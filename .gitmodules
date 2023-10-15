@@ -1,0 +1,3 @@
+[submodule "extern/bison"]
+	path = extern/bison
+	url = https://github.com/binary-dice-games/bison.git
