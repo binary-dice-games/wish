@@ -1,6 +1,6 @@
 # wish
 
-A remote UI framework built on [bison](https://github.com/binary-dice-games/bison). A wish server hosts an imgui rendering loop and exposes a set of UI element classes over bison RMI. Client applications connect, instantiate UI objects, set properties, and receive user-interaction events — all without owning a window or a graphics context.
+A remote UI framework built on [bison](https://github.com/binary-dice-games/bison). A wish server hosts a UI rendering loop and exposes a set of UI element classes over bison RMI. Client applications connect, define a UI hierarchy (in code or via JSON/YAML), and receive user-interaction events — all without owning a window or a graphics context.
 
 ## Architecture
 
@@ -9,14 +9,17 @@ Client App
   └─ wish client lib (bdg::wish::client)
        └─ bison RMI transport (TCP socket or PTY)
             └─ wish server (bdg::wish::server)
-                 ├─ bison RMI server  <- object create / set / get / call / event
-                 └─ imgui renderer    <- traverses object tree each frame
+                 ├─ bison RMI server    <- object create / set / get / call / event
+                 ├─ wish::renderer      <- abstract; imgui backend by default
+                 └─ wish::file_service  <- per-session sandboxed resource store
 ```
 
-- The **server** registers all built-in UI element classes in the `"wish"` bison namespace and drives an imgui frame loop.
-- The **client** connects via a bison transport, instantiates UI objects, and links them into a parent-child hierarchy by setting the `children` field.
-- **Properties** are synchronized by calling `proxy.set(fields)` from the client; the server's `__setter` hook marks the object dirty so the next frame picks up the change.
-- **Events** (button clicks, slider drags, etc.) flow from the server to the client via `proxy.onEvent(name, handler)`.
+- The **server** is transport-agnostic. The same UI class registry and renderer work with PTY (Linux), TCP socket, or any other bison transport.
+- The **renderer** is an abstract interface (`wish::renderer`). The initial implementation uses imgui; other backends can be added without changing client code.
+- **UI hierarchies** can be built object-by-object in code, or imported wholesale from a JSON or YAML string with a single call.
+- **UI templates** can be registered on the server, then instantiated by name — useful for repeated UI patterns.
+- The **file service** lets clients upload resources (images, fonts) to a sandboxed per-session folder. The folder is deleted when the client disconnects.
+- **Multiple clients** can be connected simultaneously; each has an isolated session, object tree, and resource folder.
 
 ## Quick Build
 
@@ -25,39 +28,11 @@ cmake -S . -B build
 cmake --build build
 ```
 
-See [docs/building.md](docs/building.md) for prerequisites, options, and platform notes.
+PTY transport is only available on Linux builds. See [docs/building.md](docs/building.md) for prerequisites, CMake options, and platform notes.
 
 ## Quick Start
 
-### Server side — register a custom panel
-
-```cpp
-#include <wish/wish.hpp>
-
-// bdg::wish::server already registers all built-in UI classes.
-// Extend with application-specific classes before calling run().
-class my_server : public bdg::wish::server {
-protected:
-  void register_classes() override {
-    bdg::wish::server::register_classes();  // Window, Button, Label, ...
-
-    auto proto = bison::dynamic_ptr{"MyPanel"_key, {}};
-    proto->addField("title"_key, bison::field{std::string{"Panel"}});
-    proto->addMethod("reset"_key,
-      [](bison::dynamic& self, const bison::dynamic&) -> bison::dynamic {
-        self["title"_key] = std::string{"Panel"};
-        return {};
-      });
-    bison::dynamic::addClass("wish"_key, proto, 0U);
-  }
-};
-
-int main(int argc, char** argv) {
-  return my_server{}.run(argc, argv);
-}
-```
-
-### Client side — create a window with a button
+### Option A — import a UI from JSON
 
 ```cpp
 #include <wish/wish.hpp>
@@ -65,42 +40,102 @@ int main(int argc, char** argv) {
 class my_client : public bdg::wish::client {
 protected:
   int on_session(bison::rmi::client& c) override {
-    auto win = c.instantiate("wish"_key, "Window"_key).get();
-    win.set({{"width"_key, 400}, {"height"_key, 300},
-             {"title"_key, std::string{"Hello"}}}).get();
+    // Import a full UI hierarchy from a JSON string in one call.
+    constexpr auto ui = R"({
+      "type": "Window",
+      "title": "Hello",
+      "width": 400,
+      "height": 300,
+      "children": {
+        "body": {
+          "type": "VerticalLayout",
+          "children": {
+            "greeting": { "type": "Label", "text": "Welcome!" },
+            "row": {
+              "type": "HorizontalLayout", "spacing": 8,
+              "children": {
+                "ok":     { "type": "Button", "label": "OK" },
+                "cancel": { "type": "Button", "label": "Cancel" }
+              }
+            }
+          }
+        }
+      }
+    })";
 
-    auto btn = c.instantiate("wish"_key, "Button"_key).get();
-    btn.set({{"label"_key, std::string{"OK"}}}).get();
-
-    // Link button into the window's children map.
-    bison::dynamic children;
-    children[0U] = btn.id();
-    win.set({{"children"_key, children}}).get();
-
-    btn.onEvent("clicked"_key, [](bison::dynamic) {
-      std::cout << "Button clicked\n";
+    auto handles = c.import_ui(ui).get();    // instantiates + configures all objects
+    handles["ok"].onEvent("clicked"_key, [](bison::dynamic) {
+      std::cout << "OK clicked\n";
     });
 
     std::string line;
-    std::getline(std::cin, line);  // keep session alive
+    std::getline(std::cin, line);
     return 0;
   }
 };
 
-int main(int argc, char** argv) {
-  return my_client{}.run(argc, argv);
-}
+int main(int argc, char** argv) { return my_client{}.run(argc, argv); }
+```
+
+### Option B — register and instantiate a UI template
+
+```cpp
+// Register a reusable template once (e.g. on startup):
+c.register_template("ConfirmDialog"_key, R"({
+  "type": "Window", "title": "Confirm", "width": 300, "height": 120,
+  "children": {
+    "msg":    { "type": "Label",  "text": "" },
+    "ok":     { "type": "Button", "label": "OK" },
+    "cancel": { "type": "Button", "label": "Cancel" }
+  }
+})").get();
+
+// Later, instantiate the template by name:
+auto dlg = c.instantiate_template("ConfirmDialog"_key).get();
+dlg["msg"].set({{"text"_key, std::string{"Delete file?"}}}).get();
+dlg["ok"].onEvent("clicked"_key, [](bison::dynamic) { /* ... */ });
+```
+
+### Option C — build the hierarchy manually
+
+```cpp
+auto win = c.instantiate("wish"_key, "Window"_key).get();
+win.set({{"title"_key, std::string{"Hello"}}, {"width"_key, 400}}).get();
+
+auto btn = c.instantiate("wish"_key, "Button"_key).get();
+btn.set({{"label"_key, std::string{"OK"}}}).get();
+
+// Named child reference (string key).
+bison::dynamic children;
+children["ok"_key] = btn.id();
+win.set({{"children"_key, children}}).get();
+```
+
+### Uploading a resource
+
+```cpp
+// Upload logo.png; the server stores it in the session resource folder.
+c.upload_file("logo.png", file_bytes).get();
+
+// Reference it in an Image element.
+auto img = c.instantiate("wish"_key, "Image"_key).get();
+img.set({{"src"_key, std::string{"logo.png"}}, {"width"_key, 64}, {"height"_key, 64}}).get();
 ```
 
 ## Core Concepts
 
 | Concept | Description |
 |---------|-------------|
-| **Object hierarchy** | UI elements are bison `dynamic` objects linked via indexed `children` fields, forming a tree rooted at a `Window`. |
-| **Remote properties** | `proxy.set(fields)` / `proxy.get()` synchronize typed fields between client and server. Partial updates and projected `get()` calls are supported. |
-| **Events** | Server-side interactions emit named events (`clicked`, `changed`, ...) delivered to the client via `proxy.onEvent`. |
-| **Renderer backends** | The initial backend is imgui. The renderer dispatches each node by its `__class` field. A new backend is a new `wish::renderer` subclass. |
-| **Transports** | PTY (local, default) or TCP socket (network). Chosen at runtime via server/client launch parameters. |
+| **Object hierarchy** | UI elements are bison `dynamic` objects forming a tree. Children are addressed by numeric index (lists) or by name (named slots like `"ok"`, `"cancel"`). Layouts are first-class nodes in the tree. |
+| **Layouts** | `VerticalLayout` stacks children top-to-bottom; `HorizontalLayout` places them side by side. Layouts can be nested to create row/column grids and complex arrangements. |
+| **JSON/YAML import** | `client::import_ui(json_or_yaml)` parses a hierarchy descriptor and instantiates the full tree in one call, returning a map of named handles. |
+| **UI templates** | Named UI blueprints registered on the server. `instantiate_template(name)` creates a fresh copy; useful for dialogs and repeated panels. |
+| **Remote properties** | `proxy.set(fields)` / `proxy.get()` synchronize typed fields. Property sets are one-way (no round-trip) for low-latency visual updates. |
+| **Events** | Server-side interactions emit named events (`clicked`, `changed`, ...) to the client via `proxy.onEvent`. |
+| **File service** | Clients upload/download files via `client::upload_file` / `download_file`. Files are stored in a sandboxed per-session folder, deleted on disconnect. |
+| **Multi-client** | Each connected client has an isolated session: independent object tree, template registry, and resource folder. |
+| **Renderer backends** | `wish::renderer` is an abstract interface. The imgui backend is the default. New backends (Qt, Win32, ...) implement the same interface. |
+| **Transports** | PTY (Linux only) or TCP socket. Chosen at runtime; the renderer and class registry are independent of the transport. |
 
 ## Further Documentation
 
