@@ -9,7 +9,7 @@ project(
 
 option(WISH_BUILD_TESTS "Build the wish tests" ON)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 # Disable bison's own test suite in this build; wish manages its own tests
@@ -19,7 +19,19 @@ add_subdirectory("extern/bison")
 
 add_library(wish STATIC
   include/wish/wish.hpp
+  include/wish/registry.hpp
   src/wish.cpp
+  src/registry.cpp
+  src/ui_elements/element.cpp
+  src/ui_elements/layout.cpp
+  src/ui_elements/window.cpp
+  src/ui_elements/label.cpp
+  src/ui_elements/button.cpp
+  src/ui_elements/checkbox.cpp
+  src/ui_elements/slider.cpp
+  src/ui_elements/input_text.cpp
+  src/ui_elements/image.cpp
+  src/ui_elements/separator.cpp
 )
 
 target_include_directories(wish

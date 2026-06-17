@@ -3,6 +3,4 @@
 /// @brief Top-level umbrella header for the wish remote UI framework.
 #pragma once
 
-namespace bdg::wish {
-// Populated in subsequent implementation steps.
-}  // namespace bdg::wish
+#include <wish/registry.hpp>
