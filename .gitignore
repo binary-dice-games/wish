@@ -1,2 +1,15 @@
 .vs/
 out/
+build/
+build-linux/
+build_asan/
+__pycache__/
+*.pyc
+*.pyo
+# .NET build artifacts
+bindings/csharp/obj/
+bindings/csharp/bin/
+bindings/csharp/tests/obj/
+bindings/csharp/tests/bin/
+# Java build artifacts
+bindings/java/target/
