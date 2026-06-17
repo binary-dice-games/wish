@@ -8,15 +8,8 @@ Rules:
 - Keep `README.md` under ~200 lines. Prose should be tight; no padded explanations.
 - Detailed setup instructions belong in `docs/building.md`.
 - Example run instructions belong in `docs/examples.md`.
-- Language binding setup and usage belong in `docs/bindings.md`.
-- Benchmark details and optimization notes belong in `docs/performance.md`.
-- Wire format specification lives in `FORMAT.md` (already referenced from README).
 - When you add or change a feature, update the relevant section in `README.md` (or the relevant `docs/` file) to reflect the change. Do not leave stale content.
 - If you add a new `docs/` file, add a row for it in the "Further Documentation" table in `README.md`.
-
-## FORMAT.md — wire format spec
-
-Update `FORMAT.md` whenever the binary wire format, RMI envelope schema, or transport framing changes. Keep it precise and implementation-agnostic.
 
 ## Code documentation
 
@@ -31,13 +24,13 @@ Some directories contain a `DESIGN.md` file that describes the architecture, key
 
 ## Startup reading
 
-At the start of every new conversation, always read `README.md` to understand the project's structure and goals. Read `FORMAT.md` only when working on serialization, RMI, or transport. When task-specific details are needed, read the relevant `docs/` file and the in-code documentation.
+At the start of every new conversation, always read `README.md` to understand the project's structure and goals. When task-specific details are needed, read the relevant `docs/` file and the in-code documentation.
 
 ## Tests
 
 Always write automated tests validating any new or modified behavior. Maintain and update tests alongside code changes; tests should be concise, deterministic, and focused on public behavior.
 
-# Bison Coding Style Guide for Claude Code Assist
+# Whish Coding Style Guide for Claude Code Assist
 
 Use this guide when generating or editing code in this repository.
 
@@ -74,10 +67,8 @@ Use this guide when generating or editing code in this repository.
 
 ### Naming
 
-- Keep namespace style as `bdg::bison::...` and close with a namespace comment.
-- Follow existing naming in each subsystem:
-  - RMI code uses snake_case types/functions (`memory_server_transport`, `send_response`).
-  - Legacy core APIs may use existing camelCase symbols; do not rename them.
+- Keep namespace style as `bdg::wish::...` and close with a namespace comment.
+- Follow existing naming in each subsystem
 - Use trailing underscores for private member fields (`running_`, `mtx_`).
 - Use descriptive local names (`payload_bytes`, `request_id`, `workers_mutex_`).
 
