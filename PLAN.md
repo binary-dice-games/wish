@@ -28,21 +28,21 @@ Each step produces a self-contained, testable deliverable. Steps are ordered so 
 
 **Deliverables:**
 - `include/wish/registry.hpp` — declares `void register_all()`.
-- `src/registry.cpp` — implements `register_all()`:
-  - Registers `Element` prototype with fields `visible` (bool, true) and `children` (dynamic, {}).
-  - Registers `Layout` (parent: `Element`) with field `spacing` (float, 0.0f).
-  - Registers `VerticalLayout` and `HorizontalLayout` (parent: `Layout`), no additional fields.
-  - Registers `Window` (parent: `Element`) with fields `title` (string), `width` (int32), `height` (int32), `pos_x` (int32), `pos_y` (int32), `flags` (int32).
-  - Registers `Label` (parent: `Element`) with field `text` (string).
-  - Registers `Button` (parent: `Element`) with field `label` (string).
-  - Registers `Checkbox` (parent: `Element`) with fields `label` (string), `value` (bool).
-  - Registers `SliderFloat` (parent: `Element`) with fields `label` (string), `value` (float), `min` (float), `max` (float), `format` (string, "%.2f").
-  - Registers `SliderInt` (parent: `Element`) with fields `label` (string), `value` (int32), `min` (int32), `max` (int32).
-  - Registers `InputText` (parent: `Element`) with fields `label` (string), `value` (string), `hint` (string), `max_length` (int32, 256).
-  - Registers `Image` (parent: `Element`) with fields `src` (string), `width` (int32), `height` (int32).
-  - Registers `Separator` (parent: `Element`), no additional fields.
+- `src/registry.cpp` — implements `register_all()` by calling one `register_*` function per element type (defined in the files below). Registration order must respect the parent-before-child dependency: `Element` first, then `Layout`, then all leaf classes.
+- `src/ui_elements/element.cpp` — registers the `Element` base prototype: fields `visible` (bool, true) and `children` (dynamic, {}). Also declares and exposes `bison::key_t element_key()` so child registrations can reference the parent key without hard-coding it.
+- `src/ui_elements/layout.cpp` — registers the `Layout` intermediate prototype (parent: `Element`) with field `spacing` (float, 0.0f). Registers `VerticalLayout` and `HorizontalLayout` (parent: `Layout`), which add no fields of their own.
+- `src/ui_elements/window.cpp` — registers `Window` (parent: `Element`) with fields `title` (string), `width` (int32), `height` (int32), `pos_x` (int32), `pos_y` (int32), `flags` (int32).
+- `src/ui_elements/label.cpp` — registers `Label` (parent: `Element`) with field `text` (string).
+- `src/ui_elements/button.cpp` — registers `Button` (parent: `Element`) with field `label` (string).
+- `src/ui_elements/checkbox.cpp` — registers `Checkbox` (parent: `Element`) with fields `label` (string), `value` (bool).
+- `src/ui_elements/slider.cpp` — registers `SliderFloat` (parent: `Element`) with fields `label` (string), `value` (float), `min` (float), `max` (float), `format` (string, "%.2f"); and `SliderInt` (parent: `Element`) with fields `label` (string), `value` (int32), `min` (int32), `max` (int32). Both slider variants live in one file because they share structure.
+- `src/ui_elements/input_text.cpp` — registers `InputText` (parent: `Element`) with fields `label` (string), `value` (string), `hint` (string), `max_length` (int32, 256).
+- `src/ui_elements/image.cpp` — registers `Image` (parent: `Element`) with fields `src` (string), `width` (int32), `height` (int32).
+- `src/ui_elements/separator.cpp` — registers `Separator` (parent: `Element`), no additional fields.
+- Each `src/ui_elements/*.cpp` file declares a corresponding `void register_<name>()` free function (e.g. `register_window()`, `register_label()`). These are internal to the library (not in any public header); only `registry.hpp` / `register_all()` is public.
 - All class keys use `"ClassName"_key` (FNV-1a hashing from bison).
 - All registrations use `bison::dynamic::addClass("wish"_key, proto, parent_key)`.
+- Root `CMakeLists.txt` lists every `src/ui_elements/*.cpp` file explicitly in the `wish` target sources.
 
 **Tests** (`tests/test_registry.cpp`):
 - `register_all()` does not throw.
