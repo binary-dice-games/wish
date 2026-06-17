@@ -7,36 +7,35 @@ project(
   VERSION 1.0
   LANGUAGES CXX)
 
-option(PACKAGE_TESTS "Build the tests" ON)
-  
+option(WISH_BUILD_TESTS "Build the wish tests" ON)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
-set(WISH_PUBLIC_HEADERS
-  	"${CMAKE_CURRENT_LIST_DIR}/src/wish.hpp"
-)
-
-set(WISH_PRIVATE_SOURCES
-	src/wish.cpp
-)
-
-include_directories(. include)
-
+# Disable bison's own test suite in this build; wish manages its own tests
+# and adds GoogleTest directly from bison's extern/ directory.
+set(PACKAGE_TESTS OFF CACHE BOOL "Build bison tests" FORCE)
 add_subdirectory("extern/bison")
 
 add_library(wish STATIC
-  ${WISH_PUBLIC_HEADERS}
-  ${WISH_PRIVATE_SOURCES}
+  include/wish/wish.hpp
+  src/wish.cpp
 )
 
 target_include_directories(wish
     PRIVATE
         src
+        # Exposes bison's C++ headers (src/bison/bison.hpp, src/rmi/rmi.hpp, etc.)
+        # using the same include convention as bison's own examples and tests.
+        ${CMAKE_CURRENT_SOURCE_DIR}/extern/bison
     PUBLIC
         include
 )
 
-if(PACKAGE_TESTS)
+# bison is PUBLIC so consumers of wish also get bison's types and link deps.
+target_link_libraries(wish PUBLIC bison)
+
+if(WISH_BUILD_TESTS)
     enable_testing()
     include(GoogleTest)
     add_subdirectory(tests)
