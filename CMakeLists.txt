@@ -26,6 +26,7 @@ add_library(wish STATIC
   include/wish/renderer.hpp
   include/wish/file_service.hpp
   include/wish/server.hpp
+  include/wish/client.hpp
   src/wish.cpp
   src/registry.cpp
   src/ui_importer.cpp
@@ -34,6 +35,7 @@ add_library(wish STATIC
   src/renderer.cpp
   src/file_service.cpp
   src/server.cpp
+  src/client.cpp
   src/ui_elements/element.cpp
   src/ui_elements/layout.cpp
   src/ui_elements/window.cpp
