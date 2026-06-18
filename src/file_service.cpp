@@ -16,7 +16,27 @@ using namespace bdg::bison;
 file_service_node::file_service_node(dynamic&& base,
                                      std::filesystem::path resource_dir)
     : dynamic(std::move(base)),
-      resource_dir_(std::move(resource_dir)) {}
+      resource_dir_(std::move(resource_dir)) {
+  addMethod(
+      "upload"_key,
+      bison::method{[this](dynamic& /*self*/, const dynamic& p) -> dynamic {
+        upload(p.as<std::string>("name"_key), p.as<std::string>("data"_key));
+        return dynamic{};
+      }});
+  addMethod(
+      "download"_key,
+      bison::method{[this](dynamic& /*self*/, const dynamic& p) -> dynamic {
+        dynamic result;
+        result["result"_key] = download(p.as<std::string>("name"_key));
+        return result;
+      }});
+  addMethod(
+      "erase"_key,
+      bison::method{[this](dynamic& /*self*/, const dynamic& p) -> dynamic {
+        erase(p.as<std::string>("name"_key));
+        return dynamic{};
+      }});
+}
 
 std::filesystem::path
 file_service_node::resolve_path(const std::string& name) const {

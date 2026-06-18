@@ -2,6 +2,8 @@
 /// @file registry.cpp
 #include <wish/registry.hpp>
 
+#include "import_handler.hpp"
+#include "template_handler.hpp"
 #include "ui_elements.hpp"
 
 namespace bdg::wish {
@@ -18,6 +20,9 @@ void register_all() {
   register_input_text();
   register_image();
   register_separator();
+  // Protocol handler classes used by wish::client helpers.
+  import_handler::register_class();
+  template_handler::register_class();
 }
 
 }  // namespace bdg::wish

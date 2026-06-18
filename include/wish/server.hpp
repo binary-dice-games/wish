@@ -78,6 +78,13 @@ class server : public bison::rmi::server {
   void on_session_created(bison::rmi::context& ctx) override final;
   void on_session_destroyed(bison::rmi::context& ctx) override final;
 
+  // Returns session-aware objects for protocol classes (__WishImport,
+  // __WishTemplate, __WishFS); falls back to plain instantiate otherwise.
+  bison::dynamic_ptr on_create_object(
+      bison::rmi::context& ctx,
+      bison::key_t ns,
+      bison::key_t klass) override final;
+
   void render_loop();
 
   std::unique_ptr<renderer> renderer_;

@@ -5,6 +5,9 @@
 #include <wish/file_service.hpp>
 #include <wish/registry.hpp>
 
+#include "import_handler.hpp"
+#include "template_handler.hpp"
+
 #include <chrono>
 #include <memory>
 #include <thread>
@@ -65,6 +68,41 @@ void server::on_session_destroyed(bison::rmi::context& ctx) {
       on_session_destroyed(*sess);
     } catch (...) {}
   }
+}
+
+bison::dynamic_ptr server::on_create_object(
+    bison::rmi::context& ctx,
+    bison::key_t ns,
+    bison::key_t klass) {
+  using namespace bison;
+
+  std::shared_ptr<session> sess;
+  {
+    auto lp = sessions_.rlock();
+    auto it = lp->find(ctx.session_id.id);
+    if (it != lp->end()) {
+      sess = it->second;
+    }
+  }
+
+  if (!sess) {
+    return dynamic_ptr{std::make_shared<dynamic>(dynamic::instantiate(ns, klass))};
+  }
+
+  if (klass == "__WishImport"_key) {
+    return std::make_shared<import_handler>(
+        dynamic::instantiate(ns, klass), ctx, sess);
+  }
+  if (klass == "__WishTemplate"_key) {
+    return std::make_shared<template_handler>(
+        dynamic::instantiate(ns, klass), ctx, sess);
+  }
+  if (klass == "__WishFS"_key && sess->file_service) {
+    return dynamic_ptr{
+        std::static_pointer_cast<dynamic>(sess->file_service)};
+  }
+
+  return dynamic_ptr{std::make_shared<dynamic>(dynamic::instantiate(ns, klass))};
 }
 
 void server::render_loop() {
