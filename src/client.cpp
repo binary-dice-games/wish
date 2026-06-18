@@ -15,6 +15,9 @@ using namespace bison;
 
 void client::run() {
   connect();
+  import_proxy_ = instantiate("wish"_key, "__WishImport"_key).get();
+  template_proxy_ = instantiate("wish"_key, "__WishTemplate"_key).get();
+  fs_proxy_ = instantiate("wish"_key, "__WishFS"_key).get();
   try {
     on_session();
   } catch (...) {
@@ -28,45 +31,6 @@ void client::run() {
   template_proxy_.reset();
   fs_proxy_.reset();
   disconnect();
-}
-
-// ── Cached proxy accessors ────────────────────────────────────────────────────
-// Each accessor holds proxy_mutex_ only long enough to check-and-init the
-// optional.  The actual RMI call (instantiate(...).get()) is done outside the
-// lock so that concurrent initializations of different proxies don't serialize
-// on the mutex unnecessarily.
-
-bison::rmi::proxy::dynamic& client::import_proxy() {
-  {
-    std::lock_guard lk{proxy_mutex_};
-    if (import_proxy_) return *import_proxy_;
-  }
-  auto proxy = instantiate("wish"_key, "__WishImport"_key).get();
-  std::lock_guard lk{proxy_mutex_};
-  if (!import_proxy_) import_proxy_ = std::move(proxy);
-  return *import_proxy_;
-}
-
-bison::rmi::proxy::dynamic& client::template_proxy() {
-  {
-    std::lock_guard lk{proxy_mutex_};
-    if (template_proxy_) return *template_proxy_;
-  }
-  auto proxy = instantiate("wish"_key, "__WishTemplate"_key).get();
-  std::lock_guard lk{proxy_mutex_};
-  if (!template_proxy_) template_proxy_ = std::move(proxy);
-  return *template_proxy_;
-}
-
-bison::rmi::proxy::dynamic& client::fs_proxy() {
-  {
-    std::lock_guard lk{proxy_mutex_};
-    if (fs_proxy_) return *fs_proxy_;
-  }
-  auto proxy = instantiate("wish"_key, "__WishFS"_key).get();
-  std::lock_guard lk{proxy_mutex_};
-  if (!fs_proxy_) fs_proxy_ = std::move(proxy);
-  return *fs_proxy_;
 }
 
 // ── Helper: build proxy_map from an indexed apply_descriptor result ───────────
@@ -93,7 +57,7 @@ std::future<proxy_map> client::import_ui(const std::string& descriptor) {
   return std::async(std::launch::async, [this, descriptor]() -> proxy_map {
     dynamic args;
     args["descriptor"_key] = descriptor;
-    auto result = import_proxy().call("import"_key, std::move(args)).get();
+    auto result = import_proxy_->call("import"_key, std::move(args)).get();
     return proxies_from_result(*this, result);
   });
 }
@@ -104,7 +68,7 @@ std::future<void> client::register_template(
     dynamic args;
     args["name"_key] = name;
     args["descriptor"_key] = descriptor;
-    template_proxy().call("register"_key, std::move(args)).get();
+    template_proxy_->call("register"_key, std::move(args)).get();
   });
 }
 
@@ -112,7 +76,7 @@ std::future<proxy_map> client::instantiate_template(bison::key_t name) {
   return std::async(std::launch::async, [this, name]() -> proxy_map {
     dynamic args;
     args["name"_key] = name;
-    auto result = template_proxy().call("instantiate"_key, std::move(args)).get();
+    auto result = template_proxy_->call("instantiate"_key, std::move(args)).get();
     return proxies_from_result(*this, result);
   });
 }
@@ -123,7 +87,7 @@ std::future<void> client::upload_file(
     dynamic args;
     args["name"_key] = name;
     args["data"_key] = data;
-    fs_proxy().call("upload"_key, std::move(args)).get();
+    fs_proxy_->call("upload"_key, std::move(args)).get();
   });
 }
 
@@ -131,7 +95,7 @@ std::future<std::string> client::download_file(const std::string& name) {
   return std::async(std::launch::async, [this, name]() -> std::string {
     dynamic args;
     args["name"_key] = name;
-    auto result = fs_proxy().call("download"_key, std::move(args)).get();
+    auto result = fs_proxy_->call("download"_key, std::move(args)).get();
     return result.as<std::string>("result"_key);
   });
 }
