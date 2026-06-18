@@ -39,8 +39,8 @@ struct session {
   /// Sandboxed temporary directory for this session's uploaded resources.
   std::filesystem::path resource_dir;
 
-  /// Set to `true` by the `__setter` hook whenever a field changes; cleared
-  /// after each render frame.
+  /// Application-managed flag; `wish::server` does not read or write it.
+  /// Callers may use it for their own throttling or change-detection logic.
   std::atomic<bool> dirty{false};
 
   /// File service instance; populated by `register_file_service(session&)`.

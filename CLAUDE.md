@@ -97,6 +97,20 @@ Use this guide when generating or editing code in this repository.
 - Maintain consistent formatting and naming (snake_case for Python, PascalCase for C#/Java).
 - Ensure public APIs have clear documentation (docstrings or XML comments).
 
+## The bison library
+
+The `extern/bison` submodule (also checked out at `d:\github\bison`) is a first-party
+dependency and **may be modified**. When a wish feature requires a missing bison capability
+(a new hook, a template helper, a new transport primitive, etc.):
+
+1. Identify the minimal change needed in bison.
+2. Propose the change to the user with a clear rationale before implementing.
+3. Once approved, apply the change to `d:\github\bison`, commit it there, then update
+   the wish submodule to reference the new bison commit.
+
+Follow the same coding style and documentation standards as the rest of bison (see the bison
+source for conventions). Do not modify bison unilaterally — always get explicit approval first.
+
 ## Claude Code Assist Behavioral Rules for This Repo
 
 - Do not introduce broad stylistic rewrites.

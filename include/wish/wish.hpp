@@ -6,5 +6,6 @@
 #include <wish/file_service.hpp>
 #include <wish/registry.hpp>
 #include <wish/renderer.hpp>
+#include <wish/server.hpp>
 #include <wish/session.hpp>
 #include <wish/ui_importer.hpp>

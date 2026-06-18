@@ -24,21 +24,19 @@ The core transport, serialization, and remote-object protocol are entirely provi
 |  - import_ui()          |  <-- file_service (upload / download)        |
 |  - upload_file()        |                                               |
 +-------------------------+                                               |
-                                                              +-----------+----------+
-                                                              |  bdg::wish::server   |
-                                                              |                      |
-                                                              | bison rmi::server    |
-                                                              |   (per-session ctx)  |
-                                                              |         |            |
-                                                              | wish::session        |
-                                                              |  - object tree       |
-                                                              |  - template registry |
-                                                              |  - resource folder   |
-                                                              |         |            |
-                                                              | wish::renderer       |
-                                                              |  (abstract iface)    |
-                                                              |   imgui backend      |
-                                                              +----------------------+
+                                                    +-----------------------+----------+
+                                                    |  bdg::wish::server               |
+                                                    |  : public bison::rmi::server     |
+                                                    |                                  |
+                                                    |  per-client wish::session        |
+                                                    |   - object tree                  |
+                                                    |   - template registry            |
+                                                    |   - resource folder              |
+                                                    |         |                        |
+                                                    |  wish::renderer                  |
+                                                    |   (abstract iface)               |
+                                                    |    imgui backend                 |
+                                                    +----------------------------------+
 ```
 
 Multiple clients connect to the same server. Each client gets an independent `wish::session` with its own object tree, template registry, and sandboxed resource folder. Sessions cannot access each other's state.
@@ -49,15 +47,17 @@ Multiple clients connect to the same server. Each client gets an independent `wi
 
 ### `bdg::wish::server`
 
-Transport-agnostic base class. Does not inherit from any specific bison app scaffold. Instead it accepts a `bison::rmi::server_transport_iface&` at construction time, so the same server logic works with PTY, TCP socket, or any other bison transport.
+Inherits from `bison::rmi::server` directly, so all bison RMI server capabilities (accept loop, worker threads, session context management, `session_contexts()` accessor) are available without delegation or wrapping.
+
+The constructor accepts a `server_transport_iface&` so the same server logic works with PTY, TCP socket, or any other bison transport.
+
+`wish::server` overrides two protected virtual hooks on `bison::rmi::server` — `on_session_created(context&)` and `on_session_destroyed(context&)` — as `final` methods that bridge into wish session management. Subclasses use the wish-level hooks `on_session_created(session&)` and `on_session_destroyed(session&)` instead.
 
 Responsibilities:
 - Calls `wish::registry::register_all()` on startup to populate the `"wish"` namespace.
-- Owns the renderer (abstract `wish::renderer*`) and calls `renderer->render_frame(session)` on each frame.
+- Owns the renderer (abstract `wish::renderer*`) and calls `renderer->render_node(root, session)` on each frame tick (~5 ms).
 - Creates and destroys `wish::session` objects as clients connect and disconnect.
-- Runs the bison RMI server loop and the render loop on separate threads.
-
-Subclasses can override `make_renderer()` to substitute a different backend.
+- Runs the bison RMI accept loop and the render loop on separate threads.
 
 ### `bdg::wish::registry`
 
@@ -86,8 +86,6 @@ Element  (visible, children)
 `Layout` is an intermediate base class that contributes the `spacing` field and the children iteration contract. `VerticalLayout` and `HorizontalLayout` add no fields of their own; they differ only in how the renderer arranges their children.
 
 Layouts can be nested arbitrarily: a `VerticalLayout` can contain `HorizontalLayout` children (to build row-based grids), other `VerticalLayout` children (to create subsections), or any leaf elements.
-
-Each class registers a `__setter` hook that sets a dirty flag on the containing `wish::session`, ensuring the next render frame picks up the change.
 
 Event-emitting classes (Button, Checkbox, Slider*, InputText) call `context.emit_event(object_id, event_name, payload)` from inside the renderer when the UI backend reports user interaction.
 
@@ -121,15 +119,18 @@ Per-client state, owned by the server, created on connect and destroyed on disco
 
 ```cpp
 struct session {
-  bison::rmi::context&                       rmi_ctx;     // bison session context
-  wish::name_map                             objects;     // live ui_element tree (name → ptr)
-  std::unordered_map<key_t, std::string>     templates;   // named UI blueprints (JSON/YAML)
-  std::filesystem::path                      resource_dir;// sandboxed folder
-  std::atomic<bool>                          dirty;       // renderer needs refresh
+  bison::key_t                                       id;           // assigned by bison RMI layer
+  wish::name_map                                     objects;      // live ui_element tree (name → ptr)
+  std::unordered_map<bison::key_t, std::string, ...> templates;   // named UI blueprints (JSON/YAML)
+  std::filesystem::path                              resource_dir; // sandboxed folder
+  std::atomic<bool>                                  dirty{false}; // application-managed flag
+  file_service_ptr                                   file_service; // set by register_file_service()
 };
 ```
 
 `resource_dir` is a temporary directory created at session start and deleted at session end. Clients can only read and write within this directory via the file service.
+
+`dirty` is an application-managed flag — `wish::server` does not read or write it. The render loop renders every session every tick; callers may use `dirty` for their own throttling or change-detection logic.
 
 ### `bdg::wish::ui_element`
 
@@ -271,8 +272,8 @@ Named children (`"body"`, `"label"`, `"ok"`) use hashed string keys (MSB set in 
 ```
 Client: proxy.set({{"text"_key, "Hello"}})    // oneway, no round-trip
   -> bison RMI OP_SET (oneway=true)
-  -> server __setter: session.dirty = true
-  -> next render frame: renderer reads node["text"_key] -> draw
+  -> bison __setter hook on Element prototype applies the field
+  -> render loop picks it up on the next tick (~5 ms)
 
 Client: proxy.get({{"text"_key, {}}})         // projected get, has response
   -> bison RMI OP_GET
@@ -328,7 +329,7 @@ No session can read or write another session's objects, templates, or resource f
 ## Design Decisions
 
 **Transport-agnostic server.**
-`wish::server` takes a `server_transport_iface&` rather than inheriting from `pty_server_app`. This lets the same business logic (class registry, renderer, file service) run over PTY, TCP, or any future transport without code duplication. PTY is available as a launch wrapper on Linux.
+`wish::server` inherits from `bison::rmi::server` and takes a `server_transport_iface&` at construction time rather than embedding a concrete transport type. This lets the same business logic (class registry, renderer, file service) run over PTY, TCP, or any future transport without code duplication. PTY is available as a launch wrapper on Linux.
 
 **Abstract renderer interface.**
 Decoupling the render pipeline from imgui means backends can be swapped without touching client code or the class registry. Immediate-mode (imgui) and retained-mode (Qt, Win32) backends share the same interface; the retained-mode case would add a reconciliation pass inside `render_node`.

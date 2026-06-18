@@ -200,13 +200,13 @@ Each step produces a self-contained, testable deliverable. Steps are ordered so 
 **Deliverables:**
 - `include/wish/server.hpp` — declares:
   ```cpp
-  class server {
+  class server : public bison::rmi::server {
   public:
-    explicit server(bison::rmi::server_transport_iface& transport,
+    explicit server(bison::rmi::transport::server_transport_iface& transport,
                     std::unique_ptr<renderer> r);
 
-    void start();   // begins accepting connections; non-blocking
-    void stop();    // shuts down all sessions and the render loop
+    void start();   // register_all(), start render loop, begin accepting
+    void stop();    // stop accept loop, render loop, join all threads
 
   protected:
     virtual void on_session_created(session& s) {}
@@ -214,19 +214,20 @@ Each step produces a self-contained, testable deliverable. Steps are ordered so 
   };
   ```
 - `src/server.cpp` — implementation:
-  - Calls `wish::registry::register_all()` and `wish::file_service::register_file_service` on start.
-  - Accepts bison RMI connections via `transport`; creates a `wish::session` per connection.
-  - Handles `OP_INSTANTIATE` / `OP_SET` / `OP_GET` / `OP_CALL` / `OP_DESTROY` by delegating to the bison session context within the matching `wish::session`.
-  - `__setter` hook on every wish class sets `session.dirty = true`.
-  - Render loop thread: when `dirty` is true, calls `renderer->begin_frame()`, iterates all active sessions and calls `render_node` on each root, then calls `renderer->end_frame()`, then clears `dirty`.
-  - On client disconnect, calls `on_session_destroyed` and destroys the `session` (triggers resource_dir cleanup).
+  - `wish::server` inherits `bison::rmi::server` directly; no pimpl.
+  - `start()` calls `wish::registry::register_all()`, starts the render thread, then calls `bison::rmi::server::listen()`.
+  - `stop()` stops the render thread and calls `bison::rmi::server::stop()`.
+  - Overrides two new protected virtual hooks on `bison::rmi::server` (`on_session_created(context&)` and `on_session_destroyed(context&)`) as `final` methods to manage `wish::session` objects. These bridge into the wish-level `on_session_created(session&)` / `on_session_destroyed(session&)` hooks for subclasses.
+  - Session IDs are taken directly from `bison::rmi::context::session_id`; no separate counter.
+  - Render loop renders every active session every tick (~5 ms sleep); no dirty gate.
+  - On client disconnect, `on_session_destroyed(session&)` fires and the session is destroyed (triggers `resource_dir` cleanup).
 
 **Tests** (`tests/test_server.cpp`) — use `memory_server_transport` and `null_renderer`:
 - `start()` then `stop()` does not hang or throw.
 - A client connecting via in-memory transport triggers `on_session_created`.
 - A client disconnecting triggers `on_session_destroyed`.
 - `OP_INSTANTIATE("wish"_key, "Window"_key)` from a memory client succeeds and returns a valid object ID.
-- `OP_SET` on a `Window`'s `title` field sets `session.dirty = true`.
+- `OP_SET` on a `Window`'s `title` field applies the value (verified by a subsequent `OP_GET`).
 - Two simultaneous in-memory clients each receive their own session.
 
 ---
