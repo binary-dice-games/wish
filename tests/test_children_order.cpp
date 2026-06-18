@@ -2,23 +2,24 @@
 #include <gtest/gtest.h>
 
 #include "src/bison/bison_object.hpp"
-#include <wish/children_order.hpp>
 #include <wish/registry.hpp>
+#include <wish/ui_element.hpp>
 #include <wish/ui_importer.hpp>
 
 #include <string>
 #include <vector>
 
 using namespace bdg::bison;
+using bdg::wish::ui_element;
 
 class ChildrenOrderTest : public ::testing::Test {
  protected:
   void SetUp() override { bdg::wish::register_all(); }
 
   // Collect visited child keys from for_each_child_ordered into a vector.
-  static std::vector<key_t> collect_order(const dynamic& parent) {
+  static std::vector<key_t> collect_order(ui_element& parent) {
     std::vector<key_t> keys;
-    bdg::wish::for_each_child_ordered(parent, [&](key_t k, const field&) {
+    parent.for_each_child_ordered([&](key_t k, ui_element&) {
       keys.push_back(k);
     });
     return keys;
@@ -67,9 +68,8 @@ TEST_F(ChildrenOrderTest, IndexedChildrenPreserveOrder) {
   ASSERT_NE(win, nullptr);
 
   std::vector<std::string> texts;
-  bdg::wish::for_each_child_ordered(*win, [&](key_t, const field& f) {
-    auto& child = f.as<dynamic_ptr>();
-    if (child) texts.push_back(child->findField("text"_key)->as<std::string>());
+  win->for_each_child_ordered([&](key_t, ui_element& child) {
+    texts.push_back(child.findField("text"_key)->as<std::string>());
   });
 
   ASSERT_EQ(texts.size(), 3u);
@@ -140,7 +140,7 @@ TEST_F(ChildrenOrderTest, RefreshAfterOrderMutation) {
   }
 
   // After refresh the new order is reflected.
-  bdg::wish::refresh_children_order(*win);
+  win->refresh_children_order();
   {
     auto keys = collect_order(*win);
     ASSERT_EQ(keys.size(), 2u);
@@ -152,16 +152,16 @@ TEST_F(ChildrenOrderTest, RefreshAfterOrderMutation) {
 // ── No-cache fallback ─────────────────────────────────────────────────────────
 
 // for_each_child_ordered on a manually-constructed parent (no cache built)
-// falls back to raw forEach order without crashing.
+// falls back to forEachChild<ui_element> without crashing.
 TEST_F(ChildrenOrderTest, FallbackWhenNoCachePresent) {
-  auto win = dynamic_ptr{dynamic::instantiate("wish"_key, "Window"_key)};
+  auto win = dynamic::instantiate<ui_element>("wish"_key, "Window"_key);
   auto children = dynamic_ptr{key_t{0U}, {}};
-  auto lbl = dynamic_ptr{dynamic::instantiate("wish"_key, "Label"_key)};
+  auto lbl = dynamic::instantiate<ui_element>("wish"_key, "Label"_key);
   (*children)["x"_key] = lbl;
   (*win)["children"_key] = children;
 
   // Should not crash and should visit the one child.
   int count = 0;
-  bdg::wish::for_each_child_ordered(*win, [&](key_t, const field&) { ++count; });
+  win->for_each_child_ordered([&](key_t, ui_element&) { ++count; });
   EXPECT_EQ(count, 1);
 }

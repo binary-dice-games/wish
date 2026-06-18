@@ -7,20 +7,20 @@
 /// name map for O(1) access to any named node.
 #pragma once
 
-#include "src/bison/bison_object.hpp"
+#include <wish/ui_element.hpp>
 
 #include <string>
 #include <unordered_map>
 
 namespace bdg::wish {
 
-/// @brief Flat map from dot-path name to the corresponding wish object.
+/// @brief Flat map from dot-path name to the corresponding wish UI element.
 ///
 /// The root node is stored at key `""`.  Named descendants use dot-joined
 /// ancestor names, e.g. `"body.row.ok"`.  Indexed (numeric) children are
 /// not included; they are accessible via integer index on the parent's
 /// `children` field.
-using name_map = std::unordered_map<std::string, bison::dynamic_ptr>;
+using name_map = std::unordered_map<std::string, ui_element_ptr>;
 
 /// @brief Parse a JSON descriptor and return a wish object tree.
 /// @param json  UTF-8 JSON text representing a wish UI hierarchy.

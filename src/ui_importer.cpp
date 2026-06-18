@@ -6,7 +6,6 @@
 /// path building).  YAML is parsed with libyaml into an equivalent JSON
 /// representation and then fed through the same JSON processing path.
 #include <wish/ui_importer.hpp>
-#include <wish/children_order.hpp>
 
 #include "src/bison/bison_object.hpp"
 
@@ -54,7 +53,7 @@ static void set_field_from_json(
 
 // ── JSON → wish objects ───────────────────────────────────────────────────────
 
-static dynamic_ptr import_json_node(
+static ui_element_ptr import_json_node(
     const json& descriptor,
     const std::string& path,
     bool add_to_map,
@@ -110,7 +109,7 @@ static dynamic_ptr build_children(
   return children_dyn;
 }
 
-static dynamic_ptr import_json_node(
+static ui_element_ptr import_json_node(
     const json& descriptor,
     const std::string& path,
     bool add_to_map,
@@ -140,7 +139,7 @@ static dynamic_ptr import_json_node(
     }
   }
 
-  auto obj = dynamic_ptr{dynamic::instantiate("wish"_key, type_key)};
+  auto obj = dynamic::instantiate<ui_element>("wish"_key, type_key);
 
   for (const auto& [key_str, value] : descriptor.items()) {
     if (key_str == "type" || key_str == "children") continue;
@@ -153,7 +152,7 @@ static dynamic_ptr import_json_node(
   if (children_it != descriptor.end()) {
     (*obj)["children"_key] = build_children(
         *children_it, path, add_to_map, result);
-    refresh_children_order(*obj);
+    obj->refresh_children_order();
   }
 
   if (add_to_map) {

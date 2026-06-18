@@ -21,11 +21,11 @@ add_library(wish STATIC
   include/wish/wish.hpp
   include/wish/registry.hpp
   include/wish/ui_importer.hpp
-  include/wish/children_order.hpp
+  include/wish/ui_element.hpp
   src/wish.cpp
   src/registry.cpp
   src/ui_importer.cpp
-  src/children_order.cpp
+  src/ui_element.cpp
   src/ui_elements/element.cpp
   src/ui_elements/layout.cpp
   src/ui_elements/window.cpp

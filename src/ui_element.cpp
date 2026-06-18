@@ -1,7 +1,7 @@
 // MIT License © 2025 Binary Dice Games
-/// @file children_order.cpp
-/// @brief Implementation of render-order utilities for wish UI element children.
-#include <wish/children_order.hpp>
+/// @file ui_element.cpp
+/// @brief Implementation of the ui_element base class.
+#include <wish/ui_element.hpp>
 
 #include "src/bison/bison_object.hpp"
 
@@ -12,8 +12,10 @@ namespace bdg::wish {
 
 using namespace bdg::bison;
 
-void refresh_children_order(dynamic& parent) {
-  auto* children_field = parent.findField("children"_key);
+ui_element::ui_element(dynamic&& base) : dynamic(std::move(base)) {}
+
+void ui_element::refresh_children_order() {
+  auto* children_field = findField("children"_key);
   if (!children_field || !children_field->is<dynamic_ptr>()) return;
   auto& children = children_field->as<dynamic_ptr>();
   if (!children) return;
@@ -31,48 +33,48 @@ void refresh_children_order(dynamic& parent) {
     entries.emplace_back(k, order);
   });
 
-  // Stable-sort ascending by order value so equal values preserve source order.
+  // Stable-sort ascending so equal order values preserve declaration sequence.
   std::stable_sort(entries.begin(), entries.end(),
       [](const auto& a, const auto& b) { return a.second < b.second; });
 
-  // Write sorted key sequence into the cache.  Each entry i holds the raw
-  // hash_t of the child key, cast to int32_t for storage as a bison field.
+  // Write sorted key sequence into the cache.  Each slot i holds the raw
+  // hash_t of the child key cast to int32_t (well-defined 2's-complement).
   auto cache = dynamic_ptr{key_t{0U}, {}};
   for (size_t i = 0; i < entries.size(); ++i) {
     (*cache)[i] = static_cast<int32_t>(entries[i].first.id);
   }
-  parent["__children_order__"_key] = cache;
+  (*this)["__children_order__"_key] = cache;
 }
 
-void for_each_child_ordered(
-    const dynamic& parent,
-    const std::function<void(key_t, const field&)>& fn) {
+void ui_element::for_each_child_ordered(
+    const std::function<void(key_t, ui_element&)>& fn) const {
 
-  auto* children_field = parent.findField("children"_key);
+  auto* children_field = findField("children"_key);
   if (!children_field || !children_field->is<dynamic_ptr>()) return;
   const auto& children = children_field->as<dynamic_ptr>();
   if (!children) return;
 
-  auto* cache_field = parent.findField("__children_order__"_key);
+  auto* cache_field = findField("__children_order__"_key);
   if (cache_field && cache_field->is<dynamic_ptr>()) {
     const auto& cache = cache_field->as<dynamic_ptr>();
     if (cache) {
-      // Cache entries are indexed 0, 1, 2... so forEach visits them in
-      // ascending integer order, which is the intended render order.
+      // Cache entries are indexed 0, 1, 2 ... so forEach visits them in
+      // ascending integer order — the intended render order.
       cache->forEach([&](key_t, const field& entry) {
         if (!entry.is<int32_t>()) return;
         key_t child_key{static_cast<hash_t>(entry.as<int32_t>())};
         auto* child_field = children->findField(child_key);
-        if (child_field) fn(child_key, *child_field);
+        if (!child_field || !child_field->is<dynamic_ptr>()) return;
+        auto* elem = dynamic_cast<ui_element*>(
+            child_field->as<dynamic_ptr>().get());
+        if (elem) fn(child_key, *elem);
       });
       return;
     }
   }
 
-  // Fallback: no cache — visit dynamic_ptr children in raw map order.
-  children->forEach([&](key_t k, const field& f) {
-    if (f.is<dynamic_ptr>()) fn(k, f);
-  });
+  // Fallback: no cache — use forEachChild<ui_element> (hash-sorted order).
+  children->template forEachChild<ui_element>(fn);
 }
 
 }  // namespace bdg::wish
