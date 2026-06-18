@@ -4,4 +4,5 @@
 #pragma once
 
 #include <wish/registry.hpp>
+#include <wish/session.hpp>
 #include <wish/ui_importer.hpp>
