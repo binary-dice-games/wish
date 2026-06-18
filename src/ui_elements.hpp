@@ -4,6 +4,8 @@
 ///        Not part of the public wish API.
 #pragma once
 
+#include "bison_attributes.hpp"
+
 namespace bdg::wish {
 
 void register_element();

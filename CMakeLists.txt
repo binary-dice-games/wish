@@ -20,8 +20,10 @@ add_subdirectory("extern/bison")
 add_library(wish STATIC
   include/wish/wish.hpp
   include/wish/registry.hpp
+  include/wish/ui_importer.hpp
   src/wish.cpp
   src/registry.cpp
+  src/ui_importer.cpp
   src/ui_elements/element.cpp
   src/ui_elements/layout.cpp
   src/ui_elements/window.cpp
@@ -37,15 +39,21 @@ add_library(wish STATIC
 target_include_directories(wish
     PRIVATE
         src
-        # Exposes bison's C++ headers (src/bison/bison.hpp, src/rmi/rmi.hpp, etc.)
-        # using the same include convention as bison's own examples and tests.
-        ${CMAKE_CURRENT_SOURCE_DIR}/extern/bison
+        # nlohmann/json and libyaml headers; only needed by src/ui_importer.cpp.
+        ${CMAKE_CURRENT_SOURCE_DIR}/extern/bison/extern/json/single_include
+        ${CMAKE_CURRENT_SOURCE_DIR}/extern/bison/extern/yaml/include
     PUBLIC
         include
+        # Exposes bison's C++ headers (src/bison/bison_object.hpp, etc.)
+        # using the same include convention as bison's own examples and tests.
+        # PUBLIC because wish's own public headers reference bison types.
+        ${CMAKE_CURRENT_SOURCE_DIR}/extern/bison
 )
 
 # bison is PUBLIC so consumers of wish also get bison's types and link deps.
 target_link_libraries(wish PUBLIC bison)
+# libyaml is needed by ui_importer.cpp; PRIVATE because it is an impl detail.
+target_link_libraries(wish PRIVATE yaml)
 
 if(WISH_BUILD_TESTS)
     enable_testing()
