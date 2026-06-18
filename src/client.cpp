@@ -31,25 +31,41 @@ void client::run() {
 }
 
 // ── Cached proxy accessors ────────────────────────────────────────────────────
+// Each accessor holds proxy_mutex_ only long enough to check-and-init the
+// optional.  The actual RMI call (instantiate(...).get()) is done outside the
+// lock so that concurrent initializations of different proxies don't serialize
+// on the mutex unnecessarily.
 
 bison::rmi::proxy::dynamic& client::import_proxy() {
-  if (!import_proxy_) {
-    import_proxy_ = instantiate("wish"_key, "__WishImport"_key).get();
+  {
+    std::lock_guard lk{proxy_mutex_};
+    if (import_proxy_) return *import_proxy_;
   }
+  auto proxy = instantiate("wish"_key, "__WishImport"_key).get();
+  std::lock_guard lk{proxy_mutex_};
+  if (!import_proxy_) import_proxy_ = std::move(proxy);
   return *import_proxy_;
 }
 
 bison::rmi::proxy::dynamic& client::template_proxy() {
-  if (!template_proxy_) {
-    template_proxy_ = instantiate("wish"_key, "__WishTemplate"_key).get();
+  {
+    std::lock_guard lk{proxy_mutex_};
+    if (template_proxy_) return *template_proxy_;
   }
+  auto proxy = instantiate("wish"_key, "__WishTemplate"_key).get();
+  std::lock_guard lk{proxy_mutex_};
+  if (!template_proxy_) template_proxy_ = std::move(proxy);
   return *template_proxy_;
 }
 
 bison::rmi::proxy::dynamic& client::fs_proxy() {
-  if (!fs_proxy_) {
-    fs_proxy_ = instantiate("wish"_key, "__WishFS"_key).get();
+  {
+    std::lock_guard lk{proxy_mutex_};
+    if (fs_proxy_) return *fs_proxy_;
   }
+  auto proxy = instantiate("wish"_key, "__WishFS"_key).get();
+  std::lock_guard lk{proxy_mutex_};
+  if (!fs_proxy_) fs_proxy_ = std::move(proxy);
   return *fs_proxy_;
 }
 
