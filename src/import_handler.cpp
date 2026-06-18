@@ -21,7 +21,6 @@ bison::dynamic apply_descriptor(
     bison::rmi::context& ctx,
     session& sess,
     const std::string& descriptor) {
-  // Auto-detect format: JSON starts with '{' or '['.
   auto it = std::find_if_not(descriptor.cbegin(), descriptor.cend(),
                               [](unsigned char c) { return std::isspace(c); });
   bool is_json =
@@ -46,23 +45,25 @@ bison::dynamic apply_descriptor(
 
 // ── import_handler ───────────────────────────────────────────────────────────
 
-void import_handler::register_class() {
-  auto proto = dynamic_ptr{"__WishImport"_key, {}};
-  dynamic::addClass("wish"_key, std::move(proto));
-}
-
-import_handler::import_handler(
-    bison::dynamic&& base,
-    bison::rmi::context& ctx,
-    std::shared_ptr<session> sess)
-    : dynamic(std::move(base)), ctx_(ctx), sess_(std::move(sess)) {
+import_handler::import_handler(bison::dynamic&& base)
+    : wish_handler(std::move(base)) {
   addMethod(
       "import"_key,
       bison::method{[this](dynamic& /*self*/,
                             const dynamic& params) -> dynamic {
         std::string descriptor = params.as<std::string>("descriptor"_key);
-        return apply_descriptor(ctx_, *sess_, descriptor);
+        return apply_descriptor(*ctx_, *sess_, descriptor);
       }});
+}
+
+bison::dynamic_ptr import_handler::clone_for_instance() const {
+  return bison::dynamic::instantiate<import_handler>("wish"_key, "__WishImport"_key);
+}
+
+void import_handler::register_class() {
+  auto proto = bison::dynamic::instantiate<import_handler>(
+      key_t{0U}, "__WishImport"_key);
+  bison::dynamic::addClass("wish"_key, bison::dynamic_ptr{proto});
 }
 
 }  // namespace bdg::wish

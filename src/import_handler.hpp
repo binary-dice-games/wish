@@ -3,22 +3,16 @@
 /// @brief Server-side __WishImport RMI object that parses UI descriptors.
 #pragma once
 
-#include <wish/session.hpp>
-
-#include "src/bison/bison_object.hpp"
-#include "src/rmi/server/context.hpp"
-
-#include <memory>
-#include <string>
+#include "wish_handler.hpp"
 
 namespace bdg::wish {
 
 /**
- * @brief Parse @p descriptor, register all resulting elements in @p ctx and
- *        @p sess, and return an indexed dynamic mapping position → {name, id}.
+ * @brief Shared utility: parse @p descriptor, register elements in @p ctx
+ *        and @p sess, and return an indexed result payload.
  *
- * Shared by both import_handler and template_handler.  Format is auto-detected
- * from the first non-whitespace character ('{' or '[' → JSON, otherwise YAML).
+ * Format is auto-detected from the first non-whitespace character
+ * ('{' or '[' → JSON, otherwise YAML).
  *
  * @throws std::runtime_error on parse failure or unknown element type.
  */
@@ -28,28 +22,21 @@ bison::dynamic apply_descriptor(
     const std::string& descriptor);
 
 /**
- * @brief Server-side bison dynamic that implements the `__WishImport` RMI
- *        class.
+ * @brief Server-side bison dynamic for the `__WishImport` RMI class.
  *
- * One instance is created per client `OP_INSTANTIATE("wish", "__WishImport")`
- * call via `wish::server::on_create_object`.  Holds a reference to the bison
- * session context and a shared_ptr to the wish session so that `import()`
- * can register created objects in both the RMI object table and the wish
- * session's name map.
+ * Registered via `import_handler::register_class()` as the prototype for
+ * `__WishImport` in the `"wish"` namespace.  `clone_for_instance()` creates
+ * a fresh `import_handler`; `wish::server::on_create_object` then calls
+ * `init()` to supply session context.
  */
-class import_handler : public bison::dynamic {
+class import_handler : public wish_handler {
  public:
-  import_handler(
-      bison::dynamic&& base,
-      bison::rmi::context& ctx,
-      std::shared_ptr<session> sess);
+  explicit import_handler(bison::dynamic&& base);
 
-  /// @brief Register the `__WishImport` class in the `"wish"` namespace.
+  /// @brief Register `import_handler` as the `__WishImport` class prototype.
   static void register_class();
 
- private:
-  bison::rmi::context& ctx_;
-  std::shared_ptr<session> sess_;
+  bison::dynamic_ptr clone_for_instance() const override;
 };
 
 }  // namespace bdg::wish

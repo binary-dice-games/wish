@@ -5,8 +5,7 @@
 #include <wish/file_service.hpp>
 #include <wish/registry.hpp>
 
-#include "import_handler.hpp"
-#include "template_handler.hpp"
+#include "wish_handler.hpp"
 
 #include <chrono>
 #include <memory>
@@ -85,24 +84,21 @@ bison::dynamic_ptr server::on_create_object(
     }
   }
 
-  if (!sess) {
-    return dynamic_ptr{std::make_shared<dynamic>(dynamic::instantiate(ns, klass))};
+  // __WishFS is a per-session singleton — return the pre-created instance.
+  if (klass == "__WishFS"_key && sess && sess->file_service) {
+    return dynamic_ptr{std::static_pointer_cast<dynamic>(sess->file_service)};
   }
 
-  if (klass == "__WishImport"_key) {
-    return std::make_shared<import_handler>(
-        dynamic::instantiate(ns, klass), ctx, sess);
+  // For all other classes, bison creates the concrete type from the registered
+  // prototype (e.g. import_handler, template_handler).  Inject session context
+  // into any wish_handler subclass via a single dynamic_cast.
+  auto obj = bison::rmi::server::on_create_object(ctx, ns, klass);
+  if (obj && sess) {
+    if (auto* h = dynamic_cast<wish_handler*>(obj.get())) {
+      h->init(ctx, sess);
+    }
   }
-  if (klass == "__WishTemplate"_key) {
-    return std::make_shared<template_handler>(
-        dynamic::instantiate(ns, klass), ctx, sess);
-  }
-  if (klass == "__WishFS"_key && sess->file_service) {
-    return dynamic_ptr{
-        std::static_pointer_cast<dynamic>(sess->file_service)};
-  }
-
-  return dynamic_ptr{std::make_shared<dynamic>(dynamic::instantiate(ns, klass))};
+  return obj;
 }
 
 void server::render_loop() {
