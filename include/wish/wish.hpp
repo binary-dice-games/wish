@@ -3,6 +3,7 @@
 /// @brief Top-level umbrella header for the wish remote UI framework.
 #pragma once
 
+#include <wish/file_service.hpp>
 #include <wish/registry.hpp>
 #include <wish/renderer.hpp>
 #include <wish/session.hpp>

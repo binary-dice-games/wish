@@ -9,10 +9,14 @@
 
 #include <atomic>
 #include <filesystem>
+#include <memory>
 #include <string>
 #include <unordered_map>
 
 namespace bdg::wish {
+
+class file_service_node;
+using file_service_ptr = std::shared_ptr<file_service_node>;
 
 /// @brief Holds all mutable state owned by one connected client.
 ///
@@ -38,6 +42,9 @@ struct session {
   /// Set to `true` by the `__setter` hook whenever a field changes; cleared
   /// after each render frame.
   std::atomic<bool> dirty{false};
+
+  /// File service instance; populated by `register_file_service(session&)`.
+  file_service_ptr file_service;
 
   /// @brief Construct a session: creates a unique temporary directory.
   /// @param id  Session identifier; used to derive a unique directory name.

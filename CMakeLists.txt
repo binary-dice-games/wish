@@ -24,12 +24,14 @@ add_library(wish STATIC
   include/wish/ui_element.hpp
   include/wish/session.hpp
   include/wish/renderer.hpp
+  include/wish/file_service.hpp
   src/wish.cpp
   src/registry.cpp
   src/ui_importer.cpp
   src/ui_element.cpp
   src/session.cpp
   src/renderer.cpp
+  src/file_service.cpp
   src/ui_elements/element.cpp
   src/ui_elements/layout.cpp
   src/ui_elements/window.cpp
