@@ -22,11 +22,10 @@ namespace bdg::wish {
 class template_handler : public wish_handler {
  public:
   explicit template_handler(bison::dynamic&& base);
-
-  /// @brief Register `template_handler` as the `__WishTemplate` class prototype.
-  static void register_class();
-
   bison::dynamic_ptr clone_for_instance() const override;
 };
+
+/// @brief Register `template_handler` as the `__WishTemplate` class prototype.
+void register_template_handler();
 
 }  // namespace bdg::wish

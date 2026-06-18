@@ -47,7 +47,9 @@ void server::stop() {
 
 void server::on_session_created(bison::rmi::context& ctx) {
   auto sess = std::make_shared<session>(ctx.session_id);
-  register_file_service(*sess);
+  sess->file_service = std::make_shared<file_service_node>(
+      bison::dynamic::instantiate(bison::key_t{"wish"}, bison::key_t{"__WishFS"}),
+      sess->resource_dir);
   sessions_.wlock()->emplace(ctx.session_id.id, sess);
   on_session_created(*sess);
 }

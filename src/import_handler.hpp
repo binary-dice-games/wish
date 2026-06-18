@@ -32,11 +32,10 @@ bison::dynamic apply_descriptor(
 class import_handler : public wish_handler {
  public:
   explicit import_handler(bison::dynamic&& base);
-
-  /// @brief Register `import_handler` as the `__WishImport` class prototype.
-  static void register_class();
-
   bison::dynamic_ptr clone_for_instance() const override;
 };
+
+/// @brief Register `import_handler` as the `__WishImport` class prototype.
+void register_import_handler();
 
 }  // namespace bdg::wish

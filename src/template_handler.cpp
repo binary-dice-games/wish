@@ -42,7 +42,7 @@ bison::dynamic_ptr template_handler::clone_for_instance() const {
   return bison::dynamic::instantiate<template_handler>("wish"_key, "__WishTemplate"_key);
 }
 
-void template_handler::register_class() {
+void register_template_handler() {
   auto proto = bison::dynamic::instantiate<template_handler>(
       key_t{0U}, "__WishTemplate"_key);
   bison::dynamic::addClass("wish"_key, bison::dynamic_ptr{proto});

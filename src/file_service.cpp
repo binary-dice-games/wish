@@ -111,17 +111,9 @@ void file_service_node::erase(const std::string& name) {
 
 // ── register_file_service ────────────────────────────────────────────────────
 
-void register_file_service(session& s) {
-  // Register the bison class once; addClass returns false on duplicate, which
-  // is fine — we just proceed to instantiate regardless.
-  {
-    auto proto = dynamic_ptr{"__WishFS"_key, {}};
-    dynamic::addClass("wish"_key, std::move(proto));
-  }
-
-  s.file_service = std::make_shared<file_service_node>(
-      dynamic::instantiate("wish"_key, "__WishFS"_key),
-      s.resource_dir);
+void register_file_service() {
+  auto proto = dynamic_ptr{"__WishFS"_key, {}};
+  dynamic::addClass("wish"_key, std::move(proto));
 }
 
 }  // namespace bdg::wish

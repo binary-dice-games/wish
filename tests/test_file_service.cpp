@@ -14,8 +14,11 @@ using bdg::wish::session;
 class FileServiceTest : public ::testing::Test {
  protected:
   void SetUp() override {
+    bdg::wish::register_file_service();  // idempotent: registers bison class
     sess_ = std::make_unique<session>("fs_test"_key);
-    bdg::wish::register_file_service(*sess_);
+    sess_->file_service = std::make_shared<file_service_node>(
+        dynamic::instantiate("wish"_key, "__WishFS"_key),
+        sess_->resource_dir);
   }
 
   session& sess() { return *sess_; }

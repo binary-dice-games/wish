@@ -10,6 +10,7 @@
 
 #include <future>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 
@@ -118,6 +119,18 @@ class client : public bison::rmi::client {
    *        either case.
    */
   virtual void on_session() = 0;
+
+ private:
+  // Lazily instantiated per-session proxy handles.  Created on first use;
+  // cleared by run() after on_session() returns or throws so each new
+  // connection starts fresh.
+  std::optional<bison::rmi::proxy::dynamic> import_proxy_;
+  std::optional<bison::rmi::proxy::dynamic> template_proxy_;
+  std::optional<bison::rmi::proxy::dynamic> fs_proxy_;
+
+  bison::rmi::proxy::dynamic& import_proxy();
+  bison::rmi::proxy::dynamic& template_proxy();
+  bison::rmi::proxy::dynamic& fs_proxy();
 };
 
 }  // namespace bdg::wish
