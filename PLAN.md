@@ -232,44 +232,38 @@ Each step produces a self-contained, testable deliverable. Steps are ordered so 
 
 ---
 
-## Step 8 — `wish::client`: client-side wrapper
+## Step 8 — `wish::client`: client-side base class
 
-**Goal:** A base class wrapping `bison::rmi::client` that adds wish-specific helpers; concrete applications subclass it and override `on_session`.
+**Goal:** A base class inheriting `bison::rmi::client` that adds wish-specific helpers; concrete
+applications subclass it and override `on_session()`.
+
+**Bison change:** `bison::rmi::client` destructor made `virtual` (committed to `d:\github\bison`
+at `00f9203`; submodule updated). No other bison changes required.
 
 **Deliverables:**
 - `include/wish/client.hpp` — declares:
   ```cpp
-  class client {
+  class client : public bison::rmi::client {
   public:
-    explicit client(std::unique_ptr<bison::rmi::client_transport_iface> transport);
+    explicit client(
+        std::unique_ptr<bison::rmi::transport::client_transport_iface> transport);
 
-    int run();  // connects, calls on_session, disconnects
+    /** Connect, call on_session(), then disconnect. */
+    void run();
 
-    std::future<wish::name_map>
-    import_ui(const std::string& descriptor);
-
-    std::future<void>
-    register_template(bison::key_t name, const std::string& descriptor);
-
-    std::future<wish::name_map>
-    instantiate_template(bison::key_t name);
-
-    std::future<void>
-    upload_file(const std::string& name, const std::string& data);
-
-    std::future<std::string>
-    download_file(const std::string& name);
+    std::future<wish::name_map> import_ui(const std::string& descriptor);
+    std::future<void> register_template(bison::key_t name, const std::string& descriptor);
+    std::future<wish::name_map> instantiate_template(bison::key_t name);
+    std::future<void> upload_file(const std::string& name, const std::string& data);
+    std::future<std::string> download_file(const std::string& name);
 
   protected:
-    virtual int on_session(bison::rmi::client& c) = 0;
-
-    bison::rmi::client& rmi() { return *rmi_; }
-
-  private:
-    std::unique_ptr<bison::rmi::client> rmi_;
+    /** Called after connect(); subclass performs all UI interaction here. */
+    virtual void on_session() = 0;
   };
   ```
 - `src/client.cpp` — implementation:
+  - `run()`: calls `connect()`, then `on_session()`, then `disconnect()` (exception-safe).
   - `import_ui`: sends the descriptor string to the server via a `call` on a well-known `__WishImport` object; deserializes the returned name→id map into `wish::name_map` of proxy handles.
   - `register_template`: stores the descriptor on the server by calling the `__WishTemplate` object's `register` method.
   - `instantiate_template`: calls `__WishTemplate`'s `instantiate` method; returns handle map.
