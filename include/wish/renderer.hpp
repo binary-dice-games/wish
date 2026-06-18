@@ -1,0 +1,69 @@
+// MIT License © 2025 Binary Dice Games
+/// @file renderer.hpp
+/// @brief Abstract renderer interface and render-children utility for wish.
+#pragma once
+
+#include <wish/session.hpp>
+#include <wish/ui_element.hpp>
+
+namespace bdg::wish {
+
+/**
+ * @brief Abstract rendering backend contract.
+ *
+ * Concrete backends (imgui, Qt, null) implement the three virtual methods.
+ * `render_node` is the hot path: called once per visible element per frame.
+ * After drawing the node itself, implementations should call
+ * `render_children(r, node, s)` to recurse into children in render order.
+ */
+class renderer {
+ public:
+  virtual ~renderer() = default;
+
+  /// @brief Called once before any nodes are rendered in a frame.
+  virtual void begin_frame() = 0;
+
+  /**
+   * @brief Draw a single UI element.
+   *
+   * Implementations dispatch on `node.as<bison::key_t>(bison::dynamic::CLASS)`
+   * and call the appropriate backend draw primitive.  After drawing, call
+   * `render_children(*this, node, s)` to recurse into the element's children.
+   *
+   * @param node  The element to draw.
+   * @param s     Active session (used for event emission and resource lookup).
+   */
+  virtual void render_node(const ui_element& node, session& s) = 0;
+
+  /// @brief Called once after all nodes have been rendered in a frame.
+  virtual void end_frame() = 0;
+};
+
+/**
+ * @brief Iterate @p node's children in render order and call
+ *        `r.render_node` for each.
+ *
+ * Uses `node.for_each_child_ordered` so children are visited in ascending
+ * `order` field sequence (cache built at import time).  Concrete backends
+ * call this from within `render_node` after drawing the node itself.
+ *
+ * @param r     The active renderer.
+ * @param node  Parent element whose children to visit.
+ * @param s     Active session forwarded to each `render_node` call.
+ */
+void render_children(renderer& r, const ui_element& node, session& s);
+
+/**
+ * @brief No-op renderer for use in tests that do not require drawing.
+ *
+ * All virtual methods are empty stubs.  Does NOT recurse into children,
+ * so `render_children` must be called explicitly when tests need recursion.
+ */
+class null_renderer : public renderer {
+ public:
+  void begin_frame() override {}
+  void render_node(const ui_element&, session&) override {}
+  void end_frame() override {}
+};
+
+}  // namespace bdg::wish
