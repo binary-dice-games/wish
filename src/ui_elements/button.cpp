@@ -11,8 +11,14 @@ using namespace bdg::bison;
 
 void register_button() {
   auto proto = dynamic_ptr{"Button"_key, {}};
-  proto->addField("label"_key, field{std::string{""}});
-  dynamic::addClass("wish"_key, std::move(proto), "Element"_key);
+  proto->addField("label"_key, field{std::string{""},
+    attr<DisplayName>("Label"),
+    attr<Description>("Button caption text."),
+    attr<Category>("Content")});
+  dynamic::addClass("wish"_key, std::move(proto), "Element"_key, {
+    attr<DisplayName>("Button"),
+    attr<Description>(
+        "A clickable button that emits a clicked event.")});
 }
 
 }  // namespace bdg::wish

@@ -11,11 +11,27 @@ using namespace bdg::bison;
 
 void register_input_text() {
   auto proto = dynamic_ptr{"InputText"_key, {}};
-  proto->addField("label"_key,      field{std::string{""}});
-  proto->addField("value"_key,      field{std::string{""}});
-  proto->addField("hint"_key,       field{std::string{""}});
-  proto->addField("max_length"_key, field{int32_t{256}});
-  dynamic::addClass("wish"_key, std::move(proto), "Element"_key);
+  proto->addField("label"_key, field{std::string{""},
+    attr<DisplayName>("Label"),
+    attr<Description>("Input field label."),
+    attr<Category>("Content")});
+  proto->addField("value"_key, field{std::string{""},
+    attr<DisplayName>("Value"),
+    attr<Description>("Current text value."),
+    attr<Category>("State")});
+  proto->addField("hint"_key, field{std::string{""},
+    attr<DisplayName>("Hint"),
+    attr<Description>("Placeholder text shown when the field is empty."),
+    attr<Category>("Content")});
+  proto->addField("max_length"_key, field{int32_t{256},
+    attr<DisplayName>("Max Length"),
+    attr<Description>("Maximum number of characters the user may enter."),
+    attr<Category>("Behavior"),
+    attr<Range>(1, 65536),
+    attr<Step>(1)});
+  dynamic::addClass("wish"_key, std::move(proto), "Element"_key, {
+    attr<DisplayName>("Input Text"),
+    attr<Description>("A single-line text input field.")});
 }
 
 }  // namespace bdg::wish

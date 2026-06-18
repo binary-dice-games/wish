@@ -11,8 +11,13 @@ using namespace bdg::bison;
 
 void register_label() {
   auto proto = dynamic_ptr{"Label"_key, {}};
-  proto->addField("text"_key, field{std::string{""}});
-  dynamic::addClass("wish"_key, std::move(proto), "Element"_key);
+  proto->addField("text"_key, field{std::string{""},
+    attr<DisplayName>("Text"),
+    attr<Description>("Displayed text content."),
+    attr<Category>("Content")});
+  dynamic::addClass("wish"_key, std::move(proto), "Element"_key, {
+    attr<DisplayName>("Label"),
+    attr<Description>("A read-only text element.")});
 }
 
 }  // namespace bdg::wish

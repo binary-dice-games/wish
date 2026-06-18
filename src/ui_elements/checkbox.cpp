@@ -11,9 +11,17 @@ using namespace bdg::bison;
 
 void register_checkbox() {
   auto proto = dynamic_ptr{"Checkbox"_key, {}};
-  proto->addField("label"_key, field{std::string{""}});
-  proto->addField("value"_key, field{false});
-  dynamic::addClass("wish"_key, std::move(proto), "Element"_key);
+  proto->addField("label"_key, field{std::string{""},
+    attr<DisplayName>("Label"),
+    attr<Description>("Checkbox caption text."),
+    attr<Category>("Content")});
+  proto->addField("value"_key, field{false,
+    attr<DisplayName>("Value"),
+    attr<Description>("Current checked state."),
+    attr<Category>("State")});
+  dynamic::addClass("wish"_key, std::move(proto), "Element"_key, {
+    attr<DisplayName>("Checkbox"),
+    attr<Description>("A toggleable checkbox with a label.")});
 }
 
 }  // namespace bdg::wish

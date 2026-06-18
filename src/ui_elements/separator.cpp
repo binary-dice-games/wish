@@ -11,7 +11,9 @@ using namespace bdg::bison;
 
 void register_separator() {
   auto proto = dynamic_ptr{"Separator"_key, {}};
-  dynamic::addClass("wish"_key, std::move(proto), "Element"_key);
+  dynamic::addClass("wish"_key, std::move(proto), "Element"_key, {
+    attr<DisplayName>("Separator"),
+    attr<Description>("A visual horizontal rule between elements.")});
 }
 
 }  // namespace bdg::wish
