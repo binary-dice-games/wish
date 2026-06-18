@@ -19,6 +19,10 @@ void register_element() {
     attr<DisplayName>("Children"),
     attr<Description>("Nested child elements."),
     attr<Category>("Layout")});
+  proto->addField("order"_key, field{int32_t{0},
+    attr<DisplayName>("Order"),
+    attr<Description>("Render order within parent children. Lower values render first."),
+    attr<Category>("Layout")});
   dynamic::addClass("wish"_key, std::move(proto), key_t{0U}, {
     attr<DisplayName>("Element"),
     attr<Description>("Base class for all UI elements.")});

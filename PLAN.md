@@ -29,7 +29,10 @@ Each step produces a self-contained, testable deliverable. Steps are ordered so 
 **Deliverables:**
 - `include/wish/registry.hpp` — declares `void register_all()`.
 - `src/registry.cpp` — implements `register_all()` by calling one `register_*` function per element type (defined in the files below). Registration order must respect the parent-before-child dependency: `Element` first, then `Layout`, then all leaf classes.
-- `src/ui_elements/element.cpp` — registers the `Element` base prototype: fields `visible` (bool, true) and `children` (dynamic, {}). Also declares and exposes `bison::key_t element_key()` so child registrations can reference the parent key without hard-coding it.
+- `src/ui_elements/element.cpp` — registers the `Element` base prototype: fields `visible` (bool, true), `children` (dynamic, {}), and `order` (int32, 0). The `order` field controls render sequence within a parent's children; lower values render first. Also declares and exposes `bison::key_t element_key()` so child registrations can reference the parent key without hard-coding it.
+- `include/wish/children_order.hpp` + `src/children_order.cpp` — render-order utilities:
+  - `refresh_children_order(dynamic& parent)` — reads each child's `order` field, stable-sorts the children ascending, and caches the sorted key sequence in a reserved `__children_order__` field on `parent`. Call once after import and again whenever an `order` field is mutated at runtime.
+  - `for_each_child_ordered(const dynamic& parent, fn)` — iterates children via the cache when present; falls back to raw map order if no cache exists.
 - `src/ui_elements/layout.cpp` — registers the `Layout` intermediate prototype (parent: `Element`) with field `spacing` (float, 0.0f). Registers `VerticalLayout` and `HorizontalLayout` (parent: `Layout`), which add no fields of their own.
 - `src/ui_elements/window.cpp` — registers `Window` (parent: `Element`) with fields `title` (string), `width` (int32), `height` (int32), `pos_x` (int32), `pos_y` (int32), `flags` (int32).
 - `src/ui_elements/label.cpp` — registers `Label` (parent: `Element`) with field `text` (string).
@@ -69,11 +72,13 @@ Each step produces a self-contained, testable deliverable. Steps are ordered so 
   name_map import_json(const std::string& json);
   name_map import_yaml(const std::string& yaml);
   ```
-- `src/ui_importer.cpp` — implementation using `nlohmann/json` (already in `extern/bison/extern/json`) and `libyaml` (already in `extern/bison/extern/yaml`):
+- `src/ui_importer.cpp` — implementation using `nlohmann::ordered_json` (preserves JSON object key declaration order) and `libyaml` (already in `extern/bison/extern/yaml`):
   - Reads `"type"` key to determine the class name.
   - Instantiates the class via `bison::dynamic::instantiate("wish"_key, type_key)`.
-  - Sets all non-reserved fields (`type`, `children` excluded) on the new instance.
+  - Sets all non-reserved fields (`type`, `children`, and `__`-prefixed keys excluded) on the new instance.
   - Recurses into `"children"`: string keys become named bison children (`"name"_key`); numeric string keys (`"0"`, `"1"`) become indexed bison children (`0U`, `1U`).
+  - Stamps each child's `order` field with a monotonic counter (0, 1, 2 … in declaration order) unless the descriptor provides an explicit `order` value, enabling user-defined render sequence overrides.
+  - Calls `refresh_children_order` on the parent after all children are built so the renderer can use `for_each_child_ordered`.
   - Collects every named node into the flat `name_map` (path = dot-joined ancestor names, e.g. `"body.row.ok"`).
   - Returns the name map; the root node is accessible as `name_map[""]` (empty string key).
 
@@ -148,12 +153,12 @@ Each step produces a self-contained, testable deliverable. Steps are ordered so 
     void end_frame() override {}
   };
   ```
-- `src/renderer.cpp` — implements `render_children`: iterates `node["children"_key]` in field-insertion order; calls `r.render_node(child, s)` for each.
+- `src/renderer.cpp` — implements `render_children`: uses `for_each_child_ordered(node, ...)` to iterate children in render order (sorted by each child's `order` field via the cache built at import time); calls `r.render_node(child, s)` for each.
 
 **Tests** (`tests/test_renderer.cpp`):
 - `null_renderer::render_node` can be called with a `Window` instance without throwing.
-- `render_children` with a parent having two indexed children calls `render_node` exactly twice (verified with a counting renderer subclass).
-- `render_children` with a parent having two named children calls `render_node` exactly twice.
+- `render_children` with a parent having two indexed children calls `render_node` exactly twice in index order (verified with a counting renderer subclass).
+- `render_children` with a parent having two named children calls `render_node` exactly twice in declaration order (i.e. `order` field sequence, not hash sequence).
 - `render_children` with no children calls `render_node` zero times.
 - A counting renderer correctly accumulates calls across a three-level nested tree.
 

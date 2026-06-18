@@ -6,6 +6,7 @@
 /// path building).  YAML is parsed with libyaml into an equivalent JSON
 /// representation and then fed through the same JSON processing path.
 #include <wish/ui_importer.hpp>
+#include <wish/children_order.hpp>
 
 #include "src/bison/bison_object.hpp"
 
@@ -19,7 +20,9 @@
 namespace bdg::wish {
 
 using namespace bdg::bison;
-using json = nlohmann::json;
+// ordered_json preserves JSON object key insertion order so that named
+// children are processed — and stamped with 'order' — in declaration sequence.
+using json = nlohmann::ordered_json;
 
 // ── Field coercion ────────────────────────────────────────────────────────────
 
@@ -64,6 +67,7 @@ static dynamic_ptr build_children(
     name_map& result) {
 
   auto children_dyn = dynamic_ptr{key_t{0U}, {}};
+  int32_t order_counter = 0;
 
   auto process_named = [&](const std::string& name, const json& child_json) {
     std::string child_path;
@@ -72,11 +76,17 @@ static dynamic_ptr build_children(
       child_path = parent_path.empty() ? name : (parent_path + "." + name);
     }
     auto child = import_json_node(child_json, child_path, child_in_map, result);
+    if (!child_json.contains("order"))
+      (*child)["order"_key] = order_counter;
+    ++order_counter;
     (*children_dyn)[key_t{name}] = child;
   };
 
   auto process_indexed = [&](size_t idx, const json& child_json) {
     auto child = import_json_node(child_json, "", false, result);
+    if (!child_json.contains("order"))
+      (*child)["order"_key] = order_counter;
+    ++order_counter;
     (*children_dyn)[idx] = child;
   };
 
@@ -143,6 +153,7 @@ static dynamic_ptr import_json_node(
   if (children_it != descriptor.end()) {
     (*obj)["children"_key] = build_children(
         *children_it, path, add_to_map, result);
+    refresh_children_order(*obj);
   }
 
   if (add_to_map) {
