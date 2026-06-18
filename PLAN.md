@@ -30,9 +30,12 @@ Each step produces a self-contained, testable deliverable. Steps are ordered so 
 - `include/wish/registry.hpp` — declares `void register_all()`.
 - `src/registry.cpp` — implements `register_all()` by calling one `register_*` function per element type (defined in the files below). Registration order must respect the parent-before-child dependency: `Element` first, then `Layout`, then all leaf classes.
 - `src/ui_elements/element.cpp` — registers the `Element` base prototype: fields `visible` (bool, true), `children` (dynamic, {}), and `order` (int32, 0). The `order` field controls render sequence within a parent's children; lower values render first. Also declares and exposes `bison::key_t element_key()` so child registrations can reference the parent key without hard-coding it.
-- `include/wish/children_order.hpp` + `src/children_order.cpp` — render-order utilities:
-  - `refresh_children_order(dynamic& parent)` — reads each child's `order` field, stable-sorts the children ascending, and caches the sorted key sequence in a reserved `__children_order__` field on `parent`. Call once after import and again whenever an `order` field is mutated at runtime.
-  - `for_each_child_ordered(const dynamic& parent, fn)` — iterates children via the cache when present; falls back to raw map order if no cache exists.
+- `include/wish/ui_element.hpp` + `src/ui_element.cpp` — the `ui_element` C++ class:
+  - `class ui_element : public bison::dynamic` — all wish UI objects are instances of this type.
+  - `explicit ui_element(bison::dynamic&& base)` — constructs from a base `dynamic` value produced by `dynamic::instantiate`.
+  - `void refresh_children_order()` — reads each child's `order` field, stable-sorts ascending, and caches the sorted key sequence in a reserved `__children_order__` field on `*this`. Call once after import and again whenever an `order` field is mutated at runtime.
+  - `void for_each_child_ordered(fn)` — iterates children via the cache when present; falls back to `forEachChild<ui_element>` when no cache exists.
+  - `using ui_element_ptr = std::shared_ptr<ui_element>` — canonical pointer type for wish elements throughout the codebase.
 - `src/ui_elements/layout.cpp` — registers the `Layout` intermediate prototype (parent: `Element`) with field `spacing` (float, 0.0f). Registers `VerticalLayout` and `HorizontalLayout` (parent: `Layout`), which add no fields of their own.
 - `src/ui_elements/window.cpp` — registers `Window` (parent: `Element`) with fields `title` (string), `width` (int32), `height` (int32), `pos_x` (int32), `pos_y` (int32), `flags` (int32).
 - `src/ui_elements/label.cpp` — registers `Label` (parent: `Element`) with field `text` (string).
@@ -67,18 +70,18 @@ Each step produces a self-contained, testable deliverable. Steps are ordered so 
 **Deliverables:**
 - `include/wish/ui_importer.hpp` — declares:
   ```cpp
-  // name_map: flat map from element path ("body.row.ok") to the instantiated dynamic_ptr
-  using name_map = std::unordered_map<std::string, bison::dynamic_ptr>;
+  // name_map: flat map from element path ("body.row.ok") to the ui_element_ptr
+  using name_map = std::unordered_map<std::string, ui_element_ptr>;
   name_map import_json(const std::string& json);
   name_map import_yaml(const std::string& yaml);
   ```
 - `src/ui_importer.cpp` — implementation using `nlohmann::ordered_json` (preserves JSON object key declaration order) and `libyaml` (already in `extern/bison/extern/yaml`):
   - Reads `"type"` key to determine the class name.
-  - Instantiates the class via `bison::dynamic::instantiate("wish"_key, type_key)`.
+  - Instantiates each element via `bison::dynamic::instantiate<ui_element>("wish"_key, type_key)`, returning a `ui_element_ptr` directly.
   - Sets all non-reserved fields (`type`, `children`, and `__`-prefixed keys excluded) on the new instance.
-  - Recurses into `"children"`: string keys become named bison children (`"name"_key`); numeric string keys (`"0"`, `"1"`) become indexed bison children (`0U`, `1U`).
+  - Recurses into `"children"`: string keys become named bison children (`"name"_key`); numeric string keys (`"0"`, `"1"`) become indexed bison children (`0U`, `1U`). Children are stored as `dynamic_ptr` (implicit upcast from `ui_element_ptr`) so the bison field system can hold them; `dynamic_cast` recovers the typed pointer when needed.
   - Stamps each child's `order` field with a monotonic counter (0, 1, 2 … in declaration order) unless the descriptor provides an explicit `order` value, enabling user-defined render sequence overrides.
-  - Calls `refresh_children_order` on the parent after all children are built so the renderer can use `for_each_child_ordered`.
+  - Calls `obj->refresh_children_order()` on the parent after all children are built so the renderer can use `for_each_child_ordered`.
   - Collects every named node into the flat `name_map` (path = dot-joined ancestor names, e.g. `"body.row.ok"`).
   - Returns the name map; the root node is accessible as `name_map[""]` (empty string key).
 
@@ -103,8 +106,7 @@ Each step produces a self-contained, testable deliverable. Steps are ordered so 
   ```cpp
   struct session {
     bison::key_t                                   id;
-    bison::dynamic_ptr                             root;        // root UI node (may be null)
-    wish::name_map                                 objects;     // name -> dynamic_ptr
+    wish::name_map                                 objects;     // name -> ui_element_ptr (root at "")
     std::unordered_map<bison::key_t, std::string>  templates;   // name_key -> descriptor
     std::filesystem::path                          resource_dir;
     std::atomic<bool>                              dirty{false};
@@ -115,6 +117,7 @@ Each step produces a self-contained, testable deliverable. Steps are ordered so 
     session& operator=(const session&) = delete;
   };
   ```
+  The root `ui_element_ptr` is stored at `objects[""]`. All named descendants are also in the map, so the server renderer can walk the session tree via `objects[""]->for_each_child_ordered(...)` without a separate root pointer.
 - `src/session.cpp` — constructor creates a unique temporary directory under the system temp path; destructor removes it recursively.
 
 **Tests** (`tests/test_session.cpp`):
@@ -137,26 +140,26 @@ Each step produces a self-contained, testable deliverable. Steps are ordered so 
   public:
     virtual ~renderer() = default;
     virtual void begin_frame() = 0;
-    virtual void render_node(const bison::dynamic& node, session& s) = 0;
+    virtual void render_node(const ui_element& node, session& s) = 0;
     virtual void end_frame() = 0;
   };
 
-  // Walks the children map and recurses into each child.
+  // Walks the children map in render order and recurses into each child.
   // Concrete backends call this after drawing the node itself.
-  void render_children(renderer& r, const bison::dynamic& node, session& s);
+  void render_children(renderer& r, const ui_element& node, session& s);
 
   // No-op renderer for testing.
   class null_renderer : public renderer {
   public:
     void begin_frame() override {}
-    void render_node(const bison::dynamic&, session&) override {}
+    void render_node(const ui_element&, session&) override {}
     void end_frame() override {}
   };
   ```
-- `src/renderer.cpp` — implements `render_children`: uses `for_each_child_ordered(node, ...)` to iterate children in render order (sorted by each child's `order` field via the cache built at import time); calls `r.render_node(child, s)` for each.
+- `src/renderer.cpp` — implements `render_children`: calls `node.for_each_child_ordered(...)` to iterate children in ascending `order` field sequence (using the cache built at import time); calls `r.render_node(child, s)` for each.
 
 **Tests** (`tests/test_renderer.cpp`):
-- `null_renderer::render_node` can be called with a `Window` instance without throwing.
+- `null_renderer::render_node` can be called with a `Window` `ui_element` instance without throwing.
 - `render_children` with a parent having two indexed children calls `render_node` exactly twice in index order (verified with a counting renderer subclass).
 - `render_children` with a parent having two named children calls `render_node` exactly twice in declaration order (i.e. `order` field sequence, not hash sequence).
 - `render_children` with no children calls `render_node` zero times.
@@ -171,13 +174,14 @@ Each step produces a self-contained, testable deliverable. Steps are ordered so 
 **Deliverables:**
 - `include/wish/file_service.hpp` — declares `void register_file_service(session& s)`.
 - `src/file_service.cpp` — implements `register_file_service`:
-  - Creates a `dynamic_ptr` for class `"__WishFS"_key` if not already registered in `"wish"_key`.
-  - Adds methods: `upload(name, data)`, `download(name)`, `list()`, `delete(name)`.
+  - Registers a `"__WishFS"_key` class in `"wish"_key` (once, idempotent).
+  - Instantiates a `file_service_node : public bison::dynamic` (follow the `ui_element` pattern: subclass `dynamic`, construct from `dynamic&&`, add member functions for the service logic). This gives the file service typed methods and clean encapsulation rather than free functions that take `dynamic*`.
+  - Exposes methods: `upload(name, data)`, `download(name)`, `list()`, `delete(name)`.
   - `upload`: validates `name` (no `/`, `\`, or `..`); writes binary content to `session.resource_dir / name`.
   - `download`: reads and returns the file content as a string field.
   - `list`: returns a dynamic with indexed string fields, one per file.
   - `delete`: removes the named file.
-  - All methods capture a reference to the session's `resource_dir` at registration time.
+  - All methods capture a reference to the session's `resource_dir` at construction time.
 
 **Tests** (`tests/test_file_service.cpp`):
 - Upload then download round-trips file content correctly.
@@ -286,8 +290,8 @@ Each step produces a self-contained, testable deliverable. Steps are ordered so 
 
 **Deliverables:**
 - `include/wish/imgui_renderer.hpp` — declares `class imgui_renderer : public renderer`.
-- `src/imgui_renderer.cpp` — implements `render_node` for all leaf classes:
-  - `Window` → `ImGui::Begin` / `ImGui::End`; after `Begin`, calls `render_children`.
+- `src/imgui_renderer.cpp` — implements `render_node(const ui_element& node, session& s)` for all leaf classes. Dispatch is on `node.as<bison::key_t>(bison::dynamic::CLASS)`:
+  - `Window` → `ImGui::Begin` / `ImGui::End`; after `Begin`, calls `render_children(r, node, s)`.
   - `Label` → `ImGui::Text`.
   - `Button` → `ImGui::Button`; on `true`, emits `"clicked"` event via `session.rmi_ctx.emit_event`.
   - `Checkbox` → `ImGui::Checkbox`; on change, emits `"changed"` event with `{"value": bool}` payload; sets `value` field.
@@ -332,13 +336,12 @@ Each step produces a self-contained, testable deliverable. Steps are ordered so 
 
 **Deliverables:**
 - `include/wish/import_handler.hpp` + `src/import_handler.cpp`:
-  - Registers `"__WishImport"_key` class in the `"wish"` namespace with a single method `import(descriptor: string)`.
-  - The method calls `wish::ui_importer::import_json` (or `import_yaml` based on a leading `---` marker), stores results in `session.objects`, and returns a dynamic mapping name→object_id.
+  - Registers `"__WishImport"_key` class in the `"wish"` namespace.
+  - Implement as `import_handler : public bison::dynamic` (same pattern as `ui_element`): construct from `dynamic&&`, hold a `session&` reference, expose an `import(descriptor)` member that calls `wish::import_json`/`import_yaml`, merges results into `session.objects`, and returns a dynamic mapping name→object_id.
 - `include/wish/template_handler.hpp` + `src/template_handler.cpp`:
-  - Registers `"__WishTemplate"_key` class with methods `register(name: string, descriptor: string)` and `instantiate(name: string)`.
-  - `register`: stores `descriptor` in `session.templates[name_key]`.
-  - `instantiate`: looks up the descriptor, calls `ui_importer`, returns name→object_id map.
-- Both handlers are instantiated once per session by `wish::server` immediately after session creation.
+  - Registers `"__WishTemplate"_key` class; implemented as `template_handler : public bison::dynamic`.
+  - Member methods `register_template(name, descriptor)` and `instantiate(name)` operate on `session.templates` and `session.objects`.
+- Both handlers are instantiated via `dynamic::instantiate<import_handler>(...)` and `dynamic::instantiate<template_handler>(...)` once per session by `wish::server`.
 
 **Tests** (`tests/test_handlers.cpp`) — use in-memory transport:
 - Client calls `import_ui(json)` → server parses, returns map → client holds valid proxies.
