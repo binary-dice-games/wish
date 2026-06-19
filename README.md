@@ -1,4 +1,4 @@
-# wish
+<img src="resources/Wish.png" alt="Wish" height="200"/>
 
 A remote UI framework built on [bison](https://github.com/binary-dice-games/bison). A wish server hosts a UI rendering loop and exposes a set of UI element classes over bison RMI. Client applications connect, define a UI hierarchy (in code or via JSON/YAML), and receive user-interaction events — all without owning a window or a graphics context.
 
