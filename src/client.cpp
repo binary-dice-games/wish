@@ -15,22 +15,25 @@ using namespace bison;
 
 void client::run() {
   connect();
-  import_proxy_ = instantiate("wish"_key, "__WishImport"_key).get();
-  template_proxy_ = instantiate("wish"_key, "__WishTemplate"_key).get();
-  fs_proxy_ = instantiate("wish"_key, "__WishFS"_key).get();
   try {
     on_session();
   } catch (...) {
-    import_proxy_.reset();
-    template_proxy_.reset();
-    fs_proxy_.reset();
     disconnect();
     throw;
   }
+  disconnect();
+}
+
+void client::on_connect() {
+  import_proxy_ = instantiate("wish"_key, "__WishImport"_key).get();
+  template_proxy_ = instantiate("wish"_key, "__WishTemplate"_key).get();
+  fs_proxy_ = instantiate("wish"_key, "__WishFS"_key).get();
+}
+
+void client::on_disconnect() {
   import_proxy_.reset();
   template_proxy_.reset();
   fs_proxy_.reset();
-  disconnect();
 }
 
 // ── Helper: build proxy_map from an indexed apply_descriptor result ───────────

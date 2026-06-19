@@ -120,6 +120,12 @@ class client : public bison::rmi::client {
    */
   virtual void on_session() = 0;
 
+  /** @brief Instantiates the wish protocol proxies once the session is open. */
+  void on_connect() override;
+
+  /** @brief Releases wish protocol proxies when the session ends. */
+  void on_disconnect() override;
+
  private:
   // Per-session proxy handles.  Populated by run() before on_session() is
   // called; cleared after on_session() returns or throws.
