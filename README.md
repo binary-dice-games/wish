@@ -16,8 +16,8 @@ Client App
 
 - The **server** is transport-agnostic. The same UI class registry and renderer work with PTY (Linux), TCP socket, or any other bison transport.
 - The **renderer** is an abstract interface (`wish::renderer`). The initial implementation uses imgui; other backends can be added without changing client code.
-- **UI hierarchies** can be built object-by-object in code, or imported wholesale from a JSON or YAML string with a single call.
-- **UI templates** can be registered on the server, then instantiated by name — useful for repeated UI patterns.
+- **UI hierarchies** can be built object-by-object in code, or described in JSON/YAML and loaded via the template system.
+- **UI templates** are registered on the server and instantiated by name — the standard way to define a UI hierarchy from a JSON or YAML string.
 - The **file service** lets clients upload resources (images, fonts) to a sandboxed per-session folder. The folder is deleted when the client disconnects.
 - **Multiple clients** can be connected simultaneously; each has an isolated session, object tree, and resource folder.
 
@@ -32,55 +32,10 @@ PTY transport is only available on Linux builds. See [docs/building.md](docs/bui
 
 ## Quick Start
 
-### Option A — import a UI from JSON
+### Option A — register and instantiate a UI template
 
 ```cpp
-#include <wish/wish.hpp>
-
-class my_client : public bdg::wish::client {
-protected:
-  int on_session(bison::rmi::client& c) override {
-    // Import a full UI hierarchy from a JSON string in one call.
-    constexpr auto ui = R"({
-      "type": "Window",
-      "title": "Hello",
-      "width": 400,
-      "height": 300,
-      "children": {
-        "body": {
-          "type": "VerticalLayout",
-          "children": {
-            "greeting": { "type": "Label", "text": "Welcome!" },
-            "row": {
-              "type": "HorizontalLayout", "spacing": 8,
-              "children": {
-                "ok":     { "type": "Button", "label": "OK" },
-                "cancel": { "type": "Button", "label": "Cancel" }
-              }
-            }
-          }
-        }
-      }
-    })";
-
-    auto handles = c.import_ui(ui).get();    // instantiates + configures all objects
-    handles["ok"].onEvent("clicked"_key, [](bison::dynamic) {
-      std::cout << "OK clicked\n";
-    });
-
-    std::string line;
-    std::getline(std::cin, line);
-    return 0;
-  }
-};
-
-int main(int argc, char** argv) { return my_client{}.run(argc, argv); }
-```
-
-### Option B — register and instantiate a UI template
-
-```cpp
-// Register a reusable template once (e.g. on startup):
+// Register a named template (descriptor is parsed server-side on instantiate):
 c.register_template("ConfirmDialog"_key, R"({
   "type": "Window", "title": "Confirm", "width": 300, "height": 120,
   "children": {
@@ -90,13 +45,13 @@ c.register_template("ConfirmDialog"_key, R"({
   }
 })").get();
 
-// Later, instantiate the template by name:
+// Instantiate by name — can be called multiple times for independent copies:
 auto dlg = c.instantiate_template("ConfirmDialog"_key).get();
 dlg["msg"].set({{"text"_key, std::string{"Delete file?"}}}).get();
 dlg["ok"].onEvent("clicked"_key, [](bison::dynamic) { /* ... */ });
 ```
 
-### Option C — build the hierarchy manually
+### Option B — build the hierarchy manually
 
 ```cpp
 auto win = c.instantiate("wish"_key, "Window"_key).get();
@@ -128,8 +83,7 @@ img.set({{"src"_key, std::string{"logo.png"}}, {"width"_key, 64}, {"height"_key,
 |---------|-------------|
 | **Object hierarchy** | UI elements are bison `dynamic` objects forming a tree. Children are addressed by numeric index (lists) or by name (named slots like `"ok"`, `"cancel"`). Layouts are first-class nodes in the tree. |
 | **Layouts** | `VerticalLayout` stacks children top-to-bottom; `HorizontalLayout` places them side by side. Layouts can be nested to create row/column grids and complex arrangements. |
-| **JSON/YAML import** | `client::import_ui(json_or_yaml)` parses a hierarchy descriptor and instantiates the full tree in one call, returning a map of named handles. |
-| **UI templates** | Named UI blueprints registered on the server. `instantiate_template(name)` creates a fresh copy; useful for dialogs and repeated panels. |
+| **UI templates** | Named JSON/YAML blueprints stored on the server via `register_template`. `instantiate_template(name)` parses and creates a fresh object tree, returning a map of named handles. |
 | **Remote properties** | `proxy.set(fields)` / `proxy.get()` synchronize typed fields. Property sets are one-way (no round-trip) for low-latency visual updates. |
 | **Events** | Server-side interactions emit named events (`clicked`, `changed`, ...) to the client via `proxy.onEvent`. |
 | **File service** | Clients upload/download files via `client::upload_file` / `download_file`. Files are stored in a sandboxed per-session folder, deleted on disconnect. |

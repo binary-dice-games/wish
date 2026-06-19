@@ -5,7 +5,7 @@
 #include <wish/file_service.hpp>
 #include <wish/registry.hpp>
 
-#include "wish_handler.hpp"
+#include "template_handler.hpp"
 
 #include <chrono>
 #include <memory>
@@ -92,11 +92,10 @@ bison::dynamic_ptr server::on_create_object(
   }
 
   // For all other classes, bison creates the concrete type from the registered
-  // prototype (e.g. import_handler, template_handler).  Inject session context
-  // into any wish_handler subclass via a single dynamic_cast.
+  // prototype.  Inject session context into template_handler instances.
   auto obj = bison::rmi::server::on_create_object(ctx, ns, klass);
   if (obj && sess) {
-    if (auto* h = dynamic_cast<wish_handler*>(obj.get())) {
+    if (auto* h = dynamic_cast<template_handler*>(obj.get())) {
       h->init(ctx, sess);
     }
   }

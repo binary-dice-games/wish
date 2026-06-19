@@ -36,7 +36,6 @@ add_library(wish STATIC
   src/file_service.cpp
   src/server.cpp
   src/client.cpp
-  src/import_handler.cpp
   src/template_handler.cpp
   src/ui_elements/element.cpp
   src/ui_elements/layout.cpp

@@ -118,9 +118,9 @@ TEST(ClientTest, InheritedSetGetRoundTrips) {
   srv.stop();
 }
 
-// ── import_ui ─────────────────────────────────────────────────────────────────
+// ── register_template + instantiate_template ─────────────────────────────────
 
-TEST(ClientTest, ImportUiReturnsNonEmptyMap) {
+TEST(ClientTest, InstantiateReturnsNonEmptyMap) {
   memory_server_transport transport;
   wish::server srv{transport, std::make_unique<wish::null_renderer>()};
   srv.start();
@@ -132,7 +132,8 @@ TEST(ClientTest, ImportUiReturnsNonEmptyMap) {
 
    protected:
     void on_session() override {
-      result = import_ui(kWindowJson).get();
+      register_template("tpl"_key, kWindowJson).get();
+      result = instantiate_template("tpl"_key).get();
     }
   };
 
@@ -143,7 +144,7 @@ TEST(ClientTest, ImportUiReturnsNonEmptyMap) {
   srv.stop();
 }
 
-TEST(ClientTest, ImportUiRootProxyIsValid) {
+TEST(ClientTest, InstantiateRootProxyIsValid) {
   memory_server_transport transport;
   wish::server srv{transport, std::make_unique<wish::null_renderer>()};
   srv.start();
@@ -155,7 +156,8 @@ TEST(ClientTest, ImportUiRootProxyIsValid) {
 
    protected:
     void on_session() override {
-      result = import_ui(kWindowJson).get();
+      register_template("tpl"_key, kWindowJson).get();
+      result = instantiate_template("tpl"_key).get();
     }
   };
 
@@ -167,7 +169,7 @@ TEST(ClientTest, ImportUiRootProxyIsValid) {
   srv.stop();
 }
 
-TEST(ClientTest, ImportUiNamedChildrenAppearInMap) {
+TEST(ClientTest, InstantiateNamedChildrenAppearInMap) {
   memory_server_transport transport;
   wish::server srv{transport, std::make_unique<wish::null_renderer>()};
   srv.start();
@@ -179,7 +181,8 @@ TEST(ClientTest, ImportUiNamedChildrenAppearInMap) {
 
    protected:
     void on_session() override {
-      result = import_ui(kWindowWithChildJson).get();
+      register_template("tpl"_key, kWindowWithChildJson).get();
+      result = instantiate_template("tpl"_key).get();
     }
   };
 
@@ -194,7 +197,7 @@ TEST(ClientTest, ImportUiNamedChildrenAppearInMap) {
   srv.stop();
 }
 
-TEST(ClientTest, ImportUiInvalidDescriptorThrows) {
+TEST(ClientTest, InstantiateInvalidDescriptorThrows) {
   memory_server_transport transport;
   wish::server srv{transport, std::make_unique<wish::null_renderer>()};
   srv.start();
@@ -207,7 +210,8 @@ TEST(ClientTest, ImportUiInvalidDescriptorThrows) {
    protected:
     void on_session() override {
       try {
-        import_ui("{invalid json}").get();
+        register_template("tpl"_key, "{invalid json}").get();
+        instantiate_template("tpl"_key).get();
       } catch (const std::exception&) {
         threw = true;
       }
@@ -221,9 +225,7 @@ TEST(ClientTest, ImportUiInvalidDescriptorThrows) {
   srv.stop();
 }
 
-// ── register_template + instantiate_template ─────────────────────────────────
-
-TEST(ClientTest, TemplateRoundTrip) {
+TEST(ClientTest, TemplateCanBeInstantiatedMultipleTimes) {
   memory_server_transport transport;
   wish::server srv{transport, std::make_unique<wish::null_renderer>()};
   srv.start();
@@ -231,25 +233,22 @@ TEST(ClientTest, TemplateRoundTrip) {
   class test_client : public wish::client {
    public:
     using wish::client::client;
-    wish::proxy_map from_import;
-    wish::proxy_map from_template;
+    wish::proxy_map first;
+    wish::proxy_map second;
 
    protected:
     void on_session() override {
-      from_import = import_ui(kWindowWithChildJson).get();
       register_template("tpl"_key, kWindowWithChildJson).get();
-      from_template = instantiate_template("tpl"_key).get();
+      first = instantiate_template("tpl"_key).get();
+      second = instantiate_template("tpl"_key).get();
     }
   };
 
   test_client c{transport.connect()};
   c.run();
 
-  // Both should have "" and "lbl"
-  EXPECT_TRUE(c.from_import.count(""));
-  EXPECT_TRUE(c.from_import.count("lbl"));
-  EXPECT_TRUE(c.from_template.count(""));
-  EXPECT_TRUE(c.from_template.count("lbl"));
+  EXPECT_TRUE(c.first.count("") && c.first.count("lbl"));
+  EXPECT_TRUE(c.second.count("") && c.second.count("lbl"));
   srv.stop();
 }
 

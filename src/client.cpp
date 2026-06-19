@@ -25,13 +25,11 @@ void client::run() {
 }
 
 void client::on_connect() {
-  import_proxy_ = instantiate("wish"_key, "__WishImport"_key).get();
   template_proxy_ = instantiate("wish"_key, "__WishTemplate"_key).get();
   fs_proxy_ = instantiate("wish"_key, "__WishFS"_key).get();
 }
 
 void client::on_disconnect() {
-  import_proxy_.reset();
   template_proxy_.reset();
   fs_proxy_.reset();
 }
@@ -55,15 +53,6 @@ static proxy_map proxies_from_result(
 }
 
 // ── Wish helpers ──────────────────────────────────────────────────────────────
-
-std::future<proxy_map> client::import_ui(const std::string& descriptor) {
-  return std::async(std::launch::async, [this, descriptor]() -> proxy_map {
-    dynamic args;
-    args["descriptor"_key] = descriptor;
-    auto result = import_proxy_->call("import"_key, std::move(args)).get();
-    return proxies_from_result(*this, result);
-  });
-}
 
 std::future<void> client::register_template(
     bison::key_t name, const std::string& descriptor) {

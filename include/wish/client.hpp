@@ -29,9 +29,9 @@ using proxy_map =
  * Inherits all RMI client behaviour from `bison::rmi::client` and adds:
  * - A `run()` template method: connects, calls `on_session()`, then
  *   disconnects cleanly even if `on_session()` throws.
- * - Wish-specific helpers (`import_ui`, `register_template`,
- *   `instantiate_template`, `upload_file`, `download_file`) that delegate
- *   to the server-side wish RMI protocol objects.
+ * - Wish-specific helpers (`register_template`, `instantiate_template`,
+ *   `upload_file`, `download_file`) that delegate to the server-side wish
+ *   RMI protocol objects.
  *
  * ## Usage
  *
@@ -40,14 +40,14 @@ using proxy_map =
  * class my_client : public wish::client {
  *  protected:
  *   void on_session() override {
- *     auto nodes = import_ui(R"({"type":"Window","title":"Hello"})").get();
+ *     register_template("ui"_key, R"({"type":"Window","title":"Hello"})").get();
+ *     auto nodes = instantiate_template("ui"_key).get();
  *   }
  * };
  * ```
  *
- * @note The helper methods (`import_ui`, `register_template`, etc.) require
- *       the server to have the wish protocol handlers registered
- *       (`__WishImport`, `__WishTemplate`, `__WishFS`).
+ * @note The helper methods require the server to have the wish protocol
+ *       handlers registered (`__WishTemplate`, `__WishFS`).
  */
 class client : public bison::rmi::client {
  public:
@@ -64,21 +64,11 @@ class client : public bison::rmi::client {
   void run();
 
   /**
-   * @brief Parse @p descriptor on the server and return a proxy name map.
-   * @param descriptor JSON or YAML UI descriptor string.
-   * @return Future resolved with a map of dot-path name → proxy handle,
-   *         with the root element at key `""`.
-   * @throws std::logic_error until the server-side `__WishImport` handler
-   *         is registered (Step 11).
-   */
-  std::future<proxy_map> import_ui(const std::string& descriptor);
-
-  /**
    * @brief Register a named UI template on the server.
    * @param name       Template name key.
    * @param descriptor JSON or YAML descriptor string.
    * @throws std::logic_error until the server-side `__WishTemplate` handler
-   *         is registered (Step 11).
+   *         is registered.
    */
   std::future<void> register_template(
       bison::key_t name, const std::string& descriptor);
@@ -86,10 +76,10 @@ class client : public bison::rmi::client {
   /**
    * @brief Instantiate a previously registered template.
    * @param name Template name key.
-   * @return Future resolved with a proxy name map identical to `import_ui`
-   *         on the same descriptor.
+   * @return Future resolved with a proxy map; the root is at key `""`.
+   * @throws std::runtime_error if the template name was never registered.
    * @throws std::logic_error until the server-side `__WishTemplate` handler
-   *         is registered (Step 11).
+   *         is registered.
    */
   std::future<proxy_map> instantiate_template(bison::key_t name);
 
@@ -98,7 +88,7 @@ class client : public bison::rmi::client {
    * @param name Filename (no path separators or `..`).
    * @param data File contents.
    * @throws std::logic_error until the server-side `__WishFS` protocol is
-   *         accessible to the client (Step 11).
+   *         accessible to the client.
    */
   std::future<void> upload_file(
       const std::string& name, const std::string& data);
@@ -108,7 +98,7 @@ class client : public bison::rmi::client {
    * @param name Filename (no path separators or `..`).
    * @return Future resolved with the file contents.
    * @throws std::logic_error until the server-side `__WishFS` protocol is
-   *         accessible to the client (Step 11).
+   *         accessible to the client.
    */
   std::future<std::string> download_file(const std::string& name);
 
@@ -127,9 +117,8 @@ class client : public bison::rmi::client {
   void on_disconnect() override;
 
  private:
-  // Per-session proxy handles.  Populated by run() before on_session() is
-  // called; cleared after on_session() returns or throws.
-  std::optional<bison::rmi::proxy::dynamic> import_proxy_;
+  // Per-session proxy handles.  Populated by on_connect() before on_session()
+  // is called; cleared by on_disconnect().
   std::optional<bison::rmi::proxy::dynamic> template_proxy_;
   std::optional<bison::rmi::proxy::dynamic> fs_proxy_;
 };

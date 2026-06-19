@@ -3,18 +3,50 @@
 /// @brief Implementation of the server-side __WishTemplate RMI class.
 #include "template_handler.hpp"
 
-#include "import_handler.hpp"
+#include <wish/ui_importer.hpp>
 
+#include "src/rmi/shared/ids.hpp"
+
+#include <algorithm>
+#include <cctype>
 #include <stdexcept>
 
 namespace bdg::wish {
 
 using namespace bison;
 
+// ── apply_descriptor ─────────────────────────────────────────────────────────
+
+static bison::dynamic apply_descriptor(
+    bison::rmi::context& ctx,
+    session& sess,
+    const std::string& descriptor) {
+  auto it = std::find_if_not(descriptor.cbegin(), descriptor.cend(),
+                              [](unsigned char c) { return std::isspace(c); });
+  bool is_json =
+      (it != descriptor.cend() && (*it == '{' || *it == '['));
+
+  wish::name_map nmap = is_json ? import_json(descriptor) : import_yaml(descriptor);
+
+  bison::dynamic result;
+  std::size_t idx = 0;
+  for (auto& [name, elem] : nmap) {
+    bison::key_t new_id = bison::rmi::shared::generate_id();
+    ctx.objects[new_id.id] = elem;
+    sess.objects[name] = elem;
+
+    bison::dynamic entry;
+    entry["name"_key] = name;
+    entry["id"_key] = new_id;
+    result[idx++] = bison::dynamic_ptr{std::move(entry)};
+  }
+  return result;
+}
+
 // ── template_handler ─────────────────────────────────────────────────────────
 
 template_handler::template_handler(bison::dynamic&& base)
-    : wish_handler(std::move(base)) {
+    : dynamic(std::move(base)) {
   addMethod(
       "register"_key,
       bison::method{[this](dynamic& /*self*/,

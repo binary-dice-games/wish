@@ -3,7 +3,6 @@
 #include <wish/registry.hpp>
 #include <wish/file_service.hpp>
 
-#include "import_handler.hpp"
 #include "template_handler.hpp"
 #include "ui_elements.hpp"
 
@@ -22,7 +21,6 @@ void register_all() {
   register_image();
   register_separator();
   // Protocol handler classes.
-  register_import_handler();
   register_template_handler();
   register_file_service();
 }

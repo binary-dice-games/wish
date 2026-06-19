@@ -251,9 +251,8 @@ at `00f9203`; submodule updated). No other bison changes required.
     /** Connect, call on_session(), then disconnect. */
     void run();
 
-    std::future<wish::name_map> import_ui(const std::string& descriptor);
     std::future<void> register_template(bison::key_t name, const std::string& descriptor);
-    std::future<wish::name_map> instantiate_template(bison::key_t name);
+    std::future<wish::proxy_map> instantiate_template(bison::key_t name);
     std::future<void> upload_file(const std::string& name, const std::string& data);
     std::future<std::string> download_file(const std::string& name);
 
@@ -264,18 +263,17 @@ at `00f9203`; submodule updated). No other bison changes required.
   ```
 - `src/client.cpp` — implementation:
   - `run()`: calls `connect()`, then `on_session()`, then `disconnect()` (exception-safe).
-  - `import_ui`: sends the descriptor string to the server via a `call` on a well-known `__WishImport` object; deserializes the returned name→id map into `wish::name_map` of proxy handles.
   - `register_template`: stores the descriptor on the server by calling the `__WishTemplate` object's `register` method.
   - `instantiate_template`: calls `__WishTemplate`'s `instantiate` method; returns handle map.
   - `upload_file` / `download_file`: delegate to the `__WishFS` object.
 
 **Tests** (`tests/test_client.cpp`) — use `memory_client_transport` paired with a test server:
-- `import_ui` with a valid JSON `Window` descriptor returns a non-empty name map.
+- `register_template` + `instantiate_template` with a valid JSON `Window` descriptor returns a non-empty name map.
 - The name map entry for `""` (root) is a valid proxy.
 - Named children appear in the name map with their dot-path keys.
-- `register_template` + `instantiate_template` produces a name map identical to `import_ui` with the same descriptor.
+- `register_template` + `instantiate_template` with an invalid descriptor propagates `std::runtime_error` via the future (error surfaces on `instantiate_template`).
 - `upload_file` / `download_file` round-trips content via the server file service.
-- `import_ui` with an invalid descriptor propagates `std::runtime_error` via the future.
+- Calling `instantiate_template` with an unregistered name propagates `std::runtime_error`.
 
 ---
 
@@ -325,22 +323,21 @@ at `00f9203`; submodule updated). No other bison changes required.
 
 ---
 
-## Step 11 — Server-side import and template handlers
+## Step 11 — Server-side template handler
 
-**Goal:** The server exposes `__WishImport` and `__WishTemplate` RMI objects so the client's `import_ui`, `register_template`, and `instantiate_template` calls work end-to-end.
+**Goal:** The server exposes `__WishTemplate` as the sole descriptor RMI object so the client's `register_template` and `instantiate_template` calls work end-to-end.
 
 **Deliverables:**
-- `include/wish/import_handler.hpp` + `src/import_handler.cpp`:
-  - Registers `"__WishImport"_key` class in the `"wish"` namespace.
-  - Implement as `import_handler : public bison::dynamic` (same pattern as `ui_element`): construct from `dynamic&&`, hold a `session&` reference, expose an `import(descriptor)` member that calls `wish::import_json`/`import_yaml`, merges results into `session.objects`, and returns a dynamic mapping name→object_id.
-- `include/wish/template_handler.hpp` + `src/template_handler.cpp`:
-  - Registers `"__WishTemplate"_key` class; implemented as `template_handler : public bison::dynamic`.
-  - Member methods `register_template(name, descriptor)` and `instantiate(name)` operate on `session.templates` and `session.objects`.
-- Both handlers are instantiated via `dynamic::instantiate<import_handler>(...)` and `dynamic::instantiate<template_handler>(...)` once per session by `wish::server`.
+- `src/template_handler.hpp` + `src/template_handler.cpp`:
+  - Registers `"__WishTemplate"_key` class in the `"wish"` namespace.
+  - Implemented as `template_handler : public bison::dynamic` (same pattern as `ui_element`): construct from `dynamic&&`, hold `ctx_` and `sess_` directly (no intermediate base class).
+  - Contains the internal `apply_descriptor(ctx, sess, descriptor)` free function: auto-detects JSON/YAML, parses with `import_json`/`import_yaml`, registers elements in the session and RMI context, returns an indexed dynamic result.
+  - Member methods `register(name, descriptor)` and `instantiate(name)` operate on `session.templates` and `session.objects` via `apply_descriptor`.
+  - `wish::server::on_create_object` injects context via `dynamic_cast<template_handler*>` and calls `init()` once per instance.
+- No `import_handler` or `wish_handler` files; the descriptor-parsing path lives entirely in `template_handler.cpp`.
 
 **Tests** (`tests/test_handlers.cpp`) — use in-memory transport:
-- Client calls `import_ui(json)` → server parses, returns map → client holds valid proxies.
-- Client calls `register_template` then `instantiate_template` → returns identical structure to `import_ui`.
+- Client calls `register_template` then `instantiate_template` → server parses, returns map → client holds valid proxies.
 - Calling `instantiate_template` with an unregistered name returns an error response (not a crash).
 - Importing a hierarchy then calling `proxy.get()` on a named child returns the correct field values.
 
@@ -354,7 +351,7 @@ at `00f9203`; submodule updated). No other bison changes required.
 - `tests/test_integration.cpp`:
   - Starts a `wish::server` with `memory_server_transport` and `null_renderer`.
   - Connects a `wish::client` with `memory_client_transport`.
-  - Imports a `Window → VerticalLayout → [Label, Button]` from JSON.
+  - Registers a named template and instantiates a `Window → VerticalLayout → [Label, Button]` from JSON.
   - Sets the `Label`'s `text` to `"Hello"` via `proxy.set`; verifies the server-side field value.
   - Registers a `"clicked"` event handler on the `Button` proxy; simulates the event from the server side via `emit_event`; verifies the handler fires.
   - Uploads a file, lists files, downloads and verifies content, deletes the file.
@@ -390,7 +387,7 @@ at `00f9203`; submodule updated). No other bison changes required.
 - Both target Windows and Linux.
 
 **Tests** (`tests/test_socket_transport.cpp`):
-- Server listens on an ephemeral port; client connects; `import_ui` round-trip succeeds; client disconnects; server session is cleaned up.
+- Server listens on an ephemeral port; client connects; `register_template` + `instantiate_template` round-trip succeeds; client disconnects; server session is cleaned up.
 - Two clients connect simultaneously; each receives an independent session; one disconnecting does not affect the other.
 
 ---

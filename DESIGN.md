@@ -21,7 +21,7 @@ The core transport, serialization, and remote-object protocol are entirely provi
 +-------------------------+            bison RMI (PTY or TCP)
 |      Client App         |  ------------------------------------------>+
 |  bdg::wish::client      |  <-- events (clicked, changed, ...)          |
-|  - import_ui()          |  <-- file_service (upload / download)        |
+|  - register_template()  |  <-- file_service (upload / download)        |
 |  - upload_file()        |                                               |
 +-------------------------+                                               |
                                                     +-----------------------+----------+
@@ -156,7 +156,7 @@ using ui_element_ptr = std::shared_ptr<ui_element>;
 
 `ui_element_ptr` is stored in the `name_map` and in `session`. The underlying bison field system stores all dynamic children as `dynamic_ptr`; the shared ownership and virtual dispatch of `shared_ptr<ui_element>` is preserved by an implicit upcast at assignment time.
 
-This pattern — subclassing `bison::dynamic` to attach typed behaviour to a registered class — is the standard way wish components add logic to data objects. Future wish objects that carry non-trivial behaviour (e.g. `file_service_node`, `import_handler`) should follow the same approach.
+This pattern — subclassing `bison::dynamic` to attach typed behaviour to a registered class — is the standard way wish components add logic to data objects. Future wish objects that carry non-trivial behaviour (e.g. `file_service_node`, `template_handler`) should follow the same approach.
 
 ### `bdg::wish::ui_importer`
 
@@ -170,8 +170,9 @@ auto map = wish::import_json(descriptor);
 map[""].   // root ui_element
 map["body.ok"]-> // named descendant
 
-// Client side: send descriptor to server, server imports and returns name->id map.
-auto handles = client.import_ui(descriptor).get();
+// Client side: register a template and instantiate it by name.
+client.register_template("ui"_key, descriptor).get();
+auto handles = client.instantiate_template("ui"_key).get();
 handles["ok"].onEvent("clicked"_key, handler);
 ```
 
@@ -230,9 +231,8 @@ An `Image` element's `src` field is resolved relative to `session.resource_dir` 
 
 Thin wrapper around `bison::rmi::client` (or `bison::pty_client_app` on Linux). Adds:
 
-- `import_ui(json_or_yaml)` — sends descriptor to server, returns `std::future<handle_map>`.
-- `register_template(name, descriptor)` — registers a named blueprint on the server.
-- `instantiate_template(name)` — instantiates a registered template.
+- `register_template(name, descriptor)` — stores a named JSON/YAML blueprint on the server.
+- `instantiate_template(name)` — parses and instantiates a registered template, returns `std::future<proxy_map>`.
 - `upload_file(name, bytes)` / `download_file(name)` — file service calls.
 
 ---
@@ -337,8 +337,8 @@ Decoupling the render pipeline from imgui means backends can be swapped without 
 **Bison dynamic objects as UI state.**
 No separate schema system is needed. The same serialization, prototype inheritance, and RMI machinery bison provides is reused for the UI tree. Field type constraints (the variant is locked on first assignment) give lightweight validation automatically.
 
-**JSON/YAML import as a first-class operation.**
-Requiring clients to instantiate objects one by one is verbose and produces many round-trips. A single `import_ui` call sends one descriptor, the server instantiates everything locally, and returns a name-to-id map. This is the preferred path; the manual API remains available for dynamic modifications after import.
+**Template-based descriptor import.**
+Requiring clients to instantiate objects one by one is verbose and produces many round-trips. The template API (`register_template` + `instantiate_template`) sends a descriptor once, stores it server-side, and instantiates the full tree on demand — returning a name-to-id map. The same template can be instantiated multiple times without retransmitting the descriptor. The manual RMI API remains available for dynamic modifications after instantiation.
 
 **Named and numeric children in the same map.**
 Bison's dynamic map already supports both key kinds in one container (hashed names with MSB set vs. numeric indices below 0x80000000). wish uses this directly: named slots (e.g. `"ok"`, `"cancel"`) for structural child references, numeric slots for ordered lists. The renderer iterates both transparently.
@@ -352,7 +352,7 @@ Visual updates (set a label text, change a slider value) do not need acknowledge
 **Typed `dynamic` subclasses for wish objects.**
 `bison::dynamic` is the data layer; wish adds behaviour by subclassing it. `ui_element : public bison::dynamic` is the canonical example: it is a fully-functional bison object (registered in the registry, stored in the field map, moved over RMI) while also owning wish-specific methods (`refresh_children_order`, `for_each_child_ordered`). This replaces the alternative of free functions that take a `dynamic&` parameter, which gives no type safety and scatters behaviour away from the data.
 
-The same pattern applies to any wish component that needs non-trivial logic on a registered bison class: a `file_service_node`, `import_handler`, or `template_handler` would each subclass `dynamic`, get constructed from a `dynamic&&` base (via `bison::dynamic::instantiate<T>()`), and expose their behaviour as member functions. `dynamic_cast<T*>` is the safe downcast path; bison's `forEachChild<T>` and `instantiate<T>` template helpers eliminate the boilerplate at call sites.
+The same pattern applies to any wish component that needs non-trivial logic on a registered bison class: `file_service_node` and `template_handler` each subclass `dynamic`, get constructed from a `dynamic&&` base (via `bison::dynamic::instantiate<T>()`), and expose their behaviour as member functions. `dynamic_cast<T*>` is the safe downcast path; bison's `forEachChild<T>` and `instantiate<T>` template helpers eliminate the boilerplate at call sites.
 
 **Layouts as first-class container nodes.**
 Layout behaviour (vertical vs. horizontal arrangement) belongs in the object tree rather than as a property on a generic container. This lets the renderer dispatch purely on `__class` — no conditional field checks — and lets the JSON/YAML descriptor express layout intent declaratively. It also allows arbitrary nesting: a `HorizontalLayout` row is itself a node whose children can be `VerticalLayout` columns, with no limit on depth.
