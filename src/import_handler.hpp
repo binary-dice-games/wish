@@ -32,7 +32,6 @@ bison::dynamic apply_descriptor(
 class import_handler : public wish_handler {
  public:
   explicit import_handler(bison::dynamic&& base);
-  bison::dynamic_ptr clone_for_instance() const override;
 };
 
 /// @brief Register `import_handler` as the `__WishImport` class prototype.

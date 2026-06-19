@@ -22,7 +22,6 @@ namespace bdg::wish {
 class template_handler : public wish_handler {
  public:
   explicit template_handler(bison::dynamic&& base);
-  bison::dynamic_ptr clone_for_instance() const override;
 };
 
 /// @brief Register `template_handler` as the `__WishTemplate` class prototype.

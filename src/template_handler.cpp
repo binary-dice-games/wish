@@ -38,14 +38,14 @@ template_handler::template_handler(bison::dynamic&& base)
       }});
 }
 
-bison::dynamic_ptr template_handler::clone_for_instance() const {
-  return bison::dynamic::instantiate<template_handler>("wish"_key, "__WishTemplate"_key);
-}
-
 void register_template_handler() {
   auto proto = bison::dynamic::instantiate<template_handler>(
       key_t{0U}, "__WishTemplate"_key);
-  bison::dynamic::addClass("wish"_key, bison::dynamic_ptr{proto});
+  bison::dynamic::addClass(
+      "wish"_key,
+      bison::dynamic_ptr{proto},
+      key_t{0U},
+      bison::dynamic::make_factory<template_handler>("wish"_key, "__WishTemplate"_key));
 }
 
 }  // namespace bdg::wish

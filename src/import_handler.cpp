@@ -56,14 +56,14 @@ import_handler::import_handler(bison::dynamic&& base)
       }});
 }
 
-bison::dynamic_ptr import_handler::clone_for_instance() const {
-  return bison::dynamic::instantiate<import_handler>("wish"_key, "__WishImport"_key);
-}
-
 void register_import_handler() {
   auto proto = bison::dynamic::instantiate<import_handler>(
       key_t{0U}, "__WishImport"_key);
-  bison::dynamic::addClass("wish"_key, bison::dynamic_ptr{proto});
+  bison::dynamic::addClass(
+      "wish"_key,
+      bison::dynamic_ptr{proto},
+      key_t{0U},
+      bison::dynamic::make_factory<import_handler>("wish"_key, "__WishImport"_key));
 }
 
 }  // namespace bdg::wish
