@@ -47,8 +47,8 @@ void server::stop() {
 
 void server::on_session_created(bison::rmi::context& ctx) {
   auto sess = std::make_shared<session>(ctx.session_id);
-  sess->file_service = std::make_shared<file_service_node>(
-      bison::dynamic::instantiate(bison::key_t{"wish"}, bison::key_t{"__WishFS"}),
+  sess->file_service = std::make_shared<file_service>(
+      bison::dynamic::instantiate(bison::key_t{"wish"}, bison::key_t{"__WishFileSystem"}),
       sess->resource_dir);
   sessions_.wlock()->emplace(ctx.session_id.id, sess);
   on_session_created(*sess);
@@ -86,8 +86,8 @@ bison::dynamic_ptr server::on_create_object(
     }
   }
 
-  // __WishFS is a per-session singleton — return the pre-created instance.
-  if (klass == "__WishFS"_key && sess && sess->file_service) {
+  // __WishFileSystem is a per-session singleton — return the pre-created instance.
+  if (klass == "__WishFileSystem"_key && sess && sess->file_service) {
     return dynamic_ptr{std::static_pointer_cast<dynamic>(sess->file_service)};
   }
 

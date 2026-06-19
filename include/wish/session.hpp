@@ -15,8 +15,8 @@
 
 namespace bdg::wish {
 
-class file_service_node;
-using file_service_ptr = std::shared_ptr<file_service_node>;
+class file_service;
+using file_service_ptr = std::shared_ptr<file_service>;
 
 /// @brief Holds all mutable state owned by one connected client.
 ///

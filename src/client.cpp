@@ -26,7 +26,7 @@ void client::run() {
 
 void client::on_connect() {
   template_proxy_ = instantiate("wish"_key, "__WishTemplate"_key).get();
-  fs_proxy_ = instantiate("wish"_key, "__WishFS"_key).get();
+  fs_proxy_ = instantiate("wish"_key, "__WishFileSystem"_key).get();
 }
 
 void client::on_disconnect() {

@@ -47,7 +47,7 @@ using proxy_map =
  * ```
  *
  * @note The helper methods require the server to have the wish protocol
- *       handlers registered (`__WishTemplate`, `__WishFS`).
+ *       handlers registered (`__WishTemplate`, `__WishFileSystem`).
  */
 class client : public bison::rmi::client {
  public:
@@ -87,7 +87,7 @@ class client : public bison::rmi::client {
    * @brief Upload a file to the server's sandboxed session resource directory.
    * @param name Filename (no path separators or `..`).
    * @param data File contents.
-   * @throws std::logic_error until the server-side `__WishFS` protocol is
+   * @throws std::logic_error until the server-side `__WishFileSystem` protocol is
    *         accessible to the client.
    */
   std::future<void> upload_file(
@@ -97,7 +97,7 @@ class client : public bison::rmi::client {
    * @brief Download a previously uploaded file from the server.
    * @param name Filename (no path separators or `..`).
    * @return Future resolved with the file contents.
-   * @throws std::logic_error until the server-side `__WishFS` protocol is
+   * @throws std::logic_error until the server-side `__WishFileSystem` protocol is
    *         accessible to the client.
    */
   std::future<std::string> download_file(const std::string& name);

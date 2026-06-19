@@ -1,8 +1,8 @@
-# wish — Architecture & Design
+﻿# wish â€” Architecture & Design
 
 ## Overview
 
-wish is a remote UI framework. A **wish server** owns a native window and a UI rendering context. **Client applications** connect over a bison RMI transport and build a UI by defining a hierarchy of remote objects — one per UI element. The server traverses that tree on every render frame and calls the appropriate UI backend draw primitives. User interactions (clicks, edits, drags) flow back to the client as named events.
+wish is a remote UI framework. A **wish server** owns a native window and a UI rendering context. **Client applications** connect over a bison RMI transport and build a UI by defining a hierarchy of remote objects â€” one per UI element. The server traverses that tree on every render frame and calls the appropriate UI backend draw primitives. User interactions (clicks, edits, drags) flow back to the client as named events.
 
 The core transport, serialization, and remote-object protocol are entirely provided by the [bison](../extern/bison) library. wish adds:
 
@@ -51,7 +51,7 @@ Inherits from `bison::rmi::server` directly, so all bison RMI server capabilitie
 
 The constructor accepts a `server_transport_iface&` so the same server logic works with PTY, TCP socket, or any other bison transport.
 
-`wish::server` overrides two protected virtual hooks on `bison::rmi::server` — `on_session_created(context&)` and `on_session_destroyed(context&)` — as `final` methods that bridge into wish session management. Subclasses use the wish-level hooks `on_session_created(session&)` and `on_session_destroyed(session&)` instead.
+`wish::server` overrides two protected virtual hooks on `bison::rmi::server` â€” `on_session_created(context&)` and `on_session_destroyed(context&)` â€” as `final` methods that bridge into wish session management. Subclasses use the wish-level hooks `on_session_created(session&)` and `on_session_destroyed(session&)` instead.
 
 Responsibilities:
 - Calls `wish::registry::register_all()` on startup to populate the `"wish"` namespace.
@@ -106,8 +106,8 @@ public:
 
 Layout classes control how their children are arranged before recursing:
 
-- **`VerticalLayout`** — renders children sequentially in the default imgui top-to-bottom flow, inserting `spacing` pixels of padding between items via `ImGui::SetCursorPosY`.
-- **`HorizontalLayout`** — wraps children in `ImGui::BeginGroup()` / `ImGui::EndGroup()` and calls `ImGui::SameLine(0, spacing)` between items so they share a horizontal line.
+- **`VerticalLayout`** â€” renders children sequentially in the default imgui top-to-bottom flow, inserting `spacing` pixels of padding between items via `ImGui::SetCursorPosY`.
+- **`HorizontalLayout`** â€” wraps children in `ImGui::BeginGroup()` / `ImGui::EndGroup()` and calls `ImGui::SameLine(0, spacing)` between items so they share a horizontal line.
 
 Non-layout containers (`Window`) render their children using the default vertical flow. A backend that is not immediate-mode would implement the same two layout types as a two-pass measure-then-place operation.
 
@@ -120,7 +120,7 @@ Per-client state, owned by the server, created on connect and destroyed on disco
 ```cpp
 struct session {
   bison::key_t                                       id;           // assigned by bison RMI layer
-  wish::name_map                                     objects;      // live ui_element tree (name → ptr)
+  wish::name_map                                     objects;      // live ui_element tree (name â†’ ptr)
   std::unordered_map<bison::key_t, std::string, ...> templates;   // named UI blueprints (JSON/YAML)
   std::filesystem::path                              resource_dir; // sandboxed folder
   std::atomic<bool>                                  dirty{false}; // application-managed flag
@@ -130,7 +130,7 @@ struct session {
 
 `resource_dir` is a temporary directory created at session start and deleted at session end. Clients can only read and write within this directory via the file service.
 
-`dirty` is an application-managed flag — `wish::server` does not read or write it. The render loop renders every session every tick; callers may use `dirty` for their own throttling or change-detection logic.
+`dirty` is an application-managed flag â€” `wish::server` does not read or write it. The render loop renders every session every tick; callers may use `dirty` for their own throttling or change-detection logic.
 
 ### `bdg::wish::ui_element`
 
@@ -156,7 +156,7 @@ using ui_element_ptr = std::shared_ptr<ui_element>;
 
 `ui_element_ptr` is stored in the `name_map` and in `session`. The underlying bison field system stores all dynamic children as `dynamic_ptr`; the shared ownership and virtual dispatch of `shared_ptr<ui_element>` is preserved by an implicit upcast at assignment time.
 
-This pattern — subclassing `bison::dynamic` to attach typed behaviour to a registered class — is the standard way wish components add logic to data objects. Future wish objects that carry non-trivial behaviour (e.g. `file_service_node`, `template_handler`) should follow the same approach.
+This pattern â€” subclassing `bison::dynamic` to attach typed behaviour to a registered class â€” is the standard way wish components add logic to data objects. Future wish objects that carry non-trivial behaviour (e.g. `file_service`, `template_handler`) should follow the same approach.
 
 ### `bdg::wish::ui_importer`
 
@@ -214,13 +214,13 @@ Templates are scoped to a session and are deleted with it.
 
 ### `bdg::wish::file_service`
 
-Registered as a bison class (`"__WishFS"_key`) in the `"wish"` namespace. Exposes methods:
+Registered as a bison class (`"__WishFileSystem"_key`) in the `"wish"` namespace. Exposes methods:
 
 | Method | Parameters | Description |
 |--------|-----------|-------------|
 | `upload` | `name` (string), `data` (bytes as string) | Write file into `session.resource_dir` |
 | `download` | `name` (string) | Read file from `session.resource_dir`, return bytes |
-| `list` | — | Return list of uploaded file names |
+| `list` | â€” | Return list of uploaded file names |
 | `delete` | `name` (string) | Remove a file from the session folder |
 
 Path traversal is blocked: `name` is validated to contain no directory separators or `..` components. The service only exposes files within `session.resource_dir`. The entire folder is removed when the client disconnects.
@@ -231,9 +231,9 @@ An `Image` element's `src` field is resolved relative to `session.resource_dir` 
 
 Thin wrapper around `bison::rmi::client` (or `bison::pty_client_app` on Linux). Adds:
 
-- `register_template(name, descriptor)` — stores a named JSON/YAML blueprint on the server.
-- `instantiate_template(name)` — parses and instantiates a registered template, returns `std::future<proxy_map>`.
-- `upload_file(name, bytes)` / `download_file(name)` — file service calls.
+- `register_template(name, descriptor)` â€” stores a named JSON/YAML blueprint on the server.
+- `instantiate_template(name)` â€” parses and instantiates a registered template, returns `std::future<proxy_map>`.
+- `upload_file(name, bytes)` / `download_file(name)` â€” file service calls.
 
 ---
 
@@ -338,7 +338,7 @@ Decoupling the render pipeline from imgui means backends can be swapped without 
 No separate schema system is needed. The same serialization, prototype inheritance, and RMI machinery bison provides is reused for the UI tree. Field type constraints (the variant is locked on first assignment) give lightweight validation automatically.
 
 **Template-based descriptor import.**
-Requiring clients to instantiate objects one by one is verbose and produces many round-trips. The template API (`register_template` + `instantiate_template`) sends a descriptor once, stores it server-side, and instantiates the full tree on demand — returning a name-to-id map. The same template can be instantiated multiple times without retransmitting the descriptor. The manual RMI API remains available for dynamic modifications after instantiation.
+Requiring clients to instantiate objects one by one is verbose and produces many round-trips. The template API (`register_template` + `instantiate_template`) sends a descriptor once, stores it server-side, and instantiates the full tree on demand â€” returning a name-to-id map. The same template can be instantiated multiple times without retransmitting the descriptor. The manual RMI API remains available for dynamic modifications after instantiation.
 
 **Named and numeric children in the same map.**
 Bison's dynamic map already supports both key kinds in one container (hashed names with MSB set vs. numeric indices below 0x80000000). wish uses this directly: named slots (e.g. `"ok"`, `"cancel"`) for structural child references, numeric slots for ordered lists. The renderer iterates both transparently.
@@ -352,7 +352,8 @@ Visual updates (set a label text, change a slider value) do not need acknowledge
 **Typed `dynamic` subclasses for wish objects.**
 `bison::dynamic` is the data layer; wish adds behaviour by subclassing it. `ui_element : public bison::dynamic` is the canonical example: it is a fully-functional bison object (registered in the registry, stored in the field map, moved over RMI) while also owning wish-specific methods (`refresh_children_order`, `for_each_child_ordered`). This replaces the alternative of free functions that take a `dynamic&` parameter, which gives no type safety and scatters behaviour away from the data.
 
-The same pattern applies to any wish component that needs non-trivial logic on a registered bison class: `file_service_node` and `template_handler` each subclass `dynamic`, get constructed from a `dynamic&&` base (via `bison::dynamic::instantiate<T>()`), and expose their behaviour as member functions. `dynamic_cast<T*>` is the safe downcast path; bison's `forEachChild<T>` and `instantiate<T>` template helpers eliminate the boilerplate at call sites.
+The same pattern applies to any wish component that needs non-trivial logic on a registered bison class: `file_service` and `template_handler` each subclass `dynamic`, get constructed from a `dynamic&&` base (via `bison::dynamic::instantiate<T>()`), and expose their behaviour as member functions. `dynamic_cast<T*>` is the safe downcast path; bison's `forEachChild<T>` and `instantiate<T>` template helpers eliminate the boilerplate at call sites.
 
 **Layouts as first-class container nodes.**
-Layout behaviour (vertical vs. horizontal arrangement) belongs in the object tree rather than as a property on a generic container. This lets the renderer dispatch purely on `__class` — no conditional field checks — and lets the JSON/YAML descriptor express layout intent declaratively. It also allows arbitrary nesting: a `HorizontalLayout` row is itself a node whose children can be `VerticalLayout` columns, with no limit on depth.
+Layout behaviour (vertical vs. horizontal arrangement) belongs in the object tree rather than as a property on a generic container. This lets the renderer dispatch purely on `__class` â€” no conditional field checks â€” and lets the JSON/YAML descriptor express layout intent declaratively. It also allows arbitrary nesting: a `HorizontalLayout` row is itself a node whose children can be `VerticalLayout` columns, with no limit on depth.
+

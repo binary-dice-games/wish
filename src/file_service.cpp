@@ -1,4 +1,4 @@
-// MIT License © 2025 Binary Dice Games
+﻿// MIT License Â© 2025 Binary Dice Games
 /// @file file_service.cpp
 /// @brief Implementation of the wish file service.
 #include <wish/file_service.hpp>
@@ -11,9 +11,9 @@ namespace bdg::wish {
 
 using namespace bdg::bison;
 
-// ── file_service_node ─────────────────────────────────────────────────────────
+// â”€â”€ file_service â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-file_service_node::file_service_node(dynamic&& base,
+file_service::file_service(dynamic&& base,
                                      std::filesystem::path resource_dir)
     : dynamic(std::move(base)),
       resource_dir_(std::move(resource_dir)) {
@@ -39,12 +39,12 @@ file_service_node::file_service_node(dynamic&& base,
 }
 
 std::filesystem::path
-file_service_node::resolve_path(const std::string& name) const {
+file_service::resolve_path(const std::string& name) const {
   if (name.empty()) {
     throw std::runtime_error(
         "wish::file_service: path must not be empty");
   }
-  // Normalize both paths purely syntactically — resolves '..' and '.' without
+  // Normalize both paths purely syntactically â€” resolves '..' and '.' without
   // touching the filesystem, so it works for files that do not yet exist.
   auto base   = resource_dir_.lexically_normal();
   auto target = (resource_dir_ / name).lexically_normal();
@@ -59,7 +59,7 @@ file_service_node::resolve_path(const std::string& name) const {
   return target;
 }
 
-void file_service_node::upload(const std::string& name,
+void file_service::upload(const std::string& name,
                                const std::string& data) {
   auto path = resolve_path(name);
   if (!std::filesystem::exists(resource_dir_)) {
@@ -76,7 +76,7 @@ void file_service_node::upload(const std::string& name,
   out.write(data.data(), static_cast<std::streamsize>(data.size()));
 }
 
-std::string file_service_node::download(const std::string& name) const {
+std::string file_service::download(const std::string& name) const {
   auto path = resolve_path(name);
   std::ifstream in(path, std::ios::binary);
   if (!in) {
@@ -87,7 +87,7 @@ std::string file_service_node::download(const std::string& name) const {
           std::istreambuf_iterator<char>{}};
 }
 
-bison::dynamic_ptr file_service_node::list() const {
+bison::dynamic_ptr file_service::list() const {
   auto result = dynamic_ptr{key_t{0U}, {}};
   std::size_t idx = 0;
   std::error_code ec;
@@ -100,7 +100,7 @@ bison::dynamic_ptr file_service_node::list() const {
   return result;
 }
 
-void file_service_node::erase(const std::string& name) {
+void file_service::erase(const std::string& name) {
   auto path = resolve_path(name);
   std::error_code ec;
   if (!std::filesystem::remove(path, ec)) {
@@ -109,11 +109,12 @@ void file_service_node::erase(const std::string& name) {
   }
 }
 
-// ── register_file_service ────────────────────────────────────────────────────
+// â”€â”€ register_file_service â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 void register_file_service() {
-  auto proto = dynamic_ptr{"__WishFS"_key, {}};
+  auto proto = dynamic_ptr{"__WishFileSystem"_key, {}};
   dynamic::addClass("wish"_key, std::move(proto));
 }
 
 }  // namespace bdg::wish
+

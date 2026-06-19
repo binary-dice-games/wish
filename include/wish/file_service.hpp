@@ -19,18 +19,18 @@ namespace bdg::wish {
  * `bison::dynamic`, constructed from a `dynamic&&` base plus a resource
  * directory path, and exposes typed C++ member functions for all operations.
  *
- * The class is registered as `"__WishFS"_key` in the `"wish"` namespace via
+ * The class is registered as `"__WishFileSystem"_key` in the `"wish"` namespace via
  * `register_file_service()`.  One instance is created per session by
  * `server::on_session_created`.
  */
-class file_service_node : public bison::dynamic {
+class file_service : public bison::dynamic {
  public:
   /**
    * @brief Construct from a bison base object and a resource directory.
    * @param base          Plain `dynamic` produced by `dynamic::instantiate`.
    * @param resource_dir  Sandboxed directory for this session's files.
    */
-  file_service_node(bison::dynamic&& base,
+  file_service(bison::dynamic&& base,
                     std::filesystem::path resource_dir);
 
   /**
@@ -66,7 +66,7 @@ class file_service_node : public bison::dynamic {
   std::filesystem::path resolve_path(const std::string& name) const;
 };
 
-/// @brief Register `"__WishFS"_key` in the `"wish"` bison namespace.
+/// @brief Register `"__WishFileSystem"_key` in the `"wish"` bison namespace.
 ///        Called once by `register_all()`; idempotent across repeated calls.
 void register_file_service();
 

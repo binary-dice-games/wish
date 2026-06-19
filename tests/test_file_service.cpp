@@ -8,7 +8,7 @@
 #include <unordered_set>
 
 using namespace bdg::bison;
-using bdg::wish::file_service_node;
+using bdg::wish::file_service;
 using bdg::wish::session;
 
 class FileServiceTest : public ::testing::Test {
@@ -16,13 +16,13 @@ class FileServiceTest : public ::testing::Test {
   void SetUp() override {
     bdg::wish::register_file_service();  // idempotent: registers bison class
     sess_ = std::make_unique<session>("fs_test"_key);
-    sess_->file_service = std::make_shared<file_service_node>(
-        dynamic::instantiate("wish"_key, "__WishFS"_key),
+    sess_->file_service = std::make_shared<file_service>(
+        dynamic::instantiate("wish"_key, "__WishFileSystem"_key),
         sess_->resource_dir);
   }
 
   session& sess() { return *sess_; }
-  file_service_node& fs() { return *sess_->file_service; }
+  file_service& fs() { return *sess_->file_service; }
 
  private:
   std::unique_ptr<session> sess_;
