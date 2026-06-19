@@ -111,6 +111,31 @@ dependency and **may be modified**. When a wish feature requires a missing bison
 Follow the same coding style and documentation standards as the rest of bison (see the bison
 source for conventions). Do not modify bison unilaterally — always get explicit approval first.
 
+### Updating the submodule after a bison commit
+
+**Never commit directly inside `d:\github\wish\extern\bison`.** That checkout is the
+submodule working tree; committing there creates an orphan commit on a detached HEAD
+that diverges from `d:\github\bison`'s `main` branch. When wish is later pushed,
+git cannot reconcile the two histories and rejects the push as non-fast-forward.
+
+The correct sequence after committing a bison change at `d:\github\bison`:
+
+```
+# 1. Push bison main so the new commit exists on the remote.
+git -C d:/github/bison push origin main
+
+# 2. In the submodule checkout, fetch and detach HEAD at the new commit.
+git -C d:/github/wish/extern/bison fetch origin
+git -C d:/github/wish/extern/bison checkout <new-sha>
+
+# 3. Stage the updated submodule pointer in wish and commit.
+git -C d:/github/wish add extern/bison
+git -C d:/github/wish commit -m "..."
+```
+
+Step 1 must come before step 2 so the new SHA is available on the remote when wish is
+eventually pushed.
+
 ## Claude Code Assist Behavioral Rules for This Repo
 
 - Do not introduce broad stylistic rewrites.
