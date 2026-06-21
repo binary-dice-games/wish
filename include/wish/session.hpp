@@ -9,6 +9,7 @@
 
 #include <atomic>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -45,6 +46,12 @@ struct session {
 
   /// File service instance; populated by `register_file_service(session&)`.
   file_service_ptr file_service;
+
+  /// @brief Callback for emitting asynchronous events to the connected client.
+  ///
+  /// Parameters: `(object_id, event_name, payload)`.  Null when no client is
+  /// attached (e.g. in unit tests that do not require event delivery).
+  std::function<void(bison::key_t, bison::key_t, bison::dynamic)> emit_event;
 
   /// @brief Construct a session: creates a unique temporary directory.
   /// @param id  Session identifier; used to derive a unique directory name.

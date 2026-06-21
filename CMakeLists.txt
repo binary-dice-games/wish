@@ -7,7 +7,8 @@ project(
   VERSION 1.0
   LANGUAGES CXX)
 
-option(WISH_BUILD_TESTS "Build the wish tests" ON)
+option(WISH_BUILD_TESTS   "Build the wish tests"     ON)
+option(WISH_ENABLE_IMGUI  "Build the imgui renderer" ON)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
@@ -16,6 +17,26 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 # and adds GoogleTest directly from bison's extern/ directory.
 set(PACKAGE_TESTS OFF CACHE BOOL "Build bison tests" FORCE)
 add_subdirectory("extern/bison")
+
+if(WISH_ENABLE_IMGUI)
+  include(FetchContent)
+  FetchContent_Declare(
+    imgui
+    GIT_REPOSITORY https://github.com/ocornut/imgui.git
+    GIT_TAG        v1.91.9
+    GIT_SHALLOW    TRUE
+  )
+  FetchContent_MakeAvailable(imgui)
+
+  add_library(imgui_core STATIC
+    ${imgui_SOURCE_DIR}/imgui.cpp
+    ${imgui_SOURCE_DIR}/imgui_draw.cpp
+    ${imgui_SOURCE_DIR}/imgui_tables.cpp
+    ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+  )
+  target_include_directories(imgui_core PUBLIC ${imgui_SOURCE_DIR})
+  set_target_properties(imgui_core PROPERTIES FOLDER extern)
+endif()
 
 add_library(wish STATIC
   include/wish/wish.hpp
@@ -48,6 +69,16 @@ add_library(wish STATIC
   src/ui_elements/image.cpp
   src/ui_elements/separator.cpp
 )
+
+if(WISH_ENABLE_IMGUI)
+  target_sources(wish PRIVATE
+    include/wish/imgui_renderer.hpp
+    src/imgui_renderer.cpp
+  )
+  target_compile_definitions(wish PUBLIC WISH_IMGUI_ENABLED)
+  # PUBLIC so that consumers who include imgui_renderer.hpp have imgui in path.
+  target_link_libraries(wish PUBLIC imgui_core)
+endif()
 
 target_include_directories(wish
     PRIVATE
