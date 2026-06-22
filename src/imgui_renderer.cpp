@@ -74,8 +74,10 @@ static void render_label(const ui_element& node) {
 }
 
 static void render_button(const ui_element& node, session& s) {
-  auto label = str_field(node, "label"_key, "");
-  if (ImGui::Button(label.c_str()) && s.emit_event) {
+  auto    label = str_field(node, "label"_key, "");
+  int32_t w     = int_field(node, "width"_key,  0);
+  int32_t h     = int_field(node, "height"_key, 0);
+  if (ImGui::Button(label.c_str(), ImVec2(float(w), float(h))) && s.emit_event) {
     dynamic payload;
     s.emit_event(node_id(node), "clicked"_key, std::move(payload));
   }

@@ -28,54 +28,59 @@ namespace wish = bdg::wish;
 static constexpr const char* kCalcDesc = R"({
   "type": "Window",
   "title": "Calculator",
-  "width": 300,
+  "width": 328,
   "height": 420,
   "children": {
     "display": { "type": "Label", "text": "0" },
     "sep":     { "type": "Separator" },
     "row0": {
       "type": "HorizontalLayout",
+      "spacing": 6,
       "children": {
-        "c":   { "type": "Button", "label": "C"   },
-        "div": { "type": "Button", "label": "/"   },
-        "mul": { "type": "Button", "label": "*"   },
-        "bsp": { "type": "Button", "label": "<-"  }
+        "c":   { "type": "Button", "label": "C",   "width": 72, "height": 52 },
+        "div": { "type": "Button", "label": "/",   "width": 72, "height": 52 },
+        "mul": { "type": "Button", "label": "*",   "width": 72, "height": 52 },
+        "bsp": { "type": "Button", "label": "<-",  "width": 72, "height": 52 }
       }
     },
     "row1": {
       "type": "HorizontalLayout",
+      "spacing": 6,
       "children": {
-        "n7":  { "type": "Button", "label": "7" },
-        "n8":  { "type": "Button", "label": "8" },
-        "n9":  { "type": "Button", "label": "9" },
-        "sub": { "type": "Button", "label": "-" }
+        "n7":  { "type": "Button", "label": "7", "width": 72, "height": 52 },
+        "n8":  { "type": "Button", "label": "8", "width": 72, "height": 52 },
+        "n9":  { "type": "Button", "label": "9", "width": 72, "height": 52 },
+        "sub": { "type": "Button", "label": "-", "width": 72, "height": 52 }
       }
     },
     "row2": {
       "type": "HorizontalLayout",
+      "spacing": 6,
       "children": {
-        "n4":  { "type": "Button", "label": "4" },
-        "n5":  { "type": "Button", "label": "5" },
-        "n6":  { "type": "Button", "label": "6" },
-        "add": { "type": "Button", "label": "+" }
+        "n4":  { "type": "Button", "label": "4", "width": 72, "height": 52 },
+        "n5":  { "type": "Button", "label": "5", "width": 72, "height": 52 },
+        "n6":  { "type": "Button", "label": "6", "width": 72, "height": 52 },
+        "add": { "type": "Button", "label": "+", "width": 72, "height": 52 }
       }
     },
     "row3": {
       "type": "HorizontalLayout",
+      "spacing": 6,
       "children": {
-        "n1": { "type": "Button", "label": "1" },
-        "n2": { "type": "Button", "label": "2" },
-        "n3": { "type": "Button", "label": "3" },
-        "eq": { "type": "Button", "label": "=" }
+        "n1": { "type": "Button", "label": "1", "width": 72, "height": 52 },
+        "n2": { "type": "Button", "label": "2", "width": 72, "height": 52 },
+        "n3": { "type": "Button", "label": "3", "width": 72, "height": 52 },
+        "eq": { "type": "Button", "label": "=", "width": 72, "height": 52 }
       }
     },
     "row4": {
       "type": "HorizontalLayout",
+      "spacing": 6,
       "children": {
-        "n0":  { "type": "Button", "label": "0"   },
-        "dot": { "type": "Button", "label": "."   },
-        "pm":  { "type": "Button", "label": "+/-" },
-        "pct": { "type": "Button", "label": "%"   }
+        "n0":  { "type": "Button", "label": "0",   "width": 72, "height": 52 },
+        "dot": { "type": "Button", "label": ".",   "width": 72, "height": 52 },
+        "pm":  { "type": "Button", "label": "+/-", "width": 72, "height": 52 },
+        "pct": { "type": "Button", "label": "%",   "width": 72, "height": 52 }
       }
     }
   }
@@ -263,7 +268,7 @@ int main(int argc, char* argv[]) {
 
   memory_server_transport transport;
 
-  auto r    = std::make_unique<wish::sdl3_renderer>("Calculator", 300, 420);
+  auto r    = std::make_unique<wish::sdl3_renderer>("Calculator", 340, 440);
   auto rptr = r.get();
 
   wish::server server{transport, std::move(r)};
