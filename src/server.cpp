@@ -104,6 +104,7 @@ bison::dynamic_ptr server::on_create_object(
 }
 
 void server::render_loop() {
+  if (renderer_) renderer_->setup();
   while (running_.load(std::memory_order_acquire)) {
     if (renderer_) {
       renderer_->begin_frame();
@@ -117,9 +118,12 @@ void server::render_loop() {
         }
       }
       renderer_->end_frame();
+      if (renderer_->should_quit())
+        running_.store(false, std::memory_order_release);
     }
     std::this_thread::sleep_for(std::chrono::milliseconds{5});
   }
+  if (renderer_) renderer_->teardown();
 }
 
 } // namespace bdg::wish

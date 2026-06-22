@@ -20,6 +20,31 @@ class renderer {
  public:
   virtual ~renderer() = default;
 
+  /**
+   * @brief Called once from the render thread before the first frame.
+   *
+   * Windowed backends (e.g. sdl3_renderer) use this to initialize platform
+   * resources (SDL window, GPU context, ImGui backends) on the thread that
+   * will own them for the duration of the session.  The default is a no-op.
+   */
+  virtual void setup() {}
+
+  /**
+   * @brief Called once from the render thread after the last frame exits.
+   *
+   * Must mirror every resource acquired in `setup()`.  Default is a no-op.
+   */
+  virtual void teardown() {}
+
+  /**
+   * @brief Returns true when the backend wants the server to stop.
+   *
+   * Windowed backends set this when the user closes the window.  The render
+   * loop checks this after each frame and stops itself when it returns true.
+   * Default returns false (server runs until `stop()` is called explicitly).
+   */
+  virtual bool should_quit() const { return false; }
+
   /// @brief Called once before any nodes are rendered in a frame.
   virtual void begin_frame() = 0;
 

@@ -138,6 +138,15 @@ TEST_F(RendererTest, IndexedChildrenVisitedInIndexOrder) {
   EXPECT_EQ(texts[1], "second");
 }
 
+// ── Lifecycle no-ops ─────────────────────────────────────────────────────────
+
+TEST_F(RendererTest, SetupTeardownAndShouldQuitHaveNoOpDefaults) {
+  null_renderer r;
+  EXPECT_NO_THROW(r.setup());
+  EXPECT_NO_THROW(r.teardown());
+  EXPECT_FALSE(r.should_quit());
+}
+
 // ── Three-level tree ──────────────────────────────────────────────────────────
 
 // Window → VerticalLayout → [Label, Button]

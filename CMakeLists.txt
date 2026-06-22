@@ -7,8 +7,9 @@ project(
   VERSION 1.0
   LANGUAGES CXX)
 
-option(WISH_BUILD_TESTS   "Build the wish tests"     ON)
-option(WISH_ENABLE_IMGUI  "Build the imgui renderer" ON)
+option(WISH_BUILD_TESTS   "Build the wish tests"                            ON)
+option(WISH_ENABLE_IMGUI  "Build the imgui renderer"                       ON)
+option(WISH_ENABLE_SDL3   "Build the SDL3 renderer and calculator example" ON)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
@@ -36,6 +37,25 @@ if(WISH_ENABLE_IMGUI)
   )
   target_include_directories(imgui_core PUBLIC ${imgui_SOURCE_DIR})
   set_target_properties(imgui_core PROPERTIES FOLDER extern)
+endif()
+
+if(WISH_ENABLE_IMGUI AND WISH_ENABLE_SDL3)
+  include(FetchContent)
+  FetchContent_Declare(
+    SDL3
+    GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
+    GIT_TAG        release-3.2.10
+    GIT_SHALLOW    TRUE
+  )
+  FetchContent_MakeAvailable(SDL3)
+
+  # imgui v1.91.9 ships SDL3 backend sources; add them to imgui_core.
+  target_sources(imgui_core PRIVATE
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_sdlrenderer3.cpp
+  )
+  target_include_directories(imgui_core PUBLIC ${imgui_SOURCE_DIR}/backends)
+  target_link_libraries(imgui_core PUBLIC SDL3::SDL3)
 endif()
 
 add_library(wish STATIC
@@ -78,6 +98,15 @@ if(WISH_ENABLE_IMGUI)
   target_compile_definitions(wish PUBLIC WISH_IMGUI_ENABLED)
   # PUBLIC so that consumers who include imgui_renderer.hpp have imgui in path.
   target_link_libraries(wish PUBLIC imgui_core)
+endif()
+
+if(WISH_ENABLE_IMGUI AND WISH_ENABLE_SDL3)
+  target_sources(wish PRIVATE
+    include/wish/sdl3_renderer.hpp
+    src/sdl3_renderer.cpp
+  )
+  target_compile_definitions(wish PUBLIC WISH_SDL3_ENABLED)
+  target_link_libraries(wish PUBLIC SDL3::SDL3)
 endif()
 
 target_include_directories(wish

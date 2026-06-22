@@ -18,7 +18,7 @@ The core transport, serialization, and remote-object protocol are entirely provi
 ## Architecture
 
 ```
-+-------------------------+            bison RMI (PTY or TCP)
++-------------------------+            bison RMI (PTY or TCP or in-memory)
 |      Client App         |  ------------------------------------------>+
 |  bdg::wish::client      |  <-- events (clicked, changed, ...)          |
 |  - register_template()  |  <-- file_service (upload / download)        |
@@ -35,7 +35,8 @@ The core transport, serialization, and remote-object protocol are entirely provi
                                                     |         |                        |
                                                     |  wish::renderer                  |
                                                     |   (abstract iface)               |
-                                                    |    imgui backend                 |
+                                                    |    imgui_renderer (headless)     |
+                                                    |    sdl3_renderer  (windowed)     |
                                                     +----------------------------------+
 ```
 
@@ -95,12 +96,20 @@ Event-emitting classes (Button, Checkbox, Slider*, InputText) call `context.emit
 class renderer {
 public:
   virtual ~renderer() = default;
+
+  // Lifecycle — called from the render thread, not the constructor.
+  virtual void setup()             {}              // before first frame
+  virtual void teardown()          {}              // after last frame
+  virtual bool should_quit() const { return false; }
+
+  // Per-frame
   virtual void begin_frame() = 0;
-  virtual void render_node(const ui_element& node,
-                           wish::session& session) = 0;
-  virtual void end_frame() = 0;
+  virtual void render_node(const ui_element& node, wish::session& s) = 0;
+  virtual void end_frame()   = 0;
 };
 ```
+
+**Lifecycle contract:** `setup()` is called once from the render thread before the first frame; `teardown()` is called once after the loop exits. After each `end_frame()` the render loop checks `should_quit()`; when `true` it sets `running_` to false and calls `teardown()`.
 
 `render_node` is called recursively for each node in the object tree. The dispatch key is the `__class` reserved field. After handling the node itself, `render_node` calls `node.for_each_child_ordered(...)` to recurse into children in render order (ascending `order` field, using the cache built at import time).
 
@@ -111,7 +120,22 @@ Layout classes control how their children are arranged before recursing:
 
 Non-layout containers (`Window`) render their children using the default vertical flow. A backend that is not immediate-mode would implement the same two layout types as a two-pass measure-then-place operation.
 
-The **imgui backend** (`wish::imgui_renderer`) is the only concrete implementation initially. Adding a new backend (Qt, Win32 controls, terminal/TUI) means implementing `wish::renderer` without changing any other wish component.
+Concrete implementations:
+
+- **`wish::imgui_renderer`** — Dear ImGui draw calls only; no windowing backend. Used in headless tests by providing a manually created `ImGuiContext`.
+- **`wish::sdl3_renderer`** — extends `imgui_renderer`; creates an SDL3 window and SDL renderer inside `setup()` (which runs on the render thread). See below.
+
+Adding a further backend (Qt, Win32 controls, terminal/TUI) means implementing `wish::renderer` without changing any other wish component.
+
+### `bdg::wish::sdl3_renderer`
+
+Inherits `imgui_renderer`. Creates a real platform window via SDL3 and draws Dear ImGui's output using the SDL renderer backend (`imgui_impl_sdlrenderer3`).
+
+**Thread model:** SDL3 requires that the window, renderer, and event pump all belong to the same thread. `sdl3_renderer` defers all SDL object creation to `setup()`, which `wish::server` calls from the render thread before the first frame. The same thread drives `begin_frame()` (which calls `SDL_PollEvent`), `end_frame()` (which calls `SDL_RenderPresent`), and `teardown()` (which destroys SDL objects). No additional locking is required.
+
+**Window close:** When `SDL_PollEvent` returns an `SDL_EVENT_QUIT` event, `sdl3_renderer` sets an internal `quit_` flag. The render loop reads this via `should_quit()`, sets `running_` to false, and lets the loop exit naturally so `teardown()` cleans up on the same thread.
+
+**Texture loading:** `get_or_load_texture(src, resource_dir)` loads `resource_dir / src` as a BMP via `SDL_LoadBMP`, uploads it via `SDL_CreateTextureFromSurface`, and caches the resulting `SDL_Texture*` as an `ImTextureID`. PNG loading would require SDL3_image (not currently a dependency). Cached textures are destroyed in `teardown()`.
 
 ### `bdg::wish::session`
 
@@ -297,7 +321,7 @@ render frame: imgui Button("Submit") returns true
 |-----------|-------|----------|---------|
 | PTY | `pty_server_transport` / `pty_client_transport` | Linux only | Client launches server as a subprocess via a PTY |
 | TCP socket | `socket_server_transport` / `socket_client_transport` | Windows + Linux | Network or local daemon |
-| In-memory | `memory_server_transport` / `memory_client_transport` | Windows + Linux | Unit tests |
+| In-memory | `memory_server_transport` / `memory_client_transport` | Windows + Linux | Unit tests and self-contained examples (e.g. calculator) |
 
 `bdg::wish::server` accepts a `server_transport_iface&` reference, so transport selection is a runtime decision at the call site. No `#ifdef` inside the server or renderer. PTY-specific code lives only in the PTY transport and the `pty_client_app`/`pty_server_app` scaffolds, which are guarded by `#if defined(__linux__)`.
 
@@ -355,5 +379,8 @@ Visual updates (set a label text, change a slider value) do not need acknowledge
 The same pattern applies to any wish component that needs non-trivial logic on a registered bison class: `file_service` and `template_handler` each subclass `dynamic`, get constructed from a `dynamic&&` base (via `bison::dynamic::instantiate<T>()`), and expose their behaviour as member functions. `dynamic_cast<T*>` is the safe downcast path; bison's `forEachChild<T>` and `instantiate<T>` template helpers eliminate the boilerplate at call sites.
 
 **Layouts as first-class container nodes.**
-Layout behaviour (vertical vs. horizontal arrangement) belongs in the object tree rather than as a property on a generic container. This lets the renderer dispatch purely on `__class` â€” no conditional field checks â€” and lets the JSON/YAML descriptor express layout intent declaratively. It also allows arbitrary nesting: a `HorizontalLayout` row is itself a node whose children can be `VerticalLayout` columns, with no limit on depth.
+Layout behaviour (vertical vs. horizontal arrangement) belongs in the object tree rather than as a property on a generic container. This lets the renderer dispatch purely on `__class` — no conditional field checks — and lets the JSON/YAML descriptor express layout intent declaratively. It also allows arbitrary nesting: a `HorizontalLayout` row is itself a node whose children can be `VerticalLayout` columns, with no limit on depth.
+
+**Renderer lifecycle hooks (`setup`/`teardown`) instead of constructor init.**
+SDL3 (and most GPU APIs) require that the window, renderer, and event pump all be created and driven by the same OS thread. The `wish::server` render loop runs on a dedicated render thread spawned by `server::start()`. If `sdl3_renderer` initialized SDL in its constructor (which runs on the main thread), SDL objects would be shared across threads with no synchronization. Deferring initialization to `setup()` — called from the render thread immediately before the first frame — keeps all SDL state on one thread for its entire lifetime. `teardown()` mirrors this by running on the render thread after the loop exits. The `should_quit()` hook gives the render thread a way to signal the rest of the application that the window has been closed, without requiring any shared condition variable or cross-thread call into the server.
 
