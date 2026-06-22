@@ -30,6 +30,7 @@ wish_add_test(test_renderer       test_renderer.cpp)
 wish_add_test(test_file_service   test_file_service.cpp)
 wish_add_test(test_server         test_server.cpp)
 wish_add_test(test_client         test_client.cpp)
+wish_add_test(test_handlers       test_handlers.cpp)
 
 if(WISH_ENABLE_IMGUI)
   wish_add_test(test_imgui_renderer test_imgui_renderer.cpp)
