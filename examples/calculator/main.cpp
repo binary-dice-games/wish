@@ -104,9 +104,6 @@ class calc_client : public wish::client {
       overrides["window_rounding"_key]          = 6.0f;
       overrides["frame_rounding"_key]           = 4.0f;
       overrides["grab_rounding"_key]            = 4.0f;
-      overrides["color_button"_key]             = std::string{"#2060EFFF"};
-      overrides["color_button_hovered"_key]     = std::string{"#3070FFFF"};
-      overrides["color_button_active"_key]      = std::string{"#1050CFFF"};
       set_style(std::move(overrides)).get();
     }
 
