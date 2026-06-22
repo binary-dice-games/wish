@@ -4,7 +4,7 @@
 // The server renders a real SDL3 window; the client (running on the same
 // thread as main, after server.start()) drives the UI via the wish RPC layer.
 //
-// Usage: just run the binary. Close the window to exit.
+// Usage: calculator [--verbose | -v]
 
 #include <wish/client.hpp>
 #include <wish/server.hpp>
@@ -13,6 +13,7 @@
 #include "src/rmi/rmi.hpp"  // memory_server_transport / memory_client_transport
 
 #include <cmath>
+#include <iostream>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -84,15 +85,24 @@ static constexpr const char* kCalcDesc = R"({
 
 class calc_client : public wish::client {
  public:
-  calc_client(
-      std::unique_ptr<bison::rmi::transport::client_transport_iface> t,
-      wish::sdl3_renderer* renderer)
-      : wish::client(std::move(t)), renderer_(renderer) {}
+  calc_client(memory_client_transport t,
+              wish::sdl3_renderer* renderer,
+              bool verbose = false)
+      : wish::client(std::move(t)), renderer_(renderer), verbose_(verbose) {}
 
  protected:
   void on_session() override {
+    vlog("registering template 'calc'");
     register_template("calc"_key, kCalcDesc).get();
+
+    vlog("instantiating template 'calc'");
     auto pm = instantiate_template("calc"_key).get();
+
+    if (verbose_) {
+      std::clog << "[calc] proxy map (" << pm.size() << " entries):\n";
+      for (auto& [name, proxy] : pm)
+        std::clog << "  \"" << name << "\"\n";
+    }
 
     // Capture display proxy for updates.
     auto& disp = pm.at("display");
@@ -101,6 +111,7 @@ class calc_client : public wish::client {
 
     // Helper: push display string to the label proxy.
     auto update_display = [&]() {
+      vlog("update_display -> \"" + display_ + "\"");
       dynamic f;
       f["text"_key] = display_;
       disp.set(std::move(f));
@@ -109,6 +120,7 @@ class calc_client : public wish::client {
     // Digit button: append character to the current entry.
     auto digit_handler = [&, update_display](const std::string& ch) {
       return [&, ch, update_display](dynamic) {
+        vlog("digit '" + ch + "' clicked");
         if (fresh_) { display_ = ch; fresh_ = false; }
         else        { display_ += ch; }
         update_display();
@@ -118,6 +130,7 @@ class calc_client : public wish::client {
     // Operator button: store pending operand and op.
     auto op_handler = [&, update_display](char op) {
       return [&, op, update_display](dynamic) {
+        vlog(std::string("op '") + op + "' clicked");
         operand_    = std::stod(display_);
         pending_op_ = op;
         fresh_      = true;
@@ -125,7 +138,10 @@ class calc_client : public wish::client {
       };
     };
 
+    vlog("registering button handlers");
+
     pm.at("row0.c").onEvent("clicked"_key, [&, update_display](dynamic) {
+      vlog("C (clear) clicked");
       display_    = "0";
       operand_    = 0.0;
       pending_op_ = 0;
@@ -137,6 +153,7 @@ class calc_client : public wish::client {
     pm.at("row0.mul").onEvent("clicked"_key, op_handler('*'));
 
     pm.at("row0.bsp").onEvent("clicked"_key, [&, update_display](dynamic) {
+      vlog("<- (backspace) clicked");
       if (display_.size() > 1) display_.pop_back();
       else                     display_ = "0";
       update_display();
@@ -157,6 +174,7 @@ class calc_client : public wish::client {
     pm.at("row3.n3").onEvent("clicked"_key, digit_handler("3"));
 
     pm.at("row3.eq").onEvent("clicked"_key, [&, update_display](dynamic) {
+      vlog("= (equals) clicked");
       double rhs = std::stod(display_);
       double result = 0.0;
       switch (pending_op_) {
@@ -167,8 +185,7 @@ class calc_client : public wish::client {
         default:  result = rhs; break;
       }
       // Format: drop trailing .0 for whole numbers.
-      if (result == std::floor(result) &&
-          std::abs(result) < 1e12) {
+      if (result == std::floor(result) && std::abs(result) < 1e12) {
         display_ = std::to_string(static_cast<long long>(result));
       } else {
         std::ostringstream oss;
@@ -177,12 +194,14 @@ class calc_client : public wish::client {
       }
       pending_op_ = 0;
       fresh_      = true;
+      vlog("result: \"" + display_ + "\"");
       update_display();
     });
 
     pm.at("row4.n0").onEvent("clicked"_key, digit_handler("0"));
 
     pm.at("row4.dot").onEvent("clicked"_key, [&, update_display](dynamic) {
+      vlog(". (dot) clicked");
       if (display_.find('.') == std::string::npos)
         display_ += '.';
       fresh_ = false;
@@ -190,6 +209,7 @@ class calc_client : public wish::client {
     });
 
     pm.at("row4.pm").onEvent("clicked"_key, [&, update_display](dynamic) {
+      vlog("+/- clicked");
       if (!display_.empty() && display_ != "0") {
         if (display_[0] == '-') display_.erase(0, 1);
         else                    display_.insert(0, "-");
@@ -198,6 +218,7 @@ class calc_client : public wish::client {
     });
 
     pm.at("row4.pct").onEvent("clicked"_key, [&, update_display](dynamic) {
+      vlog("% clicked");
       double v = std::stod(display_) / 100.0;
       std::ostringstream oss;
       oss << v;
@@ -205,13 +226,22 @@ class calc_client : public wish::client {
       update_display();
     });
 
+    vlog("ready — waiting for window close");
+
     // ── Wait until the window is closed ──────────────────────────────────
     while (!renderer_->should_quit())
       std::this_thread::sleep_for(std::chrono::milliseconds{16});
+
+    vlog("window closed — exiting on_session");
   }
 
  private:
+  void vlog(const std::string& msg) const {
+    if (verbose_) std::clog << "[calc] " << msg << "\n";
+  }
+
   wish::sdl3_renderer* renderer_;
+  bool verbose_;
 
   // Calculator state
   std::string display_    = "0";
@@ -222,7 +252,15 @@ class calc_client : public wish::client {
 
 // ── main ──────────────────────────────────────────────────────────────────────
 
-int main() {
+int main(int argc, char* argv[]) {
+  bool verbose = false;
+  for (int i = 1; i < argc; ++i) {
+    std::string arg(argv[i]);
+    if (arg == "--verbose" || arg == "-v") verbose = true;
+  }
+
+  if (verbose) std::clog << "[calc] starting\n";
+
   memory_server_transport transport;
 
   auto r    = std::make_unique<wish::sdl3_renderer>("Calculator", 300, 420);
@@ -231,9 +269,13 @@ int main() {
   wish::server server{transport, std::move(r)};
   server.start();  // spawns render thread (SDL lives there) + bison listen thread
 
+  if (verbose) std::clog << "[calc] server started — connecting client\n";
+
   // run() blocks in on_session() until should_quit() goes true (window closed).
-  calc_client client{transport.connect(), rptr};
+  calc_client client{transport.connect(), rptr, verbose};
   client.run();
+
+  if (verbose) std::clog << "[calc] client done — stopping server\n";
 
   server.stop();
   return 0;

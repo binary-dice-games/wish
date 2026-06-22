@@ -42,13 +42,13 @@ class imgui_renderer : public renderer {
   /// @brief Ends the ImGui frame (`ImGui::EndFrame`).
   void end_frame() override;
 
- public:
   /// @brief Fetch a cached texture or attempt to load it from @p resource_dir.
   /// Returns a zero/null ID in headless / no-backend contexts.
-  ImTextureID get_or_load_texture(const std::string& src,
-                                  const std::filesystem::path& resource_dir);
+  virtual ImTextureID get_or_load_texture(
+      const std::string&            src,
+      const std::filesystem::path&  resource_dir);
 
- private:
+ protected:
   /// Loaded texture cache: maps resource path → ImTextureID.
   std::unordered_map<std::string, ImTextureID> texture_cache_;
 };

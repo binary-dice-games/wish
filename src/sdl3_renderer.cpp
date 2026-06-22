@@ -134,7 +134,7 @@ ImTextureID sdl3_renderer::get_or_load_texture(
   SDL_Texture* tex = SDL_CreateTextureFromSurface(sdl_renderer_, surf);
   SDL_DestroySurface(surf);
 
-  ImTextureID id = tex ? ImTextureID{tex} : ImTextureID{};
+  ImTextureID id = tex ? reinterpret_cast<ImTextureID>(tex) : ImTextureID{};
   texture_cache_[src] = id;
   return id;
 }

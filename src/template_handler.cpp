@@ -35,6 +35,10 @@ static bison::dynamic apply_descriptor(
     ctx.objects[new_id.id] = elem;
     sess.objects[name] = elem;
 
+    // Store the RMI object ID on the element so the renderer can emit events
+    // with the correct ID (not the class name).
+    (*elem)["__wish_id"_key] = new_id;
+
     bison::dynamic entry;
     entry["name"_key] = name;
     entry["id"_key] = new_id;

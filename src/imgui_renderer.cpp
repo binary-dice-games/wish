@@ -16,6 +16,14 @@ namespace bdg::wish {
 
 using namespace bdg::bison;
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+// Returns the RMI object ID stamped by apply_descriptor, or a fallback key.
+static key_t node_id(const ui_element& node) {
+  const auto* f = node.findField("__wish_id"_key);
+  return (f && f->is<key_t>()) ? f->as<key_t>() : key_t{};
+}
+
 // ── Field helpers ─────────────────────────────────────────────────────────────
 
 static std::string str_field(
@@ -69,8 +77,7 @@ static void render_button(const ui_element& node, session& s) {
   auto label = str_field(node, "label"_key, "");
   if (ImGui::Button(label.c_str()) && s.emit_event) {
     dynamic payload;
-    s.emit_event(
-        node.as<key_t>(dynamic::CLASS), "clicked"_key, std::move(payload));
+    s.emit_event(node_id(node), "clicked"_key, std::move(payload));
   }
 }
 
@@ -82,8 +89,7 @@ static void render_checkbox(const ui_element& node, session& s) {
     if (s.emit_event) {
       dynamic payload;
       payload["value"_key] = val;
-      s.emit_event(
-          node.as<key_t>(dynamic::CLASS), "changed"_key, std::move(payload));
+      s.emit_event(node_id(node), "changed"_key, std::move(payload));
     }
   }
 }
@@ -99,8 +105,7 @@ static void render_slider_float(const ui_element& node, session& s) {
     if (s.emit_event) {
       dynamic payload;
       payload["value"_key] = val;
-      s.emit_event(
-          node.as<key_t>(dynamic::CLASS), "changed"_key, std::move(payload));
+      s.emit_event(node_id(node), "changed"_key, std::move(payload));
     }
   }
 }
@@ -115,8 +120,7 @@ static void render_slider_int(const ui_element& node, session& s) {
     if (s.emit_event) {
       dynamic payload;
       payload["value"_key] = val;
-      s.emit_event(
-          node.as<key_t>(dynamic::CLASS), "changed"_key, std::move(payload));
+      s.emit_event(node_id(node), "changed"_key, std::move(payload));
     }
   }
 }
@@ -142,8 +146,7 @@ static void render_input_text(const ui_element& node, session& s) {
     if (s.emit_event) {
       dynamic payload;
       payload["value"_key] = new_val;
-      s.emit_event(
-          node.as<key_t>(dynamic::CLASS), "changed"_key, std::move(payload));
+      s.emit_event(node_id(node), "changed"_key, std::move(payload));
     }
   }
 }
