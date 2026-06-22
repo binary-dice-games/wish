@@ -92,13 +92,17 @@ class calc_client : public wish::client {
  public:
   calc_client(memory_client_transport t,
               wish::sdl3_renderer* renderer,
-              bool verbose = false)
-      : wish::client(std::move(t)), renderer_(renderer), verbose_(verbose) {}
+              bool verbose = false,
+              std::string theme = "dark")
+      : wish::client(std::move(t)),
+        renderer_(renderer),
+        verbose_(verbose),
+        theme_(std::move(theme)) {}
 
  protected:
   void on_session() override {
-    vlog("applying light theme");
-    set_style_preset("light").get();
+    vlog("applying " + theme_ + " theme");
+    set_style_preset(theme_).get();
     {
       dynamic overrides;
       overrides["window_rounding"_key]          = 6.0f;
@@ -257,6 +261,7 @@ class calc_client : public wish::client {
 
   wish::sdl3_renderer* renderer_;
   bool verbose_;
+  std::string theme_;
 
   // Calculator state
   std::string display_    = "0";
@@ -269,9 +274,19 @@ class calc_client : public wish::client {
 
 int main(int argc, char* argv[]) {
   bool verbose = false;
+  std::string theme = "dark";
   for (int i = 1; i < argc; ++i) {
     std::string arg(argv[i]);
-    if (arg == "--verbose" || arg == "-v") verbose = true;
+    if (arg == "--verbose" || arg == "-v") {
+      verbose = true;
+    } else if ((arg == "--theme" || arg == "-t") && i + 1 < argc) {
+      theme = argv[++i];
+      if (theme != "dark" && theme != "light" && theme != "classic") {
+        std::cerr << "Unknown theme '" << theme
+                  << "'. Valid values: dark, light, classic\n";
+        return 1;
+      }
+    }
   }
 
   if (verbose) std::clog << "[calc] starting\n";
@@ -287,7 +302,7 @@ int main(int argc, char* argv[]) {
   if (verbose) std::clog << "[calc] server started — connecting client\n";
 
   // run() blocks in on_session() until should_quit() goes true (window closed).
-  calc_client client{transport.connect(), rptr, verbose};
+  calc_client client{transport.connect(), rptr, verbose, theme};
   client.run();
 
   if (verbose) std::clog << "[calc] client done — stopping server\n";
