@@ -31,6 +31,19 @@ file_service::file_service(dynamic&& base,
         return result;
       }});
   addMethod(
+      "list"_key,
+      bison::method{[this](dynamic& /*self*/, const dynamic& /*p*/) -> dynamic {
+        dynamic result;
+        std::size_t idx = 0;
+        std::error_code ec;
+        for (const auto& entry :
+             std::filesystem::directory_iterator(resource_dir_, ec)) {
+          if (entry.is_regular_file())
+            result[idx++] = entry.path().filename().string();
+        }
+        return result;
+      }});
+  addMethod(
       "erase"_key,
       bison::method{[this](dynamic& /*self*/, const dynamic& p) -> dynamic {
         erase(p.as<std::string>("name"_key));
