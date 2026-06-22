@@ -11,7 +11,7 @@ namespace bdg::wish {
 
 using namespace bdg::bison;
 
-// â”€â”€ file_service â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// —— file_service —————————————————————————————————————————————————————————
 
 file_service::file_service(dynamic&& base,
                                      std::filesystem::path resource_dir)
@@ -122,7 +122,7 @@ void file_service::erase(const std::string& name) {
   }
 }
 
-// â”€â”€ register_file_service â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// —— register_file_service ————————————————————————————————————————————————————
 
 void register_file_service() {
   auto proto = dynamic_ptr{"__WishFileSystem"_key, {}};
