@@ -33,7 +33,13 @@ if(WISH_ENABLE_IMGUI)
     GIT_TAG        v0.16
     GIT_SHALLOW    TRUE
   )
-  FetchContent_MakeAvailable(imgui implot)
+  FetchContent_Declare(
+    implot3d
+    GIT_REPOSITORY https://github.com/brenocq/implot3d.git
+    GIT_TAG        v0.4
+    GIT_SHALLOW    TRUE
+  )
+  FetchContent_MakeAvailable(imgui implot implot3d)
 
   add_library(imgui_core STATIC
     ${imgui_SOURCE_DIR}/imgui.cpp
@@ -42,8 +48,15 @@ if(WISH_ENABLE_IMGUI)
     ${imgui_SOURCE_DIR}/imgui_widgets.cpp
     ${implot_SOURCE_DIR}/implot.cpp
     ${implot_SOURCE_DIR}/implot_items.cpp
+    ${implot3d_SOURCE_DIR}/implot3d.cpp
+    ${implot3d_SOURCE_DIR}/implot3d_items.cpp
+    ${implot3d_SOURCE_DIR}/implot3d_meshes.cpp
   )
-  target_include_directories(imgui_core PUBLIC ${imgui_SOURCE_DIR} ${implot_SOURCE_DIR})
+  target_include_directories(imgui_core PUBLIC
+    ${imgui_SOURCE_DIR}
+    ${implot_SOURCE_DIR}
+    ${implot3d_SOURCE_DIR}
+  )
   set_target_properties(imgui_core PROPERTIES FOLDER extern)
 endif()
 
@@ -114,6 +127,11 @@ add_library(wish STATIC
   src/plot_elements/plot_heatmap.cpp
   src/plot_elements/plot_pie.cpp
   src/plot_elements/plot_annotations.cpp
+  src/plot3d_elements/plot3d.cpp
+  src/plot3d_elements/plot3d_series.cpp
+  src/plot3d_elements/plot3d_surface.cpp
+  src/plot3d_elements/plot3d_mesh.cpp
+  src/plot3d_elements/plot3d_annotations.cpp
 )
 
 if(WISH_ENABLE_IMGUI)
@@ -122,6 +140,8 @@ if(WISH_ENABLE_IMGUI)
     src/imgui_renderer.cpp
     src/imgui_plot_renderer.hpp
     src/imgui_plot_renderer.cpp
+    src/imgui_plot3d_renderer.hpp
+    src/imgui_plot3d_renderer.cpp
   )
   target_compile_definitions(wish PUBLIC WISH_IMGUI_ENABLED)
   # PUBLIC so that consumers who include imgui_renderer.hpp have imgui in path.

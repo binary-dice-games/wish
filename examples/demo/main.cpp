@@ -332,6 +332,74 @@ static constexpr const char* kDemoDesc = R"json({
 
           }
         }
+      )json"
+      R"json(,
+
+        "tab_plot3d": { "type": "TabItem", "label": "3-D Plots",
+          "children": {
+
+            "ch3_line": { "type": "CollapsingHeader", "label": "Line & Scatter",
+              "children": {
+                "plt3_ls": { "type": "Plot3D", "title": "Helix & Sphere",
+                             "height": 300.0,
+                             "x_label": "X", "y_label": "Y", "z_label": "Z",
+                  "children": {
+                    "p3_helix":  { "type": "Plot3DLine",    "label": "Helix"            },
+                    "p3_sphere": { "type": "Plot3DScatter", "label": "Fibonacci sphere" }
+                  }
+                }
+              }
+            },
+
+            "ch3_surf": { "type": "CollapsingHeader", "label": "Surface",
+              "children": {
+                "plt3_surf": { "type": "Plot3D", "title": "Sinc Surface",
+                               "height": 300.0,
+                               "x_label": "X", "y_label": "Y", "z_label": "Z",
+                  "children": {
+                    "p3_sinc": { "type": "Plot3DSurface", "label": "sinc(r)",
+                                 "x_count": 25, "y_count": 25,
+                                 "scale_min": -0.25, "scale_max": 1.0 }
+                  }
+                }
+              }
+            },
+
+            "ch3_mesh": { "type": "CollapsingHeader", "label": "Triangle, Quad & Mesh",
+              "children": {
+                "plt3_shapes": { "type": "Plot3D", "title": "3-D Shapes",
+                                 "height": 320.0,
+                  "children": {
+                    "p3_tetra": { "type": "Plot3DTriangle", "label": "Tetrahedron" },
+                    "p3_cube":  { "type": "Plot3DQuad",     "label": "Cube"        },
+                    "p3_octa":  { "type": "Plot3DMesh",     "label": "Octahedron"  }
+                  }
+                }
+              }
+            },
+
+            "ch3_text": { "type": "CollapsingHeader", "label": "Text Annotation",
+              "children": {
+                "plt3_text": { "type": "Plot3D", "title": "Axis Labels",
+                               "height": 260.0,
+                               "x_label": "X", "y_label": "Y", "z_label": "Z",
+                  "children": {
+                    "p3_axpts": { "type": "Plot3DScatter", "label": "Axis tips"    },
+                    "p3_txt0":  { "type": "Plot3DText", "text": "Origin",
+                                  "x": 0.0, "y": 0.0, "z": 0.0 },
+                    "p3_txtx":  { "type": "Plot3DText", "text": "+X",
+                                  "x": 1.0, "y": 0.0, "z": 0.0 },
+                    "p3_txty":  { "type": "Plot3DText", "text": "+Y",
+                                  "x": 0.0, "y": 1.0, "z": 0.0 },
+                    "p3_txtz":  { "type": "Plot3DText", "text": "+Z",
+                                  "x": 0.0, "y": 0.0, "z": 1.0 }
+                  }
+                }
+              }
+            }
+
+          }
+        }
 
       }
     },
@@ -529,6 +597,126 @@ class demo_client : public wish::client {
       dynamic dh;
       dh["values"_key] = std::vector<float>{0.0f};
       pm.at("tabs_root.tab_plots.ch_annot.plt_annot.an_href").set(std::move(dh));
+    }
+
+    // ── Plot3D data ───────────────────────────────────────────────────────
+
+    // A: Helix line + Fibonacci sphere scatter.
+    {
+      constexpr int kHL = 100;
+      std::vector<float> hx(kHL), hy(kHL), hz(kHL);
+      for (int i = 0; i < kHL; ++i) {
+        float t = 4.0f * k2pi * float(i) / float(kHL - 1);
+        hx[i] = std::cos(t); hy[i] = std::sin(t);
+        hz[i] = t / (4.0f * k2pi);
+      }
+      {
+        dynamic d; d["xs"_key] = hx; d["ys"_key] = hy; d["zs"_key] = hz;
+        pm.at("tabs_root.tab_plot3d.ch3_line.plt3_ls.p3_helix").set(std::move(d));
+      }
+
+      constexpr int kFib = 60;
+      const float kGolden = k2pi * (1.0f - 0.618033988f);
+      std::vector<float> spx(kFib), spy(kFib), spz(kFib);
+      for (int i = 0; i < kFib; ++i) {
+        float inc = std::acos(1.0f - 2.0f * float(i) / float(kFib));
+        float az  = kGolden * float(i);
+        spx[i] = std::sin(inc) * std::cos(az);
+        spy[i] = std::sin(inc) * std::sin(az);
+        spz[i] = std::cos(inc);
+      }
+      {
+        dynamic d; d["xs"_key] = spx; d["ys"_key] = spy; d["zs"_key] = spz;
+        pm.at("tabs_root.tab_plot3d.ch3_line.plt3_ls.p3_sphere").set(std::move(d));
+      }
+    }
+
+    // B: Sinc surface on 25×25 grid.
+    {
+      constexpr int kNS = 25;
+      std::vector<float> sx(kNS*kNS), sy(kNS*kNS), sz(kNS*kNS);
+      for (int i = 0; i < kNS; ++i) {
+        for (int j = 0; j < kNS; ++j) {
+          float x = -4.0f + 8.0f * float(j) / float(kNS - 1);
+          float y = -4.0f + 8.0f * float(i) / float(kNS - 1);
+          float r = std::sqrt(x*x + y*y) + 1e-6f;
+          sx[i*kNS+j] = x;
+          sy[i*kNS+j] = y;
+          sz[i*kNS+j] = std::sin(r) / r;
+        }
+      }
+      dynamic d; d["xs"_key] = sx; d["ys"_key] = sy; d["zs"_key] = sz;
+      pm.at("tabs_root.tab_plot3d.ch3_surf.plt3_surf.p3_sinc").set(std::move(d));
+    }
+
+    // C: 3-D shapes — tetrahedron (triangles), cube (quads), octahedron (mesh).
+    // Each shape is offset along X so they don't overlap in the shared plot.
+    {
+      // Tetrahedron — 4 faces × 3 vertices, offset to x−3.
+      const float tv[4][3] = {{1,1,1},{1,-1,-1},{-1,1,-1},{-1,-1,1}};
+      const int   tf[4][3] = {{0,1,2},{0,3,1},{0,2,3},{1,3,2}};
+      std::vector<float> tri_xs, tri_ys, tri_zs;
+      for (auto& f : tf)
+        for (int v : f) {
+          tri_xs.push_back(tv[v][0] * 0.8f - 3.0f);
+          tri_ys.push_back(tv[v][1] * 0.8f);
+          tri_zs.push_back(tv[v][2] * 0.8f);
+        }
+      {
+        dynamic d; d["xs"_key]=tri_xs; d["ys"_key]=tri_ys; d["zs"_key]=tri_zs;
+        pm.at("tabs_root.tab_plot3d.ch3_mesh.plt3_shapes.p3_tetra").set(std::move(d));
+      }
+
+      // Cube — 6 faces × 4 vertices, centered at origin.
+      const float cv[8][3] = {
+        {-1,-1,-1},{1,-1,-1},{1,1,-1},{-1,1,-1},
+        {-1,-1, 1},{1,-1, 1},{1,1, 1},{-1,1, 1}};
+      const int qf[6][4] = {
+        {0,1,2,3},{7,6,5,4},{0,4,5,1},
+        {1,5,6,2},{2,6,7,3},{3,7,4,0}};
+      std::vector<float> quad_xs, quad_ys, quad_zs;
+      for (auto& f : qf)
+        for (int v : f) {
+          quad_xs.push_back(cv[v][0] * 0.8f);
+          quad_ys.push_back(cv[v][1] * 0.8f);
+          quad_zs.push_back(cv[v][2] * 0.8f);
+        }
+      {
+        dynamic d; d["xs"_key]=quad_xs; d["ys"_key]=quad_ys; d["zs"_key]=quad_zs;
+        pm.at("tabs_root.tab_plot3d.ch3_mesh.plt3_shapes.p3_cube").set(std::move(d));
+      }
+
+      // Octahedron — 6 vertices, 8 triangular faces, offset to x+3.
+      const float ov[6][3] = {
+        { 0, 0, 1},{1, 0, 0},{0, 1, 0},
+        {-1, 0, 0},{0,-1, 0},{0, 0,-1}};
+      const int oi[8][3] = {
+        {0,1,2},{0,2,3},{0,3,4},{0,4,1},
+        {5,2,1},{5,3,2},{5,4,3},{5,1,4}};
+      std::vector<float> mxs, mys, mzs;
+      std::vector<int32_t> midxs;
+      for (int v = 0; v < 6; ++v) {
+        mxs.push_back(ov[v][0] * 0.8f + 3.0f);
+        mys.push_back(ov[v][1] * 0.8f);
+        mzs.push_back(ov[v][2] * 0.8f);
+      }
+      for (auto& f : oi)
+        for (int v : f) midxs.push_back(int32_t(v));
+      {
+        dynamic d;
+        d["xs"_key]=mxs; d["ys"_key]=mys; d["zs"_key]=mzs;
+        d["indices"_key] = midxs;
+        pm.at("tabs_root.tab_plot3d.ch3_mesh.plt3_shapes.p3_octa").set(std::move(d));
+      }
+    }
+
+    // D: Text annotation — scatter at axis tips (origin + unit X/Y/Z).
+    {
+      dynamic d;
+      d["xs"_key] = std::vector<float>{0.0f, 1.0f, 0.0f, 0.0f};
+      d["ys"_key] = std::vector<float>{0.0f, 0.0f, 1.0f, 0.0f};
+      d["zs"_key] = std::vector<float>{0.0f, 0.0f, 0.0f, 1.0f};
+      pm.at("tabs_root.tab_plot3d.ch3_text.plt3_text.p3_axpts").set(std::move(d));
     }
 
     // ── Basics tab: buttons, checkboxes, radio ────────────────────────────
@@ -759,11 +947,12 @@ class demo_client : public wish::client {
         "tabs_root.tab_selection",
         "tabs_root.tab_tree",
         "tabs_root.tab_misc",
-        "tabs_root.tab_plots"};
+        "tabs_root.tab_plots",
+        "tabs_root.tab_plot3d"};
     static const char* kTabLabels[] = {
         "Basics", "Sliders & Drags", "Text & Numbers",
-        "Selection", "Tree & Collapse", "Misc", "Plots"};
-    for (int i = 0; i < 7; ++i) {
+        "Selection", "Tree & Collapse", "Misc", "Plots", "3-D Plots"};
+    for (int i = 0; i < 8; ++i) {
       pm.at(kTabNames[i]).onEvent("selected"_key,
           [i, status](dynamic) {
             status(std::string("Tab selected: ") + kTabLabels[i]);

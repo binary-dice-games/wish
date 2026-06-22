@@ -12,6 +12,7 @@
 #include <imgui.h>
 
 #include "imgui_plot_renderer.hpp"
+#include "imgui_plot3d_renderer.hpp"
 
 #include <functional>
 #include <string>
@@ -521,6 +522,15 @@ static const std::unordered_map<bison::hash_t, render_fn>& render_dispatch() {
     {"PlotPieChart"_key.id,     render_plot_pie_chart   },
     {"PlotText"_key.id,         render_plot_text        },
     {"PlotInfLines"_key.id,     render_plot_inf_lines   },
+    // 3-D plot elements (require ImPlot3D context — must be inside a Plot3D)
+    {"Plot3D"_key.id,           render_plot3d           },
+    {"Plot3DLine"_key.id,       render_plot3d_line      },
+    {"Plot3DScatter"_key.id,    render_plot3d_scatter   },
+    {"Plot3DSurface"_key.id,    render_plot3d_surface   },
+    {"Plot3DTriangle"_key.id,   render_plot3d_triangle  },
+    {"Plot3DQuad"_key.id,       render_plot3d_quad      },
+    {"Plot3DMesh"_key.id,       render_plot3d_mesh      },
+    {"Plot3DText"_key.id,       render_plot3d_text      },
   };
   return tbl;
 }
