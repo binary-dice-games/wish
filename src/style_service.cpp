@@ -51,6 +51,7 @@ style_service::style_service(bison::dynamic&& base)
 
 void style_service::set_fields(const bison::dynamic& params) {
   merge_fields(params, style_);
+  dirty_.store(true, std::memory_order_release);
 }
 
 bison::dynamic style_service::get_fields() const {
@@ -69,6 +70,7 @@ void style_service::set_preset(const std::string& name) {
   // The renderer applies ImGui::StyleColors<Preset>() on the render thread.
   style_ = bison::dynamic{};
   style_["preset"_key] = name;
+  dirty_.store(true, std::memory_order_release);
 }
 
 // ── registration ──────────────────────────────────────────────────────────────

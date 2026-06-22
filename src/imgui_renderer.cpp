@@ -350,11 +350,20 @@ void imgui_renderer::render_session(const ui_element& root, session& s) {
     render_node(root, s);
     return;
   }
-  // RAII guard: save the global ImGuiStyle, apply the session's style, render,
-  // then restore — so each session gets an independent theme without persisting
-  // into the next session's render pass (or into the next frame's default state).
+
+  // Recompile the bison field map into an ImGuiStyle only when the client
+  // has changed the style since the last compiled cache.
+  if (s.style_service->is_dirty()) {
+    auto compiled = std::make_shared<ImGuiStyle>();
+    apply_style_fields(s.style_service->current_style(), *compiled);
+    s.style_service->set_renderer_cache(compiled);
+  }
+
+  // RAII guard: swap in the cached style, render, restore.
+  const ImGuiStyle& compiled =
+      *std::static_pointer_cast<ImGuiStyle>(s.style_service->renderer_cache());
   ImGuiStyle saved = ImGui::GetStyle();
-  apply_style_fields(s.style_service->current_style(), ImGui::GetStyle());
+  ImGui::GetStyle() = compiled;
   try {
     render_node(root, s);
   } catch (...) {

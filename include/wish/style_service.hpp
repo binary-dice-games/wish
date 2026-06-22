@@ -6,6 +6,7 @@
 #include "src/bison/bison_object.hpp"
 #include "src/bison/bison_common.hpp"
 
+#include <atomic>
 #include <memory>
 #include <string>
 
@@ -81,14 +82,33 @@ class style_service : public bison::dynamic {
   void set_preset(const std::string& name);
 
   /// @brief Read-only view of the current style field map.
-  ///
-  /// Called by the renderer (on the render thread) before drawing each
-  /// session's element tree.  Never call from a bison worker thread while
-  /// the field map might be written concurrently.
   const bison::dynamic& current_style() const { return style_; }
+
+  // ── Renderer cache (render-thread only) ────────────────────────────────────
+
+  /// @brief True when the field map has changed since the last compiled cache.
+  ///
+  /// The render thread checks this flag before each session draw.  When true
+  /// it recompiles the bison fields into a backend-specific representation and
+  /// calls `set_renderer_cache` to store it and clear the flag.
+  bool is_dirty() const noexcept {
+    return dirty_.load(std::memory_order_acquire);
+  }
+
+  /// @brief Opaque compiled-style slot, written and read only on the render thread.
+  const std::shared_ptr<void>& renderer_cache() const { return renderer_cache_; }
+
+  /// @brief Store a compiled cache and clear the dirty flag.
+  /// @param c  Renderer-specific compiled representation (e.g. a heap ImGuiStyle).
+  void set_renderer_cache(std::shared_ptr<void> c) {
+    renderer_cache_ = std::move(c);
+    dirty_.store(false, std::memory_order_release);
+  }
 
  private:
   bison::dynamic style_;
+  std::atomic<bool> dirty_{true};
+  std::shared_ptr<void> renderer_cache_;
 };
 
 /// @brief Register `"__WishStyle"` in the `"wish"` bison class namespace.
