@@ -3,6 +3,7 @@
 /// @brief Implementation of wish::server.
 #include <wish/server.hpp>
 #include <wish/file_service.hpp>
+#include <wish/style_service.hpp>
 #include <wish/registry.hpp>
 
 #include "template_handler.hpp"
@@ -51,6 +52,8 @@ void server::on_session_created(bison::rmi::context& ctx) {
   sess->file_service = std::make_shared<file_service>(
       bison::dynamic::instantiate(bison::key_t{"wish"}, bison::key_t{"__WishFileSystem"}),
       sess->resource_dir);
+  sess->style_service = std::make_shared<style_service>(
+      bison::dynamic::instantiate(bison::key_t{"wish"}, bison::key_t{"__WishStyle"}));
   sessions_.wlock()->emplace(ctx.session_id.id, sess);
   on_session_created(*sess);
 }
@@ -92,6 +95,11 @@ bison::dynamic_ptr server::on_create_object(
     return dynamic_ptr{std::static_pointer_cast<dynamic>(sess->file_service)};
   }
 
+  // __WishStyle is a per-session singleton — return the pre-created instance.
+  if (klass == "__WishStyle"_key && sess && sess->style_service) {
+    return dynamic_ptr{std::static_pointer_cast<dynamic>(sess->style_service)};
+  }
+
   // For all other classes, bison creates the concrete type from the registered
   // prototype.  Inject session context into template_handler instances.
   auto obj = bison::rmi::server::on_create_object(ctx, ns, klass);
@@ -113,7 +121,7 @@ void server::render_loop() {
         for (const auto& [id, sess] : *lp) {
           auto it = sess->objects.find("");
           if (it != sess->objects.end()) {
-            renderer_->render_node(*it->second, *sess);
+            renderer_->render_session(*it->second, *sess);
           }
         }
       }

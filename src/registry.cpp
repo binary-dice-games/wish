@@ -2,6 +2,7 @@
 /// @file registry.cpp
 #include <wish/registry.hpp>
 #include <wish/file_service.hpp>
+#include <wish/style_service.hpp>
 
 #include "template_handler.hpp"
 #include "ui_elements.hpp"
@@ -23,6 +24,7 @@ void register_all() {
   // Protocol handler classes.
   register_template_handler();
   register_file_service();
+  register_style_service();
 }
 
 }  // namespace bdg::wish

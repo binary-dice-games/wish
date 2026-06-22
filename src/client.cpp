@@ -26,12 +26,14 @@ void client::run() {
 
 void client::on_connect() {
   template_proxy_ = instantiate("wish"_key, "__WishTemplate"_key).get();
-  fs_proxy_ = instantiate("wish"_key, "__WishFileSystem"_key).get();
+  fs_proxy_       = instantiate("wish"_key, "__WishFileSystem"_key).get();
+  style_proxy_    = instantiate("wish"_key, "__WishStyle"_key).get();
 }
 
 void client::on_disconnect() {
   template_proxy_.reset();
   fs_proxy_.reset();
+  style_proxy_.reset();
 }
 
 // ── Helper: build proxy_map from an indexed apply_descriptor result ───────────
@@ -89,6 +91,27 @@ std::future<std::string> client::download_file(const std::string& name) {
     args["name"_key] = name;
     auto result = fs_proxy_->call("download"_key, std::move(args)).get();
     return result.as<std::string>("result"_key);
+  });
+}
+
+std::future<void> client::set_style_preset(const std::string& name) {
+  return std::async(std::launch::async, [this, name]() {
+    dynamic args;
+    args["name"_key] = name;
+    style_proxy_->call("preset"_key, std::move(args)).get();
+  });
+}
+
+std::future<void> client::set_style(bison::dynamic params) {
+  return std::async(std::launch::async,
+      [this, p = std::move(params)]() mutable {
+    style_proxy_->call("set"_key, std::move(p)).get();
+  });
+}
+
+std::future<bison::dynamic> client::get_style() {
+  return std::async(std::launch::async, [this]() -> dynamic {
+    return style_proxy_->call("get"_key, dynamic{}).get();
   });
 }
 

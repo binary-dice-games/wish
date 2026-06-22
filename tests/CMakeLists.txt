@@ -35,4 +35,5 @@ wish_add_test(test_integration    test_integration.cpp)
 
 if(WISH_ENABLE_IMGUI)
   wish_add_test(test_imgui_renderer test_imgui_renderer.cpp)
+  wish_add_test(test_style_service  test_style_service.cpp)
 endif()

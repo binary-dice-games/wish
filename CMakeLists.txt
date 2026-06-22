@@ -66,6 +66,7 @@ add_library(wish STATIC
   include/wish/session.hpp
   include/wish/renderer.hpp
   include/wish/file_service.hpp
+  include/wish/style_service.hpp
   include/wish/server.hpp
   include/wish/client.hpp
   src/wish.cpp
@@ -75,6 +76,7 @@ add_library(wish STATIC
   src/session.cpp
   src/renderer.cpp
   src/file_service.cpp
+  src/style_service.cpp
   src/server.cpp
   src/client.cpp
   src/template_handler.cpp

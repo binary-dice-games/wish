@@ -19,6 +19,9 @@ namespace bdg::wish {
 class file_service;
 using file_service_ptr = std::shared_ptr<file_service>;
 
+class style_service;
+using style_service_ptr = std::shared_ptr<style_service>;
+
 /// @brief Holds all mutable state owned by one connected client.
 ///
 /// Constructed when a client connects; destroyed (and `resource_dir` deleted)
@@ -46,6 +49,10 @@ struct session {
 
   /// File service instance; populated by `register_file_service(session&)`.
   file_service_ptr file_service;
+
+  /// Style service instance; holds the client-configured ImGui theme fields.
+  /// Read by the renderer before drawing this session's element tree.
+  style_service_ptr style_service;
 
   /// @brief Callback for emitting asynchronous events to the connected client.
   ///

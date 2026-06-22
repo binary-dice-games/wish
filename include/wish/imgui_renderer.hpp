@@ -39,6 +39,16 @@ class imgui_renderer : public renderer {
   ///        children where required.
   void render_node(const ui_element& node, session& s) override;
 
+  /**
+   * @brief Render a session's element tree with per-session style isolation.
+   *
+   * Saves the global ImGuiStyle, applies the session's style (from
+   * `s.style_service`), renders via `render_node`, then restores the
+   * original style — even if rendering throws.  When no style is configured
+   * for the session, delegates directly to `render_node`.
+   */
+  void render_session(const ui_element& root, session& s) override;
+
   /// @brief Ends the ImGui frame (`ImGui::EndFrame`).
   void end_frame() override;
 

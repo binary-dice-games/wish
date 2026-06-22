@@ -4,12 +4,15 @@
 #include <wish/imgui_renderer.hpp>
 #include <wish/renderer.hpp>
 #include <wish/session.hpp>
+#include <wish/style_service.hpp>
 
 #include "src/bison/bison_object.hpp"
 #include "src/bison/bison_common.hpp"
 
 #include <imgui.h>
 
+#include <stdexcept>
+#include <string>
 #include <vector>
 
 namespace bdg::wish {
@@ -189,6 +192,121 @@ static void render_image(
   ImGui::Image(tex, ImVec2(float(w), float(h)));
 }
 
+// ── Per-session style helpers ─────────────────────────────────────────────────
+
+// Parse "#RRGGBBAA" or "#RRGGBB" hex color string into an ImVec4.
+static ImVec4 parse_hex_color(const std::string& s) {
+  if (s.size() < 7 || s[0] != '#') return ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+  try {
+    std::string hex = s.substr(1);
+    if (hex.size() == 6) hex += "FF";
+    if (hex.size() != 8) return ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+    unsigned long val = std::stoul(hex, nullptr, 16);
+    return ImVec4(
+        static_cast<float>((val >> 24) & 0xFF) / 255.0f,
+        static_cast<float>((val >> 16) & 0xFF) / 255.0f,
+        static_cast<float>((val >>  8) & 0xFF) / 255.0f,
+        static_cast<float>((val      ) & 0xFF) / 255.0f);
+  } catch (...) {
+    return ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+  }
+}
+
+// Apply all fields from sd into style.
+static void apply_style_fields(const bison::dynamic& sd, ImGuiStyle& style) {
+  // Apply named preset first so per-field overrides can refine it.
+  const auto* preset_f = sd.findField("preset"_key);
+  if (preset_f && preset_f->is<std::string>()) {
+    const std::string& p = preset_f->as<std::string>();
+    if      (p == "dark")    ImGui::StyleColorsDark(&style);
+    else if (p == "light")   ImGui::StyleColorsLight(&style);
+    else if (p == "classic") ImGui::StyleColorsClassic(&style);
+  }
+
+  // Scalar float overrides.
+  auto fset = [&](key_t k, float& target) {
+    const auto* f = sd.findField(k);
+    if (f && f->is<float>()) target = f->as<float>();
+  };
+  fset("alpha"_key,                    style.Alpha);
+  fset("disabled_alpha"_key,           style.DisabledAlpha);
+  fset("window_rounding"_key,          style.WindowRounding);
+  fset("window_border_size"_key,       style.WindowBorderSize);
+  fset("child_rounding"_key,           style.ChildRounding);
+  fset("child_border_size"_key,        style.ChildBorderSize);
+  fset("popup_rounding"_key,           style.PopupRounding);
+  fset("popup_border_size"_key,        style.PopupBorderSize);
+  fset("frame_rounding"_key,           style.FrameRounding);
+  fset("frame_border_size"_key,        style.FrameBorderSize);
+  fset("indent_spacing"_key,           style.IndentSpacing);
+  fset("scrollbar_size"_key,           style.ScrollbarSize);
+  fset("scrollbar_rounding"_key,       style.ScrollbarRounding);
+  fset("grab_min_size"_key,            style.GrabMinSize);
+  fset("grab_rounding"_key,            style.GrabRounding);
+  fset("tab_rounding"_key,             style.TabRounding);
+  fset("tab_border_size"_key,          style.TabBorderSize);
+  fset("separator_text_border_size"_key, style.SeparatorTextBorderSize);
+
+  // Vec2 overrides (stored as _x / _y float pairs).
+  fset("window_padding_x"_key,       style.WindowPadding.x);
+  fset("window_padding_y"_key,       style.WindowPadding.y);
+  fset("frame_padding_x"_key,        style.FramePadding.x);
+  fset("frame_padding_y"_key,        style.FramePadding.y);
+  fset("item_spacing_x"_key,         style.ItemSpacing.x);
+  fset("item_spacing_y"_key,         style.ItemSpacing.y);
+  fset("item_inner_spacing_x"_key,   style.ItemInnerSpacing.x);
+  fset("item_inner_spacing_y"_key,   style.ItemInnerSpacing.y);
+  fset("cell_padding_x"_key,         style.CellPadding.x);
+  fset("cell_padding_y"_key,         style.CellPadding.y);
+  fset("button_text_align_x"_key,    style.ButtonTextAlign.x);
+  fset("button_text_align_y"_key,    style.ButtonTextAlign.y);
+
+  // Color overrides (#RRGGBBAA hex strings).
+  auto cset = [&](key_t k, ImVec4& target) {
+    const auto* f = sd.findField(k);
+    if (f && f->is<std::string>()) target = parse_hex_color(f->as<std::string>());
+  };
+  cset("color_text"_key,                   style.Colors[ImGuiCol_Text]);
+  cset("color_text_disabled"_key,          style.Colors[ImGuiCol_TextDisabled]);
+  cset("color_window_bg"_key,              style.Colors[ImGuiCol_WindowBg]);
+  cset("color_child_bg"_key,               style.Colors[ImGuiCol_ChildBg]);
+  cset("color_popup_bg"_key,               style.Colors[ImGuiCol_PopupBg]);
+  cset("color_border"_key,                 style.Colors[ImGuiCol_Border]);
+  cset("color_border_shadow"_key,          style.Colors[ImGuiCol_BorderShadow]);
+  cset("color_frame_bg"_key,               style.Colors[ImGuiCol_FrameBg]);
+  cset("color_frame_bg_hovered"_key,       style.Colors[ImGuiCol_FrameBgHovered]);
+  cset("color_frame_bg_active"_key,        style.Colors[ImGuiCol_FrameBgActive]);
+  cset("color_title_bg"_key,               style.Colors[ImGuiCol_TitleBg]);
+  cset("color_title_bg_active"_key,        style.Colors[ImGuiCol_TitleBgActive]);
+  cset("color_title_bg_collapsed"_key,     style.Colors[ImGuiCol_TitleBgCollapsed]);
+  cset("color_menu_bar_bg"_key,            style.Colors[ImGuiCol_MenuBarBg]);
+  cset("color_scrollbar_bg"_key,           style.Colors[ImGuiCol_ScrollbarBg]);
+  cset("color_scrollbar_grab"_key,         style.Colors[ImGuiCol_ScrollbarGrab]);
+  cset("color_scrollbar_grab_hovered"_key, style.Colors[ImGuiCol_ScrollbarGrabHovered]);
+  cset("color_scrollbar_grab_active"_key,  style.Colors[ImGuiCol_ScrollbarGrabActive]);
+  cset("color_check_mark"_key,             style.Colors[ImGuiCol_CheckMark]);
+  cset("color_slider_grab"_key,            style.Colors[ImGuiCol_SliderGrab]);
+  cset("color_slider_grab_active"_key,     style.Colors[ImGuiCol_SliderGrabActive]);
+  cset("color_button"_key,                 style.Colors[ImGuiCol_Button]);
+  cset("color_button_hovered"_key,         style.Colors[ImGuiCol_ButtonHovered]);
+  cset("color_button_active"_key,          style.Colors[ImGuiCol_ButtonActive]);
+  cset("color_header"_key,                 style.Colors[ImGuiCol_Header]);
+  cset("color_header_hovered"_key,         style.Colors[ImGuiCol_HeaderHovered]);
+  cset("color_header_active"_key,          style.Colors[ImGuiCol_HeaderActive]);
+  cset("color_separator"_key,              style.Colors[ImGuiCol_Separator]);
+  cset("color_separator_hovered"_key,      style.Colors[ImGuiCol_SeparatorHovered]);
+  cset("color_separator_active"_key,       style.Colors[ImGuiCol_SeparatorActive]);
+  cset("color_resize_grip"_key,            style.Colors[ImGuiCol_ResizeGrip]);
+  cset("color_resize_grip_hovered"_key,    style.Colors[ImGuiCol_ResizeGripHovered]);
+  cset("color_resize_grip_active"_key,     style.Colors[ImGuiCol_ResizeGripActive]);
+  cset("color_plot_lines"_key,             style.Colors[ImGuiCol_PlotLines]);
+  cset("color_plot_lines_hovered"_key,     style.Colors[ImGuiCol_PlotLinesHovered]);
+  cset("color_plot_histogram"_key,         style.Colors[ImGuiCol_PlotHistogram]);
+  cset("color_plot_histogram_hovered"_key, style.Colors[ImGuiCol_PlotHistogramHovered]);
+  cset("color_text_selected_bg"_key,       style.Colors[ImGuiCol_TextSelectedBg]);
+  cset("color_modal_window_dim_bg"_key,    style.Colors[ImGuiCol_ModalWindowDimBg]);
+}
+
 // ── imgui_renderer ────────────────────────────────────────────────────────────
 
 void imgui_renderer::begin_frame() {
@@ -225,6 +343,25 @@ void imgui_renderer::render_node(const ui_element& node, session& s) {
     ImGui::TextDisabled("[wish: unknown element]");
     render_children(*this, node, s);
   }
+}
+
+void imgui_renderer::render_session(const ui_element& root, session& s) {
+  if (!s.style_service) {
+    render_node(root, s);
+    return;
+  }
+  // RAII guard: save the global ImGuiStyle, apply the session's style, render,
+  // then restore — so each session gets an independent theme without persisting
+  // into the next session's render pass (or into the next frame's default state).
+  ImGuiStyle saved = ImGui::GetStyle();
+  apply_style_fields(s.style_service->current_style(), ImGui::GetStyle());
+  try {
+    render_node(root, s);
+  } catch (...) {
+    ImGui::GetStyle() = saved;
+    throw;
+  }
+  ImGui::GetStyle() = saved;
 }
 
 ImTextureID imgui_renderer::get_or_load_texture(

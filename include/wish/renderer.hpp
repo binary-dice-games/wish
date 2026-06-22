@@ -49,6 +49,22 @@ class renderer {
   virtual void begin_frame() = 0;
 
   /**
+   * @brief Render one session's complete element tree.
+   *
+   * The default implementation calls `render_node(root, s)` directly.
+   * Backends that support per-session styling (e.g. imgui_renderer) override
+   * this to apply a session-scoped visual style around the render call using
+   * a RAII guard, so each session can have an independent theme without
+   * polluting the global renderer state.
+   *
+   * @param root  Root element of the session's object tree.
+   * @param s     Active session (style, events, resources).
+   */
+  virtual void render_session(const ui_element& root, session& s) {
+    render_node(root, s);
+  }
+
+  /**
    * @brief Draw a single UI element.
    *
    * Implementations dispatch on `node.as<bison::key_t>(bison::dynamic::CLASS)`

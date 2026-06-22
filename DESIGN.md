@@ -11,7 +11,8 @@ The core transport, serialization, and remote-object protocol are entirely provi
 3. A **JSON/YAML importer** that parses a UI hierarchy descriptor and instantiates the full tree.
 4. A **template registry** for named, reusable UI blueprints.
 5. A **file service** for per-session sandboxed resource storage.
-6. Thin `wish::server` and `wish::client` base classes that wire bison transports to the above.
+6. A **style service** for per-session visual theme configuration.
+7. Thin `wish::server` and `wish::client` base classes that wire bison transports to the above.
 
 ---
 
@@ -22,7 +23,8 @@ The core transport, serialization, and remote-object protocol are entirely provi
 |      Client App         |  ------------------------------------------>+
 |  bdg::wish::client      |  <-- events (clicked, changed, ...)          |
 |  - register_template()  |  <-- file_service (upload / download)        |
-|  - upload_file()        |                                               |
+|  - upload_file()        |  <-- style_service (set/get/preset)          |
+|  - set_style_preset()   |                                               |
 +-------------------------+                                               |
                                                     +-----------------------+----------+
                                                     |  bdg::wish::server               |
@@ -32,10 +34,12 @@ The core transport, serialization, and remote-object protocol are entirely provi
                                                     |   - object tree                  |
                                                     |   - template registry            |
                                                     |   - resource folder              |
+                                                    |   - style_service (theme fields) |
                                                     |         |                        |
                                                     |  wish::renderer                  |
                                                     |   (abstract iface)               |
                                                     |    imgui_renderer (headless)     |
+                                                    |      render_session: RAII style  |
                                                     |    sdl3_renderer  (windowed)     |
                                                     +----------------------------------+
 ```
@@ -97,7 +101,7 @@ class renderer {
 public:
   virtual ~renderer() = default;
 
-  // Lifecycle — called from the render thread, not the constructor.
+  // Lifecycle -- called from the render thread, not the constructor.
   virtual void setup()             {}              // before first frame
   virtual void teardown()          {}              // after last frame
   virtual bool should_quit() const { return false; }
@@ -106,6 +110,13 @@ public:
   virtual void begin_frame() = 0;
   virtual void render_node(const ui_element& node, wish::session& s) = 0;
   virtual void end_frame()   = 0;
+
+  // Per-session entry point (default: delegates to render_node).
+  // Backends that support per-session style override this to apply a
+  // session-scoped visual theme around the render_node call.
+  virtual void render_session(const ui_element& root, wish::session& s) {
+    render_node(root, s);
+  }
 };
 ```
 
@@ -143,12 +154,13 @@ Per-client state, owned by the server, created on connect and destroyed on disco
 
 ```cpp
 struct session {
-  bison::key_t                                       id;           // assigned by bison RMI layer
-  wish::name_map                                     objects;      // live ui_element tree (name â†’ ptr)
-  std::unordered_map<bison::key_t, std::string, ...> templates;   // named UI blueprints (JSON/YAML)
-  std::filesystem::path                              resource_dir; // sandboxed folder
-  std::atomic<bool>                                  dirty{false}; // application-managed flag
-  file_service_ptr                                   file_service; // set by register_file_service()
+  bison::key_t                                       id;            // assigned by bison RMI layer
+  wish::name_map                                     objects;       // live ui_element tree (name -> ptr)
+  std::unordered_map<bison::key_t, std::string, ...> templates;    // named UI blueprints (JSON/YAML)
+  std::filesystem::path                              resource_dir;  // sandboxed folder
+  std::atomic<bool>                                  dirty{false};  // application-managed flag
+  file_service_ptr                                   file_service;  // per-session file sandbox
+  style_service_ptr                                  style_service; // per-session visual theme
 };
 ```
 
@@ -251,13 +263,34 @@ Path traversal is blocked: `name` is validated to contain no directory separator
 
 An `Image` element's `src` field is resolved relative to `session.resource_dir` by the renderer at draw time.
 
+### `bdg::wish::style_service`
+
+Registered in the `”wish”` bison namespace as `”__WishStyle”`. One instance is created per connected session in `server::on_session_created`; the session singleton is returned when the client calls `dynamic::instantiate(“wish”_key, “__WishStyle”_key)`.
+
+**RMI methods:**
+
+| Method   | Params                                      | Effect                                           |
+|----------|---------------------------------------------|--------------------------------------------------|
+| `set`    | flat dynamic (float / string fields)        | Merge style field overrides into the active style |
+| `get`    | --                                          | Return current style fields as a flat dynamic     |
+| `preset` | `”name”`: `”dark”` / `”light”` / `”classic”` | Reset to ImGui built-in preset, clear overrides |
+
+Scalar float field keys: `alpha`, `disabled_alpha`, `window_rounding`, `window_border_size`, `child_rounding`, `frame_rounding`, `scrollbar_rounding`, `grab_rounding`, `tab_rounding`, etc. Vec2 fields are stored as `_x` / `_y` float pairs (e.g. `item_spacing_x`, `item_spacing_y`). Color fields use `#RRGGBBAA` hex strings (e.g. `color_button`, `color_window_bg`).
+
+The `set` method **merges** into the existing style (partial update); `preset` **replaces** the entire style with a clean preset baseline.
+
+**Renderer integration:** `imgui_renderer::render_session` reads `session.style_service->current_style()`, applies it to `ImGui::GetStyle()` using a RAII style guard, calls `render_node`, then restores the original style on return (even if rendering throws). This gives each session an independent visual theme without permanently mutating the global ImGui state across sessions or frames.
+
 ### `bdg::wish::client`
 
 Thin wrapper around `bison::rmi::client` (or `bison::pty_client_app` on Linux). Adds:
 
-- `register_template(name, descriptor)` â€” stores a named JSON/YAML blueprint on the server.
-- `instantiate_template(name)` â€” parses and instantiates a registered template, returns `std::future<proxy_map>`.
-- `upload_file(name, bytes)` / `download_file(name)` â€” file service calls.
+- `register_template(name, descriptor)` -- stores a named JSON/YAML blueprint on the server.
+- `instantiate_template(name)` -- parses and instantiates a registered template, returns `std::future<proxy_map>`.
+- `upload_file(name, bytes)` / `download_file(name)` -- file service calls.
+- `set_style_preset(name)` -- apply a named ImGui theme preset (`”dark”`, `”light”`, `”classic”`).
+- `set_style(params)` -- merge per-field style overrides (floats, `#RRGGBBAA` color strings).
+- `get_style()` -- retrieve the current session style as a flat dynamic.
 
 ---
 
@@ -380,6 +413,9 @@ The same pattern applies to any wish component that needs non-trivial logic on a
 
 **Layouts as first-class container nodes.**
 Layout behaviour (vertical vs. horizontal arrangement) belongs in the object tree rather than as a property on a generic container. This lets the renderer dispatch purely on `__class` — no conditional field checks — and lets the JSON/YAML descriptor express layout intent declaratively. It also allows arbitrary nesting: a `HorizontalLayout` row is itself a node whose children can be `VerticalLayout` columns, with no limit on depth.
+
+**Per-session style service with RAII isolation.**
+ImGui's style state is global (`ImGui::GetStyle()`). Applying a per-session theme naively would leak the style of the last session rendered into the next frame's default state. `imgui_renderer::render_session` solves this with a RAII guard: it saves the global `ImGuiStyle` before each session's render, applies that session's theme (read from `sess.style_service->current_style()`), calls `render_node`, and restores the original style on scope exit -- even if rendering throws. This way, each session sees its own theme throughout its render pass while the global style is always restored before the next session or frame begins. Storing style as a flat `bison::dynamic` field map (no ImGui types in `session.hpp`) keeps `style_service.hpp` free of ImGui dependencies and the field map accessible to the renderer's merge/apply logic via `findField`.
 
 **Renderer lifecycle hooks (`setup`/`teardown`) instead of constructor init.**
 SDL3 (and most GPU APIs) require that the window, renderer, and event pump all be created and driven by the same OS thread. The `wish::server` render loop runs on a dedicated render thread spawned by `server::start()`. If `sdl3_renderer` initialized SDL in its constructor (which runs on the main thread), SDL objects would be shared across threads with no synchronization. Deferring initialization to `setup()` — called from the render thread immediately before the first frame — keeps all SDL state on one thread for its entire lifetime. `teardown()` mirrors this by running on the render thread after the loop exits. The `should_quit()` hook gives the render thread a way to signal the rest of the application that the window has been closed, without requiring any shared condition variable or cross-thread call into the server.

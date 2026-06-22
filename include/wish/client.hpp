@@ -102,6 +102,34 @@ class client : public bison::rmi::client {
    */
   std::future<std::string> download_file(const std::string& name);
 
+  /**
+   * @brief Apply a named built-in style preset for this session.
+   * @param name  `"dark"`, `"light"`, or `"classic"`.
+   *
+   * Clears any per-field overrides set by `set_style`; the preset becomes the
+   * new baseline.  Call `set_style` after this to add individual overrides.
+   */
+  std::future<void> set_style_preset(const std::string& name);
+
+  /**
+   * @brief Merge per-field style overrides into the session's active style.
+   *
+   * Accepts a flat dynamic where keys map to:
+   * - `float`  — scalar style fields (e.g. `"window_rounding"_key`) or vec2
+   *              components (`"item_spacing_x"_key`, `"item_spacing_y"_key`).
+   * - `string` — `"#RRGGBBAA"` hex color for color fields
+   *              (e.g. `"color_button"_key`).
+   *
+   * To reset a field, call `set_style_preset` first to restore the baseline.
+   */
+  std::future<void> set_style(bison::dynamic params);
+
+  /**
+   * @brief Retrieve the current session style as a flat dynamic.
+   * @return Future resolved with the style field map.
+   */
+  std::future<bison::dynamic> get_style();
+
  protected:
   /**
    * @brief Called after `connect()` completes; subclass performs all UI
@@ -121,6 +149,7 @@ class client : public bison::rmi::client {
   // is called; cleared by on_disconnect().
   std::optional<bison::rmi::proxy::dynamic> template_proxy_;
   std::optional<bison::rmi::proxy::dynamic> fs_proxy_;
+  std::optional<bison::rmi::proxy::dynamic> style_proxy_;
 };
 
 }  // namespace bdg::wish
