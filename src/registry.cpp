@@ -6,6 +6,7 @@
 
 #include "template_handler.hpp"
 #include "ui_elements.hpp"
+#include "plot_elements.hpp"
 
 namespace bdg::wish {
 
@@ -30,6 +31,14 @@ void register_all() {
   register_input_number();
   register_drag();
   register_selectable();
+  // Plot elements — must come after Element is registered.
+  register_plot();            // PlotItem, Plot
+  register_plot_series();     // PlotLine, PlotScatter, PlotStairs, PlotStems, PlotShaded, PlotDigital
+  register_plot_bars();       // PlotBars, PlotBarsH
+  register_plot_histogram();  // PlotHistogram, PlotHistogram2D
+  register_plot_heatmap();    // PlotHeatmap
+  register_plot_pie();        // PlotPieChart
+  register_plot_annotations();// PlotText, PlotInfLines
   // Protocol handler classes.
   register_template_handler();
   register_file_service();

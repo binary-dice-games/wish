@@ -27,15 +27,23 @@ if(WISH_ENABLE_IMGUI)
     GIT_TAG        v1.91.9
     GIT_SHALLOW    TRUE
   )
-  FetchContent_MakeAvailable(imgui)
+  FetchContent_Declare(
+    implot
+    GIT_REPOSITORY https://github.com/epezent/implot.git
+    GIT_TAG        v0.16
+    GIT_SHALLOW    TRUE
+  )
+  FetchContent_MakeAvailable(imgui implot)
 
   add_library(imgui_core STATIC
     ${imgui_SOURCE_DIR}/imgui.cpp
     ${imgui_SOURCE_DIR}/imgui_draw.cpp
     ${imgui_SOURCE_DIR}/imgui_tables.cpp
     ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+    ${implot_SOURCE_DIR}/implot.cpp
+    ${implot_SOURCE_DIR}/implot_items.cpp
   )
-  target_include_directories(imgui_core PUBLIC ${imgui_SOURCE_DIR})
+  target_include_directories(imgui_core PUBLIC ${imgui_SOURCE_DIR} ${implot_SOURCE_DIR})
   set_target_properties(imgui_core PROPERTIES FOLDER extern)
 endif()
 
@@ -99,12 +107,21 @@ add_library(wish STATIC
   src/ui_elements/input_number.cpp
   src/ui_elements/drag.cpp
   src/ui_elements/selectable.cpp
+  src/plot_elements/plot.cpp
+  src/plot_elements/plot_series.cpp
+  src/plot_elements/plot_bars.cpp
+  src/plot_elements/plot_histogram.cpp
+  src/plot_elements/plot_heatmap.cpp
+  src/plot_elements/plot_pie.cpp
+  src/plot_elements/plot_annotations.cpp
 )
 
 if(WISH_ENABLE_IMGUI)
   target_sources(wish PRIVATE
     include/wish/imgui_renderer.hpp
     src/imgui_renderer.cpp
+    src/imgui_plot_renderer.hpp
+    src/imgui_plot_renderer.cpp
   )
   target_compile_definitions(wish PUBLIC WISH_IMGUI_ENABLED)
   # PUBLIC so that consumers who include imgui_renderer.hpp have imgui in path.

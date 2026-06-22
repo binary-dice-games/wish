@@ -11,6 +11,8 @@
 
 #include <imgui.h>
 
+#include "imgui_plot_renderer.hpp"
+
 #include <functional>
 #include <string>
 #include <unordered_map>
@@ -503,6 +505,22 @@ static const std::unordered_map<bison::hash_t, render_fn>& render_dispatch() {
     {"DragInt"_key.id,          render_drag_int         },
     // Status
     {"ProgressBar"_key.id,      render_progress_bar     },
+    // Plot elements (require ImPlot context — must be inside a Plot)
+    {"Plot"_key.id,             render_plot             },
+    {"PlotLine"_key.id,         render_plot_line        },
+    {"PlotScatter"_key.id,      render_plot_scatter     },
+    {"PlotStairs"_key.id,       render_plot_stairs      },
+    {"PlotStems"_key.id,        render_plot_stems       },
+    {"PlotShaded"_key.id,       render_plot_shaded      },
+    {"PlotDigital"_key.id,      render_plot_digital     },
+    {"PlotBars"_key.id,         render_plot_bars        },
+    {"PlotBarsH"_key.id,        render_plot_bars_h      },
+    {"PlotHistogram"_key.id,    render_plot_histogram   },
+    {"PlotHistogram2D"_key.id,  render_plot_histogram2d },
+    {"PlotHeatmap"_key.id,      render_plot_heatmap     },
+    {"PlotPieChart"_key.id,     render_plot_pie_chart   },
+    {"PlotText"_key.id,         render_plot_text        },
+    {"PlotInfLines"_key.id,     render_plot_inf_lines   },
   };
   return tbl;
 }

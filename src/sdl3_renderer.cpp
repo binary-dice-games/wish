@@ -8,6 +8,7 @@
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_sdlrenderer3.h>
+#include <implot.h>
 
 #include <stdexcept>
 
@@ -52,6 +53,7 @@ void sdl3_renderer::setup() {
 
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();
+  ImPlot::CreateContext();
   ImGui::StyleColorsDark();
 
   ImGui_ImplSDL3_InitForSDLRenderer(window_, sdl_renderer_);
@@ -74,6 +76,7 @@ void sdl3_renderer::teardown() {
 
   ImGui_ImplSDLRenderer3_Shutdown();
   ImGui_ImplSDL3_Shutdown();
+  ImPlot::DestroyContext();
   ImGui::DestroyContext();
 
   if (sdl_renderer_) {
