@@ -21,6 +21,15 @@ void register_all() {
   register_input_text();
   register_image();
   register_separator();
+  register_menu();
+  register_tabs();
+  register_tree();
+  register_combo();
+  register_radio_button();
+  register_progress_bar();
+  register_input_number();
+  register_drag();
+  register_selectable();
   // Protocol handler classes.
   register_template_handler();
   register_file_service();

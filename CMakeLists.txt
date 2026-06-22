@@ -90,6 +90,15 @@ add_library(wish STATIC
   src/ui_elements/input_text.cpp
   src/ui_elements/image.cpp
   src/ui_elements/separator.cpp
+  src/ui_elements/menu.cpp
+  src/ui_elements/tabs.cpp
+  src/ui_elements/tree.cpp
+  src/ui_elements/combo.cpp
+  src/ui_elements/radio_button.cpp
+  src/ui_elements/progress_bar.cpp
+  src/ui_elements/input_number.cpp
+  src/ui_elements/drag.cpp
+  src/ui_elements/selectable.cpp
 )
 
 if(WISH_ENABLE_IMGUI)

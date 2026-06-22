@@ -17,6 +17,15 @@ void register_checkbox();
 void register_slider();
 void register_input_text();
 void register_image();
-void register_separator();
+void register_separator();   // Separator + SeparatorText
+void register_menu();        // MenuBar, Menu, MenuItem
+void register_tabs();        // TabBar, TabItem
+void register_tree();        // TreeNode, CollapsingHeader
+void register_combo();
+void register_radio_button();
+void register_progress_bar();
+void register_input_number();  // InputInt, InputFloat
+void register_drag();          // DragFloat, DragInt
+void register_selectable();
 
 }  // namespace bdg::wish
