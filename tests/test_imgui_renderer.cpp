@@ -212,3 +212,126 @@ TEST_F(ImguiRendererTest, WindowWithTwoLabelsCallsRenderNodeTwiceForLabels) {
 
   EXPECT_EQ(r.label_count, 2);
 }
+
+// ── Step 10: layout support ───────────────────────────────────────────────────
+
+TEST_F(ImguiRendererTest, VerticalLayoutWithThreeLabelsDoesNotThrow) {
+  constexpr auto desc = R"({
+    "type": "Window",
+    "title": "VL",
+    "children": {
+      "vl": {
+        "type": "VerticalLayout",
+        "spacing": 4.0,
+        "children": {
+          "a": { "type": "Label", "text": "one"   },
+          "b": { "type": "Label", "text": "two"   },
+          "c": { "type": "Label", "text": "three" }
+        }
+      }
+    }
+  })";
+  auto map = bdg::wish::import_json(desc);
+  EXPECT_NO_THROW({
+    renderer_->begin_frame();
+    renderer_->render_node(*map[""], *sess_);
+    renderer_->end_frame();
+  });
+}
+
+TEST_F(ImguiRendererTest, HorizontalLayoutWithThreeButtonsDoesNotThrow) {
+  constexpr auto desc = R"({
+    "type": "Window",
+    "title": "HL",
+    "children": {
+      "hl": {
+        "type": "HorizontalLayout",
+        "spacing": 4.0,
+        "children": {
+          "a": { "type": "Button", "label": "A" },
+          "b": { "type": "Button", "label": "B" },
+          "c": { "type": "Button", "label": "C" }
+        }
+      }
+    }
+  })";
+  auto map = bdg::wish::import_json(desc);
+  EXPECT_NO_THROW({
+    renderer_->begin_frame();
+    renderer_->render_node(*map[""], *sess_);
+    renderer_->end_frame();
+  });
+}
+
+TEST_F(ImguiRendererTest, NestedLayoutTreeRendersWithoutError) {
+  constexpr auto desc = R"({
+    "type": "Window",
+    "title": "Nested",
+    "children": {
+      "vl": {
+        "type": "VerticalLayout",
+        "children": {
+          "row0": {
+            "type": "HorizontalLayout",
+            "children": {
+              "lbl": { "type": "Label",  "text": "Name" },
+              "btn": { "type": "Button", "label": "OK"  }
+            }
+          },
+          "row1": {
+            "type": "HorizontalLayout",
+            "children": {
+              "lbl": { "type": "Label",  "text": "Value" },
+              "btn": { "type": "Button", "label": "Cancel" }
+            }
+          }
+        }
+      }
+    }
+  })";
+  auto map = bdg::wish::import_json(desc);
+  EXPECT_NO_THROW({
+    renderer_->begin_frame();
+    renderer_->render_node(*map[""], *sess_);
+    renderer_->end_frame();
+  });
+}
+
+TEST_F(ImguiRendererTest, VerticalLayoutSpacingZeroAndNonzeroDoNotThrow) {
+  constexpr auto desc_zero = R"({
+    "type": "Window", "title": "V0",
+    "children": {
+      "vl": {
+        "type": "VerticalLayout", "spacing": 0.0,
+        "children": {
+          "a": { "type": "Label", "text": "A" },
+          "b": { "type": "Label", "text": "B" }
+        }
+      }
+    }
+  })";
+  constexpr auto desc_eight = R"({
+    "type": "Window", "title": "V8",
+    "children": {
+      "vl": {
+        "type": "VerticalLayout", "spacing": 8.0,
+        "children": {
+          "a": { "type": "Label", "text": "A" },
+          "b": { "type": "Label", "text": "B" }
+        }
+      }
+    }
+  })";
+  EXPECT_NO_THROW({
+    renderer_->begin_frame();
+    auto m0 = bdg::wish::import_json(desc_zero);
+    renderer_->render_node(*m0[""], *sess_);
+    renderer_->end_frame();
+  });
+  EXPECT_NO_THROW({
+    renderer_->begin_frame();
+    auto m8 = bdg::wish::import_json(desc_eight);
+    renderer_->render_node(*m8[""], *sess_);
+    renderer_->end_frame();
+  });
+}

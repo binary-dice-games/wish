@@ -148,6 +148,31 @@ static void render_input_text(const ui_element& node, session& s) {
   }
 }
 
+static void render_vertical_layout(
+    imgui_renderer& r, const ui_element& node, session& s) {
+  float spacing = float_field(node, "spacing"_key, 0.0f);
+  bool first = true;
+  node.for_each_child_ordered([&](key_t, ui_element& child) {
+    if (!first && spacing > 0.0f)
+      ImGui::SetCursorPosY(ImGui::GetCursorPosY() + spacing);
+    first = false;
+    r.render_node(child, s);
+  });
+}
+
+static void render_horizontal_layout(
+    imgui_renderer& r, const ui_element& node, session& s) {
+  float spacing = float_field(node, "spacing"_key, 0.0f);
+  ImGui::BeginGroup();
+  bool first = true;
+  node.for_each_child_ordered([&](key_t, ui_element& child) {
+    if (!first) ImGui::SameLine(0.0f, spacing);
+    first = false;
+    r.render_node(child, s);
+  });
+  ImGui::EndGroup();
+}
+
 static void render_image(
     imgui_renderer& r, const ui_element& node, session& s) {
   auto    src = str_field(node, "src"_key, "");
@@ -186,8 +211,10 @@ void imgui_renderer::render_node(const ui_element& node, session& s) {
   else if (cls == "SliderFloat"_key) render_slider_float(node, s);
   else if (cls == "SliderInt"_key)   render_slider_int(node, s);
   else if (cls == "InputText"_key)   render_input_text(node, s);
-  else if (cls == "Image"_key)       render_image(*this, node, s);
-  else if (cls == "Separator"_key)   ImGui::Separator();
+  else if (cls == "Image"_key)            render_image(*this, node, s);
+  else if (cls == "Separator"_key)        ImGui::Separator();
+  else if (cls == "VerticalLayout"_key)   render_vertical_layout(*this, node, s);
+  else if (cls == "HorizontalLayout"_key) render_horizontal_layout(*this, node, s);
   else {
     // Unknown class: log and pass through so children still render.
     ImGui::TextDisabled("[wish: unknown element]");
