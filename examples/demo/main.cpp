@@ -12,10 +12,12 @@
 #include "src/rmi/rmi.hpp"  // memory_server_transport / memory_client_transport
 
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <iostream>
 #include <string>
 #include <thread>
+#include <vector>
 
 using namespace bdg::bison;
 using namespace bdg::bison::rmi::transport;
@@ -25,17 +27,17 @@ namespace wish = bdg::wish;
 
 static constexpr const char* kDemoDesc = R"json({
   "type": "Window", "title": "wish Widget Demo",
-  "width": 820, "height": 900,
+  "width": 900, "height": 950,
   "children": {
 
     "main_menu": { "type": "MenuBar",
       "children": {
         "m_file": { "type": "Menu", "label": "File",
           "children": {
-            "mi_new":   { "type": "MenuItem", "label": "New",   "shortcut": "Ctrl+N" },
-            "mi_open":  { "type": "MenuItem", "label": "Open",  "shortcut": "Ctrl+O" },
-            "mi_sep":   { "type": "Separator" },
-            "mi_quit":  { "type": "MenuItem", "label": "Quit",  "shortcut": "Alt+F4" }
+            "mi_new":  { "type": "MenuItem", "label": "New",  "shortcut": "Ctrl+N" },
+            "mi_open": { "type": "MenuItem", "label": "Open", "shortcut": "Ctrl+O" },
+            "mi_sep":  { "type": "Separator" },
+            "mi_quit": { "type": "MenuItem", "label": "Quit", "shortcut": "Alt+F4" }
           }
         },
         "m_view": { "type": "Menu", "label": "View",
@@ -58,12 +60,10 @@ static constexpr const char* kDemoDesc = R"json({
 
         "tab_basics": { "type": "TabItem", "label": "Basics",
           "children": {
-
             "sec_labels":  { "type": "SeparatorText", "label": "Labels" },
             "lbl_static":  { "type": "Label", "text": "Static label — text set in JSON." },
             "lbl_dynamic": { "type": "Label", "text": "(updated by events)" },
             "lbl_clicks":  { "type": "Label", "text": "Click counter: 0" },
-
             "sec_buttons": { "type": "SeparatorText", "label": "Buttons" },
             "btn_row": {
               "type": "HorizontalLayout", "spacing": 8,
@@ -73,14 +73,12 @@ static constexpr const char* kDemoDesc = R"json({
                 "btn_wide":  { "type": "Button", "label": "Wide button",  "width": 160 }
               }
             },
-
-            "sec_checks":  { "type": "SeparatorText", "label": "Checkboxes" },
-            "chk_a":       { "type": "Checkbox", "label": "Option A", "value": false },
-            "chk_b":       { "type": "Checkbox", "label": "Option B", "value": true  },
-            "chk_vis":     { "type": "Checkbox", "label": "Show hidden label (visible field)", "value": true },
-            "lbl_hidden":  { "type": "Label",    "text": "    This label is toggled by the checkbox above." },
-
-            "sec_radio":   { "type": "SeparatorText", "label": "Radio Buttons" },
+            "sec_checks": { "type": "SeparatorText", "label": "Checkboxes" },
+            "chk_a":      { "type": "Checkbox", "label": "Option A", "value": false },
+            "chk_b":      { "type": "Checkbox", "label": "Option B", "value": true  },
+            "chk_vis":    { "type": "Checkbox", "label": "Show hidden label", "value": true },
+            "lbl_hidden": { "type": "Label", "text": "    This label is toggled by the checkbox above." },
+            "sec_radio":  { "type": "SeparatorText", "label": "Radio Buttons" },
             "radio_row": {
               "type": "HorizontalLayout", "spacing": 12,
               "children": {
@@ -94,55 +92,46 @@ static constexpr const char* kDemoDesc = R"json({
 
         "tab_sliders": { "type": "TabItem", "label": "Sliders & Drags",
           "children": {
-
-            "sec_sliders":  { "type": "SeparatorText", "label": "Sliders" },
-            "sf_opacity":   { "type": "SliderFloat", "label": "Opacity", "value": 1.0,  "min": 0.0,    "max": 1.0,   "format": "%.2f"     },
-            "sf_angle":     { "type": "SliderFloat", "label": "Angle",   "value": 0.0,  "min": -180.0, "max": 180.0, "format": "%.0f deg" },
-            "si_count":     { "type": "SliderInt",   "label": "Count",   "value": 10,   "min": 0,      "max": 50     },
-
-            "sec_drags":    { "type": "SeparatorText", "label": "Drag Widgets" },
-            "df_val":       { "type": "DragFloat", "label": "Float drag", "value": 1.5,  "speed": 0.05, "min": 0.0, "max": 10.0, "format": "%.2f" },
-            "di_val":       { "type": "DragInt",   "label": "Int drag",   "value": 42,   "speed": 0.5,  "min": 0,   "max": 200  }
+            "sec_sliders": { "type": "SeparatorText", "label": "Sliders" },
+            "sf_opacity":  { "type": "SliderFloat", "label": "Opacity", "value": 1.0,  "min": 0.0,    "max": 1.0,   "format": "%.2f"     },
+            "sf_angle":    { "type": "SliderFloat", "label": "Angle",   "value": 0.0,  "min": -180.0, "max": 180.0, "format": "%.0f deg" },
+            "si_count":    { "type": "SliderInt",   "label": "Count",   "value": 10,   "min": 0,      "max": 50     },
+            "sec_drags":   { "type": "SeparatorText", "label": "Drag Widgets" },
+            "df_val":      { "type": "DragFloat", "label": "Float drag", "value": 1.5, "speed": 0.05, "min": 0.0, "max": 10.0, "format": "%.2f" },
+            "di_val":      { "type": "DragInt",   "label": "Int drag",   "value": 42,  "speed": 0.5,  "min": 0,   "max": 200  }
           }
         },
 
         "tab_inputs": { "type": "TabItem", "label": "Text & Numbers",
           "children": {
-
-            "sec_text":    { "type": "SeparatorText", "label": "Text Input" },
-            "txt_name":    { "type": "InputText", "label": "Name",    "value": "",             "hint": "Type your name..."  },
-            "txt_msg":     { "type": "InputText", "label": "Message", "value": "Hello, wish!"                               },
-
-            "sec_nums":    { "type": "SeparatorText", "label": "Numeric Input" },
-            "ii_qty":      { "type": "InputInt",   "label": "Quantity",    "value": 1,   "step": 1,    "step_fast": 10  },
-            "if_price":    { "type": "InputFloat", "label": "Price ($)",   "value": 9.99, "step": 0.01, "step_fast": 1.0, "format": "%.2f" }
+            "sec_text":  { "type": "SeparatorText", "label": "Text Input" },
+            "txt_name":  { "type": "InputText", "label": "Name",    "value": "",            "hint": "Type your name..." },
+            "txt_msg":   { "type": "InputText", "label": "Message", "value": "Hello, wish!" },
+            "sec_nums":  { "type": "SeparatorText", "label": "Numeric Input" },
+            "ii_qty":    { "type": "InputInt",   "label": "Quantity",  "value": 1,    "step": 1,    "step_fast": 10  },
+            "if_price":  { "type": "InputFloat", "label": "Price ($)", "value": 9.99, "step": 0.01, "step_fast": 1.0, "format": "%.2f" }
           }
         },
 
         "tab_selection": { "type": "TabItem", "label": "Selection",
           "children": {
-
-            "sec_combo":   { "type": "SeparatorText", "label": "Combo Box" },
-            "cmb_fruit":   { "type": "Combo", "label": "Fruit",
-                             "items": "Apple\nBanana\nCherry\nDate\nElder\nFig\nGrape",
-                             "value": 0 },
-            "cmb_size":    { "type": "Combo", "label": "Size",
-                             "items": "Small\nMedium\nLarge\nExtra Large",
-                             "value": 1 },
-
-            "sec_sel":     { "type": "SeparatorText", "label": "Selectables" },
-            "sel_a":       { "type": "Selectable", "label": "Item Alpha",   "selected": false },
-            "sel_b":       { "type": "Selectable", "label": "Item Beta",    "selected": true  },
-            "sel_c":       { "type": "Selectable", "label": "Item Gamma",   "selected": false },
-            "sel_d":       { "type": "Selectable", "label": "Item Delta",   "selected": false }
+            "sec_combo": { "type": "SeparatorText", "label": "Combo Box" },
+            "cmb_fruit": { "type": "Combo", "label": "Fruit",
+                           "items": "Apple\nBanana\nCherry\nDate\nElder\nFig\nGrape", "value": 0 },
+            "cmb_size":  { "type": "Combo", "label": "Size",
+                           "items": "Small\nMedium\nLarge\nExtra Large", "value": 1 },
+            "sec_sel":   { "type": "SeparatorText", "label": "Selectables" },
+            "sel_a":     { "type": "Selectable", "label": "Item Alpha",  "selected": false },
+            "sel_b":     { "type": "Selectable", "label": "Item Beta",   "selected": true  },
+            "sel_c":     { "type": "Selectable", "label": "Item Gamma",  "selected": false },
+            "sel_d":     { "type": "Selectable", "label": "Item Delta",  "selected": false }
           }
         },
 
         "tab_tree": { "type": "TabItem", "label": "Tree & Collapse",
           "children": {
-
-            "sec_tree":  { "type": "SeparatorText", "label": "TreeNode" },
-            "tn_root":   { "type": "TreeNode", "label": "Root node", "open": true,
+            "sec_tree": { "type": "SeparatorText", "label": "TreeNode" },
+            "tn_root":  { "type": "TreeNode", "label": "Root node", "open": true,
               "children": {
                 "tn_child_a": { "type": "TreeNode", "label": "Child A",
                   "children": {
@@ -157,15 +146,14 @@ static constexpr const char* kDemoDesc = R"json({
                 }
               }
             },
-
-            "sec_collap":    { "type": "SeparatorText", "label": "CollapsingHeader" },
-            "ch_details":    { "type": "CollapsingHeader", "label": "Details",
+            "sec_collap":  { "type": "SeparatorText", "label": "CollapsingHeader" },
+            "ch_details":  { "type": "CollapsingHeader", "label": "Details",
               "children": {
                 "ch_lbl_a": { "type": "Label", "text": "Line A inside collapsing header." },
                 "ch_lbl_b": { "type": "Label", "text": "Line B inside collapsing header." }
               }
             },
-            "ch_advanced":   { "type": "CollapsingHeader", "label": "Advanced",
+            "ch_advanced": { "type": "CollapsingHeader", "label": "Advanced",
               "children": {
                 "ch_lbl_c": { "type": "Label", "text": "Advanced options would live here." }
               }
@@ -175,13 +163,11 @@ static constexpr const char* kDemoDesc = R"json({
 
         "tab_misc": { "type": "TabItem", "label": "Misc",
           "children": {
-
             "sec_progress": { "type": "SeparatorText", "label": "Progress Bar" },
             "pb_download":  { "type": "ProgressBar", "value": 0.65, "label": "65 %" },
             "pb_notext":    { "type": "ProgressBar", "value": 0.30 },
-
             "sec_layouts":  { "type": "SeparatorText", "label": "Layouts" },
-            "lbl_hlay":     { "type": "Label",  "text": "HorizontalLayout (spacing 12):" },
+            "lbl_hlay":     { "type": "Label", "text": "HorizontalLayout (spacing 12):" },
             "hlay": {
               "type": "HorizontalLayout", "spacing": 12,
               "children": {
@@ -190,7 +176,7 @@ static constexpr const char* kDemoDesc = R"json({
                 "hl_c": { "type": "Button", "label": "Gamma" }
               }
             },
-            "lbl_vlay": { "type": "Label", "text": "VerticalLayout (spacing 4) with nested rows:" },
+            "lbl_vlay": { "type": "Label", "text": "VerticalLayout (spacing 4):" },
             "vlay": {
               "type": "VerticalLayout", "spacing": 4,
               "children": {
@@ -211,9 +197,8 @@ static constexpr const char* kDemoDesc = R"json({
                 }
               }
             },
-
-            "sec_theme":    { "type": "SeparatorText", "label": "Theme" },
-            "lbl_theme":    { "type": "Label", "text": "Switch the visual theme at runtime:" },
+            "sec_theme": { "type": "SeparatorText", "label": "Theme" },
+            "lbl_theme": { "type": "Label", "text": "Switch the visual theme at runtime:" },
             "theme_row": {
               "type": "HorizontalLayout", "spacing": 8,
               "children": {
@@ -223,16 +208,155 @@ static constexpr const char* kDemoDesc = R"json({
               }
             }
           }
+        },
+
+        "tab_plots": { "type": "TabItem", "label": "Plots",
+          "children": {
+
+            "ch_line": { "type": "CollapsingHeader", "label": "Line, Scatter & Stairs",
+              "children": {
+                "plt_lines": { "type": "Plot", "title": "Line Series",
+                               "height": 220.0, "x_label": "x", "y_label": "y",
+                  "children": {
+                    "l_sin":    { "type": "PlotLine",    "label": "sin(x)"        },
+                    "l_cos":    { "type": "PlotScatter", "label": "cos(x) noisy"  },
+                    "l_stairs": { "type": "PlotStairs",  "label": "cos(x) stairs" }
+                  }
+                }
+              }
+            },
+
+            "ch_area": { "type": "CollapsingHeader", "label": "Stems & Shaded Area",
+              "children": {
+                "plt_area": { "type": "Plot", "title": "Stems & Shaded",
+                              "height": 220.0, "x_label": "x", "y_label": "y",
+                  "children": {
+                    "a_stems":  { "type": "PlotStems",  "label": "sin(x) stems"  },
+                    "a_shaded": { "type": "PlotShaded", "label": "±0.4 band"     }
+                  }
+                }
+              }
+            },
+
+            "ch_digital": { "type": "CollapsingHeader", "label": "Digital Signals",
+              "children": {
+                "plt_digital": { "type": "Plot", "title": "Digital Signals",
+                                 "height": 160.0, "x_label": "t (s)",
+                  "children": {
+                    "d_pwm": { "type": "PlotDigital", "label": "PWM 67%"  },
+                    "d_clk": { "type": "PlotDigital", "label": "Clock 50%" }
+                  }
+                }
+              }
+            },
+
+            "ch_bars": { "type": "CollapsingHeader", "label": "Bar Charts",
+              "children": {
+                "plt_bars": { "type": "Plot", "title": "Vertical Bars",
+                              "height": 200.0, "x_label": "Month", "y_label": "Units",
+                  "children": {
+                    "b_monthly": { "type": "PlotBars", "label": "Sales 2025" }
+                  }
+                },
+                "plt_barsh": { "type": "Plot", "title": "Horizontal Bars",
+                               "height": 180.0, "x_label": "Revenue ($k)", "y_label": "Quarter",
+                  "children": {
+                    "b_qtr": { "type": "PlotBarsH", "label": "Revenue" }
+                  }
+                }
+              }
+            },
+
+            "ch_hist": { "type": "CollapsingHeader", "label": "Histograms",
+              "children": {
+                "plt_hist1": { "type": "Plot", "title": "1-D Histogram",
+                               "height": 200.0, "x_label": "Value", "y_label": "Count",
+                  "children": {
+                    "h_norm": { "type": "PlotHistogram", "label": "Normal dist.", "bins": 40 }
+                  }
+                },
+                "plt_hist2": { "type": "Plot", "title": "2-D Histogram",
+                               "height": 220.0, "x_label": "X", "y_label": "Y",
+                  "children": {
+                    "h_2d": { "type": "PlotHistogram2D", "label": "Bivariate",
+                              "x_bins": 25, "y_bins": 25 }
+                  }
+                }
+              }
+            },
+
+            "ch_heatmap": { "type": "CollapsingHeader", "label": "Heatmap",
+              "children": {
+                "plt_heat": { "type": "Plot", "title": "Gaussian Heatmap",
+                              "height": 260.0,
+                  "children": {
+                    "hm": { "type": "PlotHeatmap", "label": "Intensity",
+                            "rows": 10, "cols": 10,
+                            "scale_min": 0.0, "scale_max": 1.0, "format": "%.2f",
+                            "x_max": 1.0, "y_max": 1.0 }
+                  }
+                }
+              }
+            },
+
+            "ch_pie": { "type": "CollapsingHeader", "label": "Pie Chart",
+              "children": {
+                "plt_pie": { "type": "Plot", "title": "Market Share",
+                             "height": 260.0,
+                             "x_flags": 15, "y_flags": 15,
+                  "children": {
+                    "pie": { "type": "PlotPieChart", "label": "share",
+                             "labels": "Web\nMobile\nDesktop\nTablet\nOther",
+                             "normalize": true, "label_fmt": "%.0f%%",
+                             "angle0": 90.0, "x": 0.5, "y": 0.5, "radius": 0.4 }
+                  }
+                }
+              }
+            },
+
+            "ch_annot": { "type": "CollapsingHeader", "label": "Annotations",
+              "children": {
+                "plt_annot": { "type": "Plot", "title": "Annotations",
+                               "height": 220.0, "x_label": "x", "y_label": "y",
+                  "children": {
+                    "an_line": { "type": "PlotLine",     "label": "sin(x)"   },
+                    "an_txt":  { "type": "PlotText",     "text": "Peak",
+                                 "x": 1.5708, "y": 1.05, "offset_y": -12.0  },
+                    "an_vref": { "type": "PlotInfLines", "label": "x = π/2" },
+                    "an_href": { "type": "PlotInfLines", "label": "y = 0",
+                                 "horizontal": true                           }
+                  }
+                }
+              }
+            }
+
+          }
         }
 
       }
     },
 
-    "sep_status":   { "type": "Separator" },
-    "lbl_ev_hdr":   { "type": "Label", "text": "Last event:" },
-    "lbl_status":   { "type": "Label", "text": "(interact with any widget to see its event here)" }
+    "sep_status": { "type": "Separator" },
+    "lbl_ev_hdr": { "type": "Label", "text": "Last event:" },
+    "lbl_status": { "type": "Label", "text": "(interact with any widget to see its event here)" }
   }
 })json";
+
+// ── Plot data helpers ─────────────────────────────────────────────────────────
+
+// Simple xorshift RNG for deterministic pseudo-random data.
+static float rng_float(uint32_t& s) {
+  s ^= s << 13; s ^= s >> 17; s ^= s << 5;
+  return (float(s & 0xFFFFu) / 32768.0f) - 1.0f;  // [-1, 1)
+}
+
+// Box-Muller normal sample (returns z0; stores z1 via pointer for next call).
+static float normal_sample(uint32_t& s) {
+  const float pi2 = 6.28318530f;
+  float u1 = (float((s ^= s<<13, s^=s>>17, s^=s<<5, s) & 0xFFFFu) + 1.0f) / 65537.0f;
+  float u2 = (float((s ^= s<<13, s^=s>>17, s^=s<<5, s) & 0xFFFFu)) / 65536.0f;
+  return std::sqrt(-2.0f * std::log(u1)) * std::cos(pi2 * u2);
+}
 
 // ── Demo client ───────────────────────────────────────────────────────────────
 
@@ -270,12 +394,144 @@ class demo_client : public wish::client {
       pm.at(name).set(std::move(f));
     };
 
+    auto set_xy = [&](const std::string& path,
+                      std::vector<float> xs, std::vector<float> ys) {
+      dynamic d;
+      d["xs"_key] = std::move(xs);
+      d["ys"_key] = std::move(ys);
+      pm.at(path).set(std::move(d));
+    };
+
     auto status = [&, set_text](const std::string& msg) {
       vlog("event: " + msg);
       set_text("lbl_status", msg);
     };
 
-    // ── Basics tab: labels & counters ─────────────────────────────────────
+    // ── Plot data ─────────────────────────────────────────────────────────
+
+    // Sinusoidal data (100 points over 0..2π).
+    constexpr int kN = 100;
+    const float k2pi = 6.28318530f;
+    std::vector<float> xs(kN), sin_ys(kN), cos_ys(kN);
+    for (int i = 0; i < kN; ++i) {
+      float t = k2pi * float(i) / float(kN - 1);
+      xs[i] = t;
+      sin_ys[i] = std::sin(t);
+      cos_ys[i] = std::cos(t);
+    }
+
+    // Noisy cosine for scatter.
+    uint32_t rng = 0xDEADBEEFu;
+    std::vector<float> noisy_cos(kN);
+    for (int i = 0; i < kN; ++i)
+      noisy_cos[i] = cos_ys[i] + rng_float(rng) * 0.35f;
+
+    // Section 1: Line, Scatter, Stairs.
+    set_xy("tabs_root.tab_plots.ch_line.plt_lines.l_sin",    xs, sin_ys);
+    set_xy("tabs_root.tab_plots.ch_line.plt_lines.l_cos",    xs, noisy_cos);
+    set_xy("tabs_root.tab_plots.ch_line.plt_lines.l_stairs", xs, cos_ys);
+
+    // Section 2: Stems and Shaded.
+    set_xy("tabs_root.tab_plots.ch_area.plt_area.a_stems", xs, sin_ys);
+    {
+      std::vector<float> band_hi(kN), band_lo(kN);
+      for (int i = 0; i < kN; ++i) {
+        band_hi[i] = sin_ys[i] + 0.4f;
+        band_lo[i] = sin_ys[i] - 0.4f;
+      }
+      dynamic d;
+      d["xs"_key]  = xs;
+      d["ys"_key]  = band_hi;
+      d["ys2"_key] = band_lo;
+      pm.at("tabs_root.tab_plots.ch_area.plt_area.a_shaded").set(std::move(d));
+    }
+
+    // Section 3: Digital signals (200 steps at 20 Hz → 10 s window).
+    {
+      constexpr int kD = 200;
+      std::vector<float> dt(kD), pwm(kD), clk(kD);
+      for (int i = 0; i < kD; ++i) {
+        dt[i]  = float(i) * 0.05f;
+        pwm[i] = (i % 6 < 4) ? 1.0f : 0.0f;   // 67 % duty cycle
+        clk[i] = (i % 2 == 0) ? 1.0f : 0.0f;  // 50 % clock
+      }
+      set_xy("tabs_root.tab_plots.ch_digital.plt_digital.d_pwm", dt, pwm);
+      set_xy("tabs_root.tab_plots.ch_digital.plt_digital.d_clk", dt, clk);
+    }
+
+    // Section 4: Bar charts (12 monthly sales, 4 quarterly revenues).
+    {
+      std::vector<float> month_xs, month_ys;
+      const float sales[] = {42,38,61,54,72,80,65,59,78,91,83,76};
+      for (int i = 0; i < 12; ++i) {
+        month_xs.push_back(float(i + 1));
+        month_ys.push_back(sales[i]);
+      }
+      set_xy("tabs_root.tab_plots.ch_bars.plt_bars.b_monthly", month_xs, month_ys);
+
+      // Horizontal bars: ys = quarter index, xs = revenue
+      std::vector<float> qtr_ys = {1.0f, 2.0f, 3.0f, 4.0f};
+      std::vector<float> qtr_xs = {42.5f, 38.2f, 51.0f, 45.7f};
+      set_xy("tabs_root.tab_plots.ch_bars.plt_barsh.b_qtr", qtr_xs, qtr_ys);
+    }
+
+    // Section 5: Histograms (1000 normal-distribution samples).
+    {
+      constexpr int kS = 1000;
+      rng = 0x12345678u;
+      std::vector<float> h_vals(kS), h_xs(kS), h_ys(kS);
+      for (int i = 0; i < kS; ++i) {
+        float z = normal_sample(rng);
+        h_vals[i] = z;
+        h_xs[i]   = z;
+        // Correlated second variable for 2-D histogram.
+        h_ys[i]   = 0.7f * z + 0.3f * normal_sample(rng);
+      }
+      {
+        dynamic d; d["values"_key] = h_vals;
+        pm.at("tabs_root.tab_plots.ch_hist.plt_hist1.h_norm").set(std::move(d));
+      }
+      set_xy("tabs_root.tab_plots.ch_hist.plt_hist2.h_2d", h_xs, h_ys);
+    }
+
+    // Section 6: Heatmap — 10×10 Gaussian bell.
+    {
+      constexpr int kR = 10, kC = 10;
+      std::vector<float> heat(kR * kC);
+      for (int r = 0; r < kR; ++r) {
+        for (int c = 0; c < kC; ++c) {
+          float x = (float(c) - float(kC - 1) * 0.5f) / float(kC) * 4.0f;
+          float y = (float(r) - float(kR - 1) * 0.5f) / float(kR) * 4.0f;
+          heat[r * kC + c] = std::exp(-(x*x + y*y) * 0.5f);
+        }
+      }
+      dynamic d; d["values"_key] = heat;
+      pm.at("tabs_root.tab_plots.ch_heatmap.plt_heat.hm").set(std::move(d));
+    }
+
+    // Section 7: Pie chart values (Web, Mobile, Desktop, Tablet, Other).
+    {
+      dynamic d;
+      d["values"_key] = std::vector<float>{38.0f, 28.0f, 22.0f, 8.0f, 4.0f};
+      pm.at("tabs_root.tab_plots.ch_pie.plt_pie.pie").set(std::move(d));
+    }
+
+    // Section 8: Annotations — sin(x) line + text label + inf lines.
+    set_xy("tabs_root.tab_plots.ch_annot.plt_annot.an_line", xs, sin_ys);
+    {
+      // Vertical reference at x = π/2.
+      dynamic dv;
+      dv["values"_key] = std::vector<float>{k2pi / 4.0f};
+      pm.at("tabs_root.tab_plots.ch_annot.plt_annot.an_vref").set(std::move(dv));
+    }
+    {
+      // Horizontal reference at y = 0.
+      dynamic dh;
+      dh["values"_key] = std::vector<float>{0.0f};
+      pm.at("tabs_root.tab_plots.ch_annot.plt_annot.an_href").set(std::move(dh));
+    }
+
+    // ── Basics tab: buttons, checkboxes, radio ────────────────────────────
 
     pm.at("tabs_root.tab_basics.btn_row.btn_click").onEvent("clicked"_key,
         [&, set_text, status](dynamic) {
@@ -318,7 +574,6 @@ class demo_client : public wish::client {
           status("Visibility: label is now " + std::string(v ? "shown" : "hidden"));
         });
 
-    // Radio buttons — manage mutual exclusivity
     static const char* kRBNames[] = {
         "tabs_root.tab_basics.radio_row.rb_a",
         "tabs_root.tab_basics.radio_row.rb_b",
@@ -326,10 +581,9 @@ class demo_client : public wish::client {
     static const char* kRBLabels[] = {"Alpha", "Beta", "Gamma"};
     for (int i = 0; i < 3; ++i) {
       pm.at(kRBNames[i]).onEvent("clicked"_key,
-          [&, i, set_text, status](dynamic) {
+          [&, i, status](dynamic) {
             for (int j = 0; j < 3; ++j) {
-              dynamic f;
-              f["active"_key] = (j == i);
+              dynamic f; f["active"_key] = (j == i);
               pm.at(kRBNames[j]).set(std::move(f));
             }
             status(std::string("Radio: ") + kRBLabels[i] + " selected.");
@@ -345,7 +599,6 @@ class demo_client : public wish::client {
           char buf[64]; std::snprintf(buf, sizeof(buf), "Opacity: %.2f", v);
           status(buf);
         });
-
     pm.at("tabs_root.tab_sliders.sf_angle").onEvent("changed"_key,
         [status](dynamic p) {
           const auto* f = p.findField("value"_key);
@@ -353,14 +606,12 @@ class demo_client : public wish::client {
           char buf[64]; std::snprintf(buf, sizeof(buf), "Angle: %.0f deg", v);
           status(buf);
         });
-
     pm.at("tabs_root.tab_sliders.si_count").onEvent("changed"_key,
         [status](dynamic p) {
           const auto* f = p.findField("value"_key);
           int32_t v = (f && f->is<int32_t>()) ? f->as<int32_t>() : 0;
           status("Count: " + std::to_string(v));
         });
-
     pm.at("tabs_root.tab_sliders.df_val").onEvent("changed"_key,
         [status](dynamic p) {
           const auto* f = p.findField("value"_key);
@@ -368,7 +619,6 @@ class demo_client : public wish::client {
           char buf[64]; std::snprintf(buf, sizeof(buf), "Float drag: %.2f", v);
           status(buf);
         });
-
     pm.at("tabs_root.tab_sliders.di_val").onEvent("changed"_key,
         [status](dynamic p) {
           const auto* f = p.findField("value"_key);
@@ -384,21 +634,18 @@ class demo_client : public wish::client {
           std::string v = (f && f->is<std::string>()) ? f->as<std::string>() : "";
           status("Name: \"" + v + "\"");
         });
-
     pm.at("tabs_root.tab_inputs.txt_msg").onEvent("changed"_key,
         [status](dynamic p) {
           const auto* f = p.findField("value"_key);
           std::string v = (f && f->is<std::string>()) ? f->as<std::string>() : "";
           status("Message: \"" + v + "\"");
         });
-
     pm.at("tabs_root.tab_inputs.ii_qty").onEvent("changed"_key,
         [status](dynamic p) {
           const auto* f = p.findField("value"_key);
           int32_t v = (f && f->is<int32_t>()) ? f->as<int32_t>() : 0;
           status("Quantity: " + std::to_string(v));
         });
-
     pm.at("tabs_root.tab_inputs.if_price").onEvent("changed"_key,
         [status](dynamic p) {
           const auto* f = p.findField("value"_key);
@@ -415,7 +662,6 @@ class demo_client : public wish::client {
           std::string v = (f && f->is<std::string>()) ? f->as<std::string>() : "?";
           status("Fruit: " + v);
         });
-
     pm.at("tabs_root.tab_selection.cmb_size").onEvent("changed"_key,
         [status](dynamic p) {
           const auto* f = p.findField("text"_key);
@@ -448,7 +694,6 @@ class demo_client : public wish::client {
         status(name + ": " + (v ? "expanded" : "collapsed"));
       };
     };
-
     pm.at("tabs_root.tab_tree.tn_root").onEvent("toggled"_key,
         on_toggled("Root node"));
     pm.at("tabs_root.tab_tree.tn_root.tn_child_a").onEvent("toggled"_key,
@@ -460,7 +705,7 @@ class demo_client : public wish::client {
     pm.at("tabs_root.tab_tree.ch_advanced").onEvent("toggled"_key,
         on_toggled("CollapsingHeader: Advanced"));
 
-    // ── Misc tab: layout buttons & theme ──────────────────────────────────
+    // ── Misc tab ──────────────────────────────────────────────────────────
 
     for (const auto* name : {
              "tabs_root.tab_misc.hlay.hl_a",
@@ -478,20 +723,11 @@ class demo_client : public wish::client {
     }
 
     pm.at("tabs_root.tab_misc.theme_row.theme_dark").onEvent("clicked"_key,
-        [&, status](dynamic) {
-          set_style_preset("dark").get();
-          status("Theme: dark");
-        });
+        [&, status](dynamic) { set_style_preset("dark").get(); status("Theme: dark"); });
     pm.at("tabs_root.tab_misc.theme_row.theme_light").onEvent("clicked"_key,
-        [&, status](dynamic) {
-          set_style_preset("light").get();
-          status("Theme: light");
-        });
+        [&, status](dynamic) { set_style_preset("light").get(); status("Theme: light"); });
     pm.at("tabs_root.tab_misc.theme_row.theme_classic").onEvent("clicked"_key,
-        [&, status](dynamic) {
-          set_style_preset("classic").get();
-          status("Theme: classic");
-        });
+        [&, status](dynamic) { set_style_preset("classic").get(); status("Theme: classic"); });
 
     // ── Menu bar ──────────────────────────────────────────────────────────
 
@@ -501,23 +737,12 @@ class demo_client : public wish::client {
         [status](dynamic) { status("Menu: File > Open"); });
     pm.at("main_menu.m_file.mi_quit").onEvent("clicked"_key,
         [status](dynamic) { status("Menu: File > Quit"); });
-
     pm.at("main_menu.m_view.mi_dark").onEvent("clicked"_key,
-        [&, status](dynamic) {
-          set_style_preset("dark").get();
-          status("Menu: View > Dark theme");
-        });
+        [&, status](dynamic) { set_style_preset("dark").get(); status("Menu: View > Dark theme"); });
     pm.at("main_menu.m_view.mi_light").onEvent("clicked"_key,
-        [&, status](dynamic) {
-          set_style_preset("light").get();
-          status("Menu: View > Light theme");
-        });
+        [&, status](dynamic) { set_style_preset("light").get(); status("Menu: View > Light theme"); });
     pm.at("main_menu.m_view.mi_classic").onEvent("clicked"_key,
-        [&, status](dynamic) {
-          set_style_preset("classic").get();
-          status("Menu: View > Classic theme");
-        });
-
+        [&, status](dynamic) { set_style_preset("classic").get(); status("Menu: View > Classic theme"); });
     pm.at("main_menu.m_check.mi_verbose").onEvent("clicked"_key,
         [status](dynamic p) {
           const auto* f = p.findField("checked"_key);
@@ -533,11 +758,12 @@ class demo_client : public wish::client {
         "tabs_root.tab_inputs",
         "tabs_root.tab_selection",
         "tabs_root.tab_tree",
-        "tabs_root.tab_misc"};
+        "tabs_root.tab_misc",
+        "tabs_root.tab_plots"};
     static const char* kTabLabels[] = {
         "Basics", "Sliders & Drags", "Text & Numbers",
-        "Selection", "Tree & Collapse", "Misc"};
-    for (int i = 0; i < 6; ++i) {
+        "Selection", "Tree & Collapse", "Misc", "Plots"};
+    for (int i = 0; i < 7; ++i) {
       pm.at(kTabNames[i]).onEvent("selected"_key,
           [i, status](dynamic) {
             status(std::string("Tab selected: ") + kTabLabels[i]);
@@ -545,10 +771,8 @@ class demo_client : public wish::client {
     }
 
     vlog("ready - waiting for window close");
-
     while (!renderer_->should_quit())
       std::this_thread::sleep_for(std::chrono::milliseconds{16});
-
     vlog("window closed");
   }
 
@@ -586,7 +810,7 @@ int main(int argc, char* argv[]) {
 
   memory_server_transport transport;
 
-  auto r    = std::make_unique<wish::sdl3_renderer>("wish Widget Demo", 820, 900);
+  auto r    = std::make_unique<wish::sdl3_renderer>("wish Widget Demo", 900, 950);
   auto rptr = r.get();
 
   wish::server server{transport, std::move(r)};
