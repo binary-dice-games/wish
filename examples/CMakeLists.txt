@@ -8,4 +8,12 @@ if(WISH_ENABLE_SDL3)
       ${CMAKE_SOURCE_DIR}/extern/bison  # bison public headers
   )
   set_target_properties(calculator PROPERTIES FOLDER examples)
+
+  add_executable(demo demo/main.cpp)
+  target_link_libraries(demo PRIVATE wish)
+  target_include_directories(demo PRIVATE
+      ${CMAKE_SOURCE_DIR}               # for "src/rmi/rmi.hpp"
+      ${CMAKE_SOURCE_DIR}/extern/bison  # bison public headers
+  )
+  set_target_properties(demo PROPERTIES FOLDER examples)
 endif()

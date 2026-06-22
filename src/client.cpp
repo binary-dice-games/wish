@@ -98,14 +98,19 @@ std::future<void> client::set_style_preset(const std::string& name) {
   return std::async(std::launch::async, [this, name]() {
     dynamic args;
     args["name"_key] = name;
-    style_proxy_->call("preset"_key, std::move(args)).get();
+    // oneway=true: server applies the preset but sends no response.
+    // This lets the call be made safely from within event callbacks
+    // (which run on the RMI worker thread that would otherwise deadlock
+    // waiting for a response that only it can deliver).
+    style_proxy_->call("preset"_key, std::move(args), true).get();
   });
 }
 
 std::future<void> client::set_style(bison::dynamic params) {
   return std::async(std::launch::async,
       [this, p = std::move(params)]() mutable {
-    style_proxy_->call("set"_key, std::move(p)).get();
+    // oneway=true: same reasoning as set_style_preset above.
+    style_proxy_->call("set"_key, std::move(p), true).get();
   });
 }
 
