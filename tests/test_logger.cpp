@@ -27,7 +27,7 @@ class LoggerTest : public ::testing::Test {
 
   bdg::wish::logger make_logger(bool verbose = false) {
     return bdg::wish::logger{
-        bison::dynamic::instantiate("wish"_key, "__WishLogger"_key),
+        dynamic::instantiate("wish"_key, "__WishLogger"_key),
         verbose,
         log_path_};
   }
@@ -94,7 +94,7 @@ TEST_F(LoggerTest, GenericLogMethodWithCustomLevel) {
 
 TEST_F(LoggerTest, EmptyLogPathDoesNotCreateFile) {
   bdg::wish::logger lg{
-      bison::dynamic::instantiate("wish"_key, "__WishLogger"_key),
+      dynamic::instantiate("wish"_key, "__WishLogger"_key),
       false,
       {}};
   lg.info("should not appear on disk");
