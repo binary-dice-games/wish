@@ -31,7 +31,7 @@ class integration_server : public wish::server {
       : wish::server(t, std::make_unique<wish::null_renderer>()) {}
 
   // Callback wired to ctx.emit_event; available once on_session_created fires.
-  std::function<void(bison::key_t, bison::key_t, bison::dynamic)> emit_fn;
+  std::function<void(key_t, key_t, dynamic)> emit_fn;
 
   // Sandboxed resource directory for the active session.
   std::filesystem::path resource_dir;

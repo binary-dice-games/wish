@@ -1,8 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "Read(extern/bison/**)",
-      "Bash(cat C:\github\wish\extern\bison\**)"
+      "Read(extern/bison/**)"
     ],
     "deny": [
       "Read(extern/**)",

@@ -25,7 +25,7 @@ DEFINE_string(cmd, "bash", "Shell command spawned for PTY transport");
 
 int main(int argc, char** argv) {
   gflags::SetUsageMessage(
-      "wish — GUI server for the wish remote UI framework\n"
+      "wish - GUI server for the wish remote UI framework\n"
       "Opens an SDL3 window and accepts client connections.");
   bdg::wish::wish_server server;
   return server.run(argc, argv);
