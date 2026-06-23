@@ -162,6 +162,8 @@ if(WISH_ENABLE_IMGUI AND WISH_ENABLE_SDL3)
   target_link_libraries(wish PUBLIC SDL3::SDL3)
 endif()
 
+set_target_properties(wish PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 target_include_directories(wish
     PRIVATE
         src

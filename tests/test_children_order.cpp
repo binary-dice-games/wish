@@ -17,9 +17,9 @@ class ChildrenOrderTest : public ::testing::Test {
   void SetUp() override { bdg::wish::register_all(); }
 
   // Collect visited child keys from for_each_child_ordered into a vector.
-  static std::vector<key_t> collect_order(ui_element& parent) {
-    std::vector<key_t> keys;
-    parent.for_each_child_ordered([&](key_t k, ui_element&) {
+  static std::vector<bdg::bison::key_t> collect_order(ui_element& parent) {
+    std::vector<bdg::bison::key_t> keys;
+    parent.for_each_child_ordered([&](bdg::bison::key_t k, ui_element&) {
       keys.push_back(k);
     });
     return keys;
@@ -68,7 +68,7 @@ TEST_F(ChildrenOrderTest, IndexedChildrenPreserveOrder) {
   ASSERT_NE(win, nullptr);
 
   std::vector<std::string> texts;
-  win->for_each_child_ordered([&](key_t, ui_element& child) {
+  win->for_each_child_ordered([&](bdg::bison::key_t, ui_element& child) {
     texts.push_back(child.findField("text"_key)->as<std::string>());
   });
 
@@ -155,13 +155,13 @@ TEST_F(ChildrenOrderTest, RefreshAfterOrderMutation) {
 // falls back to forEachChild<ui_element> without crashing.
 TEST_F(ChildrenOrderTest, FallbackWhenNoCachePresent) {
   auto win = dynamic::instantiate<ui_element>("wish"_key, "Window"_key);
-  auto children = dynamic_ptr{key_t{0U}, {}};
+  auto children = dynamic_ptr{bdg::bison::key_t{0U}, {}};
   auto lbl = dynamic::instantiate<ui_element>("wish"_key, "Label"_key);
   (*children)["x"_key] = lbl;
   (*win)["children"_key] = children;
 
   // Should not crash and should visit the one child.
   int count = 0;
-  win->for_each_child_ordered([&](key_t, ui_element&) { ++count; });
+  win->for_each_child_ordered([&](bdg::bison::key_t, ui_element&) { ++count; });
   EXPECT_EQ(count, 1);
 }

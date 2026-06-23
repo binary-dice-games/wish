@@ -22,13 +22,13 @@ using bdg::wish::ui_element;
 class counting_renderer : public renderer {
  public:
   int count = 0;
-  std::vector<key_t> visited;
+  std::vector<bdg::bison::key_t> visited;
 
   void begin_frame() override {}
 
   void render_node(const ui_element& node, session& s) override {
     ++count;
-    visited.push_back(node.as<key_t>(dynamic::CLASS));
+    visited.push_back(node.as<bdg::bison::key_t>(dynamic::CLASS));
     render_children(*this, node, s);
   }
 
@@ -107,8 +107,8 @@ TEST_F(RendererTest, NamedChildrenVisitedInDeclarationOrder) {
   })";
   auto map = bdg::wish::import_json(desc);
 
-  std::vector<key_t> order;
-  map[""]->for_each_child_ordered([&](key_t k, ui_element&) {
+  std::vector<bdg::bison::key_t> order;
+  map[""]->for_each_child_ordered([&](bdg::bison::key_t k, ui_element&) {
     order.push_back(k);
   });
 
@@ -128,7 +128,7 @@ TEST_F(RendererTest, IndexedChildrenVisitedInIndexOrder) {
   auto map = bdg::wish::import_json(desc);
 
   std::vector<std::string> texts;
-  map[""]->for_each_child_ordered([&](key_t, ui_element& child) {
+  map[""]->for_each_child_ordered([&](bdg::bison::key_t, ui_element& child) {
     auto* f = child.findField("text"_key);
     if (f && f->is<std::string>()) texts.push_back(f->as<std::string>());
   });

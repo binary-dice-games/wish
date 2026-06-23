@@ -27,7 +27,7 @@ TEST_F(UiImporterTest, JsonWindowNoChildren) {
   ASSERT_TRUE(result.count(""));
   auto& win = result[""];
   ASSERT_NE(win, nullptr);
-  EXPECT_EQ(win->findField(dynamic::CLASS)->as<key_t>(), "Window"_key);
+  EXPECT_EQ(win->findField(dynamic::CLASS)->as<bdg::bison::key_t>(), "Window"_key);
   EXPECT_EQ(win->findField("title"_key)->as<std::string>(), "Hello");
   EXPECT_EQ(win->findField("width"_key)->as<int32_t>(), 400);
   EXPECT_EQ(win->findField("height"_key)->as<int32_t>(), 300);
@@ -48,7 +48,7 @@ TEST_F(UiImporterTest, JsonNamedChildInMap) {
   ASSERT_TRUE(result.count("ok"));
   auto& btn = result["ok"];
   ASSERT_NE(btn, nullptr);
-  EXPECT_EQ(btn->findField(dynamic::CLASS)->as<key_t>(), "Button"_key);
+  EXPECT_EQ(btn->findField(dynamic::CLASS)->as<bdg::bison::key_t>(), "Button"_key);
   EXPECT_EQ(btn->findField("label"_key)->as<std::string>(), "OK");
 }
 
@@ -109,9 +109,9 @@ TEST_F(UiImporterTest, JsonDeepHierarchyAllNamedNodesInMap) {
   EXPECT_TRUE(result.count("body.row2.lbl2"));
   EXPECT_TRUE(result.count("body.row2.btn2"));
 
-  EXPECT_EQ(result["body"]->findField(dynamic::CLASS)->as<key_t>(),
+  EXPECT_EQ(result["body"]->findField(dynamic::CLASS)->as<bdg::bison::key_t>(),
             "VerticalLayout"_key);
-  EXPECT_EQ(result["body.row1"]->findField(dynamic::CLASS)->as<key_t>(),
+  EXPECT_EQ(result["body.row1"]->findField(dynamic::CLASS)->as<bdg::bison::key_t>(),
             "HorizontalLayout"_key);
   EXPECT_EQ(result["body.row1.lbl1"]->findField("text"_key)->as<std::string>(),
             "A");
@@ -153,7 +153,7 @@ TEST_F(UiImporterTest, JsonIndexedChildrenAccessibleByIndex) {
   EXPECT_TRUE(c1.is<dynamic_ptr>());
 
   auto lbl = c0.as<dynamic_ptr>();
-  EXPECT_EQ(lbl->findField(dynamic::CLASS)->as<key_t>(), "Label"_key);
+  EXPECT_EQ(lbl->findField(dynamic::CLASS)->as<bdg::bison::key_t>(), "Label"_key);
   EXPECT_EQ(lbl->findField("text"_key)->as<std::string>(), "First");
 }
 
@@ -218,12 +218,12 @@ children:
   ASSERT_TRUE(yaml_result.count("ok"));
 
   auto& win = yaml_result[""];
-  EXPECT_EQ(win->findField(dynamic::CLASS)->as<key_t>(), "Window"_key);
+  EXPECT_EQ(win->findField(dynamic::CLASS)->as<bdg::bison::key_t>(), "Window"_key);
   EXPECT_EQ(win->findField("title"_key)->as<std::string>(), "Hello");
   EXPECT_EQ(win->findField("width"_key)->as<int32_t>(), 400);
 
   auto& btn = yaml_result["ok"];
-  EXPECT_EQ(btn->findField(dynamic::CLASS)->as<key_t>(), "Button"_key);
+  EXPECT_EQ(btn->findField(dynamic::CLASS)->as<bdg::bison::key_t>(), "Button"_key);
   EXPECT_EQ(btn->findField("label"_key)->as<std::string>(), "OK");
 }
 

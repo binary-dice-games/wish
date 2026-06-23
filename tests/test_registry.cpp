@@ -29,7 +29,7 @@ TEST_F(RegistryTest, WindowCanBeInstantiated) {
   auto obj = dynamic::instantiate("wish"_key, "Window"_key);
   auto* cls = obj.findField(dynamic::CLASS);
   ASSERT_NE(cls, nullptr);
-  EXPECT_EQ(cls->as<key_t>(), "Window"_key);
+  EXPECT_EQ(cls->as<bdg::bison::key_t>(), "Window"_key);
 }
 
 TEST_F(RegistryTest, WindowInheritsVisibleFromElement) {
@@ -159,7 +159,7 @@ TEST_F(RegistryTest, SeparatorCanBeInstantiated) {
   auto obj = dynamic::instantiate("wish"_key, "Separator"_key);
   auto* cls = obj.findField(dynamic::CLASS);
   ASSERT_NE(cls, nullptr);
-  EXPECT_EQ(cls->as<key_t>(), "Separator"_key);
+  EXPECT_EQ(cls->as<bdg::bison::key_t>(), "Separator"_key);
 }
 
 TEST_F(RegistryTest, SeparatorInheritsVisibleFromElement) {

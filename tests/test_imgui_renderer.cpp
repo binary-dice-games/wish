@@ -92,7 +92,7 @@ TEST_F(ImguiRendererTest, BeginEndFrameDoNotThrow) {
 
 TEST_F(ImguiRendererTest, LabelDoesNotThrowOrEmitEvent) {
   bool event_fired = false;
-  sess_->emit_event = [&](key_t, key_t, dynamic) { event_fired = true; };
+  sess_->emit_event = [&](bdg::bison::key_t, bdg::bison::key_t, dynamic) { event_fired = true; };
 
   auto map = bdg::wish::import_json(R"({"type":"Label","text":"hello"})");
 
@@ -106,8 +106,8 @@ TEST_F(ImguiRendererTest, LabelDoesNotThrowOrEmitEvent) {
 // ── Button: emits "clicked" on simulated press+release ───────────────────────
 
 TEST_F(ImguiRendererTest, ButtonEmitsClickedEvent) {
-  key_t last_event{hash_t{0}};
-  sess_->emit_event = [&](key_t, key_t ev, dynamic) { last_event = ev; };
+  bdg::bison::key_t last_event{hash_t{0}};
+  sess_->emit_event = [&](bdg::bison::key_t, bdg::bison::key_t ev, dynamic) { last_event = ev; };
 
   auto map = bdg::wish::import_json(R"({"type":"Button","label":"OK"})");
 
@@ -134,9 +134,9 @@ TEST_F(ImguiRendererTest, ButtonEmitsClickedEvent) {
 // ── Checkbox: emits "changed" with correct boolean payload ───────────────────
 
 TEST_F(ImguiRendererTest, CheckboxEmitsChangedWithCorrectPayload) {
-  key_t  last_event{hash_t{0}};
+  bdg::bison::key_t  last_event{hash_t{0}};
   bool   last_value = false;
-  sess_->emit_event = [&](key_t, key_t ev, dynamic payload) {
+  sess_->emit_event = [&](bdg::bison::key_t, bdg::bison::key_t ev, dynamic payload) {
     last_event = ev;
     auto* f = payload.findField("value"_key);
     if (f && f->is<bool>()) last_value = f->as<bool>();
@@ -189,7 +189,7 @@ class counting_imgui_renderer : public imgui_renderer {
   int label_count = 0;
 
   void render_node(const ui_element& node, session& s) override {
-    if (node.as<key_t>(dynamic::CLASS) == "Label"_key) ++label_count;
+    if (node.as<bdg::bison::key_t>(dynamic::CLASS) == "Label"_key) ++label_count;
     imgui_renderer::render_node(node, s);
   }
 };

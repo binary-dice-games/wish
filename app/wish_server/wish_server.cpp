@@ -149,7 +149,7 @@ int wish_server::run_pty() {
 
   pty_server_transport pty{FLAGS_cmd};
   bison::dynamic params;
-  params["mode"_key] = std::string{"dcs"};
+  params[bdg::bison::key_t{"mode"}] = std::string{"dcs"};
   pty.start(std::move(params));
   on_listening_pty();
 

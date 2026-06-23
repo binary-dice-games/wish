@@ -51,7 +51,7 @@ TEST_F(FileServiceTest, ListReturnsUploadedFileNames) {
   ASSERT_NE(listing, nullptr);
 
   std::unordered_set<std::string> found;
-  listing->forEach([&](key_t, const field& f) {
+  listing->forEach([&](bdg::bison::key_t, const field& f) {
     if (f.is<std::string>()) found.insert(f.as<std::string>());
   });
 
@@ -62,7 +62,7 @@ TEST_F(FileServiceTest, ListReturnsUploadedFileNames) {
 TEST_F(FileServiceTest, ListEmptyWhenNoFiles) {
   auto listing = fs().list();
   int count = 0;
-  listing->forEach([&](key_t, const field& f) {
+  listing->forEach([&](bdg::bison::key_t, const field& f) {
     if (f.is<std::string>()) ++count;
   });
   EXPECT_EQ(count, 0);

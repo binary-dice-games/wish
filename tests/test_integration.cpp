@@ -31,7 +31,7 @@ class integration_server : public wish::server {
       : wish::server(t, std::make_unique<wish::null_renderer>()) {}
 
   // Callback wired to ctx.emit_event; available once on_session_created fires.
-  std::function<void(key_t, key_t, dynamic)> emit_fn;
+  std::function<void(bdg::bison::key_t, bdg::bison::key_t, dynamic)> emit_fn;
 
   // Sandboxed resource directory for the active session.
   std::filesystem::path resource_dir;
@@ -146,7 +146,7 @@ TEST_F(IntegrationTest, FullStack) {
         auto fs = instantiate("wish"_key, "__WishFileSystem"_key).get();
         {
           auto result = fs.call("list"_key, dynamic{}).get();
-          result.forEach([this](key_t, const field& f) {
+          result.forEach([this](bdg::bison::key_t, const field& f) {
             if (f.is<std::string>() && f.as<std::string>() == "test.bin")
               file_list_ok = true;
           });
