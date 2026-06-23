@@ -120,6 +120,7 @@ void server::render_loop() {
   while (running_.load(std::memory_order_acquire)) {
     if (renderer_) {
       renderer_->begin_frame();
+      renderer_->render_server_frame();
       {
         auto lp = sessions_.rlock();
         for (const auto& [id, sess] : *lp) {

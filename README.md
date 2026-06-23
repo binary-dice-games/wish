@@ -95,5 +95,5 @@ img.set({{"src"_key, std::string{"logo.png"}}, {"width"_key, 64}, {"height"_key,
 
 | File | Contents |
 |------|----------|
-| [docs/building.md](docs/building.md) | Prerequisites, CMake options, platform notes |
+| [docs/building.md](docs/building.md) | Prerequisites, CMake options, build commands, running the server |
 | [docs/examples.md](docs/examples.md) | Annotated example walkthroughs |

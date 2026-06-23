@@ -124,6 +124,10 @@ bool sdl3_renderer::should_quit() const {
   return quit_.load(std::memory_order_acquire);
 }
 
+void sdl3_renderer::request_quit() {
+  quit_.store(true, std::memory_order_release);
+}
+
 // ── texture loading ───────────────────────────────────────────────────────────
 
 ImTextureID sdl3_renderer::get_or_load_texture(

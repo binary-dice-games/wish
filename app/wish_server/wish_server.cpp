@@ -9,6 +9,8 @@
 #include <wish/sdl3_renderer.hpp>
 #include <wish/server.hpp>
 
+#include <imgui.h>
+
 #if defined(__linux__)
 #  include "src/app/pty/pty_server_transport.hpp"
 #endif
@@ -34,10 +36,68 @@ DECLARE_string(cmd);
 
 namespace bdg::wish {
 
+// ── server_renderer ───────────────────────────────────────────────────────────
+//
+// Extends sdl3_renderer with a fullscreen host window that provides:
+//   - A DockSpace so client windows can be docked anywhere in the server view.
+//   - A menu bar with server-level actions (including Quit).
+
+class server_renderer : public sdl3_renderer {
+ public:
+  using sdl3_renderer::sdl3_renderer;
+
+  void render_server_frame() override {
+    // Cover the entire main viewport with a borderless host window.
+    const ImGuiViewport* vp = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(vp->WorkPos);
+    ImGui::SetNextWindowSize(vp->WorkSize);
+    ImGui::SetNextWindowViewport(vp->ID);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding,   0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,    ImVec2(0.0f, 0.0f));
+
+    constexpr ImGuiWindowFlags host_flags =
+        ImGuiWindowFlags_NoDocking          |
+        ImGuiWindowFlags_NoTitleBar         |
+        ImGuiWindowFlags_NoCollapse         |
+        ImGuiWindowFlags_NoResize           |
+        ImGuiWindowFlags_NoMove             |
+        ImGuiWindowFlags_NoBringToFrontOnFocus |
+        ImGuiWindowFlags_NoNavFocus         |
+        ImGuiWindowFlags_MenuBar;
+
+    ImGui::Begin("##wish_server_host", nullptr, host_flags);
+    ImGui::PopStyleVar(3);
+
+    // ── Menu bar ──────────────────────────────────────────────────────────────
+    if (ImGui::BeginMenuBar()) {
+      if (ImGui::BeginMenu("Server")) {
+        if (ImGui::MenuItem("Quit", "Alt+F4"))
+          request_quit();
+        ImGui::EndMenu();
+      }
+      if (ImGui::BeginMenu("View")) {
+        ImGui::MenuItem("(no options yet)", nullptr, false, false);
+        ImGui::EndMenu();
+      }
+      ImGui::EndMenuBar();
+    }
+
+    // ── DockSpace ─────────────────────────────────────────────────────────────
+    ImGuiID dock_id = ImGui::GetID("ServerDockSpace");
+    ImGui::DockSpace(dock_id, ImVec2(0.0f, 0.0f),
+                     ImGuiDockNodeFlags_PassthruCentralNode);
+
+    ImGui::End();
+    // Client session windows are rendered after this by server::render_loop
+    // and will dock into the dockspace created above.
+  }
+};
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 static std::unique_ptr<sdl3_renderer> make_renderer() {
-  return std::make_unique<sdl3_renderer>(
+  return std::make_unique<server_renderer>(
       FLAGS_title.c_str(), FLAGS_width, FLAGS_height);
 }
 

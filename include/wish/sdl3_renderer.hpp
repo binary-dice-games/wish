@@ -70,8 +70,11 @@ class sdl3_renderer : public imgui_renderer {
   ///        Calls `ImGui::Render()` instead of the parent's `EndFrame()`.
   void end_frame() override;
 
-  /// @brief Returns true once the user closes the window.
+  /// @brief Returns true once the user closes the window or quit is requested.
   bool should_quit() const override;
+
+  /// @brief Programmatically request shutdown (e.g. from a menu action).
+  void request_quit();
 
   // ── texture loading ───────────────────────────────────────────────────────
 

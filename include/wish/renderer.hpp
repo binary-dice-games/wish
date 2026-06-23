@@ -49,6 +49,17 @@ class renderer {
   virtual void begin_frame() = 0;
 
   /**
+   * @brief Optional server-level UI rendered once per frame before client
+   *        sessions.
+   *
+   * Override to inject a host window (e.g. a fullscreen dockspace with a menu
+   * bar) that surrounds client-session windows.  The default is a no-op.
+   * Called from `wish::server::render_loop` after `begin_frame` and before
+   * any session is rendered.
+   */
+  virtual void render_server_frame() {}
+
+  /**
    * @brief Render one session's complete element tree.
    *
    * The default implementation calls `render_node(root, s)` directly.
