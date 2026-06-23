@@ -222,9 +222,9 @@ static constexpr const char* kTabTablesDesc = R"json(
                            "flags": 1921, "headers": true,
               "children": {
                 "col_sensor": { "type": "TableColumn", "label": "Sensor",
-                                "init_width": 160 },
+                                "flags": 16, "init_width": 160 },
                 "col_value":  { "type": "TableColumn", "label": "Value",
-                                "init_width": 120 },
+                                "flags": 16, "init_width": 120 },
                 "col_action": { "type": "TableColumn", "label": "Action" },
                 "row_temp": { "type": "TableRow", "children": {
                   "c0": { "type": "Label",  "text": "Temperature" },
