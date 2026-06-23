@@ -57,6 +57,9 @@ class logger : public bison::dynamic {
   void warn (const std::string& msg) { log("warn",  msg); }
   void error(const std::string& msg) { log("error", msg); }
 
+  /// @brief Returns true when verbose mode is on (stdout mirroring enabled).
+  bool is_verbose() const noexcept { return verbose_; }
+
  private:
   bool verbose_;
   std::filesystem::path log_path_;

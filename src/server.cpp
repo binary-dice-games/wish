@@ -10,7 +10,9 @@
 #include "template_handler.hpp"
 
 #include <chrono>
+#include <iomanip>
 #include <memory>
+#include <sstream>
 #include <thread>
 
 namespace bdg::wish {
@@ -62,6 +64,12 @@ void server::on_session_created(bison::rmi::context& ctx) {
   // All sessions share the same global logger instance (set via set_logger()).
   sess->logger_service = logger_;
   sessions_.wlock()->emplace(ctx.session_id.id, sess);
+  {
+    std::ostringstream oss;
+    oss << "[rmi] connect     sid=0x"
+        << std::hex << std::setw(8) << std::setfill('0') << ctx.session_id.id;
+    on_print(ctx.session_id, oss.str());
+  }
   on_session_created(*sess);
 }
 
@@ -77,6 +85,12 @@ void server::on_session_destroyed(bison::rmi::context& ctx) {
   }
   if (sess) {
     try {
+      {
+        std::ostringstream oss;
+        oss << "[rmi] disconnect  sid=0x"
+            << std::hex << std::setw(8) << std::setfill('0') << ctx.session_id.id;
+        on_print(ctx.session_id, oss.str());
+      }
       on_session_destroyed(*sess);
     } catch (...) {}
   }
@@ -121,6 +135,10 @@ bison::dynamic_ptr server::on_create_object(
     }
   }
   return obj;
+}
+
+void server::on_print(bison::key_t /*session_id*/, const std::string& line) {
+  if (logger_ && logger_->is_verbose()) logger_->info(line);
 }
 
 void server::render_loop() {

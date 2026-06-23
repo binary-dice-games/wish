@@ -104,6 +104,9 @@ class server : public bison::rmi::server {
       bison::key_t ns,
       bison::key_t klass) override final;
 
+  // Receive formatted trace lines from the base class and forward to logger_.
+  void on_print(bison::key_t session_id, const std::string& line) override;
+
   void render_loop();
 
   std::unique_ptr<renderer> renderer_;
