@@ -6,6 +6,9 @@ build_asan/
 __pycache__/
 *.pyc
 *.pyo
+# Runtime-generated files
+imgui.ini
+wish_logs/
 # .NET build artifacts
 bindings/csharp/obj/
 bindings/csharp/bin/

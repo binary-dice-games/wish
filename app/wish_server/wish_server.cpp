@@ -146,6 +146,7 @@ int wish_server::run_with_transport(
   server srv{transport, make_renderer()};
   srv.set_logger(server_log_);
   srv.start();
+  server_log_->info("server started");
   on_listening();
   while (!srv.should_quit())
     std::this_thread::sleep_for(std::chrono::milliseconds{50});
@@ -189,6 +190,7 @@ int wish_server::run_pty() {
   srv.pty = &pty;
   srv.set_logger(server_log_);
   srv.start();
+  server_log_->info("server started (PTY)");
   while (!srv.should_quit())
     std::this_thread::sleep_for(std::chrono::milliseconds{50});
   srv.stop();

@@ -138,7 +138,7 @@ bison::dynamic_ptr server::on_create_object(
 }
 
 void server::on_print(bison::key_t /*session_id*/, const std::string& line) {
-  if (logger_ && logger_->is_verbose()) logger_->info(line);
+  if (logger_) logger_->info(line);
 }
 
 void server::render_loop() {

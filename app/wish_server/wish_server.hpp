@@ -58,7 +58,7 @@ class wish_server : public bison::app::srv_app {
 #endif
 
  private:
-  /// @brief Shared logger for all sessions; null when verbose mode is off.
+  /// @brief Shared logger for all sessions; always active when the server runs.
   std::shared_ptr<logger> server_log_;
 };
 
