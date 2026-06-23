@@ -175,15 +175,15 @@ void render_plot_bars_h(imgui_renderer&, const ui_element& node, session&) {
   const auto* xs = vec_field(node, "xs"_key);
   const auto* ys = vec_field(node, "ys"_key);
 
-  // ImPlot v0.16: horizontal bars via the Horizontal flag.
-  constexpr ImPlotBarsFlags kH = ImPlotBarsFlags_Horizontal;
+  ImPlotSpec hspec;
+  hspec.Flags = ImPlotBarsFlags_Horizontal;
   if (xs && !xs->empty() && ys && !ys->empty()) {
     int count = int(std::min(xs->size(), ys->size()));
     ImPlot::PlotBars(label.c_str(), xs->data(), ys->data(), count,
-                     double(bar_size), kH);
+                     double(bar_size), hspec);
   } else if (ys && !ys->empty()) {
     ImPlot::PlotBars(label.c_str(), ys->data(), int(ys->size()),
-                     double(bar_size), 0.0, kH);
+                     double(bar_size), 0.0, hspec);
   }
 }
 
@@ -208,8 +208,10 @@ void render_plot_histogram(imgui_renderer&, const ui_element& node, session&) {
   if (rng_min != rng_max)
     range = ImPlotRange(double(rng_min), double(rng_max));
 
+  ImPlotSpec hspec;
+  hspec.Flags = hflags;
   ImPlot::PlotHistogram(label.c_str(), vals->data(), int(vals->size()),
-                        bins, 1.0, range, hflags);
+                        bins, 1.0, range, hspec);
 }
 
 void render_plot_histogram2d(imgui_renderer&, const ui_element& node, session&) {
@@ -281,10 +283,11 @@ void render_plot_pie_chart(imgui_renderer&, const ui_element& node, session&) {
   label_ptrs.reserve(size_t(count));
   for (int i = 0; i < count; ++i) label_ptrs.push_back(labels[size_t(i)].c_str());
 
-  ImPlotPieChartFlags flags = normalize ? ImPlotPieChartFlags_Normalize : 0;
+  ImPlotSpec pspec;
+  pspec.Flags = normalize ? ImPlotPieChartFlags_Normalize : 0;
   ImPlot::PlotPieChart(label_ptrs.data(), vals->data(), count,
                        double(cx), double(cy), double(radius),
-                       fmt.c_str(), double(angle0), flags);
+                       fmt.c_str(), double(angle0), pspec);
 }
 
 // ── Annotations ───────────────────────────────────────────────────────────────
@@ -306,8 +309,9 @@ void render_plot_inf_lines(imgui_renderer&, const ui_element& node, session&) {
   const auto* vals  = vec_field(node, "values"_key);
   if (!vals || vals->empty()) return;
 
-  ImPlotInfLinesFlags flags = horiz ? ImPlotInfLinesFlags_Horizontal : 0;
-  ImPlot::PlotInfLines(label.c_str(), vals->data(), int(vals->size()), flags);
+  ImPlotSpec ispec;
+  ispec.Flags = horiz ? ImPlotInfLinesFlags_Horizontal : 0;
+  ImPlot::PlotInfLines(label.c_str(), vals->data(), int(vals->size()), ispec);
 }
 
 }  // namespace bdg::wish

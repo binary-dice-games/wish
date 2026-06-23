@@ -24,13 +24,13 @@ if(WISH_ENABLE_IMGUI)
   FetchContent_Declare(
     imgui
     GIT_REPOSITORY https://github.com/ocornut/imgui.git
-    GIT_TAG        v1.91.9
+    GIT_TAG        docking
     GIT_SHALLOW    TRUE
   )
   FetchContent_Declare(
     implot
     GIT_REPOSITORY https://github.com/epezent/implot.git
-    GIT_TAG        v0.16
+    GIT_TAG        master
     GIT_SHALLOW    TRUE
   )
   FetchContent_Declare(
@@ -70,7 +70,7 @@ if(WISH_ENABLE_IMGUI AND WISH_ENABLE_SDL3)
   )
   FetchContent_MakeAvailable(SDL3)
 
-  # imgui v1.91.9 ships SDL3 backend sources; add them to imgui_core.
+  # imgui docking branch ships SDL3 backend sources; add them to imgui_core.
   target_sources(imgui_core PRIVATE
     ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
     ${imgui_SOURCE_DIR}/backends/imgui_impl_sdlrenderer3.cpp
@@ -120,6 +120,7 @@ add_library(wish STATIC
   src/ui_elements/input_number.cpp
   src/ui_elements/drag.cpp
   src/ui_elements/selectable.cpp
+  src/ui_elements/docking.cpp
   src/plot_elements/plot.cpp
   src/plot_elements/plot_series.cpp
   src/plot_elements/plot_bars.cpp
@@ -138,6 +139,8 @@ if(WISH_ENABLE_IMGUI)
   target_sources(wish PRIVATE
     include/wish/imgui_renderer.hpp
     src/imgui_renderer.cpp
+    src/imgui_ui_renderer.hpp
+    src/imgui_ui_renderer.cpp
     src/imgui_plot_renderer.hpp
     src/imgui_plot_renderer.cpp
     src/imgui_plot3d_renderer.hpp

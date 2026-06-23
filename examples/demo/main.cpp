@@ -374,15 +374,9 @@ static constexpr const char* kTabPlot3DDesc = R"json(
           }
         })json";
 
-// ── Full window descriptor — assembled from per-tab pieces ─────────────────
+// ── Menu bar descriptor ────────────────────────────────────────────────────
 
-static const std::string kDemoDescStr =
-    // Window header, menu bar, and tab bar opening.
-    std::string(R"json({
-  "type": "Window", "title": "wish Widget Demo",
-  "width": 900, "height": 950,
-  "children": {
-
+static constexpr const char* kMenuBarDesc = R"json(
     "main_menu": { "type": "MenuBar",
       "children": {
         "m_file": { "type": "Menu", "label": "File",
@@ -406,10 +400,27 @@ static const std::string kDemoDescStr =
           }
         }
       }
-    },
+    })json";
 
-    "tabs_root": { "type": "TabBar", "id": "demo_tabs",
-      "children": {)json")
+// ── Full descriptor — assembled from per-tab pieces ─────────────────────────
+//
+// Root is a DockSpaceViewport so users can undock, resize, and rearrange panes.
+// The menu bar lives at the viewport level; all widget content is inside
+// demo_win, which ImGui can dock into the central dockspace node.
+
+static const std::string kDemoDescStr =
+    // DockSpaceViewport root — menu bar floats at viewport level.
+    std::string(R"json({
+  "type": "DockSpaceViewport", "id": "demo_dockspace",
+  "children": {)json")
+    + kMenuBarDesc + ","
+    // Main demo window: dockable, contains all tabs and the status bar.
+    + R"json(
+    "demo_win": { "type": "Window", "title": "wish Widget Demo",
+      "width": 900, "height": 800,
+      "children": {
+        "tabs_root": { "type": "TabBar", "id": "demo_tabs",
+          "children": {)json"
     + kTabBasicsDesc    + ","
     + kTabSlidersDesc   + ","
     + kTabInputsDesc    + ","
@@ -418,15 +429,16 @@ static const std::string kDemoDescStr =
     + kTabMiscDesc      + ","
     + kTabPlotsDesc     + ","
     + kTabPlot3DDesc
-    // Tab bar footer, status bar, and window closing.
+    // Close tab bar, add status bar, close window and dockspace.
     + R"json(
 
+          }
+        },
+        "sep_status": { "type": "Separator" },
+        "lbl_ev_hdr": { "type": "Label", "text": "Last event:" },
+        "lbl_status": { "type": "Label", "text": "(interact with any widget to see its event here)" }
       }
-    },
-
-    "sep_status": { "type": "Separator" },
-    "lbl_ev_hdr": { "type": "Label", "text": "Last event:" },
-    "lbl_status": { "type": "Label", "text": "(interact with any widget to see its event here)" }
+    }
   }
 })json";
 
@@ -492,7 +504,7 @@ class demo_client : public wish::client {
 
     auto status = [&, set_text](const std::string& msg) {
       vlog("event: " + msg);
-      set_text("lbl_status", msg);
+      set_text("demo_win.lbl_status", msg);
     };
 
     // ── Plot data ─────────────────────────────────────────────────────────
@@ -515,12 +527,12 @@ class demo_client : public wish::client {
       noisy_cos[i] = cos_ys[i] + rng_float(rng) * 0.35f;
 
     // Section 1: Line, Scatter, Stairs.
-    set_xy("tabs_root.tab_plots.ch_line.plt_lines.l_sin",    xs, sin_ys);
-    set_xy("tabs_root.tab_plots.ch_line.plt_lines.l_cos",    xs, noisy_cos);
-    set_xy("tabs_root.tab_plots.ch_line.plt_lines.l_stairs", xs, cos_ys);
+    set_xy("demo_win.tabs_root.tab_plots.ch_line.plt_lines.l_sin",    xs, sin_ys);
+    set_xy("demo_win.tabs_root.tab_plots.ch_line.plt_lines.l_cos",    xs, noisy_cos);
+    set_xy("demo_win.tabs_root.tab_plots.ch_line.plt_lines.l_stairs", xs, cos_ys);
 
     // Section 2: Stems and Shaded.
-    set_xy("tabs_root.tab_plots.ch_area.plt_area.a_stems", xs, sin_ys);
+    set_xy("demo_win.tabs_root.tab_plots.ch_area.plt_area.a_stems", xs, sin_ys);
     {
       std::vector<float> band_hi(kN), band_lo(kN);
       for (int i = 0; i < kN; ++i) {
@@ -531,7 +543,7 @@ class demo_client : public wish::client {
       d["xs"_key]  = xs;
       d["ys"_key]  = band_hi;
       d["ys2"_key] = band_lo;
-      pm.at("tabs_root.tab_plots.ch_area.plt_area.a_shaded").set(std::move(d));
+      pm.at("demo_win.tabs_root.tab_plots.ch_area.plt_area.a_shaded").set(std::move(d));
     }
 
     // Section 3: Digital signals (200 steps at 20 Hz → 10 s window).
@@ -543,8 +555,8 @@ class demo_client : public wish::client {
         pwm[i] = (i % 6 < 4) ? 1.0f : 0.0f;   // 67 % duty cycle
         clk[i] = (i % 2 == 0) ? 1.0f : 0.0f;  // 50 % clock
       }
-      set_xy("tabs_root.tab_plots.ch_digital.plt_digital.d_pwm", dt, pwm);
-      set_xy("tabs_root.tab_plots.ch_digital.plt_digital.d_clk", dt, clk);
+      set_xy("demo_win.tabs_root.tab_plots.ch_digital.plt_digital.d_pwm", dt, pwm);
+      set_xy("demo_win.tabs_root.tab_plots.ch_digital.plt_digital.d_clk", dt, clk);
     }
 
     // Section 4: Bar charts (12 monthly sales, 4 quarterly revenues).
@@ -555,12 +567,12 @@ class demo_client : public wish::client {
         month_xs.push_back(float(i + 1));
         month_ys.push_back(sales[i]);
       }
-      set_xy("tabs_root.tab_plots.ch_bars.plt_bars.b_monthly", month_xs, month_ys);
+      set_xy("demo_win.tabs_root.tab_plots.ch_bars.plt_bars.b_monthly", month_xs, month_ys);
 
       // Horizontal bars: ys = quarter index, xs = revenue
       std::vector<float> qtr_ys = {1.0f, 2.0f, 3.0f, 4.0f};
       std::vector<float> qtr_xs = {42.5f, 38.2f, 51.0f, 45.7f};
-      set_xy("tabs_root.tab_plots.ch_bars.plt_barsh.b_qtr", qtr_xs, qtr_ys);
+      set_xy("demo_win.tabs_root.tab_plots.ch_bars.plt_barsh.b_qtr", qtr_xs, qtr_ys);
     }
 
     // Section 5: Histograms (1000 normal-distribution samples).
@@ -577,9 +589,9 @@ class demo_client : public wish::client {
       }
       {
         dynamic d; d["values"_key] = h_vals;
-        pm.at("tabs_root.tab_plots.ch_hist.plt_hist1.h_norm").set(std::move(d));
+        pm.at("demo_win.tabs_root.tab_plots.ch_hist.plt_hist1.h_norm").set(std::move(d));
       }
-      set_xy("tabs_root.tab_plots.ch_hist.plt_hist2.h_2d", h_xs, h_ys);
+      set_xy("demo_win.tabs_root.tab_plots.ch_hist.plt_hist2.h_2d", h_xs, h_ys);
     }
 
     // Section 6: Heatmap — 10×10 Gaussian bell.
@@ -594,29 +606,29 @@ class demo_client : public wish::client {
         }
       }
       dynamic d; d["values"_key] = heat;
-      pm.at("tabs_root.tab_plots.ch_heatmap.plt_heat.hm").set(std::move(d));
+      pm.at("demo_win.tabs_root.tab_plots.ch_heatmap.plt_heat.hm").set(std::move(d));
     }
 
     // Section 7: Pie chart values (Web, Mobile, Desktop, Tablet, Other).
     {
       dynamic d;
       d["values"_key] = std::vector<float>{38.0f, 28.0f, 22.0f, 8.0f, 4.0f};
-      pm.at("tabs_root.tab_plots.ch_pie.plt_pie.pie").set(std::move(d));
+      pm.at("demo_win.tabs_root.tab_plots.ch_pie.plt_pie.pie").set(std::move(d));
     }
 
     // Section 8: Annotations — sin(x) line + text label + inf lines.
-    set_xy("tabs_root.tab_plots.ch_annot.plt_annot.an_line", xs, sin_ys);
+    set_xy("demo_win.tabs_root.tab_plots.ch_annot.plt_annot.an_line", xs, sin_ys);
     {
       // Vertical reference at x = π/2.
       dynamic dv;
       dv["values"_key] = std::vector<float>{k2pi / 4.0f};
-      pm.at("tabs_root.tab_plots.ch_annot.plt_annot.an_vref").set(std::move(dv));
+      pm.at("demo_win.tabs_root.tab_plots.ch_annot.plt_annot.an_vref").set(std::move(dv));
     }
     {
       // Horizontal reference at y = 0.
       dynamic dh;
       dh["values"_key] = std::vector<float>{0.0f};
-      pm.at("tabs_root.tab_plots.ch_annot.plt_annot.an_href").set(std::move(dh));
+      pm.at("demo_win.tabs_root.tab_plots.ch_annot.plt_annot.an_href").set(std::move(dh));
     }
 
     // ── Plot3D data ───────────────────────────────────────────────────────
@@ -632,7 +644,7 @@ class demo_client : public wish::client {
       }
       {
         dynamic d; d["xs"_key] = hx; d["ys"_key] = hy; d["zs"_key] = hz;
-        pm.at("tabs_root.tab_plot3d.ch3_line.plt3_ls.p3_helix").set(std::move(d));
+        pm.at("demo_win.tabs_root.tab_plot3d.ch3_line.plt3_ls.p3_helix").set(std::move(d));
       }
 
       constexpr int kFib = 60;
@@ -647,7 +659,7 @@ class demo_client : public wish::client {
       }
       {
         dynamic d; d["xs"_key] = spx; d["ys"_key] = spy; d["zs"_key] = spz;
-        pm.at("tabs_root.tab_plot3d.ch3_line.plt3_ls.p3_sphere").set(std::move(d));
+        pm.at("demo_win.tabs_root.tab_plot3d.ch3_line.plt3_ls.p3_sphere").set(std::move(d));
       }
     }
 
@@ -666,7 +678,7 @@ class demo_client : public wish::client {
         }
       }
       dynamic d; d["xs"_key] = sx; d["ys"_key] = sy; d["zs"_key] = sz;
-      pm.at("tabs_root.tab_plot3d.ch3_surf.plt3_surf.p3_sinc").set(std::move(d));
+      pm.at("demo_win.tabs_root.tab_plot3d.ch3_surf.plt3_surf.p3_sinc").set(std::move(d));
     }
 
     // C: 3-D shapes — tetrahedron (triangles), cube (quads), octahedron (mesh).
@@ -684,7 +696,7 @@ class demo_client : public wish::client {
         }
       {
         dynamic d; d["xs"_key]=tri_xs; d["ys"_key]=tri_ys; d["zs"_key]=tri_zs;
-        pm.at("tabs_root.tab_plot3d.ch3_mesh.plt3_shapes.p3_tetra").set(std::move(d));
+        pm.at("demo_win.tabs_root.tab_plot3d.ch3_mesh.plt3_shapes.p3_tetra").set(std::move(d));
       }
 
       // Cube — 6 faces × 4 vertices, centered at origin.
@@ -703,7 +715,7 @@ class demo_client : public wish::client {
         }
       {
         dynamic d; d["xs"_key]=quad_xs; d["ys"_key]=quad_ys; d["zs"_key]=quad_zs;
-        pm.at("tabs_root.tab_plot3d.ch3_mesh.plt3_shapes.p3_cube").set(std::move(d));
+        pm.at("demo_win.tabs_root.tab_plot3d.ch3_mesh.plt3_shapes.p3_cube").set(std::move(d));
       }
 
       // Octahedron — 6 vertices, 8 triangular faces, offset to x+3.
@@ -726,7 +738,7 @@ class demo_client : public wish::client {
         dynamic d;
         d["xs"_key]=mxs; d["ys"_key]=mys; d["zs"_key]=mzs;
         d["indices"_key] = midxs;
-        pm.at("tabs_root.tab_plot3d.ch3_mesh.plt3_shapes.p3_octa").set(std::move(d));
+        pm.at("demo_win.tabs_root.tab_plot3d.ch3_mesh.plt3_shapes.p3_octa").set(std::move(d));
       }
     }
 
@@ -736,56 +748,56 @@ class demo_client : public wish::client {
       d["xs"_key] = std::vector<float>{0.0f, 1.0f, 0.0f, 0.0f};
       d["ys"_key] = std::vector<float>{0.0f, 0.0f, 1.0f, 0.0f};
       d["zs"_key] = std::vector<float>{0.0f, 0.0f, 0.0f, 1.0f};
-      pm.at("tabs_root.tab_plot3d.ch3_text.plt3_text.p3_axpts").set(std::move(d));
+      pm.at("demo_win.tabs_root.tab_plot3d.ch3_text.plt3_text.p3_axpts").set(std::move(d));
     }
 
     // ── Basics tab: buttons, checkboxes, radio ────────────────────────────
 
-    pm.at("tabs_root.tab_basics.btn_row.btn_click").onEvent("clicked"_key,
+    pm.at("demo_win.tabs_root.tab_basics.btn_row.btn_click").onEvent("clicked"_key,
         [&, set_text, status](dynamic) {
           ++click_count_;
-          set_text("tabs_root.tab_basics.lbl_clicks",
+          set_text("demo_win.tabs_root.tab_basics.lbl_clicks",
                    "Click counter: " + std::to_string(click_count_));
           status("'Click me' pressed (" +
                  std::to_string(click_count_) + " times total)");
         });
 
-    pm.at("tabs_root.tab_basics.btn_row.btn_reset").onEvent("clicked"_key,
+    pm.at("demo_win.tabs_root.tab_basics.btn_row.btn_reset").onEvent("clicked"_key,
         [&, set_text, status](dynamic) {
           click_count_ = 0;
-          set_text("tabs_root.tab_basics.lbl_clicks", "Click counter: 0");
+          set_text("demo_win.tabs_root.tab_basics.lbl_clicks", "Click counter: 0");
           status("Counter reset.");
         });
 
-    pm.at("tabs_root.tab_basics.btn_row.btn_wide").onEvent("clicked"_key,
+    pm.at("demo_win.tabs_root.tab_basics.btn_row.btn_wide").onEvent("clicked"_key,
         [status](dynamic) { status("Wide button clicked."); });
 
-    pm.at("tabs_root.tab_basics.chk_a").onEvent("changed"_key,
+    pm.at("demo_win.tabs_root.tab_basics.chk_a").onEvent("changed"_key,
         [status](dynamic p) {
           const auto* f = p.findField("value"_key);
           bool v = (f && f->is<bool>()) ? f->as<bool>() : false;
           status("Option A: " + std::string(v ? "checked" : "unchecked"));
         });
 
-    pm.at("tabs_root.tab_basics.chk_b").onEvent("changed"_key,
+    pm.at("demo_win.tabs_root.tab_basics.chk_b").onEvent("changed"_key,
         [status](dynamic p) {
           const auto* f = p.findField("value"_key);
           bool v = (f && f->is<bool>()) ? f->as<bool>() : false;
           status("Option B: " + std::string(v ? "checked" : "unchecked"));
         });
 
-    pm.at("tabs_root.tab_basics.chk_vis").onEvent("changed"_key,
+    pm.at("demo_win.tabs_root.tab_basics.chk_vis").onEvent("changed"_key,
         [set_visible, status](dynamic p) {
           const auto* f = p.findField("value"_key);
           bool v = (f && f->is<bool>()) ? f->as<bool>() : false;
-          set_visible("tabs_root.tab_basics.lbl_hidden", v);
+          set_visible("demo_win.tabs_root.tab_basics.lbl_hidden", v);
           status("Visibility: label is now " + std::string(v ? "shown" : "hidden"));
         });
 
     static const char* kRBNames[] = {
-        "tabs_root.tab_basics.radio_row.rb_a",
-        "tabs_root.tab_basics.radio_row.rb_b",
-        "tabs_root.tab_basics.radio_row.rb_c"};
+        "demo_win.tabs_root.tab_basics.radio_row.rb_a",
+        "demo_win.tabs_root.tab_basics.radio_row.rb_b",
+        "demo_win.tabs_root.tab_basics.radio_row.rb_c"};
     static const char* kRBLabels[] = {"Alpha", "Beta", "Gamma"};
     for (int i = 0; i < 3; ++i) {
       pm.at(kRBNames[i]).onEvent("clicked"_key,
@@ -800,34 +812,34 @@ class demo_client : public wish::client {
 
     // ── Sliders & Drags tab ───────────────────────────────────────────────
 
-    pm.at("tabs_root.tab_sliders.sf_opacity").onEvent("changed"_key,
+    pm.at("demo_win.tabs_root.tab_sliders.sf_opacity").onEvent("changed"_key,
         [status](dynamic p) {
           const auto* f = p.findField("value"_key);
           float v = (f && f->is<float>()) ? f->as<float>() : 0.0f;
           char buf[64]; std::snprintf(buf, sizeof(buf), "Opacity: %.2f", v);
           status(buf);
         });
-    pm.at("tabs_root.tab_sliders.sf_angle").onEvent("changed"_key,
+    pm.at("demo_win.tabs_root.tab_sliders.sf_angle").onEvent("changed"_key,
         [status](dynamic p) {
           const auto* f = p.findField("value"_key);
           float v = (f && f->is<float>()) ? f->as<float>() : 0.0f;
           char buf[64]; std::snprintf(buf, sizeof(buf), "Angle: %.0f deg", v);
           status(buf);
         });
-    pm.at("tabs_root.tab_sliders.si_count").onEvent("changed"_key,
+    pm.at("demo_win.tabs_root.tab_sliders.si_count").onEvent("changed"_key,
         [status](dynamic p) {
           const auto* f = p.findField("value"_key);
           int32_t v = (f && f->is<int32_t>()) ? f->as<int32_t>() : 0;
           status("Count: " + std::to_string(v));
         });
-    pm.at("tabs_root.tab_sliders.df_val").onEvent("changed"_key,
+    pm.at("demo_win.tabs_root.tab_sliders.df_val").onEvent("changed"_key,
         [status](dynamic p) {
           const auto* f = p.findField("value"_key);
           float v = (f && f->is<float>()) ? f->as<float>() : 0.0f;
           char buf[64]; std::snprintf(buf, sizeof(buf), "Float drag: %.2f", v);
           status(buf);
         });
-    pm.at("tabs_root.tab_sliders.di_val").onEvent("changed"_key,
+    pm.at("demo_win.tabs_root.tab_sliders.di_val").onEvent("changed"_key,
         [status](dynamic p) {
           const auto* f = p.findField("value"_key);
           int32_t v = (f && f->is<int32_t>()) ? f->as<int32_t>() : 0;
@@ -836,25 +848,25 @@ class demo_client : public wish::client {
 
     // ── Text & Numbers tab ────────────────────────────────────────────────
 
-    pm.at("tabs_root.tab_inputs.txt_name").onEvent("changed"_key,
+    pm.at("demo_win.tabs_root.tab_inputs.txt_name").onEvent("changed"_key,
         [status](dynamic p) {
           const auto* f = p.findField("value"_key);
           std::string v = (f && f->is<std::string>()) ? f->as<std::string>() : "";
           status("Name: \"" + v + "\"");
         });
-    pm.at("tabs_root.tab_inputs.txt_msg").onEvent("changed"_key,
+    pm.at("demo_win.tabs_root.tab_inputs.txt_msg").onEvent("changed"_key,
         [status](dynamic p) {
           const auto* f = p.findField("value"_key);
           std::string v = (f && f->is<std::string>()) ? f->as<std::string>() : "";
           status("Message: \"" + v + "\"");
         });
-    pm.at("tabs_root.tab_inputs.ii_qty").onEvent("changed"_key,
+    pm.at("demo_win.tabs_root.tab_inputs.ii_qty").onEvent("changed"_key,
         [status](dynamic p) {
           const auto* f = p.findField("value"_key);
           int32_t v = (f && f->is<int32_t>()) ? f->as<int32_t>() : 0;
           status("Quantity: " + std::to_string(v));
         });
-    pm.at("tabs_root.tab_inputs.if_price").onEvent("changed"_key,
+    pm.at("demo_win.tabs_root.tab_inputs.if_price").onEvent("changed"_key,
         [status](dynamic p) {
           const auto* f = p.findField("value"_key);
           float v = (f && f->is<float>()) ? f->as<float>() : 0.0f;
@@ -864,13 +876,13 @@ class demo_client : public wish::client {
 
     // ── Selection tab ─────────────────────────────────────────────────────
 
-    pm.at("tabs_root.tab_selection.cmb_fruit").onEvent("changed"_key,
+    pm.at("demo_win.tabs_root.tab_selection.cmb_fruit").onEvent("changed"_key,
         [status](dynamic p) {
           const auto* f = p.findField("text"_key);
           std::string v = (f && f->is<std::string>()) ? f->as<std::string>() : "?";
           status("Fruit: " + v);
         });
-    pm.at("tabs_root.tab_selection.cmb_size").onEvent("changed"_key,
+    pm.at("demo_win.tabs_root.tab_selection.cmb_size").onEvent("changed"_key,
         [status](dynamic p) {
           const auto* f = p.findField("text"_key);
           std::string v = (f && f->is<std::string>()) ? f->as<std::string>() : "?";
@@ -878,10 +890,10 @@ class demo_client : public wish::client {
         });
 
     static const char* kSelNames[] = {
-        "tabs_root.tab_selection.sel_a",
-        "tabs_root.tab_selection.sel_b",
-        "tabs_root.tab_selection.sel_c",
-        "tabs_root.tab_selection.sel_d"};
+        "demo_win.tabs_root.tab_selection.sel_a",
+        "demo_win.tabs_root.tab_selection.sel_b",
+        "demo_win.tabs_root.tab_selection.sel_c",
+        "demo_win.tabs_root.tab_selection.sel_d"};
     static const char* kSelLabels[] = {"Alpha", "Beta", "Gamma", "Delta"};
     for (int i = 0; i < 4; ++i) {
       pm.at(kSelNames[i]).onEvent("changed"_key,
@@ -902,39 +914,39 @@ class demo_client : public wish::client {
         status(name + ": " + (v ? "expanded" : "collapsed"));
       };
     };
-    pm.at("tabs_root.tab_tree.tn_root").onEvent("toggled"_key,
+    pm.at("demo_win.tabs_root.tab_tree.tn_root").onEvent("toggled"_key,
         on_toggled("Root node"));
-    pm.at("tabs_root.tab_tree.tn_root.tn_child_a").onEvent("toggled"_key,
+    pm.at("demo_win.tabs_root.tab_tree.tn_root.tn_child_a").onEvent("toggled"_key,
         on_toggled("Child A"));
-    pm.at("tabs_root.tab_tree.tn_root.tn_child_b").onEvent("toggled"_key,
+    pm.at("demo_win.tabs_root.tab_tree.tn_root.tn_child_b").onEvent("toggled"_key,
         on_toggled("Child B"));
-    pm.at("tabs_root.tab_tree.ch_details").onEvent("toggled"_key,
+    pm.at("demo_win.tabs_root.tab_tree.ch_details").onEvent("toggled"_key,
         on_toggled("CollapsingHeader: Details"));
-    pm.at("tabs_root.tab_tree.ch_advanced").onEvent("toggled"_key,
+    pm.at("demo_win.tabs_root.tab_tree.ch_advanced").onEvent("toggled"_key,
         on_toggled("CollapsingHeader: Advanced"));
 
     // ── Misc tab ──────────────────────────────────────────────────────────
 
     for (const auto* name : {
-             "tabs_root.tab_misc.hlay.hl_a",
-             "tabs_root.tab_misc.hlay.hl_b",
-             "tabs_root.tab_misc.hlay.hl_c",
-             "tabs_root.tab_misc.vlay.vr1.vr1c1",
-             "tabs_root.tab_misc.vlay.vr1.vr1c2",
-             "tabs_root.tab_misc.vlay.vr1.vr1c3",
-             "tabs_root.tab_misc.vlay.vr2.vr2c1",
-             "tabs_root.tab_misc.vlay.vr2.vr2c2"}) {
+             "demo_win.tabs_root.tab_misc.hlay.hl_a",
+             "demo_win.tabs_root.tab_misc.hlay.hl_b",
+             "demo_win.tabs_root.tab_misc.hlay.hl_c",
+             "demo_win.tabs_root.tab_misc.vlay.vr1.vr1c1",
+             "demo_win.tabs_root.tab_misc.vlay.vr1.vr1c2",
+             "demo_win.tabs_root.tab_misc.vlay.vr1.vr1c3",
+             "demo_win.tabs_root.tab_misc.vlay.vr2.vr2c1",
+             "demo_win.tabs_root.tab_misc.vlay.vr2.vr2c2"}) {
       pm.at(name).onEvent("clicked"_key,
           [s = status, n = std::string(name)](dynamic) {
             s("Layout button '" + n + "' clicked.");
           });
     }
 
-    pm.at("tabs_root.tab_misc.theme_row.theme_dark").onEvent("clicked"_key,
+    pm.at("demo_win.tabs_root.tab_misc.theme_row.theme_dark").onEvent("clicked"_key,
         [&, status](dynamic) { set_style_preset("dark").get(); status("Theme: dark"); });
-    pm.at("tabs_root.tab_misc.theme_row.theme_light").onEvent("clicked"_key,
+    pm.at("demo_win.tabs_root.tab_misc.theme_row.theme_light").onEvent("clicked"_key,
         [&, status](dynamic) { set_style_preset("light").get(); status("Theme: light"); });
-    pm.at("tabs_root.tab_misc.theme_row.theme_classic").onEvent("clicked"_key,
+    pm.at("demo_win.tabs_root.tab_misc.theme_row.theme_classic").onEvent("clicked"_key,
         [&, status](dynamic) { set_style_preset("classic").get(); status("Theme: classic"); });
 
     // ── Menu bar ──────────────────────────────────────────────────────────
@@ -961,14 +973,14 @@ class demo_client : public wish::client {
     // ── Tab events ────────────────────────────────────────────────────────
 
     static const char* kTabNames[] = {
-        "tabs_root.tab_basics",
-        "tabs_root.tab_sliders",
-        "tabs_root.tab_inputs",
-        "tabs_root.tab_selection",
-        "tabs_root.tab_tree",
-        "tabs_root.tab_misc",
-        "tabs_root.tab_plots",
-        "tabs_root.tab_plot3d"};
+        "demo_win.tabs_root.tab_basics",
+        "demo_win.tabs_root.tab_sliders",
+        "demo_win.tabs_root.tab_inputs",
+        "demo_win.tabs_root.tab_selection",
+        "demo_win.tabs_root.tab_tree",
+        "demo_win.tabs_root.tab_misc",
+        "demo_win.tabs_root.tab_plots",
+        "demo_win.tabs_root.tab_plot3d"};
     static const char* kTabLabels[] = {
         "Basics", "Sliders & Drags", "Text & Numbers",
         "Selection", "Tree & Collapse", "Misc", "Plots", "3-D Plots"};

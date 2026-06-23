@@ -58,11 +58,13 @@ void sdl3_renderer::setup() {
   ImPlot3D::CreateContext();
   ImGui::StyleColorsDark();
 
+  ImGuiIO& io = ImGui::GetIO();
+  io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+
   ImGui_ImplSDL3_InitForSDLRenderer(window_, sdl_renderer_);
   ImGui_ImplSDLRenderer3_Init(sdl_renderer_);
 
   // Build font atlas — required before the first NewFrame.
-  ImGuiIO& io = ImGui::GetIO();
   unsigned char* pixels;
   int fw, fh;
   io.Fonts->GetTexDataAsRGBA32(&pixels, &fw, &fh);
