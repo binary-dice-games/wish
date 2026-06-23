@@ -23,41 +23,9 @@ using namespace bdg::bison;
 using namespace bdg::bison::rmi::transport;
 namespace wish = bdg::wish;
 
-// ── UI descriptor ─────────────────────────────────────────────────────────────
+// ── Tab descriptors (one per TabBar entry) ────────────────────────────────────
 
-static constexpr const char* kDemoDesc = R"json({
-  "type": "Window", "title": "wish Widget Demo",
-  "width": 900, "height": 950,
-  "children": {
-
-    "main_menu": { "type": "MenuBar",
-      "children": {
-        "m_file": { "type": "Menu", "label": "File",
-          "children": {
-            "mi_new":  { "type": "MenuItem", "label": "New",  "shortcut": "Ctrl+N" },
-            "mi_open": { "type": "MenuItem", "label": "Open", "shortcut": "Ctrl+O" },
-            "mi_sep":  { "type": "Separator" },
-            "mi_quit": { "type": "MenuItem", "label": "Quit", "shortcut": "Alt+F4" }
-          }
-        },
-        "m_view": { "type": "Menu", "label": "View",
-          "children": {
-            "mi_dark":    { "type": "MenuItem", "label": "Dark theme"    },
-            "mi_light":   { "type": "MenuItem", "label": "Light theme"   },
-            "mi_classic": { "type": "MenuItem", "label": "Classic theme" }
-          }
-        },
-        "m_check": { "type": "Menu", "label": "Options",
-          "children": {
-            "mi_verbose": { "type": "MenuItem", "label": "Verbose logging", "checked": false }
-          }
-        }
-      }
-    },
-
-    "tabs_root": { "type": "TabBar", "id": "demo_tabs",
-      "children": {
-
+static constexpr const char* kTabBasicsDesc = R"json(
         "tab_basics": { "type": "TabItem", "label": "Basics",
           "children": {
             "sec_labels":  { "type": "SeparatorText", "label": "Labels" },
@@ -88,8 +56,9 @@ static constexpr const char* kDemoDesc = R"json({
               }
             }
           }
-        },
+        })json";
 
+static constexpr const char* kTabSlidersDesc = R"json(
         "tab_sliders": { "type": "TabItem", "label": "Sliders & Drags",
           "children": {
             "sec_sliders": { "type": "SeparatorText", "label": "Sliders" },
@@ -100,8 +69,9 @@ static constexpr const char* kDemoDesc = R"json({
             "df_val":      { "type": "DragFloat", "label": "Float drag", "value": 1.5, "speed": 0.05, "min": 0.0, "max": 10.0, "format": "%.2f" },
             "di_val":      { "type": "DragInt",   "label": "Int drag",   "value": 42,  "speed": 0.5,  "min": 0,   "max": 200  }
           }
-        },
+        })json";
 
+static constexpr const char* kTabInputsDesc = R"json(
         "tab_inputs": { "type": "TabItem", "label": "Text & Numbers",
           "children": {
             "sec_text":  { "type": "SeparatorText", "label": "Text Input" },
@@ -111,8 +81,9 @@ static constexpr const char* kDemoDesc = R"json({
             "ii_qty":    { "type": "InputInt",   "label": "Quantity",  "value": 1,    "step": 1,    "step_fast": 10  },
             "if_price":  { "type": "InputFloat", "label": "Price ($)", "value": 9.99, "step": 0.01, "step_fast": 1.0, "format": "%.2f" }
           }
-        },
+        })json";
 
+static constexpr const char* kTabSelectionDesc = R"json(
         "tab_selection": { "type": "TabItem", "label": "Selection",
           "children": {
             "sec_combo": { "type": "SeparatorText", "label": "Combo Box" },
@@ -126,8 +97,9 @@ static constexpr const char* kDemoDesc = R"json({
             "sel_c":     { "type": "Selectable", "label": "Item Gamma",  "selected": false },
             "sel_d":     { "type": "Selectable", "label": "Item Delta",  "selected": false }
           }
-        },
+        })json";
 
+static constexpr const char* kTabTreeDesc = R"json(
         "tab_tree": { "type": "TabItem", "label": "Tree & Collapse",
           "children": {
             "sec_tree": { "type": "SeparatorText", "label": "TreeNode" },
@@ -159,8 +131,9 @@ static constexpr const char* kDemoDesc = R"json({
               }
             }
           }
-        },
+        })json";
 
+static constexpr const char* kTabMiscDesc = R"json(
         "tab_misc": { "type": "TabItem", "label": "Misc",
           "children": {
             "sec_progress": { "type": "SeparatorText", "label": "Progress Bar" },
@@ -208,8 +181,9 @@ static constexpr const char* kDemoDesc = R"json({
               }
             }
           }
-        },
+        })json";
 
+static constexpr const char* kTabPlotsDesc = R"json(
         "tab_plots": { "type": "TabItem", "label": "Plots",
           "children": {
 
@@ -331,10 +305,9 @@ static constexpr const char* kDemoDesc = R"json({
             }
 
           }
-        }
-      )json"
-      R"json(,
+        })json";
 
+static constexpr const char* kTabPlot3DDesc = R"json(
         "tab_plot3d": { "type": "TabItem", "label": "3-D Plots",
           "children": {
 
@@ -399,7 +372,54 @@ static constexpr const char* kDemoDesc = R"json({
             }
 
           }
+        })json";
+
+// ── Full window descriptor — assembled from per-tab pieces ─────────────────
+
+static const std::string kDemoDescStr =
+    // Window header, menu bar, and tab bar opening.
+    std::string(R"json({
+  "type": "Window", "title": "wish Widget Demo",
+  "width": 900, "height": 950,
+  "children": {
+
+    "main_menu": { "type": "MenuBar",
+      "children": {
+        "m_file": { "type": "Menu", "label": "File",
+          "children": {
+            "mi_new":  { "type": "MenuItem", "label": "New",  "shortcut": "Ctrl+N" },
+            "mi_open": { "type": "MenuItem", "label": "Open", "shortcut": "Ctrl+O" },
+            "mi_sep":  { "type": "Separator" },
+            "mi_quit": { "type": "MenuItem", "label": "Quit", "shortcut": "Alt+F4" }
+          }
+        },
+        "m_view": { "type": "Menu", "label": "View",
+          "children": {
+            "mi_dark":    { "type": "MenuItem", "label": "Dark theme"    },
+            "mi_light":   { "type": "MenuItem", "label": "Light theme"   },
+            "mi_classic": { "type": "MenuItem", "label": "Classic theme" }
+          }
+        },
+        "m_check": { "type": "Menu", "label": "Options",
+          "children": {
+            "mi_verbose": { "type": "MenuItem", "label": "Verbose logging", "checked": false }
+          }
         }
+      }
+    },
+
+    "tabs_root": { "type": "TabBar", "id": "demo_tabs",
+      "children": {)json")
+    + kTabBasicsDesc    + ","
+    + kTabSlidersDesc   + ","
+    + kTabInputsDesc    + ","
+    + kTabSelectionDesc + ","
+    + kTabTreeDesc      + ","
+    + kTabMiscDesc      + ","
+    + kTabPlotsDesc     + ","
+    + kTabPlot3DDesc
+    // Tab bar footer, status bar, and window closing.
+    + R"json(
 
       }
     },
@@ -445,7 +465,7 @@ class demo_client : public wish::client {
     set_style_preset(theme_).get();
 
     vlog("registering and instantiating template");
-    register_template("demo"_key, kDemoDesc).get();
+    register_template("demo"_key, kDemoDescStr.c_str()).get();
     auto pm = instantiate_template("demo"_key).get();
 
     // ── Shared helpers ────────────────────────────────────────────────────
