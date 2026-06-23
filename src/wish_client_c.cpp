@@ -27,6 +27,11 @@ using namespace bdg::bison;
 using namespace bdg::bison::rmi::transport;
 namespace wish = bdg::wish;
 
+// On Linux, <sys/types.h> declares a POSIX ::key_t (IPC key type) which
+// conflicts with bdg::bison::key_t pulled in above.  The explicit
+// using-declaration resolves the ambiguity in favour of the bison type.
+using bdg::bison::key_t;
+
 // ── Forward declaration (circular dependency: c_abi_client ↔ wish_client_s) ──
 
 struct wish_client_s;
@@ -131,7 +136,7 @@ make_client_transport(wish_transport_t type, const char* address,
 
   if (type == WISH_TRANSPORT_PTY) {
 #if defined(__linux__)
-    return std::make_unique<bison::app::pty_client_transport>();
+    return std::make_unique<bdg::bison::app::pty_client_transport>();
 #else
     state->last_error_ = "PTY transport is only supported on Linux";
     return nullptr;
