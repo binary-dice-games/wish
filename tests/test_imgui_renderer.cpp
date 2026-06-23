@@ -335,3 +335,67 @@ TEST_F(ImguiRendererTest, VerticalLayoutSpacingZeroAndNonzeroDoNotThrow) {
     renderer_->end_frame();
   });
 }
+
+// ── Table, TableColumn, TableRow ──────────────────────────────────────────────
+
+TEST_F(ImguiRendererTest, TableWithHeadersAndRowsDoesNotThrow) {
+  constexpr auto desc = R"({
+    "type": "Window", "title": "tbl",
+    "children": {
+      "t": { "type": "Table", "id": "t_basic", "columns": 3,
+             "flags": 1985, "headers": true,
+        "children": {
+          "ca": { "type": "TableColumn", "label": "Name"     },
+          "cb": { "type": "TableColumn", "label": "Price"    },
+          "cc": { "type": "TableColumn", "label": "Category" },
+          "r0": { "type": "TableRow", "children": {
+            "c0": { "type": "Label", "text": "Widget" },
+            "c1": { "type": "Label", "text": "$9.99"  },
+            "c2": { "type": "Label", "text": "HW"     }
+          }},
+          "r1": { "type": "TableRow", "children": {
+            "c0": { "type": "Label", "text": "Gizmo" },
+            "c1": { "type": "Label", "text": "$4.50" },
+            "c2": { "type": "Label", "text": "SW"    }
+          }}
+        }
+      }
+    }
+  })";
+  auto map = bdg::wish::import_json(desc);
+  EXPECT_NO_THROW({
+    renderer_->begin_frame();
+    in_window([&] { renderer_->render_node(*map[""], *sess_); });
+    renderer_->end_frame();
+  });
+}
+
+TEST_F(ImguiRendererTest, TableCellsRenderWithoutThrowIncludingButton) {
+  // Verify that a Table containing TableColumn, TableRow, and a Button in a
+  // cell renders across multiple frames without crashing.  Button click events
+  // are covered by ButtonEmitsClickedEvent; here we focus on table plumbing.
+  constexpr auto desc = R"({
+    "type": "Table", "id": "t_btn", "columns": 2,
+    "flags": 1920, "headers": true,
+    "children": {
+      "ca": { "type": "TableColumn", "label": "Name"   },
+      "cb": { "type": "TableColumn", "label": "Action" },
+      "r0": { "type": "TableRow", "children": {
+        "c0": { "type": "Label",  "text": "Item A"  },
+        "c1": { "type": "Button", "label": "Select" }
+      }}
+    }
+  })";
+  auto map = bdg::wish::import_json(desc);
+
+  EXPECT_NO_THROW({
+    renderer_->begin_frame();
+    in_window([&] { renderer_->render_node(*map[""], *sess_); });
+    renderer_->end_frame();
+  });
+  EXPECT_NO_THROW({
+    renderer_->begin_frame();
+    in_window([&] { renderer_->render_node(*map[""], *sess_); });
+    renderer_->end_frame();
+  });
+}

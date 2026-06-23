@@ -60,6 +60,11 @@ void render_progress_bar(imgui_renderer&, const ui_element& node, session&);
 void render_dockspace_viewport(imgui_renderer& r, const ui_element& node, session& s);
 void render_dockspace(imgui_renderer&, const ui_element& node, session&);
 
+// Table
+void render_table(imgui_renderer& r, const ui_element& node, session& s);
+void render_table_column(imgui_renderer&, const ui_element&, session&);
+void render_table_row(imgui_renderer& r, const ui_element& node, session& s);
+
 }  // namespace bdg::wish
 
 #endif  // WISH_IMGUI_ENABLED

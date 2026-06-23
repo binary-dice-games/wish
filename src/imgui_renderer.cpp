@@ -56,6 +56,10 @@ static const std::unordered_map<bison::hash_t, render_fn>& render_dispatch() {
     // Docking
     {"DockSpaceViewport"_key.id, render_dockspace_viewport},
     {"DockSpace"_key.id,         render_dockspace         },
+    // Table
+    {"Table"_key.id,             render_table             },
+    {"TableColumn"_key.id,       render_table_column      },
+    {"TableRow"_key.id,          render_table_row         },
     // Core
     {"Window"_key.id,           render_window           },
     {"Label"_key.id,            render_label            },

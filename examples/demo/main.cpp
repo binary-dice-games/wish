@@ -183,6 +183,69 @@ static constexpr const char* kTabMiscDesc = R"json(
           }
         })json";
 
+static constexpr const char* kTabTablesDesc = R"json(
+        "tab_tables": { "type": "TabItem", "label": "Tables",
+          "children": {
+            "sec_static": { "type": "SeparatorText",
+                            "label": "Static Table (Borders + Row Background + Resizable)" },
+            "tbl_catalog": { "type": "Table", "id": "demo_catalog", "columns": 3,
+                             "flags": 1985, "headers": true,
+              "children": {
+                "col_item":  { "type": "TableColumn", "label": "Item"     },
+                "col_price": { "type": "TableColumn", "label": "Price"    },
+                "col_cat":   { "type": "TableColumn", "label": "Category" },
+                "row0": { "type": "TableRow", "children": {
+                  "c0": { "type": "Label", "text": "Widget Alpha" },
+                  "c1": { "type": "Label", "text": "$12.99"       },
+                  "c2": { "type": "Label", "text": "Hardware"     }
+                }},
+                "row1": { "type": "TableRow", "children": {
+                  "c0": { "type": "Label", "text": "Widget Beta"  },
+                  "c1": { "type": "Label", "text": "$7.50"        },
+                  "c2": { "type": "Label", "text": "Software"     }
+                }},
+                "row2": { "type": "TableRow", "children": {
+                  "c0": { "type": "Label", "text": "Widget Gamma" },
+                  "c1": { "type": "Label", "text": "$24.00"       },
+                  "c2": { "type": "Label", "text": "Hardware"     }
+                }},
+                "row3": { "type": "TableRow", "children": {
+                  "c0": { "type": "Label", "text": "Widget Delta" },
+                  "c1": { "type": "Label", "text": "$3.25"        },
+                  "c2": { "type": "Label", "text": "Consumable"   }
+                }}
+              }
+            },
+            "sec_inter": { "type": "SeparatorText",
+                           "label": "Interactive Table (Buttons in Cells)" },
+            "tbl_inter": { "type": "Table", "id": "demo_inter", "columns": 3,
+                           "flags": 1921, "headers": true,
+              "children": {
+                "col_sensor": { "type": "TableColumn", "label": "Sensor",
+                                "init_width": 160 },
+                "col_value":  { "type": "TableColumn", "label": "Value",
+                                "init_width": 120 },
+                "col_action": { "type": "TableColumn", "label": "Action" },
+                "row_temp": { "type": "TableRow", "children": {
+                  "c0": { "type": "Label",  "text": "Temperature" },
+                  "c1": { "type": "Label",  "text": "25.0 degC"   },
+                  "c2": { "type": "Button", "label": "Read##temp"  }
+                }},
+                "row_hum": { "type": "TableRow", "children": {
+                  "c0": { "type": "Label",  "text": "Humidity"    },
+                  "c1": { "type": "Label",  "text": "60 % RH"     },
+                  "c2": { "type": "Button", "label": "Read##hum"   }
+                }},
+                "row_pres": { "type": "TableRow", "children": {
+                  "c0": { "type": "Label",  "text": "Pressure"    },
+                  "c1": { "type": "Label",  "text": "1013 hPa"    },
+                  "c2": { "type": "Button", "label": "Read##pres"  }
+                }}
+              }
+            }
+          }
+        })json";
+
 static constexpr const char* kTabPlotsDesc = R"json(
         "tab_plots": { "type": "TabItem", "label": "Plots",
           "children": {
@@ -427,6 +490,7 @@ static const std::string kDemoDescStr =
     + kTabSelectionDesc + ","
     + kTabTreeDesc      + ","
     + kTabMiscDesc      + ","
+    + kTabTablesDesc    + ","
     + kTabPlotsDesc     + ","
     + kTabPlot3DDesc
     // Close tab bar, add status bar, close window and dockspace.
@@ -949,6 +1013,15 @@ class demo_client : public wish::client {
     pm.at("demo_win.tabs_root.tab_misc.theme_row.theme_classic").onEvent("clicked"_key,
         [&, status](dynamic) { set_style_preset("classic").get(); status("Theme: classic"); });
 
+    // ── Tables tab ────────────────────────────────────────────────────────
+
+    pm.at("demo_win.tabs_root.tab_tables.tbl_inter.row_temp.c2").onEvent("clicked"_key,
+        [status](dynamic) { status("Table: Read Temperature"); });
+    pm.at("demo_win.tabs_root.tab_tables.tbl_inter.row_hum.c2").onEvent("clicked"_key,
+        [status](dynamic) { status("Table: Read Humidity"); });
+    pm.at("demo_win.tabs_root.tab_tables.tbl_inter.row_pres.c2").onEvent("clicked"_key,
+        [status](dynamic) { status("Table: Read Pressure"); });
+
     // ── Menu bar ──────────────────────────────────────────────────────────
 
     pm.at("main_menu.m_file.mi_new").onEvent("clicked"_key,
@@ -979,12 +1052,13 @@ class demo_client : public wish::client {
         "demo_win.tabs_root.tab_selection",
         "demo_win.tabs_root.tab_tree",
         "demo_win.tabs_root.tab_misc",
+        "demo_win.tabs_root.tab_tables",
         "demo_win.tabs_root.tab_plots",
         "demo_win.tabs_root.tab_plot3d"};
     static const char* kTabLabels[] = {
         "Basics", "Sliders & Drags", "Text & Numbers",
-        "Selection", "Tree & Collapse", "Misc", "Plots", "3-D Plots"};
-    for (int i = 0; i < 8; ++i) {
+        "Selection", "Tree & Collapse", "Misc", "Tables", "Plots", "3-D Plots"};
+    for (int i = 0; i < 9; ++i) {
       pm.at(kTabNames[i]).onEvent("selected"_key,
           [i, status](dynamic) {
             status(std::string("Tab selected: ") + kTabLabels[i]);

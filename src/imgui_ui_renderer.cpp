@@ -518,6 +518,58 @@ void render_dockspace(imgui_renderer&, const ui_element& node, session&) {
       ImGui::GetID(id.c_str()), ImVec2(width, height), ImGuiDockNodeFlags(flags));
 }
 
+// ── Table elements ────────────────────────────────────────────────────────────
+
+void render_table(imgui_renderer& r, const ui_element& node, session& s) {
+  auto    id       = str_field(node, "id"_key, "##table");
+  int32_t columns  = int_field(node, "columns"_key, 1);
+  int32_t flags    = int_field(node, "flags"_key, 0);
+  float   outer_w  = float_field(node, "outer_width"_key, 0.0f);
+  float   outer_h  = float_field(node, "outer_height"_key, 0.0f);
+  float   inner_w  = float_field(node, "inner_width"_key, 0.0f);
+  bool    headers  = bool_field(node, "headers"_key, false);
+
+  if (!ImGui::BeginTable(id.c_str(), columns, ImGuiTableFlags(flags),
+                         ImVec2(outer_w, outer_h), inner_w))
+    return;
+
+  // Column setup must precede any row; iterate TableColumn children first.
+  node.for_each_child_ordered([&](bison::key_t, ui_element& child) {
+    if (child.as<bison::key_t>(bison::dynamic::CLASS) != "TableColumn"_key)
+      return;
+    auto    label   = str_field(child, "label"_key, "");
+    int32_t col_fl  = int_field(child, "flags"_key, 0);
+    float   col_w   = float_field(child, "init_width"_key, 0.0f);
+    ImGui::TableSetupColumn(label.c_str(), ImGuiTableColumnFlags(col_fl), col_w);
+  });
+
+  if (headers)
+    ImGui::TableHeadersRow();
+
+  // Render remaining children (rows and other content) in declaration order.
+  node.for_each_child_ordered([&](bison::key_t, ui_element& child) {
+    if (child.as<bison::key_t>(bison::dynamic::CLASS) == "TableColumn"_key)
+      return;
+    r.render_node(child, s);
+  });
+
+  ImGui::EndTable();
+}
+
+void render_table_column(imgui_renderer&, const ui_element&, session&) {
+  // Handled inline by render_table during column setup; no-op when standalone.
+}
+
+void render_table_row(imgui_renderer& r, const ui_element& node, session& s) {
+  int32_t flags      = int_field(node, "flags"_key, 0);
+  float   min_height = float_field(node, "min_height"_key, 0.0f);
+  ImGui::TableNextRow(ImGuiTableRowFlags(flags), min_height);
+  node.for_each_child_ordered([&](bison::key_t, ui_element& child) {
+    ImGui::TableNextColumn();
+    r.render_node(child, s);
+  });
+}
+
 }  // namespace bdg::wish
 
 #endif  // WISH_IMGUI_ENABLED

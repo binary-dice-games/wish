@@ -121,6 +121,7 @@ add_library(wish STATIC
   src/ui_elements/drag.cpp
   src/ui_elements/selectable.cpp
   src/ui_elements/docking.cpp
+  src/ui_elements/table.cpp
   src/plot_elements/plot.cpp
   src/plot_elements/plot_series.cpp
   src/plot_elements/plot_bars.cpp

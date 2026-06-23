@@ -28,5 +28,6 @@ void register_input_number();  // InputInt, InputFloat
 void register_drag();          // DragFloat, DragInt
 void register_selectable();
 void register_docking();   // DockSpaceViewport, DockSpace
+void register_table();     // Table, TableColumn, TableRow
 
 }  // namespace bdg::wish
