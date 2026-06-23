@@ -27,11 +27,6 @@ using namespace bdg::bison;
 using namespace bdg::bison::rmi::transport;
 namespace wish = bdg::wish;
 
-// On Linux, <sys/types.h> declares a POSIX ::key_t (IPC key type) which
-// conflicts with bdg::bison::key_t pulled in above.  The explicit
-// using-declaration resolves the ambiguity in favour of the bison type.
-using bdg::bison::key_t;
-
 // ── Forward declaration (circular dependency: c_abi_client ↔ wish_client_s) ──
 
 struct wish_client_s;
@@ -235,7 +230,7 @@ extern "C" wish_error wish_register_template(wish_client_t c,
                                               const char* descriptor) {
   if (!c || !name || !descriptor) return WISH_ERR_NULL;
   try {
-    c->client_->register_template(key_t{name},
+    c->client_->register_template(bdg::bison::key_t{name},
                                   std::string{descriptor}).get();
     return WISH_OK;
   } catch (const std::exception& e) {
@@ -251,7 +246,7 @@ extern "C" wish_proxy_t wish_instantiate_template(wish_client_t c,
     c->proxy_map_.clear();
     c->handle_map_.clear();
 
-    c->proxy_map_ = c->client_->instantiate_template(key_t{name}).get();
+    c->proxy_map_ = c->client_->instantiate_template(bdg::bison::key_t{name}).get();
 
     for (auto& [path, proxy] : c->proxy_map_)
       c->handle_map_.emplace(path, wish_proxy_s{&proxy});
@@ -283,7 +278,7 @@ extern "C" wish_error wish_proxy_set_string(wish_proxy_t p,
   if (!p || !p->proxy || !value) return WISH_ERR_NULL;
   try {
     dynamic d;
-    d[key_t{field}] = std::string{value};
+    d[bdg::bison::key_t{field}] = std::string{value};
     p->proxy->set(std::move(d));
     return WISH_OK;
   } catch (...) {
@@ -297,7 +292,7 @@ extern "C" wish_error wish_proxy_set_int(wish_proxy_t p,
   if (!p || !p->proxy) return WISH_ERR_NULL;
   try {
     dynamic d;
-    d[key_t{field}] = value;
+    d[bdg::bison::key_t{field}] = value;
     p->proxy->set(std::move(d));
     return WISH_OK;
   } catch (...) {
@@ -311,7 +306,7 @@ extern "C" wish_error wish_proxy_set_float(wish_proxy_t p,
   if (!p || !p->proxy) return WISH_ERR_NULL;
   try {
     dynamic d;
-    d[key_t{field}] = value;
+    d[bdg::bison::key_t{field}] = value;
     p->proxy->set(std::move(d));
     return WISH_OK;
   } catch (...) {
@@ -325,7 +320,7 @@ extern "C" wish_error wish_proxy_set_bool(wish_proxy_t p,
   if (!p || !p->proxy) return WISH_ERR_NULL;
   try {
     dynamic d;
-    d[key_t{field}] = (value != 0);
+    d[bdg::bison::key_t{field}] = (value != 0);
     p->proxy->set(std::move(d));
     return WISH_OK;
   } catch (...) {
@@ -341,7 +336,7 @@ extern "C" wish_error wish_proxy_on_event(wish_proxy_t p,
                                            void* userdata) {
   if (!p || !p->proxy || !event) return WISH_ERR_NULL;
   try {
-    key_t     key{event};
+    bdg::bison::key_t key{event};
     wish_hash ev_hash = static_cast<wish_hash>(key.id);
     p->proxy->onEvent(key, [p, callback, userdata, ev_hash](dynamic) {
       if (callback) callback(p, ev_hash, userdata);
