@@ -24,4 +24,11 @@ if(WISH_BUILD_SHARED)
   target_link_libraries(config_panel PRIVATE wish_client gflags)
   target_include_directories(config_panel PRIVATE ${CMAKE_SOURCE_DIR}/include)
   set_target_properties(config_panel PROPERTIES FOLDER examples)
+
+  # Copy wish_client.dll next to config_panel.exe so it can be run in-place.
+  add_custom_command(TARGET config_panel POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      $<TARGET_FILE:wish_client>
+      $<TARGET_FILE_DIR:config_panel>
+  )
 endif()

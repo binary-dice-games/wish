@@ -80,7 +80,7 @@ static void on_reset(wish_proxy_t, wish_hash, void*) {
 }
 
 static void on_quit(wish_proxy_t, wish_hash, void*) {
-  std::cout << "[config_panel] Quit clicked — closing session\n";
+  std::cout << "[config_panel] Quit clicked - closing session\n";
   wish_client_quit(g_client);
 }
 
@@ -117,7 +117,7 @@ static void session(wish_client_t c, void*) {
   if (auto* p = wish_proxy_get(c, "btns.quit"))
     wish_proxy_on_event(p, "clicked", on_quit, nullptr);
 
-  std::cout << "[config_panel] ready — close the panel or click Quit to exit\n";
+  std::cout << "[config_panel] ready - close the panel or click Quit to exit\n";
   wish_client_wait(c);
 }
 

@@ -56,10 +56,10 @@ void wish_server::register_classes() {
 void wish_server::on_listening() const {
   if (!FLAGS_pipe.empty()) {
     std::cout << "[wish] listening on pipe " << FLAGS_pipe
-              << " — close the window to stop\n" << std::flush;
+              << " - close the window to stop\n" << std::flush;
   } else {
     std::cout << "[wish] listening on " << FLAGS_host << ':' << FLAGS_port
-              << " — close the window to stop\n" << std::flush;
+              << " - close the window to stop\n" << std::flush;
   }
 }
 
@@ -80,7 +80,7 @@ int wish_server::run_with_transport(
 
 void wish_server::on_listening_pty() const {
   std::cout << "[wish] PTY server started (cmd: " << FLAGS_cmd
-            << ") — close the window to stop\n"
+            << ") - close the window to stop\n"
             << std::flush;
 }
 
