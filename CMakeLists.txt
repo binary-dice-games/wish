@@ -140,13 +140,13 @@ add_library(wish STATIC
 if(WISH_ENABLE_IMGUI)
   target_sources(wish PRIVATE
     include/wish/imgui_renderer.hpp
-    src/imgui_renderer.cpp
-    src/imgui_ui_renderer.hpp
-    src/imgui_ui_renderer.cpp
-    src/imgui_plot_renderer.hpp
-    src/imgui_plot_renderer.cpp
-    src/imgui_plot3d_renderer.hpp
-    src/imgui_plot3d_renderer.cpp
+    src/imgui/imgui_renderer.cpp
+    src/imgui/imgui_ui_renderer.hpp
+    src/imgui/imgui_ui_renderer.cpp
+    src/imgui/imgui_plot_renderer.hpp
+    src/imgui/imgui_plot_renderer.cpp
+    src/imgui/imgui_plot3d_renderer.hpp
+    src/imgui/imgui_plot3d_renderer.cpp
   )
   target_compile_definitions(wish PUBLIC WISH_IMGUI_ENABLED)
   # PUBLIC so that consumers who include imgui_renderer.hpp have imgui in path.
