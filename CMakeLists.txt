@@ -10,7 +10,7 @@ project(
 option(WISH_BUILD_TESTS   "Build the wish tests"                            ON)
 option(WISH_ENABLE_IMGUI  "Build the imgui renderer"                       ON)
 option(WISH_ENABLE_SDL3   "Build the SDL3 renderer and calculator example" ON)
-option(WISH_BUILD_SHARED  "Build wish_client shared library with C ABI"   OFF)
+option(WISH_BUILD_SHARED  "Build wish_client shared library with C ABI"   ON)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
