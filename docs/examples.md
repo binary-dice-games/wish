@@ -139,6 +139,77 @@ When the user closes the SDL window:
 
 ---
 
+## Demo (`examples/demo/`)
+
+### What it demonstrates
+
+A comprehensive showcase of every wish widget and layout type in a single dockable window — the wish equivalent of `ImGui::ShowDemoWindow`. It is the canonical reference for what the framework can render.
+
+- **DockSpaceViewport root** — the top-level node is a `DockSpaceViewport` so the inner window can be undocked, resized, and rearranged by the user.
+- **Menu bar** — a `MenuBar` with File, View, and Options menus; menu-item `clicked` and `checked` events are forwarded to the status bar.
+- **TabBar with nine tabs** — each tab is a self-contained widget group:
+
+| Tab | Widgets shown |
+|-----|---------------|
+| Basics | `Label`, `Button` (including fixed-width), `Checkbox`, `RadioButton`, visibility toggle |
+| Sliders & Drags | `SliderFloat`, `SliderInt`, `DragFloat`, `DragInt` |
+| Text & Numbers | `InputText` (with hint), `InputInt`, `InputFloat` |
+| Selection | `Combo`, `Selectable` |
+| Tree & Collapse | `TreeNode` (nested), `CollapsingHeader` |
+| Misc | `ProgressBar`, `HorizontalLayout`, `VerticalLayout` (nested rows), runtime theme switching |
+| Tables | Static `Table` with borders and row backgrounds; interactive `Table` with buttons in cells |
+| Plots | `Plot` containing `PlotLine`, `PlotScatter`, `PlotStairs`, `PlotStems`, `PlotShaded`, `PlotDigital`, `PlotBars`, `PlotBarsH`, `PlotHistogram`, `PlotHistogram2D`, `PlotHeatmap`, `PlotPieChart`, `PlotText`, `PlotInfLines` |
+| 3-D Plots | `Plot3D` containing `Plot3DLine`, `Plot3DScatter`, `Plot3DSurface`, `Plot3DTriangle`, `Plot3DQuad`, `Plot3DMesh`, `Plot3DText` |
+
+- **Status bar** — a `Label` at the bottom of the window that displays the last event received from any widget.
+- **Runtime theme switching** — `set_style_preset` is called at startup and also wired to the theme buttons and View menu, showing how the server-side style can be changed while the session is live.
+- **In-memory transport** — server and client run in the same process (same as the calculator).
+
+### Running
+
+```sh
+# Linux / macOS
+./build/demo
+
+# Windows (Visual Studio generator, Debug build)
+.\build\Debug\demo.exe
+
+# Windows (Ninja generator)
+.\build\demo.exe
+```
+
+Command-line flags:
+
+| Flag | Effect |
+|------|--------|
+| `--verbose` / `-v` | Print session lifecycle messages to `stderr` |
+| `--theme dark\|light\|classic` / `-t <theme>` | Set the initial ImGui theme (default: `dark`) |
+
+A 900 × 950 window opens titled "wish Widget Demo". Use the tab bar to browse widget groups. Every interaction updates the status label at the bottom of the window.
+
+### Architecture of the example
+
+```
+main()
+  │
+  ├─ memory_server_transport transport
+  ├─ wish::server{transport, sdl3_renderer("wish Widget Demo", 900, 950)}
+  │    └─ server.start()
+  │
+  └─ demo_client{transport.connect(), renderer_ptr, verbose, theme}.run()
+       └─ on_session():
+            ├─ set_style_preset(theme)
+            ├─ register_template("demo", kDemoDescStr)
+            ├─ pm = instantiate_template("demo")
+            ├─ push plot data (xs/ys/zs) to Plot / Plot3D series
+            ├─ register onEvent handlers for every interactive widget
+            └─ while (!renderer->should_quit()) sleep 16ms
+```
+
+The full UI descriptor is assembled at compile time from nine per-tab `constexpr` string fragments (`kTabBasicsDesc`, `kTabSlidersDesc`, …) concatenated into `kDemoDescStr`. Each fragment is a JSON object subtree; the root node is a `DockSpaceViewport` containing a `MenuBar` and the main `Window`.
+
+---
+
 ## Planned examples (not yet implemented)
 
 | Example | Step | Description |
