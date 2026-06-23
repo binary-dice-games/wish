@@ -130,6 +130,29 @@ class client : public bison::rmi::client {
    */
   std::future<bison::dynamic> get_style();
 
+  // ── Logging helpers ───────────────────────────────────────────────────────────
+
+  /**
+   * @brief Send a structured log message to the server's logger service.
+   * @param level  Severity label: `"debug"`, `"info"`, `"warn"`, or `"error"`.
+   * @param msg    Free-form message text.
+   *
+   * The call is fire-and-forget (oneway); it does not wait for a response.
+   */
+  std::future<void> log(const std::string& level, const std::string& msg);
+
+  /// @brief Convenience wrapper for `log("debug", msg)`.
+  std::future<void> log_debug(const std::string& msg);
+
+  /// @brief Convenience wrapper for `log("info", msg)`.
+  std::future<void> log_info(const std::string& msg);
+
+  /// @brief Convenience wrapper for `log("warn", msg)`.
+  std::future<void> log_warn(const std::string& msg);
+
+  /// @brief Convenience wrapper for `log("error", msg)`.
+  std::future<void> log_error(const std::string& msg);
+
  protected:
   /**
    * @brief Called after `connect()` completes; subclass performs all UI
@@ -150,6 +173,7 @@ class client : public bison::rmi::client {
   std::optional<bison::rmi::proxy::dynamic> template_proxy_;
   std::optional<bison::rmi::proxy::dynamic> fs_proxy_;
   std::optional<bison::rmi::proxy::dynamic> style_proxy_;
+  std::optional<bison::rmi::proxy::dynamic> log_proxy_;
 };
 
 }  // namespace bdg::wish

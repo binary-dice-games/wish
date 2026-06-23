@@ -22,6 +22,9 @@ using file_service_ptr = std::shared_ptr<file_service>;
 class style_service;
 using style_service_ptr = std::shared_ptr<style_service>;
 
+class logger;
+using logger_ptr = std::shared_ptr<logger>;
+
 /// @brief Holds all mutable state owned by one connected client.
 ///
 /// Constructed when a client connects; destroyed (and `resource_dir` deleted)
@@ -53,6 +56,9 @@ struct session {
   /// Style service instance; holds the client-configured ImGui theme fields.
   /// Read by the renderer before drawing this session's element tree.
   style_service_ptr style_service;
+
+  /// Logger service instance; forwards client log calls to stdout / log file.
+  logger_ptr logger_service;
 
   /// @brief Callback for emitting asynchronous events to the connected client.
   ///

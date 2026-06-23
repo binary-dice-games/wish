@@ -2,6 +2,7 @@
 /// @file registry.cpp
 #include <wish/registry.hpp>
 #include <wish/file_service.hpp>
+#include <wish/logger.hpp>
 #include <wish/style_service.hpp>
 
 #include "template_handler.hpp"
@@ -52,6 +53,7 @@ void register_all() {
   register_template_handler();
   register_file_service();
   register_style_service();
+  register_logger();
 }
 
 }  // namespace bdg::wish

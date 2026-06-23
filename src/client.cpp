@@ -28,12 +28,14 @@ void client::on_connect() {
   template_proxy_ = instantiate("wish"_key, "__WishTemplate"_key).get();
   fs_proxy_       = instantiate("wish"_key, "__WishFileSystem"_key).get();
   style_proxy_    = instantiate("wish"_key, "__WishStyle"_key).get();
+  log_proxy_      = instantiate("wish"_key, "__WishLogger"_key).get();
 }
 
 void client::on_disconnect() {
   template_proxy_.reset();
   fs_proxy_.reset();
   style_proxy_.reset();
+  log_proxy_.reset();
 }
 
 // ── Helper: build proxy_map from an indexed apply_descriptor result ───────────
@@ -118,6 +120,30 @@ std::future<bison::dynamic> client::get_style() {
   return std::async(std::launch::async, [this]() -> dynamic {
     return style_proxy_->call("get"_key, dynamic{}).get();
   });
+}
+
+std::future<void> client::log(
+    const std::string& level, const std::string& msg) {
+  return std::async(std::launch::async, [this, level, msg]() {
+    dynamic args;
+    args["level"_key] = level;
+    args["msg"_key]   = msg;
+    // oneway=true: log messages are fire-and-forget to avoid blocking callers.
+    log_proxy_->call("log"_key, std::move(args), true).get();
+  });
+}
+
+std::future<void> client::log_debug(const std::string& msg) {
+  return log("debug", msg);
+}
+std::future<void> client::log_info(const std::string& msg) {
+  return log("info", msg);
+}
+std::future<void> client::log_warn(const std::string& msg) {
+  return log("warn", msg);
+}
+std::future<void> client::log_error(const std::string& msg) {
+  return log("error", msg);
 }
 
 }  // namespace bdg::wish

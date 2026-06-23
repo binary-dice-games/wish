@@ -3,6 +3,7 @@
 /// @brief Implementation of wish::server.
 #include <wish/server.hpp>
 #include <wish/file_service.hpp>
+#include <wish/logger.hpp>
 #include <wish/style_service.hpp>
 #include <wish/registry.hpp>
 
@@ -58,6 +59,8 @@ void server::on_session_created(bison::rmi::context& ctx) {
       sess->resource_dir);
   sess->style_service = std::make_shared<style_service>(
       bison::dynamic::instantiate(bison::key_t{"wish"}, bison::key_t{"__WishStyle"}));
+  // All sessions share the same global logger instance (set via set_logger()).
+  sess->logger_service = logger_;
   sessions_.wlock()->emplace(ctx.session_id.id, sess);
   on_session_created(*sess);
 }
@@ -102,6 +105,11 @@ bison::dynamic_ptr server::on_create_object(
   // __WishStyle is a per-session singleton — return the pre-created instance.
   if (klass == "__WishStyle"_key && sess && sess->style_service) {
     return dynamic_ptr{std::static_pointer_cast<dynamic>(sess->style_service)};
+  }
+
+  // __WishLogger is a per-session singleton — return the pre-created instance.
+  if (klass == "__WishLogger"_key && sess && sess->logger_service) {
+    return dynamic_ptr{std::static_pointer_cast<dynamic>(sess->logger_service)};
   }
 
   // For all other classes, bison creates the concrete type from the registered

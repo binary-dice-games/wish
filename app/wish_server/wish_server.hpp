@@ -7,7 +7,11 @@
 
 #include "src/app/srv/srv_app.hpp"
 
+#include <memory>
+
 namespace bdg::wish {
+
+class logger;
 
 /**
  * @brief Server application that opens an SDL3 window and accepts wish
@@ -35,6 +39,10 @@ class wish_server : public bison::app::srv_app {
 
   void on_listening() const override;
 
+  /// @brief Route verbose trace lines through the server logger (file + stdout).
+  void on_verbose_trace(bison::key_t session_id,
+                        const std::string& line) const override;
+
 #if defined(__linux__)
   void on_listening_pty() const override;
 #endif
@@ -48,6 +56,10 @@ class wish_server : public bison::app::srv_app {
 #if defined(__linux__)
   int run_pty() override;
 #endif
+
+ private:
+  /// @brief Shared logger for all sessions; null when verbose mode is off.
+  std::shared_ptr<logger> server_log_;
 };
 
 } // namespace bdg::wish

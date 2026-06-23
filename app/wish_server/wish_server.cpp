@@ -5,6 +5,7 @@
  */
 #include "app/wish_server/wish_server.hpp"
 
+#include <wish/logger.hpp>
 #include <wish/registry.hpp>
 #include <wish/sdl3_renderer.hpp>
 #include <wish/server.hpp>
@@ -18,10 +19,12 @@
 #include <gflags/gflags.h>
 
 #include <chrono>
+#include <filesystem>
 #include <iostream>
 #include <memory>
 #include <thread>
 
+DECLARE_bool  (verbose);
 DECLARE_string(host);
 DECLARE_int32 (port);
 DECLARE_string(pipe);
@@ -101,6 +104,15 @@ static std::unique_ptr<sdl3_renderer> make_renderer() {
       FLAGS_title.c_str(), FLAGS_width, FLAGS_height);
 }
 
+// Build the global server logger.  Always writes to wish_logs/server.log;
+// also mirrors to stdout when --verbose is active.
+static std::shared_ptr<logger> make_server_logger() {
+  return std::make_shared<logger>(
+      bison::dynamic::instantiate(bison::key_t{"wish"}, bison::key_t{"__WishLogger"}),
+      FLAGS_verbose,
+      std::filesystem::path{"wish_logs"} / "server.log");
+}
+
 // ── srv_app overrides ─────────────────────────────────────────────────────────
 
 std::string wish_server::server_description() const {
@@ -123,14 +135,22 @@ void wish_server::on_listening() const {
   }
 }
 
+void wish_server::on_verbose_trace(bison::key_t /*session_id*/,
+                                   const std::string& line) const {
+  if (server_log_) server_log_->info(line);
+}
+
 int wish_server::run_with_transport(
     bison::rmi::transport::server_transport_iface& transport) {
+  server_log_ = make_server_logger();
   server srv{transport, make_renderer()};
+  srv.set_logger(server_log_);
   srv.start();
   on_listening();
   while (!srv.should_quit())
     std::this_thread::sleep_for(std::chrono::milliseconds{50});
   srv.stop();
+  server_log_.reset();
   return 0;
 }
 
@@ -164,13 +184,16 @@ int wish_server::run_pty() {
     }
   };
 
+  server_log_ = make_server_logger();
   pty_server_impl srv{pty, make_renderer()};
   srv.pty = &pty;
+  srv.set_logger(server_log_);
   srv.start();
   while (!srv.should_quit())
     std::this_thread::sleep_for(std::chrono::milliseconds{50});
   srv.stop();
   pty.stop();
+  server_log_.reset();
   return 0;
 }
 

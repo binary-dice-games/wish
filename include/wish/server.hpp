@@ -6,6 +6,7 @@
 #pragma once
 
 #include "src/rmi/server/server.hpp"
+#include <wish/logger.hpp>
 #include <wish/renderer.hpp>
 #include <wish/session.hpp>
 
@@ -62,6 +63,16 @@ class server : public bison::rmi::server {
    *         client connections. */
   void start();
 
+  /**
+   * @brief Attach a shared logger that all sessions will write through.
+   *
+   * The logger is set as the `logger_service` of every new session; all
+   * sessions therefore share a single log file.  Pass `nullptr` to disable
+   * client-side logging.
+   * Must be called before `start()`.
+   */
+  void set_logger(logger_ptr logger) { logger_ = std::move(logger); }
+
   /** @brief Stop the accept loop, render loop, and join all threads. */
   void stop();
 
@@ -101,6 +112,7 @@ class server : public bison::rmi::server {
       sessions_;
   std::thread render_thread_;
   std::atomic<bool> running_{false};
+  logger_ptr logger_;
 };
 
 } // namespace bdg::wish
