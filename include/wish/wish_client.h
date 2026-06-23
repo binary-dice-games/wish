@@ -324,6 +324,55 @@ WISH_API wish_error wish_proxy_on_event(wish_proxy_t proxy,
                                         wish_event_fn callback,
                                         void* userdata);
 
+/* ── Logging ──────────────────────────────────────────────────────────────── */
+
+/**
+ * @brief Send a structured log message to the server's logger service.
+ *
+ * The server writes the message to its global log file and, when started with
+ * `--verbose`, also mirrors it to stdout.  The call is fire-and-forget.
+ *
+ * @param client  Active session handle.
+ * @param level   Severity label: "debug", "info", "warn", or "error".
+ * @param msg     Free-form message text (null-terminated UTF-8).
+ * @return WISH_OK or WISH_ERR_*.
+ */
+WISH_API wish_error wish_log(wish_client_t client,
+                             const char* level,
+                             const char* msg);
+
+/**
+ * @brief Convenience wrapper for wish_log(client, "debug", msg).
+ * @param client  Active session handle.
+ * @param msg     Message text.
+ * @return WISH_OK or WISH_ERR_*.
+ */
+WISH_API wish_error wish_log_debug(wish_client_t client, const char* msg);
+
+/**
+ * @brief Convenience wrapper for wish_log(client, "info", msg).
+ * @param client  Active session handle.
+ * @param msg     Message text.
+ * @return WISH_OK or WISH_ERR_*.
+ */
+WISH_API wish_error wish_log_info(wish_client_t client, const char* msg);
+
+/**
+ * @brief Convenience wrapper for wish_log(client, "warn", msg).
+ * @param client  Active session handle.
+ * @param msg     Message text.
+ * @return WISH_OK or WISH_ERR_*.
+ */
+WISH_API wish_error wish_log_warn(wish_client_t client, const char* msg);
+
+/**
+ * @brief Convenience wrapper for wish_log(client, "error", msg).
+ * @param client  Active session handle.
+ * @param msg     Message text.
+ * @return WISH_OK or WISH_ERR_*.
+ */
+WISH_API wish_error wish_log_error(wish_client_t client, const char* msg);
+
 #ifdef __cplusplus
 }
 #endif

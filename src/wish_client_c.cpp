@@ -346,3 +346,31 @@ extern "C" wish_error wish_proxy_on_event(wish_proxy_t p,
     return WISH_ERR_EXCEPTION;
   }
 }
+
+// ── Logging ───────────────────────────────────────────────────────────────────
+
+extern "C" wish_error wish_log(wish_client_t c,
+                                const char* level,
+                                const char* msg) {
+  if (!c || !level || !msg) return WISH_ERR_NULL;
+  try {
+    c->client_->log(std::string{level}, std::string{msg}).get();
+    return WISH_OK;
+  } catch (const std::exception& e) {
+    c->last_error_ = e.what();
+    return WISH_ERR_EXCEPTION;
+  }
+}
+
+extern "C" wish_error wish_log_debug(wish_client_t c, const char* msg) {
+  return wish_log(c, "debug", msg);
+}
+extern "C" wish_error wish_log_info(wish_client_t c, const char* msg) {
+  return wish_log(c, "info", msg);
+}
+extern "C" wish_error wish_log_warn(wish_client_t c, const char* msg) {
+  return wish_log(c, "warn", msg);
+}
+extern "C" wish_error wish_log_error(wish_client_t c, const char* msg) {
+  return wish_log(c, "error", msg);
+}
