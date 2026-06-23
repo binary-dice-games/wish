@@ -46,6 +46,10 @@ void server::stop() {
   }
 }
 
+bool server::should_quit() const {
+  return !running_.load(std::memory_order_acquire);
+}
+
 void server::on_session_created(bison::rmi::context& ctx) {
   auto sess = std::make_shared<session>(ctx.session_id);
   sess->emit_event = ctx.emit_event;

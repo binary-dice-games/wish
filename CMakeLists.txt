@@ -10,6 +10,7 @@ project(
 option(WISH_BUILD_TESTS   "Build the wish tests"                            ON)
 option(WISH_ENABLE_IMGUI  "Build the imgui renderer"                       ON)
 option(WISH_ENABLE_SDL3   "Build the SDL3 renderer and calculator example" ON)
+option(WISH_BUILD_SHARED  "Build wish_client shared library with C ABI"   OFF)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
@@ -186,4 +187,21 @@ if(WISH_BUILD_TESTS)
     add_subdirectory(tests)
 endif()
 
+# ── wish_client shared library (C ABI) ───────────────────────────────────────
+if(WISH_BUILD_SHARED)
+  add_library(wish_client SHARED
+      src/wish_client_c.cpp
+      include/wish/wish_client.h)
+  target_compile_definitions(wish_client PRIVATE WISH_CLIENT_BUILDING_DLL)
+  target_link_libraries(wish_client PUBLIC wish)
+  target_include_directories(wish_client
+      PUBLIC
+          ${CMAKE_SOURCE_DIR}/include
+      PRIVATE
+          ${CMAKE_SOURCE_DIR}
+          ${CMAKE_SOURCE_DIR}/extern/bison)
+  set_target_properties(wish_client PROPERTIES FOLDER lib)
+endif()
+
+add_subdirectory(app)
 add_subdirectory(examples)

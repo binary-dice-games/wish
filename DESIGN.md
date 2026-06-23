@@ -383,6 +383,55 @@ No session can read or write another session's objects, templates, or resource f
 
 ---
 
+## `wish` Server Binary
+
+`examples/wish_server/main.cpp` builds the `wish` executable — a standalone multi-transport GUI server.  It opens an SDL3 window and listens for client connections on the transport selected at launch.
+
+### CLI
+
+```
+wish [OPTIONS]
+
+  --transport socket|pty   Transport (default: socket)
+  --host HOST              Bind address (socket, default: 0.0.0.0)
+  --port N                 Bind port   (socket, default: 7070)
+  --cmd  CMD               Shell command (pty, default: bash)
+  --title TITLE            Window title (default: wish)
+  --size WxH               Window dimensions (default: 1280x720)
+  --verbose                Log session events to stderr
+```
+
+### Lifecycle
+
+`wish::server::start()` is non-blocking — it spawns the render loop thread and the bison accept loop thread, then returns immediately.  The binary polls `srv.should_quit()` (added to `wish::server`) every 50 ms; that flag is set by the render loop when `renderer_->should_quit()` fires (SDL window close).  After the flag is seen, `srv.stop()` closes the accept loop and joins threads.
+
+PTY transport is `#ifdef __linux__`-guarded; on other platforms `--transport pty` prints an error and exits.
+
+---
+
+## C Client ABI (`wish_client.h` / `libwish_client`)
+
+`include/wish/wish_client.h` and `src/wish_client_c.cpp` provide a stable C ABI for the client side.  The `WISH_BUILD_SHARED` CMake option (default OFF) builds `libwish_client.so` / `wish_client.dll`.
+
+### Design
+
+| Concept | C ABI | C++ equivalent |
+|---------|-------|----------------|
+| Session lifetime | `wish_client_create` / `wish_client_run` / `wish_client_destroy` | `wish::client` subclass + `run()` |
+| UI templates | `wish_register_template` + `wish_instantiate_template` | `register_template` + `instantiate_template` |
+| Proxy access | `wish_proxy_get(c, "btns.ok")` | `pm.at("btns.ok")` |
+| Field update | `wish_proxy_set_string(p, wish_key("text"), "Hi")` | `proxy.set({{"text"_key, "Hi"}})` |
+| Events | `wish_proxy_on_event(p, "clicked", cb, ud)` | `proxy.onEvent("clicked"_key, handler)` |
+| Wait for quit | `wish_client_wait(c)` inside session callback | `while (!rend->should_quit()) sleep(16ms)` |
+
+Keys are computed via `wish_key(name)` which implements the same FNV-1a 32-bit hash (with MSB forced to 1) as the C++ `"name"_key` user-defined literal.
+
+`wish_proxy_t` handles are non-owning pointers into a `std::unordered_map` owned by the `wish_client_s` struct.  They remain valid until the next `wish_instantiate_template` call or the session ends.
+
+`config_panel` (`examples/config_panel/config_panel.c`) is the canonical demonstration: a pure-C settings panel application that connects to a running `wish` server and renders a configuration UI.
+
+---
+
 ## Design Decisions
 
 **Transport-agnostic server.**

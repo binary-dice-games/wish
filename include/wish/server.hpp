@@ -65,6 +65,14 @@ class server : public bison::rmi::server {
   /** @brief Stop the accept loop, render loop, and join all threads. */
   void stop();
 
+  /** @brief Returns true once the renderer signals it should close.
+   *
+   *  Useful for a standalone server process that wants to poll for shutdown
+   *  without subclassing.  Becomes true when `renderer_->should_quit()` fires
+   *  inside the render loop; stays true until `stop()` is called.
+   */
+  bool should_quit() const;
+
  protected:
   /** @brief Called on the worker thread after a client connects. */
   virtual void on_session_created(session& s) { (void)s; }
