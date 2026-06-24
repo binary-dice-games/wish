@@ -389,3 +389,148 @@ TEST_F(OpenFileDialogRMITest, SetConfirmLabelRoundTrips) {
   auto snapshot = proxy.get().get();
   EXPECT_EQ(snapshot.as<std::string>("confirm_label"_key), "Select");
 }
+
+// ── Step 7: high-level event emission ────────────────────────────────────────
+
+// Records form-level events (on_open, on_cancel, on_navigate) emitted by the
+// form through sess().emit_event, without interfering with internal routing.
+struct CapturedEvent {
+  key_t       name;
+  dynamic     payload;
+};
+
+class OpenFileDialogEventsTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    srv_ = std::make_unique<SessionCapturingServer>(
+        transport_, std::make_unique<wish::null_renderer>());
+    srv_->start();
+    client_ = std::make_unique<bdg::bison::rmi::client>(transport_.connect());
+    client_->connect();
+    proxy_.emplace(client_->instantiate("wish"_key, "OpenFileDialog"_key).get());
+    ASSERT_TRUE(proxy_->valid());
+    root_ = find_form_root(srv_->last_session->objects);
+    ASSERT_FALSE(root_.empty());
+
+    // Wrap sess().emit_event to spy on form-level events.  The form's own
+    // interceptor is already in place; we chain on top of it so internal
+    // widget events (row_selected, clicked on internal buttons) still flow
+    // through the form's handler first, then reach us only when the form
+    // itself re-emits a high-level event via form::emit().
+    auto prev = std::move(srv_->last_session->emit_event);
+    events_   = std::make_shared<std::vector<CapturedEvent>>();
+    auto evts = events_;
+    srv_->last_session->emit_event =
+        [prev, evts](key_t id, key_t event, dynamic payload) {
+          if (event == "on_open"_key || event == "on_cancel"_key ||
+              event == "on_navigate"_key)
+            evts->push_back({event, payload});
+          if (prev) prev(id, event, std::move(payload));
+        };
+  }
+
+  void TearDown() override {
+    proxy_.reset();
+    client_->disconnect();
+    client_.reset();
+    srv_->stop();
+    srv_.reset();
+  }
+
+  void set_files(dynamic files_dyn) {
+    dynamic params;
+    params["files"_key] = dynamic_ptr{
+        std::make_shared<dynamic>(std::move(files_dyn))};
+    proxy_->set(std::move(params)).get();
+  }
+
+  void set_filename(const std::string& name) {
+    dynamic params;
+    params["filename"_key] = name;
+    proxy_->set(std::move(params)).get();
+  }
+
+  void simulate_btn_click(const std::string& btn_key) {
+    auto& objs = srv_->last_session->objects;
+    auto it = objs.find(root_ + ".vbox.btn_row." + btn_key);
+    ASSERT_NE(it, objs.end()) << "button not found: " << btn_key;
+    auto btn_id = (*it->second)["__wish_id"_key].as<key_t>();
+    srv_->last_session->emit_event(btn_id, "clicked"_key, dynamic{});
+  }
+
+  void simulate_row_activated(int32_t idx) {
+    auto& objs = srv_->last_session->objects;
+    auto it = objs.find(root_ + ".vbox.file_table");
+    ASSERT_NE(it, objs.end());
+    auto table_id = (*it->second)["__wish_id"_key].as<key_t>();
+    dynamic payload;
+    payload["index"_key] = idx;
+    srv_->last_session->emit_event(table_id, "row_activated"_key,
+                                   std::move(payload));
+  }
+
+  bool has_event(key_t name) const {
+    for (auto& e : *events_)
+      if (e.name.id == name.id) return true;
+    return false;
+  }
+
+  const CapturedEvent* find_event(key_t name) const {
+    for (auto& e : *events_)
+      if (e.name.id == name.id) return &e;
+    return nullptr;
+  }
+
+  memory_server_transport                   transport_;
+  std::unique_ptr<SessionCapturingServer>   srv_;
+  std::unique_ptr<bdg::bison::rmi::client>  client_;
+  std::optional<bdg::bison::rmi::proxy::dynamic> proxy_;
+  std::string root_;
+  std::shared_ptr<std::vector<CapturedEvent>> events_;
+};
+
+TEST_F(OpenFileDialogEventsTest, BtnOpenEmitsOnOpen) {
+  set_files(make_files({{"report.pdf", "file"}}));
+  set_filename("report.pdf");
+  simulate_btn_click("btn_open");
+  ASSERT_TRUE(has_event("on_open"_key));
+  auto* ev = find_event("on_open"_key);
+  EXPECT_EQ(ev->payload.as<std::string>("path"_key), "report.pdf");
+}
+
+TEST_F(OpenFileDialogEventsTest, BtnCancelEmitsOnCancelAndRemovesWindow) {
+  simulate_btn_click("btn_cancel");
+  EXPECT_TRUE(has_event("on_cancel"_key));
+  // Internal Window must be removed from session.objects.
+  EXPECT_TRUE(find_form_root(srv_->last_session->objects).empty());
+}
+
+TEST_F(OpenFileDialogEventsTest, RowActivatedDirEmitsOnNavigate) {
+  set_files(make_files({{"docs", "dir"}, {"readme.txt", "file"}}));
+  simulate_row_activated(0);
+  ASSERT_TRUE(has_event("on_navigate"_key));
+  auto* ev = find_event("on_navigate"_key);
+  EXPECT_EQ(ev->payload.as<std::string>("name"_key), "docs");
+  EXPECT_EQ(ev->payload.as<std::string>("type"_key), "dir");
+}
+
+TEST_F(OpenFileDialogEventsTest, RowActivatedFileEmitsOnOpen) {
+  set_files(make_files({{"docs", "dir"}, {"readme.txt", "file"}}));
+  simulate_row_activated(1);
+  ASSERT_TRUE(has_event("on_open"_key));
+  auto* ev = find_event("on_open"_key);
+  EXPECT_EQ(ev->payload.as<std::string>("path"_key), "readme.txt");
+}
+
+TEST_F(OpenFileDialogEventsTest, DotDotFilenameDoesNotEmitOnOpen) {
+  set_filename("../escape.txt");
+  simulate_btn_click("btn_open");
+  EXPECT_FALSE(has_event("on_open"_key));
+}
+
+TEST_F(OpenFileDialogEventsTest, AbsolutePathRejectedWhenNotAllowed) {
+  // allow_absolute_paths defaults to false on this server instance.
+  set_filename("/etc/passwd");
+  simulate_btn_click("btn_open");
+  EXPECT_FALSE(has_event("on_open"_key));
+}

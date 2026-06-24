@@ -72,6 +72,12 @@ class form : public bison::dynamic {
   /// closed or destroyed.
   std::string internal_root_key_;
 
+  /// @brief Remove all session.objects entries owned by this form.
+  ///
+  /// Erases the root key and every key with the `"<root>."` prefix. Safe to
+  /// call more than once (subsequent calls are no-ops). Also called by ~form().
+  void remove_internal_objects();
+
  private:
   bison::rmi::context*     ctx_{nullptr};
   std::shared_ptr<session> sess_;

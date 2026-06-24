@@ -6,6 +6,7 @@
 #include "src/bison/bison_object.hpp"
 #include "src/rmi/shared/ids.hpp"
 
+#include <wish/file_service.hpp>
 #include <wish/ui_importer.hpp>
 
 namespace bdg::wish {
@@ -101,6 +102,10 @@ void open_file_dialog::on_init() {
   }
   if (auto it = tree.find("vbox.filename_row.filename_input"); it != tree.end())
     filename_input_ptr_ = it->second;
+  if (auto it = tree.find("vbox.btn_row.btn_open"); it != tree.end())
+    btn_open_id_ = (*it->second)["__wish_id"_key].as<key_t>();
+  if (auto it = tree.find("vbox.btn_row.btn_cancel"); it != tree.end())
+    btn_cancel_id_ = (*it->second)["__wish_id"_key].as<key_t>();
 
   // Merge the imported name_map into session.objects under our prefix.
   auto& objs = sess().objects;
@@ -111,16 +116,25 @@ void open_file_dialog::on_init() {
 
   // Intercept events from internal widgets. Unrecognised events are forwarded
   // to the client via the original emit function.
-  auto base_emit = std::move(sess().emit_event);
-  auto table_id  = file_table_id_;
+  auto base_emit     = std::move(sess().emit_event);
+  auto table_id      = file_table_id_;
+  auto btn_open_id   = btn_open_id_;
+  auto btn_cancel_id = btn_cancel_id_;
 
   // Capture `this` by raw pointer; the lambda lives inside sess().emit_event,
   // which the server destroys before releasing ctx.objects (which holds `this`).
   sess().emit_event =
-      [this, base_emit, table_id](key_t id, key_t event, dynamic payload) {
-        if (id.id == table_id.id && event == "row_selected"_key) {
-          on_row_selected(payload);
-          return;
+      [this, base_emit, table_id, btn_open_id, btn_cancel_id]
+      (key_t id, key_t event, dynamic payload) {
+        if (id.id == table_id.id) {
+          if (event == "row_selected"_key)  { on_row_selected(payload);  return; }
+          if (event == "row_activated"_key) { on_row_activated(payload); return; }
+        }
+        if (id.id == btn_open_id.id && event == "clicked"_key) {
+          on_btn_open_clicked(); return;
+        }
+        if (id.id == btn_cancel_id.id && event == "clicked"_key) {
+          on_btn_cancel_clicked(); return;
         }
         if (base_emit)
           base_emit(id, event, std::move(payload));
@@ -202,6 +216,57 @@ void open_file_dialog::on_row_selected(const bison::dynamic& payload) {
   // Mirror the value into the internal InputText widget.
   if (filename_input_ptr_)
     (*filename_input_ptr_)["value"_key] = name;
+}
+
+void open_file_dialog::on_btn_open_clicked() {
+  auto* fn_f = findField("filename"_key);
+  if (!fn_f || !fn_f->is<std::string>()) return;
+  const auto& filename = fn_f->as<std::string>();
+
+  auto resolved = file_service::resolve_path(
+      filename, sess().resource_dir, sess().allow_absolute_paths);
+  if (resolved.empty()) return;
+
+  bison::dynamic payload;
+  payload["path"_key] = filename;
+  emit("on_open"_key, std::move(payload));
+}
+
+void open_file_dialog::on_btn_cancel_clicked() {
+  emit("on_cancel"_key);
+  remove_internal_objects();
+}
+
+void open_file_dialog::on_row_activated(const bison::dynamic& payload) {
+  int32_t idx = payload.as<int32_t>("index"_key);
+
+  auto* files_f = findField("files"_key);
+  if (!files_f || !files_f->is<dynamic_ptr>() || !files_f->as<dynamic_ptr>())
+    return;
+  const auto& files = *files_f->as<dynamic_ptr>();
+
+  if (static_cast<size_t>(idx) >= files.size()) return;
+
+  const auto& entry_field = files.at(size_t{static_cast<size_t>(idx)});
+  if (!entry_field.is<dynamic_ptr>() || !entry_field.as<dynamic_ptr>()) return;
+  const auto& entry = *entry_field.as<dynamic_ptr>();
+
+  auto name = entry.as<std::string>("name"_key);
+  auto type = entry.as<std::string>("type"_key);
+
+  if (type == "dir") {
+    bison::dynamic nav;
+    nav["name"_key] = name;
+    nav["type"_key] = std::string{"dir"};
+    emit("on_navigate"_key, std::move(nav));
+  } else {
+    auto resolved = file_service::resolve_path(
+        name, sess().resource_dir, sess().allow_absolute_paths);
+    if (resolved.empty()) return;
+    bison::dynamic open;
+    open["path"_key] = name;
+    emit("on_open"_key, std::move(open));
+  }
 }
 
 // ── Registration ──────────────────────────────────────────────────────────────

@@ -37,9 +37,20 @@ class open_file_dialog : public form {
   /// @brief Update filename field and filename_input widget from a row click.
   void on_row_selected(const bison::dynamic& payload);
 
+  /// @brief Validate filename, then emit on_open if the path is safe.
+  void on_btn_open_clicked();
+
+  /// @brief Emit on_cancel and remove the internal UI tree from session.objects.
+  void on_btn_cancel_clicked();
+
+  /// @brief Handle a double-click on a table row: emit on_navigate or on_open.
+  void on_row_activated(const bison::dynamic& payload);
+
   ui_element_ptr file_table_ptr_;
   ui_element_ptr filename_input_ptr_;
   bison::key_t   file_table_id_;
+  bison::key_t   btn_open_id_;
+  bison::key_t   btn_cancel_id_;
 };
 
 /// @brief Register OpenFileDialog in the "wish" bison namespace.

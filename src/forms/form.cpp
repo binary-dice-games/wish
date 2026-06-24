@@ -11,6 +11,10 @@ form::form(bison::dynamic&& base)
     : bison::dynamic(std::move(base)) {}
 
 form::~form() {
+  remove_internal_objects();
+}
+
+void form::remove_internal_objects() {
   if (internal_root_key_.empty() || !sess_) return;
   auto& objs = sess_->objects;
   const std::string dot = internal_root_key_ + ".";
