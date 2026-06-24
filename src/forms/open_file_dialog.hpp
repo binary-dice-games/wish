@@ -56,6 +56,7 @@ class open_file_dialog : public form {
   void on_row_activated(const bison::dynamic& payload);
 
   ui_element_ptr file_table_ptr_;
+  ui_element_ptr path_label_ptr_;
   ui_element_ptr filename_input_ptr_;
   ui_element_ptr filter_combo_ptr_;
   ui_element_ptr filter_row_ptr_;

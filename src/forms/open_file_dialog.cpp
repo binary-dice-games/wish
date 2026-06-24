@@ -18,9 +18,12 @@ using namespace bison;
 // TableColumns are stored as NAMED children so dynamic::clear() on the
 // children dynamic removes only the indexed row entries, not the columns.
 // Placeholder field values (title, btn_open label) are overwritten in on_init().
+// ImGuiTableFlags: Resizable(1) + RowBg(64) + BordersInnerH(128) +
+//   BordersOuterH(256) + ScrollY(1<<25=33554432) = 33554881
+// ImGuiTableColumnFlags: WidthFixed(1<<4=16)
 static constexpr const char* kDialogLayout = R"({
   "type": "Window",
-  "width": 480, "height": 360,
+  "width": 520, "height": 420,
   "children": {
     "vbox": {
       "type": "VerticalLayout",
@@ -29,19 +32,19 @@ static constexpr const char* kDialogLayout = R"({
         "file_table": {
           "type": "Table",
           "columns": 2,
+          "flags": 33554881,
+          "outer_height": 280.0,
           "headers": true,
           "children": {
-            "col_name": { "type": "TableColumn", "label": "Name" },
-            "col_type": { "type": "TableColumn", "label": "Type" }
+            "col_name": { "type": "TableColumn", "label": "Name",
+                          "flags": 16, "init_width": 340 },
+            "col_type": { "type": "TableColumn", "label": "Type",
+                          "flags": 16, "init_width": 80  }
           }
         },
-        "filename_row": {
-          "type": "HorizontalLayout",
-          "children": {
-            "filename_input": {
-              "type": "InputText", "value": "", "hint": "filename"
-            }
-          }
+        "filename_input": {
+          "type": "InputText", "value": "", "hint": "filename",
+          "max_length": 1024
         },
         "filter_row": {
           "type": "HorizontalLayout",
@@ -53,8 +56,8 @@ static constexpr const char* kDialogLayout = R"({
         "btn_row": {
           "type": "HorizontalLayout",
           "children": {
-            "btn_open":   { "type": "Button", "label": "Open"   },
-            "btn_cancel": { "type": "Button", "label": "Cancel" }
+            "btn_open":   { "type": "Button", "label": "Open",   "width": 100 },
+            "btn_cancel": { "type": "Button", "label": "Cancel", "width": 100 }
           }
         }
       }
@@ -100,7 +103,9 @@ void open_file_dialog::on_init() {
     file_table_ptr_ = it->second;
     file_table_id_  = (*it->second)["__wish_id"_key].as<key_t>();
   }
-  if (auto it = tree.find("vbox.filename_row.filename_input"); it != tree.end()) {
+  if (auto it = tree.find("vbox.path_label"); it != tree.end())
+    path_label_ptr_ = it->second;
+  if (auto it = tree.find("vbox.filename_input"); it != tree.end()) {
     filename_input_ptr_ = it->second;
     filename_input_id_  = (*it->second)["__wish_id"_key].as<key_t>();
   }
@@ -163,6 +168,10 @@ void open_file_dialog::on_init() {
 // ── Event and field handlers ──────────────────────────────────────────────────
 
 bison::dynamic open_file_dialog::on_set(const bison::dynamic& patch) {
+  if (auto* f = patch.findField("path"_key)) {
+    if (f->is<std::string>() && path_label_ptr_)
+      (*path_label_ptr_)["text"_key] = f->as<std::string>();
+  }
   if (auto* f = patch.findField("files"_key)) {
     if (f->is<dynamic_ptr>() && f->as<dynamic_ptr>())
       rebuild_file_rows(*f->as<dynamic_ptr>());
@@ -219,6 +228,9 @@ void open_file_dialog::rebuild_file_rows(const bison::dynamic& files) {
     (*children)[size_t{static_cast<size_t>(row_idx)}] = dynamic_ptr{row};
     ++row_idx;
   });
+
+  // Rebuild the sorted-key cache so for_each_child_ordered finds the new rows.
+  file_table_ptr_->refresh_children_order();
 }
 
 void open_file_dialog::rebuild_filter_combo(const bison::dynamic& filters) {
@@ -366,6 +378,13 @@ void register_open_file_dialog() {
     attr<DisplayName>("Confirm Label"),
     attr<Description>("Label on the confirm button."),
     attr<Category>("Appearance")});
+
+  proto->addField("path"_key, field{std::string{""},
+    attr<DisplayName>("Path"),
+    attr<Description>(
+        "Current directory path shown in the path bar. "
+        "Client should update this when handling on_navigate."),
+    attr<Category>("Data")});
 
   // The __setter hook intercepts every set() call to synchronize internal
   // widgets (Table rows, btn_open label) with updated field values.

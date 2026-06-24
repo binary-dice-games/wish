@@ -1232,6 +1232,7 @@ class demo_client : public wish::client {
       dynamic init;
       init["title"_key]         = title;
       init["confirm_label"_key] = confirm_label;
+      init["path"_key]          = cur_dir->string();
       init["files"_key]         = dynamic_ptr{
           std::make_shared<dynamic>(list_directory(*cur_dir))};
       dlg->set(std::move(init)).get();
@@ -1242,6 +1243,7 @@ class demo_client : public wish::client {
             *cur_dir = (name == "..") ? cur_dir->parent_path()
                                       : (*cur_dir / name);
             dynamic fields;
+            fields["path"_key]  = cur_dir->string();
             fields["files"_key] = dynamic_ptr{
                 std::make_shared<dynamic>(list_directory(*cur_dir))};
             dlg->set(std::move(fields));
