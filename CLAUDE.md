@@ -17,10 +17,27 @@ Maintain clear, concise doc comments in code, especially for public APIs, classe
 
 ## DESIGN.md — directory architecture docs
 
-Some directories contain a `DESIGN.md` file that describes the architecture, key abstractions, and design decisions for the code in that directory. When working in a directory:
-- Read `DESIGN.md` if it exists before making changes, to understand the intended design.
-- After making changes that affect the architecture, public API surface, or key design decisions, update `DESIGN.md` to reflect those changes. Keep it accurate and concise — it should explain the *why* behind the structure, not restate what the code already says.
-- Do not create a `DESIGN.md` unless asked to. Only maintain existing ones.
+Some directories contain a `DESIGN.md` file that describes the architecture, key abstractions, and design decisions for the code in that directory.
+
+**Contents:** Overview of the subsystem's purpose, a diagram or summary of key abstractions and their relationships, the public API contract, and the *why* behind non-obvious design decisions (trade-offs, constraints, alternatives rejected). Do not restate what the code already says — explain intent and reasoning.
+
+**When to read:** Before making any change in a directory that has a `DESIGN.md`. Understanding the intended design prevents changes that technically compile but violate the subsystem's contracts or invariants.
+
+**When to update:** After any change that affects the architecture, the public API surface, or a key design decision documented there. Keep it accurate; a stale `DESIGN.md` is worse than none.
+
+**When to create:** Only when explicitly asked. Do not create a `DESIGN.md` speculatively.
+
+## PLAN.md — feature implementation plans
+
+Some features or directories contain a `PLAN.md` file that describes the ordered sequence of steps for implementing the feature. Each step is a self-contained, testable deliverable small enough for a human to review comfortably before the next step begins.
+
+**Contents:** An introductory note pointing to the relevant `DESIGN.md`, then a numbered list of steps. Each step has a **Goal** (one sentence stating what is true when this step is done), **Deliverables** (the exact files created or changed and what each must contain), and **Tests** (the specific assertions that must pass before moving on). A **Completion Criteria** section at the end lists the overall pass/fail conditions for the entire feature.
+
+**When to read:** Before implementing any step of a planned feature. If a `PLAN.md` exists, follow it — do not skip steps or reorder them without a clear reason. If a step is already done, verify its tests pass before continuing.
+
+**When to update:** If implementation reveals that a step's deliverables or tests need adjustment, update the plan *before* diverging from it, so the document stays authoritative. Check off or remove completed steps when the feature ships.
+
+**When to create:** Only when explicitly asked. Do not create a `PLAN.md` speculatively.
 
 ## Startup reading
 
