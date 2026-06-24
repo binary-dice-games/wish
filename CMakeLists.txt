@@ -99,7 +99,23 @@ if(WISH_ENABLE_IMGUI AND WISH_ENABLE_SDL3)
   target_link_libraries(imgui_core PUBLIC SDL3::SDL3)
 endif()
 
-add_library(wish STATIC
+# ── wish_client — lightweight C++ client (no renderer, no UI elements) ────────
+
+add_library(wish_client STATIC
+  include/wish/client.hpp
+  src/client.cpp
+)
+set_target_properties(wish_client PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_include_directories(wish_client
+    PUBLIC
+        include
+        ${CMAKE_CURRENT_SOURCE_DIR}/extern/bison
+)
+target_link_libraries(wish_client PUBLIC bison)
+
+# ── wish_server — server, renderer, and all UI elements (heavy stack) ─────────
+
+add_library(wish_server STATIC
   include/wish/wish.hpp
   include/wish/registry.hpp
   include/wish/ui_importer.hpp
@@ -110,7 +126,6 @@ add_library(wish STATIC
   include/wish/logger.hpp
   include/wish/style_service.hpp
   include/wish/server.hpp
-  include/wish/client.hpp
   include/wish/form.hpp
   src/wish.cpp
   src/registry.cpp
@@ -122,7 +137,6 @@ add_library(wish STATIC
   src/logger.cpp
   src/style_service.cpp
   src/server.cpp
-  src/client.cpp
   src/template_handler.cpp
   src/ui_elements/element.cpp
   src/ui_elements/layout.cpp
@@ -162,18 +176,17 @@ add_library(wish STATIC
   src/forms/open_file_dialog.cpp
 )
 
-
 if(WISH_MODULE_DESKTOP)
-  target_sources(wish PRIVATE
+  target_sources(wish_server PRIVATE
     src/forms/desktop/desktop_module.cpp
     src/forms/desktop/calculator.cpp
     src/forms/desktop/notepad.cpp
   )
-  target_compile_definitions(wish PRIVATE WISH_MODULE_DESKTOP)
+  target_compile_definitions(wish_server PRIVATE WISH_MODULE_DESKTOP)
 endif()
 
 if(WISH_ENABLE_IMGUI)
-  target_sources(wish PRIVATE
+  target_sources(wish_server PRIVATE
     include/wish/imgui_renderer.hpp
     src/imgui/imgui_renderer.cpp
     src/imgui/imgui_ui_renderer.hpp
@@ -184,23 +197,23 @@ if(WISH_ENABLE_IMGUI)
     src/imgui/imgui_plot3d_renderer.cpp
     src/imgui/imgui_text_editor_renderer.cpp
   )
-  target_compile_definitions(wish PUBLIC WISH_IMGUI_ENABLED)
+  target_compile_definitions(wish_server PUBLIC WISH_IMGUI_ENABLED)
   # PUBLIC so that consumers who include imgui_renderer.hpp have imgui in path.
-  target_link_libraries(wish PUBLIC imgui_core)
+  target_link_libraries(wish_server PUBLIC imgui_core)
 endif()
 
 if(WISH_ENABLE_IMGUI AND WISH_ENABLE_SDL3)
-  target_sources(wish PRIVATE
+  target_sources(wish_server PRIVATE
     include/wish/sdl3_renderer.hpp
     src/sdl3_renderer.cpp
   )
-  target_compile_definitions(wish PUBLIC WISH_SDL3_ENABLED)
-  target_link_libraries(wish PUBLIC SDL3::SDL3 SDL3_image::SDL3_image)
+  target_compile_definitions(wish_server PUBLIC WISH_SDL3_ENABLED)
+  target_link_libraries(wish_server PUBLIC SDL3::SDL3 SDL3_image::SDL3_image)
 endif()
 
-set_target_properties(wish PROPERTIES POSITION_INDEPENDENT_CODE ON)
+set_target_properties(wish_server PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
-target_include_directories(wish
+target_include_directories(wish_server
     PRIVATE
         src
         # nlohmann/json and libyaml headers; only needed by src/ui_importer.cpp.
@@ -214,10 +227,19 @@ target_include_directories(wish
         ${CMAKE_CURRENT_SOURCE_DIR}/extern/bison
 )
 
-# bison is PUBLIC so consumers of wish also get bison's types and link deps.
-target_link_libraries(wish PUBLIC bison)
+# bison is PUBLIC so consumers of wish_server also get bison's types and link deps.
+target_link_libraries(wish_server PUBLIC bison)
 # libyaml is needed by ui_importer.cpp; PRIVATE because it is an impl detail.
-target_link_libraries(wish PRIVATE yaml)
+target_link_libraries(wish_server PRIVATE yaml)
+
+# ── wish — convenience interface target (client + server) ─────────────────────
+#
+# Single-binary apps (calculator, demo) and tests that need both sides link
+# against this target and get everything.  External projects that only need
+# one side link directly against wish_client or wish_server instead.
+
+add_library(wish INTERFACE)
+target_link_libraries(wish INTERFACE wish_server wish_client)
 
 if(WISH_BUILD_TESTS)
     enable_testing()
@@ -225,20 +247,26 @@ if(WISH_BUILD_TESTS)
     add_subdirectory(tests)
 endif()
 
-# ── wish_client shared library (C ABI) ───────────────────────────────────────
+# ── wish_client_dll — C ABI shared library wrapping wish_client ───────────────
+#
+# CMake target is named wish_client_dll to avoid colliding with the wish_client
+# static lib; the output filename is still wish_client.dll / libwish_client.so.
+
 if(WISH_BUILD_SHARED)
-  add_library(wish_client SHARED
+  add_library(wish_client_dll SHARED
       src/wish_client_c.cpp
       include/wish/wish_client.h)
-  target_compile_definitions(wish_client PRIVATE WISH_CLIENT_BUILDING_DLL)
-  target_link_libraries(wish_client PUBLIC wish)
-  target_include_directories(wish_client
-      PUBLIC
-          ${CMAKE_SOURCE_DIR}/include
+  target_compile_definitions(wish_client_dll PRIVATE WISH_CLIENT_BUILDING_DLL)
+  target_link_libraries(wish_client_dll PUBLIC wish_client)
+  target_include_directories(wish_client_dll
       PRIVATE
           ${CMAKE_SOURCE_DIR}
           ${CMAKE_SOURCE_DIR}/extern/bison)
-  set_target_properties(wish_client PROPERTIES FOLDER lib)
+  set_target_properties(wish_client_dll PROPERTIES
+      RUNTIME_OUTPUT_NAME wish_client      # wish_client.dll
+      ARCHIVE_OUTPUT_NAME wish_client_dll  # wish_client_dll.lib — avoids collision with wish_client.lib
+      OUTPUT_NAME         wish_client      # non-MSVC fallback
+      FOLDER              lib)
 endif()
 
 add_subdirectory(app)
