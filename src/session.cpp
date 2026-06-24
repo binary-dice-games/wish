@@ -3,7 +3,12 @@
 /// @brief Implementation of the wish::session lifecycle.
 #include <wish/session.hpp>
 
+#include "src/bison/bison_object.hpp"
+
+#include <algorithm>
+#include <iomanip>
 #include <system_error>
+#include <vector>
 
 namespace bdg::wish {
 
@@ -50,6 +55,49 @@ session& session::operator=(session&& other) noexcept {
     other.resource_dir.clear();
   }
   return *this;
+}
+
+// ── Debug dump ────────────────────────────────────────────────────────────────
+
+void dump_session_tree(const session& s, std::ostream& out) {
+  using namespace bdg::bison;
+
+  auto class_name = [](const ui_element& node) -> std::string {
+    auto k = node.as<key_t>(dynamic::CLASS);
+    if (const auto* proto = node.findClass(k)) {
+      if (const auto* cls = proto->findField(dynamic::CLASS)) {
+        if (const auto* dn = cls->findAttribute<DisplayName>())
+          return dn->name();
+      }
+    }
+    return "?(" + std::to_string(k.id) + ")";
+  };
+
+  // Collect and sort by key for stable, readable output.
+  std::vector<std::pair<std::string, ui_element_ptr>> entries(
+      s.objects.begin(), s.objects.end());
+  std::sort(entries.begin(), entries.end(),
+      [](const auto& a, const auto& b) { return a.first < b.first; });
+
+  out << "wish session objects (" << entries.size() << "):\n";
+  for (const auto& [key, ptr] : entries) {
+    if (!ptr) { out << "  [null]  \"" << key << "\"\n"; continue; }
+    out << "  [" << std::left << std::setw(20) << class_name(*ptr) << "]  \""
+        << key << "\"\n";
+  }
+
+  if (!s.top_level_objects.empty()) {
+    out << "top_level_objects (" << s.top_level_objects.size() << "):\n";
+    std::vector<std::pair<std::string, ui_element_ptr>> roots(
+        s.top_level_objects.begin(), s.top_level_objects.end());
+    std::sort(roots.begin(), roots.end(),
+        [](const auto& a, const auto& b) { return a.first < b.first; });
+    for (const auto& [key, ptr] : roots) {
+      if (!ptr) { out << "  [null]  \"" << key << "\"\n"; continue; }
+      out << "  [" << std::left << std::setw(20) << class_name(*ptr)
+          << "]  \"" << key << "\"\n";
+    }
+  }
 }
 
 }  // namespace bdg::wish

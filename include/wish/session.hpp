@@ -11,8 +11,10 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <ostream>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace bdg::wish {
 
@@ -66,6 +68,18 @@ struct session {
   /// Logger service instance; forwards client log calls to stdout / log file.
   logger_ptr logger_service;
 
+  /// Map of key → root `ui_element_ptr` for every top-level window that the
+  /// server must render each frame.  Both template instantiations and form
+  /// objects register here:
+  ///
+  ///  - `template_handler::do_instantiate` adds the root at a unique key.
+  ///  - `form::init()` adds the form's internal Window at `internal_root_key_`.
+  ///  - `form::remove_internal_objects()` erases by that same key.
+  ///
+  /// The render loop iterates all values without relying on the `""` convention
+  /// used in `objects`, so multiple top-level windows coexist correctly.
+  std::unordered_map<std::string, ui_element_ptr> top_level_objects;
+
   /// @brief Callback for emitting asynchronous events to the connected client.
   ///
   /// Parameters: `(object_id, event_name, payload)`.  Null when no client is
@@ -89,5 +103,23 @@ struct session {
   session(session&& other) noexcept;
   session& operator=(session&& other) noexcept;
 };
+
+/// @brief Write a human-readable dump of every object in the session to @p out.
+///
+/// Outputs one line per entry in `session.objects` and `session.top_level_objects`,
+/// sorted by key, with the element's class type.  Useful for diagnosing missing
+/// or unexpected elements in the UI tree.
+///
+/// Example output:
+/// @code
+/// wish session objects (6):
+///   [DockSpaceViewport]  ""
+///   [Window]             "demo_win"
+///   [TabBar]             "demo_win.tabs_root"
+///   top_level_objects (2):
+///   [DockSpaceViewport]  "tpl_0"
+///   [Window]             "__form_140703"
+/// @endcode
+void dump_session_tree(const session& s, std::ostream& out);
 
 }  // namespace bdg::wish

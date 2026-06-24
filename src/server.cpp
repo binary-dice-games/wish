@@ -154,10 +154,8 @@ void server::render_loop() {
       {
         auto lp = sessions_.rlock();
         for (const auto& [id, sess] : *lp) {
-          auto it = sess->objects.find("");
-          if (it != sess->objects.end()) {
-            renderer_->render_session(*it->second, *sess);
-          }
+          for (const auto& [key, win] : sess->top_level_objects)
+            if (win) renderer_->render_session(*win, *sess);
         }
       }
       renderer_->end_frame();

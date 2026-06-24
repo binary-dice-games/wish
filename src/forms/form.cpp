@@ -18,6 +18,10 @@ void form::remove_internal_objects() {
   if (internal_root_key_.empty() || !sess_) return;
   auto& objs = sess_->objects;
   const std::string dot = internal_root_key_ + ".";
+
+  // Remove the root window from the top-level map before erasing objects.
+  sess_->top_level_objects.erase(internal_root_key_);
+
   for (auto it = objs.begin(); it != objs.end(); ) {
     if (it->first == internal_root_key_ || it->first.rfind(dot, 0) == 0)
       it = objs.erase(it);
@@ -30,6 +34,13 @@ void form::init(bison::rmi::context& ctx, std::shared_ptr<session> sess) {
   ctx_  = &ctx;
   sess_ = std::move(sess);
   on_init();
+  // After on_init() the subclass has populated internal_root_key_. Register
+  // the root window as an overlay so the render loop draws it each frame.
+  if (!internal_root_key_.empty()) {
+    auto it = sess_->objects.find(internal_root_key_);
+    if (it != sess_->objects.end())
+      sess_->top_level_objects[internal_root_key_] = it->second;
+  }
 }
 
 void form::emit(bison::key_t event_name, bison::dynamic payload) {

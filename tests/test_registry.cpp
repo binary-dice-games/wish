@@ -167,6 +167,21 @@ TEST_F(RegistryTest, SeparatorInheritsVisibleFromElement) {
   ASSERT_NE(obj.findField("visible"_key), nullptr);
 }
 
+// ── DisplayName on CLASS field ────────────────────────────────────────────────
+
+TEST_F(RegistryTest, ClassFieldHasDisplayNameViaProto) {
+  // DisplayName is stored on the prototype's CLASS field, not the instance's.
+  auto obj = dynamic::instantiate("wish"_key, "Button"_key);
+  auto class_key = obj.as<key_t>(dynamic::CLASS);
+  auto* proto = obj.findClass(class_key);
+  ASSERT_NE(proto, nullptr) << "findClass should find the Button prototype";
+  auto* cls = proto->findField(dynamic::CLASS);
+  ASSERT_NE(cls, nullptr);
+  auto* dn = cls->findAttribute<DisplayName>();
+  ASSERT_NE(dn, nullptr) << "DisplayName should be accessible on prototype CLASS field";
+  EXPECT_EQ(dn->name(), "Button");
+}
+
 // ── Label ─────────────────────────────────────────────────────────────────────
 
 TEST_F(RegistryTest, LabelHasTextAsString) {

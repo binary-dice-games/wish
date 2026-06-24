@@ -8,6 +8,7 @@
 #include "src/rmi/shared/ids.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <stdexcept>
 
@@ -28,6 +29,12 @@ static bison::dynamic apply_descriptor(
 
   wish::name_map nmap = is_json ? import_json(descriptor) : import_yaml(descriptor);
 
+  // Generate a unique top-level key for this instantiation so multiple
+  // templates can coexist without overwriting each other.
+  static std::atomic<uint32_t> tpl_counter{0};
+  const std::string tpl_key =
+      "__tpl_" + std::to_string(tpl_counter.fetch_add(1));
+
   bison::dynamic result;
   std::size_t idx = 0;
   for (auto& [name, elem] : nmap) {
@@ -44,6 +51,13 @@ static bison::dynamic apply_descriptor(
     entry["id"_key] = new_id;
     result[idx++] = bison::dynamic_ptr{std::move(entry)};
   }
+
+  // Register the root element as a top-level renderable.  The root is at
+  // key "" in the name_map (the outermost element of the descriptor).
+  auto root_it = nmap.find("");
+  if (root_it != nmap.end())
+    sess.top_level_objects[tpl_key] = root_it->second;
+
   return result;
 }
 
