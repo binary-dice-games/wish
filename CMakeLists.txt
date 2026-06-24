@@ -159,7 +159,9 @@ add_library(wish STATIC
   src/plot3d_elements/plot3d_mesh.cpp
   src/plot3d_elements/plot3d_annotations.cpp
   src/forms/form.cpp
+  src/forms/open_file_dialog.cpp
 )
+
 
 if(WISH_MODULE_DESKTOP)
   target_sources(wish PRIVATE

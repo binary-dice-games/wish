@@ -9,6 +9,10 @@
 #include "ui_elements.hpp"
 #include "plot_elements.hpp"
 #include "plot3d_elements.hpp"
+#include "forms/open_file_dialog.hpp"
+#ifdef WISH_MODULE_DESKTOP
+#include "forms/desktop/desktop_module.hpp"
+#endif
 
 namespace bdg::wish {
 
@@ -55,10 +59,10 @@ void register_all() {
   register_file_service();
   register_style_service();
   register_logger();
-  // Built-in forms (Step 4+).
-  // register_open_file_dialog();
+  // Built-in forms.
+  register_open_file_dialog();
 #ifdef WISH_MODULE_DESKTOP
-  // register_desktop_module();
+  register_desktop_module();
 #endif
 }
 
