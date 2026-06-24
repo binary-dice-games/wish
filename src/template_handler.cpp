@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <mutex>
 #include <stdexcept>
 
 namespace bdg::wish {
@@ -55,8 +56,10 @@ static bison::dynamic apply_descriptor(
   // Register the root element as a top-level renderable.  The root is at
   // key "" in the name_map (the outermost element of the descriptor).
   auto root_it = nmap.find("");
-  if (root_it != nmap.end())
+  if (root_it != nmap.end()) {
+    std::lock_guard<std::mutex> lg(sess.top_level_mutex);
     sess.top_level_objects[tpl_key] = root_it->second;
+  }
 
   return result;
 }

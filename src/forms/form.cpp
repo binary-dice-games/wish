@@ -3,6 +3,8 @@
 /// @brief Implementation of the wish::form base class.
 #include <wish/form.hpp>
 
+#include <mutex>
+
 namespace bdg::wish {
 
 // ── form ─────────────────────────────────────────────────────────────────────
@@ -20,7 +22,10 @@ void form::remove_internal_objects() {
   const std::string dot = internal_root_key_ + ".";
 
   // Remove the root window from the top-level map before erasing objects.
-  sess_->top_level_objects.erase(internal_root_key_);
+  {
+    std::lock_guard<std::mutex> lg(sess_->top_level_mutex);
+    sess_->top_level_objects.erase(internal_root_key_);
+  }
 
   for (auto it = objs.begin(); it != objs.end(); ) {
     if (it->first == internal_root_key_ || it->first.rfind(dot, 0) == 0)
@@ -38,8 +43,10 @@ void form::init(bison::rmi::context& ctx, std::shared_ptr<session> sess) {
   // the root window as an overlay so the render loop draws it each frame.
   if (!internal_root_key_.empty()) {
     auto it = sess_->objects.find(internal_root_key_);
-    if (it != sess_->objects.end())
+    if (it != sess_->objects.end()) {
+      std::lock_guard<std::mutex> lg(sess_->top_level_mutex);
       sess_->top_level_objects[internal_root_key_] = it->second;
+    }
   }
 }
 

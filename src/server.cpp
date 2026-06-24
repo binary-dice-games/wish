@@ -13,8 +13,10 @@
 #include <chrono>
 #include <iomanip>
 #include <memory>
+#include <mutex>
 #include <sstream>
 #include <thread>
+#include <vector>
 
 namespace bdg::wish {
 
@@ -152,11 +154,20 @@ void server::render_loop() {
       renderer_->begin_frame();
       renderer_->render_server_frame();
       {
-        auto lp = sessions_.rlock();
-        for (const auto& [id, sess] : *lp) {
-          for (const auto& [key, win] : sess->top_level_objects)
-            if (win) renderer_->render_session(*win, *sess);
+        // Snapshot top_level_objects under its mutex so the RMI thread can
+        // safely add/remove entries (e.g. form close) without data races.
+        using RenderItem = std::pair<ui_element_ptr, session*>;
+        std::vector<RenderItem> render_list;
+        {
+          auto lp = sessions_.rlock();
+          for (const auto& [id, sess] : *lp) {
+            std::lock_guard<std::mutex> lg(sess->top_level_mutex);
+            for (const auto& [key, win] : sess->top_level_objects)
+              if (win) render_list.emplace_back(win, sess.get());
+          }
         }
+        for (const auto& [win, sess] : render_list)
+          renderer_->render_session(*win, *sess);
       }
       renderer_->end_frame();
       if (renderer_->should_quit())

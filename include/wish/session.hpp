@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <ostream>
 #include <string>
 #include <unordered_map>
@@ -68,6 +69,11 @@ struct session {
   /// Logger service instance; forwards client log calls to stdout / log file.
   logger_ptr logger_service;
 
+  /// Guards `top_level_objects`.  The render thread snapshots the map under
+  /// this lock; writers (form lifecycle, template instantiation) hold it while
+  /// inserting or erasing entries.
+  mutable std::mutex top_level_mutex;
+
   /// Map of key → root `ui_element_ptr` for every top-level window that the
   /// server must render each frame.  Both template instantiations and form
   /// objects register here:
@@ -78,6 +84,7 @@ struct session {
   ///
   /// The render loop iterates all values without relying on the `""` convention
   /// used in `objects`, so multiple top-level windows coexist correctly.
+  /// Always access under `top_level_mutex`.
   std::unordered_map<std::string, ui_element_ptr> top_level_objects;
 
   /// @brief Callback for emitting asynchronous events to the connected client.
