@@ -1,4 +1,4 @@
-﻿// MIT License Â© 2025 Binary Dice Games
+// MIT License (c) 2025 Binary Dice Games
 /// @file file_service.cpp
 /// @brief Implementation of the wish file service.
 #include <wish/file_service.hpp>
@@ -11,10 +11,10 @@ namespace bdg::wish {
 
 using namespace bdg::bison;
 
-// —— file_service —————————————————————————————————————————————————————————
+// ── file_service ──────────────────────────────────────────────────────────────
 
 file_service::file_service(dynamic&& base,
-                                     std::filesystem::path resource_dir)
+                           std::filesystem::path resource_dir)
     : dynamic(std::move(base)),
       resource_dir_(std::move(resource_dir)) {
   addMethod(
@@ -62,14 +62,14 @@ std::filesystem::path file_service::resolve_path(
   if (p.is_absolute())
     return allow_absolute ? p : std::filesystem::path{};
 
-  // Normalize purely syntactically — resolves '..' and '.' without touching
+  // Normalize purely syntactically -- resolves ".." and "." without touching
   // the filesystem, so it works for files that do not yet exist.
   auto base   = resource_dir.lexically_normal();
   auto target = (resource_dir / name).lexically_normal();
   auto rel    = target.lexically_relative(base);
 
-  // A relative path that starts with “..” escapes the sandbox.
-  if (rel.empty() || *rel.begin() == “..”)
+  // A relative path that starts with ".." escapes the sandbox.
+  if (rel.empty() || *rel.begin() == std::filesystem::path(".."))
     return {};
 
   return target;
@@ -80,16 +80,16 @@ file_service::resolve_path(const std::string& name) const {
   auto result = resolve_path(name, resource_dir_, /*allow_absolute=*/false);
   if (result.empty()) {
     if (name.empty())
-      throw std::runtime_error(“wish::file_service: path must not be empty”);
+      throw std::runtime_error(
+          "wish::file_service: path must not be empty");
     throw std::runtime_error(
-        “wish::file_service: path \”” + name +
-        “\” escapes the resource directory”);
+        "wish::file_service: path escapes the resource directory: " + name);
   }
   return result;
 }
 
 void file_service::upload(const std::string& name,
-                               const std::string& data) {
+                          const std::string& data) {
   auto path = resolve_path(name);
   if (!std::filesystem::exists(resource_dir_)) {
     throw std::runtime_error(
@@ -100,7 +100,7 @@ void file_service::upload(const std::string& name,
   std::ofstream out(path, std::ios::binary);
   if (!out) {
     throw std::runtime_error(
-        "wish::file_service: cannot write \"" + name + "\"");
+        "wish::file_service: cannot write: " + name);
   }
   out.write(data.data(), static_cast<std::streamsize>(data.size()));
 }
@@ -110,7 +110,7 @@ std::string file_service::download(const std::string& name) const {
   std::ifstream in(path, std::ios::binary);
   if (!in) {
     throw std::runtime_error(
-        "wish::file_service: file not found: \"" + name + "\"");
+        "wish::file_service: file not found: " + name);
   }
   return {std::istreambuf_iterator<char>(in),
           std::istreambuf_iterator<char>{}};
@@ -134,11 +134,11 @@ void file_service::erase(const std::string& name) {
   std::error_code ec;
   if (!std::filesystem::remove(path, ec)) {
     throw std::runtime_error(
-        "wish::file_service: cannot delete \"" + name + "\"");
+        "wish::file_service: cannot delete: " + name);
   }
 }
 
-// —— register_file_service ————————————————————————————————————————————————————
+// ── register_file_service ──────────────────────────────────────────────────────
 
 void register_file_service() {
   auto proto = dynamic_ptr{"__WishFileSystem"_key, {}};
@@ -146,4 +146,3 @@ void register_file_service() {
 }
 
 }  // namespace bdg::wish
-
