@@ -73,6 +73,20 @@ class server : public bison::rmi::server {
    */
   void set_logger(logger_ptr logger) { logger_ = std::move(logger); }
 
+  /**
+   * @brief Allow widgets to reference files by absolute path.
+   *
+   * By default, widget file paths (e.g. `TextEditor::file_path`,
+   * `Image::src`) must be relative and are sandboxed inside the session's
+   * `resource_dir`.  Call this with `true` only for same-process deployments
+   * (memory_transport) where the server and client share the host filesystem.
+   *
+   * Must be called before `start()`.
+   */
+  void set_allow_absolute_paths(bool allow) {
+    allow_absolute_paths_ = allow;
+  }
+
   /** @brief Stop the accept loop, render loop, and join all threads. */
   void stop();
 
@@ -116,6 +130,7 @@ class server : public bison::rmi::server {
   std::thread render_thread_;
   std::atomic<bool> running_{false};
   logger_ptr logger_;
+  bool allow_absolute_paths_{false};
 };
 
 } // namespace bdg::wish

@@ -126,6 +126,50 @@ my_service::my_service(bison::dynamic&& base) : dynamic(std::move(base)) {}
 
 For classes that need a factory (server instantiates via RMI `INSTANTIATE`), see `register_template_handler()` in `src/template_handler.cpp` for the `make_factory<T>` pattern.
 
+## Security Considerations for AI Code Assist
+
+When generating or modifying wish server-side code, AI agents must follow these rules:
+
+### File access is sandboxed per session
+
+Every client session has an isolated temporary directory (`session::resource_dir`).
+Widget fields that accept file paths (e.g. `Image::src`, `TextEditor::file_path`)
+**must** be validated against this sandbox before any file I/O:
+
+- **Relative paths** are resolved with `resolve_widget_path()` (defined in
+  `src/imgui/imgui_ui_renderer.hpp`), which uses purely lexical normalization to
+  verify the resolved path stays inside `resource_dir`. Never skip this check.
+- **Absolute paths** are rejected by default. They are permitted only when the
+  server has been explicitly configured with
+  `wish::server::set_allow_absolute_paths(true)` — which is intended exclusively
+  for same-process (`memory_transport`) deployments.
+- **Never** construct file paths from untrusted client input without going through
+  `resolve_widget_path()` or `file_service::resolve_path()`.  A path like
+  `../../etc/passwd` must be rejected, not silently truncated or accessed.
+
+### Adding new file-accessing widgets
+
+Any new widget whose render function reads or writes a file must:
+
+1. Accept only a **relative** path field by default.
+2. Call `resolve_widget_path(path, s.resource_dir, s.allow_absolute_paths)` and
+   return early if the result is empty.
+3. Document the field's security contract in the registration attributes
+   (see `src/ui_elements/text_editor.cpp` as a reference).
+
+### Uploads and downloads
+
+`file_service::upload` / `download` already enforce sandboxing via
+`file_service::resolve_path()`.  Do not bypass or replicate this logic; call the
+method directly.
+
+### Session isolation
+
+Each `wish::session` is independent: object tree, resource folder, file service,
+and style service are all isolated.  Do not share mutable session state across
+sessions or cache per-session resources in process-global structures keyed by
+anything other than the session ID.
+
 ## Further Documentation
 
 | File | Contents |

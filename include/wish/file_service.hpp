@@ -58,6 +58,27 @@ class file_service : public bison::dynamic {
    */
   void erase(const std::string& name);
 
+  /**
+   * @brief Validate and resolve @p name against @p resource_dir.
+   *
+   * Relative paths are resolved purely syntactically (no filesystem access),
+   * so the function works for files that do not yet exist.  The resolved path
+   * must remain inside @p resource_dir; paths that escape via `..` or similar
+   * are rejected.
+   *
+   * Absolute paths are accepted only when @p allow_absolute is `true`; this
+   * flag should only be set for same-process (`memory_transport`) deployments.
+   *
+   * @param name           Raw path value (relative or absolute).
+   * @param resource_dir   Session sandbox directory.
+   * @param allow_absolute Whether absolute paths are permitted.
+   * @return Resolved path, or an empty path if @p name is rejected.
+   */
+  static std::filesystem::path resolve_path(
+      const std::string& name,
+      const std::filesystem::path& resource_dir,
+      bool allow_absolute = false);
+
  private:
   std::filesystem::path resource_dir_;
 

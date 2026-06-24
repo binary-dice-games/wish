@@ -51,25 +51,41 @@ file_service::file_service(dynamic&& base,
       }});
 }
 
-std::filesystem::path
-file_service::resolve_path(const std::string& name) const {
-  if (name.empty()) {
-    throw std::runtime_error(
-        "wish::file_service: path must not be empty");
-  }
-  // Normalize both paths purely syntactically â€” resolves '..' and '.' without
-  // touching the filesystem, so it works for files that do not yet exist.
-  auto base   = resource_dir_.lexically_normal();
-  auto target = (resource_dir_ / name).lexically_normal();
+std::filesystem::path file_service::resolve_path(
+    const std::string& name,
+    const std::filesystem::path& resource_dir,
+    bool allow_absolute)
+{
+  if (name.empty()) return {};
+
+  std::filesystem::path p{name};
+  if (p.is_absolute())
+    return allow_absolute ? p : std::filesystem::path{};
+
+  // Normalize purely syntactically — resolves '..' and '.' without touching
+  // the filesystem, so it works for files that do not yet exist.
+  auto base   = resource_dir.lexically_normal();
+  auto target = (resource_dir / name).lexically_normal();
   auto rel    = target.lexically_relative(base);
 
-  // If the relative path starts with ".." the target is outside the sandbox.
-  if (rel.empty() || *rel.begin() == "..") {
-    throw std::runtime_error(
-        "wish::file_service: path \"" + name +
-        "\" escapes the resource directory");
-  }
+  // A relative path that starts with “..” escapes the sandbox.
+  if (rel.empty() || *rel.begin() == “..”)
+    return {};
+
   return target;
+}
+
+std::filesystem::path
+file_service::resolve_path(const std::string& name) const {
+  auto result = resolve_path(name, resource_dir_, /*allow_absolute=*/false);
+  if (result.empty()) {
+    if (name.empty())
+      throw std::runtime_error(“wish::file_service: path must not be empty”);
+    throw std::runtime_error(
+        “wish::file_service: path \”” + name +
+        “\” escapes the resource directory”);
+  }
+  return result;
 }
 
 void file_service::upload(const std::string& name,

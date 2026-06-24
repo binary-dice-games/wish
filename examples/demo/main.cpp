@@ -448,6 +448,28 @@ static constexpr const char* kTabPlot3DDesc = R"json(
           }
         })json";
 
+static constexpr const char* kTabFilesDesc = R"json(
+        "tab_files": { "type": "TabItem", "label": "Files",
+          "children": {
+            "sec_image":    { "type": "SeparatorText", "label": "Image Viewer" },
+            "lbl_img_hint": { "type": "Label",
+                              "text": "Enter an absolute path to a BMP image file:" },
+            "txt_img_path": { "type": "InputText", "label": "Image Path",
+                              "value": "", "max_length": 512 },
+            "img_view":     { "type": "Image", "src": "", "width": 512, "height": 300 },
+            "sec_editor":   { "type": "SeparatorText", "label": "Text / Code Editor" },
+            "lbl_ed_hint":  { "type": "Label",
+                              "text": "Enter an absolute path to a text or code file:" },
+            "txt_ed_path":  { "type": "InputText", "label": "File Path",
+                              "value": "", "max_length": 512 },
+            "cmb_lang":     { "type": "Combo", "label": "Language",
+                              "items": "none\ncpp\nc\ncs\nglsl\nhlsl\nlua\npython\nsql\njson\nmarkdown\nangelscript",
+                              "value": 0 },
+            "editor": { "type": "TextEditor", "file_path": "", "language": "none",
+                        "height": 400 }
+          }
+        })json";
+
 // ── Menu bar descriptor ────────────────────────────────────────────────────
 
 static constexpr const char* kMenuBarDesc = R"json(
@@ -503,7 +525,8 @@ static const std::string kDemoDescStr =
     + kTabMiscDesc      + ","
     + kTabTablesDesc    + ","
     + kTabPlotsDesc     + ","
-    + kTabPlot3DDesc
+    + kTabPlot3DDesc    + ","
+    + kTabFilesDesc
     // Close tab bar, add status bar, close window and dockspace.
     + R"json(
 
@@ -1054,6 +1077,59 @@ class demo_client : public wish::client {
           status(std::string("Verbose logging: ") + (v ? "on" : "off"));
         });
 
+    // ── Files tab ─────────────────────────────────────────────────────────
+
+    // Image path: forward changes to the Image widget's src field.
+    pm.at("demo_win.tabs_root.tab_files.txt_img_path").onEvent("changed"_key,
+        [&, status](dynamic p) {
+          const auto* f = p.findField("value"_key);
+          std::string path = (f && f->is<std::string>()) ? f->as<std::string>() : "";
+          dynamic fields;
+          fields["src"_key] = path;
+          pm.at("demo_win.tabs_root.tab_files.img_view").set(std::move(fields));
+          status("Image path: " + path);
+        });
+
+    // Editor path: forward changes to the TextEditor's file_path field.
+    pm.at("demo_win.tabs_root.tab_files.txt_ed_path").onEvent("changed"_key,
+        [&, status](dynamic p) {
+          const auto* f = p.findField("value"_key);
+          std::string path = (f && f->is<std::string>()) ? f->as<std::string>() : "";
+          dynamic fields;
+          fields["file_path"_key] = path;
+          pm.at("demo_win.tabs_root.tab_files.editor").set(std::move(fields));
+          status("Editor path: " + path);
+        });
+
+    // Language combo: map item index to language string.
+    static const char* kLangNames[] = {
+        "none","cpp","c","cs","glsl","hlsl",
+        "lua","python","sql","json","markdown","angelscript"};
+    pm.at("demo_win.tabs_root.tab_files.cmb_lang").onEvent("changed"_key,
+        [&, status](dynamic p) {
+          const auto* f = p.findField("value"_key);
+          int32_t idx = (f && f->is<int32_t>()) ? f->as<int32_t>() : 0;
+          if (idx < 0 || idx >= 12) idx = 0;
+          dynamic fields;
+          fields["language"_key] = std::string(kLangNames[idx]);
+          pm.at("demo_win.tabs_root.tab_files.editor").set(std::move(fields));
+          status(std::string("Language: ") + kLangNames[idx]);
+        });
+
+    // TextEditor events.
+    pm.at("demo_win.tabs_root.tab_files.editor").onEvent("changed"_key,
+        [status](dynamic p) {
+          const auto* f = p.findField("file_path"_key);
+          std::string path = (f && f->is<std::string>()) ? f->as<std::string>() : "";
+          status("File modified: " + path);
+        });
+    pm.at("demo_win.tabs_root.tab_files.editor").onEvent("saved"_key,
+        [status](dynamic p) {
+          const auto* f = p.findField("file_path"_key);
+          std::string path = (f && f->is<std::string>()) ? f->as<std::string>() : "";
+          status("File saved: " + path);
+        });
+
     // ── Tab events ────────────────────────────────────────────────────────
 
     static const char* kTabNames[] = {
@@ -1065,11 +1141,13 @@ class demo_client : public wish::client {
         "demo_win.tabs_root.tab_misc",
         "demo_win.tabs_root.tab_tables",
         "demo_win.tabs_root.tab_plots",
-        "demo_win.tabs_root.tab_plot3d"};
+        "demo_win.tabs_root.tab_plot3d",
+        "demo_win.tabs_root.tab_files"};
     static const char* kTabLabels[] = {
         "Basics", "Sliders & Drags", "Text & Numbers",
-        "Selection", "Tree & Collapse", "Misc", "Tables", "Plots", "3-D Plots"};
-    for (int i = 0; i < 9; ++i) {
+        "Selection", "Tree & Collapse", "Misc", "Tables", "Plots", "3-D Plots",
+        "Files"};
+    for (int i = 0; i < 10; ++i) {
       pm.at(kTabNames[i]).onEvent("selected"_key,
           [i, status](dynamic) {
             status(std::string("Tab selected: ") + kTabLabels[i]);
@@ -1106,6 +1184,8 @@ int main(int argc, char* argv[]) {
   auto rptr = r.get();
 
   wish::server server{transport, std::move(r)};
+  // This is a same-process demo using memory_transport; absolute paths are safe.
+  server.set_allow_absolute_paths(true);
   server.start();
 
   if (FLAGS_verbose) std::clog << "[demo] server started - connecting client\n";

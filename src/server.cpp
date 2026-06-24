@@ -56,6 +56,7 @@ bool server::should_quit() const {
 void server::on_session_created(bison::rmi::context& ctx) {
   auto sess = std::make_shared<session>(ctx.session_id);
   sess->emit_event = ctx.emit_event;
+  sess->allow_absolute_paths = allow_absolute_paths_;
   sess->file_service = std::make_shared<file_service>(
       bison::dynamic::instantiate(bison::key_t{"wish"}, bison::key_t{"__WishFileSystem"}),
       sess->resource_dir);

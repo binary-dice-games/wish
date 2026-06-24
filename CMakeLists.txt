@@ -40,7 +40,13 @@ if(WISH_ENABLE_IMGUI)
     GIT_TAG        v0.4
     GIT_SHALLOW    TRUE
   )
-  FetchContent_MakeAvailable(imgui implot implot3d)
+  FetchContent_Declare(
+    imgui_color_text_edit
+    GIT_REPOSITORY https://github.com/goossens/ImGuiColorTextEdit.git
+    GIT_TAG        master
+    GIT_SHALLOW    TRUE
+  )
+  FetchContent_MakeAvailable(imgui implot implot3d imgui_color_text_edit)
 
   add_library(imgui_core STATIC
     ${imgui_SOURCE_DIR}/imgui.cpp
@@ -52,11 +58,14 @@ if(WISH_ENABLE_IMGUI)
     ${implot3d_SOURCE_DIR}/implot3d.cpp
     ${implot3d_SOURCE_DIR}/implot3d_items.cpp
     ${implot3d_SOURCE_DIR}/implot3d_meshes.cpp
+    ${imgui_color_text_edit_SOURCE_DIR}/TextEditor.cpp
+    ${imgui_color_text_edit_SOURCE_DIR}/TextDiff.cpp
   )
   target_include_directories(imgui_core PUBLIC
     ${imgui_SOURCE_DIR}
     ${implot_SOURCE_DIR}
     ${implot3d_SOURCE_DIR}
+    ${imgui_color_text_edit_SOURCE_DIR}
   )
   set_target_properties(imgui_core PROPERTIES FOLDER extern)
 endif()
@@ -125,6 +134,7 @@ add_library(wish STATIC
   src/ui_elements/selectable.cpp
   src/ui_elements/docking.cpp
   src/ui_elements/table.cpp
+  src/ui_elements/text_editor.cpp
   src/plot_elements/plot.cpp
   src/plot_elements/plot_series.cpp
   src/plot_elements/plot_bars.cpp
@@ -149,6 +159,7 @@ if(WISH_ENABLE_IMGUI)
     src/imgui/imgui_plot_renderer.cpp
     src/imgui/imgui_plot3d_renderer.hpp
     src/imgui/imgui_plot3d_renderer.cpp
+    src/imgui/imgui_text_editor_renderer.cpp
   )
   target_compile_definitions(wish PUBLIC WISH_IMGUI_ENABLED)
   # PUBLIC so that consumers who include imgui_renderer.hpp have imgui in path.

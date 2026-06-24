@@ -138,7 +138,10 @@ void render_image(imgui_renderer& r, const ui_element& node, session& s) {
   int32_t w   = node.get_as<int32_t>("width"_key, 0);
   int32_t h   = node.get_as<int32_t>("height"_key, 0);
   if (src.empty() || w <= 0 || h <= 0) return;
-  ImTextureID tex = r.get_or_load_texture(src, s.resource_dir);
+  auto full_path = file_service::resolve_path(src, s.resource_dir,
+                                              s.allow_absolute_paths);
+  if (full_path.empty()) return;
+  ImTextureID tex = r.get_or_load_texture(full_path.string(), s.resource_dir);
   if (!tex) return;
   ImGui::Image(tex, ImVec2(float(w), float(h)));
 }

@@ -71,6 +71,8 @@ static const std::unordered_map<bison::hash_t, render_fn>& render_dispatch() {
     {"DragInt"_key.id,          render_drag_int         },
     // Status
     {"ProgressBar"_key.id,      render_progress_bar     },
+    // Text editor
+    {"TextEditor"_key.id,       render_text_editor      },
     // Plot elements (require ImPlot context — must be inside a Plot)
     {"Plot"_key.id,             render_plot             },
     {"PlotLine"_key.id,         render_plot_line        },

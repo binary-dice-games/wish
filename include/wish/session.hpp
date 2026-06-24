@@ -50,6 +50,12 @@ struct session {
   /// Callers may use it for their own throttling or change-detection logic.
   std::atomic<bool> dirty{false};
 
+  /// When `false` (default), widget file paths must be relative and are
+  /// sandboxed inside `resource_dir`.  Set to `true` only for same-process
+  /// deployments (memory_transport) where absolute host paths are safe.
+  /// Controlled by `wish::server::set_allow_absolute_paths()`.
+  bool allow_absolute_paths{false};
+
   /// File service instance; populated by `register_file_service(session&)`.
   file_service_ptr file_service;
 

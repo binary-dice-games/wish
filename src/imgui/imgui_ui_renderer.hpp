@@ -9,6 +9,7 @@
 
 #ifdef WISH_IMGUI_ENABLED
 
+#include <wish/file_service.hpp>
 #include <wish/imgui_renderer.hpp>
 #include <wish/ui_element.hpp>
 #include <wish/session.hpp>
@@ -55,6 +56,9 @@ void render_drag_int(imgui_renderer&, const ui_element& node, session& s);
 
 // Status
 void render_progress_bar(imgui_renderer&, const ui_element& node, session&);
+
+// Text editor
+void render_text_editor(imgui_renderer&, const ui_element& node, session& s);
 
 // Docking
 void render_dockspace_viewport(imgui_renderer& r, const ui_element& node, session& s);
