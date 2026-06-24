@@ -22,7 +22,7 @@ The embedded resource system solves this by compiling those assets directly into
 
 ```
 Build time
-  resources/                     ← source asset tree (committed to repo)
+  resources/embedded/            ← source asset tree (committed to repo)
     fonts/
       default.ttf
     icons/
@@ -49,21 +49,22 @@ Runtime
 
 ## Source Asset Layout
 
-Built-in assets live in `resources/` at the repository root, **not** inside `src/`. This separates art assets from generated and hand-written C++ source.
+Built-in assets live in `resources/embedded/` at the repository root, **not** inside `src/`. The `embedded/` subdirectory makes it explicit which assets are compiled into the binary; applications using the wish server will typically use `resources/` for their own runtime assets that are not embedded.
 
 ```
 wish/
-  resources/          ← committed art assets (source of truth for embedded resources)
-    fonts/
-    icons/
-    cursors/
+  resources/
+    embedded/         ← assets compiled into the binary (source of truth for resource_store)
+      fonts/
+      icons/
+      cursors/
   src/resources/      ← C++ code for the resource_store API + generated file
     resource_store.hpp
     resource_store.cpp
     embedded_resources.cpp   ← generated; excluded from version control
 ```
 
-The CMake script accepts the source asset folder as a configurable variable (`WISH_RESOURCE_DIR`, default: `${CMAKE_SOURCE_DIR}/resources`). This allows downstream projects that embed wish as a library to substitute their own asset tree.
+The CMake script accepts the source asset folder as a configurable variable (`WISH_RESOURCE_DIR`, default: `${CMAKE_SOURCE_DIR}/resources/embedded`). This allows downstream projects that embed wish as a library to substitute their own asset tree.
 
 ---
 
@@ -251,9 +252,9 @@ ImGui's `ImGui::GetIO().Fonts->AddFontFromMemoryTTF` and the SDL3/OpenGL texture
 
 ---
 
-## What Belongs in `resources/`
+## What Belongs in `resources/embedded/`
 
-Only binary assets that are needed by the server's built-in UI at runtime belong in the committed `resources/` tree:
+Only binary assets that are needed by the server's built-in UI at runtime belong in `resources/embedded/`:
 
 | Category | Examples |
 |----------|---------|
@@ -263,7 +264,7 @@ Only binary assets that are needed by the server's built-in UI at runtime belong
 
 **Do not add:**
 - Test data or fixtures (use the `tests/` tree).
-- Documentation images (use `docs/` or `resources/` in the repo root for README assets).
+- Documentation images (use `docs/` or the repo root for README assets — not `resources/embedded/`).
 - Assets for optional modules unless the module is compiled unconditionally. Module-specific assets should be gated with the same CMake option as their module's source.
 
 ---
