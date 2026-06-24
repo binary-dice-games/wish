@@ -100,10 +100,20 @@ void open_file_dialog::on_init() {
     file_table_ptr_ = it->second;
     file_table_id_  = (*it->second)["__wish_id"_key].as<key_t>();
   }
-  if (auto it = tree.find("vbox.filename_row.filename_input"); it != tree.end())
+  if (auto it = tree.find("vbox.filename_row.filename_input"); it != tree.end()) {
     filename_input_ptr_ = it->second;
-  if (auto it = tree.find("vbox.btn_row.btn_open"); it != tree.end())
-    btn_open_id_ = (*it->second)["__wish_id"_key].as<key_t>();
+    filename_input_id_  = (*it->second)["__wish_id"_key].as<key_t>();
+  }
+  if (auto it = tree.find("vbox.filter_row"); it != tree.end())
+    filter_row_ptr_ = it->second;
+  if (auto it = tree.find("vbox.filter_row.filter_combo"); it != tree.end()) {
+    filter_combo_ptr_ = it->second;
+    filter_combo_id_  = (*it->second)["__wish_id"_key].as<key_t>();
+  }
+  if (auto it = tree.find("vbox.btn_row.btn_open"); it != tree.end()) {
+    btn_open_id_  = (*it->second)["__wish_id"_key].as<key_t>();
+    btn_open_ptr_ = it->second;
+  }
   if (auto it = tree.find("vbox.btn_row.btn_cancel"); it != tree.end())
     btn_cancel_id_ = (*it->second)["__wish_id"_key].as<key_t>();
 
@@ -116,15 +126,18 @@ void open_file_dialog::on_init() {
 
   // Intercept events from internal widgets. Unrecognised events are forwarded
   // to the client via the original emit function.
-  auto base_emit     = std::move(sess().emit_event);
-  auto table_id      = file_table_id_;
-  auto btn_open_id   = btn_open_id_;
-  auto btn_cancel_id = btn_cancel_id_;
+  auto base_emit          = std::move(sess().emit_event);
+  auto table_id           = file_table_id_;
+  auto btn_open_id        = btn_open_id_;
+  auto btn_cancel_id      = btn_cancel_id_;
+  auto filename_input_id  = filename_input_id_;
+  auto filter_combo_id    = filter_combo_id_;
 
   // Capture `this` by raw pointer; the lambda lives inside sess().emit_event,
   // which the server destroys before releasing ctx.objects (which holds `this`).
   sess().emit_event =
-      [this, base_emit, table_id, btn_open_id, btn_cancel_id]
+      [this, base_emit, table_id, btn_open_id, btn_cancel_id,
+       filename_input_id, filter_combo_id]
       (key_t id, key_t event, dynamic payload) {
         if (id.id == table_id.id) {
           if (event == "row_selected"_key)  { on_row_selected(payload);  return; }
@@ -135,6 +148,12 @@ void open_file_dialog::on_init() {
         }
         if (id.id == btn_cancel_id.id && event == "clicked"_key) {
           on_btn_cancel_clicked(); return;
+        }
+        if (id.id == filename_input_id.id && event == "changed"_key) {
+          on_filename_input_changed(payload); return;
+        }
+        if (id.id == filter_combo_id.id && event == "changed"_key) {
+          on_filter_combo_changed(payload); return;
         }
         if (base_emit)
           base_emit(id, event, std::move(payload));
@@ -147,6 +166,14 @@ bison::dynamic open_file_dialog::on_set(const bison::dynamic& patch) {
   if (auto* f = patch.findField("files"_key)) {
     if (f->is<dynamic_ptr>() && f->as<dynamic_ptr>())
       rebuild_file_rows(*f->as<dynamic_ptr>());
+  }
+  if (auto* f = patch.findField("filters"_key)) {
+    if (f->is<dynamic_ptr>() && f->as<dynamic_ptr>())
+      rebuild_filter_combo(*f->as<dynamic_ptr>());
+  }
+  if (auto* f = patch.findField("confirm_label"_key)) {
+    if (f->is<std::string>() && btn_open_ptr_)
+      (*btn_open_ptr_)["label"_key] = f->as<std::string>();
   }
   return patch;
 }
@@ -192,6 +219,37 @@ void open_file_dialog::rebuild_file_rows(const bison::dynamic& files) {
     (*children)[size_t{static_cast<size_t>(row_idx)}] = dynamic_ptr{row};
     ++row_idx;
   });
+}
+
+void open_file_dialog::rebuild_filter_combo(const bison::dynamic& filters) {
+  if (!filter_combo_ptr_ || !filter_row_ptr_) return;
+
+  std::string items;
+  bool first = true;
+  filters.forEach([&](key_t, const field& f) {
+    if (!f.is<std::string>()) return;
+    if (!first) items += '\n';
+    items += f.as<std::string>();
+    first = false;
+  });
+
+  bool has_filters = !items.empty();
+  (*filter_row_ptr_)["visible"_key] = has_filters;
+  (*filter_combo_ptr_)["items"_key] = items;
+}
+
+void open_file_dialog::on_filename_input_changed(const bison::dynamic& payload) {
+  if (auto* f = payload.findField("value"_key)) {
+    if (f->is<std::string>())
+      (*this)["filename"_key] = f->as<std::string>();
+  }
+}
+
+void open_file_dialog::on_filter_combo_changed(const bison::dynamic& payload) {
+  if (auto* f = payload.findField("value"_key)) {
+    if (f->is<int32_t>())
+      selected_filter_idx_ = f->as<int32_t>();
+  }
 }
 
 void open_file_dialog::on_row_selected(const bison::dynamic& payload) {

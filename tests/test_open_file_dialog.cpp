@@ -534,3 +534,131 @@ TEST_F(OpenFileDialogEventsTest, AbsolutePathRejectedWhenNotAllowed) {
   simulate_btn_click("btn_open");
   EXPECT_FALSE(has_event("on_open"_key));
 }
+
+// ── Step 8: filename two-way binding and filters Combo ───────────────────────
+
+class OpenFileDialogBindingTest : public ::testing::Test {
+  using proxy_t = bdg::bison::rmi::proxy::dynamic;
+
+ protected:
+  void SetUp() override {
+    srv_ = std::make_unique<SessionCapturingServer>(
+        transport_, std::make_unique<wish::null_renderer>());
+    srv_->start();
+    client_ = std::make_unique<bdg::bison::rmi::client>(transport_.connect());
+    client_->connect();
+    proxy_.emplace(client_->instantiate("wish"_key, "OpenFileDialog"_key).get());
+    ASSERT_TRUE(proxy_->valid());
+    root_ = find_form_root(srv_->last_session->objects);
+    ASSERT_FALSE(root_.empty());
+  }
+
+  void TearDown() override {
+    proxy_.reset();
+    client_->disconnect();
+    client_.reset();
+    srv_->stop();
+    srv_.reset();
+  }
+
+  // Simulate a "changed" event on the filename_input widget.
+  void simulate_filename_input_changed(const std::string& value) {
+    auto& objs = srv_->last_session->objects;
+    auto it = objs.find(root_ + ".vbox.filename_row.filename_input");
+    ASSERT_NE(it, objs.end()) << "filename_input not found in session.objects";
+    auto input_id = (*it->second)["__wish_id"_key].as<key_t>();
+    dynamic payload;
+    payload["value"_key] = value;
+    srv_->last_session->emit_event(input_id, "changed"_key, std::move(payload));
+  }
+
+  // Set the filters field via the client proxy.
+  void set_filters(dynamic filters_dyn) {
+    dynamic params;
+    params["filters"_key] = dynamic_ptr{
+        std::make_shared<dynamic>(std::move(filters_dyn))};
+    proxy_->set(std::move(params)).get();
+  }
+
+  // Set the confirm_label field via the client proxy.
+  void set_confirm_label(const std::string& label) {
+    dynamic params;
+    params["confirm_label"_key] = label;
+    proxy_->set(std::move(params)).get();
+  }
+
+  // Read the visible field of filter_row from session.objects.
+  bool filter_row_visible() const {
+    auto& objs = srv_->last_session->objects;
+    auto it = objs.find(root_ + ".vbox.filter_row");
+    if (it == objs.end() || !it->second) return false;
+    auto* f = it->second->findField("visible"_key);
+    if (!f) return false;
+    return f->as<bool>();
+  }
+
+  // Read the items string of filter_combo from session.objects.
+  std::string filter_combo_items() const {
+    auto& objs = srv_->last_session->objects;
+    auto it = objs.find(root_ + ".vbox.filter_row.filter_combo");
+    if (it == objs.end() || !it->second) return {};
+    auto* f = it->second->findField("items"_key);
+    if (!f || !f->is<std::string>()) return {};
+    return f->as<std::string>();
+  }
+
+  // Read btn_open's label field from session.objects.
+  std::string btn_open_label() const {
+    auto& objs = srv_->last_session->objects;
+    auto it = objs.find(root_ + ".vbox.btn_row.btn_open");
+    if (it == objs.end() || !it->second) return {};
+    auto* f = it->second->findField("label"_key);
+    if (!f || !f->is<std::string>()) return {};
+    return f->as<std::string>();
+  }
+
+  memory_server_transport transport_;
+  std::unique_ptr<SessionCapturingServer> srv_;
+  std::unique_ptr<bdg::bison::rmi::client> client_;
+  std::optional<proxy_t> proxy_;
+  std::string root_;
+};
+
+TEST_F(OpenFileDialogBindingTest, FilenameInputChangedUpdatesFormFilenameField) {
+  simulate_filename_input_changed("foo.txt");
+  auto snapshot = proxy_->get().get();
+  EXPECT_EQ(snapshot.as<std::string>("filename"_key), "foo.txt");
+}
+
+TEST_F(OpenFileDialogBindingTest, SetFiltersMakesFilterRowVisible) {
+  dynamic filters;
+  filters[size_t{0}] = std::string{"*.txt"};
+  filters[size_t{1}] = std::string{"*.md"};
+  set_filters(std::move(filters));
+  EXPECT_TRUE(filter_row_visible());
+}
+
+TEST_F(OpenFileDialogBindingTest, SetFiltersPopulatesComboItems) {
+  dynamic filters;
+  filters[size_t{0}] = std::string{"*.txt"};
+  filters[size_t{1}] = std::string{"*.md"};
+  set_filters(std::move(filters));
+  EXPECT_EQ(filter_combo_items(), "*.txt\n*.md");
+}
+
+TEST_F(OpenFileDialogBindingTest, ClearFiltersHidesFilterRow) {
+  // First make it visible.
+  dynamic filters;
+  filters[size_t{0}] = std::string{"*.txt"};
+  set_filters(std::move(filters));
+  ASSERT_TRUE(filter_row_visible());
+
+  // Clearing should hide it.
+  set_filters(dynamic{});
+  EXPECT_FALSE(filter_row_visible());
+}
+
+TEST_F(OpenFileDialogBindingTest, SetConfirmLabelUpdatesBtnOpenLabel) {
+  set_confirm_label("Select");
+  EXPECT_EQ(btn_open_label(), "Select");
+}
