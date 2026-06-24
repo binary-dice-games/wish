@@ -78,7 +78,16 @@ if(WISH_ENABLE_IMGUI AND WISH_ENABLE_SDL3)
     GIT_TAG        release-3.2.10
     GIT_SHALLOW    TRUE
   )
-  FetchContent_MakeAvailable(SDL3)
+  FetchContent_Declare(
+    SDL3_image
+    GIT_REPOSITORY https://github.com/libsdl-org/SDL_image.git
+    GIT_TAG        release-3.2.4
+    GIT_SHALLOW    TRUE
+  )
+  # Disable AVIF (needs dav1d + NASM) and JXL before SDL3_image is configured.
+  set(SDLIMAGE_AVIF OFF CACHE BOOL "" FORCE)
+  set(SDLIMAGE_JXL  OFF CACHE BOOL "" FORCE)
+  FetchContent_MakeAvailable(SDL3 SDL3_image)
 
   # imgui docking branch ships SDL3 backend sources; add them to imgui_core.
   target_sources(imgui_core PRIVATE
@@ -172,7 +181,7 @@ if(WISH_ENABLE_IMGUI AND WISH_ENABLE_SDL3)
     src/sdl3_renderer.cpp
   )
   target_compile_definitions(wish PUBLIC WISH_SDL3_ENABLED)
-  target_link_libraries(wish PUBLIC SDL3::SDL3)
+  target_link_libraries(wish PUBLIC SDL3::SDL3 SDL3_image::SDL3_image)
 endif()
 
 set_target_properties(wish PROPERTIES POSITION_INDEPENDENT_CODE ON)

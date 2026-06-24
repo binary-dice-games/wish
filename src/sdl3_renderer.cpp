@@ -10,6 +10,7 @@
 #include <imgui_impl_sdlrenderer3.h>
 #include <implot.h>
 #include <implot3d.h>
+#include <SDL3_image/SDL_image.h>
 
 #include <stdexcept>
 
@@ -137,7 +138,8 @@ ImTextureID sdl3_renderer::get_or_load_texture(
   if (it != texture_cache_.end()) return it->second;
 
   auto path = resource_dir / src;
-  SDL_Surface* surf = SDL_LoadBMP(path.string().c_str());
+
+  SDL_Surface* surf = IMG_Load(path.string().c_str());
   if (!surf) {
     texture_cache_[src] = ImTextureID{};
     return ImTextureID{};
