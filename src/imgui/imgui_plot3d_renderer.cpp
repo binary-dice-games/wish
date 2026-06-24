@@ -27,6 +27,13 @@ static const std::vector<float>* vec_field(const dynamic& obj, key_t k) {
   return (f && f->is<std::vector<float>>()) ? &f->as<std::vector<float>>() : nullptr;
 }
 
+// Append "##<wish_id>" so ImPlot3D/ImGui use a unique internal ID even when two
+// elements share the same visible text.  Both ImGui and ImPlot3D hide everything
+// after "##" from the display, so the rendered label / legend entry is unchanged.
+static std::string with_id(const std::string& label, const ui_element& node) {
+  return label + "##" +
+      std::to_string(node.get_as<key_t>("__wish_id"_key, key_t{}).id);
+}
 
 // ── Plot3D container ──────────────────────────────────────────────────────────
 
@@ -42,7 +49,8 @@ void render_plot3d(imgui_renderer& r, const ui_element& node, session& s) {
   int32_t yf      = node.get_as<int32_t>("y_flags"_key, 0);
   int32_t zf      = node.get_as<int32_t>("z_flags"_key, 0);
 
-  if (ImPlot3D::BeginPlot(title.c_str(), ImVec2(w, h),
+  auto iml = with_id(title, node);
+  if (ImPlot3D::BeginPlot(iml.c_str(), ImVec2(w, h),
                           ImPlot3DFlags(flags))) {
     if (!x_label.empty() || !y_label.empty() || !z_label.empty()
         || xf != 0 || yf != 0 || zf != 0) {
@@ -68,8 +76,9 @@ void render_plot3d_line(imgui_renderer&, const ui_element& node, session&) {
   const auto* zs  = vec_field(node, "zs"_key);
   if (!xs || !ys || !zs) return;
   int count = int(std::min({xs->size(), ys->size(), zs->size()}));
+  auto iml = with_id(label, node);
   if (count > 0)
-    ImPlot3D::PlotLine(label.c_str(), xs->data(), ys->data(), zs->data(), count);
+    ImPlot3D::PlotLine(iml.c_str(), xs->data(), ys->data(), zs->data(), count);
 }
 
 void render_plot3d_scatter(imgui_renderer&, const ui_element& node, session&) {
@@ -79,8 +88,9 @@ void render_plot3d_scatter(imgui_renderer&, const ui_element& node, session&) {
   const auto* zs  = vec_field(node, "zs"_key);
   if (!xs || !ys || !zs) return;
   int count = int(std::min({xs->size(), ys->size(), zs->size()}));
+  auto iml = with_id(label, node);
   if (count > 0)
-    ImPlot3D::PlotScatter(label.c_str(), xs->data(), ys->data(), zs->data(), count);
+    ImPlot3D::PlotScatter(iml.c_str(), xs->data(), ys->data(), zs->data(), count);
 }
 
 // ── Surface ───────────────────────────────────────────────────────────────────
@@ -100,7 +110,8 @@ void render_plot3d_surface(imgui_renderer&, const ui_element& node, session&) {
   if (int(xs->size()) < needed || int(ys->size()) < needed ||
       int(zs->size()) < needed) return;
 
-  ImPlot3D::PlotSurface(label.c_str(),
+  auto iml = with_id(label, node);
+  ImPlot3D::PlotSurface(iml.c_str(),
                         xs->data(), ys->data(), zs->data(),
                         x_count, y_count,
                         double(scale_min), double(scale_max));
@@ -117,8 +128,9 @@ void render_plot3d_triangle(imgui_renderer&, const ui_element& node, session&) {
   int count = int(std::min({xs->size(), ys->size(), zs->size()}));
   // Must be a multiple of 3.
   count -= count % 3;
+  auto iml = with_id(label, node);
   if (count > 0)
-    ImPlot3D::PlotTriangle(label.c_str(),
+    ImPlot3D::PlotTriangle(iml.c_str(),
                            xs->data(), ys->data(), zs->data(), count);
 }
 
@@ -131,8 +143,9 @@ void render_plot3d_quad(imgui_renderer&, const ui_element& node, session&) {
   int count = int(std::min({xs->size(), ys->size(), zs->size()}));
   // Must be a multiple of 4.
   count -= count % 4;
+  auto iml = with_id(label, node);
   if (count > 0)
-    ImPlot3D::PlotQuad(label.c_str(),
+    ImPlot3D::PlotQuad(iml.c_str(),
                        xs->data(), ys->data(), zs->data(), count);
 }
 
@@ -160,7 +173,8 @@ void render_plot3d_mesh(imgui_renderer&, const ui_element& node, session&) {
   const float* pxs = xs->data();
   const float* pys = ys->data();
   const float* pzs = zs->data();
-  ImPlot3D::PlotMesh(label.c_str(), pxs, pys, pzs, uids.data(), vtx_count, idx_count);
+  auto iml = with_id(label, node);
+  ImPlot3D::PlotMesh(iml.c_str(), pxs, pys, pzs, uids.data(), vtx_count, idx_count);
 }
 
 // ── Text annotation ───────────────────────────────────────────────────────────

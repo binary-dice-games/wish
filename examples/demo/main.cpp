@@ -16,8 +16,12 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <filesystem>
+#include <functional>
 #include <iostream>
+#include <memory>
 #include <string>
+#include <system_error>
 #include <thread>
 #include <vector>
 
@@ -453,15 +457,25 @@ static constexpr const char* kTabFilesDesc = R"json(
           "children": {
             "sec_image":    { "type": "SeparatorText", "label": "Image Viewer" },
             "lbl_img_hint": { "type": "Label",
-                              "text": "Enter an absolute path to a BMP image file:" },
-            "txt_img_path": { "type": "InputText", "label": "Image Path",
-                              "value": "", "max_length": 512 },
+                              "text": "Enter a path to a BMP image file, or click ... to browse:" },
+            "img_path_row": { "type": "HorizontalLayout", "spacing": 4,
+              "children": {
+                "txt_img_path":   { "type": "InputText", "label": "Image Path",
+                                    "value": "", "max_length": 512 },
+                "btn_img_browse": { "type": "Button", "label": "..." }
+              }
+            },
             "img_view":     { "type": "Image", "src": "", "width": 512, "height": 300 },
             "sec_editor":   { "type": "SeparatorText", "label": "Text / Code Editor" },
             "lbl_ed_hint":  { "type": "Label",
-                              "text": "Enter an absolute path to a text or code file:" },
-            "txt_ed_path":  { "type": "InputText", "label": "File Path",
-                              "value": "", "max_length": 512 },
+                              "text": "Enter a path to a text or code file, or click ... to browse:" },
+            "ed_path_row":  { "type": "HorizontalLayout", "spacing": 4,
+              "children": {
+                "txt_ed_path":   { "type": "InputText", "label": "File Path",
+                                   "value": "", "max_length": 512 },
+                "btn_ed_browse": { "type": "Button", "label": "..." }
+              }
+            },
             "cmb_lang":     { "type": "Combo", "label": "Language",
                               "items": "none\ncpp\nc\ncs\nglsl\nhlsl\nlua\npython\nsql\njson\nmarkdown\nangelscript",
                               "value": 0 },
@@ -469,9 +483,14 @@ static constexpr const char* kTabFilesDesc = R"json(
                         "height": 400 },
             "sec_font":       { "type": "SeparatorText", "label": "Font Override" },
             "lbl_font_hint":  { "type": "Label",
-                                "text": "Enter an absolute path to a TTF font file:" },
-            "txt_font_path":  { "type": "InputText", "label": "Font Path",
-                                "value": "", "max_length": 512 },
+                                "text": "Enter a path to a TTF font file, or click ... to browse:" },
+            "font_path_row":  { "type": "HorizontalLayout", "spacing": 4,
+              "children": {
+                "txt_font_path":   { "type": "InputText", "label": "Font Path",
+                                     "value": "", "max_length": 512 },
+                "btn_font_browse": { "type": "Button", "label": "..." }
+              }
+            },
             "sld_font_size":  { "type": "SliderFloat", "label": "Font Size (px)",
                                 "value": 16.0, "min": 8.0, "max": 72.0 },
             "lbl_font_sample": { "type": "Label",
@@ -563,6 +582,30 @@ static float normal_sample(uint32_t& s) {
   float u1 = (float((s ^= s<<13, s^=s>>17, s^=s<<5, s) & 0xFFFFu) + 1.0f) / 65537.0f;
   float u2 = (float((s ^= s<<13, s^=s>>17, s^=s<<5, s) & 0xFFFFu)) / 65536.0f;
   return std::sqrt(-2.0f * std::log(u1)) * std::cos(pi2 * u2);
+}
+
+// ── File-browser helpers ──────────────────────────────────────────────────────
+
+// Build the `files` dynamic expected by OpenFileDialog from a directory listing.
+// The ".." entry is prepended when the path is not the filesystem root.
+static dynamic list_directory(const std::filesystem::path& dir) {
+  dynamic files;
+  size_t i = 0;
+  if (dir.has_parent_path() && dir != dir.root_path()) {
+    auto e = std::make_shared<dynamic>();
+    (*e)["name"_key] = std::string{".."};
+    (*e)["type"_key] = std::string{"dir"};
+    files[i++] = dynamic_ptr{e};
+  }
+  std::error_code ec;
+  for (auto& entry : std::filesystem::directory_iterator{dir, ec}) {
+    auto e = std::make_shared<dynamic>();
+    (*e)["name"_key] = entry.path().filename().string();
+    (*e)["type"_key] =
+        entry.is_directory(ec) ? std::string{"dir"} : std::string{"file"};
+    files[i++] = dynamic_ptr{e};
+  }
+  return files;
 }
 
 // ── Demo client ───────────────────────────────────────────────────────────────
@@ -1089,8 +1132,8 @@ class demo_client : public wish::client {
     // ── Files tab ─────────────────────────────────────────────────────────
 
     // Image path: forward changes to the Image widget's src field.
-    pm.at("demo_win.tabs_root.tab_files.txt_img_path").onEvent("changed"_key,
-        [&, status](dynamic p) {
+    pm.at("demo_win.tabs_root.tab_files.img_path_row.txt_img_path")
+        .onEvent("changed"_key, [&pm, status](dynamic p) {
           const auto* f = p.findField("value"_key);
           std::string path = (f && f->is<std::string>()) ? f->as<std::string>() : "";
           dynamic fields;
@@ -1100,8 +1143,8 @@ class demo_client : public wish::client {
         });
 
     // Editor path: forward changes to the TextEditor's file_path field.
-    pm.at("demo_win.tabs_root.tab_files.txt_ed_path").onEvent("changed"_key,
-        [&, status](dynamic p) {
+    pm.at("demo_win.tabs_root.tab_files.ed_path_row.txt_ed_path")
+        .onEvent("changed"_key, [&pm, status](dynamic p) {
           const auto* f = p.findField("value"_key);
           std::string path = (f && f->is<std::string>()) ? f->as<std::string>() : "";
           dynamic fields;
@@ -1145,8 +1188,9 @@ class demo_client : public wish::client {
     auto font_path_ptr = std::make_shared<std::string>("");
     auto font_size_ptr = std::make_shared<float>(16.0f);
 
-    pm.at("demo_win.tabs_root.tab_files.txt_font_path").onEvent("changed"_key,
-        [&, status, font_path_ptr, font_size_ptr](dynamic p) {
+    pm.at("demo_win.tabs_root.tab_files.font_path_row.txt_font_path")
+        .onEvent("changed"_key,
+        [&pm, status, font_path_ptr, font_size_ptr](dynamic p) {
           const auto* f = p.findField("value"_key);
           *font_path_ptr = (f && f->is<std::string>()) ? f->as<std::string>() : "";
           dynamic fields;
@@ -1158,7 +1202,7 @@ class demo_client : public wish::client {
         });
 
     pm.at("demo_win.tabs_root.tab_files.sld_font_size").onEvent("changed"_key,
-        [&, status, font_path_ptr, font_size_ptr](dynamic p) {
+        [&pm, status, font_path_ptr, font_size_ptr](dynamic p) {
           const auto* f = p.findField("value"_key);
           *font_size_ptr = (f && f->is<float>()) ? f->as<float>() : 16.0f;
           dynamic fields;
@@ -1168,6 +1212,99 @@ class demo_client : public wish::client {
               .set(std::move(fields));
           status("Font size: " + std::to_string(static_cast<int>(*font_size_ptr))
                  + "px");
+        });
+
+    // ── Browse buttons (open OpenFileDialog to pick each path) ────────────
+
+    // Creates an OpenFileDialog starting in CWD. The `on_selected` callback
+    // receives the chosen absolute path; browse() returns immediately.
+    auto browse = [this](
+        const std::string& title,
+        const std::string& confirm_label,
+        std::function<void(std::string)> on_selected) {
+      namespace fs = std::filesystem;
+      auto cur_dir = std::make_shared<fs::path>(fs::current_path());
+
+      auto raw_dlg = this->instantiate("wish"_key, "OpenFileDialog"_key).get();
+      auto dlg = std::make_shared<bdg::bison::rmi::proxy::dynamic>(
+          std::move(raw_dlg));
+
+      dynamic init;
+      init["title"_key]         = title;
+      init["confirm_label"_key] = confirm_label;
+      init["files"_key]         = dynamic_ptr{
+          std::make_shared<dynamic>(list_directory(*cur_dir))};
+      dlg->set(std::move(init)).get();
+
+      dlg->onEvent("on_navigate"_key,
+          [dlg, cur_dir](dynamic payload) mutable {
+            auto name = payload.as<std::string>("name"_key);
+            *cur_dir = (name == "..") ? cur_dir->parent_path()
+                                      : (*cur_dir / name);
+            dynamic fields;
+            fields["files"_key] = dynamic_ptr{
+                std::make_shared<dynamic>(list_directory(*cur_dir))};
+            dlg->set(std::move(fields));
+          });
+
+      dlg->onEvent("on_open"_key,
+          [cur_dir, on_selected](dynamic payload) {
+            auto name = payload.as<std::string>("path"_key);
+            fs::path full = fs::path(name).is_absolute()
+                ? fs::path(name)
+                : (*cur_dir / name);
+            on_selected(full.string());
+          });
+
+      // on_cancel: dialog already removed itself from session.objects; nothing
+      // else is needed here, but the capture keeps dlg alive until this fires.
+      dlg->onEvent("on_cancel"_key, [dlg](dynamic) {});
+    };
+
+    pm.at("demo_win.tabs_root.tab_files.img_path_row.btn_img_browse")
+        .onEvent("clicked"_key, [&pm, status, browse](dynamic) {
+          browse("Select Image", "Open", [&pm, status](std::string path) {
+            dynamic f;
+            f["value"_key] = path;
+            pm.at("demo_win.tabs_root.tab_files.img_path_row.txt_img_path")
+                .set(f);
+            dynamic g;
+            g["src"_key] = path;
+            pm.at("demo_win.tabs_root.tab_files.img_view").set(g);
+            status("Image path: " + path);
+          });
+        });
+
+    pm.at("demo_win.tabs_root.tab_files.ed_path_row.btn_ed_browse")
+        .onEvent("clicked"_key, [&pm, status, browse](dynamic) {
+          browse("Select File", "Open", [&pm, status](std::string path) {
+            dynamic f;
+            f["value"_key] = path;
+            pm.at("demo_win.tabs_root.tab_files.ed_path_row.txt_ed_path")
+                .set(f);
+            dynamic g;
+            g["file_path"_key] = path;
+            pm.at("demo_win.tabs_root.tab_files.editor").set(g);
+            status("Editor path: " + path);
+          });
+        });
+
+    pm.at("demo_win.tabs_root.tab_files.font_path_row.btn_font_browse")
+        .onEvent("clicked"_key,
+        [&pm, status, browse, font_path_ptr, font_size_ptr](dynamic) {
+          browse("Select Font", "Select",
+              [&pm, status, font_path_ptr, font_size_ptr](std::string path) {
+                *font_path_ptr = path;
+                dynamic f;
+                f["value"_key] = path;
+                pm.at("demo_win.tabs_root.tab_files.font_path_row.txt_font_path")
+                    .set(f);
+                dynamic g;
+                g["font_path"_key] = *font_path_ptr;
+                g["font_size"_key] = *font_size_ptr;
+                pm.at("demo_win.tabs_root.tab_files.lbl_font_sample").set(g);
+                status("Font path: " + path);
+              });
         });
 
     // ── Tab events ────────────────────────────────────────────────────────

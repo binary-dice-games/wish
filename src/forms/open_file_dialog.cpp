@@ -288,6 +288,9 @@ void open_file_dialog::on_btn_open_clicked() {
   bison::dynamic payload;
   payload["path"_key] = filename;
   emit("on_open"_key, std::move(payload));
+  // Remove the internal window from session.objects so the dialog disappears,
+  // matching the conventional "close on confirm" behavior of a file picker.
+  remove_internal_objects();
 }
 
 void open_file_dialog::on_btn_cancel_clicked() {

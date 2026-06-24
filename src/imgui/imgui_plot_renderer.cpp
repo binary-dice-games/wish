@@ -29,6 +29,14 @@ static const std::vector<float>* vec_field(const dynamic& obj, key_t k) {
   return (f && f->is<std::vector<float>>()) ? &f->as<std::vector<float>>() : nullptr;
 }
 
+// Append "##<wish_id>" so ImPlot/ImGui use a unique internal ID even when two
+// elements share the same visible text.  Both ImGui and ImPlot hide everything
+// after "##" from the display, so the rendered label / legend entry is unchanged.
+static std::string with_id(const std::string& label, const ui_element& node) {
+  return label + "##" +
+      std::to_string(node.get_as<key_t>("__wish_id"_key, key_t{}).id);
+}
+
 // ── Plot container ─────────────────────────────────────────────────────────────
 
 void render_plot(imgui_renderer& r, const ui_element& node, session& s) {
@@ -41,7 +49,8 @@ void render_plot(imgui_renderer& r, const ui_element& node, session& s) {
   int32_t xf      = node.get_as<int32_t>("x_flags"_key, 0);
   int32_t yf      = node.get_as<int32_t>("y_flags"_key, 0);
 
-  if (ImPlot::BeginPlot(title.c_str(), ImVec2(w, h), ImPlotFlags(flags))) {
+  auto iml = with_id(title, node);
+  if (ImPlot::BeginPlot(iml.c_str(), ImVec2(w, h), ImPlotFlags(flags))) {
     if (!x_label.empty() || !y_label.empty() || xf != 0 || yf != 0) {
       ImPlot::SetupAxes(
           x_label.empty() ? nullptr : x_label.c_str(),
@@ -62,8 +71,9 @@ void render_plot_line(imgui_renderer&, const ui_element& node, session&) {
   const auto* ys = vec_field(node, "ys"_key);
   if (!xs || !ys) return;
   int count = int(std::min(xs->size(), ys->size()));
+  auto iml = with_id(label, node);
   if (count > 0)
-    ImPlot::PlotLine(label.c_str(), xs->data(), ys->data(), count);
+    ImPlot::PlotLine(iml.c_str(), xs->data(), ys->data(), count);
 }
 
 void render_plot_scatter(imgui_renderer&, const ui_element& node, session&) {
@@ -72,8 +82,9 @@ void render_plot_scatter(imgui_renderer&, const ui_element& node, session&) {
   const auto* ys = vec_field(node, "ys"_key);
   if (!xs || !ys) return;
   int count = int(std::min(xs->size(), ys->size()));
+  auto iml = with_id(label, node);
   if (count > 0)
-    ImPlot::PlotScatter(label.c_str(), xs->data(), ys->data(), count);
+    ImPlot::PlotScatter(iml.c_str(), xs->data(), ys->data(), count);
 }
 
 void render_plot_stairs(imgui_renderer&, const ui_element& node, session&) {
@@ -82,8 +93,9 @@ void render_plot_stairs(imgui_renderer&, const ui_element& node, session&) {
   const auto* ys = vec_field(node, "ys"_key);
   if (!xs || !ys) return;
   int count = int(std::min(xs->size(), ys->size()));
+  auto iml = with_id(label, node);
   if (count > 0)
-    ImPlot::PlotStairs(label.c_str(), xs->data(), ys->data(), count);
+    ImPlot::PlotStairs(iml.c_str(), xs->data(), ys->data(), count);
 }
 
 void render_plot_stems(imgui_renderer&, const ui_element& node, session&) {
@@ -93,8 +105,9 @@ void render_plot_stems(imgui_renderer&, const ui_element& node, session&) {
   const auto* ys = vec_field(node, "ys"_key);
   if (!xs || !ys) return;
   int count = int(std::min(xs->size(), ys->size()));
+  auto iml = with_id(label, node);
   if (count > 0)
-    ImPlot::PlotStems(label.c_str(), xs->data(), ys->data(), count, double(ref));
+    ImPlot::PlotStems(iml.c_str(), xs->data(), ys->data(), count, double(ref));
 }
 
 void render_plot_shaded(imgui_renderer&, const ui_element& node, session&) {
@@ -104,18 +117,19 @@ void render_plot_shaded(imgui_renderer&, const ui_element& node, session&) {
   const auto* ys  = vec_field(node, "ys"_key);
   const auto* ys2 = vec_field(node, "ys2"_key);
   if (!xs || !ys) return;
+  auto iml = with_id(label, node);
 
   if (ys2 && !ys2->empty()) {
     // Band between ys and ys2.
     int count = int(std::min({xs->size(), ys->size(), ys2->size()}));
     if (count > 0)
-      ImPlot::PlotShaded(label.c_str(),
+      ImPlot::PlotShaded(iml.c_str(),
                          xs->data(), ys->data(), ys2->data(), count);
   } else {
     // Shade between ys and the ref baseline.
     int count = int(std::min(xs->size(), ys->size()));
     if (count > 0)
-      ImPlot::PlotShaded(label.c_str(),
+      ImPlot::PlotShaded(iml.c_str(),
                          xs->data(), ys->data(), count, double(ref));
   }
 }
@@ -126,8 +140,9 @@ void render_plot_digital(imgui_renderer&, const ui_element& node, session&) {
   const auto* ys = vec_field(node, "ys"_key);
   if (!xs || !ys) return;
   int count = int(std::min(xs->size(), ys->size()));
+  auto iml = with_id(label, node);
   if (count > 0)
-    ImPlot::PlotDigital(label.c_str(), xs->data(), ys->data(), count);
+    ImPlot::PlotDigital(iml.c_str(), xs->data(), ys->data(), count);
 }
 
 // ── Bar charts ────────────────────────────────────────────────────────────────
@@ -137,12 +152,13 @@ void render_plot_bars(imgui_renderer&, const ui_element& node, session&) {
   float bar_size = node.get_as<float>("bar_size"_key, 0.67f);
   const auto* xs = vec_field(node, "xs"_key);
   const auto* ys = vec_field(node, "ys"_key);
+  auto iml = with_id(label, node);
 
   if (xs && !xs->empty() && ys && !ys->empty()) {
     int count = int(std::min(xs->size(), ys->size()));
-    ImPlot::PlotBars(label.c_str(), xs->data(), ys->data(), count, double(bar_size));
+    ImPlot::PlotBars(iml.c_str(), xs->data(), ys->data(), count, double(bar_size));
   } else if (ys && !ys->empty()) {
-    ImPlot::PlotBars(label.c_str(), ys->data(), int(ys->size()), double(bar_size));
+    ImPlot::PlotBars(iml.c_str(), ys->data(), int(ys->size()), double(bar_size));
   }
 }
 
@@ -151,15 +167,16 @@ void render_plot_bars_h(imgui_renderer&, const ui_element& node, session&) {
   float bar_size = node.get_as<float>("bar_size"_key, 0.67f);
   const auto* xs = vec_field(node, "xs"_key);
   const auto* ys = vec_field(node, "ys"_key);
+  auto iml = with_id(label, node);
 
   ImPlotSpec hspec;
   hspec.Flags = ImPlotBarsFlags_Horizontal;
   if (xs && !xs->empty() && ys && !ys->empty()) {
     int count = int(std::min(xs->size(), ys->size()));
-    ImPlot::PlotBars(label.c_str(), xs->data(), ys->data(), count,
+    ImPlot::PlotBars(iml.c_str(), xs->data(), ys->data(), count,
                      double(bar_size), hspec);
   } else if (ys && !ys->empty()) {
-    ImPlot::PlotBars(label.c_str(), ys->data(), int(ys->size()),
+    ImPlot::PlotBars(iml.c_str(), ys->data(), int(ys->size()),
                      double(bar_size), 0.0, hspec);
   }
 }
@@ -187,7 +204,8 @@ void render_plot_histogram(imgui_renderer&, const ui_element& node, session&) {
 
   ImPlotSpec hspec;
   hspec.Flags = hflags;
-  ImPlot::PlotHistogram(label.c_str(), vals->data(), int(vals->size()),
+  auto iml = with_id(label, node);
+  ImPlot::PlotHistogram(iml.c_str(), vals->data(), int(vals->size()),
                         bins, 1.0, range, hspec);
 }
 
@@ -201,7 +219,8 @@ void render_plot_histogram2d(imgui_renderer&, const ui_element& node, session&) 
   int count = int(std::min(xs->size(), ys->size()));
   if (count == 0) return;
 
-  ImPlot::PlotHistogram2D(label.c_str(), xs->data(), ys->data(), count,
+  auto iml = with_id(label, node);
+  ImPlot::PlotHistogram2D(iml.c_str(), xs->data(), ys->data(), count,
                           x_bins, y_bins);
 }
 
@@ -221,8 +240,9 @@ void render_plot_heatmap(imgui_renderer&, const ui_element& node, session&) {
   const auto* vals  = vec_field(node, "values"_key);
   if (!vals || int(vals->size()) < rows * cols || rows <= 0 || cols <= 0) return;
 
+  auto iml = with_id(label, node);
   ImPlot::PlotHeatmap(
-      label.c_str(), vals->data(), rows, cols,
+      iml.c_str(), vals->data(), rows, cols,
       double(scale_min), double(scale_max),
       fmt.empty() ? nullptr : fmt.c_str(),
       ImPlotPoint(double(x_min), double(y_min)),
@@ -288,7 +308,8 @@ void render_plot_inf_lines(imgui_renderer&, const ui_element& node, session&) {
 
   ImPlotSpec ispec;
   ispec.Flags = horiz ? ImPlotInfLinesFlags_Horizontal : 0;
-  ImPlot::PlotInfLines(label.c_str(), vals->data(), int(vals->size()), ispec);
+  auto iml = with_id(label, node);
+  ImPlot::PlotInfLines(iml.c_str(), vals->data(), int(vals->size()), ispec);
 }
 
 }  // namespace bdg::wish
