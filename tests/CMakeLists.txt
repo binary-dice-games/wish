@@ -22,6 +22,7 @@ macro(wish_add_test TESTNAME)
 endmacro()
 
 wish_add_test(test_stub              test_stub.cpp)
+wish_add_test(test_resource_store    test_resource_store.cpp)
 wish_add_test(test_form_base         test_form_base.cpp)
 wish_add_test(test_open_file_dialog  test_open_file_dialog.cpp)
 wish_add_test(test_registry       test_registry.cpp)

@@ -7,6 +7,8 @@ project(
   VERSION 1.0
   LANGUAGES CXX)
 
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+
 option(WISH_BUILD_TESTS      "Build the wish tests"                            ON)
 option(WISH_ENABLE_IMGUI     "Build the imgui renderer"                       ON)
 option(WISH_ENABLE_SDL3      "Build the SDL3 renderer and calculator example" ON)
@@ -99,6 +101,29 @@ if(WISH_ENABLE_IMGUI AND WISH_ENABLE_SDL3)
   target_link_libraries(imgui_core PUBLIC SDL3::SDL3)
 endif()
 
+# ── Embedded resources — generate embedded_resources.cpp from asset tree ──────
+
+set(WISH_RESOURCE_DIR "${CMAKE_SOURCE_DIR}/resources/embedded"
+    CACHE PATH "Source asset directory compiled into the binary")
+
+file(GLOB_RECURSE WISH_RESOURCE_FILES
+  CONFIGURE_DEPENDS
+  "${WISH_RESOURCE_DIR}/*"
+)
+
+set(WISH_EMBEDDED_CPP
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/resources/embedded_resources.cpp")
+
+add_custom_command(
+  OUTPUT  "${WISH_EMBEDDED_CPP}"
+  COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_SOURCE_DIR}/cmake/embed_resources.py"
+            --input  "${WISH_RESOURCE_DIR}"
+            --output "${WISH_EMBEDDED_CPP}"
+  DEPENDS ${WISH_RESOURCE_FILES}
+  COMMENT "Embedding resources from ${WISH_RESOURCE_DIR}"
+)
+
 # ── wish_client — lightweight C++ client (no renderer, no UI elements) ────────
 
 add_library(wish_client STATIC
@@ -117,6 +142,7 @@ target_link_libraries(wish_client PUBLIC bison)
 
 add_library(wish_server STATIC
   include/wish/wish.hpp
+  include/wish/resource_store.hpp
   include/wish/registry.hpp
   include/wish/ui_importer.hpp
   include/wish/ui_element.hpp
@@ -128,6 +154,8 @@ add_library(wish_server STATIC
   include/wish/server.hpp
   include/wish/form.hpp
   src/wish.cpp
+  src/resources/resource_store.cpp
+  "${WISH_EMBEDDED_CPP}"
   src/registry.cpp
   src/ui_importer.cpp
   src/ui_element.cpp
@@ -216,6 +244,7 @@ set_target_properties(wish_server PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(wish_server
     PRIVATE
         src
+        src/resources
         # nlohmann/json and libyaml headers; only needed by src/ui_importer.cpp.
         ${CMAKE_CURRENT_SOURCE_DIR}/extern/bison/extern/json/single_include
         ${CMAKE_CURRENT_SOURCE_DIR}/extern/bison/extern/yaml/include
