@@ -3,9 +3,11 @@
 
 #include <wish/form.hpp>
 #include <wish/registry.hpp>
+#include <wish/server.hpp>
 #include <wish/session.hpp>
 
 #include "src/bison/bison_object.hpp"
+#include "src/rmi/rmi.hpp"
 #include "src/rmi/server/context.hpp"
 
 using namespace bdg::bison;
@@ -164,4 +166,73 @@ TEST(FormBase, EmitWithNullEmitEventDoesNothing) {
   f->init(ctx, sess);
 
   EXPECT_NO_THROW(f->test_emit("on_test"_key));
+}
+
+// ── Server injection ──────────────────────────────────────────────────────────
+
+// Track which stub_form instances had init() called.
+static std::atomic<int> g_server_init_count{0};
+
+class tracked_stub_form : public wish::form {
+ public:
+  explicit tracked_stub_form(dynamic&& base) : form(std::move(base)) {}
+ protected:
+  void on_init() override { g_server_init_count.fetch_add(1); }
+};
+
+TEST(FormServerInjection, InstantiateFormCallsOnInit) {
+  using namespace bdg::bison::rmi::transport;
+
+  ensure_registered();
+  // Register tracked_stub_form as a separate class.
+  static bool tracked_registered = false;
+  if (!tracked_registered) {
+    tracked_registered = true;
+    auto proto = dynamic_ptr{"__TrackedStubForm"_key, {}};
+    dynamic::addClass(
+        "wish"_key,
+        std::move(proto),
+        key_t{0U},
+        dynamic::make_factory<tracked_stub_form>("wish"_key, "__TrackedStubForm"_key));
+  }
+
+  g_server_init_count.store(0);
+
+  memory_server_transport transport;
+  wish::server srv{transport, std::make_unique<wish::null_renderer>()};
+  srv.start();
+
+  {
+    bdg::bison::rmi::client c{transport.connect()};
+    c.connect();
+    auto proxy = c.instantiate("wish"_key, "__TrackedStubForm"_key).get();
+    EXPECT_TRUE(proxy.valid());
+    EXPECT_EQ(g_server_init_count.load(), 1);
+    c.disconnect();
+  }
+
+  srv.stop();
+}
+
+TEST(FormServerInjection, TwoInstantiationsBothGetInit) {
+  using namespace bdg::bison::rmi::transport;
+
+  g_server_init_count.store(0);
+
+  memory_server_transport transport;
+  wish::server srv{transport, std::make_unique<wish::null_renderer>()};
+  srv.start();
+
+  {
+    bdg::bison::rmi::client c{transport.connect()};
+    c.connect();
+    auto p1 = c.instantiate("wish"_key, "__TrackedStubForm"_key).get();
+    auto p2 = c.instantiate("wish"_key, "__TrackedStubForm"_key).get();
+    EXPECT_TRUE(p1.valid());
+    EXPECT_TRUE(p2.valid());
+    EXPECT_EQ(g_server_init_count.load(), 2);
+    c.disconnect();
+  }
+
+  srv.stop();
 }

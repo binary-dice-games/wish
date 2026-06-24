@@ -3,6 +3,7 @@
 /// @brief Implementation of wish::server.
 #include <wish/server.hpp>
 #include <wish/file_service.hpp>
+#include <wish/form.hpp>
 #include <wish/logger.hpp>
 #include <wish/style_service.hpp>
 #include <wish/registry.hpp>
@@ -133,6 +134,8 @@ bison::dynamic_ptr server::on_create_object(
   if (obj && sess) {
     if (auto* h = dynamic_cast<template_handler*>(obj.get())) {
       h->init(ctx, sess);
+    } else if (auto* f = dynamic_cast<form*>(obj.get())) {
+      f->init(ctx, sess);
     }
   }
   return obj;
