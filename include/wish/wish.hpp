@@ -5,6 +5,7 @@
 
 #include <wish/client.hpp>
 #include <wish/file_service.hpp>
+#include <wish/form.hpp>
 #include <wish/logger.hpp>
 #include <wish/registry.hpp>
 #include <wish/renderer.hpp>

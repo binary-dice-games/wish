@@ -111,6 +111,7 @@ add_library(wish STATIC
   include/wish/style_service.hpp
   include/wish/server.hpp
   include/wish/client.hpp
+  include/wish/form.hpp
   src/wish.cpp
   src/registry.cpp
   src/ui_importer.cpp

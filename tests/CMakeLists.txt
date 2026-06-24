@@ -22,6 +22,7 @@ macro(wish_add_test TESTNAME)
 endmacro()
 
 wish_add_test(test_stub           test_stub.cpp)
+wish_add_test(test_form_base      test_form_base.cpp)
 wish_add_test(test_registry       test_registry.cpp)
 wish_add_test(test_ui_importer    test_ui_importer.cpp)
 wish_add_test(test_children_order test_children_order.cpp)
