@@ -7,10 +7,11 @@ project(
   VERSION 1.0
   LANGUAGES CXX)
 
-option(WISH_BUILD_TESTS   "Build the wish tests"                            ON)
-option(WISH_ENABLE_IMGUI  "Build the imgui renderer"                       ON)
-option(WISH_ENABLE_SDL3   "Build the SDL3 renderer and calculator example" ON)
-option(WISH_BUILD_SHARED  "Build wish_client shared library with C ABI"   ON)
+option(WISH_BUILD_TESTS      "Build the wish tests"                            ON)
+option(WISH_ENABLE_IMGUI     "Build the imgui renderer"                       ON)
+option(WISH_ENABLE_SDL3      "Build the SDL3 renderer and calculator example" ON)
+option(WISH_BUILD_SHARED     "Build wish_client shared library with C ABI"   ON)
+option(WISH_MODULE_DESKTOP   "Include desktop utility forms (Calculator, Notepad, ...)" OFF)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
@@ -156,7 +157,17 @@ add_library(wish STATIC
   src/plot3d_elements/plot3d_surface.cpp
   src/plot3d_elements/plot3d_mesh.cpp
   src/plot3d_elements/plot3d_annotations.cpp
+  src/forms/form.cpp
 )
+
+if(WISH_MODULE_DESKTOP)
+  target_sources(wish PRIVATE
+    src/forms/desktop/desktop_module.cpp
+    src/forms/desktop/calculator.cpp
+    src/forms/desktop/notepad.cpp
+  )
+  target_compile_definitions(wish PRIVATE WISH_MODULE_DESKTOP)
+endif()
 
 if(WISH_ENABLE_IMGUI)
   target_sources(wish PRIVATE

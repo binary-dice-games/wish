@@ -55,6 +55,11 @@ void register_all() {
   register_file_service();
   register_style_service();
   register_logger();
+  // Built-in forms (Step 4+).
+  // register_open_file_dialog();
+#ifdef WISH_MODULE_DESKTOP
+  // register_desktop_module();
+#endif
 }
 
 }  // namespace bdg::wish
