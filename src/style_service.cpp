@@ -66,12 +66,15 @@ void register_style_service() {
     [](dynamic& s, const dynamic& /*p*/) -> dynamic {
       return static_cast<style_service&>(s).get_fields();
     }, attr<DisplayName>("get")});
-  (void)"name"_rkey;
+  auto preset_in = std::make_shared<dynamic>();
+  preset_in->addField("name"_key, field{std::string{}, attr<DisplayName>("name")});
   proto->addMethod("preset"_key, bison::method{
     [](dynamic& s, const dynamic& p) -> dynamic {
       static_cast<style_service&>(s).set_preset(p.as<std::string>("name"_key));
       return dynamic{};
-    }, attr<DisplayName>("preset")});
+    },
+    dynamic_ptr{preset_in}, nullptr,
+    attr<DisplayName>("preset")});
   dynamic::addClass("wish"_key, std::move(proto));
 }
 

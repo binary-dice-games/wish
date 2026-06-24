@@ -70,15 +70,18 @@ void logger::write_locked(const std::string& level, const std::string& msg) {
 
 void register_logger() {
   auto proto = dynamic_ptr{"__WishLogger"_key, {}};
-  (void)"level"_rkey;
-  (void)"msg"_rkey;
+  auto log_in = std::make_shared<dynamic>();
+  log_in->addField("level"_key, field{std::string{}, attr<DisplayName>("level")});
+  log_in->addField("msg"_key,   field{std::string{}, attr<DisplayName>("msg")});
   proto->addMethod("log"_key, bison::method{
     [](dynamic& s, const dynamic& p) -> dynamic {
       static_cast<logger&>(s).log(
           p.as<std::string>("level"_key),
           p.as<std::string>("msg"_key));
       return dynamic{};
-    }, attr<DisplayName>("log")});
+    },
+    dynamic_ptr{log_in}, nullptr,
+    attr<DisplayName>("log")});
   dynamic::addClass("wish"_key, std::move(proto));
 }
 

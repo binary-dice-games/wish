@@ -70,17 +70,28 @@ bison::dynamic template_handler::do_instantiate(const bison::dynamic& params) {
 
 void register_template_handler() {
   auto proto = bison::dynamic_ptr{"__WishTemplate"_key, {}};
-  (void)"name"_rkey;
-  (void)"descriptor"_rkey;
-  (void)"id"_rkey;
+
+  auto reg_in = std::make_shared<dynamic>();
+  reg_in->addField("name"_key,       field{std::string{}, attr<DisplayName>("name")});
+  reg_in->addField("descriptor"_key, field{std::string{}, attr<DisplayName>("descriptor")});
   proto->addMethod("register"_key, bison::method{
     [](dynamic& s, const dynamic& p) -> dynamic {
       return static_cast<template_handler&>(s).do_register(p);
-    }, attr<DisplayName>("register")});
+    },
+    dynamic_ptr{reg_in}, nullptr,
+    attr<DisplayName>("register")});
+
+  auto inst_in = std::make_shared<dynamic>();
+  inst_in->addField("name"_key, field{std::string{}, attr<DisplayName>("name")});
+  auto inst_out = std::make_shared<dynamic>();
+  inst_out->addField("name"_key, field{std::string{}, attr<DisplayName>("name")});
+  inst_out->addField("id"_key,   field{key_t{},       attr<DisplayName>("id")});
   proto->addMethod("instantiate"_key, bison::method{
     [](dynamic& s, const dynamic& p) -> dynamic {
       return static_cast<template_handler&>(s).do_instantiate(p);
-    }, attr<DisplayName>("instantiate")});
+    },
+    dynamic_ptr{inst_in}, dynamic_ptr{inst_out},
+    attr<DisplayName>("instantiate")});
   bison::dynamic::addClass(
       "wish"_key,
       std::move(proto),
