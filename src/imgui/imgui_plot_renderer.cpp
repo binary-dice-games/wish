@@ -1,4 +1,4 @@
-// MIT License © 2025 Binary Dice Games
+﻿// MIT License © 2025 Binary Dice Games
 /// @file imgui_plot_renderer.cpp
 /// @brief ImPlot render functions for wish plot elements.
 ///
@@ -23,29 +23,6 @@ namespace bdg::wish {
 
 using namespace bdg::bison;
 
-// ── Inline field helpers (mirrors imgui_renderer.cpp) ─────────────────────────
-
-static std::string str_field(
-    const dynamic& obj, key_t k, const char* dflt = "") {
-  const auto* f = obj.findField(k);
-  return (f && f->is<std::string>()) ? f->as<std::string>() : dflt;
-}
-
-static float float_field(const dynamic& obj, key_t k, float dflt = 0.0f) {
-  const auto* f = obj.findField(k);
-  return (f && f->is<float>()) ? f->as<float>() : dflt;
-}
-
-static int32_t int_field(const dynamic& obj, key_t k, int32_t dflt = 0) {
-  const auto* f = obj.findField(k);
-  return (f && f->is<int32_t>()) ? f->as<int32_t>() : dflt;
-}
-
-static bool bool_field(const dynamic& obj, key_t k, bool dflt = false) {
-  const auto* f = obj.findField(k);
-  return (f && f->is<bool>()) ? f->as<bool>() : dflt;
-}
-
 // Return the float vector stored under key k, or nullptr if absent/wrong type.
 static const std::vector<float>* vec_field(const dynamic& obj, key_t k) {
   const auto* f = obj.findField(k);
@@ -55,14 +32,14 @@ static const std::vector<float>* vec_field(const dynamic& obj, key_t k) {
 // ── Plot container ─────────────────────────────────────────────────────────────
 
 void render_plot(imgui_renderer& r, const ui_element& node, session& s) {
-  auto    title   = str_field(node, "title"_key, "##plot");
-  float   w       = float_field(node, "width"_key, -1.0f);
-  float   h       = float_field(node, "height"_key, 300.0f);
-  int32_t flags   = int_field(node, "flags"_key, 0);
-  auto    x_label = str_field(node, "x_label"_key, "");
-  auto    y_label = str_field(node, "y_label"_key, "");
-  int32_t xf      = int_field(node, "x_flags"_key, 0);
-  int32_t yf      = int_field(node, "y_flags"_key, 0);
+  auto    title   = node.tryGet<std::string>("title"_key, "##plot");
+  float   w       = node.tryGet<float>("width"_key, -1.0f);
+  float   h       = node.tryGet<float>("height"_key, 300.0f);
+  int32_t flags   = node.tryGet<int32_t>("flags"_key, 0);
+  auto    x_label = node.tryGet<std::string>("x_label"_key, "");
+  auto    y_label = node.tryGet<std::string>("y_label"_key, "");
+  int32_t xf      = node.tryGet<int32_t>("x_flags"_key, 0);
+  int32_t yf      = node.tryGet<int32_t>("y_flags"_key, 0);
 
   if (ImPlot::BeginPlot(title.c_str(), ImVec2(w, h), ImPlotFlags(flags))) {
     if (!x_label.empty() || !y_label.empty() || xf != 0 || yf != 0) {
@@ -80,7 +57,7 @@ void render_plot(imgui_renderer& r, const ui_element& node, session& s) {
 // ── Line / scatter / stair / stem / shaded / digital ─────────────────────────
 
 void render_plot_line(imgui_renderer&, const ui_element& node, session&) {
-  auto label = str_field(node, "label"_key, "");
+  auto label = node.tryGet<std::string>("label"_key, "");
   const auto* xs = vec_field(node, "xs"_key);
   const auto* ys = vec_field(node, "ys"_key);
   if (!xs || !ys) return;
@@ -90,7 +67,7 @@ void render_plot_line(imgui_renderer&, const ui_element& node, session&) {
 }
 
 void render_plot_scatter(imgui_renderer&, const ui_element& node, session&) {
-  auto label = str_field(node, "label"_key, "");
+  auto label = node.tryGet<std::string>("label"_key, "");
   const auto* xs = vec_field(node, "xs"_key);
   const auto* ys = vec_field(node, "ys"_key);
   if (!xs || !ys) return;
@@ -100,7 +77,7 @@ void render_plot_scatter(imgui_renderer&, const ui_element& node, session&) {
 }
 
 void render_plot_stairs(imgui_renderer&, const ui_element& node, session&) {
-  auto label = str_field(node, "label"_key, "");
+  auto label = node.tryGet<std::string>("label"_key, "");
   const auto* xs = vec_field(node, "xs"_key);
   const auto* ys = vec_field(node, "ys"_key);
   if (!xs || !ys) return;
@@ -110,8 +87,8 @@ void render_plot_stairs(imgui_renderer&, const ui_element& node, session&) {
 }
 
 void render_plot_stems(imgui_renderer&, const ui_element& node, session&) {
-  auto  label = str_field(node, "label"_key, "");
-  float ref   = float_field(node, "ref"_key, 0.0f);
+  auto  label = node.tryGet<std::string>("label"_key, "");
+  float ref   = node.tryGet<float>("ref"_key, 0.0f);
   const auto* xs = vec_field(node, "xs"_key);
   const auto* ys = vec_field(node, "ys"_key);
   if (!xs || !ys) return;
@@ -121,8 +98,8 @@ void render_plot_stems(imgui_renderer&, const ui_element& node, session&) {
 }
 
 void render_plot_shaded(imgui_renderer&, const ui_element& node, session&) {
-  auto  label = str_field(node, "label"_key, "");
-  float ref   = float_field(node, "ref"_key, 0.0f);
+  auto  label = node.tryGet<std::string>("label"_key, "");
+  float ref   = node.tryGet<float>("ref"_key, 0.0f);
   const auto* xs  = vec_field(node, "xs"_key);
   const auto* ys  = vec_field(node, "ys"_key);
   const auto* ys2 = vec_field(node, "ys2"_key);
@@ -144,7 +121,7 @@ void render_plot_shaded(imgui_renderer&, const ui_element& node, session&) {
 }
 
 void render_plot_digital(imgui_renderer&, const ui_element& node, session&) {
-  auto label = str_field(node, "label"_key, "");
+  auto label = node.tryGet<std::string>("label"_key, "");
   const auto* xs = vec_field(node, "xs"_key);
   const auto* ys = vec_field(node, "ys"_key);
   if (!xs || !ys) return;
@@ -156,8 +133,8 @@ void render_plot_digital(imgui_renderer&, const ui_element& node, session&) {
 // ── Bar charts ────────────────────────────────────────────────────────────────
 
 void render_plot_bars(imgui_renderer&, const ui_element& node, session&) {
-  auto  label    = str_field(node, "label"_key, "");
-  float bar_size = float_field(node, "bar_size"_key, 0.67f);
+  auto  label    = node.tryGet<std::string>("label"_key, "");
+  float bar_size = node.tryGet<float>("bar_size"_key, 0.67f);
   const auto* xs = vec_field(node, "xs"_key);
   const auto* ys = vec_field(node, "ys"_key);
 
@@ -170,8 +147,8 @@ void render_plot_bars(imgui_renderer&, const ui_element& node, session&) {
 }
 
 void render_plot_bars_h(imgui_renderer&, const ui_element& node, session&) {
-  auto  label    = str_field(node, "label"_key, "");
-  float bar_size = float_field(node, "bar_size"_key, 0.67f);
+  auto  label    = node.tryGet<std::string>("label"_key, "");
+  float bar_size = node.tryGet<float>("bar_size"_key, 0.67f);
   const auto* xs = vec_field(node, "xs"_key);
   const auto* ys = vec_field(node, "ys"_key);
 
@@ -190,12 +167,12 @@ void render_plot_bars_h(imgui_renderer&, const ui_element& node, session&) {
 // ── Histograms ────────────────────────────────────────────────────────────────
 
 void render_plot_histogram(imgui_renderer&, const ui_element& node, session&) {
-  auto    label    = str_field(node, "label"_key, "");
-  int32_t bins     = int_field(node, "bins"_key, -1);  // -1 = Sturges
-  bool    cumul    = bool_field(node, "cumulative"_key, false);
-  bool    density  = bool_field(node, "density"_key, false);
-  float   rng_min  = float_field(node, "range_min"_key, 0.0f);
-  float   rng_max  = float_field(node, "range_max"_key, 0.0f);
+  auto    label    = node.tryGet<std::string>("label"_key, "");
+  int32_t bins     = node.tryGet<int32_t>("bins"_key, -1);  // -1 = Sturges
+  bool    cumul    = node.tryGet<bool>("cumulative"_key, false);
+  bool    density  = node.tryGet<bool>("density"_key, false);
+  float   rng_min  = node.tryGet<float>("range_min"_key, 0.0f);
+  float   rng_max  = node.tryGet<float>("range_max"_key, 0.0f);
   const auto* vals = vec_field(node, "values"_key);
   if (!vals || vals->empty()) return;
 
@@ -215,9 +192,9 @@ void render_plot_histogram(imgui_renderer&, const ui_element& node, session&) {
 }
 
 void render_plot_histogram2d(imgui_renderer&, const ui_element& node, session&) {
-  auto    label  = str_field(node, "label"_key, "");
-  int32_t x_bins = int_field(node, "x_bins"_key, -1);
-  int32_t y_bins = int_field(node, "y_bins"_key, -1);
+  auto    label  = node.tryGet<std::string>("label"_key, "");
+  int32_t x_bins = node.tryGet<int32_t>("x_bins"_key, -1);
+  int32_t y_bins = node.tryGet<int32_t>("y_bins"_key, -1);
   const auto* xs = vec_field(node, "xs"_key);
   const auto* ys = vec_field(node, "ys"_key);
   if (!xs || !ys) return;
@@ -231,16 +208,16 @@ void render_plot_histogram2d(imgui_renderer&, const ui_element& node, session&) 
 // ── Heatmap ───────────────────────────────────────────────────────────────────
 
 void render_plot_heatmap(imgui_renderer&, const ui_element& node, session&) {
-  auto    label     = str_field(node, "label"_key, "");
-  int32_t rows      = int_field(node, "rows"_key, 1);
-  int32_t cols      = int_field(node, "cols"_key, 1);
-  float   scale_min = float_field(node, "scale_min"_key, 0.0f);
-  float   scale_max = float_field(node, "scale_max"_key, 1.0f);
-  auto    fmt       = str_field(node, "format"_key, "%.1f");
-  float   x_min     = float_field(node, "x_min"_key, 0.0f);
-  float   x_max     = float_field(node, "x_max"_key, 1.0f);
-  float   y_min     = float_field(node, "y_min"_key, 0.0f);
-  float   y_max     = float_field(node, "y_max"_key, 1.0f);
+  auto    label     = node.tryGet<std::string>("label"_key, "");
+  int32_t rows      = node.tryGet<int32_t>("rows"_key, 1);
+  int32_t cols      = node.tryGet<int32_t>("cols"_key, 1);
+  float   scale_min = node.tryGet<float>("scale_min"_key, 0.0f);
+  float   scale_max = node.tryGet<float>("scale_max"_key, 1.0f);
+  auto    fmt       = node.tryGet<std::string>("format"_key, "%.1f");
+  float   x_min     = node.tryGet<float>("x_min"_key, 0.0f);
+  float   x_max     = node.tryGet<float>("x_max"_key, 1.0f);
+  float   y_min     = node.tryGet<float>("y_min"_key, 0.0f);
+  float   y_max     = node.tryGet<float>("y_max"_key, 1.0f);
   const auto* vals  = vec_field(node, "values"_key);
   if (!vals || int(vals->size()) < rows * cols || rows <= 0 || cols <= 0) return;
 
@@ -255,13 +232,13 @@ void render_plot_heatmap(imgui_renderer&, const ui_element& node, session&) {
 // ── Pie chart ─────────────────────────────────────────────────────────────────
 
 void render_plot_pie_chart(imgui_renderer&, const ui_element& node, session&) {
-  auto  labels_str = str_field(node, "labels"_key, "");
-  float cx         = float_field(node, "x"_key, 0.5f);
-  float cy         = float_field(node, "y"_key, 0.5f);
-  float radius     = float_field(node, "radius"_key, 0.4f);
-  bool  normalize  = bool_field(node, "normalize"_key, false);
-  auto  fmt        = str_field(node, "label_fmt"_key, "%.1f%%");
-  float angle0     = float_field(node, "angle0"_key, 90.0f);
+  auto  labels_str = node.tryGet<std::string>("labels"_key, "");
+  float cx         = node.tryGet<float>("x"_key, 0.5f);
+  float cy         = node.tryGet<float>("y"_key, 0.5f);
+  float radius     = node.tryGet<float>("radius"_key, 0.4f);
+  bool  normalize  = node.tryGet<bool>("normalize"_key, false);
+  auto  fmt        = node.tryGet<std::string>("label_fmt"_key, "%.1f%%");
+  float angle0     = node.tryGet<float>("angle0"_key, 90.0f);
   const auto* vals = vec_field(node, "values"_key);
   if (!vals || vals->empty()) return;
 
@@ -293,19 +270,19 @@ void render_plot_pie_chart(imgui_renderer&, const ui_element& node, session&) {
 // ── Annotations ───────────────────────────────────────────────────────────────
 
 void render_plot_text(imgui_renderer&, const ui_element& node, session&) {
-  auto  text     = str_field(node, "text"_key, "");
-  float x        = float_field(node, "x"_key, 0.0f);
-  float y        = float_field(node, "y"_key, 0.0f);
-  float offset_x = float_field(node, "offset_x"_key, 0.0f);
-  float offset_y = float_field(node, "offset_y"_key, 0.0f);
+  auto  text     = node.tryGet<std::string>("text"_key, "");
+  float x        = node.tryGet<float>("x"_key, 0.0f);
+  float y        = node.tryGet<float>("y"_key, 0.0f);
+  float offset_x = node.tryGet<float>("offset_x"_key, 0.0f);
+  float offset_y = node.tryGet<float>("offset_y"_key, 0.0f);
   if (!text.empty())
     ImPlot::PlotText(text.c_str(), double(x), double(y),
                      ImVec2(offset_x, offset_y));
 }
 
 void render_plot_inf_lines(imgui_renderer&, const ui_element& node, session&) {
-  auto        label = str_field(node, "label"_key, "");
-  bool        horiz = bool_field(node, "horizontal"_key, false);
+  auto        label = node.tryGet<std::string>("label"_key, "");
+  bool        horiz = node.tryGet<bool>("horizontal"_key, false);
   const auto* vals  = vec_field(node, "values"_key);
   if (!vals || vals->empty()) return;
 

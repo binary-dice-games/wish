@@ -1,4 +1,4 @@
-// MIT License © 2025 Binary Dice Games
+﻿// MIT License © 2025 Binary Dice Games
 /// @file imgui_ui_renderer.cpp
 /// @brief ImGui render functions for wish UI elements.
 ///
@@ -22,44 +22,15 @@ namespace bdg::wish {
 
 using namespace bdg::bison;
 
-// ── Inline field helpers (mirrors imgui_renderer.cpp) ─────────────────────────
-
-static std::string str_field(
-    const dynamic& obj, key_t k, const char* dflt = "") {
-  const auto* f = obj.findField(k);
-  return (f && f->is<std::string>()) ? f->as<std::string>() : dflt;
-}
-
-static float float_field(const dynamic& obj, key_t k, float dflt = 0.0f) {
-  const auto* f = obj.findField(k);
-  return (f && f->is<float>()) ? f->as<float>() : dflt;
-}
-
-static int32_t int_field(const dynamic& obj, key_t k, int32_t dflt = 0) {
-  const auto* f = obj.findField(k);
-  return (f && f->is<int32_t>()) ? f->as<int32_t>() : dflt;
-}
-
-static bool bool_field(const dynamic& obj, key_t k, bool dflt = false) {
-  const auto* f = obj.findField(k);
-  return (f && f->is<bool>()) ? f->as<bool>() : dflt;
-}
-
-// Returns the RMI object ID stamped by apply_descriptor, or a fallback key.
-static key_t node_id(const ui_element& node) {
-  const auto* f = node.findField("__wish_id"_key);
-  return (f && f->is<key_t>()) ? f->as<key_t>() : key_t{};
-}
-
 // ── Core ──────────────────────────────────────────────────────────────────────
 
 void render_window(imgui_renderer& r, const ui_element& node, session& s) {
-  auto title  = str_field(node, "title"_key, "");
-  int32_t px  = int_field(node, "pos_x"_key, -1);
-  int32_t py  = int_field(node, "pos_y"_key, -1);
-  int32_t w   = int_field(node, "width"_key, 0);
-  int32_t h   = int_field(node, "height"_key, 0);
-  int32_t fl  = int_field(node, "flags"_key, 0);
+  auto title  = node.tryGet<std::string>("title"_key, "");
+  int32_t px  = node.tryGet<int32_t>("pos_x"_key, -1);
+  int32_t py  = node.tryGet<int32_t>("pos_y"_key, -1);
+  int32_t w   = node.tryGet<int32_t>("width"_key, 0);
+  int32_t h   = node.tryGet<int32_t>("height"_key, 0);
+  int32_t fl  = node.tryGet<int32_t>("flags"_key, 0);
 
   // Automatically reserve menu bar space when a direct MenuBar child exists.
   node.for_each_child_ordered([&](key_t, ui_element& child) {
@@ -78,69 +49,69 @@ void render_window(imgui_renderer& r, const ui_element& node, session& s) {
 }
 
 void render_label(imgui_renderer&, const ui_element& node, session&) {
-  auto text = str_field(node, "text"_key, "");
+  auto text = node.tryGet<std::string>("text"_key, "");
   ImGui::TextUnformatted(text.c_str());
 }
 
 void render_button(imgui_renderer&, const ui_element& node, session& s) {
-  auto    label = str_field(node, "label"_key, "");
-  int32_t w     = int_field(node, "width"_key,  0);
-  int32_t h     = int_field(node, "height"_key, 0);
+  auto    label = node.tryGet<std::string>("label"_key, "");
+  int32_t w     = node.tryGet<int32_t>("width"_key,  0);
+  int32_t h     = node.tryGet<int32_t>("height"_key, 0);
   if (ImGui::Button(label.c_str(), ImVec2(float(w), float(h))) && s.emit_event) {
     dynamic payload;
-    s.emit_event(node_id(node), "clicked"_key, std::move(payload));
+    s.emit_event(node.tryGet<key_t>("__wish_id"_key, key_t{}), "clicked"_key, std::move(payload));
   }
 }
 
 void render_checkbox(imgui_renderer&, const ui_element& node, session& s) {
-  auto label = str_field(node, "label"_key, "");
-  bool val   = bool_field(node, "value"_key, false);
+  auto label = node.tryGet<std::string>("label"_key, "");
+  bool val   = node.tryGet<bool>("value"_key, false);
   if (ImGui::Checkbox(label.c_str(), &val)) {
     const_cast<ui_element&>(node)["value"_key] = val;
     if (s.emit_event) {
       dynamic payload;
       payload["value"_key] = val;
-      s.emit_event(node_id(node), "changed"_key, std::move(payload));
+      s.emit_event(node.tryGet<key_t>("__wish_id"_key, key_t{}), "changed"_key, std::move(payload));
     }
   }
 }
 
 void render_slider_float(imgui_renderer&, const ui_element& node, session& s) {
-  auto  label = str_field(node, "label"_key, "");
-  float val   = float_field(node, "value"_key, 0.0f);
-  float vmin  = float_field(node, "min"_key, 0.0f);
-  float vmax  = float_field(node, "max"_key, 1.0f);
-  auto  fmt   = str_field(node, "format"_key, "%.2f");
+  auto  label = node.tryGet<std::string>("label"_key, "");
+  float val   = node.tryGet<float>("value"_key, 0.0f);
+  float vmin  = node.tryGet<float>("min"_key, 0.0f);
+  float vmax  = node.tryGet<float>("max"_key, 1.0f);
+  auto  fmt   = node.tryGet<std::string>("format"_key, "%.2f");
   if (ImGui::SliderFloat(label.c_str(), &val, vmin, vmax, fmt.c_str())) {
     const_cast<ui_element&>(node)["value"_key] = val;
     if (s.emit_event) {
       dynamic payload;
       payload["value"_key] = val;
-      s.emit_event(node_id(node), "changed"_key, std::move(payload));
+      s.emit_event(node.tryGet<key_t>("__wish_id"_key, key_t{}), "changed"_key, std::move(payload));
     }
   }
 }
 
 void render_slider_int(imgui_renderer&, const ui_element& node, session& s) {
-  auto    label = str_field(node, "label"_key, "");
-  int32_t val   = int_field(node, "value"_key, 0);
-  int32_t vmin  = int_field(node, "min"_key, 0);
-  int32_t vmax  = int_field(node, "max"_key, 100);
+  auto    label = node.tryGet<std::string>("label"_key, "");
+  int32_t val   = node.tryGet<int32_t>("value"_key, 0);
+  int32_t vmin  = node.tryGet<int32_t>("min"_key, 0);
+  int32_t vmax  = node.tryGet<int32_t>("max"_key, 100);
   if (ImGui::SliderInt(label.c_str(), &val, vmin, vmax)) {
     const_cast<ui_element&>(node)["value"_key] = val;
     if (s.emit_event) {
       dynamic payload;
       payload["value"_key] = val;
-      s.emit_event(node_id(node), "changed"_key, std::move(payload));
+      s.emit_event(node.tryGet<key_t>("__wish_id"_key, key_t{}), "changed"_key, std::move(payload));
     }
   }
 }
 
 void render_input_text(imgui_renderer&, const ui_element& node, session& s) {
-  auto    label   = str_field(node, "label"_key, "");
-  auto    hint    = str_field(node, "hint"_key, "");
-  int32_t maxlen  = int_field(node, "max_length"_key, 256);
-  auto    current = str_field(node, "value"_key, "");
+  auto    label   = node.tryGet<std::string>("label"_key, "");
+  auto    hint    = node.tryGet<std::string>("hint"_key, "");
+  int32_t maxlen  = node.tryGet<int32_t>("max_length"_key, 256);
+  auto    current = node.tryGet<std::string>("value"_key, "");
 
   std::vector<char> buf(static_cast<size_t>(maxlen) + 1, '\0');
   auto copy_len = std::min(static_cast<size_t>(maxlen), current.size());
@@ -157,15 +128,15 @@ void render_input_text(imgui_renderer&, const ui_element& node, session& s) {
     if (s.emit_event) {
       dynamic payload;
       payload["value"_key] = new_val;
-      s.emit_event(node_id(node), "changed"_key, std::move(payload));
+      s.emit_event(node.tryGet<key_t>("__wish_id"_key, key_t{}), "changed"_key, std::move(payload));
     }
   }
 }
 
 void render_image(imgui_renderer& r, const ui_element& node, session& s) {
-  auto    src = str_field(node, "src"_key, "");
-  int32_t w   = int_field(node, "width"_key, 0);
-  int32_t h   = int_field(node, "height"_key, 0);
+  auto    src = node.tryGet<std::string>("src"_key, "");
+  int32_t w   = node.tryGet<int32_t>("width"_key, 0);
+  int32_t h   = node.tryGet<int32_t>("height"_key, 0);
   if (src.empty() || w <= 0 || h <= 0) return;
   ImTextureID tex = r.get_or_load_texture(src, s.resource_dir);
   if (!tex) return;
@@ -177,13 +148,13 @@ void render_separator(imgui_renderer&, const ui_element&, session&) {
 }
 
 void render_separator_text(imgui_renderer&, const ui_element& node, session&) {
-  auto label = str_field(node, "label"_key, "");
+  auto label = node.tryGet<std::string>("label"_key, "");
   ImGui::SeparatorText(label.c_str());
 }
 
 void render_vertical_layout(
     imgui_renderer& r, const ui_element& node, session& s) {
-  float spacing = float_field(node, "spacing"_key, 0.0f);
+  float spacing = node.tryGet<float>("spacing"_key, 0.0f);
   bool first = true;
   node.for_each_child_ordered([&](key_t, ui_element& child) {
     if (!first && spacing > 0.0f)
@@ -195,7 +166,7 @@ void render_vertical_layout(
 
 void render_horizontal_layout(
     imgui_renderer& r, const ui_element& node, session& s) {
-  float spacing = float_field(node, "spacing"_key, 0.0f);
+  float spacing = node.tryGet<float>("spacing"_key, 0.0f);
   ImGui::BeginGroup();
   bool first = true;
   node.for_each_child_ordered([&](key_t, ui_element& child) {
@@ -216,8 +187,8 @@ void render_menu_bar(imgui_renderer& r, const ui_element& node, session& s) {
 }
 
 void render_menu(imgui_renderer& r, const ui_element& node, session& s) {
-  auto label   = str_field(node, "label"_key, "");
-  bool enabled = bool_field(node, "enabled"_key, true);
+  auto label   = node.tryGet<std::string>("label"_key, "");
+  bool enabled = node.tryGet<bool>("enabled"_key, true);
   if (ImGui::BeginMenu(label.c_str(), enabled)) {
     render_children(r, node, s);
     ImGui::EndMenu();
@@ -225,17 +196,17 @@ void render_menu(imgui_renderer& r, const ui_element& node, session& s) {
 }
 
 void render_menu_item(imgui_renderer&, const ui_element& node, session& s) {
-  auto  label    = str_field(node, "label"_key, "");
-  auto  shortcut = str_field(node, "shortcut"_key, "");
-  bool  checked  = bool_field(node, "checked"_key, false);
-  bool  enabled  = bool_field(node, "enabled"_key, true);
+  auto  label    = node.tryGet<std::string>("label"_key, "");
+  auto  shortcut = node.tryGet<std::string>("shortcut"_key, "");
+  bool  checked  = node.tryGet<bool>("checked"_key, false);
+  bool  enabled  = node.tryGet<bool>("enabled"_key, true);
   const char* sc = shortcut.empty() ? nullptr : shortcut.c_str();
   if (ImGui::MenuItem(label.c_str(), sc, &checked, enabled)) {
     const_cast<ui_element&>(node)["checked"_key] = checked;
     if (s.emit_event) {
       dynamic payload;
       payload["checked"_key] = checked;
-      s.emit_event(node_id(node), "clicked"_key, std::move(payload));
+      s.emit_event(node.tryGet<key_t>("__wish_id"_key, key_t{}), "clicked"_key, std::move(payload));
     }
   }
 }
@@ -243,7 +214,7 @@ void render_menu_item(imgui_renderer&, const ui_element& node, session& s) {
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 
 void render_tab_bar(imgui_renderer& r, const ui_element& node, session& s) {
-  auto id = str_field(node, "id"_key, "##tabbar");
+  auto id = node.tryGet<std::string>("id"_key, "##tabbar");
   if (ImGui::BeginTabBar(id.c_str())) {
     render_children(r, node, s);
     ImGui::EndTabBar();
@@ -251,8 +222,8 @@ void render_tab_bar(imgui_renderer& r, const ui_element& node, session& s) {
 }
 
 void render_tab_item(imgui_renderer& r, const ui_element& node, session& s) {
-  auto  label    = str_field(node, "label"_key, "Tab");
-  bool  closable = bool_field(node, "closable"_key, false);
+  auto  label    = node.tryGet<std::string>("label"_key, "Tab");
+  bool  closable = node.tryGet<bool>("closable"_key, false);
   bool  open     = true;
   bool* p_open   = closable ? &open : nullptr;
 
@@ -263,7 +234,7 @@ void render_tab_item(imgui_renderer& r, const ui_element& node, session& s) {
   bool was_selected  = (prev_f && prev_f->is<bool>()) ? prev_f->as<bool>() : is_selected;
   const_cast<ui_element&>(node)["__selected__"_key] = is_selected;
   if (is_selected && !was_selected && s.emit_event)
-    s.emit_event(node_id(node), "selected"_key, dynamic{});
+    s.emit_event(node.tryGet<key_t>("__wish_id"_key, key_t{}), "selected"_key, dynamic{});
 
   if (is_selected) {
     render_children(r, node, s);
@@ -271,15 +242,15 @@ void render_tab_item(imgui_renderer& r, const ui_element& node, session& s) {
   }
 
   if (closable && !open && s.emit_event)
-    s.emit_event(node_id(node), "closed"_key, dynamic{});
+    s.emit_event(node.tryGet<key_t>("__wish_id"_key, key_t{}), "closed"_key, dynamic{});
 }
 
 // ── Tree ──────────────────────────────────────────────────────────────────────
 
 void render_tree_node(imgui_renderer& r, const ui_element& node, session& s) {
-  auto label     = str_field(node, "label"_key, "");
-  bool init_open = bool_field(node, "open"_key, false);
-  bool leaf      = bool_field(node, "leaf"_key, false);
+  auto label     = node.tryGet<std::string>("label"_key, "");
+  bool init_open = node.tryGet<bool>("open"_key, false);
+  bool leaf      = node.tryGet<bool>("leaf"_key, false);
 
   ImGui::SetNextItemOpen(init_open, ImGuiCond_Once);
 
@@ -294,7 +265,7 @@ void render_tree_node(imgui_renderer& r, const ui_element& node, session& s) {
   if (is_open != was_open && s.emit_event) {
     dynamic payload;
     payload["open"_key] = is_open;
-    s.emit_event(node_id(node), "toggled"_key, std::move(payload));
+    s.emit_event(node.tryGet<key_t>("__wish_id"_key, key_t{}), "toggled"_key, std::move(payload));
   }
 
   if (is_open && !leaf) {
@@ -305,7 +276,7 @@ void render_tree_node(imgui_renderer& r, const ui_element& node, session& s) {
 
 void render_collapsing_header(
     imgui_renderer& r, const ui_element& node, session& s) {
-  auto label   = str_field(node, "label"_key, "");
+  auto label   = node.tryGet<std::string>("label"_key, "");
   bool is_open = ImGui::CollapsingHeader(label.c_str());
 
   const auto* prev_f = node.findField("__open__"_key);
@@ -314,7 +285,7 @@ void render_collapsing_header(
   if (is_open != was_open && s.emit_event) {
     dynamic payload;
     payload["open"_key] = is_open;
-    s.emit_event(node_id(node), "toggled"_key, std::move(payload));
+    s.emit_event(node.tryGet<key_t>("__wish_id"_key, key_t{}), "toggled"_key, std::move(payload));
   }
 
   if (is_open)
@@ -324,9 +295,9 @@ void render_collapsing_header(
 // ── Selection ─────────────────────────────────────────────────────────────────
 
 void render_combo(imgui_renderer&, const ui_element& node, session& s) {
-  auto    label     = str_field(node, "label"_key, "");
-  auto    items_str = str_field(node, "items"_key, "");
-  int32_t sel       = int_field(node, "value"_key, 0);
+  auto    label     = node.tryGet<std::string>("label"_key, "");
+  auto    items_str = node.tryGet<std::string>("items"_key, "");
+  int32_t sel       = node.tryGet<int32_t>("value"_key, 0);
 
   // Build per-frame vectors from the newline-separated items string.
   std::vector<std::string> items;
@@ -349,30 +320,30 @@ void render_combo(imgui_renderer&, const ui_element& node, session& s) {
       payload["value"_key] = int32_t(cur);
       if (cur >= 0 && cur < int(items.size()))
         payload["text"_key] = items[size_t(cur)];
-      s.emit_event(node_id(node), "changed"_key, std::move(payload));
+      s.emit_event(node.tryGet<key_t>("__wish_id"_key, key_t{}), "changed"_key, std::move(payload));
     }
   }
 }
 
 void render_radio_button(imgui_renderer&, const ui_element& node, session& s) {
-  auto label  = str_field(node, "label"_key, "");
-  bool active = bool_field(node, "active"_key, false);
+  auto label  = node.tryGet<std::string>("label"_key, "");
+  bool active = node.tryGet<bool>("active"_key, false);
   if (ImGui::RadioButton(label.c_str(), active) && s.emit_event)
-    s.emit_event(node_id(node), "clicked"_key, dynamic{});
+    s.emit_event(node.tryGet<key_t>("__wish_id"_key, key_t{}), "clicked"_key, dynamic{});
 }
 
 void render_selectable(imgui_renderer&, const ui_element& node, session& s) {
-  auto  label    = str_field(node, "label"_key, "");
-  bool  selected = bool_field(node, "selected"_key, false);
-  float w        = float_field(node, "width"_key, 0.0f);
-  float h        = float_field(node, "height"_key, 0.0f);
+  auto  label    = node.tryGet<std::string>("label"_key, "");
+  bool  selected = node.tryGet<bool>("selected"_key, false);
+  float w        = node.tryGet<float>("width"_key, 0.0f);
+  float h        = node.tryGet<float>("height"_key, 0.0f);
   bool  v        = selected;
   if (ImGui::Selectable(label.c_str(), &v, 0, ImVec2(w, h))) {
     const_cast<ui_element&>(node)["selected"_key] = v;
     if (s.emit_event) {
       dynamic payload;
       payload["selected"_key] = v;
-      s.emit_event(node_id(node), "changed"_key, std::move(payload));
+      s.emit_event(node.tryGet<key_t>("__wish_id"_key, key_t{}), "changed"_key, std::move(payload));
     }
   }
 }
@@ -380,69 +351,69 @@ void render_selectable(imgui_renderer&, const ui_element& node, session& s) {
 // ── Numeric inputs ────────────────────────────────────────────────────────────
 
 void render_input_int(imgui_renderer&, const ui_element& node, session& s) {
-  auto    label     = str_field(node, "label"_key, "");
-  int32_t val       = int_field(node, "value"_key, 0);
-  int32_t step      = int_field(node, "step"_key, 1);
-  int32_t step_fast = int_field(node, "step_fast"_key, 100);
+  auto    label     = node.tryGet<std::string>("label"_key, "");
+  int32_t val       = node.tryGet<int32_t>("value"_key, 0);
+  int32_t step      = node.tryGet<int32_t>("step"_key, 1);
+  int32_t step_fast = node.tryGet<int32_t>("step_fast"_key, 100);
   int v = val;
   if (ImGui::InputInt(label.c_str(), &v, step, step_fast)) {
     const_cast<ui_element&>(node)["value"_key] = int32_t(v);
     if (s.emit_event) {
       dynamic payload;
       payload["value"_key] = int32_t(v);
-      s.emit_event(node_id(node), "changed"_key, std::move(payload));
+      s.emit_event(node.tryGet<key_t>("__wish_id"_key, key_t{}), "changed"_key, std::move(payload));
     }
   }
 }
 
 void render_input_float(imgui_renderer&, const ui_element& node, session& s) {
-  auto  label     = str_field(node, "label"_key, "");
-  float val       = float_field(node, "value"_key, 0.0f);
-  float step      = float_field(node, "step"_key, 0.0f);
-  float step_fast = float_field(node, "step_fast"_key, 0.0f);
-  auto  fmt       = str_field(node, "format"_key, "%.3f");
+  auto  label     = node.tryGet<std::string>("label"_key, "");
+  float val       = node.tryGet<float>("value"_key, 0.0f);
+  float step      = node.tryGet<float>("step"_key, 0.0f);
+  float step_fast = node.tryGet<float>("step_fast"_key, 0.0f);
+  auto  fmt       = node.tryGet<std::string>("format"_key, "%.3f");
   float v = val;
   if (ImGui::InputFloat(label.c_str(), &v, step, step_fast, fmt.c_str())) {
     const_cast<ui_element&>(node)["value"_key] = v;
     if (s.emit_event) {
       dynamic payload;
       payload["value"_key] = v;
-      s.emit_event(node_id(node), "changed"_key, std::move(payload));
+      s.emit_event(node.tryGet<key_t>("__wish_id"_key, key_t{}), "changed"_key, std::move(payload));
     }
   }
 }
 
 void render_drag_float(imgui_renderer&, const ui_element& node, session& s) {
-  auto  label = str_field(node, "label"_key, "");
-  float val   = float_field(node, "value"_key, 0.0f);
-  float speed = float_field(node, "speed"_key, 1.0f);
-  float vmin  = float_field(node, "min"_key, 0.0f);
-  float vmax  = float_field(node, "max"_key, 0.0f);
-  auto  fmt   = str_field(node, "format"_key, "%.3f");
+  auto  label = node.tryGet<std::string>("label"_key, "");
+  float val   = node.tryGet<float>("value"_key, 0.0f);
+  float speed = node.tryGet<float>("speed"_key, 1.0f);
+  float vmin  = node.tryGet<float>("min"_key, 0.0f);
+  float vmax  = node.tryGet<float>("max"_key, 0.0f);
+  auto  fmt   = node.tryGet<std::string>("format"_key, "%.3f");
   float v = val;
   if (ImGui::DragFloat(label.c_str(), &v, speed, vmin, vmax, fmt.c_str())) {
     const_cast<ui_element&>(node)["value"_key] = v;
     if (s.emit_event) {
       dynamic payload;
       payload["value"_key] = v;
-      s.emit_event(node_id(node), "changed"_key, std::move(payload));
+      s.emit_event(node.tryGet<key_t>("__wish_id"_key, key_t{}), "changed"_key, std::move(payload));
     }
   }
 }
 
 void render_drag_int(imgui_renderer&, const ui_element& node, session& s) {
-  auto    label = str_field(node, "label"_key, "");
-  int32_t val   = int_field(node, "value"_key, 0);
-  float   speed = float_field(node, "speed"_key, 1.0f);
-  int32_t vmin  = int_field(node, "min"_key, 0);
-  int32_t vmax  = int_field(node, "max"_key, 0);
+  auto    label = node.tryGet<std::string>("label"_key, "");
+  int32_t val   = node.tryGet<int32_t>("value"_key, 0);
+  float   speed = node.tryGet<float>("speed"_key, 1.0f);
+  int32_t vmin  = node.tryGet<int32_t>("min"_key, 0);
+  int32_t vmax  = node.tryGet<int32_t>("max"_key, 0);
   int v = val;
   if (ImGui::DragInt(label.c_str(), &v, speed, vmin, vmax)) {
     const_cast<ui_element&>(node)["value"_key] = int32_t(v);
     if (s.emit_event) {
       dynamic payload;
       payload["value"_key] = int32_t(v);
-      s.emit_event(node_id(node), "changed"_key, std::move(payload));
+      s.emit_event(node.tryGet<key_t>("__wish_id"_key, key_t{}), "changed"_key, std::move(payload));
     }
   }
 }
@@ -450,10 +421,10 @@ void render_drag_int(imgui_renderer&, const ui_element& node, session& s) {
 // ── Status ────────────────────────────────────────────────────────────────────
 
 void render_progress_bar(imgui_renderer&, const ui_element& node, session&) {
-  float val     = float_field(node, "value"_key, 0.0f);
-  float w       = float_field(node, "width"_key, -1.0f);
-  float h       = float_field(node, "height"_key, 0.0f);
-  auto  overlay = str_field(node, "label"_key, "");
+  float val     = node.tryGet<float>("value"_key, 0.0f);
+  float w       = node.tryGet<float>("width"_key, -1.0f);
+  float h       = node.tryGet<float>("height"_key, 0.0f);
+  auto  overlay = node.tryGet<std::string>("label"_key, "");
   ImGui::ProgressBar(val, ImVec2(w, h), overlay.empty() ? nullptr : overlay.c_str());
 }
 
@@ -461,9 +432,9 @@ void render_progress_bar(imgui_renderer&, const ui_element& node, session&) {
 
 void render_dockspace_viewport(
     imgui_renderer& r, const ui_element& node, session& s) {
-  auto    id       = str_field(node, "id"_key, "##viewport_dockspace");
-  int32_t flags    = int_field(node, "flags"_key, 0);
-  bool    passthru = bool_field(node, "passthru"_key, false);
+  auto    id       = node.tryGet<std::string>("id"_key, "##viewport_dockspace");
+  int32_t flags    = node.tryGet<int32_t>("flags"_key, 0);
+  bool    passthru = node.tryGet<bool>("passthru"_key, false);
 
   const ImGuiViewport* vp = ImGui::GetMainViewport();
   ImGui::SetNextWindowPos(vp->WorkPos);
@@ -510,10 +481,10 @@ void render_dockspace_viewport(
 }
 
 void render_dockspace(imgui_renderer&, const ui_element& node, session&) {
-  auto    id     = str_field(node, "id"_key, "dockspace");
-  float   width  = float_field(node, "width"_key, 0.0f);
-  float   height = float_field(node, "height"_key, 0.0f);
-  int32_t flags  = int_field(node, "flags"_key, 0);
+  auto    id     = node.tryGet<std::string>("id"_key, "dockspace");
+  float   width  = node.tryGet<float>("width"_key, 0.0f);
+  float   height = node.tryGet<float>("height"_key, 0.0f);
+  int32_t flags  = node.tryGet<int32_t>("flags"_key, 0);
   ImGui::DockSpace(
       ImGui::GetID(id.c_str()), ImVec2(width, height), ImGuiDockNodeFlags(flags));
 }
@@ -521,13 +492,13 @@ void render_dockspace(imgui_renderer&, const ui_element& node, session&) {
 // ── Table elements ────────────────────────────────────────────────────────────
 
 void render_table(imgui_renderer& r, const ui_element& node, session& s) {
-  auto    id       = str_field(node, "id"_key, "##table");
-  int32_t columns  = int_field(node, "columns"_key, 1);
-  int32_t flags    = int_field(node, "flags"_key, 0);
-  float   outer_w  = float_field(node, "outer_width"_key, 0.0f);
-  float   outer_h  = float_field(node, "outer_height"_key, 0.0f);
-  float   inner_w  = float_field(node, "inner_width"_key, 0.0f);
-  bool    headers  = bool_field(node, "headers"_key, false);
+  auto    id       = node.tryGet<std::string>("id"_key, "##table");
+  int32_t columns  = node.tryGet<int32_t>("columns"_key, 1);
+  int32_t flags    = node.tryGet<int32_t>("flags"_key, 0);
+  float   outer_w  = node.tryGet<float>("outer_width"_key, 0.0f);
+  float   outer_h  = node.tryGet<float>("outer_height"_key, 0.0f);
+  float   inner_w  = node.tryGet<float>("inner_width"_key, 0.0f);
+  bool    headers  = node.tryGet<bool>("headers"_key, false);
 
   if (!ImGui::BeginTable(id.c_str(), columns, ImGuiTableFlags(flags),
                          ImVec2(outer_w, outer_h), inner_w))
@@ -537,9 +508,9 @@ void render_table(imgui_renderer& r, const ui_element& node, session& s) {
   node.for_each_child_ordered([&](bison::key_t, ui_element& child) {
     if (child.as<bison::key_t>(bison::dynamic::CLASS) != "TableColumn"_key)
       return;
-    auto    label   = str_field(child, "label"_key, "");
-    int32_t col_fl  = int_field(child, "flags"_key, 0);
-    float   col_w   = float_field(child, "init_width"_key, 0.0f);
+    auto    label   = child.tryGet<std::string>("label"_key, "");
+    int32_t col_fl  = child.tryGet<int32_t>("flags"_key, 0);
+    float   col_w   = child.tryGet<float>("init_width"_key, 0.0f);
     ImGui::TableSetupColumn(label.c_str(), ImGuiTableColumnFlags(col_fl), col_w);
   });
 
@@ -561,8 +532,8 @@ void render_table_column(imgui_renderer&, const ui_element&, session&) {
 }
 
 void render_table_row(imgui_renderer& r, const ui_element& node, session& s) {
-  int32_t flags      = int_field(node, "flags"_key, 0);
-  float   min_height = float_field(node, "min_height"_key, 0.0f);
+  int32_t flags      = node.tryGet<int32_t>("flags"_key, 0);
+  float   min_height = node.tryGet<float>("min_height"_key, 0.0f);
   ImGui::TableNextRow(ImGuiTableRowFlags(flags), min_height);
   node.for_each_child_ordered([&](bison::key_t, ui_element& child) {
     ImGui::TableNextColumn();

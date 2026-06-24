@@ -1,4 +1,4 @@
-// MIT License © 2025 Binary Dice Games
+﻿// MIT License © 2025 Binary Dice Games
 /// @file imgui_renderer.cpp
 /// @brief Dear ImGui concrete renderer — element dispatch.
 #include <wish/imgui_renderer.hpp>
@@ -21,29 +21,6 @@
 namespace bdg::wish {
 
 using namespace bdg::bison;
-
-// ── Field helpers ─────────────────────────────────────────────────────────────
-
-static std::string str_field(
-    const dynamic& obj, key_t k, const char* dflt = "") {
-  const auto* f = obj.findField(k);
-  return (f && f->is<std::string>()) ? f->as<std::string>() : dflt;
-}
-
-static float float_field(const dynamic& obj, key_t k, float dflt = 0.0f) {
-  const auto* f = obj.findField(k);
-  return (f && f->is<float>()) ? f->as<float>() : dflt;
-}
-
-static int32_t int_field(const dynamic& obj, key_t k, int32_t dflt = 0) {
-  const auto* f = obj.findField(k);
-  return (f && f->is<int32_t>()) ? f->as<int32_t>() : dflt;
-}
-
-static bool bool_field(const dynamic& obj, key_t k, bool dflt = false) {
-  const auto* f = obj.findField(k);
-  return (f && f->is<bool>()) ? f->as<bool>() : dflt;
-}
 
 // ── Dispatch table ────────────────────────────────────────────────────────────
 //
@@ -254,7 +231,7 @@ void imgui_renderer::end_frame() {
 }
 
 void imgui_renderer::render_node(const ui_element& node, session& s) {
-  if (!bool_field(node, "visible"_key, true)) return;
+  if (!node.tryGet<bool>("visible"_key, true)) return;
 
   auto cls = node.as<key_t>(dynamic::CLASS);
   const auto& tbl = render_dispatch();

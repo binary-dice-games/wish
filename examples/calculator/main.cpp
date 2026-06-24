@@ -4,7 +4,7 @@
 // The server renders a real SDL3 window; the client (running on the same
 // thread as main, after server.start()) drives the UI via the wish RPC layer.
 //
-// Usage: calculator [--verbose | -v]
+// Usage: calculator [--verbose] [--theme dark|light|classic]
 
 #include <wish/client.hpp>
 #include <wish/server.hpp>
@@ -12,12 +12,23 @@
 
 #include "src/rmi/rmi.hpp"  // memory_server_transport / memory_client_transport
 
+#include <gflags/gflags.h>
+
 #include <cmath>
 #include <iostream>
 #include <sstream>
 #include <string>
 #include <thread>
 #include <chrono>
+
+DEFINE_bool  (verbose, false, "Print verbose trace to stderr.");
+DEFINE_string(theme,   "dark",
+              "UI theme preset: dark, light, or classic.");
+
+static bool ValidateTheme(const char* /*flag*/, const std::string& value) {
+  return value == "dark" || value == "light" || value == "classic";
+}
+DEFINE_validator(theme, &ValidateTheme);
 
 using namespace bdg::bison;
 using namespace bdg::bison::rmi::transport;
@@ -273,23 +284,9 @@ class calc_client : public wish::client {
 // ── main ──────────────────────────────────────────────────────────────────────
 
 int main(int argc, char* argv[]) {
-  bool verbose = false;
-  std::string theme = "dark";
-  for (int i = 1; i < argc; ++i) {
-    std::string arg(argv[i]);
-    if (arg == "--verbose" || arg == "-v") {
-      verbose = true;
-    } else if ((arg == "--theme" || arg == "-t") && i + 1 < argc) {
-      theme = argv[++i];
-      if (theme != "dark" && theme != "light" && theme != "classic") {
-        std::cerr << "Unknown theme '" << theme
-                  << "'. Valid values: dark, light, classic\n";
-        return 1;
-      }
-    }
-  }
+  gflags::ParseCommandLineFlags(&argc, &argv, true);
 
-  if (verbose) std::clog << "[calc] starting\n";
+  if (FLAGS_verbose) std::clog << "[calc] starting\n";
 
   memory_server_transport transport;
 
@@ -299,13 +296,13 @@ int main(int argc, char* argv[]) {
   wish::server server{transport, std::move(r)};
   server.start();  // spawns render thread (SDL lives there) + bison listen thread
 
-  if (verbose) std::clog << "[calc] server started — connecting client\n";
+  if (FLAGS_verbose) std::clog << "[calc] server started — connecting client\n";
 
   // run() blocks in on_session() until should_quit() goes true (window closed).
-  calc_client client{transport.connect(), rptr, verbose, theme};
+  calc_client client{transport.connect(), rptr, FLAGS_verbose, FLAGS_theme};
   client.run();
 
-  if (verbose) std::clog << "[calc] client done — stopping server\n";
+  if (FLAGS_verbose) std::clog << "[calc] client done — stopping server\n";
 
   server.stop();
   return 0;

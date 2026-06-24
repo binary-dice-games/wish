@@ -1,4 +1,4 @@
-// MIT License © 2025 Binary Dice Games
+﻿// MIT License © 2025 Binary Dice Games
 /// @file imgui_plot3d_renderer.cpp
 /// @brief ImPlot3D render functions for wish plot3d elements.
 ///
@@ -22,24 +22,6 @@ namespace bdg::wish {
 
 using namespace bdg::bison;
 
-// ── Inline field helpers (mirrors imgui_renderer.cpp) ─────────────────────────
-
-static std::string str_field(
-    const dynamic& obj, key_t k, const char* dflt = "") {
-  const auto* f = obj.findField(k);
-  return (f && f->is<std::string>()) ? f->as<std::string>() : dflt;
-}
-
-static float float_field(const dynamic& obj, key_t k, float dflt = 0.0f) {
-  const auto* f = obj.findField(k);
-  return (f && f->is<float>()) ? f->as<float>() : dflt;
-}
-
-static int32_t int_field(const dynamic& obj, key_t k, int32_t dflt = 0) {
-  const auto* f = obj.findField(k);
-  return (f && f->is<int32_t>()) ? f->as<int32_t>() : dflt;
-}
-
 static const std::vector<float>* vec_field(const dynamic& obj, key_t k) {
   const auto* f = obj.findField(k);
   return (f && f->is<std::vector<float>>()) ? &f->as<std::vector<float>>() : nullptr;
@@ -49,16 +31,16 @@ static const std::vector<float>* vec_field(const dynamic& obj, key_t k) {
 // ── Plot3D container ──────────────────────────────────────────────────────────
 
 void render_plot3d(imgui_renderer& r, const ui_element& node, session& s) {
-  auto    title   = str_field(node, "title"_key, "##plot3d");
-  float   w       = float_field(node, "width"_key, -1.0f);
-  float   h       = float_field(node, "height"_key, 400.0f);
-  int32_t flags   = int_field(node, "flags"_key, 0);
-  auto    x_label = str_field(node, "x_label"_key, "");
-  auto    y_label = str_field(node, "y_label"_key, "");
-  auto    z_label = str_field(node, "z_label"_key, "");
-  int32_t xf      = int_field(node, "x_flags"_key, 0);
-  int32_t yf      = int_field(node, "y_flags"_key, 0);
-  int32_t zf      = int_field(node, "z_flags"_key, 0);
+  auto    title   = node.tryGet<std::string>("title"_key, "##plot3d");
+  float   w       = node.tryGet<float>("width"_key, -1.0f);
+  float   h       = node.tryGet<float>("height"_key, 400.0f);
+  int32_t flags   = node.tryGet<int32_t>("flags"_key, 0);
+  auto    x_label = node.tryGet<std::string>("x_label"_key, "");
+  auto    y_label = node.tryGet<std::string>("y_label"_key, "");
+  auto    z_label = node.tryGet<std::string>("z_label"_key, "");
+  int32_t xf      = node.tryGet<int32_t>("x_flags"_key, 0);
+  int32_t yf      = node.tryGet<int32_t>("y_flags"_key, 0);
+  int32_t zf      = node.tryGet<int32_t>("z_flags"_key, 0);
 
   if (ImPlot3D::BeginPlot(title.c_str(), ImVec2(w, h),
                           ImPlot3DFlags(flags))) {
@@ -80,7 +62,7 @@ void render_plot3d(imgui_renderer& r, const ui_element& node, session& s) {
 // ── Line / Scatter ────────────────────────────────────────────────────────────
 
 void render_plot3d_line(imgui_renderer&, const ui_element& node, session&) {
-  auto label      = str_field(node, "label"_key, "");
+  auto label      = node.tryGet<std::string>("label"_key, "");
   const auto* xs  = vec_field(node, "xs"_key);
   const auto* ys  = vec_field(node, "ys"_key);
   const auto* zs  = vec_field(node, "zs"_key);
@@ -91,7 +73,7 @@ void render_plot3d_line(imgui_renderer&, const ui_element& node, session&) {
 }
 
 void render_plot3d_scatter(imgui_renderer&, const ui_element& node, session&) {
-  auto label      = str_field(node, "label"_key, "");
+  auto label      = node.tryGet<std::string>("label"_key, "");
   const auto* xs  = vec_field(node, "xs"_key);
   const auto* ys  = vec_field(node, "ys"_key);
   const auto* zs  = vec_field(node, "zs"_key);
@@ -104,11 +86,11 @@ void render_plot3d_scatter(imgui_renderer&, const ui_element& node, session&) {
 // ── Surface ───────────────────────────────────────────────────────────────────
 
 void render_plot3d_surface(imgui_renderer&, const ui_element& node, session&) {
-  auto    label     = str_field(node, "label"_key, "");
-  int32_t x_count   = int_field(node, "x_count"_key, 2);
-  int32_t y_count   = int_field(node, "y_count"_key, 2);
-  float   scale_min = float_field(node, "scale_min"_key, 0.0f);
-  float   scale_max = float_field(node, "scale_max"_key, 0.0f);
+  auto    label     = node.tryGet<std::string>("label"_key, "");
+  int32_t x_count   = node.tryGet<int32_t>("x_count"_key, 2);
+  int32_t y_count   = node.tryGet<int32_t>("y_count"_key, 2);
+  float   scale_min = node.tryGet<float>("scale_min"_key, 0.0f);
+  float   scale_max = node.tryGet<float>("scale_max"_key, 0.0f);
   const auto* xs    = vec_field(node, "xs"_key);
   const auto* ys    = vec_field(node, "ys"_key);
   const auto* zs    = vec_field(node, "zs"_key);
@@ -127,7 +109,7 @@ void render_plot3d_surface(imgui_renderer&, const ui_element& node, session&) {
 // ── Triangle / Quad / Mesh ────────────────────────────────────────────────────
 
 void render_plot3d_triangle(imgui_renderer&, const ui_element& node, session&) {
-  auto label      = str_field(node, "label"_key, "");
+  auto label      = node.tryGet<std::string>("label"_key, "");
   const auto* xs  = vec_field(node, "xs"_key);
   const auto* ys  = vec_field(node, "ys"_key);
   const auto* zs  = vec_field(node, "zs"_key);
@@ -141,7 +123,7 @@ void render_plot3d_triangle(imgui_renderer&, const ui_element& node, session&) {
 }
 
 void render_plot3d_quad(imgui_renderer&, const ui_element& node, session&) {
-  auto label      = str_field(node, "label"_key, "");
+  auto label      = node.tryGet<std::string>("label"_key, "");
   const auto* xs  = vec_field(node, "xs"_key);
   const auto* ys  = vec_field(node, "ys"_key);
   const auto* zs  = vec_field(node, "zs"_key);
@@ -155,7 +137,7 @@ void render_plot3d_quad(imgui_renderer&, const ui_element& node, session&) {
 }
 
 void render_plot3d_mesh(imgui_renderer&, const ui_element& node, session&) {
-  auto label     = str_field(node, "label"_key, "");
+  auto label     = node.tryGet<std::string>("label"_key, "");
   const auto* xs = vec_field(node, "xs"_key);
   const auto* ys = vec_field(node, "ys"_key);
   const auto* zs = vec_field(node, "zs"_key);
@@ -184,13 +166,13 @@ void render_plot3d_mesh(imgui_renderer&, const ui_element& node, session&) {
 // ── Text annotation ───────────────────────────────────────────────────────────
 
 void render_plot3d_text(imgui_renderer&, const ui_element& node, session&) {
-  auto  text     = str_field(node, "text"_key, "");
-  float x        = float_field(node, "x"_key, 0.0f);
-  float y        = float_field(node, "y"_key, 0.0f);
-  float z        = float_field(node, "z"_key, 0.0f);
-  float angle    = float_field(node, "angle"_key, 0.0f);
-  float offset_x = float_field(node, "offset_x"_key, 0.0f);
-  float offset_y = float_field(node, "offset_y"_key, 0.0f);
+  auto  text     = node.tryGet<std::string>("text"_key, "");
+  float x        = node.tryGet<float>("x"_key, 0.0f);
+  float y        = node.tryGet<float>("y"_key, 0.0f);
+  float z        = node.tryGet<float>("z"_key, 0.0f);
+  float angle    = node.tryGet<float>("angle"_key, 0.0f);
+  float offset_x = node.tryGet<float>("offset_x"_key, 0.0f);
+  float offset_y = node.tryGet<float>("offset_y"_key, 0.0f);
   if (!text.empty())
     ImPlot3D::PlotText(text.c_str(),
                        double(x), double(y), double(z),

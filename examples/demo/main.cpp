@@ -3,13 +3,15 @@
 // Demo example: showcases every wish widget and layout type in a single window,
 // analogous to ImGui::ShowDemoWindow for the wish framework.
 //
-// Usage: demo [--verbose | -v] [--theme dark|light|classic | -t <theme>]
+// Usage: demo [--verbose] [--theme dark|light|classic]
 
 #include <wish/client.hpp>
 #include <wish/server.hpp>
 #include <wish/sdl3_renderer.hpp>
 
 #include "src/rmi/rmi.hpp"  // memory_server_transport / memory_client_transport
+
+#include <gflags/gflags.h>
 
 #include <chrono>
 #include <cmath>
@@ -18,6 +20,15 @@
 #include <string>
 #include <thread>
 #include <vector>
+
+DEFINE_bool  (verbose, false, "Print verbose trace to stderr.");
+DEFINE_string(theme,   "dark",
+              "UI theme preset: dark, light, or classic.");
+
+static bool ValidateTheme(const char* /*flag*/, const std::string& value) {
+  return value == "dark" || value == "light" || value == "classic";
+}
+DEFINE_validator(theme, &ValidateTheme);
 
 using namespace bdg::bison;
 using namespace bdg::bison::rmi::transport;
@@ -1085,23 +1096,9 @@ class demo_client : public wish::client {
 // ── main ──────────────────────────────────────────────────────────────────────
 
 int main(int argc, char* argv[]) {
-  bool verbose = false;
-  std::string theme = "dark";
-  for (int i = 1; i < argc; ++i) {
-    std::string arg(argv[i]);
-    if (arg == "--verbose" || arg == "-v") {
-      verbose = true;
-    } else if ((arg == "--theme" || arg == "-t") && i + 1 < argc) {
-      theme = argv[++i];
-      if (theme != "dark" && theme != "light" && theme != "classic") {
-        std::cerr << "Unknown theme '" << theme
-                  << "'. Valid values: dark, light, classic\n";
-        return 1;
-      }
-    }
-  }
+  gflags::ParseCommandLineFlags(&argc, &argv, true);
 
-  if (verbose) std::clog << "[demo] starting\n";
+  if (FLAGS_verbose) std::clog << "[demo] starting\n";
 
   memory_server_transport transport;
 
@@ -1111,12 +1108,12 @@ int main(int argc, char* argv[]) {
   wish::server server{transport, std::move(r)};
   server.start();
 
-  if (verbose) std::clog << "[demo] server started - connecting client\n";
+  if (FLAGS_verbose) std::clog << "[demo] server started - connecting client\n";
 
-  demo_client client{transport.connect(), rptr, verbose, theme};
+  demo_client client{transport.connect(), rptr, FLAGS_verbose, FLAGS_theme};
   client.run();
 
-  if (verbose) std::clog << "[demo] client done - stopping server\n";
+  if (FLAGS_verbose) std::clog << "[demo] client done - stopping server\n";
 
   server.stop();
   return 0;
