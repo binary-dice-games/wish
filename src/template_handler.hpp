@@ -42,6 +42,9 @@ class template_handler : public bison::dynamic {
     sess_ = std::move(sess);
   }
 
+  bison::dynamic do_register(const bison::dynamic& params);
+  bison::dynamic do_instantiate(const bison::dynamic& params);
+
  private:
   bison::rmi::context* ctx_{nullptr};
   std::shared_ptr<session> sess_;

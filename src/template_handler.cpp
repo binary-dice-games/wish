@@ -50,36 +50,40 @@ static bison::dynamic apply_descriptor(
 // ── template_handler ─────────────────────────────────────────────────────────
 
 template_handler::template_handler(bison::dynamic&& base)
-    : dynamic(std::move(base)) {
-  addMethod(
-      "register"_key,
-      bison::method{[this](dynamic& /*self*/,
-                            const dynamic& params) -> dynamic {
-        bison::key_t name = params.as<bison::key_t>("name"_key);
-        std::string descriptor = params.as<std::string>("descriptor"_key);
-        sess_->templates[name] = std::move(descriptor);
-        return dynamic{};
-      }});
+    : dynamic(std::move(base)) {}
 
-  addMethod(
-      "instantiate"_key,
-      bison::method{[this](dynamic& /*self*/,
-                            const dynamic& params) -> dynamic {
-        bison::key_t name = params.as<bison::key_t>("name"_key);
-        auto it = sess_->templates.find(name);
-        if (it == sess_->templates.end()) {
-          throw std::runtime_error("wish: template not found");
-        }
-        return apply_descriptor(*ctx_, *sess_, it->second);
-      }});
+bison::dynamic template_handler::do_register(const bison::dynamic& params) {
+  bison::key_t name = params.as<bison::key_t>("name"_key);
+  std::string descriptor = params.as<std::string>("descriptor"_key);
+  sess_->templates[name] = std::move(descriptor);
+  return dynamic{};
+}
+
+bison::dynamic template_handler::do_instantiate(const bison::dynamic& params) {
+  bison::key_t name = params.as<bison::key_t>("name"_key);
+  auto it = sess_->templates.find(name);
+  if (it == sess_->templates.end()) {
+    throw std::runtime_error("wish: template not found");
+  }
+  return apply_descriptor(*ctx_, *sess_, it->second);
 }
 
 void register_template_handler() {
-  auto proto = bison::dynamic::instantiate<template_handler>(
-      key_t{0U}, "__WishTemplate"_key);
+  auto proto = bison::dynamic_ptr{"__WishTemplate"_key, {}};
+  (void)"name"_rkey;
+  (void)"descriptor"_rkey;
+  (void)"id"_rkey;
+  proto->addMethod("register"_key, bison::method{
+    [](dynamic& s, const dynamic& p) -> dynamic {
+      return static_cast<template_handler&>(s).do_register(p);
+    }, attr<DisplayName>("register")});
+  proto->addMethod("instantiate"_key, bison::method{
+    [](dynamic& s, const dynamic& p) -> dynamic {
+      return static_cast<template_handler&>(s).do_instantiate(p);
+    }, attr<DisplayName>("instantiate")});
   bison::dynamic::addClass(
       "wish"_key,
-      bison::dynamic_ptr{proto},
+      std::move(proto),
       key_t{0U},
       bison::dynamic::make_factory<template_handler>("wish"_key, "__WishTemplate"_key));
 }

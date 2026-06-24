@@ -27,27 +27,7 @@ static void merge_fields(const bison::dynamic& src, bison::dynamic& dst) {
 // ── style_service ─────────────────────────────────────────────────────────────
 
 style_service::style_service(bison::dynamic&& base)
-    : dynamic(std::move(base)) {
-  addMethod(
-      "set"_key,
-      bison::method{[this](dynamic& /*self*/, const dynamic& p) -> dynamic {
-        set_fields(p);
-        return dynamic{};
-      }});
-
-  addMethod(
-      "get"_key,
-      bison::method{[this](dynamic& /*self*/, const dynamic& /*p*/) -> dynamic {
-        return get_fields();
-      }});
-
-  addMethod(
-      "preset"_key,
-      bison::method{[this](dynamic& /*self*/, const dynamic& p) -> dynamic {
-        set_preset(p.as<std::string>("name"_key));
-        return dynamic{};
-      }});
-}
+    : dynamic(std::move(base)) {}
 
 void style_service::set_fields(const bison::dynamic& params) {
   merge_fields(params, style_);
@@ -77,6 +57,21 @@ void style_service::set_preset(const std::string& name) {
 
 void register_style_service() {
   auto proto = dynamic_ptr{"__WishStyle"_key, {}};
+  proto->addMethod("set"_key, bison::method{
+    [](dynamic& s, const dynamic& p) -> dynamic {
+      static_cast<style_service&>(s).set_fields(p);
+      return dynamic{};
+    }, attr<DisplayName>("set")});
+  proto->addMethod("get"_key, bison::method{
+    [](dynamic& s, const dynamic& /*p*/) -> dynamic {
+      return static_cast<style_service&>(s).get_fields();
+    }, attr<DisplayName>("get")});
+  (void)"name"_rkey;
+  proto->addMethod("preset"_key, bison::method{
+    [](dynamic& s, const dynamic& p) -> dynamic {
+      static_cast<style_service&>(s).set_preset(p.as<std::string>("name"_key));
+      return dynamic{};
+    }, attr<DisplayName>("preset")});
   dynamic::addClass("wish"_key, std::move(proto));
 }
 

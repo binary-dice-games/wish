@@ -48,12 +48,6 @@ logger::logger(bison::dynamic&& base, bool verbose,
     }
   }
 
-  addMethod(
-      "log"_key,
-      bison::method{[this](dynamic& /*self*/, const dynamic& p) -> dynamic {
-        log(p.as<std::string>("level"_key), p.as<std::string>("msg"_key));
-        return dynamic{};
-      }});
 }
 
 void logger::log(const std::string& level, const std::string& msg) {
@@ -76,6 +70,15 @@ void logger::write_locked(const std::string& level, const std::string& msg) {
 
 void register_logger() {
   auto proto = dynamic_ptr{"__WishLogger"_key, {}};
+  (void)"level"_rkey;
+  (void)"msg"_rkey;
+  proto->addMethod("log"_key, bison::method{
+    [](dynamic& s, const dynamic& p) -> dynamic {
+      static_cast<logger&>(s).log(
+          p.as<std::string>("level"_key),
+          p.as<std::string>("msg"_key));
+      return dynamic{};
+    }, attr<DisplayName>("log")});
   dynamic::addClass("wish"_key, std::move(proto));
 }
 
