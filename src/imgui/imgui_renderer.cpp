@@ -231,7 +231,7 @@ void imgui_renderer::end_frame() {
 }
 
 void imgui_renderer::render_node(const ui_element& node, session& s) {
-  if (!node.tryGet<bool>("visible"_key, true)) return;
+  if (!node.get_as<bool>("visible"_key, true)) return;
 
   auto cls = node.as<key_t>(dynamic::CLASS);
   const auto& tbl = render_dispatch();
