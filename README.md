@@ -91,6 +91,41 @@ img.set({{"src"_key, std::string{"logo.png"}}, {"width"_key, 64}, {"height"_key,
 | **Renderer backends** | `wish::renderer` is an abstract interface. The imgui backend is the default. New backends (Qt, Win32, ...) implement the same interface. |
 | **Transports** | PTY (Linux only) or TCP socket. Chosen at runtime; the renderer and class registry are independent of the transport. |
 
+## Declaring bison RMI Classes (server-side)
+
+Every server-side class follows this pattern:
+
+1. **Inherit `bison::dynamic`** and declare a constructor that accepts a `bison::dynamic&&` base.
+2. **Register the prototype** in a free `register_*()` function called from `registry.cpp`. Build the prototype, add all methods and fields with `DisplayName` attributes, then call `dynamic::addClass()`.
+3. **Put methods on the prototype, not in the constructor.** Methods registered on the prototype are visible to `build_display_dict()` (which powers trace output) and are found by dispatch via prototype-chain lookup.
+4. **Access instance state via `static_cast<T&>(self)`** — prototype method lambdas receive the actual instance as `dynamic& self`, not `this`.
+5. **Describe parameter fields with input/output specs** on the method constructor. This is how `build_display_dict()` resolves param key hashes to human-readable names in logs.
+
+```cpp
+// register_*(): prototype declares the full schema
+void register_my_service() {
+  auto proto = dynamic_ptr{"__MyService"_key, {}};
+
+  auto call_in = std::make_shared<dynamic>();
+  call_in->addField("value"_key, field{0, attr<DisplayName>("value")});
+
+  proto->addMethod("doThing"_key, bison::method{
+    [](dynamic& s, const dynamic& p) -> dynamic {
+      static_cast<my_service&>(s).do_thing(p.as<int>("value"_key));
+      return dynamic{};
+    },
+    dynamic_ptr{call_in}, nullptr,
+    attr<DisplayName>("doThing")});
+
+  dynamic::addClass("wish"_key, std::move(proto));
+}
+
+// Constructor: only initialization, no addMethod calls
+my_service::my_service(bison::dynamic&& base) : dynamic(std::move(base)) {}
+```
+
+For classes that need a factory (server instantiates via RMI `INSTANTIATE`), see `register_template_handler()` in `src/template_handler.cpp` for the `make_factory<T>` pattern.
+
 ## Further Documentation
 
 | File | Contents |
