@@ -548,11 +548,53 @@ void render_table(imgui_renderer& r, const ui_element& node, session& s) {
   if (headers)
     ImGui::TableHeadersRow();
 
-  // Render remaining children (rows and other content) in declaration order.
+  const key_t table_id = node.get_as<key_t>("__wish_id"_key, key_t{});
+  int32_t row_idx = 0;
+
+  // Render non-column children in declaration order.  TableRow children get
+  // an invisible spanning Selectable so single- and double-clicks on any cell
+  // emit row_selected / row_activated on the table's wish_id.
   node.for_each_child_ordered([&](bison::key_t, ui_element& child) {
-    if (child.as<bison::key_t>(bison::dynamic::CLASS) == "TableColumn"_key)
+    if (child.as<key_t>(dynamic::CLASS) == "TableColumn"_key)
       return;
-    r.render_node(child, s);
+
+    if (child.as<key_t>(dynamic::CLASS) == "TableRow"_key) {
+      int32_t row_flags = child.get_as<int32_t>("flags"_key, 0);
+      float   min_h     = child.get_as<float>("min_height"_key, 0.0f);
+      ImGui::TableNextRow(ImGuiTableRowFlags(row_flags), min_h);
+      ImGui::TableSetColumnIndex(0);
+
+      // Invisible selectable spanning all columns acts as the row hit-test.
+      // AllowOverlap lets the cell Labels render on top without blocking input.
+      char sel_id[32];
+      std::snprintf(sel_id, sizeof(sel_id), "##row%d", row_idx);
+      const float row_h = ImGui::GetTextLineHeightWithSpacing();
+      const auto  sf    = ImGuiSelectableFlags_SpanAllColumns  |
+                          ImGuiSelectableFlags_AllowDoubleClick |
+                          ImGuiSelectableFlags_AllowOverlap;
+      bool sel = ImGui::Selectable(sel_id, false, sf, ImVec2(0.0f, row_h));
+      const bool dbl = sel && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
+      if (dbl) sel = false;  // promote to double-click only
+
+      // Render each cell starting at column 0 (column was already set above).
+      int32_t col = 0;
+      child.for_each_child_ordered([&](bison::key_t, ui_element& cell) {
+        ImGui::TableSetColumnIndex(col++);
+        r.render_node(cell, s);
+      });
+
+      if (s.emit_event && table_id.id) {
+        dynamic payload;
+        payload["index"_key] = row_idx;
+        if (dbl)
+          s.emit_event(table_id, "row_activated"_key, std::move(payload));
+        else if (sel)
+          s.emit_event(table_id, "row_selected"_key, std::move(payload));
+      }
+      ++row_idx;
+    } else {
+      r.render_node(child, s);
+    }
   });
 
   ImGui::EndTable();
@@ -563,11 +605,13 @@ void render_table_column(imgui_renderer&, const ui_element&, session&) {
 }
 
 void render_table_row(imgui_renderer& r, const ui_element& node, session& s) {
+  // Fallback: used when render_table_row is called outside a render_table context.
   int32_t flags      = node.get_as<int32_t>("flags"_key, 0);
   float   min_height = node.get_as<float>("min_height"_key, 0.0f);
   ImGui::TableNextRow(ImGuiTableRowFlags(flags), min_height);
+  int32_t col = 0;
   node.for_each_child_ordered([&](bison::key_t, ui_element& child) {
-    ImGui::TableNextColumn();
+    ImGui::TableSetColumnIndex(col++);
     r.render_node(child, s);
   });
 }
