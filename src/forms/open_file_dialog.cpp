@@ -4,6 +4,7 @@
 #include "open_file_dialog.hpp"
 
 #include "src/bison/bison_object.hpp"
+#include "src/rmi/shared/ids.hpp"
 
 #include <wish/ui_importer.hpp>
 
@@ -13,7 +14,9 @@ using namespace bison;
 
 // ── Hardcoded UI layout ───────────────────────────────────────────────────────
 
-// Placeholder label values are overwritten in on_init() from the form's fields.
+// TableColumns are stored as NAMED children so dynamic::clear() on the
+// children dynamic removes only the indexed row entries, not the columns.
+// Placeholder field values (title, btn_open label) are overwritten in on_init().
 static constexpr const char* kDialogLayout = R"({
   "type": "Window",
   "width": 480, "height": 360,
@@ -26,10 +29,10 @@ static constexpr const char* kDialogLayout = R"({
           "type": "Table",
           "columns": 2,
           "headers": true,
-          "children": [
-            { "type": "TableColumn", "label": "Name" },
-            { "type": "TableColumn", "label": "Type" }
-          ]
+          "children": {
+            "col_name": { "type": "TableColumn", "label": "Name" },
+            "col_type": { "type": "TableColumn", "label": "Type" }
+          }
         },
         "filename_row": {
           "type": "HorizontalLayout",
@@ -63,15 +66,15 @@ static constexpr const char* kDialogLayout = R"({
 open_file_dialog::open_file_dialog(dynamic&& base)
     : form(std::move(base)) {}
 
+// ── on_init ───────────────────────────────────────────────────────────────────
+
 void open_file_dialog::on_init() {
-  // Derive unique root key from object address; the form's bison ID is not
-  // yet available when on_init() is called (assigned after on_create_object).
   internal_root_key_ = "__form_" +
       std::to_string(reinterpret_cast<uintptr_t>(this));
 
   auto tree = import_json(kDialogLayout);
 
-  // Apply form field values to the imported tree.
+  // Stamp form-field values onto the imported tree.
   auto* title_f = findField("title"_key);
   (*tree[""])["title"_key] =
       title_f ? title_f->as<std::string>() : std::string{"Open File"};
@@ -82,12 +85,123 @@ void open_file_dialog::on_init() {
         confirm_f ? confirm_f->as<std::string>() : std::string{"Open"};
   }
 
+  // Assign each imported element a bison RMI ID so the renderer can emit
+  // events with the correct object ID. Mirrors the template_handler pattern.
+  auto& objects = ctx().objects;
+  for (auto& [key, elem] : tree) {
+    key_t id = rmi::shared::generate_id();
+    objects[id.id] = elem;
+    (*elem)["__wish_id"_key] = id;
+  }
+
+  // Cache pointers to widgets that need runtime access.
+  if (auto it = tree.find("vbox.file_table"); it != tree.end()) {
+    file_table_ptr_ = it->second;
+    file_table_id_  = (*it->second)["__wish_id"_key].as<key_t>();
+  }
+  if (auto it = tree.find("vbox.filename_row.filename_input"); it != tree.end())
+    filename_input_ptr_ = it->second;
+
   // Merge the imported name_map into session.objects under our prefix.
   auto& objs = sess().objects;
   for (auto& [key, ptr] : tree) {
     objs[key.empty() ? internal_root_key_
                      : (internal_root_key_ + "." + key)] = ptr;
   }
+
+  // Intercept events from internal widgets. Unrecognised events are forwarded
+  // to the client via the original emit function.
+  auto base_emit = std::move(sess().emit_event);
+  auto table_id  = file_table_id_;
+
+  // Capture `this` by raw pointer; the lambda lives inside sess().emit_event,
+  // which the server destroys before releasing ctx.objects (which holds `this`).
+  sess().emit_event =
+      [this, base_emit, table_id](key_t id, key_t event, dynamic payload) {
+        if (id.id == table_id.id && event == "row_selected"_key) {
+          on_row_selected(payload);
+          return;
+        }
+        if (base_emit)
+          base_emit(id, event, std::move(payload));
+      };
+}
+
+// ── Event and field handlers ──────────────────────────────────────────────────
+
+bison::dynamic open_file_dialog::on_set(const bison::dynamic& patch) {
+  if (auto* f = patch.findField("files"_key)) {
+    if (f->is<dynamic_ptr>() && f->as<dynamic_ptr>())
+      rebuild_file_rows(*f->as<dynamic_ptr>());
+  }
+  return patch;
+}
+
+void open_file_dialog::rebuild_file_rows(const bison::dynamic& files) {
+  if (!file_table_ptr_) return;
+
+  auto* children_f = file_table_ptr_->findField("children"_key);
+  if (!children_f || !children_f->is<dynamic_ptr>()) return;
+  auto& children = children_f->as<dynamic_ptr>();
+
+  // Remove previous row entries (indexed); named TableColumn children remain.
+  children->clear();
+
+  int32_t row_idx = 0;
+  files.forEach([&](key_t, const field& entry_field) {
+    if (!entry_field.is<dynamic_ptr>() || !entry_field.as<dynamic_ptr>()) return;
+    const auto& entry = *entry_field.as<dynamic_ptr>();
+
+    auto name = entry.as<std::string>("name"_key);
+    auto type = entry.as<std::string>("type"_key);
+
+    auto row = std::make_shared<ui_element>(
+        dynamic::instantiate("wish"_key, "TableRow"_key));
+    (*row)["order"_key] = row_idx;
+
+    auto row_children = dynamic_ptr{key_t{0U}, {}};
+
+    auto name_lbl = std::make_shared<ui_element>(
+        dynamic::instantiate("wish"_key, "Label"_key));
+    (*name_lbl)["text"_key]  = name;
+    (*name_lbl)["order"_key] = int32_t{0};
+
+    auto type_lbl = std::make_shared<ui_element>(
+        dynamic::instantiate("wish"_key, "Label"_key));
+    (*type_lbl)["text"_key]  = type;
+    (*type_lbl)["order"_key] = int32_t{1};
+
+    (*row_children)[size_t{0}] = dynamic_ptr{name_lbl};
+    (*row_children)[size_t{1}] = dynamic_ptr{type_lbl};
+    (*row)["children"_key] = row_children;
+
+    (*children)[size_t{static_cast<size_t>(row_idx)}] = dynamic_ptr{row};
+    ++row_idx;
+  });
+}
+
+void open_file_dialog::on_row_selected(const bison::dynamic& payload) {
+  int32_t idx = payload.as<int32_t>("index"_key);
+
+  auto* files_f = findField("files"_key);
+  if (!files_f || !files_f->is<dynamic_ptr>() || !files_f->as<dynamic_ptr>())
+    return;
+  const auto& files = *files_f->as<dynamic_ptr>();
+
+  if (static_cast<size_t>(idx) >= files.size()) return;
+
+  const auto& entry_field = files.at(size_t{static_cast<size_t>(idx)});
+  if (!entry_field.is<dynamic_ptr>() || !entry_field.as<dynamic_ptr>()) return;
+  const auto& entry = *entry_field.as<dynamic_ptr>();
+
+  auto name = entry.as<std::string>("name"_key);
+
+  // Update the form's public filename field.
+  (*this)["filename"_key] = name;
+
+  // Mirror the value into the internal InputText widget.
+  if (filename_input_ptr_)
+    (*filename_input_ptr_)["value"_key] = name;
 }
 
 // ── Registration ──────────────────────────────────────────────────────────────
@@ -126,6 +240,14 @@ void register_open_file_dialog() {
     attr<DisplayName>("Confirm Label"),
     attr<Description>("Label on the confirm button."),
     attr<Category>("Appearance")});
+
+  // The __setter hook intercepts every set() call to synchronize internal
+  // widgets (Table rows, btn_open label) with updated field values.
+  proto->addMethod("__setter"_key, bison::method{
+    [](dynamic& s, const dynamic& p) -> dynamic {
+      return static_cast<open_file_dialog&>(s).on_set(p);
+    }
+  });
 
   (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("OpenFileDialog"));
   (*proto)[dynamic::CLASS].addAttribute(attr<Description>(

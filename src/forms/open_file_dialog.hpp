@@ -4,6 +4,7 @@
 #pragma once
 
 #include <wish/form.hpp>
+#include <wish/ui_element.hpp>
 
 namespace bdg::wish {
 
@@ -19,8 +20,26 @@ class open_file_dialog : public form {
  public:
   explicit open_file_dialog(bison::dynamic&& base);
 
+  /// @brief Called from the `__setter` prototype method for every set() call.
+  ///
+  /// Intercepts the `files` field to synchronize the internal Table widget and
+  /// `confirm_label` to update `btn_open`'s label. Returns the patch unchanged
+  /// so the RMI layer still applies the field values to the form object.
+  bison::dynamic on_set(const bison::dynamic& patch);
+
  protected:
   void on_init() override;
+
+ private:
+  /// @brief Rebuild TableRow children from a new files dynamic.
+  void rebuild_file_rows(const bison::dynamic& files);
+
+  /// @brief Update filename field and filename_input widget from a row click.
+  void on_row_selected(const bison::dynamic& payload);
+
+  ui_element_ptr file_table_ptr_;
+  ui_element_ptr filename_input_ptr_;
+  bison::key_t   file_table_id_;
 };
 
 /// @brief Register OpenFileDialog in the "wish" bison namespace.

@@ -187,6 +187,153 @@ TEST_F(OpenFileDialogWindowTest, BtnOpenLabelMatchesConfirmLabel) {
             "Open");
 }
 
+// ── Step 6: file list synchronization ────────────────────────────────────────
+
+// Helper: build a files dynamic_ptr like {0:{name,type}, 1:{name,type}, ...}
+static dynamic make_files(
+    std::initializer_list<std::pair<std::string, std::string>> entries) {
+  dynamic files;
+  size_t i = 0;
+  for (auto& [name, type] : entries) {
+    auto e = dynamic_ptr{key_t{0U}, {}};
+    (*e)["name"_key] = name;
+    (*e)["type"_key] = type;
+    files[i++] = e;
+  }
+  return files;
+}
+
+class OpenFileDialogFilesTest : public ::testing::Test {
+  using proxy_t = bdg::bison::rmi::proxy::dynamic;
+
+ protected:
+  void SetUp() override {
+    srv_ = std::make_unique<SessionCapturingServer>(
+        transport_, std::make_unique<wish::null_renderer>());
+    srv_->start();
+    client_ = std::make_unique<bdg::bison::rmi::client>(transport_.connect());
+    client_->connect();
+    proxy_.emplace(client_->instantiate("wish"_key, "OpenFileDialog"_key).get());
+    ASSERT_TRUE(proxy_->valid());
+    root_ = find_form_root(srv_->last_session->objects);
+    ASSERT_FALSE(root_.empty());
+  }
+
+  void TearDown() override {
+    proxy_.reset();
+    client_->disconnect();
+    client_.reset();
+    srv_->stop();
+    srv_.reset();
+  }
+
+  // Set the form's files field from a files dynamic.
+  void set_files(dynamic files_dyn) {
+    dynamic params;
+    params["files"_key] = dynamic_ptr{
+        std::make_shared<dynamic>(std::move(files_dyn))};
+    proxy_->set(std::move(params)).get();
+  }
+
+  // Count the indexed (row) children of the internal Table widget.
+  size_t table_row_count() const {
+    auto& objs = srv_->last_session->objects;
+    auto it = objs.find(root_ + ".vbox.file_table");
+    if (it == objs.end() || !it->second) return 0;
+    auto* cf = it->second->findField("children"_key);
+    if (!cf || !cf->is<dynamic_ptr>()) return 0;
+    return cf->as<dynamic_ptr>()->size();
+  }
+
+  // Get the text of the Label at row[row_idx], column[col_idx] in the Table.
+  std::string table_cell_text(size_t row_idx, size_t col_idx) const {
+    auto& objs = srv_->last_session->objects;
+    auto it = objs.find(root_ + ".vbox.file_table");
+    if (it == objs.end() || !it->second) return {};
+    auto* cf = it->second->findField("children"_key);
+    if (!cf || !cf->is<dynamic_ptr>()) return {};
+    auto& ch = *cf->as<dynamic_ptr>();
+
+    const auto& row_f = ch.at(row_idx);
+    if (!row_f.is<dynamic_ptr>()) return {};
+    auto& row = *row_f.as<dynamic_ptr>();
+
+    auto* rcf = row.findField("children"_key);
+    if (!rcf || !rcf->is<dynamic_ptr>()) return {};
+    const auto& cell_f = rcf->as<dynamic_ptr>()->at(col_idx);
+    if (!cell_f.is<dynamic_ptr>()) return {};
+    return cell_f.as<dynamic_ptr>()->as<std::string>("text"_key);
+  }
+
+  // Simulate a row_selected event on the internal Table.
+  void simulate_row_selected(int32_t idx) {
+    auto& objs = srv_->last_session->objects;
+    auto it = objs.find(root_ + ".vbox.file_table");
+    ASSERT_NE(it, objs.end());
+    auto table_id = (*it->second)["__wish_id"_key].as<key_t>();
+
+    dynamic payload;
+    payload["index"_key] = idx;
+    srv_->last_session->emit_event(table_id, "row_selected"_key,
+                                   std::move(payload));
+  }
+
+  memory_server_transport transport_;
+  std::unique_ptr<SessionCapturingServer> srv_;
+  std::unique_ptr<bdg::bison::rmi::client> client_;
+  std::optional<proxy_t> proxy_;
+  std::string root_;
+};
+
+TEST_F(OpenFileDialogFilesTest, SetFilesBuildsTableRows) {
+  set_files(make_files({{"a.txt", "file"}, {"docs", "dir"}}));
+  EXPECT_EQ(table_row_count(), 2u);
+}
+
+TEST_F(OpenFileDialogFilesTest, TableRowsHaveCorrectNames) {
+  set_files(make_files({{"a.txt", "file"}, {"docs", "dir"}}));
+  EXPECT_EQ(table_cell_text(0, 0), "a.txt");
+  EXPECT_EQ(table_cell_text(1, 0), "docs");
+}
+
+TEST_F(OpenFileDialogFilesTest, TableRowsHaveCorrectTypes) {
+  set_files(make_files({{"a.txt", "file"}, {"docs", "dir"}}));
+  EXPECT_EQ(table_cell_text(0, 1), "file");
+  EXPECT_EQ(table_cell_text(1, 1), "dir");
+}
+
+TEST_F(OpenFileDialogFilesTest, ClearFilesEmptiesTableRows) {
+  set_files(make_files({{"a.txt", "file"}}));
+  EXPECT_EQ(table_row_count(), 1u);
+  set_files(make_files({}));
+  EXPECT_EQ(table_row_count(), 0u);
+}
+
+TEST_F(OpenFileDialogFilesTest, RowSelectedSetsFilenameToFirstEntry) {
+  set_files(make_files({{"a.txt", "file"}, {"docs", "dir"}}));
+  simulate_row_selected(0);
+  auto snapshot = proxy_->get().get();
+  std::string fn = snapshot.as<std::string>("filename"_key);
+  EXPECT_EQ(fn, "a.txt");
+}
+
+TEST_F(OpenFileDialogFilesTest, RowSelectedSetsFilenameToSecondEntry) {
+  set_files(make_files({{"a.txt", "file"}, {"docs", "dir"}}));
+  simulate_row_selected(1);
+  auto snapshot = proxy_->get().get();
+  std::string fn = snapshot.as<std::string>("filename"_key);
+  EXPECT_EQ(fn, "docs");
+}
+
+TEST_F(OpenFileDialogFilesTest, RowSelectedUpdatesFilenameInputWidget) {
+  set_files(make_files({{"report.pdf", "file"}}));
+  simulate_row_selected(0);
+  auto& objs = srv_->last_session->objects;
+  auto it = objs.find(root_ + ".vbox.filename_row.filename_input");
+  ASSERT_NE(it, objs.end());
+  EXPECT_EQ(it->second->findField("value"_key)->as<std::string>(), "report.pdf");
+}
+
 // ── RMI fixture — checks server round-trips ───────────────────────────────────
 
 class OpenFileDialogRMITest : public ::testing::Test {
