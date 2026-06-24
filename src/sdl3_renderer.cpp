@@ -106,6 +106,8 @@ void sdl3_renderer::begin_frame() {
       quit_.store(true, std::memory_order_release);
   }
 
+  if (fonts_dirty_) rebuild_font_atlas();
+
   ImGui_ImplSDLRenderer3_NewFrame();
   ImGui_ImplSDL3_NewFrame();
   imgui_renderer::begin_frame();  // → ImGui::NewFrame()
@@ -127,6 +129,48 @@ bool sdl3_renderer::should_quit() const {
 
 void sdl3_renderer::request_quit() {
   quit_.store(true, std::memory_order_release);
+}
+
+// ── font loading ──────────────────────────────────────────────────────────────
+
+ImFont* sdl3_renderer::get_or_load_font(const std::string& path, float size) {
+  FontKey key{path, size};
+  auto it = font_cache_.find(key);
+  if (it != font_cache_.end()) return it->second;
+  // Cache miss: record the key (even for missing files) so we don't keep
+  // scheduling rebuilds every frame for the same bad path.
+  font_cache_[key] = nullptr;
+  if (std::filesystem::exists(path)) {
+    pending_fonts_.insert(key);
+    fonts_dirty_ = true;
+  }
+  return nullptr;  // default font used this frame
+}
+
+void sdl3_renderer::rebuild_font_atlas() {
+  ImGuiIO& io = ImGui::GetIO();
+  io.Fonts->Clear();
+  io.Fonts->AddFontDefault();
+
+  // Re-add all previously loaded fonts (ImFont* pointers must be refreshed).
+  for (auto& [key, ptr] : font_cache_) {
+    ptr = std::filesystem::exists(key.path)
+        ? io.Fonts->AddFontFromFileTTF(key.path.c_str(), key.size)
+        : nullptr;
+  }
+
+  // Add newly requested fonts, skipping any whose file cannot be found.
+  for (const auto& key : pending_fonts_) {
+    font_cache_[key] = std::filesystem::exists(key.path)
+        ? io.Fonts->AddFontFromFileTTF(key.path.c_str(), key.size)
+        : nullptr;
+  }
+  pending_fonts_.clear();
+
+  io.Fonts->Build();
+  ImGui_ImplSDLRenderer3_DestroyDeviceObjects();
+  ImGui_ImplSDLRenderer3_CreateDeviceObjects();
+  fonts_dirty_ = false;
 }
 
 // ── texture loading ───────────────────────────────────────────────────────────

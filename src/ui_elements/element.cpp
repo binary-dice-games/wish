@@ -23,6 +23,16 @@ void register_element() {
     attr<DisplayName>("Order"),
     attr<Description>("Render order within parent children. Lower values render first."),
     attr<Category>("Layout")});
+  proto->addField("font_path"_key, field{std::string{},
+    attr<DisplayName>("Font Path"),
+    attr<Description>("Path to a TTF font file. Relative paths are sandboxed "
+                      "to the session resource directory; absolute paths "
+                      "require server::set_allow_absolute_paths(true)."),
+    attr<Category>("Appearance")});
+  proto->addField("font_size"_key, field{float{0.0f},
+    attr<DisplayName>("Font Size"),
+    attr<Description>("Font size in pixels. 0 uses the default ImGui font."),
+    attr<Category>("Appearance")});
   dynamic::addClass("wish"_key, std::move(proto), key_t{0U}, {
     attr<DisplayName>("Element"),
     attr<Description>("Base class for all UI elements.")});

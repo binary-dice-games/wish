@@ -5,6 +5,7 @@
 #include <wish/renderer.hpp>
 #include <wish/session.hpp>
 #include <wish/style_service.hpp>
+#include <wish/file_service.hpp>
 
 #include "src/bison/bison_object.hpp"
 #include "src/bison/bison_common.hpp"
@@ -235,6 +236,21 @@ void imgui_renderer::end_frame() {
 void imgui_renderer::render_node(const ui_element& node, session& s) {
   if (!node.get_as<bool>("visible"_key, true)) return;
 
+  // Per-element font override.  PushFont(nullptr) is valid — it selects the
+  // default font — so the push/pop pair is always safe to emit.
+  ImFont* font = nullptr;
+  {
+    auto font_path = node.get_as<std::string>("font_path"_key, "");
+    auto font_size = node.get_as<float>("font_size"_key, 0.0f);
+    if (!font_path.empty() && font_size > 0.0f) {
+      auto full = file_service::resolve_path(font_path, s.resource_dir,
+                                             s.allow_absolute_paths);
+      if (!full.empty())
+        font = get_or_load_font(full.string(), font_size);
+    }
+  }
+  ImGui::PushFont(font);
+
   auto cls = node.as<key_t>(dynamic::CLASS);
   const auto& tbl = render_dispatch();
   auto it = tbl.find(cls.id);
@@ -246,6 +262,8 @@ void imgui_renderer::render_node(const ui_element& node, session& s) {
         std::to_string(cls.id).c_str());
     render_children(*this, node, s);
   }
+
+  ImGui::PopFont();
 }
 
 void imgui_renderer::render_session(const ui_element& root, session& s) {
@@ -284,6 +302,12 @@ ImTextureID imgui_renderer::get_or_load_texture(
   // Texture loading requires a GPU backend; return null in headless contexts.
   (void)resource_dir;
   return texture_cache_[src] = ImTextureID{};
+}
+
+ImFont* imgui_renderer::get_or_load_font(const std::string& path, float size) {
+  // Font loading requires a GPU backend; return null (default font) here.
+  (void)path; (void)size;
+  return nullptr;
 }
 
 }  // namespace bdg::wish

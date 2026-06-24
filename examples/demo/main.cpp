@@ -466,7 +466,16 @@ static constexpr const char* kTabFilesDesc = R"json(
                               "items": "none\ncpp\nc\ncs\nglsl\nhlsl\nlua\npython\nsql\njson\nmarkdown\nangelscript",
                               "value": 0 },
             "editor": { "type": "TextEditor", "file_path": "", "language": "none",
-                        "height": 400 }
+                        "height": 400 },
+            "sec_font":       { "type": "SeparatorText", "label": "Font Override" },
+            "lbl_font_hint":  { "type": "Label",
+                                "text": "Enter an absolute path to a TTF font file:" },
+            "txt_font_path":  { "type": "InputText", "label": "Font Path",
+                                "value": "", "max_length": 512 },
+            "sld_font_size":  { "type": "SliderFloat", "label": "Font Size (px)",
+                                "value": 16.0, "min": 8.0, "max": 72.0 },
+            "lbl_font_sample": { "type": "Label",
+                                 "text": "The quick brown fox jumps over the lazy dog" }
           }
         })json";
 
@@ -1128,6 +1137,37 @@ class demo_client : public wish::client {
           const auto* f = p.findField("file_path"_key);
           std::string path = (f && f->is<std::string>()) ? f->as<std::string>() : "";
           status("File saved: " + path);
+        });
+
+    // Font path and size: both fields are sent together so the widget always
+    // has a consistent (path, size) pair — a non-zero size with no path (or
+    // vice versa) would silently use the default font.
+    auto font_path_ptr = std::make_shared<std::string>("");
+    auto font_size_ptr = std::make_shared<float>(16.0f);
+
+    pm.at("demo_win.tabs_root.tab_files.txt_font_path").onEvent("changed"_key,
+        [&, status, font_path_ptr, font_size_ptr](dynamic p) {
+          const auto* f = p.findField("value"_key);
+          *font_path_ptr = (f && f->is<std::string>()) ? f->as<std::string>() : "";
+          dynamic fields;
+          fields["font_path"_key] = *font_path_ptr;
+          fields["font_size"_key] = *font_size_ptr;
+          pm.at("demo_win.tabs_root.tab_files.lbl_font_sample")
+              .set(std::move(fields));
+          status("Font path: " + *font_path_ptr);
+        });
+
+    pm.at("demo_win.tabs_root.tab_files.sld_font_size").onEvent("changed"_key,
+        [&, status, font_path_ptr, font_size_ptr](dynamic p) {
+          const auto* f = p.findField("value"_key);
+          *font_size_ptr = (f && f->is<float>()) ? f->as<float>() : 16.0f;
+          dynamic fields;
+          fields["font_path"_key] = *font_path_ptr;
+          fields["font_size"_key] = *font_size_ptr;
+          pm.at("demo_win.tabs_root.tab_files.lbl_font_sample")
+              .set(std::move(fields));
+          status("Font size: " + std::to_string(static_cast<int>(*font_size_ptr))
+                 + "px");
         });
 
     // ── Tab events ────────────────────────────────────────────────────────

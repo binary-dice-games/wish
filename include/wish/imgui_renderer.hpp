@@ -58,6 +58,20 @@ class imgui_renderer : public renderer {
       const std::string&            src,
       const std::filesystem::path&  resource_dir);
 
+  /**
+   * @brief Fetch a cached font or schedule loading the TTF at @p path with
+   *        @p size pixels.
+   *
+   * On the first call for a given (path, size) pair, returns `nullptr` and
+   * schedules an atlas rebuild for the next frame.  Subsequent calls return
+   * the loaded `ImFont*`.  The base implementation always returns `nullptr`
+   * (headless / no-GPU contexts).
+   *
+   * @param path  Fully-resolved absolute path to a TTF font file.
+   * @param size  Font size in pixels (must be > 0).
+   */
+  virtual ImFont* get_or_load_font(const std::string& path, float size);
+
  protected:
   /// Loaded texture cache: maps resource path → ImTextureID.
   std::unordered_map<std::string, ImTextureID> texture_cache_;

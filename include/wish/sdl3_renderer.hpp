@@ -12,6 +12,8 @@
 
 #include <atomic>
 #include <filesystem>
+#include <map>
+#include <set>
 #include <string>
 
 namespace bdg::wish {
@@ -92,6 +94,18 @@ class sdl3_renderer : public imgui_renderer {
       const std::string&            src,
       const std::filesystem::path&  resource_dir) override;
 
+  /**
+   * @brief Return a cached ImFont* for (path, size), or schedule an atlas
+   *        rebuild and return nullptr (default font) on the first request.
+   *
+   * The atlas is rebuilt at the start of the next frame; from that point on,
+   * subsequent calls return the loaded font pointer.
+   *
+   * @param path  Absolute path to a TTF font file.
+   * @param size  Font size in pixels.
+   */
+  ImFont* get_or_load_font(const std::string& path, float size) override;
+
  private:
   const char*        title_;
   int                width_;
@@ -99,6 +113,24 @@ class sdl3_renderer : public imgui_renderer {
   SDL_Window*        window_       = nullptr;
   SDL_Renderer*      sdl_renderer_ = nullptr;
   std::atomic<bool>  quit_{false};
+
+  // ── Font cache ─────────────────────────────────────────────────────────────
+
+  struct FontKey {
+    std::string path;
+    float       size{0.0f};
+    bool operator<(const FontKey& o) const {
+      if (path != o.path) return path < o.path;
+      return size < o.size;
+    }
+  };
+
+  std::map<FontKey, ImFont*> font_cache_;
+  std::set<FontKey>          pending_fonts_;
+  bool                       fonts_dirty_{false};
+
+  /// @brief Clear and rebuild the ImGui font atlas, then re-upload to the GPU.
+  void rebuild_font_atlas();
 };
 
 }  // namespace bdg::wish
