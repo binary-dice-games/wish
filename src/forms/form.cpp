@@ -10,6 +10,18 @@ namespace bdg::wish {
 form::form(bison::dynamic&& base)
     : bison::dynamic(std::move(base)) {}
 
+form::~form() {
+  if (internal_root_key_.empty() || !sess_) return;
+  auto& objs = sess_->objects;
+  const std::string dot = internal_root_key_ + ".";
+  for (auto it = objs.begin(); it != objs.end(); ) {
+    if (it->first == internal_root_key_ || it->first.rfind(dot, 0) == 0)
+      it = objs.erase(it);
+    else
+      ++it;
+  }
+}
+
 void form::init(bison::rmi::context& ctx, std::shared_ptr<session> sess) {
   ctx_  = &ctx;
   sess_ = std::move(sess);

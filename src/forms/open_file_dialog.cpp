@@ -5,9 +5,58 @@
 
 #include "src/bison/bison_object.hpp"
 
+#include <wish/ui_importer.hpp>
+
 namespace bdg::wish {
 
 using namespace bison;
+
+// ── Hardcoded UI layout ───────────────────────────────────────────────────────
+
+// Placeholder label values are overwritten in on_init() from the form's fields.
+static constexpr const char* kDialogLayout = R"({
+  "type": "Window",
+  "width": 480, "height": 360,
+  "children": {
+    "vbox": {
+      "type": "VerticalLayout",
+      "children": {
+        "path_label": { "type": "Label", "text": "" },
+        "file_table": {
+          "type": "Table",
+          "columns": 2,
+          "headers": true,
+          "children": [
+            { "type": "TableColumn", "label": "Name" },
+            { "type": "TableColumn", "label": "Type" }
+          ]
+        },
+        "filename_row": {
+          "type": "HorizontalLayout",
+          "children": {
+            "filename_input": {
+              "type": "InputText", "value": "", "hint": "filename"
+            }
+          }
+        },
+        "filter_row": {
+          "type": "HorizontalLayout",
+          "visible": false,
+          "children": {
+            "filter_combo": { "type": "Combo", "label": "" }
+          }
+        },
+        "btn_row": {
+          "type": "HorizontalLayout",
+          "children": {
+            "btn_open":   { "type": "Button", "label": "Open"   },
+            "btn_cancel": { "type": "Button", "label": "Cancel" }
+          }
+        }
+      }
+    }
+  }
+})";
 
 // ── open_file_dialog ──────────────────────────────────────────────────────────
 
@@ -15,7 +64,30 @@ open_file_dialog::open_file_dialog(dynamic&& base)
     : form(std::move(base)) {}
 
 void open_file_dialog::on_init() {
-  // Internal UI construction added in Step 5.
+  // Derive unique root key from object address; the form's bison ID is not
+  // yet available when on_init() is called (assigned after on_create_object).
+  internal_root_key_ = "__form_" +
+      std::to_string(reinterpret_cast<uintptr_t>(this));
+
+  auto tree = import_json(kDialogLayout);
+
+  // Apply form field values to the imported tree.
+  auto* title_f = findField("title"_key);
+  (*tree[""])["title"_key] =
+      title_f ? title_f->as<std::string>() : std::string{"Open File"};
+
+  auto* confirm_f = findField("confirm_label"_key);
+  if (auto it = tree.find("vbox.btn_row.btn_open"); it != tree.end()) {
+    (*it->second)["label"_key] =
+        confirm_f ? confirm_f->as<std::string>() : std::string{"Open"};
+  }
+
+  // Merge the imported name_map into session.objects under our prefix.
+  auto& objs = sess().objects;
+  for (auto& [key, ptr] : tree) {
+    objs[key.empty() ? internal_root_key_
+                     : (internal_root_key_ + "." + key)] = ptr;
+  }
 }
 
 // ── Registration ──────────────────────────────────────────────────────────────

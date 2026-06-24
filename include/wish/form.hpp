@@ -30,6 +30,9 @@ class form : public bison::dynamic {
  public:
   explicit form(bison::dynamic&& base);
 
+  /// @brief Remove this form's internal UI tree from session.objects.
+  virtual ~form();
+
   /// @brief Inject session context.
   ///
   /// Called exactly once by server::on_create_object after the object is
