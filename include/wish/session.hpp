@@ -74,6 +74,12 @@ struct session {
   /// inserting or erasing entries.
   mutable std::mutex top_level_mutex;
 
+  /// Guards the UI element tree during rendering.  The render thread holds
+  /// this for the duration of `render_session`; any RMI-thread code that
+  /// structurally modifies the tree (adding/removing children) must acquire
+  /// this lock first to prevent iterator invalidation.
+  mutable std::mutex render_mutex;
+
   /// Map of key → root `ui_element_ptr` for every top-level window that the
   /// server must render each frame.  Both template instantiations and form
   /// objects register here:

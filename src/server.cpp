@@ -147,6 +147,20 @@ void server::on_print(bison::key_t /*session_id*/, const std::string& line) {
   if (logger_) logger_->info(line);
 }
 
+void server::on_before_dispatch(bison::rmi::context& ctx) {
+  auto lp = sessions_.rlock();
+  auto it = lp->find(ctx.session_id.id);
+  if (it != lp->end())
+    it->second->render_mutex.lock();
+}
+
+void server::on_after_dispatch(bison::rmi::context& ctx) noexcept {
+  auto lp = sessions_.rlock();
+  auto it = lp->find(ctx.session_id.id);
+  if (it != lp->end())
+    it->second->render_mutex.unlock();
+}
+
 void server::render_loop() {
   if (renderer_) renderer_->setup();
   while (running_.load(std::memory_order_acquire)) {
@@ -166,8 +180,10 @@ void server::render_loop() {
               if (win) render_list.emplace_back(win, sess.get());
           }
         }
-        for (const auto& [win, sess] : render_list)
+        for (const auto& [win, sess] : render_list) {
+          std::lock_guard<std::mutex> rlg(sess->render_mutex);
           renderer_->render_session(*win, *sess);
+        }
       }
       renderer_->end_frame();
       if (renderer_->should_quit())

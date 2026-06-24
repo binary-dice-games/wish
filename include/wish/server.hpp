@@ -121,6 +121,13 @@ class server : public bison::rmi::server {
   // Receive formatted trace lines from the base class and forward to logger_.
   void on_print(bison::key_t session_id, const std::string& line) override;
 
+  // Serialise all RMI message handling with the render frame: acquire the
+  // session's render_mutex before any handler runs, release it after.
+  // This prevents the RMI thread from structurally modifying the UI tree
+  // while the render thread is iterating it.
+  void on_before_dispatch(bison::rmi::context& ctx) override;
+  void on_after_dispatch(bison::rmi::context& ctx) noexcept override;
+
   void render_loop();
 
   std::unique_ptr<renderer> renderer_;

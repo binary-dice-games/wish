@@ -551,6 +551,13 @@ void render_table(imgui_renderer& r, const ui_element& node, session& s) {
   const key_t table_id = node.get_as<key_t>("__wish_id"_key, key_t{});
   int32_t row_idx = 0;
 
+  // Events detected while iterating rows are deferred until after the loop
+  // exits.  Emitting inside the loop risks reentrant modification of the
+  // children map on synchronous transports (memory_transport), which would
+  // invalidate the active iterator and crash.
+  struct PendingEvent { key_t event; int32_t index; };
+  PendingEvent pending{key_t{}, -1};
+
   // Render non-column children in declaration order.  TableRow children get
   // an invisible spanning Selectable so single- and double-clicks on any cell
   // emit row_selected / row_activated on the table's wish_id.
@@ -576,21 +583,25 @@ void render_table(imgui_renderer& r, const ui_element& node, session& s) {
       const bool dbl = sel && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
       if (dbl) sel = false;  // promote to double-click only
 
-      // Render each cell starting at column 0 (column was already set above).
+      // Overlay cell content on the same line as the selectable.
+      // SameLine(0,0) for col 0 puts the cursor back to the selectable's
+      // start position; TableNextColumn() advances for subsequent columns.
       int32_t col = 0;
       child.for_each_child_ordered([&](bison::key_t, ui_element& cell) {
-        ImGui::TableSetColumnIndex(col++);
+        if (col == 0)
+          ImGui::SameLine(0.0f, 0.0f);
+        else
+          ImGui::TableNextColumn();
         r.render_node(cell, s);
+        ++col;
       });
 
-      if (s.emit_event && table_id.id) {
-        dynamic payload;
-        payload["index"_key] = row_idx;
-        if (dbl)
-          s.emit_event(table_id, "row_activated"_key, std::move(payload));
-        else if (sel)
-          s.emit_event(table_id, "row_selected"_key, std::move(payload));
-      }
+      // Record at most one event per frame; the last clicked row wins.
+      if (dbl)
+        pending = {"row_activated"_key, row_idx};
+      else if (sel && !pending.event.id)
+        pending = {"row_selected"_key, row_idx};
+
       ++row_idx;
     } else {
       r.render_node(child, s);
@@ -598,6 +609,15 @@ void render_table(imgui_renderer& r, const ui_element& node, session& s) {
   });
 
   ImGui::EndTable();
+
+  // Emit the deferred row event now that iteration and EndTable are both done.
+  // On synchronous transports this may call rebuild_file_rows, which is safe
+  // because we are no longer holding any iterator into the children map.
+  if (s.emit_event && table_id.id && pending.event.id) {
+    dynamic payload;
+    payload["index"_key] = pending.index;
+    s.emit_event(table_id, pending.event, std::move(payload));
+  }
 }
 
 void render_table_column(imgui_renderer&, const ui_element&, session&) {
