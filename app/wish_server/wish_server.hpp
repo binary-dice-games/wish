@@ -1,11 +1,11 @@
 // MIT License © 2025 Binary Dice Games
 /**
  * @file wish_server.hpp
- * @brief wish GUI server application — integrates wish::server with srv_app.
+ * @brief wish GUI server application — integrates wish::server with server_app.
  */
 #pragma once
 
-#include "src/app/srv/srv_app.hpp"
+#include "src/app/server/server_app.hpp"
 
 #include <memory>
 
@@ -17,7 +17,7 @@ class logger;
  * @brief Server application that opens an SDL3 window and accepts wish
  *        clients over any bison transport.
  *
- * Extends `bison::app::srv_app` so it inherits transport selection (socket
+ * Extends `bison::app::server_app` so it inherits transport selection (socket
  * or PTY on Linux) and gflags-based CLI handling.  Only wish-specific
  * behaviour is added here:
  *
@@ -31,9 +31,9 @@ class logger;
  *   --width N        Window width  (default: 1280)
  *   --height N       Window height (default: 720)
  *
- * Plus all flags inherited from srv_app (--host, --port, --pty, --verbose).
+ * Plus all flags inherited from server_app (--host, --port, --pty, --verbose).
  */
-class wish_server : public bison::app::srv_app {
+class wish_server : public bison::app::server_app {
  public:
   std::string server_description() const override;
 

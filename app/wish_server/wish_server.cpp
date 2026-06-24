@@ -113,7 +113,7 @@ static std::shared_ptr<logger> make_server_logger() {
       std::filesystem::path{"wish_logs"} / "server.log");
 }
 
-// ── srv_app overrides ─────────────────────────────────────────────────────────
+// ── server_app overrides ──────────────────────────────────────────────────────
 
 std::string wish_server::server_description() const {
   return "wish GUI server.\n"
