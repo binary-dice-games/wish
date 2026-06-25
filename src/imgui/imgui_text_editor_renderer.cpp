@@ -99,20 +99,16 @@ void render_text_editor(imgui_renderer&, const ui_element& node, const session& 
     if (std::ofstream f(full_path, std::ios::binary); f)
       f << st.editor.GetText();
 
-    if (s.emit_event) {
-      dynamic payload;
-      payload["file_path"_key] = file_path;
-      s.emit_event(id, "changed"_key, std::move(payload));
-    }
+    dynamic payload;
+    payload["file_path"_key] = file_path;
+    enqueue_event(s, id, "changed"_key, std::move(payload));
   }
 
   // Ctrl+S → "saved": signals the client to download the finished file.
   if (ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S, false)) {
-    if (s.emit_event) {
-      dynamic payload;
-      payload["file_path"_key] = file_path;
-      s.emit_event(id, "saved"_key, std::move(payload));
-    }
+    dynamic payload;
+    payload["file_path"_key] = file_path;
+    enqueue_event(s, id, "saved"_key, std::move(payload));
   }
 }
 

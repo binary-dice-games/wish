@@ -69,10 +69,8 @@ void render_button(imgui_renderer&, const ui_element& node, const session& s) {
   int32_t w     = node.get_as<int32_t>("width"_key,  0);
   int32_t h     = node.get_as<int32_t>("height"_key, 0);
   auto iml = with_id(label, node);
-  if (ImGui::Button(iml.c_str(), ImVec2(float(w), float(h))) && s.emit_event) {
-    dynamic payload;
-    s.emit_event(node.get_as<key_t>("__wish_id"_key, key_t{}), "clicked"_key, std::move(payload));
-  }
+  if (ImGui::Button(iml.c_str(), ImVec2(float(w), float(h))))
+    enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "clicked"_key, dynamic{});
 }
 
 void render_checkbox(imgui_renderer&, const ui_element& node, const session& s) {
@@ -81,11 +79,9 @@ void render_checkbox(imgui_renderer&, const ui_element& node, const session& s) 
   auto iml = with_id(label, node);
   if (ImGui::Checkbox(iml.c_str(), &val)) {
     const_cast<ui_element&>(node)["value"_key] = val;
-    if (s.emit_event) {
-      dynamic payload;
-      payload["value"_key] = val;
-      s.emit_event(node.get_as<key_t>("__wish_id"_key, key_t{}), "changed"_key, std::move(payload));
-    }
+    dynamic payload;
+    payload["value"_key] = val;
+    enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "changed"_key, std::move(payload));
   }
 }
 
@@ -98,11 +94,9 @@ void render_slider_float(imgui_renderer&, const ui_element& node, const session&
   auto iml = with_id(label, node);
   if (ImGui::SliderFloat(iml.c_str(), &val, vmin, vmax, fmt.c_str())) {
     const_cast<ui_element&>(node)["value"_key] = val;
-    if (s.emit_event) {
-      dynamic payload;
-      payload["value"_key] = val;
-      s.emit_event(node.get_as<key_t>("__wish_id"_key, key_t{}), "changed"_key, std::move(payload));
-    }
+    dynamic payload;
+    payload["value"_key] = val;
+    enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "changed"_key, std::move(payload));
   }
 }
 
@@ -114,11 +108,9 @@ void render_slider_int(imgui_renderer&, const ui_element& node, const session& s
   auto iml = with_id(label, node);
   if (ImGui::SliderInt(iml.c_str(), &val, vmin, vmax)) {
     const_cast<ui_element&>(node)["value"_key] = val;
-    if (s.emit_event) {
-      dynamic payload;
-      payload["value"_key] = val;
-      s.emit_event(node.get_as<key_t>("__wish_id"_key, key_t{}), "changed"_key, std::move(payload));
-    }
+    dynamic payload;
+    payload["value"_key] = val;
+    enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "changed"_key, std::move(payload));
   }
 }
 
@@ -141,11 +133,9 @@ void render_input_text(imgui_renderer&, const ui_element& node, const session& s
   if (changed) {
     std::string new_val(buf.data());
     const_cast<ui_element&>(node)["value"_key] = new_val;
-    if (s.emit_event) {
-      dynamic payload;
-      payload["value"_key] = new_val;
-      s.emit_event(node.get_as<key_t>("__wish_id"_key, key_t{}), "changed"_key, std::move(payload));
-    }
+    dynamic payload;
+    payload["value"_key] = new_val;
+    enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "changed"_key, std::move(payload));
   }
 }
 
@@ -224,11 +214,9 @@ void render_menu_item(imgui_renderer&, const ui_element& node, const session& s)
   auto iml = with_id(label, node);
   if (ImGui::MenuItem(iml.c_str(), sc, &checked, enabled)) {
     const_cast<ui_element&>(node)["checked"_key] = checked;
-    if (s.emit_event) {
-      dynamic payload;
-      payload["checked"_key] = checked;
-      s.emit_event(node.get_as<key_t>("__wish_id"_key, key_t{}), "clicked"_key, std::move(payload));
-    }
+    dynamic payload;
+    payload["checked"_key] = checked;
+    enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "clicked"_key, std::move(payload));
   }
 }
 
@@ -255,16 +243,16 @@ void render_tab_item(imgui_renderer& r, const ui_element& node, const session& s
   const auto* prev_f = node.findField("__selected__"_key);
   bool was_selected  = (prev_f && prev_f->is<bool>()) ? prev_f->as<bool>() : is_selected;
   const_cast<ui_element&>(node)["__selected__"_key] = is_selected;
-  if (is_selected && !was_selected && s.emit_event)
-    s.emit_event(node.get_as<key_t>("__wish_id"_key, key_t{}), "selected"_key, dynamic{});
+  if (is_selected && !was_selected)
+    enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "selected"_key, dynamic{});
 
   if (is_selected) {
     render_children(r, node, s);
     ImGui::EndTabItem();
   }
 
-  if (closable && !open && s.emit_event)
-    s.emit_event(node.get_as<key_t>("__wish_id"_key, key_t{}), "closed"_key, dynamic{});
+  if (closable && !open)
+    enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "closed"_key, dynamic{});
 }
 
 // ── Tree ──────────────────────────────────────────────────────────────────────
@@ -285,10 +273,10 @@ void render_tree_node(imgui_renderer& r, const ui_element& node, const session& 
   const auto* prev_f = node.findField("__open__"_key);
   bool was_open = (prev_f && prev_f->is<bool>()) ? prev_f->as<bool>() : is_open;
   const_cast<ui_element&>(node)["__open__"_key] = is_open;
-  if (is_open != was_open && s.emit_event) {
+  if (is_open != was_open) {
     dynamic payload;
     payload["open"_key] = is_open;
-    s.emit_event(node.get_as<key_t>("__wish_id"_key, key_t{}), "toggled"_key, std::move(payload));
+    enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "toggled"_key, std::move(payload));
   }
 
   if (is_open && !leaf) {
@@ -306,10 +294,10 @@ void render_collapsing_header(
   const auto* prev_f = node.findField("__open__"_key);
   bool was_open = (prev_f && prev_f->is<bool>()) ? prev_f->as<bool>() : is_open;
   const_cast<ui_element&>(node)["__open__"_key] = is_open;
-  if (is_open != was_open && s.emit_event) {
+  if (is_open != was_open) {
     dynamic payload;
     payload["open"_key] = is_open;
-    s.emit_event(node.get_as<key_t>("__wish_id"_key, key_t{}), "toggled"_key, std::move(payload));
+    enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "toggled"_key, std::move(payload));
   }
 
   if (is_open)
@@ -340,13 +328,11 @@ void render_combo(imgui_renderer&, const ui_element& node, const session& s) {
   auto iml = with_id(label, node);
   if (ImGui::Combo(iml.c_str(), &cur, ptrs.data(), int(ptrs.size()))) {
     const_cast<ui_element&>(node)["value"_key] = int32_t(cur);
-    if (s.emit_event) {
-      dynamic payload;
-      payload["value"_key] = int32_t(cur);
-      if (cur >= 0 && cur < int(items.size()))
-        payload["text"_key] = items[size_t(cur)];
-      s.emit_event(node.get_as<key_t>("__wish_id"_key, key_t{}), "changed"_key, std::move(payload));
-    }
+    dynamic payload;
+    payload["value"_key] = int32_t(cur);
+    if (cur >= 0 && cur < int(items.size()))
+      payload["text"_key] = items[size_t(cur)];
+    enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "changed"_key, std::move(payload));
   }
 }
 
@@ -354,8 +340,8 @@ void render_radio_button(imgui_renderer&, const ui_element& node, const session&
   auto label  = node.get_as<std::string>("label"_key, "");
   bool active = node.get_as<bool>("active"_key, false);
   auto iml = with_id(label, node);
-  if (ImGui::RadioButton(iml.c_str(), active) && s.emit_event)
-    s.emit_event(node.get_as<key_t>("__wish_id"_key, key_t{}), "clicked"_key, dynamic{});
+  if (ImGui::RadioButton(iml.c_str(), active))
+    enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "clicked"_key, dynamic{});
 }
 
 void render_selectable(imgui_renderer&, const ui_element& node, const session& s) {
@@ -367,11 +353,9 @@ void render_selectable(imgui_renderer&, const ui_element& node, const session& s
   auto iml = with_id(label, node);
   if (ImGui::Selectable(iml.c_str(), &v, 0, ImVec2(w, h))) {
     const_cast<ui_element&>(node)["selected"_key] = v;
-    if (s.emit_event) {
-      dynamic payload;
-      payload["selected"_key] = v;
-      s.emit_event(node.get_as<key_t>("__wish_id"_key, key_t{}), "changed"_key, std::move(payload));
-    }
+    dynamic payload;
+    payload["selected"_key] = v;
+    enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "changed"_key, std::move(payload));
   }
 }
 
@@ -386,11 +370,9 @@ void render_input_int(imgui_renderer&, const ui_element& node, const session& s)
   auto iml = with_id(label, node);
   if (ImGui::InputInt(iml.c_str(), &v, step, step_fast)) {
     const_cast<ui_element&>(node)["value"_key] = int32_t(v);
-    if (s.emit_event) {
-      dynamic payload;
-      payload["value"_key] = int32_t(v);
-      s.emit_event(node.get_as<key_t>("__wish_id"_key, key_t{}), "changed"_key, std::move(payload));
-    }
+    dynamic payload;
+    payload["value"_key] = int32_t(v);
+    enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "changed"_key, std::move(payload));
   }
 }
 
@@ -404,11 +386,9 @@ void render_input_float(imgui_renderer&, const ui_element& node, const session& 
   auto iml = with_id(label, node);
   if (ImGui::InputFloat(iml.c_str(), &v, step, step_fast, fmt.c_str())) {
     const_cast<ui_element&>(node)["value"_key] = v;
-    if (s.emit_event) {
-      dynamic payload;
-      payload["value"_key] = v;
-      s.emit_event(node.get_as<key_t>("__wish_id"_key, key_t{}), "changed"_key, std::move(payload));
-    }
+    dynamic payload;
+    payload["value"_key] = v;
+    enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "changed"_key, std::move(payload));
   }
 }
 
@@ -423,11 +403,9 @@ void render_drag_float(imgui_renderer&, const ui_element& node, const session& s
   auto iml = with_id(label, node);
   if (ImGui::DragFloat(iml.c_str(), &v, speed, vmin, vmax, fmt.c_str())) {
     const_cast<ui_element&>(node)["value"_key] = v;
-    if (s.emit_event) {
-      dynamic payload;
-      payload["value"_key] = v;
-      s.emit_event(node.get_as<key_t>("__wish_id"_key, key_t{}), "changed"_key, std::move(payload));
-    }
+    dynamic payload;
+    payload["value"_key] = v;
+    enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "changed"_key, std::move(payload));
   }
 }
 
@@ -441,11 +419,9 @@ void render_drag_int(imgui_renderer&, const ui_element& node, const session& s) 
   auto iml = with_id(label, node);
   if (ImGui::DragInt(iml.c_str(), &v, speed, vmin, vmax)) {
     const_cast<ui_element&>(node)["value"_key] = int32_t(v);
-    if (s.emit_event) {
-      dynamic payload;
-      payload["value"_key] = int32_t(v);
-      s.emit_event(node.get_as<key_t>("__wish_id"_key, key_t{}), "changed"_key, std::move(payload));
-    }
+    dynamic payload;
+    payload["value"_key] = int32_t(v);
+    enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "changed"_key, std::move(payload));
   }
 }
 
@@ -550,13 +526,8 @@ void render_table(imgui_renderer& r, const ui_element& node, const session& s) {
 
   const key_t table_id = node.get_as<key_t>("__wish_id"_key, key_t{});
   int32_t row_idx = 0;
-
-  // Events detected while iterating rows are deferred until after the loop
-  // exits.  Emitting inside the loop risks reentrant modification of the
-  // children map on synchronous transports (memory_transport), which would
-  // invalidate the active iterator and crash.
-  struct PendingEvent { key_t event; int32_t index; };
-  PendingEvent pending{key_t{}, -1};
+  key_t   pending_event{};
+  int32_t pending_index = -1;
 
   // Render non-column children in declaration order.  TableRow children get
   // an invisible spanning Selectable so single- and double-clicks on any cell
@@ -598,9 +569,9 @@ void render_table(imgui_renderer& r, const ui_element& node, const session& s) {
 
       // Record at most one event per frame; the last clicked row wins.
       if (dbl)
-        pending = {"row_activated"_key, row_idx};
-      else if (sel && !pending.event.id)
-        pending = {"row_selected"_key, row_idx};
+        { pending_event = "row_activated"_key; pending_index = row_idx; }
+      else if (sel && !pending_event.id)
+        { pending_event = "row_selected"_key;  pending_index = row_idx; }
 
       ++row_idx;
     } else {
@@ -610,13 +581,10 @@ void render_table(imgui_renderer& r, const ui_element& node, const session& s) {
 
   ImGui::EndTable();
 
-  // Emit the deferred row event now that iteration and EndTable are both done.
-  // On synchronous transports this may call rebuild_file_rows, which is safe
-  // because we are no longer holding any iterator into the children map.
-  if (s.emit_event && table_id.id && pending.event.id) {
+  if (table_id.id && pending_event.id) {
     dynamic payload;
-    payload["index"_key] = pending.index;
-    s.emit_event(table_id, pending.event, std::move(payload));
+    payload["index"_key] = pending_index;
+    enqueue_event(s, table_id, pending_event, std::move(payload));
   }
 }
 

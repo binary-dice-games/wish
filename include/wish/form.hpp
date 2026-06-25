@@ -11,6 +11,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace bdg::wish {
 
@@ -50,6 +51,19 @@ class form : public bison::dynamic {
   /// Called from init() after ctx_ and sess_ are set. ctx() and sess() are
   /// valid for the lifetime of this form.
   virtual void on_init() = 0;
+
+  /// @brief Register a server-side handler for events on an internal widget.
+  ///
+  /// Inserts an entry into `session.widget_event_handlers` keyed by
+  /// `widget_id`.  The renderer's `enqueue_event()` will route events for
+  /// this widget through the handler instead of delivering them to the client.
+  ///
+  /// Must be called from on_init() (i.e. within dispatch context).
+  /// @param widget_id  The `__wish_id` of the internal widget to intercept.
+  /// @param handler    Called with `(event_name, payload)` after the frame.
+  void register_widget_handler(
+      bison::key_t widget_id,
+      std::function<void(bison::key_t, bison::dynamic)> handler);
 
   /// @brief Emit a high-level event to the client.
   ///
@@ -100,7 +114,10 @@ class form : public bison::dynamic {
  private:
   bison::rmi::context* ctx_{nullptr};
   /// Lazily resolved on the first call to emit().
-  bison::key_t         own_id_;
+  bison::key_t own_id_;
+  /// IDs of widgets registered via register_widget_handler; cleared in
+  /// remove_internal_objects.
+  std::vector<bison::hash_t> registered_widget_ids_;
 };
 
 }  // namespace bdg::wish

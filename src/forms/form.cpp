@@ -26,17 +26,28 @@ void form::remove_internal_objects() {
       else
         ++it;
     }
+    for (bison::hash_t id : registered_widget_ids_)
+      s.widget_event_handlers.erase(id);
+    registered_widget_ids_.clear();
   };
 
   if (detail::current_session) {
     // Called within dispatch: wlock already held by the dispatch hook.
     do_remove(*detail::current_session);
   } else {
-    // Called from destructor (cleanup path): session already removed from
-    // sessions_ so no render-thread races; acquire wlock directly.
+    // Called outside dispatch (pending_op or destructor): acquire wlock.
     auto lock = sync_sess_->wlock();
     do_remove(*lock);
   }
+}
+
+void form::register_widget_handler(
+    bison::key_t widget_id,
+    std::function<void(bison::key_t, bison::dynamic)> handler) {
+  if (!detail::current_session) return;
+  detail::current_session->widget_event_handlers[widget_id.id] =
+      std::move(handler);
+  registered_widget_ids_.push_back(widget_id.id);
 }
 
 void form::init(bison::rmi::context& ctx, sync_session_ptr sync_sess) {

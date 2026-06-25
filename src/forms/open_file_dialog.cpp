@@ -126,40 +126,29 @@ void open_file_dialog::on_init() {
   // Merge the imported tree into session.objects under our prefix.
   sess().objects.merge(std::move(tree), internal_root_key_);
 
-  // Intercept events from internal widgets. Unrecognised events are forwarded
-  // to the client via the original emit function.
-  auto base_emit          = std::move(sess().emit_event);
-  auto table_id           = file_table_id_;
-  auto btn_open_id        = btn_open_id_;
-  auto btn_cancel_id      = btn_cancel_id_;
-  auto filename_input_id  = filename_input_id_;
-  auto filter_combo_id    = filter_combo_id_;
-
-  // Capture `this` by raw pointer; the lambda lives inside sess().emit_event,
-  // which the server destroys before releasing ctx.objects (which holds `this`).
-  sess().emit_event =
-      [this, base_emit, table_id, btn_open_id, btn_cancel_id,
-       filename_input_id, filter_combo_id]
-      (key_t id, key_t event, dynamic payload) {
-        if (id.id == table_id.id) {
-          if (event == "row_selected"_key)  { on_row_selected(payload);  return; }
-          if (event == "row_activated"_key) { on_row_activated(payload); return; }
-        }
-        if (id.id == btn_open_id.id && event == "clicked"_key) {
-          on_btn_open_clicked(); return;
-        }
-        if (id.id == btn_cancel_id.id && event == "clicked"_key) {
-          on_btn_cancel_clicked(); return;
-        }
-        if (id.id == filename_input_id.id && event == "changed"_key) {
-          on_filename_input_changed(payload); return;
-        }
-        if (id.id == filter_combo_id.id && event == "changed"_key) {
-          on_filter_combo_changed(payload); return;
-        }
-        if (base_emit)
-          base_emit(id, event, std::move(payload));
-      };
+  // Register server-side handlers for each internal widget.  Events are
+  // enqueued by the renderer and dispatched after the frame completes.
+  register_widget_handler(file_table_id_,
+      [this](key_t event, dynamic payload) {
+        if (event == "row_selected"_key)  { on_row_selected(payload);  return; }
+        if (event == "row_activated"_key) { on_row_activated(payload); return; }
+      });
+  register_widget_handler(btn_open_id_,
+      [this](key_t event, dynamic) {
+        if (event == "clicked"_key) on_btn_open_clicked();
+      });
+  register_widget_handler(btn_cancel_id_,
+      [this](key_t event, dynamic) {
+        if (event == "clicked"_key) on_btn_cancel_clicked();
+      });
+  register_widget_handler(filename_input_id_,
+      [this](key_t event, dynamic payload) {
+        if (event == "changed"_key) on_filename_input_changed(payload);
+      });
+  register_widget_handler(filter_combo_id_,
+      [this](key_t event, dynamic payload) {
+        if (event == "changed"_key) on_filter_combo_changed(payload);
+      });
 }
 
 // ── Event and field handlers ──────────────────────────────────────────────────

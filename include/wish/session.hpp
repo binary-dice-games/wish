@@ -17,6 +17,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <utility>
 
 namespace bdg::wish {
 
@@ -85,11 +86,35 @@ struct session {
   /// `on_before_dispatch` / `on_after_dispatch` hooks.
   std::unordered_map<std::string, ui_element_ptr> top_level_objects;
 
-  /// @brief Callback for emitting asynchronous events to the connected client.
+  /// @brief Callback for delivering events to the connected client.
   ///
   /// Parameters: `(object_id, event_name, payload)`.  Null when no client is
   /// attached (e.g. in unit tests that do not require event delivery).
+  ///
+  /// This function is set once by the server on session creation and is never
+  /// replaced.  Use `enqueue_event()` from renderer code — it routes
+  /// form-internal events through `widget_event_handlers` and defers all
+  /// delivery to after the current frame via `pending_ops`.
   std::function<void(bison::key_t, bison::key_t, bison::dynamic)> emit_event;
+
+  /// @brief Per-widget event handlers registered by server-side forms.
+  ///
+  /// Keyed by the `__wish_id` hash of each internal widget.  Populated by
+  /// `form::register_widget_handler` during `on_init`; cleared by
+  /// `form::remove_internal_objects`.  The render loop routes events for
+  /// registered widgets through these handlers instead of delivering them to
+  /// the client.
+  std::unordered_map<bison::hash_t,
+      std::function<void(bison::key_t /*event*/, bison::dynamic /*payload*/)>>
+      widget_event_handlers;
+
+  /// @brief Operations deferred from the current render frame.
+  ///
+  /// Populated by `enqueue_event()` during rendering; drained by the render
+  /// loop after all top-level windows have been drawn and the session lock
+  /// has been released.  Each entry is a zero-argument callable that either
+  /// invokes a form handler or delivers an event to the client.
+  mutable std::vector<std::function<void()>> pending_ops;
 
   /// @brief Construct a session: creates a unique temporary directory.
   /// @param id  Session identifier; used to derive a unique directory name.
@@ -147,5 +172,34 @@ extern thread_local session* current_session;
 ///   [Window]             "__form_140703"
 /// @endcode
 void dump_session_tree(const session& s, std::ostream& out);
+
+/// @brief Enqueue a widget event for deferred dispatch after the current frame.
+///
+/// Called from renderer code instead of `s.emit_event` directly.  Routing:
+///  - If `id` has an entry in `s.widget_event_handlers` the registered form
+///    handler is pushed onto `s.pending_ops`.
+///  - Otherwise the client-delivery callback (`s.emit_event`) is captured and
+///    pushed onto `s.pending_ops`.
+///
+/// In both cases the actual call happens after the render loop releases the
+/// session lock, so handlers are free to modify session state (including
+/// `top_level_objects`) without iterator-invalidation or deadlock hazards.
+inline void enqueue_event(const session& s,
+    bison::key_t id, bison::key_t event, bison::dynamic payload) {
+  auto it = s.widget_event_handlers.find(id.id);
+  if (it != s.widget_event_handlers.end()) {
+    auto handler = it->second;
+    s.pending_ops.push_back(
+        [handler, event, pl = std::move(payload)]() mutable {
+          handler(event, std::move(pl));
+        });
+  } else if (s.emit_event) {
+    auto emit = s.emit_event;
+    s.pending_ops.push_back(
+        [emit, id, event, pl = std::move(payload)]() mutable {
+          emit(id, event, std::move(pl));
+        });
+  }
+}
 
 }  // namespace bdg::wish
