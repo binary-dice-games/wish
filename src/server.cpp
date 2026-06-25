@@ -63,18 +63,19 @@ bool server::should_quit() const {
 }
 
 void server::on_session_created(bison::rmi::context& ctx) {
-  session raw{ctx.session_id};
-  raw.emit_event         = ctx.emit_event;
-  raw.allow_absolute_paths = allow_absolute_paths_;
-  raw.file_service       = std::make_shared<file_service>(
-      bison::dynamic::instantiate(bison::key_t{"wish"}, bison::key_t{"__WishFileSystem"}),
-      raw.resource_dir);
-  raw.style_service      = std::make_shared<style_service>(
-      bison::dynamic::instantiate(bison::key_t{"wish"}, bison::key_t{"__WishStyle"}));
-  // All sessions share the same global logger instance (set via set_logger()).
-  raw.logger_service = logger_;
-
-  auto sync_sess = std::make_shared<sync_session>(std::move(raw));
+  auto sync_sess = std::make_shared<sync_session>(ctx.session_id);
+  {
+    auto sess = sync_sess->wlock();
+    sess->emit_event = ctx.emit_event;
+    sess->allow_absolute_paths = allow_absolute_paths_;
+    sess->file_service = std::make_shared<file_service>(
+        bison::dynamic::instantiate(bison::key_t{"wish"}, bison::key_t{"__WishFileSystem"}),
+        sess->resource_dir);
+    sess->style_service = std::make_shared<style_service>(
+        bison::dynamic::instantiate(bison::key_t{"wish"}, bison::key_t{"__WishStyle"}));
+    // All sessions share the same global logger instance (set via set_logger()).
+    sess->logger_service = logger_;
+  }
   sessions_.wlock()->emplace(ctx.session_id.id, sync_sess);
   {
     std::ostringstream oss;
