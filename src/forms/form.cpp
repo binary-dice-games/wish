@@ -2,6 +2,7 @@
 /// @file form.cpp
 /// @brief Implementation of the wish::form base class.
 #include <wish/form.hpp>
+#include <wish/top_level_element.hpp>
 
 namespace bdg::wish {
 
@@ -20,34 +21,23 @@ void form::remove_internal_objects() {
 
   auto do_remove = [&](session& s) {
     s.top_level_objects.erase(internal_root_key_);
+    s.top_level_handlers.erase(internal_root_key_);
     for (auto it = s.objects.begin(); it != s.objects.end(); ) {
       if (it->first == internal_root_key_ || it->first.rfind(dot, 0) == 0)
         it = s.objects.erase(it);
       else
         ++it;
     }
-    for (bison::hash_t id : registered_widget_ids_)
-      s.widget_event_handlers.erase(id);
-    registered_widget_ids_.clear();
   };
 
   if (detail::current_session) {
     // Called within dispatch: wlock already held by the dispatch hook.
     do_remove(*detail::current_session);
   } else {
-    // Called outside dispatch (pending_op or destructor): acquire wlock.
+    // Called outside dispatch (event handler or destructor): acquire wlock.
     auto lock = sync_sess_->wlock();
     do_remove(*lock);
   }
-}
-
-void form::register_widget_handler(
-    bison::key_t widget_id,
-    std::function<void(bison::key_t, bison::dynamic)> handler) {
-  if (!detail::current_session) return;
-  detail::current_session->widget_event_handlers[widget_id.id] =
-      std::move(handler);
-  registered_widget_ids_.push_back(widget_id.id);
 }
 
 void form::init(bison::rmi::context& ctx, sync_session_ptr sync_sess) {
@@ -55,13 +45,14 @@ void form::init(bison::rmi::context& ctx, sync_session_ptr sync_sess) {
   sync_sess_ = std::move(sync_sess);
   on_init();
   // After on_init() the subclass has populated internal_root_key_. Register
-  // the root window as an overlay so the render loop draws it each frame.
+  // the root window as renderable and this form as its event handler.
   // Called within dispatch: detail::current_session (wlock held) is valid.
   if (!internal_root_key_.empty() && detail::current_session) {
     auto& s = *detail::current_session;
     auto it = s.objects.find(internal_root_key_);
     if (it != s.objects.end())
       s.top_level_objects[internal_root_key_] = it->second;
+    s.top_level_handlers[internal_root_key_] = this;
   }
 }
 

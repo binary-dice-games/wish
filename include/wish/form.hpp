@@ -4,6 +4,7 @@
 #pragma once
 
 #include <wish/session.hpp>
+#include <wish/top_level_element.hpp>
 
 #include "src/bison/bison_object.hpp"
 #include "src/rmi/server/context.hpp"
@@ -11,7 +12,6 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
-#include <vector>
 
 namespace bdg::wish {
 
@@ -28,7 +28,7 @@ namespace bdg::wish {
 ///
 /// File access inside a form must go through file_service::resolve_path()
 /// or resolve_widget_path() — the same sandbox rules as low-level elements.
-class form : public bison::dynamic {
+class form : public bison::dynamic, public top_level_element {
  public:
   explicit form(bison::dynamic&& base);
 
@@ -52,18 +52,21 @@ class form : public bison::dynamic {
   /// valid for the lifetime of this form.
   virtual void on_init() = 0;
 
-  /// @brief Register a server-side handler for events on an internal widget.
+  /// @brief React to a widget event from this form's internal subtree.
   ///
-  /// Inserts an entry into `session.widget_event_handlers` keyed by
-  /// `widget_id`.  The renderer's `enqueue_event()` will route events for
-  /// this widget through the handler instead of delivering them to the client.
+  /// Called by the render loop after each frame for every event fired by a
+  /// widget that belongs to this form. The default implementation is a no-op;
+  /// subclasses override to close dialogs, update fields, etc.
   ///
-  /// Must be called from on_init() (i.e. within dispatch context).
-  /// @param widget_id  The `__wish_id` of the internal widget to intercept.
-  /// @param handler    Called with `(event_name, payload)` after the frame.
-  void register_widget_handler(
-      bison::key_t widget_id,
-      std::function<void(bison::key_t, bison::dynamic)> handler);
+  /// Called outside the session lock — handlers may freely acquire
+  /// `sync_sess_->wlock()` or modify session state.
+  ///
+  /// @param widget_id   The `__wish_id` of the widget that fired the event.
+  /// @param event_name  Event key (e.g. `"clicked"_key`, `"changed"_key`).
+  /// @param payload     Event payload (may be empty).
+  void on_event(bison::key_t widget_id,
+                bison::key_t event_name,
+                const bison::dynamic& payload) override {}
 
   /// @brief Emit a high-level event to the client.
   ///
@@ -115,9 +118,6 @@ class form : public bison::dynamic {
   bison::rmi::context* ctx_{nullptr};
   /// Lazily resolved on the first call to emit().
   bison::key_t own_id_;
-  /// IDs of widgets registered via register_widget_handler; cleared in
-  /// remove_internal_objects.
-  std::vector<bison::hash_t> registered_widget_ids_;
 };
 
 }  // namespace bdg::wish

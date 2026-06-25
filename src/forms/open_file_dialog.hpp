@@ -29,6 +29,9 @@ class open_file_dialog : public form {
 
  protected:
   void on_init() override;
+  void on_event(bison::key_t widget_id,
+                bison::key_t event_name,
+                const bison::dynamic& payload) override;
 
  private:
   /// @brief Rebuild TableRow children from a new files dynamic.

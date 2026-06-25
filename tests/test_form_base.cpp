@@ -38,11 +38,22 @@ class stub_form : public wish::form {
   }
 };
 
+// ── tracked_stub_form (defined here so ensure_registered() can reference it) ──
+
+// Track which stub_form instances had init() called.
+static std::atomic<int> g_server_init_count{0};
+
+class tracked_stub_form : public wish::form {
+ public:
+  explicit tracked_stub_form(dynamic&& base) : form(std::move(base)) {}
+ protected:
+  void on_init() override { g_server_init_count.fetch_add(1); }
+};
+
 // ── Registration helper ───────────────────────────────────────────────────────
 
 static void ensure_registered() {
-  // register_all() is idempotent; registering stub_form only needs to happen
-  // once per process.
+  // Registers all classes needed by these tests; idempotent via static guard.
   static bool done = false;
   if (done) return;
   done = true;
@@ -53,6 +64,12 @@ static void ensure_registered() {
       std::move(proto),
       key_t{0U},
       dynamic::make_factory<stub_form>("wish"_key, "__StubForm"_key));
+  auto tracked_proto = dynamic_ptr{"__TrackedStubForm"_key, {}};
+  dynamic::addClass(
+      "wish"_key,
+      std::move(tracked_proto),
+      key_t{0U},
+      dynamic::make_factory<tracked_stub_form>("wish"_key, "__TrackedStubForm"_key));
 }
 
 // ── Construction ──────────────────────────────────────────────────────────────
@@ -201,32 +218,10 @@ TEST(FormBase, EmitWithNullEmitEventDoesNothing) {
 
 // ── Server injection ──────────────────────────────────────────────────────────
 
-// Track which stub_form instances had init() called.
-static std::atomic<int> g_server_init_count{0};
-
-class tracked_stub_form : public wish::form {
- public:
-  explicit tracked_stub_form(dynamic&& base) : form(std::move(base)) {}
- protected:
-  void on_init() override { g_server_init_count.fetch_add(1); }
-};
-
 TEST(FormServerInjection, InstantiateFormCallsOnInit) {
   using namespace bdg::bison::rmi::transport;
 
   ensure_registered();
-  // Register tracked_stub_form as a separate class.
-  static bool tracked_registered = false;
-  if (!tracked_registered) {
-    tracked_registered = true;
-    auto proto = dynamic_ptr{"__TrackedStubForm"_key, {}};
-    dynamic::addClass(
-        "wish"_key,
-        std::move(proto),
-        key_t{0U},
-        dynamic::make_factory<tracked_stub_form>("wish"_key, "__TrackedStubForm"_key));
-  }
-
   g_server_init_count.store(0);
 
   memory_server_transport transport;
@@ -248,6 +243,7 @@ TEST(FormServerInjection, InstantiateFormCallsOnInit) {
 TEST(FormServerInjection, TwoInstantiationsBothGetInit) {
   using namespace bdg::bison::rmi::transport;
 
+  ensure_registered();
   g_server_init_count.store(0);
 
   memory_server_transport transport;

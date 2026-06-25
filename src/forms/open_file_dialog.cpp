@@ -125,30 +125,19 @@ void open_file_dialog::on_init() {
 
   // Merge the imported tree into session.objects under our prefix.
   sess().objects.merge(std::move(tree), internal_root_key_);
+}
 
-  // Register server-side handlers for each internal widget.  Events are
-  // enqueued by the renderer and dispatched after the frame completes.
-  register_widget_handler(file_table_id_,
-      [this](key_t event, dynamic payload) {
-        if (event == "row_selected"_key)  { on_row_selected(payload);  return; }
-        if (event == "row_activated"_key) { on_row_activated(payload); return; }
-      });
-  register_widget_handler(btn_open_id_,
-      [this](key_t event, dynamic) {
-        if (event == "clicked"_key) on_btn_open_clicked();
-      });
-  register_widget_handler(btn_cancel_id_,
-      [this](key_t event, dynamic) {
-        if (event == "clicked"_key) on_btn_cancel_clicked();
-      });
-  register_widget_handler(filename_input_id_,
-      [this](key_t event, dynamic payload) {
-        if (event == "changed"_key) on_filename_input_changed(payload);
-      });
-  register_widget_handler(filter_combo_id_,
-      [this](key_t event, dynamic payload) {
-        if (event == "changed"_key) on_filter_combo_changed(payload);
-      });
+// ── Event routing ─────────────────────────────────────────────────────────────
+
+void open_file_dialog::on_event(key_t id, key_t event, const dynamic& payload) {
+  if (id == file_table_id_) {
+    if (event == "row_selected"_key)  { on_row_selected(payload);  return; }
+    if (event == "row_activated"_key) { on_row_activated(payload); return; }
+  }
+  if (id == btn_open_id_       && event == "clicked"_key) { on_btn_open_clicked();              return; }
+  if (id == btn_cancel_id_     && event == "clicked"_key) { on_btn_cancel_clicked();            return; }
+  if (id == filename_input_id_ && event == "changed"_key) { on_filename_input_changed(payload); return; }
+  if (id == filter_combo_id_   && event == "changed"_key) { on_filter_combo_changed(payload);   return; }
 }
 
 // ── Event and field handlers ──────────────────────────────────────────────────
@@ -264,10 +253,14 @@ void open_file_dialog::on_btn_open_clicked() {
   if (!fn_f) return;
   const auto& filename = *fn_f;
 
-  auto sess = sync_sess_->rlock();
-  auto resolved = file_service::resolve_path(
-      filename, sess->resource_dir, sess->allow_absolute_paths);
-  if (resolved.empty()) return;
+  // Validate the path inside a scoped rlock; release before calling
+  // remove_internal_objects() which needs the wlock.
+  {
+    auto sess = sync_sess_->rlock();
+    auto resolved = file_service::resolve_path(
+        filename, sess->resource_dir, sess->allow_absolute_paths);
+    if (resolved.empty()) return;
+  }
 
   bison::dynamic payload;
   payload["path"_key] = filename;

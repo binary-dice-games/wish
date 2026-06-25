@@ -21,6 +21,8 @@
 
 namespace bdg::wish {
 
+class top_level_element;  // defined in <wish/top_level_element.hpp>
+
 class file_service;
 using file_service_ptr = std::shared_ptr<file_service>;
 
@@ -91,30 +93,38 @@ struct session {
   /// Parameters: `(object_id, event_name, payload)`.  Null when no client is
   /// attached (e.g. in unit tests that do not require event delivery).
   ///
-  /// This function is set once by the server on session creation and is never
-  /// replaced.  Use `enqueue_event()` from renderer code — it routes
-  /// form-internal events through `widget_event_handlers` and defers all
-  /// delivery to after the current frame via `pending_ops`.
+  /// Set once by the server on session creation.  Renderer code must call
+  /// `enqueue_event()` instead of invoking this directly — events are
+  /// deferred to after the frame so session state can be modified safely.
   std::function<void(bison::key_t, bison::key_t, bison::dynamic)> emit_event;
 
-  /// @brief Per-widget event handlers registered by server-side forms.
-  ///
-  /// Keyed by the `__wish_id` hash of each internal widget.  Populated by
-  /// `form::register_widget_handler` during `on_init`; cleared by
-  /// `form::remove_internal_objects`.  The render loop routes events for
-  /// registered widgets through these handlers instead of delivering them to
-  /// the client.
-  std::unordered_map<bison::hash_t,
-      std::function<void(bison::key_t /*event*/, bison::dynamic /*payload*/)>>
-      widget_event_handlers;
+  /// @brief One widget event queued during rendering; dispatched after the frame.
+  struct pending_event {
+    bison::key_t   id;          ///< `__wish_id` of the widget that fired
+    bison::key_t   event_name;
+    bison::dynamic payload;
+    std::string    root_key;    ///< top_level_objects key at time of enqueue
+  };
 
-  /// @brief Operations deferred from the current render frame.
+  /// @brief Events accumulated during one render frame; drained after the frame.
   ///
-  /// Populated by `enqueue_event()` during rendering; drained by the render
-  /// loop after all top-level windows have been drawn and the session lock
-  /// has been released.  Each entry is a zero-argument callable that either
-  /// invokes a form handler or delivers an event to the client.
-  mutable std::vector<std::function<void()>> pending_ops;
+  /// The render loop moves these out while holding the session wlock, then
+  /// delivers them (to the client and to `top_level_handlers`) after releasing
+  /// the lock — preventing deadlocks and iterator-invalidation crashes.
+  mutable std::vector<pending_event> pending_events;
+
+  /// @brief Top-level key currently being rendered; set/cleared by the render loop.
+  ///
+  /// `enqueue_event()` copies this into `pending_event::root_key` so the
+  /// dispatch phase can find the owning top-level handler without a map lookup.
+  mutable std::string current_top_level_key;
+
+  /// @brief Maps top-level key → event handler (form or root ui_element).
+  ///
+  /// Populated by `form::init()` and `template_handler` when they register a
+  /// root window; cleared by `form::remove_internal_objects()` and template
+  /// teardown.  The render loop snapshots this map before dispatching events.
+  std::unordered_map<std::string, top_level_element*> top_level_handlers;
 
   /// @brief Construct a session: creates a unique temporary directory.
   /// @param id  Session identifier; used to derive a unique directory name.
@@ -175,31 +185,16 @@ void dump_session_tree(const session& s, std::ostream& out);
 
 /// @brief Enqueue a widget event for deferred dispatch after the current frame.
 ///
-/// Called from renderer code instead of `s.emit_event` directly.  Routing:
-///  - If `id` has an entry in `s.widget_event_handlers` the registered form
-///    handler is pushed onto `s.pending_ops`.
-///  - Otherwise the client-delivery callback (`s.emit_event`) is captured and
-///    pushed onto `s.pending_ops`.
-///
-/// In both cases the actual call happens after the render loop releases the
-/// session lock, so handlers are free to modify session state (including
-/// `top_level_objects`) without iterator-invalidation or deadlock hazards.
+/// Called from renderer code instead of `s.emit_event` directly.  The event
+/// is appended to `s.pending_events` together with the current
+/// `s.current_top_level_key` (set by the render loop before each
+/// `render_session` call).  After the frame the render loop delivers every
+/// queued event to the client and calls `on_event` on the owning
+/// `top_level_element`, preventing deadlocks and iterator-invalidation.
 inline void enqueue_event(const session& s,
     bison::key_t id, bison::key_t event, bison::dynamic payload) {
-  auto it = s.widget_event_handlers.find(id.id);
-  if (it != s.widget_event_handlers.end()) {
-    auto handler = it->second;
-    s.pending_ops.push_back(
-        [handler, event, pl = std::move(payload)]() mutable {
-          handler(event, std::move(pl));
-        });
-  } else if (s.emit_event) {
-    auto emit = s.emit_event;
-    s.pending_ops.push_back(
-        [emit, id, event, pl = std::move(payload)]() mutable {
-          emit(id, event, std::move(pl));
-        });
-  }
+  s.pending_events.push_back(
+      {id, event, std::move(payload), s.current_top_level_key});
 }
 
 }  // namespace bdg::wish

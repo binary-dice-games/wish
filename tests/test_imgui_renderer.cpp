@@ -128,6 +128,11 @@ TEST_F(ImguiRendererTest, ButtonEmitsClickedEvent) {
   in_window([&] { renderer_->render_node(*map[""], *sess_); });
   ImGui::EndFrame();
 
+  // Drain pending_events: simulates the server render loop's post-frame dispatch.
+  for (auto& ev : sess_->pending_events)
+    if (sess_->emit_event) sess_->emit_event(ev.id, ev.event_name, ev.payload);
+  sess_->pending_events.clear();
+
   EXPECT_EQ(last_event, "clicked"_key);
 }
 
@@ -161,6 +166,11 @@ TEST_F(ImguiRendererTest, CheckboxEmitsChangedWithCorrectPayload) {
   fake_click(cb_id);
   in_window([&] { renderer_->render_node(*map[""], *sess_); });
   ImGui::EndFrame();
+
+  // Drain pending_events: simulates the server render loop's post-frame dispatch.
+  for (auto& ev : sess_->pending_events)
+    if (sess_->emit_event) sess_->emit_event(ev.id, ev.event_name, ev.payload);
+  sess_->pending_events.clear();
 
   EXPECT_EQ(last_event, "changed"_key);
   EXPECT_TRUE(last_value);

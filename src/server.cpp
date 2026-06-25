@@ -7,6 +7,7 @@
 #include <wish/logger.hpp>
 #include <wish/style_service.hpp>
 #include <wish/registry.hpp>
+#include <wish/top_level_element.hpp>
 
 #include "template_handler.hpp"
 
@@ -197,18 +198,33 @@ void server::render_loop() {
           for (const auto& [id, sp] : *lp) to_render.push_back(sp);
         }
         for (const auto& sync_sess : to_render) {
-          std::vector<std::function<void()>> ops;
+          std::vector<session::pending_event> events;
+          std::unordered_map<std::string, top_level_element*> handlers;
+          std::function<void(bison::key_t, bison::key_t, bison::dynamic)> client_emit;
           {
             auto sess = sync_sess->wlock();
             detail::current_session = &*sess;
-            for (const auto& [key, win] : sess->top_level_objects)
-              if (win) renderer_->render_session(*win, *sess);
+            for (const auto& [key, win] : sess->top_level_objects) {
+              if (win) {
+                sess->current_top_level_key = key;
+                renderer_->render_session(*win, *sess);
+              }
+            }
+            sess->current_top_level_key.clear();
             detail::current_session = nullptr;
-            ops = std::move(sess->pending_ops);
+            events      = std::move(sess->pending_events);
+            handlers    = sess->top_level_handlers;
+            client_emit = sess->emit_event;
           }
-          // Drain pending_ops with no lock held: form handlers can safely
-          // acquire the session lock and modify top_level_objects.
-          for (auto& op : ops) op();
+          // Dispatch events with no lock held: handlers may modify session state.
+          for (auto& ev : events) {
+            if (client_emit) client_emit(ev.id, ev.event_name, ev.payload);
+            if (!ev.root_key.empty()) {
+              auto it = handlers.find(ev.root_key);
+              if (it != handlers.end() && it->second)
+                it->second->on_event(ev.id, ev.event_name, ev.payload);
+            }
+          }
         }
       }
       renderer_->end_frame();

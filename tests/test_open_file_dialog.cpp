@@ -152,8 +152,7 @@ TEST_F(OpenFileDialogWindowTest, TreeContainsFileTable) {
 TEST_F(OpenFileDialogWindowTest, TreeContainsFilenameInput) {
   std::string root = instantiate_and_get_root();
   ASSERT_FALSE(root.empty());
-  EXPECT_TRUE(srv_->last_session->objects.count(
-      root + ".vbox.filename_row.filename_input"));
+  EXPECT_TRUE(srv_->last_session->objects.count(root + ".vbox.filename_input"));
 }
 
 TEST_F(OpenFileDialogWindowTest, TreeContainsBtnOpen) {
@@ -274,8 +273,10 @@ class OpenFileDialogFilesTest : public ::testing::Test {
 
     dynamic payload;
     payload["index"_key] = idx;
-    srv_->last_session->emit_event(table_id, "row_selected"_key,
-                                   std::move(payload));
+
+    auto h = srv_->last_session->top_level_handlers.find(root_);
+    ASSERT_NE(h, srv_->last_session->top_level_handlers.end());
+    h->second->on_event(table_id, "row_selected"_key, std::move(payload));
   }
 
   memory_server_transport transport_;
@@ -329,7 +330,7 @@ TEST_F(OpenFileDialogFilesTest, RowSelectedUpdatesFilenameInputWidget) {
   set_files(make_files({{"report.pdf", "file"}}));
   simulate_row_selected(0);
   auto& objs = srv_->last_session->objects;
-  auto it = objs.find(root_ + ".vbox.filename_row.filename_input");
+  auto it = objs.find(root_ + ".vbox.filename_input");
   ASSERT_NE(it, objs.end());
   EXPECT_EQ(it->second->findField("value"_key)->as<std::string>(), "report.pdf");
 }
@@ -412,11 +413,9 @@ class OpenFileDialogEventsTest : public ::testing::Test {
     root_ = find_form_root(srv_->last_session->objects);
     ASSERT_FALSE(root_.empty());
 
-    // Wrap sess().emit_event to spy on form-level events.  The form's own
-    // interceptor is already in place; we chain on top of it so internal
-    // widget events (row_selected, clicked on internal buttons) still flow
-    // through the form's handler first, then reach us only when the form
-    // itself re-emits a high-level event via form::emit().
+    // Wrap emit_event to capture high-level events emitted by form::emit().
+    // simulate_btn_click / simulate_row_activated call on_event on the form
+    // handler directly, which in turn calls form::emit() for high-level events.
     auto prev = std::move(srv_->last_session->emit_event);
     events_   = std::make_shared<std::vector<CapturedEvent>>();
     auto evts = events_;
@@ -455,7 +454,9 @@ class OpenFileDialogEventsTest : public ::testing::Test {
     auto it = objs.find(root_ + ".vbox.btn_row." + btn_key);
     ASSERT_NE(it, objs.end()) << "button not found: " << btn_key;
     auto btn_id = (*it->second)["__wish_id"_key].as<key_t>();
-    srv_->last_session->emit_event(btn_id, "clicked"_key, dynamic{});
+    auto h = srv_->last_session->top_level_handlers.find(root_);
+    ASSERT_NE(h, srv_->last_session->top_level_handlers.end());
+    h->second->on_event(btn_id, "clicked"_key, dynamic{});
   }
 
   void simulate_row_activated(int32_t idx) {
@@ -465,8 +466,9 @@ class OpenFileDialogEventsTest : public ::testing::Test {
     auto table_id = (*it->second)["__wish_id"_key].as<key_t>();
     dynamic payload;
     payload["index"_key] = idx;
-    srv_->last_session->emit_event(table_id, "row_activated"_key,
-                                   std::move(payload));
+    auto h = srv_->last_session->top_level_handlers.find(root_);
+    ASSERT_NE(h, srv_->last_session->top_level_handlers.end());
+    h->second->on_event(table_id, "row_activated"_key, std::move(payload));
   }
 
   bool has_event(key_t name) const {
@@ -564,12 +566,14 @@ class OpenFileDialogBindingTest : public ::testing::Test {
   // Simulate a "changed" event on the filename_input widget.
   void simulate_filename_input_changed(const std::string& value) {
     auto& objs = srv_->last_session->objects;
-    auto it = objs.find(root_ + ".vbox.filename_row.filename_input");
+    auto it = objs.find(root_ + ".vbox.filename_input");
     ASSERT_NE(it, objs.end()) << "filename_input not found in session.objects";
     auto input_id = (*it->second)["__wish_id"_key].as<key_t>();
     dynamic payload;
     payload["value"_key] = value;
-    srv_->last_session->emit_event(input_id, "changed"_key, std::move(payload));
+    auto h = srv_->last_session->top_level_handlers.find(root_);
+    ASSERT_NE(h, srv_->last_session->top_level_handlers.end());
+    h->second->on_event(input_id, "changed"_key, std::move(payload));
   }
 
   // Set the filters field via the client proxy.

@@ -4,6 +4,7 @@
 #include "template_handler.hpp"
 
 #include <wish/ui_importer.hpp>
+#include <wish/top_level_element.hpp>
 
 #include "src/rmi/shared/ids.hpp"
 
@@ -52,11 +53,13 @@ static bison::dynamic apply_descriptor(
     result[idx++] = bison::dynamic_ptr{std::move(entry)};
   }
 
-  // Register the root element as a top-level renderable.  The root is at
-  // key "" in the name_map (the outermost element of the descriptor).
+  // Register the root element as a top-level renderable and its own event handler.
+  // The root is at key "" in the name_map (the outermost element of the descriptor).
   auto root_it = nmap.find("");
-  if (root_it != nmap.end())
-    sess.top_level_objects[tpl_key] = root_it->second;
+  if (root_it != nmap.end()) {
+    sess.top_level_objects[tpl_key]  = root_it->second;
+    sess.top_level_handlers[tpl_key] = root_it->second.get();
+  }
 
   return result;
 }
