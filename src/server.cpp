@@ -197,9 +197,11 @@ void server::render_loop() {
           for (const auto& [id, sp] : *lp) to_render.push_back(sp);
         }
         for (const auto& sync_sess : to_render) {
-          auto sp = sync_sess->rlock();
-          for (const auto& [key, win] : sp->top_level_objects)
-            if (win) renderer_->render_session(*win, *sp);
+          auto sess = sync_sess->wlock();
+          detail::current_session = &*sess;
+          for (const auto& [key, win] : sess->top_level_objects)
+            if (win) renderer_->render_session(*win, *sess);
+          detail::current_session = nullptr;
         }
       }
       renderer_->end_frame();
