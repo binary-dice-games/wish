@@ -9,6 +9,7 @@
 #include "src/rmi/server/context.hpp"
 
 #include <memory>
+#include <stdexcept>
 #include <string>
 
 namespace bdg::wish {
@@ -37,11 +38,11 @@ class form : public bison::dynamic {
   ///
   /// Called exactly once by server::on_create_object after the object is
   /// created and before it is accessible via RMI. Calls on_init() after
-  /// storing ctx and sess.
+  /// storing ctx and sync_sess.
   ///
-  /// @param ctx  Per-session RMI context; must outlive *this.
-  /// @param sess Shared wish session state.
-  void init(bison::rmi::context& ctx, std::shared_ptr<session> sess);
+  /// @param ctx       Per-session RMI context; must outlive *this.
+  /// @param sync_sess Synchronized wish session; held for the form's lifetime.
+  void init(bison::rmi::context& ctx, sync_session_ptr sync_sess);
 
  protected:
   /// @brief Build the internal ui_element tree and register event handlers.
@@ -63,8 +64,20 @@ class form : public bison::dynamic {
   /// @return Reference to the per-session RMI context supplied by init().
   bison::rmi::context& ctx() { return *ctx_; }
 
-  /// @return Reference to the wish session supplied by init().
-  session& sess() { return *sess_; }
+  /// @return Reference to the wish session for the current dispatch context.
+  ///
+  /// Valid only while called from on_init(), on_set(), or any RMI handler
+  /// (i.e. when `detail::current_session` is set by the dispatch hook).
+  /// Do NOT call outside of dispatch — use sync_sess_->rlock() / wlock() for
+  /// any access that must happen outside the dispatch stack.
+  /// @throws std::logic_error if called outside a dispatch context.
+  session& sess() {
+    if (!detail::current_session)
+      throw std::logic_error(
+          "wish::form::sess() called outside RMI dispatch — "
+          "use sync_sess_->rlock()/wlock() instead");
+    return *detail::current_session;
+  }
 
   /// @brief Key under which the internal Window root is stored in session.objects.
   ///
@@ -78,11 +91,16 @@ class form : public bison::dynamic {
   /// call more than once (subsequent calls are no-ops). Also called by ~form().
   void remove_internal_objects();
 
+ protected:
+  /// Synchronized session wrapper; held for the form's lifetime.  Use
+  /// sess() to access session data within dispatch; use sync_sess_->wlock()
+  /// directly for access outside dispatch (e.g. destructor cleanup paths).
+  sync_session_ptr sync_sess_;
+
  private:
-  bison::rmi::context*     ctx_{nullptr};
-  std::shared_ptr<session> sess_;
+  bison::rmi::context* ctx_{nullptr};
   /// Lazily resolved on the first call to emit().
-  bison::key_t             own_id_;
+  bison::key_t         own_id_;
 };
 
 }  // namespace bdg::wish

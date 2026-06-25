@@ -76,17 +76,17 @@ static dynamic_ptr build_children(
     }
     auto child = import_json_node(child_json, child_path, child_in_map, result);
     if (!child_json.contains("order"))
-      (*child)["order"_key] = order_counter;
+      child["order"_key] = order_counter;
     ++order_counter;
-    (*children_dyn)[key_t{name}] = child;
+    (*children_dyn)[key_t{name}] = dynamic_ptr{child};
   };
 
   auto process_indexed = [&](size_t idx, const json& child_json) {
     auto child = import_json_node(child_json, "", false, result);
     if (!child_json.contains("order"))
-      (*child)["order"_key] = order_counter;
+      child["order"_key] = order_counter;
     ++order_counter;
-    (*children_dyn)[idx] = child;
+    (*children_dyn)[idx] = dynamic_ptr{child};
   };
 
   if (children_json.is_array()) {
@@ -139,7 +139,7 @@ static ui_element_ptr import_json_node(
     }
   }
 
-  auto obj = dynamic::instantiate<ui_element>("wish"_key, type_key);
+  ui_element_ptr obj = dynamic::instantiate<ui_element>("wish"_key, type_key);
 
   for (const auto& [key_str, value] : descriptor.items()) {
     if (key_str == "type" || key_str == "children") continue;
@@ -150,7 +150,7 @@ static ui_element_ptr import_json_node(
 
   auto children_it = descriptor.find("children");
   if (children_it != descriptor.end()) {
-    (*obj)["children"_key] = build_children(
+    obj["children"_key] = build_children(
         *children_it, path, add_to_map, result);
     obj->refresh_children_order();
   }
@@ -164,7 +164,7 @@ static ui_element_ptr import_json_node(
 
 // ── Public JSON entry point ───────────────────────────────────────────────────
 
-name_map import_json(const std::string& json_str) {
+ui_tree import_json(const std::string& json_str) {
   json parsed;
   try {
     parsed = json::parse(json_str);
@@ -172,7 +172,7 @@ name_map import_json(const std::string& json_str) {
     throw std::runtime_error(std::string{"wish::import_json: "} + e.what());
   }
 
-  name_map result;
+  ui_tree result;
   import_json_node(parsed, "", true, result);
   return result;
 }
@@ -283,7 +283,7 @@ static json parse_yaml_sequence(yaml_parser_t* p) {
 
 // ── Public YAML entry point ───────────────────────────────────────────────────
 
-name_map import_yaml(const std::string& yaml_str) {
+ui_tree import_yaml(const std::string& yaml_str) {
   // Normalise CRLF → LF so that raw string literals compiled on Windows
   // (which have \r\n endings) don't produce \r-suffixed scalar values.
   std::string normalized;
@@ -338,7 +338,7 @@ name_map import_yaml(const std::string& yaml_str) {
 
   yaml_parser_delete(&parser);
 
-  name_map result;
+  ui_tree result;
   import_json_node(parsed, "", true, result);
   return result;
 }

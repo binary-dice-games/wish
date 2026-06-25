@@ -188,7 +188,7 @@ class counting_imgui_renderer : public imgui_renderer {
  public:
   int label_count = 0;
 
-  void render_node(const ui_element& node, session& s) override {
+  void render_node(const ui_element& node, const session& s) override {
     if (node.as<bdg::bison::key_t>(dynamic::CLASS) == "Label"_key) ++label_count;
     imgui_renderer::render_node(node, s);
   }

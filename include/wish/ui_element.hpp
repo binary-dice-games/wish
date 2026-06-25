@@ -3,20 +3,23 @@
 /// @brief Typed C++ base class for all wish UI elements.
 ///
 /// `ui_element` inherits from `bison::dynamic` so that element-specific logic
-/// (render ordering, future helpers) lives as member functions rather than as
+/// (render ordering, future helpers) lives as member functions rather than
 /// free functions operating on raw `dynamic` objects.
 ///
 /// All wish element instances created by `ui_importer` are `ui_element` objects.
-/// Bison APIs that accept `dynamic_ptr` continue to work because
-/// `std::shared_ptr<ui_element>` implicitly converts to `std::shared_ptr<dynamic>`;
-/// the vtable is preserved, so `dynamic_cast` back to `ui_element*` is always safe
-/// for objects produced by the importer.
+///
+/// `ui_element_ptr` inherits from `std::shared_ptr<ui_element>`, giving it all
+/// standard shared-pointer operations.  It adds `operator[]` so field access can
+/// be written as `ptr["key"_key] = value` instead of `(*ptr)["key"_key] = value`,
+/// and an implicit conversion to `bison::dynamic_ptr` so `ui_element_ptr` values
+/// can be stored in bison fields without explicit casting.
 ///
 /// ### Typical usage
 ///
 ///   auto result = wish::import_json(desc);      // name_map<string, ui_element_ptr>
 ///   auto& win = result[""];
 ///   win->refresh_children_order();              // called automatically at import
+///   win["title"_key] = "Hello";                // no (*win) needed
 ///
 ///   win->for_each_child_ordered([](bison::key_t, wish::ui_element& child) {
 ///     render(child);
@@ -31,7 +34,32 @@
 namespace bdg::wish {
 
 class ui_element;
-using ui_element_ptr = std::shared_ptr<ui_element>;
+
+/**
+ * @brief Smart pointer for wish UI elements; inherits `std::shared_ptr<ui_element>`.
+ *
+ * All standard shared-pointer operations (`->`, `*`, `bool`, `get()`,
+ * comparisons, `reset()`, `swap()`, …) are inherited.  Two extras are added:
+ *   - `operator[]` so field assignments read as `ptr["key"_key] = val`
+ *     rather than `(*ptr)["key"_key] = val`.
+ *   - Implicit conversion to `bison::dynamic_ptr` for storage in bison fields.
+ */
+class ui_element_ptr : public std::shared_ptr<ui_element> {
+ public:
+  using std::shared_ptr<ui_element>::shared_ptr;
+  using std::shared_ptr<ui_element>::operator=;
+
+  /// @brief Construct by upgrading a plain bison::dynamic rvalue into a ui_element.
+  explicit ui_element_ptr(bison::dynamic&& base);
+
+  /// @brief Field access: `ptr["key"_key] = value` without needing `(*ptr)`.
+  template<typename K>
+  decltype(auto) operator[](K key) const { return (**this)[key]; }
+
+  /// @brief Implicit conversion to bison::dynamic_ptr for field assignments
+  ///        and bison APIs that store elements by dynamic_ptr.
+  operator bison::dynamic_ptr() const;  // NOLINT(google-explicit-constructor)
+};
 
 /**
  * @brief Typed base class for all wish UI elements.

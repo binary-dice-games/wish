@@ -76,8 +76,13 @@ TEST(FormBase, InitCallsOnInitExactlyOnce) {
   EXPECT_FALSE(f.init_called_);
 
   rmi::context ctx;
-  auto sess = std::make_shared<wish::session>("form_init"_key);
-  f.init(ctx, sess);
+  auto sync_sess = std::make_shared<wish::sync_session>(wish::session{"form_init"_key});
+  {
+    auto lk = sync_sess->wlock();
+    wish::detail::current_session = &(*lk);
+    f.init(ctx, sync_sess);
+    wish::detail::current_session = nullptr;
+  }
 
   EXPECT_TRUE(f.init_called_);
 }
@@ -85,8 +90,13 @@ TEST(FormBase, InitCallsOnInitExactlyOnce) {
 TEST(FormBase, InitStoresContextReference) {
   stub_form f{dynamic{}};
   rmi::context ctx;
-  auto sess = std::make_shared<wish::session>("form_ctx"_key);
-  f.init(ctx, sess);
+  auto sync_sess = std::make_shared<wish::sync_session>(wish::session{"form_ctx"_key});
+  {
+    auto lk = sync_sess->wlock();
+    wish::detail::current_session = &(*lk);
+    f.init(ctx, sync_sess);
+    wish::detail::current_session = nullptr;
+  }
 
   EXPECT_EQ(f.ctx_ref_, &ctx);
 }
@@ -94,10 +104,18 @@ TEST(FormBase, InitStoresContextReference) {
 TEST(FormBase, InitStoresSessionReference) {
   stub_form f{dynamic{}};
   rmi::context ctx;
-  auto sess = std::make_shared<wish::session>("form_sess"_key);
-  f.init(ctx, sess);
+  auto sync_sess = std::make_shared<wish::sync_session>(wish::session{"form_sess"_key});
 
-  EXPECT_EQ(f.sess_ref_, sess.get());
+  wish::session* raw_sess;
+  {
+    auto lk = sync_sess->wlock();
+    raw_sess = &(*lk);
+    wish::detail::current_session = raw_sess;
+    f.init(ctx, sync_sess);
+    wish::detail::current_session = nullptr;
+  }
+
+  EXPECT_EQ(f.sess_ref_, raw_sess);
 }
 
 // ── emit() ────────────────────────────────────────────────────────────────────
@@ -113,13 +131,17 @@ TEST(FormBase, EmitForwardsEventToSession) {
   key_t form_id{"stub_form_id"_key};
   ctx.objects[form_id.id] = f;
 
-  auto sess = std::make_shared<wish::session>("form_emit"_key);
-  sess->emit_event = [&](key_t oid, key_t evt, dynamic) {
-    captured_id    = oid;
-    captured_event = evt;
-  };
-
-  f->init(ctx, sess);
+  auto sync_sess = std::make_shared<wish::sync_session>(wish::session{"form_emit"_key});
+  {
+    auto lk = sync_sess->wlock();
+    lk->emit_event = [&](key_t oid, key_t evt, dynamic) {
+      captured_id    = oid;
+      captured_event = evt;
+    };
+    wish::detail::current_session = &(*lk);
+    f->init(ctx, sync_sess);
+    wish::detail::current_session = nullptr;
+  }
   f->test_emit("on_test"_key);
 
   EXPECT_EQ(captured_id.id,    form_id.id);
@@ -135,12 +157,16 @@ TEST(FormBase, EmitWithPayloadForwardsPayload) {
   key_t form_id{"stub_payload_id"_key};
   ctx.objects[form_id.id] = f;
 
-  auto sess = std::make_shared<wish::session>("form_emit_payload"_key);
-  sess->emit_event = [&](key_t, key_t, dynamic p) {
-    captured_payload = std::move(p);
-  };
-
-  f->init(ctx, sess);
+  auto sync_sess = std::make_shared<wish::sync_session>(wish::session{"form_emit_payload"_key});
+  {
+    auto lk = sync_sess->wlock();
+    lk->emit_event = [&](key_t, key_t, dynamic p) {
+      captured_payload = std::move(p);
+    };
+    wish::detail::current_session = &(*lk);
+    f->init(ctx, sync_sess);
+    wish::detail::current_session = nullptr;
+  }
 
   dynamic payload;
   payload["path"_key] = std::string{"foo.txt"};
@@ -162,8 +188,13 @@ TEST(FormBase, EmitWithNullEmitEventDoesNothing) {
   ctx.objects[form_id.id] = f;
 
   // Session with no emit_event callback set.
-  auto sess = std::make_shared<wish::session>("form_null_emit"_key);
-  f->init(ctx, sess);
+  auto sync_sess = std::make_shared<wish::sync_session>(wish::session{"form_null_emit"_key});
+  {
+    auto lk = sync_sess->wlock();
+    wish::detail::current_session = &(*lk);
+    f->init(ctx, sync_sess);
+    wish::detail::current_session = nullptr;
+  }
 
   EXPECT_NO_THROW(f->test_emit("on_test"_key));
 }

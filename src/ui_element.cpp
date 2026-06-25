@@ -12,6 +12,17 @@ namespace bdg::wish {
 
 using namespace bdg::bison;
 
+// ── ui_element_ptr ───────────────────────────────────────────────────────────
+
+ui_element_ptr::ui_element_ptr(dynamic&& base)
+    : std::shared_ptr<ui_element>(std::make_shared<ui_element>(std::move(base))) {}
+
+ui_element_ptr::operator bison::dynamic_ptr() const {
+  return bison::dynamic_ptr{std::shared_ptr<dynamic>(*this)};
+}
+
+// ── ui_element ───────────────────────────────────────────────────────────────
+
 ui_element::ui_element(dynamic&& base) : dynamic(std::move(base)) {}
 
 void ui_element::refresh_children_order() {

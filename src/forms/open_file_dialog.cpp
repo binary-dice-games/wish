@@ -79,15 +79,13 @@ void open_file_dialog::on_init() {
   auto tree = import_json(kDialogLayout);
 
   // Stamp form-field values onto the imported tree.
-  auto* title_f = findField("title"_key);
-  (*tree[""])["title"_key] =
-      title_f ? title_f->as<std::string>() : std::string{"Open File"};
+  auto* title_f = findField<std::string>("title"_key);
+  (*tree[""])["title"_key] = title_f ? *title_f : std::string{"Open File"};
 
-  auto* confirm_f = findField("confirm_label"_key);
-  if (auto it = tree.find("vbox.btn_row.btn_open"); it != tree.end()) {
-    (*it->second)["label"_key] =
-        confirm_f ? confirm_f->as<std::string>() : std::string{"Open"};
-  }
+  auto* confirm_f = findField<std::string>("confirm_label"_key);
+  tree.with("vbox.btn_row.btn_open", [&](const auto& e) {
+    e["label"_key] = confirm_f ? *confirm_f : std::string{"Open"};
+  });
 
   // Assign each imported element a bison RMI ID so the renderer can emit
   // events with the correct object ID. Mirrors the template_handler pattern.
@@ -95,39 +93,38 @@ void open_file_dialog::on_init() {
   for (auto& [key, elem] : tree) {
     key_t id = rmi::shared::generate_id();
     objects[id.id] = elem;
-    (*elem)["__wish_id"_key] = id;
+    elem["__wish_id"_key] = id;
   }
 
   // Cache pointers to widgets that need runtime access.
-  if (auto it = tree.find("vbox.file_table"); it != tree.end()) {
-    file_table_ptr_ = it->second;
-    file_table_id_  = (*it->second)["__wish_id"_key].as<key_t>();
-  }
-  if (auto it = tree.find("vbox.path_label"); it != tree.end())
-    path_label_ptr_ = it->second;
-  if (auto it = tree.find("vbox.filename_input"); it != tree.end()) {
-    filename_input_ptr_ = it->second;
-    filename_input_id_  = (*it->second)["__wish_id"_key].as<key_t>();
-  }
-  if (auto it = tree.find("vbox.filter_row"); it != tree.end())
-    filter_row_ptr_ = it->second;
-  if (auto it = tree.find("vbox.filter_row.filter_combo"); it != tree.end()) {
-    filter_combo_ptr_ = it->second;
-    filter_combo_id_  = (*it->second)["__wish_id"_key].as<key_t>();
-  }
-  if (auto it = tree.find("vbox.btn_row.btn_open"); it != tree.end()) {
-    btn_open_id_  = (*it->second)["__wish_id"_key].as<key_t>();
-    btn_open_ptr_ = it->second;
-  }
-  if (auto it = tree.find("vbox.btn_row.btn_cancel"); it != tree.end())
-    btn_cancel_id_ = (*it->second)["__wish_id"_key].as<key_t>();
+  tree.with("vbox.file_table", [&](const auto& e) {
+    file_table_ptr_ = e;
+    file_table_id_  = e->as<key_t>("__wish_id"_key);
+  });
+  tree.with("vbox.path_label", [&](const auto& e) {
+    path_label_ptr_ = e;
+  });
+  tree.with("vbox.filename_input", [&](const auto& e) {
+    filename_input_ptr_ = e;
+    filename_input_id_  = e->as<key_t>("__wish_id"_key);
+  });
+  tree.with("vbox.filter_row", [&](const auto& e) {
+    filter_row_ptr_ = e;
+  });
+  tree.with("vbox.filter_row.filter_combo", [&](const auto& e) {
+    filter_combo_ptr_ = e;
+    filter_combo_id_  = e->as<key_t>("__wish_id"_key);
+  });
+  tree.with("vbox.btn_row.btn_open", [&](const auto& e) {
+    btn_open_ptr_ = e;
+    btn_open_id_  = e->as<key_t>("__wish_id"_key);
+  });
+  tree.with("vbox.btn_row.btn_cancel", [&](const auto& e) {
+    btn_cancel_id_ = e->as<key_t>("__wish_id"_key);
+  });
 
-  // Merge the imported name_map into session.objects under our prefix.
-  auto& objs = sess().objects;
-  for (auto& [key, ptr] : tree) {
-    objs[key.empty() ? internal_root_key_
-                     : (internal_root_key_ + "." + key)] = ptr;
-  }
+  // Merge the imported tree into session.objects under our prefix.
+  sess().objects.merge(std::move(tree), internal_root_key_);
 
   // Intercept events from internal widgets. Unrecognised events are forwarded
   // to the client via the original emit function.
@@ -168,62 +165,52 @@ void open_file_dialog::on_init() {
 // ── Event and field handlers ──────────────────────────────────────────────────
 
 bison::dynamic open_file_dialog::on_set(const bison::dynamic& patch) {
-  if (auto* f = patch.findField("path"_key)) {
-    if (f->is<std::string>() && path_label_ptr_)
-      (*path_label_ptr_)["text"_key] = f->as<std::string>();
-  }
-  if (auto* f = patch.findField("files"_key)) {
-    if (f->is<dynamic_ptr>() && f->as<dynamic_ptr>())
-      rebuild_file_rows(*f->as<dynamic_ptr>());
-  }
-  if (auto* f = patch.findField("filters"_key)) {
-    if (f->is<dynamic_ptr>() && f->as<dynamic_ptr>())
-      rebuild_filter_combo(*f->as<dynamic_ptr>());
-  }
-  if (auto* f = patch.findField("confirm_label"_key)) {
-    if (f->is<std::string>() && btn_open_ptr_)
-      (*btn_open_ptr_)["label"_key] = f->as<std::string>();
-  }
+  if (auto* v = patch.findField<std::string>("path"_key); v && path_label_ptr_)
+    path_label_ptr_["text"_key] = *v;
+  if (auto* v = patch.findField<dynamic_ptr>("files"_key); v && *v)
+    rebuild_file_rows(**v);
+  if (auto* v = patch.findField<dynamic_ptr>("filters"_key); v && *v)
+    rebuild_filter_combo(**v);
+  if (auto* v = patch.findField<std::string>("confirm_label"_key); v && btn_open_ptr_)
+    btn_open_ptr_["label"_key] = *v;
   return patch;
 }
 
 void open_file_dialog::rebuild_file_rows(const bison::dynamic& files) {
   if (!file_table_ptr_) return;
 
-  auto* children_f = file_table_ptr_->findField("children"_key);
-  if (!children_f || !children_f->is<dynamic_ptr>()) return;
-  auto& children = children_f->as<dynamic_ptr>();
+  auto* children_p = file_table_ptr_->findField<dynamic_ptr>("children"_key);
+  if (!children_p) return;
+  auto& children = *children_p;
 
   // Remove previous row entries (indexed); named TableColumn children remain.
   children->clear();
 
   int32_t row_idx = 0;
   files.forEach([&](key_t, const field& entry_field) {
-    if (!entry_field.is<dynamic_ptr>() || !entry_field.as<dynamic_ptr>()) return;
-    const auto& entry = *entry_field.as<dynamic_ptr>();
+    auto* ep = entry_field.get<dynamic_ptr>();
+    if (!ep || !*ep) return;
+    const auto& entry = **ep;
 
     auto name = entry.as<std::string>("name"_key);
     auto type = entry.as<std::string>("type"_key);
 
-    auto row = std::make_shared<ui_element>(
-        dynamic::instantiate("wish"_key, "TableRow"_key));
-    (*row)["order"_key] = row_idx;
+    ui_element_ptr row{dynamic::instantiate("wish"_key, "TableRow"_key)};
+    row["order"_key] = row_idx;
 
     auto row_children = dynamic_ptr{key_t{0U}, {}};
 
-    auto name_lbl = std::make_shared<ui_element>(
-        dynamic::instantiate("wish"_key, "Label"_key));
-    (*name_lbl)["text"_key]  = name;
-    (*name_lbl)["order"_key] = int32_t{0};
+    ui_element_ptr name_lbl{dynamic::instantiate("wish"_key, "Label"_key)};
+    name_lbl["text"_key]  = name;
+    name_lbl["order"_key] = int32_t{0};
 
-    auto type_lbl = std::make_shared<ui_element>(
-        dynamic::instantiate("wish"_key, "Label"_key));
-    (*type_lbl)["text"_key]  = type;
-    (*type_lbl)["order"_key] = int32_t{1};
+    ui_element_ptr type_lbl{dynamic::instantiate("wish"_key, "Label"_key)};
+    type_lbl["text"_key]  = type;
+    type_lbl["order"_key] = int32_t{1};
 
     (*row_children)[size_t{0}] = dynamic_ptr{name_lbl};
     (*row_children)[size_t{1}] = dynamic_ptr{type_lbl};
-    (*row)["children"_key] = row_children;
+    row["children"_key] = row_children;
 
     (*children)[size_t{static_cast<size_t>(row_idx)}] = dynamic_ptr{row};
     ++row_idx;
@@ -246,37 +233,32 @@ void open_file_dialog::rebuild_filter_combo(const bison::dynamic& filters) {
   });
 
   bool has_filters = !items.empty();
-  (*filter_row_ptr_)["visible"_key] = has_filters;
-  (*filter_combo_ptr_)["items"_key] = items;
+  filter_row_ptr_["visible"_key] = has_filters;
+  filter_combo_ptr_["items"_key] = items;
 }
 
 void open_file_dialog::on_filename_input_changed(const bison::dynamic& payload) {
-  if (auto* f = payload.findField("value"_key)) {
-    if (f->is<std::string>())
-      (*this)["filename"_key] = f->as<std::string>();
-  }
+  if (auto* v = payload.findField<std::string>("value"_key))
+    (*this)["filename"_key] = *v;
 }
 
 void open_file_dialog::on_filter_combo_changed(const bison::dynamic& payload) {
-  if (auto* f = payload.findField("value"_key)) {
-    if (f->is<int32_t>())
-      selected_filter_idx_ = f->as<int32_t>();
-  }
+  if (auto* v = payload.findField<int32_t>("value"_key))
+    selected_filter_idx_ = *v;
 }
 
 void open_file_dialog::on_row_selected(const bison::dynamic& payload) {
   int32_t idx = payload.as<int32_t>("index"_key);
 
-  auto* files_f = findField("files"_key);
-  if (!files_f || !files_f->is<dynamic_ptr>() || !files_f->as<dynamic_ptr>())
-    return;
-  const auto& files = *files_f->as<dynamic_ptr>();
+  auto* files_p = findField<dynamic_ptr>("files"_key);
+  if (!files_p || !*files_p) return;
+  const auto& files = **files_p;
 
   if (static_cast<size_t>(idx) >= files.size()) return;
 
-  const auto& entry_field = files.at(size_t{static_cast<size_t>(idx)});
-  if (!entry_field.is<dynamic_ptr>() || !entry_field.as<dynamic_ptr>()) return;
-  const auto& entry = *entry_field.as<dynamic_ptr>();
+  auto* ep = files.at(size_t{static_cast<size_t>(idx)}).get<dynamic_ptr>();
+  if (!ep || !*ep) return;
+  const auto& entry = **ep;
 
   auto name = entry.as<std::string>("name"_key);
 
@@ -285,13 +267,13 @@ void open_file_dialog::on_row_selected(const bison::dynamic& payload) {
 
   // Mirror the value into the internal InputText widget.
   if (filename_input_ptr_)
-    (*filename_input_ptr_)["value"_key] = name;
+    filename_input_ptr_["value"_key] = name;
 }
 
 void open_file_dialog::on_btn_open_clicked() {
-  auto* fn_f = findField("filename"_key);
-  if (!fn_f || !fn_f->is<std::string>()) return;
-  const auto& filename = fn_f->as<std::string>();
+  auto* fn_f = findField<std::string>("filename"_key);
+  if (!fn_f) return;
+  const auto& filename = *fn_f;
 
   auto resolved = file_service::resolve_path(
       filename, sess().resource_dir, sess().allow_absolute_paths);
@@ -313,16 +295,15 @@ void open_file_dialog::on_btn_cancel_clicked() {
 void open_file_dialog::on_row_activated(const bison::dynamic& payload) {
   int32_t idx = payload.as<int32_t>("index"_key);
 
-  auto* files_f = findField("files"_key);
-  if (!files_f || !files_f->is<dynamic_ptr>() || !files_f->as<dynamic_ptr>())
-    return;
-  const auto& files = *files_f->as<dynamic_ptr>();
+  auto* files_p = findField<dynamic_ptr>("files"_key);
+  if (!files_p || !*files_p) return;
+  const auto& files = **files_p;
 
   if (static_cast<size_t>(idx) >= files.size()) return;
 
-  const auto& entry_field = files.at(size_t{static_cast<size_t>(idx)});
-  if (!entry_field.is<dynamic_ptr>() || !entry_field.as<dynamic_ptr>()) return;
-  const auto& entry = *entry_field.as<dynamic_ptr>();
+  auto* ep = files.at(size_t{static_cast<size_t>(idx)}).get<dynamic_ptr>();
+  if (!ep || !*ep) return;
+  const auto& entry = **ep;
 
   auto name = entry.as<std::string>("name"_key);
   auto type = entry.as<std::string>("type"_key);

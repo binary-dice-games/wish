@@ -6,13 +6,14 @@
 #include <wish/ui_importer.hpp>
 
 #include "src/bison/bison_common.hpp"
+#include "src/bison/bison_sync.hpp"
 
 #include <atomic>
 #include <filesystem>
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <ostream>
+#include <shared_mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -39,8 +40,9 @@ struct session {
 
   /// Flat map of dot-path name → `ui_element_ptr`.  The root node is at key
   /// `""`.  All named descendants follow the dot-joined ancestor naming
-  /// convention (e.g. `"body.row.ok"`).
-  wish::name_map objects;
+  /// convention (e.g. `"body.row.ok"`).  Stored as `ui_tree` so that
+  /// imported trees can be merged in directly via `objects.merge()`.
+  wish::ui_tree objects;
 
   /// Named UI blueprint strings (JSON or YAML) registered by the client.
   std::unordered_map<bison::key_t, std::string, bison::key_t, bison::key_t>
@@ -69,17 +71,6 @@ struct session {
   /// Logger service instance; forwards client log calls to stdout / log file.
   logger_ptr logger_service;
 
-  /// Guards `top_level_objects`.  The render thread snapshots the map under
-  /// this lock; writers (form lifecycle, template instantiation) hold it while
-  /// inserting or erasing entries.
-  mutable std::mutex top_level_mutex;
-
-  /// Guards the UI element tree during rendering.  The render thread holds
-  /// this for the duration of `render_session`; any RMI-thread code that
-  /// structurally modifies the tree (adding/removing children) must acquire
-  /// this lock first to prevent iterator invalidation.
-  mutable std::mutex render_mutex;
-
   /// Map of key → root `ui_element_ptr` for every top-level window that the
   /// server must render each frame.  Both template instantiations and form
   /// objects register here:
@@ -88,9 +79,10 @@ struct session {
   ///  - `form::init()` adds the form's internal Window at `internal_root_key_`.
   ///  - `form::remove_internal_objects()` erases by that same key.
   ///
-  /// The render loop iterates all values without relying on the `""` convention
-  /// used in `objects`, so multiple top-level windows coexist correctly.
-  /// Always access under `top_level_mutex`.
+  /// All reads and writes are serialised by `server::sessions_` (the
+  /// synchronized session map): the render loop holds the read lock for the
+  /// entire frame; every RMI dispatch holds the write lock via the
+  /// `on_before_dispatch` / `on_after_dispatch` hooks.
   std::unordered_map<std::string, ui_element_ptr> top_level_objects;
 
   /// @brief Callback for emitting asynchronous events to the connected client.
@@ -116,6 +108,32 @@ struct session {
   session(session&& other) noexcept;
   session& operator=(session&& other) noexcept;
 };
+
+// ── Synchronized session wrapper ─────────────────────────────────────────────
+
+/// Synchronized wrapper that owns a session and serialises all access to it
+/// with a shared_mutex (multiple concurrent readers or one exclusive writer).
+/// All wish server code must access session data through this wrapper.
+using sync_session = bison::synchronized<session>;
+using sync_session_ptr = std::shared_ptr<sync_session>;
+
+/// Convenience lock-pointer types for the two lock modes.
+using sync_session_wlock =
+    bison::locked_ptr<session, std::unique_lock<std::shared_mutex>>;
+using sync_session_rlock =
+    bison::locked_ptr<const session, std::shared_lock<std::shared_mutex>>;
+
+namespace detail {
+/// Thread-local pointer to the wish::session whose wlock is currently held by
+/// `server::on_before_dispatch`.  Valid only on the worker thread executing an
+/// RMI dispatch; null at all other times.
+///
+/// Form and template-handler methods access session data through this pointer
+/// rather than re-acquiring the lock (which would deadlock on a non-recursive
+/// mutex).  Do NOT cache or dereference this outside the call stack that entered
+/// dispatch.
+extern thread_local session* current_session;
+}  // namespace detail
 
 /// @brief Write a human-readable dump of every object in the session to @p out.
 ///

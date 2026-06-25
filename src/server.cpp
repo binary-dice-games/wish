@@ -13,12 +13,18 @@
 #include <chrono>
 #include <iomanip>
 #include <memory>
-#include <mutex>
+#include <optional>
+#include <shared_mutex>
 #include <sstream>
 #include <thread>
 #include <vector>
 
 namespace bdg::wish {
+
+// Thread-local session pointer set by on_before_dispatch and cleared by
+// on_after_dispatch.  Form and template-handler code reads session data
+// through this pointer so they never re-acquire the already-held wlock.
+thread_local session* detail::current_session = nullptr;
 
 using namespace bison::rmi::transport;
 
@@ -57,37 +63,40 @@ bool server::should_quit() const {
 }
 
 void server::on_session_created(bison::rmi::context& ctx) {
-  auto sess = std::make_shared<session>(ctx.session_id);
-  sess->emit_event = ctx.emit_event;
-  sess->allow_absolute_paths = allow_absolute_paths_;
-  sess->file_service = std::make_shared<file_service>(
+  session raw{ctx.session_id};
+  raw.emit_event         = ctx.emit_event;
+  raw.allow_absolute_paths = allow_absolute_paths_;
+  raw.file_service       = std::make_shared<file_service>(
       bison::dynamic::instantiate(bison::key_t{"wish"}, bison::key_t{"__WishFileSystem"}),
-      sess->resource_dir);
-  sess->style_service = std::make_shared<style_service>(
+      raw.resource_dir);
+  raw.style_service      = std::make_shared<style_service>(
       bison::dynamic::instantiate(bison::key_t{"wish"}, bison::key_t{"__WishStyle"}));
   // All sessions share the same global logger instance (set via set_logger()).
-  sess->logger_service = logger_;
-  sessions_.wlock()->emplace(ctx.session_id.id, sess);
+  raw.logger_service = logger_;
+
+  auto sync_sess = std::make_shared<sync_session>(std::move(raw));
+  sessions_.wlock()->emplace(ctx.session_id.id, sync_sess);
   {
     std::ostringstream oss;
     oss << "[rmi] connect     sid=0x"
         << std::hex << std::setw(8) << std::setfill('0') << ctx.session_id.id;
     on_print(ctx.session_id, oss.str());
   }
-  on_session_created(*sess);
+  auto lock = sync_sess->wlock();
+  on_session_created(*lock);
 }
 
 void server::on_session_destroyed(bison::rmi::context& ctx) {
-  std::shared_ptr<session> sess;
+  sync_session_ptr sync_sess;
   {
     auto lp = sessions_.wlock();
     auto it = lp->find(ctx.session_id.id);
     if (it != lp->end()) {
-      sess = it->second;
+      sync_sess = it->second;
       lp->erase(it);
     }
   }
-  if (sess) {
+  if (sync_sess) {
     try {
       {
         std::ostringstream oss;
@@ -95,7 +104,8 @@ void server::on_session_destroyed(bison::rmi::context& ctx) {
             << std::hex << std::setw(8) << std::setfill('0') << ctx.session_id.id;
         on_print(ctx.session_id, oss.str());
       }
-      on_session_destroyed(*sess);
+      auto lock = sync_sess->wlock();
+      on_session_destroyed(*lock);
     } catch (...) {}
   }
 }
@@ -106,38 +116,35 @@ bison::dynamic_ptr server::on_create_object(
     bison::key_t klass) {
   using namespace bison;
 
-  std::shared_ptr<session> sess;
+  // on_create_object runs inside a dispatch (on_before_dispatch has run), so
+  // detail::current_session is set.  We also need the sync_session_ptr for
+  // lifetime management when handing it to new objects.
+  sync_session_ptr sync_sess;
   {
     auto lp = sessions_.rlock();
     auto it = lp->find(ctx.session_id.id);
-    if (it != lp->end()) {
-      sess = it->second;
-    }
+    if (it != lp->end()) sync_sess = it->second;
   }
 
-  // __WishFileSystem is a per-session singleton — return the pre-created instance.
-  if (klass == "__WishFileSystem"_key && sess && sess->file_service) {
-    return dynamic_ptr{std::static_pointer_cast<dynamic>(sess->file_service)};
-  }
-
-  // __WishStyle is a per-session singleton — return the pre-created instance.
-  if (klass == "__WishStyle"_key && sess && sess->style_service) {
-    return dynamic_ptr{std::static_pointer_cast<dynamic>(sess->style_service)};
-  }
-
-  // __WishLogger is a per-session singleton — return the pre-created instance.
-  if (klass == "__WishLogger"_key && sess && sess->logger_service) {
-    return dynamic_ptr{std::static_pointer_cast<dynamic>(sess->logger_service)};
+  if (sync_sess && detail::current_session) {
+    session& s = *detail::current_session;
+    // Singleton classes: return the pre-created per-session instance.
+    if (klass == "__WishFileSystem"_key && s.file_service)
+      return dynamic_ptr{std::static_pointer_cast<dynamic>(s.file_service)};
+    if (klass == "__WishStyle"_key && s.style_service)
+      return dynamic_ptr{std::static_pointer_cast<dynamic>(s.style_service)};
+    if (klass == "__WishLogger"_key && s.logger_service)
+      return dynamic_ptr{std::static_pointer_cast<dynamic>(s.logger_service)};
   }
 
   // For all other classes, bison creates the concrete type from the registered
-  // prototype.  Inject session context into template_handler instances.
+  // prototype.  Inject session context into template_handler and form instances.
   auto obj = bison::rmi::server::on_create_object(ctx, ns, klass);
-  if (obj && sess) {
+  if (obj && sync_sess) {
     if (auto* h = dynamic_cast<template_handler*>(obj.get())) {
-      h->init(ctx, sess);
+      h->init(ctx, sync_sess);
     } else if (auto* f = dynamic_cast<form*>(obj.get())) {
-      f->init(ctx, sess);
+      f->init(ctx, sync_sess);
     }
   }
   return obj;
@@ -147,18 +154,27 @@ void server::on_print(bison::key_t /*session_id*/, const std::string& line) {
   if (logger_) logger_->info(line);
 }
 
+// Thread-local per-session write lock held for the duration of each dispatch.
+// Acquiring it blocks the render thread's per-session rlock, serialising RMI
+// handlers against rendering for the same session without blocking other sessions.
+thread_local std::optional<sync_session_wlock> tl_dispatch_wlock;
+
 void server::on_before_dispatch(bison::rmi::context& ctx) {
-  auto lp = sessions_.rlock();
-  auto it = lp->find(ctx.session_id.id);
-  if (it != lp->end())
-    it->second->render_mutex.lock();
+  sync_session_ptr sync_sess;
+  {
+    auto lp = sessions_.rlock();
+    auto it = lp->find(ctx.session_id.id);
+    if (it != lp->end()) sync_sess = it->second;
+  }
+  if (sync_sess) {
+    tl_dispatch_wlock = sync_sess->wlock();
+    detail::current_session = &(**tl_dispatch_wlock);
+  }
 }
 
-void server::on_after_dispatch(bison::rmi::context& ctx) noexcept {
-  auto lp = sessions_.rlock();
-  auto it = lp->find(ctx.session_id.id);
-  if (it != lp->end())
-    it->second->render_mutex.unlock();
+void server::on_after_dispatch(bison::rmi::context&) noexcept {
+  detail::current_session = nullptr;
+  tl_dispatch_wlock.reset();
 }
 
 void server::render_loop() {
@@ -168,21 +184,20 @@ void server::render_loop() {
       renderer_->begin_frame();
       renderer_->render_server_frame();
       {
-        // Snapshot top_level_objects under its mutex so the RMI thread can
-        // safely add/remove entries (e.g. form close) without data races.
-        using RenderItem = std::pair<ui_element_ptr, session*>;
-        std::vector<RenderItem> render_list;
+        // Snapshot the set of sync_session pointers under a brief sessions_
+        // rlock, then render each session under its own per-session rlock.
+        // This lets different sessions render without blocking each other
+        // and keeps sessions_ unblocked for session lifecycle operations.
+        std::vector<sync_session_ptr> to_render;
         {
           auto lp = sessions_.rlock();
-          for (const auto& [id, sess] : *lp) {
-            std::lock_guard<std::mutex> lg(sess->top_level_mutex);
-            for (const auto& [key, win] : sess->top_level_objects)
-              if (win) render_list.emplace_back(win, sess.get());
-          }
+          to_render.reserve(lp->size());
+          for (const auto& [id, sp] : *lp) to_render.push_back(sp);
         }
-        for (const auto& [win, sess] : render_list) {
-          std::lock_guard<std::mutex> rlg(sess->render_mutex);
-          renderer_->render_session(*win, *sess);
+        for (const auto& sync_sess : to_render) {
+          auto sp = sync_sess->rlock();
+          for (const auto& [key, win] : sp->top_level_objects)
+            if (win) renderer_->render_session(*win, *sp);
         }
       }
       renderer_->end_frame();

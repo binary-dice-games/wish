@@ -1,10 +1,10 @@
-﻿// MIT License © 2025 Binary Dice Games
+// MIT License © 2025 Binary Dice Games
 /// @file imgui_plot_renderer.cpp
 /// @brief ImPlot render functions for wish plot elements.
 ///
 /// Each function maps one wish element class to the corresponding ImPlot call.
 /// All functions share the signature:
-///   void(imgui_renderer&, const ui_element&, session&)
+///   void(imgui_renderer&, const ui_element&, const session&)
 /// matching the render_fn typedef in imgui_renderer.cpp.
 #include "imgui_plot_renderer.hpp"
 
@@ -39,7 +39,7 @@ static std::string with_id(const std::string& label, const ui_element& node) {
 
 // ── Plot container ─────────────────────────────────────────────────────────────
 
-void render_plot(imgui_renderer& r, const ui_element& node, session& s) {
+void render_plot(imgui_renderer& r, const ui_element& node, const session& s) {
   auto    title   = node.get_as<std::string>("title"_key, "##plot");
   float   w       = node.get_as<float>("width"_key, -1.0f);
   float   h       = node.get_as<float>("height"_key, 300.0f);
@@ -65,7 +65,7 @@ void render_plot(imgui_renderer& r, const ui_element& node, session& s) {
 
 // ── Line / scatter / stair / stem / shaded / digital ─────────────────────────
 
-void render_plot_line(imgui_renderer&, const ui_element& node, session&) {
+void render_plot_line(imgui_renderer&, const ui_element& node, const session&) {
   auto label = node.get_as<std::string>("label"_key, "");
   const auto* xs = vec_field(node, "xs"_key);
   const auto* ys = vec_field(node, "ys"_key);
@@ -76,7 +76,7 @@ void render_plot_line(imgui_renderer&, const ui_element& node, session&) {
     ImPlot::PlotLine(iml.c_str(), xs->data(), ys->data(), count);
 }
 
-void render_plot_scatter(imgui_renderer&, const ui_element& node, session&) {
+void render_plot_scatter(imgui_renderer&, const ui_element& node, const session&) {
   auto label = node.get_as<std::string>("label"_key, "");
   const auto* xs = vec_field(node, "xs"_key);
   const auto* ys = vec_field(node, "ys"_key);
@@ -87,7 +87,7 @@ void render_plot_scatter(imgui_renderer&, const ui_element& node, session&) {
     ImPlot::PlotScatter(iml.c_str(), xs->data(), ys->data(), count);
 }
 
-void render_plot_stairs(imgui_renderer&, const ui_element& node, session&) {
+void render_plot_stairs(imgui_renderer&, const ui_element& node, const session&) {
   auto label = node.get_as<std::string>("label"_key, "");
   const auto* xs = vec_field(node, "xs"_key);
   const auto* ys = vec_field(node, "ys"_key);
@@ -98,7 +98,7 @@ void render_plot_stairs(imgui_renderer&, const ui_element& node, session&) {
     ImPlot::PlotStairs(iml.c_str(), xs->data(), ys->data(), count);
 }
 
-void render_plot_stems(imgui_renderer&, const ui_element& node, session&) {
+void render_plot_stems(imgui_renderer&, const ui_element& node, const session&) {
   auto  label = node.get_as<std::string>("label"_key, "");
   float ref   = node.get_as<float>("ref"_key, 0.0f);
   const auto* xs = vec_field(node, "xs"_key);
@@ -110,7 +110,7 @@ void render_plot_stems(imgui_renderer&, const ui_element& node, session&) {
     ImPlot::PlotStems(iml.c_str(), xs->data(), ys->data(), count, double(ref));
 }
 
-void render_plot_shaded(imgui_renderer&, const ui_element& node, session&) {
+void render_plot_shaded(imgui_renderer&, const ui_element& node, const session&) {
   auto  label = node.get_as<std::string>("label"_key, "");
   float ref   = node.get_as<float>("ref"_key, 0.0f);
   const auto* xs  = vec_field(node, "xs"_key);
@@ -134,7 +134,7 @@ void render_plot_shaded(imgui_renderer&, const ui_element& node, session&) {
   }
 }
 
-void render_plot_digital(imgui_renderer&, const ui_element& node, session&) {
+void render_plot_digital(imgui_renderer&, const ui_element& node, const session&) {
   auto label = node.get_as<std::string>("label"_key, "");
   const auto* xs = vec_field(node, "xs"_key);
   const auto* ys = vec_field(node, "ys"_key);
@@ -147,7 +147,7 @@ void render_plot_digital(imgui_renderer&, const ui_element& node, session&) {
 
 // ── Bar charts ────────────────────────────────────────────────────────────────
 
-void render_plot_bars(imgui_renderer&, const ui_element& node, session&) {
+void render_plot_bars(imgui_renderer&, const ui_element& node, const session&) {
   auto  label    = node.get_as<std::string>("label"_key, "");
   float bar_size = node.get_as<float>("bar_size"_key, 0.67f);
   const auto* xs = vec_field(node, "xs"_key);
@@ -162,7 +162,7 @@ void render_plot_bars(imgui_renderer&, const ui_element& node, session&) {
   }
 }
 
-void render_plot_bars_h(imgui_renderer&, const ui_element& node, session&) {
+void render_plot_bars_h(imgui_renderer&, const ui_element& node, const session&) {
   auto  label    = node.get_as<std::string>("label"_key, "");
   float bar_size = node.get_as<float>("bar_size"_key, 0.67f);
   const auto* xs = vec_field(node, "xs"_key);
@@ -183,7 +183,7 @@ void render_plot_bars_h(imgui_renderer&, const ui_element& node, session&) {
 
 // ── Histograms ────────────────────────────────────────────────────────────────
 
-void render_plot_histogram(imgui_renderer&, const ui_element& node, session&) {
+void render_plot_histogram(imgui_renderer&, const ui_element& node, const session&) {
   auto    label    = node.get_as<std::string>("label"_key, "");
   int32_t bins     = node.get_as<int32_t>("bins"_key, -1);  // -1 = Sturges
   bool    cumul    = node.get_as<bool>("cumulative"_key, false);
@@ -209,7 +209,7 @@ void render_plot_histogram(imgui_renderer&, const ui_element& node, session&) {
                         bins, 1.0, range, hspec);
 }
 
-void render_plot_histogram2d(imgui_renderer&, const ui_element& node, session&) {
+void render_plot_histogram2d(imgui_renderer&, const ui_element& node, const session&) {
   auto    label  = node.get_as<std::string>("label"_key, "");
   int32_t x_bins = node.get_as<int32_t>("x_bins"_key, -1);
   int32_t y_bins = node.get_as<int32_t>("y_bins"_key, -1);
@@ -226,7 +226,7 @@ void render_plot_histogram2d(imgui_renderer&, const ui_element& node, session&) 
 
 // ── Heatmap ───────────────────────────────────────────────────────────────────
 
-void render_plot_heatmap(imgui_renderer&, const ui_element& node, session&) {
+void render_plot_heatmap(imgui_renderer&, const ui_element& node, const session&) {
   auto    label     = node.get_as<std::string>("label"_key, "");
   int32_t rows      = node.get_as<int32_t>("rows"_key, 1);
   int32_t cols      = node.get_as<int32_t>("cols"_key, 1);
@@ -251,7 +251,7 @@ void render_plot_heatmap(imgui_renderer&, const ui_element& node, session&) {
 
 // ── Pie chart ─────────────────────────────────────────────────────────────────
 
-void render_plot_pie_chart(imgui_renderer&, const ui_element& node, session&) {
+void render_plot_pie_chart(imgui_renderer&, const ui_element& node, const session&) {
   auto  labels_str = node.get_as<std::string>("labels"_key, "");
   float cx         = node.get_as<float>("x"_key, 0.5f);
   float cy         = node.get_as<float>("y"_key, 0.5f);
@@ -289,7 +289,7 @@ void render_plot_pie_chart(imgui_renderer&, const ui_element& node, session&) {
 
 // ── Annotations ───────────────────────────────────────────────────────────────
 
-void render_plot_text(imgui_renderer&, const ui_element& node, session&) {
+void render_plot_text(imgui_renderer&, const ui_element& node, const session&) {
   auto  text     = node.get_as<std::string>("text"_key, "");
   float x        = node.get_as<float>("x"_key, 0.0f);
   float y        = node.get_as<float>("y"_key, 0.0f);
@@ -300,7 +300,7 @@ void render_plot_text(imgui_renderer&, const ui_element& node, session&) {
                      ImVec2(offset_x, offset_y));
 }
 
-void render_plot_inf_lines(imgui_renderer&, const ui_element& node, session&) {
+void render_plot_inf_lines(imgui_renderer&, const ui_element& node, const session&) {
   auto        label = node.get_as<std::string>("label"_key, "");
   bool        horiz = node.get_as<bool>("horizontal"_key, false);
   const auto* vals  = vec_field(node, "values"_key);

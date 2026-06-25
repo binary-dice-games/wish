@@ -3,8 +3,6 @@
 /// @brief Implementation of the wish::form base class.
 #include <wish/form.hpp>
 
-#include <mutex>
-
 namespace bdg::wish {
 
 // ── form ─────────────────────────────────────────────────────────────────────
@@ -17,41 +15,47 @@ form::~form() {
 }
 
 void form::remove_internal_objects() {
-  if (internal_root_key_.empty() || !sess_) return;
-  auto& objs = sess_->objects;
+  if (internal_root_key_.empty() || !sync_sess_) return;
   const std::string dot = internal_root_key_ + ".";
 
-  // Remove the root window from the top-level map before erasing objects.
-  {
-    std::lock_guard<std::mutex> lg(sess_->top_level_mutex);
-    sess_->top_level_objects.erase(internal_root_key_);
-  }
+  auto do_remove = [&](session& s) {
+    s.top_level_objects.erase(internal_root_key_);
+    for (auto it = s.objects.begin(); it != s.objects.end(); ) {
+      if (it->first == internal_root_key_ || it->first.rfind(dot, 0) == 0)
+        it = s.objects.erase(it);
+      else
+        ++it;
+    }
+  };
 
-  for (auto it = objs.begin(); it != objs.end(); ) {
-    if (it->first == internal_root_key_ || it->first.rfind(dot, 0) == 0)
-      it = objs.erase(it);
-    else
-      ++it;
+  if (detail::current_session) {
+    // Called within dispatch: wlock already held by the dispatch hook.
+    do_remove(*detail::current_session);
+  } else {
+    // Called from destructor (cleanup path): session already removed from
+    // sessions_ so no render-thread races; acquire wlock directly.
+    auto lock = sync_sess_->wlock();
+    do_remove(*lock);
   }
 }
 
-void form::init(bison::rmi::context& ctx, std::shared_ptr<session> sess) {
-  ctx_  = &ctx;
-  sess_ = std::move(sess);
+void form::init(bison::rmi::context& ctx, sync_session_ptr sync_sess) {
+  ctx_       = &ctx;
+  sync_sess_ = std::move(sync_sess);
   on_init();
   // After on_init() the subclass has populated internal_root_key_. Register
   // the root window as an overlay so the render loop draws it each frame.
-  if (!internal_root_key_.empty()) {
-    auto it = sess_->objects.find(internal_root_key_);
-    if (it != sess_->objects.end()) {
-      std::lock_guard<std::mutex> lg(sess_->top_level_mutex);
-      sess_->top_level_objects[internal_root_key_] = it->second;
-    }
+  // Called within dispatch: detail::current_session (wlock held) is valid.
+  if (!internal_root_key_.empty() && detail::current_session) {
+    auto& s = *detail::current_session;
+    auto it = s.objects.find(internal_root_key_);
+    if (it != s.objects.end())
+      s.top_level_objects[internal_root_key_] = it->second;
   }
 }
 
 void form::emit(bison::key_t event_name, bison::dynamic payload) {
-  if (!sess_ || !sess_->emit_event) return;
+  if (!sync_sess_) return;
   // Resolve our own RMI ID lazily on the first call by scanning the object
   // table. Forms emit at interactive speed (button clicks), so the one-time
   // O(n) scan is negligible. The ID is stable once assigned by handle_instantiate.
@@ -63,8 +67,17 @@ void form::emit(bison::key_t event_name, bison::dynamic payload) {
       }
     }
   }
-  if (own_id_.id)
-    sess_->emit_event(own_id_, event_name, std::move(payload));
+  if (!own_id_.id) return;
+
+  if (detail::current_session) {
+    // Within dispatch: wlock already held.
+    auto& s = *detail::current_session;
+    if (s.emit_event) s.emit_event(own_id_, event_name, std::move(payload));
+  } else {
+    auto lock = sync_sess_->rlock();
+    if (lock->emit_event)
+      lock->emit_event(own_id_, event_name, std::move(payload));
+  }
 }
 
 }  // namespace bdg::wish

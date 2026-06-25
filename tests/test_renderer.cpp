@@ -26,7 +26,7 @@ class counting_renderer : public renderer {
 
   void begin_frame() override {}
 
-  void render_node(const ui_element& node, session& s) override {
+  void render_node(const ui_element& node, const session& s) override {
     ++count;
     visited.push_back(node.as<bdg::bison::key_t>(dynamic::CLASS));
     render_children(*this, node, s);

@@ -98,7 +98,41 @@ Use this guide when generating or editing code in this repository.
 
 ### Concurrency
 
-- Use standard primitives (`std::mutex`, `std::lock_guard`, `std::shared_mutex`, atomics).
+**Prefer `bison::synchronized<T>` over raw `std::mutex` for all shared state.**
+`synchronized<T>` wraps a value and makes it inaccessible without explicitly
+calling `.rlock()` (shared read) or `.wlock()` (exclusive write), so the type
+system enforces synchronization rather than relying on comments or convention.
+Avoid raw `std::mutex`, `std::lock_guard`, and `std::unique_lock` except at the
+lowest implementation level (e.g. inside custom data structures).
+
+#### Session threading model
+
+The wish server uses a two-level synchronization hierarchy:
+
+- **`server::sessions_`** (`synchronized<map<id, sync_session_ptr>>`): protects
+  the sessions map at server level.  Acquire its `rlock` briefly to look up a
+  session; acquire its `wlock` only when adding or removing sessions.
+
+- **Per-session `sync_session`** (`synchronized<session>`): protects all data
+  owned by one session — the UI element tree, `top_level_objects`, `emit_event`,
+  etc.  The rule is:
+  - The **render loop** acquires each session's `rlock` for the duration of
+    `render_session`.  Multiple sessions are rendered sequentially (render loop
+    snapshots the session list first), each under its own rlock.
+  - The **RMI dispatch hook** (`on_before_dispatch`) acquires the session's
+    `wlock` for the entire message dispatch and stores a raw `session*` in
+    `detail::current_session` (thread_local).  `on_after_dispatch` releases
+    the wlock and clears the pointer.
+  - **Form and template-handler methods** read/write session data via
+    `detail::current_session` — they do NOT acquire additional locks, because
+    the dispatch wlock is already held and `std::shared_mutex` is non-recursive.
+  - Code that runs **outside dispatch** (e.g. form destructors during cleanup)
+    must acquire the session wlock directly: `sync_sess_->wlock()`.
+
+Do NOT store a raw `session*` or `session&` as a long-lived member.  Any class
+that needs to access session data across calls must hold a `sync_session_ptr`
+(`std::shared_ptr<bison::synchronized<session>>`).
+
 - Keep lock scope tight.
 - Use condition variables with explicit shutdown/stop flags.
 

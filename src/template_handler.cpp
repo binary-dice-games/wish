@@ -10,7 +10,6 @@
 #include <algorithm>
 #include <atomic>
 #include <cctype>
-#include <mutex>
 #include <stdexcept>
 
 namespace bdg::wish {
@@ -28,7 +27,7 @@ static bison::dynamic apply_descriptor(
   bool is_json =
       (it != descriptor.cend() && (*it == '{' || *it == '['));
 
-  wish::name_map nmap = is_json ? import_json(descriptor) : import_yaml(descriptor);
+  auto nmap = is_json ? import_json(descriptor) : import_yaml(descriptor);
 
   // Generate a unique top-level key for this instantiation so multiple
   // templates can coexist without overwriting each other.
@@ -45,7 +44,7 @@ static bison::dynamic apply_descriptor(
 
     // Store the RMI object ID on the element so the renderer can emit events
     // with the correct ID (not the class name).
-    (*elem)["__wish_id"_key] = new_id;
+    elem["__wish_id"_key] = new_id;
 
     bison::dynamic entry;
     entry["name"_key] = name;
@@ -56,10 +55,8 @@ static bison::dynamic apply_descriptor(
   // Register the root element as a top-level renderable.  The root is at
   // key "" in the name_map (the outermost element of the descriptor).
   auto root_it = nmap.find("");
-  if (root_it != nmap.end()) {
-    std::lock_guard<std::mutex> lg(sess.top_level_mutex);
+  if (root_it != nmap.end())
     sess.top_level_objects[tpl_key] = root_it->second;
-  }
 
   return result;
 }
@@ -72,17 +69,18 @@ template_handler::template_handler(bison::dynamic&& base)
 bison::dynamic template_handler::do_register(const bison::dynamic& params) {
   bison::key_t name = params.as<bison::key_t>("name"_key);
   std::string descriptor = params.as<std::string>("descriptor"_key);
-  sess_->templates[name] = std::move(descriptor);
+  sess().templates[name] = std::move(descriptor);
   return dynamic{};
 }
 
 bison::dynamic template_handler::do_instantiate(const bison::dynamic& params) {
   bison::key_t name = params.as<bison::key_t>("name"_key);
-  auto it = sess_->templates.find(name);
-  if (it == sess_->templates.end()) {
+  session& s = sess();
+  auto it = s.templates.find(name);
+  if (it == s.templates.end()) {
     throw std::runtime_error("wish: template not found");
   }
-  return apply_descriptor(*ctx_, *sess_, it->second);
+  return apply_descriptor(*ctx_, s, it->second);
 }
 
 void register_template_handler() {

@@ -121,10 +121,10 @@ class server : public bison::rmi::server {
   // Receive formatted trace lines from the base class and forward to logger_.
   void on_print(bison::key_t session_id, const std::string& line) override;
 
-  // Serialise all RMI message handling with the render frame: acquire the
-  // session's render_mutex before any handler runs, release it after.
-  // This prevents the RMI thread from structurally modifying the UI tree
-  // while the render thread is iterating it.
+  // Acquire the per-session write lock before each dispatch and release it
+  // after.  The render loop holds the per-session read lock for the duration
+  // of each render_session call, so these hooks serialise RMI dispatch against
+  // rendering without blocking other sessions.
   void on_before_dispatch(bison::rmi::context& ctx) override;
   void on_after_dispatch(bison::rmi::context& ctx) noexcept override;
 
@@ -132,7 +132,7 @@ class server : public bison::rmi::server {
 
   std::unique_ptr<renderer> renderer_;
   bison::synchronized<
-      std::unordered_map<bison::hash_t, std::shared_ptr<session>>>
+      std::unordered_map<bison::hash_t, sync_session_ptr>>
       sessions_;
   std::thread render_thread_;
   std::atomic<bool> running_{false};

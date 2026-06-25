@@ -55,7 +55,7 @@ const TextEditor::Language* language_for(const std::string& lang) {
 
 // ── Render function ───────────────────────────────────────────────────────────
 
-void render_text_editor(imgui_renderer&, const ui_element& node, session& s) {
+void render_text_editor(imgui_renderer&, const ui_element& node, const session& s) {
   auto file_path = node.get_as<std::string>("file_path"_key, "");
   auto language  = node.get_as<std::string>("language"_key, "none");
   auto read_only = node.get_as<bool>("read_only"_key, false);

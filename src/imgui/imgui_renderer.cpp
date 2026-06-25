@@ -27,7 +27,7 @@ using namespace bdg::bison;
 //
 // Maps class key hash → render function.  Built once at first render_node call.
 
-using render_fn = void (*)(imgui_renderer&, const ui_element&, session&);
+using render_fn = void (*)(imgui_renderer&, const ui_element&, const session&);
 
 static const std::unordered_map<bison::hash_t, render_fn>& render_dispatch() {
   static const std::unordered_map<bison::hash_t, render_fn> tbl{
@@ -233,7 +233,7 @@ void imgui_renderer::end_frame() {
   ImGui::EndFrame();
 }
 
-void imgui_renderer::render_node(const ui_element& node, session& s) {
+void imgui_renderer::render_node(const ui_element& node, const session& s) {
   if (!node.get_as<bool>("visible"_key, true)) return;
 
   // Per-element font override.  PushFont(nullptr) is valid — it selects the
@@ -266,7 +266,7 @@ void imgui_renderer::render_node(const ui_element& node, session& s) {
   ImGui::PopFont();
 }
 
-void imgui_renderer::render_session(const ui_element& root, session& s) {
+void imgui_renderer::render_session(const ui_element& root, const session& s) {
   if (!s.style_service) {
     render_node(root, s);
     return;
