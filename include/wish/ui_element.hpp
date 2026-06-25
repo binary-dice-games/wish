@@ -49,6 +49,9 @@ class ui_element_ptr : public std::shared_ptr<ui_element> {
   using std::shared_ptr<ui_element>::shared_ptr;
   using std::shared_ptr<ui_element>::operator=;
 
+  ui_element_ptr(const std::shared_ptr<ui_element>& that);
+  ui_element_ptr(std::shared_ptr<ui_element>&& that);
+
   /// @brief Construct by upgrading a plain bison::dynamic rvalue into a ui_element.
   explicit ui_element_ptr(bison::dynamic&& base);
 

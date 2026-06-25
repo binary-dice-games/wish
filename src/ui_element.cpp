@@ -14,6 +14,12 @@ using namespace bdg::bison;
 
 // ── ui_element_ptr ───────────────────────────────────────────────────────────
 
+ui_element_ptr::ui_element_ptr(const std::shared_ptr<ui_element>& that)
+    : std::shared_ptr<ui_element>(that) {}
+
+ui_element_ptr::ui_element_ptr(std::shared_ptr<ui_element>&& that)
+    : std::shared_ptr<ui_element>(std::move(that)) {}
+
 ui_element_ptr::ui_element_ptr(dynamic&& base)
     : std::shared_ptr<ui_element>(std::make_shared<ui_element>(std::move(base))) {}
 

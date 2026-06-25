@@ -35,6 +35,12 @@ session::session(session&& other) noexcept
       objects(std::move(other.objects)),
       templates(std::move(other.templates)),
       resource_dir(std::move(other.resource_dir)),
+      allow_absolute_paths(other.allow_absolute_paths),
+      file_service(std::move(other.file_service)),
+      style_service(std::move(other.style_service)),
+      logger_service(std::move(other.logger_service)),
+      top_level_objects(std::move(other.top_level_objects)),
+      emit_event(std::move(other.emit_event)),
       dirty(other.dirty.load()) {
   // Clear source so its destructor does not remove the transferred directory.
   other.resource_dir.clear();
@@ -47,10 +53,16 @@ session& session::operator=(session&& other) noexcept {
       std::error_code ec;
       std::filesystem::remove_all(resource_dir, ec);
     }
-    id           = other.id;
-    objects      = std::move(other.objects);
-    templates    = std::move(other.templates);
+    id = other.id;
+    objects = std::move(other.objects);
+    templates = std::move(other.templates);
     resource_dir = std::move(other.resource_dir);
+    allow_absolute_paths = other.allow_absolute_paths;
+    file_service = std::move(other.file_service);
+    style_service = std::move(other.style_service);
+    logger_service = std::move(other.logger_service);
+    top_level_objects = std::move(other.top_level_objects);
+    emit_event = std::move(other.emit_event);
     dirty.store(other.dirty.load());
     other.resource_dir.clear();
   }
