@@ -100,13 +100,8 @@ struct session {
 
   session(const session&) = delete;
   session& operator=(const session&) = delete;
-
-  /// @brief Move construction transfers `resource_dir` ownership.
-  ///
-  /// After the move, the source session's `resource_dir` is empty so its
-  /// destructor will not attempt to delete the directory.
-  session(session&& other) noexcept;
-  session& operator=(session&& other) noexcept;
+  session(session&& other) = delete;
+  session& operator=(session&& other) = delete;
 };
 
 // ── Synchronized session wrapper ─────────────────────────────────────────────

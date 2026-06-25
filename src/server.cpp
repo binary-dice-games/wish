@@ -13,6 +13,7 @@
 #include <chrono>
 #include <iomanip>
 #include <memory>
+#include <utility>
 #include <optional>
 #include <shared_mutex>
 #include <sstream>
@@ -63,7 +64,7 @@ bool server::should_quit() const {
 }
 
 void server::on_session_created(bison::rmi::context& ctx) {
-  auto sync_sess = std::make_shared<sync_session>(ctx.session_id);
+  auto sync_sess = std::make_shared<sync_session>(std::in_place, ctx.session_id);
   {
     auto sess = sync_sess->wlock();
     sess->emit_event = ctx.emit_event;
@@ -83,8 +84,8 @@ void server::on_session_created(bison::rmi::context& ctx) {
         << std::hex << std::setw(8) << std::setfill('0') << ctx.session_id.id;
     on_print(ctx.session_id, oss.str());
   }
-  auto lock = sync_sess->wlock();
-  on_session_created(*lock);
+  auto sess = sync_sess->wlock();
+  on_session_created(*sess);
 }
 
 void server::on_session_destroyed(bison::rmi::context& ctx) {

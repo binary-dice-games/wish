@@ -76,7 +76,7 @@ TEST(FormBase, InitCallsOnInitExactlyOnce) {
   EXPECT_FALSE(f.init_called_);
 
   rmi::context ctx;
-  auto sync_sess = std::make_shared<wish::sync_session>(wish::session{"form_init"_key});
+  auto sync_sess = std::make_shared<wish::sync_session>(std::in_place, "form_init"_key);
   {
     auto lk = sync_sess->wlock();
     wish::detail::current_session = &(*lk);
@@ -90,7 +90,7 @@ TEST(FormBase, InitCallsOnInitExactlyOnce) {
 TEST(FormBase, InitStoresContextReference) {
   stub_form f{dynamic{}};
   rmi::context ctx;
-  auto sync_sess = std::make_shared<wish::sync_session>(wish::session{"form_ctx"_key});
+  auto sync_sess = std::make_shared<wish::sync_session>(std::in_place, "form_ctx"_key);
   {
     auto lk = sync_sess->wlock();
     wish::detail::current_session = &(*lk);
@@ -104,7 +104,7 @@ TEST(FormBase, InitStoresContextReference) {
 TEST(FormBase, InitStoresSessionReference) {
   stub_form f{dynamic{}};
   rmi::context ctx;
-  auto sync_sess = std::make_shared<wish::sync_session>(wish::session{"form_sess"_key});
+  auto sync_sess = std::make_shared<wish::sync_session>(std::in_place, "form_sess"_key);
 
   wish::session* raw_sess;
   {
@@ -131,7 +131,7 @@ TEST(FormBase, EmitForwardsEventToSession) {
   key_t form_id{"stub_form_id"_key};
   ctx.objects[form_id.id] = f;
 
-  auto sync_sess = std::make_shared<wish::sync_session>(wish::session{"form_emit"_key});
+  auto sync_sess = std::make_shared<wish::sync_session>(std::in_place, "form_emit"_key);
   {
     auto lk = sync_sess->wlock();
     lk->emit_event = [&](key_t oid, key_t evt, dynamic) {
@@ -157,7 +157,7 @@ TEST(FormBase, EmitWithPayloadForwardsPayload) {
   key_t form_id{"stub_payload_id"_key};
   ctx.objects[form_id.id] = f;
 
-  auto sync_sess = std::make_shared<wish::sync_session>(wish::session{"form_emit_payload"_key});
+  auto sync_sess = std::make_shared<wish::sync_session>(std::in_place, "form_emit_payload"_key);
   {
     auto lk = sync_sess->wlock();
     lk->emit_event = [&](key_t, key_t, dynamic p) {
@@ -188,7 +188,7 @@ TEST(FormBase, EmitWithNullEmitEventDoesNothing) {
   ctx.objects[form_id.id] = f;
 
   // Session with no emit_event callback set.
-  auto sync_sess = std::make_shared<wish::sync_session>(wish::session{"form_null_emit"_key});
+  auto sync_sess = std::make_shared<wish::sync_session>(std::in_place, "form_null_emit"_key);
   {
     auto lk = sync_sess->wlock();
     wish::detail::current_session = &(*lk);

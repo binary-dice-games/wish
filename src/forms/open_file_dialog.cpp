@@ -275,8 +275,9 @@ void open_file_dialog::on_btn_open_clicked() {
   if (!fn_f) return;
   const auto& filename = *fn_f;
 
+  auto sess = sync_sess_->rlock();
   auto resolved = file_service::resolve_path(
-      filename, sess().resource_dir, sess().allow_absolute_paths);
+      filename, sess->resource_dir, sess->allow_absolute_paths);
   if (resolved.empty()) return;
 
   bison::dynamic payload;
@@ -314,8 +315,9 @@ void open_file_dialog::on_row_activated(const bison::dynamic& payload) {
     nav["type"_key] = std::string{"dir"};
     emit("on_navigate"_key, std::move(nav));
   } else {
+    auto sess = sync_sess_->rlock();
     auto resolved = file_service::resolve_path(
-        name, sess().resource_dir, sess().allow_absolute_paths);
+        name, sess->resource_dir, sess->allow_absolute_paths);
     if (resolved.empty()) return;
     bison::dynamic open;
     open["path"_key] = name;
