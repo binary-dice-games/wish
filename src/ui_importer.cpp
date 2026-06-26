@@ -42,6 +42,11 @@ static void set_field_from_json(
   } else if (dst.is<int32_t>()) {
     if (value.is_number_integer())      dst = value.get<int32_t>();
     else if (value.is_number_float())   dst = static_cast<int32_t>(value.get<float>());
+    else if (value.is_string()) {
+      // field::operator=(string) uses EnumFlags/Enum attribute to convert;
+      // silently ignored when the field has no such attribute.
+      try { dst = value.get<std::string>(); } catch (const std::runtime_error&) {}
+    }
   } else if (dst.is<float>()) {
     if (value.is_number_float())        dst = value.get<float>();
     else if (value.is_number_integer()) dst = static_cast<float>(value.get<int32_t>());
