@@ -35,9 +35,16 @@ void register_layout() {
         dynamic::make_factory<ui_element>("wish"_key, "VerticalLayout"_key));
   }
 
-  // HorizontalLayout — places children side by side; no extra fields.
+  // HorizontalLayout — places children side by side.
   {
     auto proto = dynamic_ptr{"HorizontalLayout"_key, {}};
+    proto->addField("align"_key, field{std::string{"left"},
+      attr<DisplayName>("Align"),
+      attr<Description>(
+          "Horizontal alignment of children: \"left\" (default) or \"right\". "
+          "Right alignment offsets children so they flush to the content edge; "
+          "requires each child to have an explicit width field."),
+      attr<Category>("Layout")});
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Horizontal Layout"));
     (*proto)[dynamic::CLASS].addAttribute(attr<Description>("Arranges children left-to-right."));
     dynamic::addClass("wish"_key, std::move(proto), "Layout"_key,

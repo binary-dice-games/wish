@@ -6,6 +6,7 @@
 #include "src/bison/bison_object.hpp"
 
 #include <wish/file_service.hpp>
+#include <wish/style_service.hpp>
 
 #include <TextEditor.h>
 #include <imgui.h>
@@ -27,6 +28,7 @@ struct TextEditorState {
   TextEditor editor;
   std::string loaded_path;   // full path last loaded into the editor
   std::string loaded_lang;   // language key last applied
+  std::string applied_preset; // palette preset last applied ("dark", "light", ...)
   size_t last_undo_index{0};
 };
 
@@ -87,6 +89,21 @@ void render_text_editor(imgui_renderer&, const ui_element& node, const session& 
   }
 
   st.editor.SetReadOnlyEnabled(read_only);
+
+  // Sync the TextEditor palette with the session's active style preset.
+  // TextEditor maintains its own color palette independent of ImGuiStyle.
+  {
+    std::string preset = "dark";
+    if (s.style_service) {
+      const auto* f = s.style_service->current_style().findField("preset"_key);
+      if (f && f->is<std::string>()) preset = f->as<std::string>();
+    }
+    if (st.applied_preset != preset) {
+      st.applied_preset = preset;
+      st.editor.SetPalette(preset == "light" ? TextEditor::GetLightPalette()
+                                              : TextEditor::GetDarkPalette());
+    }
+  }
 
   auto label = std::string("##te_") + std::to_string(id.id);
   ImVec2 size{w > 0 ? float(w) : -1.f, float(h > 0 ? h : 400)};

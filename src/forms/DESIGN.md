@@ -90,7 +90,7 @@ class form : public bison::dynamic {
 ## Form Lifecycle
 
 ```
-client: instantiate("wish", "OpenFileDialog")
+client: instantiate("wish", "FileDialog")
   → server: on_create_object() creates instance, calls form::init(ctx, sess)
     → on_init(): build Window + Table + Buttons, register in session.objects
     → fields are set to defaults (empty file list, default title)
@@ -143,7 +143,7 @@ Optional form modules are therefore **compiled in** as additional source files, 
 ```cmake
 # CMakeLists.txt (forms)
 target_sources(wish PRIVATE
-  src/forms/open_file_dialog.cpp   # always compiled: part of the base server
+  src/forms/file_dialog.cpp   # always compiled: part of the base server
 )
 
 option(WISH_MODULE_DESKTOP "Include desktop utility forms (Calculator, Notepad, ...)" OFF)
@@ -161,7 +161,7 @@ endif()
 ```cpp
 void register_all() {
   // ... existing element/service registrations ...
-  register_open_file_dialog();      // always present
+  register_file_dialog();           // always present
 
 #ifdef WISH_MODULE_DESKTOP
   register_desktop_module();        // Calculator, Notepad, ...
@@ -182,11 +182,11 @@ Because each module's code is statically linked into the server binary, `addClas
 
 ## Built-in Forms
 
-### `OpenFileDialog`
+### `FileDialog`
 
-**Bison class name:** `"OpenFileDialog"` in the `"wish"` namespace.
+**Bison class name:** `"FileDialog"` in the `"wish"` namespace.
 
-**Purpose:** A modal file-picker dialog. The server manages all selection, filtering, and keyboard navigation logic. The client is responsible for providing the list of files available in the current directory and for acting on the selected path.
+**Purpose:** A modal file-picker dialog usable as both an Open File and a Save As dialog (controlled by the `confirm_label` field). The server manages all selection, filtering, and navigation logic. The client is responsible for providing the list of files available in the current directory and for acting on the selected path.
 
 #### Fields
 
@@ -195,15 +195,16 @@ Because each module's code is statically linked into the server binary, `addClas
 | `title` | string | client → form | Dialog window title. Default: `"Open File"`. |
 | `files` | dynamic | client → form | Ordered list of entries. Each entry is a dynamic with `name` (string) and `type` (`"file"` or `"dir"`). Client repopulates this on every `on_navigate` event. |
 | `filename` | string | client ↔ form | Current value of the filename input field. Client may preset it; form updates it as the user types or clicks. |
-| `filters` | dynamic | client → form | Optional list of filter strings shown in a combo box (e.g., `{0: "*.txt", 1: "*.md"}`). Empty means no filter UI is shown. |
-| `confirm_label` | string | client → form | Label on the confirm button. Default: `"Open"`. |
+| `filters` | dynamic | client → form | Optional list of filter entries. Each entry is a dynamic with `label` (string, shown in the combo box) and an optional `regex` (string, applied case-insensitively to filenames; empty or absent means match all). If the list is empty, the filter row is hidden. |
+| `confirm_label` | string | client → form | Label on the confirm button. Default: `"Open"`. Set to `"Save"` for a Save As dialog. |
+| `path` | string | client ↔ form | Current directory path shown in the editable path bar. Client updates on `on_navigate`. User may also type a path and press Enter. |
 
 #### Events
 
 | Event | Payload fields | Description |
 |-------|---------------|-------------|
 | `on_open` | `path` (string) | User confirmed selection. `path` is the value of the filename field at the moment of confirmation. It is always relative unless `allow_absolute_paths` is enabled server-side. |
-| `on_navigate` | `name` (string), `type` (string) | User double-clicked an entry. For `type == "dir"` the client should update `files` with the new directory's contents. For `type == "file"` the client may treat this as a confirm (equivalent to `on_open`). |
+| `on_navigate` | `name` (string), `type` (string) | User navigated. For `type == "dir"` the client should update `files` for the new directory. For `type == "file"` the client may treat this as a confirm. For `type == "path"` the user typed a path directly into the path bar and pressed Enter; `name` contains the full typed string. |
 | `on_cancel` | — | User dismissed the dialog without selecting a file. |
 
 #### Internal UI structure (informative)
@@ -211,15 +212,12 @@ Because each module's code is statically linked into the server binary, `addClas
 ```
 Window (title from field)
   VerticalLayout
-    Label          ← current path display (updated by the client via on_navigate flow)
+    InputText      ← editable path bar; Enter emits on_navigate(type="path")
     Table          ← file list (rows from `files` field; single-click fills filename, dbl-click emits on_navigate)
-    HorizontalLayout
-      Label        ← "File name:"
-      InputText    ← filename field (two-way bound to the `filename` field)
+    InputText      ← filename field (full width; two-way bound to the `filename` field)
     HorizontalLayout (if filters non-empty)
-      Label        ← "Filter:"
       Combo        ← filter list
-    HorizontalLayout
+    HorizontalLayout (right-aligned, spacing=8)
       Button       ← confirm_label  → emits on_open
       Button       ← "Cancel"       → emits on_cancel
 ```
@@ -229,7 +227,7 @@ The internal tree is private. Clients must not attempt to access its nodes by na
 #### Example (C++)
 
 ```cpp
-auto dlg = c.instantiate("wish"_key, "OpenFileDialog"_key).get();
+auto dlg = c.instantiate("wish"_key, "FileDialog"_key).get();
 
 // Populate the initial file list.
 bison::dynamic entries;
@@ -243,9 +241,11 @@ for (auto& e : list_sandbox_dir()) {
 dlg["dlg"].set({{"files"_key, entries}, {"title"_key, std::string{"Open File"}}}).get();
 
 dlg["dlg"].onEvent("on_navigate"_key, [&](bison::dynamic payload) {
-  // User navigated into a directory — repopulate the file list.
   auto name = payload.as<std::string>("name"_key);
-  // ... update entries for new directory ...
+  auto type = payload.as<std::string>("type"_key);
+  // type="dir"  — user double-clicked a directory row
+  // type="path" — user typed a path in the path bar and pressed Enter
+  // ... navigate to the new directory and update files ...
   dlg["dlg"].set({{"files"_key, new_entries}});
 });
 
@@ -264,7 +264,7 @@ The same rules that govern low-level wish elements apply to forms without except
 
 - **Relative paths only by default.** A form that constructs or emits a file path must pass it through `file_service::resolve_path(name, sess().resource_dir, sess().allow_absolute_paths)`. If the result is empty, the path is rejected.
 - **Client-provided data is untrusted.** Field values set by the client (file names, filter strings, dialog titles) are untrusted input. Forms must not use them to construct file paths without sandbox validation.
-- **`OpenFileDialog` does not read the filesystem.** The dialog only displays what the client provides in the `files` field. The `on_navigate` event gives the client an entry name (relative, never an absolute path) and the client decides what to load. This design avoids any server-side directory traversal.
+- **`FileDialog` does not read the filesystem.** The dialog only displays what the client provides in the `files` field. The `on_navigate` event gives the client an entry name (relative, never an absolute path) and the client decides what to load. This design avoids any server-side directory traversal.
 - **Forms that do access files** (e.g., a Notepad form in `WISH_MODULE_DESKTOP`) must call `file_service::resolve_path()` for every read and write, and must document this in the form's registration attributes (see `src/ui_elements/text_editor.cpp` for the reference pattern).
 - **No cross-session leakage.** A form holds a `std::shared_ptr<session>` to its own session. It must not store or access any other session's state.
 
@@ -291,8 +291,7 @@ The same rules that govern low-level wish elements apply to forms without except
 
 | Form | Module | Description |
 |------|--------|-------------|
-| `OpenFileDialog` | built-in | File picker (described above) |
-| `SaveFileDialog` | built-in | Variant of OpenFileDialog with a "Save" confirm path |
+| `FileDialog` | built-in | File picker / Save As dialog (described above) |
 | `Calculator` | `WISH_MODULE_DESKTOP` | Four-function calculator; demonstrates self-contained form logic |
 | `Notepad` | `WISH_MODULE_DESKTOP` | Text editor backed by a file in the session sandbox |
 | `ProcessMonitor` | `WISH_MODULE_DESKTOP` | Tabular view of running processes (read-only, OS-specific) |

@@ -9,7 +9,7 @@
 #include "ui_elements.hpp"
 #include "plot_elements.hpp"
 #include "plot3d_elements.hpp"
-#include "forms/open_file_dialog.hpp"
+#include "forms/file_dialog.hpp"
 #ifdef WISH_MODULE_DESKTOP
 #include "forms/desktop/desktop_module.hpp"
 #endif
@@ -60,7 +60,7 @@ void register_all() {
   register_style_service();
   register_logger();
   // Built-in forms.
-  register_open_file_dialog();
+  register_file_dialog();
 #ifdef WISH_MODULE_DESKTOP
   register_desktop_module();
 #endif

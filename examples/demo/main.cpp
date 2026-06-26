@@ -586,7 +586,7 @@ static float normal_sample(uint32_t& s) {
 
 // ── File-browser helpers ──────────────────────────────────────────────────────
 
-// Build the `files` dynamic expected by OpenFileDialog from a directory listing.
+// Build the `files` dynamic expected by FileDialog from a directory listing.
 // The ".." entry is prepended when the path is not the filesystem root.
 static dynamic list_directory(const std::filesystem::path& dir) {
   dynamic files;
@@ -1214,18 +1214,22 @@ class demo_client : public wish::client {
                  + "px");
         });
 
-    // ── Browse buttons (open OpenFileDialog to pick each path) ────────────
+    // ── Browse buttons (open FileDialog to pick each path) ───────────────
 
-    // Creates an OpenFileDialog starting in CWD. The `on_selected` callback
+    // Creates a FileDialog starting in CWD. The `on_selected` callback
     // receives the chosen absolute path; browse() returns immediately.
+    // Each filter entry is a {label, regex} pair where label is shown in the
+    // combo box and regex is applied to filenames (empty regex = match all).
+    using filter_list = std::vector<std::pair<std::string, std::string>>;
     auto browse = [this](
         const std::string& title,
         const std::string& confirm_label,
+        const filter_list& filters,
         std::function<void(std::string)> on_selected) {
       namespace fs = std::filesystem;
       auto cur_dir = std::make_shared<fs::path>(fs::current_path());
 
-      auto raw_dlg = this->instantiate("wish"_key, "OpenFileDialog"_key).get();
+      auto raw_dlg = this->instantiate("wish"_key, "FileDialog"_key).get();
       auto dlg = std::make_shared<bdg::bison::rmi::proxy::dynamic>(
           std::move(raw_dlg));
 
@@ -1235,13 +1239,33 @@ class demo_client : public wish::client {
       init["path"_key]          = cur_dir->string();
       init["files"_key]         = dynamic_ptr{
           std::make_shared<dynamic>(list_directory(*cur_dir))};
+
+      // Populate the filter combo if caller supplied filter entries.
+      if (!filters.empty()) {
+        dynamic filter_items;
+        for (size_t fi = 0; fi < filters.size(); ++fi) {
+          auto entry = dynamic_ptr{std::make_shared<dynamic>()};
+          (*entry)["label"_key] = filters[fi].first;
+          (*entry)["regex"_key] = filters[fi].second;
+          filter_items[fi] = std::move(entry);
+        }
+        init["filters"_key] = dynamic_ptr{
+            std::make_shared<dynamic>(std::move(filter_items))};
+      }
+
       dlg->set(std::move(init)).get();
 
       dlg->onEvent("on_navigate"_key,
           [dlg, cur_dir](dynamic payload) mutable {
             auto name = payload.as<std::string>("name"_key);
-            *cur_dir = (name == "..") ? cur_dir->parent_path()
-                                      : (*cur_dir / name);
+            auto type = payload.as<std::string>("type"_key);
+            // type="path" means the user typed an absolute/arbitrary path.
+            if (type == "path") {
+              *cur_dir = fs::path(name);
+            } else {
+              *cur_dir = (name == "..") ? cur_dir->parent_path()
+                                        : (*cur_dir / name);
+            }
             dynamic fields;
             fields["path"_key]  = cur_dir->string();
             fields["files"_key] = dynamic_ptr{
@@ -1265,7 +1289,10 @@ class demo_client : public wish::client {
 
     pm.at("demo_win.tabs_root.tab_files.img_path_row.btn_img_browse")
         .onEvent("clicked"_key, [&pm, status, browse](dynamic) {
-          browse("Select Image", "Open", [&pm, status](std::string path) {
+          browse("Select Image", "Open",
+              {{"Images (*.bmp *.png *.jpg)", "\\.(bmp|png|jpg)$"},
+               {"All Files (*.*)",            ""}},
+              [&pm, status](std::string path) {
             dynamic f;
             f["value"_key] = path;
             pm.at("demo_win.tabs_root.tab_files.img_path_row.txt_img_path")
@@ -1279,7 +1306,11 @@ class demo_client : public wish::client {
 
     pm.at("demo_win.tabs_root.tab_files.ed_path_row.btn_ed_browse")
         .onEvent("clicked"_key, [&pm, status, browse](dynamic) {
-          browse("Select File", "Open", [&pm, status](std::string path) {
+          browse("Select File", "Open",
+              {{"Source Files (*.cpp *.hpp *.c *.h)", "\\.(cpp|hpp|c|h)$"},
+               {"Text Files (*.txt *.md)",            "\\.(txt|md)$"},
+               {"All Files (*.*)",                    ""}},
+              [&pm, status](std::string path) {
             dynamic f;
             f["value"_key] = path;
             pm.at("demo_win.tabs_root.tab_files.ed_path_row.txt_ed_path")
@@ -1295,6 +1326,9 @@ class demo_client : public wish::client {
         .onEvent("clicked"_key,
         [&pm, status, browse, font_path_ptr, font_size_ptr](dynamic) {
           browse("Select Font", "Select",
+              {{"TrueType Fonts (*.ttf)",  "\\.ttf$"},
+               {"OpenType Fonts (*.otf)", "\\.otf$"},
+               {"All Files (*.*)",         ""}},
               [&pm, status, font_path_ptr, font_size_ptr](std::string path) {
                 *font_path_ptr = path;
                 dynamic f;

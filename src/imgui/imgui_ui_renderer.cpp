@@ -119,6 +119,10 @@ void render_input_text(imgui_renderer&, const ui_element& node, const session& s
   auto    hint    = node.get_as<std::string>("hint"_key, "");
   int32_t maxlen  = node.get_as<int32_t>("max_length"_key, 256);
   auto    current = node.get_as<std::string>("value"_key, "");
+  float   width   = node.get_as<float>("width"_key, 0.0f);
+  int32_t flags   = node.get_as<int32_t>("flags"_key, 0);
+
+  if (width != 0.0f) ImGui::SetNextItemWidth(width);
 
   std::vector<char> buf(static_cast<size_t>(maxlen) + 1, '\0');
   auto copy_len = std::min(static_cast<size_t>(maxlen), current.size());
@@ -126,9 +130,11 @@ void render_input_text(imgui_renderer&, const ui_element& node, const session& s
 
   auto iml = with_id(label, node);
   bool changed = hint.empty()
-      ? ImGui::InputText(iml.c_str(), buf.data(), buf.size())
+      ? ImGui::InputText(iml.c_str(), buf.data(), buf.size(),
+                         ImGuiInputTextFlags(flags))
       : ImGui::InputTextWithHint(
-            iml.c_str(), hint.c_str(), buf.data(), buf.size());
+            iml.c_str(), hint.c_str(), buf.data(), buf.size(),
+            ImGuiInputTextFlags(flags));
 
   if (changed) {
     std::string new_val(buf.data());
@@ -176,6 +182,23 @@ void render_vertical_layout(
 void render_horizontal_layout(
     imgui_renderer& r, const ui_element& node, const session& s) {
   float spacing = node.get_as<float>("spacing"_key, 0.0f);
+  auto  align   = node.get_as<std::string>("align"_key, "left");
+
+  if (align == "right") {
+    // Sum explicit child widths to compute the right-edge offset.
+    float total = 0.0f;
+    int   n     = 0;
+    node.for_each_child_ordered([&](key_t, ui_element& child) {
+      total += static_cast<float>(child.get_as<int32_t>("width"_key, 0));
+      ++n;
+    });
+    if (n > 1) total += spacing * static_cast<float>(n - 1);
+    float avail = ImGui::GetContentRegionAvail().x;
+    float offset = avail - total;
+    if (offset > 0.0f)
+      ImGui::SetCursorPosX(ImGui::GetCursorPosX() + offset);
+  }
+
   ImGui::BeginGroup();
   bool first = true;
   node.for_each_child_ordered([&](key_t, ui_element& child) {

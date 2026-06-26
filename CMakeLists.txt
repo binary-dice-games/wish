@@ -201,7 +201,7 @@ add_library(wish_server STATIC
   src/plot3d_elements/plot3d_mesh.cpp
   src/plot3d_elements/plot3d_annotations.cpp
   src/forms/form.cpp
-  src/forms/open_file_dialog.cpp
+  src/forms/file_dialog.cpp
 )
 
 if(WISH_MODULE_DESKTOP)
