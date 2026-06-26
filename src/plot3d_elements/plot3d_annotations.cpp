@@ -42,11 +42,12 @@ void register_plot3d_annotations() {
       attr<DisplayName>("Offset Y"),
       attr<Description>("Pixel offset applied to the text after projection (vertical)."),
       attr<Category>("Position")});
-    dynamic::addClass("wish"_key, std::move(proto), "Plot3DItem"_key, {
-      attr<DisplayName>("Plot3DText"),
-      attr<Description>(
-          "Renders a text string at a given 3-D plot coordinate. "
-          "Must be a child of a Plot3D element.")});
+    (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Plot3DText"));
+    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+        "Renders a text string at a given 3-D plot coordinate. "
+        "Must be a child of a Plot3D element."));
+    dynamic::addClass("wish"_key, std::move(proto), "Plot3DItem"_key,
+        dynamic::make_factory<ui_element>("wish"_key, "Plot3DText"_key));
   }
 }
 

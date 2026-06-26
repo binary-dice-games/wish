@@ -4,7 +4,7 @@
 #pragma once
 
 #include <wish/session.hpp>
-#include <wish/top_level_element.hpp>
+#include <wish/ui_root.hpp>
 
 #include "src/bison/bison_object.hpp"
 #include "src/rmi/server/context.hpp"
@@ -28,7 +28,7 @@ namespace bdg::wish {
 ///
 /// File access inside a form must go through file_service::resolve_path()
 /// or resolve_widget_path() — the same sandbox rules as low-level elements.
-class form : public bison::dynamic, public top_level_element {
+class form : public ui_root {
  public:
   explicit form(bison::dynamic&& base);
 

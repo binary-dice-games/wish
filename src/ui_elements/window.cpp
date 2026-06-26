@@ -1,6 +1,8 @@
 // MIT License © 2025 Binary Dice Games
 /// @file window.cpp
 /// @brief Registers the Window prototype in the "wish" bison namespace.
+#include <wish/window.hpp>
+
 #include "src/bison/bison_object.hpp"
 
 #include "ui_elements.hpp"
@@ -8,6 +10,8 @@
 namespace bdg::wish {
 
 using namespace bdg::bison;
+
+window::window(bison::dynamic&& base) : ui_root(std::move(base)) {}
 
 void register_window() {
   auto proto = dynamic_ptr{"Window"_key, {}};
@@ -41,9 +45,11 @@ void register_window() {
     attr<DisplayName>("Flags"),
     attr<Description>("ImGui window flags bitmask."),
     attr<Category>("Behavior")});
-  dynamic::addClass("wish"_key, std::move(proto), "Element"_key, {
-    attr<DisplayName>("Window"),
-    attr<Description>("A top-level window container.")});
+  // Attach class-level attrs manually (no combined attrs+factory overload exists).
+  (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Window"));
+  (*proto)[dynamic::CLASS].addAttribute(attr<Description>("A top-level window container."));
+  dynamic::addClass("wish"_key, std::move(proto), "Element"_key,
+      dynamic::make_factory<window>("wish"_key, "Window"_key));
 }
 
 }  // namespace bdg::wish

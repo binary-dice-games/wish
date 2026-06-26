@@ -28,12 +28,13 @@ void register_plot3d_mesh() {
       attr<DisplayName>("Z Vertices"),
       attr<Description>("Vertex Z coordinates; length must be a multiple of 3."),
       attr<Category>("Data")});
-    dynamic::addClass("wish"_key, std::move(proto), "Plot3DItem"_key, {
-      attr<DisplayName>("Plot3DTriangle"),
-      attr<Description>(
-          "Draws filled 3-D triangles. xs/ys/zs are vertex arrays whose length "
-          "must be a multiple of 3 (every 3 consecutive vertices form one triangle). "
-          "Must be a child of a Plot3D element.")});
+    (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Plot3DTriangle"));
+    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+        "Draws filled 3-D triangles. xs/ys/zs are vertex arrays whose length "
+        "must be a multiple of 3 (every 3 consecutive vertices form one triangle). "
+        "Must be a child of a Plot3D element."));
+    dynamic::addClass("wish"_key, std::move(proto), "Plot3DItem"_key,
+        dynamic::make_factory<ui_element>("wish"_key, "Plot3DTriangle"_key));
   }
 
   // Plot3DQuad — a set of filled quads.
@@ -52,12 +53,13 @@ void register_plot3d_mesh() {
       attr<DisplayName>("Z Vertices"),
       attr<Description>("Vertex Z coordinates; length must be a multiple of 4."),
       attr<Category>("Data")});
-    dynamic::addClass("wish"_key, std::move(proto), "Plot3DItem"_key, {
-      attr<DisplayName>("Plot3DQuad"),
-      attr<Description>(
-          "Draws filled 3-D quads. xs/ys/zs are vertex arrays whose length "
-          "must be a multiple of 4 (every 4 consecutive vertices form one quad). "
-          "Must be a child of a Plot3D element.")});
+    (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Plot3DQuad"));
+    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+        "Draws filled 3-D quads. xs/ys/zs are vertex arrays whose length "
+        "must be a multiple of 4 (every 4 consecutive vertices form one quad). "
+        "Must be a child of a Plot3D element."));
+    dynamic::addClass("wish"_key, std::move(proto), "Plot3DItem"_key,
+        dynamic::make_factory<ui_element>("wish"_key, "Plot3DQuad"_key));
   }
 
   // Plot3DMesh — indexed triangle mesh with separate vertex and index arrays.
@@ -82,12 +84,13 @@ void register_plot3d_mesh() {
       attr<Description>(
           "Flat list of vertex indices forming triangles; length must be a multiple of 3."),
       attr<Category>("Data")});
-    dynamic::addClass("wish"_key, std::move(proto), "Plot3DItem"_key, {
-      attr<DisplayName>("Plot3DMesh"),
-      attr<Description>(
-          "Draws an indexed 3-D triangle mesh. xs/ys/zs are vertex arrays; "
-          "indices is a flat list of vertex indices (groups of 3 per triangle). "
-          "Must be a child of a Plot3D element.")});
+    (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Plot3DMesh"));
+    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+        "Draws an indexed 3-D triangle mesh. xs/ys/zs are vertex arrays; "
+        "indices is a flat list of vertex indices (groups of 3 per triangle). "
+        "Must be a child of a Plot3D element."));
+    dynamic::addClass("wish"_key, std::move(proto), "Plot3DItem"_key,
+        dynamic::make_factory<ui_element>("wish"_key, "Plot3DMesh"_key));
   }
 }
 

@@ -44,11 +44,12 @@ void register_plot_histogram() {
           "Maximum sample value to include.  "
           "When range_min == range_max (default 0/0), ImPlot auto-ranges."),
       attr<Category>("Behavior")});
-    dynamic::addClass("wish"_key, std::move(proto), "PlotItem"_key, {
-      attr<DisplayName>("PlotHistogram"),
-      attr<Description>(
-          "Draws a 1-D frequency histogram of the values array.  "
-          "Must be a child of a Plot element.")});
+    (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("PlotHistogram"));
+    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+        "Draws a 1-D frequency histogram of the values array.  "
+        "Must be a child of a Plot element."));
+    dynamic::addClass("wish"_key, std::move(proto), "PlotItem"_key,
+        dynamic::make_factory<ui_element>("wish"_key, "PlotHistogram"_key));
   }
 
   // PlotHistogram2D — 2-D frequency heatmap.
@@ -70,11 +71,12 @@ void register_plot_histogram() {
       attr<DisplayName>("Y Bins"),
       attr<Description>("Bin count for Y; same sentinel values as PlotHistogram.bins."),
       attr<Category>("Behavior")});
-    dynamic::addClass("wish"_key, std::move(proto), "PlotItem"_key, {
-      attr<DisplayName>("PlotHistogram2D"),
-      attr<Description>(
-          "Draws a 2-D frequency heatmap of the (xs, ys) sample pairs.  "
-          "Must be a child of a Plot element.")});
+    (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("PlotHistogram2D"));
+    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+        "Draws a 2-D frequency heatmap of the (xs, ys) sample pairs.  "
+        "Must be a child of a Plot element."));
+    dynamic::addClass("wish"_key, std::move(proto), "PlotItem"_key,
+        dynamic::make_factory<ui_element>("wish"_key, "PlotHistogram2D"_key));
   }
 }
 

@@ -26,8 +26,6 @@
 ///   });
 #pragma once
 
-#include <wish/top_level_element.hpp>
-
 #include "src/bison/bison_object.hpp"
 
 #include <functional>
@@ -73,7 +71,7 @@ class ui_element_ptr : public std::shared_ptr<ui_element> {
  * Instances are created by `ui_importer` via
  * `bison::dynamic::instantiate<ui_element>(...)`.
  */
-class ui_element : public bison::dynamic, public top_level_element {
+class ui_element : public bison::dynamic {
  public:
   /**
    * @brief Construct a `ui_element` by moving a plain `dynamic` into it.

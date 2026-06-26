@@ -2,14 +2,13 @@
 /// @file form.cpp
 /// @brief Implementation of the wish::form base class.
 #include <wish/form.hpp>
-#include <wish/top_level_element.hpp>
 
 namespace bdg::wish {
 
 // ── form ─────────────────────────────────────────────────────────────────────
 
 form::form(bison::dynamic&& base)
-    : bison::dynamic(std::move(base)) {}
+    : ui_root(std::move(base)) {}
 
 form::~form() {
   remove_internal_objects();
@@ -20,8 +19,8 @@ void form::remove_internal_objects() {
   const std::string dot = internal_root_key_ + ".";
 
   auto do_remove = [&](session& s) {
-    s.top_level_objects.erase(internal_root_key_);
-    s.top_level_handlers.erase(internal_root_key_);
+    s.top_level_objects.erase(bison::key_t{internal_root_key_});
+    s.top_level_handlers.erase(bison::key_t{internal_root_key_});
     for (auto it = s.objects.begin(); it != s.objects.end(); ) {
       if (it->first == internal_root_key_ || it->first.rfind(dot, 0) == 0)
         it = s.objects.erase(it);
@@ -51,8 +50,8 @@ void form::init(bison::rmi::context& ctx, sync_session_ptr sync_sess) {
     auto& s = *detail::current_session;
     auto it = s.objects.find(internal_root_key_);
     if (it != s.objects.end())
-      s.top_level_objects[internal_root_key_] = it->second;
-    s.top_level_handlers[internal_root_key_] = this;
+      s.top_level_objects[bison::key_t{internal_root_key_}] = it->second;
+    s.top_level_handlers[bison::key_t{internal_root_key_}] = this;
   }
 }
 

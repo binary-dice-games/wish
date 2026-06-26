@@ -61,14 +61,19 @@ void dump_session_tree(const session& s, std::ostream& out) {
 
   if (!s.top_level_objects.empty()) {
     out << "top_level_objects (" << s.top_level_objects.size() << "):\n";
-    std::vector<std::pair<std::string, ui_element_ptr>> roots(
+    std::vector<std::pair<bison::key_t, ui_element_ptr>> roots(
         s.top_level_objects.begin(), s.top_level_objects.end());
     std::sort(roots.begin(), roots.end(),
-        [](const auto& a, const auto& b) { return a.first < b.first; });
+        [](const auto& a, const auto& b) {
+          return static_cast<uint32_t>(a.first) < static_cast<uint32_t>(b.first);
+        });
     for (const auto& [key, ptr] : roots) {
-      if (!ptr) { out << "  [null]  \"" << key << "\"\n"; continue; }
-      out << "  [" << std::left << std::setw(20) << class_name(*ptr)
-          << "]  \"" << key << "\"\n";
+      if (!ptr) {
+        out << "  [null]  [0x" << std::hex << static_cast<uint32_t>(key) << "]\n";
+        continue;
+      }
+      out << "  [" << std::left << std::setw(20) << class_name(*ptr) << std::dec
+          << "]  [0x" << std::hex << static_cast<uint32_t>(key) << "]\n";
     }
   }
 }

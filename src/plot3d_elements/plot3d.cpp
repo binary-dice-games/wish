@@ -18,11 +18,12 @@ void register_plot3d() {
       attr<DisplayName>("Label"),
       attr<Description>("Series name shown in the plot legend."),
       attr<Category>("Content")});
-    dynamic::addClass("wish"_key, std::move(proto), "Element"_key, {
-      attr<DisplayName>("Plot3DItem"),
-      attr<Description>(
-          "Abstract base class for all 3-D plot series. "
-          "Must be placed as a direct child of a Plot3D element.")});
+    (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Plot3DItem"));
+    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+        "Abstract base class for all 3-D plot series. "
+        "Must be placed as a direct child of a Plot3D element."));
+    dynamic::addClass("wish"_key, std::move(proto), "Element"_key,
+        dynamic::make_factory<ui_element>("wish"_key, "Plot3DItem"_key));
   }
 
   // Plot3D — ImPlot3D window container. Children should be Plot3DItem elements.
@@ -72,11 +73,12 @@ void register_plot3d() {
       attr<DisplayName>("Z Axis Flags"),
       attr<Description>("ImPlot3DAxisFlags for the Z axis."),
       attr<Category>("Axes")});
-    dynamic::addClass("wish"_key, std::move(proto), "Element"_key, {
-      attr<DisplayName>("Plot3D"),
-      attr<Description>(
-          "An ImPlot3D plot window. "
-          "Children should be Plot3DItem elements (Plot3DLine, Plot3DSurface, etc.).")});
+    (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Plot3D"));
+    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+        "An ImPlot3D plot window. "
+        "Children should be Plot3DItem elements (Plot3DLine, Plot3DSurface, etc.)."));
+    dynamic::addClass("wish"_key, std::move(proto), "Element"_key,
+        dynamic::make_factory<ui_element>("wish"_key, "Plot3D"_key));
   }
 }
 

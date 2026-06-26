@@ -21,11 +21,12 @@ void register_radio_button() {
         "Whether this radio button is in the selected (filled) state. "
         "The server is responsible for maintaining mutual exclusivity within a group."),
     attr<Category>("State")});
-  dynamic::addClass("wish"_key, std::move(proto), "Element"_key, {
-    attr<DisplayName>("RadioButton"),
-    attr<Description>(
-        "A single radio button. "
-        "Emits 'clicked' when the user presses the button.")});
+  (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("RadioButton"));
+  (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+      "A single radio button. "
+      "Emits 'clicked' when the user presses the button."));
+  dynamic::addClass("wish"_key, std::move(proto), "Element"_key,
+      dynamic::make_factory<ui_element>("wish"_key, "RadioButton"_key));
 }
 
 }  // namespace bdg::wish

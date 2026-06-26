@@ -28,9 +28,11 @@ void register_docking() {
       attr<DisplayName>("Passthru Central Node"),
       attr<Description>("Let the central node be transparent to mouse/keyboard."),
       attr<Category>("Behavior")});
-    dynamic::addClass("wish"_key, std::move(proto), "Element"_key, {
-      attr<DisplayName>("DockSpaceViewport"),
-      attr<Description>("Full-viewport dockspace host. Windows nested as children become dockable.")});
+    (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("DockSpaceViewport"));
+    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+        "Full-viewport dockspace host. Windows nested as children become dockable."));
+    dynamic::addClass("wish"_key, std::move(proto), "Element"_key,
+        dynamic::make_factory<ui_element>("wish"_key, "DockSpaceViewport"_key));
   }
 
   // ── DockSpace ─────────────────────────────────────────────────────────────
@@ -53,9 +55,11 @@ void register_docking() {
       attr<DisplayName>("Flags"),
       attr<Description>("ImGuiDockNodeFlags bitmask."),
       attr<Category>("Behavior")});
-    dynamic::addClass("wish"_key, std::move(proto), "Element"_key, {
-      attr<DisplayName>("DockSpace"),
-      attr<Description>("Inline dockspace inside an existing window.")});
+    (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("DockSpace"));
+    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+        "Inline dockspace inside an existing window."));
+    dynamic::addClass("wish"_key, std::move(proto), "Element"_key,
+        dynamic::make_factory<ui_element>("wish"_key, "DockSpace"_key));
   }
 }
 

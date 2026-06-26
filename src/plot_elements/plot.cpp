@@ -18,11 +18,12 @@ void register_plot() {
       attr<DisplayName>("Label"),
       attr<Description>("Series name shown in the plot legend."),
       attr<Category>("Content")});
-    dynamic::addClass("wish"_key, std::move(proto), "Element"_key, {
-      attr<DisplayName>("PlotItem"),
-      attr<Description>(
-          "Abstract base class for all plot series. "
-          "Must be placed as a direct child of a Plot element.")});
+    (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("PlotItem"));
+    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+        "Abstract base class for all plot series. "
+        "Must be placed as a direct child of a Plot element."));
+    dynamic::addClass("wish"_key, std::move(proto), "Element"_key,
+        dynamic::make_factory<ui_element>("wish"_key, "PlotItem"_key));
   }
 
   // Plot — ImPlot window container.  Children should be PlotItem elements.
@@ -69,11 +70,12 @@ void register_plot() {
           "ImPlotAxisFlags for the primary Y axis.  "
           "Use ImPlotAxisFlags_NoDecorations (0x1F) for pie charts."),
       attr<Category>("Axes")});
-    dynamic::addClass("wish"_key, std::move(proto), "Element"_key, {
-      attr<DisplayName>("Plot"),
-      attr<Description>(
-          "An ImPlot plot window.  "
-          "Children should be PlotItem elements (PlotLine, PlotBars, etc.).")});
+    (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Plot"));
+    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+        "An ImPlot plot window.  "
+        "Children should be PlotItem elements (PlotLine, PlotBars, etc.)."));
+    dynamic::addClass("wish"_key, std::move(proto), "Element"_key,
+        dynamic::make_factory<ui_element>("wish"_key, "Plot"_key));
   }
 }
 

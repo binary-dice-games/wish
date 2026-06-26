@@ -4,7 +4,7 @@
 #include "template_handler.hpp"
 
 #include <wish/ui_importer.hpp>
-#include <wish/top_level_element.hpp>
+#include <wish/ui_root.hpp>
 
 #include "src/rmi/shared/ids.hpp"
 
@@ -33,8 +33,8 @@ static bison::dynamic apply_descriptor(
   // Generate a unique top-level key for this instantiation so multiple
   // templates can coexist without overwriting each other.
   static std::atomic<uint32_t> tpl_counter{0};
-  const std::string tpl_key =
-      "__tpl_" + std::to_string(tpl_counter.fetch_add(1));
+  const bison::key_t tpl_key{
+      "__tpl_" + std::to_string(tpl_counter.fetch_add(1))};
 
   bison::dynamic result;
   std::size_t idx = 0;
@@ -53,12 +53,13 @@ static bison::dynamic apply_descriptor(
     result[idx++] = bison::dynamic_ptr{std::move(entry)};
   }
 
-  // Register the root element as a top-level renderable and its own event handler.
-  // The root is at key "" in the name_map (the outermost element of the descriptor).
+  // Register the root element as a top-level renderable.  If the root is a
+  // window (ui_root subtype), also register it as its own event handler.
   auto root_it = nmap.find("");
   if (root_it != nmap.end()) {
-    sess.top_level_objects[tpl_key]  = root_it->second;
-    sess.top_level_handlers[tpl_key] = root_it->second.get();
+    sess.top_level_objects[tpl_key] = root_it->second;
+    if (auto* root_iface = dynamic_cast<ui_root*>(root_it->second.get()))
+      sess.top_level_handlers[tpl_key] = root_iface;
   }
 
   return result;

@@ -4,6 +4,7 @@
 #include <wish/registry.hpp>
 #include <wish/server.hpp>
 #include <wish/session.hpp>
+#include <wish/ui_root.hpp>
 
 #include "src/bison/bison_object.hpp"
 #include "src/rmi/rmi.hpp"

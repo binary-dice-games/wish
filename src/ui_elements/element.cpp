@@ -33,9 +33,10 @@ void register_element() {
     attr<DisplayName>("Font Size"),
     attr<Description>("Font size in pixels. 0 uses the default ImGui font."),
     attr<Category>("Appearance")});
-  dynamic::addClass("wish"_key, std::move(proto), key_t{0U}, {
-    attr<DisplayName>("Element"),
-    attr<Description>("Base class for all UI elements.")});
+  (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Element"));
+  (*proto)[dynamic::CLASS].addAttribute(attr<Description>("Base class for all UI elements."));
+  dynamic::addClass("wish"_key, std::move(proto), key_t{0U},
+      dynamic::make_factory<ui_element>("wish"_key, "Element"_key));
 }
 
 }  // namespace bdg::wish

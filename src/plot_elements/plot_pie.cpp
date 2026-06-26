@@ -62,12 +62,13 @@ void register_plot_pie() {
         "90° = 12 o'clock)."),
     attr<Category>("Appearance"),
     attr<Range>(0.0, 360.0)});
-  dynamic::addClass("wish"_key, std::move(proto), "PlotItem"_key, {
-    attr<DisplayName>("PlotPieChart"),
-    attr<Description>(
-        "Draws a pie chart.  "
-        "Place inside a Plot with x_flags=31 (NoDecorations) and y_flags=31, "
-        "and set Plot axis limits to [0,1] x [0,1] for correct scaling.")});
+  (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("PlotPieChart"));
+  (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+      "Draws a pie chart.  "
+      "Place inside a Plot with x_flags=31 (NoDecorations) and y_flags=31, "
+      "and set Plot axis limits to [0,1] x [0,1] for correct scaling."));
+  dynamic::addClass("wish"_key, std::move(proto), "PlotItem"_key,
+      dynamic::make_factory<ui_element>("wish"_key, "PlotPieChart"_key));
 }
 
 }  // namespace bdg::wish

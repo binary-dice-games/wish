@@ -17,10 +17,11 @@ void register_tabs() {
       attr<DisplayName>("ID"),
       attr<Description>("ImGui identifier for this tab bar. Must be unique within its window."),
       attr<Category>("Behavior")});
-    dynamic::addClass("wish"_key, std::move(proto), "Element"_key, {
-      attr<DisplayName>("TabBar"),
-      attr<Description>(
-          "A horizontal tab bar. Children should be TabItem elements.")});
+    (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("TabBar"));
+    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+        "A horizontal tab bar. Children should be TabItem elements."));
+    dynamic::addClass("wish"_key, std::move(proto), "Element"_key,
+        dynamic::make_factory<ui_element>("wish"_key, "TabBar"_key));
   }
 
   // TabItem — one tab page inside a TabBar; its children are the page content.
@@ -34,12 +35,13 @@ void register_tabs() {
       attr<DisplayName>("Closable"),
       attr<Description>("When true, a close button appears on the tab."),
       attr<Category>("Behavior")});
-    dynamic::addClass("wish"_key, std::move(proto), "Element"_key, {
-      attr<DisplayName>("TabItem"),
-      attr<Description>(
-          "A single tab page inside a TabBar. "
-          "Emits 'selected' when it becomes the active tab. "
-          "Emits 'closed' when the close button is clicked (requires closable: true).")});
+    (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("TabItem"));
+    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+        "A single tab page inside a TabBar. "
+        "Emits 'selected' when it becomes the active tab. "
+        "Emits 'closed' when the close button is clicked (requires closable: true)."));
+    dynamic::addClass("wish"_key, std::move(proto), "Element"_key,
+        dynamic::make_factory<ui_element>("wish"_key, "TabItem"_key));
   }
 }
 

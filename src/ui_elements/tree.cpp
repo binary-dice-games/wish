@@ -28,11 +28,12 @@ void register_tree() {
       attr<Description>(
           "When true, renders as a leaf node without an arrow and does not show children."),
       attr<Category>("Behavior")});
-    dynamic::addClass("wish"_key, std::move(proto), "Element"_key, {
-      attr<DisplayName>("TreeNode"),
-      attr<Description>(
-          "A collapsible tree node with an arrow. "
-          "Emits 'toggled' with {open: bool} when expanded or collapsed.")});
+    (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("TreeNode"));
+    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+        "A collapsible tree node with an arrow. "
+        "Emits 'toggled' with {open: bool} when expanded or collapsed."));
+    dynamic::addClass("wish"_key, std::move(proto), "Element"_key,
+        dynamic::make_factory<ui_element>("wish"_key, "TreeNode"_key));
   }
 
   // CollapsingHeader — bold section header that collapses its children.
@@ -42,11 +43,12 @@ void register_tree() {
       attr<DisplayName>("Label"),
       attr<Description>("Header text."),
       attr<Category>("Content")});
-    dynamic::addClass("wish"_key, std::move(proto), "Element"_key, {
-      attr<DisplayName>("CollapsingHeader"),
-      attr<Description>(
-          "A bold section header that toggles visibility of its children. "
-          "Emits 'toggled' with {open: bool} when expanded or collapsed.")});
+    (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("CollapsingHeader"));
+    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+        "A bold section header that toggles visibility of its children. "
+        "Emits 'toggled' with {open: bool} when expanded or collapsed."));
+    dynamic::addClass("wish"_key, std::move(proto), "Element"_key,
+        dynamic::make_factory<ui_element>("wish"_key, "CollapsingHeader"_key));
   }
 }
 

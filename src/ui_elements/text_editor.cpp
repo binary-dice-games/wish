@@ -44,12 +44,13 @@ void register_text_editor() {
     attr<Category>("Layout"),
     attr<Range>(1, 8192),
     attr<Step>(1)});
-  dynamic::addClass("wish"_key, std::move(proto), "Element"_key, {
-    attr<DisplayName>("Text Editor"),
-    attr<Description>(
-        "A full-featured code/text editor backed by ImGuiColorTextEdit. "
-        "Reads and writes a local file; use upload_file / download_file "
-        "for remote transports.")});
+  (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Text Editor"));
+  (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+      "A full-featured code/text editor backed by ImGuiColorTextEdit. "
+      "Reads and writes a local file; use upload_file / download_file "
+      "for remote transports."));
+  dynamic::addClass("wish"_key, std::move(proto), "Element"_key,
+      dynamic::make_factory<ui_element>("wish"_key, "TextEditor"_key));
 }
 
 }  // namespace bdg::wish

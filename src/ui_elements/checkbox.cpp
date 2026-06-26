@@ -19,9 +19,10 @@ void register_checkbox() {
     attr<DisplayName>("Value"),
     attr<Description>("Current checked state."),
     attr<Category>("State")});
-  dynamic::addClass("wish"_key, std::move(proto), "Element"_key, {
-    attr<DisplayName>("Checkbox"),
-    attr<Description>("A toggleable checkbox with a label.")});
+  (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Checkbox"));
+  (*proto)[dynamic::CLASS].addAttribute(attr<Description>("A toggleable checkbox with a label."));
+  dynamic::addClass("wish"_key, std::move(proto), "Element"_key,
+      dynamic::make_factory<ui_element>("wish"_key, "Checkbox"_key));
 }
 
 }  // namespace bdg::wish

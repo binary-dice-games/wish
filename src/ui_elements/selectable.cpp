@@ -27,11 +27,12 @@ void register_selectable() {
     attr<DisplayName>("Height"),
     attr<Description>("Height in pixels. 0 uses the default line height."),
     attr<Category>("Layout")});
-  dynamic::addClass("wish"_key, std::move(proto), "Element"_key, {
-    attr<DisplayName>("Selectable"),
-    attr<Description>(
-        "A highlight-on-hover item suitable for building list boxes or menus. "
-        "Emits 'changed' with {selected: bool} on click.")});
+  (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Selectable"));
+  (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+      "A highlight-on-hover item suitable for building list boxes or menus. "
+      "Emits 'changed' with {selected: bool} on click."));
+  dynamic::addClass("wish"_key, std::move(proto), "Element"_key,
+      dynamic::make_factory<ui_element>("wish"_key, "Selectable"_key));
 }
 
 }  // namespace bdg::wish

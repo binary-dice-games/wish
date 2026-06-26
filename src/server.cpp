@@ -7,7 +7,7 @@
 #include <wish/logger.hpp>
 #include <wish/style_service.hpp>
 #include <wish/registry.hpp>
-#include <wish/top_level_element.hpp>
+#include <wish/ui_root.hpp>
 
 #include "template_handler.hpp"
 
@@ -199,7 +199,8 @@ void server::render_loop() {
         }
         for (const auto& sync_sess : to_render) {
           std::vector<session::pending_event> events;
-          std::unordered_map<std::string, top_level_element*> handlers;
+          std::unordered_map<bison::key_t, ui_root*,
+                             bison::key_t, bison::key_t> handlers;
           std::function<void(bison::key_t, bison::key_t, bison::dynamic)> client_emit;
           {
             auto sess = sync_sess->wlock();
@@ -210,7 +211,7 @@ void server::render_loop() {
                 renderer_->render_session(*win, *sess);
               }
             }
-            sess->current_top_level_key.clear();
+            sess->current_top_level_key = bison::key_t{};
             detail::current_session = nullptr;
             events      = std::move(sess->pending_events);
             handlers    = sess->top_level_handlers;
@@ -219,7 +220,7 @@ void server::render_loop() {
           // Dispatch events with no lock held: handlers may modify session state.
           for (auto& ev : events) {
             if (client_emit) client_emit(ev.id, ev.event_name, ev.payload);
-            if (!ev.root_key.empty()) {
+            if (ev.root_key.id != 0) {
               auto it = handlers.find(ev.root_key);
               if (it != handlers.end() && it->second)
                 it->second->on_event(ev.id, ev.event_name, ev.payload);

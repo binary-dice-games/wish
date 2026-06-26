@@ -15,10 +15,11 @@ void register_button() {
     attr<DisplayName>("Label"),
     attr<Description>("Button caption text."),
     attr<Category>("Content")});
-  dynamic::addClass("wish"_key, std::move(proto), "Element"_key, {
-    attr<DisplayName>("Button"),
-    attr<Description>(
-        "A clickable button that emits a clicked event.")});
+  (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Button"));
+  (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+      "A clickable button that emits a clicked event."));
+  dynamic::addClass("wish"_key, std::move(proto), "Element"_key,
+      dynamic::make_factory<ui_element>("wish"_key, "Button"_key));
 }
 
 }  // namespace bdg::wish

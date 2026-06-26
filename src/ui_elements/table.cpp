@@ -46,11 +46,12 @@ void register_table() {
       attr<DisplayName>("Show Headers"),
       attr<Description>("Render a header row from TableColumn labels."),
       attr<Category>("Appearance")});
-    dynamic::addClass("wish"_key, std::move(proto), "Element"_key, {
-      attr<DisplayName>("Table"),
-      attr<Description>(
-          "A multi-column table. Direct children of type TableColumn define "
-          "column setup; all other children (typically TableRow) provide rows.")});
+    (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Table"));
+    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+        "A multi-column table. Direct children of type TableColumn define "
+        "column setup; all other children (typically TableRow) provide rows."));
+    dynamic::addClass("wish"_key, std::move(proto), "Element"_key,
+        dynamic::make_factory<ui_element>("wish"_key, "Table"_key));
   }
 
   // TableColumn — maps to ImGui::TableSetupColumn.
@@ -69,11 +70,12 @@ void register_table() {
       attr<DisplayName>("Init Width"),
       attr<Description>("Initial column width in pixels (or weight for stretch columns)."),
       attr<Category>("Layout")});
-    dynamic::addClass("wish"_key, std::move(proto), "Element"_key, {
-      attr<DisplayName>("TableColumn"),
-      attr<Description>(
-          "Defines one column inside a Table. "
-          "Processed by the parent Table for setup; not rendered independently.")});
+    (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("TableColumn"));
+    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+        "Defines one column inside a Table. "
+        "Processed by the parent Table for setup; not rendered independently."));
+    dynamic::addClass("wish"_key, std::move(proto), "Element"_key,
+        dynamic::make_factory<ui_element>("wish"_key, "TableColumn"_key));
   }
 
   // TableRow — maps to ImGui::TableNextRow.
@@ -88,11 +90,12 @@ void register_table() {
       attr<DisplayName>("Min Height"),
       attr<Description>("Minimum row height in pixels; 0 uses default."),
       attr<Category>("Layout")});
-    dynamic::addClass("wish"_key, std::move(proto), "Element"_key, {
-      attr<DisplayName>("TableRow"),
-      attr<Description>(
-          "A row inside a Table. Each child element occupies one column cell "
-          "in left-to-right order.")});
+    (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("TableRow"));
+    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+        "A row inside a Table. Each child element occupies one column cell "
+        "in left-to-right order."));
+    dynamic::addClass("wish"_key, std::move(proto), "Element"_key,
+        dynamic::make_factory<ui_element>("wish"_key, "TableRow"_key));
   }
 }
 

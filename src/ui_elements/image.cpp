@@ -30,9 +30,11 @@ void register_image() {
     attr<Category>("Layout"),
     attr<Range>(0, 16384),
     attr<Step>(1)});
-  dynamic::addClass("wish"_key, std::move(proto), "Element"_key, {
-    attr<DisplayName>("Image"),
-    attr<Description>("Displays an image uploaded via the file service.")});
+  (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Image"));
+  (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+      "Displays an image uploaded via the file service."));
+  dynamic::addClass("wish"_key, std::move(proto), "Element"_key,
+      dynamic::make_factory<ui_element>("wish"_key, "Image"_key));
 }
 
 }  // namespace bdg::wish

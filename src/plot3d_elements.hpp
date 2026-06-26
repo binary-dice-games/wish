@@ -4,6 +4,8 @@
 ///        Not part of the public wish API.
 #pragma once
 
+#include <wish/ui_element.hpp>
+
 namespace bdg::wish {
 
 void register_plot3d();           // Plot3D (container), Plot3DItem (series base)

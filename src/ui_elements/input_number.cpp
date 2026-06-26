@@ -29,11 +29,12 @@ void register_input_number() {
       attr<DisplayName>("Step Fast"),
       attr<Description>("Amount added/subtracted when Ctrl is held while clicking +/-."),
       attr<Category>("Behavior")});
-    dynamic::addClass("wish"_key, std::move(proto), "Element"_key, {
-      attr<DisplayName>("InputInt"),
-      attr<Description>(
-          "An integer input field with increment/decrement buttons. "
-          "Emits 'changed' with {value: int} when edited.")});
+    (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("InputInt"));
+    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+        "An integer input field with increment/decrement buttons. "
+        "Emits 'changed' with {value: int} when edited."));
+    dynamic::addClass("wish"_key, std::move(proto), "Element"_key,
+        dynamic::make_factory<ui_element>("wish"_key, "InputInt"_key));
   }
 
   // InputFloat — float input with optional step buttons.
@@ -59,11 +60,12 @@ void register_input_number() {
       attr<DisplayName>("Format"),
       attr<Description>("printf-style display format, e.g. \"%.2f\"."),
       attr<Category>("Display")});
-    dynamic::addClass("wish"_key, std::move(proto), "Element"_key, {
-      attr<DisplayName>("InputFloat"),
-      attr<Description>(
-          "A float input field with optional increment/decrement buttons. "
-          "Emits 'changed' with {value: float} when edited.")});
+    (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("InputFloat"));
+    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+        "A float input field with optional increment/decrement buttons. "
+        "Emits 'changed' with {value: float} when edited."));
+    dynamic::addClass("wish"_key, std::move(proto), "Element"_key,
+        dynamic::make_factory<ui_element>("wish"_key, "InputFloat"_key));
   }
 }
 

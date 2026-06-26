@@ -27,9 +27,11 @@ void register_progress_bar() {
     attr<DisplayName>("Height"),
     attr<Description>("Bar height in pixels. 0 uses the default height."),
     attr<Category>("Layout")});
-  dynamic::addClass("wish"_key, std::move(proto), "Element"_key, {
-    attr<DisplayName>("ProgressBar"),
-    attr<Description>("A non-interactive horizontal progress bar. No events.")});
+  (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("ProgressBar"));
+  (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+      "A non-interactive horizontal progress bar. No events."));
+  dynamic::addClass("wish"_key, std::move(proto), "Element"_key,
+      dynamic::make_factory<ui_element>("wish"_key, "ProgressBar"_key));
 }
 
 }  // namespace bdg::wish

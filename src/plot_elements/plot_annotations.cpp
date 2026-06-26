@@ -33,11 +33,12 @@ void register_plot_annotations() {
       attr<DisplayName>("Pixel Offset Y"),
       attr<Description>("Vertical pixel offset applied after coordinate projection."),
       attr<Category>("Layout")});
-    dynamic::addClass("wish"_key, std::move(proto), "PlotItem"_key, {
-      attr<DisplayName>("PlotText"),
-      attr<Description>(
-          "Draws a text string at a plot coordinate.  "
-          "Must be a child of a Plot element.")});
+    (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("PlotText"));
+    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+        "Draws a text string at a plot coordinate.  "
+        "Must be a child of a Plot element."));
+    dynamic::addClass("wish"_key, std::move(proto), "PlotItem"_key,
+        dynamic::make_factory<ui_element>("wish"_key, "PlotText"_key));
   }
 
   // PlotInfLines — infinite vertical or horizontal reference lines.
@@ -56,11 +57,12 @@ void register_plot_annotations() {
           "When false, draws vertical lines at each X value.  "
           "When true, draws horizontal lines at each Y value."),
       attr<Category>("Behavior")});
-    dynamic::addClass("wish"_key, std::move(proto), "PlotItem"_key, {
-      attr<DisplayName>("PlotInfLines"),
-      attr<Description>(
-          "Draws infinite reference lines across the plot.  "
-          "Must be a child of a Plot element.")});
+    (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("PlotInfLines"));
+    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+        "Draws infinite reference lines across the plot.  "
+        "Must be a child of a Plot element."));
+    dynamic::addClass("wish"_key, std::move(proto), "PlotItem"_key,
+        dynamic::make_factory<ui_element>("wish"_key, "PlotInfLines"_key));
   }
 }
 

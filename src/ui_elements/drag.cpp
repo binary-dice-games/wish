@@ -37,11 +37,12 @@ void register_drag() {
       attr<DisplayName>("Format"),
       attr<Description>("printf-style display format."),
       attr<Category>("Display")});
-    dynamic::addClass("wish"_key, std::move(proto), "Element"_key, {
-      attr<DisplayName>("DragFloat"),
-      attr<Description>(
-          "A float value editor: click-and-drag to change, double-click to type. "
-          "Emits 'changed' with {value: float} when edited.")});
+    (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("DragFloat"));
+    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+        "A float value editor: click-and-drag to change, double-click to type. "
+        "Emits 'changed' with {value: float} when edited."));
+    dynamic::addClass("wish"_key, std::move(proto), "Element"_key,
+        dynamic::make_factory<ui_element>("wish"_key, "DragFloat"_key));
   }
 
   // DragInt — click-and-drag (or double-click to type) an integer value.
@@ -67,11 +68,12 @@ void register_drag() {
       attr<DisplayName>("Max"),
       attr<Description>("Upper clamp. When min == max the value is unclamped."),
       attr<Category>("Behavior")});
-    dynamic::addClass("wish"_key, std::move(proto), "Element"_key, {
-      attr<DisplayName>("DragInt"),
-      attr<Description>(
-          "An integer value editor: click-and-drag to change, double-click to type. "
-          "Emits 'changed' with {value: int} when edited.")});
+    (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("DragInt"));
+    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+        "An integer value editor: click-and-drag to change, double-click to type. "
+        "Emits 'changed' with {value: int} when edited."));
+    dynamic::addClass("wish"_key, std::move(proto), "Element"_key,
+        dynamic::make_factory<ui_element>("wish"_key, "DragInt"_key));
   }
 }
 

@@ -15,11 +15,12 @@ void register_menu() {
   // sets ImGuiWindowFlags_MenuBar on the window.
   {
     auto proto = dynamic_ptr{"MenuBar"_key, {}};
-    dynamic::addClass("wish"_key, std::move(proto), "Element"_key, {
-      attr<DisplayName>("MenuBar"),
-      attr<Description>(
-          "Menu bar container. Must be a direct child of a Window. "
-          "Children should be Menu elements.")});
+    (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("MenuBar"));
+    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+        "Menu bar container. Must be a direct child of a Window. "
+        "Children should be Menu elements."));
+    dynamic::addClass("wish"_key, std::move(proto), "Element"_key,
+        dynamic::make_factory<ui_element>("wish"_key, "MenuBar"_key));
   }
 
   // Menu — drop-down submenu. Children are MenuItem, Menu, or Separator.
@@ -33,11 +34,12 @@ void register_menu() {
       attr<DisplayName>("Enabled"),
       attr<Description>("When false, the menu header is grayed out and cannot be opened."),
       attr<Category>("Behavior")});
-    dynamic::addClass("wish"_key, std::move(proto), "Element"_key, {
-      attr<DisplayName>("Menu"),
-      attr<Description>(
-          "A drop-down menu. "
-          "Children may be MenuItem, Menu (submenu), or Separator elements.")});
+    (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Menu"));
+    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+        "A drop-down menu. "
+        "Children may be MenuItem, Menu (submenu), or Separator elements."));
+    dynamic::addClass("wish"_key, std::move(proto), "Element"_key,
+        dynamic::make_factory<ui_element>("wish"_key, "Menu"_key));
   }
 
   // MenuItem — a single selectable item inside a Menu.
@@ -59,11 +61,12 @@ void register_menu() {
       attr<DisplayName>("Enabled"),
       attr<Description>("When false, the item is grayed out and cannot be clicked."),
       attr<Category>("Behavior")});
-    dynamic::addClass("wish"_key, std::move(proto), "Element"_key, {
-      attr<DisplayName>("MenuItem"),
-      attr<Description>(
-          "A selectable item inside a Menu. "
-          "Emits 'clicked' with {checked: bool} when activated.")});
+    (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("MenuItem"));
+    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+        "A selectable item inside a Menu. "
+        "Emits 'clicked' with {checked: bool} when activated."));
+    dynamic::addClass("wish"_key, std::move(proto), "Element"_key,
+        dynamic::make_factory<ui_element>("wish"_key, "MenuItem"_key));
   }
 }
 

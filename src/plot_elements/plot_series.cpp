@@ -30,33 +30,36 @@ void register_plot_series() {
   {
     auto proto = dynamic_ptr{"PlotLine"_key, {}};
     add_xy_fields(proto);
-    dynamic::addClass("wish"_key, std::move(proto), "PlotItem"_key, {
-      attr<DisplayName>("PlotLine"),
-      attr<Description>(
-          "Draws a connected line through the (xs, ys) data points.  "
-          "Must be a child of a Plot element.")});
+    (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("PlotLine"));
+    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+        "Draws a connected line through the (xs, ys) data points.  "
+        "Must be a child of a Plot element."));
+    dynamic::addClass("wish"_key, std::move(proto), "PlotItem"_key,
+        dynamic::make_factory<ui_element>("wish"_key, "PlotLine"_key));
   }
 
   // PlotScatter — dots at each data point, no connecting line.
   {
     auto proto = dynamic_ptr{"PlotScatter"_key, {}};
     add_xy_fields(proto);
-    dynamic::addClass("wish"_key, std::move(proto), "PlotItem"_key, {
-      attr<DisplayName>("PlotScatter"),
-      attr<Description>(
-          "Draws a marker at each (xs[i], ys[i]) coordinate without connecting lines.  "
-          "Must be a child of a Plot element.")});
+    (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("PlotScatter"));
+    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+        "Draws a marker at each (xs[i], ys[i]) coordinate without connecting lines.  "
+        "Must be a child of a Plot element."));
+    dynamic::addClass("wish"_key, std::move(proto), "PlotItem"_key,
+        dynamic::make_factory<ui_element>("wish"_key, "PlotScatter"_key));
   }
 
   // PlotStairs — staircase / step interpolation between data points.
   {
     auto proto = dynamic_ptr{"PlotStairs"_key, {}};
     add_xy_fields(proto);
-    dynamic::addClass("wish"_key, std::move(proto), "PlotItem"_key, {
-      attr<DisplayName>("PlotStairs"),
-      attr<Description>(
-          "Draws a staircase (step-interpolated) line through the data.  "
-          "Must be a child of a Plot element.")});
+    (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("PlotStairs"));
+    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+        "Draws a staircase (step-interpolated) line through the data.  "
+        "Must be a child of a Plot element."));
+    dynamic::addClass("wish"_key, std::move(proto), "PlotItem"_key,
+        dynamic::make_factory<ui_element>("wish"_key, "PlotStairs"_key));
   }
 
   // PlotStems — vertical lines from a reference level to each data point.
@@ -67,11 +70,12 @@ void register_plot_series() {
       attr<DisplayName>("Reference"),
       attr<Description>("Y coordinate of the baseline from which stems grow."),
       attr<Category>("Data")});
-    dynamic::addClass("wish"_key, std::move(proto), "PlotItem"_key, {
-      attr<DisplayName>("PlotStems"),
-      attr<Description>(
-          "Draws vertical stems from the reference level to each (xs[i], ys[i]).  "
-          "Must be a child of a Plot element.")});
+    (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("PlotStems"));
+    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+        "Draws vertical stems from the reference level to each (xs[i], ys[i]).  "
+        "Must be a child of a Plot element."));
+    dynamic::addClass("wish"_key, std::move(proto), "PlotItem"_key,
+        dynamic::make_factory<ui_element>("wish"_key, "PlotStems"_key));
   }
 
   // PlotShaded — filled area between two curves (or between one curve and ref).
@@ -89,22 +93,24 @@ void register_plot_series() {
       attr<Description>(
           "Horizontal reference line used when ys2 is empty."),
       attr<Category>("Data")});
-    dynamic::addClass("wish"_key, std::move(proto), "PlotItem"_key, {
-      attr<DisplayName>("PlotShaded"),
-      attr<Description>(
-          "Draws a shaded region between two curves, or between ys and a reference.  "
-          "Must be a child of a Plot element.")});
+    (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("PlotShaded"));
+    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+        "Draws a shaded region between two curves, or between ys and a reference.  "
+        "Must be a child of a Plot element."));
+    dynamic::addClass("wish"_key, std::move(proto), "PlotItem"_key,
+        dynamic::make_factory<ui_element>("wish"_key, "PlotShaded"_key));
   }
 
   // PlotDigital — binary / digital signal display.
   {
     auto proto = dynamic_ptr{"PlotDigital"_key, {}};
     add_xy_fields(proto);
-    dynamic::addClass("wish"_key, std::move(proto), "PlotItem"_key, {
-      attr<DisplayName>("PlotDigital"),
-      attr<Description>(
-          "Draws a digital signal trace: xs = timestamps, ys = 0 or 1.  "
-          "Must be a child of a Plot element.")});
+    (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("PlotDigital"));
+    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+        "Draws a digital signal trace: xs = timestamps, ys = 0 or 1.  "
+        "Must be a child of a Plot element."));
+    dynamic::addClass("wish"_key, std::move(proto), "PlotItem"_key,
+        dynamic::make_factory<ui_element>("wish"_key, "PlotDigital"_key));
   }
 }
 

@@ -51,12 +51,13 @@ void register_plot3d_surface() {
           "Maximum value used to map Z height to colormap. "
           "Both scale_min and scale_max equal to 0 triggers auto-range."),
       attr<Category>("Style")});
-    dynamic::addClass("wish"_key, std::move(proto), "Plot3DItem"_key, {
-      attr<DisplayName>("Plot3DSurface"),
-      attr<Description>(
-          "Draws a colored 3-D parametric surface on an x_count × y_count grid. "
-          "xs, ys, zs are flattened row-major arrays. "
-          "Must be a child of a Plot3D element.")});
+    (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Plot3DSurface"));
+    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+        "Draws a colored 3-D parametric surface on an x_count × y_count grid. "
+        "xs, ys, zs are flattened row-major arrays. "
+        "Must be a child of a Plot3D element."));
+    dynamic::addClass("wish"_key, std::move(proto), "Plot3DItem"_key,
+        dynamic::make_factory<ui_element>("wish"_key, "Plot3DSurface"_key));
   }
 }
 

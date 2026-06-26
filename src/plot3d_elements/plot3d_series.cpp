@@ -32,22 +32,24 @@ void register_plot3d_series() {
   {
     auto proto = dynamic_ptr{"Plot3DLine"_key, {}};
     add_xyz_fields(proto);
-    dynamic::addClass("wish"_key, std::move(proto), "Plot3DItem"_key, {
-      attr<DisplayName>("Plot3DLine"),
-      attr<Description>(
-          "Draws a connected 3-D line through (xs[i], ys[i], zs[i]) data points. "
-          "Must be a child of a Plot3D element.")});
+    (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Plot3DLine"));
+    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+        "Draws a connected 3-D line through (xs[i], ys[i], zs[i]) data points. "
+        "Must be a child of a Plot3D element."));
+    dynamic::addClass("wish"_key, std::move(proto), "Plot3DItem"_key,
+        dynamic::make_factory<ui_element>("wish"_key, "Plot3DLine"_key));
   }
 
   // Plot3DScatter — dots at each 3-D data point, no connecting line.
   {
     auto proto = dynamic_ptr{"Plot3DScatter"_key, {}};
     add_xyz_fields(proto);
-    dynamic::addClass("wish"_key, std::move(proto), "Plot3DItem"_key, {
-      attr<DisplayName>("Plot3DScatter"),
-      attr<Description>(
-          "Draws a marker at each (xs[i], ys[i], zs[i]) without connecting lines. "
-          "Must be a child of a Plot3D element.")});
+    (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Plot3DScatter"));
+    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+        "Draws a marker at each (xs[i], ys[i], zs[i]) without connecting lines. "
+        "Must be a child of a Plot3D element."));
+    dynamic::addClass("wish"_key, std::move(proto), "Plot3DItem"_key,
+        dynamic::make_factory<ui_element>("wish"_key, "Plot3DScatter"_key));
   }
 }
 

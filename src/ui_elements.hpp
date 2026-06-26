@@ -5,6 +5,7 @@
 #pragma once
 
 #include "bison_attributes.hpp"
+#include <wish/ui_element.hpp>
 
 namespace bdg::wish {
 

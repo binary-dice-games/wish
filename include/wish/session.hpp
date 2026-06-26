@@ -21,7 +21,7 @@
 
 namespace bdg::wish {
 
-class top_level_element;  // defined in <wish/top_level_element.hpp>
+class ui_root;  // defined in <wish/ui_root.hpp>
 
 class file_service;
 using file_service_ptr = std::shared_ptr<file_service>;
@@ -86,7 +86,8 @@ struct session {
   /// synchronized session map): the render loop holds the read lock for the
   /// entire frame; every RMI dispatch holds the write lock via the
   /// `on_before_dispatch` / `on_after_dispatch` hooks.
-  std::unordered_map<std::string, ui_element_ptr> top_level_objects;
+  std::unordered_map<bison::key_t, ui_element_ptr,
+                     bison::key_t, bison::key_t> top_level_objects;
 
   /// @brief Callback for delivering events to the connected client.
   ///
@@ -103,7 +104,7 @@ struct session {
     bison::key_t   id;          ///< `__wish_id` of the widget that fired
     bison::key_t   event_name;
     bison::dynamic payload;
-    std::string    root_key;    ///< top_level_objects key at time of enqueue
+    bison::key_t   root_key;    ///< top_level_objects key at time of enqueue
   };
 
   /// @brief Events accumulated during one render frame; drained after the frame.
@@ -117,14 +118,15 @@ struct session {
   ///
   /// `enqueue_event()` copies this into `pending_event::root_key` so the
   /// dispatch phase can find the owning top-level handler without a map lookup.
-  mutable std::string current_top_level_key;
+  mutable bison::key_t current_top_level_key;
 
-  /// @brief Maps top-level key → event handler (form or root ui_element).
+  /// @brief Maps top-level key → event handler (`ui_element` or `form`).
   ///
   /// Populated by `form::init()` and `template_handler` when they register a
   /// root window; cleared by `form::remove_internal_objects()` and template
   /// teardown.  The render loop snapshots this map before dispatching events.
-  std::unordered_map<std::string, top_level_element*> top_level_handlers;
+  std::unordered_map<bison::key_t, ui_root*,
+                     bison::key_t, bison::key_t> top_level_handlers;
 
   /// @brief Construct a session: creates a unique temporary directory.
   /// @param id  Session identifier; used to derive a unique directory name.
@@ -190,7 +192,7 @@ void dump_session_tree(const session& s, std::ostream& out);
 /// `s.current_top_level_key` (set by the render loop before each
 /// `render_session` call).  After the frame the render loop delivers every
 /// queued event to the client and calls `on_event` on the owning
-/// `top_level_element`, preventing deadlocks and iterator-invalidation.
+/// `ui_root`, preventing deadlocks and iterator-invalidation.
 inline void enqueue_event(const session& s,
     bison::key_t id, bison::key_t event, bison::dynamic payload) {
   s.pending_events.push_back(

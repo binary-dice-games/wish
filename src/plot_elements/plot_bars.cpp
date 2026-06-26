@@ -32,24 +32,26 @@ void register_plot_bars() {
   {
     auto proto = dynamic_ptr{"PlotBars"_key, {}};
     add_bar_fields(proto);
-    dynamic::addClass("wish"_key, std::move(proto), "PlotItem"_key, {
-      attr<DisplayName>("PlotBars"),
-      attr<Description>(
-          "Draws vertical bars at each xs[i] with height ys[i].  "
-          "If xs is empty, bars are placed at integer positions 0, 1, 2, …  "
-          "Must be a child of a Plot element.")});
+    (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("PlotBars"));
+    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+        "Draws vertical bars at each xs[i] with height ys[i].  "
+        "If xs is empty, bars are placed at integer positions 0, 1, 2, …  "
+        "Must be a child of a Plot element."));
+    dynamic::addClass("wish"_key, std::move(proto), "PlotItem"_key,
+        dynamic::make_factory<ui_element>("wish"_key, "PlotBars"_key));
   }
 
   // PlotBarsH — horizontal bar chart.
   {
     auto proto = dynamic_ptr{"PlotBarsH"_key, {}};
     add_bar_fields(proto);
-    dynamic::addClass("wish"_key, std::move(proto), "PlotItem"_key, {
-      attr<DisplayName>("PlotBarsH"),
-      attr<Description>(
-          "Draws horizontal bars at each ys[i] with length xs[i].  "
-          "Implemented via ImPlot::PlotBars with ImPlotBarsFlags_Horizontal.  "
-          "Must be a child of a Plot element.")});
+    (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("PlotBarsH"));
+    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+        "Draws horizontal bars at each ys[i] with length xs[i].  "
+        "Implemented via ImPlot::PlotBars with ImPlotBarsFlags_Horizontal.  "
+        "Must be a child of a Plot element."));
+    dynamic::addClass("wish"_key, std::move(proto), "PlotItem"_key,
+        dynamic::make_factory<ui_element>("wish"_key, "PlotBarsH"_key));
   }
 }
 
