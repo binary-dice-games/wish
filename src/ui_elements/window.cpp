@@ -45,7 +45,7 @@ void register_window() {
     attr<DisplayName>("Flags"),
     attr<Description>("ImGui window flags bitmask (combine names with '|')."),
     attr<Category>("Behavior"),
-    attr<EnumFlags>({
+    attr<EnumFlags>(EnumFlags::table{
       {"ImGuiWindowFlags_NoTitleBar",                1 << 0},
       {"ImGuiWindowFlags_NoResize",                  1 << 1},
       {"ImGuiWindowFlags_NoMove",                    1 << 2},
