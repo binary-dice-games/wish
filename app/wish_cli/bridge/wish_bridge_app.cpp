@@ -47,7 +47,7 @@ using namespace bison;
 // ── Desktop chrome ────────────────────────────────────────────────────────────
 
 std::string wish_bridge_app::desktop_title() const {
-  return "Bridge Desktop — " + std::to_string(client_count_) +
+  return "Bridge Desktop - " + std::to_string(client_count_) +
          (client_count_ == 1 ? " client" : " clients") + " connected";
 }
 
@@ -144,7 +144,7 @@ int wish_bridge_app::run(int argc, char** argv) {
     }
 
     bridge.start();
-    std::cout << "[bridge] running — press Ctrl+C to stop\n" << std::flush;
+    std::cout << "[bridge] running - press Ctrl+C to stop\n" << std::flush;
 
     while (!g_quit.load())
       std::this_thread::sleep_for(std::chrono::milliseconds{100});

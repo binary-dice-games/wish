@@ -31,7 +31,7 @@ DEFINE_bool  (pty, false, "Use PTY transport");
 
 static void print_usage() {
   std::cout <<
-    "wish — remote GUI framework CLI\n"
+    "wish - remote GUI framework CLI\n"
     "\n"
     "Usage:\n"
     "  wish server  [transport flags] [--title T] [--width W] [--height H]\n"
@@ -66,20 +66,20 @@ int main(int argc, char** argv) {
 
   if (std::strcmp(subcmd, "server") == 0) {
     gflags::SetUsageMessage(
-        "wish server — render server that accepts client connections");
+        "wish server - render server that accepts client connections");
     bdg::wish::wish_server_app app;
     return app.run(sub_argc, sub_argv);
   }
 
   if (std::strcmp(subcmd, "client") == 0) {
     gflags::SetUsageMessage(
-        "wish client — connect to a server and run an embedded application");
+        "wish client - connect to a server and run an embedded application");
     return bdg::wish::run_client_mode(sub_argc, sub_argv);
   }
 
   if (std::strcmp(subcmd, "bridge") == 0) {
     gflags::SetUsageMessage(
-        "wish bridge — multiplexing bridge with upstream/downstream transports");
+        "wish bridge - multiplexing bridge with upstream/downstream transports");
     return bdg::wish::wish_bridge_app::run(sub_argc, sub_argv);
   }
 
