@@ -103,7 +103,20 @@ int run_client_mode(int argc, char** argv) {
 
 #if defined(__linux__) || defined(_WIN32)
     if (FLAGS_pty) {
+#  if defined(_WIN32)
+      // ConPTY is opaque to DCS frames, so the server exposes a named pipe
+      // via BISON_PTY_PIPE (set in the cmd.exe environment at server startup).
+      char pipe_env[MAX_PATH] = {};
+      if (GetEnvironmentVariableA("BISON_PTY_PIPE", pipe_env, MAX_PATH) == 0) {
+        std::cerr << "[wish client] --pty on Windows requires BISON_PTY_PIPE "
+                     "(run from inside a wish-server --pty terminal)\n";
+        return 1;
+      }
+      transport =
+          std::make_unique<rmi::transport::named_pipe_client_transport>(pipe_env);
+#  else
       transport = std::make_unique<app::pty_client_transport>();
+#  endif
     } else
 #endif
     if (!FLAGS_pipe.empty()) {

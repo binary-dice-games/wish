@@ -98,7 +98,18 @@ int wish_bridge_app::run(int argc, char** argv) {
   std::unique_ptr<rmi::transport::client_transport_iface> up_transport;
 #if defined(__linux__) || defined(_WIN32)
   if (FLAGS_up_pty) {
+#  if defined(_WIN32)
+    char pipe_env[MAX_PATH] = {};
+    if (GetEnvironmentVariableA("BISON_PTY_PIPE", pipe_env, MAX_PATH) == 0) {
+      std::cerr << "[bridge] --up-pty on Windows requires BISON_PTY_PIPE "
+                   "(run from inside a wish-server --pty terminal)\n";
+      return 1;
+    }
+    up_transport =
+        std::make_unique<rmi::transport::named_pipe_client_transport>(pipe_env);
+#  else
     up_transport = std::make_unique<app::pty_client_transport>();
+#  endif
   } else
 #endif
   if (!FLAGS_up_pipe.empty()) {

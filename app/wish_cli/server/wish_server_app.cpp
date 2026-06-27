@@ -15,6 +15,9 @@
 #if defined(__linux__) || defined(_WIN32)
 #  include "src/rmi/transport/pty_server_transport.hpp"
 #endif
+#if defined(_WIN32)
+#  include "src/rmi/transport/named_pipe_transport.hpp"
+#endif
 
 #include <gflags/gflags.h>
 
@@ -163,6 +166,50 @@ void wish_server_app::on_listening_pty() const {
             << std::flush;
 }
 
+#if defined(_WIN32)
+
+// On Windows, ConPTY is not a transparent byte pipe — it interprets DCS
+// frames as VT terminal sequences and swallows them before they reach the
+// server.  We therefore use a Windows named pipe as the actual RMI channel
+// and keep ConPTY purely for interactive shell I/O.
+//
+// Setting BISON_PTY_PIPE in the environment before spawning the shell means
+// cmd.exe (and any child wish-client process) inherits it automatically.
+// wish-client --pty on Windows checks that variable and connects via named
+// pipe instead of DCS-over-stdin/stdout.
+int wish_server_app::run_pty() {
+  using bison::app::pty_server_transport;
+  using rmi::transport::named_pipe_server_transport;
+
+  const std::string pipe_name =
+      R"(\\.\pipe\wish-pty-)" + std::to_string(GetCurrentProcessId());
+
+  // Expose pipe name before spawning the shell so cmd.exe inherits it.
+  SetEnvironmentVariableA("BISON_PTY_PIPE", pipe_name.c_str());
+  pty_server_transport shell{FLAGS_cmd};
+  shell.start({});
+  // Clear from our own environment; cmd.exe already has the value.
+  SetEnvironmentVariableA("BISON_PTY_PIPE", nullptr);
+
+  on_listening_pty();
+
+  named_pipe_server_transport pipe_srv{pipe_name};
+
+  server_log_ = make_server_logger();
+  server srv{pipe_srv, make_renderer()};
+  srv.set_logger(server_log_);
+  srv.start();
+  server_log_->info("server started (PTY/pipe)");
+  while (!srv.should_quit())
+    std::this_thread::sleep_for(std::chrono::milliseconds{50});
+  srv.stop();
+  shell.stop();
+  server_log_.reset();
+  return 0;
+}
+
+#else // Linux: DCS frames pass through PTY transparently.
+
 int wish_server_app::run_pty() {
   using bison::app::pty_server_transport;
 
@@ -195,6 +242,8 @@ int wish_server_app::run_pty() {
   server_log_.reset();
   return 0;
 }
+
+#endif
 
 #endif // defined(__linux__) || defined(_WIN32)
 
