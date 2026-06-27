@@ -16,68 +16,67 @@ namespace bdg::wish {
 using namespace bison;
 
 // ── UI layout ─────────────────────────────────────────────────────────────────
+//
+// ImGuiWindowFlags_NoResize = 1<<1 = 2
 
 static constexpr const char* kLayout = R"({
   "type": "Window",
   "title": "Calculator",
-  "width": 265,
-  "height": 385,
+  "width": 328,
+  "height": 420,
+  "flags": "NoResize",
+  "closable": true,
   "children": {
-    "vbox": {
-      "type": "VerticalLayout",
+    "display": { "type": "Label", "text": "0" },
+    "sep":     { "type": "Separator" },
+    "row0": {
+      "type": "HorizontalLayout",
+      "spacing": 6,
       "children": {
-        "display": { "type": "Label", "text": "0" },
-        "row_fn": {
-          "type": "HorizontalLayout",
-          "children": {
-            "btn_c":   { "type": "Button", "label": "C",   "width": 60 },
-            "btn_pm":  { "type": "Button", "label": "+/-", "width": 60 },
-            "btn_pct": { "type": "Button", "label": "%",   "width": 60 },
-            "btn_bs":  { "type": "Button", "label": "<",   "width": 60 }
-          }
-        },
-        "row1": {
-          "type": "HorizontalLayout",
-          "children": {
-            "btn7":    { "type": "Button", "label": "7", "width": 60 },
-            "btn8":    { "type": "Button", "label": "8", "width": 60 },
-            "btn9":    { "type": "Button", "label": "9", "width": 60 },
-            "btn_div": { "type": "Button", "label": "/", "width": 60 }
-          }
-        },
-        "row2": {
-          "type": "HorizontalLayout",
-          "children": {
-            "btn4":    { "type": "Button", "label": "4", "width": 60 },
-            "btn5":    { "type": "Button", "label": "5", "width": 60 },
-            "btn6":    { "type": "Button", "label": "6", "width": 60 },
-            "btn_mul": { "type": "Button", "label": "*", "width": 60 }
-          }
-        },
-        "row3": {
-          "type": "HorizontalLayout",
-          "children": {
-            "btn1":    { "type": "Button", "label": "1", "width": 60 },
-            "btn2":    { "type": "Button", "label": "2", "width": 60 },
-            "btn3":    { "type": "Button", "label": "3", "width": 60 },
-            "btn_sub": { "type": "Button", "label": "-", "width": 60 }
-          }
-        },
-        "row4": {
-          "type": "HorizontalLayout",
-          "children": {
-            "btn0":    { "type": "Button", "label": "0", "width": 60 },
-            "btn_dot": { "type": "Button", "label": ".", "width": 60 },
-            "btn_eq":  { "type": "Button", "label": "=", "width": 60 },
-            "btn_add": { "type": "Button", "label": "+", "width": 60 }
-          }
-        },
-        "row_close": {
-          "type": "HorizontalLayout",
-          "children": {
-            "btn_close": { "type": "Button", "label": "Close", "width": 245 }
-          }
-        }
+        "c":   { "type": "Button", "label": "C",   "width": 72, "height": 52 },
+        "div": { "type": "Button", "label": "/",   "width": 72, "height": 52 },
+        "mul": { "type": "Button", "label": "*",   "width": 72, "height": 52 },
+        "bsp": { "type": "Button", "label": "<-",  "width": 72, "height": 52 }
+      }
+    },
+    "row1": {
+      "type": "HorizontalLayout",
+      "spacing": 6,
+      "children": {
+        "n7":  { "type": "Button", "label": "7", "width": 72, "height": 52 },
+        "n8":  { "type": "Button", "label": "8", "width": 72, "height": 52 },
+        "n9":  { "type": "Button", "label": "9", "width": 72, "height": 52 },
+        "sub": { "type": "Button", "label": "-", "width": 72, "height": 52 }
+      }
+    },
+    "row2": {
+      "type": "HorizontalLayout",
+      "spacing": 6,
+      "children": {
+        "n4":  { "type": "Button", "label": "4", "width": 72, "height": 52 },
+        "n5":  { "type": "Button", "label": "5", "width": 72, "height": 52 },
+        "n6":  { "type": "Button", "label": "6", "width": 72, "height": 52 },
+        "add": { "type": "Button", "label": "+", "width": 72, "height": 52 }
+      }
+    },
+    "row3": {
+      "type": "HorizontalLayout",
+      "spacing": 6,
+      "children": {
+        "n1": { "type": "Button", "label": "1", "width": 72, "height": 52 },
+        "n2": { "type": "Button", "label": "2", "width": 72, "height": 52 },
+        "n3": { "type": "Button", "label": "3", "width": 72, "height": 52 },
+        "eq": { "type": "Button", "label": "=", "width": 72, "height": 52 }
+      }
+    },
+    "row4": {
+      "type": "HorizontalLayout",
+      "spacing": 6,
+      "children": {
+        "n0":  { "type": "Button", "label": "0",   "width": 72, "height": 52 },
+        "dot": { "type": "Button", "label": ".",   "width": 72, "height": 52 },
+        "pm":  { "type": "Button", "label": "+/-", "width": 72, "height": 52 },
+        "pct": { "type": "Button", "label": "%",   "width": 72, "height": 52 }
       }
     }
   }
@@ -93,6 +92,7 @@ void calculator::on_init() {
 
   auto tree = import_json(kLayout);
 
+  // Assign every element a bison RMI ID.
   auto& objects = ctx().objects;
   for (auto& [key, elem] : tree) {
     key_t id = rmi::shared::generate_id();
@@ -100,37 +100,38 @@ void calculator::on_init() {
     elem["__wish_id"_key] = id;
   }
 
-  // Cache IDs for every interactive widget.
-  auto cache = [&](const char* path, key_t& out_id,
-                    ui_element_ptr* out_ptr = nullptr) {
-    tree.with(path, [&](const auto& e) {
-      out_id = e->as<key_t>("__wish_id"_key);
-      if (out_ptr) *out_ptr = e;
-    });
-  };
+  // Cache IDs for interactive widgets.
+  window_id_  = (*tree[""])["__wish_id"_key].as<key_t>();
 
-  cache("vbox.display",           display_id_,  &display_ptr_);
-  cache("vbox.row_close.btn_close", btn_close_id_);
-  cache("vbox.row_fn.btn_c",      btn_c_);
-  cache("vbox.row_fn.btn_pm",     btn_pm_);
-  cache("vbox.row_fn.btn_pct",    btn_pct_);
-  cache("vbox.row_fn.btn_bs",     btn_bs_);
-  cache("vbox.row1.btn7",         btn_digit_[7]);
-  cache("vbox.row1.btn8",         btn_digit_[8]);
-  cache("vbox.row1.btn9",         btn_digit_[9]);
-  cache("vbox.row1.btn_div",      btn_div_);
-  cache("vbox.row2.btn4",         btn_digit_[4]);
-  cache("vbox.row2.btn5",         btn_digit_[5]);
-  cache("vbox.row2.btn6",         btn_digit_[6]);
-  cache("vbox.row2.btn_mul",      btn_mul_);
-  cache("vbox.row3.btn1",         btn_digit_[1]);
-  cache("vbox.row3.btn2",         btn_digit_[2]);
-  cache("vbox.row3.btn3",         btn_digit_[3]);
-  cache("vbox.row3.btn_sub",      btn_sub_);
-  cache("vbox.row4.btn0",         btn_digit_[0]);
-  cache("vbox.row4.btn_dot",      btn_dot_);
-  cache("vbox.row4.btn_eq",       btn_eq_);
-  cache("vbox.row4.btn_add",      btn_add_);
+  tree.with("display",    [&](const auto& e) {
+    display_id_  = e->as<key_t>("__wish_id"_key);
+    display_ptr_ = e;
+  });
+
+  tree.with("row0.c",   [&](const auto& e) { btn_c_   = e->as<key_t>("__wish_id"_key); });
+  tree.with("row0.div", [&](const auto& e) { btn_div_ = e->as<key_t>("__wish_id"_key); });
+  tree.with("row0.mul", [&](const auto& e) { btn_mul_ = e->as<key_t>("__wish_id"_key); });
+  tree.with("row0.bsp", [&](const auto& e) { btn_bsp_ = e->as<key_t>("__wish_id"_key); });
+
+  tree.with("row1.n7",  [&](const auto& e) { btn_n7_  = e->as<key_t>("__wish_id"_key); });
+  tree.with("row1.n8",  [&](const auto& e) { btn_n8_  = e->as<key_t>("__wish_id"_key); });
+  tree.with("row1.n9",  [&](const auto& e) { btn_n9_  = e->as<key_t>("__wish_id"_key); });
+  tree.with("row1.sub", [&](const auto& e) { btn_sub_ = e->as<key_t>("__wish_id"_key); });
+
+  tree.with("row2.n4",  [&](const auto& e) { btn_n4_  = e->as<key_t>("__wish_id"_key); });
+  tree.with("row2.n5",  [&](const auto& e) { btn_n5_  = e->as<key_t>("__wish_id"_key); });
+  tree.with("row2.n6",  [&](const auto& e) { btn_n6_  = e->as<key_t>("__wish_id"_key); });
+  tree.with("row2.add", [&](const auto& e) { btn_add_ = e->as<key_t>("__wish_id"_key); });
+
+  tree.with("row3.n1",  [&](const auto& e) { btn_n1_  = e->as<key_t>("__wish_id"_key); });
+  tree.with("row3.n2",  [&](const auto& e) { btn_n2_  = e->as<key_t>("__wish_id"_key); });
+  tree.with("row3.n3",  [&](const auto& e) { btn_n3_  = e->as<key_t>("__wish_id"_key); });
+  tree.with("row3.eq",  [&](const auto& e) { btn_eq_  = e->as<key_t>("__wish_id"_key); });
+
+  tree.with("row4.n0",  [&](const auto& e) { btn_n0_  = e->as<key_t>("__wish_id"_key); });
+  tree.with("row4.dot", [&](const auto& e) { btn_dot_ = e->as<key_t>("__wish_id"_key); });
+  tree.with("row4.pm",  [&](const auto& e) { btn_pm_  = e->as<key_t>("__wish_id"_key); });
+  tree.with("row4.pct", [&](const auto& e) { btn_pct_ = e->as<key_t>("__wish_id"_key); });
 
   sess().objects.merge(std::move(tree), internal_root_key_);
 }
@@ -138,46 +139,49 @@ void calculator::on_init() {
 // ── Event routing ─────────────────────────────────────────────────────────────
 
 void calculator::on_event(key_t id, key_t event, const dynamic& /*payload*/) {
-  if (event != "clicked"_key) return;
-
-  if (id == btn_close_id_) {
+  // Window X button — forward to the client and clean up.
+  if (id == window_id_ && event == "closed"_key) {
     emit("closed"_key);
     remove_internal_objects();
     return;
   }
-  if (id == btn_c_)   { handle_clear();    return; }
-  if (id == btn_pm_)  { handle_negate();   return; }
-  if (id == btn_pct_) { handle_percent();  return; }
-  if (id == btn_bs_)  { handle_backspace(); return; }
-  if (id == btn_dot_) { handle_dot();      return; }
-  if (id == btn_eq_)  { handle_equals();   return; }
-  if (id == btn_add_) { handle_operator('+'); return; }
-  if (id == btn_sub_) { handle_operator('-'); return; }
-  if (id == btn_mul_) { handle_operator('*'); return; }
-  if (id == btn_div_) { handle_operator('/'); return; }
-  for (int d = 0; d <= 9; ++d) {
-    if (id == btn_digit_[d]) { handle_digit(static_cast<char>('0' + d)); return; }
-  }
+
+  if (event != "clicked"_key) return;
+
+  if (id == btn_c_)   { handle_clear();          return; }
+  if (id == btn_div_) { handle_operator('/');     return; }
+  if (id == btn_mul_) { handle_operator('*');     return; }
+  if (id == btn_bsp_) { handle_backspace();       return; }
+  if (id == btn_n7_)  { handle_digit("7");        return; }
+  if (id == btn_n8_)  { handle_digit("8");        return; }
+  if (id == btn_n9_)  { handle_digit("9");        return; }
+  if (id == btn_sub_) { handle_operator('-');     return; }
+  if (id == btn_n4_)  { handle_digit("4");        return; }
+  if (id == btn_n5_)  { handle_digit("5");        return; }
+  if (id == btn_n6_)  { handle_digit("6");        return; }
+  if (id == btn_add_) { handle_operator('+');     return; }
+  if (id == btn_n1_)  { handle_digit("1");        return; }
+  if (id == btn_n2_)  { handle_digit("2");        return; }
+  if (id == btn_n3_)  { handle_digit("3");        return; }
+  if (id == btn_eq_)  { handle_equals();          return; }
+  if (id == btn_n0_)  { handle_digit("0");        return; }
+  if (id == btn_dot_) { handle_dot();             return; }
+  if (id == btn_pm_)  { handle_negate();          return; }
+  if (id == btn_pct_) { handle_percent();         return; }
 }
 
 // ── Calculator logic ──────────────────────────────────────────────────────────
 
-void calculator::handle_digit(char d) {
-  if (has_result_) {
-    display_ = std::string{d};
-    has_result_ = false;
-  } else if (display_ == "0") {
-    display_ = std::string{d};
-  } else if (display_.size() < 15) {
-    display_ += d;
-  }
+void calculator::handle_digit(const std::string& ch) {
+  if (fresh_) { display_ = ch; fresh_ = false; }
+  else if (display_.size() < 15) { display_ += ch; }
   update_display();
 }
 
 void calculator::handle_dot() {
-  if (has_result_) {
+  if (fresh_) {
     display_ = "0.";
-    has_result_ = false;
+    fresh_ = false;
   } else if (display_.find('.') == std::string::npos) {
     display_ += '.';
   }
@@ -185,13 +189,12 @@ void calculator::handle_dot() {
 }
 
 void calculator::handle_operator(char op) {
-  if (pending_op_ && !has_result_) {
-    // Chain: apply pending operation first.
+  if (pending_op_ && !fresh_) {
     handle_equals();
   }
-  operand_ = std::stod(display_);
+  operand_    = std::stod(display_);
   pending_op_ = op;
-  has_result_ = true;
+  fresh_      = true;
 }
 
 void calculator::handle_equals() {
@@ -205,10 +208,9 @@ void calculator::handle_equals() {
     case '/': result = (rhs != 0.0) ? result / rhs : 0.0; break;
   }
   pending_op_ = 0;
-  has_result_ = true;
+  fresh_      = true;
 
-  // Format: prefer integer string when result is whole.
-  if (result == std::floor(result) && std::abs(result) < 1e15) {
+  if (result == std::floor(result) && std::abs(result) < 1e12) {
     display_ = std::to_string(static_cast<long long>(result));
   } else {
     std::ostringstream oss;
@@ -220,19 +222,17 @@ void calculator::handle_equals() {
 }
 
 void calculator::handle_clear() {
-  display_ = "0";
-  operand_ = 0.0;
+  display_    = "0";
+  operand_    = 0.0;
   pending_op_ = 0;
-  has_result_ = false;
+  fresh_      = true;
   update_display();
 }
 
 void calculator::handle_negate() {
   if (display_ == "0") return;
-  if (display_[0] == '-')
-    display_.erase(0, 1);
-  else
-    display_.insert(0, "-");
+  if (display_[0] == '-') display_.erase(0, 1);
+  else                     display_.insert(0, "-");
   update_display();
 }
 
@@ -246,14 +246,9 @@ void calculator::handle_percent() {
 }
 
 void calculator::handle_backspace() {
-  if (has_result_) {
-    handle_clear();
-    return;
-  }
-  if (display_.size() > 1)
-    display_.pop_back();
-  else
-    display_ = "0";
+  if (fresh_) { handle_clear(); return; }
+  if (display_.size() > 1) display_.pop_back();
+  else                     display_ = "0";
   update_display();
 }
 

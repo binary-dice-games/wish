@@ -32,6 +32,7 @@ class wish_client_session : public client {
   void signal_done();
 
   void on_session() override;
+  void on_disconnect() override;
 
  private:
   std::string app_name_;

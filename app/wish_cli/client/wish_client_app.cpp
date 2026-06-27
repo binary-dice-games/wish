@@ -59,6 +59,10 @@ void wish_client_session::signal_done() {
   }
 }
 
+void wish_client_session::on_disconnect() {
+  signal_done();
+}
+
 void wish_client_session::on_session() {
   auto it = kApps.find(app_name_);
   if (it == kApps.end())
@@ -71,6 +75,10 @@ void wish_client_session::on_session() {
 // ── run_client_mode ───────────────────────────────────────────────────────────
 
 int run_client_mode(int argc, char** argv) {
+  // Override the shared --host default: 0.0.0.0 is a valid bind address for
+  // the server but not a connectable address for a client.
+  gflags::SetCommandLineOptionWithMode(
+      "host", "127.0.0.1", gflags::SET_FLAGS_DEFAULT);
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
   if (FLAGS_list) {

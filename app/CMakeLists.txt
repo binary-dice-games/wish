@@ -1,4 +1,5 @@
 if(WISH_ENABLE_IMGUI AND WISH_ENABLE_SDL3)
+  # ── wish-cli — unified multi-mode binary (server + client + bridge) ───────────
   add_executable(wish-cli
       wish_cli/main.cpp
       wish_cli/server/wish_server_app.cpp
@@ -14,4 +15,41 @@ if(WISH_ENABLE_IMGUI AND WISH_ENABLE_SDL3)
   set_target_properties(wish-cli PROPERTIES
       OUTPUT_NAME "wish"
       FOLDER      app)
+
+  # ── wish-server — standalone server binary (requires SDL3 + ImGui) ────────────
+  add_executable(wish-server
+      wish_cli/server/wish_server_app.cpp
+      wish_cli/server/standalone_main.cpp)
+  target_include_directories(wish-server PRIVATE
+      ${CMAKE_SOURCE_DIR}
+      ${CMAKE_SOURCE_DIR}/include
+      ${CMAKE_SOURCE_DIR}/extern/bison
+  )
+  target_link_libraries(wish-server PRIVATE wish_server gflags)
+  set_target_properties(wish-server PROPERTIES FOLDER app)
 endif()
+
+# ── wish-client — standalone client binary (lightweight, no SDL/ImGui) ─────────
+add_executable(wish-client
+    wish_cli/client/wish_client_app.cpp
+    wish_cli/client/apps/calculator.cpp
+    wish_cli/client/standalone_main.cpp)
+target_include_directories(wish-client PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/extern/bison
+)
+target_link_libraries(wish-client PRIVATE wish_client gflags)
+set_target_properties(wish-client PROPERTIES FOLDER app)
+
+# ── wish-bridge — standalone bridge binary (bison only, no SDL/ImGui) ──────────
+add_executable(wish-bridge
+    wish_cli/bridge/wish_bridge_app.cpp
+    wish_cli/bridge/standalone_main.cpp)
+target_include_directories(wish-bridge PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/extern/bison
+)
+target_link_libraries(wish-bridge PRIVATE bison gflags)
+set_target_properties(wish-bridge PROPERTIES FOLDER app)

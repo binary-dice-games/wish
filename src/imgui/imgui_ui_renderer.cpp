@@ -35,12 +35,13 @@ static std::string with_id(const std::string& label, const ui_element& node) {
 // ── Core ──────────────────────────────────────────────────────────────────────
 
 void render_window(imgui_renderer& r, const ui_element& node, const session& s) {
-  auto title  = node.get_as<std::string>("title"_key, "");
-  int32_t px  = node.get_as<int32_t>("pos_x"_key, -1);
-  int32_t py  = node.get_as<int32_t>("pos_y"_key, -1);
-  int32_t w   = node.get_as<int32_t>("width"_key, 0);
-  int32_t h   = node.get_as<int32_t>("height"_key, 0);
-  int32_t fl  = node.get_as<int32_t>("flags"_key, 0);
+  auto title    = node.get_as<std::string>("title"_key, "");
+  int32_t px    = node.get_as<int32_t>("pos_x"_key, -1);
+  int32_t py    = node.get_as<int32_t>("pos_y"_key, -1);
+  int32_t w     = node.get_as<int32_t>("width"_key, 0);
+  int32_t h     = node.get_as<int32_t>("height"_key, 0);
+  int32_t fl    = node.get_as<int32_t>("flags"_key, 0);
+  bool closable = node.get_as<bool>("closable"_key, false);
 
   // Automatically reserve menu bar space when a direct MenuBar child exists.
   node.for_each_child_ordered([&](key_t, ui_element& child) {
@@ -53,10 +54,15 @@ void render_window(imgui_renderer& r, const ui_element& node, const session& s) 
   if (w > 0 && h > 0)
     ImGui::SetNextWindowSize(ImVec2(float(w), float(h)), ImGuiCond_Once);
 
+  bool open    = true;
+  bool* p_open = closable ? &open : nullptr;
   auto iml = with_id(title, node);
-  if (ImGui::Begin(iml.c_str(), nullptr, ImGuiWindowFlags(fl)))
+  if (ImGui::Begin(iml.c_str(), p_open, ImGuiWindowFlags(fl)))
     render_children(r, node, s);
   ImGui::End();
+
+  if (closable && !open)
+    enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "closed"_key, dynamic{});
 }
 
 void render_label(imgui_renderer&, const ui_element& node, const session&) {
