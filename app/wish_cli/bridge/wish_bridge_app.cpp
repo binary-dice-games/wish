@@ -98,7 +98,7 @@ int wish_bridge_app::run(int argc, char** argv) {
   std::unique_ptr<rmi::transport::client_transport_iface> up_transport;
 #if defined(__linux__) || defined(_WIN32)
   if (FLAGS_up_pty) {
-    up_transport = std::make_unique<rmi::transport::pty_client_transport>();
+    up_transport = std::make_unique<app::pty_client_transport>();
   } else
 #endif
   if (!FLAGS_up_pipe.empty()) {

@@ -13,7 +13,7 @@
 #include <imgui.h>
 
 #if defined(__linux__) || defined(_WIN32)
-#  include "src/app/pty/pty_server_transport.hpp"
+#  include "src/rmi/transport/pty_server_transport.hpp"
 #endif
 
 #include <gflags/gflags.h>

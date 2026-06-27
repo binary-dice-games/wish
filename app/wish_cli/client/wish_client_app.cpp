@@ -103,7 +103,7 @@ int run_client_mode(int argc, char** argv) {
 
 #if defined(__linux__) || defined(_WIN32)
     if (FLAGS_pty) {
-      transport = std::make_unique<rmi::transport::pty_client_transport>();
+      transport = std::make_unique<app::pty_client_transport>();
     } else
 #endif
     if (!FLAGS_pipe.empty()) {
