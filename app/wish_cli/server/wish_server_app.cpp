@@ -12,7 +12,7 @@
 
 #include <imgui.h>
 
-#if defined(__linux__)
+#if defined(__linux__) || defined(_WIN32)
 #  include "src/app/pty/pty_server_transport.hpp"
 #endif
 
@@ -33,9 +33,13 @@ DEFINE_string(title,  "wish", "Window title");
 DEFINE_int32 (width,  1280,   "Window width in pixels");
 DEFINE_int32 (height, 720,    "Window height in pixels");
 
-#if defined(__linux__)
+#if defined(__linux__) || defined(_WIN32)
 DECLARE_bool  (pty);
-DEFINE_string (cmd, "bash", "Shell command spawned for PTY transport");
+#  if defined(_WIN32)
+DEFINE_string (cmd, "cmd.exe", "Shell command spawned for PTY transport");
+#  else
+DEFINE_string (cmd, "bash",    "Shell command spawned for PTY transport");
+#  endif
 #endif
 
 namespace bdg::wish {
@@ -149,9 +153,9 @@ int wish_server_app::run_with_transport(
   return 0;
 }
 
-// ── Linux PTY support ─────────────────────────────────────────────────────────
+// ── PTY support (Linux and Windows) ──────────────────────────────────────────
 
-#if defined(__linux__)
+#if defined(__linux__) || defined(_WIN32)
 
 void wish_server_app::on_listening_pty() const {
   std::cout << "[wish] PTY server started (cmd: " << FLAGS_cmd
@@ -192,6 +196,6 @@ int wish_server_app::run_pty() {
   return 0;
 }
 
-#endif // defined(__linux__)
+#endif // defined(__linux__) || defined(_WIN32)
 
 } // namespace bdg::wish

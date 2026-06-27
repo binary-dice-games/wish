@@ -9,7 +9,7 @@
 #include "src/rmi/transport/named_pipe_transport.hpp"
 #include "src/rmi/transport/socket_transport.hpp"
 
-#if defined(__linux__)
+#if defined(__linux__) || defined(_WIN32)
 #  include "src/rmi/transport/pty_client_transport.hpp"
 #endif
 
@@ -24,7 +24,7 @@
 DECLARE_string(host);
 DECLARE_int32 (port);
 DECLARE_string(pipe);
-#if defined(__linux__)
+#if defined(__linux__) || defined(_WIN32)
 DECLARE_bool  (pty);
 #endif
 
@@ -101,7 +101,7 @@ int run_client_mode(int argc, char** argv) {
   try {
     std::unique_ptr<rmi::transport::client_transport_iface> transport;
 
-#if defined(__linux__)
+#if defined(__linux__) || defined(_WIN32)
     if (FLAGS_pty) {
       transport = std::make_unique<rmi::transport::pty_client_transport>();
     } else

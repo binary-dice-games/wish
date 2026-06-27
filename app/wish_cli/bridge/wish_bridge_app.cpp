@@ -8,7 +8,7 @@
 #include "src/rmi/transport/named_pipe_transport.hpp"
 #include "src/rmi/transport/socket_transport.hpp"
 
-#if defined(__linux__)
+#if defined(__linux__) || defined(_WIN32)
 #  include "src/rmi/transport/pty_client_transport.hpp"
 #  include "src/rmi/transport/pty_server_transport.hpp"
 #endif
@@ -31,7 +31,7 @@ DECLARE_bool  (verbose);
 DEFINE_string(up_host, "127.0.0.1", "Upstream server host address");
 DEFINE_int32 (up_port, 7070,        "Upstream server port");
 DEFINE_string(up_pipe, "",           "Upstream named-pipe / Unix-socket path");
-#if defined(__linux__)
+#if defined(__linux__) || defined(_WIN32)
 DEFINE_bool  (up_pty,  false,        "Connect upstream via PTY");
 #endif
 
@@ -96,7 +96,7 @@ int wish_bridge_app::run(int argc, char** argv) {
 
   // Build upstream (client-side) transport.
   std::unique_ptr<rmi::transport::client_transport_iface> up_transport;
-#if defined(__linux__)
+#if defined(__linux__) || defined(_WIN32)
   if (FLAGS_up_pty) {
     up_transport = std::make_unique<rmi::transport::pty_client_transport>();
   } else
@@ -131,7 +131,7 @@ int wish_bridge_app::run(int argc, char** argv) {
       std::cout << "[bridge] downstream on "
                 << FLAGS_down_host << ':' << FLAGS_down_port << '\n';
     }
-#if defined(__linux__)
+#if defined(__linux__) || defined(_WIN32)
     if (FLAGS_up_pty) {
       std::cout << "[bridge] upstream via PTY\n";
     } else

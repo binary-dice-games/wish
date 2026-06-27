@@ -10,8 +10,8 @@ DEFINE_string(host,    "0.0.0.0", "Bind host address");
 DEFINE_int32 (port,    7070,      "Listen port");
 DEFINE_string(pipe,    "",        "Named pipe / Unix socket path");
 DEFINE_bool  (verbose, false,     "Print session trace messages to stdout");
-#if defined(__linux__)
-DEFINE_bool  (pty, false, "Use PTY transport (Linux only)");
+#if defined(__linux__) || defined(_WIN32)
+DEFINE_bool  (pty, false, "Use PTY transport");
 #endif
 
 int main(int argc, char** argv) {
