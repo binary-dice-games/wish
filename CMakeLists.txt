@@ -202,6 +202,7 @@ add_library(wish_server STATIC
   src/plot3d_elements/plot3d_annotations.cpp
   src/forms/form.cpp
   src/forms/file_dialog.cpp
+  src/forms/calculator.cpp
 )
 
 if(WISH_MODULE_DESKTOP)

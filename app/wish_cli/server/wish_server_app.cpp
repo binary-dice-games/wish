@@ -1,9 +1,9 @@
 // MIT License © 2025 Binary Dice Games
 /**
- * @file wish_server.cpp
+ * @file wish_server_app.cpp
  * @brief wish GUI server application implementation.
  */
-#include "app/wish_server/wish_server.hpp"
+#include "app/wish_cli/server/wish_server_app.hpp"
 
 #include <wish/logger.hpp>
 #include <wish/registry.hpp>
@@ -28,13 +28,14 @@ DECLARE_bool  (verbose);
 DECLARE_string(host);
 DECLARE_int32 (port);
 DECLARE_string(pipe);
-DECLARE_string(title);
-DECLARE_int32 (width);
-DECLARE_int32 (height);
 
+DEFINE_string(title,  "wish", "Window title");
+DEFINE_int32 (width,  1280,   "Window width in pixels");
+DEFINE_int32 (height, 720,    "Window height in pixels");
 
 #if defined(__linux__)
-DECLARE_string(cmd);
+DECLARE_bool  (pty);
+DEFINE_string (cmd, "bash", "Shell command spawned for PTY transport");
 #endif
 
 namespace bdg::wish {
@@ -50,7 +51,6 @@ class server_renderer : public sdl3_renderer {
   using sdl3_renderer::sdl3_renderer;
 
   void render_server_frame() override {
-    // Cover the entire main viewport with a borderless host window.
     const ImGuiViewport* vp = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(vp->WorkPos);
     ImGui::SetNextWindowSize(vp->WorkSize);
@@ -72,7 +72,6 @@ class server_renderer : public sdl3_renderer {
     ImGui::Begin("##wish_server_host", nullptr, host_flags);
     ImGui::PopStyleVar(3);
 
-    // ── Menu bar ──────────────────────────────────────────────────────────────
     if (ImGui::BeginMenuBar()) {
       if (ImGui::BeginMenu("Server")) {
         if (ImGui::MenuItem("Quit", "Alt+F4"))
@@ -86,14 +85,11 @@ class server_renderer : public sdl3_renderer {
       ImGui::EndMenuBar();
     }
 
-    // ── DockSpace ─────────────────────────────────────────────────────────────
     ImGuiID dock_id = ImGui::GetID("ServerDockSpace");
     ImGui::DockSpace(dock_id, ImVec2(0.0f, 0.0f),
                      ImGuiDockNodeFlags_PassthruCentralNode);
 
     ImGui::End();
-    // Client session windows are rendered after this by server::render_loop
-    // and will dock into the dockspace created above.
   }
 };
 
@@ -104,8 +100,6 @@ static std::unique_ptr<sdl3_renderer> make_renderer() {
       FLAGS_title.c_str(), FLAGS_width, FLAGS_height);
 }
 
-// Build the global server logger.  Always writes to wish_logs/server.log;
-// also mirrors to stdout when --verbose is active.
 static std::shared_ptr<logger> make_server_logger() {
   return std::make_shared<logger>(
       bison::dynamic::instantiate(bison::key_t{"wish"}, bison::key_t{"__WishLogger"}),
@@ -115,17 +109,17 @@ static std::shared_ptr<logger> make_server_logger() {
 
 // ── server_app overrides ──────────────────────────────────────────────────────
 
-std::string wish_server::server_description() const {
+std::string wish_server_app::server_description() const {
   return "wish GUI server.\n"
          "Opens an SDL3 window and renders UI pushed by connected clients.\n"
          "Close the window to stop.";
 }
 
-void wish_server::register_classes() {
+void wish_server_app::register_classes() {
   register_all();
 }
 
-void wish_server::on_listening() const {
+void wish_server_app::on_listening() const {
   if (!FLAGS_pipe.empty()) {
     std::cout << "[wish] listening on pipe " << FLAGS_pipe
               << " - close the window to stop\n" << std::flush;
@@ -135,12 +129,12 @@ void wish_server::on_listening() const {
   }
 }
 
-void wish_server::on_verbose_trace(bison::key_t /*session_id*/,
-                                   const std::string& line) const {
+void wish_server_app::on_verbose_trace(bison::key_t /*session_id*/,
+                                       const std::string& line) const {
   if (server_log_) server_log_->info(line);
 }
 
-int wish_server::run_with_transport(
+int wish_server_app::run_with_transport(
     bison::rmi::transport::server_transport_iface& transport) {
   server_log_ = make_server_logger();
   server srv{transport, make_renderer()};
@@ -159,13 +153,13 @@ int wish_server::run_with_transport(
 
 #if defined(__linux__)
 
-void wish_server::on_listening_pty() const {
+void wish_server_app::on_listening_pty() const {
   std::cout << "[wish] PTY server started (cmd: " << FLAGS_cmd
             << ") - close the window to stop\n"
             << std::flush;
 }
 
-int wish_server::run_pty() {
+int wish_server_app::run_pty() {
   using bison::app::pty_server_transport;
 
   pty_server_transport pty{FLAGS_cmd};
@@ -174,7 +168,6 @@ int wish_server::run_pty() {
   pty.start(std::move(params));
   on_listening_pty();
 
-  // Local server subclass that restarts the PTY between client sessions.
   struct pty_server_impl : public server {
     using server::server;
     pty_server_transport* pty = nullptr;

@@ -1,6 +1,6 @@
 // MIT License © 2025 Binary Dice Games
 /**
- * @file wish_server.hpp
+ * @file wish_server_app.hpp
  * @brief wish GUI server application — integrates wish::server with server_app.
  */
 #pragma once
@@ -33,7 +33,7 @@ class logger;
  *
  * Plus all flags inherited from server_app (--host, --port, --pty, --verbose).
  */
-class wish_server : public bison::app::server_app {
+class wish_server_app : public bison::app::server_app {
  public:
   std::string server_description() const override;
 
