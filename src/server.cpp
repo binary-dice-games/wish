@@ -219,7 +219,11 @@ void server::render_loop() {
           }
           // Dispatch events with no lock held: handlers may modify session state.
           for (auto& ev : events) {
-            if (client_emit) client_emit(ev.id, ev.event_name, ev.payload);
+            if (client_emit) {
+              try {
+                client_emit(ev.id, ev.event_name, ev.payload);
+              } catch (...) {}  // client may have disconnected between render and dispatch
+            }
             if (ev.root_key.id != 0) {
               auto it = handlers.find(ev.root_key);
               if (it != handlers.end() && it->second)
