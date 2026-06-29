@@ -26,6 +26,12 @@ namespace bdg::wish {
 class file_service : public bison::dynamic {
  public:
   /**
+   * @brief Instatitates a new file service instance.
+   * @param resource_dir  Sandboxed directory for this session's files.
+   */
+  static file_service_ptr instantiate(std::filesystem::path resource_dir);
+
+  /**
    * @brief Construct from a bison base object and a resource directory.
    * @param base          Plain `dynamic` produced by `dynamic::instantiate`.
    * @param resource_dir  Sandboxed directory for this session's files.

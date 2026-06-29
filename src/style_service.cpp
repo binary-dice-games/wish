@@ -29,6 +29,10 @@ static void merge_fields(const bison::dynamic& src, bison::dynamic& dst) {
 
 // ── style_service ─────────────────────────────────────────────────────────────
 
+style_service_ptr style_service::instantiate() {
+    return std::make_shared<style_service>(bison::dynamic::instantiate(bison::key_t{"wish"}, bison::key_t{"__WishStyle"}));
+}
+
 style_service::style_service(bison::dynamic&& base) : dynamic(std::move(base)) {}
 
 void style_service::set_fields(const bison::dynamic& params) {

@@ -69,10 +69,8 @@ void server::on_session_created(bison::rmi::context& ctx) {
     auto sess = sync_sess->wlock();
     sess->emit_event = ctx.emit_event;
     sess->allow_absolute_paths = allow_absolute_paths_;
-    sess->file_service = std::make_shared<file_service>(
-        bison::dynamic::instantiate(bison::key_t{"wish"}, bison::key_t{"__WishFileSystem"}), sess->resource_dir);
-    sess->style_service =
-        std::make_shared<style_service>(bison::dynamic::instantiate(bison::key_t{"wish"}, bison::key_t{"__WishStyle"}));
+    sess->file_service = file_service::instantiate(sess->resource_dir);
+    sess->style_service = style_service::instantiate();
     // All sessions share the same global logger instance (set via set_logger()).
     sess->logger_service = logger_;
   }

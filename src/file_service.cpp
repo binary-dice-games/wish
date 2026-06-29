@@ -13,6 +13,11 @@ using namespace bdg::bison;
 
 // ── file_service ──────────────────────────────────────────────────────────────
 
+file_service_ptr file_service::instantiate(std::filesystem::path resource_dir) {
+    return std::make_shared<file_service>(
+        bison::dynamic::instantiate(bison::key_t{"wish"}, bison::key_t{"__WishFileSystem"}), std::move(resource_dir));
+}
+
 file_service::file_service(dynamic&& base, std::filesystem::path resource_dir)
     : dynamic(std::move(base)), resource_dir_(std::move(resource_dir)) {
   addMethod("upload"_key, bison::method{[this](dynamic& /*self*/, const dynamic& p) -> dynamic {

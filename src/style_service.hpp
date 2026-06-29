@@ -63,6 +63,9 @@ using style_service_ptr = std::shared_ptr<style_service>;
 class style_service : public bison::dynamic {
  public:
   /// @brief Construct and register RMI methods.
+  static style_service_ptr instantiate();
+
+  /// @brief Construct and register RMI methods.
   /// @param base  Prototype-initialised dynamic base (from `dynamic::instantiate`).
   explicit style_service(bison::dynamic&& base);
 
