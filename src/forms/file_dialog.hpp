@@ -6,9 +6,9 @@
 #include <wish/form.hpp>
 #include <wish/ui_element.hpp>
 
+#include <regex>
 #include <string>
 #include <vector>
-#include <regex>
 
 namespace bdg::wish {
 
@@ -39,9 +39,7 @@ class file_dialog : public form {
 
  protected:
   void on_init() override;
-  void on_event(bison::key_t widget_id,
-                bison::key_t event_name,
-                const bison::dynamic& payload) override;
+  void on_event(bison::key_t widget_id, bison::key_t event_name, const bison::dynamic& payload) override;
 
  private:
   /// @brief Rebuild TableRow children from a new files dynamic.
@@ -71,9 +69,9 @@ class file_dialog : public form {
   /// @brief Handle a double-click on a table row: emit on_navigate or on_open.
   void on_row_activated(const bison::dynamic& payload);
 
-  bison::dynamic_ptr       cached_files_;       // last files list received from client
-  std::vector<std::string> filter_regexes_;     // one per filter; empty = match all
-  std::vector<size_t>      row_to_file_idx_;    // maps visible row index → cached_files_ index
+  bison::dynamic_ptr cached_files_; // last files list received from client
+  std::vector<std::string> filter_regexes_; // one per filter; empty = match all
+  std::vector<size_t> row_to_file_idx_; // maps visible row index → cached_files_ index
 
   ui_element_ptr file_table_ptr_;
   ui_element_ptr path_input_ptr_;
@@ -81,16 +79,16 @@ class file_dialog : public form {
   ui_element_ptr filter_combo_ptr_;
   ui_element_ptr filter_row_ptr_;
   ui_element_ptr btn_open_ptr_;
-  bison::key_t   file_table_id_;
-  bison::key_t   path_input_id_;
-  bison::key_t   filename_input_id_;
-  bison::key_t   btn_open_id_;
-  bison::key_t   btn_cancel_id_;
-  bison::key_t   filter_combo_id_;
-  int32_t        selected_filter_idx_{0};
+  bison::key_t file_table_id_;
+  bison::key_t path_input_id_;
+  bison::key_t filename_input_id_;
+  bison::key_t btn_open_id_;
+  bison::key_t btn_cancel_id_;
+  bison::key_t filter_combo_id_;
+  int32_t selected_filter_idx_{0};
 };
 
 /// @brief Register FileDialog in the "wish" bison namespace.
 void register_file_dialog();
 
-}  // namespace bdg::wish
+} // namespace bdg::wish

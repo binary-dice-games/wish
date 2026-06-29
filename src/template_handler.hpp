@@ -38,7 +38,7 @@ class template_handler : public bison::dynamic {
    * @param sess Shared wish session state.
    */
   void init(bison::rmi::context& ctx, sync_session_ptr sync_sess) {
-    ctx_       = &ctx;
+    ctx_ = &ctx;
     sync_sess_ = std::move(sync_sess);
   }
 
@@ -48,8 +48,7 @@ class template_handler : public bison::dynamic {
   /// @throws std::logic_error if called outside RMI dispatch.
   session& sess() {
     if (!detail::current_session)
-      throw std::logic_error(
-          "wish: template_handler method called outside RMI dispatch");
+      throw std::logic_error("wish: template_handler method called outside RMI dispatch");
     return *detail::current_session;
   }
 
@@ -61,4 +60,4 @@ class template_handler : public bison::dynamic {
 /// @brief Register `template_handler` as the `__WishTemplate` class prototype.
 void register_template_handler();
 
-}  // namespace bdg::wish
+} // namespace bdg::wish

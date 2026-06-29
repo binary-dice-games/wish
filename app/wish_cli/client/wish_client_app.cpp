@@ -18,13 +18,13 @@
 
 // ── Transport flags (defined in main.cpp) ─────────────────────────────────────
 DECLARE_string(host);
-DECLARE_int32 (port);
+DECLARE_int32(port);
 DECLARE_string(pipe);
 
 // ── Client-mode flags ─────────────────────────────────────────────────────────
-DEFINE_bool  (list,    false, "List available embedded applications and exit");
-DEFINE_string(run,     "",    "Name of the embedded application to run");
-DEFINE_int32 (timeout, 30000, "Connection timeout in milliseconds");
+DEFINE_bool(list, false, "List available embedded applications and exit");
+DEFINE_string(run, "", "Name of the embedded application to run");
+DEFINE_int32(timeout, 30000, "Connection timeout in milliseconds");
 
 namespace bdg::wish {
 
@@ -61,8 +61,8 @@ void wish_client_session::on_session() {
   if (it == kApps.end())
     throw std::runtime_error("unknown app: " + app_name_);
 
-  it->second(*this);          // set up proxies and event handlers
-  done_future_.wait();        // block until signal_done() fires
+  it->second(*this); // set up proxies and event handlers
+  done_future_.wait(); // block until signal_done() fires
 }
 
 // ── run_client_mode ───────────────────────────────────────────────────────────
@@ -70,8 +70,7 @@ void wish_client_session::on_session() {
 int run_client_mode(int argc, char** argv) {
   // Override the shared --host default: 0.0.0.0 is a valid bind address for
   // the server but not a connectable address for a client.
-  gflags::SetCommandLineOptionWithMode(
-      "host", "127.0.0.1", gflags::SET_FLAGS_DEFAULT);
+  gflags::SetCommandLineOptionWithMode("host", "127.0.0.1", gflags::SET_FLAGS_DEFAULT);
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
   if (FLAGS_list) {
@@ -86,8 +85,7 @@ int run_client_mode(int argc, char** argv) {
     return 1;
   }
   if (kApps.find(FLAGS_run) == kApps.end()) {
-    std::cerr << "[wish client] unknown app '" << FLAGS_run
-              << "'. Use --list to see available apps.\n";
+    std::cerr << "[wish client] unknown app '" << FLAGS_run << "'. Use --list to see available apps.\n";
     return 1;
   }
 
@@ -95,11 +93,10 @@ int run_client_mode(int argc, char** argv) {
     std::unique_ptr<rmi::transport::client_transport_iface> transport;
 
     if (!FLAGS_pipe.empty()) {
-      transport = std::make_unique<rmi::transport::named_pipe_client_transport>(
-          FLAGS_pipe);
+      transport = std::make_unique<rmi::transport::named_pipe_client_transport>(FLAGS_pipe);
     } else {
-      transport = std::make_unique<rmi::transport::socket_client_transport>(
-          FLAGS_host, static_cast<uint16_t>(FLAGS_port));
+      transport =
+          std::make_unique<rmi::transport::socket_client_transport>(FLAGS_host, static_cast<uint16_t>(FLAGS_port));
     }
 
     wish_client_session session{std::move(transport)};

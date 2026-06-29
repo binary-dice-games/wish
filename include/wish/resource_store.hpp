@@ -16,7 +16,7 @@ namespace bdg::wish {
 /// Pass `data.data()` / `data.size()` to APIs (e.g. ImGui font loader) that
 /// require a raw pointer and byte count.
 struct resource_view {
-  std::span<const unsigned char> data;  ///< View into static storage.
+  std::span<const unsigned char> data; ///< View into static storage.
 };
 
 /// @brief Read-only store of binary resources compiled into the wish binary.

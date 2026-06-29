@@ -5,12 +5,12 @@
 
 #ifdef WISH_SDL3_ENABLED
 
+#include <SDL3_image/SDL_image.h>
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_sdlrenderer3.h>
 #include <implot.h>
 #include <implot3d.h>
-#include <SDL3_image/SDL_image.h>
 
 #include <stdexcept>
 
@@ -31,15 +31,12 @@ sdl3_renderer::~sdl3_renderer() {
 
 void sdl3_renderer::setup() {
   if (!SDL_Init(SDL_INIT_VIDEO))
-    throw std::runtime_error(
-        std::string("SDL_Init failed: ") + SDL_GetError());
+    throw std::runtime_error(std::string("SDL_Init failed: ") + SDL_GetError());
 
-  window_ = SDL_CreateWindow(
-      title_, width_, height_, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
+  window_ = SDL_CreateWindow(title_, width_, height_, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
   if (!window_) {
     SDL_Quit();
-    throw std::runtime_error(
-        std::string("SDL_CreateWindow failed: ") + SDL_GetError());
+    throw std::runtime_error(std::string("SDL_CreateWindow failed: ") + SDL_GetError());
   }
 
   sdl_renderer_ = SDL_CreateRenderer(window_, nullptr);
@@ -47,8 +44,7 @@ void sdl3_renderer::setup() {
     SDL_DestroyWindow(window_);
     window_ = nullptr;
     SDL_Quit();
-    throw std::runtime_error(
-        std::string("SDL_CreateRenderer failed: ") + SDL_GetError());
+    throw std::runtime_error(std::string("SDL_CreateRenderer failed: ") + SDL_GetError());
   }
 
   SDL_SetRenderVSync(sdl_renderer_, 1);
@@ -106,11 +102,12 @@ void sdl3_renderer::begin_frame() {
       quit_.store(true, std::memory_order_release);
   }
 
-  if (fonts_dirty_) rebuild_font_atlas();
+  if (fonts_dirty_)
+    rebuild_font_atlas();
 
   ImGui_ImplSDLRenderer3_NewFrame();
   ImGui_ImplSDL3_NewFrame();
-  imgui_renderer::begin_frame();  // → ImGui::NewFrame()
+  imgui_renderer::begin_frame(); // → ImGui::NewFrame()
 }
 
 void sdl3_renderer::end_frame() {
@@ -136,7 +133,8 @@ void sdl3_renderer::request_quit() {
 ImFont* sdl3_renderer::get_or_load_font(const std::string& path, float size) {
   FontKey key{path, size};
   auto it = font_cache_.find(key);
-  if (it != font_cache_.end()) return it->second;
+  if (it != font_cache_.end())
+    return it->second;
   // Cache miss: record the key (even for missing files) so we don't keep
   // scheduling rebuilds every frame for the same bad path.
   font_cache_[key] = nullptr;
@@ -144,7 +142,7 @@ ImFont* sdl3_renderer::get_or_load_font(const std::string& path, float size) {
     pending_fonts_.insert(key);
     fonts_dirty_ = true;
   }
-  return nullptr;  // default font used this frame
+  return nullptr; // default font used this frame
 }
 
 void sdl3_renderer::rebuild_font_atlas() {
@@ -154,16 +152,13 @@ void sdl3_renderer::rebuild_font_atlas() {
 
   // Re-add all previously loaded fonts (ImFont* pointers must be refreshed).
   for (auto& [key, ptr] : font_cache_) {
-    ptr = std::filesystem::exists(key.path)
-        ? io.Fonts->AddFontFromFileTTF(key.path.c_str(), key.size)
-        : nullptr;
+    ptr = std::filesystem::exists(key.path) ? io.Fonts->AddFontFromFileTTF(key.path.c_str(), key.size) : nullptr;
   }
 
   // Add newly requested fonts, skipping any whose file cannot be found.
   for (const auto& key : pending_fonts_) {
-    font_cache_[key] = std::filesystem::exists(key.path)
-        ? io.Fonts->AddFontFromFileTTF(key.path.c_str(), key.size)
-        : nullptr;
+    font_cache_[key] =
+        std::filesystem::exists(key.path) ? io.Fonts->AddFontFromFileTTF(key.path.c_str(), key.size) : nullptr;
   }
   pending_fonts_.clear();
 
@@ -175,11 +170,10 @@ void sdl3_renderer::rebuild_font_atlas() {
 
 // ── texture loading ───────────────────────────────────────────────────────────
 
-ImTextureID sdl3_renderer::get_or_load_texture(
-    const std::string&           src,
-    const std::filesystem::path& resource_dir) {
+ImTextureID sdl3_renderer::get_or_load_texture(const std::string& src, const std::filesystem::path& resource_dir) {
   auto it = texture_cache_.find(src);
-  if (it != texture_cache_.end()) return it->second;
+  if (it != texture_cache_.end())
+    return it->second;
 
   auto path = resource_dir / src;
 
@@ -197,6 +191,6 @@ ImTextureID sdl3_renderer::get_or_load_texture(
   return id;
 }
 
-}  // namespace bdg::wish
+} // namespace bdg::wish
 
-#endif  // WISH_SDL3_ENABLED
+#endif // WISH_SDL3_ENABLED

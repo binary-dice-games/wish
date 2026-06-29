@@ -1,6 +1,6 @@
 $ClangPath = "C:\Program Files\LLVM\bin\clang-format.exe"
 # Add any folder names you want to exclude here
-$ExcludedFolders = @("extern", "build")
+$ExcludedFolders = @("extern", "build", "build-linux", "_deps")
 
 # Converts the list into a regex pattern (e.g., \\(extern|build)\\)
 $ExcludePattern = "\\(" + ($ExcludedFolders -join "|") + ")\\"

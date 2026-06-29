@@ -17,7 +17,7 @@ class logger;
  * @brief Server application that opens an SDL3 window and accepts wish
  *        clients over any bison transport.
  *
- * Extends `bison::app::server_app` so it inherits transport selection 
+ * Extends `bison::app::server_app` so it inherits transport selection
  * and gflags-based CLI handling.  Only wish-specific
  * behaviour is added here:
  *
@@ -39,14 +39,12 @@ class wish_server_app : public bison::app::server_app {
   void on_listening() const override;
 
   /// @brief Route verbose trace lines through the server logger (file + stdout).
-  void on_verbose_trace(bison::key_t session_id,
-                        const std::string& line) const override;
+  void on_verbose_trace(bison::key_t session_id, const std::string& line) const override;
 
  protected:
   void register_classes() override;
 
-  int run_with_transport(
-      bison::rmi::transport::server_transport_iface& transport) override;
+  int run_with_transport(bison::rmi::transport::server_transport_iface& transport) override;
 
  private:
   /// @brief Shared logger for all sessions; always active when the server runs.

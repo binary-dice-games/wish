@@ -47,17 +47,14 @@ class sdl3_renderer : public imgui_renderer {
    * @param width   Initial window width in pixels.
    * @param height  Initial window height in pixels.
    */
-  explicit sdl3_renderer(
-      const char* title  = "wish",
-      int         width  = 1280,
-      int         height = 720);
+  explicit sdl3_renderer(const char* title = "wish", int width = 1280, int height = 720);
 
   ~sdl3_renderer() override;
 
   // ── renderer lifecycle ────────────────────────────────────────────────────
 
   /// @brief Initialize SDL3, create window + renderer, set up ImGui backends.
-  void setup()    override;
+  void setup() override;
 
   /// @brief Shut down ImGui backends, destroy SDL objects, free textures.
   void teardown() override;
@@ -90,9 +87,7 @@ class sdl3_renderer : public imgui_renderer {
    * @param src           Filename relative to the session resource directory.
    * @param resource_dir  Session-scoped resource folder.
    */
-  ImTextureID get_or_load_texture(
-      const std::string&            src,
-      const std::filesystem::path&  resource_dir) override;
+  ImTextureID get_or_load_texture(const std::string& src, const std::filesystem::path& resource_dir) override;
 
   /**
    * @brief Return a cached ImFont* for (path, size), or schedule an atlas
@@ -107,32 +102,33 @@ class sdl3_renderer : public imgui_renderer {
   ImFont* get_or_load_font(const std::string& path, float size) override;
 
  private:
-  const char*        title_;
-  int                width_;
-  int                height_;
-  SDL_Window*        window_       = nullptr;
-  SDL_Renderer*      sdl_renderer_ = nullptr;
-  std::atomic<bool>  quit_{false};
+  const char* title_;
+  int width_;
+  int height_;
+  SDL_Window* window_ = nullptr;
+  SDL_Renderer* sdl_renderer_ = nullptr;
+  std::atomic<bool> quit_{false};
 
   // ── Font cache ─────────────────────────────────────────────────────────────
 
   struct FontKey {
     std::string path;
-    float       size{0.0f};
+    float size{0.0f};
     bool operator<(const FontKey& o) const {
-      if (path != o.path) return path < o.path;
+      if (path != o.path)
+        return path < o.path;
       return size < o.size;
     }
   };
 
   std::map<FontKey, ImFont*> font_cache_;
-  std::set<FontKey>          pending_fonts_;
-  bool                       fonts_dirty_{false};
+  std::set<FontKey> pending_fonts_;
+  bool fonts_dirty_{false};
 
   /// @brief Clear and rebuild the ImGui font atlas, then re-upload to the GPU.
   void rebuild_font_atlas();
 };
 
-}  // namespace bdg::wish
+} // namespace bdg::wish
 
-#endif  // WISH_SDL3_ENABLED
+#endif // WISH_SDL3_ENABLED

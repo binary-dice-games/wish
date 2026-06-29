@@ -24,11 +24,9 @@ class ui_root : public ui_element {
   /// @param widget_id   The `__wish_id` of the widget that fired the event.
   /// @param event_name  Event key (e.g. `"clicked"_key`, `"changed"_key`).
   /// @param payload     Event-specific payload fields (may be empty).
-  virtual void on_event(bison::key_t widget_id,
-                        bison::key_t event_name,
-                        const bison::dynamic& payload) {}
+  virtual void on_event(bison::key_t widget_id, bison::key_t event_name, const bison::dynamic& payload) {}
 
   virtual ~ui_root() = default;
 };
 
-}  // namespace bdg::wish
+} // namespace bdg::wish

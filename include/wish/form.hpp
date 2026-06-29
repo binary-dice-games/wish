@@ -64,9 +64,7 @@ class form : public ui_root {
   /// @param widget_id   The `__wish_id` of the widget that fired the event.
   /// @param event_name  Event key (e.g. `"clicked"_key`, `"changed"_key`).
   /// @param payload     Event payload (may be empty).
-  void on_event(bison::key_t widget_id,
-                bison::key_t event_name,
-                const bison::dynamic& payload) override {}
+  void on_event(bison::key_t widget_id, bison::key_t event_name, const bison::dynamic& payload) override {}
 
   /// @brief Emit a high-level event to the client.
   ///
@@ -79,7 +77,9 @@ class form : public ui_root {
   void emit(bison::key_t event_name, bison::dynamic payload = {});
 
   /// @return Reference to the per-session RMI context supplied by init().
-  bison::rmi::context& ctx() { return *ctx_; }
+  bison::rmi::context& ctx() {
+    return *ctx_;
+  }
 
   /// @return Reference to the wish session for the current dispatch context.
   ///
@@ -120,4 +120,4 @@ class form : public ui_root {
   bison::key_t own_id_;
 };
 
-}  // namespace bdg::wish
+} // namespace bdg::wish

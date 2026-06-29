@@ -11,8 +11,8 @@
 
 #include <wish/file_service.hpp>
 #include <wish/imgui_renderer.hpp>
-#include <wish/ui_element.hpp>
 #include <wish/session.hpp>
+#include <wish/ui_element.hpp>
 
 namespace bdg::wish {
 
@@ -69,6 +69,6 @@ void render_table(imgui_renderer& r, const ui_element& node, const session& s);
 void render_table_column(imgui_renderer&, const ui_element&, const session&);
 void render_table_row(imgui_renderer& r, const ui_element& node, const session& s);
 
-}  // namespace bdg::wish
+} // namespace bdg::wish
 
-#endif  // WISH_IMGUI_ENABLED
+#endif // WISH_IMGUI_ENABLED

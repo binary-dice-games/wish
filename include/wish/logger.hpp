@@ -3,8 +3,8 @@
 /// @brief Per-session RMI logging service.
 #pragma once
 
-#include "src/bison/bison_object.hpp"
 #include "src/bison/bison_common.hpp"
+#include "src/bison/bison_object.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -52,13 +52,23 @@ class logger : public bison::dynamic {
   /// @param msg    Free-form message text.
   void log(const std::string& level, const std::string& msg);
 
-  void debug(const std::string& msg) { log("debug", msg); }
-  void info (const std::string& msg) { log("info",  msg); }
-  void warn (const std::string& msg) { log("warn",  msg); }
-  void error(const std::string& msg) { log("error", msg); }
+  void debug(const std::string& msg) {
+    log("debug", msg);
+  }
+  void info(const std::string& msg) {
+    log("info", msg);
+  }
+  void warn(const std::string& msg) {
+    log("warn", msg);
+  }
+  void error(const std::string& msg) {
+    log("error", msg);
+  }
 
   /// @brief Returns true when verbose mode is on (stdout mirroring enabled).
-  bool is_verbose() const noexcept { return verbose_; }
+  bool is_verbose() const noexcept {
+    return verbose_;
+  }
 
  private:
   bool verbose_;
@@ -73,4 +83,4 @@ class logger : public bison::dynamic {
 /// @brief Register `"__WishLogger"` in the `"wish"` bison class namespace.
 void register_logger();
 
-}  // namespace bdg::wish
+} // namespace bdg::wish

@@ -1,15 +1,17 @@
 // MIT License © 2025 Binary Dice Games
 #include <gtest/gtest.h>
 
-#include "src/bison/bison_object.hpp"
 #include <wish/registry.hpp>
 #include <wish/ui_importer.hpp>
+#include "src/bison/bison_object.hpp"
 
 using namespace bdg::bison;
 
 class UiImporterTest : public ::testing::Test {
  protected:
-  void SetUp() override { bdg::wish::register_all(); }
+  void SetUp() override {
+    bdg::wish::register_all();
+  }
 };
 
 // ── Simple Window ─────────────────────────────────────────────────────────────
@@ -109,12 +111,9 @@ TEST_F(UiImporterTest, JsonDeepHierarchyAllNamedNodesInMap) {
   EXPECT_TRUE(result.count("body.row2.lbl2"));
   EXPECT_TRUE(result.count("body.row2.btn2"));
 
-  EXPECT_EQ(result["body"]->findField(dynamic::CLASS)->as<bdg::bison::key_t>(),
-            "VerticalLayout"_key);
-  EXPECT_EQ(result["body.row1"]->findField(dynamic::CLASS)->as<bdg::bison::key_t>(),
-            "HorizontalLayout"_key);
-  EXPECT_EQ(result["body.row1.lbl1"]->findField("text"_key)->as<std::string>(),
-            "A");
+  EXPECT_EQ(result["body"]->findField(dynamic::CLASS)->as<bdg::bison::key_t>(), "VerticalLayout"_key);
+  EXPECT_EQ(result["body.row1"]->findField(dynamic::CLASS)->as<bdg::bison::key_t>(), "HorizontalLayout"_key);
+  EXPECT_EQ(result["body.row1.lbl1"]->findField("text"_key)->as<std::string>(), "A");
 }
 
 // ── visible field ─────────────────────────────────────────────────────────────
@@ -170,21 +169,15 @@ TEST_F(UiImporterTest, JsonIntegerCoercedToFloatForSpacing) {
 // ── Error cases ───────────────────────────────────────────────────────────────
 
 TEST_F(UiImporterTest, JsonUnknownTypeThrows) {
-  EXPECT_THROW(
-      bdg::wish::import_json(R"({ "type": "DoesNotExist" })"),
-      std::runtime_error);
+  EXPECT_THROW(bdg::wish::import_json(R"({ "type": "DoesNotExist" })"), std::runtime_error);
 }
 
 TEST_F(UiImporterTest, JsonInvalidJsonThrows) {
-  EXPECT_THROW(
-      bdg::wish::import_json("{ this is not valid json }"),
-      std::runtime_error);
+  EXPECT_THROW(bdg::wish::import_json("{ this is not valid json }"), std::runtime_error);
 }
 
 TEST_F(UiImporterTest, JsonMissingTypeThrows) {
-  EXPECT_THROW(
-      bdg::wish::import_json(R"({ "title": "Hello" })"),
-      std::runtime_error);
+  EXPECT_THROW(bdg::wish::import_json(R"({ "title": "Hello" })"), std::runtime_error);
 }
 
 // ── YAML round-trip ───────────────────────────────────────────────────────────

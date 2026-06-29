@@ -16,12 +16,12 @@
 #include <shared_mutex>
 #include <string>
 #include <unordered_map>
-#include <vector>
 #include <utility>
+#include <vector>
 
 namespace bdg::wish {
 
-class ui_root;  // defined in <wish/ui_root.hpp>
+class ui_root; // defined in <wish/ui_root.hpp>
 
 class file_service;
 using file_service_ptr = std::shared_ptr<file_service>;
@@ -48,8 +48,7 @@ struct session {
   wish::ui_tree objects;
 
   /// Named UI blueprint strings (JSON or YAML) registered by the client.
-  std::unordered_map<bison::key_t, std::string, bison::key_t, bison::key_t>
-      templates;
+  std::unordered_map<bison::key_t, std::string, bison::key_t, bison::key_t> templates;
 
   /// Sandboxed temporary directory for this session's uploaded resources.
   std::filesystem::path resource_dir;
@@ -86,8 +85,7 @@ struct session {
   /// synchronized session map): the render loop holds the read lock for the
   /// entire frame; every RMI dispatch holds the write lock via the
   /// `on_before_dispatch` / `on_after_dispatch` hooks.
-  std::unordered_map<bison::key_t, ui_element_ptr,
-                     bison::key_t, bison::key_t> top_level_objects;
+  std::unordered_map<bison::key_t, ui_element_ptr, bison::key_t, bison::key_t> top_level_objects;
 
   /// @brief Callback for delivering events to the connected client.
   ///
@@ -101,10 +99,10 @@ struct session {
 
   /// @brief One widget event queued during rendering; dispatched after the frame.
   struct pending_event {
-    bison::key_t   id;          ///< `__wish_id` of the widget that fired
-    bison::key_t   event_name;
+    bison::key_t id; ///< `__wish_id` of the widget that fired
+    bison::key_t event_name;
     bison::dynamic payload;
-    bison::key_t   root_key;    ///< top_level_objects key at time of enqueue
+    bison::key_t root_key; ///< top_level_objects key at time of enqueue
   };
 
   /// @brief Events accumulated during one render frame; drained after the frame.
@@ -125,8 +123,7 @@ struct session {
   /// Populated by `form::init()` and `template_handler` when they register a
   /// root window; cleared by `form::remove_internal_objects()` and template
   /// teardown.  The render loop snapshots this map before dispatching events.
-  std::unordered_map<bison::key_t, ui_root*,
-                     bison::key_t, bison::key_t> top_level_handlers;
+  std::unordered_map<bison::key_t, ui_root*, bison::key_t, bison::key_t> top_level_handlers;
 
   /// @brief Construct a session: creates a unique temporary directory.
   /// @param id  Session identifier; used to derive a unique directory name.
@@ -150,10 +147,8 @@ using sync_session = bison::synchronized<session>;
 using sync_session_ptr = std::shared_ptr<sync_session>;
 
 /// Convenience lock-pointer types for the two lock modes.
-using sync_session_wlock =
-    bison::locked_ptr<session, std::unique_lock<std::shared_mutex>>;
-using sync_session_rlock =
-    bison::locked_ptr<const session, std::shared_lock<std::shared_mutex>>;
+using sync_session_wlock = bison::locked_ptr<session, std::unique_lock<std::shared_mutex>>;
+using sync_session_rlock = bison::locked_ptr<const session, std::shared_lock<std::shared_mutex>>;
 
 namespace detail {
 /// Thread-local pointer to the wish::session whose wlock is currently held by
@@ -165,7 +160,7 @@ namespace detail {
 /// mutex).  Do NOT cache or dereference this outside the call stack that entered
 /// dispatch.
 extern thread_local session* current_session;
-}  // namespace detail
+} // namespace detail
 
 /// @brief Write a human-readable dump of every object in the session to @p out.
 ///
@@ -193,10 +188,8 @@ void dump_session_tree(const session& s, std::ostream& out);
 /// `render_session` call).  After the frame the render loop delivers every
 /// queued event to the client and calls `on_event` on the owning
 /// `ui_root`, preventing deadlocks and iterator-invalidation.
-inline void enqueue_event(const session& s,
-    bison::key_t id, bison::key_t event, bison::dynamic payload) {
-  s.pending_events.push_back(
-      {id, event, std::move(payload), s.current_top_level_key});
+inline void enqueue_event(const session& s, bison::key_t id, bison::key_t event, bison::dynamic payload) {
+  s.pending_events.push_back({id, event, std::move(payload), s.current_top_level_key});
 }
 
-}  // namespace bdg::wish
+} // namespace bdg::wish

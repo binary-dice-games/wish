@@ -12,13 +12,11 @@
 
 namespace bdg::wish {
 
-session::session(bison::key_t id_)
-    : id(id_) {
+session::session(bison::key_t id_) : id(id_) {
   // Derive a directory name from the session id so that concurrent sessions
   // on the same machine do not collide.  Session IDs are unique per server
   // instance; the "wish_" prefix prevents clashing with other applications.
-  resource_dir = std::filesystem::temp_directory_path() /
-                 ("wish_" + std::to_string(static_cast<uint32_t>(id.id)));
+  resource_dir = std::filesystem::temp_directory_path() / ("wish_" + std::to_string(static_cast<uint32_t>(id.id)));
   std::filesystem::create_directories(resource_dir);
 }
 
@@ -47,35 +45,33 @@ void dump_session_tree(const session& s, std::ostream& out) {
   };
 
   // Collect and sort by key for stable, readable output.
-  std::vector<std::pair<std::string, ui_element_ptr>> entries(
-      s.objects.begin(), s.objects.end());
-  std::sort(entries.begin(), entries.end(),
-      [](const auto& a, const auto& b) { return a.first < b.first; });
+  std::vector<std::pair<std::string, ui_element_ptr>> entries(s.objects.begin(), s.objects.end());
+  std::sort(entries.begin(), entries.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
 
   out << "wish session objects (" << entries.size() << "):\n";
   for (const auto& [key, ptr] : entries) {
-    if (!ptr) { out << "  [null]  \"" << key << "\"\n"; continue; }
-    out << "  [" << std::left << std::setw(20) << class_name(*ptr) << "]  \""
-        << key << "\"\n";
+    if (!ptr) {
+      out << "  [null]  \"" << key << "\"\n";
+      continue;
+    }
+    out << "  [" << std::left << std::setw(20) << class_name(*ptr) << "]  \"" << key << "\"\n";
   }
 
   if (!s.top_level_objects.empty()) {
     out << "top_level_objects (" << s.top_level_objects.size() << "):\n";
-    std::vector<std::pair<bison::key_t, ui_element_ptr>> roots(
-        s.top_level_objects.begin(), s.top_level_objects.end());
-    std::sort(roots.begin(), roots.end(),
-        [](const auto& a, const auto& b) {
-          return static_cast<uint32_t>(a.first) < static_cast<uint32_t>(b.first);
-        });
+    std::vector<std::pair<bison::key_t, ui_element_ptr>> roots(s.top_level_objects.begin(), s.top_level_objects.end());
+    std::sort(roots.begin(), roots.end(), [](const auto& a, const auto& b) {
+      return static_cast<uint32_t>(a.first) < static_cast<uint32_t>(b.first);
+    });
     for (const auto& [key, ptr] : roots) {
       if (!ptr) {
         out << "  [null]  [0x" << std::hex << static_cast<uint32_t>(key) << "]\n";
         continue;
       }
-      out << "  [" << std::left << std::setw(20) << class_name(*ptr) << std::dec
-          << "]  [0x" << std::hex << static_cast<uint32_t>(key) << "]\n";
+      out << "  [" << std::left << std::setw(20) << class_name(*ptr) << std::dec << "]  [0x" << std::hex
+          << static_cast<uint32_t>(key) << "]\n";
     }
   }
 }
 
-}  // namespace bdg::wish
+} // namespace bdg::wish

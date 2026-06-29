@@ -87,8 +87,7 @@ static constexpr const char* kLayout = R"({
 calculator::calculator(dynamic&& base) : form(std::move(base)) {}
 
 void calculator::on_init() {
-  internal_root_key_ =
-      "__calc_" + std::to_string(reinterpret_cast<uintptr_t>(this));
+  internal_root_key_ = "__calc_" + std::to_string(reinterpret_cast<uintptr_t>(this));
 
   auto tree = import_json(kLayout);
 
@@ -101,36 +100,36 @@ void calculator::on_init() {
   }
 
   // Cache IDs for interactive widgets.
-  window_id_  = (*tree[""])["__wish_id"_key].as<key_t>();
+  window_id_ = (*tree[""])["__wish_id"_key].as<key_t>();
 
-  tree.with("display",    [&](const auto& e) {
-    display_id_  = e->as<key_t>("__wish_id"_key);
+  tree.with("display", [&](const auto& e) {
+    display_id_ = e->as<key_t>("__wish_id"_key);
     display_ptr_ = e;
   });
 
-  tree.with("row0.c",   [&](const auto& e) { btn_c_   = e->as<key_t>("__wish_id"_key); });
+  tree.with("row0.c", [&](const auto& e) { btn_c_ = e->as<key_t>("__wish_id"_key); });
   tree.with("row0.div", [&](const auto& e) { btn_div_ = e->as<key_t>("__wish_id"_key); });
   tree.with("row0.mul", [&](const auto& e) { btn_mul_ = e->as<key_t>("__wish_id"_key); });
   tree.with("row0.bsp", [&](const auto& e) { btn_bsp_ = e->as<key_t>("__wish_id"_key); });
 
-  tree.with("row1.n7",  [&](const auto& e) { btn_n7_  = e->as<key_t>("__wish_id"_key); });
-  tree.with("row1.n8",  [&](const auto& e) { btn_n8_  = e->as<key_t>("__wish_id"_key); });
-  tree.with("row1.n9",  [&](const auto& e) { btn_n9_  = e->as<key_t>("__wish_id"_key); });
+  tree.with("row1.n7", [&](const auto& e) { btn_n7_ = e->as<key_t>("__wish_id"_key); });
+  tree.with("row1.n8", [&](const auto& e) { btn_n8_ = e->as<key_t>("__wish_id"_key); });
+  tree.with("row1.n9", [&](const auto& e) { btn_n9_ = e->as<key_t>("__wish_id"_key); });
   tree.with("row1.sub", [&](const auto& e) { btn_sub_ = e->as<key_t>("__wish_id"_key); });
 
-  tree.with("row2.n4",  [&](const auto& e) { btn_n4_  = e->as<key_t>("__wish_id"_key); });
-  tree.with("row2.n5",  [&](const auto& e) { btn_n5_  = e->as<key_t>("__wish_id"_key); });
-  tree.with("row2.n6",  [&](const auto& e) { btn_n6_  = e->as<key_t>("__wish_id"_key); });
+  tree.with("row2.n4", [&](const auto& e) { btn_n4_ = e->as<key_t>("__wish_id"_key); });
+  tree.with("row2.n5", [&](const auto& e) { btn_n5_ = e->as<key_t>("__wish_id"_key); });
+  tree.with("row2.n6", [&](const auto& e) { btn_n6_ = e->as<key_t>("__wish_id"_key); });
   tree.with("row2.add", [&](const auto& e) { btn_add_ = e->as<key_t>("__wish_id"_key); });
 
-  tree.with("row3.n1",  [&](const auto& e) { btn_n1_  = e->as<key_t>("__wish_id"_key); });
-  tree.with("row3.n2",  [&](const auto& e) { btn_n2_  = e->as<key_t>("__wish_id"_key); });
-  tree.with("row3.n3",  [&](const auto& e) { btn_n3_  = e->as<key_t>("__wish_id"_key); });
-  tree.with("row3.eq",  [&](const auto& e) { btn_eq_  = e->as<key_t>("__wish_id"_key); });
+  tree.with("row3.n1", [&](const auto& e) { btn_n1_ = e->as<key_t>("__wish_id"_key); });
+  tree.with("row3.n2", [&](const auto& e) { btn_n2_ = e->as<key_t>("__wish_id"_key); });
+  tree.with("row3.n3", [&](const auto& e) { btn_n3_ = e->as<key_t>("__wish_id"_key); });
+  tree.with("row3.eq", [&](const auto& e) { btn_eq_ = e->as<key_t>("__wish_id"_key); });
 
-  tree.with("row4.n0",  [&](const auto& e) { btn_n0_  = e->as<key_t>("__wish_id"_key); });
+  tree.with("row4.n0", [&](const auto& e) { btn_n0_ = e->as<key_t>("__wish_id"_key); });
   tree.with("row4.dot", [&](const auto& e) { btn_dot_ = e->as<key_t>("__wish_id"_key); });
-  tree.with("row4.pm",  [&](const auto& e) { btn_pm_  = e->as<key_t>("__wish_id"_key); });
+  tree.with("row4.pm", [&](const auto& e) { btn_pm_ = e->as<key_t>("__wish_id"_key); });
   tree.with("row4.pct", [&](const auto& e) { btn_pct_ = e->as<key_t>("__wish_id"_key); });
 
   sess().objects.merge(std::move(tree), internal_root_key_);
@@ -146,35 +145,100 @@ void calculator::on_event(key_t id, key_t event, const dynamic& /*payload*/) {
     return;
   }
 
-  if (event != "clicked"_key) return;
+  if (event != "clicked"_key)
+    return;
 
-  if (id == btn_c_)   { handle_clear();          return; }
-  if (id == btn_div_) { handle_operator('/');     return; }
-  if (id == btn_mul_) { handle_operator('*');     return; }
-  if (id == btn_bsp_) { handle_backspace();       return; }
-  if (id == btn_n7_)  { handle_digit("7");        return; }
-  if (id == btn_n8_)  { handle_digit("8");        return; }
-  if (id == btn_n9_)  { handle_digit("9");        return; }
-  if (id == btn_sub_) { handle_operator('-');     return; }
-  if (id == btn_n4_)  { handle_digit("4");        return; }
-  if (id == btn_n5_)  { handle_digit("5");        return; }
-  if (id == btn_n6_)  { handle_digit("6");        return; }
-  if (id == btn_add_) { handle_operator('+');     return; }
-  if (id == btn_n1_)  { handle_digit("1");        return; }
-  if (id == btn_n2_)  { handle_digit("2");        return; }
-  if (id == btn_n3_)  { handle_digit("3");        return; }
-  if (id == btn_eq_)  { handle_equals();          return; }
-  if (id == btn_n0_)  { handle_digit("0");        return; }
-  if (id == btn_dot_) { handle_dot();             return; }
-  if (id == btn_pm_)  { handle_negate();          return; }
-  if (id == btn_pct_) { handle_percent();         return; }
+  if (id == btn_c_) {
+    handle_clear();
+    return;
+  }
+  if (id == btn_div_) {
+    handle_operator('/');
+    return;
+  }
+  if (id == btn_mul_) {
+    handle_operator('*');
+    return;
+  }
+  if (id == btn_bsp_) {
+    handle_backspace();
+    return;
+  }
+  if (id == btn_n7_) {
+    handle_digit("7");
+    return;
+  }
+  if (id == btn_n8_) {
+    handle_digit("8");
+    return;
+  }
+  if (id == btn_n9_) {
+    handle_digit("9");
+    return;
+  }
+  if (id == btn_sub_) {
+    handle_operator('-');
+    return;
+  }
+  if (id == btn_n4_) {
+    handle_digit("4");
+    return;
+  }
+  if (id == btn_n5_) {
+    handle_digit("5");
+    return;
+  }
+  if (id == btn_n6_) {
+    handle_digit("6");
+    return;
+  }
+  if (id == btn_add_) {
+    handle_operator('+');
+    return;
+  }
+  if (id == btn_n1_) {
+    handle_digit("1");
+    return;
+  }
+  if (id == btn_n2_) {
+    handle_digit("2");
+    return;
+  }
+  if (id == btn_n3_) {
+    handle_digit("3");
+    return;
+  }
+  if (id == btn_eq_) {
+    handle_equals();
+    return;
+  }
+  if (id == btn_n0_) {
+    handle_digit("0");
+    return;
+  }
+  if (id == btn_dot_) {
+    handle_dot();
+    return;
+  }
+  if (id == btn_pm_) {
+    handle_negate();
+    return;
+  }
+  if (id == btn_pct_) {
+    handle_percent();
+    return;
+  }
 }
 
 // ── Calculator logic ──────────────────────────────────────────────────────────
 
 void calculator::handle_digit(const std::string& ch) {
-  if (fresh_) { display_ = ch; fresh_ = false; }
-  else if (display_.size() < 15) { display_ += ch; }
+  if (fresh_) {
+    display_ = ch;
+    fresh_ = false;
+  } else if (display_.size() < 15) {
+    display_ += ch;
+  }
   update_display();
 }
 
@@ -192,23 +256,32 @@ void calculator::handle_operator(char op) {
   if (pending_op_ && !fresh_) {
     handle_equals();
   }
-  operand_    = std::stod(display_);
+  operand_ = std::stod(display_);
   pending_op_ = op;
-  fresh_      = true;
+  fresh_ = true;
 }
 
 void calculator::handle_equals() {
-  if (!pending_op_) return;
+  if (!pending_op_)
+    return;
   double rhs = std::stod(display_);
   double result = operand_;
   switch (pending_op_) {
-    case '+': result += rhs; break;
-    case '-': result -= rhs; break;
-    case '*': result *= rhs; break;
-    case '/': result = (rhs != 0.0) ? result / rhs : 0.0; break;
+    case '+':
+      result += rhs;
+      break;
+    case '-':
+      result -= rhs;
+      break;
+    case '*':
+      result *= rhs;
+      break;
+    case '/':
+      result = (rhs != 0.0) ? result / rhs : 0.0;
+      break;
   }
   pending_op_ = 0;
-  fresh_      = true;
+  fresh_ = true;
 
   if (result == std::floor(result) && std::abs(result) < 1e12) {
     display_ = std::to_string(static_cast<long long>(result));
@@ -216,23 +289,27 @@ void calculator::handle_equals() {
     std::ostringstream oss;
     oss << result;
     display_ = oss.str();
-    if (display_.size() > 15) display_.resize(15);
+    if (display_.size() > 15)
+      display_.resize(15);
   }
   update_display();
 }
 
 void calculator::handle_clear() {
-  display_    = "0";
-  operand_    = 0.0;
+  display_ = "0";
+  operand_ = 0.0;
   pending_op_ = 0;
-  fresh_      = true;
+  fresh_ = true;
   update_display();
 }
 
 void calculator::handle_negate() {
-  if (display_ == "0") return;
-  if (display_[0] == '-') display_.erase(0, 1);
-  else                     display_.insert(0, "-");
+  if (display_ == "0")
+    return;
+  if (display_[0] == '-')
+    display_.erase(0, 1);
+  else
+    display_.insert(0, "-");
   update_display();
 }
 
@@ -241,14 +318,20 @@ void calculator::handle_percent() {
   std::ostringstream oss;
   oss << v;
   display_ = oss.str();
-  if (display_.size() > 15) display_.resize(15);
+  if (display_.size() > 15)
+    display_.resize(15);
   update_display();
 }
 
 void calculator::handle_backspace() {
-  if (fresh_) { handle_clear(); return; }
-  if (display_.size() > 1) display_.pop_back();
-  else                     display_ = "0";
+  if (fresh_) {
+    handle_clear();
+    return;
+  }
+  if (display_.size() > 1)
+    display_.pop_back();
+  else
+    display_ = "0";
   update_display();
 }
 
@@ -263,16 +346,13 @@ void register_calculator() {
   auto proto = dynamic_ptr{"Calculator"_key, {}};
 
   (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Calculator"));
-  (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
-      "Self-contained four-function calculator. "
-      "All arithmetic is server-side. "
-      "Listen for the 'closed' event to detect when the user is done."));
+  (*proto)[dynamic::CLASS].addAttribute(
+      attr<Description>("Self-contained four-function calculator. "
+                        "All arithmetic is server-side. "
+                        "Listen for the 'closed' event to detect when the user is done."));
 
   dynamic::addClass(
-      "wish"_key,
-      std::move(proto),
-      key_t{0U},
-      dynamic::make_factory<calculator>("wish"_key, "Calculator"_key));
+      "wish"_key, std::move(proto), key_t{0U}, dynamic::make_factory<calculator>("wish"_key, "Calculator"_key));
 }
 
 } // namespace bdg::wish

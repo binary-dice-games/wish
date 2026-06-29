@@ -43,7 +43,9 @@ class renderer {
    * loop checks this after each frame and stops itself when it returns true.
    * Default returns false (server runs until `stop()` is called explicitly).
    */
-  virtual bool should_quit() const { return false; }
+  virtual bool should_quit() const {
+    return false;
+  }
 
   /// @brief Called once before any nodes are rendered in a frame.
   virtual void begin_frame() = 0;
@@ -118,4 +120,4 @@ class null_renderer : public renderer {
   void end_frame() override {}
 };
 
-}  // namespace bdg::wish
+} // namespace bdg::wish

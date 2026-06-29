@@ -7,21 +7,21 @@ namespace bdg::wish {
 
 // ── form ─────────────────────────────────────────────────────────────────────
 
-form::form(bison::dynamic&& base)
-    : ui_root(std::move(base)) {}
+form::form(bison::dynamic&& base) : ui_root(std::move(base)) {}
 
 form::~form() {
   remove_internal_objects();
 }
 
 void form::remove_internal_objects() {
-  if (internal_root_key_.empty() || !sync_sess_) return;
+  if (internal_root_key_.empty() || !sync_sess_)
+    return;
   const std::string dot = internal_root_key_ + ".";
 
   auto do_remove = [&](session& s) {
     s.top_level_objects.erase(bison::key_t{internal_root_key_});
     s.top_level_handlers.erase(bison::key_t{internal_root_key_});
-    for (auto it = s.objects.begin(); it != s.objects.end(); ) {
+    for (auto it = s.objects.begin(); it != s.objects.end();) {
       if (it->first == internal_root_key_ || it->first.rfind(dot, 0) == 0)
         it = s.objects.erase(it);
       else
@@ -40,7 +40,7 @@ void form::remove_internal_objects() {
 }
 
 void form::init(bison::rmi::context& ctx, sync_session_ptr sync_sess) {
-  ctx_       = &ctx;
+  ctx_ = &ctx;
   sync_sess_ = std::move(sync_sess);
   on_init();
   // After on_init() the subclass has populated internal_root_key_. Register
@@ -56,7 +56,8 @@ void form::init(bison::rmi::context& ctx, sync_session_ptr sync_sess) {
 }
 
 void form::emit(bison::key_t event_name, bison::dynamic payload) {
-  if (!sync_sess_) return;
+  if (!sync_sess_)
+    return;
   // Resolve our own RMI ID lazily on the first call by scanning the object
   // table. Forms emit at interactive speed (button clicks), so the one-time
   // O(n) scan is negligible. The ID is stable once assigned by handle_instantiate.
@@ -68,12 +69,14 @@ void form::emit(bison::key_t event_name, bison::dynamic payload) {
       }
     }
   }
-  if (!own_id_.id) return;
+  if (!own_id_.id)
+    return;
 
   if (detail::current_session) {
     // Within dispatch: wlock already held.
     auto& s = *detail::current_session;
-    if (s.emit_event) s.emit_event(own_id_, event_name, std::move(payload));
+    if (s.emit_event)
+      s.emit_event(own_id_, event_name, std::move(payload));
   } else {
     auto lock = sync_sess_->rlock();
     if (lock->emit_event)
@@ -81,4 +84,4 @@ void form::emit(bison::key_t event_name, bison::dynamic payload) {
   }
 }
 
-}  // namespace bdg::wish
+} // namespace bdg::wish

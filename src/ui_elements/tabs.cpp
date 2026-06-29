@@ -13,36 +13,45 @@ void register_tabs() {
   // TabBar — container; children should be TabItem elements.
   {
     auto proto = dynamic_ptr{"TabBar"_key, {}};
-    proto->addField("id"_key, field{std::string{"##tabbar"},
-      attr<DisplayName>("ID"),
-      attr<Description>("ImGui identifier for this tab bar. Must be unique within its window."),
-      attr<Category>("Behavior")});
+    proto->addField(
+        "id"_key,
+        field{
+            std::string{"##tabbar"},
+            attr<DisplayName>("ID"),
+            attr<Description>("ImGui identifier for this tab bar. Must be unique within its window."),
+            attr<Category>("Behavior")});
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("TabBar"));
-    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
-        "A horizontal tab bar. Children should be TabItem elements."));
-    dynamic::addClass("wish"_key, std::move(proto), "Element"_key,
-        dynamic::make_factory<ui_element>("wish"_key, "TabBar"_key));
+    (*proto)[dynamic::CLASS].addAttribute(
+        attr<Description>("A horizontal tab bar. Children should be TabItem elements."));
+    dynamic::addClass(
+        "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_element>("wish"_key, "TabBar"_key));
   }
 
   // TabItem — one tab page inside a TabBar; its children are the page content.
   {
     auto proto = dynamic_ptr{"TabItem"_key, {}};
-    proto->addField("label"_key, field{std::string{},
-      attr<DisplayName>("Label"),
-      attr<Description>("Text shown on the tab button."),
-      attr<Category>("Content")});
-    proto->addField("closable"_key, field{false,
-      attr<DisplayName>("Closable"),
-      attr<Description>("When true, a close button appears on the tab."),
-      attr<Category>("Behavior")});
+    proto->addField(
+        "label"_key,
+        field{
+            std::string{},
+            attr<DisplayName>("Label"),
+            attr<Description>("Text shown on the tab button."),
+            attr<Category>("Content")});
+    proto->addField(
+        "closable"_key,
+        field{
+            false,
+            attr<DisplayName>("Closable"),
+            attr<Description>("When true, a close button appears on the tab."),
+            attr<Category>("Behavior")});
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("TabItem"));
-    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
-        "A single tab page inside a TabBar. "
-        "Emits 'selected' when it becomes the active tab. "
-        "Emits 'closed' when the close button is clicked (requires closable: true)."));
-    dynamic::addClass("wish"_key, std::move(proto), "Element"_key,
-        dynamic::make_factory<ui_element>("wish"_key, "TabItem"_key));
+    (*proto)[dynamic::CLASS].addAttribute(
+        attr<Description>("A single tab page inside a TabBar. "
+                          "Emits 'selected' when it becomes the active tab. "
+                          "Emits 'closed' when the close button is clicked (requires closable: true)."));
+    dynamic::addClass(
+        "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_element>("wish"_key, "TabItem"_key));
   }
 }
 
-}  // namespace bdg::wish
+} // namespace bdg::wish

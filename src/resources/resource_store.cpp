@@ -14,7 +14,7 @@ namespace bdg::wish {
 
 // Defined in the generated embedded_resources.cpp translation unit.
 extern const resource_entry g_resource_table[];
-extern const std::size_t    g_resource_count;
+extern const std::size_t g_resource_count;
 
 static constexpr std::string_view kScheme = "res://";
 

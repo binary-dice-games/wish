@@ -14,15 +14,18 @@ using bdg::wish::session;
 class FileServiceTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    bdg::wish::register_file_service();  // idempotent: registers bison class
+    bdg::wish::register_file_service(); // idempotent: registers bison class
     sess_ = std::make_unique<session>("fs_test"_key);
-    sess_->file_service = std::make_shared<file_service>(
-        dynamic::instantiate("wish"_key, "__WishFileSystem"_key),
-        sess_->resource_dir);
+    sess_->file_service =
+        std::make_shared<file_service>(dynamic::instantiate("wish"_key, "__WishFileSystem"_key), sess_->resource_dir);
   }
 
-  session& sess() { return *sess_; }
-  file_service& fs() { return *sess_->file_service; }
+  session& sess() {
+    return *sess_;
+  }
+  file_service& fs() {
+    return *sess_->file_service;
+  }
 
  private:
   std::unique_ptr<session> sess_;
@@ -45,25 +48,27 @@ TEST_F(FileServiceTest, UploadDownloadBinaryContent) {
 
 TEST_F(FileServiceTest, ListReturnsUploadedFileNames) {
   fs().upload("alpha.txt", "a");
-  fs().upload("beta.txt",  "b");
+  fs().upload("beta.txt", "b");
 
   auto listing = fs().list();
   ASSERT_NE(listing, nullptr);
 
   std::unordered_set<std::string> found;
   listing->forEach([&](bdg::bison::key_t, const field& f) {
-    if (f.is<std::string>()) found.insert(f.as<std::string>());
+    if (f.is<std::string>())
+      found.insert(f.as<std::string>());
   });
 
   EXPECT_NE(found.find("alpha.txt"), found.end());
-  EXPECT_NE(found.find("beta.txt"),  found.end());
+  EXPECT_NE(found.find("beta.txt"), found.end());
 }
 
 TEST_F(FileServiceTest, ListEmptyWhenNoFiles) {
   auto listing = fs().list();
   int count = 0;
   listing->forEach([&](bdg::bison::key_t, const field& f) {
-    if (f.is<std::string>()) ++count;
+    if (f.is<std::string>())
+      ++count;
   });
   EXPECT_EQ(count, 0);
 }

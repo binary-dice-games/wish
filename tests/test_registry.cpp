@@ -1,14 +1,16 @@
 // MIT License © 2025 Binary Dice Games
 #include <gtest/gtest.h>
 
-#include "src/bison/bison_object.hpp"
 #include <wish/registry.hpp>
+#include "src/bison/bison_object.hpp"
 
 using namespace bdg::bison;
 
 class RegistryTest : public ::testing::Test {
  protected:
-  void SetUp() override { bdg::wish::register_all(); }
+  void SetUp() override {
+    bdg::wish::register_all();
+  }
 };
 
 // ── register_all() ────────────────────────────────────────────────────────────

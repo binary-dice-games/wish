@@ -13,7 +13,7 @@
 #include <imgui.h>
 
 #if defined(_WIN32)
-#  include "src/rmi/transport/named_pipe_transport.hpp"
+#include "src/rmi/transport/named_pipe_transport.hpp"
 #endif
 
 #include <gflags/gflags.h>
@@ -24,14 +24,14 @@
 #include <memory>
 #include <thread>
 
-DECLARE_bool  (verbose);
+DECLARE_bool(verbose);
 DECLARE_string(host);
-DECLARE_int32 (port);
+DECLARE_int32(port);
 DECLARE_string(pipe);
 
-DEFINE_string(title,  "wish", "Window title");
-DEFINE_int32 (width,  1280,   "Window width in pixels");
-DEFINE_int32 (height, 720,    "Window height in pixels");
+DEFINE_string(title, "wish", "Window title");
+DEFINE_int32(width, 1280, "Window width in pixels");
+DEFINE_int32(height, 720, "Window height in pixels");
 
 namespace bdg::wish {
 
@@ -50,19 +50,13 @@ class server_renderer : public sdl3_renderer {
     ImGui::SetNextWindowPos(vp->WorkPos);
     ImGui::SetNextWindowSize(vp->WorkSize);
     ImGui::SetNextWindowViewport(vp->ID);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding,   0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,    ImVec2(0.0f, 0.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 
-    constexpr ImGuiWindowFlags host_flags =
-        ImGuiWindowFlags_NoDocking          |
-        ImGuiWindowFlags_NoTitleBar         |
-        ImGuiWindowFlags_NoCollapse         |
-        ImGuiWindowFlags_NoResize           |
-        ImGuiWindowFlags_NoMove             |
-        ImGuiWindowFlags_NoBringToFrontOnFocus |
-        ImGuiWindowFlags_NoNavFocus         |
-        ImGuiWindowFlags_MenuBar;
+    constexpr ImGuiWindowFlags host_flags = ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar |
+        ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+        ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus | ImGuiWindowFlags_MenuBar;
 
     ImGui::Begin("##wish_server_host", nullptr, host_flags);
     ImGui::PopStyleVar(3);
@@ -81,8 +75,7 @@ class server_renderer : public sdl3_renderer {
     }
 
     ImGuiID dock_id = ImGui::GetID("ServerDockSpace");
-    ImGui::DockSpace(dock_id, ImVec2(0.0f, 0.0f),
-                     ImGuiDockNodeFlags_PassthruCentralNode);
+    ImGui::DockSpace(dock_id, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_PassthruCentralNode);
 
     ImGui::End();
   }
@@ -91,8 +84,7 @@ class server_renderer : public sdl3_renderer {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 static std::unique_ptr<sdl3_renderer> make_renderer() {
-  return std::make_unique<server_renderer>(
-      FLAGS_title.c_str(), FLAGS_width, FLAGS_height);
+  return std::make_unique<server_renderer>(FLAGS_title.c_str(), FLAGS_width, FLAGS_height);
 }
 
 static std::shared_ptr<logger> make_server_logger() {
@@ -116,21 +108,19 @@ void wish_server_app::register_classes() {
 
 void wish_server_app::on_listening() const {
   if (!FLAGS_pipe.empty()) {
-    std::cout << "[wish] listening on pipe " << FLAGS_pipe
-              << " - close the window to stop\n" << std::flush;
+    std::cout << "[wish] listening on pipe " << FLAGS_pipe << " - close the window to stop\n" << std::flush;
   } else {
-    std::cout << "[wish] listening on " << FLAGS_host << ':' << FLAGS_port
-              << " - close the window to stop\n" << std::flush;
+    std::cout << "[wish] listening on " << FLAGS_host << ':' << FLAGS_port << " - close the window to stop\n"
+              << std::flush;
   }
 }
 
-void wish_server_app::on_verbose_trace(bison::key_t /*session_id*/,
-                                       const std::string& line) const {
-  if (server_log_) server_log_->info(line);
+void wish_server_app::on_verbose_trace(bison::key_t /*session_id*/, const std::string& line) const {
+  if (server_log_)
+    server_log_->info(line);
 }
 
-int wish_server_app::run_with_transport(
-    bison::rmi::transport::server_transport_iface& transport) {
+int wish_server_app::run_with_transport(bison::rmi::transport::server_transport_iface& transport) {
   server_log_ = make_server_logger();
   server srv{transport, make_renderer()};
   srv.set_logger(server_log_);

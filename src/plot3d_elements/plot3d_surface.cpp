@@ -14,51 +14,70 @@ void register_plot3d_surface() {
   // xs, ys, zs are flattened row-major arrays of x_count * y_count elements.
   {
     auto proto = dynamic_ptr{"Plot3DSurface"_key, {}};
-    proto->addField("xs"_key, field{std::vector<float>{},
-      attr<DisplayName>("X Grid"),
-      attr<Description>(
-          "Flattened x_count × y_count array of X coordinates for each grid point."),
-      attr<Category>("Data")});
-    proto->addField("ys"_key, field{std::vector<float>{},
-      attr<DisplayName>("Y Grid"),
-      attr<Description>(
-          "Flattened x_count × y_count array of Y coordinates for each grid point."),
-      attr<Category>("Data")});
-    proto->addField("zs"_key, field{std::vector<float>{},
-      attr<DisplayName>("Z Grid"),
-      attr<Description>(
-          "Flattened x_count × y_count array of Z (height) values."),
-      attr<Category>("Data")});
-    proto->addField("x_count"_key, field{int32_t{2},
-      attr<DisplayName>("X Count"),
-      attr<Description>("Number of grid points along the X (first) dimension."),
-      attr<Category>("Data"),
-      attr<Range>(2.0, 4096.0)});
-    proto->addField("y_count"_key, field{int32_t{2},
-      attr<DisplayName>("Y Count"),
-      attr<Description>("Number of grid points along the Y (second) dimension."),
-      attr<Category>("Data"),
-      attr<Range>(2.0, 4096.0)});
-    proto->addField("scale_min"_key, field{float{0.0f},
-      attr<DisplayName>("Scale Min"),
-      attr<Description>(
-          "Minimum value used to map Z height to colormap. "
-          "Both scale_min and scale_max equal to 0 triggers auto-range."),
-      attr<Category>("Style")});
-    proto->addField("scale_max"_key, field{float{0.0f},
-      attr<DisplayName>("Scale Max"),
-      attr<Description>(
-          "Maximum value used to map Z height to colormap. "
-          "Both scale_min and scale_max equal to 0 triggers auto-range."),
-      attr<Category>("Style")});
+    proto->addField(
+        "xs"_key,
+        field{
+            std::vector<float>{},
+            attr<DisplayName>("X Grid"),
+            attr<Description>("Flattened x_count × y_count array of X coordinates for each grid point."),
+            attr<Category>("Data")});
+    proto->addField(
+        "ys"_key,
+        field{
+            std::vector<float>{},
+            attr<DisplayName>("Y Grid"),
+            attr<Description>("Flattened x_count × y_count array of Y coordinates for each grid point."),
+            attr<Category>("Data")});
+    proto->addField(
+        "zs"_key,
+        field{
+            std::vector<float>{},
+            attr<DisplayName>("Z Grid"),
+            attr<Description>("Flattened x_count × y_count array of Z (height) values."),
+            attr<Category>("Data")});
+    proto->addField(
+        "x_count"_key,
+        field{
+            int32_t{2},
+            attr<DisplayName>("X Count"),
+            attr<Description>("Number of grid points along the X (first) dimension."),
+            attr<Category>("Data"),
+            attr<Range>(2.0, 4096.0)});
+    proto->addField(
+        "y_count"_key,
+        field{
+            int32_t{2},
+            attr<DisplayName>("Y Count"),
+            attr<Description>("Number of grid points along the Y (second) dimension."),
+            attr<Category>("Data"),
+            attr<Range>(2.0, 4096.0)});
+    proto->addField(
+        "scale_min"_key,
+        field{
+            float{0.0f},
+            attr<DisplayName>("Scale Min"),
+            attr<Description>("Minimum value used to map Z height to colormap. "
+                              "Both scale_min and scale_max equal to 0 triggers auto-range."),
+            attr<Category>("Style")});
+    proto->addField(
+        "scale_max"_key,
+        field{
+            float{0.0f},
+            attr<DisplayName>("Scale Max"),
+            attr<Description>("Maximum value used to map Z height to colormap. "
+                              "Both scale_min and scale_max equal to 0 triggers auto-range."),
+            attr<Category>("Style")});
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Plot3DSurface"));
-    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
-        "Draws a colored 3-D parametric surface on an x_count × y_count grid. "
-        "xs, ys, zs are flattened row-major arrays. "
-        "Must be a child of a Plot3D element."));
-    dynamic::addClass("wish"_key, std::move(proto), "Plot3DItem"_key,
+    (*proto)[dynamic::CLASS].addAttribute(
+        attr<Description>("Draws a colored 3-D parametric surface on an x_count × y_count grid. "
+                          "xs, ys, zs are flattened row-major arrays. "
+                          "Must be a child of a Plot3D element."));
+    dynamic::addClass(
+        "wish"_key,
+        std::move(proto),
+        "Plot3DItem"_key,
         dynamic::make_factory<ui_element>("wish"_key, "Plot3DSurface"_key));
   }
 }
 
-}  // namespace bdg::wish
+} // namespace bdg::wish

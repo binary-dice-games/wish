@@ -1,12 +1,12 @@
 // MIT License © 2025 Binary Dice Games
 /// @file server.cpp
 /// @brief Implementation of wish::server.
-#include <wish/server.hpp>
 #include <wish/file_service.hpp>
 #include <wish/form.hpp>
 #include <wish/logger.hpp>
-#include <wish/style_service.hpp>
 #include <wish/registry.hpp>
+#include <wish/server.hpp>
+#include <wish/style_service.hpp>
 #include <wish/ui_root.hpp>
 
 #include "template_handler.hpp"
@@ -14,11 +14,11 @@
 #include <chrono>
 #include <iomanip>
 #include <memory>
-#include <utility>
 #include <optional>
 #include <shared_mutex>
 #include <sstream>
 #include <thread>
+#include <utility>
 #include <vector>
 
 namespace bdg::wish {
@@ -32,16 +32,15 @@ using namespace bison::rmi::transport;
 
 // ── server ────────────────────────────────────────────────────────────────────
 
-server::server(
-    server_transport_iface& transport,
-    std::unique_ptr<renderer> r)
+server::server(server_transport_iface& transport, std::unique_ptr<renderer> r)
     : bison::rmi::server(transport), renderer_(std::move(r)) {}
 
 server::~server() {
   if (running_.load(std::memory_order_acquire)) {
     try {
       stop();
-    } catch (...) {}
+    } catch (...) {
+    }
   }
 }
 
@@ -71,18 +70,16 @@ void server::on_session_created(bison::rmi::context& ctx) {
     sess->emit_event = ctx.emit_event;
     sess->allow_absolute_paths = allow_absolute_paths_;
     sess->file_service = std::make_shared<file_service>(
-        bison::dynamic::instantiate(bison::key_t{"wish"}, bison::key_t{"__WishFileSystem"}),
-        sess->resource_dir);
-    sess->style_service = std::make_shared<style_service>(
-        bison::dynamic::instantiate(bison::key_t{"wish"}, bison::key_t{"__WishStyle"}));
+        bison::dynamic::instantiate(bison::key_t{"wish"}, bison::key_t{"__WishFileSystem"}), sess->resource_dir);
+    sess->style_service =
+        std::make_shared<style_service>(bison::dynamic::instantiate(bison::key_t{"wish"}, bison::key_t{"__WishStyle"}));
     // All sessions share the same global logger instance (set via set_logger()).
     sess->logger_service = logger_;
   }
   sessions_.wlock()->emplace(ctx.session_id.id, sync_sess);
   {
     std::ostringstream oss;
-    oss << "[rmi] connect     sid=0x"
-        << std::hex << std::setw(8) << std::setfill('0') << ctx.session_id.id;
+    oss << "[rmi] connect     sid=0x" << std::hex << std::setw(8) << std::setfill('0') << ctx.session_id.id;
     on_print(ctx.session_id, oss.str());
   }
   auto sess = sync_sess->wlock();
@@ -103,20 +100,17 @@ void server::on_session_destroyed(bison::rmi::context& ctx) {
     try {
       {
         std::ostringstream oss;
-        oss << "[rmi] disconnect  sid=0x"
-            << std::hex << std::setw(8) << std::setfill('0') << ctx.session_id.id;
+        oss << "[rmi] disconnect  sid=0x" << std::hex << std::setw(8) << std::setfill('0') << ctx.session_id.id;
         on_print(ctx.session_id, oss.str());
       }
       auto lock = sync_sess->wlock();
       on_session_destroyed(*lock);
-    } catch (...) {}
+    } catch (...) {
+    }
   }
 }
 
-bison::dynamic_ptr server::on_create_object(
-    bison::rmi::context& ctx,
-    bison::key_t ns,
-    bison::key_t klass) {
+bison::dynamic_ptr server::on_create_object(bison::rmi::context& ctx, bison::key_t ns, bison::key_t klass) {
   using namespace bison;
 
   // on_create_object runs inside a dispatch (on_before_dispatch has run), so
@@ -126,7 +120,8 @@ bison::dynamic_ptr server::on_create_object(
   {
     auto lp = sessions_.rlock();
     auto it = lp->find(ctx.session_id.id);
-    if (it != lp->end()) sync_sess = it->second;
+    if (it != lp->end())
+      sync_sess = it->second;
   }
 
   if (sync_sess && detail::current_session) {
@@ -154,7 +149,8 @@ bison::dynamic_ptr server::on_create_object(
 }
 
 void server::on_print(bison::key_t /*session_id*/, const std::string& line) {
-  if (logger_) logger_->info(line);
+  if (logger_)
+    logger_->info(line);
 }
 
 // Thread-local per-session write lock held for the duration of each dispatch.
@@ -167,7 +163,8 @@ void server::on_before_dispatch(bison::rmi::context& ctx) {
   {
     auto lp = sessions_.rlock();
     auto it = lp->find(ctx.session_id.id);
-    if (it != lp->end()) sync_sess = it->second;
+    if (it != lp->end())
+      sync_sess = it->second;
   }
   if (sync_sess) {
     tl_dispatch_wlock = sync_sess->wlock();
@@ -181,7 +178,8 @@ void server::on_after_dispatch(bison::rmi::context&) noexcept {
 }
 
 void server::render_loop() {
-  if (renderer_) renderer_->setup();
+  if (renderer_)
+    renderer_->setup();
   while (running_.load(std::memory_order_acquire)) {
     if (renderer_) {
       renderer_->begin_frame();
@@ -195,12 +193,12 @@ void server::render_loop() {
         {
           auto lp = sessions_.rlock();
           to_render.reserve(lp->size());
-          for (const auto& [id, sp] : *lp) to_render.push_back(sp);
+          for (const auto& [id, sp] : *lp)
+            to_render.push_back(sp);
         }
         for (const auto& sync_sess : to_render) {
           std::vector<session::pending_event> events;
-          std::unordered_map<bison::key_t, ui_root*,
-                             bison::key_t, bison::key_t> handlers;
+          std::unordered_map<bison::key_t, ui_root*, bison::key_t, bison::key_t> handlers;
           std::function<void(bison::key_t, bison::key_t, bison::dynamic)> client_emit;
           {
             auto sess = sync_sess->wlock();
@@ -213,8 +211,8 @@ void server::render_loop() {
             }
             sess->current_top_level_key = bison::key_t{};
             detail::current_session = nullptr;
-            events      = std::move(sess->pending_events);
-            handlers    = sess->top_level_handlers;
+            events = std::move(sess->pending_events);
+            handlers = sess->top_level_handlers;
             client_emit = sess->emit_event;
           }
           // Dispatch events with no lock held: handlers may modify session state.
@@ -222,7 +220,8 @@ void server::render_loop() {
             if (client_emit) {
               try {
                 client_emit(ev.id, ev.event_name, ev.payload);
-              } catch (...) {}  // client may have disconnected between render and dispatch
+              } catch (...) {
+              } // client may have disconnected between render and dispatch
             }
             if (ev.root_key.id != 0) {
               auto it = handlers.find(ev.root_key);
@@ -238,7 +237,8 @@ void server::render_loop() {
     }
     std::this_thread::sleep_for(std::chrono::milliseconds{5});
   }
-  if (renderer_) renderer_->teardown();
+  if (renderer_)
+    renderer_->teardown();
 }
 
 } // namespace bdg::wish

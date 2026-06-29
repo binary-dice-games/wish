@@ -54,9 +54,7 @@ class imgui_renderer : public renderer {
 
   /// @brief Fetch a cached texture or attempt to load it from @p resource_dir.
   /// Returns a zero/null ID in headless / no-backend contexts.
-  virtual ImTextureID get_or_load_texture(
-      const std::string&            src,
-      const std::filesystem::path&  resource_dir);
+  virtual ImTextureID get_or_load_texture(const std::string& src, const std::filesystem::path& resource_dir);
 
   /**
    * @brief Fetch a cached font or schedule loading the TTF at @p path with
@@ -77,4 +75,4 @@ class imgui_renderer : public renderer {
   std::unordered_map<std::string, ImTextureID> texture_cache_;
 };
 
-}  // namespace bdg::wish
+} // namespace bdg::wish

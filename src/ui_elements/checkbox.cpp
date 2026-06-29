@@ -11,18 +11,20 @@ using namespace bdg::bison;
 
 void register_checkbox() {
   auto proto = dynamic_ptr{"Checkbox"_key, {}};
-  proto->addField("label"_key, field{std::string{""},
-    attr<DisplayName>("Label"),
-    attr<Description>("Checkbox caption text."),
-    attr<Category>("Content")});
-  proto->addField("value"_key, field{false,
-    attr<DisplayName>("Value"),
-    attr<Description>("Current checked state."),
-    attr<Category>("State")});
+  proto->addField(
+      "label"_key,
+      field{
+          std::string{""},
+          attr<DisplayName>("Label"),
+          attr<Description>("Checkbox caption text."),
+          attr<Category>("Content")});
+  proto->addField(
+      "value"_key,
+      field{false, attr<DisplayName>("Value"), attr<Description>("Current checked state."), attr<Category>("State")});
   (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Checkbox"));
   (*proto)[dynamic::CLASS].addAttribute(attr<Description>("A toggleable checkbox with a label."));
-  dynamic::addClass("wish"_key, std::move(proto), "Element"_key,
-      dynamic::make_factory<ui_element>("wish"_key, "Checkbox"_key));
+  dynamic::addClass(
+      "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_element>("wish"_key, "Checkbox"_key));
 }
 
-}  // namespace bdg::wish
+} // namespace bdg::wish

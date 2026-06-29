@@ -37,8 +37,8 @@ class wish_bridge_app : public bison::rmi::bridge {
   std::string desktop_title() const;
   void update_title();
 
-  std::mutex  desktop_mtx_;
-  int         client_count_{0};
+  std::mutex desktop_mtx_;
+  int client_count_{0};
   std::optional<bison::rmi::proxy::dynamic> desktop_window_;
 };
 

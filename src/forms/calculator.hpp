@@ -22,9 +22,7 @@ class calculator : public form {
 
  protected:
   void on_init() override;
-  void on_event(bison::key_t widget_id,
-                bison::key_t event_name,
-                const bison::dynamic& payload) override;
+  void on_event(bison::key_t widget_id, bison::key_t event_name, const bison::dynamic& payload) override;
 
  private:
   // ── Calculator state ──────────────────────────────────────────────────────
@@ -40,9 +38,9 @@ class calculator : public form {
   void update_display();
 
   std::string display_{"0"};
-  double      operand_{0.0};
-  char        pending_op_{0};
-  bool        fresh_{true};
+  double operand_{0.0};
+  char pending_op_{0};
+  bool fresh_{true};
 
   // ── Widget ID cache ───────────────────────────────────────────────────────
 
@@ -53,7 +51,7 @@ class calculator : public form {
   bison::key_t btn_n7_, btn_n8_, btn_n9_, btn_sub_;
   bison::key_t btn_n4_, btn_n5_, btn_n6_, btn_add_;
   bison::key_t btn_n1_, btn_n2_, btn_n3_, btn_eq_;
-  bison::key_t btn_n0_, btn_dot_, btn_pm_,  btn_pct_;
+  bison::key_t btn_n0_, btn_dot_, btn_pm_, btn_pct_;
 
   ui_element_ptr display_ptr_;
 };

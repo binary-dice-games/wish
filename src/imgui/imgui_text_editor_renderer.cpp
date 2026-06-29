@@ -26,8 +26,8 @@ namespace {
 
 struct TextEditorState {
   TextEditor editor;
-  std::string loaded_path;   // full path last loaded into the editor
-  std::string loaded_lang;   // language key last applied
+  std::string loaded_path; // full path last loaded into the editor
+  std::string loaded_lang; // language key last applied
   std::string applied_preset; // palette preset last applied ("dark", "light", ...)
   size_t last_undo_index{0};
 };
@@ -39,46 +39,57 @@ std::unordered_map<uint32_t, TextEditorState>& editor_cache() {
 
 // Map wish language string → TextEditor::Language factory.
 const TextEditor::Language* language_for(const std::string& lang) {
-  if (lang == "cpp" || lang == "c++") return TextEditor::Language::Cpp();
-  if (lang == "c")           return TextEditor::Language::C();
-  if (lang == "cs")          return TextEditor::Language::Cs();
-  if (lang == "glsl")        return TextEditor::Language::Glsl();
-  if (lang == "hlsl")        return TextEditor::Language::Hlsl();
-  if (lang == "lua")         return TextEditor::Language::Lua();
-  if (lang == "python")      return TextEditor::Language::Python();
-  if (lang == "sql")         return TextEditor::Language::Sql();
-  if (lang == "json")        return TextEditor::Language::Json();
-  if (lang == "markdown")    return TextEditor::Language::Markdown();
-  if (lang == "angelscript") return TextEditor::Language::AngelScript();
+  if (lang == "cpp" || lang == "c++")
+    return TextEditor::Language::Cpp();
+  if (lang == "c")
+    return TextEditor::Language::C();
+  if (lang == "cs")
+    return TextEditor::Language::Cs();
+  if (lang == "glsl")
+    return TextEditor::Language::Glsl();
+  if (lang == "hlsl")
+    return TextEditor::Language::Hlsl();
+  if (lang == "lua")
+    return TextEditor::Language::Lua();
+  if (lang == "python")
+    return TextEditor::Language::Python();
+  if (lang == "sql")
+    return TextEditor::Language::Sql();
+  if (lang == "json")
+    return TextEditor::Language::Json();
+  if (lang == "markdown")
+    return TextEditor::Language::Markdown();
+  if (lang == "angelscript")
+    return TextEditor::Language::AngelScript();
   return nullptr;
 }
 
-}  // namespace
+} // namespace
 
 // ── Render function ───────────────────────────────────────────────────────────
 
 void render_text_editor(imgui_renderer&, const ui_element& node, const session& s) {
   auto file_path = node.get_as<std::string>("file_path"_key, "");
-  auto language  = node.get_as<std::string>("language"_key, "none");
+  auto language = node.get_as<std::string>("language"_key, "none");
   auto read_only = node.get_as<bool>("read_only"_key, false);
-  int32_t w      = node.get_as<int32_t>("width"_key, 0);
-  int32_t h      = node.get_as<int32_t>("height"_key, 400);
+  int32_t w = node.get_as<int32_t>("width"_key, 0);
+  int32_t h = node.get_as<int32_t>("height"_key, 400);
 
-  if (file_path.empty()) return;
+  if (file_path.empty())
+    return;
 
-  auto full_path = file_service::resolve_path(file_path, s.resource_dir,
-                                              s.allow_absolute_paths);
-  if (full_path.empty()) return;
+  auto full_path = file_service::resolve_path(file_path, s.resource_dir, s.allow_absolute_paths);
+  if (full_path.empty())
+    return;
 
-  auto id  = node.get_as<key_t>("__wish_id"_key, key_t{});
+  auto id = node.get_as<key_t>("__wish_id"_key, key_t{});
   auto& st = editor_cache()[id.id];
 
   // Reload when the file path changes.
   if (st.loaded_path != full_path.string()) {
     st.loaded_path = full_path.string();
     std::ifstream f(full_path, std::ios::binary);
-    st.editor.SetText(
-        f ? std::string{std::istreambuf_iterator<char>(f), {}} : "");
+    st.editor.SetText(f ? std::string{std::istreambuf_iterator<char>(f), {}} : "");
     st.loaded_lang = language;
     st.editor.SetLanguage(language_for(language));
     st.last_undo_index = st.editor.GetUndoIndex();
@@ -96,12 +107,12 @@ void render_text_editor(imgui_renderer&, const ui_element& node, const session& 
     std::string preset = "dark";
     if (s.style_service) {
       const auto* f = s.style_service->current_style().findField("preset"_key);
-      if (f && f->is<std::string>()) preset = f->as<std::string>();
+      if (f && f->is<std::string>())
+        preset = f->as<std::string>();
     }
     if (st.applied_preset != preset) {
       st.applied_preset = preset;
-      st.editor.SetPalette(preset == "light" ? TextEditor::GetLightPalette()
-                                              : TextEditor::GetDarkPalette());
+      st.editor.SetPalette(preset == "light" ? TextEditor::GetLightPalette() : TextEditor::GetDarkPalette());
     }
   }
 
@@ -129,4 +140,4 @@ void render_text_editor(imgui_renderer&, const ui_element& node, const session& 
   }
 }
 
-}  // namespace bdg::wish
+} // namespace bdg::wish

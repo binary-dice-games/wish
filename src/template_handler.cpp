@@ -19,22 +19,16 @@ using namespace bison;
 
 // ── apply_descriptor ─────────────────────────────────────────────────────────
 
-static bison::dynamic apply_descriptor(
-    bison::rmi::context& ctx,
-    session& sess,
-    const std::string& descriptor) {
-  auto it = std::find_if_not(descriptor.cbegin(), descriptor.cend(),
-                              [](unsigned char c) { return std::isspace(c); });
-  bool is_json =
-      (it != descriptor.cend() && (*it == '{' || *it == '['));
+static bison::dynamic apply_descriptor(bison::rmi::context& ctx, session& sess, const std::string& descriptor) {
+  auto it = std::find_if_not(descriptor.cbegin(), descriptor.cend(), [](unsigned char c) { return std::isspace(c); });
+  bool is_json = (it != descriptor.cend() && (*it == '{' || *it == '['));
 
   auto nmap = is_json ? import_json(descriptor) : import_yaml(descriptor);
 
   // Generate a unique top-level key for this instantiation so multiple
   // templates can coexist without overwriting each other.
   static std::atomic<uint32_t> tpl_counter{0};
-  const bison::key_t tpl_key{
-      "__tpl_" + std::to_string(tpl_counter.fetch_add(1))};
+  const bison::key_t tpl_key{"__tpl_" + std::to_string(tpl_counter.fetch_add(1))};
 
   bison::dynamic result;
   std::size_t idx = 0;
@@ -67,8 +61,7 @@ static bison::dynamic apply_descriptor(
 
 // ── template_handler ─────────────────────────────────────────────────────────
 
-template_handler::template_handler(bison::dynamic&& base)
-    : dynamic(std::move(base)) {}
+template_handler::template_handler(bison::dynamic&& base) : dynamic(std::move(base)) {}
 
 bison::dynamic template_handler::do_register(const bison::dynamic& params) {
   bison::key_t name = params.as<bison::key_t>("name"_key);
@@ -91,26 +84,28 @@ void register_template_handler() {
   auto proto = bison::dynamic_ptr{"__WishTemplate"_key, {}};
 
   auto reg_in = std::make_shared<dynamic>();
-  reg_in->addField("name"_key,       field{std::string{}, attr<DisplayName>("name")});
+  reg_in->addField("name"_key, field{std::string{}, attr<DisplayName>("name")});
   reg_in->addField("descriptor"_key, field{std::string{}, attr<DisplayName>("descriptor")});
-  proto->addMethod("register"_key, bison::method{
-    [](dynamic& s, const dynamic& p) -> dynamic {
-      return static_cast<template_handler&>(s).do_register(p);
-    },
-    dynamic_ptr{reg_in}, nullptr,
-    attr<DisplayName>("register")});
+  proto->addMethod(
+      "register"_key,
+      bison::method{
+          [](dynamic& s, const dynamic& p) -> dynamic { return static_cast<template_handler&>(s).do_register(p); },
+          dynamic_ptr{reg_in},
+          nullptr,
+          attr<DisplayName>("register")});
 
   auto inst_in = std::make_shared<dynamic>();
   inst_in->addField("name"_key, field{std::string{}, attr<DisplayName>("name")});
   auto inst_out = std::make_shared<dynamic>();
   inst_out->addField("name"_key, field{std::string{}, attr<DisplayName>("name")});
-  inst_out->addField("id"_key,   field{key_t{},       attr<DisplayName>("id")});
-  proto->addMethod("instantiate"_key, bison::method{
-    [](dynamic& s, const dynamic& p) -> dynamic {
-      return static_cast<template_handler&>(s).do_instantiate(p);
-    },
-    dynamic_ptr{inst_in}, dynamic_ptr{inst_out},
-    attr<DisplayName>("instantiate")});
+  inst_out->addField("id"_key, field{key_t{}, attr<DisplayName>("id")});
+  proto->addMethod(
+      "instantiate"_key,
+      bison::method{
+          [](dynamic& s, const dynamic& p) -> dynamic { return static_cast<template_handler&>(s).do_instantiate(p); },
+          dynamic_ptr{inst_in},
+          dynamic_ptr{inst_out},
+          attr<DisplayName>("instantiate")});
   bison::dynamic::addClass(
       "wish"_key,
       std::move(proto),
@@ -118,4 +113,4 @@ void register_template_handler() {
       bison::dynamic::make_factory<template_handler>("wish"_key, "__WishTemplate"_key));
 }
 
-}  // namespace bdg::wish
+} // namespace bdg::wish

@@ -31,29 +31,26 @@ static const std::vector<float>* vec_field(const dynamic& obj, key_t k) {
 // elements share the same visible text.  Both ImGui and ImPlot3D hide everything
 // after "##" from the display, so the rendered label / legend entry is unchanged.
 static std::string with_id(const std::string& label, const ui_element& node) {
-  return label + "##" +
-      std::to_string(node.get_as<key_t>("__wish_id"_key, key_t{}).id);
+  return label + "##" + std::to_string(node.get_as<key_t>("__wish_id"_key, key_t{}).id);
 }
 
 // ── Plot3D container ──────────────────────────────────────────────────────────
 
 void render_plot3d(imgui_renderer& r, const ui_element& node, const session& s) {
-  auto    title   = node.get_as<std::string>("title"_key, "##plot3d");
-  float   w       = node.get_as<float>("width"_key, -1.0f);
-  float   h       = node.get_as<float>("height"_key, 400.0f);
-  int32_t flags   = node.get_as<int32_t>("flags"_key, 0);
-  auto    x_label = node.get_as<std::string>("x_label"_key, "");
-  auto    y_label = node.get_as<std::string>("y_label"_key, "");
-  auto    z_label = node.get_as<std::string>("z_label"_key, "");
-  int32_t xf      = node.get_as<int32_t>("x_flags"_key, 0);
-  int32_t yf      = node.get_as<int32_t>("y_flags"_key, 0);
-  int32_t zf      = node.get_as<int32_t>("z_flags"_key, 0);
+  auto title = node.get_as<std::string>("title"_key, "##plot3d");
+  float w = node.get_as<float>("width"_key, -1.0f);
+  float h = node.get_as<float>("height"_key, 400.0f);
+  int32_t flags = node.get_as<int32_t>("flags"_key, 0);
+  auto x_label = node.get_as<std::string>("x_label"_key, "");
+  auto y_label = node.get_as<std::string>("y_label"_key, "");
+  auto z_label = node.get_as<std::string>("z_label"_key, "");
+  int32_t xf = node.get_as<int32_t>("x_flags"_key, 0);
+  int32_t yf = node.get_as<int32_t>("y_flags"_key, 0);
+  int32_t zf = node.get_as<int32_t>("z_flags"_key, 0);
 
   auto iml = with_id(title, node);
-  if (ImPlot3D::BeginPlot(iml.c_str(), ImVec2(w, h),
-                          ImPlot3DFlags(flags))) {
-    if (!x_label.empty() || !y_label.empty() || !z_label.empty()
-        || xf != 0 || yf != 0 || zf != 0) {
+  if (ImPlot3D::BeginPlot(iml.c_str(), ImVec2(w, h), ImPlot3DFlags(flags))) {
+    if (!x_label.empty() || !y_label.empty() || !z_label.empty() || xf != 0 || yf != 0 || zf != 0) {
       ImPlot3D::SetupAxes(
           x_label.empty() ? nullptr : x_label.c_str(),
           y_label.empty() ? nullptr : y_label.c_str(),
@@ -70,11 +67,12 @@ void render_plot3d(imgui_renderer& r, const ui_element& node, const session& s) 
 // ── Line / Scatter ────────────────────────────────────────────────────────────
 
 void render_plot3d_line(imgui_renderer&, const ui_element& node, const session&) {
-  auto label      = node.get_as<std::string>("label"_key, "");
-  const auto* xs  = vec_field(node, "xs"_key);
-  const auto* ys  = vec_field(node, "ys"_key);
-  const auto* zs  = vec_field(node, "zs"_key);
-  if (!xs || !ys || !zs) return;
+  auto label = node.get_as<std::string>("label"_key, "");
+  const auto* xs = vec_field(node, "xs"_key);
+  const auto* ys = vec_field(node, "ys"_key);
+  const auto* zs = vec_field(node, "zs"_key);
+  if (!xs || !ys || !zs)
+    return;
   int count = int(std::min({xs->size(), ys->size(), zs->size()}));
   auto iml = with_id(label, node);
   if (count > 0)
@@ -82,11 +80,12 @@ void render_plot3d_line(imgui_renderer&, const ui_element& node, const session&)
 }
 
 void render_plot3d_scatter(imgui_renderer&, const ui_element& node, const session&) {
-  auto label      = node.get_as<std::string>("label"_key, "");
-  const auto* xs  = vec_field(node, "xs"_key);
-  const auto* ys  = vec_field(node, "ys"_key);
-  const auto* zs  = vec_field(node, "zs"_key);
-  if (!xs || !ys || !zs) return;
+  auto label = node.get_as<std::string>("label"_key, "");
+  const auto* xs = vec_field(node, "xs"_key);
+  const auto* ys = vec_field(node, "ys"_key);
+  const auto* zs = vec_field(node, "zs"_key);
+  if (!xs || !ys || !zs)
+    return;
   int count = int(std::min({xs->size(), ys->size(), zs->size()}));
   auto iml = with_id(label, node);
   if (count > 0)
@@ -96,72 +95,74 @@ void render_plot3d_scatter(imgui_renderer&, const ui_element& node, const sessio
 // ── Surface ───────────────────────────────────────────────────────────────────
 
 void render_plot3d_surface(imgui_renderer&, const ui_element& node, const session&) {
-  auto    label     = node.get_as<std::string>("label"_key, "");
-  int32_t x_count   = node.get_as<int32_t>("x_count"_key, 2);
-  int32_t y_count   = node.get_as<int32_t>("y_count"_key, 2);
-  float   scale_min = node.get_as<float>("scale_min"_key, 0.0f);
-  float   scale_max = node.get_as<float>("scale_max"_key, 0.0f);
-  const auto* xs    = vec_field(node, "xs"_key);
-  const auto* ys    = vec_field(node, "ys"_key);
-  const auto* zs    = vec_field(node, "zs"_key);
-  if (!xs || !ys || !zs) return;
+  auto label = node.get_as<std::string>("label"_key, "");
+  int32_t x_count = node.get_as<int32_t>("x_count"_key, 2);
+  int32_t y_count = node.get_as<int32_t>("y_count"_key, 2);
+  float scale_min = node.get_as<float>("scale_min"_key, 0.0f);
+  float scale_max = node.get_as<float>("scale_max"_key, 0.0f);
+  const auto* xs = vec_field(node, "xs"_key);
+  const auto* ys = vec_field(node, "ys"_key);
+  const auto* zs = vec_field(node, "zs"_key);
+  if (!xs || !ys || !zs)
+    return;
   int needed = x_count * y_count;
-  if (needed <= 0) return;
-  if (int(xs->size()) < needed || int(ys->size()) < needed ||
-      int(zs->size()) < needed) return;
+  if (needed <= 0)
+    return;
+  if (int(xs->size()) < needed || int(ys->size()) < needed || int(zs->size()) < needed)
+    return;
 
   auto iml = with_id(label, node);
-  ImPlot3D::PlotSurface(iml.c_str(),
-                        xs->data(), ys->data(), zs->data(),
-                        x_count, y_count,
-                        double(scale_min), double(scale_max));
+  ImPlot3D::PlotSurface(
+      iml.c_str(), xs->data(), ys->data(), zs->data(), x_count, y_count, double(scale_min), double(scale_max));
 }
 
 // ── Triangle / Quad / Mesh ────────────────────────────────────────────────────
 
 void render_plot3d_triangle(imgui_renderer&, const ui_element& node, const session&) {
-  auto label      = node.get_as<std::string>("label"_key, "");
-  const auto* xs  = vec_field(node, "xs"_key);
-  const auto* ys  = vec_field(node, "ys"_key);
-  const auto* zs  = vec_field(node, "zs"_key);
-  if (!xs || !ys || !zs) return;
+  auto label = node.get_as<std::string>("label"_key, "");
+  const auto* xs = vec_field(node, "xs"_key);
+  const auto* ys = vec_field(node, "ys"_key);
+  const auto* zs = vec_field(node, "zs"_key);
+  if (!xs || !ys || !zs)
+    return;
   int count = int(std::min({xs->size(), ys->size(), zs->size()}));
   // Must be a multiple of 3.
   count -= count % 3;
   auto iml = with_id(label, node);
   if (count > 0)
-    ImPlot3D::PlotTriangle(iml.c_str(),
-                           xs->data(), ys->data(), zs->data(), count);
+    ImPlot3D::PlotTriangle(iml.c_str(), xs->data(), ys->data(), zs->data(), count);
 }
 
 void render_plot3d_quad(imgui_renderer&, const ui_element& node, const session&) {
-  auto label      = node.get_as<std::string>("label"_key, "");
-  const auto* xs  = vec_field(node, "xs"_key);
-  const auto* ys  = vec_field(node, "ys"_key);
-  const auto* zs  = vec_field(node, "zs"_key);
-  if (!xs || !ys || !zs) return;
+  auto label = node.get_as<std::string>("label"_key, "");
+  const auto* xs = vec_field(node, "xs"_key);
+  const auto* ys = vec_field(node, "ys"_key);
+  const auto* zs = vec_field(node, "zs"_key);
+  if (!xs || !ys || !zs)
+    return;
   int count = int(std::min({xs->size(), ys->size(), zs->size()}));
   // Must be a multiple of 4.
   count -= count % 4;
   auto iml = with_id(label, node);
   if (count > 0)
-    ImPlot3D::PlotQuad(iml.c_str(),
-                       xs->data(), ys->data(), zs->data(), count);
+    ImPlot3D::PlotQuad(iml.c_str(), xs->data(), ys->data(), zs->data(), count);
 }
 
 void render_plot3d_mesh(imgui_renderer&, const ui_element& node, const session&) {
-  auto label     = node.get_as<std::string>("label"_key, "");
+  auto label = node.get_as<std::string>("label"_key, "");
   const auto* xs = vec_field(node, "xs"_key);
   const auto* ys = vec_field(node, "ys"_key);
   const auto* zs = vec_field(node, "zs"_key);
   // indices are stored as vector<int32_t> — access via findField directly.
   const auto* fi = node.findField("indices"_key);
-  if (!xs || !ys || !zs || !fi || !fi->is<std::vector<int32_t>>()) return;
+  if (!xs || !ys || !zs || !fi || !fi->is<std::vector<int32_t>>())
+    return;
   const auto& idx_vec = fi->as<std::vector<int32_t>>();
   int vtx_count = int(std::min({xs->size(), ys->size(), zs->size()}));
   int idx_count = int(idx_vec.size());
   idx_count -= idx_count % 3;
-  if (vtx_count <= 0 || idx_count <= 0) return;
+  if (vtx_count <= 0 || idx_count <= 0)
+    return;
 
   // Convert int32_t indices to unsigned int.
   std::vector<unsigned int> uids;
@@ -180,20 +181,17 @@ void render_plot3d_mesh(imgui_renderer&, const ui_element& node, const session&)
 // ── Text annotation ───────────────────────────────────────────────────────────
 
 void render_plot3d_text(imgui_renderer&, const ui_element& node, const session&) {
-  auto  text     = node.get_as<std::string>("text"_key, "");
-  float x        = node.get_as<float>("x"_key, 0.0f);
-  float y        = node.get_as<float>("y"_key, 0.0f);
-  float z        = node.get_as<float>("z"_key, 0.0f);
-  float angle    = node.get_as<float>("angle"_key, 0.0f);
+  auto text = node.get_as<std::string>("text"_key, "");
+  float x = node.get_as<float>("x"_key, 0.0f);
+  float y = node.get_as<float>("y"_key, 0.0f);
+  float z = node.get_as<float>("z"_key, 0.0f);
+  float angle = node.get_as<float>("angle"_key, 0.0f);
   float offset_x = node.get_as<float>("offset_x"_key, 0.0f);
   float offset_y = node.get_as<float>("offset_y"_key, 0.0f);
   if (!text.empty())
-    ImPlot3D::PlotText(text.c_str(),
-                       double(x), double(y), double(z),
-                       double(angle),
-                       ImVec2(offset_x, offset_y));
+    ImPlot3D::PlotText(text.c_str(), double(x), double(y), double(z), double(angle), ImVec2(offset_x, offset_y));
 }
 
-}  // namespace bdg::wish
+} // namespace bdg::wish
 
-#endif  // WISH_IMGUI_ENABLED
+#endif // WISH_IMGUI_ENABLED

@@ -20,10 +20,8 @@
 
 #include <iostream>
 
-DEFINE_string(transport, "socket",
-              "Transport type: socket, pipe");
-DEFINE_string(address,   "127.0.0.1:7070",
-              "Server address — host:port for socket, path for pipe");
+DEFINE_string(transport, "socket", "Transport type: socket, pipe");
+DEFINE_string(address, "127.0.0.1:7070", "Server address — host:port for socket, path for pipe");
 
 // ── UI descriptor ─────────────────────────────────────────────────────────────
 
@@ -60,7 +58,7 @@ static const char* kDesc = R"({
 // thread-safe ABI functions (wish_proxy_set_string, wish_client_quit).
 
 static wish_client_t g_client = nullptr;
-static wish_proxy_t  g_status = nullptr;
+static wish_proxy_t g_status = nullptr;
 
 // ── Event handlers ────────────────────────────────────────────────────────────
 
@@ -87,21 +85,18 @@ static void session(wish_client_t c, void*) {
   wish_set_style_preset(c, "dark");
 
   if (wish_register_template(c, "cfg", kDesc) != WISH_OK) {
-    std::cerr << "[config_panel] register_template failed: "
-              << wish_last_error(c) << '\n';
+    std::cerr << "[config_panel] register_template failed: " << wish_last_error(c) << '\n';
     return;
   }
 
   if (!wish_instantiate_template(c, "cfg")) {
-    std::cerr << "[config_panel] instantiate_template failed: "
-              << wish_last_error(c) << '\n';
+    std::cerr << "[config_panel] instantiate_template failed: " << wish_last_error(c) << '\n';
     return;
   }
 
   g_status = wish_proxy_get(c, "status");
   if (!g_status) {
-    std::cerr << "[config_panel] proxy 'status' not found: "
-              << wish_last_error(c) << '\n';
+    std::cerr << "[config_panel] proxy 'status' not found: " << wish_last_error(c) << '\n';
     return;
   }
 
@@ -128,8 +123,7 @@ int main(int argc, char* argv[]) {
   if (FLAGS_transport == "pipe") {
     transport = WISH_TRANSPORT_PIPE;
   } else if (FLAGS_transport != "socket") {
-    std::cerr << "[config_panel] unknown transport: " << FLAGS_transport
-              << " (supported: socket, pipe)\n";
+    std::cerr << "[config_panel] unknown transport: " << FLAGS_transport << " (supported: socket, pipe)\n";
     return 1;
   }
 

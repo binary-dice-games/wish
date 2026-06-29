@@ -11,4 +11,4 @@ namespace bdg::wish {
 ///        silently ignored.
 void register_all();
 
-}  // namespace bdg::wish
+} // namespace bdg::wish

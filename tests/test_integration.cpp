@@ -27,8 +27,7 @@ namespace wish = bdg::wish;
 // and for triggering events from outside the render loop.
 class integration_server : public wish::server {
  public:
-  integration_server(memory_server_transport& t)
-      : wish::server(t, std::make_unique<wish::null_renderer>()) {}
+  integration_server(memory_server_transport& t) : wish::server(t, std::make_unique<wish::null_renderer>()) {}
 
   // Callback wired to ctx.emit_event; available once on_session_created fires.
   std::function<void(bdg::bison::key_t, bdg::bison::key_t, dynamic)> emit_fn;
@@ -38,7 +37,7 @@ class integration_server : public wish::server {
 
  protected:
   void on_session_created(wish::session& s) override {
-    emit_fn     = s.emit_event;
+    emit_fn = s.emit_event;
     resource_dir = s.resource_dir;
   }
 };
@@ -57,7 +56,7 @@ class IntegrationTest : public ::testing::Test {
     srv_.reset();
   }
 
-  memory_server_transport          transport_;
+  memory_server_transport transport_;
   std::unique_ptr<integration_server> srv_;
 };
 
@@ -102,7 +101,7 @@ TEST_F(IntegrationTest, FullStack) {
       register_template("ui"_key, kUIDesc).get();
       auto pm = instantiate_template("ui"_key).get();
 
-      ASSERT_TRUE(pm.count(""))          << "root proxy missing";
+      ASSERT_TRUE(pm.count("")) << "root proxy missing";
       ASSERT_TRUE(pm.count("layout.lbl")) << "label proxy missing";
       ASSERT_TRUE(pm.count("layout.btn")) << "button proxy missing";
 
@@ -119,13 +118,10 @@ TEST_F(IntegrationTest, FullStack) {
       // ── 3. Event: register handler → trigger via server emit_event ───────
       {
         std::atomic<bool> fired{false};
-        pm.at("layout.btn").onEvent("clicked"_key, [&fired](dynamic) {
-          fired.store(true, std::memory_order_release);
-        });
+        pm.at("layout.btn").onEvent("clicked"_key, [&fired](dynamic) { fired.store(true, std::memory_order_release); });
 
         // Simulate a button click from the server side.
-        srv->emit_fn(
-            pm.at("layout.btn").object_id(), "clicked"_key, dynamic{});
+        srv->emit_fn(pm.at("layout.btn").object_id(), "clicked"_key, dynamic{});
 
         // Spin until the client worker thread delivers the event (≤ 2 s).
         auto t0 = std::chrono::steady_clock::now();
@@ -166,25 +162,23 @@ TEST_F(IntegrationTest, FullStack) {
           file_erase_ok = true;
         }
       }
-    }  // on_session()
+    } // on_session()
   };
 
   // ── Run the client ────────────────────────────────────────────────────────
   test_client c{transport_.connect()};
   c.srv = srv_.get();
-  c.run();  // connect → on_session() → disconnect
+  c.run(); // connect → on_session() → disconnect
 
   // ── Assertions ────────────────────────────────────────────────────────────
-  EXPECT_TRUE(c.lbl_set_ok)      << "label text set/get round-trip failed";
-  EXPECT_TRUE(c.event_ok)        << "clicked event was not delivered";
-  EXPECT_TRUE(c.file_upload_ok)  << "file upload failed";
-  EXPECT_TRUE(c.file_list_ok)    << "file not found in list result";
+  EXPECT_TRUE(c.lbl_set_ok) << "label text set/get round-trip failed";
+  EXPECT_TRUE(c.event_ok) << "clicked event was not delivered";
+  EXPECT_TRUE(c.file_upload_ok) << "file upload failed";
+  EXPECT_TRUE(c.file_list_ok) << "file not found in list result";
   EXPECT_TRUE(c.file_download_ok) << "file download content mismatch";
-  EXPECT_TRUE(c.file_erase_ok)   << "file erase call failed";
+  EXPECT_TRUE(c.file_erase_ok) << "file erase call failed";
 
   // Session resource_dir must be deleted when the client disconnects.
-  ASSERT_FALSE(srv_->resource_dir.empty())
-      << "server did not record resource_dir";
-  EXPECT_FALSE(std::filesystem::exists(srv_->resource_dir))
-      << "resource_dir still exists after disconnect";
+  ASSERT_FALSE(srv_->resource_dir.empty()) << "server did not record resource_dir";
+  EXPECT_FALSE(std::filesystem::exists(srv_->resource_dir)) << "resource_dir still exists after disconnect";
 }

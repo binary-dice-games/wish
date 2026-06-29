@@ -1,14 +1,14 @@
 // MIT License © 2025 Binary Dice Games
 #include <gtest/gtest.h>
 
-#include <wish/style_service.hpp>
 #include <wish/imgui_renderer.hpp>
 #include <wish/registry.hpp>
 #include <wish/session.hpp>
+#include <wish/style_service.hpp>
 #include <wish/ui_importer.hpp>
 
-#include "src/bison/bison_object.hpp"
 #include "src/bison/bison_common.hpp"
+#include "src/bison/bison_object.hpp"
 
 #include <imgui.h>
 
@@ -24,18 +24,17 @@ class StyleServiceTest : public ::testing::Test {
   void SetUp() override {
     bdg::wish::register_all();
     ctx_ = ImGui::CreateContext();
-    ImGui::StyleColorsDark();  // ensure a known baseline
+    ImGui::StyleColorsDark(); // ensure a known baseline
 
-    ImGuiIO& io    = ImGui::GetIO();
+    ImGuiIO& io = ImGui::GetIO();
     io.DisplaySize = ImVec2(800.0f, 600.0f);
-    io.DeltaTime   = 1.0f / 60.0f;
+    io.DeltaTime = 1.0f / 60.0f;
     unsigned char* pixels;
     int fw, fh;
     io.Fonts->GetTexDataAsRGBA32(&pixels, &fw, &fh);
     io.Fonts->SetTexID(ImTextureID{1});
 
-    svc_  = std::make_shared<style_service>(
-        dynamic::instantiate("wish"_key, "__WishStyle"_key));
+    svc_ = std::make_shared<style_service>(dynamic::instantiate("wish"_key, "__WishStyle"_key));
     sess_ = std::make_unique<session>("style_test"_key);
     sess_->style_service = svc_;
     renderer_ = std::make_unique<imgui_renderer>();
@@ -49,9 +48,9 @@ class StyleServiceTest : public ::testing::Test {
     ctx_ = nullptr;
   }
 
-  ImGuiContext*                   ctx_      = nullptr;
-  std::shared_ptr<style_service>  svc_;
-  std::unique_ptr<session>        sess_;
+  ImGuiContext* ctx_ = nullptr;
+  std::shared_ptr<style_service> svc_;
+  std::unique_ptr<session> sess_;
   std::unique_ptr<imgui_renderer> renderer_;
 };
 
@@ -129,8 +128,8 @@ TEST_F(StyleServiceTest, SetFieldsMergesIntoExistingStyle) {
 
 TEST_F(StyleServiceTest, GetFieldsReturnsSetFields) {
   dynamic params;
-  params["grab_rounding"_key]  = 3.0f;
-  params["color_button"_key]   = std::string{"#00FF00FF"};
+  params["grab_rounding"_key] = 3.0f;
+  params["color_button"_key] = std::string{"#00FF00FF"};
   svc_->set_fields(params);
 
   dynamic result = svc_->get_fields();
@@ -161,10 +160,9 @@ TEST_F(StyleServiceTest, RenderSessionAppliesPresetLight) {
   // style WAS applied during rendering, we apply it again manually here
   // (render_session restores it on return, by design).
   ImGuiStyle applied;
-  ImGui::StyleColorsDark(&applied);    // start from dark
-  ImGui::StyleColorsLight(&applied);   // apply light
-  EXPECT_NEAR(applied.Colors[ImGuiCol_WindowBg].x,
-              light.Colors[ImGuiCol_WindowBg].x, 0.01f);
+  ImGui::StyleColorsDark(&applied); // start from dark
+  ImGui::StyleColorsLight(&applied); // apply light
+  EXPECT_NEAR(applied.Colors[ImGuiCol_WindowBg].x, light.Colors[ImGuiCol_WindowBg].x, 0.01f);
 }
 
 TEST_F(StyleServiceTest, RenderSessionAppliesFloatOverride) {

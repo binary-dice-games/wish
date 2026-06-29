@@ -28,9 +28,10 @@ class ui_tree : public name_map {
   /// @brief Invoke fn(elem) if path exists in the tree; no-op otherwise.
   /// @param path  Dot-joined element path, e.g. `"vbox.btn_row.btn_open"`.
   /// @param fn    Callable accepting a `const ui_element_ptr&`.
-  template<typename Fn>
+  template <typename Fn>
   void with(const std::string& path, Fn&& fn) const {
-    if (auto it = find(path); it != end()) fn(it->second);
+    if (auto it = find(path); it != end())
+      fn(it->second);
   }
 
   /// @brief Move all entries from @p source into this tree, prepending @p
@@ -59,4 +60,4 @@ ui_tree import_json(const std::string& json);
 /// @throws std::runtime_error on YAML parse error or unknown element type.
 ui_tree import_yaml(const std::string& yaml);
 
-}  // namespace bdg::wish
+} // namespace bdg::wish

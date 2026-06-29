@@ -3,8 +3,8 @@
 /// @brief Per-session RMI service for configuring the ImGui visual style.
 #pragma once
 
-#include "src/bison/bison_object.hpp"
 #include "src/bison/bison_common.hpp"
+#include "src/bison/bison_object.hpp"
 
 #include <atomic>
 #include <memory>
@@ -82,7 +82,9 @@ class style_service : public bison::dynamic {
   void set_preset(const std::string& name);
 
   /// @brief Read-only view of the current style field map.
-  const bison::dynamic& current_style() const { return style_; }
+  const bison::dynamic& current_style() const {
+    return style_;
+  }
 
   // ── Renderer cache (render-thread only) ────────────────────────────────────
 
@@ -96,7 +98,9 @@ class style_service : public bison::dynamic {
   }
 
   /// @brief Opaque compiled-style slot, written and read only on the render thread.
-  const std::shared_ptr<void>& renderer_cache() const { return renderer_cache_; }
+  const std::shared_ptr<void>& renderer_cache() const {
+    return renderer_cache_;
+  }
 
   /// @brief Store a compiled cache and clear the dirty flag.
   /// @param c  Renderer-specific compiled representation (e.g. a heap ImGuiStyle).
@@ -114,4 +118,4 @@ class style_service : public bison::dynamic {
 /// @brief Register `"__WishStyle"` in the `"wish"` bison class namespace.
 void register_style_service();
 
-}  // namespace bdg::wish
+} // namespace bdg::wish

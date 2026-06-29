@@ -29,8 +29,7 @@ class tracking_client : public wish::client {
 };
 
 // Minimal JSON descriptor helpers used across tests.
-static const char* kWindowJson =
-    R"({"type":"Window","title":"Root"})";
+static const char* kWindowJson = R"({"type":"Window","title":"Root"})";
 
 static const char* kWindowWithChildJson =
     R"({"type":"Window","title":"Root","children":{"lbl":{"type":"Label","text":"Hi"}}})";
@@ -59,7 +58,9 @@ TEST(ClientTest, RunDisconnectsOnException) {
     using wish::client::client;
 
    protected:
-    void on_session() override { throw std::runtime_error("test error"); }
+    void on_session() override {
+      throw std::runtime_error("test error");
+    }
   };
 
   throwing_client c{transport.connect()};

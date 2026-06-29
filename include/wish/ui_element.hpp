@@ -56,12 +56,14 @@ class ui_element_ptr : public std::shared_ptr<ui_element> {
   explicit ui_element_ptr(bison::dynamic&& base);
 
   /// @brief Field access: `ptr["key"_key] = value` without needing `(*ptr)`.
-  template<typename K>
-  decltype(auto) operator[](K key) const { return (**this)[key]; }
+  template <typename K>
+  decltype(auto) operator[](K key) const {
+    return (**this)[key];
+  }
 
   /// @brief Implicit conversion to bison::dynamic_ptr for field assignments
   ///        and bison APIs that store elements by dynamic_ptr.
-  operator bison::dynamic_ptr() const;  // NOLINT(google-explicit-constructor)
+  operator bison::dynamic_ptr() const; // NOLINT(google-explicit-constructor)
 };
 
 /**
@@ -102,8 +104,7 @@ class ui_element : public bison::dynamic {
    *
    * @param fn  Called as `fn(key, child)` for each child in render order.
    */
-  void for_each_child_ordered(
-      const std::function<void(bison::key_t, ui_element&)>& fn) const;
+  void for_each_child_ordered(const std::function<void(bison::key_t, ui_element&)>& fn) const;
 };
 
-}  // namespace bdg::wish
+} // namespace bdg::wish

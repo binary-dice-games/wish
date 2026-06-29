@@ -1,16 +1,16 @@
 // MIT License © 2025 Binary Dice Games
 /// @file registry.cpp
-#include <wish/registry.hpp>
 #include <wish/file_service.hpp>
 #include <wish/logger.hpp>
+#include <wish/registry.hpp>
 #include <wish/style_service.hpp>
 
+#include "forms/calculator.hpp"
+#include "forms/file_dialog.hpp"
+#include "plot3d_elements.hpp"
+#include "plot_elements.hpp"
 #include "template_handler.hpp"
 #include "ui_elements.hpp"
-#include "plot_elements.hpp"
-#include "plot3d_elements.hpp"
-#include "forms/file_dialog.hpp"
-#include "forms/calculator.hpp"
 #ifdef WISH_MODULE_DESKTOP
 #include "forms/desktop/desktop_module.hpp"
 #endif
@@ -19,13 +19,13 @@ namespace bdg::wish {
 
 void register_all() {
   // UI element classes — order matters: parents before children.
-  register_element();   // root base: visible, children
-  register_layout();    // Layout < Element; VerticalLayout, HorizontalLayout < Layout
+  register_element(); // root base: visible, children
+  register_layout(); // Layout < Element; VerticalLayout, HorizontalLayout < Layout
   register_window();
   register_label();
   register_button();
   register_checkbox();
-  register_slider();    // SliderFloat and SliderInt
+  register_slider(); // SliderFloat and SliderInt
   register_input_text();
   register_image();
   register_separator();
@@ -42,19 +42,19 @@ void register_all() {
   register_table();
   register_text_editor();
   // Plot elements — must come after Element is registered.
-  register_plot();            // PlotItem, Plot
-  register_plot_series();     // PlotLine, PlotScatter, PlotStairs, PlotStems, PlotShaded, PlotDigital
-  register_plot_bars();       // PlotBars, PlotBarsH
-  register_plot_histogram();  // PlotHistogram, PlotHistogram2D
-  register_plot_heatmap();    // PlotHeatmap
-  register_plot_pie();        // PlotPieChart
-  register_plot_annotations();// PlotText, PlotInfLines
+  register_plot(); // PlotItem, Plot
+  register_plot_series(); // PlotLine, PlotScatter, PlotStairs, PlotStems, PlotShaded, PlotDigital
+  register_plot_bars(); // PlotBars, PlotBarsH
+  register_plot_histogram(); // PlotHistogram, PlotHistogram2D
+  register_plot_heatmap(); // PlotHeatmap
+  register_plot_pie(); // PlotPieChart
+  register_plot_annotations(); // PlotText, PlotInfLines
   // 3-D plot elements — must come after Element is registered.
-  register_plot3d();              // Plot3DItem, Plot3D
-  register_plot3d_series();       // Plot3DLine, Plot3DScatter
-  register_plot3d_surface();      // Plot3DSurface
-  register_plot3d_mesh();         // Plot3DTriangle, Plot3DQuad, Plot3DMesh
-  register_plot3d_annotations();  // Plot3DText
+  register_plot3d(); // Plot3DItem, Plot3D
+  register_plot3d_series(); // Plot3DLine, Plot3DScatter
+  register_plot3d_surface(); // Plot3DSurface
+  register_plot3d_mesh(); // Plot3DTriangle, Plot3DQuad, Plot3DMesh
+  register_plot3d_annotations(); // Plot3DText
   // Protocol handler classes.
   register_template_handler();
   register_file_service();
@@ -68,4 +68,4 @@ void register_all() {
 #endif
 }
 
-}  // namespace bdg::wish
+} // namespace bdg::wish

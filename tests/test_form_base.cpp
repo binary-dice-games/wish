@@ -12,7 +12,7 @@
 
 using namespace bdg::bison;
 namespace wish = bdg::wish;
-namespace rmi  = bdg::bison::rmi;
+namespace rmi = bdg::bison::rmi;
 
 // ── stub_form ─────────────────────────────────────────────────────────────────
 
@@ -21,7 +21,7 @@ class stub_form : public wish::form {
  public:
   explicit stub_form(dynamic&& base) : form(std::move(base)) {}
 
-  bool          init_called_{false};
+  bool init_called_{false};
   rmi::context* ctx_ref_{nullptr};
   wish::session* sess_ref_{nullptr};
 
@@ -33,7 +33,7 @@ class stub_form : public wish::form {
  protected:
   void on_init() override {
     init_called_ = true;
-    ctx_ref_  = &ctx();
+    ctx_ref_ = &ctx();
     sess_ref_ = &sess();
   }
 };
@@ -46,8 +46,11 @@ static std::atomic<int> g_server_init_count{0};
 class tracked_stub_form : public wish::form {
  public:
   explicit tracked_stub_form(dynamic&& base) : form(std::move(base)) {}
+
  protected:
-  void on_init() override { g_server_init_count.fetch_add(1); }
+  void on_init() override {
+    g_server_init_count.fetch_add(1);
+  }
 };
 
 // ── Registration helper ───────────────────────────────────────────────────────
@@ -55,15 +58,13 @@ class tracked_stub_form : public wish::form {
 static void ensure_registered() {
   // Registers all classes needed by these tests; idempotent via static guard.
   static bool done = false;
-  if (done) return;
+  if (done)
+    return;
   done = true;
   bdg::wish::register_all();
   auto proto = dynamic_ptr{"__StubForm"_key, {}};
   dynamic::addClass(
-      "wish"_key,
-      std::move(proto),
-      key_t{0U},
-      dynamic::make_factory<stub_form>("wish"_key, "__StubForm"_key));
+      "wish"_key, std::move(proto), key_t{0U}, dynamic::make_factory<stub_form>("wish"_key, "__StubForm"_key));
   auto tracked_proto = dynamic_ptr{"__TrackedStubForm"_key, {}};
   dynamic::addClass(
       "wish"_key,
@@ -152,7 +153,7 @@ TEST(FormBase, EmitForwardsEventToSession) {
   {
     auto lk = sync_sess->wlock();
     lk->emit_event = [&](key_t oid, key_t evt, dynamic) {
-      captured_id    = oid;
+      captured_id = oid;
       captured_event = evt;
     };
     wish::detail::current_session = &(*lk);
@@ -161,7 +162,7 @@ TEST(FormBase, EmitForwardsEventToSession) {
   }
   f->test_emit("on_test"_key);
 
-  EXPECT_EQ(captured_id.id,    form_id.id);
+  EXPECT_EQ(captured_id.id, form_id.id);
   EXPECT_EQ(captured_event.id, "on_test"_key.id);
 }
 
@@ -177,9 +178,7 @@ TEST(FormBase, EmitWithPayloadForwardsPayload) {
   auto sync_sess = std::make_shared<wish::sync_session>(std::in_place, "form_emit_payload"_key);
   {
     auto lk = sync_sess->wlock();
-    lk->emit_event = [&](key_t, key_t, dynamic p) {
-      captured_payload = std::move(p);
-    };
+    lk->emit_event = [&](key_t, key_t, dynamic p) { captured_payload = std::move(p); };
     wish::detail::current_session = &(*lk);
     f->init(ctx, sync_sess);
     wish::detail::current_session = nullptr;

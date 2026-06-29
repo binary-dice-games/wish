@@ -5,10 +5,10 @@
  */
 #pragma once
 
-#include "src/rmi/server/server.hpp"
 #include <wish/logger.hpp>
 #include <wish/renderer.hpp>
 #include <wish/session.hpp>
+#include "src/rmi/server/server.hpp"
 
 #include <atomic>
 #include <memory>
@@ -48,9 +48,7 @@ class server : public bison::rmi::server {
    * @param transport Transport owned by the caller; must outlive the server.
    * @param r         Renderer used by the frame loop.
    */
-  explicit server(
-      bison::rmi::transport::server_transport_iface& transport,
-      std::unique_ptr<renderer> r);
+  explicit server(bison::rmi::transport::server_transport_iface& transport, std::unique_ptr<renderer> r);
 
   ~server();
 
@@ -71,7 +69,9 @@ class server : public bison::rmi::server {
    * client-side logging.
    * Must be called before `start()`.
    */
-  void set_logger(logger_ptr logger) { logger_ = std::move(logger); }
+  void set_logger(logger_ptr logger) {
+    logger_ = std::move(logger);
+  }
 
   /**
    * @brief Allow widgets to reference files by absolute path.
@@ -100,10 +100,14 @@ class server : public bison::rmi::server {
 
  protected:
   /** @brief Called on the worker thread after a client connects. */
-  virtual void on_session_created(session& s) { (void)s; }
+  virtual void on_session_created(session& s) {
+    (void)s;
+  }
 
   /** @brief Called on the worker thread just before a client disconnects. */
-  virtual void on_session_destroyed(session& s) { (void)s; }
+  virtual void on_session_destroyed(session& s) {
+    (void)s;
+  }
 
  private:
   // Bridge bison's context-level hooks to wish session management.
@@ -113,10 +117,7 @@ class server : public bison::rmi::server {
 
   // Returns session-aware objects for protocol classes (__WishTemplate,
   // __WishFileSystem); falls back to plain instantiate otherwise.
-  bison::dynamic_ptr on_create_object(
-      bison::rmi::context& ctx,
-      bison::key_t ns,
-      bison::key_t klass) override final;
+  bison::dynamic_ptr on_create_object(bison::rmi::context& ctx, bison::key_t ns, bison::key_t klass) override final;
 
   // Receive formatted trace lines from the base class and forward to logger_.
   void on_print(bison::key_t session_id, const std::string& line) override;
@@ -131,9 +132,7 @@ class server : public bison::rmi::server {
   void render_loop();
 
   std::unique_ptr<renderer> renderer_;
-  bison::synchronized<
-      std::unordered_map<bison::hash_t, sync_session_ptr>>
-      sessions_;
+  bison::synchronized<std::unordered_map<bison::hash_t, sync_session_ptr>> sessions_;
   std::thread render_thread_;
   std::atomic<bool> running_{false};
   logger_ptr logger_;

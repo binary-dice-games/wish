@@ -8,13 +8,13 @@
 
 namespace bdg::wish {
 
-void register_plot();            // Plot (container), PlotItem (series base)
-void register_plot_series();     // PlotLine, PlotScatter, PlotStairs, PlotStems,
-                                 // PlotShaded, PlotDigital
-void register_plot_bars();       // PlotBars, PlotBarsH
-void register_plot_histogram();  // PlotHistogram, PlotHistogram2D
-void register_plot_heatmap();    // PlotHeatmap
-void register_plot_pie();        // PlotPieChart
-void register_plot_annotations();// PlotText, PlotInfLines
+void register_plot(); // Plot (container), PlotItem (series base)
+void register_plot_series(); // PlotLine, PlotScatter, PlotStairs, PlotStems,
+                             // PlotShaded, PlotDigital
+void register_plot_bars(); // PlotBars, PlotBarsH
+void register_plot_histogram(); // PlotHistogram, PlotHistogram2D
+void register_plot_heatmap(); // PlotHeatmap
+void register_plot_pie(); // PlotPieChart
+void register_plot_annotations(); // PlotText, PlotInfLines
 
-}  // namespace bdg::wish
+} // namespace bdg::wish

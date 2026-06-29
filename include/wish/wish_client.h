@@ -34,13 +34,13 @@ extern "C" {
 
 /* ── Export macro ─────────────────────────────────────────────────────────── */
 #if defined(_WIN32)
-#  ifdef WISH_CLIENT_BUILDING_DLL
-#    define WISH_API __declspec(dllexport)
-#  else
-#    define WISH_API __declspec(dllimport)
-#  endif
+#ifdef WISH_CLIENT_BUILDING_DLL
+#define WISH_API __declspec(dllexport)
 #else
-#  define WISH_API __attribute__((visibility("default")))
+#define WISH_API __declspec(dllimport)
+#endif
+#else
+#define WISH_API __attribute__((visibility("default")))
 #endif
 
 /* ── Opaque handles ───────────────────────────────────────────────────────── */
@@ -76,11 +76,11 @@ WISH_API wish_hash wish_key(const char* name);
 /** @brief Return type for fallible API calls. */
 typedef int wish_error;
 
-#define WISH_OK             0   /**< Success.                                */
-#define WISH_ERR_NULL      -1   /**< A required pointer argument was NULL.   */
-#define WISH_ERR_NOT_FOUND -2   /**< Named proxy or resource not found.      */
-#define WISH_ERR_TRANSPORT -3   /**< Transport connection failed.            */
-#define WISH_ERR_EXCEPTION -4   /**< An internal C++ exception was thrown.   */
+#define WISH_OK 0 /**< Success.                                */
+#define WISH_ERR_NULL -1 /**< A required pointer argument was NULL.   */
+#define WISH_ERR_NOT_FOUND -2 /**< Named proxy or resource not found.      */
+#define WISH_ERR_TRANSPORT -3 /**< Transport connection failed.            */
+#define WISH_ERR_EXCEPTION -4 /**< An internal C++ exception was thrown.   */
 
 /* ── Transport selection ──────────────────────────────────────────────────── */
 
@@ -101,7 +101,7 @@ typedef enum {
    * Windows: `address` = full pipe path, e.g. `\\.\pipe\wish`.
    * Linux/macOS: `address` = socket path, e.g. `/tmp/wish.sock`.
    */
-  WISH_TRANSPORT_PIPE   = 2,
+  WISH_TRANSPORT_PIPE = 2,
 } wish_transport_t;
 
 /* ── Callbacks ────────────────────────────────────────────────────────────── */
@@ -141,8 +141,7 @@ typedef void (*wish_event_fn)(wish_proxy_t src, wish_hash event, void* userdata)
  * @return Non-null handle on success; NULL if transport construction fails
  *         (e.g. unsupported transport on this platform, bad address format).
  */
-WISH_API wish_client_t wish_client_create(wish_transport_t transport,
-                                          const char* address);
+WISH_API wish_client_t wish_client_create(wish_transport_t transport, const char* address);
 
 /**
  * @brief Destroy a wish client and free all associated resources.
@@ -165,9 +164,7 @@ WISH_API void wish_client_destroy(wish_client_t client);
  * @param userdata    Forwarded to session_fn unchanged.
  * @return WISH_OK on clean exit; WISH_ERR_* on transport or protocol failure.
  */
-WISH_API wish_error wish_client_run(wish_client_t client,
-                                    wish_session_fn session_fn,
-                                    void* userdata);
+WISH_API wish_error wish_client_run(wish_client_t client, wish_session_fn session_fn, void* userdata);
 
 /**
  * @brief Block inside the session callback until wish_client_quit() is called.
@@ -208,8 +205,7 @@ WISH_API const char* wish_last_error(wish_client_t client);
  * @param preset  "dark", "light", or "classic".
  * @return WISH_OK or WISH_ERR_*.
  */
-WISH_API wish_error wish_set_style_preset(wish_client_t client,
-                                          const char* preset);
+WISH_API wish_error wish_set_style_preset(wish_client_t client, const char* preset);
 
 /* ── Template management ──────────────────────────────────────────────────── */
 
@@ -221,9 +217,7 @@ WISH_API wish_error wish_set_style_preset(wish_client_t client,
  * @param descriptor  JSON or YAML descriptor string.
  * @return WISH_OK or WISH_ERR_*.
  */
-WISH_API wish_error wish_register_template(wish_client_t client,
-                                           const char* name,
-                                           const char* descriptor);
+WISH_API wish_error wish_register_template(wish_client_t client, const char* name, const char* descriptor);
 
 /**
  * @brief Instantiate a previously registered template.
@@ -236,8 +230,7 @@ WISH_API wish_error wish_register_template(wish_client_t client,
  * @param name    Template name passed to wish_register_template().
  * @return Root proxy handle (key ""), or NULL on failure.
  */
-WISH_API wish_proxy_t wish_instantiate_template(wish_client_t client,
-                                                const char* name);
+WISH_API wish_proxy_t wish_instantiate_template(wish_client_t client, const char* name);
 
 /**
  * @brief Resolve a dot-joined element path to a proxy handle.
@@ -249,8 +242,7 @@ WISH_API wish_proxy_t wish_instantiate_template(wish_client_t client,
  * @param dot_path  Dot-joined element path, or "" for the root element.
  * @return Proxy handle on success; NULL if the path is not in the proxy map.
  */
-WISH_API wish_proxy_t wish_proxy_get(wish_client_t client,
-                                     const char* dot_path);
+WISH_API wish_proxy_t wish_proxy_get(wish_client_t client, const char* dot_path);
 
 /* ── Proxy field setters ──────────────────────────────────────────────────── */
 
@@ -262,9 +254,7 @@ WISH_API wish_proxy_t wish_proxy_get(wish_client_t client,
  * @param value  New string value (UTF-8, null-terminated).
  * @return WISH_OK or WISH_ERR_*.
  */
-WISH_API wish_error wish_proxy_set_string(wish_proxy_t proxy,
-                                          wish_hash field,
-                                          const char* value);
+WISH_API wish_error wish_proxy_set_string(wish_proxy_t proxy, wish_hash field, const char* value);
 
 /**
  * @brief Set an integer field on a remote UI element.
@@ -274,9 +264,7 @@ WISH_API wish_error wish_proxy_set_string(wish_proxy_t proxy,
  * @param value  New int32 value.
  * @return WISH_OK or WISH_ERR_*.
  */
-WISH_API wish_error wish_proxy_set_int(wish_proxy_t proxy,
-                                       wish_hash field,
-                                       int32_t value);
+WISH_API wish_error wish_proxy_set_int(wish_proxy_t proxy, wish_hash field, int32_t value);
 
 /**
  * @brief Set a float field on a remote UI element.
@@ -286,9 +274,7 @@ WISH_API wish_error wish_proxy_set_int(wish_proxy_t proxy,
  * @param value  New float value.
  * @return WISH_OK or WISH_ERR_*.
  */
-WISH_API wish_error wish_proxy_set_float(wish_proxy_t proxy,
-                                         wish_hash field,
-                                         float value);
+WISH_API wish_error wish_proxy_set_float(wish_proxy_t proxy, wish_hash field, float value);
 
 /**
  * @brief Set a boolean field on a remote UI element.
@@ -298,9 +284,7 @@ WISH_API wish_error wish_proxy_set_float(wish_proxy_t proxy,
  * @param value  Non-zero for true; zero for false.
  * @return WISH_OK or WISH_ERR_*.
  */
-WISH_API wish_error wish_proxy_set_bool(wish_proxy_t proxy,
-                                        wish_hash field,
-                                        int value);
+WISH_API wish_error wish_proxy_set_bool(wish_proxy_t proxy, wish_hash field, int value);
 
 /* ── Event subscription ───────────────────────────────────────────────────── */
 
@@ -313,10 +297,7 @@ WISH_API wish_error wish_proxy_set_bool(wish_proxy_t proxy,
  * @param userdata  Forwarded to callback unchanged.
  * @return WISH_OK or WISH_ERR_*.
  */
-WISH_API wish_error wish_proxy_on_event(wish_proxy_t proxy,
-                                        const char* event,
-                                        wish_event_fn callback,
-                                        void* userdata);
+WISH_API wish_error wish_proxy_on_event(wish_proxy_t proxy, const char* event, wish_event_fn callback, void* userdata);
 
 /* ── Logging ──────────────────────────────────────────────────────────────── */
 
@@ -331,9 +312,7 @@ WISH_API wish_error wish_proxy_on_event(wish_proxy_t proxy,
  * @param msg     Free-form message text (null-terminated UTF-8).
  * @return WISH_OK or WISH_ERR_*.
  */
-WISH_API wish_error wish_log(wish_client_t client,
-                             const char* level,
-                             const char* msg);
+WISH_API wish_error wish_log(wish_client_t client, const char* level, const char* msg);
 
 /**
  * @brief Convenience wrapper for wish_log(client, "debug", msg).

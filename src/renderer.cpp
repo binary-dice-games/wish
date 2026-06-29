@@ -6,9 +6,7 @@
 namespace bdg::wish {
 
 void render_children(renderer& r, const ui_element& node, const session& s) {
-  node.for_each_child_ordered([&](bison::key_t, ui_element& child) {
-    r.render_node(child, s);
-  });
+  node.for_each_child_ordered([&](bison::key_t, ui_element& child) { r.render_node(child, s); });
 }
 
-}  // namespace bdg::wish
+} // namespace bdg::wish

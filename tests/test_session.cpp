@@ -47,4 +47,3 @@ TEST(SessionTest, DirtyCanBeSetAtomically) {
   s.dirty.store(true);
   EXPECT_TRUE(s.dirty.load());
 }
-

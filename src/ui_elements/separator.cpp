@@ -13,23 +13,28 @@ void register_separator() {
   {
     auto proto = dynamic_ptr{"Separator"_key, {}};
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Separator"));
-    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
-        "A visual horizontal rule between elements."));
-    dynamic::addClass("wish"_key, std::move(proto), "Element"_key,
-        dynamic::make_factory<ui_element>("wish"_key, "Separator"_key));
+    (*proto)[dynamic::CLASS].addAttribute(attr<Description>("A visual horizontal rule between elements."));
+    dynamic::addClass(
+        "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_element>("wish"_key, "Separator"_key));
   }
   {
     auto proto = dynamic_ptr{"SeparatorText"_key, {}};
-    proto->addField("label"_key, field{std::string{},
-      attr<DisplayName>("Label"),
-      attr<Description>("Text shown inline with the separator line."),
-      attr<Category>("Content")});
+    proto->addField(
+        "label"_key,
+        field{
+            std::string{},
+            attr<DisplayName>("Label"),
+            attr<Description>("Text shown inline with the separator line."),
+            attr<Category>("Content")});
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("SeparatorText"));
-    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
-        "A horizontal rule with a text label embedded in the line."));
-    dynamic::addClass("wish"_key, std::move(proto), "Element"_key,
+    (*proto)[dynamic::CLASS].addAttribute(
+        attr<Description>("A horizontal rule with a text label embedded in the line."));
+    dynamic::addClass(
+        "wish"_key,
+        std::move(proto),
+        "Element"_key,
         dynamic::make_factory<ui_element>("wish"_key, "SeparatorText"_key));
   }
 }
 
-}  // namespace bdg::wish
+} // namespace bdg::wish

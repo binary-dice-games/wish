@@ -1,8 +1,8 @@
 // MIT License © 2025 Binary Dice Games
 #include <gtest/gtest.h>
 
-#include <wish/renderer.hpp>
 #include <wish/registry.hpp>
+#include <wish/renderer.hpp>
 #include <wish/ui_importer.hpp>
 
 #include <string>
@@ -42,7 +42,9 @@ class RendererTest : public ::testing::Test {
     sess_ = std::make_unique<session>("renderer_test"_key);
   }
 
-  session& sess() { return *sess_; }
+  session& sess() {
+    return *sess_;
+  }
 
  private:
   std::unique_ptr<session> sess_;
@@ -108,9 +110,7 @@ TEST_F(RendererTest, NamedChildrenVisitedInDeclarationOrder) {
   auto map = bdg::wish::import_json(desc);
 
   std::vector<bdg::bison::key_t> order;
-  map[""]->for_each_child_ordered([&](bdg::bison::key_t k, ui_element&) {
-    order.push_back(k);
-  });
+  map[""]->for_each_child_ordered([&](bdg::bison::key_t k, ui_element&) { order.push_back(k); });
 
   ASSERT_EQ(order.size(), 2u);
   EXPECT_EQ(order[0], "zzz"_key);
@@ -130,7 +130,8 @@ TEST_F(RendererTest, IndexedChildrenVisitedInIndexOrder) {
   std::vector<std::string> texts;
   map[""]->for_each_child_ordered([&](bdg::bison::key_t, ui_element& child) {
     auto* f = child.findField("text"_key);
-    if (f && f->is<std::string>()) texts.push_back(f->as<std::string>());
+    if (f && f->is<std::string>())
+      texts.push_back(f->as<std::string>());
   });
 
   ASSERT_EQ(texts.size(), 2u);

@@ -13,18 +13,27 @@ namespace bdg::wish {
 using namespace bdg::bison;
 
 static void add_xyz_fields(dynamic_ptr& proto) {
-  proto->addField("xs"_key, field{std::vector<float>{},
-    attr<DisplayName>("X Values"),
-    attr<Description>("Array of X coordinates, one per data point."),
-    attr<Category>("Data")});
-  proto->addField("ys"_key, field{std::vector<float>{},
-    attr<DisplayName>("Y Values"),
-    attr<Description>("Array of Y coordinates, one per data point."),
-    attr<Category>("Data")});
-  proto->addField("zs"_key, field{std::vector<float>{},
-    attr<DisplayName>("Z Values"),
-    attr<Description>("Array of Z coordinates, one per data point."),
-    attr<Category>("Data")});
+  proto->addField(
+      "xs"_key,
+      field{
+          std::vector<float>{},
+          attr<DisplayName>("X Values"),
+          attr<Description>("Array of X coordinates, one per data point."),
+          attr<Category>("Data")});
+  proto->addField(
+      "ys"_key,
+      field{
+          std::vector<float>{},
+          attr<DisplayName>("Y Values"),
+          attr<Description>("Array of Y coordinates, one per data point."),
+          attr<Category>("Data")});
+  proto->addField(
+      "zs"_key,
+      field{
+          std::vector<float>{},
+          attr<DisplayName>("Z Values"),
+          attr<Description>("Array of Z coordinates, one per data point."),
+          attr<Category>("Data")});
 }
 
 void register_plot3d_series() {
@@ -33,10 +42,13 @@ void register_plot3d_series() {
     auto proto = dynamic_ptr{"Plot3DLine"_key, {}};
     add_xyz_fields(proto);
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Plot3DLine"));
-    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
-        "Draws a connected 3-D line through (xs[i], ys[i], zs[i]) data points. "
-        "Must be a child of a Plot3D element."));
-    dynamic::addClass("wish"_key, std::move(proto), "Plot3DItem"_key,
+    (*proto)[dynamic::CLASS].addAttribute(
+        attr<Description>("Draws a connected 3-D line through (xs[i], ys[i], zs[i]) data points. "
+                          "Must be a child of a Plot3D element."));
+    dynamic::addClass(
+        "wish"_key,
+        std::move(proto),
+        "Plot3DItem"_key,
         dynamic::make_factory<ui_element>("wish"_key, "Plot3DLine"_key));
   }
 
@@ -45,12 +57,15 @@ void register_plot3d_series() {
     auto proto = dynamic_ptr{"Plot3DScatter"_key, {}};
     add_xyz_fields(proto);
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Plot3DScatter"));
-    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
-        "Draws a marker at each (xs[i], ys[i], zs[i]) without connecting lines. "
-        "Must be a child of a Plot3D element."));
-    dynamic::addClass("wish"_key, std::move(proto), "Plot3DItem"_key,
+    (*proto)[dynamic::CLASS].addAttribute(
+        attr<Description>("Draws a marker at each (xs[i], ys[i], zs[i]) without connecting lines. "
+                          "Must be a child of a Plot3D element."));
+    dynamic::addClass(
+        "wish"_key,
+        std::move(proto),
+        "Plot3DItem"_key,
         dynamic::make_factory<ui_element>("wish"_key, "Plot3DScatter"_key));
   }
 }
 
-}  // namespace bdg::wish
+} // namespace bdg::wish

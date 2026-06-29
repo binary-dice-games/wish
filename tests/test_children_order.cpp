@@ -1,10 +1,10 @@
 // MIT License © 2025 Binary Dice Games
 #include <gtest/gtest.h>
 
-#include "src/bison/bison_object.hpp"
 #include <wish/registry.hpp>
 #include <wish/ui_element.hpp>
 #include <wish/ui_importer.hpp>
+#include "src/bison/bison_object.hpp"
 
 #include <string>
 #include <vector>
@@ -14,14 +14,14 @@ using bdg::wish::ui_element;
 
 class ChildrenOrderTest : public ::testing::Test {
  protected:
-  void SetUp() override { bdg::wish::register_all(); }
+  void SetUp() override {
+    bdg::wish::register_all();
+  }
 
   // Collect visited child keys from for_each_child_ordered into a vector.
   static std::vector<bdg::bison::key_t> collect_order(ui_element& parent) {
     std::vector<bdg::bison::key_t> keys;
-    parent.for_each_child_ordered([&](bdg::bison::key_t k, ui_element&) {
-      keys.push_back(k);
-    });
+    parent.for_each_child_ordered([&](bdg::bison::key_t k, ui_element&) { keys.push_back(k); });
     return keys;
   }
 };
@@ -68,9 +68,8 @@ TEST_F(ChildrenOrderTest, IndexedChildrenPreserveOrder) {
   ASSERT_NE(win, nullptr);
 
   std::vector<std::string> texts;
-  win->for_each_child_ordered([&](bdg::bison::key_t, ui_element& child) {
-    texts.push_back(child.findField("text"_key)->as<std::string>());
-  });
+  win->for_each_child_ordered(
+      [&](bdg::bison::key_t, ui_element& child) { texts.push_back(child.findField("text"_key)->as<std::string>()); });
 
   ASSERT_EQ(texts.size(), 3u);
   EXPECT_EQ(texts[0], "first");
@@ -97,8 +96,8 @@ TEST_F(ChildrenOrderTest, ExplicitOrderFieldOverridesDeclarationOrder) {
 
   auto keys = collect_order(*win);
   ASSERT_EQ(keys.size(), 2u);
-  EXPECT_EQ(keys[0], "zzz"_key);  // order 0 → rendered first
-  EXPECT_EQ(keys[1], "aaa"_key);  // order 1 → rendered second
+  EXPECT_EQ(keys[0], "zzz"_key); // order 0 → rendered first
+  EXPECT_EQ(keys[1], "aaa"_key); // order 1 → rendered second
 }
 
 // ── refresh_children_order after runtime mutation ─────────────────────────────
@@ -144,7 +143,7 @@ TEST_F(ChildrenOrderTest, RefreshAfterOrderMutation) {
   {
     auto keys = collect_order(*win);
     ASSERT_EQ(keys.size(), 2u);
-    EXPECT_EQ(keys[0], "second"_key);  // order -1 → now first
+    EXPECT_EQ(keys[0], "second"_key); // order -1 → now first
     EXPECT_EQ(keys[1], "first"_key);
   }
 }

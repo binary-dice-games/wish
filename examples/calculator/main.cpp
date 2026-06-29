@@ -7,23 +7,22 @@
 // Usage: calculator [--verbose] [--theme dark|light|classic]
 
 #include <wish/client.hpp>
-#include <wish/server.hpp>
 #include <wish/sdl3_renderer.hpp>
+#include <wish/server.hpp>
 
-#include "src/rmi/rmi.hpp"  // memory_server_transport / memory_client_transport
+#include "src/rmi/rmi.hpp" // memory_server_transport / memory_client_transport
 
 #include <gflags/gflags.h>
 
+#include <chrono>
 #include <cmath>
 #include <iostream>
 #include <sstream>
 #include <string>
 #include <thread>
-#include <chrono>
 
-DEFINE_bool  (verbose, false, "Print verbose trace to stderr.");
-DEFINE_string(theme,   "dark",
-              "UI theme preset: dark, light, or classic.");
+DEFINE_bool(verbose, false, "Print verbose trace to stderr.");
+DEFINE_string(theme, "dark", "UI theme preset: dark, light, or classic.");
 
 static bool ValidateTheme(const char* /*flag*/, const std::string& value) {
   return value == "dark" || value == "light" || value == "classic";
@@ -101,14 +100,12 @@ static constexpr const char* kCalcDesc = R"({
 
 class calc_client : public wish::client {
  public:
-  calc_client(memory_client_transport t,
-              wish::sdl3_renderer* renderer,
-              bool verbose = false,
-              std::string theme = "dark")
-      : wish::client(std::move(t)),
-        renderer_(renderer),
-        verbose_(verbose),
-        theme_(std::move(theme)) {}
+  calc_client(
+      memory_client_transport t,
+      wish::sdl3_renderer* renderer,
+      bool verbose = false,
+      std::string theme = "dark")
+      : wish::client(std::move(t)), renderer_(renderer), verbose_(verbose), theme_(std::move(theme)) {}
 
  protected:
   void on_session() override {
@@ -116,9 +113,9 @@ class calc_client : public wish::client {
     set_style_preset(theme_).get();
     {
       dynamic overrides;
-      overrides["window_rounding"_key]          = 6.0f;
-      overrides["frame_rounding"_key]           = 4.0f;
-      overrides["grab_rounding"_key]            = 4.0f;
+      overrides["window_rounding"_key] = 6.0f;
+      overrides["frame_rounding"_key] = 4.0f;
+      overrides["grab_rounding"_key] = 4.0f;
       set_style(std::move(overrides)).get();
     }
 
@@ -151,8 +148,12 @@ class calc_client : public wish::client {
     auto digit_handler = [&, update_display](const std::string& ch) {
       return [&, ch, update_display](dynamic) {
         vlog("digit '" + ch + "' clicked");
-        if (fresh_) { display_ = ch; fresh_ = false; }
-        else        { display_ += ch; }
+        if (fresh_) {
+          display_ = ch;
+          fresh_ = false;
+        } else {
+          display_ += ch;
+        }
         update_display();
       };
     };
@@ -161,9 +162,9 @@ class calc_client : public wish::client {
     auto op_handler = [&, update_display](char op) {
       return [&, op, update_display](dynamic) {
         vlog(std::string("op '") + op + "' clicked");
-        operand_    = std::stod(display_);
+        operand_ = std::stod(display_);
         pending_op_ = op;
-        fresh_      = true;
+        fresh_ = true;
         update_display();
       };
     };
@@ -172,10 +173,10 @@ class calc_client : public wish::client {
 
     pm.at("row0.c").onEvent("clicked"_key, [&, update_display](dynamic) {
       vlog("C (clear) clicked");
-      display_    = "0";
-      operand_    = 0.0;
+      display_ = "0";
+      operand_ = 0.0;
       pending_op_ = 0;
-      fresh_      = true;
+      fresh_ = true;
       update_display();
     });
 
@@ -184,8 +185,10 @@ class calc_client : public wish::client {
 
     pm.at("row0.bsp").onEvent("clicked"_key, [&, update_display](dynamic) {
       vlog("<- (backspace) clicked");
-      if (display_.size() > 1) display_.pop_back();
-      else                     display_ = "0";
+      if (display_.size() > 1)
+        display_.pop_back();
+      else
+        display_ = "0";
       update_display();
     });
 
@@ -208,11 +211,21 @@ class calc_client : public wish::client {
       double rhs = std::stod(display_);
       double result = 0.0;
       switch (pending_op_) {
-        case '+': result = operand_ + rhs; break;
-        case '-': result = operand_ - rhs; break;
-        case '*': result = operand_ * rhs; break;
-        case '/': result = (rhs != 0.0) ? operand_ / rhs : 0.0; break;
-        default:  result = rhs; break;
+        case '+':
+          result = operand_ + rhs;
+          break;
+        case '-':
+          result = operand_ - rhs;
+          break;
+        case '*':
+          result = operand_ * rhs;
+          break;
+        case '/':
+          result = (rhs != 0.0) ? operand_ / rhs : 0.0;
+          break;
+        default:
+          result = rhs;
+          break;
       }
       // Format: drop trailing .0 for whole numbers.
       if (result == std::floor(result) && std::abs(result) < 1e12) {
@@ -223,7 +236,7 @@ class calc_client : public wish::client {
         display_ = oss.str();
       }
       pending_op_ = 0;
-      fresh_      = true;
+      fresh_ = true;
       vlog("result: \"" + display_ + "\"");
       update_display();
     });
@@ -241,8 +254,10 @@ class calc_client : public wish::client {
     pm.at("row4.pm").onEvent("clicked"_key, [&, update_display](dynamic) {
       vlog("+/- clicked");
       if (!display_.empty() && display_ != "0") {
-        if (display_[0] == '-') display_.erase(0, 1);
-        else                    display_.insert(0, "-");
+        if (display_[0] == '-')
+          display_.erase(0, 1);
+        else
+          display_.insert(0, "-");
       }
       update_display();
     });
@@ -267,7 +282,8 @@ class calc_client : public wish::client {
 
  private:
   void vlog(const std::string& msg) const {
-    if (verbose_) std::clog << "[calc] " << msg << "\n";
+    if (verbose_)
+      std::clog << "[calc] " << msg << "\n";
   }
 
   wish::sdl3_renderer* renderer_;
@@ -275,10 +291,10 @@ class calc_client : public wish::client {
   std::string theme_;
 
   // Calculator state
-  std::string display_    = "0";
-  double      operand_    = 0.0;
-  char        pending_op_ = 0;
-  bool        fresh_      = true;
+  std::string display_ = "0";
+  double operand_ = 0.0;
+  char pending_op_ = 0;
+  bool fresh_ = true;
 };
 
 // ── main ──────────────────────────────────────────────────────────────────────
@@ -286,23 +302,26 @@ class calc_client : public wish::client {
 int main(int argc, char* argv[]) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
-  if (FLAGS_verbose) std::clog << "[calc] starting\n";
+  if (FLAGS_verbose)
+    std::clog << "[calc] starting\n";
 
   memory_server_transport transport;
 
-  auto r    = std::make_unique<wish::sdl3_renderer>("Calculator", 340, 440);
+  auto r = std::make_unique<wish::sdl3_renderer>("Calculator", 340, 440);
   auto rptr = r.get();
 
   wish::server server{transport, std::move(r)};
-  server.start();  // spawns render thread (SDL lives there) + bison listen thread
+  server.start(); // spawns render thread (SDL lives there) + bison listen thread
 
-  if (FLAGS_verbose) std::clog << "[calc] server started — connecting client\n";
+  if (FLAGS_verbose)
+    std::clog << "[calc] server started — connecting client\n";
 
   // run() blocks in on_session() until should_quit() goes true (window closed).
   calc_client client{transport.connect(), rptr, FLAGS_verbose, FLAGS_theme};
   client.run();
 
-  if (FLAGS_verbose) std::clog << "[calc] client done — stopping server\n";
+  if (FLAGS_verbose)
+    std::clog << "[calc] client done — stopping server\n";
 
   server.stop();
   return 0;

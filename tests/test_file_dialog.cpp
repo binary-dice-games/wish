@@ -20,7 +20,9 @@ using namespace bdg::bison::rmi::transport;
 
 class FileDialogLocalTest : public ::testing::Test {
  protected:
-  void SetUp() override { bdg::wish::register_all(); }
+  void SetUp() override {
+    bdg::wish::register_all();
+  }
 };
 
 TEST_F(FileDialogLocalTest, CanBeInstantiated) {
@@ -72,14 +74,15 @@ TEST_F(FileDialogLocalTest, DefaultConfirmLabelIsOpen) {
 
 class SessionCapturingServer : public wish::server {
  public:
-  SessionCapturingServer(server_transport_iface& t,
-                          std::unique_ptr<wish::renderer> r)
+  SessionCapturingServer(server_transport_iface& t, std::unique_ptr<wish::renderer> r)
       : wish::server(t, std::move(r)) {}
 
   wish::session* last_session{nullptr};
 
  protected:
-  void on_session_created(wish::session& s) override { last_session = &s; }
+  void on_session_created(wish::session& s) override {
+    last_session = &s;
+  }
 };
 
 // Helper: find the root key for the internal form tree (starts with "__form_",
@@ -97,8 +100,7 @@ static std::string find_form_root(const wish::name_map& objects) {
 class FileDialogWindowTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    srv_ = std::make_unique<SessionCapturingServer>(
-        transport_, std::make_unique<wish::null_renderer>());
+    srv_ = std::make_unique<SessionCapturingServer>(transport_, std::make_unique<wish::null_renderer>());
     srv_->start();
     client_ = std::make_unique<bdg::bison::rmi::client>(transport_.connect());
     client_->connect();
@@ -140,8 +142,7 @@ TEST_F(FileDialogWindowTest, WindowHasVerticalLayoutChild) {
   ASSERT_FALSE(root.empty());
   auto& objs = srv_->last_session->objects;
   ASSERT_TRUE(objs.count(root + ".vbox"));
-  EXPECT_EQ(objs.at(root + ".vbox")->findField(dynamic::CLASS)->as<key_t>(),
-            "VerticalLayout"_key);
+  EXPECT_EQ(objs.at(root + ".vbox")->findField(dynamic::CLASS)->as<key_t>(), "VerticalLayout"_key);
 }
 
 TEST_F(FileDialogWindowTest, TreeContainsPathInput) {
@@ -188,16 +189,13 @@ TEST_F(FileDialogWindowTest, BtnOpenLabelMatchesConfirmLabel) {
   ASSERT_FALSE(root.empty());
   auto& objs = srv_->last_session->objects;
   ASSERT_TRUE(objs.count(root + ".vbox.btn_row.btn_open"));
-  EXPECT_EQ(objs.at(root + ".vbox.btn_row.btn_open")->findField("label"_key)
-                ->as<std::string>(),
-            "Open");
+  EXPECT_EQ(objs.at(root + ".vbox.btn_row.btn_open")->findField("label"_key)->as<std::string>(), "Open");
 }
 
 // ── Step 6: file list synchronization ────────────────────────────────────────
 
 // Helper: build a files dynamic_ptr like {0:{name,type}, 1:{name,type}, ...}
-static dynamic make_files(
-    std::initializer_list<std::pair<std::string, std::string>> entries) {
+static dynamic make_files(std::initializer_list<std::pair<std::string, std::string>> entries) {
   dynamic files;
   size_t i = 0;
   for (auto& [name, type] : entries) {
@@ -214,8 +212,7 @@ class FileDialogFilesTest : public ::testing::Test {
 
  protected:
   void SetUp() override {
-    srv_ = std::make_unique<SessionCapturingServer>(
-        transport_, std::make_unique<wish::null_renderer>());
+    srv_ = std::make_unique<SessionCapturingServer>(transport_, std::make_unique<wish::null_renderer>());
     srv_->start();
     client_ = std::make_unique<bdg::bison::rmi::client>(transport_.connect());
     client_->connect();
@@ -236,8 +233,7 @@ class FileDialogFilesTest : public ::testing::Test {
   // Set the form's files field from a files dynamic.
   void set_files(dynamic files_dyn) {
     dynamic params;
-    params["files"_key] = dynamic_ptr{
-        std::make_shared<dynamic>(std::move(files_dyn))};
+    params["files"_key] = dynamic_ptr{std::make_shared<dynamic>(std::move(files_dyn))};
     proxy_->set(std::move(params)).get();
   }
 
@@ -245,9 +241,11 @@ class FileDialogFilesTest : public ::testing::Test {
   size_t table_row_count() const {
     auto& objs = srv_->last_session->objects;
     auto it = objs.find(root_ + ".vbox.file_table");
-    if (it == objs.end() || !it->second) return 0;
+    if (it == objs.end() || !it->second)
+      return 0;
     auto* cf = it->second->findField("children"_key);
-    if (!cf || !cf->is<dynamic_ptr>()) return 0;
+    if (!cf || !cf->is<dynamic_ptr>())
+      return 0;
     return cf->as<dynamic_ptr>()->size();
   }
 
@@ -255,19 +253,24 @@ class FileDialogFilesTest : public ::testing::Test {
   std::string table_cell_text(size_t row_idx, size_t col_idx) const {
     auto& objs = srv_->last_session->objects;
     auto it = objs.find(root_ + ".vbox.file_table");
-    if (it == objs.end() || !it->second) return {};
+    if (it == objs.end() || !it->second)
+      return {};
     auto* cf = it->second->findField("children"_key);
-    if (!cf || !cf->is<dynamic_ptr>()) return {};
+    if (!cf || !cf->is<dynamic_ptr>())
+      return {};
     auto& ch = *cf->as<dynamic_ptr>();
 
     const auto& row_f = ch.at(row_idx);
-    if (!row_f.is<dynamic_ptr>()) return {};
+    if (!row_f.is<dynamic_ptr>())
+      return {};
     auto& row = *row_f.as<dynamic_ptr>();
 
     auto* rcf = row.findField("children"_key);
-    if (!rcf || !rcf->is<dynamic_ptr>()) return {};
+    if (!rcf || !rcf->is<dynamic_ptr>())
+      return {};
     const auto& cell_f = rcf->as<dynamic_ptr>()->at(col_idx);
-    if (!cell_f.is<dynamic_ptr>()) return {};
+    if (!cell_f.is<dynamic_ptr>())
+      return {};
     return cell_f.as<dynamic_ptr>()->as<std::string>("text"_key);
   }
 
@@ -347,8 +350,7 @@ TEST_F(FileDialogFilesTest, RowSelectedUpdatesFilenameInputWidget) {
 class FileDialogRMITest : public ::testing::Test {
  protected:
   void SetUp() override {
-    srv_ = std::make_unique<wish::server>(
-        transport_, std::make_unique<wish::null_renderer>());
+    srv_ = std::make_unique<wish::server>(transport_, std::make_unique<wish::null_renderer>());
     srv_->start();
     client_ = std::make_unique<bdg::bison::rmi::client>(transport_.connect());
     client_->connect();
@@ -403,15 +405,14 @@ TEST_F(FileDialogRMITest, SetConfirmLabelRoundTrips) {
 // Records form-level events (on_open, on_cancel, on_navigate) emitted by the
 // form through sess().emit_event, without interfering with internal routing.
 struct CapturedEvent {
-  key_t       name;
-  dynamic     payload;
+  key_t name;
+  dynamic payload;
 };
 
 class FileDialogEventsTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    srv_ = std::make_unique<SessionCapturingServer>(
-        transport_, std::make_unique<wish::null_renderer>());
+    srv_ = std::make_unique<SessionCapturingServer>(transport_, std::make_unique<wish::null_renderer>());
     srv_->start();
     client_ = std::make_unique<bdg::bison::rmi::client>(transport_.connect());
     client_->connect();
@@ -422,15 +423,14 @@ class FileDialogEventsTest : public ::testing::Test {
 
     // Wrap emit_event to capture high-level events emitted by form::emit().
     auto prev = std::move(srv_->last_session->emit_event);
-    events_   = std::make_shared<std::vector<CapturedEvent>>();
+    events_ = std::make_shared<std::vector<CapturedEvent>>();
     auto evts = events_;
-    srv_->last_session->emit_event =
-        [prev, evts](key_t id, key_t event, dynamic payload) {
-          if (event == "on_open"_key || event == "on_cancel"_key ||
-              event == "on_navigate"_key)
-            evts->push_back({event, payload});
-          if (prev) prev(id, event, std::move(payload));
-        };
+    srv_->last_session->emit_event = [prev, evts](key_t id, key_t event, dynamic payload) {
+      if (event == "on_open"_key || event == "on_cancel"_key || event == "on_navigate"_key)
+        evts->push_back({event, payload});
+      if (prev)
+        prev(id, event, std::move(payload));
+    };
   }
 
   void TearDown() override {
@@ -443,8 +443,7 @@ class FileDialogEventsTest : public ::testing::Test {
 
   void set_files(dynamic files_dyn) {
     dynamic params;
-    params["files"_key] = dynamic_ptr{
-        std::make_shared<dynamic>(std::move(files_dyn))};
+    params["files"_key] = dynamic_ptr{std::make_shared<dynamic>(std::move(files_dyn))};
     proxy_->set(std::move(params)).get();
   }
 
@@ -491,19 +490,21 @@ class FileDialogEventsTest : public ::testing::Test {
 
   bool has_event(key_t name) const {
     for (auto& e : *events_)
-      if (e.name.id == name.id) return true;
+      if (e.name.id == name.id)
+        return true;
     return false;
   }
 
   const CapturedEvent* find_event(key_t name) const {
     for (auto& e : *events_)
-      if (e.name.id == name.id) return &e;
+      if (e.name.id == name.id)
+        return &e;
     return nullptr;
   }
 
-  memory_server_transport                   transport_;
-  std::unique_ptr<SessionCapturingServer>   srv_;
-  std::unique_ptr<bdg::bison::rmi::client>  client_;
+  memory_server_transport transport_;
+  std::unique_ptr<SessionCapturingServer> srv_;
+  std::unique_ptr<bdg::bison::rmi::client> client_;
   std::optional<bdg::bison::rmi::proxy::dynamic> proxy_;
   std::string root_;
   std::shared_ptr<std::vector<CapturedEvent>> events_;
@@ -570,8 +571,7 @@ class FileDialogBindingTest : public ::testing::Test {
 
  protected:
   void SetUp() override {
-    srv_ = std::make_unique<SessionCapturingServer>(
-        transport_, std::make_unique<wish::null_renderer>());
+    srv_ = std::make_unique<SessionCapturingServer>(transport_, std::make_unique<wish::null_renderer>());
     srv_->start();
     client_ = std::make_unique<bdg::bison::rmi::client>(transport_.connect());
     client_->connect();
@@ -605,8 +605,7 @@ class FileDialogBindingTest : public ::testing::Test {
   // Set the filters field via the client proxy.
   void set_filters(dynamic filters_dyn) {
     dynamic params;
-    params["filters"_key] = dynamic_ptr{
-        std::make_shared<dynamic>(std::move(filters_dyn))};
+    params["filters"_key] = dynamic_ptr{std::make_shared<dynamic>(std::move(filters_dyn))};
     proxy_->set(std::move(params)).get();
   }
 
@@ -621,9 +620,11 @@ class FileDialogBindingTest : public ::testing::Test {
   bool filter_row_visible() const {
     auto& objs = srv_->last_session->objects;
     auto it = objs.find(root_ + ".vbox.filter_row");
-    if (it == objs.end() || !it->second) return false;
+    if (it == objs.end() || !it->second)
+      return false;
     auto* f = it->second->findField("visible"_key);
-    if (!f) return false;
+    if (!f)
+      return false;
     return f->as<bool>();
   }
 
@@ -631,9 +632,11 @@ class FileDialogBindingTest : public ::testing::Test {
   std::string filter_combo_items() const {
     auto& objs = srv_->last_session->objects;
     auto it = objs.find(root_ + ".vbox.filter_row.filter_combo");
-    if (it == objs.end() || !it->second) return {};
+    if (it == objs.end() || !it->second)
+      return {};
     auto* f = it->second->findField("items"_key);
-    if (!f || !f->is<std::string>()) return {};
+    if (!f || !f->is<std::string>())
+      return {};
     return f->as<std::string>();
   }
 
@@ -641,9 +644,11 @@ class FileDialogBindingTest : public ::testing::Test {
   std::string btn_open_label() const {
     auto& objs = srv_->last_session->objects;
     auto it = objs.find(root_ + ".vbox.btn_row.btn_open");
-    if (it == objs.end() || !it->second) return {};
+    if (it == objs.end() || !it->second)
+      return {};
     auto* f = it->second->findField("label"_key);
-    if (!f || !f->is<std::string>()) return {};
+    if (!f || !f->is<std::string>())
+      return {};
     return f->as<std::string>();
   }
 
@@ -651,9 +656,11 @@ class FileDialogBindingTest : public ::testing::Test {
   std::string path_input_value() const {
     auto& objs = srv_->last_session->objects;
     auto it = objs.find(root_ + ".vbox.path_input");
-    if (it == objs.end() || !it->second) return {};
+    if (it == objs.end() || !it->second)
+      return {};
     auto* f = it->second->findField("value"_key);
-    if (!f || !f->is<std::string>()) return {};
+    if (!f || !f->is<std::string>())
+      return {};
     return f->as<std::string>();
   }
 
@@ -678,8 +685,7 @@ TEST_F(FileDialogBindingTest, SetPathUpdatesPathInputWidget) {
 }
 
 // Build a filter entry dynamic with a label and optional regex.
-static dynamic_ptr make_filter(const std::string& label,
-                               const std::string& regex = "") {
+static dynamic_ptr make_filter(const std::string& label, const std::string& regex = "") {
   auto e = dynamic_ptr{std::make_shared<dynamic>()};
   (*e)["label"_key] = label;
   (*e)["regex"_key] = regex;
@@ -689,7 +695,7 @@ static dynamic_ptr make_filter(const std::string& label,
 TEST_F(FileDialogBindingTest, SetFiltersMakesFilterRowVisible) {
   dynamic filters;
   filters[size_t{0}] = make_filter("Text Files (*.txt)", "\\.txt$");
-  filters[size_t{1}] = make_filter("Markdown (*.md)",    "\\.md$");
+  filters[size_t{1}] = make_filter("Markdown (*.md)", "\\.md$");
   set_filters(std::move(filters));
   EXPECT_TRUE(filter_row_visible());
 }
@@ -697,7 +703,7 @@ TEST_F(FileDialogBindingTest, SetFiltersMakesFilterRowVisible) {
 TEST_F(FileDialogBindingTest, SetFiltersPopulatesComboItems) {
   dynamic filters;
   filters[size_t{0}] = make_filter("Text Files (*.txt)", "\\.txt$");
-  filters[size_t{1}] = make_filter("Markdown (*.md)",    "\\.md$");
+  filters[size_t{1}] = make_filter("Markdown (*.md)", "\\.md$");
   set_filters(std::move(filters));
   EXPECT_EQ(filter_combo_items(), "Text Files (*.txt)\nMarkdown (*.md)");
 }

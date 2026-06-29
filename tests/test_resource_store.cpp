@@ -40,7 +40,7 @@ TEST(ResourceStore, StripSchemeLeavesBarePathUnchanged) {
 TEST(ResourceStore, FindReturnsNulloptForUnknownPath) {
   EXPECT_EQ(find("no/such/file.png"), std::nullopt);
   EXPECT_EQ(find(""), std::nullopt);
-  EXPECT_EQ(find("res://icons/folder.png"), std::nullopt);  // prefix not stripped
+  EXPECT_EQ(find("res://icons/folder.png"), std::nullopt); // prefix not stripped
 }
 
 // ── find — hit ────────────────────────────────────────────────────────────────
@@ -59,24 +59,26 @@ TEST(ResourceStore, FindReturnsDataForKnownFont) {
 
 TEST(ResourceStore, FindCoversAllPlannedIcons) {
   for (const char* path : {
-      "icons/file.png",
-      "icons/folder.png",
-      "icons/audio.png",
-      "icons/image.png",
-      "icons/code.png",
-      "icons/document.png",
-  }) {
+           "icons/file.png",
+           "icons/folder.png",
+           "icons/audio.png",
+           "icons/image.png",
+           "icons/code.png",
+           "icons/document.png",
+       }) {
     auto result = find(path);
     EXPECT_TRUE(result.has_value()) << "missing: " << path;
-    if (result) EXPECT_FALSE(result->data.empty()) << "zero-size: " << path;
+    if (result)
+      EXPECT_FALSE(result->data.empty()) << "zero-size: " << path;
   }
 }
 
 TEST(ResourceStore, FindCoversAllPlannedFonts) {
-  for (const char* path : { "fonts/default.ttf", "fonts/mono.ttf" }) {
+  for (const char* path : {"fonts/default.ttf", "fonts/mono.ttf"}) {
     auto result = find(path);
     EXPECT_TRUE(result.has_value()) << "missing: " << path;
-    if (result) EXPECT_FALSE(result->data.empty()) << "zero-size: " << path;
+    if (result)
+      EXPECT_FALSE(result->data.empty()) << "zero-size: " << path;
   }
 }
 

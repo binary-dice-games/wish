@@ -5,8 +5,8 @@
 #include <wish/logger.hpp>
 #include <wish/registry.hpp>
 
-#include <fstream>
 #include <filesystem>
+#include <fstream>
 #include <string>
 
 using namespace bdg::bison;
@@ -18,7 +18,7 @@ class LoggerTest : public ::testing::Test {
   void SetUp() override {
     bdg::wish::register_all();
     log_path_ = std::filesystem::temp_directory_path() / "wish_test_logger.log";
-    std::filesystem::remove(log_path_);  // start clean
+    std::filesystem::remove(log_path_); // start clean
   }
 
   void TearDown() override {
@@ -26,16 +26,12 @@ class LoggerTest : public ::testing::Test {
   }
 
   bdg::wish::logger make_logger(bool verbose = false) {
-    return bdg::wish::logger{
-        dynamic::instantiate("wish"_key, "__WishLogger"_key),
-        verbose,
-        log_path_};
+    return bdg::wish::logger{dynamic::instantiate("wish"_key, "__WishLogger"_key), verbose, log_path_};
   }
 
   std::string read_log() const {
     std::ifstream f(log_path_);
-    return {std::istreambuf_iterator<char>(f),
-            std::istreambuf_iterator<char>{}};
+    return {std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>{}};
   }
 
   std::filesystem::path log_path_;
@@ -44,7 +40,9 @@ class LoggerTest : public ::testing::Test {
 // ── Construction ──────────────────────────────────────────────────────────────
 
 TEST_F(LoggerTest, ConstructionCreatesLogFile) {
-  { auto lg = make_logger(); }
+  {
+    auto lg = make_logger();
+  }
   EXPECT_TRUE(std::filesystem::exists(log_path_));
 }
 
@@ -65,7 +63,7 @@ TEST_F(LoggerTest, DebugWarnErrorLevelsAppearInFile) {
   lg.error("err");
   const auto content = read_log();
   EXPECT_NE(content.find("[debug]"), std::string::npos);
-  EXPECT_NE(content.find("[warn]"),  std::string::npos);
+  EXPECT_NE(content.find("[warn]"), std::string::npos);
   EXPECT_NE(content.find("[error]"), std::string::npos);
 }
 
@@ -75,9 +73,9 @@ TEST_F(LoggerTest, MultipleMessagesAllAppearInFile) {
   lg.info("second");
   lg.info("third");
   const auto content = read_log();
-  EXPECT_NE(content.find("first"),  std::string::npos);
+  EXPECT_NE(content.find("first"), std::string::npos);
   EXPECT_NE(content.find("second"), std::string::npos);
-  EXPECT_NE(content.find("third"),  std::string::npos);
+  EXPECT_NE(content.find("third"), std::string::npos);
 }
 
 // ── Log generic level ─────────────────────────────────────────────────────────
@@ -86,17 +84,14 @@ TEST_F(LoggerTest, GenericLogMethodWithCustomLevel) {
   auto lg = make_logger();
   lg.log("warn", "rmi message");
   const auto content = read_log();
-  EXPECT_NE(content.find("[warn]"),       std::string::npos);
+  EXPECT_NE(content.find("[warn]"), std::string::npos);
   EXPECT_NE(content.find("rmi message"), std::string::npos);
 }
 
 // ── No file path ──────────────────────────────────────────────────────────────
 
 TEST_F(LoggerTest, EmptyLogPathDoesNotCreateFile) {
-  bdg::wish::logger lg{
-      dynamic::instantiate("wish"_key, "__WishLogger"_key),
-      false,
-      {}};
+  bdg::wish::logger lg{dynamic::instantiate("wish"_key, "__WishLogger"_key), false, {}};
   lg.info("should not appear on disk");
   EXPECT_FALSE(std::filesystem::exists(log_path_));
 }

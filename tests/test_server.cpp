@@ -20,10 +20,7 @@ namespace wish = bdg::wish;
 
 class tracking_server : public wish::server {
  public:
-  tracking_server(
-      server_transport_iface& t,
-      std::unique_ptr<wish::renderer> r)
-      : wish::server(t, std::move(r)) {}
+  tracking_server(server_transport_iface& t, std::unique_ptr<wish::renderer> r) : wish::server(t, std::move(r)) {}
 
   std::atomic<int> created_count{0};
   std::atomic<int> destroyed_count{0};
@@ -42,10 +39,7 @@ class tracking_server : public wish::server {
 
 class multi_tracking_server : public wish::server {
  public:
-  multi_tracking_server(
-      server_transport_iface& t,
-      std::unique_ptr<wish::renderer> r)
-      : wish::server(t, std::move(r)) {}
+  multi_tracking_server(server_transport_iface& t, std::unique_ptr<wish::renderer> r) : wish::server(t, std::move(r)) {}
 
   std::atomic<int> created_count{0};
   std::mutex sessions_mutex;

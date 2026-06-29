@@ -20,4 +20,4 @@ class window : public ui_root {
   explicit window(bison::dynamic&& base);
 };
 
-}  // namespace bdg::wish
+} // namespace bdg::wish

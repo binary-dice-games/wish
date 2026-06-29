@@ -5,8 +5,8 @@
 #include <wish/registry.hpp>
 #include <wish/ui_importer.hpp>
 
-#include "src/bison/bison_object.hpp"
 #include "src/bison/bison_common.hpp"
+#include "src/bison/bison_object.hpp"
 
 #include <imgui.h>
 #include <imgui_internal.h>
@@ -26,7 +26,7 @@ class ImguiRendererTest : public ::testing::Test {
     ctx_ = ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.DisplaySize = ImVec2(800.0f, 600.0f);
-    io.DeltaTime   = 1.0f / 60.0f;
+    io.DeltaTime = 1.0f / 60.0f;
     // Build font atlas in headless mode (no platform backend does this for us).
     unsigned char* pixels;
     int fw, fh;
@@ -34,7 +34,7 @@ class ImguiRendererTest : public ::testing::Test {
     io.Fonts->SetTexID(ImTextureID{1});
     // Place mouse somewhere valid so window hover detection works.
     io.MousePos = ImVec2(10.0f, 10.0f);
-    sess_     = std::make_unique<session>("imgui_test"_key);
+    sess_ = std::make_unique<session>("imgui_test"_key);
     renderer_ = std::make_unique<imgui_renderer>();
   }
 
@@ -49,9 +49,11 @@ class ImguiRendererTest : public ::testing::Test {
   void in_window(const std::function<void()>& fn) {
     ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(800, 600), ImGuiCond_Always);
-    ImGui::Begin("TestWindow", nullptr,
-        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
-        ImGuiWindowFlags_NoMove    | ImGuiWindowFlags_NoScrollbar);
+    ImGui::Begin(
+        "TestWindow",
+        nullptr,
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+            ImGuiWindowFlags_NoScrollbar);
     fn();
     ImGui::End();
   }
@@ -61,22 +63,22 @@ class ImguiRendererTest : public ::testing::Test {
   // Sets internal imgui state so ButtonBehavior returns true for that item.
   static void fake_click(ImGuiID item_id) {
     ImGuiContext& g = *GImGui;
-    g.ActiveId                    = item_id;
-    g.ActiveIdIsAlive             = item_id;
-    g.ActiveIdSource              = ImGuiInputSource_Mouse;
+    g.ActiveId = item_id;
+    g.ActiveIdIsAlive = item_id;
+    g.ActiveIdSource = ImGuiInputSource_Mouse;
     // ActiveIdMouseButton must NOT be -1: ButtonBehavior calls ClearActiveID()
     // immediately when it finds -1 (programmatic set) before reaching release logic.
-    g.ActiveIdMouseButton         = 0;      // left button
-    g.ActiveIdWindow              = ImGui::FindWindowByName("TestWindow");
-    g.IO.MouseDown[0]             = false;
-    g.IO.MouseDownDuration[0]     = 0.05f;  // was held briefly
-    g.IO.MouseReleased[0]         = true;   // just released
-    g.IO.MousePos                 = ImVec2(10.0f, 10.0f);
+    g.ActiveIdMouseButton = 0; // left button
+    g.ActiveIdWindow = ImGui::FindWindowByName("TestWindow");
+    g.IO.MouseDown[0] = false;
+    g.IO.MouseDownDuration[0] = 0.05f; // was held briefly
+    g.IO.MouseReleased[0] = true; // just released
+    g.IO.MousePos = ImVec2(10.0f, 10.0f);
   }
 
-  ImGuiContext*           ctx_      = nullptr;
-  std::unique_ptr<session>         sess_;
-  std::unique_ptr<imgui_renderer>  renderer_;
+  ImGuiContext* ctx_ = nullptr;
+  std::unique_ptr<session> sess_;
+  std::unique_ptr<imgui_renderer> renderer_;
 };
 
 // ── begin_frame / end_frame ───────────────────────────────────────────────────
@@ -130,7 +132,8 @@ TEST_F(ImguiRendererTest, ButtonEmitsClickedEvent) {
 
   // Drain pending_events: simulates the server render loop's post-frame dispatch.
   for (auto& ev : sess_->pending_events)
-    if (sess_->emit_event) sess_->emit_event(ev.id, ev.event_name, ev.payload);
+    if (sess_->emit_event)
+      sess_->emit_event(ev.id, ev.event_name, ev.payload);
   sess_->pending_events.clear();
 
   EXPECT_EQ(last_event, "clicked"_key);
@@ -139,17 +142,17 @@ TEST_F(ImguiRendererTest, ButtonEmitsClickedEvent) {
 // ── Checkbox: emits "changed" with correct boolean payload ───────────────────
 
 TEST_F(ImguiRendererTest, CheckboxEmitsChangedWithCorrectPayload) {
-  bdg::bison::key_t  last_event{hash_t{0}};
-  bool   last_value = false;
+  bdg::bison::key_t last_event{hash_t{0}};
+  bool last_value = false;
   sess_->emit_event = [&](bdg::bison::key_t, bdg::bison::key_t ev, dynamic payload) {
     last_event = ev;
     auto* f = payload.findField("value"_key);
-    if (f && f->is<bool>()) last_value = f->as<bool>();
+    if (f && f->is<bool>())
+      last_value = f->as<bool>();
   };
 
   // Checkbox starts unchecked; fake-click will toggle it to true.
-  auto map = bdg::wish::import_json(
-      R"({"type":"Checkbox","label":"Check","value":false})");
+  auto map = bdg::wish::import_json(R"({"type":"Checkbox","label":"Check","value":false})");
 
   // Frame 1: register the window and get the checkbox's ID.
   renderer_->begin_frame();
@@ -169,7 +172,8 @@ TEST_F(ImguiRendererTest, CheckboxEmitsChangedWithCorrectPayload) {
 
   // Drain pending_events: simulates the server render loop's post-frame dispatch.
   for (auto& ev : sess_->pending_events)
-    if (sess_->emit_event) sess_->emit_event(ev.id, ev.event_name, ev.payload);
+    if (sess_->emit_event)
+      sess_->emit_event(ev.id, ev.event_name, ev.payload);
   sess_->pending_events.clear();
 
   EXPECT_EQ(last_event, "changed"_key);
@@ -182,8 +186,7 @@ TEST_F(ImguiRendererTest, UnknownClassDoesNotThrow) {
   // Rendering any fully-valid tree exercises the dispatch table, including
   // the else (unknown-class) branch when a class key is not in the table.
   // We verify no exception escapes render_node.
-  auto map = bdg::wish::import_json(
-      R"({"type":"Window","title":"T","children":{"s":{"type":"Separator"}}})");
+  auto map = bdg::wish::import_json(R"({"type":"Window","title":"T","children":{"s":{"type":"Separator"}}})");
   EXPECT_NO_THROW({
     renderer_->begin_frame();
     renderer_->render_node(*map[""], *sess_);
@@ -199,7 +202,8 @@ class counting_imgui_renderer : public imgui_renderer {
   int label_count = 0;
 
   void render_node(const ui_element& node, const session& s) override {
-    if (node.as<bdg::bison::key_t>(dynamic::CLASS) == "Label"_key) ++label_count;
+    if (node.as<bdg::bison::key_t>(dynamic::CLASS) == "Label"_key)
+      ++label_count;
     imgui_renderer::render_node(node, s);
   }
 };

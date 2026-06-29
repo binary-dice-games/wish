@@ -37,7 +37,7 @@ class wish_client_session : public client {
  private:
   std::string app_name_;
   std::promise<void> done_;
-  std::future<void>  done_future_{done_.get_future()};
+  std::future<void> done_future_{done_.get_future()};
   std::vector<bison::rmi::proxy::dynamic> live_proxies_;
 
   friend int run_client_mode(int argc, char** argv);

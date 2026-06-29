@@ -10,9 +10,9 @@ namespace bdg::wish {
 
 /// @brief A single row in the compile-time resource table.
 struct resource_entry {
-  const char*          path;  ///< Null-terminated key, e.g. "icons/folder.png".
-  const unsigned char* data;  ///< Pointer to static byte array.
-  std::size_t          size;  ///< Byte count.
+  const char* path; ///< Null-terminated key, e.g. "icons/folder.png".
+  const unsigned char* data; ///< Pointer to static byte array.
+  std::size_t size; ///< Byte count.
 };
 
 } // namespace bdg::wish

@@ -20,8 +20,7 @@ namespace wish = bdg::wish;
 class HandlersTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    srv_ = std::make_unique<wish::server>(
-        transport_, std::make_unique<wish::null_renderer>());
+    srv_ = std::make_unique<wish::server>(transport_, std::make_unique<wish::null_renderer>());
     srv_->start();
   }
 
@@ -36,8 +35,7 @@ class HandlersTest : public ::testing::Test {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-static const char* kWindowJson =
-    R"({"type":"Window","title":"Root"})";
+static const char* kWindowJson = R"({"type":"Window","title":"Root"})";
 
 static const char* kWindowWithLabelJson = R"({
   "type": "Window",

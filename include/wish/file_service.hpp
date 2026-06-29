@@ -30,8 +30,7 @@ class file_service : public bison::dynamic {
    * @param base          Plain `dynamic` produced by `dynamic::instantiate`.
    * @param resource_dir  Sandboxed directory for this session's files.
    */
-  file_service(bison::dynamic&& base,
-                    std::filesystem::path resource_dir);
+  file_service(bison::dynamic&& base, std::filesystem::path resource_dir);
 
   /**
    * @brief Write @p data to a file named @p name in the resource directory.
@@ -74,10 +73,8 @@ class file_service : public bison::dynamic {
    * @param allow_absolute Whether absolute paths are permitted.
    * @return Resolved path, or an empty path if @p name is rejected.
    */
-  static std::filesystem::path resolve_path(
-      const std::string& name,
-      const std::filesystem::path& resource_dir,
-      bool allow_absolute = false);
+  static std::filesystem::path
+  resolve_path(const std::string& name, const std::filesystem::path& resource_dir, bool allow_absolute = false);
 
  private:
   std::filesystem::path resource_dir_;
@@ -91,4 +88,4 @@ class file_service : public bison::dynamic {
 ///        Called once by `register_all()`; idempotent across repeated calls.
 void register_file_service();
 
-}  // namespace bdg::wish
+} // namespace bdg::wish

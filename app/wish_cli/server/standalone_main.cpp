@@ -6,10 +6,10 @@
 #include <gflags/gflags.h>
 
 // Shared transport flags — declared by bison::app::server_app internals.
-DEFINE_string(host,    "0.0.0.0", "Bind host address");
-DEFINE_int32 (port,    7070,      "Listen port");
-DEFINE_string(pipe,    "",        "Named pipe / Unix socket path");
-DEFINE_bool  (verbose, false,     "Print session trace messages to stdout");
+DEFINE_string(host, "0.0.0.0", "Bind host address");
+DEFINE_int32(port, 7070, "Listen port");
+DEFINE_string(pipe, "", "Named pipe / Unix socket path");
+DEFINE_bool(verbose, false, "Print session trace messages to stdout");
 
 int main(int argc, char** argv) {
   gflags::SetUsageMessage("wish-server - wish GUI render server");

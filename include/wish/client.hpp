@@ -20,8 +20,7 @@ namespace bdg::wish {
 ///
 /// The root proxy is stored at key `""`.  Named descendants follow the same
 /// dot-joined naming convention as `wish::name_map` on the server.
-using proxy_map =
-    std::unordered_map<std::string, bison::rmi::proxy::dynamic>;
+using proxy_map = std::unordered_map<std::string, bison::rmi::proxy::dynamic>;
 
 /**
  * @brief Connects to a wish server and exposes wish-level operations.
@@ -70,8 +69,7 @@ class client : public bison::rmi::client {
    * @throws std::logic_error until the server-side `__WishTemplate` handler
    *         is registered.
    */
-  std::future<void> register_template(
-      bison::key_t name, const std::string& descriptor);
+  std::future<void> register_template(bison::key_t name, const std::string& descriptor);
 
   /**
    * @brief Instantiate a previously registered template.
@@ -90,8 +88,7 @@ class client : public bison::rmi::client {
    * @throws std::logic_error until the server-side `__WishFileSystem` protocol is
    *         accessible to the client.
    */
-  std::future<void> upload_file(
-      const std::string& name, const std::string& data);
+  std::future<void> upload_file(const std::string& name, const std::string& data);
 
   /**
    * @brief Download a previously uploaded file from the server.
@@ -176,4 +173,4 @@ class client : public bison::rmi::client {
   std::optional<bison::rmi::proxy::dynamic> log_proxy_;
 };
 
-}  // namespace bdg::wish
+} // namespace bdg::wish
