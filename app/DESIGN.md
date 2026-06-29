@@ -16,10 +16,9 @@ Shared transport flags (all modes):
 |------|-------------|
 | `--host`, `--port` | TCP socket (default: `0.0.0.0:7070` for server, `127.0.0.1:7070` for client) |
 | `--pipe=<path>` | Named pipe / Unix socket |
-| `--pty` | PTY transport (Linux only) |
 | `--verbose` | Trace RMI messages |
 
-`bridge` mode adds prefixed variants: `--up-host`, `--up-port`, `--up-pipe`, `--up-pty`
+`bridge` mode adds prefixed variants: `--up-host`, `--up-port`, `--up-pipe`
 (upstream) and `--down-host`, `--down-port`, `--down-pipe` (downstream).
 
 ---
@@ -35,7 +34,7 @@ Shared transport flags (all modes):
 else     → print_usage(), exit(1)
 ```
 
-Shared transport flags (`--host`, `--port`, `--pipe`, `--pty`, `--verbose`) are
+Shared transport flags (`--host`, `--port`, `--pipe`, `--verbose`) are
 defined in `main.cpp` so that `bison::app::server_app` can DECLARE them as usual.
 Mode-specific flags are defined in each mode's `.cpp` file.
 
@@ -48,7 +47,7 @@ Mode-specific flags are defined in each mode's `.cpp` file.
 **Sources**: `app/wish_cli/server/wish_server_app.hpp/.cpp`
 
 Behaviour is identical to the original implementation. The SDL3 renderer,
-dockspace, menu bar, and PTY session restart logic are unchanged.
+dockspace, menu bar, and session restart logic are unchanged.
 
 ---
 
@@ -66,7 +65,7 @@ dockspace, menu bar, and PTY session restart logic are unchanged.
 | `--run=<name>` | Launch named app (e.g. `calculator`) |
 | `--timeout=<ms>` | Connection timeout in milliseconds (default: 30000) |
 
-Transport flags `--host`, `--port`, `--pipe`, `--pty` are shared with server mode.
+Transport flags `--host`, `--port`, `--pipe` are shared with server mode.
 
 ### App registry
 
@@ -88,7 +87,7 @@ static const std::map<std::string, AppFn> kApps = {
 wish_client_app::run()
   parse flags
   if --list: print app names, return 0
-  build transport (pty > pipe > tcp)
+  build transport (pipe > tcp)
   create wish_client_session, connect, call run()
     on_session()
       call kApps[--run](session)
@@ -165,7 +164,7 @@ protected:
 
 | Group | Flags |
 |-------|-------|
-| Upstream | `--up-host` (127.0.0.1), `--up-port` (7070), `--up-pipe` (""), `--up-pty` |
+| Upstream | `--up-host` (127.0.0.1), `--up-port` (7070), `--up-pipe` ("") |
 | Downstream | `--down-host` (0.0.0.0), `--down-port` (7071), `--down-pipe` ("") |
 | Common | `--verbose` (shared, DECLARE only) |
 
@@ -181,7 +180,7 @@ subsequent connects/disconnects update its `title` field.
 ```
 wish_bridge_app::run()
   parse flags
-  build upstream transport (up-pty > up-pipe > up-tcp)
+  build upstream transport (up-pipe > up-tcp)
   build downstream server transport (down-pipe > down-tcp)
   bridge::start()   → connects upstream; starts downstream listen loop
   block until SIGINT

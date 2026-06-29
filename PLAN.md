@@ -445,29 +445,13 @@ SDL3 is added via FetchContent (same pattern as imgui) — no git submodule need
 
 ---
 
-## Step 17 — PTY transport integration (Linux only)
-
-**Goal:** The server and client both work with `pty_server_transport` and `pty_client_transport` on Linux builds.
-
-**Deliverables:**
-- `examples/pty_server/main.cpp` — a minimal wish server using PTY transport and `null_renderer` (imgui windowing is a separate concern).
-- `examples/pty_client/main.cpp` — a minimal wish client using PTY transport that imports a `Window → Button` UI, prints a message on `"clicked"`, and exits on Enter.
-- Both examples are conditionally compiled with `if(UNIX)` in `examples/CMakeLists.txt`.
-
-**Tests:**
-- On Linux: `cmake --build build --target pty_server pty_client` succeeds.
-- Manual smoke test (not automated): running `pty_server` and connecting with `pty_client` produces a working session with event delivery.
-- On Windows: the conditional compilation means `pty_server` and `pty_client` targets do not exist; the rest of the build is unaffected.
-
----
-
-## Step 18 — TCP socket integration example
+## Step 17 — TCP socket integration example
 
 **Goal:** The same server logic works over a TCP socket for network deployments.
 
 **Deliverables:**
 - `examples/socket_server/main.cpp` — wish server using `socket_server_transport` on port 7070, `null_renderer`.
-- `examples/socket_client/main.cpp` — wish client using `socket_client_transport` connecting to `127.0.0.1:7070`; imports the same `Window → Button` UI as the PTY example.
+- `examples/socket_client/main.cpp` — wish client using `socket_client_transport` connecting to `127.0.0.1:7070`.
 - Both target Windows and Linux.
 
 **Tests** (`tests/test_socket_transport.cpp`):
@@ -484,6 +468,5 @@ The project is complete when:
 3. `cmake --build build --target calculator` succeeds; running `calculator` opens a window with working arithmetic.
 4. `WISH_ENABLE_SDL3=OFF` build still passes all tests.
 5. The socket example server and client can exchange a `"clicked"` event end-to-end.
-6. On Linux, the PTY example also works.
 7. All public headers have Doxygen `@brief` comments.
 8. `clang-format` reports no diff against the committed sources.

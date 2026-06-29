@@ -8,11 +8,6 @@
 #include "src/rmi/transport/named_pipe_transport.hpp"
 #include "src/rmi/transport/socket_transport.hpp"
 
-#if defined(__linux__) || defined(_WIN32)
-#  include "src/rmi/transport/pty_client_transport.hpp"
-#  include "src/rmi/transport/pty_server_transport.hpp"
-#endif
-
 #include "src/bison/bison.hpp"
 
 #include <gflags/gflags.h>
@@ -31,9 +26,6 @@ DECLARE_bool  (verbose);
 DEFINE_string(up_host, "127.0.0.1", "Upstream server host address");
 DEFINE_int32 (up_port, 7070,        "Upstream server port");
 DEFINE_string(up_pipe, "",           "Upstream named-pipe / Unix-socket path");
-#if defined(__linux__) || defined(_WIN32)
-DEFINE_bool  (up_pty,  false,        "Connect upstream via PTY");
-#endif
 
 // ── Downstream (server side) flags ───────────────────────────────────────────
 DEFINE_string(down_host, "0.0.0.0", "Downstream bind host");
@@ -96,22 +88,6 @@ int wish_bridge_app::run(int argc, char** argv) {
 
   // Build upstream (client-side) transport.
   std::unique_ptr<rmi::transport::client_transport_iface> up_transport;
-#if defined(__linux__) || defined(_WIN32)
-  if (FLAGS_up_pty) {
-#  if defined(_WIN32)
-    char pipe_env[MAX_PATH] = {};
-    if (GetEnvironmentVariableA("BISON_PTY_PIPE", pipe_env, MAX_PATH) == 0) {
-      std::cerr << "[bridge] --up-pty on Windows requires BISON_PTY_PIPE "
-                   "(run from inside a wish-server --pty terminal)\n";
-      return 1;
-    }
-    up_transport =
-        std::make_unique<rmi::transport::named_pipe_client_transport>(pipe_env);
-#  else
-    up_transport = std::make_unique<app::pty_client_transport>();
-#  endif
-  } else
-#endif
   if (!FLAGS_up_pipe.empty()) {
     up_transport = std::make_unique<rmi::transport::named_pipe_client_transport>(
         FLAGS_up_pipe);
@@ -142,11 +118,6 @@ int wish_bridge_app::run(int argc, char** argv) {
       std::cout << "[bridge] downstream on "
                 << FLAGS_down_host << ':' << FLAGS_down_port << '\n';
     }
-#if defined(__linux__) || defined(_WIN32)
-    if (FLAGS_up_pty) {
-      std::cout << "[bridge] upstream via PTY\n";
-    } else
-#endif
     if (!FLAGS_up_pipe.empty()) {
       std::cout << "[bridge] upstream via pipe " << FLAGS_up_pipe << '\n';
     } else {

@@ -214,5 +214,4 @@ The full UI descriptor is assembled at compile time from nine per-tab `constexpr
 
 | Example | Step | Description |
 |---------|------|-------------|
-| `pty_server` / `pty_client` | Step 17 | Minimal server + client communicating over a Linux PTY. Linux only. |
 | `socket_server` / `socket_client` | Step 18 | Server listening on TCP port 7070; client connects over the network. Windows + Linux. |

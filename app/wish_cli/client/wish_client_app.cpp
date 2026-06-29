@@ -9,10 +9,6 @@
 #include "src/rmi/transport/named_pipe_transport.hpp"
 #include "src/rmi/transport/socket_transport.hpp"
 
-#if defined(__linux__) || defined(_WIN32)
-#  include "src/rmi/transport/pty_client_transport.hpp"
-#endif
-
 #include <gflags/gflags.h>
 
 #include <functional>
@@ -24,9 +20,6 @@
 DECLARE_string(host);
 DECLARE_int32 (port);
 DECLARE_string(pipe);
-#if defined(__linux__) || defined(_WIN32)
-DECLARE_bool  (pty);
-#endif
 
 // ── Client-mode flags ─────────────────────────────────────────────────────────
 DEFINE_bool  (list,    false, "List available embedded applications and exit");
@@ -101,24 +94,6 @@ int run_client_mode(int argc, char** argv) {
   try {
     std::unique_ptr<rmi::transport::client_transport_iface> transport;
 
-#if defined(__linux__) || defined(_WIN32)
-    if (FLAGS_pty) {
-#  if defined(_WIN32)
-      // ConPTY is opaque to DCS frames, so the server exposes a named pipe
-      // via BISON_PTY_PIPE (set in the cmd.exe environment at server startup).
-      char pipe_env[MAX_PATH] = {};
-      if (GetEnvironmentVariableA("BISON_PTY_PIPE", pipe_env, MAX_PATH) == 0) {
-        std::cerr << "[wish client] --pty on Windows requires BISON_PTY_PIPE "
-                     "(run from inside a wish-server --pty terminal)\n";
-        return 1;
-      }
-      transport =
-          std::make_unique<rmi::transport::named_pipe_client_transport>(pipe_env);
-#  else
-      transport = std::make_unique<app::pty_client_transport>();
-#  endif
-    } else
-#endif
     if (!FLAGS_pipe.empty()) {
       transport = std::make_unique<rmi::transport::named_pipe_client_transport>(
           FLAGS_pipe);

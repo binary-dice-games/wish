@@ -7,14 +7,14 @@ A remote UI framework built on [bison](https://github.com/binary-dice-games/biso
 ```
 Client App
   └─ wish client lib (bdg::wish::client)
-       └─ bison RMI transport (TCP socket or PTY)
+       └─ bison RMI transport (TCP socket or pipes)
             └─ wish server (bdg::wish::server)
                  ├─ bison RMI server    <- object create / set / get / call / event
                  ├─ wish::renderer      <- abstract; imgui backend by default
                  └─ wish::file_service  <- per-session sandboxed resource store
 ```
 
-- The **server** is transport-agnostic. The same UI class registry and renderer work with PTY (Linux), TCP socket, or any other bison transport.
+- The **server** is transport-agnostic. The same UI class registry and renderer work with TCP socket, or any other bison transport.
 - The **renderer** is an abstract interface (`wish::renderer`). The initial implementation uses imgui; other backends can be added without changing client code.
 - **UI hierarchies** can be built object-by-object in code, or described in JSON/YAML and loaded via the template system.
 - **UI templates** are registered on the server and instantiated by name — the standard way to define a UI hierarchy from a JSON or YAML string.
@@ -28,7 +28,7 @@ cmake -S . -B build
 cmake --build build
 ```
 
-PTY transport is only available on Linux builds. See [docs/building.md](docs/building.md) for prerequisites, CMake options, and platform notes.
+See [docs/building.md](docs/building.md) for prerequisites, CMake options, and platform notes.
 
 ## Quick Start
 
@@ -89,7 +89,7 @@ img.set({{"src"_key, std::string{"logo.png"}}, {"width"_key, 64}, {"height"_key,
 | **File service** | Clients upload/download files via `client::upload_file` / `download_file`. Files are stored in a sandboxed per-session folder, deleted on disconnect. |
 | **Multi-client** | Each connected client has an isolated session: independent object tree, template registry, and resource folder. |
 | **Renderer backends** | `wish::renderer` is an abstract interface. The imgui backend is the default. New backends (Qt, Win32, ...) implement the same interface. |
-| **Transports** | PTY (Linux only) or TCP socket. Chosen at runtime; the renderer and class registry are independent of the transport. |
+| **Transports** | TCP socket. Chosen at runtime; the renderer and class registry are independent of the transport. |
 
 ## Declaring bison RMI Classes (server-side)
 

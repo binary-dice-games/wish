@@ -4,11 +4,11 @@
  * @brief Entry point for the wish CLI — dispatches server / client / bridge.
  *
  * Usage:
- *   wish server  [--host H] [--port P] [--pipe PATH] [--pty]  (pty: Linux/Windows)
+ *   wish server  [--host H] [--port P] [--pipe PATH]
  *                [--title T] [--width W] [--height H] [--verbose]
- *   wish client  [--host H] [--port P] [--pipe PATH] [--pty]
+ *   wish client  [--host H] [--port P] [--pipe PATH]
  *                (--list | --run=<app>) [--timeout MS]
- *   wish bridge  [--up-host H] [--up-port P] [--up-pipe PATH] [--up-pty]
+ *   wish bridge  [--up-host H] [--up-port P] [--up-pipe PATH]
  *                [--down-host H] [--down-port P] [--down-pipe PATH]
  */
 #include "app/wish_cli/server/wish_server_app.hpp"
@@ -25,9 +25,6 @@ DEFINE_string(host,    "0.0.0.0", "Bind/connect host address");
 DEFINE_int32 (port,    7070,      "Listen/connect port");
 DEFINE_string(pipe,    "",        "Named-pipe / Unix-socket path");
 DEFINE_bool  (verbose, false,     "Print session trace messages to stdout");
-#if defined(__linux__) || defined(_WIN32)
-DEFINE_bool  (pty, false, "Use PTY transport");
-#endif
 
 static void print_usage() {
   std::cout <<
@@ -42,9 +39,6 @@ static void print_usage() {
     "  --host H     Host address  (default: 0.0.0.0 for server, 127.0.0.1 for client)\n"
     "  --port P     Port          (default: 7070)\n"
     "  --pipe PATH  Named pipe / Unix socket\n"
-#if defined(__linux__) || defined(_WIN32)
-    "  --pty        PTY transport (Linux, Windows)\n"
-#endif
     "  --verbose    Print RMI trace messages\n"
     "\n"
     "Run 'wish <subcommand> --help' for subcommand-specific flags.\n";

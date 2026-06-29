@@ -10,9 +10,6 @@
 #include "src/rmi/transport/named_pipe_transport.hpp"
 #include "src/rmi/transport/socket_transport.hpp"
 #include "src/rmi/transport/stream_transport.hpp"
-#if defined(__linux__)
-#  include "src/app/pty/pty_client_transport.hpp"
-#endif
 
 #include <condition_variable>
 #include <cstring>
@@ -127,15 +124,6 @@ make_client_transport(wish_transport_t type, const char* address,
       return nullptr;
     }
     return std::make_unique<stream_client_transport>(state->stream_storage_);
-  }
-
-  if (type == WISH_TRANSPORT_PTY) {
-#if defined(__linux__)
-    return std::make_unique<bdg::bison::app::pty_client_transport>();
-#else
-    state->last_error_ = "PTY transport is only supported on Linux";
-    return nullptr;
-#endif
   }
 
   if (type == WISH_TRANSPORT_PIPE) {

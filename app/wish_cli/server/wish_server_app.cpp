@@ -12,9 +12,6 @@
 
 #include <imgui.h>
 
-#if defined(__linux__) || defined(_WIN32)
-#  include "src/rmi/transport/pty_server_transport.hpp"
-#endif
 #if defined(_WIN32)
 #  include "src/rmi/transport/named_pipe_transport.hpp"
 #endif
@@ -35,15 +32,6 @@ DECLARE_string(pipe);
 DEFINE_string(title,  "wish", "Window title");
 DEFINE_int32 (width,  1280,   "Window width in pixels");
 DEFINE_int32 (height, 720,    "Window height in pixels");
-
-#if defined(__linux__) || defined(_WIN32)
-DECLARE_bool  (pty);
-#  if defined(_WIN32)
-DEFINE_string (cmd, "cmd.exe", "Shell command spawned for PTY transport");
-#  else
-DEFINE_string (cmd, "bash",    "Shell command spawned for PTY transport");
-#  endif
-#endif
 
 namespace bdg::wish {
 
@@ -155,96 +143,5 @@ int wish_server_app::run_with_transport(
   server_log_.reset();
   return 0;
 }
-
-// ── PTY support (Linux and Windows) ──────────────────────────────────────────
-
-#if defined(__linux__) || defined(_WIN32)
-
-void wish_server_app::on_listening_pty() const {
-  std::cout << "[wish] PTY server started (cmd: " << FLAGS_cmd
-            << ") - close the window to stop\n"
-            << std::flush;
-}
-
-#if defined(_WIN32)
-
-// On Windows, ConPTY is not a transparent byte pipe — it interprets DCS
-// frames as VT terminal sequences and swallows them before they reach the
-// server.  We therefore use a Windows named pipe as the actual RMI channel
-// and keep ConPTY purely for interactive shell I/O.
-//
-// Setting BISON_PTY_PIPE in the environment before spawning the shell means
-// cmd.exe (and any child wish-client process) inherits it automatically.
-// wish-client --pty on Windows checks that variable and connects via named
-// pipe instead of DCS-over-stdin/stdout.
-int wish_server_app::run_pty() {
-  using bison::app::pty_server_transport;
-  using rmi::transport::named_pipe_server_transport;
-
-  const std::string pipe_name =
-      R"(\\.\pipe\wish-pty-)" + std::to_string(GetCurrentProcessId());
-
-  // Expose pipe name before spawning the shell so cmd.exe inherits it.
-  SetEnvironmentVariableA("BISON_PTY_PIPE", pipe_name.c_str());
-  pty_server_transport shell{FLAGS_cmd};
-  shell.start({});
-  // Clear from our own environment; cmd.exe already has the value.
-  SetEnvironmentVariableA("BISON_PTY_PIPE", nullptr);
-
-  on_listening_pty();
-
-  named_pipe_server_transport pipe_srv{pipe_name};
-
-  server_log_ = make_server_logger();
-  server srv{pipe_srv, make_renderer()};
-  srv.set_logger(server_log_);
-  srv.start();
-  server_log_->info("server started (PTY/pipe)");
-  while (!srv.should_quit())
-    std::this_thread::sleep_for(std::chrono::milliseconds{50});
-  srv.stop();
-  shell.stop();
-  server_log_.reset();
-  return 0;
-}
-
-#else // Linux: DCS frames pass through PTY transparently.
-
-int wish_server_app::run_pty() {
-  using bison::app::pty_server_transport;
-
-  pty_server_transport pty{FLAGS_cmd};
-  bison::dynamic params;
-  params[bdg::bison::key_t{"mode"}] = std::string{"dcs"};
-  pty.start(std::move(params));
-  on_listening_pty();
-
-  struct pty_server_impl : public server {
-    using server::server;
-    pty_server_transport* pty = nullptr;
-   protected:
-    void on_session_destroyed(session&) override {
-      if (pty && pty->is_shell_running())
-        pty->restart_session();
-    }
-  };
-
-  server_log_ = make_server_logger();
-  pty_server_impl srv{pty, make_renderer()};
-  srv.pty = &pty;
-  srv.set_logger(server_log_);
-  srv.start();
-  server_log_->info("server started (PTY)");
-  while (!srv.should_quit())
-    std::this_thread::sleep_for(std::chrono::milliseconds{50});
-  srv.stop();
-  pty.stop();
-  server_log_.reset();
-  return 0;
-}
-
-#endif
-
-#endif // defined(__linux__) || defined(_WIN32)
 
 } // namespace bdg::wish

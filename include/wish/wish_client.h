@@ -97,17 +97,11 @@ typedef enum {
    */
   WISH_TRANSPORT_STREAM = 1,
   /**
-   * PTY channel via stdin/stdout.  The process must be launched as a
-   * subprocess of a wish server started with --pty.
-   * `address` is ignored.  Linux only.
-   */
-  WISH_TRANSPORT_PTY    = 2,
-  /**
    * Named pipe (Windows) or Unix domain socket (Linux/macOS).
    * Windows: `address` = full pipe path, e.g. `\\.\pipe\wish`.
    * Linux/macOS: `address` = socket path, e.g. `/tmp/wish.sock`.
    */
-  WISH_TRANSPORT_PIPE   = 3,
+  WISH_TRANSPORT_PIPE   = 2,
 } wish_transport_t;
 
 /* ── Callbacks ────────────────────────────────────────────────────────────── */

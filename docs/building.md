@@ -141,7 +141,6 @@ Or with Ninja:
 | `--host HOST` | `0.0.0.0` | Bind address for the TCP transport |
 | `--port PORT` | `7070` | TCP listen port |
 | `--pipe PATH` | *(empty)* | Named-pipe / Unix-socket path; when set, TCP is not used |
-| `--pty` | `false` | Use PTY transport — **Linux only** (see below) |
 | `--verbose` | `false` | Print session lifecycle messages to stdout |
 | `--title TITLE` | `wish` | Window title |
 | `--width N` | `1280` | Initial window width in pixels |
@@ -154,23 +153,6 @@ Or with Ninja:
 ```
 
 Close the window, or choose **Server → Quit** from the menu bar, to stop the server.
-
----
-
-## PTY transport (Linux only)
-
-On Linux, the server can spawn a shell process and communicate with it over a pseudo-terminal instead of a socket. This is useful for wrapping interactive TUI programs.
-
-```sh
-./build/wish --pty --cmd bash
-```
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--pty` | `false` | Enable PTY transport |
-| `--cmd CMD` | `bash` | Shell command to spawn |
-
-PTY transport is not available on Windows; the `--pty` and `--cmd` flags are not defined in Windows builds.
 
 ---
 

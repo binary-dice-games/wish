@@ -13,11 +13,6 @@
  * Quick start (socket mode):
  *   wish --port 7070 &
  *   config_panel --address 127.0.0.1:7070
- *
- * PTY mode (Linux — run inside the shell spawned by wish):
- *   wish --pty
- *   # in the bash session:
- *   config_panel --transport pty
  */
 #include <wish/wish_client.h>
 
@@ -26,7 +21,7 @@
 #include <iostream>
 
 DEFINE_string(transport, "socket",
-              "Transport type: socket, pipe, or pty");
+              "Transport type: socket, pipe");
 DEFINE_string(address,   "127.0.0.1:7070",
               "Server address — host:port for socket, path for pipe");
 
@@ -130,13 +125,11 @@ int main(int argc, char* argv[]) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
   wish_transport_t transport = WISH_TRANSPORT_SOCKET;
-  if (FLAGS_transport == "pty") {
-    transport = WISH_TRANSPORT_PTY;
-  } else if (FLAGS_transport == "pipe") {
+  if (FLAGS_transport == "pipe") {
     transport = WISH_TRANSPORT_PIPE;
   } else if (FLAGS_transport != "socket") {
     std::cerr << "[config_panel] unknown transport: " << FLAGS_transport
-              << " (supported: socket, pipe, pty)\n";
+              << " (supported: socket, pipe)\n";
     return 1;
   }
 

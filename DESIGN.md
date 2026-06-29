@@ -19,7 +19,7 @@ The core transport, serialization, and remote-object protocol are entirely provi
 ## Architecture
 
 ```
-+-------------------------+            bison RMI (PTY or TCP or in-memory)
++-------------------------+            bison RMI (TCP or in-memory)
 |      Client App         |  ------------------------------------------>+
 |  bdg::wish::client      |  <-- events (clicked, changed, ...)          |
 |  - register_template()  |  <-- file_service (upload / download)        |
@@ -54,7 +54,7 @@ Multiple clients connect to the same server. Each client gets an independent `wi
 
 Inherits from `bison::rmi::server` directly, so all bison RMI server capabilities (accept loop, worker threads, session context management, `session_contexts()` accessor) are available without delegation or wrapping.
 
-The constructor accepts a `server_transport_iface&` so the same server logic works with PTY, TCP socket, or any other bison transport.
+The constructor accepts a `server_transport_iface&` so the same server logic works with TCP socket, or any other bison transport.
 
 `wish::server` overrides two protected virtual hooks on `bison::rmi::server` â€” `on_session_created(context&)` and `on_session_destroyed(context&)` â€” as `final` methods that bridge into wish session management. Subclasses use the wish-level hooks `on_session_created(session&)` and `on_session_destroyed(session&)` instead.
 
@@ -283,7 +283,7 @@ The `set` method **merges** into the existing style (partial update); `preset` *
 
 ### `bdg::wish::client`
 
-Thin wrapper around `bison::rmi::client` (or `bison::pty_client_app` on Linux). Adds:
+Thin wrapper around `bison::rmi::client`. Adds:
 
 - `register_template(name, descriptor)` -- stores a named JSON/YAML blueprint on the server.
 - `instantiate_template(name)` -- parses and instantiates a registered template, returns `std::future<proxy_map>`.
@@ -352,11 +352,10 @@ render frame: imgui Button("Submit") returns true
 
 | Transport | Class | Platform | Use case |
 |-----------|-------|----------|---------|
-| PTY | `pty_server_transport` / `pty_client_transport` | Linux only | Client launches server as a subprocess via a PTY |
 | TCP socket | `socket_server_transport` / `socket_client_transport` | Windows + Linux | Network or local daemon |
 | In-memory | `memory_server_transport` / `memory_client_transport` | Windows + Linux | Unit tests and self-contained examples (e.g. calculator) |
 
-`bdg::wish::server` accepts a `server_transport_iface&` reference, so transport selection is a runtime decision at the call site. No `#ifdef` inside the server or renderer. PTY-specific code lives only in the PTY transport and the `pty_client_app`/`pty_server_app` scaffolds, which are guarded by `#if defined(__linux__)`.
+`bdg::wish::server` accepts a `server_transport_iface&` reference, so transport selection is a runtime decision at the call site. No `#ifdef` inside the server or renderer.
 
 ---
 
@@ -392,10 +391,9 @@ No session can read or write another session's objects, templates, or resource f
 ```
 wish [OPTIONS]
 
-  --transport socket|pty   Transport (default: socket)
+  --transport socket       Transport (default: socket)
   --host HOST              Bind address (socket, default: 0.0.0.0)
   --port N                 Bind port   (socket, default: 7070)
-  --cmd  CMD               Shell command (pty, default: bash)
   --title TITLE            Window title (default: wish)
   --size WxH               Window dimensions (default: 1280x720)
   --verbose                Log session events to stderr
@@ -404,8 +402,6 @@ wish [OPTIONS]
 ### Lifecycle
 
 `wish::server::start()` is non-blocking — it spawns the render loop thread and the bison accept loop thread, then returns immediately.  The binary polls `srv.should_quit()` (added to `wish::server`) every 50 ms; that flag is set by the render loop when `renderer_->should_quit()` fires (SDL window close).  After the flag is seen, `srv.stop()` closes the accept loop and joins threads.
-
-PTY transport is `#ifdef __linux__`-guarded; on other platforms `--transport pty` prints an error and exits.
 
 ---
 
@@ -435,7 +431,7 @@ Keys are computed via `wish_key(name)` which implements the same FNV-1a 32-bit h
 ## Design Decisions
 
 **Transport-agnostic server.**
-`wish::server` inherits from `bison::rmi::server` and takes a `server_transport_iface&` at construction time rather than embedding a concrete transport type. This lets the same business logic (class registry, renderer, file service) run over PTY, TCP, or any future transport without code duplication. PTY is available as a launch wrapper on Linux.
+`wish::server` inherits from `bison::rmi::server` and takes a `server_transport_iface&` at construction time rather than embedding a concrete transport type. This lets the same business logic (class registry, renderer, file service) run over TCP, or any future transport without code duplication.
 
 **Abstract renderer interface.**
 Decoupling the render pipeline from imgui means backends can be swapped without touching client code or the class registry. Immediate-mode (imgui) and retained-mode (Qt, Win32) backends share the same interface; the retained-mode case would add a reconciliation pass inside `render_node`.
