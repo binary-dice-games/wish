@@ -17,18 +17,3 @@ if(WISH_ENABLE_SDL3)
   )
   set_target_properties(demo PROPERTIES FOLDER examples)
 endif()
-
-# config_panel demonstrates the C ABI; requires the wish_client shared library.
-if(WISH_BUILD_SHARED)
-  add_executable(config_panel config_panel/config_panel.cpp)
-  target_link_libraries(config_panel PRIVATE wish_client_dll gflags)
-  target_include_directories(config_panel PRIVATE ${CMAKE_SOURCE_DIR}/include)
-  set_target_properties(config_panel PROPERTIES FOLDER examples)
-
-  # Copy wish_client.dll next to config_panel.exe so it can be run in-place.
-  add_custom_command(TARGET config_panel POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-      $<TARGET_FILE:wish_client_dll>
-      $<TARGET_FILE_DIR:config_panel>
-  )
-endif()
