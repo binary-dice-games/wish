@@ -1,7 +1,7 @@
 // MIT License © 2025 Binary Dice Games
 /// @file sdl3_renderer.cpp
 /// @brief Implementation of wish::sdl3_renderer.
-#include <wish/sdl3_renderer.hpp>
+#include <sdl3_renderer.hpp>
 
 #ifdef WISH_SDL3_ENABLED
 

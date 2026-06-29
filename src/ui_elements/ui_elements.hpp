@@ -4,7 +4,7 @@
 ///        Not part of the public wish API.
 #pragma once
 
-#include <wish/ui_element.hpp>
+#include <ui_element.hpp>
 #include "bison_attributes.hpp"
 
 namespace bdg::wish {

@@ -36,7 +36,7 @@ Read `DESIGN.md` in this directory before starting any step.
 **Goal:** The `form` base class is defined and its contract (context injection, event emission, internal root key) is testable in isolation.
 
 **Deliverables:**
-- `include/wish/form.hpp` — declares:
+- `src/form.hpp` — declares:
   ```cpp
   namespace bdg::wish {
 
@@ -79,7 +79,7 @@ Read `DESIGN.md` in this directory before starting any step.
   - `form::form(dynamic&& base)` — delegates to `dynamic(std::move(base))`.
   - `form::init(ctx, sess)` — stores `ctx` and `sess`, then calls `on_init()`.
   - `form::emit(event_name, payload)` — calls `ctx_->emit_event(id(), event_name, payload)`.
-- `include/wish/wish.hpp` — add `#include <wish/form.hpp>`.
+- `src/wish.hpp` — add `#include <form.hpp>`.
 
 **Tests** (`tests/test_form_base.cpp`):
 - A concrete `stub_form : public form` that overrides `on_init()` with `init_called_ = true` and stores `&ctx()` + `&sess()`.
@@ -103,7 +103,7 @@ Read `DESIGN.md` in this directory before starting any step.
   }
   ```
   This single branch handles every current and future `form` subclass with no per-class changes to the server.
-- `include/wish/server.hpp` — add `#include <wish/form.hpp>`.
+- `src/server.hpp` — add `#include <form.hpp>`.
 
 **Tests** (`tests/test_form_base.cpp` — extend):
 - Register `stub_form` as a bison class `"__StubForm"` in `"wish"`.

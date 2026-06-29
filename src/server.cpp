@@ -1,13 +1,13 @@
 // MIT License © 2025 Binary Dice Games
 /// @file server.cpp
 /// @brief Implementation of wish::server.
-#include <wish/file_service.hpp>
-#include <wish/form.hpp>
-#include <wish/logger.hpp>
-#include <wish/registry.hpp>
-#include <wish/server.hpp>
-#include <wish/style_service.hpp>
-#include <wish/ui_root.hpp>
+#include <file_service.hpp>
+#include <forms/form.hpp>
+#include <logger.hpp>
+#include <registry.hpp>
+#include <server.hpp>
+#include <style_service.hpp>
+#include <ui_root.hpp>
 
 #include "template_handler.hpp"
 

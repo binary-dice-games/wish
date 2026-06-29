@@ -1,7 +1,7 @@
 // MIT License © 2025 Binary Dice Games
 #include <gtest/gtest.h>
 
-#include <wish/session.hpp>
+#include <session.hpp>
 
 #include <filesystem>
 

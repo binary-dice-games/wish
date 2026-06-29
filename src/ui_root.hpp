@@ -3,7 +3,7 @@
 /// @brief Common base for top-level renderable objects that receive widget events.
 #pragma once
 
-#include <wish/ui_element.hpp>
+#include <ui_element.hpp>
 
 namespace bdg::wish {
 

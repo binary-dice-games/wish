@@ -1,7 +1,7 @@
 // MIT License © 2025 Binary Dice Games
 /// @file logger.cpp
 /// @brief Per-session logging RMI service implementation.
-#include <wish/logger.hpp>
+#include <logger.hpp>
 
 #include <chrono>
 #include <ctime>

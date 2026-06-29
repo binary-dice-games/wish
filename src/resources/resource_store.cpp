@@ -1,7 +1,7 @@
 // MIT License © 2025 Binary Dice Games
 /// @file resource_store.cpp
 /// @brief Read-only resource store backed by the generated resource table.
-#include <wish/resource_store.hpp>
+#include <resource_store.hpp>
 
 #include "resource_entry.hpp"
 

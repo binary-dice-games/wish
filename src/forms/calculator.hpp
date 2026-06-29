@@ -3,8 +3,8 @@
 /// @brief Server-side Calculator form.
 #pragma once
 
-#include <wish/form.hpp>
-#include <wish/ui_element.hpp>
+#include <forms/form.hpp>
+#include <ui_element.hpp>
 
 namespace bdg::wish {
 

@@ -5,8 +5,8 @@
 
 #include "src/bison/bison_object.hpp"
 
-#include <wish/file_service.hpp>
-#include <wish/style_service.hpp>
+#include <file_service.hpp>
+#include <style_service.hpp>
 
 #include <TextEditor.h>
 #include <imgui.h>

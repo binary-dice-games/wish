@@ -3,7 +3,7 @@
 /// @brief Per-client state container for an active wish session.
 #pragma once
 
-#include <wish/ui_importer.hpp>
+#include <ui_importer.hpp>
 
 #include "src/bison/bison_common.hpp"
 #include "src/bison/bison_sync.hpp"

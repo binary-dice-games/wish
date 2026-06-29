@@ -6,8 +6,8 @@
 #include "src/bison/bison_object.hpp"
 #include "src/rmi/shared/ids.hpp"
 
-#include <wish/file_service.hpp>
-#include <wish/ui_importer.hpp>
+#include <file_service.hpp>
+#include <ui_importer.hpp>
 
 #include <regex>
 

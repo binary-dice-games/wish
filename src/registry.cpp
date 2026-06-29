@@ -1,16 +1,16 @@
 // MIT License © 2025 Binary Dice Games
 /// @file registry.cpp
-#include <wish/file_service.hpp>
-#include <wish/logger.hpp>
-#include <wish/registry.hpp>
-#include <wish/style_service.hpp>
+#include <file_service.hpp>
+#include <logger.hpp>
+#include <registry.hpp>
+#include <style_service.hpp>
 
 #include "forms/calculator.hpp"
 #include "forms/file_dialog.hpp"
-#include "plot3d_elements.hpp"
-#include "plot_elements.hpp"
+#include "plot3d_elements/plot3d_elements.hpp"
+#include "plot_elements/plot_elements.hpp"
 #include "template_handler.hpp"
-#include "ui_elements.hpp"
+#include "ui_elements/ui_elements.hpp"
 #ifdef WISH_MODULE_DESKTOP
 #include "forms/desktop/desktop_module.hpp"
 #endif

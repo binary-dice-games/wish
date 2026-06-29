@@ -10,7 +10,7 @@
 
 #ifdef WISH_IMGUI_ENABLED
 
-#include <wish/renderer.hpp>
+#include <renderer.hpp>
 
 #include <implot.h>
 

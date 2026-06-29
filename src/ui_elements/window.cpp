@@ -1,11 +1,11 @@
 // MIT License © 2025 Binary Dice Games
 /// @file window.cpp
 /// @brief Registers the Window prototype in the "wish" bison namespace.
-#include <wish/window.hpp>
+#include "ui_elements/window.hpp"
 
 #include "src/bison/bison_object.hpp"
 
-#include "ui_elements.hpp"
+#include "ui_elements/ui_elements.hpp"
 
 namespace bdg::wish {
 

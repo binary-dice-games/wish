@@ -19,7 +19,7 @@ the user selecting the active backend at runtime via `--renderer [sdl3|web]`.
 ### Class Hierarchy
 
 ```
-renderer            (abstract, include/wish/renderer.hpp)
+renderer            (abstract, src/renderer.hpp)
   └─ imgui_renderer (headless ImGui dispatch, src/imgui/imgui_renderer.cpp)
        ├─ sdl3_renderer   (existing windowed backend)
        └─ web_renderer    (new: headless + embedded HTTP/WebSocket server)
@@ -32,7 +32,7 @@ frame-boundary methods.
 ### Key Files
 
 ```
-include/wish/web_renderer.hpp     public class declaration
+src/web_renderer.hpp     public class declaration
 src/web_renderer.cpp              implementation + embedded browser client
 src/web/DESIGN.md                 this document
 tests/test_web_renderer.cpp       unit tests (headless, no browser required)
@@ -219,7 +219,7 @@ if(WISH_ENABLE_IMGUI AND WISH_ENABLE_WEB)
   FetchContent_MakeAvailable(httplib)
 
   target_sources(wish_server PRIVATE
-    include/wish/web_renderer.hpp
+    src/web_renderer.hpp
     src/web_renderer.cpp
   )
   target_compile_definitions(wish_server PUBLIC WISH_WEB_ENABLED)

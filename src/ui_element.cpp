@@ -1,7 +1,7 @@
 // MIT License © 2025 Binary Dice Games
 /// @file ui_element.cpp
 /// @brief Implementation of the ui_element base class.
-#include <wish/ui_element.hpp>
+#include <ui_element.hpp>
 
 #include "src/bison/bison_object.hpp"
 

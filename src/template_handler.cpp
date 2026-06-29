@@ -1,10 +1,10 @@
 // MIT License © 2025 Binary Dice Games
 /// @file template_handler.cpp
 /// @brief Implementation of the server-side __WishTemplate RMI class.
-#include "template_handler.hpp"
+#include <template_handler.hpp>
 
-#include <wish/ui_importer.hpp>
-#include <wish/ui_root.hpp>
+#include <ui_importer.hpp>
+#include <ui_root.hpp>
 
 #include "src/rmi/shared/ids.hpp"
 

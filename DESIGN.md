@@ -378,7 +378,7 @@ No session can read or write another session's objects, templates, or resource f
 |-------|-----------|
 | C++ namespace | `bdg::wish` |
 | Bison class namespace key | `"wish"_key` (FNV-1a hash of `"wish"`) |
-| Public header | `include/wish/wish.hpp` |
+| Public header | `src/wish.hpp` |
 
 ---
 
@@ -407,7 +407,7 @@ wish [OPTIONS]
 
 ## C Client ABI (`wish_client_c.h` / `libwish_client`)
 
-`include/wish/wish_client_c.h` and `src/wish_client_c.cpp` provide a stable C ABI for the client side.  The `WISH_BUILD_SHARED` CMake option (default OFF) builds `libwish_client.so` / `wish_client.dll`.
+`src/wish_client_c.h` and `src/wish_client_c.cpp` provide a stable C ABI for the client side.  The `WISH_BUILD_SHARED` CMake option (default OFF) builds `libwish_client.so` / `wish_client.dll`.
 
 ### Design
 

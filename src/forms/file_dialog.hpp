@@ -3,8 +3,8 @@
 /// @brief Server-side FileDialog form class.
 #pragma once
 
-#include <wish/form.hpp>
-#include <wish/ui_element.hpp>
+#include <forms/form.hpp>
+#include <ui_element.hpp>
 
 #include <regex>
 #include <string>

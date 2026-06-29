@@ -1,7 +1,7 @@
 // MIT License © 2025 Binary Dice Games
 #include <gtest/gtest.h>
 
-#include <wish/resource_store.hpp>
+#include <resources/resource_store.hpp>
 
 using bdg::wish::resource_store::find;
 using bdg::wish::resource_store::is_resource_path;

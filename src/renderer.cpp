@@ -1,7 +1,7 @@
 // MIT License © 2025 Binary Dice Games
 /// @file renderer.cpp
 /// @brief Implementation of render_children.
-#include <wish/renderer.hpp>
+#include <renderer.hpp>
 
 namespace bdg::wish {
 

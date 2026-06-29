@@ -1,7 +1,7 @@
 // MIT License © 2025 Binary Dice Games
 /// @file form.cpp
 /// @brief Implementation of the wish::form base class.
-#include <wish/form.hpp>
+#include "forms/form.hpp"
 
 namespace bdg::wish {
 

@@ -3,7 +3,7 @@
 /// @brief Dear ImGui concrete renderer backend for wish.
 #pragma once
 
-#include <wish/renderer.hpp>
+#include <renderer.hpp>
 
 #include <imgui.h>
 

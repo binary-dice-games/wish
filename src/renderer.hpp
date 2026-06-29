@@ -3,8 +3,8 @@
 /// @brief Abstract renderer interface and render-children utility for wish.
 #pragma once
 
-#include <wish/session.hpp>
-#include <wish/ui_element.hpp>
+#include <session.hpp>
+#include <ui_element.hpp>
 
 namespace bdg::wish {
 

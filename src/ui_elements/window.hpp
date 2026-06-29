@@ -3,7 +3,7 @@
 /// @brief Concrete ui_root for the "Window" bison class.
 #pragma once
 
-#include <wish/ui_root.hpp>
+#include <ui_root.hpp>
 
 namespace bdg::wish {
 

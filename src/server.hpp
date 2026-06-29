@@ -5,9 +5,9 @@
  */
 #pragma once
 
-#include <wish/logger.hpp>
-#include <wish/renderer.hpp>
-#include <wish/session.hpp>
+#include <logger.hpp>
+#include <renderer.hpp>
+#include <session.hpp>
 #include "src/rmi/server/server.hpp"
 
 #include <atomic>

@@ -3,7 +3,7 @@
 /// @brief Server-side __WishTemplate RMI object for named UI templates.
 #pragma once
 
-#include <wish/session.hpp>
+#include <session.hpp>
 
 #include "src/bison/bison_object.hpp"
 #include "src/rmi/server/context.hpp"

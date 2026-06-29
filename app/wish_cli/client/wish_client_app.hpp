@@ -5,7 +5,7 @@
  */
 #pragma once
 
-#include <wish/client.hpp>
+#include <client.hpp>
 
 #include <future>
 #include <memory>

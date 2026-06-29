@@ -5,7 +5,7 @@
 /// JSON is parsed with nlohmann/json (preserving string keys for name_map
 /// path building).  YAML is parsed with libyaml into an equivalent JSON
 /// representation and then fed through the same JSON processing path.
-#include <wish/ui_importer.hpp>
+#include <ui_importer.hpp>
 
 #include "src/bison/bison_object.hpp"
 

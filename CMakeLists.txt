@@ -127,13 +127,13 @@ add_custom_command(
 # ── wish_client — lightweight C++ client (no renderer, no UI elements) ────────
 
 add_library(wish_client STATIC
-  include/wish/client.hpp
+  src/client.hpp
   src/client.cpp
 )
 set_target_properties(wish_client PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(wish_client
     PUBLIC
-        include
+        src
         ${CMAKE_CURRENT_SOURCE_DIR}/extern/bison
 )
 target_link_libraries(wish_client PUBLIC bison)
@@ -141,18 +141,18 @@ target_link_libraries(wish_client PUBLIC bison)
 # ── wish_server — server, renderer, and all UI elements (heavy stack) ─────────
 
 add_library(wish_server STATIC
-  include/wish/wish.hpp
-  include/wish/resource_store.hpp
-  include/wish/registry.hpp
-  include/wish/ui_importer.hpp
-  include/wish/ui_element.hpp
-  include/wish/session.hpp
-  include/wish/renderer.hpp
-  include/wish/file_service.hpp
-  include/wish/logger.hpp
-  include/wish/style_service.hpp
-  include/wish/server.hpp
-  include/wish/form.hpp
+  src/wish.hpp
+  src/resources/resource_store.hpp
+  src/registry.hpp
+  src/ui_importer.hpp
+  src/ui_element.hpp
+  src/session.hpp
+  src/renderer.hpp
+  src/file_service.hpp
+  src/logger.hpp
+  src/style_service.hpp
+  src/server.hpp
+  src/forms/form.hpp
   src/wish.cpp
   src/resources/resource_store.cpp
   "${WISH_EMBEDDED_CPP}"
@@ -216,7 +216,7 @@ endif()
 
 if(WISH_ENABLE_IMGUI)
   target_sources(wish_server PRIVATE
-    include/wish/imgui_renderer.hpp
+    src/imgui/imgui_renderer.hpp
     src/imgui/imgui_renderer.cpp
     src/imgui/imgui_ui_renderer.hpp
     src/imgui/imgui_ui_renderer.cpp
@@ -233,7 +233,7 @@ endif()
 
 if(WISH_ENABLE_IMGUI AND WISH_ENABLE_SDL3)
   target_sources(wish_server PRIVATE
-    include/wish/sdl3_renderer.hpp
+    src/sdl3_renderer.hpp
     src/sdl3_renderer.cpp
   )
   target_compile_definitions(wish_server PUBLIC WISH_SDL3_ENABLED)
@@ -250,7 +250,7 @@ target_include_directories(wish_server
         ${CMAKE_CURRENT_SOURCE_DIR}/extern/bison/extern/json/single_include
         ${CMAKE_CURRENT_SOURCE_DIR}/extern/bison/extern/yaml/include
     PUBLIC
-        include
+        src
         # Exposes bison's C++ headers (src/bison/bison_object.hpp, etc.)
         # using the same include convention as bison's own examples and tests.
         # PUBLIC because wish's own public headers reference bison types.
@@ -285,7 +285,7 @@ endif()
 if(WISH_BUILD_SHARED)
   add_library(wish_client_dll SHARED
       src/wish_client_c.cpp
-      include/wish/wish_client_c.h)
+      include/wish_client_c.h)
   target_compile_definitions(wish_client_dll PRIVATE WISH_CLIENT_BUILDING_DLL)
   target_link_libraries(wish_client_dll PUBLIC wish_client)
   target_include_directories(wish_client_dll

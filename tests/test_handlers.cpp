@@ -1,8 +1,8 @@
 // MIT License © 2025 Binary Dice Games
 #include <gtest/gtest.h>
 
-#include <wish/client.hpp>
-#include <wish/server.hpp>
+#include <client.hpp>
+#include <server.hpp>
 
 #include "src/rmi/rmi.hpp"
 

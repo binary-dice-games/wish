@@ -1,7 +1,7 @@
 // MIT License © 2025 Binary Dice Games
 /// @file session.cpp
 /// @brief Implementation of the wish::session lifecycle.
-#include <wish/session.hpp>
+#include <session.hpp>
 
 #include "src/bison/bison_object.hpp"
 

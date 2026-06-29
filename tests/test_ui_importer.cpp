@@ -1,8 +1,8 @@
 // MIT License © 2025 Binary Dice Games
 #include <gtest/gtest.h>
 
-#include <wish/registry.hpp>
-#include <wish/ui_importer.hpp>
+#include <registry.hpp>
+#include <ui_importer.hpp>
 #include "src/bison/bison_object.hpp"
 
 using namespace bdg::bison;

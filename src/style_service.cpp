@@ -1,7 +1,7 @@
 // MIT License © 2025 Binary Dice Games
 /// @file style_service.cpp
 /// @brief Per-session style/theme RMI service implementation.
-#include <wish/style_service.hpp>
+#include <style_service.hpp>
 
 #include <stdexcept>
 #include <string>

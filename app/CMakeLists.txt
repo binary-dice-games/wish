@@ -8,7 +8,7 @@ if(WISH_ENABLE_IMGUI AND WISH_ENABLE_SDL3)
       wish_cli/bridge/wish_bridge_app.cpp)
   target_include_directories(wish-cli PRIVATE
       ${CMAKE_SOURCE_DIR}               # for "app/wish_cli/..." and "src/..."
-      ${CMAKE_SOURCE_DIR}/include       # for <wish/...>
+      ${CMAKE_SOURCE_DIR}/src           # for <wish/...>
       ${CMAKE_SOURCE_DIR}/extern/bison  # for "src/app/server/server_app.hpp" etc.
   )
   target_link_libraries(wish-cli PRIVATE wish gflags)
@@ -22,7 +22,7 @@ if(WISH_ENABLE_IMGUI AND WISH_ENABLE_SDL3)
       wish_cli/server/standalone_main.cpp)
   target_include_directories(wish-server PRIVATE
       ${CMAKE_SOURCE_DIR}
-      ${CMAKE_SOURCE_DIR}/include
+      ${CMAKE_SOURCE_DIR}/src
       ${CMAKE_SOURCE_DIR}/extern/bison
   )
   target_link_libraries(wish-server PRIVATE wish_server gflags)
@@ -36,7 +36,7 @@ add_executable(wish-client
     wish_cli/client/standalone_main.cpp)
 target_include_directories(wish-client PRIVATE
     ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/extern/bison
 )
 target_link_libraries(wish-client PRIVATE wish_client gflags)
@@ -48,7 +48,7 @@ add_executable(wish-bridge
     wish_cli/bridge/standalone_main.cpp)
 target_include_directories(wish-bridge PRIVATE
     ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/extern/bison
 )
 target_link_libraries(wish-bridge PRIVATE bison gflags)

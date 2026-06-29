@@ -7,7 +7,7 @@
 /// name map for O(1) access to any named node.
 #pragma once
 
-#include <wish/ui_element.hpp>
+#include <ui_element.hpp>
 
 #include <string>
 #include <unordered_map>

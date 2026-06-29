@@ -6,7 +6,7 @@
 
 #ifdef WISH_SDL3_ENABLED
 
-#include <wish/imgui_renderer.hpp>
+#include <imgui/imgui_renderer.hpp>
 
 #include <SDL3/SDL.h>
 

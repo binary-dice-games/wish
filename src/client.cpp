@@ -1,7 +1,7 @@
 // MIT License © 2025 Binary Dice Games
 /// @file client.cpp
 /// @brief Implementation of wish::client.
-#include <wish/client.hpp>
+#include <client.hpp>
 
 #include "src/bison/bison.hpp"
 

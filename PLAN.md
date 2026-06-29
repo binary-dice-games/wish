@@ -9,7 +9,7 @@ Each step produces a self-contained, testable deliverable. Steps are ordered so 
 **Goal:** The project builds and the test harness runs, even with empty implementation stubs.
 
 **Deliverables:**
-- `include/wish/wish.hpp` — top-level umbrella header (empty `bdg::wish` namespace declaration).
+- `src/wish.hpp` — top-level umbrella header (empty `bdg::wish` namespace declaration).
 - `src/wish.cpp` — empty translation unit that includes `wish.hpp`.
 - `tests/CMakeLists.txt` — links against `wish` and `bison`; discovers tests with `gtest_discover_tests`.
 - `tests/test_stub.cpp` — single smoke test `TEST(Stub, Builds) { SUCCEED(); }`.
@@ -27,10 +27,10 @@ Each step produces a self-contained, testable deliverable. Steps are ordered so 
 **Goal:** All built-in UI element classes exist in the `"wish"` bison namespace and can be instantiated.
 
 **Deliverables:**
-- `include/wish/registry.hpp` — declares `void register_all()`.
+- `src/registry.hpp` — declares `void register_all()`.
 - `src/registry.cpp` — implements `register_all()` by calling one `register_*` function per element type (defined in the files below). Registration order must respect the parent-before-child dependency: `Element` first, then `Layout`, then all leaf classes.
 - `src/ui_elements/element.cpp` — registers the `Element` base prototype: fields `visible` (bool, true), `children` (dynamic, {}), and `order` (int32, 0). The `order` field controls render sequence within a parent's children; lower values render first. Also declares and exposes `bison::key_t element_key()` so child registrations can reference the parent key without hard-coding it.
-- `include/wish/ui_element.hpp` + `src/ui_element.cpp` — the `ui_element` C++ class:
+- `src/ui_element.hpp` + `src/ui_element.cpp` — the `ui_element` C++ class:
   - `class ui_element : public bison::dynamic` — all wish UI objects are instances of this type.
   - `explicit ui_element(bison::dynamic&& base)` — constructs from a base `dynamic` value produced by `dynamic::instantiate`.
   - `void refresh_children_order()` — reads each child's `order` field, stable-sorts ascending, and caches the sorted key sequence in a reserved `__children_order__` field on `*this`. Call once after import and again whenever an `order` field is mutated at runtime.
@@ -68,7 +68,7 @@ Each step produces a self-contained, testable deliverable. Steps are ordered so 
 **Goal:** A descriptor string (JSON or YAML) is parsed into a live tree of bison `dynamic` instances, all registered in the `"wish"` namespace.
 
 **Deliverables:**
-- `include/wish/ui_importer.hpp` — declares:
+- `src/ui_importer.hpp` — declares:
   ```cpp
   // name_map: flat map from element path ("body.row.ok") to the ui_element_ptr
   using name_map = std::unordered_map<std::string, ui_element_ptr>;
@@ -102,7 +102,7 @@ Each step produces a self-contained, testable deliverable. Steps are ordered so 
 **Goal:** A session object holds a client's object tree, template registry, and resource directory, and manages their lifetimes.
 
 **Deliverables:**
-- `include/wish/session.hpp` — declares:
+- `src/session.hpp` — declares:
   ```cpp
   struct session {
     bison::key_t                                   id;
@@ -134,7 +134,7 @@ Each step produces a self-contained, testable deliverable. Steps are ordered so 
 **Goal:** Define the contract that all rendering backends must satisfy; provide a null renderer for use in tests that don't need actual drawing.
 
 **Deliverables:**
-- `include/wish/renderer.hpp` — declares:
+- `src/renderer.hpp` — declares:
   ```cpp
   class renderer {
   public:
@@ -172,7 +172,7 @@ Each step produces a self-contained, testable deliverable. Steps are ordered so 
 **Goal:** Clients can upload and download files through a bison RMI object; files are stored in the session's resource directory and cleaned up automatically.
 
 **Deliverables:**
-- `include/wish/file_service.hpp` — declares `void register_file_service(session& s)`.
+- `src/file_service.hpp` — declares `void register_file_service(session& s)`.
 - `src/file_service.cpp` — implements `register_file_service`:
   - Registers a `"__WishFileSystem"_key` class in `"wish"_key` (once, idempotent).
   - Instantiates a `file_service : public bison::dynamic` (follow the `ui_element` pattern: subclass `dynamic`, construct from `dynamic&&`, add member functions for the service logic). This gives the file service typed methods and clean encapsulation rather than free functions that take `dynamic*`.
@@ -198,7 +198,7 @@ Each step produces a self-contained, testable deliverable. Steps are ordered so 
 **Goal:** A transport-agnostic server accepts client connections, manages sessions, drives the render loop, and routes RMI operations to the correct session.
 
 **Deliverables:**
-- `include/wish/server.hpp` — declares:
+- `src/server.hpp` — declares:
   ```cpp
   class server : public bison::rmi::server {
   public:
@@ -241,7 +241,7 @@ applications subclass it and override `on_session()`.
 at `00f9203`; submodule updated). No other bison changes required.
 
 **Deliverables:**
-- `include/wish/client.hpp` — declares:
+- `src/client.hpp` — declares:
   ```cpp
   class client : public bison::rmi::client {
   public:
@@ -282,7 +282,7 @@ at `00f9203`; submodule updated). No other bison changes required.
 **Goal:** A concrete `wish::renderer` that draws all non-layout UI elements using Dear ImGui. No windowing backend yet (uses an offscreen context for testing).
 
 **Deliverables:**
-- `include/wish/imgui_renderer.hpp` — declares `class imgui_renderer : public renderer`.
+- `src/imgui_renderer.hpp` — declares `class imgui_renderer : public renderer`.
 - `src/imgui_renderer.cpp` — implements `render_node(const ui_element& node, session& s)` for all leaf classes. Dispatch is on `node.as<bison::key_t>(bison::dynamic::CLASS)`:
   - `Window` → `ImGui::Begin` / `ImGui::End`; after `Begin`, calls `render_children(r, node, s)`.
   - `Label` → `ImGui::Text`.
@@ -388,7 +388,7 @@ SDL3 is added via FetchContent (same pattern as imgui) — no git submodule need
 **Why lifecycle hooks instead of constructor init:** SDL3 requires that window, renderer, and events are all driven from the same thread. Deferring initialization to `setup()` — called from the render thread before the first frame — keeps all SDL objects created and used on one thread without extra synchronization.
 
 **Deliverables:**
-- `include/wish/renderer.hpp` — add three virtual methods with default no-op/false bodies:
+- `src/renderer.hpp` — add three virtual methods with default no-op/false bodies:
   ```cpp
   virtual void setup() {}
   virtual void teardown() {}
@@ -408,7 +408,7 @@ SDL3 is added via FetchContent (same pattern as imgui) — no git submodule need
 **Goal:** Concrete renderer that creates an SDL3 window with Dear ImGui rendered via the SDL3 backend; real texture loading from BMP files in the session resource directory.
 
 **Deliverables:**
-- `include/wish/sdl3_renderer.hpp` — declares `class sdl3_renderer : public imgui_renderer`; constructor takes optional `title`, `width`, `height`; guards with `#ifdef WISH_SDL3_ENABLED`.
+- `src/sdl3_renderer.hpp` — declares `class sdl3_renderer : public imgui_renderer`; constructor takes optional `title`, `width`, `height`; guards with `#ifdef WISH_SDL3_ENABLED`.
 - `src/sdl3_renderer.cpp` — implements:
   - `setup()`: `SDL_Init`, `SDL_CreateWindow`, `SDL_CreateRenderer`, `ImGui::CreateContext`, `ImGui_ImplSDL3_InitForSDLRenderer`, `ImGui_ImplSDLRenderer3_Init`, build font atlas.
   - `teardown()`: free cached SDL textures, `ImGui_ImplSDLRenderer3_Shutdown`, `ImGui_ImplSDL3_Shutdown`, `ImGui::DestroyContext`, `SDL_DestroyRenderer`, `SDL_DestroyWindow`, `SDL_Quit`.

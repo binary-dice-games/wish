@@ -1,9 +1,9 @@
 // MIT License © 2025 Binary Dice Games
 #include <gtest/gtest.h>
 
-#include <wish/imgui_renderer.hpp>
-#include <wish/registry.hpp>
-#include <wish/ui_importer.hpp>
+#include <imgui/imgui_renderer.hpp>
+#include <registry.hpp>
+#include <ui_importer.hpp>
 
 #include "src/bison/bison_common.hpp"
 #include "src/bison/bison_object.hpp"

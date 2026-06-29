@@ -1,7 +1,7 @@
 // MIT License (c) 2025 Binary Dice Games
 /// @file file_service.cpp
 /// @brief Implementation of the wish file service.
-#include <wish/file_service.hpp>
+#include <file_service.hpp>
 
 #include <fstream>
 #include <stdexcept>

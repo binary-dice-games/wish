@@ -5,9 +5,9 @@
 //
 // Usage: demo [--verbose] [--theme dark|light|classic]
 
-#include <wish/client.hpp>
-#include <wish/sdl3_renderer.hpp>
-#include <wish/server.hpp>
+#include <client.hpp>
+#include <sdl3_renderer.hpp>
+#include <server.hpp>
 
 #include "src/rmi/rmi.hpp" // memory_server_transport / memory_client_transport
 

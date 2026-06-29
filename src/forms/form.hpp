@@ -3,8 +3,8 @@
 /// @brief Base class for all wish high-level form objects.
 #pragma once
 
-#include <wish/session.hpp>
-#include <wish/ui_root.hpp>
+#include <session.hpp>
+#include <ui_root.hpp>
 
 #include "src/bison/bison_object.hpp"
 #include "src/rmi/server/context.hpp"
