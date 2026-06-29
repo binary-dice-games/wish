@@ -285,7 +285,7 @@ endif()
 if(WISH_BUILD_SHARED)
   add_library(wish_client_dll SHARED
       src/wish_client_c.cpp
-      include/wish/wish_client.h)
+      include/wish/wish_client_c.h)
   target_compile_definitions(wish_client_dll PRIVATE WISH_CLIENT_BUILDING_DLL)
   target_link_libraries(wish_client_dll PUBLIC wish_client)
   target_include_directories(wish_client_dll

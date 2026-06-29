@@ -405,9 +405,9 @@ wish [OPTIONS]
 
 ---
 
-## C Client ABI (`wish_client.h` / `libwish_client`)
+## C Client ABI (`wish_client_c.h` / `libwish_client`)
 
-`include/wish/wish_client.h` and `src/wish_client_c.cpp` provide a stable C ABI for the client side.  The `WISH_BUILD_SHARED` CMake option (default OFF) builds `libwish_client.so` / `wish_client.dll`.
+`include/wish/wish_client_c.h` and `src/wish_client_c.cpp` provide a stable C ABI for the client side.  The `WISH_BUILD_SHARED` CMake option (default OFF) builds `libwish_client.so` / `wish_client.dll`.
 
 ### Design
 

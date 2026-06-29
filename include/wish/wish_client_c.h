@@ -1,6 +1,6 @@
 // MIT License © 2025 Binary Dice Games
 /**
- * @file wish_client.h
+ * @file wish_client_c.h
  * @brief C ABI for the wish client — connects to a running wish server and
  *        drives UI templates from any C-compatible language or runtime.
  *
