@@ -4,6 +4,7 @@ build/
 build-linux/
 build_asan/
 __pycache__/
+_deps/
 *.pyc
 *.pyo
 # Runtime-generated files
