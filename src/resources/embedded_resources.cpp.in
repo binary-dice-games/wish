@@ -1,0 +1,19 @@
+// MIT License © 2025 Binary Dice Games
+// GENERATED — do not edit. Re-run CMake to regenerate.
+
+#include "resource_entry.hpp"
+
+#include <cstddef>
+
+// Distinct hex byte arrays for each file are dynamically injected here
+@CPP_CONTENT@
+
+namespace bdg::wish {
+
+// Map all generated asset arrays into the external resource table configuration
+extern const resource_entry g_resource_table[] = {
+@TABLE_ENTRIES@};
+
+extern const std::size_t g_resource_count = @RESOURCE_COUNT@;
+
+} // namespace bdg::wish

@@ -106,22 +106,28 @@ endif()
 set(WISH_RESOURCE_DIR "${CMAKE_SOURCE_DIR}/resources/embedded"
     CACHE PATH "Source asset directory compiled into the binary")
 
-file(GLOB_RECURSE WISH_RESOURCE_FILES
-  CONFIGURE_DEPENDS
-  "${WISH_RESOURCE_DIR}/*"
-)
+set(WISH_EMBEDDED_CPP_IN "${CMAKE_CURRENT_SOURCE_DIR}/src/resources/embedded_resources.cpp.in")
+set(WISH_EMBEDDED_CPP "${CMAKE_CURRENT_SOURCE_DIR}/src/resources/embedded_resources.cpp")
 
-set(WISH_EMBEDDED_CPP
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/resources/embedded_resources.cpp")
+file(GLOB_RECURSE ALL_ASSETS RELATIVE "${WISH_RESOURCE_DIR}" "${WISH_RESOURCE_DIR}/*")
+
+set(FULL_ASSET_PATHS "")
+foreach(asset ${ALL_ASSETS})
+    list(APPEND FULL_ASSET_PATHS "${WISH_RESOURCE_DIR}/${asset}")
+endforeach()
+
+string(REPLACE ";" "\\;" ESCAPED_ASSETS "${ALL_ASSETS}")
 
 add_custom_command(
-  OUTPUT  "${WISH_EMBEDDED_CPP}"
-  COMMAND "${Python3_EXECUTABLE}"
-            "${CMAKE_SOURCE_DIR}/cmake/embed_resources.py"
-            --input  "${WISH_RESOURCE_DIR}"
-            --output "${WISH_EMBEDDED_CPP}"
-  DEPENDS ${WISH_RESOURCE_FILES}
-  COMMENT "Embedding resources from ${WISH_RESOURCE_DIR}"
+    OUTPUT "${WISH_EMBEDDED_CPP}"
+    COMMAND ${CMAKE_COMMAND} 
+        -DWISH_RESOURCE_DIR=${WISH_RESOURCE_DIR}
+        -DALL_ASSETS="${ESCAPED_ASSETS}"
+        -DTEMPLATE_FILE=${WISH_EMBEDDED_CPP_IN} 
+        -DOUTPUT_FILE=${WISH_EMBEDDED_CPP} 
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/GenerateResource.cmake"
+    DEPENDS ${FULL_ASSET_PATHS} "${WISH_EMBEDDED_CPP_IN}"
+    COMMENT "Generating embedded C++ resources table from ${WISH_RESOURCE_DIR}"
 )
 
 # ── wish_client — lightweight C++ client (no renderer, no UI elements) ────────

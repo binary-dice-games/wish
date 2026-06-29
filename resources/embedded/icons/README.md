@@ -1,1 +1,0 @@
-Icon collection from https://www.streamlinehq.com/icons/streamline-colors
