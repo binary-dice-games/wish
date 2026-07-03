@@ -120,7 +120,9 @@ void wish_server_app::on_verbose_trace(bison::key_t /*session_id*/, const std::s
     server_log_->info(line);
 }
 
-int wish_server_app::run_with_transport(bison::rmi::transport::server_transport_iface& transport) {
+int wish_server_app::run_with_transport(
+    bison::rmi::transport::server_transport_iface& transport,
+    std::function<void()> wait_for_shutdown) {
   server_log_ = make_server_logger();
   server srv{transport, make_renderer()};
   srv.set_logger(server_log_);

@@ -15,6 +15,13 @@ namespace bdg::wish {
 
 using namespace bison;
 
+namespace {
+template <typename Element>
+key_t wish_id_of(const Element& element) {
+  return element->template as<key_t>("__wish_id"_key);
+}
+} // namespace
+
 // ── UI layout ─────────────────────────────────────────────────────────────────
 //
 // ImGuiWindowFlags_NoResize = 1<<1 = 2
@@ -103,34 +110,34 @@ void calculator::on_init() {
   window_id_ = (*tree[""])["__wish_id"_key].as<key_t>();
 
   tree.with("display", [&](const auto& e) {
-    display_id_ = e->as<key_t>("__wish_id"_key);
+    display_id_ = wish_id_of(e);
     display_ptr_ = e;
   });
 
-  tree.with("row0.c", [&](const auto& e) { btn_c_ = e->as<key_t>("__wish_id"_key); });
-  tree.with("row0.div", [&](const auto& e) { btn_div_ = e->as<key_t>("__wish_id"_key); });
-  tree.with("row0.mul", [&](const auto& e) { btn_mul_ = e->as<key_t>("__wish_id"_key); });
-  tree.with("row0.bsp", [&](const auto& e) { btn_bsp_ = e->as<key_t>("__wish_id"_key); });
+  tree.with("row0.c", [&](const auto& e) { btn_c_ = wish_id_of(e); });
+  tree.with("row0.div", [&](const auto& e) { btn_div_ = wish_id_of(e); });
+  tree.with("row0.mul", [&](const auto& e) { btn_mul_ = wish_id_of(e); });
+  tree.with("row0.bsp", [&](const auto& e) { btn_bsp_ = wish_id_of(e); });
 
-  tree.with("row1.n7", [&](const auto& e) { btn_n7_ = e->as<key_t>("__wish_id"_key); });
-  tree.with("row1.n8", [&](const auto& e) { btn_n8_ = e->as<key_t>("__wish_id"_key); });
-  tree.with("row1.n9", [&](const auto& e) { btn_n9_ = e->as<key_t>("__wish_id"_key); });
-  tree.with("row1.sub", [&](const auto& e) { btn_sub_ = e->as<key_t>("__wish_id"_key); });
+  tree.with("row1.n7", [&](const auto& e) { btn_n7_ = wish_id_of(e); });
+  tree.with("row1.n8", [&](const auto& e) { btn_n8_ = wish_id_of(e); });
+  tree.with("row1.n9", [&](const auto& e) { btn_n9_ = wish_id_of(e); });
+  tree.with("row1.sub", [&](const auto& e) { btn_sub_ = wish_id_of(e); });
 
-  tree.with("row2.n4", [&](const auto& e) { btn_n4_ = e->as<key_t>("__wish_id"_key); });
-  tree.with("row2.n5", [&](const auto& e) { btn_n5_ = e->as<key_t>("__wish_id"_key); });
-  tree.with("row2.n6", [&](const auto& e) { btn_n6_ = e->as<key_t>("__wish_id"_key); });
-  tree.with("row2.add", [&](const auto& e) { btn_add_ = e->as<key_t>("__wish_id"_key); });
+  tree.with("row2.n4", [&](const auto& e) { btn_n4_ = wish_id_of(e); });
+  tree.with("row2.n5", [&](const auto& e) { btn_n5_ = wish_id_of(e); });
+  tree.with("row2.n6", [&](const auto& e) { btn_n6_ = wish_id_of(e); });
+  tree.with("row2.add", [&](const auto& e) { btn_add_ = wish_id_of(e); });
 
-  tree.with("row3.n1", [&](const auto& e) { btn_n1_ = e->as<key_t>("__wish_id"_key); });
-  tree.with("row3.n2", [&](const auto& e) { btn_n2_ = e->as<key_t>("__wish_id"_key); });
-  tree.with("row3.n3", [&](const auto& e) { btn_n3_ = e->as<key_t>("__wish_id"_key); });
-  tree.with("row3.eq", [&](const auto& e) { btn_eq_ = e->as<key_t>("__wish_id"_key); });
+  tree.with("row3.n1", [&](const auto& e) { btn_n1_ = wish_id_of(e); });
+  tree.with("row3.n2", [&](const auto& e) { btn_n2_ = wish_id_of(e); });
+  tree.with("row3.n3", [&](const auto& e) { btn_n3_ = wish_id_of(e); });
+  tree.with("row3.eq", [&](const auto& e) { btn_eq_ = wish_id_of(e); });
 
-  tree.with("row4.n0", [&](const auto& e) { btn_n0_ = e->as<key_t>("__wish_id"_key); });
-  tree.with("row4.dot", [&](const auto& e) { btn_dot_ = e->as<key_t>("__wish_id"_key); });
-  tree.with("row4.pm", [&](const auto& e) { btn_pm_ = e->as<key_t>("__wish_id"_key); });
-  tree.with("row4.pct", [&](const auto& e) { btn_pct_ = e->as<key_t>("__wish_id"_key); });
+  tree.with("row4.n0", [&](const auto& e) { btn_n0_ = wish_id_of(e); });
+  tree.with("row4.dot", [&](const auto& e) { btn_dot_ = wish_id_of(e); });
+  tree.with("row4.pm", [&](const auto& e) { btn_pm_ = wish_id_of(e); });
+  tree.with("row4.pct", [&](const auto& e) { btn_pct_ = wish_id_of(e); });
 
   sess().objects.merge(std::move(tree), internal_root_key_);
 }

@@ -11,6 +11,7 @@
 #include "src/rmi/server/context.hpp"
 
 using namespace bdg::bison;
+namespace bison = bdg::bison;
 namespace wish = bdg::wish;
 namespace rmi = bdg::bison::rmi;
 
@@ -26,7 +27,7 @@ class stub_form : public wish::form {
   wish::session* sess_ref_{nullptr};
 
   /// Expose emit() for testing (it is protected in form).
-  void test_emit(key_t event_name, dynamic payload = {}) {
+  void test_emit(bison::key_t event_name, dynamic payload = {}) {
     emit(event_name, std::move(payload));
   }
 
@@ -64,12 +65,12 @@ static void ensure_registered() {
   bdg::wish::register_all();
   auto proto = dynamic_ptr{"__StubForm"_key, {}};
   dynamic::addClass(
-      "wish"_key, std::move(proto), key_t{0U}, dynamic::make_factory<stub_form>("wish"_key, "__StubForm"_key));
+      "wish"_key, std::move(proto), bison::key_t{0U}, dynamic::make_factory<stub_form>("wish"_key, "__StubForm"_key));
   auto tracked_proto = dynamic_ptr{"__TrackedStubForm"_key, {}};
   dynamic::addClass(
       "wish"_key,
       std::move(tracked_proto),
-      key_t{0U},
+      bison::key_t{0U},
       dynamic::make_factory<tracked_stub_form>("wish"_key, "__TrackedStubForm"_key));
 }
 
@@ -141,18 +142,18 @@ TEST(FormBase, InitStoresSessionReference) {
 TEST(FormBase, EmitForwardsEventToSession) {
   auto f = std::make_shared<stub_form>(dynamic{});
 
-  key_t captured_id{};
-  key_t captured_event{};
+  bison::key_t captured_id{};
+  bison::key_t captured_event{};
 
   rmi::context ctx;
   // Place the form in ctx.objects so emit() can discover its ID.
-  key_t form_id{"stub_form_id"_key};
+  bison::key_t form_id{"stub_form_id"_key};
   ctx.objects[form_id.id] = f;
 
   auto sync_sess = std::make_shared<wish::sync_session>(std::in_place, "form_emit"_key);
   {
     auto lk = sync_sess->wlock();
-    lk->emit_event = [&](key_t oid, key_t evt, dynamic) {
+    lk->emit_event = [&](bison::key_t oid, bison::key_t evt, dynamic) {
       captured_id = oid;
       captured_event = evt;
     };
@@ -172,13 +173,13 @@ TEST(FormBase, EmitWithPayloadForwardsPayload) {
   dynamic captured_payload;
 
   rmi::context ctx;
-  key_t form_id{"stub_payload_id"_key};
+  bison::key_t form_id{"stub_payload_id"_key};
   ctx.objects[form_id.id] = f;
 
   auto sync_sess = std::make_shared<wish::sync_session>(std::in_place, "form_emit_payload"_key);
   {
     auto lk = sync_sess->wlock();
-    lk->emit_event = [&](key_t, key_t, dynamic p) { captured_payload = std::move(p); };
+    lk->emit_event = [&](bison::key_t, bison::key_t, dynamic p) { captured_payload = std::move(p); };
     wish::detail::current_session = &(*lk);
     f->init(ctx, sync_sess);
     wish::detail::current_session = nullptr;
@@ -200,7 +201,7 @@ TEST(FormBase, EmitWithNullEmitEventDoesNothing) {
   auto f = std::make_shared<stub_form>(dynamic{});
 
   rmi::context ctx;
-  key_t form_id{"null_emit_id"_key};
+  bison::key_t form_id{"null_emit_id"_key};
   ctx.objects[form_id.id] = f;
 
   // Session with no emit_event callback set.

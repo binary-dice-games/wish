@@ -44,7 +44,9 @@ class wish_server_app : public bison::app::server_app {
  protected:
   void register_classes() override;
 
-  int run_with_transport(bison::rmi::transport::server_transport_iface& transport) override;
+  int run_with_transport(
+      bison::rmi::transport::server_transport_iface& transport,
+      std::function<void()> wait_for_shutdown = nullptr) override;
 
  private:
   /// @brief Shared logger for all sessions; always active when the server runs.
