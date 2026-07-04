@@ -25,6 +25,8 @@ DEFINE_string(host, "0.0.0.0", "Bind/connect host address");
 DEFINE_int32(port, 7070, "Listen/connect port");
 DEFINE_string(pipe, "", "Unix-socket path");
 DEFINE_bool(verbose, false, "Print session trace messages to stdout");
+DEFINE_bool(pty, false, "Use pty/stdio BISON<...> framing instead of socket/pipe");
+DEFINE_bool(debugger, false, "Wait for debugger attachment before starting");
 
 static void print_usage() {
   std::cout << "wish - remote GUI framework CLI\n"
@@ -39,6 +41,8 @@ static void print_usage() {
                "  --port P     Port          (default: 7070)\n"
                "  --pipe PATH  Unix socket\n"
                "  --verbose    Print RMI trace messages\n"
+               "  --pty        Use pty/stdio framing instead of socket/pipe\n"
+               "  --debugger   Wait for debugger attachment before starting\n"
                "\n"
                "Run 'wish <subcommand> --help' for subcommand-specific flags.\n";
 }

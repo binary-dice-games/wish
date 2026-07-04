@@ -15,6 +15,13 @@ namespace bdg::wish {
 
 using namespace bison;
 
+namespace {
+template <typename Element>
+key_t wish_id_of(const Element& element) {
+  return element->template as<key_t>("__wish_id"_key);
+}
+} // namespace
+
 // ── Hardcoded UI layout ───────────────────────────────────────────────────────
 
 // TableColumns are stored as NAMED children so dynamic::clear() on the
@@ -103,26 +110,26 @@ void file_dialog::on_init() {
   // Cache pointers to widgets that need runtime access.
   tree.with("vbox.file_table", [&](const auto& e) {
     file_table_ptr_ = e;
-    file_table_id_ = e->as<key_t>("__wish_id"_key);
+    file_table_id_ = wish_id_of(e);
   });
   tree.with("vbox.path_input", [&](const auto& e) {
     path_input_ptr_ = e;
-    path_input_id_ = e->as<key_t>("__wish_id"_key);
+    path_input_id_ = wish_id_of(e);
   });
   tree.with("vbox.filename_input", [&](const auto& e) {
     filename_input_ptr_ = e;
-    filename_input_id_ = e->as<key_t>("__wish_id"_key);
+    filename_input_id_ = wish_id_of(e);
   });
   tree.with("vbox.filter_row", [&](const auto& e) { filter_row_ptr_ = e; });
   tree.with("vbox.filter_row.filter_combo", [&](const auto& e) {
     filter_combo_ptr_ = e;
-    filter_combo_id_ = e->as<key_t>("__wish_id"_key);
+    filter_combo_id_ = wish_id_of(e);
   });
   tree.with("vbox.btn_row.btn_open", [&](const auto& e) {
     btn_open_ptr_ = e;
-    btn_open_id_ = e->as<key_t>("__wish_id"_key);
+    btn_open_id_ = wish_id_of(e);
   });
-  tree.with("vbox.btn_row.btn_cancel", [&](const auto& e) { btn_cancel_id_ = e->as<key_t>("__wish_id"_key); });
+  tree.with("vbox.btn_row.btn_cancel", [&](const auto& e) { btn_cancel_id_ = wish_id_of(e); });
 
   // Merge the imported tree into session.objects under our prefix.
   sess().objects.merge(std::move(tree), internal_root_key_);

@@ -174,7 +174,7 @@ TEST_F(RegistryTest, SeparatorInheritsVisibleFromElement) {
 TEST_F(RegistryTest, ClassFieldHasDisplayNameViaProto) {
   // DisplayName is stored on the prototype's CLASS field, not the instance's.
   auto obj = dynamic::instantiate("wish"_key, "Button"_key);
-  auto class_key = obj.as<key_t>(dynamic::CLASS);
+  auto class_key = obj.as<bdg::bison::key_t>(bdg::bison::dynamic::CLASS);
   auto* proto = obj.findClass(class_key);
   ASSERT_NE(proto, nullptr) << "findClass should find the Button prototype";
   auto* cls = proto->findField(dynamic::CLASS);

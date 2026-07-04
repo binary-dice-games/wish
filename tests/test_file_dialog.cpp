@@ -13,6 +13,7 @@
 #include <string>
 
 using namespace bdg::bison;
+namespace bison = bdg::bison;
 namespace wish = bdg::wish;
 using namespace bdg::bison::rmi::transport;
 
@@ -29,7 +30,7 @@ TEST_F(FileDialogLocalTest, CanBeInstantiated) {
   auto obj = dynamic::instantiate("wish"_key, "FileDialog"_key);
   auto* cls = obj.findField(dynamic::CLASS);
   ASSERT_NE(cls, nullptr);
-  EXPECT_EQ(cls->as<key_t>(), "FileDialog"_key);
+  EXPECT_EQ(cls->as<bison::key_t>(), "FileDialog"_key);
 }
 
 TEST_F(FileDialogLocalTest, DefaultTitleIsOpenFile) {
@@ -134,7 +135,7 @@ TEST_F(FileDialogWindowTest, FormRootIsWindow) {
   std::string root = instantiate_and_get_root();
   ASSERT_FALSE(root.empty());
   auto& obj = srv_->last_session->objects.at(root);
-  EXPECT_EQ(obj->findField(dynamic::CLASS)->as<key_t>(), "Window"_key);
+  EXPECT_EQ(obj->findField(dynamic::CLASS)->as<bison::key_t>(), "Window"_key);
 }
 
 TEST_F(FileDialogWindowTest, WindowHasVerticalLayoutChild) {
@@ -142,7 +143,7 @@ TEST_F(FileDialogWindowTest, WindowHasVerticalLayoutChild) {
   ASSERT_FALSE(root.empty());
   auto& objs = srv_->last_session->objects;
   ASSERT_TRUE(objs.count(root + ".vbox"));
-  EXPECT_EQ(objs.at(root + ".vbox")->findField(dynamic::CLASS)->as<key_t>(), "VerticalLayout"_key);
+  EXPECT_EQ(objs.at(root + ".vbox")->findField(dynamic::CLASS)->as<bison::key_t>(), "VerticalLayout"_key);
 }
 
 TEST_F(FileDialogWindowTest, TreeContainsPathInput) {
@@ -199,7 +200,7 @@ static dynamic make_files(std::initializer_list<std::pair<std::string, std::stri
   dynamic files;
   size_t i = 0;
   for (auto& [name, type] : entries) {
-    auto e = dynamic_ptr{key_t{0U}, {}};
+    auto e = dynamic_ptr{bison::key_t{0U}, {}};
     (*e)["name"_key] = name;
     (*e)["type"_key] = type;
     files[i++] = e;
@@ -279,7 +280,7 @@ class FileDialogFilesTest : public ::testing::Test {
     auto& objs = srv_->last_session->objects;
     auto it = objs.find(root_ + ".vbox.file_table");
     ASSERT_NE(it, objs.end());
-    auto table_id = (*it->second)["__wish_id"_key].as<key_t>();
+    auto table_id = (*it->second)["__wish_id"_key].as<bison::key_t>();
 
     dynamic payload;
     payload["index"_key] = idx;
@@ -405,7 +406,7 @@ TEST_F(FileDialogRMITest, SetConfirmLabelRoundTrips) {
 // Records form-level events (on_open, on_cancel, on_navigate) emitted by the
 // form through sess().emit_event, without interfering with internal routing.
 struct CapturedEvent {
-  key_t name;
+  bison::key_t name;
   dynamic payload;
 };
 
@@ -425,7 +426,7 @@ class FileDialogEventsTest : public ::testing::Test {
     auto prev = std::move(srv_->last_session->emit_event);
     events_ = std::make_shared<std::vector<CapturedEvent>>();
     auto evts = events_;
-    srv_->last_session->emit_event = [prev, evts](key_t id, key_t event, dynamic payload) {
+    srv_->last_session->emit_event = [prev, evts](bison::key_t id, bison::key_t event, dynamic payload) {
       if (event == "on_open"_key || event == "on_cancel"_key || event == "on_navigate"_key)
         evts->push_back({event, payload});
       if (prev)
@@ -457,7 +458,7 @@ class FileDialogEventsTest : public ::testing::Test {
     auto& objs = srv_->last_session->objects;
     auto it = objs.find(root_ + ".vbox.btn_row." + btn_key);
     ASSERT_NE(it, objs.end()) << "button not found: " << btn_key;
-    auto btn_id = (*it->second)["__wish_id"_key].as<key_t>();
+    auto btn_id = (*it->second)["__wish_id"_key].as<bison::key_t>();
     auto h = srv_->last_session->top_level_handlers.find(root_);
     ASSERT_NE(h, srv_->last_session->top_level_handlers.end());
     h->second->on_event(btn_id, "clicked"_key, dynamic{});
@@ -467,7 +468,7 @@ class FileDialogEventsTest : public ::testing::Test {
     auto& objs = srv_->last_session->objects;
     auto it = objs.find(root_ + ".vbox.file_table");
     ASSERT_NE(it, objs.end());
-    auto table_id = (*it->second)["__wish_id"_key].as<key_t>();
+    auto table_id = (*it->second)["__wish_id"_key].as<bison::key_t>();
     dynamic payload;
     payload["index"_key] = idx;
     auto h = srv_->last_session->top_level_handlers.find(root_);
@@ -480,7 +481,7 @@ class FileDialogEventsTest : public ::testing::Test {
     auto& objs = srv_->last_session->objects;
     auto it = objs.find(root_ + ".vbox.path_input");
     ASSERT_NE(it, objs.end()) << "path_input not found";
-    auto input_id = (*it->second)["__wish_id"_key].as<key_t>();
+    auto input_id = (*it->second)["__wish_id"_key].as<bison::key_t>();
     dynamic payload;
     payload["value"_key] = path;
     auto h = srv_->last_session->top_level_handlers.find(root_);
@@ -488,14 +489,14 @@ class FileDialogEventsTest : public ::testing::Test {
     h->second->on_event(input_id, "changed"_key, std::move(payload));
   }
 
-  bool has_event(key_t name) const {
+  bool has_event(bison::key_t name) const {
     for (auto& e : *events_)
       if (e.name.id == name.id)
         return true;
     return false;
   }
 
-  const CapturedEvent* find_event(key_t name) const {
+  const CapturedEvent* find_event(bison::key_t name) const {
     for (auto& e : *events_)
       if (e.name.id == name.id)
         return &e;
@@ -594,7 +595,7 @@ class FileDialogBindingTest : public ::testing::Test {
     auto& objs = srv_->last_session->objects;
     auto it = objs.find(root_ + ".vbox.filename_input");
     ASSERT_NE(it, objs.end()) << "filename_input not found in session.objects";
-    auto input_id = (*it->second)["__wish_id"_key].as<key_t>();
+    auto input_id = (*it->second)["__wish_id"_key].as<bison::key_t>();
     dynamic payload;
     payload["value"_key] = value;
     auto h = srv_->last_session->top_level_handlers.find(root_);
