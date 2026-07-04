@@ -304,6 +304,26 @@ WISH_API wish_error wish_instantiate_template_async(
  */
 WISH_API rmi_proxy_handle wish_proxy_get(wish_client_handle client, const char* dot_path);
 
+/**
+ * @brief Release every proxy cached under @p prefix and its descendants.
+ *
+ * Removes @p prefix and every `prefix.<path>` entry merged in by a prior
+ * wish_instantiate_template() (or its async variant) from the dot-path →
+ * proxy map, freeing the underlying `rmi_proxy_handle` objects it owned.
+ * Call this once the caller is done with an instantiated template — without
+ * it, entries merged under distinct prefixes accumulate in the map for the
+ * lifetime of the client. Proxy handles previously returned to the caller
+ * (e.g. the root from wish_instantiate_template()) are independent copies
+ * and are unaffected; release those separately with rmi_proxy_release().
+ *
+ * @param client  Active session handle.
+ * @param prefix  Prefix passed to wish_instantiate_template() (or a
+ *                dot-path within it) identifying the subtree to release.
+ * @return WISH_OK, WISH_ERR_NULL, or WISH_ERR_NOT_FOUND if no entries
+ *         matched @p prefix.
+ */
+WISH_API wish_error wish_release(wish_client_handle client, const char* prefix);
+
 /* ── Logging ──────────────────────────────────────────────────────────────── */
 
 /**

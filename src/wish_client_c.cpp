@@ -270,6 +270,22 @@ static void merge_proxy_map(wish_client_handle c, const std::string& prefix, wis
     c->proxy_map_.insert_or_assign(path.empty() ? prefix : (prefix + "." + path), std::move(proxy));
 }
 
+// Inverse of merge_proxy_map(): erase `prefix` and every "prefix." descendant
+// from proxy_map_. Returns the number of entries erased.
+static size_t erase_proxy_subtree(wish_client_handle c, const std::string& prefix) {
+  std::string child_prefix = prefix + ".";
+  size_t erased = 0;
+  for (auto it = c->proxy_map_.begin(); it != c->proxy_map_.end();) {
+    if (it->first == prefix || it->first.compare(0, child_prefix.size(), child_prefix) == 0) {
+      it = c->proxy_map_.erase(it);
+      ++erased;
+    } else {
+      ++it;
+    }
+  }
+  return erased;
+}
+
 extern "C" rmi_proxy_handle wish_instantiate_template(wish_client_handle c, const char* name, const char* prefix) {
   if (!c || !name || !prefix)
     return nullptr;
@@ -321,6 +337,16 @@ extern "C" rmi_proxy_handle wish_proxy_get(wish_client_handle c, const char* dot
   }
   auto* pp = new proxy_ptr(std::make_unique<proxy::dynamic>(c->client_->make_proxy(it->second.object_id())));
   return as_proxy_handle(pp);
+}
+
+extern "C" wish_error wish_release(wish_client_handle c, const char* prefix) {
+  if (!c || !prefix)
+    return WISH_ERR_NULL;
+  if (erase_proxy_subtree(c, std::string{prefix}) == 0) {
+    c->last_error_ = std::string{"no proxies found with prefix: "} + prefix;
+    return WISH_ERR_NOT_FOUND;
+  }
+  return WISH_OK;
 }
 
 // ── Logging ───────────────────────────────────────────────────────────────────
