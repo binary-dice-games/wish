@@ -306,6 +306,8 @@ if(WISH_BUILD_SHARED)
   target_compile_definitions(wish_client_dll PRIVATE WISH_CLIENT_BUILDING_DLL BISON_BUILDING_DLL)
   target_link_libraries(wish_client_dll PUBLIC wish_client)
   target_include_directories(wish_client_dll
+      PUBLIC
+          ${CMAKE_SOURCE_DIR}/include
       PRIVATE
           ${CMAKE_SOURCE_DIR}
           ${CMAKE_SOURCE_DIR}/extern/bison
