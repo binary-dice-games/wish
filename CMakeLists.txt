@@ -101,34 +101,78 @@ if(WISH_ENABLE_IMGUI AND WISH_ENABLE_SDL3)
   target_link_libraries(imgui_core PUBLIC SDL3::SDL3)
 endif()
 
-# ── Embedded resources — generate embedded_resources.cpp from asset tree ──────
+# ── miniz — zip (de)compression, used to unpack embedded resources ───────────
+
+include(FetchContent)
+FetchContent_Declare(
+  miniz
+  GIT_REPOSITORY https://github.com/richgel999/miniz.git
+  GIT_TAG        3.1.2
+  GIT_SHALLOW    TRUE
+)
+# miniz's own CMakeLists defaults these ON only when built standalone; force
+# off defensively, matching the SDLIMAGE_AVIF/SDLIMAGE_JXL pattern above.
+set(BUILD_TESTS     OFF CACHE BOOL "" FORCE)
+set(BUILD_EXAMPLES  OFF CACHE BOOL "" FORCE)
+set(INSTALL_PROJECT OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(miniz)
+set_target_properties(miniz PROPERTIES FOLDER extern)
+
+# ── Embedded resources — zip the asset tree, then embed as one byte array ────
 
 set(WISH_RESOURCE_DIR "${CMAKE_SOURCE_DIR}/resources/embedded"
     CACHE PATH "Source asset directory compiled into the binary")
 
 set(WISH_EMBEDDED_CPP_IN "${CMAKE_CURRENT_SOURCE_DIR}/src/resources/embedded_resources.cpp.in")
-set(WISH_EMBEDDED_CPP "${CMAKE_CURRENT_SOURCE_DIR}/src/resources/embedded_resources.cpp")
+set(WISH_EMBEDDED_CPP    "${CMAKE_CURRENT_SOURCE_DIR}/src/resources/embedded_resources.cpp")
+set(WISH_EMBEDDED_ZIP    "${CMAKE_BINARY_DIR}/wish_embedded_resources.zip")
 
-file(GLOB_RECURSE ALL_ASSETS RELATIVE "${WISH_RESOURCE_DIR}" "${WISH_RESOURCE_DIR}/*")
+# CONFIGURE_DEPENDS: reconfigure whenever a file is added/removed under
+# WISH_RESOURCE_DIR (the previous version of this script lacked this, so a
+# newly added/removed asset was silently ignored until something else forced
+# a reconfigure).
+file(GLOB_RECURSE ALL_ASSETS
+    CONFIGURE_DEPENDS
+    RELATIVE "${WISH_RESOURCE_DIR}" "${WISH_RESOURCE_DIR}/*")
 
 set(FULL_ASSET_PATHS "")
 foreach(asset ${ALL_ASSETS})
     list(APPEND FULL_ASSET_PATHS "${WISH_RESOURCE_DIR}/${asset}")
 endforeach()
 
-string(REPLACE ";" "\\;" ESCAPED_ASSETS "${ALL_ASSETS}")
+if(ALL_ASSETS)
+  # Step 1: pack every asset into one zip, preserving relative paths as entry
+  # names (e.g. "icons/folder.png"). A build-time custom command (not
+  # file(ARCHIVE_CREATE), which runs at configure time) so it participates
+  # correctly in incremental-build OUTPUT/DEPENDS tracking. cmake -E tar
+  # --format=zip ships with CMake itself (bundled libarchive); unquoted
+  # ${ALL_ASSETS} expands into one argument per file automatically.
+  add_custom_command(
+      OUTPUT "${WISH_EMBEDDED_ZIP}"
+      COMMAND ${CMAKE_COMMAND} -E tar cf "${WISH_EMBEDDED_ZIP}" --format=zip -- ${ALL_ASSETS}
+      WORKING_DIRECTORY "${WISH_RESOURCE_DIR}"
+      DEPENDS ${FULL_ASSET_PATHS}
+      COMMENT "Zipping ${WISH_RESOURCE_DIR} -> ${WISH_EMBEDDED_ZIP}"
+  )
 
-add_custom_command(
-    OUTPUT "${WISH_EMBEDDED_CPP}"
-    COMMAND ${CMAKE_COMMAND} 
-        -DWISH_RESOURCE_DIR=${WISH_RESOURCE_DIR}
-        -DALL_ASSETS="${ESCAPED_ASSETS}"
-        -DTEMPLATE_FILE=${WISH_EMBEDDED_CPP_IN} 
-        -DOUTPUT_FILE=${WISH_EMBEDDED_CPP} 
-        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/GenerateResource.cmake"
-    DEPENDS ${FULL_ASSET_PATHS} "${WISH_EMBEDDED_CPP_IN}"
-    COMMENT "Generating embedded C++ resources table from ${WISH_RESOURCE_DIR}"
-)
+  # Step 2: embed the zip's bytes as a single static byte array.
+  add_custom_command(
+      OUTPUT "${WISH_EMBEDDED_CPP}"
+      COMMAND ${CMAKE_COMMAND}
+          -DWISH_EMBEDDED_ZIP=${WISH_EMBEDDED_ZIP}
+          -DTEMPLATE_FILE=${WISH_EMBEDDED_CPP_IN}
+          -DOUTPUT_FILE=${WISH_EMBEDDED_CPP}
+          -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/GenerateResource.cmake"
+      DEPENDS "${WISH_EMBEDDED_ZIP}" "${WISH_EMBEDDED_CPP_IN}"
+      COMMENT "Embedding resource archive as a C++ byte array"
+  )
+else()
+  # No assets found (e.g. a downstream project repoints WISH_RESOURCE_DIR at
+  # an empty tree) -- emit a zero-length array directly at configure time so
+  # the build still succeeds.
+  set(CPP_CONTENT "0x00")
+  configure_file("${WISH_EMBEDDED_CPP_IN}" "${WISH_EMBEDDED_CPP}" @ONLY)
+endif()
 
 # ── wish_client — lightweight C++ client (no renderer, no UI elements) ────────
 
@@ -267,6 +311,8 @@ target_include_directories(wish_server
 target_link_libraries(wish_server PUBLIC bison)
 # libyaml is needed by ui_importer.cpp; PRIVATE because it is an impl detail.
 target_link_libraries(wish_server PRIVATE yaml)
+# miniz is needed by resource_store.cpp to unpack the embedded archive.
+target_link_libraries(wish_server PRIVATE miniz)
 
 # ── wish — convenience interface target (client + server) ─────────────────────
 #

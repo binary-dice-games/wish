@@ -47,3 +47,23 @@ TEST(SessionTest, DirtyCanBeSetAtomically) {
   s.dirty.store(true);
   EXPECT_TRUE(s.dirty.load());
 }
+
+// ── embedded resources ────────────────────────────────────────────────────────
+
+TEST(SessionTest, ResourceDirContainsEmbeddedAssets) {
+  session s{"s5"_key};
+  auto icon = s.resource_dir / "res" / "icons/folder.png";
+  auto font = s.resource_dir / "res" / "fonts/default.ttf";
+  ASSERT_TRUE(std::filesystem::exists(icon));
+  ASSERT_TRUE(std::filesystem::exists(font));
+  EXPECT_GT(std::filesystem::file_size(icon), 0U);
+  EXPECT_GT(std::filesystem::file_size(font), 0U);
+}
+
+TEST(SessionTest, ResourceDirEmbeddedFilesAreReadOnly) {
+  session s{"s6"_key};
+  auto icon = s.resource_dir / "res" / "icons/folder.png";
+  ASSERT_TRUE(std::filesystem::exists(icon));
+  EXPECT_EQ(std::filesystem::status(icon).permissions() & std::filesystem::perms::owner_write,
+            std::filesystem::perms::none);
+}

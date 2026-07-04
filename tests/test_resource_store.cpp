@@ -3,101 +3,88 @@
 
 #include <resources/resource_store.hpp>
 
-using bdg::wish::resource_store::find;
-using bdg::wish::resource_store::is_resource_path;
-using bdg::wish::resource_store::strip_scheme;
+#include <atomic>
+#include <cstdint>
+#include <filesystem>
+#include <string>
 
-// ── is_resource_path ──────────────────────────────────────────────────────────
+using bdg::wish::resource_store::extract_to;
 
-TEST(ResourceStore, IsResourcePathReturnsTrueForResScheme) {
-  EXPECT_TRUE(is_resource_path("res://icons/folder.png"));
-  EXPECT_TRUE(is_resource_path("res://"));
+namespace {
+
+std::filesystem::path make_temp_dir(const char* suffix) {
+  static std::atomic<uint32_t> counter{0};
+  auto dir = std::filesystem::temp_directory_path() /
+      ("wish_test_resource_store_" + std::string(suffix) + "_" + std::to_string(counter++));
+  std::filesystem::remove_all(dir);
+  return dir;
 }
 
-TEST(ResourceStore, IsResourcePathReturnsFalseForBareAndFilePaths) {
-  EXPECT_FALSE(is_resource_path("icons/folder.png"));
-  EXPECT_FALSE(is_resource_path("file://icons/folder.png"));
-  EXPECT_FALSE(is_resource_path(""));
-  EXPECT_FALSE(is_resource_path("/absolute/path.png"));
+bool is_owner_writable(const std::filesystem::path& p) {
+  return (std::filesystem::status(p).permissions() & std::filesystem::perms::owner_write) !=
+      std::filesystem::perms::none;
 }
 
-// ── strip_scheme ──────────────────────────────────────────────────────────────
+const char* kExpectedFiles[] = {
+    "icons/file.png",     "icons/folder.png", "icons/audio.png", "icons/image.png",
+    "icons/document.png", "icons/code.png",   "fonts/default.ttf", "fonts/mono.ttf",
+};
 
-TEST(ResourceStore, StripSchemeRemovesResPrefix) {
-  EXPECT_EQ(strip_scheme("res://icons/folder.png"), "icons/folder.png");
-  EXPECT_EQ(strip_scheme("res://fonts/default.ttf"), "fonts/default.ttf");
-  EXPECT_EQ(strip_scheme("res://"), "");
-}
+} // namespace
 
-TEST(ResourceStore, StripSchemeLeavesBarePathUnchanged) {
-  EXPECT_EQ(strip_scheme("icons/folder.png"), "icons/folder.png");
-  EXPECT_EQ(strip_scheme(""), "");
-  EXPECT_EQ(strip_scheme("file://foo.png"), "file://foo.png");
-}
+// ── extract_to — happy path ───────────────────────────────────────────────────
 
-// ── find — miss ───────────────────────────────────────────────────────────────
+TEST(ResourceStore, ExtractToCreatesExpectedFiles) {
+  auto dir = make_temp_dir("expected");
+  ASSERT_TRUE(extract_to(dir));
 
-TEST(ResourceStore, FindReturnsNulloptForUnknownPath) {
-  EXPECT_EQ(find("no/such/file.png"), std::nullopt);
-  EXPECT_EQ(find(""), std::nullopt);
-  EXPECT_EQ(find("res://icons/folder.png"), std::nullopt); // prefix not stripped
-}
-
-// ── find — hit ────────────────────────────────────────────────────────────────
-
-TEST(ResourceStore, FindReturnsDataForKnownIcon) {
-  auto result = find("icons/folder.png");
-  ASSERT_TRUE(result.has_value());
-  EXPECT_FALSE(result->data.empty());
-}
-
-TEST(ResourceStore, FindReturnsDataForKnownFont) {
-  auto result = find("fonts/default.ttf");
-  ASSERT_TRUE(result.has_value());
-  EXPECT_FALSE(result->data.empty());
-}
-
-TEST(ResourceStore, FindCoversAllPlannedIcons) {
-  for (const char* path : {
-           "icons/file.png",
-           "icons/folder.png",
-           "icons/audio.png",
-           "icons/image.png",
-           "icons/code.png",
-           "icons/document.png",
-       }) {
-    auto result = find(path);
-    EXPECT_TRUE(result.has_value()) << "missing: " << path;
-    if (result)
-      EXPECT_FALSE(result->data.empty()) << "zero-size: " << path;
+  for (const char* rel : kExpectedFiles) {
+    auto path = dir / rel;
+    EXPECT_TRUE(std::filesystem::exists(path)) << "missing: " << rel;
+    EXPECT_GT(std::filesystem::file_size(path), 0U) << "zero-size: " << rel;
   }
+
+  std::filesystem::remove_all(dir);
 }
 
-TEST(ResourceStore, FindCoversAllPlannedFonts) {
-  for (const char* path : {"fonts/default.ttf", "fonts/mono.ttf"}) {
-    auto result = find(path);
-    EXPECT_TRUE(result.has_value()) << "missing: " << path;
-    if (result)
-      EXPECT_FALSE(result->data.empty()) << "zero-size: " << path;
+TEST(ResourceStore, ExtractToCreatesDestinationDirectoryIfMissing) {
+  auto dir = make_temp_dir("missing_dir");
+  ASSERT_FALSE(std::filesystem::exists(dir));
+
+  ASSERT_TRUE(extract_to(dir));
+  EXPECT_TRUE(std::filesystem::exists(dir));
+  EXPECT_TRUE(std::filesystem::exists(dir / "icons/folder.png"));
+
+  std::filesystem::remove_all(dir);
+}
+
+TEST(ResourceStore, ExtractToMarksFilesReadOnly) {
+  auto dir = make_temp_dir("readonly");
+  ASSERT_TRUE(extract_to(dir));
+
+  for (const char* rel : kExpectedFiles) {
+    EXPECT_FALSE(is_owner_writable(dir / rel)) << "writable: " << rel;
   }
+
+  std::filesystem::remove_all(dir);
 }
 
-// ── strip + find round-trip ───────────────────────────────────────────────────
+// ── extract_to — repeated call ────────────────────────────────────────────────
 
-TEST(ResourceStore, StripThenFindResolvesResUri) {
-  std::string_view uri = "res://icons/folder.png";
-  auto result = find(strip_scheme(uri));
-  ASSERT_TRUE(result.has_value());
-  EXPECT_FALSE(result->data.empty());
-}
+TEST(ResourceStore, ExtractToSecondCallReturnsFalseButPreservesExistingFiles) {
+  auto dir = make_temp_dir("repeat");
+  ASSERT_TRUE(extract_to(dir));
 
-// ── data pointer stability ────────────────────────────────────────────────────
+  // Files are already read-only; miniz cannot reopen them for writing, so
+  // the second call reports failure -- but must not delete or corrupt what
+  // is already on disk.
+  EXPECT_FALSE(extract_to(dir));
 
-TEST(ResourceStore, TwoFindCallsReturnSamePointer) {
-  auto a = find("icons/file.png");
-  auto b = find("icons/file.png");
-  ASSERT_TRUE(a.has_value());
-  ASSERT_TRUE(b.has_value());
-  EXPECT_EQ(a->data.data(), b->data.data());
-  EXPECT_EQ(a->data.size(), b->data.size());
+  for (const char* rel : kExpectedFiles) {
+    auto path = dir / rel;
+    EXPECT_TRUE(std::filesystem::exists(path)) << "missing after re-extract: " << rel;
+    EXPECT_GT(std::filesystem::file_size(path), 0U) << "zero-size after re-extract: " << rel;
+  }
+
+  std::filesystem::remove_all(dir);
 }

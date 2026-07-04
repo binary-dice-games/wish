@@ -1,47 +1,29 @@
 // MIT License © 2025 Binary Dice Games
 /// @file resource_store.hpp
-/// @brief Read-only store of binary resources compiled into the wish binary.
+/// @brief Access to the embedded resource archive compiled into the wish
+///        binary, and the routine that unpacks it per-session.
 #pragma once
 
-#include <cstddef>
-#include <optional>
-#include <span>
-#include <string_view>
+#include <filesystem>
 
-namespace bdg::wish {
+namespace bdg::wish::resource_store {
 
-/// @brief Immutable view over a single embedded resource.
+/// @brief Unpack the embedded resource archive into @p dir.
 ///
-/// Backed by static storage; the span is valid for the lifetime of the process.
-/// Pass `data.data()` / `data.size()` to APIs (e.g. ImGui font loader) that
-/// require a raw pointer and byte count.
-struct resource_view {
-  std::span<const unsigned char> data; ///< View into static storage.
-};
-
-/// @brief Read-only store of binary resources compiled into the wish binary.
+/// Creates @p dir if it does not already exist. Every regular-file entry in
+/// the archive becomes a file under @p dir (creating subdirectories as
+/// needed), then has its permissions set to read-only (owner/group/other
+/// read, no write), so `file_service::upload()` cannot silently overwrite a
+/// built-in asset.
 ///
-/// All functions are free functions (no instantiation needed). The backing
-/// table is generated at build time from the asset tree in WISH_RESOURCE_DIR.
+/// Never throws. Any miniz or filesystem failure is logged to stderr and
+/// that entry is skipped; extraction continues with the remaining entries.
+/// Callers must treat a `false` return as non-fatal — see the rationale in
+/// `session::session()`, which calls this on a thread with no surrounding
+/// try/catch.
 ///
-/// Paths use forward slashes and are relative to the asset root, e.g.
-/// "icons/folder.png".  The "res://" URI scheme prefix is stripped before
-/// lookup; callers may pass either form to find().
-namespace resource_store {
+/// @param dir  Destination directory.
+/// @return true if every entry was extracted successfully.
+bool extract_to(const std::filesystem::path& dir);
 
-/// @brief Return true if @p path starts with the "res://" scheme.
-bool is_resource_path(std::string_view path);
-
-/// @brief Strip the "res://" prefix from @p path.
-/// @return The bare path (e.g. "icons/folder.png"), or @p path unchanged
-///         if it does not start with "res://".
-std::string_view strip_scheme(std::string_view path);
-
-/// @brief Look up an embedded resource by its bare path (no "res://" prefix).
-/// @param path  Case-sensitive path relative to the asset root.
-/// @return A populated resource_view, or std::nullopt if not found.
-std::optional<resource_view> find(std::string_view path);
-
-} // namespace resource_store
-
-} // namespace bdg::wish
+} // namespace bdg::wish::resource_store

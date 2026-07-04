@@ -51,6 +51,10 @@ struct session {
   std::unordered_map<bison::key_t, std::string, bison::key_t, bison::key_t> templates;
 
   /// Sandboxed temporary directory for this session's uploaded resources.
+  /// Its `res/` subdirectory is pre-populated at construction time with
+  /// read-only copies of the embedded assets (icons, fonts — see
+  /// `resource_store::extract_to()`); a failed or partial extraction is
+  /// non-fatal and does not throw.
   std::filesystem::path resource_dir;
 
   /// Application-managed flag; `wish::server` does not read or write it.

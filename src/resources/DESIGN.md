@@ -4,17 +4,17 @@
 
 The wish server is designed to ship as a single, self-contained binary. Some UI elements require binary assets that would normally live on disk — file-type icons used by `OpenFileDialog`, TrueType fonts for text rendering, cursor images, and so on. Requiring these to exist as loose files alongside the binary would break the single-binary guarantee and complicate deployment.
 
-The embedded resource system solves this by compiling those assets directly into the `wish` binary as static C++ arrays, generated during the CMake build from a source asset folder. At runtime, the server resolves `res://`-prefixed paths against the in-memory resource store rather than the filesystem, with no external files required.
+The embedded resource system solves this by compiling those assets into the `wish` binary as a single compressed zip archive (one static C++ byte array), generated during the CMake build from a source asset folder. At runtime, each session unpacks that archive into its own sandboxed `resource_dir/res/` subdirectory when the session is constructed. From that point on, built-in assets are ordinary files on disk, resolved through the exact same `file_service` path-resolution and sandboxing that already handles client-uploaded files — there is no separate URI scheme or in-memory lookup path to keep in sync with the renderer.
 
 ---
 
 ## Design Goals
 
-1. **No runtime file I/O for built-in assets.** Every built-in icon, font, and texture is available in any deployment, including those where the working directory or the server's own directory is inaccessible.
-2. **Transparent URI scheme.** Callers (renderers, widget field setters) use a `res://` prefix to request an embedded resource. Paths without a prefix — or with `file://` — go through the existing `resolve_widget_path()` / `file_service::resolve_path()` chain unchanged.
-3. **Read-only.** The resource store is a static, immutable view. No runtime addition, removal, or modification of embedded resources.
+1. **No build-time bloat from per-file arrays.** All assets are packed into a single zip archive and embedded as one byte array, rather than one `static const unsigned char[]` per file plus a lookup table.
+2. **Assets behave like regular files at runtime.** Once unpacked into a session's `resource_dir/res/`, built-in icons and fonts are indistinguishable from client-uploaded files as far as any renderer or widget code is concerned — both resolve through `file_service::resolve_path()`.
+3. **Read-only.** Extracted files are chmod'd read-only (owner/group/other read, no write) so `file_service::upload()` cannot silently overwrite a built-in asset. See "Security Considerations" below for the one accepted limitation to this.
 4. **Zero maintenance overhead.** Adding or removing an asset from the source folder automatically updates the binary on the next build — no manual bookkeeping in C++ source required.
-5. **Minimal API surface.** The public API is a single `resource_store` header with two functions: `find` and `is_resource_path`.
+5. **Minimal API surface.** The public API is a single `resource_store` header with one function: `extract_to`.
 
 ---
 
@@ -22,27 +22,35 @@ The embedded resource system solves this by compiling those assets directly into
 
 ```
 Build time
-  resources/embedded/            ← source asset tree (committed to repo)
+  resources/embedded/               ← source asset tree (committed to repo)
     fonts/
       default.ttf
+      mono.ttf
     icons/
       file.png
       folder.png
       audio.png
-  cmake/embed_resources.cmake    ← CMake custom command / Python script
-      ↓ (runs before wish target compiles)
+      image.png
+      code.png
+      document.png
+      ↓ cmake -E tar --format=zip (add_custom_command)
+  build/wish_embedded_resources.zip ← intermediate build artifact (not committed)
+      ↓ cmake/GenerateResource.cmake (add_custom_command)
   src/resources/embedded_resources.cpp   ← generated (not committed)
-      static const unsigned char res_fonts_default_ttf[] = { 0x00, ... };
-      static const resource_entry g_resource_table[] = { ... };
+      extern const unsigned char g_resource_archive_data[] = { 0x50, 0x4b, ... };
+      extern const std::size_t   g_resource_archive_size = sizeof(...);
 
 Runtime
-  resource_store::find("fonts/default.ttf")
-    → scans g_resource_table → returns resource_view{data, size}
+  session::session(id)
+    → std::filesystem::create_directories(resource_dir)
+    → resource_store::extract_to(resource_dir / "res")
+        → mz_zip_reader_init_mem(g_resource_archive_data, g_resource_archive_size)
+        → for each entry: extract to resource_dir/res/<entry path>, chmod read-only
 
-  Widget renderer resolving "res://icons/folder.png"
-    → resource_store::is_resource_path() → true
-    → resource_store::find("icons/folder.png") → resource_view
-    → passes raw bytes to imgui texture loader
+  Widget renderer resolving Image::src = "icons/folder.png"
+    → file_service::resolve_path("res/icons/folder.png", resource_dir, ...)
+        (same sandbox check used for every other session file)
+    → ordinary file read; no special case anywhere in renderer code
 ```
 
 ---
@@ -57,124 +65,43 @@ wish/
     embedded/         ← assets compiled into the binary (source of truth for resource_store)
       fonts/
       icons/
-      cursors/
   src/resources/      ← C++ code for the resource_store API + generated file
     resource_store.hpp
     resource_store.cpp
     embedded_resources.cpp   ← generated; excluded from version control
 ```
 
-The CMake script accepts the source asset folder as a configurable variable (`WISH_RESOURCE_DIR`, default: `${CMAKE_SOURCE_DIR}/resources/embedded`). This allows downstream projects that embed wish as a library to substitute their own asset tree.
+The CMake logic accepts the source asset folder as a configurable variable (`WISH_RESOURCE_DIR`, default: `${CMAKE_SOURCE_DIR}/resources/embedded`). This allows downstream projects that embed wish as a library to substitute their own asset tree.
 
 ---
 
-## CMake Code Generation Step
+## CMake Build Steps
 
-A small Python script (`cmake/embed_resources.py`) is invoked as a CMake `add_custom_command` with `OUTPUT` set to `src/resources/embedded_resources.cpp`. CMake re-runs the script whenever any file under `WISH_RESOURCE_DIR` changes.
+Two chained `add_custom_command`s in the root `CMakeLists.txt` produce `src/resources/embedded_resources.cpp`:
 
-The script:
+1. **Zip the asset tree.** `${CMAKE_COMMAND} -E tar cf <zip> --format=zip -- <relative asset names>`, run with `WORKING_DIRECTORY` set to `WISH_RESOURCE_DIR`, so zip entry names are the same relative paths used at runtime (`icons/folder.png`, `fonts/default.ttf`, ...). This is a genuine build-time `COMMAND` (not a configure-time `file(ARCHIVE_CREATE)` call), so it participates correctly in Ninja/Make `OUTPUT`/`DEPENDS` incremental tracking — it only reruns when a listed asset file actually changes. `cmake -E tar --format=zip` ships with CMake itself (bundled libarchive); no new build-time dependency is introduced by this step.
+2. **Embed the zip as a byte array.** `cmake/GenerateResource.cmake` reads the zip file's bytes via `file(READ ... HEX)`, converts them to `0x..` tokens, and writes `src/resources/embedded_resources.cpp` from the `embedded_resources.cpp.in` template via `configure_file()`.
 
-1. Walks `WISH_RESOURCE_DIR` recursively, collecting every file.
-2. Sorts paths for deterministic output.
-3. For each file, writes a `static const unsigned char` array named after the file's path with non-alphanumeric characters replaced by `_`. These arrays are `static` (internal linkage) because they are only referenced within this translation unit:
-   ```cpp
-   // icons/folder.png  →  res_icons_folder_png
-   static const unsigned char res_icons_folder_png[] = {
-     0x89, 0x50, 0x4e, 0x47, ...
-   };
-   ```
-4. Emits a `resource_entry` table and count **without** `static`, giving them external linkage so that `resource_store.cpp` can reference them directly across translation units:
-   ```cpp
-   // No static — external linkage required so resource_store.cpp can form a
-   // live reference and the linker cannot dead-strip the table.
-   const resource_entry g_resource_table[] = {
-     { "fonts/default.ttf",  res_fonts_default_ttf,  sizeof(res_fonts_default_ttf)  },
-     { "icons/audio.png",    res_icons_audio_png,    sizeof(res_icons_audio_png)    },
-     { "icons/file.png",     res_icons_file_png,     sizeof(res_icons_file_png)     },
-     { "icons/folder.png",   res_icons_folder_png,   sizeof(res_icons_folder_png)   },
-   };
-   const std::size_t g_resource_count = sizeof(g_resource_table) / sizeof(g_resource_table[0]);
-   ```
-5. `resource_store.cpp` declares these symbols with `extern` and references them in every public lookup function.
-6. **Compares before writing.** The script builds the full output in memory, then reads the existing `embedded_resources.cpp` (if it exists). If the content is identical it exits without touching the file:
-   ```python
-   new_content = generate_cpp(resource_dir)
-   out_path = Path(output_file)
-   if out_path.exists() and out_path.read_text(encoding="utf-8") == new_content:
-       sys.exit(0)   # file unchanged — preserve mtime, skip recompile
-   out_path.write_text(new_content, encoding="utf-8")
-   ```
-   Because CMake and Ninja use file modification timestamps to decide whether to recompile, leaving the file untouched when content has not changed prevents the C++ compiler from processing the file unnecessarily — which matters because the generated file can be large.
+```cmake
+# cmake/GenerateResource.cmake
+file(READ "${WISH_EMBEDDED_ZIP}" hex_content HEX)
+string(REGEX REPLACE "(..)" "0x\\1, " CPP_CONTENT "${hex_content}")
+configure_file("${TEMPLATE_FILE}" "${OUTPUT_FILE}" @ONLY)
+```
 
 The generated file has the MIT license header and a `// GENERATED — do not edit` banner at the top. It is listed in `.gitignore`.
 
-If `WISH_RESOURCE_DIR` is empty or does not exist, the script emits an empty table and logs a CMake warning; the build still succeeds (useful for library-only builds that provide no built-in assets).
+If `WISH_RESOURCE_DIR` is empty or does not exist, the build emits a zero-length array directly at configure time instead of running either custom command, so the build still succeeds (useful for library-only builds that provide no built-in assets).
 
 ### CMake dependency tracking
 
-`add_custom_command` lists every file under `WISH_RESOURCE_DIR` as a dependency so the script is re-run whenever an asset is modified. `file(GLOB_RECURSE ... CONFIGURE_DEPENDS)` extends this to also re-run the CMake configure step when assets are added or removed, keeping the dependency list accurate:
-
-```cmake
-file(GLOB_RECURSE WISH_RESOURCE_FILES
-  CONFIGURE_DEPENDS
-  "${WISH_RESOURCE_DIR}/*"
-)
-
-add_custom_command(
-  OUTPUT  "${CMAKE_CURRENT_SOURCE_DIR}/src/resources/embedded_resources.cpp"
-  COMMAND python3 "${CMAKE_SOURCE_DIR}/cmake/embed_resources.py"
-            --input  "${WISH_RESOURCE_DIR}"
-            --output "${CMAKE_CURRENT_SOURCE_DIR}/src/resources/embedded_resources.cpp"
-  DEPENDS ${WISH_RESOURCE_FILES}
-  COMMENT "Embedding resources"
-)
-```
-
-The two mechanisms complement each other:
+`file(GLOB_RECURSE ALL_ASSETS CONFIGURE_DEPENDS ...)` re-runs the CMake configure step whenever a file is added or removed under `WISH_RESOURCE_DIR`, keeping the `DEPENDS` list of the zip-creation command accurate. Combined with the two `add_custom_command`s' own `DEPENDS`, this means:
 
 | Scenario | Outcome |
 |----------|---------|
-| No asset changed | `DEPENDS` timestamps unchanged → script not invoked → no recompile |
-| Asset content changed | Script invoked → content differs → file written → recompile |
-| Asset added or removed | `CONFIGURE_DEPENDS` re-runs CMake → updated `DEPENDS` list → script invoked → compare-before-write decides |
-| CMake reconfigure only | Script may be invoked → compare-before-write leaves file unchanged → no recompile |
-
----
-
-## Preventing Dead-Code Elimination
-
-Modern linkers remove unreferenced symbols by default (`--gc-sections` on GCC/Clang, `/OPT:REF` on MSVC). Because `embedded_resources.cpp` is a generated translation unit with no callers inside its own file, the linker could in principle strip its contents entirely.
-
-The design avoids this without compiler-specific attributes by ensuring a **live reference chain**:
-
-```
-renderer calls resource_store::find()          ← used, cannot be stripped
-  → find() references g_resource_table         ← external linkage, referenced by find()
-    → table entries hold addresses of byte     ← static arrays, referenced by table
-         arrays (res_icons_folder_png, ...)
-```
-
-`resource_store.cpp` holds the `extern` declarations that anchor the chain:
-
-```cpp
-// resource_store.cpp
-extern const resource_entry g_resource_table[];
-extern const std::size_t    g_resource_count;
-
-std::optional<resource_view> resource_store::find(std::string_view path) {
-  for (std::size_t i = 0; i < g_resource_count; ++i) {
-    if (path == g_resource_table[i].path)
-      return resource_view{g_resource_table[i].data, g_resource_table[i].size};
-  }
-  return std::nullopt;
-}
-```
-
-Because `find` is reachable (called by the renderer), the linker must keep it. Keeping `find` requires keeping `g_resource_table` and `g_resource_count` (external linkage, referenced directly). Keeping the table requires keeping every byte array whose address is stored in a table entry (referenced by the table initialiser within the same TU).
-
-The individual byte arrays are `static` (internal linkage) — they cannot be referenced from outside `embedded_resources.cpp`. This is intentional: it prevents symbol-table bloat from hundreds of generated names while still keeping them alive through the table.
-
-No `[[gnu::used]]`, `__declspec(selectany)`, or linker scripts are required.
+| No asset changed | Custom commands not invoked → no rebuild |
+| Asset content changed | Zip step reruns → codegen step reruns → recompile |
+| Asset added or removed | `CONFIGURE_DEPENDS` re-runs CMake → updated `DEPENDS` list → zip step reruns |
 
 ---
 
@@ -183,72 +110,51 @@ No `[[gnu::used]]`, `__declspec(selectany)`, or linker scripts are required.
 ```cpp
 // src/resources/resource_store.hpp
 
-namespace bdg::wish {
+namespace bdg::wish::resource_store {
 
-/// @brief Immutable view over a single embedded resource.
-struct resource_view {
-  const unsigned char* data;  ///< Pointer into static storage. Never null if valid.
-  std::size_t          size;  ///< Byte length.
-};
-
-/// @brief Read-only store of binary resources compiled into the wish binary.
+/// @brief Unpack the embedded resource archive into @p dir.
 ///
-/// All methods are free functions (no instantiation needed). The backing table
-/// is generated at build time from the asset tree in WISH_RESOURCE_DIR.
-namespace resource_store {
+/// Creates @p dir if it does not already exist. Every regular-file entry
+/// becomes a file under @p dir (creating subdirectories as needed), then has
+/// its permissions set to read-only (owner/group/other read, no write), so
+/// `file_service::upload()` cannot silently overwrite a built-in asset.
+///
+/// Never throws. Any miniz or filesystem failure is logged to stderr and
+/// that entry is skipped; extraction continues with the remaining entries.
+///
+/// @return true if every entry was extracted successfully.
+bool extract_to(const std::filesystem::path& dir);
 
-  /// @brief Return true if @p path starts with the "res://" scheme.
-  bool is_resource_path(std::string_view path);
-
-  /// @brief Strip the "res://" prefix from @p path.
-  /// @return The bare path (e.g. "icons/folder.png"), or @p path unchanged if
-  ///         it does not start with "res://".
-  std::string_view strip_scheme(std::string_view path);
-
-  /// @brief Look up an embedded resource by its bare path (no "res://" prefix).
-  /// @param path  Case-sensitive path relative to the asset root
-  ///              (e.g. "icons/folder.png").
-  /// @return A populated resource_view, or std::nullopt if not found.
-  std::optional<resource_view> find(std::string_view path);
-
-} // namespace resource_store
-
-} // namespace bdg::wish
+} // namespace bdg::wish::resource_store
 ```
 
-`is_resource_path` and `strip_scheme` are pure string operations with no table access; they are safe to call from any thread at any time. `find` performs a linear scan of the statically initialised table; the table is immutable after process start, so `find` is also thread-safe without locking.
+Unpacking is implemented with [miniz](https://github.com/richgel999/miniz), vendored via `FetchContent` (see root `CMakeLists.txt`), the same mechanism already used for imgui/SDL3.
 
 ---
 
-## Integration with Widget Rendering
+## Runtime Extraction and Failure Handling
 
-Widget fields that accept file paths (e.g. `Image::src`, font path fields) currently go through `resolve_widget_path()` (defined in `src/imgui/imgui_ui_renderer.hpp`), which enforces the session sandbox for filesystem access.
+`extract_to()` is called once, from `session::session()`, immediately after `resource_dir` itself is created:
 
-`res://` paths bypass the sandbox check entirely — they reference data already compiled into the binary, not the filesystem. The renderer checks `resource_store::is_resource_path()` **before** calling `resolve_widget_path()`:
-
-```
-renderer receives path string
-  ├─ starts with "res://"?
-  │    yes → resource_store::find(strip_scheme(path))
-  │           → load texture / font from raw bytes in memory
-  │           → return; no filesystem access
-  └─ no  → resolve_widget_path(path, resource_dir, allow_absolute_paths)
-             → existing sandbox-validated filesystem load
+```cpp
+session::session(bison::key_t id_) : id(id_) {
+  resource_dir = std::filesystem::temp_directory_path() / ("wish_" + std::to_string(...));
+  std::filesystem::create_directories(resource_dir);
+  resource_store::extract_to(resource_dir / "res");
+}
 ```
 
-This precedence rule means `res://` paths are unaffected by `allow_absolute_paths` or the per-session `resource_dir` — they are always available and never sandboxed.
+`session::session()` runs on the per-connection worker thread with **no surrounding try/catch** — an exception escaping it would call `std::terminate()` and kill the entire server process, not just the one connection. For this reason `extract_to()` never throws: every failure mode (archive corruption, a per-entry extract/chmod failure, an unwritable destination) is logged to stderr and folded into a `false` return, which the caller intentionally ignores. A session whose built-in icons/fonts failed to extract is degraded, not broken — this matches the renderer's existing fail-soft philosophy for missing assets (`render_image()` silently no-ops when a texture fails to load), as opposed to `file_service`'s fail-loud `std::runtime_error`s, which are safe only because RMI method dispatch runs inside the server's own per-message catch blocks — a fundamentally different call context than session construction.
 
-### Texture loading from memory
-
-ImGui's `ImGui::GetIO().Fonts->AddFontFromMemoryTTF` and the SDL3/OpenGL texture-from-memory path accept a raw byte buffer. `resource_view.data` and `resource_view.size` are passed directly to these APIs. The caller must not free or modify the buffer.
+No explicit cleanup step is needed: `session::~session()` already unconditionally `remove_all(resource_dir, ec)`s the whole tree (including `res/`) on disconnect. Extracted files are read-only but the directories containing them are left normally writable, so POSIX unlink (governed by the containing directory's permissions, not the file's own mode) removes them without any special-casing — this holds whether extraction fully succeeded or partially failed.
 
 ---
 
 ## Security Considerations
 
-- **No path traversal risk.** The resource table keys are normalised at build time by the generator script and are never influenced by client input. A `res://` path from a client is matched against this fixed table; if no match exists, `find` returns `nullopt` and the caller falls back to a default or renders nothing.
-- **No writable surface.** `resource_view` exposes a `const unsigned char*`. Nothing in the public API allows writing to the backing arrays.
-- **No filesystem access.** `resource_store` never opens files at runtime. The risk surface is limited to the generator script at build time, which only reads files from `WISH_RESOURCE_DIR`.
+- **No path traversal risk from the archive itself.** Zip entry names come from the build-controlled asset tree, not from any client input — there is nothing to sandbox-check on the way in.
+- **Read-only against overwrite, not against deletion.** Extracted files are chmod'd read-only, so `file_service::upload("res/icons/folder.png", ...)` fails (the underlying `std::ofstream` cannot open a read-only file for writing). `file_service::erase("res/icons/folder.png")` can still succeed, because POSIX unlink permission is governed by the containing directory (left writable), not the file's own mode. This is an accepted, deliberate trade-off: it only affects the *current session's* private, temp-directory copy (never the embedded archive itself), and is cleaned up unconditionally on disconnect regardless.
+- **No collisions with uploads.** Extraction targets `resource_dir/res/`, a name reserved by convention, not `resource_dir` itself — so a client's uploaded file names (via `file_service::upload()`, which writes directly under `resource_dir`) can never collide with an embedded asset's path.
 
 ---
 
@@ -260,7 +166,6 @@ Only binary assets that are needed by the server's built-in UI at runtime belong
 |----------|---------|
 | Fonts | Default UI font (.ttf), monospace font for text editor |
 | Icons | File-type icons (folder, audio, image, document, code, ...) for `OpenFileDialog` |
-| Cursors | Custom cursor images, if not provided by the OS |
 
 **Do not add:**
 - Test data or fixtures (use the `tests/` tree).
@@ -271,11 +176,7 @@ Only binary assets that are needed by the server's built-in UI at runtime belong
 
 ## Relationship to `file_service`
 
-`file_service` manages per-session, client-uploaded files in a temporary directory that is deleted on disconnect. It is the right mechanism for user-provided images, fonts, or data that the client uploads at runtime.
-
-`resource_store` manages immutable, server-provided assets compiled into the binary. It is the right mechanism for icons, default fonts, and other assets that the server always needs regardless of what clients connect.
-
-The two systems are intentionally separate. A path starting with `res://` always resolves through `resource_store`; all other paths resolve through `file_service::resolve_path()`.
+`file_service` manages per-session files in `resource_dir` — both client-uploaded content and, since this refactor, the unpacked built-in assets under `resource_dir/res/`. There is no longer a second, parallel resolution path distinguished by a URI scheme: `resource_store` has exactly one runtime touchpoint (the one-time `extract_to()` call in `session::session()`), after which `file_service` uniformly owns everything under `resource_dir`, with the only distinction being the read-only permission bit on extracted files.
 
 ---
 

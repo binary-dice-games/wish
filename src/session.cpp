@@ -5,6 +5,8 @@
 
 #include "src/bison/bison_object.hpp"
 
+#include <resource_store.hpp>
+
 #include <algorithm>
 #include <iomanip>
 #include <system_error>
@@ -18,6 +20,12 @@ session::session(bison::key_t id_) : id(id_) {
   // instance; the "wish_" prefix prevents clashing with other applications.
   resource_dir = std::filesystem::temp_directory_path() / ("wish_" + std::to_string(static_cast<uint32_t>(id.id)));
   std::filesystem::create_directories(resource_dir);
+  // Return value intentionally ignored: a client that can't see built-in
+  // icons/fonts is degraded, not fatal. extract_to() never throws, which
+  // matters here -- this constructor runs on a per-connection worker thread
+  // with no surrounding try/catch, so a thrown exception would terminate the
+  // whole server, not just this connection.
+  resource_store::extract_to(resource_dir / "res");
 }
 
 session::~session() {
