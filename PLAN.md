@@ -17,7 +17,7 @@ Each step produces a self-contained, testable deliverable. Steps are ordered so 
 - Update root `CMakeLists.txt` to correctly link `wish` against the bison target from `extern/bison`.
 
 **Tests:**
-- `cmake -S . -B build && cmake --build build` succeeds with no errors on both Windows and Linux.
+- `cmake -S . -B build && cmake --build build` succeeds with no errors on Linux and MSYS2.
 - `ctest --test-dir build` runs and the stub test passes.
 
 ---
@@ -452,7 +452,7 @@ SDL3 is added via FetchContent (same pattern as imgui) — no git submodule need
 **Deliverables:**
 - `examples/socket_server/main.cpp` — wish server using `socket_server_transport` on port 7070, `null_renderer`.
 - `examples/socket_client/main.cpp` — wish client using `socket_client_transport` connecting to `127.0.0.1:7070`.
-- Both target Windows and Linux.
+- Both target Linux and MSYS2.
 
 **Tests** (`tests/test_socket_transport.cpp`):
 - Server listens on an ephemeral port; client connects; `register_template` + `instantiate_template` round-trip succeeds; client disconnects; server session is cleaned up.
@@ -463,7 +463,7 @@ SDL3 is added via FetchContent (same pattern as imgui) — no git submodule need
 ## Completion Criteria
 
 The project is complete when:
-1. `cmake -S . -B build && cmake --build build` succeeds on both Windows (MSVC or MinGW) and Linux (GCC or Clang).
+1. `cmake -S . -B build && cmake --build build` succeeds on Linux (GCC or Clang) and MSYS2 (GCC).
 2. `ctest --test-dir build` passes all tests with no failures.
 3. `cmake --build build --target calculator` succeeds; running `calculator` opens a window with working arithmetic.
 4. `WISH_ENABLE_SDL3=OFF` build still passes all tests.

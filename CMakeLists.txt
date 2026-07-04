@@ -301,7 +301,7 @@ if(WISH_BUILD_SHARED)
   set_target_properties(wish_client_dll PROPERTIES
       RUNTIME_OUTPUT_NAME wish_client      # wish_client.dll
       ARCHIVE_OUTPUT_NAME wish_client_dll  # wish_client_dll.lib — avoids collision with wish_client.lib
-      OUTPUT_NAME         wish_client      # non-MSVC fallback
+      OUTPUT_NAME         wish_client      # MSYS2/Linux fallback
       FOLDER              lib)
 endif()
 

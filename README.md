@@ -88,7 +88,7 @@ img.set({{"src"_key, std::string{"logo.png"}}, {"width"_key, 64}, {"height"_key,
 | **Events** | Server-side interactions emit named events (`clicked`, `changed`, ...) to the client via `proxy.onEvent`. |
 | **File service** | Clients upload/download files via `client::upload_file` / `download_file`. Files are stored in a sandboxed per-session folder, deleted on disconnect. |
 | **Multi-client** | Each connected client has an isolated session: independent object tree, template registry, and resource folder. |
-| **Renderer backends** | `wish::renderer` is an abstract interface. The imgui backend is the default. New backends (Qt, Win32, ...) implement the same interface. |
+| **Renderer backends** | `wish::renderer` is an abstract interface. The imgui backend is the default. New backends (Qt, terminal/TUI, ...) implement the same interface. |
 | **Transports** | TCP socket. Chosen at runtime; the renderer and class registry are independent of the transport. |
 
 ## Declaring bison RMI Classes (server-side)

@@ -136,7 +136,7 @@ Concrete implementations:
 - **`wish::imgui_renderer`** — Dear ImGui draw calls only; no windowing backend. Used in headless tests by providing a manually created `ImGuiContext`.
 - **`wish::sdl3_renderer`** — extends `imgui_renderer`; creates an SDL3 window and SDL renderer inside `setup()` (which runs on the render thread). See below.
 
-Adding a further backend (Qt, Win32 controls, terminal/TUI) means implementing `wish::renderer` without changing any other wish component.
+Adding a further backend (Qt, terminal/TUI) means implementing `wish::renderer` without changing any other wish component.
 
 ### `bdg::wish::sdl3_renderer`
 
@@ -352,8 +352,8 @@ render frame: imgui Button("Submit") returns true
 
 | Transport | Class | Platform | Use case |
 |-----------|-------|----------|---------|
-| TCP socket | `socket_server_transport` / `socket_client_transport` | Windows + Linux | Network or local daemon |
-| In-memory | `memory_server_transport` / `memory_client_transport` | Windows + Linux | Unit tests and self-contained examples (e.g. calculator) |
+| TCP socket | `socket_server_transport` / `socket_client_transport` | Linux + MSYS2 | Network or local daemon |
+| In-memory | `memory_server_transport` / `memory_client_transport` | Linux + MSYS2 | Unit tests and self-contained examples (e.g. calculator) |
 
 `bdg::wish::server` accepts a `server_transport_iface&` reference, so transport selection is a runtime decision at the call site. No `#ifdef` inside the server or renderer.
 
@@ -434,7 +434,7 @@ Keys are computed via `wish_key(name)` which implements the same FNV-1a 32-bit h
 `wish::server` inherits from `bison::rmi::server` and takes a `server_transport_iface&` at construction time rather than embedding a concrete transport type. This lets the same business logic (class registry, renderer, file service) run over TCP, or any future transport without code duplication.
 
 **Abstract renderer interface.**
-Decoupling the render pipeline from imgui means backends can be swapped without touching client code or the class registry. Immediate-mode (imgui) and retained-mode (Qt, Win32) backends share the same interface; the retained-mode case would add a reconciliation pass inside `render_node`.
+Decoupling the render pipeline from imgui means backends can be swapped without touching client code or the class registry. Immediate-mode (imgui) and retained-mode (Qt) backends share the same interface; the retained-mode case would add a reconciliation pass inside `render_node`.
 
 **Bison dynamic objects as UI state.**
 No separate schema system is needed. The same serialization, prototype inheritance, and RMI machinery bison provides is reused for the UI tree. Field type constraints (the variant is locked on first assignment) give lightweight validation automatically.

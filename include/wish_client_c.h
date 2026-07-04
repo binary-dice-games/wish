@@ -97,9 +97,8 @@ typedef enum {
    */
   WISH_TRANSPORT_STREAM = 1,
   /**
-   * Named pipe (Windows) or Unix domain socket (Linux/macOS).
-   * Windows: `address` = full pipe path, e.g. `\\.\pipe\wish`.
-   * Linux/macOS: `address` = socket path, e.g. `/tmp/wish.sock`.
+   * Unix domain socket (Linux and MSYS2).
+   * `address` = socket path, e.g. `/tmp/wish.sock`.
    */
   WISH_TRANSPORT_PIPE = 2,
 } wish_transport_t;

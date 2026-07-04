@@ -1,6 +1,9 @@
 # wish — Building
 
-This page covers prerequisites, CMake options, and platform-specific notes for building wish and running the wish server on Windows and Linux.
+wish targets **Linux and MSYS2 only**; native Windows/MSVC builds are not
+supported. This page covers prerequisites, CMake options, and
+platform-specific notes for building wish and running the wish server on
+Linux and MSYS2 (Windows host).
 
 ---
 
@@ -11,16 +14,9 @@ This page covers prerequisites, CMake options, and platform-specific notes for b
 | Tool | Minimum version | Notes |
 |------|----------------|-------|
 | CMake | 3.10 | 3.21+ recommended for `--preset` support |
-| C++ compiler | C++20 | MSVC 19.29+, GCC 10+, Clang 12+ |
+| C++ compiler | C++20 | GCC 10+, Clang 12+ |
 | Git | any | Required to check out submodules |
 | Internet access at configure time | — | SDL3, Dear ImGui, ImPlot, and ImPlot3D are fetched automatically via CMake FetchContent |
-
-### Windows
-
-- **Visual Studio 2022** (recommended) with the "Desktop development with C++" workload, or
-- **MSVC + CMake + Ninja** installed via the Visual Studio installer.
-
-No additional system libraries are needed; all graphics dependencies are fetched automatically.
 
 ### Linux
 
@@ -36,6 +32,22 @@ sudo apt-get install -y \
 ```
 
 SDL3 is fetched and built from source by CMake, so no `libsdl3-dev` package is required.
+
+### MSYS2 (Windows host)
+
+Install [MSYS2](https://www.msys2.org/), then from an **MSYS2 MSYS** shell
+(not MinGW64, not `cmd.exe`/PowerShell) install the toolchain:
+
+```bash
+pacman -S --needed \
+    mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja \
+    mingw-w64-x86_64-gcc \
+    mingw-w64-x86_64-libuv pkg-config
+```
+
+wish's core dependency (`extern/bison`) picks up MSYS2's system `libuv` via
+`pkg-config` automatically; configuring and building from here on is
+identical to Linux.
 
 ---
 
@@ -65,7 +77,7 @@ cmake -S . -B build
 |--------|---------|-------------|
 | `WISH_ENABLE_IMGUI` | `ON` | Build the Dear ImGui renderer. Required for SDL3 renderer and wish server. |
 | `WISH_ENABLE_SDL3` | `ON` | Build the SDL3 windowed renderer, the wish server, and the calculator/demo examples. |
-| `WISH_BUILD_SHARED` | `ON` | Build `wish_client` as a shared library with a C ABI (`wish_client.dll` / `libwish_client.so`). |
+| `WISH_BUILD_SHARED` | `ON` | Build `wish_client` as a shared library with a C ABI (`wish_client.dll` on MSYS2 / `libwish_client.so` on Linux). |
 | `WISH_BUILD_TESTS` | `ON` | Build and register the GoogleTest suite. |
 
 Example — headless/CI build with no window system:
@@ -96,42 +108,25 @@ cmake --build build --target calculator
 cmake --build build --target demo
 ```
 
-To build in Release mode with the Visual Studio generator (Windows):
-
-```sh
-cmake --build build --config Release
-```
-
 ### Output locations
 
 | Generator | Executable |
 |-----------|-----------|
-| Visual Studio (Windows) | `build\Debug\wish.exe`, `build\Release\wish.exe` |
-| Ninja on Windows | `build\wish.exe` |
 | Ninja / Makefiles (Linux) | `build/wish` |
+| Ninja / Makefiles (MSYS2) | `build/wish.exe` |
 
 ---
 
 ## Running the wish server
 
-The wish server opens an SDL3 window that acts as the rendering host. Clients connect over TCP (or a named pipe on Windows / Unix socket on Linux) and push UI to the window.
-
-### Windows
-
-```bat
-.\build\Debug\wish.exe
-```
-
-Or with Ninja:
-
-```bat
-.\build\wish.exe
-```
-
-### Linux
+The wish server opens an SDL3 window that acts as the rendering host. Clients connect over TCP or a Unix domain socket and push UI to the window.
 
 ```sh
+# Linux
 ./build/wish
+
+# MSYS2
+./build/wish.exe
 ```
 
 ### Command-line flags
@@ -140,7 +135,7 @@ Or with Ninja:
 |------|---------|-------------|
 | `--host HOST` | `0.0.0.0` | Bind address for the TCP transport |
 | `--port PORT` | `7070` | TCP listen port |
-| `--pipe PATH` | *(empty)* | Named-pipe / Unix-socket path; when set, TCP is not used |
+| `--pipe PATH` | *(empty)* | Unix-socket path; when set, TCP is not used |
 | `--verbose` | `false` | Print session lifecycle messages to stdout |
 | `--title TITLE` | `wish` | Window title |
 | `--width N` | `1280` | Initial window width in pixels |
@@ -165,7 +160,7 @@ See [docs/examples.md](examples.md) for annotated walkthroughs of each example. 
 ./build/calculator
 ./build/demo
 
-# Windows (Visual Studio generator, Debug)
-.\build\Debug\calculator.exe
-.\build\Debug\demo.exe
+# MSYS2
+./build/calculator.exe
+./build/demo.exe
 ```

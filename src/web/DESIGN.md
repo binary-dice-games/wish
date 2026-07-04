@@ -127,10 +127,6 @@ if(WISH_ENABLE_IMGUI AND WISH_ENABLE_WEB)
   )
   target_compile_definitions(wish_server PUBLIC WISH_WEB_ENABLED)
   target_link_libraries(wish_server PRIVATE wish_imgui imgui-ws)
-
-  if(WIN32)
-    target_link_libraries(wish_server PRIVATE ws2_32 mswsock)
-  endif()
 endif()
 
 ```

@@ -12,9 +12,7 @@
 
 #include <imgui.h>
 
-#if defined(_WIN32)
 #include "src/rmi/transport/named_pipe_transport.hpp"
-#endif
 
 #include <gflags/gflags.h>
 

@@ -136,6 +136,20 @@ that needs to access session data across calls must hold a `sync_session_ptr`
 - Keep lock scope tight.
 - Use condition variables with explicit shutdown/stop flags.
 
+## Platform Support
+
+wish targets **Linux and MSYS2 only** (native Windows/MSVC builds are not
+supported). MSYS2 provides the same POSIX layer as Linux and still defines
+`_WIN32`/`WIN32` (it uses the mingw-w64 toolchain), so MSYS2-only code such as
+the `__declspec(dllexport/dllimport)` `WISH_API` macro in
+`include/wish_client_c.h` must stay — it is not native-Windows-only. Do not
+add a separate platform-suffixed file (e.g. `logger_win.cpp`) for a Linux/
+MSYS2 difference; avoid conditional compilation (`#ifdef`, `#if defined(...)`)
+to branch on OS behavior. If a genuine platform difference arises within the
+Linux/MSYS2 target, keep it a small, narrowly-scoped `#if defined(_WIN32)`
+guard within the shared file rather than a full file split, and prefer it
+only when there truly is no portable alternative.
+
 ## Testing Style (GoogleTest)
 
 - Use `TEST` / `TEST_F` with descriptive suite and test names.

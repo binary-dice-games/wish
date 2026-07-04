@@ -23,7 +23,7 @@
 // ── Shared transport flags — consumed by all three modes ──────────────────────
 DEFINE_string(host, "0.0.0.0", "Bind/connect host address");
 DEFINE_int32(port, 7070, "Listen/connect port");
-DEFINE_string(pipe, "", "Named-pipe / Unix-socket path");
+DEFINE_string(pipe, "", "Unix-socket path");
 DEFINE_bool(verbose, false, "Print session trace messages to stdout");
 
 static void print_usage() {
@@ -37,7 +37,7 @@ static void print_usage() {
                "Shared transport flags:\n"
                "  --host H     Host address  (default: 0.0.0.0 for server, 127.0.0.1 for client)\n"
                "  --port P     Port          (default: 7070)\n"
-               "  --pipe PATH  Named pipe / Unix socket\n"
+               "  --pipe PATH  Unix socket\n"
                "  --verbose    Print RMI trace messages\n"
                "\n"
                "Run 'wish <subcommand> --help' for subcommand-specific flags.\n";

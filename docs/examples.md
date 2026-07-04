@@ -9,7 +9,7 @@ This page describes every runnable example in the `examples/` directory: what it
 | Tool | Minimum version |
 |------|----------------|
 | CMake | 3.10 |
-| C++ compiler | C++20 (MSVC 19.29+, GCC 10+, Clang 12+) |
+| C++ compiler | C++20 (GCC 10+, Clang 12+) |
 | Internet access at configure time | SDL3 and Dear ImGui are fetched automatically via CMake FetchContent — no manual download needed |
 
 ---
@@ -41,16 +41,8 @@ cmake --build build
 
 | Generator | Binary location |
 |-----------|----------------|
-| Ninja / Unix Makefiles (Linux, macOS) | `build/calculator` |
-| Visual Studio (Windows, default) | `build\Debug\calculator.exe` or `build\Release\calculator.exe` |
-| Ninja on Windows | `build\calculator.exe` |
-
-To build in Release mode with Visual Studio:
-
-```sh
-cmake -S . -B build
-cmake --build build --config Release --target calculator
-```
+| Ninja / Unix Makefiles (Linux) | `build/calculator` |
+| Ninja / Unix Makefiles (MSYS2) | `build/calculator.exe` |
 
 ---
 
@@ -70,14 +62,11 @@ A self-contained 4-function calculator that exercises the full wish stack end to
 ### Running
 
 ```sh
-# Linux / macOS
+# Linux
 ./build/calculator
 
-# Windows (Visual Studio generator, Debug build)
-.\build\Debug\calculator.exe
-
-# Windows (Ninja generator)
-.\build\calculator.exe
+# MSYS2
+./build/calculator.exe
 ```
 
 A 300 × 420 window opens with a standard calculator layout:
@@ -168,14 +157,11 @@ A comprehensive showcase of every wish widget and layout type in a single dockab
 ### Running
 
 ```sh
-# Linux / macOS
+# Linux
 ./build/demo
 
-# Windows (Visual Studio generator, Debug build)
-.\build\Debug\demo.exe
-
-# Windows (Ninja generator)
-.\build\demo.exe
+# MSYS2
+./build/demo.exe
 ```
 
 Command-line flags:
@@ -214,4 +200,4 @@ The full UI descriptor is assembled at compile time from nine per-tab `constexpr
 
 | Example | Step | Description |
 |---------|------|-------------|
-| `socket_server` / `socket_client` | Step 18 | Server listening on TCP port 7070; client connects over the network. Windows + Linux. |
+| `socket_server` / `socket_client` | Step 18 | Server listening on TCP port 7070; client connects over the network. Linux + MSYS2. |
