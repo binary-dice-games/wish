@@ -24,8 +24,8 @@
  * static void session(wish_client_handle c, void* ud) {
  *   wish_set_style_preset(c, "dark");
  *   wish_register_template(c, "ui", kMyDesc);
- *   rmi_proxy_handle root = wish_instantiate_template(c, "ui");
- *   rmi_proxy_handle btn = wish_proxy_get(c, "ok_button");
+ *   rmi_proxy_handle root = wish_instantiate_template(c, "ui", "ui");
+ *   rmi_proxy_handle btn = wish_proxy_get(c, "ui.ok_button");
  *   rmi_proxy_on_event(btn, bison_key("clicked"), on_clicked, c);
  *   wish_client_wait(c);
  *   rmi_proxy_release(btn);
@@ -244,47 +244,63 @@ WISH_API wish_error wish_register_template_async(
 /**
  * @brief Instantiate a previously registered template.
  *
- * Populates the internal dot-path → proxy map used by wish_proxy_get().  Only
- * one template can be active at a time; calling this again replaces the
- * previous map (proxy handles already returned to the caller remain valid
- * until individually released with rmi_proxy_release()).
+ * The result is merged into the internal dot-path → proxy map used by
+ * wish_proxy_get() under @p prefix: the template's root lands at dot-path
+ * @p prefix and its descendants at `prefix.<path>` (mirroring how
+ * `bdg::wish::form` merges its own elements into the session's object tree
+ * under a caller-chosen, per-instance key). Other prefixes already in the
+ * map remain queryable; instantiating again under the same @p prefix only
+ * replaces that instance's own subtree. Pass a distinct @p prefix (e.g. one
+ * derived from a serial number) to instantiate multiple independent copies
+ * of the same @p name.
  *
  * @param client  Active session handle.
  * @param name    Template name passed to wish_register_template().
- * @return Root proxy handle (dot-path ""), or NULL on failure.  Caller owns
- *         the handle and must release it with rmi_proxy_release().
+ * @param prefix  Non-empty dot-path prefix under which this instance's
+ *                elements are registered; caller-chosen and must be unique
+ *                among the client's live instances to avoid colliding with
+ *                another one's subtree.
+ * @return Root proxy handle (dot-path @p prefix), or NULL on failure.
+ *         Caller owns the handle and must release it with
+ *         rmi_proxy_release().
  */
-WISH_API rmi_proxy_handle wish_instantiate_template(wish_client_handle client, const char* name);
+WISH_API rmi_proxy_handle wish_instantiate_template(wish_client_handle client, const char* name, const char* prefix);
 
 /**
  * @brief Asynchronous variant of wish_instantiate_template().
  *
  * Resolves like `rmi_client_instantiate_async()`: consume @p out_future with
- * `rmi_future_get_proxy()` to obtain the root proxy handle.  The dot-path →
- * proxy map used by wish_proxy_get() is populated as a side effect of the
- * future becoming ready.
+ * `rmi_future_get_proxy()` to obtain the root proxy handle (dot-path
+ * @p prefix).  The dot-path → proxy map used by wish_proxy_get() is merged
+ * under @p prefix as a side effect of the future becoming ready — see
+ * wish_instantiate_template() for the prefixing/merge behavior.
  *
  * @param client      Active session handle.
  * @param name        Template name passed to wish_register_template().
+ * @param prefix      Non-empty dot-path prefix for this instance; see
+ *                    wish_instantiate_template().
  * @param out_future  Output future consumed with rmi_future_get_proxy().
  * @return WISH_OK if the operation was submitted; WISH_ERR_* otherwise.
  */
-WISH_API wish_error
-wish_instantiate_template_async(wish_client_handle client, const char* name, rmi_future_handle* out_future);
+WISH_API wish_error wish_instantiate_template_async(
+    wish_client_handle client, const char* name, const char* prefix, rmi_future_handle* out_future);
 
 /**
  * @brief Resolve a dot-joined element path to a proxy handle.
  *
- * Paths follow the wish naming convention: children are joined with ".".
- * Example: "btns.ok" refers to the "ok" child of the "btns" element.  Looked
- * up from the map populated by the most recent wish_instantiate_template()
- * (or wish_instantiate_template_async()) call — no round trip to the server.
+ * Paths are prefixed by the instance prefix passed to
+ * wish_instantiate_template(), e.g. `wish_proxy_get(client, "ui.btns.ok")`
+ * for the "ok" child of "btns" in the instance created with prefix "ui";
+ * `wish_proxy_get(client, "ui")` for that instance's root.  Looked up from
+ * the map populated by every wish_instantiate_template() (or
+ * wish_instantiate_template_async()) call so far — no round trip to the
+ * server.
  *
  * @param client    Active session handle.
- * @param dot_path  Dot-joined element path, or "" for the root element.
- * @return New proxy handle, or NULL if the path is not in the current
- *         template's proxy map.  Caller owns the handle and must release it
- *         with rmi_proxy_release().
+ * @param dot_path  Dot-joined element path, prefixed by its instance prefix.
+ * @return New proxy handle, or NULL if the path is not in the proxy map.
+ *         Caller owns the handle and must release it with
+ *         rmi_proxy_release().
  */
 WISH_API rmi_proxy_handle wish_proxy_get(wish_client_handle client, const char* dot_path);
 

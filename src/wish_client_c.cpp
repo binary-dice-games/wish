@@ -257,13 +257,27 @@ extern "C" wish_error wish_register_template_async(
   }
 }
 
-extern "C" rmi_proxy_handle wish_instantiate_template(wish_client_handle c, const char* name) {
-  if (!c || !name)
+// Merge a freshly instantiated template's proxies into the client's
+// persistent proxy_map_ under `prefix` (caller-supplied, so distinct
+// instances of the same template can coexist), the same prefixing
+// convention as ui_tree::merge(): the root (key "") lands at just `prefix`,
+// descendants land at `prefix + "." + path`. Unlike a plain assignment, this
+// leaves other instances' entries in place so wish_proxy_get() can still
+// resolve them; instantiating again under the same prefix only replaces
+// that instance's own subtree.
+static void merge_proxy_map(wish_client_handle c, const std::string& prefix, wish::proxy_map&& fresh) {
+  for (auto& [path, proxy] : fresh)
+    c->proxy_map_.insert_or_assign(path.empty() ? prefix : (prefix + "." + path), std::move(proxy));
+}
+
+extern "C" rmi_proxy_handle wish_instantiate_template(wish_client_handle c, const char* name, const char* prefix) {
+  if (!c || !name || !prefix)
     return nullptr;
   try {
-    c->proxy_map_ = c->client_->instantiate_template(bdg::bison::key_t{name}).get();
+    std::string prefix_str{prefix};
+    merge_proxy_map(c, prefix_str, c->client_->instantiate_template(bdg::bison::key_t{name}).get());
 
-    auto it = c->proxy_map_.find(std::string{});
+    auto it = c->proxy_map_.find(prefix_str);
     if (it == c->proxy_map_.end())
       return nullptr;
 
@@ -275,15 +289,16 @@ extern "C" rmi_proxy_handle wish_instantiate_template(wish_client_handle c, cons
   }
 }
 
-extern "C" wish_error
-wish_instantiate_template_async(wish_client_handle c, const char* name, rmi_future_handle* out_future) {
-  if (!c || !name || !out_future)
+extern "C" wish_error wish_instantiate_template_async(
+    wish_client_handle c, const char* name, const char* prefix, rmi_future_handle* out_future) {
+  if (!c || !name || !prefix || !out_future)
     return WISH_ERR_NULL;
   try {
     bdg::bison::key_t key{name};
-    std::future<proxy::dynamic> fut = std::async(std::launch::async, [c, key]() -> proxy::dynamic {
-      c->proxy_map_ = c->client_->instantiate_template(key).get();
-      auto it = c->proxy_map_.find(std::string{});
+    std::string prefix_str{prefix};
+    std::future<proxy::dynamic> fut = std::async(std::launch::async, [c, key, prefix_str]() -> proxy::dynamic {
+      merge_proxy_map(c, prefix_str, c->client_->instantiate_template(key).get());
+      auto it = c->proxy_map_.find(prefix_str);
       if (it == c->proxy_map_.end())
         throw std::runtime_error("template has no root element");
       return c->client_->make_proxy(it->second.object_id());
