@@ -310,6 +310,45 @@ Window (title from field)
 
 The internal tree is private, like `FileDialog`'s.
 
+### `ProcessExplorer`
+
+**Bison class name:** `"ProcessExplorer"` in the `"wish"` namespace. Module-gated behind `WISH_MODULE_PROCESS_EXPLORER` (`OFF` by default) since, unlike `Calculator`/`Notepad`, it is genuinely OS-specific -- see [Module System](#module-system).
+
+**Purpose:** A read-only, self-contained top/htop-style system monitor: overall and per-core CPU meters, CPU% and memory% history graphs (via `plot_elements`), and a live process table sorted by CPU% descending. Entirely server-side and self-contained, like `Calculator` -- the client only needs to instantiate it and listen for `"closed"`.
+
+Gathering process/CPU/memory information is inherently platform-specific. The data-acquisition layer is split out of the form itself: `src/forms/process_explorer/process_info.hpp` declares a platform-agnostic `process_info_source` class (returning `system_snapshot`/`process_sample` data), and `process_info_linux.cpp` is the Linux/MSYS2 implementation, reading `/proc`. A future native-Windows port adds `process_info_windows.cpp` implementing the same interface and selects between the two `process_info_*.cpp` sources in `CMakeLists.txt` -- the form itself (`process_explorer.cpp`) never changes.
+
+The form owns a background refresh thread (started in `on_init()`, stopped in the destructor / on window close) that samples `process_info_source` roughly once a second and pushes the result into the internal UI tree under the session's write lock (`sync_sess_->wlock()`) -- the same pattern `CLAUDE.md` documents for any code that mutates session state outside of RMI dispatch. Because the form's own destruction can itself happen synchronously *during* a dispatch that already holds that write lock (an explicit client-initiated object-destroy request), the destructor detects that case (`detail::current_session != nullptr`) and detaches the thread instead of joining it, to avoid a self-deadlock; the thread's state lives in a separate `shared_ptr<refresh_state>` so it never touches the (possibly already-destroyed) form object during the brief window before it notices the stop flag and exits.
+
+#### Fields
+
+| Field | Type | Direction | Description |
+|-------|------|-----------|--------------|
+| `title` | string | client → form | Window title. Default: `"Process Explorer"`. |
+
+#### Events
+
+| Event | Payload fields | Description |
+|-------|---------------|--------------|
+| `closed` | — | The window was closed. Internal UI (and the refresh thread) is torn down. |
+
+#### Internal UI structure (informative)
+
+```
+Window (title from field)
+  VerticalLayout
+    HorizontalLayout            "summary"  -- CPU/Memory summary Labels
+    HorizontalLayout            "cores"    -- one ProgressBar per logical core, built at runtime
+    Plot "CPU % History"
+      PlotShaded                            -- rolling ~60-sample CPU% history
+    Plot "Memory % History"
+      PlotLine                               -- rolling ~60-sample memory% history
+    Table "proc_table" (headers: PID, Name, State, CPU %, Memory, Command)
+      TableRow* (one per process, added/removed/reordered by the refresh thread)
+```
+
+The internal tree is private, like `FileDialog`'s and `Notepad`'s.
+
 ---
 
 ## Sandbox and Security
@@ -348,7 +387,7 @@ The same rules that govern low-level wish elements apply to forms without except
 | `FileDialog` | built-in | File picker / Save As dialog (described above) |
 | `Calculator` | built-in | Four-function calculator; demonstrates self-contained form logic |
 | `Notepad` | built-in | Multi-file, syntax-highlighted text editor bridged to the client via upload_file/download_file (described above) |
-| `ProcessMonitor` | `WISH_MODULE_DESKTOP` | Tabular view of running processes (read-only, OS-specific) |
+| `ProcessExplorer` | `WISH_MODULE_PROCESS_EXPLORER` | top/htop-style system monitor (read-only, OS-specific) -- described below |
 
 New built-in forms go in `src/forms/`. Module-specific forms go in `src/forms/<module_name>/`.
 

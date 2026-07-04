@@ -39,3 +39,8 @@ if(WISH_ENABLE_IMGUI)
   wish_add_test(test_imgui_renderer test_imgui_renderer.cpp)
   wish_add_test(test_style_service  test_style_service.cpp)
 endif()
+
+if(WISH_MODULE_PROCESS_EXPLORER)
+  wish_add_test(test_process_explorer test_process_explorer.cpp)
+  target_compile_definitions(test_process_explorer PRIVATE WISH_MODULE_PROCESS_EXPLORER)
+endif()

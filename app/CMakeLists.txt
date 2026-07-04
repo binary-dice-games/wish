@@ -16,6 +16,10 @@ if(WISH_ENABLE_IMGUI AND WISH_ENABLE_SDL3)
   set_target_properties(wish-cli PROPERTIES
       OUTPUT_NAME "wish"
       FOLDER      app)
+  if(WISH_MODULE_PROCESS_EXPLORER)
+    target_sources(wish-cli PRIVATE wish_cli/client/apps/process_explorer.cpp)
+    target_compile_definitions(wish-cli PRIVATE WISH_MODULE_PROCESS_EXPLORER)
+  endif()
 
   # ── wish-server — standalone server binary (requires SDL3 + ImGui) ────────────
   add_executable(wish-server
@@ -43,6 +47,10 @@ target_include_directories(wish-client PRIVATE
 )
 target_link_libraries(wish-client PRIVATE wish_client gflags)
 set_target_properties(wish-client PROPERTIES FOLDER app)
+if(WISH_MODULE_PROCESS_EXPLORER)
+  target_sources(wish-client PRIVATE wish_cli/client/apps/process_explorer.cpp)
+  target_compile_definitions(wish-client PRIVATE WISH_MODULE_PROCESS_EXPLORER)
+endif()
 
 # ── wish-bridge — standalone bridge binary (bison only, no SDL/ImGui) ──────────
 add_executable(wish-bridge

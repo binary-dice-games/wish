@@ -15,6 +15,9 @@
 #ifdef WISH_MODULE_DESKTOP
 #include "forms/desktop/desktop_module.hpp"
 #endif
+#ifdef WISH_MODULE_PROCESS_EXPLORER
+#include "forms/process_explorer/process_explorer_module.hpp"
+#endif
 
 namespace bdg::wish {
 
@@ -67,6 +70,9 @@ void register_all() {
   register_notepad();
 #ifdef WISH_MODULE_DESKTOP
   register_desktop_module();
+#endif
+#ifdef WISH_MODULE_PROCESS_EXPLORER
+  register_process_explorer_module();
 #endif
 }
 
