@@ -251,6 +251,8 @@ void imgui_renderer::render_node(const ui_element& node, const session& s) {
   {
     auto font_path = node.get_as<std::string>("font_path"_key, "");
     auto font_size = node.get_as<float>("font_size"_key, 0.0f);
+    if (font_path.empty() && font_size > 0.0f)
+      font_path = "res/fonts/default.ttf";
     if (!font_path.empty() && font_size > 0.0f) {
       auto full = file_service::resolve_path(font_path, s.resource_dir, s.allow_absolute_paths);
       if (!full.empty())
