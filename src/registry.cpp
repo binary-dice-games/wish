@@ -7,6 +7,7 @@
 
 #include "forms/calculator.hpp"
 #include "forms/file_dialog.hpp"
+#include "forms/notepad.hpp"
 #include "plot3d_elements/plot3d_elements.hpp"
 #include "plot_elements/plot_elements.hpp"
 #include "template_handler.hpp"
@@ -63,6 +64,7 @@ void register_all() {
   // Built-in forms.
   register_file_dialog();
   register_calculator();
+  register_notepad();
 #ifdef WISH_MODULE_DESKTOP
   register_desktop_module();
 #endif

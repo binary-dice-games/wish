@@ -5,6 +5,7 @@
  */
 #include "app/wish_cli/client/wish_client_app.hpp"
 #include "app/wish_cli/client/apps/calculator.hpp"
+#include "app/wish_cli/client/apps/notepad.hpp"
 
 #include "src/app/transport_flags.hpp"
 #include "src/pty/raw_mode_guard.hpp"
@@ -40,6 +41,7 @@ using AppFn = std::function<void(wish_client_session&)>;
 
 static const std::map<std::string, AppFn> kApps = {
     {"calculator", run_calculator},
+    {"notepad", run_notepad},
 };
 
 // ── wish_client_session ───────────────────────────────────────────────────────

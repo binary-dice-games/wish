@@ -253,6 +253,7 @@ add_library(wish_server STATIC
   src/forms/form.cpp
   src/forms/file_dialog.cpp
   src/forms/calculator.cpp
+  src/forms/notepad.cpp
 )
 
 if(WISH_MODULE_DESKTOP)

@@ -283,6 +283,12 @@ Read `DESIGN.md` in this directory before starting any step.
 
 ## Step 10 — Calculator form (desktop module)
 
+> **Superseded:** implemented directly in `src/forms/calculator.hpp/.cpp` as
+> an unconditional built-in (not under `src/forms/desktop/` /
+> `WISH_MODULE_DESKTOP`), matching `FileDialog`. Fields/events differ
+> slightly from the spec below — see the source and `DESIGN.md`'s
+> "Planned Forms" note.
+
 **Goal:** A self-contained four-function calculator form that maintains all arithmetic state on the server. The client needs no calculator logic — only event listeners and a connection.
 
 **Deliverables:**
@@ -308,7 +314,20 @@ Read `DESIGN.md` in this directory before starting any step.
 
 ## Step 11 — Notepad form (desktop module)
 
-**Goal:** A single-file text editor whose content is persisted to the session sandbox. The form exposes a high-level API for loading and saving; all file I/O goes through `file_service::resolve_path()`.
+> **Superseded:** implemented directly in `src/forms/notepad.hpp/.cpp` as an
+> unconditional built-in (not under `src/forms/desktop/` /
+> `WISH_MODULE_DESKTOP`). The design below predates the `TextEditor` element
+> (`src/ui_elements/text_editor.cpp`), which already reads/writes the
+> sandbox file and handles load/save itself — so the shipped `Notepad` has
+> no `load()`/`save()` methods. Instead it manages multiple tabs (one
+> `TextEditor` each) and bridges the sandbox to the client's real filesystem
+> via `client::upload_file`/`client::download_file`, since a text editor's
+> files conceptually belong to the client, not the server. See `DESIGN.md`'s
+> "Notepad" subsection under "Built-in Forms" for the actual fields,
+> methods, and events, and `app/wish_cli/client/apps/notepad.cpp` for the
+> reference client integration.
+
+**Goal (original, superseded):** A single-file text editor whose content is persisted to the session sandbox. The form exposes a high-level API for loading and saving; all file I/O goes through `file_service::resolve_path()`.
 
 **Deliverables:**
 - `src/forms/desktop/notepad.hpp` — declares `class notepad : public form` and `void register_notepad()`.

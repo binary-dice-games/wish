@@ -256,6 +256,57 @@ dlg["dlg"].onEvent("on_open"_key, [&](bison::dynamic payload) {
 });
 ```
 
+### `Notepad`
+
+**Bison class name:** `"Notepad"` in the `"wish"` namespace. Built-in (registered unconditionally in `register_all()`, alongside `FileDialog` and `Calculator` — not gated behind `WISH_MODULE_DESKTOP`; see the note at the end of [Planned Forms](#planned-forms)).
+
+**Purpose:** A multi-file, syntax-highlighted text editor. Each open file is one closable tab (`TabItem`) containing a `TextEditor` — the existing `TextEditor` element already reads/writes the session sandbox directly and provides highlighting, so `Notepad` itself only manages tabs; it does not duplicate load/save logic.
+
+Files edited by a form live in the session's sandboxed `resource_dir`, but a text editor's files conceptually belong to the *client* (its local disk). `Notepad` bridges the two by treating "open" and "close" as an explicit handshake with the client rather than doing any file listing itself:
+
+- **Open** — the client must call `client::upload_file` to place the file's bytes in the sandbox *before* calling the `open_file` method with the resulting sandbox-relative path. `Notepad` cannot offer a client-side directory listing itself, so its own "Open" button emits `on_request_open`, asking the connected client to present its own picker (typically by driving a client-owned `FileDialog` instance populated from a local `directory_iterator` — see `app/wish_cli/client/apps/notepad.cpp` for the reference client).
+- **Close** — closing a tab (or the whole window) emits `on_file_closed`; the client is expected to call `client::download_file` for that path and persist it locally before discarding its own bookkeeping.
+- **Sync** — the "Sync" toolbar button emits `on_sync_requested` with every currently open path, asking the client to download and overwrite its local copies without closing anything.
+
+#### Fields
+
+| Field | Type | Direction | Description |
+|-------|------|-----------|--------------|
+| `title` | string | client → form | Window title. Default: `"Notepad"`. |
+
+#### Methods
+
+| Method | Params | Description |
+|--------|--------|--------------|
+| `open_file` | `path` (string, required), `title` (string, optional) | Registers an already-uploaded sandbox file as a new tab. `path` is validated with `file_service::resolve_path`; an invalid or sandbox-escaping path emits `on_error` instead. A `path` that is already open is a no-op. |
+
+#### Events
+
+| Event | Payload fields | Description |
+|-------|---------------|--------------|
+| `on_request_open` | — | The "Open" button was clicked. The client should present its own file picker and, once a file is chosen, `upload_file` it and call `open_file`. |
+| `on_file_opened` | `path`, `title` | A new tab was created. |
+| `on_file_closed` | `path` | A tab was closed (individually, or as part of the whole window closing). The client should `download_file(path)` and persist it locally. |
+| `on_file_saved` | `path` | The user pressed Ctrl+S inside a tab's editor. The client should `download_file(path)` without closing the tab. |
+| `on_sync_requested` | `paths` (list of string) | The "Sync" button was clicked. The client should `download_file` every listed path. |
+| `on_error` | `message` | `open_file` was called with an invalid or sandbox-escaping path. |
+| `closed` | — | The whole Notepad window was closed. `on_file_closed` fires for every file that was still open, before this event. |
+
+#### Internal UI structure (informative)
+
+```
+Window (title from field)
+  VerticalLayout
+    HorizontalLayout
+      Button "Open"  → emits on_request_open
+      Button "Sync"  → emits on_sync_requested
+    TabBar             ← one TabItem per open file, added/removed at runtime
+      TabItem (closable) ← emits "closed" when its X is clicked
+        TextEditor       ← file_path = sandbox-relative path; language inferred from extension
+```
+
+The internal tree is private, like `FileDialog`'s.
+
 ---
 
 ## Sandbox and Security
@@ -292,8 +343,17 @@ The same rules that govern low-level wish elements apply to forms without except
 | Form | Module | Description |
 |------|--------|-------------|
 | `FileDialog` | built-in | File picker / Save As dialog (described above) |
-| `Calculator` | `WISH_MODULE_DESKTOP` | Four-function calculator; demonstrates self-contained form logic |
-| `Notepad` | `WISH_MODULE_DESKTOP` | Text editor backed by a file in the session sandbox |
+| `Calculator` | built-in | Four-function calculator; demonstrates self-contained form logic |
+| `Notepad` | built-in | Multi-file, syntax-highlighted text editor bridged to the client via upload_file/download_file (described above) |
 | `ProcessMonitor` | `WISH_MODULE_DESKTOP` | Tabular view of running processes (read-only, OS-specific) |
 
 New built-in forms go in `src/forms/`. Module-specific forms go in `src/forms/<module_name>/`.
+
+> **Note:** `Calculator` and `Notepad` were originally planned to live under
+> `src/forms/desktop/` behind `WISH_MODULE_DESKTOP` (see the CMake snippet in
+> [Module System](#module-system)). In practice both were implemented
+> directly in `src/forms/` as unconditional built-ins, matching `FileDialog`
+> — `src/forms/desktop/` does not exist, so `WISH_MODULE_DESKTOP=ON` currently
+> fails to link. Any future form that genuinely needs to be optional (e.g.
+> `ProcessMonitor`, which is OS-specific) should use that module mechanism;
+> forms with no such constraint should just go in `src/forms/` like these two.
