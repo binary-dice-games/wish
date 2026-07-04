@@ -6,7 +6,7 @@
  * Usage:
  *   wish server  [--transport T] [--host H] [--port P] [--name PATH] [--cmd C]
  *                [--title T] [--width W] [--height H] [--verbose]
- *   wish client  [--host H] [--port P] [--pipe PATH]
+ *   wish client  [--transport T] [--host H] [--port P] [--name PATH]
  *                (--list | --run=<app>) [--timeout MS]
  *   wish bridge  [--up-host H] [--up-port P] [--up-pipe PATH]
  *                [--down-host H] [--down-port P] [--down-pipe PATH]
@@ -20,15 +20,15 @@
 #include <cstring>
 #include <iostream>
 
-// ── Shared flags — consumed by server and client modes ────────────────────────
+// ── Shared transport flags — consumed by server and client modes ─────────────
+DEFINE_string(transport, "tcp", "Transport to use: tcp, pipe, pty, or console");
 DEFINE_string(host, "0.0.0.0", "Bind/connect host address");
 DEFINE_int32(port, 7070, "Listen/connect port");
+DEFINE_string(name, "", "Named-pipe / Unix-socket path (transport=pipe)");
 DEFINE_bool(verbose, false, "Print session trace messages to stdout");
 DEFINE_bool(debugger, false, "Wait for debugger attachment before starting");
 
-// ── Server-only transport flags — consumed by bison::app::server_app ─────────
-DEFINE_string(transport, "tcp", "Transport to use: tcp, pipe, pty, or console");
-DEFINE_string(name, "", "Named-pipe / Unix-socket path (transport=pipe)");
+// ── Server-only flags — consumed by bison::app::server_app ───────────────────
 DEFINE_string(cmd, "", "Command to spawn (transport=console)");
 
 static void print_usage() {
@@ -37,15 +37,16 @@ static void print_usage() {
                "Usage:\n"
                "  wish server  [--transport T] [--host H] [--port P] [--name PATH] [--cmd C]\n"
                "               [--title T] [--width W] [--height H] [--verbose]\n"
-               "  wish client  [--host H] [--port P] [--pipe PATH] (--list | --run=<app>) [--timeout MS]\n"
+               "  wish client  [--transport T] [--host H] [--port P] [--name PATH]\n"
+               "               (--list | --run=<app>) [--timeout MS]\n"
                "  wish bridge  [--up-host H --up-port P ...] [--down-host H --down-port P ...]\n"
                "\n"
-               "Server transport flags:\n"
+               "Shared transport flags (server and client):\n"
                "  --transport T  tcp, pipe, pty, or console (default: tcp)\n"
-               "  --host H       Bind host address          (default: 0.0.0.0)\n"
-               "  --port P       Bind port                   (default: 7070)\n"
+               "  --host H       Host address (default: 0.0.0.0 for server, 127.0.0.1 for client)\n"
+               "  --port P       Port                        (default: 7070)\n"
                "  --name PATH    Named-pipe / Unix-socket path (transport=pipe)\n"
-               "  --cmd C        Command to spawn             (transport=console)\n"
+               "  --cmd C        Command to spawn             (transport=console, server only)\n"
                "  --verbose      Print RMI trace messages\n"
                "  --debugger     Wait for debugger attachment before starting\n"
                "\n"

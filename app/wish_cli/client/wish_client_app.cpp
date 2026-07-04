@@ -6,22 +6,26 @@
 #include "app/wish_cli/client/wish_client_app.hpp"
 #include "app/wish_cli/client/apps/calculator.hpp"
 
+#include "src/app/transport_flags.hpp"
+#include "src/pty/raw_mode_guard.hpp"
 #include "src/rmi/transport/named_pipe_transport.hpp"
 #include "src/rmi/transport/socket_transport.hpp"
+#include "src/rmi/transport/stdio_transport.hpp"
 
 #include <gflags/gflags.h>
 
 #include <functional>
 #include <iostream>
 #include <map>
+#include <optional>
 #include <stdexcept>
 
 // ── Shared flags (defined in main.cpp) ────────────────────────────────────────
 DECLARE_string(host);
 DECLARE_int32(port);
+DECLARE_string(name);
 
 // ── Client-mode flags ─────────────────────────────────────────────────────────
-DEFINE_string(pipe, "", "Named pipe / Unix socket path");
 DEFINE_bool(list, false, "List available embedded applications and exit");
 DEFINE_string(run, "", "Name of the embedded application to run");
 DEFINE_int32(timeout, 30000, "Connection timeout in milliseconds");
@@ -91,12 +95,29 @@ int run_client_mode(int argc, char** argv) {
 
   try {
     std::unique_ptr<rmi::transport::client_transport_iface> transport;
+    // Only constructed for --transport=pty; kept alive for the session's
+    // duration (restores the fd's original terminal mode on scope exit).
+    std::optional<pty::raw_mode_guard> raw_mode;
 
-    if (!FLAGS_pipe.empty()) {
-      transport = std::make_unique<rmi::transport::named_pipe_client_transport>(FLAGS_pipe);
-    } else {
-      transport =
-          std::make_unique<rmi::transport::socket_client_transport>(FLAGS_host, static_cast<uint16_t>(FLAGS_port));
+    switch (bison::app::selected_transport()) {
+      case bison::app::transport_kind::pipe:
+        transport = std::make_unique<rmi::transport::named_pipe_client_transport>(FLAGS_name);
+        break;
+      case bison::app::transport_kind::pty:
+        // See raw_mode_guard's doc comment: without this, a pty slave's
+        // cooked-mode line buffering stalls the BISON<...> framing read from
+        // fd 0. wish's client apps never read console input themselves, so
+        // unlike bison::app::client_app there's no passthrough/echo to wire up.
+        raw_mode.emplace(0);
+        transport = std::make_unique<rmi::transport::stdio_client_transport>(0, 1);
+        break;
+      case bison::app::transport_kind::console:
+        transport = std::make_unique<rmi::transport::stdio_client_transport>(0, 1);
+        break;
+      case bison::app::transport_kind::tcp:
+        transport =
+            std::make_unique<rmi::transport::socket_client_transport>(FLAGS_host, static_cast<uint16_t>(FLAGS_port));
+        break;
     }
 
     wish_client_session session{std::move(transport)};

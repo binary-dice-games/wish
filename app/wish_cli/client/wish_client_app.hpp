@@ -20,6 +20,14 @@ namespace bdg::wish {
  * App runner functions (e.g. run_calculator) call `keep_alive()` to store
  * proxy handles that must remain valid until the session ends, and call
  * `signal_done()` (typically from an event handler) to unblock `on_session()`.
+ *
+ * CLI flags (defined in `main.cpp`, used here via DECLARE_*), same
+ * `--transport` scheme as `wish_server_app` (see
+ * `src/app/transport_flags.hpp`):
+ *   --transport T  tcp (default), pipe, pty, or console
+ *   --host H       Connect host address  (transport=tcp)
+ *   --port P       Connect port          (transport=tcp)
+ *   --name PATH    Named-pipe / Unix-socket path (transport=pipe)
  */
 class wish_client_session : public client {
  public:
