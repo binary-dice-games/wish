@@ -34,56 +34,56 @@ static constexpr const char* kLayout = R"({
   "flags": "NoResize",
   "closable": true,
   "children": {
-    "display": { "type": "Label", "text": "0", "font_path": "fonts/default.ttf", "font_size": 32 },
+    "display": { "type": "Label", "text": "0", "font_path": "res/fonts/default.ttf", "font_size": 32 },
     "sep":     { "type": "Separator" },
     "row0": {
       "type": "HorizontalLayout",
       "spacing": 6,
       "children": {
-        "c":   { "type": "Button", "label": "C",   "width": 72, "height": 52, "font_path": "fonts/default.ttf", "font_size": 24 },
-        "div": { "type": "Button", "label": "/",   "width": 72, "height": 52, "font_path": "fonts/default.ttf", "font_size": 24 },
-        "mul": { "type": "Button", "label": "*",   "width": 72, "height": 52, "font_path": "fonts/default.ttf", "font_size": 24 },
-        "bsp": { "type": "Button", "label": "<-",  "width": 72, "height": 52, "font_path": "fonts/default.ttf", "font_size": 24 }
+        "c":   { "type": "Button", "label": "C",   "width": 72, "height": 52, "font_path": "res/fonts/default.ttf", "font_size": 24 },
+        "div": { "type": "Button", "label": "/",   "width": 72, "height": 52, "font_path": "res/fonts/default.ttf", "font_size": 24 },
+        "mul": { "type": "Button", "label": "*",   "width": 72, "height": 52, "font_path": "res/fonts/default.ttf", "font_size": 24 },
+        "bsp": { "type": "Button", "label": "<-",  "width": 72, "height": 52, "font_path": "res/fonts/default.ttf", "font_size": 24 }
       }
     },
     "row1": {
       "type": "HorizontalLayout",
       "spacing": 6,
       "children": {
-        "n7":  { "type": "Button", "label": "7", "width": 72, "height": 52, "font_path": "fonts/default.ttf", "font_size": 24 },
-        "n8":  { "type": "Button", "label": "8", "width": 72, "height": 52, "font_path": "fonts/default.ttf", "font_size": 24 },
-        "n9":  { "type": "Button", "label": "9", "width": 72, "height": 52, "font_path": "fonts/default.ttf", "font_size": 24 },
-        "sub": { "type": "Button", "label": "-", "width": 72, "height": 52, "font_path": "fonts/default.ttf", "font_size": 24 }
+        "n7":  { "type": "Button", "label": "7", "width": 72, "height": 52, "font_path": "res/fonts/default.ttf", "font_size": 24 },
+        "n8":  { "type": "Button", "label": "8", "width": 72, "height": 52, "font_path": "res/fonts/default.ttf", "font_size": 24 },
+        "n9":  { "type": "Button", "label": "9", "width": 72, "height": 52, "font_path": "res/fonts/default.ttf", "font_size": 24 },
+        "sub": { "type": "Button", "label": "-", "width": 72, "height": 52, "font_path": "res/fonts/default.ttf", "font_size": 24 }
       }
     },
     "row2": {
       "type": "HorizontalLayout",
       "spacing": 6,
       "children": {
-        "n4":  { "type": "Button", "label": "4", "width": 72, "height": 52, "font_path": "fonts/default.ttf", "font_size": 24 },
-        "n5":  { "type": "Button", "label": "5", "width": 72, "height": 52, "font_path": "fonts/default.ttf", "font_size": 24 },
-        "n6":  { "type": "Button", "label": "6", "width": 72, "height": 52, "font_path": "fonts/default.ttf", "font_size": 24 },
-        "add": { "type": "Button", "label": "+", "width": 72, "height": 52, "font_path": "fonts/default.ttf", "font_size": 24 }
+        "n4":  { "type": "Button", "label": "4", "width": 72, "height": 52, "font_path": "res/fonts/default.ttf", "font_size": 24 },
+        "n5":  { "type": "Button", "label": "5", "width": 72, "height": 52, "font_path": "res/fonts/default.ttf", "font_size": 24 },
+        "n6":  { "type": "Button", "label": "6", "width": 72, "height": 52, "font_path": "res/fonts/default.ttf", "font_size": 24 },
+        "add": { "type": "Button", "label": "+", "width": 72, "height": 52, "font_path": "res/fonts/default.ttf", "font_size": 24 }
       }
     },
     "row3": {
       "type": "HorizontalLayout",
       "spacing": 6,
       "children": {
-        "n1": { "type": "Button", "label": "1", "width": 72, "height": 52, "font_path": "fonts/default.ttf", "font_size": 24 },
-        "n2": { "type": "Button", "label": "2", "width": 72, "height": 52, "font_path": "fonts/default.ttf", "font_size": 24 },
-        "n3": { "type": "Button", "label": "3", "width": 72, "height": 52, "font_path": "fonts/default.ttf", "font_size": 24 },
-        "eq": { "type": "Button", "label": "=", "width": 72, "height": 52, "font_path": "fonts/default.ttf", "font_size": 24 }
+        "n1": { "type": "Button", "label": "1", "width": 72, "height": 52, "font_path": "res/fonts/default.ttf", "font_size": 24 },
+        "n2": { "type": "Button", "label": "2", "width": 72, "height": 52, "font_path": "res/fonts/default.ttf", "font_size": 24 },
+        "n3": { "type": "Button", "label": "3", "width": 72, "height": 52, "font_path": "res/fonts/default.ttf", "font_size": 24 },
+        "eq": { "type": "Button", "label": "=", "width": 72, "height": 52, "font_path": "res/fonts/default.ttf", "font_size": 24 }
       }
     },
     "row4": {
       "type": "HorizontalLayout",
       "spacing": 6,
       "children": {
-        "n0":  { "type": "Button", "label": "0",   "width": 72, "height": 52, "font_path": "fonts/default.ttf", "font_size": 24 },
-        "dot": { "type": "Button", "label": ".",   "width": 72, "height": 52, "font_path": "fonts/default.ttf", "font_size": 24 },
-        "pm":  { "type": "Button", "label": "+/-", "width": 72, "height": 52, "font_path": "fonts/default.ttf", "font_size": 24 },
-        "pct": { "type": "Button", "label": "%",   "width": 72, "height": 52, "font_path": "fonts/default.ttf", "font_size": 24 }
+        "n0":  { "type": "Button", "label": "0",   "width": 72, "height": 52, "font_path": "res/fonts/default.ttf", "font_size": 24 },
+        "dot": { "type": "Button", "label": ".",   "width": 72, "height": 52, "font_path": "res/fonts/default.ttf", "font_size": 24 },
+        "pm":  { "type": "Button", "label": "+/-", "width": 72, "height": 52, "font_path": "res/fonts/default.ttf", "font_size": 24 },
+        "pct": { "type": "Button", "label": "%",   "width": 72, "height": 52, "font_path": "res/fonts/default.ttf", "font_size": 24 }
       }
     }
   }
