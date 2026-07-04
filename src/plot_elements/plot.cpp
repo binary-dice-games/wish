@@ -93,6 +93,38 @@ void register_plot() {
             attr<Description>("ImPlotAxisFlags for the primary Y axis.  "
                               "Use ImPlotAxisFlags_NoDecorations (0x1F) for pie charts."),
             attr<Category>("Axes")});
+    proto->addField(
+        "x_min"_key,
+        field{
+            float{0.0f},
+            attr<DisplayName>("X Min"),
+            attr<Description>("Fixed lower X-axis limit, locked every frame.  "
+                              "Ignored (axis auto-fits normally) when equal to x_max."),
+            attr<Category>("Axes")});
+    proto->addField(
+        "x_max"_key,
+        field{
+            float{0.0f},
+            attr<DisplayName>("X Max"),
+            attr<Description>("Fixed upper X-axis limit, locked every frame.  "
+                              "Ignored (axis auto-fits normally) when equal to x_min."),
+            attr<Category>("Axes")});
+    proto->addField(
+        "y_min"_key,
+        field{
+            float{0.0f},
+            attr<DisplayName>("Y Min"),
+            attr<Description>("Fixed lower Y-axis limit, locked every frame.  "
+                              "Ignored (axis auto-fits normally) when equal to y_max."),
+            attr<Category>("Axes")});
+    proto->addField(
+        "y_max"_key,
+        field{
+            float{0.0f},
+            attr<DisplayName>("Y Max"),
+            attr<Description>("Fixed upper Y-axis limit, locked every frame.  "
+                              "Ignored (axis auto-fits normally) when equal to y_min."),
+            attr<Category>("Axes")});
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Plot"));
     (*proto)[dynamic::CLASS].addAttribute(
         attr<Description>("An ImPlot plot window.  "

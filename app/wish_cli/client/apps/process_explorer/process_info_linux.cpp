@@ -208,6 +208,14 @@ struct process_info_source::impl {
     uint64_t delta_total = (have_stat && has_prev && overall_cur.total > overall_prev.total)
                                 ? overall_cur.total - overall_prev.total
                                 : 0;
+    // /proc/stat's aggregate "cpu" line sums jiffies across all logical
+    // cores, so delta_total is ~num_cores times the actual wall-clock delta.
+    // Per-process CPU% must be normalized against wall-clock jiffies (the
+    // top/htop convention -- a process fully using one core reads 100%, one
+    // using two cores reads 200%), not against the num_cores-times-larger
+    // aggregate, which would understate every process by ~num_cores.
+    size_t num_cores = per_core_cur.size();
+    uint64_t delta_wall = num_cores > 0 ? delta_total / num_cores : delta_total;
 
     std::unordered_map<int, uint64_t> next_prev_proc_jiffies;
     std::error_code ec;
@@ -235,11 +243,11 @@ struct process_info_source::impl {
 
       uint64_t jiffies = utime + stime;
       next_prev_proc_jiffies[pid] = jiffies;
-      if (has_prev && delta_total > 0) {
+      if (has_prev && delta_wall > 0) {
         auto it = prev_proc_jiffies.find(pid);
         if (it != prev_proc_jiffies.end() && jiffies >= it->second) {
           uint64_t delta_proc = jiffies - it->second;
-          ps.cpu_percent = 100.0 * static_cast<double>(delta_proc) / static_cast<double>(delta_total);
+          ps.cpu_percent = 100.0 * static_cast<double>(delta_proc) / static_cast<double>(delta_wall);
         }
       }
 

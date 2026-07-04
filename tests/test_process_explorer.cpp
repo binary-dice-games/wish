@@ -9,9 +9,11 @@
 #include "src/bison/bison_object.hpp"
 #include "src/rmi/rmi.hpp"
 
+#include <algorithm>
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace bdg::bison;
@@ -242,6 +244,64 @@ class ProcessExplorerSnapshotTest : public ::testing::Test {
     return it->second->as<std::string>("text"_key);
   }
 
+  std::vector<float> plot_field(const std::string& path, bison::key_t field_key) const {
+    auto it = srv_->last_session->objects.find(path);
+    if (it == srv_->last_session->objects.end())
+      return {};
+    auto* f = it->second->findField<std::vector<float>>(field_key);
+    return f ? *f : std::vector<float>{};
+  }
+
+  // Reconstructs visual row order from each TableRow's "order" field and its
+  // first cell (the PID Label), independent of pid_to_row_'s internal
+  // (unordered) iteration order.
+  std::vector<int> row_pids_in_order() const {
+    auto it = srv_->last_session->objects.find(root_ + ".vbox.proc_table");
+    if (it == srv_->last_session->objects.end())
+      return {};
+    auto* cf = it->second->findField<dynamic_ptr>("children"_key);
+    if (!cf || !*cf)
+      return {};
+    std::vector<std::pair<int32_t, int>> ordered;
+    (*cf)->forEach([&](bison::key_t, const field& f) {
+      if (!f.is<dynamic_ptr>())
+        return;
+      auto row = f.as<dynamic_ptr>();
+      if (!row)
+        return;
+      int32_t order = row->as<int32_t>("order"_key);
+      auto* rc = row->findField<dynamic_ptr>("children"_key);
+      if (!rc || !*rc)
+        return;
+      auto& pid_field = (*rc)->at(size_t{0});
+      if (!pid_field.is<dynamic_ptr>())
+        return;
+      auto pid_label = pid_field.as<dynamic_ptr>();
+      if (!pid_label)
+        return;
+      ordered.push_back({order, std::stoi(pid_label->as<std::string>("text"_key))});
+    });
+    std::sort(ordered.begin(), ordered.end());
+    std::vector<int> result;
+    result.reserve(ordered.size());
+    for (auto& [order, pid] : ordered)
+      result.push_back(pid);
+    return result;
+  }
+
+  // Mirrors the imgui renderer's "sorted" event (see render_table in
+  // imgui_ui_renderer.cpp): simulates a column-header click without needing
+  // a real ImGui frame.
+  void simulate_sort(int32_t column_id, bool ascending) {
+    auto table_id = srv_->last_session->objects.at(root_ + ".vbox.proc_table")->as<bison::key_t>("__wish_id"_key);
+    auto h = srv_->last_session->top_level_handlers.find(root_);
+    ASSERT_NE(h, srv_->last_session->top_level_handlers.end());
+    dynamic payload;
+    payload["column_id"_key] = column_id;
+    payload["ascending"_key] = ascending;
+    h->second->on_event(table_id, "sorted"_key, std::move(payload));
+  }
+
   memory_server_transport transport_;
   std::unique_ptr<SessionCapturingServer> srv_;
   std::unique_ptr<bdg::bison::rmi::client> client_;
@@ -254,6 +314,26 @@ TEST_F(ProcessExplorerSnapshotTest, UpdatesSummaryLabels) {
 
   EXPECT_EQ(label_text(root_ + ".vbox.summary.cpu_label"), "CPU: 37.5%");
   EXPECT_NE(label_text(root_ + ".vbox.summary.mem_label").find("40.0%"), std::string::npos);
+}
+
+// Regression test: the ImPlot renderer plots min(xs.size(), ys.size())
+// points, so a series with populated "ys" but empty "xs" silently renders
+// nothing. Both plot series must get a matching "xs" alongside "ys".
+TEST_F(ProcessExplorerSnapshotTest, PlotSeriesGetMatchingXsAndYs) {
+  update_snapshot(10.0, {}, 1000.0, 100.0, {});
+  update_snapshot(20.0, {}, 1000.0, 200.0, {});
+
+  auto cpu_xs = plot_field(root_ + ".vbox.cpu_plot.cpu_series", "xs"_key);
+  auto cpu_ys = plot_field(root_ + ".vbox.cpu_plot.cpu_series", "ys"_key);
+  ASSERT_EQ(cpu_xs.size(), cpu_ys.size());
+  ASSERT_EQ(cpu_xs.size(), 2u);
+  EXPECT_FLOAT_EQ(cpu_ys[0], 10.0f);
+  EXPECT_FLOAT_EQ(cpu_ys[1], 20.0f);
+
+  auto mem_xs = plot_field(root_ + ".vbox.mem_plot.mem_series", "xs"_key);
+  auto mem_ys = plot_field(root_ + ".vbox.mem_plot.mem_series", "ys"_key);
+  ASSERT_EQ(mem_xs.size(), mem_ys.size());
+  ASSERT_EQ(mem_xs.size(), 2u);
 }
 
 TEST_F(ProcessExplorerSnapshotTest, FirstCallSizesCoreMeters) {
@@ -297,6 +377,60 @@ TEST_F(ProcessExplorerSnapshotTest, SecondProcessAddsSecondRow) {
       100.0,
       {{100, "init", "[init]", "S", 5.0, 0.0}, {200, "sshd", "[sshd]", "S", 1.0, 0.0}});
   EXPECT_EQ(row_count(), 2u);
+}
+
+// ── Column-header sorting ─────────────────────────────────────────────────────
+
+TEST_F(ProcessExplorerSnapshotTest, DefaultsToCpuPercentDescending) {
+  update_snapshot(
+      5.0,
+      {},
+      1000.0,
+      100.0,
+      {{1, "low", "[low]", "S", 10.0, 0.0}, {2, "high", "[high]", "S", 50.0, 0.0}, {3, "mid", "[mid]", "S", 30.0, 0.0}});
+
+  EXPECT_EQ(row_pids_in_order(), (std::vector<int>{2, 3, 1}));
+}
+
+TEST_F(ProcessExplorerSnapshotTest, SortedEventByPidReorders) {
+  // CPU% (the default sort column) intentionally does NOT correlate with
+  // PID order here, so a passing test can only mean the "sorted" event --
+  // not the default criterion -- drove the resulting order.
+  update_snapshot(
+      5.0,
+      {},
+      1000.0,
+      100.0,
+      {{30, "c", "[c]", "S", 10.0, 0.0}, {10, "a", "[a]", "S", 50.0, 0.0}, {20, "b", "[b]", "S", 30.0, 0.0}});
+
+  simulate_sort(0, /*ascending=*/false); // PID descending
+  EXPECT_EQ(row_pids_in_order(), (std::vector<int>{30, 20, 10}));
+
+  simulate_sort(0, /*ascending=*/true); // PID ascending
+  EXPECT_EQ(row_pids_in_order(), (std::vector<int>{10, 20, 30}));
+}
+
+TEST_F(ProcessExplorerSnapshotTest, SortedEventByNameDescendingReorders) {
+  update_snapshot(
+      5.0,
+      {},
+      1000.0,
+      100.0,
+      {{1, "alpha", "[alpha]", "S", 10.0, 0.0}, {2, "beta", "[beta]", "S", 10.0, 0.0}, {3, "gamma", "[gamma]", "S", 10.0, 0.0}});
+
+  simulate_sort(1, /*ascending=*/false); // Name descending
+  EXPECT_EQ(row_pids_in_order(), (std::vector<int>{3, 2, 1})); // gamma, beta, alpha
+}
+
+TEST_F(ProcessExplorerSnapshotTest, SortCriterionPersistsAcrossSubsequentSnapshots) {
+  update_snapshot(5.0, {}, 1000.0, 100.0, {{1, "a", "[a]", "S", 90.0, 0.0}, {2, "b", "[b]", "S", 10.0, 0.0}});
+  simulate_sort(0, /*ascending=*/true); // PID ascending, overriding the CPU%-descending default
+  ASSERT_EQ(row_pids_in_order(), (std::vector<int>{1, 2}));
+
+  // A later snapshot (even one that would reorder under the old default)
+  // must keep applying the user's chosen criterion, not reset to it.
+  update_snapshot(5.0, {}, 1000.0, 100.0, {{1, "a", "[a]", "S", 5.0, 0.0}, {2, "b", "[b]", "S", 95.0, 0.0}});
+  EXPECT_EQ(row_pids_in_order(), (std::vector<int>{1, 2}));
 }
 
 // ── Event routing ─────────────────────────────────────────────────────────────

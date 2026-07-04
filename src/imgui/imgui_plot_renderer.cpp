@@ -47,6 +47,10 @@ void render_plot(imgui_renderer& r, const ui_element& node, const session& s) {
   auto y_label = node.get_as<std::string>("y_label"_key, "");
   int32_t xf = node.get_as<int32_t>("x_flags"_key, 0);
   int32_t yf = node.get_as<int32_t>("y_flags"_key, 0);
+  float x_min = node.get_as<float>("x_min"_key, 0.0f);
+  float x_max = node.get_as<float>("x_max"_key, 0.0f);
+  float y_min = node.get_as<float>("y_min"_key, 0.0f);
+  float y_max = node.get_as<float>("y_max"_key, 0.0f);
 
   auto iml = with_id(title, node);
   if (ImPlot::BeginPlot(iml.c_str(), ImVec2(w, h), ImPlotFlags(flags))) {
@@ -57,6 +61,13 @@ void render_plot(imgui_renderer& r, const ui_element& node, const session& s) {
           ImPlotAxisFlags(xf),
           ImPlotAxisFlags(yf));
     }
+    // A fixed range (locked every frame via ImPlotCond_Always) is opt-in per
+    // axis by setting x_min != x_max / y_min != y_max; otherwise ImPlot's
+    // normal auto-fit behavior applies unchanged.
+    if (x_min != x_max)
+      ImPlot::SetupAxisLimits(ImAxis_X1, x_min, x_max, ImPlotCond_Always);
+    if (y_min != y_max)
+      ImPlot::SetupAxisLimits(ImAxis_Y1, y_min, y_max, ImPlotCond_Always);
     render_children(r, node, s);
     ImPlot::EndPlot();
   }

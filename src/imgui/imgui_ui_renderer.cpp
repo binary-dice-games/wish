@@ -535,20 +535,45 @@ void render_table(imgui_renderer& r, const ui_element& node, const session& s) {
   if (!ImGui::BeginTable(id.c_str(), columns, ImGuiTableFlags(flags), ImVec2(outer_w, outer_h), inner_w))
     return;
 
+  const key_t table_id = node.get_as<key_t>("__wish_id"_key, key_t{});
+
   // Column setup must precede any row; iterate TableColumn children first.
+  // column_id is passed through as ImGui's per-column user_data so a click
+  // on this column's header can be mapped back to it by ColumnUserID rather
+  // than by position (see the sort-spec handling below).
   node.for_each_child_ordered([&](bison::key_t, ui_element& child) {
     if (child.as<bison::key_t>(bison::dynamic::CLASS) != "TableColumn"_key)
       return;
     auto label = child.get_as<std::string>("label"_key, "");
     int32_t col_fl = child.get_as<int32_t>("flags"_key, 0);
     float col_w = child.get_as<float>("init_width"_key, 0.0f);
-    ImGui::TableSetupColumn(label.c_str(), ImGuiTableColumnFlags(col_fl), col_w);
+    int32_t col_id = child.get_as<int32_t>("column_id"_key, 0);
+    ImGui::TableSetupColumn(label.c_str(), ImGuiTableColumnFlags(col_fl), col_w, ImGuiID(col_id));
   });
 
   if (headers)
     ImGui::TableHeadersRow();
 
-  const key_t table_id = node.get_as<key_t>("__wish_id"_key, key_t{});
+  // ImGuiTableFlags_Sortable tables report header clicks via sort specs
+  // rather than a normal widget event; SpecsDirty is true once when the
+  // table is first created (reflecting whichever column has DefaultSort)
+  // and again each time the user clicks a header. We surface it as a
+  // "sorted" event and immediately clear the dirty flag ourselves --
+  // ImGui does not track "already consumed", so leaving it set would
+  // re-emit the same event every frame.
+  if (table_id.id) {
+    if (ImGuiTableSortSpecs* sort_specs = ImGui::TableGetSortSpecs()) {
+      if (sort_specs->SpecsDirty && sort_specs->SpecsCount > 0) {
+        const auto& spec = sort_specs->Specs[0];
+        dynamic sort_payload;
+        sort_payload["column_id"_key] = static_cast<int32_t>(spec.ColumnUserID);
+        sort_payload["ascending"_key] = spec.SortDirection == ImGuiSortDirection_Ascending;
+        enqueue_event(s, table_id, "sorted"_key, std::move(sort_payload));
+        sort_specs->SpecsDirty = false;
+      }
+    }
+  }
+
   int32_t row_idx = 0;
   key_t pending_event{};
   int32_t pending_index = -1;

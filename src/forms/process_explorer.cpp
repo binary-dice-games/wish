@@ -18,6 +18,14 @@ using namespace bison;
 
 namespace {
 
+// Number of samples kept in the rolling CPU%/memory% history; also doubles
+// as the fixed X-axis width for both plots (see on_init()).
+constexpr size_t kMaxHistory = 60;
+
+// ImPlotAxisFlags_NoTickLabels: the X axis is a rolling sample index, not a
+// meaningful timestamp, so its numeric labels would just be noise.
+constexpr int32_t kHideXTickLabels = 8;
+
 std::string format_percent(float pct) {
   std::ostringstream oss;
   oss << std::fixed << std::setprecision(1) << pct << "%";
@@ -41,8 +49,14 @@ std::string format_bytes(float bytes) {
 
 // ── UI layout ─────────────────────────────────────────────────────────────────
 //
-// ImGuiTableFlags_Resizable=1, RowBg=64, Borders=1920 -> 1985 (matches the
-// "tbl_catalog" example in examples/demo/main.cpp).
+// ImGuiTableFlags_Resizable=1, RowBg=64, Borders=1920, Sortable=8 -> 1993
+// (the first three match the "tbl_catalog" example in examples/demo/main.cpp;
+// Sortable makes column headers clickable -- see the "sorted" event handling
+// in on_event()/resort_rows()). Each TableColumn's "flags" is
+// ImGuiTableColumnFlags_WidthFixed=16, except "col_cpu" which also ORs in
+// DefaultSort=4 and PreferSortDescending=32768 (16+4+32768=32788) so the
+// column-header UI's initial sort indicator matches sort_column_id_/
+// sort_ascending_'s own defaults below.
 // "cores" is given an explicit empty "children" object -- even though empty
 // -- so the importer allocates a private children map for this instance
 // instead of sharing the Element base prototype's default (see notepad.cpp's
@@ -83,14 +97,14 @@ static constexpr const char* kLayout = R"({
         },
         "proc_table": {
           "type": "Table", "id": "##proc_table", "columns": 6,
-          "flags": 1985, "headers": true,
+          "flags": 1993, "headers": true,
           "children": {
-            "col_pid":   { "type": "TableColumn", "label": "PID",     "flags": 16, "init_width": 70 },
-            "col_name":  { "type": "TableColumn", "label": "Name",    "flags": 16, "init_width": 140 },
-            "col_state": { "type": "TableColumn", "label": "State",   "flags": 16, "init_width": 60 },
-            "col_cpu":   { "type": "TableColumn", "label": "CPU %",   "flags": 16, "init_width": 100 },
-            "col_mem":   { "type": "TableColumn", "label": "Memory",  "flags": 16, "init_width": 100 },
-            "col_cmd":   { "type": "TableColumn", "label": "Command" }
+            "col_pid":   { "type": "TableColumn", "label": "PID",     "flags": 16,    "init_width": 70,  "column_id": 0 },
+            "col_name":  { "type": "TableColumn", "label": "Name",    "flags": 16,    "init_width": 140, "column_id": 1 },
+            "col_state": { "type": "TableColumn", "label": "State",   "flags": 16,    "init_width": 60,  "column_id": 2 },
+            "col_cpu":   { "type": "TableColumn", "label": "CPU %",   "flags": 32788, "init_width": 100, "column_id": 3 },
+            "col_mem":   { "type": "TableColumn", "label": "Memory",  "flags": 16,    "init_width": 100, "column_id": 4 },
+            "col_cmd":   { "type": "TableColumn", "label": "Command", "column_id": 5 }
           }
         }
       }
@@ -123,7 +137,25 @@ void process_explorer::on_init() {
   tree.with("vbox.cores", [&](const auto& e) { cores_container_ = e; });
   tree.with("vbox.cpu_plot.cpu_series", [&](const auto& e) { cpu_plot_series_ = e; });
   tree.with("vbox.mem_plot.mem_series", [&](const auto& e) { mem_plot_series_ = e; });
-  tree.with("vbox.proc_table", [&](const auto& e) { proc_table_ = e; });
+  tree.with("vbox.proc_table", [&](const auto& e) {
+    proc_table_ = e;
+    proc_table_id_ = e->template as<key_t>("__wish_id"_key);
+  });
+
+  // Fix both axes so the graphs read as stable percentage gauges instead of
+  // auto-fitting (which otherwise locks onto whatever tiny range existed on
+  // the very first render, before any real data arrived) -- Y is always
+  // 0..100%; X is a rolling sample-index window with its numeric labels
+  // hidden, since "sample 37" isn't meaningful to a user.
+  auto fix_axes = [](const auto& e) {
+    e["x_min"_key] = 0.0f;
+    e["x_max"_key] = static_cast<float>(kMaxHistory - 1);
+    e["y_min"_key] = 0.0f;
+    e["y_max"_key] = 100.0f;
+    e["x_flags"_key] = kHideXTickLabels;
+  };
+  tree.with("vbox.cpu_plot", fix_axes);
+  tree.with("vbox.mem_plot", fix_axes);
 
   sess().objects.merge(std::move(tree), internal_root_key_);
 }
@@ -135,8 +167,6 @@ dynamic process_explorer::do_update_snapshot(const dynamic& args) {
   if (cpu_summary_label_)
     cpu_summary_label_["text"_key] = "CPU: " + format_percent(cpu_pct);
   push_history(cpu_history_, cpu_pct);
-  if (cpu_plot_series_)
-    cpu_plot_series_["ys"_key] = cpu_history_;
 
   float mem_total = args.as<float>("mem_total_bytes"_key);
   float mem_used = args.as<float>("mem_used_bytes"_key);
@@ -146,8 +176,18 @@ dynamic process_explorer::do_update_snapshot(const dynamic& args) {
         "Mem: " + format_percent(mem_pct) + " (" + format_bytes(mem_used) + " / " + format_bytes(mem_total) + ")";
   }
   push_history(mem_history_, mem_pct);
-  if (mem_plot_series_)
+
+  // Both histories are pushed exactly once per call, so they always share
+  // one length -- an index axis (0, 1, 2, ...) is all either series needs.
+  update_history_xs(cpu_history_.size());
+  if (cpu_plot_series_) {
+    cpu_plot_series_["xs"_key] = history_xs_;
+    cpu_plot_series_["ys"_key] = cpu_history_;
+  }
+  if (mem_plot_series_) {
+    mem_plot_series_["xs"_key] = history_xs_;
     mem_plot_series_["ys"_key] = mem_history_;
+  }
 
   if (auto* per_core = args.findField<std::vector<float>>("per_core_percent"_key)) {
     ensure_core_meters(per_core->size());
@@ -187,10 +227,17 @@ void process_explorer::ensure_core_meters(size_t core_count) {
 }
 
 void process_explorer::push_history(std::vector<float>& history, float value) {
-  static constexpr size_t kMaxHistory = 60;
   history.push_back(value);
   if (history.size() > kMaxHistory)
     history.erase(history.begin());
+}
+
+void process_explorer::update_history_xs(size_t count) {
+  if (history_xs_.size() == count)
+    return;
+  history_xs_.resize(count);
+  for (size_t i = 0; i < count; ++i)
+    history_xs_[i] = static_cast<float>(i);
 }
 
 void process_explorer::update_process_table(const dynamic& args) {
@@ -271,7 +318,11 @@ void process_explorer::update_process_table(const dynamic& args) {
 
         entry.child_key = next_child_key_++;
         (*children)[entry.child_key] = dynamic_ptr{entry.row};
+        entry.name = name;
+        entry.state = state;
+        entry.command = command;
         entry.cpu_percent = cpu_percent;
+        entry.mem_rss_bytes = mem_rss;
 
         pid_to_row_.emplace(pid, std::move(entry));
       } else {
@@ -282,7 +333,11 @@ void process_explorer::update_process_table(const dynamic& args) {
         entry.cpu_bar["label"_key] = format_percent(cpu_percent);
         entry.mem_label["text"_key] = format_bytes(mem_rss);
         entry.command_label["text"_key] = command;
+        entry.name = name;
+        entry.state = state;
+        entry.command = command;
         entry.cpu_percent = cpu_percent;
+        entry.mem_rss_bytes = mem_rss;
       }
     });
   }
@@ -297,26 +352,61 @@ void process_explorer::update_process_table(const dynamic& args) {
     }
   }
 
-  // Sort by CPU% descending (top's default "busiest first" ordering).
-  std::vector<row_entry*> rows;
+  resort_rows();
+}
+
+void process_explorer::resort_rows() {
+  if (!proc_table_ || pid_to_row_.empty())
+    return;
+
+  std::vector<std::pair<int, row_entry*>> rows;
   rows.reserve(pid_to_row_.size());
   for (auto& [pid, entry] : pid_to_row_)
-    rows.push_back(&entry);
-  std::sort(rows.begin(), rows.end(), [](const row_entry* a, const row_entry* b) {
-    return a->cpu_percent > b->cpu_percent;
+    rows.push_back({pid, &entry});
+
+  // Comparator always expressed in ascending terms; descending just swaps
+  // the operand order, matching column_id assignments in kLayout above
+  // (0=PID, 1=Name, 2=State, 3=CPU %, 4=Memory, 5=Command).
+  auto ascending_less = [&](const std::pair<int, row_entry*>& a, const std::pair<int, row_entry*>& b) {
+    switch (sort_column_id_) {
+      case 0:
+        return a.first < b.first;
+      case 1:
+        return a.second->name < b.second->name;
+      case 2:
+        return a.second->state < b.second->state;
+      case 4:
+        return a.second->mem_rss_bytes < b.second->mem_rss_bytes;
+      case 5:
+        return a.second->command < b.second->command;
+      case 3:
+      default:
+        return a.second->cpu_percent < b.second->cpu_percent;
+    }
+  };
+  std::sort(rows.begin(), rows.end(), [&](const auto& a, const auto& b) {
+    return sort_ascending_ ? ascending_less(a, b) : ascending_less(b, a);
   });
+
   for (size_t i = 0; i < rows.size(); ++i)
-    rows[i]->row["order"_key] = static_cast<int32_t>(i);
+    rows[i].second->row["order"_key] = static_cast<int32_t>(i);
 
   proc_table_->refresh_children_order();
 }
 
 // ── Event routing ─────────────────────────────────────────────────────────────
 
-void process_explorer::on_event(key_t id, key_t event, const dynamic& /*payload*/) {
+void process_explorer::on_event(key_t id, key_t event, const dynamic& payload) {
   if (id == window_id_ && event == "closed"_key) {
     emit("closed"_key);
     remove_internal_objects();
+    return;
+  }
+
+  if (id == proc_table_id_ && event == "sorted"_key) {
+    sort_column_id_ = payload.as<int32_t>("column_id"_key);
+    sort_ascending_ = payload.as<bool>("ascending"_key);
+    resort_rows();
   }
 }
 

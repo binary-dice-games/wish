@@ -70,7 +70,11 @@ void register_table() {
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Table"));
     (*proto)[dynamic::CLASS].addAttribute(
         attr<Description>("A multi-column table. Direct children of type TableColumn define "
-                          "column setup; all other children (typically TableRow) provide rows."));
+                          "column setup; all other children (typically TableRow) provide rows. "
+                          "Emits 'row_selected' / 'row_activated' with {index: int} on row clicks. "
+                          "When flags includes ImGuiTableFlags_Sortable (8) and the user clicks a "
+                          "column header, emits 'sorted' with {column_id: int, ascending: bool} -- "
+                          "the owner is responsible for actually reordering rows in response."));
     dynamic::addClass(
         "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_element>("wish"_key, "Table"_key));
   }
@@ -100,6 +104,17 @@ void register_table() {
             attr<DisplayName>("Init Width"),
             attr<Description>("Initial column width in pixels (or weight for stretch columns)."),
             attr<Category>("Layout")});
+    proto->addField(
+        "column_id"_key,
+        field{
+            int32_t{0},
+            attr<DisplayName>("Column ID"),
+            attr<Description>("Stable identifier passed through to ImGui as the column's user_data. "
+                              "When the parent Table has ImGuiTableFlags_Sortable and the user clicks "
+                              "this column's header, the Table's 'sorted' event payload's `column_id` "
+                              "field echoes this value back, letting the owner map it to a semantic "
+                              "field (e.g. \"sort by PID\") independent of column position."),
+            attr<Category>("Behavior")});
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("TableColumn"));
     (*proto)[dynamic::CLASS].addAttribute(
         attr<Description>("Defines one column inside a Table. "
