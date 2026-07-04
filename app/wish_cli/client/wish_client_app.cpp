@@ -124,6 +124,11 @@ int run_client_mode(int argc, char** argv) {
 
     wish_client_session session{std::move(transport)};
     session.app_name_ = FLAGS_run;
+    // Anything left in argv after gflags removed recognized flags is either a
+    // stray positional argument or, more commonly, whatever followed a
+    // literal "--" on the command line (gflags stops flag parsing there and
+    // leaves the rest untouched). Forward it to the app via app_args().
+    session.app_args_.assign(argv + 1, argv + argc);
 
     bison::dynamic params;
     params["timeout_ms"_key] = int32_t{FLAGS_timeout};

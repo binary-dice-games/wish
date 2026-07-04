@@ -7,7 +7,7 @@
  *   wish server  [--transport T] [--host H] [--port P] [--name PATH] [--cmd C]
  *                [--title T] [--width W] [--height H] [--verbose]
  *   wish client  [--transport T] [--host H] [--port P] [--name PATH]
- *                (--list | --run=<app>) [--timeout MS]
+ *                (--list | --run=<app>) [--timeout MS] [-- app-args...]
  *   wish bridge  [--up-host H] [--up-port P] [--up-pipe PATH]
  *                [--down-host H] [--down-port P] [--down-pipe PATH]
  */
@@ -38,8 +38,11 @@ static void print_usage() {
                "  wish server  [--transport T] [--host H] [--port P] [--name PATH] [--cmd C]\n"
                "               [--title T] [--width W] [--height H] [--verbose]\n"
                "  wish client  [--transport T] [--host H] [--port P] [--name PATH]\n"
-               "               (--list | --run=<app>) [--timeout MS]\n"
+               "               (--list | --run=<app>) [--timeout MS] [-- app-args...]\n"
                "  wish bridge  [--up-host H --up-port P ...] [--down-host H --down-port P ...]\n"
+               "\n"
+               "Anything after a literal `--` is forwarded to the app, e.g.\n"
+               "  wish client --run=notepad -- path/to/file\n"
                "\n"
                "Shared transport flags (server and client):\n"
                "  --transport T  tcp, pipe, pty, or console (default: tcp)\n"

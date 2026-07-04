@@ -7,6 +7,10 @@
 /// sandbox. This runner is the bridge: it reacts to the form's high-level
 /// events by driving the client's own local files through `upload_file` /
 /// `download_file`.
+///
+/// A file to open at startup may be passed after `--` on the command line,
+/// e.g. `wish client --run=notepad -- path/to/file` (see
+/// `wish_client_session::app_args()`).
 #include "app/wish_cli/client/apps/notepad.hpp"
 #include "app/wish_cli/client/wish_client_app.hpp"
 
@@ -14,6 +18,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <map>
 #include <memory>
 #include <string>
@@ -76,6 +81,25 @@ struct sandbox_files {
   }
 };
 
+// Upload a local file's current contents into the sandbox under a fresh
+// name and register it as a new Notepad tab. Shared by the FileDialog-driven
+// Open/New flows and by opening a file passed on the command line.
+void upload_and_open(
+    wish_client_session& s,
+    const std::shared_ptr<rmi::proxy::dynamic>& notepad,
+    const std::shared_ptr<sandbox_files>& files,
+    const fs::path& local_path) {
+  auto data = read_local_file(local_path);
+  auto sandbox_name = files->reserve_name(local_path);
+  s.upload_file(sandbox_name, data).get();
+  files->local_path_by_sandbox_name[sandbox_name] = local_path.string();
+
+  dynamic args;
+  args["path"_key] = sandbox_name;
+  args["title"_key] = local_path.filename().string();
+  notepad->call("open_file"_key, std::move(args)).get();
+}
+
 // Shared by "Open" and "New": show a FileDialog populated from a local
 // directory listing (same pattern as examples/demo/main.cpp's browse()
 // helper), then upload the chosen file and register it via open_file().
@@ -121,15 +145,7 @@ void browse_and_open(
     if (create_if_missing && !fs::exists(local_path))
       write_local_file(local_path, "");
 
-    auto data = read_local_file(local_path);
-    auto sandbox_name = files->reserve_name(local_path);
-    s.upload_file(sandbox_name, data).get();
-    files->local_path_by_sandbox_name[sandbox_name] = local_path.string();
-
-    dynamic args;
-    args["path"_key] = sandbox_name;
-    args["title"_key] = local_path.filename().string();
-    notepad->call("open_file"_key, std::move(args)).get();
+    upload_and_open(s, notepad, files, local_path);
   });
 
   // on_cancel: the dialog already removed itself from session.objects;
@@ -192,6 +208,17 @@ void run_notepad(wish_client_session& s) {
   // Nothing else to keep alive: `notepad`'s shared_ptr lives on inside the
   // lambdas above (registered as this session's event handlers), which is
   // enough to keep the proxy usable for the whole session.
+
+  // `wish client --run=notepad -- path/to/file`: open a file at startup.
+  // Only the first positional argument is used; extras are ignored.
+  if (const auto& app_args = s.app_args(); !app_args.empty()) {
+    fs::path local_path = fs::absolute(app_args[0]);
+    if (fs::exists(local_path))
+      upload_and_open(s, notepad, files, local_path);
+    else
+      std::cerr << "[notepad] no such file: " << local_path.string() << '\n';
+  }
+
   // on_session() blocks until signal_done() is called.
 }
 

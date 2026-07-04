@@ -28,6 +28,10 @@ namespace bdg::wish {
  *   --host H       Connect host address  (transport=tcp)
  *   --port P       Connect port          (transport=tcp)
  *   --name PATH    Named-pipe / Unix-socket path (transport=pipe)
+ *
+ * Anything after a literal `--` on the command line is left unparsed by
+ * gflags and forwarded verbatim to the app function as `app_args()`, e.g.
+ * `wish client --run=notepad -- path/to/file`.
  */
 class wish_client_session : public client {
  public:
@@ -39,11 +43,17 @@ class wish_client_session : public client {
   /// @brief Unblock on_session() — call from a "closed" event handler.
   void signal_done();
 
+  /// @brief Positional arguments given after `--` on the command line.
+  const std::vector<std::string>& app_args() const {
+    return app_args_;
+  }
+
   void on_session() override;
   void on_disconnect() override;
 
  private:
   std::string app_name_;
+  std::vector<std::string> app_args_;
   std::promise<void> done_;
   std::future<void> done_future_{done_.get_future()};
   std::vector<bison::rmi::proxy::dynamic> live_proxies_;
