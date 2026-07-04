@@ -4,33 +4,48 @@
  * @brief C ABI for the wish client — connects to a running wish server and
  *        drives UI templates from any C-compatible language or runtime.
  *
+ * This header only adds wish-specific session/template operations. Proxies
+ * are plain `rmi_proxy_handle` values (see `rmi_c.h`): use
+ * `rmi_proxy_get()` / `rmi_proxy_set()` / `rmi_proxy_call()` /
+ * `rmi_proxy_on_event()` / `rmi_proxy_release()` to interact with the
+ * proxies returned below, and `bison_c.h` to build/read the `bison_handle`
+ * field payloads they exchange.
+ *
  * All functions are thread-safe unless noted otherwise.  Opaque handles are
  * heap-allocated by the library and freed with wish_client_destroy().
  *
  * ## Typical usage
  * ```c
- * static void session(wish_client_t c, void* ud) {
+ * static void on_clicked(bison_handle params, void* ud) {
+ *   (void)params;
+ *   wish_client_quit((wish_client_handle)ud);
+ * }
+ *
+ * static void session(wish_client_handle c, void* ud) {
  *   wish_set_style_preset(c, "dark");
  *   wish_register_template(c, "ui", kMyDesc);
- *   wish_instantiate_template(c, "ui");
- *   wish_proxy_t btn = wish_proxy_get(c, "ok_button");
- *   wish_proxy_on_event(btn, "clicked", on_ok, c);
+ *   rmi_proxy_handle root = wish_instantiate_template(c, "ui");
+ *   rmi_proxy_handle btn = wish_proxy_get(c, "ok_button");
+ *   rmi_proxy_on_event(btn, bison_key("clicked"), on_clicked, c);
  *   wish_client_wait(c);
+ *   rmi_proxy_release(btn);
+ *   rmi_proxy_release(root);
  * }
  *
  * int main(void) {
- *   wish_client_t c = wish_client_create(WISH_TRANSPORT_SOCKET, "127.0.0.1:7070");
+ *   wish_client_handle c = wish_client_create(WISH_TRANSPORT_SOCKET, "127.0.0.1:7070");
  *   wish_client_run(c, session, NULL);
  *   wish_client_destroy(c);
  * }
  * ```
  */
 #pragma once
+
+#include "rmi_c.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#include <stdint.h>
 
 /* ── Export macro ─────────────────────────────────────────────────────────── */
 #if defined(_WIN32)
@@ -46,25 +61,19 @@ extern "C" {
 /* ── Opaque handles ───────────────────────────────────────────────────────── */
 
 /** @brief Opaque wish client session handle.  Freed by wish_client_destroy(). */
-typedef struct wish_client_s* wish_client_t;
-
-/**
- * @brief Non-owning handle to a remote UI element proxy.
- *
- * Valid for the lifetime of the session that produced it.  Do not free.
- */
-typedef struct wish_proxy_s* wish_proxy_t;
+typedef struct wish_client_handle_* wish_client_handle;
 
 /* ── Key hashing ──────────────────────────────────────────────────────────── */
 
-/** @brief Pre-hashed field name type (matches bison FNV-1a hash_t). */
-typedef uint32_t wish_hash;
+/** @brief Pre-hashed field name type; identical to bison_hash. */
+typedef bison_hash wish_hash;
 
 /**
  * @brief Compute the FNV-1a hash of a field name at runtime.
  *
- * Produces the same value as the C++ `"name"_key` user-defined literal so
- * that hashes computed here can be passed to proxy field setters.
+ * Identical to `bison_key()`; provided so wish-only callers don't need to
+ * reference `bison_c.h` directly.  Produces the same value as the C++
+ * `"name"_key` user-defined literal.
  *
  * @param name  Null-terminated ASCII/UTF-8 field name.
  * @return      Hash value with MSB set (never zero for non-empty input).
@@ -110,23 +119,13 @@ typedef enum {
  *
  * Called from the RMI worker thread.  The session remains active for as long
  * as this function blocks.  Call wish_client_wait() to suspend here until
- * wish_client_quit() is invoked (e.g. from an event handler).
+ * wish_client_quit() is invoked (e.g. from an event handler registered via
+ * rmi_proxy_on_event()).
  *
  * @param client   The active session handle.
  * @param userdata Pointer supplied to wish_client_run().
  */
-typedef void (*wish_session_fn)(wish_client_t client, void* userdata);
-
-/**
- * @brief Event callback invoked when a UI element fires an event.
- *
- * Called from the event dispatch thread.  Must not block.
- *
- * @param src      Handle to the proxy that emitted the event.
- * @param event    FNV-1a hash of the event name (e.g. wish_key("clicked")).
- * @param userdata Pointer supplied to wish_proxy_on_event().
- */
-typedef void (*wish_event_fn)(wish_proxy_t src, wish_hash event, void* userdata);
+typedef void (*wish_session_fn)(wish_client_handle client, void* userdata);
 
 /* ── Client lifecycle ─────────────────────────────────────────────────────── */
 
@@ -140,7 +139,7 @@ typedef void (*wish_event_fn)(wish_proxy_t src, wish_hash event, void* userdata)
  * @return Non-null handle on success; NULL if transport construction fails
  *         (e.g. unsupported transport on this platform, bad address format).
  */
-WISH_API wish_client_t wish_client_create(wish_transport_t transport, const char* address);
+WISH_API wish_client_handle wish_client_create(wish_transport_t transport, const char* address);
 
 /**
  * @brief Destroy a wish client and free all associated resources.
@@ -149,7 +148,7 @@ WISH_API wish_client_t wish_client_create(wish_transport_t transport, const char
  *
  * @param client  Handle to destroy; NULL is a no-op.
  */
-WISH_API void wish_client_destroy(wish_client_t client);
+WISH_API void wish_client_destroy(wish_client_handle client);
 
 /**
  * @brief Connect, invoke the session callback, then disconnect.
@@ -163,7 +162,7 @@ WISH_API void wish_client_destroy(wish_client_t client);
  * @param userdata    Forwarded to session_fn unchanged.
  * @return WISH_OK on clean exit; WISH_ERR_* on transport or protocol failure.
  */
-WISH_API wish_error wish_client_run(wish_client_t client, wish_session_fn session_fn, void* userdata);
+WISH_API wish_error wish_client_run(wish_client_handle client, wish_session_fn session_fn, void* userdata);
 
 /**
  * @brief Block inside the session callback until wish_client_quit() is called.
@@ -174,7 +173,7 @@ WISH_API wish_error wish_client_run(wish_client_t client, wish_session_fn sessio
  *
  * @param client  Active session handle.
  */
-WISH_API void wish_client_wait(wish_client_t client);
+WISH_API void wish_client_wait(wish_client_handle client);
 
 /**
  * @brief Signal the session to end.
@@ -185,7 +184,7 @@ WISH_API void wish_client_wait(wish_client_t client);
  *
  * @param client  Active session handle.
  */
-WISH_API void wish_client_quit(wish_client_t client);
+WISH_API void wish_client_quit(wish_client_handle client);
 
 /**
  * @brief Retrieve the last error message for this client.
@@ -193,7 +192,7 @@ WISH_API void wish_client_quit(wish_client_t client);
  * @param client  Client handle.
  * @return Null-terminated string (never NULL); empty string if no error.
  */
-WISH_API const char* wish_last_error(wish_client_t client);
+WISH_API const char* wish_last_error(wish_client_handle client);
 
 /* ── Style ────────────────────────────────────────────────────────────────── */
 
@@ -204,7 +203,20 @@ WISH_API const char* wish_last_error(wish_client_t client);
  * @param preset  "dark", "light", or "classic".
  * @return WISH_OK or WISH_ERR_*.
  */
-WISH_API wish_error wish_set_style_preset(wish_client_t client, const char* preset);
+WISH_API wish_error wish_set_style_preset(wish_client_handle client, const char* preset);
+
+/**
+ * @brief Asynchronous variant of wish_set_style_preset().
+ *
+ * @param client      Active session handle.
+ * @param preset      "dark", "light", or "classic".
+ * @param out_future  Output future; the resolved value carries no result, so
+ *                     consume it with rmi_future_wait() and discard it with
+ *                     rmi_future_release().
+ * @return WISH_OK if the operation was submitted; WISH_ERR_* otherwise.
+ */
+WISH_API wish_error
+wish_set_style_preset_async(wish_client_handle client, const char* preset, rmi_future_handle* out_future);
 
 /* ── Template management ──────────────────────────────────────────────────── */
 
@@ -216,87 +228,65 @@ WISH_API wish_error wish_set_style_preset(wish_client_t client, const char* pres
  * @param descriptor  JSON or YAML descriptor string.
  * @return WISH_OK or WISH_ERR_*.
  */
-WISH_API wish_error wish_register_template(wish_client_t client, const char* name, const char* descriptor);
+WISH_API wish_error wish_register_template(wish_client_handle client, const char* name, const char* descriptor);
+
+/**
+ * @brief Asynchronous variant of wish_register_template().
+ *
+ * @param out_future  Output future; the resolved value carries no result, so
+ *                     consume it with rmi_future_wait() and discard it with
+ *                     rmi_future_release().
+ * @return WISH_OK if the operation was submitted; WISH_ERR_* otherwise.
+ */
+WISH_API wish_error wish_register_template_async(
+    wish_client_handle client, const char* name, const char* descriptor, rmi_future_handle* out_future);
 
 /**
  * @brief Instantiate a previously registered template.
  *
- * Populates the internal proxy map used by wish_proxy_get().  Only one
- * template can be active at a time; calling this again replaces the previous
- * proxy map and invalidates all wish_proxy_t handles from the prior call.
+ * Populates the internal dot-path → proxy map used by wish_proxy_get().  Only
+ * one template can be active at a time; calling this again replaces the
+ * previous map (proxy handles already returned to the caller remain valid
+ * until individually released with rmi_proxy_release()).
  *
  * @param client  Active session handle.
  * @param name    Template name passed to wish_register_template().
- * @return Root proxy handle (key ""), or NULL on failure.
+ * @return Root proxy handle (dot-path ""), or NULL on failure.  Caller owns
+ *         the handle and must release it with rmi_proxy_release().
  */
-WISH_API wish_proxy_t wish_instantiate_template(wish_client_t client, const char* name);
+WISH_API rmi_proxy_handle wish_instantiate_template(wish_client_handle client, const char* name);
+
+/**
+ * @brief Asynchronous variant of wish_instantiate_template().
+ *
+ * Resolves like `rmi_client_instantiate_async()`: consume @p out_future with
+ * `rmi_future_get_proxy()` to obtain the root proxy handle.  The dot-path →
+ * proxy map used by wish_proxy_get() is populated as a side effect of the
+ * future becoming ready.
+ *
+ * @param client      Active session handle.
+ * @param name        Template name passed to wish_register_template().
+ * @param out_future  Output future consumed with rmi_future_get_proxy().
+ * @return WISH_OK if the operation was submitted; WISH_ERR_* otherwise.
+ */
+WISH_API wish_error
+wish_instantiate_template_async(wish_client_handle client, const char* name, rmi_future_handle* out_future);
 
 /**
  * @brief Resolve a dot-joined element path to a proxy handle.
  *
  * Paths follow the wish naming convention: children are joined with ".".
- * Example: "btns.ok" refers to the "ok" child of the "btns" element.
+ * Example: "btns.ok" refers to the "ok" child of the "btns" element.  Looked
+ * up from the map populated by the most recent wish_instantiate_template()
+ * (or wish_instantiate_template_async()) call — no round trip to the server.
  *
  * @param client    Active session handle.
  * @param dot_path  Dot-joined element path, or "" for the root element.
- * @return Proxy handle on success; NULL if the path is not in the proxy map.
+ * @return New proxy handle, or NULL if the path is not in the current
+ *         template's proxy map.  Caller owns the handle and must release it
+ *         with rmi_proxy_release().
  */
-WISH_API wish_proxy_t wish_proxy_get(wish_client_t client, const char* dot_path);
-
-/* ── Proxy field setters ──────────────────────────────────────────────────── */
-
-/**
- * @brief Set a string field on a remote UI element.
- *
- * @param proxy  Proxy handle from wish_proxy_get().
- * @param field  FNV-1a hash of the field name (use wish_key("name")).
- * @param value  New string value (UTF-8, null-terminated).
- * @return WISH_OK or WISH_ERR_*.
- */
-WISH_API wish_error wish_proxy_set_string(wish_proxy_t proxy, wish_hash field, const char* value);
-
-/**
- * @brief Set an integer field on a remote UI element.
- *
- * @param proxy  Proxy handle.
- * @param field  FNV-1a hash of the field name.
- * @param value  New int32 value.
- * @return WISH_OK or WISH_ERR_*.
- */
-WISH_API wish_error wish_proxy_set_int(wish_proxy_t proxy, wish_hash field, int32_t value);
-
-/**
- * @brief Set a float field on a remote UI element.
- *
- * @param proxy  Proxy handle.
- * @param field  FNV-1a hash of the field name.
- * @param value  New float value.
- * @return WISH_OK or WISH_ERR_*.
- */
-WISH_API wish_error wish_proxy_set_float(wish_proxy_t proxy, wish_hash field, float value);
-
-/**
- * @brief Set a boolean field on a remote UI element.
- *
- * @param proxy  Proxy handle.
- * @param field  FNV-1a hash of the field name.
- * @param value  Non-zero for true; zero for false.
- * @return WISH_OK or WISH_ERR_*.
- */
-WISH_API wish_error wish_proxy_set_bool(wish_proxy_t proxy, wish_hash field, int value);
-
-/* ── Event subscription ───────────────────────────────────────────────────── */
-
-/**
- * @brief Subscribe to an event emitted by a remote UI element.
- *
- * @param proxy     Proxy handle for the element to watch.
- * @param event     Event name (e.g. "clicked", "changed").
- * @param callback  Function called on the event dispatch thread; must not block.
- * @param userdata  Forwarded to callback unchanged.
- * @return WISH_OK or WISH_ERR_*.
- */
-WISH_API wish_error wish_proxy_on_event(wish_proxy_t proxy, const char* event, wish_event_fn callback, void* userdata);
+WISH_API rmi_proxy_handle wish_proxy_get(wish_client_handle client, const char* dot_path);
 
 /* ── Logging ──────────────────────────────────────────────────────────────── */
 
@@ -311,7 +301,7 @@ WISH_API wish_error wish_proxy_on_event(wish_proxy_t proxy, const char* event, w
  * @param msg     Free-form message text (null-terminated UTF-8).
  * @return WISH_OK or WISH_ERR_*.
  */
-WISH_API wish_error wish_log(wish_client_t client, const char* level, const char* msg);
+WISH_API wish_error wish_log(wish_client_handle client, const char* level, const char* msg);
 
 /**
  * @brief Convenience wrapper for wish_log(client, "debug", msg).
@@ -319,7 +309,7 @@ WISH_API wish_error wish_log(wish_client_t client, const char* level, const char
  * @param msg     Message text.
  * @return WISH_OK or WISH_ERR_*.
  */
-WISH_API wish_error wish_log_debug(wish_client_t client, const char* msg);
+WISH_API wish_error wish_log_debug(wish_client_handle client, const char* msg);
 
 /**
  * @brief Convenience wrapper for wish_log(client, "info", msg).
@@ -327,7 +317,7 @@ WISH_API wish_error wish_log_debug(wish_client_t client, const char* msg);
  * @param msg     Message text.
  * @return WISH_OK or WISH_ERR_*.
  */
-WISH_API wish_error wish_log_info(wish_client_t client, const char* msg);
+WISH_API wish_error wish_log_info(wish_client_handle client, const char* msg);
 
 /**
  * @brief Convenience wrapper for wish_log(client, "warn", msg).
@@ -335,7 +325,7 @@ WISH_API wish_error wish_log_info(wish_client_t client, const char* msg);
  * @param msg     Message text.
  * @return WISH_OK or WISH_ERR_*.
  */
-WISH_API wish_error wish_log_warn(wish_client_t client, const char* msg);
+WISH_API wish_error wish_log_warn(wish_client_handle client, const char* msg);
 
 /**
  * @brief Convenience wrapper for wish_log(client, "error", msg).
@@ -343,7 +333,7 @@ WISH_API wish_error wish_log_warn(wish_client_t client, const char* msg);
  * @param msg     Message text.
  * @return WISH_OK or WISH_ERR_*.
  */
-WISH_API wish_error wish_log_error(wish_client_t client, const char* msg);
+WISH_API wish_error wish_log_error(wish_client_handle client, const char* msg);
 
 #ifdef __cplusplus
 }

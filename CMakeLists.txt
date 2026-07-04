@@ -288,19 +288,21 @@ endif()
 # CMake target is named wish_client_dll to avoid colliding with the wish_client
 # static lib; the output filename is still wish_client.dll / libwish_client.so.
 #
-# bison_c.cpp and rmi_c.cpp are compiled directly into this target (the same
-# sources bison's own bison_abi target uses) so that wish_client.{so,dll}
-# exports bison's and RMI's C ABI alongside wish's, and consumers only need to
-# link/load this one library to get the full bison + RMI + wish surface.
+# Consumers only need to link/load this one library to get the full
+# bison + RMI + wish C ABI surface, but bison_c.cpp and rmi_c.cpp are *not*
+# listed as separate sources here: src/wish_client_c.cpp #includes both
+# directly (see that file) so it can reuse their internal handle-wrapping
+# helpers (bison_handle/rmi_proxy_handle/rmi_future_handle are otherwise
+# opaque outside those translation units) without a second bison-side API
+# surface. Compiling them again here would duplicate every bison_*/rmi_*
+# symbol.
 
 if(WISH_BUILD_SHARED)
   add_library(wish_client_dll SHARED
       src/wish_client_c.cpp
       include/wish_client_c.h
       extern/bison/include/bison_c.h
-      extern/bison/include/rmi_c.h
-      extern/bison/src/bison/bison_c.cpp
-      extern/bison/src/rmi/rmi_c.cpp)
+      extern/bison/include/rmi_c.h)
   target_compile_definitions(wish_client_dll PRIVATE WISH_CLIENT_BUILDING_DLL BISON_BUILDING_DLL)
   target_link_libraries(wish_client_dll PUBLIC wish_client)
   target_include_directories(wish_client_dll

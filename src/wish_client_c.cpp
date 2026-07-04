@@ -11,6 +11,19 @@
 #include "src/rmi/transport/socket_transport.hpp"
 #include "src/rmi/transport/stream_transport.hpp"
 
+// bison_c.cpp's and rmi_c.cpp's handle-wrapping helpers (sp_dyn/as_handle,
+// proxy_ptr/as_proxy_handle, bool_future_state, proxy_future_state,
+// store_future_handle, ...) are file-local statics — bison_handle,
+// rmi_proxy_handle, and rmi_future_handle are otherwise fully opaque outside
+// those translation units. #including the sources directly gives this file
+// access to them so functions here can return/build real bison_handle /
+// rmi_proxy_handle / rmi_future_handle values instead of wish-private handle
+// types. Their private helper names don't collide with each other. See the
+// CMakeLists.txt comment above the wish_client_dll target: neither file may
+// also be compiled as a separate source of this target.
+#include "src/bison/bison_c.cpp"
+#include "src/rmi/rmi_c.cpp"
+
 #include <condition_variable>
 #include <cstring>
 #include <fstream>
@@ -24,36 +37,28 @@ using namespace bdg::bison;
 using namespace bdg::bison::rmi::transport;
 namespace wish = bdg::wish;
 
-// ── Forward declaration (circular dependency: c_abi_client ↔ wish_client_s) ──
+// ── Forward declaration (circular dependency: c_abi_client ↔ wish_client_handle_) ──
 
-struct wish_client_s;
-
-// ── Proxy handle ──────────────────────────────────────────────────────────────
-
-struct wish_proxy_s {
-  // Non-owning pointer into wish_client_s::proxy_map_.
-  // unordered_map guarantees reference/pointer stability across rehash.
-  rmi::proxy::dynamic* proxy;
-};
+struct wish_client_handle_;
 
 // ── Internal C++ client ───────────────────────────────────────────────────────
 
 /// Subclass of wish::client that calls the C session callback from on_session.
 class c_abi_client : public wish::client {
  public:
-  c_abi_client(std::unique_ptr<rmi::transport::client_transport_iface> t, wish_client_s* state)
+  c_abi_client(std::unique_ptr<rmi::transport::client_transport_iface> t, wish_client_handle_* state)
       : wish::client(std::move(t)), state_(state) {}
 
  protected:
   void on_session() override;
 
  private:
-  wish_client_s* state_;
+  wish_client_handle_* state_;
 };
 
 // ── Client state ──────────────────────────────────────────────────────────────
 
-struct wish_client_s {
+struct wish_client_handle_ {
   std::unique_ptr<c_abi_client> client_;
 
   wish_session_fn session_fn_ = nullptr;
@@ -63,11 +68,11 @@ struct wish_client_s {
   std::condition_variable wait_cv_;
   bool quit_ = false;
 
-  // Proxy storage — populated by wish_instantiate_template.
-  // Storing by value; pointers into proxy_map_ are stable (std::unordered_map
-  // reference-stability guarantee).
+  // Cache of the most recent instantiate_template() result: dot-path ->
+  // proxy. wish_proxy_get() builds a fresh, independently-owned
+  // rmi_proxy_handle from the cached remote id via client_->make_proxy() —
+  // a purely local operation, no server round trip — on every call.
   wish::proxy_map proxy_map_;
-  std::unordered_map<std::string, wish_proxy_s> handle_map_;
 
   // Owned stream for WISH_TRANSPORT_STREAM; kept alive as long as transport.
   std::fstream stream_storage_;
@@ -83,19 +88,13 @@ void c_abi_client::on_session() {
 // ── wish_key ──────────────────────────────────────────────────────────────────
 
 extern "C" wish_hash wish_key(const char* name) {
-  // FNV-1a 32-bit with MSB forced to 1 — identical to bison::hash().
-  uint32_t value = 0x811c9dc5u;
-  while (*name) {
-    value ^= static_cast<uint32_t>(static_cast<unsigned char>(*name++));
-    value *= 0x01000193u;
-  }
-  return value | 0x80000000u;
+  return bison_key(name);
 }
 
 // ── Transport factory ─────────────────────────────────────────────────────────
 
 static std::unique_ptr<rmi::transport::client_transport_iface>
-make_client_transport(wish_transport_t type, const char* address, wish_client_s* state) {
+make_client_transport(wish_transport_t type, const char* address, wish_client_handle_* state) {
   if (type == WISH_TRANSPORT_SOCKET) {
     std::string host = "127.0.0.1";
     uint16_t port = 7070;
@@ -137,9 +136,9 @@ make_client_transport(wish_transport_t type, const char* address, wish_client_s*
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 
-extern "C" wish_client_t wish_client_create(wish_transport_t type, const char* address) {
+extern "C" wish_client_handle wish_client_create(wish_transport_t type, const char* address) {
   try {
-    auto state = std::make_unique<wish_client_s>();
+    auto state = std::make_unique<wish_client_handle_>();
     auto t = make_client_transport(type, address, state.get());
     if (!t)
       return nullptr; // last_error_ already set
@@ -150,11 +149,11 @@ extern "C" wish_client_t wish_client_create(wish_transport_t type, const char* a
   }
 }
 
-extern "C" void wish_client_destroy(wish_client_t c) {
+extern "C" void wish_client_destroy(wish_client_handle c) {
   delete c;
 }
 
-extern "C" wish_error wish_client_run(wish_client_t c, wish_session_fn fn, void* ud) {
+extern "C" wish_error wish_client_run(wish_client_handle c, wish_session_fn fn, void* ud) {
   if (!c)
     return WISH_ERR_NULL;
   c->session_fn_ = fn;
@@ -172,14 +171,14 @@ extern "C" wish_error wish_client_run(wish_client_t c, wish_session_fn fn, void*
   }
 }
 
-extern "C" void wish_client_wait(wish_client_t c) {
+extern "C" void wish_client_wait(wish_client_handle c) {
   if (!c)
     return;
   std::unique_lock<std::mutex> lk(c->wait_mtx_);
   c->wait_cv_.wait(lk, [c] { return c->quit_; });
 }
 
-extern "C" void wish_client_quit(wish_client_t c) {
+extern "C" void wish_client_quit(wish_client_handle c) {
   if (!c)
     return;
   {
@@ -189,7 +188,7 @@ extern "C" void wish_client_quit(wish_client_t c) {
   c->wait_cv_.notify_all();
 }
 
-extern "C" const char* wish_last_error(wish_client_t c) {
+extern "C" const char* wish_last_error(wish_client_handle c) {
   if (!c)
     return "";
   return c->last_error_.c_str();
@@ -197,7 +196,7 @@ extern "C" const char* wish_last_error(wish_client_t c) {
 
 // ── Style ─────────────────────────────────────────────────────────────────────
 
-extern "C" wish_error wish_set_style_preset(wish_client_t c, const char* preset) {
+extern "C" wish_error wish_set_style_preset(wish_client_handle c, const char* preset) {
   if (!c || !preset)
     return WISH_ERR_NULL;
   try {
@@ -209,9 +208,26 @@ extern "C" wish_error wish_set_style_preset(wish_client_t c, const char* preset)
   }
 }
 
+extern "C" wish_error
+wish_set_style_preset_async(wish_client_handle c, const char* preset, rmi_future_handle* out_future) {
+  if (!c || !preset || !out_future)
+    return WISH_ERR_NULL;
+  try {
+    std::string preset_name{preset};
+    std::future<bool> fut = std::async(std::launch::async, [c, preset_name]() -> bool {
+      c->client_->set_style_preset(preset_name).get();
+      return true;
+    });
+    return store_future_handle<bool_future_state>(out_future, std::move(fut)) == RMI_OK ? WISH_OK : WISH_ERR_EXCEPTION;
+  } catch (const std::exception& e) {
+    c->last_error_ = e.what();
+    return WISH_ERR_EXCEPTION;
+  }
+}
+
 // ── Templates ─────────────────────────────────────────────────────────────────
 
-extern "C" wish_error wish_register_template(wish_client_t c, const char* name, const char* descriptor) {
+extern "C" wish_error wish_register_template(wish_client_handle c, const char* name, const char* descriptor) {
   if (!c || !name || !descriptor)
     return WISH_ERR_NULL;
   try {
@@ -223,112 +239,78 @@ extern "C" wish_error wish_register_template(wish_client_t c, const char* name, 
   }
 }
 
-extern "C" wish_proxy_t wish_instantiate_template(wish_client_t c, const char* name) {
+extern "C" wish_error wish_register_template_async(
+    wish_client_handle c, const char* name, const char* descriptor, rmi_future_handle* out_future) {
+  if (!c || !name || !descriptor || !out_future)
+    return WISH_ERR_NULL;
+  try {
+    bdg::bison::key_t key{name};
+    std::string desc{descriptor};
+    std::future<bool> fut = std::async(std::launch::async, [c, key, desc]() -> bool {
+      c->client_->register_template(key, desc).get();
+      return true;
+    });
+    return store_future_handle<bool_future_state>(out_future, std::move(fut)) == RMI_OK ? WISH_OK : WISH_ERR_EXCEPTION;
+  } catch (const std::exception& e) {
+    c->last_error_ = e.what();
+    return WISH_ERR_EXCEPTION;
+  }
+}
+
+extern "C" rmi_proxy_handle wish_instantiate_template(wish_client_handle c, const char* name) {
   if (!c || !name)
     return nullptr;
   try {
-    c->proxy_map_.clear();
-    c->handle_map_.clear();
-
     c->proxy_map_ = c->client_->instantiate_template(bdg::bison::key_t{name}).get();
 
-    for (auto& [path, proxy] : c->proxy_map_)
-      c->handle_map_.emplace(path, wish_proxy_s{&proxy});
+    auto it = c->proxy_map_.find(std::string{});
+    if (it == c->proxy_map_.end())
+      return nullptr;
 
-    auto it = c->handle_map_.find(std::string{});
-    return it != c->handle_map_.end() ? &it->second : nullptr;
+    auto* pp = new proxy_ptr(std::make_unique<proxy::dynamic>(c->client_->make_proxy(it->second.object_id())));
+    return as_proxy_handle(pp);
   } catch (const std::exception& e) {
     c->last_error_ = e.what();
     return nullptr;
   }
 }
 
-extern "C" wish_proxy_t wish_proxy_get(wish_client_t c, const char* dot_path) {
+extern "C" wish_error
+wish_instantiate_template_async(wish_client_handle c, const char* name, rmi_future_handle* out_future) {
+  if (!c || !name || !out_future)
+    return WISH_ERR_NULL;
+  try {
+    bdg::bison::key_t key{name};
+    std::future<proxy::dynamic> fut = std::async(std::launch::async, [c, key]() -> proxy::dynamic {
+      c->proxy_map_ = c->client_->instantiate_template(key).get();
+      auto it = c->proxy_map_.find(std::string{});
+      if (it == c->proxy_map_.end())
+        throw std::runtime_error("template has no root element");
+      return c->client_->make_proxy(it->second.object_id());
+    });
+    return store_future_handle<proxy_future_state>(out_future, std::move(fut)) == RMI_OK ? WISH_OK
+                                                                                           : WISH_ERR_EXCEPTION;
+  } catch (const std::exception& e) {
+    c->last_error_ = e.what();
+    return WISH_ERR_EXCEPTION;
+  }
+}
+
+extern "C" rmi_proxy_handle wish_proxy_get(wish_client_handle c, const char* dot_path) {
   if (!c || !dot_path)
     return nullptr;
-  auto it = c->handle_map_.find(std::string{dot_path});
-  if (it == c->handle_map_.end()) {
+  auto it = c->proxy_map_.find(std::string{dot_path});
+  if (it == c->proxy_map_.end()) {
     c->last_error_ = std::string{"proxy not found: "} + dot_path;
     return nullptr;
   }
-  return &it->second;
-}
-
-// ── Proxy field setters ───────────────────────────────────────────────────────
-
-extern "C" wish_error wish_proxy_set_string(wish_proxy_t p, wish_hash field, const char* value) {
-  if (!p || !p->proxy || !value)
-    return WISH_ERR_NULL;
-  try {
-    dynamic d;
-    d[bdg::bison::key_t{field}] = std::string{value};
-    p->proxy->set(std::move(d));
-    return WISH_OK;
-  } catch (...) {
-    return WISH_ERR_EXCEPTION;
-  }
-}
-
-extern "C" wish_error wish_proxy_set_int(wish_proxy_t p, wish_hash field, int32_t value) {
-  if (!p || !p->proxy)
-    return WISH_ERR_NULL;
-  try {
-    dynamic d;
-    d[bdg::bison::key_t{field}] = value;
-    p->proxy->set(std::move(d));
-    return WISH_OK;
-  } catch (...) {
-    return WISH_ERR_EXCEPTION;
-  }
-}
-
-extern "C" wish_error wish_proxy_set_float(wish_proxy_t p, wish_hash field, float value) {
-  if (!p || !p->proxy)
-    return WISH_ERR_NULL;
-  try {
-    dynamic d;
-    d[bdg::bison::key_t{field}] = value;
-    p->proxy->set(std::move(d));
-    return WISH_OK;
-  } catch (...) {
-    return WISH_ERR_EXCEPTION;
-  }
-}
-
-extern "C" wish_error wish_proxy_set_bool(wish_proxy_t p, wish_hash field, int value) {
-  if (!p || !p->proxy)
-    return WISH_ERR_NULL;
-  try {
-    dynamic d;
-    d[bdg::bison::key_t{field}] = (value != 0);
-    p->proxy->set(std::move(d));
-    return WISH_OK;
-  } catch (...) {
-    return WISH_ERR_EXCEPTION;
-  }
-}
-
-// ── Event subscription ────────────────────────────────────────────────────────
-
-extern "C" wish_error wish_proxy_on_event(wish_proxy_t p, const char* event, wish_event_fn callback, void* userdata) {
-  if (!p || !p->proxy || !event)
-    return WISH_ERR_NULL;
-  try {
-    bdg::bison::key_t key{event};
-    wish_hash ev_hash = static_cast<wish_hash>(key.id);
-    p->proxy->onEvent(key, [p, callback, userdata, ev_hash](dynamic) {
-      if (callback)
-        callback(p, ev_hash, userdata);
-    });
-    return WISH_OK;
-  } catch (...) {
-    return WISH_ERR_EXCEPTION;
-  }
+  auto* pp = new proxy_ptr(std::make_unique<proxy::dynamic>(c->client_->make_proxy(it->second.object_id())));
+  return as_proxy_handle(pp);
 }
 
 // ── Logging ───────────────────────────────────────────────────────────────────
 
-extern "C" wish_error wish_log(wish_client_t c, const char* level, const char* msg) {
+extern "C" wish_error wish_log(wish_client_handle c, const char* level, const char* msg) {
   if (!c || !level || !msg)
     return WISH_ERR_NULL;
   try {
@@ -340,15 +322,15 @@ extern "C" wish_error wish_log(wish_client_t c, const char* level, const char* m
   }
 }
 
-extern "C" wish_error wish_log_debug(wish_client_t c, const char* msg) {
+extern "C" wish_error wish_log_debug(wish_client_handle c, const char* msg) {
   return wish_log(c, "debug", msg);
 }
-extern "C" wish_error wish_log_info(wish_client_t c, const char* msg) {
+extern "C" wish_error wish_log_info(wish_client_handle c, const char* msg) {
   return wish_log(c, "info", msg);
 }
-extern "C" wish_error wish_log_warn(wish_client_t c, const char* msg) {
+extern "C" wish_error wish_log_warn(wish_client_handle c, const char* msg) {
   return wish_log(c, "warn", msg);
 }
-extern "C" wish_error wish_log_error(wish_client_t c, const char* msg) {
+extern "C" wish_error wish_log_error(wish_client_handle c, const char* msg) {
   return wish_log(c, "error", msg);
 }
