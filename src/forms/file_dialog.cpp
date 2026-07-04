@@ -395,13 +395,20 @@ void file_dialog::on_row_activated(const bison::dynamic& payload) {
     nav["type"_key] = std::string{"dir"};
     emit("on_navigate"_key, std::move(nav));
   } else {
-    auto sess = sync_sess_->rlock();
-    auto resolved = file_service::resolve_path(name, sess->resource_dir, sess->allow_absolute_paths);
-    if (resolved.empty())
-      return;
+    // Validate inside a scoped rlock; release before remove_internal_objects()
+    // which needs the wlock -- matches on_btn_open_clicked().
+    {
+      auto sess = sync_sess_->rlock();
+      auto resolved = file_service::resolve_path(name, sess->resource_dir, sess->allow_absolute_paths);
+      if (resolved.empty())
+        return;
+    }
     bison::dynamic open;
     open["path"_key] = name;
     emit("on_open"_key, std::move(open));
+    // Double-click confirms the selection just like the Open button: close
+    // the dialog so the client doesn't have to click Cancel afterward.
+    remove_internal_objects();
   }
 }
 

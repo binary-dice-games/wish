@@ -117,6 +117,12 @@ TEST_F(NotepadWindowTest, TreeContainsBtnOpen) {
   EXPECT_TRUE(srv_->last_session->objects.count(root + ".vbox.toolbar.btn_open"));
 }
 
+TEST_F(NotepadWindowTest, TreeContainsBtnNew) {
+  std::string root = instantiate_and_get_root();
+  ASSERT_FALSE(root.empty());
+  EXPECT_TRUE(srv_->last_session->objects.count(root + ".vbox.toolbar.btn_new"));
+}
+
 TEST_F(NotepadWindowTest, TreeContainsBtnSync) {
   std::string root = instantiate_and_get_root();
   ASSERT_FALSE(root.empty());
@@ -360,6 +366,11 @@ TEST_F(NotepadFilesTest, SyncClickedEmitsAllOpenPaths) {
 TEST_F(NotepadFilesTest, OpenButtonClickedEmitsOnRequestOpen) {
   simulate_btn_click("btn_open");
   EXPECT_TRUE(has_event("on_request_open"_key));
+}
+
+TEST_F(NotepadFilesTest, NewButtonClickedEmitsOnRequestNew) {
+  simulate_btn_click("btn_new");
+  EXPECT_TRUE(has_event("on_request_new"_key));
 }
 
 TEST_F(NotepadFilesTest, WindowClosedFlushesEveryOpenFileThenCloses) {

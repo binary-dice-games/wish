@@ -29,7 +29,9 @@ namespace bdg::wish {
 /// to). Clicking its "Open" button emits `on_request_open` so the client can
 /// present its own file picker (e.g. driven by the `FileDialog` form,
 /// populated from the client's local filesystem) and upload the chosen file
-/// before calling `open_file`. Clicking "Sync" emits `on_sync_requested`
+/// before calling `open_file`. Clicking "New" emits `on_request_new`, the
+/// same handshake but asking the client to pick (and create) a fresh local
+/// file instead of an existing one. Clicking "Sync" emits `on_sync_requested`
 /// with every open file's path, asking the client to download and persist
 /// each one without closing it. Closing a tab, or the whole window, emits
 /// `on_file_closed` per file so the client can download it one last time
@@ -69,6 +71,7 @@ class notepad : public form {
   ui_element_ptr tab_bar_ptr_;
   bison::key_t window_id_;
   bison::key_t btn_open_id_;
+  bison::key_t btn_new_id_;
   bison::key_t btn_sync_id_;
   size_t next_child_key_{0};
 

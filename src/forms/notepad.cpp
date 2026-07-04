@@ -78,6 +78,7 @@ static constexpr const char* kNotepadLayout = R"({
           "spacing": 8.0,
           "children": {
             "btn_open": { "type": "Button", "label": "Open", "width": 90 },
+            "btn_new":  { "type": "Button", "label": "New",  "width": 90 },
             "btn_sync": { "type": "Button", "label": "Sync", "width": 90 }
           }
         },
@@ -111,6 +112,7 @@ void notepad::on_init() {
 
   window_id_ = (*tree[""])["__wish_id"_key].as<key_t>();
   tree.with("vbox.toolbar.btn_open", [&](const auto& e) { btn_open_id_ = wish_id_of(e); });
+  tree.with("vbox.toolbar.btn_new", [&](const auto& e) { btn_new_id_ = wish_id_of(e); });
   tree.with("vbox.toolbar.btn_sync", [&](const auto& e) { btn_sync_id_ = wish_id_of(e); });
   tree.with("vbox.tab_bar", [&](const auto& e) { tab_bar_ptr_ = e; });
 
@@ -154,6 +156,8 @@ dynamic notepad::do_open_file(const dynamic& args) {
   ui_element_ptr editor{dynamic::instantiate("wish"_key, "TextEditor"_key)};
   editor["file_path"_key] = path;
   editor["language"_key] = language_for_extension(path);
+  editor["width"_key] = int32_t{0}; // fill available width
+  editor["height"_key] = int32_t{0}; // fill available height
   editor["order"_key] = int32_t{0};
 
   key_t tab_id = rmi::shared::generate_id();
@@ -208,6 +212,11 @@ void notepad::on_event(key_t id, key_t event, const dynamic& /*payload*/) {
 
   if (id == btn_open_id_ && event == "clicked"_key) {
     emit("on_request_open"_key);
+    return;
+  }
+
+  if (id == btn_new_id_ && event == "clicked"_key) {
+    emit("on_request_new"_key);
     return;
   }
 

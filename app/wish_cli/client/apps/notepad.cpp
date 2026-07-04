@@ -76,58 +76,82 @@ struct sandbox_files {
   }
 };
 
+// Shared by "Open" and "New": show a FileDialog populated from a local
+// directory listing (same pattern as examples/demo/main.cpp's browse()
+// helper), then upload the chosen file and register it via open_file().
+// `create_if_missing` is set for "New", where the chosen path need not
+// already exist locally.
+void browse_and_open(
+    wish_client_session& s,
+    std::shared_ptr<rmi::proxy::dynamic> notepad,
+    std::shared_ptr<sandbox_files> files,
+    std::string title,
+    std::string confirm_label,
+    bool create_if_missing) {
+  auto cur_dir = std::make_shared<fs::path>(fs::current_path());
+  auto dlg = std::make_shared<rmi::proxy::dynamic>(s.instantiate("wish"_key, "FileDialog"_key).get());
+
+  dynamic init;
+  init["title"_key] = title;
+  init["confirm_label"_key] = confirm_label;
+  init["path"_key] = cur_dir->string();
+  init["files"_key] = dynamic_ptr{std::make_shared<dynamic>(list_directory(*cur_dir))};
+  dlg->set(std::move(init)).get();
+
+  dlg->onEvent("on_navigate"_key, [dlg, cur_dir](dynamic payload) mutable {
+    auto name = payload.as<std::string>("name"_key);
+    auto type = payload.as<std::string>("type"_key);
+    if (type == "path")
+      *cur_dir = fs::path(name);
+    else
+      *cur_dir = (name == "..") ? cur_dir->parent_path() : (*cur_dir / name);
+    dynamic next;
+    next["path"_key] = cur_dir->string();
+    next["files"_key] = dynamic_ptr{std::make_shared<dynamic>(list_directory(*cur_dir))};
+    dlg->set(std::move(next));
+  });
+
+  dlg->onEvent("on_open"_key, [&s, notepad, files, cur_dir, create_if_missing](dynamic payload) {
+    auto name = payload.as<std::string>("path"_key);
+    fs::path local_path = fs::path(name).is_absolute() ? fs::path(name) : (*cur_dir / name);
+
+    // "New": the user typed/picked a path that may not exist yet -- create it
+    // empty. If it already exists (e.g. they picked an existing file by
+    // mistake), leave its content alone rather than truncating it.
+    if (create_if_missing && !fs::exists(local_path))
+      write_local_file(local_path, "");
+
+    auto data = read_local_file(local_path);
+    auto sandbox_name = files->reserve_name(local_path);
+    s.upload_file(sandbox_name, data).get();
+    files->local_path_by_sandbox_name[sandbox_name] = local_path.string();
+
+    dynamic args;
+    args["path"_key] = sandbox_name;
+    args["title"_key] = local_path.filename().string();
+    notepad->call("open_file"_key, std::move(args)).get();
+  });
+
+  // on_cancel: the dialog already removed itself from session.objects;
+  // the capture just keeps dlg alive until one of its events fires.
+  dlg->onEvent("on_cancel"_key, [dlg](dynamic) {});
+}
+
 } // namespace
 
 void run_notepad(wish_client_session& s) {
   auto notepad = std::make_shared<rmi::proxy::dynamic>(s.instantiate("wish"_key, "Notepad"_key).get());
   auto files = std::make_shared<sandbox_files>();
 
-  // "Open" clicked: the server has no view of the client's local files, so it
-  // asks us to present our own picker. Reuse the FileDialog form, populated
-  // from a local directory listing (same pattern as examples/demo/main.cpp's
-  // browse() helper), then upload the chosen file before registering it.
+  // "Open" clicked: the server has no view of the client's local files, so
+  // it asks us to present our own picker.
   notepad->onEvent("on_request_open"_key, [&s, notepad, files](dynamic) {
-    auto cur_dir = std::make_shared<fs::path>(fs::current_path());
-    auto dlg = std::make_shared<rmi::proxy::dynamic>(s.instantiate("wish"_key, "FileDialog"_key).get());
+    browse_and_open(s, notepad, files, "Open File", "Open", /*create_if_missing=*/false);
+  });
 
-    dynamic init;
-    init["title"_key] = std::string{"Open File"};
-    init["confirm_label"_key] = std::string{"Open"};
-    init["path"_key] = cur_dir->string();
-    init["files"_key] = dynamic_ptr{std::make_shared<dynamic>(list_directory(*cur_dir))};
-    dlg->set(std::move(init)).get();
-
-    dlg->onEvent("on_navigate"_key, [dlg, cur_dir](dynamic payload) mutable {
-      auto name = payload.as<std::string>("name"_key);
-      auto type = payload.as<std::string>("type"_key);
-      if (type == "path")
-        *cur_dir = fs::path(name);
-      else
-        *cur_dir = (name == "..") ? cur_dir->parent_path() : (*cur_dir / name);
-      dynamic next;
-      next["path"_key] = cur_dir->string();
-      next["files"_key] = dynamic_ptr{std::make_shared<dynamic>(list_directory(*cur_dir))};
-      dlg->set(std::move(next));
-    });
-
-    dlg->onEvent("on_open"_key, [&s, notepad, files, cur_dir](dynamic payload) {
-      auto name = payload.as<std::string>("path"_key);
-      fs::path local_path = fs::path(name).is_absolute() ? fs::path(name) : (*cur_dir / name);
-
-      auto data = read_local_file(local_path);
-      auto sandbox_name = files->reserve_name(local_path);
-      s.upload_file(sandbox_name, data).get();
-      files->local_path_by_sandbox_name[sandbox_name] = local_path.string();
-
-      dynamic args;
-      args["path"_key] = sandbox_name;
-      args["title"_key] = local_path.filename().string();
-      notepad->call("open_file"_key, std::move(args)).get();
-    });
-
-    // on_cancel: the dialog already removed itself from session.objects;
-    // the capture just keeps dlg alive until one of its events fires.
-    dlg->onEvent("on_cancel"_key, [dlg](dynamic) {});
+  // "New" clicked: same handshake, but the chosen path need not exist yet.
+  notepad->onEvent("on_request_new"_key, [&s, notepad, files](dynamic) {
+    browse_and_open(s, notepad, files, "New File", "New", /*create_if_missing=*/true);
   });
 
   // A tab (or the whole window) closed: download this file one last time

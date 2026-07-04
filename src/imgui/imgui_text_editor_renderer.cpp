@@ -117,7 +117,7 @@ void render_text_editor(imgui_renderer&, const ui_element& node, const session& 
   }
 
   auto label = std::string("##te_") + std::to_string(id.id);
-  ImVec2 size{w > 0 ? float(w) : -1.f, float(h > 0 ? h : 400)};
+  ImVec2 size{w > 0 ? float(w) : -1.f, h > 0 ? float(h) : -1.f};
   st.editor.Render(label.c_str(), size);
 
   // Write to disk and emit "changed" when the undo stack advances.

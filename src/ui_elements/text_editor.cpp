@@ -53,9 +53,9 @@ void register_text_editor() {
       field{
           int32_t{400},
           attr<DisplayName>("Height"),
-          attr<Description>("Widget height in pixels."),
+          attr<Description>("Widget height in pixels. 0 = fill available height."),
           attr<Category>("Layout"),
-          attr<Range>(1, 8192),
+          attr<Range>(0, 8192),
           attr<Step>(1)});
   (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Text Editor"));
   (*proto)[dynamic::CLASS].addAttribute(

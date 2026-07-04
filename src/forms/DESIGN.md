@@ -203,7 +203,7 @@ Because each module's code is statically linked into the server binary, `addClas
 
 | Event | Payload fields | Description |
 |-------|---------------|-------------|
-| `on_open` | `path` (string) | User confirmed selection. `path` is the value of the filename field at the moment of confirmation. It is always relative unless `allow_absolute_paths` is enabled server-side. |
+| `on_open` | `path` (string) | User confirmed selection (via the confirm button, or double-clicking a file row). `path` is the value of the filename field at the moment of confirmation. It is always relative unless `allow_absolute_paths` is enabled server-side. The dialog closes itself (like `on_cancel`) whichever way `on_open` was triggered. |
 | `on_navigate` | `name` (string), `type` (string) | User navigated. For `type == "dir"` the client should update `files` for the new directory. For `type == "file"` the client may treat this as a confirm. For `type == "path"` the user typed a path directly into the path bar and pressed Enter; `name` contains the full typed string. |
 | `on_cancel` | — | User dismissed the dialog without selecting a file. |
 
@@ -265,6 +265,7 @@ dlg["dlg"].onEvent("on_open"_key, [&](bison::dynamic payload) {
 Files edited by a form live in the session's sandboxed `resource_dir`, but a text editor's files conceptually belong to the *client* (its local disk). `Notepad` bridges the two by treating "open" and "close" as an explicit handshake with the client rather than doing any file listing itself:
 
 - **Open** — the client must call `client::upload_file` to place the file's bytes in the sandbox *before* calling the `open_file` method with the resulting sandbox-relative path. `Notepad` cannot offer a client-side directory listing itself, so its own "Open" button emits `on_request_open`, asking the connected client to present its own picker (typically by driving a client-owned `FileDialog` instance populated from a local `directory_iterator` — see `app/wish_cli/client/apps/notepad.cpp` for the reference client).
+- **New** — the "New" button emits `on_request_new`, the same handshake as "Open" but for a file that may not exist locally yet. The reference client shows a `FileDialog` (confirm label `"New"`) letting the user pick or type a target path, creates it locally if missing, then uploads and calls `open_file` exactly like the Open flow.
 - **Close** — closing a tab (or the whole window) emits `on_file_closed`; the client is expected to call `client::download_file` for that path and persist it locally before discarding its own bookkeeping.
 - **Sync** — the "Sync" toolbar button emits `on_sync_requested` with every currently open path, asking the client to download and overwrite its local copies without closing anything.
 
@@ -285,6 +286,7 @@ Files edited by a form live in the session's sandboxed `resource_dir`, but a tex
 | Event | Payload fields | Description |
 |-------|---------------|--------------|
 | `on_request_open` | — | The "Open" button was clicked. The client should present its own file picker and, once a file is chosen, `upload_file` it and call `open_file`. |
+| `on_request_new` | — | The "New" button was clicked. Same as `on_request_open`, but the chosen path need not exist locally yet — the client should create it (if missing), then `upload_file` and call `open_file`. |
 | `on_file_opened` | `path`, `title` | A new tab was created. |
 | `on_file_closed` | `path` | A tab was closed (individually, or as part of the whole window closing). The client should `download_file(path)` and persist it locally. |
 | `on_file_saved` | `path` | The user pressed Ctrl+S inside a tab's editor. The client should `download_file(path)` without closing the tab. |
@@ -299,6 +301,7 @@ Window (title from field)
   VerticalLayout
     HorizontalLayout
       Button "Open"  → emits on_request_open
+      Button "New"   → emits on_request_new
       Button "Sync"  → emits on_sync_requested
     TabBar             ← one TabItem per open file, added/removed at runtime
       TabItem (closable) ← emits "closed" when its X is clicked
