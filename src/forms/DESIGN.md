@@ -312,13 +312,13 @@ The internal tree is private, like `FileDialog`'s.
 
 ### `ProcessExplorer`
 
-**Bison class name:** `"ProcessExplorer"` in the `"wish"` namespace. Module-gated behind `WISH_MODULE_PROCESS_EXPLORER` (`OFF` by default) since, unlike `Calculator`/`Notepad`, it is genuinely OS-specific -- see [Module System](#module-system).
+**Bison class name:** `"ProcessExplorer"` in the `"wish"` namespace. Built-in (registered unconditionally in `register_all()`, alongside `FileDialog`, `Calculator`, and `Notepad`).
 
-**Purpose:** A read-only, self-contained top/htop-style system monitor: overall and per-core CPU meters, CPU% and memory% history graphs (via `plot_elements`), and a live process table sorted by CPU% descending. Entirely server-side and self-contained, like `Calculator` -- the client only needs to instantiate it and listen for `"closed"`.
+**Purpose:** A read-only top/htop-style system monitor: overall and per-core CPU meters, CPU% and memory% history graphs (via `plot_elements`), and a process table sorted by CPU% descending.
 
-Gathering process/CPU/memory information is inherently platform-specific. The data-acquisition layer is split out of the form itself: `src/forms/process_explorer/process_info.hpp` declares a platform-agnostic `process_info_source` class (returning `system_snapshot`/`process_sample` data), and `process_info_linux.cpp` is the Linux/MSYS2 implementation, reading `/proc`. A future native-Windows port adds `process_info_windows.cpp` implementing the same interface and selects between the two `process_info_*.cpp` sources in `CMakeLists.txt` -- the form itself (`process_explorer.cpp`) never changes.
+Gathering process/CPU/memory information is inherently platform-specific -- and, just as importantly, the machine a user wants visibility into is *their own* (the one the client is running on), not necessarily the wish server's host. So, unlike a naive read of "OS-specific work belongs server-side," `ProcessExplorer` follows the same server/client split as `Notepad`: **the server only renders**; it holds no sampling logic and no platform-specific code at all. The client owns a `process_info_source` (declared in `app/wish_cli/client/apps/process_explorer/process_info.hpp`, implemented for Linux/MSYS2 in `process_info_linux.cpp` -- a future native-Windows port adds `process_info_windows.cpp` behind the same interface) and periodically calls the form's `update_snapshot` method with the latest reading. The form just reconciles its internal `Table` rows, `Plot` series, and `ProgressBar` meters against whatever it was last given -- exactly as `Notepad` bridges `upload_file`/`download_file` to a client-owned local file instead of reading the sandbox itself.
 
-The form owns a background refresh thread (started in `on_init()`, stopped in the destructor / on window close) that samples `process_info_source` roughly once a second and pushes the result into the internal UI tree under the session's write lock (`sync_sess_->wlock()`) -- the same pattern `CLAUDE.md` documents for any code that mutates session state outside of RMI dispatch. Because the form's own destruction can itself happen synchronously *during* a dispatch that already holds that write lock (an explicit client-initiated object-destroy request), the destructor detects that case (`detail::current_session != nullptr`) and detaches the thread instead of joining it, to avoid a self-deadlock; the thread's state lives in a separate `shared_ptr<refresh_state>` so it never touches the (possibly already-destroyed) form object during the brief window before it notices the stop flag and exits.
+Because all sampling happens client-side and `update_snapshot` is an ordinary RMI method, the server never needs a background thread, its own lock acquisition outside of dispatch, or any `_linux`-suffixed file -- that OS-specific code lives entirely in the client app.
 
 #### Fields
 
@@ -326,11 +326,17 @@ The form owns a background refresh thread (started in `on_init()`, stopped in th
 |-------|------|-----------|--------------|
 | `title` | string | client → form | Window title. Default: `"Process Explorer"`. |
 
+#### Methods
+
+| Method | Params | Description |
+|--------|--------|--------------|
+| `update_snapshot` | `cpu_percent` (float), `per_core_percent` (vector<float>), `mem_total_bytes`/`mem_used_bytes` (float), `processes` (dynamic array of `{pid: int32, name, command, state: 1-char string, cpu_percent: float, mem_rss_bytes: float}`) | Replaces the currently-displayed snapshot. Rows are reconciled by `pid` (added/updated/removed in place) and kept sorted by `cpu_percent` descending. The per-core meter row is sized once, from the first call's `per_core_percent` length. |
+
 #### Events
 
 | Event | Payload fields | Description |
 |-------|---------------|--------------|
-| `closed` | — | The window was closed. Internal UI (and the refresh thread) is torn down. |
+| `closed` | — | The window was closed. Internal UI is removed. |
 
 #### Internal UI structure (informative)
 
@@ -338,16 +344,20 @@ The form owns a background refresh thread (started in `on_init()`, stopped in th
 Window (title from field)
   VerticalLayout
     HorizontalLayout            "summary"  -- CPU/Memory summary Labels
-    HorizontalLayout            "cores"    -- one ProgressBar per logical core, built at runtime
+    HorizontalLayout            "cores"    -- one ProgressBar per logical core, sized on first update_snapshot()
     Plot "CPU % History"
       PlotShaded                            -- rolling ~60-sample CPU% history
     Plot "Memory % History"
       PlotLine                               -- rolling ~60-sample memory% history
     Table "proc_table" (headers: PID, Name, State, CPU %, Memory, Command)
-      TableRow* (one per process, added/removed/reordered by the refresh thread)
+      TableRow* (one per process, added/removed/reordered by update_snapshot())
 ```
 
 The internal tree is private, like `FileDialog`'s and `Notepad`'s.
+
+#### Example (C++ reference client)
+
+See `app/wish_cli/client/apps/process_explorer/process_explorer.cpp`: it instantiates the form, spawns one background thread that owns a `process_info_source`, and loops calling `proxy->call("update_snapshot"_key, encode_snapshot(source.sample()))` roughly once a second until the `"closed"` event fires.
 
 ---
 
@@ -387,7 +397,7 @@ The same rules that govern low-level wish elements apply to forms without except
 | `FileDialog` | built-in | File picker / Save As dialog (described above) |
 | `Calculator` | built-in | Four-function calculator; demonstrates self-contained form logic |
 | `Notepad` | built-in | Multi-file, syntax-highlighted text editor bridged to the client via upload_file/download_file (described above) |
-| `ProcessExplorer` | `WISH_MODULE_PROCESS_EXPLORER` | top/htop-style system monitor (read-only, OS-specific) -- described below |
+| `ProcessExplorer` | built-in | top/htop-style system monitor; server only renders, client owns all sampling (described above) |
 
 New built-in forms go in `src/forms/`. Module-specific forms go in `src/forms/<module_name>/`.
 
@@ -396,6 +406,9 @@ New built-in forms go in `src/forms/`. Module-specific forms go in `src/forms/<m
 > [Module System](#module-system)). In practice both were implemented
 > directly in `src/forms/` as unconditional built-ins, matching `FileDialog`
 > — `src/forms/desktop/` does not exist, so `WISH_MODULE_DESKTOP=ON` currently
-> fails to link. Any future form that genuinely needs to be optional (e.g.
-> `ProcessMonitor`, which is OS-specific) should use that module mechanism;
-> forms with no such constraint should just go in `src/forms/` like these two.
+> fails to link. `ProcessExplorer` was also originally assumed to need
+> module-gating for being "OS-specific," but that OS dependency (reading
+> `/proc`) belongs to the *client*, not the server -- see `ProcessExplorer`'s
+> section above. No implemented form has needed the module mechanism so far;
+> a future form should only reach for it if the server side itself has a
+> genuine, unavoidable platform dependency.

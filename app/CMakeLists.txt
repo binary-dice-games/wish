@@ -6,6 +6,8 @@ if(WISH_ENABLE_IMGUI AND WISH_ENABLE_SDL3)
       wish_cli/client/wish_client_app.cpp
       wish_cli/client/apps/calculator.cpp
       wish_cli/client/apps/notepad.cpp
+      wish_cli/client/apps/process_explorer/process_explorer.cpp
+      wish_cli/client/apps/process_explorer/process_info_linux.cpp
       wish_cli/bridge/wish_bridge_app.cpp)
   target_include_directories(wish-cli PRIVATE
       ${CMAKE_SOURCE_DIR}               # for "app/wish_cli/..." and "src/..."
@@ -16,10 +18,6 @@ if(WISH_ENABLE_IMGUI AND WISH_ENABLE_SDL3)
   set_target_properties(wish-cli PROPERTIES
       OUTPUT_NAME "wish"
       FOLDER      app)
-  if(WISH_MODULE_PROCESS_EXPLORER)
-    target_sources(wish-cli PRIVATE wish_cli/client/apps/process_explorer.cpp)
-    target_compile_definitions(wish-cli PRIVATE WISH_MODULE_PROCESS_EXPLORER)
-  endif()
 
   # ── wish-server — standalone server binary (requires SDL3 + ImGui) ────────────
   add_executable(wish-server
@@ -39,6 +37,8 @@ add_executable(wish-client
     wish_cli/client/wish_client_app.cpp
     wish_cli/client/apps/calculator.cpp
     wish_cli/client/apps/notepad.cpp
+    wish_cli/client/apps/process_explorer/process_explorer.cpp
+    wish_cli/client/apps/process_explorer/process_info_linux.cpp
     wish_cli/client/standalone_main.cpp)
 target_include_directories(wish-client PRIVATE
     ${CMAKE_SOURCE_DIR}
@@ -47,10 +47,6 @@ target_include_directories(wish-client PRIVATE
 )
 target_link_libraries(wish-client PRIVATE wish_client gflags)
 set_target_properties(wish-client PROPERTIES FOLDER app)
-if(WISH_MODULE_PROCESS_EXPLORER)
-  target_sources(wish-client PRIVATE wish_cli/client/apps/process_explorer.cpp)
-  target_compile_definitions(wish-client PRIVATE WISH_MODULE_PROCESS_EXPLORER)
-endif()
 
 # ── wish-bridge — standalone bridge binary (bison only, no SDL/ImGui) ──────────
 add_executable(wish-bridge

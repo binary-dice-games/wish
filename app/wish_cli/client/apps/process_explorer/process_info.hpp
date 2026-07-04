@@ -7,6 +7,12 @@
 /// lives in a platform-suffixed source file (`process_info_linux.cpp` for
 /// Linux/MSYS2 today; a future `process_info_windows.cpp` would provide a
 /// native-Windows implementation behind the same interface).
+///
+/// This is client-side code: the client always monitors its own local
+/// machine (the one the user is actually sitting at), not necessarily the
+/// wish server's host -- see process_explorer.cpp in this directory, which
+/// periodically pushes a sample into the server-side ProcessExplorer form
+/// via its `update_snapshot` RMI method.
 #pragma once
 
 #include <cstdint>
@@ -48,8 +54,8 @@ struct system_snapshot {
 /// every CPU percentage field.
 ///
 /// Not thread-safe: callers must serialize their own access. In practice
-/// each `process_explorer` form owns exactly one instance and calls
-/// sample() only from its single background refresh thread.
+/// each `run_process_explorer` session owns exactly one instance and calls
+/// sample() only from its single background sampling thread.
 class process_info_source {
  public:
   process_info_source();

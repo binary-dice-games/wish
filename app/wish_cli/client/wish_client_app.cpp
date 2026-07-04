@@ -6,9 +6,7 @@
 #include "app/wish_cli/client/wish_client_app.hpp"
 #include "app/wish_cli/client/apps/calculator.hpp"
 #include "app/wish_cli/client/apps/notepad.hpp"
-#ifdef WISH_MODULE_PROCESS_EXPLORER
-#include "app/wish_cli/client/apps/process_explorer.hpp"
-#endif
+#include "app/wish_cli/client/apps/process_explorer/process_explorer.hpp"
 
 #include "src/app/transport_flags.hpp"
 #include "src/pty/raw_mode_guard.hpp"
@@ -45,9 +43,7 @@ using AppFn = std::function<void(wish_client_session&)>;
 static const std::map<std::string, AppFn> kApps = {
     {"calculator", run_calculator},
     {"notepad", run_notepad},
-#ifdef WISH_MODULE_PROCESS_EXPLORER
     {"process_explorer", run_process_explorer},
-#endif
 };
 
 // ── wish_client_session ───────────────────────────────────────────────────────

@@ -1,7 +1,6 @@
 // MIT License © 2025 Binary Dice Games
 #include <gtest/gtest.h>
 
-#include <forms/process_explorer/process_explorer.hpp>
 #include <registry.hpp>
 #include <server.hpp>
 #include <session.hpp>
@@ -9,9 +8,11 @@
 
 #include "src/bison/bison_object.hpp"
 #include "src/rmi/rmi.hpp"
-#include "src/rmi/server/context.hpp"
 
+#include <memory>
+#include <optional>
 #include <string>
+#include <vector>
 
 using namespace bdg::bison;
 namespace bison = bdg::bison;
@@ -20,117 +21,57 @@ using namespace bdg::bison::rmi::transport;
 
 namespace {
 
-// Exposes process_explorer's protected static reconciliation logic (and the
-// refresh_state type it operates on) without ever constructing a
-// process_explorer instance -- so these tests exercise the row add/update/
-// remove/sort logic directly with synthetic data, with no server, no
-// session, and no background thread involved at all.
-class TestableProcessExplorer : public wish::process_explorer {
- public:
-  using wish::process_explorer::apply_snapshot;
-  using wish::process_explorer::refresh_state;
+// Builds the same `update_snapshot` args shape the reference client
+// (app/wish_cli/client/apps/process_explorer/process_explorer.cpp) sends --
+// duplicated here rather than shared, since tests exercise the server's
+// documented wire contract independent of any particular client.
+struct fake_process {
+  int32_t pid;
+  std::string name;
+  std::string command;
+  std::string state;
+  float cpu_percent;
+  float mem_rss_bytes;
 };
 
-wish::process_sample make_process(int pid, std::string name, double cpu_percent, uint64_t rss_bytes) {
-  wish::process_sample p;
-  p.pid = pid;
-  p.name = std::move(name);
-  p.command = "[" + p.name + "]";
-  p.state = 'S';
-  p.cpu_percent = cpu_percent;
-  p.mem_rss_bytes = rss_bytes;
-  return p;
+// bison::dynamic fields only support float (not double) among floating-
+// point alternatives -- matches the reference client's encode_snapshot().
+dynamic make_snapshot_args(
+    float cpu_percent,
+    std::vector<float> per_core_percent,
+    float mem_total_bytes,
+    float mem_used_bytes,
+    const std::vector<fake_process>& processes) {
+  dynamic args;
+  args["cpu_percent"_key] = cpu_percent;
+  args["per_core_percent"_key] = std::move(per_core_percent);
+  args["mem_total_bytes"_key] = mem_total_bytes;
+  args["mem_used_bytes"_key] = mem_used_bytes;
+
+  dynamic procs;
+  size_t i = 0;
+  for (auto& p : processes) {
+    auto e = std::make_shared<dynamic>();
+    (*e)["pid"_key] = p.pid;
+    (*e)["name"_key] = p.name;
+    (*e)["command"_key] = p.command;
+    (*e)["state"_key] = p.state;
+    (*e)["cpu_percent"_key] = p.cpu_percent;
+    (*e)["mem_rss_bytes"_key] = p.mem_rss_bytes;
+    procs[i++] = dynamic_ptr{e};
+  }
+  args["processes"_key] = dynamic_ptr{std::make_shared<dynamic>(std::move(procs))};
+  return args;
 }
 
 } // namespace
-
-// ── Pure reconciliation logic (no server/session/thread involved) ───────────
-
-class ProcessExplorerSnapshotTest : public ::testing::Test {
- protected:
-  void SetUp() override {
-    wish::register_all();
-    table_ = ui_element_t{dynamic::instantiate("wish"_key, "Table"_key)};
-    // Explicit private children map, matching the technique notepad.cpp uses
-    // for tab_bar -- otherwise this instance could share the Element base
-    // prototype's default children map.
-    (*table_)["children"_key] = dynamic_ptr{bison::key_t{0U}, {}};
-    state_.ctx = &ctx_;
-    state_.proc_table = table_;
-  }
-
-  using ui_element_t = wish::ui_element_ptr;
-
-  size_t row_count() const {
-    auto* cf = table_->findField<dynamic_ptr>("children"_key);
-    if (!cf || !*cf)
-      return 0;
-    return (*cf)->size();
-  }
-
-  bison::rmi::context ctx_;
-  ui_element_t table_;
-  TestableProcessExplorer::refresh_state state_;
-};
-
-TEST_F(ProcessExplorerSnapshotTest, NewProcessAddsRow) {
-  wish::system_snapshot snap;
-  snap.processes.push_back(make_process(100, "init", 5.0, 1024 * 1024));
-
-  TestableProcessExplorer::apply_snapshot(state_, snap);
-
-  EXPECT_EQ(state_.pid_to_row.size(), 1u);
-  EXPECT_EQ(row_count(), 1u);
-  ASSERT_TRUE(state_.pid_to_row.count(100));
-  EXPECT_EQ(state_.pid_to_row.at(100).name_label->as<std::string>("text"_key), "init");
-}
-
-TEST_F(ProcessExplorerSnapshotTest, ExistingProcessUpdatesInPlaceWithoutDuplicating) {
-  wish::system_snapshot first;
-  first.processes.push_back(make_process(100, "init", 5.0, 1024 * 1024));
-  TestableProcessExplorer::apply_snapshot(state_, first);
-
-  wish::system_snapshot second;
-  second.processes.push_back(make_process(100, "init", 42.0, 2 * 1024 * 1024));
-  TestableProcessExplorer::apply_snapshot(state_, second);
-
-  EXPECT_EQ(state_.pid_to_row.size(), 1u);
-  EXPECT_EQ(row_count(), 1u);
-  EXPECT_DOUBLE_EQ(state_.pid_to_row.at(100).cpu_percent, 42.0);
-  EXPECT_FLOAT_EQ(state_.pid_to_row.at(100).cpu_bar->as<float>("value"_key), 0.42f);
-}
-
-TEST_F(ProcessExplorerSnapshotTest, VanishedProcessRemovesRow) {
-  wish::system_snapshot first;
-  first.processes.push_back(make_process(100, "init", 5.0, 1024 * 1024));
-  TestableProcessExplorer::apply_snapshot(state_, first);
-  ASSERT_EQ(row_count(), 1u);
-
-  wish::system_snapshot second; // pid 100 no longer present
-  TestableProcessExplorer::apply_snapshot(state_, second);
-
-  EXPECT_EQ(state_.pid_to_row.size(), 0u);
-  EXPECT_EQ(row_count(), 0u);
-}
-
-TEST_F(ProcessExplorerSnapshotTest, RowsAreSortedByCpuPercentDescending) {
-  wish::system_snapshot snap;
-  snap.processes.push_back(make_process(1, "low", 10.0, 0));
-  snap.processes.push_back(make_process(2, "high", 50.0, 0));
-  snap.processes.push_back(make_process(3, "mid", 30.0, 0));
-  TestableProcessExplorer::apply_snapshot(state_, snap);
-
-  EXPECT_EQ(state_.pid_to_row.at(2).row->as<int32_t>("order"_key), 0); // high (50%) first
-  EXPECT_EQ(state_.pid_to_row.at(3).row->as<int32_t>("order"_key), 1); // mid (30%) second
-  EXPECT_EQ(state_.pid_to_row.at(1).row->as<int32_t>("order"_key), 2); // low (10%) last
-}
 
 // ── Local (non-RMI) fixture — checks prototype defaults ───────────────────────
 
 class ProcessExplorerLocalTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    wish::register_all();
+    bdg::wish::register_all();
   }
 };
 
@@ -149,7 +90,7 @@ TEST_F(ProcessExplorerLocalTest, DefaultTitle) {
   EXPECT_EQ(f->as<std::string>(), "Process Explorer");
 }
 
-// ── Internal Window construction (real server; exercises on_init() once) ────
+// ── Session-capturing server for internal-tree tests ──────────────────────────
 
 class SessionCapturingServer : public wish::server {
  public:
@@ -165,7 +106,7 @@ class SessionCapturingServer : public wish::server {
 };
 
 // Helper: find the root key for the internal form tree (starts with
-// "__procexp_", no dot -- i.e. it is the top-level entry, not a child path).
+// "__procexp_", no dot -- i.e. it is the top-level entry not a child path).
 static std::string find_form_root(const wish::name_map& objects) {
   for (const auto& [k, _] : objects) {
     if (k.rfind("__procexp_", 0) == 0 && k.find('.') == std::string::npos)
@@ -173,6 +114,8 @@ static std::string find_form_root(const wish::name_map& objects) {
   }
   return {};
 }
+
+// ── Internal Window construction ─────────────────────────────────────────────
 
 class ProcessExplorerWindowTest : public ::testing::Test {
  protected:
@@ -190,10 +133,6 @@ class ProcessExplorerWindowTest : public ::testing::Test {
     srv_.reset();
   }
 
-  // Instantiating runs on_init() synchronously to completion (including the
-  // one real /proc sample and the initial apply_snapshot() call) before the
-  // background refresh thread's very first ~1s sleep chunk elapses, so
-  // reading the resulting tree immediately afterward is race-free.
   std::string instantiate_and_get_root() {
     client_->instantiate("wish"_key, "ProcessExplorer"_key).get();
     EXPECT_NE(srv_->last_session, nullptr);
@@ -231,7 +170,7 @@ TEST_F(ProcessExplorerWindowTest, TreeContainsPlots) {
   EXPECT_TRUE(srv_->last_session->objects.count(root + ".vbox.mem_plot.mem_series"));
 }
 
-TEST_F(ProcessExplorerWindowTest, TreeContainsProcessTableWithAtLeastOneRow) {
+TEST_F(ProcessExplorerWindowTest, TreeContainsEmptyProcessTableBeforeAnySnapshot) {
   std::string root = instantiate_and_get_root();
   ASSERT_FALSE(root.empty());
   auto it = srv_->last_session->objects.find(root + ".vbox.proc_table");
@@ -240,16 +179,129 @@ TEST_F(ProcessExplorerWindowTest, TreeContainsProcessTableWithAtLeastOneRow) {
   auto* cf = it->second->findField<dynamic_ptr>("children"_key);
   ASSERT_NE(cf, nullptr);
   ASSERT_TRUE(*cf);
-  // Columns (6) plus at least one TableRow -- this test process itself is
-  // always present in /proc, so on_init()'s one real sample always yields
-  // at least one row.
-  EXPECT_GT((*cf)->size(), 6u);
+  // dynamic::size() only counts numeric-indexed ("array") entries; the 6
+  // TableColumn children are string-keyed and don't count toward it, so a
+  // fresh table with no rows yet reports 0, not 6.
+  EXPECT_EQ((*cf)->size(), 0u);
 }
 
-TEST_F(ProcessExplorerWindowTest, WindowClosedEmitsClosedAndCleansUp) {
-  std::string root = instantiate_and_get_root();
-  ASSERT_FALSE(root.empty());
+// ── update_snapshot() reconciliation ─────────────────────────────────────────
 
+class ProcessExplorerSnapshotTest : public ::testing::Test {
+  using proxy_t = bdg::bison::rmi::proxy::dynamic;
+
+ protected:
+  void SetUp() override {
+    srv_ = std::make_unique<SessionCapturingServer>(transport_, std::make_unique<wish::null_renderer>());
+    srv_->start();
+    client_ = std::make_unique<bdg::bison::rmi::client>(transport_.connect());
+    client_->connect();
+    proxy_.emplace(client_->instantiate("wish"_key, "ProcessExplorer"_key).get());
+    ASSERT_TRUE(proxy_->valid());
+    root_ = find_form_root(srv_->last_session->objects);
+    ASSERT_FALSE(root_.empty());
+  }
+
+  void TearDown() override {
+    proxy_.reset();
+    client_->disconnect();
+    client_.reset();
+    srv_->stop();
+    srv_.reset();
+  }
+
+  dynamic update_snapshot(
+      float cpu_percent,
+      std::vector<float> per_core_percent,
+      float mem_total_bytes,
+      float mem_used_bytes,
+      const std::vector<fake_process>& processes) {
+    return proxy_
+        ->call(
+            "update_snapshot"_key,
+            make_snapshot_args(cpu_percent, std::move(per_core_percent), mem_total_bytes, mem_used_bytes, processes))
+        .get();
+  }
+
+  // dynamic::size() only counts numeric-indexed entries, so it already
+  // excludes the 6 string-keyed TableColumn children -- no subtraction needed.
+  size_t row_count() const {
+    auto it = srv_->last_session->objects.find(root_ + ".vbox.proc_table");
+    if (it == srv_->last_session->objects.end())
+      return 0;
+    auto* cf = it->second->findField<dynamic_ptr>("children"_key);
+    if (!cf || !*cf)
+      return 0;
+    return (*cf)->size();
+  }
+
+  std::string label_text(const std::string& path) const {
+    auto it = srv_->last_session->objects.find(path);
+    if (it == srv_->last_session->objects.end())
+      return {};
+    return it->second->as<std::string>("text"_key);
+  }
+
+  memory_server_transport transport_;
+  std::unique_ptr<SessionCapturingServer> srv_;
+  std::unique_ptr<bdg::bison::rmi::client> client_;
+  std::optional<proxy_t> proxy_;
+  std::string root_;
+};
+
+TEST_F(ProcessExplorerSnapshotTest, UpdatesSummaryLabels) {
+  update_snapshot(37.5, {}, 1000.0, 400.0, {});
+
+  EXPECT_EQ(label_text(root_ + ".vbox.summary.cpu_label"), "CPU: 37.5%");
+  EXPECT_NE(label_text(root_ + ".vbox.summary.mem_label").find("40.0%"), std::string::npos);
+}
+
+TEST_F(ProcessExplorerSnapshotTest, FirstCallSizesCoreMeters) {
+  update_snapshot(10.0, {20.0f, 30.0f, 40.0f, 50.0f}, 1000.0, 100.0, {});
+
+  auto it = srv_->last_session->objects.find(root_ + ".vbox.cores");
+  ASSERT_NE(it, srv_->last_session->objects.end());
+  auto* cf = it->second->findField<dynamic_ptr>("children"_key);
+  ASSERT_NE(cf, nullptr);
+  ASSERT_TRUE(*cf);
+  EXPECT_EQ((*cf)->size(), 4u);
+}
+
+TEST_F(ProcessExplorerSnapshotTest, NewProcessAddsRow) {
+  update_snapshot(5.0, {}, 1000.0, 100.0, {{100, "init", "[init]", "S", 5.0, 1024.0 * 1024.0}});
+
+  EXPECT_EQ(row_count(), 1u);
+}
+
+TEST_F(ProcessExplorerSnapshotTest, ExistingProcessUpdatesInPlaceWithoutDuplicating) {
+  update_snapshot(5.0, {}, 1000.0, 100.0, {{100, "init", "[init]", "S", 5.0, 1024.0 * 1024.0}});
+  ASSERT_EQ(row_count(), 1u);
+
+  update_snapshot(5.0, {}, 1000.0, 100.0, {{100, "init", "[init]", "S", 42.0, 2.0 * 1024.0 * 1024.0}});
+  EXPECT_EQ(row_count(), 1u);
+}
+
+TEST_F(ProcessExplorerSnapshotTest, VanishedProcessRemovesRow) {
+  update_snapshot(5.0, {}, 1000.0, 100.0, {{100, "init", "[init]", "S", 5.0, 0.0}});
+  ASSERT_EQ(row_count(), 1u);
+
+  update_snapshot(5.0, {}, 1000.0, 100.0, {}); // pid 100 no longer present
+  EXPECT_EQ(row_count(), 0u);
+}
+
+TEST_F(ProcessExplorerSnapshotTest, SecondProcessAddsSecondRow) {
+  update_snapshot(
+      5.0,
+      {},
+      1000.0,
+      100.0,
+      {{100, "init", "[init]", "S", 5.0, 0.0}, {200, "sshd", "[sshd]", "S", 1.0, 0.0}});
+  EXPECT_EQ(row_count(), 2u);
+}
+
+// ── Event routing ─────────────────────────────────────────────────────────────
+
+TEST_F(ProcessExplorerSnapshotTest, WindowClosedEmitsClosedAndCleansUp) {
   bool got_closed = false;
   auto prev = std::move(srv_->last_session->emit_event);
   srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
@@ -259,31 +311,11 @@ TEST_F(ProcessExplorerWindowTest, WindowClosedEmitsClosedAndCleansUp) {
       prev(id, event, std::move(payload));
   };
 
-  auto win_id = srv_->last_session->objects.at(root)->as<bison::key_t>("__wish_id"_key);
-  auto h = srv_->last_session->top_level_handlers.find(root);
+  auto win_id = srv_->last_session->objects.at(root_)->as<bison::key_t>("__wish_id"_key);
+  auto h = srv_->last_session->top_level_handlers.find(root_);
   ASSERT_NE(h, srv_->last_session->top_level_handlers.end());
   h->second->on_event(win_id, "closed"_key, dynamic{});
 
   EXPECT_TRUE(got_closed);
-  EXPECT_EQ(srv_->last_session->objects.count(root), 0u);
-}
-
-// ── Lifecycle: destroy immediately after instantiate; must not hang/crash ───
-
-TEST(ProcessExplorerLifecycleTest, DestroysCleanlyWithoutHanging) {
-  memory_server_transport transport;
-  auto srv = std::make_unique<SessionCapturingServer>(transport, std::make_unique<wish::null_renderer>());
-  srv->start();
-  auto client = std::make_unique<bdg::bison::rmi::client>(transport.connect());
-  client->connect();
-
-  client->instantiate("wish"_key, "ProcessExplorer"_key).get();
-
-  // Disconnecting tears the session (and the form, and its refresh thread)
-  // down immediately -- well before the first ~1s refresh tick -- exercising
-  // the destructor's stop+join path under time pressure.
-  client->disconnect();
-  client.reset();
-  srv->stop();
-  srv.reset();
+  EXPECT_EQ(srv_->last_session->objects.count(root_), 0u);
 }

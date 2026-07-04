@@ -2,10 +2,10 @@
 /// @file process_info_linux.cpp
 /// @brief Linux/MSYS2 implementation of process_info_source (reads /proc).
 ///
-/// This is the only file in process_explorer/ that knows about /proc; a
-/// future native-Windows port would add a process_info_windows.cpp
-/// implementing the same process_info_source interface (see process_info.hpp)
-/// without touching any other file in this directory.
+/// This is the only file in this directory that knows about /proc; a future
+/// native-Windows port would add a process_info_windows.cpp implementing the
+/// same process_info_source interface (see process_info.hpp) without
+/// touching any other file here.
 #include "process_info.hpp"
 
 #include <algorithm>

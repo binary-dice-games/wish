@@ -79,7 +79,6 @@ cmake -S . -B build
 | `WISH_ENABLE_SDL3` | `ON` | Build the SDL3 windowed renderer, the wish server, and the calculator/demo examples. |
 | `WISH_BUILD_SHARED` | `ON` | Build `wish_client` as a shared library with a C ABI (`wish_client.dll` on MSYS2 / `libwish_client.so` on Linux). |
 | `WISH_BUILD_TESTS` | `ON` | Build and register the GoogleTest suite. |
-| `WISH_MODULE_PROCESS_EXPLORER` | `OFF` | Include the `ProcessExplorer` form (top/htop-style system monitor). OS-specific: reads `/proc` on Linux/MSYS2. |
 
 Example — headless/CI build with no window system:
 

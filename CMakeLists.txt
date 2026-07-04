@@ -14,7 +14,6 @@ option(WISH_ENABLE_IMGUI     "Build the imgui renderer"                       ON
 option(WISH_ENABLE_SDL3      "Build the SDL3 renderer and calculator example" ON)
 option(WISH_BUILD_SHARED     "Build wish_client shared library with C ABI"   ON)
 option(WISH_MODULE_DESKTOP   "Include desktop utility forms (Calculator, Notepad, ...)" OFF)
-option(WISH_MODULE_PROCESS_EXPLORER "Include the Process Explorer form (OS-specific)" OFF)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
@@ -255,6 +254,7 @@ add_library(wish_server STATIC
   src/forms/file_dialog.cpp
   src/forms/calculator.cpp
   src/forms/notepad.cpp
+  src/forms/process_explorer.cpp
 )
 
 if(WISH_MODULE_DESKTOP)
@@ -264,23 +264,6 @@ if(WISH_MODULE_DESKTOP)
     src/forms/desktop/notepad.cpp
   )
   target_compile_definitions(wish_server PRIVATE WISH_MODULE_DESKTOP)
-endif()
-
-# ProcessExplorer gathers process/CPU/memory information, which is
-# inherently OS-specific -- process_info_linux.cpp is the Linux/MSYS2
-# implementation of process_info.hpp's interface. A future native-Windows
-# port would add process_info_windows.cpp here and pick between the two
-# with if(WIN32)/else().
-if(WISH_MODULE_PROCESS_EXPLORER)
-  target_sources(wish_server PRIVATE
-    src/forms/process_explorer/process_explorer.hpp
-    src/forms/process_explorer/process_explorer.cpp
-    src/forms/process_explorer/process_explorer_module.hpp
-    src/forms/process_explorer/process_explorer_module.cpp
-    src/forms/process_explorer/process_info.hpp
-    src/forms/process_explorer/process_info_linux.cpp
-  )
-  target_compile_definitions(wish_server PRIVATE WISH_MODULE_PROCESS_EXPLORER)
 endif()
 
 if(WISH_ENABLE_IMGUI)
