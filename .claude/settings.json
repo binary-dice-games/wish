@@ -4,8 +4,8 @@
       "Read(extern/bison/**)"
     ],
     "deny": [
-      "Read(extern/**)",
-      "Write(extern/**)"
+      "Read(extern/bison/extern/**)",
+      "Write(extern/bison/extern/**)"
     ]
   }
 }

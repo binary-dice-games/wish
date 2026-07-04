@@ -16,12 +16,12 @@
 #include <map>
 #include <stdexcept>
 
-// ── Transport flags (defined in main.cpp) ─────────────────────────────────────
+// ── Shared flags (defined in main.cpp) ────────────────────────────────────────
 DECLARE_string(host);
 DECLARE_int32(port);
-DECLARE_string(pipe);
 
 // ── Client-mode flags ─────────────────────────────────────────────────────────
+DEFINE_string(pipe, "", "Named pipe / Unix socket path");
 DEFINE_bool(list, false, "List available embedded applications and exit");
 DEFINE_string(run, "", "Name of the embedded application to run");
 DEFINE_int32(timeout, 30000, "Connection timeout in milliseconds");

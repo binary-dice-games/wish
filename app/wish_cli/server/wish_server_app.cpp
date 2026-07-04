@@ -12,6 +12,7 @@
 
 #include <imgui.h>
 
+#include "src/app/transport_flags.hpp"
 #include "src/rmi/transport/named_pipe_transport.hpp"
 
 #include <gflags/gflags.h>
@@ -25,7 +26,8 @@
 DECLARE_bool(verbose);
 DECLARE_string(host);
 DECLARE_int32(port);
-DECLARE_string(pipe);
+DECLARE_string(name);
+DECLARE_string(cmd);
 
 DEFINE_string(title, "wish", "Window title");
 DEFINE_int32(width, 1280, "Window width in pixels");
@@ -105,11 +107,23 @@ void wish_server_app::register_classes() {
 }
 
 void wish_server_app::on_listening() const {
-  if (!FLAGS_pipe.empty()) {
-    std::cout << "[wish] listening on pipe " << FLAGS_pipe << " - close the window to stop\n" << std::flush;
-  } else {
-    std::cout << "[wish] listening on " << FLAGS_host << ':' << FLAGS_port << " - close the window to stop\n"
-              << std::flush;
+  using bison::app::transport_kind;
+  switch (bison::app::selected_transport()) {
+    case transport_kind::pipe:
+      std::cout << "[wish] listening on pipe " << FLAGS_name << " - close the window to stop\n" << std::flush;
+      return;
+    case transport_kind::pty:
+      std::cout << "[wish] listening via --transport=pty - close the window to stop\n" << std::flush;
+      return;
+    case transport_kind::console:
+      std::cout << "[wish] listening via --transport=console (spawned: " << FLAGS_cmd
+                << ") - close the window to stop\n"
+                << std::flush;
+      return;
+    case transport_kind::tcp:
+      std::cout << "[wish] listening on " << FLAGS_host << ':' << FLAGS_port << " - close the window to stop\n"
+                << std::flush;
+      return;
   }
 }
 

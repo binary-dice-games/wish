@@ -4,7 +4,7 @@
  * @brief Entry point for the wish CLI — dispatches server / client / bridge.
  *
  * Usage:
- *   wish server  [--host H] [--port P] [--pipe PATH]
+ *   wish server  [--transport T] [--host H] [--port P] [--name PATH] [--cmd C]
  *                [--title T] [--width W] [--height H] [--verbose]
  *   wish client  [--host H] [--port P] [--pipe PATH]
  *                (--list | --run=<app>) [--timeout MS]
@@ -20,29 +20,34 @@
 #include <cstring>
 #include <iostream>
 
-// ── Shared transport flags — consumed by all three modes ──────────────────────
+// ── Shared flags — consumed by server and client modes ────────────────────────
 DEFINE_string(host, "0.0.0.0", "Bind/connect host address");
 DEFINE_int32(port, 7070, "Listen/connect port");
-DEFINE_string(pipe, "", "Unix-socket path");
 DEFINE_bool(verbose, false, "Print session trace messages to stdout");
-DEFINE_bool(pty, false, "Use pty/stdio BISON<...> framing instead of socket/pipe");
 DEFINE_bool(debugger, false, "Wait for debugger attachment before starting");
+
+// ── Server-only transport flags — consumed by bison::app::server_app ─────────
+DEFINE_string(transport, "tcp", "Transport to use: tcp, pipe, pty, or console");
+DEFINE_string(name, "", "Named-pipe / Unix-socket path (transport=pipe)");
+DEFINE_string(cmd, "", "Command to spawn (transport=console)");
 
 static void print_usage() {
   std::cout << "wish - remote GUI framework CLI\n"
                "\n"
                "Usage:\n"
-               "  wish server  [transport flags] [--title T] [--width W] [--height H]\n"
-               "  wish client  [transport flags] (--list | --run=<app>) [--timeout MS]\n"
+               "  wish server  [--transport T] [--host H] [--port P] [--name PATH] [--cmd C]\n"
+               "               [--title T] [--width W] [--height H] [--verbose]\n"
+               "  wish client  [--host H] [--port P] [--pipe PATH] (--list | --run=<app>) [--timeout MS]\n"
                "  wish bridge  [--up-host H --up-port P ...] [--down-host H --down-port P ...]\n"
                "\n"
-               "Shared transport flags:\n"
-               "  --host H     Host address  (default: 0.0.0.0 for server, 127.0.0.1 for client)\n"
-               "  --port P     Port          (default: 7070)\n"
-               "  --pipe PATH  Unix socket\n"
-               "  --verbose    Print RMI trace messages\n"
-               "  --pty        Use pty/stdio framing instead of socket/pipe\n"
-               "  --debugger   Wait for debugger attachment before starting\n"
+               "Server transport flags:\n"
+               "  --transport T  tcp, pipe, pty, or console (default: tcp)\n"
+               "  --host H       Bind host address          (default: 0.0.0.0)\n"
+               "  --port P       Bind port                   (default: 7070)\n"
+               "  --name PATH    Named-pipe / Unix-socket path (transport=pipe)\n"
+               "  --cmd C        Command to spawn             (transport=console)\n"
+               "  --verbose      Print RMI trace messages\n"
+               "  --debugger     Wait for debugger attachment before starting\n"
                "\n"
                "Run 'wish <subcommand> --help' for subcommand-specific flags.\n";
 }

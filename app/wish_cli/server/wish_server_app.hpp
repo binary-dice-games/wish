@@ -30,7 +30,8 @@ class logger;
  *   --width N        Window width  (default: 1280)
  *   --height N       Window height (default: 720)
  *
- * Plus all flags inherited from server_app (--host, --port, --verbose).
+ * Plus all flags inherited from server_app (--transport, --host, --port,
+ * --name, --cmd, --verbose).
  */
 class wish_server_app : public bison::app::server_app {
  public:
