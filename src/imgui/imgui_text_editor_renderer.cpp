@@ -120,6 +120,13 @@ void render_text_editor(imgui_renderer&, const ui_element& node, const session& 
   ImVec2 size{w > 0 ? float(w) : -1.f, h > 0 ? float(h) : -1.f};
   st.editor.Render(label.c_str(), size);
 
+  // TextEditor draws its own blinking caret whenever its window has focus,
+  // driven by ImGui::GetTime() -- it doesn't set ImGuiIO::WantTextInput, so
+  // the render loop's continuous-redraw check would never fire for it.
+  // Mark the session dirty directly so it keeps rendering while focused.
+  if (ImGui::IsWindowFocused())
+    s.dirty.store(true, std::memory_order_release);
+
   // Write to disk and emit "changed" when the undo stack advances.
   size_t current_undo = st.editor.GetUndoIndex();
   if (!read_only && current_undo != st.last_undo_index) {

@@ -11,6 +11,7 @@
 #include <SDL3/SDL.h>
 
 #include <atomic>
+#include <chrono>
 #include <filesystem>
 #include <map>
 #include <set>
@@ -112,6 +113,22 @@ class sdl3_renderer : public imgui_renderer {
   SDL_Window* window_ = nullptr;
   SDL_Renderer* sdl_renderer_ = nullptr;
   std::atomic<bool> quit_{false};
+
+  // ── Mouse-motion debounce ─────────────────────────────────────────────────
+  //
+  // Mouse motion is fed to ImGui unconditionally (position stays accurate),
+  // but only counts as "activity" that forces a frame once it has moved far
+  // enough or enough time has passed since the last motion-triggered frame.
+  // This keeps small jitter / slow drags from redrawing on every SDL poll.
+
+  /// @brief Returns true if motion to (x, y) is significant enough to force
+  ///        a frame, and if so advances the debounce baseline to (x, y, now).
+  bool mouse_motion_significant(float x, float y);
+
+  float last_motion_x_{0.0f};
+  float last_motion_y_{0.0f};
+  std::chrono::steady_clock::time_point last_motion_time_{};
+  bool has_motion_baseline_{false};
 
   // ── Font cache ─────────────────────────────────────────────────────────────
 

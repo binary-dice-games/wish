@@ -241,6 +241,10 @@ void imgui_renderer::end_frame() {
   ImGui::EndFrame();
 }
 
+bool imgui_renderer::wants_continuous_redraw() const {
+  return ImGui::GetIO().WantTextInput;
+}
+
 void imgui_renderer::render_node(const ui_element& node, const session& s) {
   if (!node.get_as<bool>("visible"_key, true))
     return;

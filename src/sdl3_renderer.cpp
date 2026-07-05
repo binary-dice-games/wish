@@ -95,6 +95,26 @@ void sdl3_renderer::teardown() {
 
 // ── per-frame ─────────────────────────────────────────────────────────────────
 
+bool sdl3_renderer::mouse_motion_significant(float x, float y) {
+  static constexpr float kMotionPixelThreshold = 4.0f;
+  static constexpr auto kMotionTimeThreshold = std::chrono::milliseconds{100};
+
+  auto now = std::chrono::steady_clock::now();
+  float dx = x - last_motion_x_;
+  float dy = y - last_motion_y_;
+  bool far_enough = dx * dx + dy * dy >= kMotionPixelThreshold * kMotionPixelThreshold;
+  bool long_enough = now - last_motion_time_ >= kMotionTimeThreshold;
+
+  if (has_motion_baseline_ && !far_enough && !long_enough)
+    return false;
+
+  last_motion_x_ = x;
+  last_motion_y_ = y;
+  last_motion_time_ = now;
+  has_motion_baseline_ = true;
+  return true;
+}
+
 bool sdl3_renderer::poll_events() {
   bool activity = false;
   SDL_Event event;
@@ -102,6 +122,13 @@ bool sdl3_renderer::poll_events() {
     ImGui_ImplSDL3_ProcessEvent(&event);
     if (event.type == SDL_EVENT_QUIT)
       quit_.store(true, std::memory_order_release);
+
+    if (event.type == SDL_EVENT_MOUSE_MOTION) {
+      if (mouse_motion_significant(event.motion.x, event.motion.y))
+        activity = true;
+      continue;
+    }
+
     activity = true;
   }
   return activity || fonts_dirty_ || quit_.load(std::memory_order_acquire);

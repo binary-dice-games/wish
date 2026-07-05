@@ -11,6 +11,7 @@
 #include "src/rmi/server/server.hpp"
 
 #include <atomic>
+#include <chrono>
 #include <memory>
 #include <thread>
 #include <unordered_map>
@@ -135,6 +136,15 @@ class server : public bison::rmi::server {
   bison::synchronized<std::unordered_map<bison::hash_t, sync_session_ptr>> sessions_;
   std::thread render_thread_;
   std::atomic<bool> running_{false};
+  // Render-thread-only timestamp of the last drawn frame; caps render rate
+  // independent of vsync (which may be unavailable/ineffective) so bursts
+  // of low-level input (e.g. high-poll-rate mouse motion) can't drive the
+  // frame rate arbitrarily high.
+  std::chrono::steady_clock::time_point last_render_time_{};
+  // Render-thread-only latch: set when input activity is observed but the
+  // frame-rate cap defers the actual render, so the deferred frame isn't
+  // lost if no further input arrives before the cap allows rendering again.
+  bool pending_render_{false};
   logger_ptr logger_;
   bool allow_absolute_paths_{false};
 };

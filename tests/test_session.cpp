@@ -37,9 +37,11 @@ TEST(SessionTest, TwoSessionsHaveDifferentIdsAndPaths) {
 
 // ── dirty flag ────────────────────────────────────────────────────────────────
 
-TEST(SessionTest, DirtyDefaultsFalse) {
+TEST(SessionTest, DirtyDefaultsTrue) {
+  // A freshly created session must render at least once, so the render loop
+  // does not treat it as idle before any RMI dispatch has run.
   session s{"s3"_key};
-  EXPECT_FALSE(s.dirty.load());
+  EXPECT_TRUE(s.dirty.load());
 }
 
 TEST(SessionTest, DirtyCanBeSetAtomically) {

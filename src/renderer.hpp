@@ -66,6 +66,19 @@ class renderer {
     return true;
   }
 
+  /**
+   * @brief Returns true when something on screen animates over time and
+   *        therefore needs continuous redraws even with no new input and no
+   *        dirty session (e.g. a text-input widget's blinking caret).
+   *
+   * Checked once after each drawn frame; when true the render loop keeps
+   * rendering every iteration (subject to the frame-rate cap) instead of
+   * going idle. Default returns false.
+   */
+  virtual bool wants_continuous_redraw() const {
+    return false;
+  }
+
   /// @brief Called once before any nodes are rendered in a frame.
   virtual void begin_frame() = 0;
 

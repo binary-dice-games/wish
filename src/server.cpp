@@ -174,7 +174,9 @@ void server::render_loop() {
       // poll_events() must run every iteration regardless of whether a
       // frame is drawn, so OS event queues are drained and window-close
       // requests are never delayed by an idle skip below.
-      bool needs_render = renderer_->poll_events();
+      if (renderer_->poll_events())
+        pending_render_ = true;
+      bool needs_render = pending_render_;
 
       // Snapshot the set of sync_session pointers under a brief sessions_
       // rlock; reused below both for the cheap dirty scan and (if needed)
@@ -201,12 +203,24 @@ void server::render_loop() {
       if (renderer_->should_quit())
         running_.store(false, std::memory_order_release);
 
+      // Cap the render rate independent of vsync (which may be unavailable
+      // or a no-op on some drivers) so a burst of low-level input events
+      // (e.g. a high-poll-rate mouse generating many motion events between
+      // sleep_for ticks) can't drive full-tree ImGui rebuilds far above the
+      // rate a display could even show. Sessions/input remain marked dirty,
+      // so the deferred frame still happens as soon as the interval elapses.
+      static constexpr std::chrono::milliseconds kMinFrameInterval{16}; // ~60 FPS
+      if (needs_render && std::chrono::steady_clock::now() - last_render_time_ < kMinFrameInterval)
+        needs_render = false; // pending_render_ stays set; retried next tick
+
       // ImGui is immediate-mode: a session's windows only stay on screen if
       // they are resubmitted every frame that gets presented. So we can't
       // selectively skip one session — either the whole frame is drawn (all
       // sessions resubmitted) or none of it is, leaving the previous
       // presented frame on screen unchanged.
       if (needs_render && running_.load(std::memory_order_acquire)) {
+        pending_render_ = false;
+        last_render_time_ = std::chrono::steady_clock::now();
         renderer_->begin_frame();
         renderer_->render_server_frame();
         for (const auto& sync_sess : sessions_snapshot) {
@@ -215,6 +229,11 @@ void server::render_loop() {
           std::function<void(bison::key_t, bison::key_t, bison::dynamic)> client_emit;
           {
             auto sess = sync_sess->wlock();
+            // Clear dirty before rendering, not after: a render function may
+            // re-set it (via the const session& it's given) to request
+            // continuous redraws, e.g. a focused widget animating its own
+            // caret. Clearing afterward would stomp that signal.
+            sess->dirty.store(false, std::memory_order_release);
             detail::current_session = &*sess;
             for (const auto& [key, win] : sess->top_level_objects) {
               if (win) {
@@ -227,7 +246,6 @@ void server::render_loop() {
             events = std::move(sess->pending_events);
             handlers = sess->top_level_handlers;
             client_emit = sess->emit_event;
-            sess->dirty.store(false, std::memory_order_release);
           }
           // Dispatch events with no lock held: handlers may modify session state.
           for (auto& ev : events) {
@@ -251,6 +269,8 @@ void server::render_loop() {
             sync_sess->wlock()->dirty.store(true, std::memory_order_release);
         }
         renderer_->end_frame();
+        if (renderer_->wants_continuous_redraw())
+          pending_render_ = true;
         if (renderer_->should_quit())
           running_.store(false, std::memory_order_release);
       }

@@ -61,11 +61,16 @@ struct session {
 
   /// Set to `true` after any RMI dispatch touching this session and after
   /// any top-level event handler runs, so the render loop knows the session
-  /// needs to be redrawn; cleared once the render loop has drawn it.
+  /// needs to be redrawn; cleared right before the render loop redraws it.
   /// Application code may also set it directly to force a redraw after
   /// mutating session state from outside RMI dispatch (e.g. a background
-  /// thread holding the session wlock directly).
-  std::atomic<bool> dirty{true};
+  /// thread holding the session wlock directly), or from within a render
+  /// function (which only ever sees a `const session&`) to request
+  /// continuous redraws — e.g. a custom widget animating its own caret
+  /// outside of ImGui's `WantTextInput` mechanism. `mutable` for that
+  /// last case; still an atomic since it's read from other threads via
+  /// `rlock()` while dispatch holds the `wlock()`.
+  mutable std::atomic<bool> dirty{true};
 
   /// When `false` (default), widget file paths must be relative and are
   /// sandboxed inside `resource_dir`.  Set to `true` only for same-process

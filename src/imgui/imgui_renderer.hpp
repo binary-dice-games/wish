@@ -52,6 +52,12 @@ class imgui_renderer : public renderer {
   /// @brief Ends the ImGui frame (`ImGui::EndFrame`).
   void end_frame() override;
 
+  /// @brief True while an active ImGui text-input widget wants a blinking
+  ///        caret drawn (`ImGuiIO::WantTextInput`). Custom widgets that draw
+  ///        their own caret without going through ImGui::InputText (e.g. the
+  ///        TextEditor wish element) mark the session dirty directly instead.
+  bool wants_continuous_redraw() const override;
+
   /// @brief Fetch a cached texture or attempt to load it from @p resource_dir.
   /// Returns a zero/null ID in headless / no-backend contexts.
   virtual ImTextureID get_or_load_texture(const std::string& src, const std::filesystem::path& resource_dir);
