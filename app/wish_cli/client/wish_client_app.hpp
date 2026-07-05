@@ -5,6 +5,8 @@
  */
 #pragma once
 
+#include "app/wish_cli/client/wish_app_host.hpp"
+
 #include <client.hpp>
 
 #include <future>
@@ -21,6 +23,12 @@ namespace bdg::wish {
  * proxy handles that must remain valid until the session ends, and call
  * `signal_done()` (typically from an event handler) to unblock `on_session()`.
  *
+ * Also implements `wish_app_host` by forwarding to `wish::client`'s own
+ * `instantiate`/`upload_file`/`download_file`, so the app runner functions
+ * (`run_calculator` et al.) can be written against `wish_app_host&` and work
+ * unmodified under both this transport-backed session and the in-process
+ * `wish_standalone_session` used by `wish standalone`.
+ *
  * CLI flags (defined in `main.cpp`, used here via DECLARE_*), same
  * `--transport` scheme as `wish_server_app` (see
  * `src/app/transport_flags.hpp`):
@@ -33,19 +41,32 @@ namespace bdg::wish {
  * gflags and forwarded verbatim to the app function as `app_args()`, e.g.
  * `wish client --run=notepad -- path/to/file`.
  */
-class wish_client_session : public client {
+class wish_client_session : public client, public wish_app_host {
  public:
   using client::client;
 
   /// @brief Store a proxy to keep the remote object alive for the session.
-  void keep_alive(bison::rmi::proxy::dynamic&& proxy);
+  void keep_alive(bison::rmi::proxy::dynamic&& proxy) override;
 
   /// @brief Unblock on_session() — call from a "closed" event handler.
-  void signal_done();
+  void signal_done() override;
 
   /// @brief Positional arguments given after `--` on the command line.
-  const std::vector<std::string>& app_args() const {
+  const std::vector<std::string>& app_args() const override {
     return app_args_;
+  }
+
+  std::future<bison::rmi::proxy::dynamic>
+  instantiate(bison::key_t ns, bison::key_t klass, bison::dynamic params = bison::dynamic{}) override {
+    return client::instantiate(ns, klass, std::move(params));
+  }
+
+  std::future<void> upload_file(const std::string& name, const std::string& data) override {
+    return client::upload_file(name, data);
+  }
+
+  std::future<std::string> download_file(const std::string& name) override {
+    return client::download_file(name);
   }
 
   void on_session() override;

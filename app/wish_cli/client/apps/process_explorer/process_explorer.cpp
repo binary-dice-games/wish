@@ -11,7 +11,7 @@
 /// server only manages tabs (see app/wish_cli/client/apps/notepad.cpp).
 #include "app/wish_cli/client/apps/process_explorer/process_explorer.hpp"
 #include "app/wish_cli/client/apps/process_explorer/process_info.hpp"
-#include "app/wish_cli/client/wish_client_app.hpp"
+#include "app/wish_cli/client/wish_app_host.hpp"
 
 #include "src/bison/bison.hpp"
 
@@ -56,7 +56,7 @@ dynamic encode_snapshot(const system_snapshot& snap) {
 
 } // namespace
 
-void run_process_explorer(wish_client_session& s) {
+void run_process_explorer(wish_app_host& s) {
   auto proxy = std::make_shared<rmi::proxy::dynamic>(s.instantiate("wish"_key, "ProcessExplorer"_key).get());
   auto stop = std::make_shared<std::atomic<bool>>(false);
 

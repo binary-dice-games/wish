@@ -6,6 +6,7 @@
 #include <logger.hpp>
 #include <registry.hpp>
 #include <server.hpp>
+#include <session_object_factory.hpp>
 #include <style_service.hpp>
 #include <ui_root.hpp>
 
@@ -109,8 +110,6 @@ void server::on_session_destroyed(bison::rmi::context& ctx) {
 }
 
 bison::dynamic_ptr server::on_create_object(bison::rmi::context& ctx, bison::key_t ns, bison::key_t klass) {
-  using namespace bison;
-
   // on_create_object runs inside a dispatch (on_before_dispatch has run), so
   // detail::current_session is set.  We also need the sync_session_ptr for
   // lifetime management when handing it to new objects.
@@ -123,26 +122,14 @@ bison::dynamic_ptr server::on_create_object(bison::rmi::context& ctx, bison::key
   }
 
   if (sync_sess && detail::current_session) {
-    session& s = *detail::current_session;
-    // Singleton classes: return the pre-created per-session instance.
-    if (klass == "__WishFileSystem"_key && s.file_service)
-      return dynamic_ptr{std::static_pointer_cast<dynamic>(s.file_service)};
-    if (klass == "__WishStyle"_key && s.style_service)
-      return dynamic_ptr{std::static_pointer_cast<dynamic>(s.style_service)};
-    if (klass == "__WishLogger"_key && s.logger_service)
-      return dynamic_ptr{std::static_pointer_cast<dynamic>(s.logger_service)};
+    if (auto svc = detail::find_singleton_service(*detail::current_session, klass))
+      return svc;
   }
 
   // For all other classes, bison creates the concrete type from the registered
   // prototype.  Inject session context into template_handler and form instances.
   auto obj = bison::rmi::server::on_create_object(ctx, ns, klass);
-  if (obj && sync_sess) {
-    if (auto* h = dynamic_cast<template_handler*>(obj.get())) {
-      h->init(ctx, sync_sess);
-    } else if (auto* f = dynamic_cast<form*>(obj.get())) {
-      f->init(ctx, sync_sess);
-    }
-  }
+  detail::init_session_object(obj, ctx, sync_sess);
   return obj;
 }
 

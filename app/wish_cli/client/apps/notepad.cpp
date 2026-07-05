@@ -10,9 +10,9 @@
 ///
 /// A file to open at startup may be passed after `--` on the command line,
 /// e.g. `wish client --run=notepad -- path/to/file` (see
-/// `wish_client_session::app_args()`).
+/// `wish_app_host::app_args()`).
 #include "app/wish_cli/client/apps/notepad.hpp"
-#include "app/wish_cli/client/wish_client_app.hpp"
+#include "app/wish_cli/client/wish_app_host.hpp"
 
 #include "src/bison/bison.hpp"
 
@@ -85,7 +85,7 @@ struct sandbox_files {
 // name and register it as a new Notepad tab. Shared by the FileDialog-driven
 // Open/New flows and by opening a file passed on the command line.
 void upload_and_open(
-    wish_client_session& s,
+    wish_app_host& s,
     const std::shared_ptr<rmi::proxy::dynamic>& notepad,
     const std::shared_ptr<sandbox_files>& files,
     const fs::path& local_path) {
@@ -106,7 +106,7 @@ void upload_and_open(
 // `create_if_missing` is set for "New", where the chosen path need not
 // already exist locally.
 void browse_and_open(
-    wish_client_session& s,
+    wish_app_host& s,
     std::shared_ptr<rmi::proxy::dynamic> notepad,
     std::shared_ptr<sandbox_files> files,
     std::string title,
@@ -155,7 +155,7 @@ void browse_and_open(
 
 } // namespace
 
-void run_notepad(wish_client_session& s) {
+void run_notepad(wish_app_host& s) {
   auto notepad = std::make_shared<rmi::proxy::dynamic>(s.instantiate("wish"_key, "Notepad"_key).get());
   auto files = std::make_shared<sandbox_files>();
 

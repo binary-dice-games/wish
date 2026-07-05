@@ -1,0 +1,130 @@
+// MIT License © 2025 Binary Dice Games
+/// @file wish_standalone_app.cpp
+/// @brief wish CLI standalone mode implementation.
+#include "app/wish_cli/standalone/wish_standalone_app.hpp"
+#include "app/wish_cli/client/apps/app_registry.hpp"
+
+#include <logger.hpp>
+#include <registry.hpp>
+#include <sdl3_renderer.hpp>
+
+#include <gflags/gflags.h>
+
+#include <chrono>
+#include <filesystem>
+#include <iostream>
+#include <thread>
+
+// ── Shared flags — reused from main.cpp / wish_server_app.cpp / ──────────────
+// wish_client_app.cpp so this mode doesn't redefine (and collide with) them.
+DECLARE_string(transport);
+DECLARE_string(host);
+DECLARE_int32(port);
+DECLARE_string(name);
+DECLARE_bool(verbose);
+
+DECLARE_string(title);
+DECLARE_int32(width);
+DECLARE_int32(height);
+
+DECLARE_bool(list);
+DECLARE_string(run);
+
+namespace bdg::wish {
+
+using namespace bison;
+
+void wish_standalone_session::keep_alive(rmi::proxy::dynamic&& proxy) {
+  live_proxies_.push_back(std::move(proxy));
+}
+
+void wish_standalone_session::signal_done() {
+  try {
+    done_.set_value();
+  } catch (const std::future_error&) {
+    // Already signalled — ignore.
+  }
+}
+
+namespace {
+
+std::shared_ptr<logger> make_standalone_logger() {
+  return std::make_shared<logger>(
+      bison::dynamic::instantiate(bison::key_t{"wish"}, bison::key_t{"__WishLogger"}),
+      FLAGS_verbose,
+      std::filesystem::path{"wish_logs"} / "standalone.log");
+}
+
+/// @brief Reject flags that only make sense with a real transport — standalone
+///        mode fuses server and client into one process and has none.
+/// @return true (and prints an error) if a rejected flag was set explicitly.
+bool reject_transport_flags() {
+  static const char* kTransportFlags[] = {"transport", "host", "port", "name"};
+  for (const char* flag : kTransportFlags) {
+    if (!gflags::GetCommandLineFlagInfoOrDie(flag).is_default) {
+      std::cerr << "[wish standalone] --" << flag
+                << " is not supported: standalone mode runs the server and "
+                   "client in one process, with no transport.\n";
+      return true;
+    }
+  }
+  return false;
+}
+
+} // namespace
+
+int run_standalone_mode(int argc, char** argv) {
+  gflags::ParseCommandLineFlags(&argc, &argv, true);
+
+  if (reject_transport_flags())
+    return 1;
+
+  if (FLAGS_list) {
+    std::cout << "Available applications:\n";
+    for (const auto& [app_name, _] : registered_apps())
+      std::cout << "  " << app_name << '\n';
+    return 0;
+  }
+
+  if (FLAGS_run.empty()) {
+    std::cerr << "[wish standalone] use --list to see apps or --run=<name> to launch one\n";
+    return 1;
+  }
+  const auto& apps = registered_apps();
+  auto it = apps.find(FLAGS_run);
+  if (it == apps.end()) {
+    std::cerr << "[wish standalone] unknown app '" << FLAGS_run << "'. Use --list to see available apps.\n";
+    return 1;
+  }
+
+  try {
+    // register_all() also runs inside session.start(); calling it here first
+    // lets make_standalone_logger() instantiate "__WishLogger" up front
+    // (mirrors wish_server_app's register_classes()-before-logger ordering).
+    register_all();
+
+    wish_standalone_session session{std::make_unique<sdl3_renderer>(FLAGS_title.c_str(), FLAGS_width, FLAGS_height)};
+    session.set_logger(make_standalone_logger());
+    session.app_args_.assign(argv + 1, argv + argc);
+    session.start();
+
+    it->second(session); // set up proxies and event handlers
+
+    // Block until either the app signals completion (e.g. a "closed" event
+    // handler calling signal_done()) or the user closes the SDL3 window.
+    using namespace std::chrono_literals;
+    while (!session.should_quit()) {
+      if (session.done_future_.wait_for(50ms) == std::future_status::ready)
+        break;
+    }
+
+    session.stop();
+    return 0;
+
+  } catch (const std::exception& ex) {
+    std::cerr << "[wish standalone] error: " << ex.what() << '\n';
+    return 1;
+  }
+}
+
+} // namespace bdg::wish

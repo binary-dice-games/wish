@@ -2,7 +2,7 @@
 /// @file calculator.cpp
 /// @brief Client-side runner for the Calculator embedded app.
 #include "app/wish_cli/client/apps/calculator.hpp"
-#include "app/wish_cli/client/wish_client_app.hpp"
+#include "app/wish_cli/client/wish_app_host.hpp"
 
 #include "src/bison/bison.hpp"
 
@@ -12,7 +12,7 @@ using namespace bison;
 
 /// Instantiate the server-side Calculator form, register for the "closed"
 /// event, and keep the proxy alive until signal_done() fires.
-void run_calculator(wish_client_session& s) {
+void run_calculator(wish_app_host& s) {
   auto proxy = s.instantiate("wish"_key, "Calculator"_key).get();
 
   // When the user clicks "Close" inside the form, the server emits "closed".

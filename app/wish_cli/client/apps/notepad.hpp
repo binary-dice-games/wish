@@ -4,6 +4,6 @@
 #pragma once
 
 namespace bdg::wish {
-class wish_client_session;
-void run_notepad(wish_client_session& s);
+class wish_app_host;
+void run_notepad(wish_app_host& s);
 } // namespace bdg::wish

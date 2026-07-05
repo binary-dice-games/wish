@@ -202,6 +202,8 @@ add_library(wish_server STATIC
   src/logger.hpp
   src/style_service.hpp
   src/server.hpp
+  src/standalone.hpp
+  src/session_object_factory.hpp
   src/forms/form.hpp
   src/wish.cpp
   src/resources/resource_store.cpp
@@ -215,6 +217,8 @@ add_library(wish_server STATIC
   src/logger.cpp
   src/style_service.cpp
   src/server.cpp
+  src/standalone.cpp
+  src/session_object_factory.cpp
   src/template_handler.cpp
   src/ui_elements/element.cpp
   src/ui_elements/layout.cpp

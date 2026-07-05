@@ -1,19 +1,25 @@
 // MIT License © 2025 Binary Dice Games
 /**
  * @file main.cpp
- * @brief Entry point for the wish CLI — dispatches server / client / bridge.
+ * @brief Entry point for the wish CLI — dispatches server / client / bridge /
+ *        standalone.
  *
  * Usage:
- *   wish server  [--transport T] [--host H] [--port P] [--name PATH] [--cmd C]
- *                [--title T] [--width W] [--height H] [--verbose]
- *   wish client  [--transport T] [--host H] [--port P] [--name PATH]
- *                (--list | --run=<app>) [--timeout MS] [-- app-args...]
- *   wish bridge  [--up-host H] [--up-port P] [--up-pipe PATH]
- *                [--down-host H] [--down-port P] [--down-pipe PATH]
+ *   wish server     [--transport T] [--host H] [--port P] [--name PATH] [--cmd C]
+ *                   [--title T] [--width W] [--height H] [--verbose]
+ *   wish client     [--transport T] [--host H] [--port P] [--name PATH]
+ *                   (--list | --run=<app>) [--timeout MS] [-- app-args...]
+ *   wish standalone [--title T] [--width W] [--height H]
+ *                   (--list | --run=<app>) [-- app-args...]
+ *                   (--transport/--host/--port/--name are not accepted here —
+ *                   standalone mode runs server and client in one process)
+ *   wish bridge     [--up-host H] [--up-port P] [--up-pipe PATH]
+ *                   [--down-host H] [--down-port P] [--down-pipe PATH]
  */
 #include "app/wish_cli/bridge/wish_bridge_app.hpp"
 #include "app/wish_cli/client/wish_client_app.hpp"
 #include "app/wish_cli/server/wish_server_app.hpp"
+#include "app/wish_cli/standalone/wish_standalone_app.hpp"
 
 #include <gflags/gflags.h>
 
@@ -35,11 +41,13 @@ static void print_usage() {
   std::cout << "wish - remote GUI framework CLI\n"
                "\n"
                "Usage:\n"
-               "  wish server  [--transport T] [--host H] [--port P] [--name PATH] [--cmd C]\n"
-               "               [--title T] [--width W] [--height H] [--verbose]\n"
-               "  wish client  [--transport T] [--host H] [--port P] [--name PATH]\n"
-               "               (--list | --run=<app>) [--timeout MS] [-- app-args...]\n"
-               "  wish bridge  [--up-host H --up-port P ...] [--down-host H --down-port P ...]\n"
+               "  wish server     [--transport T] [--host H] [--port P] [--name PATH] [--cmd C]\n"
+               "                  [--title T] [--width W] [--height H] [--verbose]\n"
+               "  wish client     [--transport T] [--host H] [--port P] [--name PATH]\n"
+               "                  (--list | --run=<app>) [--timeout MS] [-- app-args...]\n"
+               "  wish standalone [--title T] [--width W] [--height H]\n"
+               "                  (--list | --run=<app>) [-- app-args...]\n"
+               "  wish bridge     [--up-host H --up-port P ...] [--down-host H --down-port P ...]\n"
                "\n"
                "Anything after a literal `--` is forwarded to the app, e.g.\n"
                "  wish client --run=notepad -- path/to/file\n"
@@ -52,6 +60,10 @@ static void print_usage() {
                "  --cmd C        Command to spawn             (transport=console, server only)\n"
                "  --verbose      Print RMI trace messages\n"
                "  --debugger     Wait for debugger attachment before starting\n"
+               "\n"
+               "wish standalone runs the server and client in the same process (no\n"
+               "transport, no serialization) and does not accept --transport/--host/\n"
+               "--port/--name.\n"
                "\n"
                "Run 'wish <subcommand> --help' for subcommand-specific flags.\n";
 }
@@ -79,6 +91,11 @@ int main(int argc, char** argv) {
   if (std::strcmp(subcmd, "client") == 0) {
     gflags::SetUsageMessage("wish client - connect to a server and run an embedded application");
     return bdg::wish::run_client_mode(sub_argc, sub_argv);
+  }
+
+  if (std::strcmp(subcmd, "standalone") == 0) {
+    gflags::SetUsageMessage("wish standalone - in-process server+client, no transport");
+    return bdg::wish::run_standalone_mode(sub_argc, sub_argv);
   }
 
   if (std::strcmp(subcmd, "bridge") == 0) {

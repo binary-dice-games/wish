@@ -4,9 +4,7 @@
  * @brief wish CLI client mode implementation.
  */
 #include "app/wish_cli/client/wish_client_app.hpp"
-#include "app/wish_cli/client/apps/calculator.hpp"
-#include "app/wish_cli/client/apps/notepad.hpp"
-#include "app/wish_cli/client/apps/process_explorer/process_explorer.hpp"
+#include "app/wish_cli/client/apps/app_registry.hpp"
 
 #include "src/app/transport_flags.hpp"
 #include "src/pty/raw_mode_guard.hpp"
@@ -36,16 +34,6 @@ namespace bdg::wish {
 
 using namespace bison;
 
-// ── App registry ──────────────────────────────────────────────────────────────
-
-using AppFn = std::function<void(wish_client_session&)>;
-
-static const std::map<std::string, AppFn> kApps = {
-    {"calculator", run_calculator},
-    {"notepad", run_notepad},
-    {"process_explorer", run_process_explorer},
-};
-
 // ── wish_client_session ───────────────────────────────────────────────────────
 
 void wish_client_session::keep_alive(rmi::proxy::dynamic&& proxy) {
@@ -65,8 +53,9 @@ void wish_client_session::on_disconnect() {
 }
 
 void wish_client_session::on_session() {
-  auto it = kApps.find(app_name_);
-  if (it == kApps.end())
+  const auto& apps = registered_apps();
+  auto it = apps.find(app_name_);
+  if (it == apps.end())
     throw std::runtime_error("unknown app: " + app_name_);
 
   it->second(*this); // set up proxies and event handlers
@@ -83,7 +72,7 @@ int run_client_mode(int argc, char** argv) {
 
   if (FLAGS_list) {
     std::cout << "Available applications:\n";
-    for (const auto& [name, _] : kApps)
+    for (const auto& [name, _] : registered_apps())
       std::cout << "  " << name << '\n';
     return 0;
   }
@@ -92,7 +81,7 @@ int run_client_mode(int argc, char** argv) {
     std::cerr << "[wish client] use --list to see apps or --run=<name> to launch one\n";
     return 1;
   }
-  if (kApps.find(FLAGS_run) == kApps.end()) {
+  if (registered_apps().find(FLAGS_run) == registered_apps().end()) {
     std::cerr << "[wish client] unknown app '" << FLAGS_run << "'. Use --list to see available apps.\n";
     return 1;
   }
