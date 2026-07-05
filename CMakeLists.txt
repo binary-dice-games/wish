@@ -360,6 +360,15 @@ if(WISH_BUILD_SHARED)
       extern/bison/include/bison_c.h
       extern/bison/include/rmi_c.h)
   target_compile_definitions(wish_client_dll PRIVATE WISH_CLIENT_BUILDING_DLL BISON_BUILDING_DLL)
+  # wish_client_c.cpp #includes bison_c.cpp/rmi_c.cpp directly (see comment
+  # above), so this target must mirror the same native-Windows compile
+  # definitions the `bison` target itself uses (extern/bison/CMakeLists.txt)
+  # for rmi_c.cpp's #if defined(BISON_NATIVE_WINDOWS) guards to take effect.
+  if(WIN32 AND NOT MSYS AND NOT CYGWIN)
+    target_compile_definitions(wish_client_dll PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN BISON_NATIVE_WINDOWS)
+  elseif(WIN32)
+    target_compile_definitions(wish_client_dll PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+  endif()
   target_link_libraries(wish_client_dll PUBLIC wish_client)
   target_include_directories(wish_client_dll
       PUBLIC
