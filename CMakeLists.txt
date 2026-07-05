@@ -74,10 +74,12 @@ endif()
 
 if(WISH_ENABLE_IMGUI AND WISH_ENABLE_SDL3)
   include(FetchContent)
+  set(SDL_X11_XSCRNSAVER OFF CACHE BOOL "" FORCE)
+  set(SDL_X11_XTEST OFF CACHE BOOL "" FORCE)
   FetchContent_Declare(
     SDL3
     GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
-    GIT_TAG        release-3.2.10
+    GIT_TAG        release-3.4.x
     GIT_SHALLOW    TRUE
   )
   FetchContent_Declare(
