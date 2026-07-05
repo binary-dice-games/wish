@@ -6,6 +6,9 @@
 #include <forms/form.hpp>
 #include <ui_element.hpp>
 
+#include <functional>
+#include <unordered_map>
+
 namespace bdg::wish {
 
 /// @brief Self-contained four-function calculator form.
@@ -54,6 +57,10 @@ class calculator : public form {
   bison::key_t btn_n0_, btn_dot_, btn_pm_, btn_pct_;
 
   ui_element_ptr display_ptr_;
+
+  // Dispatch table from button widget ID to its click handler, populated
+  // once the IDs are known in on_init().
+  std::unordered_map<bison::key_t, std::function<void()>, bison::key_t, bison::key_t> button_handlers_;
 };
 
 /// @brief Register Calculator in the "wish" bison namespace.

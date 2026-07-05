@@ -5,17 +5,12 @@
 #include <registry.hpp>
 #include <style_service.hpp>
 
-#include "forms/calculator.hpp"
 #include "forms/file_dialog.hpp"
-#include "forms/notepad.hpp"
-#include "forms/process_explorer.hpp"
 #include "plot3d_elements/plot3d_elements.hpp"
 #include "plot_elements/plot_elements.hpp"
 #include "ui_template.hpp"
 #include "ui_elements/ui_elements.hpp"
-#ifdef WISH_MODULE_DESKTOP
-#include "forms/desktop/desktop_module.hpp"
-#endif
+#include "wish_module_registry.hpp"
 
 namespace bdg::wish {
 
@@ -64,12 +59,9 @@ void register_all() {
   register_logger();
   // Built-in forms.
   register_file_dialog();
-  register_calculator();
-  register_notepad();
-  register_process_explorer();
-#ifdef WISH_MODULE_DESKTOP
-  register_desktop_module();
-#endif
+  // Optional modules (calculator, notepad, process_explorer, ...); see
+  // src/forms/DESIGN.md's "Module System" section.
+  register_optional_modules();
 }
 
 } // namespace bdg::wish

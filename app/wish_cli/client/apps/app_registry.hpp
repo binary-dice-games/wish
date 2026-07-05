@@ -18,7 +18,14 @@ class wish_app_host;
 ///        returns (the caller blocks on session completion separately).
 using AppFn = std::function<void(wish_app_host&)>;
 
-/// @brief Name -> runner table for `calculator`, `notepad`, `process_explorer`.
+/// @brief Registers an embedded app under `name`. Each optional module's
+///        client runner calls this from a static-initialized registrar
+///        object (see modules/calculator/client/calculator.cpp for the
+///        pattern) -- callers outside a module's own translation unit should
+///        not call this directly.
+void register_app(const std::string& name, AppFn fn);
+
+/// @brief Name -> runner table, populated by register_app().
 const std::map<std::string, AppFn>& registered_apps();
 
 } // namespace bdg::wish

@@ -13,7 +13,6 @@ option(WISH_BUILD_TESTS      "Build the wish tests"                            O
 option(WISH_ENABLE_IMGUI     "Build the imgui renderer"                       ON)
 option(WISH_ENABLE_SDL3      "Build the SDL3 renderer and calculator example" ON)
 option(WISH_BUILD_SHARED     "Build wish_client shared library with C ABI"   ON)
-option(WISH_MODULE_DESKTOP   "Include desktop utility forms (Calculator, Notepad, ...)" OFF)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
@@ -254,19 +253,7 @@ add_library(wish_server STATIC
   src/plot3d_elements/plot3d_annotations.cpp
   src/forms/form.cpp
   src/forms/file_dialog.cpp
-  src/forms/calculator.cpp
-  src/forms/notepad.cpp
-  src/forms/process_explorer.cpp
 )
-
-if(WISH_MODULE_DESKTOP)
-  target_sources(wish_server PRIVATE
-    src/forms/desktop/desktop_module.cpp
-    src/forms/desktop/calculator.cpp
-    src/forms/desktop/notepad.cpp
-  )
-  target_compile_definitions(wish_server PRIVATE WISH_MODULE_DESKTOP)
-endif()
 
 if(WISH_ENABLE_IMGUI)
   target_sources(wish_server PRIVATE
@@ -303,6 +290,9 @@ target_include_directories(wish_server
         # nlohmann/json and libyaml headers; only needed by src/ui_importer.cpp.
         ${CMAKE_CURRENT_SOURCE_DIR}/extern/bison/extern/json/single_include
         ${CMAKE_CURRENT_SOURCE_DIR}/extern/bison/extern/yaml/include
+        # repo root; needed for "modules/<name>/server/..." includes used by
+        # registry.cpp and the generated module registry (see WishModules.cmake).
+        ${CMAKE_CURRENT_SOURCE_DIR}
     PUBLIC
         src
         # Exposes bison's C++ headers (src/bison/bison_object.hpp, etc.)
@@ -317,6 +307,20 @@ target_link_libraries(wish_server PUBLIC bison)
 target_link_libraries(wish_server PRIVATE yaml)
 # miniz is needed by resource_store.cpp to unpack the embedded archive.
 target_link_libraries(wish_server PRIVATE miniz)
+
+# ── Optional modules — calculator, notepad, process_explorer, ... ────────────
+#
+# Each module is off by default; see cmake/WishModules.cmake for the
+# wish_add_module() framework and modules/<name>/{server,client}/ for the
+# per-module sources. Adding a new module only requires a new
+# modules/<name>/ directory and one wish_add_module() line here.
+include(cmake/WishModules.cmake)
+
+wish_add_module(calculator)
+wish_add_module(notepad)
+wish_add_module(process_explorer)
+
+wish_generate_module_registry()
 
 # ── wish — convenience interface target (client + server) ─────────────────────
 #

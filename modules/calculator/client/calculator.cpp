@@ -1,7 +1,9 @@
 // MIT License © 2025 Binary Dice Games
 /// @file calculator.cpp
 /// @brief Client-side runner for the Calculator embedded app.
-#include "app/wish_cli/client/apps/calculator.hpp"
+#include "modules/calculator/client/calculator.hpp"
+
+#include "app/wish_cli/client/apps/app_registry.hpp"
 #include "app/wish_cli/client/wish_app_host.hpp"
 
 #include "src/bison/bison.hpp"
@@ -22,5 +24,12 @@ void run_calculator(wish_app_host& s) {
   s.keep_alive(std::move(proxy));
   // on_session() blocks until signal_done() is called.
 }
+
+namespace {
+struct calculator_app_registrar {
+  calculator_app_registrar() { register_app("calculator", run_calculator); }
+};
+const calculator_app_registrar calculator_app_registrar_instance;
+} // namespace
 
 } // namespace bdg::wish

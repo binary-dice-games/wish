@@ -15,7 +15,7 @@ The motivation is consistency: an open-file dialog built on top of raw wish elem
 1. **Server-side logic, client-side data.** The server owns UI state (which row is selected, whether the filename field is focused). The client owns application data (which files exist in a folder). High-level events bridge the two.
 2. **Hidden internals.** The client cannot directly access or modify a form's internal `ui_element` tree. Only the form's declared fields, methods, and events are part of its public contract.
 3. **Composable with low-level elements.** A form's Window is a first-class node in the session's object tree. It can coexist with client-managed elements in the same session.
-4. **Extensible via compile-time modules.** Optional sets of forms (desktop utilities, process monitors, ...) are compiled in via CMake options, not loaded as DLL plugins, for reasons detailed in [Module System](#module-system).
+4. **Extensible via compile-time modules.** Each optional tool (Calculator, Notepad, Process Explorer, ...) is compiled in via its own CMake option, not loaded as a DLL plugin, for reasons detailed in [Module System](#module-system).
 5. **Sandbox-safe.** Any form that reads or writes files must go through the same `file_service::resolve_path()` / `resolve_widget_path()` path as all other wish components.
 
 ---
@@ -138,45 +138,52 @@ All fields, methods, and events must be registered on the **prototype** (not in 
 
 The natural extension mechanism for a framework like wish is a runtime plugin loaded from a DLL. wish cannot use this approach because bison's class registry is a **process-global singleton** (`bison::dynamic::addClass` writes into a single in-process table). When a DLL is loaded, its static storage is separate from the hosting binary's static storage. Calls to `addClass` from inside the DLL write into the DLL's own copy of the registry, which the wish server never consults — the server's registry remains empty for those classes.
 
-Optional form modules are therefore **compiled in** as additional source files, selected at CMake configuration time:
+Optional forms are therefore **compiled in** as additional source files under `modules/<name>/server/`, one independent module per tool — there is no umbrella "desktop" module; enabling Calculator has no bearing on whether Notepad or Process Explorer are built. Each module is selected at CMake configuration time via a `wish_add_module(<name>)` call (defined in `cmake/WishModules.cmake`) in the root `CMakeLists.txt`:
 
 ```cmake
-# CMakeLists.txt (forms)
-target_sources(wish PRIVATE
-  src/forms/file_dialog.cpp   # always compiled: part of the base server
-)
-
-option(WISH_MODULE_DESKTOP "Include desktop utility forms (Calculator, Notepad, ...)" OFF)
-if(WISH_MODULE_DESKTOP)
-  target_sources(wish PRIVATE
-    src/forms/desktop/calculator.cpp
-    src/forms/desktop/notepad.cpp
-  )
-  target_compile_definitions(wish PRIVATE WISH_MODULE_DESKTOP)
-endif()
+# CMakeLists.txt (root)
+wish_add_module(calculator)
+wish_add_module(notepad)
+wish_add_module(process_explorer)
 ```
 
-`register_all()` in `registry.cpp` calls the module registration hooks behind the same `#ifdef`:
+`wish_add_module(<name>)` declares an off-by-default `WISH_MODULE_<NAME>` option and, when enabled, adds `modules/<name>/server/*.{hpp,cpp}` to `wish_server` and defines `WISH_MODULE_<NAME>` (`PUBLIC`, so consumers of `wish_server` see it too).
+
+Because each module's code is statically linked into the server binary, `addClass` and `addField` write into exactly the same singleton that the server reads. No plugin loading machinery is required — but `wish_server` is itself a **static library** (`add_library(wish_server STATIC ...)`), and a static archive only pulls in the object files needed to resolve an external reference. A form `.cpp` whose only reference is its own self-registering static global therefore risks being silently dropped by the linker. To avoid that, `wish_add_module()` instead records each enabled module's `register_<name>()` hook, and `wish_generate_module_registry()` renders them into a single generated translation unit (`src/wish_module_registry.cpp.in` → `${CMAKE_BINARY_DIR}/generated/wish_module_registry.cpp`, following the same codegen pattern already used for `src/resources/embedded_resources.cpp.in`). `register_all()` calls the one, permanent, generic hook this produces:
 
 ```cpp
+// src/registry.cpp
+#include "wish_module_registry.hpp"
+
 void register_all() {
   // ... existing element/service registrations ...
   register_file_dialog();           // always present
-
-#ifdef WISH_MODULE_DESKTOP
-  register_desktop_module();        // Calculator, Notepad, ...
-#endif
+  register_optional_modules();      // every module enabled at configure time
 }
 ```
 
-Because each module's code is statically linked into the server binary, `addClass` and `addField` write into exactly the same singleton that the server reads. No plugin loading machinery is required.
+`register_optional_modules()` and its call site in `register_all()` are framework-level and permanent — adding a new module never requires touching `registry.cpp`.
+
+The client-side reference runners (`modules/<name>/client/`) don't have this problem: `app/CMakeLists.txt` compiles them directly into each executable target (`wish-cli`, `wish-standalone`, `wish-client`), not through an intermediate static library, so a plain self-registering static global is safe there — see [Adding a new module](#adding-a-new-module).
 
 ### Adding a new module
 
-1. Create `src/forms/<module_name>/` with a `.cpp` per form and a `register_<module_name>_module()` free function.
-2. Add a `CMakeLists.txt` `option()` and a corresponding `target_sources` + `target_compile_definitions` block.
-3. Add the `#ifdef WISH_MODULE_<NAME>` guard and the `register_` call in `registry.cpp`.
-4. Document the module in `README.md` under "Further Documentation" and in `docs/building.md` under CMake options.
+1. Create `modules/<name>/server/<name>.hpp/.cpp` with a `register_<name>()` free function (same contract as any other form — see [Writing a New Form](#writing-a-new-form)).
+2. Optionally create `modules/<name>/client/<name>.hpp/.cpp` with a `run_<name>(wish_app_host&)` entry point, and self-register it with a static registrar object:
+   ```cpp
+   namespace {
+   struct <name>_app_registrar {
+     <name>_app_registrar() { register_app("<name>", run_<name>); }
+   };
+   const <name>_app_registrar <name>_app_registrar_instance;
+   }
+   ```
+   (see `modules/calculator/client/calculator.cpp` for the reference pattern).
+3. Add one line to the root `CMakeLists.txt`: `wish_add_module(<name>)`.
+4. If the module has tests, gate them with `wish_add_optional_test(WISH_MODULE_<NAME> test_<name> test_<name>.cpp)` in `tests/CMakeLists.txt` (mirrors `wish_add_test`, but only registers the test when the module's option is enabled).
+5. Document the module in `docs/building.md` under CMake options.
+
+No edits to `registry.cpp` or `app_registry.cpp` are ever required.
 
 ---
 
@@ -258,7 +265,7 @@ dlg["dlg"].onEvent("on_open"_key, [&](bison::dynamic payload) {
 
 ### `Notepad`
 
-**Bison class name:** `"Notepad"` in the `"wish"` namespace. Built-in (registered unconditionally in `register_all()`, alongside `FileDialog` and `Calculator` — not gated behind `WISH_MODULE_DESKTOP`; see the note at the end of [Planned Forms](#planned-forms)).
+**Bison class name:** `"Notepad"` in the `"wish"` namespace. Optional module, registered behind `WISH_MODULE_NOTEPAD` (see [Module System](#module-system)); disabled by default.
 
 **Purpose:** A multi-file, syntax-highlighted text editor. Each open file is one closable tab (`TabItem`) containing a `TextEditor` — the existing `TextEditor` element already reads/writes the session sandbox directly and provides highlighting, so `Notepad` itself only manages tabs; it does not duplicate load/save logic.
 
@@ -312,7 +319,7 @@ The internal tree is private, like `FileDialog`'s.
 
 ### `ProcessExplorer`
 
-**Bison class name:** `"ProcessExplorer"` in the `"wish"` namespace. Built-in (registered unconditionally in `register_all()`, alongside `FileDialog`, `Calculator`, and `Notepad`).
+**Bison class name:** `"ProcessExplorer"` in the `"wish"` namespace. Optional module, registered behind `WISH_MODULE_PROCESS_EXPLORER` (see [Module System](#module-system)); disabled by default.
 
 **Purpose:** A read-only top/htop-style system monitor: overall and per-core CPU meters, CPU% and memory% history graphs (via `plot_elements`), and a process table sorted by CPU% descending.
 
@@ -368,7 +375,7 @@ The same rules that govern low-level wish elements apply to forms without except
 - **Relative paths only by default.** A form that constructs or emits a file path must pass it through `file_service::resolve_path(name, sess().resource_dir, sess().allow_absolute_paths)`. If the result is empty, the path is rejected.
 - **Client-provided data is untrusted.** Field values set by the client (file names, filter strings, dialog titles) are untrusted input. Forms must not use them to construct file paths without sandbox validation.
 - **`FileDialog` does not read the filesystem.** The dialog only displays what the client provides in the `files` field. The `on_navigate` event gives the client an entry name (relative, never an absolute path) and the client decides what to load. This design avoids any server-side directory traversal.
-- **Forms that do access files** (e.g., a Notepad form in `WISH_MODULE_DESKTOP`) must call `file_service::resolve_path()` for every read and write, and must document this in the form's registration attributes (see `src/ui_elements/text_editor.cpp` for the reference pattern).
+- **Forms that do access files** (e.g., the Notepad module) must call `file_service::resolve_path()` for every read and write, and must document this in the form's registration attributes (see `src/ui_elements/text_editor.cpp` for the reference pattern).
 - **No cross-session leakage.** A form holds a `std::shared_ptr<session>` to its own session. It must not store or access any other session's state.
 
 ---
@@ -395,20 +402,8 @@ The same rules that govern low-level wish elements apply to forms without except
 | Form | Module | Description |
 |------|--------|-------------|
 | `FileDialog` | built-in | File picker / Save As dialog (described above) |
-| `Calculator` | built-in | Four-function calculator; demonstrates self-contained form logic |
-| `Notepad` | built-in | Multi-file, syntax-highlighted text editor bridged to the client via upload_file/download_file (described above) |
-| `ProcessExplorer` | built-in | top/htop-style system monitor; server only renders, client owns all sampling (described above) |
+| `Calculator` | optional (`WISH_MODULE_CALCULATOR`) | Four-function calculator; demonstrates self-contained form logic |
+| `Notepad` | optional (`WISH_MODULE_NOTEPAD`) | Multi-file, syntax-highlighted text editor bridged to the client via upload_file/download_file (described above) |
+| `ProcessExplorer` | optional (`WISH_MODULE_PROCESS_EXPLORER`) | top/htop-style system monitor; server only renders, client owns all sampling (described above) |
 
-New built-in forms go in `src/forms/`. Module-specific forms go in `src/forms/<module_name>/`.
-
-> **Note:** `Calculator` and `Notepad` were originally planned to live under
-> `src/forms/desktop/` behind `WISH_MODULE_DESKTOP` (see the CMake snippet in
-> [Module System](#module-system)). In practice both were implemented
-> directly in `src/forms/` as unconditional built-ins, matching `FileDialog`
-> — `src/forms/desktop/` does not exist, so `WISH_MODULE_DESKTOP=ON` currently
-> fails to link. `ProcessExplorer` was also originally assumed to need
-> module-gating for being "OS-specific," but that OS dependency (reading
-> `/proc`) belongs to the *client*, not the server -- see `ProcessExplorer`'s
-> section above. No implemented form has needed the module mechanism so far;
-> a future form should only reach for it if the server side itself has a
-> genuine, unavoidable platform dependency.
+New built-in forms go in `src/forms/`. Optional-module forms go in `modules/<name>/server/` (and, if they ship a reference client runner, `modules/<name>/client/`); see [Module System](#module-system).

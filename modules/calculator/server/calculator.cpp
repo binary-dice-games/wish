@@ -139,6 +139,29 @@ void calculator::on_init() {
   tree.with("row4.pm", [&](const auto& e) { btn_pm_ = wish_id_of(e); });
   tree.with("row4.pct", [&](const auto& e) { btn_pct_ = wish_id_of(e); });
 
+  button_handlers_ = {
+      {btn_c_, [this] { handle_clear(); }},
+      {btn_div_, [this] { handle_operator('/'); }},
+      {btn_mul_, [this] { handle_operator('*'); }},
+      {btn_bsp_, [this] { handle_backspace(); }},
+      {btn_n7_, [this] { handle_digit("7"); }},
+      {btn_n8_, [this] { handle_digit("8"); }},
+      {btn_n9_, [this] { handle_digit("9"); }},
+      {btn_sub_, [this] { handle_operator('-'); }},
+      {btn_n4_, [this] { handle_digit("4"); }},
+      {btn_n5_, [this] { handle_digit("5"); }},
+      {btn_n6_, [this] { handle_digit("6"); }},
+      {btn_add_, [this] { handle_operator('+'); }},
+      {btn_n1_, [this] { handle_digit("1"); }},
+      {btn_n2_, [this] { handle_digit("2"); }},
+      {btn_n3_, [this] { handle_digit("3"); }},
+      {btn_eq_, [this] { handle_equals(); }},
+      {btn_n0_, [this] { handle_digit("0"); }},
+      {btn_dot_, [this] { handle_dot(); }},
+      {btn_pm_, [this] { handle_negate(); }},
+      {btn_pct_, [this] { handle_percent(); }},
+  };
+
   sess().objects.merge(std::move(tree), internal_root_key_);
 }
 
@@ -155,86 +178,9 @@ void calculator::on_event(key_t id, key_t event, const dynamic& /*payload*/) {
   if (event != "clicked"_key)
     return;
 
-  if (id == btn_c_) {
-    handle_clear();
-    return;
-  }
-  if (id == btn_div_) {
-    handle_operator('/');
-    return;
-  }
-  if (id == btn_mul_) {
-    handle_operator('*');
-    return;
-  }
-  if (id == btn_bsp_) {
-    handle_backspace();
-    return;
-  }
-  if (id == btn_n7_) {
-    handle_digit("7");
-    return;
-  }
-  if (id == btn_n8_) {
-    handle_digit("8");
-    return;
-  }
-  if (id == btn_n9_) {
-    handle_digit("9");
-    return;
-  }
-  if (id == btn_sub_) {
-    handle_operator('-');
-    return;
-  }
-  if (id == btn_n4_) {
-    handle_digit("4");
-    return;
-  }
-  if (id == btn_n5_) {
-    handle_digit("5");
-    return;
-  }
-  if (id == btn_n6_) {
-    handle_digit("6");
-    return;
-  }
-  if (id == btn_add_) {
-    handle_operator('+');
-    return;
-  }
-  if (id == btn_n1_) {
-    handle_digit("1");
-    return;
-  }
-  if (id == btn_n2_) {
-    handle_digit("2");
-    return;
-  }
-  if (id == btn_n3_) {
-    handle_digit("3");
-    return;
-  }
-  if (id == btn_eq_) {
-    handle_equals();
-    return;
-  }
-  if (id == btn_n0_) {
-    handle_digit("0");
-    return;
-  }
-  if (id == btn_dot_) {
-    handle_dot();
-    return;
-  }
-  if (id == btn_pm_) {
-    handle_negate();
-    return;
-  }
-  if (id == btn_pct_) {
-    handle_percent();
-    return;
-  }
+  auto it = button_handlers_.find(id);
+  if (it != button_handlers_.end())
+    it->second();
 }
 
 // ── Calculator logic ──────────────────────────────────────────────────────────

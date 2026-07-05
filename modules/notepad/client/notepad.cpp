@@ -11,7 +11,9 @@
 /// A file to open at startup may be passed after `--` on the command line,
 /// e.g. `wish client --run=notepad -- path/to/file` (see
 /// `wish_app_host::app_args()`).
-#include "app/wish_cli/client/apps/notepad.hpp"
+#include "modules/notepad/client/notepad.hpp"
+
+#include "app/wish_cli/client/apps/app_registry.hpp"
 #include "app/wish_cli/client/wish_app_host.hpp"
 
 #include "src/bison/bison.hpp"
@@ -221,5 +223,12 @@ void run_notepad(wish_app_host& s) {
 
   // on_session() blocks until signal_done() is called.
 }
+
+namespace {
+struct notepad_app_registrar {
+  notepad_app_registrar() { register_app("notepad", run_notepad); }
+};
+const notepad_app_registrar notepad_app_registrar_instance;
+} // namespace
 
 } // namespace bdg::wish

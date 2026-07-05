@@ -8,9 +8,11 @@
 /// machine the client is running on) and periodically pushes a fresh
 /// snapshot into the form via its `update_snapshot` RMI method, mirroring
 /// how Notepad's reference client owns upload_file/download_file while the
-/// server only manages tabs (see app/wish_cli/client/apps/notepad.cpp).
-#include "app/wish_cli/client/apps/process_explorer/process_explorer.hpp"
-#include "app/wish_cli/client/apps/process_explorer/process_info.hpp"
+/// server only manages tabs (see modules/notepad/client/notepad.cpp).
+#include "modules/process_explorer/client/process_explorer.hpp"
+#include "modules/process_explorer/client/process_info.hpp"
+
+#include "app/wish_cli/client/apps/app_registry.hpp"
 #include "app/wish_cli/client/wish_app_host.hpp"
 
 #include "src/bison/bison.hpp"
@@ -84,5 +86,14 @@ void run_process_explorer(wish_app_host& s) {
     }
   }).detach();
 }
+
+namespace {
+struct process_explorer_app_registrar {
+  process_explorer_app_registrar() {
+    register_app("process_explorer", run_process_explorer);
+  }
+};
+const process_explorer_app_registrar process_explorer_app_registrar_instance;
+} // namespace
 
 } // namespace bdg::wish

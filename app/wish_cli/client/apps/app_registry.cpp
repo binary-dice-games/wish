@@ -3,19 +3,21 @@
 /// @brief Name -> runner lookup for embedded apps.
 #include "app/wish_cli/client/apps/app_registry.hpp"
 
-#include "app/wish_cli/client/apps/calculator.hpp"
-#include "app/wish_cli/client/apps/notepad.hpp"
-#include "app/wish_cli/client/apps/process_explorer/process_explorer.hpp"
-
 namespace bdg::wish {
 
-const std::map<std::string, AppFn>& registered_apps() {
-  static const std::map<std::string, AppFn> apps = {
-      {"calculator", run_calculator},
-      {"notepad", run_notepad},
-      {"process_explorer", run_process_explorer},
-  };
+namespace {
+std::map<std::string, AppFn>& app_map() {
+  static std::map<std::string, AppFn> apps;
   return apps;
+}
+} // namespace
+
+void register_app(const std::string& name, AppFn fn) {
+  app_map().emplace(name, std::move(fn));
+}
+
+const std::map<std::string, AppFn>& registered_apps() {
+  return app_map();
 }
 
 } // namespace bdg::wish
