@@ -114,53 +114,37 @@ void calculator::on_init() {
     display_ptr_ = e;
   });
 
-  tree.with("row0.c", [&](const auto& e) { btn_c_ = wish_id_of(e); });
-  tree.with("row0.div", [&](const auto& e) { btn_div_ = wish_id_of(e); });
-  tree.with("row0.mul", [&](const auto& e) { btn_mul_ = wish_id_of(e); });
-  tree.with("row0.bsp", [&](const auto& e) { btn_bsp_ = wish_id_of(e); });
-
-  tree.with("row1.n7", [&](const auto& e) { btn_n7_ = wish_id_of(e); });
-  tree.with("row1.n8", [&](const auto& e) { btn_n8_ = wish_id_of(e); });
-  tree.with("row1.n9", [&](const auto& e) { btn_n9_ = wish_id_of(e); });
-  tree.with("row1.sub", [&](const auto& e) { btn_sub_ = wish_id_of(e); });
-
-  tree.with("row2.n4", [&](const auto& e) { btn_n4_ = wish_id_of(e); });
-  tree.with("row2.n5", [&](const auto& e) { btn_n5_ = wish_id_of(e); });
-  tree.with("row2.n6", [&](const auto& e) { btn_n6_ = wish_id_of(e); });
-  tree.with("row2.add", [&](const auto& e) { btn_add_ = wish_id_of(e); });
-
-  tree.with("row3.n1", [&](const auto& e) { btn_n1_ = wish_id_of(e); });
-  tree.with("row3.n2", [&](const auto& e) { btn_n2_ = wish_id_of(e); });
-  tree.with("row3.n3", [&](const auto& e) { btn_n3_ = wish_id_of(e); });
-  tree.with("row3.eq", [&](const auto& e) { btn_eq_ = wish_id_of(e); });
-
-  tree.with("row4.n0", [&](const auto& e) { btn_n0_ = wish_id_of(e); });
-  tree.with("row4.dot", [&](const auto& e) { btn_dot_ = wish_id_of(e); });
-  tree.with("row4.pm", [&](const auto& e) { btn_pm_ = wish_id_of(e); });
-  tree.with("row4.pct", [&](const auto& e) { btn_pct_ = wish_id_of(e); });
-
-  button_handlers_ = {
-      {btn_c_, [this] { handle_clear(); }},
-      {btn_div_, [this] { handle_operator('/'); }},
-      {btn_mul_, [this] { handle_operator('*'); }},
-      {btn_bsp_, [this] { handle_backspace(); }},
-      {btn_n7_, [this] { handle_digit("7"); }},
-      {btn_n8_, [this] { handle_digit("8"); }},
-      {btn_n9_, [this] { handle_digit("9"); }},
-      {btn_sub_, [this] { handle_operator('-'); }},
-      {btn_n4_, [this] { handle_digit("4"); }},
-      {btn_n5_, [this] { handle_digit("5"); }},
-      {btn_n6_, [this] { handle_digit("6"); }},
-      {btn_add_, [this] { handle_operator('+'); }},
-      {btn_n1_, [this] { handle_digit("1"); }},
-      {btn_n2_, [this] { handle_digit("2"); }},
-      {btn_n3_, [this] { handle_digit("3"); }},
-      {btn_eq_, [this] { handle_equals(); }},
-      {btn_n0_, [this] { handle_digit("0"); }},
-      {btn_dot_, [this] { handle_dot(); }},
-      {btn_pm_, [this] { handle_negate(); }},
-      {btn_pct_, [this] { handle_percent(); }},
+  // Look up a button by its dot-path, cache its ID in id_out, and register
+  // its click handler in button_handlers_.
+  auto bind_button = [&](const std::string& path, key_t& id_out, std::function<void()> handler) {
+    tree.with(path, [&](const auto& e) { id_out = wish_id_of(e); });
+    button_handlers_[id_out] = std::move(handler);
   };
+
+  bind_button("row0.c", btn_c_, [this] { handle_clear(); });
+  bind_button("row0.div", btn_div_, [this] { handle_operator('/'); });
+  bind_button("row0.mul", btn_mul_, [this] { handle_operator('*'); });
+  bind_button("row0.bsp", btn_bsp_, [this] { handle_backspace(); });
+
+  bind_button("row1.n7", btn_n7_, [this] { handle_digit("7"); });
+  bind_button("row1.n8", btn_n8_, [this] { handle_digit("8"); });
+  bind_button("row1.n9", btn_n9_, [this] { handle_digit("9"); });
+  bind_button("row1.sub", btn_sub_, [this] { handle_operator('-'); });
+
+  bind_button("row2.n4", btn_n4_, [this] { handle_digit("4"); });
+  bind_button("row2.n5", btn_n5_, [this] { handle_digit("5"); });
+  bind_button("row2.n6", btn_n6_, [this] { handle_digit("6"); });
+  bind_button("row2.add", btn_add_, [this] { handle_operator('+'); });
+
+  bind_button("row3.n1", btn_n1_, [this] { handle_digit("1"); });
+  bind_button("row3.n2", btn_n2_, [this] { handle_digit("2"); });
+  bind_button("row3.n3", btn_n3_, [this] { handle_digit("3"); });
+  bind_button("row3.eq", btn_eq_, [this] { handle_equals(); });
+
+  bind_button("row4.n0", btn_n0_, [this] { handle_digit("0"); });
+  bind_button("row4.dot", btn_dot_, [this] { handle_dot(); });
+  bind_button("row4.pm", btn_pm_, [this] { handle_negate(); });
+  bind_button("row4.pct", btn_pct_, [this] { handle_percent(); });
 
   sess().objects.merge(std::move(tree), internal_root_key_);
 }
