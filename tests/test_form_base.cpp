@@ -10,6 +10,9 @@
 #include "src/rmi/rmi.hpp"
 #include "src/rmi/server/context.hpp"
 
+#include <functional>
+#include <memory>
+
 using namespace bdg::bison;
 namespace bison = bdg::bison;
 namespace wish = bdg::wish;
@@ -138,12 +141,15 @@ TEST(FormBase, InitStoresSessionReference) {
 }
 
 // ── emit() ────────────────────────────────────────────────────────────────────
+//
+// form::emit() defers delivery via enqueue_event()/pending_events instead of
+// invoking session::emit_event directly -- the same contract every widget
+// event producer follows (see session.hpp's doc comment on emit_event). It
+// never calls emit_event itself; the render loop is what drains
+// pending_events and invokes it, after releasing the session lock.
 
 TEST(FormBase, EmitForwardsEventToSession) {
   auto f = std::make_shared<stub_form>(dynamic{});
-
-  bison::key_t captured_id{};
-  bison::key_t captured_event{};
 
   rmi::context ctx;
   // Place the form in ctx.objects so emit() can discover its ID.
@@ -153,24 +159,20 @@ TEST(FormBase, EmitForwardsEventToSession) {
   auto sync_sess = std::make_shared<wish::sync_session>(std::in_place, "form_emit"_key);
   {
     auto lk = sync_sess->wlock();
-    lk->emit_event = [&](bison::key_t oid, bison::key_t evt, dynamic) {
-      captured_id = oid;
-      captured_event = evt;
-    };
     wish::detail::current_session = &(*lk);
     f->init(ctx, sync_sess);
     wish::detail::current_session = nullptr;
   }
   f->test_emit("on_test"_key);
 
-  EXPECT_EQ(captured_id.id, form_id.id);
-  EXPECT_EQ(captured_event.id, "on_test"_key.id);
+  auto lk = sync_sess->rlock();
+  ASSERT_EQ(lk->pending_events.size(), 1u);
+  EXPECT_EQ(lk->pending_events[0].id.id, form_id.id);
+  EXPECT_EQ(lk->pending_events[0].event_name.id, "on_test"_key.id);
 }
 
 TEST(FormBase, EmitWithPayloadForwardsPayload) {
   auto f = std::make_shared<stub_form>(dynamic{});
-
-  dynamic captured_payload;
 
   rmi::context ctx;
   bison::key_t form_id{"stub_payload_id"_key};
@@ -179,7 +181,6 @@ TEST(FormBase, EmitWithPayloadForwardsPayload) {
   auto sync_sess = std::make_shared<wish::sync_session>(std::in_place, "form_emit_payload"_key);
   {
     auto lk = sync_sess->wlock();
-    lk->emit_event = [&](bison::key_t, bison::key_t, dynamic p) { captured_payload = std::move(p); };
     wish::detail::current_session = &(*lk);
     f->init(ctx, sync_sess);
     wish::detail::current_session = nullptr;
@@ -189,7 +190,9 @@ TEST(FormBase, EmitWithPayloadForwardsPayload) {
   payload["path"_key] = std::string{"foo.txt"};
   f->test_emit("on_open"_key, std::move(payload));
 
-  EXPECT_EQ(captured_payload.as<std::string>("path"_key), "foo.txt");
+  auto lk = sync_sess->rlock();
+  ASSERT_EQ(lk->pending_events.size(), 1u);
+  EXPECT_EQ(lk->pending_events[0].payload.as<std::string>("path"_key), "foo.txt");
 }
 
 TEST(FormBase, EmitBeforeInitDoesNothing) {
@@ -197,7 +200,7 @@ TEST(FormBase, EmitBeforeInitDoesNothing) {
   EXPECT_NO_THROW(f.test_emit("on_test"_key));
 }
 
-TEST(FormBase, EmitWithNullEmitEventDoesNothing) {
+TEST(FormBase, EmitWithNullEmitEventStillEnqueues) {
   auto f = std::make_shared<stub_form>(dynamic{});
 
   rmi::context ctx;
@@ -214,6 +217,95 @@ TEST(FormBase, EmitWithNullEmitEventDoesNothing) {
   }
 
   EXPECT_NO_THROW(f->test_emit("on_test"_key));
+
+  // emit() always enqueues regardless of whether emit_event is set -- the
+  // null-check happens later, at drain time (see the render loop).
+  auto lk = sync_sess->rlock();
+  EXPECT_EQ(lk->pending_events.size(), 1u);
+}
+
+// Regression: form::emit() must never invoke emit_event directly. In
+// standalone mode emit_event invokes the registered onEvent handler
+// synchronously and in-process (unlike server mode, where it just enqueues a
+// network send), so a handler that calls back into another RMI operation
+// would deadlock against whatever lock emit() held while calling it inline.
+// This reproduced as a real hang in `wish standalone --run=notepad` (clicking
+// "Open" deadlocked). Verified here by confirming emit_event is simply never
+// called by emit() -- it only shows up afterward in pending_events.
+TEST(FormBase, EmitOutsideDispatchNeverInvokesEmitEventDirectly) {
+  auto f = std::make_shared<stub_form>(dynamic{});
+
+  rmi::context ctx;
+  bison::key_t form_id{"reentrant_emit_id"_key};
+  ctx.objects[form_id.id] = f;
+
+  auto sync_sess = std::make_shared<wish::sync_session>(std::in_place, "form_reentrant_emit"_key);
+  bool emit_event_called = false;
+  {
+    auto lk = sync_sess->wlock();
+    lk->emit_event = [&emit_event_called](bison::key_t, bison::key_t, dynamic) { emit_event_called = true; };
+    wish::detail::current_session = &(*lk);
+    f->init(ctx, sync_sess);
+    wish::detail::current_session = nullptr;
+  }
+
+  f->test_emit("on_test"_key);
+
+  EXPECT_FALSE(emit_event_called);
+
+  auto lk = sync_sess->rlock();
+  ASSERT_EQ(lk->pending_events.size(), 1u);
+  EXPECT_EQ(lk->pending_events[0].id.id, form_id.id);
+  EXPECT_EQ(lk->pending_events[0].event_name.id, "on_test"_key.id);
+}
+
+// Documents the full two-step contract: emit() enqueues (tested above), and
+// draining pending_events -- exactly as server::render_loop() /
+// standalone::render_loop() do -- is what actually invokes emit_event.
+TEST(FormBase, DrainingPendingEventsInvokesEmitEventWithCorrectData) {
+  auto f = std::make_shared<stub_form>(dynamic{});
+
+  rmi::context ctx;
+  bison::key_t form_id{"drain_emit_id"_key};
+  ctx.objects[form_id.id] = f;
+
+  bison::key_t captured_id{};
+  bison::key_t captured_event{};
+  dynamic captured_payload;
+
+  auto sync_sess = std::make_shared<wish::sync_session>(std::in_place, "form_drain_emit"_key);
+  {
+    auto lk = sync_sess->wlock();
+    lk->emit_event = [&](bison::key_t oid, bison::key_t evt, dynamic p) {
+      captured_id = oid;
+      captured_event = evt;
+      captured_payload = std::move(p);
+    };
+    wish::detail::current_session = &(*lk);
+    f->init(ctx, sync_sess);
+    wish::detail::current_session = nullptr;
+  }
+
+  dynamic payload;
+  payload["path"_key] = std::string{"foo.txt"};
+  f->test_emit("on_open"_key, std::move(payload));
+
+  // Mirror the render loop: move pending_events out under the wlock, then
+  // deliver them with no lock held.
+  std::vector<wish::session::pending_event> events;
+  std::function<void(bison::key_t, bison::key_t, dynamic)> emit_event;
+  {
+    auto lk = sync_sess->wlock();
+    events = std::move(lk->pending_events);
+    emit_event = lk->emit_event;
+  }
+  for (auto& ev : events)
+    if (emit_event)
+      emit_event(ev.id, ev.event_name, ev.payload);
+
+  EXPECT_EQ(captured_id.id, form_id.id);
+  EXPECT_EQ(captured_event.id, "on_open"_key.id);
+  EXPECT_EQ(captured_payload.as<std::string>("path"_key), "foo.txt");
 }
 
 // ── Server injection ──────────────────────────────────────────────────────────

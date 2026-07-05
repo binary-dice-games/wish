@@ -10,9 +10,11 @@
 #include "src/rmi/rmi.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <memory>
 #include <optional>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -449,6 +451,13 @@ TEST_F(ProcessExplorerSnapshotTest, WindowClosedEmitsClosedAndCleansUp) {
   auto h = srv_->last_session->top_level_handlers.find(root_);
   ASSERT_NE(h, srv_->last_session->top_level_handlers.end());
   h->second->on_event(win_id, "closed"_key, dynamic{});
+
+  // form::emit() defers delivery to the render loop's next frame (see
+  // session.hpp's contract on emit_event), so spin briefly for it, same
+  // idiom as test_integration.cpp's event round-trip test.
+  auto t0 = std::chrono::steady_clock::now();
+  while (!got_closed && std::chrono::steady_clock::now() - t0 < std::chrono::seconds(2))
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
 
   EXPECT_TRUE(got_closed);
   EXPECT_EQ(srv_->last_session->objects.count(root_), 0u);

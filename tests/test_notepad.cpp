@@ -10,10 +10,12 @@
 #include "src/rmi/rmi.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <fstream>
 #include <mutex>
 #include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 using namespace bdg::bison;
@@ -244,6 +246,18 @@ class NotepadFilesTest : public ::testing::Test {
     return false;
   }
 
+  // form::emit() defers delivery to the render loop's next frame (see
+  // session.hpp's contract on emit_event), so a form-level event is not
+  // necessarily captured yet the instant a simulate_*/open_file() call
+  // returns. Spin briefly for it, same idiom as test_integration.cpp's event
+  // round-trip test.
+  bool wait_for_event(bison::key_t name, std::chrono::milliseconds timeout = std::chrono::milliseconds(2000)) const {
+    auto t0 = std::chrono::steady_clock::now();
+    while (!has_event(name) && std::chrono::steady_clock::now() - t0 < timeout)
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    return has_event(name);
+  }
+
   std::vector<CapturedEvent> events_of(bison::key_t name) const {
     std::vector<CapturedEvent> result;
     for (auto& e : *events_)
@@ -299,6 +313,7 @@ TEST_F(NotepadFilesTest, OpenFileEmitsOnFileOpened) {
   seed_sandbox_file("notes.txt", "hello");
   open_file("notes.txt", "notes.txt");
 
+  ASSERT_TRUE(wait_for_event("on_file_opened"_key));
   auto evts = events_of("on_file_opened"_key);
   ASSERT_EQ(evts.size(), 1u);
   EXPECT_EQ(evts[0].payload.as<std::string>("path"_key), "notes.txt");
@@ -323,7 +338,7 @@ TEST_F(NotepadFilesTest, OpenSecondFileAddsSecondTab) {
 TEST_F(NotepadFilesTest, PathTraversalEmitsOnErrorAndNoTab) {
   open_file("../escape.txt");
   EXPECT_EQ(tab_count(), 0u);
-  EXPECT_TRUE(has_event("on_error"_key));
+  EXPECT_TRUE(wait_for_event("on_error"_key));
   EXPECT_FALSE(has_event("on_file_opened"_key));
 }
 
@@ -335,6 +350,7 @@ TEST_F(NotepadFilesTest, TabClosedEmitsOnFileClosedAndRemovesTab) {
   simulate_tab_closed(0);
 
   EXPECT_EQ(tab_count(), 0u);
+  ASSERT_TRUE(wait_for_event("on_file_closed"_key));
   auto evts = events_of("on_file_closed"_key);
   ASSERT_EQ(evts.size(), 1u);
   EXPECT_EQ(evts[0].payload.as<std::string>("path"_key), "a.txt");
@@ -348,6 +364,7 @@ TEST_F(NotepadFilesTest, SyncClickedEmitsAllOpenPaths) {
 
   simulate_btn_click("btn_sync");
 
+  ASSERT_TRUE(wait_for_event("on_sync_requested"_key));
   auto evts = events_of("on_sync_requested"_key);
   ASSERT_EQ(evts.size(), 1u);
   auto* paths_f = evts[0].payload.findField<dynamic_ptr>("paths"_key);
@@ -365,12 +382,12 @@ TEST_F(NotepadFilesTest, SyncClickedEmitsAllOpenPaths) {
 
 TEST_F(NotepadFilesTest, OpenButtonClickedEmitsOnRequestOpen) {
   simulate_btn_click("btn_open");
-  EXPECT_TRUE(has_event("on_request_open"_key));
+  EXPECT_TRUE(wait_for_event("on_request_open"_key));
 }
 
 TEST_F(NotepadFilesTest, NewButtonClickedEmitsOnRequestNew) {
   simulate_btn_click("btn_new");
-  EXPECT_TRUE(has_event("on_request_new"_key));
+  EXPECT_TRUE(wait_for_event("on_request_new"_key));
 }
 
 TEST_F(NotepadFilesTest, WindowClosedFlushesEveryOpenFileThenCloses) {
@@ -381,6 +398,10 @@ TEST_F(NotepadFilesTest, WindowClosedFlushesEveryOpenFileThenCloses) {
 
   simulate_window_closed();
 
+  // Waiting for "closed" (enqueued last, delivered in the same FIFO order)
+  // guarantees the earlier on_file_closed events have arrived too.
+  ASSERT_TRUE(wait_for_event("closed"_key));
+
   auto closed_evts = events_of("on_file_closed"_key);
   EXPECT_EQ(closed_evts.size(), 2u);
   std::vector<std::string> paths;
@@ -388,8 +409,6 @@ TEST_F(NotepadFilesTest, WindowClosedFlushesEveryOpenFileThenCloses) {
     paths.push_back(e.payload.as<std::string>("path"_key));
   EXPECT_NE(std::find(paths.begin(), paths.end(), "a.txt"), paths.end());
   EXPECT_NE(std::find(paths.begin(), paths.end(), "b.txt"), paths.end());
-
-  EXPECT_TRUE(has_event("closed"_key));
 
   // "closed" must fire after every on_file_closed, matching the documented
   // "flush before teardown" contract.

@@ -74,13 +74,11 @@ void form::emit(bison::key_t event_name, bison::dynamic payload) {
 
   if (detail::current_session) {
     // Within dispatch: wlock already held.
-    auto& s = *detail::current_session;
-    if (s.emit_event)
-      s.emit_event(own_id_, event_name, std::move(payload));
+    enqueue_event(*detail::current_session, own_id_, event_name, std::move(payload));
   } else {
-    auto lock = sync_sess_->rlock();
-    if (lock->emit_event)
-      lock->emit_event(own_id_, event_name, std::move(payload));
+    // Outside dispatch: acquire the wlock ourselves.
+    auto lock = sync_sess_->wlock();
+    enqueue_event(*lock, own_id_, event_name, std::move(payload));
   }
 }
 

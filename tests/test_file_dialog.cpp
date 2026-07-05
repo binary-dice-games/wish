@@ -9,8 +9,10 @@
 #include "src/bison/bison_object.hpp"
 #include "src/rmi/rmi.hpp"
 
+#include <chrono>
 #include <mutex>
 #include <string>
+#include <thread>
 
 using namespace bdg::bison;
 namespace bison = bdg::bison;
@@ -496,6 +498,17 @@ class FileDialogEventsTest : public ::testing::Test {
     return false;
   }
 
+  // form::emit() defers delivery to the render loop's next frame (see
+  // session.hpp's contract on emit_event), so a form-level event is not
+  // necessarily captured yet the instant simulate_*() returns. Spin briefly
+  // for it, same idiom as test_integration.cpp's event round-trip test.
+  bool wait_for_event(bison::key_t name, std::chrono::milliseconds timeout = std::chrono::milliseconds(2000)) const {
+    auto t0 = std::chrono::steady_clock::now();
+    while (!has_event(name) && std::chrono::steady_clock::now() - t0 < timeout)
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    return has_event(name);
+  }
+
   const CapturedEvent* find_event(bison::key_t name) const {
     for (auto& e : *events_)
       if (e.name.id == name.id)
@@ -515,14 +528,14 @@ TEST_F(FileDialogEventsTest, BtnOpenEmitsOnOpen) {
   set_files(make_files({{"report.pdf", "file"}}));
   set_filename("report.pdf");
   simulate_btn_click("btn_open");
-  ASSERT_TRUE(has_event("on_open"_key));
+  ASSERT_TRUE(wait_for_event("on_open"_key));
   auto* ev = find_event("on_open"_key);
   EXPECT_EQ(ev->payload.as<std::string>("path"_key), "report.pdf");
 }
 
 TEST_F(FileDialogEventsTest, BtnCancelEmitsOnCancelAndRemovesWindow) {
   simulate_btn_click("btn_cancel");
-  EXPECT_TRUE(has_event("on_cancel"_key));
+  EXPECT_TRUE(wait_for_event("on_cancel"_key));
   // Internal Window must be removed from session.objects.
   EXPECT_TRUE(find_form_root(srv_->last_session->objects).empty());
 }
@@ -530,7 +543,7 @@ TEST_F(FileDialogEventsTest, BtnCancelEmitsOnCancelAndRemovesWindow) {
 TEST_F(FileDialogEventsTest, RowActivatedDirEmitsOnNavigate) {
   set_files(make_files({{"docs", "dir"}, {"readme.txt", "file"}}));
   simulate_row_activated(0);
-  ASSERT_TRUE(has_event("on_navigate"_key));
+  ASSERT_TRUE(wait_for_event("on_navigate"_key));
   auto* ev = find_event("on_navigate"_key);
   EXPECT_EQ(ev->payload.as<std::string>("name"_key), "docs");
   EXPECT_EQ(ev->payload.as<std::string>("type"_key), "dir");
@@ -539,7 +552,7 @@ TEST_F(FileDialogEventsTest, RowActivatedDirEmitsOnNavigate) {
 TEST_F(FileDialogEventsTest, RowActivatedFileEmitsOnOpen) {
   set_files(make_files({{"docs", "dir"}, {"readme.txt", "file"}}));
   simulate_row_activated(1);
-  ASSERT_TRUE(has_event("on_open"_key));
+  ASSERT_TRUE(wait_for_event("on_open"_key));
   auto* ev = find_event("on_open"_key);
   EXPECT_EQ(ev->payload.as<std::string>("path"_key), "readme.txt");
 }
@@ -559,7 +572,7 @@ TEST_F(FileDialogEventsTest, AbsolutePathRejectedWhenNotAllowed) {
 
 TEST_F(FileDialogEventsTest, PathInputChangedEmitsOnNavigateWithTypePath) {
   simulate_path_input_changed("/home/user/docs");
-  ASSERT_TRUE(has_event("on_navigate"_key));
+  ASSERT_TRUE(wait_for_event("on_navigate"_key));
   auto* ev = find_event("on_navigate"_key);
   EXPECT_EQ(ev->payload.as<std::string>("name"_key), "/home/user/docs");
   EXPECT_EQ(ev->payload.as<std::string>("type"_key), "path");
