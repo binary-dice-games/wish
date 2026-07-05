@@ -90,7 +90,12 @@ void run_process_explorer(wish_app_host& s) {
 namespace {
 struct process_explorer_app_registrar {
   process_explorer_app_registrar() {
-    register_app("process_explorer", run_process_explorer);
+    register_app({
+        .name = "process_explorer",
+        .description = "top/htop-style system monitor; client samples CPU/memory/processes, server only renders",
+        .params = {},
+        .run = run_process_explorer,
+    });
   }
 };
 const process_explorer_app_registrar process_explorer_app_registrar_instance;

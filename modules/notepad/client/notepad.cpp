@@ -226,7 +226,14 @@ void run_notepad(wish_app_host& s) {
 
 namespace {
 struct notepad_app_registrar {
-  notepad_app_registrar() { register_app("notepad", run_notepad); }
+  notepad_app_registrar() {
+    register_app({
+        .name = "notepad",
+        .description = "Multi-file, syntax-highlighted text editor",
+        .params = {{"file", "Path to a file to open at startup (optional)"}},
+        .run = run_notepad,
+    });
+  }
 };
 const notepad_app_registrar notepad_app_registrar_instance;
 } // namespace

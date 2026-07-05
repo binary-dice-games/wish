@@ -62,6 +62,7 @@ dockspace, menu bar, and session restart logic are unchanged.
 | Flag | Description |
 |------|-------------|
 | `--list` | Print available apps and exit |
+| `--describe=<name>` | Print an app's name, description, and parameters and exit |
 | `--run=<name>` | Launch named app (e.g. `calculator`) |
 | `--timeout=<ms>` | Connection timeout in milliseconds (default: 30000) |
 

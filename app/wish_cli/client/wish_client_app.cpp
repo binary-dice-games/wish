@@ -28,6 +28,7 @@ DECLARE_string(name);
 // ── Client-mode flags ─────────────────────────────────────────────────────────
 DEFINE_bool(list, false, "List available embedded applications and exit");
 DEFINE_string(run, "", "Name of the embedded application to run");
+DEFINE_string(describe, "", "Print name, description, and parameters for a specific embedded application and exit");
 DEFINE_int32(timeout, 30000, "Connection timeout in milliseconds");
 
 namespace bdg::wish {
@@ -58,7 +59,7 @@ void wish_client_session::on_session() {
   if (it == apps.end())
     throw std::runtime_error("unknown app: " + app_name_);
 
-  it->second(*this); // set up proxies and event handlers
+  it->second.run(*this); // set up proxies and event handlers
   done_future_.wait(); // block until signal_done() fires
 }
 
@@ -74,6 +75,17 @@ int run_client_mode(int argc, char** argv) {
     std::cout << "Available applications:\n";
     for (const auto& [name, _] : registered_apps())
       std::cout << "  " << name << '\n';
+    return 0;
+  }
+
+  if (!FLAGS_describe.empty()) {
+    const auto& apps = registered_apps();
+    auto it = apps.find(FLAGS_describe);
+    if (it == apps.end()) {
+      std::cerr << "[wish client] unknown app '" << FLAGS_describe << "'. Use --list to see available apps.\n";
+      return 1;
+    }
+    describe_app(it->second, std::cout);
     return 0;
   }
 

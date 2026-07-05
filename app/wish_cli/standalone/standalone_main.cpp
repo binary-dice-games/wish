@@ -22,6 +22,7 @@ DEFINE_int32(height, 720, "Window height in pixels");
 
 DEFINE_bool(list, false, "List available embedded applications and exit");
 DEFINE_string(run, "", "Name of the embedded application to run");
+DEFINE_string(describe, "", "Print name, description, and parameters for a specific embedded application and exit");
 
 int main(int argc, char** argv) {
   gflags::SetUsageMessage("wish-standalone - in-process wish server+client, no transport");

@@ -29,6 +29,7 @@ DECLARE_int32(height);
 
 DECLARE_bool(list);
 DECLARE_string(run);
+DECLARE_string(describe);
 
 namespace bdg::wish {
 
@@ -86,6 +87,17 @@ int run_standalone_mode(int argc, char** argv) {
     return 0;
   }
 
+  if (!FLAGS_describe.empty()) {
+    const auto& apps = registered_apps();
+    auto it = apps.find(FLAGS_describe);
+    if (it == apps.end()) {
+      std::cerr << "[wish standalone] unknown app '" << FLAGS_describe << "'. Use --list to see available apps.\n";
+      return 1;
+    }
+    describe_app(it->second, std::cout);
+    return 0;
+  }
+
   if (FLAGS_run.empty()) {
     std::cerr << "[wish standalone] use --list to see apps or --run=<name> to launch one\n";
     return 1;
@@ -108,7 +120,7 @@ int run_standalone_mode(int argc, char** argv) {
     session.app_args_.assign(argv + 1, argv + argc);
     session.start();
 
-    it->second(session); // set up proxies and event handlers
+    it->second.run(session); // set up proxies and event handlers
 
     // Block until either the app signals completion (e.g. a "closed" event
     // handler calling signal_done()) or the user closes the SDL3 window.

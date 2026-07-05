@@ -27,7 +27,14 @@ void run_calculator(wish_app_host& s) {
 
 namespace {
 struct calculator_app_registrar {
-  calculator_app_registrar() { register_app("calculator", run_calculator); }
+  calculator_app_registrar() {
+    register_app({
+        .name = "calculator",
+        .description = "Four-function calculator; demonstrates self-contained form logic",
+        .params = {},
+        .run = run_calculator,
+    });
+  }
 };
 const calculator_app_registrar calculator_app_registrar_instance;
 } // namespace

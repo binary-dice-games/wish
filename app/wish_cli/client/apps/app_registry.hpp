@@ -8,7 +8,9 @@
 
 #include <functional>
 #include <map>
+#include <ostream>
 #include <string>
+#include <vector>
 
 namespace bdg::wish {
 
@@ -18,14 +20,35 @@ class wish_app_host;
 ///        returns (the caller blocks on session completion separately).
 using AppFn = std::function<void(wish_app_host&)>;
 
-/// @brief Registers an embedded app under `name`. Each optional module's
-///        client runner calls this from a static-initialized registrar
-///        object (see modules/calculator/client/calculator.cpp for the
-///        pattern) -- callers outside a module's own translation unit should
-///        not call this directly.
-void register_app(const std::string& name, AppFn fn);
+/// @brief Describes one positional parameter an app reads via
+///        `wish_app_host::app_args()` (the tokens following a literal `--`
+///        on the command line).
+struct app_param {
+  std::string name;
+  std::string description;
+};
 
-/// @brief Name -> runner table, populated by register_app().
-const std::map<std::string, AppFn>& registered_apps();
+/// @brief Full registration info for an embedded app, as reported by
+///        `--list` and `--describe=<name>`.
+struct app_info {
+  std::string name;
+  std::string description;
+  std::vector<app_param> params;
+  AppFn run;
+};
+
+/// @brief Registers an embedded app. Each optional module's client runner
+///        calls this from a static-initialized registrar object (see
+///        modules/calculator/client/calculator.cpp for the pattern) --
+///        callers outside a module's own translation unit should not call
+///        this directly.
+void register_app(app_info info);
+
+/// @brief Name -> registration info table, populated by register_app().
+const std::map<std::string, app_info>& registered_apps();
+
+/// @brief Prints `info`'s name, description, and parameters to `out`, for
+///        `--describe=<name>`.
+void describe_app(const app_info& info, std::ostream& out);
 
 } // namespace bdg::wish
