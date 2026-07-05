@@ -5,7 +5,6 @@
 
 #include <file_service.hpp>
 #include <registry.hpp>
-#include <session_object_factory.hpp>
 #include <style_service.hpp>
 #include <ui_root.hpp>
 

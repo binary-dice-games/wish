@@ -6,7 +6,6 @@
 #include <logger.hpp>
 #include <registry.hpp>
 #include <server.hpp>
-#include <session_object_factory.hpp>
 #include <style_service.hpp>
 #include <ui_root.hpp>
 
