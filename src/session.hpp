@@ -83,7 +83,7 @@ struct session {
   /// server must render each frame.  Both template instantiations and form
   /// objects register here:
   ///
-  ///  - `template_handler::do_instantiate` adds the root at a unique key.
+  ///  - `ui_template::do_instantiate` adds the root at a unique key.
   ///  - `form::init()` adds the form's internal Window at `internal_root_key_`.
   ///  - `form::remove_internal_objects()` erases by that same key.
   ///
@@ -126,7 +126,7 @@ struct session {
 
   /// @brief Maps top-level key → event handler (`ui_element` or `form`).
   ///
-  /// Populated by `form::init()` and `template_handler` when they register a
+  /// Populated by `form::init()` and `ui_template` when they register a
   /// root window; cleared by `form::remove_internal_objects()` and template
   /// teardown.  The render loop snapshots this map before dispatching events.
   std::unordered_map<bison::key_t, ui_root*, bison::key_t, bison::key_t> top_level_handlers;
@@ -181,9 +181,9 @@ extern thread_local session* current_session;
 ///         session has no such service attached).
 bison::dynamic_ptr find_singleton_service(const session& s, bison::key_t klass);
 
-/// @brief Inject session context into a freshly created form/template_handler.
+/// @brief Inject session context into a freshly created form/ui_template.
 ///
-/// No-op if @p obj is null or not a `form`/`template_handler` instance.
+/// No-op if @p obj is null or not a `form`/`ui_template` instance.
 ///
 /// @param obj       Object returned by the base class's `on_create_object`.
 /// @param ctx       Per-session RMI context; must outlive @p obj.

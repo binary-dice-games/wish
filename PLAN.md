@@ -328,13 +328,13 @@ at `00f9203`; submodule updated). No other bison changes required.
 **Goal:** The server exposes `__WishTemplate` as the sole descriptor RMI object so the client's `register_template` and `instantiate_template` calls work end-to-end.
 
 **Deliverables:**
-- `src/template_handler.hpp` + `src/template_handler.cpp`:
+- `src/ui_template.hpp` + `src/ui_template.cpp`:
   - Registers `"__WishTemplate"_key` class in the `"wish"` namespace.
-  - Implemented as `template_handler : public bison::dynamic` (same pattern as `ui_element`): construct from `dynamic&&`, hold `ctx_` and `sess_` directly (no intermediate base class).
+  - Implemented as `ui_template : public bison::dynamic` (same pattern as `ui_element`): construct from `dynamic&&`, hold `ctx_` and `sess_` directly (no intermediate base class).
   - Contains the internal `apply_descriptor(ctx, sess, descriptor)` free function: auto-detects JSON/YAML, parses with `import_json`/`import_yaml`, registers elements in the session and RMI context, returns an indexed dynamic result.
   - Member methods `register(name, descriptor)` and `instantiate(name)` operate on `session.templates` and `session.objects` via `apply_descriptor`.
-  - `wish::server::on_create_object` injects context via `dynamic_cast<template_handler*>` and calls `init()` once per instance.
-- No `import_handler` or `wish_handler` files; the descriptor-parsing path lives entirely in `template_handler.cpp`.
+  - `wish::server::on_create_object` injects context via `dynamic_cast<ui_template*>` and calls `init()` once per instance.
+- No `import_handler` or `wish_handler` files; the descriptor-parsing path lives entirely in `ui_template.cpp`.
 
 **Tests** (`tests/test_handlers.cpp`) — use in-memory transport:
 - Client calls `register_template` then `instantiate_template` → server parses, returns map → client holds valid proxies.

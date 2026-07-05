@@ -11,7 +11,7 @@
 #include "forms/process_explorer.hpp"
 #include "plot3d_elements/plot3d_elements.hpp"
 #include "plot_elements/plot_elements.hpp"
-#include "template_handler.hpp"
+#include "ui_template.hpp"
 #include "ui_elements/ui_elements.hpp"
 #ifdef WISH_MODULE_DESKTOP
 #include "forms/desktop/desktop_module.hpp"
@@ -58,7 +58,7 @@ void register_all() {
   register_plot3d_mesh(); // Plot3DTriangle, Plot3DQuad, Plot3DMesh
   register_plot3d_annotations(); // Plot3DText
   // Protocol handler classes.
-  register_template_handler();
+  register_ui_template();
   register_file_service();
   register_style_service();
   register_logger();

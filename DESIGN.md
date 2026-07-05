@@ -192,7 +192,7 @@ using ui_element_ptr = std::shared_ptr<ui_element>;
 
 `ui_element_ptr` is stored in the `name_map` and in `session`. The underlying bison field system stores all dynamic children as `dynamic_ptr`; the shared ownership and virtual dispatch of `shared_ptr<ui_element>` is preserved by an implicit upcast at assignment time.
 
-This pattern â€” subclassing `bison::dynamic` to attach typed behaviour to a registered class â€” is the standard way wish components add logic to data objects. Future wish objects that carry non-trivial behaviour (e.g. `file_service`, `template_handler`) should follow the same approach.
+This pattern â€” subclassing `bison::dynamic` to attach typed behaviour to a registered class â€” is the standard way wish components add logic to data objects. Future wish objects that carry non-trivial behaviour (e.g. `file_service`, `ui_template`) should follow the same approach.
 
 ### `bdg::wish::ui_importer`
 
@@ -454,7 +454,7 @@ Visual updates (set a label text, change a slider value) do not need acknowledge
 **Typed `dynamic` subclasses for wish objects.**
 `bison::dynamic` is the data layer; wish adds behaviour by subclassing it. `ui_element : public bison::dynamic` is the canonical example: it is a fully-functional bison object (registered in the registry, stored in the field map, moved over RMI) while also owning wish-specific methods (`refresh_children_order`, `for_each_child_ordered`). This replaces the alternative of free functions that take a `dynamic&` parameter, which gives no type safety and scatters behaviour away from the data.
 
-The same pattern applies to any wish component that needs non-trivial logic on a registered bison class: `file_service` and `template_handler` each subclass `dynamic`, get constructed from a `dynamic&&` base (via `bison::dynamic::instantiate<T>()`), and expose their behaviour as member functions. `dynamic_cast<T*>` is the safe downcast path; bison's `forEachChild<T>` and `instantiate<T>` template helpers eliminate the boilerplate at call sites.
+The same pattern applies to any wish component that needs non-trivial logic on a registered bison class: `file_service` and `ui_template` each subclass `dynamic`, get constructed from a `dynamic&&` base (via `bison::dynamic::instantiate<T>()`), and expose their behaviour as member functions. `dynamic_cast<T*>` is the safe downcast path; bison's `forEachChild<T>` and `instantiate<T>` template helpers eliminate the boilerplate at call sites.
 
 **Layouts as first-class container nodes.**
 Layout behaviour (vertical vs. horizontal arrangement) belongs in the object tree rather than as a property on a generic container. This lets the renderer dispatch purely on `__class` — no conditional field checks — and lets the JSON/YAML descriptor express layout intent declaratively. It also allows arbitrary nesting: a `HorizontalLayout` row is itself a node whose children can be `VerticalLayout` columns, with no limit on depth.

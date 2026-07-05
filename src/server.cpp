@@ -9,7 +9,7 @@
 #include <style_service.hpp>
 #include <ui_root.hpp>
 
-#include "template_handler.hpp"
+#include "ui_template.hpp"
 
 #include <chrono>
 #include <iomanip>
@@ -126,7 +126,7 @@ bison::dynamic_ptr server::on_create_object(bison::rmi::context& ctx, bison::key
   }
 
   // For all other classes, bison creates the concrete type from the registered
-  // prototype.  Inject session context into template_handler and form instances.
+  // prototype.  Inject session context into ui_template and form instances.
   auto obj = bison::rmi::server::on_create_object(ctx, ns, klass);
   detail::init_session_object(obj, ctx, sync_sess);
   return obj;

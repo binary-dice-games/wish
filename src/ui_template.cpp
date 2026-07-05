@@ -1,7 +1,7 @@
 // MIT License © 2025 Binary Dice Games
-/// @file template_handler.cpp
+/// @file ui_template.cpp
 /// @brief Implementation of the server-side __WishTemplate RMI class.
-#include <template_handler.hpp>
+#include <ui_template.hpp>
 
 #include <ui_importer.hpp>
 #include <ui_root.hpp>
@@ -59,18 +59,18 @@ static bison::dynamic apply_descriptor(bison::rmi::context& ctx, session& sess, 
   return result;
 }
 
-// ── template_handler ─────────────────────────────────────────────────────────
+// ── ui_template ─────────────────────────────────────────────────────────
 
-template_handler::template_handler(bison::dynamic&& base) : dynamic(std::move(base)) {}
+ui_template::ui_template(bison::dynamic&& base) : dynamic(std::move(base)) {}
 
-bison::dynamic template_handler::do_register(const bison::dynamic& params) {
+bison::dynamic ui_template::do_register(const bison::dynamic& params) {
   bison::key_t name = params.as<bison::key_t>("name"_key);
   std::string descriptor = params.as<std::string>("descriptor"_key);
   sess().templates[name] = std::move(descriptor);
   return dynamic{};
 }
 
-bison::dynamic template_handler::do_instantiate(const bison::dynamic& params) {
+bison::dynamic ui_template::do_instantiate(const bison::dynamic& params) {
   bison::key_t name = params.as<bison::key_t>("name"_key);
   session& s = sess();
   auto it = s.templates.find(name);
@@ -80,7 +80,7 @@ bison::dynamic template_handler::do_instantiate(const bison::dynamic& params) {
   return apply_descriptor(*ctx_, s, it->second);
 }
 
-void register_template_handler() {
+void register_ui_template() {
   auto proto = bison::dynamic_ptr{"__WishTemplate"_key, {}};
 
   auto reg_in = std::make_shared<dynamic>();
@@ -89,7 +89,7 @@ void register_template_handler() {
   proto->addMethod(
       "register"_key,
       bison::method{
-          [](dynamic& s, const dynamic& p) -> dynamic { return static_cast<template_handler&>(s).do_register(p); },
+          [](dynamic& s, const dynamic& p) -> dynamic { return static_cast<ui_template&>(s).do_register(p); },
           dynamic_ptr{reg_in},
           nullptr,
           attr<DisplayName>("register")});
@@ -102,7 +102,7 @@ void register_template_handler() {
   proto->addMethod(
       "instantiate"_key,
       bison::method{
-          [](dynamic& s, const dynamic& p) -> dynamic { return static_cast<template_handler&>(s).do_instantiate(p); },
+          [](dynamic& s, const dynamic& p) -> dynamic { return static_cast<ui_template&>(s).do_instantiate(p); },
           dynamic_ptr{inst_in},
           dynamic_ptr{inst_out},
           attr<DisplayName>("instantiate")});
@@ -110,7 +110,7 @@ void register_template_handler() {
       "wish"_key,
       std::move(proto),
       key_t{0U},
-      bison::dynamic::make_factory<template_handler>("wish"_key, "__WishTemplate"_key));
+      bison::dynamic::make_factory<ui_template>("wish"_key, "__WishTemplate"_key));
 }
 
 } // namespace bdg::wish

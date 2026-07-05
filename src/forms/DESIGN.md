@@ -83,7 +83,7 @@ class form : public bison::dynamic {
 };
 ```
 
-`init()` is called from `server::on_create_object` via `dynamic_cast<form*>`, the same pattern used for `template_handler`. Every concrete form class must register itself in `registry.cpp` so the server knows the cast target.
+`init()` is called from `server::on_create_object` via `dynamic_cast<form*>`, the same pattern used for `ui_template`. Every concrete form class must register itself in `registry.cpp` so the server knows the cast target.
 
 ---
 
@@ -128,7 +128,7 @@ Each form declares its public API in three categories:
 
 Fields are the primary way the client feeds data into a form (e.g., a file list). Events are the primary output. Methods are for imperative control (e.g., `close()`, `focus()`).
 
-All fields, methods, and events must be registered on the **prototype** (not in the constructor) so that `build_display_dict()` and the bison dispatch chain see them. Follow the same registration pattern as `template_handler` and other wish classes (see `register_*` free functions in `src/`).
+All fields, methods, and events must be registered on the **prototype** (not in the constructor) so that `build_display_dict()` and the bison dispatch chain see them. Follow the same registration pattern as `ui_template` and other wish classes (see `register_*` free functions in `src/`).
 
 ---
 
@@ -378,11 +378,11 @@ The same rules that govern low-level wish elements apply to forms without except
 1. **Create `src/forms/<name>.hpp` and `src/forms/<name>.cpp`.**
    - Inherit from `form` (which inherits from `bison::dynamic`).
    - Override `on_init()` to build the internal UI tree and register prototype fields/events.
-   - Follow the RMI registration pattern in `template_handler.cpp`.
+   - Follow the RMI registration pattern in `ui_template.cpp`.
 
 2. **Register the class.** Add a `register_<name>()` free-function declaration in the header and its definition in the `.cpp`. Call it from `registry.cpp` (or from the module's registration function).
 
-3. **Inject context in `server::on_create_object`.** Add a `dynamic_cast<YourForm*>` branch alongside the existing `template_handler` branch.
+3. **Inject context in `server::on_create_object`.** Add a `dynamic_cast<YourForm*>` branch alongside the existing `ui_template` branch.
 
 4. **Declare the public API** (fields, methods, events) on the prototype in `register_<name>()`. Use `DisplayName` attributes so `build_display_dict()` resolves key hashes in logs.
 

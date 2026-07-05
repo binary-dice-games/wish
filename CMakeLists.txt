@@ -217,7 +217,7 @@ add_library(wish_server STATIC
   src/style_service.cpp
   src/server.cpp
   src/standalone.cpp
-  src/template_handler.cpp
+  src/ui_template.cpp
   src/ui_elements/element.cpp
   src/ui_elements/layout.cpp
   src/ui_elements/window.cpp

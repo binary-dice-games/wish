@@ -99,7 +99,7 @@ void file_dialog::on_init() {
       "vbox.btn_row.btn_open", [&](const auto& e) { e["label"_key] = confirm_f ? *confirm_f : std::string{"Open"}; });
 
   // Assign each imported element a bison RMI ID so the renderer can emit
-  // events with the correct object ID. Mirrors the template_handler pattern.
+  // events with the correct object ID. Mirrors the ui_template pattern.
   auto& objects = ctx().objects;
   for (auto& [key, elem] : tree) {
     key_t id = rmi::shared::generate_id();

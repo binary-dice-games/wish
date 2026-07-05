@@ -93,10 +93,10 @@ Read `DESIGN.md` in this directory before starting any step.
 
 ## Step 3 — Server context injection for forms
 
-**Goal:** `server::on_create_object` automatically injects session context into any `form` subclass, using the same `dynamic_cast` pattern already used for `template_handler`.
+**Goal:** `server::on_create_object` automatically injects session context into any `form` subclass, using the same `dynamic_cast` pattern already used for `ui_template`.
 
 **Deliverables:**
-- `src/server.cpp` — in `on_create_object`, after the existing `template_handler` branch, add:
+- `src/server.cpp` — in `on_create_object`, after the existing `ui_template` branch, add:
   ```cpp
   if (auto* f = dynamic_cast<form*>(obj.get())) {
     f->init(ctx, sess);

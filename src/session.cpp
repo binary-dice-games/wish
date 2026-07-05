@@ -18,7 +18,7 @@
 
 #include <forms/form.hpp>
 
-#include "template_handler.hpp"
+#include "ui_template.hpp"
 
 namespace bdg::wish {
 
@@ -43,7 +43,7 @@ bison::dynamic_ptr find_singleton_service(const session& s, bison::key_t klass) 
 void init_session_object(const bison::dynamic_ptr& obj, bison::rmi::context& ctx, const sync_session_ptr& sync_sess) {
   if (!obj || !sync_sess)
     return;
-  if (auto* h = dynamic_cast<template_handler*>(obj.get())) {
+  if (auto* h = dynamic_cast<ui_template*>(obj.get())) {
     h->init(ctx, sync_sess);
   } else if (auto* f = dynamic_cast<form*>(obj.get())) {
     f->init(ctx, sync_sess);

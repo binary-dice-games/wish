@@ -1,5 +1,5 @@
 // MIT License © 2025 Binary Dice Games
-/// @file template_handler.hpp
+/// @file ui_template.hpp
 /// @brief Server-side __WishTemplate RMI object for named UI templates.
 #pragma once
 
@@ -24,9 +24,9 @@ namespace bdg::wish {
  * `wish::server::on_create_object` calls `init()` once per instance to
  * supply the per-session context before the object is accessible via RMI.
  */
-class template_handler : public bison::dynamic {
+class ui_template : public bison::dynamic {
  public:
-  explicit template_handler(bison::dynamic&& base);
+  explicit ui_template(bison::dynamic&& base);
 
   /**
    * @brief Inject session context.
@@ -48,7 +48,7 @@ class template_handler : public bison::dynamic {
   /// @throws std::logic_error if called outside RMI dispatch.
   session& sess() {
     if (!detail::current_session)
-      throw std::logic_error("wish: template_handler method called outside RMI dispatch");
+      throw std::logic_error("wish: ui_template method called outside RMI dispatch");
     return *detail::current_session;
   }
 
@@ -57,7 +57,7 @@ class template_handler : public bison::dynamic {
   sync_session_ptr sync_sess_;
 };
 
-/// @brief Register `template_handler` as the `__WishTemplate` class prototype.
-void register_template_handler();
+/// @brief Register `ui_template` as the `__WishTemplate` class prototype.
+void register_ui_template();
 
 } // namespace bdg::wish
