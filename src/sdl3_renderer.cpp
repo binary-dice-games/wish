@@ -95,14 +95,19 @@ void sdl3_renderer::teardown() {
 
 // ── per-frame ─────────────────────────────────────────────────────────────────
 
-void sdl3_renderer::begin_frame() {
+bool sdl3_renderer::poll_events() {
+  bool activity = false;
   SDL_Event event;
   while (SDL_PollEvent(&event)) {
     ImGui_ImplSDL3_ProcessEvent(&event);
     if (event.type == SDL_EVENT_QUIT)
       quit_.store(true, std::memory_order_release);
+    activity = true;
   }
+  return activity || fonts_dirty_ || quit_.load(std::memory_order_acquire);
+}
 
+void sdl3_renderer::begin_frame() {
   if (fonts_dirty_)
     rebuild_font_atlas();
 

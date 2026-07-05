@@ -61,8 +61,12 @@ class sdl3_renderer : public imgui_renderer {
 
   // ── per-frame ─────────────────────────────────────────────────────────────
 
-  /// @brief Poll SDL events, call ImGui backend new-frame helpers, then
-  ///        forward to `imgui_renderer::begin_frame()` (ImGui::NewFrame).
+  /// @brief Drain pending SDL events into ImGui and report whether they (or
+  ///        a pending font atlas rebuild) require a frame to be drawn.
+  bool poll_events() override;
+
+  /// @brief Call ImGui backend new-frame helpers, then forward to
+  ///        `imgui_renderer::begin_frame()` (ImGui::NewFrame).
   void begin_frame() override;
 
   /// @brief Render ImGui draw data to the SDL renderer and present.

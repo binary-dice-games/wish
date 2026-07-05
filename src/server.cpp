@@ -157,6 +157,11 @@ void server::on_before_dispatch(bison::rmi::context& ctx) {
 }
 
 void server::on_after_dispatch(bison::rmi::context&) noexcept {
+  // Any dispatched RMI call may have mutated session state (properties,
+  // tree structure, style); flag the session so the render loop redraws it
+  // instead of skipping the next idle-check.
+  if (tl_dispatch_wlock)
+    (*tl_dispatch_wlock)->dirty.store(true, std::memory_order_release);
   detail::current_session = nullptr;
   tl_dispatch_wlock.reset();
 }
@@ -166,21 +171,45 @@ void server::render_loop() {
     renderer_->setup();
   while (running_.load(std::memory_order_acquire)) {
     if (renderer_) {
-      renderer_->begin_frame();
-      renderer_->render_server_frame();
+      // poll_events() must run every iteration regardless of whether a
+      // frame is drawn, so OS event queues are drained and window-close
+      // requests are never delayed by an idle skip below.
+      bool needs_render = renderer_->poll_events();
+
+      // Snapshot the set of sync_session pointers under a brief sessions_
+      // rlock; reused below both for the cheap dirty scan and (if needed)
+      // for rendering. This lets different sessions render without
+      // blocking each other and keeps sessions_ unblocked for session
+      // lifecycle operations.
+      std::vector<sync_session_ptr> sessions_snapshot;
       {
-        // Snapshot the set of sync_session pointers under a brief sessions_
-        // rlock, then render each session under its own per-session rlock.
-        // This lets different sessions render without blocking each other
-        // and keeps sessions_ unblocked for session lifecycle operations.
-        std::vector<sync_session_ptr> to_render;
-        {
-          auto lp = sessions_.rlock();
-          to_render.reserve(lp->size());
-          for (const auto& [id, sp] : *lp)
-            to_render.push_back(sp);
+        auto lp = sessions_.rlock();
+        sessions_snapshot.reserve(lp->size());
+        for (const auto& [id, sp] : *lp)
+          sessions_snapshot.push_back(sp);
+      }
+
+      if (!needs_render) {
+        for (const auto& sync_sess : sessions_snapshot) {
+          if (sync_sess->rlock()->dirty.load(std::memory_order_acquire)) {
+            needs_render = true;
+            break;
+          }
         }
-        for (const auto& sync_sess : to_render) {
+      }
+
+      if (renderer_->should_quit())
+        running_.store(false, std::memory_order_release);
+
+      // ImGui is immediate-mode: a session's windows only stay on screen if
+      // they are resubmitted every frame that gets presented. So we can't
+      // selectively skip one session — either the whole frame is drawn (all
+      // sessions resubmitted) or none of it is, leaving the previous
+      // presented frame on screen unchanged.
+      if (needs_render && running_.load(std::memory_order_acquire)) {
+        renderer_->begin_frame();
+        renderer_->render_server_frame();
+        for (const auto& sync_sess : sessions_snapshot) {
           std::vector<session::pending_event> events;
           std::unordered_map<bison::key_t, ui_root*, bison::key_t, bison::key_t> handlers;
           std::function<void(bison::key_t, bison::key_t, bison::dynamic)> client_emit;
@@ -198,6 +227,7 @@ void server::render_loop() {
             events = std::move(sess->pending_events);
             handlers = sess->top_level_handlers;
             client_emit = sess->emit_event;
+            sess->dirty.store(false, std::memory_order_release);
           }
           // Dispatch events with no lock held: handlers may modify session state.
           for (auto& ev : events) {
@@ -213,11 +243,17 @@ void server::render_loop() {
                 it->second->on_event(ev.id, ev.event_name, ev.payload);
             }
           }
+          // Handlers dispatched above may have mutated session state (e.g.
+          // added a widget in response to a click) without any further OS
+          // input arriving; force one more render so the change reaches the
+          // screen instead of being skipped as idle.
+          if (!events.empty())
+            sync_sess->wlock()->dirty.store(true, std::memory_order_release);
         }
+        renderer_->end_frame();
+        if (renderer_->should_quit())
+          running_.store(false, std::memory_order_release);
       }
-      renderer_->end_frame();
-      if (renderer_->should_quit())
-        running_.store(false, std::memory_order_release);
     }
     std::this_thread::sleep_for(std::chrono::milliseconds{5});
   }

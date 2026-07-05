@@ -59,9 +59,13 @@ struct session {
   /// non-fatal and does not throw.
   std::filesystem::path resource_dir;
 
-  /// Application-managed flag; `wish::server` does not read or write it.
-  /// Callers may use it for their own throttling or change-detection logic.
-  std::atomic<bool> dirty{false};
+  /// Set to `true` after any RMI dispatch touching this session and after
+  /// any top-level event handler runs, so the render loop knows the session
+  /// needs to be redrawn; cleared once the render loop has drawn it.
+  /// Application code may also set it directly to force a redraw after
+  /// mutating session state from outside RMI dispatch (e.g. a background
+  /// thread holding the session wlock directly).
+  std::atomic<bool> dirty{true};
 
   /// When `false` (default), widget file paths must be relative and are
   /// sandboxed inside `resource_dir`.  Set to `true` only for same-process

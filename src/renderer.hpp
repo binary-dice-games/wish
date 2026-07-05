@@ -47,6 +47,25 @@ class renderer {
     return false;
   }
 
+  /**
+   * @brief Poll platform/OS events for one render_loop iteration.
+   *
+   * Called every iteration of `wish::server::render_loop` /
+   * `wish::standalone::render_loop`, whether or not a full frame ends up
+   * being drawn, so OS event queues are always drained and window-close or
+   * resize events are never missed.
+   *
+   * @return `true` if the events observed (input, window activity, a
+   *         pending internal rebuild such as a font atlas reload, etc.)
+   *         mean a full frame should be drawn this iteration. The default
+   *         implementation — used by backends with no OS event loop, e.g.
+   *         `null_renderer` or headless test renderers — always returns
+   *         `true`, so those backends keep rendering every iteration.
+   */
+  virtual bool poll_events() {
+    return true;
+  }
+
   /// @brief Called once before any nodes are rendered in a frame.
   virtual void begin_frame() = 0;
 

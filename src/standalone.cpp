@@ -108,6 +108,11 @@ void standalone::on_before_dispatch(bison::rmi::context& /*ctx*/) {
 }
 
 void standalone::on_after_dispatch(bison::rmi::context& /*ctx*/) noexcept {
+  // Any dispatched RMI call may have mutated session state (properties,
+  // tree structure, style); flag the session so the render loop redraws it
+  // instead of skipping the next idle-check.
+  if (tl_standalone_dispatch_wlock)
+    (*tl_standalone_dispatch_wlock)->dirty.store(true, std::memory_order_release);
   detail::current_session = nullptr;
   tl_standalone_dispatch_wlock.reset();
 }
@@ -117,45 +122,64 @@ void standalone::render_loop() {
     renderer_->setup();
   while (running_.load(std::memory_order_acquire)) {
     if (renderer_) {
-      renderer_->begin_frame();
-      renderer_->render_server_frame();
-      if (session_) {
-        std::vector<session::pending_event> events;
-        std::unordered_map<bison::key_t, ui_root*, bison::key_t, bison::key_t> handlers;
-        std::function<void(bison::key_t, bison::key_t, bison::dynamic)> client_emit;
-        {
-          auto sess = session_->wlock();
-          detail::current_session = &*sess;
-          for (const auto& [key, win] : sess->top_level_objects) {
-            if (win) {
-              sess->current_top_level_key = key;
-              renderer_->render_session(*win, *sess);
-            }
-          }
-          sess->current_top_level_key = bison::key_t{};
-          detail::current_session = nullptr;
-          events = std::move(sess->pending_events);
-          handlers = sess->top_level_handlers;
-          client_emit = sess->emit_event;
-        }
-        // Dispatch events with no lock held: handlers may modify session state.
-        for (auto& ev : events) {
-          if (client_emit) {
-            try {
-              client_emit(ev.id, ev.event_name, ev.payload);
-            } catch (...) {
-            } // caller may have torn things down between render and dispatch
-          }
-          if (ev.root_key.id != 0) {
-            auto it = handlers.find(ev.root_key);
-            if (it != handlers.end() && it->second)
-              it->second->on_event(ev.id, ev.event_name, ev.payload);
-          }
-        }
-      }
-      renderer_->end_frame();
+      // poll_events() must run every iteration regardless of whether a
+      // frame is drawn, so OS event queues are drained and window-close
+      // requests are never delayed by an idle skip below.
+      bool needs_render = renderer_->poll_events();
+      if (!needs_render && session_)
+        needs_render = session_->rlock()->dirty.load(std::memory_order_acquire);
+
       if (renderer_->should_quit())
         running_.store(false, std::memory_order_release);
+
+      if (needs_render && running_.load(std::memory_order_acquire)) {
+        renderer_->begin_frame();
+        renderer_->render_server_frame();
+        if (session_) {
+          std::vector<session::pending_event> events;
+          std::unordered_map<bison::key_t, ui_root*, bison::key_t, bison::key_t> handlers;
+          std::function<void(bison::key_t, bison::key_t, bison::dynamic)> client_emit;
+          {
+            auto sess = session_->wlock();
+            detail::current_session = &*sess;
+            for (const auto& [key, win] : sess->top_level_objects) {
+              if (win) {
+                sess->current_top_level_key = key;
+                renderer_->render_session(*win, *sess);
+              }
+            }
+            sess->current_top_level_key = bison::key_t{};
+            detail::current_session = nullptr;
+            events = std::move(sess->pending_events);
+            handlers = sess->top_level_handlers;
+            client_emit = sess->emit_event;
+            sess->dirty.store(false, std::memory_order_release);
+          }
+          // Dispatch events with no lock held: handlers may modify session state.
+          for (auto& ev : events) {
+            if (client_emit) {
+              try {
+                client_emit(ev.id, ev.event_name, ev.payload);
+              } catch (...) {
+              } // caller may have torn things down between render and dispatch
+            }
+            if (ev.root_key.id != 0) {
+              auto it = handlers.find(ev.root_key);
+              if (it != handlers.end() && it->second)
+                it->second->on_event(ev.id, ev.event_name, ev.payload);
+            }
+          }
+          // Handlers dispatched above may have mutated session state (e.g.
+          // added a widget in response to a click) without any further OS
+          // input arriving; force one more render so the change reaches the
+          // screen instead of being skipped as idle.
+          if (!events.empty())
+            session_->wlock()->dirty.store(true, std::memory_order_release);
+        }
+        renderer_->end_frame();
+        if (renderer_->should_quit())
+          running_.store(false, std::memory_order_release);
+      }
     }
     std::this_thread::sleep_for(std::chrono::milliseconds{5});
   }
