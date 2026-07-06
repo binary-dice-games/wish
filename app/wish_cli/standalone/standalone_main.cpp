@@ -10,7 +10,7 @@
 // is self-contained. transport/host/port/name are never valid in standalone
 // mode -- they exist only so run_standalone_mode()'s rejection check can
 // look them up and report a clear error if the user passes one.
-DEFINE_string(transport, "tcp", "Not supported in standalone mode");
+DEFINE_string(transport, "term", "Not supported in standalone mode");
 DEFINE_string(host, "0.0.0.0", "Not supported in standalone mode");
 DEFINE_int32(port, 7070, "Not supported in standalone mode");
 DEFINE_string(name, "", "Not supported in standalone mode");

@@ -112,14 +112,6 @@ void wish_server_app::on_listening() const {
     case transport_kind::pipe:
       std::cout << "[wish] listening on pipe " << FLAGS_name << " - close the window to stop\n" << std::flush;
       return;
-    case transport_kind::pty:
-      std::cout << "[wish] listening via --transport=pty - close the window to stop\n" << std::flush;
-      return;
-    case transport_kind::console:
-      std::cout << "[wish] listening via --transport=console (spawned: " << FLAGS_cmd
-                << ") - close the window to stop\n"
-                << std::flush;
-      return;
     case transport_kind::term:
       std::cout << "[wish] listening via --transport=term (spawned: " << FLAGS_cmd << ") - close the window to stop\n"
                 << std::flush;

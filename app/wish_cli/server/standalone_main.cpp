@@ -6,7 +6,7 @@
 #include <gflags/gflags.h>
 
 // Shared transport flags — declared by bison::app::server_app internals.
-DEFINE_string(transport, "tcp", "Transport to use: tcp, pipe, pty, or console");
+DEFINE_string(transport, "term", "Transport to use: tcp, pipe or term");
 DEFINE_string(host, "0.0.0.0", "Bind host address (transport=tcp)");
 DEFINE_int32(port, 7070, "Listen port (transport=tcp)");
 DEFINE_string(name, "", "Named-pipe / Unix-socket path (transport=pipe)");
