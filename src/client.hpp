@@ -154,9 +154,9 @@ class client : public bison::rmi::client {
   /**
    * @brief Called after `connect()` completes; subclass performs all UI
    *        interaction here.  May throw; `run()` calls `disconnect()` in
-   *        either case.
+   *        either case.  Default: no-op.
    */
-  virtual void on_session() = 0;
+  virtual void on_session() {}
 
   /** @brief Instantiates the wish protocol proxies once the session is open. */
   void on_connect() override;

@@ -1,13 +1,15 @@
 // MIT License © 2025 Binary Dice Games
 /**
  * @file wish_client_app.hpp
- * @brief wish CLI client mode — connects to a server and runs an embedded app.
+ * @brief wish CLI client application — connects to a server and runs an
+ *        embedded app.
  */
 #pragma once
 
 #include "app/wish_cli/client/wish_app_host.hpp"
 
-#include <client.hpp>
+#include "src/app/client/client_app.hpp"
+#include "src/client.hpp"
 
 #include <future>
 #include <memory>
@@ -17,33 +19,46 @@
 namespace bdg::wish {
 
 /**
- * @brief Extends wish::client with lifecycle helpers for CLI client mode.
+ * @brief Client application that connects to a wish server and runs an
+ *        embedded application module.
  *
- * App runner functions (e.g. run_calculator) call `keep_alive()` to store
+ * Extends `bison::app::client_app` so it inherits transport selection
+ * and gflags-based CLI handling. Only wish-specific behaviour is added here:
+ *
+ * - `on_session(c)` looks up the registered app by name and runs it,
+ *   implements `wish_app_host` so app runners can instantiate remote objects
+ *   and stay connected until the app signals completion.
+ * - `on_connect_params()` populates the connection timeout from `FLAGS_timeout`.
+ *
+ * Session-runner functions (e.g. run_calculator) call `keep_alive()` to store
  * proxy handles that must remain valid until the session ends, and call
  * `signal_done()` (typically from an event handler) to unblock `on_session()`.
  *
- * Also implements `wish_app_host` by forwarding to `wish::client`'s own
- * `instantiate`/`upload_file`/`download_file`, so the app runner functions
- * (`run_calculator` et al.) can be written against `wish_app_host&` and work
- * unmodified under both this transport-backed session and the in-process
- * `wish_standalone_session` used by `wish standalone`.
- *
- * CLI flags (defined in `main.cpp`, used here via DECLARE_*), same
- * `--transport` scheme as `wish_server_app` (see
- * `src/app/transport_flags.hpp`):
+ * CLI flags (consumed via gflags DECLARE_*), same `--transport` scheme as
+ * `wish_server_app`:
  *   --transport T  tcp (default), pipe, pty, or console
  *   --host H       Connect host address  (transport=tcp)
  *   --port P       Connect port          (transport=tcp)
  *   --name PATH    Named-pipe / Unix-socket path (transport=pipe)
  *
- * Anything after a literal `--` on the command line is left unparsed by
- * gflags and forwarded verbatim to the app function as `app_args()`, e.g.
- * `wish client --run=notepad -- path/to/file`.
+ * Plus wish-specific flags:
+ *   --list                List available embedded apps and exit
+ *   --run=<name>          Launch the named app (required unless --list)
+ *   --describe=<name>     Print app description and exit
+ *   --timeout MS          Connection timeout in milliseconds (default: 30000)
+ *
+ * Anything after a literal `--` on the command line is forwarded to the app
+ * via `app_args()`, e.g. `wish client --run=notepad -- path/to/file`.
  */
-class wish_client_session : public client, public wish_app_host {
+class wish_client_app : public bison::app::client_app, public wish_app_host {
  public:
-  using client::client;
+  wish_client_app() = default;
+
+  /// @brief Entry point — parse flags and run the client application.
+  /// 
+  /// Handles --list and --describe flags which exit early, and requires
+  /// --run=<name> for normal operation.
+  int run(int argc, char** argv) override;
 
   /// @brief Store a proxy to keep the remote object alive for the session.
   void keep_alive(bison::rmi::proxy::dynamic&& proxy) override;
@@ -57,20 +72,21 @@ class wish_client_session : public client, public wish_app_host {
   }
 
   std::future<bison::rmi::proxy::dynamic>
-  instantiate(bison::key_t ns, bison::key_t klass, bison::dynamic params = bison::dynamic{}) override {
-    return client::instantiate(ns, klass, std::move(params));
-  }
+  instantiate(bison::key_t ns, bison::key_t klass, bison::dynamic params = bison::dynamic{}) override;
 
-  std::future<void> upload_file(const std::string& name, const std::string& data) override {
-    return client::upload_file(name, data);
-  }
+  std::future<void> upload_file(const std::string& name, const std::string& data) override;
 
-  std::future<std::string> download_file(const std::string& name) override {
-    return client::download_file(name);
-  }
+  std::future<std::string> download_file(const std::string& name) override;
 
-  void on_session() override;
-  void on_disconnect() override;
+ protected:
+  void on_connect_params(bison::dynamic& params) const override;
+
+  int on_session(bison::rmi::client& c) override;
+
+  /// @brief Override to create and own a wish::client directly instead of
+  ///        generic bison::rmi::client, so on_session() can access wish-specific
+  ///        methods like upload_file() and download_file().
+  int run_with_transport(std::unique_ptr<bison::rmi::transport::client_transport_iface> transport) override;
 
  private:
   std::string app_name_;
@@ -78,11 +94,7 @@ class wish_client_session : public client, public wish_app_host {
   std::promise<void> done_;
   std::future<void> done_future_{done_.get_future()};
   std::vector<bison::rmi::proxy::dynamic> live_proxies_;
-
-  friend int run_client_mode(int argc, char** argv);
+  wish::client* wish_client_ = nullptr;
 };
-
-/// @brief Entry point for `wish client [flags]`.
-int run_client_mode(int argc, char** argv);
 
 } // namespace bdg::wish

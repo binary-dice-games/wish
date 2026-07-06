@@ -14,5 +14,6 @@ DEFINE_bool(debugger, false, "Wait for debugger attachment before starting");
 
 int main(int argc, char** argv) {
   gflags::SetUsageMessage("wish-client - wish GUI remote client");
-  return bdg::wish::run_client_mode(argc, argv);
+  bdg::wish::wish_client_app app;
+  return app.run(argc, argv);
 }

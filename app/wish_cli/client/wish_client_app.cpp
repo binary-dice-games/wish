@@ -1,24 +1,14 @@
 // MIT License © 2025 Binary Dice Games
 /**
  * @file wish_client_app.cpp
- * @brief wish CLI client mode implementation.
+ * @brief wish CLI client application implementation.
  */
 #include "app/wish_cli/client/wish_client_app.hpp"
 #include "app/wish_cli/client/app_registry.hpp"
 
-#include "src/app/transport_flags.hpp"
-#include "src/pty/raw_mode_guard.hpp"
-#include "src/rmi/transport/named_pipe_transport.hpp"
-#include "src/rmi/transport/socket_transport.hpp"
-#include "src/rmi/transport/stdio_transport.hpp"
-#include "src/rmi/transport/term_transport.hpp"
-
 #include <gflags/gflags.h>
 
-#include <functional>
 #include <iostream>
-#include <map>
-#include <optional>
 #include <stdexcept>
 
 // ── Shared flags (defined in main.cpp) ────────────────────────────────────────
@@ -36,37 +26,9 @@ namespace bdg::wish {
 
 using namespace bison;
 
-// ── wish_client_session ───────────────────────────────────────────────────────
+// ── wish_client_app ───────────────────────────────────────────────────────────
 
-void wish_client_session::keep_alive(rmi::proxy::dynamic&& proxy) {
-  live_proxies_.push_back(std::move(proxy));
-}
-
-void wish_client_session::signal_done() {
-  try {
-    done_.set_value();
-  } catch (const std::future_error&) {
-    // Already signalled — ignore.
-  }
-}
-
-void wish_client_session::on_disconnect() {
-  signal_done();
-}
-
-void wish_client_session::on_session() {
-  const auto& apps = registered_apps();
-  auto it = apps.find(app_name_);
-  if (it == apps.end())
-    throw std::runtime_error("unknown app: " + app_name_);
-
-  it->second.run(*this); // set up proxies and event handlers
-  done_future_.wait(); // block until signal_done() fires
-}
-
-// ── run_client_mode ───────────────────────────────────────────────────────────
-
-int run_client_mode(int argc, char** argv) {
+int wish_client_app::run(int argc, char** argv) {
   // Override the shared --host default: 0.0.0.0 is a valid bind address for
   // the server but not a connectable address for a client.
   gflags::SetCommandLineOptionWithMode("host", "127.0.0.1", gflags::SET_FLAGS_DEFAULT);
@@ -99,63 +61,91 @@ int run_client_mode(int argc, char** argv) {
     return 1;
   }
 
+  // Store app-specific data before delegating to parent's run_with_transport(),
+  // which will handle transport creation, connection, and on_session() dispatch.
+  app_name_ = FLAGS_run;
+  app_args_.assign(argv + 1, argv + argc);
+
+  // Let parent class handle transport creation and connection lifecycle.
+  return bison::app::client_app::run(argc, argv);
+}
+
+void wish_client_app::keep_alive(rmi::proxy::dynamic&& proxy) {
+  live_proxies_.push_back(std::move(proxy));
+}
+
+void wish_client_app::signal_done() {
   try {
-    std::unique_ptr<rmi::transport::client_transport_iface> transport;
-    // Only constructed for --transport=pty; kept alive for the session's
-    // duration (restores the fd's original terminal mode on scope exit).
-    std::optional<pty::raw_mode_guard> raw_mode;
+    done_.set_value();
+  } catch (const std::future_error&) {
+    // Already signalled — ignore.
+  }
+}
 
-    switch (bison::app::selected_transport()) {
-      case bison::app::transport_kind::pipe:
-        transport = std::make_unique<rmi::transport::named_pipe_client_transport>(FLAGS_name);
-        break;
-      case bison::app::transport_kind::pty:
-        // See raw_mode_guard's doc comment: without this, a pty slave's
-        // cooked-mode line buffering stalls the BISON<...> framing read from
-        // fd 0. wish's client apps never read console input themselves, so
-        // unlike bison::app::client_app there's no passthrough/echo to wire up.
-        raw_mode.emplace(0);
-        transport = std::make_unique<rmi::transport::stdio_client_transport>(0, 1);
-        break;
-      case bison::app::transport_kind::console:
-        transport = std::make_unique<rmi::transport::stdio_client_transport>(0, 1);
-        break;
-      case bison::app::transport_kind::term:
-        // Same rationale as --transport=pty above, but framed as OSC-99
-        // instead of BISON<...> (see term_transport.hpp). No passthrough
-        // callback needed for the same reason as --transport=pty.
-        raw_mode.emplace(0);
-        transport = std::make_unique<rmi::transport::term_client_transport>(0, 1);
-        break;
-      case bison::app::transport_kind::tcp:
-        transport =
-            std::make_unique<rmi::transport::socket_client_transport>(FLAGS_host, static_cast<uint16_t>(FLAGS_port));
-        break;
-    }
+std::future<bison::rmi::proxy::dynamic>
+wish_client_app::instantiate(bison::key_t ns, bison::key_t klass, bison::dynamic params) {
+  if (!wish_client_)
+    throw std::runtime_error("client not connected");
+  return wish_client_->instantiate(ns, klass, std::move(params));
+}
 
-    wish_client_session session{std::move(transport)};
-    session.app_name_ = FLAGS_run;
-    // Anything left in argv after gflags removed recognized flags is either a
-    // stray positional argument or, more commonly, whatever followed a
-    // literal "--" on the command line (gflags stops flag parsing there and
-    // leaves the rest untouched). Forward it to the app via app_args().
-    session.app_args_.assign(argv + 1, argv + argc);
+std::future<void> wish_client_app::upload_file(const std::string& name, const std::string& data) {
+  if (!wish_client_)
+    throw std::runtime_error("client not connected");
+  return wish_client_->upload_file(name, data);
+}
 
+std::future<std::string> wish_client_app::download_file(const std::string& name) {
+  if (!wish_client_)
+    throw std::runtime_error("client not connected");
+  return wish_client_->download_file(name);
+}
+
+void wish_client_app::on_connect_params(bison::dynamic& params) const {
+  params["timeout_ms"_key] = int32_t{FLAGS_timeout};
+}
+
+int wish_client_app::on_session(bison::rmi::client& c) {
+  if (!wish_client_)
+    throw std::runtime_error("wish_client not initialized");
+
+  const auto& apps = registered_apps();
+  auto it = apps.find(app_name_);
+  if (it == apps.end())
+    throw std::runtime_error("unknown app: " + app_name_);
+
+  try {
+    it->second.run(*this); // set up proxies and event handlers
+    done_future_.wait(); // block until signal_done() fires
+  } catch (...) {
+    throw;
+  }
+  return 0;
+}
+
+int wish_client_app::run_with_transport(
+    std::unique_ptr<bison::rmi::transport::client_transport_iface> transport) {
+  // Create a wish::client with the transport provided by the parent.
+  // This allows on_session() to access wish-specific methods.
+  wish::client client{std::move(transport)};
+  wish_client_ = &client;
+
+  try {
     bison::dynamic params;
-    params["timeout_ms"_key] = int32_t{FLAGS_timeout};
-    session.connect(std::move(params));
+    on_connect_params(params);
+    client.connect(std::move(params));
 
     try {
-      session.on_session();
+      on_connected();
+      int result = on_session(client);
+      client.disconnect();
+      return result;
     } catch (...) {
-      session.disconnect();
+      client.disconnect();
       throw;
     }
-    session.disconnect();
-    return 0;
-
   } catch (const std::exception& ex) {
-    std::cerr << "[wish client] error: " << ex.what() << '\n';
+    on_error(ex.what());
     return 1;
   }
 }

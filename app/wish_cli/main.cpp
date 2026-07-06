@@ -90,7 +90,8 @@ int main(int argc, char** argv) {
 
   if (std::strcmp(subcmd, "client") == 0) {
     gflags::SetUsageMessage("wish client - connect to a server and run an embedded application");
-    return bdg::wish::run_client_mode(sub_argc, sub_argv);
+    bdg::wish::wish_client_app app;
+    return app.run(sub_argc, sub_argv);
   }
 
   if (std::strcmp(subcmd, "standalone") == 0) {
