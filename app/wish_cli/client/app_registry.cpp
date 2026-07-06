@@ -1,7 +1,7 @@
 // MIT License © 2025 Binary Dice Games
 /// @file app_registry.cpp
 /// @brief Name -> runner lookup for embedded apps.
-#include "app/wish_cli/client/apps/app_registry.hpp"
+#include "app/wish_cli/client/app_registry.hpp"
 
 namespace bdg::wish {
 

@@ -27,7 +27,7 @@
 #include <iostream>
 
 // ── Shared transport flags — consumed by server and client modes ─────────────
-DEFINE_string(transport, "tcp", "Transport to use: tcp, pipe, pty, or console");
+DEFINE_string(transport, "tcp", "Transport to use: tcp, pipe, pty, console, or term");
 DEFINE_string(host, "0.0.0.0", "Bind/connect host address");
 DEFINE_int32(port, 7070, "Listen/connect port");
 DEFINE_string(name, "", "Named-pipe / Unix-socket path (transport=pipe)");

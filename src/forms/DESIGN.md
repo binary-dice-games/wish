@@ -169,7 +169,7 @@ The client-side reference runners (`modules/<name>/client/`) don't have this pro
 ### Adding a new module
 
 1. Create `modules/<name>/server/<name>.hpp/.cpp` with a `register_<name>()` free function (same contract as any other form — see [Writing a New Form](#writing-a-new-form)).
-2. Optionally create `modules/<name>/client/<name>.hpp/.cpp` with a `run_<name>(wish_app_host&)` entry point, and self-register it with a static registrar object. Include a short `description` and, for each positional argument the app reads via `wish_app_host::app_args()`, an `app_param{name, description}` entry — both are shown by `--list` and `--describe=<name>` (see `app/wish_cli/client/apps/app_registry.hpp`):
+2. Optionally create `modules/<name>/client/<name>.hpp/.cpp` with a `run_<name>(wish_app_host&)` entry point, and self-register it with a static registrar object. Include a short `description` and, for each positional argument the app reads via `wish_app_host::app_args()`, an `app_param{name, description}` entry — both are shown by `--list` and `--describe=<name>` (see `app/wish_cli/client/app_registry.hpp`):
    ```cpp
    namespace {
    struct <name>_app_registrar {

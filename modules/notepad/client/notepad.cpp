@@ -13,7 +13,7 @@
 /// `wish_app_host::app_args()`).
 #include "modules/notepad/client/notepad.hpp"
 
-#include "app/wish_cli/client/apps/app_registry.hpp"
+#include "app/wish_cli/client/app_registry.hpp"
 #include "app/wish_cli/client/wish_app_host.hpp"
 
 #include "src/bison/bison.hpp"

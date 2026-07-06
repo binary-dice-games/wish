@@ -2,7 +2,7 @@
 /// @file wish_standalone_app.cpp
 /// @brief wish CLI standalone mode implementation.
 #include "app/wish_cli/standalone/wish_standalone_app.hpp"
-#include "app/wish_cli/client/apps/app_registry.hpp"
+#include "app/wish_cli/client/app_registry.hpp"
 
 #include <logger.hpp>
 #include <registry.hpp>

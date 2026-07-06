@@ -4,13 +4,14 @@
  * @brief wish CLI client mode implementation.
  */
 #include "app/wish_cli/client/wish_client_app.hpp"
-#include "app/wish_cli/client/apps/app_registry.hpp"
+#include "app/wish_cli/client/app_registry.hpp"
 
 #include "src/app/transport_flags.hpp"
 #include "src/pty/raw_mode_guard.hpp"
 #include "src/rmi/transport/named_pipe_transport.hpp"
 #include "src/rmi/transport/socket_transport.hpp"
 #include "src/rmi/transport/stdio_transport.hpp"
+#include "src/rmi/transport/term_transport.hpp"
 
 #include <gflags/gflags.h>
 
@@ -118,6 +119,13 @@ int run_client_mode(int argc, char** argv) {
         break;
       case bison::app::transport_kind::console:
         transport = std::make_unique<rmi::transport::stdio_client_transport>(0, 1);
+        break;
+      case bison::app::transport_kind::term:
+        // Same rationale as --transport=pty above, but framed as OSC-99
+        // instead of BISON<...> (see term_transport.hpp). No passthrough
+        // callback needed for the same reason as --transport=pty.
+        raw_mode.emplace(0);
+        transport = std::make_unique<rmi::transport::term_client_transport>(0, 1);
         break;
       case bison::app::transport_kind::tcp:
         transport =

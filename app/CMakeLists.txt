@@ -4,7 +4,7 @@ if(WISH_ENABLE_IMGUI AND WISH_ENABLE_SDL3)
       wish_cli/main.cpp
       wish_cli/server/wish_server_app.cpp
       wish_cli/client/wish_client_app.cpp
-      wish_cli/client/apps/app_registry.cpp
+      wish_cli/client/app_registry.cpp
       wish_cli/standalone/wish_standalone_app.cpp
       wish_cli/bridge/wish_bridge_app.cpp)
   target_sources(wish-cli PRIVATE ${WISH_APP_MODULE_SOURCES})
@@ -35,7 +35,7 @@ if(WISH_ENABLE_IMGUI AND WISH_ENABLE_SDL3)
   add_executable(wish-standalone
       wish_cli/standalone/wish_standalone_app.cpp
       wish_cli/standalone/standalone_main.cpp
-      wish_cli/client/apps/app_registry.cpp)
+      wish_cli/client/app_registry.cpp)
   target_sources(wish-standalone PRIVATE ${WISH_APP_MODULE_SOURCES})
   target_compile_definitions(wish-standalone PRIVATE ${WISH_APP_MODULE_DEFS})
   target_include_directories(wish-standalone PRIVATE
@@ -50,7 +50,7 @@ endif()
 # ── wish-client — standalone client binary (lightweight, no SDL/ImGui) ─────────
 add_executable(wish-client
     wish_cli/client/wish_client_app.cpp
-    wish_cli/client/apps/app_registry.cpp
+    wish_cli/client/app_registry.cpp
     wish_cli/client/standalone_main.cpp)
 target_sources(wish-client PRIVATE ${WISH_APP_MODULE_SOURCES})
 target_compile_definitions(wish-client PRIVATE ${WISH_APP_MODULE_DEFS})

@@ -3,7 +3,7 @@
 /// @brief Client-side runner for the Calculator embedded app.
 #include "modules/calculator/client/calculator.hpp"
 
-#include "app/wish_cli/client/apps/app_registry.hpp"
+#include "app/wish_cli/client/app_registry.hpp"
 #include "app/wish_cli/client/wish_app_host.hpp"
 
 #include "src/bison/bison.hpp"

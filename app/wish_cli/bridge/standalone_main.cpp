@@ -7,6 +7,7 @@
 
 // verbose is declared by wish_bridge_app internally; define it here.
 DEFINE_bool(verbose, false, "Print session trace messages to stdout");
+DEFINE_bool(debugger, false, "Wait for debugger attachment before starting");
 
 int main(int argc, char** argv) {
   gflags::SetUsageMessage("wish-bridge - wish RMI bridge / multiplexer");
