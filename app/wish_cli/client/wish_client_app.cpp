@@ -21,6 +21,12 @@ DEFINE_bool(list, false, "List available embedded applications and exit");
 DEFINE_string(run, "", "Name of the embedded application to run");
 DEFINE_string(describe, "", "Print name, description, and parameters for a specific embedded application and exit");
 DEFINE_int32(timeout, 30000, "Connection timeout in milliseconds");
+DEFINE_string(theme, "dark", "UI theme preset: dark, light, or classic.");
+
+static bool ValidateTheme(const char* /*flag*/, const std::string& value) {
+  return value == "dark" || value == "light" || value == "classic";
+}
+DEFINE_validator(theme, &ValidateTheme);
 
 namespace bdg::wish {
 
@@ -115,6 +121,7 @@ int wish_client_app::on_session(bison::rmi::client& c) {
     throw std::runtime_error("unknown app: " + app_name_);
 
   try {
+    wish_client_->set_style_preset(FLAGS_theme).get();    
     it->second.run(*this); // set up proxies and event handlers
     done_future_.wait(); // block until signal_done() fires
   } catch (...) {
