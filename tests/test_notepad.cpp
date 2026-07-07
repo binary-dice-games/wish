@@ -3,7 +3,7 @@
 
 #include <registry.hpp>
 #include <server.hpp>
-#include <session.hpp>
+#include <context.hpp>
 #include <ui_root.hpp>
 
 #include "src/bison/bison_object.hpp"
@@ -54,10 +54,10 @@ class SessionCapturingServer : public wish::server {
   SessionCapturingServer(server_transport_iface& t, std::unique_ptr<wish::renderer> r)
       : wish::server(t, std::move(r)) {}
 
-  wish::session* last_session{nullptr};
+  wish::context* last_session{nullptr};
 
  protected:
-  void on_session_created(wish::session& s) override {
+  void on_session_created(wish::context& s) override {
     last_session = &s;
   }
 };
@@ -93,7 +93,7 @@ class NotepadWindowTest : public ::testing::Test {
   std::string instantiate_and_get_root() {
     client_->instantiate("wish"_key, "Notepad"_key).get();
     EXPECT_NE(srv_->last_session, nullptr);
-    return find_form_root(srv_->last_session->objects);
+    return find_form_root(srv_->last_session->ui_objects);
   }
 
   memory_server_transport transport_;
@@ -109,32 +109,32 @@ TEST_F(NotepadWindowTest, SessionObjectsHasFormRoot) {
 TEST_F(NotepadWindowTest, FormRootIsWindow) {
   std::string root = instantiate_and_get_root();
   ASSERT_FALSE(root.empty());
-  auto& obj = srv_->last_session->objects.at(root);
+  auto& obj = srv_->last_session->ui_objects.at(root);
   EXPECT_EQ(obj->findField(dynamic::CLASS)->as<bison::key_t>(), "Window"_key);
 }
 
 TEST_F(NotepadWindowTest, TreeContainsBtnOpen) {
   std::string root = instantiate_and_get_root();
   ASSERT_FALSE(root.empty());
-  EXPECT_TRUE(srv_->last_session->objects.count(root + ".vbox.toolbar.btn_open"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".vbox.toolbar.btn_open"));
 }
 
 TEST_F(NotepadWindowTest, TreeContainsBtnNew) {
   std::string root = instantiate_and_get_root();
   ASSERT_FALSE(root.empty());
-  EXPECT_TRUE(srv_->last_session->objects.count(root + ".vbox.toolbar.btn_new"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".vbox.toolbar.btn_new"));
 }
 
 TEST_F(NotepadWindowTest, TreeContainsBtnSync) {
   std::string root = instantiate_and_get_root();
   ASSERT_FALSE(root.empty());
-  EXPECT_TRUE(srv_->last_session->objects.count(root + ".vbox.toolbar.btn_sync"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".vbox.toolbar.btn_sync"));
 }
 
 TEST_F(NotepadWindowTest, TreeContainsTabBar) {
   std::string root = instantiate_and_get_root();
   ASSERT_FALSE(root.empty());
-  EXPECT_TRUE(srv_->last_session->objects.count(root + ".vbox.tab_bar"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".vbox.tab_bar"));
 }
 
 // ── open_file / tab management ────────────────────────────────────────────────
@@ -155,7 +155,7 @@ class NotepadFilesTest : public ::testing::Test {
     client_->connect();
     proxy_.emplace(client_->instantiate("wish"_key, "Notepad"_key).get());
     ASSERT_TRUE(proxy_->valid());
-    root_ = find_form_root(srv_->last_session->objects);
+    root_ = find_form_root(srv_->last_session->ui_objects);
     ASSERT_FALSE(root_.empty());
 
     // Wrap emit_event to capture every high-level event emitted by form::emit().
@@ -193,7 +193,7 @@ class NotepadFilesTest : public ::testing::Test {
   }
 
   size_t tab_count() const {
-    auto& objs = srv_->last_session->objects;
+    auto& objs = srv_->last_session->ui_objects;
     auto it = objs.find(root_ + ".vbox.tab_bar");
     if (it == objs.end() || !it->second)
       return 0;
@@ -205,7 +205,7 @@ class NotepadFilesTest : public ::testing::Test {
 
   // The sole TextEditor child of the tab stored at children[child_key].
   dynamic_ptr editor_at(size_t child_key) const {
-    auto& objs = srv_->last_session->objects;
+    auto& objs = srv_->last_session->ui_objects;
     auto it = objs.find(root_ + ".vbox.tab_bar");
     if (it == objs.end() || !it->second)
       return {};
@@ -226,7 +226,7 @@ class NotepadFilesTest : public ::testing::Test {
   }
 
   bison::key_t tab_id_at(size_t child_key) const {
-    auto& objs = srv_->last_session->objects;
+    auto& objs = srv_->last_session->ui_objects;
     auto it = objs.find(root_ + ".vbox.tab_bar");
     if (it == objs.end() || !it->second)
       return {};
@@ -267,7 +267,7 @@ class NotepadFilesTest : public ::testing::Test {
   }
 
   void simulate_window_closed() {
-    auto win_id = srv_->last_session->objects.at(root_)->as<bison::key_t>("__wish_id"_key);
+    auto win_id = srv_->last_session->ui_objects.at(root_)->as<bison::key_t>("__wish_id"_key);
     auto h = srv_->last_session->top_level_handlers.find(root_);
     ASSERT_NE(h, srv_->last_session->top_level_handlers.end());
     h->second->on_event(win_id, "closed"_key, dynamic{});
@@ -281,7 +281,7 @@ class NotepadFilesTest : public ::testing::Test {
   }
 
   void simulate_btn_click(const std::string& btn_key) {
-    auto& objs = srv_->last_session->objects;
+    auto& objs = srv_->last_session->ui_objects;
     auto it = objs.find(root_ + ".vbox.toolbar." + btn_key);
     ASSERT_NE(it, objs.end()) << "button not found: " << btn_key;
     auto btn_id = (*it->second)["__wish_id"_key].as<bison::key_t>();

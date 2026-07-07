@@ -3,7 +3,7 @@
 
 #include <imgui/imgui_renderer.hpp>
 #include <registry.hpp>
-#include <session.hpp>
+#include <context.hpp>
 #include <style_service.hpp>
 #include <ui_importer.hpp>
 
@@ -14,7 +14,7 @@
 
 using namespace bdg::bison;
 using bdg::wish::imgui_renderer;
-using bdg::wish::session;
+using bdg::wish::context;
 using bdg::wish::style_service;
 
 // ── Test fixture ──────────────────────────────────────────────────────────────
@@ -35,7 +35,7 @@ class StyleServiceTest : public ::testing::Test {
     io.Fonts->SetTexID(ImTextureID{1});
 
     svc_ = std::make_shared<style_service>(dynamic::instantiate("wish"_key, "__WishStyle"_key));
-    sess_ = std::make_unique<session>("style_test"_key);
+    sess_ = std::make_unique<context>("style_test"_key);
     sess_->style_service = svc_;
     renderer_ = std::make_unique<imgui_renderer>();
   }
@@ -50,7 +50,7 @@ class StyleServiceTest : public ::testing::Test {
 
   ImGuiContext* ctx_ = nullptr;
   std::shared_ptr<style_service> svc_;
-  std::unique_ptr<session> sess_;
+  std::unique_ptr<context> sess_;
   std::unique_ptr<imgui_renderer> renderer_;
 };
 
@@ -150,7 +150,7 @@ TEST_F(StyleServiceTest, RenderSessionAppliesPresetLight) {
   ImGuiStyle light;
   ImGui::StyleColorsLight(&light);
 
-  // Render a simple session — render_session applies style with RAII.
+  // Render a simple context — render_session applies style with RAII.
   auto map = bdg::wish::import_json(R"({"type":"Window","title":"T"})");
   renderer_->begin_frame();
   renderer_->render_session(*map[""], *sess_);
@@ -202,7 +202,7 @@ TEST_F(StyleServiceTest, RenderSessionRestoresStyleAfterwards) {
 
 TEST_F(StyleServiceTest, RenderSessionWithNoStyleJustRenders) {
   // A session without style_service goes through render_node directly.
-  session plain_sess("plain"_key);
+  context plain_sess("plain"_key);
   auto map = bdg::wish::import_json(R"({"type":"Window","title":"P"})");
   EXPECT_NO_THROW({
     renderer_->begin_frame();

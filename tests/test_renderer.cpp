@@ -12,7 +12,7 @@ using namespace bdg::bison;
 using bdg::wish::null_renderer;
 using bdg::wish::render_children;
 using bdg::wish::renderer;
-using bdg::wish::session;
+using bdg::wish::context;
 using bdg::wish::ui_element;
 
 // ── Test infrastructure ───────────────────────────────────────────────────────
@@ -26,7 +26,7 @@ class counting_renderer : public renderer {
 
   void begin_frame() override {}
 
-  void render_node(const ui_element& node, const session& s) override {
+  void render_node(const ui_element& node, const context& s) override {
     ++count;
     visited.push_back(node.as<bdg::bison::key_t>(dynamic::CLASS));
     render_children(*this, node, s);
@@ -39,15 +39,15 @@ class RendererTest : public ::testing::Test {
  protected:
   void SetUp() override {
     bdg::wish::register_all();
-    sess_ = std::make_unique<session>("renderer_test"_key);
+    sess_ = std::make_unique<context>("renderer_test"_key);
   }
 
-  session& sess() {
+  context& sess() {
     return *sess_;
   }
 
  private:
-  std::unique_ptr<session> sess_;
+  std::unique_ptr<context> sess_;
 };
 
 // ── null_renderer ─────────────────────────────────────────────────────────────

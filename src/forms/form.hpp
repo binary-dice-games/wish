@@ -3,7 +3,7 @@
 /// @brief Base class for all wish high-level form objects.
 #pragma once
 
-#include <session.hpp>
+#include <context.hpp>
 #include <ui_root.hpp>
 
 #include "src/bison/bison_object.hpp"
@@ -39,11 +39,11 @@ class form : public ui_root {
   ///
   /// Called exactly once by server::on_create_object after the object is
   /// created and before it is accessible via RMI. Calls on_init() after
-  /// storing ctx and sync_sess.
+  /// storing ctx and sync_ctx.
   ///
-  /// @param ctx       Per-session RMI context; must outlive *this.
-  /// @param sync_sess Synchronized wish session; held for the form's lifetime.
-  void init(bison::rmi::context& ctx, sync_session_ptr sync_sess);
+  /// @param ctx      Per-session RMI context; must outlive *this.
+  /// @param sync_ctx Synchronized wish session; held for the form's lifetime.
+  void init(bison::rmi::context& ctx, sync_context_ptr sync_ctx);
 
  protected:
   /// @brief Build the internal ui_element tree and register event handlers.
@@ -59,7 +59,7 @@ class form : public ui_root {
   /// subclasses override to close dialogs, update fields, etc.
   ///
   /// Called outside the session lock — handlers may freely acquire
-  /// `sync_sess_->wlock()` or modify session state.
+  /// `context_wlock{*sync_ctx_}` or modify session state.
   ///
   /// @param widget_id   The `__wish_id` of the widget that fired the event.
   /// @param event_name  Event key (e.g. `"clicked"_key`, `"changed"_key`).
@@ -84,16 +84,16 @@ class form : public ui_root {
   /// @return Reference to the wish session for the current dispatch context.
   ///
   /// Valid only while called from on_init(), on_set(), or any RMI handler
-  /// (i.e. when `detail::current_session` is set by the dispatch hook).
-  /// Do NOT call outside of dispatch — use sync_sess_->rlock() / wlock() for
-  /// any access that must happen outside the dispatch stack.
+  /// (i.e. when `detail::current_context` is set by the dispatch hook).
+  /// Do NOT call outside of dispatch — use context_rlock/context_wlock over
+  /// sync_ctx_ for any access that must happen outside the dispatch stack.
   /// @throws std::logic_error if called outside a dispatch context.
-  session& sess() {
-    if (!detail::current_session)
+  context& sess() {
+    if (!detail::current_context)
       throw std::logic_error(
           "wish::form::sess() called outside RMI dispatch — "
-          "use sync_sess_->rlock()/wlock() instead");
-    return *detail::current_session;
+          "use context_rlock/context_wlock over sync_ctx_ instead");
+    return *detail::current_context;
   }
 
   /// @brief Key under which the internal Window root is stored in session.objects.
@@ -110,9 +110,10 @@ class form : public ui_root {
 
  protected:
   /// Synchronized session wrapper; held for the form's lifetime.  Use
-  /// sess() to access session data within dispatch; use sync_sess_->wlock()
-  /// directly for access outside dispatch (e.g. destructor cleanup paths).
-  sync_session_ptr sync_sess_;
+  /// sess() to access session data within dispatch; use
+  /// context_wlock{*sync_ctx_} directly for access outside dispatch (e.g.
+  /// destructor cleanup paths).
+  sync_context_ptr sync_ctx_;
 
  private:
   bison::rmi::context* ctx_{nullptr};

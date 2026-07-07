@@ -4,38 +4,38 @@
 ///
 /// Functions are defined in imgui_plot_renderer.cpp and have the same uniform
 /// signature used throughout the imgui_renderer dispatch table:
-///   void(imgui_renderer&, const ui_element&, const session&)
+///   void(imgui_renderer&, const ui_element&, const context&)
 #pragma once
 
 #ifdef WISH_IMGUI_ENABLED
 
 #include "imgui_renderer.hpp"
-#include "session.hpp"
+#include "context.hpp"
 #include "ui_element.hpp"
 
 namespace bdg::wish {
 
-void render_plot(imgui_renderer& r, const ui_element& node, const session& s);
+void render_plot(imgui_renderer& r, const ui_element& node, const context& s);
 
-void render_plot_line(imgui_renderer&, const ui_element& node, const session&);
-void render_plot_scatter(imgui_renderer&, const ui_element& node, const session&);
-void render_plot_stairs(imgui_renderer&, const ui_element& node, const session&);
-void render_plot_stems(imgui_renderer&, const ui_element& node, const session&);
-void render_plot_shaded(imgui_renderer&, const ui_element& node, const session&);
-void render_plot_digital(imgui_renderer&, const ui_element& node, const session&);
+void render_plot_line(imgui_renderer&, const ui_element& node, const context&);
+void render_plot_scatter(imgui_renderer&, const ui_element& node, const context&);
+void render_plot_stairs(imgui_renderer&, const ui_element& node, const context&);
+void render_plot_stems(imgui_renderer&, const ui_element& node, const context&);
+void render_plot_shaded(imgui_renderer&, const ui_element& node, const context&);
+void render_plot_digital(imgui_renderer&, const ui_element& node, const context&);
 
-void render_plot_bars(imgui_renderer&, const ui_element& node, const session&);
-void render_plot_bars_h(imgui_renderer&, const ui_element& node, const session&);
+void render_plot_bars(imgui_renderer&, const ui_element& node, const context&);
+void render_plot_bars_h(imgui_renderer&, const ui_element& node, const context&);
 
-void render_plot_histogram(imgui_renderer&, const ui_element& node, const session&);
-void render_plot_histogram2d(imgui_renderer&, const ui_element& node, const session&);
+void render_plot_histogram(imgui_renderer&, const ui_element& node, const context&);
+void render_plot_histogram2d(imgui_renderer&, const ui_element& node, const context&);
 
-void render_plot_heatmap(imgui_renderer&, const ui_element& node, const session&);
+void render_plot_heatmap(imgui_renderer&, const ui_element& node, const context&);
 
-void render_plot_pie_chart(imgui_renderer&, const ui_element& node, const session&);
+void render_plot_pie_chart(imgui_renderer&, const ui_element& node, const context&);
 
-void render_plot_text(imgui_renderer&, const ui_element& node, const session&);
-void render_plot_inf_lines(imgui_renderer&, const ui_element& node, const session&);
+void render_plot_text(imgui_renderer&, const ui_element& node, const context&);
+void render_plot_inf_lines(imgui_renderer&, const ui_element& node, const context&);
 
 } // namespace bdg::wish
 

@@ -5,16 +5,15 @@
  */
 #pragma once
 
+#include <context.hpp>
 #include <logger.hpp>
 #include <renderer.hpp>
-#include <session.hpp>
 #include "src/rmi/server/server.hpp"
 
 #include <atomic>
 #include <chrono>
 #include <memory>
 #include <thread>
-#include <unordered_map>
 
 namespace bdg::wish {
 
@@ -23,8 +22,8 @@ namespace bdg::wish {
  *
  * Inherits all RMI server behaviour from `bison::rmi::server` and adds:
  * - Automatic wish class registration on `start()`.
- * - Per-client `wish::session` lifecycle (created/destroyed with the
- *   connection).
+ * - Per-client `wish::context` lifecycle (created/destroyed with the
+ *   connection), stored directly in the base class's `session_contexts()`.
  * - A renderer-driven frame loop that calls `begin_frame` / `render_node` /
  *   `end_frame` on every connected session at a fixed rate.
  *
@@ -34,8 +33,8 @@ namespace bdg::wish {
  * ```cpp
  * class my_server : public wish::server {
  *  protected:
- *   void on_session_created(wish::session& s) override { ... }
- *   void on_session_destroyed(wish::session& s) override { ... }
+ *   void on_session_created(wish::context& s) override { ... }
+ *   void on_session_destroyed(wish::context& s) override { ... }
  * };
  * ```
  *
@@ -101,16 +100,21 @@ class server : public bison::rmi::server {
 
  protected:
   /** @brief Called on the worker thread after a client connects. */
-  virtual void on_session_created(session& s) {
+  virtual void on_session_created(context& s) {
     (void)s;
   }
 
   /** @brief Called on the worker thread just before a client disconnects. */
-  virtual void on_session_destroyed(session& s) {
+  virtual void on_session_destroyed(context& s) {
     (void)s;
   }
 
  private:
+  // Factory hook: construct the wish::context for a new session. Called by
+  // bison::rmi::server::client_worker before the context is registered in
+  // session_contexts() or locked by anything else.
+  std::unique_ptr<bison::rmi::context> on_create_context(bison::key_t session_id) override;
+
   // Bridge bison's context-level hooks to wish session management.
   // Declared final so subclasses use the wish-level hooks above.
   void on_session_created(bison::rmi::context& ctx) override final;
@@ -123,17 +127,19 @@ class server : public bison::rmi::server {
   // Receive formatted trace lines from the base class and forward to logger_.
   void on_print(bison::key_t session_id, const std::string& line) override;
 
-  // Acquire the per-session write lock before each dispatch and release it
-  // after.  The render loop holds the per-session read lock for the duration
-  // of each render_session call, so these hooks serialise RMI dispatch against
-  // rendering without blocking other sessions.
+  // Set/clear detail::current_context for the duration of each dispatch. The
+  // base class (bison::rmi::server::client_worker) already holds the
+  // per-session write lock for the whole dispatch, so these hooks no longer
+  // need to acquire or release anything themselves. The render loop holds
+  // the per-session read lock for the duration of each render_session call,
+  // so dispatch and rendering remain serialised per-session without
+  // blocking other sessions.
   void on_before_dispatch(bison::rmi::context& ctx) override;
   void on_after_dispatch(bison::rmi::context& ctx) noexcept override;
 
   void render_loop();
 
   std::unique_ptr<renderer> renderer_;
-  bison::synchronized<std::unordered_map<bison::hash_t, sync_session_ptr>> sessions_;
   std::thread render_thread_;
   std::atomic<bool> running_{false};
   // Render-thread-only timestamp of the last drawn frame; caps render rate

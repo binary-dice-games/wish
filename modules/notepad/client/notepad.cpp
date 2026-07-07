@@ -150,7 +150,7 @@ void browse_and_open(
     upload_and_open(s, notepad, files, local_path);
   });
 
-  // on_cancel: the dialog already removed itself from session.objects;
+  // on_cancel: the dialog already removed itself from context.ui_objects;
   // the capture just keeps dlg alive until one of its events fires.
   dlg->onEvent("on_cancel"_key, [dlg](dynamic) {});
 }

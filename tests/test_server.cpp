@@ -24,14 +24,14 @@ class tracking_server : public wish::server {
 
   std::atomic<int> created_count{0};
   std::atomic<int> destroyed_count{0};
-  wish::session* last_session{nullptr};
+  wish::context* last_session{nullptr};
 
  protected:
-  void on_session_created(wish::session& s) override {
+  void on_session_created(wish::context& s) override {
     last_session = &s;
     created_count.fetch_add(1, std::memory_order_release);
   }
-  void on_session_destroyed(wish::session& s) override {
+  void on_session_destroyed(wish::context& s) override {
     (void)s;
     destroyed_count.fetch_add(1, std::memory_order_release);
   }
@@ -43,10 +43,10 @@ class multi_tracking_server : public wish::server {
 
   std::atomic<int> created_count{0};
   std::mutex sessions_mutex;
-  std::vector<wish::session*> sessions;
+  std::vector<wish::context*> sessions;
 
  protected:
-  void on_session_created(wish::session& s) override {
+  void on_session_created(wish::context& s) override {
     std::lock_guard<std::mutex> lk(sessions_mutex);
     sessions.push_back(&s);
     created_count.fetch_add(1, std::memory_order_release);
@@ -166,7 +166,7 @@ TEST(ServerTest, TwoClientsGetSeparateSessions) {
       std::lock_guard<std::mutex> lk(srv.sessions_mutex);
       ASSERT_EQ(srv.sessions.size(), 2u);
       EXPECT_NE(srv.sessions[0], srv.sessions[1]);
-      EXPECT_NE(srv.sessions[0]->id, srv.sessions[1]->id);
+      EXPECT_NE(srv.sessions[0]->session_id, srv.sessions[1]->session_id);
     }
 
     c1.disconnect();

@@ -157,7 +157,7 @@ void process_explorer::on_init() {
   tree.with("vbox.cpu_plot", fix_axes);
   tree.with("vbox.mem_plot", fix_axes);
 
-  sess().objects.merge(std::move(tree), internal_root_key_);
+  sess().ui_objects.merge(std::move(tree), internal_root_key_);
 }
 
 // ── update_snapshot ───────────────────────────────────────────────────────────

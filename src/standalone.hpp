@@ -5,9 +5,9 @@
  */
 #pragma once
 
+#include <context.hpp>
 #include <logger.hpp>
 #include <renderer.hpp>
-#include <session.hpp>
 #include "src/rmi/standalone/standalone.hpp"
 
 #include <atomic>
@@ -141,12 +141,12 @@ class standalone : public bison::rmi::standalone {
  protected:
   /** @brief Called once the session's services are ready, before the first
    *         object may be instantiated. */
-  virtual void on_session_created(session& s) {
+  virtual void on_session_created(context& s) {
     (void)s;
   }
 
   /** @brief Called once, just before the session is torn down. */
-  virtual void on_session_destroyed(session& s) {
+  virtual void on_session_destroyed(context& s) {
     (void)s;
   }
 
@@ -163,7 +163,13 @@ class standalone : public bison::rmi::standalone {
   void render_loop();
 
   std::unique_ptr<renderer> renderer_;
-  sync_session_ptr session_;
+  // sync_context_ptr (not a direct bison::synchronized<context>): form and
+  // ui_template are shared between wish::server and wish::standalone, and
+  // their init() takes a sync_context_ptr -- so both hosts must store the
+  // context behind the same unique_ptr<bison::rmi::context> indirection,
+  // even though standalone itself never needs the polymorphic storage for
+  // its own purposes (it only ever holds one, concretely-typed session).
+  sync_context_ptr context_;
   std::thread render_thread_;
   std::atomic<bool> running_{false};
   // Render-thread-only timestamp of the last drawn frame; caps render rate

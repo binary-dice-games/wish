@@ -14,6 +14,7 @@
 #include <future>
 #include <memory>
 #include <optional>
+#include <shared_mutex>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -24,9 +25,9 @@ using namespace bison;
 
 namespace {
 // Thread-local per-dispatch write lock -- distinct symbol from server.cpp's
-// tl_dispatch_wlock (different translation unit, same purpose: serialize RMI
+// equivalent (different translation unit, same purpose: serialize RMI
 // handlers against rendering without blocking other standalone instances).
-thread_local std::optional<sync_session_wlock> tl_standalone_dispatch_wlock;
+thread_local std::optional<context_wlock> tl_standalone_dispatch_wlock;
 } // namespace
 
 // ── standalone ────────────────────────────────────────────────────────────────
@@ -45,9 +46,9 @@ standalone::~standalone() {
 void standalone::start() {
   register_all();
   // Fires on_session_created() synchronously on this thread, before the
-  // render thread starts -- so session_ is fully published (via the
+  // render thread starts -- so context_ is fully published (via the
   // happens-before edge of std::thread's own construction) with no need to
-  // separately synchronize access to the session_ member itself.
+  // separately synchronize access to the context_ member itself.
   connect();
   running_.store(true, std::memory_order_release);
   render_thread_ = std::thread(&standalone::render_loop, this);
@@ -65,9 +66,9 @@ bool standalone::should_quit() const {
 }
 
 void standalone::on_session_created(bison::rmi::context& ctx) {
-  session_ = std::make_shared<sync_session>(std::in_place, ctx.session_id);
+  context_ = std::make_shared<sync_context>(std::in_place, std::make_unique<context>(ctx.session_id));
   {
-    auto sess = session_->wlock();
+    auto sess = context_wlock{*context_};
     sess->emit_event = ctx.emit_event;
     sess->allow_absolute_paths = allow_absolute_paths_;
     sess->file_service = file_service::instantiate(sess->resource_dir);
@@ -84,28 +85,28 @@ void standalone::on_session_created(bison::rmi::context& ctx) {
 
 void standalone::on_session_destroyed(bison::rmi::context& ctx) {
   (void)ctx;
-  if (!session_)
+  if (!context_)
     return;
-  auto lock = session_->wlock();
+  auto lock = context_wlock{*context_};
   on_session_destroyed(*lock);
 }
 
 bison::dynamic_ptr standalone::on_create_object(bison::rmi::context& ctx, bison::key_t ns, bison::key_t klass) {
-  if (session_ && detail::current_session) {
-    if (auto svc = detail::find_singleton_service(*detail::current_session, klass))
+  if (context_ && detail::current_context) {
+    if (auto svc = detail::find_singleton_service(*detail::current_context, klass))
       return svc;
   }
 
   auto obj = bison::rmi::standalone::on_create_object(ctx, ns, klass);
-  detail::init_session_object(obj, ctx, session_);
+  detail::init_session_object(obj, ctx, context_);
   return obj;
 }
 
 void standalone::on_before_dispatch(bison::rmi::context& /*ctx*/) {
-  if (!session_)
+  if (!context_)
     return;
-  tl_standalone_dispatch_wlock = session_->wlock();
-  detail::current_session = &(**tl_standalone_dispatch_wlock);
+  tl_standalone_dispatch_wlock.emplace(*context_);
+  detail::current_context = &**tl_standalone_dispatch_wlock;
 }
 
 void standalone::on_after_dispatch(bison::rmi::context& /*ctx*/) noexcept {
@@ -114,7 +115,7 @@ void standalone::on_after_dispatch(bison::rmi::context& /*ctx*/) noexcept {
   // instead of skipping the next idle-check.
   if (tl_standalone_dispatch_wlock)
     (*tl_standalone_dispatch_wlock)->dirty.store(true, std::memory_order_release);
-  detail::current_session = nullptr;
+  detail::current_context = nullptr;
   tl_standalone_dispatch_wlock.reset();
 }
 
@@ -129,8 +130,8 @@ void standalone::render_loop() {
       if (renderer_->poll_events())
         pending_render_ = true;
       bool needs_render = pending_render_;
-      if (!needs_render && session_)
-        needs_render = session_->rlock()->dirty.load(std::memory_order_acquire);
+      if (!needs_render && context_)
+        needs_render = context_rlock{*context_}->dirty.load(std::memory_order_acquire);
 
       if (renderer_->should_quit())
         running_.store(false, std::memory_order_release);
@@ -150,18 +151,18 @@ void standalone::render_loop() {
         last_render_time_ = std::chrono::steady_clock::now();
         renderer_->begin_frame();
         renderer_->render_server_frame();
-        if (session_) {
-          std::vector<session::pending_event> events;
+        if (context_) {
+          std::vector<context::pending_event> events;
           std::unordered_map<bison::key_t, ui_root*, bison::key_t, bison::key_t> handlers;
           std::function<void(bison::key_t, bison::key_t, bison::dynamic)> client_emit;
           {
-            auto sess = session_->wlock();
+            auto sess = context_wlock{*context_};
             // Clear dirty before rendering, not after: a render function may
-            // re-set it (via the const session& it's given) to request
+            // re-set it (via the const context& it's given) to request
             // continuous redraws, e.g. a focused widget animating its own
             // caret. Clearing afterward would stomp that signal.
             sess->dirty.store(false, std::memory_order_release);
-            detail::current_session = &*sess;
+            detail::current_context = &*sess;
             for (const auto& [key, win] : sess->top_level_objects) {
               if (win) {
                 sess->current_top_level_key = key;
@@ -169,7 +170,7 @@ void standalone::render_loop() {
               }
             }
             sess->current_top_level_key = bison::key_t{};
-            detail::current_session = nullptr;
+            detail::current_context = nullptr;
             events = std::move(sess->pending_events);
             handlers = sess->top_level_handlers;
             client_emit = sess->emit_event;
@@ -193,7 +194,7 @@ void standalone::render_loop() {
           // input arriving; force one more render so the change reaches the
           // screen instead of being skipped as idle.
           if (!events.empty())
-            session_->wlock()->dirty.store(true, std::memory_order_release);
+            context_wlock{*context_}->dirty.store(true, std::memory_order_release);
         }
         renderer_->end_frame();
         if (renderer_->wants_continuous_redraw())

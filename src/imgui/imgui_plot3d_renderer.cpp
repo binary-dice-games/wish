@@ -4,7 +4,7 @@
 ///
 /// Each function maps one wish element class to the corresponding ImPlot3D call.
 /// All functions share the signature:
-///   void(imgui_renderer&, const ui_element&, const session&)
+///   void(imgui_renderer&, const ui_element&, const context&)
 /// matching the render_fn typedef in imgui_renderer.cpp.
 #include "imgui_plot3d_renderer.hpp"
 
@@ -36,7 +36,7 @@ static std::string with_id(const std::string& label, const ui_element& node) {
 
 // ── Plot3D container ──────────────────────────────────────────────────────────
 
-void render_plot3d(imgui_renderer& r, const ui_element& node, const session& s) {
+void render_plot3d(imgui_renderer& r, const ui_element& node, const context& s) {
   auto title = node.get_as<std::string>("title"_key, "##plot3d");
   float w = node.get_as<float>("width"_key, -1.0f);
   float h = node.get_as<float>("height"_key, 400.0f);
@@ -66,7 +66,7 @@ void render_plot3d(imgui_renderer& r, const ui_element& node, const session& s) 
 
 // ── Line / Scatter ────────────────────────────────────────────────────────────
 
-void render_plot3d_line(imgui_renderer&, const ui_element& node, const session&) {
+void render_plot3d_line(imgui_renderer&, const ui_element& node, const context&) {
   auto label = node.get_as<std::string>("label"_key, "");
   const auto* xs = vec_field(node, "xs"_key);
   const auto* ys = vec_field(node, "ys"_key);
@@ -79,7 +79,7 @@ void render_plot3d_line(imgui_renderer&, const ui_element& node, const session&)
     ImPlot3D::PlotLine(iml.c_str(), xs->data(), ys->data(), zs->data(), count);
 }
 
-void render_plot3d_scatter(imgui_renderer&, const ui_element& node, const session&) {
+void render_plot3d_scatter(imgui_renderer&, const ui_element& node, const context&) {
   auto label = node.get_as<std::string>("label"_key, "");
   const auto* xs = vec_field(node, "xs"_key);
   const auto* ys = vec_field(node, "ys"_key);
@@ -94,7 +94,7 @@ void render_plot3d_scatter(imgui_renderer&, const ui_element& node, const sessio
 
 // ── Surface ───────────────────────────────────────────────────────────────────
 
-void render_plot3d_surface(imgui_renderer&, const ui_element& node, const session&) {
+void render_plot3d_surface(imgui_renderer&, const ui_element& node, const context&) {
   auto label = node.get_as<std::string>("label"_key, "");
   int32_t x_count = node.get_as<int32_t>("x_count"_key, 2);
   int32_t y_count = node.get_as<int32_t>("y_count"_key, 2);
@@ -118,7 +118,7 @@ void render_plot3d_surface(imgui_renderer&, const ui_element& node, const sessio
 
 // ── Triangle / Quad / Mesh ────────────────────────────────────────────────────
 
-void render_plot3d_triangle(imgui_renderer&, const ui_element& node, const session&) {
+void render_plot3d_triangle(imgui_renderer&, const ui_element& node, const context&) {
   auto label = node.get_as<std::string>("label"_key, "");
   const auto* xs = vec_field(node, "xs"_key);
   const auto* ys = vec_field(node, "ys"_key);
@@ -133,7 +133,7 @@ void render_plot3d_triangle(imgui_renderer&, const ui_element& node, const sessi
     ImPlot3D::PlotTriangle(iml.c_str(), xs->data(), ys->data(), zs->data(), count);
 }
 
-void render_plot3d_quad(imgui_renderer&, const ui_element& node, const session&) {
+void render_plot3d_quad(imgui_renderer&, const ui_element& node, const context&) {
   auto label = node.get_as<std::string>("label"_key, "");
   const auto* xs = vec_field(node, "xs"_key);
   const auto* ys = vec_field(node, "ys"_key);
@@ -148,7 +148,7 @@ void render_plot3d_quad(imgui_renderer&, const ui_element& node, const session&)
     ImPlot3D::PlotQuad(iml.c_str(), xs->data(), ys->data(), zs->data(), count);
 }
 
-void render_plot3d_mesh(imgui_renderer&, const ui_element& node, const session&) {
+void render_plot3d_mesh(imgui_renderer&, const ui_element& node, const context&) {
   auto label = node.get_as<std::string>("label"_key, "");
   const auto* xs = vec_field(node, "xs"_key);
   const auto* ys = vec_field(node, "ys"_key);
@@ -180,7 +180,7 @@ void render_plot3d_mesh(imgui_renderer&, const ui_element& node, const session&)
 
 // ── Text annotation ───────────────────────────────────────────────────────────
 
-void render_plot3d_text(imgui_renderer&, const ui_element& node, const session&) {
+void render_plot3d_text(imgui_renderer&, const ui_element& node, const context&) {
   auto text = node.get_as<std::string>("text"_key, "");
   float x = node.get_as<float>("x"_key, 0.0f);
   float y = node.get_as<float>("y"_key, 0.0f);

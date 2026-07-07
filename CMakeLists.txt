@@ -205,7 +205,7 @@ add_library(wish_server STATIC
   src/registry.hpp
   src/ui_importer.hpp
   src/ui_element.hpp
-  src/session.hpp
+  src/context.hpp
   src/renderer.hpp
   src/file_service.hpp
   src/logger.hpp
@@ -219,7 +219,7 @@ add_library(wish_server STATIC
   src/registry.cpp
   src/ui_importer.cpp
   src/ui_element.cpp
-  src/session.cpp
+  src/context.cpp
   src/renderer.cpp
   src/file_service.cpp
   src/logger.cpp

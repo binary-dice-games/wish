@@ -3,7 +3,7 @@
 /// @brief Server-side __WishTemplate RMI object for named UI templates.
 #pragma once
 
-#include <session.hpp>
+#include <context.hpp>
 
 #include "src/bison/bison_object.hpp"
 #include "src/rmi/server/context.hpp"
@@ -38,27 +38,27 @@ class ui_template : public bison::dynamic {
    * Called exactly once by `wish::server::on_create_object` after the object
    * is created and before it is accessible via RMI.
    *
-   * @param ctx  Per-session RMI context; must outlive `*this`.
-   * @param sess Shared wish session state.
+   * @param ctx      Per-session RMI context; must outlive `*this`.
+   * @param sync_ctx Shared wish session state.
    */
-  void init(bison::rmi::context& ctx, sync_session_ptr sync_sess) {
+  void init(bison::rmi::context& ctx, sync_context_ptr sync_ctx) {
     ctx_ = &ctx;
-    sync_sess_ = std::move(sync_sess);
+    sync_ctx_ = std::move(sync_ctx);
   }
 
   bison::dynamic do_register(const bison::dynamic& params);
   bison::dynamic do_instantiate(const bison::dynamic& params);
 
   /// @throws std::logic_error if called outside RMI dispatch.
-  session& sess() {
-    if (!detail::current_session)
+  context& sess() {
+    if (!detail::current_context)
       throw std::logic_error("wish: ui_template method called outside RMI dispatch");
-    return *detail::current_session;
+    return *detail::current_context;
   }
 
  private:
   bison::rmi::context* ctx_{nullptr};
-  sync_session_ptr sync_sess_;
+  sync_context_ptr sync_ctx_;
 };
 
 /// @brief Register `ui_template` as the `__WishTemplate` class prototype.

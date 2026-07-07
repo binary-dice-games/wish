@@ -22,16 +22,16 @@ class tracking_standalone : public wish::standalone {
 
   std::atomic<int> created_count{0};
   std::atomic<int> destroyed_count{0};
-  wish::session* last_session{nullptr};
+  wish::context* last_session{nullptr};
   std::function<void(bdg::bison::key_t, bdg::bison::key_t, dynamic)> emit_fn;
 
  protected:
-  void on_session_created(wish::session& s) override {
+  void on_session_created(wish::context& s) override {
     last_session = &s;
     emit_fn = s.emit_event;
     created_count.fetch_add(1, std::memory_order_release);
   }
-  void on_session_destroyed(wish::session& s) override {
+  void on_session_destroyed(wish::context& s) override {
     (void)s;
     destroyed_count.fetch_add(1, std::memory_order_release);
   }

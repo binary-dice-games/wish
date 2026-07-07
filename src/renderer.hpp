@@ -3,7 +3,7 @@
 /// @brief Abstract renderer interface and render-children utility for wish.
 #pragma once
 
-#include <session.hpp>
+#include <context.hpp>
 #include <ui_element.hpp>
 
 namespace bdg::wish {
@@ -105,7 +105,7 @@ class renderer {
    * @param root  Root element of the session's object tree.
    * @param s     Active session (style, events, resources).
    */
-  virtual void render_session(const ui_element& root, const session& s) {
+  virtual void render_session(const ui_element& root, const context& s) {
     render_node(root, s);
   }
 
@@ -119,7 +119,7 @@ class renderer {
    * @param node  The element to draw.
    * @param s     Active session (used for event emission and resource lookup).
    */
-  virtual void render_node(const ui_element& node, const session& s) = 0;
+  virtual void render_node(const ui_element& node, const context& s) = 0;
 
   /// @brief Called once after all nodes have been rendered in a frame.
   virtual void end_frame() = 0;
@@ -137,7 +137,7 @@ class renderer {
  * @param node  Parent element whose children to visit.
  * @param s     Active session forwarded to each `render_node` call.
  */
-void render_children(renderer& r, const ui_element& node, const session& s);
+void render_children(renderer& r, const ui_element& node, const context& s);
 
 /**
  * @brief No-op renderer for use in tests that do not require drawing.
@@ -148,7 +148,7 @@ void render_children(renderer& r, const ui_element& node, const session& s);
 class null_renderer : public renderer {
  public:
   void begin_frame() override {}
-  void render_node(const ui_element&, const session&) override {}
+  void render_node(const ui_element&, const context&) override {}
   void end_frame() override {}
 };
 

@@ -14,7 +14,7 @@
 using namespace bdg::bison;
 using bdg::wish::imgui_renderer;
 using bdg::wish::render_children;
-using bdg::wish::session;
+using bdg::wish::context;
 using bdg::wish::ui_element;
 
 // ── Test fixture ──────────────────────────────────────────────────────────────
@@ -34,7 +34,7 @@ class ImguiRendererTest : public ::testing::Test {
     io.Fonts->SetTexID(ImTextureID{1});
     // Place mouse somewhere valid so window hover detection works.
     io.MousePos = ImVec2(10.0f, 10.0f);
-    sess_ = std::make_unique<session>("imgui_test"_key);
+    sess_ = std::make_unique<context>("imgui_test"_key);
     renderer_ = std::make_unique<imgui_renderer>();
   }
 
@@ -77,7 +77,7 @@ class ImguiRendererTest : public ::testing::Test {
   }
 
   ImGuiContext* ctx_ = nullptr;
-  std::unique_ptr<session> sess_;
+  std::unique_ptr<context> sess_;
   std::unique_ptr<imgui_renderer> renderer_;
 };
 
@@ -201,7 +201,7 @@ class counting_imgui_renderer : public imgui_renderer {
  public:
   int label_count = 0;
 
-  void render_node(const ui_element& node, const session& s) override {
+  void render_node(const ui_element& node, const context& s) override {
     if (node.as<bdg::bison::key_t>(dynamic::CLASS) == "Label"_key)
       ++label_count;
     imgui_renderer::render_node(node, s);

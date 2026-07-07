@@ -14,8 +14,6 @@
 #include <chrono>
 #include <iomanip>
 #include <memory>
-#include <optional>
-#include <shared_mutex>
 #include <sstream>
 #include <thread>
 #include <utility>
@@ -23,10 +21,11 @@
 
 namespace bdg::wish {
 
-// Thread-local session pointer set by on_before_dispatch and cleared by
+// Thread-local context pointer set by on_before_dispatch and cleared by
 // on_after_dispatch.  Form and template-handler code reads session data
-// through this pointer so they never re-acquire the already-held wlock.
-thread_local session* detail::current_session = nullptr;
+// through this pointer so they never re-acquire the already-held wlock (held
+// for the whole dispatch by bison::rmi::server::client_worker).
+thread_local context* detail::current_context = nullptr;
 
 using namespace bison::rmi::transport;
 
@@ -63,72 +62,64 @@ bool server::should_quit() const {
   return !running_.load(std::memory_order_acquire);
 }
 
+std::unique_ptr<bison::rmi::context> server::on_create_context(bison::key_t session_id) {
+  return std::make_unique<wish::context>(session_id);
+}
+
 void server::on_session_created(bison::rmi::context& ctx) {
-  auto sync_sess = std::make_shared<sync_session>(std::in_place, ctx.session_id);
-  {
-    auto sess = sync_sess->wlock();
-    sess->emit_event = ctx.emit_event;
-    sess->allow_absolute_paths = allow_absolute_paths_;
-    sess->file_service = file_service::instantiate(sess->resource_dir);
-    sess->style_service = style_service::instantiate();
-    // All sessions share the same global logger instance (set via set_logger()).
-    sess->logger_service = logger_;
-  }
-  sessions_.wlock()->emplace(ctx.session_id.id, sync_sess);
+  // The base class (client_worker) already holds this context's wlock for
+  // the duration of this call, and has already registered it in
+  // session_contexts() -- nothing left to do here but attach services.
+  auto& s = static_cast<context&>(ctx);
+  s.allow_absolute_paths = allow_absolute_paths_;
+  s.file_service = file_service::instantiate(s.resource_dir);
+  s.style_service = style_service::instantiate();
+  // All sessions share the same global logger instance (set via set_logger()).
+  s.logger_service = logger_;
   {
     std::ostringstream oss;
     oss << "[rmi] connect     sid=0x" << std::hex << std::setw(8) << std::setfill('0') << ctx.session_id.id;
     on_print(ctx.session_id, oss.str());
   }
-  auto sess = sync_sess->wlock();
-  on_session_created(*sess);
+  on_session_created(s);
 }
 
 void server::on_session_destroyed(bison::rmi::context& ctx) {
-  sync_session_ptr sync_sess;
-  {
-    auto lp = sessions_.wlock();
-    auto it = lp->find(ctx.session_id.id);
-    if (it != lp->end()) {
-      sync_sess = it->second;
-      lp->erase(it);
-    }
-  }
-  if (sync_sess) {
-    try {
-      {
-        std::ostringstream oss;
-        oss << "[rmi] disconnect  sid=0x" << std::hex << std::setw(8) << std::setfill('0') << ctx.session_id.id;
-        on_print(ctx.session_id, oss.str());
-      }
-      auto lock = sync_sess->wlock();
-      on_session_destroyed(*lock);
-    } catch (...) {
-    }
+  // The base class holds this context's wlock for the duration of this call;
+  // it erases the entry from session_contexts() after this returns.
+  auto& s = static_cast<context&>(ctx);
+  try {
+    std::ostringstream oss;
+    oss << "[rmi] disconnect  sid=0x" << std::hex << std::setw(8) << std::setfill('0') << ctx.session_id.id;
+    on_print(ctx.session_id, oss.str());
+    on_session_destroyed(s);
+  } catch (...) {
   }
 }
 
 bison::dynamic_ptr server::on_create_object(bison::rmi::context& ctx, bison::key_t ns, bison::key_t klass) {
-  // on_create_object runs inside a dispatch (on_before_dispatch has run), so
-  // detail::current_session is set.  We also need the sync_session_ptr for
-  // lifetime management when handing it to new objects.
-  sync_session_ptr sync_sess;
+  // on_create_object runs inside a dispatch, so ctx is the same object
+  // detail::current_context already points at.
+  auto& s = static_cast<context&>(ctx);
+
+  if (auto svc = detail::find_singleton_service(s, klass))
+    return svc;
+
+  // form/ui_template hold a sync_context_ptr long-term (e.g. so destructors
+  // can lock it outside of dispatch); look it up from the base class's own
+  // session_contexts() map -- the single source of truth for this session.
+  sync_context_ptr sync_ctx;
   {
-    auto lp = sessions_.rlock();
+    auto lp = session_contexts().rlock();
     auto it = lp->find(ctx.session_id.id);
     if (it != lp->end())
-      sync_sess = it->second;
-  }
-
-  if (sync_sess && detail::current_session) {
-    if (auto svc = detail::find_singleton_service(*detail::current_session, klass))
-      return svc;
+      sync_ctx = it->second;
   }
 
   // For all other classes, bison creates the concrete type from the registered
   // prototype.  Inject session context into ui_template and form instances.
   auto obj = bison::rmi::server::on_create_object(ctx, ns, klass);
-  detail::init_session_object(obj, ctx, sync_sess);
+  detail::init_session_object(obj, ctx, sync_ctx);
   return obj;
 }
 
@@ -137,33 +128,16 @@ void server::on_print(bison::key_t /*session_id*/, const std::string& line) {
     logger_->info(line);
 }
 
-// Thread-local per-session write lock held for the duration of each dispatch.
-// Acquiring it blocks the render thread's per-session rlock, serialising RMI
-// handlers against rendering for the same session without blocking other sessions.
-thread_local std::optional<sync_session_wlock> tl_dispatch_wlock;
-
 void server::on_before_dispatch(bison::rmi::context& ctx) {
-  sync_session_ptr sync_sess;
-  {
-    auto lp = sessions_.rlock();
-    auto it = lp->find(ctx.session_id.id);
-    if (it != lp->end())
-      sync_sess = it->second;
-  }
-  if (sync_sess) {
-    tl_dispatch_wlock = sync_sess->wlock();
-    detail::current_session = &(**tl_dispatch_wlock);
-  }
+  detail::current_context = &static_cast<context&>(ctx);
 }
 
-void server::on_after_dispatch(bison::rmi::context&) noexcept {
+void server::on_after_dispatch(bison::rmi::context& ctx) noexcept {
   // Any dispatched RMI call may have mutated session state (properties,
   // tree structure, style); flag the session so the render loop redraws it
   // instead of skipping the next idle-check.
-  if (tl_dispatch_wlock)
-    (*tl_dispatch_wlock)->dirty.store(true, std::memory_order_release);
-  detail::current_session = nullptr;
-  tl_dispatch_wlock.reset();
+  static_cast<context&>(ctx).dirty.store(true, std::memory_order_release);
+  detail::current_context = nullptr;
 }
 
 void server::render_loop() {
@@ -178,22 +152,22 @@ void server::render_loop() {
         pending_render_ = true;
       bool needs_render = pending_render_;
 
-      // Snapshot the set of sync_session pointers under a brief sessions_
-      // rlock; reused below both for the cheap dirty scan and (if needed)
-      // for rendering. This lets different sessions render without
-      // blocking each other and keeps sessions_ unblocked for session
-      // lifecycle operations.
-      std::vector<sync_session_ptr> sessions_snapshot;
+      // Snapshot the set of sync_context pointers under a brief
+      // session_contexts() rlock; reused below both for the cheap dirty scan
+      // and (if needed) for rendering. This lets different sessions render
+      // without blocking each other and keeps session_contexts() unblocked
+      // for session lifecycle operations.
+      std::vector<sync_context_ptr> sessions_snapshot;
       {
-        auto lp = sessions_.rlock();
+        auto lp = session_contexts().rlock();
         sessions_snapshot.reserve(lp->size());
         for (const auto& [id, sp] : *lp)
           sessions_snapshot.push_back(sp);
       }
 
       if (!needs_render) {
-        for (const auto& sync_sess : sessions_snapshot) {
-          if (sync_sess->rlock()->dirty.load(std::memory_order_acquire)) {
+        for (const auto& sync_ctx : sessions_snapshot) {
+          if (context_rlock{*sync_ctx}->dirty.load(std::memory_order_acquire)) {
             needs_render = true;
             break;
           }
@@ -223,18 +197,18 @@ void server::render_loop() {
         last_render_time_ = std::chrono::steady_clock::now();
         renderer_->begin_frame();
         renderer_->render_server_frame();
-        for (const auto& sync_sess : sessions_snapshot) {
-          std::vector<session::pending_event> events;
+        for (const auto& sync_ctx : sessions_snapshot) {
+          std::vector<context::pending_event> events;
           std::unordered_map<bison::key_t, ui_root*, bison::key_t, bison::key_t> handlers;
           std::function<void(bison::key_t, bison::key_t, bison::dynamic)> client_emit;
           {
-            auto sess = sync_sess->wlock();
+            auto sess = context_wlock{*sync_ctx};
             // Clear dirty before rendering, not after: a render function may
-            // re-set it (via the const session& it's given) to request
+            // re-set it (via the const context& it's given) to request
             // continuous redraws, e.g. a focused widget animating its own
             // caret. Clearing afterward would stomp that signal.
             sess->dirty.store(false, std::memory_order_release);
-            detail::current_session = &*sess;
+            detail::current_context = &*sess;
             for (const auto& [key, win] : sess->top_level_objects) {
               if (win) {
                 sess->current_top_level_key = key;
@@ -242,7 +216,7 @@ void server::render_loop() {
               }
             }
             sess->current_top_level_key = bison::key_t{};
-            detail::current_session = nullptr;
+            detail::current_context = nullptr;
             events = std::move(sess->pending_events);
             handlers = sess->top_level_handlers;
             client_emit = sess->emit_event;
@@ -266,7 +240,7 @@ void server::render_loop() {
           // input arriving; force one more render so the change reaches the
           // screen instead of being skipped as idle.
           if (!events.empty())
-            sync_sess->wlock()->dirty.store(true, std::memory_order_release);
+            context_wlock{*sync_ctx}->dirty.store(true, std::memory_order_release);
         }
         renderer_->end_frame();
         if (renderer_->wants_continuous_redraw())

@@ -13,7 +13,7 @@ namespace bdg::wish {
 ///   `bison::dynamic ← ui_element ← ui_root ← window`
 ///
 /// Because `window` inherits `ui_root`, only Window elements (not generic
-/// ui_elements) are registered in `session::top_level_handlers` and receive
+/// ui_elements) are registered in `context::top_level_handlers` and receive
 /// `on_event` callbacks from the render loop.
 class window : public ui_root {
  public:

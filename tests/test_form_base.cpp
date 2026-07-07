@@ -4,7 +4,7 @@
 #include <forms/form.hpp>
 #include <registry.hpp>
 #include <server.hpp>
-#include <session.hpp>
+#include <context.hpp>
 
 #include "src/bison/bison_object.hpp"
 #include "src/rmi/rmi.hpp"
@@ -27,7 +27,7 @@ class stub_form : public wish::form {
 
   bool init_called_{false};
   rmi::context* ctx_ref_{nullptr};
-  wish::session* sess_ref_{nullptr};
+  wish::context* sess_ref_{nullptr};
 
   /// Expose emit() for testing (it is protected in form).
   void test_emit(bison::key_t event_name, dynamic payload = {}) {
@@ -98,12 +98,12 @@ TEST(FormBase, InitCallsOnInitExactlyOnce) {
   EXPECT_FALSE(f.init_called_);
 
   rmi::context ctx;
-  auto sync_sess = std::make_shared<wish::sync_session>(std::in_place, "form_init"_key);
+  auto sync_sess = std::make_shared<wish::sync_context>(std::in_place, std::make_unique<wish::context>("form_init"_key));
   {
-    auto lk = sync_sess->wlock();
-    wish::detail::current_session = &(*lk);
+    auto lk = wish::context_wlock{*sync_sess};
+    wish::detail::current_context = &(*lk);
     f.init(ctx, sync_sess);
-    wish::detail::current_session = nullptr;
+    wish::detail::current_context = nullptr;
   }
 
   EXPECT_TRUE(f.init_called_);
@@ -112,12 +112,12 @@ TEST(FormBase, InitCallsOnInitExactlyOnce) {
 TEST(FormBase, InitStoresContextReference) {
   stub_form f{dynamic{}};
   rmi::context ctx;
-  auto sync_sess = std::make_shared<wish::sync_session>(std::in_place, "form_ctx"_key);
+  auto sync_sess = std::make_shared<wish::sync_context>(std::in_place, std::make_unique<wish::context>("form_ctx"_key));
   {
-    auto lk = sync_sess->wlock();
-    wish::detail::current_session = &(*lk);
+    auto lk = wish::context_wlock{*sync_sess};
+    wish::detail::current_context = &(*lk);
     f.init(ctx, sync_sess);
-    wish::detail::current_session = nullptr;
+    wish::detail::current_context = nullptr;
   }
 
   EXPECT_EQ(f.ctx_ref_, &ctx);
@@ -126,15 +126,15 @@ TEST(FormBase, InitStoresContextReference) {
 TEST(FormBase, InitStoresSessionReference) {
   stub_form f{dynamic{}};
   rmi::context ctx;
-  auto sync_sess = std::make_shared<wish::sync_session>(std::in_place, "form_sess"_key);
+  auto sync_sess = std::make_shared<wish::sync_context>(std::in_place, std::make_unique<wish::context>("form_sess"_key));
 
-  wish::session* raw_sess;
+  wish::context* raw_sess;
   {
-    auto lk = sync_sess->wlock();
+    auto lk = wish::context_wlock{*sync_sess};
     raw_sess = &(*lk);
-    wish::detail::current_session = raw_sess;
+    wish::detail::current_context = raw_sess;
     f.init(ctx, sync_sess);
-    wish::detail::current_session = nullptr;
+    wish::detail::current_context = nullptr;
   }
 
   EXPECT_EQ(f.sess_ref_, raw_sess);
@@ -156,16 +156,16 @@ TEST(FormBase, EmitForwardsEventToSession) {
   bison::key_t form_id{"stub_form_id"_key};
   ctx.objects[form_id.id] = f;
 
-  auto sync_sess = std::make_shared<wish::sync_session>(std::in_place, "form_emit"_key);
+  auto sync_sess = std::make_shared<wish::sync_context>(std::in_place, std::make_unique<wish::context>("form_emit"_key));
   {
-    auto lk = sync_sess->wlock();
-    wish::detail::current_session = &(*lk);
+    auto lk = wish::context_wlock{*sync_sess};
+    wish::detail::current_context = &(*lk);
     f->init(ctx, sync_sess);
-    wish::detail::current_session = nullptr;
+    wish::detail::current_context = nullptr;
   }
   f->test_emit("on_test"_key);
 
-  auto lk = sync_sess->rlock();
+  auto lk = wish::context_rlock{*sync_sess};
   ASSERT_EQ(lk->pending_events.size(), 1u);
   EXPECT_EQ(lk->pending_events[0].id.id, form_id.id);
   EXPECT_EQ(lk->pending_events[0].event_name.id, "on_test"_key.id);
@@ -178,19 +178,19 @@ TEST(FormBase, EmitWithPayloadForwardsPayload) {
   bison::key_t form_id{"stub_payload_id"_key};
   ctx.objects[form_id.id] = f;
 
-  auto sync_sess = std::make_shared<wish::sync_session>(std::in_place, "form_emit_payload"_key);
+  auto sync_sess = std::make_shared<wish::sync_context>(std::in_place, std::make_unique<wish::context>("form_emit_payload"_key));
   {
-    auto lk = sync_sess->wlock();
-    wish::detail::current_session = &(*lk);
+    auto lk = wish::context_wlock{*sync_sess};
+    wish::detail::current_context = &(*lk);
     f->init(ctx, sync_sess);
-    wish::detail::current_session = nullptr;
+    wish::detail::current_context = nullptr;
   }
 
   dynamic payload;
   payload["path"_key] = std::string{"foo.txt"};
   f->test_emit("on_open"_key, std::move(payload));
 
-  auto lk = sync_sess->rlock();
+  auto lk = wish::context_rlock{*sync_sess};
   ASSERT_EQ(lk->pending_events.size(), 1u);
   EXPECT_EQ(lk->pending_events[0].payload.as<std::string>("path"_key), "foo.txt");
 }
@@ -208,19 +208,19 @@ TEST(FormBase, EmitWithNullEmitEventStillEnqueues) {
   ctx.objects[form_id.id] = f;
 
   // Session with no emit_event callback set.
-  auto sync_sess = std::make_shared<wish::sync_session>(std::in_place, "form_null_emit"_key);
+  auto sync_sess = std::make_shared<wish::sync_context>(std::in_place, std::make_unique<wish::context>("form_null_emit"_key));
   {
-    auto lk = sync_sess->wlock();
-    wish::detail::current_session = &(*lk);
+    auto lk = wish::context_wlock{*sync_sess};
+    wish::detail::current_context = &(*lk);
     f->init(ctx, sync_sess);
-    wish::detail::current_session = nullptr;
+    wish::detail::current_context = nullptr;
   }
 
   EXPECT_NO_THROW(f->test_emit("on_test"_key));
 
   // emit() always enqueues regardless of whether emit_event is set -- the
   // null-check happens later, at drain time (see the render loop).
-  auto lk = sync_sess->rlock();
+  auto lk = wish::context_rlock{*sync_sess};
   EXPECT_EQ(lk->pending_events.size(), 1u);
 }
 
@@ -239,21 +239,21 @@ TEST(FormBase, EmitOutsideDispatchNeverInvokesEmitEventDirectly) {
   bison::key_t form_id{"reentrant_emit_id"_key};
   ctx.objects[form_id.id] = f;
 
-  auto sync_sess = std::make_shared<wish::sync_session>(std::in_place, "form_reentrant_emit"_key);
+  auto sync_sess = std::make_shared<wish::sync_context>(std::in_place, std::make_unique<wish::context>("form_reentrant_emit"_key));
   bool emit_event_called = false;
   {
-    auto lk = sync_sess->wlock();
+    auto lk = wish::context_wlock{*sync_sess};
     lk->emit_event = [&emit_event_called](bison::key_t, bison::key_t, dynamic) { emit_event_called = true; };
-    wish::detail::current_session = &(*lk);
+    wish::detail::current_context = &(*lk);
     f->init(ctx, sync_sess);
-    wish::detail::current_session = nullptr;
+    wish::detail::current_context = nullptr;
   }
 
   f->test_emit("on_test"_key);
 
   EXPECT_FALSE(emit_event_called);
 
-  auto lk = sync_sess->rlock();
+  auto lk = wish::context_rlock{*sync_sess};
   ASSERT_EQ(lk->pending_events.size(), 1u);
   EXPECT_EQ(lk->pending_events[0].id.id, form_id.id);
   EXPECT_EQ(lk->pending_events[0].event_name.id, "on_test"_key.id);
@@ -273,17 +273,17 @@ TEST(FormBase, DrainingPendingEventsInvokesEmitEventWithCorrectData) {
   bison::key_t captured_event{};
   dynamic captured_payload;
 
-  auto sync_sess = std::make_shared<wish::sync_session>(std::in_place, "form_drain_emit"_key);
+  auto sync_sess = std::make_shared<wish::sync_context>(std::in_place, std::make_unique<wish::context>("form_drain_emit"_key));
   {
-    auto lk = sync_sess->wlock();
+    auto lk = wish::context_wlock{*sync_sess};
     lk->emit_event = [&](bison::key_t oid, bison::key_t evt, dynamic p) {
       captured_id = oid;
       captured_event = evt;
       captured_payload = std::move(p);
     };
-    wish::detail::current_session = &(*lk);
+    wish::detail::current_context = &(*lk);
     f->init(ctx, sync_sess);
-    wish::detail::current_session = nullptr;
+    wish::detail::current_context = nullptr;
   }
 
   dynamic payload;
@@ -292,10 +292,10 @@ TEST(FormBase, DrainingPendingEventsInvokesEmitEventWithCorrectData) {
 
   // Mirror the render loop: move pending_events out under the wlock, then
   // deliver them with no lock held.
-  std::vector<wish::session::pending_event> events;
+  std::vector<wish::context::pending_event> events;
   std::function<void(bison::key_t, bison::key_t, dynamic)> emit_event;
   {
-    auto lk = sync_sess->wlock();
+    auto lk = wish::context_wlock{*sync_sess};
     events = std::move(lk->pending_events);
     emit_event = lk->emit_event;
   }

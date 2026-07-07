@@ -1,5 +1,5 @@
 // MIT License © 2025 Binary Dice Games
-/// @file session.hpp
+/// @file context.hpp
 /// @brief Per-client state container for an active wish session.
 #pragma once
 
@@ -36,18 +36,21 @@ using logger_ptr = std::shared_ptr<logger>;
 
 /// @brief Holds all mutable state owned by one connected client.
 ///
+/// A `bison::rmi::context` subclass: `session_id` and `emit_event` are
+/// inherited directly, so wish never keeps its own copy of either. `objects`
+/// is also inherited but is bison's *own* live RMI object table (keyed by
+/// remote object id) -- an unrelated concept to this class's `ui_objects`
+/// (the dot-path UI tree), so it is deliberately not shadowed/renamed.
+///
 /// Constructed when a client connects; destroyed (and `resource_dir` deleted)
 /// when the client disconnects.  Not copyable; moveable so it can live in a
 /// container that may rehash.
-struct session {
-  /// Unique session identifier assigned by the bison RMI layer.
-  bison::key_t id;
-
+struct context : public bison::rmi::context {
   /// Flat map of dot-path name → `ui_element_ptr`.  The root node is at key
   /// `""`.  All named descendants follow the dot-joined ancestor naming
   /// convention (e.g. `"body.row.ok"`).  Stored as `ui_tree` so that
-  /// imported trees can be merged in directly via `objects.merge()`.
-  wish::ui_tree objects;
+  /// imported trees can be merged in directly via `ui_objects.merge()`.
+  wish::ui_tree ui_objects;
 
   /// Named UI template prototypes registered by the client: the fully
   /// resolved, typed `ui_element` tree root, built once at `register_template`
@@ -69,7 +72,7 @@ struct session {
   /// Application code may also set it directly to force a redraw after
   /// mutating session state from outside RMI dispatch (e.g. a background
   /// thread holding the session wlock directly), or from within a render
-  /// function (which only ever sees a `const session&`) to request
+  /// function (which only ever sees a `const context&`) to request
   /// continuous redraws — e.g. a custom widget animating its own caret
   /// outside of ImGui's `WantTextInput` mechanism. `mutable` for that
   /// last case; still an atomic since it's read from other threads via
@@ -82,7 +85,7 @@ struct session {
   /// Controlled by `wish::server::set_allow_absolute_paths()`.
   bool allow_absolute_paths{false};
 
-  /// File service instance; populated by `register_file_service(session&)`.
+  /// File service instance; populated by `register_file_service(context&)`.
   file_service_ptr file_service;
 
   /// Style service instance; holds the client-configured ImGui theme fields.
@@ -100,21 +103,12 @@ struct session {
   ///  - `form::init()` adds the form's internal Window at `internal_root_key_`.
   ///  - `form::remove_internal_objects()` erases by that same key.
   ///
-  /// All reads and writes are serialised by `server::sessions_` (the
-  /// synchronized session map): the render loop holds the read lock for the
-  /// entire frame; every RMI dispatch holds the write lock via the
+  /// All reads and writes are serialised by the session's own lock (see
+  /// `sync_context`/`context_wlock`/`context_rlock` below): the render loop
+  /// holds the read lock for the entire frame; every RMI dispatch holds the
+  /// write lock via bison's `client_worker`, spanning the
   /// `on_before_dispatch` / `on_after_dispatch` hooks.
   std::unordered_map<bison::key_t, ui_element_ptr, bison::key_t, bison::key_t> top_level_objects;
-
-  /// @brief Callback for delivering events to the connected client.
-  ///
-  /// Parameters: `(object_id, event_name, payload)`.  Null when no client is
-  /// attached (e.g. in unit tests that do not require event delivery).
-  ///
-  /// Set once by the server on session creation.  Renderer code must call
-  /// `enqueue_event()` instead of invoking this directly — events are
-  /// deferred to after the frame so session state can be modified safely.
-  std::function<void(bison::key_t, bison::key_t, bison::dynamic)> emit_event;
 
   /// @brief One widget event queued during rendering; dispatched after the frame.
   struct pending_event {
@@ -146,39 +140,74 @@ struct session {
 
   /// @brief Construct a session: creates a unique temporary directory.
   /// @param id  Session identifier; used to derive a unique directory name.
-  explicit session(bison::key_t id);
+  explicit context(bison::key_t id);
 
   /// @brief Destroy the session: removes `resource_dir` and all its contents.
-  ~session();
+  ~context();
 
-  session(const session&) = delete;
-  session& operator=(const session&) = delete;
-  session(session&& other) = delete;
-  session& operator=(session&& other) = delete;
+  context(const context&) = delete;
+  context& operator=(const context&) = delete;
+  context(context&& other) = delete;
+  context& operator=(context&& other) = delete;
 };
 
-// ── Synchronized session wrapper ─────────────────────────────────────────────
+// ── Synchronized context wrapper ─────────────────────────────────────────────
 
-/// Synchronized wrapper that owns a session and serialises all access to it
-/// with a shared_mutex (multiple concurrent readers or one exclusive writer).
-/// All wish server code must access session data through this wrapper.
-using sync_session = bison::synchronized<session>;
-using sync_session_ptr = std::shared_ptr<sync_session>;
+/// Synchronized wrapper that owns a polymorphic `bison::rmi::context` and
+/// serialises all access to it with a shared_mutex (multiple concurrent
+/// readers or one exclusive writer).  The wrapped value is a `unique_ptr`
+/// rather than a plain `context` because `bison::synchronized<T>` stores `T`
+/// by value -- wrapping `context` directly would slice off `wish::context`'s
+/// extra fields.  This is the exact type stored in
+/// `bison::rmi::server::session_contexts()`, so wish shares the same
+/// lockable slots rather than maintaining a second, parallel map.
+using sync_context = bison::synchronized<std::unique_ptr<bison::rmi::context>>;
+using sync_context_ptr = std::shared_ptr<sync_context>;
 
-/// Convenience lock-pointer types for the two lock modes.
-using sync_session_wlock = bison::locked_ptr<session, std::unique_lock<std::shared_mutex>>;
-using sync_session_rlock = bison::locked_ptr<const session, std::shared_lock<std::shared_mutex>>;
+/// @brief RAII write-lock wrapper that exposes the underlying `wish::context`
+///        directly (downcasting past the `unique_ptr<bison::rmi::context>`
+///        indirection `sync_context` stores).
+class context_wlock {
+ public:
+  explicit context_wlock(sync_context& sc) : lp_(sc.wlock()) {}
+
+  wish::context& operator*() const {
+    return static_cast<wish::context&>(**lp_);
+  }
+  wish::context* operator->() const {
+    return &**this;
+  }
+
+ private:
+  bison::locked_ptr<std::unique_ptr<bison::rmi::context>, std::unique_lock<std::shared_mutex>> lp_;
+};
+
+/// @brief Const/read-locked counterpart of `context_wlock`.
+class context_rlock {
+ public:
+  explicit context_rlock(const sync_context& sc) : lp_(sc.rlock()) {}
+
+  const wish::context& operator*() const {
+    return static_cast<const wish::context&>(**lp_);
+  }
+  const wish::context* operator->() const {
+    return &**this;
+  }
+
+ private:
+  bison::locked_ptr<const std::unique_ptr<bison::rmi::context>, std::shared_lock<std::shared_mutex>> lp_;
+};
 
 namespace detail {
-/// Thread-local pointer to the wish::session whose wlock is currently held by
-/// `server::on_before_dispatch`.  Valid only on the worker thread executing an
-/// RMI dispatch; null at all other times.
+/// Thread-local pointer to the wish::context whose wlock is currently held by
+/// bison's `client_worker` for the duration of an RMI dispatch.  Valid only
+/// on the worker thread executing that dispatch; null at all other times.
 ///
 /// Form and template-handler methods access session data through this pointer
 /// rather than re-acquiring the lock (which would deadlock on a non-recursive
 /// mutex).  Do NOT cache or dereference this outside the call stack that entered
 /// dispatch.
-extern thread_local session* current_session;
+extern thread_local context* current_context;
 
 /// @brief Return the per-session singleton instance for a `__Wish*` protocol
 ///        class (`__WishFileSystem`, `__WishStyle`, `__WishLogger`).
@@ -192,7 +221,7 @@ extern thread_local session* current_session;
 /// @return The singleton's `dynamic_ptr`, or an empty `dynamic_ptr` if
 ///         @p klass is not one of the singleton protocol classes (or the
 ///         session has no such service attached).
-bison::dynamic_ptr find_singleton_service(const session& s, bison::key_t klass);
+bison::dynamic_ptr find_singleton_service(const context& s, bison::key_t klass);
 
 /// @brief Inject session context into a freshly created form/ui_template.
 ///
@@ -200,14 +229,14 @@ bison::dynamic_ptr find_singleton_service(const session& s, bison::key_t klass);
 ///
 /// @param obj       Object returned by the base class's `on_create_object`.
 /// @param ctx       Per-session RMI context; must outlive @p obj.
-/// @param sync_sess Synchronized wish session; held for @p obj's lifetime.
-void init_session_object(const bison::dynamic_ptr& obj, bison::rmi::context& ctx, const sync_session_ptr& sync_sess);
+/// @param sync_ctx  Synchronized wish session; held for @p obj's lifetime.
+void init_session_object(const bison::dynamic_ptr& obj, bison::rmi::context& ctx, const sync_context_ptr& sync_ctx);
 
 } // namespace detail
 
 /// @brief Write a human-readable dump of every object in the session to @p out.
 ///
-/// Outputs one line per entry in `session.objects` and `session.top_level_objects`,
+/// Outputs one line per entry in `context.ui_objects` and `context.top_level_objects`,
 /// sorted by key, with the element's class type.  Useful for diagnosing missing
 /// or unexpected elements in the UI tree.
 ///
@@ -221,7 +250,7 @@ void init_session_object(const bison::dynamic_ptr& obj, bison::rmi::context& ctx
 ///   [DockSpaceViewport]  "tpl_0"
 ///   [Window]             "__form_140703"
 /// @endcode
-void dump_session_tree(const session& s, std::ostream& out);
+void dump_session_tree(const context& s, std::ostream& out);
 
 /// @brief Enqueue a widget event for deferred dispatch after the current frame.
 ///
@@ -231,7 +260,7 @@ void dump_session_tree(const session& s, std::ostream& out);
 /// `render_session` call).  After the frame the render loop delivers every
 /// queued event to the client and calls `on_event` on the owning
 /// `ui_root`, preventing deadlocks and iterator-invalidation.
-inline void enqueue_event(const session& s, bison::key_t id, bison::key_t event, bison::dynamic payload) {
+inline void enqueue_event(const context& s, bison::key_t id, bison::key_t event, bison::dynamic payload) {
   s.pending_events.push_back({id, event, std::move(payload), s.current_top_level_key});
 }
 

@@ -3,7 +3,7 @@
 
 #include <registry.hpp>
 #include <server.hpp>
-#include <session.hpp>
+#include <context.hpp>
 #include <ui_root.hpp>
 
 #include "src/bison/bison_object.hpp"
@@ -101,10 +101,10 @@ class SessionCapturingServer : public wish::server {
   SessionCapturingServer(server_transport_iface& t, std::unique_ptr<wish::renderer> r)
       : wish::server(t, std::move(r)) {}
 
-  wish::session* last_session{nullptr};
+  wish::context* last_session{nullptr};
 
  protected:
-  void on_session_created(wish::session& s) override {
+  void on_session_created(wish::context& s) override {
     last_session = &s;
   }
 };
@@ -140,7 +140,7 @@ class ProcessExplorerWindowTest : public ::testing::Test {
   std::string instantiate_and_get_root() {
     client_->instantiate("wish"_key, "ProcessExplorer"_key).get();
     EXPECT_NE(srv_->last_session, nullptr);
-    return find_form_root(srv_->last_session->objects);
+    return find_form_root(srv_->last_session->ui_objects);
   }
 
   memory_server_transport transport_;
@@ -156,29 +156,29 @@ TEST_F(ProcessExplorerWindowTest, SessionObjectsHasFormRoot) {
 TEST_F(ProcessExplorerWindowTest, FormRootIsWindow) {
   std::string root = instantiate_and_get_root();
   ASSERT_FALSE(root.empty());
-  auto& obj = srv_->last_session->objects.at(root);
+  auto& obj = srv_->last_session->ui_objects.at(root);
   EXPECT_EQ(obj->findField(dynamic::CLASS)->as<bison::key_t>(), "Window"_key);
 }
 
 TEST_F(ProcessExplorerWindowTest, TreeContainsSummaryLabels) {
   std::string root = instantiate_and_get_root();
   ASSERT_FALSE(root.empty());
-  EXPECT_TRUE(srv_->last_session->objects.count(root + ".vbox.summary.cpu_label"));
-  EXPECT_TRUE(srv_->last_session->objects.count(root + ".vbox.summary.mem_label"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".vbox.summary.cpu_label"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".vbox.summary.mem_label"));
 }
 
 TEST_F(ProcessExplorerWindowTest, TreeContainsPlots) {
   std::string root = instantiate_and_get_root();
   ASSERT_FALSE(root.empty());
-  EXPECT_TRUE(srv_->last_session->objects.count(root + ".vbox.cpu_plot.cpu_series"));
-  EXPECT_TRUE(srv_->last_session->objects.count(root + ".vbox.mem_plot.mem_series"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".vbox.cpu_plot.cpu_series"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".vbox.mem_plot.mem_series"));
 }
 
 TEST_F(ProcessExplorerWindowTest, TreeContainsEmptyProcessTableBeforeAnySnapshot) {
   std::string root = instantiate_and_get_root();
   ASSERT_FALSE(root.empty());
-  auto it = srv_->last_session->objects.find(root + ".vbox.proc_table");
-  ASSERT_NE(it, srv_->last_session->objects.end());
+  auto it = srv_->last_session->ui_objects.find(root + ".vbox.proc_table");
+  ASSERT_NE(it, srv_->last_session->ui_objects.end());
 
   auto* cf = it->second->findField<dynamic_ptr>("children"_key);
   ASSERT_NE(cf, nullptr);
@@ -202,7 +202,7 @@ class ProcessExplorerSnapshotTest : public ::testing::Test {
     client_->connect();
     proxy_.emplace(client_->instantiate("wish"_key, "ProcessExplorer"_key).get());
     ASSERT_TRUE(proxy_->valid());
-    root_ = find_form_root(srv_->last_session->objects);
+    root_ = find_form_root(srv_->last_session->ui_objects);
     ASSERT_FALSE(root_.empty());
   }
 
@@ -230,8 +230,8 @@ class ProcessExplorerSnapshotTest : public ::testing::Test {
   // dynamic::size() only counts numeric-indexed entries, so it already
   // excludes the 6 string-keyed TableColumn children -- no subtraction needed.
   size_t row_count() const {
-    auto it = srv_->last_session->objects.find(root_ + ".vbox.proc_table");
-    if (it == srv_->last_session->objects.end())
+    auto it = srv_->last_session->ui_objects.find(root_ + ".vbox.proc_table");
+    if (it == srv_->last_session->ui_objects.end())
       return 0;
     auto* cf = it->second->findField<dynamic_ptr>("children"_key);
     if (!cf || !*cf)
@@ -240,15 +240,15 @@ class ProcessExplorerSnapshotTest : public ::testing::Test {
   }
 
   std::string label_text(const std::string& path) const {
-    auto it = srv_->last_session->objects.find(path);
-    if (it == srv_->last_session->objects.end())
+    auto it = srv_->last_session->ui_objects.find(path);
+    if (it == srv_->last_session->ui_objects.end())
       return {};
     return it->second->as<std::string>("text"_key);
   }
 
   std::vector<float> plot_field(const std::string& path, bison::key_t field_key) const {
-    auto it = srv_->last_session->objects.find(path);
-    if (it == srv_->last_session->objects.end())
+    auto it = srv_->last_session->ui_objects.find(path);
+    if (it == srv_->last_session->ui_objects.end())
       return {};
     auto* f = it->second->findField<std::vector<float>>(field_key);
     return f ? *f : std::vector<float>{};
@@ -258,8 +258,8 @@ class ProcessExplorerSnapshotTest : public ::testing::Test {
   // first cell (the PID Label), independent of pid_to_row_'s internal
   // (unordered) iteration order.
   std::vector<int> row_pids_in_order() const {
-    auto it = srv_->last_session->objects.find(root_ + ".vbox.proc_table");
-    if (it == srv_->last_session->objects.end())
+    auto it = srv_->last_session->ui_objects.find(root_ + ".vbox.proc_table");
+    if (it == srv_->last_session->ui_objects.end())
       return {};
     auto* cf = it->second->findField<dynamic_ptr>("children"_key);
     if (!cf || !*cf)
@@ -295,7 +295,7 @@ class ProcessExplorerSnapshotTest : public ::testing::Test {
   // imgui_ui_renderer.cpp): simulates a column-header click without needing
   // a real ImGui frame.
   void simulate_sort(int32_t column_id, bool ascending) {
-    auto table_id = srv_->last_session->objects.at(root_ + ".vbox.proc_table")->as<bison::key_t>("__wish_id"_key);
+    auto table_id = srv_->last_session->ui_objects.at(root_ + ".vbox.proc_table")->as<bison::key_t>("__wish_id"_key);
     auto h = srv_->last_session->top_level_handlers.find(root_);
     ASSERT_NE(h, srv_->last_session->top_level_handlers.end());
     dynamic payload;
@@ -341,8 +341,8 @@ TEST_F(ProcessExplorerSnapshotTest, PlotSeriesGetMatchingXsAndYs) {
 TEST_F(ProcessExplorerSnapshotTest, FirstCallSizesCoreMeters) {
   update_snapshot(10.0, {20.0f, 30.0f, 40.0f, 50.0f}, 1000.0, 100.0, {});
 
-  auto it = srv_->last_session->objects.find(root_ + ".vbox.cores");
-  ASSERT_NE(it, srv_->last_session->objects.end());
+  auto it = srv_->last_session->ui_objects.find(root_ + ".vbox.cores");
+  ASSERT_NE(it, srv_->last_session->ui_objects.end());
   auto* cf = it->second->findField<dynamic_ptr>("children"_key);
   ASSERT_NE(cf, nullptr);
   ASSERT_TRUE(*cf);
@@ -447,7 +447,7 @@ TEST_F(ProcessExplorerSnapshotTest, WindowClosedEmitsClosedAndCleansUp) {
       prev(id, event, std::move(payload));
   };
 
-  auto win_id = srv_->last_session->objects.at(root_)->as<bison::key_t>("__wish_id"_key);
+  auto win_id = srv_->last_session->ui_objects.at(root_)->as<bison::key_t>("__wish_id"_key);
   auto h = srv_->last_session->top_level_handlers.find(root_);
   ASSERT_NE(h, srv_->last_session->top_level_handlers.end());
   h->second->on_event(win_id, "closed"_key, dynamic{});
@@ -460,5 +460,5 @@ TEST_F(ProcessExplorerSnapshotTest, WindowClosedEmitsClosedAndCleansUp) {
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
 
   EXPECT_TRUE(got_closed);
-  EXPECT_EQ(srv_->last_session->objects.count(root_), 0u);
+  EXPECT_EQ(srv_->last_session->ui_objects.count(root_), 0u);
 }

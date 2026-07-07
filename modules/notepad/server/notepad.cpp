@@ -116,7 +116,7 @@ void notepad::on_init() {
   tree.with("vbox.toolbar.btn_sync", [&](const auto& e) { btn_sync_id_ = wish_id_of(e); });
   tree.with("vbox.tab_bar", [&](const auto& e) { tab_bar_ptr_ = e; });
 
-  sess().objects.merge(std::move(tree), internal_root_key_);
+  sess().ui_objects.merge(std::move(tree), internal_root_key_);
 }
 
 // ── open_file ─────────────────────────────────────────────────────────────────

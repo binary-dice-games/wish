@@ -20,13 +20,13 @@ using namespace bison;
 // Walk a (freshly cloned) element tree, assigning each mapped node (one
 // stamped with "__path__" by build_ui_node at register time) a fresh RMI id
 // and registering it into ctx/sess, appending a {name, id} entry to `result`.
-static void collect_ids(rmi::context& ctx, session& sess, const ui_element_ptr& node, dynamic& result, size_t& idx) {
+static void collect_ids(rmi::context& ctx, context& sess, const ui_element_ptr& node, dynamic& result, size_t& idx) {
   const auto* path_field = node->findField("__path__"_key);
   if (path_field && path_field->is<std::string>()) {
     const std::string& path = path_field->as<std::string>();
     key_t new_id = rmi::shared::generate_id();
     ctx.objects[new_id.id] = node;
-    sess.objects[path] = node;
+    sess.ui_objects[path] = node;
 
     // Store the RMI object ID on the element so the renderer can emit events
     // with the correct ID (not the class name).
@@ -65,7 +65,7 @@ static void collect_ids(rmi::context& ctx, session& sess, const ui_element_ptr& 
 // and register the root as a top-level renderable (and, if it's a ui_root
 // subtype, as its own event handler). Returns the {name, id} entry array the
 // client uses to build its local proxy_map.
-static dynamic instantiate_prototype(rmi::context& ctx, session& sess, const ui_element_ptr& prototype) {
+static dynamic instantiate_prototype(rmi::context& ctx, context& sess, const ui_element_ptr& prototype) {
   ui_element_ptr cloned_root{std::static_pointer_cast<ui_element>(std::shared_ptr<dynamic>(prototype->clone_ptr()))};
 
   dynamic result;
@@ -105,7 +105,7 @@ bison::dynamic ui_template::do_register(const bison::dynamic& params) {
 
 bison::dynamic ui_template::do_instantiate(const bison::dynamic& params) {
   bison::key_t name = params.as<bison::key_t>("name"_key);
-  session& s = sess();
+  context& s = sess();
   auto it = s.templates.find(name);
   if (it == s.templates.end()) {
     throw std::runtime_error("wish: template not found");

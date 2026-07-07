@@ -37,7 +37,7 @@ class imgui_renderer : public renderer {
 
   /// @brief Dispatches the element to its ImGui widget(s) and recurses into
   ///        children where required.
-  void render_node(const ui_element& node, const session& s) override;
+  void render_node(const ui_element& node, const context& s) override;
 
   /**
    * @brief Render a session's element tree with per-session style isolation.
@@ -47,7 +47,7 @@ class imgui_renderer : public renderer {
    * original style — even if rendering throws.  When no style is configured
    * for the session, delegates directly to `render_node`.
    */
-  void render_session(const ui_element& root, const session& s) override;
+  void render_session(const ui_element& root, const context& s) override;
 
   /// @brief Ends the ImGui frame (`ImGui::EndFrame`).
   void end_frame() override;

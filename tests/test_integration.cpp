@@ -37,7 +37,7 @@ class integration_server : public wish::server {
   std::filesystem::path resource_dir;
 
  protected:
-  void on_session_created(wish::session& s) override {
+  void on_session_created(wish::context& s) override {
     emit_fn = s.emit_event;
     resource_dir = s.resource_dir;
   }
@@ -179,7 +179,16 @@ TEST_F(IntegrationTest, FullStack) {
   EXPECT_TRUE(c.file_download_ok) << "file download content mismatch";
   EXPECT_TRUE(c.file_erase_ok) << "file erase call failed";
 
-  // Session resource_dir must be deleted when the client disconnects.
+  // Session resource_dir must be deleted when the client disconnects. The
+  // client's disconnect() does not block on the server finishing its own
+  // teardown (context destruction happens on the server's worker thread,
+  // after it notices the connection closed) -- spin briefly, same as the
+  // event-delivery wait above.
   ASSERT_FALSE(srv_->resource_dir.empty()) << "server did not record resource_dir";
+  {
+    auto t0 = std::chrono::steady_clock::now();
+    while (std::filesystem::exists(srv_->resource_dir) && std::chrono::steady_clock::now() - t0 < std::chrono::seconds(2))
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
   EXPECT_FALSE(std::filesystem::exists(srv_->resource_dir)) << "resource_dir still exists after disconnect";
 }

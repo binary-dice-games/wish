@@ -131,8 +131,8 @@ void file_dialog::on_init() {
   });
   tree.with("vbox.btn_row.btn_cancel", [&](const auto& e) { btn_cancel_id_ = wish_id_of(e); });
 
-  // Merge the imported tree into session.objects under our prefix.
-  sess().objects.merge(std::move(tree), internal_root_key_);
+  // Merge the imported tree into context.ui_objects under our prefix.
+  sess().ui_objects.merge(std::move(tree), internal_root_key_);
 }
 
 // ── Event routing ─────────────────────────────────────────────────────────────
@@ -350,7 +350,7 @@ void file_dialog::on_btn_open_clicked() {
   // Validate the path inside a scoped rlock; release before calling
   // remove_internal_objects() which needs the wlock.
   {
-    auto sess = sync_sess_->rlock();
+    auto sess = context_rlock{*sync_ctx_};
     auto resolved = file_service::resolve_path(filename, sess->resource_dir, sess->allow_absolute_paths);
     if (resolved.empty())
       return;
@@ -359,7 +359,7 @@ void file_dialog::on_btn_open_clicked() {
   bison::dynamic payload;
   payload["path"_key] = filename;
   emit("on_open"_key, std::move(payload));
-  // Remove the internal window from session.objects so the dialog disappears,
+  // Remove the internal window from context.ui_objects so the dialog disappears,
   // matching the conventional "close on confirm" behavior of a file picker.
   remove_internal_objects();
 }
@@ -398,7 +398,7 @@ void file_dialog::on_row_activated(const bison::dynamic& payload) {
     // Validate inside a scoped rlock; release before remove_internal_objects()
     // which needs the wlock -- matches on_btn_open_clicked().
     {
-      auto sess = sync_sess_->rlock();
+      auto sess = context_rlock{*sync_ctx_};
       auto resolved = file_service::resolve_path(name, sess->resource_dir, sess->allow_absolute_paths);
       if (resolved.empty())
         return;

@@ -146,7 +146,7 @@ void calculator::on_init() {
   bind_button("row4.pm", btn_pm_, [this] { handle_negate(); });
   bind_button("row4.pct", btn_pct_, [this] { handle_percent(); });
 
-  sess().objects.merge(std::move(tree), internal_root_key_);
+  sess().ui_objects.merge(std::move(tree), internal_root_key_);
 }
 
 // ── Event routing ─────────────────────────────────────────────────────────────

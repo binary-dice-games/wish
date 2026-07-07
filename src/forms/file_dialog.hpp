@@ -63,7 +63,7 @@ class file_dialog : public form {
   /// @brief Validate filename, then emit on_open if the path is safe.
   void on_btn_open_clicked();
 
-  /// @brief Emit on_cancel and remove the internal UI tree from session.objects.
+  /// @brief Emit on_cancel and remove the internal UI tree from context.ui_objects.
   void on_btn_cancel_clicked();
 
   /// @brief Handle a double-click on a table row: emit on_navigate or on_open.

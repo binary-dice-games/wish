@@ -10,5 +10,5 @@
 #include <registry.hpp>
 #include <renderer.hpp>
 #include <server.hpp>
-#include <session.hpp>
+#include <context.hpp>
 #include <ui_importer.hpp>

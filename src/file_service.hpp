@@ -3,7 +3,7 @@
 /// @brief Sandboxed per-session file store accessible over bison RMI.
 #pragma once
 
-#include <session.hpp>
+#include <context.hpp>
 
 #include "src/bison/bison_object.hpp"
 

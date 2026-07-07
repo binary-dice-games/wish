@@ -19,7 +19,7 @@ namespace bdg::wish::resource_store {
 /// Never throws. Any miniz or filesystem failure is logged to stderr and
 /// that entry is skipped; extraction continues with the remaining entries.
 /// Callers must treat a `false` return as non-fatal — see the rationale in
-/// `session::session()`, which calls this on a thread with no surrounding
+/// `context::context()`, which calls this on a thread with no surrounding
 /// try/catch.
 ///
 /// @param dir  Destination directory.

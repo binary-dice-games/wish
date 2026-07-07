@@ -4,7 +4,7 @@
 ///
 /// Each function maps one wish element class to the corresponding ImGui call.
 /// All functions share the signature:
-///   void(imgui_renderer&, const ui_element&, const session&)
+///   void(imgui_renderer&, const ui_element&, const context&)
 /// matching the render_fn typedef in imgui_renderer.cpp.
 #include "imgui_ui_renderer.hpp"
 
@@ -33,7 +33,7 @@ static std::string with_id(const std::string& label, const ui_element& node) {
 
 // ── Core ──────────────────────────────────────────────────────────────────────
 
-void render_window(imgui_renderer& r, const ui_element& node, const session& s) {
+void render_window(imgui_renderer& r, const ui_element& node, const context& s) {
   auto title = node.get_as<std::string>("title"_key, "");
   int32_t px = node.get_as<int32_t>("pos_x"_key, -1);
   int32_t py = node.get_as<int32_t>("pos_y"_key, -1);
@@ -64,12 +64,12 @@ void render_window(imgui_renderer& r, const ui_element& node, const session& s) 
     enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "closed"_key, dynamic{});
 }
 
-void render_label(imgui_renderer&, const ui_element& node, const session&) {
+void render_label(imgui_renderer&, const ui_element& node, const context&) {
   auto text = node.get_as<std::string>("text"_key, "");
   ImGui::TextUnformatted(text.c_str());
 }
 
-void render_button(imgui_renderer&, const ui_element& node, const session& s) {
+void render_button(imgui_renderer&, const ui_element& node, const context& s) {
   auto label = node.get_as<std::string>("label"_key, "");
   int32_t w = node.get_as<int32_t>("width"_key, 0);
   int32_t h = node.get_as<int32_t>("height"_key, 0);
@@ -78,7 +78,7 @@ void render_button(imgui_renderer&, const ui_element& node, const session& s) {
     enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "clicked"_key, dynamic{});
 }
 
-void render_checkbox(imgui_renderer&, const ui_element& node, const session& s) {
+void render_checkbox(imgui_renderer&, const ui_element& node, const context& s) {
   auto label = node.get_as<std::string>("label"_key, "");
   bool val = node.get_as<bool>("value"_key, false);
   auto iml = with_id(label, node);
@@ -90,7 +90,7 @@ void render_checkbox(imgui_renderer&, const ui_element& node, const session& s) 
   }
 }
 
-void render_slider_float(imgui_renderer&, const ui_element& node, const session& s) {
+void render_slider_float(imgui_renderer&, const ui_element& node, const context& s) {
   auto label = node.get_as<std::string>("label"_key, "");
   float val = node.get_as<float>("value"_key, 0.0f);
   float vmin = node.get_as<float>("min"_key, 0.0f);
@@ -105,7 +105,7 @@ void render_slider_float(imgui_renderer&, const ui_element& node, const session&
   }
 }
 
-void render_slider_int(imgui_renderer&, const ui_element& node, const session& s) {
+void render_slider_int(imgui_renderer&, const ui_element& node, const context& s) {
   auto label = node.get_as<std::string>("label"_key, "");
   int32_t val = node.get_as<int32_t>("value"_key, 0);
   int32_t vmin = node.get_as<int32_t>("min"_key, 0);
@@ -119,7 +119,7 @@ void render_slider_int(imgui_renderer&, const ui_element& node, const session& s
   }
 }
 
-void render_input_text(imgui_renderer&, const ui_element& node, const session& s) {
+void render_input_text(imgui_renderer&, const ui_element& node, const context& s) {
   auto label = node.get_as<std::string>("label"_key, "");
   auto hint = node.get_as<std::string>("hint"_key, "");
   int32_t maxlen = node.get_as<int32_t>("max_length"_key, 256);
@@ -148,7 +148,7 @@ void render_input_text(imgui_renderer&, const ui_element& node, const session& s
   }
 }
 
-void render_image(imgui_renderer& r, const ui_element& node, const session& s) {
+void render_image(imgui_renderer& r, const ui_element& node, const context& s) {
   auto src = node.get_as<std::string>("src"_key, "");
   int32_t w = node.get_as<int32_t>("width"_key, 0);
   int32_t h = node.get_as<int32_t>("height"_key, 0);
@@ -163,16 +163,16 @@ void render_image(imgui_renderer& r, const ui_element& node, const session& s) {
   ImGui::Image(tex, ImVec2(float(w), float(h)));
 }
 
-void render_separator(imgui_renderer&, const ui_element&, const session&) {
+void render_separator(imgui_renderer&, const ui_element&, const context&) {
   ImGui::Separator();
 }
 
-void render_separator_text(imgui_renderer&, const ui_element& node, const session&) {
+void render_separator_text(imgui_renderer&, const ui_element& node, const context&) {
   auto label = node.get_as<std::string>("label"_key, "");
   ImGui::SeparatorText(label.c_str());
 }
 
-void render_vertical_layout(imgui_renderer& r, const ui_element& node, const session& s) {
+void render_vertical_layout(imgui_renderer& r, const ui_element& node, const context& s) {
   float spacing = node.get_as<float>("spacing"_key, 0.0f);
   bool first = true;
   node.for_each_child_ordered([&](key_t, ui_element& child) {
@@ -183,7 +183,7 @@ void render_vertical_layout(imgui_renderer& r, const ui_element& node, const ses
   });
 }
 
-void render_horizontal_layout(imgui_renderer& r, const ui_element& node, const session& s) {
+void render_horizontal_layout(imgui_renderer& r, const ui_element& node, const context& s) {
   float spacing = node.get_as<float>("spacing"_key, 0.0f);
   auto align = node.get_as<std::string>("align"_key, "left");
 
@@ -216,14 +216,14 @@ void render_horizontal_layout(imgui_renderer& r, const ui_element& node, const s
 
 // ── Menu ──────────────────────────────────────────────────────────────────────
 
-void render_menu_bar(imgui_renderer& r, const ui_element& node, const session& s) {
+void render_menu_bar(imgui_renderer& r, const ui_element& node, const context& s) {
   if (ImGui::BeginMenuBar()) {
     render_children(r, node, s);
     ImGui::EndMenuBar();
   }
 }
 
-void render_menu(imgui_renderer& r, const ui_element& node, const session& s) {
+void render_menu(imgui_renderer& r, const ui_element& node, const context& s) {
   auto label = node.get_as<std::string>("label"_key, "");
   bool enabled = node.get_as<bool>("enabled"_key, true);
   auto iml = with_id(label, node);
@@ -233,7 +233,7 @@ void render_menu(imgui_renderer& r, const ui_element& node, const session& s) {
   }
 }
 
-void render_menu_item(imgui_renderer&, const ui_element& node, const session& s) {
+void render_menu_item(imgui_renderer&, const ui_element& node, const context& s) {
   auto label = node.get_as<std::string>("label"_key, "");
   auto shortcut = node.get_as<std::string>("shortcut"_key, "");
   bool checked = node.get_as<bool>("checked"_key, false);
@@ -250,7 +250,7 @@ void render_menu_item(imgui_renderer&, const ui_element& node, const session& s)
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 
-void render_tab_bar(imgui_renderer& r, const ui_element& node, const session& s) {
+void render_tab_bar(imgui_renderer& r, const ui_element& node, const context& s) {
   auto id = node.get_as<std::string>("id"_key, "##tabbar");
   if (ImGui::BeginTabBar(id.c_str())) {
     render_children(r, node, s);
@@ -258,7 +258,7 @@ void render_tab_bar(imgui_renderer& r, const ui_element& node, const session& s)
   }
 }
 
-void render_tab_item(imgui_renderer& r, const ui_element& node, const session& s) {
+void render_tab_item(imgui_renderer& r, const ui_element& node, const context& s) {
   auto label = node.get_as<std::string>("label"_key, "Tab");
   bool closable = node.get_as<bool>("closable"_key, false);
   bool open = true;
@@ -285,7 +285,7 @@ void render_tab_item(imgui_renderer& r, const ui_element& node, const session& s
 
 // ── Tree ──────────────────────────────────────────────────────────────────────
 
-void render_tree_node(imgui_renderer& r, const ui_element& node, const session& s) {
+void render_tree_node(imgui_renderer& r, const ui_element& node, const context& s) {
   auto label = node.get_as<std::string>("label"_key, "");
   bool init_open = node.get_as<bool>("open"_key, false);
   bool leaf = node.get_as<bool>("leaf"_key, false);
@@ -312,7 +312,7 @@ void render_tree_node(imgui_renderer& r, const ui_element& node, const session& 
   }
 }
 
-void render_collapsing_header(imgui_renderer& r, const ui_element& node, const session& s) {
+void render_collapsing_header(imgui_renderer& r, const ui_element& node, const context& s) {
   auto label = node.get_as<std::string>("label"_key, "");
   auto iml = with_id(label, node);
   bool is_open = ImGui::CollapsingHeader(iml.c_str());
@@ -332,7 +332,7 @@ void render_collapsing_header(imgui_renderer& r, const ui_element& node, const s
 
 // ── Selection ─────────────────────────────────────────────────────────────────
 
-void render_combo(imgui_renderer&, const ui_element& node, const session& s) {
+void render_combo(imgui_renderer&, const ui_element& node, const context& s) {
   auto label = node.get_as<std::string>("label"_key, "");
   auto items_str = node.get_as<std::string>("items"_key, "");
   int32_t sel = node.get_as<int32_t>("value"_key, 0);
@@ -364,7 +364,7 @@ void render_combo(imgui_renderer&, const ui_element& node, const session& s) {
   }
 }
 
-void render_radio_button(imgui_renderer&, const ui_element& node, const session& s) {
+void render_radio_button(imgui_renderer&, const ui_element& node, const context& s) {
   auto label = node.get_as<std::string>("label"_key, "");
   bool active = node.get_as<bool>("active"_key, false);
   auto iml = with_id(label, node);
@@ -372,7 +372,7 @@ void render_radio_button(imgui_renderer&, const ui_element& node, const session&
     enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "clicked"_key, dynamic{});
 }
 
-void render_selectable(imgui_renderer&, const ui_element& node, const session& s) {
+void render_selectable(imgui_renderer&, const ui_element& node, const context& s) {
   auto label = node.get_as<std::string>("label"_key, "");
   bool selected = node.get_as<bool>("selected"_key, false);
   float w = node.get_as<float>("width"_key, 0.0f);
@@ -389,7 +389,7 @@ void render_selectable(imgui_renderer&, const ui_element& node, const session& s
 
 // ── Numeric inputs ────────────────────────────────────────────────────────────
 
-void render_input_int(imgui_renderer&, const ui_element& node, const session& s) {
+void render_input_int(imgui_renderer&, const ui_element& node, const context& s) {
   auto label = node.get_as<std::string>("label"_key, "");
   int32_t val = node.get_as<int32_t>("value"_key, 0);
   int32_t step = node.get_as<int32_t>("step"_key, 1);
@@ -404,7 +404,7 @@ void render_input_int(imgui_renderer&, const ui_element& node, const session& s)
   }
 }
 
-void render_input_float(imgui_renderer&, const ui_element& node, const session& s) {
+void render_input_float(imgui_renderer&, const ui_element& node, const context& s) {
   auto label = node.get_as<std::string>("label"_key, "");
   float val = node.get_as<float>("value"_key, 0.0f);
   float step = node.get_as<float>("step"_key, 0.0f);
@@ -420,7 +420,7 @@ void render_input_float(imgui_renderer&, const ui_element& node, const session& 
   }
 }
 
-void render_drag_float(imgui_renderer&, const ui_element& node, const session& s) {
+void render_drag_float(imgui_renderer&, const ui_element& node, const context& s) {
   auto label = node.get_as<std::string>("label"_key, "");
   float val = node.get_as<float>("value"_key, 0.0f);
   float speed = node.get_as<float>("speed"_key, 1.0f);
@@ -437,7 +437,7 @@ void render_drag_float(imgui_renderer&, const ui_element& node, const session& s
   }
 }
 
-void render_drag_int(imgui_renderer&, const ui_element& node, const session& s) {
+void render_drag_int(imgui_renderer&, const ui_element& node, const context& s) {
   auto label = node.get_as<std::string>("label"_key, "");
   int32_t val = node.get_as<int32_t>("value"_key, 0);
   float speed = node.get_as<float>("speed"_key, 1.0f);
@@ -455,7 +455,7 @@ void render_drag_int(imgui_renderer&, const ui_element& node, const session& s) 
 
 // ── Status ────────────────────────────────────────────────────────────────────
 
-void render_progress_bar(imgui_renderer&, const ui_element& node, const session&) {
+void render_progress_bar(imgui_renderer&, const ui_element& node, const context&) {
   float val = node.get_as<float>("value"_key, 0.0f);
   float w = node.get_as<float>("width"_key, -1.0f);
   float h = node.get_as<float>("height"_key, 0.0f);
@@ -465,7 +465,7 @@ void render_progress_bar(imgui_renderer&, const ui_element& node, const session&
 
 // ── Docking ───────────────────────────────────────────────────────────────────
 
-void render_dockspace_viewport(imgui_renderer& r, const ui_element& node, const session& s) {
+void render_dockspace_viewport(imgui_renderer& r, const ui_element& node, const context& s) {
   auto id = node.get_as<std::string>("id"_key, "##viewport_dockspace");
   int32_t flags = node.get_as<int32_t>("flags"_key, 0);
   bool passthru = node.get_as<bool>("passthru"_key, false);
@@ -513,7 +513,7 @@ void render_dockspace_viewport(imgui_renderer& r, const ui_element& node, const 
   });
 }
 
-void render_dockspace(imgui_renderer&, const ui_element& node, const session&) {
+void render_dockspace(imgui_renderer&, const ui_element& node, const context&) {
   auto id = node.get_as<std::string>("id"_key, "dockspace");
   float width = node.get_as<float>("width"_key, 0.0f);
   float height = node.get_as<float>("height"_key, 0.0f);
@@ -523,7 +523,7 @@ void render_dockspace(imgui_renderer&, const ui_element& node, const session&) {
 
 // ── Table elements ────────────────────────────────────────────────────────────
 
-void render_table(imgui_renderer& r, const ui_element& node, const session& s) {
+void render_table(imgui_renderer& r, const ui_element& node, const context& s) {
   auto id = node.get_as<std::string>("id"_key, "##table");
   int32_t columns = node.get_as<int32_t>("columns"_key, 1);
   int32_t flags = node.get_as<int32_t>("flags"_key, 0);
@@ -640,11 +640,11 @@ void render_table(imgui_renderer& r, const ui_element& node, const session& s) {
   }
 }
 
-void render_table_column(imgui_renderer&, const ui_element&, const session&) {
+void render_table_column(imgui_renderer&, const ui_element&, const context&) {
   // Handled inline by render_table during column setup; no-op when standalone.
 }
 
-void render_table_row(imgui_renderer& r, const ui_element& node, const session& s) {
+void render_table_row(imgui_renderer& r, const ui_element& node, const context& s) {
   // Fallback: used when render_table_row is called outside a render_table context.
   int32_t flags = node.get_as<int32_t>("flags"_key, 0);
   float min_height = node.get_as<float>("min_height"_key, 0.0f);

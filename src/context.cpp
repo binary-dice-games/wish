@@ -1,7 +1,7 @@
 // MIT License © 2025 Binary Dice Games
-/// @file session.cpp
-/// @brief Implementation of the wish::session lifecycle.
-#include <session.hpp>
+/// @file context.cpp
+/// @brief Implementation of the wish::context lifecycle.
+#include <context.hpp>
 
 #include "src/bison/bison_common.hpp"
 #include "src/bison/bison_object.hpp"
@@ -26,7 +26,7 @@ using namespace bison;
 
 namespace detail {
 
-bison::dynamic_ptr find_singleton_service(const session& s, bison::key_t klass) {
+bison::dynamic_ptr find_singleton_service(const context& s, bison::key_t klass) {
   if (klass == "__WishFileSystem"_key && s.file_service)
     return dynamic_ptr{std::static_pointer_cast<dynamic>(s.file_service)};
   if (klass == "__WishStyle"_key && s.style_service)
@@ -40,19 +40,19 @@ bison::dynamic_ptr find_singleton_service(const session& s, bison::key_t klass) 
   return dynamic_ptr{std::shared_ptr<dynamic>{}};
 }
 
-void init_session_object(const bison::dynamic_ptr& obj, bison::rmi::context& ctx, const sync_session_ptr& sync_sess) {
-  if (!obj || !sync_sess)
+void init_session_object(const bison::dynamic_ptr& obj, bison::rmi::context& ctx, const sync_context_ptr& sync_ctx) {
+  if (!obj || !sync_ctx)
     return;
   if (auto* h = dynamic_cast<ui_template*>(obj.get())) {
-    h->init(ctx, sync_sess);
+    h->init(ctx, sync_ctx);
   } else if (auto* f = dynamic_cast<form*>(obj.get())) {
-    f->init(ctx, sync_sess);
+    f->init(ctx, sync_ctx);
   }
 }
 
 } // namespace detail
 
-session::session(bison::key_t id_) : id(id_) {
+context::context(bison::key_t id) : bison::rmi::context(id) {
   // Derive a directory name from the session id so that concurrent sessions
   // on the same machine do not collide.  Session IDs are unique per server
   // instance; the "wish_" prefix prevents clashing with other applications.
@@ -66,7 +66,7 @@ session::session(bison::key_t id_) : id(id_) {
   resource_store::extract_to(resource_dir / "res");
 }
 
-session::~session() {
+context::~context() {
   if (!resource_dir.empty()) {
     std::error_code ec;
     std::filesystem::remove_all(resource_dir, ec);
@@ -76,7 +76,7 @@ session::~session() {
 
 // ── Debug dump ────────────────────────────────────────────────────────────────
 
-void dump_session_tree(const session& s, std::ostream& out) {
+void dump_session_tree(const context& s, std::ostream& out) {
   using namespace bdg::bison;
 
   auto class_name = [](const ui_element& node) -> std::string {
@@ -91,7 +91,7 @@ void dump_session_tree(const session& s, std::ostream& out) {
   };
 
   // Collect and sort by key for stable, readable output.
-  std::vector<std::pair<std::string, ui_element_ptr>> entries(s.objects.begin(), s.objects.end());
+  std::vector<std::pair<std::string, ui_element_ptr>> entries(s.ui_objects.begin(), s.ui_objects.end());
   std::sort(entries.begin(), entries.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
 
   out << "wish session objects (" << entries.size() << "):\n";

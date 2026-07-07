@@ -3,7 +3,7 @@
 
 #include <registry.hpp>
 #include <server.hpp>
-#include <session.hpp>
+#include <context.hpp>
 #include <ui_root.hpp>
 
 #include "src/bison/bison_object.hpp"
@@ -80,10 +80,10 @@ class SessionCapturingServer : public wish::server {
   SessionCapturingServer(server_transport_iface& t, std::unique_ptr<wish::renderer> r)
       : wish::server(t, std::move(r)) {}
 
-  wish::session* last_session{nullptr};
+  wish::context* last_session{nullptr};
 
  protected:
-  void on_session_created(wish::session& s) override {
+  void on_session_created(wish::context& s) override {
     last_session = &s;
   }
 };
@@ -120,7 +120,7 @@ class FileDialogWindowTest : public ::testing::Test {
   std::string instantiate_and_get_root() {
     client_->instantiate("wish"_key, "FileDialog"_key).get();
     EXPECT_NE(srv_->last_session, nullptr);
-    return find_form_root(srv_->last_session->objects);
+    return find_form_root(srv_->last_session->ui_objects);
   }
 
   memory_server_transport transport_;
@@ -136,14 +136,14 @@ TEST_F(FileDialogWindowTest, SessionObjectsHasFormRoot) {
 TEST_F(FileDialogWindowTest, FormRootIsWindow) {
   std::string root = instantiate_and_get_root();
   ASSERT_FALSE(root.empty());
-  auto& obj = srv_->last_session->objects.at(root);
+  auto& obj = srv_->last_session->ui_objects.at(root);
   EXPECT_EQ(obj->findField(dynamic::CLASS)->as<bison::key_t>(), "Window"_key);
 }
 
 TEST_F(FileDialogWindowTest, WindowHasVerticalLayoutChild) {
   std::string root = instantiate_and_get_root();
   ASSERT_FALSE(root.empty());
-  auto& objs = srv_->last_session->objects;
+  auto& objs = srv_->last_session->ui_objects;
   ASSERT_TRUE(objs.count(root + ".vbox"));
   EXPECT_EQ(objs.at(root + ".vbox")->findField(dynamic::CLASS)->as<bison::key_t>(), "VerticalLayout"_key);
 }
@@ -151,46 +151,46 @@ TEST_F(FileDialogWindowTest, WindowHasVerticalLayoutChild) {
 TEST_F(FileDialogWindowTest, TreeContainsPathInput) {
   std::string root = instantiate_and_get_root();
   ASSERT_FALSE(root.empty());
-  EXPECT_TRUE(srv_->last_session->objects.count(root + ".vbox.path_input"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".vbox.path_input"));
 }
 
 TEST_F(FileDialogWindowTest, TreeContainsFileTable) {
   std::string root = instantiate_and_get_root();
   ASSERT_FALSE(root.empty());
-  EXPECT_TRUE(srv_->last_session->objects.count(root + ".vbox.file_table"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".vbox.file_table"));
 }
 
 TEST_F(FileDialogWindowTest, TreeContainsFilenameInput) {
   std::string root = instantiate_and_get_root();
   ASSERT_FALSE(root.empty());
-  EXPECT_TRUE(srv_->last_session->objects.count(root + ".vbox.filename_input"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".vbox.filename_input"));
 }
 
 TEST_F(FileDialogWindowTest, TreeContainsBtnOpen) {
   std::string root = instantiate_and_get_root();
   ASSERT_FALSE(root.empty());
-  EXPECT_TRUE(srv_->last_session->objects.count(root + ".vbox.btn_row.btn_open"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".vbox.btn_row.btn_open"));
 }
 
 TEST_F(FileDialogWindowTest, TreeContainsBtnCancel) {
   std::string root = instantiate_and_get_root();
   ASSERT_FALSE(root.empty());
-  EXPECT_TRUE(srv_->last_session->objects.count(root + ".vbox.btn_row.btn_cancel"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".vbox.btn_row.btn_cancel"));
 }
 
 TEST_F(FileDialogWindowTest, WindowTitleMatchesFormTitleField) {
   client_->instantiate("wish"_key, "FileDialog"_key).get();
-  std::string root = find_form_root(srv_->last_session->objects);
+  std::string root = find_form_root(srv_->last_session->ui_objects);
   ASSERT_FALSE(root.empty());
-  auto& win = srv_->last_session->objects.at(root);
+  auto& win = srv_->last_session->ui_objects.at(root);
   EXPECT_EQ(win->findField("title"_key)->as<std::string>(), "Open File");
 }
 
 TEST_F(FileDialogWindowTest, BtnOpenLabelMatchesConfirmLabel) {
   client_->instantiate("wish"_key, "FileDialog"_key).get();
-  std::string root = find_form_root(srv_->last_session->objects);
+  std::string root = find_form_root(srv_->last_session->ui_objects);
   ASSERT_FALSE(root.empty());
-  auto& objs = srv_->last_session->objects;
+  auto& objs = srv_->last_session->ui_objects;
   ASSERT_TRUE(objs.count(root + ".vbox.btn_row.btn_open"));
   EXPECT_EQ(objs.at(root + ".vbox.btn_row.btn_open")->findField("label"_key)->as<std::string>(), "Open");
 }
@@ -221,7 +221,7 @@ class FileDialogFilesTest : public ::testing::Test {
     client_->connect();
     proxy_.emplace(client_->instantiate("wish"_key, "FileDialog"_key).get());
     ASSERT_TRUE(proxy_->valid());
-    root_ = find_form_root(srv_->last_session->objects);
+    root_ = find_form_root(srv_->last_session->ui_objects);
     ASSERT_FALSE(root_.empty());
   }
 
@@ -242,7 +242,7 @@ class FileDialogFilesTest : public ::testing::Test {
 
   // Count the indexed (row) children of the internal Table widget.
   size_t table_row_count() const {
-    auto& objs = srv_->last_session->objects;
+    auto& objs = srv_->last_session->ui_objects;
     auto it = objs.find(root_ + ".vbox.file_table");
     if (it == objs.end() || !it->second)
       return 0;
@@ -254,7 +254,7 @@ class FileDialogFilesTest : public ::testing::Test {
 
   // Get the text of the Label at row[row_idx], column[col_idx] in the Table.
   std::string table_cell_text(size_t row_idx, size_t col_idx) const {
-    auto& objs = srv_->last_session->objects;
+    auto& objs = srv_->last_session->ui_objects;
     auto it = objs.find(root_ + ".vbox.file_table");
     if (it == objs.end() || !it->second)
       return {};
@@ -279,7 +279,7 @@ class FileDialogFilesTest : public ::testing::Test {
 
   // Simulate a row_selected event on the internal Table.
   void simulate_row_selected(int32_t idx) {
-    auto& objs = srv_->last_session->objects;
+    auto& objs = srv_->last_session->ui_objects;
     auto it = objs.find(root_ + ".vbox.file_table");
     ASSERT_NE(it, objs.end());
     auto table_id = (*it->second)["__wish_id"_key].as<bison::key_t>();
@@ -342,7 +342,7 @@ TEST_F(FileDialogFilesTest, RowSelectedSetsFilenameToSecondEntry) {
 TEST_F(FileDialogFilesTest, RowSelectedUpdatesFilenameInputWidget) {
   set_files(make_files({{"report.pdf", "file"}}));
   simulate_row_selected(0);
-  auto& objs = srv_->last_session->objects;
+  auto& objs = srv_->last_session->ui_objects;
   auto it = objs.find(root_ + ".vbox.filename_input");
   ASSERT_NE(it, objs.end());
   EXPECT_EQ(it->second->findField("value"_key)->as<std::string>(), "report.pdf");
@@ -421,7 +421,7 @@ class FileDialogEventsTest : public ::testing::Test {
     client_->connect();
     proxy_.emplace(client_->instantiate("wish"_key, "FileDialog"_key).get());
     ASSERT_TRUE(proxy_->valid());
-    root_ = find_form_root(srv_->last_session->objects);
+    root_ = find_form_root(srv_->last_session->ui_objects);
     ASSERT_FALSE(root_.empty());
 
     // Wrap emit_event to capture high-level events emitted by form::emit().
@@ -457,7 +457,7 @@ class FileDialogEventsTest : public ::testing::Test {
   }
 
   void simulate_btn_click(const std::string& btn_key) {
-    auto& objs = srv_->last_session->objects;
+    auto& objs = srv_->last_session->ui_objects;
     auto it = objs.find(root_ + ".vbox.btn_row." + btn_key);
     ASSERT_NE(it, objs.end()) << "button not found: " << btn_key;
     auto btn_id = (*it->second)["__wish_id"_key].as<bison::key_t>();
@@ -467,7 +467,7 @@ class FileDialogEventsTest : public ::testing::Test {
   }
 
   void simulate_row_activated(int32_t idx) {
-    auto& objs = srv_->last_session->objects;
+    auto& objs = srv_->last_session->ui_objects;
     auto it = objs.find(root_ + ".vbox.file_table");
     ASSERT_NE(it, objs.end());
     auto table_id = (*it->second)["__wish_id"_key].as<bison::key_t>();
@@ -480,7 +480,7 @@ class FileDialogEventsTest : public ::testing::Test {
 
   // Simulate the user typing a path and pressing Enter in the path_input.
   void simulate_path_input_changed(const std::string& path) {
-    auto& objs = srv_->last_session->objects;
+    auto& objs = srv_->last_session->ui_objects;
     auto it = objs.find(root_ + ".vbox.path_input");
     ASSERT_NE(it, objs.end()) << "path_input not found";
     auto input_id = (*it->second)["__wish_id"_key].as<bison::key_t>();
@@ -537,7 +537,7 @@ TEST_F(FileDialogEventsTest, BtnCancelEmitsOnCancelAndRemovesWindow) {
   simulate_btn_click("btn_cancel");
   EXPECT_TRUE(wait_for_event("on_cancel"_key));
   // Internal Window must be removed from session.objects.
-  EXPECT_TRUE(find_form_root(srv_->last_session->objects).empty());
+  EXPECT_TRUE(find_form_root(srv_->last_session->ui_objects).empty());
 }
 
 TEST_F(FileDialogEventsTest, RowActivatedDirEmitsOnNavigate) {
@@ -591,7 +591,7 @@ class FileDialogBindingTest : public ::testing::Test {
     client_->connect();
     proxy_.emplace(client_->instantiate("wish"_key, "FileDialog"_key).get());
     ASSERT_TRUE(proxy_->valid());
-    root_ = find_form_root(srv_->last_session->objects);
+    root_ = find_form_root(srv_->last_session->ui_objects);
     ASSERT_FALSE(root_.empty());
   }
 
@@ -605,7 +605,7 @@ class FileDialogBindingTest : public ::testing::Test {
 
   // Simulate a "changed" event on the filename_input widget.
   void simulate_filename_input_changed(const std::string& value) {
-    auto& objs = srv_->last_session->objects;
+    auto& objs = srv_->last_session->ui_objects;
     auto it = objs.find(root_ + ".vbox.filename_input");
     ASSERT_NE(it, objs.end()) << "filename_input not found in session.objects";
     auto input_id = (*it->second)["__wish_id"_key].as<bison::key_t>();
@@ -632,7 +632,7 @@ class FileDialogBindingTest : public ::testing::Test {
 
   // Read the visible field of filter_row from session.objects.
   bool filter_row_visible() const {
-    auto& objs = srv_->last_session->objects;
+    auto& objs = srv_->last_session->ui_objects;
     auto it = objs.find(root_ + ".vbox.filter_row");
     if (it == objs.end() || !it->second)
       return false;
@@ -644,7 +644,7 @@ class FileDialogBindingTest : public ::testing::Test {
 
   // Read the items string of filter_combo from session.objects.
   std::string filter_combo_items() const {
-    auto& objs = srv_->last_session->objects;
+    auto& objs = srv_->last_session->ui_objects;
     auto it = objs.find(root_ + ".vbox.filter_row.filter_combo");
     if (it == objs.end() || !it->second)
       return {};
@@ -656,7 +656,7 @@ class FileDialogBindingTest : public ::testing::Test {
 
   // Read btn_open's label field from session.objects.
   std::string btn_open_label() const {
-    auto& objs = srv_->last_session->objects;
+    auto& objs = srv_->last_session->ui_objects;
     auto it = objs.find(root_ + ".vbox.btn_row.btn_open");
     if (it == objs.end() || !it->second)
       return {};
@@ -668,7 +668,7 @@ class FileDialogBindingTest : public ::testing::Test {
 
   // Read path_input value from session.objects.
   std::string path_input_value() const {
-    auto& objs = srv_->last_session->objects;
+    auto& objs = srv_->last_session->ui_objects;
     auto it = objs.find(root_ + ".vbox.path_input");
     if (it == objs.end() || !it->second)
       return {};

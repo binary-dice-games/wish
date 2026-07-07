@@ -15,7 +15,7 @@ namespace bdg::wish {
 /// @brief Multi-file, syntax-highlighted text editor form.
 ///
 /// Files edited by this form live in the session's sandboxed resource
-/// directory (`session::resource_dir`); the connected client is responsible
+/// directory (`context::resource_dir`); the connected client is responsible
 /// for moving bytes into and out of that sandbox via `client::upload_file` /
 /// `client::download_file`. Opening a file is therefore a two-step
 /// handshake: the client uploads the file's contents, then calls the

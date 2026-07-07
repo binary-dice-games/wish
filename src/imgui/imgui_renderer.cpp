@@ -4,7 +4,7 @@
 #include <file_service.hpp>
 #include <imgui/imgui_renderer.hpp>
 #include <renderer.hpp>
-#include <session.hpp>
+#include <context.hpp>
 #include <style_service.hpp>
 
 #include "src/bison/bison_common.hpp"
@@ -27,7 +27,7 @@ using namespace bdg::bison;
 //
 // Maps class key hash → render function.  Built once at first render_node call.
 
-using render_fn = void (*)(imgui_renderer&, const ui_element&, const session&);
+using render_fn = void (*)(imgui_renderer&, const ui_element&, const context&);
 
 static const std::unordered_map<bison::hash_t, render_fn>& render_dispatch() {
   static const std::unordered_map<bison::hash_t, render_fn> tbl{
@@ -245,7 +245,7 @@ bool imgui_renderer::wants_continuous_redraw() const {
   return ImGui::GetIO().WantTextInput;
 }
 
-void imgui_renderer::render_node(const ui_element& node, const session& s) {
+void imgui_renderer::render_node(const ui_element& node, const context& s) {
   if (!node.get_as<bool>("visible"_key, true))
     return;
 
@@ -279,7 +279,7 @@ void imgui_renderer::render_node(const ui_element& node, const session& s) {
   ImGui::PopFont();
 }
 
-void imgui_renderer::render_session(const ui_element& root, const session& s) {
+void imgui_renderer::render_session(const ui_element& root, const context& s) {
   if (!s.style_service) {
     render_node(root, s);
     return;
