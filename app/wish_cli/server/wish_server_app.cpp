@@ -33,6 +33,7 @@ DECLARE_string(cmd);
 DEFINE_string(title, "wish", "Window title");
 DEFINE_int32(width, 1280, "Window width in pixels");
 DEFINE_int32(height, 720, "Window height in pixels");
+DEFINE_int32(font_size, 16, "Font size in pixels");
 
 namespace bdg::wish {
 
@@ -85,7 +86,7 @@ class server_renderer : public sdl3_renderer {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 static std::unique_ptr<sdl3_renderer> make_renderer() {
-  return std::make_unique<server_renderer>(FLAGS_title.c_str(), FLAGS_width, FLAGS_height);
+  return std::make_unique<server_renderer>(FLAGS_title.c_str(), FLAGS_width, FLAGS_height, FLAGS_font_size);
 }
 
 static std::shared_ptr<logger> make_server_logger() {

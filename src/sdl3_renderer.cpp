@@ -18,8 +18,8 @@ namespace bdg::wish {
 
 // ── construction ──────────────────────────────────────────────────────────────
 
-sdl3_renderer::sdl3_renderer(const char* title, int width, int height)
-    : title_(title), width_(width), height_(height) {}
+sdl3_renderer::sdl3_renderer(const char* title, int width, int height, int font_size)
+    : title_(title), width_(width), height_(height), font_size_(font_size) {}
 
 sdl3_renderer::~sdl3_renderer() {
   // teardown() is called from the render thread before the render loop exits.
@@ -179,9 +179,12 @@ ImFont* sdl3_renderer::get_or_load_font(const std::string& path, float size) {
 }
 
 void sdl3_renderer::rebuild_font_atlas() {
+  ImGuiStyle& style = ImGui::GetStyle();
+  style.FontSizeBase = font_size_;
+
   ImGuiIO& io = ImGui::GetIO();
   io.Fonts->Clear();
-  io.Fonts->AddFontDefault();
+  io.Fonts->AddFontDefaultVector();
 
   // Re-add all previously loaded fonts (ImFont* pointers must be refreshed).
   for (auto& [key, ptr] : font_cache_) {

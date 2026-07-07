@@ -47,8 +47,9 @@ class sdl3_renderer : public imgui_renderer {
    * @param title   Window title string (must outlive this object).
    * @param width   Initial window width in pixels.
    * @param height  Initial window height in pixels.
+   * @param font_size  Base font size in pixels.
    */
-  explicit sdl3_renderer(const char* title = "wish", int width = 1280, int height = 720);
+  explicit sdl3_renderer(const char* title = "wish", int width = 1280, int height = 720, int font_size = 16);
 
   ~sdl3_renderer() override;
 
@@ -110,6 +111,7 @@ class sdl3_renderer : public imgui_renderer {
   const char* title_;
   int width_;
   int height_;
+  int font_size_;
   SDL_Window* window_ = nullptr;
   SDL_Renderer* sdl_renderer_ = nullptr;
   std::atomic<bool> quit_{false};
@@ -144,7 +146,7 @@ class sdl3_renderer : public imgui_renderer {
 
   std::map<FontKey, ImFont*> font_cache_;
   std::set<FontKey> pending_fonts_;
-  bool fonts_dirty_{false};
+  bool fonts_dirty_{true};
 
   /// @brief Clear and rebuild the ImGui font atlas, then re-upload to the GPU.
   void rebuild_font_atlas();
