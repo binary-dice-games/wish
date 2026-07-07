@@ -105,6 +105,12 @@ class standalone : public bison::rmi::standalone {
   /// @copydoc bdg::wish::client::register_template
   std::future<void> register_template(bison::key_t name, bison::dynamic descriptor);
 
+  /// @copydoc bdg::wish::client::register_template_from_json
+  std::future<void> register_template_from_json(bison::key_t name, const std::string& json);
+
+  /// @copydoc bdg::wish::client::register_template_from_yaml
+  std::future<void> register_template_from_yaml(bison::key_t name, const std::string& yaml);
+
   /// @copydoc bdg::wish::client::upload_file
   std::future<void> upload_file(const std::string& name, const std::string& data);
 

@@ -9,7 +9,6 @@
 #include <client.hpp>
 #include <sdl3_renderer.hpp>
 #include <server.hpp>
-#include <ui_descriptor.hpp>
 
 #include "src/rmi/rmi.hpp" // memory_server_transport / memory_client_transport
 
@@ -121,7 +120,7 @@ class calc_client : public wish::client {
     }
 
     vlog("registering template 'calc'");
-    register_template("calc"_key, wish::import_descriptor_json(kCalcDesc)).get();
+    register_template_from_json("calc"_key, kCalcDesc).get();
 
     vlog("instantiating template 'calc'");
     auto pm = instantiate_template("calc"_key).get();

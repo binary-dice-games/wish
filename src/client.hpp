@@ -39,7 +39,7 @@ using proxy_map = std::unordered_map<std::string, bison::rmi::proxy::dynamic>;
  * class my_client : public wish::client {
  *  protected:
  *   void on_session() override {
- *     register_template("ui"_key, wish::import_descriptor_json(R"({"type":"Window","title":"Hello"})")).get();
+ *     register_template_from_json("ui"_key, R"({"type":"Window","title":"Hello"})").get();
  *     auto nodes = instantiate_template("ui"_key).get();
  *   }
  * };
@@ -73,6 +73,32 @@ class client : public bison::rmi::client {
    *         is registered.
    */
   std::future<void> register_template(bison::key_t name, bison::dynamic descriptor);
+
+  /**
+   * @brief Parse a JSON descriptor and register it as a named UI template.
+   *
+   * Convenience wrapper: `wish::import_descriptor_json(json)` followed by
+   * `register_template(name, ...)`, for callers who don't need to build or
+   * inspect the intermediate `bison::dynamic` tree themselves.
+   *
+   * @param name Template name key.
+   * @param json UTF-8 JSON text representing a wish UI hierarchy.
+   * @throws std::runtime_error on JSON parse error.
+   * @throws std::logic_error until the server-side `__WishTemplate` handler
+   *         is registered.
+   */
+  std::future<void> register_template_from_json(bison::key_t name, const std::string& json);
+
+  /**
+   * @brief Parse a YAML descriptor and register it as a named UI template.
+   * @param name Template name key.
+   * @param yaml UTF-8 YAML text representing a wish UI hierarchy.
+   * @throws std::runtime_error on YAML parse error.
+   * @throws std::logic_error until the server-side `__WishTemplate` handler
+   *         is registered.
+   * @see register_template_from_json
+   */
+  std::future<void> register_template_from_yaml(bison::key_t name, const std::string& yaml);
 
   /**
    * @brief Instantiate a previously registered template.

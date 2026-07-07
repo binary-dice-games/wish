@@ -3,6 +3,8 @@
 /// @brief Implementation of wish::client.
 #include <client.hpp>
 
+#include <ui_descriptor.hpp>
+
 #include "src/bison/bison.hpp"
 
 #include <future>
@@ -66,6 +68,14 @@ std::future<void> client::register_template(bison::key_t name, bison::dynamic de
     args["descriptor"_key] = dynamic_ptr{std::move(d)};
     template_proxy_->call("register"_key, std::move(args)).get();
   });
+}
+
+std::future<void> client::register_template_from_json(bison::key_t name, const std::string& json) {
+  return register_template(name, import_descriptor_json(json));
+}
+
+std::future<void> client::register_template_from_yaml(bison::key_t name, const std::string& yaml) {
+  return register_template(name, import_descriptor_yaml(yaml));
 }
 
 std::future<proxy_map> client::instantiate_template(bison::key_t name) {

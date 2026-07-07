@@ -6,6 +6,7 @@
 #include <file_service.hpp>
 #include <registry.hpp>
 #include <style_service.hpp>
+#include <ui_descriptor.hpp>
 #include <ui_root.hpp>
 
 #include <chrono>
@@ -216,6 +217,14 @@ std::future<void> standalone::register_template(bison::key_t name, bison::dynami
     args["descriptor"_key] = dynamic_ptr{std::move(d)};
     template_proxy_->call("register"_key, std::move(args)).get();
   });
+}
+
+std::future<void> standalone::register_template_from_json(bison::key_t name, const std::string& json) {
+  return register_template(name, import_descriptor_json(json));
+}
+
+std::future<void> standalone::register_template_from_yaml(bison::key_t name, const std::string& yaml) {
+  return register_template(name, import_descriptor_yaml(yaml));
 }
 
 std::future<void> standalone::upload_file(const std::string& name, const std::string& data) {
