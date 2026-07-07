@@ -10,6 +10,7 @@
 #include "src/rmi/transport/named_pipe_transport.hpp"
 #include "src/rmi/transport/socket_transport.hpp"
 #include "src/rmi/transport/stream_transport.hpp"
+#include "src/rmi/transport/term_transport.hpp"
 
 // bison_c.cpp's and rmi_c.cpp's handle-wrapping helpers (sp_dyn/as_handle,
 // proxy_ptr/as_proxy_handle, bool_future_state, proxy_future_state,
@@ -74,7 +75,7 @@ struct wish_client_handle_ {
   // a purely local operation, no server round trip — on every call.
   wish::proxy_map proxy_map_;
 
-  // Owned stream for WISH_TRANSPORT_STREAM; kept alive as long as transport.
+  // Owned stream for wish_client_stream_create(); kept alive as long as transport.
   std::fstream stream_storage_;
 
   std::string last_error_;
@@ -91,59 +92,59 @@ extern "C" wish_hash wish_key(const char* name) {
   return bison_key(name);
 }
 
-// ── Transport factory ─────────────────────────────────────────────────────────
-
-static std::unique_ptr<rmi::transport::client_transport_iface>
-make_client_transport(wish_transport_t type, const char* address, wish_client_handle_* state) {
-  if (type == WISH_TRANSPORT_SOCKET) {
-    std::string host = "127.0.0.1";
-    uint16_t port = 7070;
-    if (address && *address) {
-      std::string addr(address);
-      auto colon = addr.rfind(':');
-      if (colon != std::string::npos) {
-        host = addr.substr(0, colon);
-        port = static_cast<uint16_t>(std::stoi(addr.substr(colon + 1)));
-      }
-    }
-    return std::make_unique<socket_client_transport>(host, port);
-  }
-
-  if (type == WISH_TRANSPORT_STREAM) {
-    if (!address || !*address) {
-      state->last_error_ = "stream transport requires a path address";
-      return nullptr;
-    }
-    state->stream_storage_.open(address, std::ios::in | std::ios::out | std::ios::binary);
-    if (!state->stream_storage_.is_open()) {
-      state->last_error_ = std::string("cannot open stream path: ") + address;
-      return nullptr;
-    }
-    return std::make_unique<stream_client_transport>(state->stream_storage_);
-  }
-
-  if (type == WISH_TRANSPORT_PIPE) {
-    if (!address || !*address) {
-      state->last_error_ = "pipe transport requires a path address";
-      return nullptr;
-    }
-    return std::make_unique<named_pipe_client_transport>(address);
-  }
-
-  state->last_error_ = "unknown transport type";
-  return nullptr;
-}
-
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 
-extern "C" wish_client_handle wish_client_create(wish_transport_t type, const char* address) {
+// Wraps a freshly constructed transport in a c_abi_client and stores it in
+// the handle; shared tail of every wish_client_*_create() below.
+static wish_client_handle
+make_client_handle(std::unique_ptr<wish_client_handle_> state, std::unique_ptr<rmi::transport::client_transport_iface> t) {
+  state->client_ = std::make_unique<c_abi_client>(std::move(t), state.get());
+  return state.release();
+}
+
+extern "C" wish_client_handle wish_client_tcp_create(const char* host, uint16_t port) {
+  if (!host)
+    return nullptr;
   try {
     auto state = std::make_unique<wish_client_handle_>();
-    auto t = make_client_transport(type, address, state.get());
-    if (!t)
-      return nullptr; // last_error_ already set
-    state->client_ = std::make_unique<c_abi_client>(std::move(t), state.get());
-    return state.release();
+    return make_client_handle(std::move(state), std::make_unique<socket_client_transport>(host, port));
+  } catch (...) {
+    return nullptr;
+  }
+}
+
+extern "C" wish_client_handle wish_client_stream_create(const char* path) {
+  if (!path)
+    return nullptr;
+  try {
+    auto state = std::make_unique<wish_client_handle_>();
+    state->stream_storage_.open(path, std::ios::in | std::ios::out | std::ios::binary);
+    if (!state->stream_storage_.is_open()) {
+      state->last_error_ = std::string("cannot open stream path: ") + path;
+      return nullptr;
+    }
+    auto t = std::make_unique<stream_client_transport>(state->stream_storage_);
+    return make_client_handle(std::move(state), std::move(t));
+  } catch (...) {
+    return nullptr;
+  }
+}
+
+extern "C" wish_client_handle wish_client_pipe_create(const char* path) {
+  if (!path)
+    return nullptr;
+  try {
+    auto state = std::make_unique<wish_client_handle_>();
+    return make_client_handle(std::move(state), std::make_unique<named_pipe_client_transport>(path));
+  } catch (...) {
+    return nullptr;
+  }
+}
+
+extern "C" wish_client_handle wish_client_term_create(void) {
+  try {
+    auto state = std::make_unique<wish_client_handle_>();
+    return make_client_handle(std::move(state), std::make_unique<term_client_transport>(0, 1));
   } catch (...) {
     return nullptr;
   }

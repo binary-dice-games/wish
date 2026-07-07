@@ -33,7 +33,7 @@
  * }
  *
  * int main(void) {
- *   wish_client_handle c = wish_client_create(WISH_TRANSPORT_SOCKET, "127.0.0.1:7070");
+ *   wish_client_handle c = wish_client_tcp_create("127.0.0.1", 7070);
  *   wish_client_run(c, session, NULL);
  *   wish_client_destroy(c);
  * }
@@ -91,27 +91,6 @@ typedef int wish_error;
 #define WISH_ERR_TRANSPORT -3 /**< Transport connection failed.            */
 #define WISH_ERR_EXCEPTION -4 /**< An internal C++ exception was thrown.   */
 
-/* ── Transport selection ──────────────────────────────────────────────────── */
-
-/**
- * @brief Transport type passed to wish_client_create().
- */
-typedef enum {
-  /** TCP socket.  `address` = "host:port", e.g. "127.0.0.1:7070". */
-  WISH_TRANSPORT_SOCKET = 0,
-  /**
-   * std::iostream-backed stream (FIFO / named pipe).
-   * `address` = filesystem path to a pre-existing FIFO.
-   * Linux only.
-   */
-  WISH_TRANSPORT_STREAM = 1,
-  /**
-   * Unix domain socket (Linux and MSYS2).
-   * `address` = socket path, e.g. `/tmp/wish.sock`.
-   */
-  WISH_TRANSPORT_PIPE = 2,
-} wish_transport_t;
-
 /* ── Callbacks ────────────────────────────────────────────────────────────── */
 
 /**
@@ -130,16 +109,52 @@ typedef void (*wish_session_fn)(wish_client_handle client, void* userdata);
 /* ── Client lifecycle ─────────────────────────────────────────────────────── */
 
 /**
- * @brief Create a wish client for the given transport.
+ * @brief Create a TCP socket client.
  *
  * Does not connect; call wish_client_run() to establish the session.
  *
- * @param transport  Transport type.
- * @param address    Transport address string (semantics depend on transport).
- * @return Non-null handle on success; NULL if transport construction fails
- *         (e.g. unsupported transport on this platform, bad address format).
+ * @param host  Server hostname or IP address (e.g., "127.0.0.1").
+ * @param port  Server port number (0-65535).
+ * @return Non-null handle on success; NULL on allocation failure.
  */
-WISH_API wish_client_handle wish_client_create(wish_transport_t transport, const char* address);
+WISH_API wish_client_handle wish_client_tcp_create(const char* host, uint16_t port);
+
+/**
+ * @brief Create a std::iostream-backed stream (FIFO / named pipe) client.
+ *
+ * Does not connect; call wish_client_run() to establish the session.  Linux
+ * only.
+ *
+ * @param path  Filesystem path to a pre-existing FIFO.
+ * @return Non-null handle on success; NULL if the FIFO cannot be opened.
+ */
+WISH_API wish_client_handle wish_client_stream_create(const char* path);
+
+/**
+ * @brief Create a named-pipe / Unix-socket client.
+ *
+ * Does not connect; call wish_client_run() to establish the session.
+ *
+ * On Windows/MSYS2, @p path is a full pipe path (`\\.\pipe\name`). On Linux,
+ * @p path is a file-system socket path (e.g. `/tmp/wish.sock`).
+ *
+ * @param path  Pipe or Unix-socket path to connect to.
+ * @return Non-null handle on success; NULL on allocation failure.
+ */
+WISH_API wish_client_handle wish_client_pipe_create(const char* path);
+
+/**
+ * @brief Create a terminal (OSC-99 framed) client.
+ *
+ * Wraps the calling process's own inherited stdio (fd 0 for reads, fd 1 for
+ * writes) with the term transport.  Intended for a client process that is
+ * itself running as the child spawned by a wish server started with the
+ * term transport.  Does not connect; call wish_client_run() to establish
+ * the session.
+ *
+ * @return Non-null handle on success; NULL on allocation failure.
+ */
+WISH_API wish_client_handle wish_client_term_create(void);
 
 /**
  * @brief Destroy a wish client and free all associated resources.
@@ -157,7 +172,8 @@ WISH_API void wish_client_destroy(wish_client_handle client);
  * The session callback runs on the RMI worker thread; call wish_client_wait()
  * inside it if you want to keep the session alive while event handlers run.
  *
- * @param client      Client handle from wish_client_create().
+ * @param client      Client handle from wish_client_tcp_create() (or another
+ *                    wish_client_*_create() constructor).
  * @param session_fn  Session callback (must not be NULL).
  * @param userdata    Forwarded to session_fn unchanged.
  * @return WISH_OK on clean exit; WISH_ERR_* on transport or protocol failure.

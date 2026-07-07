@@ -413,7 +413,7 @@ wish [OPTIONS]
 
 | Concept | C ABI | C++ equivalent |
 |---------|-------|----------------|
-| Session lifetime | `wish_client_create` / `wish_client_run` / `wish_client_destroy` | `wish::client` subclass + `run()` |
+| Session lifetime | `wish_client_tcp_create` / `wish_client_stream_create` / `wish_client_pipe_create` / `wish_client_term_create`, then `wish_client_run` / `wish_client_destroy` | `wish::client` subclass + `run()` |
 | UI templates | `wish_register_template` + `wish_instantiate_template` | `register_template` + `instantiate_template` |
 | Proxy access | `wish_proxy_get(c, "btns.ok")` | `pm.at("btns.ok")` |
 | Field update | `wish_proxy_set_string(p, wish_key("text"), "Hi")` | `proxy.set({{"text"_key, "Hi"}})` |
