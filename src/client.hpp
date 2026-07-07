@@ -39,7 +39,7 @@ using proxy_map = std::unordered_map<std::string, bison::rmi::proxy::dynamic>;
  * class my_client : public wish::client {
  *  protected:
  *   void on_session() override {
- *     register_template("ui"_key, R"({"type":"Window","title":"Hello"})").get();
+ *     register_template("ui"_key, wish::import_descriptor_json(R"({"type":"Window","title":"Hello"})")).get();
  *     auto nodes = instantiate_template("ui"_key).get();
  *   }
  * };
@@ -65,11 +65,14 @@ class client : public bison::rmi::client {
   /**
    * @brief Register a named UI template on the server.
    * @param name       Template name key.
-   * @param descriptor JSON or YAML descriptor string.
+   * @param descriptor Generic UI hierarchy tree, as produced by
+   *                   `wish::import_descriptor_json`/`import_descriptor_yaml`
+   *                   (src/ui_descriptor.hpp) from JSON/YAML text, or built
+   *                   by hand. The server resolves it into typed elements.
    * @throws std::logic_error until the server-side `__WishTemplate` handler
    *         is registered.
    */
-  std::future<void> register_template(bison::key_t name, const std::string& descriptor);
+  std::future<void> register_template(bison::key_t name, bison::dynamic descriptor);
 
   /**
    * @brief Instantiate a previously registered template.

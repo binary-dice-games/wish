@@ -16,10 +16,14 @@ namespace bdg::wish {
  * @brief Server-side bison dynamic for the `__WishTemplate` RMI class.
  *
  * Exposes two methods:
- * - `"register"_key(name, descriptor)` — stores a named descriptor in the
- *   session's template map.
- * - `"instantiate"_key(name)` — looks up the stored descriptor, parses it,
- *   and registers the resulting objects in the session.
+ * - `"register"_key(name, descriptor)` — resolves the (already-parsed)
+ *   `bison::dynamic` descriptor tree into a typed `ui_element` tree (against
+ *   the "wish" class registry) and stores it as the named template's
+ *   prototype. See `wish::import_descriptor_json`/`import_descriptor_yaml`
+ *   (src/ui_descriptor.hpp) for the client-side JSON/YAML → `dynamic` step.
+ * - `"instantiate"_key(name)` — deep-clones the stored prototype
+ *   (`ui_element::clone_ptr()`), assigns every node a fresh RMI id, and
+ *   registers the resulting objects in the session.
  *
  * `wish::server::on_create_object` calls `init()` once per instance to
  * supply the per-session context before the object is accessible via RMI.

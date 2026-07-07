@@ -27,7 +27,7 @@ ui_element_ptr::operator bison::dynamic_ptr() const {
 
 // ── ui_element ───────────────────────────────────────────────────────────────
 
-ui_element::ui_element(dynamic&& base) : dynamic(std::move(base)) {}
+ui_element::ui_element(dynamic&& base) : cloneable_dynamic(std::move(base)) {}
 
 void ui_element::refresh_children_order() {
   auto* children_field = findField("children"_key);

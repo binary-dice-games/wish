@@ -3,6 +3,7 @@
 
 #include <client.hpp>
 #include <server.hpp>
+#include <ui_descriptor.hpp>
 
 #include "src/rmi/rmi.hpp"
 
@@ -64,7 +65,7 @@ TEST_F(HandlersTest, RegisterThenInstantiateReturnsValidProxies) {
 
    protected:
     void on_session() override {
-      register_template("tpl"_key, kWindowJson).get();
+      register_template("tpl"_key, wish::import_descriptor_json(kWindowJson)).get();
       result = instantiate_template("tpl"_key).get();
     }
   };
@@ -112,7 +113,7 @@ TEST_F(HandlersTest, ProxyGetOnNamedChildReturnsCorrectFieldValues) {
 
    protected:
     void on_session() override {
-      register_template("tpl"_key, kWindowWithLabelJson).get();
+      register_template("tpl"_key, wish::import_descriptor_json(kWindowWithLabelJson)).get();
       auto pm = instantiate_template("tpl"_key).get();
 
       auto it = pm.find("lbl");
@@ -145,7 +146,7 @@ TEST_F(HandlersTest, YamlDescriptorProducesCorrectFieldValues) {
 
    protected:
     void on_session() override {
-      register_template("tpl"_key, kWindowWithLabelYaml).get();
+      register_template("tpl"_key, wish::import_descriptor_yaml(kWindowWithLabelYaml)).get();
       auto pm = instantiate_template("tpl"_key).get();
 
       auto it = pm.find("lbl");

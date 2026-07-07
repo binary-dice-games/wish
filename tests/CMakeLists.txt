@@ -35,6 +35,14 @@ wish_add_test(test_client         test_client.cpp)
 wish_add_test(test_handlers       test_handlers.cpp)
 wish_add_test(test_integration    test_integration.cpp)
 
+# Links ONLY wish_client (not the combined `wish` target) to prove the
+# lightweight client / heavy server CMake split actually works for a real
+# thin client -- see tests/test_client_only_link.cpp.
+add_executable(test_client_only_link test_client_only_link.cpp)
+target_link_libraries(test_client_only_link PRIVATE wish_client gtest gmock gtest_main)
+gtest_discover_tests(test_client_only_link)
+set_target_properties(test_client_only_link PROPERTIES FOLDER tests)
+
 if(WISH_ENABLE_IMGUI)
   wish_add_test(test_imgui_renderer test_imgui_renderer.cpp)
   wish_add_test(test_style_service  test_style_service.cpp)

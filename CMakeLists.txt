@@ -180,14 +180,22 @@ endif()
 add_library(wish_client STATIC
   src/client.hpp
   src/client.cpp
+  src/ui_descriptor.hpp
+  src/ui_descriptor.cpp
 )
 set_target_properties(wish_client PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(wish_client
     PUBLIC
         src
         ${CMAKE_CURRENT_SOURCE_DIR}/extern/bison
+    PRIVATE
+        # nlohmann/json and libyaml headers; only needed by src/ui_descriptor.cpp.
+        ${CMAKE_CURRENT_SOURCE_DIR}/extern/bison/extern/json/single_include
+        ${CMAKE_CURRENT_SOURCE_DIR}/extern/bison/extern/yaml/include
 )
 target_link_libraries(wish_client PUBLIC bison)
+# libyaml is needed by ui_descriptor.cpp; PRIVATE because it is an impl detail.
+target_link_libraries(wish_client PRIVATE yaml)
 
 # ── wish_server — server, renderer, and all UI elements (heavy stack) ─────────
 
@@ -289,9 +297,6 @@ target_include_directories(wish_server
     PRIVATE
         src
         src/resources
-        # nlohmann/json and libyaml headers; only needed by src/ui_importer.cpp.
-        ${CMAKE_CURRENT_SOURCE_DIR}/extern/bison/extern/json/single_include
-        ${CMAKE_CURRENT_SOURCE_DIR}/extern/bison/extern/yaml/include
         # repo root; needed for "modules/<name>/server/..." includes used by
         # registry.cpp and the generated module registry (see WishModules.cmake).
         ${CMAKE_CURRENT_SOURCE_DIR}
@@ -305,8 +310,10 @@ target_include_directories(wish_server
 
 # bison is PUBLIC so consumers of wish_server also get bison's types and link deps.
 target_link_libraries(wish_server PUBLIC bison)
-# libyaml is needed by ui_importer.cpp; PRIVATE because it is an impl detail.
-target_link_libraries(wish_server PRIVATE yaml)
+# wish_client provides src/ui_descriptor.cpp (text -> generic dynamic tree),
+# which ui_importer.cpp builds on; PUBLIC so wish_server consumers also get
+# client::register_template et al. without linking wish_client separately.
+target_link_libraries(wish_server PUBLIC wish_client)
 # miniz is needed by resource_store.cpp to unpack the embedded archive.
 target_link_libraries(wish_server PRIVATE miniz)
 

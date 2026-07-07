@@ -49,8 +49,12 @@ struct session {
   /// imported trees can be merged in directly via `objects.merge()`.
   wish::ui_tree objects;
 
-  /// Named UI blueprint strings (JSON or YAML) registered by the client.
-  std::unordered_map<bison::key_t, std::string, bison::key_t, bison::key_t> templates;
+  /// Named UI template prototypes registered by the client: the fully
+  /// resolved, typed `ui_element` tree root, built once at `register_template`
+  /// time (see `ui_template::do_register`).  `instantiate_template` deep
+  /// clones the stored root (`ui_element::clone_ptr()`) and assigns fresh RMI
+  /// ids on every call rather than re-resolving element types each time.
+  std::unordered_map<bison::key_t, ui_element_ptr, bison::key_t, bison::key_t> templates;
 
   /// Sandboxed temporary directory for this session's uploaded resources.
   /// Its `res/` subdirectory is pre-populated at construction time with

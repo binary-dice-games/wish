@@ -3,6 +3,7 @@
 
 #include <client.hpp>
 #include <server.hpp>
+#include <ui_descriptor.hpp>
 
 #include "src/rmi/rmi.hpp"
 
@@ -133,7 +134,7 @@ TEST(ClientTest, InstantiateReturnsNonEmptyMap) {
 
    protected:
     void on_session() override {
-      register_template("tpl"_key, kWindowJson).get();
+      register_template("tpl"_key, wish::import_descriptor_json(kWindowJson)).get();
       result = instantiate_template("tpl"_key).get();
     }
   };
@@ -157,7 +158,7 @@ TEST(ClientTest, InstantiateRootProxyIsValid) {
 
    protected:
     void on_session() override {
-      register_template("tpl"_key, kWindowJson).get();
+      register_template("tpl"_key, wish::import_descriptor_json(kWindowJson)).get();
       result = instantiate_template("tpl"_key).get();
     }
   };
@@ -182,7 +183,7 @@ TEST(ClientTest, InstantiateNamedChildrenAppearInMap) {
 
    protected:
     void on_session() override {
-      register_template("tpl"_key, kWindowWithChildJson).get();
+      register_template("tpl"_key, wish::import_descriptor_json(kWindowWithChildJson)).get();
       result = instantiate_template("tpl"_key).get();
     }
   };
@@ -211,7 +212,7 @@ TEST(ClientTest, InstantiateInvalidDescriptorThrows) {
    protected:
     void on_session() override {
       try {
-        register_template("tpl"_key, "{invalid json}").get();
+        register_template("tpl"_key, wish::import_descriptor_json("{invalid json}")).get();
         instantiate_template("tpl"_key).get();
       } catch (const std::exception&) {
         threw = true;
@@ -239,7 +240,7 @@ TEST(ClientTest, TemplateCanBeInstantiatedMultipleTimes) {
 
    protected:
     void on_session() override {
-      register_template("tpl"_key, kWindowWithChildJson).get();
+      register_template("tpl"_key, wish::import_descriptor_json(kWindowWithChildJson)).get();
       first = instantiate_template("tpl"_key).get();
       second = instantiate_template("tpl"_key).get();
     }
@@ -250,6 +251,38 @@ TEST(ClientTest, TemplateCanBeInstantiatedMultipleTimes) {
 
   EXPECT_TRUE(c.first.count("") && c.first.count("lbl"));
   EXPECT_TRUE(c.second.count("") && c.second.count("lbl"));
+  srv.stop();
+}
+
+// A hand-built bison::dynamic descriptor, with no JSON/YAML text at all --
+// proves register_template's argument is a real dynamic tree, not just a
+// convenience wrapper around text parsing.
+TEST(ClientTest, RegisterTemplateAcceptsHandBuiltDescriptor) {
+  memory_server_transport transport;
+  wish::server srv{transport, std::make_unique<wish::null_renderer>()};
+  srv.start();
+
+  class test_client : public wish::client {
+   public:
+    using wish::client::client;
+    wish::proxy_map result;
+
+   protected:
+    void on_session() override {
+      dynamic desc;
+      desc["__type__"_key] = "Window"_key;
+      desc["title"_key] = std::string{"Hand-built"};
+
+      register_template("tpl"_key, std::move(desc)).get();
+      result = instantiate_template("tpl"_key).get();
+    }
+  };
+
+  test_client c{transport.connect()};
+  c.run();
+
+  ASSERT_TRUE(c.result.count(""));
+  EXPECT_TRUE(c.result.at("").valid());
   srv.stop();
 }
 

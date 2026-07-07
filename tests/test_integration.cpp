@@ -7,6 +7,7 @@
 
 #include <client.hpp>
 #include <server.hpp>
+#include <ui_descriptor.hpp>
 
 #include "src/rmi/rmi.hpp"
 
@@ -98,7 +99,7 @@ TEST_F(IntegrationTest, FullStack) {
    protected:
     void on_session() override {
       // ── 1. Template: register + instantiate ──────────────────────────────
-      register_template("ui"_key, kUIDesc).get();
+      register_template("ui"_key, wish::import_descriptor_json(kUIDesc)).get();
       auto pm = instantiate_template("ui"_key).get();
 
       ASSERT_TRUE(pm.count("")) << "root proxy missing";

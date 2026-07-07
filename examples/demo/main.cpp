@@ -8,6 +8,7 @@
 #include <client.hpp>
 #include <sdl3_renderer.hpp>
 #include <server.hpp>
+#include <ui_descriptor.hpp>
 
 #include "src/rmi/rmi.hpp" // memory_server_transport / memory_client_transport
 
@@ -619,7 +620,7 @@ class demo_client : public wish::client {
     set_style_preset(theme_).get();
 
     vlog("registering and instantiating template");
-    register_template("demo"_key, kDemoDescStr.c_str()).get();
+    register_template("demo"_key, wish::import_descriptor_json(kDemoDescStr)).get();
     auto pm = instantiate_template("demo"_key).get();
 
     // ── Shared helpers ────────────────────────────────────────────────────

@@ -69,11 +69,18 @@ class ui_element_ptr : public std::shared_ptr<ui_element> {
 /**
  * @brief Typed base class for all wish UI elements.
  *
- * Inherits from `bison::dynamic` and adds wish-specific member functions.
+ * Inherits from `bison::cloneable_dynamic<ui_element>` (rather than
+ * `bison::dynamic` directly) so that cloning a tree of `ui_element`s — e.g.
+ * `bison::dynamic::clone()`/`clone_ptr()` on a nested `dynamic_ptr` field —
+ * reconstructs `ui_element` instances at every level instead of slicing them
+ * down to plain `dynamic`, which would break `dynamic_cast<ui_element*>`
+ * (used by `for_each_child_ordered`) on the clone. See
+ * `bison::cloneable_dynamic` for how the mixin works.
+ *
  * Instances are created by `ui_importer` via
  * `bison::dynamic::instantiate<ui_element>(...)`.
  */
-class ui_element : public bison::dynamic {
+class ui_element : public bison::cloneable_dynamic<ui_element> {
  public:
   /**
    * @brief Construct a `ui_element` by moving a plain `dynamic` into it.

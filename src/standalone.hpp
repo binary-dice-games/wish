@@ -103,7 +103,7 @@ class standalone : public bison::rmi::standalone {
   // standalone-mode consumers use templates; add it if/when one does.
 
   /// @copydoc bdg::wish::client::register_template
-  std::future<void> register_template(bison::key_t name, const std::string& descriptor);
+  std::future<void> register_template(bison::key_t name, bison::dynamic descriptor);
 
   /// @copydoc bdg::wish::client::upload_file
   std::future<void> upload_file(const std::string& name, const std::string& data);

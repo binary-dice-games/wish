@@ -5,6 +5,7 @@
 /// Wraps wish::client in a plain-C interface so that any language with a
 /// C FFI can drive a wish session without linking against C++ directly.
 #include <client.hpp>
+#include <ui_descriptor.hpp>
 #include <include/wish_client_c.h>
 
 #include "src/rmi/transport/named_pipe_transport.hpp"
@@ -232,7 +233,7 @@ extern "C" wish_error wish_register_template(wish_client_handle c, const char* n
   if (!c || !name || !descriptor)
     return WISH_ERR_NULL;
   try {
-    c->client_->register_template(bdg::bison::key_t{name}, std::string{descriptor}).get();
+    c->client_->register_template(bdg::bison::key_t{name}, bdg::wish::import_descriptor_text(descriptor)).get();
     return WISH_OK;
   } catch (const std::exception& e) {
     c->last_error_ = e.what();
@@ -246,9 +247,9 @@ extern "C" wish_error wish_register_template_async(
     return WISH_ERR_NULL;
   try {
     bdg::bison::key_t key{name};
-    std::string desc{descriptor};
-    std::future<bool> fut = std::async(std::launch::async, [c, key, desc]() -> bool {
-      c->client_->register_template(key, desc).get();
+    bdg::bison::dynamic desc = bdg::wish::import_descriptor_text(descriptor);
+    std::future<bool> fut = std::async(std::launch::async, [c, key, d = std::move(desc)]() mutable -> bool {
+      c->client_->register_template(key, std::move(d)).get();
       return true;
     });
     return store_future_handle<bool_future_state>(out_future, std::move(fut)) == RMI_OK ? WISH_OK : WISH_ERR_EXCEPTION;

@@ -209,11 +209,11 @@ void standalone::render_loop() {
 
 // ── Wish-level convenience helpers (mirror wish::client) ──────────────────────
 
-std::future<void> standalone::register_template(bison::key_t name, const std::string& descriptor) {
-  return std::async(std::launch::async, [this, name, descriptor]() {
+std::future<void> standalone::register_template(bison::key_t name, bison::dynamic descriptor) {
+  return std::async(std::launch::async, [this, name, d = std::move(descriptor)]() mutable {
     dynamic args;
     args["name"_key] = name;
-    args["descriptor"_key] = descriptor;
+    args["descriptor"_key] = dynamic_ptr{std::move(d)};
     template_proxy_->call("register"_key, std::move(args)).get();
   });
 }

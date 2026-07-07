@@ -1,13 +1,22 @@
 // MIT License © 2025 Binary Dice Games
 /// @file ui_importer.hpp
-/// @brief Parses JSON or YAML descriptors into live wish object trees.
+/// @brief Builds typed wish UI element trees from a generic bison::dynamic
+///        descriptor, and from JSON/YAML text as a convenience wrapper.
 ///
-/// The importer reads a descriptor string, instantiates every element in the
+/// The importer reads a descriptor (either already a generic `bison::dynamic`
+/// tree — see src/ui_descriptor.hpp — or JSON/YAML text, which is first
+/// parsed into that same generic shape), instantiates every element in the
 /// "wish" bison namespace, wires up the children hierarchy, and returns a flat
-/// name map for O(1) access to any named node.
+/// name map for O(1) access to any named node.  Resolving element types
+/// against the "wish" class registry is server-only (the registry is
+/// populated by `register_all()`, called only from `server.cpp`/
+/// `standalone.cpp`), which is why this header depends on `ui_element.hpp`
+/// and is only compiled into `wish_server`.
 #pragma once
 
 #include <ui_element.hpp>
+
+#include "src/bison/bison_object.hpp"
 
 #include <string>
 #include <unordered_map>
@@ -47,6 +56,26 @@ class ui_tree : public name_map {
       (*this)[key.empty() ? prefix : (prefix + "." + key)] = std::move(ptr);
   }
 };
+
+/// @brief Resolve a generic descriptor node (see src/ui_descriptor.hpp) into
+///        a typed wish UI element, recursively wiring up its children.
+///
+/// This is the server-only counterpart of `import_descriptor_json`/
+/// `import_descriptor_yaml`: it reads the node's `"__type__"_key` field and
+/// instantiates the matching class registered in the "wish" bison namespace
+/// (see `register_all()`), coerces every other field's value to match that
+/// class's prototype field types, and recurses into `"children"_key`.
+///
+/// @param node        Generic dynamic node, as produced by
+///                    `import_descriptor_json`/`import_descriptor_yaml` or
+///                    received as an RMI `register_template` argument.
+/// @param path        Dot-path of this node (`""` for the root).
+/// @param add_to_map  If true, records this node in @p result under @p path.
+/// @param result      Flat dot-path -> element map, populated as nodes are
+///                    visited (only entries with `add_to_map == true`).
+/// @return The instantiated, fully wired `ui_element` for @p node.
+/// @throws std::runtime_error if @p node's type is not a registered class.
+ui_element_ptr build_ui_node(const bison::dynamic& node, const std::string& path, bool add_to_map, name_map& result);
 
 /// @brief Parse a JSON descriptor and return a wish object tree.
 /// @param json  UTF-8 JSON text representing a wish UI hierarchy.

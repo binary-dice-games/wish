@@ -220,6 +220,29 @@ children:
   EXPECT_EQ(btn->findField("label"_key)->as<std::string>(), "OK");
 }
 
+// ── Reserved-field collision ──────────────────────────────────────────────────
+
+// A widget field literally named "name" (as opposed to the internal
+// "__name__"/"__path__" bookkeeping fields build_ui_node stamps on mapped
+// nodes) must round-trip untouched and not be confused with the child's own
+// dot-path identity.
+TEST_F(UiImporterTest, NameFieldDoesNotCollideWithPathBookkeeping) {
+  constexpr auto desc = R"({
+    "type": "Window",
+    "children": {
+      "ok": { "type": "Button", "label": "OK", "name": "literal-name-value" }
+    }
+  })";
+
+  auto result = bdg::wish::import_json(desc);
+
+  ASSERT_TRUE(result.count("ok"));
+  auto& btn = result["ok"];
+  ASSERT_NE(btn, nullptr);
+  EXPECT_EQ(btn->findField("name"_key)->as<std::string>(), "literal-name-value");
+  EXPECT_EQ(btn->findField("label"_key)->as<std::string>(), "OK");
+}
+
 TEST_F(UiImporterTest, YamlVisibleFalseIsApplied) {
   constexpr auto yaml_desc = R"(
 type: Label
