@@ -14,6 +14,7 @@
 
 #include "src/app/transport_flags.hpp"
 #include "src/rmi/transport/named_pipe_transport.hpp"
+#include "src/term/terminal.hpp"
 
 #include <gflags/gflags.h>
 
@@ -107,14 +108,15 @@ void wish_server_app::register_classes() {
 }
 
 void wish_server_app::on_listening() const {
+  std::stringstream ss;
   using bison::app::transport_kind;
   switch (bison::app::selected_transport()) {
     case transport_kind::pipe:
       std::cout << "[wish] listening on pipe " << FLAGS_name << " - close the window to stop\n" << std::flush;
       return;
     case transport_kind::term:
-      std::cout << "[wish] listening via --transport=term (spawned: " << FLAGS_cmd << ") - close the window to stop\n"
-                << std::flush;
+      ss << "[wish] listening via --transport=term (spawned: " << FLAGS_cmd << ") - close the window to stop\n";
+      bison::term::terminal::print(ss.str());
       return;
     case transport_kind::tcp:
       std::cout << "[wish] listening on " << FLAGS_host << ':' << FLAGS_port << " - close the window to stop\n"
