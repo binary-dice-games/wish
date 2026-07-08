@@ -48,6 +48,10 @@ if(WISH_ENABLE_IMGUI)
   wish_add_test(test_style_service  test_style_service.cpp)
 endif()
 
+if(WISH_ENABLE_IMGUI AND WISH_ENABLE_WEB)
+  wish_add_test(test_web_renderer test_web_renderer.cpp)
+endif()
+
 
 # Like wish_add_test, but only registers the test when OPTION_NAME is set
 # (e.g. a WISH_MODULE_<NAME> option) -- for tests that exercise an optional

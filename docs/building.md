@@ -16,7 +16,7 @@ Linux and MSYS2 (Windows host).
 | CMake | 3.10 | 3.21+ recommended for `--preset` support |
 | C++ compiler | C++20 | GCC 10+, Clang 12+ |
 | Git | any | Required to check out submodules |
-| Internet access at configure time | — | SDL3, Dear ImGui, ImPlot, and ImPlot3D are fetched automatically via CMake FetchContent |
+| Internet access at configure time | — | SDL3, Dear ImGui, ImPlot, and ImPlot3D are fetched automatically via CMake FetchContent (plus civetweb and stb when `WISH_ENABLE_WEB=ON`) |
 
 ### Linux
 
@@ -77,6 +77,7 @@ cmake -S . -B build
 |--------|---------|-------------|
 | `WISH_ENABLE_IMGUI` | `ON` | Build the Dear ImGui renderer. Required for SDL3 renderer and wish server. |
 | `WISH_ENABLE_SDL3` | `ON` | Build the SDL3 windowed renderer, the wish server, and the calculator/demo examples. |
+| `WISH_ENABLE_WEB` | `OFF` | Build the web renderer (`--renderer web`): a browser-based backend over HTTP + WebSocket, using civetweb and a first-party binary draw-data protocol (no OpenGL/window system required). Requires no additional system packages beyond what's already needed (SSL is compiled out, so no OpenSSL dependency). Can be combined with `WISH_ENABLE_SDL3` in the same binary; `WISH_ENABLE_SDL3=OFF -DWISH_ENABLE_WEB=ON` builds `wish server`/`wish-server` with no windowing/GPU dependency at all. |
 | `WISH_BUILD_SHARED` | `ON` | Build `wish_client` as a shared library with a C ABI (`wish_client.dll` on MSYS2 / `libwish_client.so` on Linux). |
 | `WISH_BUILD_TESTS` | `ON` | Build and register the GoogleTest suite. |
 | `WISH_MODULE_CALCULATOR` | `OFF` | Include the Calculator form (server) and its self-registering reference client runner. |
@@ -140,9 +141,12 @@ The wish server opens an SDL3 window that acts as the rendering host. Clients co
 | `--port PORT` | `7070` | TCP listen port |
 | `--pipe PATH` | *(empty)* | Unix-socket path; when set, TCP is not used |
 | `--verbose` | `false` | Print session lifecycle messages to stdout |
-| `--title TITLE` | `wish` | Window title |
-| `--width N` | `1280` | Initial window width in pixels |
-| `--height N` | `720` | Initial window height in pixels |
+| `--title TITLE` | `wish` | Window title (`--renderer sdl3` only) |
+| `--width N` | `1280` | Initial window width in pixels (`--renderer sdl3` only) |
+| `--height N` | `720` | Initial window height in pixels (`--renderer sdl3` only) |
+| `--renderer NAME` | `sdl3` | Rendering backend: `sdl3` or `web` |
+| `--web_port PORT` | `8080` | HTTP/WebSocket port (`--renderer web` only) |
+| `--web_bind ADDR` | `127.0.0.1` | Bind address (`--renderer web` only; localhost-only by default) |
 
 **Example — listen on a non-default port with a custom window title:**
 
@@ -151,6 +155,19 @@ The wish server opens an SDL3 window that acts as the rendering host. Clients co
 ```
 
 Close the window, or choose **Server → Quit** from the menu bar, to stop the server.
+
+### Running the web renderer
+
+Requires a build with `-DWISH_ENABLE_WEB=ON`:
+
+```sh
+./build/wish server --renderer web --web_port 8080
+```
+
+Then open `http://localhost:8080` in a browser. Ctrl+C stops the process —
+there's no window to close, and the server does not auto-quit when no
+browser is connected. See [src/web/DESIGN.md](../src/web/DESIGN.md) for the
+protocol and architecture.
 
 ---
 

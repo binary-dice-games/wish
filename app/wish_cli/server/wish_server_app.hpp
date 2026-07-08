@@ -14,24 +14,35 @@ namespace bdg::wish {
 class logger;
 
 /**
- * @brief Server application that opens an SDL3 window and accepts wish
- *        clients over any bison transport.
+ * @brief Server application that accepts wish clients over any bison
+ *        transport and renders their UI via a selectable backend.
  *
  * Extends `bison::app::server_app` so it inherits transport selection
  * and gflags-based CLI handling.  Only wish-specific
  * behaviour is added here:
  *
  * - `register_classes()` registers the wish UI class hierarchy.
- * - `run_with_transport()` creates a `wish::server` with an SDL3 renderer
- *   and blocks until the window is closed.
+ * - `run_with_transport()` creates a `wish::server` with the renderer
+ *   selected by `--renderer` and blocks until it requests a stop (window
+ *   close for `sdl3`, `request_quit()`/process signal for `web`).
  *
- * CLI flags (defined in `main.cpp`, used here via DECLARE_*):
- *   --title TITLE    Window title  (default: wish)
- *   --width N        Window width  (default: 1280)
- *   --height N       Window height (default: 720)
+ * CLI flags (defined in `wish_server_app.cpp`, used here via DECLARE_*
+ * where shared with other subcommands):
+ *   --renderer NAME  Rendering backend: sdl3 or web (default: sdl3)
+ *   --title TITLE    Window title, --renderer sdl3 only  (default: wish)
+ *   --width N        Window width, --renderer sdl3 only  (default: 1280)
+ *   --height N       Window height, --renderer sdl3 only (default: 720)
+ *   --font_size N    Base font size in pixels             (default: 16)
+ *   --web_port N     HTTP/WebSocket port, --renderer web only (default: 8080)
+ *   --web_bind ADDR  Bind address, --renderer web only (default: 127.0.0.1)
  *
  * Plus all flags inherited from server_app (--transport, --host, --port,
- * --name, --cmd, --verbose).
+ * --name, --cmd, --verbose). Note `--port` is bison's TCP RMI transport
+ * port -- unrelated to `--web_port`, the web renderer's HTTP port.
+ *
+ * A backend requested via `--renderer` that wasn't compiled in (see
+ * `WISH_ENABLE_SDL3`/`WISH_ENABLE_WEB`) makes `run_with_transport()` throw
+ * `std::runtime_error` rather than silently falling back to another backend.
  */
 class wish_server_app : public bison::app::server_app {
  public:

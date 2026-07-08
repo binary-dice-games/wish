@@ -1,5 +1,10 @@
-if(WISH_ENABLE_IMGUI AND WISH_ENABLE_SDL3)
+if(WISH_ENABLE_IMGUI AND (WISH_ENABLE_SDL3 OR WISH_ENABLE_WEB))
   # ── wish-cli — unified multi-mode binary (server + client + bridge + standalone) ─
+  #
+  # Builds with either (or both) renderer backends; wish_server_app.cpp picks
+  # between them at runtime via --renderer, guarded by WISH_SDL3_ENABLED /
+  # WISH_WEB_ENABLED so a backend that wasn't compiled in simply isn't an
+  # option (see wish_server_app.cpp's make_renderer()).
   add_executable(wish-cli
       wish_cli/main.cpp
       wish_cli/server/wish_server_app.cpp
@@ -19,7 +24,7 @@ if(WISH_ENABLE_IMGUI AND WISH_ENABLE_SDL3)
       OUTPUT_NAME "wish"
       FOLDER      app)
 
-  # ── wish-server — standalone server binary (requires SDL3 + ImGui) ────────────
+  # ── wish-server — standalone server binary (requires ImGui + SDL3 and/or web) ─
   add_executable(wish-server
       wish_cli/server/wish_server_app.cpp
       wish_cli/server/standalone_main.cpp)
@@ -30,8 +35,14 @@ if(WISH_ENABLE_IMGUI AND WISH_ENABLE_SDL3)
   )
   target_link_libraries(wish-server PRIVATE wish_server gflags)
   set_target_properties(wish-server PROPERTIES FOLDER app)
+endif()
 
+if(WISH_ENABLE_IMGUI AND WISH_ENABLE_SDL3)
   # ── wish-standalone — standalone in-process binary (requires SDL3 + ImGui) ────
+  #
+  # Runs server and client in one process with no transport; this is
+  # inherently an interactive, windowed use case, so unlike wish-cli/
+  # wish-server it does not build under WISH_ENABLE_WEB alone.
   add_executable(wish-standalone
       wish_cli/standalone/wish_standalone_app.cpp
       wish_cli/standalone/standalone_main.cpp

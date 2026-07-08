@@ -115,6 +115,16 @@ int run_standalone_mode(int argc, char** argv) {
     // (mirrors wish_server_app's register_classes()-before-logger ordering).
     register_all();
 
+#ifndef WISH_SDL3_ENABLED
+    // Standalone mode fuses server and client into one interactive process
+    // and has always been SDL3-only; unlike `wish server`, it has no
+    // --renderer flag / web backend option. wish-cli itself may still be
+    // built with WISH_ENABLE_SDL3=OFF (e.g. a web-only deployment), in
+    // which case this subcommand isn't available at runtime.
+    std::cerr << "[wish standalone] this binary was built with WISH_ENABLE_SDL3=OFF; "
+                 "standalone mode requires the SDL3 renderer.\n";
+    return 1;
+#else
     wish_standalone_session session{std::make_unique<sdl3_renderer>(FLAGS_title.c_str(), FLAGS_width, FLAGS_height)};
     session.set_logger(make_standalone_logger());
     session.app_args_.assign(argv + 1, argv + argc);
@@ -132,6 +142,7 @@ int run_standalone_mode(int argc, char** argv) {
 
     session.stop();
     return 0;
+#endif
 
   } catch (const std::exception& ex) {
     std::cerr << "[wish standalone] error: " << ex.what() << '\n';

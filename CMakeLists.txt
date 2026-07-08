@@ -12,6 +12,7 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter)
 option(WISH_BUILD_TESTS      "Build the wish tests"                            ON)
 option(WISH_ENABLE_IMGUI     "Build the imgui renderer"                       ON)
 option(WISH_ENABLE_SDL3      "Build the SDL3 renderer and calculator example" ON)
+option(WISH_ENABLE_WEB       "Build the web renderer (browser + WebSocket backend)" OFF)
 option(WISH_BUILD_SHARED     "Build wish_client shared library with C ABI"   ON)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -100,6 +101,48 @@ if(WISH_ENABLE_IMGUI AND WISH_ENABLE_SDL3)
   )
   target_include_directories(imgui_core PUBLIC ${imgui_SOURCE_DIR}/backends)
   target_link_libraries(imgui_core PUBLIC SDL3::SDL3)
+endif()
+
+if(WISH_ENABLE_IMGUI AND WISH_ENABLE_WEB)
+  include(FetchContent)
+  # Static file serving + WebSocket only; no TLS (localhost dev tool), no
+  # bundled server executable/tests -- wish only needs the C library.
+  set(CIVETWEB_ENABLE_WEBSOCKETS        ON  CACHE BOOL "" FORCE)
+  set(CIVETWEB_ENABLE_SSL               OFF CACHE BOOL "" FORCE)
+  set(CIVETWEB_BUILD_TESTING            OFF CACHE BOOL "" FORCE)
+  set(CIVETWEB_ENABLE_SERVER_EXECUTABLE OFF CACHE BOOL "" FORCE)
+  set(CIVETWEB_INSTALL_EXECUTABLE       OFF CACHE BOOL "" FORCE)
+  FetchContent_Declare(
+    civetweb
+    GIT_REPOSITORY https://github.com/civetweb/civetweb.git
+    GIT_TAG        v1.16
+    GIT_SHALLOW    TRUE
+  )
+  # Single-header PNG/JPEG decoder for web_renderer::get_or_load_texture --
+  # WISH_ENABLE_SDL3 (and its transitive SDL3_image dependency) is not
+  # guaranteed to be on in a web-only build, so this backend needs its own
+  # decoder.
+  FetchContent_Declare(
+    stb
+    GIT_REPOSITORY https://github.com/nothings/stb.git
+    GIT_TAG        master
+    GIT_SHALLOW    TRUE
+  )
+  # civetweb v1.16's own CMakeLists declares cmake_minimum_required(3.3),
+  # which CMake 4+ refuses to configure without an explicit policy floor.
+  set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+  FetchContent_MakeAvailable(civetweb stb)
+  unset(CMAKE_POLICY_VERSION_MINIMUM)
+  set_target_properties(civetweb-c-library PROPERTIES FOLDER extern)
+  # civetweb's master accept-loop only checks its stop flag once per
+  # SOCKET_TIMEOUT_QUANTUM (2000ms by default), so mg_stop() can otherwise
+  # block for up to 2s -- multiplied across every test that starts a
+  # civetweb_server. This only affects shutdown latency, not runtime
+  # behavior.
+  target_compile_definitions(civetweb-c-library PRIVATE SOCKET_TIMEOUT_QUANTUM=100)
+
+  add_library(stb_image INTERFACE)
+  target_include_directories(stb_image INTERFACE ${stb_SOURCE_DIR})
 endif()
 
 # ── miniz — zip (de)compression, used to unpack embedded resources ───────────
@@ -289,6 +332,21 @@ if(WISH_ENABLE_IMGUI AND WISH_ENABLE_SDL3)
   )
   target_compile_definitions(wish_server PUBLIC WISH_SDL3_ENABLED)
   target_link_libraries(wish_server PUBLIC SDL3::SDL3 SDL3_image::SDL3_image)
+endif()
+
+if(WISH_ENABLE_IMGUI AND WISH_ENABLE_WEB)
+  target_sources(wish_server PRIVATE
+    src/web/web_renderer.hpp
+    src/web/web_renderer.cpp
+    src/web/draw_protocol.hpp
+    src/web/draw_protocol.cpp
+    src/web/civetweb_server.hpp
+    src/web/civetweb_server.cpp
+  )
+  target_compile_definitions(wish_server PUBLIC WISH_WEB_ENABLED)
+  # PRIVATE: civetweb/stb_image are isolated behind web_renderer.cpp; public
+  # headers (web_renderer.hpp) never include <civetweb.h> or <stb_image.h>.
+  target_link_libraries(wish_server PRIVATE civetweb-c-library stb_image)
 endif()
 
 set_target_properties(wish_server PROPERTIES POSITION_INDEPENDENT_CODE ON)
