@@ -47,6 +47,19 @@ class wish_app_host {
 
   /// @brief Positional arguments given after `--` on the command line.
   virtual const std::vector<std::string>& app_args() const = 0;
+
+  /// @brief Read one line of console (operator) input, blocking until a
+  ///        line is available.
+  ///
+  /// Always safe to call regardless of transport: `wish_client_session`
+  /// routes this through `bison::app::client_app::read_console_line()`,
+  /// which knows how to read console input even when the active transport
+  /// (e.g. `--transport=term`) also owns stdin for framed RMI traffic.
+  /// App runners must use this instead of `std::cin` directly.
+  ///
+  /// @param line Output line, without the trailing newline.
+  /// @return `false` once no more input is available (EOF).
+  virtual bool read_console_line(std::string& line) = 0;
 };
 
 } // namespace bdg::wish

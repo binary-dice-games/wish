@@ -39,6 +39,10 @@ void wish_standalone_session::keep_alive(rmi::proxy::dynamic&& proxy) {
   live_proxies_.push_back(std::move(proxy));
 }
 
+bool wish_standalone_session::read_console_line(std::string& line) {
+  return static_cast<bool>(std::getline(std::cin, line));
+}
+
 void wish_standalone_session::signal_done() {
   try {
     done_.set_value();

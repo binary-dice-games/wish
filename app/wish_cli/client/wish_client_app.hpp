@@ -71,6 +71,9 @@ class wish_client_app : public bison::app::client_app, public wish_app_host {
     return app_args_;
   }
 
+  /// @brief Forwards to the inherited (protected) `client_app::read_console_line()`.
+  bool read_console_line(std::string& line) override;
+
   std::future<bison::rmi::proxy::dynamic>
   instantiate(bison::key_t ns, bison::key_t klass, bison::dynamic params = bison::dynamic{}) override;
 

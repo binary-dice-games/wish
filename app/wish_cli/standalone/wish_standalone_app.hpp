@@ -58,6 +58,10 @@ class wish_standalone_session : public standalone, public wish_app_host {
     return standalone::download_file(name);
   }
 
+  /// @brief Standalone mode has no transport contending for stdin, so this
+  ///        is just a direct `std::cin` read.
+  bool read_console_line(std::string& line) override;
+
  private:
   std::vector<std::string> app_args_;
   std::promise<void> done_;

@@ -80,6 +80,10 @@ void wish_client_app::keep_alive(rmi::proxy::dynamic&& proxy) {
   live_proxies_.push_back(std::move(proxy));
 }
 
+bool wish_client_app::read_console_line(std::string& line) {
+  return client_app::read_console_line(line);
+}
+
 void wish_client_app::signal_done() {
   try {
     done_.set_value();
