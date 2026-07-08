@@ -112,6 +112,21 @@ if(WISH_ENABLE_IMGUI AND WISH_ENABLE_WEB)
   set(CIVETWEB_BUILD_TESTING            OFF CACHE BOOL "" FORCE)
   set(CIVETWEB_ENABLE_SERVER_EXECUTABLE OFF CACHE BOOL "" FORCE)
   set(CIVETWEB_INSTALL_EXECUTABLE       OFF CACHE BOOL "" FORCE)
+  # civetweb's own CMakeLists defaults this ON and adds -fsanitize=address
+  # -fsanitize=undefined to its Debug compile flags without propagating them
+  # to consumers' link flags, so any Debug build (e.g. VSCode CMake Tools'
+  # default config) fails to link with undefined __ubsan_handle_*/__asan_*
+  # references. wish doesn't build the rest of the project with sanitizers,
+  # so civetweb shouldn't either.
+  set(CIVETWEB_ENABLE_ASAN              OFF CACHE BOOL "" FORCE)
+  # civetweb's own CMakeLists defaults this ON in Debug builds, adding
+  # -DDEBUG to its compile flags. That enables civetweb's internal
+  # DEBUG_TRACE_FUNC, which unconditionally fprintf()s raw '\n'-terminated
+  # lines straight to stdout -- noisy, and (before the bison::term::terminal
+  # stdio redirect) a source of "staircase" output under --transport=term's
+  # raw-mode terminal. civetweb is a vendored stable dependency here, not
+  # something wish is developing, so its internal tracing has no value to us.
+  set(CIVETWEB_ENABLE_DEBUG_TOOLS        OFF CACHE BOOL "" FORCE)
   FetchContent_Declare(
     civetweb
     GIT_REPOSITORY https://github.com/civetweb/civetweb.git

@@ -15,7 +15,6 @@
 
 #include "src/app/transport_flags.hpp"
 #include "src/rmi/transport/named_pipe_transport.hpp"
-#include "src/term/terminal.hpp"
 
 #include <gflags/gflags.h>
 
@@ -140,7 +139,6 @@ void wish_server_app::on_listening() const {
   // point a browser instead.
   std::string stop_hint = FLAGS_renderer == "web" ? "Ctrl+C to stop" : "close the window to stop";
 
-  std::stringstream ss;
   using bison::app::transport_kind;
   switch (bison::app::selected_transport()) {
     case transport_kind::pipe:
