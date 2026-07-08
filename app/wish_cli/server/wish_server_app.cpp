@@ -145,7 +145,11 @@ void wish_server_app::on_listening() const {
       std::cout << "[wish] listening on pipe " << FLAGS_name << " - " << stop_hint << "\n" << std::flush;
       break;
     case transport_kind::term:
-      std::cout << "[wish] listening via --transport=term (spawned: " << FLAGS_cmd << ") - " << stop_hint << "\n"
+      // Exiting the spawned terminal stops the server regardless of
+      // --renderer (see run_with_transport()), so it takes priority over
+      // stop_hint here.
+      std::cout << "[wish] listening via --transport=term (spawned: " << FLAGS_cmd
+                << ") - exit the spawned terminal to stop\n"
                 << std::flush;
       break;
     case transport_kind::tcp:
@@ -166,14 +170,20 @@ void wish_server_app::on_verbose_trace(bison::key_t /*session_id*/, const std::s
 
 int wish_server_app::run_with_transport(
     bison::rmi::transport::server_transport_iface& transport,
-    std::function<void()> wait_for_shutdown) {
+    std::function<void()> /*wait_for_shutdown*/,
+    std::function<bool()> is_shutdown_requested) {
   server_log_ = make_server_logger();
   server srv{transport, make_renderer()};
   srv.set_logger(server_log_);
   srv.start();
   server_log_->info("server started");
   on_listening();
-  while (!srv.should_quit())
+  // Stops on whichever comes first: the renderer's own close signal (sdl3
+  // window close; web has none), or -- when --transport=term spawned a
+  // terminal -- that terminal process exiting. This is what lets --renderer
+  // web be stopped at all: it has no window and nothing installs a SIGINT
+  // handler for this process.
+  while (!srv.should_quit() && !(is_shutdown_requested && is_shutdown_requested()))
     std::this_thread::sleep_for(std::chrono::milliseconds{50});
   srv.stop();
   server_log_.reset();
