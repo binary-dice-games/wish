@@ -8,6 +8,7 @@
 #include <client.hpp>
 #include <sdl3_renderer.hpp>
 #include <server.hpp>
+#include <web/web_renderer.hpp>
 
 #include "src/rmi/rmi.hpp" // memory_server_transport / memory_client_transport
 
@@ -27,6 +28,10 @@
 
 DEFINE_bool(verbose, false, "Print verbose trace to stderr.");
 DEFINE_string(theme, "dark", "UI theme preset: dark, light, or classic.");
+DEFINE_int32(font_size, 16, "Font size in pixels");
+DEFINE_string(renderer, "web", "Rendering backend: sdl3 or web");
+DEFINE_int32(web_port, 8080, "HTTP/WebSocket port for --renderer web");
+DEFINE_string(web_bind, "127.0.0.1", "Bind address for --renderer web (localhost-only by default)");
 
 static bool ValidateTheme(const char* /*flag*/, const std::string& value) {
   return value == "dark" || value == "light" || value == "classic";
@@ -606,11 +611,7 @@ static dynamic list_directory(const std::filesystem::path& dir) {
 
 class demo_client : public wish::client {
  public:
-  demo_client(
-      memory_client_transport t,
-      wish::sdl3_renderer* renderer,
-      bool verbose = false,
-      std::string theme = "dark")
+  demo_client(memory_client_transport t, wish::renderer* renderer, bool verbose = false, std::string theme = "dark")
       : wish::client(std::move(t)), renderer_(renderer), verbose_(verbose), theme_(std::move(theme)) {}
 
  protected:
@@ -1360,11 +1361,34 @@ class demo_client : public wish::client {
       std::clog << "[demo] " << msg << "\n";
   }
 
-  wish::sdl3_renderer* renderer_;
+  wish::renderer* renderer_;
   bool verbose_;
   std::string theme_;
   int click_count_ = 0;
 };
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+static std::unique_ptr<wish::renderer> make_renderer() {
+  if (FLAGS_renderer == "sdl3") {
+#ifdef WISH_SDL3_ENABLED
+    return std::make_unique<wish::sdl3_renderer>("Calculator", 340, 440, FLAGS_font_size);
+#else
+    throw std::runtime_error("--renderer=sdl3 requested but this binary was built with WISH_ENABLE_SDL3=OFF");
+#endif
+  }
+  if (FLAGS_renderer == "web") {
+#ifdef WISH_WEB_ENABLED
+    std::cout << "[wish] open http://" << FLAGS_web_bind << ':' << FLAGS_web_port << " in a browser\n"
+              << "Press Ctrl+C to stop\n"
+              << std::flush;
+    return std::make_unique<wish::web_renderer>(FLAGS_web_bind, FLAGS_web_port, FLAGS_font_size);
+#else
+    throw std::runtime_error("--renderer=web requested but this binary was built with WISH_ENABLE_WEB=OFF");
+#endif
+  }
+  throw std::runtime_error("unknown --renderer value '" + FLAGS_renderer + "' (expected sdl3 or web)");
+}
 
 // ── main ──────────────────────────────────────────────────────────────────────
 
@@ -1376,7 +1400,7 @@ int main(int argc, char* argv[]) {
 
   memory_server_transport transport;
 
-  auto r = std::make_unique<wish::sdl3_renderer>("wish Widget Demo", 900, 950);
+  auto r = make_renderer();
   auto rptr = r.get();
 
   wish::server server{transport, std::move(r)};

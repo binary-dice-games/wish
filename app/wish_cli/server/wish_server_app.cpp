@@ -35,7 +35,7 @@ DEFINE_string(title, "wish", "Window title");
 DEFINE_int32(width, 1280, "Window width in pixels");
 DEFINE_int32(height, 720, "Window height in pixels");
 DEFINE_int32(font_size, 16, "Font size in pixels");
-DEFINE_string(renderer, "sdl3", "Rendering backend: sdl3 or web");
+DEFINE_string(renderer, "web", "Rendering backend: sdl3 or web");
 // Deliberately NOT named --port: that flag is already bison's TCP RMI
 // transport port (see main.cpp), an unrelated concept from the web
 // renderer's HTTP/WebSocket port.
