@@ -464,12 +464,24 @@
     send(encodeResize(canvas.clientWidth, canvas.clientHeight, dpr));
   }
 
+  const disconnectedBanner = document.getElementById("wish-disconnected-banner");
+
+  function showDisconnectedBanner() {
+    if (disconnectedBanner) disconnectedBanner.classList.remove("hidden");
+  }
+
   ws.addEventListener("open", () => {
     console.log("[wish] connected");
     sendResize();
   });
-  ws.addEventListener("close", () => console.log("[wish] disconnected"));
-  ws.addEventListener("error", (err) => console.error("[wish] socket error", err));
+  ws.addEventListener("close", () => {
+    console.log("[wish] disconnected");
+    showDisconnectedBanner();
+  });
+  ws.addEventListener("error", (err) => {
+    console.error("[wish] socket error", err);
+    showDisconnectedBanner();
+  });
 
   ws.addEventListener("message", (event) => {
     const buf = event.data;
