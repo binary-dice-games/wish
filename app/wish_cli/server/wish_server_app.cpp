@@ -138,8 +138,7 @@ void wish_server_app::on_listening() const {
   // "close the window to stop" is SDL3-specific wording; the web renderer
   // has no window to close (Ctrl+C stops the process), and prints where to
   // point a browser instead.
-  std::string stop_hint =
-      FLAGS_renderer == "web" ? "Ctrl+C to stop" : "close the window to stop";
+  std::string stop_hint = FLAGS_renderer == "web" ? "Ctrl+C to stop" : "close the window to stop";
 
   std::stringstream ss;
   using bison::app::transport_kind;
@@ -148,8 +147,8 @@ void wish_server_app::on_listening() const {
       std::cout << "[wish] listening on pipe " << FLAGS_name << " - " << stop_hint << "\n" << std::flush;
       break;
     case transport_kind::term:
-      ss << "[wish] listening via --transport=term (spawned: " << FLAGS_cmd << ") - " << stop_hint << "\n";
-      bison::term::terminal::print(ss.str());
+      std::cout << "[wish] listening via --transport=term (spawned: " << FLAGS_cmd << ") - " << stop_hint << "\n"
+                << std::flush;
       break;
     case transport_kind::tcp:
       std::cout << "[wish] listening on " << FLAGS_host << ':' << FLAGS_port << " - " << stop_hint << "\n"
@@ -158,8 +157,7 @@ void wish_server_app::on_listening() const {
   }
 
   if (FLAGS_renderer == "web") {
-    std::cout << "[wish] open http://" << FLAGS_web_bind << ':' << FLAGS_web_port << " in a browser\n"
-              << std::flush;
+    std::cout << "[wish] open http://" << FLAGS_web_bind << ':' << FLAGS_web_port << " in a browser\n" << std::flush;
   }
 }
 
