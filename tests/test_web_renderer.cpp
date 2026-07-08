@@ -7,9 +7,15 @@
 
 #include <imgui.h>
 
+#if defined(_WIN32)
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <process.h>
+#else
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#endif
 
 #include <atomic>
 #include <chrono>
@@ -35,6 +41,45 @@ using bdg::wish::draw_protocol::encode_texture_update;
 //    internal logic) ──────────────────────────────────────────────────────
 
 namespace {
+
+// Raw client-socket portability shim: on native Windows sockets are Winsock
+// SOCKET handles (not plain fds), closed via closesocket() and requiring
+// WSAStartup() before first use -- see bison's socket_transport.cpp for the
+// same pattern. MSYS2 and Linux both provide real POSIX sockets.
+#if defined(_WIN32)
+using raw_socket_t = SOCKET;
+constexpr raw_socket_t kInvalidSocket = INVALID_SOCKET;
+
+struct winsock_guard {
+  winsock_guard() {
+    WSADATA data;
+    WSAStartup(MAKEWORD(2, 2), &data);
+  }
+  ~winsock_guard() {
+    WSACleanup();
+  }
+};
+const winsock_guard g_winsock_guard;
+
+void close_socket(raw_socket_t sock) {
+  ::closesocket(sock);
+}
+#else
+using raw_socket_t = int;
+constexpr raw_socket_t kInvalidSocket = -1;
+
+void close_socket(raw_socket_t sock) {
+  ::close(sock);
+}
+#endif
+
+long current_pid() {
+#if defined(_WIN32)
+  return static_cast<long>(::_getpid());
+#else
+  return static_cast<long>(::getpid());
+#endif
+}
 
 void push_u8(std::vector<std::byte>& buf, uint8_t v) {
   buf.push_back(std::byte{v});
@@ -84,15 +129,15 @@ float read_f32(const std::vector<std::byte>& buf, size_t& pos) {
 // Hand-rolled WS client handshake -- returns a connected + upgraded socket,
 // or -1 on failure. Doesn't validate Sec-WebSocket-Accept (only "101").
 int connect_ws_client(int port) {
-  int sock = ::socket(AF_INET, SOCK_STREAM, 0);
-  if (sock < 0)
+  raw_socket_t sock = ::socket(AF_INET, SOCK_STREAM, 0);
+  if (sock == kInvalidSocket)
     return -1;
   sockaddr_in addr{};
   addr.sin_family = AF_INET;
   addr.sin_port = htons(static_cast<uint16_t>(port));
   ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
   if (::connect(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) {
-    ::close(sock);
+    close_socket(sock);
     return -1;
   }
 
@@ -103,7 +148,7 @@ int connect_ws_client(int port) {
       "Connection: Upgrade\r\n"
       "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
       "Sec-WebSocket-Version: 13\r\n\r\n";
-  ::send(sock, handshake.data(), handshake.size(), 0);
+  ::send(sock, handshake.data(), static_cast<int>(handshake.size()), 0);
 
   std::string resp;
   char c;
@@ -113,10 +158,10 @@ int connect_ws_client(int port) {
       break;
   }
   if (resp.find("101") == std::string::npos) {
-    ::close(sock);
+    close_socket(sock);
     return -1;
   }
-  return sock;
+  return static_cast<int>(sock);
 }
 
 // Sends @p payload as one masked client->server binary WS frame (RFC6455
@@ -131,7 +176,7 @@ void send_ws_binary(int sock, const std::vector<std::byte>& payload) {
   frame.insert(frame.end(), mask, mask + 4);
   for (size_t i = 0; i < payload.size(); ++i)
     frame.push_back(static_cast<unsigned char>(std::to_integer<uint8_t>(payload[i]) ^ mask[i % 4]));
-  ::send(sock, reinterpret_cast<const char*>(frame.data()), frame.size(), 0);
+  ::send(sock, reinterpret_cast<const char*>(frame.data()), static_cast<int>(frame.size()), 0);
 }
 
 } // namespace
@@ -247,7 +292,7 @@ TEST_F(WebRendererTest, PollEvents_FalseThenTrueAfterConnect) {
   }
   EXPECT_TRUE(activity);
 
-  ::close(sock);
+  close_socket(sock);
 }
 
 TEST_F(WebRendererTest, BeginFrame_DrainsQueuedMouseMoveIntoImGuiIO) {
@@ -286,7 +331,7 @@ TEST_F(WebRendererTest, BeginFrame_DrainsQueuedMouseMoveIntoImGuiIO) {
   EXPECT_FLOAT_EQ(ImGui::GetIO().MousePos.y, 17.0f);
   renderer_->end_frame();
 
-  ::close(sock);
+  close_socket(sock);
 }
 
 TEST_F(WebRendererTest, BeginFrame_DrainsQueuedResizeIntoImGuiIO) {
@@ -323,7 +368,7 @@ TEST_F(WebRendererTest, BeginFrame_DrainsQueuedResizeIntoImGuiIO) {
   EXPECT_FLOAT_EQ(ImGui::GetIO().DisplayFramebufferScale.x, 2.0f);
   renderer_->end_frame();
 
-  ::close(sock);
+  close_socket(sock);
 }
 
 // ── draw_protocol: encode_frame ─────────────────────────────────────────────
@@ -602,14 +647,14 @@ TEST(DrawProtocolTest, ImDrawIdxIsTwoBytes) {
 // ── civetweb_server: static file serving ────────────────────────────────────
 //
 // One thin network smoke test, deliberately scoped to plain HTTP GET (built
-// by hand over a raw POSIX socket -- wish targets Linux/MSYS2 only, so this
-// needs no platform branching, and avoids pulling in a new test-only HTTP
-// client dependency). WebSocket handshake/framing is exercised only by the
+// by hand over a raw client socket -- see the raw_socket_t shim above for
+// the Winsock/POSIX split -- avoiding a new test-only HTTP client
+// dependency). WebSocket handshake/framing is exercised only by the
 // draw_protocol unit tests above and by manual browser testing, not here.
 
 TEST(CivetwebServerTest, StaticFileServedOverHttp) {
   auto tmp_dir = std::filesystem::temp_directory_path() /
-      ("wish_civetweb_test_" + std::to_string(static_cast<long>(::getpid())));
+      ("wish_civetweb_test_" + std::to_string(current_pid()));
   std::filesystem::create_directories(tmp_dir);
   {
     std::ofstream f(tmp_dir / "hello.txt");
@@ -621,8 +666,8 @@ TEST(CivetwebServerTest, StaticFileServedOverHttp) {
   int port = server.actual_port();
   ASSERT_GT(port, 0);
 
-  int sock = ::socket(AF_INET, SOCK_STREAM, 0);
-  ASSERT_GE(sock, 0);
+  raw_socket_t sock = ::socket(AF_INET, SOCK_STREAM, 0);
+  ASSERT_NE(sock, kInvalidSocket);
   sockaddr_in addr{};
   addr.sin_family = AF_INET;
   addr.sin_port = htons(static_cast<uint16_t>(port));
@@ -630,14 +675,14 @@ TEST(CivetwebServerTest, StaticFileServedOverHttp) {
   ASSERT_EQ(::connect(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)), 0);
 
   std::string request = "GET /hello.txt HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n";
-  ASSERT_EQ(::send(sock, request.data(), request.size(), 0), static_cast<ssize_t>(request.size()));
+  ASSERT_EQ(::send(sock, request.data(), static_cast<int>(request.size()), 0), static_cast<long>(request.size()));
 
   std::string response;
   char buf[4096];
-  ssize_t n;
+  long n;
   while ((n = ::recv(sock, buf, sizeof(buf), 0)) > 0)
     response.append(buf, static_cast<size_t>(n));
-  ::close(sock);
+  close_socket(sock);
 
   server.stop();
   std::filesystem::remove_all(tmp_dir);
@@ -657,7 +702,7 @@ TEST(CivetwebServerTest, StaticFileServedOverHttp) {
 
 TEST(CivetwebServerTest, BroadcastDeliversBinaryFrameOverWebSocket) {
   auto tmp_dir = std::filesystem::temp_directory_path() /
-      ("wish_civetweb_ws_test_" + std::to_string(static_cast<long>(::getpid())));
+      ("wish_civetweb_ws_test_" + std::to_string(current_pid()));
   std::filesystem::create_directories(tmp_dir);
 
   std::atomic<bool> connected{false};
@@ -667,8 +712,8 @@ TEST(CivetwebServerTest, BroadcastDeliversBinaryFrameOverWebSocket) {
   int port = server.actual_port();
   ASSERT_GT(port, 0);
 
-  int sock = ::socket(AF_INET, SOCK_STREAM, 0);
-  ASSERT_GE(sock, 0);
+  raw_socket_t sock = ::socket(AF_INET, SOCK_STREAM, 0);
+  ASSERT_NE(sock, kInvalidSocket);
   sockaddr_in addr{};
   addr.sin_family = AF_INET;
   addr.sin_port = htons(static_cast<uint16_t>(port));
@@ -682,7 +727,8 @@ TEST(CivetwebServerTest, BroadcastDeliversBinaryFrameOverWebSocket) {
       "Connection: Upgrade\r\n"
       "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
       "Sec-WebSocket-Version: 13\r\n\r\n";
-  ASSERT_EQ(::send(sock, handshake.data(), handshake.size(), 0), static_cast<ssize_t>(handshake.size()));
+  ASSERT_EQ(::send(sock, handshake.data(), static_cast<int>(handshake.size()), 0),
+            static_cast<long>(handshake.size()));
 
   // Read the HTTP upgrade response headers up to the blank line.
   std::string resp;
@@ -707,18 +753,18 @@ TEST(CivetwebServerTest, BroadcastDeliversBinaryFrameOverWebSocket) {
   // Server->client frames are never masked; the 5-byte test payload needs
   // no extended-length parsing.
   unsigned char header[2];
-  ASSERT_EQ(::recv(sock, header, 2, MSG_WAITALL), 2);
+  ASSERT_EQ(::recv(sock, reinterpret_cast<char*>(header), 2, MSG_WAITALL), 2);
   EXPECT_EQ(header[0] & 0x0F, 0x2); // binary opcode
   uint64_t len = header[1] & 0x7F;
   ASSERT_LT(len, 126u);
   std::vector<unsigned char> body(len);
-  ASSERT_EQ(::recv(sock, body.data(), len, MSG_WAITALL), static_cast<ssize_t>(len));
+  ASSERT_EQ(::recv(sock, reinterpret_cast<char*>(body.data()), static_cast<int>(len), MSG_WAITALL), static_cast<long>(len));
 
   ASSERT_EQ(body.size(), payload.size());
   for (size_t i = 0; i < payload.size(); ++i)
     EXPECT_EQ(body[i], std::to_integer<unsigned char>(payload[i]));
 
-  ::close(sock);
+  close_socket(sock);
   server.stop();
   std::filesystem::remove_all(tmp_dir);
 }
