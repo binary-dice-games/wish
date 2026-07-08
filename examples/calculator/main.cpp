@@ -6,14 +6,7 @@
 //
 // Usage: calculator [--verbose] [--theme dark|light|classic]
 
-#include <client.hpp>
-#include <sdl3_renderer.hpp>
-#include <server.hpp>
-#include <web/web_renderer.hpp>
-
-#include "src/rmi/rmi.hpp" // memory_server_transport / memory_client_transport
-
-#include <gflags/gflags.h>
+#include "../common/example_app.hpp"
 
 #include <chrono>
 #include <cmath>
@@ -21,18 +14,6 @@
 #include <sstream>
 #include <string>
 #include <thread>
-
-DEFINE_bool(verbose, false, "Print verbose trace to stderr.");
-DEFINE_string(theme, "dark", "UI theme preset: dark, light, or classic.");
-DEFINE_int32(font_size, 16, "Font size in pixels");
-DEFINE_string(renderer, "web", "Rendering backend: sdl3 or web");
-DEFINE_int32(web_port, 8080, "HTTP/WebSocket port for --renderer web");
-DEFINE_string(web_bind, "127.0.0.1", "Bind address for --renderer web (localhost-only by default)");
-
-static bool ValidateTheme(const char* /*flag*/, const std::string& value) {
-  return value == "dark" || value == "light" || value == "classic";
-}
-DEFINE_validator(theme, &ValidateTheme);
 
 using namespace bdg::bison;
 using namespace bdg::bison::rmi::transport;
@@ -103,10 +84,10 @@ static constexpr const char* kCalcDesc = R"({
 
 // ── Calculator client ─────────────────────────────────────────────────────────
 
-class calc_client : public wish::client {
+class calc_client : public wish::examples::example_client {
  public:
   calc_client(memory_client_transport t, wish::renderer* renderer, bool verbose = false, std::string theme = "dark")
-      : wish::client(std::move(t)), renderer_(renderer), verbose_(verbose), theme_(std::move(theme)) {}
+      : wish::examples::example_client(std::move(t), renderer, verbose, std::move(theme), "calc") {}
 
  protected:
   void on_session() override {
@@ -282,15 +263,6 @@ class calc_client : public wish::client {
   }
 
  private:
-  void vlog(const std::string& msg) const {
-    if (verbose_)
-      std::clog << "[calc] " << msg << "\n";
-  }
-
-  wish::renderer* renderer_;
-  bool verbose_;
-  std::string theme_;
-
   // Calculator state
   std::string display_ = "0";
   double operand_ = 0.0;
@@ -298,55 +270,12 @@ class calc_client : public wish::client {
   bool fresh_ = true;
 };
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-static std::unique_ptr<wish::renderer> make_renderer() {
-  if (FLAGS_renderer == "sdl3") {
-#ifdef WISH_SDL3_ENABLED
-    return std::make_unique<wish::sdl3_renderer>("Calculator", 340, 440, FLAGS_font_size);
-#else
-    throw std::runtime_error("--renderer=sdl3 requested but this binary was built with WISH_ENABLE_SDL3=OFF");
-#endif
-  }
-  if (FLAGS_renderer == "web") {
-#ifdef WISH_WEB_ENABLED
-    std::cout << "[wish] open http://" << FLAGS_web_bind << ':' << FLAGS_web_port << " in a browser\n"
-              << "Press Ctrl+C to stop\n"
-              << std::flush;
-    return std::make_unique<wish::web_renderer>(FLAGS_web_bind, FLAGS_web_port, FLAGS_font_size);
-#else
-    throw std::runtime_error("--renderer=web requested but this binary was built with WISH_ENABLE_WEB=OFF");
-#endif
-  }
-  throw std::runtime_error("unknown --renderer value '" + FLAGS_renderer + "' (expected sdl3 or web)");
-}
-
 // ── main ──────────────────────────────────────────────────────────────────────
 
 int main(int argc, char* argv[]) {
-  gflags::ParseCommandLineFlags(&argc, &argv, true);
-
-  if (FLAGS_verbose)
-    std::clog << "[calc] starting\n";
-
-  memory_server_transport transport;
-
-  auto r = make_renderer();
-  auto rptr = r.get();
-
-  wish::server server{transport, std::move(r)};
-  server.start(); // spawns render thread (SDL lives there) + bison listen thread
-
-  if (FLAGS_verbose)
-    std::clog << "[calc] server started — connecting client\n";
-
-  // run() blocks in on_session() until should_quit() goes true (window closed).
-  calc_client client{transport.connect(), rptr, FLAGS_verbose, FLAGS_theme};
-  client.run();
-
-  if (FLAGS_verbose)
-    std::clog << "[calc] client done — stopping server\n";
-
-  server.stop();
-  return 0;
+  return wish::examples::run_example(
+      argc, argv, "calc", "Calculator", 340, 440, false,
+      [](memory_client_transport t, wish::renderer* r, bool verbose, std::string theme) {
+        return std::make_unique<calc_client>(std::move(t), r, verbose, std::move(theme));
+      });
 }
