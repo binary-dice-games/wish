@@ -138,17 +138,22 @@ that needs to access session data across calls must hold a `sync_session_ptr`
 
 ## Platform Support
 
-wish targets **Linux and MSYS2 only** (native Windows/MSVC builds are not
-supported). MSYS2 provides the same POSIX layer as Linux and still defines
-`_WIN32`/`WIN32` (it uses the mingw-w64 toolchain), so MSYS2-only code such as
-the `__declspec(dllexport/dllimport)` `WISH_API` macro in
+wish targets **Linux, MSYS2, and native Windows (MSVC)**. MSYS2 provides the
+same POSIX layer as Linux and still defines `_WIN32`/`WIN32` (it uses the
+mingw-w64 toolchain), so MSYS2-only code such as the
+`__declspec(dllexport/dllimport)` `WISH_API` macro in
 `include/wish_client_c.h` must stay — it is not native-Windows-only. Do not
-add a separate platform-suffixed file (e.g. `logger_win.cpp`) for a Linux/
-MSYS2 difference; avoid conditional compilation (`#ifdef`, `#if defined(...)`)
-to branch on OS behavior. If a genuine platform difference arises within the
-Linux/MSYS2 target, keep it a small, narrowly-scoped `#if defined(_WIN32)`
-guard within the shared file rather than a full file split, and prefer it
-only when there truly is no portable alternative.
+add a separate platform-suffixed file (e.g. `logger_win.cpp`) for a small
+platform difference; avoid conditional compilation (`#ifdef`,
+`#if defined(...)`) to branch on OS behavior unless truly necessary. If a
+genuine platform difference arises, prefer a small, narrowly-scoped
+`#if defined(_WIN32)` guard within the shared file over a full file split;
+split into `_posix`/`_win` suffixed files only when the divergence is large
+enough that a guard would make the shared file hard to read. Native MSVC is
+stricter than GCC/Clang about template instantiation order (e.g. it requires
+complete types where GCC/Clang tolerate an incomplete forward declaration in
+some contexts) — do not assume something that compiles cleanly on
+Linux/MSYS2 will compile on MSVC without verification.
 
 ## Testing Style (GoogleTest)
 
@@ -164,13 +169,15 @@ only when there truly is no portable alternative.
 
 ## The bison library
 
-The `extern/bison` submodule (also checked out at `d:\github\bison`) is a first-party
-dependency and **may be modified**. When a wish feature requires a missing bison capability
-(a new hook, a template helper, a new transport primitive, etc.):
+The `extern/bison` submodule (also checked out separately at `c:\github\bison`) is a
+first-party dependency and **may be modified**. When a wish feature requires a missing
+bison capability (a new hook, a template helper, a new transport primitive, etc.), or a
+platform-compatibility fix (e.g. an MSVC build error) that originates in bison:
 
 1. Identify the minimal change needed in bison.
 2. Propose the change to the user with a clear rationale before implementing.
-3. Once approved, apply the change to `d:\github\bison`, commit it there, then update
+3. Once approved, apply the change to `c:\github\bison` on the `main` branch (fast-forward
+   to `origin/main` first if the local `main` is stale), commit it there, then update
    the wish submodule to reference the new bison commit.
 
 Follow the same coding style and documentation standards as the rest of bison (see the bison
@@ -178,24 +185,24 @@ source for conventions). Do not modify bison unilaterally — always get explici
 
 ### Updating the submodule after a bison commit
 
-**Never commit directly inside `d:\github\wish\extern\bison`.** That checkout is the
+**Never commit directly inside `c:\github\wish\extern\bison`.** That checkout is the
 submodule working tree; committing there creates an orphan commit on a detached HEAD
-that diverges from `d:\github\bison`'s `main` branch. When wish is later pushed,
+that diverges from `c:\github\bison`'s `main` branch. When wish is later pushed,
 git cannot reconcile the two histories and rejects the push as non-fast-forward.
 
-The correct sequence after committing a bison change at `d:\github\bison`:
+The correct sequence after committing a bison change at `c:\github\bison`:
 
 ```
 # 1. Push bison main so the new commit exists on the remote.
-git -C d:/github/bison push origin main
+git -C c:/github/bison push origin main
 
 # 2. In the submodule checkout, fetch and detach HEAD at the new commit.
-git -C d:/github/wish/extern/bison fetch origin
-git -C d:/github/wish/extern/bison checkout <new-sha>
+git -C c:/github/wish/extern/bison fetch origin
+git -C c:/github/wish/extern/bison checkout <new-sha>
 
 # 3. Stage the updated submodule pointer in wish and commit.
-git -C d:/github/wish add extern/bison
-git -C d:/github/wish commit -m "..."
+git -C c:/github/wish add extern/bison
+git -C c:/github/wish commit -m "..."
 ```
 
 Step 1 must come before step 2 so the new SHA is available on the remote when wish is

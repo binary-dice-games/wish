@@ -13,7 +13,11 @@
 #include <implot.h>
 #include <implot3d.h>
 
+#if defined(_WIN32)
+#include <process.h>
+#else
 #include <unistd.h>
+#endif
 
 namespace bdg::wish {
 
@@ -62,8 +66,13 @@ void web_renderer::setup() {
   // context::context(), this is a process-global directory extracted once
   // here. The pid suffix keeps concurrent web_renderer instances (e.g. in
   // tests) from colliding on the same path.
-  web_assets_dir_ =
-      std::filesystem::temp_directory_path() / ("wish_web_assets_" + std::to_string(static_cast<long>(::getpid())));
+#if defined(_WIN32)
+  long pid = static_cast<long>(::_getpid());
+#else
+  long pid = static_cast<long>(::getpid());
+#endif
+  web_assets_dir_ = std::filesystem::temp_directory_path() /
+                    ("wish_web_assets_" + std::to_string(pid));
   std::filesystem::create_directories(web_assets_dir_);
   resource_store::extract_to(web_assets_dir_);
 
