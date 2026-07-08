@@ -450,6 +450,111 @@ TEST_F(WebRendererTest, EncodeFrame_ClipRectAndTextureIdPerDrawCmd) {
   EXPECT_EQ(pos, bytes.size());
 }
 
+// ── get_or_load_texture() ─────────────────────────────────────────────────────
+
+namespace {
+
+// Writes a minimal, uncompressed 2x2 24-bit BMP (a format stb_image decodes
+// without any external codec) to `path`. Row size (2 * 3 = 6 bytes) is
+// padded to a multiple of 4, per the BMP spec.
+void write_test_bmp(const std::filesystem::path& path) {
+  std::vector<uint8_t> bytes;
+  auto put_u16 = [&](uint16_t v) {
+    bytes.push_back(static_cast<uint8_t>(v & 0xFF));
+    bytes.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+  };
+  auto put_u32 = [&](uint32_t v) {
+    for (int i = 0; i < 4; ++i)
+      bytes.push_back(static_cast<uint8_t>((v >> (8 * i)) & 0xFF));
+  };
+
+  const uint32_t pixel_data_offset = 14 + 40;
+  const uint32_t row_size = 8; // 2 px * 3 bytes, padded to a multiple of 4
+  const uint32_t pixel_data_size = row_size * 2;
+  const uint32_t file_size = pixel_data_offset + pixel_data_size;
+
+  // BITMAPFILEHEADER
+  bytes.push_back('B');
+  bytes.push_back('M');
+  put_u32(file_size);
+  put_u32(0); // reserved
+  put_u32(pixel_data_offset);
+
+  // BITMAPINFOHEADER
+  put_u32(40); // header size
+  put_u32(2);  // width
+  put_u32(2);  // height
+  put_u16(1);  // planes
+  put_u16(24); // bits per pixel
+  put_u32(0);  // compression = BI_RGB
+  put_u32(pixel_data_size);
+  put_u32(0); // x pixels per meter
+  put_u32(0); // y pixels per meter
+  put_u32(0); // colors used
+  put_u32(0); // colors important
+
+  // Pixel data: bottom-up rows, BGR order, 2px padding to row_size.
+  for (int row = 0; row < 2; ++row) {
+    bytes.push_back(0);
+    bytes.push_back(0);
+    bytes.push_back(255); // red pixel
+    bytes.push_back(0);
+    bytes.push_back(255);
+    bytes.push_back(0); // green pixel
+    bytes.push_back(0); // row padding
+    bytes.push_back(0);
+  }
+
+  std::ofstream out(path, std::ios::binary);
+  out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+}
+
+} // namespace
+
+TEST_F(WebRendererTest, GetOrLoadTexture_MissingFileReturnsNullAndIsCached) {
+  ImTextureID first = renderer_->get_or_load_texture("does_not_exist.bmp", std::filesystem::temp_directory_path());
+  EXPECT_EQ(first, ImTextureID{});
+
+  ImTextureID second = renderer_->get_or_load_texture("does_not_exist.bmp", std::filesystem::temp_directory_path());
+  EXPECT_EQ(second, ImTextureID{});
+}
+
+TEST_F(WebRendererTest, GetOrLoadTexture_DecodesAndUploadsThroughTextureWalk) {
+  std::filesystem::path dir = std::filesystem::temp_directory_path() / "wish_get_or_load_texture_test";
+  std::filesystem::create_directories(dir);
+  write_test_bmp(dir / "swatch.bmp");
+
+  // begin_frame()/end_frame() bracket the load, mirroring how render_node()
+  // calls get_or_load_texture() mid-frame in imgui_ui_renderer.cpp. The
+  // texture is registered with ImGui as soon as it decodes, but its real id
+  // is only assigned once end_frame() calls ImGui::Render() (which walks
+  // ImDrawData::Textures and resolves WantCreate) -- so, like
+  // get_or_load_font()'s first-call contract, this first call returns null.
+  renderer_->begin_frame();
+  ImGui::Begin("test");
+  ImTextureID first = renderer_->get_or_load_texture("swatch.bmp", dir);
+  ImGui::End();
+  renderer_->end_frame();
+
+  EXPECT_EQ(first, ImTextureID{});
+
+  ImTextureData* uploaded = nullptr;
+  for (ImTextureData* t : *ImGui::GetDrawData()->Textures) {
+    if (t->Width == 2 && t->Height == 2 && t->Format == ImTextureFormat_RGBA32)
+      uploaded = t;
+  }
+  ASSERT_NE(uploaded, nullptr);
+  EXPECT_EQ(uploaded->Status, ImTextureStatus_OK); // end_frame() already resolved WantCreate
+  EXPECT_NE(uploaded->TexID, ImTextureID{});
+
+  // Now that end_frame() has assigned a real id, a follow-up call for the
+  // same path returns it from cache -- no re-decode, no second registration.
+  ImTextureID cached = renderer_->get_or_load_texture("swatch.bmp", dir);
+  EXPECT_EQ(cached, uploaded->TexID);
+
+  std::filesystem::remove_all(dir);
+}
+
 // ── draw_protocol: texture encoding ─────────────────────────────────────────
 
 TEST(DrawProtocolTest, EncodeTextureUpdate_WholeTextureOnCreate) {

@@ -10,8 +10,17 @@
 #include <resource_store.hpp>
 
 #include <imgui.h>
+#include <imgui_internal.h> // ImGui::RegisterUserTexture/UnregisterUserTexture
 #include <implot.h>
 #include <implot3d.h>
+
+// stb_image is vendored solely for get_or_load_texture() -- WISH_ENABLE_SDL3
+// (and its transitive SDL3_image dependency) is not guaranteed to be on in a
+// web-only build, so this backend needs its own decoder. Implementation is
+// compiled into this translation unit only; never included from the header
+// (see src/web/DESIGN.md's isolation note for civetweb/stb_image).
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
 
 #if defined(_WIN32)
 #include <process.h>
@@ -19,6 +28,7 @@
 #include <unistd.h>
 #endif
 
+#include <cstring>
 namespace bdg::wish {
 
 // ── construction ──────────────────────────────────────────────────────────────
@@ -109,6 +119,13 @@ void web_renderer::teardown() {
     std::filesystem::remove_all(web_assets_dir_, ec);
     // Ignore errors on cleanup (e.g. already removed externally).
   }
+
+  for (auto& tex : loaded_textures_)
+    ImGui::UnregisterUserTexture(tex.get());
+  loaded_textures_.clear();
+  loaded_by_src_.clear();
+  texture_cache_.clear();
+  texture_ids_.clear();
 
   ImPlot3D::DestroyContext();
   ImPlot::DestroyContext();
@@ -247,6 +264,39 @@ bool web_renderer::should_quit() const {
 
 void web_renderer::request_quit() {
   quit_.store(true, std::memory_order_release);
+}
+
+// ── texture loading ───────────────────────────────────────────────────────────
+
+ImTextureID web_renderer::get_or_load_texture(const std::string& src, const std::filesystem::path& resource_dir) {
+  auto it = loaded_by_src_.find(src);
+  if (it != loaded_by_src_.end())
+    return it->second ? it->second->TexID : ImTextureID{};
+
+  auto path = resource_dir / src;
+
+  int w = 0, h = 0, channels = 0;
+  unsigned char* pixels = stbi_load(path.string().c_str(), &w, &h, &channels, 4);
+  if (!pixels) {
+    loaded_by_src_[src] = nullptr;
+    return ImTextureID{};
+  }
+
+  auto tex = std::make_unique<ImTextureData>();
+  tex->Create(ImTextureFormat_RGBA32, w, h);
+  std::memcpy(tex->GetPixels(), pixels, static_cast<size_t>(tex->GetSizeInBytes()));
+  tex->UseColors = true;
+  stbi_image_free(pixels);
+
+  ImTextureData* raw = tex.get();
+  ImGui::RegisterUserTexture(raw);
+  loaded_textures_.push_back(std::move(tex));
+  loaded_by_src_[src] = raw;
+
+  // No id yet -- end_frame() assigns one this frame when it walks
+  // ImDrawData::Textures and sees this texture's WantCreate status (see the
+  // doc comment on get_or_load_texture() in web_renderer.hpp).
+  return raw->TexID;
 }
 
 } // namespace bdg::wish

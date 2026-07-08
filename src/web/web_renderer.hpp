@@ -108,6 +108,32 @@ class web_renderer : public imgui_renderer {
     return server_ ? server_->actual_port() : 0;
   }
 
+  // ── texture loading ───────────────────────────────────────────────────────
+
+  /**
+   * @brief Decode an image file with `stb_image` and register it as an ImGui
+   *        user texture so the next `end_frame()` uploads it to every
+   *        connected browser via the normal `ImDrawData::Textures` path.
+   *
+   * Results are cached by `src` (not the base class's `texture_cache_`,
+   * which can only hold a settled id -- see `loaded_by_src_`), so repeated
+   * calls for the same path are free after the first. Returns a null handle
+   * (zero) -- cached, so decoding is not retried -- if the file cannot be
+   * found or decoded.
+   *
+   * Unlike `sdl3_renderer`, the returned `ImTextureID` is never valid on the
+   * frame it is first requested: the id is only assigned once `end_frame()`
+   * calls `ImGui::Render()`, which happens strictly after `render_node()`
+   * (and therefore after this call returns). Callers (e.g. the `Image`
+   * element) already treat a null id as "nothing to draw yet" for that
+   * frame, matching `get_or_load_font()`'s first-call contract; the texture
+   * is available from the following frame onward.
+   *
+   * @param src           Filename relative to the session resource directory.
+   * @param resource_dir  Session-scoped resource folder.
+   */
+  ImTextureID get_or_load_texture(const std::string& src, const std::filesystem::path& resource_dir) override;
+
  private:
   std::string bind_addr_;
   int port_;
@@ -140,6 +166,20 @@ class web_renderer : public imgui_renderer {
   // civetweb worker thread -- so no synchronized<T> wrapper is needed.
   std::unordered_map<ImTextureData*, uint32_t> texture_ids_;
   uint32_t next_texture_id_ = 1;
+
+  // Owns every ImTextureData created by get_or_load_texture(); registered
+  // with ImGui via ImGui::RegisterUserTexture() so it flows through the same
+  // ImDrawData::Textures upload path as the font atlas. Freed (and
+  // unregistered) in teardown().
+  std::vector<std::unique_ptr<ImTextureData>> loaded_textures_;
+
+  // Cache of get_or_load_texture()'s decode results, keyed by `src`. Not the
+  // base class's `texture_cache_` (which only stores a settled ImTextureID)
+  // because a freshly-created ImTextureData's id isn't known until end_frame()
+  // walks ImDrawData::Textures -- storing the ImTextureData* instead lets
+  // get_or_load_texture() read tex->TexID fresh on every call. Null entries
+  // mark a `src` that failed to decode, so a bad path isn't retried every frame.
+  std::unordered_map<std::string, ImTextureData*> loaded_by_src_;
 };
 
 } // namespace bdg::wish
