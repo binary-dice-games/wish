@@ -10,7 +10,7 @@ namespace bdg::wish {
 /// Defined in a generated translation unit (see wish_module_registry.cpp.in
 /// and cmake/WishModules.cmake); called once from register_all(). Adding a
 /// new module never requires editing this declaration or its call site —
-/// see src/forms/DESIGN.md's "Module System" section.
+/// see src/ui/forms/DESIGN.md's "Module System" section.
 void register_optional_modules();
 
 } // namespace bdg::wish

@@ -3,7 +3,7 @@
 /// @brief Server-side Notepad form class.
 #pragma once
 
-#include <forms/form.hpp>
+#include <ui/forms/form.hpp>
 #include <ui/ui_element.hpp>
 
 #include <string>

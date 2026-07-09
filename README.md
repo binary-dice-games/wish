@@ -155,7 +155,7 @@ Any new widget whose render function reads or writes a file must:
 2. Call `resolve_widget_path(path, s.resource_dir, s.allow_absolute_paths)` and
    return early if the result is empty.
 3. Document the field's security contract in the registration attributes
-   (see `src/ui_elements/text_editor.cpp` as a reference).
+   (see `src/ui/ui_elements/text_editor.cpp` as a reference).
 
 ### Uploads and downloads
 

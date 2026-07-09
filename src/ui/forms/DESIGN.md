@@ -382,14 +382,14 @@ The same rules that govern low-level wish elements apply to forms without except
 - **Relative paths only by default.** A form that constructs or emits a file path must pass it through `file_service::resolve_path(name, sess().resource_dir, sess().allow_absolute_paths)`. If the result is empty, the path is rejected.
 - **Client-provided data is untrusted.** Field values set by the client (file names, filter strings, dialog titles) are untrusted input. Forms must not use them to construct file paths without sandbox validation.
 - **`FileDialog` does not read the filesystem.** The dialog only displays what the client provides in the `files` field. The `on_navigate` event gives the client an entry name (relative, never an absolute path) and the client decides what to load. This design avoids any server-side directory traversal.
-- **Forms that do access files** (e.g., the Notepad module) must call `file_service::resolve_path()` for every read and write, and must document this in the form's registration attributes (see `src/ui_elements/text_editor.cpp` for the reference pattern).
+- **Forms that do access files** (e.g., the Notepad module) must call `file_service::resolve_path()` for every read and write, and must document this in the form's registration attributes (see `src/ui/ui_elements/text_editor.cpp` for the reference pattern).
 - **No cross-session leakage.** A form holds a `std::shared_ptr<session>` to its own session. It must not store or access any other session's state.
 
 ---
 
 ## Writing a New Form
 
-1. **Create `src/forms/<name>.hpp` and `src/forms/<name>.cpp`.**
+1. **Create `src/ui/forms/<name>.hpp` and `src/ui/forms/<name>.cpp`.**
    - Inherit from `form` (which inherits from `bison::dynamic`).
    - Override `on_init()` to build the internal UI tree and register prototype fields/events.
    - Follow the RMI registration pattern in `ui_template.cpp`.
@@ -413,4 +413,4 @@ The same rules that govern low-level wish elements apply to forms without except
 | `Notepad` | optional (`WISH_MODULE_NOTEPAD`) | Multi-file, syntax-highlighted text editor bridged to the client via upload_file/download_file (described above) |
 | `ProcessExplorer` | optional (`WISH_MODULE_PROCESS_EXPLORER`) | top/htop-style system monitor; server only renders, client owns all sampling (described above) |
 
-New built-in forms go in `src/forms/`. Optional-module forms go in `modules/<name>/server/` (and, if they ship a reference client runner, `modules/<name>/client/`); see [Module System](#module-system).
+New built-in forms go in `src/ui/forms/`. Optional-module forms go in `modules/<name>/server/` (and, if they ship a reference client runner, `modules/<name>/client/`); see [Module System](#module-system).

@@ -5,11 +5,11 @@
 #include <server/registry.hpp>
 #include <context/style_service.hpp>
 
-#include "forms/file_dialog.hpp"
-#include "plot3d_elements/plot3d_elements.hpp"
-#include "plot_elements/plot_elements.hpp"
+#include "ui/forms/file_dialog.hpp"
+#include "ui/plot3d_elements/plot3d_elements.hpp"
+#include "ui/plot_elements/plot_elements.hpp"
 #include "ui/ui_template.hpp"
-#include "ui_elements/ui_elements.hpp"
+#include "ui/ui_elements/ui_elements.hpp"
 #include "server/wish_module_registry.hpp"
 
 namespace bdg::wish {
@@ -60,7 +60,7 @@ void register_all() {
   // Built-in forms.
   register_file_dialog();
   // Optional modules (calculator, notepad, process_explorer, ...); see
-  // src/forms/DESIGN.md's "Module System" section.
+  // src/ui/forms/DESIGN.md's "Module System" section.
   register_optional_modules();
 }
 

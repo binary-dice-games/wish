@@ -24,7 +24,7 @@ key_t wish_id_of(const Element& element) {
 }
 
 // Map a sandbox file's extension to one of TextEditor's supported "language"
-// values (see src/ui_elements/text_editor.cpp). Unknown extensions fall back
+// values (see src/ui/ui_elements/text_editor.cpp). Unknown extensions fall back
 // to "none" (no highlighting).
 std::string language_for_extension(const std::string& path) {
   auto ext = std::filesystem::path(path).extension().string();

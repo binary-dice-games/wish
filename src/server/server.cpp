@@ -2,7 +2,7 @@
 /// @file server.cpp
 /// @brief Implementation of wish::server.
 #include <context/file_service.hpp>
-#include <forms/form.hpp>
+#include <ui/forms/form.hpp>
 #include <context/logger.hpp>
 #include <server/registry.hpp>
 #include <server/server.hpp>

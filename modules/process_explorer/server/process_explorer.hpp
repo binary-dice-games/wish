@@ -3,7 +3,7 @@
 /// @brief Server-side ProcessExplorer form (top/htop-style system monitor).
 #pragma once
 
-#include <forms/form.hpp>
+#include <ui/forms/form.hpp>
 #include <ui/ui_element.hpp>
 
 #include <string>
@@ -52,7 +52,7 @@ class process_explorer : public form {
   void on_init() override;
   /// @brief Reacts to `"closed"` (window X button) and `"sorted"` (a
   /// `proc_table_` column header was clicked -- see `Table`'s docs in
-  /// `src/ui_elements/table.cpp`). The latter updates the active sort
+  /// `src/ui/ui_elements/table.cpp`). The latter updates the active sort
   /// column/direction and immediately re-sorts the existing rows, without
   /// waiting for the client's next `update_snapshot` call.
   void on_event(bison::key_t widget_id, bison::key_t event_name, const bison::dynamic& payload) override;

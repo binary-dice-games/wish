@@ -270,7 +270,7 @@ add_library(wish_server STATIC
   src/context/style_service.hpp
   src/server/server.hpp
   src/standalone/standalone.hpp
-  src/forms/form.hpp
+  src/ui/forms/form.hpp
   src/wish.cpp
   src/resources/resource_store.cpp
   "${WISH_EMBEDDED_CPP}"
@@ -285,42 +285,42 @@ add_library(wish_server STATIC
   src/server/server.cpp
   src/standalone/standalone.cpp
   src/ui/ui_template.cpp
-  src/ui_elements/element.cpp
-  src/ui_elements/layout.cpp
-  src/ui_elements/window.cpp
-  src/ui_elements/label.cpp
-  src/ui_elements/button.cpp
-  src/ui_elements/checkbox.cpp
-  src/ui_elements/slider.cpp
-  src/ui_elements/input_text.cpp
-  src/ui_elements/image.cpp
-  src/ui_elements/separator.cpp
-  src/ui_elements/menu.cpp
-  src/ui_elements/tabs.cpp
-  src/ui_elements/tree.cpp
-  src/ui_elements/combo.cpp
-  src/ui_elements/radio_button.cpp
-  src/ui_elements/progress_bar.cpp
-  src/ui_elements/input_number.cpp
-  src/ui_elements/drag.cpp
-  src/ui_elements/selectable.cpp
-  src/ui_elements/docking.cpp
-  src/ui_elements/table.cpp
-  src/ui_elements/text_editor.cpp
-  src/plot_elements/plot.cpp
-  src/plot_elements/plot_series.cpp
-  src/plot_elements/plot_bars.cpp
-  src/plot_elements/plot_histogram.cpp
-  src/plot_elements/plot_heatmap.cpp
-  src/plot_elements/plot_pie.cpp
-  src/plot_elements/plot_annotations.cpp
-  src/plot3d_elements/plot3d.cpp
-  src/plot3d_elements/plot3d_series.cpp
-  src/plot3d_elements/plot3d_surface.cpp
-  src/plot3d_elements/plot3d_mesh.cpp
-  src/plot3d_elements/plot3d_annotations.cpp
-  src/forms/form.cpp
-  src/forms/file_dialog.cpp
+  src/ui/ui_elements/element.cpp
+  src/ui/ui_elements/layout.cpp
+  src/ui/ui_elements/window.cpp
+  src/ui/ui_elements/label.cpp
+  src/ui/ui_elements/button.cpp
+  src/ui/ui_elements/checkbox.cpp
+  src/ui/ui_elements/slider.cpp
+  src/ui/ui_elements/input_text.cpp
+  src/ui/ui_elements/image.cpp
+  src/ui/ui_elements/separator.cpp
+  src/ui/ui_elements/menu.cpp
+  src/ui/ui_elements/tabs.cpp
+  src/ui/ui_elements/tree.cpp
+  src/ui/ui_elements/combo.cpp
+  src/ui/ui_elements/radio_button.cpp
+  src/ui/ui_elements/progress_bar.cpp
+  src/ui/ui_elements/input_number.cpp
+  src/ui/ui_elements/drag.cpp
+  src/ui/ui_elements/selectable.cpp
+  src/ui/ui_elements/docking.cpp
+  src/ui/ui_elements/table.cpp
+  src/ui/ui_elements/text_editor.cpp
+  src/ui/plot_elements/plot.cpp
+  src/ui/plot_elements/plot_series.cpp
+  src/ui/plot_elements/plot_bars.cpp
+  src/ui/plot_elements/plot_histogram.cpp
+  src/ui/plot_elements/plot_heatmap.cpp
+  src/ui/plot_elements/plot_pie.cpp
+  src/ui/plot_elements/plot_annotations.cpp
+  src/ui/plot3d_elements/plot3d.cpp
+  src/ui/plot3d_elements/plot3d_series.cpp
+  src/ui/plot3d_elements/plot3d_surface.cpp
+  src/ui/plot3d_elements/plot3d_mesh.cpp
+  src/ui/plot3d_elements/plot3d_annotations.cpp
+  src/ui/forms/form.cpp
+  src/ui/forms/file_dialog.cpp
 )
 
 if(WISH_ENABLE_IMGUI)

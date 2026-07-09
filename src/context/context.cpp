@@ -16,7 +16,7 @@
 #include <resource_store.hpp>
 #include <context/style_service.hpp>
 
-#include <forms/form.hpp>
+#include <ui/forms/form.hpp>
 
 #include "ui/ui_template.hpp"
 

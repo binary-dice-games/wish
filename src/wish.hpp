@@ -5,7 +5,7 @@
 
 #include <client/client.hpp>
 #include <context/file_service.hpp>
-#include <forms/form.hpp>
+#include <ui/forms/form.hpp>
 #include <context/logger.hpp>
 #include <server/registry.hpp>
 #include <server/renderer.hpp>
