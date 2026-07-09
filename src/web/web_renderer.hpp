@@ -20,6 +20,8 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace bdg::wish {
@@ -129,10 +131,41 @@ class web_renderer : public imgui_renderer {
    * frame, matching `get_or_load_font()`'s first-call contract; the texture
    * is available from the following frame onward.
    *
-   * @param src           Filename relative to the session resource directory.
-   * @param resource_dir  Session-scoped resource folder.
+   * @param src              Filename relative to the session resource directory.
+   * @param resource_dir     Session-scoped resource folder.
+   * @param embedded_crc32s  Optional map of resource_dir-relative path ->
+   *                          precomputed CRC-32 for embedded assets (see
+   *                          `context::embedded_crc32s`). When `src` (relative
+   *                          to `resource_dir`) has an entry here, it is
+   *                          reused as the texture's content-version number
+   *                          instead of recomputing a CRC-32 over the file's
+   *                          bytes; otherwise (e.g. session-uploaded files,
+   *                          which never carry a precomputed checksum) the
+   *                          CRC-32 is computed on the fly. Used to decide
+   *                          whether the browser resource cache may be
+   *                          offered this texture — see `texture_meta_`.
    */
-  ImTextureID get_or_load_texture(const std::string& src, const std::filesystem::path& resource_dir) override;
+  ImTextureID get_or_load_texture(const std::string& src, const std::filesystem::path& resource_dir,
+      const std::unordered_map<std::string, uint32_t>* embedded_crc32s = nullptr) override;
+
+  /// Per-texture identity/versioning metadata for the browser resource
+  /// cache, populated by get_or_load_texture(). Textures with no such
+  /// metadata (the font atlas, and any other user texture not registered
+  /// through get_or_load_texture()) have no stable on-disk identity and are
+  /// never offered to the browser cache.
+  struct texture_meta {
+    std::string src;         ///< Path relative to `resource_dir`.
+    uint32_t crc32 = 0;      ///< Content version (see get_or_load_texture()).
+    bool cacheable = false;  ///< False for anything under a `private/` prefix.
+  };
+
+  /// @brief Test-support accessor: the cache metadata recorded for a texture
+  ///        previously loaded via `get_or_load_texture()` for this exact
+  ///        `src`, or `std::nullopt` if none was recorded (e.g. the file
+  ///        failed to decode). Not used by production code -- exists so
+  ///        tests can observe the CRC32/cacheable decision without needing
+  ///        the full TEX_CHECK wire protocol handshake.
+  std::optional<texture_meta> texture_meta_for_test(const std::string& src) const;
 
  private:
   std::string bind_addr_;
@@ -156,6 +189,22 @@ class web_renderer : public imgui_renderer {
   // Only the most recent resize matters; no need to queue every one.
   bison::synchronized<std::optional<web_resize_event>> pending_resize_;
 
+  // CACHE_RESPONSE messages decoded on a civetweb worker thread (on_message),
+  // drained on the render thread at the top of end_frame() (mirrors
+  // input_queue_).
+  bison::synchronized<std::deque<std::pair<ws_connection_id, web_cache_response>>> cache_response_queue_;
+
+  // Per-connection texture ids with an outstanding TEX_CHECK the browser
+  // hasn't answered yet. Populated in end_frame()'s pending_sync_ drain
+  // (render thread only); consumed (erased) when the matching
+  // CACHE_RESPONSE is drained from cache_response_queue_ -- both happen on
+  // the render thread, but the map itself is written to from
+  // pending_sync_'s render-thread code only, so this synchronized<T> exists
+  // purely so a future consumer on another thread doesn't have to reason
+  // about it -- see cache_response_queue_ for the actual cross-thread
+  // handoff.
+  bison::synchronized<std::unordered_map<ws_connection_id, std::unordered_set<uint32_t>>> awaiting_cache_response_;
+
   // Set by on_connect/on_disconnect/on_message (civetweb worker threads),
   // consumed by poll_events() (render thread). A single bool needs no
   // synchronized<T> wrapper -- mirrors sdl3_renderer::quit_.
@@ -166,6 +215,13 @@ class web_renderer : public imgui_renderer {
   // civetweb worker thread -- so no synchronized<T> wrapper is needed.
   std::unordered_map<ImTextureData*, uint32_t> texture_ids_;
   uint32_t next_texture_id_ = 1;
+
+  // Reverse of texture_ids_: needed to rebuild a full TEX_CREATE payload
+  // once a per-connection cache miss is reported (see end_frame()'s
+  // cache_response_queue_ drain), without re-walking ImDrawData::Textures to
+  // find the ImTextureData* for a given wire id. Render-thread only, kept in
+  // sync wherever texture_ids_ is.
+  std::unordered_map<uint32_t, ImTextureData*> textures_by_id_;
 
   // Owns every ImTextureData created by get_or_load_texture(); registered
   // with ImGui via ImGui::RegisterUserTexture() so it flows through the same
@@ -180,6 +236,10 @@ class web_renderer : public imgui_renderer {
   // get_or_load_texture() read tex->TexID fresh on every call. Null entries
   // mark a `src` that failed to decode, so a bad path isn't retried every frame.
   std::unordered_map<std::string, ImTextureData*> loaded_by_src_;
+
+  // Per-texture identity/versioning metadata for the browser resource
+  // cache, populated by get_or_load_texture() alongside `loaded_by_src_`.
+  std::unordered_map<ImTextureData*, texture_meta> texture_meta_;
 };
 
 } // namespace bdg::wish

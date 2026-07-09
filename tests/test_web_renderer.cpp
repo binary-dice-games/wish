@@ -6,6 +6,7 @@
 #include <web/web_renderer.hpp>
 
 #include <imgui.h>
+#include <miniz.h>
 
 #if defined(_WIN32)
 #include <winsock2.h>
@@ -24,14 +25,17 @@
 #include <fstream>
 #include <thread>
 
+using bdg::wish::web_cache_response;
 using bdg::wish::web_input_event;
 using bdg::wish::web_input_kind;
 using bdg::wish::web_msg_type;
 using bdg::wish::web_renderer;
 using bdg::wish::web_resize_event;
+using bdg::wish::draw_protocol::decode_cache_response_message;
 using bdg::wish::draw_protocol::decode_input_message;
 using bdg::wish::draw_protocol::decode_resize_message;
 using bdg::wish::draw_protocol::encode_frame;
+using bdg::wish::draw_protocol::encode_texture_check;
 using bdg::wish::draw_protocol::encode_texture_destroy;
 using bdg::wish::draw_protocol::encode_texture_update;
 
@@ -179,6 +183,85 @@ void send_ws_binary(int sock, const std::vector<std::byte>& payload) {
   ::send(sock, reinterpret_cast<const char*>(frame.data()), static_cast<int>(frame.size()), 0);
 }
 
+// One decoded server->client WS binary frame: the envelope's msg_type byte
+// plus the already-unwrapped payload bytes.
+struct recv_result {
+  uint8_t msg_type;
+  std::vector<std::byte> payload;
+};
+
+// Reads exactly one server->client binary WS frame (never masked) and
+// unwraps draw_protocol's envelope. Handles all three RFC6455 length forms
+// (7-bit, 16-bit extended, 64-bit extended) -- pending_sync_ resends *every*
+// live texture to a newly-connected browser, including the font atlas,
+// whose payload is routinely large enough to need extended-length framing,
+// so tests must be able to read past it to find a specific small message.
+std::optional<recv_result> recv_ws_frame(int sock) {
+  unsigned char header[2];
+  if (::recv(sock, reinterpret_cast<char*>(header), 2, MSG_WAITALL) != 2)
+    return std::nullopt;
+
+  uint64_t len = header[1] & 0x7F;
+  if (len == 126) {
+    unsigned char ext[2];
+    if (::recv(sock, reinterpret_cast<char*>(ext), 2, MSG_WAITALL) != 2)
+      return std::nullopt;
+    len = (static_cast<uint64_t>(ext[0]) << 8) | ext[1];
+  } else if (len == 127) {
+    unsigned char ext[8];
+    if (::recv(sock, reinterpret_cast<char*>(ext), 8, MSG_WAITALL) != 8)
+      return std::nullopt;
+    len = 0;
+    for (unsigned char b : ext)
+      len = (len << 8) | b;
+  }
+
+  std::vector<unsigned char> body(len);
+  if (len > 0 &&
+      ::recv(sock, reinterpret_cast<char*>(body.data()), static_cast<int>(len), MSG_WAITALL) != static_cast<long>(len))
+    return std::nullopt;
+  if (body.size() < 8)
+    return std::nullopt;
+
+  recv_result result;
+  result.msg_type = body[0];
+  uint32_t payload_len;
+  std::memcpy(&payload_len, body.data() + 4, sizeof(payload_len));
+  if (body.size() - 8 != payload_len)
+    return std::nullopt;
+  result.payload.resize(payload_len);
+  for (size_t i = 0; i < payload_len; ++i)
+    result.payload[i] = std::byte{body[8 + i]};
+  return result;
+}
+
+// TEX_CHECK and TEX_CREATE both start with `u32 texture_id, u8 format, u32
+// width, ...` -- reads the width field common to either, used to pick our
+// 2x2 test texture's message out of a pending_sync_ batch that also resends
+// the (much larger) font atlas.
+uint32_t recv_payload_width(const std::vector<std::byte>& payload) {
+  size_t pos = 5; // texture_id (4) + format (1)
+  return read_u32(payload, pos);
+}
+
+// Reads WS frames (up to @p max_frames) until one is a TEX_CHECK or
+// TEX_CREATE whose width is 2 (our test texture, see write_test_bmp) --
+// skipping over any interleaved font-atlas texture messages or FRAME
+// broadcasts along the way.
+std::optional<recv_result> recv_message_for_test_texture(int sock, int max_frames = 8) {
+  for (int i = 0; i < max_frames; ++i) {
+    auto msg = recv_ws_frame(sock);
+    if (!msg)
+      return std::nullopt;
+    bool is_tex_msg =
+        msg->msg_type == static_cast<uint8_t>(web_msg_type::tex_check) ||
+        msg->msg_type == static_cast<uint8_t>(web_msg_type::tex_create);
+    if (is_tex_msg && recv_payload_width(msg->payload) == 2)
+      return msg;
+  }
+  return std::nullopt;
+}
+
 } // namespace
 
 // ── Test fixture ──────────────────────────────────────────────────────────────
@@ -258,6 +341,7 @@ TEST_F(WebRendererTest, Setup_ExtractsWebAssetsAndServesIndexOverHttp) {
   ASSERT_FALSE(dir.empty());
   EXPECT_TRUE(std::filesystem::exists(dir / "web" / "index.html"));
   EXPECT_TRUE(std::filesystem::exists(dir / "web" / "client.js"));
+  EXPECT_TRUE(std::filesystem::exists(dir / "web" / "resource_cache.js"));
 }
 
 TEST(WebRendererAssetTeardownTest, Teardown_RemovesExtractedAssetDirectory) {
@@ -555,6 +639,303 @@ TEST_F(WebRendererTest, GetOrLoadTexture_DecodesAndUploadsThroughTextureWalk) {
   std::filesystem::remove_all(dir);
 }
 
+// ── get_or_load_texture(): CRC32 + cacheable metadata ───────────────────────
+
+TEST_F(WebRendererTest, GetOrLoadTexture_ComputesCrc32OnTheFlyWhenNoPrecomputedMap) {
+  std::filesystem::path dir = std::filesystem::temp_directory_path() / "wish_texmeta_onthefly_test";
+  std::filesystem::create_directories(dir);
+  write_test_bmp(dir / "swatch.bmp");
+
+  std::vector<unsigned char> file_bytes;
+  {
+    std::ifstream file(dir / "swatch.bmp", std::ios::binary);
+    file_bytes.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+  }
+  uint32_t expected_crc32 = static_cast<uint32_t>(mz_crc32(MZ_CRC32_INIT, file_bytes.data(), file_bytes.size()));
+
+  renderer_->begin_frame();
+  ImGui::Begin("test");
+  renderer_->get_or_load_texture("swatch.bmp", dir); // embedded_crc32s defaults to nullptr
+  ImGui::End();
+  renderer_->end_frame();
+
+  auto meta = renderer_->texture_meta_for_test("swatch.bmp");
+  ASSERT_TRUE(meta.has_value());
+  EXPECT_EQ(meta->src, "swatch.bmp");
+  EXPECT_EQ(meta->crc32, expected_crc32);
+  EXPECT_TRUE(meta->cacheable);
+
+  std::filesystem::remove_all(dir);
+}
+
+TEST_F(WebRendererTest, GetOrLoadTexture_ReusesPrecomputedCrc32InsteadOfRecomputing) {
+  std::filesystem::path dir = std::filesystem::temp_directory_path() / "wish_texmeta_precomputed_test";
+  std::filesystem::create_directories(dir);
+  write_test_bmp(dir / "swatch.bmp");
+
+  // Deliberately wrong/sentinel value: if get_or_load_texture recomputed the
+  // CRC32 from the file's real bytes instead of reusing this map entry, the
+  // real (non-sentinel) value would show up in texture_meta_ instead.
+  constexpr uint32_t kSentinelCrc32 = 0xDEADBEEFu;
+  std::unordered_map<std::string, uint32_t> embedded_crc32s{{"swatch.bmp", kSentinelCrc32}};
+
+  renderer_->begin_frame();
+  ImGui::Begin("test");
+  renderer_->get_or_load_texture("swatch.bmp", dir, &embedded_crc32s);
+  ImGui::End();
+  renderer_->end_frame();
+
+  auto meta = renderer_->texture_meta_for_test("swatch.bmp");
+  ASSERT_TRUE(meta.has_value());
+  EXPECT_EQ(meta->crc32, kSentinelCrc32);
+
+  std::filesystem::remove_all(dir);
+}
+
+TEST_F(WebRendererTest, GetOrLoadTexture_PrivatePathIsNotCacheable) {
+  std::filesystem::path dir = std::filesystem::temp_directory_path() / "wish_texmeta_private_test";
+  std::filesystem::create_directories(dir / "private");
+  write_test_bmp(dir / "private" / "photo.bmp");
+  write_test_bmp(dir / "public.bmp");
+
+  renderer_->begin_frame();
+  ImGui::Begin("test");
+  renderer_->get_or_load_texture((dir / "private" / "photo.bmp").string(), dir);
+  renderer_->get_or_load_texture("public.bmp", dir);
+  ImGui::End();
+  renderer_->end_frame();
+
+  auto private_meta = renderer_->texture_meta_for_test((dir / "private" / "photo.bmp").string());
+  ASSERT_TRUE(private_meta.has_value());
+  EXPECT_FALSE(private_meta->cacheable);
+
+  auto public_meta = renderer_->texture_meta_for_test("public.bmp");
+  ASSERT_TRUE(public_meta.has_value());
+  EXPECT_TRUE(public_meta->cacheable);
+
+  std::filesystem::remove_all(dir);
+}
+
+TEST_F(WebRendererTest, GetOrLoadTexture_RepeatedCallForCachedSrcKeepsMetadataAndDoesNotCrash) {
+  std::filesystem::path dir = std::filesystem::temp_directory_path() / "wish_texmeta_repeat_test";
+  std::filesystem::create_directories(dir);
+  write_test_bmp(dir / "swatch.bmp");
+
+  renderer_->begin_frame();
+  ImGui::Begin("test");
+  renderer_->get_or_load_texture("swatch.bmp", dir);
+  ImGui::End();
+  renderer_->end_frame();
+
+  auto first = renderer_->texture_meta_for_test("swatch.bmp");
+  ASSERT_TRUE(first.has_value());
+
+  EXPECT_NO_THROW(renderer_->get_or_load_texture("swatch.bmp", dir));
+  auto second = renderer_->texture_meta_for_test("swatch.bmp");
+  ASSERT_TRUE(second.has_value());
+  EXPECT_EQ(second->crc32, first->crc32);
+  EXPECT_EQ(second->cacheable, first->cacheable);
+
+  std::filesystem::remove_all(dir);
+}
+
+// ── pending_sync_ cache-check handshake ─────────────────────────────────────
+//
+// End-to-end through real WebSocket connections: a (re)connecting browser
+// must receive TEX_CHECK (not a full TEX_CREATE) for a cacheable texture,
+// and only get pixels after replying "miss". Non-cacheable (private/)
+// textures must be completely unaffected -- same plain TEX_CREATE as today.
+
+namespace {
+
+// Waits (via poll_events()) for the on_message/on_connect callback on a
+// civetweb worker thread to signal activity, mirroring the pattern used by
+// the existing input/resize tests above.
+void wait_for_activity(web_renderer& renderer) {
+  for (int i = 0; i < 200; ++i) {
+    if (renderer.poll_events())
+      return;
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+}
+
+} // namespace
+
+TEST_F(WebRendererTest, PendingSync_CacheableTextureSendsCheckNotCreate) {
+  std::filesystem::path dir = std::filesystem::temp_directory_path() / "wish_pending_sync_cacheable_test";
+  std::filesystem::create_directories(dir);
+  write_test_bmp(dir / "swatch.bmp");
+
+  renderer_->begin_frame();
+  ImGui::Begin("test");
+  renderer_->get_or_load_texture("swatch.bmp", dir);
+  ImGui::End();
+  renderer_->end_frame(); // texture reaches ImTextureStatus_OK this frame
+
+  int port = renderer_->actual_port();
+  ASSERT_GT(port, 0);
+  int sock = connect_ws_client(port);
+  ASSERT_GE(sock, 0);
+  wait_for_activity(*renderer_); // drain the connect-triggered activity signal
+
+  renderer_->begin_frame();
+  renderer_->end_frame(); // drains pending_sync_ for the new connection
+
+  // pending_sync_ also resends the font atlas (not cacheable) in the same
+  // batch; recv_message_for_test_texture() skips past it to find ours.
+  auto msg = recv_message_for_test_texture(sock);
+  ASSERT_TRUE(msg.has_value());
+  EXPECT_EQ(msg->msg_type, static_cast<uint8_t>(web_msg_type::tex_check));
+
+  close_socket(sock);
+  std::filesystem::remove_all(dir);
+}
+
+TEST_F(WebRendererTest, PendingSync_PrivatePathStillSendsFullCreate) {
+  std::filesystem::path dir = std::filesystem::temp_directory_path() / "wish_pending_sync_private_test";
+  std::filesystem::create_directories(dir / "private");
+  write_test_bmp(dir / "private" / "photo.bmp");
+
+  renderer_->begin_frame();
+  ImGui::Begin("test");
+  renderer_->get_or_load_texture("private/photo.bmp", dir);
+  ImGui::End();
+  renderer_->end_frame();
+
+  int port = renderer_->actual_port();
+  ASSERT_GT(port, 0);
+  int sock = connect_ws_client(port);
+  ASSERT_GE(sock, 0);
+  wait_for_activity(*renderer_);
+
+  renderer_->begin_frame();
+  renderer_->end_frame();
+
+  auto msg = recv_message_for_test_texture(sock);
+  ASSERT_TRUE(msg.has_value());
+  EXPECT_EQ(msg->msg_type, static_cast<uint8_t>(web_msg_type::tex_create));
+
+  close_socket(sock);
+  std::filesystem::remove_all(dir);
+}
+
+TEST_F(WebRendererTest, CacheResponse_MissTriggersFullTexCreate) {
+  std::filesystem::path dir = std::filesystem::temp_directory_path() / "wish_cache_response_miss_test";
+  std::filesystem::create_directories(dir);
+  write_test_bmp(dir / "swatch.bmp");
+
+  renderer_->begin_frame();
+  ImGui::Begin("test");
+  renderer_->get_or_load_texture("swatch.bmp", dir);
+  ImGui::End();
+  renderer_->end_frame();
+
+  int port = renderer_->actual_port();
+  ASSERT_GT(port, 0);
+  int sock = connect_ws_client(port);
+  ASSERT_GE(sock, 0);
+  wait_for_activity(*renderer_);
+
+  renderer_->begin_frame();
+  renderer_->end_frame();
+
+  auto check = recv_message_for_test_texture(sock);
+  ASSERT_TRUE(check.has_value());
+  ASSERT_EQ(check->msg_type, static_cast<uint8_t>(web_msg_type::tex_check));
+  size_t pos = 0;
+  uint32_t texture_id = read_u32(check->payload, pos);
+
+  std::vector<std::byte> resp_payload;
+  push_u32(resp_payload, texture_id);
+  push_u8(resp_payload, 0); // miss
+  send_ws_binary(sock, build_envelope(web_msg_type::cache_response, resp_payload));
+  wait_for_activity(*renderer_);
+
+  renderer_->begin_frame();
+  renderer_->end_frame(); // drains cache_response_queue_
+
+  // Skips the FRAME broadcast left over from the previous end_frame() call
+  // to find the resulting TEX_CREATE.
+  auto create = recv_message_for_test_texture(sock);
+  ASSERT_TRUE(create.has_value());
+  EXPECT_EQ(create->msg_type, static_cast<uint8_t>(web_msg_type::tex_create));
+  pos = 0;
+  EXPECT_EQ(read_u32(create->payload, pos), texture_id);
+
+  close_socket(sock);
+  std::filesystem::remove_all(dir);
+}
+
+TEST_F(WebRendererTest, CacheResponse_HitSendsNothingFurtherForThatTexture) {
+  std::filesystem::path dir = std::filesystem::temp_directory_path() / "wish_cache_response_hit_test";
+  std::filesystem::create_directories(dir);
+  write_test_bmp(dir / "swatch.bmp");
+
+  renderer_->begin_frame();
+  ImGui::Begin("test");
+  renderer_->get_or_load_texture("swatch.bmp", dir);
+  ImGui::End();
+  renderer_->end_frame();
+
+  int port = renderer_->actual_port();
+  ASSERT_GT(port, 0);
+  int sock = connect_ws_client(port);
+  ASSERT_GE(sock, 0);
+  wait_for_activity(*renderer_);
+
+  renderer_->begin_frame();
+  renderer_->end_frame();
+
+  auto check = recv_message_for_test_texture(sock);
+  ASSERT_TRUE(check.has_value());
+  ASSERT_EQ(check->msg_type, static_cast<uint8_t>(web_msg_type::tex_check));
+  size_t pos = 0;
+  uint32_t texture_id = read_u32(check->payload, pos);
+
+  std::vector<std::byte> resp_payload;
+  push_u32(resp_payload, texture_id);
+  push_u8(resp_payload, 1); // hit
+  send_ws_binary(sock, build_envelope(web_msg_type::cache_response, resp_payload));
+  wait_for_activity(*renderer_);
+
+  // No new widgets this frame (e.g. no first-use of a text glyph, which
+  // would trigger an incremental font-atlas TEX_UPDATE broadcast to every
+  // connection and confuse the assertion below) -- just drain the queues.
+  renderer_->begin_frame();
+  renderer_->end_frame(); // drains cache_response_queue_ (hit -> nothing sent) then broadcasts FRAME
+
+  // Two FRAME broadcasts are owed to this connection at this point (one
+  // from the pending_sync_ end_frame() above, one from this one); neither
+  // of them should be interleaved with another TEX_CREATE/TEX_CHECK for our
+  // texture -- that would mean the hit failed to suppress the pixel resend.
+  for (int i = 0; i < 2; ++i) {
+    auto next = recv_ws_frame(sock);
+    ASSERT_TRUE(next.has_value());
+    EXPECT_EQ(next->msg_type, static_cast<uint8_t>(web_msg_type::frame));
+  }
+
+  close_socket(sock);
+  std::filesystem::remove_all(dir);
+}
+
+TEST(WebRendererCacheHandshakeTeardownTest, Teardown_ClearsCacheHandshakeStateWithoutCrash) {
+  web_renderer renderer("127.0.0.1", 0, 16);
+  renderer.setup();
+
+  std::filesystem::path dir = std::filesystem::temp_directory_path() / "wish_cache_handshake_teardown_test";
+  std::filesystem::create_directories(dir);
+  write_test_bmp(dir / "swatch.bmp");
+
+  renderer.begin_frame();
+  ImGui::Begin("test");
+  renderer.get_or_load_texture("swatch.bmp", dir);
+  ImGui::End();
+  renderer.end_frame();
+
+  EXPECT_NO_THROW(renderer.teardown());
+  std::filesystem::remove_all(dir);
+}
+
 // ── draw_protocol: texture encoding ─────────────────────────────────────────
 
 TEST(DrawProtocolTest, EncodeTextureUpdate_WholeTextureOnCreate) {
@@ -629,6 +1010,86 @@ TEST(DrawProtocolTest, EncodeTextureDestroy_EncodesId) {
   pos += 3;
   EXPECT_EQ(read_u32(bytes, pos), 4u);
   EXPECT_EQ(read_u32(bytes, pos), 99u);
+}
+
+// ── draw_protocol: TEX_CHECK / CACHE_RESPONSE ───────────────────────────────
+
+TEST(DrawProtocolTest, EncodeTextureCheck_PayloadLayout) {
+  ImTextureData tex;
+  tex.Create(ImTextureFormat_RGBA32, 4, 3);
+
+  std::string path = "res/icons/folder.png";
+  auto bytes = encode_texture_check(42, path, 0xCAFEBABEu, tex);
+
+  size_t pos = 0;
+  EXPECT_EQ(read_u8(bytes, pos), static_cast<uint8_t>(web_msg_type::tex_check));
+  pos += 3;
+  uint32_t payload_len = read_u32(bytes, pos);
+  EXPECT_EQ(payload_len, bytes.size() - 8);
+
+  EXPECT_EQ(read_u32(bytes, pos), 42u);
+  EXPECT_EQ(read_u8(bytes, pos), 0); // RGBA32
+  EXPECT_EQ(read_u32(bytes, pos), 4u);
+  EXPECT_EQ(read_u32(bytes, pos), 3u);
+  EXPECT_EQ(read_u32(bytes, pos), 0xCAFEBABEu);
+
+  uint32_t path_len = read_u32(bytes, pos);
+  ASSERT_EQ(path_len, path.size());
+  std::string decoded_path(reinterpret_cast<const char*>(bytes.data() + pos), path_len);
+  EXPECT_EQ(decoded_path, path);
+  pos += path_len;
+
+  EXPECT_EQ(pos, bytes.size());
+}
+
+TEST(DrawProtocolTest, EncodeTextureCheck_Alpha8FormatByte) {
+  ImTextureData tex;
+  tex.Create(ImTextureFormat_Alpha8, 8, 8);
+
+  auto bytes = encode_texture_check(7, "res/fonts/default.ttf", 1, tex);
+
+  size_t pos = 0;
+  pos += 8; // envelope
+  pos += 4; // texture_id
+  EXPECT_EQ(read_u8(bytes, pos), 1); // Alpha8
+}
+
+TEST(DrawProtocolTest, DecodeCacheResponse_RoundTripsHit) {
+  std::vector<std::byte> payload;
+  push_u32(payload, 42);
+  push_u8(payload, 1); // hit
+
+  auto resp = decode_cache_response_message(build_envelope(web_msg_type::cache_response, payload));
+  ASSERT_TRUE(resp.has_value());
+  EXPECT_EQ(resp->texture_id, 42u);
+  EXPECT_TRUE(resp->hit);
+}
+
+TEST(DrawProtocolTest, DecodeCacheResponse_RoundTripsMiss) {
+  std::vector<std::byte> payload;
+  push_u32(payload, 7);
+  push_u8(payload, 0); // miss
+
+  auto resp = decode_cache_response_message(build_envelope(web_msg_type::cache_response, payload));
+  ASSERT_TRUE(resp.has_value());
+  EXPECT_EQ(resp->texture_id, 7u);
+  EXPECT_FALSE(resp->hit);
+}
+
+TEST(DrawProtocolTest, DecodeCacheResponse_RejectsWrongMsgType) {
+  std::vector<std::byte> payload;
+  push_u32(payload, 42);
+  push_u8(payload, 1);
+
+  EXPECT_FALSE(decode_cache_response_message(build_envelope(web_msg_type::tex_check, payload)).has_value());
+}
+
+TEST(DrawProtocolTest, DecodeCacheResponse_RejectsTruncatedPayload) {
+  std::vector<std::byte> payload;
+  push_u32(payload, 42);
+  // Missing the hit byte.
+
+  EXPECT_FALSE(decode_cache_response_message(build_envelope(web_msg_type::cache_response, payload)).has_value());
 }
 
 // ── draw_protocol: input/resize decoding ────────────────────────────────────

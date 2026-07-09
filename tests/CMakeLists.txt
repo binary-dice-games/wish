@@ -20,6 +20,11 @@ endmacro()
 
 wish_add_test(test_stub              test_stub.cpp)
 wish_add_test(test_resource_store    test_resource_store.cpp)
+# Needs miniz.h directly to independently recompute CRC-32 for its own
+# assertions (see ResourceStore.ExtractToPopulatesCrc32MapMatchingFileContent) --
+# wish_server links miniz PRIVATE, which puts it on this target's link line
+# already, but not its include path.
+target_link_libraries(test_resource_store PRIVATE miniz)
 wish_add_test(test_form_base         test_form_base.cpp)
 wish_add_test(test_file_dialog  test_file_dialog.cpp)
 wish_add_test(test_registry       test_registry.cpp)
@@ -50,6 +55,9 @@ endif()
 
 if(WISH_ENABLE_IMGUI AND WISH_ENABLE_WEB)
   wish_add_test(test_web_renderer test_web_renderer.cpp)
+  # Needs miniz.h directly to independently recompute CRC-32 for its own
+  # assertions (see GetOrLoadTexture_ComputesCrc32OnTheFlyWhenNoPrecomputedMap).
+  target_link_libraries(test_web_renderer PRIVATE miniz)
 endif()
 
 

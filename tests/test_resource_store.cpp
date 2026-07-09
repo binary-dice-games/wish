@@ -3,10 +3,16 @@
 
 #include <resources/resource_store.hpp>
 
+#include <miniz.h>
+
 #include <atomic>
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <string>
+#include <unordered_map>
+#include <vector>
 
 using bdg::wish::resource_store::extract_to;
 
@@ -84,6 +90,31 @@ TEST(ResourceStore, ExtractToSecondCallReturnsFalseButPreservesExistingFiles) {
     auto path = dir / rel;
     EXPECT_TRUE(std::filesystem::exists(path)) << "missing after re-extract: " << rel;
     EXPECT_GT(std::filesystem::file_size(path), 0U) << "zero-size after re-extract: " << rel;
+  }
+
+  std::filesystem::remove_all(dir);
+}
+
+// ── extract_to — CRC32 out-param ──────────────────────────────────────────────
+//
+// Surfaces miniz's own per-file CRC-32 (computed while unpacking the zip) so
+// callers can use it as a content-version number without recomputing it --
+// see web_renderer::get_or_load_texture()'s reuse of context::embedded_crc32s.
+
+TEST(ResourceStore, ExtractToPopulatesCrc32MapMatchingFileContent) {
+  auto dir = make_temp_dir("crc32");
+  std::unordered_map<std::string, uint32_t> crc32s;
+  ASSERT_TRUE(extract_to(dir, &crc32s));
+
+  for (const char* rel : kExpectedFiles) {
+    auto it = crc32s.find(rel);
+    ASSERT_NE(it, crc32s.end()) << "missing crc32 entry: " << rel;
+
+    std::ifstream file(dir / rel, std::ios::binary);
+    ASSERT_TRUE(file) << rel;
+    std::vector<unsigned char> bytes((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    uint32_t expected = static_cast<uint32_t>(mz_crc32(MZ_CRC32_INIT, bytes.data(), bytes.size()));
+    EXPECT_EQ(it->second, expected) << "crc32 mismatch: " << rel;
   }
 
   std::filesystem::remove_all(dir);

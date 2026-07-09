@@ -13,6 +13,7 @@
 #include <imgui_internal.h> // ImGui::RegisterUserTexture/UnregisterUserTexture
 #include <implot.h>
 #include <implot3d.h>
+#include <miniz.h> // mz_crc32 -- on-the-fly content versioning for uploaded files
 
 // stb_image is vendored solely for get_or_load_texture() -- WISH_ENABLE_SDL3
 // (and its transitive SDL3_image dependency) is not guaranteed to be on in a
@@ -29,6 +30,8 @@
 #endif
 
 #include <cstring>
+#include <fstream>
+#include <iterator>
 namespace bdg::wish {
 
 // ── construction ──────────────────────────────────────────────────────────────
@@ -95,12 +98,15 @@ void web_renderer::setup() {
       },
       /*on_disconnect=*/[this](ws_connection_id) { activity_.store(true, std::memory_order_relaxed); },
       /*on_message=*/
-      [this](ws_connection_id, std::span<const std::byte> message) {
+      [this](ws_connection_id id, std::span<const std::byte> message) {
         if (auto ev = draw_protocol::decode_input_message(message)) {
           input_queue_.wlock()->push_back(*ev);
           activity_.store(true, std::memory_order_relaxed);
         } else if (auto resize = draw_protocol::decode_resize_message(message)) {
           *pending_resize_.wlock() = *resize;
+          activity_.store(true, std::memory_order_relaxed);
+        } else if (auto resp = draw_protocol::decode_cache_response_message(message)) {
+          cache_response_queue_.wlock()->push_back({id, *resp});
           activity_.store(true, std::memory_order_relaxed);
         }
         // Unrecognized messages are silently dropped -- decode_*_message()
@@ -126,6 +132,10 @@ void web_renderer::teardown() {
   loaded_by_src_.clear();
   texture_cache_.clear();
   texture_ids_.clear();
+  textures_by_id_.clear();
+  texture_meta_.clear();
+  awaiting_cache_response_.wlock()->clear();
+  cache_response_queue_.wlock()->clear();
 
   ImPlot3D::DestroyContext();
   ImPlot::DestroyContext();
@@ -199,6 +209,7 @@ void web_renderer::end_frame() {
       case ImTextureStatus_WantCreate: {
         uint32_t id = next_texture_id_++;
         texture_ids_[tex] = id;
+        textures_by_id_[id] = tex;
         tex->SetTexID(static_cast<ImTextureID>(id));
         server_->broadcast(draw_protocol::encode_texture_update(id, *tex));
         tex->SetStatus(ImTextureStatus_OK);
@@ -208,6 +219,7 @@ void web_renderer::end_frame() {
         auto it = texture_ids_.find(tex);
         uint32_t id = it != texture_ids_.end() ? it->second : next_texture_id_++;
         texture_ids_[tex] = id;
+        textures_by_id_[id] = tex;
         server_->broadcast(draw_protocol::encode_texture_update(id, *tex));
         tex->SetStatus(ImTextureStatus_OK);
         break;
@@ -216,6 +228,7 @@ void web_renderer::end_frame() {
         auto it = texture_ids_.find(tex);
         if (it != texture_ids_.end()) {
           server_->broadcast(draw_protocol::encode_texture_destroy(it->second));
+          textures_by_id_.erase(it->second);
           texture_ids_.erase(it);
         }
         tex->SetStatus(ImTextureStatus_Destroyed);
@@ -226,9 +239,50 @@ void web_renderer::end_frame() {
     }
   }
 
+  // Resolve any CACHE_RESPONSE replies to a TEX_CHECK sent from a previous
+  // end_frame()'s pending_sync_ drain (see below). On a miss, the browser
+  // needs the full pixel payload it declined to reuse from its own cache;
+  // on a hit, nothing further to send -- the browser already built the
+  // texture from its cached bytes. Drained before pending_sync_ so a
+  // response that arrived in the same tick as a fresh connection is handled
+  // in a deterministic order relative to it.
+  std::deque<std::pair<ws_connection_id, web_cache_response>> cache_responses;
+  {
+    auto lock = cache_response_queue_.wlock();
+    cache_responses = std::move(*lock);
+    lock->clear();
+  }
+  for (const auto& [conn_id, resp] : cache_responses) {
+    {
+      auto lock = awaiting_cache_response_.wlock();
+      auto conn_it = lock->find(conn_id);
+      if (conn_it != lock->end())
+        conn_it->second.erase(resp.texture_id);
+    }
+    if (resp.hit)
+      continue;
+    auto tex_it = textures_by_id_.find(resp.texture_id);
+    if (tex_it == textures_by_id_.end())
+      continue; // texture destroyed since the TEX_CHECK was sent
+    ImTextureData* tex = tex_it->second;
+    // Temporarily present as WantCreate so encode_texture_update() emits a
+    // whole-texture payload; restored immediately after -- same technique
+    // the pending_sync_ loop below uses.
+    ImTextureStatus saved = tex->Status;
+    tex->Status = ImTextureStatus_WantCreate;
+    auto bytes = draw_protocol::encode_texture_update(resp.texture_id, *tex);
+    tex->Status = saved;
+    server_->send_to(conn_id, bytes);
+  }
+
   // A newly-connected browser needs the *current* texture state even if
   // nothing changed this frame (Status only transitions once per upload) --
   // resend every live texture as a full upload, to that connection only.
+  // Cacheable textures get a TEX_CHECK instead: the browser may already
+  // have this exact (path, crc32) persisted from an earlier session, saving
+  // the pixel payload entirely. See src/web/DESIGN.md for why this
+  // handshake is confined to this per-connection resync path rather than
+  // the live per-frame broadcast above.
   std::vector<ws_connection_id> pending;
   {
     auto lock = pending_sync_.wlock();
@@ -242,6 +296,19 @@ void web_renderer::end_frame() {
       auto it = texture_ids_.find(tex);
       if (it == texture_ids_.end())
         continue;
+
+      auto meta_it = texture_meta_.find(tex);
+      if (meta_it != texture_meta_.end() && meta_it->second.cacheable) {
+        auto check_bytes =
+            draw_protocol::encode_texture_check(it->second, meta_it->second.src, meta_it->second.crc32, *tex);
+        auto lock = awaiting_cache_response_.wlock();
+        for (ws_connection_id id : pending) {
+          server_->send_to(id, check_bytes);
+          (*lock)[id].insert(it->second);
+        }
+        continue;
+      }
+
       // Temporarily present as WantCreate so encode_texture_update() emits
       // a whole-texture payload; restored immediately after. Safe because
       // no ImGui core logic runs between the two assignments (Status is
@@ -268,15 +335,29 @@ void web_renderer::request_quit() {
 
 // ── texture loading ───────────────────────────────────────────────────────────
 
-ImTextureID web_renderer::get_or_load_texture(const std::string& src, const std::filesystem::path& resource_dir) {
+ImTextureID web_renderer::get_or_load_texture(const std::string& src, const std::filesystem::path& resource_dir,
+    const std::unordered_map<std::string, uint32_t>* embedded_crc32s) {
   auto it = loaded_by_src_.find(src);
   if (it != loaded_by_src_.end())
     return it->second ? it->second->TexID : ImTextureID{};
 
   auto path = resource_dir / src;
 
+  // Read the whole file into memory up front rather than letting stb_image
+  // read from disk itself: the raw bytes are needed for the on-the-fly CRC32
+  // fallback below, and decoding via stbi_load_from_memory() from the same
+  // buffer avoids a second disk read.
+  std::ifstream file(path, std::ios::binary);
+  std::vector<unsigned char> file_bytes(
+      (std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+  if (!file || file_bytes.empty()) {
+    loaded_by_src_[src] = nullptr;
+    return ImTextureID{};
+  }
+
   int w = 0, h = 0, channels = 0;
-  unsigned char* pixels = stbi_load(path.string().c_str(), &w, &h, &channels, 4);
+  unsigned char* pixels =
+      stbi_load_from_memory(file_bytes.data(), static_cast<int>(file_bytes.size()), &w, &h, &channels, 4);
   if (!pixels) {
     loaded_by_src_[src] = nullptr;
     return ImTextureID{};
@@ -288,15 +369,50 @@ ImTextureID web_renderer::get_or_load_texture(const std::string& src, const std:
   tex->UseColors = true;
   stbi_image_free(pixels);
 
+  // Content-version CRC32: reuse the embedded zip's own per-file CRC32 when
+  // `src` is a known embedded asset (no need to hash bytes we already trust
+  // miniz to have hashed); otherwise (session-uploaded files, which never
+  // carry a precomputed checksum -- see file_service::upload()) compute it
+  // from the bytes just read.
+  auto rel = path.lexically_relative(resource_dir).generic_string();
+  uint32_t crc32 = 0;
+  bool has_precomputed_crc = false;
+  if (embedded_crc32s) {
+    if (auto crc_it = embedded_crc32s->find(rel); crc_it != embedded_crc32s->end()) {
+      crc32 = crc_it->second;
+      has_precomputed_crc = true;
+    }
+  }
+  if (!has_precomputed_crc)
+    crc32 = static_cast<uint32_t>(mz_crc32(MZ_CRC32_INIT, file_bytes.data(), file_bytes.size()));
+
+  // Content under a "private/" prefix (relative to resource_dir) may hold
+  // personal data (e.g. uploaded photos) and must never be offered to the
+  // browser's persistent resource cache -- see context.hpp's resource_dir
+  // doc comment and src/web/DESIGN.md.
+  std::filesystem::path rel_path{rel};
+  bool cacheable = rel_path.empty() || rel_path.begin()->string() != "private";
+
   ImTextureData* raw = tex.get();
   ImGui::RegisterUserTexture(raw);
   loaded_textures_.push_back(std::move(tex));
   loaded_by_src_[src] = raw;
+  texture_meta_[raw] = texture_meta{rel, crc32, cacheable};
 
   // No id yet -- end_frame() assigns one this frame when it walks
   // ImDrawData::Textures and sees this texture's WantCreate status (see the
   // doc comment on get_or_load_texture() in web_renderer.hpp).
   return raw->TexID;
+}
+
+std::optional<web_renderer::texture_meta> web_renderer::texture_meta_for_test(const std::string& src) const {
+  auto it = loaded_by_src_.find(src);
+  if (it == loaded_by_src_.end() || !it->second)
+    return std::nullopt;
+  auto meta_it = texture_meta_.find(it->second);
+  if (meta_it == texture_meta_.end())
+    return std::nullopt;
+  return meta_it->second;
 }
 
 } // namespace bdg::wish

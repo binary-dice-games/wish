@@ -28,6 +28,7 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <string>
 #include <vector>
 
 struct ImDrawData;
@@ -37,12 +38,14 @@ namespace bdg::wish {
 
 /// @brief Message type tags for the envelope's `msg_type` byte.
 enum class web_msg_type : uint8_t {
-  frame = 0x01,       ///< Server -> browser: one ImDrawData snapshot.
-  tex_create = 0x02,  ///< Server -> browser: full texture upload.
-  tex_update = 0x03,  ///< Server -> browser: partial texture upload.
-  tex_destroy = 0x04, ///< Server -> browser: drop a texture.
-  input = 0x10,       ///< Browser -> server: one input event.
-  resize = 0x11,      ///< Browser -> server: canvas size changed.
+  frame = 0x01,          ///< Server -> browser: one ImDrawData snapshot.
+  tex_create = 0x02,     ///< Server -> browser: full texture upload.
+  tex_update = 0x03,     ///< Server -> browser: partial texture upload.
+  tex_destroy = 0x04,    ///< Server -> browser: drop a texture.
+  tex_check = 0x05,      ///< Server -> browser: "do you have this cached?"
+  input = 0x10,          ///< Browser -> server: one input event.
+  resize = 0x11,         ///< Browser -> server: canvas size changed.
+  cache_response = 0x12, ///< Browser -> server: hit/miss reply to TEX_CHECK.
 };
 
 /// @brief Discriminator for `web_input_event::kind`.
@@ -79,6 +82,15 @@ struct web_resize_event {
   float dpr = 1.0f; ///< devicePixelRatio; feeds ImDrawData::FramebufferScale.
 };
 
+/**
+ * @brief One decoded browser -> server reply to a TEX_CHECK (CACHE_RESPONSE
+ *        payload): whether the browser already had this texture cached.
+ */
+struct web_cache_response {
+  uint32_t texture_id = 0;
+  bool hit = false;
+};
+
 namespace draw_protocol {
 
 /// @brief Encode one ImDrawData snapshot as a FRAME message.
@@ -102,6 +114,25 @@ std::vector<std::byte> encode_texture_update(uint32_t texture_id, const ImTextur
 std::vector<std::byte> encode_texture_destroy(uint32_t texture_id);
 
 /**
+ * @brief Encode a TEX_CHECK message: "does the browser already have this
+ *        exact (path, crc32) cached?" -- metadata only, no pixel payload.
+ *
+ * Sent instead of a full TEX_CREATE for a cacheable texture during the
+ * `pending_sync_` per-connection resync path (see `web_renderer::end_frame()`
+ * and `src/web/DESIGN.md`); never on the live per-frame broadcast.
+ *
+ * @param texture_id  wish-assigned id for this texture (matches what a
+ *                     follow-up TEX_CREATE for the same texture would use).
+ * @param path        Path relative to the session resource directory,
+ *                     identifying the resource independent of `texture_id`
+ *                     (which is only stable within one server process run).
+ * @param crc32       Content-version number (see `web_renderer::texture_meta`).
+ * @param tex         Source texture; only `Format`/`Width`/`Height` are read.
+ */
+std::vector<std::byte> encode_texture_check(
+    uint32_t texture_id, const std::string& path, uint32_t crc32, const ImTextureData& tex);
+
+/**
  * @brief Decode one browser -> server WebSocket binary message as an INPUT
  *        event.
  *
@@ -121,6 +152,17 @@ std::optional<web_input_event> decode_input_message(std::span<const std::byte> m
  * @return `std::nullopt` if `message` isn't a well-formed RESIZE message.
  */
 std::optional<web_resize_event> decode_resize_message(std::span<const std::byte> message);
+
+/**
+ * @brief Decode one browser -> server WebSocket binary message as a
+ *        CACHE_RESPONSE (the reply to a TEX_CHECK).
+ *
+ * @param message  The full envelope-wrapped message bytes as received from
+ *                  the socket.
+ * @return `std::nullopt` if `message` isn't a well-formed CACHE_RESPONSE
+ *         message.
+ */
+std::optional<web_cache_response> decode_cache_response_message(std::span<const std::byte> message);
 
 } // namespace draw_protocol
 } // namespace bdg::wish

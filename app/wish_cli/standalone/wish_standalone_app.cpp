@@ -7,6 +7,7 @@
 #include <logger.hpp>
 #include <registry.hpp>
 #include <sdl3_renderer.hpp>
+#include <web/web_renderer.hpp>
 
 #include <gflags/gflags.h>
 
@@ -26,6 +27,18 @@ DECLARE_bool(verbose);
 DECLARE_string(title);
 DECLARE_int32(width);
 DECLARE_int32(height);
+
+#ifdef WISH_CLI_BUILD
+DECLARE_int32(font_size);
+DECLARE_string(renderer);
+DECLARE_int32(web_port);
+DECLARE_string(web_bind);
+#else
+DEFINE_int32(font_size, 16, "Font size in pixels");
+DEFINE_string(renderer, "web", "Rendering backend: sdl3 or web");
+DEFINE_int32(web_port, 8080, "HTTP/WebSocket port for --renderer web");
+DEFINE_string(web_bind, "127.0.0.1", "Bind address for --renderer web (localhost-only by default)");
+#endif
 
 DECLARE_bool(list);
 DECLARE_string(run);
@@ -52,6 +65,24 @@ void wish_standalone_session::signal_done() {
 }
 
 namespace {
+
+static std::unique_ptr<renderer> make_renderer() {
+  if (FLAGS_renderer == "sdl3") {
+#ifdef WISH_SDL3_ENABLED
+    return std::make_unique<sdl3_renderer>(FLAGS_title.c_str(), FLAGS_width, FLAGS_height, FLAGS_font_size);
+#else
+    throw std::runtime_error("--renderer=sdl3 requested but this binary was built with WISH_ENABLE_SDL3=OFF");
+#endif
+  }
+  if (FLAGS_renderer == "web") {
+#ifdef WISH_WEB_ENABLED
+    return std::make_unique<web_renderer>(FLAGS_web_bind, FLAGS_web_port, FLAGS_font_size);
+#else
+    throw std::runtime_error("--renderer=web requested but this binary was built with WISH_ENABLE_WEB=OFF");
+#endif
+  }
+  throw std::runtime_error("unknown --renderer value '" + FLAGS_renderer + "' (expected sdl3 or web)");
+}
 
 std::shared_ptr<logger> make_standalone_logger() {
   return std::make_shared<logger>(
@@ -129,10 +160,14 @@ int run_standalone_mode(int argc, char** argv) {
                  "standalone mode requires the SDL3 renderer.\n";
     return 1;
 #else
-    wish_standalone_session session{std::make_unique<sdl3_renderer>(FLAGS_title.c_str(), FLAGS_width, FLAGS_height)};
+    wish_standalone_session session{make_renderer()};
     session.set_logger(make_standalone_logger());
     session.app_args_.assign(argv + 1, argv + argc);
     session.start();
+
+    if (FLAGS_renderer == "web") {
+      std::cout << "[wish] open http://" << FLAGS_web_bind << ':' << FLAGS_web_port << " in a browser\n" << std::flush;
+    }
 
     it->second.run(session); // set up proxies and event handlers
 

@@ -7,6 +7,7 @@
 
 #include "../common/example_app.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -483,6 +484,59 @@ static constexpr const char* kTabFilesDesc = R"json(
           }
         })json";
 
+// Escapes '"' and '\' for embedding an arbitrary string as a JSON string
+// literal. Icon filenames come from the embedded resource archive (trusted,
+// not user input), but this keeps the descriptor well-formed regardless.
+static std::string json_escape(const std::string& s) {
+  std::string out;
+  out.reserve(s.size());
+  for (char c : s) {
+    if (c == '"' || c == '\\')
+      out.push_back('\\');
+    out.push_back(c);
+  }
+  return out;
+}
+
+// Builds the "Icons" tab's descriptor with exactly one TableRow per entry in
+// @p icon_files -- discovered at runtime (see on_session()'s list_files("res/icons")
+// call) rather than hardcoded, so the tab always reflects whatever the
+// embedded resource archive actually contains.
+static std::string build_tab_icons_desc(const std::vector<std::string>& icon_files) {
+  std::string rows;
+  for (size_t i = 0; i < icon_files.size(); ++i) {
+    const std::string& name = icon_files[i];
+    std::string src = json_escape("res/icons/" + name);
+    std::string label = json_escape(name);
+    if (i > 0)
+      rows += ",";
+    rows += "\"row" + std::to_string(i) +
+        "\": { \"type\": \"TableRow\", \"children\": {"
+        "\"c0\": { \"type\": \"Image\", \"src\": \"" +
+        src +
+        "\", \"width\": 32, \"height\": 32 },"
+        "\"c1\": { \"type\": \"Label\", \"text\": \"" +
+        label + "\" } } }";
+  }
+
+  return R"json(
+        "tab_icons": { "type": "TabItem", "label": "Icons",
+          "children": {
+            "sec_icons": { "type": "SeparatorText", "label": "Embedded Icons" },
+            "lbl_icons_hint": { "type": "Label",
+                                "text": "Built-in icons discovered at runtime under this session's res/icons/ folder (see src/resources/DESIGN.md)." },
+            "tbl_icons": { "type": "Table", "id": "demo_icons", "columns": 2,
+                           "flags": 1985, "headers": true,
+              "children": {
+                "col_icon": { "type": "TableColumn", "label": "Icon", "flags": 16, "init_width": 64 },
+                "col_name": { "type": "TableColumn", "label": "File" },)json" +
+      rows + R"json(
+              }
+            }
+          }
+        })json";
+}
+
 // ── Menu bar descriptor ────────────────────────────────────────────────────
 
 static constexpr const char* kMenuBarDesc = R"json(
@@ -516,26 +570,30 @@ static constexpr const char* kMenuBarDesc = R"json(
 // Root is a DockSpaceViewport so users can undock, resize, and rearrange panes.
 // The menu bar lives at the viewport level; all widget content is inside
 // demo_win, which ImGui can dock into the central dockspace node.
-
-static const std::string kDemoDescStr =
-    // DockSpaceViewport root — menu bar floats at viewport level.
-    std::string(R"json({
+//
+// Takes the Icons tab's descriptor as a parameter (rather than a static
+// constant like every other tab) because it depends on a runtime directory
+// listing -- see build_tab_icons_desc() and on_session()'s list_files() call.
+static std::string build_demo_desc_str(const std::string& tab_icons_desc) {
+  return
+      // DockSpaceViewport root — menu bar floats at viewport level.
+      std::string(R"json({
   "type": "DockSpaceViewport", "id": "demo_dockspace",
   "children": {)json") +
-    kMenuBarDesc +
-    ","
-    // Main demo window: dockable, contains all tabs and the status bar.
-    + R"json(
+      kMenuBarDesc +
+      ","
+      // Main demo window: dockable, contains all tabs and the status bar.
+      + R"json(
     "demo_win": { "type": "Window", "title": "wish Widget Demo",
       "width": 900, "height": 800,
       "children": {
         "tabs_root": { "type": "TabBar", "id": "demo_tabs",
           "children": {)json" +
-    kTabBasicsDesc + "," + kTabSlidersDesc + "," + kTabInputsDesc + "," + kTabSelectionDesc + "," + kTabTreeDesc + "," +
-    kTabMiscDesc + "," + kTabTablesDesc + "," + kTabPlotsDesc + "," + kTabPlot3DDesc + "," +
-    kTabFilesDesc
-    // Close tab bar, add status bar, close window and dockspace.
-    + R"json(
+      kTabBasicsDesc + "," + kTabSlidersDesc + "," + kTabInputsDesc + "," + kTabSelectionDesc + "," + kTabTreeDesc +
+      "," + kTabMiscDesc + "," + kTabTablesDesc + "," + kTabPlotsDesc + "," + kTabPlot3DDesc + "," + kTabFilesDesc +
+      "," + tab_icons_desc
+      // Close tab bar, add status bar, close window and dockspace.
+      + R"json(
 
           }
         },
@@ -546,6 +604,7 @@ static const std::string kDemoDescStr =
     }
   }
 })json";
+}
 
 // ── Plot data helpers ─────────────────────────────────────────────────────────
 
@@ -600,8 +659,13 @@ class demo_client : public wish::examples::example_client {
     vlog("applying " + theme_ + " theme");
     set_style_preset(theme_).get();
 
+    vlog("discovering embedded icon resources");
+    auto icon_files = list_files("res/icons").get();
+    std::sort(icon_files.begin(), icon_files.end()); // stable, deterministic row order
+    vlog("found " + std::to_string(icon_files.size()) + " icon(s) in res/icons");
+
     vlog("registering and instantiating template");
-    register_template_from_json("demo"_key, kDemoDescStr).get();
+    register_template_from_json("demo"_key, build_demo_desc_str(build_tab_icons_desc(icon_files))).get();
     auto pm = instantiate_template("demo"_key).get();
 
     // ── Shared helpers ────────────────────────────────────────────────────
@@ -1312,7 +1376,8 @@ class demo_client : public wish::examples::example_client {
         "demo_win.tabs_root.tab_tables",
         "demo_win.tabs_root.tab_plots",
         "demo_win.tabs_root.tab_plot3d",
-        "demo_win.tabs_root.tab_files"};
+        "demo_win.tabs_root.tab_files",
+        "demo_win.tabs_root.tab_icons"};
     static const char* kTabLabels[] = {
         "Basics",
         "Sliders & Drags",
@@ -1323,8 +1388,9 @@ class demo_client : public wish::examples::example_client {
         "Tables",
         "Plots",
         "3-D Plots",
-        "Files"};
-    for (int i = 0; i < 10; ++i) {
+        "Files",
+        "Icons"};
+    for (int i = 0; i < 11; ++i) {
       pm.at(kTabNames[i]).onEvent("selected"_key, [i, status](dynamic) {
         status(std::string("Tab selected: ") + kTabLabels[i]);
       });

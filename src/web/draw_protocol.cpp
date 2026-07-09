@@ -211,6 +211,23 @@ std::vector<std::byte> encode_texture_destroy(uint32_t texture_id) {
   return wrap_envelope(web_msg_type::tex_destroy, std::move(payload));
 }
 
+// ── outbound: TEX_CHECK ─────────────────────────────────────────────────────
+
+std::vector<std::byte> encode_texture_check(
+    uint32_t texture_id, const std::string& path, uint32_t crc32, const ImTextureData& tex) {
+  std::vector<std::byte> payload;
+
+  put_u32(payload, texture_id);
+  put_u8(payload, tex.Format == ImTextureFormat_Alpha8 ? 1 : 0);
+  put_u32(payload, static_cast<uint32_t>(tex.Width));
+  put_u32(payload, static_cast<uint32_t>(tex.Height));
+  put_u32(payload, crc32);
+  put_u32(payload, static_cast<uint32_t>(path.size()));
+  put_bytes(payload, path.data(), path.size());
+
+  return wrap_envelope(web_msg_type::tex_check, std::move(payload));
+}
+
 // ── inbound: INPUT ───────────────────────────────────────────────────────────
 
 std::optional<web_input_event> decode_input_message(std::span<const std::byte> message) {
@@ -297,6 +314,22 @@ std::optional<web_resize_event> decode_resize_message(std::span<const std::byte>
     return std::nullopt;
 
   return web_resize_event{*width, *height, *dpr};
+}
+
+// ── inbound: CACHE_RESPONSE ──────────────────────────────────────────────────
+
+std::optional<web_cache_response> decode_cache_response_message(std::span<const std::byte> message) {
+  auto payload = unwrap_envelope(message, web_msg_type::cache_response);
+  if (!payload)
+    return std::nullopt;
+
+  reader r{*payload};
+  auto texture_id = r.u32();
+  auto hit = r.u8();
+  if (!texture_id || !hit)
+    return std::nullopt;
+
+  return web_cache_response{*texture_id, *hit != 0};
 }
 
 } // namespace bdg::wish::draw_protocol

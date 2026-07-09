@@ -13,6 +13,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace bdg::wish {
 
@@ -127,6 +128,22 @@ class client : public bison::rmi::client {
    *         accessible to the client.
    */
   std::future<std::string> download_file(const std::string& name);
+
+  /**
+   * @brief List file names found directly under a subdirectory of the
+   *        server's sandboxed session resource directory.
+   * @param path  Subdirectory relative to the resource directory (e.g.
+   *              `"res/icons"` for the built-in icon set). Empty (the
+   *              default) lists the resource directory's own top-level
+   *              contents. Not recursive.
+   * @return Future resolved with the file names found, in filesystem
+   *         iteration order.
+   * @throws std::logic_error until the server-side `__WishFileSystem` protocol is
+   *         accessible to the client.
+   * @throws std::runtime_error (via the resolved future) if @p path escapes
+   *         the sandbox.
+   */
+  std::future<std::vector<std::string>> list_files(const std::string& path = "");
 
   /**
    * @brief Apply a named built-in style preset for this session.

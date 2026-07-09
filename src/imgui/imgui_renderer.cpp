@@ -306,12 +306,14 @@ void imgui_renderer::render_session(const ui_element& root, const context& s) {
   ImGui::GetStyle() = saved;
 }
 
-ImTextureID imgui_renderer::get_or_load_texture(const std::string& src, const std::filesystem::path& resource_dir) {
+ImTextureID imgui_renderer::get_or_load_texture(const std::string& src, const std::filesystem::path& resource_dir,
+    const std::unordered_map<std::string, uint32_t>* embedded_crc32s) {
   auto it = texture_cache_.find(src);
   if (it != texture_cache_.end())
     return it->second;
   // Texture loading requires a GPU backend; return null in headless contexts.
   (void)resource_dir;
+  (void)embedded_crc32s;
   return texture_cache_[src] = ImTextureID{};
 }
 

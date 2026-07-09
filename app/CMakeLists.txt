@@ -20,6 +20,7 @@ if(WISH_ENABLE_IMGUI AND (WISH_ENABLE_SDL3 OR WISH_ENABLE_WEB))
       ${CMAKE_SOURCE_DIR}/extern/bison  # for "src/app/server/server_app.hpp" etc.
   )
   target_link_libraries(wish-cli PRIVATE wish gflags)
+  target_compile_definitions(wish-cli PRIVATE WISH_CLI_BUILD)
   set_target_properties(wish-cli PROPERTIES
       OUTPUT_NAME "wish"
       FOLDER      app)

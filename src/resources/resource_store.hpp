@@ -4,7 +4,10 @@
 ///        binary, and the routine that unpacks it per-session.
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
+#include <string>
+#include <unordered_map>
 
 namespace bdg::wish::resource_store {
 
@@ -22,8 +25,15 @@ namespace bdg::wish::resource_store {
 /// `context::context()`, which calls this on a thread with no surrounding
 /// try/catch.
 ///
-/// @param dir  Destination directory.
+/// @param dir        Destination directory.
+/// @param out_crc32  When non-null, populated with one entry per
+///                    successfully-extracted file: the archive-relative
+///                    path (same string as the extracted file's path under
+///                    @p dir) mapped to that file's zip CRC-32 (already
+///                    computed by miniz for its own integrity checks, and
+///                    surfaced here so callers can use it as a stable
+///                    content-version number without recomputing it).
 /// @return true if every entry was extracted successfully.
-bool extract_to(const std::filesystem::path& dir);
+bool extract_to(const std::filesystem::path& dir, std::unordered_map<std::string, uint32_t>* out_crc32 = nullptr);
 
 } // namespace bdg::wish::resource_store

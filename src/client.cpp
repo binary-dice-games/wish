@@ -105,6 +105,21 @@ std::future<std::string> client::download_file(const std::string& name) {
   });
 }
 
+std::future<std::vector<std::string>> client::list_files(const std::string& path) {
+  return std::async(std::launch::async, [this, path]() -> std::vector<std::string> {
+    dynamic args;
+    if (!path.empty())
+      args["path"_key] = path;
+    auto result = fs_proxy_->call("list"_key, std::move(args)).get();
+    std::vector<std::string> names;
+    result.forEach([&names](key_t, const field& f) {
+      if (f.is<std::string>())
+        names.push_back(f.as<std::string>());
+    });
+    return names;
+  });
+}
+
 std::future<void> client::set_style_preset(const std::string& name) {
   return std::async(std::launch::async, [this, name]() {
     dynamic args;

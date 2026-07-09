@@ -206,7 +206,9 @@ void sdl3_renderer::rebuild_font_atlas() {
 
 // ── texture loading ───────────────────────────────────────────────────────────
 
-ImTextureID sdl3_renderer::get_or_load_texture(const std::string& src, const std::filesystem::path& resource_dir) {
+ImTextureID sdl3_renderer::get_or_load_texture(const std::string& src, const std::filesystem::path& resource_dir,
+    const std::unordered_map<std::string, uint32_t>* embedded_crc32s) {
+  (void)embedded_crc32s; // no browser resource cache to version here
   auto it = texture_cache_.find(src);
   if (it != texture_cache_.end())
     return it->second;

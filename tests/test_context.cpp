@@ -69,3 +69,10 @@ TEST(ContextTest, ResourceDirEmbeddedFilesAreReadOnly) {
   EXPECT_EQ(std::filesystem::status(icon).permissions() & std::filesystem::perms::owner_write,
             std::filesystem::perms::none);
 }
+
+TEST(ContextTest, EmbeddedCrc32sPopulatedWithResPrefixedKeys) {
+  context s{"s7"_key};
+  auto it = s.embedded_crc32s.find("res/icons/folder.png");
+  ASSERT_NE(it, s.embedded_crc32s.end());
+  EXPECT_NE(it->second, 0U);
+}

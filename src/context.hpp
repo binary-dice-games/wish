@@ -11,6 +11,7 @@
 #include "src/rmi/server/context.hpp"
 
 #include <atomic>
+#include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <memory>
@@ -64,7 +65,24 @@ struct context : public bison::rmi::context {
   /// read-only copies of the embedded assets (icons, fonts — see
   /// `resource_store::extract_to()`); a failed or partial extraction is
   /// non-fatal and does not throw.
+  ///
+  /// A `private/` subfolder is a reserved naming convention (not enforced by
+  /// `file_service`, which sandboxes purely against `..`-escape): content an
+  /// application places there — e.g. user-uploaded photos or other data that
+  /// may be personal — is never offered to the browser's persistent
+  /// resource cache (see `web_renderer`'s texture-check handshake in
+  /// `src/web/DESIGN.md`), even though it is still cached server-side like
+  /// any other resource.
   std::filesystem::path resource_dir;
+
+  /// CRC-32 of every embedded asset extracted into `resource_dir / "res"`,
+  /// keyed by its path relative to `resource_dir` (e.g. `"res/icons/foo.png"`)
+  /// so it can be looked up directly against a resolved `Image::src`. Reuses
+  /// the zip's own per-file CRC-32 (already computed by miniz while
+  /// unpacking the embedded archive) as a stable content-version number for
+  /// the browser resource cache, so embedded assets never need a redundant
+  /// CRC-32 pass over their own bytes at texture-load time.
+  std::unordered_map<std::string, uint32_t> embedded_crc32s;
 
   /// Set to `true` after any RMI dispatch touching this session and after
   /// any top-level event handler runs, so the render loop knows the session

@@ -18,7 +18,7 @@ extern const std::size_t g_resource_archive_size;
 
 namespace resource_store {
 
-bool extract_to(const std::filesystem::path& dir) {
+bool extract_to(const std::filesystem::path& dir, std::unordered_map<std::string, uint32_t>* out_crc32) {
   std::error_code ec;
   std::filesystem::create_directories(dir, ec);
   if (ec) {
@@ -57,6 +57,9 @@ bool extract_to(const std::filesystem::path& dir) {
         std::filesystem::perms::owner_read | std::filesystem::perms::group_read | std::filesystem::perms::others_read,
         std::filesystem::perm_options::replace, ec);
     ok = ok && !ec;
+
+    if (out_crc32)
+      (*out_crc32)[st.m_filename] = static_cast<uint32_t>(st.m_crc32);
   }
 
   mz_zip_reader_end(&zip);

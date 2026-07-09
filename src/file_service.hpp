@@ -52,10 +52,16 @@ class file_service : public bison::dynamic {
   std::string download(const std::string& name) const;
 
   /**
-   * @brief Return an indexed `dynamic` whose entries are the uploaded file
-   *        names (one per slot, in filesystem iteration order).
+   * @brief Return an indexed `dynamic` whose entries are the file names found
+   *        directly under @p path (one per slot, in filesystem iteration
+   *        order; not recursive).
+   * @param path  Subdirectory relative to the resource directory, e.g.
+   *              `"res/icons"`. Empty (the default) lists the resource
+   *              directory's own top-level contents.
+   * @throws std::runtime_error if @p path escapes the sandbox (same
+   *         validation as `upload`/`download`/`erase`).
    */
-  bison::dynamic_ptr list() const;
+  bison::dynamic_ptr list(const std::string& path = "") const;
 
   /**
    * @brief Remove a previously uploaded file.

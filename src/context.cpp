@@ -63,7 +63,13 @@ context::context(bison::key_t id) : bison::rmi::context(id) {
   // matters here -- this constructor runs on a per-connection worker thread
   // with no surrounding try/catch, so a thrown exception would terminate the
   // whole server, not just this connection.
-  resource_store::extract_to(resource_dir / "res");
+  std::unordered_map<std::string, uint32_t> raw_crc32;
+  resource_store::extract_to(resource_dir / "res", &raw_crc32);
+  // Re-key with a "res/" prefix so a lookup by embedded_crc32s[src] matches
+  // the resource_dir-relative src an Image element resolves to (see
+  // imgui_ui_renderer.cpp's render_image / web_renderer::get_or_load_texture).
+  for (auto& [rel, crc] : raw_crc32)
+    embedded_crc32s["res/" + rel] = crc;
 }
 
 context::~context() {

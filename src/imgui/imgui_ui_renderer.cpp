@@ -157,7 +157,7 @@ void render_image(imgui_renderer& r, const ui_element& node, const context& s) {
   auto full_path = file_service::resolve_path(src, s.resource_dir, s.allow_absolute_paths);
   if (full_path.empty())
     return;
-  ImTextureID tex = r.get_or_load_texture(full_path.string(), s.resource_dir);
+  ImTextureID tex = r.get_or_load_texture(full_path.string(), s.resource_dir, &s.embedded_crc32s);
   if (!tex)
     return;
   ImGui::Image(tex, ImVec2(float(w), float(h)));

@@ -29,15 +29,11 @@ file_service::file_service(dynamic&& base, std::filesystem::path resource_dir)
               result["result"_key] = download(p.as<std::string>("name"_key));
               return result;
             }});
-  addMethod("list"_key, bison::method{[this](dynamic& /*self*/, const dynamic& /*p*/) -> dynamic {
-              dynamic result;
-              std::size_t idx = 0;
-              std::error_code ec;
-              for (const auto& entry : std::filesystem::directory_iterator(resource_dir_, ec)) {
-                if (entry.is_regular_file())
-                  result[idx++] = entry.path().filename().string();
-              }
-              return result;
+  addMethod("list"_key, bison::method{[this](dynamic& /*self*/, const dynamic& p) -> dynamic {
+              std::string path;
+              if (const auto* f = p.findField("path"_key); f && f->is<std::string>())
+                path = f->as<std::string>();
+              return *list(path);
             }});
   addMethod("erase"_key, bison::method{[this](dynamic& /*self*/, const dynamic& p) -> dynamic {
               erase(p.as<std::string>("name"_key));
@@ -100,11 +96,16 @@ std::string file_service::download(const std::string& name) const {
   return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>{}};
 }
 
-bison::dynamic_ptr file_service::list() const {
+bison::dynamic_ptr file_service::list(const std::string& path) const {
+  // Empty path lists the resource directory's own root; resolve_path()
+  // throws on an empty name, so that case bypasses it entirely rather than
+  // being treated as an escape attempt.
+  auto dir = path.empty() ? resource_dir_ : resolve_path(path);
+
   auto result = dynamic_ptr{key_t{0U}, {}};
   std::size_t idx = 0;
   std::error_code ec;
-  for (const auto& entry : std::filesystem::directory_iterator(resource_dir_, ec)) {
+  for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
     if (entry.is_regular_file()) {
       (*result)[idx++] = entry.path().filename().string();
     }

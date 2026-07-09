@@ -122,13 +122,18 @@ namespace bdg::wish::resource_store {
 /// Never throws. Any miniz or filesystem failure is logged to stderr and
 /// that entry is skipped; extraction continues with the remaining entries.
 ///
+/// @param out_crc32  When non-null, populated with one entry per
+///                    successfully-extracted file: its archive-relative path
+///                    mapped to the zip's own per-file CRC-32.
 /// @return true if every entry was extracted successfully.
-bool extract_to(const std::filesystem::path& dir);
+bool extract_to(const std::filesystem::path& dir, std::unordered_map<std::string, uint32_t>* out_crc32 = nullptr);
 
 } // namespace bdg::wish::resource_store
 ```
 
 Unpacking is implemented with [miniz](https://github.com/richgel999/miniz), vendored via `FetchContent` (see root `CMakeLists.txt`), the same mechanism already used for imgui/SDL3.
+
+**CRC-32 exposure (browser resource cache).** `mz_zip_reader_file_stat` already computes a per-file CRC-32 while `extract_to()` walks the archive; the optional `out_crc32` out-param simply surfaces a field that was previously read and discarded. `context::context()` collects it into `context::embedded_crc32s` (re-keyed with a `"res/"` prefix) when extracting embedded assets into a session's `resource_dir/res/`. `web_renderer::get_or_load_texture()` (see `src/web/DESIGN.md`'s "Persistent Browser Resource Cache" section) consumes this map to version its browser-side texture cache without re-hashing bytes miniz already checksummed. Session-**uploaded** files never appear in the embedded zip and never carry a client-supplied checksum (`file_service::upload()`'s RMI payload is raw `{name, data}`), so they fall back to an on-the-fly `mz_crc32` computation at the same call site, using the same primitive for one consistent versioning scheme regardless of a resource's origin. This is the only consumer of `out_crc32` — `resource_store`'s own extraction logic and its `bool` success contract are otherwise unchanged.
 
 ---
 

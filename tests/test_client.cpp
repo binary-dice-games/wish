@@ -9,6 +9,7 @@
 
 #include <atomic>
 #include <stdexcept>
+#include <unordered_set>
 
 using namespace bdg::bison;
 using namespace bdg::bison::rmi;
@@ -336,5 +337,62 @@ TEST(ClientTest, UploadDownloadRoundTrips) {
   c.run();
 
   EXPECT_EQ(c.downloaded, "world");
+  srv.stop();
+}
+
+// ── list_files ─────────────────────────────────────────────────────────────────
+
+TEST(ClientTest, ListFilesReturnsSubdirectoryContents) {
+  memory_server_transport transport;
+  wish::server srv{transport, std::make_unique<wish::null_renderer>()};
+  srv.start();
+
+  class test_client : public wish::client {
+   public:
+    using wish::client::client;
+    std::vector<std::string> names;
+
+   protected:
+    void on_session() override {
+      upload_file("icons/a.png", "a").get();
+      upload_file("icons/b.png", "b").get();
+      upload_file("root.txt", "r").get();
+      names = list_files("icons").get();
+    }
+  };
+
+  test_client c{transport.connect()};
+  c.run();
+
+  std::unordered_set<std::string> found(c.names.begin(), c.names.end());
+  EXPECT_EQ(found.size(), 2U);
+  EXPECT_NE(found.find("a.png"), found.end());
+  EXPECT_NE(found.find("b.png"), found.end());
+  EXPECT_EQ(found.find("root.txt"), found.end());
+  srv.stop();
+}
+
+TEST(ClientTest, ListFilesEmptyPathListsResourceDirRoot) {
+  memory_server_transport transport;
+  wish::server srv{transport, std::make_unique<wish::null_renderer>()};
+  srv.start();
+
+  class test_client : public wish::client {
+   public:
+    using wish::client::client;
+    std::vector<std::string> names;
+
+   protected:
+    void on_session() override {
+      upload_file("root.txt", "r").get();
+      names = list_files().get();
+    }
+  };
+
+  test_client c{transport.connect()};
+  c.run();
+
+  std::unordered_set<std::string> found(c.names.begin(), c.names.end());
+  EXPECT_NE(found.find("root.txt"), found.end());
   srv.stop();
 }

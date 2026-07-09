@@ -92,8 +92,13 @@ class sdl3_renderer : public imgui_renderer {
    *
    * @param src           Filename relative to the session resource directory.
    * @param resource_dir  Session-scoped resource folder.
+   *
+   * @p embedded_crc32s is accepted for interface compatibility but unused —
+   * this backend draws to a native window, so there is no browser resource
+   * cache to version by content hash.
    */
-  ImTextureID get_or_load_texture(const std::string& src, const std::filesystem::path& resource_dir) override;
+  ImTextureID get_or_load_texture(const std::string& src, const std::filesystem::path& resource_dir,
+      const std::unordered_map<std::string, uint32_t>* embedded_crc32s = nullptr) override;
 
   /**
    * @brief Return a cached ImFont* for (path, size), or schedule an atlas

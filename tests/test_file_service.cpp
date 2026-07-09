@@ -73,6 +73,68 @@ TEST_F(FileServiceTest, ListEmptyWhenNoFiles) {
   EXPECT_EQ(count, 0);
 }
 
+TEST_F(FileServiceTest, ListSubdirectoryReturnsOnlyItsOwnFiles) {
+  fs().upload("root.txt", "r");
+  fs().upload("icons/file.png", "f");
+  fs().upload("icons/folder.png", "d");
+
+  auto listing = fs().list("icons");
+  ASSERT_NE(listing, nullptr);
+
+  std::unordered_set<std::string> found;
+  listing->forEach([&](bdg::bison::key_t, const field& f) {
+    if (f.is<std::string>())
+      found.insert(f.as<std::string>());
+  });
+
+  EXPECT_EQ(found.size(), 2U);
+  EXPECT_NE(found.find("file.png"), found.end());
+  EXPECT_NE(found.find("folder.png"), found.end());
+  EXPECT_EQ(found.find("root.txt"), found.end());
+}
+
+TEST_F(FileServiceTest, ListNestedSubdirectoryWorks) {
+  fs().upload("a/b/c.txt", "deep");
+
+  auto listing = fs().list("a/b");
+  std::unordered_set<std::string> found;
+  listing->forEach([&](bdg::bison::key_t, const field& f) {
+    if (f.is<std::string>())
+      found.insert(f.as<std::string>());
+  });
+
+  EXPECT_NE(found.find("c.txt"), found.end());
+}
+
+TEST_F(FileServiceTest, ListEmptyPathListsResourceDirRoot) {
+  fs().upload("alpha.txt", "a");
+  fs().upload("sub/beta.txt", "b");
+
+  auto listing = fs().list("");
+  std::unordered_set<std::string> found;
+  listing->forEach([&](bdg::bison::key_t, const field& f) {
+    if (f.is<std::string>())
+      found.insert(f.as<std::string>());
+  });
+
+  EXPECT_NE(found.find("alpha.txt"), found.end());
+  EXPECT_EQ(found.find("beta.txt"), found.end()); // nested; not listed from root
+}
+
+TEST_F(FileServiceTest, ListPathTraversalThrows) {
+  EXPECT_THROW(fs().list("../escape"), std::runtime_error);
+}
+
+TEST_F(FileServiceTest, ListMissingSubdirectoryReturnsEmpty) {
+  auto listing = fs().list("does_not_exist");
+  int count = 0;
+  listing->forEach([&](bdg::bison::key_t, const field& f) {
+    if (f.is<std::string>())
+      ++count;
+  });
+  EXPECT_EQ(count, 0);
+}
+
 // ── erase ─────────────────────────────────────────────────────────────────────
 
 TEST_F(FileServiceTest, EraseRemovesFile) {

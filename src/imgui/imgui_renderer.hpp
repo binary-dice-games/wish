@@ -7,6 +7,7 @@
 
 #include <imgui.h>
 
+#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <unordered_map>
@@ -58,9 +59,21 @@ class imgui_renderer : public renderer {
   ///        TextEditor wish element) mark the session dirty directly instead.
   bool wants_continuous_redraw() const override;
 
-  /// @brief Fetch a cached texture or attempt to load it from @p resource_dir.
-  /// Returns a zero/null ID in headless / no-backend contexts.
-  virtual ImTextureID get_or_load_texture(const std::string& src, const std::filesystem::path& resource_dir);
+  /**
+   * @brief Fetch a cached texture or attempt to load it from @p resource_dir.
+   * Returns a zero/null ID in headless / no-backend contexts.
+   *
+   * @param embedded_crc32s  Optional map of resource_dir-relative path ->
+   *                          precomputed CRC-32 (see `context::embedded_crc32s`).
+   *                          When @p src has an entry here, an override that
+   *                          versions its resource cache by content hash
+   *                          (e.g. `web_renderer`) may reuse it instead of
+   *                          recomputing a CRC-32 over the file's bytes.
+   *                          Ignored by backends that don't cache by content
+   *                          version.
+   */
+  virtual ImTextureID get_or_load_texture(const std::string& src, const std::filesystem::path& resource_dir,
+      const std::unordered_map<std::string, uint32_t>* embedded_crc32s = nullptr);
 
   /**
    * @brief Fetch a cached font or schedule loading the TTF at @p path with

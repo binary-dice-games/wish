@@ -23,8 +23,10 @@
     TEX_CREATE: 0x02,
     TEX_UPDATE: 0x03,
     TEX_DESTROY: 0x04,
+    TEX_CHECK: 0x05,
     INPUT: 0x10,
     RESIZE: 0x11,
+    CACHE_RESPONSE: 0x12,
   };
 
   const INPUT_KIND = {
@@ -151,6 +153,14 @@
     v.setFloat32(4, height, true);
     v.setFloat32(8, dpr, true);
     return encodeEnvelope(MSG.RESIZE, new Uint8Array(buf));
+  }
+
+  function encodeCacheResponse(textureId, hit) {
+    const buf = new ArrayBuffer(5);
+    const v = new DataView(buf);
+    v.setUint32(0, textureId, true);
+    v.setUint8(4, hit ? 1 : 0);
+    return encodeEnvelope(MSG.CACHE_RESPONSE, new Uint8Array(buf));
   }
 
   // ── WebGL2 renderer ────────────────────────────────────────────────────────
@@ -445,10 +455,34 @@
     return { textureId, format, width, height, rects };
   }
 
+  // TEX_CHECK shares its texture_id/format/width/height layout with
+  // TEX_CREATE/TEX_UPDATE (see decodeTextureMessage), then adds a crc32 and
+  // a length-prefixed path instead of pixel rects -- see draw_protocol.hpp.
+  function decodeTextureCheck(view, offset) {
+    const textureId = view.getUint32(offset, true);
+    const format = view.getUint8(offset + 4);
+    const width = view.getUint32(offset + 5, true);
+    const height = view.getUint32(offset + 9, true);
+    const crc32 = view.getUint32(offset + 13, true);
+    const pathLen = view.getUint32(offset + 17, true);
+    const pathBytes = new Uint8Array(view.buffer, view.byteOffset + offset + 21, pathLen);
+    const path = new TextDecoder().decode(pathBytes);
+    return { textureId, format, width, height, crc32, path };
+  }
+
   // ── wiring: WebSocket + input capture ────────────────────────────────────
 
   const canvas = document.getElementById("wish-canvas");
   const renderer = new Renderer(canvas);
+
+  // Set (by TEX_CHECK) for a texture the resource cache didn't have -- the
+  // resulting TEX_CREATE's pixels get persisted for next time. Cleared once
+  // that TEX_CREATE arrives. See resource_cache.js and src/web/DESIGN.md.
+  const pendingCacheStore = new Map(); // textureId -> {path, crc32}
+
+  if (window.WishResourceCache) {
+    WishResourceCache.open().then(() => WishResourceCache.sweepExpired(WishResourceCache.TTL_MS));
+  }
 
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
   const ws = new WebSocket(proto + "//" + window.location.host + "/ws");
@@ -483,7 +517,7 @@
     showDisconnectedBanner();
   });
 
-  ws.addEventListener("message", (event) => {
+  ws.addEventListener("message", async (event) => {
     const buf = event.data;
     const view = new DataView(buf);
     const type = view.getUint8(0);
@@ -501,11 +535,36 @@
       case MSG.TEX_UPDATE: {
         const t = decodeTextureMessage(view, offset);
         renderer.uploadTexture(t.textureId, t.format, t.width, t.height, t.rects);
+        // Only set when this TEX_CREATE follows a TEX_CHECK miss (see
+        // MSG.TEX_CHECK below) -- a texture never offered for caching (the
+        // font atlas, or anything under a private/ prefix server-side) has
+        // no pending entry here and is simply never persisted.
+        const pending = pendingCacheStore.get(t.textureId);
+        if (pending && window.WishResourceCache) {
+          pendingCacheStore.delete(t.textureId);
+          // TEX_CREATE always carries exactly one whole-texture rect (see
+          // draw_protocol.cpp's encode_texture_update).
+          WishResourceCache.store(
+              pending.path, pending.crc32, t.width, t.height, t.format === TEX_FORMAT.ALPHA8, t.rects[0].pixels);
+        }
         break;
       }
       case MSG.TEX_DESTROY:
         renderer.destroyTexture(view.getUint32(offset, true));
         break;
+      case MSG.TEX_CHECK: {
+        const t = decodeTextureCheck(view, offset);
+        const cached = window.WishResourceCache ? await WishResourceCache.lookup(t.path, t.crc32) : null;
+        if (cached) {
+          renderer.uploadTexture(
+              t.textureId, t.format, t.width, t.height, [{ x: 0, y: 0, w: t.width, h: t.height, pixels: cached.pixels }]);
+          send(encodeCacheResponse(t.textureId, true));
+        } else {
+          pendingCacheStore.set(t.textureId, { path: t.path, crc32: t.crc32 });
+          send(encodeCacheResponse(t.textureId, false));
+        }
+        break;
+      }
       default:
         console.warn("[wish] unknown message type", type);
     }

@@ -28,7 +28,7 @@ src/web/web_renderer.hpp/.cpp      public class + lifecycle/frame overrides
 src/web/draw_protocol.hpp/.cpp     pure, network-independent wire-format codec
 src/web/civetweb_server.hpp/.cpp   pimpl isolating civetweb's C API
 src/web/DESIGN.md                  this document
-resources/embedded/web/            index.html, client.js, style.css
+resources/embedded/web/            index.html, client.js, style.css, resource_cache.js
 tests/test_web_renderer.cpp        unit + real-socket tests (no browser required)
 ```
 
@@ -69,12 +69,14 @@ uint32  payload_len
 byte[payload_len] payload
 ```
 
-Server → browser: `0x01 FRAME`, `0x02 TEX_CREATE`, `0x03 TEX_UPDATE`, `0x04 TEX_DESTROY`.
-Browser → server: `0x10 INPUT`, `0x11 RESIZE`.
+Server → browser: `0x01 FRAME`, `0x02 TEX_CREATE`, `0x03 TEX_UPDATE`, `0x04 TEX_DESTROY`, `0x05 TEX_CHECK`.
+Browser → server: `0x10 INPUT`, `0x11 RESIZE`, `0x12 CACHE_RESPONSE`.
 
 **FRAME** carries display pos/size/framebuffer-scale, then per `ImDrawList`: the vertex buffer (memcpy'd directly — `ImDrawVert` is a stable 20-byte pos/uv/col layout), the index buffer (`ImDrawIdx` is 16-bit in this repo's ImGui config; `draw_protocol.cpp` has a `static_assert` guarding that assumption), and per `ImDrawCmd`: clip rect, wish-assigned texture id, vtx/idx offsets, element count.
 
 **TEX_CREATE/TEX_UPDATE** carry a texture id, pixel format (RGBA32 or Alpha8), full dimensions, and one or more `(x, y, w, h, pixels)` rects — the whole texture for a create, only the changed sub-rects for an update. `web_renderer::end_frame()` builds these by walking `ImDrawData::Textures` each frame and reacting to `ImTextureData::Status` (`WantCreate`/`WantUpdates`/`WantDestroy`) — the current ImGui texture-management model, and the single source of truth for both the font atlas and any user textures.
+
+**TEX_CHECK/CACHE_RESPONSE** implement the persistent browser resource cache (see "Persistent Browser Resource Cache" below): `TEX_CHECK` carries a texture id, format/dimensions, a content-version `crc32`, and a length-prefixed `path` string — metadata only, no pixel payload. `CACHE_RESPONSE` is the browser's reply: a texture id and a `hit`/`miss` byte.
 
 **INPUT/RESIZE** carry mouse/keyboard/wheel events and canvas size changes from the browser.
 
@@ -95,6 +97,32 @@ A browser tab connecting after textures are already `OK` (so no `Status` transit
 **No `ImGuiBackendFlags_RendererHasVtxOffset`**: wish deliberately never sets this flag. The browser renders with core WebGL2 (GLES 3.0), which has no "draw with base vertex" call; leaving the flag unset keeps ImGui splitting draw lists so `ImDrawCmd::VtxOffset` is always `0`.
 
 **`get_or_load_texture()`** (loading a named image from a session's resource directory, e.g. for an `Image` element) decodes the file with `stb_image` (vendored for this purpose — `WISH_ENABLE_SDL3`'s `SDL3_image` dependency is not guaranteed to be on in a web-only build) into an RGBA32 `ImTextureData`, then calls `ImGui::RegisterUserTexture()` so it flows through the exact same `end_frame()` walk described above, rather than a separate ad hoc broadcast. Results are cached by `src` in `web_renderer::loaded_by_src_` (not the `imgui_renderer` base's `texture_cache_`, which can only store a settled `ImTextureID` — a freshly-registered texture's id isn't known until `end_frame()` assigns one). Consequently the returned id is always null on the frame a texture is first requested — `ImGui::Render()`, which resolves `WantCreate` and assigns the real id, runs later in `end_frame()`, strictly after `render_node()` (and this call) has returned — and only valid from the following frame onward. This mirrors `get_or_load_font()`'s first-call-returns-nothing contract; callers (e.g. `render_image()` in `imgui_ui_renderer.cpp`) already treat a null id as "nothing to draw yet". Loaded textures live for the renderer's lifetime and are unregistered/freed in `teardown()`, same as `sdl3_renderer`'s texture cache.
+
+---
+
+## Persistent Browser Resource Cache
+
+Reconnecting (or reopening) the browser client used to re-download every texture's full pixel payload from scratch, even for content that hadn't changed since the last visit. `TEX_CHECK`/`CACHE_RESPONSE` let the server ask "do you already have this cached?" before paying that cost again, with the browser persisting resources across page loads in IndexedDB (`resources/embedded/web/resource_cache.js`).
+
+**Cache identity: `(path, crc32)`.** `path` is the texture's `src`, relative to the session's `resource_dir` (e.g. `"res/icons/folder.png"` or `"uploads/logo.png"`). `crc32` is a content-version number computed once at load time in `get_or_load_texture()`:
+
+- For **embedded assets** (anything under `resource_dir/res/`), it reuses the zip's own per-file CRC-32 — already computed by miniz while unpacking the archive (`resource_store::extract_to()`'s `out_crc32` out-param → `context::embedded_crc32s`, keyed with a `"res/"` prefix to match `src` directly) — rather than re-hashing bytes already trusted.
+- For **session-uploaded files** (via `file_service::upload()`, whose RMI payload is just raw `{name, data}` with no checksum), the CRC-32 is computed on the fly from the same bytes `stb_image` just decoded, using `mz_crc32` (the same primitive, so both origins get one consistent versioning scheme).
+
+This metadata is recorded per texture in `web_renderer::texture_meta_` (`{src, crc32, cacheable}`, keyed by `ImTextureData*`). Textures with **no** such metadata — the font atlas, and any other user texture not registered through `get_or_load_texture()` — have no stable on-disk identity and structurally cannot enter the cache-check path; they always use the plain `TEX_CREATE`/`TEX_UPDATE` flow described above.
+
+**The `private/` convention.** Content placed under `resource_dir/private/` (a reserved naming convention documented on `context::resource_dir`, not a separate sandboxing mechanism — `file_service` itself does not treat it specially) is marked `cacheable = false` and is *never* offered to the browser cache, even though it is still cached server-side like any other resource. This is for session content that may hold personal data (uploaded photos, etc.) that must never persist in browser storage. Because `cacheable = false` routes through the exact same code path as "no metadata at all" (the font atlas case above), there is no separate "don't store" flag on the wire to get wrong — a private-path texture is indistinguishable, from the wire protocol's perspective, from a texture the cache mechanism doesn't know about.
+
+**Scope: `pending_sync_` only, never the live per-frame broadcast.** The cache-check handshake is confined to the existing per-connection resync path (`web_renderer::pending_sync_`, drained in `end_frame()` — see "Threading Model" above) — the same one that already resends full texture state to a newly-(re)connected browser. A texture's live `WantCreate` transition (the first time it's ever created in a running session) always still uses the plain broadcast `TEX_CREATE`/`TEX_UPDATE` path unconditionally, for every connection, regardless of cacheability. Deliberately **not** doing the handshake there: no browser tab currently connected could possibly have that exact `(path, crc32)` cached yet from *this* session (it doesn't exist until this frame), so a check would almost never produce a hit; doing it anyway would require `civetweb_server::broadcast()` to become connection-selective plus per-connection buffering of interleaved `TEX_UPDATE`/`TEX_DESTROY` messages for a texture still awaiting a hit/miss reply on some (but not all) connections — real complexity for a case that doesn't pay off. Confining the handshake to `pending_sync_` covers the actual goal (reopening the client shouldn't re-download identical images) with much less new machinery.
+
+**Handshake:** for each cacheable texture in the `pending_sync_` drain, the server sends `TEX_CHECK` (instead of a full `TEX_CREATE`) to the newly-connected browser and records the texture id as awaiting a reply (`web_renderer::awaiting_cache_response_`, keyed per connection). The browser looks up `(path, crc32)` in its IndexedDB store (`WishResourceCache.lookup()`):
+
+- **Hit** — the browser builds the WebGL texture directly from the cached bytes and replies `CACHE_RESPONSE{hit=true}`. The server sends nothing further for that texture/connection.
+- **Miss** — the browser replies `CACHE_RESPONSE{hit=false}`, remembering the texture id is pending a store. The server (on the next `end_frame()`, draining `cache_response_queue_`) sends a normal full `TEX_CREATE`; the browser's `client.js` then persists those pixels to IndexedDB under `(path, crc32)` with a timestamp.
+
+**Accepted trade-off — brief pending-check window.** No buffering exists for a `FRAME` referencing a texture whose `TEX_CHECK` hasn't resolved yet: `client.js`'s renderer already falls back to a solid white texture for any unrecognized `textureId` (see `Renderer.render()`), so the texture just renders blank for the one round-trip until the hit/miss resolves, then snaps in. This was judged simpler than adding real buffering machinery for a window that's normally a single network round-trip.
+
+**TTL eviction.** `resource_cache.js` stores a `storedAt` timestamp per entry and sweeps entries older than `WishResourceCache.TTL_MS` (30 days, a top-of-file constant) once at client startup, via an IndexedDB index on `storedAt` rather than a full-store scan.
 
 ---
 
