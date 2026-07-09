@@ -15,10 +15,6 @@
 // wish_desktop_app.cpp DECLAREs these (DEFINEd in main.cpp / standalone_main.cpp
 // for the real binaries, neither of which this test links) and DEFINEs the
 // upstream_* flags itself -- mirrors extern/bison/tests/bridge_app_tests.cpp.
-DEFINE_string(downstream_transport, "tcp", "test default");
-DEFINE_string(downstream_host, "127.0.0.1", "test default");
-DEFINE_int32(downstream_port, 7070, "test default");
-DEFINE_string(downstream_name, "", "test default");
 DEFINE_string(cmd, "", "test default");
 DEFINE_bool(verbose, false, "test default");
 DEFINE_bool(debugger, false, "test default");

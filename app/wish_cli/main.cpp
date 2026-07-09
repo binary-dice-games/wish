@@ -39,16 +39,6 @@ DEFINE_bool(debugger, false, "Wait for debugger attachment before starting");
 // ── Server-only flags — consumed by bison::app::server_app ───────────────────
 DEFINE_string(cmd, "", "Command to spawn (transport=console)");
 
-// ── Desktop-only downstream flags — consumed by bison::app::bridge_app ───────
-// Explicitly downstream_-prefixed (unlike --transport/--host/--port/--name
-// above, shared by server/client) because a bridge has both a downstream and
-// an upstream transport active at once; a bare --port would be ambiguous
-// next to --upstream_port.
-DEFINE_string(downstream_transport, "tcp", "Downstream transport to use: tcp, pipe, or term");
-DEFINE_string(downstream_host, "0.0.0.0", "Downstream bind host address (downstream_transport=tcp)");
-DEFINE_int32(downstream_port, 7070, "Downstream listen port (downstream_transport=tcp)");
-DEFINE_string(downstream_name, "", "Downstream named-pipe / Unix-socket path (downstream_transport=pipe)");
-
 static void print_usage() {
   std::cout << "wish - remote GUI framework CLI\n"
                "\n"

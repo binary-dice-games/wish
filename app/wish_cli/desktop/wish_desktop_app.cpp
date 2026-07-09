@@ -19,16 +19,18 @@
 
 // ── Shared flags (defined in main.cpp for wish-cli, or desktop/standalone_main.cpp
 // for the standalone wish-desktop binary) ────────────────────────────────────
-DECLARE_string(downstream_transport);
-DECLARE_string(downstream_host);
-DECLARE_int32(downstream_port);
-DECLARE_string(downstream_name);
 DECLARE_string(cmd);
 DECLARE_bool(verbose);
 DECLARE_bool(debugger);
 // Shared with wish client's --timeout: both express "per-request timeout to
 // the remote peer" (there, the wish server; here, the upstream server).
 DECLARE_int32(timeout);
+
+// ── Downstream (server side) flags ─────────────────────────────────────────────
+DEFINE_string(downstream_transport, "tcp", "Downstream transport to use: tcp, pipe, or term");
+DEFINE_string(downstream_host, "0.0.0.0", "Downstream bind host address (downstream_transport=tcp)");
+DEFINE_int32(downstream_port, 7071, "Downstream listen port (downstream_transport=tcp)");
+DEFINE_string(downstream_name, "", "Downstream named-pipe / Unix-socket path (downstream_transport=pipe)");
 
 // ── Upstream (client side) flags ─────────────────────────────────────────────
 DEFINE_string(upstream_transport, "term", "Upstream transport to use: tcp, pipe, or term");
