@@ -182,6 +182,15 @@ class web_renderer : public imgui_renderer {
   // render thread (end_frame()).
   bison::synchronized<std::vector<ws_connection_id>> pending_sync_;
 
+  // Every connection currently known to be open (inserted in on_connect,
+  // erased in on_disconnect) -- unlike pending_sync_, this is never
+  // drained. Lets end_frame()'s WantCreate handling offer a cacheable
+  // texture's very first upload as a TEX_CHECK to whichever clients are
+  // already connected at that moment, not just ones that join later via
+  // pending_sync_ -- see "Persistent Browser Resource Cache" in
+  // src/web/DESIGN.md.
+  bison::synchronized<std::unordered_set<ws_connection_id>> connected_ids_;
+
   // Inbound input events decoded on a civetweb worker thread (on_message),
   // drained into ImGuiIO on the render thread at the top of begin_frame().
   bison::synchronized<std::deque<web_input_event>> input_queue_;

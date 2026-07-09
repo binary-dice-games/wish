@@ -93,10 +93,16 @@ void web_renderer::setup() {
       bind_addr_, port_, web_assets_dir_ / "web",
       /*on_connect=*/
       [this](ws_connection_id id) {
+        connected_ids_.wlock()->insert(id);
         pending_sync_.wlock()->push_back(id);
         activity_.store(true, std::memory_order_relaxed);
       },
-      /*on_disconnect=*/[this](ws_connection_id) { activity_.store(true, std::memory_order_relaxed); },
+      /*on_disconnect=*/
+      [this](ws_connection_id id) {
+        connected_ids_.wlock()->erase(id);
+        awaiting_cache_response_.wlock()->erase(id);
+        activity_.store(true, std::memory_order_relaxed);
+      },
       /*on_message=*/
       [this](ws_connection_id id, std::span<const std::byte> message) {
         if (auto ev = draw_protocol::decode_input_message(message)) {
@@ -134,6 +140,7 @@ void web_renderer::teardown() {
   texture_ids_.clear();
   textures_by_id_.clear();
   texture_meta_.clear();
+  connected_ids_.wlock()->clear();
   awaiting_cache_response_.wlock()->clear();
   cache_response_queue_.wlock()->clear();
 
@@ -200,6 +207,13 @@ void web_renderer::end_frame() {
   if (!draw_data || !draw_data->Valid || !server_ || !draw_data->Textures)
     return;
 
+  // Texture ids assigned a fresh WantCreate this frame, and thus already
+  // offered (TEX_CHECK or full TEX_CREATE, per cacheability) to every
+  // currently-connected client below -- the pending_sync_ drain further
+  // down must skip these so a client that just connected this same frame
+  // doesn't get sent a second, redundant TEX_CHECK for the same texture.
+  std::unordered_set<ImTextureData*> created_this_frame;
+
   // Texture (re)uploads must be broadcast before the FRAME that references
   // their ids, and before any draw command's GetTexID() is called (which
   // asserts a valid TexID) -- draw_protocol::encode_frame() calls GetTexID()
@@ -211,7 +225,28 @@ void web_renderer::end_frame() {
         texture_ids_[tex] = id;
         textures_by_id_[id] = tex;
         tex->SetTexID(static_cast<ImTextureID>(id));
-        server_->broadcast(draw_protocol::encode_texture_update(id, *tex));
+        created_this_frame.insert(tex);
+
+        // A texture's very first upload is the common case a browser tab
+        // could already have this exact (path, crc32) persisted from an
+        // earlier run of the app -- offer the same TEX_CHECK handshake
+        // used for reconnects (see pending_sync_ below) to every client
+        // already connected, instead of unconditionally paying the full
+        // pixel upload. See "Persistent Browser Resource Cache" in
+        // src/web/DESIGN.md.
+        auto meta_it = texture_meta_.find(tex);
+        if (meta_it != texture_meta_.end() && meta_it->second.cacheable) {
+          auto check_bytes =
+              draw_protocol::encode_texture_check(id, meta_it->second.src, meta_it->second.crc32, *tex);
+          auto conns = connected_ids_.rlock();
+          auto lock = awaiting_cache_response_.wlock();
+          for (ws_connection_id conn_id : *conns) {
+            server_->send_to(conn_id, check_bytes);
+            (*lock)[conn_id].insert(id);
+          }
+        } else {
+          server_->broadcast(draw_protocol::encode_texture_update(id, *tex));
+        }
         tex->SetStatus(ImTextureStatus_OK);
         break;
       }
@@ -280,9 +315,7 @@ void web_renderer::end_frame() {
   // resend every live texture as a full upload, to that connection only.
   // Cacheable textures get a TEX_CHECK instead: the browser may already
   // have this exact (path, crc32) persisted from an earlier session, saving
-  // the pixel payload entirely. See src/web/DESIGN.md for why this
-  // handshake is confined to this per-connection resync path rather than
-  // the live per-frame broadcast above.
+  // the pixel payload entirely.
   std::vector<ws_connection_id> pending;
   {
     auto lock = pending_sync_.wlock();
@@ -292,6 +325,10 @@ void web_renderer::end_frame() {
   if (!pending.empty()) {
     for (ImTextureData* tex : *draw_data->Textures) {
       if (tex->Status != ImTextureStatus_OK)
+        continue;
+      // Already offered (TEX_CHECK or full TEX_CREATE) to every connected
+      // client -- including these -- by the WantCreate handling above.
+      if (created_this_frame.contains(tex))
         continue;
       auto it = texture_ids_.find(tex);
       if (it == texture_ids_.end())

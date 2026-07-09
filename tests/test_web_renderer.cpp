@@ -791,6 +791,46 @@ TEST_F(WebRendererTest, PendingSync_CacheableTextureSendsCheckNotCreate) {
   std::filesystem::remove_all(dir);
 }
 
+TEST_F(WebRendererTest, WantCreate_CacheableTextureSendsCheckToAlreadyConnectedClient) {
+  // The common case: a browser tab is already connected (e.g. viewing the
+  // app) when a cacheable texture is loaded for the very first time this
+  // session -- that first WantCreate transition should offer a TEX_CHECK to
+  // the already-connected client instead of unconditionally paying the full
+  // pixel upload, since that client may have this exact (path, crc32)
+  // persisted from an earlier run of the app.
+  std::filesystem::path dir = std::filesystem::temp_directory_path() / "wish_want_create_cacheable_test";
+  std::filesystem::create_directories(dir);
+  write_test_bmp(dir / "swatch.bmp");
+
+  int port = renderer_->actual_port();
+  ASSERT_GT(port, 0);
+  int sock = connect_ws_client(port);
+  ASSERT_GE(sock, 0);
+  wait_for_activity(*renderer_); // drain the connect-triggered activity signal
+
+  // No texture loaded yet on the first frame -- just resolves the font
+  // atlas's own WantCreate and drains pending_sync_ for the connection
+  // above (as a plain TEX_CREATE, since the font atlas is never cacheable).
+  renderer_->begin_frame();
+  ImGui::Begin("test");
+  ImGui::End();
+  renderer_->end_frame();
+
+  // Now load the texture, on a frame *after* the client already connected.
+  renderer_->begin_frame();
+  ImGui::Begin("test");
+  renderer_->get_or_load_texture("swatch.bmp", dir);
+  ImGui::End();
+  renderer_->end_frame(); // texture's first-ever WantCreate happens here
+
+  auto msg = recv_message_for_test_texture(sock);
+  ASSERT_TRUE(msg.has_value());
+  EXPECT_EQ(msg->msg_type, static_cast<uint8_t>(web_msg_type::tex_check));
+
+  close_socket(sock);
+  std::filesystem::remove_all(dir);
+}
+
 TEST_F(WebRendererTest, PendingSync_PrivatePathStillSendsFullCreate) {
   std::filesystem::path dir = std::filesystem::temp_directory_path() / "wish_pending_sync_private_test";
   std::filesystem::create_directories(dir / "private");
