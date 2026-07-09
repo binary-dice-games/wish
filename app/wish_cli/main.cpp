@@ -1,7 +1,7 @@
 // MIT License © 2025 Binary Dice Games
 /**
  * @file main.cpp
- * @brief Entry point for the wish CLI — dispatches server / client / bridge /
+ * @brief Entry point for the wish CLI — dispatches server / client / desktop /
  *        standalone.
  *
  * Usage:
@@ -13,11 +13,11 @@
  *                   (--list | --run=<app>) [-- app-args...]
  *                   (--transport/--host/--port/--name are not accepted here —
  *                   standalone mode runs server and client in one process)
- *   wish bridge     [--transport T] [--host H] [--port P] [--name PATH]
+ *   wish desktop    [--transport T] [--host H] [--port P] [--name PATH]
  *                   [--upstream_transport T] [--upstream_host H]
  *                   [--upstream_port P] [--upstream_name PATH] [--timeout MS]
  */
-#include "app/wish_cli/bridge/wish_bridge_app.hpp"
+#include "app/wish_cli/desktop/wish_desktop_app.hpp"
 #include "app/wish_cli/client/wish_client_app.hpp"
 #include "app/wish_cli/server/wish_server_app.hpp"
 #include "app/wish_cli/standalone/wish_standalone_app.hpp"
@@ -48,14 +48,14 @@ static void print_usage() {
                "                  (--list | --run=<app>) [--timeout MS] [-- app-args...]\n"
                "  wish standalone [--title T] [--width W] [--height H]\n"
                "                  (--list | --run=<app>) [-- app-args...]\n"
-               "  wish bridge     [--transport T] [--host H] [--port P] [--name PATH]\n"
+               "  wish desktop    [--transport T] [--host H] [--port P] [--name PATH]\n"
                "                  [--upstream_transport T] [--upstream_host H] [--upstream_port P]\n"
                "                  [--upstream_name PATH] [--timeout MS]\n"
                "\n"
                "Anything after a literal `--` is forwarded to the app, e.g.\n"
                "  wish client --run=notepad -- path/to/file\n"
                "\n"
-               "Shared transport flags (server, client, and bridge downstream):\n"
+               "Shared transport flags (server, client, and desktop downstream):\n"
                "  --transport T  tcp, pipe, pty, or console (default: tcp)\n"
                "  --host H       Host address (default: 0.0.0.0 for server, 127.0.0.1 for client)\n"
                "  --port P       Port                        (default: 7070)\n"
@@ -64,7 +64,7 @@ static void print_usage() {
                "  --verbose      Print RMI trace messages\n"
                "  --debugger     Wait for debugger attachment before starting\n"
                "\n"
-               "wish bridge's upstream (client) side has its own flag set:\n"
+               "wish desktop's upstream (client) side has its own flag set:\n"
                "  --upstream_transport T  tcp, pipe, or term  (default: term)\n"
                "  --upstream_host H       Upstream host       (default: 127.0.0.1)\n"
                "  --upstream_port P       Upstream port       (default: 7070)\n"
@@ -108,9 +108,9 @@ int main(int argc, char** argv) {
     return bdg::wish::run_standalone_mode(sub_argc, sub_argv);
   }
 
-  if (std::strcmp(subcmd, "bridge") == 0) {
-    gflags::SetUsageMessage("wish bridge - multiplexing bridge with upstream/downstream transports");
-    bdg::wish::wish_bridge_app app;
+  if (std::strcmp(subcmd, "desktop") == 0) {
+    gflags::SetUsageMessage("wish desktop - multiplexing bridge with upstream/downstream transports");
+    bdg::wish::wish_desktop_app app;
     return app.run(sub_argc, sub_argv);
   }
 

@@ -218,7 +218,29 @@ void render_horizontal_layout(imgui_renderer& r, const ui_element& node, const c
 
 void render_menu_bar(imgui_renderer& r, const ui_element& node, const context& s) {
   if (ImGui::BeginMenuBar()) {
-    render_children(r, node, s);
+    // A trailing Label child (e.g. a clock) is right-aligned instead of
+    // flowing left-to-right with the Menu children; anything else renders
+    // in the usual menu-bar order (Menu/MenuItem stack horizontally on
+    // their own, no explicit SameLine needed).
+    ui_element* trailing_label = nullptr;
+    node.for_each_child_ordered([&](key_t, ui_element& child) {
+      trailing_label = (child.as<key_t>(dynamic::CLASS) == "Label"_key) ? &child : nullptr;
+    });
+
+    node.for_each_child_ordered([&](key_t, ui_element& child) {
+      if (&child != trailing_label)
+        r.render_node(child, s);
+    });
+
+    if (trailing_label) {
+      auto text = trailing_label->get_as<std::string>("text"_key, "");
+      float text_w = ImGui::CalcTextSize(text.c_str()).x;
+      float avail = ImGui::GetContentRegionAvail().x;
+      if (avail > text_w)
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + avail - text_w);
+      ImGui::TextUnformatted(text.c_str());
+    }
+
     ImGui::EndMenuBar();
   }
 }

@@ -1,7 +1,7 @@
 // MIT License © 2025 Binary Dice Games
 /// @file standalone_main.cpp
-/// @brief Entry point for the standalone wish-bridge binary.
-#include "app/wish_cli/bridge/wish_bridge_app.hpp"
+/// @brief Entry point for the standalone wish-desktop binary.
+#include "app/wish_cli/desktop/wish_desktop_app.hpp"
 
 #include <gflags/gflags.h>
 
@@ -16,7 +16,7 @@ DEFINE_bool(verbose, false, "Print downstream request/response trace messages to
 DEFINE_bool(debugger, false, "Wait for debugger attachment before starting");
 
 int main(int argc, char** argv) {
-  gflags::SetUsageMessage("wish-bridge - wish RMI bridge / multiplexer");
-  bdg::wish::wish_bridge_app app;
+  gflags::SetUsageMessage("wish-desktop - wish RMI bridge / multiplexer with desktop shell");
+  bdg::wish::wish_desktop_app app;
   return app.run(argc, argv);
 }

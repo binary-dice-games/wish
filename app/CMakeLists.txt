@@ -1,5 +1,5 @@
 if(WISH_ENABLE_IMGUI AND (WISH_ENABLE_SDL3 OR WISH_ENABLE_WEB))
-  # ── wish-cli — unified multi-mode binary (server + client + bridge + standalone) ─
+  # ── wish-cli — unified multi-mode binary (server + client + desktop + standalone) ─
   #
   # Builds with either (or both) renderer backends; wish_server_app.cpp picks
   # between them at runtime via --renderer, guarded by WISH_SDL3_ENABLED /
@@ -11,7 +11,7 @@ if(WISH_ENABLE_IMGUI AND (WISH_ENABLE_SDL3 OR WISH_ENABLE_WEB))
       wish_cli/client/wish_client_app.cpp
       wish_cli/client/app_registry.cpp
       wish_cli/standalone/wish_standalone_app.cpp
-      wish_cli/bridge/wish_bridge_app.cpp)
+      wish_cli/desktop/wish_desktop_app.cpp)
   target_sources(wish-cli PRIVATE ${WISH_APP_MODULE_SOURCES})
   target_compile_definitions(wish-cli PRIVATE ${WISH_APP_MODULE_DEFS})
   target_include_directories(wish-cli PRIVATE
@@ -74,14 +74,18 @@ target_include_directories(wish-client PRIVATE
 target_link_libraries(wish-client PRIVATE wish_client gflags)
 set_target_properties(wish-client PROPERTIES FOLDER app)
 
-# ── wish-bridge — standalone bridge binary (bison only, no SDL/ImGui) ──────────
-add_executable(wish-bridge
-    wish_cli/bridge/wish_bridge_app.cpp
-    wish_cli/bridge/standalone_main.cpp)
-target_include_directories(wish-bridge PRIVATE
+# ── wish-desktop — standalone bridge+shell binary (no SDL/ImGui) ───────────────
+#
+# Links wish_client (not just bison) for import_descriptor_json(), used to
+# build the desktop shell's UI template descriptor client-side; wish_client
+# has no ImGui/SDL dependency, keeping this binary's footprint lightweight.
+add_executable(wish-desktop
+    wish_cli/desktop/wish_desktop_app.cpp
+    wish_cli/desktop/standalone_main.cpp)
+target_include_directories(wish-desktop PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/extern/bison
 )
-target_link_libraries(wish-bridge PRIVATE bison gflags)
-set_target_properties(wish-bridge PROPERTIES FOLDER app)
+target_link_libraries(wish-desktop PRIVATE wish_client gflags)
+set_target_properties(wish-desktop PROPERTIES FOLDER app)

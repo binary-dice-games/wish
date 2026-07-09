@@ -40,6 +40,19 @@ wish_add_test(test_client         test_client.cpp)
 wish_add_test(test_handlers       test_handlers.cpp)
 wish_add_test(test_integration    test_integration.cpp)
 
+# Exercises wish_desktop's chrome-building behavior (menu bar + dockspace +
+# clock) against a real wish::server upstream. wish_desktop_app.cpp isn't
+# part of the `wish` library (it's an app/ source, compiled directly into
+# wish-cli/wish-desktop), so it's added as an extra source here, along with
+# gflags for the DEFINE_string calls it makes at file scope.
+add_executable(test_wish_desktop
+    test_wish_desktop.cpp
+    ${CMAKE_SOURCE_DIR}/app/wish_cli/desktop/wish_desktop_app.cpp)
+target_include_directories(test_wish_desktop PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(test_wish_desktop PRIVATE wish gflags gtest gmock gtest_main)
+gtest_discover_tests(test_wish_desktop)
+set_target_properties(test_wish_desktop PROPERTIES FOLDER tests)
+
 # Links ONLY wish_client (not the combined `wish` target) to prove the
 # lightweight client / heavy server CMake split actually works for a real
 # thin client -- see tests/test_client_only_link.cpp.
