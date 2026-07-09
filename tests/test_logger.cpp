@@ -2,8 +2,8 @@
 // Tests for wish::logger — the per-session RMI logging service.
 #include <gtest/gtest.h>
 
-#include <logger.hpp>
-#include <registry.hpp>
+#include <context/logger.hpp>
+#include <server/registry.hpp>
 
 #include <filesystem>
 #include <fstream>

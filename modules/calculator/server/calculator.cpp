@@ -6,7 +6,7 @@
 #include "src/bison/bison_object.hpp"
 #include "src/rmi/shared/ids.hpp"
 
-#include <ui_importer.hpp>
+#include <ui/ui_importer.hpp>
 
 #include <cmath>
 #include <sstream>

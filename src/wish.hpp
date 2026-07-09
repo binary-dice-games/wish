@@ -3,12 +3,12 @@
 /// @brief Top-level umbrella header for the wish remote UI framework.
 #pragma once
 
-#include <client.hpp>
-#include <file_service.hpp>
+#include <client/client.hpp>
+#include <context/file_service.hpp>
 #include <forms/form.hpp>
-#include <logger.hpp>
-#include <registry.hpp>
-#include <renderer.hpp>
-#include <server.hpp>
-#include <context.hpp>
-#include <ui_importer.hpp>
+#include <context/logger.hpp>
+#include <server/registry.hpp>
+#include <server/renderer.hpp>
+#include <server/server.hpp>
+#include <context/context.hpp>
+#include <ui/ui_importer.hpp>

@@ -5,10 +5,10 @@
  */
 #include "app/wish_cli/server/wish_server_app.hpp"
 
-#include <logger.hpp>
-#include <registry.hpp>
-#include <sdl3_renderer.hpp>
-#include <server.hpp>
+#include <context/logger.hpp>
+#include <server/registry.hpp>
+#include <sdl/sdl3_renderer.hpp>
+#include <server/server.hpp>
 #include <web/web_renderer.hpp>
 
 #include <imgui.h>

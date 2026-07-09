@@ -191,7 +191,7 @@ The grid label is `"##ne_<wish_id>"` to give each editor instance a unique ImNod
 4. Add new unconditional `wish_server` sources: `src/flow/node_editor.cpp`, `src/flow/node.cpp`, `src/flow/node_pin.cpp`.
 5. Inside the `if(WISH_ENABLE_IMGUI)` `target_sources` block, add `src/imgui/imgui_node_editor_renderer.cpp`.
 
-### `src/registry.cpp`
+### `src/server/registry.cpp`
 
 ```cpp
 #include "flow/node_elements.hpp"

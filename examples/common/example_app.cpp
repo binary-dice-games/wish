@@ -6,8 +6,8 @@
 
 #include "example_app.hpp"
 
-#include <sdl3_renderer.hpp>
-#include <server.hpp>
+#include <sdl/sdl3_renderer.hpp>
+#include <server/server.hpp>
 #include <web/web_renderer.hpp>
 
 #include <iostream>

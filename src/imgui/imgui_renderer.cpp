@@ -1,11 +1,11 @@
 ﻿// MIT License © 2025 Binary Dice Games
 /// @file imgui_renderer.cpp
 /// @brief Dear ImGui concrete renderer — element dispatch.
-#include <file_service.hpp>
+#include <context/file_service.hpp>
 #include <imgui/imgui_renderer.hpp>
-#include <renderer.hpp>
-#include <context.hpp>
-#include <style_service.hpp>
+#include <server/renderer.hpp>
+#include <context/context.hpp>
+#include <context/style_service.hpp>
 
 #include "src/bison/bison_common.hpp"
 #include "src/bison/bison_object.hpp"

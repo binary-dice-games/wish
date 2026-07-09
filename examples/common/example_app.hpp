@@ -9,8 +9,8 @@
 
 #pragma once
 
-#include <client.hpp>
-#include <renderer.hpp>
+#include <client/client.hpp>
+#include <server/renderer.hpp>
 
 #include "src/rmi/rmi.hpp" // memory_server_transport / memory_client_transport
 

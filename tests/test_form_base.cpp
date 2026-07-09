@@ -2,9 +2,9 @@
 #include <gtest/gtest.h>
 
 #include <forms/form.hpp>
-#include <registry.hpp>
-#include <server.hpp>
-#include <context.hpp>
+#include <server/registry.hpp>
+#include <server/server.hpp>
+#include <context/context.hpp>
 
 #include "src/bison/bison_object.hpp"
 #include "src/rmi/rmi.hpp"

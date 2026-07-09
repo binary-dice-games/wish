@@ -1,7 +1,7 @@
 // MIT License © 2025 Binary Dice Games
 #include <gtest/gtest.h>
 
-#include <context.hpp>
+#include <context/context.hpp>
 
 #include <filesystem>
 

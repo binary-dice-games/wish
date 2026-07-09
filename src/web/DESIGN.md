@@ -13,7 +13,7 @@ This is an optional, compile-time feature gated by the CMake option `WISH_ENABLE
 ### Class Hierarchy
 
 ```
-renderer            (abstract, src/renderer.hpp)
+renderer            (abstract, src/server/renderer.hpp)
   └─ imgui_renderer (headless ImGui dispatch, src/imgui/imgui_renderer.cpp)
        ├─ sdl3_renderer   (existing windowed backend)
        └─ web_renderer    (headless + civetweb HTTP/WebSocket server)

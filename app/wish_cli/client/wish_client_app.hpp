@@ -9,7 +9,7 @@
 #include "app/wish_cli/client/wish_app_host.hpp"
 
 #include "src/app/client/client_app.hpp"
-#include "src/client.hpp"
+#include "src/client/client.hpp"
 
 #include <future>
 #include <memory>

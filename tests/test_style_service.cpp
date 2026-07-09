@@ -2,10 +2,10 @@
 #include <gtest/gtest.h>
 
 #include <imgui/imgui_renderer.hpp>
-#include <registry.hpp>
-#include <context.hpp>
-#include <style_service.hpp>
-#include <ui_importer.hpp>
+#include <server/registry.hpp>
+#include <context/context.hpp>
+#include <context/style_service.hpp>
+#include <ui/ui_importer.hpp>
 
 #include "src/bison/bison_common.hpp"
 #include "src/bison/bison_object.hpp"

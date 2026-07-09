@@ -113,12 +113,12 @@ function(wish_add_module name)
   endif()
 endfunction()
 
-# Renders src/wish_module_registry.cpp.in with the includes/calls collected
-# from every wish_add_module() call so far, and adds the result to
+# Renders src/server/wish_module_registry.cpp.in with the includes/calls
+# collected from every wish_add_module() call so far, and adds the result to
 # wish_server. Must be called once, after all wish_add_module() calls.
 function(wish_generate_module_registry)
   configure_file(
-      "${CMAKE_SOURCE_DIR}/src/wish_module_registry.cpp.in"
+      "${CMAKE_SOURCE_DIR}/src/server/wish_module_registry.cpp.in"
       "${CMAKE_BINARY_DIR}/generated/wish_module_registry.cpp"
       @ONLY)
   target_sources(wish_server PRIVATE

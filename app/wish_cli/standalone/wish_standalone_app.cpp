@@ -4,9 +4,9 @@
 #include "app/wish_cli/standalone/wish_standalone_app.hpp"
 #include "app/wish_cli/client/app_registry.hpp"
 
-#include <logger.hpp>
-#include <registry.hpp>
-#include <sdl3_renderer.hpp>
+#include <context/logger.hpp>
+#include <server/registry.hpp>
+#include <sdl/sdl3_renderer.hpp>
 #include <web/web_renderer.hpp>
 
 #include <gflags/gflags.h>

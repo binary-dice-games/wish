@@ -1,10 +1,10 @@
 // MIT License © 2025 Binary Dice Games
 #include <gtest/gtest.h>
 
-#include <registry.hpp>
-#include <server.hpp>
-#include <context.hpp>
-#include <ui_root.hpp>
+#include <server/registry.hpp>
+#include <server/server.hpp>
+#include <context/context.hpp>
+#include <ui/ui_root.hpp>
 
 #include "src/bison/bison_object.hpp"
 #include "src/rmi/rmi.hpp"

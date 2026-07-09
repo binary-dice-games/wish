@@ -8,7 +8,7 @@
 
 #include "app/wish_cli/client/wish_app_host.hpp"
 
-#include <standalone.hpp>
+#include <standalone/standalone.hpp>
 
 #include <future>
 #include <string>

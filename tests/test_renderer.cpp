@@ -1,9 +1,9 @@
 // MIT License © 2025 Binary Dice Games
 #include <gtest/gtest.h>
 
-#include <registry.hpp>
-#include <renderer.hpp>
-#include <ui_importer.hpp>
+#include <server/registry.hpp>
+#include <server/renderer.hpp>
+#include <ui/ui_importer.hpp>
 
 #include <string>
 #include <vector>

@@ -124,7 +124,7 @@ void register_my_service() {
 my_service::my_service(bison::dynamic&& base) : dynamic(std::move(base)) {}
 ```
 
-For classes that need a factory (server instantiates via RMI `INSTANTIATE`), see `register_ui_template()` in `src/ui_template.cpp` for the `make_factory<T>` pattern.
+For classes that need a factory (server instantiates via RMI `INSTANTIATE`), see `register_ui_template()` in `src/ui/ui_template.cpp` for the `make_factory<T>` pattern.
 
 ## Security Considerations for AI Code Assist
 

@@ -9,8 +9,8 @@
 // heavy server stack.
 #include <gtest/gtest.h>
 
-#include <client.hpp>
-#include <ui_descriptor.hpp>
+#include <client/client.hpp>
+#include <ui/ui_descriptor.hpp>
 
 using namespace bdg::bison;
 namespace bison = bdg::bison;

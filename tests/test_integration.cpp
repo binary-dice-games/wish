@@ -5,9 +5,9 @@
 // operations, and session cleanup after disconnect.
 #include <gtest/gtest.h>
 
-#include <client.hpp>
-#include <server.hpp>
-#include <ui_descriptor.hpp>
+#include <client/client.hpp>
+#include <server/server.hpp>
+#include <ui/ui_descriptor.hpp>
 
 #include "src/rmi/rmi.hpp"
 

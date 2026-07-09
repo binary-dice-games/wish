@@ -10,8 +10,8 @@
 #ifdef WISH_IMGUI_ENABLED
 
 #include "imgui_renderer.hpp"
-#include "context.hpp"
-#include "ui_element.hpp"
+#include "context/context.hpp"
+#include "ui/ui_element.hpp"
 
 namespace bdg::wish {
 

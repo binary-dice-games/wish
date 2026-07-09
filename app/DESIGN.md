@@ -129,7 +129,7 @@ All button-click events are handled server-side in `on_event()`. State:
 `remove_internal_objects()`.
 
 Registration: `register_calculator()` called from `register_all()` in
-`src/registry.cpp`.
+`src/server/registry.cpp`.
 
 ### Client-side runner: `app/wish_cli/client/apps/calculator.hpp/.cpp`
 

@@ -236,10 +236,10 @@ endif()
 # ── wish_client — lightweight C++ client (no renderer, no UI elements) ────────
 
 add_library(wish_client STATIC
-  src/client.hpp
-  src/client.cpp
-  src/ui_descriptor.hpp
-  src/ui_descriptor.cpp
+  src/client/client.hpp
+  src/client/client.cpp
+  src/ui/ui_descriptor.hpp
+  src/ui/ui_descriptor.cpp
 )
 set_target_properties(wish_client PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(wish_client
@@ -247,7 +247,7 @@ target_include_directories(wish_client
         src
         ${CMAKE_CURRENT_SOURCE_DIR}/extern/bison
     PRIVATE
-        # nlohmann/json and libyaml headers; only needed by src/ui_descriptor.cpp.
+        # nlohmann/json and libyaml headers; only needed by src/ui/ui_descriptor.cpp.
         ${CMAKE_CURRENT_SOURCE_DIR}/extern/bison/extern/json/single_include
         ${CMAKE_CURRENT_SOURCE_DIR}/extern/bison/extern/yaml/include
 )
@@ -260,31 +260,31 @@ target_link_libraries(wish_client PRIVATE yaml)
 add_library(wish_server STATIC
   src/wish.hpp
   src/resources/resource_store.hpp
-  src/registry.hpp
-  src/ui_importer.hpp
-  src/ui_element.hpp
-  src/context.hpp
-  src/renderer.hpp
-  src/file_service.hpp
-  src/logger.hpp
-  src/style_service.hpp
-  src/server.hpp
-  src/standalone.hpp
+  src/server/registry.hpp
+  src/ui/ui_importer.hpp
+  src/ui/ui_element.hpp
+  src/context/context.hpp
+  src/server/renderer.hpp
+  src/context/file_service.hpp
+  src/context/logger.hpp
+  src/context/style_service.hpp
+  src/server/server.hpp
+  src/standalone/standalone.hpp
   src/forms/form.hpp
   src/wish.cpp
   src/resources/resource_store.cpp
   "${WISH_EMBEDDED_CPP}"
-  src/registry.cpp
-  src/ui_importer.cpp
-  src/ui_element.cpp
-  src/context.cpp
-  src/renderer.cpp
-  src/file_service.cpp
-  src/logger.cpp
-  src/style_service.cpp
-  src/server.cpp
-  src/standalone.cpp
-  src/ui_template.cpp
+  src/server/registry.cpp
+  src/ui/ui_importer.cpp
+  src/ui/ui_element.cpp
+  src/context/context.cpp
+  src/server/renderer.cpp
+  src/context/file_service.cpp
+  src/context/logger.cpp
+  src/context/style_service.cpp
+  src/server/server.cpp
+  src/standalone/standalone.cpp
+  src/ui/ui_template.cpp
   src/ui_elements/element.cpp
   src/ui_elements/layout.cpp
   src/ui_elements/window.cpp
@@ -342,8 +342,8 @@ endif()
 
 if(WISH_ENABLE_IMGUI AND WISH_ENABLE_SDL3)
   target_sources(wish_server PRIVATE
-    src/sdl3_renderer.hpp
-    src/sdl3_renderer.cpp
+    src/sdl/sdl3_renderer.hpp
+    src/sdl/sdl3_renderer.cpp
   )
   target_compile_definitions(wish_server PUBLIC WISH_SDL3_ENABLED)
   target_link_libraries(wish_server PUBLIC SDL3::SDL3 SDL3_image::SDL3_image)
@@ -383,7 +383,7 @@ target_include_directories(wish_server
 
 # bison is PUBLIC so consumers of wish_server also get bison's types and link deps.
 target_link_libraries(wish_server PUBLIC bison)
-# wish_client provides src/ui_descriptor.cpp (text -> generic dynamic tree),
+# wish_client provides src/ui/ui_descriptor.cpp (text -> generic dynamic tree),
 # which ui_importer.cpp builds on; PUBLIC so wish_server consumers also get
 # client::register_template et al. without linking wish_client separately.
 target_link_libraries(wish_server PUBLIC wish_client)
@@ -455,8 +455,7 @@ if(WISH_BUILD_SHARED)
           ${CMAKE_SOURCE_DIR}/include
       PRIVATE
           ${CMAKE_SOURCE_DIR}
-          ${CMAKE_SOURCE_DIR}/extern/bison
-          ${CMAKE_SOURCE_DIR}/extern/bison/src/rmi)
+          ${CMAKE_SOURCE_DIR}/extern/bison)
   set_target_properties(wish_client_dll PROPERTIES
       RUNTIME_OUTPUT_NAME wish_client      # wish_client.dll
       ARCHIVE_OUTPUT_NAME wish_client_dll  # wish_client_dll.lib — avoids collision with wish_client.lib

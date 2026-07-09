@@ -4,8 +4,8 @@
 ///
 /// Wraps wish::client in a plain-C interface so that any language with a
 /// C FFI can drive a wish session without linking against C++ directly.
-#include <client.hpp>
-#include <ui_descriptor.hpp>
+#include <client/client.hpp>
+#include <ui/ui_descriptor.hpp>
 #include <include/wish_client_c.h>
 
 #include "src/rmi/transport/named_pipe_transport.hpp"

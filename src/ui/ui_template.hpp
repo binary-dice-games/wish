@@ -1,0 +1,67 @@
+// MIT License © 2025 Binary Dice Games
+/// @file ui_template.hpp
+/// @brief Server-side __WishTemplate RMI object for named UI templates.
+#pragma once
+
+#include <context/context.hpp>
+
+#include "src/bison/bison_object.hpp"
+#include "src/rmi/server/context.hpp"
+
+#include <memory>
+
+namespace bdg::wish {
+
+/**
+ * @brief Server-side bison dynamic for the `__WishTemplate` RMI class.
+ *
+ * Exposes two methods:
+ * - `"register"_key(name, descriptor)` — resolves the (already-parsed)
+ *   `bison::dynamic` descriptor tree into a typed `ui_element` tree (against
+ *   the "wish" class registry) and stores it as the named template's
+ *   prototype. See `wish::import_descriptor_json`/`import_descriptor_yaml`
+ *   (src/ui/ui_descriptor.hpp) for the client-side JSON/YAML → `dynamic` step.
+ * - `"instantiate"_key(name)` — deep-clones the stored prototype
+ *   (`ui_element::clone_ptr()`), assigns every node a fresh RMI id, and
+ *   registers the resulting objects in the session.
+ *
+ * `wish::server::on_create_object` calls `init()` once per instance to
+ * supply the per-session context before the object is accessible via RMI.
+ */
+class ui_template : public bison::dynamic {
+ public:
+  explicit ui_template(bison::dynamic&& base);
+
+  /**
+   * @brief Inject session context.
+   *
+   * Called exactly once by `wish::server::on_create_object` after the object
+   * is created and before it is accessible via RMI.
+   *
+   * @param ctx      Per-session RMI context; must outlive `*this`.
+   * @param sync_ctx Shared wish session state.
+   */
+  void init(bison::rmi::context& ctx, sync_context_ptr sync_ctx) {
+    ctx_ = &ctx;
+    sync_ctx_ = std::move(sync_ctx);
+  }
+
+  bison::dynamic do_register(const bison::dynamic& params);
+  bison::dynamic do_instantiate(const bison::dynamic& params);
+
+  /// @throws std::logic_error if called outside RMI dispatch.
+  context& sess() {
+    if (!detail::current_context)
+      throw std::logic_error("wish: ui_template method called outside RMI dispatch");
+    return *detail::current_context;
+  }
+
+ private:
+  bison::rmi::context* ctx_{nullptr};
+  sync_context_ptr sync_ctx_;
+};
+
+/// @brief Register `ui_template` as the `__WishTemplate` class prototype.
+void register_ui_template();
+
+} // namespace bdg::wish
