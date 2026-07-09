@@ -18,8 +18,26 @@ Shared transport flags (all modes):
 | `--pipe=<path>` | Named pipe / Unix socket |
 | `--verbose` | Trace RMI messages |
 
-`bridge` mode adds prefixed variants: `--up-host`, `--up-port`, `--up-pipe`
-(upstream) and `--down-host`, `--down-port`, `--down-pipe` (downstream).
+`bridge` mode reuses the shared transport flags for its downstream side and
+adds `--upstream_transport`, `--upstream_host`, `--upstream_port`,
+`--upstream_name` for its upstream side (see "bridge mode" below).
+
+### Factory-method pattern (client/server/standalone/bridge)
+
+Each of the four `bison::app::*_app` scaffolds has a virtual factory method
+(`make_client()`, `make_server()`, `make_standalone()`, `make_bridge()`) that
+constructs the RMI object the app's lifecycle drives. Wish overrides the
+relevant factory in each of its four app classes to construct its own
+session/server/bridge type (`wish::client`, `wish::server`,
+`wish_standalone_session`, `wish_bridge`) instead of the generic bison type,
+so hooks like `on_session()` can `static_cast` to the wish-specific type and
+call wish-level methods (`upload_file()`, `set_style()`, etc.) without
+duplicating the base class's connect/run/disconnect lifecycle. `server_app`
+and `standalone_app` additionally needed small hook seams
+(`server_app::run_with_transport()` already existed; `standalone_app` gained
+`open_session()`/`close_session()`) because `wish::server`/`wish::standalone`
+replace `listen()`/`connect()` with their own `start()` that also spins up a
+render thread.
 
 ---
 
@@ -28,10 +46,11 @@ Shared transport flags (all modes):
 `app/wish_cli/main.cpp` reads `argv[1]` and dispatches:
 
 ```
-"server" → wish_server_app::run(argc-1, argv+1)
-"client" → wish_client_app::run(argc-1, argv+1)
-"bridge" → wish_bridge_app::run(argc-1, argv+1)
-else     → print_usage(), exit(1)
+"server"     → wish_server_app{}.run(argc-1, argv+1)
+"client"     → wish_client_app{}.run(argc-1, argv+1)
+"standalone" → run_standalone_mode(argc-1, argv+1)   (wraps wish_standalone_app{}.run(...))
+"bridge"     → wish_bridge_app{}.run(argc-1, argv+1)
+else         → print_usage(), exit(1)
 ```
 
 Shared transport flags (`--host`, `--port`, `--pipe`, `--verbose`) are
@@ -148,30 +167,29 @@ and returns. The session blocks in `on_session()` until `signal_done()` fires.
 
 ## bridge mode
 
-**Class**: `wish_bridge_app` (extends `rmi::bridge`)
+**Classes**: `wish_bridge` (extends `bison::rmi::bridge`, desktop chrome) and
+`wish_bridge_app` (extends `bison::app::bridge_app`, CLI scaffold)
 **Sources**: `app/wish_cli/bridge/wish_bridge_app.hpp/.cpp`
 
-### Required bison change
-
-`rmi::bridge::upstream_client_` is private. A one-line protected accessor is
-added to `bridge.hpp` so subclasses can reach the upstream RMI client:
-
-```cpp
-protected:
-  rmi::client& upstream() { return upstream_client_; }
-```
+`bison::rmi::bridge` already exposes a protected `upstream()` accessor
+(`rmi::client& upstream() { return upstream_client_; }`) that subclasses use
+to reach the upstream RMI client -- no bison change needed for this.
+`wish_bridge_app::make_bridge()` overrides `bison::app::bridge_app`'s factory
+to construct a `wish_bridge` instead of the generic internal bridge, so
+`wish_bridge`'s own `on_client_connected`/`on_client_disconnected` overrides
+(which call `upstream()`) run.
 
 ### Flags
 
 | Group | Flags |
 |-------|-------|
-| Upstream | `--up-host` (127.0.0.1), `--up-port` (7070), `--up-pipe` ("") |
-| Downstream | `--down-host` (0.0.0.0), `--down-port` (7071), `--down-pipe` ("") |
-| Common | `--verbose` (shared, DECLARE only) |
+| Downstream | shared with server mode: `--transport`, `--host` (0.0.0.0), `--port` (7070), `--name`, `--cmd` |
+| Upstream | `--upstream_transport` (term), `--upstream_host` (127.0.0.1), `--upstream_port` (7070), `--upstream_name` |
+| Common | `--timeout` (shared with client mode), `--verbose`, `--debugger` |
 
 ### Desktop chrome
 
-`wish_bridge_app` overrides `on_client_connected` and `on_client_disconnected`
+`wish_bridge` overrides `on_client_connected` and `on_client_disconnected`
 to maintain a Window on the upstream session that shows the connected client
 count. On first connect the Window is created via `upstream().instantiate(...)`;
 subsequent connects/disconnects update its `title` field.
@@ -181,10 +199,11 @@ subsequent connects/disconnects update its `title` field.
 ```
 wish_bridge_app::run()
   parse flags
-  build upstream transport (up-pipe > up-tcp)
-  build downstream server transport (down-pipe > down-tcp)
-  bridge::start()   → connects upstream; starts downstream listen loop
-  block until SIGINT
+  build upstream transport (bison::app::bridge_app::run())
+  build downstream server transport
+  make_bridge()      → constructs a wish_bridge
+  bridge::start()    → connects upstream; starts downstream listen loop
+  block until Enter is pressed (or the spawned terminal exits, --transport=term)
   bridge::stop()
 ```
 
@@ -245,9 +264,12 @@ target_link_libraries(wish-cli PRIVATE wish gflags)
 
 1. Calculator form is in `wish_server` static lib — linked by both server and
    client modes.
-2. `rmi::bridge` (bison) is only extended, not modified beyond the one-line
-   `upstream()` accessor.
-3. Shared transport flags are defined exactly once, in `main.cpp`.
+2. `rmi::bridge` (bison) is extended (`wish_bridge`), not modified, aside from
+   the pre-existing `upstream()` accessor.
+3. Shared transport flags (`--transport`/`--host`/`--port`/`--name`/`--cmd`/
+   `--verbose`/`--debugger`/`--timeout`) are each defined exactly once: in
+   `main.cpp` for the combined `wish-cli` binary, or in the relevant
+   `standalone_main.cpp` for each mode's standalone binary.
 4. Client mode has no SDL renderer dependency; it links `wish_client` only
    (transitively via `wish`).
 5. Bridge desktop chrome uses `upstream().instantiate(...)` directly — no

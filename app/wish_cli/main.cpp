@@ -13,8 +13,9 @@
  *                   (--list | --run=<app>) [-- app-args...]
  *                   (--transport/--host/--port/--name are not accepted here —
  *                   standalone mode runs server and client in one process)
- *   wish bridge     [--up-host H] [--up-port P] [--up-pipe PATH]
- *                   [--down-host H] [--down-port P] [--down-pipe PATH]
+ *   wish bridge     [--transport T] [--host H] [--port P] [--name PATH]
+ *                   [--upstream_transport T] [--upstream_host H]
+ *                   [--upstream_port P] [--upstream_name PATH] [--timeout MS]
  */
 #include "app/wish_cli/bridge/wish_bridge_app.hpp"
 #include "app/wish_cli/client/wish_client_app.hpp"
@@ -47,12 +48,14 @@ static void print_usage() {
                "                  (--list | --run=<app>) [--timeout MS] [-- app-args...]\n"
                "  wish standalone [--title T] [--width W] [--height H]\n"
                "                  (--list | --run=<app>) [-- app-args...]\n"
-               "  wish bridge     [--up-host H --up-port P ...] [--down-host H --down-port P ...]\n"
+               "  wish bridge     [--transport T] [--host H] [--port P] [--name PATH]\n"
+               "                  [--upstream_transport T] [--upstream_host H] [--upstream_port P]\n"
+               "                  [--upstream_name PATH] [--timeout MS]\n"
                "\n"
                "Anything after a literal `--` is forwarded to the app, e.g.\n"
                "  wish client --run=notepad -- path/to/file\n"
                "\n"
-               "Shared transport flags (server and client):\n"
+               "Shared transport flags (server, client, and bridge downstream):\n"
                "  --transport T  tcp, pipe, pty, or console (default: tcp)\n"
                "  --host H       Host address (default: 0.0.0.0 for server, 127.0.0.1 for client)\n"
                "  --port P       Port                        (default: 7070)\n"
@@ -60,6 +63,12 @@ static void print_usage() {
                "  --cmd C        Command to spawn             (transport=console, server only)\n"
                "  --verbose      Print RMI trace messages\n"
                "  --debugger     Wait for debugger attachment before starting\n"
+               "\n"
+               "wish bridge's upstream (client) side has its own flag set:\n"
+               "  --upstream_transport T  tcp, pipe, or term  (default: term)\n"
+               "  --upstream_host H       Upstream host       (default: 127.0.0.1)\n"
+               "  --upstream_port P       Upstream port       (default: 7070)\n"
+               "  --upstream_name PATH    Upstream named-pipe / Unix-socket path (upstream_transport=pipe)\n"
                "\n"
                "wish standalone runs the server and client in the same process (no\n"
                "transport, no serialization) and does not accept --transport/--host/\n"
@@ -101,7 +110,8 @@ int main(int argc, char** argv) {
 
   if (std::strcmp(subcmd, "bridge") == 0) {
     gflags::SetUsageMessage("wish bridge - multiplexing bridge with upstream/downstream transports");
-    return bdg::wish::wish_bridge_app::run(sub_argc, sub_argv);
+    bdg::wish::wish_bridge_app app;
+    return app.run(sub_argc, sub_argv);
   }
 
   std::cerr << "wish: unknown subcommand '" << subcmd << "'\n\n";

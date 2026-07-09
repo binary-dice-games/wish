@@ -116,49 +116,22 @@ void wish_client_app::on_connect_params(bison::dynamic& params) const {
 }
 
 int wish_client_app::on_session(bison::rmi::client& c) {
-  if (!wish_client_)
-    throw std::runtime_error("wish_client not initialized");
+  wish_client_ = static_cast<wish::client*>(&c);
 
   const auto& apps = registered_apps();
   auto it = apps.find(app_name_);
   if (it == apps.end())
     throw std::runtime_error("unknown app: " + app_name_);
 
-  try {
-    wish_client_->set_style_preset(FLAGS_theme).get();    
-    it->second.run(*this); // set up proxies and event handlers
-    done_future_.wait(); // block until signal_done() fires
-  } catch (...) {
-    throw;
-  }
+  wish_client_->set_style_preset(FLAGS_theme).get();
+  it->second.run(*this); // set up proxies and event handlers
+  done_future_.wait(); // block until signal_done() fires
   return 0;
 }
 
-int wish_client_app::run_with_transport(
-    std::unique_ptr<bison::rmi::transport::client_transport_iface> transport) {
-  // Create a wish::client with the transport provided by the parent.
-  // This allows on_session() to access wish-specific methods.
-  wish::client client{std::move(transport)};
-  wish_client_ = &client;
-
-  try {
-    bison::dynamic params;
-    on_connect_params(params);
-    client.connect(std::move(params));
-
-    try {
-      on_connected();
-      int result = on_session(client);
-      client.disconnect();
-      return result;
-    } catch (...) {
-      client.disconnect();
-      throw;
-    }
-  } catch (const std::exception& ex) {
-    on_error(ex.what());
-    return 1;
-  }
+std::unique_ptr<bison::rmi::client> wish_client_app::make_client(
+    std::unique_ptr<bison::rmi::transport::client_transport_iface> transport) const {
+  return std::make_unique<wish::client>(std::move(transport));
 }
 
 } // namespace bdg::wish

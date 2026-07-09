@@ -60,6 +60,11 @@ class wish_server_app : public bison::app::server_app {
  protected:
   void register_classes() override;
 
+  /// @brief Create a wish::server with the renderer selected by --renderer,
+  ///        instead of the generic internal server bison::app::server_app
+  ///        would otherwise build.
+  std::unique_ptr<bison::rmi::server> make_server(bison::rmi::transport::server_transport_iface& transport) override;
+
   int run_with_transport(
       bison::rmi::transport::server_transport_iface& transport,
       std::function<void()> wait_for_shutdown = nullptr,

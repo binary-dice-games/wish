@@ -15,6 +15,7 @@ DEFINE_string(host, "0.0.0.0", "Not supported in standalone mode");
 DEFINE_int32(port, 7070, "Not supported in standalone mode");
 DEFINE_string(name, "", "Not supported in standalone mode");
 DEFINE_bool(verbose, false, "Print session trace messages to stdout");
+DEFINE_bool(debugger, false, "Wait for debugger attachment before starting");
 
 DEFINE_string(title, "wish", "Window title");
 DEFINE_int32(width, 1280, "Window width in pixels");

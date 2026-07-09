@@ -14,7 +14,7 @@
 #include <chrono>
 #include <filesystem>
 #include <iostream>
-#include <thread>
+#include <stdexcept>
 
 // ── Shared flags — reused from main.cpp / wish_server_app.cpp / ──────────────
 // wish_client_app.cpp so this mode doesn't redefine (and collide with) them.
@@ -48,6 +48,11 @@ namespace bdg::wish {
 
 using namespace bison;
 
+// ── wish_standalone_session ───────────────────────────────────────────────────
+
+wish_standalone_session::wish_standalone_session(std::unique_ptr<renderer> r, std::vector<std::string> app_args)
+    : standalone(std::move(r)), app_args_(std::move(app_args)) {}
+
 void wish_standalone_session::keep_alive(rmi::proxy::dynamic&& proxy) {
   live_proxies_.push_back(std::move(proxy));
 }
@@ -64,9 +69,19 @@ void wish_standalone_session::signal_done() {
   }
 }
 
+void wish_standalone_session::wait_until_done() {
+  // Blocks until either the app signals completion (e.g. a "closed" event
+  // handler calling signal_done()) or the user closes the SDL3 window.
+  using namespace std::chrono_literals;
+  while (!should_quit()) {
+    if (done_future_.wait_for(50ms) == std::future_status::ready)
+      break;
+  }
+}
+
 namespace {
 
-static std::unique_ptr<renderer> make_renderer() {
+std::unique_ptr<renderer> make_renderer() {
   if (FLAGS_renderer == "sdl3") {
 #ifdef WISH_SDL3_ENABLED
     return std::make_unique<sdl3_renderer>(FLAGS_title.c_str(), FLAGS_width, FLAGS_height, FLAGS_font_size);
@@ -109,7 +124,9 @@ bool reject_transport_flags() {
 
 } // namespace
 
-int run_standalone_mode(int argc, char** argv) {
+// ── wish_standalone_app ────────────────────────────────────────────────────────
+
+int wish_standalone_app::run(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
   if (reject_transport_flags())
@@ -137,56 +154,71 @@ int run_standalone_mode(int argc, char** argv) {
     std::cerr << "[wish standalone] use --list to see apps or --run=<name> to launch one\n";
     return 1;
   }
-  const auto& apps = registered_apps();
-  auto it = apps.find(FLAGS_run);
-  if (it == apps.end()) {
+  if (registered_apps().find(FLAGS_run) == registered_apps().end()) {
     std::cerr << "[wish standalone] unknown app '" << FLAGS_run << "'. Use --list to see available apps.\n";
     return 1;
   }
 
-  try {
-    // register_all() also runs inside session.start(); calling it here first
-    // lets make_standalone_logger() instantiate "__WishLogger" up front
-    // (mirrors wish_server_app's register_classes()-before-logger ordering).
-    register_all();
+  // Store app-specific data before delegating to parent's run(), which
+  // handles register_classes()/make_standalone()/on_session() dispatch.
+  app_name_ = FLAGS_run;
+  app_args_.assign(argv + 1, argv + argc);
 
+  return bison::app::standalone_app::run(argc, argv);
+}
+
+void wish_standalone_app::register_classes() {
+  register_all();
+}
+
+std::unique_ptr<bison::rmi::standalone> wish_standalone_app::make_standalone() {
 #ifndef WISH_SDL3_ENABLED
-    // Standalone mode fuses server and client into one interactive process
-    // and has always been SDL3-only; unlike `wish server`, it has no
-    // --renderer flag / web backend option. wish-cli itself may still be
-    // built with WISH_ENABLE_SDL3=OFF (e.g. a web-only deployment), in
-    // which case this subcommand isn't available at runtime.
-    std::cerr << "[wish standalone] this binary was built with WISH_ENABLE_SDL3=OFF; "
-                 "standalone mode requires the SDL3 renderer.\n";
-    return 1;
+  // Standalone mode fuses server and client into one interactive process
+  // and has always been SDL3-only; unlike `wish server`, it has no
+  // --renderer flag / web backend option. wish-cli itself may still be
+  // built with WISH_ENABLE_SDL3=OFF (e.g. a web-only deployment), in
+  // which case this subcommand isn't available at runtime.
+  throw std::runtime_error(
+      "this binary was built with WISH_ENABLE_SDL3=OFF; standalone mode requires the SDL3 renderer.");
 #else
-    wish_standalone_session session{make_renderer()};
-    session.set_logger(make_standalone_logger());
-    session.app_args_.assign(argv + 1, argv + argc);
-    session.start();
-
-    if (FLAGS_renderer == "web") {
-      std::cout << "[wish] open http://" << FLAGS_web_bind << ':' << FLAGS_web_port << " in a browser\n" << std::flush;
-    }
-
-    it->second.run(session); // set up proxies and event handlers
-
-    // Block until either the app signals completion (e.g. a "closed" event
-    // handler calling signal_done()) or the user closes the SDL3 window.
-    using namespace std::chrono_literals;
-    while (!session.should_quit()) {
-      if (session.done_future_.wait_for(50ms) == std::future_status::ready)
-        break;
-    }
-
-    session.stop();
-    return 0;
+  auto session = std::make_unique<wish_standalone_session>(make_renderer(), app_args_);
+  session->set_logger(make_standalone_logger()); // must be called before start()
+  return session;
 #endif
+}
 
-  } catch (const std::exception& ex) {
-    std::cerr << "[wish standalone] error: " << ex.what() << '\n';
-    return 1;
+void wish_standalone_app::open_session(bison::rmi::standalone& sa) {
+  static_cast<wish_standalone_session&>(sa).start();
+}
+
+void wish_standalone_app::close_session(bison::rmi::standalone& sa) {
+  static_cast<wish_standalone_session&>(sa).stop();
+}
+
+int wish_standalone_app::on_session(bison::rmi::standalone& sa) {
+  auto& session = static_cast<wish_standalone_session&>(sa);
+
+  const auto& apps = registered_apps();
+  auto it = apps.find(app_name_);
+  if (it == apps.end())
+    throw std::runtime_error("unknown app: " + app_name_);
+
+  if (FLAGS_renderer == "web") {
+    std::cout << "[wish] open http://" << FLAGS_web_bind << ':' << FLAGS_web_port << " in a browser\n" << std::flush;
   }
+
+  it->second.run(session); // set up proxies and event handlers
+  session.wait_until_done();
+  return 0;
+}
+
+void wish_standalone_app::on_error(const std::string& msg) const {
+  std::cerr << "[wish standalone] error: " << msg << '\n';
+}
+
+int run_standalone_mode(int argc, char** argv) {
+  wish_standalone_app app;
+  return app.run(argc, argv);
 }
 
 } // namespace bdg::wish

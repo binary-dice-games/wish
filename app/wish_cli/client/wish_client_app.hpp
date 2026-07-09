@@ -29,6 +29,9 @@ namespace bdg::wish {
  *   implements `wish_app_host` so app runners can instantiate remote objects
  *   and stay connected until the app signals completion.
  * - `on_connect_params()` populates the connection timeout from `FLAGS_timeout`.
+ * - `make_client()` constructs a `wish::client` instead of the generic
+ *   `bison::rmi::client`, so `on_session()` can access wish-specific methods
+ *   like `upload_file()`/`download_file()`.
  *
  * Session-runner functions (e.g. run_calculator) call `keep_alive()` to store
  * proxy handles that must remain valid until the session ends, and call
@@ -86,10 +89,11 @@ class wish_client_app : public bison::app::client_app, public wish_app_host {
 
   int on_session(bison::rmi::client& c) override;
 
-  /// @brief Override to create and own a wish::client directly instead of
-  ///        generic bison::rmi::client, so on_session() can access wish-specific
-  ///        methods like upload_file() and download_file().
-  int run_with_transport(std::unique_ptr<bison::rmi::transport::client_transport_iface> transport) override;
+  /// @brief Create a wish::client instead of a generic bison::rmi::client,
+  ///        so on_session() can access wish-specific methods like
+  ///        upload_file() and download_file() via a static_cast.
+  std::unique_ptr<bison::rmi::client> make_client(
+      std::unique_ptr<bison::rmi::transport::client_transport_iface> transport) const override;
 
  private:
   std::string app_name_;

@@ -168,12 +168,18 @@ void wish_server_app::on_verbose_trace(bison::key_t /*session_id*/, const std::s
     server_log_->info(line);
 }
 
+std::unique_ptr<bison::rmi::server> wish_server_app::make_server(
+    bison::rmi::transport::server_transport_iface& transport) {
+  return std::make_unique<server>(transport, make_renderer());
+}
+
 int wish_server_app::run_with_transport(
     bison::rmi::transport::server_transport_iface& transport,
     std::function<void()> /*wait_for_shutdown*/,
     std::function<bool()> is_shutdown_requested) {
   server_log_ = make_server_logger();
-  server srv{transport, make_renderer()};
+  auto srv_owner = make_server(transport);
+  auto& srv = static_cast<server&>(*srv_owner);
   srv.set_logger(server_log_);
   srv.start();
   server_log_->info("server started");

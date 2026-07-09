@@ -5,45 +5,45 @@
  */
 #include "app/wish_cli/bridge/wish_bridge_app.hpp"
 
-#include "src/rmi/transport/named_pipe_transport.hpp"
-#include "src/rmi/transport/socket_transport.hpp"
-
 #include "src/bison/bison.hpp"
 
 #include <gflags/gflags.h>
 
-#include <atomic>
-#include <chrono>
-#include <csignal>
 #include <iostream>
+#include <mutex>
 #include <stdexcept>
-#include <thread>
 
-// ── Shared flags (defined in main.cpp) ───────────────────────────────────────
+// ── Shared flags (defined in main.cpp for wish-cli, or bridge/standalone_main.cpp
+// for the standalone wish-bridge binary) ─────────────────────────────────────
+DECLARE_string(transport);
+DECLARE_string(host);
+DECLARE_int32(port);
+DECLARE_string(name);
+DECLARE_string(cmd);
 DECLARE_bool(verbose);
+DECLARE_bool(debugger);
+// Shared with wish client's --timeout: both express "per-request timeout to
+// the remote peer" (there, the wish server; here, the upstream server).
+DECLARE_int32(timeout);
 
 // ── Upstream (client side) flags ─────────────────────────────────────────────
-DEFINE_string(up_host, "127.0.0.1", "Upstream server host address");
-DEFINE_int32(up_port, 7070, "Upstream server port");
-DEFINE_string(up_pipe, "", "Upstream named-pipe / Unix-socket path");
-
-// ── Downstream (server side) flags ───────────────────────────────────────────
-DEFINE_string(down_host, "0.0.0.0", "Downstream bind host");
-DEFINE_int32(down_port, 7071, "Downstream listen port");
-DEFINE_string(down_pipe, "", "Downstream named-pipe / Unix-socket path");
+DEFINE_string(upstream_transport, "term", "Upstream transport to use: tcp, pipe, or term");
+DEFINE_string(upstream_host, "127.0.0.1", "Upstream host address (upstream_transport=tcp)");
+DEFINE_int32(upstream_port, 7070, "Upstream port (upstream_transport=tcp)");
+DEFINE_string(upstream_name, "", "Upstream named-pipe / Unix-socket path (upstream_transport=pipe)");
 
 namespace bdg::wish {
 
 using namespace bison;
 
-// ── Desktop chrome ────────────────────────────────────────────────────────────
+// ── wish_bridge — desktop chrome ───────────────────────────────────────────────
 
-std::string wish_bridge_app::desktop_title() const {
+std::string wish_bridge::desktop_title() const {
   return "Bridge Desktop - " + std::to_string(client_count_) + (client_count_ == 1 ? " client" : " clients") +
       " connected";
 }
 
-void wish_bridge_app::update_title() {
+void wish_bridge::update_title() {
   if (!desktop_window_.has_value())
     return;
   dynamic fields;
@@ -54,7 +54,7 @@ void wish_bridge_app::update_title() {
   }
 }
 
-void wish_bridge_app::on_client_connected(rmi::context& /*ctx*/) {
+void wish_bridge::on_client_connected(rmi::context& /*ctx*/) {
   std::lock_guard<std::mutex> lk(desktop_mtx_);
   ++client_count_;
 
@@ -75,69 +75,26 @@ void wish_bridge_app::on_client_connected(rmi::context& /*ctx*/) {
   }
 }
 
-void wish_bridge_app::on_client_disconnected(rmi::context& /*ctx*/) {
+void wish_bridge::on_client_disconnected(rmi::context& /*ctx*/) {
   std::lock_guard<std::mutex> lk(desktop_mtx_);
   if (client_count_ > 0)
     --client_count_;
   update_title();
 }
 
-// ── run ───────────────────────────────────────────────────────────────────────
+// ── wish_bridge_app ─────────────────────────────────────────────────────────────
 
-static std::atomic<bool> g_quit{false};
+std::string wish_bridge_app::bridge_description() const {
+  return "wish bridge.\n"
+         "Multiplexes downstream clients into one upstream wish server, "
+         "with a small desktop window showing the connected client count.";
+}
 
-int wish_bridge_app::run(int argc, char** argv) {
-  gflags::ParseCommandLineFlags(&argc, &argv, true);
-
-  // Build upstream (client-side) transport.
-  std::unique_ptr<rmi::transport::client_transport_iface> up_transport;
-  if (!FLAGS_up_pipe.empty()) {
-    up_transport = std::make_unique<rmi::transport::named_pipe_client_transport>(FLAGS_up_pipe);
-  } else {
-    up_transport =
-        std::make_unique<rmi::transport::socket_client_transport>(FLAGS_up_host, static_cast<uint16_t>(FLAGS_up_port));
-  }
-
-  // Build downstream (server-side) transport.
-  std::unique_ptr<rmi::transport::server_transport_iface> down_transport;
-  if (!FLAGS_down_pipe.empty()) {
-    down_transport = std::make_unique<rmi::transport::named_pipe_server_transport>(FLAGS_down_pipe);
-  } else {
-    down_transport = std::make_unique<rmi::transport::socket_server_transport>(
-        FLAGS_down_host, static_cast<uint16_t>(FLAGS_down_port));
-  }
-
-  // Install SIGINT handler.
-  std::signal(SIGINT, [](int) { g_quit.store(true); });
-
-  try {
-    wish_bridge_app bridge{std::move(down_transport), std::move(up_transport)};
-
-    if (!FLAGS_down_pipe.empty()) {
-      std::cout << "[bridge] downstream on pipe " << FLAGS_down_pipe << '\n';
-    } else {
-      std::cout << "[bridge] downstream on " << FLAGS_down_host << ':' << FLAGS_down_port << '\n';
-    }
-    if (!FLAGS_up_pipe.empty()) {
-      std::cout << "[bridge] upstream via pipe " << FLAGS_up_pipe << '\n';
-    } else {
-      std::cout << "[bridge] upstream " << FLAGS_up_host << ':' << FLAGS_up_port << '\n';
-    }
-
-    bridge.start();
-    std::cout << "[bridge] running - press Ctrl+C to stop\n" << std::flush;
-
-    while (!g_quit.load())
-      std::this_thread::sleep_for(std::chrono::milliseconds{100});
-
-    std::cout << "\n[bridge] stopping...\n" << std::flush;
-    bridge.stop();
-    return 0;
-
-  } catch (const std::exception& ex) {
-    std::cerr << "[bridge] error: " << ex.what() << '\n';
-    return 1;
-  }
+std::unique_ptr<bison::rmi::bridge> wish_bridge_app::make_bridge(
+    bison::rmi::transport::server_transport_iface& downstream,
+    std::unique_ptr<bison::rmi::transport::client_transport_iface> upstream_transport,
+    bison::dynamic upstream_params) {
+  return std::make_unique<wish_bridge>(downstream, std::move(upstream_transport), std::move(upstream_params));
 }
 
 } // namespace bdg::wish
