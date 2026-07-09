@@ -13,7 +13,8 @@
  *                   (--list | --run=<app>) [-- app-args...]
  *                   (--transport/--host/--port/--name are not accepted here —
  *                   standalone mode runs server and client in one process)
- *   wish desktop    [--transport T] [--host H] [--port P] [--name PATH]
+ *   wish desktop    [--downstream_transport T] [--downstream_host H]
+ *                   [--downstream_port P] [--downstream_name PATH]
  *                   [--upstream_transport T] [--upstream_host H]
  *                   [--upstream_port P] [--upstream_name PATH] [--timeout MS]
  */
@@ -38,6 +39,16 @@ DEFINE_bool(debugger, false, "Wait for debugger attachment before starting");
 // ── Server-only flags — consumed by bison::app::server_app ───────────────────
 DEFINE_string(cmd, "", "Command to spawn (transport=console)");
 
+// ── Desktop-only downstream flags — consumed by bison::app::bridge_app ───────
+// Explicitly downstream_-prefixed (unlike --transport/--host/--port/--name
+// above, shared by server/client) because a bridge has both a downstream and
+// an upstream transport active at once; a bare --port would be ambiguous
+// next to --upstream_port.
+DEFINE_string(downstream_transport, "tcp", "Downstream transport to use: tcp, pipe, or term");
+DEFINE_string(downstream_host, "0.0.0.0", "Downstream bind host address (downstream_transport=tcp)");
+DEFINE_int32(downstream_port, 7070, "Downstream listen port (downstream_transport=tcp)");
+DEFINE_string(downstream_name, "", "Downstream named-pipe / Unix-socket path (downstream_transport=pipe)");
+
 static void print_usage() {
   std::cout << "wish - remote GUI framework CLI\n"
                "\n"
@@ -48,14 +59,16 @@ static void print_usage() {
                "                  (--list | --run=<app>) [--timeout MS] [-- app-args...]\n"
                "  wish standalone [--title T] [--width W] [--height H]\n"
                "                  (--list | --run=<app>) [-- app-args...]\n"
-               "  wish desktop    [--transport T] [--host H] [--port P] [--name PATH]\n"
+               "  wish desktop    [--downstream_transport T] [--downstream_host H]\n"
+               "                  [--downstream_port P] [--downstream_name PATH]\n"
                "                  [--upstream_transport T] [--upstream_host H] [--upstream_port P]\n"
                "                  [--upstream_name PATH] [--timeout MS]\n"
                "\n"
                "Anything after a literal `--` is forwarded to the app, e.g.\n"
                "  wish client --run=notepad -- path/to/file\n"
                "\n"
-               "Shared transport flags (server, client, and desktop downstream):\n"
+               "Shared transport flags (server and client only -- wish desktop has its own\n"
+               "downstream_/upstream_-prefixed flag sets, see below):\n"
                "  --transport T  tcp, pipe, pty, or console (default: tcp)\n"
                "  --host H       Host address (default: 0.0.0.0 for server, 127.0.0.1 for client)\n"
                "  --port P       Port                        (default: 7070)\n"
@@ -64,7 +77,15 @@ static void print_usage() {
                "  --verbose      Print RMI trace messages\n"
                "  --debugger     Wait for debugger attachment before starting\n"
                "\n"
-               "wish desktop's upstream (client) side has its own flag set:\n"
+               "wish desktop has two transports active at once, so each side gets its own\n"
+               "explicitly-prefixed flag set to avoid ambiguity -- downstream (accepting\n"
+               "client connections):\n"
+               "  --downstream_transport T  tcp, pipe, or term  (default: tcp)\n"
+               "  --downstream_host H       Downstream host     (default: 0.0.0.0)\n"
+               "  --downstream_port P       Downstream port     (default: 7070)\n"
+               "  --downstream_name PATH    Downstream named-pipe / Unix-socket path (downstream_transport=pipe)\n"
+               "\n"
+               "...and upstream (the single relayed connection):\n"
                "  --upstream_transport T  tcp, pipe, or term  (default: term)\n"
                "  --upstream_host H       Upstream host       (default: 127.0.0.1)\n"
                "  --upstream_port P       Upstream port       (default: 7070)\n"

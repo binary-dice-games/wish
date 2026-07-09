@@ -69,7 +69,8 @@ class wish_desktop : public bison::rmi::bridge {
  *        desktop shell.
  *
  * Extends `bison::app::bridge_app` so it inherits transport selection
- * (downstream `--transport`/`--host`/`--port`/`--name`/`--cmd`, upstream
+ * (downstream `--downstream_transport`/`--downstream_host`/
+ * `--downstream_port`/`--downstream_name`/`--cmd`, upstream
  * `--upstream_transport`/`--upstream_host`/`--upstream_port`/
  * `--upstream_name`, shared `--timeout`/`--verbose`/`--debugger`) and the
  * start/stop lifecycle. Only wish-specific behaviour is added here:

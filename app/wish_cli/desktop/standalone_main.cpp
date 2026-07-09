@@ -6,11 +6,11 @@
 #include <gflags/gflags.h>
 
 // Shared transport flags — declared by bison::app::bridge_app internals.
-DEFINE_string(transport, "tcp", "Downstream transport to use: tcp, pipe, or term");
-DEFINE_string(host, "0.0.0.0", "Downstream bind host address (transport=tcp)");
-DEFINE_int32(port, 7071, "Downstream listen port (transport=tcp)");
-DEFINE_string(name, "", "Downstream named-pipe / Unix-socket path (transport=pipe)");
-DEFINE_string(cmd, "", "Command to spawn (transport=term)");
+DEFINE_string(downstream_transport, "tcp", "Downstream transport to use: tcp, pipe, or term");
+DEFINE_string(downstream_host, "0.0.0.0", "Downstream bind host address (downstream_transport=tcp)");
+DEFINE_int32(downstream_port, 7071, "Downstream listen port (downstream_transport=tcp)");
+DEFINE_string(downstream_name, "", "Downstream named-pipe / Unix-socket path (downstream_transport=pipe)");
+DEFINE_string(cmd, "", "Command to spawn (downstream_transport=term)");
 DEFINE_int32(timeout, 30000, "Upstream per-request timeout in milliseconds");
 DEFINE_bool(verbose, false, "Print downstream request/response trace messages to stdout");
 DEFINE_bool(debugger, false, "Wait for debugger attachment before starting");

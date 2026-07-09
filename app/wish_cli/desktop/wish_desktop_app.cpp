@@ -19,10 +19,10 @@
 
 // ── Shared flags (defined in main.cpp for wish-cli, or desktop/standalone_main.cpp
 // for the standalone wish-desktop binary) ────────────────────────────────────
-DECLARE_string(transport);
-DECLARE_string(host);
-DECLARE_int32(port);
-DECLARE_string(name);
+DECLARE_string(downstream_transport);
+DECLARE_string(downstream_host);
+DECLARE_int32(downstream_port);
+DECLARE_string(downstream_name);
 DECLARE_string(cmd);
 DECLARE_bool(verbose);
 DECLARE_bool(debugger);
