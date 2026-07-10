@@ -25,12 +25,30 @@ gflags::CommandLineFlagInfo flag_info(const char* name) {
   return info;
 }
 
+// MSVC lacks the POSIX setenv/unsetenv names; _putenv_s is the equivalent,
+// and an empty value removes the variable just like unsetenv.
+void set_env(const char* name, const char* value) {
+#if defined(_WIN32)
+  _putenv_s(name, value);
+#else
+  setenv(name, value, 1);
+#endif
+}
+
+void unset_env(const char* name) {
+#if defined(_WIN32)
+  _putenv_s(name, "");
+#else
+  unsetenv(name);
+#endif
+}
+
 } // namespace
 
 TEST(EnvFlagsTest, EnvVarBecomesFlagDefaultWhenSet) {
-  setenv("WISH_TEST_ENV_FLAG_STR", "from_env", 1);
+  set_env("WISH_TEST_ENV_FLAG_STR", "from_env");
   wish::apply_env_flag_defaults();
-  unsetenv("WISH_TEST_ENV_FLAG_STR");
+  unset_env("WISH_TEST_ENV_FLAG_STR");
 
   auto info = flag_info("test_env_flag_str");
   EXPECT_EQ(info.default_value, "from_env");
@@ -41,7 +59,7 @@ TEST(EnvFlagsTest, EnvVarBecomesFlagDefaultWhenSet) {
 }
 
 TEST(EnvFlagsTest, NoEnvVarLeavesFlagAtCompiledDefault) {
-  unsetenv("WISH_TEST_ENV_FLAG_INT");
+  unset_env("WISH_TEST_ENV_FLAG_INT");
   wish::apply_env_flag_defaults();
 
   auto info = flag_info("test_env_flag_int");
@@ -56,9 +74,9 @@ TEST(EnvFlagsTest, ExplicitlySetFlagValueOutranksEnvVar) {
   // not the already-set current value -- mirroring "CLI flag always wins".
   gflags::SetCommandLineOptionWithMode("test_env_flag_int", "42", gflags::SET_FLAGS_VALUE);
 
-  setenv("WISH_TEST_ENV_FLAG_INT", "999", 1);
+  set_env("WISH_TEST_ENV_FLAG_INT", "999");
   wish::apply_env_flag_defaults();
-  unsetenv("WISH_TEST_ENV_FLAG_INT");
+  unset_env("WISH_TEST_ENV_FLAG_INT");
 
   auto info = flag_info("test_env_flag_int");
   EXPECT_EQ(info.current_value, "42");
