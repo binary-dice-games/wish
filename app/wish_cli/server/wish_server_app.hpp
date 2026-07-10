@@ -52,6 +52,10 @@ class wish_server_app : public bison::app::server_app {
  public:
   std::string server_description() const override;
 
+  std::string terminal_label() const override {
+    return "wish-server";
+  }
+
   void on_listening() const override;
 
   /// @brief Route verbose trace lines through the server logger (file + stdout).

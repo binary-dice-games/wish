@@ -120,6 +120,10 @@ class wish_desktop_app : public bison::app::bridge_app {
  protected:
   std::string bridge_description() const override;
 
+  std::string terminal_label() const override {
+    return "wish-desktop";
+  }
+
   std::unique_ptr<bison::rmi::bridge> make_bridge(
       bison::rmi::transport::server_transport_iface& downstream_transport,
       std::unique_ptr<bison::rmi::transport::client_transport_iface> upstream_transport,
