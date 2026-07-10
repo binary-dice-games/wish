@@ -46,17 +46,20 @@ DEFINE_string(web_bind, "127.0.0.1", "Bind address for --renderer web (localhost
 
 namespace bdg::wish {
 
-#ifdef WISH_SDL3_ENABLED
-
 // ── server_renderer ───────────────────────────────────────────────────────────
 //
-// Extends sdl3_renderer with a fullscreen host window that provides:
+// Extends a given imgui-based renderer backend (sdl3_renderer or
+// web_renderer) with a fullscreen host window that provides:
 //   - A DockSpace so client windows can be docked anywhere in the server view.
 //   - A menu bar with server-level actions (including Quit).
+//
+// Templatized on the backend so the same host-window UI is shared by every
+// renderer that draws through ImGui, rather than duplicating it per backend.
 
-class server_renderer : public sdl3_renderer {
+template <typename Base>
+class server_renderer : public Base {
  public:
-  using sdl3_renderer::sdl3_renderer;
+  using Base::Base;
 
   void render_server_frame() override {
     const ImGuiViewport* vp = ImGui::GetMainViewport();
@@ -77,7 +80,7 @@ class server_renderer : public sdl3_renderer {
     if (ImGui::BeginMenuBar()) {
       if (ImGui::BeginMenu("Server")) {
         if (ImGui::MenuItem("Quit", "Alt+F4"))
-          request_quit();
+          this->request_quit();
         ImGui::EndMenu();
       }
       if (ImGui::BeginMenu("View")) {
@@ -94,21 +97,20 @@ class server_renderer : public sdl3_renderer {
   }
 };
 
-#endif // WISH_SDL3_ENABLED
-
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 static std::unique_ptr<renderer> make_renderer() {
   if (FLAGS_renderer == "sdl3") {
 #ifdef WISH_SDL3_ENABLED
-    return std::make_unique<server_renderer>(FLAGS_title.c_str(), FLAGS_width, FLAGS_height, FLAGS_font_size);
+    return std::make_unique<server_renderer<sdl3_renderer>>(
+        FLAGS_title.c_str(), FLAGS_width, FLAGS_height, FLAGS_font_size);
 #else
     throw std::runtime_error("--renderer=sdl3 requested but this binary was built with WISH_ENABLE_SDL3=OFF");
 #endif
   }
   if (FLAGS_renderer == "web") {
 #ifdef WISH_WEB_ENABLED
-    return std::make_unique<web_renderer>(FLAGS_web_bind, FLAGS_web_port, FLAGS_font_size);
+    return std::make_unique<server_renderer<web_renderer>>(FLAGS_web_bind, FLAGS_web_port, FLAGS_font_size);
 #else
     throw std::runtime_error("--renderer=web requested but this binary was built with WISH_ENABLE_WEB=OFF");
 #endif
