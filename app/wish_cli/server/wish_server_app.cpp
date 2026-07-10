@@ -173,10 +173,7 @@ std::unique_ptr<bison::rmi::server> wish_server_app::make_server(
   return std::make_unique<server>(transport, make_renderer());
 }
 
-int wish_server_app::run_with_transport(
-    bison::rmi::transport::server_transport_iface& transport,
-    std::function<void()> /*wait_for_shutdown*/,
-    std::function<bool()> is_shutdown_requested) {
+int wish_server_app::run_with_transport(bison::rmi::transport::server_transport_iface& transport) {
   server_log_ = make_server_logger();
   auto srv_owner = make_server(transport);
   auto& srv = static_cast<server&>(*srv_owner);
@@ -189,7 +186,7 @@ int wish_server_app::run_with_transport(
   // terminal -- that terminal process exiting. This is what lets --renderer
   // web be stopped at all: it has no window and nothing installs a SIGINT
   // handler for this process.
-  while (!srv.should_quit() && !(is_shutdown_requested && is_shutdown_requested()))
+  while (!srv.should_quit() && !is_shutdown_requested())
     std::this_thread::sleep_for(std::chrono::milliseconds{50});
   srv.stop();
   server_log_.reset();

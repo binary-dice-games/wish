@@ -210,11 +210,26 @@ Downstream clients' own `Window` objects need no special handling to dock:
 ImGui auto-docks any window lacking `NoDocking` into whichever dockspace is
 open that frame -- the existing bridge proxy relay (unchanged) is sufficient.
 
-The "Quit" `MenuItem`'s `"clicked"` event calls `std::exit(0)` directly (no
-graceful `bridge::stop()` sequencing). The clock label is updated once a
-second by a dedicated thread (stop flag + condition variable, joined in
-`wish_desktop`'s destructor before the base `bridge` destructor disconnects
-upstream).
+The "Quit" `MenuItem`'s `"clicked"` event calls `wish_desktop::request_quit()`
+directly (no external handler injected -- `wish_desktop` owns its own
+quit condition variable). This wakes `wish_desktop::wait_for_quit()`, which
+`wish_desktop_app::wait_for_shutdown()` blocks on (overriding
+`bison::app::bridge_app::wait_for_shutdown()`'s default
+`std::getline(std::cin, ...)` block so both console Enter and the Quit click
+can wake it -- a detached thread runs the `getline` and also calls
+`request_quit()`). Once woken, `wait_for_shutdown()` returns into
+`bridge_app::run_with_transport()`, which calls `br->stop()` and unwinds --
+releasing terminal state (`scoped_terminal_config`/`terminal`) via RAII
+instead of terminating the process mid-teardown. Under
+`--downstream_transport=term`, `bridge_app::run()` sets `active_term_` before
+calling `wait_for_shutdown()`; `wish_desktop_app`'s override checks
+`active_term_` and, when set, defers to the base class's wait on the spawned
+terminal exiting instead of racing it for stdin -- so the Quit click has no
+effect in that mode, same as before this override existed.
+
+The clock label is updated once a second by a dedicated thread (stop flag +
+condition variable, joined in `wish_desktop`'s destructor before the base
+`bridge` destructor disconnects upstream).
 
 ### Lifecycle
 

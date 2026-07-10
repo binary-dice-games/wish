@@ -122,7 +122,7 @@ void wish_desktop::build_chrome() {
 
     if (quit_id.id != 0u) {
       quit_proxy_ = upstream().make_proxy(quit_id);
-      quit_proxy_->onEvent("clicked"_key, [](dynamic) { std::exit(0); });
+      quit_proxy_->onEvent("clicked"_key, [this](dynamic) { request_quit(); });
     }
 
     if (clock_id.id != 0u) {
@@ -132,6 +132,19 @@ void wish_desktop::build_chrome() {
   } catch (const std::exception& ex) {
     std::cerr << "[desktop] chrome build error: " << ex.what() << '\n';
   }
+}
+
+void wish_desktop::request_quit() {
+  {
+    std::lock_guard<std::mutex> lk(quit_mtx_);
+    quit_requested_ = true;
+  }
+  quit_cv_.notify_all();
+}
+
+void wish_desktop::wait_for_quit() {
+  std::unique_lock<std::mutex> lk(quit_mtx_);
+  quit_cv_.wait(lk, [this] { return quit_requested_; });
 }
 
 void wish_desktop::run_clock() {
@@ -169,10 +182,11 @@ std::string wish_desktop_app::bridge_description() const {
 }
 
 std::unique_ptr<bison::rmi::bridge> wish_desktop_app::make_bridge(
-    bison::rmi::transport::server_transport_iface& downstream,
+    bison::rmi::transport::server_transport_iface& downstream_transport,
     std::unique_ptr<bison::rmi::transport::client_transport_iface> upstream_transport,
     bison::dynamic upstream_params) {
-  auto br = std::make_unique<wish_desktop>(downstream, std::move(upstream_transport), std::move(upstream_params));
+  auto br =
+      std::make_unique<wish_desktop>(downstream_transport, std::move(upstream_transport), std::move(upstream_params));
   desktop_ = br.get();
   return br;
 }
@@ -181,6 +195,22 @@ void wish_desktop_app::on_listening() const {
   bison::app::bridge_app::on_listening();
   if (desktop_)
     desktop_->build_chrome();
+}
+
+void wish_desktop_app::wait_for_shutdown() {
+  if (active_term_ || !desktop_) {
+    bison::app::bridge_app::wait_for_shutdown();
+    return;
+  }
+
+  std::thread stdin_thread([this] {
+    std::string line;
+    std::getline(std::cin, line);
+    desktop_->request_quit();
+  });
+  stdin_thread.detach();
+
+  desktop_->wait_for_quit();
 }
 
 } // namespace bdg::wish

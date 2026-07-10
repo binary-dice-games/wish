@@ -24,11 +24,11 @@ class logger;
  * - `register_classes()` registers the wish UI class hierarchy.
  * - `run_with_transport()` creates a `wish::server` with the renderer
  *   selected by `--renderer` and blocks until either the renderer requests a
- *   stop (window close for `sdl3`; `request_quit()` for `web`) or, when
- *   `--transport=term` spawned a terminal, that terminal process exits
- *   (e.g. the operator typed `exit`) -- the latter is how `--renderer web`
- *   is normally stopped, since it has no window to close and nothing
- *   installs a Ctrl+C/SIGINT handler for it.
+ *   stop (window close for `sdl3`; `request_quit()` for `web`) or
+ *   `is_shutdown_requested()` reports the spawned terminal exited (e.g. the
+ *   operator typed `exit`), when `--transport=term` selected it -- the
+ *   latter is how `--renderer web` is normally stopped, since it has no
+ *   window to close and nothing installs a Ctrl+C/SIGINT handler for it.
  *
  * CLI flags (defined in `wish_server_app.cpp`, used here via DECLARE_*
  * where shared with other subcommands):
@@ -65,10 +65,7 @@ class wish_server_app : public bison::app::server_app {
   ///        would otherwise build.
   std::unique_ptr<bison::rmi::server> make_server(bison::rmi::transport::server_transport_iface& transport) override;
 
-  int run_with_transport(
-      bison::rmi::transport::server_transport_iface& transport,
-      std::function<void()> wait_for_shutdown = nullptr,
-      std::function<bool()> is_shutdown_requested = nullptr) override;
+  int run_with_transport(bison::rmi::transport::server_transport_iface& transport) override;
 
  private:
   /// @brief Shared logger for all sessions; always active when the server runs.

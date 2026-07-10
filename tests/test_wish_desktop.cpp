@@ -110,3 +110,29 @@ TEST_F(WishDesktopTest, ClockLabelTextTicks) {
   EXPECT_EQ(text[2], ':');
   EXPECT_EQ(text[5], ':');
 }
+
+TEST_F(WishDesktopTest, QuitClickInvokesRequestQuit) {
+  desktop_.build_chrome();
+
+  ASSERT_NE(upstream_srv_.last_session, nullptr);
+  wish::context& sess = *upstream_srv_.last_session;
+
+  bdg::bison::key_t quit_id{0u};
+  sess.ui_objects.with(
+      "main_menu.m_file.mi_quit",
+      [&](const wish::ui_element_ptr& elem) {
+        quit_id = elem->get_as<bdg::bison::key_t>("__wish_id"_key, bdg::bison::key_t{});
+      });
+  ASSERT_NE(quit_id.id, 0u);
+
+  // Simulate the renderer's enqueue_event() for a Quit click by emitting
+  // directly through the session, the same way the server drains a pending
+  // "clicked" event -- exercises the same onEvent registration/dispatch path
+  // build_chrome() wires up.
+  ASSERT_TRUE(sess.emit_event);
+  sess.emit_event(quit_id, "clicked"_key, dynamic{});
+
+  // wait_for_quit() blocks until request_quit() fires; a hang here means the
+  // "clicked" handler didn't call it.
+  desktop_.wait_for_quit();
+}

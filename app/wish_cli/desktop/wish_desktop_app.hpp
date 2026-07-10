@@ -45,10 +45,23 @@ class wish_desktop : public bison::rmi::bridge {
    * Idempotent: only the first call has an effect. Registers and
    * instantiates a UI template via the upstream `__WishTemplate` protocol
    * object (the same protocol `wish::client::register_template`/
-   * `instantiate_template` use), wires the "Quit" menu item to terminate the
-   * process, and starts the clock-update thread.
+   * `instantiate_template` use), wires the "Quit" menu item to invoke
+   * `request_quit()`, and starts the clock-update thread.
    */
   void build_chrome();
+
+  /**
+   * @brief Request an orderly shutdown. Safe from any thread.
+   *
+   * Called by the "clicked" handler `build_chrome()` wires to the Quit menu
+   * item. Wakes `wait_for_quit()`, causing the identical orderly
+   * `bridge_app::run()` unwind (`br->stop()`, then RAII release of terminal
+   * state) that pressing Enter at the console uses.
+   */
+  void request_quit();
+
+  /** @brief Block until `request_quit()` is called. */
+  void wait_for_quit();
 
  private:
   void run_clock();
@@ -62,6 +75,10 @@ class wish_desktop : public bison::rmi::bridge {
   std::mutex clock_mtx_;
   std::condition_variable clock_cv_;
   std::atomic<bool> stop_clock_{false};
+
+  std::mutex quit_mtx_;
+  std::condition_variable quit_cv_;
+  bool quit_requested_{false};
 };
 
 /**
@@ -83,17 +100,39 @@ class wish_desktop : public bison::rmi::bridge {
  *   bridge starts listening, so the desktop shell exists unconditionally,
  *   not gated on any client connecting.
  * - `bridge_description()` supplies the `OP_HELP` preamble.
+ * - `wait_for_shutdown()` is overridden so the Quit menu item can trigger
+ *   an orderly shutdown alongside console Enter.
  */
 class wish_desktop_app : public bison::app::bridge_app {
  protected:
   std::string bridge_description() const override;
 
   std::unique_ptr<bison::rmi::bridge> make_bridge(
-      bison::rmi::transport::server_transport_iface& downstream,
+      bison::rmi::transport::server_transport_iface& downstream_transport,
       std::unique_ptr<bison::rmi::transport::client_transport_iface> upstream_transport,
       bison::dynamic upstream_params) override;
 
   void on_listening() const override;
+
+  /**
+   * @brief Block until console Enter is pressed or the Quit menu item fires.
+   *
+   * `bridge_app`'s default (non-`--downstream_transport=term`) wait is a
+   * bare `std::getline(std::cin, ...)` that nothing else can wake. This
+   * override replaces it with `wish_desktop::wait_for_quit()`, and moves the
+   * `getline` onto a detached thread that calls `wish_desktop::request_quit()`
+   * when it returns -- the same call the Quit menu item's "clicked" handler
+   * makes. Either trigger wakes the same wait, so both paths return here and
+   * let `bridge_app::run_with_transport()`/`run()` proceed through
+   * `br->stop()` and unwind normally, releasing terminal state
+   * (`scoped_terminal_config`/`terminal`) via RAII.
+   *
+   * `--downstream_transport=term` sets `active_term_` before calling this
+   * (see `bridge_app::run()`); in that case stdin is being pumped into the
+   * spawned terminal instead, so this defers to the base class's
+   * `active_term_`-aware wait instead of racing it for stdin.
+   */
+  void wait_for_shutdown() override;
 
  private:
   /** Non-owning: valid for the lifetime of the `wish_desktop` `run_with_transport()` owns. */
