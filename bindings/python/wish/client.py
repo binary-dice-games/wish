@@ -196,6 +196,57 @@ class Client:
         """Release every proxy cached under *prefix* and its descendants."""
         _check(self._lib.wish_release(self._handle, prefix.encode()), f"release({prefix!r})")
 
+    # ── Object instantiation ─────────────────────────────────────────────────
+
+    def instantiate(self, klass_name: str, ns_name: str = "", params: Optional[dict] = None) -> Proxy:
+        """Instantiate a remote object directly (no UI template involved).
+
+        Unlike :meth:`instantiate_template`, the result is not merged into
+        the dot-path proxy map used by :meth:`proxy_get`; the caller keeps
+        and releases the returned proxy directly.
+        """
+        from bison import Dynamic
+
+        ns_key = _n.get_lib().wish_key(ns_name.encode()) if ns_name else 0
+        klass_key = _n.get_lib().wish_key(klass_name.encode())
+
+        params_dyn: Optional[Dynamic] = None
+        try:
+            if params:
+                params_dyn = Dynamic()
+                for k, v in params.items():
+                    params_dyn[k] = v
+            params_handle = params_dyn._handle if params_dyn is not None else None
+            h = self._lib.wish_instantiate(self._handle, ns_key, klass_key, params_handle)
+        finally:
+            if params_dyn is not None:
+                params_dyn.release()
+        if not h:
+            raise WishError(_n.WISH_ERR_EXCEPTION, f"instantiate({klass_name!r}, {ns_name!r})")
+        return Proxy(h)
+
+    # ── File transfer ─────────────────────────────────────────────────────────
+
+    def upload_file(self, name: str, data: bytes) -> None:
+        """Upload a file to the server's sandboxed session resource directory."""
+        _check(
+            self._lib.wish_upload_file(self._handle, name.encode(), data, len(data)),
+            f"upload_file({name!r})",
+        )
+
+    def download_file(self, name: str) -> bytes:
+        """Download a previously uploaded file from the server."""
+        out_data = ctypes.c_char_p()
+        out_len = ctypes.c_size_t(0)
+        _check(
+            self._lib.wish_download_file(self._handle, name.encode(), ctypes.byref(out_data), ctypes.byref(out_len)),
+            f"download_file({name!r})",
+        )
+        try:
+            return ctypes.string_at(out_data, out_len.value)
+        finally:
+            self._lib.bison_free_string(out_data)
+
     # ── Logging ──────────────────────────────────────────────────────────────
 
     def log(self, level: str, msg: str) -> None:

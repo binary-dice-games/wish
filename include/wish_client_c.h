@@ -340,6 +340,58 @@ WISH_API rmi_proxy_handle wish_proxy_get(wish_client_handle client, const char* 
  */
 WISH_API wish_error wish_release(wish_client_handle client, const char* prefix);
 
+/* ── Object instantiation ─────────────────────────────────────────────────── */
+
+/**
+ * @brief Instantiate a remote object directly (no UI template involved).
+ *
+ * Mirrors `rmi_client_instantiate()` for a `wish_client_handle`, so callers
+ * can create arbitrary registered classes on the server (e.g. an embedded
+ * app's root widget, or an ad-hoc dialog such as `FileDialog`) without first
+ * registering a template descriptor.  Unlike wish_instantiate_template(), the
+ * result is not merged into the dot-path → proxy map used by
+ * wish_proxy_get(); the caller keeps and releases the returned handle
+ * directly.
+ *
+ * @param client  Active session handle.
+ * @param ns      Namespace key to instantiate in, or `0` for global (use
+ *                `wish_key()`).
+ * @param klass   Class key to instantiate (use `wish_key()`).
+ * @param params  Constructor parameters (`bison_handle` or `NULL`).
+ * @return New proxy handle, or `NULL` on failure (see wish_last_error()).
+ *         Caller owns the handle and must release it with
+ *         `rmi_proxy_release()`.
+ */
+WISH_API rmi_proxy_handle
+wish_instantiate(wish_client_handle client, wish_hash ns, wish_hash klass, bison_handle params);
+
+/* ── File transfer ────────────────────────────────────────────────────────── */
+
+/**
+ * @brief Upload a file to the server's sandboxed session resource directory.
+ *
+ * @param client    Active session handle.
+ * @param name      Filename (no path separators or `..`).
+ * @param data      File contents; may contain embedded NUL bytes.
+ * @param data_len  Length of @p data in bytes.
+ * @return WISH_OK or WISH_ERR_*.
+ */
+WISH_API wish_error
+wish_upload_file(wish_client_handle client, const char* name, const char* data, size_t data_len);
+
+/**
+ * @brief Download a previously uploaded file from the server.
+ *
+ * @param client    Active session handle.
+ * @param name      Filename (no path separators or `..`).
+ * @param out_data  Output buffer, heap-allocated; may contain embedded NUL
+ *                  bytes.  Release with `bison_free_string()`.
+ * @param out_len   Output length of @p out_data in bytes.
+ * @return WISH_OK or WISH_ERR_*.
+ */
+WISH_API wish_error
+wish_download_file(wish_client_handle client, const char* name, char** out_data, size_t* out_len);
+
 /* ── Logging ──────────────────────────────────────────────────────────────── */
 
 /**

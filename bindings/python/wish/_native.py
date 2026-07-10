@@ -173,6 +173,17 @@ def _setup_wish_signatures(lib: ctypes.CDLL) -> None:
     lib.wish_release.restype = Error
     lib.wish_release.argtypes = [ClientHandle, ctypes.c_char_p]
 
+    # ── Object instantiation ────────────────────────────────────────────────
+    lib.wish_instantiate.restype = ProxyHandle
+    lib.wish_instantiate.argtypes = [ClientHandle, Hash, Hash, _bison_native.Handle]
+
+    # ── File transfer ────────────────────────────────────────────────────────
+    lib.wish_upload_file.restype = Error
+    lib.wish_upload_file.argtypes = [ClientHandle, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_size_t]
+
+    lib.wish_download_file.restype = Error
+    lib.wish_download_file.argtypes = [ClientHandle, ctypes.c_char_p, P(ctypes.c_char_p), P(ctypes.c_size_t)]
+
     # ── Logging ──────────────────────────────────────────────────────────────
     lib.wish_log.restype = Error
     lib.wish_log.argtypes = [ClientHandle, ctypes.c_char_p, ctypes.c_char_p]

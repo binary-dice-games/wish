@@ -378,6 +378,56 @@ extern "C" wish_error wish_release(wish_client_handle c, const char* prefix) {
   return WISH_OK;
 }
 
+// ── Object instantiation ────────────────────────────────────────────────────────
+
+extern "C" rmi_proxy_handle
+wish_instantiate(wish_client_handle c, wish_hash ns, wish_hash klass, bison_handle params) {
+  if (!c)
+    return nullptr;
+  try {
+    dynamic dyn_params = bison_handle_to_dynamic(params);
+    proxy::dynamic proxy_obj =
+        c->client_->instantiate(bdg::bison::key_t{ns}, bdg::bison::key_t{klass}, std::move(dyn_params)).get();
+    auto* pp = new proxy_ptr(std::make_unique<proxy::dynamic>(std::move(proxy_obj)));
+    return as_proxy_handle(pp);
+  } catch (const std::exception& e) {
+    c->last_error_ = e.what();
+    return nullptr;
+  }
+}
+
+// ── File transfer ────────────────────────────────────────────────────────────────
+
+extern "C" wish_error
+wish_upload_file(wish_client_handle c, const char* name, const char* data, size_t data_len) {
+  if (!c || !name || (!data && data_len > 0))
+    return WISH_ERR_NULL;
+  try {
+    c->client_->upload_file(std::string{name}, std::string{data, data_len}).get();
+    return WISH_OK;
+  } catch (const std::exception& e) {
+    c->last_error_ = e.what();
+    return WISH_ERR_EXCEPTION;
+  }
+}
+
+extern "C" wish_error
+wish_download_file(wish_client_handle c, const char* name, char** out_data, size_t* out_len) {
+  if (!c || !name || !out_data || !out_len)
+    return WISH_ERR_NULL;
+  try {
+    std::string data = c->client_->download_file(std::string{name}).get();
+    char* buf = new char[data.size()];
+    std::memcpy(buf, data.data(), data.size());
+    *out_data = buf;
+    *out_len = data.size();
+    return WISH_OK;
+  } catch (const std::exception& e) {
+    c->last_error_ = e.what();
+    return WISH_ERR_EXCEPTION;
+  }
+}
+
 // ── Logging ───────────────────────────────────────────────────────────────────
 
 extern "C" wish_error wish_log(wish_client_handle c, const char* level, const char* msg) {
