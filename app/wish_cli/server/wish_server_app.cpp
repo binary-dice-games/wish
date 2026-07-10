@@ -5,6 +5,8 @@
  */
 #include "app/wish_cli/server/wish_server_app.hpp"
 
+#include "app/wish_cli/env_flags.hpp"
+
 #include <context/logger.hpp>
 #include <server/registry.hpp>
 #include <sdl/sdl3_renderer.hpp>
@@ -122,6 +124,11 @@ static std::shared_ptr<logger> make_server_logger() {
 }
 
 // ── server_app overrides ──────────────────────────────────────────────────────
+
+int wish_server_app::run(int argc, char** argv) {
+  apply_env_flag_defaults();
+  return bison::app::server_app::run(argc, argv);
+}
 
 std::string wish_server_app::server_description() const {
   return "wish GUI server.\n"

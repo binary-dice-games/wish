@@ -5,6 +5,7 @@
  */
 #include "app/wish_cli/client/wish_client_app.hpp"
 #include "app/wish_cli/client/app_registry.hpp"
+#include "app/wish_cli/env_flags.hpp"
 
 #include <gflags/gflags.h>
 
@@ -38,6 +39,11 @@ int wish_client_app::run(int argc, char** argv) {
   // Override the shared --host default: 0.0.0.0 is a valid bind address for
   // the server but not a connectable address for a client.
   gflags::SetCommandLineOptionWithMode("host", "127.0.0.1", gflags::SET_FLAGS_DEFAULT);
+  // WISH_HOST (if set) overrides the 127.0.0.1 default above; WISH_<FLAG>
+  // overrides every other registered flag's own default (--transport,
+  // --port, --name, --timeout, --theme, ...). An explicit command-line
+  // flag always wins over all of these.
+  apply_env_flag_defaults();
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
   if (FLAGS_list) {

@@ -47,7 +47,8 @@ wish_add_test(test_integration    test_integration.cpp)
 # gflags for the DEFINE_string calls it makes at file scope.
 add_executable(test_wish_desktop
     test_wish_desktop.cpp
-    ${CMAKE_SOURCE_DIR}/app/wish_cli/desktop/wish_desktop_app.cpp)
+    ${CMAKE_SOURCE_DIR}/app/wish_cli/desktop/wish_desktop_app.cpp
+    ${CMAKE_SOURCE_DIR}/app/wish_cli/env_flags.cpp)
 target_include_directories(test_wish_desktop PRIVATE ${CMAKE_SOURCE_DIR})
 target_link_libraries(test_wish_desktop PRIVATE wish gflags gtest gmock gtest_main)
 gtest_discover_tests(test_wish_desktop)
@@ -60,6 +61,17 @@ add_executable(test_client_only_link test_client_only_link.cpp)
 target_link_libraries(test_client_only_link PRIVATE wish_client gtest gmock gtest_main)
 gtest_discover_tests(test_client_only_link)
 set_target_properties(test_client_only_link PROPERTIES FOLDER tests)
+
+# Exercises apply_env_flag_defaults() (app/wish_cli/env_flags.hpp/.cpp), an
+# app/ source not part of the `wish` library, so it's added as an extra
+# source here (mirrors test_wish_desktop above).
+add_executable(test_env_flags
+    test_env_flags.cpp
+    ${CMAKE_SOURCE_DIR}/app/wish_cli/env_flags.cpp)
+target_include_directories(test_env_flags PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(test_env_flags PRIVATE gflags gtest gmock gtest_main)
+gtest_discover_tests(test_env_flags)
+set_target_properties(test_env_flags PROPERTIES FOLDER tests)
 
 if(WISH_ENABLE_IMGUI)
   wish_add_test(test_imgui_renderer test_imgui_renderer.cpp)

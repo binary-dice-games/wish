@@ -154,6 +154,24 @@ The wish server opens an SDL3 window that acts as the rendering host. Clients co
 ./build/wish --port 9090 --title "My App Server"
 ```
 
+### Environment-variable flag defaults
+
+Every `wish`/`wish-*` flag falls back to a `WISH_<FLAG_NAME_UPPERCASED>`
+environment variable when not given on the command line (e.g.
+`WISH_TRANSPORT`, `WISH_HOST`, `WISH_PORT`, `WISH_NAME`,
+`WISH_DOWNSTREAM_PORT`, `WISH_WEB_BIND`, ...) -- an explicit command-line
+flag always wins. `wish desktop` sets `WISH_TRANSPORT`/`WISH_HOST`/
+`WISH_PORT`/`WISH_NAME` in the terminal it spawns to match its own
+`--downstream_transport`/`--downstream_host`/`--downstream_port`/
+`--downstream_name`, so a `wish client`/`wish server` launched from that
+terminal connects to the desktop with no flags:
+
+```sh
+wish desktop                      # downstream defaults to tcp:7071
+# inside the spawned terminal:
+wish client --run notepad         # connects to the desktop's tcp:7071, no flags needed
+```
+
 Close the window, or choose **Server → Quit** from the menu bar, to stop the server.
 
 ### Running the web renderer

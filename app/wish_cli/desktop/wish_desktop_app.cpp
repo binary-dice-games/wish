@@ -5,6 +5,7 @@
  */
 #include "app/wish_cli/desktop/wish_desktop_app.hpp"
 
+#include "app/wish_cli/env_flags.hpp"
 #include "src/bison/bison.hpp"
 #include "src/term/terminal.hpp"
 #include "src/ui/ui_descriptor.hpp"
@@ -44,6 +45,20 @@ namespace bdg::wish {
 using namespace bison;
 
 namespace {
+
+/**
+ * @brief Sets an environment variable so a subsequently-spawned child
+ *        process inherits it (e.g. via `forkpty()`+`execl()` on POSIX, or
+ *        `CreateProcess()` on Windows, both of which inherit the calling
+ *        process's environment by default).
+ */
+void set_env_var(const char* name, const std::string& value) {
+#if defined(_WIN32)
+  _putenv_s(name, value.c_str());
+#else
+  setenv(name, value.c_str(), 1);
+#endif
+}
 
 // Template name used to register/instantiate the desktop shell; namespaced
 // with a leading "__" like wish's other internal protocol identifiers to
@@ -179,6 +194,18 @@ void wish_desktop::run_clock() {
 }
 
 // ── wish_desktop_app ─────────────────────────────────────────────────────────
+
+int wish_desktop_app::run(int argc, char** argv) {
+  apply_env_flag_defaults();
+  gflags::ParseCommandLineFlags(&argc, &argv, true);
+
+  set_env_var("WISH_TRANSPORT", FLAGS_downstream_transport);
+  set_env_var("WISH_HOST", FLAGS_downstream_host);
+  set_env_var("WISH_PORT", std::to_string(FLAGS_downstream_port));
+  set_env_var("WISH_NAME", FLAGS_downstream_name);
+
+  return bison::app::bridge_app::run(argc, argv);
+}
 
 std::string wish_desktop_app::bridge_description() const {
   return "wish desktop.\n"

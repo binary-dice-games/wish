@@ -50,6 +50,11 @@ class logger;
  */
 class wish_server_app : public bison::app::server_app {
  public:
+  /// @brief Applies WISH_<FLAG> environment-variable defaults for every
+  ///        registered flag (see env_flags.hpp), then delegates to
+  ///        server_app::run().
+  int run(int argc, char** argv) override;
+
   std::string server_description() const override;
 
   std::string terminal_label() const override {

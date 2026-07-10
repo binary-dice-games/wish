@@ -117,6 +117,25 @@ class wish_desktop : public bison::rmi::bridge {
  *   an orderly shutdown alongside console Enter.
  */
 class wish_desktop_app : public bison::app::bridge_app {
+ public:
+  /**
+   * @brief Applies WISH_<FLAG> environment-variable defaults for every flag
+   *        registered in this process (see env_flags.hpp), parses flags,
+   *        then primes WISH_TRANSPORT/WISH_HOST/WISH_PORT/WISH_NAME in the
+   *        environment from --downstream_transport/--downstream_host/
+   *        --downstream_port/--downstream_name before delegating to
+   *        bridge_app::run().
+   *
+   * Those four variables are set in this (parent) process before
+   * bridge_app::run() spawns its anchor/downstream terminal, so the spawned
+   * shell -- and any `wish client`/`wish server` invoked inside it --
+   * inherits them via `environ` and defaults to this desktop's downstream
+   * connection with no flags needed (mirrors the env-inheritance mechanism
+   * terminal.hpp already relies on for its --prompt-label PS1/
+   * PROMPT_COMMAND overrides).
+   */
+  int run(int argc, char** argv) override;
+
  protected:
   std::string bridge_description() const override;
 

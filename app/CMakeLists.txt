@@ -7,6 +7,7 @@ if(WISH_ENABLE_IMGUI AND (WISH_ENABLE_SDL3 OR WISH_ENABLE_WEB))
   # option (see wish_server_app.cpp's make_renderer()).
   add_executable(wish-cli
       wish_cli/main.cpp
+      wish_cli/env_flags.cpp
       wish_cli/server/wish_server_app.cpp
       wish_cli/client/wish_client_app.cpp
       wish_cli/client/app_registry.cpp
@@ -27,6 +28,7 @@ if(WISH_ENABLE_IMGUI AND (WISH_ENABLE_SDL3 OR WISH_ENABLE_WEB))
 
   # ── wish-server — standalone server binary (requires ImGui + SDL3 and/or web) ─
   add_executable(wish-server
+      wish_cli/env_flags.cpp
       wish_cli/server/wish_server_app.cpp
       wish_cli/server/standalone_main.cpp)
   target_include_directories(wish-server PRIVATE
@@ -61,6 +63,7 @@ endif()
 
 # ── wish-client — standalone client binary (lightweight, no SDL/ImGui) ─────────
 add_executable(wish-client
+    wish_cli/env_flags.cpp
     wish_cli/client/wish_client_app.cpp
     wish_cli/client/app_registry.cpp
     wish_cli/client/standalone_main.cpp)
@@ -80,6 +83,7 @@ set_target_properties(wish-client PROPERTIES FOLDER app)
 # build the desktop shell's UI template descriptor client-side; wish_client
 # has no ImGui/SDL dependency, keeping this binary's footprint lightweight.
 add_executable(wish-desktop
+    wish_cli/env_flags.cpp
     wish_cli/desktop/wish_desktop_app.cpp
     wish_cli/desktop/standalone_main.cpp)
 target_include_directories(wish-desktop PRIVATE
