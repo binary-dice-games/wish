@@ -32,7 +32,12 @@ automatically (default search is `build/libwish_client.so` /
 `.dylib` / `build/Debug/wish_client.dll`):
 
 ```bash
+# Linux:
 export WISH_LIB=$(pwd)/build/libwish_client.so
+# macOS:
+export WISH_LIB=$(pwd)/build/libwish_client.dylib
+# Windows:
+set WISH_LIB=%cd%\build\Debug\wish_client.dll
 ```
 
 ### Running the calculator example
