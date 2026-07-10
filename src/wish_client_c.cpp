@@ -12,6 +12,7 @@
 #include "src/rmi/transport/socket_transport.hpp"
 #include "src/rmi/transport/stream_transport.hpp"
 #include "src/rmi/transport/term_transport.hpp"
+#include "src/term/scoped_terminal_config.hpp"
 
 // bison_c.cpp's and rmi_c.cpp's handle-wrapping helpers (sp_dyn/as_handle,
 // proxy_ptr/as_proxy_handle, bool_future_state, proxy_future_state,
@@ -31,6 +32,7 @@
 #include <fstream>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <unordered_map>
 
@@ -61,6 +63,14 @@ class c_abi_client : public wish::client {
 // ── Client state ──────────────────────────────────────────────────────────────
 
 struct wish_client_handle_ {
+  // Only engaged by wish_client_term_create(). Declared before client_ so
+  // that member destruction order (reverse of declaration) tears client_
+  // down first: its owned term_client_transport calls back into this via
+  // its before_destroy hook (scoped_terminal_config::stop_output_pump()),
+  // which must still be alive when that happens, and only afterwards does
+  // scoped_terminal_config's own destructor restore the terminal.
+  std::optional<term::scoped_terminal_config> term_config_;
+
   std::unique_ptr<c_abi_client> client_;
 
   wish_session_fn session_fn_ = nullptr;
@@ -145,7 +155,24 @@ extern "C" wish_client_handle wish_client_pipe_create(const char* path) {
 extern "C" wish_client_handle wish_client_term_create(void) {
   try {
     auto state = std::make_unique<wish_client_handle_>();
-    return make_client_handle(std::move(state), std::make_unique<term_client_transport>(0, 1));
+    // Mirrors bison::app::client_app::run()'s term-transport branch: puts fd
+    // 0/1 into raw mode and redirects them through internal pipes so the
+    // transport becomes the sole reader/writer of the real fds, while
+    // scoped_terminal_config re-synthesizes plain, protocol-unaware terminal
+    // I/O (line discipline, local echo) on top for anything that isn't part
+    // of a framed envelope. Without this, fd 0 stays in cooked mode and the
+    // peer's raw `BISON<...>` marker bytes are never intercepted by the
+    // transport — they show up as literal, echoed terminal input instead.
+    state->term_config_.emplace(term::scoped_terminal_config::params{0, 1});
+    auto& stc = *state->term_config_;
+    auto t = std::make_unique<term_client_transport>(
+        stc.upstream_read_fd(),
+        stc.upstream_write_fd(),
+        [&stc](std::string_view s) { stc.on_passthrough(s); },
+        kDefaultHandshakeTimeout,
+        [&stc] { stc.stop_output_pump(); });
+    stc.set_output_channel([raw = t.get()](std::string_view s) { raw->send(s); });
+    return make_client_handle(std::move(state), std::move(t));
   } catch (...) {
     return nullptr;
   }
