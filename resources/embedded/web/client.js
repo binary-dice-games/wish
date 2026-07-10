@@ -606,7 +606,7 @@
   canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 
   canvas.tabIndex = 0; // make the canvas focusable so it receives key events
-  canvas.addEventListener("keydown", (e) => {
+  window.addEventListener("keydown", (e) => {
     const key = domCodeToImGuiKey(e.code);
     if (key !== undefined) {
       send(encodeKey(key, true));
@@ -615,7 +615,7 @@
     if (e.key.length === 1 && !e.ctrlKey && !e.metaKey)
       send(encodeChar(e.key.codePointAt(0)));
   });
-  canvas.addEventListener("keyup", (e) => {
+  window.addEventListener("keyup", (e) => {
     const key = domCodeToImGuiKey(e.code);
     if (key !== undefined) {
       send(encodeKey(key, false));
