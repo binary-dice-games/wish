@@ -87,8 +87,7 @@ def upload_and_open(client: Client, notepad, files: SandboxFiles, local_path: Pa
     sandbox_name = files.reserve_name(local_path)
     client.upload_file(sandbox_name, data)
     files.local_path_by_sandbox_name[sandbox_name] = local_path
-
-    notepad.call("open_file", {"path": sandbox_name, "title": local_path.name})
+    notepad.open_file(path=sandbox_name, title=local_path.name)
 
 
 def json_array_dynamic(items: list) -> Dynamic:
