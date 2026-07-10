@@ -6,6 +6,7 @@
 #include <ui/ui_importer.hpp>
 #include <ui/ui_root.hpp>
 
+#include "src/rmi/shared/constants.hpp"
 #include "src/rmi/shared/ids.hpp"
 
 #include <atomic>
@@ -25,7 +26,14 @@ static void collect_ids(rmi::context& ctx, context& sess, const ui_element_ptr& 
   if (path_field && path_field->is<std::string>()) {
     const std::string& path = path_field->as<std::string>();
     key_t new_id = rmi::shared::generate_id();
-    ctx.objects[new_id.id] = node;
+    // put_object() (rather than ctx.objects[new_id.id] = node) files this
+    // element under whatever group the current request is tagged with (see
+    // rmi::context::current_group) -- e.g. rmi::bridge tags every relayed
+    // request with the owning downstream session's ID, so a whole template
+    // instantiation's worth of elements, created here as a side effect of
+    // one "instantiate" call, still get cleaned up together when that
+    // session disconnects.
+    ctx.put_object(new_id, node);
     sess.ui_objects[path] = node;
 
     // Store the RMI object ID on the element so the renderer can emit events
@@ -80,6 +88,24 @@ static dynamic instantiate_prototype(rmi::context& ctx, context& sess, const ui_
   sess.top_level_objects[tpl_key] = cloned_root;
   if (auto* root_iface = dynamic_cast<ui_root*>(cloned_root.get()))
     sess.top_level_handlers[tpl_key] = root_iface;
+
+  // The render loop (server.cpp) iterates sess.top_level_objects
+  // unconditionally every frame -- unlike wish::form, which removes its own
+  // internal window from these maps via remove_internal_objects() (wired
+  // into ~form()), a template-instantiated root has no such cleanup, so
+  // destroying it over RMI (OP_DESTROY / OP_DESTROY_GROUP) would otherwise
+  // leave a now-orphaned entry that the renderer keeps drawing forever.
+  // Capturing `sess` by reference is safe here: this hook only ever runs
+  // from within RMI dispatch (destroy always goes through the server's
+  // dispatch machinery), during which the session outlives every object it
+  // owns, including this one.
+  cloned_root->addMethod(
+      rmi::shared::constants::HOOK_DESTRUCT,
+      method{[&sess, tpl_key](dynamic& /*self*/, const dynamic& /*params*/) -> dynamic {
+        sess.top_level_objects.erase(tpl_key);
+        sess.top_level_handlers.erase(tpl_key);
+        return dynamic{};
+      }});
 
   return result;
 }

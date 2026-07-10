@@ -124,10 +124,13 @@ void process_explorer::on_init() {
   auto* title_f = findField<std::string>("title"_key);
   (*tree[""])["title"_key] = title_f ? *title_f : std::string{"Process Explorer"};
 
-  auto& objects = ctx().objects;
+  // put_object() files each element under the current request's group (see
+  // rmi::context::current_group) so they're cleaned up together with the
+  // rest of this form when relayed through rmi::bridge.
+  auto& c = ctx();
   for (auto& [key, elem] : tree) {
     key_t id = rmi::shared::generate_id();
-    objects[id.id] = elem;
+    c.put_object(id, elem);
     elem["__wish_id"_key] = id;
   }
 
@@ -217,7 +220,7 @@ void process_explorer::ensure_core_meters(size_t core_count) {
     bar["order"_key] = static_cast<int32_t>(i);
 
     key_t id = rmi::shared::generate_id();
-    ctx().objects[id.id] = bar;
+    ctx().put_object(id, bar);
     bar["__wish_id"_key] = id;
 
     (*children)[next_child_key_++] = dynamic_ptr{bar};
@@ -294,7 +297,7 @@ void process_explorer::update_process_table(const dynamic& args) {
 
         auto assign_id = [&](ui_element_ptr& el) {
           key_t id2 = rmi::shared::generate_id();
-          ctx().objects[id2.id] = el;
+          ctx().put_object(id2, el);
           el["__wish_id"_key] = id2;
         };
         assign_id(entry.row);

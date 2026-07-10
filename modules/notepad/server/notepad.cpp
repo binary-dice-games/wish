@@ -102,11 +102,13 @@ void notepad::on_init() {
 
   // Assign each imported element a bison RMI ID so the renderer can emit
   // events with the correct object ID. Mirrors the calculator/file_dialog
-  // pattern.
-  auto& objects = ctx().objects;
+  // pattern. put_object() files each one under the current request's group
+  // (see rmi::context::current_group) so they're cleaned up together with
+  // the rest of this form when relayed through rmi::bridge.
+  auto& c = ctx();
   for (auto& [key, elem] : tree) {
     key_t id = rmi::shared::generate_id();
-    objects[id.id] = elem;
+    c.put_object(id, elem);
     elem["__wish_id"_key] = id;
   }
 
@@ -161,11 +163,11 @@ dynamic notepad::do_open_file(const dynamic& args) {
   editor["order"_key] = int32_t{0};
 
   key_t tab_id = rmi::shared::generate_id();
-  ctx().objects[tab_id.id] = tab;
+  ctx().put_object(tab_id, tab);
   tab["__wish_id"_key] = tab_id;
 
   key_t editor_id = rmi::shared::generate_id();
-  ctx().objects[editor_id.id] = editor;
+  ctx().put_object(editor_id, editor);
   editor["__wish_id"_key] = editor_id;
 
   // Give the TabItem its own private children map (see the layout comment

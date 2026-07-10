@@ -98,11 +98,16 @@ void calculator::on_init() {
 
   auto tree = import_json(kLayout);
 
-  // Assign every element a bison RMI ID.
-  auto& objects = ctx().objects;
+  // Assign every element a bison RMI ID. put_object() (rather than
+  // ctx().objects[id.id] = elem) files each one under whatever group the
+  // current request is tagged with -- see rmi::context::current_group --
+  // so a whole form's worth of internal elements, created here as a side
+  // effect of one "instantiate" call, still get cleaned up together e.g.
+  // when relayed through rmi::bridge and the owning session disconnects.
+  auto& c = ctx();
   for (auto& [key, elem] : tree) {
     key_t id = rmi::shared::generate_id();
-    objects[id.id] = elem;
+    c.put_object(id, elem);
     elem["__wish_id"_key] = id;
   }
 

@@ -36,6 +36,19 @@ class integration_server : public wish::server {
   // Sandboxed resource directory for the active session.
   std::filesystem::path resource_dir;
 
+  // Number of live top_level_objects entries for the (single) active
+  // session -- the render loop (server.cpp) iterates this map every frame,
+  // so a stale entry left behind after a template root is destroyed would
+  // otherwise be rendered forever. Assumes exactly one connected session.
+  size_t top_level_object_count() {
+    auto lp = session_contexts().rlock();
+    for (auto& [id, holder] : *lp) {
+      auto clp = holder->rlock();
+      return static_cast<wish::context&>(**clp).top_level_objects.size();
+    }
+    return 0;
+  }
+
  protected:
   void on_session_created(wish::context& s) override {
     emit_fn = s.emit_event;
@@ -191,4 +204,46 @@ TEST_F(IntegrationTest, FullStack) {
       std::this_thread::sleep_for(std::chrono::milliseconds(5));
   }
   EXPECT_FALSE(std::filesystem::exists(srv_->resource_dir)) << "resource_dir still exists after disconnect";
+}
+
+// ── Template root destroy must remove it from the render loop ─────────────────
+//
+// server.cpp's render loop iterates context::top_level_objects
+// unconditionally every frame. wish::form removes its own internal window
+// from that map when destroyed (form::remove_internal_objects(), wired into
+// ~form()); a raw register_template/instantiate_template root previously had
+// no equivalent cleanup, so destroying it over RMI left a dangling entry the
+// renderer kept drawing forever (see ui_template.cpp's instantiate_prototype
+// HOOK_DESTRUCT).
+
+TEST_F(IntegrationTest, DestroyingTemplateRootRemovesTopLevelObject) {
+  class test_client : public wish::client {
+   public:
+    using wish::client::client;
+
+    integration_server* srv{nullptr};
+    size_t count_before_destroy{static_cast<size_t>(-1)};
+    size_t count_after_destroy{static_cast<size_t>(-1)};
+
+   protected:
+    void on_session() override {
+      register_template("ui"_key, wish::import_descriptor_json(kUIDesc)).get();
+      auto pm = instantiate_template("ui"_key).get();
+      ASSERT_TRUE(pm.count("")) << "root proxy missing";
+
+      count_before_destroy = srv->top_level_object_count();
+
+      pm.at("").destroy();
+
+      count_after_destroy = srv->top_level_object_count();
+    }
+  };
+
+  test_client c{transport_.connect()};
+  c.srv = srv_.get();
+  c.run();
+
+  EXPECT_GT(c.count_before_destroy, c.count_after_destroy)
+      << "expected destroying the template root to remove its top_level_objects entry";
+  EXPECT_EQ(c.count_after_destroy, 0u) << "expected no top-level objects left after destroying the only template";
 }

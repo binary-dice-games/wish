@@ -100,10 +100,13 @@ void file_dialog::on_init() {
 
   // Assign each imported element a bison RMI ID so the renderer can emit
   // events with the correct object ID. Mirrors the ui_template pattern.
-  auto& objects = ctx().objects;
+  // put_object() files each one under the current request's group (see
+  // rmi::context::current_group) so they're cleaned up together with the
+  // rest of this form when relayed through rmi::bridge.
+  auto& c = ctx();
   for (auto& [key, elem] : tree) {
     key_t id = rmi::shared::generate_id();
-    objects[id.id] = elem;
+    c.put_object(id, elem);
     elem["__wish_id"_key] = id;
   }
 
