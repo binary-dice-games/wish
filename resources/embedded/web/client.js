@@ -580,7 +580,7 @@
     return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   }
 
-  canvas.addEventListener("mousemove", (e) => {
+  window.addEventListener("mousemove", (e) => {
     const p = canvasPos(e);
     send(encodeMouseMove(p.x, p.y));
   });

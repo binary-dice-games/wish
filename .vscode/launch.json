@@ -8,7 +8,8 @@
             "name": "(Linux) Attach",
             "type": "cppdbg",
             "request": "attach",
-            "program": "${workspaceFolder}/build/app/wish-server"
+            "program": "${workspaceFolder}/build/app/wish-server",
+            "processId": "${command:pickProcess}"
         }
     ]
 }
