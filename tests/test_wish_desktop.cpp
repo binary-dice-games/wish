@@ -136,3 +136,15 @@ TEST_F(WishDesktopTest, QuitClickInvokesRequestQuit) {
   // "clicked" handler didn't call it.
   desktop_.wait_for_quit();
 }
+
+TEST_F(WishDesktopTest, WaitForQuitForTimesOutThenReturnsTrueAfterRequestQuit) {
+  // Before request_quit() is called, wait_for_quit_for() must time out and
+  // report false -- this is what lets wish_desktop_app::wait_for_shutdown()
+  // poll an active_term_ for exit alongside the Quit menu item instead of
+  // blocking on wait_for_quit() forever.
+  EXPECT_FALSE(desktop_.wait_for_quit_for(std::chrono::milliseconds{20}));
+
+  desktop_.request_quit();
+
+  EXPECT_TRUE(desktop_.wait_for_quit_for(std::chrono::milliseconds{20}));
+}

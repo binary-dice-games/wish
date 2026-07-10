@@ -10,6 +10,7 @@
 #include "src/rmi/client/proxy.hpp"
 
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <memory>
 #include <mutex>
@@ -63,6 +64,18 @@ class wish_desktop : public bison::rmi::bridge {
   /** @brief Block until `request_quit()` is called. */
   void wait_for_quit();
 
+  /**
+   * @brief Block until `request_quit()` is called, or `timeout` elapses.
+   *
+   * Lets a caller poll another shutdown condition (e.g. an anchor
+   * terminal exiting) alongside the Quit menu item instead of blocking on
+   * `wait_for_quit()` indefinitely.
+   *
+   * @return `true` if `request_quit()` was called before `timeout`
+   *         elapsed; `false` on timeout.
+   */
+  bool wait_for_quit_for(std::chrono::milliseconds timeout);
+
  private:
   void run_clock();
 
@@ -115,22 +128,20 @@ class wish_desktop_app : public bison::app::bridge_app {
   void on_listening() const override;
 
   /**
-   * @brief Block until console Enter is pressed or the Quit menu item fires.
+   * @brief Block until the anchor/downstream terminal exits or the Quit
+   *        menu item fires -- whichever happens first.
    *
-   * `bridge_app`'s default (non-`--downstream_transport=term`) wait is a
-   * bare `std::getline(std::cin, ...)` that nothing else can wake. This
-   * override replaces it with `wish_desktop::wait_for_quit()`, and moves the
-   * `getline` onto a detached thread that calls `wish_desktop::request_quit()`
-   * when it returns -- the same call the Quit menu item's "clicked" handler
-   * makes. Either trigger wakes the same wait, so both paths return here and
-   * let `bridge_app::run_with_transport()`/`run()` proceed through
-   * `br->stop()` and unwind normally, releasing terminal state
+   * `bridge_app::run()` now spawns an `active_term_` unconditionally (an
+   * anchor terminal, or the downstream terminal itself for
+   * `--downstream_transport=term`) and pumps real stdin into it, so a
+   * separate `std::getline(std::cin, ...)` thread here would race it for
+   * stdin. Instead, this polls `wish_desktop::wait_for_quit_for()`
+   * alongside `active_term_->has_exited()`, returning as soon as either
+   * the Quit menu item's "clicked" handler calls
+   * `wish_desktop::request_quit()`, or the operator exits the terminal.
+   * Either path lets `bridge_app::run_with_transport()`/`run()` proceed
+   * through `br->stop()` and unwind normally, releasing terminal state
    * (`scoped_terminal_config`/`terminal`) via RAII.
-   *
-   * `--downstream_transport=term` sets `active_term_` before calling this
-   * (see `bridge_app::run()`); in that case stdin is being pumped into the
-   * spawned terminal instead, so this defers to the base class's
-   * `active_term_`-aware wait instead of racing it for stdin.
    */
   void wait_for_shutdown() override;
 

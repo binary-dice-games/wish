@@ -6,6 +6,7 @@
 #include "app/wish_cli/desktop/wish_desktop_app.hpp"
 
 #include "src/bison/bison.hpp"
+#include "src/term/terminal.hpp"
 #include "src/ui/ui_descriptor.hpp"
 
 #include <gflags/gflags.h>
@@ -147,6 +148,11 @@ void wish_desktop::wait_for_quit() {
   quit_cv_.wait(lk, [this] { return quit_requested_; });
 }
 
+bool wish_desktop::wait_for_quit_for(std::chrono::milliseconds timeout) {
+  std::unique_lock<std::mutex> lk(quit_mtx_);
+  return quit_cv_.wait_for(lk, timeout, [this] { return quit_requested_; });
+}
+
 void wish_desktop::run_clock() {
   using namespace std::chrono_literals;
   std::unique_lock<std::mutex> lk(clock_mtx_);
@@ -198,19 +204,16 @@ void wish_desktop_app::on_listening() const {
 }
 
 void wish_desktop_app::wait_for_shutdown() {
-  if (active_term_ || !desktop_) {
+  if (!desktop_) {
     bison::app::bridge_app::wait_for_shutdown();
     return;
   }
 
-  std::thread stdin_thread([this] {
-    std::string line;
-    std::getline(std::cin, line);
-    desktop_->request_quit();
-  });
-  stdin_thread.detach();
-
-  desktop_->wait_for_quit();
+  using namespace std::chrono_literals;
+  while (!desktop_->wait_for_quit_for(100ms)) {
+    if (active_term_ && active_term_->has_exited())
+      return;
+  }
 }
 
 } // namespace bdg::wish
