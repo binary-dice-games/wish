@@ -49,6 +49,7 @@ enum class web_msg_type : uint8_t {
 #ifdef WISH_AUTOMATION_ENABLED
   query_tree = 0x20,    ///< Browser -> server: request a tree/hit-test snapshot.
   tree_snapshot = 0x21, ///< Server -> browser: JSON tree/hit-test snapshot.
+  log_event = 0x22,     ///< Server -> browser: newly-logged entries, pushed live.
 #endif
 };
 
@@ -197,6 +198,21 @@ std::optional<std::string> decode_query_tree_message(std::span<const std::byte> 
  *                       payload -- this function does not itself touch JSON.
  */
 std::vector<std::byte> encode_tree_snapshot(const std::string& json_payload);
+
+/**
+ * @brief Encode a LOG_EVENT message wrapping an already-serialized JSON
+ *        payload -- mirrors `encode_tree_snapshot()`.
+ *
+ * Unlike TREE_SNAPSHOT (a reply to a browser-initiated QUERY_TREE),
+ * LOG_EVENT is pushed to every connected browser as soon as new log
+ * entries exist -- there is no corresponding browser -> server request
+ * message. See `automation::build_log_event()` and
+ * `web_renderer::service_automation_queries()`.
+ *
+ * @param json_payload  UTF-8 JSON text, e.g. `automation::build_log_event()`'s
+ *                       return value.
+ */
+std::vector<std::byte> encode_log_event(const std::string& json_payload);
 #endif
 
 } // namespace draw_protocol

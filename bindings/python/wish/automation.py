@@ -201,6 +201,27 @@ class AutomationClient:
         if @p path does not currently exist in the tree."""
         return self._page.evaluate("(path) => window.wish.getWidget(path)", path)
 
+    def get_logs(self) -> List[Dict[str, Any]]:
+        """Return every log entry received so far, oldest first: each
+        `{"seq": N, "timestamp": "...", "level": "info", "message": "..."}`
+        (see `logger::log_entry`, `src/context/logger.hpp`).
+
+        Entries are pushed live as LOG_EVENT messages arrive (no server
+        round trip here -- this just reads what `window.wish.logs` has
+        already accumulated), in the exact order `log()` was called. That
+        means a log entry's position relative to this script's own actions
+        tells you when it happened without any extra correlation -- e.g.::
+
+            before = len(ui.get_logs())
+            ui.click("dialog.ok")
+            ui.wait_for(f"() => window.wish.logs.length > {before}")
+            assert ui.get_logs()[-1]["message"] == "saved"
+
+        confirms that log line was caused by the click, not something
+        logged earlier or later. See `CLAUDE.md`'s "Automation" section.
+        """
+        return self._page.evaluate("() => window.wish.getLogs()")
+
     # ── input ────────────────────────────────────────────────────────────
 
     def _widget_center(self, path: str) -> tuple:

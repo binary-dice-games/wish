@@ -12,13 +12,15 @@ and testing a wish UI" section.
 wish has no way for an external tool — an AI agent, or an automated e2e
 test — to observe or drive the UI it renders. There is no widget-tree
 query API, no input-injection entry point beyond ImGui's own internal test
-hooks (see `tests/test_imgui_renderer.cpp`), and no screenshot capability
-anywhere in the codebase. The automation module closes that gap: it lets a
-Python script (or an AI agent driving one) query the live widget tree
-(names, classes, screen positions), inject mouse/keyboard input, and pull a
-screenshot, so it can control a wish UI the way Playwright controls a
-browser and "see" the result of each action. The same primitive serves two
-audiences:
+hooks (see `tests/test_imgui_renderer.cpp`), no screenshot capability, and
+no way to see the application's own log output correlated with what it was
+doing at the time — anywhere in the codebase. The automation module closes
+that gap: it lets a Python script (or an AI agent driving one) query the
+live widget tree (names, classes, screen positions), inject mouse/keyboard
+input, pull a screenshot, and receive the session's `logger` output live as
+it happens, so it can control a wish UI the way Playwright controls a
+browser and "see" the result of each action — including log lines a click
+or keystroke caused. The same primitive serves two audiences:
 
 1. **Live AI-agent control** — an agent queries the tree, decides what to
    click or type, observes the result, repeats.
@@ -45,12 +47,20 @@ existing page with Playwright:
   WebSocket messages (`src/web/DESIGN.md`, "Browser Client" section) —
   this is the exact path a real human browser session already exercises.
   **No new input-handling code is needed anywhere.**
-- The **one genuinely new piece** is a **tree/hit-test query API**: the UI
-  is a `<canvas>` (WebGL2), not real DOM, so Playwright cannot
-  `page.click("#ok")` a wish widget the way it would a web page. Automation
-  adds exactly this — a way to ask "what widgets exist, and where are they
-  on screen" — as two new message types on the protocol `web_renderer`
-  already speaks.
+- The **genuinely new pieces** are a **tree/hit-test query API** and a
+  **live log feed**, both riding the protocol `web_renderer` already
+  speaks:
+  - The UI is a `<canvas>` (WebGL2), not real DOM, so Playwright cannot
+    `page.click("#ok")` a wish widget the way it would a web page.
+    Automation adds a way to ask "what widgets exist, and where are they
+    on screen" (`QUERY_TREE`/`TREE_SNAPSHOT`).
+  - `logger` (`src/context/logger.hpp`) already exists for application log
+    output, but had no path out to an external observer. Automation adds
+    `LOG_EVENT`: every `logger::log()` call is pushed to the browser as it
+    happens, so a script sees log lines land in sequence with its own
+    actions (e.g. "click a button, then observe the log entry it caused")
+    instead of having to reconcile a separately-parsed log file against
+    UI state after the fact.
 
 This scope keeps the new C++ surface small: no new renderer class, no new
 socket/port, no new third-party dependency in the server, and — unlike an
@@ -133,9 +143,14 @@ src/automation/automation_query.hpp/.cpp   tree/hit-test snapshot struct,
 src/automation/DESIGN.md                   this document
 
 # Existing files with small, #ifdef-guarded additions:
-src/web/web_renderer.hpp/.cpp              render_node override + hit_test_map_
-src/web/draw_protocol.hpp/.cpp             QUERY_TREE / TREE_SNAPSHOT message types
-resources/embedded/web/client.js           window.wish JS shim
+src/web/web_renderer.hpp/.cpp              render_node override + hit_test_map_ +
+                                            last_broadcast_log_seq_ watermark
+src/web/draw_protocol.hpp/.cpp             QUERY_TREE / TREE_SNAPSHOT / LOG_EVENT
+                                            message types
+src/context/logger.hpp/.cpp                log_entry struct + bounded recent_logs()
+                                            ring buffer, appended to by log()
+resources/embedded/web/client.js           window.wish JS shim (tree queries +
+                                            window.wish.logs)
 src/server/renderer.hpp                    service_automation_queries() virtual hook (no-op
                                             default; only web_renderer overrides it)
 src/server/server.cpp                      render_loop() calls the hook per session
@@ -279,6 +294,79 @@ to make correct).
 
 ---
 
+## Log event protocol
+
+`logger` (`src/context/logger.hpp`) is wish's existing per-session RMI
+service: application code calls `client.log_info(...)` etc., and the
+server writes each message to stdout/a log file. That's fine for a human
+watching the terminal, but useless to an automation script, which has no
+way to read the server's stdout and, even if it did, would still have to
+reconstruct which UI state was current when each line was logged. The
+automation module closes that gap by pushing every log call straight to
+the browser, live, instead of leaving it to be reconstructed after the
+fact.
+
+**Push, not pull — this is deliberately not symmetric with QUERY_TREE.** A
+tree snapshot only makes sense "as of right now, on request" (the tree
+constantly changes; there is no meaningful history to ask for). Log
+entries are exactly the opposite: they're discrete events whose *order*
+relative to the automation script's own actions (click, then observe the
+log line that click caused) is the entire point. Modeling that as a
+request/response query would force the script to poll and reconstruct
+ordering itself; a live push preserves it for free — `window.wish.logs`
+grows in exactly the order `logger::log()` was called, interleaved
+correctly with whatever the script did in between reads. This also means
+no `visible_windows`-style UI-state snapshot needs to travel with each log
+entry: the automation script *is* the one driving the UI, so it already
+knows what it just did immediately before observing the log line.
+
+One new message type, server → browser only (no browser → server request
+exists for this):
+
+| Direction | Type | Payload |
+|---|---|---|
+| server → browser | `0x22 LOG_EVENT` | JSON `{"logs": [{"seq": N, "timestamp": "...", "level": "...", "message": "..."}, ...]}` |
+
+`logger::log()` (every call, whether it came from an RMI `log` call or a
+direct server-side C++ call) appends a `logger::log_entry` — `seq`
+(monotonically increasing, assigned by `logger`, never reused),
+`timestamp`, `level`, `message` — to a bounded ring buffer,
+`logger::recent_logs_` (capped at `kMaxRecentLogs` = 200; oldest dropped
+first). This happens inside `logger::log()` itself, under the same mutex
+that already serializes writes to stdout/the log file — no new
+synchronization primitive.
+
+Delivery is driven from the same place QUERY_TREE is answered:
+`web_renderer::service_automation_queries()`, called once per session per
+rendered frame. Each call compares `s.logger_service->recent_logs()`
+against `web_renderer::last_broadcast_log_seq_` (a render-thread-only
+watermark, the highest `seq` already sent) and broadcasts anything newer,
+in one `LOG_EVENT` message, to every currently-connected browser via
+`civetweb_server::broadcast()` — then advances the watermark. A frame with
+nothing new logged sends nothing. Because `on_after_dispatch`
+(`src/server/server.cpp`) already marks *every* session dirty after *any*
+RMI dispatch — including the `log` RMI method itself — a `log()` call is
+guaranteed to trigger a render within one frame interval (the ~16ms cap in
+`server::render_loop`), so delivery is near-real-time without any special-
+casing beyond the existing dirty-tracking the render loop already does.
+
+On the browser side, `client.js`'s `window.wish.logs` array accumulates
+every `LOG_EVENT`'s entries as they arrive (`window.wish.getLogs()` is a
+plain synchronous accessor — a shallow copy of that array — not a
+`Promise`, since there is no round trip: the data is already local by the
+time a script asks for it). A script correlates cause and effect the same
+way it would with any event log: read the array length, take an action,
+`wait_for` the length to grow, inspect what got appended:
+
+```python
+before = len(ui.get_logs())
+ui.click("dialog.ok")
+ui.wait_for(f"() => window.wish.logs.length > {before}")
+assert ui.get_logs()[-1]["message"] == "saved"
+```
+
+---
+
 ## Screenshots and input via Playwright
 
 No new server-side code is needed for either capability — both ride on
@@ -311,6 +399,7 @@ window.wish = {
   ready: false,
   _pending: new Map(),   // request_id -> {resolve, reject}
   _nextId: 1,
+  logs: [],               // grows as 0x22 LOG_EVENT envelopes arrive
 
   getTree(root = "") {
     const id = this._nextId++;
@@ -324,11 +413,17 @@ window.wish = {
     const snap = await this.getTree(path);
     return snap.widgets.find(w => w.path === path) ?? null;
   },
+
+  getLogs() {
+    return this.logs.slice();  // synchronous -- no round trip, see below
+  },
 };
 // on receiving a 0x21 TREE_SNAPSHOT envelope:
 //   const { resolve } = window.wish._pending.get(msg.request_id);
 //   window.wish._pending.delete(msg.request_id);
 //   resolve(msg);
+// on receiving a 0x22 LOG_EVENT envelope (pushed, no request_id to resolve):
+//   window.wish.logs.push(...msg.logs);
 ```
 
 This is the only piece Playwright needs beyond its own APIs — no second
@@ -375,9 +470,12 @@ alongside the existing "Running the web renderer" one.
 
 `tests/test_automation_query.cpp`, gated the same way
 `tests/test_web_renderer.cpp` is: real WebSocket connections over a real
-socket, no browser required, asserting on `QUERY_TREE`/`TREE_SNAPSHOT`
-envelope round-trips and on `automation::build_tree_snapshot()`'s output
-against a hand-built `ui_element` tree.
+socket, no browser required, asserting on `QUERY_TREE`/`TREE_SNAPSHOT`/
+`LOG_EVENT` envelope round-trips, on `automation::build_tree_snapshot()`'s
+output against a hand-built `ui_element` tree, on `logger::recent_logs()`'s
+ordering/`seq`/cap behavior, and on `service_automation_queries()`
+broadcasting each new log entry exactly once (not resending what an
+earlier call already sent).
 
 ---
 
@@ -399,14 +497,21 @@ with AutomationClient.launch(server_cmd=["wish", "server",
     ui.type_text("form.name_input", "Ada Lovelace")
     png_bytes = ui.screenshot()
     ui.wait_for("async () => (await window.wish.getWidget('status.label'))?.text === 'Saved'")
+
+    before = len(ui.get_logs())
+    ui.click("form.save")
+    ui.wait_for(f"() => window.wish.logs.length > {before}")
+    assert ui.get_logs()[-1]["message"] == "saved"
 ```
 
-`window.wish` only exposes `getTree()`/`getWidget()` as `Promise`-returning
-calls (see the JS shim below) — there is no separate synchronous variant.
-`wait_for()`'s predicate may itself be `async`: Playwright's
-`page.wait_for_function()` already awaits a returned `Promise` on every
-poll, so an `async` predicate that calls `getWidget()` works with no extra
-plumbing on the Python side.
+`window.wish.getTree()`/`getWidget()` are `Promise`-returning calls (see
+the JS shim below); `wait_for()`'s predicate may itself be `async` --
+Playwright's `page.wait_for_function()` already awaits a returned
+`Promise` on every poll, so an `async` predicate that calls `getWidget()`
+works with no extra plumbing on the Python side. `getLogs()` is different:
+synchronous, no `Promise`, since log entries are pushed and buffered
+client-side as they happen (see "Log event protocol" above) rather than
+fetched on demand.
 
 `AutomationClient.launch(...)`:
 1. Starts the given `server_cmd` (typically `wish server --renderer web`) as
@@ -420,7 +525,7 @@ plumbing on the Python side.
 2. Launches a headless Chromium via `playwright.sync_api.sync_playwright()
    .chromium.launch(headless=True)`, navigates to the server's URL.
 3. Waits for `window.wish.ready`.
-4. Exposes `get_tree()`, `get_widget(path)`, `click(path)`,
+4. Exposes `get_tree()`, `get_widget(path)`, `get_logs()`, `click(path)`,
    `type_text(path, text)`, `screenshot()`, `wait_for(js_predicate)` as
    thin wrappers over `page.evaluate()`/`page.mouse`/`page.keyboard`/
    `page.screenshot()`/`page.wait_for_function()`.
@@ -481,6 +586,7 @@ still-unimplemented, design).
 | **Hit-test capture placement** | Central `render_node` override in `web_renderer` | Zero changes to any of the ~20 individual widget `render_*` functions in `imgui_ui_renderer.cpp`; mirrors the exact wrap-and-capture shape `tests/test_imgui_renderer.cpp`'s `counting_imgui_renderer` already proves safe. |
 | **Widget targeting** | Existing dot-path names (`context::ui_objects`) | Already the stable, human-readable identifier scheme wish maintains; no new "testid" field needed on any widget class. |
 | **Session model** | Dedicated single-session process per run | Matches Playwright's own "fresh context per test" model; sidesteps the current shared-global-`ImGuiContext` limitation across multiple sessions in `server::render_loop`. Attaching to a live multi-session server is a possible future extension, out of scope here. |
+| **Log delivery** | Server pushes `LOG_EVENT`; no browser-initiated query exists | A log line's *position relative to the automation script's own actions* is the point (click, then observe the log it caused) — a pull/query model would force the script to poll and reconstruct that ordering itself, and would need a UI-state snapshot bundled into each entry to substitute for it. Push preserves ordering for free, since the script is already the one driving the UI and therefore already knows what state it's in. |
 
 ---
 

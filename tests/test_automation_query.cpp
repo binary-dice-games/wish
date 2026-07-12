@@ -2,13 +2,15 @@
 //
 // Mirrors test_web_renderer.cpp's real-socket, no-browser-required style
 // (see src/automation/DESIGN.md's "Tests" section): pure-logic tests for
-// automation::parse_query_tree_request()/build_tree_snapshot() need no
-// networking at all, plus one end-to-end test that drives an actual
-// QUERY_TREE -> TREE_SNAPSHOT round trip over a real WebSocket connection.
+// automation::parse_query_tree_request()/build_tree_snapshot()/build_log_event()
+// need no networking at all, plus end-to-end tests that drive an actual
+// QUERY_TREE -> TREE_SNAPSHOT round trip, and a logger::log() -> LOG_EVENT
+// push, over a real WebSocket connection.
 #include <gtest/gtest.h>
 
 #include <automation/automation_query.hpp>
 #include <context/context.hpp>
+#include <context/logger.hpp>
 #include <server/registry.hpp>
 #include <ui/ui_importer.hpp>
 #include <web/draw_protocol.hpp>
@@ -28,18 +30,24 @@
 
 #include <chrono>
 #include <cstring>
+#include <deque>
+#include <filesystem>
+#include <memory>
 #include <optional>
 #include <string>
 #include <thread>
 #include <vector>
 
+using bdg::wish::automation::build_log_event;
 using bdg::wish::automation::build_tree_snapshot;
 using bdg::wish::automation::hit_test_entry;
 using bdg::wish::automation::hit_test_map;
 using bdg::wish::automation::parse_query_tree_request;
 using bdg::wish::context;
+using bdg::wish::logger;
 using bdg::wish::web_renderer;
 using bdg::wish::draw_protocol::decode_query_tree_message;
+using bdg::wish::draw_protocol::encode_log_event;
 using bdg::wish::draw_protocol::encode_tree_snapshot;
 
 using namespace bdg::bison;
@@ -179,6 +187,67 @@ TEST_F(BuildTreeSnapshotTest, UnknownClassFallsBackToHexHash) {
   EXPECT_EQ(j["widgets"][0]["class"].get<std::string>().substr(0, 2), "0x");
 }
 
+// ── logger::recent_logs() / build_log_event() ───────────────────────────────
+
+class LoggerAutomationTest : public ::testing::Test {
+ protected:
+  static void SetUpTestSuite() {
+    bdg::wish::register_all();
+  }
+
+  logger make_logger() {
+    return logger{dynamic::instantiate("wish"_key, "__WishLogger"_key), /*verbose=*/false, std::filesystem::path{}};
+  }
+};
+
+TEST_F(LoggerAutomationTest, RecentLogsCapturesCallsInOrderWithIncreasingSeq) {
+  auto lg = make_logger();
+  lg.info("first");
+  lg.warn("second");
+
+  auto logs = lg.recent_logs();
+  ASSERT_EQ(logs.size(), 2u);
+  EXPECT_EQ(logs[0].seq, 1u);
+  EXPECT_EQ(logs[0].level, "info");
+  EXPECT_EQ(logs[0].message, "first");
+  EXPECT_EQ(logs[1].seq, 2u);
+  EXPECT_EQ(logs[1].level, "warn");
+  EXPECT_EQ(logs[1].message, "second");
+}
+
+TEST_F(LoggerAutomationTest, RecentLogsDropsOldestPastCap) {
+  auto lg = make_logger();
+  // kMaxRecentLogs is 200 (private); push comfortably past it and check the
+  // buffer never grows unbounded and keeps the newest entries.
+  for (int i = 0; i < 250; ++i)
+    lg.debug("msg " + std::to_string(i));
+
+  auto logs = lg.recent_logs();
+  EXPECT_LE(logs.size(), 200u);
+  EXPECT_EQ(logs.front().message, "msg 50"); // 250 - 200 == 50 dropped from the front
+  EXPECT_EQ(logs.back().message, "msg 249");
+}
+
+TEST(BuildLogEventTest, EmitsEntriesInOrder) {
+  std::deque<logger::log_entry> entries;
+  entries.push_back(logger::log_entry{1, "2026-01-01 00:00:00", "info", "hello"});
+  entries.push_back(logger::log_entry{2, "2026-01-01 00:00:01", "warn", "uh oh"});
+
+  auto j = nlohmann::json::parse(build_log_event(entries));
+  ASSERT_EQ(j["logs"].size(), 2u);
+  EXPECT_EQ(j["logs"][0]["seq"], 1);
+  EXPECT_EQ(j["logs"][0]["level"], "info");
+  EXPECT_EQ(j["logs"][0]["message"], "hello");
+  EXPECT_EQ(j["logs"][1]["seq"], 2);
+  EXPECT_EQ(j["logs"][1]["message"], "uh oh");
+}
+
+TEST(BuildLogEventTest, EmptyEntriesYieldsEmptyArray) {
+  std::deque<logger::log_entry> entries;
+  auto j = nlohmann::json::parse(build_log_event(entries));
+  EXPECT_TRUE(j["logs"].empty());
+}
+
 // ── decode_query_tree_message() / encode_tree_snapshot() envelope codec ────
 
 namespace {
@@ -220,6 +289,15 @@ TEST(DrawProtocolAutomationTest, EncodeTreeSnapshot_WrapsJsonVerbatim) {
   auto bytes = encode_tree_snapshot(json);
   ASSERT_EQ(bytes.size(), 8 + json.size());
   EXPECT_EQ(static_cast<uint8_t>(bytes[0]), static_cast<uint8_t>(bdg::wish::web_msg_type::tree_snapshot));
+  std::string round_tripped(reinterpret_cast<const char*>(bytes.data() + 8), json.size());
+  EXPECT_EQ(round_tripped, json);
+}
+
+TEST(DrawProtocolAutomationTest, EncodeLogEvent_WrapsJsonVerbatim) {
+  std::string json = R"({"logs":[]})";
+  auto bytes = encode_log_event(json);
+  ASSERT_EQ(bytes.size(), 8 + json.size());
+  EXPECT_EQ(static_cast<uint8_t>(bytes[0]), static_cast<uint8_t>(bdg::wish::web_msg_type::log_event));
   std::string round_tripped(reinterpret_cast<const char*>(bytes.data() + 8), json.size());
   EXPECT_EQ(round_tripped, json);
 }
@@ -342,13 +420,13 @@ std::optional<recv_result> recv_ws_frame(int sock) {
 }
 
 // Reads frames (skipping FRAME/TEX_* broadcasts, e.g. the font atlas) until
-// a TREE_SNAPSHOT arrives, or @p max_frames is exhausted.
-std::optional<recv_result> recv_tree_snapshot(int sock, int max_frames = 30) {
+// one matching @p wanted arrives, or @p max_frames is exhausted.
+std::optional<recv_result> recv_message_of_type(int sock, bdg::wish::web_msg_type wanted, int max_frames = 30) {
   for (int i = 0; i < max_frames; ++i) {
     auto r = recv_ws_frame(sock);
     if (!r)
       return std::nullopt;
-    if (r->msg_type == static_cast<uint8_t>(bdg::wish::web_msg_type::tree_snapshot))
+    if (r->msg_type == static_cast<uint8_t>(wanted))
       return r;
   }
   return std::nullopt;
@@ -413,7 +491,7 @@ TEST_F(WebRendererAutomationTest, QueryTreeRoundTripsThroughRealSocket) {
 
   renderer_->service_automation_queries(ctx);
 
-  auto snapshot = recv_tree_snapshot(sock);
+  auto snapshot = recv_message_of_type(sock, bdg::wish::web_msg_type::tree_snapshot);
   ASSERT_TRUE(snapshot.has_value());
   auto j = nlohmann::json::parse(snapshot->payload);
   EXPECT_EQ(j["request_id"], 42);
@@ -428,6 +506,52 @@ TEST_F(WebRendererAutomationTest, QueryTreeRoundTripsThroughRealSocket) {
     }
   }
   EXPECT_TRUE(found);
+
+  close_socket(sock);
+}
+
+// logger::log() is push-based automation: unlike QUERY_TREE, there is no
+// browser -> server request. service_automation_queries() itself decides
+// what's "new" (via logger::log_entry::seq vs. web_renderer's own
+// last_broadcast_log_seq_ watermark) and broadcasts it unprompted -- this
+// test exercises exactly that watermark logic: two separate log() calls,
+// each followed by its own service_automation_queries() call, must produce
+// two separate LOG_EVENT messages, each containing only the entry that
+// hadn't been sent yet.
+TEST_F(WebRendererAutomationTest, LogEventsBroadcastLiveWithoutResendingOlderEntries) {
+  int port = renderer_->actual_port();
+  ASSERT_GT(port, 0);
+  int sock = connect_ws_client(port);
+  ASSERT_GE(sock, 0);
+
+  for (int i = 0; i < 200; ++i) {
+    if (renderer_->poll_events())
+      break;
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+
+  context ctx{"automation_log_test"_key};
+  ctx.logger_service = std::make_shared<logger>(
+      dynamic::instantiate("wish"_key, "__WishLogger"_key), /*verbose=*/false, std::filesystem::path{});
+
+  ctx.logger_service->info("clicked ok");
+  renderer_->service_automation_queries(ctx);
+
+  auto first = recv_message_of_type(sock, bdg::wish::web_msg_type::log_event);
+  ASSERT_TRUE(first.has_value());
+  auto j1 = nlohmann::json::parse(first->payload);
+  ASSERT_EQ(j1["logs"].size(), 1u);
+  EXPECT_EQ(j1["logs"][0]["message"], "clicked ok");
+  EXPECT_EQ(j1["logs"][0]["level"], "info");
+
+  ctx.logger_service->warn("second event");
+  renderer_->service_automation_queries(ctx);
+
+  auto second = recv_message_of_type(sock, bdg::wish::web_msg_type::log_event);
+  ASSERT_TRUE(second.has_value());
+  auto j2 = nlohmann::json::parse(second->payload);
+  ASSERT_EQ(j2["logs"].size(), 1u); // the first entry is never resent
+  EXPECT_EQ(j2["logs"][0]["message"], "second event");
 
   close_socket(sock);
 }

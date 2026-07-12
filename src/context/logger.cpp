@@ -48,6 +48,9 @@ logger::logger(bison::dynamic&& base, bool verbose, std::filesystem::path log_pa
 void logger::log(const std::string& level, const std::string& msg) {
   std::lock_guard<std::mutex> lk(mtx_);
   write_locked(level, msg);
+#ifdef WISH_AUTOMATION_ENABLED
+  record_for_automation(level, msg);
+#endif
 }
 
 void logger::write_locked(const std::string& level, const std::string& msg) {
@@ -60,6 +63,23 @@ void logger::write_locked(const std::string& level, const std::string& msg) {
     log_file_ << line << std::flush;
   }
 }
+
+#ifdef WISH_AUTOMATION_ENABLED
+
+void logger::record_for_automation(const std::string& level, const std::string& msg) {
+  // seq is what lets service_automation_queries() broadcast each entry
+  // exactly once, in call order -- see log_entry's doc comment.
+  recent_logs_.push_back(log_entry{next_log_seq_++, timestamp(), level, msg});
+  if (recent_logs_.size() > kMaxRecentLogs)
+    recent_logs_.pop_front();
+}
+
+std::deque<logger::log_entry> logger::recent_logs() const {
+  std::lock_guard<std::mutex> lk(mtx_);
+  return recent_logs_;
+}
+
+#endif // WISH_AUTOMATION_ENABLED
 
 // ── registration ──────────────────────────────────────────────────────────────
 

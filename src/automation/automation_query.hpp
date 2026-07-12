@@ -12,11 +12,13 @@
 
 #ifdef WISH_AUTOMATION_ENABLED
 
+#include <context/logger.hpp>
 #include <ui/ui_importer.hpp>
 
 #include "src/bison/bison_common.hpp"
 
 #include <cstdint>
+#include <deque>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -98,6 +100,26 @@ std::optional<query_tree_request> parse_query_tree_request(const std::string& js
  */
 std::string build_tree_snapshot(
     uint32_t request_id, const std::string& root, const wish::ui_tree& ui_objects, const hit_test_map& hits);
+
+/**
+ * @brief Build a LOG_EVENT JSON payload.
+ *
+ * Unlike `build_tree_snapshot()`, this has no request/response pairing --
+ * it's pushed to every connected browser as soon as new entries exist (see
+ * `web_renderer::service_automation_queries()`), so a log line's arrival
+ * order tells an automation client exactly where it fell relative to
+ * whatever action the client just took (e.g. "click a button, then observe
+ * the log entry it caused").
+ *
+ * Emits one JSON object per entry in @p new_entries, oldest first: `seq`,
+ * `timestamp`, `level`, `message` (see `logger::log_entry`).
+ *
+ * @param new_entries  The subset of `logger::recent_logs()` not yet
+ *                      broadcast (entries with `seq` greater than whatever
+ *                      was last sent).
+ * @return UTF-8 JSON text: `{"logs":[...]}`.
+ */
+std::string build_log_event(const std::deque<logger::log_entry>& new_entries);
 
 } // namespace bdg::wish::automation
 

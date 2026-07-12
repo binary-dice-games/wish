@@ -349,6 +349,14 @@ std::vector<std::byte> encode_tree_snapshot(const std::string& json_payload) {
   return wrap_envelope(web_msg_type::tree_snapshot, std::move(payload));
 }
 
+// ── outbound: LOG_EVENT ──────────────────────────────────────────────────────
+
+std::vector<std::byte> encode_log_event(const std::string& json_payload) {
+  std::vector<std::byte> payload(json_payload.size());
+  std::memcpy(payload.data(), json_payload.data(), json_payload.size());
+  return wrap_envelope(web_msg_type::log_event, std::move(payload));
+}
+
 #endif // WISH_AUTOMATION_ENABLED
 
 } // namespace bdg::wish::draw_protocol

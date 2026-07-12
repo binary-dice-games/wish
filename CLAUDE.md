@@ -249,16 +249,24 @@ with AutomationClient.launch(server_cmd=["build/wish", "server", "--renderer", "
     ui.type_text("form.name_input", "Ada Lovelace")
     png_bytes = ui.screenshot()
     ui.wait_for("async () => (await window.wish.getWidget('status.label'))?.text === 'Saved'")
+
+    # Logs are pushed live and buffered in arrival order, so an action's log
+    # output can be told apart from everything logged before it:
+    before = len(ui.get_logs())
+    ui.click("form.save")
+    ui.wait_for(f"() => window.wish.logs.length > {before}")
+    assert ui.get_logs()[-1]["message"] == "saved"
 ```
 
 | Method | Use it to... |
 |---|---|
 | `get_tree(root="")` | Dump the whole tree, or one subtree, for orientation — "what widgets exist right now, and what are their current field values?" |
 | `get_widget(path)` | Read one widget's current state (`class`, `label`/`text`/`value`/`title`/`checked`/`selected`/`hint` — whichever exist, `rect`, `hovered`, `active`, `visible`) by its exact dot-path. |
+| `get_logs()` | Read every application log message (`client.log_info(...)` etc., via `logger`) received so far, oldest first — `{seq, timestamp, level, message}` each. Pushed live as the app logs them, so an entry's position relative to actions this script just took (e.g. `click()`) tells you what caused it, with no timestamp cross-referencing needed. |
 | `click(path)` | Click a widget's center — a real DOM/CDP mouse event, indistinguishable from a human click. Raises if `path` doesn't exist or was never rendered (`rect` is `None`). |
 | `type_text(path, text)` | Focus-click, then type — for `InputText`/`InputInt`/`InputFloat` etc. |
 | `screenshot()` | Pixel-perfect PNG bytes of exactly what's on screen right now — attach to a bug report, or eyeball visually with the `Read` tool after writing to a file. |
-| `wait_for(js_predicate)` | Block until a JS predicate is true — e.g. wait for an async operation's result to land, or a dialog to close, before asserting. `async` predicates that call `getTree()`/`getWidget()` work directly (Playwright awaits the returned Promise on every poll). |
+| `wait_for(js_predicate)` | Block until a JS predicate is true — e.g. wait for an async operation's result to land, a dialog to close, or a new log entry to appear, before asserting. `async` predicates that call `getTree()`/`getWidget()` work directly (Playwright awaits the returned Promise on every poll). |
 
 ### Workflow: investigating a UI bug report
 
@@ -271,7 +279,10 @@ with AutomationClient.launch(server_cmd=["build/wish", "server", "--renderer", "
 3. **Drive the exact repro steps** from the bug report with `click()`/`type_text()`,
    checking `get_widget()` after each step — this pinpoints the exact
    action where state diverges from expectation, rather than staring at a
-   single end-state screenshot.
+   single end-state screenshot. If the app logs anything (`client.log_info`
+   etc.), check `get_logs()` after each step too — an unexpected message
+   (or a missing one) right after a specific `click()` often points straight
+   at the handler responsible, without needing a debugger.
 4. **Correlate a widget back to source** via its `class` and dot-`path`: the
    path's last segment is the field name in whatever JSON/YAML descriptor or
    `register_template()` call defined it (e.g. `"dialog.ok"` → search for
@@ -319,6 +330,10 @@ def test_saving_shows_confirmation(wish_ui):
   pass `--web_bind 0.0.0.0` for an automation session on a shared or
   untrusted network — the query API grants full tree introspection and input
   injection over the same WebSocket connection.
+- **`get_logs()` only sees logs from after the browser connected.** Logging
+  is pushed live, not replayed from history — a message logged before
+  `AutomationClient.launch()` finished connecting is never delivered.
+  Connect first, then drive the app, and this is a non-issue in practice.
 
 ## Claude Code Assist Behavioral Rules for This Repo
 

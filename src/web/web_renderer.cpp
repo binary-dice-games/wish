@@ -155,6 +155,7 @@ void web_renderer::teardown() {
 #ifdef WISH_AUTOMATION_ENABLED
   hit_test_map_.clear();
   pending_tree_queries_.wlock()->clear();
+  last_broadcast_log_seq_ = 0;
 #endif
 
   ImPlot3D::DestroyContext();
@@ -420,22 +421,38 @@ void web_renderer::render_node(const ui_element& node, const context& s) {
 }
 
 void web_renderer::service_automation_queries(const context& s) {
-  std::deque<std::pair<ws_connection_id, std::string>> queries;
-  {
-    auto lock = pending_tree_queries_.wlock();
-    queries = std::move(*lock);
-    lock->clear();
-  }
-  if (queries.empty() || !server_)
+  if (!server_)
     return;
 
-  for (const auto& [conn_id, json_payload] : queries) {
+  std::deque<std::pair<ws_connection_id, std::string>> tree_queries;
+  {
+    auto lock = pending_tree_queries_.wlock();
+    tree_queries = std::move(*lock);
+    lock->clear();
+  }
+  for (const auto& [conn_id, json_payload] : tree_queries) {
     auto req = automation::parse_query_tree_request(json_payload);
     if (!req)
       continue; // malformed QUERY_TREE payload -- drop silently, matches
                 // draw_protocol's own "unrecognized messages" convention
     auto snapshot_json = automation::build_tree_snapshot(req->request_id, req->root, s.ui_objects, hit_test_map_);
     server_->send_to(conn_id, draw_protocol::encode_tree_snapshot(snapshot_json));
+  }
+
+  // Push, not pull: broadcast whatever has been logged since the last call
+  // to every connected browser, unprompted, so a script observes log
+  // events interleaved with its own actions in the order they happened --
+  // see service_automation_queries()'s doc comment.
+  if (s.logger_service) {
+    auto logs = s.logger_service->recent_logs();
+    std::deque<logger::log_entry> new_entries;
+    for (auto& e : logs)
+      if (e.seq > last_broadcast_log_seq_)
+        new_entries.push_back(std::move(e));
+    if (!new_entries.empty()) {
+      last_broadcast_log_seq_ = new_entries.back().seq;
+      server_->broadcast(draw_protocol::encode_log_event(automation::build_log_event(new_entries)));
+    }
   }
 }
 

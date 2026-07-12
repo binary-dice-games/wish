@@ -142,6 +142,22 @@ std::string build_tree_snapshot(
   return out.dump();
 }
 
+std::string build_log_event(const std::deque<logger::log_entry>& new_entries) {
+  nlohmann::json entries = nlohmann::json::array();
+  for (const auto& e : new_entries) {
+    nlohmann::json entry;
+    entry["seq"] = e.seq;
+    entry["timestamp"] = e.timestamp;
+    entry["level"] = e.level;
+    entry["message"] = e.message;
+    entries.push_back(std::move(entry));
+  }
+
+  nlohmann::json out;
+  out["logs"] = std::move(entries);
+  return out.dump();
+}
+
 } // namespace bdg::wish::automation
 
 #endif // WISH_AUTOMATION_ENABLED

@@ -125,7 +125,8 @@ class renderer {
   virtual void end_frame() = 0;
 
   /**
-   * @brief Answer any pending automation tree/hit-test queries for @p s.
+   * @brief Service the automation module for @p s: answer any pending
+   *        tree/hit-test queries, and push any newly-logged entries.
    *
    * Called from `wish::server::render_loop` / `wish::standalone::render_loop`
    * right after @p s's `render_session()` calls for this frame complete,
@@ -136,7 +137,7 @@ class renderer {
    * the render loop) so `server.cpp`/`standalone.cpp` never need to know
    * which concrete renderer is active.
    *
-   * @param s  Session whose queued queries (if any) should be answered.
+   * @param s  Session this call should act on.
    */
   virtual void service_automation_queries(const context& s) {
     (void)s;

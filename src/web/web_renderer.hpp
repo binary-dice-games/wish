@@ -120,17 +120,27 @@ class web_renderer : public imgui_renderer {
   void render_node(const ui_element& node, const context& s) override;
 
   /**
-   * @brief Answer any QUERY_TREE requests queued since the last call.
+   * @brief Answer any QUERY_TREE requests queued since the last call, and
+   *        push a LOG_EVENT for any log entries logged since the last call.
    *
    * Called by `wish::server::render_loop` / `wish::standalone::render_loop`
    * right after this session's `render_session()` calls complete, while the
    * session's context write-lock is still held -- see
    * `src/automation/DESIGN.md`. At that point `hit_test_map_` holds exactly
    * this frame's rects for @p s (cleared fresh in `begin_frame()`), so a
-   * reply always reflects the most recently completed frame.
+   * QUERY_TREE reply always reflects the most recently completed frame.
    *
-   * @param s  The session whose `ui_objects` a queued query should be
-   *           answered against.
+   * Log broadcasting is unconditional (no browser request needed): every
+   * call compares `s.logger_service->recent_logs()` against
+   * `last_broadcast_log_seq_` and broadcasts anything new to every
+   * connected browser, in the order `log()` was called -- so an automation
+   * script sees log events land in sequence with its own actions (e.g.
+   * "click a button, then observe the log entry it caused") rather than
+   * having to ask for logs and reconstruct timing itself. A no-op when
+   * @p s has no logger service attached yet.
+   *
+   * @param s  The session whose `ui_objects` / `logger_service` this call
+   *           should act on.
    */
   void service_automation_queries(const context& s) override;
 #endif
@@ -302,6 +312,17 @@ class web_renderer : public imgui_renderer {
   // request's still-raw JSON payload; parsing happens on the render thread
   // in service_automation_queries() via automation::parse_query_tree_request().
   bison::synchronized<std::deque<std::pair<ws_connection_id, std::string>>> pending_tree_queries_;
+
+  // Highest logger::log_entry::seq already broadcast as a LOG_EVENT.
+  // Render-thread only (read and written solely inside
+  // service_automation_queries()). Starts at 0, which is always less than
+  // any real seq (logger::next_log_seq_ starts at 1), so the first call
+  // broadcasts everything already buffered when automation started
+  // watching. Session-wide, not per-session, matching hit_test_map_'s own
+  // single-session assumption (see "Session model" in
+  // src/automation/DESIGN.md) -- with more than one connected RMI session
+  // this would under- or over-broadcast across them.
+  uint64_t last_broadcast_log_seq_ = 0;
 #endif
 };
 
