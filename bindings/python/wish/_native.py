@@ -138,6 +138,9 @@ def _setup_wish_signatures(lib: ctypes.CDLL) -> None:
     lib.wish_client_run.restype = Error
     lib.wish_client_run.argtypes = [ClientHandle, SessionFn, ctypes.c_void_p]
 
+    lib.wish_client_run_with_params.restype = Error
+    lib.wish_client_run_with_params.argtypes = [ClientHandle, SessionFn, ctypes.c_void_p, _bison_native.Handle]
+
     lib.wish_client_wait.restype = None
     lib.wish_client_wait.argtypes = [ClientHandle]
 

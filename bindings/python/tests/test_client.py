@@ -58,5 +58,51 @@ class TestErrorMapping(unittest.TestCase):
         self.assertEqual(err.code, _n.WISH_ERR_NOT_FOUND)
 
 
+class TestRunWithConnectParams(unittest.TestCase):
+    """Exercises Client.run(session_fn, params=...) -> wish_client_run_with_params
+    plumbing (see src/auth/DESIGN.md). No live server is spun up here (the
+    Python bindings are client-only) -- connecting to a closed port still
+    proves params are marshaled through the FFI boundary without crashing;
+    the full persistence round-trip through a live server is covered by the
+    C++ integration tests in tests/test_auth.cpp.
+    """
+
+    def _unreachable_client(self):
+        # Port 1 is a reserved/privileged port essentially never listening.
+        return Client.tcp("127.0.0.1", 1)
+
+    def test_run_with_dict_params_fails_cleanly_not_a_crash(self):
+        client = self._unreachable_client()
+        try:
+            with self.assertRaises(WishError) as ctx:
+                client.run(lambda c: None, params={"username": "alice"})
+            self.assertEqual(ctx.exception.code, _n.WISH_ERR_EXCEPTION)
+        finally:
+            client.destroy()
+
+    def test_run_with_no_params_still_works(self):
+        client = self._unreachable_client()
+        try:
+            with self.assertRaises(WishError) as ctx:
+                client.run(lambda c: None)
+            self.assertEqual(ctx.exception.code, _n.WISH_ERR_EXCEPTION)
+        finally:
+            client.destroy()
+
+    def test_run_with_dynamic_params_fails_cleanly_not_a_crash(self):
+        from bison import Dynamic
+
+        client = self._unreachable_client()
+        params = Dynamic()
+        params["username"] = "alice"
+        try:
+            with self.assertRaises(WishError) as ctx:
+                client.run(lambda c: None, params=params)
+            self.assertEqual(ctx.exception.code, _n.WISH_ERR_EXCEPTION)
+        finally:
+            params.release()
+            client.destroy()
+
+
 if __name__ == "__main__":
     unittest.main()

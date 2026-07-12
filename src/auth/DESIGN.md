@@ -1,9 +1,17 @@
 # wish Optional Auth Module & Persistent Sandbox Directories — Architecture & Design
 
-**Status: design only — not yet implemented.** This document is the
-implementation brief for a future pass; no code in this directory exists
-yet. Do not treat any type or file path below as already present until it
-has actually been created.
+**Status: implemented.** See `src/auth/local_auth_module.hpp`/`.cpp`,
+`bison::rmi::auth_module_iface` (`extern/bison/src/rmi/server/auth.hpp`),
+`wish::context::resource_dir_persistent`/`populate_resource_dir()`
+(`src/context/context.hpp`/`.cpp`), and `wish::server::start()`/
+`set_persistent_sandbox_root()`/`on_authenticated()`
+(`src/server/server.hpp`/`.cpp`). One deviation from the original brief
+below: `auth_module` ended up as a parameter of `server::listen()` /
+`wish::server::start()` rather than a `set_auth_module()` setter (see
+"Key Abstractions" below) -- the module cannot sensibly change once the
+accept loop is running, so a setter with a "must call before start()"
+convention-only contract was replaced with a compile-time-enforced
+parameter instead. Everything else matches this document as designed.
 
 ## Overview
 
@@ -120,16 +128,23 @@ using auth_module_ptr = std::shared_ptr<auth_module_iface>;
 ```
 
 `bison::rmi::server` additions:
-- `auth_module_ptr auth_module_;` + `set_auth_module(auth_module_ptr)`
-  (must be called before `start()`/`listen()`, same contract as
-  `wish::server::set_logger`).
+- `auth_module_ptr auth_module_;` set by `listen(dynamic params = {},
+  auth_module_ptr auth_module = nullptr)`'s new second parameter --
+  **implemented as a `listen()` parameter, not a `set_auth_module()`
+  setter** as originally sketched above. The module cannot sensibly change
+  once the accept loop it gates is already running, so there is no
+  meaningful "set it again later" use case; a parameter makes that
+  invariant compile-time-enforced instead of a "must call before start()"
+  convention (the pattern `set_logger`/`set_allow_absolute_paths` use).
+  `nullptr` (default) disables the feature, so existing `listen()` call
+  sites are unaffected.
 - New no-op-default virtual hook `on_authenticated(context& ctx, const
   std::string& identity)`, fired only when `auth_module_` is set and
   `authenticate()` returned `true`. This is the extension point wish uses.
-- `handle_connect()` (`server.cpp:470-474`): if `auth_module_` is set, call
+- `handle_connect()`: if `auth_module_` is set, call
   `authenticate(ctx, env.payload, identity)`; on failure, respond with the
-  existing `ERR_ACCESS_DENIED` constant (`src/rmi/shared/constants.hpp:72`
-  — defined but currently unused anywhere) instead of the normal ack; on
+  existing `ERR_ACCESS_DENIED` constant (`src/rmi/shared/constants.hpp` --
+  previously defined but unused anywhere) instead of the normal ack; on
   success call `on_authenticated(ctx, identity)` before the ack. With no
   `auth_module_` set, `handle_connect` is byte-for-byte unchanged.
 
@@ -197,23 +212,30 @@ rather than inventing a second code path for the persistent case.
 
 ### `wish::server` changes
 
-Two new setters, both "must be called before `start()`" like the existing
-ones (`set_logger`, `set_allow_absolute_paths`):
-- `set_auth_module(bison::rmi::auth_module_ptr mod)` — forwards to the
-  base `bison::rmi::server::set_auth_module`.
-- `set_persistent_sandbox_root(std::filesystem::path root)` — stores
-  `persistent_sandbox_root_` (default empty = feature disabled). **This is
-  the privacy flag**: persistent, identity-keyed directories are only ever
-  created when an operator has explicitly opted in with a root path,
-  mirroring how `allow_absolute_paths` gates absolute-path widget
-  references.
+- `start(bison::rmi::auth_module_ptr auth_module = nullptr)` — the auth
+  module is a parameter of `start()` (forwarded to the base
+  `bison::rmi::server::listen()`), not a setter, for the same reason as
+  the bison-level change above: it cannot change once the accept loop is
+  running. `nullptr` (default) disables the feature.
+- `set_persistent_sandbox_root(std::filesystem::path root)` — a setter,
+  same "must be called before `start()`" contract as `set_logger`/
+  `set_allow_absolute_paths` (unlike the auth module, there's no strong
+  reason to also make this a `start()` parameter, so it stays consistent
+  with existing config setters). Stores `persistent_sandbox_root_`
+  (default empty = feature disabled). **This is the privacy flag**:
+  persistent, identity-keyed directories are only ever created when an
+  operator has explicitly opted in with a root path, mirroring how
+  `allow_absolute_paths` gates absolute-path widget references.
 
 New override:
 ```cpp
-void on_authenticated(bison::rmi::context& ctx, const std::string& identity) override;
+void on_authenticated(bison::rmi::context& ctx, const std::string& identity) override final;
 ```
-Bridging pattern like the existing `on_session_created`/
-`on_session_destroyed` overrides (`server.cpp:69-98`). No-op if
+Unlike `on_session_created`/`on_session_destroyed`, this is a single
+private `override final` -- there is no further wish-level protected hook
+exposed to `wish::server` subclasses, since the design calls for exactly
+one policy (switch to a persistent, identity-keyed sandbox) with no
+per-application variation point. No-op if
 `persistent_sandbox_root_` is empty or `identity` is empty (falls back to
 the default temp directory for that session — a client that supplies no
 identity, or a deployment with no persistent root configured, sees no
@@ -287,11 +309,13 @@ this design's hook fully supports without further bison/wish changes.
 | Symbol | Layer | Contract |
 |---|---|---|
 | `bison::rmi::auth_module_iface::authenticate` | bison | Pure policy hook: accept/reject + optional identity string. No I/O side effects implied; bison does not persist or interpret the identity. |
-| `bison::rmi::server::set_auth_module` | bison | Must be called before `start()`/`listen()`. `nullptr` (default) disables the feature — `handle_connect` behaves exactly as before. |
+| `bison::rmi::server::listen`'s `auth_module` parameter | bison | Parameter, not a setter -- passed to `listen()` when the accept loop starts. `nullptr` (default) disables the feature — `handle_connect` behaves exactly as before. |
 | `bison::rmi::server::on_authenticated` | bison | Default no-op virtual; fires once per successful `authenticate()`, never for rejected or auth-disabled connections. |
 | `client::connect(dynamic params)` / `wish::client::run(dynamic params)` | bison / wish | `params` is forwarded to *both* the transport's `open()` and the server's connect-handshake payload. Existing callers passing no params see no behavior change. |
+| `wish::server::start`'s `auth_module` parameter | wish | Parameter, not a setter, mirroring `bison::rmi::server::listen()`. Forwarded unchanged to the base `listen()`. |
 | `wish::server::set_persistent_sandbox_root` | wish | Must be called before `start()`. Empty path (default) disables persistence entirely regardless of auth module / identity. |
 | `wish::context::resource_dir_persistent` | wish | When true, the destructor does not delete `resource_dir`. Only ever set by `on_authenticated`, never by application code directly. |
+| `rmi_client_connect(rmi_client_handle, bison_handle params)` | bison C ABI | Fixed as part of this work: previously discarded `params` and always connected with an empty `dynamic` (a pre-existing bug this design's "no ABI gap" claim below had assumed was not present); now forwards `params` via `bison_handle_to_dynamic()`, matching what the Python `Client.connect(params)` binding already promised. |
 | `wish::local_auth_module` | wish | Optional convenience; never rejects; not a substitute for real authentication in untrusted deployments. |
 
 ---
@@ -302,41 +326,37 @@ this design's hook fully supports without further bison/wish changes.
   `set_allow_absolute_paths`) have **zero** ABI/Python exposure today —
   `wish::server` is not reachable from any C ABI at all; only bare
   `bison::rmi::server` lifecycle (`rmi_server_tcp_create`/`_listen`/`_stop`/
-  `_release`, `bison/include/rmi_c.h:467-533`) is exposed, with no way to
-  reach virtual hooks or subclass setters. `set_auth_module` and
-  `set_persistent_sandbox_root` follow the exact same, currently
-  C++-embedder-only precedent — **no ABI/binding gap is introduced** for
-  the server-config side; nothing needs to change there.
-- bison's raw client ABI already plumbs `dynamic` params end-to-end:
-  `rmi_client_connect(rmi_client_handle, bison_handle params)`
-  (`bison/include/rmi_c.h:232`) and Python `Client.connect(params)`
-  (`extern/bison/bindings/python/bison/rmi.py:244-247`, via the
-  `_as_params` helper at lines 35-56). Since the `connect()` change above
-  alters *behavior*, not *signature*, callers already using bison's own C
+  `_release`) is exposed, with no way to reach virtual hooks, subclass
+  setters, or (now) `start()`'s `auth_module`/`set_persistent_sandbox_root`.
+  **No ABI/binding gap is introduced** for the server-config side; nothing
+  needed to change there.
+- bison's raw client ABI plumbs `dynamic` params end-to-end:
+  `rmi_client_connect(rmi_client_handle, bison_handle params)` and Python
+  `Client.connect(params)` (via the `_as_params` helper). **This needed a
+  fix as part of this work**: `rmi_client_connect`'s C++ implementation was
+  actually discarding `params` and always connecting with an empty
+  `dynamic`, despite the Python binding faithfully forwarding whatever the
+  caller passed — a pre-existing bug, now fixed (see the Public API
+  Contract table above). Since the `connect()` change above alters
+  *behavior*, not *signature*, callers already using bison's own C
   ABI/Python client can pass auth fields today with no further change.
-- **The actual gap**: wish's own higher-level client ABI/Python wrapper
-  does not expose connect params. `wish_client_run(wish_client_handle,
-  wish_session_fn, void* userdata)` (`include/wish_client_c.h:181`) has no
-  params argument, and the Python `Client.run(session_fn)`
-  (`bindings/python/wish/client.py:103-126`) calls it as-is.
+- **The actual gap, now closed**: wish's own higher-level client
+  ABI/Python wrapper didn't expose connect params.
+  `wish_client_run_with_params(wish_client_handle client, wish_session_fn
+  session_fn, void* userdata, bison_handle connect_params)` has been added
+  to `include/wish_client_c.h`/`src/wish_client_c.cpp`, converting
+  `connect_params` via the existing `bison_handle_to_dynamic()` helper and
+  calling `wish::client::run(dynamic)`. `wish_client_run` is now a thin
+  wrapper calling the new function with a null params handle — no behavior
+  change for existing callers.
 
-  To close this: add `wish_client_run_with_params(wish_client_handle
-  client, wish_session_fn session_fn, void* userdata, bison_handle
-  connect_params)` to `include/wish_client_c.h`/`src/wish_client_c.cpp`,
-  converting `connect_params` to a `bison::dynamic` (reusing whichever
-  handle→dynamic conversion `wish_client_c.cpp` already uses elsewhere,
-  e.g. for template registration) and calling `wish::client::run(dynamic)`.
-  Keep `wish_client_run` unchanged, reimplemented as a thin wrapper calling
-  the new function with an empty params handle — no behavior change for
-  existing callers.
-
-  `bindings/python/wish/client.py`'s `Client.run` gets an optional `params`
-  argument (dict / `bison.Dynamic` / `None`), mirroring bison's own
-  `Client.connect(params)` / `_as_params` conversion pattern, calling the
-  new `wish_client_run_with_params` ABI entry when params are given (and
-  falling back to the existing `wish_client_run` when not, so the default
-  path is untouched). `bindings/python/wish/_native.py` gets the new
-  function's `ctypes` signature declared alongside the existing ones.
+  `bindings/python/wish/client.py`'s `Client.run` takes an optional
+  `params` argument (dict / `bison.Dynamic` / `None`), mirroring bison's
+  own `Client.connect(params)` / `_as_params` conversion pattern, and
+  always calls the new `wish_client_run_with_params` ABI entry (passing a
+  null handle when `params` is `None`, so the default path is untouched).
+  `bindings/python/wish/_native.py` declares the new function's `ctypes`
+  signature alongside the existing ones.
 
 ---
 
@@ -372,41 +392,60 @@ this design's hook fully supports without further bison/wish changes.
 
 ## Tests
 
-- bison: `authenticate()` returning `false` → the client's `connect()`
-  future throws, and the session never reaches `on_authenticated`;
-  returning `true` → `on_authenticated` fires with the right identity; no
-  auth module set → behavior identical to today (regression test).
-- wish: with `set_persistent_sandbox_root` unset, behavior is unchanged
-  (temp dir, deleted on disconnect). With it set + `local_auth_module` +
-  a client calling `run({{"username"_key, "alice"}})`: upload a file,
-  disconnect, reconnect with the same params — the file is still there via
-  `download`. Reconnect with a different username — the file is *not*
-  visible (directory isolation). Reject an identity containing `..`/`/`
-  (sandbox-escape guard).
-- wish C ABI/Python: `wish_client_run_with_params`/`Client.run(params=...)`
-  round-trips a params dict into the server-side `auth_module_iface`
-  payload (covered by the same persistence scenario above, driven from
-  Python).
+- bison (`tests/rmi_tests.cpp`, `RmiAuth` suite): `authenticate()`
+  returning `false` → the client's `connect()` future throws, and the
+  session never reaches `on_authenticated`
+  (`RejectingModuleFailsConnectAndSkipsOnAuthenticated`); returning `true`
+  → `on_authenticated` fires with the right identity
+  (`AcceptingModuleFiresOnAuthenticatedWithIdentity`); no auth module set →
+  behavior identical to today (`NoModuleSetBehavesUnchanged`).
+- wish (`tests/test_auth.cpp`, `AuthTest` suite): with
+  `set_persistent_sandbox_root` unset, behavior is unchanged (temp dir,
+  deleted on disconnect) even with an auth module set
+  (`NoPersistentRootConfiguredBehavesUnchangedEvenWithAuthModule`), and
+  with no auth module at all (`NoAuthModuleBehavesUnchanged`). With a root
+  set + `local_auth_module` + a client calling
+  `run({{"username"_key, "alice"}})`: upload a file, disconnect, reconnect
+  with the same params — the file is still there via `download`
+  (`UploadPersistsAcrossReconnectWithSameIdentity`). Reconnect with a
+  different username — the file is *not* visible
+  (`DifferentIdentityDoesNotSeeAnotherIdentitysFiles`). No identity at all
+  → non-persistent, same as before (`NoIdentityFallsBackToNonPersistentTempDir`).
+  An identity containing `..`/`/` is rejected and does not persist
+  (`PathEscapingIdentityIsRejectedAndDoesNotPersist`).
+- wish (`tests/test_context.cpp`): `resource_dir_persistent` defaults
+  `false`; the destructor skips removal when it's `true`;
+  `populate_resource_dir()` can be called again after `resource_dir`
+  changes and re-populates `res/` + `embedded_crc32s` at the new location.
+- wish C ABI/Python (`bindings/python/tests/test_client.py`,
+  `TestRunWithConnectParams` suite): `Client.run(session_fn, params=...)`
+  marshals a dict or `bison.Dynamic` through `wish_client_run_with_params`
+  without crashing (no live server in the Python binding test harness, so
+  this exercises the FFI plumbing against an unreachable host rather than
+  a real round trip -- the actual persistence round trip driven by these
+  same params is what `tests/test_auth.cpp` exercises in C++).
 
 ## Verification
 
-Build and run the existing wish server/client integration test harness
-(`memory_transport`, same pattern as current `file_service` tests)
-exercising: upload → disconnect → reconnect with the same identity →
-download succeeds, using `set_persistent_sandbox_root` pointed at a temp
-test directory that the test itself cleans up.
+`tests/test_auth.cpp`'s `AuthTest` suite runs the wish server/client
+integration test harness (`memory_transport`, same pattern as
+`test_integration.cpp`) exercising: upload → disconnect → reconnect with
+the same identity → download succeeds, using `set_persistent_sandbox_root`
+pointed at a temp test directory the test itself cleans up in `TearDown`.
 
 ---
 
-## Open Items for the Implementation Pass
+## Resolved Implementation-Pass Decisions
 
-- Exact name/location of the small identity-sanitizing helper (§
-  `wish::server` changes, step 1) — likely a private free function in
-  `src/server/server.cpp` near `on_authenticated`, not a new public API.
-- Whether `bison/src/rmi/DESIGN.md`'s "Auth hooks and capability
-  negotiation" Future bullet (line 732) and connect-section text (lines
-  573-576) should be resolved/rewritten as part of the same change that
-  implements `auth_module_iface`, so that document doesn't go stale.
-- Whether `README.md` / `docs/` needs a line under whatever section
-  documents `set_allow_absolute_paths`-style server config, pointing at
-  `set_persistent_sandbox_root`/`set_auth_module`.
+These were open questions during design; here's how each was resolved:
+
+- **Identity-sanitizing helper**: `is_safe_identity(const std::string&)`,
+  a private free function in an anonymous namespace in `src/server/server.cpp`,
+  next to `on_authenticated`. Not a public API.
+- **bison's `src/rmi/DESIGN.md`**: resolved as part of this change. § 10.1
+  ("connect") now describes the `auth_module_iface` hook and § 15
+  ("Implementation Status") lists it under "Completed" instead of "Future".
+- **`README.md` / `docs/`**: `README.md`'s "Security Considerations for AI
+  Code Assist" section gets a new subsection alongside the existing
+  absolute-paths one, pointing at `set_persistent_sandbox_root` and
+  `start()`'s `auth_module` parameter.

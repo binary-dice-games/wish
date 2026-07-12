@@ -12,7 +12,9 @@
 
 #include <atomic>
 #include <chrono>
+#include <filesystem>
 #include <memory>
+#include <string>
 #include <thread>
 
 namespace bdg::wish {
@@ -57,9 +59,20 @@ class server : public bison::rmi::server {
   server(server&&) = delete;
   server& operator=(server&&) = delete;
 
-  /** @brief Register wish classes, start the render loop, then begin accepting
-   *         client connections. */
-  void start();
+  /**
+   * @brief Register wish classes, start the render loop, then begin accepting
+   *        client connections.
+   *
+   * @param auth_module Optional authentication hook (see
+   *                     `bison::rmi::auth_module_iface`), evaluated once per
+   *                     connection. `nullptr` (default) disables the
+   *                     feature: no session ever gets a persistent sandbox
+   *                     directory, regardless of `set_persistent_sandbox_root`.
+   *                     A parameter rather than a setter, since the module
+   *                     cannot sensibly change once the accept loop is
+   *                     running -- mirrors `bison::rmi::server::listen()`.
+   */
+  void start(bison::rmi::auth_module_ptr auth_module = nullptr);
 
   /**
    * @brief Attach a shared logger that all sessions will write through.
@@ -85,6 +98,29 @@ class server : public bison::rmi::server {
    */
   void set_allow_absolute_paths(bool allow) {
     allow_absolute_paths_ = allow;
+  }
+
+  /**
+   * @brief Enable persistent, identity-keyed session sandbox directories.
+   *
+   * When set, and a connection both supplies a non-empty identity (via
+   * `start()`'s `auth_module`) and passes authentication, `on_authenticated()`
+   * switches that session's `resource_dir` to `root / identity` instead of
+   * the default throwaway temp directory, so previously uploaded files
+   * persist across reconnects. This is the privacy opt-in: persistent,
+   * identity-keyed directories are only ever created when an operator has
+   * explicitly configured a root here, mirroring `set_allow_absolute_paths`.
+   *
+   * Empty (default) disables persistence entirely, regardless of whether an
+   * auth module is set or what identity it produces.
+   *
+   * Must be called before `start()`.
+   *
+   * @param root Directory under which per-identity subdirectories are
+   *             created.
+   */
+  void set_persistent_sandbox_root(std::filesystem::path root) {
+    persistent_sandbox_root_ = std::move(root);
   }
 
   /** @brief Stop the accept loop, render loop, and join all threads. */
@@ -120,6 +156,14 @@ class server : public bison::rmi::server {
   void on_session_created(bison::rmi::context& ctx) override final;
   void on_session_destroyed(bison::rmi::context& ctx) override final;
 
+  // Switches a newly-authenticated session's resource_dir to a persistent,
+  // identity-keyed directory under persistent_sandbox_root_ -- see
+  // src/auth/DESIGN.md. No-op if persistent_sandbox_root_ or identity is
+  // empty, so a client that supplies no identity (or a deployment with no
+  // persistent root configured) sees no behavior change from the default
+  // temp directory on_session_created already set up.
+  void on_authenticated(bison::rmi::context& ctx, const std::string& identity) override final;
+
   // Returns session-aware objects for protocol classes (__WishTemplate,
   // __WishFileSystem); falls back to plain instantiate otherwise.
   bison::dynamic_ptr on_create_object(bison::rmi::context& ctx, bison::key_t ns, bison::key_t klass) override final;
@@ -153,6 +197,9 @@ class server : public bison::rmi::server {
   bool pending_render_{false};
   logger_ptr logger_;
   bool allow_absolute_paths_{false};
+  // Empty (default) disables persistent sandbox directories entirely; see
+  // set_persistent_sandbox_root().
+  std::filesystem::path persistent_sandbox_root_;
 };
 
 } // namespace bdg::wish

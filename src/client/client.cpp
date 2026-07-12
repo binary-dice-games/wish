@@ -15,8 +15,8 @@ using namespace bison;
 
 // ── client ────────────────────────────────────────────────────────────────────
 
-void client::run() {
-  connect();
+void client::run(bison::dynamic connect_params) {
+  connect(std::move(connect_params));
   try {
     on_session();
   } catch (...) {

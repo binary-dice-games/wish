@@ -8,10 +8,10 @@ library re-exports the bison and RMI C ABIs alongside its own.
 """
 
 import ctypes
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 from . import _native as _n
-from bison.rmi import Future, Proxy
+from bison.rmi import Future, Proxy, _as_params
 
 __all__ = ["WishError", "Client", "key"]
 
@@ -100,13 +100,18 @@ class Client:
 
     # ── Session lifecycle ────────────────────────────────────────────────────
 
-    def run(self, session_fn: Callable[["Client"], None]) -> None:
+    def run(self, session_fn: Callable[["Client"], None], params: Any = None) -> None:
         """Connect, invoke ``session_fn(self)``, then disconnect.
 
         Blocks until ``session_fn`` returns. It runs on the RMI worker
         thread; call :meth:`wait` inside it to keep the session alive while
         event handlers update the UI, and end it with :meth:`quit` (typically
         from an event handler).
+
+        ``params`` (a ``dict``, ``bison.Dynamic``, or ``None``) is forwarded
+        to both the transport's connection setup and the server's connect
+        handshake payload -- e.g. fields a server-side auth module inspects
+        (see ``src/auth/DESIGN.md``).
         """
         errors: list = []
 
@@ -118,7 +123,8 @@ class Client:
 
         self._session_cb = _n.SessionFn(c_callback)
         try:
-            rc = self._lib.wish_client_run(self._handle, self._session_cb, None)
+            with _as_params(params) as ph:
+                rc = self._lib.wish_client_run_with_params(self._handle, self._session_cb, None, ph)
         finally:
             self._session_cb = None
         if errors:
