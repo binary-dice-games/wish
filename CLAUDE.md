@@ -208,6 +208,118 @@ git -C c:/github/wish commit -m "..."
 Step 1 must come before step 2 so the new SHA is available on the remote when wish is
 eventually pushed.
 
+## Automation: debugging and testing a wish UI
+
+wish ships an optional automation module (`src/automation/`, gated by
+`WISH_ENABLE_AUTOMATION`, requires `WISH_ENABLE_WEB=ON`) that lets an agent
+*see and drive* a running wish UI instead of reasoning about it purely from
+source: query the live widget tree (paths, classes, field values, screen
+rects, hover/active/visible state), take a real screenshot, and inject
+mouse/keyboard input — the wish equivalent of Playwright driving a web page.
+Full protocol/architecture: [src/automation/DESIGN.md](src/automation/DESIGN.md).
+
+**Use this whenever you are debugging a UI-visible bug, verifying a fix, or
+writing an e2e regression test for a wish app** — it is almost always faster
+and more reliable than re-reading render code and guessing at runtime state.
+
+### Prerequisites
+
+```sh
+cmake -S . -B build -DWISH_ENABLE_WEB=ON -DWISH_ENABLE_AUTOMATION=ON
+cmake --build build --target wish-server   # or whichever target owns the app you're debugging
+pip install playwright && playwright install chromium   # skip the install step if a
+                                                          # Chromium is already configured via
+                                                          # PLAYWRIGHT_BROWSERS_PATH (true in
+                                                          # Claude Code's own environment)
+```
+
+### Python client
+
+`bindings/python/wish/automation.py`'s `AutomationClient` is the entry point. It
+does **not** require building `wish_client_dll` (unlike `wish.Client`) —
+only the C++ binary under test needs to exist.
+
+```python
+from wish.automation import AutomationClient
+
+with AutomationClient.launch(server_cmd=["build/wish", "server", "--renderer", "web"]) as ui:
+    tree = ui.get_tree()                 # {"request_id": N, "widgets": [...]}
+    widget = ui.get_widget("dialog.ok")  # one entry by exact dot-path, or None
+    ui.click("dialog.ok")
+    ui.type_text("form.name_input", "Ada Lovelace")
+    png_bytes = ui.screenshot()
+    ui.wait_for("async () => (await window.wish.getWidget('status.label'))?.text === 'Saved'")
+```
+
+| Method | Use it to... |
+|---|---|
+| `get_tree(root="")` | Dump the whole tree, or one subtree, for orientation — "what widgets exist right now, and what are their current field values?" |
+| `get_widget(path)` | Read one widget's current state (`class`, `label`/`text`/`value`/`title`/`checked`/`selected`/`hint` — whichever exist, `rect`, `hovered`, `active`, `visible`) by its exact dot-path. |
+| `click(path)` | Click a widget's center — a real DOM/CDP mouse event, indistinguishable from a human click. Raises if `path` doesn't exist or was never rendered (`rect` is `None`). |
+| `type_text(path, text)` | Focus-click, then type — for `InputText`/`InputInt`/`InputFloat` etc. |
+| `screenshot()` | Pixel-perfect PNG bytes of exactly what's on screen right now — attach to a bug report, or eyeball visually with the `Read` tool after writing to a file. |
+| `wait_for(js_predicate)` | Block until a JS predicate is true — e.g. wait for an async operation's result to land, or a dialog to close, before asserting. `async` predicates that call `getTree()`/`getWidget()` work directly (Playwright awaits the returned Promise on every poll). |
+
+### Workflow: investigating a UI bug report
+
+1. **Reproduce it live** instead of guessing from source: build with automation
+   enabled, launch the app under `--renderer web`, connect an `AutomationClient`.
+2. **Orient with a screenshot and a tree dump** — `ui.screenshot()` plus
+   `ui.get_tree()` tell you what's actually on screen and what every widget's
+   *current* field values are, which is often not what the code "should"
+   produce if the bug is real.
+3. **Drive the exact repro steps** from the bug report with `click()`/`type_text()`,
+   checking `get_widget()` after each step — this pinpoints the exact
+   action where state diverges from expectation, rather than staring at a
+   single end-state screenshot.
+4. **Correlate a widget back to source** via its `class` and dot-`path`: the
+   path's last segment is the field name in whatever JSON/YAML descriptor or
+   `register_template()` call defined it (e.g. `"dialog.ok"` → search for
+   `"ok"` under a `"dialog"` node); `class` names the `src/ui/ui_elements/*.cpp`
+   registration and `src/imgui/imgui_ui_renderer.cpp` render function
+   (`render_button`, `render_checkbox`, ...) that owns its behavior.
+5. **Fix, rebuild, re-run the same script** — same repro steps, same
+   assertions — to confirm the fix without re-deriving the repro by hand
+   each time.
+
+### Workflow: writing an e2e regression test
+
+Once a bug is understood, turn the repro script into a permanent test with
+`wish.automation_testing` (a pytest fixture wrapping the same launch/teardown
+sequence — see `bindings/python/wish/automation_testing.py`):
+
+```python
+from wish.automation_testing import make_wish_ui_fixture
+
+wish_ui = make_wish_ui_fixture(lambda: ["build/wish", "server", "--renderer", "web"])
+
+def test_saving_shows_confirmation(wish_ui):
+    wish_ui.click("toolbar.save")
+    assert wish_ui.get_widget("status.label")["text"] == "Saved"
+```
+
+### Gotchas
+
+- **A widget with `rect: null` was never rendered this frame** — e.g. it's
+  inside a collapsed `TreeNode`, an unopened `TabBar` tab, or a window that
+  hasn't been given a chance to draw yet. Navigate to make it visible (or
+  `wait_for` the tree to settle) before asserting on its rect or clicking it.
+- **Only leaf-widget rects are reliable.** A container/window element's
+  captured rect actually reflects whatever widget happened to render last
+  *inside* it (an inherent consequence of the hit-test capture happening
+  right after each ImGui call — see "Hit-test capture mechanism" in
+  `src/automation/DESIGN.md`), not a meaningful bounding box for the
+  container itself. Assert on the specific interactive widget you care
+  about, not its enclosing `Window`/`Layout`/`TabBar`.
+- **One dedicated session per launch.** Automation assumes exactly one
+  connected app session per server process (see DESIGN.md's "Session model")
+  — always launch a fresh server per debugging session / test rather than
+  attaching to a shared, already-running multi-client server.
+- **Loopback-only by default.** `--web_bind` defaults to `127.0.0.1`; do not
+  pass `--web_bind 0.0.0.0` for an automation session on a shared or
+  untrusted network — the query API grants full tree introspection and input
+  injection over the same WebSocket connection.
+
 ## Claude Code Assist Behavioral Rules for This Repo
 
 - Do not introduce broad stylistic rewrites.

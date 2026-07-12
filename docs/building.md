@@ -78,6 +78,7 @@ cmake -S . -B build
 | `WISH_ENABLE_IMGUI` | `ON` | Build the Dear ImGui renderer. Required for SDL3 renderer and wish server. |
 | `WISH_ENABLE_SDL3` | `ON` | Build the SDL3 windowed renderer, the wish server, and the calculator/demo examples. |
 | `WISH_ENABLE_WEB` | `OFF` | Build the web renderer (`--renderer web`): a browser-based backend over HTTP + WebSocket, using civetweb and a first-party binary draw-data protocol (no OpenGL/window system required). Requires no additional system packages beyond what's already needed (SSL is compiled out, so no OpenSSL dependency). Can be combined with `WISH_ENABLE_SDL3` in the same binary; `WISH_ENABLE_SDL3=OFF -DWISH_ENABLE_WEB=ON` builds `wish server`/`wish-server` with no windowing/GPU dependency at all. |
+| `WISH_ENABLE_AUTOMATION` | `OFF` | Build the automation query API on top of the web renderer: a widget-tree/hit-test query protocol that lets a Playwright-driven headless browser (or an AI agent) introspect and drive a running wish UI, in addition to the screenshot/input control it already gets for free from the web renderer. Requires `WISH_ENABLE_WEB=ON` (configure-time error otherwise). See [src/automation/DESIGN.md](../src/automation/DESIGN.md) and `CLAUDE.md`'s "Automation" section. |
 | `WISH_BUILD_SHARED` | `ON` | Build `wish_client` as a shared library with a C ABI (`wish_client.dll` on MSYS2 / `libwish_client.so` on Linux). |
 | `WISH_BUILD_TESTS` | `ON` | Build and register the GoogleTest suite. |
 | `WISH_MODULE_CALCULATOR` | `OFF` | Include the Calculator form (server) and its self-registering reference client runner. |
@@ -186,6 +187,36 @@ Then open `http://localhost:8080` in a browser. Ctrl+C stops the process —
 there's no window to close, and the server does not auto-quit when no
 browser is connected. See [src/web/DESIGN.md](../src/web/DESIGN.md) for the
 protocol and architecture.
+
+### Running automation
+
+Requires a build with `-DWISH_ENABLE_WEB=ON -DWISH_ENABLE_AUTOMATION=ON`.
+The server itself is launched exactly like the plain web renderer — no new
+flags — automation just adds two new WebSocket message types the browser
+client already knows how to speak:
+
+```sh
+./build/wish server --renderer web --web_port 8080
+```
+
+Drive it with `wish.automation.AutomationClient` (`bindings/python/wish/automation.py`,
+needs the `playwright` package — `pip install playwright && playwright install chromium`):
+
+```python
+from wish.automation import AutomationClient
+
+with AutomationClient.launch(url="http://127.0.0.1:8080") as ui:
+    tree = ui.get_tree()
+    ui.click("dialog.ok")
+    png_bytes = ui.screenshot()
+```
+
+`AutomationClient.launch(server_cmd=[...])` can also start the server
+subprocess itself (picking a free port automatically) instead of attaching
+to one already running via `url=`. See
+[src/automation/DESIGN.md](../src/automation/DESIGN.md) for the protocol,
+and `CLAUDE.md`'s "Automation: debugging and testing a wish UI" section for
+the agent-facing workflow (investigating a bug, driving e2e tests).
 
 ---
 

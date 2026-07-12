@@ -7,6 +7,10 @@
 
 #include <web/draw_protocol.hpp>
 
+#ifdef WISH_AUTOMATION_ENABLED
+#include <automation/automation_query.hpp>
+#endif
+
 #include <resource_store.hpp>
 
 #include <imgui.h>
@@ -114,6 +118,11 @@ void web_renderer::setup() {
         } else if (auto resp = draw_protocol::decode_cache_response_message(message)) {
           cache_response_queue_.wlock()->push_back({id, *resp});
           activity_.store(true, std::memory_order_relaxed);
+#ifdef WISH_AUTOMATION_ENABLED
+        } else if (auto query_json = draw_protocol::decode_query_tree_message(message)) {
+          pending_tree_queries_.wlock()->push_back({id, std::move(*query_json)});
+          activity_.store(true, std::memory_order_relaxed);
+#endif
         }
         // Unrecognized messages are silently dropped -- decode_*_message()
         // already rejects malformed input; nothing else to do here.
@@ -143,6 +152,10 @@ void web_renderer::teardown() {
   connected_ids_.wlock()->clear();
   awaiting_cache_response_.wlock()->clear();
   cache_response_queue_.wlock()->clear();
+#ifdef WISH_AUTOMATION_ENABLED
+  hit_test_map_.clear();
+  pending_tree_queries_.wlock()->clear();
+#endif
 
   ImPlot3D::DestroyContext();
   ImPlot::DestroyContext();
@@ -157,6 +170,13 @@ bool web_renderer::poll_events() {
 
 void web_renderer::begin_frame() {
   ImGuiIO& io = ImGui::GetIO();
+
+#ifdef WISH_AUTOMATION_ENABLED
+  // Rebuilt fresh every frame by render_node() below, so a query answered
+  // from service_automation_queries() always reflects the most recently
+  // completed frame, never a stale or partially-rendered one.
+  hit_test_map_.clear();
+#endif
 
   std::optional<web_resize_event> resize;
   {
@@ -369,6 +389,57 @@ bool web_renderer::should_quit() const {
 void web_renderer::request_quit() {
   quit_.store(true, std::memory_order_release);
 }
+
+// ── automation ───────────────────────────────────────────────────────────────
+
+#ifdef WISH_AUTOMATION_ENABLED
+
+void web_renderer::render_node(const ui_element& node, const context& s) {
+  imgui_renderer::render_node(node, s); // unchanged dispatch/recursion
+
+  // imgui_renderer::render_node() itself early-returns (draws nothing) for
+  // a node with visible=false, before reaching the class dispatch table --
+  // capturing GetItemRect*() here would then read a stale, unrelated
+  // item's state left over from whatever widget rendered before this one.
+  if (!node.get_as<bool>(bison::key_t{"visible"}, true))
+    return;
+
+  auto id = node.get_as<bison::key_t>(bison::key_t{"__wish_id"}, bison::key_t{});
+  if (id.id == 0)
+    return; // node was never assigned an id (e.g. a manually built test tree)
+
+  hit_test_map_[id] = automation::hit_test_entry{
+      ImGui::GetItemRectMin().x,
+      ImGui::GetItemRectMin().y,
+      ImGui::GetItemRectMax().x,
+      ImGui::GetItemRectMax().y,
+      ImGui::IsItemHovered(),
+      ImGui::IsItemActive(),
+      ImGui::IsItemVisible(),
+  };
+}
+
+void web_renderer::service_automation_queries(const context& s) {
+  std::deque<std::pair<ws_connection_id, std::string>> queries;
+  {
+    auto lock = pending_tree_queries_.wlock();
+    queries = std::move(*lock);
+    lock->clear();
+  }
+  if (queries.empty() || !server_)
+    return;
+
+  for (const auto& [conn_id, json_payload] : queries) {
+    auto req = automation::parse_query_tree_request(json_payload);
+    if (!req)
+      continue; // malformed QUERY_TREE payload -- drop silently, matches
+                // draw_protocol's own "unrecognized messages" convention
+    auto snapshot_json = automation::build_tree_snapshot(req->request_id, req->root, s.ui_objects, hit_test_map_);
+    server_->send_to(conn_id, draw_protocol::encode_tree_snapshot(snapshot_json));
+  }
+}
+
+#endif // WISH_AUTOMATION_ENABLED
 
 // ── texture loading ───────────────────────────────────────────────────────────
 

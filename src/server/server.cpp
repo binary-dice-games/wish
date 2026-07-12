@@ -217,6 +217,7 @@ void server::render_loop() {
             }
             sess->current_top_level_key = bison::key_t{};
             detail::current_context = nullptr;
+            renderer_->service_automation_queries(*sess);
             events = std::move(sess->pending_events);
             handlers = sess->top_level_handlers;
             client_emit = sess->emit_event;

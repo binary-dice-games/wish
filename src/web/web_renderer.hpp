@@ -10,6 +10,10 @@
 #include <web/civetweb_server.hpp>
 #include <web/draw_protocol.hpp>
 
+#ifdef WISH_AUTOMATION_ENABLED
+#include <automation/automation_query.hpp>
+#endif
+
 #include "src/bison/bison_sync.hpp"
 
 #include <atomic>
@@ -97,6 +101,39 @@ class web_renderer : public imgui_renderer {
 
   /// @brief Programmatically request shutdown.
   void request_quit();
+
+#ifdef WISH_AUTOMATION_ENABLED
+  // ── automation ───────────────────────────────────────────────────────────
+
+  /**
+   * @brief Capture this node's screen rect and interaction flags into
+   *        `hit_test_map_` after drawing it via the base `imgui_renderer`.
+   *
+   * Wrap-and-capture, exactly the shape `tests/test_imgui_renderer.cpp`'s
+   * `counting_imgui_renderer` already proves safe: calls
+   * `imgui_renderer::render_node()` first (unchanged dispatch/recursion),
+   * then reads `ImGui::GetItemRectMin/Max()` etc. for the node just drawn.
+   * A node with no `__wish_id` field (never assigned one, e.g. a manually
+   * built tree in a unit test) is skipped -- `hit_test_map_` only tracks
+   * automation-addressable widgets.
+   */
+  void render_node(const ui_element& node, const context& s) override;
+
+  /**
+   * @brief Answer any QUERY_TREE requests queued since the last call.
+   *
+   * Called by `wish::server::render_loop` / `wish::standalone::render_loop`
+   * right after this session's `render_session()` calls complete, while the
+   * session's context write-lock is still held -- see
+   * `src/automation/DESIGN.md`. At that point `hit_test_map_` holds exactly
+   * this frame's rects for @p s (cleared fresh in `begin_frame()`), so a
+   * reply always reflects the most recently completed frame.
+   *
+   * @param s  The session whose `ui_objects` a queued query should be
+   *           answered against.
+   */
+  void service_automation_queries(const context& s) override;
+#endif
 
   /// @brief Directory the embedded browser client assets were extracted
   ///        to; empty until `setup()` has run.
@@ -249,6 +286,23 @@ class web_renderer : public imgui_renderer {
   // Per-texture identity/versioning metadata for the browser resource
   // cache, populated by get_or_load_texture() alongside `loaded_by_src_`.
   std::unordered_map<ImTextureData*, texture_meta> texture_meta_;
+
+#ifdef WISH_AUTOMATION_ENABLED
+  // Screen rect + interaction flags per widget, keyed by __wish_id, for the
+  // frame currently being drawn. Render-thread only (written by render_node(),
+  // read by service_automation_queries() -- both always called from the
+  // render thread -- see src/automation/DESIGN.md). Cleared at the top of
+  // begin_frame() so a query always answers against a complete frame, never
+  // a partially-rendered one.
+  automation::hit_test_map hit_test_map_;
+
+  // QUERY_TREE requests decoded on a civetweb worker thread (on_message),
+  // drained by service_automation_queries() on the render thread (mirrors
+  // input_queue_). Each entry is the requesting connection paired with the
+  // request's still-raw JSON payload; parsing happens on the render thread
+  // in service_automation_queries() via automation::parse_query_tree_request().
+  bison::synchronized<std::deque<std::pair<ws_connection_id, std::string>>> pending_tree_queries_;
+#endif
 };
 
 } // namespace bdg::wish

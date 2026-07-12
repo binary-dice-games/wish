@@ -1,9 +1,11 @@
 # Automation Module — Architecture & Design
 
-**Status: design only — not yet implemented.** This document is the
-implementation brief for a future pass; no code in this directory exists
-yet. Do not treat any type or file path below as already present until it
-has actually been created.
+**Status: implemented.** This document was the implementation brief this
+pass followed; see "Implementation notes" at the end of this document for
+the small set of places the actual implementation had to go beyond (or
+adjust) what's written below, and why. For agent-facing usage (how to use
+this to debug or test a wish app), see `CLAUDE.md`'s "Automation: debugging
+and testing a wish UI" section.
 
 ## Purpose
 
@@ -134,6 +136,10 @@ src/automation/DESIGN.md                   this document
 src/web/web_renderer.hpp/.cpp              render_node override + hit_test_map_
 src/web/draw_protocol.hpp/.cpp             QUERY_TREE / TREE_SNAPSHOT message types
 resources/embedded/web/client.js           window.wish JS shim
+src/server/renderer.hpp                    service_automation_queries() virtual hook (no-op
+                                            default; only web_renderer overrides it)
+src/server/server.cpp                      render_loop() calls the hook per session
+src/standalone/standalone.cpp              same call, standalone's own render_loop()
 
 # New, gated test:
 tests/test_automation_query.cpp            mirrors test_web_renderer.cpp's
@@ -392,13 +398,25 @@ with AutomationClient.launch(server_cmd=["wish", "server",
     ui.click("dialog.ok")
     ui.type_text("form.name_input", "Ada Lovelace")
     png_bytes = ui.screenshot()
-    ui.wait_for("() => window.wish.getWidgetSync('status.label')?.text === 'Saved'")
+    ui.wait_for("async () => (await window.wish.getWidget('status.label'))?.text === 'Saved'")
 ```
 
+`window.wish` only exposes `getTree()`/`getWidget()` as `Promise`-returning
+calls (see the JS shim below) — there is no separate synchronous variant.
+`wait_for()`'s predicate may itself be `async`: Playwright's
+`page.wait_for_function()` already awaits a returned `Promise` on every
+poll, so an `async` predicate that calls `getWidget()` works with no extra
+plumbing on the Python side.
+
 `AutomationClient.launch(...)`:
-1. Starts `wish server --renderer web --web_port <ephemeral>` as a
-   subprocess (or accepts an already-running `url=` for attaching to a
-   manually-started server during interactive agent use).
+1. Starts the given `server_cmd` (typically `wish server --renderer web`) as
+   a subprocess, appending `--web_port <port>` for a Python-chosen free port
+   if the command doesn't already specify one (see "Implementation notes"
+   for why this is a Python-side port pick rather than an ephemeral
+   `--web_port 0` whose actual bound port would need to be parsed back out
+   of the subprocess), and waits for that port to accept connections — or
+   accepts an already-running `url=` for attaching to a manually-started
+   server during interactive agent use.
 2. Launches a headless Chromium via `playwright.sync_api.sync_playwright()
    .chromium.launch(headless=True)`, navigates to the server's URL.
 3. Waits for `window.wish.ready`.
@@ -463,3 +481,64 @@ still-unimplemented, design).
 | **Hit-test capture placement** | Central `render_node` override in `web_renderer` | Zero changes to any of the ~20 individual widget `render_*` functions in `imgui_ui_renderer.cpp`; mirrors the exact wrap-and-capture shape `tests/test_imgui_renderer.cpp`'s `counting_imgui_renderer` already proves safe. |
 | **Widget targeting** | Existing dot-path names (`context::ui_objects`) | Already the stable, human-readable identifier scheme wish maintains; no new "testid" field needed on any widget class. |
 | **Session model** | Dedicated single-session process per run | Matches Playwright's own "fresh context per test" model; sidesteps the current shared-global-`ImGuiContext` limitation across multiple sessions in `server::render_loop`. Attaching to a live multi-session server is a possible future extension, out of scope here. |
+
+---
+
+## Implementation notes
+
+A few places the implementation had to add to, or make a concrete choice
+beyond, what's specified above:
+
+- **`renderer::service_automation_queries()` hook.** `build_tree_snapshot()`
+  needs a session's `context::ui_objects` *and* `web_renderer::hit_test_map_`
+  at the same time, under the session's lock — but `web_renderer` itself
+  never sees a `context` outside the transient scope of one `render_node()`
+  call, and only `server::render_loop`/`standalone::render_loop` hold both
+  the per-session `context_wlock` and a reference to the active `renderer`
+  at once. Rather than special-case the web renderer in those render loops
+  (an `#ifdef WISH_WEB_ENABLED`/`dynamic_cast` in otherwise
+  renderer-agnostic code), a new no-op-by-default virtual,
+  `renderer::service_automation_queries(const context&)`, was added to
+  `src/server/renderer.hpp` alongside the existing `render_session`/
+  `render_node` hooks; only `web_renderer` overrides it. `server.cpp` and
+  `standalone.cpp` each call it once per session, right after that
+  session's `render_session()` calls, while still holding the session's
+  context write-lock.
+- **Class name resolution.** Every `register_*()` in `src/ui/ui_elements/*.cpp`
+  already attaches a `DisplayName` attribute to its own class's `CLASS`
+  field, equal to the class name itself (e.g. `button.cpp` attaches
+  `DisplayName("Button")` to `"Button"_key`) — this was already there for
+  `bison::build_display_dict()`'s existing consumers (trace/property-editor
+  output), and `build_tree_snapshot()` reuses it directly for the `class`
+  field rather than inventing a second name registry. A class hash with no
+  such attribute (defined outside `src/ui/ui_elements/`) falls back to its
+  hash formatted as `"0x########"`.
+- **Content field probing.** `label`/`text`/`value`/`title`/`checked`/
+  `selected`/`hint` (the actual lowercase field-key spellings used across
+  `src/ui/ui_elements/*.cpp`) are probed via `dynamic::findField<T>()` for
+  `T` in `{string, bool, int32_t, float}` and copied through under their own
+  literal name when present — not resolved via `build_display_dict()` (whose
+  entries are human-facing display names like `"Label"`, not the
+  wire-visible field key `"label"`).
+- **`render_node()`'s visibility guard.** The base `imgui_renderer::render_node()`
+  early-returns (draws nothing, calls no ImGui widget function) for a node
+  with `visible=false`. `web_renderer::render_node()` checks the same
+  `visible` field before capturing `GetItemRect*()`, so an invisible node
+  doesn't get a stale, unrelated widget's rect attributed to it.
+- **Container/window rects are not meaningful.** `ImGui::GetItemRectMin/Max()`
+  reflects whatever ImGui widget call happened most recently — for a leaf
+  widget (`Button`, `Checkbox`, ...) that's always its own call, since
+  nothing else runs between the widget's own ImGui call and this capture.
+  For a container (`Window`, `Layout`, `TabBar`, ...), `render_children()`
+  runs *before* the capture, so the captured rect actually belongs to
+  whichever descendant rendered last inside it. This was accepted as-is
+  (the design's own sketch has the same property for every element
+  uniformly) rather than adding per-class capture logic; see `CLAUDE.md`'s
+  "Automation" section for the agent-facing version of this caveat.
+- **`AutomationClient` picks its own port.** Rather than passing
+  `--web_port 0` (ephemeral) and parsing the server subprocess's stdout to
+  discover which port it actually bound — fragile, and `wish server` prints
+  no such line today — `AutomationClient.launch()` asks the OS for a free
+  port itself (a short-lived probe socket, same technique `web_renderer`
+  uses server-side for `--web_port 0`) and passes it explicitly via
+  `--web_port <port>`, unless `server_cmd` already specifies one.
