@@ -56,8 +56,36 @@ void render_window(imgui_renderer& r, const ui_element& node, const context& s) 
   bool open = true;
   bool* p_open = closable ? &open : nullptr;
   auto iml = with_id(title, node);
-  if (ImGui::Begin(iml.c_str(), p_open, ImGuiWindowFlags(fl)))
+  if (ImGui::Begin(iml.c_str(), p_open, ImGuiWindowFlags(fl))) {
+    // ImGui's docking branch resizes a window to fit its dock node/tab
+    // region; on undock it does not restore the pre-dock floating size
+    // (docking is handled entirely inside ImGui, invisible to wish). Track
+    // docked state and the last-known floating size in hidden fields (same
+    // idiom as __selected__/__open__ above) and force the size back on the
+    // frame the window transitions from docked to floating.
+    if (!(fl & ImGuiWindowFlags_NoDocking)) {
+      bool is_docked = ImGui::IsWindowDocked();
+      const auto* prev_f = node.findField("__was_docked__"_key);
+      bool was_docked = (prev_f && prev_f->is<bool>()) ? prev_f->as<bool>() : is_docked;
+
+      if (was_docked && !is_docked) {
+        int32_t fw = node.get_as<int32_t>("__float_width__"_key, 0);
+        int32_t fh = node.get_as<int32_t>("__float_height__"_key, 0);
+        if (fw > 0 && fh > 0)
+          ImGui::SetWindowSize(ImVec2(float(fw), float(fh)));
+      }
+
+      if (!is_docked) {
+        ImVec2 cur = ImGui::GetWindowSize();
+        const_cast<ui_element&>(node)["__float_width__"_key] = int32_t(cur.x);
+        const_cast<ui_element&>(node)["__float_height__"_key] = int32_t(cur.y);
+      }
+
+      const_cast<ui_element&>(node)["__was_docked__"_key] = is_docked;
+    }
+
     render_children(r, node, s);
+  }
   ImGui::End();
 
   if (closable && !open)
