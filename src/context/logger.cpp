@@ -37,8 +37,9 @@ logger::logger(bison::dynamic&& base, bool verbose, std::filesystem::path log_pa
   if (!log_path_.empty()) {
     // Ensure parent directory exists.
     std::filesystem::create_directories(log_path_.parent_path());
-    log_file_.open(log_path_, std::ios::out | std::ios::app);
-    if (!log_file_) {
+    auto s = state_.wlock();
+    s->log_file.open(log_path_, std::ios::out | std::ios::app);
+    if (!s->log_file) {
       // Non-fatal: log a warning to stderr and continue without file output.
       std::cerr << "[wish::logger] cannot open log file: " << log_path_ << "\n";
     }
@@ -46,37 +47,37 @@ logger::logger(bison::dynamic&& base, bool verbose, std::filesystem::path log_pa
 }
 
 void logger::log(const std::string& level, const std::string& msg) {
-  std::lock_guard<std::mutex> lk(mtx_);
-  write_locked(level, msg);
+  auto s = state_.wlock();
+  write_locked(*s, level, msg);
 #ifdef WISH_AUTOMATION_ENABLED
-  record_for_automation(level, msg);
+  record_for_automation(*s, level, msg);
 #endif
 }
 
-void logger::write_locked(const std::string& level, const std::string& msg) {
+void logger::write_locked(state& s, const std::string& level, const std::string& msg) {
   // Format: [YYYY-MM-DD HH:MM:SS] [LEVEL] message
   std::string line = "[" + timestamp() + "] [" + level + "] " + msg + "\n";
   if (verbose_) {
     std::cout << line << std::flush;
   }
-  if (log_file_.is_open()) {
-    log_file_ << line << std::flush;
+  if (s.log_file.is_open()) {
+    s.log_file << line << std::flush;
   }
 }
 
 #ifdef WISH_AUTOMATION_ENABLED
 
-void logger::record_for_automation(const std::string& level, const std::string& msg) {
+void logger::record_for_automation(state& s, const std::string& level, const std::string& msg) {
   // seq is what lets service_automation_queries() broadcast each entry
   // exactly once, in call order -- see log_entry's doc comment.
-  recent_logs_.push_back(log_entry{next_log_seq_++, timestamp(), level, msg});
-  if (recent_logs_.size() > kMaxRecentLogs)
-    recent_logs_.pop_front();
+  s.recent_logs.push_back(log_entry{s.next_log_seq++, timestamp(), level, msg});
+  if (s.recent_logs.size() > kMaxRecentLogs)
+    s.recent_logs.pop_front();
 }
 
 std::deque<logger::log_entry> logger::recent_logs() const {
-  std::lock_guard<std::mutex> lk(mtx_);
-  return recent_logs_;
+  auto s = state_.rlock();
+  return s->recent_logs;
 }
 
 #endif // WISH_AUTOMATION_ENABLED

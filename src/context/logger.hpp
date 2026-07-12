@@ -5,10 +5,10 @@
 
 #include "src/bison/bison_common.hpp"
 #include "src/bison/bison_object.hpp"
+#include "src/bison/bison_sync.hpp"
 
 #include <filesystem>
 #include <fstream>
-#include <mutex>
 #include <string>
 
 #ifdef WISH_AUTOMATION_ENABLED
@@ -106,8 +106,7 @@ class logger : public bison::dynamic {
    * @brief Snapshot of the most recent `log()` calls (oldest dropped first
    *        once the buffer exceeds `kMaxRecentLogs`).
    *
-   * Thread-safe: copies the buffer under the same `mtx_` that serializes
-   * `log()` itself.
+   * Thread-safe: copies the buffer under `state_`'s read lock.
    */
   std::deque<log_entry> recent_logs() const;
 #endif
@@ -115,18 +114,24 @@ class logger : public bison::dynamic {
  private:
   bool verbose_;
   std::filesystem::path log_path_;
-  std::ofstream log_file_;
-  mutable std::mutex mtx_;
 
-  /// @brief Format and emit the message; called with `mtx_` held.
-  void write_locked(const std::string& level, const std::string& msg);
+  /// @brief Mutable state shared across `log()` calls, guarded by `state_`.
+  struct state {
+    std::ofstream log_file;
+#ifdef WISH_AUTOMATION_ENABLED
+    std::deque<log_entry> recent_logs;
+    uint64_t next_log_seq = 1;
+#endif
+  };
+  mutable bison::synchronized<state> state_;
+
+  /// @brief Format and emit the message; called with `state_`'s write lock held.
+  void write_locked(state& s, const std::string& level, const std::string& msg);
 
 #ifdef WISH_AUTOMATION_ENABLED
-  /// @brief Append a `log_entry` to `recent_logs_`; called with `mtx_` held.
-  void record_for_automation(const std::string& level, const std::string& msg);
+  /// @brief Append a `log_entry` to `s.recent_logs`; called with `state_`'s write lock held.
+  void record_for_automation(state& s, const std::string& level, const std::string& msg);
 
-  std::deque<log_entry> recent_logs_;
-  uint64_t next_log_seq_ = 1;
   static constexpr size_t kMaxRecentLogs = 200;
 #endif
 };
