@@ -170,6 +170,8 @@ terminal connects to the desktop with no flags:
 wish desktop                      # downstream defaults to tcp:7071
 # inside the spawned terminal:
 wish client --run notepad         # connects to the desktop's tcp:7071, no flags needed
+wish notepad                      # same thing -- an app name not matching a
+                                   # subcommand is aliased to `wish client --run=<name>`
 ```
 
 Close the window, or choose **Server → Quit** from the menu bar, to stop the server.
