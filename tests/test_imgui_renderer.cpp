@@ -413,3 +413,69 @@ TEST_F(ImguiRendererTest, TableCellsRenderWithoutThrowIncludingButton) {
     renderer_->end_frame();
   });
 }
+
+// ── Docking: undock restores pre-dock floating size ──────────────────────────
+
+TEST_F(ImguiRendererTest, WindowRestoresFloatingSizeAfterUndock) {
+  ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+
+  auto map = bdg::wish::import_json(R"({"type":"Window","title":"Dockable","width":400,"height":300})");
+  auto& win = *map[""];
+  auto wish_id =
+      win.get_as<bdg::bison::key_t>("__wish_id"_key, bdg::bison::key_t{});
+  std::string label = "Dockable##" + std::to_string(wish_id.id);
+
+  // Render one floating frame: establishes the ImGuiCond_Once 400x300 size
+  // and populates the hidden __float_width__/__float_height__ fields.
+  renderer_->begin_frame();
+  renderer_->render_node(win, *sess_);
+  renderer_->end_frame();
+  EXPECT_EQ(win.get_as<int32_t>("__float_width__"_key, 0), 400);
+  EXPECT_EQ(win.get_as<int32_t>("__float_height__"_key, 0), 300);
+
+  // Programmatically dock the window via DockBuilder (no simulated drag
+  // needed -- imgui_internal.h is already included above).
+  ImGuiID dock_id = ImGui::GetID("TestDockSpace");
+  ImGui::DockBuilderRemoveNode(dock_id);
+  ImGui::DockBuilderAddNode(dock_id, ImGuiDockNodeFlags_None);
+  ImGui::DockBuilderSetNodeSize(dock_id, ImVec2(800, 600));
+  ImGui::DockBuilderDockWindow(label.c_str(), dock_id);
+  ImGui::DockBuilderFinish(dock_id);
+
+  // A live DockSpace() host is required for ImGui to merge the pending dock
+  // request into a real dock node. Drive a bounded number of frames until
+  // the window reports as docked.
+  bool docked = false;
+  for (int i = 0; i < 5 && !docked; ++i) {
+    renderer_->begin_frame();
+    ImGui::SetNextWindowPos(ImVec2(0, 0));
+    ImGui::SetNextWindowSize(ImVec2(800, 600));
+    ImGui::Begin(
+        "Host",
+        nullptr,
+        ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+            ImGuiWindowFlags_NoMove);
+    ImGui::DockSpace(dock_id, ImVec2(0, 0), ImGuiDockNodeFlags_None);
+    ImGui::End();
+    renderer_->render_node(win, *sess_);
+    renderer_->end_frame();
+    auto* w = ImGui::FindWindowByName(label.c_str());
+    docked = w && w->DockIsActive;
+  }
+  ASSERT_TRUE(docked);
+  ImVec2 docked_size = ImGui::FindWindowByName(label.c_str())->Size;
+  EXPECT_NE(docked_size.x, 400.0f); // sanity: docking actually changed the size
+
+  // Force undock via DockBuilder's documented idiom (dock to node 0).
+  ImGui::DockBuilderDockWindow(label.c_str(), 0);
+
+  bool restored = false;
+  for (int i = 0; i < 3 && !restored; ++i) {
+    renderer_->begin_frame();
+    renderer_->render_node(win, *sess_);
+    renderer_->end_frame();
+    auto* w = ImGui::FindWindowByName(label.c_str());
+    restored = w && !w->DockIsActive && w->Size.x == 400.0f && w->Size.y == 300.0f;
+  }
+  EXPECT_TRUE(restored);
+}

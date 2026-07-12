@@ -17,8 +17,14 @@
  *                   [--downstream_port P] [--downstream_name PATH]
  *                   [--upstream_transport T] [--upstream_host H]
  *                   [--upstream_port P] [--upstream_name PATH] [--timeout MS]
+ *   wish <app>      [--transport T] [--host H] [--port P] [--name PATH]
+ *                   [--timeout MS] [-- app-args...]
+ *                   Alias for `wish client --run=<app> ...`, available when
+ *                   <app> is not one of the subcommands above and matches a
+ *                   name in the client app registry (see `wish client --list`).
  */
 #include "app/wish_cli/desktop/wish_desktop_app.hpp"
+#include "app/wish_cli/client/app_registry.hpp"
 #include "app/wish_cli/client/wish_client_app.hpp"
 #include "app/wish_cli/server/wish_server_app.hpp"
 #include "app/wish_cli/standalone/wish_standalone_app.hpp"
@@ -27,6 +33,8 @@
 
 #include <cstring>
 #include <iostream>
+#include <string>
+#include <vector>
 
 // ── Shared transport flags — consumed by server and client modes ─────────────
 DEFINE_string(transport, "term", "Transport to use: tcp, pipe or term");
@@ -53,9 +61,15 @@ static void print_usage() {
                "                  [--downstream_port P] [--downstream_name PATH]\n"
                "                  [--upstream_transport T] [--upstream_host H] [--upstream_port P]\n"
                "                  [--upstream_name PATH] [--timeout MS]\n"
+               "  wish <app>      [--transport T] [--host H] [--port P] [--name PATH]\n"
+               "                  [--timeout MS] [-- app-args...]\n"
+               "                  Alias for `wish client --run=<app> ...`, when <app> is not\n"
+               "                  one of the subcommands above and names a registered app\n"
+               "                  (see `wish client --list`).\n"
                "\n"
                "Anything after a literal `--` is forwarded to the app, e.g.\n"
                "  wish client --run=notepad -- path/to/file\n"
+               "  wish notepad -- path/to/file\n"
                "\n"
                "Shared transport flags (server and client only -- wish desktop has its own\n"
                "downstream_/upstream_-prefixed flag sets, see below):\n"
@@ -123,6 +137,27 @@ int main(int argc, char** argv) {
     gflags::SetUsageMessage("wish desktop - multiplexing bridge with upstream/downstream transports");
     bdg::wish::wish_desktop_app app;
     return app.run(sub_argc, sub_argv);
+  }
+
+  // Not a known subcommand -- if it names a registered app, alias it to
+  // `wish client --run=<subcmd> ...`, forwarding the remaining original
+  // arguments (transport flags, `-- app-args`, etc.) unchanged.
+  if (bdg::wish::registered_apps().count(subcmd) != 0) {
+    gflags::SetUsageMessage("wish client - connect to a server and run an embedded application");
+    std::vector<std::string> alias_args;
+    alias_args.reserve(static_cast<size_t>(argc));
+    alias_args.emplace_back(argv[0]);
+    alias_args.emplace_back(std::string("--run=") + subcmd);
+    for (int i = 2; i < argc; ++i)
+      alias_args.emplace_back(argv[i]);
+
+    std::vector<char*> alias_argv;
+    alias_argv.reserve(alias_args.size());
+    for (auto& arg : alias_args)
+      alias_argv.push_back(arg.data());
+
+    bdg::wish::wish_client_app app;
+    return app.run(static_cast<int>(alias_argv.size()), alias_argv.data());
   }
 
   std::cerr << "wish: unknown subcommand '" << subcmd << "'\n\n";

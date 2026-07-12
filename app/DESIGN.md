@@ -210,6 +210,14 @@ Downstream clients' own `Window` objects need no special handling to dock:
 ImGui auto-docks any window lacking `NoDocking` into whichever dockspace is
 open that frame -- the existing bridge proxy relay (unchanged) is sufficient.
 
+One exception: `render_window` tracks each window's last-floating size in
+hidden `__float_width__`/`__float_height__`/`__was_docked__` fields and
+forces it back via `ImGui::SetWindowSize()` on the frame a window
+transitions from docked to floating, since ImGui's docking branch does
+not restore the pre-dock size on undock. This is renderer-internal
+bookkeeping -- client authors still don't need to do anything to make
+their `Window`s dock.
+
 The "Quit" `MenuItem`'s `"clicked"` event calls `wish_desktop::request_quit()`
 directly (no external handler injected -- `wish_desktop` owns its own
 quit condition variable). This wakes `wish_desktop::wait_for_quit()`, which
