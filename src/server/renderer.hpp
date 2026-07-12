@@ -123,6 +123,25 @@ class renderer {
 
   /// @brief Called once after all nodes have been rendered in a frame.
   virtual void end_frame() = 0;
+
+  /**
+   * @brief Service the automation module for @p s: answer any pending
+   *        tree/hit-test queries, and push any newly-logged entries.
+   *
+   * Called from `wish::server::render_loop` / `wish::standalone::render_loop`
+   * right after @p s's `render_session()` calls for this frame complete,
+   * while @p s's context write-lock is still held. The default is a no-op;
+   * only `web_renderer` overrides it, gated by `WISH_AUTOMATION_ENABLED` --
+   * see `src/automation/DESIGN.md`. Kept as a renderer-agnostic virtual hook
+   * (rather than a `dynamic_cast`/`#ifdef WISH_WEB_ENABLED` special case in
+   * the render loop) so `server.cpp`/`standalone.cpp` never need to know
+   * which concrete renderer is active.
+   *
+   * @param s  Session this call should act on.
+   */
+  virtual void service_automation_queries(const context& s) {
+    (void)s;
+  }
 };
 
 /**

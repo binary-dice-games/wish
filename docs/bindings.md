@@ -80,3 +80,16 @@ def session(client):
 
 Client.tcp("127.0.0.1", 7070).run(session)
 ```
+
+### Automation (`bindings/python/wish/automation.py`)
+
+A separate, standalone module for driving a `wish server --renderer web`
+instance the way Playwright drives a browser — screenshots, click/type
+input, and a widget-tree query API for an AI agent debugging a UI, or a
+pytest-based e2e suite (`wish.automation_testing`). Unlike `wish.Client`
+above, it does **not** use `wish_client_dll`/`ctypes` at all — no native
+build step needed on the Python side, only `pip install playwright`. See
+[building.md](building.md#running-automation) for a runnable example and
+[src/automation/DESIGN.md](../src/automation/DESIGN.md) for the protocol,
+and `CLAUDE.md`'s "Automation: debugging and testing a wish UI" section for
+the agent-facing workflow.

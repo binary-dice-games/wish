@@ -332,6 +332,33 @@ std::optional<web_cache_response> decode_cache_response_message(std::span<const 
   return web_cache_response{*texture_id, *hit != 0};
 }
 
+// ── inbound: QUERY_TREE / outbound: TREE_SNAPSHOT ───────────────────────────
+
+#ifdef WISH_AUTOMATION_ENABLED
+
+std::optional<std::string> decode_query_tree_message(std::span<const std::byte> message) {
+  auto payload = unwrap_envelope(message, web_msg_type::query_tree);
+  if (!payload)
+    return std::nullopt;
+  return std::string(reinterpret_cast<const char*>(payload->data()), payload->size());
+}
+
+std::vector<std::byte> encode_tree_snapshot(const std::string& json_payload) {
+  std::vector<std::byte> payload(json_payload.size());
+  std::memcpy(payload.data(), json_payload.data(), json_payload.size());
+  return wrap_envelope(web_msg_type::tree_snapshot, std::move(payload));
+}
+
+// ── outbound: LOG_EVENT ──────────────────────────────────────────────────────
+
+std::vector<std::byte> encode_log_event(const std::string& json_payload) {
+  std::vector<std::byte> payload(json_payload.size());
+  std::memcpy(payload.data(), json_payload.data(), json_payload.size());
+  return wrap_envelope(web_msg_type::log_event, std::move(payload));
+}
+
+#endif // WISH_AUTOMATION_ENABLED
+
 } // namespace bdg::wish::draw_protocol
 
 #endif // WISH_WEB_ENABLED

@@ -27,6 +27,14 @@
     INPUT: 0x10,
     RESIZE: 0x11,
     CACHE_RESPONSE: 0x12,
+    // Only meaningful when the server was built with -DWISH_ENABLE_AUTOMATION=ON
+    // (see src/automation/DESIGN.md) -- a server built without it never
+    // sends TREE_SNAPSHOT/LOG_EVENT and silently ignores QUERY_TREE, so
+    // window.wish.getTree() simply never resolves and window.wish.logs
+    // simply never grows against such a server.
+    QUERY_TREE: 0x20,
+    TREE_SNAPSHOT: 0x21,
+    LOG_EVENT: 0x22, // pushed live, no request -- see window.wish.logs below
   };
 
   const INPUT_KIND = {
@@ -161,6 +169,14 @@
     v.setUint32(0, textureId, true);
     v.setUint8(4, hit ? 1 : 0);
     return encodeEnvelope(MSG.CACHE_RESPONSE, new Uint8Array(buf));
+  }
+
+  // QUERY_TREE's payload is just UTF-8 JSON text (see draw_protocol.hpp's
+  // decode_query_tree_message(), which passes it through unparsed) -- no
+  // fixed-width fields to encode here, unlike the other outbound messages.
+  function encodeQueryTree(requestId, root) {
+    const json = JSON.stringify({ request_id: requestId, root: root });
+    return encodeEnvelope(MSG.QUERY_TREE, new TextEncoder().encode(json));
   }
 
   // ── WebGL2 renderer ────────────────────────────────────────────────────────
@@ -498,6 +514,66 @@
     send(encodeResize(canvas.clientWidth, canvas.clientHeight, dpr));
   }
 
+  // ── automation: window.wish tree-query + live-log shim ────────────────────
+  //
+  // The only piece Playwright needs beyond its own screenshot/mouse/keyboard
+  // APIs -- see "Screenshots and input via Playwright" in
+  // src/automation/DESIGN.md. No-ops against a server built without
+  // -DWISH_ENABLE_AUTOMATION=ON: getTree()'s Promise never resolves (no
+  // TREE_SNAPSHOT ever arrives), and `logs` simply stays empty (no
+  // LOG_EVENT ever arrives).
+  window.wish = {
+    ready: false,
+    _pending: new Map(), // request_id -> {resolve, reject}, used by getTree()
+
+    // Every log() call made through this session's logger service, pushed
+    // live as LOG_EVENT messages arrive (see logger::log(), src/context/
+    // logger.hpp) and appended here in the exact order they happened --
+    // interleaved with whatever actions this script took in between, so
+    // e.g. "click a button, then see the log entry it caused appear after
+    // the entries seen before the click" requires no extra correlation.
+    // Unbounded on the JS side (the server's own buffer is capped -- see
+    // logger::kMaxRecentLogs); a long-running script that cares should trim
+    // it itself.
+    logs: [],
+    _nextId: 1,
+
+    /**
+     * Query the live widget tree, optionally restricted to `root` (a
+     * dot-path) and its descendants.
+     * @param {string} [root] Dot-path to restrict to; omit for the whole tree.
+     * @returns {Promise<{request_id: number, widgets: object[]}>}
+     */
+    getTree(root = "") {
+      const id = this._nextId++;
+      return new Promise((resolve, reject) => {
+        this._pending.set(id, { resolve, reject });
+        send(encodeQueryTree(id, root));
+      });
+    },
+
+    /**
+     * Look up one widget by its exact dot-path.
+     * @param {string} path
+     * @returns {Promise<object|null>} The widget's snapshot entry, or `null`
+     *   if `path` does not currently exist in the tree.
+     */
+    async getWidget(path) {
+      const snap = await this.getTree(path);
+      return snap.widgets.find((w) => w.path === path) ?? null;
+    },
+
+    /**
+     * Every log entry received so far, oldest first. Synchronous -- no
+     * server round trip, since entries are already pushed into `logs` as
+     * they happen (see the `logs` field above).
+     * @returns {object[]} Each `{seq, timestamp, level, message}`.
+     */
+    getLogs() {
+      return this.logs.slice();
+    },
+  };
+
   const disconnectedBanner = document.getElementById("wish-disconnected-banner");
 
   function showDisconnectedBanner() {
@@ -530,6 +606,10 @@
     switch (type) {
       case MSG.FRAME:
         renderer.render(decodeFrame(view, offset));
+        // First FRAME processed means the canvas now shows something real --
+        // Playwright scripts wait on this before interacting (see
+        // src/automation/DESIGN.md's "Readiness").
+        window.wish.ready = true;
         break;
       case MSG.TEX_CREATE:
       case MSG.TEX_UPDATE: {
@@ -563,6 +643,24 @@
           pendingCacheStore.set(t.textureId, { path: t.path, crc32: t.crc32 });
           send(encodeCacheResponse(t.textureId, false));
         }
+        break;
+      }
+      case MSG.TREE_SNAPSHOT: {
+        const jsonBytes = new Uint8Array(view.buffer, view.byteOffset + offset, payloadLen);
+        const snapshot = JSON.parse(new TextDecoder().decode(jsonBytes));
+        const pending = window.wish._pending.get(snapshot.request_id);
+        if (pending) {
+          window.wish._pending.delete(snapshot.request_id);
+          pending.resolve(snapshot);
+        }
+        break;
+      }
+      case MSG.LOG_EVENT: {
+        // Pushed unprompted, no request_id to resolve against -- just
+        // append to window.wish.logs in the order it arrived.
+        const jsonBytes = new Uint8Array(view.buffer, view.byteOffset + offset, payloadLen);
+        const event = JSON.parse(new TextDecoder().decode(jsonBytes));
+        window.wish.logs.push(...event.logs);
         break;
       }
       default:

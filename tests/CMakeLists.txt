@@ -85,6 +85,15 @@ if(WISH_ENABLE_IMGUI AND WISH_ENABLE_WEB)
   target_link_libraries(test_web_renderer PRIVATE miniz)
 endif()
 
+if(WISH_ENABLE_IMGUI AND WISH_ENABLE_WEB AND WISH_ENABLE_AUTOMATION)
+  wish_add_test(test_automation_query test_automation_query.cpp)
+  # automation_query.hpp/.cpp are the only wish_server sources that need
+  # nlohmann/json.hpp directly; this test parses TREE_SNAPSHOT payloads with
+  # it too (see src/automation/automation_query.cpp for the same path).
+  target_include_directories(test_automation_query PRIVATE
+    ${CMAKE_SOURCE_DIR}/extern/bison/extern/json/single_include)
+endif()
+
 
 # Like wish_add_test, but only registers the test when OPTION_NAME is set
 # (e.g. a WISH_MODULE_<NAME> option) -- for tests that exercise an optional

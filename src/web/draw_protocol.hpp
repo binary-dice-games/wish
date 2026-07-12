@@ -46,6 +46,11 @@ enum class web_msg_type : uint8_t {
   input = 0x10,          ///< Browser -> server: one input event.
   resize = 0x11,         ///< Browser -> server: canvas size changed.
   cache_response = 0x12, ///< Browser -> server: hit/miss reply to TEX_CHECK.
+#ifdef WISH_AUTOMATION_ENABLED
+  query_tree = 0x20,    ///< Browser -> server: request a tree/hit-test snapshot.
+  tree_snapshot = 0x21, ///< Server -> browser: JSON tree/hit-test snapshot.
+  log_event = 0x22,     ///< Server -> browser: newly-logged entries, pushed live.
+#endif
 };
 
 /// @brief Discriminator for `web_input_event::kind`.
@@ -163,6 +168,52 @@ std::optional<web_resize_event> decode_resize_message(std::span<const std::byte>
  *         message.
  */
 std::optional<web_cache_response> decode_cache_response_message(std::span<const std::byte> message);
+
+#ifdef WISH_AUTOMATION_ENABLED
+/**
+ * @brief Decode one browser -> server QUERY_TREE message as its raw UTF-8
+ *        JSON payload -- unparsed.
+ *
+ * Unlike the other decode_*_message() functions, this does not parse the
+ * payload into a struct: `draw_protocol` has no `nlohmann::json` dependency
+ * (kept a pure binary-envelope codec, see the file doc comment), so parsing
+ * the `{"request_id":N,"root":"..."}` body is left to
+ * `automation::parse_query_tree_request()` (src/automation/automation_query.hpp),
+ * which already depends on `nlohmann::json` for building the reply.
+ *
+ * @param message  The full envelope-wrapped message bytes as received from
+ *                  the socket.
+ * @return `std::nullopt` if `message` isn't a well-formed QUERY_TREE message
+ *         (wrong `msg_type` or truncated envelope); otherwise the payload
+ *         bytes decoded as UTF-8 text, valid JSON or not.
+ */
+std::optional<std::string> decode_query_tree_message(std::span<const std::byte> message);
+
+/**
+ * @brief Encode a TREE_SNAPSHOT message wrapping an already-serialized JSON
+ *        payload.
+ *
+ * @param json_payload  UTF-8 JSON text, e.g. `automation::build_tree_snapshot()`'s
+ *                       return value. Copied verbatim into the envelope
+ *                       payload -- this function does not itself touch JSON.
+ */
+std::vector<std::byte> encode_tree_snapshot(const std::string& json_payload);
+
+/**
+ * @brief Encode a LOG_EVENT message wrapping an already-serialized JSON
+ *        payload -- mirrors `encode_tree_snapshot()`.
+ *
+ * Unlike TREE_SNAPSHOT (a reply to a browser-initiated QUERY_TREE),
+ * LOG_EVENT is pushed to every connected browser as soon as new log
+ * entries exist -- there is no corresponding browser -> server request
+ * message. See `automation::build_log_event()` and
+ * `web_renderer::service_automation_queries()`.
+ *
+ * @param json_payload  UTF-8 JSON text, e.g. `automation::build_log_event()`'s
+ *                       return value.
+ */
+std::vector<std::byte> encode_log_event(const std::string& json_payload);
+#endif
 
 } // namespace draw_protocol
 } // namespace bdg::wish
