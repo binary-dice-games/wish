@@ -421,7 +421,8 @@ TEST_F(ImguiRendererTest, WindowRestoresFloatingSizeAfterUndock) {
 
   auto map = bdg::wish::import_json(R"({"type":"Window","title":"Dockable","width":400,"height":300})");
   auto& win = *map[""];
-  auto wish_id = win.get_as<key_t>("__wish_id"_key, key_t{});
+  auto wish_id =
+      win.get_as<bdg::bison::key_t>("__wish_id"_key, bdg::bison::key_t{});
   std::string label = "Dockable##" + std::to_string(wish_id.id);
 
   // Render one floating frame: establishes the ImGuiCond_Once 400x300 size
