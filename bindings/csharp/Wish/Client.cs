@@ -165,7 +165,7 @@ public sealed class Client : IDisposable
         {
             throw caught;
         }
-        WishException.Check(rc, "run");
+        WishException.Check(rc, "run", LastError);
     }
 
     /// <summary>Blocks until <see cref="Quit"/> is called (from any thread).</summary>
@@ -211,7 +211,7 @@ public sealed class Client : IDisposable
         var h = Native.wish_instantiate_template(_handle, name, prefix);
         if (h == nint.Zero)
         {
-            throw new WishException(WishErrorCode.Exception, $"instantiate_template({name}, {prefix})");
+            throw new WishException(WishErrorCode.Exception, $"instantiate_template({name}, {prefix})", LastError());
         }
         return WishInterop.WrapProxy(h);
     }
@@ -258,7 +258,7 @@ public sealed class Client : IDisposable
         var h = Native.wish_instantiate(_handle, nsKey, klassKey, scope.Handle);
         if (h == nint.Zero)
         {
-            throw new WishException(WishErrorCode.Exception, $"instantiate({klassName}, {nsName})");
+            throw new WishException(WishErrorCode.Exception, $"instantiate({klassName}, {nsName})", LastError());
         }
         return WishInterop.WrapProxy(h);
     }

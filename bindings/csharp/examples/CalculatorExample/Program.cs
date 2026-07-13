@@ -7,8 +7,15 @@
  * bindings/python/examples/calculator_example.py, minus the in-memory
  * server/renderer wiring: this program is a *client only*. Start a wish
  * server first (it owns the window/renderer), then point this program at
- * it -- matching whichever transport the server was started with:
+ * it -- matching whichever transport the server was started with (the
+ * server's own default is --transport=term, which spawns its own
+ * terminal and expects the client to run *inside* it):
  *
+ *   build/app/wish server --renderer=sdl3
+ *   -- inside the terminal the server just spawned --
+ *   dotnet run --project bindings/csharp/examples/CalculatorExample -- --transport=term
+ *
+ *   -- or explicitly over TCP --
  *   build/app/wish server --transport=tcp --port=7070 --renderer=sdl3
  *   dotnet run --project bindings/csharp/examples/CalculatorExample -- --transport=tcp --host=127.0.0.1 --port=7070
  *
@@ -18,70 +25,7 @@
 using Bdg.Bison;
 using Bdg.Bison.Rmi;
 using Bdg.Wish;
-
-const string CalcDesc = """
-{
-  "type": "Window",
-  "title": "Calculator",
-  "width": 328,
-  "height": 420,
-  "closable": true,
-  "children": {
-    "display": { "type": "Label", "text": "0" },
-    "sep":     { "type": "Separator" },
-    "row0": {
-      "type": "HorizontalLayout",
-      "spacing": 6,
-      "children": {
-        "c":   { "type": "Button", "label": "C",   "width": 72, "height": 52 },
-        "div": { "type": "Button", "label": "/",   "width": 72, "height": 52 },
-        "mul": { "type": "Button", "label": "*",   "width": 72, "height": 52 },
-        "bsp": { "type": "Button", "label": "<-",  "width": 72, "height": 52 }
-      }
-    },
-    "row1": {
-      "type": "HorizontalLayout",
-      "spacing": 6,
-      "children": {
-        "n7":  { "type": "Button", "label": "7", "width": 72, "height": 52 },
-        "n8":  { "type": "Button", "label": "8", "width": 72, "height": 52 },
-        "n9":  { "type": "Button", "label": "9", "width": 72, "height": 52 },
-        "sub": { "type": "Button", "label": "-", "width": 72, "height": 52 }
-      }
-    },
-    "row2": {
-      "type": "HorizontalLayout",
-      "spacing": 6,
-      "children": {
-        "n4":  { "type": "Button", "label": "4", "width": 72, "height": 52 },
-        "n5":  { "type": "Button", "label": "5", "width": 72, "height": 52 },
-        "n6":  { "type": "Button", "label": "6", "width": 72, "height": 52 },
-        "add": { "type": "Button", "label": "+", "width": 72, "height": 52 }
-      }
-    },
-    "row3": {
-      "type": "HorizontalLayout",
-      "spacing": 6,
-      "children": {
-        "n1": { "type": "Button", "label": "1", "width": 72, "height": 52 },
-        "n2": { "type": "Button", "label": "2", "width": 72, "height": 52 },
-        "n3": { "type": "Button", "label": "3", "width": 72, "height": 52 },
-        "eq": { "type": "Button", "label": "=", "width": 72, "height": 52 }
-      }
-    },
-    "row4": {
-      "type": "HorizontalLayout",
-      "spacing": 6,
-      "children": {
-        "n0":  { "type": "Button", "label": "0",   "width": 72, "height": 52 },
-        "dot": { "type": "Button", "label": ".",   "width": 72, "height": 52 },
-        "pm":  { "type": "Button", "label": "+/-", "width": 72, "height": 52 },
-        "pct": { "type": "Button", "label": "%",   "width": 72, "height": 52 }
-      }
-    }
-  }
-}
-""";
+using Client = Bdg.Wish.Client;
 
 var options = CliOptions.Parse(args, defaultHost: "127.0.0.1", defaultPort: 7070);
 
@@ -142,6 +86,70 @@ Console.WriteLine("[Client] done.");
 /// <summary>Port of calc_client from examples/calculator/main.cpp.</summary>
 internal sealed class Calculator
 {
+    private const string CalcDesc = """
+    {
+      "type": "Window",
+      "title": "Calculator",
+      "width": 328,
+      "height": 420,
+      "closable": true,
+      "children": {
+        "display": { "type": "Label", "text": "0" },
+        "sep":     { "type": "Separator" },
+        "row0": {
+          "type": "HorizontalLayout",
+          "spacing": 6,
+          "children": {
+            "c":   { "type": "Button", "label": "C",   "width": 72, "height": 52 },
+            "div": { "type": "Button", "label": "/",   "width": 72, "height": 52 },
+            "mul": { "type": "Button", "label": "*",   "width": 72, "height": 52 },
+            "bsp": { "type": "Button", "label": "<-",  "width": 72, "height": 52 }
+          }
+        },
+        "row1": {
+          "type": "HorizontalLayout",
+          "spacing": 6,
+          "children": {
+            "n7":  { "type": "Button", "label": "7", "width": 72, "height": 52 },
+            "n8":  { "type": "Button", "label": "8", "width": 72, "height": 52 },
+            "n9":  { "type": "Button", "label": "9", "width": 72, "height": 52 },
+            "sub": { "type": "Button", "label": "-", "width": 72, "height": 52 }
+          }
+        },
+        "row2": {
+          "type": "HorizontalLayout",
+          "spacing": 6,
+          "children": {
+            "n4":  { "type": "Button", "label": "4", "width": 72, "height": 52 },
+            "n5":  { "type": "Button", "label": "5", "width": 72, "height": 52 },
+            "n6":  { "type": "Button", "label": "6", "width": 72, "height": 52 },
+            "add": { "type": "Button", "label": "+", "width": 72, "height": 52 }
+          }
+        },
+        "row3": {
+          "type": "HorizontalLayout",
+          "spacing": 6,
+          "children": {
+            "n1": { "type": "Button", "label": "1", "width": 72, "height": 52 },
+            "n2": { "type": "Button", "label": "2", "width": 72, "height": 52 },
+            "n3": { "type": "Button", "label": "3", "width": 72, "height": 52 },
+            "eq": { "type": "Button", "label": "=", "width": 72, "height": 52 }
+          }
+        },
+        "row4": {
+          "type": "HorizontalLayout",
+          "spacing": 6,
+          "children": {
+            "n0":  { "type": "Button", "label": "0",   "width": 72, "height": 52 },
+            "dot": { "type": "Button", "label": ".",   "width": 72, "height": 52 },
+            "pm":  { "type": "Button", "label": "+/-", "width": 72, "height": 52 },
+            "pct": { "type": "Button", "label": "%",   "width": 72, "height": 52 }
+          }
+        }
+      }
+    }
+    """;
+
     private readonly bool _verbose;
     private readonly string _theme;
     private string _display = "0";
@@ -333,7 +341,7 @@ internal sealed record CliOptions(string Transport, string Host, int Port, strin
 {
     public static CliOptions Parse(string[] args, string defaultHost, int defaultPort)
     {
-        var transport = "tcp";
+        var transport = "term";
         var host = defaultHost;
         var port = defaultPort;
         var name = "";

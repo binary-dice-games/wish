@@ -1,5 +1,7 @@
 .vs/
 out/
+bin/
+obj/
 build**/
 __pycache__/
 _deps/

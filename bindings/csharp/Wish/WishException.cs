@@ -21,23 +21,27 @@ public sealed class WishException : Exception
 
     public WishErrorCode Code { get; }
 
-    public WishException(WishErrorCode code, string context = "")
-        : base(Format(code, context))
+    public WishException(WishErrorCode code, string context = "", string detail = "")
+        : base(Format(code, context, detail))
     {
         Code = code;
     }
 
-    private static string Format(WishErrorCode code, string context)
+    private static string Format(WishErrorCode code, string context, string detail)
     {
         var msg = Messages.TryGetValue(code, out var m) ? m : $"Unknown error {(int)code}";
+        if (detail.Length > 0)
+        {
+            msg = $"{msg} ({detail})";
+        }
         return context.Length > 0 ? $"{context}: {msg}" : msg;
     }
 
-    internal static void Check(int rc, string context = "")
+    internal static void Check(int rc, string context = "", Func<string>? lastError = null)
     {
         if (rc != (int)WishErrorCode.Ok)
         {
-            throw new WishException((WishErrorCode)rc, context);
+            throw new WishException((WishErrorCode)rc, context, lastError?.Invoke() ?? "");
         }
     }
 }

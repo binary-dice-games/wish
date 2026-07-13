@@ -222,6 +222,16 @@ Full protocol/architecture: [src/automation/DESIGN.md](src/automation/DESIGN.md)
 writing an e2e regression test for a wish app** — it is almost always faster
 and more reliable than re-reading render code and guessing at runtime state.
 
+This includes verifying that a client example/binding (C++, Python, C#, ...)
+actually works end-to-end, not just that it compiles and runs without
+throwing. "The client connected and didn't crash" is a weaker check than "the
+expected widget tree rendered" — e.g. after fixing a client that failed to
+`Instantiate` a form, don't stop at confirming the call no longer throws;
+launch the server with `--renderer=web` (or reuse one already running) and
+use `AutomationClient` to confirm the expected widgets actually appear in
+`get_tree()` / a screenshot. A client-side exception disappearing can mean
+the bug is fixed, or just that the failure moved somewhere silent.
+
 ### Prerequisites
 
 ```sh

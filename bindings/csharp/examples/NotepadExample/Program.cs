@@ -23,6 +23,7 @@ using System.Text.Json;
 using Bdg.Bison;
 using Bdg.Bison.Rmi;
 using Bdg.Wish;
+using Client = Bdg.Wish.Client;
 
 static List<Dictionary<string, object>> ListDirectory(string directory)
 {
@@ -297,7 +298,7 @@ internal sealed record CliOptions(string Transport, string Host, int Port, strin
 {
     public static CliOptions Parse(string[] args)
     {
-        var transport = "tcp";
+        var transport = "term";
         var host = "127.0.0.1";
         var port = 7070;
         var name = "";

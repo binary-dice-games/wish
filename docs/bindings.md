@@ -36,8 +36,10 @@ automatically (default search is `build/libwish_client.so` /
 export WISH_LIB=$(pwd)/build/libwish_client.so
 # macOS:
 export WISH_LIB=$(pwd)/build/libwish_client.dylib
-# Windows:
+# Windows (cmd):
 set WISH_LIB=%cd%\build\Debug\wish_client.dll
+# Windows (powershell):
+$env:WISH_LIB = "$PWD\build\Debug\wish_client.dll"
 ```
 
 ### Running the calculator example
@@ -127,8 +129,10 @@ binding's `WISH_LIB`:
 export WISH_LIB=$(pwd)/build/libwish_client.so
 # macOS:
 export WISH_LIB=$(pwd)/build/libwish_client.dylib
-# Windows:
+# Windows (cmd):
 set WISH_LIB=%cd%\build\Debug\wish_client.dll
+# Windows (powershell):
+$env:WISH_LIB = "$PWD\build\Debug\wish_client.dll"
 ```
 
 ### Running the calculator example
