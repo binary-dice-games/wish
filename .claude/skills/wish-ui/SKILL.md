@@ -139,10 +139,27 @@ design before any host-app code is touched:
    iterate before writing the host app's real integration code. For a
    plot-shaped example, feed a synthetic sine wave or ramp into `xs`/`ys`
    so the mockup shows realistic-looking data, not an empty plot.
+
+   **If `ui.screenshot()` comes back as a broken-image placeholder and
+   `page.on("console")` (or the server's own log) shows
+   `CONTEXT_LOST_WEBGL`**, this environment has no usable GPU for the web
+   renderer's canvas — see CONCEPTS.md section 6's "Known limitation".
+   Do not retry the screenshot, add Chromium GL flags, or otherwise try to
+   fix it; that's an environment property, not something fixable from this
+   session. Instead: keep using `ui.get_tree()` to confirm the template
+   registered the widgets you expect at the right paths (labels, text,
+   structure — everything except pixels), and produce the visual mockup
+   for the user as a standalone styled HTML file (`Artifact` tool) that
+   mirrors the template 1:1 — same widget tree shape, same labels/text —
+   styled to resemble wish's actual look (ImGui dark/light presets: flat
+   panels, thin borders, a titlebar, no border-radius-heavy/rounded-card
+   styling). Tell the user plainly that this is a styled stand-in, not a
+   real render, and why (no WebGL in this environment).
 5. For interactive elements, drive them with `ui.click()`/`ui.type_text()`
    and confirm the intended event fires (check `ui.get_logs()` if the
    fake session logs on each callback) before wiring the real host-app
-   callback.
+   callback. This still works even when screenshots don't, since it does
+   not depend on the canvas actually painting.
 
 ## 5. Implement the real integration
 

@@ -158,6 +158,19 @@ the user a real screenshot rather than asking them to approve JSON:
 4. Read `mockup.png` back with the `Read` tool and show/describe it to the
    user; iterate on the layout JSON/fields before writing the rest of the
    module's logic if anything looks off.
+
+   **If `ui.screenshot()` comes back as a broken-image placeholder and
+   `page.on("console")` (or the server's own log) shows
+   `CONTEXT_LOST_WEBGL`**, this environment has no usable GPU for the web
+   renderer's canvas — see CONCEPTS.md section 6's "Known limitation". Do
+   not retry the screenshot or hunt for Chromium GL flags; it will not
+   start working. Fall back to `ui.get_tree()` to confirm the form's
+   widgets registered at the expected paths with the expected
+   labels/fields, and show the user a standalone styled HTML mockup (the
+   `Artifact` tool) mirroring that tree instead of a real screenshot,
+   saying plainly that it's a stand-in. Step 5 (real interactive behavior)
+   and step 6 (tests) are unaffected — `click()`/`type_text()`/
+   `get_widget()`/`get_logs()` don't depend on the canvas painting.
 5. Once the module has real interactive behavior, extend the same script
    into repro/regression steps — `ui.click(...)`, `ui.type_text(...)`,
    `ui.get_widget(...)`, `ui.get_logs()` — to confirm the end-to-end flow

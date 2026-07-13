@@ -138,6 +138,21 @@ was never actually rendered (make it visible before asserting on it), and
 only leaf-widget rects are reliable (assert on the specific interactive
 widget, not its enclosing container).
 
+**Known limitation — `ui.screenshot()` can be unusable in a GPU-less
+environment.** The web renderer paints via WebGL; Playwright's headless
+Chromium needs a working GL context (hardware or `--use-gl=swiftshader`) to
+render it. In a sandboxed/CI environment with no GPU passthrough, the
+context comes up and is immediately lost (`CONTEXT_LOST_WEBGL` in
+`page.on("console")`), and every `ui.screenshot()` returns a broken-image
+placeholder forever — no amount of retrying, extra `wait_for`, or Chromium
+launch flags fixes this, because the GL context itself never becomes
+usable. If you observe `CONTEXT_LOST_WEBGL` once, treat screenshots as
+unavailable for the rest of the session rather than re-attempting; `
+ui.get_tree()` / `ui.get_widget()` still work (they read the object model
+over the RMI/automation channel, not the canvas) and remain useful for
+confirming structure, but do not prove pixels actually painted. See each
+skill's mockup step for what to do instead when screenshots are down.
+
 ## 7. Coding conventions
 
 Follow this repo's `CLAUDE.md` style guide for anything written in C++
