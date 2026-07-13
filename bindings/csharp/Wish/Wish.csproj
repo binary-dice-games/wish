@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>Bdg.Wish</RootNamespace>
+    <AssemblyName>Bdg.Wish</AssemblyName>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- extern/bison is a git submodule; its own C# binding lives at this
+         fixed relative path regardless of which commit is checked out. -->
+    <ProjectReference Include="../../../extern/bison/bindings/csharp/Bison/Bison.csproj" />
+  </ItemGroup>
+
+</Project>
