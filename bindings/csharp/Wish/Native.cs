@@ -28,6 +28,7 @@ public enum WishErrorCode
     NotFound = -2,
     Transport = -3,
     Exception = -4,
+    Ambiguous = -5,
 }
 
 /// <summary><c>wish_session_fn</c>: void(*)(wish_client_handle client, void* userdata).</summary>
@@ -180,6 +181,14 @@ internal static partial class Native
     [LibraryImport(LibName)]
     public static partial nint wish_instantiate(nint client, uint ns, uint klass, nint parameters);
 
+    // ── Embedded apps ─────────────────────────────────────────────────────────
+
+    [LibraryImport(LibName)]
+    public static partial int wish_list_apps(out nint outJson);
+
+    [LibraryImport(LibName, StringMarshalling = StringMarshalling.Utf8)]
+    public static partial int wish_run_app(nint client, string appName, string[] args, nuint nargs);
+
     // ── File transfer ──────────────────────────────────────────────────────────
 
     [LibraryImport(LibName, StringMarshalling = StringMarshalling.Utf8)]
@@ -187,6 +196,15 @@ internal static partial class Native
 
     [LibraryImport(LibName, StringMarshalling = StringMarshalling.Utf8)]
     public static partial int wish_download_file(nint client, string name, out nint outData, out nuint outLen);
+
+    [LibraryImport(LibName, StringMarshalling = StringMarshalling.Utf8)]
+    public static partial int wish_upload_file_from_path(nint client, string name, string localPath);
+
+    [LibraryImport(LibName, StringMarshalling = StringMarshalling.Utf8)]
+    public static partial int wish_download_file_to_path(nint client, string name, string localPath);
+
+    [LibraryImport(LibName, StringMarshalling = StringMarshalling.Utf8)]
+    public static partial int wish_upload_package_from_path(nint client, string destPath, string localZipPath);
 
     // ── Logging ───────────────────────────────────────────────────────────────
 

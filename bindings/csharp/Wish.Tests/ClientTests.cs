@@ -71,6 +71,39 @@ public class ErrorMappingTests
         Assert.Contains("Named proxy or resource not found", ex.Message);
         Assert.Equal(WishErrorCode.NotFound, ex.Code);
     }
+
+    [Fact]
+    public void AmbiguousMessage()
+    {
+        var ex = new WishException(WishErrorCode.Ambiguous, "run_app('notepad')");
+        Assert.Contains("fully-qualified name", ex.Message);
+        Assert.Equal(WishErrorCode.Ambiguous, ex.Code);
+    }
+}
+
+/// <summary>
+/// Exercises Client.ListApps() -&gt; wish_list_apps plumbing. Registration
+/// happens at library load time, so this needs no connection or live
+/// server -- it works even when no optional app module is enabled (an
+/// empty list is a valid result).
+/// </summary>
+public class ListAppsTests
+{
+    [Fact]
+    public void ListAppsDoesNotThrow()
+    {
+        var apps = Client.ListApps();
+        Assert.NotNull(apps);
+    }
+
+    [Fact]
+    public void ListAppsEntriesHaveNames()
+    {
+        foreach (var app in Client.ListApps())
+        {
+            Assert.False(string.IsNullOrEmpty(app.Name));
+        }
+    }
 }
 
 /// <summary>

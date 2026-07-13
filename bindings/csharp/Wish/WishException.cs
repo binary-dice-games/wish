@@ -16,6 +16,7 @@ public sealed class WishException : Exception
         [WishErrorCode.NotFound] = "Named proxy or resource not found",
         [WishErrorCode.Transport] = "Transport connection failed",
         [WishErrorCode.Exception] = "Internal C++ exception",
+        [WishErrorCode.Ambiguous] = "App name matches more than one registered app; use the fully-qualified name (see LastError())",
     };
 
     public WishErrorCode Code { get; }

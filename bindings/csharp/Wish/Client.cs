@@ -11,10 +11,31 @@
  */
 
 using System.Runtime.InteropServices;
+using System.Text.Json.Serialization;
 using Bdg.Bison;
 using Bdg.Bison.Rmi;
 
 namespace Bdg.Wish;
+
+/// <summary>One parameter accepted by an embedded app (see <see cref="Client.ListApps"/>).</summary>
+public sealed record AppParamInfo(
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("description")] string Description);
+
+/// <summary>
+/// One embedded app registered by an enabled optional module (see
+/// <c>modules/README.md</c>). <see cref="Name"/> alone is what
+/// <see cref="Client.RunApp"/> takes; <see cref="Organization"/> /
+/// <see cref="Collection"/> are the module's location in the
+/// <c>modules/&lt;organization&gt;/&lt;collection&gt;/&lt;name&gt;</c> tree
+/// (empty if not populated).
+/// </summary>
+public sealed record AppInfo(
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("organization")] string Organization,
+    [property: JsonPropertyName("collection")] string Collection,
+    [property: JsonPropertyName("description")] string Description,
+    [property: JsonPropertyName("params")] IReadOnlyList<AppParamInfo> Params);
 
 /// <summary>
 /// RAII wrapper around a <c>wish_client_handle</c>. Construct via
@@ -242,6 +263,47 @@ public sealed class Client : IDisposable
         return WishInterop.WrapProxy(h);
     }
 
+    // ── Embedded apps ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Lists every embedded app registered by an enabled optional module
+    /// (see <c>modules/README.md</c>). Mirrors <c>wish client --list</c>.
+    /// Does not require a connection -- app registration happens at library
+    /// load time, independent of any session.
+    /// </summary>
+    public static IReadOnlyList<AppInfo> ListApps()
+    {
+        WishException.Check(Native.wish_list_apps(out var outJson), "list_apps");
+        try
+        {
+            var json = Marshal.PtrToStringUTF8(outJson) ?? "[]";
+            return System.Text.Json.JsonSerializer.Deserialize<List<AppInfo>>(json) ?? [];
+        }
+        finally
+        {
+            WishInterop.FreeString(outJson);
+        }
+    }
+
+    /// <summary>
+    /// Connects, runs the named embedded app (see <see cref="ListApps"/>),
+    /// blocks until it signals completion, then disconnects. Mirrors
+    /// <c>wish client --run=&lt;name&gt; -- &lt;args...&gt;</c>.
+    ///
+    /// <paramref name="name"/> may be a short name (<c>"calculator"</c>) or
+    /// its fully-qualified <c>"organization/collection/name"</c> form. Two
+    /// different modules may register the same short name -- if
+    /// <paramref name="name"/> is short and ambiguous between more than one,
+    /// this throws a <see cref="WishException"/> with
+    /// <see cref="WishErrorCode.Ambiguous"/>; use the fully-qualified name
+    /// from <see cref="ListApps"/> instead.
+    /// </summary>
+    public void RunApp(string name, IReadOnlyList<string>? args = null)
+    {
+        var argv = args?.ToArray() ?? [];
+        WishException.Check(Native.wish_run_app(_handle, name, argv, (nuint)argv.Length), $"run_app({name})");
+    }
+
     // ── File transfer ──────────────────────────────────────────────────────────
 
     /// <summary>Uploads a file to the server's sandboxed session resource directory.</summary>
@@ -267,6 +329,38 @@ public sealed class Client : IDisposable
         {
             WishInterop.FreeString(outData);
         }
+    }
+
+    /// <summary>
+    /// Uploads a file to the server, streaming it in chunks from a local
+    /// file on disk instead of buffering the whole content in memory.
+    /// </summary>
+    public void UploadFileFromPath(string name, string localPath)
+    {
+        WishException.Check(
+            Native.wish_upload_file_from_path(_handle, name, localPath), $"upload_file_from_path({name})");
+    }
+
+    /// <summary>
+    /// Downloads a previously uploaded file, streaming it in chunks
+    /// directly to a local file on disk instead of buffering the whole
+    /// content in memory.
+    /// </summary>
+    public void DownloadFileToPath(string name, string localPath)
+    {
+        WishException.Check(
+            Native.wish_download_file_to_path(_handle, name, localPath), $"download_file_to_path({name})");
+    }
+
+    /// <summary>
+    /// Uploads a local zip archive and has the server unpack it into
+    /// <paramref name="destPath"/> inside the sandbox.
+    /// </summary>
+    public void UploadPackageFromPath(string destPath, string localZipPath)
+    {
+        WishException.Check(
+            Native.wish_upload_package_from_path(_handle, destPath, localZipPath),
+            $"upload_package_from_path({destPath})");
     }
 
     // ── Logging ───────────────────────────────────────────────────────────────
