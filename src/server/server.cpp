@@ -232,6 +232,16 @@ void server::render_loop() {
         renderer_->begin_frame();
         renderer_->render_server_frame(sessions_snapshot);
 
+        // With zero sessions connected, the per-session loop below (which
+        // normally calls service_automation_queries(*sess)) never runs at
+        // all -- so a QUERY_TREE sent while no app-under-test has connected
+        // yet (or after it disconnected) would never get answered and the
+        // browser's getTree() promise would hang forever. Answer with an
+        // empty tree instead; see renderer::service_automation_queries()'s
+        // no-arg overload doc comment.
+        if (sessions_snapshot.empty())
+          renderer_->service_automation_queries();
+
         for (const auto& sync_ctx : sessions_snapshot) {
           std::vector<context::pending_event> events;
           std::unordered_map<bison::key_t, ui_root*, bison::key_t, bison::key_t> handlers;

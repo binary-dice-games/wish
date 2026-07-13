@@ -153,6 +153,27 @@ class renderer {
   virtual void service_automation_queries(const context& s) {
     (void)s;
   }
+
+  /**
+   * @brief Answer pending tree/hit-test queries when no session is
+   * connected.
+   *
+   * `pending_tree_queries_` (`web_renderer`'s queue) is populated purely by
+   * the automation browser's own WebSocket connection and is independent of
+   * any RMI session, but `wish::server::render_loop()` /
+   * `wish::standalone::render_loop()` only call the `service_automation_queries(s)`
+   * overload once per connected session -- if zero sessions are connected,
+   * that per-session loop body never runs at all, so a `QUERY_TREE` sent
+   * while the app-under-test hasn't connected yet (or has already
+   * disconnected) would sit in the queue forever and the browser's
+   * `getTree()` promise would never resolve. This overload is called once
+   * per frame instead, only when the per-session path was skipped, so those
+   * requests are still answered -- with an empty widget list, since there is
+   * no session to introspect. default no-op; only `web_renderer` overrides
+   * it.
+   */
+  virtual void service_automation_queries() {
+  }
 };
 
 /**

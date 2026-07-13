@@ -157,6 +157,11 @@ void standalone::render_loop() {
         if (context_)
           sessions_snapshot.push_back(context_);
         renderer_->render_server_frame(sessions_snapshot);
+        // See the matching comment in wish::server::render_loop(): with no
+        // embedded session, service_automation_queries(*sess) below never
+        // runs, so a QUERY_TREE would hang forever without this.
+        if (!context_)
+          renderer_->service_automation_queries();
         if (context_) {
           std::vector<context::pending_event> events;
           std::unordered_map<bison::key_t, ui_root*, bison::key_t, bison::key_t> handlers;

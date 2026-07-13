@@ -510,6 +510,47 @@ TEST_F(WebRendererAutomationTest, QueryTreeRoundTripsThroughRealSocket) {
   close_socket(sock);
 }
 
+// Regression test for a hang where QUERY_TREE sent while zero RMI sessions
+// are connected (e.g. before an app-under-test has connected, or after it
+// disconnected) never got a reply at all: wish::server::render_loop() /
+// wish::standalone::render_loop() only called service_automation_queries(s)
+// once per connected session, so with zero sessions that call site never
+// ran and pending_tree_queries_ was never drained. The no-arg overload
+// exists specifically so callers can still answer (with an empty widget
+// list) when there is no session to introspect.
+TEST_F(WebRendererAutomationTest, QueryTreeAnsweredWithEmptyTreeWhenNoSessionConnected) {
+  int port = renderer_->actual_port();
+  ASSERT_GT(port, 0);
+  int sock = connect_ws_client(port);
+  ASSERT_GE(sock, 0);
+
+  for (int i = 0; i < 200; ++i) {
+    if (renderer_->poll_events())
+      break;
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+
+  send_ws_binary(sock, build_envelope(bdg::wish::web_msg_type::query_tree, R"({"request_id":7,"root":""})"));
+
+  bool activity = false;
+  for (int i = 0; i < 200 && !activity; ++i) {
+    activity = renderer_->poll_events();
+    if (!activity)
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+  ASSERT_TRUE(activity);
+
+  renderer_->service_automation_queries(); // no-arg overload: no session exists
+
+  auto snapshot = recv_message_of_type(sock, bdg::wish::web_msg_type::tree_snapshot);
+  ASSERT_TRUE(snapshot.has_value());
+  auto j = nlohmann::json::parse(snapshot->payload);
+  EXPECT_EQ(j["request_id"], 7);
+  EXPECT_TRUE(j["widgets"].empty());
+
+  close_socket(sock);
+}
+
 // logger::log() is push-based automation: unlike QUERY_TREE, there is no
 // browser -> server request. service_automation_queries() itself decides
 // what's "new" (via logger::log_entry::seq vs. web_renderer's own

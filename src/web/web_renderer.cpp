@@ -420,6 +420,24 @@ void web_renderer::render_node(const ui_element& node, const context& s) {
   };
 }
 
+namespace {
+/// Drains `queries` (a `pending_tree_queries_` snapshot) and sends each a
+/// `TREE_SNAPSHOT` reply built against @p ui_objects / @p hits. Shared by
+/// both `service_automation_queries()` overloads below.
+void answer_tree_queries(
+    civetweb_server* server, std::deque<std::pair<ws_connection_id, std::string>>& queries,
+    const wish::ui_tree& ui_objects, const automation::hit_test_map& hits) {
+  for (const auto& [conn_id, json_payload] : queries) {
+    auto req = automation::parse_query_tree_request(json_payload);
+    if (!req)
+      continue; // malformed QUERY_TREE payload -- drop silently, matches
+                // draw_protocol's own "unrecognized messages" convention
+    auto snapshot_json = automation::build_tree_snapshot(req->request_id, req->root, ui_objects, hits);
+    server->send_to(conn_id, draw_protocol::encode_tree_snapshot(snapshot_json));
+  }
+}
+} // namespace
+
 void web_renderer::service_automation_queries(const context& s) {
   if (!server_)
     return;
@@ -430,14 +448,7 @@ void web_renderer::service_automation_queries(const context& s) {
     tree_queries = std::move(*lock);
     lock->clear();
   }
-  for (const auto& [conn_id, json_payload] : tree_queries) {
-    auto req = automation::parse_query_tree_request(json_payload);
-    if (!req)
-      continue; // malformed QUERY_TREE payload -- drop silently, matches
-                // draw_protocol's own "unrecognized messages" convention
-    auto snapshot_json = automation::build_tree_snapshot(req->request_id, req->root, s.ui_objects, hit_test_map_);
-    server_->send_to(conn_id, draw_protocol::encode_tree_snapshot(snapshot_json));
-  }
+  answer_tree_queries(server_.get(), tree_queries, s.ui_objects, hit_test_map_);
 
   // Push, not pull: broadcast whatever has been logged since the last call
   // to every connected browser, unprompted, so a script observes log
@@ -454,6 +465,20 @@ void web_renderer::service_automation_queries(const context& s) {
       server_->broadcast(draw_protocol::encode_log_event(automation::build_log_event(new_entries)));
     }
   }
+}
+
+void web_renderer::service_automation_queries() {
+  if (!server_)
+    return;
+
+  std::deque<std::pair<ws_connection_id, std::string>> tree_queries;
+  {
+    auto lock = pending_tree_queries_.wlock();
+    tree_queries = std::move(*lock);
+    lock->clear();
+  }
+  static const wish::ui_tree kEmptyUiObjects;
+  answer_tree_queries(server_.get(), tree_queries, kEmptyUiObjects, hit_test_map_);
 }
 
 #endif // WISH_AUTOMATION_ENABLED

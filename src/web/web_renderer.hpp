@@ -143,6 +143,19 @@ class web_renderer : public imgui_renderer {
    *           should act on.
    */
   void service_automation_queries(const context& s) override;
+
+  /**
+   * @brief Answer any QUERY_TREE requests queued since the last call, with
+   *        an empty widget list, since no session is connected to
+   *        introspect.
+   *
+   * Called instead of `service_automation_queries(const context&)` for any
+   * frame where zero RMI sessions are connected -- see that overload's
+   * base-class doc comment (`renderer::service_automation_queries()`) for
+   * why this exists. Does not push `LOG_EVENT`s: there is no session, so
+   * no `logger_service` to read from.
+   */
+  void service_automation_queries() override;
 #endif
 
   /// @brief Directory the embedded browser client assets were extracted
