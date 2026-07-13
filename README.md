@@ -77,6 +77,8 @@ auto img = c.instantiate("wish"_key, "Image"_key).get();
 img.set({{"src"_key, std::string{"logo.png"}}, {"width"_key, 64}, {"height"_key, 64}}).get();
 ```
 
+For large files, `upload_file`/`download_file` also accept a `std::istream&`/`std::ostream&` to stream the content in chunks instead of buffering it whole, and `upload_package(dest_path, zip_stream)` uploads a zip archive and has the server unpack it into `dest_path` in the sandbox. See [DESIGN.md](DESIGN.md#bdgwishfile_service) for the chunked-transfer protocol.
+
 ## Core Concepts
 
 | Concept | Description |
@@ -86,7 +88,7 @@ img.set({{"src"_key, std::string{"logo.png"}}, {"width"_key, 64}, {"height"_key,
 | **UI templates** | Named JSON/YAML blueprints stored on the server via `register_template`. `instantiate_template(name)` parses and creates a fresh object tree, returning a map of named handles. |
 | **Remote properties** | `proxy.set(fields)` / `proxy.get()` synchronize typed fields. Property sets are one-way (no round-trip) for low-latency visual updates. |
 | **Events** | Server-side interactions emit named events (`clicked`, `changed`, ...) to the client via `proxy.onEvent`. |
-| **File service** | Clients upload/download files via `client::upload_file` / `download_file`. Files are stored in a sandboxed per-session folder, deleted on disconnect. |
+| **File service** | Clients upload/download files via `client::upload_file` / `download_file` (whole-file or streamed/chunked overloads), plus `upload_package` to upload and unpack a zip archive. Files are stored in a sandboxed per-session folder, deleted on disconnect. |
 | **Multi-client** | Each connected client has an isolated session: independent object tree, template registry, and resource folder. |
 | **Renderer backends** | `wish::renderer` is an abstract interface. The SDL3 (windowed) and web (browser, via `--renderer web`) backends both build on it — see [docs/building.md](docs/building.md) for the `WISH_ENABLE_WEB` option and [src/web/DESIGN.md](src/web/DESIGN.md) for the browser renderer's architecture. New backends (Qt, terminal/TUI, ...) implement the same interface. |
 | **Automation** | `WISH_ENABLE_AUTOMATION` extends the web renderer with a widget-tree/hit-test query API, letting a Playwright-driven headless browser (or an AI agent) introspect and drive a running wish UI — see [src/automation/DESIGN.md](src/automation/DESIGN.md), [docs/bindings.md](docs/bindings.md#automation-bindingspythonwishautomationpy), and `CLAUDE.md`'s "Automation" section. |

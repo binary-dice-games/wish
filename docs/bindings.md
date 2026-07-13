@@ -81,6 +81,19 @@ def session(client):
 Client.tcp("127.0.0.1", 7070).run(session)
 ```
 
+### File transfer
+
+`Client.upload_file(name, data: bytes)` / `download_file(name) -> bytes` move
+a whole file in one call, same as the C++ `std::string` overloads. For large
+files, `Client.upload_file_from_path(name, local_path)` and
+`download_file_to_path(name, local_path)` stream the content in chunks
+to/from a local file on disk instead of buffering it in memory (the C ABI has
+no `istream`/`ostream`, so these take a path and open it internally).
+`Client.upload_package(dest_path, local_zip_path)` uploads a local zip
+archive and has the server unpack it into `dest_path` inside the sandbox.
+See [DESIGN.md](../DESIGN.md#bdgwishfile_service) for the chunked-transfer
+protocol these build on.
+
 ### Automation (`bindings/python/wish/automation.py`)
 
 A separate, standalone module for driving a `wish server --renderer web`

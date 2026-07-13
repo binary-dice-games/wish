@@ -33,10 +33,17 @@ wish_add_test(test_children_order test_children_order.cpp)
 wish_add_test(test_context        test_context.cpp)
 wish_add_test(test_renderer       test_renderer.cpp)
 wish_add_test(test_file_service   test_file_service.cpp)
+# Needs miniz_zip.h directly to build zip fixtures for unpack() tests --
+# wish_server links miniz PRIVATE, which puts it on this target's link line
+# already, but not its include path (same pattern as test_resource_store above).
+target_link_libraries(test_file_service PRIVATE miniz)
 wish_add_test(test_logger         test_logger.cpp)
 wish_add_test(test_server         test_server.cpp)
 wish_add_test(test_standalone     test_standalone.cpp)
 wish_add_test(test_client         test_client.cpp)
+# Needs miniz_zip.h directly to build a zip fixture for the upload_package
+# test (same pattern as test_file_service/test_resource_store above).
+target_link_libraries(test_client PRIVATE miniz)
 wish_add_test(test_handlers       test_handlers.cpp)
 wish_add_test(test_integration    test_integration.cpp)
 wish_add_test(test_auth           test_auth.cpp)

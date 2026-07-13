@@ -7,6 +7,7 @@
 
 #include "src/bison/bison_object.hpp"
 
+#include <cstdint>
 #include <filesystem>
 #include <string>
 
@@ -50,6 +51,71 @@ class file_service : public bison::dynamic {
    * @throws std::runtime_error if the file does not exist or cannot be read.
    */
   std::string download(const std::string& name) const;
+
+  /**
+   * @brief Write one chunk of a file being uploaded in pieces.
+   *
+   * Stateless on the server: chunks are written to a staging file
+   * (`<resolved path>.wishpart`) and only become visible at @p name once the
+   * chunk with @p eof set arrives. @p first must be `true` for exactly the
+   * first chunk of a transfer (creates/truncates the staging file) and
+   * `false` for every subsequent chunk (appends); an empty file is produced
+   * by a single call with both @p first and @p eof set to `true` and an
+   * empty @p data.
+   *
+   * @param name   Target filename, sandboxed the same as `upload()`.
+   * @param data   Chunk bytes; may contain embedded NUL bytes.
+   * @param first  `true` for the first chunk of the transfer.
+   * @param eof    `true` for the last chunk; triggers the atomic rename from
+   *               the staging file onto @p name.
+   * @throws std::runtime_error if @p name escapes the sandbox or the
+   *         staging file cannot be written.
+   */
+  void upload_chunk(const std::string& name, const std::string& data, bool first, bool eof);
+
+  /**
+   * @brief One chunk of a file being downloaded in pieces.
+   */
+  struct chunk {
+    std::string data; ///< Bytes read, up to the requested chunk size.
+    bool eof = false; ///< `true` once `offset + data.size()` reached EOF.
+  };
+
+  /**
+   * @brief Read one chunk of a previously uploaded file at a given offset.
+   *
+   * Stateless: each call independently seeks to @p offset and reads, so
+   * calls may be retried or interleaved with other operations without any
+   * server-side handle to leak or clean up.
+   *
+   * @param name      Filename to read, sandboxed the same as `download()`.
+   * @param offset    Byte offset to start reading from.
+   * @param max_size  Maximum number of bytes to read.
+   * @return The bytes read (possibly empty) and whether EOF was reached.
+   * @throws std::runtime_error if the file does not exist or cannot be read.
+   */
+  chunk download_chunk(const std::string& name, int32_t offset, int32_t max_size) const;
+
+  /**
+   * @brief Extract a zip archive previously uploaded via `upload_chunk()`
+   *        into a sandboxed destination directory.
+   *
+   * Both @p zip_name and @p dest are resolved and sandboxed independently
+   * (same rules as `upload()`/`download()`). Every extracted entry's target
+   * path is additionally verified to stay within the resolved @p dest
+   * directory (zip-slip protection: unlike the build-controlled embedded
+   * resource archive, @p zip_name's entries are client-supplied content and
+   * must not be trusted). Extraction merges into @p dest -- existing files
+   * are overwritten, unrelated existing files are left alone. On success,
+   * the staging archive at @p zip_name is deleted.
+   *
+   * @param zip_name  Previously uploaded zip file, relative to the sandbox.
+   * @param dest      Destination directory, relative to the sandbox.
+   * @throws std::runtime_error if either path escapes the sandbox, the
+   *         archive cannot be opened, or any entry would extract outside
+   *         @p dest.
+   */
+  void unpack(const std::string& zip_name, const std::string& dest);
 
   /**
    * @brief Return an indexed `dynamic` whose entries are the file names found

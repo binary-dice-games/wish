@@ -7,7 +7,9 @@
 
 #include "src/bison/bison.hpp"
 
+#include <cstdint>
 #include <future>
+#include <vector>
 
 namespace bdg::wish {
 
@@ -102,6 +104,74 @@ std::future<std::string> client::download_file(const std::string& name) {
     args["name"_key] = name;
     auto result = fs_proxy_->call("download"_key, std::move(args)).get();
     return result.as<std::string>("result"_key);
+  });
+}
+
+void client::upload_stream_sync(const std::string& name, std::istream& data, std::size_t chunk_size) {
+  std::vector<char> buf(chunk_size);
+  bool first = true;
+  for (;;) {
+    data.read(buf.data(), static_cast<std::streamsize>(chunk_size));
+    auto n = static_cast<std::size_t>(data.gcount());
+    // A read that fills the whole buffer doesn't set eofbit until the
+    // stream actually tries to read past the end -- peek() forces that
+    // check so a chunk landing exactly on the stream's end is still
+    // reported correctly (and so an empty stream still sends one chunk).
+    bool eof = data.eof() || data.peek() == std::char_traits<char>::eof();
+
+    dynamic args;
+    args["name"_key] = name;
+    args["data"_key] = std::string(buf.data(), n);
+    args["first"_key] = first;
+    args["eof"_key] = eof;
+    fs_proxy_->call("upload_chunk"_key, std::move(args)).get();
+
+    first = false;
+    if (eof)
+      break;
+  }
+}
+
+void client::download_stream_sync(const std::string& name, std::ostream& out, std::size_t chunk_size) {
+  int32_t offset = 0;
+  for (;;) {
+    dynamic args;
+    args["name"_key] = name;
+    args["offset"_key] = offset;
+    args["max_size"_key] = static_cast<int32_t>(chunk_size);
+    auto result = fs_proxy_->call("download_chunk"_key, std::move(args)).get();
+
+    auto chunk = result.as<std::string>("data"_key);
+    bool eof = result.as<bool>("eof"_key);
+    if (!chunk.empty()) {
+      out.write(chunk.data(), static_cast<std::streamsize>(chunk.size()));
+      offset += static_cast<int32_t>(chunk.size());
+    }
+    if (eof)
+      break;
+  }
+}
+
+std::future<void> client::upload_file(const std::string& name, std::istream& data, std::size_t chunk_size) {
+  return std::async(
+      std::launch::async, [this, name, &data, chunk_size]() { upload_stream_sync(name, data, chunk_size); });
+}
+
+std::future<void> client::download_file(const std::string& name, std::ostream& out, std::size_t chunk_size) {
+  return std::async(
+      std::launch::async, [this, name, &out, chunk_size]() { download_stream_sync(name, out, chunk_size); });
+}
+
+std::future<void>
+client::upload_package(const std::string& dest_path, std::istream& package_stream, std::size_t chunk_size) {
+  return std::async(std::launch::async, [this, dest_path, &package_stream, chunk_size]() {
+    std::string staging_name = dest_path + ".wishpkg.zip";
+    upload_stream_sync(staging_name, package_stream, chunk_size);
+
+    dynamic args;
+    args["zip_name"_key] = staging_name;
+    args["dest"_key] = dest_path;
+    fs_proxy_->call("unpack"_key, std::move(args)).get();
   });
 }
 

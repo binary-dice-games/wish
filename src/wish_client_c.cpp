@@ -558,6 +558,58 @@ wish_download_file(wish_client_handle c, const char* name, char** out_data, size
   }
 }
 
+extern "C" wish_error wish_upload_file_from_path(wish_client_handle c, const char* name, const char* local_path) {
+  if (!c || !name || !local_path)
+    return WISH_ERR_NULL;
+  try {
+    std::ifstream in(local_path, std::ios::binary);
+    if (!in) {
+      c->last_error_ = std::string{"cannot open local file: "} + local_path;
+      return WISH_ERR_EXCEPTION;
+    }
+    c->client_->upload_file(std::string{name}, in).get();
+    return WISH_OK;
+  } catch (const std::exception& e) {
+    c->last_error_ = e.what();
+    return WISH_ERR_EXCEPTION;
+  }
+}
+
+extern "C" wish_error wish_download_file_to_path(wish_client_handle c, const char* name, const char* local_path) {
+  if (!c || !name || !local_path)
+    return WISH_ERR_NULL;
+  try {
+    std::ofstream out(local_path, std::ios::binary | std::ios::trunc);
+    if (!out) {
+      c->last_error_ = std::string{"cannot open local file: "} + local_path;
+      return WISH_ERR_EXCEPTION;
+    }
+    c->client_->download_file(std::string{name}, out).get();
+    return WISH_OK;
+  } catch (const std::exception& e) {
+    c->last_error_ = e.what();
+    return WISH_ERR_EXCEPTION;
+  }
+}
+
+extern "C" wish_error
+wish_upload_package_from_path(wish_client_handle c, const char* dest_path, const char* local_zip_path) {
+  if (!c || !dest_path || !local_zip_path)
+    return WISH_ERR_NULL;
+  try {
+    std::ifstream in(local_zip_path, std::ios::binary);
+    if (!in) {
+      c->last_error_ = std::string{"cannot open local file: "} + local_zip_path;
+      return WISH_ERR_EXCEPTION;
+    }
+    c->client_->upload_package(std::string{dest_path}, in).get();
+    return WISH_OK;
+  } catch (const std::exception& e) {
+    c->last_error_ = e.what();
+    return WISH_ERR_EXCEPTION;
+  }
+}
+
 // ── Logging ───────────────────────────────────────────────────────────────────
 
 extern "C" wish_error wish_log(wish_client_handle c, const char* level, const char* msg) {
