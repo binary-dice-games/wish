@@ -12,6 +12,7 @@ A remote UI framework built on [bison](https://github.com/binary-dice-games/biso
 - **Per-session sandboxing** — isolated object tree, template registry, and file-service resource folder per connected client.
 - **Automation-ready** — an optional query/screenshot/input-injection API lets Playwright (or an AI agent) drive and introspect a running UI like a browser page.
 - **C++, Python, and C# clients** — a native C++ API plus generated bindings, all layered on the same bison RMI proxy semantics.
+- **AI-agent-assisted app/UI building** — describe a UI in plain English and have a Claude Code skill build and screenshot-verify it, with no need to know the widget catalog up front. See [docs/ai-assisted-development.md](docs/ai-assisted-development.md).
 
 ## Architecture
 
@@ -108,7 +109,7 @@ New to wish? [docs/tutorial.md](docs/tutorial.md) walks through building, runnin
 | **Multi-client** | Each connected client has an isolated session: independent object tree, template registry, and resource folder. |
 | **Renderer backends** | `wish::renderer` is an abstract interface. The SDL3 (windowed) and web (browser, via `--renderer web`) backends both build on it — see [docs/building.md](docs/building.md) for the `WISH_ENABLE_WEB` option and [src/web/DESIGN.md](src/web/DESIGN.md) for the browser renderer's architecture. New backends (Qt, terminal/TUI, ...) implement the same interface. |
 | **Automation** | `WISH_ENABLE_AUTOMATION` extends the web renderer with a widget-tree/hit-test query API, letting a Playwright-driven headless browser (or an AI agent) introspect and drive a running wish UI — see [src/automation/DESIGN.md](src/automation/DESIGN.md), [docs/bindings.md](docs/bindings.md#automation-bindingspythonwishautomationpy), and `CLAUDE.md`'s "Automation" section. |
-| **Transports** | TCP socket, named pipe/Unix socket, an interactive terminal hop (`--transport=term`), or an in-memory queue (single-process demos). Chosen at runtime via `--transport`; the renderer and class registry are independent of the transport. See [docs/building.md](docs/building.md#command-line-flags). |
+| **Transports** | TCP socket, named pipe/Unix socket, an interactive terminal hop (`--transport=term`), or an in-memory queue (single-process demos). Chosen at runtime via `--transport`; the renderer and class registry are independent of the transport. See [docs/cli.md](docs/cli.md). |
 | **Extending wish** | New server-side UI element classes are bison RMI prototypes registered in the `"wish"` namespace, same pattern as any bison RMI class. See [DESIGN.md](DESIGN.md#adding-a-new-ui-element-class) for the step-by-step pattern. |
 
 ## Security
@@ -127,9 +128,11 @@ into a persistent, identity-keyed directory per client via an
 | File | Contents |
 |------|----------|
 | [docs/tutorial.md](docs/tutorial.md) | Beginner-friendly walkthrough of wish with runnable examples |
-| [docs/building.md](docs/building.md) | Prerequisites, CMake options, build commands, running the server |
+| [docs/building.md](docs/building.md) | Prerequisites, CMake options, build commands |
+| [docs/cli.md](docs/cli.md) | Full `wish` CLI reference: `server`/`client`/`standalone`/`desktop` |
 | [docs/examples.md](docs/examples.md) | Annotated example walkthroughs |
 | [docs/bindings.md](docs/bindings.md) | Python and C# language binding setup and usage |
+| [docs/ai-assisted-development.md](docs/ai-assisted-development.md) | Building wish apps/UI via natural language with the `wish-module`/`wish-ui` AI-agent skills |
 | [DESIGN.md](DESIGN.md) | Architecture, key abstractions, object model, and design decisions |
 
 ## License

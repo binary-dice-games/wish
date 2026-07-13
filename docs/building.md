@@ -165,50 +165,10 @@ transport selected at launch.
 ./build/app/wish.exe server
 ```
 
-### Command-line flags
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--transport T` | `term` | `tcp`, `pipe`, or `term` (interactive pty/stdio hop — see [C# bindings example](bindings.md#c-bindingscsharp)) |
-| `--host HOST` | `0.0.0.0` | Bind address (`--transport tcp` only) |
-| `--port PORT` | `7070` | Bind port (`--transport tcp` only) |
-| `--name PATH` | *(empty)* | Named-pipe / Unix-socket path (`--transport pipe` only) |
-| `--cmd C` | *(empty)* | Command to spawn (`--transport term` only) |
-| `--verbose` | `false` | Print session lifecycle messages to stdout |
-| `--debugger` | `false` | Wait for debugger attachment before starting |
-| `--title TITLE` | `wish` | Window title (`--renderer sdl3` only) |
-| `--width N` | `1280` | Initial window width in pixels (`--renderer sdl3` only) |
-| `--height N` | `720` | Initial window height in pixels (`--renderer sdl3` only) |
-| `--font_size N` | `16` | UI font size in pixels |
-| `--renderer NAME` | `web` | Rendering backend: `sdl3` or `web` |
-| `--web_port PORT` | `8080` | HTTP/WebSocket port (`--renderer web` only) |
-| `--web_bind ADDR` | `127.0.0.1` | Bind address (`--renderer web` only; localhost-only by default) |
-
-**Example — listen on TCP on a non-default port with a custom window title:**
-
-```sh
-./build/app/wish server --transport tcp --port 9090 --renderer sdl3 --title "My App Server"
-```
-
-### Environment-variable flag defaults
-
-Every `wish`/`wish-*` flag falls back to a `WISH_<FLAG_NAME_UPPERCASED>`
-environment variable when not given on the command line (e.g.
-`WISH_TRANSPORT`, `WISH_HOST`, `WISH_PORT`, `WISH_NAME`,
-`WISH_DOWNSTREAM_PORT`, `WISH_WEB_BIND`, ...) -- an explicit command-line
-flag always wins. `wish desktop` sets `WISH_TRANSPORT`/`WISH_HOST`/
-`WISH_PORT`/`WISH_NAME` in the terminal it spawns to match its own
-`--downstream_transport`/`--downstream_host`/`--downstream_port`/
-`--downstream_name`, so a `wish client`/`wish server` launched from that
-terminal connects to the desktop with no flags:
-
-```sh
-wish desktop                      # downstream defaults to tcp:7071
-# inside the spawned terminal:
-wish client --run notepad         # connects to the desktop's tcp:7071, no flags needed
-wish notepad                      # same thing -- an app name not matching a
-                                   # subcommand is aliased to `wish client --run=<name>`
-```
+See [docs/cli.md](cli.md) for the full `wish server` flag reference (transport
+selection, window/renderer options), the other three subcommands (`client`,
+`standalone`, `desktop`), the `wish <app>` alias, and the `WISH_<FLAG>`
+environment-variable fallback available for every flag.
 
 Close the window, or choose **Server → Quit** from the menu bar, to stop the server.
 

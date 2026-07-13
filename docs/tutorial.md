@@ -315,9 +315,10 @@ int main() {
 `--transport` also accepts `pipe` (named pipe / Unix socket, via `--name`)
 and `term` (an interactive terminal hop the server spawns and the client
 runs inside — `wish server`'s own default). See
-[docs/building.md](building.md#command-line-flags) for the full flag
-reference, [docs/bindings.md](bindings.md) for connecting from Python or C#,
-and `wish client --list` / `modules/README.md` for the separate module
+[docs/cli.md](cli.md) for the full flag reference (including `wish
+client`/`wish standalone`/`wish desktop`), [docs/bindings.md](bindings.md)
+for connecting from Python or C#, and `wish client --list` /
+`modules/README.md` for the separate module
 system that lets a pre-built client binary run a named app by string
 (`wish client --run=<name>`) instead of linking your own `main()`.
 

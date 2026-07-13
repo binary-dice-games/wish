@@ -444,7 +444,7 @@ No session can read or write another session's objects, templates, or resource f
 
 ### CLI
 
-See [docs/building.md](docs/building.md#command-line-flags) for the full, authoritative flag reference (transports, renderer options, `wish desktop`'s downstream/upstream flag sets, etc.) — kept here only at the level of "a CLI exists with subcommands" to avoid the two copies drifting out of sync.
+See [docs/cli.md](docs/cli.md) for the full, authoritative flag reference (all four subcommands, transports, renderer options, `wish desktop`'s downstream/upstream flag sets, etc.) — kept here only at the level of "a CLI exists with subcommands" to avoid the two copies drifting out of sync.
 
 ### Lifecycle
 
