@@ -429,19 +429,20 @@ TEST(ClientTest, UploadDownloadFileViaStreamsRoundTrips) {
   wish::server srv{transport, std::make_unique<wish::null_renderer>()};
   srv.start();
 
+  // Content longer than the small chunk_size override below, so the test
+  // actually exercises multiple upload_chunk/download_chunk round trips
+  // instead of a single call.
+  const std::string kContent = "The quick brown fox jumps over the lazy dog.";
+
   class test_client : public wish::client {
    public:
     using wish::client::client;
     std::string downloaded;
-
-    // Content longer than the small chunk_size override below, so the test
-    // actually exercises multiple upload_chunk/download_chunk round trips
-    // instead of a single call.
-    static inline const std::string kContent = "The quick brown fox jumps over the lazy dog.";
+    std::string content;
 
    protected:
     void on_session() override {
-      std::istringstream in(kContent);
+      std::istringstream in(content);
       upload_file("streamed.txt", in, /*chunk_size=*/8).get();
 
       std::ostringstream out;
@@ -451,9 +452,10 @@ TEST(ClientTest, UploadDownloadFileViaStreamsRoundTrips) {
   };
 
   test_client c{transport.connect()};
+  c.content = kContent;
   c.run();
 
-  EXPECT_EQ(c.downloaded, test_client::kContent);
+  EXPECT_EQ(c.downloaded, kContent);
   srv.stop();
 }
 
