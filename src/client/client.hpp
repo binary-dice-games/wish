@@ -8,9 +8,12 @@
 #include "src/rmi/client/client.hpp"
 #include "src/rmi/client/proxy.hpp"
 
+#include <cstddef>
 #include <future>
+#include <istream>
 #include <memory>
 #include <optional>
+#include <ostream>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -136,6 +139,70 @@ class client : public bison::rmi::client {
    */
   std::future<std::string> download_file(const std::string& name);
 
+  /// @brief Default chunk size used by the streaming `upload_file` /
+  ///        `download_file` / `upload_package` overloads.
+  static constexpr std::size_t kDefaultFileChunkSize = 1u << 20; // 1 MiB
+
+  /**
+   * @brief Upload a file to the server's sandboxed session resource
+   *        directory, reading it from @p data in chunks so the full content
+   *        is never buffered in memory at once.
+   *
+   * @param name       Filename (no path separators or `..`).
+   * @param data       Stream to read the file content from. Must remain
+   *                   valid until the returned future is ready -- it is
+   *                   read from a background thread, not copied.
+   * @param chunk_size Number of bytes read from @p data per RMI call.
+   * @throws std::logic_error until the server-side `__WishFileSystem` protocol is
+   *         accessible to the client.
+   */
+  std::future<void>
+  upload_file(const std::string& name, std::istream& data, std::size_t chunk_size = kDefaultFileChunkSize);
+
+  /**
+   * @brief Download a previously uploaded file from the server, writing it
+   *        to @p out in chunks so the full content is never buffered in
+   *        memory at once.
+   *
+   * @param name       Filename (no path separators or `..`).
+   * @param out        Stream the downloaded bytes are written to. Must
+   *                   remain valid until the returned future is ready.
+   * @param chunk_size Number of bytes requested per RMI call.
+   * @throws std::logic_error until the server-side `__WishFileSystem` protocol is
+   *         accessible to the client.
+   */
+  std::future<void>
+  download_file(const std::string& name, std::ostream& out, std::size_t chunk_size = kDefaultFileChunkSize);
+
+  /**
+   * @brief Upload a zip archive and have the server unpack it into a
+   *        sandboxed destination directory.
+   *
+   * Streams @p package_stream to the server in chunks (same mechanism as
+   * the `upload_file(name, std::istream&)` overload), then asks the server
+   * to extract it into @p dest_path (created if missing) inside the
+   * session's resource directory. For example,
+   * `upload_package("my_folder/my_package", zip_stream)` extracts into
+   * `my_folder/my_package/` in the sandbox. Extraction merges into an
+   * existing destination directory; entries that would extract outside
+   * @p dest_path are rejected.
+   *
+   * @param dest_path      Destination directory, relative to the sandbox.
+   * @param package_stream Zip archive content. Must remain valid until the
+   *                       returned future is ready.
+   * @param chunk_size     Number of bytes read from @p package_stream per
+   *                       RMI call.
+   * @throws std::logic_error until the server-side `__WishFileSystem` protocol is
+   *         accessible to the client.
+   * @throws std::runtime_error (via the resolved future) if the archive is
+   *         corrupt, either path escapes the sandbox, or an entry would
+   *         extract outside @p dest_path.
+   */
+  std::future<void> upload_package(
+      const std::string& dest_path,
+      std::istream& package_stream,
+      std::size_t chunk_size = kDefaultFileChunkSize);
+
   /**
    * @brief List file names found directly under a subdirectory of the
    *        server's sandboxed session resource directory.
@@ -218,6 +285,14 @@ class client : public bison::rmi::client {
   void on_disconnect() override;
 
  private:
+  // Synchronous chunk-loop helpers backing the streaming upload_file /
+  // download_file overloads; also reused directly by upload_package to
+  // avoid a nested std::async when staging the archive upload. Run on
+  // whichever thread calls them -- the public overloads wrap these in
+  // std::async, matching every other client helper.
+  void upload_stream_sync(const std::string& name, std::istream& data, std::size_t chunk_size);
+  void download_stream_sync(const std::string& name, std::ostream& out, std::size_t chunk_size);
+
   // Per-session proxy handles.  Populated by on_connect() before on_session()
   // is called; cleared by on_disconnect().
   std::optional<bison::rmi::proxy::dynamic> template_proxy_;

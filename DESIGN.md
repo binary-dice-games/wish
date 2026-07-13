@@ -254,14 +254,24 @@ Registered as a bison class (`"__WishFileSystem"_key`) in the `"wish"` namespace
 
 | Method | Parameters | Description |
 |--------|-----------|-------------|
-| `upload` | `name` (string), `data` (bytes as string) | Write file into `session.resource_dir` |
-| `download` | `name` (string) | Read file from `session.resource_dir`, return bytes |
+| `upload` | `name` (string), `data` (bytes as string) | Write file into `session.resource_dir` in one call |
+| `download` | `name` (string) | Read file from `session.resource_dir`, return bytes in one call |
 | `list` | â€” | Return list of uploaded file names |
 | `delete` | `name` (string) | Remove a file from the session folder |
+| `upload_chunk` | `name`, `data`, `first` (bool), `eof` (bool) | Append one chunk of a large upload; see below |
+| `download_chunk` | `name`, `offset` (int32), `max_size` (int32) | Read one chunk of a large download at `offset`; see below |
+| `unpack` | `zip_name` (string), `dest` (string) | Extract a previously-uploaded zip archive into a sandboxed directory |
 
 Path traversal is blocked: `name` is validated to contain no directory separators or `..` components. The service only exposes files within `session.resource_dir`. The entire folder is removed when the client disconnects.
 
 An `Image` element's `src` field is resolved relative to `session.resource_dir` by the renderer at draw time.
+
+**Chunked transfer.** `upload`/`download` move an entire file in one RMI call, buffering the whole content in memory on both ends â€” fine for small files, wasteful for large ones. `upload_chunk`/`download_chunk` are a stateless alternative: no per-transfer session state is kept on the server, so calls can be retried or interleaved safely.
+- `upload_chunk` writes each chunk to a staging file (`<resolved path>.wishpart`); `first=true` creates/truncates it, every call appends, and `eof=true` atomically renames it onto the final path â€” a transfer interrupted mid-stream never leaves a corrupt file at the user-visible name.
+- `download_chunk` is pull-based: each call independently seeks to `offset` and reads up to `max_size` bytes, returning `{data, eof}`. No server-side read handle is kept between calls.
+- `unpack` extracts a zip previously written into the sandbox (typically via `upload_chunk`) into a destination directory, using the same `resolve_path()` sandboxing for both `zip_name` and `dest`. Because the archive's *entries* are client-supplied content (unlike the build-controlled embedded resource archive `resource_store` unpacks), every entry's target path is independently re-validated against `dest` to block zip-slip (`../`-escaping entries). Extraction merges into `dest`; the staging archive is deleted on success.
+
+`bdg::wish::client` exposes this as overloaded `upload_file`/`download_file` (a `std::string` overload for the simple case, and `std::istream&`/`std::ostream&` overloads that drive the chunked protocol under the hood) plus `upload_package(dest_path, istream&)`, which uploads a zip via the chunked path and calls `unpack` â€” e.g. `upload_package("my_folder/my_package", zip_stream)` extracts into `my_folder/my_package/` in the sandbox.
 
 ### `bdg::wish::style_service`
 
@@ -287,7 +297,9 @@ Thin wrapper around `bison::rmi::client`. Adds:
 
 - `register_template(name, descriptor)` -- stores a named JSON/YAML blueprint on the server.
 - `instantiate_template(name)` -- parses and instantiates a registered template, returns `std::future<proxy_map>`.
-- `upload_file(name, bytes)` / `download_file(name)` -- file service calls.
+- `upload_file(name, bytes)` / `download_file(name)` -- whole-file service calls.
+- `upload_file(name, istream&)` / `download_file(name, ostream&)` -- streaming, chunked equivalents for large files; never buffer the full content in memory.
+- `upload_package(dest_path, istream&)` -- streams a zip archive to the server and has it unpacked into `dest_path` inside the sandbox.
 - `set_style_preset(name)` -- apply a named ImGui theme preset (`”dark”`, `”light”`, `”classic”`).
 - `set_style(params)` -- merge per-field style overrides (floats, `#RRGGBBAA` color strings).
 - `get_style()` -- retrieve the current session style as a flat dynamic.

@@ -253,6 +253,33 @@ class Client:
         finally:
             self._lib.bison_free_string(out_data)
 
+    def upload_file_from_path(self, name: str, local_path: str) -> None:
+        """Upload a file to the server, streaming it in chunks from a local
+        file on disk instead of buffering the whole content in memory."""
+        _check(
+            self._lib.wish_upload_file_from_path(self._handle, name.encode(), local_path.encode()),
+            f"upload_file_from_path({name!r}, {local_path!r})",
+        )
+
+    def download_file_to_path(self, name: str, local_path: str) -> None:
+        """Download a previously uploaded file, streaming it in chunks
+        directly to a local file on disk instead of buffering the whole
+        content in memory."""
+        _check(
+            self._lib.wish_download_file_to_path(self._handle, name.encode(), local_path.encode()),
+            f"download_file_to_path({name!r}, {local_path!r})",
+        )
+
+    def upload_package(self, dest_path: str, local_zip_path: str) -> None:
+        """Upload a local zip archive and have the server unpack it into a
+        sandboxed destination directory, e.g.
+        ``upload_package("my_folder/my_package", "package.zip")`` extracts
+        into ``my_folder/my_package/`` in the sandbox."""
+        _check(
+            self._lib.wish_upload_package_from_path(self._handle, dest_path.encode(), local_zip_path.encode()),
+            f"upload_package({dest_path!r}, {local_zip_path!r})",
+        )
+
     # ── Logging ──────────────────────────────────────────────────────────────
 
     def log(self, level: str, msg: str) -> None:

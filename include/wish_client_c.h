@@ -412,6 +412,59 @@ wish_upload_file(wish_client_handle client, const char* name, const char* data, 
 WISH_API wish_error
 wish_download_file(wish_client_handle client, const char* name, char** out_data, size_t* out_len);
 
+/**
+ * @brief Upload a file to the server, streaming it in chunks from a local
+ *        file on disk instead of buffering the whole content in memory.
+ *
+ * Equivalent to `wish::client::upload_file(name, std::istream&)`; opens
+ * @p local_path as a binary `std::ifstream` internally and streams it.
+ *
+ * @param client      Active session handle.
+ * @param name        Destination filename on the server (no path separators
+ *                    or `..`).
+ * @param local_path  Path to a local file to read and upload.
+ * @return WISH_OK or WISH_ERR_*; WISH_ERR_EXCEPTION if @p local_path cannot
+ *         be opened.
+ */
+WISH_API wish_error wish_upload_file_from_path(wish_client_handle client, const char* name, const char* local_path);
+
+/**
+ * @brief Download a previously uploaded file, streaming it in chunks
+ *        directly to a local file on disk instead of buffering the whole
+ *        content in memory.
+ *
+ * Equivalent to `wish::client::download_file(name, std::ostream&)`; opens
+ * @p local_path as a binary `std::ofstream` internally (truncating any
+ * existing content) and streams into it.
+ *
+ * @param client      Active session handle.
+ * @param name        Filename to download (no path separators or `..`).
+ * @param local_path  Path to a local file to create/overwrite with the
+ *                    downloaded content.
+ * @return WISH_OK or WISH_ERR_*; WISH_ERR_EXCEPTION if @p local_path cannot
+ *         be opened for writing.
+ */
+WISH_API wish_error wish_download_file_to_path(wish_client_handle client, const char* name, const char* local_path);
+
+/**
+ * @brief Upload a local zip archive and have the server unpack it into a
+ *        sandboxed destination directory.
+ *
+ * Equivalent to `wish::client::upload_package(dest_path, std::istream&)`;
+ * opens @p local_zip_path as a binary `std::ifstream` internally and
+ * streams it.
+ *
+ * @param client          Active session handle.
+ * @param dest_path       Destination directory, relative to the sandbox
+ *                        (e.g. `"my_folder/my_package"`).
+ * @param local_zip_path  Path to a local zip archive to upload and extract.
+ * @return WISH_OK or WISH_ERR_*; WISH_ERR_EXCEPTION if @p local_zip_path
+ *         cannot be opened, the archive is corrupt, or an entry would
+ *         extract outside @p dest_path.
+ */
+WISH_API wish_error
+wish_upload_package_from_path(wish_client_handle client, const char* dest_path, const char* local_zip_path);
+
 /* ── Logging ──────────────────────────────────────────────────────────────── */
 
 /**

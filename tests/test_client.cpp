@@ -7,9 +7,18 @@
 
 #include "src/rmi/rmi.hpp"
 
+#include <miniz.h>
+#include <miniz_zip.h>
+
 #include <atomic>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
 #include <stdexcept>
+#include <string>
 #include <unordered_set>
+#include <utility>
+#include <vector>
 
 using namespace bdg::bison;
 using namespace bdg::bison::rmi;
@@ -29,6 +38,22 @@ class tracking_client : public wish::client {
     session_fired.store(true, std::memory_order_release);
   }
 };
+
+// Builds a zip archive on disk containing the given (name -> content)
+// entries, for exercising client::upload_package() without depending on
+// any pre-existing fixture file.
+static std::filesystem::path make_test_zip(
+    const std::filesystem::path& path,
+    const std::vector<std::pair<std::string, std::string>>& entries) {
+  mz_zip_archive zip{};
+  EXPECT_TRUE(mz_zip_writer_init_file(&zip, path.string().c_str(), 0));
+  for (const auto& [name, content] : entries) {
+    EXPECT_TRUE(mz_zip_writer_add_mem(&zip, name.c_str(), content.data(), content.size(), MZ_DEFAULT_COMPRESSION));
+  }
+  EXPECT_TRUE(mz_zip_writer_finalize_archive(&zip));
+  mz_zip_writer_end(&zip);
+  return path;
+}
 
 // Minimal JSON descriptor helpers used across tests.
 static const char* kWindowJson = R"({"type":"Window","title":"Root"})";
@@ -395,4 +420,106 @@ TEST(ClientTest, ListFilesEmptyPathListsResourceDirRoot) {
   std::unordered_set<std::string> found(c.names.begin(), c.names.end());
   EXPECT_NE(found.find("root.txt"), found.end());
   srv.stop();
+}
+
+// ── streamed upload_file / download_file ────────────────────────────────────────
+
+TEST(ClientTest, UploadDownloadFileViaStreamsRoundTrips) {
+  memory_server_transport transport;
+  wish::server srv{transport, std::make_unique<wish::null_renderer>()};
+  srv.start();
+
+  class test_client : public wish::client {
+   public:
+    using wish::client::client;
+    std::string downloaded;
+
+    // Content longer than the small chunk_size override below, so the test
+    // actually exercises multiple upload_chunk/download_chunk round trips
+    // instead of a single call.
+    static inline const std::string kContent = "The quick brown fox jumps over the lazy dog.";
+
+   protected:
+    void on_session() override {
+      std::istringstream in(kContent);
+      upload_file("streamed.txt", in, /*chunk_size=*/8).get();
+
+      std::ostringstream out;
+      download_file("streamed.txt", out, /*chunk_size=*/8).get();
+      downloaded = out.str();
+    }
+  };
+
+  test_client c{transport.connect()};
+  c.run();
+
+  EXPECT_EQ(c.downloaded, test_client::kContent);
+  srv.stop();
+}
+
+TEST(ClientTest, UploadDownloadFileViaStreamsHandlesEmptyContent) {
+  memory_server_transport transport;
+  wish::server srv{transport, std::make_unique<wish::null_renderer>()};
+  srv.start();
+
+  class test_client : public wish::client {
+   public:
+    using wish::client::client;
+    std::string downloaded{"not empty"};
+
+   protected:
+    void on_session() override {
+      std::istringstream in("");
+      upload_file("empty_stream.txt", in).get();
+
+      std::ostringstream out;
+      download_file("empty_stream.txt", out).get();
+      downloaded = out.str();
+    }
+  };
+
+  test_client c{transport.connect()};
+  c.run();
+
+  EXPECT_EQ(c.downloaded, "");
+  srv.stop();
+}
+
+// ── upload_package ───────────────────────────────────────────────────────────
+
+TEST(ClientTest, UploadPackageExtractsFilesIntoDestFolder) {
+  memory_server_transport transport;
+  wish::server srv{transport, std::make_unique<wish::null_renderer>()};
+  srv.start();
+
+  auto zip_path = std::filesystem::temp_directory_path() / "wish_test_client_upload_package.zip";
+  make_test_zip(zip_path, {{"a.txt", "alpha"}, {"sub/b.txt", "beta"}});
+
+  class test_client : public wish::client {
+   public:
+    using wish::client::client;
+    std::filesystem::path zip_path;
+    std::vector<std::string> dest_names;
+    std::string a_content;
+
+   protected:
+    void on_session() override {
+      std::ifstream in(zip_path, std::ios::binary);
+      upload_package("my_folder/my_package", in, /*chunk_size=*/16).get();
+
+      dest_names = list_files("my_folder/my_package").get();
+      a_content = download_file("my_folder/my_package/a.txt").get();
+    }
+  };
+
+  test_client c{transport.connect()};
+  c.zip_path = zip_path;
+  c.run();
+
+  std::unordered_set<std::string> found(c.dest_names.begin(), c.dest_names.end());
+  EXPECT_NE(found.find("a.txt"), found.end());
+  EXPECT_EQ(c.a_content, "alpha");
+  srv.stop();
+
+  std::filesystem::remove(zip_path);
 }
