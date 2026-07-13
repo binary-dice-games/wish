@@ -39,6 +39,7 @@ wish_add_test(test_standalone     test_standalone.cpp)
 wish_add_test(test_client         test_client.cpp)
 wish_add_test(test_handlers       test_handlers.cpp)
 wish_add_test(test_integration    test_integration.cpp)
+wish_add_test(test_auth           test_auth.cpp)
 
 # Exercises wish_desktop's chrome-building behavior (menu bar + dockspace +
 # clock) against a real wish::server upstream. wish_desktop_app.cpp isn't

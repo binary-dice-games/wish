@@ -183,13 +183,18 @@ extern "C" void wish_client_destroy(wish_client_handle c) {
 }
 
 extern "C" wish_error wish_client_run(wish_client_handle c, wish_session_fn fn, void* ud) {
+  return wish_client_run_with_params(c, fn, ud, nullptr);
+}
+
+extern "C" wish_error
+wish_client_run_with_params(wish_client_handle c, wish_session_fn fn, void* ud, bison_handle connect_params) {
   if (!c)
     return WISH_ERR_NULL;
   c->session_fn_ = fn;
   c->session_ud_ = ud;
   c->quit_ = false;
   try {
-    c->client_->run();
+    c->client_->run(bison_handle_to_dynamic(connect_params));
     return WISH_OK;
   } catch (const std::exception& e) {
     c->last_error_ = e.what();

@@ -57,12 +57,25 @@ context::context(bison::key_t id) : bison::rmi::context(id) {
   // on the same machine do not collide.  Session IDs are unique per server
   // instance; the "wish_" prefix prevents clashing with other applications.
   resource_dir = std::filesystem::temp_directory_path() / ("wish_" + std::to_string(static_cast<uint32_t>(id.id)));
+  // populate_resource_dir() never throws, which matters here -- this
+  // constructor runs on a per-connection worker thread with no surrounding
+  // try/catch, so a thrown exception would terminate the whole server, not
+  // just this connection.
+  populate_resource_dir();
+}
+
+context::~context() {
+  if (!resource_dir.empty() && !resource_dir_persistent) {
+    std::error_code ec;
+    std::filesystem::remove_all(resource_dir, ec);
+    // Ignore errors on cleanup (e.g. already removed externally).
+  }
+}
+
+void context::populate_resource_dir() {
   std::filesystem::create_directories(resource_dir);
   // Return value intentionally ignored: a client that can't see built-in
-  // icons/fonts is degraded, not fatal. extract_to() never throws, which
-  // matters here -- this constructor runs on a per-connection worker thread
-  // with no surrounding try/catch, so a thrown exception would terminate the
-  // whole server, not just this connection.
+  // icons/fonts is degraded, not fatal. extract_to() never throws.
   std::unordered_map<std::string, uint32_t> raw_crc32;
   resource_store::extract_to(resource_dir / "res", &raw_crc32);
   // Re-key with a "res/" prefix so a lookup by embedded_crc32s[src] matches
@@ -70,14 +83,6 @@ context::context(bison::key_t id) : bison::rmi::context(id) {
   // imgui_ui_renderer.cpp's render_image / web_renderer::get_or_load_texture).
   for (auto& [rel, crc] : raw_crc32)
     embedded_crc32s["res/" + rel] = crc;
-}
-
-context::~context() {
-  if (!resource_dir.empty()) {
-    std::error_code ec;
-    std::filesystem::remove_all(resource_dir, ec);
-    // Ignore errors on cleanup (e.g. already removed externally).
-  }
 }
 
 // ── Debug dump ────────────────────────────────────────────────────────────────

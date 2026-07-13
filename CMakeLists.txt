@@ -278,6 +278,7 @@ add_library(wish_server STATIC
   src/context/logger.hpp
   src/context/style_service.hpp
   src/server/server.hpp
+  src/auth/local_auth_module.hpp
   src/standalone/standalone.hpp
   src/ui/forms/form.hpp
   src/wish.cpp
@@ -292,6 +293,7 @@ add_library(wish_server STATIC
   src/context/logger.cpp
   src/context/style_service.cpp
   src/server/server.cpp
+  src/auth/local_auth_module.cpp
   src/standalone/standalone.cpp
   src/ui/ui_template.cpp
   src/ui/ui_elements/element.cpp

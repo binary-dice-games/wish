@@ -60,8 +60,15 @@ class client : public bison::rmi::client {
    *
    * Disconnects even if `on_session()` throws; the exception is re-thrown
    * after `disconnect()` completes.
+   *
+   * @param connect_params Forwarded unchanged to `bison::rmi::client::connect()`
+   *                        -- reaches both the transport's `open()` and the
+   *                        server's `OP_CONNECT` payload, e.g. fields a
+   *                        server-side `auth_module_iface` inspects (see
+   *                        `src/auth/DESIGN.md`). Empty by default, matching
+   *                        prior behavior.
    */
-  void run();
+  void run(bison::dynamic connect_params = bison::dynamic{});
 
   /**
    * @brief Register a named UI template on the server.

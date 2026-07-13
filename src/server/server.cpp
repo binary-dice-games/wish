@@ -29,6 +29,20 @@ thread_local context* detail::current_context = nullptr;
 
 using namespace bison::rmi::transport;
 
+namespace {
+
+// Validates that `identity` is safe to use as a single path segment under
+// persistent_sandbox_root_: non-empty, and containing none of '/', '\', or
+// ".." -- the same class of check file_service::resolve_path applies to
+// client-supplied file names, but simpler, since an identity is exactly one
+// path segment rather than an arbitrary relative path.
+bool is_safe_identity(const std::string& identity) {
+  return !identity.empty() && identity.find('/') == std::string::npos && identity.find('\\') == std::string::npos &&
+      identity.find("..") == std::string::npos;
+}
+
+} // namespace
+
 // ── server ────────────────────────────────────────────────────────────────────
 
 server::server(server_transport_iface& transport, std::unique_ptr<renderer> r)
@@ -43,11 +57,11 @@ server::~server() {
   }
 }
 
-void server::start() {
+void server::start(bison::rmi::auth_module_ptr auth_module) {
   register_all();
   running_.store(true, std::memory_order_release);
   render_thread_ = std::thread([this]() { render_loop(); });
-  listen();
+  listen(bison::dynamic{}, std::move(auth_module));
 }
 
 void server::stop() {
@@ -95,6 +109,26 @@ void server::on_session_destroyed(bison::rmi::context& ctx) {
     on_session_destroyed(s);
   } catch (...) {
   }
+}
+
+void server::on_authenticated(bison::rmi::context& ctx, const std::string& identity) {
+  // The base class holds this context's wlock for the duration of this
+  // call, as it does for the whole OP_CONNECT dispatch that triggers it.
+  if (persistent_sandbox_root_.empty() || identity.empty())
+    return; // no persistence configured, or module extracted no identity
+  if (!is_safe_identity(identity)) {
+    on_print(ctx.session_id, "[rmi] rejected unsafe identity for persistent sandbox: " + identity);
+    return;
+  }
+
+  auto& s = static_cast<context&>(ctx);
+  s.resource_dir = persistent_sandbox_root_ / identity;
+  s.resource_dir_persistent = true;
+  s.populate_resource_dir();
+  // Re-instantiate so the singleton __WishFileSystem object handed out by
+  // find_singleton_service()/on_create_object() points at the persistent
+  // directory instead of the temp one on_session_created() set up.
+  s.file_service = file_service::instantiate(s.resource_dir);
 }
 
 bison::dynamic_ptr server::on_create_object(bison::rmi::context& ctx, bison::key_t ns, bison::key_t klass) {

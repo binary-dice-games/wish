@@ -158,6 +158,20 @@ Any new widget whose render function reads or writes a file must:
 3. Document the field's security contract in the registration attributes
    (see `src/ui/ui_elements/text_editor.cpp` as a reference).
 
+### Optional auth module and persistent sandbox directories
+
+By default every session's `resource_dir` is a throwaway temp directory,
+deleted on disconnect. A server can opt in to a persistent, identity-keyed
+directory per client via `wish::server::start(auth_module)` (an optional
+`bison::rmi::auth_module_ptr`, evaluated once per connection) together with
+`wish::server::set_allow_absolute_paths`'s sibling setter,
+`set_persistent_sandbox_root(path)` — both are required before any session
+gets a directory outside the default temp location. `wish::local_auth_module`
+is a ready-to-use, trust-the-client module for local/single-user deployments;
+untrusted or remote deployments must supply their own `auth_module_iface`
+that verifies the client's claimed identity. See `src/auth/DESIGN.md` for
+the full design and the sandbox-escape guard applied to the identity string.
+
 ### Uploads and downloads
 
 `file_service::upload` / `download` already enforce sandboxing via

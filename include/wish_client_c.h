@@ -181,6 +181,26 @@ WISH_API void wish_client_destroy(wish_client_handle client);
 WISH_API wish_error wish_client_run(wish_client_handle client, wish_session_fn session_fn, void* userdata);
 
 /**
+ * @brief Connect with extra params, invoke the session callback, then disconnect.
+ *
+ * Identical to wish_client_run(), except @p connect_params is forwarded to
+ * the underlying `wish::client::run(bison::dynamic)` -- it reaches both the
+ * transport's connection setup and the server's connect handshake payload,
+ * e.g. fields a server-side auth module inspects (see `src/auth/DESIGN.md`).
+ * wish_client_run() is a thin wrapper around this function with an empty
+ * @p connect_params.
+ *
+ * @param client         Client handle from wish_client_tcp_create() (or
+ *                       another wish_client_*_create() constructor).
+ * @param session_fn     Session callback (must not be NULL).
+ * @param userdata       Forwarded to session_fn unchanged.
+ * @param connect_params Optional connect params (`bison_handle` or `NULL`).
+ * @return WISH_OK on clean exit; WISH_ERR_* on transport or protocol failure.
+ */
+WISH_API wish_error wish_client_run_with_params(
+    wish_client_handle client, wish_session_fn session_fn, void* userdata, bison_handle connect_params);
+
+/**
  * @brief Block inside the session callback until wish_client_quit() is called.
  *
  * Call this at the end of the session callback to keep the session alive while

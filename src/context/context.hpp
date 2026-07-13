@@ -75,6 +75,13 @@ struct context : public bison::rmi::context {
   /// any other resource.
   std::filesystem::path resource_dir;
 
+  /// When `true`, the destructor does not delete `resource_dir` -- it is a
+  /// persistent, identity-keyed directory outside the server's control, not
+  /// this session's own throwaway temp dir. Only ever set by
+  /// `server::on_authenticated()`; application code must not set it
+  /// directly.
+  bool resource_dir_persistent{false};
+
   /// CRC-32 of every embedded asset extracted into `resource_dir / "res"`,
   /// keyed by its path relative to `resource_dir` (e.g. `"res/icons/foo.png"`)
   /// so it can be looked up directly against a resolved `Image::src`. Reuses
@@ -160,8 +167,22 @@ struct context : public bison::rmi::context {
   /// @param id  Session identifier; used to derive a unique directory name.
   explicit context(bison::key_t id);
 
-  /// @brief Destroy the session: removes `resource_dir` and all its contents.
+  /// @brief Destroy the session: removes `resource_dir` and all its contents,
+  ///        unless `resource_dir_persistent` is set.
   ~context();
+
+  /// @brief (Re-)populate `resource_dir / "res"` with the embedded assets and
+  ///        rebuild `embedded_crc32s`.
+  ///
+  /// Factored out of the constructor so `server::on_authenticated()` can run
+  /// the same population logic again after switching `resource_dir` to a
+  /// persistent, identity-keyed directory -- see `src/auth/DESIGN.md`. Only
+  /// ever touches the `res/` subfolder, so re-running it against a directory
+  /// that already has previously-uploaded files at its top level cannot
+  /// clobber them. Failure is non-fatal (same contract as the constructor's
+  /// original inline version): a client that can't see built-in icons/fonts
+  /// is degraded, not fatal.
+  void populate_resource_dir();
 
   context(const context&) = delete;
   context& operator=(const context&) = delete;

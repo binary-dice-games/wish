@@ -26,6 +26,42 @@ TEST(ContextTest, DestructorRemovesResourceDir) {
   EXPECT_FALSE(std::filesystem::exists(saved));
 }
 
+TEST(ContextTest, ResourceDirPersistentDefaultsFalse) {
+  context s{"s2b"_key};
+  EXPECT_FALSE(s.resource_dir_persistent);
+}
+
+TEST(ContextTest, DestructorSkipsRemovalWhenResourceDirPersistent) {
+  std::filesystem::path saved;
+  {
+    context s{"s2c"_key};
+    s.resource_dir_persistent = true;
+    saved = s.resource_dir;
+    ASSERT_TRUE(std::filesystem::exists(saved));
+  }
+  EXPECT_TRUE(std::filesystem::exists(saved));
+  std::filesystem::remove_all(saved);
+}
+
+TEST(ContextTest, PopulateResourceDirRepopulatesAfterResourceDirChanges) {
+  context s{"s2d"_key};
+  auto original_dir = s.resource_dir;
+  auto new_dir =
+      std::filesystem::temp_directory_path() / ("wish_ctx_test_" + std::to_string(static_cast<uint32_t>(s.session_id.id)));
+  std::filesystem::remove_all(new_dir);
+
+  s.resource_dir = new_dir;
+  s.populate_resource_dir();
+
+  EXPECT_TRUE(std::filesystem::exists(new_dir / "res" / "icons/folder.png"));
+  auto it = s.embedded_crc32s.find("res/icons/folder.png");
+  ASSERT_NE(it, s.embedded_crc32s.end());
+  EXPECT_NE(it->second, 0U);
+
+  std::filesystem::remove_all(new_dir);
+  std::filesystem::remove_all(original_dir);
+}
+
 // ── ID and path uniqueness ────────────────────────────────────────────────────
 
 TEST(ContextTest, TwoSessionsHaveDifferentIdsAndPaths) {
