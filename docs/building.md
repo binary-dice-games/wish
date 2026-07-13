@@ -125,51 +125,69 @@ cmake --build build
 To build a specific target:
 
 ```sh
-cmake --build build --target wish-server
+cmake --build build --target wish-cli     # unified `wish` binary (server/client/standalone/desktop subcommands)
 cmake --build build --target calculator
 cmake --build build --target demo
 ```
 
 ### Output locations
 
-| Generator | Executable |
-|-----------|-----------|
-| Ninja / Makefiles (Linux) | `build/wish` |
-| Ninja / Makefiles (MSYS2) | `build/wish.exe` |
+`wish-cli` is the single binary most users want — it dispatches to
+`server`/`client`/`standalone`/`desktop` subcommands (see below) and its
+output filename is `wish`, not `wish-cli`. Single-purpose binaries
+(`wish-server`, `wish-client`, `wish-standalone`, `wish-desktop`) build
+alongside it with no subcommand needed, for callers that only want one mode
+and a smaller dependency footprint (e.g. `wish-client` links neither
+SDL3 nor ImGui).
+
+CMake mirrors the source tree under `build/` (no flattened output directory
+is configured), so every `app/wish_cli` binary lands under `build/app/`:
+
+| Generator | Unified CLI | Single-purpose binaries |
+|-----------|-------------|--------------------------|
+| Ninja / Makefiles (Linux) | `build/app/wish` | `build/app/wish-server`, `build/app/wish-client`, `build/app/wish-standalone`, `build/app/wish-desktop` |
+| Ninja / Makefiles (MSYS2) | `build/app/wish.exe` | `build/app/wish-server.exe`, `build/app/wish-client.exe`, `build/app/wish-standalone.exe`, `build/app/wish-desktop.exe` |
 
 ---
 
 ## Running the wish server
 
-The wish server opens an SDL3 window that acts as the rendering host. Clients connect over TCP or a Unix domain socket and push UI to the window.
+`wish server` (or the standalone `wish-server` binary, equivalent flags, no
+subcommand) opens an SDL3 window, or — with `--renderer web` (the default) —
+a browser endpoint, and renders UI pushed by connected clients over the
+transport selected at launch.
 
 ```sh
 # Linux
-./build/wish
+./build/app/wish server
 
 # MSYS2
-./build/wish.exe
+./build/app/wish.exe server
 ```
 
 ### Command-line flags
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--host HOST` | `0.0.0.0` | Bind address for the TCP transport |
-| `--port PORT` | `7070` | TCP listen port |
-| `--pipe PATH` | *(empty)* | Unix-socket path; when set, TCP is not used |
+| `--transport T` | `term` | `tcp`, `pipe`, or `term` (interactive pty/stdio hop — see [C# bindings example](bindings.md#c-bindingscsharp)) |
+| `--host HOST` | `0.0.0.0` | Bind address (`--transport tcp` only) |
+| `--port PORT` | `7070` | Bind port (`--transport tcp` only) |
+| `--name PATH` | *(empty)* | Named-pipe / Unix-socket path (`--transport pipe` only) |
+| `--cmd C` | *(empty)* | Command to spawn (`--transport term` only) |
 | `--verbose` | `false` | Print session lifecycle messages to stdout |
+| `--debugger` | `false` | Wait for debugger attachment before starting |
 | `--title TITLE` | `wish` | Window title (`--renderer sdl3` only) |
 | `--width N` | `1280` | Initial window width in pixels (`--renderer sdl3` only) |
 | `--height N` | `720` | Initial window height in pixels (`--renderer sdl3` only) |
-| `--renderer NAME` | `sdl3` | Rendering backend: `sdl3` or `web` |
+| `--font_size N` | `16` | UI font size in pixels |
+| `--renderer NAME` | `web` | Rendering backend: `sdl3` or `web` |
 | `--web_port PORT` | `8080` | HTTP/WebSocket port (`--renderer web` only) |
 | `--web_bind ADDR` | `127.0.0.1` | Bind address (`--renderer web` only; localhost-only by default) |
 
-**Example — listen on a non-default port with a custom window title:**
+**Example — listen on TCP on a non-default port with a custom window title:**
 
 ```sh
-./build/wish --port 9090 --title "My App Server"
+./build/app/wish server --transport tcp --port 9090 --renderer sdl3 --title "My App Server"
 ```
 
 ### Environment-variable flag defaults
@@ -199,7 +217,7 @@ Close the window, or choose **Server → Quit** from the menu bar, to stop the s
 Requires a build with `-DWISH_ENABLE_WEB=ON`:
 
 ```sh
-./build/wish server --renderer web --web_port 8080
+./build/app/wish server --renderer web --web_port 8080
 ```
 
 Then open `http://localhost:8080` in a browser. Ctrl+C stops the process —
@@ -215,7 +233,7 @@ flags — automation just adds two new WebSocket message types the browser
 client already knows how to speak:
 
 ```sh
-./build/wish server --renderer web --web_port 8080
+./build/app/wish server --renderer web --web_port 8080
 ```
 
 Drive it with `wish.automation.AutomationClient` (`bindings/python/wish/automation.py`,
@@ -245,10 +263,10 @@ See [docs/examples.md](examples.md) for annotated walkthroughs of each example. 
 
 ```sh
 # Linux
-./build/calculator
-./build/demo
+./build/examples/calculator
+./build/examples/demo
 
 # MSYS2
-./build/calculator.exe
-./build/demo.exe
+./build/examples/calculator.exe
+./build/examples/demo.exe
 ```

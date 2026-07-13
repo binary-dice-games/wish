@@ -1,8 +1,8 @@
-﻿# wish â€” Architecture & Design
+# wish — Architecture & Design
 
 ## Overview
 
-wish is a remote UI framework. A **wish server** owns a native window and a UI rendering context. **Client applications** connect over a bison RMI transport and build a UI by defining a hierarchy of remote objects â€” one per UI element. The server traverses that tree on every render frame and calls the appropriate UI backend draw primitives. User interactions (clicks, edits, drags) flow back to the client as named events.
+wish is a remote UI framework. A **wish server** owns a native window and a UI rendering context. **Client applications** connect over a bison RMI transport and build a UI by defining a hierarchy of remote objects — one per UI element. The server traverses that tree on every render frame and calls the appropriate UI backend draw primitives. User interactions (clicks, edits, drags) flow back to the client as named events.
 
 The core transport, serialization, and remote-object protocol are entirely provided by the [bison](../extern/bison) library. wish adds:
 
@@ -56,7 +56,7 @@ Inherits from `bison::rmi::server` directly, so all bison RMI server capabilitie
 
 The constructor accepts a `server_transport_iface&` so the same server logic works with TCP socket, or any other bison transport.
 
-`wish::server` overrides two protected virtual hooks on `bison::rmi::server` â€” `on_session_created(context&)` and `on_session_destroyed(context&)` â€” as `final` methods that bridge into wish session management. Subclasses use the wish-level hooks `on_session_created(session&)` and `on_session_destroyed(session&)` instead.
+`wish::server` overrides two protected virtual hooks on `bison::rmi::server` — `on_session_created(context&)` and `on_session_destroyed(context&)` — as `final` methods that bridge into wish session management. Subclasses use the wish-level hooks `on_session_created(session&)` and `on_session_destroyed(session&)` instead.
 
 Responsibilities:
 - Calls `wish::registry::register_all()` on startup to populate the `"wish"` namespace.
@@ -70,7 +70,7 @@ Free function module (`wish/registry.hpp`). Registers every built-in UI element 
 
 This module is independent of any server or transport class and can be included in any application that wants to host a wish UI server.
 
-Built-in class hierarchy:
+Partial built-in class hierarchy (illustrative — see below for the full list):
 
 ```
 Element  (visible, children)
@@ -90,9 +90,53 @@ Element  (visible, children)
 
 `Layout` is an intermediate base class that contributes the `spacing` field and the children iteration contract. `VerticalLayout` and `HorizontalLayout` add no fields of their own; they differ only in how the renderer arranges their children.
 
+The registry has grown well beyond this illustrative subset — `register_all()`
+in `src/server/registry.cpp` is the authoritative, always-current list (menus,
+tabs, tree/collapsing headers, combo/radio/selectable, tables, a text editor,
+docking, and the full 2D (`Plot*`) and 3D (`Plot3D*`) plotting families). The
+per-tab widget table in [docs/examples.md](docs/examples.md#demo-examplesdemo)
+enumerates every widget currently exercised by the `demo` example, grouped by
+category.
+
 Layouts can be nested arbitrarily: a `VerticalLayout` can contain `HorizontalLayout` children (to build row-based grids), other `VerticalLayout` children (to create subsections), or any leaf elements.
 
 Event-emitting classes (Button, Checkbox, Slider*, InputText) call `context.emit_event(object_id, event_name, payload)` from inside the renderer when the UI backend reports user interaction.
+
+### Adding a new UI element class
+
+Every server-side UI element class follows this pattern (see
+`src/ui_elements/*.cpp` for reference implementations):
+
+1. **Inherit `bison::dynamic`** and declare a constructor that accepts a `bison::dynamic&&` base.
+2. **Register the prototype** in a free `register_*()` function called from `registry.cpp`. Build the prototype, add all methods and fields with `DisplayName` attributes, then call `dynamic::addClass()`.
+3. **Put methods on the prototype, not in the constructor.** Methods registered on the prototype are visible to `build_display_dict()` (which powers trace output) and are found by dispatch via prototype-chain lookup.
+4. **Access instance state via `static_cast<T&>(self)`** — prototype method lambdas receive the actual instance as `dynamic& self`, not `this`.
+5. **Describe parameter fields with input/output specs** on the method constructor. This is how `build_display_dict()` resolves param key hashes to human-readable names in logs.
+
+```cpp
+// register_*(): prototype declares the full schema
+void register_my_service() {
+  auto proto = dynamic_ptr{"__MyService"_key, {}};
+
+  auto call_in = std::make_shared<dynamic>();
+  call_in->addField("value"_key, field{0, attr<DisplayName>("value")});
+
+  proto->addMethod("doThing"_key, bison::method{
+    [](dynamic& s, const dynamic& p) -> dynamic {
+      static_cast<my_service&>(s).do_thing(p.as<int>("value"_key));
+      return dynamic{};
+    },
+    dynamic_ptr{call_in}, nullptr,
+    attr<DisplayName>("doThing")});
+
+  dynamic::addClass("wish"_key, std::move(proto));
+}
+
+// Constructor: only initialization, no addMethod calls
+my_service::my_service(bison::dynamic&& base) : dynamic(std::move(base)) {}
+```
+
+For classes that need a factory (server instantiates via RMI `INSTANTIATE`), see `register_ui_template()` in `src/ui/ui_template.cpp` for the `make_factory<T>` pattern.
 
 ### `bdg::wish::renderer` (abstract interface)
 
@@ -126,8 +170,8 @@ public:
 
 Layout classes control how their children are arranged before recursing:
 
-- **`VerticalLayout`** â€” renders children sequentially in the default imgui top-to-bottom flow, inserting `spacing` pixels of padding between items via `ImGui::SetCursorPosY`.
-- **`HorizontalLayout`** â€” wraps children in `ImGui::BeginGroup()` / `ImGui::EndGroup()` and calls `ImGui::SameLine(0, spacing)` between items so they share a horizontal line.
+- **`VerticalLayout`** — renders children sequentially in the default imgui top-to-bottom flow, inserting `spacing` pixels of padding between items via `ImGui::SetCursorPosY`.
+- **`HorizontalLayout`** — wraps children in `ImGui::BeginGroup()` / `ImGui::EndGroup()` and calls `ImGui::SameLine(0, spacing)` between items so they share a horizontal line.
 
 Non-layout containers (`Window`) render their children using the default vertical flow. A backend that is not immediate-mode would implement the same two layout types as a two-pass measure-then-place operation.
 
@@ -166,7 +210,7 @@ struct session {
 
 `resource_dir` is a temporary directory created at session start and deleted at session end. Clients can only read and write within this directory via the file service.
 
-`dirty` is an application-managed flag â€” `wish::server` does not read or write it. The render loop renders every session every tick; callers may use `dirty` for their own throttling or change-detection logic.
+`dirty` is an application-managed flag — `wish::server` does not read or write it. The render loop renders every session every tick; callers may use `dirty` for their own throttling or change-detection logic.
 
 ### `bdg::wish::ui_element`
 
@@ -192,7 +236,7 @@ using ui_element_ptr = std::shared_ptr<ui_element>;
 
 `ui_element_ptr` is stored in the `name_map` and in `session`. The underlying bison field system stores all dynamic children as `dynamic_ptr`; the shared ownership and virtual dispatch of `shared_ptr<ui_element>` is preserved by an implicit upcast at assignment time.
 
-This pattern â€” subclassing `bison::dynamic` to attach typed behaviour to a registered class â€” is the standard way wish components add logic to data objects. Future wish objects that carry non-trivial behaviour (e.g. `file_service`, `ui_template`) should follow the same approach.
+This pattern — subclassing `bison::dynamic` to attach typed behaviour to a registered class — is the standard way wish components add logic to data objects. Future wish objects that carry non-trivial behaviour (e.g. `file_service`, `ui_template`) should follow the same approach.
 
 ### `bdg::wish::ui_importer`
 
@@ -256,7 +300,7 @@ Registered as a bison class (`"__WishFileSystem"_key`) in the `"wish"` namespace
 |--------|-----------|-------------|
 | `upload` | `name` (string), `data` (bytes as string) | Write file into `session.resource_dir` in one call |
 | `download` | `name` (string) | Read file from `session.resource_dir`, return bytes in one call |
-| `list` | â€” | Return list of uploaded file names |
+| `list` | — | Return list of uploaded file names |
 | `delete` | `name` (string) | Remove a file from the session folder |
 | `upload_chunk` | `name`, `data`, `first` (bool), `eof` (bool) | Append one chunk of a large upload; see below |
 | `download_chunk` | `name`, `offset` (int32), `max_size` (int32) | Read one chunk of a large download at `offset`; see below |
@@ -266,12 +310,12 @@ Path traversal is blocked: `name` is validated to contain no directory separator
 
 An `Image` element's `src` field is resolved relative to `session.resource_dir` by the renderer at draw time.
 
-**Chunked transfer.** `upload`/`download` move an entire file in one RMI call, buffering the whole content in memory on both ends â€” fine for small files, wasteful for large ones. `upload_chunk`/`download_chunk` are a stateless alternative: no per-transfer session state is kept on the server, so calls can be retried or interleaved safely.
-- `upload_chunk` writes each chunk to a staging file (`<resolved path>.wishpart`); `first=true` creates/truncates it, every call appends, and `eof=true` atomically renames it onto the final path â€” a transfer interrupted mid-stream never leaves a corrupt file at the user-visible name.
+**Chunked transfer.** `upload`/`download` move an entire file in one RMI call, buffering the whole content in memory on both ends — fine for small files, wasteful for large ones. `upload_chunk`/`download_chunk` are a stateless alternative: no per-transfer session state is kept on the server, so calls can be retried or interleaved safely.
+- `upload_chunk` writes each chunk to a staging file (`<resolved path>.wishpart`); `first=true` creates/truncates it, every call appends, and `eof=true` atomically renames it onto the final path — a transfer interrupted mid-stream never leaves a corrupt file at the user-visible name.
 - `download_chunk` is pull-based: each call independently seeks to `offset` and reads up to `max_size` bytes, returning `{data, eof}`. No server-side read handle is kept between calls.
 - `unpack` extracts a zip previously written into the sandbox (typically via `upload_chunk`) into a destination directory, using the same `resolve_path()` sandboxing for both `zip_name` and `dest`. Because the archive's *entries* are client-supplied content (unlike the build-controlled embedded resource archive `resource_store` unpacks), every entry's target path is independently re-validated against `dest` to block zip-slip (`../`-escaping entries). Extraction merges into `dest`; the staging archive is deleted on success.
 
-`bdg::wish::client` exposes this as overloaded `upload_file`/`download_file` (a `std::string` overload for the simple case, and `std::istream&`/`std::ostream&` overloads that drive the chunked protocol under the hood) plus `upload_package(dest_path, istream&)`, which uploads a zip via the chunked path and calls `unpack` â€” e.g. `upload_package("my_folder/my_package", zip_stream)` extracts into `my_folder/my_package/` in the sandbox.
+`bdg::wish::client` exposes this as overloaded `upload_file`/`download_file` (a `std::string` overload for the simple case, and `std::istream&`/`std::ostream&` overloads that drive the chunked protocol under the hood) plus `upload_package(dest_path, istream&)`, which uploads a zip via the chunked path and calls `unpack` — e.g. `upload_package("my_folder/my_package", zip_stream)` extracts into `my_folder/my_package/` in the sandbox.
 
 ### `bdg::wish::style_service`
 
@@ -396,20 +440,11 @@ No session can read or write another session's objects, templates, or resource f
 
 ## `wish` Server Binary
 
-`examples/wish_server/main.cpp` builds the `wish` executable — a standalone multi-transport GUI server.  It opens an SDL3 window and listens for client connections on the transport selected at launch.
+`app/wish_cli/` builds the `wish` executable — a single binary dispatching to `server`, `client`, `standalone`, and `desktop` subcommands (`main.cpp`). `wish server` opens an SDL3 window or a `--renderer web` browser endpoint and listens for client connections on the transport selected at launch.
 
 ### CLI
 
-```
-wish [OPTIONS]
-
-  --transport socket       Transport (default: socket)
-  --host HOST              Bind address (socket, default: 0.0.0.0)
-  --port N                 Bind port   (socket, default: 7070)
-  --title TITLE            Window title (default: wish)
-  --size WxH               Window dimensions (default: 1280x720)
-  --verbose                Log session events to stderr
-```
+See [docs/building.md](docs/building.md#command-line-flags) for the full, authoritative flag reference (transports, renderer options, `wish desktop`'s downstream/upstream flag sets, etc.) — kept here only at the level of "a CLI exists with subcommands" to avoid the two copies drifting out of sync.
 
 ### Lifecycle
 
@@ -452,7 +487,7 @@ Decoupling the render pipeline from imgui means backends can be swapped without 
 No separate schema system is needed. The same serialization, prototype inheritance, and RMI machinery bison provides is reused for the UI tree. Field type constraints (the variant is locked on first assignment) give lightweight validation automatically.
 
 **Template-based descriptor import.**
-Requiring clients to instantiate objects one by one is verbose and produces many round-trips. The template API (`register_template` + `instantiate_template`) sends a descriptor once, stores it server-side, and instantiates the full tree on demand â€” returning a name-to-id map. The same template can be instantiated multiple times without retransmitting the descriptor. The manual RMI API remains available for dynamic modifications after instantiation.
+Requiring clients to instantiate objects one by one is verbose and produces many round-trips. The template API (`register_template` + `instantiate_template`) sends a descriptor once, stores it server-side, and instantiates the full tree on demand — returning a name-to-id map. The same template can be instantiated multiple times without retransmitting the descriptor. The manual RMI API remains available for dynamic modifications after instantiation.
 
 **Named and numeric children in the same map.**
 Bison's dynamic map already supports both key kinds in one container (hashed names with MSB set vs. numeric indices below 0x80000000). wish uses this directly: named slots (e.g. `"ok"`, `"cancel"`) for structural child references, numeric slots for ordered lists. The renderer iterates both transparently.

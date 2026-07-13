@@ -45,7 +45,7 @@ DEFINE_bool(verbose, false, "Print session trace messages to stdout");
 DEFINE_bool(debugger, false, "Wait for debugger attachment before starting");
 
 // ── Server-only flags — consumed by bison::app::server_app ───────────────────
-DEFINE_string(cmd, "", "Command to spawn (transport=console)");
+DEFINE_string(cmd, "", "Command to spawn (transport=term)");
 
 static void print_usage() {
   std::cout << "wish - remote GUI framework CLI\n"
@@ -73,11 +73,11 @@ static void print_usage() {
                "\n"
                "Shared transport flags (server and client only -- wish desktop has its own\n"
                "downstream_/upstream_-prefixed flag sets, see below):\n"
-               "  --transport T  tcp, pipe, pty, or console (default: tcp)\n"
+               "  --transport T  tcp, pipe, or term          (default: term)\n"
                "  --host H       Host address (default: 0.0.0.0 for server, 127.0.0.1 for client)\n"
                "  --port P       Port                        (default: 7070)\n"
                "  --name PATH    Named-pipe / Unix-socket path (transport=pipe)\n"
-               "  --cmd C        Command to spawn             (transport=console, server only)\n"
+               "  --cmd C        Command to spawn             (transport=term, server only)\n"
                "  --verbose      Print RMI trace messages\n"
                "  --debugger     Wait for debugger attachment before starting\n"
                "\n"
