@@ -10,7 +10,6 @@
 #include <gtest/gtest.h>
 
 #include <chrono>
-#include <thread>
 
 // wish_desktop_app.cpp DECLAREs these (DEFINEd in main.cpp / standalone_main.cpp
 // for the real binaries, neither of which this test links) and DEFINEs the
@@ -66,19 +65,19 @@ class WishDesktopTest : public ::testing::Test {
 
 } // namespace
 
-TEST_F(WishDesktopTest, BuildChromeCreatesDockspaceMenuAndClock) {
+TEST_F(WishDesktopTest, BuildChromeCreatesMenuBarExtensionMenu) {
   desktop_.build_chrome();
 
   ASSERT_NE(upstream_srv_.last_session, nullptr);
   const wish::context& sess = *upstream_srv_.last_session;
 
-  // Root DockSpaceViewport is registered as a top-level renderable object.
+  // Root MenuBarExtension is registered as a top-level renderable object --
+  // spliced into the server's own chrome menu bar rather than opening a
+  // competing dockspace/menu bar of its own.
   EXPECT_EQ(sess.top_level_objects.size(), size_t{1});
 
-  EXPECT_TRUE(sess.ui_objects.count("main_menu"));
-  EXPECT_TRUE(sess.ui_objects.count("main_menu.m_file"));
-  EXPECT_TRUE(sess.ui_objects.count("main_menu.m_file.mi_quit"));
-  EXPECT_TRUE(sess.ui_objects.count("main_menu.clock"));
+  EXPECT_TRUE(sess.ui_objects.count("m_file"));
+  EXPECT_TRUE(sess.ui_objects.count("m_file.mi_quit"));
 }
 
 TEST_F(WishDesktopTest, BuildChromeIsIdempotent) {
@@ -92,25 +91,6 @@ TEST_F(WishDesktopTest, BuildChromeIsIdempotent) {
   EXPECT_EQ(upstream_srv_.last_session->top_level_objects.size(), size_t{1});
 }
 
-TEST_F(WishDesktopTest, ClockLabelTextTicks) {
-  desktop_.build_chrome();
-  ASSERT_NE(upstream_srv_.last_session, nullptr);
-
-  // Give the clock thread's first iteration time to run, then check the
-  // label was stamped with an "HH:MM:SS"-shaped string (avoids asserting on
-  // an exact value or diffing two snapshots, which would be flaky around
-  // second boundaries).
-  std::this_thread::sleep_for(std::chrono::milliseconds{200});
-
-  std::string text;
-  upstream_srv_.last_session->ui_objects.with(
-      "main_menu.clock", [&](const wish::ui_element_ptr& elem) { text = elem->get_as<std::string>("text"_key, ""); });
-
-  ASSERT_EQ(text.size(), size_t{8});
-  EXPECT_EQ(text[2], ':');
-  EXPECT_EQ(text[5], ':');
-}
-
 TEST_F(WishDesktopTest, QuitClickInvokesRequestQuit) {
   desktop_.build_chrome();
 
@@ -119,7 +99,7 @@ TEST_F(WishDesktopTest, QuitClickInvokesRequestQuit) {
 
   bdg::bison::key_t quit_id{0u};
   sess.ui_objects.with(
-      "main_menu.m_file.mi_quit",
+      "m_file.mi_quit",
       [&](const wish::ui_element_ptr& elem) {
         quit_id = elem->get_as<bdg::bison::key_t>("__wish_id"_key, bdg::bison::key_t{});
       });

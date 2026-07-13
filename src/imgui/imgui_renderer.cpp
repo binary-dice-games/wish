@@ -224,6 +224,7 @@ static void apply_style_fields(const bison::dynamic& sd, ImGuiStyle& style) {
   cset("color_plot_histogram_hovered"_key, style.Colors[ImGuiCol_PlotHistogramHovered]);
   cset("color_text_selected_bg"_key, style.Colors[ImGuiCol_TextSelectedBg]);
   cset("color_modal_window_dim_bg"_key, style.Colors[ImGuiCol_ModalWindowDimBg]);
+  cset("color_docking_empty_bg"_key, style.Colors[ImGuiCol_DockingEmptyBg]);
 }
 
 // ── imgui_renderer ────────────────────────────────────────────────────────────

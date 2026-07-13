@@ -86,6 +86,28 @@ void register_menu() {
     dynamic::addClass(
         "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_element>("wish"_key, "MenuItem"_key));
   }
+
+  // MenuBarExtension — registered by a session (e.g. the desktop bridge) as
+  // a top-level object to splice extra content into the *server's* own
+  // chrome menu bar, instead of creating a competing menu bar/dockspace.
+  // Never rendered standalone: the server's render_server_frame() finds it
+  // by class among each session's top-level objects and draws its children
+  // (Menu/Label) directly inside its own already-open BeginMenuBar/EndMenuBar
+  // block via render_children(). It has no render_node dispatch entry of its
+  // own.
+  {
+    auto proto = dynamic_ptr{"MenuBarExtension"_key, {}};
+    (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("MenuBarExtension"));
+    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+        "Extends the server's chrome menu bar with additional content. Register as a top-level "
+        "object; children should be Menu or a trailing Label (e.g. a clock), same as MenuBar. "
+        "Removed automatically when the owning session disconnects."));
+    dynamic::addClass(
+        "wish"_key,
+        std::move(proto),
+        "Element"_key,
+        dynamic::make_factory<ui_element>("wish"_key, "MenuBarExtension"_key));
+  }
 }
 
 } // namespace bdg::wish

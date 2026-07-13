@@ -16,14 +16,13 @@
 #include <mutex>
 #include <optional>
 #include <string>
-#include <thread>
 
 namespace bdg::wish {
 
 /**
  * @brief Extends rmi::bridge with a desktop shell rendered on the upstream
- *        session: a menu bar (File -> Quit, with a live clock on the right)
- *        over a full-viewport dockable area.
+ *        session: a Desktop -> Quit menu spliced into the server's own chrome
+ *        menu bar (see `MenuBarExtension`).
  *
  * The shell is built once, unconditionally, as soon as the upstream
  * connection is up (`build_chrome()`, called by `wish_desktop_app` right
@@ -46,8 +45,8 @@ class wish_desktop : public bison::rmi::bridge {
    * Idempotent: only the first call has an effect. Registers and
    * instantiates a UI template via the upstream `__WishTemplate` protocol
    * object (the same protocol `wish::client::register_template`/
-   * `instantiate_template` use), wires the "Quit" menu item to invoke
-   * `request_quit()`, and starts the clock-update thread.
+   * `instantiate_template` use), and wires the "Quit" menu item to invoke
+   * `request_quit()`.
    */
   void build_chrome();
 
@@ -77,17 +76,9 @@ class wish_desktop : public bison::rmi::bridge {
   bool wait_for_quit_for(std::chrono::milliseconds timeout);
 
  private:
-  void run_clock();
-
   std::atomic<bool> chrome_built_{false};
 
   std::optional<bison::rmi::proxy::dynamic> quit_proxy_;
-  std::optional<bison::rmi::proxy::dynamic> clock_proxy_;
-
-  std::thread clock_thread_;
-  std::mutex clock_mtx_;
-  std::condition_variable clock_cv_;
-  std::atomic<bool> stop_clock_{false};
 
   std::mutex quit_mtx_;
   std::condition_variable quit_cv_;

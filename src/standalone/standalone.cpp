@@ -150,7 +150,13 @@ void standalone::render_loop() {
         pending_render_ = false;
         last_render_time_ = std::chrono::steady_clock::now();
         renderer_->begin_frame();
-        renderer_->render_server_frame();
+        // standalone embeds at most one session, so the "sessions" list
+        // render_server_frame() sees for chrome-extension purposes is either
+        // empty or a single element.
+        std::vector<sync_context_ptr> sessions_snapshot;
+        if (context_)
+          sessions_snapshot.push_back(context_);
+        renderer_->render_server_frame(sessions_snapshot);
         if (context_) {
           std::vector<context::pending_event> events;
           std::unordered_map<bison::key_t, ui_root*, bison::key_t, bison::key_t> handlers;

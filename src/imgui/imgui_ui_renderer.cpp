@@ -527,6 +527,11 @@ void render_dockspace_viewport(imgui_renderer& r, const ui_element& node, const 
   ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
   ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
   ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+  // Host window fills the whole viewport, so its background reads as the
+  // app's canvas rather than a widget surface -- use the theme's dedicated
+  // "empty docking node" color (ImGuiCol_DockingEmptyBg) instead of
+  // ImGuiCol_WindowBg, which the dark preset sets close to black.
+  ImGui::PushStyleColor(ImGuiCol_WindowBg, ImGui::GetStyle().Colors[ImGuiCol_DockingEmptyBg]);
 
   // Reserve menu bar space if any direct child is a MenuBar.
   ImGuiWindowFlags host_flags = ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse |
@@ -539,6 +544,7 @@ void render_dockspace_viewport(imgui_renderer& r, const ui_element& node, const 
 
   ImGui::Begin(id.c_str(), nullptr, host_flags);
   ImGui::PopStyleVar(3);
+  ImGui::PopStyleColor();
 
   ImGuiDockNodeFlags dock_flags = ImGuiDockNodeFlags(flags);
   if (passthru)

@@ -1,12 +1,15 @@
 // MIT License © 2025 Binary Dice Games
 #include <gtest/gtest.h>
 
+#include <server/registry.hpp>
 #include <server/server.hpp>
+#include <ui/ui_descriptor.hpp>
 
 #include "src/rmi/rmi.hpp"
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -171,6 +174,130 @@ TEST(ServerTest, TwoClientsGetSeparateSessions) {
 
     c1.disconnect();
     c2.disconnect();
+  }
+
+  srv.stop();
+}
+
+// ── MenuBarExtension splice / skip-double-render ────────────────────────────
+//
+// Covers the extensible-chrome design: a session's MenuBarExtension
+// top-level object must be visible to render_server_frame() (so a host
+// renderer can splice its children into the server's own menu bar) but must
+// NOT also be drawn by the normal per-session render_session() path, or it
+// would be double-rendered as a standalone window.
+
+namespace {
+
+// Records every render_server_frame()/render_session() call so a test can
+// assert on which sessions/classes were seen by each path, without needing a
+// real ImGui backend.
+class recording_renderer : public wish::renderer {
+ public:
+  std::mutex mtx;
+  std::condition_variable cv;
+  int server_frame_calls = 0;
+  size_t last_sessions_seen = 0;
+  bool menu_bar_extension_seen_by_server_frame = false;
+  std::vector<key_t> render_session_classes;
+
+  void begin_frame() override {}
+  void end_frame() override {}
+
+  void render_server_frame(const std::vector<wish::sync_context_ptr>& sessions) override {
+    std::lock_guard<std::mutex> lk(mtx);
+    ++server_frame_calls;
+    last_sessions_seen = sessions.size();
+    for (const auto& sync_ctx : sessions) {
+      auto sess = wish::context_rlock{*sync_ctx};
+      for (const auto& [key, win] : sess->top_level_objects) {
+        if (win && win->as<key_t>(dynamic::CLASS) == key_t{"MenuBarExtension"})
+          menu_bar_extension_seen_by_server_frame = true;
+      }
+    }
+    cv.notify_all();
+  }
+
+  void render_node(const wish::ui_element& node, const wish::context& s) override {
+    // render_session() (the base's default, un-overridden here) calls
+    // render_node() once per top-level root; recurses into children for a
+    // full tree walk, mirroring counting_renderer in test_renderer.cpp.
+    std::lock_guard<std::mutex> lk(mtx);
+    render_session_classes.push_back(node.as<key_t>(dynamic::CLASS));
+    wish::render_children(*this, node, s);
+  }
+};
+
+// Registers and instantiates a one-node-root template (via __WishTemplate,
+// the same RMI mechanism wish_desktop::build_chrome() uses) so its root
+// lands in the session's top_level_objects.
+void instantiate_template(client& c, const std::string& name, const std::string& descriptor_json) {
+  auto tmpl = c.instantiate("wish"_key, "__WishTemplate"_key).get();
+
+  dynamic reg_args;
+  reg_args["name"_key] = key_t{name};
+  reg_args["descriptor"_key] = dynamic_ptr{wish::import_descriptor_json(descriptor_json)};
+  tmpl.call("register"_key, std::move(reg_args)).get();
+
+  dynamic inst_args;
+  inst_args["name"_key] = key_t{name};
+  tmpl.call("instantiate"_key, std::move(inst_args)).get();
+}
+
+} // namespace
+
+TEST(ServerTest, MenuBarExtensionSplicedNotDoubleRendered) {
+  memory_server_transport transport;
+  auto rec_owner = std::make_unique<recording_renderer>();
+  recording_renderer& rec = *rec_owner;
+  wish::server srv{transport, std::move(rec_owner)};
+  srv.start();
+
+  {
+    client c{transport.connect()};
+    c.connect();
+
+    instantiate_template(c, "__test_menu_ext", R"json({
+      "type": "MenuBarExtension",
+      "children": { "m_file": { "type": "Menu", "label": "File" } }
+    })json");
+    instantiate_template(c, "__test_window", R"json({ "type": "Window", "title": "Plain" })json");
+
+    // Wait for the render loop to observe both top-level objects and draw at
+    // least one frame; render_loop() ticks every 5ms and only redraws when a
+    // session is dirty (set by on_after_dispatch() after the calls above).
+    {
+      std::unique_lock<std::mutex> lk(rec.mtx);
+      ASSERT_TRUE(rec.cv.wait_for(lk, std::chrono::seconds{2}, [&] {
+        return rec.server_frame_calls > 0 && rec.menu_bar_extension_seen_by_server_frame &&
+            !rec.render_session_classes.empty();
+      }));
+    }
+
+    {
+      std::lock_guard<std::mutex> lk(rec.mtx);
+      // render_server_frame() must see the session so it can splice the
+      // MenuBarExtension's children into the host menu bar.
+      EXPECT_GT(rec.last_sessions_seen, size_t{0});
+      EXPECT_TRUE(rec.menu_bar_extension_seen_by_server_frame);
+
+      // The per-session render_session() path must have drawn the plain
+      // Window root, but never the MenuBarExtension root -- it is only ever
+      // reached via render_server_frame()'s splice, never as a standalone
+      // top-level window.
+      bool window_rendered = false;
+      bool extension_rendered_standalone = false;
+      for (const key_t& cls : rec.render_session_classes) {
+        if (cls == "Window"_key)
+          window_rendered = true;
+        if (cls == "MenuBarExtension"_key)
+          extension_rendered_standalone = true;
+      }
+      EXPECT_TRUE(window_rendered);
+      EXPECT_FALSE(extension_rendered_standalone);
+    }
+
+    c.disconnect();
   }
 
   srv.stop();

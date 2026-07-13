@@ -6,6 +6,8 @@
 #include <context/context.hpp>
 #include <ui/ui_element.hpp>
 
+#include <vector>
+
 namespace bdg::wish {
 
 /**
@@ -90,8 +92,17 @@ class renderer {
    * bar) that surrounds client-session windows.  The default is a no-op.
    * Called from `wish::server::render_loop` after `begin_frame` and before
    * any session is rendered.
+   *
+   * @param sessions Snapshot of currently-connected sessions.  Implementations
+   *                 that extend the host chrome (e.g. a menu bar) may briefly
+   *                 lock each session to look for top-level objects of a
+   *                 well-known class (e.g. `MenuBarExtension`) and splice
+   *                 their content into the host UI -- see `server_renderer`
+   *                 in `app/wish_cli/server/wish_server_app.cpp`.
    */
-  virtual void render_server_frame() {}
+  virtual void render_server_frame(const std::vector<sync_context_ptr>& sessions) {
+    (void)sessions;
+  }
 
   /**
    * @brief Render one session's complete element tree.

@@ -14,7 +14,6 @@
 
 #include <chrono>
 #include <cstdlib>
-#include <ctime>
 #include <iostream>
 #include <mutex>
 #include <stdexcept>
@@ -65,26 +64,22 @@ void set_env_var(const char* name, const std::string& value) {
 // avoid colliding with a downstream client's own template names.
 constexpr const char* kChromeTemplateName = "__wish_desktop_chrome";
 
-// Dot-paths (relative to the template root, see wish::client::proxy_map)
-// of the two nodes wish_desktop needs a handle to after instantiation.
-constexpr const char* kQuitPath = "main_menu.m_file.mi_quit";
-constexpr const char* kClockPath = "main_menu.clock";
+// Dot-path (relative to the template root, see wish::client::proxy_map) of
+// the node wish_desktop needs a handle to after instantiation.
+constexpr const char* kQuitPath = "m_file.mi_quit";
 
-// Full-viewport dockspace host with a menu bar (File -> Quit) and a clock
-// label docked to the right of the menu bar. Downstream clients' own Windows
-// dock into the DockSpaceViewport automatically -- no reference to them is
-// needed here.
+// A MenuBarExtension splices its children (a Desktop -> Quit menu) directly
+// into the *server's* own chrome menu bar, instead of creating a competing
+// menu bar/dockspace of its own -- see
+// server_renderer::render_server_frame() in wish_server_app.cpp. Any future
+// windows this session registers are plain Window top-levels, which dock
+// into the server's existing dockspace automatically.
 constexpr const char* kChromeDescriptorJson = R"json({
-  "type": "DockSpaceViewport", "id": "wish_desktop_dockspace", "passthru": true,
+  "type": "MenuBarExtension",
   "children": {
-    "main_menu": { "type": "MenuBar",
+    "m_file": { "type": "Menu", "label": "Desktop",
       "children": {
-        "m_file": { "type": "Menu", "label": "File",
-          "children": {
-            "mi_quit": { "type": "MenuItem", "label": "Quit" }
-          }
-        },
-        "clock": { "type": "Label", "text": "" }
+        "mi_quit": { "type": "MenuItem", "label": "Quit" }
       }
     }
   }
@@ -94,12 +89,7 @@ constexpr const char* kChromeDescriptorJson = R"json({
 
 // ── wish_desktop — desktop shell ────────────────────────────────────────────
 
-wish_desktop::~wish_desktop() {
-  stop_clock_.store(true);
-  clock_cv_.notify_all();
-  if (clock_thread_.joinable())
-    clock_thread_.join();
-}
+wish_desktop::~wish_desktop() = default;
 
 void wish_desktop::build_chrome() {
   if (chrome_built_.exchange(true))
@@ -118,7 +108,6 @@ void wish_desktop::build_chrome() {
     auto result = tmpl.call("instantiate"_key, std::move(inst_args)).get();
 
     key_t quit_id{0u};
-    key_t clock_id{0u};
     result.forEach([&](key_t, const field& v) {
       if (!v.is<dynamic_ptr>())
         return;
@@ -132,18 +121,11 @@ void wish_desktop::build_chrome() {
       const std::string& path = name_field->as<std::string>();
       if (path == kQuitPath)
         quit_id = id_field->as<key_t>();
-      else if (path == kClockPath)
-        clock_id = id_field->as<key_t>();
     });
 
     if (quit_id.id != 0u) {
       quit_proxy_ = upstream().make_proxy(quit_id);
       quit_proxy_->onEvent("clicked"_key, [this](dynamic) { request_quit(); });
-    }
-
-    if (clock_id.id != 0u) {
-      clock_proxy_ = upstream().make_proxy(clock_id);
-      clock_thread_ = std::thread([this] { run_clock(); });
     }
   } catch (const std::exception& ex) {
     std::cerr << "[desktop] chrome build error: " << ex.what() << '\n';
@@ -166,31 +148,6 @@ void wish_desktop::wait_for_quit() {
 bool wish_desktop::wait_for_quit_for(std::chrono::milliseconds timeout) {
   std::unique_lock<std::mutex> lk(quit_mtx_);
   return quit_cv_.wait_for(lk, timeout, [this] { return quit_requested_; });
-}
-
-void wish_desktop::run_clock() {
-  using namespace std::chrono_literals;
-  std::unique_lock<std::mutex> lk(clock_mtx_);
-  while (!stop_clock_.load()) {
-    std::time_t now = std::time(nullptr);
-    std::tm tm{};
-#if defined(_WIN32)
-    localtime_s(&tm, &now);
-#else
-    localtime_r(&now, &tm);
-#endif
-    char buf[16];
-    std::strftime(buf, sizeof(buf), "%H:%M:%S", &tm);
-
-    dynamic fields;
-    fields["text"_key] = std::string{buf};
-    try {
-      clock_proxy_->set(std::move(fields)).get();
-    } catch (...) {
-    }
-
-    clock_cv_.wait_for(lk, 1s, [this] { return stop_clock_.load(); });
-  }
 }
 
 // ── wish_desktop_app ─────────────────────────────────────────────────────────

@@ -230,7 +230,8 @@ void server::render_loop() {
         pending_render_ = false;
         last_render_time_ = std::chrono::steady_clock::now();
         renderer_->begin_frame();
-        renderer_->render_server_frame();
+        renderer_->render_server_frame(sessions_snapshot);
+
         for (const auto& sync_ctx : sessions_snapshot) {
           std::vector<context::pending_event> events;
           std::unordered_map<bison::key_t, ui_root*, bison::key_t, bison::key_t> handlers;
@@ -244,7 +245,10 @@ void server::render_loop() {
             sess->dirty.store(false, std::memory_order_release);
             detail::current_context = &*sess;
             for (const auto& [key, win] : sess->top_level_objects) {
-              if (win) {
+              // MenuBarExtension top-levels are spliced into the server's own
+              // chrome menu bar by render_server_frame() above; rendering
+              // them again here as standalone windows would double-draw them.
+              if (win && win->as<bison::key_t>(bison::dynamic::CLASS) != bison::key_t{"MenuBarExtension"}) {
                 sess->current_top_level_key = key;
                 renderer_->render_session(*win, *sess);
               }
