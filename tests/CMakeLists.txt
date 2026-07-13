@@ -105,5 +105,5 @@ macro(wish_add_optional_test OPTION_NAME TESTNAME)
     endif()
 endmacro()
 
-wish_add_optional_test(WISH_MODULE_NOTEPAD           test_notepad           test_notepad.cpp)
-wish_add_optional_test(WISH_MODULE_PROCESS_EXPLORER  test_process_explorer  test_process_explorer.cpp)
+wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_NOTEPAD           test_notepad           test_notepad.cpp)
+wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_PROCESS_EXPLORER  test_process_explorer  test_process_explorer.cpp)

@@ -8,12 +8,13 @@ library re-exports the bison and RMI C ABIs alongside its own.
 """
 
 import ctypes
-from typing import Any, Callable, Optional
+import json
+from typing import Any, Callable, List, Optional
 
 from . import _native as _n
 from bison.rmi import Future, Proxy, _as_params
 
-__all__ = ["WishError", "Client", "key"]
+__all__ = ["WishError", "Client", "key", "list_apps"]
 
 
 class WishError(RuntimeError):
@@ -34,6 +35,27 @@ def key(name: str) -> int:
     """Return the FNV-1a hash of *name* (identical to ``bison.key()`` /
     the C++ ``"name"_key`` literal)."""
     return _n.get_lib().wish_key(name.encode())
+
+
+def list_apps() -> List[dict]:
+    """List every embedded app registered by an enabled optional module (see
+    ``modules/README.md``), as a list of
+    ``{"name", "organization", "collection", "description", "params"}`` dicts
+    -- ``params`` is a list of ``{"name", "description"}`` dicts.
+    ``organization``/``collection`` are the module's location in the
+    ``modules/<organization>/<collection>/<name>`` tree (empty if not
+    populated); ``name`` alone is what :meth:`Client.run_app` takes.
+
+    Mirrors ``wish client --list``. Does not require a connection: app
+    registration happens at library load time, independent of any session.
+    """
+    lib = _n.get_lib()
+    out = ctypes.c_char_p()
+    _check(lib.wish_list_apps(ctypes.byref(out)), "list_apps")
+    try:
+        return json.loads(out.value.decode("utf-8"))
+    finally:
+        lib.bison_free_string(out)
 
 
 class Client:
@@ -230,6 +252,30 @@ class Client:
         if not h:
             raise WishError(_n.WISH_ERR_EXCEPTION, f"instantiate({klass_name!r}, {ns_name!r})")
         return Proxy(h)
+
+    # ── Embedded apps ─────────────────────────────────────────────────────────
+
+    def run_app(self, name: str, args: Optional[List[str]] = None) -> None:
+        """Connect, run the named embedded app (see :func:`list_apps`), block
+        until it signals completion, then disconnect.
+
+        Mirrors ``wish client --run=<name> -- <args...>``. *args* are
+        forwarded to the app the same way (e.g. notepad's optional startup
+        file).
+
+        *name* may be a short name (``"calculator"``) or its fully-qualified
+        ``"organization/collection/name"`` form. Two different modules may
+        register the same short name -- if *name* is short and ambiguous
+        between more than one, this raises :class:`WishError` with code
+        ``WISH_ERR_AMBIGUOUS``; use the fully-qualified name from
+        :func:`list_apps` instead.
+        """
+        encoded = [a.encode() for a in (args or [])]
+        arr = (ctypes.c_char_p * len(encoded))(*encoded)
+        _check(
+            self._lib.wish_run_app(self._handle, name.encode(), arr, len(encoded)),
+            f"run_app({name!r})",
+        )
 
     # ── File transfer ─────────────────────────────────────────────────────────
 

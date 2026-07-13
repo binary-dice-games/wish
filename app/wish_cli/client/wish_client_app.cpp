@@ -4,7 +4,7 @@
  * @brief wish CLI client application implementation.
  */
 #include "app/wish_cli/client/wish_client_app.hpp"
-#include "app/wish_cli/client/app_registry.hpp"
+#include "src/client/app_registry.hpp"
 #include "app/wish_cli/env_flags.hpp"
 
 #include <gflags/gflags.h>
@@ -48,34 +48,46 @@ int wish_client_app::run(int argc, char** argv) {
 
   if (FLAGS_list) {
     std::cout << "Available applications:\n";
-    for (const auto& [name, _] : registered_apps())
-      std::cout << "  " << name << '\n';
+    for (const auto& [name, info] : registered_apps())
+      std::cout << "  " << qualified_app_name(info) << '\n';
     return 0;
   }
 
   if (!FLAGS_describe.empty()) {
-    const auto& apps = registered_apps();
-    auto it = apps.find(FLAGS_describe);
-    if (it == apps.end()) {
-      std::cerr << "[wish client] unknown app '" << FLAGS_describe << "'. Use --list to see available apps.\n";
-      return 1;
+    auto resolution = resolve_app(FLAGS_describe);
+    switch (resolution.status) {
+      case app_resolve_status::not_found:
+        std::cerr << "[wish client] unknown app '" << FLAGS_describe << "'. Use --list to see available apps.\n";
+        return 1;
+      case app_resolve_status::ambiguous:
+        std::cerr << "[wish client] " << format_ambiguous_error(FLAGS_describe, resolution.candidates) << "\n";
+        return 1;
+      case app_resolve_status::found:
+        describe_app(*resolution.info, std::cout);
+        return 0;
     }
-    describe_app(it->second, std::cout);
-    return 0;
   }
 
   if (FLAGS_run.empty()) {
     std::cerr << "[wish client] use --list to see apps or --run=<name> to launch one\n";
     return 1;
   }
-  if (registered_apps().find(FLAGS_run) == registered_apps().end()) {
-    std::cerr << "[wish client] unknown app '" << FLAGS_run << "'. Use --list to see available apps.\n";
-    return 1;
+  auto resolution = resolve_app(FLAGS_run);
+  switch (resolution.status) {
+    case app_resolve_status::not_found:
+      std::cerr << "[wish client] unknown app '" << FLAGS_run << "'. Use --list to see available apps.\n";
+      return 1;
+    case app_resolve_status::ambiguous:
+      std::cerr << "[wish client] " << format_ambiguous_error(FLAGS_run, resolution.candidates) << "\n";
+      return 1;
+    case app_resolve_status::found:
+      break;
   }
 
   // Store app-specific data before delegating to parent's run_with_transport(),
   // which will handle transport creation, connection, and on_session() dispatch.
   app_name_ = FLAGS_run;
+  resolved_app_ = resolution.info;
   app_args_.assign(argv + 1, argv + argc);
 
   // Let parent class handle transport creation and connection lifecycle.
@@ -124,13 +136,15 @@ void wish_client_app::on_connect_params(bison::dynamic& params) const {
 int wish_client_app::on_session(bison::rmi::client& c) {
   wish_client_ = static_cast<wish::client*>(&c);
 
-  const auto& apps = registered_apps();
-  auto it = apps.find(app_name_);
-  if (it == apps.end())
+  // resolved_app_ is set once in run(), before the transport/connection even
+  // exists -- resolving again here would risk a different (ambiguous)
+  // outcome if the registry could somehow change mid-process, and duplicates
+  // work for no benefit since it can't.
+  if (!resolved_app_)
     throw std::runtime_error("unknown app: " + app_name_);
 
   wish_client_->set_style_preset(FLAGS_theme).get();
-  it->second.run(*this); // set up proxies and event handlers
+  resolved_app_->run(*this); // set up proxies and event handlers
   done_future_.wait(); // block until signal_done() fires
   return 0;
 }

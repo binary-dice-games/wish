@@ -1,10 +1,10 @@
 // MIT License © 2025 Binary Dice Games
 /// @file calculator.cpp
 /// @brief Client-side runner for the Calculator embedded app.
-#include "modules/calculator/client/calculator.hpp"
+#include "modules/bdg/desktop/calculator/client/calculator.hpp"
 
-#include "app/wish_cli/client/app_registry.hpp"
-#include "app/wish_cli/client/wish_app_host.hpp"
+#include "src/client/app_registry.hpp"
+#include "src/client/wish_app_host.hpp"
 
 #include "src/bison/bison.hpp"
 
@@ -30,6 +30,8 @@ struct calculator_app_registrar {
   calculator_app_registrar() {
     register_app({
         .name = "calculator",
+        .organization = WISH_MODULE_BDG_DESKTOP_CALCULATOR_ORGANIZATION,
+        .collection = WISH_MODULE_BDG_DESKTOP_CALCULATOR_COLLECTION,
         .description = "Four-function calculator; demonstrates self-contained form logic",
         .params = {},
         .run = run_calculator,

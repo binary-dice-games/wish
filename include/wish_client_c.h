@@ -90,6 +90,7 @@ typedef int wish_error;
 #define WISH_ERR_NOT_FOUND -2 /**< Named proxy or resource not found.      */
 #define WISH_ERR_TRANSPORT -3 /**< Transport connection failed.            */
 #define WISH_ERR_EXCEPTION -4 /**< An internal C++ exception was thrown.   */
+#define WISH_ERR_AMBIGUOUS -5 /**< A short app name matches more than one registered app; see wish_last_error(). */
 
 /* ── Callbacks ────────────────────────────────────────────────────────────── */
 
@@ -384,6 +385,65 @@ WISH_API wish_error wish_release(wish_client_handle client, const char* prefix);
  */
 WISH_API rmi_proxy_handle
 wish_instantiate(wish_client_handle client, wish_hash ns, wish_hash klass, bison_handle params);
+
+/* ── Embedded apps ────────────────────────────────────────────────────────── */
+
+/**
+ * @brief List every embedded app registered by an enabled optional module
+ *        (see modules/README.md), as a JSON array of
+ *        `{"name","organization","collection","description","params":[{"name","description"},...]}`
+ *        objects. `organization`/`collection` are the module's location in
+ *        the `modules/<organization>/<collection>/<name>` tree (empty if
+ *        not populated); `name` alone is what `wish_run_app()` takes.
+ *
+ * Mirrors `wish client --list`. Does not require a connected client -- app
+ * registration happens at process/library load time via static
+ * initializers, independent of any session.
+ *
+ * @param out  Receives a pointer to the allocated JSON string on success.
+ *             The returned string is heap-allocated; release it with
+ *             `bison_free_string()` (re-exported by this library).
+ * @return `WISH_OK` or `WISH_ERR_NULL`.
+ *
+ * @code{.c}
+ * char* json = NULL;
+ * wish_list_apps(&json);
+ * puts(json);   // e.g. [{"name":"calculator","description":"...","params":[]}]
+ * bison_free_string(json);
+ * @endcode
+ */
+WISH_API wish_error wish_list_apps(char** out);
+
+/**
+ * @brief Connect @p client, run the named embedded app, block until it
+ *        signals completion, then disconnect.
+ *
+ * Mirrors `wish client --run=<app_name> -- <args...>` -- see
+ * modules/README.md for what an "embedded app" is and wish_list_apps() for
+ * how to discover available names. Console input
+ * (`wish_app_host::read_console_line()` at the C++ level) is not available
+ * through this entry point; none of wish's own bundled apps use it.
+ *
+ * @param client    A freshly created, not-yet-run client handle (as passed
+ *                  to wish_client_run()).
+ * @param app_name  Either a short name as reported by wish_list_apps()
+ *                  (e.g. `"calculator"`) or its fully-qualified
+ *                  `"organization/collection/name"` form. Two different
+ *                  modules may register the same short name (see
+ *                  modules/README.md's "Naming collisions") -- if `app_name`
+ *                  is short and matches more than one, this returns
+ *                  `WISH_ERR_AMBIGUOUS` with the candidates listed in
+ *                  wish_last_error(); pass the fully-qualified name instead.
+ * @param args      Positional arguments forwarded to the app (e.g.
+ *                  notepad's optional startup file). May be `NULL` if
+ *                  @p nargs is `0`.
+ * @param nargs     Number of entries in @p args.
+ * @return `WISH_OK`, `WISH_ERR_NULL`, `WISH_ERR_NOT_FOUND` (unknown
+ *         @p app_name), `WISH_ERR_AMBIGUOUS` (see above), or
+ *         `WISH_ERR_EXCEPTION` (see wish_last_error()).
+ */
+WISH_API wish_error
+wish_run_app(wish_client_handle client, const char* app_name, const char* const* args, size_t nargs);
 
 /* ── File transfer ────────────────────────────────────────────────────────── */
 

@@ -24,7 +24,7 @@
  *                   name in the client app registry (see `wish client --list`).
  */
 #include "app/wish_cli/desktop/wish_desktop_app.hpp"
-#include "app/wish_cli/client/app_registry.hpp"
+#include "src/client/app_registry.hpp"
 #include "app/wish_cli/client/wish_client_app.hpp"
 #include "app/wish_cli/server/wish_server_app.hpp"
 #include "app/wish_cli/standalone/wish_standalone_app.hpp"

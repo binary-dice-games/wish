@@ -9,11 +9,11 @@
 /// snapshot into the form via its `update_snapshot` RMI method, mirroring
 /// how Notepad's reference client owns upload_file/download_file while the
 /// server only manages tabs (see modules/notepad/client/notepad.cpp).
-#include "modules/process_explorer/client/process_explorer.hpp"
-#include "modules/process_explorer/client/process_info.hpp"
+#include "modules/bdg/desktop/process_explorer/client/process_explorer.hpp"
+#include "modules/bdg/desktop/process_explorer/client/process_info.hpp"
 
-#include "app/wish_cli/client/app_registry.hpp"
-#include "app/wish_cli/client/wish_app_host.hpp"
+#include "src/client/app_registry.hpp"
+#include "src/client/wish_app_host.hpp"
 
 #include "src/bison/bison.hpp"
 
@@ -92,6 +92,8 @@ struct process_explorer_app_registrar {
   process_explorer_app_registrar() {
     register_app({
         .name = "process_explorer",
+        .organization = WISH_MODULE_BDG_DESKTOP_PROCESS_EXPLORER_ORGANIZATION,
+        .collection = WISH_MODULE_BDG_DESKTOP_PROCESS_EXPLORER_COLLECTION,
         .description = "top/htop-style system monitor; client samples CPU/memory/processes, server only renders",
         .params = {},
         .run = run_process_explorer,

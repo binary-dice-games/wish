@@ -1,0 +1,14 @@
+# bdg/desktop
+
+wish's own bundled desktop-tool modules — small, self-contained UI apps
+that exercise the framework end-to-end and double as reference
+implementations for the [module system](../../README.md). All off by
+default; enable the whole collection with `-DWISH_COLLECTION_BDG_DESKTOP=ON`,
+or individual modules with their own `WISH_MODULE_BDG_DESKTOP_<NAME>` option
+(see [docs/building.md](../../../docs/building.md)).
+
+| Module | Description |
+|--------|-------------|
+| [calculator](calculator/README.md) | Four-function calculator; demonstrates self-contained server-side form logic. |
+| [notepad](notepad/README.md) | Multi-file, syntax-highlighted text editor. |
+| [process_explorer](process_explorer/README.md) | top/htop-style system monitor; client samples CPU/memory/processes, server only renders. |

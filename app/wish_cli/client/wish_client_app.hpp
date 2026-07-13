@@ -6,7 +6,8 @@
  */
 #pragma once
 
-#include "app/wish_cli/client/wish_app_host.hpp"
+#include "src/client/app_registry.hpp"
+#include "src/client/wish_app_host.hpp"
 
 #include "src/app/client/client_app.hpp"
 #include "src/client/client.hpp"
@@ -96,7 +97,8 @@ class wish_client_app : public bison::app::client_app, public wish_app_host {
       std::unique_ptr<bison::rmi::transport::client_transport_iface> transport) const override;
 
  private:
-  std::string app_name_;
+  std::string app_name_; // as given on the command line (short or qualified), for messages/logging
+  const app_info* resolved_app_ = nullptr; // resolved once in run(), used by on_session()
   std::vector<std::string> app_args_;
   std::promise<void> done_;
   std::future<void> done_future_{done_.get_future()};

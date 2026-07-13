@@ -6,7 +6,8 @@
  */
 #pragma once
 
-#include "app/wish_cli/client/wish_app_host.hpp"
+#include "src/client/app_registry.hpp"
+#include "src/client/wish_app_host.hpp"
 
 #include "src/app/standalone/standalone_app.hpp"
 
@@ -108,7 +109,8 @@ class wish_standalone_app : public bison::app::standalone_app {
   void on_error(const std::string& msg) const override;
 
  private:
-  std::string app_name_;
+  std::string app_name_; // as given on the command line (short or qualified), for messages/logging
+  const app_info* resolved_app_ = nullptr; // resolved once in run(), used by on_session()
   std::vector<std::string> app_args_;
 };
 

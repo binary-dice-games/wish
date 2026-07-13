@@ -81,9 +81,26 @@ cmake -S . -B build
 | `WISH_ENABLE_AUTOMATION` | `OFF` | Build the automation query API on top of the web renderer: a widget-tree/hit-test query protocol that lets a Playwright-driven headless browser (or an AI agent) introspect and drive a running wish UI, in addition to the screenshot/input control it already gets for free from the web renderer. Requires `WISH_ENABLE_WEB=ON` (configure-time error otherwise). See [src/automation/DESIGN.md](../src/automation/DESIGN.md) and `CLAUDE.md`'s "Automation" section. |
 | `WISH_BUILD_SHARED` | `ON` | Build `wish_client` as a shared library with a C ABI (`wish_client.dll` on MSYS2 / `libwish_client.so` on Linux). |
 | `WISH_BUILD_TESTS` | `ON` | Build and register the GoogleTest suite. |
-| `WISH_MODULE_CALCULATOR` | `OFF` | Include the Calculator form (server) and its self-registering reference client runner. |
-| `WISH_MODULE_NOTEPAD` | `OFF` | Include the Notepad form (server) and its self-registering reference client runner. |
-| `WISH_MODULE_PROCESS_EXPLORER` | `OFF` | Include the Process Explorer form (server) and its self-registering reference client runner. |
+| `WISH_COLLECTION_BDG_DESKTOP` | `OFF` | Include every module in `modules/bdg/desktop/` (calculator, notepad, process_explorer) — see below. |
+| `WISH_MODULE_BDG_DESKTOP_CALCULATOR` | `OFF` | Include the Calculator form (server) and its self-registering reference client runner. |
+| `WISH_MODULE_BDG_DESKTOP_NOTEPAD` | `OFF` | Include the Notepad form (server) and its self-registering reference client runner. |
+| `WISH_MODULE_BDG_DESKTOP_PROCESS_EXPLORER` | `OFF` | Include the Process Explorer form (server) and its self-registering reference client runner. |
+
+Modules live in a `modules/<organization>/<collection>/<module>` tree (see
+[modules/README.md](../modules/README.md)); each individual
+`WISH_MODULE_<ORG>_<COLLECTION>_<NAME>` option can be set directly, or a
+whole collection enabled at once with `-DWISH_COLLECTION_<ORG>_<COLLECTION>=ON`
+(individual module options still override it, e.g.
+`-DWISH_COLLECTION_BDG_DESKTOP=ON -DWISH_MODULE_BDG_DESKTOP_NOTEPAD=OFF`). A
+3rd-party project consuming wish via `add_subdirectory()`/`FetchContent` can
+register its own module or collection the same way, with its source living
+outside the wish repo — see [Out-of-tree modules](../src/ui/forms/DESIGN.md#out-of-tree-modules-3rd-party-projects)
+in `src/ui/forms/DESIGN.md`.
+
+Enabled modules' client-side code is also compiled into `wish_client_dll`
+(when `WISH_BUILD_SHARED=ON`), reachable from Python via
+`wish.client.list_apps()`/`Client.run_app()` — see
+[Client modules and wish_client_dll](../src/ui/forms/DESIGN.md#client-modules-and-wish_client_dll).
 
 Example — headless/CI build with no window system:
 

@@ -12,7 +12,7 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter)
 option(WISH_BUILD_TESTS      "Build the wish tests"                            ON)
 option(WISH_ENABLE_IMGUI     "Build the imgui renderer"                       ON)
 option(WISH_ENABLE_SDL3      "Build the SDL3 renderer and calculator example" ON)
-option(WISH_ENABLE_WEB       "Build the web renderer (browser + WebSocket backend)" OFF)
+option(WISH_ENABLE_WEB       "Build the web renderer (browser + WebSocket backend)" ON)
 option(WISH_ENABLE_AUTOMATION "Build the automation query API on top of the web renderer \
      (headless UI automation for AI agents / e2e tests via Playwright)" OFF)
 option(WISH_BUILD_SHARED     "Build wish_client shared library with C ABI"   ON)
@@ -187,66 +187,22 @@ FetchContent_MakeAvailable(miniz)
 set_target_properties(miniz PROPERTIES FOLDER extern)
 
 # ── Embedded resources — zip the asset tree, then embed as one byte array ────
-
-set(WISH_RESOURCE_DIR "${CMAKE_SOURCE_DIR}/resources/embedded"
-    CACHE PATH "Source asset directory compiled into the binary")
-
-set(WISH_EMBEDDED_CPP_IN "${CMAKE_CURRENT_SOURCE_DIR}/src/resources/embedded_resources.cpp.in")
-set(WISH_EMBEDDED_CPP    "${CMAKE_CURRENT_SOURCE_DIR}/src/resources/embedded_resources.cpp")
-set(WISH_EMBEDDED_ZIP    "${CMAKE_BINARY_DIR}/wish_embedded_resources.zip")
-
-# CONFIGURE_DEPENDS: reconfigure whenever a file is added/removed under
-# WISH_RESOURCE_DIR (the previous version of this script lacked this, so a
-# newly added/removed asset was silently ignored until something else forced
-# a reconfigure).
-file(GLOB_RECURSE ALL_ASSETS
-    CONFIGURE_DEPENDS
-    RELATIVE "${WISH_RESOURCE_DIR}" "${WISH_RESOURCE_DIR}/*")
-
-set(FULL_ASSET_PATHS "")
-foreach(asset ${ALL_ASSETS})
-    list(APPEND FULL_ASSET_PATHS "${WISH_RESOURCE_DIR}/${asset}")
-endforeach()
-
-if(ALL_ASSETS)
-  # Step 1: pack every asset into one zip, preserving relative paths as entry
-  # names (e.g. "icons/folder.png"). A build-time custom command (not
-  # file(ARCHIVE_CREATE), which runs at configure time) so it participates
-  # correctly in incremental-build OUTPUT/DEPENDS tracking. cmake -E tar
-  # --format=zip ships with CMake itself (bundled libarchive); unquoted
-  # ${ALL_ASSETS} expands into one argument per file automatically.
-  add_custom_command(
-      OUTPUT "${WISH_EMBEDDED_ZIP}"
-      COMMAND ${CMAKE_COMMAND} -E tar cf "${WISH_EMBEDDED_ZIP}" --format=zip -- ${ALL_ASSETS}
-      WORKING_DIRECTORY "${WISH_RESOURCE_DIR}"
-      DEPENDS ${FULL_ASSET_PATHS}
-      COMMENT "Zipping ${WISH_RESOURCE_DIR} -> ${WISH_EMBEDDED_ZIP}"
-  )
-
-  # Step 2: embed the zip's bytes as a single static byte array.
-  add_custom_command(
-      OUTPUT "${WISH_EMBEDDED_CPP}"
-      COMMAND ${CMAKE_COMMAND}
-          -DWISH_EMBEDDED_ZIP=${WISH_EMBEDDED_ZIP}
-          -DTEMPLATE_FILE=${WISH_EMBEDDED_CPP_IN}
-          -DOUTPUT_FILE=${WISH_EMBEDDED_CPP}
-          -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/GenerateResource.cmake"
-      DEPENDS "${WISH_EMBEDDED_ZIP}" "${WISH_EMBEDDED_CPP_IN}"
-      COMMENT "Embedding resource archive as a C++ byte array"
-  )
-else()
-  # No assets found (e.g. a downstream project repoints WISH_RESOURCE_DIR at
-  # an empty tree) -- emit a zero-length array directly at configure time so
-  # the build still succeeds.
-  set(CPP_CONTENT "0x00")
-  configure_file("${WISH_EMBEDDED_CPP_IN}" "${WISH_EMBEDDED_CPP}" @ONLY)
-endif()
+#
+# wish_generate_embedded_resources() (cmake/WishResources.cmake) does the
+# actual work; it's called at the finalize point below (alongside
+# wish_generate_module_registry()/wish_finalize_app_modules()), after every
+# wish_add_module()/wish_add_collection() call, so enabled modules'
+# resources/embedded/ trees are folded in too.
+include(cmake/WishResources.cmake)
 
 # ── wish_client — lightweight C++ client (no renderer, no UI elements) ────────
 
 add_library(wish_client STATIC
   src/client/client.hpp
   src/client/client.cpp
+  src/client/app_registry.hpp
+  src/client/app_registry.cpp
+  src/client/wish_app_host.hpp
   src/ui/ui_descriptor.hpp
   src/ui/ui_descriptor.cpp
 )
@@ -283,7 +239,6 @@ add_library(wish_server STATIC
   src/ui/forms/form.hpp
   src/wish.cpp
   src/resources/resource_store.cpp
-  "${WISH_EMBEDDED_CPP}"
   src/server/registry.cpp
   src/ui/ui_importer.cpp
   src/ui/ui_element.cpp
@@ -423,11 +378,16 @@ target_link_libraries(wish_server PRIVATE miniz)
 # modules/<name>/ directory and one wish_add_module() line here.
 include(cmake/WishModules.cmake)
 
-wish_add_module(calculator)
-wish_add_module(notepad)
-wish_add_module(process_explorer)
+wish_add_collection(bdg/desktop)
 
-wish_generate_module_registry()
+# wish_generate_module_registry()/wish_generate_embedded_resources() are
+# safe to call now (wish_server already exists); wish_finalize_app_modules()
+# needs wish-cli/wish-client/wish-standalone/wish_client_dll, which don't
+# exist yet -- see the guarded call after add_subdirectory(app) below.
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+  wish_generate_module_registry()
+  wish_generate_embedded_resources()
+endif()
 
 # ── wish — convenience interface target (client + server) ─────────────────────
 #
@@ -480,7 +440,9 @@ if(WISH_BUILD_SHARED)
           ${CMAKE_SOURCE_DIR}/include
       PRIVATE
           ${CMAKE_SOURCE_DIR}
-          ${CMAKE_SOURCE_DIR}/extern/bison)
+          ${CMAKE_SOURCE_DIR}/extern/bison
+          # nlohmann/json, for wish_list_apps()'s JSON encoding in wish_client_c.cpp.
+          ${CMAKE_SOURCE_DIR}/extern/bison/extern/json/single_include)
   set_target_properties(wish_client_dll PROPERTIES
       RUNTIME_OUTPUT_NAME wish_client      # wish_client.dll
       ARCHIVE_OUTPUT_NAME wish_client_dll  # wish_client_dll.lib — avoids collision with wish_client.lib
@@ -489,4 +451,15 @@ if(WISH_BUILD_SHARED)
 endif()
 
 add_subdirectory(app)
+
+# Only auto-run here when wish is the top-level project. A project that
+# consumes wish via add_subdirectory()/FetchContent may still want to
+# register its own out-of-tree modules (see cmake/WishModules.cmake's
+# "Out-of-tree modules" section) before this is finalized -- it must call
+# wish_finalize_app_modules() itself, once, after add_subdirectory(wish)
+# and every wish_add_module() call (its own and wish's built-in ones).
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+  wish_finalize_app_modules()
+endif()
+
 add_subdirectory(examples)

@@ -46,12 +46,14 @@ WISH_ERR_NULL = -1
 WISH_ERR_NOT_FOUND = -2
 WISH_ERR_TRANSPORT = -3
 WISH_ERR_EXCEPTION = -4
+WISH_ERR_AMBIGUOUS = -5
 
 WISH_ERROR_MESSAGES = {
     WISH_ERR_NULL: "Null handle or pointer",
     WISH_ERR_NOT_FOUND: "Named proxy or resource not found",
     WISH_ERR_TRANSPORT: "Transport connection failed",
     WISH_ERR_EXCEPTION: "Internal C++ exception",
+    WISH_ERR_AMBIGUOUS: "App name matches more than one registered app; use the fully-qualified name (see last_error())",
 }
 
 # ─── Callback types ─────────────────────────────────────────────────────────
@@ -179,6 +181,13 @@ def _setup_wish_signatures(lib: ctypes.CDLL) -> None:
     # ── Object instantiation ────────────────────────────────────────────────
     lib.wish_instantiate.restype = ProxyHandle
     lib.wish_instantiate.argtypes = [ClientHandle, Hash, Hash, _bison_native.Handle]
+
+    # ── Embedded apps ────────────────────────────────────────────────────────
+    lib.wish_list_apps.restype = Error
+    lib.wish_list_apps.argtypes = [P(ctypes.c_char_p)]
+
+    lib.wish_run_app.restype = Error
+    lib.wish_run_app.argtypes = [ClientHandle, ctypes.c_char_p, P(ctypes.c_char_p), ctypes.c_size_t]
 
     # ── File transfer ────────────────────────────────────────────────────────
     lib.wish_upload_file.restype = Error

@@ -4,7 +4,9 @@
 ///
 /// Wraps wish::client in a plain-C interface so that any language with a
 /// C FFI can drive a wish session without linking against C++ directly.
+#include <client/app_registry.hpp>
 #include <client/client.hpp>
+#include <client/wish_app_host.hpp>
 #include <ui/ui_descriptor.hpp>
 #include <include/wish_client_c.h>
 
@@ -13,6 +15,8 @@
 #include "src/rmi/transport/stream_transport.hpp"
 #include "src/rmi/transport/term_transport.hpp"
 #include "src/term/scoped_terminal_config.hpp"
+
+#include <nlohmann/json.hpp>
 
 // bison_c.cpp's and rmi_c.cpp's handle-wrapping helpers (sp_dyn/as_handle,
 // proxy_ptr/as_proxy_handle, bool_future_state, proxy_future_state,
@@ -62,6 +66,60 @@ class c_abi_client : public wish::client {
 
 // ── Client state ──────────────────────────────────────────────────────────────
 
+// ── Embedded-app adapter ─────────────────────────────────────────────────────
+//
+// Implements wish::wish_app_host purely in terms of a wish::client& --
+// wish_app_host is already host-agnostic (see src/client/wish_app_host.hpp),
+// so this is the entire adaptation needed to run a module's client-side
+// run_<name>(wish_app_host&) against a C-ABI-owned session. read_console_line()
+// is the one piece of wish_app_host that has no C-ABI equivalent; none of
+// wish's own bundled apps (calculator/notepad/process_explorer) use it.
+class c_abi_app_host : public wish::wish_app_host {
+ public:
+  c_abi_app_host(wish::client& client, std::vector<std::string> args) : client_(client), args_(std::move(args)) {}
+
+  std::future<proxy::dynamic>
+  instantiate(bdg::bison::key_t ns, bdg::bison::key_t klass, dynamic params = dynamic{}) override {
+    return client_.instantiate(ns, klass, std::move(params));
+  }
+  std::future<void> upload_file(const std::string& name, const std::string& data) override {
+    return client_.upload_file(name, data);
+  }
+  std::future<std::string> download_file(const std::string& name) override {
+    return client_.download_file(name);
+  }
+  void keep_alive(proxy::dynamic&& p) override {
+    live_proxies_.push_back(std::move(p));
+  }
+  void signal_done() override {
+    {
+      std::lock_guard<std::mutex> lk(mtx_);
+      done_ = true;
+    }
+    cv_.notify_all();
+  }
+  const std::vector<std::string>& app_args() const override {
+    return args_;
+  }
+  bool read_console_line(std::string&) override {
+    return false;
+  }
+
+  /// Blocks until signal_done() is called from an event handler.
+  void wait_done() {
+    std::unique_lock<std::mutex> lk(mtx_);
+    cv_.wait(lk, [this] { return done_; });
+  }
+
+ private:
+  wish::client& client_;
+  std::vector<std::string> args_;
+  std::vector<proxy::dynamic> live_proxies_;
+  std::mutex mtx_;
+  std::condition_variable cv_;
+  bool done_ = false;
+};
+
 struct wish_client_handle_ {
   // Only engaged by wish_client_term_create(). Declared before client_ so
   // that member destruction order (reverse of declaration) tears client_
@@ -90,9 +148,27 @@ struct wish_client_handle_ {
   std::fstream stream_storage_;
 
   std::string last_error_;
+
+  // Set by wish_run_app() for the duration of one client_->run() call; when
+  // non-null, on_session() runs this app via a c_abi_app_host instead of
+  // invoking session_fn_.
+  const wish::app_info* pending_app_info_ = nullptr;
+  std::vector<std::string> pending_app_args_;
 };
 
 void c_abi_client::on_session() {
+  if (state_->pending_app_info_) {
+    c_abi_app_host host(*this, state_->pending_app_args_);
+    try {
+      state_->pending_app_info_->run(host);
+      host.wait_done();
+    } catch (const std::exception& e) {
+      state_->last_error_ = e.what();
+    } catch (...) {
+      state_->last_error_ = "unknown exception";
+    }
+    return;
+  }
   if (state_->session_fn_)
     state_->session_fn_(state_, state_->session_ud_);
 }
@@ -399,6 +475,55 @@ wish_instantiate(wish_client_handle c, wish_hash ns, wish_hash klass, bison_hand
     c->last_error_ = e.what();
     return nullptr;
   }
+}
+
+// ── Embedded apps ─────────────────────────────────────────────────────────────
+
+extern "C" wish_error wish_list_apps(char** out) {
+  if (!out)
+    return WISH_ERR_NULL;
+  nlohmann::json arr = nlohmann::json::array();
+  for (const auto& [name, info] : wish::registered_apps()) {
+    nlohmann::json params = nlohmann::json::array();
+    for (const auto& p : info.params)
+      params.push_back({{"name", p.name}, {"description", p.description}});
+    arr.push_back({{"name", info.name},
+                   {"organization", info.organization},
+                   {"collection", info.collection},
+                   {"description", info.description},
+                   {"params", std::move(params)}});
+  }
+  std::string json_str = arr.dump();
+  char* buf = new char[json_str.size() + 1];
+  std::memcpy(buf, json_str.c_str(), json_str.size() + 1);
+  *out = buf;
+  return WISH_OK;
+}
+
+extern "C" wish_error
+wish_run_app(wish_client_handle c, const char* app_name, const char* const* args, size_t nargs) {
+  if (!c || !app_name)
+    return WISH_ERR_NULL;
+  auto resolution = wish::resolve_app(app_name);
+  if (resolution.status == wish::app_resolve_status::not_found) {
+    c->last_error_ = std::string{"unknown app: "} + app_name;
+    return WISH_ERR_NOT_FOUND;
+  }
+  if (resolution.status == wish::app_resolve_status::ambiguous) {
+    c->last_error_ = wish::format_ambiguous_error(app_name, resolution.candidates);
+    return WISH_ERR_AMBIGUOUS;
+  }
+
+  c->pending_app_info_ = resolution.info;
+  c->pending_app_args_.clear();
+  for (size_t i = 0; i < nargs; ++i)
+    c->pending_app_args_.emplace_back(args[i] ? args[i] : "");
+
+  wish_error result = wish_client_run(c, nullptr, nullptr);
+
+  c->pending_app_info_ = nullptr;
+  c->pending_app_args_.clear();
+  return result;
 }
 
 // ── File transfer ────────────────────────────────────────────────────────────────

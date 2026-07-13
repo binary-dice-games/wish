@@ -2,7 +2,7 @@
 /// @file wish_standalone_app.cpp
 /// @brief wish CLI standalone mode implementation.
 #include "app/wish_cli/standalone/wish_standalone_app.hpp"
-#include "app/wish_cli/client/app_registry.hpp"
+#include "src/client/app_registry.hpp"
 
 #include <context/logger.hpp>
 #include <server/registry.hpp>
@@ -134,34 +134,46 @@ int wish_standalone_app::run(int argc, char** argv) {
 
   if (FLAGS_list) {
     std::cout << "Available applications:\n";
-    for (const auto& [app_name, _] : registered_apps())
-      std::cout << "  " << app_name << '\n';
+    for (const auto& [app_name, info] : registered_apps())
+      std::cout << "  " << qualified_app_name(info) << '\n';
     return 0;
   }
 
   if (!FLAGS_describe.empty()) {
-    const auto& apps = registered_apps();
-    auto it = apps.find(FLAGS_describe);
-    if (it == apps.end()) {
-      std::cerr << "[wish standalone] unknown app '" << FLAGS_describe << "'. Use --list to see available apps.\n";
-      return 1;
+    auto resolution = resolve_app(FLAGS_describe);
+    switch (resolution.status) {
+      case app_resolve_status::not_found:
+        std::cerr << "[wish standalone] unknown app '" << FLAGS_describe << "'. Use --list to see available apps.\n";
+        return 1;
+      case app_resolve_status::ambiguous:
+        std::cerr << "[wish standalone] " << format_ambiguous_error(FLAGS_describe, resolution.candidates) << "\n";
+        return 1;
+      case app_resolve_status::found:
+        describe_app(*resolution.info, std::cout);
+        return 0;
     }
-    describe_app(it->second, std::cout);
-    return 0;
   }
 
   if (FLAGS_run.empty()) {
     std::cerr << "[wish standalone] use --list to see apps or --run=<name> to launch one\n";
     return 1;
   }
-  if (registered_apps().find(FLAGS_run) == registered_apps().end()) {
-    std::cerr << "[wish standalone] unknown app '" << FLAGS_run << "'. Use --list to see available apps.\n";
-    return 1;
+  auto resolution = resolve_app(FLAGS_run);
+  switch (resolution.status) {
+    case app_resolve_status::not_found:
+      std::cerr << "[wish standalone] unknown app '" << FLAGS_run << "'. Use --list to see available apps.\n";
+      return 1;
+    case app_resolve_status::ambiguous:
+      std::cerr << "[wish standalone] " << format_ambiguous_error(FLAGS_run, resolution.candidates) << "\n";
+      return 1;
+    case app_resolve_status::found:
+      break;
   }
 
   // Store app-specific data before delegating to parent's run(), which
   // handles register_classes()/make_standalone()/on_session() dispatch.
   app_name_ = FLAGS_run;
+  resolved_app_ = resolution.info;
   app_args_.assign(argv + 1, argv + argc);
 
   return bison::app::standalone_app::run(argc, argv);
@@ -198,16 +210,14 @@ void wish_standalone_app::close_session(bison::rmi::standalone& sa) {
 int wish_standalone_app::on_session(bison::rmi::standalone& sa) {
   auto& session = static_cast<wish_standalone_session&>(sa);
 
-  const auto& apps = registered_apps();
-  auto it = apps.find(app_name_);
-  if (it == apps.end())
+  if (!resolved_app_)
     throw std::runtime_error("unknown app: " + app_name_);
 
   if (FLAGS_renderer == "web") {
     std::cout << "[wish] open http://" << FLAGS_web_bind << ':' << FLAGS_web_port << " in a browser\n" << std::flush;
   }
 
-  it->second.run(session); // set up proxies and event handlers
+  resolved_app_->run(session); // set up proxies and event handlers
   session.wait_until_done();
   return 0;
 }
