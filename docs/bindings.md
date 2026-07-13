@@ -94,6 +94,85 @@ archive and has the server unpack it into `dest_path` inside the sandbox.
 See [DESIGN.md](../DESIGN.md#bdgwishfile_service) for the chunked-transfer
 protocol these build on.
 
+---
+
+## C# (`bindings/csharp/`)
+
+Source-generated `[LibraryImport]` P/Invoke wrapper (`bindings/csharp/Wish/`)
+over `wish_client_c.h`, layered directly on top of the Bison C# binding at
+[extern/bison/bindings/csharp](../extern/bison/bindings/csharp) the same way
+the Python binding layers on `extern/bison/bindings/python`: proxies and
+futures returned by `Bdg.Wish.Client` are plain `Bdg.Bison.Rmi.Proxy` /
+`Bdg.Bison.Rmi.Future` instances -- see
+[extern/bison/docs/bindings.md](../extern/bison/docs/bindings.md) for their
+API (`.Get()` / `.Set()` / `.Call()` / `.OnEvent()`, plus `dynamic`
+attribute-style access). `Bdg.Wish.Client` is `IDisposable` with a finalizer
+safety net, so `using`/`Dispose()` is enough -- `wish_client_destroy()` /
+`rmi_*_release()` never need to be called directly.
+
+**Requirements:** .NET 8 SDK. Build `wish_client_dll` first:
+
+```bash
+cmake -B build
+cmake --build build --target wish_client_dll
+```
+
+Set `WISH_LIB` to the full path of the shared library if it is not found
+automatically (default search is `build/libwish_client.so` /
+`.dylib` / `build/Debug/wish_client.dll`), same convention as the Python
+binding's `WISH_LIB`:
+
+```bash
+# Linux:
+export WISH_LIB=$(pwd)/build/libwish_client.so
+# macOS:
+export WISH_LIB=$(pwd)/build/libwish_client.dylib
+# Windows:
+set WISH_LIB=%cd%\build\Debug\wish_client.dll
+```
+
+### Running the calculator example
+
+```bash
+# --transport=tcp, then in another terminal:
+build/app/wish server --transport=tcp --port=7070 --renderer=sdl3
+dotnet run --project bindings/csharp/examples/CalculatorExample -- --transport=tcp --host=127.0.0.1 --port=7070
+
+# --transport=term (the default): the server spawns its own terminal and
+# expects the client to run *inside* it, wrapping that process's own
+# inherited stdio (Client.Term()) -- no separate terminal, no --host/--port:
+build/app/wish server --renderer=sdl3
+# -- inside the terminal the server just spawned --
+dotnet run --project bindings/csharp/examples/CalculatorExample -- --transport=term
+```
+
+`bindings/csharp/examples/NotepadExample` is the C# port of
+[bindings/python/examples/notepad_example.py](../bindings/python/examples/notepad_example.py)
+-- run it the same way, with an optional trailing file path to open at
+startup.
+
+Run the tests with:
+
+```bash
+dotnet test bindings/csharp/Wish.Tests
+```
+
+Quick-start snippet:
+
+```csharp
+using Bdg.Wish;
+
+using var client = Client.Tcp("127.0.0.1", 7070);
+client.Run(c =>
+{
+    c.SetStylePreset("dark");
+    c.RegisterTemplate("ui", """{"type": "Window", "title": "Hi"}""");
+    using var root = c.InstantiateTemplate("ui", "ui");
+    Console.WriteLine(root["title"]);   // "Hi"
+    c.Wait();                           // blocks until an event handler calls c.Quit()
+});
+```
+
 ### Automation (`bindings/python/wish/automation.py`)
 
 A separate, standalone module for driving a `wish server --renderer web`

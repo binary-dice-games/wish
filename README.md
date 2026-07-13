@@ -193,4 +193,4 @@ anything other than the session ID.
 |------|----------|
 | [docs/building.md](docs/building.md) | Prerequisites, CMake options, build commands, running the server |
 | [docs/examples.md](docs/examples.md) | Annotated example walkthroughs |
-| [docs/bindings.md](docs/bindings.md) | Python language binding setup and usage |
+| [docs/bindings.md](docs/bindings.md) | Python and C# language binding setup and usage |
