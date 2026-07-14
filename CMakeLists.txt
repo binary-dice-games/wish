@@ -464,3 +464,10 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 endif()
 
 add_subdirectory(examples)
+
+# bindings/cpp — header-only C++ client binding + its examples/tests. Needs
+# wish_client_dll (built above) and, for its test executable, the gtest
+# targets tests/CMakeLists.txt adds -- both must already exist.
+if(WISH_BUILD_SHARED)
+  add_subdirectory(bindings/cpp)
+endif()
