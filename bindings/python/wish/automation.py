@@ -148,7 +148,19 @@ class AutomationClient:
 
         playwright = sync_playwright().start()
         try:
-            browser = playwright.chromium.launch(headless=headless)
+            # Headless Chromium disables GPU/WebGL by default, which leaves
+            # wish's WebGL2 canvas blank in screenshot()/get_tree() rects
+            # that depend on a rendered frame. Force a software rasterizer
+            # so the canvas actually renders in headless mode.
+            browser = playwright.chromium.launch(
+                headless=headless,
+                args=[
+                    "--use-gl=angle",
+                    "--use-angle=swiftshader",
+                    "--enable-unsafe-swiftshader",
+                    "--ignore-gpu-blocklist",
+                ],
+            )
             page = browser.new_page()
             page.goto(url)
             page.wait_for_function("() => window.wish && window.wish.ready === true", timeout=startup_timeout * 1000)

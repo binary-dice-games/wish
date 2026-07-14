@@ -279,6 +279,23 @@ class web_renderer : public imgui_renderer {
   // synchronized<T> wrapper -- mirrors sdl3_renderer::quit_.
   std::atomic<bool> activity_{false};
 
+  // Left/right modifier key state, tracked from individual LeftShift/
+  // RightShift/... key events so begin_frame() can additionally emit the
+  // merged ImGuiMod_Shift/Ctrl/Alt/Super event ImGui actually derives
+  // io.KeyShift/io.KeyMods (and thus ConfigDockingWithShift) from -- see
+  // ImGui_ImplSDL3_UpdateKeyModifiers() in imgui_impl_sdl3.cpp for the
+  // reference backend doing the same thing from native OS modifier state.
+  // Render-thread only, like input_queue_'s consumer side.
+  struct modifier_state {
+    bool left = false;
+    bool right = false;
+    bool any() const { return left || right; }
+  };
+  modifier_state mod_ctrl_;
+  modifier_state mod_shift_;
+  modifier_state mod_alt_;
+  modifier_state mod_super_;
+
   // wish-assigned texture ids, keyed by the (stable, per ImGui docs)
   // ImTextureData* pointer. Render-thread only -- never touched from a
   // civetweb worker thread -- so no synchronized<T> wrapper is needed.

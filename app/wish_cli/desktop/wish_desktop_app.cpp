@@ -69,11 +69,11 @@ constexpr const char* kChromeTemplateName = "__wish_desktop_chrome";
 constexpr const char* kQuitPath = "m_file.mi_quit";
 
 // A MenuBarExtension splices its children (a Desktop -> Quit menu) directly
-// into the *server's* own chrome menu bar, instead of creating a competing
+// into the host's own chrome menu bar, instead of creating a competing
 // menu bar/dockspace of its own -- see
-// server_renderer::render_server_frame() in wish_server_app.cpp. Any future
-// windows this session registers are plain Window top-levels, which dock
-// into the server's existing dockspace automatically.
+// host_renderer::render_server_frame() in host_renderer.hpp.
+// Any future windows this session registers are plain Window top-levels,
+// which dock into the host's existing dockspace automatically.
 constexpr const char* kChromeDescriptorJson = R"json({
   "type": "MenuBarExtension",
   "children": {

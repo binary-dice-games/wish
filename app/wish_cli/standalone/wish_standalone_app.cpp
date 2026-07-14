@@ -1,6 +1,7 @@
 // MIT License © 2025 Binary Dice Games
 /// @file wish_standalone_app.cpp
 /// @brief wish CLI standalone mode implementation.
+#include "app/wish_cli/host_renderer.hpp"
 #include "app/wish_cli/standalone/wish_standalone_app.hpp"
 #include "src/client/app_registry.hpp"
 
@@ -84,14 +85,15 @@ namespace {
 std::unique_ptr<renderer> make_renderer() {
   if (FLAGS_renderer == "sdl3") {
 #ifdef WISH_SDL3_ENABLED
-    return std::make_unique<sdl3_renderer>(FLAGS_title.c_str(), FLAGS_width, FLAGS_height, FLAGS_font_size);
+    return std::make_unique<host_renderer<sdl3_renderer>>(
+        FLAGS_title.c_str(), FLAGS_width, FLAGS_height, FLAGS_font_size);
 #else
     throw std::runtime_error("--renderer=sdl3 requested but this binary was built with WISH_ENABLE_SDL3=OFF");
 #endif
   }
   if (FLAGS_renderer == "web") {
 #ifdef WISH_WEB_ENABLED
-    return std::make_unique<web_renderer>(FLAGS_web_bind, FLAGS_web_port, FLAGS_font_size);
+    return std::make_unique<host_renderer<web_renderer>>(FLAGS_web_bind, FLAGS_web_port, FLAGS_font_size);
 #else
     throw std::runtime_error("--renderer=web requested but this binary was built with WISH_ENABLE_WEB=OFF");
 #endif

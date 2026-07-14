@@ -6,14 +6,13 @@
 #include "app/wish_cli/server/wish_server_app.hpp"
 
 #include "app/wish_cli/env_flags.hpp"
+#include "app/wish_cli/host_renderer.hpp"
 
 #include <context/logger.hpp>
 #include <server/registry.hpp>
 #include <sdl/sdl3_renderer.hpp>
 #include <server/server.hpp>
 #include <web/web_renderer.hpp>
-
-#include <imgui.h>
 
 #include "src/app/transport_flags.hpp"
 #include "src/rmi/transport/named_pipe_transport.hpp"
@@ -49,99 +48,13 @@ namespace bdg::wish {
 
 namespace {
 
-// Returns the session's MenuBarExtension top-level object, if it registered
-// one, else nullptr.  Sessions (e.g. the desktop bridge) use this class to
-// splice extra menu-bar content into the server's own chrome instead of
-// creating a competing menu bar/dockspace.
-const ui_element* find_menu_bar_extension(const context& s) {
-  for (const auto& [key, win] : s.top_level_objects) {
-    if (win && win->as<bison::key_t>(bison::dynamic::CLASS) == bison::key_t{"MenuBarExtension"})
-      return win.get();
-  }
-  return nullptr;
-}
-
-} // namespace
-
-// ── server_renderer ───────────────────────────────────────────────────────────
-//
-// Extends a given imgui-based renderer backend (sdl3_renderer or
-// web_renderer) with a fullscreen host window that provides:
-//   - A DockSpace so client windows can be docked anywhere in the server view.
-//   - A menu bar with server-level actions (including Quit), extensible by
-//     sessions that register a MenuBarExtension top-level object (see
-//     find_menu_bar_extension() above).
-//
-// Templatized on the backend so the same host-window UI is shared by every
-// renderer that draws through ImGui, rather than duplicating it per backend.
-
-template <typename Base>
-class server_renderer : public Base {
- public:
-  using Base::Base;
-
-  void render_server_frame(const std::vector<sync_context_ptr>& sessions) override {
-    const ImGuiViewport* vp = ImGui::GetMainViewport();
-    ImGui::SetNextWindowPos(vp->WorkPos);
-    ImGui::SetNextWindowSize(vp->WorkSize);
-    ImGui::SetNextWindowViewport(vp->ID);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-    // Host window fills the whole viewport, so its background reads as the
-    // app's canvas rather than a widget surface -- use the theme's dedicated
-    // "empty docking node" color (ImGuiCol_DockingEmptyBg) instead of
-    // ImGuiCol_WindowBg, which the dark preset sets close to black.
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImGui::GetStyle().Colors[ImGuiCol_DockingEmptyBg]);
-
-    constexpr ImGuiWindowFlags host_flags = ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar |
-        ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
-        ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus | ImGuiWindowFlags_MenuBar;
-
-    ImGui::Begin("##wish_server_host", nullptr, host_flags);
-    ImGui::PopStyleVar(3);
-    ImGui::PopStyleColor();
-
-    if (ImGui::BeginMenuBar()) {
-      if (ImGui::BeginMenu("Server")) {
-        if (ImGui::MenuItem("Quit", "Alt+F4"))
-          this->request_quit();
-        ImGui::EndMenu();
-      }
-      if (ImGui::BeginMenu("View")) {
-        ImGui::MenuItem("(no options yet)", nullptr, false, false);
-        ImGui::EndMenu();
-      }
-
-      // Splice in any session-registered MenuBarExtension content (e.g. the
-      // desktop bridge's File menu and clock), one session locked at a time
-      // -- mirrors the lock discipline server::render_loop uses for its own
-      // per-session rendering, just for this smaller subtree and up front.
-      for (const auto& sync_ctx : sessions) {
-        auto sess = context_wlock{*sync_ctx};
-        if (const ui_element* ext = find_menu_bar_extension(*sess)) {
-          detail::current_context = &*sess;
-          render_children(*this, *ext, *sess);
-          detail::current_context = nullptr;
-        }
-      }
-
-      ImGui::EndMenuBar();
-    }
-
-    ImGuiID dock_id = ImGui::GetID("ServerDockSpace");
-    ImGui::DockSpace(dock_id, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_PassthruCentralNode);
-
-    ImGui::End();
-  }
-};
-
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 static std::unique_ptr<renderer> make_renderer() {
   if (FLAGS_renderer == "sdl3") {
 #ifdef WISH_SDL3_ENABLED
-    return std::make_unique<server_renderer<sdl3_renderer>>(
+    return std::make_unique<host_renderer<sdl3_renderer>>(
         FLAGS_title.c_str(), FLAGS_width, FLAGS_height, FLAGS_font_size);
 #else
     throw std::runtime_error("--renderer=sdl3 requested but this binary was built with WISH_ENABLE_SDL3=OFF");
@@ -149,7 +62,7 @@ static std::unique_ptr<renderer> make_renderer() {
   }
   if (FLAGS_renderer == "web") {
 #ifdef WISH_WEB_ENABLED
-    return std::make_unique<server_renderer<web_renderer>>(FLAGS_web_bind, FLAGS_web_port, FLAGS_font_size);
+    return std::make_unique<host_renderer<web_renderer>>(FLAGS_web_bind, FLAGS_web_port, FLAGS_font_size);
 #else
     throw std::runtime_error("--renderer=web requested but this binary was built with WISH_ENABLE_WEB=OFF");
 #endif
@@ -163,6 +76,8 @@ static std::shared_ptr<logger> make_server_logger() {
       FLAGS_verbose,
       std::filesystem::path{"wish_logs"} / "server.log");
 }
+
+} // namespace
 
 // ── server_app overrides ──────────────────────────────────────────────────────
 

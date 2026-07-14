@@ -97,8 +97,9 @@ class renderer {
    *                 that extend the host chrome (e.g. a menu bar) may briefly
    *                 lock each session to look for top-level objects of a
    *                 well-known class (e.g. `MenuBarExtension`) and splice
-   *                 their content into the host UI -- see `server_renderer`
-   *                 in `app/wish_cli/server/wish_server_app.cpp`.
+   *                 their content into the host UI -- see
+   *                 `host_renderer` in
+   *                 `app/wish_cli/host_renderer.hpp`.
    */
   virtual void render_server_frame(const std::vector<sync_context_ptr>& sessions) {
     (void)sessions;

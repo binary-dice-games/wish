@@ -207,9 +207,32 @@ void web_renderer::begin_frame() {
       case web_input_kind::mouse_wheel:
         io.AddMouseWheelEvent(ev.wheel_x, ev.wheel_y);
         break;
-      case web_input_kind::key:
-        io.AddKeyEvent(static_cast<ImGuiKey>(ev.key_code), ev.down);
+      case web_input_kind::key: {
+        const auto key = static_cast<ImGuiKey>(ev.key_code);
+        io.AddKeyEvent(key, ev.down);
+
+        // ImGui derives io.KeyShift/io.KeyMods (and thus
+        // ConfigDockingWithShift) from a separate merged ImGuiMod_Shift/
+        // Ctrl/Alt/Super key, not from LeftShift/RightShift directly --
+        // mirror ImGui_ImplSDL3_UpdateKeyModifiers() (imgui_impl_sdl3.cpp)
+        // and emit that merged event too whenever a left/right modifier
+        // key changes.
+        auto update_mod = [&](modifier_state& state, ImGuiKey left,
+                               ImGuiKey right, ImGuiKey mod) {
+          if (key == left)
+            state.left = ev.down;
+          else if (key == right)
+            state.right = ev.down;
+          else
+            return;
+          io.AddKeyEvent(mod, state.any());
+        };
+        update_mod(mod_ctrl_, ImGuiKey_LeftCtrl, ImGuiKey_RightCtrl, ImGuiMod_Ctrl);
+        update_mod(mod_shift_, ImGuiKey_LeftShift, ImGuiKey_RightShift, ImGuiMod_Shift);
+        update_mod(mod_alt_, ImGuiKey_LeftAlt, ImGuiKey_RightAlt, ImGuiMod_Alt);
+        update_mod(mod_super_, ImGuiKey_LeftSuper, ImGuiKey_RightSuper, ImGuiMod_Super);
         break;
+      }
       case web_input_kind::char_input:
         io.AddInputCharacter(ev.codepoint);
         break;
