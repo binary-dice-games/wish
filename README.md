@@ -2,6 +2,18 @@
 
 A remote UI framework built on [bison](https://github.com/binary-dice-games/bison). A wish server hosts a UI rendering loop and exposes a set of UI element classes over bison RMI. Client applications connect, define a UI hierarchy (in code or via JSON/YAML), and receive user-interaction events — all without owning a window or a graphics context.
 
+## Features
+
+- **Remote, declarative UI** — build a widget tree from a separate client process; the server owns rendering, the client owns application logic.
+- **~50 built-in widgets** — layouts, inputs, tables, docking/tabs, and full 2D/3D plotting, all backed by Dear ImGui.
+- **Two renderer backends** — windowed (SDL3) or browser-based (`--renderer web`, no GPU/window system required).
+- **JSON/YAML templates** — describe a UI hierarchy as data and instantiate it by name, or build it object-by-object in code.
+- **Multiple transports** — TCP, named pipe/Unix socket, an interactive terminal hop, or in-process (no serialization) for single-binary demos.
+- **Per-session sandboxing** — isolated object tree, template registry, and file-service resource folder per connected client.
+- **Automation-ready** — an optional query/screenshot/input-injection API lets Playwright (or an AI agent) drive and introspect a running UI like a browser page.
+- **C++, Python, and C# clients** — a native C++ API plus generated bindings, all layered on the same bison RMI proxy semantics.
+- **AI-agent-assisted app/UI building** — describe a UI in plain English and have a Claude Code skill build and screenshot-verify it, with no need to know the widget catalog up front. See [docs/ai-assisted-development.md](docs/ai-assisted-development.md).
+
 ## Architecture
 
 ```
@@ -35,8 +47,11 @@ See [docs/building.md](docs/building.md) for prerequisites, CMake options, and p
 ### Option A — register and instantiate a UI template
 
 ```cpp
-// Register a named template (descriptor is parsed server-side on instantiate):
-c.register_template("ConfirmDialog"_key, R"({
+// Register a named template (JSON is parsed client-side into a descriptor,
+// then sent to the server; register_template also accepts an already-built
+// bison::dynamic descriptor directly, and register_template_from_yaml exists
+// for YAML text):
+c.register_template_from_json("ConfirmDialog"_key, R"({
   "type": "Window", "title": "Confirm", "width": 300, "height": 120,
   "children": {
     "msg":    { "type": "Label",  "text": "" },
@@ -62,7 +77,7 @@ btn.set({{"label"_key, std::string{"OK"}}}).get();
 
 // Named child reference (string key).
 bison::dynamic children;
-children["ok"_key] = btn.id();
+children["ok"_key] = btn.object_id();
 win.set({{"children"_key, children}}).get();
 ```
 
@@ -79,6 +94,8 @@ img.set({{"src"_key, std::string{"logo.png"}}, {"width"_key, 64}, {"height"_key,
 
 For large files, `upload_file`/`download_file` also accept a `std::istream&`/`std::ostream&` to stream the content in chunks instead of buffering it whole, and `upload_package(dest_path, zip_stream)` uploads a zip archive and has the server unpack it into `dest_path` in the sandbox. See [DESIGN.md](DESIGN.md#bdgwishfile_service) for the chunked-transfer protocol.
 
+New to wish? [docs/tutorial.md](docs/tutorial.md) walks through building, running, and extending a UI end to end, starting from the `calculator` example.
+
 ## Core Concepts
 
 | Concept | Description |
@@ -92,105 +109,32 @@ For large files, `upload_file`/`download_file` also accept a `std::istream&`/`st
 | **Multi-client** | Each connected client has an isolated session: independent object tree, template registry, and resource folder. |
 | **Renderer backends** | `wish::renderer` is an abstract interface. The SDL3 (windowed) and web (browser, via `--renderer web`) backends both build on it — see [docs/building.md](docs/building.md) for the `WISH_ENABLE_WEB` option and [src/web/DESIGN.md](src/web/DESIGN.md) for the browser renderer's architecture. New backends (Qt, terminal/TUI, ...) implement the same interface. |
 | **Automation** | `WISH_ENABLE_AUTOMATION` extends the web renderer with a widget-tree/hit-test query API, letting a Playwright-driven headless browser (or an AI agent) introspect and drive a running wish UI — see [src/automation/DESIGN.md](src/automation/DESIGN.md), [docs/bindings.md](docs/bindings.md#automation-bindingspythonwishautomationpy), and `CLAUDE.md`'s "Automation" section. |
-| **Transports** | TCP socket. Chosen at runtime; the renderer and class registry are independent of the transport. |
+| **Transports** | TCP socket, named pipe/Unix socket, an interactive terminal hop (`--transport=term`), or an in-memory queue (single-process demos). Chosen at runtime via `--transport`; the renderer and class registry are independent of the transport. See [docs/cli.md](docs/cli.md). |
+| **Extending wish** | New server-side UI element classes are bison RMI prototypes registered in the `"wish"` namespace, same pattern as any bison RMI class. See [DESIGN.md](DESIGN.md#adding-a-new-ui-element-class) for the step-by-step pattern. |
 
-## Declaring bison RMI Classes (server-side)
+## Security
 
-Every server-side class follows this pattern:
-
-1. **Inherit `bison::dynamic`** and declare a constructor that accepts a `bison::dynamic&&` base.
-2. **Register the prototype** in a free `register_*()` function called from `registry.cpp`. Build the prototype, add all methods and fields with `DisplayName` attributes, then call `dynamic::addClass()`.
-3. **Put methods on the prototype, not in the constructor.** Methods registered on the prototype are visible to `build_display_dict()` (which powers trace output) and are found by dispatch via prototype-chain lookup.
-4. **Access instance state via `static_cast<T&>(self)`** — prototype method lambdas receive the actual instance as `dynamic& self`, not `this`.
-5. **Describe parameter fields with input/output specs** on the method constructor. This is how `build_display_dict()` resolves param key hashes to human-readable names in logs.
-
-```cpp
-// register_*(): prototype declares the full schema
-void register_my_service() {
-  auto proto = dynamic_ptr{"__MyService"_key, {}};
-
-  auto call_in = std::make_shared<dynamic>();
-  call_in->addField("value"_key, field{0, attr<DisplayName>("value")});
-
-  proto->addMethod("doThing"_key, bison::method{
-    [](dynamic& s, const dynamic& p) -> dynamic {
-      static_cast<my_service&>(s).do_thing(p.as<int>("value"_key));
-      return dynamic{};
-    },
-    dynamic_ptr{call_in}, nullptr,
-    attr<DisplayName>("doThing")});
-
-  dynamic::addClass("wish"_key, std::move(proto));
-}
-
-// Constructor: only initialization, no addMethod calls
-my_service::my_service(bison::dynamic&& base) : dynamic(std::move(base)) {}
-```
-
-For classes that need a factory (server instantiates via RMI `INSTANTIATE`), see `register_ui_template()` in `src/ui/ui_template.cpp` for the `make_factory<T>` pattern.
-
-## Security Considerations for AI Code Assist
-
-When generating or modifying wish server-side code, AI agents must follow these rules:
-
-### File access is sandboxed per session
-
-Every client session has an isolated temporary directory (`session::resource_dir`).
-Widget fields that accept file paths (e.g. `Image::src`, `TextEditor::file_path`)
-**must** be validated against this sandbox before any file I/O:
-
-- **Relative paths** are resolved with `resolve_widget_path()` (defined in
-  `src/imgui/imgui_ui_renderer.hpp`), which uses purely lexical normalization to
-  verify the resolved path stays inside `resource_dir`. Never skip this check.
-- **Absolute paths** are rejected by default. They are permitted only when the
-  server has been explicitly configured with
-  `wish::server::set_allow_absolute_paths(true)` — which is intended exclusively
-  for same-process (`memory_transport`) deployments.
-- **Never** construct file paths from untrusted client input without going through
-  `resolve_widget_path()` or `file_service::resolve_path()`.  A path like
-  `../../etc/passwd` must be rejected, not silently truncated or accessed.
-
-### Adding new file-accessing widgets
-
-Any new widget whose render function reads or writes a file must:
-
-1. Accept only a **relative** path field by default.
-2. Call `resolve_widget_path(path, s.resource_dir, s.allow_absolute_paths)` and
-   return early if the result is empty.
-3. Document the field's security contract in the registration attributes
-   (see `src/ui/ui_elements/text_editor.cpp` as a reference).
-
-### Optional auth module and persistent sandbox directories
-
-By default every session's `resource_dir` is a throwaway temp directory,
-deleted on disconnect. A server can opt in to a persistent, identity-keyed
-directory per client via `wish::server::start(auth_module)` (an optional
-`bison::rmi::auth_module_ptr`, evaluated once per connection) together with
-`wish::server::set_allow_absolute_paths`'s sibling setter,
-`set_persistent_sandbox_root(path)` — both are required before any session
-gets a directory outside the default temp location. `wish::local_auth_module`
-is a ready-to-use, trust-the-client module for local/single-user deployments;
-untrusted or remote deployments must supply their own `auth_module_iface`
-that verifies the client's claimed identity. See `src/auth/DESIGN.md` for
-the full design and the sandbox-escape guard applied to the identity string.
-
-### Uploads and downloads
-
-`file_service::upload` / `download` already enforce sandboxing via
-`file_service::resolve_path()`.  Do not bypass or replicate this logic; call the
-method directly.
-
-### Session isolation
-
-Each `wish::session` is independent: object tree, resource folder, file service,
-and style service are all isolated.  Do not share mutable session state across
-sessions or cache per-session resources in process-global structures keyed by
-anything other than the session ID.
+Every client session gets an isolated, sandboxed temporary directory
+(`session::resource_dir`) for uploaded/served files; absolute paths are
+rejected by default and file paths are never trusted without going through
+`resolve_widget_path()` / `file_service::resolve_path()`. A server can opt
+into a persistent, identity-keyed directory per client via an
+`auth_module_iface` instead of the default throwaway temp dir. See
+`CLAUDE.md`'s "Security Considerations for AI Code Assist" section and
+[src/auth/DESIGN.md](src/auth/DESIGN.md) for the full design.
 
 ## Further Documentation
 
 | File | Contents |
 |------|----------|
-| [docs/building.md](docs/building.md) | Prerequisites, CMake options, build commands, running the server |
+| [docs/tutorial.md](docs/tutorial.md) | Beginner-friendly walkthrough of wish with runnable examples |
+| [docs/building.md](docs/building.md) | Prerequisites, CMake options, build commands |
+| [docs/cli.md](docs/cli.md) | Full `wish` CLI reference: `server`/`client`/`standalone`/`desktop` |
 | [docs/examples.md](docs/examples.md) | Annotated example walkthroughs |
 | [docs/bindings.md](docs/bindings.md) | Python and C# language binding setup and usage |
+| [docs/ai-assisted-development.md](docs/ai-assisted-development.md) | Building wish apps/UI via natural language with the `wish-module`/`wish-ui` AI-agent skills |
+| [DESIGN.md](DESIGN.md) | Architecture, key abstractions, object model, and design decisions |
+
+## License
+
+MIT License © 2023 Binary Dice Games. See [LICENSE](LICENSE) for the full text.

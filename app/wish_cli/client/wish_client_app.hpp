@@ -40,7 +40,7 @@ namespace bdg::wish {
  *
  * CLI flags (consumed via gflags DECLARE_*), same `--transport` scheme as
  * `wish_server_app`:
- *   --transport T  tcp (default), pipe, pty, or console
+ *   --transport T  tcp, pipe, or term (default: term)
  *   --host H       Connect host address  (transport=tcp)
  *   --port P       Connect port          (transport=tcp)
  *   --name PATH    Named-pipe / Unix-socket path (transport=pipe)

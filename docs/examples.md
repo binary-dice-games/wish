@@ -39,10 +39,13 @@ cmake --build build
 
 ### Finding the binary
 
+CMake mirrors the source tree under `build/` (no flattened output directory
+is configured), so example binaries land under `build/examples/`:
+
 | Generator | Binary location |
 |-----------|----------------|
-| Ninja / Unix Makefiles (Linux) | `build/calculator` |
-| Ninja / Unix Makefiles (MSYS2) | `build/calculator.exe` |
+| Ninja / Unix Makefiles (Linux) | `build/examples/calculator` |
+| Ninja / Unix Makefiles (MSYS2) | `build/examples/calculator.exe` |
 
 ---
 
@@ -63,10 +66,10 @@ A self-contained 4-function calculator that exercises the full wish stack end to
 
 ```sh
 # Linux
-./build/calculator
+./build/examples/calculator
 
 # MSYS2
-./build/calculator.exe
+./build/examples/calculator.exe
 ```
 
 A 300 × 420 window opens with a standard calculator layout:
@@ -158,10 +161,10 @@ A comprehensive showcase of every wish widget and layout type in a single dockab
 
 ```sh
 # Linux
-./build/demo
+./build/examples/demo
 
 # MSYS2
-./build/demo.exe
+./build/examples/demo.exe
 ```
 
 Command-line flags:

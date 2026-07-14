@@ -280,7 +280,7 @@ only the C++ binary under test needs to exist.
 ```python
 from wish.automation import AutomationClient
 
-with AutomationClient.launch(server_cmd=["build/wish", "server", "--renderer", "web"]) as ui:
+with AutomationClient.launch(server_cmd=["build/app/wish", "server", "--renderer", "web"]) as ui:
     tree = ui.get_tree()                 # {"request_id": N, "widgets": [...]}
     widget = ui.get_widget("dialog.ok")  # one entry by exact dot-path, or None
     ui.click("dialog.ok")
@@ -340,7 +340,7 @@ sequence — see `bindings/python/wish/automation_testing.py`):
 ```python
 from wish.automation_testing import make_wish_ui_fixture
 
-wish_ui = make_wish_ui_fixture(lambda: ["build/wish", "server", "--renderer", "web"])
+wish_ui = make_wish_ui_fixture(lambda: ["build/app/wish", "server", "--renderer", "web"])
 
 def test_saving_shows_confirmation(wish_ui):
     wish_ui.click("toolbar.save")
@@ -372,6 +372,64 @@ def test_saving_shows_confirmation(wish_ui):
   is pushed live, not replayed from history — a message logged before
   `AutomationClient.launch()` finished connecting is never delivered.
   Connect first, then drive the app, and this is a non-issue in practice.
+
+## Security Considerations for AI Code Assist
+
+When generating or modifying wish server-side code, AI agents must follow these rules:
+
+### File access is sandboxed per session
+
+Every client session has an isolated temporary directory (`session::resource_dir`).
+Widget fields that accept file paths (e.g. `Image::src`, `TextEditor::file_path`)
+**must** be validated against this sandbox before any file I/O:
+
+- **Relative paths** are resolved with `resolve_widget_path()` (defined in
+  `src/imgui/imgui_ui_renderer.hpp`), which uses purely lexical normalization to
+  verify the resolved path stays inside `resource_dir`. Never skip this check.
+- **Absolute paths** are rejected by default. They are permitted only when the
+  server has been explicitly configured with
+  `wish::server::set_allow_absolute_paths(true)` — which is intended exclusively
+  for same-process (`memory_transport`) deployments.
+- **Never** construct file paths from untrusted client input without going through
+  `resolve_widget_path()` or `file_service::resolve_path()`.  A path like
+  `../../etc/passwd` must be rejected, not silently truncated or accessed.
+
+### Adding new file-accessing widgets
+
+Any new widget whose render function reads or writes a file must:
+
+1. Accept only a **relative** path field by default.
+2. Call `resolve_widget_path(path, s.resource_dir, s.allow_absolute_paths)` and
+   return early if the result is empty.
+3. Document the field's security contract in the registration attributes
+   (see `src/ui/ui_elements/text_editor.cpp` as a reference).
+
+### Optional auth module and persistent sandbox directories
+
+By default every session's `resource_dir` is a throwaway temp directory,
+deleted on disconnect. A server can opt in to a persistent, identity-keyed
+directory per client via `wish::server::start(auth_module)` (an optional
+`bison::rmi::auth_module_ptr`, evaluated once per connection) together with
+`wish::server::set_allow_absolute_paths`'s sibling setter,
+`set_persistent_sandbox_root(path)` — both are required before any session
+gets a directory outside the default temp location. `wish::local_auth_module`
+is a ready-to-use, trust-the-client module for local/single-user deployments;
+untrusted or remote deployments must supply their own `auth_module_iface`
+that verifies the client's claimed identity. See `src/auth/DESIGN.md` for
+the full design and the sandbox-escape guard applied to the identity string.
+
+### Uploads and downloads
+
+`file_service::upload` / `download` already enforce sandboxing via
+`file_service::resolve_path()`.  Do not bypass or replicate this logic; call the
+method directly.
+
+### Session isolation
+
+Each `wish::session` is independent: object tree, resource folder, file service,
+and style service are all isolated.  Do not share mutable session state across
+sessions or cache per-session resources in process-global structures keyed by
+anything other than the session ID.
 
 ## Claude Code Assist Behavioral Rules for This Repo
 
