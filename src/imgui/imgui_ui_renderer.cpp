@@ -25,18 +25,37 @@ using namespace bdg::bison;
 
 // ── ID helper ─────────────────────────────────────────────────────────────────
 
-// Append "###<wish_id>" to a label so that ImGui uses a unique internal ID
-// even when two elements share the same visible text. Three hashes (not
-// two) is deliberate: ImGui hides everything after "##" from display but
-// still folds the visible prefix into the ID hash, whereas "###" makes the
-// ID depend *only* on what follows it. Using "##" here let editing an
-// element's own label/title (e.g. a Window's title field) change its
-// ImGui ID out from under it, silently resetting per-ID state ImGui
-// tracks itself -- a dragged window's position/size, and which window has
-// keyboard focus -- even though __wish_id (this element's actual identity)
-// never changed.
+// Returns __path__ verbatim (not a hash of it) when available: ImGui's
+// ImGui::CreateNewWindowSettings() truncates a window's saved ini section
+// name at the first "###", keeping only what follows -- so whatever this
+// returns for a Window IS the literal text that ends up in imgui.ini's
+// "[Window][...]" line. A hash would make that file unreadable; the raw
+// dot-path (e.g. "__notepad_0") reads the same as the source that produced
+// it, and is exactly as stable across runs as a hash of it would be.
+std::string stable_id(const ui_element& node) {
+  const auto* path_field = node.findField("__path__"_key);
+  if (path_field && path_field->is<std::string>()) {
+    const std::string& path = path_field->as<std::string>();
+    if (!path.empty())
+      return path;
+  }
+  return std::to_string(node.get_as<key_t>("__wish_id"_key, key_t{}).id);
+}
+
+// Append "###<stable_id>" to a Window's title. Only render_window needs
+// this: ImGui::Begin() computes a top-level window's persistent ID by
+// hashing its name string directly -- unlike every other widget, it does
+// NOT consult the current ID stack -- so PushID() (see render_node() in
+// imgui_renderer.cpp, which scopes every other widget) can't disambiguate
+// windows. Three hashes (not two) is deliberate: ImGui hides everything
+// after "##" from display but still folds the visible prefix into the ID
+// hash, whereas "###" makes the ID depend *only* on what follows it. Using
+// "##" here would let editing the Window's own title field change its
+// ImGui ID out from under it, silently resetting per-ID state ImGui tracks
+// itself -- position/size/dock/focus -- even though the element's actual
+// identity never changed.
 static std::string with_id(const std::string& label, const ui_element& node) {
-  return label + "###" + std::to_string(node.get_as<key_t>("__wish_id"_key, key_t{}).id);
+  return label + "###" + stable_id(node);
 }
 
 // ── Core ──────────────────────────────────────────────────────────────────────
@@ -56,10 +75,16 @@ void render_window(imgui_renderer& r, const ui_element& node, const context& s) 
       fl |= ImGuiWindowFlags_MenuBar;
   });
 
+  // FirstUseEver (not Once): Once re-applies the descriptor's pos/size on
+  // every process run regardless of what's saved in imgui.ini -- since
+  // "the first SetNextWindowPos/Size call for this window's ID" is true
+  // again on every fresh launch. FirstUseEver instead only falls back to
+  // these values when the window has no persisted ini entry yet, so a
+  // user's manual move/resize actually survives a restart.
   if (px >= 0 && py >= 0)
-    ImGui::SetNextWindowPos(ImVec2(float(px), float(py)), ImGuiCond_Once);
+    ImGui::SetNextWindowPos(ImVec2(float(px), float(py)), ImGuiCond_FirstUseEver);
   if (w > 0 && h > 0)
-    ImGui::SetNextWindowSize(ImVec2(float(w), float(h)), ImGuiCond_Once);
+    ImGui::SetNextWindowSize(ImVec2(float(w), float(h)), ImGuiCond_FirstUseEver);
 
   bool open = true;
   bool* p_open = closable ? &open : nullptr;
@@ -109,16 +134,14 @@ void render_button(imgui_renderer&, const ui_element& node, const context& s) {
   auto label = node.get_as<std::string>("label"_key, "");
   int32_t w = node.get_as<int32_t>("width"_key, 0);
   int32_t h = node.get_as<int32_t>("height"_key, 0);
-  auto iml = with_id(label, node);
-  if (ImGui::Button(iml.c_str(), ImVec2(float(w), float(h))))
+  if (ImGui::Button(label.c_str(), ImVec2(float(w), float(h))))
     enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "clicked"_key, dynamic{});
 }
 
 void render_checkbox(imgui_renderer&, const ui_element& node, const context& s) {
   auto label = node.get_as<std::string>("label"_key, "");
   bool val = node.get_as<bool>("value"_key, false);
-  auto iml = with_id(label, node);
-  if (ImGui::Checkbox(iml.c_str(), &val)) {
+  if (ImGui::Checkbox(label.c_str(), &val)) {
     const_cast<ui_element&>(node)["value"_key] = val;
     dynamic payload;
     payload["value"_key] = val;
@@ -132,8 +155,7 @@ void render_slider_float(imgui_renderer&, const ui_element& node, const context&
   float vmin = node.get_as<float>("min"_key, 0.0f);
   float vmax = node.get_as<float>("max"_key, 1.0f);
   auto fmt = node.get_as<std::string>("format"_key, "%.2f");
-  auto iml = with_id(label, node);
-  if (ImGui::SliderFloat(iml.c_str(), &val, vmin, vmax, fmt.c_str())) {
+  if (ImGui::SliderFloat(label.c_str(), &val, vmin, vmax, fmt.c_str())) {
     const_cast<ui_element&>(node)["value"_key] = val;
     dynamic payload;
     payload["value"_key] = val;
@@ -146,8 +168,7 @@ void render_slider_int(imgui_renderer&, const ui_element& node, const context& s
   int32_t val = node.get_as<int32_t>("value"_key, 0);
   int32_t vmin = node.get_as<int32_t>("min"_key, 0);
   int32_t vmax = node.get_as<int32_t>("max"_key, 100);
-  auto iml = with_id(label, node);
-  if (ImGui::SliderInt(iml.c_str(), &val, vmin, vmax)) {
+  if (ImGui::SliderInt(label.c_str(), &val, vmin, vmax)) {
     const_cast<ui_element&>(node)["value"_key] = val;
     dynamic payload;
     payload["value"_key] = val;
@@ -170,10 +191,9 @@ void render_input_text(imgui_renderer&, const ui_element& node, const context& s
   auto copy_len = std::min(static_cast<size_t>(maxlen), current.size());
   std::copy_n(current.c_str(), copy_len, buf.data());
 
-  auto iml = with_id(label, node);
   bool changed = hint.empty()
-      ? ImGui::InputText(iml.c_str(), buf.data(), buf.size(), ImGuiInputTextFlags(flags))
-      : ImGui::InputTextWithHint(iml.c_str(), hint.c_str(), buf.data(), buf.size(), ImGuiInputTextFlags(flags));
+      ? ImGui::InputText(label.c_str(), buf.data(), buf.size(), ImGuiInputTextFlags(flags))
+      : ImGui::InputTextWithHint(label.c_str(), hint.c_str(), buf.data(), buf.size(), ImGuiInputTextFlags(flags));
 
   if (changed) {
     std::string new_val(buf.data());
@@ -284,8 +304,7 @@ void render_menu_bar(imgui_renderer& r, const ui_element& node, const context& s
 void render_menu(imgui_renderer& r, const ui_element& node, const context& s) {
   auto label = node.get_as<std::string>("label"_key, "");
   bool enabled = node.get_as<bool>("enabled"_key, true);
-  auto iml = with_id(label, node);
-  if (ImGui::BeginMenu(iml.c_str(), enabled)) {
+  if (ImGui::BeginMenu(label.c_str(), enabled)) {
     render_children(r, node, s);
     ImGui::EndMenu();
   }
@@ -297,8 +316,7 @@ void render_menu_item(imgui_renderer&, const ui_element& node, const context& s)
   bool checked = node.get_as<bool>("checked"_key, false);
   bool enabled = node.get_as<bool>("enabled"_key, true);
   const char* sc = shortcut.empty() ? nullptr : shortcut.c_str();
-  auto iml = with_id(label, node);
-  if (ImGui::MenuItem(iml.c_str(), sc, &checked, enabled)) {
+  if (ImGui::MenuItem(label.c_str(), sc, &checked, enabled)) {
     const_cast<ui_element&>(node)["checked"_key] = checked;
     dynamic payload;
     payload["checked"_key] = checked;
@@ -322,8 +340,7 @@ void render_tab_item(imgui_renderer& r, const ui_element& node, const context& s
   bool open = true;
   bool* p_open = closable ? &open : nullptr;
 
-  auto iml = with_id(label, node);
-  bool is_selected = ImGui::BeginTabItem(iml.c_str(), p_open);
+  bool is_selected = ImGui::BeginTabItem(label.c_str(), p_open);
 
   // Emit 'selected' only on the transition from invisible to visible.
   const auto* prev_f = node.findField("__selected__"_key);
@@ -352,8 +369,7 @@ void render_tree_node(imgui_renderer& r, const ui_element& node, const context& 
 
   ImGuiTreeNodeFlags flags =
       leaf ? (ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen) : ImGuiTreeNodeFlags_None;
-  auto iml = with_id(label, node);
-  bool is_open = ImGui::TreeNodeEx(iml.c_str(), flags);
+  bool is_open = ImGui::TreeNodeEx(label.c_str(), flags);
 
   const auto* prev_f = node.findField("__open__"_key);
   bool was_open = (prev_f && prev_f->is<bool>()) ? prev_f->as<bool>() : is_open;
@@ -372,8 +388,7 @@ void render_tree_node(imgui_renderer& r, const ui_element& node, const context& 
 
 void render_collapsing_header(imgui_renderer& r, const ui_element& node, const context& s) {
   auto label = node.get_as<std::string>("label"_key, "");
-  auto iml = with_id(label, node);
-  bool is_open = ImGui::CollapsingHeader(iml.c_str());
+  bool is_open = ImGui::CollapsingHeader(label.c_str());
 
   const auto* prev_f = node.findField("__open__"_key);
   bool was_open = (prev_f && prev_f->is<bool>()) ? prev_f->as<bool>() : is_open;
@@ -411,8 +426,7 @@ void render_combo(imgui_renderer&, const ui_element& node, const context& s) {
     ptrs.push_back(item.c_str());
 
   int cur = sel;
-  auto iml = with_id(label, node);
-  if (ImGui::Combo(iml.c_str(), &cur, ptrs.data(), int(ptrs.size()))) {
+  if (ImGui::Combo(label.c_str(), &cur, ptrs.data(), int(ptrs.size()))) {
     const_cast<ui_element&>(node)["value"_key] = int32_t(cur);
     dynamic payload;
     payload["value"_key] = int32_t(cur);
@@ -425,8 +439,7 @@ void render_combo(imgui_renderer&, const ui_element& node, const context& s) {
 void render_radio_button(imgui_renderer&, const ui_element& node, const context& s) {
   auto label = node.get_as<std::string>("label"_key, "");
   bool active = node.get_as<bool>("active"_key, false);
-  auto iml = with_id(label, node);
-  if (ImGui::RadioButton(iml.c_str(), active))
+  if (ImGui::RadioButton(label.c_str(), active))
     enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "clicked"_key, dynamic{});
 }
 
@@ -436,8 +449,7 @@ void render_selectable(imgui_renderer&, const ui_element& node, const context& s
   float w = node.get_as<float>("width"_key, 0.0f);
   float h = node.get_as<float>("height"_key, 0.0f);
   bool v = selected;
-  auto iml = with_id(label, node);
-  if (ImGui::Selectable(iml.c_str(), &v, 0, ImVec2(w, h))) {
+  if (ImGui::Selectable(label.c_str(), &v, 0, ImVec2(w, h))) {
     const_cast<ui_element&>(node)["selected"_key] = v;
     dynamic payload;
     payload["selected"_key] = v;
@@ -453,8 +465,7 @@ void render_input_int(imgui_renderer&, const ui_element& node, const context& s)
   int32_t step = node.get_as<int32_t>("step"_key, 1);
   int32_t step_fast = node.get_as<int32_t>("step_fast"_key, 100);
   int v = val;
-  auto iml = with_id(label, node);
-  if (ImGui::InputInt(iml.c_str(), &v, step, step_fast)) {
+  if (ImGui::InputInt(label.c_str(), &v, step, step_fast)) {
     const_cast<ui_element&>(node)["value"_key] = int32_t(v);
     dynamic payload;
     payload["value"_key] = int32_t(v);
@@ -469,8 +480,7 @@ void render_input_float(imgui_renderer&, const ui_element& node, const context& 
   float step_fast = node.get_as<float>("step_fast"_key, 0.0f);
   auto fmt = node.get_as<std::string>("format"_key, "%.3f");
   float v = val;
-  auto iml = with_id(label, node);
-  if (ImGui::InputFloat(iml.c_str(), &v, step, step_fast, fmt.c_str())) {
+  if (ImGui::InputFloat(label.c_str(), &v, step, step_fast, fmt.c_str())) {
     const_cast<ui_element&>(node)["value"_key] = v;
     dynamic payload;
     payload["value"_key] = v;
@@ -486,8 +496,7 @@ void render_drag_float(imgui_renderer&, const ui_element& node, const context& s
   float vmax = node.get_as<float>("max"_key, 0.0f);
   auto fmt = node.get_as<std::string>("format"_key, "%.3f");
   float v = val;
-  auto iml = with_id(label, node);
-  if (ImGui::DragFloat(iml.c_str(), &v, speed, vmin, vmax, fmt.c_str())) {
+  if (ImGui::DragFloat(label.c_str(), &v, speed, vmin, vmax, fmt.c_str())) {
     const_cast<ui_element&>(node)["value"_key] = v;
     dynamic payload;
     payload["value"_key] = v;
@@ -502,8 +511,7 @@ void render_drag_int(imgui_renderer&, const ui_element& node, const context& s) 
   int32_t vmin = node.get_as<int32_t>("min"_key, 0);
   int32_t vmax = node.get_as<int32_t>("max"_key, 0);
   int v = val;
-  auto iml = with_id(label, node);
-  if (ImGui::DragInt(iml.c_str(), &v, speed, vmin, vmax)) {
+  if (ImGui::DragInt(label.c_str(), &v, speed, vmin, vmax)) {
     const_cast<ui_element&>(node)["value"_key] = int32_t(v);
     dynamic payload;
     payload["value"_key] = int32_t(v);

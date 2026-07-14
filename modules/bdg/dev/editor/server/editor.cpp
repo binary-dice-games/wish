@@ -163,7 +163,8 @@ static constexpr const char* kEditorLayout = R"json({
 editor::editor(dynamic&& base) : form(std::move(base)) {}
 
 void editor::on_init() {
-  internal_root_key_ = "__editor_" + std::to_string(reinterpret_cast<uintptr_t>(this));
+  // See form::internal_root_key_'s doc comment: ordinally-assigned, not pointer-derived.
+  internal_root_key_ = next_available_key("__editor_");
   mock_root_key_ = internal_root_key_ + "_mock";
 
   auto tree = import_json(kEditorLayout);

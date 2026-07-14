@@ -98,9 +98,33 @@ class form : public ui_root {
 
   /// @brief Key under which the internal Window root is stored in session.objects.
   ///
-  /// Set by on_init() implementations. Used for cleanup when the form is
-  /// closed or destroyed.
+  /// Set by on_init() implementations -- via next_available_key(), NOT a
+  /// pointer-derived string -- and used for cleanup when the form is closed
+  /// or destroyed, and (by form::init(), after on_init() returns) as the
+  /// root Window element's "__path__", which stable_id() in
+  /// imgui_ui_renderer.hpp hashes into the ImGui id. next_available_key()
+  /// guarantees this stays unique across concurrently-open instances of the
+  /// same form class (e.g. two Notepad windows), while remaining
+  /// deterministic run-to-run for a given open order/count -- unlike the
+  /// pointer-derived id this replaced, which was both run-unstable AND,
+  /// since ui_tree::merge() only prefixes ui_objects' *keys* and never
+  /// touches this field, indistinguishable from another instance's empty
+  /// "" path until next_available_key() existed.
   std::string internal_root_key_;
+
+  /// @brief Returns "prefix0", "prefix1", ... -- the lowest-numbered
+  /// candidate not already registered as a top-level object in the current
+  /// session.
+  ///
+  /// Lets concurrent instances of the same form class (e.g. two Notepad
+  /// windows) get distinct keys deterministically, instead of either
+  /// colliding (a fixed literal) or being run-unstable (a pointer/address).
+  /// Call from on_init() to compute internal_root_key_, before this form's
+  /// own root is registered -- so the current instance never sees itself as
+  /// already taken.
+  ///
+  /// @param prefix  Form-class-specific prefix, e.g. "__notepad_".
+  std::string next_available_key(const std::string& prefix);
 
   /// @brief Remove all session.objects entries owned by this form.
   ///

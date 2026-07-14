@@ -250,6 +250,13 @@ class web_renderer : public imgui_renderer {
   std::unique_ptr<civetweb_server> server_;
   std::filesystem::path web_assets_dir_;
 
+  // Backing storage for ImGuiIO::IniFilename -- ImGui keeps the pointer we
+  // assign it, so the path string must outlive the ImGui context. Snapshot
+  // as an absolute path at setup() time so a later chdir() elsewhere in the
+  // process can't move where imgui.ini is read from/written to out from
+  // under a long-running server.
+  std::string ini_path_;
+
   // Connections that have completed the WS handshake since the last
   // end_frame() but have not yet received their initial texture sync.
   // Populated on a civetweb worker thread (on_connect), drained on the

@@ -116,7 +116,10 @@ void render_text_editor(imgui_renderer&, const ui_element& node, const context& 
     }
   }
 
-  auto label = std::string("##te_") + std::to_string(id.id);
+  // "##te" alone is enough: render_node() (imgui_renderer.cpp) already wraps
+  // this call in ImGui::PushID(stable_id(node)), which TextEditor::Render's
+  // internal child window respects, so no per-node suffix is needed here.
+  auto label = std::string("##te");
   ImVec2 size{w > 0 ? float(w) : -1.f, h > 0 ? float(h) : -1.f};
   st.editor.Render(label.c_str(), size);
 

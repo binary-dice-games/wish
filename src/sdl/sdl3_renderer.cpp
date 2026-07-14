@@ -59,6 +59,15 @@ void sdl3_renderer::setup() {
   io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
   io.ConfigDockingWithShift = true;
 
+  // Anchor imgui.ini next to the executable rather than letting ImGui use
+  // its CWD-relative default -- launching the app from a different working
+  // directory would otherwise silently start a fresh, empty layout file.
+  if (const char* base_path = SDL_GetBasePath())
+    ini_path_ = std::string(base_path) + "imgui.ini";
+  else
+    ini_path_ = "imgui.ini";
+  io.IniFilename = ini_path_.c_str();
+
   ImGui_ImplSDL3_InitForSDLRenderer(window_, sdl_renderer_);
   ImGui_ImplSDLRenderer3_Init(sdl_renderer_);
 
