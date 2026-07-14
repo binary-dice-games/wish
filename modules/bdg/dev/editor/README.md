@@ -8,26 +8,43 @@ wish skills to visualize a mock to the user during development — see
 
 A syntax error in the source shows an error banner above the source panel
 but leaves the last valid preview on screen, so a typo never makes the
-preview flicker or disappear. The underlying file is also watched for
-changes made outside the tool (e.g. in the user's own editor) and reloaded
-automatically.
+preview flicker or disappear. The preview window's position, size, and
+focus survive every re-edit — only its content changes. The underlying
+file is also watched for changes made outside the tool (e.g. in the user's
+own editor) and reloaded automatically. A filename label shows the local
+path and an `[MODIFIED]` marker when there are unsaved edits; closing with
+unsaved edits shows an inline Save & Close / Discard & Close / Cancel
+prompt instead of closing immediately. Copy/paste in the source editor
+interoperates with the real OS clipboard (see `src/web/DESIGN.md`'s
+"Clipboard Bridging" section).
 
-- **server/**: `Editor` form (`register_editor()`) — owns the source
-  `TextEditor` (JSON syntax highlighting), the error banner, the event log
-  table, and the preview subtree. Re-parses on every source edit and on
-  every `set_source` call; a successful parse swaps in a new preview
-  registered as its own top-level window (handled by the same form
-  instance, so its events reach the same `on_event`); a failed parse only
-  updates the banner. Logs every preview widget event as
-  `"<dot-path> <event>"`, e.g. `"main.ok clicked"`.
+- **server/**: `Editor` form (`register_editor()`) — owns the filename
+  label, error banner, source `TextEditor` (JSON syntax highlighting), the
+  close-confirmation panel, the event log table, and the preview subtree.
+  Re-parses on every source edit and on every `set_source` call; a
+  successful parse swaps in a new preview registered as its own top-level
+  window (handled by the same form instance, so its events reach the same
+  `on_event`), reusing the same preview window id across reparses so
+  ImGui's own position/size/focus state isn't reset by every edit; a
+  failed parse only updates the banner. Logs every preview widget event as
+  `"<dot-path> <event>"` plus a compact rendering of its payload, e.g.
+  `"main.volume changed {value=75}"`; the log is capped at 200 rows
+  (oldest evicted) and auto-scrolls to the newest entry.
 - **client/**: `run_editor(wish_app_host&)`, self-registered as the
   `"editor"` embedded app — owns the local JSON file (`upload_file`/
   `download_file`, same sandbox-bridging rule as Notepad) and a background
   poll loop that re-uploads the file under a fresh sandbox name whenever it
   changes on disk outside the tool. Requires a startup file path via
   `app_args()`: `wish client --run=editor -- path/to/ui.json` (created
-  empty if it doesn't exist yet).
+  empty if it doesn't exist yet). Only Ctrl+S (or a confirmed close)
+  persists edits back to the local file — in-editor edits update the live
+  preview immediately but are not written to disk until saved.
 - **resources/**: none.
+
+See [DESIGN.md](DESIGN.md) for the full architecture, including the shared
+wish-core bugs this module's development surfaced and fixed (ImGui window
+identity stability, `Table` auto-scroll, and the web renderer's clipboard/
+modifier-key handling).
 
 ## Future work
 

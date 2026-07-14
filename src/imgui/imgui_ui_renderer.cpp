@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace bdg::wish {
@@ -24,11 +25,18 @@ using namespace bdg::bison;
 
 // ── ID helper ─────────────────────────────────────────────────────────────────
 
-// Append "##<wish_id>" to a label so that ImGui uses a unique internal ID even
-// when two elements share the same visible text.  ImGui hides everything after
-// "##" from the display, so the rendered label is unchanged.
+// Append "###<wish_id>" to a label so that ImGui uses a unique internal ID
+// even when two elements share the same visible text. Three hashes (not
+// two) is deliberate: ImGui hides everything after "##" from display but
+// still folds the visible prefix into the ID hash, whereas "###" makes the
+// ID depend *only* on what follows it. Using "##" here let editing an
+// element's own label/title (e.g. a Window's title field) change its
+// ImGui ID out from under it, silently resetting per-ID state ImGui
+// tracks itself -- a dragged window's position/size, and which window has
+// keyboard focus -- even though __wish_id (this element's actual identity)
+// never changed.
 static std::string with_id(const std::string& label, const ui_element& node) {
-  return label + "##" + std::to_string(node.get_as<key_t>("__wish_id"_key, key_t{}).id);
+  return label + "###" + std::to_string(node.get_as<key_t>("__wish_id"_key, key_t{}).id);
 }
 
 // ── Core ──────────────────────────────────────────────────────────────────────
@@ -579,6 +587,15 @@ void render_dockspace(imgui_renderer&, const ui_element& node, const context&) {
 
 // ── Table elements ────────────────────────────────────────────────────────────
 
+// Per-widget last-seen row count, so a scrollable table (ImGuiTableFlags_
+// ScrollY) can detect "a new row just appeared" and stick to the bottom --
+// e.g. a live event/log table should always show its most recent entry
+// without the caller having to manage scroll position itself.
+static std::unordered_map<uint32_t, int32_t>& table_row_count_cache() {
+  static std::unordered_map<uint32_t, int32_t> cache;
+  return cache;
+}
+
 void render_table(imgui_renderer& r, const ui_element& node, const context& s) {
   auto id = node.get_as<std::string>("id"_key, "##table");
   int32_t columns = node.get_as<int32_t>("columns"_key, 1);
@@ -686,6 +703,18 @@ void render_table(imgui_renderer& r, const ui_element& node, const context& s) {
       r.render_node(child, s);
     }
   });
+
+  // Stick to the bottom when a scrollable table just grew a row, so a live
+  // log's newest entry is always visible without the caller managing scroll
+  // position. Only fires on growth (not on shrink/reset) so it never fights
+  // a user who scrolled up to read older rows while the count is unchanged.
+  if (table_id.id && (ImGuiTableFlags(flags) & ImGuiTableFlags_ScrollY)) {
+    auto& cache = table_row_count_cache();
+    auto& last_count = cache[table_id.id];
+    if (row_idx > last_count)
+      ImGui::SetScrollY(ImGui::GetScrollMaxY());
+    last_count = row_idx;
+  }
 
   ImGui::EndTable();
 

@@ -423,7 +423,11 @@ TEST_F(ImguiRendererTest, WindowRestoresFloatingSizeAfterUndock) {
   auto& win = *map[""];
   auto wish_id =
       win.get_as<bdg::bison::key_t>("__wish_id"_key, bdg::bison::key_t{});
-  std::string label = "Dockable##" + std::to_string(wish_id.id);
+  // "###" (not "##") matches with_id()'s convention in imgui_ui_renderer.cpp:
+  // the ID must depend only on wish_id, not the visible "Dockable" prefix,
+  // so editing a window's title doesn't reset ImGui's per-window state
+  // (position/size/dock/focus) -- see with_id()'s doc comment.
+  std::string label = "Dockable###" + std::to_string(wish_id.id);
 
   // Render one floating frame: establishes the ImGuiCond_Once 400x300 size
   // and populates the hidden __float_width__/__float_height__ fields.

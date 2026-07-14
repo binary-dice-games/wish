@@ -84,6 +84,7 @@ void push_local_file(
 
   dynamic args;
   args["path"_key] = name;
+  args["display_path"_key] = local_path.string();
   ed->call("set_source"_key, std::move(args)).get();
 }
 
@@ -108,9 +109,12 @@ void run_editor(wish_app_host& s) {
 
   push_local_file(s, ed, state, local_path);
 
-  // Ctrl+S inside the source editor: download the sandbox file and persist
-  // it back to the original local path, mirroring Notepad's on_file_saved.
-  ed->onEvent("on_source_saved"_key, [&s, state, local_path](dynamic) {
+  // Ctrl+S inside the source editor, or a confirmed "Save & Close": download
+  // the sandbox file, persist it back to the original local path, and tell
+  // the server the save completed (mirrors Notepad's on_file_saved; the
+  // mark_saved() call back is what lets the server clear its "unsaved
+  // changes" state and finish a pending close).
+  ed->onEvent("on_source_saved"_key, [&s, ed, state, local_path](dynamic) {
     std::string name;
     if (auto lock = state->rlock(); lock)
       name = lock->sandbox_name;
@@ -119,8 +123,11 @@ void run_editor(wish_app_host& s) {
     try {
       auto data = s.download_file(name).get();
       write_local_file(local_path, data);
-      auto lock = state->wlock();
-      lock->last_uploaded_content = data;
+      {
+        auto lock = state->wlock();
+        lock->last_uploaded_content = data;
+      }
+      ed->call("mark_saved"_key, dynamic{}).get();
     } catch (const std::exception&) {
       // Session ending; nothing to persist.
     }

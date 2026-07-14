@@ -32,8 +32,10 @@ using bdg::wish::web_msg_type;
 using bdg::wish::web_renderer;
 using bdg::wish::web_resize_event;
 using bdg::wish::draw_protocol::decode_cache_response_message;
+using bdg::wish::draw_protocol::decode_clipboard_text_message;
 using bdg::wish::draw_protocol::decode_input_message;
 using bdg::wish::draw_protocol::decode_resize_message;
+using bdg::wish::draw_protocol::encode_clipboard_write;
 using bdg::wish::draw_protocol::encode_frame;
 using bdg::wish::draw_protocol::encode_texture_check;
 using bdg::wish::draw_protocol::encode_texture_destroy;
@@ -413,6 +415,50 @@ TEST_F(WebRendererTest, BeginFrame_DrainsQueuedMouseMoveIntoImGuiIO) {
   renderer_->begin_frame();
   EXPECT_FLOAT_EQ(ImGui::GetIO().MousePos.x, 42.0f);
   EXPECT_FLOAT_EQ(ImGui::GetIO().MousePos.y, 17.0f);
+  renderer_->end_frame();
+
+  close_socket(sock);
+}
+
+TEST_F(WebRendererTest, BeginFrame_LeftCtrlKeyEventAlsoSetsMergedModFlag) {
+  // Regression test for a bug where ImGui-wide Ctrl-modified shortcuts
+  // (Ctrl+A/C/V/X/... in any widget, including TextEditor) silently never
+  // fired: IsKeyDown(ImGuiMod_Ctrl) reads a *separate* pseudo-key slot
+  // (ImGuiKey_ReservedForModCtrl) that only every official ImGui backend's
+  // explicit io.AddKeyEvent(ImGuiMod_Ctrl, ...) call populates -- sending
+  // only the literal ImGuiKey_LeftCtrl/RightCtrl events (as this renderer
+  // used to) never touches it. See the mod_*_down_ members' doc comment in
+  // web_renderer.hpp.
+  int port = renderer_->actual_port();
+  ASSERT_GT(port, 0);
+  int sock = connect_ws_client(port);
+  ASSERT_GE(sock, 0);
+
+  // See BeginFrame_DrainsQueuedMouseMoveIntoImGuiIO: drain the
+  // connect-triggered activity signal first.
+  for (int i = 0; i < 200; ++i) {
+    if (renderer_->poll_events())
+      break;
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+
+  std::vector<std::byte> payload;
+  push_u8(payload, static_cast<uint8_t>(web_input_kind::key));
+  push_u32(payload, static_cast<uint32_t>(ImGuiKey_LeftCtrl));
+  push_u8(payload, 1); // down
+  send_ws_binary(sock, build_envelope(web_msg_type::input, payload));
+
+  bool activity = false;
+  for (int i = 0; i < 200 && !activity; ++i) {
+    activity = renderer_->poll_events();
+    if (!activity)
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  ASSERT_TRUE(activity);
+
+  renderer_->begin_frame();
+  EXPECT_TRUE(ImGui::IsKeyDown(ImGuiMod_Ctrl));
+  EXPECT_TRUE(ImGui::GetIO().KeyCtrl);
   renderer_->end_frame();
 
   close_socket(sock);
@@ -1130,6 +1176,40 @@ TEST(DrawProtocolTest, DecodeCacheResponse_RejectsTruncatedPayload) {
   // Missing the hit byte.
 
   EXPECT_FALSE(decode_cache_response_message(build_envelope(web_msg_type::cache_response, payload)).has_value());
+}
+
+// ── draw_protocol: CLIPBOARD_TEXT / CLIPBOARD_WRITE ─────────────────────────
+
+TEST(DrawProtocolTest, DecodeClipboardText_RoundTripsUtf8) {
+  const std::string text = "hello \xE2\x9C\x93 clipboard"; // includes a UTF-8 checkmark
+  std::vector<std::byte> payload(text.size());
+  std::memcpy(payload.data(), text.data(), text.size());
+
+  auto decoded = decode_clipboard_text_message(build_envelope(web_msg_type::clipboard_text, payload));
+  ASSERT_TRUE(decoded.has_value());
+  EXPECT_EQ(*decoded, text);
+}
+
+TEST(DrawProtocolTest, DecodeClipboardText_EmptyPayloadRoundTrips) {
+  auto decoded = decode_clipboard_text_message(build_envelope(web_msg_type::clipboard_text, {}));
+  ASSERT_TRUE(decoded.has_value());
+  EXPECT_TRUE(decoded->empty());
+}
+
+TEST(DrawProtocolTest, DecodeClipboardText_RejectsWrongMsgType) {
+  std::vector<std::byte> payload(3);
+  EXPECT_FALSE(decode_clipboard_text_message(build_envelope(web_msg_type::resize, payload)).has_value());
+}
+
+TEST(DrawProtocolTest, EncodeClipboardWrite_EncodesTextVerbatim) {
+  auto bytes = encode_clipboard_write("copied text");
+
+  size_t pos = 0;
+  EXPECT_EQ(read_u8(bytes, pos), static_cast<uint8_t>(web_msg_type::clipboard_write));
+  pos += 3;
+  ASSERT_EQ(read_u32(bytes, pos), 11u);
+  std::string payload(reinterpret_cast<const char*>(bytes.data()) + 8, 11);
+  EXPECT_EQ(payload, "copied text");
 }
 
 // ── draw_protocol: input/resize decoding ────────────────────────────────────

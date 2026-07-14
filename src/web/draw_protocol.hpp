@@ -46,6 +46,11 @@ enum class web_msg_type : uint8_t {
   input = 0x10,          ///< Browser -> server: one input event.
   resize = 0x11,         ///< Browser -> server: canvas size changed.
   cache_response = 0x12, ///< Browser -> server: hit/miss reply to TEX_CHECK.
+  clipboard_text = 0x13, ///< Browser -> server: OS clipboard text, sent
+                         ///< proactively before a paste keystroke (see
+                         ///< "Clipboard bridging" in src/web/DESIGN.md).
+  clipboard_write = 0x14, ///< Server -> browser: ImGui copied/cut text;
+                          ///< browser should write it to the OS clipboard.
 #ifdef WISH_AUTOMATION_ENABLED
   query_tree = 0x20,    ///< Browser -> server: request a tree/hit-test snapshot.
   tree_snapshot = 0x21, ///< Server -> browser: JSON tree/hit-test snapshot.
@@ -168,6 +173,33 @@ std::optional<web_resize_event> decode_resize_message(std::span<const std::byte>
  *         message.
  */
 std::optional<web_cache_response> decode_cache_response_message(std::span<const std::byte> message);
+
+/**
+ * @brief Decode one browser -> server WebSocket binary message as a
+ *        CLIPBOARD_TEXT payload: the browser's current OS clipboard text.
+ *
+ * Sent proactively by the browser just before the key event for a Ctrl+V
+ * (see "Clipboard bridging" in src/web/DESIGN.md) -- `navigator.clipboard
+ * .readText()` is async, so the text must land server-side and be cached
+ * *before* ImGui processes the paste keystroke, since `GetClipboardTextFn`
+ * is a synchronous callback with no way to await a round trip itself.
+ *
+ * @param message  The full envelope-wrapped message bytes as received from
+ *                  the socket.
+ * @return `std::nullopt` if @p message isn't a well-formed CLIPBOARD_TEXT
+ *         message; otherwise the payload bytes decoded as UTF-8 text.
+ */
+std::optional<std::string> decode_clipboard_text_message(std::span<const std::byte> message);
+
+/**
+ * @brief Encode a CLIPBOARD_WRITE message: text ImGui just copied/cut
+ *        server-side, for the browser to push to the real OS clipboard via
+ *        `navigator.clipboard.writeText()`.
+ *
+ * @param text  UTF-8 text, as produced by ImGui's `SetClipboardTextFn`
+ *              callback.
+ */
+std::vector<std::byte> encode_clipboard_write(const std::string& text);
 
 #ifdef WISH_AUTOMATION_ENABLED
 /**

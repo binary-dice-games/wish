@@ -49,6 +49,27 @@ web_renderer::~web_renderer() {
   // freeing here.
 }
 
+// ── clipboard ─────────────────────────────────────────────────────────────────
+
+namespace {
+// The web_renderer currently owning the active ImGui context -- see the
+// doc comment on get_clipboard_text()/set_clipboard_text() in the header
+// for why this can't just be a PlatformIO user-data pointer.
+web_renderer* g_clipboard_renderer = nullptr;
+} // namespace
+
+const char* web_renderer::get_clipboard_text(ImGuiContext* /*ctx*/) {
+  if (!g_clipboard_renderer)
+    return "";
+  g_clipboard_renderer->clipboard_text_scratch_ = *g_clipboard_renderer->pending_clipboard_text_.rlock();
+  return g_clipboard_renderer->clipboard_text_scratch_.c_str();
+}
+
+void web_renderer::set_clipboard_text(ImGuiContext* /*ctx*/, const char* text) {
+  if (g_clipboard_renderer && g_clipboard_renderer->server_)
+    g_clipboard_renderer->server_->broadcast(draw_protocol::encode_clipboard_write(text ? text : ""));
+}
+
 // ── lifecycle ─────────────────────────────────────────────────────────────────
 
 void web_renderer::setup() {
@@ -74,6 +95,15 @@ void web_renderer::setup() {
   // sends a RESIZE message. imgui_renderer::begin_frame() also defends
   // against an unset DisplaySize.
   io.DisplaySize = ImVec2(1280.0f, 720.0f);
+
+  // No platform backend exists to wire up OS clipboard access for us (see
+  // "Clipboard bridging" in src/web/DESIGN.md) -- without this, ImGui falls
+  // back to its own internal, session-local clipboard buffer, so copy/paste
+  // works *within* one running app but never interops with the browser's
+  // real OS clipboard (e.g. pasting JSON copied from an external editor).
+  g_clipboard_renderer = this;
+  ImGui::GetPlatformIO().Platform_GetClipboardTextFn = &web_renderer::get_clipboard_text;
+  ImGui::GetPlatformIO().Platform_SetClipboardTextFn = &web_renderer::set_clipboard_text;
 
   ImGuiStyle& style = ImGui::GetStyle();
   style.FontSizeBase = static_cast<float>(font_size_);
@@ -118,6 +148,11 @@ void web_renderer::setup() {
         } else if (auto resp = draw_protocol::decode_cache_response_message(message)) {
           cache_response_queue_.wlock()->push_back({id, *resp});
           activity_.store(true, std::memory_order_relaxed);
+        } else if (auto clip = draw_protocol::decode_clipboard_text_message(message)) {
+          *pending_clipboard_text_.wlock() = std::move(*clip);
+          // No activity_ bump: this alone never needs a frame redrawn, and
+          // it always arrives immediately before the paste keystroke's own
+          // INPUT message, which does set it.
 #ifdef WISH_AUTOMATION_ENABLED
         } else if (auto query_json = draw_protocol::decode_query_tree_message(message)) {
           pending_tree_queries_.wlock()->push_back({id, std::move(*query_json)});
@@ -131,6 +166,8 @@ void web_renderer::setup() {
 }
 
 void web_renderer::teardown() {
+  if (g_clipboard_renderer == this)
+    g_clipboard_renderer = nullptr;
   if (server_) {
     server_->stop();
     server_.reset();
@@ -212,11 +249,12 @@ void web_renderer::begin_frame() {
         io.AddKeyEvent(key, ev.down);
 
         // ImGui derives io.KeyShift/io.KeyMods (and thus
-        // ConfigDockingWithShift) from a separate merged ImGuiMod_Shift/
-        // Ctrl/Alt/Super key, not from LeftShift/RightShift directly --
-        // mirror ImGui_ImplSDL3_UpdateKeyModifiers() (imgui_impl_sdl3.cpp)
-        // and emit that merged event too whenever a left/right modifier
-        // key changes.
+        // ConfigDockingWithShift) -- and every Ctrl/Shift/Alt/Super-modified
+        // shortcut check, e.g. TextEditor's Ctrl+A/C/V/X -- from a separate
+        // merged ImGuiMod_Shift/Ctrl/Alt/Super key, not from LeftShift/
+        // RightShift directly -- mirror ImGui_ImplSDL3_UpdateKeyModifiers()
+        // (imgui_impl_sdl3.cpp) and emit that merged event too whenever a
+        // left/right modifier key changes.
         auto update_mod = [&](modifier_state& state, ImGuiKey left,
                                ImGuiKey right, ImGuiKey mod) {
           if (key == left)

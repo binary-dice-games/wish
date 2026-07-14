@@ -69,8 +69,8 @@ uint32  payload_len
 byte[payload_len] payload
 ```
 
-Server → browser: `0x01 FRAME`, `0x02 TEX_CREATE`, `0x03 TEX_UPDATE`, `0x04 TEX_DESTROY`, `0x05 TEX_CHECK`.
-Browser → server: `0x10 INPUT`, `0x11 RESIZE`, `0x12 CACHE_RESPONSE`.
+Server → browser: `0x01 FRAME`, `0x02 TEX_CREATE`, `0x03 TEX_UPDATE`, `0x04 TEX_DESTROY`, `0x05 TEX_CHECK`, `0x14 CLIPBOARD_WRITE`.
+Browser → server: `0x10 INPUT`, `0x11 RESIZE`, `0x12 CACHE_RESPONSE`, `0x13 CLIPBOARD_TEXT`.
 
 **FRAME** carries display pos/size/framebuffer-scale, then per `ImDrawList`: the vertex buffer (memcpy'd directly — `ImDrawVert` is a stable 20-byte pos/uv/col layout), the index buffer (`ImDrawIdx` is 16-bit in this repo's ImGui config; `draw_protocol.cpp` has a `static_assert` guarding that assumption), and per `ImDrawCmd`: clip rect, wish-assigned texture id, vtx/idx offsets, element count.
 
@@ -81,6 +81,72 @@ Browser → server: `0x10 INPUT`, `0x11 RESIZE`, `0x12 CACHE_RESPONSE`.
 **INPUT/RESIZE** carry mouse/keyboard/wheel events and canvas size changes from the browser.
 
 Deliberately **not** included: delta-compression against the previous frame, zlib/gzip. `poll_events()` already avoids sending frames when nothing changed; per-frame payload size is an accepted simplicity trade-off.
+
+---
+
+## Clipboard Bridging
+
+ImGui's clipboard API (`ImGui::GetClipboardText()`/`SetClipboardText()`)
+resolves through `ImGuiPlatformIO::Platform_GetClipboardTextFn`/
+`Platform_SetClipboardTextFn` — **not** the older `ImGuiIO::
+GetClipboardTextFn`/`SetClipboardTextFn` fields, whose legacy-to-PlatformIO
+remap is not reliably active by the time `NewFrame()` first runs in this
+renderer. `web_renderer::setup()` sets `ImGui::GetPlatformIO().Platform_
+Get/SetClipboardTextFn` directly to two static callbacks
+(`web_renderer::get_clipboard_text`/`set_clipboard_text`). Since those
+callbacks take an `ImGuiContext*`, not a `void*` user-data pointer, they
+recover the owning `web_renderer` via a file-local static instance pointer
+(`g_clipboard_renderer`, set in `setup()`, cleared in `teardown()`) —
+acceptable under the same "one active renderer per process" assumption
+`sdl3_renderer` already makes.
+
+Without any wiring, ImGui falls back to its own internal, session-local
+clipboard buffer: copy/paste still works *within* one running app, but
+never interoperates with the browser's real OS clipboard (e.g. pasting
+JSON copied from an external editor into a `TextEditor` widget).
+
+**Wire messages**: `CLIPBOARD_TEXT` (`0x13`, browser → server) carries the
+browser's current OS clipboard text as a plain UTF-8 payload (no JSON,
+mirroring `QUERY_TREE`'s raw-text convention). `CLIPBOARD_WRITE` (`0x14`,
+server → browser) carries text ImGui just copied/cut, for the browser to
+push via `navigator.clipboard.writeText()`.
+
+**Copy/cut** (server → browser) is straightforward: `SetClipboardTextFn`
+fires synchronously when some widget's Ctrl+C/X is processed;
+`web_renderer::set_clipboard_text()` immediately broadcasts a
+`CLIPBOARD_WRITE`. `client.js` writes it to `navigator.clipboard` on
+receipt, silently dropping on failure (e.g. a not-yet-granted clipboard
+permission) rather than surfacing an error popup.
+
+**Paste** (browser → server) is the hard direction: `navigator.clipboard
+.readText()` is async, but `GetClipboardTextFn` is a synchronous ImGui
+callback with no way to await a round trip when it's actually called.
+`client.js`'s keydown handler special-cases Ctrl+V: it `preventDefault()`s,
+awaits `readText()`, sends `CLIPBOARD_TEXT` (cached server-side into
+`web_renderer::pending_clipboard_text_`, read back by
+`get_clipboard_text()`), and *only then* forwards the actual `V` keydown —
+so by the time ImGui processes the paste keystroke, the fresh clipboard
+text is already cached. Every other key event that arrives while that read
+is still pending (most importantly Ctrl's own keyup, which a real user
+releases only after V) is queued client-side and flushed, in original
+order, immediately after the delayed keydown goes out — without this, a
+fast keyup reaching the server before the deliberately-delayed keydown
+corrupts modifier state for that frame and silently breaks the shortcut.
+
+**Prerequisite bug, fixed alongside this feature**: `web_renderer` sent
+literal `ImGuiKey_LeftCtrl`/`RightCtrl`/etc. key events but never the
+*merged* `ImGuiMod_Ctrl`/`Shift`/`Alt`/`Super` events. `IsKeyDown
+(ImGuiMod_Ctrl)` — which every Ctrl-modified ImGui shortcut reads,
+including `TextEditor`'s own Ctrl+A/C/V/X — checks a separate pseudo-key
+slot (`ImGuiKey_ReservedForModCtrl`) that only an explicit
+`AddKeyEvent(ImGuiMod_Ctrl, ...)` populates; sending only the literal L/R
+keys left it permanently "up". This meant **no** Ctrl-modified shortcut
+ever worked in the web renderer before this fix, unrelated to clipboard
+source. `begin_frame()` now tracks each L/R modifier's raw down state
+itself and additionally emits the merged event on every change, mirroring
+`imgui_impl_sdl3.cpp`'s `ImGui_ImplSDL3_UpdateKeyModifiers()` — the
+pattern every official ImGui backend follows. Regression test:
+`WebRendererTest.BeginFrame_LeftCtrlKeyEventAlsoSetsMergedModFlag`.
 
 ---
 

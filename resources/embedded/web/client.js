@@ -27,6 +27,8 @@
     INPUT: 0x10,
     RESIZE: 0x11,
     CACHE_RESPONSE: 0x12,
+    CLIPBOARD_TEXT: 0x13, // browser -> server: OS clipboard text before a paste
+    CLIPBOARD_WRITE: 0x14, // server -> browser: text ImGui just copied/cut
     // Only meaningful when the server was built with -DWISH_ENABLE_AUTOMATION=ON
     // (see src/automation/DESIGN.md) -- a server built without it never
     // sends TREE_SNAPSHOT/LOG_EVENT and silently ignores QUERY_TREE, so
@@ -177,6 +179,12 @@
   function encodeQueryTree(requestId, root) {
     const json = JSON.stringify({ request_id: requestId, root: root });
     return encodeEnvelope(MSG.QUERY_TREE, new TextEncoder().encode(json));
+  }
+
+  // CLIPBOARD_TEXT's payload is plain UTF-8 text (see draw_protocol.hpp's
+  // decode_clipboard_text_message()) -- no fixed-width fields either.
+  function encodeClipboardText(text) {
+    return encodeEnvelope(MSG.CLIPBOARD_TEXT, new TextEncoder().encode(text));
   }
 
   // ── WebGL2 renderer ────────────────────────────────────────────────────────
@@ -663,6 +671,19 @@
         window.wish.logs.push(...event.logs);
         break;
       }
+      case MSG.CLIPBOARD_WRITE: {
+        // ImGui just copied/cut this text server-side (Ctrl+C/Ctrl+X inside
+        // some widget) -- push it to the real OS clipboard. Requires a
+        // clipboard-write permission the browser may have already granted
+        // implicitly (recent user gesture); silently drops on failure
+        // (e.g. permission denied) rather than surfacing a popup, same as
+        // ImGui's own fallback would do nothing visible either.
+        const textBytes = new Uint8Array(view.buffer, view.byteOffset + offset, payloadLen);
+        const text = new TextDecoder().decode(textBytes);
+        if (navigator.clipboard && navigator.clipboard.writeText)
+          navigator.clipboard.writeText(text).catch(() => {});
+        break;
+      }
       default:
         console.warn("[wish] unknown message type", type);
     }
@@ -703,8 +724,67 @@
   }, { passive: false });
   canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 
+  // While a Ctrl+V clipboard read is pending (see the keydown handler
+  // below), every OTHER key event that arrives is queued here instead of
+  // sent immediately, and flushed in original order right after the paste's
+  // own CLIPBOARD_TEXT + keydown go out. Without this, a fast key release
+  // (most commonly Ctrl's own keyup, dispatched synchronously with no delay)
+  // can reach the server *before* the deliberately-delayed paste keydown,
+  // corrupting modifier state server-side (e.g. io.KeyCtrl already false by
+  // the time ImGui processes the delayed 'V' keydown) and silently breaking
+  // the paste shortcut.
+  let pasteReadPending = false;
+  let queuedDuringPaste = [];
+
+  function flushQueuedKeyEvents() {
+    for (const qe of queuedDuringPaste) {
+      const key = domCodeToImGuiKey(qe.code);
+      if (key !== undefined)
+        send(encodeKey(key, qe.down));
+    }
+    queuedDuringPaste = [];
+  }
+
   canvas.tabIndex = 0; // make the canvas focusable so it receives key events
   window.addEventListener("keydown", (e) => {
+    // Ctrl+V (paste): the OS clipboard can only be read asynchronously (see
+    // "Clipboard bridging" in src/web/DESIGN.md), so intercept it here,
+    // push the current clipboard text to the server via CLIPBOARD_TEXT,
+    // *then* forward the normal key event -- GetClipboardTextFn is a
+    // synchronous ImGui callback, so the text must already be cached
+    // server-side by the time ImGui itself processes this keydown.
+    if ((e.ctrlKey || e.metaKey) && e.code === "KeyV") {
+      e.preventDefault();
+      pasteReadPending = true;
+      const forwardKeydown = () => {
+        const key = domCodeToImGuiKey(e.code);
+        if (key !== undefined)
+          send(encodeKey(key, true));
+        pasteReadPending = false;
+        flushQueuedKeyEvents();
+      };
+      if (navigator.clipboard && navigator.clipboard.readText) {
+        navigator.clipboard.readText()
+            .then((text) => {
+              send(encodeClipboardText(text));
+              forwardKeydown();
+            })
+            // Permission denied, or clipboard has no text -- still forward
+            // the keydown so ImGui's own session-local fallback clipboard
+            // (if anything was copied within this app) can still paste.
+            .catch(forwardKeydown);
+      } else {
+        forwardKeydown();
+      }
+      return;
+    }
+
+    if (pasteReadPending) {
+      queuedDuringPaste.push({ code: e.code, down: true });
+      e.preventDefault();
+      return;
+    }
+
     const key = domCodeToImGuiKey(e.code);
     if (key !== undefined) {
       send(encodeKey(key, true));
@@ -714,6 +794,11 @@
       send(encodeChar(e.key.codePointAt(0)));
   });
   window.addEventListener("keyup", (e) => {
+    if (pasteReadPending) {
+      queuedDuringPaste.push({ code: e.code, down: false });
+      e.preventDefault();
+      return;
+    }
     const key = domCodeToImGuiKey(e.code);
     if (key !== undefined) {
       send(encodeKey(key, false));

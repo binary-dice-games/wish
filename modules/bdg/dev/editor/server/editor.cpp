@@ -52,11 +52,66 @@ std::string event_name_string(key_t event) {
   return "event#" + std::to_string(event.id);
 }
 
+std::string describe_field(const field& f) {
+  if (f.is<bool>())
+    return f.as<bool>() ? "true" : "false";
+  if (f.is<int32_t>())
+    return std::to_string(f.as<int32_t>());
+  if (f.is<float>())
+    return std::to_string(f.as<float>());
+  if (f.is<std::string>())
+    return "\"" + f.as<std::string>() + "\"";
+  return "?";
+}
+
+// Payload field names used across wish's built-in element renderers (see the
+// `payload["..."_key] = ...` call sites in src/imgui/imgui_ui_renderer.cpp).
+// Same "_key, not "_rkey"" limitation as event names above -- there's no
+// generic way to enumerate a dynamic's fields by name, so known candidates
+// are checked explicitly; anything else is silently omitted rather than
+// guessed at.
+std::string format_payload(const dynamic& payload) {
+  static const std::pair<const char*, key_t> known_fields[] = {
+      {"value", "value"_key},
+      {"checked", "checked"_key},
+      {"open", "open"_key},
+      {"text", "text"_key},
+      {"selected", "selected"_key},
+      {"index", "index"_key},
+      {"file_path", "file_path"_key},
+      {"column_id", "column_id"_key},
+      {"ascending", "ascending"_key},
+  };
+  std::string out;
+  for (auto& [name, key] : known_fields) {
+    auto* f = payload.findField(key);
+    if (!f)
+      continue;
+    if (!out.empty())
+      out += ", ";
+    out += std::string(name) + "=" + describe_field(*f);
+  }
+  return out.empty() ? std::string{} : " {" + out + "}";
+}
+
 } // namespace
 
 // ── UI layout ─────────────────────────────────────────────────────────────────
+//
+// log's "flags": 33554432 = ImGuiTableFlags_ScrollY (1<<25) -- combined with
+// outer_height, this clips the log to a fixed-size scrolling region instead
+// of letting an ever-growing row count push the whole Editor window taller.
+//
+// "confirm" is an inline stand-in for a modal close-confirmation dialog:
+// wish has no dedicated modal/popup element, so it's just a normally-laid-out
+// panel that starts hidden ("visible": false) and is shown/hidden by toggling
+// that field, rather than a true blocking overlay.
 
-static constexpr const char* kEditorLayout = R"({
+// Uses a custom raw-string delimiter (R"json(...)json" instead of R"(...)")
+// because the content below contains a literal `)"` (in "Filename: (none)"),
+// which would otherwise terminate a plain R"(...)" raw string early and
+// silently corrupt the rest of the translation unit.
+static constexpr const char* kEditorLayout = R"json({
   "type": "Window",
   "title": "Editor",
   "width": 900,
@@ -66,6 +121,23 @@ static constexpr const char* kEditorLayout = R"({
     "vbox": {
       "type": "VerticalLayout",
       "children": {
+        "path_label": { "type": "Label", "text": "Filename: (none)" },
+        "confirm": {
+          "type": "VerticalLayout",
+          "visible": false,
+          "children": {
+            "confirm_text": { "type": "Label", "text": "You have unsaved changes." },
+            "confirm_row": {
+              "type": "HorizontalLayout",
+              "spacing": 8,
+              "children": {
+                "confirm_save": { "type": "Button", "label": "Save & Close" },
+                "confirm_discard": { "type": "Button", "label": "Discard & Close" },
+                "confirm_cancel": { "type": "Button", "label": "Cancel" }
+              }
+            }
+          }
+        },
         "banner": { "type": "Label", "text": "" },
         "source": { "type": "TextEditor", "language": "json", "width": 0, "height": 440 },
         "log_label": { "type": "Label", "text": "Event Log" },
@@ -75,6 +147,7 @@ static constexpr const char* kEditorLayout = R"({
           "columns": 2,
           "headers": true,
           "outer_height": 200,
+          "flags": 33554432,
           "children": {
             "col_seq":   { "type": "TableColumn", "label": "#" },
             "col_event": { "type": "TableColumn", "label": "Event" }
@@ -83,7 +156,7 @@ static constexpr const char* kEditorLayout = R"({
       }
     }
   }
-})";
+})json";
 
 // ── editor ───────────────────────────────────────────────────────────────────
 
@@ -110,6 +183,11 @@ void editor::on_init() {
   });
   tree.with("vbox.banner", [&](const auto& e) { banner_ptr_ = e; });
   tree.with("vbox.log", [&](const auto& e) { log_table_ptr_ = e; });
+  tree.with("vbox.path_label", [&](const auto& e) { path_label_ptr_ = e; });
+  tree.with("vbox.confirm", [&](const auto& e) { confirm_panel_ptr_ = e; });
+  tree.with("vbox.confirm.confirm_row.confirm_save", [&](const auto& e) { confirm_save_id_ = wish_id_of(e); });
+  tree.with("vbox.confirm.confirm_row.confirm_discard", [&](const auto& e) { confirm_discard_id_ = wish_id_of(e); });
+  tree.with("vbox.confirm.confirm_row.confirm_cancel", [&](const auto& e) { confirm_cancel_id_ = wish_id_of(e); });
 
   sess().ui_objects.merge(std::move(tree), internal_root_key_);
 }
@@ -118,9 +196,25 @@ void editor::on_init() {
 
 dynamic editor::do_set_source(const dynamic& args) {
   current_source_path_ = args.as<std::string>("path"_key);
+  if (auto* dp = args.findField<std::string>("display_path"_key); dp && !dp->empty())
+    display_path_ = *dp;
   if (source_editor_ptr_)
     (*source_editor_ptr_)["file_path"_key] = current_source_path_;
+  // The sandbox now matches disk (initial load, or the client re-uploading
+  // after an external edit) -- any prior in-editor edit is superseded.
+  dirty_ = false;
+  update_path_label();
   try_reparse();
+  return dynamic{};
+}
+
+dynamic editor::do_mark_saved(const dynamic& /*args*/) {
+  dirty_ = false;
+  update_path_label();
+  if (pending_close_after_save_) {
+    pending_close_after_save_ = false;
+    request_close();
+  }
   return dynamic{};
 }
 
@@ -167,7 +261,18 @@ void editor::try_reparse() {
 
   auto& c = ctx();
   for (auto& [path, elem] : mock) {
-    key_t id = rmi::shared::generate_id();
+    // Reuse the previous reparse's root id so ImGui's own per-window state
+    // (position, size, focus -- keyed off this id, see mock_window_id_'s
+    // doc comment) survives across reparses instead of resetting every time
+    // the user edits the source.
+    key_t id;
+    if (path.empty() && mock_window_id_.id) {
+      id = mock_window_id_;
+    } else {
+      id = rmi::shared::generate_id();
+      if (path.empty())
+        mock_window_id_ = id;
+    }
     c.put_object(id, elem);
     elem["__wish_id"_key] = id;
     mock_id_to_path_[id.id] = path.empty() ? std::string{"root"} : path;
@@ -203,6 +308,21 @@ void editor::clear_mock() {
 void editor::set_banner(const std::string& text) {
   if (banner_ptr_)
     (*banner_ptr_)["text"_key] = text;
+}
+
+void editor::update_path_label() {
+  if (!path_label_ptr_)
+    return;
+  std::string text = "Filename: " + (display_path_.empty() ? std::string{"(none)"} : display_path_);
+  if (dirty_)
+    text += " [MODIFIED]";
+  (*path_label_ptr_)["text"_key] = text;
+}
+
+void editor::request_close() {
+  clear_mock();
+  emit("closed"_key);
+  remove_internal_objects();
 }
 
 // ── Event log ─────────────────────────────────────────────────────────────────
@@ -242,22 +362,56 @@ void editor::append_log_row(const std::string& text) {
   ctx().put_object(row_id, row);
   row["__wish_id"_key] = row_id;
 
-  (*children)[next_log_child_key_++] = dynamic_ptr{row};
+  size_t child_key = next_log_child_key_++;
+  (*children)[child_key] = dynamic_ptr{row};
+  log_rows_.push_back({child_key, row_id, cell_seq_id, cell_text_id});
+
+  if (log_rows_.size() > kMaxLogRows) {
+    auto& oldest = log_rows_.front();
+    children->erase(oldest.child_key);
+    ctx().objects.erase(oldest.row_id.id);
+    ctx().objects.erase(oldest.cell_seq_id.id);
+    ctx().objects.erase(oldest.cell_text_id.id);
+    log_rows_.pop_front();
+  }
+
   log_table_ptr_->refresh_children_order();
 }
 
 // ── Event routing ─────────────────────────────────────────────────────────────
 
-void editor::on_event(key_t id, key_t event, const dynamic& /*payload*/) {
+void editor::on_event(key_t id, key_t event, const dynamic& payload) {
   if (id == window_id_ && event == "closed"_key) {
-    clear_mock();
-    emit("closed"_key);
-    remove_internal_objects();
+    if (dirty_) {
+      // Don't close yet -- ask the user via the inline confirmation panel.
+      // A second X click while it's already showing just re-shows it.
+      if (confirm_panel_ptr_)
+        (*confirm_panel_ptr_)["visible"_key] = true;
+    } else {
+      request_close();
+    }
+    return;
+  }
+
+  if (id == confirm_save_id_ && event == "clicked"_key) {
+    pending_close_after_save_ = true;
+    emit("on_source_saved"_key);
+    return;
+  }
+  if (id == confirm_discard_id_ && event == "clicked"_key) {
+    request_close();
+    return;
+  }
+  if (id == confirm_cancel_id_ && event == "clicked"_key) {
+    if (confirm_panel_ptr_)
+      (*confirm_panel_ptr_)["visible"_key] = false;
     return;
   }
 
   if (id == source_editor_id_) {
     if (event == "changed"_key) {
+      dirty_ = true;
+      update_path_label();
       try_reparse();
       return;
     }
@@ -275,7 +429,7 @@ void editor::on_event(key_t id, key_t event, const dynamic& /*payload*/) {
   if (it == mock_id_to_path_.end())
     return;
 
-  append_log_row(it->second + " " + event_name_string(event));
+  append_log_row(it->second + " " + event_name_string(event) + format_payload(payload));
 }
 
 // ── Registration ──────────────────────────────────────────────────────────────
@@ -286,15 +440,20 @@ void register_editor() {
   proto->addMethod("set_source"_key, bison::method{[](dynamic& self, const dynamic& args) -> dynamic {
                      return static_cast<editor&>(self).do_set_source(args);
                    }});
+  proto->addMethod("mark_saved"_key, bison::method{[](dynamic& self, const dynamic& args) -> dynamic {
+                     return static_cast<editor&>(self).do_mark_saved(args);
+                   }});
 
   (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Editor"));
   (*proto)[dynamic::CLASS].addAttribute(
       attr<Description>("Live JSON UI mock editor: a syntax-highlighted source panel next to a "
                         "continuously re-parsed, live-instantiated preview and an event log. "
-                        "The client owns the local JSON file; call set_source(path) after every "
-                        "upload_file, both at startup and whenever the local file changes outside "
-                        "the tool. Listen for 'closed' to detect when the user is done, and for "
-                        "'on_source_saved' to persist Ctrl+S edits back to the local file."));
+                        "The client owns the local JSON file; call set_source(path, display_path) "
+                        "after every upload_file, both at startup and whenever the local file "
+                        "changes outside the tool. Listen for 'on_source_saved' (Ctrl+S, or a "
+                        "confirmed close with unsaved edits) to download and persist the sandbox "
+                        "file to the local path, then call mark_saved(). Listen for 'closed' to "
+                        "detect when the user is actually done."));
 
   dynamic::addClass(
       "wish"_key, std::move(proto), key_t{0U}, dynamic::make_factory<editor>("wish"_key, "Editor"_key));

@@ -184,10 +184,43 @@ class EditorSourceTest : public ::testing::Test {
     out << content;
   }
 
-  dynamic set_source(const std::string& path) {
+  dynamic set_source(const std::string& path, const std::string& display_path = "") {
     dynamic args;
     args["path"_key] = path;
+    if (!display_path.empty())
+      args["display_path"_key] = display_path;
     return proxy_->call("set_source"_key, std::move(args)).get();
+  }
+
+  dynamic mark_saved() {
+    return proxy_->call("mark_saved"_key, dynamic{}).get();
+  }
+
+  bison::key_t chrome_widget_id(const std::string& dot_suffix) const {
+    auto it = srv_->last_session->ui_objects.find(dot_suffix.empty() ? root_ : root_ + "." + dot_suffix);
+    if (it == srv_->last_session->ui_objects.end())
+      return {};
+    return it->second->as<bison::key_t>("__wish_id"_key);
+  }
+
+  void simulate_chrome_event(bison::key_t widget_id, bison::key_t event, const dynamic& payload = dynamic{}) {
+    auto h = srv_->last_session->top_level_handlers.find(bison::key_t{root_});
+    ASSERT_NE(h, srv_->last_session->top_level_handlers.end());
+    h->second->on_event(widget_id, event, payload);
+  }
+
+  std::string path_label_text() const {
+    auto it = srv_->last_session->ui_objects.find(root_ + ".vbox.path_label");
+    if (it == srv_->last_session->ui_objects.end())
+      return {};
+    return it->second->as<std::string>("text"_key);
+  }
+
+  bool confirm_panel_visible() const {
+    auto it = srv_->last_session->ui_objects.find(root_ + ".vbox.confirm");
+    if (it == srv_->last_session->ui_objects.end())
+      return false;
+    return it->second->as<bool>("visible"_key);
   }
 
   std::string banner_text() const {
@@ -209,10 +242,10 @@ class EditorSourceTest : public ::testing::Test {
     return it->second->as<bison::key_t>("__wish_id"_key);
   }
 
-  void simulate_mock_event(bison::key_t widget_id, bison::key_t event) {
+  void simulate_mock_event(bison::key_t widget_id, bison::key_t event, const dynamic& payload = dynamic{}) {
     auto h = srv_->last_session->top_level_handlers.find(bison::key_t{mock_root_});
     ASSERT_NE(h, srv_->last_session->top_level_handlers.end());
-    h->second->on_event(widget_id, event, dynamic{});
+    h->second->on_event(widget_id, event, payload);
   }
 
   // The `text` field of the second cell in the log table's row at `index`
@@ -260,6 +293,111 @@ class EditorSourceTest : public ::testing::Test {
   std::string mock_root_;
   std::shared_ptr<std::vector<CapturedEvent>> events_;
 };
+
+TEST_F(EditorSourceTest, ReparseReusesRootWishId) {
+  seed_sandbox_file("v1.json", kValidUi);
+  set_source("v1.json");
+  ASSERT_TRUE(mock_registered());
+  auto first_root_id = srv_->last_session->ui_objects.at(mock_root_)->as<bison::key_t>("__wish_id"_key);
+
+  // A second, still-valid reparse must keep the same root id -- ImGui keys a
+  // window's position/size/focus state off it (see mock_window_id_'s doc
+  // comment), so a changed id would reset the user's dragged position/size
+  // and steal focus back to the preview window on every edit.
+  seed_sandbox_file("v2.json", kValidUi);
+  set_source("v2.json");
+  ASSERT_TRUE(mock_registered());
+  auto second_root_id = srv_->last_session->ui_objects.at(mock_root_)->as<bison::key_t>("__wish_id"_key);
+
+  EXPECT_EQ(first_root_id.id, second_root_id.id);
+}
+
+TEST_F(EditorSourceTest, ReparseWithChangedTitleStillReusesRootWishId) {
+  // Same guarantee as ReparseReusesRootWishId, but across a reparse that
+  // also changes the root Window's own "title" field -- this is the
+  // scenario with_id()'s "###" fix (imgui_ui_renderer.cpp) specifically
+  // targets: with the old "##" convention, ImGui's window ID hash included
+  // the visible title text, so editing the title alone (wish_id unchanged)
+  // still produced a "new" ImGui window, resetting position/size and
+  // stealing focus. wish_id staying stable here is the precondition that
+  // fix relies on; with_id() itself is exercised by test_imgui_renderer.cpp.
+  constexpr const char* kTitledV1 = R"({"type": "Window", "title": "First Title",
+    "children": {"main": {"type": "VerticalLayout", "children": {"ok": {"type": "Button", "label": "OK"}}}}})";
+  constexpr const char* kTitledV2 = R"({"type": "Window", "title": "Second Title",
+    "children": {"main": {"type": "VerticalLayout", "children": {"ok": {"type": "Button", "label": "OK"}}}}})";
+
+  seed_sandbox_file("t1.json", kTitledV1);
+  set_source("t1.json");
+  ASSERT_TRUE(mock_registered());
+  auto first_root_id = srv_->last_session->ui_objects.at(mock_root_)->as<bison::key_t>("__wish_id"_key);
+
+  seed_sandbox_file("t2.json", kTitledV2);
+  set_source("t2.json");
+  ASSERT_TRUE(mock_registered());
+  auto second_root_id = srv_->last_session->ui_objects.at(mock_root_)->as<bison::key_t>("__wish_id"_key);
+
+  EXPECT_EQ(first_root_id.id, second_root_id.id);
+  EXPECT_EQ(srv_->last_session->ui_objects.at(mock_root_)->as<std::string>("title"_key), "Second Title");
+}
+
+TEST_F(EditorSourceTest, EventLogCapsAtMaxRowsAndEvictsOldest) {
+  seed_sandbox_file("ui.json", kValidUi);
+  set_source("ui.json");
+  auto ok_id = mock_widget_id("main.ok");
+  ASSERT_NE(ok_id.id, 0u);
+
+  constexpr int kMax = 200; // must match editor::kMaxLogRows
+  for (int i = 0; i < kMax + 10; ++i)
+    simulate_mock_event(ok_id, "clicked"_key);
+
+  auto it = srv_->last_session->ui_objects.find(root_ + ".vbox.log");
+  ASSERT_NE(it, srv_->last_session->ui_objects.end());
+  auto* cf = it->second->findField("children"_key);
+  ASSERT_TRUE(cf && cf->is<dynamic_ptr>() && cf->as<dynamic_ptr>());
+  auto& children = *cf->as<dynamic_ptr>();
+
+  // Child keys 0..(kMax+10-1) were assigned in append order; only the most
+  // recent kMax rows should still be present.
+  size_t row_count = 0;
+  for (size_t k = 0; k < static_cast<size_t>(kMax + 10); ++k) {
+    try {
+      auto& f = children.at(k);
+      if (f.is<dynamic_ptr>() && f.as<dynamic_ptr>())
+        ++row_count;
+    } catch (const std::exception&) {
+      // Evicted -- expected for the oldest keys.
+    }
+  }
+  EXPECT_EQ(row_count, static_cast<size_t>(kMax));
+
+  // The very first row (child_key 0) should be gone: erase() leaves the slot
+  // present but empty rather than removing the key outright, so check that
+  // it's no longer a live row instead of expecting at() to throw.
+  auto& evicted = children.at(size_t{0});
+  EXPECT_FALSE(evicted.is<dynamic_ptr>() && evicted.as<dynamic_ptr>()) << "oldest row should have been evicted";
+}
+
+TEST_F(EditorSourceTest, MockWidgetEventPayloadIsLogged) {
+  constexpr const char* kSliderUi = R"({
+    "type": "Window",
+    "children": {
+      "volume": { "type": "SliderInt", "label": "Volume", "value": 50, "min": 0, "max": 100 }
+    }
+  })";
+  seed_sandbox_file("ui.json", kSliderUi);
+  set_source("ui.json");
+  ASSERT_TRUE(mock_registered());
+
+  auto volume_id = mock_widget_id("volume");
+  ASSERT_NE(volume_id.id, 0u);
+  dynamic payload;
+  payload["value"_key] = int32_t{75};
+  simulate_mock_event(volume_id, "changed"_key, payload);
+
+  auto row = log_row_text(0);
+  ASSERT_TRUE(row.has_value());
+  EXPECT_EQ(*row, "volume changed {value=75}");
+}
 
 TEST_F(EditorSourceTest, ValidJsonInstantiatesPreview) {
   seed_sandbox_file("ui.json", kValidUi);
@@ -333,5 +471,83 @@ TEST_F(EditorSourceTest, WindowClosedRemovesChromeAndPreview) {
 
   EXPECT_TRUE(wait_for_event("closed"_key));
   EXPECT_FALSE(mock_registered());
+  EXPECT_FALSE(srv_->last_session->ui_objects.count(root_));
+}
+
+// ── Filename label / unsaved-changes confirmation ─────────────────────────────
+
+TEST_F(EditorSourceTest, SetSourceUpdatesFilenameLabel) {
+  seed_sandbox_file("ui.json", kValidUi);
+  set_source("ui.json", "/local/path/ui.json");
+  EXPECT_EQ(path_label_text(), "Filename: /local/path/ui.json");
+}
+
+TEST_F(EditorSourceTest, InEditorChangeMarksModified) {
+  seed_sandbox_file("ui.json", kValidUi);
+  set_source("ui.json", "/local/path/ui.json");
+
+  simulate_chrome_event(chrome_widget_id("vbox.source"), "changed"_key);
+
+  EXPECT_EQ(path_label_text(), "Filename: /local/path/ui.json [MODIFIED]");
+}
+
+TEST_F(EditorSourceTest, ClosingWithUnsavedChangesShowsConfirmInsteadOfClosing) {
+  seed_sandbox_file("ui.json", kValidUi);
+  set_source("ui.json", "/local/path/ui.json");
+  simulate_chrome_event(chrome_widget_id("vbox.source"), "changed"_key);
+  ASSERT_EQ(path_label_text(), "Filename: /local/path/ui.json [MODIFIED]");
+
+  simulate_chrome_event(chrome_widget_id(""), "closed"_key);
+
+  EXPECT_TRUE(confirm_panel_visible());
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root_)); // not torn down
+  EXPECT_TRUE(mock_registered()); // preview untouched
+  EXPECT_FALSE(has_event("closed"_key));
+}
+
+TEST_F(EditorSourceTest, ConfirmCancelHidesPanelAndKeepsEditorOpen) {
+  seed_sandbox_file("ui.json", kValidUi);
+  set_source("ui.json", "/local/path/ui.json");
+  simulate_chrome_event(chrome_widget_id("vbox.source"), "changed"_key);
+  simulate_chrome_event(chrome_widget_id(""), "closed"_key);
+  ASSERT_TRUE(confirm_panel_visible());
+
+  simulate_chrome_event(chrome_widget_id("vbox.confirm.confirm_row.confirm_cancel"), "clicked"_key);
+
+  EXPECT_FALSE(confirm_panel_visible());
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root_));
+  EXPECT_FALSE(has_event("closed"_key));
+}
+
+TEST_F(EditorSourceTest, ConfirmDiscardClosesDespiteUnsavedChanges) {
+  seed_sandbox_file("ui.json", kValidUi);
+  set_source("ui.json", "/local/path/ui.json");
+  simulate_chrome_event(chrome_widget_id("vbox.source"), "changed"_key);
+  simulate_chrome_event(chrome_widget_id(""), "closed"_key);
+  ASSERT_TRUE(confirm_panel_visible());
+
+  simulate_chrome_event(chrome_widget_id("vbox.confirm.confirm_row.confirm_discard"), "clicked"_key);
+
+  EXPECT_TRUE(wait_for_event("closed"_key));
+  EXPECT_FALSE(srv_->last_session->ui_objects.count(root_));
+  EXPECT_FALSE(has_event("on_source_saved"_key));
+}
+
+TEST_F(EditorSourceTest, ConfirmSaveEmitsOnSourceSavedThenMarkSavedCompletesClose) {
+  seed_sandbox_file("ui.json", kValidUi);
+  set_source("ui.json", "/local/path/ui.json");
+  simulate_chrome_event(chrome_widget_id("vbox.source"), "changed"_key);
+  simulate_chrome_event(chrome_widget_id(""), "closed"_key);
+  ASSERT_TRUE(confirm_panel_visible());
+
+  simulate_chrome_event(chrome_widget_id("vbox.confirm.confirm_row.confirm_save"), "clicked"_key);
+
+  ASSERT_TRUE(wait_for_event("on_source_saved"_key));
+  EXPECT_FALSE(has_event("closed"_key)); // waiting on mark_saved()
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root_));
+
+  mark_saved();
+
+  EXPECT_TRUE(wait_for_event("closed"_key));
   EXPECT_FALSE(srv_->last_session->ui_objects.count(root_));
 }

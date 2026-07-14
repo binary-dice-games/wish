@@ -228,6 +228,20 @@ class web_renderer : public imgui_renderer {
   std::optional<texture_meta> texture_meta_for_test(const std::string& src) const;
 
  private:
+  // ImGuiPlatformIO::Platform_GetClipboardTextFn / Platform_SetClipboardTextFn
+  // callbacks (see "Clipboard bridging" in src/web/DESIGN.md) -- NOT the
+  // older ImGuiIO::GetClipboardTextFn/SetClipboardTextFn (which ImGui's own
+  // GetClipboardText()/SetClipboardText() no longer calls directly; a
+  // legacy-to-PlatformIO remap exists but is not reliably active by the
+  // time NewFrame() first runs). Platform_* callbacks take an
+  // ImGuiContext*, not a void* user_data, so there is no per-callback way
+  // to recover `this` -- setup()/teardown() instead point a static
+  // instance pointer at whichever web_renderer currently owns the ImGui
+  // context, mirroring the "one active renderer per process" assumption
+  // already made elsewhere (e.g. sdl3_renderer).
+  static const char* get_clipboard_text(ImGuiContext* ctx);
+  static void set_clipboard_text(ImGuiContext* ctx, const char* text);
+
   std::string bind_addr_;
   int port_;
   int font_size_;
@@ -258,6 +272,18 @@ class web_renderer : public imgui_renderer {
   // Only the most recent resize matters; no need to queue every one.
   bison::synchronized<std::optional<web_resize_event>> pending_resize_;
 
+  // Most recent OS clipboard text the browser has told us about (see
+  // "Clipboard bridging" in src/web/DESIGN.md), consumed synchronously by
+  // the ImGuiIO::GetClipboardTextFn callback -- there's no per-frame queue
+  // to drain here (unlike input_queue_) because that callback fires
+  // on-demand, mid-frame, whenever ImGui processes a paste keystroke.
+  bison::synchronized<std::string> pending_clipboard_text_;
+
+  // Backing storage for GetClipboardTextFn's returned `const char*`, which
+  // per ImGui's contract must stay valid until the next clipboard call --
+  // render-thread only (that callback only ever runs there).
+  std::string clipboard_text_scratch_;
+
   // CACHE_RESPONSE messages decoded on a civetweb worker thread (on_message),
   // drained on the render thread at the top of end_frame() (mirrors
   // input_queue_).
@@ -281,8 +307,16 @@ class web_renderer : public imgui_renderer {
 
   // Left/right modifier key state, tracked from individual LeftShift/
   // RightShift/... key events so begin_frame() can additionally emit the
-  // merged ImGuiMod_Shift/Ctrl/Alt/Super event ImGui actually derives
-  // io.KeyShift/io.KeyMods (and thus ConfigDockingWithShift) from -- see
+  // merged ImGuiMod_Shift/Ctrl/Alt/Super event. ImGui derives io.KeyShift/
+  // io.KeyMods (and thus ConfigDockingWithShift) from these merged events,
+  // not from LeftShift/RightShift directly -- and critically, so does
+  // every Ctrl/Shift/Alt/Super-modified shortcut check anywhere in ImGui
+  // (IsKeyDown(ImGuiMod_Ctrl) and everything built on it, including
+  // TextEditor's own Ctrl+A/C/V/X). Those merged states live in their own
+  // pseudo-key slots (ImGuiKey_ReservedForModCtrl, etc.), entirely separate
+  // from ImGuiKey_LeftCtrl/RightCtrl -- sending only the literal Left/Right
+  // events, as this renderer used to, leaves that slot permanently "up", so
+  // no Ctrl-modified shortcut is ever detected. See
   // ImGui_ImplSDL3_UpdateKeyModifiers() in imgui_impl_sdl3.cpp for the
   // reference backend doing the same thing from native OS modifier state.
   // Render-thread only, like input_queue_'s consumer side.

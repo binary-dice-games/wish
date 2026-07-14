@@ -332,6 +332,21 @@ std::optional<web_cache_response> decode_cache_response_message(std::span<const 
   return web_cache_response{*texture_id, *hit != 0};
 }
 
+// ── inbound: CLIPBOARD_TEXT / outbound: CLIPBOARD_WRITE ─────────────────────
+
+std::optional<std::string> decode_clipboard_text_message(std::span<const std::byte> message) {
+  auto payload = unwrap_envelope(message, web_msg_type::clipboard_text);
+  if (!payload)
+    return std::nullopt;
+  return std::string(reinterpret_cast<const char*>(payload->data()), payload->size());
+}
+
+std::vector<std::byte> encode_clipboard_write(const std::string& text) {
+  std::vector<std::byte> payload(text.size());
+  std::memcpy(payload.data(), text.data(), text.size());
+  return wrap_envelope(web_msg_type::clipboard_write, std::move(payload));
+}
+
 // ── inbound: QUERY_TREE / outbound: TREE_SNAPSHOT ───────────────────────────
 
 #ifdef WISH_AUTOMATION_ENABLED
