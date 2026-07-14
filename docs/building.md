@@ -85,6 +85,7 @@ cmake -S . -B build
 | `WISH_MODULE_BDG_DESKTOP_CALCULATOR` | `OFF` | Include the Calculator form (server) and its self-registering reference client runner. |
 | `WISH_MODULE_BDG_DESKTOP_NOTEPAD` | `OFF` | Include the Notepad form (server) and its self-registering reference client runner. |
 | `WISH_MODULE_BDG_DESKTOP_PROCESS_EXPLORER` | `OFF` | Include the Process Explorer form (server) and its self-registering reference client runner. |
+| `WISH_MODULE_BDG_DEV_EDITOR` | `OFF` | Include the Editor form (server) and its self-registering reference client runner — a live JSON UI mock editor (`wish client --run=editor -- path/to/ui.json`). |
 
 Modules live in a `modules/<organization>/<collection>/<module>` tree (see
 [modules/README.md](../modules/README.md)); each individual
@@ -219,7 +220,14 @@ client already knows how to speak:
 ```
 
 Drive it with `wish.automation.AutomationClient` (`bindings/python/wish/automation.py`,
-needs the `playwright` package — `pip install playwright && playwright install chromium`):
+needs the `playwright` package — `pip install playwright && playwright install chromium`).
+On Linux, downloading the browser binary isn't enough on its own: the first
+time, also run `sudo playwright install-deps chromium` to install the OS
+shared libraries (`libnspr4`, `libnss3`, ...) Chromium needs to launch —
+without it, `AutomationClient.launch()` fails with an
+`error while loading shared libraries: libnspr4.so: ...` error. Skip either
+step if a working Chromium is already configured (e.g. via
+`PLAYWRIGHT_BROWSERS_PATH`).
 
 ```python
 from wish.automation import AutomationClient

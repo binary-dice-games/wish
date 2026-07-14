@@ -111,6 +111,16 @@ section and `src/automation/DESIGN.md` for full detail. In short:
 cmake -S . -B build -DWISH_ENABLE_WEB=ON -DWISH_ENABLE_AUTOMATION=ON [-D... your target's other options]
 cmake --build build --target <the binary that will host your UI>
 pip install playwright && playwright install chromium   # skip install if already configured
+sudo playwright install-deps chromium   # Linux only, one-time; installs the OS shared
+                                         # libraries (libnspr4, libnss3, ...) the browser
+                                         # binary above needs to actually launch -- a
+                                         # separate step from downloading it. Skip if
+                                         # already configured. Needs an interactive
+                                         # terminal for the sudo password if not cached,
+                                         # so run it yourself, not through a non-interactive
+                                         # tool. Symptom if skipped: AutomationClient.launch()
+                                         # fails with "error while loading shared libraries:
+                                         # libnspr4.so: cannot open shared object file".
 ```
 
 ```python

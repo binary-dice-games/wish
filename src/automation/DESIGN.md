@@ -547,7 +547,14 @@ attached to a failed test's report by any existing pytest reporting plugin
 This design's one real cost, versus a pure-stdlib `socket`+`json` client
 considered earlier: the Python side now depends on the `playwright`
 package (plus a one-time `playwright install chromium`, or reusing an
-already-installed browser). That is judged acceptable here because:
+already-installed browser). On Linux, that one-time setup is actually two
+separate steps, and only the first is obvious from the package name: the
+browser binary (`playwright install chromium`) and the OS-level shared
+libraries it links against at launch (`sudo playwright install-deps
+chromium` — `libnspr4`, `libnss3`, and similar). Skipping the second on a
+fresh machine/container produces a `libnspr4.so: cannot open shared object
+file` error from `AutomationClient.launch()` that doesn't obviously point
+back to Playwright. That is judged acceptable here because:
 
 - It replaces writing and maintaining a server-side rasterizer or a new
   bison transport primitive with code that already exists and is already

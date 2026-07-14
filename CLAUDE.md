@@ -250,6 +250,27 @@ pip install playwright && playwright install chromium   # skip the install step 
                                                           # Claude Code's own environment)
 ```
 
+`playwright install chromium` downloads the browser binary but not the OS
+shared libraries it needs to actually launch (`libnspr4`, `libnss3`, and
+similar). On a fresh Linux machine/container this is a **separate,
+easy-to-miss step** — without it, `AutomationClient.launch()` fails with
+something like `error while loading shared libraries: libnspr4.so: cannot
+open shared object file`, not an obviously-Playwright-related error:
+
+```sh
+sudo playwright install-deps chromium   # one-time, requires apt + sudo; needs
+                                         # an interactive terminal for the sudo
+                                         # password if not already cached — run
+                                         # it yourself rather than through a
+                                         # non-interactive tool
+```
+
+Skip both install steps if a working Chromium is already configured (e.g.
+via `PLAYWRIGHT_BROWSERS_PATH`, true in Claude Code's own environment) —
+but if `AutomationClient.launch()` fails with a `libnspr4.so`/similar
+shared-library error even though the browser binary exists, that
+environment is missing the OS deps and needs `install-deps` regardless.
+
 ### Python client
 
 `bindings/python/wish/automation.py`'s `AutomationClient` is the entry point. It
