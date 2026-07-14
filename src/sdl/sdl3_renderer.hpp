@@ -121,6 +121,10 @@ class sdl3_renderer : public imgui_renderer {
   SDL_Renderer* sdl_renderer_ = nullptr;
   std::atomic<bool> quit_{false};
 
+  // Backing storage for ImGuiIO::IniFilename -- ImGui keeps the pointer we
+  // assign it, so the path string must outlive the ImGui context.
+  std::string ini_path_;
+
   // ── Mouse-motion debounce ─────────────────────────────────────────────────
   //
   // Mouse motion is fed to ImGui unconditionally (position stays accurate),

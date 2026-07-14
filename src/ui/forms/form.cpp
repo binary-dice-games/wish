@@ -5,6 +5,8 @@
 
 namespace bdg::wish {
 
+using namespace bison;
+
 // ── form ─────────────────────────────────────────────────────────────────────
 
 form::form(bison::dynamic&& base) : ui_root(std::move(base)) {}
@@ -39,6 +41,15 @@ void form::remove_internal_objects() {
   }
 }
 
+std::string form::next_available_key(const std::string& prefix) {
+  auto& s = sess();
+  for (int i = 0;; ++i) {
+    std::string candidate = prefix + std::to_string(i);
+    if (s.top_level_objects.find(bison::key_t{candidate}) == s.top_level_objects.end())
+      return candidate;
+  }
+}
+
 void form::init(bison::rmi::context& ctx, sync_context_ptr sync_ctx) {
   ctx_ = &ctx;
   sync_ctx_ = std::move(sync_ctx);
@@ -49,8 +60,16 @@ void form::init(bison::rmi::context& ctx, sync_context_ptr sync_ctx) {
   if (!internal_root_key_.empty() && detail::current_context) {
     auto& s = *detail::current_context;
     auto it = s.ui_objects.find(internal_root_key_);
-    if (it != s.ui_objects.end())
+    if (it != s.ui_objects.end()) {
       s.top_level_objects[bison::key_t{internal_root_key_}] = it->second;
+      // ui_tree::merge() (ui_importer.hpp) only prefixes ui_objects' keys —
+      // it never rewrites each element's own "__path__" field, so the root
+      // Window still carries the empty "" stamped by build_ui_node(). Stamp
+      // it here with internal_root_key_ (fixed per form class, see that
+      // field's doc comment) so stable_id() in imgui_ui_renderer.hpp picks
+      // it up instead of falling back to the per-run __wish_id.
+      (*it->second)["__path__"_key] = internal_root_key_;
+    }
     s.top_level_handlers[bison::key_t{internal_root_key_}] = this;
   }
 }

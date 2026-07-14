@@ -266,6 +266,17 @@ void imgui_renderer::render_node(const ui_element& node, const context& s) {
   }
   ImGui::PushFont(font);
 
+  // Scope every widget under this node to stable_id(node) via the ID stack,
+  // instead of baking an id suffix into each widget's own label text (the
+  // "###<id>" convention render_window still uses for its title -- see
+  // with_id() in imgui_ui_renderer.hpp: ImGui::Begin() ignores the ID stack
+  // for top-level windows, so PushID can't help there). This keeps widget
+  // labels clean, and — since stable_id() is derived from a run-independent
+  // dot-path where available — makes persisted per-widget ImGui state
+  // (TreeNode/CollapsingHeader open state, Table column widths, etc.)
+  // survive a restart the same way render_window's title id does.
+  ImGui::PushID(stable_id(node).c_str());
+
   auto cls = node.as<key_t>(dynamic::CLASS);
   const auto& tbl = render_dispatch();
   auto it = tbl.find(cls.id);
@@ -277,6 +288,7 @@ void imgui_renderer::render_node(const ui_element& node, const context& s) {
     render_children(*this, node, s);
   }
 
+  ImGui::PopID();
   ImGui::PopFont();
 }
 

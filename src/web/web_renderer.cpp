@@ -82,6 +82,14 @@ void web_renderer::setup() {
   ImGuiIO& io = ImGui::GetIO();
   io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
   io.ConfigDockingWithShift = true;
+
+  // Anchor imgui.ini to an absolute path snapshotted now, rather than
+  // ImGui's CWD-relative default -- see ini_path_'s doc comment.
+  std::error_code ec;
+  auto abs_cwd = std::filesystem::current_path(ec);
+  ini_path_ = (ec ? std::filesystem::path("imgui.ini") : abs_cwd / "imgui.ini").string();
+  io.IniFilename = ini_path_.c_str();
+
   // No GPU backend exists to eagerly build/upload the font atlas, so opt
   // into ImGui's incremental texture-management path: end_frame() walks
   // ImDrawData::Textures each frame and reacts to ImTextureData::Status

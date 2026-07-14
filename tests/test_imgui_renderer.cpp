@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 
 #include <imgui/imgui_renderer.hpp>
+#include <imgui/imgui_ui_renderer.hpp>
 #include <server/registry.hpp>
 #include <ui/ui_importer.hpp>
 
@@ -25,6 +26,13 @@ class ImguiRendererTest : public ::testing::Test {
     bdg::wish::register_all();
     ctx_ = ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
+    // Hermetic: never load/save a real imgui.ini. Without this, a stale
+    // entry left on disk by an earlier run (window titles here are static
+    // test-fixture strings, several sharing stable_id() == "0" since these
+    // ad-hoc trees never go through ui_template's __wish_id assignment)
+    // could silently override a test's expected fresh-window pos/size,
+    // now that render_window uses ImGuiCond_FirstUseEver instead of Once.
+    io.IniFilename = nullptr;
     io.DisplaySize = ImVec2(800.0f, 600.0f);
     io.DeltaTime = 1.0f / 60.0f;
     // Build font atlas in headless mode (no platform backend does this for us).
@@ -80,6 +88,39 @@ class ImguiRendererTest : public ::testing::Test {
   std::unique_ptr<context> sess_;
   std::unique_ptr<imgui_renderer> renderer_;
 };
+
+// ── stable_id: deterministic ImGui ID across runs ────────────────────────────
+
+TEST_F(ImguiRendererTest, StableIdSameForSamePathAcrossRebuilds) {
+  // Two independently-built trees (as if from two separate process runs)
+  // with a child at the same dot-path must agree on stable_id, even though
+  // the child's other fields differ.
+  auto map1 = bdg::wish::import_json(R"({"type":"Window","title":"W",
+      "children":{"body":{"type":"Label","text":"x"}}})");
+  auto map2 = bdg::wish::import_json(R"({"type":"Window","title":"W",
+      "children":{"body":{"type":"Label","text":"y"}}})");
+
+  EXPECT_EQ(bdg::wish::stable_id(*map1["body"]), bdg::wish::stable_id(*map2["body"]));
+}
+
+TEST_F(ImguiRendererTest, StableIdDiffersForDifferentPaths) {
+  auto map = bdg::wish::import_json(R"({"type":"Window","title":"W",
+      "children":{"a":{"type":"Label","text":"x"},"b":{"type":"Label","text":"y"}}})");
+
+  EXPECT_NE(bdg::wish::stable_id(*map["a"]), bdg::wish::stable_id(*map["b"]));
+}
+
+TEST_F(ImguiRendererTest, StableIdFallsBackToWishIdWhenPathEmpty) {
+  // The root node's "__path__" is "" (see import_json), which is not a
+  // usable stable identity -- stable_id() must fall back to __wish_id,
+  // matching pre-existing behavior for nodes without a template-assigned
+  // dot-path (e.g. form-internal elements).
+  auto map = bdg::wish::import_json(R"({"type":"Window","title":"W"})");
+  auto& root = *map[""];
+  root["__wish_id"_key] = bdg::bison::key_t{hash_t{42}};
+
+  EXPECT_EQ(bdg::wish::stable_id(root), "42");
+}
 
 // ── begin_frame / end_frame ───────────────────────────────────────────────────
 

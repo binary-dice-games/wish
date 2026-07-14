@@ -94,7 +94,8 @@ static constexpr const char* kLayout = R"({
 calculator::calculator(dynamic&& base) : form(std::move(base)) {}
 
 void calculator::on_init() {
-  internal_root_key_ = "__calc_" + std::to_string(reinterpret_cast<uintptr_t>(this));
+  // See form::internal_root_key_'s doc comment: ordinally-assigned, not pointer-derived.
+  internal_root_key_ = next_available_key("__calc_");
 
   auto tree = import_json(kLayout);
 

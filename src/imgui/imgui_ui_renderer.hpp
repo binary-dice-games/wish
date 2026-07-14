@@ -14,7 +14,29 @@
 #include <context/context.hpp>
 #include <ui/ui_element.hpp>
 
+#include <cstdint>
+
 namespace bdg::wish {
+
+// ── ID helper ─────────────────────────────────────────────────────────────────
+
+/// @brief Stable per-element identity for use as an ImGui widget ID.
+///
+/// Returns the element's "__path__" field verbatim (e.g. "dialog.ok", or a
+/// form's ordinally-assigned root key like "__notepad_0" -- see
+/// form::next_available_key() in ui/forms/form.hpp) when present: it is
+/// stamped at template-registration/form-init time and constant across
+/// process runs, so the same window/widget gets the same ImGui ID every
+/// run and ImGui's saved layout (imgui.ini) actually matches up across
+/// restarts. Returned as a string rather than a hash of it so that a
+/// Window's saved "[Window][...]" section in imgui.ini -- which ImGui
+/// truncates to just the "###" suffix, see with_id() in
+/// imgui_ui_renderer.cpp -- stays human-readable.
+///
+/// Falls back to the element's "__wish_id" RMI id (assigned fresh every
+/// run) when no "__path__" is present -- e.g. dynamically-created children,
+/// which do not have a stable definition-time path.
+std::string stable_id(const ui_element& node);
 
 // Core
 void render_window(imgui_renderer& r, const ui_element& node, const context& s);
