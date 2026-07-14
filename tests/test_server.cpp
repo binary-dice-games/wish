@@ -199,7 +199,7 @@ class recording_renderer : public wish::renderer {
   int server_frame_calls = 0;
   size_t last_sessions_seen = 0;
   bool menu_bar_extension_seen_by_server_frame = false;
-  std::vector<key_t> render_session_classes;
+  std::vector<bdg::bison::key_t> render_session_classes;
 
   void begin_frame() override {}
   void end_frame() override {}
@@ -211,7 +211,7 @@ class recording_renderer : public wish::renderer {
     for (const auto& sync_ctx : sessions) {
       auto sess = wish::context_rlock{*sync_ctx};
       for (const auto& [key, win] : sess->top_level_objects) {
-        if (win && win->as<key_t>(dynamic::CLASS) == key_t{"MenuBarExtension"})
+        if (win && win->as<bdg::bison::key_t>(dynamic::CLASS) == bdg::bison::key_t{"MenuBarExtension"})
           menu_bar_extension_seen_by_server_frame = true;
       }
     }
@@ -223,7 +223,7 @@ class recording_renderer : public wish::renderer {
     // render_node() once per top-level root; recurses into children for a
     // full tree walk, mirroring counting_renderer in test_renderer.cpp.
     std::lock_guard<std::mutex> lk(mtx);
-    render_session_classes.push_back(node.as<key_t>(dynamic::CLASS));
+    render_session_classes.push_back(node.as<bdg::bison::key_t>(dynamic::CLASS));
     wish::render_children(*this, node, s);
   }
 };
@@ -235,12 +235,12 @@ void instantiate_template(client& c, const std::string& name, const std::string&
   auto tmpl = c.instantiate("wish"_key, "__WishTemplate"_key).get();
 
   dynamic reg_args;
-  reg_args["name"_key] = key_t{name};
+  reg_args["name"_key] = bdg::bison::key_t{name};
   reg_args["descriptor"_key] = dynamic_ptr{wish::import_descriptor_json(descriptor_json)};
   tmpl.call("register"_key, std::move(reg_args)).get();
 
   dynamic inst_args;
-  inst_args["name"_key] = key_t{name};
+  inst_args["name"_key] = bdg::bison::key_t{name};
   tmpl.call("instantiate"_key, std::move(inst_args)).get();
 }
 
@@ -287,7 +287,7 @@ TEST(ServerTest, MenuBarExtensionSplicedNotDoubleRendered) {
       // top-level window.
       bool window_rendered = false;
       bool extension_rendered_standalone = false;
-      for (const key_t& cls : rec.render_session_classes) {
+      for (const bdg::bison::key_t& cls : rec.render_session_classes) {
         if (cls == "Window"_key)
           window_rendered = true;
         if (cls == "MenuBarExtension"_key)

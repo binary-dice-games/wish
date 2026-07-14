@@ -88,6 +88,13 @@ Use this guide when generating or editing code in this repository.
 - Follow existing naming in each subsystem
 - Use trailing underscores for private member fields (`running_`, `mtx_`).
 - Use descriptive local names (`payload_bytes`, `request_id`, `workers_mutex_`).
+- **Always write `bdg::bison::key_t` fully qualified, never bare `key_t`.** glibc's
+  `<sys/types.h>` (transitively included by `<gtest/gtest.h>` and other system headers)
+  also defines a `key_t` typedef (`__key_t`, used by SysV IPC). Even with
+  `using namespace bdg::bison;` in scope, an unqualified `key_t` is ambiguous between
+  `bdg::bison::key_t` and the global `::key_t` and fails to compile. This is a very
+  common compile error in Claude-generated test code in this repo — always qualify as
+  `bdg::bison::key_t` (or `bison::key_t` if already inside the `bdg` namespace).
 
 ### API and Error Handling
 
