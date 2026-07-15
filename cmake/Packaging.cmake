@@ -34,6 +34,53 @@ install(DIRECTORY bindings/python/examples DESTINATION bindings/python
     COMPONENT wish
     PATTERN "__pycache__" EXCLUDE)
 
+# bindings/python/wish/_native.py does `sys.path.insert(0, ".../extern/bison
+# /bindings/python")` and `from bison import _native` at import time -- that
+# sibling package lives outside bindings/python/ entirely, so it must be
+# installed alongside wish/ explicitly or `import wish` fails with
+# "ModuleNotFoundError: No module named 'bison'" the moment it's run outside
+# the source tree (this used to only happen in scripts/package_release.py's
+# post-processing, which meant the plain `cpack`/`--target package` path
+# silently produced a broken zip -- installing it here means every
+# packaging path gets it, including a bare `cpack -G ZIP`).
+if(EXISTS "${CMAKE_SOURCE_DIR}/extern/bison/bindings/python/bison")
+  install(DIRECTORY extern/bison/bindings/python/bison DESTINATION bindings/python
+      COMPONENT wish
+      PATTERN "__pycache__" EXCLUDE)
+else()
+  message(WARNING "extern/bison/bindings/python/bison not found -- the "
+      "packaged bindings/python/wish will be missing its 'bison' import "
+      "dependency. Did you run 'git submodule update --init --recursive'?")
+endif()
+
+# _native.py's default library search assumes the in-repo build/ layout,
+# which a standalone zip doesn't have -- point consumers at WISH_LIB.
+set(_wish_lib_name "libwish_client.so")
+if(WIN32)
+  set(_wish_lib_name "wish_client.dll")
+endif()
+file(WRITE "${CMAKE_BINARY_DIR}/wish-release-python-README.md"
+"# Using the Python binding from this release zip
+
+\`wish/_native.py\` looks for the wish_client shared library relative to an
+in-repo \`build/\` directory by default, which this standalone zip doesn't
+have. Point it at the bundled library explicitly:
+
+\`\`\`sh
+export WISH_LIB=\"$(pwd)/bin/${_wish_lib_name}\"   # Linux/MSYS2
+set WISH_LIB=%cd%\\bin\\${_wish_lib_name}          REM Windows cmd
+\`\`\`
+
+Then \`sys.path.insert(0, \"bindings/python\")\` (this directory contains
+both \`wish/\` and the sibling \`bison/\` package it imports) and
+\`import wish\`.
+")
+install(FILES "${CMAKE_BINARY_DIR}/wish-release-python-README.md"
+    DESTINATION bindings/python
+    RENAME README-RELEASE.md
+    COMPONENT wish)
+unset(_wish_lib_name)
+
 # bindings/csharp/Wish/Wish.csproj references extern/bison's C# binding via
 # a repo-relative ProjectReference that won't resolve outside the full
 # source tree, so the source alone isn't consumable standalone. Ship it

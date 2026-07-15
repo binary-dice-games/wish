@@ -4,8 +4,11 @@
 This is a thin orchestrator around the packaging CMake already knows how to
 do (see cmake/Packaging.cmake): configure a Release build, build it, run
 `cpack` to get a ZIP containing everything install()-tagged COMPONENT wish
-(binaries, wish_client_dll + headers, docs, binding sources), then bolt on
-the handful of things that aren't CMake build-tree artifacts:
+(binaries, wish_client_dll + headers, docs, binding sources -- including
+extern/bison/bindings/python/bison/, a sibling import
+bindings/python/wish/_native.py requires at runtime), then bolt on the one
+thing that genuinely isn't a CMake build-tree artifact and can't be an
+install() rule:
 
   - the C# binding compiled to DLLs via `dotnet publish` (bindings/csharp's
     Wish.csproj references extern/bison's C# binding by a repo-relative
@@ -14,9 +17,12 @@ the handful of things that aren't CMake build-tree artifacts:
     link against (the project has no static-linking flags, so a bare
     Windows machine without MSYS2 installed would otherwise be missing
     libstdc++-6.dll and friends)
-  - extern/bison/bindings/python/bison/, a sibling import
-    bindings/python/wish/_native.py requires at runtime but that lives
-    outside bindings/python/
+
+Everything else (docs, binding sources, the bison python sibling package,
+the WISH_LIB usage note) is a plain install() rule in cmake/Packaging.cmake
+now, so a bare `cpack -G ZIP` / `cmake --build build --target package` --
+with no Python script involved at all -- produces a complete, working zip
+too. This script's only job is the two things above.
 
 Usage:
     python3 scripts/package_release.py
@@ -29,7 +35,6 @@ import platform
 import re
 import shutil
 import subprocess
-import sys
 import zipfile
 from pathlib import Path
 
@@ -92,35 +97,6 @@ def stage_zip(zip_path: Path, staging_dir: Path):
                 mode = (info.external_attr >> 16) & 0o777
                 if mode:
                     (staging_dir / info.filename).chmod(mode)
-
-
-def bundle_python_bison(staging_dir: Path):
-    src = REPO_ROOT / "extern" / "bison" / "bindings" / "python" / "bison"
-    if not src.is_dir():
-        print(f"warning: {src} not found, skipping bison python binding bundle")
-        return
-    dst = staging_dir / "bindings" / "python" / "bison"
-    shutil.copytree(src, dst, ignore=shutil.ignore_patterns("__pycache__"))
-    print(f"bundled {src} -> {dst}")
-
-
-def write_wish_lib_note(staging_dir: Path):
-    lib_name = "wish_client.dll" if platform.system() == "Windows" else "libwish_client.so"
-    note = staging_dir / "bindings" / "python" / "README-RELEASE.md"
-    note.write_text(
-        "# Using the Python binding from this release zip\n\n"
-        "`wish/_native.py` looks for the wish_client shared library relative "
-        "to an in-repo `build/` directory by default, which this standalone "
-        "zip doesn't have. Point it at the bundled library explicitly:\n\n"
-        "```sh\n"
-        f'export WISH_LIB="$(pwd)/bin/{lib_name}"   # Linux/MSYS2\n'
-        f'set WISH_LIB=%cd%\\bin\\{lib_name}          REM Windows cmd\n'
-        "```\n\n"
-        "Then `sys.path.insert(0, \"bindings/python\")` (this directory "
-        "contains both `wish/` and the sibling `bison/` package it imports) "
-        "and `import wish`.\n"
-    )
-    print(f"wrote {note}")
 
 
 def bundle_csharp_dlls(staging_dir: Path):
@@ -203,8 +179,6 @@ def main():
     staging_dir = build_dir / "release-staging"
     stage_zip(zip_path, staging_dir)
 
-    bundle_python_bison(staging_dir)
-    write_wish_lib_note(staging_dir)
     bundle_csharp_dlls(staging_dir)
     if platform.system() == "Windows" or os.environ.get("MSYSTEM"):
         bundle_mingw_runtime_dlls(staging_dir)
