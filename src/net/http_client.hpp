@@ -1,6 +1,6 @@
 // MIT License © 2025 Binary Dice Games
 /// @file http_client.hpp
-/// @brief Minimal blocking HTTP(S) GET client, built on civetweb's client API.
+/// @brief Minimal blocking HTTP(S) GET client, built on libcurl.
 #pragma once
 
 #include <cstddef>

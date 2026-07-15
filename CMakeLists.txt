@@ -112,33 +112,23 @@ if(WISH_ENABLE_IMGUI AND WISH_ENABLE_SDL3)
   target_link_libraries(imgui_core PUBLIC SDL3::SDL3)
 endif()
 
-# ── civetweb — HTTP/WebSocket client + server ────────────────────────────────
+# ── civetweb — HTTP/WebSocket server ─────────────────────────────────────────
 #
-# Unconditional (not gated by WISH_ENABLE_IMGUI/WISH_ENABLE_WEB): file_service
-# (net::http_get, see src/net/http_client.hpp) uses civetweb's client API to
-# fetch http(s):// Image::src/font_path URLs into the session sandbox, and
-# this is a core wish_server capability independent of which renderer is
-# built. The web renderer additionally uses civetweb as an embedded
-# HTTP+WebSocket server (WISH_ENABLE_WEB, see src/web/civetweb_server.cpp).
+# Unconditional (not gated by WISH_ENABLE_IMGUI/WISH_ENABLE_WEB): net::http_get
+# (src/net/http_client.hpp) previously used civetweb's client API to fetch
+# http(s):// Image::src/font_path URLs, but civetweb's SSL support is Windows-
+# hostile (compile-time-hardcoded dynamic-loading DLL names it doesn't expose
+# a way to override, and a WebSocket-handshake crash under one of its OpenSSL
+# API variants if the DLL isn't found -- see git history for the investigation).
+# net::http_get is now built on libcurl instead (see the libcurl block below),
+# so civetweb here is purely an HTTP+WebSocket *server* -- used by the web
+# renderer as an embedded server (WISH_ENABLE_WEB, see
+# src/web/civetweb_server.cpp) and by tests as a throwaway local HTTP server
+# (tests/test_file_service.cpp's TestHttpServer). Neither needs TLS: the
+# server side only ever binds to 127.0.0.1 for local dev/test tooling.
 include(FetchContent)
 set(CIVETWEB_ENABLE_WEBSOCKETS        ON  CACHE BOOL "" FORCE)
-# SSL is needed for net::http_get to fetch https:// URLs. The embedded
-# server side (civetweb_server) still only binds to 127.0.0.1 for local dev
-# tooling and doesn't itself serve over TLS.
-set(CIVETWEB_ENABLE_SSL               ON  CACHE BOOL "" FORCE)
-if(UNIX AND NOT APPLE)
-  # civetweb dlopen()s its SSL library by a single fixed name baked in at
-  # compile time (see civetweb.c's SSL_LIB/CRYPTO_LIB macros) -- it does not
-  # probe a list of candidates. The unversioned "libssl.so"/"libcrypto.so"
-  # names it defaults to on Linux only exist when a distro's libssl-dev
-  # package (or equivalent) is installed; a plain runtime install (as in a
-  # fresh container) only ships the versioned SONAME. Point it at the
-  # versioned name so net::http_get's https:// fetches work without
-  # requiring a -dev package. This assumes OpenSSL 3's SONAME (current on
-  # any recent distro); verify on other Linux/MSYS2 configurations.
-  set(CIVETWEB_SSL_SSL_LIB    "libssl.so.3"    CACHE STRING "" FORCE)
-  set(CIVETWEB_SSL_CRYPTO_LIB "libcrypto.so.3" CACHE STRING "" FORCE)
-endif()
+set(CIVETWEB_ENABLE_SSL               OFF CACHE BOOL "" FORCE)
 set(CIVETWEB_BUILD_TESTING            OFF CACHE BOOL "" FORCE)
 set(CIVETWEB_ENABLE_SERVER_EXECUTABLE OFF CACHE BOOL "" FORCE)
 set(CIVETWEB_INSTALL_EXECUTABLE       OFF CACHE BOOL "" FORCE)
@@ -175,6 +165,41 @@ set_target_properties(civetweb-c-library PROPERTIES FOLDER extern)
 # civetweb_server. This only affects shutdown latency, not runtime
 # behavior.
 target_compile_definitions(civetweb-c-library PRIVATE SOCKET_TIMEOUT_QUANTUM=100)
+
+# ── libcurl — HTTP/HTTPS client ──────────────────────────────────────────────
+#
+# Backs net::http_get (src/net/http_client.cpp), used by
+# file_service::resolve_or_fetch to download http(s):// resource URLs.
+# Windows uses curl's Schannel backend (native OS TLS, no external OpenSSL
+# DLL dependency); Linux/MSYS2 link the ambient system OpenSSL, same as
+# every other TLS-using tool on those platforms.
+set(BUILD_CURL_EXE       OFF CACHE BOOL "" FORCE)
+set(BUILD_SHARED_LIBS    OFF CACHE BOOL "" FORCE)
+set(CURL_DISABLE_INSTALL ON  CACHE BOOL "" FORCE)
+set(BUILD_TESTING        OFF CACHE BOOL "" FORCE)
+set(CURL_USE_LIBPSL      OFF CACHE BOOL "" FORCE)
+set(CURL_ZLIB            OFF CACHE BOOL "" FORCE)
+# net::http_get only needs plain http(s) GET; disable every other protocol
+# curl supports to shrink the build and its dependency surface.
+foreach(proto IN ITEMS DICT FILE FTP GOPHER IMAP LDAP LDAPS MQTT POP3 RTSP SMB SMTP TELNET TFTP)
+  set(CURL_DISABLE_${proto} ON CACHE BOOL "" FORCE)
+endforeach()
+if(WIN32)
+  set(CURL_USE_SCHANNEL ON CACHE BOOL "" FORCE)
+else()
+  set(CURL_USE_OPENSSL  ON CACHE BOOL "" FORCE)
+endif()
+FetchContent_Declare(
+  curl
+  GIT_REPOSITORY https://github.com/curl/curl.git
+  GIT_TAG        curl-8_21_0
+  GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(curl)
+# "libcurl" is only an ALIAS (curl's own CMakeLists.txt) for whichever of
+# libcurl_static/libcurl_shared BUILD_SHARED_LIBS selected -- set_target_properties
+# rejects ALIAS targets, so target the real one directly.
+set_target_properties(libcurl_static PROPERTIES FOLDER extern)
 
 if(WISH_ENABLE_IMGUI AND WISH_ENABLE_WEB)
   include(FetchContent)
@@ -396,10 +421,10 @@ target_link_libraries(wish_server PUBLIC bison)
 target_link_libraries(wish_server PUBLIC wish_client)
 # miniz is needed by resource_store.cpp to unpack the embedded archive.
 target_link_libraries(wish_server PRIVATE miniz)
-# civetweb's client API backs net::http_get (src/net/http_client.cpp), used by
-# file_service::resolve_or_fetch to download http(s):// resource URLs; PRIVATE
-# since <civetweb.h> is isolated to http_client.cpp / civetweb_server.cpp.
-target_link_libraries(wish_server PRIVATE civetweb-c-library)
+# civetweb backs civetweb_server's embedded HTTP+WebSocket server;
+# libcurl backs net::http_get (src/net/http_client.cpp). Both PRIVATE since
+# <civetweb.h>/<curl/curl.h> are isolated to their respective .cpp files.
+target_link_libraries(wish_server PRIVATE civetweb-c-library libcurl)
 
 # ── Optional modules — calculator, notepad, process_explorer, ... ────────────
 #
