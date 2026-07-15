@@ -101,6 +101,7 @@ cmake -S . -B build
 | `WISH_MODULE_BDG_DESKTOP_CALCULATOR` | `OFF` | Include the Calculator form (server) and its self-registering reference client runner. |
 | `WISH_MODULE_BDG_DESKTOP_NOTEPAD` | `OFF` | Include the Notepad form (server) and its self-registering reference client runner. |
 | `WISH_MODULE_BDG_DESKTOP_PROCESS_EXPLORER` | `OFF` | Include the Process Explorer form (server) and its self-registering reference client runner. |
+| `WISH_COLLECTION_BDG_DEV` | `OFF` | Include every module in `modules/bdg/dev/` (currently just editor) — see below. |
 | `WISH_MODULE_BDG_DEV_EDITOR` | `OFF` | Include the Editor form (server) and its self-registering reference client runner — a live JSON UI mock editor (`wish client --run=editor -- path/to/ui.json`). |
 
 Modules live in a `modules/<organization>/<collection>/<module>` tree (see

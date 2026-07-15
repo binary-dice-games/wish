@@ -379,7 +379,7 @@ target_link_libraries(wish_server PRIVATE miniz)
 include(cmake/WishModules.cmake)
 
 wish_add_collection(bdg/desktop DEFAULT ON)
-wish_add_module(bdg/dev/editor)
+wish_add_collection(bdg/dev)
 
 # wish_generate_module_registry()/wish_generate_embedded_resources() are
 # safe to call now (wish_server already exists); wish_finalize_app_modules()
