@@ -37,13 +37,13 @@
 #
 # Collections
 # -----------
-# wish_add_collection(<org>/<collection> [MODULES <name1> <name2> ...])
-# declares an off-by-default WISH_COLLECTION_<ORG>_<COLLECTION> option and
-# calls wish_add_module() for every module in the collection, using that
-# option's value as each module's DEFAULT -- so enabling the collection
-# pre-enables every module in it, while each module's own
-# WISH_MODULE_<ORG>_<COLLECTION>_<NAME> option can still be individually
-# overridden (e.g. -DWISH_COLLECTION_BDG_DESKTOP=ON
+# wish_add_collection(<org>/<collection> [DEFAULT ON|OFF] [MODULES <name1> <name2> ...])
+# declares a WISH_COLLECTION_<ORG>_<COLLECTION> option (off by default,
+# unless DEFAULT ON is passed) and calls wish_add_module() for every module
+# in the collection, using that option's value as each module's DEFAULT --
+# so enabling the collection pre-enables every module in it, while each
+# module's own WISH_MODULE_<ORG>_<COLLECTION>_<NAME> option can still be
+# individually overridden (e.g. -DWISH_COLLECTION_BDG_DESKTOP=ON
 # -DWISH_MODULE_BDG_DESKTOP_NOTEPAD=OFF enables everything in bdg/desktop
 # except notepad). If MODULES isn't given, every subdirectory of
 # modules/<org>/<collection>/ that looks like a module (has server/, client/,
@@ -239,16 +239,21 @@ function(wish_add_module name)
   endif()
 endfunction()
 
-# Declares WISH_COLLECTION_<ORG>_<COLLECTION> (off by default) and calls
-# wish_add_module() for every module in the collection, using that option's
-# value as each module's DEFAULT. See "Collections" above.
+# Declares WISH_COLLECTION_<ORG>_<COLLECTION> (off by default, or on by
+# default if DEFAULT ON is passed) and calls wish_add_module() for every
+# module in the collection, using that option's value as each module's
+# DEFAULT. See "Collections" above.
 function(wish_add_collection path)
-  cmake_parse_arguments(ARG "" "" "MODULES" ${ARGN})
+  cmake_parse_arguments(ARG "" "DEFAULT" "MODULES" ${ARGN})
+
+  if(NOT DEFINED ARG_DEFAULT)
+    set(ARG_DEFAULT OFF)
+  endif()
 
   string(REPLACE "/" "_" path_flat "${path}")
   string(TOUPPER "${path_flat}" path_upper)
   set(option_name "WISH_COLLECTION_${path_upper}")
-  option(${option_name} "Include every module in ${path}" OFF)
+  option(${option_name} "Include every module in ${path}" ${ARG_DEFAULT})
 
   if(ARG_MODULES)
     set(names ${ARG_MODULES})

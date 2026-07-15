@@ -1,9 +1,8 @@
 # wish — Building
 
-wish targets **Linux and MSYS2 only**; native Windows/MSVC builds are not
-supported. This page covers prerequisites, CMake options, and
-platform-specific notes for building wish and running the wish server on
-Linux and MSYS2 (Windows host).
+wish targets **Linux, MSYS2, and native Windows (MSVC)**. This page covers
+prerequisites, CMake options, and platform-specific notes for building wish
+and running the wish server on all three.
 
 ---
 
@@ -49,6 +48,23 @@ wish's core dependency (`extern/bison`) picks up MSYS2's system `libuv` via
 `pkg-config` automatically; configuring and building from here on is
 identical to Linux.
 
+### Native Windows (MSVC)
+
+Install [Visual Studio](https://visualstudio.microsoft.com/) (2022 or later)
+with the "Desktop development with C++" workload, and
+[CMake](https://cmake.org/download/) 3.21+. From a **Developer Command
+Prompt** or **Developer PowerShell** (so `cl.exe`/MSVC is on `PATH`):
+
+```powershell
+cmake -S . -B build -G "Visual Studio 17 2022"
+cmake --build build --config Release
+```
+
+No `libuv` package install is needed — on native Windows (detected via
+`WIN32 AND NOT MSYS AND NOT CYGWIN` in `extern/bison/CMakeLists.txt`), bison
+builds its bundled `extern/libuv` from source instead of looking for a
+system/pkg-config copy, unlike the Linux/MSYS2 path above.
+
 ---
 
 ## Getting the source
@@ -79,7 +95,7 @@ cmake -S . -B build
 | `WISH_ENABLE_SDL3` | `ON` | Build the SDL3 windowed renderer, the wish server, and the calculator/demo examples. |
 | `WISH_ENABLE_WEB` | `OFF` | Build the web renderer (`--renderer web`): a browser-based backend over HTTP + WebSocket, using civetweb and a first-party binary draw-data protocol (no OpenGL/window system required). Requires no additional system packages beyond what's already needed (SSL is compiled out, so no OpenSSL dependency). Can be combined with `WISH_ENABLE_SDL3` in the same binary; `WISH_ENABLE_SDL3=OFF -DWISH_ENABLE_WEB=ON` builds `wish server`/`wish-server` with no windowing/GPU dependency at all. |
 | `WISH_ENABLE_AUTOMATION` | `OFF` | Build the automation query API on top of the web renderer: a widget-tree/hit-test query protocol that lets a Playwright-driven headless browser (or an AI agent) introspect and drive a running wish UI, in addition to the screenshot/input control it already gets for free from the web renderer. Requires `WISH_ENABLE_WEB=ON` (configure-time error otherwise). See [src/automation/DESIGN.md](../src/automation/DESIGN.md) and `CLAUDE.md`'s "Automation" section. |
-| `WISH_BUILD_SHARED` | `ON` | Build `wish_client` as a shared library with a C ABI (`wish_client.dll` on MSYS2 / `libwish_client.so` on Linux). |
+| `WISH_BUILD_SHARED` | `ON` | Build `wish_client` as a shared library with a C ABI (`wish_client.dll` on MSYS2/native Windows / `libwish_client.so` on Linux). |
 | `WISH_BUILD_TESTS` | `ON` | Build and register the GoogleTest suite. |
 | `WISH_COLLECTION_BDG_DESKTOP` | `OFF` | Include every module in `modules/bdg/desktop/` (calculator, notepad, process_explorer) — see below. |
 | `WISH_MODULE_BDG_DESKTOP_CALCULATOR` | `OFF` | Include the Calculator form (server) and its self-registering reference client runner. |
@@ -148,6 +164,7 @@ is configured), so every `app/wish_cli` binary lands under `build/app/`:
 |-----------|-------------|--------------------------|
 | Ninja / Makefiles (Linux) | `build/app/wish` | `build/app/wish-server`, `build/app/wish-client`, `build/app/wish-standalone`, `build/app/wish-desktop` |
 | Ninja / Makefiles (MSYS2) | `build/app/wish.exe` | `build/app/wish-server.exe`, `build/app/wish-client.exe`, `build/app/wish-standalone.exe`, `build/app/wish-desktop.exe` |
+| Visual Studio (native Windows) | `build/app/Release/wish.exe` | `build/app/Release/wish-server.exe`, `build/app/Release/wish-client.exe`, `build/app/Release/wish-standalone.exe`, `build/app/Release/wish-desktop.exe` |
 
 ---
 
@@ -237,4 +254,98 @@ See [docs/examples.md](examples.md) for annotated walkthroughs of each example. 
 # MSYS2
 ./build/examples/calculator.exe
 ./build/examples/demo.exe
+```
+
+---
+
+## Packaging a release
+
+`cmake/Packaging.cmake` adds `install()` rules (tagged `COMPONENT wish`, to
+keep FetchContent-vendored dependencies like SDL3/civetweb out of the
+package) plus a CPack `ZIP` generator config, so any configured build can
+produce a release zip directly:
+
+```sh
+cmake --build build --target package   # or: cd build && cpack -G ZIP
+```
+
+That zip has the CLI binaries, `wish_client_dll` + its public C headers,
+`docs/` + `README.md`, and the binding sources and examples
+(`bindings/{cpp,python,csharp}/examples/`). `scripts/package_release.py`
+wraps this end to end — configuring a Release build with the recommended
+options, building, running `cpack`, then bolting on the pieces CPack can't
+produce on its own: compiled C# binding DLLs (via `dotnet publish`, if
+`dotnet` is on `PATH`), the MSYS2/native-Windows runtime DLLs the binaries
+dynamically link against (via `ldd`), and `extern/bison`'s Python binding
+(a sibling import `bindings/python/wish/_native.py` needs at runtime):
+
+```sh
+python3 scripts/package_release.py --version 1.2.3
+```
+
+Produces `dist/wish-<version>-<System>-<arch>.zip`. Run it once per platform
+(Linux, MSYS2, native Windows) to produce that platform's release asset.
+
+### Putting the release on PATH
+
+The zip also ships a pair of small scripts (`packaging/unix/` on Linux,
+`packaging/windows/` on Windows — installed to the zip's root) so `wish` and
+`wish_client.dll`/`libwish_client.so` are usable from any working directory
+after extracting, not just from inside the zip's own `bin/`:
+
+- **`wish-env.sh` / `wish-env.ps1` / `wish-env.cmd`** — session-only, no
+  files modified. `source ./wish-env.sh` (Linux), `. .\wish-env.ps1`
+  (PowerShell), or `wish-env.cmd` (cmd.exe).
+- **`install.sh` / `install.ps1`** — persists the change so new
+  terminals pick it up automatically, without asking the user each time:
+  appends a marked, idempotent block to `~/.bashrc`/`~/.zshrc` on Linux, or
+  (on Windows, via `install.ps1`) adds the zip's `bin\` to the per-user
+  `HKCU` `PATH` — no administrator rights needed, and never touches the
+  machine-wide PATH. Both accept `--uninstall` / `-Uninstall` to remove what
+  they added.
+
+The two platforms need different mechanisms because their dynamic linkers
+work differently:
+
+- **Windows** searches every directory on `PATH` when resolving a DLL, so
+  putting `bin\` on `PATH` is sufficient for *both* running `wish.exe` from
+  anywhere *and* letting a separate program (a C# app P/Invoking
+  `wish_client.dll`, Python `ctypes.CDLL("wish_client.dll")` without
+  `WISH_LIB` set) find it.
+- **Linux's dynamic linker does not consult `PATH`** for shared libraries —
+  only `LD_LIBRARY_PATH`, `/etc/ld.so.conf(.d/)` (which needs root and
+  `ldconfig`, inappropriate for a per-user zip extraction), or an
+  executable's own rpath. `PATH` alone makes `wish`/`wish-server`/etc.
+  runnable from anywhere, but a *separate* program linking
+  `libwish_client.so` still needs `LD_LIBRARY_PATH` (or `WISH_LIB`, which
+  `bindings/python/wish/_native.py` reads directly) — both scripts set all
+  three (`PATH`, `LD_LIBRARY_PATH`, `WISH_LIB`) to cover every consumer.
+
+### Release vs. Debug
+
+By default the script always configures and builds `Release`
+(`-DCMAKE_BUILD_TYPE=Release` for single-config generators like Ninja/Make,
+`--config Release`/`cpack -C Release` for multi-config generators like
+Visual Studio) — you don't need to pass anything extra for a normal run to
+produce Release binaries.
+
+This only needs attention if you point `--build-dir` at a build directory
+that already exists from earlier day-to-day development (e.g. a `Debug`
+build you've been iterating in) **and** pass `--skip-configure`: skipping
+configure also skips the `-DCMAKE_BUILD_TYPE=Release` reconfigure, so
+`cpack` packages whatever that directory was last built as. Either use a
+dedicated build directory for packaging (the default, `build-release`,
+already avoids this — it's never shared with a Debug dev build), or drop
+`--skip-configure` so the script reconfigures it to `Release` itself:
+
+```sh
+# Safe: dedicated build dir, always configured/built fresh as Release.
+python3 scripts/package_release.py
+
+# Also fine: reconfigures an existing dir to Release before packaging.
+python3 scripts/package_release.py --build-dir build
+
+# Only do this once you've confirmed --build-dir is already a Release
+# build -- --skip-configure --skip-build trusts it as-is and just repacks.
+python3 scripts/package_release.py --build-dir build --skip-configure --skip-build
 ```
