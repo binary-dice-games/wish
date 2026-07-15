@@ -22,6 +22,16 @@ add_executable(notepad_cpp_binding examples/notepad.cpp)
 target_link_libraries(notepad_cpp_binding PRIVATE wish_cpp)
 set_target_properties(notepad_cpp_binding PROPERTIES FOLDER "bindings/cpp/examples")
 
+if(WIN32 OR MSYS OR CYGWIN)
+  foreach(cpp_binding_exe calculator_cpp_binding notepad_cpp_binding)
+    add_custom_command(TARGET ${cpp_binding_exe} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_FILE:wish_client_dll>
+                $<TARGET_FILE_DIR:${cpp_binding_exe}>
+    )
+  endforeach()
+endif()
+
 if(WISH_BUILD_TESTS)
   # The binding itself only ever touches the C ABI (wish_cpp above), but the
   # test fixture also spins up a real wish::server (socket transport) as the
@@ -34,5 +44,12 @@ if(WISH_BUILD_TESTS)
       ${CMAKE_SOURCE_DIR}/extern/bison  # bison public headers
   )
   set_target_properties(wish_cpp_binding_tests PROPERTIES FOLDER "bindings/cpp/tests")
+  if(WIN32 OR MSYS OR CYGWIN)
+    add_custom_command(TARGET wish_cpp_binding_tests POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_FILE:wish_client_dll>
+                $<TARGET_FILE_DIR:wish_cpp_binding_tests>
+    )
+  endif()
   gtest_discover_tests(wish_cpp_binding_tests)
 endif()
