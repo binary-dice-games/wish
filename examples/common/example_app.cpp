@@ -88,6 +88,10 @@ int run_example(
   wish::server server{transport, std::move(r)};
   if (allow_absolute_paths)
     server.set_allow_absolute_paths(true);
+  // Same-process examples are trusted local dev tooling (same trust level as
+  // set_allow_absolute_paths above), so URL-sourced Image::src/font_path
+  // fetches are safe to allow here too.
+  server.set_allow_url_fetch(true);
   server.start(); // spawns render thread (SDL lives there) + bison listen thread
 
   if (FLAGS_verbose)

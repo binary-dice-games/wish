@@ -112,36 +112,72 @@ if(WISH_ENABLE_IMGUI AND WISH_ENABLE_SDL3)
   target_link_libraries(imgui_core PUBLIC SDL3::SDL3)
 endif()
 
+# ── civetweb — HTTP/WebSocket client + server ────────────────────────────────
+#
+# Unconditional (not gated by WISH_ENABLE_IMGUI/WISH_ENABLE_WEB): file_service
+# (net::http_get, see src/net/http_client.hpp) uses civetweb's client API to
+# fetch http(s):// Image::src/font_path URLs into the session sandbox, and
+# this is a core wish_server capability independent of which renderer is
+# built. The web renderer additionally uses civetweb as an embedded
+# HTTP+WebSocket server (WISH_ENABLE_WEB, see src/web/civetweb_server.cpp).
+include(FetchContent)
+set(CIVETWEB_ENABLE_WEBSOCKETS        ON  CACHE BOOL "" FORCE)
+# SSL is needed for net::http_get to fetch https:// URLs. The embedded
+# server side (civetweb_server) still only binds to 127.0.0.1 for local dev
+# tooling and doesn't itself serve over TLS.
+set(CIVETWEB_ENABLE_SSL               ON  CACHE BOOL "" FORCE)
+if(UNIX AND NOT APPLE)
+  # civetweb dlopen()s its SSL library by a single fixed name baked in at
+  # compile time (see civetweb.c's SSL_LIB/CRYPTO_LIB macros) -- it does not
+  # probe a list of candidates. The unversioned "libssl.so"/"libcrypto.so"
+  # names it defaults to on Linux only exist when a distro's libssl-dev
+  # package (or equivalent) is installed; a plain runtime install (as in a
+  # fresh container) only ships the versioned SONAME. Point it at the
+  # versioned name so net::http_get's https:// fetches work without
+  # requiring a -dev package. This assumes OpenSSL 3's SONAME (current on
+  # any recent distro); verify on other Linux/MSYS2 configurations.
+  set(CIVETWEB_SSL_SSL_LIB    "libssl.so.3"    CACHE STRING "" FORCE)
+  set(CIVETWEB_SSL_CRYPTO_LIB "libcrypto.so.3" CACHE STRING "" FORCE)
+endif()
+set(CIVETWEB_BUILD_TESTING            OFF CACHE BOOL "" FORCE)
+set(CIVETWEB_ENABLE_SERVER_EXECUTABLE OFF CACHE BOOL "" FORCE)
+set(CIVETWEB_INSTALL_EXECUTABLE       OFF CACHE BOOL "" FORCE)
+# civetweb's own CMakeLists defaults this ON and adds -fsanitize=address
+# -fsanitize=undefined to its Debug compile flags without propagating them
+# to consumers' link flags, so any Debug build (e.g. VSCode CMake Tools'
+# default config) fails to link with undefined __ubsan_handle_*/__asan_*
+# references. wish doesn't build the rest of the project with sanitizers,
+# so civetweb shouldn't either.
+set(CIVETWEB_ENABLE_ASAN              OFF CACHE BOOL "" FORCE)
+# civetweb's own CMakeLists defaults this ON in Debug builds, adding
+# -DDEBUG to its compile flags. That enables civetweb's internal
+# DEBUG_TRACE_FUNC, which unconditionally fprintf()s raw '\n'-terminated
+# lines straight to stdout -- noisy, and (before the bison::term::terminal
+# stdio redirect) a source of "staircase" output under --transport=term's
+# raw-mode terminal. civetweb is a vendored stable dependency here, not
+# something wish is developing, so its internal tracing has no value to us.
+set(CIVETWEB_ENABLE_DEBUG_TOOLS        OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+  civetweb
+  GIT_REPOSITORY https://github.com/civetweb/civetweb.git
+  GIT_TAG        v1.16
+  GIT_SHALLOW    TRUE
+)
+# civetweb v1.16's own CMakeLists declares cmake_minimum_required(3.3),
+# which CMake 4+ refuses to configure without an explicit policy floor.
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+FetchContent_MakeAvailable(civetweb)
+unset(CMAKE_POLICY_VERSION_MINIMUM)
+set_target_properties(civetweb-c-library PROPERTIES FOLDER extern)
+# civetweb's master accept-loop only checks its stop flag once per
+# SOCKET_TIMEOUT_QUANTUM (2000ms by default), so mg_stop() can otherwise
+# block for up to 2s -- multiplied across every test that starts a
+# civetweb_server. This only affects shutdown latency, not runtime
+# behavior.
+target_compile_definitions(civetweb-c-library PRIVATE SOCKET_TIMEOUT_QUANTUM=100)
+
 if(WISH_ENABLE_IMGUI AND WISH_ENABLE_WEB)
   include(FetchContent)
-  # Static file serving + WebSocket only; no TLS (localhost dev tool), no
-  # bundled server executable/tests -- wish only needs the C library.
-  set(CIVETWEB_ENABLE_WEBSOCKETS        ON  CACHE BOOL "" FORCE)
-  set(CIVETWEB_ENABLE_SSL               OFF CACHE BOOL "" FORCE)
-  set(CIVETWEB_BUILD_TESTING            OFF CACHE BOOL "" FORCE)
-  set(CIVETWEB_ENABLE_SERVER_EXECUTABLE OFF CACHE BOOL "" FORCE)
-  set(CIVETWEB_INSTALL_EXECUTABLE       OFF CACHE BOOL "" FORCE)
-  # civetweb's own CMakeLists defaults this ON and adds -fsanitize=address
-  # -fsanitize=undefined to its Debug compile flags without propagating them
-  # to consumers' link flags, so any Debug build (e.g. VSCode CMake Tools'
-  # default config) fails to link with undefined __ubsan_handle_*/__asan_*
-  # references. wish doesn't build the rest of the project with sanitizers,
-  # so civetweb shouldn't either.
-  set(CIVETWEB_ENABLE_ASAN              OFF CACHE BOOL "" FORCE)
-  # civetweb's own CMakeLists defaults this ON in Debug builds, adding
-  # -DDEBUG to its compile flags. That enables civetweb's internal
-  # DEBUG_TRACE_FUNC, which unconditionally fprintf()s raw '\n'-terminated
-  # lines straight to stdout -- noisy, and (before the bison::term::terminal
-  # stdio redirect) a source of "staircase" output under --transport=term's
-  # raw-mode terminal. civetweb is a vendored stable dependency here, not
-  # something wish is developing, so its internal tracing has no value to us.
-  set(CIVETWEB_ENABLE_DEBUG_TOOLS        OFF CACHE BOOL "" FORCE)
-  FetchContent_Declare(
-    civetweb
-    GIT_REPOSITORY https://github.com/civetweb/civetweb.git
-    GIT_TAG        v1.16
-    GIT_SHALLOW    TRUE
-  )
   # Single-header PNG/JPEG decoder for web_renderer::get_or_load_texture --
   # WISH_ENABLE_SDL3 (and its transitive SDL3_image dependency) is not
   # guaranteed to be on in a web-only build, so this backend needs its own
@@ -152,18 +188,7 @@ if(WISH_ENABLE_IMGUI AND WISH_ENABLE_WEB)
     GIT_TAG        master
     GIT_SHALLOW    TRUE
   )
-  # civetweb v1.16's own CMakeLists declares cmake_minimum_required(3.3),
-  # which CMake 4+ refuses to configure without an explicit policy floor.
-  set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
-  FetchContent_MakeAvailable(civetweb stb)
-  unset(CMAKE_POLICY_VERSION_MINIMUM)
-  set_target_properties(civetweb-c-library PROPERTIES FOLDER extern)
-  # civetweb's master accept-loop only checks its stop flag once per
-  # SOCKET_TIMEOUT_QUANTUM (2000ms by default), so mg_stop() can otherwise
-  # block for up to 2s -- multiplied across every test that starts a
-  # civetweb_server. This only affects shutdown latency, not runtime
-  # behavior.
-  target_compile_definitions(civetweb-c-library PRIVATE SOCKET_TIMEOUT_QUANTUM=100)
+  FetchContent_MakeAvailable(stb)
 
   add_library(stb_image INTERFACE)
   target_include_directories(stb_image INTERFACE ${stb_SOURCE_DIR})
@@ -233,6 +258,7 @@ add_library(wish_server STATIC
   src/context/file_service.hpp
   src/context/logger.hpp
   src/context/style_service.hpp
+  src/net/http_client.hpp
   src/server/server.hpp
   src/auth/local_auth_module.hpp
   src/standalone/standalone.hpp
@@ -247,6 +273,7 @@ add_library(wish_server STATIC
   src/context/file_service.cpp
   src/context/logger.cpp
   src/context/style_service.cpp
+  src/net/http_client.cpp
   src/server/server.cpp
   src/auth/local_auth_module.cpp
   src/standalone/standalone.cpp
@@ -325,9 +352,9 @@ if(WISH_ENABLE_IMGUI AND WISH_ENABLE_WEB)
     src/web/civetweb_server.cpp
   )
   target_compile_definitions(wish_server PUBLIC WISH_WEB_ENABLED)
-  # PRIVATE: civetweb/stb_image are isolated behind web_renderer.cpp; public
-  # headers (web_renderer.hpp) never include <civetweb.h> or <stb_image.h>.
-  target_link_libraries(wish_server PRIVATE civetweb-c-library stb_image)
+  # PRIVATE: stb_image is isolated behind web_renderer.cpp; public headers
+  # (web_renderer.hpp) never include <stb_image.h>.
+  target_link_libraries(wish_server PRIVATE stb_image)
 endif()
 
 if(WISH_ENABLE_IMGUI AND WISH_ENABLE_WEB AND WISH_ENABLE_AUTOMATION)
@@ -369,6 +396,10 @@ target_link_libraries(wish_server PUBLIC bison)
 target_link_libraries(wish_server PUBLIC wish_client)
 # miniz is needed by resource_store.cpp to unpack the embedded archive.
 target_link_libraries(wish_server PRIVATE miniz)
+# civetweb's client API backs net::http_get (src/net/http_client.cpp), used by
+# file_service::resolve_or_fetch to download http(s):// resource URLs; PRIVATE
+# since <civetweb.h> is isolated to http_client.cpp / civetweb_server.cpp.
+target_link_libraries(wish_server PRIVATE civetweb-c-library)
 
 # ── Optional modules — calculator, notepad, process_explorer, ... ────────────
 #

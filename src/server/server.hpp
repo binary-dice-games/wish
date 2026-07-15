@@ -101,6 +101,22 @@ class server : public bison::rmi::server {
   }
 
   /**
+   * @brief Allow widgets to fetch `http://`/`https://` resource URLs.
+   *
+   * By default, widget file paths that look like a URL (e.g. `Image::src`,
+   * `Element.font_path`) are rejected outright -- no network request is ever
+   * made, matching the fail-closed default of `set_allow_absolute_paths()`.
+   * Call this with `true` to let `file_service::resolve_or_fetch()` download
+   * such URLs into the session sandbox (still subject to its own
+   * extension allowlist).
+   *
+   * Must be called before `start()`.
+   */
+  void set_allow_url_fetch(bool allow) {
+    allow_url_fetch_ = allow;
+  }
+
+  /**
    * @brief Enable persistent, identity-keyed session sandbox directories.
    *
    * When set, and a connection both supplies a non-empty identity (via
@@ -197,6 +213,7 @@ class server : public bison::rmi::server {
   bool pending_render_{false};
   logger_ptr logger_;
   bool allow_absolute_paths_{false};
+  bool allow_url_fetch_{false};
   // Empty (default) disables persistent sandbox directories entirely; see
   // set_persistent_sandbox_root().
   std::filesystem::path persistent_sandbox_root_;

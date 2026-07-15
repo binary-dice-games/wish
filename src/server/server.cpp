@@ -86,6 +86,7 @@ void server::on_session_created(bison::rmi::context& ctx) {
   // session_contexts() -- nothing left to do here but attach services.
   auto& s = static_cast<context&>(ctx);
   s.allow_absolute_paths = allow_absolute_paths_;
+  s.allow_url_fetch = allow_url_fetch_;
   s.file_service = file_service::instantiate(s.resource_dir);
   s.style_service = style_service::instantiate();
   // All sessions share the same global logger instance (set via set_logger()).

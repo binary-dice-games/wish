@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <string>
+#include <vector>
 
 namespace bdg::wish {
 
@@ -153,6 +154,48 @@ class file_service : public bison::dynamic {
    */
   static std::filesystem::path
   resolve_path(const std::string& name, const std::filesystem::path& resource_dir, bool allow_absolute = false);
+
+  /**
+   * @brief Like `resolve_path()`, but also accepts an `http://`/`https://`
+   *        URL in @p name, fetching it into the sandbox on demand.
+   *
+   * Dispatches on @p name's prefix:
+   * - `http://`/`https://`: rejected outright (empty path, no network
+   *   request made) unless @p allow_fetch is `true` and its URL path's
+   *   extension case-insensitively matches one of @p allowed_extensions.
+   *   Otherwise, resolves to
+   *   `resource_dir/url_cache/<hash of name>.<ext>`. If that file already
+   *   exists, it is returned immediately. Otherwise a background download is
+   *   started (unless one for this exact URL is already in flight, or a
+   *   previous attempt already failed) and an empty path is returned for
+   *   this call -- callers must treat that identically to "resource not
+   *   available yet" (matching what every current caller already does for
+   *   any other unresolved path) and simply call again on a later frame.
+   *   This function never blocks on network I/O.
+   * - `file://`: the remainder is treated as an absolute local path, subject
+   *   to the same @p allow_absolute rule as `resolve_path()`.
+   * - Otherwise: identical to `resolve_path(name, resource_dir,
+   *   allow_absolute)`.
+   *
+   * @param name                Raw path or URL value.
+   * @param resource_dir        Session sandbox directory.
+   * @param allow_absolute      Whether absolute (or `file://`) paths are permitted.
+   * @param allow_fetch         Whether `http://`/`https://` URLs may be downloaded
+   *                            at all; when `false`, every such URL is rejected
+   *                            without inspecting its extension or touching the
+   *                            network. Should be wired to
+   *                            `wish::server::set_allow_url_fetch()`'s value.
+   * @param allowed_extensions  Case-insensitive extensions (without the leading
+   *                            '.') a URL's path may end in to be fetched at all.
+   * @return Resolved local path, or an empty path if @p name is rejected,
+   *         still downloading, or previously failed to download.
+   */
+  static std::filesystem::path resolve_or_fetch(
+      const std::string& name,
+      const std::filesystem::path& resource_dir,
+      bool allow_absolute,
+      bool allow_fetch,
+      const std::vector<std::string>& allowed_extensions);
 
  private:
   std::filesystem::path resource_dir_;

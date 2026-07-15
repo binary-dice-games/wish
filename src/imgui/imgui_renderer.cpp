@@ -18,6 +18,7 @@
 
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace bdg::wish {
 
@@ -259,7 +260,9 @@ void imgui_renderer::render_node(const ui_element& node, const context& s) {
     if (font_path.empty() && font_size > 0.0f)
       font_path = "res/fonts/default.ttf";
     if (!font_path.empty() && font_size > 0.0f) {
-      auto full = file_service::resolve_path(font_path, s.resource_dir, s.allow_absolute_paths);
+      static const std::vector<std::string> kFontExtensions{"ttf", "otf"};
+      auto full = file_service::resolve_or_fetch(
+          font_path, s.resource_dir, s.allow_absolute_paths, s.allow_url_fetch, kFontExtensions);
       if (!full.empty())
         font = get_or_load_font(full.string(), font_size);
     }
