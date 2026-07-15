@@ -22,6 +22,37 @@ void register_layout() {
             attr<Category>("Layout"),
             attr<Range>(0, 256),
             attr<Step>(0.5)});
+    proto->addField(
+        "width"_key,
+        field{
+            0.0f,
+            attr<DisplayName>("Width"),
+            attr<Description>("Column width hint used when this element is a direct child of a "
+                              "HorizontalLayout: 0 (default) sizes to content, exactly like a plain "
+                              "child with no width opinion. A positive value reserves that many fixed "
+                              "pixels. A negative value makes it a stretch column, sharing whatever "
+                              "width remains after fixed columns and spacing are subtracted, weighted "
+                              "by its magnitude relative to other stretch columns (mirrors "
+                              "ImGuiTableColumnFlags_WidthStretch's weight convention). Ignored outside "
+                              "a HorizontalLayout."),
+            attr<Category>("Layout")});
+    proto->addField(
+        "height"_key,
+        field{
+            0.0f,
+            attr<DisplayName>("Height"),
+            attr<Description>("Row height hint used when this element is a direct child of a "
+                              "VerticalLayout: 0 (default) sizes to content, exactly like a plain "
+                              "child with no height opinion. A positive value reserves that many fixed "
+                              "pixels. A negative value makes it a stretch row, sharing whatever "
+                              "height remains after fixed/auto rows and spacing are subtracted, "
+                              "weighted by its magnitude relative to other stretch rows (mirrors "
+                              "Layout.width's convention). Auto rows (0) are still accounted for: "
+                              "their height from the previous rendered frame is reserved for this "
+                              "frame's stretch-row sizing, so a fixed header/footer plus one "
+                              "stretch-filling body works regardless of child order. Ignored outside "
+                              "a VerticalLayout."),
+            attr<Category>("Layout")});
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Layout"));
     (*proto)[dynamic::CLASS].addAttribute(attr<Description>("Base container that arranges child elements."));
     dynamic::addClass(

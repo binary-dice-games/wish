@@ -230,13 +230,71 @@ void render_separator_text(imgui_renderer&, const ui_element& node, const contex
 
 void render_vertical_layout(imgui_renderer& r, const ui_element& node, const context& s) {
   float spacing = node.get_as<float>("spacing"_key, 0.0f);
-  bool first = true;
+
+  // Pre-scan children for a "height" hint (see Layout::height's field
+  // comment): 0 leaves a child auto-sized exactly as before; a positive
+  // value reserves fixed pixels; a negative value makes it a stretch row
+  // sharing whatever space remains, weighted by magnitude. ImGui is
+  // immediate-mode, so an auto child's height this frame isn't knowable
+  // ahead of rendering it -- instead its *last frame's* measured height
+  // (from `s.layout_height_cache`) is reserved here, and the cache entry
+  // is overwritten with this frame's actual measurement after it renders.
+  // This lets a fixed-height header/footer plus one stretch-filling body
+  // work regardless of child order, self-correcting within one frame of
+  // any auto child's height changing. A plain VerticalLayout of leaf
+  // widgets (no height set on any child) takes the same code path it
+  // always did, since fixed_total/stretch_weight_total stay at 0.
+  struct child_info {
+    ui_element* elem;
+    float height;
+    std::string id;
+  };
+  std::vector<child_info> children;
+  float fixed_total = 0.0f;
+  float stretch_weight_total = 0.0f;
+  int n = 0;
   node.for_each_child_ordered([&](key_t, ui_element& child) {
+    float h = child.get_as<float>("height"_key, 0.0f);
+    std::string id = stable_id(child);
+    children.push_back({&child, h, id});
+    if (h > 0.0f)
+      fixed_total += h;
+    else if (h < 0.0f)
+      stretch_weight_total += -h;
+    else {
+      auto it = s.layout_height_cache.find(id);
+      if (it != s.layout_height_cache.end())
+        fixed_total += it->second;
+    }
+    ++n;
+  });
+  float spacing_total = (n > 1) ? spacing * static_cast<float>(n - 1) : 0.0f;
+  float stretch_pool = std::max(0.0f, ImGui::GetContentRegionAvail().y - fixed_total - spacing_total);
+
+  bool first = true;
+  for (auto& c : children) {
     if (!first && spacing > 0.0f)
       ImGui::SetCursorPosY(ImGui::GetCursorPosY() + spacing);
     first = false;
-    r.render_node(child, s);
-  });
+
+    if (c.height != 0.0f) {
+      // Constrain the child to a dedicated child window of the computed
+      // row height, so nested "fill available height" fields (Table's
+      // outer_height=0/negative) resolve against this row instead of the
+      // whole VerticalLayout's content region.
+      float row_h = c.height > 0.0f
+          ? c.height
+          : (stretch_weight_total > 0.0f ? stretch_pool * (-c.height / stretch_weight_total) : 0.0f);
+      auto child_id = "##vl_row_" + c.id;
+      ImGui::BeginChild(child_id.c_str(), ImVec2(0.0f, row_h), ImGuiChildFlags_None);
+      r.render_node(*c.elem, s);
+      ImGui::EndChild();
+    } else {
+      float y_before = ImGui::GetCursorPosY();
+      r.render_node(*c.elem, s);
+      s.layout_height_cache[c.id] = ImGui::GetCursorPosY() - y_before;
+    }
+  }
 }
 
 void render_horizontal_layout(imgui_renderer& r, const ui_element& node, const context& s) {
@@ -259,14 +317,70 @@ void render_horizontal_layout(imgui_renderer& r, const ui_element& node, const c
       ImGui::SetCursorPosX(ImGui::GetCursorPosX() + offset);
   }
 
+  // Pre-scan children for a "width" hint (see Layout::width's field
+  // comment): 0 leaves a child auto-sized exactly as before; a positive
+  // value reserves fixed pixels; a negative value makes it a stretch
+  // column sharing whatever space remains, weighted by magnitude. This
+  // pass only measures -- rendering happens below -- so a plain
+  // HorizontalLayout of leaf widgets (no width set on any child) takes
+  // the same code path it always did.
+  struct child_info {
+    ui_element* elem;
+    float width;
+  };
+  std::vector<child_info> children;
+  float fixed_total = 0.0f;
+  float stretch_weight_total = 0.0f;
+  int n = 0;
+  node.for_each_child_ordered([&](key_t, ui_element& child) {
+    float w = child.get_as<float>("width"_key, 0.0f);
+    children.push_back({&child, w});
+    if (w > 0.0f)
+      fixed_total += w;
+    else if (w < 0.0f)
+      stretch_weight_total += -w;
+    ++n;
+  });
+  float spacing_total = (n > 1) ? spacing * static_cast<float>(n - 1) : 0.0f;
+  float stretch_pool = std::max(0.0f, ImGui::GetContentRegionAvail().x - fixed_total - spacing_total);
+
   ImGui::BeginGroup();
   bool first = true;
-  node.for_each_child_ordered([&](key_t, ui_element& child) {
+  for (auto& c : children) {
     if (!first)
       ImGui::SameLine(0.0f, spacing);
     first = false;
-    r.render_node(child, s);
-  });
+    // Each child gets its own group so ImGui::SameLine() below anchors to
+    // the child's whole bounding box, not just the last individual widget
+    // it happened to render. Without this, a child that is itself a
+    // multi-widget subtree (a nested VerticalLayout, a Table, ...) throws
+    // off SameLine() for every sibling that follows it -- see DESIGN.md's
+    // "HorizontalLayout row containing VerticalLayout columns" case.
+    ImGui::BeginGroup();
+    if (c.width != 0.0f) {
+      // Constrain the child to a dedicated child window of the computed
+      // column width, so nested "fill available width" fields (InputText's
+      // width=-1, Table's outer_width=0/negative) resolve against this
+      // column instead of the whole HorizontalLayout's content region.
+      float col_w = c.width > 0.0f
+          ? c.width
+          : (stretch_weight_total > 0.0f ? stretch_pool * (-c.width / stretch_weight_total) : 0.0f);
+      // A 0.0f height in BeginChild() means "stretch to fill the parent's
+      // remaining vertical space", not "auto-size to content" -- without
+      // ImGuiChildFlags_AutoResizeY every fixed-width column would balloon
+      // to the full remaining window height, shoving whatever follows this
+      // row far down (this broke Notepad's toolbar row: each fixed-width
+      // button's child window ate the whole window height, pushing the
+      // tab bar/editor below it into a sliver at the bottom).
+      auto child_id = "##hl_col_" + stable_id(*c.elem);
+      ImGui::BeginChild(child_id.c_str(), ImVec2(col_w, 0.0f), ImGuiChildFlags_AutoResizeY);
+      r.render_node(*c.elem, s);
+      ImGui::EndChild();
+    } else {
+      r.render_node(*c.elem, s);
+    }
+    ImGui::EndGroup();
+  }
   ImGui::EndGroup();
 }
 
