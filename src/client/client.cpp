@@ -9,6 +9,7 @@
 
 #include <cstdint>
 #include <future>
+#include <sstream>
 #include <vector>
 
 namespace bdg::wish {
@@ -89,24 +90,6 @@ std::future<proxy_map> client::instantiate_template(bison::key_t name) {
   });
 }
 
-std::future<void> client::upload_file(const std::string& name, const std::string& data) {
-  return std::async(std::launch::async, [this, name, data]() {
-    dynamic args;
-    args["name"_key] = name;
-    args["data"_key] = data;
-    fs_proxy_->call("upload"_key, std::move(args)).get();
-  });
-}
-
-std::future<std::string> client::download_file(const std::string& name) {
-  return std::async(std::launch::async, [this, name]() -> std::string {
-    dynamic args;
-    args["name"_key] = name;
-    auto result = fs_proxy_->call("download"_key, std::move(args)).get();
-    return result.as<std::string>("result"_key);
-  });
-}
-
 void client::upload_stream_sync(const std::string& name, std::istream& data, std::size_t chunk_size) {
   std::vector<char> buf(chunk_size);
   bool first = true;
@@ -160,6 +143,93 @@ std::future<void> client::upload_file(const std::string& name, std::istream& dat
 std::future<void> client::download_file(const std::string& name, std::ostream& out, std::size_t chunk_size) {
   return std::async(
       std::launch::async, [this, name, &out, chunk_size]() { download_stream_sync(name, out, chunk_size); });
+}
+
+void client::upload_stream_sync(
+    const std::string& name,
+    std::istream& data,
+    std::size_t chunk_size,
+    std::uint64_t total,
+    const transfer_progress_callback& on_progress) {
+  std::vector<char> buf(chunk_size);
+  bool first = true;
+  std::uint64_t sent = 0;
+  for (;;) {
+    data.read(buf.data(), static_cast<std::streamsize>(chunk_size));
+    auto n = static_cast<std::size_t>(data.gcount());
+    bool eof = data.eof() || data.peek() == std::char_traits<char>::eof();
+
+    dynamic args;
+    args["name"_key] = name;
+    args["data"_key] = std::string(buf.data(), n);
+    args["first"_key] = first;
+    args["eof"_key] = eof;
+    fs_proxy_->call("upload_chunk"_key, std::move(args)).get();
+
+    sent += n;
+    if (on_progress)
+      on_progress(sent, total);
+
+    first = false;
+    if (eof)
+      break;
+  }
+}
+
+void client::download_stream_sync(
+    const std::string& name, std::ostream& out, std::size_t chunk_size, const transfer_progress_callback& on_progress) {
+  int32_t offset = 0;
+  for (;;) {
+    dynamic args;
+    args["name"_key] = name;
+    args["offset"_key] = offset;
+    args["max_size"_key] = static_cast<int32_t>(chunk_size);
+    auto result = fs_proxy_->call("download_chunk"_key, std::move(args)).get();
+
+    auto chunk = result.as<std::string>("data"_key);
+    bool eof = result.as<bool>("eof"_key);
+    auto total = static_cast<std::uint64_t>(result.as<int32_t>("total"_key));
+    if (!chunk.empty()) {
+      out.write(chunk.data(), static_cast<std::streamsize>(chunk.size()));
+      offset += static_cast<int32_t>(chunk.size());
+    }
+    if (on_progress)
+      on_progress(static_cast<std::uint64_t>(offset), total);
+    if (eof)
+      break;
+  }
+}
+
+std::future<void>
+client::upload_file(const std::string& name, const std::string& data, transfer_progress_callback on_progress) {
+  if (!on_progress) {
+    return std::async(std::launch::async, [this, name, data]() {
+      dynamic args;
+      args["name"_key] = name;
+      args["data"_key] = data;
+      fs_proxy_->call("upload"_key, std::move(args)).get();
+    });
+  }
+  return std::async(std::launch::async, [this, name, data, on_progress]() {
+    std::istringstream in(data);
+    upload_stream_sync(name, in, kDefaultFileChunkSize, data.size(), on_progress);
+  });
+}
+
+std::future<std::string> client::download_file(const std::string& name, transfer_progress_callback on_progress) {
+  if (!on_progress) {
+    return std::async(std::launch::async, [this, name]() -> std::string {
+      dynamic args;
+      args["name"_key] = name;
+      auto result = fs_proxy_->call("download"_key, std::move(args)).get();
+      return result.as<std::string>("result"_key);
+    });
+  }
+  return std::async(std::launch::async, [this, name, on_progress]() -> std::string {
+    std::ostringstream out;
+    download_stream_sync(name, out, kDefaultFileChunkSize, on_progress);
+    return out.str();
+  });
 }
 
 std::future<void>

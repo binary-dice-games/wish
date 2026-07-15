@@ -56,6 +56,7 @@ file_service::file_service(dynamic&& base, std::filesystem::path resource_dir)
               dynamic result;
               result["data"_key] = std::move(c.data);
               result["eof"_key] = c.eof;
+              result["total"_key] = static_cast<int32_t>(c.total);
               return result;
             }});
   addMethod("unpack"_key, bison::method{[this](dynamic& /*self*/, const dynamic& p) -> dynamic {
@@ -159,6 +160,8 @@ file_service::chunk file_service::download_chunk(const std::string& name, int32_
     throw std::runtime_error("wish::file_service: file not found: " + name);
   }
 
+  in.seekg(0, std::ios::end);
+  auto total = static_cast<std::uint64_t>(in.tellg());
   in.seekg(offset, std::ios::beg);
   std::string data(static_cast<std::size_t>(max_size), '\0');
   in.read(data.data(), max_size);
@@ -168,7 +171,7 @@ file_service::chunk file_service::download_chunk(const std::string& name, int32_
   // actually tries to read past the end -- peek() forces that check so a
   // chunk landing exactly on EOF is still reported correctly.
   bool eof = in.eof() || in.peek() == std::char_traits<char>::eof();
-  return chunk{std::move(data), eof};
+  return chunk{std::move(data), eof, total};
 }
 
 void file_service::unpack(const std::string& zip_name, const std::string& dest) {

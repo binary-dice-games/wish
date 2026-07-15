@@ -11,6 +11,7 @@
 #include <miniz_zip.h>
 
 #include <atomic>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -362,6 +363,58 @@ TEST(ClientTest, UploadDownloadRoundTrips) {
   c.run();
 
   EXPECT_EQ(c.downloaded, "world");
+  srv.stop();
+}
+
+TEST(ClientTest, ChunkedUploadDownloadReportsProgress) {
+  memory_server_transport transport;
+  wish::server srv{transport, std::make_unique<wish::null_renderer>()};
+  srv.start();
+
+  class test_client : public wish::client {
+   public:
+    using wish::client::client;
+    std::string data{std::string(1u << 21, 'x')}; // 2 MiB, multiple chunks.
+    std::string downloaded;
+    std::vector<std::pair<std::uint64_t, std::uint64_t>> upload_progress;
+    std::vector<std::pair<std::uint64_t, std::uint64_t>> download_progress;
+
+   protected:
+    void on_session() override {
+      upload_file(
+          "big.bin", data,
+          [this](std::uint64_t transferred, std::uint64_t total) {
+            upload_progress.emplace_back(transferred, total);
+          })
+          .get();
+      downloaded = download_file(
+                       "big.bin",
+                       [this](std::uint64_t transferred, std::uint64_t total) {
+                         download_progress.emplace_back(transferred, total);
+                       })
+                       .get();
+    }
+  };
+
+  test_client c{transport.connect()};
+  c.run();
+
+  EXPECT_EQ(c.downloaded, c.data);
+
+  ASSERT_FALSE(c.upload_progress.empty());
+  EXPECT_GT(c.upload_progress.size(), 1u);
+  for (std::size_t i = 1; i < c.upload_progress.size(); ++i)
+    EXPECT_GT(c.upload_progress[i].first, c.upload_progress[i - 1].first);
+  EXPECT_EQ(c.upload_progress.back().first, c.data.size());
+  EXPECT_EQ(c.upload_progress.back().second, c.data.size());
+
+  ASSERT_FALSE(c.download_progress.empty());
+  EXPECT_GT(c.download_progress.size(), 1u);
+  for (std::size_t i = 1; i < c.download_progress.size(); ++i)
+    EXPECT_GT(c.download_progress[i].first, c.download_progress[i - 1].first);
+  EXPECT_EQ(c.download_progress.back().first, c.data.size());
+  EXPECT_EQ(c.download_progress.back().second, c.data.size());
+
   srv.stop();
 }
 

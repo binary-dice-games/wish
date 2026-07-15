@@ -7,8 +7,11 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <functional>
 #include <thread>
+#include <utility>
+#include <vector>
 
 using namespace bdg::bison;
 using namespace bdg::bison::rmi;
@@ -99,6 +102,44 @@ TEST(StandaloneTest, UploadDownloadRoundTrips) {
   sa.upload_file("hello.txt", "world").get();
   auto downloaded = sa.download_file("hello.txt").get();
   EXPECT_EQ(downloaded, "world");
+
+  sa.stop();
+}
+
+TEST(StandaloneTest, ChunkedUploadDownloadReportsProgress) {
+  tracking_standalone sa{std::make_unique<wish::null_renderer>()};
+  sa.start();
+
+  std::string data(1u << 21, 'x'); // 2 MiB, spans multiple 1 MiB chunks.
+
+  std::vector<std::pair<std::uint64_t, std::uint64_t>> upload_progress;
+  sa.upload_file(
+        "big.bin", data,
+        [&upload_progress](std::uint64_t transferred, std::uint64_t total) {
+          upload_progress.emplace_back(transferred, total);
+        })
+      .get();
+  ASSERT_FALSE(upload_progress.empty());
+  EXPECT_GT(upload_progress.size(), 1u);
+  for (std::size_t i = 1; i < upload_progress.size(); ++i)
+    EXPECT_GT(upload_progress[i].first, upload_progress[i - 1].first);
+  EXPECT_EQ(upload_progress.back().first, data.size());
+  EXPECT_EQ(upload_progress.back().second, data.size());
+
+  std::vector<std::pair<std::uint64_t, std::uint64_t>> download_progress;
+  auto downloaded = sa.download_file(
+                           "big.bin",
+                           [&download_progress](std::uint64_t transferred, std::uint64_t total) {
+                             download_progress.emplace_back(transferred, total);
+                           })
+                         .get();
+  EXPECT_EQ(downloaded, data);
+  ASSERT_FALSE(download_progress.empty());
+  EXPECT_GT(download_progress.size(), 1u);
+  for (std::size_t i = 1; i < download_progress.size(); ++i)
+    EXPECT_GT(download_progress[i].first, download_progress[i - 1].first);
+  EXPECT_EQ(download_progress.back().first, data.size());
+  EXPECT_EQ(download_progress.back().second, data.size());
 
   sa.stop();
 }

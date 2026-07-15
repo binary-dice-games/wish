@@ -82,11 +82,13 @@ class c_abi_app_host : public wish::wish_app_host {
   instantiate(bdg::bison::key_t ns, bdg::bison::key_t klass, dynamic params = dynamic{}) override {
     return client_.instantiate(ns, klass, std::move(params));
   }
-  std::future<void> upload_file(const std::string& name, const std::string& data) override {
-    return client_.upload_file(name, data);
+  std::future<void> upload_file(
+      const std::string& name, const std::string& data, wish::transfer_progress_callback on_progress) override {
+    return client_.upload_file(name, data, std::move(on_progress));
   }
-  std::future<std::string> download_file(const std::string& name) override {
-    return client_.download_file(name);
+  std::future<std::string>
+  download_file(const std::string& name, wish::transfer_progress_callback on_progress) override {
+    return client_.download_file(name, std::move(on_progress));
   }
   void keep_alive(proxy::dynamic&& p) override {
     live_proxies_.push_back(std::move(p));

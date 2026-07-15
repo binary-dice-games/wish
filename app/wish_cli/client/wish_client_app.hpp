@@ -81,9 +81,12 @@ class wish_client_app : public bison::app::client_app, public wish_app_host {
   std::future<bison::rmi::proxy::dynamic>
   instantiate(bison::key_t ns, bison::key_t klass, bison::dynamic params = bison::dynamic{}) override;
 
-  std::future<void> upload_file(const std::string& name, const std::string& data) override;
+  std::future<void>
+  upload_file(const std::string& name, const std::string& data, bdg::wish::transfer_progress_callback on_progress)
+      override;
 
-  std::future<std::string> download_file(const std::string& name) override;
+  std::future<std::string>
+  download_file(const std::string& name, bdg::wish::transfer_progress_callback on_progress) override;
 
  protected:
   void on_connect_params(bison::dynamic& params) const override;

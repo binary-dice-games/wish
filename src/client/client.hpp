@@ -5,10 +5,13 @@
  */
 #pragma once
 
+#include <client/wish_app_host.hpp>
+
 #include "src/rmi/client/client.hpp"
 #include "src/rmi/client/proxy.hpp"
 
 #include <cstddef>
+#include <cstdint>
 #include <future>
 #include <istream>
 #include <memory>
@@ -123,21 +126,41 @@ class client : public bison::rmi::client {
 
   /**
    * @brief Upload a file to the server's sandboxed session resource directory.
-   * @param name Filename (no path separators or `..`).
-   * @param data File contents.
+   *
+   * When @p on_progress is left default (empty), this is a single monolithic
+   * RMI call. When set, the upload instead runs in `kDefaultFileChunkSize`
+   * chunks (same RMI ops as the `std::istream&` overload below), invoking
+   * @p on_progress after each chunk -- this lets a caller (e.g. an event
+   * handler running on the RMI worker/dispatch thread) hand the actual
+   * transfer off to a background thread and still receive incremental
+   * progress, without ever holding a single blocking `.get()` for the whole
+   * transfer on a thread that must stay responsive.
+   *
+   * @param name       Filename (no path separators or `..`).
+   * @param data       File contents.
+   * @param on_progress Invoked after each chunk with bytes sent so far and
+   *                    the total (`data.size()`). Leave default to skip
+   *                    progress reporting and use a single RMI call.
    * @throws std::logic_error until the server-side `__WishFileSystem` protocol is
    *         accessible to the client.
    */
-  std::future<void> upload_file(const std::string& name, const std::string& data);
+  std::future<void> upload_file(
+      const std::string& name, const std::string& data, transfer_progress_callback on_progress = nullptr);
 
   /**
    * @brief Download a previously uploaded file from the server.
-   * @param name Filename (no path separators or `..`).
+   *
+   * @see upload_file for the chunked-vs-monolithic behavior controlled by
+   *      @p on_progress.
+   * @param name        Filename (no path separators or `..`).
+   * @param on_progress Invoked after each chunk with bytes received so far
+   *                    and the total file size. Leave default to skip
+   *                    progress reporting and use a single RMI call.
    * @return Future resolved with the file contents.
    * @throws std::logic_error until the server-side `__WishFileSystem` protocol is
    *         accessible to the client.
    */
-  std::future<std::string> download_file(const std::string& name);
+  std::future<std::string> download_file(const std::string& name, transfer_progress_callback on_progress = nullptr);
 
   /// @brief Default chunk size used by the streaming `upload_file` /
   ///        `download_file` / `upload_package` overloads.
@@ -292,6 +315,19 @@ class client : public bison::rmi::client {
   // std::async, matching every other client helper.
   void upload_stream_sync(const std::string& name, std::istream& data, std::size_t chunk_size);
   void download_stream_sync(const std::string& name, std::ostream& out, std::size_t chunk_size);
+
+  // Progress-reporting variants backing the chunked upload_file/download_file
+  // overloads above. @p total is the known upload size upfront; for
+  // downloads the total comes back from the server on each download_chunk
+  // response instead, so no total parameter is needed there.
+  void upload_stream_sync(
+      const std::string& name,
+      std::istream& data,
+      std::size_t chunk_size,
+      std::uint64_t total,
+      const transfer_progress_callback& on_progress);
+  void download_stream_sync(
+      const std::string& name, std::ostream& out, std::size_t chunk_size, const transfer_progress_callback& on_progress);
 
   // Per-session proxy handles.  Populated by on_connect() before on_session()
   // is called; cleared by on_disconnect().

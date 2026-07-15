@@ -5,6 +5,7 @@
  */
 #pragma once
 
+#include <client/wish_app_host.hpp>
 #include <context/context.hpp>
 #include <context/logger.hpp>
 #include <server/renderer.hpp>
@@ -12,6 +13,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <future>
 #include <memory>
 #include <optional>
@@ -112,10 +114,11 @@ class standalone : public bison::rmi::standalone {
   std::future<void> register_template_from_yaml(bison::key_t name, const std::string& yaml);
 
   /// @copydoc bdg::wish::client::upload_file
-  std::future<void> upload_file(const std::string& name, const std::string& data);
+  std::future<void> upload_file(
+      const std::string& name, const std::string& data, transfer_progress_callback on_progress = nullptr);
 
   /// @copydoc bdg::wish::client::download_file
-  std::future<std::string> download_file(const std::string& name);
+  std::future<std::string> download_file(const std::string& name, transfer_progress_callback on_progress = nullptr);
 
   /// @copydoc bdg::wish::client::set_style_preset
   std::future<void> set_style_preset(const std::string& name);

@@ -9,7 +9,9 @@
 #include <ui/ui_descriptor.hpp>
 #include <ui/ui_root.hpp>
 
+#include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <functional>
 #include <future>
 #include <memory>
@@ -240,21 +242,78 @@ std::future<void> standalone::register_template_from_yaml(bison::key_t name, con
   return register_template(name, import_descriptor_yaml(yaml));
 }
 
-std::future<void> standalone::upload_file(const std::string& name, const std::string& data) {
-  return std::async(std::launch::async, [this, name, data]() {
-    dynamic args;
-    args["name"_key] = name;
-    args["data"_key] = data;
-    fs_proxy_->call("upload"_key, std::move(args)).get();
+namespace {
+constexpr std::size_t kStandaloneFileChunkSize = 1u << 20; // 1 MiB
+} // namespace
+
+std::future<void>
+standalone::upload_file(const std::string& name, const std::string& data, transfer_progress_callback on_progress) {
+  if (!on_progress) {
+    return std::async(std::launch::async, [this, name, data]() {
+      dynamic args;
+      args["name"_key] = name;
+      args["data"_key] = data;
+      fs_proxy_->call("upload"_key, std::move(args)).get();
+    });
+  }
+  return std::async(std::launch::async, [this, name, data, on_progress]() {
+    std::uint64_t total = data.size();
+    std::uint64_t sent = 0;
+    bool first = true;
+    for (std::size_t pos = 0; pos == 0 || pos < data.size(); pos += kStandaloneFileChunkSize) {
+      auto n = std::min<std::size_t>(kStandaloneFileChunkSize, data.size() - pos);
+      bool eof = pos + n >= data.size();
+
+      dynamic args;
+      args["name"_key] = name;
+      args["data"_key] = data.substr(pos, n);
+      args["first"_key] = first;
+      args["eof"_key] = eof;
+      fs_proxy_->call("upload_chunk"_key, std::move(args)).get();
+
+      sent += n;
+      if (on_progress)
+        on_progress(sent, total);
+
+      first = false;
+      if (eof)
+        break;
+    }
   });
 }
 
-std::future<std::string> standalone::download_file(const std::string& name) {
-  return std::async(std::launch::async, [this, name]() -> std::string {
-    dynamic args;
-    args["name"_key] = name;
-    auto result = fs_proxy_->call("download"_key, std::move(args)).get();
-    return result.as<std::string>("result"_key);
+std::future<std::string> standalone::download_file(const std::string& name, transfer_progress_callback on_progress) {
+  if (!on_progress) {
+    return std::async(std::launch::async, [this, name]() -> std::string {
+      dynamic args;
+      args["name"_key] = name;
+      auto result = fs_proxy_->call("download"_key, std::move(args)).get();
+      return result.as<std::string>("result"_key);
+    });
+  }
+  return std::async(std::launch::async, [this, name, on_progress]() -> std::string {
+    std::string result_data;
+    int32_t offset = 0;
+    for (;;) {
+      dynamic args;
+      args["name"_key] = name;
+      args["offset"_key] = offset;
+      args["max_size"_key] = static_cast<int32_t>(kStandaloneFileChunkSize);
+      auto result = fs_proxy_->call("download_chunk"_key, std::move(args)).get();
+
+      auto chunk = result.as<std::string>("data"_key);
+      bool eof = result.as<bool>("eof"_key);
+      auto total = static_cast<std::uint64_t>(result.as<int32_t>("total"_key));
+      if (!chunk.empty()) {
+        result_data.append(chunk);
+        offset += static_cast<int32_t>(chunk.size());
+      }
+      if (on_progress)
+        on_progress(static_cast<std::uint64_t>(offset), total);
+      if (eof)
+        break;
+    }
+    return result_data;
   });
 }
 

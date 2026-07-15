@@ -1,0 +1,186 @@
+{
+  "type": "Window",
+  "title": "File Explorer",
+  "width": 920,
+  "height": 540,
+  "children": {
+    "main": {
+      "type": "VerticalLayout",
+      "children": {
+        "panels": {
+          "type": "HorizontalLayout",
+          "height": -1,
+          "spacing": 10,
+          "children": {
+            "left": {
+              "type": "VerticalLayout",
+              "spacing": 4,
+              "width": -1,
+              "children": {
+                "left_label": { "type": "Label", "text": "Local Machine" },
+                "left_path": {
+                  "type": "InputText",
+                  "hint": "Local path...",
+                  "value": "C:\\Users\\Carlos\\Documents",
+                  "width": -1
+                },
+                "left_table": {
+                  "type": "Table",
+                  "id": "##local_table",
+                  "columns": 3,
+                  "headers": true,
+                  "flags": 1920,
+                  "outer_width": 0,
+                  "outer_height": -1,
+                  "children": {
+                    "col_name":     { "type": "TableColumn", "label": "Name", "column_id": 1 },
+                    "col_size":     { "type": "TableColumn", "label": "Size", "column_id": 2 },
+                    "col_modified": { "type": "TableColumn", "label": "Modified", "column_id": 3 },
+
+                    "row_up": {
+                      "type": "TableRow",
+                      "children": {
+                        "name": { "type": "Label", "text": ".. [Up]" },
+                        "size": { "type": "Label", "text": "" },
+                        "mod":  { "type": "Label", "text": "" }
+                      }
+                    },
+                    "row_docs": {
+                      "type": "TableRow",
+                      "children": {
+                        "name": { "type": "Label", "text": "[Documents]" },
+                        "size": { "type": "Label", "text": "Folder" },
+                        "mod":  { "type": "Label", "text": "2026-07-01 09:14" }
+                      }
+                    },
+                    "row_downloads": {
+                      "type": "TableRow",
+                      "children": {
+                        "name": { "type": "Label", "text": "[Downloads]" },
+                        "size": { "type": "Label", "text": "Folder" },
+                        "mod":  { "type": "Label", "text": "2026-07-10 18:02" }
+                      }
+                    },
+                    "row_projects": {
+                      "type": "TableRow",
+                      "children": {
+                        "name": { "type": "Label", "text": "[Projects]" },
+                        "size": { "type": "Label", "text": "Folder" },
+                        "mod":  { "type": "Label", "text": "2026-07-12 11:47" }
+                      }
+                    },
+                    "row_readme": {
+                      "type": "TableRow",
+                      "children": {
+                        "name": { "type": "Label", "text": "readme.txt" },
+                        "size": { "type": "Label", "text": "3.2 KB" },
+                        "mod":  { "type": "Label", "text": "2026-06-28 14:20" }
+                      }
+                    },
+                    "row_notes": {
+                      "type": "TableRow",
+                      "children": {
+                        "name": { "type": "Label", "text": "notes.md" },
+                        "size": { "type": "Label", "text": "1.1 KB" },
+                        "mod":  { "type": "Label", "text": "2026-07-05 08:33" }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+
+            "middle": {
+              "type": "VerticalLayout",
+              "spacing": 10,
+              "width": 80,
+              "children": {
+                "spacer_top": { "type": "Separator" },
+                "upload":   { "type": "Button", "label": ">>", "width": 60, "height": 36 },
+                "download": { "type": "Button", "label": "<<", "width": 60, "height": 36 }
+              }
+            },
+
+            "right": {
+              "type": "VerticalLayout",
+              "spacing": 4,
+              "width": -1,
+              "children": {
+                "right_header": {
+                  "type": "HorizontalLayout",
+                  "spacing": 8,
+                  "children": {
+                    "right_label": { "type": "Label", "text": "Sandbox (Server)" },
+                    "open_explorer": { "type": "Button", "label": "Open in Explorer" }
+                  }
+                },
+                "right_path": {
+                  "type": "InputText",
+                  "hint": "Sandbox path...",
+                  "value": "/",
+                  "width": -1
+                },
+                "right_table": {
+                  "type": "Table",
+                  "id": "##sandbox_table",
+                  "columns": 3,
+                  "headers": true,
+                  "flags": 1920,
+                  "outer_width": 0,
+                  "outer_height": -1,
+                  "children": {
+                    "col_name":     { "type": "TableColumn", "label": "Name", "column_id": 1 },
+                    "col_size":     { "type": "TableColumn", "label": "Size", "column_id": 2 },
+                    "col_modified": { "type": "TableColumn", "label": "Modified", "column_id": 3 },
+
+                    "row_assets": {
+                      "type": "TableRow",
+                      "children": {
+                        "name": { "type": "Label", "text": "[assets]" },
+                        "size": { "type": "Label", "text": "Folder" },
+                        "mod":  { "type": "Label", "text": "2026-07-11 10:02" }
+                      }
+                    },
+                    "row_uploads": {
+                      "type": "TableRow",
+                      "children": {
+                        "name": { "type": "Label", "text": "[uploads]" },
+                        "size": { "type": "Label", "text": "Folder" },
+                        "mod":  { "type": "Label", "text": "2026-07-13 16:45" }
+                      }
+                    },
+                    "row_report": {
+                      "type": "TableRow",
+                      "children": {
+                        "name": { "type": "Label", "text": "report.pdf" },
+                        "size": { "type": "Label", "text": "482 KB" },
+                        "mod":  { "type": "Label", "text": "2026-07-09 12:00" }
+                      }
+                    },
+                    "row_data": {
+                      "type": "TableRow",
+                      "children": {
+                        "name": { "type": "Label", "text": "data.csv" },
+                        "size": { "type": "Label", "text": "94 KB" },
+                        "mod":  { "type": "Label", "text": "2026-07-14 09:18" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+
+        "status_sep": { "type": "Separator" },
+        "status": { "type": "Label", "text": "Ready." },
+        "transfer_progress": {
+          "type": "ProgressBar",
+          "value": 0.42,
+          "label": "Uploading report.pdf... 42%",
+          "width": -1
+        }
+      }
+    }
+  }
+}

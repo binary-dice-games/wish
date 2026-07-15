@@ -77,8 +77,9 @@ class file_service : public bison::dynamic {
    * @brief One chunk of a file being downloaded in pieces.
    */
   struct chunk {
-    std::string data; ///< Bytes read, up to the requested chunk size.
-    bool eof = false; ///< `true` once `offset + data.size()` reached EOF.
+    std::string data;         ///< Bytes read, up to the requested chunk size.
+    bool eof = false;         ///< `true` once `offset + data.size()` reached EOF.
+    std::uint64_t total = 0;  ///< Total file size, for caller-side progress reporting.
   };
 
   /**
@@ -91,7 +92,8 @@ class file_service : public bison::dynamic {
    * @param name      Filename to read, sandboxed the same as `download()`.
    * @param offset    Byte offset to start reading from.
    * @param max_size  Maximum number of bytes to read.
-   * @return The bytes read (possibly empty) and whether EOF was reached.
+   * @return The bytes read (possibly empty), whether EOF was reached, and
+   *         the file's total size (for caller-side progress reporting).
    * @throws std::runtime_error if the file does not exist or cannot be read.
    */
   chunk download_chunk(const std::string& name, int32_t offset, int32_t max_size) const;

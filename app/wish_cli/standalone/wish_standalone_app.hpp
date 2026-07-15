@@ -50,12 +50,14 @@ class wish_standalone_session : public standalone, public wish_app_host {
     return standalone::instantiate(ns, klass, std::move(params));
   }
 
-  std::future<void> upload_file(const std::string& name, const std::string& data) override {
-    return standalone::upload_file(name, data);
+  std::future<void> upload_file(
+      const std::string& name, const std::string& data, bdg::wish::transfer_progress_callback on_progress) override {
+    return standalone::upload_file(name, data, std::move(on_progress));
   }
 
-  std::future<std::string> download_file(const std::string& name) override {
-    return standalone::download_file(name);
+  std::future<std::string>
+  download_file(const std::string& name, bdg::wish::transfer_progress_callback on_progress) override {
+    return standalone::download_file(name, std::move(on_progress));
   }
 
   /// @brief Standalone mode has no transport contending for stdin, so this

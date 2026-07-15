@@ -117,16 +117,18 @@ wish_client_app::instantiate(bison::key_t ns, bison::key_t klass, bison::dynamic
   return wish_client_->instantiate(ns, klass, std::move(params));
 }
 
-std::future<void> wish_client_app::upload_file(const std::string& name, const std::string& data) {
+std::future<void> wish_client_app::upload_file(
+    const std::string& name, const std::string& data, bdg::wish::transfer_progress_callback on_progress) {
   if (!wish_client_)
     throw std::runtime_error("client not connected");
-  return wish_client_->upload_file(name, data);
+  return wish_client_->upload_file(name, data, std::move(on_progress));
 }
 
-std::future<std::string> wish_client_app::download_file(const std::string& name) {
+std::future<std::string>
+wish_client_app::download_file(const std::string& name, bdg::wish::transfer_progress_callback on_progress) {
   if (!wish_client_)
     throw std::runtime_error("client not connected");
-  return wish_client_->download_file(name);
+  return wish_client_->download_file(name, std::move(on_progress));
 }
 
 void wish_client_app::on_connect_params(bison::dynamic& params) const {
