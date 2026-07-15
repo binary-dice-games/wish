@@ -378,7 +378,7 @@ target_link_libraries(wish_server PRIVATE miniz)
 # modules/<name>/ directory and one wish_add_module() line here.
 include(cmake/WishModules.cmake)
 
-wish_add_collection(bdg/desktop)
+wish_add_collection(bdg/desktop DEFAULT ON)
 wish_add_module(bdg/dev/editor)
 
 # wish_generate_module_registry()/wish_generate_embedded_resources() are
@@ -449,6 +449,16 @@ if(WISH_BUILD_SHARED)
       ARCHIVE_OUTPUT_NAME wish_client_dll  # wish_client_dll.lib — avoids collision with wish_client.lib
       OUTPUT_NAME         wish_client      # MSYS2/Linux fallback
       FOLDER              lib)
+  install(TARGETS wish_client_dll
+      RUNTIME DESTINATION bin COMPONENT wish   # wish_client.dll / libwish_client.so (MSYS2)
+      LIBRARY DESTINATION bin COMPONENT wish   # libwish_client.so (Linux)
+      ARCHIVE DESTINATION lib COMPONENT wish)  # wish_client_dll.lib (MSVC import lib)
+  install(FILES
+      include/wish_client_c.h
+      extern/bison/include/bison_c.h
+      extern/bison/include/rmi_c.h
+      DESTINATION include
+      COMPONENT wish)
 endif()
 
 add_subdirectory(app)
@@ -464,3 +474,17 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 endif()
 
 add_subdirectory(examples)
+
+# bindings/cpp — header-only C++ client binding + its examples/tests. Needs
+# wish_client_dll (built above) and, for its test executable, the gtest
+# targets tests/CMakeLists.txt adds -- both must already exist.
+if(WISH_BUILD_SHARED)
+  add_subdirectory(bindings/cpp)
+endif()
+
+# Packaging (install() destinations for non-target content + CPack ZIP
+# config) only makes sense when wish is the top-level project -- a consumer
+# using add_subdirectory()/FetchContent has its own packaging concerns.
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+  include(cmake/Packaging.cmake)
+endif()
