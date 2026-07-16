@@ -179,12 +179,12 @@ public sealed class Client : IDisposable
     /// <summary>Applies a built-in style preset: "dark", "light", or "classic".</summary>
     public void SetStylePreset(string preset)
     {
-        WishException.Check(Native.wish_set_style_preset(_handle, preset), "set_style_preset");
+        WishException.Check(Native.wish_set_style_preset(_handle, preset), "set_style_preset", LastError);
     }
 
     public Future SetStylePresetAsync(string preset)
     {
-        WishException.Check(Native.wish_set_style_preset_async(_handle, preset, out var outFuture), "set_style_preset_async");
+        WishException.Check(Native.wish_set_style_preset_async(_handle, preset, out var outFuture), "set_style_preset_async", LastError);
         return WishInterop.WrapFuture(outFuture);
     }
 
@@ -193,14 +193,14 @@ public sealed class Client : IDisposable
     /// <summary>Registers a named UI template (JSON or YAML descriptor string).</summary>
     public void RegisterTemplate(string name, string descriptor)
     {
-        WishException.Check(Native.wish_register_template(_handle, name, descriptor), $"register_template({name})");
+        WishException.Check(Native.wish_register_template(_handle, name, descriptor), $"register_template({name})", LastError);
     }
 
     public Future RegisterTemplateAsync(string name, string descriptor)
     {
         WishException.Check(
             Native.wish_register_template_async(_handle, name, descriptor, out var outFuture),
-            $"register_template_async({name})");
+            $"register_template_async({name})", LastError);
         return WishInterop.WrapFuture(outFuture);
     }
 
@@ -220,7 +220,7 @@ public sealed class Client : IDisposable
     {
         WishException.Check(
             Native.wish_instantiate_template_async(_handle, name, prefix, out var outFuture),
-            $"instantiate_template_async({name}, {prefix})");
+            $"instantiate_template_async({name}, {prefix})", LastError);
         return WishInterop.WrapFuture(outFuture);
     }
 
@@ -239,7 +239,7 @@ public sealed class Client : IDisposable
     /// <summary>Releases every proxy cached under <paramref name="prefix"/> and its descendants.</summary>
     public void Release(string prefix)
     {
-        WishException.Check(Native.wish_release(_handle, prefix), $"release({prefix})");
+        WishException.Check(Native.wish_release(_handle, prefix), $"release({prefix})", LastError);
     }
 
     // ── Object instantiation ──────────────────────────────────────────────────
@@ -301,7 +301,7 @@ public sealed class Client : IDisposable
     public void RunApp(string name, IReadOnlyList<string>? args = null)
     {
         var argv = args?.ToArray() ?? [];
-        WishException.Check(Native.wish_run_app(_handle, name, argv, (nuint)argv.Length), $"run_app({name})");
+        WishException.Check(Native.wish_run_app(_handle, name, argv, (nuint)argv.Length), $"run_app({name})", LastError);
     }
 
     // ── File transfer ──────────────────────────────────────────────────────────
@@ -309,13 +309,13 @@ public sealed class Client : IDisposable
     /// <summary>Uploads a file to the server's sandboxed session resource directory.</summary>
     public void UploadFile(string name, byte[] data)
     {
-        WishException.Check(Native.wish_upload_file(_handle, name, data, (nuint)data.Length), $"upload_file({name})");
+        WishException.Check(Native.wish_upload_file(_handle, name, data, (nuint)data.Length), $"upload_file({name})", LastError);
     }
 
     /// <summary>Downloads a previously uploaded file from the server.</summary>
     public byte[] DownloadFile(string name)
     {
-        WishException.Check(Native.wish_download_file(_handle, name, out var outData, out var outLen), $"download_file({name})");
+        WishException.Check(Native.wish_download_file(_handle, name, out var outData, out var outLen), $"download_file({name})", LastError);
         try
         {
             var result = new byte[outLen];
@@ -338,7 +338,7 @@ public sealed class Client : IDisposable
     public void UploadFileFromPath(string name, string localPath)
     {
         WishException.Check(
-            Native.wish_upload_file_from_path(_handle, name, localPath), $"upload_file_from_path({name})");
+            Native.wish_upload_file_from_path(_handle, name, localPath), $"upload_file_from_path({name})", LastError);
     }
 
     /// <summary>
@@ -349,7 +349,7 @@ public sealed class Client : IDisposable
     public void DownloadFileToPath(string name, string localPath)
     {
         WishException.Check(
-            Native.wish_download_file_to_path(_handle, name, localPath), $"download_file_to_path({name})");
+            Native.wish_download_file_to_path(_handle, name, localPath), $"download_file_to_path({name})", LastError);
     }
 
     /// <summary>
@@ -360,19 +360,19 @@ public sealed class Client : IDisposable
     {
         WishException.Check(
             Native.wish_upload_package_from_path(_handle, destPath, localZipPath),
-            $"upload_package_from_path({destPath})");
+            $"upload_package_from_path({destPath})", LastError);
     }
 
     // ── Logging ───────────────────────────────────────────────────────────────
 
     /// <summary>Sends a structured log message: <paramref name="level"/> is "debug"/"info"/"warn"/"error".</summary>
-    public void Log(string level, string msg) => WishException.Check(Native.wish_log(_handle, level, msg), "log");
+    public void Log(string level, string msg) => WishException.Check(Native.wish_log(_handle, level, msg), "log", LastError);
 
-    public void LogDebug(string msg) => WishException.Check(Native.wish_log_debug(_handle, msg), "log_debug");
+    public void LogDebug(string msg) => WishException.Check(Native.wish_log_debug(_handle, msg), "log_debug", LastError);
 
-    public void LogInfo(string msg) => WishException.Check(Native.wish_log_info(_handle, msg), "log_info");
+    public void LogInfo(string msg) => WishException.Check(Native.wish_log_info(_handle, msg), "log_info", LastError);
 
-    public void LogWarn(string msg) => WishException.Check(Native.wish_log_warn(_handle, msg), "log_warn");
+    public void LogWarn(string msg) => WishException.Check(Native.wish_log_warn(_handle, msg), "log_warn", LastError);
 
-    public void LogError(string msg) => WishException.Check(Native.wish_log_error(_handle, msg), "log_error");
+    public void LogError(string msg) => WishException.Check(Native.wish_log_error(_handle, msg), "log_error", LastError);
 }
