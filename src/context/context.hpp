@@ -35,6 +35,20 @@ using style_service_ptr = std::shared_ptr<style_service>;
 class logger;
 using logger_ptr = std::shared_ptr<logger>;
 
+/// @brief Number of consecutive render passes `context::dirty` requests by
+/// default whenever something marks a session dirty.
+///
+/// A single follow-up frame is not always enough: ImGui auto-fit sizing can
+/// take a couple of frames to settle on new content, and a modal popup's
+/// `BeginPopupModal` doesn't report closed until the frame *after*
+/// `ImGui::CloseCurrentPopup()` was called (see render_window()'s
+/// "__request_close__" handling in imgui_ui_renderer.cpp). Every "mark
+/// dirty" call site uses this same conservative constant rather than
+/// picking its own frame count, so the render loop always renders a few
+/// extra (cheap; skipped entirely once nothing is actually dirty) frames
+/// past the minimum any single site happens to need today.
+inline constexpr int32_t kDirtySettleFrames = 3;
+
 /// @brief Holds all mutable state owned by one connected client.
 ///
 /// A `bison::rmi::context` subclass: `session_id` and `emit_event` are
@@ -91,18 +105,33 @@ struct context : public bison::rmi::context {
   /// CRC-32 pass over their own bytes at texture-load time.
   std::unordered_map<std::string, uint32_t> embedded_crc32s;
 
-  /// Set to `true` after any RMI dispatch touching this session and after
-  /// any top-level event handler runs, so the render loop knows the session
-  /// needs to be redrawn; cleared right before the render loop redraws it.
-  /// Application code may also set it directly to force a redraw after
-  /// mutating session state from outside RMI dispatch (e.g. a background
-  /// thread holding the session wlock directly), or from within a render
-  /// function (which only ever sees a `const context&`) to request
+  /// Number of upcoming render passes the session still needs, not just
+  /// whether it needs one: some state transitions only fully resolve after
+  /// *several* consecutive frames (e.g. ImGui auto-fit sizing settling
+  /// across two or three frames of new content, or a modal popup's
+  /// `BeginPopupModal` not reporting closed until the frame after
+  /// `ImGui::CloseCurrentPopup()` was called) — a plain "needs a redraw"
+  /// bool can only guarantee the *next* frame renders, silently dropping
+  /// whichever of those later frames nothing else happens to trigger. The
+  /// render loop decrements this by one before each render (down to zero,
+  /// never negative) instead of clearing it to zero outright, so a render
+  /// function that bumps it back up mid-frame (see below) isn't stomped by
+  /// that same frame's own decrement.
+  ///
+  /// Set (via `kDirtySettleFrames`, not a bare count, so every call site
+  /// requests the same conservatively-safe number of follow-up frames) after
+  /// any RMI dispatch touching this session and after any top-level event
+  /// handler runs, so the render loop knows the session needs to be
+  /// redrawn. Application code may also set it directly to force redraws
+  /// after mutating session state from outside RMI dispatch (e.g. a
+  /// background thread holding the session wlock directly), or from within
+  /// a render function (which only ever sees a `const context&`) to request
   /// continuous redraws — e.g. a custom widget animating its own caret
-  /// outside of ImGui's `WantTextInput` mechanism. `mutable` for that
-  /// last case; still an atomic since it's read from other threads via
-  /// `rlock()` while dispatch holds the `wlock()`.
-  mutable std::atomic<bool> dirty{true};
+  /// outside of ImGui's `WantTextInput` mechanism, or render_window()
+  /// confirming a requested modal close. `mutable` for that last case;
+  /// still an atomic since it's read from other threads via `rlock()`
+  /// while dispatch holds the `wlock()`.
+  mutable std::atomic<int32_t> dirty{kDirtySettleFrames};
 
   /// When `false` (default), widget file paths must be relative and are
   /// sandboxed inside `resource_dir`.  Set to `true` only for same-process

@@ -499,6 +499,37 @@
   const canvas = document.getElementById("wish-canvas");
   const renderer = new Renderer(canvas);
 
+  // Draw the latest decoded FRAME inside a requestAnimationFrame callback
+  // rather than synchronously in the WebSocket "message" handler. Chrome's
+  // compositor schedules canvas repaints around rAF; raw WebGL draws issued
+  // from an arbitrary background task (like a socket message) can be left
+  // uncomposited -- the backing store updates, but nothing new reaches the
+  // screen -- until some *other* rAF-triggering event (e.g. a mouse move)
+  // happens to come along. Without this, a server-pushed UI change that
+  // isn't accompanied by user input (e.g. a modal dialog another widget's
+  // click handler just opened) can sit invisible for seconds after arriving.
+  // "Latest frame wins": if several FRAME messages arrive before the next
+  // rAF tick, only the most recent is drawn -- the server always resends
+  // the complete scene every frame (ImGui is immediate-mode), so nothing is
+  // lost by skipping intermediate ones.
+  let pendingFrame = null;
+  let frameRafScheduled = false;
+  function scheduleFrameRender() {
+    if (frameRafScheduled) return;
+    frameRafScheduled = true;
+    requestAnimationFrame(() => {
+      frameRafScheduled = false;
+      if (pendingFrame) {
+        renderer.render(pendingFrame);
+        pendingFrame = null;
+        // First FRAME processed means the canvas now shows something real --
+        // Playwright scripts wait on this before interacting (see
+        // src/automation/DESIGN.md's "Readiness").
+        window.wish.ready = true;
+      }
+    });
+  }
+
   // Set (by TEX_CHECK) for a texture the resource cache didn't have -- the
   // resulting TEX_CREATE's pixels get persisted for next time. Cleared once
   // that TEX_CREATE arrives. See resource_cache.js and src/web/DESIGN.md.
@@ -613,11 +644,8 @@
     const offset = 8;
     switch (type) {
       case MSG.FRAME:
-        renderer.render(decodeFrame(view, offset));
-        // First FRAME processed means the canvas now shows something real --
-        // Playwright scripts wait on this before interacting (see
-        // src/automation/DESIGN.md's "Readiness").
-        window.wish.ready = true;
+        pendingFrame = decodeFrame(view, offset);
+        scheduleFrameRender();
         break;
       case MSG.TEX_CREATE:
       case MSG.TEX_UPDATE: {

@@ -484,6 +484,33 @@ static constexpr const char* kTabFilesDesc = R"json(
           }
         })json";
 
+static constexpr const char* kTabFormsDesc = R"json(
+        "tab_forms": { "type": "TabItem", "label": "Forms",
+          "children": {
+            "sec_filedialog": { "type": "SeparatorText", "label": "File Dialog" },
+            "lbl_filedialog_hint": { "type": "Label",
+                                     "text": "Standalone file-picker dialog (the FileDialog form)." },
+            "btn_open_filedialog": { "type": "Button", "label": "Open File Dialog..." },
+            "sec_msgbox": { "type": "SeparatorText", "label": "Message Box" },
+            "lbl_msgbox_hint": { "type": "Label",
+                "text": "Win32-MessageBox-style modal dialog (the MessageBox form) -- click a button to show one:" },
+            "msgbox_row1": { "type": "HorizontalLayout", "spacing": 8,
+              "children": {
+                "btn_mb_ok":        { "type": "Button", "label": "OK"      },
+                "btn_mb_ok_cancel": { "type": "Button", "label": "OK / Cancel" },
+                "btn_mb_yes_no":    { "type": "Button", "label": "Yes / No"    }
+              }
+            },
+            "msgbox_row2": { "type": "HorizontalLayout", "spacing": 8,
+              "children": {
+                "btn_mb_yes_no_cancel":       { "type": "Button", "label": "Yes / No / Cancel"       },
+                "btn_mb_retry_cancel":        { "type": "Button", "label": "Retry / Cancel"          },
+                "btn_mb_abort_retry_ignore":  { "type": "Button", "label": "Abort / Retry / Ignore"  }
+              }
+            }
+          }
+        })json";
+
 // Escapes '"' and '\' for embedding an arbitrary string as a JSON string
 // literal. Icon filenames come from the embedded resource archive (trusted,
 // not user input), but this keeps the descriptor well-formed regardless.
@@ -591,7 +618,7 @@ static std::string build_demo_desc_str(const std::string& tab_icons_desc) {
           "children": {)json" +
       kTabBasicsDesc + "," + kTabSlidersDesc + "," + kTabInputsDesc + "," + kTabSelectionDesc + "," + kTabTreeDesc +
       "," + kTabMiscDesc + "," + kTabTablesDesc + "," + kTabPlotsDesc + "," + kTabPlot3DDesc + "," + kTabFilesDesc +
-      "," + tab_icons_desc
+      "," + kTabFormsDesc + "," + tab_icons_desc
       // Close tab bar, add status bar, close window and dockspace.
       + R"json(
 
@@ -1364,6 +1391,57 @@ class demo_client : public wish::examples::example_client {
               });
         });
 
+    // ── Forms tab: standalone FileDialog + MessageBox showcase ───────────
+
+    pm.at("demo_win.tabs_root.tab_forms.btn_open_filedialog").onEvent("clicked"_key, [status, browse](dynamic) {
+      browse("Open File", "Open", {}, [status](std::string path) { status("FileDialog: opened \"" + path + "\""); });
+    });
+
+    // Instantiates a MessageBox with the given title/message/icon/buttons
+    // preset and shows the resulting button choice in the status label. The
+    // returned proxy is kept alive by capturing it in its own on_result
+    // handler -- an RMI proxy with no live reference is destroyed
+    // immediately (taking the not-yet-answered dialog down with it), the
+    // same pitfall the `browse` lambda above avoids for FileDialog.
+    auto show_message_box = [this, status](
+                                 const std::string& title, const std::string& message, const std::string& icon,
+                                 const std::string& buttons) {
+      dynamic params;
+      params["title"_key] = title;
+      params["message"_key] = message;
+      params["icon"_key] = icon;
+      params["buttons"_key] = buttons;
+      auto raw = this->instantiate("wish"_key, "MessageBox"_key, std::move(params)).get();
+      auto mb = std::make_shared<bdg::bison::rmi::proxy::dynamic>(std::move(raw));
+      mb->onEvent("on_result"_key, [mb, status](dynamic payload) {
+        status("MessageBox result: " + payload.as<std::string>("button"_key));
+      });
+    };
+
+    pm.at("demo_win.tabs_root.tab_forms.msgbox_row1.btn_mb_ok").onEvent("clicked"_key, [show_message_box](dynamic) {
+      show_message_box("Info", "This is a simple OK message box.", "info", "ok");
+    });
+    pm.at("demo_win.tabs_root.tab_forms.msgbox_row1.btn_mb_ok_cancel")
+        .onEvent("clicked"_key, [show_message_box](dynamic) {
+          show_message_box("Confirm", "Proceed with the operation?", "question", "ok_cancel");
+        });
+    pm.at("demo_win.tabs_root.tab_forms.msgbox_row1.btn_mb_yes_no")
+        .onEvent("clicked"_key, [show_message_box](dynamic) {
+          show_message_box("Question", "Do you want to continue?", "question", "yes_no");
+        });
+    pm.at("demo_win.tabs_root.tab_forms.msgbox_row2.btn_mb_yes_no_cancel")
+        .onEvent("clicked"_key, [show_message_box](dynamic) {
+          show_message_box("Confirm", "Save changes before closing?", "warning", "yes_no_cancel");
+        });
+    pm.at("demo_win.tabs_root.tab_forms.msgbox_row2.btn_mb_retry_cancel")
+        .onEvent("clicked"_key, [show_message_box](dynamic) {
+          show_message_box("Error", "The operation failed. Retry?", "error", "retry_cancel");
+        });
+    pm.at("demo_win.tabs_root.tab_forms.msgbox_row2.btn_mb_abort_retry_ignore")
+        .onEvent("clicked"_key, [show_message_box](dynamic) {
+          show_message_box("Error", "A device error occurred.", "error", "abort_retry_ignore");
+        });
+
     // ── Tab events ────────────────────────────────────────────────────────
 
     static const char* kTabNames[] = {
@@ -1377,6 +1455,7 @@ class demo_client : public wish::examples::example_client {
         "demo_win.tabs_root.tab_plots",
         "demo_win.tabs_root.tab_plot3d",
         "demo_win.tabs_root.tab_files",
+        "demo_win.tabs_root.tab_forms",
         "demo_win.tabs_root.tab_icons"};
     static const char* kTabLabels[] = {
         "Basics",
@@ -1389,8 +1468,9 @@ class demo_client : public wish::examples::example_client {
         "Plots",
         "3-D Plots",
         "Files",
+        "Forms",
         "Icons"};
-    for (int i = 0; i < 11; ++i) {
+    for (int i = 0; i < 12; ++i) {
       pm.at(kTabNames[i]).onEvent("selected"_key, [i, status](dynamic) {
         status(std::string("Tab selected: ") + kTabLabels[i]);
       });

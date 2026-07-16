@@ -52,14 +52,14 @@ TEST_F(MessageBoxLocalTest, DefaultIconIsNone) {
   auto obj = dynamic::instantiate("wish"_key, "MessageBox"_key);
   auto* f = obj.findField("icon"_key);
   ASSERT_NE(f, nullptr);
-  EXPECT_EQ(f->as<std::string>(), "none");
+  EXPECT_EQ(f->get_as<std::string>(), "none");
 }
 
 TEST_F(MessageBoxLocalTest, DefaultButtonsIsOk) {
   auto obj = dynamic::instantiate("wish"_key, "MessageBox"_key);
   auto* f = obj.findField("buttons"_key);
   ASSERT_NE(f, nullptr);
-  EXPECT_EQ(f->as<std::string>(), "ok");
+  EXPECT_EQ(f->get_as<std::string>(), "ok");
 }
 
 // ── Session-capturing server for internal-tree tests ──────────────────────────
@@ -145,6 +145,143 @@ TEST_F(MessageBoxWindowTest, DefaultOkPresetHasOneButton) {
   EXPECT_TRUE(objs.count(root + ".buttons.btn0"));
   EXPECT_FALSE(objs.count(root + ".buttons.btn1"));
   EXPECT_EQ(objs.at(root + ".buttons.btn0")->findField("label"_key)->as<std::string>(), "OK");
+}
+
+// ── __construct: instantiate()-time params must take effect ──────────────────
+//
+// bison::rmi::server::handle_instantiate() calls form::init() (which runs
+// on_init(), building the tree from the object's *current* field values --
+// still prototype defaults at that point) strictly before it applies
+// instantiate()'s params via the "__construct" hook. Without registering
+// "__construct", those params would be silently dropped and never reach
+// on_init() at all. These tests catch a regression of that wiring, notably
+// for "buttons"/"icon" which change the tree's *structure*, not just a
+// pass-through field like title/message on other forms.
+
+class MessageBoxConstructTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    srv_ = std::make_unique<SessionCapturingServer>(transport_, std::make_unique<wish::null_renderer>());
+    srv_->start();
+    client_ = std::make_unique<bdg::bison::rmi::client>(transport_.connect());
+    client_->connect();
+  }
+
+  void TearDown() override {
+    client_->disconnect();
+    client_.reset();
+    srv_->stop();
+    srv_.reset();
+  }
+
+  memory_server_transport transport_;
+  std::unique_ptr<SessionCapturingServer> srv_;
+  std::unique_ptr<bdg::bison::rmi::client> client_;
+};
+
+TEST_F(MessageBoxConstructTest, ConstructParamsSetTitleAndMessage) {
+  dynamic params;
+  params["title"_key] = std::string{"Confirm"};
+  params["message"_key] = std::string{"Are you sure?"};
+  auto proxy = client_->instantiate("wish"_key, "MessageBox"_key, std::move(params)).get();
+  auto snapshot = proxy.get().get();
+  EXPECT_EQ(snapshot.as<std::string>("title"_key), "Confirm");
+  EXPECT_EQ(snapshot.as<std::string>("message"_key), "Are you sure?");
+
+  std::string root = find_form_root(srv_->last_session->ui_objects);
+  ASSERT_FALSE(root.empty());
+  auto& win = srv_->last_session->ui_objects.at(root);
+  EXPECT_EQ(win->findField("title"_key)->as<std::string>(), "Confirm");
+}
+
+TEST_F(MessageBoxConstructTest, ConstructParamsBuildYesNoCancelButtonRow) {
+  dynamic params;
+  params["buttons"_key] = std::string{"yes_no_cancel"};
+  client_->instantiate("wish"_key, "MessageBox"_key, std::move(params)).get();
+
+  std::string root = find_form_root(srv_->last_session->ui_objects);
+  ASSERT_FALSE(root.empty());
+  auto& objs = srv_->last_session->ui_objects;
+  ASSERT_TRUE(objs.count(root + ".buttons.btn0"));
+  ASSERT_TRUE(objs.count(root + ".buttons.btn1"));
+  ASSERT_TRUE(objs.count(root + ".buttons.btn2"));
+  EXPECT_EQ(objs.at(root + ".buttons.btn0")->findField("label"_key)->as<std::string>(), "Yes");
+  EXPECT_EQ(objs.at(root + ".buttons.btn1")->findField("label"_key)->as<std::string>(), "No");
+  EXPECT_EQ(objs.at(root + ".buttons.btn2")->findField("label"_key)->as<std::string>(), "Cancel");
+}
+
+TEST_F(MessageBoxConstructTest, ConstructParamsSetIconSrcAndMessage) {
+  dynamic params;
+  params["icon"_key] = std::string{"warning"};
+  params["message"_key] = std::string{"Careful!"};
+  client_->instantiate("wish"_key, "MessageBox"_key, std::move(params)).get();
+
+  std::string root = find_form_root(srv_->last_session->ui_objects);
+  ASSERT_FALSE(root.empty());
+  auto& objs = srv_->last_session->ui_objects;
+  ASSERT_TRUE(objs.count(root + ".body.icon"));
+  EXPECT_EQ(objs.at(root + ".body.icon")->findField("src"_key)->as<std::string>(), "res/icons/msgbox_warning.png");
+  ASSERT_TRUE(objs.count(root + ".body.message"));
+  EXPECT_EQ(objs.at(root + ".body.message")->findField("text"_key)->as<std::string>(), "Careful!");
+}
+
+TEST_F(MessageBoxConstructTest, DefaultIconLeavesSrcEmpty) {
+  // icon defaults to "none" -- the Image child should exist (still reserves
+  // its declared 32x32 via render_image()'s Dummy() fallback) but with no
+  // src to load.
+  client_->instantiate("wish"_key, "MessageBox"_key).get();
+
+  std::string root = find_form_root(srv_->last_session->ui_objects);
+  ASSERT_FALSE(root.empty());
+  auto& objs = srv_->last_session->ui_objects;
+  ASSERT_TRUE(objs.count(root + ".body.icon"));
+  EXPECT_EQ(objs.at(root + ".body.icon")->findField("src"_key)->as<std::string>(), "");
+}
+
+TEST_F(MessageBoxConstructTest, ClickingButtonFromConstructedYesNoCancelEmitsCorrectResult) {
+  dynamic params;
+  params["buttons"_key] = std::string{"yes_no_cancel"};
+  client_->instantiate("wish"_key, "MessageBox"_key, std::move(params)).get();
+
+  std::string root = find_form_root(srv_->last_session->ui_objects);
+  ASSERT_FALSE(root.empty());
+
+  bison::key_t last_event{hash_t{0}};
+  dynamic last_payload;
+  auto prev = std::move(srv_->last_session->emit_event);
+  srv_->last_session->emit_event = [&](bison::key_t, bison::key_t event, dynamic payload) {
+    last_event = event;
+    last_payload = std::move(payload);
+    if (prev)
+      prev(bison::key_t{}, event, dynamic{});
+  };
+
+  auto& objs = srv_->last_session->ui_objects;
+  auto it = objs.find(root + ".buttons.btn1"); // "No"
+  ASSERT_NE(it, objs.end());
+  auto btn_id = (*it->second)["__wish_id"_key].as<bison::key_t>();
+  auto h = srv_->last_session->top_level_handlers.find(root);
+  ASSERT_NE(h, srv_->last_session->top_level_handlers.end());
+  h->second->on_event(btn_id, "clicked"_key, dynamic{});
+
+  // form::emit() only enqueues into pending_events; delivery happens on the
+  // render loop's next frame (see test_file_dialog.cpp's wait_for_event for
+  // the same idiom), so poll briefly rather than asserting synchronously.
+  auto t0 = std::chrono::steady_clock::now();
+  while (last_event.id == 0 && std::chrono::steady_clock::now() - t0 < std::chrono::milliseconds(2000))
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+
+  EXPECT_EQ(last_event, "on_result"_key);
+  EXPECT_EQ(last_payload.as<std::string>("button"_key), "no");
+  // The internal Window is *not* removed synchronously on click: closing a
+  // modal popup requires ImGui to actually observe the close (see
+  // render_window()'s "__request_close__" handling in imgui_ui_renderer.cpp)
+  // across a real frame, which this null_renderer-based harness never runs.
+  // The window is still present, now flagged to close on the next render.
+  ASSERT_FALSE(find_form_root(srv_->last_session->ui_objects).empty());
+  auto* request_close_f = objs.at(root)->findField("__request_close__"_key);
+  ASSERT_NE(request_close_f, nullptr);
+  EXPECT_TRUE(request_close_f->as<bool>());
 }
 
 // ── RMI fixture — checks server round-trips ───────────────────────────────────
@@ -277,8 +414,17 @@ TEST_F(MessageBoxEventsTest, ClickingOkEmitsOnResultWithOkButton) {
   EXPECT_EQ(ev->payload.as<std::string>("button"_key), "ok");
 }
 
-TEST_F(MessageBoxEventsTest, ClickingOkRemovesInternalWindow) {
+TEST_F(MessageBoxEventsTest, ClickingOkRequestsModalClose) {
   simulate_btn_click("btn0");
   ASSERT_TRUE(wait_for_event("on_result"_key));
-  EXPECT_TRUE(find_form_root(srv_->last_session->ui_objects).empty());
+  // Actual removal is deferred until ImGui confirms the popup closed (see
+  // render_window()'s "__request_close__" handling in imgui_ui_renderer.cpp,
+  // and MessageBoxConstructTest.ClickingButtonFromConstructedYesNoCancelEmitsCorrectResult's
+  // comment) -- this null_renderer-based harness never runs a real frame, so
+  // the window stays present, now flagged to close on the next render.
+  auto& objs = srv_->last_session->ui_objects;
+  ASSERT_FALSE(find_form_root(objs).empty());
+  auto* request_close_f = objs.at(root_)->findField("__request_close__"_key);
+  ASSERT_NE(request_close_f, nullptr);
+  EXPECT_TRUE(request_close_f->as<bool>());
 }

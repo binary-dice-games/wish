@@ -306,6 +306,60 @@ with AutomationClient.launch(server_cmd=["build/app/wish", "server", "--renderer
 | `screenshot()` | Pixel-perfect PNG bytes of exactly what's on screen right now — attach to a bug report, or eyeball visually with the `Read` tool after writing to a file. |
 | `wait_for(js_predicate)` | Block until a JS predicate is true — e.g. wait for an async operation's result to land, a dialog to close, or a new log entry to appear, before asserting. `async` predicates that call `getTree()`/`getWidget()` work directly (Playwright awaits the returned Promise on every poll). |
 
+### Workflow: driving a form end-to-end (not just observing)
+
+`AutomationClient`'s browser page is a pure **observer**: `window.wish` (the
+shim in `resources/embedded/web/client.js`) only queries the tree, screenshots,
+and injects DOM input events into whatever is already rendered — it is *not*
+an RMI client and has no `instantiate()`/`set()`/object-model API. To actually
+build UI (e.g. instantiate a form and set its fields) you need a **second,
+separate RMI client** connected to the server's RMI transport, running
+alongside the automation session:
+
+```python
+import threading
+from wish import Client                    # real RMI client (needs wish_client_dll)
+from wish.automation import AutomationClient  # pure observer/driver
+
+ready = threading.Event()
+def session_fn(client):
+    proxy = client.instantiate("MessageBox", "wish", params={"title": "Confirm", ...})
+    # MUST assign the Proxy to a variable that outlives this closure -- see
+    # the premature-destroy gotcha below.
+    ready.set()
+    client.wait()          # blocks until client.quit() -- keeps the object alive
+
+client = Client.tcp("127.0.0.1", 7071)      # separate RMI port, NOT --web_port
+t = threading.Thread(target=lambda: client.run(session_fn), daemon=True)
+t.start()
+ready.wait(timeout=5)
+
+with AutomationClient.launch(url="http://127.0.0.1:8099") as ui:  # attach, don't launch
+    ui.click("__message_box_0.buttons.btn1")
+```
+
+Key points this pattern depends on:
+- `wish server`/`wish-server` opens **two independent listeners**: the bison
+  RMI transport (`--transport=tcp --port=N`, default transport is `term` —
+  not scriptable) and the web renderer's HTTP/WebSocket (`--web_bind`/
+  `--web_port`, what `AutomationClient` talks to). Launch the server yourself
+  with both configured, then `AutomationClient.launch(url="http://host:web_port")`
+  to **attach** rather than `server_cmd=` to launch (the latter has no way to
+  also pass `--transport=tcp`).
+- `wish.Client` (unlike `wish.automation`) requires `wish_client_dll` built
+  and discoverable — set `WISH_LIB=/path/to/libwish_client.so` if it isn't
+  under the default `<repo>/build/` (e.g. a `build-cli/` or other named build
+  directory).
+- Run the RMI client's `session_fn` on a background thread with `client.wait()`
+  inside it (unblocked by `client.quit()`, typically from an event handler) —
+  otherwise `client.run()` disconnects (and destroys every object it created)
+  the instant `session_fn` returns.
+- Restart the server (and delete its `imgui.ini`, at the server's CWD) between
+  debugging attempts that change a `Window`'s content/size — a stale saved
+  size for the same stable id can silently pin a freshly-rebuilt window to an
+  old, wrong size/position (see `test_imgui_renderer.cpp`'s own "Hermetic"
+  fixture comment on the identical class of bug in tests).
+
 ### Workflow: investigating a UI bug report
 
 1. **Reproduce it live** instead of guessing from source: build with automation
@@ -371,6 +425,36 @@ def test_saving_shows_confirmation(wish_ui):
 - **`get_logs()` only sees logs from after the browser connected.** Logging
   is pushed live, not replayed from history — a message logged before
   `AutomationClient.launch()` finished connecting is never delivered.
+- **A `wish.Client` `Proxy` you don't keep a reference to gets destroyed
+  almost immediately.** `client.instantiate(...)` as a bare statement (result
+  discarded) creates the remote object, then Python garbage-collects the
+  returned `Proxy` right away, and its destructor destroys the remote object
+  — so it's gone before automation ever queries the tree (symptom: `get_tree()`
+  returns an empty/near-empty `widgets` list even though `instantiate` clearly
+  succeeded). Always assign it: `proxy = client.instantiate(...)`, and keep
+  `proxy` in scope for as long as the object should exist. Server-side
+  `--verbose` (prints `connect`/`instantiate`/`destroy`/`disconnect` trace
+  lines) is the fastest way to confirm this is what happened — an `instantiate
+  ok` immediately followed by `destroy` for the same object is the signature.
+- **`bison.Dynamic` (Python) is not a dict — it has no `.get()`.** Read a
+  field with `payload["field_name"]`, not `payload.get("field_name")`.
+  Calling `.get(...)` resolves through `Dynamic.__getattr__`'s generic
+  RMI-method-call fallback instead of raising `AttributeError`, so it fails
+  *silently* (returns nothing useful, no exception) — an easy way to
+  misdiagnose "the event handler never fired" when it actually fired fine and
+  only the payload read was wrong.
+- **A `HorizontalLayout` child with an explicit `width` gets wrapped in its
+  own `ImGui::BeginChild()`** (the mechanism behind fixed-width/stretch
+  columns — see `Layout::width`'s field comment). Content inside that nested
+  child window does not get correct hover/click detection when the ancestor
+  `Window` is `modal: true` (`BeginPopupModal`) — clicks silently do nothing
+  even though the widget's reported `rect` looks correct and matches the
+  screenshot. Don't set an explicit `width` on children of a `HorizontalLayout`
+  inside a modal `Window`; let them auto-size to content instead. This also
+  means `align: "right"` (which computes its offset from the sum of children's
+  `width` hints) must not be combined with width-less children either — with
+  no explicit widths it sums to 0, pushing the offset almost to the full
+  available width and shoving the row off-screen (`visible: false`).
   Connect first, then drive the app, and this is a non-issue in practice.
 
 ## Security Considerations for AI Code Assist

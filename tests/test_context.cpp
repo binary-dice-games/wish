@@ -77,13 +77,13 @@ TEST(ContextTest, DirtyDefaultsTrue) {
   // A freshly created session must render at least once, so the render loop
   // does not treat it as idle before any RMI dispatch has run.
   context s{"s3"_key};
-  EXPECT_TRUE(s.dirty.load());
+  EXPECT_GT(s.dirty.load(), 0);
 }
 
 TEST(ContextTest, DirtyCanBeSetAtomically) {
   context s{"s4"_key};
-  s.dirty.store(true);
-  EXPECT_TRUE(s.dirty.load());
+  s.dirty.store(bdg::wish::kDirtySettleFrames);
+  EXPECT_GT(s.dirty.load(), 0);
 }
 
 // ── embedded resources ────────────────────────────────────────────────────────

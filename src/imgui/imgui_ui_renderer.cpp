@@ -110,6 +110,35 @@ void render_window(imgui_renderer& r, const ui_element& node, const context& s) 
     bool now_open = ImGui::BeginPopupModal(iml.c_str(), p_open, ImGuiWindowFlags(fl));
     if (now_open) {
       render_children(r, node, s);
+      // App-level code (e.g. a form's on_event()) runs outside any ImGui
+      // frame and can't call ImGui::CloseCurrentPopup() directly -- it
+      // requests a close by setting this hidden field instead (see
+      // message_box::request_close() for a concrete example), and this is
+      // the one place that actually calls it, from *inside* the Begin/End
+      // scope CloseCurrentPopup() requires. Without this, app code has no way to
+      // properly close a modal it opened: simply removing the Window from
+      // top_level_objects (as every other close path does) leaves ImGui's
+      // own internal popup stack thinking that ID is still open forever,
+      // which corrupts the *next* modal that happens to reuse the same
+      // stable id (e.g. a form's next instance, since
+      // form::next_available_key() recycles freed keys) -- it silently
+      // fails to open correctly until an unrelated input event (e.g. a
+      // mouse move) forces ImGui to reconcile its popup stack.
+      if (node.get_as<bool>("__request_close__"_key, false)) {
+        ImGui::CloseCurrentPopup();
+        const_cast<ui_element&>(node)["__request_close__"_key] = false;
+        // CloseCurrentPopup() only takes effect on ImGui's *next* pass
+        // through this popup (BeginPopupModal won't return false until
+        // then), and nothing else guarantees the render loop schedules that
+        // next frame -- setting a hidden field here doesn't enqueue an
+        // event or otherwise mark the session dirty on its own. Force it
+        // directly (dirty is mutable, same idiom as the TextEditor caret
+        // blink in imgui_text_editor_renderer.cpp) so the transition that
+        // fires "closed" (below) actually gets observed within a frame or
+        // two, instead of sitting pending until an unrelated input event
+        // (e.g. a mouse move) happens to trigger the next render.
+        s.dirty.store(kDirtySettleFrames, std::memory_order_release);
+      }
       ImGui::EndPopup();
     } else {
       const_cast<ui_element&>(node)["__modal_opened__"_key] = false;
@@ -246,16 +275,40 @@ void render_image(imgui_renderer& r, const ui_element& node, const context& s) {
   auto src = node.get_as<std::string>("src"_key, "");
   int32_t w = node.get_as<int32_t>("width"_key, 0);
   int32_t h = node.get_as<int32_t>("height"_key, 0);
-  if (src.empty() || w <= 0 || h <= 0)
+
+  // Every early-out below reserves the declared width/height via a Dummy
+  // item instead of submitting nothing at all, so a sibling in the same
+  // HorizontalLayout/VerticalLayout always sees this element occupy
+  // consistent space regardless of load state (missing src, an
+  // unresolvable path, or a texture that fails to decode). Submitting
+  // *nothing* left an empty ImGui::BeginGroup()/EndGroup() pair (see
+  // render_horizontal_layout() below), which corrupts ImGui::SameLine()'s
+  // cursor math for whatever renders next -- observed as a sibling Label
+  // silently clipping itself out of a modal Window entirely (see
+  // message_box.cpp's icon+message row). A w<=0 or h<=0 Image has nothing
+  // to reserve either way, matching prior behavior for a genuinely
+  // zero-sized element.
+  auto reserve = [&] {
+    if (w > 0 && h > 0)
+      ImGui::Dummy(ImVec2(float(w), float(h)));
+  };
+
+  if (src.empty() || w <= 0 || h <= 0) {
+    reserve();
     return;
+  }
   static const std::vector<std::string> kImageExtensions{"png", "jpg", "jpeg", "bmp", "gif", "webp", "tga"};
   auto full_path = file_service::resolve_or_fetch(
       src, s.resource_dir, s.allow_absolute_paths, s.allow_url_fetch, kImageExtensions);
-  if (full_path.empty())
+  if (full_path.empty()) {
+    reserve();
     return;
+  }
   ImTextureID tex = r.get_or_load_texture(full_path.string(), s.resource_dir, &s.embedded_crc32s);
-  if (!tex)
+  if (!tex) {
+    reserve();
     return;
+  }
   ImGui::Image(tex, ImVec2(float(w), float(h)));
 }
 

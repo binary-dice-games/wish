@@ -171,7 +171,7 @@ void server::on_after_dispatch(bison::rmi::context& ctx) noexcept {
   // Any dispatched RMI call may have mutated session state (properties,
   // tree structure, style); flag the session so the render loop redraws it
   // instead of skipping the next idle-check.
-  static_cast<context&>(ctx).dirty.store(true, std::memory_order_release);
+  static_cast<context&>(ctx).dirty.store(kDirtySettleFrames, std::memory_order_release);
   detail::current_context = nullptr;
 }
 
@@ -202,7 +202,7 @@ void server::render_loop() {
 
       if (!needs_render) {
         for (const auto& sync_ctx : sessions_snapshot) {
-          if (context_rlock{*sync_ctx}->dirty.load(std::memory_order_acquire)) {
+          if (context_rlock{*sync_ctx}->dirty.load(std::memory_order_acquire) > 0) {
             needs_render = true;
             break;
           }
@@ -249,11 +249,17 @@ void server::render_loop() {
           std::function<void(bison::key_t, bison::key_t, bison::dynamic)> client_emit;
           {
             auto sess = context_wlock{*sync_ctx};
-            // Clear dirty before rendering, not after: a render function may
-            // re-set it (via the const context& it's given) to request
-            // continuous redraws, e.g. a focused widget animating its own
-            // caret. Clearing afterward would stomp that signal.
-            sess->dirty.store(false, std::memory_order_release);
+            // Decrement dirty before rendering, not after (and not straight
+            // to zero): a render function may re-set it (via the const
+            // context& it's given) to request further redraws -- e.g. a
+            // focused widget animating its own caret, or render_window()
+            // confirming a requested modal close needs a couple more
+            // frames. Decrementing first, rather than clearing to zero,
+            // means that kind of mid-render bump survives this frame's own
+            // decrement instead of being immediately stomped by it.
+            int32_t d = sess->dirty.load(std::memory_order_relaxed);
+            if (d > 0)
+              sess->dirty.store(d - 1, std::memory_order_release);
             detail::current_context = &*sess;
             for (const auto& [key, win] : sess->top_level_objects) {
               // MenuBarExtension top-levels are spliced into the server's own
@@ -286,11 +292,13 @@ void server::render_loop() {
             }
           }
           // Handlers dispatched above may have mutated session state (e.g.
-          // added a widget in response to a click) without any further OS
-          // input arriving; force one more render so the change reaches the
-          // screen instead of being skipped as idle.
+          // added a widget in response to a click, or requested a modal
+          // close that needs a couple more frames to actually take effect
+          // -- see render_window()'s "__request_close__" handling) without
+          // any further OS input arriving; force more renders so the
+          // change reaches the screen instead of being skipped as idle.
           if (!events.empty())
-            context_wlock{*sync_ctx}->dirty.store(true, std::memory_order_release);
+            context_wlock{*sync_ctx}->dirty.store(kDirtySettleFrames, std::memory_order_release);
         }
         renderer_->end_frame();
         if (renderer_->wants_continuous_redraw())

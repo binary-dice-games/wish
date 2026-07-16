@@ -633,3 +633,96 @@ TEST_F(ImguiRendererTest, ClosableModalDoesNotDoubleFireOnNormalFrame) {
 
   EXPECT_FALSE(event_fired);
 }
+
+// ── Modal: app-requested close (message_box::request_close()'s mechanism) ────
+
+TEST_F(ImguiRendererTest, RequestCloseFieldClosesPopupAndFiresClosedEvent) {
+  // Mirrors what message_box::request_close() does: app code (running
+  // outside any ImGui frame) can't call ImGui::CloseCurrentPopup() itself,
+  // so it sets this hidden field instead and waits for render_window() to
+  // act on it and confirm the close via a "closed" event.
+  bdg::bison::key_t last_event{hash_t{0}};
+  sess_->emit_event = [&](bdg::bison::key_t, bdg::bison::key_t ev, dynamic) { last_event = ev; };
+
+  auto map = bdg::wish::import_json(R"({"type":"Window","title":"MB","modal":true})");
+  auto& win = *map[""];
+
+  renderer_->begin_frame();
+  bdg::wish::render_window(*renderer_, win, *sess_);
+  renderer_->end_frame();
+  ASSERT_TRUE(win.get_as<bool>("__modal_opened__"_key, false));
+
+  // Simulate an app handler's request_close(): set the field directly,
+  // exactly as message_box::request_close() does via a session lock, with
+  // no accompanying real ImGui call (that's render_window()'s job).
+  win["__request_close__"_key] = true;
+
+  // Frame where render_window() notices the request and calls
+  // CloseCurrentPopup() -- must also mark the session dirty on its own
+  // (nothing else does), or a caller relying on the dirty flag to decide
+  // whether to render again would stall here forever.
+  sess_->dirty.store(false, std::memory_order_release);
+  renderer_->begin_frame();
+  bdg::wish::render_window(*renderer_, win, *sess_);
+  renderer_->end_frame();
+  EXPECT_TRUE(sess_->dirty.load(std::memory_order_acquire));
+  EXPECT_FALSE(win.get_as<bool>("__request_close__"_key, true));
+
+  // Next frame: BeginPopupModal now reports closed; "closed" fires and the
+  // one-shot latch resets, ready for this exact ID to be reopened cleanly.
+  renderer_->begin_frame();
+  bdg::wish::render_window(*renderer_, win, *sess_);
+  renderer_->end_frame();
+  for (auto& ev : sess_->pending_events)
+    if (sess_->emit_event)
+      sess_->emit_event(ev.id, ev.event_name, ev.payload);
+  sess_->pending_events.clear();
+
+  EXPECT_EQ(last_event, "closed"_key);
+  EXPECT_FALSE(win.get_as<bool>("__modal_opened__"_key, true));
+}
+
+TEST_F(ImguiRendererTest, SecondModalReusingSameStableIdOpensCleanlyAfterProperClose) {
+  // Regression test for the actual reported bug: a *second* modal instance
+  // that reuses the first one's stable id (e.g. because
+  // form::next_available_key() recycled the freed key -- see
+  // message_box::rebuild()) must open normally on its very first render,
+  // not require an unrelated input event before ImGui's popup stack
+  // reconciles. This only holds if the first instance was closed the
+  // proper way (ImGui::CloseCurrentPopup(), not just abandoned).
+  auto map1 = bdg::wish::import_json(R"({"type":"Window","title":"First","modal":true})");
+  auto& win1 = *map1[""];
+  win1["__path__"_key] = std::string{"__test_modal_reuse__"};
+
+  renderer_->begin_frame();
+  bdg::wish::render_window(*renderer_, win1, *sess_);
+  renderer_->end_frame();
+  ASSERT_TRUE(win1.get_as<bool>("__modal_opened__"_key, false));
+
+  // Properly close it -- the fixed request_close()/"__request_close__" path.
+  win1["__request_close__"_key] = true;
+  renderer_->begin_frame();
+  bdg::wish::render_window(*renderer_, win1, *sess_);
+  renderer_->end_frame();
+  renderer_->begin_frame();
+  bdg::wish::render_window(*renderer_, win1, *sess_);
+  renderer_->end_frame();
+  ASSERT_FALSE(win1.get_as<bool>("__modal_opened__"_key, true));
+  // win1 is now abandoned (as remove_internal_objects() would do) -- never
+  // rendered again, same as a real form after its "closed" event fires.
+
+  auto map2 = bdg::wish::import_json(R"({"type":"Window","title":"Second","modal":true})");
+  auto& win2 = *map2[""];
+  win2["__path__"_key] = std::string{"__test_modal_reuse__"}; // same stable id as win1
+
+  renderer_->begin_frame();
+  bdg::wish::render_window(*renderer_, win2, *sess_);
+  renderer_->end_frame();
+
+  // Must open on this very first render -- no extra frame/input needed.
+  EXPECT_TRUE(win2.get_as<bool>("__modal_opened__"_key, false));
+  std::string label = "Second###" + bdg::wish::stable_id(win2);
+  auto* w = ImGui::FindWindowByName(label.c_str());
+  ASSERT_NE(w, nullptr);
+  EXPECT_TRUE(w->Flags & ImGuiWindowFlags_Modal);
+}

@@ -128,7 +128,7 @@ void render_text_editor(imgui_renderer&, const ui_element& node, const context& 
   // the render loop's continuous-redraw check would never fire for it.
   // Mark the session dirty directly so it keeps rendering while focused.
   if (ImGui::IsWindowFocused())
-    s.dirty.store(true, std::memory_order_release);
+    s.dirty.store(kDirtySettleFrames, std::memory_order_release);
 
   // Write to disk and emit "changed" when the undo stack advances.
   size_t current_undo = st.editor.GetUndoIndex();
