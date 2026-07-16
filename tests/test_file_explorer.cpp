@@ -4,7 +4,9 @@
 #include <server/registry.hpp>
 #include <server/server.hpp>
 #include <context/context.hpp>
+#include <standalone/standalone.hpp>
 #include <ui/ui_root.hpp>
+#include <web/web_renderer.hpp>
 
 #include "src/bison/bison_object.hpp"
 #include "src/rmi/rmi.hpp"
@@ -660,4 +662,94 @@ TEST_F(FileExplorerEventTest, WindowClosedEmitsClosedAndCleansUp) {
   wait_for(got_closed);
   EXPECT_TRUE(got_closed);
   EXPECT_EQ(srv_->last_session->ui_objects.count(root_), 0u);
+}
+
+// ── Standalone dispatch: repeated RMI calls must not hang ─────────────────────
+//
+// Reproduces a bug found while debugging file_explorer's upload flow via
+// wish's automation module: a second RMI call on the same object, issued
+// shortly after an earlier one on the same session, occasionally either
+// throws "Method not found" or -- worse -- never resolves at all. Only ever
+// observed under bdg::wish::standalone (worker thread + render thread, both
+// contending for the session lock), never under the transport-backed
+// bison::rmi::client + memory_server_transport pair every other test in
+// this file uses. Bounded with wait_for() so a regression here fails this
+// test instead of hanging the whole suite.
+TEST(FileExplorerStandaloneTest, RepeatedRefreshSandboxCallsDoNotHangOrFail) {
+  wish::standalone sa{std::make_unique<wish::null_renderer>()};
+  sa.start();
+
+  auto explorer = sa.instantiate("wish"_key, "FileExplorer"_key).get();
+  ASSERT_TRUE(explorer.valid());
+
+  auto call_ready = [&](const char* label) {
+    auto fut = explorer.call("refresh_sandbox"_key, dynamic{});
+    auto status = fut.wait_for(std::chrono::seconds(3));
+    EXPECT_EQ(status, std::future_status::ready) << label << " did not complete within 3s";
+    if (status == std::future_status::ready)
+      EXPECT_NO_THROW(fut.get()) << label << " threw";
+  };
+
+  for (int i = 0; i < 10; ++i)
+    call_ready("refresh_sandbox");
+
+  sa.stop();
+}
+
+TEST(FileExplorerStandaloneTest, RepeatedRefreshSandboxCallsDoNotHangOrFailUnderWebRenderer) {
+  wish::standalone sa{std::make_unique<wish::web_renderer>("127.0.0.1", 0, 16)};
+  sa.start();
+
+  auto explorer = sa.instantiate("wish"_key, "FileExplorer"_key).get();
+  ASSERT_TRUE(explorer.valid());
+
+  auto call_ready = [&](const char* label) {
+    auto fut = explorer.call("refresh_sandbox"_key, dynamic{});
+    auto status = fut.wait_for(std::chrono::seconds(3));
+    EXPECT_EQ(status, std::future_status::ready) << label << " did not complete within 3s";
+    if (status == std::future_status::ready)
+      EXPECT_NO_THROW(fut.get()) << label << " threw";
+  };
+
+  for (int i = 0; i < 20; ++i)
+    call_ready("refresh_sandbox");
+
+  sa.stop();
+}
+
+TEST(FileExplorerStandaloneTest, SetThenCallSequenceDoesNotCorruptNamespace) {
+  // Mirrors the exact client-side call sequence around one upload:
+  // update_local_listing() once, then a set() patch (progress report),
+  // another set() patch (clear progress), then a call() the object has
+  // never serviced before (refresh_sandbox) -- reproducing "Method not
+  // found" outside of any web/browser/automation involvement.
+  wish::standalone sa{std::make_unique<wish::null_renderer>()};
+  sa.start();
+
+  auto explorer = sa.instantiate("wish"_key, "FileExplorer"_key).get();
+  ASSERT_TRUE(explorer.valid());
+
+  dynamic listing_args;
+  listing_args["path"_key] = std::string{"/tmp"};
+  listing_args["files"_key] = dynamic_ptr{std::make_shared<dynamic>()};
+  explorer.call("update_local_listing"_key, std::move(listing_args)).get();
+
+  for (int round = 0; round < 5; ++round) {
+    dynamic progress_patch;
+    progress_patch["transfer_progress"_key] = 0.5f;
+    progress_patch["transfer_label"_key] = std::string{"5 / 10"};
+    ASSERT_NO_THROW(explorer.set(std::move(progress_patch)).get()) << "round " << round << " progress set";
+
+    dynamic clear_patch;
+    clear_patch["transfer_progress"_key] = 0.0f;
+    clear_patch["transfer_label"_key] = std::string{""};
+    ASSERT_NO_THROW(explorer.set(std::move(clear_patch)).get()) << "round " << round << " clear set";
+
+    auto fut = explorer.call("refresh_sandbox"_key, dynamic{});
+    auto status = fut.wait_for(std::chrono::seconds(3));
+    ASSERT_EQ(status, std::future_status::ready) << "refresh_sandbox hung on round " << round;
+    EXPECT_NO_THROW(fut.get()) << "refresh_sandbox threw on round " << round;
+  }
+
+  sa.stop();
 }
