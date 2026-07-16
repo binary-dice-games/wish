@@ -16,15 +16,19 @@ form::~form() {
 }
 
 void form::remove_internal_objects() {
-  if (internal_root_key_.empty() || !sync_ctx_)
+  remove_objects_at(internal_root_key_);
+}
+
+void form::remove_objects_at(const std::string& root_key) {
+  if (root_key.empty() || !sync_ctx_)
     return;
-  const std::string dot = internal_root_key_ + ".";
+  const std::string dot = root_key + ".";
 
   auto do_remove = [&](context& s) {
-    s.top_level_objects.erase(bison::key_t{internal_root_key_});
-    s.top_level_handlers.erase(bison::key_t{internal_root_key_});
+    s.top_level_objects.erase(bison::key_t{root_key});
+    s.top_level_handlers.erase(bison::key_t{root_key});
     for (auto it = s.ui_objects.begin(); it != s.ui_objects.end();) {
-      if (it->first == internal_root_key_ || it->first.rfind(dot, 0) == 0)
+      if (it->first == root_key || it->first.rfind(dot, 0) == 0)
         it = s.ui_objects.erase(it);
       else
         ++it;
@@ -38,6 +42,23 @@ void form::remove_internal_objects() {
     // Called outside dispatch (event handler or destructor): acquire wlock.
     auto lock = context_wlock{*sync_ctx_};
     do_remove(*lock);
+  }
+}
+
+void form::request_close_at(const std::string& root_key) {
+  auto set_flag = [&](context& s) {
+    auto it = s.ui_objects.find(root_key);
+    if (it != s.ui_objects.end() && it->second)
+      (*it->second)["__request_close__"_key] = true;
+  };
+  // Mirrors remove_objects_at()'s own dispatch/non-dispatch branching:
+  // on_event() is documented to run outside the session lock, so sess()
+  // (which requires an active dispatch) cannot be used here.
+  if (detail::current_context) {
+    set_flag(*detail::current_context);
+  } else {
+    auto lock = context_wlock{*sync_ctx_};
+    set_flag(*lock);
   }
 }
 

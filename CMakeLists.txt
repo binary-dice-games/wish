@@ -251,6 +251,7 @@ add_library(wish_server STATIC
   src/auth/local_auth_module.hpp
   src/standalone/standalone.hpp
   src/ui/forms/form.hpp
+  src/ui/forms/file_browser_utils.hpp
   src/wish.cpp
   src/resources/resource_store.cpp
   src/server/registry.cpp
@@ -301,6 +302,7 @@ add_library(wish_server STATIC
   src/ui/plot3d_elements/plot3d_mesh.cpp
   src/ui/plot3d_elements/plot3d_annotations.cpp
   src/ui/forms/form.cpp
+  src/ui/forms/file_browser_utils.cpp
   src/ui/forms/file_dialog.cpp
   src/ui/forms/message_box.cpp
 )

@@ -73,23 +73,11 @@ class file_dialog : public form {
   /// @brief Handle a double-click on a table row: emit on_navigate or on_open.
   void on_row_activated(const bison::dynamic& payload);
 
-  /// @brief Ask the internal Window to close itself, via the hidden
-  /// "__request_close__" field render_window()'s modal branch checks (see
-  /// imgui_ui_renderer.cpp).
-  ///
-  /// Called instead of remove_internal_objects() directly on confirm/cancel:
-  /// on_event() runs outside any ImGui frame, so it cannot call
-  /// ImGui::CloseCurrentPopup() itself -- only render_window() can, from
-  /// inside the popup's own Begin/End scope. Skipping that call and just
-  /// removing the Window from top_level_objects (as remove_internal_objects()
-  /// alone would do) leaves ImGui's own popup stack thinking this modal's ID
-  /// is still open forever; the *next* FileDialog instance, whose
-  /// internal_root_key_ likely recycles this same freed key (see
-  /// form::next_available_key()), then collides with that stale entry and
-  /// fails to open until an unrelated input event forces ImGui to
-  /// reconcile its stack. The actual removal happens once the Window's own
-  /// "closed" event confirms ImGui really closed it -- see on_event()'s
-  /// window_id_ branch. Mirrors message_box::request_close().
+  /// @brief Thin wrapper over form::request_close_at(internal_root_key_) --
+  /// see that method's doc comment for why this can't just remove the
+  /// Window's objects directly on confirm/cancel. The actual removal
+  /// happens once the Window's own "closed" event confirms ImGui really
+  /// closed it -- see on_event()'s window_id_ branch.
   void request_close();
 
   bison::dynamic_ptr cached_files_; // last files list received from client

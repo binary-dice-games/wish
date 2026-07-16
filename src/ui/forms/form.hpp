@@ -132,6 +132,41 @@ class form : public ui_root {
   /// call more than once (subsequent calls are no-ops). Also called by ~form().
   void remove_internal_objects();
 
+  /// @brief Ask the internal Window rooted at @p root_key to close itself,
+  /// via the hidden "__request_close__" field render_window()'s modal
+  /// branch checks (see imgui_ui_renderer.cpp).
+  ///
+  /// Call this instead of removing @p root_key's objects directly on
+  /// confirm/cancel: on_event() runs outside any ImGui frame, so it cannot
+  /// call ImGui::CloseCurrentPopup() itself -- only render_window() can,
+  /// from inside the popup's own Begin/End scope. Skipping that call and
+  /// just erasing the objects (as remove_objects_at() alone would do)
+  /// leaves ImGui's own popup stack thinking this modal's ID is still open
+  /// forever. The actual removal should happen once the Window's own
+  /// "closed" event confirms ImGui really closed it.
+  ///
+  /// Safe to call from within dispatch or from an on_event() handler
+  /// (outside dispatch) -- mirrors remove_internal_objects()'s own
+  /// dispatch/non-dispatch branching.
+  ///
+  /// @param root_key  Top-level key of the internal Window to close, e.g.
+  ///                  internal_root_key_ or a subclass's own secondary
+  ///                  internal root (see file_explorer's confirm dialog).
+  void request_close_at(const std::string& root_key);
+
+  /// @brief Erase every session.objects entry rooted at @p root_key: the
+  /// key itself and every key with the `"<root_key>."` prefix, plus its
+  /// top_level_objects/top_level_handlers entries.
+  ///
+  /// Generalizes remove_internal_objects() to an arbitrary root key, for
+  /// forms that own more than one internal top-level Window (e.g.
+  /// file_explorer's overwrite-confirmation dialog, tracked separately from
+  /// internal_root_key_). remove_internal_objects() itself is just this
+  /// called with internal_root_key_.
+  ///
+  /// @param root_key  Top-level key to erase; a no-op if empty.
+  void remove_objects_at(const std::string& root_key);
+
  protected:
   /// Synchronized session wrapper; held for the form's lifetime.  Use
   /// sess() to access session data within dispatch; use

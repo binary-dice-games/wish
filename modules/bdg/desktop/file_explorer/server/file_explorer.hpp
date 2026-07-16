@@ -84,15 +84,14 @@ class file_explorer : public form {
   /// routing and selection state the confirmation needs to act on).
   void show_overwrite_confirm(pending_transfer kind, const std::string& name);
 
-  /// @brief Requests the confirm Window close itself (see
-  /// message_box.cpp's request_close() for why this can't just erase the
-  /// tree directly from a button-click handler).
+  /// @brief Thin wrapper over form::request_close_at(confirm_root_key_) --
+  /// see that method's doc comment for why this can't just erase the tree
+  /// directly from a button-click handler.
   void request_close_confirm();
 
-  /// @brief Erases the confirm dialog's own top-level entry and its
-  /// "<key>."-prefixed ui_objects, mirroring form::remove_internal_objects()
-  /// but scoped to confirm_root_key_ instead of internal_root_key_ (a form
-  /// only tracks removal for the latter).
+  /// @brief Thin wrapper over form::remove_objects_at(confirm_root_key_),
+  /// scoped to the confirm dialog's own root instead of internal_root_key_
+  /// (a form only tracks automatic removal for the latter).
   void remove_confirm_objects();
 
   bool sandbox_has_file(const std::string& name) const;

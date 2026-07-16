@@ -3,63 +3,18 @@
 /// @brief Implementation of the FileDialog form.
 #include "file_dialog.hpp"
 
+#include "file_browser_utils.hpp"
 #include "src/bison/bison_object.hpp"
 #include "src/rmi/shared/ids.hpp"
 
 #include <context/file_service.hpp>
 #include <ui/ui_importer.hpp>
 
-#include <algorithm>
-#include <cctype>
 #include <regex>
 
 namespace bdg::wish {
 
 using namespace bison;
-
-namespace {
-template <typename Element>
-key_t wish_id_of(const Element& element) {
-  return element->template as<key_t>("__wish_id"_key);
-}
-
-// Maps a file/directory entry to the embedded icon (under
-// resources/embedded/icons/) shown to its left in the Name column, mirroring
-// the file-type icons in Windows' Open File dialog. Falls back to the
-// generic "file" icon for extensions not called out below.
-std::string icon_for_entry(const std::string& name, const std::string& type) {
-  if (type == "dir")
-    return "folder";
-
-  auto dot = name.find_last_of('.');
-  if (dot == std::string::npos || dot + 1 == name.size())
-    return "file";
-  std::string ext = name.substr(dot + 1);
-  for (auto& c : ext)
-    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-
-  static const std::vector<std::string> kImageExts{"png", "jpg", "jpeg", "gif", "bmp", "webp", "tga", "svg"};
-  static const std::vector<std::string> kAudioExts{"mp3", "wav", "ogg", "flac", "m4a", "aac"};
-  static const std::vector<std::string> kCodeExts{
-      "cpp", "hpp", "c", "h", "cc", "cs", "py", "js", "ts", "java", "go", "rs",
-      "sh", "json", "yaml", "yml", "xml", "html", "css"};
-  static const std::vector<std::string> kDocumentExts{"txt", "md", "pdf", "doc", "docx", "rtf", "log"};
-
-  auto contains = [&](const std::vector<std::string>& exts) {
-    return std::find(exts.begin(), exts.end(), ext) != exts.end();
-  };
-
-  if (contains(kImageExts))
-    return "image";
-  if (contains(kAudioExts))
-    return "audio";
-  if (contains(kCodeExts))
-    return "code";
-  if (contains(kDocumentExts))
-    return "document";
-  return "file";
-}
-} // namespace
 
 // ── Hardcoded UI layout ───────────────────────────────────────────────────────
 
@@ -290,36 +245,10 @@ void file_dialog::rebuild_file_rows(const bison::dynamic& files) {
 
     auto row_children = dynamic_ptr{key_t{0U}, {}};
 
-    // Name column shows a small type icon ahead of the label, Windows-Explorer
-    // style. The icon deliberately does NOT set an explicit "width"/"height"
-    // -- see render_image()'s "__auto_size_to_font__" handling
-    // (imgui_ui_renderer.cpp) for why: it sizes itself to the current font's
-    // line height at render time instead, both so the icon tracks
-    // --font_size automatically and so it doesn't trip render_horizontal_layout()'s
-    // width-hint BeginChild wrapping (which, for these row-generated icons
-    // with no per-row __path__/__wish_id of their own, would collide every
-    // row onto the same BeginChild ID).
-    ui_element_ptr icon_row{dynamic::instantiate("wish"_key, "HorizontalLayout"_key)};
-    icon_row["spacing"_key] = 6.0f;
-    icon_row["order"_key] = int32_t{0};
-
-    ui_element_ptr icon_img{dynamic::instantiate("wish"_key, "Image"_key)};
-    icon_img["src"_key] = "res/icons/" + icon_for_entry(name, type) + ".png";
-    icon_img["__auto_size_to_font__"_key] = true;
-    // The icon PNGs are white/monochrome so they can be tinted; without
-    // this they're invisible against the light theme's white background
-    // (see render_image()'s "__tint_to_text_color__" handling).
-    icon_img["__tint_to_text_color__"_key] = true;
-    icon_img["order"_key] = int32_t{0};
-
-    ui_element_ptr name_lbl{dynamic::instantiate("wish"_key, "Label"_key)};
-    name_lbl["text"_key] = name;
-    name_lbl["order"_key] = int32_t{1};
-
-    auto icon_row_children = dynamic_ptr{key_t{0U}, {}};
-    (*icon_row_children)[size_t{0}] = dynamic_ptr{icon_img};
-    (*icon_row_children)[size_t{1}] = dynamic_ptr{name_lbl};
-    icon_row["children"_key] = icon_row_children;
+    // Name column shows a small type icon ahead of the label,
+    // Windows-Explorer style -- see make_name_cell()'s doc comment for why
+    // the icon has no explicit width/height.
+    ui_element_ptr icon_row = make_name_cell(name, type, name);
 
     ui_element_ptr type_lbl{dynamic::instantiate("wish"_key, "Label"_key)};
     type_lbl["text"_key] = type;
@@ -452,20 +381,7 @@ void file_dialog::on_btn_cancel_clicked() {
 }
 
 void file_dialog::request_close() {
-  auto set_flag = [this](context& s) {
-    auto it = s.ui_objects.find(internal_root_key_);
-    if (it != s.ui_objects.end() && it->second)
-      (*it->second)["__request_close__"_key] = true;
-  };
-  // Mirrors remove_internal_objects()'s own dispatch/non-dispatch branching
-  // (form.cpp): on_event() is documented to run outside the session lock,
-  // so sess() (which requires an active dispatch) cannot be used here.
-  if (detail::current_context) {
-    set_flag(*detail::current_context);
-  } else {
-    auto lock = context_wlock{*sync_ctx_};
-    set_flag(*lock);
-  }
+  request_close_at(internal_root_key_);
 }
 
 void file_dialog::on_row_activated(const bison::dynamic& payload) {

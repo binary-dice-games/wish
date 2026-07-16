@@ -274,6 +274,40 @@ TEST_F(FileExplorerRmiTest, UpdateLocalListingReplacesPreviousEntries) {
   EXPECT_EQ(table_row_count(root_ + ".main.panels.left.left_table"), 2u);
 }
 
+TEST_F(FileExplorerRmiTest, UpdateLocalListingShowsTypeIconInNameCell) {
+  // fill_table() (file_explorer.cpp) now builds the Name cell via
+  // make_name_cell() (file_browser_utils.cpp), the same helper file_dialog.cpp
+  // uses -- a HorizontalLayout wrapping a type icon Image ahead of the name
+  // Label, Windows-Explorer style. Confirm both the wrapper shape and that
+  // icon_for_entry()'s per-extension mapping is actually wired up here too.
+  update_local_listing(
+      "/home/user",
+      {{"docs", "dir", "", ""}, {"photo.png", "file", "1 KB", ""}, {"unknown.xyz", "file", "1 B", ""}});
+
+  auto name_cell_icon_src = [&](size_t row_idx) -> std::string {
+    auto it = srv_->last_session->ui_objects.find(root_ + ".main.panels.left.left_table");
+    if (it == srv_->last_session->ui_objects.end())
+      return {};
+    auto* cf = it->second->findField<dynamic_ptr>("children"_key);
+    if (!cf || !*cf)
+      return {};
+    auto& row = *(*cf)->at(row_idx).as<dynamic_ptr>();
+    auto* rcf = row.findField<dynamic_ptr>("children"_key);
+    if (!rcf || !*rcf)
+      return {};
+    auto& name_cell = *(*rcf)->at(size_t{0}).as<dynamic_ptr>();
+    auto* icf = name_cell.findField<dynamic_ptr>("children"_key);
+    if (!icf || !*icf)
+      return {};
+    auto& icon_img = *(*icf)->at(size_t{0}).as<dynamic_ptr>();
+    return icon_img.as<std::string>("src"_key);
+  };
+
+  EXPECT_EQ(name_cell_icon_src(0), "res/icons/folder.png"); // "docs", type "dir"
+  EXPECT_EQ(name_cell_icon_src(1), "res/icons/image.png");  // "photo.png"
+  EXPECT_EQ(name_cell_icon_src(2), "res/icons/file.png");   // "unknown.xyz" -- no mapping
+}
+
 TEST_F(FileExplorerRmiTest, RefreshSandboxRepopulatesRightTable) {
   // Regression test for the navigate_sandbox() self-deadlock on the
   // do_refresh_sandbox() dispatch call path specifically.

@@ -5,6 +5,7 @@
 
 #include "src/bison/bison_object.hpp"
 #include "src/rmi/shared/ids.hpp"
+#include "ui/forms/file_browser_utils.hpp"
 
 #include <context/file_service.hpp>
 #include <ui/ui_importer.hpp>
@@ -31,11 +32,6 @@ using namespace bison;
 namespace fs = std::filesystem;
 
 namespace {
-
-template <typename Element>
-key_t wish_id_of(const Element& element) {
-  return element->template as<key_t>("__wish_id"_key);
-}
 
 std::string format_bytes(uintmax_t bytes) {
   static constexpr const char* kUnits[] = {"B", "KB", "MB", "GB", "TB"};
@@ -356,8 +352,12 @@ void file_explorer::fill_table(
         : entry.type == "dir"                     ? ("[" + entry.name + "]")
                                                     : entry.name;
 
+    // Name column shows a small type icon ahead of the label, mirroring
+    // file_dialog.cpp's file table (see make_name_cell()'s doc comment).
+    ui_element_ptr name_cell = make_name_cell(entry.name, entry.type, display_name);
+
     auto row_children = dynamic_ptr{key_t{0U}, {}};
-    (*row_children)[size_t{0}] = dynamic_ptr{make_label(display_name, 0)};
+    (*row_children)[size_t{0}] = dynamic_ptr{name_cell};
     (*row_children)[size_t{1}] = dynamic_ptr{make_label(entry.type == "dir" ? std::string{} : entry.size, 1)};
     (*row_children)[size_t{2}] = dynamic_ptr{make_label(entry.modified, 2)};
     row["children"_key] = row_children;
@@ -452,41 +452,11 @@ void file_explorer::show_overwrite_confirm(pending_transfer kind, const std::str
 }
 
 void file_explorer::request_close_confirm() {
-  auto set_flag = [this](context& s) {
-    auto it = s.ui_objects.find(confirm_root_key_);
-    if (it != s.ui_objects.end() && it->second)
-      (*it->second)["__request_close__"_key] = true;
-  };
-  if (detail::current_context) {
-    set_flag(*detail::current_context);
-  } else {
-    auto lock = context_wlock{*sync_ctx_};
-    set_flag(*lock);
-  }
+  request_close_at(confirm_root_key_);
 }
 
 void file_explorer::remove_confirm_objects() {
-  if (confirm_root_key_.empty() || !sync_ctx_)
-    return;
-  const std::string dot = confirm_root_key_ + ".";
-
-  auto do_remove = [&](context& s) {
-    s.top_level_objects.erase(key_t{confirm_root_key_});
-    s.top_level_handlers.erase(key_t{confirm_root_key_});
-    for (auto it = s.ui_objects.begin(); it != s.ui_objects.end();) {
-      if (it->first == confirm_root_key_ || it->first.rfind(dot, 0) == 0)
-        it = s.ui_objects.erase(it);
-      else
-        ++it;
-    }
-  };
-
-  if (detail::current_context) {
-    do_remove(*detail::current_context);
-  } else {
-    auto lock = context_wlock{*sync_ctx_};
-    do_remove(*lock);
-  }
+  remove_objects_at(confirm_root_key_);
   confirm_root_key_.clear();
 }
 
