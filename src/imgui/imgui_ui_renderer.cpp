@@ -68,6 +68,7 @@ void render_window(imgui_renderer& r, const ui_element& node, const context& s) 
   int32_t h = node.get_as<int32_t>("height"_key, 0);
   int32_t fl = node.get_as<int32_t>("flags"_key, 0);
   bool closable = node.get_as<bool>("closable"_key, false);
+  bool modal = node.get_as<bool>("modal"_key, false);
 
   // Automatically reserve menu bar space when a direct MenuBar child exists.
   node.for_each_child_ordered([&](key_t, ui_element& child) {
@@ -89,6 +90,43 @@ void render_window(imgui_renderer& r, const ui_element& node, const context& s) 
   bool open = true;
   bool* p_open = closable ? &open : nullptr;
   auto iml = with_id(title, node);
+
+  if (modal) {
+    // Docking concepts (dock nodes, floating-size restore) don't apply to a
+    // popup-modal window.
+    fl |= ImGuiWindowFlags_NoDocking;
+
+    // Unlike ImGui::Begin(), a modal popup must be opened exactly once via
+    // ImGui::OpenPopup() -- calling it every frame re-opens/re-centers it.
+    // Latch "already opened" in a hidden field, same idiom as
+    // __was_docked__ below, so setting modal=true is the one-shot trigger.
+    const auto* opened_f = node.findField("__modal_opened__"_key);
+    bool was_open = opened_f && opened_f->is<bool>() && opened_f->as<bool>();
+    if (!was_open) {
+      ImGui::OpenPopup(iml.c_str());
+      const_cast<ui_element&>(node)["__modal_opened__"_key] = true;
+    }
+
+    bool now_open = ImGui::BeginPopupModal(iml.c_str(), p_open, ImGuiWindowFlags(fl));
+    if (now_open) {
+      render_children(r, node, s);
+      ImGui::EndPopup();
+    } else {
+      const_cast<ui_element&>(node)["__modal_opened__"_key] = false;
+    }
+
+    if (closable) {
+      // Title-bar X path: identical detection to the non-modal case below.
+      if (!open)
+        enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "closed"_key, dynamic{});
+    } else if (was_open && !now_open) {
+      // No title bar to close from -- this transition means an in-content
+      // handler called ImGui::CloseCurrentPopup().
+      enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "closed"_key, dynamic{});
+    }
+    return;
+  }
+
   if (ImGui::Begin(iml.c_str(), p_open, ImGuiWindowFlags(fl))) {
     // ImGui's docking branch resizes a window to fit its dock node/tab
     // region; on undock it does not restore the pre-dock floating size
@@ -793,9 +831,10 @@ void render_table(imgui_renderer& r, const ui_element& node, const context& s) {
       char sel_id[32];
       std::snprintf(sel_id, sizeof(sel_id), "##row%d", row_idx);
       const float row_h = ImGui::GetTextLineHeightWithSpacing();
+      const bool row_selected = child.get_as<bool>("selected"_key, false);
       const auto sf = ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowDoubleClick |
           ImGuiSelectableFlags_AllowOverlap;
-      bool sel = ImGui::Selectable(sel_id, false, sf, ImVec2(0.0f, row_h));
+      bool sel = ImGui::Selectable(sel_id, row_selected, sf, ImVec2(0.0f, row_h));
       const bool dbl = sel && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
       if (dbl)
         sel = false; // promote to double-click only

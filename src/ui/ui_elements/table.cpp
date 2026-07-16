@@ -141,6 +141,14 @@ void register_table() {
             attr<DisplayName>("Min Height"),
             attr<Description>("Minimum row height in pixels; 0 uses default."),
             attr<Category>("Layout")});
+    proto->addField(
+        "selected"_key,
+        field{
+            false,
+            attr<DisplayName>("Selected"),
+            attr<Description>("Whether this row is rendered highlighted, e.g. to show the "
+                              "current selection in a file list."),
+            attr<Category>("Behavior")});
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("TableRow"));
     (*proto)[dynamic::CLASS].addAttribute(
         attr<Description>("A row inside a Table. Each child element occupies one column cell "

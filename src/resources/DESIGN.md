@@ -170,7 +170,7 @@ Only binary assets that are needed by the server's built-in UI at runtime belong
 | Category | Examples |
 |----------|---------|
 | Fonts | Default UI font (.ttf), monospace font for text editor |
-| Icons | File-type icons (folder, audio, image, document, code, ...) for `OpenFileDialog` |
+| Icons | File-type icons (folder, audio, image, document, code, ...) for `OpenFileDialog`; severity icons (info, warning, error, question) for `MessageBox` |
 
 **Do not add:**
 - Test data or fixtures (use the `tests/` tree).
@@ -197,3 +197,7 @@ Only binary assets that are needed by the server's built-in UI at runtime belong
 | `icons/image.png` | Image file icon |
 | `icons/code.png` | Source/code file icon |
 | `icons/document.png` | Document/text file icon |
+| `icons/msgbox_info.png` | Info severity icon for `MessageBox` |
+| `icons/msgbox_warning.png` | Warning severity icon for `MessageBox` |
+| `icons/msgbox_error.png` | Error severity icon for `MessageBox` |
+| `icons/msgbox_question.png` | Question severity icon for `MessageBox` |

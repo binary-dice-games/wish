@@ -532,3 +532,104 @@ TEST_F(ImguiRendererTest, WindowRestoresFloatingSizeAfterUndock) {
   }
   EXPECT_TRUE(restored);
 }
+
+// ── Modal: true input-blocking popup ─────────────────────────────────────────
+
+TEST_F(ImguiRendererTest, ModalWindowSetsModalAndNoDockingFlags) {
+  auto map = bdg::wish::import_json(R"({"type":"Window","title":"MB","modal":true})");
+  auto& win = *map[""];
+  std::string label = "MB###" + bdg::wish::stable_id(win);
+
+  renderer_->begin_frame();
+  bdg::wish::render_window(*renderer_, win, *sess_);
+  renderer_->end_frame();
+
+  auto* w = ImGui::FindWindowByName(label.c_str());
+  ASSERT_NE(w, nullptr);
+  EXPECT_TRUE(w->Flags & ImGuiWindowFlags_Modal);
+  EXPECT_TRUE(w->Flags & ImGuiWindowFlags_NoDocking);
+}
+
+TEST_F(ImguiRendererTest, ModalWindowStaysOpenAcrossFramesWithoutReopening) {
+  // OpenPopup() must be called exactly once (on activation), not every
+  // frame -- render several frames and confirm the popup stays open and the
+  // one-shot latch (__modal_opened__) stays true, with no crash from a
+  // mismatched Begin/End or popup-stack assertion.
+  auto map = bdg::wish::import_json(R"({"type":"Window","title":"MB","modal":true})");
+  auto& win = *map[""];
+  std::string label = "MB###" + bdg::wish::stable_id(win);
+
+  // ImGui::IsPopupOpen(name) requires an active window scope (it calls
+  // ImGuiWindow::GetID() on the current window), so it can only be checked
+  // from inside a Begin/End pair -- same caveat documented above for
+  // ImGui::GetID() between frames. Check it via render_window's own return
+  // path instead: FindWindowByName() (used elsewhere in this file between
+  // frames) plus the __modal_opened__ latch are sufficient to confirm the
+  // popup opened once and stayed open, without crashing.
+  (void)label;
+  for (int i = 0; i < 3; ++i) {
+    EXPECT_NO_THROW({
+      renderer_->begin_frame();
+      bdg::wish::render_window(*renderer_, win, *sess_);
+      renderer_->end_frame();
+    });
+    EXPECT_TRUE(win.get_as<bool>("__modal_opened__"_key, false));
+  }
+  auto* w = ImGui::FindWindowByName(label.c_str());
+  ASSERT_NE(w, nullptr);
+  EXPECT_TRUE(w->WasActive);
+}
+
+TEST_F(ImguiRendererTest, NonClosableModalEmitsClosedWhenPopupClosedProgrammatically) {
+  // No closable field, so the only way this modal closes is via
+  // ImGui::CloseCurrentPopup() (e.g. an in-content OK/Cancel handler).
+  // ClosePopupToLevel(0, true) is the same internal call CloseCurrentPopup()
+  // makes; it's already used in this file (via imgui_internal.h) for
+  // DockBuilder above.
+  bdg::bison::key_t last_event{hash_t{0}};
+  sess_->emit_event = [&](bdg::bison::key_t, bdg::bison::key_t ev, dynamic) { last_event = ev; };
+
+  auto map = bdg::wish::import_json(R"({"type":"Window","title":"MB","modal":true})");
+  auto& win = *map[""];
+  win["__wish_id"_key] = bdg::bison::key_t{hash_t{99}};
+
+  renderer_->begin_frame();
+  bdg::wish::render_window(*renderer_, win, *sess_);
+  renderer_->end_frame();
+  EXPECT_TRUE(win.get_as<bool>("__modal_opened__"_key, false));
+
+  ImGui::ClosePopupToLevel(0, true);
+
+  renderer_->begin_frame();
+  bdg::wish::render_window(*renderer_, win, *sess_);
+  renderer_->end_frame();
+
+  EXPECT_FALSE(win.get_as<bool>("__modal_opened__"_key, false));
+  for (auto& ev : sess_->pending_events)
+    if (sess_->emit_event)
+      sess_->emit_event(ev.id, ev.event_name, ev.payload);
+  sess_->pending_events.clear();
+  EXPECT_EQ(last_event, "closed"_key);
+}
+
+TEST_F(ImguiRendererTest, ClosableModalDoesNotDoubleFireOnNormalFrame) {
+  // Sanity check: a closable modal that nobody has closed must not emit
+  // "closed" just from being rendered normally across frames.
+  bool event_fired = false;
+  sess_->emit_event = [&](bdg::bison::key_t, bdg::bison::key_t, dynamic) { event_fired = true; };
+
+  auto map = bdg::wish::import_json(R"({"type":"Window","title":"MB","modal":true,"closable":true})");
+  auto& win = *map[""];
+
+  for (int i = 0; i < 2; ++i) {
+    renderer_->begin_frame();
+    bdg::wish::render_window(*renderer_, win, *sess_);
+    renderer_->end_frame();
+  }
+  for (auto& ev : sess_->pending_events)
+    if (sess_->emit_event)
+      sess_->emit_event(ev.id, ev.event_name, ev.payload);
+  sess_->pending_events.clear();
+
+  EXPECT_FALSE(event_fired);
+}

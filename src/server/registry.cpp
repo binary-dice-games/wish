@@ -6,6 +6,7 @@
 #include <context/style_service.hpp>
 
 #include "ui/forms/file_dialog.hpp"
+#include "ui/forms/message_box.hpp"
 #include "ui/plot3d_elements/plot3d_elements.hpp"
 #include "ui/plot_elements/plot_elements.hpp"
 #include "ui/ui_template.hpp"
@@ -59,6 +60,7 @@ void register_all() {
   register_logger();
   // Built-in forms.
   register_file_dialog();
+  register_message_box();
   // Optional modules (calculator, notepad, process_explorer, ...); see
   // src/ui/forms/DESIGN.md's "Module System" section.
   register_optional_modules();

@@ -302,6 +302,7 @@ add_library(wish_server STATIC
   src/ui/plot3d_elements/plot3d_annotations.cpp
   src/ui/forms/form.cpp
   src/ui/forms/file_dialog.cpp
+  src/ui/forms/message_box.cpp
 )
 
 if(WISH_ENABLE_IMGUI)

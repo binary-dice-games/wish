@@ -65,6 +65,16 @@ void register_window() {
                             "Clicking it emits the 'closed' event."),
           attr<Category>("Behavior")});
   proto->addField(
+      "modal"_key,
+      field{
+          bool{false},
+          attr<DisplayName>("Modal"),
+          attr<Description>("Render as a true input-blocking modal popup (ImGui "
+                            "BeginPopupModal) instead of a normal floating/dockable "
+                            "window. Forces NoDocking. Combine with closable to show "
+                            "a title-bar X that also emits 'closed'."),
+          attr<Category>("Behavior")});
+  proto->addField(
       "flags"_key,
       field{
           int32_t{0},
