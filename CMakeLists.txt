@@ -40,10 +40,15 @@ add_subdirectory("extern/bison")
 # given if(WISH_ENABLE_...) block actually needs. A no-op (and network-free)
 # once a submodule is already checked out.
 function(wish_ensure_submodules)
-  if(EXISTS "${CMAKE_SOURCE_DIR}/.git")
+  # CMAKE_CURRENT_SOURCE_DIR, not CMAKE_SOURCE_DIR: this function runs in
+  # wish's own directory scope even when wish is add_subdirectory()'d from
+  # an outer project (function() calls don't change directory scope), but
+  # CMAKE_SOURCE_DIR always names the outermost project's root -- using it
+  # here would run `git submodule update` against the wrong repository.
+  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git")
     execute_process(
       COMMAND git submodule update --init -- ${ARGN}
-      WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
       RESULT_VARIABLE _wish_submodule_result
     )
     if(NOT _wish_submodule_result EQUAL 0)
