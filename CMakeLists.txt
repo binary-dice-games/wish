@@ -406,13 +406,15 @@ wish_add_collection(bdg/desktop DEFAULT ON)
 wish_add_collection(bdg/dev)
 
 # wish_generate_module_registry()/wish_generate_embedded_resources() are
-# safe to call now (wish_server already exists); wish_finalize_app_modules()
-# needs wish-cli/wish-client/wish-standalone/wish_client_dll, which don't
-# exist yet -- see the guarded call after add_subdirectory(app) below.
-if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-  wish_generate_module_registry()
-  wish_generate_embedded_resources()
-endif()
+# safe to call now (wish_server already exists) and only touch
+# CMAKE_BINARY_DIR/target_sources(wish_server ...), both of which are
+# well-defined whether wish is the top-level project or add_subdirectory()'d
+# from a consumer -- unlike wish_finalize_app_modules() below, which needs
+# wish-cli/wish-client/wish-standalone/wish_client_dll (not created yet) and
+# genuinely must wait for a consumer's own wish_add_module() calls, these two
+# must always run or registry.cpp/resource_store.cpp fail to link.
+wish_generate_module_registry()
+wish_generate_embedded_resources()
 
 # ── wish — convenience interface target (client + server) ─────────────────────
 #
