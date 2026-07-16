@@ -32,33 +32,32 @@ endif()
 set(PACKAGE_TESTS OFF CACHE BOOL "Build bison tests" FORCE)
 add_subdirectory("extern/bison")
 
+# extern/* dependencies are git submodules (see .gitmodules), not fetched via
+# FetchContent -- a plain `git submodule update --init --recursive` has no
+# concept of the WISH_ENABLE_* options below and would unconditionally check
+# out every optional dependency's source tree. wish_ensure_submodules()
+# reproduces FetchContent's old lazy-fetch behavior: only clone the paths a
+# given if(WISH_ENABLE_...) block actually needs. A no-op (and network-free)
+# once a submodule is already checked out.
+function(wish_ensure_submodules)
+  if(EXISTS "${CMAKE_SOURCE_DIR}/.git")
+    execute_process(
+      COMMAND git submodule update --init -- ${ARGN}
+      WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+      RESULT_VARIABLE _wish_submodule_result
+    )
+    if(NOT _wish_submodule_result EQUAL 0)
+      message(FATAL_ERROR "Failed to init git submodule(s): ${ARGN}")
+    endif()
+  endif()
+endfunction()
+
 if(WISH_ENABLE_IMGUI)
-  include(FetchContent)
-  FetchContent_Declare(
-    imgui
-    GIT_REPOSITORY https://github.com/ocornut/imgui.git
-    GIT_TAG        docking
-    GIT_SHALLOW    TRUE
-  )
-  FetchContent_Declare(
-    implot
-    GIT_REPOSITORY https://github.com/epezent/implot.git
-    GIT_TAG        master
-    GIT_SHALLOW    TRUE
-  )
-  FetchContent_Declare(
-    implot3d
-    GIT_REPOSITORY https://github.com/brenocq/implot3d.git
-    GIT_TAG        v0.4
-    GIT_SHALLOW    TRUE
-  )
-  FetchContent_Declare(
-    imgui_color_text_edit
-    GIT_REPOSITORY https://github.com/goossens/ImGuiColorTextEdit.git
-    GIT_TAG        master
-    GIT_SHALLOW    TRUE
-  )
-  FetchContent_MakeAvailable(imgui implot implot3d imgui_color_text_edit)
+  wish_ensure_submodules(extern/imgui extern/implot extern/implot3d extern/imgui_color_text_edit)
+  set(imgui_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/extern/imgui)
+  set(implot_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/extern/implot)
+  set(implot3d_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/extern/implot3d)
+  set(imgui_color_text_edit_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/extern/imgui_color_text_edit)
 
   add_library(imgui_core STATIC
     ${imgui_SOURCE_DIR}/imgui.cpp
@@ -83,25 +82,14 @@ if(WISH_ENABLE_IMGUI)
 endif()
 
 if(WISH_ENABLE_IMGUI AND WISH_ENABLE_SDL3)
-  include(FetchContent)
+  wish_ensure_submodules(extern/sdl3 extern/sdl3_image)
   set(SDL_X11_XSCRNSAVER OFF CACHE BOOL "" FORCE)
   set(SDL_X11_XTEST OFF CACHE BOOL "" FORCE)
-  FetchContent_Declare(
-    SDL3
-    GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
-    GIT_TAG        release-3.4.x
-    GIT_SHALLOW    TRUE
-  )
-  FetchContent_Declare(
-    SDL3_image
-    GIT_REPOSITORY https://github.com/libsdl-org/SDL_image.git
-    GIT_TAG        release-3.2.4
-    GIT_SHALLOW    TRUE
-  )
   # Disable AVIF (needs dav1d + NASM) and JXL before SDL3_image is configured.
   set(SDLIMAGE_AVIF OFF CACHE BOOL "" FORCE)
   set(SDLIMAGE_JXL  OFF CACHE BOOL "" FORCE)
-  FetchContent_MakeAvailable(SDL3 SDL3_image)
+  add_subdirectory(extern/sdl3)
+  add_subdirectory(extern/sdl3_image)
 
   # imgui docking branch ships SDL3 backend sources; add them to imgui_core.
   target_sources(imgui_core PRIVATE
@@ -126,7 +114,7 @@ endif()
 # src/web/civetweb_server.cpp) and by tests as a throwaway local HTTP server
 # (tests/test_file_service.cpp's TestHttpServer). Neither needs TLS: the
 # server side only ever binds to 127.0.0.1 for local dev/test tooling.
-include(FetchContent)
+wish_ensure_submodules(extern/civetweb)
 set(CIVETWEB_ENABLE_WEBSOCKETS        ON  CACHE BOOL "" FORCE)
 set(CIVETWEB_ENABLE_SSL               OFF CACHE BOOL "" FORCE)
 set(CIVETWEB_BUILD_TESTING            OFF CACHE BOOL "" FORCE)
@@ -147,16 +135,10 @@ set(CIVETWEB_ENABLE_ASAN              OFF CACHE BOOL "" FORCE)
 # raw-mode terminal. civetweb is a vendored stable dependency here, not
 # something wish is developing, so its internal tracing has no value to us.
 set(CIVETWEB_ENABLE_DEBUG_TOOLS        OFF CACHE BOOL "" FORCE)
-FetchContent_Declare(
-  civetweb
-  GIT_REPOSITORY https://github.com/civetweb/civetweb.git
-  GIT_TAG        v1.16
-  GIT_SHALLOW    TRUE
-)
 # civetweb v1.16's own CMakeLists declares cmake_minimum_required(3.3),
 # which CMake 4+ refuses to configure without an explicit policy floor.
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
-FetchContent_MakeAvailable(civetweb)
+add_subdirectory(extern/civetweb)
 unset(CMAKE_POLICY_VERSION_MINIMUM)
 set_target_properties(civetweb-c-library PROPERTIES FOLDER extern)
 # civetweb's master accept-loop only checks its stop flag once per
@@ -173,6 +155,7 @@ target_compile_definitions(civetweb-c-library PRIVATE SOCKET_TIMEOUT_QUANTUM=100
 # Windows uses curl's Schannel backend (native OS TLS, no external OpenSSL
 # DLL dependency); Linux/MSYS2 link the ambient system OpenSSL, same as
 # every other TLS-using tool on those platforms.
+wish_ensure_submodules(extern/curl)
 set(BUILD_CURL_EXE       OFF CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS    OFF CACHE BOOL "" FORCE)
 set(CURL_DISABLE_INSTALL ON  CACHE BOOL "" FORCE)
@@ -189,51 +172,31 @@ if(WIN32)
 else()
   set(CURL_USE_OPENSSL  ON CACHE BOOL "" FORCE)
 endif()
-FetchContent_Declare(
-  curl
-  GIT_REPOSITORY https://github.com/curl/curl.git
-  GIT_TAG        curl-8_21_0
-  GIT_SHALLOW    TRUE
-)
-FetchContent_MakeAvailable(curl)
+add_subdirectory(extern/curl)
 # "libcurl" is only an ALIAS (curl's own CMakeLists.txt) for whichever of
 # libcurl_static/libcurl_shared BUILD_SHARED_LIBS selected -- set_target_properties
 # rejects ALIAS targets, so target the real one directly.
 set_target_properties(libcurl_static PROPERTIES FOLDER extern)
 
 if(WISH_ENABLE_IMGUI AND WISH_ENABLE_WEB)
-  include(FetchContent)
   # Single-header PNG/JPEG decoder for web_renderer::get_or_load_texture --
   # WISH_ENABLE_SDL3 (and its transitive SDL3_image dependency) is not
   # guaranteed to be on in a web-only build, so this backend needs its own
   # decoder.
-  FetchContent_Declare(
-    stb
-    GIT_REPOSITORY https://github.com/nothings/stb.git
-    GIT_TAG        master
-    GIT_SHALLOW    TRUE
-  )
-  FetchContent_MakeAvailable(stb)
-
+  wish_ensure_submodules(extern/stb)
   add_library(stb_image INTERFACE)
-  target_include_directories(stb_image INTERFACE ${stb_SOURCE_DIR})
+  target_include_directories(stb_image INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/extern/stb)
 endif()
 
 # ── miniz — zip (de)compression, used to unpack embedded resources ───────────
 
-include(FetchContent)
-FetchContent_Declare(
-  miniz
-  GIT_REPOSITORY https://github.com/richgel999/miniz.git
-  GIT_TAG        3.1.2
-  GIT_SHALLOW    TRUE
-)
+wish_ensure_submodules(extern/miniz)
 # miniz's own CMakeLists defaults these ON only when built standalone; force
 # off defensively, matching the SDLIMAGE_AVIF/SDLIMAGE_JXL pattern above.
 set(BUILD_TESTS     OFF CACHE BOOL "" FORCE)
 set(BUILD_EXAMPLES  OFF CACHE BOOL "" FORCE)
 set(INSTALL_PROJECT OFF CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(miniz)
+add_subdirectory(extern/miniz)
 set_target_properties(miniz PROPERTIES FOLDER extern)
 
 # ── Embedded resources — zip the asset tree, then embed as one byte array ────
