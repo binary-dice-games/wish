@@ -253,6 +253,14 @@ class FileDialogFilesTest : public ::testing::Test {
   }
 
   // Get the text of the Label at row[row_idx], column[col_idx] in the Table.
+  //
+  // Column 0 isn't a plain Label -- rebuild_file_table() (file_dialog.cpp)
+  // wraps it in a HorizontalLayout ("icon_row") holding a type icon Image
+  // at children[0] and the actual name Label at children[1], Windows-Explorer
+  // style (see icon_for_entry()'s doc comment). Every other column is still
+  // a direct Label. Unwrap one extra level whenever the cell itself has no
+  // "text" field of its own, rather than hardcoding "column 0 means unwrap"
+  // -- keeps this helper correct if a future column gains the same wrapping.
   std::string table_cell_text(size_t row_idx, size_t col_idx) const {
     auto& objs = srv_->last_session->ui_objects;
     auto it = objs.find(root_ + ".vbox.file_table");
@@ -274,7 +282,20 @@ class FileDialogFilesTest : public ::testing::Test {
     const auto& cell_f = rcf->as<dynamic_ptr>()->at(col_idx);
     if (!cell_f.is<dynamic_ptr>())
       return {};
-    return cell_f.as<dynamic_ptr>()->as<std::string>("text"_key);
+    auto& cell = *cell_f.as<dynamic_ptr>();
+
+    if (auto* text_f = cell.findField("text"_key); text_f && text_f->is<std::string>())
+      return text_f->as<std::string>();
+
+    // Cell has no "text" of its own -- it's a wrapper (e.g. icon_row); the
+    // name Label is its second child (children[1]).
+    auto* wrapped_cf = cell.findField("children"_key);
+    if (!wrapped_cf || !wrapped_cf->is<dynamic_ptr>())
+      return {};
+    const auto& inner_f = wrapped_cf->as<dynamic_ptr>()->at(size_t{1});
+    if (!inner_f.is<dynamic_ptr>())
+      return {};
+    return inner_f.as<dynamic_ptr>()->as<std::string>("text"_key);
   }
 
   // Simulate a row_selected event on the internal Table.
@@ -516,6 +537,7 @@ class FileDialogEventsTest : public ::testing::Test {
     return nullptr;
   }
 
+
   memory_server_transport transport_;
   std::unique_ptr<SessionCapturingServer> srv_;
   std::unique_ptr<bdg::bison::rmi::client> client_;
@@ -536,7 +558,25 @@ TEST_F(FileDialogEventsTest, BtnOpenEmitsOnOpen) {
 TEST_F(FileDialogEventsTest, BtnCancelEmitsOnCancelAndRemovesWindow) {
   simulate_btn_click("btn_cancel");
   EXPECT_TRUE(wait_for_event("on_cancel"_key));
-  // Internal Window must be removed from session.objects.
+
+  // request_close() (file_dialog.cpp) only sets the hidden __request_close__
+  // flag; the internal Window is actually torn down later, once the real
+  // ImGui render loop notices the popup closed and fires the Window's own
+  // "closed" event back through on_event() (see request_close()'s doc
+  // comment -- mirrors message_box.cpp's identical handshake). This
+  // fixture's wish::null_renderer has a no-op render_node() (renderer.hpp),
+  // so that flag is never processed here -- simulate the render loop's half
+  // of the handshake directly instead, same idiom as
+  // test_file_explorer.cpp's WindowClosedEmitsClosedAndCleansUp.
+  auto& objs = srv_->last_session->ui_objects;
+  auto it = objs.find(root_);
+  ASSERT_NE(it, objs.end());
+  auto window_id = (*it->second)["__wish_id"_key].as<bison::key_t>();
+  auto h = srv_->last_session->top_level_handlers.find(root_);
+  ASSERT_NE(h, srv_->last_session->top_level_handlers.end());
+  h->second->on_event(window_id, "closed"_key, dynamic{});
+
+  // Internal Window must now be removed from session.objects.
   EXPECT_TRUE(find_form_root(srv_->last_session->ui_objects).empty());
 }
 

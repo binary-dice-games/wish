@@ -509,6 +509,142 @@ TEST_F(FileExplorerEventTest, DownloadClickedWithNoSelectionSetsStatusInsteadOfE
       "Select a sandbox file to download.");
 }
 
+TEST_F(FileExplorerEventTest, LocalRowSelectedHighlightsSelectedRowOnly) {
+  proxy_->call(
+      "update_local_listing"_key,
+      make_local_listing_args("/home", {{"a.txt", "file", "1 B", ""}, {"b.txt", "file", "1 B", ""}}))
+      .get();
+
+  dynamic sel;
+  sel["index"_key] = int32_t{1};
+  handler_->on_event(widget_id(".main.panels.left.left_table"), "row_selected"_key, sel);
+
+  auto* children_f =
+      srv_->last_session->ui_objects.at(root_ + ".main.panels.left.left_table")->findField<dynamic_ptr>("children"_key);
+  ASSERT_NE(children_f, nullptr);
+  ASSERT_TRUE(*children_f);
+  auto row0 = (**children_f)[size_t{0}].as<dynamic_ptr>();
+  auto row1 = (**children_f)[size_t{1}].as<dynamic_ptr>();
+  ASSERT_TRUE(row0);
+  ASSERT_TRUE(row1);
+  EXPECT_FALSE(row0->as<bool>("selected"_key));
+  EXPECT_TRUE(row1->as<bool>("selected"_key));
+}
+
+// ── Overwrite confirmation ─────────────────────────────────────────────────────
+
+// Helper: find the confirm dialog's top-level root key ("__fileexplorer_confirm_N", no dot).
+static std::string find_confirm_root(const wish::name_map& objects) {
+  for (const auto& [k, _] : objects) {
+    if (k.rfind("__fileexplorer_confirm_", 0) == 0 && k.find('.') == std::string::npos)
+      return k;
+  }
+  return {};
+}
+
+TEST_F(FileExplorerEventTest, UploadClickedWithExistingSandboxFileShowsConfirmInsteadOfEmitting) {
+  // Seed the sandbox with a file of the same name as the local selection.
+  const auto& resource_dir = srv_->last_session->resource_dir;
+  for (auto& entry : std::filesystem::directory_iterator{resource_dir})
+    std::filesystem::remove_all(entry.path());
+  { std::ofstream out(resource_dir / "a.txt"); out << "existing"; }
+  proxy_->call("refresh_sandbox"_key, dynamic{}).get();
+
+  proxy_->call("update_local_listing"_key, make_local_listing_args("/home", {{"a.txt", "file", "1 B", ""}})).get();
+  dynamic sel;
+  sel["index"_key] = int32_t{0};
+  handler_->on_event(widget_id(".main.panels.left.left_table"), "row_selected"_key, sel);
+
+  bool got = false;
+  auto prev = std::move(srv_->last_session->emit_event);
+  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
+    if (event == "on_upload_requested"_key)
+      got = true;
+    if (prev)
+      prev(id, event, std::move(payload));
+  };
+
+  handler_->on_event(widget_id(".main.panels.middle.upload"), "clicked"_key, dynamic{});
+
+  wait_for(got);
+  EXPECT_FALSE(got) << "upload should be held back pending overwrite confirmation";
+
+  std::string confirm_root = find_confirm_root(srv_->last_session->ui_objects);
+  ASSERT_FALSE(confirm_root.empty()) << "no confirm dialog root registered";
+  EXPECT_TRUE(srv_->last_session->top_level_objects.count(bison::key_t{confirm_root}));
+}
+
+TEST_F(FileExplorerEventTest, ConfirmOverwriteYesEmitsOnUploadRequested) {
+  const auto& resource_dir = srv_->last_session->resource_dir;
+  for (auto& entry : std::filesystem::directory_iterator{resource_dir})
+    std::filesystem::remove_all(entry.path());
+  { std::ofstream out(resource_dir / "a.txt"); out << "existing"; }
+  proxy_->call("refresh_sandbox"_key, dynamic{}).get();
+
+  proxy_->call("update_local_listing"_key, make_local_listing_args("/home", {{"a.txt", "file", "1 B", ""}})).get();
+  dynamic sel;
+  sel["index"_key] = int32_t{0};
+  handler_->on_event(widget_id(".main.panels.left.left_table"), "row_selected"_key, sel);
+  handler_->on_event(widget_id(".main.panels.middle.upload"), "clicked"_key, dynamic{});
+
+  std::string confirm_root = find_confirm_root(srv_->last_session->ui_objects);
+  ASSERT_FALSE(confirm_root.empty());
+  auto yes_id =
+      srv_->last_session->ui_objects.at(confirm_root + ".buttons.btn_yes")->as<bison::key_t>("__wish_id"_key);
+
+  bool got = false;
+  dynamic captured;
+  auto prev = std::move(srv_->last_session->emit_event);
+  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
+    if (event == "on_upload_requested"_key) {
+      got = true;
+      captured = std::move(payload);
+    }
+    if (prev)
+      prev(id, event, std::move(payload));
+  };
+
+  handler_->on_event(yes_id, "clicked"_key, dynamic{});
+
+  wait_for(got);
+  ASSERT_TRUE(got);
+  EXPECT_EQ(captured.as<std::string>("name"_key), "a.txt");
+}
+
+TEST_F(FileExplorerEventTest, ConfirmOverwriteNoCancelsWithoutEmitting) {
+  const auto& resource_dir = srv_->last_session->resource_dir;
+  for (auto& entry : std::filesystem::directory_iterator{resource_dir})
+    std::filesystem::remove_all(entry.path());
+  { std::ofstream out(resource_dir / "a.txt"); out << "existing"; }
+  proxy_->call("refresh_sandbox"_key, dynamic{}).get();
+
+  proxy_->call("update_local_listing"_key, make_local_listing_args("/home", {{"a.txt", "file", "1 B", ""}})).get();
+  dynamic sel;
+  sel["index"_key] = int32_t{0};
+  handler_->on_event(widget_id(".main.panels.left.left_table"), "row_selected"_key, sel);
+  handler_->on_event(widget_id(".main.panels.middle.upload"), "clicked"_key, dynamic{});
+
+  std::string confirm_root = find_confirm_root(srv_->last_session->ui_objects);
+  ASSERT_FALSE(confirm_root.empty());
+  auto no_id = srv_->last_session->ui_objects.at(confirm_root + ".buttons.btn_no")->as<bison::key_t>("__wish_id"_key);
+
+  bool got = false;
+  auto prev = std::move(srv_->last_session->emit_event);
+  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
+    if (event == "on_upload_requested"_key)
+      got = true;
+    if (prev)
+      prev(id, event, std::move(payload));
+  };
+
+  handler_->on_event(no_id, "clicked"_key, dynamic{});
+
+  wait_for(got);
+  EXPECT_FALSE(got);
+  EXPECT_EQ(
+      srv_->last_session->ui_objects.at(root_ + ".main.status")->as<std::string>("text"_key), "Upload cancelled.");
+}
+
 TEST_F(FileExplorerEventTest, WindowClosedEmitsClosedAndCleansUp) {
   bool got_closed = false;
   auto prev = std::move(srv_->last_session->emit_event);
