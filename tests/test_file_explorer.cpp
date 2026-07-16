@@ -333,8 +333,8 @@ class FileExplorerEventTest : public ::testing::Test {
     srv_.reset();
   }
 
-  key_t widget_id(const std::string& path) const {
-    return srv_->last_session->ui_objects.at(root_ + path)->as<key_t>("__wish_id"_key);
+  bison::key_t widget_id(const std::string& path) const {
+    return srv_->last_session->ui_objects.at(root_ + path)->as<bison::key_t>("__wish_id"_key);
   }
 
   // form::emit() defers delivery to the render loop's next frame, so spin
@@ -357,7 +357,7 @@ TEST_F(FileExplorerEventTest, LocalPathBarChangedEmitsOnLocalNavigate) {
   bool got = false;
   dynamic captured;
   auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](key_t id, key_t event, dynamic payload) {
+  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
     if (event == "on_local_navigate"_key) {
       got = true;
       captured = std::move(payload);
@@ -382,7 +382,7 @@ TEST_F(FileExplorerEventTest, LocalRowActivatedOnDirEmitsOnLocalNavigate) {
   bool got = false;
   dynamic captured;
   auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](key_t id, key_t event, dynamic payload) {
+  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
     if (event == "on_local_navigate"_key) {
       got = true;
       captured = std::move(payload);
@@ -404,7 +404,7 @@ TEST_F(FileExplorerEventTest, LocalRowActivatedOnDirEmitsOnLocalNavigate) {
 TEST_F(FileExplorerEventTest, UploadClickedWithNoSelectionSetsStatusInsteadOfEmitting) {
   bool got = false;
   auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](key_t id, key_t event, dynamic payload) {
+  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
     if (event == "on_upload_requested"_key)
       got = true;
     if (prev)
@@ -430,7 +430,7 @@ TEST_F(FileExplorerEventTest, UploadClickedWithSelectionEmitsOnUploadRequested) 
   bool got = false;
   dynamic captured;
   auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](key_t id, key_t event, dynamic payload) {
+  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
     if (event == "on_upload_requested"_key) {
       got = true;
       captured = std::move(payload);
@@ -493,7 +493,7 @@ TEST_F(FileExplorerEventTest, SandboxRowSelectedUpdatesSelectedLabel) {
 TEST_F(FileExplorerEventTest, DownloadClickedWithNoSelectionSetsStatusInsteadOfEmitting) {
   bool got = false;
   auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](key_t id, key_t event, dynamic payload) {
+  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
     if (event == "on_download_requested"_key)
       got = true;
     if (prev)
@@ -512,7 +512,7 @@ TEST_F(FileExplorerEventTest, DownloadClickedWithNoSelectionSetsStatusInsteadOfE
 TEST_F(FileExplorerEventTest, WindowClosedEmitsClosedAndCleansUp) {
   bool got_closed = false;
   auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](key_t id, key_t event, dynamic payload) {
+  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
     if (event == "closed"_key)
       got_closed = true;
     if (prev)
