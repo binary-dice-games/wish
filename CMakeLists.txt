@@ -462,12 +462,12 @@ if(WISH_BUILD_SHARED)
   target_link_libraries(wish_client_dll PUBLIC wish_client)
   target_include_directories(wish_client_dll
       PUBLIC
-          ${CMAKE_SOURCE_DIR}/include
+          ${CMAKE_CURRENT_SOURCE_DIR}/include
       PRIVATE
-          ${CMAKE_SOURCE_DIR}
-          ${CMAKE_SOURCE_DIR}/extern/bison
+          ${CMAKE_CURRENT_SOURCE_DIR}
+          ${CMAKE_CURRENT_SOURCE_DIR}/extern/bison
           # nlohmann/json, for wish_list_apps()'s JSON encoding in wish_client_c.cpp.
-          ${CMAKE_SOURCE_DIR}/extern/bison/extern/json/single_include)
+          ${CMAKE_CURRENT_SOURCE_DIR}/extern/bison/extern/json/single_include)
   set_target_properties(wish_client_dll PROPERTIES
       RUNTIME_OUTPUT_NAME wish_client      # wish_client.dll
       ARCHIVE_OUTPUT_NAME wish_client_dll  # wish_client_dll.lib — avoids collision with wish_client.lib
