@@ -10,8 +10,10 @@
 #include <ui/ui_importer.hpp>
 
 #include <chrono>
+#include <cstdio>
 #include <ctime>
 #include <filesystem>
+#include <fstream>
 #include <iomanip>
 #include <sstream>
 
@@ -65,6 +67,58 @@ std::string format_modified(const fs::file_time_type& ftime) {
   return oss.str();
 }
 
+#if !defined(_WIN32)
+// Forks/execs `argv` (nullptr-terminated) and waits for it, returning true
+// on a clean exit(0). `argv[0]` is resolved via PATH (execvp).
+bool run_and_wait(char* const argv[]) {
+  pid_t pid = fork();
+  if (pid < 0)
+    return false;
+  if (pid == 0) {
+    execvp(argv[0], argv);
+    _exit(127);
+  }
+  int status = 0;
+  waitpid(pid, &status, 0);
+  return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+}
+
+// True under WSL (Windows Subsystem for Linux): still plain Linux
+// (_WIN32 is not defined), but `xdg-open` is typically absent since there's
+// no Linux desktop session -- the host file manager is reached via
+// `explorer.exe` instead. Detected the same way `wslpath`/util-linux
+// tooling does: the kernel release string identifies itself.
+bool running_under_wsl() {
+  std::ifstream in("/proc/version");
+  std::string line;
+  std::getline(in, line);
+  auto lower = line;
+  for (auto& c : lower)
+    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  return lower.find("microsoft") != std::string::npos;
+}
+
+// WSL fallback: convert `path` to its Windows form via `wslpath -w`, then
+// hand it to the host's `explorer.exe` (present on PATH in every WSL
+// distro). Returns "" if the conversion failed.
+std::string wsl_windows_path(const fs::path& path) {
+  std::string cmd = "wslpath -w " + path.string();
+  // path is a resolved sandbox-relative filesystem path, never raw client
+  // input, so shelling out via popen() here does not admit injection.
+  FILE* pipe = popen(cmd.c_str(), "r");
+  if (!pipe)
+    return {};
+  std::string out;
+  char buf[512];
+  while (fgets(buf, sizeof(buf), pipe))
+    out += buf;
+  pclose(pipe);
+  while (!out.empty() && (out.back() == '\n' || out.back() == '\r'))
+    out.pop_back();
+  return out;
+}
+#endif
+
 // Launches the host OS's file manager at `path`. Deliberately server-side:
 // the "Open in Explorer" button is for the *sandbox* panel, which lives on
 // this machine, mirroring the TightVNC reference design's intent to let an
@@ -76,16 +130,33 @@ bool open_in_host_explorer(const fs::path& path) {
       reinterpret_cast<INT_PTR>(ShellExecuteW(nullptr, L"explore", wide.c_str(), nullptr, nullptr, SW_SHOWNORMAL));
   return result > 32;
 #else
-  pid_t pid = fork();
-  if (pid < 0)
-    return false;
-  if (pid == 0) {
-    execlp("xdg-open", "xdg-open", path.c_str(), static_cast<char*>(nullptr));
-    _exit(127);
+  std::string path_str = path.string();
+  char* xdg_argv[] = {const_cast<char*>("xdg-open"), const_cast<char*>(path_str.c_str()), nullptr};
+  if (run_and_wait(xdg_argv))
+    return true;
+
+  // xdg-open is commonly missing on WSL (no Linux desktop session) --
+  // fall back to the Windows host's own Explorer via explorer.exe.
+  if (running_under_wsl()) {
+    std::string win_path = wsl_windows_path(path);
+    if (!win_path.empty()) {
+      char* explorer_argv[] = {const_cast<char*>("explorer.exe"), const_cast<char*>(win_path.c_str()), nullptr};
+      // explorer.exe returns a non-zero exit status even on a successful
+      // open (a long-standing Windows quirk) -- treat "we could launch it
+      // at all" as success rather than trusting its exit code.
+      pid_t pid = fork();
+      if (pid == 0) {
+        execvp(explorer_argv[0], explorer_argv);
+        _exit(127);
+      }
+      if (pid > 0) {
+        int status = 0;
+        waitpid(pid, &status, 0);
+        return WIFEXITED(status) && WEXITSTATUS(status) != 127;
+      }
+    }
   }
-  int status = 0;
-  waitpid(pid, &status, 0);
-  return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+  return false;
 #endif
 }
 
@@ -99,6 +170,20 @@ bool open_in_host_explorer(const fs::path& path) {
 // RowBg(64) + BordersInnerH(128) + BordersOuterH(256) + ScrollY(1<<25) =
 // 33554881, matching FileDialog's table. InputText EnterReturnsTrue=32 so
 // path bars only fire "changed" on Enter, not per keystroke.
+//
+// left_table/right_table use a fixed "outer_height" (300) rather than the
+// stretch-to-fill sentinel (-1): "left"/"right" are HorizontalLayout
+// columns with an explicit "width", so imgui_ui_renderer.cpp's
+// render_horizontal_layout() wraps each in its own child window with
+// ImGuiChildFlags_AutoResizeY (auto height, sized to content -- deliberate,
+// see that function's own comment). A -1 outer_height inside an
+// auto-height parent has no finite bound to stretch against, so the Table
+// never engages its own ScrollY and instead grows to fit every row,
+// pushing the overflow onto the outer Window's own scrollbar -- i.e. one
+// shared scrollbar for the whole window instead of an independent one per
+// panel. A fixed outer_height gives each Table a real bound, so ScrollY
+// activates per-panel (matching FileDialog's own fixed 260.0 for the same
+// reason).
 
 // Tagged delimiter (R"json(...)json") rather than the untagged R"(...)"
 // convention used elsewhere: "Sandbox (Server)" ends in a ")" immediately
@@ -131,7 +216,7 @@ static constexpr const char* kLayout = R"json({
                 "left_selected": { "type": "Label", "text": "Selected: (none)" },
                 "left_table": {
                   "type": "Table", "id": "##local_table", "columns": 3, "headers": true,
-                  "flags": 33554881, "outer_width": 0, "outer_height": -1,
+                  "flags": 33554881, "outer_width": 0, "outer_height": 300,
                   "children": {
                     "col_name":     { "type": "TableColumn", "label": "Name" },
                     "col_size":     { "type": "TableColumn", "label": "Size", "flags": 16, "init_width": 90 },
@@ -170,7 +255,7 @@ static constexpr const char* kLayout = R"json({
                 "right_selected": { "type": "Label", "text": "Selected: (none)" },
                 "right_table": {
                   "type": "Table", "id": "##sandbox_table", "columns": 3, "headers": true,
-                  "flags": 33554881, "outer_width": 0, "outer_height": -1,
+                  "flags": 33554881, "outer_width": 0, "outer_height": 300,
                   "children": {
                     "col_name":     { "type": "TableColumn", "label": "Name" },
                     "col_size":     { "type": "TableColumn", "label": "Size", "flags": 16, "init_width": 90 },
@@ -244,7 +329,8 @@ void file_explorer::on_init() {
 
 // ── Table population ─────────────────────────────────────────────────────────
 
-void file_explorer::fill_table(const ui_element_ptr& table, const std::vector<file_row>& entries) {
+void file_explorer::fill_table(
+    const ui_element_ptr& table, const std::vector<file_row>& entries, int32_t selected_index) {
   if (!table)
     return;
   auto* children_p = table->findField<dynamic_ptr>("children"_key);
@@ -257,6 +343,7 @@ void file_explorer::fill_table(const ui_element_ptr& table, const std::vector<fi
   for (auto& entry : entries) {
     ui_element_ptr row{dynamic::instantiate("wish"_key, "TableRow"_key)};
     row["order"_key] = idx;
+    row["selected"_key] = idx == selected_index;
 
     auto make_label = [&](const std::string& text, int32_t order) {
       ui_element_ptr lbl{dynamic::instantiate("wish"_key, "Label"_key)};
@@ -285,6 +372,122 @@ void file_explorer::set_status(const std::string& message) {
   (*this)["status"_key] = message;
   if (status_label_ptr_)
     status_label_ptr_["text"_key] = message;
+}
+
+bool file_explorer::sandbox_has_file(const std::string& name) const {
+  for (auto& e : sandbox_entries_)
+    if (e.type == "file" && e.name == name)
+      return true;
+  return false;
+}
+
+bool file_explorer::local_has_file(const std::string& name) const {
+  for (auto& e : local_entries_)
+    if (e.type == "file" && e.name == name)
+      return true;
+  return false;
+}
+
+// ── Overwrite confirmation (inline second modal, see message_box.cpp for ──────
+// the reference pattern this mirrors: an internal Window merged as its own
+// top-level object, closed via the __request_close__/closed handshake.
+
+namespace {
+constexpr const char* kConfirmLayout = R"({
+  "type": "Window", "title": "Confirm Overwrite", "modal": true,
+  "flags": "NoResize|NoCollapse|AlwaysAutoResize",
+  "children": {
+    "message": { "type": "Label", "text": "" },
+    "sep": { "type": "Separator" },
+    "buttons": { "type": "HorizontalLayout", "spacing": 6, "children": {
+      "btn_yes": { "type": "Button", "label": "Overwrite", "height": 32 },
+      "btn_no": { "type": "Button", "label": "Cancel", "height": 32 }
+    } }
+  }
+})";
+} // namespace
+
+void file_explorer::show_overwrite_confirm(pending_transfer kind, const std::string& name) {
+  // Called from on_event(), which runs outside dispatch (see form.hpp) --
+  // sess() would throw here, so this acquires context_wlock directly and
+  // avoids next_available_key()/ctx()-via-sess(), mirroring
+  // navigate_sandbox()'s and remove_internal_objects()'s own
+  // dispatch/non-dispatch handling.
+  pending_transfer_ = kind;
+
+  auto tree = import_json(kConfirmLayout);
+  std::string message = kind == pending_transfer::upload
+      ? ("\"" + name + "\" already exists in the sandbox. Overwrite it?")
+      : ("\"" + name + "\" already exists locally. Overwrite it?");
+  tree.with("message", [&](const auto& e) { e["text"_key] = message; });
+
+  auto& c = ctx();
+  for (auto& [key, elem] : tree) {
+    key_t id = rmi::shared::generate_id();
+    c.put_object(id, elem);
+    elem["__wish_id"_key] = id;
+  }
+
+  confirm_window_id_ = (*tree[""])["__wish_id"_key].as<key_t>();
+  tree.with("buttons.btn_yes", [&](const auto& e) { confirm_yes_id_ = wish_id_of(e); });
+  tree.with("buttons.btn_no", [&](const auto& e) { confirm_no_id_ = wish_id_of(e); });
+
+  auto lock = context_wlock{*sync_ctx_};
+  context& s = *lock;
+  for (int i = 0;; ++i) {
+    std::string candidate = "__fileexplorer_confirm_" + std::to_string(i);
+    if (s.top_level_objects.find(key_t{candidate}) == s.top_level_objects.end()) {
+      confirm_root_key_ = candidate;
+      break;
+    }
+  }
+
+  s.ui_objects.merge(std::move(tree), confirm_root_key_);
+  auto it = s.ui_objects.find(confirm_root_key_);
+  if (it != s.ui_objects.end()) {
+    s.top_level_objects[key_t{confirm_root_key_}] = it->second;
+    (*it->second)["__path__"_key] = confirm_root_key_;
+    s.top_level_handlers[key_t{confirm_root_key_}] = this;
+  }
+}
+
+void file_explorer::request_close_confirm() {
+  auto set_flag = [this](context& s) {
+    auto it = s.ui_objects.find(confirm_root_key_);
+    if (it != s.ui_objects.end() && it->second)
+      (*it->second)["__request_close__"_key] = true;
+  };
+  if (detail::current_context) {
+    set_flag(*detail::current_context);
+  } else {
+    auto lock = context_wlock{*sync_ctx_};
+    set_flag(*lock);
+  }
+}
+
+void file_explorer::remove_confirm_objects() {
+  if (confirm_root_key_.empty() || !sync_ctx_)
+    return;
+  const std::string dot = confirm_root_key_ + ".";
+
+  auto do_remove = [&](context& s) {
+    s.top_level_objects.erase(key_t{confirm_root_key_});
+    s.top_level_handlers.erase(key_t{confirm_root_key_});
+    for (auto it = s.ui_objects.begin(); it != s.ui_objects.end();) {
+      if (it->first == confirm_root_key_ || it->first.rfind(dot, 0) == 0)
+        it = s.ui_objects.erase(it);
+      else
+        ++it;
+    }
+  };
+
+  if (detail::current_context) {
+    do_remove(*detail::current_context);
+  } else {
+    auto lock = context_wlock{*sync_ctx_};
+    do_remove(*lock);
+  }
+  confirm_root_key_.clear();
 }
 
 // ── Sandbox navigation (server-owned) ────────────────────────────────────────
@@ -413,6 +616,7 @@ void file_explorer::on_event(key_t id, key_t event, const dynamic& payload) {
         selected_local_is_dir_ = local_entries_[static_cast<size_t>(idx)].type == "dir";
         if (left_selected_ptr_)
           left_selected_ptr_["text"_key] = "Selected: " + selected_local_name_;
+        fill_table(left_table_ptr_, local_entries_, idx);
       }
       return;
     }
@@ -449,6 +653,7 @@ void file_explorer::on_event(key_t id, key_t event, const dynamic& payload) {
         selected_sandbox_is_dir_ = sandbox_entries_[static_cast<size_t>(idx)].type == "dir";
         if (right_selected_ptr_)
           right_selected_ptr_["text"_key] = "Selected: " + selected_sandbox_name_;
+        fill_table(right_table_ptr_, sandbox_entries_, idx);
       }
       return;
     }
@@ -498,6 +703,10 @@ void file_explorer::on_event(key_t id, key_t event, const dynamic& payload) {
       set_status("Select a local file to upload.");
       return;
     }
+    if (sandbox_has_file(selected_local_name_)) {
+      show_overwrite_confirm(pending_transfer::upload, selected_local_name_);
+      return;
+    }
     dynamic req;
     req["name"_key] = selected_local_name_;
     req["local_path"_key] = local_path_;
@@ -510,10 +719,41 @@ void file_explorer::on_event(key_t id, key_t event, const dynamic& payload) {
       set_status("Select a sandbox file to download.");
       return;
     }
+    if (local_has_file(selected_sandbox_name_)) {
+      show_overwrite_confirm(pending_transfer::download, selected_sandbox_name_);
+      return;
+    }
     dynamic req;
     req["name"_key] = selected_sandbox_name_;
     emit("on_download_requested"_key, std::move(req));
     return;
+  }
+
+  if (!confirm_root_key_.empty()) {
+    if (id == confirm_window_id_ && event == "closed"_key) {
+      remove_confirm_objects();
+      pending_transfer_ = pending_transfer::none;
+      return;
+    }
+    if (id == confirm_yes_id_ && event == "clicked"_key) {
+      if (pending_transfer_ == pending_transfer::upload) {
+        dynamic req;
+        req["name"_key] = selected_local_name_;
+        req["local_path"_key] = local_path_;
+        emit("on_upload_requested"_key, std::move(req));
+      } else if (pending_transfer_ == pending_transfer::download) {
+        dynamic req;
+        req["name"_key] = selected_sandbox_name_;
+        emit("on_download_requested"_key, std::move(req));
+      }
+      request_close_confirm();
+      return;
+    }
+    if (id == confirm_no_id_ && event == "clicked"_key) {
+      set_status(pending_transfer_ == pending_transfer::upload ? "Upload cancelled." : "Download cancelled.");
+      request_close_confirm();
+      return;
+    }
   }
 }
 

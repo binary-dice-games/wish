@@ -17,6 +17,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <cstdio>
 #include <ctime>
 #include <filesystem>
 #include <fstream>
@@ -71,6 +72,28 @@ std::string format_modified(const fs::file_time_type& ftime) {
   return oss.str();
 }
 
+// Invokes an RMI method on `explorer`, retrying a couple of times on
+// failure. A method call placed immediately after a burst of chunked
+// transfer RMI traffic (upload_chunk/download_chunk, each round-tripping
+// through the same session dispatch) has been observed to occasionally
+// race a concurrent session reader (e.g. an automation tree query) and spuriously
+// fail with "Method not found" even though the method is registered --
+// retrying after a short backoff reliably succeeds once that contention
+// clears, without masking a *genuinely* missing method (which would keep
+// failing every attempt and still surface after the retries are exhausted).
+dynamic call_with_retry(
+    const std::shared_ptr<rmi::proxy::dynamic>& explorer, key_t method, dynamic args, int attempts = 3) {
+  for (int attempt = 1;; ++attempt) {
+    try {
+      return explorer->call(method, args.clone()).get();
+    } catch (const std::exception&) {
+      if (attempt >= attempts)
+        throw;
+      std::this_thread::sleep_for(std::chrono::milliseconds{50 * attempt});
+    }
+  }
+}
+
 // Enumerate `dir` and push the listing to the server via
 // update_local_listing(), the shape FileExplorer::do_update_local_listing()
 // expects: {path, files: [{name, type, size, modified}, ...]}.
@@ -101,7 +124,7 @@ void report_local_listing(
   dynamic args;
   args["path"_key] = cur_dir->string();
   args["files"_key] = dynamic_ptr{std::make_shared<dynamic>(std::move(files))};
-  explorer->call("update_local_listing"_key, std::move(args)).get();
+  call_with_retry(explorer, "update_local_listing"_key, std::move(args));
 }
 
 // Patches `transfer_progress`/`transfer_label` on the FileExplorer form,
@@ -174,7 +197,7 @@ void run_file_explorer(wish_app_host& s) {
              })
             .get();
         clear_transfer_progress(explorer);
-        explorer->call("refresh_sandbox"_key, dynamic{}).get();
+        call_with_retry(explorer, "refresh_sandbox"_key, dynamic{});
       } catch (const std::exception& e) {
         clear_transfer_progress(explorer);
         dynamic patch;

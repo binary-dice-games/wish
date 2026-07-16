@@ -71,8 +71,32 @@ class file_explorer : public form {
     std::string modified;
   };
 
-  void fill_table(const ui_element_ptr& table, const std::vector<file_row>& entries);
+  void fill_table(const ui_element_ptr& table, const std::vector<file_row>& entries, int32_t selected_index = -1);
   void set_status(const std::string& message);
+
+  /// @brief What the "Overwrite?" confirmation, once accepted, should do.
+  enum class pending_transfer { none, upload, download };
+
+  /// @brief Builds (or rebuilds) the "<name> already exists ... overwrite?"
+  /// modal as a second top-level internal Window (mirrors message_box.cpp's
+  /// rebuild()/register_root(), inlined here rather than instantiating a
+  /// separate MessageBox object -- this form already owns the on_event
+  /// routing and selection state the confirmation needs to act on).
+  void show_overwrite_confirm(pending_transfer kind, const std::string& name);
+
+  /// @brief Requests the confirm Window close itself (see
+  /// message_box.cpp's request_close() for why this can't just erase the
+  /// tree directly from a button-click handler).
+  void request_close_confirm();
+
+  /// @brief Erases the confirm dialog's own top-level entry and its
+  /// "<key>."-prefixed ui_objects, mirroring form::remove_internal_objects()
+  /// but scoped to confirm_root_key_ instead of internal_root_key_ (a form
+  /// only tracks removal for the latter).
+  void remove_confirm_objects();
+
+  bool sandbox_has_file(const std::string& name) const;
+  bool local_has_file(const std::string& name) const;
 
   /// @brief Navigate the sandbox panel to @p relative_path ("" = sandbox
   /// root) and re-list it. Rejects paths that escape the sandbox or are not
@@ -110,6 +134,12 @@ class file_explorer : public form {
   bool selected_local_is_dir_{false};
   std::string selected_sandbox_name_;
   bool selected_sandbox_is_dir_{false};
+
+  std::string confirm_root_key_; ///< Empty when no confirm dialog is open.
+  bison::key_t confirm_window_id_;
+  bison::key_t confirm_yes_id_;
+  bison::key_t confirm_no_id_;
+  pending_transfer pending_transfer_{pending_transfer::none};
 };
 
 /// @brief Register FileExplorer in the "wish" bison namespace.
