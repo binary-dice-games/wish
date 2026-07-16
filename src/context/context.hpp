@@ -110,6 +110,13 @@ struct context : public bison::rmi::context {
   /// Controlled by `wish::server::set_allow_absolute_paths()`.
   bool allow_absolute_paths{false};
 
+  /// When `false` (default), `http://`/`https://` widget file paths (e.g.
+  /// `Image::src`, `Element.font_path`) are rejected outright -- no network
+  /// request is ever made. Set to `true` to allow `file_service::resolve_or_fetch()`
+  /// to download such URLs into the session sandbox. Controlled by
+  /// `wish::server::set_allow_url_fetch()`.
+  bool allow_url_fetch{false};
+
   /// File service instance; populated by `register_file_service(context&)`.
   file_service_ptr file_service;
 

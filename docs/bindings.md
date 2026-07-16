@@ -1,5 +1,104 @@
 # Language Bindings
 
+## C++ (`bindings/cpp/`)
+
+Header-only wrapper (`bindings/cpp/include/wish_cpp/`) around
+`wish_client_c.h` (plus `bison_c.h`/`rmi_c.h`), for C++ applications that
+only want to connect to a running wish server -- no bison/wish source needs
+to be compiled in, just `#include <wish_cpp/wish.hpp>` and link the prebuilt
+`wish_client_dll` shared library. This is distinct from the native,
+statically-linked `bdg::wish::client` (`src/client/client.hpp`) that
+single-binary demos like `examples/calculator` use with an in-memory
+transport; use this binding instead when the client is its own separate
+process/executable, the same situation the Python and C# bindings address
+for their languages.
+
+Since C++ (unlike Python/C#) has `constexpr`, `wish_cpp::key_t`'s
+`const char*` constructor reimplements the FNV-1a hash used by
+`wish_key()`/`bison_key()`/`"name"_key` as a `constexpr` function instead of
+calling into the shared library: a `"name"_key` literal is evaluated
+entirely at compile time and costs nothing at runtime, with no
+hashing-related library call at all. Only names known solely at runtime
+(e.g. a dot-path string) pay for hashing, via that same function, at the
+point they're used. See `bindings/cpp/include/wish_cpp/key.hpp`.
+
+There is no header-only equivalent of `bison::dynamic` (that class is
+compiled/linked library code), so this binding ships its own thin
+`wish_cpp::value` -- a header-only RAII wrapper directly over `bison_handle`
+(`bindings/cpp/include/wish_cpp/value.hpp`) -- for proxy `set()`/`get()`/
+`call()` payloads, event parameters, and connect params.
+
+**Requirements:** A C++17 compiler and CMake. Build `wish_client_dll` first
+(same shared library the Python/C# bindings load):
+
+```bash
+cmake -B build -DWISH_BUILD_SHARED=ON
+cmake --build build --target wish_client_dll
+```
+
+The `wish_cpp` CMake target (`bindings/cpp/CMakeLists.txt`, added
+automatically when `WISH_BUILD_SHARED=ON`) is an `INTERFACE` library that
+sets up the include paths and links `wish_client_dll` -- link your own
+target against it the same way `calculator_cpp_binding`/`notepad_cpp_binding`
+do.
+
+### Running the calculator example
+
+Start a wish server (it owns the window/renderer), matching whichever
+transport you want the client to use:
+
+```bash
+# --transport=tcp, then in another terminal:
+build/app/wish server --transport=tcp --port=7070 --renderer=sdl3
+cmake --build build --target calculator_cpp_binding
+build/bindings/cpp/calculator_cpp_binding --transport=tcp --host=127.0.0.1 --port=7070
+
+# --transport=term (the server's default): the server spawns its own
+# terminal and expects the client to run *inside* it, wrapping that
+# process's own inherited stdio (wish::binding::client::term()):
+build/app/wish server --renderer=sdl3
+# -- inside the terminal the server just spawned --
+build/bindings/cpp/calculator_cpp_binding --transport=term
+```
+
+`bindings/cpp/examples/notepad.cpp` (`notepad_cpp_binding`) is the C++ port
+of [bindings/python/examples/notepad_example.py](../bindings/python/examples/notepad_example.py)
+-- run it the same way, with an optional trailing file path to open at
+startup.
+
+Quick-start snippet:
+
+```cpp
+#include <wish_cpp/wish.hpp>
+
+namespace wish = bdg::wish::binding;
+using namespace bdg::wish::binding;  // for the "_key" literal operator
+
+int main() {
+  auto client = wish::client::tcp("127.0.0.1", 7070);
+  client.run([](wish::client& c) {
+    c.set_style_preset("dark");
+    c.register_template("ui", R"({"type": "Window", "title": "Hi"})");
+    auto root = c.instantiate_template("ui", "ui");
+    std::cout << *root.get().get_string("title"_key) << "\n";  // "Hi"
+    c.wait();                                                  // blocks until an event handler calls c.quit()
+  });
+}
+```
+
+### File transfer
+
+`client::upload_file(name, data)` / `download_file(name) -> std::string`
+move a whole file in one call. `upload_file_from_path`/
+`download_file_to_path` stream a local file's content in chunks instead of
+buffering it in memory (mirroring the C ABI's own streaming functions), and
+`upload_package(dest_path, local_zip_path)` uploads a local zip archive and
+has the server unpack it into `dest_path` inside the sandbox. See
+[DESIGN.md](../DESIGN.md#bdgwishfile_service) for the chunked-transfer
+protocol these build on.
+
+---
+
 ## Python (`bindings/python/`)
 
 Thin `ctypes` wrapper (`bindings/python/wish/`) exposing `wish_client_c.h`

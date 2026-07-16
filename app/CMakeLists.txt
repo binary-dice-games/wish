@@ -33,6 +33,7 @@ if(WISH_ENABLE_IMGUI AND (WISH_ENABLE_SDL3 OR WISH_ENABLE_WEB))
   set_target_properties(wish-cli PROPERTIES
       OUTPUT_NAME "wish"
       FOLDER      app)
+  install(TARGETS wish-cli RUNTIME DESTINATION bin COMPONENT wish)
 
   # ── wish-server — standalone server binary (requires ImGui + SDL3 and/or web) ─
   add_executable(wish-server
@@ -47,6 +48,7 @@ if(WISH_ENABLE_IMGUI AND (WISH_ENABLE_SDL3 OR WISH_ENABLE_WEB))
   )
   target_link_libraries(wish-server PRIVATE wish_server gflags)
   set_target_properties(wish-server PROPERTIES FOLDER app)
+  install(TARGETS wish-server RUNTIME DESTINATION bin COMPONENT wish)
 endif()
 
 if(WISH_ENABLE_IMGUI AND WISH_ENABLE_SDL3)
@@ -66,6 +68,7 @@ if(WISH_ENABLE_IMGUI AND WISH_ENABLE_SDL3)
   )
   target_link_libraries(wish-standalone PRIVATE wish_server gflags)
   set_target_properties(wish-standalone PROPERTIES FOLDER app)
+  install(TARGETS wish-standalone RUNTIME DESTINATION bin COMPONENT wish)
 endif()
 
 # ── wish-client — standalone client binary (lightweight, no SDL/ImGui) ─────────
@@ -80,6 +83,7 @@ target_include_directories(wish-client PRIVATE
 )
 target_link_libraries(wish-client PRIVATE wish_client gflags)
 set_target_properties(wish-client PROPERTIES FOLDER app)
+install(TARGETS wish-client RUNTIME DESTINATION bin COMPONENT wish)
 
 # ── wish-desktop — standalone bridge+shell binary (no SDL/ImGui) ───────────────
 #
@@ -97,3 +101,4 @@ target_include_directories(wish-desktop PRIVATE
 )
 target_link_libraries(wish-desktop PRIVATE wish_client gflags)
 set_target_properties(wish-desktop PROPERTIES FOLDER app)
+install(TARGETS wish-desktop RUNTIME DESTINATION bin COMPONENT wish)

@@ -480,7 +480,15 @@ TEST_F(ImguiRendererTest, WindowRestoresFloatingSizeAfterUndock) {
 
   // Programmatically dock the window via DockBuilder (no simulated drag
   // needed -- imgui_internal.h is already included above).
-  ImGuiID dock_id = ImGui::GetID("TestDockSpace");
+  //
+  // ImGui::GetID() hashes against GImGui->CurrentWindow, so it can only be
+  // called inside a Begin()/End() scope; here we're between frames (right
+  // after end_frame()), so CurrentWindow is null and GetID() would
+  // dereference it unconditionally (no assert in release builds -- this
+  // segfaulted before this fix, see git history for the investigation).
+  // ImHashStr() computes the same kind of stable id without touching
+  // CurrentWindow, which is all a docking id needs to be.
+  ImGuiID dock_id = ImHashStr("TestDockSpace");
   ImGui::DockBuilderRemoveNode(dock_id);
   ImGui::DockBuilderAddNode(dock_id, ImGuiDockNodeFlags_None);
   ImGui::DockBuilderSetNodeSize(dock_id, ImVec2(800, 600));

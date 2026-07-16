@@ -2,20 +2,26 @@
 #include <gtest/gtest.h>
 
 #include <context/file_service.hpp>
+#include <net/http_client.hpp>
 
+#include <civetweb.h>
 #include <miniz.h>
 #include <miniz_zip.h>
 
+#include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <thread>
 #include <unordered_set>
 #include <vector>
 
 using namespace bdg::bison;
 using bdg::wish::file_service;
 using bdg::wish::context;
+using namespace std::chrono_literals;
 
 namespace {
 
@@ -38,6 +44,68 @@ std::filesystem::path make_test_zip(
 std::string read_binary_file(const std::filesystem::path& path) {
   std::ifstream in(path, std::ios::binary);
   return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>{}};
+}
+
+// Minimal throwaway HTTP server for resolve_or_fetch()'s URL-download tests:
+// binds an ephemeral localhost port and serves a single configurable body
+// (or error status) from every request, counting how many requests arrive so
+// tests can assert on in-flight-dedup / no-retry-after-failure behavior.
+class TestHttpServer {
+ public:
+  TestHttpServer() {
+    mg_callbacks callbacks{};
+    const char* options[] = {"listening_ports", "127.0.0.1:0", "num_threads", "4", nullptr};
+    ctx_ = mg_start(&callbacks, this, options);
+    mg_set_request_handler(ctx_, "/", &TestHttpServer::handle, this);
+  }
+  ~TestHttpServer() {
+    if (ctx_)
+      mg_stop(ctx_);
+  }
+
+  std::string url(const std::string& path) const {
+    mg_server_port ports[4];
+    int n = mg_get_server_ports(ctx_, 4, ports);
+    int port = n > 0 ? ports[0].port : 0;
+    return "http://127.0.0.1:" + std::to_string(port) + path;
+  }
+
+  std::atomic<int> request_count{0};
+  std::string body{"fake-resource-bytes"};
+  int status_code = 200;
+  int delay_ms = 0;
+
+ private:
+  static int handle(mg_connection* conn, void* cbdata) {
+    auto* self = static_cast<TestHttpServer*>(cbdata);
+    ++self->request_count;
+    if (self->delay_ms > 0)
+      std::this_thread::sleep_for(std::chrono::milliseconds(self->delay_ms));
+    if (self->status_code != 200) {
+      mg_send_http_error(conn, self->status_code, "test error");
+      return 1;
+    }
+    mg_send_http_ok(conn, "application/octet-stream", static_cast<long long>(self->body.size()));
+    mg_write(conn, self->body.data(), self->body.size());
+    return 1;
+  }
+
+  mg_context* ctx_ = nullptr;
+};
+
+// Polls @p fn (expected to return a possibly-empty std::filesystem::path)
+// until it returns non-empty or @p timeout elapses; returns the last result.
+template <typename Fn>
+std::filesystem::path poll_until_nonempty(Fn&& fn, std::chrono::milliseconds timeout = 2000ms) {
+  auto deadline = std::chrono::steady_clock::now() + timeout;
+  std::filesystem::path result;
+  do {
+    result = fn();
+    if (!result.empty())
+      return result;
+    std::this_thread::sleep_for(10ms);
+  } while (std::chrono::steady_clock::now() < deadline);
+  return result;
 }
 
 } // namespace
@@ -353,4 +421,141 @@ TEST_F(FileServiceTest, UnpackPathTraversalOnDestThrows) {
   fs().upload("pkg4.zip", read_binary_file(zip_path));
 
   EXPECT_THROW(fs().unpack("pkg4.zip", "../evil_dest"), std::runtime_error);
+}
+
+// ── net::http_get ────────────────────────────────────────────────────────────
+
+TEST(HttpGetTest, FetchesBodyOnSuccess) {
+  TestHttpServer server;
+  server.body = "hello from server";
+
+  auto resp = bdg::wish::net::http_get(server.url("/x.txt"));
+  EXPECT_TRUE(resp.ok);
+  EXPECT_EQ(resp.body, "hello from server");
+}
+
+TEST(HttpGetTest, NonSuccessStatusIsNotOk) {
+  TestHttpServer server;
+  server.status_code = 404;
+
+  auto resp = bdg::wish::net::http_get(server.url("/missing.txt"));
+  EXPECT_FALSE(resp.ok);
+}
+
+TEST(HttpGetTest, RejectsResponseLargerThanMaxBytes) {
+  TestHttpServer server;
+  server.body = std::string(1024, 'x');
+
+  auto resp = bdg::wish::net::http_get(server.url("/big.bin"), /*max_bytes=*/16);
+  EXPECT_FALSE(resp.ok);
+}
+
+TEST(HttpGetTest, TimesOutOnSlowServer) {
+  TestHttpServer server;
+  server.delay_ms = 300;
+
+  auto resp = bdg::wish::net::http_get(server.url("/slow.bin"), /*max_bytes=*/1 << 20, /*timeout_ms=*/50);
+  EXPECT_FALSE(resp.ok);
+}
+
+TEST(HttpGetTest, InvalidUrlIsRejected) {
+  auto resp = bdg::wish::net::http_get("not-a-url");
+  EXPECT_FALSE(resp.ok);
+}
+
+// ── file_service::resolve_or_fetch ──────────────────────────────────────────
+
+TEST_F(FileServiceTest, ResolveOrFetchLocalNameMatchesResolvePath) {
+  auto expected = file_service::resolve_path("res/icons/foo.png", sess().resource_dir, false);
+  auto actual = file_service::resolve_or_fetch("res/icons/foo.png", sess().resource_dir, false, true, {"png"});
+  EXPECT_EQ(actual, expected);
+}
+
+TEST_F(FileServiceTest, ResolveOrFetchLocalPathTraversalRejected) {
+  auto actual = file_service::resolve_or_fetch("../evil.png", sess().resource_dir, false, true, {"png"});
+  EXPECT_TRUE(actual.empty());
+}
+
+TEST_F(FileServiceTest, ResolveOrFetchFileSchemeRequiresAllowAbsolute) {
+  auto path = (sess().resource_dir / "abs.png").string();
+  // file:// is governed by allow_absolute only -- allow_fetch is irrelevant
+  // and left false here to prove that.
+  EXPECT_TRUE(file_service::resolve_or_fetch("file://" + path, sess().resource_dir, false, false, {"png"}).empty());
+  EXPECT_EQ(
+      file_service::resolve_or_fetch("file://" + path, sess().resource_dir, true, false, {"png"}),
+      std::filesystem::path(path));
+}
+
+TEST_F(FileServiceTest, ResolveOrFetchRejectsUrlsWhenFetchDisabled) {
+  TestHttpServer server;
+
+  auto result = file_service::resolve_or_fetch(server.url("/photo.png"), sess().resource_dir, false, false, {"png"});
+  EXPECT_TRUE(result.empty());
+  EXPECT_EQ(server.request_count.load(), 0);
+}
+
+TEST_F(FileServiceTest, ResolveOrFetchRejectsDisallowedExtensionWithoutNetworkIo) {
+  TestHttpServer server;
+
+  auto result =
+      file_service::resolve_or_fetch(server.url("/payload.exe"), sess().resource_dir, false, true, {"png", "jpg"});
+  EXPECT_TRUE(result.empty());
+  EXPECT_EQ(server.request_count.load(), 0);
+}
+
+TEST_F(FileServiceTest, ResolveOrFetchDownloadsUrlAsynchronouslyAndCaches) {
+  TestHttpServer server;
+  server.body = "png-bytes";
+  server.delay_ms = 150;
+  auto url = server.url("/photo.png");
+
+  auto start = std::chrono::steady_clock::now();
+  auto first = file_service::resolve_or_fetch(url, sess().resource_dir, false, true, {"png"});
+  auto elapsed = std::chrono::steady_clock::now() - start;
+  EXPECT_TRUE(first.empty());
+  EXPECT_LT(elapsed, 100ms); // must not block on the 150ms-delayed server
+
+  auto resolved = poll_until_nonempty(
+      [&] { return file_service::resolve_or_fetch(url, sess().resource_dir, false, true, {"png"}); });
+  ASSERT_FALSE(resolved.empty());
+  EXPECT_EQ(read_binary_file(resolved), "png-bytes");
+
+  // Cached: a later call returns immediately without another request.
+  int count_after_first_download = server.request_count.load();
+  auto cached = file_service::resolve_or_fetch(url, sess().resource_dir, false, true, {"png"});
+  EXPECT_EQ(cached, resolved);
+  EXPECT_EQ(server.request_count.load(), count_after_first_download);
+}
+
+TEST_F(FileServiceTest, ResolveOrFetchDedupsConcurrentFramesToOneRequest) {
+  TestHttpServer server;
+  server.delay_ms = 150;
+  auto url = server.url("/shared.png");
+
+  for (int i = 0; i < 20; ++i) {
+    auto result = file_service::resolve_or_fetch(url, sess().resource_dir, false, true, {"png"});
+    EXPECT_TRUE(result.empty()); // still downloading throughout this burst
+  }
+
+  auto resolved = poll_until_nonempty(
+      [&] { return file_service::resolve_or_fetch(url, sess().resource_dir, false, true, {"png"}); });
+  ASSERT_FALSE(resolved.empty());
+  EXPECT_EQ(server.request_count.load(), 1);
+}
+
+TEST_F(FileServiceTest, ResolveOrFetchDoesNotRetryAfterFailure) {
+  TestHttpServer server;
+  server.status_code = 404;
+  auto url = server.url("/gone.png");
+
+  file_service::resolve_or_fetch(url, sess().resource_dir, false, true, {"png"});
+  // Give the background thread time to run and record the failure.
+  std::this_thread::sleep_for(200ms);
+  ASSERT_EQ(server.request_count.load(), 1);
+
+  for (int i = 0; i < 10; ++i) {
+    auto result = file_service::resolve_or_fetch(url, sess().resource_dir, false, true, {"png"});
+    EXPECT_TRUE(result.empty());
+  }
+  EXPECT_EQ(server.request_count.load(), 1);
 }

@@ -37,6 +37,11 @@ wish_add_test(test_file_service   test_file_service.cpp)
 # wish_server links miniz PRIVATE, which puts it on this target's link line
 # already, but not its include path (same pattern as test_resource_store above).
 target_link_libraries(test_file_service PRIVATE miniz)
+# Needs civetweb.h directly to run a throwaway HTTP server (mg_start) as a
+# fixture for resolve_or_fetch()'s URL-download tests -- wish_server links
+# civetweb-c-library PRIVATE, which puts it on this target's link line
+# already, but not its include path (same pattern as miniz above).
+target_link_libraries(test_file_service PRIVATE civetweb-c-library)
 wish_add_test(test_logger         test_logger.cpp)
 wish_add_test(test_server         test_server.cpp)
 wish_add_test(test_standalone     test_standalone.cpp)

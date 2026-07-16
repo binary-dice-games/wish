@@ -11,7 +11,7 @@ A remote UI framework built on [bison](https://github.com/binary-dice-games/biso
 - **Multiple transports** — TCP, named pipe/Unix socket, an interactive terminal hop, or in-process (no serialization) for single-binary demos.
 - **Per-session sandboxing** — isolated object tree, template registry, and file-service resource folder per connected client.
 - **Automation-ready** — an optional query/screenshot/input-injection API lets Playwright (or an AI agent) drive and introspect a running UI like a browser page.
-- **C++, Python, and C# clients** — a native C++ API plus generated bindings, all layered on the same bison RMI proxy semantics.
+- **C++, Python, and C# clients** — a native C++ API, a header-only C++ binding (`bindings/cpp/`, C ABI only, no bison/wish source to compile), plus generated Python/C# bindings, all layered on the same bison RMI proxy semantics.
 - **AI-agent-assisted app/UI building** — describe a UI in plain English and have a Claude Code skill build and screenshot-verify it, with no need to know the widget catalog up front. See [docs/ai-assisted-development.md](docs/ai-assisted-development.md).
 
 ## Architecture
@@ -131,6 +131,7 @@ into a persistent, identity-keyed directory per client via an
 | [docs/building.md](docs/building.md) | Prerequisites, CMake options, build commands |
 | [docs/cli.md](docs/cli.md) | Full `wish` CLI reference: `server`/`client`/`standalone`/`desktop` |
 | [docs/examples.md](docs/examples.md) | Annotated example walkthroughs |
+| [docs/ui-elements.md](docs/ui-elements.md) | Full UI element/widget catalog (fields, events), window/layout model, JSON template schema, and the `editor` preview tool |
 | [docs/bindings.md](docs/bindings.md) | Python and C# language binding setup and usage |
 | [docs/ai-assisted-development.md](docs/ai-assisted-development.md) | Building wish apps/UI via natural language with the `wish-module`/`wish-ui` AI-agent skills |
 | [DESIGN.md](DESIGN.md) | Architecture, key abstractions, object model, and design decisions |

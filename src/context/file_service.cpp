@@ -3,16 +3,82 @@
 /// @brief Implementation of the wish file service.
 #include <context/file_service.hpp>
 
+#include <net/http_client.hpp>
+
+#include "src/bison/bison_sync.hpp"
+
 #include <miniz.h>
 #include <miniz_zip.h>
 
+#include <algorithm>
+#include <cctype>
+#include <cstdio>
 #include <fstream>
+#include <functional>
 #include <stdexcept>
 #include <system_error>
+#include <thread>
+#include <unordered_set>
 
 namespace bdg::wish {
 
 using namespace bdg::bison;
+
+namespace {
+
+std::string lowercase(std::string s) {
+  std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  return s;
+}
+
+// Extension (without the leading '.'), lowercased, extracted from a URL's
+// path component -- ignoring the scheme/host and any query string/fragment.
+// Empty if the URL has no path or no extension.
+std::string url_extension(const std::string& url) {
+  auto scheme_end = url.find("://");
+  std::string rest = scheme_end == std::string::npos ? url : url.substr(scheme_end + 3);
+  auto path_start = rest.find('/');
+  if (path_start == std::string::npos)
+    return {};
+  std::string path = rest.substr(path_start);
+
+  auto query = path.find_first_of("?#");
+  if (query != std::string::npos)
+    path.resize(query);
+
+  auto slash = path.find_last_of('/');
+  auto dot = path.find_last_of('.');
+  if (dot == std::string::npos || (slash != std::string::npos && dot < slash))
+    return {};
+  return lowercase(path.substr(dot + 1));
+}
+
+std::filesystem::path
+url_cache_path(const std::filesystem::path& resource_dir, const std::string& url, const std::string& ext) {
+  // A hash of the full URL is used as the cache key -- this is purely a
+  // cache filename, not a security boundary, so collision resistance beyond
+  // std::hash is unnecessary.
+  char buf[32];
+  std::snprintf(buf, sizeof(buf), "%016zx", std::hash<std::string>{}(url));
+  return resource_dir / "url_cache" / (std::string(buf) + "." + ext);
+}
+
+// Cache paths for URLs whose download is currently in flight -- prevents the
+// render loop (which calls resolve_or_fetch every frame) from starting a
+// second background download for the same URL while the first is running.
+bison::synchronized<std::unordered_set<std::filesystem::path>>& pending_downloads() {
+  static bison::synchronized<std::unordered_set<std::filesystem::path>> pending;
+  return pending;
+}
+
+// Cache paths for URLs whose download has already failed once -- prevents
+// retrying a permanently-broken URL on every subsequent frame.
+bison::synchronized<std::unordered_set<std::filesystem::path>>& failed_downloads() {
+  static bison::synchronized<std::unordered_set<std::filesystem::path>> failed;
+  return failed;
+}
+
+} // namespace
 
 // ── file_service ──────────────────────────────────────────────────────────────
 
@@ -85,6 +151,75 @@ file_service::resolve_path(const std::string& name, const std::filesystem::path&
     return {};
 
   return target;
+}
+
+std::filesystem::path file_service::resolve_or_fetch(
+    const std::string& name,
+    const std::filesystem::path& resource_dir,
+    bool allow_absolute,
+    bool allow_fetch,
+    const std::vector<std::string>& allowed_extensions) {
+  if (name.starts_with("http://") || name.starts_with("https://")) {
+    if (!allow_fetch)
+      return {};
+
+    auto ext = url_extension(name);
+    bool allowed = !ext.empty() &&
+        std::any_of(allowed_extensions.begin(), allowed_extensions.end(),
+            [&](const std::string& e) { return lowercase(e) == ext; });
+    if (!allowed)
+      return {};
+
+    auto cache_path = url_cache_path(resource_dir, name, ext);
+
+    std::error_code exists_ec;
+    if (std::filesystem::exists(cache_path, exists_ec))
+      return cache_path;
+
+    if (failed_downloads().rlock()->contains(cache_path))
+      return {};
+
+    // Atomically claim this URL's download slot: only the frame that
+    // actually inserts a new entry starts the background thread.
+    bool claimed = pending_downloads().wlock()->insert(cache_path).second;
+    if (claimed) {
+      std::thread([name, cache_path] {
+        std::error_code dir_ec;
+        std::filesystem::create_directories(cache_path.parent_path(), dir_ec);
+
+        bool success = false;
+        if (!dir_ec) {
+          auto response = net::http_get(name);
+          if (response.ok) {
+            auto staging = cache_path;
+            staging += ".part";
+            std::ofstream out(staging, std::ios::binary);
+            if (out) {
+              out.write(response.body.data(), static_cast<std::streamsize>(response.body.size()));
+              out.close();
+              std::error_code rename_ec;
+              std::filesystem::rename(staging, cache_path, rename_ec);
+              success = !rename_ec;
+            }
+          }
+        }
+
+        if (!success)
+          failed_downloads().wlock()->insert(cache_path);
+        pending_downloads().wlock()->erase(cache_path);
+      }).detach();
+    }
+    return {};
+  }
+
+  if (name.starts_with("file://")) {
+    std::filesystem::path p{name.substr(7)};
+    if (!p.is_absolute())
+      return {};
+    return allow_absolute ? p : std::filesystem::path{};
+  }
+
+  return resolve_path(name, resource_dir, allow_absolute);
 }
 
 std::filesystem::path file_service::resolve_path(const std::string& name) const {

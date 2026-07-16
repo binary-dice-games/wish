@@ -210,7 +210,9 @@ void render_image(imgui_renderer& r, const ui_element& node, const context& s) {
   int32_t h = node.get_as<int32_t>("height"_key, 0);
   if (src.empty() || w <= 0 || h <= 0)
     return;
-  auto full_path = file_service::resolve_path(src, s.resource_dir, s.allow_absolute_paths);
+  static const std::vector<std::string> kImageExtensions{"png", "jpg", "jpeg", "bmp", "gif", "webp", "tga"};
+  auto full_path = file_service::resolve_or_fetch(
+      src, s.resource_dir, s.allow_absolute_paths, s.allow_url_fetch, kImageExtensions);
   if (full_path.empty())
     return;
   ImTextureID tex = r.get_or_load_texture(full_path.string(), s.resource_dir, &s.embedded_crc32s);
