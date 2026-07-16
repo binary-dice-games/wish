@@ -53,23 +53,33 @@ const Enum::table& buttons_enum_table() {
 // icon != "none", in which case rebuild() points it at the matching
 // msgbox_*.png under resources/embedded/icons/.
 //
-// "flags" includes AlwaysAutoResize + NoSavedSettings, unlike every other
-// form's Window (e.g. calculator.cpp's "NoResize" alone): every
-// message_box instance -- across ALL SIX presets, with very different
-// content sizes -- shares the SAME pool of recycled stable ids (see
-// form::next_available_key()'s doc comment; e.g. "__message_box_0" for
-// whichever instance happens to be first/only one open). Without
-// AlwaysAutoResize, ImGui only auto-fits a window to its content on the
-// frame it first appears, then keeps that size (or a size loaded from
-// imgui.ini, keyed by the same id) on every later frame -- so a short "OK"
-// box shown first would leave a small persisted size that a much taller
-// "Abort/Retry/Ignore" box reusing the same id later gets stuck with
-// (needing a scrollbar to fit its own content), and vice versa.
-// AlwaysAutoResize forces a fresh content-based fit every single frame,
-// and NoSavedSettings stops a stale size (or position -- Win32's
-// MessageBox always centers on its owner, never remembers where the user
-// last dragged it) from ever reaching imgui.ini for this recycled-id
-// window in the first place.
+// "flags" includes AlwaysAutoResize, unlike every other form's Window (e.g.
+// calculator.cpp's "NoResize" alone): every message_box instance -- across
+// ALL SIX presets, with very different content sizes -- shares the SAME
+// pool of recycled stable ids (see form::next_available_key()'s doc
+// comment; e.g. "__message_box_0" for whichever instance happens to be
+// first/only one open). Without AlwaysAutoResize, ImGui only auto-fits a
+// window to its content on the frame it first appears, then keeps that
+// size (or a size loaded from imgui.ini, keyed by the same id) on every
+// later frame -- so a short "OK" box shown first would leave a small
+// persisted size that a much taller "Abort/Retry/Ignore" box reusing the
+// same id later gets stuck with (needing a scrollbar to fit its own
+// content), and vice versa. AlwaysAutoResize forces a fresh content-based
+// fit every single frame regardless of whatever size is on disk, so it
+// alone is enough to fix the size side of this problem.
+//
+// Deliberately NOT NoSavedSettings: an earlier version of this file added
+// it alongside AlwaysAutoResize on the (mistaken) assumption that avoiding
+// a stale ini *size* entry also required suppressing ini persistence
+// entirely, but NoSavedSettings blocks *position* persistence too --
+// AlwaysAutoResize already makes the size half moot (it's recomputed fresh
+// every frame no matter what's in imgui.ini), so nothing on the size side
+// actually needed it. The user-visible effect was every message_box
+// resetting to ImGui's default (0, 0) placement on each new server
+// session instead of reopening wherever the user last left it, unlike
+// every other form's Window (e.g. file_dialog.cpp, which persists position
+// via the ini normally). Leaving NoSavedSettings off restores that same
+// persisted-position behavior for message_box.
 //
 // No "width"/"height" on the *buttons* below (rebuild() never stamps them
 // either): a HorizontalLayout child with an explicit "width" gets wrapped
@@ -86,7 +96,7 @@ const Enum::table& buttons_enum_table() {
 // first.
 
 static constexpr const char* kLayoutOk = R"({
-  "type": "Window", "title": "", "modal": true, "flags": "NoResize|NoCollapse|AlwaysAutoResize|NoSavedSettings",
+  "type": "Window", "title": "", "modal": true, "flags": "NoResize|NoCollapse|AlwaysAutoResize",
   "children": {
     "body": { "type": "HorizontalLayout", "spacing": 12, "children": {
       "icon": { "type": "Image", "src": "", "width": 32, "height": 32 },
@@ -100,7 +110,7 @@ static constexpr const char* kLayoutOk = R"({
 })";
 
 static constexpr const char* kLayoutOkCancel = R"({
-  "type": "Window", "title": "", "modal": true, "flags": "NoResize|NoCollapse|AlwaysAutoResize|NoSavedSettings",
+  "type": "Window", "title": "", "modal": true, "flags": "NoResize|NoCollapse|AlwaysAutoResize",
   "children": {
     "body": { "type": "HorizontalLayout", "spacing": 12, "children": {
       "icon": { "type": "Image", "src": "", "width": 32, "height": 32 },
@@ -115,7 +125,7 @@ static constexpr const char* kLayoutOkCancel = R"({
 })";
 
 static constexpr const char* kLayoutYesNo = R"({
-  "type": "Window", "title": "", "modal": true, "flags": "NoResize|NoCollapse|AlwaysAutoResize|NoSavedSettings",
+  "type": "Window", "title": "", "modal": true, "flags": "NoResize|NoCollapse|AlwaysAutoResize",
   "children": {
     "body": { "type": "HorizontalLayout", "spacing": 12, "children": {
       "icon": { "type": "Image", "src": "", "width": 32, "height": 32 },
@@ -130,7 +140,7 @@ static constexpr const char* kLayoutYesNo = R"({
 })";
 
 static constexpr const char* kLayoutYesNoCancel = R"({
-  "type": "Window", "title": "", "modal": true, "flags": "NoResize|NoCollapse|AlwaysAutoResize|NoSavedSettings",
+  "type": "Window", "title": "", "modal": true, "flags": "NoResize|NoCollapse|AlwaysAutoResize",
   "children": {
     "body": { "type": "HorizontalLayout", "spacing": 12, "children": {
       "icon": { "type": "Image", "src": "", "width": 32, "height": 32 },
@@ -146,7 +156,7 @@ static constexpr const char* kLayoutYesNoCancel = R"({
 })";
 
 static constexpr const char* kLayoutRetryCancel = R"({
-  "type": "Window", "title": "", "modal": true, "flags": "NoResize|NoCollapse|AlwaysAutoResize|NoSavedSettings",
+  "type": "Window", "title": "", "modal": true, "flags": "NoResize|NoCollapse|AlwaysAutoResize",
   "children": {
     "body": { "type": "HorizontalLayout", "spacing": 12, "children": {
       "icon": { "type": "Image", "src": "", "width": 32, "height": 32 },
@@ -161,7 +171,7 @@ static constexpr const char* kLayoutRetryCancel = R"({
 })";
 
 static constexpr const char* kLayoutAbortRetryIgnore = R"({
-  "type": "Window", "title": "", "modal": true, "flags": "NoResize|NoCollapse|AlwaysAutoResize|NoSavedSettings",
+  "type": "Window", "title": "", "modal": true, "flags": "NoResize|NoCollapse|AlwaysAutoResize",
   "children": {
     "body": { "type": "HorizontalLayout", "spacing": 12, "children": {
       "icon": { "type": "Image", "src": "", "width": 32, "height": 32 },

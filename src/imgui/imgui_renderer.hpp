@@ -14,6 +14,14 @@
 
 namespace bdg::wish {
 
+/// @brief Parses a "#RRGGBBAA" or "#RRGGBB" hex color string into an ImVec4
+/// (each component in [0, 1]). Returns opaque white for anything malformed
+/// (missing '#', wrong length, non-hex digits) -- the same fallback
+/// apply_style_fields() (imgui_renderer.cpp) uses for a bad style color, so
+/// a bad tint/color field degrades to "no visible tint" rather than a
+/// thrown exception or garbage color.
+ImVec4 parse_hex_color(const std::string& s);
+
 /**
  * @brief Renderer backend that draws wish UI elements via Dear ImGui.
  *

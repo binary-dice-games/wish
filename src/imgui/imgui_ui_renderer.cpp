@@ -276,6 +276,28 @@ void render_image(imgui_renderer& r, const ui_element& node, const context& s) {
   int32_t w = node.get_as<int32_t>("width"_key, 0);
   int32_t h = node.get_as<int32_t>("height"_key, 0);
 
+  // Internal-only escape hatch, not a public field on Image (see
+  // image.cpp's width/height doc comments) -- lets form-generated icons
+  // (e.g. file_dialog.cpp's per-row type icon) size themselves to the
+  // current font's line height instead of a hardcoded pixel value, so the
+  // icon reads as roughly text-height regardless of --font_size. Tree
+  // construction happens outside any ImGui frame and has no way to query
+  // font metrics itself -- only this render call, running inside the
+  // frame, can. Deliberately left width/height at their default 0 on the
+  // node itself (rather than stamping a computed pixel value in): a
+  // nonzero "width" on an Image nested in a HorizontalLayout is read by
+  // render_horizontal_layout() below as a column-width hint and wraps the
+  // child in its own ImGui::BeginChild(), keyed by the element's
+  // stable_id() -- form-generated row icons have no "__path__"/"__wish_id"
+  // of their own (see stable_id()'s fallback), so every row's icon would
+  // collide on the same BeginChild ID and visually merge into one.
+  // Leaving "width" unset sidesteps that path entirely.
+  if (node.get_as<bool>("__auto_size_to_font__"_key, false)) {
+    int32_t line = static_cast<int32_t>(ImGui::GetTextLineHeight());
+    w = line;
+    h = line;
+  }
+
   // Every early-out below reserves the declared width/height via a Dummy
   // item instead of submitting nothing at all, so a sibling in the same
   // HorizontalLayout/VerticalLayout always sees this element occupy
@@ -309,7 +331,18 @@ void render_image(imgui_renderer& r, const ui_element& node, const context& s) {
     reserve();
     return;
   }
-  ImGui::Image(tex, ImVec2(float(w), float(h)));
+  auto tint = node.get_as<std::string>("tint"_key, "");
+  ImVec4 tint_col = tint.empty() ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : parse_hex_color(tint);
+  // Internal-only escape hatch, same idiom as "__auto_size_to_font__" above:
+  // form-generated icons (file_dialog.cpp's per-row type icon) want to track
+  // the *current* text color so they stay visible against both the light
+  // and dark theme, and across a theme switch while the dialog is open --
+  // baking a fixed "tint" hex string in at tree-construction time can't do
+  // that (it's outside any ImGui frame and has no session-style access
+  // either), so this reads ImGuiCol_Text fresh every render instead.
+  if (node.get_as<bool>("__tint_to_text_color__"_key, false))
+    tint_col = ImGui::GetStyleColorVec4(ImGuiCol_Text);
+  ImGui::ImageWithBg(tex, ImVec2(float(w), float(h)), ImVec2(0, 0), ImVec2(1, 1), ImVec4(0, 0, 0, 0), tint_col);
 }
 
 void render_separator(imgui_renderer&, const ui_element&, const context&) {

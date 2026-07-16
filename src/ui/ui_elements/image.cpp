@@ -37,6 +37,16 @@ void register_image() {
           attr<Category>("Layout"),
           attr<Range>(0, 16384),
           attr<Step>(1)});
+  proto->addField(
+      "tint"_key,
+      field{
+          std::string{""},
+          attr<DisplayName>("Tint"),
+          attr<Description>("Optional \"#RRGGBBAA\" or \"#RRGGBB\" hex color multiplied over the "
+                            "whole image (e.g. to recolor a white/monochrome icon so it stays "
+                            "visible against both light and dark themes). Empty (the default) "
+                            "draws the image unmodified."),
+          attr<Category>("Appearance")});
   (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Image"));
   (*proto)[dynamic::CLASS].addAttribute(attr<Description>("Displays an image uploaded via the file service."));
   dynamic::addClass(

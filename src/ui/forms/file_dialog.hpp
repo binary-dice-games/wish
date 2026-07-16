@@ -25,6 +25,10 @@ namespace bdg::wish {
 ///
 /// File paths produced by this form are always relative to the session sandbox
 /// unless `allow_absolute_paths` is enabled server-side.
+///
+/// The internal Window is rendered as a true input-blocking modal popup
+/// (Window.modal = true, same as message_box) and is not dockable — the user
+/// must Open or Cancel to dismiss it.
 class file_dialog : public form {
  public:
   explicit file_dialog(bison::dynamic&& base);
@@ -63,11 +67,30 @@ class file_dialog : public form {
   /// @brief Validate filename, then emit on_open if the path is safe.
   void on_btn_open_clicked();
 
-  /// @brief Emit on_cancel and remove the internal UI tree from context.ui_objects.
+  /// @brief Emit on_cancel and request that the internal Window close.
   void on_btn_cancel_clicked();
 
   /// @brief Handle a double-click on a table row: emit on_navigate or on_open.
   void on_row_activated(const bison::dynamic& payload);
+
+  /// @brief Ask the internal Window to close itself, via the hidden
+  /// "__request_close__" field render_window()'s modal branch checks (see
+  /// imgui_ui_renderer.cpp).
+  ///
+  /// Called instead of remove_internal_objects() directly on confirm/cancel:
+  /// on_event() runs outside any ImGui frame, so it cannot call
+  /// ImGui::CloseCurrentPopup() itself -- only render_window() can, from
+  /// inside the popup's own Begin/End scope. Skipping that call and just
+  /// removing the Window from top_level_objects (as remove_internal_objects()
+  /// alone would do) leaves ImGui's own popup stack thinking this modal's ID
+  /// is still open forever; the *next* FileDialog instance, whose
+  /// internal_root_key_ likely recycles this same freed key (see
+  /// form::next_available_key()), then collides with that stale entry and
+  /// fails to open until an unrelated input event forces ImGui to
+  /// reconcile its stack. The actual removal happens once the Window's own
+  /// "closed" event confirms ImGui really closed it -- see on_event()'s
+  /// window_id_ branch. Mirrors message_box::request_close().
+  void request_close();
 
   bison::dynamic_ptr cached_files_; // last files list received from client
   std::vector<std::string> filter_regexes_; // one per filter; empty = match all
@@ -85,6 +108,11 @@ class file_dialog : public form {
   bison::key_t btn_open_id_;
   bison::key_t btn_cancel_id_;
   bison::key_t filter_combo_id_;
+
+  /// @brief __wish_id of the internal root Window, cached so on_event() can
+  /// tell its "closed" event (fired once ImGui confirms the modal actually
+  /// closed) apart from the other widgets' events.
+  bison::key_t window_id_;
   int32_t selected_filter_idx_{0};
 };
 

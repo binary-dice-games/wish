@@ -106,8 +106,10 @@ static const std::unordered_map<bison::hash_t, render_fn>& render_dispatch() {
 
 // ── Per-session style helpers ─────────────────────────────────────────────────
 
-// Parse "#RRGGBBAA" or "#RRGGBB" hex color string into an ImVec4.
-static ImVec4 parse_hex_color(const std::string& s) {
+// Parse "#RRGGBBAA" or "#RRGGBB" hex color string into an ImVec4. Declared in
+// imgui_renderer.hpp so imgui_ui_renderer.cpp can reuse it (e.g. Image's
+// "tint" field).
+ImVec4 parse_hex_color(const std::string& s) {
   if (s.size() < 7 || s[0] != '#')
     return ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
   try {
