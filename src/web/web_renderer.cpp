@@ -634,6 +634,23 @@ std::optional<web_renderer::texture_meta> web_renderer::texture_meta_for_test(co
   return meta_it->second;
 }
 
+// ── font loading ─────────────────────────────────────────────────────────────
+
+ImFont* web_renderer::get_or_load_font(const std::string& path, float size) {
+  FontKey key{path, size};
+  auto it = font_cache_.find(key);
+  if (it != font_cache_.end())
+    return it->second;
+
+  // Cache miss: record the key now (even for a missing file) so a bad path
+  // isn't retried every frame.
+  ImFont* loaded = std::filesystem::exists(path)
+                        ? ImGui::GetIO().Fonts->AddFontFromFileTTF(path.c_str(), size)
+                        : nullptr;
+  font_cache_[key] = loaded;
+  return nullptr; // default font used this frame; see doc comment in the header
+}
+
 } // namespace bdg::wish
 
 #endif // WISH_WEB_ENABLED

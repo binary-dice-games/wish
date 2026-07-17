@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <deque>
 #include <filesystem>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -227,6 +228,32 @@ class web_renderer : public imgui_renderer {
   ///        the full TEX_CHECK wire protocol handshake.
   std::optional<texture_meta> texture_meta_for_test(const std::string& src) const;
 
+  // ── font loading ─────────────────────────────────────────────────────────
+
+  /**
+   * @brief Load a TTF font at @p size pixels via ImGui's dynamic font atlas
+   *        and return the cached `ImFont*`.
+   *
+   * `setup()` opts into `ImGuiBackendFlags_RendererHasTextures`, so unlike
+   * `sdl3_renderer::rebuild_font_atlas()` there is no static-atlas rebuild
+   * to trigger here: `io.Fonts->AddFontFromFileTTF()` may be called at any
+   * time (including mid-frame), and the resulting font's glyph texture(s)
+   * stream to the browser through the exact same `ImDrawData::Textures`
+   * walk `end_frame()` already performs for every other texture -- see
+   * `ImGui::ShowFontSelector()`'s "RendererHasTextures" branch in
+   * imgui.cpp for the upstream documentation of this.
+   *
+   * Still returns `nullptr` (default font) on the first call for a given
+   * (path, size) -- matching `get_or_load_texture()`'s first-call contract
+   * above -- because the browser hasn't received the new texture's pixels
+   * yet on the frame it's requested; from the following call onward the
+   * cached font is returned immediately.
+   *
+   * @param path  Fully-resolved absolute path to a TTF font file.
+   * @param size  Font size in pixels.
+   */
+  ImFont* get_or_load_font(const std::string& path, float size) override;
+
  private:
   // ImGuiPlatformIO::Platform_GetClipboardTextFn / Platform_SetClipboardTextFn
   // callbacks (see "Clipboard bridging" in src/web/DESIGN.md) -- NOT the
@@ -367,6 +394,21 @@ class web_renderer : public imgui_renderer {
   // Per-texture identity/versioning metadata for the browser resource
   // cache, populated by get_or_load_texture() alongside `loaded_by_src_`.
   std::unordered_map<ImTextureData*, texture_meta> texture_meta_;
+
+  // Font cache, keyed by (resolved path, pixel size) -- mirrors
+  // sdl3_renderer::FontKey/font_cache_. The `ImFont*` is stored as soon as
+  // it's loaded (first call for a key), but get_or_load_font() still
+  // returns nullptr that same call; see its doc comment above.
+  struct FontKey {
+    std::string path;
+    float size{0.0f};
+    bool operator<(const FontKey& o) const {
+      if (path != o.path)
+        return path < o.path;
+      return size < o.size;
+    }
+  };
+  std::map<FontKey, ImFont*> font_cache_;
 
 #ifdef WISH_AUTOMATION_ENABLED
   // Screen rect + interaction flags per widget, keyed by __wish_id, for the
