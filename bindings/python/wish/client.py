@@ -18,17 +18,27 @@ __all__ = ["WishError", "Client", "key", "list_apps"]
 
 
 class WishError(RuntimeError):
-    """Raised when a ``wish_*`` C API call returns a non-zero error code."""
+    """Raised when a ``wish_*`` C API call returns a non-zero error code.
 
-    def __init__(self, code: int, context: str = ""):
+    *detail*, when non-empty, is the underlying ``wish_last_error()`` text
+    (e.g. the ``std::exception::what()`` of whatever C++ exception was
+    caught at the ABI boundary) appended to the generic per-code message --
+    without it, every failure looks like the unhelpful "Internal C++
+    exception", regardless of whether the real cause was a refused TCP
+    connection, a missing template, or something else entirely.
+    """
+
+    def __init__(self, code: int, context: str = "", detail: str = ""):
         msg = _n.WISH_ERROR_MESSAGES.get(code, f"Unknown error {code}")
+        if detail:
+            msg = f"{msg} ({detail})"
         super().__init__(f"{context}: {msg}" if context else msg)
         self.code = code
 
 
-def _check(rc: int, context: str = "") -> None:
+def _check(rc: int, context: str = "", last_error: Optional[Callable[[], str]] = None) -> None:
     if rc != _n.WISH_OK:
-        raise WishError(rc, context)
+        raise WishError(rc, context, last_error() if last_error else "")
 
 
 def key(name: str) -> int:
@@ -151,7 +161,7 @@ class Client:
             self._session_cb = None
         if errors:
             raise errors[0]
-        _check(rc, "run")
+        _check(rc, "run", self.last_error)
 
     def wait(self) -> None:
         """Block until :meth:`quit` is called (from any thread)."""
@@ -165,13 +175,14 @@ class Client:
 
     def set_style_preset(self, preset: str) -> None:
         """Apply a built-in style preset: "dark", "light", or "classic"."""
-        _check(self._lib.wish_set_style_preset(self._handle, preset.encode()), "set_style_preset")
+        _check(self._lib.wish_set_style_preset(self._handle, preset.encode()), "set_style_preset", self.last_error)
 
     def set_style_preset_async(self, preset: str) -> Future:
         out = _n.FutureHandle(0)
         _check(
             self._lib.wish_set_style_preset_async(self._handle, preset.encode(), ctypes.byref(out)),
             "set_style_preset_async",
+            self.last_error,
         )
         return Future(out.value)
 
@@ -182,6 +193,7 @@ class Client:
         _check(
             self._lib.wish_register_template(self._handle, name.encode(), descriptor.encode()),
             f"register_template({name!r})",
+            self.last_error,
         )
 
     def register_template_async(self, name: str, descriptor: str) -> Future:
@@ -191,6 +203,7 @@ class Client:
                 self._handle, name.encode(), descriptor.encode(), ctypes.byref(out)
             ),
             f"register_template_async({name!r})",
+            self.last_error,
         )
         return Future(out.value)
 
@@ -199,7 +212,7 @@ class Client:
         return a :class:`bison.rmi.Proxy` to its root."""
         h = self._lib.wish_instantiate_template(self._handle, name.encode(), prefix.encode())
         if not h:
-            raise WishError(_n.WISH_ERR_EXCEPTION, f"instantiate_template({name!r}, {prefix!r})")
+            raise WishError(_n.WISH_ERR_EXCEPTION, f"instantiate_template({name!r}, {prefix!r})", self.last_error())
         return Proxy(h)
 
     def instantiate_template_async(self, name: str, prefix: str) -> Future:
@@ -209,6 +222,7 @@ class Client:
                 self._handle, name.encode(), prefix.encode(), ctypes.byref(out)
             ),
             f"instantiate_template_async({name!r}, {prefix!r})",
+            self.last_error,
         )
         return Future(out.value)
 
@@ -217,12 +231,12 @@ class Client:
         to a :class:`bison.rmi.Proxy`, from the client's local proxy map."""
         h = self._lib.wish_proxy_get(self._handle, dot_path.encode())
         if not h:
-            raise WishError(_n.WISH_ERR_NOT_FOUND, f"proxy_get({dot_path!r})")
+            raise WishError(_n.WISH_ERR_NOT_FOUND, f"proxy_get({dot_path!r})", self.last_error())
         return Proxy(h)
 
     def release(self, prefix: str) -> None:
         """Release every proxy cached under *prefix* and its descendants."""
-        _check(self._lib.wish_release(self._handle, prefix.encode()), f"release({prefix!r})")
+        _check(self._lib.wish_release(self._handle, prefix.encode()), f"release({prefix!r})", self.last_error)
 
     # ── Object instantiation ─────────────────────────────────────────────────
 
@@ -250,7 +264,7 @@ class Client:
             if params_dyn is not None:
                 params_dyn.release()
         if not h:
-            raise WishError(_n.WISH_ERR_EXCEPTION, f"instantiate({klass_name!r}, {ns_name!r})")
+            raise WishError(_n.WISH_ERR_EXCEPTION, f"instantiate({klass_name!r}, {ns_name!r})", self.last_error())
         return Proxy(h)
 
     # ── Embedded apps ─────────────────────────────────────────────────────────
@@ -275,6 +289,7 @@ class Client:
         _check(
             self._lib.wish_run_app(self._handle, name.encode(), arr, len(encoded)),
             f"run_app({name!r})",
+            self.last_error,
         )
 
     # ── File transfer ─────────────────────────────────────────────────────────
@@ -284,6 +299,7 @@ class Client:
         _check(
             self._lib.wish_upload_file(self._handle, name.encode(), data, len(data)),
             f"upload_file({name!r})",
+            self.last_error,
         )
 
     def download_file(self, name: str) -> bytes:
@@ -293,6 +309,7 @@ class Client:
         _check(
             self._lib.wish_download_file(self._handle, name.encode(), ctypes.byref(out_data), ctypes.byref(out_len)),
             f"download_file({name!r})",
+            self.last_error,
         )
         try:
             return ctypes.string_at(out_data, out_len.value)
@@ -305,6 +322,7 @@ class Client:
         _check(
             self._lib.wish_upload_file_from_path(self._handle, name.encode(), local_path.encode()),
             f"upload_file_from_path({name!r}, {local_path!r})",
+            self.last_error,
         )
 
     def download_file_to_path(self, name: str, local_path: str) -> None:
@@ -314,6 +332,7 @@ class Client:
         _check(
             self._lib.wish_download_file_to_path(self._handle, name.encode(), local_path.encode()),
             f"download_file_to_path({name!r}, {local_path!r})",
+            self.last_error,
         )
 
     def upload_package(self, dest_path: str, local_zip_path: str) -> None:
@@ -324,22 +343,23 @@ class Client:
         _check(
             self._lib.wish_upload_package_from_path(self._handle, dest_path.encode(), local_zip_path.encode()),
             f"upload_package({dest_path!r}, {local_zip_path!r})",
+            self.last_error,
         )
 
     # ── Logging ──────────────────────────────────────────────────────────────
 
     def log(self, level: str, msg: str) -> None:
         """Send a structured log message: level is "debug"/"info"/"warn"/"error"."""
-        _check(self._lib.wish_log(self._handle, level.encode(), msg.encode()), "log")
+        _check(self._lib.wish_log(self._handle, level.encode(), msg.encode()), "log", self.last_error)
 
     def log_debug(self, msg: str) -> None:
-        _check(self._lib.wish_log_debug(self._handle, msg.encode()), "log_debug")
+        _check(self._lib.wish_log_debug(self._handle, msg.encode()), "log_debug", self.last_error)
 
     def log_info(self, msg: str) -> None:
-        _check(self._lib.wish_log_info(self._handle, msg.encode()), "log_info")
+        _check(self._lib.wish_log_info(self._handle, msg.encode()), "log_info", self.last_error)
 
     def log_warn(self, msg: str) -> None:
-        _check(self._lib.wish_log_warn(self._handle, msg.encode()), "log_warn")
+        _check(self._lib.wish_log_warn(self._handle, msg.encode()), "log_warn", self.last_error)
 
     def log_error(self, msg: str) -> None:
-        _check(self._lib.wish_log_error(self._handle, msg.encode()), "log_error")
+        _check(self._lib.wish_log_error(self._handle, msg.encode()), "log_error", self.last_error)

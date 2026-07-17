@@ -40,10 +40,15 @@ add_subdirectory("extern/bison")
 # given if(WISH_ENABLE_...) block actually needs. A no-op (and network-free)
 # once a submodule is already checked out.
 function(wish_ensure_submodules)
-  if(EXISTS "${CMAKE_SOURCE_DIR}/.git")
+  # CMAKE_CURRENT_SOURCE_DIR, not CMAKE_SOURCE_DIR: this function runs in
+  # wish's own directory scope even when wish is add_subdirectory()'d from
+  # an outer project (function() calls don't change directory scope), but
+  # CMAKE_SOURCE_DIR always names the outermost project's root -- using it
+  # here would run `git submodule update` against the wrong repository.
+  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git")
     execute_process(
       COMMAND git submodule update --init -- ${ARGN}
-      WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
       RESULT_VARIABLE _wish_submodule_result
     )
     if(NOT _wish_submodule_result EQUAL 0)
@@ -404,13 +409,15 @@ wish_add_collection(bdg/desktop DEFAULT ON)
 wish_add_collection(bdg/dev)
 
 # wish_generate_module_registry()/wish_generate_embedded_resources() are
-# safe to call now (wish_server already exists); wish_finalize_app_modules()
-# needs wish-cli/wish-client/wish-standalone/wish_client_dll, which don't
-# exist yet -- see the guarded call after add_subdirectory(app) below.
-if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-  wish_generate_module_registry()
-  wish_generate_embedded_resources()
-endif()
+# safe to call now (wish_server already exists) and only touch
+# CMAKE_BINARY_DIR/target_sources(wish_server ...), both of which are
+# well-defined whether wish is the top-level project or add_subdirectory()'d
+# from a consumer -- unlike wish_finalize_app_modules() below, which needs
+# wish-cli/wish-client/wish-standalone/wish_client_dll (not created yet) and
+# genuinely must wait for a consumer's own wish_add_module() calls, these two
+# must always run or registry.cpp/resource_store.cpp fail to link.
+wish_generate_module_registry()
+wish_generate_embedded_resources()
 
 # ── wish — convenience interface target (client + server) ─────────────────────
 #
@@ -460,12 +467,12 @@ if(WISH_BUILD_SHARED)
   target_link_libraries(wish_client_dll PUBLIC wish_client)
   target_include_directories(wish_client_dll
       PUBLIC
-          ${CMAKE_SOURCE_DIR}/include
+          ${CMAKE_CURRENT_SOURCE_DIR}/include
       PRIVATE
-          ${CMAKE_SOURCE_DIR}
-          ${CMAKE_SOURCE_DIR}/extern/bison
+          ${CMAKE_CURRENT_SOURCE_DIR}
+          ${CMAKE_CURRENT_SOURCE_DIR}/extern/bison
           # nlohmann/json, for wish_list_apps()'s JSON encoding in wish_client_c.cpp.
-          ${CMAKE_SOURCE_DIR}/extern/bison/extern/json/single_include)
+          ${CMAKE_CURRENT_SOURCE_DIR}/extern/bison/extern/json/single_include)
   set_target_properties(wish_client_dll PROPERTIES
       RUNTIME_OUTPUT_NAME wish_client      # wish_client.dll
       ARCHIVE_OUTPUT_NAME wish_client_dll  # wish_client_dll.lib — avoids collision with wish_client.lib
