@@ -6,6 +6,8 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
+#include <cstdlib>
 #include <vector>
 
 namespace bdg::wish {
@@ -69,6 +71,43 @@ ui_element_ptr make_name_cell(const std::string& name, const std::string& type, 
   icon_row["children"_key] = icon_row_children;
 
   return icon_row;
+}
+
+bool ascii_ci_less(const std::string& a, const std::string& b) {
+  size_t n = std::min(a.size(), b.size());
+  for (size_t i = 0; i < n; ++i) {
+    unsigned char ca = static_cast<unsigned char>(std::tolower(static_cast<unsigned char>(a[i])));
+    unsigned char cb = static_cast<unsigned char>(std::tolower(static_cast<unsigned char>(b[i])));
+    if (ca != cb)
+      return ca < cb;
+  }
+  return a.size() < b.size();
+}
+
+double parse_display_size(const std::string& text) {
+  if (text.empty())
+    return -1.0;
+
+  char* end = nullptr;
+  double value = std::strtod(text.c_str(), &end);
+  if (end == text.c_str())
+    return -1.0;
+
+  // Skip the space between the number and unit (format_bytes() always
+  // separates them, e.g. "12.3 KB").
+  while (*end == ' ')
+    ++end;
+
+  std::string unit = end;
+  for (auto& c : unit)
+    c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+
+  static constexpr const char* kUnits[] = {"B", "KB", "MB", "GB", "TB"};
+  for (size_t i = 0; i < std::size(kUnits); ++i) {
+    if (unit == kUnits[i])
+      return value * std::pow(1024.0, static_cast<double>(i));
+  }
+  return value;
 }
 
 } // namespace bdg::wish

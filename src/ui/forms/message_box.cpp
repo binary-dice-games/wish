@@ -257,8 +257,17 @@ void message_box::rebuild() {
   // file_dialog.cpp's title/confirm_label stamping).
   (*tree[""])["title"_key] = title;
   tree.with("body.message", [&](const auto& e) { e["text"_key] = message; });
-  if (icon != "none")
-    tree.with("body.icon", [&](const auto& e) { e["src"_key] = "res/icons/msgbox_" + icon + ".png"; });
+  if (icon != "none") {
+    tree.with("body.icon", [&](const auto& e) {
+      e["src"_key] = "res/icons/msgbox_" + icon + ".png";
+      // The msgbox_*.png icons are white/monochrome so they can be tinted;
+      // without this they're invisible against the light theme's white
+      // background -- see render_image()'s "__tint_to_text_color__"
+      // handling (imgui_ui_renderer.cpp), same fix as the file-type icons
+      // in file_browser_utils.cpp's make_name_cell().
+      e["__tint_to_text_color__"_key] = true;
+    });
+  }
 
   // Assign every element a bison RMI ID. See calculator.cpp's on_init() for
   // why put_object() (not a direct ctx().objects[id.id] assignment) matters.

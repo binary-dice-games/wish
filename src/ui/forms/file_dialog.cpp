@@ -10,6 +10,7 @@
 #include <context/file_service.hpp>
 #include <ui/ui_importer.hpp>
 
+#include <algorithm>
 #include <regex>
 
 namespace bdg::wish {
@@ -22,9 +23,12 @@ using namespace bison;
 // children dynamic removes only the indexed row entries, not the columns.
 // Placeholder field values (title, btn_open label) are overwritten in on_init().
 // ImGuiTableFlags: Resizable(1) + RowBg(64) + BordersInnerH(128) +
-//   BordersOuterH(256) + ScrollY(1<<25=33554432) = 33554881
+//   BordersOuterH(256) + Sortable(8) + ScrollY(1<<25=33554432) = 33554889
 // ImGuiTableColumnFlags: WidthFixed(1<<4=16)
 // ImGuiInputTextFlags: EnterReturnsTrue=32
+// col_name/col_type's "column_id" is echoed back in the Table's "sorted"
+// event payload (see table.cpp's TableColumn.column_id doc comment) --
+// on_file_table_sorted() below matches it against these same 0/1 values.
 static constexpr const char* kDialogLayout = R"({
   "type": "Window",
   "width": 520, "height": 420, "modal": true,
@@ -39,14 +43,14 @@ static constexpr const char* kDialogLayout = R"({
         "file_table": {
           "type": "Table",
           "columns": 2,
-          "flags": 33554881,
+          "flags": 33554889,
           "outer_height": 260.0,
           "headers": true,
           "children": {
             "col_name": { "type": "TableColumn", "label": "Name",
-                          "flags": 16, "init_width": 340 },
+                          "flags": 16, "init_width": 340, "column_id": 0 },
             "col_type": { "type": "TableColumn", "label": "Type",
-                          "flags": 16, "init_width": 80  }
+                          "flags": 16, "init_width": 80, "column_id": 1 }
           }
         },
         "filename_input": {
@@ -157,6 +161,10 @@ void file_dialog::on_event(key_t id, key_t event, const dynamic& payload) {
       on_row_activated(payload);
       return;
     }
+    if (event == "sorted"_key) {
+      on_file_table_sorted(payload);
+      return;
+    }
   }
   if (id == path_input_id_ && event == "changed"_key) {
     on_path_input_changed(payload);
@@ -218,11 +226,16 @@ void file_dialog::rebuild_file_rows(const bison::dynamic& files) {
     }
   }
 
-  // Remove previous row entries (indexed); named TableColumn children remain.
-  children->clear();
-  row_to_file_idx_.clear();
+  // Collect entries matching the active filter first (rather than building
+  // rows inline as before), so they can be sorted by the active column
+  // before rows are built -- see on_file_table_sorted()'s doc comment.
+  struct visible_entry {
+    size_t orig_idx;
+    std::string name;
+    std::string type;
+  };
+  std::vector<visible_entry> visible;
 
-  int32_t row_idx = 0;
   size_t orig_idx = 0;
   files.forEach([&](key_t, const field& entry_field) {
     size_t this_orig = orig_idx++;
@@ -238,7 +251,24 @@ void file_dialog::rebuild_file_rows(const bison::dynamic& files) {
     if (type != "dir" && active_re && !std::regex_search(name, *active_re))
       return;
 
-    row_to_file_idx_.push_back(this_orig);
+    visible.push_back({this_orig, std::move(name), std::move(type)});
+  });
+
+  // column_id 0 = Name, 1 = Type (see kDialogLayout's col_name/col_type).
+  auto key_less = [&](const visible_entry& a, const visible_entry& b) {
+    return sort_column_id_ == 1 ? ascii_ci_less(a.type, b.type) : ascii_ci_less(a.name, b.name);
+  };
+  std::stable_sort(visible.begin(), visible.end(), [&](const visible_entry& a, const visible_entry& b) {
+    return sort_ascending_ ? key_less(a, b) : key_less(b, a);
+  });
+
+  // Remove previous row entries (indexed); named TableColumn children remain.
+  children->clear();
+  row_to_file_idx_.clear();
+
+  int32_t row_idx = 0;
+  for (auto& v : visible) {
+    row_to_file_idx_.push_back(v.orig_idx);
 
     ui_element_ptr row{dynamic::instantiate("wish"_key, "TableRow"_key)};
     row["order"_key] = row_idx;
@@ -248,10 +278,10 @@ void file_dialog::rebuild_file_rows(const bison::dynamic& files) {
     // Name column shows a small type icon ahead of the label,
     // Windows-Explorer style -- see make_name_cell()'s doc comment for why
     // the icon has no explicit width/height.
-    ui_element_ptr icon_row = make_name_cell(name, type, name);
+    ui_element_ptr icon_row = make_name_cell(v.name, v.type, v.name);
 
     ui_element_ptr type_lbl{dynamic::instantiate("wish"_key, "Label"_key)};
-    type_lbl["text"_key] = type;
+    type_lbl["text"_key] = v.type;
     type_lbl["order"_key] = int32_t{1};
 
     (*row_children)[size_t{0}] = dynamic_ptr{icon_row};
@@ -260,7 +290,7 @@ void file_dialog::rebuild_file_rows(const bison::dynamic& files) {
 
     (*children)[size_t{static_cast<size_t>(row_idx)}] = dynamic_ptr{row};
     ++row_idx;
-  });
+  }
 
   // Rebuild the sorted-key cache so for_each_child_ordered finds the new rows.
   file_table_ptr_->refresh_children_order();
@@ -323,6 +353,17 @@ void file_dialog::on_filter_combo_changed(const bison::dynamic& payload) {
     if (cached_files_)
       rebuild_file_rows(*cached_files_);
   }
+}
+
+void file_dialog::on_file_table_sorted(const bison::dynamic& payload) {
+  auto* col_f = payload.findField<int32_t>("column_id"_key);
+  auto* asc_f = payload.findField<bool>("ascending"_key);
+  if (!col_f || !asc_f)
+    return;
+  sort_column_id_ = *col_f;
+  sort_ascending_ = *asc_f;
+  if (cached_files_)
+    rebuild_file_rows(*cached_files_);
 }
 
 void file_dialog::on_row_selected(const bison::dynamic& payload) {

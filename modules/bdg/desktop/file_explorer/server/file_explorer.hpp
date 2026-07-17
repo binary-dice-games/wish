@@ -74,6 +74,24 @@ class file_explorer : public form {
   void fill_table(const ui_element_ptr& table, const std::vector<file_row>& entries, int32_t selected_index = -1);
   void set_status(const std::string& message);
 
+  /// @brief Sorts @p entries in place by the given file_table column
+  /// (0=Name, 1=Size, 2=Modified -- see kLayout's col_name/col_size/
+  /// col_modified `column_id`), leaving a leading ".." entry (see
+  /// navigate_sandbox()) pinned first regardless of column/direction, the
+  /// way Explorer keeps the parent-directory shortcut from moving under
+  /// sort. Size is compared numerically via parse_display_size()
+  /// (file_browser_utils.hpp), not lexicographically, since "size" is only
+  /// ever a human-formatted string (e.g. "12.3 KB" would otherwise sort
+  /// before "2 KB").
+  void sort_entries(std::vector<file_row>& entries, int32_t sort_column_id, bool ascending) const;
+
+  /// @brief Handle the left/right file_table's "sorted" event (see
+  /// table.cpp's Table.flags doc comment): store the new sort state and
+  /// re-sort + rebuild the given entries/table.
+  void on_table_sorted(
+      const bison::dynamic& payload, std::vector<file_row>& entries, const ui_element_ptr& table,
+      int32_t& sort_column_id, bool& sort_ascending);
+
   /// @brief What the "Overwrite?" confirmation, once accepted, should do.
   enum class pending_transfer { none, upload, download };
 
@@ -128,6 +146,14 @@ class file_explorer : public form {
   std::string sandbox_path_; ///< Relative to sandbox root; "" == root.
   std::vector<file_row> local_entries_;
   std::vector<file_row> sandbox_entries_;
+
+  // Current per-panel sort state, applied by sort_entries() whenever
+  // local_entries_/sandbox_entries_ is (re)built. Defaults to ascending by
+  // Name (column_id 0), matching col_name's position in kLayout.
+  int32_t local_sort_column_id_{0};
+  bool local_sort_ascending_{true};
+  int32_t sandbox_sort_column_id_{0};
+  bool sandbox_sort_ascending_{true};
 
   std::string selected_local_name_;
   bool selected_local_is_dir_{false};

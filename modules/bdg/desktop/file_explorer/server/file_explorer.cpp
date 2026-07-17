@@ -10,6 +10,7 @@
 #include <context/file_service.hpp>
 #include <ui/ui_importer.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <ctime>
@@ -163,9 +164,12 @@ bool open_in_host_explorer(const fs::path& path) {
 // Mirrors examples/file_explorer_sample_ui.json (the JSON mock validated
 // interactively in the editor) with the example rows removed -- rows are
 // built at runtime by fill_table(). ImGuiTableFlags: Resizable(1) +
-// RowBg(64) + BordersInnerH(128) + BordersOuterH(256) + ScrollY(1<<25) =
-// 33554881, matching FileDialog's table. InputText EnterReturnsTrue=32 so
-// path bars only fire "changed" on Enter, not per keystroke.
+// RowBg(64) + BordersInnerH(128) + BordersOuterH(256) + Sortable(8) +
+// ScrollY(1<<25) = 33554889 (FileDialog's table adds the same Sortable(8)
+// bit to its own 33554881). col_name/col_size/col_modified's "column_id"
+// (0/1/2) is echoed back in each Table's "sorted" event payload -- see
+// on_table_sorted()'s doc comment. InputText EnterReturnsTrue=32 so path
+// bars only fire "changed" on Enter, not per keystroke.
 //
 // left_table/right_table use a fixed "outer_height" (300) rather than the
 // stretch-to-fill sentinel (-1): "left"/"right" are HorizontalLayout
@@ -212,11 +216,11 @@ static constexpr const char* kLayout = R"json({
                 "left_selected": { "type": "Label", "text": "Selected: (none)" },
                 "left_table": {
                   "type": "Table", "id": "##local_table", "columns": 3, "headers": true,
-                  "flags": 33554881, "outer_width": 0, "outer_height": 300,
+                  "flags": 33554889, "outer_width": 0, "outer_height": 300,
                   "children": {
-                    "col_name":     { "type": "TableColumn", "label": "Name" },
-                    "col_size":     { "type": "TableColumn", "label": "Size", "flags": 16, "init_width": 90 },
-                    "col_modified": { "type": "TableColumn", "label": "Modified", "flags": 16, "init_width": 130 }
+                    "col_name":     { "type": "TableColumn", "label": "Name", "column_id": 0 },
+                    "col_size":     { "type": "TableColumn", "label": "Size", "flags": 16, "init_width": 90, "column_id": 1 },
+                    "col_modified": { "type": "TableColumn", "label": "Modified", "flags": 16, "init_width": 130, "column_id": 2 }
                   }
                 }
               }
@@ -251,11 +255,11 @@ static constexpr const char* kLayout = R"json({
                 "right_selected": { "type": "Label", "text": "Selected: (none)" },
                 "right_table": {
                   "type": "Table", "id": "##sandbox_table", "columns": 3, "headers": true,
-                  "flags": 33554881, "outer_width": 0, "outer_height": 300,
+                  "flags": 33554889, "outer_width": 0, "outer_height": 300,
                   "children": {
-                    "col_name":     { "type": "TableColumn", "label": "Name" },
-                    "col_size":     { "type": "TableColumn", "label": "Size", "flags": 16, "init_width": 90 },
-                    "col_modified": { "type": "TableColumn", "label": "Modified", "flags": 16, "init_width": 130 }
+                    "col_name":     { "type": "TableColumn", "label": "Name", "column_id": 0 },
+                    "col_size":     { "type": "TableColumn", "label": "Size", "flags": 16, "init_width": 90, "column_id": 1 },
+                    "col_modified": { "type": "TableColumn", "label": "Modified", "flags": 16, "init_width": 130, "column_id": 2 }
                   }
                 }
               }
@@ -366,6 +370,41 @@ void file_explorer::fill_table(
     ++idx;
   }
   table->refresh_children_order();
+}
+
+void file_explorer::sort_entries(std::vector<file_row>& entries, int32_t sort_column_id, bool ascending) const {
+  // A leading ".." entry (navigate_sandbox()'s "up" row) is never part of
+  // the sort -- pin it at entries[0] and sort only the rest.
+  size_t begin = !entries.empty() && entries[0].name == ".." ? 1 : 0;
+
+  auto key_less = [&](const file_row& a, const file_row& b) {
+    switch (sort_column_id) {
+      case 1: // Size -- numeric, not lexicographic (see parse_display_size()).
+        return parse_display_size(a.size) < parse_display_size(b.size);
+      case 2: // Modified -- format_modified()'s "%Y-%m-%d %H:%M" sorts
+              // correctly as a plain string; trust the client's own format
+              // for local entries the same way the rest of this form does.
+        return ascii_ci_less(a.modified, b.modified);
+      default: // Name (0), and any unrecognized column_id.
+        return ascii_ci_less(a.name, b.name);
+    }
+  };
+  std::stable_sort(entries.begin() + static_cast<ptrdiff_t>(begin), entries.end(), [&](auto& a, auto& b) {
+    return ascending ? key_less(a, b) : key_less(b, a);
+  });
+}
+
+void file_explorer::on_table_sorted(
+    const dynamic& payload, std::vector<file_row>& entries, const ui_element_ptr& table, int32_t& sort_column_id,
+    bool& sort_ascending) {
+  auto* col_f = payload.findField<int32_t>("column_id"_key);
+  auto* asc_f = payload.findField<bool>("ascending"_key);
+  if (!col_f || !asc_f)
+    return;
+  sort_column_id = *col_f;
+  sort_ascending = *asc_f;
+  sort_entries(entries, sort_column_id, sort_ascending);
+  fill_table(table, entries);
 }
 
 void file_explorer::set_status(const std::string& message) {
@@ -507,6 +546,10 @@ void file_explorer::navigate_sandbox(
 
   sandbox_path_ = relative_path;
   sandbox_entries_ = std::move(entries);
+  // Re-apply whatever sort column the user last clicked, so navigating
+  // away and back doesn't silently drop it (matches Explorer's own
+  // persisted-sort behavior).
+  sort_entries(sandbox_entries_, sandbox_sort_column_id_, sandbox_sort_ascending_);
   fill_table(right_table_ptr_, sandbox_entries_);
 
   std::string display = "/" + relative_path;
@@ -542,6 +585,7 @@ dynamic file_explorer::do_update_local_listing(const dynamic& args) {
     });
   }
 
+  sort_entries(local_entries_, local_sort_column_id_, local_sort_ascending_);
   fill_table(left_table_ptr_, local_entries_);
   if (left_path_ptr_)
     left_path_ptr_["value"_key] = local_path_;
@@ -603,6 +647,17 @@ void file_explorer::on_event(key_t id, key_t event, const dynamic& payload) {
       emit("on_local_navigate"_key, std::move(nav));
       return;
     }
+    if (event == "sorted"_key) {
+      // Row positions change under the new sort order, so the previous
+      // selection index no longer points at the same entry -- reset it,
+      // mirroring do_update_local_listing()'s own reset-on-reload behavior.
+      selected_local_name_.clear();
+      selected_local_is_dir_ = false;
+      if (left_selected_ptr_)
+        left_selected_ptr_["text"_key] = "Selected: (none)";
+      on_table_sorted(payload, local_entries_, left_table_ptr_, local_sort_column_id_, local_sort_ascending_);
+      return;
+    }
   }
 
   if (id == left_path_id_ && event == "changed"_key) {
@@ -639,6 +694,14 @@ void file_explorer::on_event(key_t id, key_t event, const dynamic& payload) {
                                                                           : (fs::path(sandbox_path_) / entry.name).string());
       auto s = context_rlock{*sync_ctx_};
       navigate_sandbox(target, s->resource_dir, s->allow_absolute_paths);
+      return;
+    }
+    if (event == "sorted"_key) {
+      selected_sandbox_name_.clear();
+      selected_sandbox_is_dir_ = false;
+      if (right_selected_ptr_)
+        right_selected_ptr_["text"_key] = "Selected: (none)";
+      on_table_sorted(payload, sandbox_entries_, right_table_ptr_, sandbox_sort_column_id_, sandbox_sort_ascending_);
       return;
     }
   }

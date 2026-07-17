@@ -64,6 +64,12 @@ class file_dialog : public form {
   /// @brief Store the newly selected filter index and re-apply filtering.
   void on_filter_combo_changed(const bison::dynamic& payload);
 
+  /// @brief Store the file_table's new sort column/direction (from its
+  /// "sorted" event, see table.cpp's Table.flags doc comment) and rebuild
+  /// rows in that order. `payload.column_id` matches kDialogLayout's
+  /// col_name/col_type `column_id` (0/1).
+  void on_file_table_sorted(const bison::dynamic& payload);
+
   /// @brief Validate filename, then emit on_open if the path is safe.
   void on_btn_open_clicked();
 
@@ -102,6 +108,12 @@ class file_dialog : public form {
   /// closed) apart from the other widgets' events.
   bison::key_t window_id_;
   int32_t selected_filter_idx_{0};
+
+  // Current file_table sort state, applied by rebuild_file_rows(). Defaults
+  // to ascending by Name (column_id 0), matching col_name/col_type's
+  // left-to-right order in kDialogLayout.
+  int32_t sort_column_id_{0};
+  bool sort_ascending_{true};
 };
 
 /// @brief Register FileDialog in the "wish" bison namespace.

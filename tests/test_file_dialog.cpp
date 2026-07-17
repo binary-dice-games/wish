@@ -313,6 +313,25 @@ class FileDialogFilesTest : public ::testing::Test {
     h->second->on_event(table_id, "row_selected"_key, std::move(payload));
   }
 
+  // Simulate a "sorted" event on the internal Table -- the imgui renderer
+  // emits this on a header click (see table.cpp's Table.flags doc comment
+  // and imgui_ui_renderer.cpp's render_table()); column_id 0 = Name,
+  // 1 = Type (see kDialogLayout's col_name/col_type).
+  void simulate_sorted(int32_t column_id, bool ascending) {
+    auto& objs = srv_->last_session->ui_objects;
+    auto it = objs.find(root_ + ".vbox.file_table");
+    ASSERT_NE(it, objs.end());
+    auto table_id = (*it->second)["__wish_id"_key].as<bison::key_t>();
+
+    dynamic payload;
+    payload["column_id"_key] = column_id;
+    payload["ascending"_key] = ascending;
+
+    auto h = srv_->last_session->top_level_handlers.find(root_);
+    ASSERT_NE(h, srv_->last_session->top_level_handlers.end());
+    h->second->on_event(table_id, "sorted"_key, std::move(payload));
+  }
+
   memory_server_transport transport_;
   std::unique_ptr<SessionCapturingServer> srv_;
   std::unique_ptr<bdg::bison::rmi::client> client_;
@@ -342,6 +361,42 @@ TEST_F(FileDialogFilesTest, ClearFilesEmptiesTableRows) {
   EXPECT_EQ(table_row_count(), 1u);
   set_files(make_files({}));
   EXPECT_EQ(table_row_count(), 0u);
+}
+
+TEST_F(FileDialogFilesTest, DefaultOrderIsAscendingByName) {
+  set_files(make_files({{"zebra.txt", "file"}, {"apple.txt", "file"}, {"mango.txt", "file"}}));
+  EXPECT_EQ(table_cell_text(0, 0), "apple.txt");
+  EXPECT_EQ(table_cell_text(1, 0), "mango.txt");
+  EXPECT_EQ(table_cell_text(2, 0), "zebra.txt");
+}
+
+TEST_F(FileDialogFilesTest, ClickingNameHeaderDescendingReversesOrder) {
+  set_files(make_files({{"zebra.txt", "file"}, {"apple.txt", "file"}, {"mango.txt", "file"}}));
+  simulate_sorted(0, false);
+  EXPECT_EQ(table_cell_text(0, 0), "zebra.txt");
+  EXPECT_EQ(table_cell_text(1, 0), "mango.txt");
+  EXPECT_EQ(table_cell_text(2, 0), "apple.txt");
+}
+
+TEST_F(FileDialogFilesTest, ClickingTypeHeaderSortsByType) {
+  set_files(make_files({{"a.txt", "file"}, {"docs", "dir"}, {"b.txt", "file"}}));
+  simulate_sorted(1, true);
+  // Ascending by type: "dir" < "file" alphabetically.
+  EXPECT_EQ(table_cell_text(0, 1), "dir");
+  EXPECT_EQ(table_cell_text(1, 1), "file");
+  EXPECT_EQ(table_cell_text(2, 1), "file");
+}
+
+TEST_F(FileDialogFilesTest, SortOrderPersistsAcrossNewFilesList) {
+  set_files(make_files({{"zebra.txt", "file"}, {"apple.txt", "file"}}));
+  simulate_sorted(0, false);
+  ASSERT_EQ(table_cell_text(0, 0), "zebra.txt");
+
+  // A fresh files list (e.g. after navigating) should still be sorted
+  // descending by Name, without the caller having to re-click the header.
+  set_files(make_files({{"middle.txt", "file"}, {"aardvark.txt", "file"}}));
+  EXPECT_EQ(table_cell_text(0, 0), "middle.txt");
+  EXPECT_EQ(table_cell_text(1, 0), "aardvark.txt");
 }
 
 TEST_F(FileDialogFilesTest, RowSelectedSetsFilenameToFirstEntry) {

@@ -225,6 +225,23 @@ TEST_F(MessageBoxConstructTest, ConstructParamsSetIconSrcAndMessage) {
   EXPECT_EQ(objs.at(root + ".body.message")->findField("text"_key)->as<std::string>(), "Careful!");
 }
 
+TEST_F(MessageBoxConstructTest, IconIsTintedToTextColor) {
+  // The msgbox_*.png icons are white/monochrome, like the file-type icons
+  // in file_browser_utils.cpp's make_name_cell() -- without
+  // __tint_to_text_color__ they're invisible against the light theme's
+  // white background (see render_image()'s handling in
+  // imgui_ui_renderer.cpp).
+  dynamic params;
+  params["icon"_key] = std::string{"info"};
+  client_->instantiate("wish"_key, "MessageBox"_key, std::move(params)).get();
+
+  std::string root = find_form_root(srv_->last_session->ui_objects);
+  ASSERT_FALSE(root.empty());
+  auto& objs = srv_->last_session->ui_objects;
+  ASSERT_TRUE(objs.count(root + ".body.icon"));
+  EXPECT_TRUE(objs.at(root + ".body.icon")->findField("__tint_to_text_color__"_key)->as<bool>());
+}
+
 TEST_F(MessageBoxConstructTest, DefaultIconLeavesSrcEmpty) {
   // icon defaults to "none" -- the Image child should exist (still reserves
   // its declared 32x32 via render_image()'s Dummy() fallback) but with no

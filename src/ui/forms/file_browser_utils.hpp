@@ -2,8 +2,9 @@
 /// @file file_browser_utils.hpp
 /// @brief Shared helpers for forms that render a file/directory listing
 /// (FileDialog, FileExplorer): the type-icon lookup and the icon+label Name
-/// cell it builds, plus the small `__wish_id` accessor both forms use when
-/// caching widget pointers during on_init().
+/// cell it builds, the small `__wish_id` accessor both forms use when
+/// caching widget pointers during on_init(), and the comparison primitives
+/// both forms' click-to-sort-column handling is built on.
 #pragma once
 
 #include <ui/ui_element.hpp>
@@ -52,5 +53,27 @@ std::string icon_for_entry(const std::string& name, const std::string& type);
 /// @param display_name  Text shown in the Label (may differ from @p name,
 ///                      e.g. FileExplorer's "[dirname]" / ".. [Up]" framing).
 ui_element_ptr make_name_cell(const std::string& name, const std::string& type, const std::string& display_name);
+
+/// @brief Case-insensitive (ASCII) less-than, for sorting a file listing's
+/// Name/Type/Modified columns the way a case-sensitive `operator<` on
+/// std::string would get wrong (e.g. "Zeta" sorting before "apple").
+bool ascii_ci_less(const std::string& a, const std::string& b);
+
+/// @brief Approximates the byte count behind a human-formatted size string
+/// (e.g. "12.3 KB", "1 GB", as produced by format_bytes() in
+/// file_explorer.cpp), for numeric Size-column sorting.
+///
+/// Both the sandbox listing (server-formatted) and the local listing
+/// (client-formatted, see update_local_listing()'s `size` field) only ever
+/// carry the already-formatted display string -- not the raw byte count --
+/// so an exact sort is not possible; this recovers enough precision (value
+/// * unit multiplier) to order entries the way a user expects (all KB
+/// before all MB, etc.), which plain lexicographic string comparison does
+/// not ("1 GB" < "10 KB" alphabetically).
+///
+/// @return  Parsed byte estimate, or -1.0 for an empty/unparseable string
+///          (e.g. a directory row's blank size) so such rows always sort
+///          first in ascending order.
+double parse_display_size(const std::string& text);
 
 } // namespace bdg::wish

@@ -373,6 +373,41 @@ class FileExplorerEventTest : public ::testing::Test {
     return srv_->last_session->ui_objects.at(root_ + path)->as<bison::key_t>("__wish_id"_key);
   }
 
+  // Reads the Name column's Label text for row_idx in the Table at
+  // `table_path` (e.g. ".main.panels.left.left_table"). Column 0 is a
+  // make_name_cell() wrapper -- a HorizontalLayout holding a type icon at
+  // children[0] and the name Label at children[1] (see
+  // file_browser_utils.hpp's doc comment).
+  std::string table_name_cell_text(const std::string& table_path, size_t row_idx) const {
+    auto& objs = srv_->last_session->ui_objects;
+    auto it = objs.find(root_ + table_path);
+    if (it == objs.end() || !it->second)
+      return {};
+    auto* cf = it->second->findField<dynamic_ptr>("children"_key);
+    if (!cf || !*cf)
+      return {};
+    auto& row = *(*cf)->at(row_idx).as<dynamic_ptr>();
+    auto* rcf = row.findField<dynamic_ptr>("children"_key);
+    if (!rcf || !*rcf)
+      return {};
+    auto& name_cell = *(*rcf)->at(size_t{0}).as<dynamic_ptr>();
+    auto* ncf = name_cell.findField<dynamic_ptr>("children"_key);
+    if (!ncf || !*ncf)
+      return {};
+    return (*ncf)->at(size_t{1}).as<dynamic_ptr>()->as<std::string>("text"_key);
+  }
+
+  // Simulate a "sorted" event on the Table at `table_path` -- see
+  // table.cpp's Table.flags doc comment and imgui_ui_renderer.cpp's
+  // render_table(). column_id 0/1/2 = Name/Size/Modified (see kLayout's
+  // col_name/col_size/col_modified).
+  void simulate_sorted(const std::string& table_path, int32_t column_id, bool ascending) {
+    dynamic payload;
+    payload["column_id"_key] = column_id;
+    payload["ascending"_key] = ascending;
+    handler_->on_event(widget_id(table_path), "sorted"_key, payload);
+  }
+
   // form::emit() defers delivery to the render loop's next frame, so spin
   // briefly for it, same idiom as test_process_explorer.cpp.
   void wait_for(bool& flag) const {
@@ -524,6 +559,60 @@ TEST_F(FileExplorerEventTest, SandboxRowSelectedUpdatesSelectedLabel) {
   EXPECT_EQ(
       srv_->last_session->ui_objects.at(root_ + ".main.panels.right.right_selected")->as<std::string>("text"_key),
       "Selected: s.txt");
+}
+
+TEST_F(FileExplorerEventTest, LocalTableSortedEventSortsRowsDescendingByName) {
+  proxy_->call(
+      "update_local_listing"_key,
+      make_local_listing_args(
+          "/home", {{"zebra.txt", "file", "1 B", ""}, {"apple.txt", "file", "1 B", ""}}))
+      .get();
+  // Default order is ascending by Name.
+  ASSERT_EQ(table_name_cell_text(".main.panels.left.left_table", 0), "apple.txt");
+
+  simulate_sorted(".main.panels.left.left_table", /*column_id=*/0, /*ascending=*/false);
+
+  EXPECT_EQ(table_name_cell_text(".main.panels.left.left_table", 0), "zebra.txt");
+  EXPECT_EQ(table_name_cell_text(".main.panels.left.left_table", 1), "apple.txt");
+}
+
+TEST_F(FileExplorerEventTest, SandboxTableSortedBySizeOrdersNumericallyNotLexicographically) {
+  // "19.5 KB" sorts before "5 B" lexicographically ('1' < '5'), but a
+  // numeric Size sort must put the smaller file first -- exercises
+  // parse_display_size() (file_browser_utils.hpp), not a plain string
+  // compare.
+  const auto& resource_dir = srv_->last_session->resource_dir;
+  for (auto& entry : std::filesystem::directory_iterator{resource_dir})
+    std::filesystem::remove_all(entry.path());
+  { std::ofstream out(resource_dir / "big.txt"); out << std::string(20000, 'x'); }
+  { std::ofstream out(resource_dir / "small.txt"); out << "hi"; }
+  proxy_->call("refresh_sandbox"_key, dynamic{}).get();
+
+  simulate_sorted(".main.panels.right.right_table", /*column_id=*/1, /*ascending=*/true);
+
+  EXPECT_EQ(table_name_cell_text(".main.panels.right.right_table", 0), "small.txt");
+  EXPECT_EQ(table_name_cell_text(".main.panels.right.right_table", 1), "big.txt");
+}
+
+TEST_F(FileExplorerEventTest, SandboxSortKeepsDotDotPinnedFirst) {
+  const auto& resource_dir = srv_->last_session->resource_dir;
+  std::filesystem::create_directories(resource_dir / "sub");
+  { std::ofstream out(resource_dir / "sub" / "zzz.txt"); out << "hi"; }
+  proxy_->call("refresh_sandbox"_key, dynamic{}).get();
+
+  // Navigate into "sub" via the right_path InputText's "changed" event --
+  // navigate_sandbox() resolves a typed path the same way, and this makes
+  // sandbox_path_ non-empty so it injects the ".." row.
+  dynamic changed;
+  changed["value"_key] = std::string{"/sub"};
+  handler_->on_event(widget_id(".main.panels.right.right_path"), "changed"_key, changed);
+
+  simulate_sorted(".main.panels.right.right_table", /*column_id=*/0, /*ascending=*/false);
+
+  // Descending by name would normally put "zzz.txt" first, but ".." must
+  // stay pinned at row 0 regardless of sort column/direction.
+  EXPECT_EQ(table_name_cell_text(".main.panels.right.right_table", 0), ".. [Up]");
+  EXPECT_EQ(table_name_cell_text(".main.panels.right.right_table", 1), "zzz.txt");
 }
 
 TEST_F(FileExplorerEventTest, DownloadClickedWithNoSelectionSetsStatusInsteadOfEmitting) {
