@@ -68,7 +68,7 @@ bool standalone::should_quit() const {
 }
 
 void standalone::on_session_created(bison::rmi::context& ctx) {
-  context_ = std::make_shared<sync_context>(std::in_place, std::make_unique<context>(ctx.session_id));
+  context_ = std::make_shared<sync_context>(std::in_place, on_create_context(ctx.session_id));
   {
     auto sess = context_wlock{*context_};
     sess->emit_event = ctx.emit_event;

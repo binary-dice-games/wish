@@ -166,3 +166,78 @@ TEST(StandaloneTest, EventFiresSynchronouslyInProcess) {
 
   sa.stop();
 }
+
+// ── Context factory hook (on_create_context) ──────────────────────────────────
+
+namespace {
+
+class custom_context : public wish::context {
+ public:
+  using wish::context::context;
+  bool marker = true;
+};
+
+class custom_context_standalone : public wish::standalone {
+ public:
+  using wish::standalone::standalone;
+
+  wish::context* last_session{nullptr};
+
+ protected:
+  std::unique_ptr<bdg::bison::rmi::context> on_create_context(bdg::bison::key_t session_id) override {
+    return std::make_unique<custom_context>(session_id);
+  }
+  void on_session_created(wish::context& s) override {
+    last_session = &s;
+  }
+};
+
+} // namespace
+
+TEST(StandaloneTest, CustomContextFactoryIsUsed) {
+  custom_context_standalone sa{std::make_unique<wish::null_renderer>()};
+  sa.start();
+  ASSERT_NE(sa.last_session, nullptr);
+  EXPECT_NE(dynamic_cast<custom_context*>(sa.last_session), nullptr);
+  sa.stop();
+}
+
+// ── on_create_object extensibility ─────────────────────────────────────────────
+
+namespace {
+
+class custom_object_standalone : public wish::standalone {
+ public:
+  using wish::standalone::standalone;
+
+  int window_dispatch_count{0};
+
+ protected:
+  bdg::bison::dynamic_ptr on_create_object(
+      bdg::bison::rmi::context& ctx, bdg::bison::key_t ns, bdg::bison::key_t klass) override {
+    if (klass == "Window"_key)
+      ++window_dispatch_count;
+    // Falls back to the base implementation for everything -- this only
+    // compiles/links if on_create_object is protected (not private) and
+    // overridable (not final), proving Part A's un-sealing.
+    return wish::standalone::on_create_object(ctx, ns, klass);
+  }
+};
+
+} // namespace
+
+TEST(StandaloneTest, CustomOnCreateObjectCanObserveAndFallsBackToBase) {
+  custom_object_standalone sa{std::make_unique<wish::null_renderer>()};
+  sa.start();
+
+  auto window_proxy = sa.instantiate("wish"_key, "Window"_key).get();
+  EXPECT_TRUE(window_proxy.valid());
+  EXPECT_EQ(sa.window_dispatch_count, 1);
+
+  // An unrelated class still dispatches correctly through the fallback path.
+  auto button_proxy = sa.instantiate("wish"_key, "Button"_key).get();
+  EXPECT_TRUE(button_proxy.valid());
+  EXPECT_EQ(sa.window_dispatch_count, 1);
+
+  sa.stop();
+}

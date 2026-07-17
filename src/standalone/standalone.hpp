@@ -153,13 +153,52 @@ class standalone : public bison::rmi::standalone {
     (void)s;
   }
 
+  /**
+   * @brief Factory hook: construct the wish::context for the standalone
+   *        session. Mirrors wish::server::on_create_context() (see
+   *        src/server/server.hpp) -- override to attach a project-specific
+   *        context subclass (e.g. genie::context) instead of a plain
+   *        wish::context.
+   *
+   * Called from on_session_created(bison::rmi::context&) below, before the
+   * result is wrapped in context_ and locked -- do not call back into
+   * instantiate()/other operations from an override (there is no session to
+   * operate on yet).
+   *
+   * @param session_id The new session's id, forwarded to wish::context's constructor.
+   */
+  virtual std::unique_ptr<bison::rmi::context> on_create_context(bison::key_t session_id) {
+    return std::make_unique<context>(session_id);
+  }
+
+  /**
+   * @brief Returns the standalone session's synchronized wish::context, once
+   *        created (null before the first on_session_created() call).
+   *
+   * A subclass's on_session_created(context&) override needs this (not just
+   * the bare context& the hook receives) to pass to per-session singleton
+   * factories that lock session state from a background thread -- mirrors
+   * wish::server::session_contexts(), simplified for standalone's single
+   * session. Valid from within/after on_session_created(context&).
+   */
+  sync_context_ptr session_context_ptr() const {
+    return context_;
+  }
+
+  // Returns session-aware objects for protocol classes (__WishTemplate,
+  // __WishFileSystem); falls back to plain instantiate otherwise. Not
+  // `final`, and `protected` rather than `private`, so a project embedding
+  // wish (e.g. genie) can override it to also special-case its own
+  // session-scoped singleton services, calling wish::standalone::on_create_object()
+  // for everything it doesn't itself recognize -- mirrors wish::server::on_create_object().
+  bison::dynamic_ptr on_create_object(bison::rmi::context& ctx, bison::key_t ns, bison::key_t klass) override;
+
  private:
   // Bridge bison::rmi::standalone's context-level hooks to wish session
   // management -- mirrors wish::server's bridging of bison::rmi::server's
   // hooks (see src/server.cpp), simplified for exactly one session.
   void on_session_created(bison::rmi::context& ctx) override final;
   void on_session_destroyed(bison::rmi::context& ctx) override final;
-  bison::dynamic_ptr on_create_object(bison::rmi::context& ctx, bison::key_t ns, bison::key_t klass) override final;
   void on_before_dispatch(bison::rmi::context& ctx) override final;
   void on_after_dispatch(bison::rmi::context& ctx) noexcept override final;
 
