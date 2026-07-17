@@ -812,3 +812,12 @@ TEST_F(ImguiRendererTest, BaseBeginRenderTargetReturnsNullAndDoesNotThrow) {
 TEST_F(ImguiRendererTest, BaseEndRenderTargetWithoutBeginIsSafeNoOp) {
   EXPECT_NO_THROW(renderer_->end_render_target());
 }
+
+// The base imgui_renderer has no backend to submit to, so flush_draw_list()
+// must be a safe no-op rather than throwing or dereferencing a null backend.
+TEST_F(ImguiRendererTest, BaseFlushDrawListIsSafeNoOp) {
+  ImDrawList draw_list(ImGui::GetDrawListSharedData());
+  draw_list._ResetForNewFrame();
+  draw_list.AddRectFilled(ImVec2(0, 0), ImVec2(4, 4), IM_COL32(255, 0, 0, 255));
+  EXPECT_NO_THROW(renderer_->flush_draw_list(draw_list, 4, 4));
+}

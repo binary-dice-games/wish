@@ -358,4 +358,12 @@ void imgui_renderer::end_render_target() {
   // No-op to match the base begin_render_target()'s "unsupported" contract.
 }
 
+void imgui_renderer::flush_draw_list(ImDrawList& draw_list, int w, int h) {
+  // No backend to submit to; matches begin_render_target()'s "unsupported"
+  // contract.
+  (void)draw_list;
+  (void)w;
+  (void)h;
+}
+
 } // namespace bdg::wish

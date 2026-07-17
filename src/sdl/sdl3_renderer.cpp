@@ -276,6 +276,25 @@ void sdl3_renderer::end_render_target() {
   saved_render_target_ = nullptr;
 }
 
+void sdl3_renderer::flush_draw_list(ImDrawList& draw_list, int w, int h) {
+  if (w <= 0 || h <= 0)
+    return;
+
+  ImDrawData draw_data;
+  draw_data.DisplayPos = ImVec2(0.0f, 0.0f);
+  draw_data.DisplaySize = ImVec2(float(w), float(h));
+  draw_data.FramebufferScale = ImVec2(1.0f, 1.0f);
+  draw_data.AddDrawList(&draw_list);
+  // No dynamic texture updates to service for this one-off submission --
+  // every texture drawn into `draw_list` (scene textures, fonts) was
+  // already uploaded earlier this same frame via get_or_load_texture()/the
+  // normal font atlas path.
+  draw_data.Textures = nullptr;
+  draw_data.Valid = true;
+
+  ImGui_ImplSDLRenderer3_RenderDrawData(&draw_data, sdl_renderer_);
+}
+
 } // namespace bdg::wish
 
 #endif // WISH_SDL3_ENABLED

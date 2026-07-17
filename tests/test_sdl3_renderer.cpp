@@ -90,3 +90,54 @@ TEST_F(Sdl3RendererTest, EndRenderTargetRestoresPreviousTarget) {
 TEST_F(Sdl3RendererTest, EndRenderTargetWithoutBeginIsSafeNoOp) {
   EXPECT_NO_THROW(renderer_->end_render_target());
 }
+
+// flush_draw_list() must submit its ImDrawList immediately, landing on
+// whatever target begin_render_target() made active -- not deferred to the
+// next end_frame() (there is no frame/end_frame() in this test at all).
+TEST_F(Sdl3RendererTest, FlushDrawListRendersOntoActiveTarget) {
+  SDL_Renderer* r = renderer_->sdl_renderer();
+
+  // A small solid-green source texture, drawn via AddImageQuad -- a real
+  // externally-created texture, not the font atlas, so this doesn't depend
+  // on ImGui's own texture-management/upload path at all.
+  SDL_Texture* src = SDL_CreateTexture(r, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, 2, 2);
+  ASSERT_NE(src, nullptr);
+  SDL_Texture* prev = SDL_GetRenderTarget(r);
+  SDL_SetRenderTarget(r, src);
+  SDL_SetRenderDrawColor(r, 0, 255, 0, 255); // green
+  SDL_RenderClear(r);
+  SDL_SetRenderTarget(r, prev);
+
+  ImTextureID target_tex = renderer_->begin_render_target(4, 4);
+  ASSERT_NE(target_tex, ImTextureID{});
+  SDL_SetRenderDrawColor(r, 0, 0, 0, 255); // black, so a lingering clear can't look like the quad
+  SDL_RenderClear(r);
+
+  ImDrawList draw_list(ImGui::GetDrawListSharedData());
+  draw_list._ResetForNewFrame();
+  // _ResetForNewFrame() zero-initializes the clip rect, which the SDL3
+  // backend reads as an empty (0,0,0,0) scissor and skips the draw
+  // entirely -- a real caller (e.g. genie's render_viewport) always pushes
+  // a clip rect covering the target before drawing into it.
+  draw_list.PushClipRect(ImVec2(0, 0), ImVec2(4, 4));
+  draw_list.AddImageQuad(
+      reinterpret_cast<ImTextureID>(src), ImVec2(0, 0), ImVec2(4, 0), ImVec2(4, 4), ImVec2(0, 4));
+  draw_list.PopClipRect();
+
+  renderer_->flush_draw_list(draw_list, 4, 4);
+
+  SDL_Color c = read_top_left_pixel(r);
+  EXPECT_EQ(c.r, 0);
+  EXPECT_EQ(c.g, 255);
+  EXPECT_EQ(c.b, 0);
+
+  renderer_->end_render_target();
+  SDL_DestroyTexture(src);
+}
+
+TEST_F(Sdl3RendererTest, FlushDrawListWithNonPositiveSizeIsSafeNoOp) {
+  ImDrawList draw_list(ImGui::GetDrawListSharedData());
+  draw_list._ResetForNewFrame();
+  EXPECT_NO_THROW(renderer_->flush_draw_list(draw_list, 0, 0));
+  EXPECT_NO_THROW(renderer_->flush_draw_list(draw_list, -1, 4));
+}

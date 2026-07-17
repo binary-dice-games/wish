@@ -129,6 +129,20 @@ class sdl3_renderer : public imgui_renderer {
   /// @brief Restore the render target saved by `begin_render_target()`.
   void end_render_target() override;
 
+  /**
+   * @brief Immediately submits @p draw_list to whatever `SDL_Renderer`
+   *        target is currently active, via `ImGui_ImplSDLRenderer3_RenderDrawData()`.
+   *
+   * Unlike the normal per-frame flush (one combined `ImGui_ImplSDLRenderer3_
+   * RenderDrawData()` call over every window's accumulated draw list at
+   * `end_frame()`), this wraps just @p draw_list in its own throwaway
+   * `ImDrawData` and submits it right away -- so a caller sandwiching this
+   * between `begin_render_target()`/`end_render_target()` gets @p draw_list
+   * rendered onto the offscreen texture specifically, not the window
+   * backbuffer everything else eventually lands on.
+   */
+  void flush_draw_list(ImDrawList& draw_list, int w, int h) override;
+
  protected:
   /// @brief The underlying SDL_Renderer handle, for tests/subclasses that
   ///        need to issue direct SDL draw/readback calls (e.g. verifying

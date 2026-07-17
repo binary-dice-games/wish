@@ -154,6 +154,33 @@ class imgui_renderer : public renderer {
    */
   virtual void end_render_target();
 
+  /**
+   * @brief Immediately submits @p draw_list to whatever target is currently
+   *        active -- the window backbuffer, or an offscreen target between
+   *        a `begin_render_target()`/`end_render_target()` pair -- instead
+   *        of going through ImGui's own once-per-frame deferred flush.
+   *
+   * ImGui accumulates one draw list per window and flushes all of them
+   * together in a single backend call at `end_frame()` -- so a `render_*`
+   * function that wants a *separate* draw pass landing on a *different*
+   * target (e.g. a scene renderer drawing into an offscreen render target
+   * that will later be composited elsewhere) needs its own manually-built
+   * `ImDrawList` and its own immediate submission, bypassing the
+   * once-per-frame path entirely. Base implementation is a no-op
+   * (headless-safe, matching `begin_render_target()`'s "unsupported"
+   * contract).
+   *
+   * @param draw_list  A caller-owned `ImDrawList`, typically constructed
+   *                   with `ImGui::GetDrawListSharedData()` and initialized
+   *                   via `_ResetForNewFrame()` before any `PushClipRect`/
+   *                   `Add*` calls, populated with whatever draw commands
+   *                   should land on the current target.
+   * @param w  Target width in pixels, defining the coordinate space
+   *           @p draw_list's vertices are expressed in (top-left origin).
+   * @param h  Target height in pixels.
+   */
+  virtual void flush_draw_list(ImDrawList& draw_list, int w, int h);
+
  protected:
   /// Loaded texture cache: maps resource path → ImTextureID.
   std::unordered_map<std::string, ImTextureID> texture_cache_;
