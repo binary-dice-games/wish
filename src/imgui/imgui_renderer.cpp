@@ -347,4 +347,15 @@ ImFont* imgui_renderer::get_or_load_font(const std::string& path, float size) {
   return nullptr;
 }
 
+ImTextureID imgui_renderer::begin_render_target(int w, int h) {
+  // Offscreen render targets require a GPU backend; headless-safe no-op.
+  (void)w;
+  (void)h;
+  return ImTextureID{};
+}
+
+void imgui_renderer::end_render_target() {
+  // No-op to match the base begin_render_target()'s "unsupported" contract.
+}
+
 } // namespace bdg::wish

@@ -794,3 +794,21 @@ TEST_F(ImguiRendererTest, ExtraRenderFnsOverrideIsPerInstanceNotGlobal) {
   });
   EXPECT_FALSE(g_dummy_render_called);
 }
+
+// ── Offscreen render target (base class) ─────────────────────────────────────
+
+// The base imgui_renderer has no GPU backend attached, so begin_render_target()
+// must report "unsupported" via a null handle rather than throwing or
+// fabricating a texture.
+TEST_F(ImguiRendererTest, BaseBeginRenderTargetReturnsNullAndDoesNotThrow) {
+  ImTextureID tex{};
+  EXPECT_NO_THROW(tex = renderer_->begin_render_target(64, 64));
+  EXPECT_EQ(tex, ImTextureID{});
+}
+
+// Calling end_render_target() without a preceding begin_render_target() call
+// is documented as a safe no-op -- the base implementation has no state to
+// restore.
+TEST_F(ImguiRendererTest, BaseEndRenderTargetWithoutBeginIsSafeNoOp) {
+  EXPECT_NO_THROW(renderer_->end_render_target());
+}

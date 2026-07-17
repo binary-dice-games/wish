@@ -126,6 +126,34 @@ class imgui_renderer : public renderer {
    */
   virtual ImFont* get_or_load_font(const std::string& path, float size);
 
+  /**
+   * @brief Redirect subsequent draws into an offscreen render target of size
+   *        @p w x @p h, returning its texture handle.
+   *
+   * Every draw call issued between this call and the matching
+   * `end_render_target()` renders into the offscreen texture instead of the
+   * window/canvas backbuffer; `end_render_target()` restores whatever target
+   * was active before this call. Backends that cannot support an offscreen
+   * target (no GPU backend attached) return a null handle and leave the
+   * active target unchanged -- callers must treat a null return as
+   * "unsupported" rather than assuming a texture was created.
+   *
+   * @param w  Target width in pixels (must be > 0 for a real render target).
+   * @param h  Target height in pixels (must be > 0 for a real render target).
+   * @return   The offscreen texture's handle, or a null `ImTextureID` if this
+   *           backend has no GPU render target support.
+   */
+  virtual ImTextureID begin_render_target(int w, int h);
+
+  /**
+   * @brief Restore the render target active before the matching
+   *        `begin_render_target()` call.
+   *
+   * Calling this without a preceding `begin_render_target()` (or after the
+   * base no-op `begin_render_target()` returned null) is a safe no-op.
+   */
+  virtual void end_render_target();
+
  protected:
   /// Loaded texture cache: maps resource path → ImTextureID.
   std::unordered_map<std::string, ImTextureID> texture_cache_;

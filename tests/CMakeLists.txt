@@ -92,6 +92,10 @@ if(WISH_ENABLE_IMGUI)
   wish_add_test(test_style_service  test_style_service.cpp)
 endif()
 
+if(WISH_ENABLE_IMGUI AND WISH_ENABLE_SDL3)
+  wish_add_test(test_sdl3_renderer test_sdl3_renderer.cpp)
+endif()
+
 if(WISH_ENABLE_IMGUI AND WISH_ENABLE_WEB)
   wish_add_test(test_web_renderer test_web_renderer.cpp)
   # Needs miniz.h directly to independently recompute CRC-32 for its own

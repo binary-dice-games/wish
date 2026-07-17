@@ -115,6 +115,29 @@ class sdl3_renderer : public imgui_renderer {
    */
   ImFont* get_or_load_font(const std::string& path, float size) override;
 
+  // ── offscreen render target ──────────────────────────────────────────────
+
+  /**
+   * @brief Create (or reuse, if @p w x @p h matches the current one) an
+   *        `SDL_TEXTUREACCESS_TARGET` texture and redirect rendering to it.
+   *
+   * The previously active render target (typically the window's own
+   * backbuffer) is saved and restored by `end_render_target()`.
+   */
+  ImTextureID begin_render_target(int w, int h) override;
+
+  /// @brief Restore the render target saved by `begin_render_target()`.
+  void end_render_target() override;
+
+ protected:
+  /// @brief The underlying SDL_Renderer handle, for tests/subclasses that
+  ///        need to issue direct SDL draw/readback calls (e.g. verifying
+  ///        begin_render_target()/end_render_target() actually swap the
+  ///        active target) beyond what this class's own API exposes.
+  SDL_Renderer* sdl_renderer() const {
+    return sdl_renderer_;
+  }
+
  private:
   const char* title_;
   int width_;
@@ -162,6 +185,19 @@ class sdl3_renderer : public imgui_renderer {
 
   /// @brief Clear and rebuild the ImGui font atlas, then re-upload to the GPU.
   void rebuild_font_atlas();
+
+  // ── Offscreen render target ────────────────────────────────────────────────
+
+  /// Current offscreen render target texture, recreated by
+  /// begin_render_target() only when the requested size changes; freed in
+  /// teardown().
+  SDL_Texture* render_target_ = nullptr;
+  int render_target_w_ = 0;
+  int render_target_h_ = 0;
+
+  /// Render target active immediately before the last begin_render_target()
+  /// call, restored by end_render_target(). Null means "the window backbuffer".
+  SDL_Texture* saved_render_target_ = nullptr;
 };
 
 } // namespace bdg::wish

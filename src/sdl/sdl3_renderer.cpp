@@ -87,6 +87,13 @@ void sdl3_renderer::teardown() {
   }
   texture_cache_.clear();
 
+  if (render_target_) {
+    SDL_DestroyTexture(render_target_);
+    render_target_ = nullptr;
+    render_target_w_ = 0;
+    render_target_h_ = 0;
+  }
+
   ImGui_ImplSDLRenderer3_Shutdown();
   ImGui_ImplSDL3_Shutdown();
   ImPlot3D::DestroyContext();
@@ -238,6 +245,35 @@ ImTextureID sdl3_renderer::get_or_load_texture(const std::string& src, const std
   ImTextureID id = tex ? reinterpret_cast<ImTextureID>(tex) : ImTextureID{};
   texture_cache_[src] = id;
   return id;
+}
+
+// ── offscreen render target ────────────────────────────────────────────────────
+
+ImTextureID sdl3_renderer::begin_render_target(int w, int h) {
+  if (w <= 0 || h <= 0)
+    return ImTextureID{};
+
+  if (!render_target_ || render_target_w_ != w || render_target_h_ != h) {
+    if (render_target_)
+      SDL_DestroyTexture(render_target_);
+    render_target_ = SDL_CreateTexture(sdl_renderer_, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, w, h);
+    render_target_w_ = w;
+    render_target_h_ = h;
+    if (!render_target_) {
+      render_target_w_ = 0;
+      render_target_h_ = 0;
+      return ImTextureID{};
+    }
+  }
+
+  saved_render_target_ = SDL_GetRenderTarget(sdl_renderer_);
+  SDL_SetRenderTarget(sdl_renderer_, render_target_);
+  return reinterpret_cast<ImTextureID>(render_target_);
+}
+
+void sdl3_renderer::end_render_target() {
+  SDL_SetRenderTarget(sdl_renderer_, saved_render_target_);
+  saved_render_target_ = nullptr;
 }
 
 } // namespace bdg::wish
