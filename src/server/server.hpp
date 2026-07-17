@@ -180,10 +180,6 @@ class server : public bison::rmi::server {
   // temp directory on_session_created already set up.
   void on_authenticated(bison::rmi::context& ctx, const std::string& identity) override final;
 
-  // Returns session-aware objects for protocol classes (__WishTemplate,
-  // __WishFileSystem); falls back to plain instantiate otherwise.
-  bison::dynamic_ptr on_create_object(bison::rmi::context& ctx, bison::key_t ns, bison::key_t klass) override final;
-
   // Receive formatted trace lines from the base class and forward to logger_.
   void on_print(bison::key_t session_id, const std::string& line) override;
 
@@ -196,6 +192,15 @@ class server : public bison::rmi::server {
   // blocking other sessions.
   void on_before_dispatch(bison::rmi::context& ctx) override;
   void on_after_dispatch(bison::rmi::context& ctx) noexcept override;
+
+ protected:
+  // Returns session-aware objects for protocol classes (__WishTemplate,
+  // __WishFileSystem); falls back to plain instantiate otherwise. Not
+  // `final`, and `protected` rather than `private`, so a project embedding
+  // wish (e.g. genie) can override it to also special-case its own
+  // session-scoped singleton services, calling wish::server::on_create_object()
+  // for everything it doesn't itself recognize.
+  bison::dynamic_ptr on_create_object(bison::rmi::context& ctx, bison::key_t ns, bison::key_t klass) override;
 
   void render_loop();
 
