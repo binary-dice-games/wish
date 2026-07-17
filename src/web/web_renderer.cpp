@@ -40,8 +40,9 @@ namespace bdg::wish {
 
 // ── construction ──────────────────────────────────────────────────────────────
 
-web_renderer::web_renderer(std::string bind_addr, int port, int font_size)
-    : bind_addr_(std::move(bind_addr)), port_(port), font_size_(font_size) {}
+web_renderer::web_renderer(std::string bind_addr, int port, int font_size, render_fn_map extra_render_fns)
+    : imgui_renderer(std::move(extra_render_fns)), bind_addr_(std::move(bind_addr)), port_(port),
+      font_size_(font_size) {}
 
 web_renderer::~web_renderer() {
   // teardown() is called from the render thread before the render loop

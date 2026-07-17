@@ -26,12 +26,13 @@ using namespace bdg::bison;
 
 // ── Dispatch table ────────────────────────────────────────────────────────────
 //
-// Maps class key hash → render function.  Built once at first render_node call.
+// Maps class key hash → render function. Built once (process-wide, since it
+// never varies) and copied into each imgui_renderer instance's render_fns_ at
+// construction, where a caller-supplied extra_render_fns can add to or
+// override it -- see imgui_renderer::imgui_renderer().
 
-using render_fn = void (*)(imgui_renderer&, const ui_element&, const context&);
-
-static const std::unordered_map<bison::hash_t, render_fn>& render_dispatch() {
-  static const std::unordered_map<bison::hash_t, render_fn> tbl{
+static const render_fn_map& built_in_render_fns() {
+  static const render_fn_map tbl{
       // Docking
       {"DockSpaceViewport"_key.id, render_dockspace_viewport},
       {"DockSpace"_key.id, render_dockspace},
@@ -232,6 +233,11 @@ static void apply_style_fields(const bison::dynamic& sd, ImGuiStyle& style) {
 
 // ── imgui_renderer ────────────────────────────────────────────────────────────
 
+imgui_renderer::imgui_renderer(render_fn_map extra_render_fns) : render_fns_(built_in_render_fns()) {
+  for (auto& [class_id, fn] : extra_render_fns)
+    render_fns_[class_id] = fn;
+}
+
 void imgui_renderer::begin_frame() {
   ImGuiIO& io = ImGui::GetIO();
   if (io.DisplaySize.x <= 0.0f || io.DisplaySize.y <= 0.0f)
@@ -283,9 +289,8 @@ void imgui_renderer::render_node(const ui_element& node, const context& s) {
   ImGui::PushID(stable_id(node).c_str());
 
   auto cls = node.as<key_t>(dynamic::CLASS);
-  const auto& tbl = render_dispatch();
-  auto it = tbl.find(cls.id);
-  if (it != tbl.end()) {
+  auto it = render_fns_.find(cls.id);
+  if (it != render_fns_.end()) {
     it->second(*this, node, s);
   } else {
     // Unknown class: log placeholder and pass through so children still render.

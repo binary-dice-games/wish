@@ -57,8 +57,11 @@ class web_renderer : public imgui_renderer {
    * @param bind_addr  Address to bind the HTTP/WebSocket server to.
    * @param port       TCP port for the HTTP/WebSocket server.
    * @param font_size  Base font size in pixels.
+   * @param extra_render_fns  Extra/override `render_*` dispatch entries, see
+   *                          `imgui_renderer::imgui_renderer()`.
    */
-  explicit web_renderer(std::string bind_addr = "127.0.0.1", int port = 8080, int font_size = 16);
+  explicit web_renderer(
+      std::string bind_addr = "127.0.0.1", int port = 8080, int font_size = 16, render_fn_map extra_render_fns = {});
 
   ~web_renderer() override;
 

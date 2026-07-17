@@ -726,3 +726,71 @@ TEST_F(ImguiRendererTest, SecondModalReusingSameStableIdOpensCleanlyAfterProperC
   ASSERT_NE(w, nullptr);
   EXPECT_TRUE(w->Flags & ImGuiWindowFlags_Modal);
 }
+
+// ── Construction-time extra_render_fns dispatch ──────────────────────────────
+//
+// imgui_renderer's dispatch table is seeded with wish's built-ins at
+// construction and merged with whatever the caller passes as
+// extra_render_fns -- see imgui_renderer::imgui_renderer(). These functions
+// must be plain function pointers (render_fn's signature), so state is
+// tracked via file-scope statics rather than captures.
+
+namespace {
+bool g_dummy_render_called = false;
+
+void render_dummy_test_element(bdg::wish::imgui_renderer&, const ui_element&, const context&) {
+  g_dummy_render_called = true;
+}
+} // namespace
+
+TEST_F(ImguiRendererTest, ExtraRenderFnsDispatchesToProjectSpecificClass) {
+  g_dummy_render_called = false;
+  auto map = bdg::wish::import_json(R"({"type":"Label","text":"x"})");
+  auto& node = *map[""];
+  node[dynamic::CLASS] = "DummyTestElement"_key;
+
+  imgui_renderer r({{"DummyTestElement"_key.id, render_dummy_test_element}});
+  r.begin_frame();
+  in_window([&] { r.render_node(node, *sess_); });
+  r.end_frame();
+
+  EXPECT_TRUE(g_dummy_render_called);
+}
+
+TEST_F(ImguiRendererTest, ExtraRenderFnsDoNotClobberUnrelatedBuiltIns) {
+  g_dummy_render_called = false;
+  auto map = bdg::wish::import_json(R"({"type":"Label","text":"built-in"})");
+
+  // Constructed with an extra entry for an unrelated class id -- the "Label"
+  // built-in must still dispatch to wish's own render_label, not the dummy.
+  imgui_renderer r({{"DummyTestElement"_key.id, render_dummy_test_element}});
+  EXPECT_NO_THROW({
+    r.begin_frame();
+    in_window([&] { r.render_node(*map[""], *sess_); });
+    r.end_frame();
+  });
+
+  EXPECT_FALSE(g_dummy_render_called);
+}
+
+TEST_F(ImguiRendererTest, ExtraRenderFnsOverrideIsPerInstanceNotGlobal) {
+  g_dummy_render_called = false;
+  auto map = bdg::wish::import_json(R"({"type":"Label","text":"overridden"})");
+
+  // One instance overrides "Label"'s built-in dispatch entry...
+  imgui_renderer overriding_r({{"Label"_key.id, render_dummy_test_element}});
+  overriding_r.begin_frame();
+  in_window([&] { overriding_r.render_node(*map[""], *sess_); });
+  overriding_r.end_frame();
+  EXPECT_TRUE(g_dummy_render_called);
+
+  // ...but a separately-constructed instance with no override still uses
+  // wish's built-in render_label, proving the mapping is per-instance.
+  g_dummy_render_called = false;
+  EXPECT_NO_THROW({
+    renderer_->begin_frame();
+    in_window([&] { renderer_->render_node(*map[""], *sess_); });
+    renderer_->end_frame();
+  });
+  EXPECT_FALSE(g_dummy_render_called);
+}

@@ -13,13 +13,15 @@
 #include <implot3d.h>
 
 #include <stdexcept>
+#include <utility>
 
 namespace bdg::wish {
 
 // ── construction ──────────────────────────────────────────────────────────────
 
-sdl3_renderer::sdl3_renderer(const char* title, int width, int height, int font_size)
-    : title_(title), width_(width), height_(height), font_size_(font_size) {}
+sdl3_renderer::sdl3_renderer(const char* title, int width, int height, int font_size, render_fn_map extra_render_fns)
+    : imgui_renderer(std::move(extra_render_fns)), title_(title), width_(width), height_(height),
+      font_size_(font_size) {}
 
 sdl3_renderer::~sdl3_renderer() {
   // teardown() is called from the render thread before the render loop exits.

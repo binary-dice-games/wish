@@ -48,8 +48,11 @@ class sdl3_renderer : public imgui_renderer {
    * @param width   Initial window width in pixels.
    * @param height  Initial window height in pixels.
    * @param font_size  Base font size in pixels.
+   * @param extra_render_fns  Extra/override `render_*` dispatch entries, see
+   *                          `imgui_renderer::imgui_renderer()`.
    */
-  explicit sdl3_renderer(const char* title = "wish", int width = 1280, int height = 720, int font_size = 16);
+  explicit sdl3_renderer(const char* title = "wish", int width = 1280, int height = 720, int font_size = 16,
+      render_fn_map extra_render_fns = {});
 
   ~sdl3_renderer() override;
 

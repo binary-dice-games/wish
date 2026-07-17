@@ -5,6 +5,8 @@
 
 #include <server/renderer.hpp>
 
+#include "src/bison/bison_common.hpp"
+
 #include <imgui.h>
 
 #include <cstdint>
@@ -14,6 +16,8 @@
 
 namespace bdg::wish {
 
+class imgui_renderer;
+
 /// @brief Parses a "#RRGGBBAA" or "#RRGGBB" hex color string into an ImVec4
 /// (each component in [0, 1]). Returns opaque white for anything malformed
 /// (missing '#', wrong length, non-hex digits) -- the same fallback
@@ -21,6 +25,16 @@ namespace bdg::wish {
 /// a bad tint/color field degrades to "no visible tint" rather than a
 /// thrown exception or garbage color.
 ImVec4 parse_hex_color(const std::string& s);
+
+/// @brief Renders one `ui_element` node's ImGui widget(s); the uniform
+///        signature every `render_*` function in imgui_ui_renderer.hpp uses.
+using render_fn = void (*)(imgui_renderer&, const ui_element&, const context&);
+
+/// @brief Class-id -> render function map, used to extend an `imgui_renderer`
+///        instance's dispatch table with project-specific `ui_element`
+///        subclasses at construction time (see `imgui_renderer`'s
+///        `extra_render_fns` constructor parameter).
+using render_fn_map = std::unordered_map<bison::hash_t, render_fn>;
 
 /**
  * @brief Renderer backend that draws wish UI elements via Dear ImGui.
@@ -37,7 +51,22 @@ ImVec4 parse_hex_color(const std::string& s);
  */
 class imgui_renderer : public renderer {
  public:
-  imgui_renderer() = default;
+  /**
+   * @brief Construct with an optional set of extra `render_*` functions.
+   *
+   * @param extra_render_fns  Class-id -> render function entries merged over
+   *                           wish's built-in dispatch table for this
+   *                           instance only (an entry here overrides a
+   *                           built-in with the same class id). Lets a
+   *                           project embedding wish (e.g. genie) add
+   *                           dispatch for its own `ui_element` subclasses
+   *                           without forking or patching this class. The
+   *                           mapping is fixed for the lifetime of the
+   *                           instance -- there is no post-construction
+   *                           registration call, so it can never race with
+   *                           `render_node`.
+   */
+  explicit imgui_renderer(render_fn_map extra_render_fns = {});
   ~imgui_renderer() override = default;
 
   /// @brief Prepares a new ImGui frame.  Sets sensible IO defaults if the
@@ -100,6 +129,12 @@ class imgui_renderer : public renderer {
  protected:
   /// Loaded texture cache: maps resource path → ImTextureID.
   std::unordered_map<std::string, ImTextureID> texture_cache_;
+
+ private:
+  /// This instance's full class-id -> render function dispatch table: wish's
+  /// built-ins seeded at construction, overridden/extended by whatever was
+  /// passed as `extra_render_fns`. See `render_node()`.
+  render_fn_map render_fns_;
 };
 
 } // namespace bdg::wish
