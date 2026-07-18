@@ -280,6 +280,13 @@
       // textureId -> { tex: WebGLTexture, isAlpha: bool, width, height }
       this.textures = new Map();
       this.whiteTexture = this._createSolidTexture(255, 255, 255, 255);
+
+      // Offscreen render targets (see "Offscreen Render Targets" in
+      // src/web/DESIGN.md): targetId -> { fbo: WebGLFramebuffer, width, height }.
+      // The color attachment backing each entry is also registered in
+      // `this.textures` under the same id, so an ordinary draw command can
+      // sample it like any other texture once rendered.
+      this.renderTargets = new Map();
     }
 
     _createSolidTexture(r, g, b, a) {
@@ -334,24 +341,40 @@
 
     destroyTexture(textureId) {
       const entry = this.textures.get(textureId);
-      if (!entry)
-        return;
-      this.gl.deleteTexture(entry.tex);
-      this.textures.delete(textureId);
+      if (entry) {
+        this.gl.deleteTexture(entry.tex);
+        this.textures.delete(textureId);
+      }
+      // A render target's color attachment lives in `this.textures` too
+      // (see renderToTarget()) -- also free the framebuffer wrapping it.
+      const rt = this.renderTargets.get(textureId);
+      if (rt) {
+        this.gl.deleteFramebuffer(rt.fbo);
+        this.renderTargets.delete(textureId);
+      }
     }
 
-    // frame: { displayPos, displaySize, fbScale, cmdLists: [{vtx, idx, cmds: [...]}] }
-    render(frame) {
+    // Shared by render() (canvas) and renderToTarget() (offscreen render
+    // target): issues the actual draw calls for `frame` against whichever
+    // framebuffer is currently bound, at (fbWidth, fbHeight).
+    //
+    // `flipY`: GL's viewport mapping (NDC y=-1 -> texel row 0) is the same
+    // for an FBO as for the canvas, but an ordinarily *uploaded* image
+    // (texSubImage2D) has row 0 = the image's own top row. With this
+    // client's projection (world-space top -> NDC y=+1, matching
+    // imgui_impl_opengl3, already correct for the canvas), a scene *rendered
+    // into* an FBO would end up with its bottom at texel row 0 -- the
+    // opposite of an uploaded image's convention, so a render target's
+    // composited quad would appear vertically flipped. Fix it at the
+    // source: swap the T/B values feeding the projection's Y column when
+    // drawing into a render target (a standard technique for flipping an
+    // orthographic projection) so the target's texel row 0 ends up holding
+    // the top of the scene like every other texture -- see "Offscreen
+    // Render Targets" in src/web/DESIGN.md.
+    _drawCmdLists(frame, fbWidth, fbHeight, flipY) {
       const gl = this.gl;
-      const fbWidth = Math.max(1, Math.round(frame.displaySize.x * frame.fbScale.x));
-      const fbHeight = Math.max(1, Math.round(frame.displaySize.y * frame.fbScale.y));
-      if (this.canvas.width !== fbWidth) this.canvas.width = fbWidth;
-      if (this.canvas.height !== fbHeight) this.canvas.height = fbHeight;
 
       gl.viewport(0, 0, fbWidth, fbHeight);
-      gl.clearColor(0.117, 0.117, 0.117, 1.0); // matches sdl3_renderer's clear color
-      gl.clear(gl.COLOR_BUFFER_BIT);
-
       gl.enable(gl.BLEND);
       gl.blendEquation(gl.FUNC_ADD);
       gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
@@ -361,7 +384,8 @@
 
       gl.useProgram(this.program);
       const L = frame.displayPos.x, R = frame.displayPos.x + frame.displaySize.x;
-      const T = frame.displayPos.y, B = frame.displayPos.y + frame.displaySize.y;
+      const top = frame.displayPos.y, bottom = frame.displayPos.y + frame.displaySize.y;
+      const T = flipY ? bottom : top, B = flipY ? top : bottom;
       // Column-major orthographic projection matching imgui_impl_opengl3.
       const proj = new Float32Array([
         2 / (R - L), 0, 0, 0,
@@ -408,11 +432,87 @@
       }
       gl.bindVertexArray(null);
     }
+
+    // frame: { targetId, displayPos, displaySize, fbScale, cmdLists: [{vtx, idx, cmds: [...]}] }
+    render(frame) {
+      const gl = this.gl;
+      const fbWidth = Math.max(1, Math.round(frame.displaySize.x * frame.fbScale.x));
+      const fbHeight = Math.max(1, Math.round(frame.displaySize.y * frame.fbScale.y));
+      if (this.canvas.width !== fbWidth) this.canvas.width = fbWidth;
+      if (this.canvas.height !== fbHeight) this.canvas.height = fbHeight;
+
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.clearColor(0.117, 0.117, 0.117, 1.0); // matches sdl3_renderer's clear color
+      gl.clear(gl.COLOR_BUFFER_BIT);
+
+      this._drawCmdLists(frame, fbWidth, fbHeight, /*flipY=*/false);
+    }
+
+    // Renders `frame` into the offscreen render target identified by
+    // `frame.targetId` instead of the canvas, creating (or resizing) its
+    // framebuffer + color texture on demand.
+    //
+    // Unlike sdl3_renderer::flush_draw_list() (which never clears its
+    // target either), this *does* clear to transparent black first. A
+    // texture's real id here is only valid from the frame *after* it's
+    // first requested (see get_or_load_texture()'s doc comment in
+    // web_renderer.hpp) -- a draw command referencing it before then falls
+    // back to the opaque whiteTexture placeholder (see the `entry ||
+    // this.whiteTexture` fallback below), which is opaque everywhere,
+    // including the texture's actually-transparent background pixels. sdl3
+    // never hits this because get_or_load_texture() there uploads
+    // synchronously on the very first call -- no such placeholder frame
+    // exists. Without clearing, that one opaque frame would permanently
+    // "poison" the target's alpha: blending a now-correct, genuinely
+    // transparent pixel onto an already-opaque destination leaves the
+    // destination opaque (over-blending a transparent source is a no-op),
+    // so the placeholder's opacity could never be undone by a later,
+    // correct redraw. Clearing first makes every flush a fresh start, so
+    // the target self-corrects the moment the real texture becomes
+    // available -- exactly like the canvas already does via its own
+    // per-frame clear in render(). See "Offscreen Render Targets" in
+    // src/web/DESIGN.md.
+    renderToTarget(frame) {
+      const gl = this.gl;
+      const id = frame.targetId;
+      const w = Math.max(1, Math.round(frame.displaySize.x));
+      const h = Math.max(1, Math.round(frame.displaySize.y));
+
+      let rt = this.renderTargets.get(id);
+      if (!rt || rt.width !== w || rt.height !== h) {
+        const tex = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+        const fbo = gl.createFramebuffer();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+
+        rt = { fbo, width: w, height: h };
+        this.renderTargets.set(id, rt);
+        // Registered under the same id as the render target itself, so an
+        // ordinary AddImageQuad draw command compositing this scene
+        // elsewhere samples it exactly like any other texture.
+        this.textures.set(id, { tex, isAlpha: false, width: w, height: h });
+      }
+
+      gl.bindFramebuffer(gl.FRAMEBUFFER, rt.fbo);
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      this._drawCmdLists(frame, w, h, /*flipY=*/true);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    }
   }
 
   // ── frame decoding ───────────────────────────────────────────────────────
 
   function decodeFrame(view, offset) {
+    const targetId = view.getUint32(offset, true);
+    offset += 4;
     const displayPos = { x: view.getFloat32(offset, true), y: view.getFloat32(offset + 4, true) };
     const displaySize = { x: view.getFloat32(offset + 8, true), y: view.getFloat32(offset + 12, true) };
     const fbScale = { x: view.getFloat32(offset + 16, true), y: view.getFloat32(offset + 20, true) };
@@ -454,7 +554,7 @@
       }
       cmdLists.push({ vtx, idx, cmds });
     }
-    return { displayPos, displaySize, fbScale, cmdLists };
+    return { targetId, displayPos, displaySize, fbScale, cmdLists };
   }
 
   function decodeTextureMessage(view, offset) {
@@ -643,10 +743,22 @@
     }
     const offset = 8;
     switch (type) {
-      case MSG.FRAME:
-        pendingFrame = decodeFrame(view, offset);
-        scheduleFrameRender();
+      case MSG.FRAME: {
+        const frame = decodeFrame(view, offset);
+        if (frame.targetId !== 0) {
+          // An offscreen render-target frame is a side effect a later
+          // canvas frame's compositing draw command depends on -- render it
+          // synchronously rather than through the rAF-deferred "latest
+          // frame wins" path below, which would silently drop it if a
+          // canvas FRAME lands in the same tick. See "Offscreen Render
+          // Targets" in src/web/DESIGN.md.
+          renderer.renderToTarget(frame);
+        } else {
+          pendingFrame = frame;
+          scheduleFrameRender();
+        }
         break;
+      }
       case MSG.TEX_CREATE:
       case MSG.TEX_UPDATE: {
         const t = decodeTextureMessage(view, offset);

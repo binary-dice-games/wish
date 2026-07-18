@@ -103,8 +103,22 @@ struct web_cache_response {
 
 namespace draw_protocol {
 
-/// @brief Encode one ImDrawData snapshot as a FRAME message.
-std::vector<std::byte> encode_frame(const ImDrawData& draw_data);
+/**
+ * @brief Encode one ImDrawData snapshot as a FRAME message.
+ *
+ * @param target_id  `0` (default) means "the visible canvas" -- today's only
+ *                    behavior. A non-zero id means "render this draw data
+ *                    into the offscreen render target with this id instead
+ *                    of the canvas" -- see `imgui_renderer::begin_render_
+ *                    target()`/`flush_draw_list()` and `web_renderer`'s
+ *                    override of them. The id is drawn from the same space
+ *                    as texture ids (assigned via `web_renderer`'s
+ *                    `next_texture_id_` counter), since a render target's
+ *                    color attachment is later sampled like any other
+ *                    texture by a normal draw command (compositing it into
+ *                    the canvas frame).
+ */
+std::vector<std::byte> encode_frame(const ImDrawData& draw_data, uint32_t target_id = 0);
 
 /**
  * @brief Encode a texture (re)upload as a TEX_CREATE or TEX_UPDATE message.

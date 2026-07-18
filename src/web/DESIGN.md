@@ -72,7 +72,7 @@ byte[payload_len] payload
 Server → browser: `0x01 FRAME`, `0x02 TEX_CREATE`, `0x03 TEX_UPDATE`, `0x04 TEX_DESTROY`, `0x05 TEX_CHECK`, `0x14 CLIPBOARD_WRITE`.
 Browser → server: `0x10 INPUT`, `0x11 RESIZE`, `0x12 CACHE_RESPONSE`, `0x13 CLIPBOARD_TEXT`.
 
-**FRAME** carries display pos/size/framebuffer-scale, then per `ImDrawList`: the vertex buffer (memcpy'd directly — `ImDrawVert` is a stable 20-byte pos/uv/col layout), the index buffer (`ImDrawIdx` is 16-bit in this repo's ImGui config; `draw_protocol.cpp` has a `static_assert` guarding that assumption), and per `ImDrawCmd`: clip rect, wish-assigned texture id, vtx/idx offsets, element count.
+**FRAME** carries a `target_id` (see "Offscreen Render Targets" below; `0` means the visible canvas), then display pos/size/framebuffer-scale, then per `ImDrawList`: the vertex buffer (memcpy'd directly — `ImDrawVert` is a stable 20-byte pos/uv/col layout), the index buffer (`ImDrawIdx` is 16-bit in this repo's ImGui config; `draw_protocol.cpp` has a `static_assert` guarding that assumption), and per `ImDrawCmd`: clip rect, wish-assigned texture id, vtx/idx offsets, element count.
 
 **TEX_CREATE/TEX_UPDATE** carry a texture id, pixel format (RGBA32 or Alpha8), full dimensions, and one or more `(x, y, w, h, pixels)` rects — the whole texture for a create, only the changed sub-rects for an update. `web_renderer::end_frame()` builds these by walking `ImDrawData::Textures` each frame and reacting to `ImTextureData::Status` (`WantCreate`/`WantUpdates`/`WantDestroy`) — the current ImGui texture-management model, and the single source of truth for both the font atlas and any user textures.
 
@@ -163,6 +163,88 @@ A browser tab connecting after textures are already `OK` (so no `Status` transit
 **No `ImGuiBackendFlags_RendererHasVtxOffset`**: wish deliberately never sets this flag. The browser renders with core WebGL2 (GLES 3.0), which has no "draw with base vertex" call; leaving the flag unset keeps ImGui splitting draw lists so `ImDrawCmd::VtxOffset` is always `0`.
 
 **`get_or_load_texture()`** (loading a named image from a session's resource directory, e.g. for an `Image` element) decodes the file with `stb_image` (vendored for this purpose — `WISH_ENABLE_SDL3`'s `SDL3_image` dependency is not guaranteed to be on in a web-only build) into an RGBA32 `ImTextureData`, then calls `ImGui::RegisterUserTexture()` so it flows through the exact same `end_frame()` walk described above, rather than a separate ad hoc broadcast. Results are cached by `src` in `web_renderer::loaded_by_src_` (not the `imgui_renderer` base's `texture_cache_`, which can only store a settled `ImTextureID` — a freshly-registered texture's id isn't known until `end_frame()` assigns one). Consequently the returned id is always null on the frame a texture is first requested — `ImGui::Render()`, which resolves `WantCreate` and assigns the real id, runs later in `end_frame()`, strictly after `render_node()` (and this call) has returned — and only valid from the following frame onward. This mirrors `get_or_load_font()`'s first-call-returns-nothing contract; callers (e.g. `render_image()` in `imgui_ui_renderer.cpp`) already treat a null id as "nothing to draw yet". Loaded textures live for the renderer's lifetime and are unregistered/freed in `teardown()`, same as `sdl3_renderer`'s texture cache.
+
+---
+
+## Offscreen Render Targets
+
+`imgui_renderer` exposes `begin_render_target(w, h)` / `end_render_target()` /
+`flush_draw_list(draw_list, w, h)` so a `render_*` function (e.g. genie's
+`render_viewport()`) can draw a batch of commands into an offscreen target
+and composite the result elsewhere in the same frame — see the doc comments
+on those three methods in `src/imgui/imgui_renderer.hpp`. `sdl3_renderer`
+implements this with a real `SDL_TEXTUREACCESS_TARGET` GPU texture;
+`web_renderer` has no GPU to redirect draws to (it runs ImGui headlessly),
+so the redirection has to happen in the *browser* instead.
+
+**Design**: a render target's color attachment is assigned an id from the
+same space as ordinary wish texture ids (`web_renderer::next_texture_id_`).
+That id serves two roles on the wire: it's the `target_id` a `FRAME` message
+carries when it should render into that offscreen target instead of the
+canvas, and it's a normal texture id any later `ImDrawCmd` (e.g. an
+`AddImageQuad` compositing the rendered scene into the surrounding UI) can
+reference — no separate "render target" concept exists client-side beyond
+`Renderer.renderTargets`, which just remembers which WebGL framebuffer
+backs a given texture id.
+
+**`web_renderer`** mirrors `sdl3_renderer`'s single-slot design exactly: one
+cached `render_target_id_`/`render_target_w_`/`render_target_h_`, recreated
+(and the old id torn down via an ordinary `TEX_DESTROY`) only when the
+requested size changes. `current_target_id_`/`saved_render_target_id_` play
+the role `sdl3_renderer::render_target_`/`saved_render_target_` play for a
+real ambient GPU target — since there's no ambient server-side state to
+save/restore here, they're just plain ids `begin_render_target()`/
+`end_render_target()` swap. `flush_draw_list()` wraps its `ImDrawList` in a
+throwaway `ImDrawData` (matching `sdl3_renderer`'s own technique) and
+broadcasts it immediately via `encode_frame(draw_data, current_target_id_)`
+— not deferred to `end_frame()` — so the offscreen target is up to date
+before any later draw command in the same frame samples it.
+
+**`client.js`** creates a WebGL2 framebuffer + `RGBA8` color texture per
+render-target id on first use (or on a size change), registers the color
+texture into the same `Renderer.textures` map ordinary uploaded textures
+live in (so compositing "just works"), and frees both via the existing
+`TEX_DESTROY` path (`Renderer.destroyTexture()` additionally drops any
+`renderTargets` entry for that id). A `FRAME` with a non-zero `target_id`
+renders synchronously in the WebSocket message handler rather than through
+the usual `requestAnimationFrame` "latest frame wins" path used for the
+canvas: that path is fine for the canvas (ImGui always resends the full UI,
+so skipping an intermediate frame is free), but a render-target frame is a
+side effect other draw commands in the *same* logical frame depend on, and
+must not be silently dropped just because a canvas `FRAME` happens to land
+in the same tick.
+
+**Vertical flip.** GL's viewport mapping (`NDC y=-1` → texel row 0) is the
+same for an FBO as for the default framebuffer, but an ordinarily *uploaded*
+image (`texSubImage2D`) has row 0 = the image's own top row. Combined with
+this client's projection matrix (world-space top maps to `NDC y=+1`,
+matching `imgui_impl_opengl3`, and already correct for the canvas), a scene
+*rendered into* an FBO ends up with its bottom at texel row 0 — the
+opposite of an uploaded image's convention. Left alone, a composited
+render-target quad would appear vertically flipped. `Renderer._drawCmdLists()`
+takes a `flipY` flag that swaps the `T`/`B` values feeding the projection
+matrix's Y column when drawing into a render target (a standard technique
+for flipping an orthographic projection), so the target's texel row 0 ends
+up holding the top of the scene like every other texture — no special
+casing needed anywhere a render target's texture is later sampled.
+
+**Clearing (unlike `sdl3_renderer::flush_draw_list()`, which never
+clears).** `renderToTarget()` clears to transparent black before every
+draw. `sdl3_renderer` can get away with never clearing because
+`get_or_load_texture()` there uploads synchronously on the very first
+call; `web_renderer`'s texture ids are only valid from the frame *after*
+they're first requested (see `get_or_load_texture()`'s doc comment), so a
+texture referenced before then falls back to the opaque `whiteTexture`
+placeholder for that one draw. Skipping the clear would let that
+placeholder's opacity persist forever afterward: blending a later,
+genuinely transparent pixel onto an already-opaque destination is a
+no-op (over-blending a transparent source never reduces the
+destination's alpha), so a render target's background could never
+recover transparency once poisoned by one early placeholder-textured
+draw, even after the real texture arrives. Clearing first makes every
+flush a fresh start, so the target self-corrects the moment the real
+texture is available — exactly like the canvas already does via its own
+per-frame clear in `render()`.
 
 ---
 

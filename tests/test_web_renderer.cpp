@@ -516,6 +516,9 @@ TEST_F(WebRendererTest, EncodeFrame_RoundTripsVertexAndIndexCounts) {
   uint32_t payload_len = read_u32(bytes, pos);
   EXPECT_EQ(payload_len, bytes.size() - 8);
 
+  uint32_t target_id = read_u32(bytes, pos);
+  EXPECT_EQ(target_id, 0u); // default target_id -- the canvas
+
   pos += 4 * 6; // display pos, display size, framebuffer scale
   uint32_t total_vtx = read_u32(bytes, pos);
   uint32_t total_idx = read_u32(bytes, pos);
@@ -532,6 +535,7 @@ TEST_F(WebRendererTest, EncodeFrame_ClipRectAndTextureIdPerDrawCmd) {
   auto bytes = encode_frame(*draw_data);
 
   size_t pos = 8;   // envelope header
+  pos += 4;         // target_id
   pos += 4 * 6;     // display pos/size/scale
   pos += 4 * 2;     // total_vtx_count, total_idx_count
   uint32_t cmd_list_count = read_u32(bytes, pos);
@@ -578,6 +582,16 @@ TEST_F(WebRendererTest, EncodeFrame_ClipRectAndTextureIdPerDrawCmd) {
     }
   }
   EXPECT_EQ(pos, bytes.size());
+}
+
+TEST_F(WebRendererTest, EncodeFrame_NonZeroTargetIdRoundTrips) {
+  const ImDrawData* draw_data = render_test_frame();
+  ASSERT_NE(draw_data, nullptr);
+
+  auto bytes = encode_frame(*draw_data, /*target_id=*/42);
+
+  size_t pos = 8; // envelope header
+  EXPECT_EQ(read_u32(bytes, pos), 42u);
 }
 
 // ── get_or_load_texture() ─────────────────────────────────────────────────────
@@ -1002,6 +1016,144 @@ TEST_F(WebRendererTest, CacheResponse_HitSendsNothingFurtherForThatTexture) {
 
   close_socket(sock);
   std::filesystem::remove_all(dir);
+}
+
+// ── offscreen render target ─────────────────────────────────────────────────
+//
+// Mirrors test_sdl3_renderer.cpp's begin_render_target()/end_render_target()/
+// flush_draw_list() coverage, adapted to inspect broadcast wire messages
+// instead of GPU pixel readback -- there's no real GPU here (see "Offscreen
+// Render Targets" in src/web/DESIGN.md).
+
+TEST_F(WebRendererTest, BeginRenderTarget_ReturnsNonNullIdAndReusesForSameSize) {
+  ImTextureID tex = renderer_->begin_render_target(64, 64);
+  EXPECT_NE(tex, ImTextureID{});
+  renderer_->end_render_target();
+
+  ImTextureID tex2 = renderer_->begin_render_target(64, 64);
+  EXPECT_EQ(tex2, tex); // same size -> cached id reused
+  renderer_->end_render_target();
+}
+
+TEST_F(WebRendererTest, BeginRenderTarget_NonPositiveSizeReturnsNull) {
+  EXPECT_EQ(renderer_->begin_render_target(0, 4), ImTextureID{});
+  EXPECT_EQ(renderer_->begin_render_target(4, -1), ImTextureID{});
+}
+
+TEST_F(WebRendererTest, BeginRenderTarget_SizeChangeAllocatesNewIdAndBroadcastsDestroyForOld) {
+  int port = renderer_->actual_port();
+  ASSERT_GT(port, 0);
+  int sock = connect_ws_client(port);
+  ASSERT_GE(sock, 0);
+  wait_for_activity(*renderer_);
+
+  ImTextureID tex1 = renderer_->begin_render_target(4, 4);
+  ASSERT_NE(tex1, ImTextureID{});
+  renderer_->end_render_target();
+
+  ImTextureID tex2 = renderer_->begin_render_target(8, 8);
+  ASSERT_NE(tex2, ImTextureID{});
+  EXPECT_NE(tex2, tex1); // size changed -> new id, old one torn down
+
+  auto msg = recv_ws_frame(sock);
+  ASSERT_TRUE(msg.has_value());
+  EXPECT_EQ(msg->msg_type, static_cast<uint8_t>(web_msg_type::tex_destroy));
+  size_t pos = 0;
+  EXPECT_EQ(read_u32(msg->payload, pos), static_cast<uint32_t>(tex1));
+
+  renderer_->end_render_target();
+  close_socket(sock);
+}
+
+TEST_F(WebRendererTest, EndRenderTargetWithoutBeginIsSafeNoOp) {
+  EXPECT_NO_THROW(renderer_->end_render_target());
+}
+
+TEST_F(WebRendererTest, FlushDrawList_WhileTargetActiveSendsFrameTaggedWithTargetId) {
+  int port = renderer_->actual_port();
+  ASSERT_GT(port, 0);
+  int sock = connect_ws_client(port);
+  ASSERT_GE(sock, 0);
+  wait_for_activity(*renderer_);
+
+  ImTextureID target_tex = renderer_->begin_render_target(4, 4);
+  ASSERT_NE(target_tex, ImTextureID{});
+
+  // A small quad referencing an arbitrary (never-uploaded) texture id --
+  // flush_draw_list() never touches texture upload state, only whatever
+  // draw_list already references, mirroring the sdl3 test's own approach.
+  ImDrawList draw_list(ImGui::GetDrawListSharedData());
+  draw_list._ResetForNewFrame();
+  draw_list.PushClipRect(ImVec2(0, 0), ImVec2(4, 4));
+  draw_list.AddImageQuad(
+      static_cast<ImTextureID>(7), ImVec2(0, 0), ImVec2(4, 0), ImVec2(4, 4), ImVec2(0, 4));
+  draw_list.PopClipRect();
+
+  renderer_->flush_draw_list(draw_list, 4, 4);
+  renderer_->end_render_target();
+
+  auto msg = recv_ws_frame(sock);
+  ASSERT_TRUE(msg.has_value());
+  EXPECT_EQ(msg->msg_type, static_cast<uint8_t>(web_msg_type::frame));
+  size_t pos = 0;
+  EXPECT_EQ(read_u32(msg->payload, pos), static_cast<uint32_t>(target_tex));
+  pos += 4 * 2; // DisplayPos
+  EXPECT_FLOAT_EQ(read_f32(msg->payload, pos), 4.0f); // DisplaySize.x
+  EXPECT_FLOAT_EQ(read_f32(msg->payload, pos), 4.0f); // DisplaySize.y
+
+  close_socket(sock);
+}
+
+TEST_F(WebRendererTest, FlushDrawList_OutsideRenderTargetTagsFrameWithZero) {
+  int port = renderer_->actual_port();
+  ASSERT_GT(port, 0);
+  int sock = connect_ws_client(port);
+  ASSERT_GE(sock, 0);
+  wait_for_activity(*renderer_);
+
+  ImDrawList draw_list(ImGui::GetDrawListSharedData());
+  draw_list._ResetForNewFrame();
+  draw_list.PushClipRect(ImVec2(0, 0), ImVec2(4, 4));
+  draw_list.AddImageQuad(
+      static_cast<ImTextureID>(7), ImVec2(0, 0), ImVec2(4, 0), ImVec2(4, 4), ImVec2(0, 4));
+  draw_list.PopClipRect();
+
+  renderer_->flush_draw_list(draw_list, 4, 4); // no begin_render_target() -- targets the canvas
+
+  auto msg = recv_ws_frame(sock);
+  ASSERT_TRUE(msg.has_value());
+  EXPECT_EQ(msg->msg_type, static_cast<uint8_t>(web_msg_type::frame));
+  size_t pos = 0;
+  EXPECT_EQ(read_u32(msg->payload, pos), 0u);
+
+  close_socket(sock);
+}
+
+TEST_F(WebRendererTest, FlushDrawListWithNonPositiveSizeIsSafeNoOpAndSendsNothing) {
+  int port = renderer_->actual_port();
+  ASSERT_GT(port, 0);
+  int sock = connect_ws_client(port);
+  ASSERT_GE(sock, 0);
+  wait_for_activity(*renderer_);
+
+  ImDrawList draw_list(ImGui::GetDrawListSharedData());
+  draw_list._ResetForNewFrame();
+  EXPECT_NO_THROW(renderer_->flush_draw_list(draw_list, 0, 0));
+  EXPECT_NO_THROW(renderer_->flush_draw_list(draw_list, -1, 4));
+
+  // Prove nothing was broadcast for either non-positive call above: a
+  // deliberate follow-up flush must be the very first message this
+  // connection receives.
+  ImTextureID target_tex = renderer_->begin_render_target(2, 2);
+  ASSERT_NE(target_tex, ImTextureID{});
+  renderer_->flush_draw_list(draw_list, 2, 2);
+  renderer_->end_render_target();
+
+  auto msg = recv_ws_frame(sock);
+  ASSERT_TRUE(msg.has_value());
+  EXPECT_EQ(msg->msg_type, static_cast<uint8_t>(web_msg_type::frame));
+
+  close_socket(sock);
 }
 
 TEST(WebRendererCacheHandshakeTeardownTest, Teardown_ClearsCacheHandshakeStateWithoutCrash) {
