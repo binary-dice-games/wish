@@ -228,9 +228,23 @@ for flipping an orthographic projection), so the target's texel row 0 ends
 up holding the top of the scene like every other texture — no special
 casing needed anywhere a render target's texture is later sampled.
 
-No clear is issued before drawing into a render target (mirrors
-`sdl3_renderer::flush_draw_list()`, which doesn't clear either) — the
-caller's draw commands are expected to fully cover it.
+**Clearing (unlike `sdl3_renderer::flush_draw_list()`, which never
+clears).** `renderToTarget()` clears to transparent black before every
+draw. `sdl3_renderer` can get away with never clearing because
+`get_or_load_texture()` there uploads synchronously on the very first
+call; `web_renderer`'s texture ids are only valid from the frame *after*
+they're first requested (see `get_or_load_texture()`'s doc comment), so a
+texture referenced before then falls back to the opaque `whiteTexture`
+placeholder for that one draw. Skipping the clear would let that
+placeholder's opacity persist forever afterward: blending a later,
+genuinely transparent pixel onto an already-opaque destination is a
+no-op (over-blending a transparent source never reduces the
+destination's alpha), so a render target's background could never
+recover transparency once poisoned by one early placeholder-textured
+draw, even after the real texture arrives. Clearing first makes every
+flush a fresh start, so the target self-corrects the moment the real
+texture is available — exactly like the canvas already does via its own
+per-frame clear in `render()`.
 
 ---
 

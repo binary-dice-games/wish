@@ -450,10 +450,28 @@
 
     // Renders `frame` into the offscreen render target identified by
     // `frame.targetId` instead of the canvas, creating (or resizing) its
-    // framebuffer + color texture on demand. Unlike render(), never clears
-    // first -- mirrors sdl3_renderer::flush_draw_list(), which doesn't clear
-    // the target either; the caller's draw commands are expected to cover
-    // it. See "Offscreen Render Targets" in src/web/DESIGN.md.
+    // framebuffer + color texture on demand.
+    //
+    // Unlike sdl3_renderer::flush_draw_list() (which never clears its
+    // target either), this *does* clear to transparent black first. A
+    // texture's real id here is only valid from the frame *after* it's
+    // first requested (see get_or_load_texture()'s doc comment in
+    // web_renderer.hpp) -- a draw command referencing it before then falls
+    // back to the opaque whiteTexture placeholder (see the `entry ||
+    // this.whiteTexture` fallback below), which is opaque everywhere,
+    // including the texture's actually-transparent background pixels. sdl3
+    // never hits this because get_or_load_texture() there uploads
+    // synchronously on the very first call -- no such placeholder frame
+    // exists. Without clearing, that one opaque frame would permanently
+    // "poison" the target's alpha: blending a now-correct, genuinely
+    // transparent pixel onto an already-opaque destination leaves the
+    // destination opaque (over-blending a transparent source is a no-op),
+    // so the placeholder's opacity could never be undone by a later,
+    // correct redraw. Clearing first makes every flush a fresh start, so
+    // the target self-corrects the moment the real texture becomes
+    // available -- exactly like the canvas already does via its own
+    // per-frame clear in render(). See "Offscreen Render Targets" in
+    // src/web/DESIGN.md.
     renderToTarget(frame) {
       const gl = this.gl;
       const id = frame.targetId;
@@ -483,6 +501,8 @@
       }
 
       gl.bindFramebuffer(gl.FRAMEBUFFER, rt.fbo);
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
       this._drawCmdLists(frame, w, h, /*flipY=*/true);
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
