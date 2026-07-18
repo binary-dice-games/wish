@@ -257,6 +257,39 @@ class web_renderer : public imgui_renderer {
    */
   ImFont* get_or_load_font(const std::string& path, float size) override;
 
+  // ── offscreen render target ──────────────────────────────────────────────
+
+  /**
+   * @brief Assign (or reuse) an offscreen render-target id and redirect
+   *        `flush_draw_list()` to tag its `FRAME` broadcasts with it instead
+   *        of the canvas.
+   *
+   * There is no GPU here to redirect draws to server-side -- unlike
+   * `sdl3_renderer`, the actual offscreen framebuffer/texture is created and
+   * owned by the *browser* (`client.js`'s `Renderer.renderTargets`), keyed
+   * by the id this returns. Mirrors `sdl3_renderer::begin_render_target()`'s
+   * single-slot design: one cached id/size, recreated (tearing down the old
+   * id via an ordinary `TEX_DESTROY`) only when the requested size changes.
+   * See "Offscreen Render Targets" in `src/web/DESIGN.md`.
+   */
+  ImTextureID begin_render_target(int w, int h) override;
+
+  /// @brief Restore the target id active before the matching
+  ///        `begin_render_target()` call.
+  void end_render_target() override;
+
+  /**
+   * @brief Immediately broadcast @p draw_list as a `FRAME` tagged with
+   *        whatever render-target id is currently active (`0` if none --
+   *        the canvas), instead of waiting for `end_frame()`'s own
+   *        broadcast.
+   *
+   * Mirrors `sdl3_renderer::flush_draw_list()`: wraps @p draw_list in a
+   * throwaway `ImDrawData` (no texture uploads to service -- everything
+   * `draw_list` references was already uploaded earlier this frame).
+   */
+  void flush_draw_list(ImDrawList& draw_list, int w, int h) override;
+
  private:
   // ImGuiPlatformIO::Platform_GetClipboardTextFn / Platform_SetClipboardTextFn
   // callbacks (see "Clipboard bridging" in src/web/DESIGN.md) -- NOT the
@@ -412,6 +445,28 @@ class web_renderer : public imgui_renderer {
     }
   };
   std::map<FontKey, ImFont*> font_cache_;
+
+  // ── Offscreen render target ────────────────────────────────────────────────
+  //
+  // Mirrors sdl3_renderer::render_target_/render_target_w_/render_target_h_/
+  // saved_render_target_, id-based instead of GPU-texture-based since there
+  // is no ambient server-side render target to save/restore -- see
+  // "Offscreen Render Targets" in src/web/DESIGN.md. Render-thread only,
+  // like the rest of this backend's per-frame state.
+
+  /// Current offscreen render-target id, recreated by begin_render_target()
+  /// only when the requested size changes (the old id torn down via an
+  /// ordinary TEX_DESTROY broadcast first). 0 = none allocated yet.
+  uint32_t render_target_id_ = 0;
+  int render_target_w_ = 0;
+  int render_target_h_ = 0;
+
+  /// What flush_draw_list() tags its FRAME broadcast with. 0 = canvas.
+  uint32_t current_target_id_ = 0;
+
+  /// current_target_id_'s value immediately before the last
+  /// begin_render_target() call, restored by end_render_target().
+  uint32_t saved_render_target_id_ = 0;
 
 #ifdef WISH_AUTOMATION_ENABLED
   // Screen rect + interaction flags per widget, keyed by __wish_id, for the

@@ -118,10 +118,14 @@ std::optional<std::span<const std::byte>> unwrap_envelope(std::span<const std::b
 } // namespace
 
 // ── outbound: FRAME ─────────────────────────────────────────────────────────
+//
+// Payload layout: uint32 target_id, then display pos/size/framebuffer-scale,
+// then per ImDrawList as documented on encode_frame() in the header.
 
-std::vector<std::byte> encode_frame(const ImDrawData& draw_data) {
+std::vector<std::byte> encode_frame(const ImDrawData& draw_data, uint32_t target_id) {
   std::vector<std::byte> payload;
 
+  put_u32(payload, target_id);
   put_f32(payload, draw_data.DisplayPos.x);
   put_f32(payload, draw_data.DisplayPos.y);
   put_f32(payload, draw_data.DisplaySize.x);

@@ -198,6 +198,11 @@ void web_renderer::teardown() {
   connected_ids_.wlock()->clear();
   awaiting_cache_response_.wlock()->clear();
   cache_response_queue_.wlock()->clear();
+  render_target_id_ = 0;
+  render_target_w_ = 0;
+  render_target_h_ = 0;
+  current_target_id_ = 0;
+  saved_render_target_id_ = 0;
 #ifdef WISH_AUTOMATION_ENABLED
   hit_test_map_.clear();
   pending_tree_queries_.wlock()->clear();
@@ -650,6 +655,49 @@ ImFont* web_renderer::get_or_load_font(const std::string& path, float size) {
                         : nullptr;
   font_cache_[key] = loaded;
   return nullptr; // default font used this frame; see doc comment in the header
+}
+
+// ── offscreen render target ───────────────────────────────────────────────────
+
+ImTextureID web_renderer::begin_render_target(int w, int h) {
+  if (w <= 0 || h <= 0)
+    return ImTextureID{};
+
+  if (render_target_id_ == 0 || render_target_w_ != w || render_target_h_ != h) {
+    if (render_target_id_ != 0 && server_)
+      server_->broadcast(draw_protocol::encode_texture_destroy(render_target_id_));
+    render_target_id_ = next_texture_id_++;
+    render_target_w_ = w;
+    render_target_h_ = h;
+  }
+
+  saved_render_target_id_ = current_target_id_;
+  current_target_id_ = render_target_id_;
+  return static_cast<ImTextureID>(render_target_id_);
+}
+
+void web_renderer::end_render_target() {
+  current_target_id_ = saved_render_target_id_;
+  saved_render_target_id_ = 0;
+}
+
+void web_renderer::flush_draw_list(ImDrawList& draw_list, int w, int h) {
+  if (w <= 0 || h <= 0 || !server_)
+    return;
+
+  ImDrawData draw_data;
+  draw_data.DisplayPos = ImVec2(0.0f, 0.0f);
+  draw_data.DisplaySize = ImVec2(float(w), float(h));
+  draw_data.FramebufferScale = ImVec2(1.0f, 1.0f);
+  draw_data.AddDrawList(&draw_list);
+  // No dynamic texture updates to service for this one-off submission --
+  // every texture drawn into `draw_list` (scene textures, fonts) was
+  // already uploaded earlier this same frame via get_or_load_texture()/the
+  // normal font atlas path.
+  draw_data.Textures = nullptr;
+  draw_data.Valid = true;
+
+  server_->broadcast(draw_protocol::encode_frame(draw_data, current_target_id_));
 }
 
 } // namespace bdg::wish
