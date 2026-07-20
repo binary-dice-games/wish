@@ -89,6 +89,7 @@ set_target_properties(test_env_flags PROPERTIES FOLDER tests)
 
 if(WISH_ENABLE_IMGUI)
   wish_add_test(test_imgui_renderer test_imgui_renderer.cpp)
+  wish_add_test(test_drag_drop      test_drag_drop.cpp)
   wish_add_test(test_style_service  test_style_service.cpp)
 endif()
 

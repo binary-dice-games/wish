@@ -36,11 +36,40 @@ contributes these fields to every widget (not repeated per element below):
 | `order` | `int32` | `0` | Render order within the parent's children; lower renders first. |
 | `font_path` | `string` | `""` | Path to a TTF font file (sandboxed; see `CLAUDE.md`'s security section). |
 | `font_size` | `float` | `0.0` | Font size in pixels; `0` uses the default font. |
+| `drag_type` | `string` | `""` | Opaque type tag; non-empty makes this element a drag source. See "Drag and drop" below. |
+| `drag_payload` | `string` | `""` | Opaque payload bytes carried by a drag started from this element. |
+| `drop_type` | `string` | `""` | Opaque type tag; non-empty makes this element a drop target that accepts drags whose `drag_type` matches exactly. |
 
 Children are addressed by **dot-path**: a child keyed `"ok"` under a window
 named at the root is `"ok"`; nested further, `"row.ok"`. Numerically-indexed
 children (an array under `children`) are addressed by integer index instead
 and are not given a name.
+
+### Drag and drop
+
+Any element becomes a **drag source** by setting a non-empty `drag_type`
+(plus, usually, `drag_payload`); any element becomes a **drop target** by
+setting a non-empty `drop_type`. A drop is accepted only when a target's
+`drop_type` exactly matches the dragged element's `drag_type` — there is no
+wildcard or multi-type matching. On a successful drop (release while
+hovering a matching target), the target's own widget id fires a `"dropped"`
+event with payload `{"type": <the matched type tag>, "payload": <the
+source's drag_payload, verbatim>}`.
+
+Both fields are generic and domain-agnostic (wish itself attaches no
+meaning to the tag or payload strings — an application defines its own
+type-tag/payload convention, e.g. `"<asset class>|<path>"`) and are
+implemented once, generically, in `imgui_renderer::render_node()`
+(`src/imgui/imgui_renderer.cpp`) rather than per element class, so they work
+on any element without extra wiring.
+
+**Only meaningful on a leaf element** whose render function draws exactly
+one top-level ImGui item (`Button`, `Image`, `Label`, `Checkbox`, ...) —
+`BeginDragDropSource`/`BeginDragDropTarget` attach to "whatever item was
+drawn last," so setting these fields on a container/layout element attaches
+to its last-rendered child instead of the container itself. This mirrors
+the same "leaf widgets only" caveat `src/automation/DESIGN.md` documents for
+hit-test rects.
 
 ## 2. Windows and layouts
 
