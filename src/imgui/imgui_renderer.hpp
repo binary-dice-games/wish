@@ -36,6 +36,20 @@ using render_fn = void (*)(imgui_renderer&, const ui_element&, const context&);
 ///        `extra_render_fns` constructor parameter).
 using render_fn_map = std::unordered_map<bison::hash_t, render_fn>;
 
+/// @brief Generic drag-and-drop: attaches to whatever ImGui item was drawn
+///        last, so it is only meaningful called immediately after a leaf
+///        element's own top-level item (Button, Image, Label, a Table row's
+///        Selectable, ...) -- see docs/ui-elements.md's "Drag and drop"
+///        section. Both `"drag_type"`/`"drop_type"` default to empty on
+///        every element (element.cpp), so this is a no-op for the
+///        overwhelming majority of calls. Shared by `imgui_renderer::
+///        render_node()` (every element) and `render_table()`'s per-row loop
+///        (imgui_ui_renderer.cpp) -- `TableRow` children are rendered
+///        directly by `render_table()`, never via a recursive `render_node()`
+///        call, so without this second call site a row's own `drag_type`/
+///        `drop_type` fields would never be checked.
+void handle_drag_drop(const ui_element& node, const context& s);
+
 /**
  * @brief Renderer backend that draws wish UI elements via Dear ImGui.
  *

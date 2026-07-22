@@ -898,6 +898,8 @@ void render_table(imgui_renderer& r, const ui_element& node, const context& s) {
   int32_t row_idx = 0;
   key_t pending_event{};
   int32_t pending_index = -1;
+  bool pending_ctrl = false;
+  bool pending_shift = false;
 
   // Render non-column children in declaration order.  TableRow children get
   // an invisible spanning Selectable so single- and double-clicks on any cell
@@ -924,6 +926,19 @@ void render_table(imgui_renderer& r, const ui_element& node, const context& s) {
       const bool dbl = sel && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
       if (dbl)
         sel = false; // promote to double-click only
+      // Modifier keys must be read here, the same frame the click happens --
+      // by the time the enqueued event is dispatched (a later frame/message),
+      // ImGuiIO's keys may have moved on -- so they ride along in the payload
+      // rather than being re-queried by the event's eventual handler.
+      const bool click_ctrl = ImGui::GetIO().KeyCtrl;
+      const bool click_shift = ImGui::GetIO().KeyShift;
+
+      // Row-level drag-and-drop: attaches to the Selectable just drawn above
+      // (the row's own top-level ImGui item) -- see handle_drag_drop()'s doc
+      // comment on why this can't just rely on render_node()'s own generic
+      // call, since TableRow children are never dispatched through
+      // render_node() here, only their cells are (below).
+      handle_drag_drop(child, s);
 
       // Overlay cell content on the same line as the selectable.
       // SameLine(0,0) for col 0 puts the cursor back to the selectable's
@@ -942,9 +957,13 @@ void render_table(imgui_renderer& r, const ui_element& node, const context& s) {
       if (dbl) {
         pending_event = "row_activated"_key;
         pending_index = row_idx;
+        pending_ctrl = click_ctrl;
+        pending_shift = click_shift;
       } else if (sel && !pending_event.id) {
         pending_event = "row_selected"_key;
         pending_index = row_idx;
+        pending_ctrl = click_ctrl;
+        pending_shift = click_shift;
       }
 
       ++row_idx;
@@ -970,6 +989,8 @@ void render_table(imgui_renderer& r, const ui_element& node, const context& s) {
   if (table_id.id && pending_event.id) {
     dynamic payload;
     payload["index"_key] = pending_index;
+    payload["ctrl"_key] = pending_ctrl;
+    payload["shift"_key] = pending_shift;
     enqueue_event(s, table_id, pending_event, std::move(payload));
   }
 }

@@ -255,6 +255,27 @@ bool imgui_renderer::wants_continuous_redraw() const {
   return ImGui::GetIO().WantTextInput;
 }
 
+void handle_drag_drop(const ui_element& node, const context& s) {
+  auto drag_type = node.get_as<std::string>("drag_type"_key, "");
+  if (!drag_type.empty() && ImGui::BeginDragDropSource()) {
+    auto drag_payload = node.get_as<std::string>("drag_payload"_key, "");
+    ImGui::SetDragDropPayload(drag_type.c_str(), drag_payload.data(), drag_payload.size());
+    ImGui::TextUnformatted(drag_payload.c_str());
+    ImGui::EndDragDropSource();
+  }
+  auto drop_type = node.get_as<std::string>("drop_type"_key, "");
+  if (!drop_type.empty() && ImGui::BeginDragDropTarget()) {
+    if (const ImGuiPayload* accepted = ImGui::AcceptDragDropPayload(drop_type.c_str())) {
+      dynamic payload;
+      payload["type"_key] = drop_type;
+      payload["payload"_key] =
+          std::string(static_cast<const char*>(accepted->Data), static_cast<size_t>(accepted->DataSize));
+      enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "dropped"_key, std::move(payload));
+    }
+    ImGui::EndDragDropTarget();
+  }
+}
+
 void imgui_renderer::render_node(const ui_element& node, const context& s) {
   if (!node.get_as<bool>("visible"_key, true))
     return;
@@ -298,30 +319,9 @@ void imgui_renderer::render_node(const ui_element& node, const context& s) {
     render_children(*this, node, s);
   }
 
-  // Generic drag-and-drop: attaches to whatever ImGui item the dispatch call
-  // above drew last, so "drag_type"/"drop_type" are only meaningful on a
-  // leaf element that draws exactly one top-level item (Button, Image,
-  // Label, ...) -- see docs/ui-elements.md's "Drag and drop" section. Both
-  // fields default to empty on every element (element.cpp), so this is a
-  // no-op for the overwhelming majority of nodes that never set them.
-  auto drag_type = node.get_as<std::string>("drag_type"_key, "");
-  if (!drag_type.empty() && ImGui::BeginDragDropSource()) {
-    auto drag_payload = node.get_as<std::string>("drag_payload"_key, "");
-    ImGui::SetDragDropPayload(drag_type.c_str(), drag_payload.data(), drag_payload.size());
-    ImGui::TextUnformatted(drag_payload.c_str());
-    ImGui::EndDragDropSource();
-  }
-  auto drop_type = node.get_as<std::string>("drop_type"_key, "");
-  if (!drop_type.empty() && ImGui::BeginDragDropTarget()) {
-    if (const ImGuiPayload* accepted = ImGui::AcceptDragDropPayload(drop_type.c_str())) {
-      dynamic payload;
-      payload["type"_key] = drop_type;
-      payload["payload"_key] =
-          std::string(static_cast<const char*>(accepted->Data), static_cast<size_t>(accepted->DataSize));
-      enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "dropped"_key, std::move(payload));
-    }
-    ImGui::EndDragDropTarget();
-  }
+  // Attaches to whatever ImGui item the dispatch call above drew last -- see
+  // handle_drag_drop()'s own doc comment.
+  handle_drag_drop(node, s);
 
   ImGui::PopID();
   ImGui::PopFont();

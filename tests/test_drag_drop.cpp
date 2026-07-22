@@ -119,7 +119,7 @@ std::pair<std::shared_ptr<ui_element>, std::shared_ptr<ui_element>> make_source_
 
 TEST_F(DragDropTest, ElementsWithNoDragOrDropFieldsSetNeverEmitDropped) {
   bool event_fired = false;
-  sess_->emit_event = [&](key_t, key_t, dynamic) { event_fired = true; };
+  sess_->emit_event = [&](bdg::bison::key_t, bdg::bison::key_t, dynamic) { event_fired = true; };
 
   auto map = bdg::wish::import_json(R"({"type":"Window","title":"W",
       "children":{"a":{"type":"Button","label":"A"},"b":{"type":"Button","label":"B"}}})");
@@ -137,11 +137,11 @@ TEST_F(DragDropTest, ElementsWithNoDragOrDropFieldsSetNeverEmitDropped) {
 TEST_F(DragDropTest, DraggingSourceOntoMatchingTargetEmitsDroppedWithPayload) {
   auto [src, tgt] = make_source_and_target("GenieAsset", "TextureAsset|textures/x.png", "GenieAsset");
 
-  key_t last_widget{hash_t{0}};
-  key_t last_event{hash_t{0}};
+  bdg::bison::key_t last_widget{hash_t{0}};
+  bdg::bison::key_t last_event{hash_t{0}};
   std::string last_type;
   std::string last_payload;
-  sess_->emit_event = [&](key_t widget, key_t ev, dynamic payload) {
+  sess_->emit_event = [&](bdg::bison::key_t widget, bdg::bison::key_t ev, dynamic payload) {
     last_widget = widget;
     last_event = ev;
     if (auto* f = payload.findField("type"_key); f && f->is<std::string>())
@@ -187,7 +187,7 @@ TEST_F(DragDropTest, DraggingSourceOntoMatchingTargetEmitsDroppedWithPayload) {
   render_frame(*src, *tgt, tgt_center, /*mouse_down=*/false);
   drain_events();
 
-  EXPECT_EQ(last_widget, tgt->as<key_t>("__wish_id"_key));
+  EXPECT_EQ(last_widget, tgt->as<bdg::bison::key_t>("__wish_id"_key));
   EXPECT_EQ(last_event, "dropped"_key);
   EXPECT_EQ(last_type, "GenieAsset");
   EXPECT_EQ(last_payload, "TextureAsset|textures/x.png");
@@ -199,7 +199,7 @@ TEST_F(DragDropTest, MismatchedDragAndDropTypesNeverEmitDropped) {
   auto [src, tgt] = make_source_and_target("GenieAsset", "payload", "SomethingElse");
 
   bool event_fired = false;
-  sess_->emit_event = [&](key_t, key_t, dynamic) { event_fired = true; };
+  sess_->emit_event = [&](bdg::bison::key_t, bdg::bison::key_t, dynamic) { event_fired = true; };
 
   ImVec2 src_center{0, 0}, tgt_center{0, 0};
   renderer_->begin_frame();
@@ -228,7 +228,7 @@ TEST_F(DragDropTest, PressAndReleaseOnSourceWithoutDraggingDoesNotEmitDropped) {
   auto [src, tgt] = make_source_and_target("GenieAsset", "payload", "GenieAsset");
 
   bool event_fired = false;
-  sess_->emit_event = [&](key_t, key_t, dynamic) { event_fired = true; };
+  sess_->emit_event = [&](bdg::bison::key_t, bdg::bison::key_t, dynamic) { event_fired = true; };
 
   ImVec2 src_center{0, 0};
   renderer_->begin_frame();

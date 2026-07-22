@@ -59,7 +59,7 @@ source's drag_payload, verbatim>}`.
 Both fields are generic and domain-agnostic (wish itself attaches no
 meaning to the tag or payload strings — an application defines its own
 type-tag/payload convention, e.g. `"<asset class>|<path>"`) and are
-implemented once, generically, in `imgui_renderer::render_node()`
+implemented once, generically, via `handle_drag_drop()`
 (`src/imgui/imgui_renderer.cpp`) rather than per element class, so they work
 on any element without extra wiring.
 
@@ -69,7 +69,11 @@ one top-level ImGui item (`Button`, `Image`, `Label`, `Checkbox`, ...) —
 drawn last," so setting these fields on a container/layout element attaches
 to its last-rendered child instead of the container itself. This mirrors
 the same "leaf widgets only" caveat `src/automation/DESIGN.md` documents for
-hit-test rects.
+hit-test rects. `imgui_renderer::render_node()` calls `handle_drag_drop()`
+for every element after its own dispatch; `render_table()` additionally
+calls it directly for each `TableRow` right after that row's hit-test
+`Selectable()`, since `TableRow` children never go through `render_node()`
+themselves (only their cells do) — see `TableRow`'s own field table above.
 
 ## 2. Windows and layouts
 
@@ -431,10 +435,14 @@ other children (typically `TableRow`) provide data rows.
   changes (initial default sort, or a header click); `{ column_id: int32, ascending: bool }`
   (`column_id` echoes the clicked `TableColumn.column_id`). The owner is
   responsible for actually reordering rows.
-- `row_selected` — single click on a `TableRow`; `{ index: int32 }` (0-based
-  row index).
-- `row_activated` — double-click on a `TableRow`; `{ index: int32 }`. At most
-  one of `row_selected`/`row_activated` fires per frame.
+- `row_selected` — single click on a `TableRow`; `{ index: int32, ctrl: bool,
+  shift: bool }` (0-based row index, plus whether Ctrl/Shift were held at
+  click time — captured the same frame as the click, since the event is only
+  delivered later, by which point `ImGuiIO`'s own key state may have moved
+  on).
+- `row_activated` — double-click on a `TableRow`; same payload shape as
+  `row_selected`. At most one of `row_selected`/`row_activated` fires per
+  frame.
 
 #### `TableColumn`
 Defines one column; processed by the parent `Table` during setup, not
@@ -454,9 +462,17 @@ A data row; each child occupies one column cell, left to right.
 |---|---|---|---|
 | `flags` | `int32` (flags) | `0` | ImGuiTableRowFlags bitmask, e.g. `Headers=1`. |
 | `min_height` | `float` | `0.0` | Minimum row height; `0` uses default. |
+| `selected` | `bool` | `false` | Renders the row highlighted, e.g. to show the current selection. |
 
 No events of its own — `row_selected`/`row_activated` are emitted on the
 **parent `Table`**, not on the row.
+
+Like any element, a `TableRow` may also set `drag_type`/`drag_payload`/
+`drop_type` (see "Drag and drop" below) to act as a drag source and/or drop
+target — `render_table()` checks these on the row's own hit-test item
+directly, since `TableRow` children are rendered inline rather than through
+the generic per-element dispatch the "Drag and drop" section otherwise
+describes.
 
 ### Docking
 
