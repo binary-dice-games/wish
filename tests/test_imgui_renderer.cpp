@@ -223,6 +223,25 @@ TEST_F(ImguiRendererTest, CheckboxEmitsChangedWithCorrectPayload) {
 
 // ── MenuButton: opens a popup on click, exposing its children ───────────────
 
+// Captures the MenuItem's ImGui item id from inside render_menu_button()'s
+// still-open popup scope. EndPopup() (an End() call) restores
+// g.LastItemData to whatever it was before BeginPopup() was entered, so
+// ImGui::GetItemID() read *after* render_node() returns reports the
+// trigger Button's id again, not the MenuItem's -- the same End()
+// last-item-restore behavior documented on
+// WindowRestoresFloatingSizeAfterUndock above, just hitting GetItemID()
+// instead of GetID().
+class menu_item_capturing_renderer : public imgui_renderer {
+ public:
+  ImGuiID menu_item_id{0};
+
+  void render_node(const ui_element& node, const context& s) override {
+    imgui_renderer::render_node(node, s);
+    if (node.as<bdg::bison::key_t>(dynamic::CLASS) == "MenuItem"_key)
+      menu_item_id = ImGui::GetItemID();
+  }
+};
+
 TEST_F(ImguiRendererTest, MenuButtonOpensPopupAndRendersChildOnClick) {
   auto map = bdg::wish::import_json(
       R"({"type":"MenuButton","label":"Create","children":{"item":{"type":"MenuItem","label":"Object"}}})");
@@ -230,17 +249,37 @@ TEST_F(ImguiRendererTest, MenuButtonOpensPopupAndRendersChildOnClick) {
   // StableIdFallsBackToWishIdWhenPathEmpty above), so stable_id() falls
   // back to the default key_t{} -- computed via the real helper rather than
   // hardcoded so this doesn't silently drift from stable_id()'s own logic.
-  std::string popup_id = "Create###" + bdg::wish::stable_id(*map[""]);
+  std::string root_id = bdg::wish::stable_id(*map[""]);
+  std::string popup_id = "Create###" + root_id;
+
+  menu_item_capturing_renderer r;
 
   // Frame 1: popup starts closed -- only the trigger Button renders.
-  renderer_->begin_frame();
+  //
+  // Checking IsPopupOpen() here is fiddlier than a plain widget check for
+  // two reasons:
+  //  - render_node() (imgui_renderer.cpp) wraps every node's dispatch in
+  //    ImGui::PushID(stable_id(node)), so render_menu_button() computed
+  //    the popup's id one ID-stack level deeper than "TestWindow" alone --
+  //    replicate that same PushID here so IsPopupOpen() hashes the exact
+  //    id OpenPopup() used.
+  //  - ImGui::IsPopupOpen(name) also requires an active window scope on
+  //    top of that (it calls ImGuiWindow::GetID() on the current window,
+  //    same caveat documented on
+  //    ModalWindowStaysOpenAcrossFramesWithoutReopening above), so it's
+  //    checked from inside in_window() rather than after end_frame().
+  r.begin_frame();
   ImGuiID btn_id{0};
+  bool popup_open_before_click = true;
   in_window([&] {
-    renderer_->render_node(*map[""], *sess_);
+    r.render_node(*map[""], *sess_);
     btn_id = ImGui::GetItemID();
+    ImGui::PushID(root_id.c_str());
+    popup_open_before_click = ImGui::IsPopupOpen(popup_id.c_str());
+    ImGui::PopID();
   });
-  renderer_->end_frame();
-  EXPECT_FALSE(ImGui::IsPopupOpen(popup_id.c_str()));
+  r.end_frame();
+  EXPECT_FALSE(popup_open_before_click);
 
   // Frame 2: simulate press+release on the trigger button -- opens the
   // popup and renders its MenuItem child in this same frame (standard
@@ -248,17 +287,20 @@ TEST_F(ImguiRendererTest, MenuButtonOpensPopupAndRendersChildOnClick) {
   ImGui::GetIO().DeltaTime = 1.0f / 60.0f;
   ImGui::NewFrame();
   fake_click(btn_id);
-  ImGuiID item_id{0};
+  bool popup_open_after_click = false;
   in_window([&] {
-    renderer_->render_node(*map[""], *sess_);
-    item_id = ImGui::GetItemID();
+    r.render_node(*map[""], *sess_);
+    ImGui::PushID(root_id.c_str());
+    popup_open_after_click = ImGui::IsPopupOpen(popup_id.c_str());
+    ImGui::PopID();
   });
   ImGui::EndFrame();
 
-  EXPECT_TRUE(ImGui::IsPopupOpen(popup_id.c_str()));
-  // The MenuItem is the last item rendered once the popup is open.
-  EXPECT_NE(item_id, btn_id);
-  EXPECT_NE(item_id, ImGuiID{0});
+  EXPECT_TRUE(popup_open_after_click);
+  // menu_item_capturing_renderer captured the MenuItem's id from inside
+  // the still-open popup scope, before EndPopup() could reset it.
+  EXPECT_NE(r.menu_item_id, btn_id);
+  EXPECT_NE(r.menu_item_id, ImGuiID{0});
 }
 
 // ── Unknown class: no throw ───────────────────────────────────────────────────

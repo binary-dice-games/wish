@@ -14,7 +14,27 @@
 #include <unordered_map>
 #include <vector>
 
+#ifndef _WIN32
+#include <unistd.h>
+#endif
+
 using bdg::wish::resource_store::extract_to;
+
+namespace {
+
+// On POSIX, a process running as root bypasses regular file permission
+// checks (including the owner-write bit extract_to() clears), so it can
+// reopen and rewrite a file it just marked read-only. Windows' read-only
+// file attribute has no such privileged-user bypass.
+bool can_bypass_read_only_permissions() {
+#ifndef _WIN32
+  return geteuid() == 0;
+#else
+  return false;
+#endif
+}
+
+} // namespace
 
 namespace {
 
@@ -83,8 +103,11 @@ TEST(ResourceStore, ExtractToSecondCallReturnsFalseButPreservesExistingFiles) {
 
   // Files are already read-only; miniz cannot reopen them for writing, so
   // the second call reports failure -- but must not delete or corrupt what
-  // is already on disk.
-  EXPECT_FALSE(extract_to(dir));
+  // is already on disk. A privileged (root) process bypasses that
+  // permission check, so it can legitimately get `true` back here instead.
+  const bool second_call_ok = extract_to(dir);
+  if (!can_bypass_read_only_permissions())
+    EXPECT_FALSE(second_call_ok);
 
   for (const char* rel : kExpectedFiles) {
     auto path = dir / rel;
