@@ -221,6 +221,46 @@ TEST_F(ImguiRendererTest, CheckboxEmitsChangedWithCorrectPayload) {
   EXPECT_TRUE(last_value);
 }
 
+// ── MenuButton: opens a popup on click, exposing its children ───────────────
+
+TEST_F(ImguiRendererTest, MenuButtonOpensPopupAndRendersChildOnClick) {
+  auto map = bdg::wish::import_json(
+      R"({"type":"MenuButton","label":"Create","children":{"item":{"type":"MenuItem","label":"Object"}}})");
+  // Root has no "__path__"/"__wish_id" in this ad-hoc tree (see
+  // StableIdFallsBackToWishIdWhenPathEmpty above), so stable_id() falls
+  // back to the default key_t{} -- computed via the real helper rather than
+  // hardcoded so this doesn't silently drift from stable_id()'s own logic.
+  std::string popup_id = "Create###" + bdg::wish::stable_id(*map[""]);
+
+  // Frame 1: popup starts closed -- only the trigger Button renders.
+  renderer_->begin_frame();
+  ImGuiID btn_id{0};
+  in_window([&] {
+    renderer_->render_node(*map[""], *sess_);
+    btn_id = ImGui::GetItemID();
+  });
+  renderer_->end_frame();
+  EXPECT_FALSE(ImGui::IsPopupOpen(popup_id.c_str()));
+
+  // Frame 2: simulate press+release on the trigger button -- opens the
+  // popup and renders its MenuItem child in this same frame (standard
+  // ImGui OpenPopup()-then-BeginPopup() idiom needs no extra frame delay).
+  ImGui::GetIO().DeltaTime = 1.0f / 60.0f;
+  ImGui::NewFrame();
+  fake_click(btn_id);
+  ImGuiID item_id{0};
+  in_window([&] {
+    renderer_->render_node(*map[""], *sess_);
+    item_id = ImGui::GetItemID();
+  });
+  ImGui::EndFrame();
+
+  EXPECT_TRUE(ImGui::IsPopupOpen(popup_id.c_str()));
+  // The MenuItem is the last item rendered once the popup is open.
+  EXPECT_NE(item_id, btn_id);
+  EXPECT_NE(item_id, ImGuiID{0});
+}
+
 // ── Unknown class: no throw ───────────────────────────────────────────────────
 
 TEST_F(ImguiRendererTest, UnknownClassDoesNotThrow) {

@@ -1,6 +1,6 @@
 // MIT License © 2025 Binary Dice Games
 /// @file menu.cpp
-/// @brief Registers MenuBar, Menu, and MenuItem prototypes.
+/// @brief Registers MenuBar, Menu, MenuItem, and MenuButton prototypes.
 #include "src/bison/bison_object.hpp"
 
 #include "ui_elements.hpp"
@@ -85,6 +85,34 @@ void register_menu() {
                           "Emits 'clicked' with {checked: bool} when activated."));
     dynamic::addClass(
         "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_element>("wish"_key, "MenuItem"_key));
+  }
+
+  // MenuButton — an ordinary Button that opens a popup containing its own
+  // children (Menu/MenuItem/Separator) when clicked, rendered exactly as
+  // they would be inside a MenuBar -- but unlike MenuBar/Menu, it needs no
+  // surrounding menu context of its own (no Window menu-bar strip, no
+  // already-open parent Menu/popup): it opens that context itself via
+  // ImGui::OpenPopup()/BeginPopup() on click, so it can appear anywhere an
+  // ordinary Button can (e.g. a toolbar).
+  {
+    auto proto = dynamic_ptr{"MenuButton"_key, {}};
+    proto->addField(
+        "label"_key,
+        field{
+            std::string{},
+            attr<DisplayName>("Label"),
+            attr<Description>("Button caption text."),
+            attr<Category>("Content")});
+    (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("MenuButton"));
+    (*proto)[dynamic::CLASS].addAttribute(
+        attr<Description>("A button that opens a popup menu when clicked. Children should be "
+                          "Menu, MenuItem, or Separator elements, rendered inside the popup "
+                          "exactly as they would inside a MenuBar."));
+    dynamic::addClass(
+        "wish"_key,
+        std::move(proto),
+        "Element"_key,
+        dynamic::make_factory<ui_element>("wish"_key, "MenuButton"_key));
   }
 
   // MenuBarExtension — registered by a session (e.g. the desktop bridge) as

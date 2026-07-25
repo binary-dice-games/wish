@@ -57,6 +57,7 @@ static const render_fn_map& built_in_render_fns() {
       {"MenuBar"_key.id, render_menu_bar},
       {"Menu"_key.id, render_menu},
       {"MenuItem"_key.id, render_menu_item},
+      {"MenuButton"_key.id, render_menu_button},
       // Tabs
       {"TabBar"_key.id, render_tab_bar},
       {"TabItem"_key.id, render_tab_item},

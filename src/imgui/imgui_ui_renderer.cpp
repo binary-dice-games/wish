@@ -564,6 +564,23 @@ void render_menu_item(imgui_renderer&, const ui_element& node, const context& s)
   }
 }
 
+void render_menu_button(imgui_renderer& r, const ui_element& node, const context& s) {
+  auto label = node.get_as<std::string>("label"_key, "");
+  // Same with_id() suffix used for both the trigger Button's own ImGui id
+  // and the popup's id (mirrors render_window()'s "iml" reuse for a modal's
+  // Begin/OpenPopup/BeginPopupModal calls) -- a single stable identifier is
+  // all either call needs, and ImGui::Button()'s widget-id namespace and
+  // ImGui::OpenPopup()'s popup-id namespace don't collide even when given
+  // the identical string.
+  auto iml = with_id(label, node);
+  if (ImGui::Button(iml.c_str()))
+    ImGui::OpenPopup(iml.c_str());
+  if (ImGui::BeginPopup(iml.c_str())) {
+    render_children(r, node, s);
+    ImGui::EndPopup();
+  }
+}
+
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 
 void render_tab_bar(imgui_renderer& r, const ui_element& node, const context& s) {

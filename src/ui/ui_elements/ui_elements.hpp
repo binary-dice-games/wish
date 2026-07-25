@@ -18,7 +18,7 @@ void register_slider();
 void register_input_text();
 void register_image();
 void register_separator(); // Separator + SeparatorText
-void register_menu(); // MenuBar, Menu, MenuItem
+void register_menu(); // MenuBar, Menu, MenuItem, MenuButton
 void register_tabs(); // TabBar, TabItem
 void register_tree(); // TreeNode, CollapsingHeader
 void register_combo();
