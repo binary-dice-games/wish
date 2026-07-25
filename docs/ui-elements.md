@@ -330,6 +330,20 @@ A selectable leaf inside a `Menu`.
 **Events:** `clicked` — `{ checked: bool }` (field is updated before the
 event fires).
 
+#### `MenuButton`
+An ordinary button that opens a popup containing its own children
+(`MenuItem`, `Menu`, or `Separator`) when clicked, rendered exactly as they
+would be inside a `MenuBar`. Unlike `MenuBar`/`Menu`, it needs no
+surrounding menu context of its own — it opens that context itself on
+click — so it can appear anywhere an ordinary `Button` can (e.g. a
+toolbar), not just inside a `Window`'s menu-bar strip or an already-open
+`Menu`. No events of its own; its `MenuItem` children fire `clicked` the
+same as they would inside a `Menu`.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `label` | `string` | `""` | Button caption text. |
+
 #### `MenuBarExtension`
 Extends the server's own chrome menu bar with app-supplied content —
 register as a top-level object (not nested under a `Window`); children are

@@ -190,3 +190,19 @@ TEST_F(RegistryTest, LabelHasTextAsString) {
   auto obj = dynamic::instantiate("wish"_key, "Label"_key);
   EXPECT_TRUE(obj.findField("text"_key)->is<std::string>());
 }
+
+// ── MenuButton ────────────────────────────────────────────────────────────────
+
+TEST_F(RegistryTest, MenuButtonHasLabelAsString) {
+  auto obj = dynamic::instantiate("wish"_key, "MenuButton"_key);
+  auto* f = obj.findField("label"_key);
+  ASSERT_NE(f, nullptr);
+  EXPECT_TRUE(f->is<std::string>());
+}
+
+TEST_F(RegistryTest, MenuButtonInheritsChildrenFromElement) {
+  auto obj = dynamic::instantiate("wish"_key, "MenuButton"_key);
+  auto* f = obj.findField("children"_key);
+  ASSERT_NE(f, nullptr);
+  EXPECT_TRUE(f->is<dynamic_ptr>());
+}
