@@ -65,6 +65,12 @@ enum class web_input_kind : uint8_t {
   mouse_wheel = 2,
   key = 3,
   char_input = 4,
+  touch_down = 5,   ///< A new finger touched the canvas.
+  touch_move = 6,   ///< An already-down finger moved.
+  touch_up = 7,     ///< A finger was lifted.
+  touch_cancel = 8, ///< The browser canceled a touch (e.g. a system gesture
+                    ///< took over) -- treated like `touch_up` by consumers.
+  motion = 9,       ///< A `devicemotion` (accelerometer) sample.
 };
 
 /**
@@ -75,14 +81,20 @@ enum class web_input_kind : uint8_t {
  */
 struct web_input_event {
   web_input_kind kind{};
-  float x = 0.0f;         ///< mouse_move, mouse_button
-  float y = 0.0f;         ///< mouse_move, mouse_button
+  float x = 0.0f;         ///< mouse_move, mouse_button, touch_down/move/up/cancel
+  float y = 0.0f;         ///< mouse_move, mouse_button, touch_down/move/up/cancel
   uint8_t button = 0;     ///< mouse_button
   bool down = false;      ///< mouse_button, key
   float wheel_x = 0.0f;   ///< mouse_wheel
   float wheel_y = 0.0f;   ///< mouse_wheel
   uint32_t key_code = 0;  ///< key — ImGuiKey enum value
   uint32_t codepoint = 0; ///< char_input — UTF-32 codepoint
+  uint32_t touch_id = 0;  ///< touch_down/move/up/cancel — the browser's
+                          ///< `Touch.identifier`, stable for one finger's
+                          ///< whole down-move*-up/cancel lifetime.
+  float accel_x = 0.0f;   ///< motion — `DeviceMotionEvent.acceleration.x` (m/s^2).
+  float accel_y = 0.0f;   ///< motion — `DeviceMotionEvent.acceleration.y` (m/s^2).
+  float accel_z = 0.0f;   ///< motion — `DeviceMotionEvent.acceleration.z` (m/s^2).
 };
 
 /// @brief One decoded browser -> server canvas resize (RESIZE payload).

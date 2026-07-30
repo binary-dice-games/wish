@@ -1433,6 +1433,66 @@ TEST(DrawProtocolTest, DecodeInputMessage_CharRoundTrips) {
   EXPECT_EQ(ev->codepoint, 0x1F600u);
 }
 
+TEST(DrawProtocolTest, DecodeInputMessage_TouchDownRoundTrips) {
+  std::vector<std::byte> payload;
+  push_u8(payload, static_cast<uint8_t>(web_input_kind::touch_down));
+  push_u32(payload, 7); // touch_id
+  push_f32(payload, 100.0f);
+  push_f32(payload, 200.0f);
+
+  auto ev = decode_input_message(build_envelope(web_msg_type::input, payload));
+  ASSERT_TRUE(ev.has_value());
+  EXPECT_EQ(ev->kind, web_input_kind::touch_down);
+  EXPECT_EQ(ev->touch_id, 7u);
+  EXPECT_FLOAT_EQ(ev->x, 100.0f);
+  EXPECT_FLOAT_EQ(ev->y, 200.0f);
+}
+
+TEST(DrawProtocolTest, DecodeInputMessage_TouchMoveRoundTrips) {
+  std::vector<std::byte> payload;
+  push_u8(payload, static_cast<uint8_t>(web_input_kind::touch_move));
+  push_u32(payload, 7);
+  push_f32(payload, 110.0f);
+  push_f32(payload, 205.0f);
+
+  auto ev = decode_input_message(build_envelope(web_msg_type::input, payload));
+  ASSERT_TRUE(ev.has_value());
+  EXPECT_EQ(ev->kind, web_input_kind::touch_move);
+  EXPECT_EQ(ev->touch_id, 7u);
+  EXPECT_FLOAT_EQ(ev->x, 110.0f);
+  EXPECT_FLOAT_EQ(ev->y, 205.0f);
+}
+
+TEST(DrawProtocolTest, DecodeInputMessage_TouchUpAndCancelRoundTrip) {
+  for (web_input_kind kind : {web_input_kind::touch_up, web_input_kind::touch_cancel}) {
+    std::vector<std::byte> payload;
+    push_u8(payload, static_cast<uint8_t>(kind));
+    push_u32(payload, 3);
+    push_f32(payload, 1.0f);
+    push_f32(payload, 2.0f);
+
+    auto ev = decode_input_message(build_envelope(web_msg_type::input, payload));
+    ASSERT_TRUE(ev.has_value());
+    EXPECT_EQ(ev->kind, kind);
+    EXPECT_EQ(ev->touch_id, 3u);
+  }
+}
+
+TEST(DrawProtocolTest, DecodeInputMessage_MotionRoundTrips) {
+  std::vector<std::byte> payload;
+  push_u8(payload, static_cast<uint8_t>(web_input_kind::motion));
+  push_f32(payload, 0.5f);
+  push_f32(payload, -9.8f);
+  push_f32(payload, 0.1f);
+
+  auto ev = decode_input_message(build_envelope(web_msg_type::input, payload));
+  ASSERT_TRUE(ev.has_value());
+  EXPECT_EQ(ev->kind, web_input_kind::motion);
+  EXPECT_FLOAT_EQ(ev->accel_x, 0.5f);
+  EXPECT_FLOAT_EQ(ev->accel_y, -9.8f);
+  EXPECT_FLOAT_EQ(ev->accel_z, 0.1f);
+}
+
 TEST(DrawProtocolTest, DecodeInputMessage_UnknownEventKindReturnsNullopt) {
   std::vector<std::byte> payload;
   push_u8(payload, 0xFF); // not a valid web_input_kind

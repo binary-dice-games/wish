@@ -288,6 +288,16 @@ void web_renderer::begin_frame() {
       case web_input_kind::char_input:
         io.AddInputCharacter(ev.codepoint);
         break;
+      case web_input_kind::touch_down:
+      case web_input_kind::touch_move:
+      case web_input_kind::touch_up:
+      case web_input_kind::touch_cancel:
+      case web_input_kind::motion:
+        // Not modeled as ImGui io events -- wish's own generic UI has no
+        // per-session input-action consumer to hand these to (unlike
+        // genie's web_deferred_renderer, which queues them separately for
+        // genie::input_manager). Ignored here, not an error.
+        break;
     }
   }
 

@@ -78,7 +78,15 @@ Browser → server: `0x10 INPUT`, `0x11 RESIZE`, `0x12 CACHE_RESPONSE`, `0x13 CL
 
 **TEX_CHECK/CACHE_RESPONSE** implement the persistent browser resource cache (see "Persistent Browser Resource Cache" below): `TEX_CHECK` carries a texture id, format/dimensions, a content-version `crc32`, and a length-prefixed `path` string — metadata only, no pixel payload. `CACHE_RESPONSE` is the browser's reply: a texture id and a `hit`/`miss` byte.
 
-**INPUT/RESIZE** carry mouse/keyboard/wheel events and canvas size changes from the browser.
+**INPUT/RESIZE** carry mouse/keyboard/wheel events and canvas size changes
+from the browser. `INPUT`'s `web_input_event` also carries multitouch
+(`touch_down`/`touch_move`/`touch_up`/`touch_cancel`, each a browser
+`Touch.identifier` + canvas-relative `x`/`y`) and accelerometer
+(`motion`, a `DeviceMotionEvent.acceleration` `x`/`y`/`z` triple) samples.
+`web_renderer::begin_frame()` itself treats these as no-ops (they aren't
+ImGui `io` concepts) — they exist on the wire for consumers with a richer
+per-session input model to drain instead, e.g. genie's
+`web_deferred_renderer`/`input_manager` (see genie's `src/input/DESIGN.md`).
 
 Deliberately **not** included: delta-compression against the previous frame, zlib/gzip. `poll_events()` already avoids sending frames when nothing changed; per-frame payload size is an accepted simplicity trade-off.
 
