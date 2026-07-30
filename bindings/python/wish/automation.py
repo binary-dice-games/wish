@@ -263,6 +263,30 @@ class AutomationClient:
         self.click(path)
         self._page.keyboard.type(text)
 
+    def drag(self, from_path: str, to_path: str, steps: int = 10) -> None:
+        """Drag from the center of @p from_path to the center of @p to_path.
+
+        Resolves both widgets to screen rects via `get_widget()` (same as
+        `click()`), then issues a real `page.mouse.move()`/`down()`/`move()`/
+        `up()` sequence -- real DOM/CDP mouse events picked up by the same
+        raw `mousemove`/`mousedown`/`mouseup` listeners `client.js` already
+        installs for `click()` (see its "input" section), so no client.js
+        change was needed for this. Intermediate `steps` are real
+        `mousemove` events along the path, matching how a human drag
+        actually looks rather than a single instantaneous jump -- for a
+        wish element carrying a `drag_type` field (see docs/ui-elements.md's
+        "Drag and drop" section), this drives the same press/move/release
+        gesture `imgui_renderer::render_node()`'s `BeginDragDropSource()`/
+        `BeginDragDropTarget()` handling expects. Raises `AutomationError`
+        if either path doesn't exist or was never rendered.
+        """
+        fx, fy = self._widget_center(from_path)
+        tx, ty = self._widget_center(to_path)
+        self._page.mouse.move(fx, fy)
+        self._page.mouse.down()
+        self._page.mouse.move(tx, ty, steps=steps)
+        self._page.mouse.up()
+
     # ── observation ──────────────────────────────────────────────────────
 
     def screenshot(self) -> bytes:

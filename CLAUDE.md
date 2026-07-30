@@ -303,6 +303,7 @@ with AutomationClient.launch(server_cmd=["build/app/wish", "server", "--renderer
 | `get_logs()` | Read every application log message (`client.log_info(...)` etc., via `logger`) received so far, oldest first — `{seq, timestamp, level, message}` each. Pushed live as the app logs them, so an entry's position relative to actions this script just took (e.g. `click()`) tells you what caused it, with no timestamp cross-referencing needed. |
 | `click(path)` | Click a widget's center — a real DOM/CDP mouse event, indistinguishable from a human click. Raises if `path` doesn't exist or was never rendered (`rect` is `None`). |
 | `type_text(path, text)` | Focus-click, then type — for `InputText`/`InputInt`/`InputFloat` etc. |
+| `drag(from_path, to_path)` | Real press/move/release drag between two widgets' centers — for an element with a `drag_type` field dropped onto one with a matching `drop_type` (see `docs/ui-elements.md`'s "Drag and drop" section). Raises if either path doesn't exist or was never rendered. |
 | `screenshot()` | Pixel-perfect PNG bytes of exactly what's on screen right now — attach to a bug report, or eyeball visually with the `Read` tool after writing to a file. |
 | `wait_for(js_predicate)` | Block until a JS predicate is true — e.g. wait for an async operation's result to land, a dialog to close, or a new log entry to appear, before asserting. `async` predicates that call `getTree()`/`getWidget()` work directly (Playwright awaits the returned Promise on every poll). |
 

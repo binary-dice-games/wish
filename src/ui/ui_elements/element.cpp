@@ -48,6 +48,35 @@ void register_element() {
           attr<DisplayName>("Font Size"),
           attr<Description>("Font size in pixels. 0 uses the default ImGui font."),
           attr<Category>("Appearance")});
+  proto->addField(
+      "drag_type"_key,
+      field{
+          std::string{},
+          attr<DisplayName>("Drag Type"),
+          attr<Description>("Opaque type tag that makes this element a drag source when non-empty. "
+                            "A drop target's own \"drop_type\" must match this string exactly to "
+                            "accept a drop. Only meaningful on a leaf element whose render function "
+                            "draws exactly one top-level ImGui item (Button, Image, Label, ...) -- "
+                            "see docs/ui-elements.md's \"Drag and drop\" section."),
+          attr<Category>("Behavior")});
+  proto->addField(
+      "drag_payload"_key,
+      field{
+          std::string{},
+          attr<DisplayName>("Drag Payload"),
+          attr<Description>("Opaque payload bytes carried by a drag started from this element. "
+                            "Delivered verbatim in a drop target's \"dropped\" event payload."),
+          attr<Category>("Behavior")});
+  proto->addField(
+      "drop_type"_key,
+      field{
+          std::string{},
+          attr<DisplayName>("Drop Type"),
+          attr<Description>("Opaque type tag this element accepts drops of, when non-empty. Must "
+                            "exactly match a drag source's own \"drag_type\" to accept the drop. On "
+                            "a successful drop, emits a \"dropped\" event with payload "
+                            "{\"type\": <this tag>, \"payload\": <the source's drag_payload>}."),
+          attr<Category>("Behavior")});
   (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Element"));
   (*proto)[dynamic::CLASS].addAttribute(attr<Description>("Base class for all UI elements."));
   dynamic::addClass(
