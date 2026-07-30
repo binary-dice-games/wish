@@ -298,6 +298,33 @@ std::optional<web_input_event> decode_input_message(std::span<const std::byte> m
       ev.codepoint = *codepoint;
       return ev;
     }
+    case web_input_kind::touch_down:
+    case web_input_kind::touch_move:
+    case web_input_kind::touch_up:
+    case web_input_kind::touch_cancel: {
+      auto touch_id = r.u32();
+      auto x = r.f32();
+      auto y = r.f32();
+      if (!touch_id || !x || !y)
+        return std::nullopt;
+      ev.kind = static_cast<web_input_kind>(*kind_byte);
+      ev.touch_id = *touch_id;
+      ev.x = *x;
+      ev.y = *y;
+      return ev;
+    }
+    case web_input_kind::motion: {
+      auto ax = r.f32();
+      auto ay = r.f32();
+      auto az = r.f32();
+      if (!ax || !ay || !az)
+        return std::nullopt;
+      ev.kind = web_input_kind::motion;
+      ev.accel_x = *ax;
+      ev.accel_y = *ay;
+      ev.accel_z = *az;
+      return ev;
+    }
     default:
       return std::nullopt;
   }
