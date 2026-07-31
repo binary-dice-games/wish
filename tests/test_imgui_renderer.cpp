@@ -303,6 +303,81 @@ TEST_F(ImguiRendererTest, MenuButtonOpensPopupAndRendersChildOnClick) {
   EXPECT_NE(r.menu_item_id, ImGuiID{0});
 }
 
+// Regression test: opening a MenuButton's popup enqueues no wish event (only
+// a later "clicked" MenuItem selection does), so nothing forced the render
+// loop's post-dispatch settle frames (server::render_loop()'s "events not
+// empty" check) -- the newly opened popup's content could sit invisible
+// until an unrelated input event (e.g. a mouse move) drove the next render.
+// render_menu_button() must force those settle frames itself on the frame
+// the popup opens.
+TEST_F(ImguiRendererTest, MenuButtonOpeningPopupMarksSessionDirty) {
+  auto map = bdg::wish::import_json(
+      R"({"type":"MenuButton","label":"Create","children":{"item":{"type":"MenuItem","label":"Object"}}})");
+
+  ImGuiID btn_id{0};
+  renderer_->begin_frame();
+  in_window([&] {
+    renderer_->render_node(*map[""], *sess_);
+    btn_id = ImGui::GetItemID();
+  });
+  renderer_->end_frame();
+
+  sess_->dirty.store(0, std::memory_order_release);
+  ImGui::GetIO().DeltaTime = 1.0f / 60.0f;
+  ImGui::NewFrame();
+  fake_click(btn_id);
+  in_window([&] { renderer_->render_node(*map[""], *sess_); });
+  ImGui::EndFrame();
+
+  EXPECT_GT(sess_->dirty.load(std::memory_order_acquire), 0);
+}
+
+// ── Combo ─────────────────────────────────────────────────────────────────────
+
+// Regression test for the same class of bug: opening a Combo's dropdown
+// (clicking its header) enqueues no wish event either -- only an actual
+// selection change does -- so it needs the identical explicit dirty-store
+// fix as MenuButton above.
+TEST_F(ImguiRendererTest, ComboOpeningDropdownMarksSessionDirty) {
+  auto map = bdg::wish::import_json(R"({"type":"Combo","label":"Pick","items":"A\nB\nC","value":0})");
+
+  // Frame 1: dropdown starts closed -- only the header renders. Compute the
+  // popup's id the same way BeginCombo() does internally (ImHashStr("##Combo
+  // Popup", 0, header_id)) so frame 2 can confirm it actually opened.
+  ImGuiID header_id{0};
+  ImGuiID popup_id{0};
+  bool popup_open_before_click = true;
+  renderer_->begin_frame();
+  in_window([&] {
+    renderer_->render_node(*map[""], *sess_);
+    header_id = ImGui::GetItemID();
+    popup_id = ImHashStr("##ComboPopup", 0, header_id);
+    popup_open_before_click = ImGui::IsPopupOpen(popup_id, ImGuiPopupFlags_None);
+  });
+  renderer_->end_frame();
+  ASSERT_FALSE(popup_open_before_click);
+
+  // Frame 2: simulate press+release on the header -- opens the dropdown in
+  // this same frame (standard ImGui OpenPopup()-then-Begin idiom), same as
+  // MenuButtonOpensPopupAndRendersChildOnClick above.
+  sess_->dirty.store(0, std::memory_order_release);
+  bool popup_open_after_click = false;
+  ImGui::GetIO().DeltaTime = 1.0f / 60.0f;
+  ImGui::NewFrame();
+  fake_click(header_id);
+  in_window([&] {
+    renderer_->render_node(*map[""], *sess_);
+    popup_open_after_click = ImGui::IsPopupOpen(popup_id, ImGuiPopupFlags_None);
+  });
+  ImGui::EndFrame();
+
+  ASSERT_TRUE(popup_open_after_click);
+  // The click only opened the dropdown -- selection (value) did not change --
+  // yet the render loop must still be told to schedule follow-up frames.
+  EXPECT_EQ(map[""]->get_as<int32_t>("value"_key, -1), 0);
+  EXPECT_GT(sess_->dirty.load(std::memory_order_acquire), 0);
+}
+
 // ── Unknown class: no throw ───────────────────────────────────────────────────
 
 TEST_F(ImguiRendererTest, UnknownClassDoesNotThrow) {
