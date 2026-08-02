@@ -132,6 +132,7 @@ into a persistent, identity-keyed directory per client via an
 | [docs/cli.md](docs/cli.md) | Full `wish` CLI reference: `server`/`client`/`standalone`/`desktop` |
 | [docs/examples.md](docs/examples.md) | Annotated example walkthroughs |
 | [docs/ui-elements.md](docs/ui-elements.md) | Full UI element/widget catalog (fields, events), window/layout model, JSON template schema, and the `editor` preview tool |
+| [docs/visual-editor-options.md](docs/visual-editor-options.md) | Proposal: WYSIWYG editor options — forking ImRAD Studio vs. extending the native `editor` module |
 | [docs/bindings.md](docs/bindings.md) | Python and C# language binding setup and usage |
 | [docs/ai-assisted-development.md](docs/ai-assisted-development.md) | Building wish apps/UI via natural language with the `wish-module`/`wish-ui` AI-agent skills |
 | [DESIGN.md](DESIGN.md) | Architecture, key abstractions, object model, and design decisions |
