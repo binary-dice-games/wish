@@ -12,16 +12,16 @@ using namespace bdg::bison;
 void register_slider() {
   // SliderFloat
   {
-    auto proto = dynamic_ptr{"SliderFloat"_key, {}};
+    auto proto = dynamic_ptr{"SliderFloat"_rkey, {}};
     proto->addField(
-        "label"_key,
+        "label"_rkey,
         field{
             std::string{""},
             attr<DisplayName>("Label"),
             attr<Description>("Slider label text."),
             attr<Category>("Content")});
     proto->addField(
-        "value"_key,
+        "value"_rkey,
         field{
             0.0f,
             attr<DisplayName>("Value"),
@@ -29,7 +29,7 @@ void register_slider() {
             attr<Category>("State"),
             attr<Step>(0.01)});
     proto->addField(
-        "min"_key,
+        "min"_rkey,
         field{
             0.0f,
             attr<DisplayName>("Min"),
@@ -37,7 +37,7 @@ void register_slider() {
             attr<Category>("Behavior"),
             attr<Step>(0.01)});
     proto->addField(
-        "max"_key,
+        "max"_rkey,
         field{
             1.0f,
             attr<DisplayName>("Max"),
@@ -45,7 +45,7 @@ void register_slider() {
             attr<Category>("Behavior"),
             attr<Step>(0.01)});
     proto->addField(
-        "format"_key,
+        "format"_rkey,
         field{
             std::string{"%.2f"},
             attr<DisplayName>("Format"),
@@ -59,16 +59,16 @@ void register_slider() {
 
   // SliderInt
   {
-    auto proto = dynamic_ptr{"SliderInt"_key, {}};
+    auto proto = dynamic_ptr{"SliderInt"_rkey, {}};
     proto->addField(
-        "label"_key,
+        "label"_rkey,
         field{
             std::string{""},
             attr<DisplayName>("Label"),
             attr<Description>("Slider label text."),
             attr<Category>("Content")});
     proto->addField(
-        "value"_key,
+        "value"_rkey,
         field{
             int32_t{0},
             attr<DisplayName>("Value"),
@@ -76,7 +76,7 @@ void register_slider() {
             attr<Category>("State"),
             attr<Step>(1)});
     proto->addField(
-        "min"_key,
+        "min"_rkey,
         field{
             int32_t{0},
             attr<DisplayName>("Min"),
@@ -84,7 +84,7 @@ void register_slider() {
             attr<Category>("Behavior"),
             attr<Step>(1)});
     proto->addField(
-        "max"_key,
+        "max"_rkey,
         field{
             int32_t{100},
             attr<DisplayName>("Max"),

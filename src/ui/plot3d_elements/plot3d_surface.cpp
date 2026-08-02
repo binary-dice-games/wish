@@ -13,30 +13,30 @@ void register_plot3d_surface() {
   // Plot3DSurface — a 3-D parametric surface defined on an x_count × y_count grid.
   // xs, ys, zs are flattened row-major arrays of x_count * y_count elements.
   {
-    auto proto = dynamic_ptr{"Plot3DSurface"_key, {}};
+    auto proto = dynamic_ptr{"Plot3DSurface"_rkey, {}};
     proto->addField(
-        "xs"_key,
+        "xs"_rkey,
         field{
             std::vector<float>{},
             attr<DisplayName>("X Grid"),
             attr<Description>("Flattened x_count × y_count array of X coordinates for each grid point."),
             attr<Category>("Data")});
     proto->addField(
-        "ys"_key,
+        "ys"_rkey,
         field{
             std::vector<float>{},
             attr<DisplayName>("Y Grid"),
             attr<Description>("Flattened x_count × y_count array of Y coordinates for each grid point."),
             attr<Category>("Data")});
     proto->addField(
-        "zs"_key,
+        "zs"_rkey,
         field{
             std::vector<float>{},
             attr<DisplayName>("Z Grid"),
             attr<Description>("Flattened x_count × y_count array of Z (height) values."),
             attr<Category>("Data")});
     proto->addField(
-        "x_count"_key,
+        "x_count"_rkey,
         field{
             int32_t{2},
             attr<DisplayName>("X Count"),
@@ -44,7 +44,7 @@ void register_plot3d_surface() {
             attr<Category>("Data"),
             attr<Range>(2.0, 4096.0)});
     proto->addField(
-        "y_count"_key,
+        "y_count"_rkey,
         field{
             int32_t{2},
             attr<DisplayName>("Y Count"),
@@ -52,7 +52,7 @@ void register_plot3d_surface() {
             attr<Category>("Data"),
             attr<Range>(2.0, 4096.0)});
     proto->addField(
-        "scale_min"_key,
+        "scale_min"_rkey,
         field{
             float{0.0f},
             attr<DisplayName>("Scale Min"),
@@ -60,7 +60,7 @@ void register_plot3d_surface() {
                               "Both scale_min and scale_max equal to 0 triggers auto-range."),
             attr<Category>("Style")});
     proto->addField(
-        "scale_max"_key,
+        "scale_max"_rkey,
         field{
             float{0.0f},
             attr<DisplayName>("Scale Max"),

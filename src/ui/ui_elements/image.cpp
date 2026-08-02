@@ -10,9 +10,9 @@ namespace bdg::wish {
 using namespace bdg::bison;
 
 void register_image() {
-  auto proto = dynamic_ptr{"Image"_key, {}};
+  auto proto = dynamic_ptr{"Image"_rkey, {}};
   proto->addField(
-      "src"_key,
+      "src"_rkey,
       field{
           std::string{""},
           attr<DisplayName>("Source"),
@@ -20,7 +20,7 @@ void register_image() {
           attr<Category>("Content"),
           attr<Required>()});
   proto->addField(
-      "width"_key,
+      "width"_rkey,
       field{
           int32_t{0},
           attr<DisplayName>("Width"),
@@ -29,7 +29,7 @@ void register_image() {
           attr<Range>(0, 16384),
           attr<Step>(1)});
   proto->addField(
-      "height"_key,
+      "height"_rkey,
       field{
           int32_t{0},
           attr<DisplayName>("Height"),
@@ -38,7 +38,7 @@ void register_image() {
           attr<Range>(0, 16384),
           attr<Step>(1)});
   proto->addField(
-      "tint"_key,
+      "tint"_rkey,
       field{
           std::string{""},
           attr<DisplayName>("Tint"),

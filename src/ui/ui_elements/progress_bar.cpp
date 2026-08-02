@@ -10,30 +10,30 @@ namespace bdg::wish {
 using namespace bdg::bison;
 
 void register_progress_bar() {
-  auto proto = dynamic_ptr{"ProgressBar"_key, {}};
+  auto proto = dynamic_ptr{"ProgressBar"_rkey, {}};
   proto->addField(
-      "value"_key,
+      "value"_rkey,
       field{
           float{0.0f},
           attr<DisplayName>("Value"),
           attr<Description>("Fill fraction: 0.0 (empty) to 1.0 (full)."),
           attr<Category>("State")});
   proto->addField(
-      "label"_key,
+      "label"_rkey,
       field{
           std::string{},
           attr<DisplayName>("Label"),
           attr<Description>("Optional text drawn on top of the bar."),
           attr<Category>("Content")});
   proto->addField(
-      "width"_key,
+      "width"_rkey,
       field{
           float{-1.0f},
           attr<DisplayName>("Width"),
           attr<Description>("Bar width in pixels. -1 fills the available width."),
           attr<Category>("Layout")});
   proto->addField(
-      "height"_key,
+      "height"_rkey,
       field{
           float{0.0f},
           attr<DisplayName>("Height"),

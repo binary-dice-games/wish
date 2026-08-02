@@ -13,9 +13,9 @@ void register_plot() {
   // PlotItem — hidden base class for all series drawn inside a Plot element.
   // Carries only the legend label; concrete series types add their data arrays.
   {
-    auto proto = dynamic_ptr{"PlotItem"_key, {}};
+    auto proto = dynamic_ptr{"PlotItem"_rkey, {}};
     proto->addField(
-        "label"_key,
+        "label"_rkey,
         field{
             std::string{},
             attr<DisplayName>("Label"),
@@ -31,9 +31,9 @@ void register_plot() {
 
   // Plot — ImPlot window container.  Children should be PlotItem elements.
   {
-    auto proto = dynamic_ptr{"Plot"_key, {}};
+    auto proto = dynamic_ptr{"Plot"_rkey, {}};
     proto->addField(
-        "title"_key,
+        "title"_rkey,
         field{
             std::string{"##plot"},
             attr<DisplayName>("Title"),
@@ -41,21 +41,21 @@ void register_plot() {
                               "prefix ## to make the ID hidden (no visible title)."),
             attr<Category>("Content")});
     proto->addField(
-        "x_label"_key,
+        "x_label"_rkey,
         field{
             std::string{},
             attr<DisplayName>("X Label"),
             attr<Description>("X axis label; empty string = no label."),
             attr<Category>("Axes")});
     proto->addField(
-        "y_label"_key,
+        "y_label"_rkey,
         field{
             std::string{},
             attr<DisplayName>("Y Label"),
             attr<Description>("Y axis label; empty string = no label."),
             attr<Category>("Axes")});
     proto->addField(
-        "width"_key,
+        "width"_rkey,
         field{
             float{-1.0f},
             attr<DisplayName>("Width"),
@@ -63,7 +63,7 @@ void register_plot() {
             attr<Category>("Layout"),
             attr<Range>(-1.0, 8192.0)});
     proto->addField(
-        "height"_key,
+        "height"_rkey,
         field{
             float{300.0f},
             attr<DisplayName>("Height"),
@@ -71,14 +71,14 @@ void register_plot() {
             attr<Category>("Layout"),
             attr<Range>(16.0, 8192.0)});
     proto->addField(
-        "flags"_key,
+        "flags"_rkey,
         field{
             int32_t{0},
             attr<DisplayName>("Flags"),
             attr<Description>("ImPlotFlags bit field (see implot.h)."),
             attr<Category>("Behavior")});
     proto->addField(
-        "x_flags"_key,
+        "x_flags"_rkey,
         field{
             int32_t{0},
             attr<DisplayName>("X Axis Flags"),
@@ -86,7 +86,7 @@ void register_plot() {
                               "Use ImPlotAxisFlags_NoDecorations (0x1F) for pie charts."),
             attr<Category>("Axes")});
     proto->addField(
-        "y_flags"_key,
+        "y_flags"_rkey,
         field{
             int32_t{0},
             attr<DisplayName>("Y Axis Flags"),
@@ -94,7 +94,7 @@ void register_plot() {
                               "Use ImPlotAxisFlags_NoDecorations (0x1F) for pie charts."),
             attr<Category>("Axes")});
     proto->addField(
-        "x_min"_key,
+        "x_min"_rkey,
         field{
             float{0.0f},
             attr<DisplayName>("X Min"),
@@ -102,7 +102,7 @@ void register_plot() {
                               "Ignored (axis auto-fits normally) when equal to x_max."),
             attr<Category>("Axes")});
     proto->addField(
-        "x_max"_key,
+        "x_max"_rkey,
         field{
             float{0.0f},
             attr<DisplayName>("X Max"),
@@ -110,7 +110,7 @@ void register_plot() {
                               "Ignored (axis auto-fits normally) when equal to x_min."),
             attr<Category>("Axes")});
     proto->addField(
-        "y_min"_key,
+        "y_min"_rkey,
         field{
             float{0.0f},
             attr<DisplayName>("Y Min"),
@@ -118,7 +118,7 @@ void register_plot() {
                               "Ignored (axis auto-fits normally) when equal to y_max."),
             attr<Category>("Axes")});
     proto->addField(
-        "y_max"_key,
+        "y_max"_rkey,
         field{
             float{0.0f},
             attr<DisplayName>("Y Max"),

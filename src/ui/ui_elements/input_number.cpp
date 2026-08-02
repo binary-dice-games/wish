@@ -12,30 +12,30 @@ using namespace bdg::bison;
 void register_input_number() {
   // InputInt — integer input with +/- step buttons.
   {
-    auto proto = dynamic_ptr{"InputInt"_key, {}};
+    auto proto = dynamic_ptr{"InputInt"_rkey, {}};
     proto->addField(
-        "label"_key,
+        "label"_rkey,
         field{
             std::string{},
             attr<DisplayName>("Label"),
             attr<Description>("Caption shown to the left of the input box."),
             attr<Category>("Content")});
     proto->addField(
-        "value"_key,
+        "value"_rkey,
         field{
             int32_t{0},
             attr<DisplayName>("Value"),
             attr<Description>("Current integer value."),
             attr<Category>("State")});
     proto->addField(
-        "step"_key,
+        "step"_rkey,
         field{
             int32_t{1},
             attr<DisplayName>("Step"),
             attr<Description>("Amount added/subtracted by the +/- buttons."),
             attr<Category>("Behavior")});
     proto->addField(
-        "step_fast"_key,
+        "step_fast"_rkey,
         field{
             int32_t{100},
             attr<DisplayName>("Step Fast"),
@@ -51,37 +51,37 @@ void register_input_number() {
 
   // InputFloat — float input with optional step buttons.
   {
-    auto proto = dynamic_ptr{"InputFloat"_key, {}};
+    auto proto = dynamic_ptr{"InputFloat"_rkey, {}};
     proto->addField(
-        "label"_key,
+        "label"_rkey,
         field{
             std::string{},
             attr<DisplayName>("Label"),
             attr<Description>("Caption shown to the left of the input box."),
             attr<Category>("Content")});
     proto->addField(
-        "value"_key,
+        "value"_rkey,
         field{
             float{0.0f},
             attr<DisplayName>("Value"),
             attr<Description>("Current float value."),
             attr<Category>("State")});
     proto->addField(
-        "step"_key,
+        "step"_rkey,
         field{
             float{0.0f},
             attr<DisplayName>("Step"),
             attr<Description>("Amount added/subtracted by the +/- buttons. 0 hides the buttons."),
             attr<Category>("Behavior")});
     proto->addField(
-        "step_fast"_key,
+        "step_fast"_rkey,
         field{
             float{0.0f},
             attr<DisplayName>("Step Fast"),
             attr<Description>("Amount added/subtracted when Ctrl is held. 0 falls back to step."),
             attr<Category>("Behavior")});
     proto->addField(
-        "format"_key,
+        "format"_rkey,
         field{
             std::string{"%.3f"},
             attr<DisplayName>("Format"),

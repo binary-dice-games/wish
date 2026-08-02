@@ -12,37 +12,37 @@ using namespace bdg::bison;
 void register_plot3d_annotations() {
   // Plot3DText — text annotation positioned at a 3-D plot coordinate.
   {
-    auto proto = dynamic_ptr{"Plot3DText"_key, {}};
+    auto proto = dynamic_ptr{"Plot3DText"_rkey, {}};
     proto->addField(
-        "text"_key,
+        "text"_rkey,
         field{
             std::string{},
             attr<DisplayName>("Text"),
             attr<Description>("The string to display at the given 3-D position."),
             attr<Category>("Content")});
     proto->addField(
-        "x"_key,
+        "x"_rkey,
         field{
             float{0.0f},
             attr<DisplayName>("X"),
             attr<Description>("Plot X coordinate of the text anchor."),
             attr<Category>("Position")});
     proto->addField(
-        "y"_key,
+        "y"_rkey,
         field{
             float{0.0f},
             attr<DisplayName>("Y"),
             attr<Description>("Plot Y coordinate of the text anchor."),
             attr<Category>("Position")});
     proto->addField(
-        "z"_key,
+        "z"_rkey,
         field{
             float{0.0f},
             attr<DisplayName>("Z"),
             attr<Description>("Plot Z coordinate of the text anchor."),
             attr<Category>("Position")});
     proto->addField(
-        "angle"_key,
+        "angle"_rkey,
         field{
             float{0.0f},
             attr<DisplayName>("Angle"),
@@ -50,14 +50,14 @@ void register_plot3d_annotations() {
             attr<Category>("Style"),
             attr<Range>(-360.0, 360.0)});
     proto->addField(
-        "offset_x"_key,
+        "offset_x"_rkey,
         field{
             float{0.0f},
             attr<DisplayName>("Offset X"),
             attr<Description>("Pixel offset applied to the text after projection (horizontal)."),
             attr<Category>("Position")});
     proto->addField(
-        "offset_y"_key,
+        "offset_y"_rkey,
         field{
             float{0.0f},
             attr<DisplayName>("Offset Y"),

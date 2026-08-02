@@ -14,16 +14,16 @@ using namespace bdg::bison;
 window::window(bison::dynamic&& base) : ui_root(std::move(base)) {}
 
 void register_window() {
-  auto proto = dynamic_ptr{"Window"_key, {}};
+  auto proto = dynamic_ptr{"Window"_rkey, {}};
   proto->addField(
-      "title"_key,
+      "title"_rkey,
       field{
           std::string{""},
           attr<DisplayName>("Title"),
           attr<Description>("Window title bar text."),
           attr<Category>("Appearance")});
   proto->addField(
-      "width"_key,
+      "width"_rkey,
       field{
           int32_t{0},
           attr<DisplayName>("Width"),
@@ -32,7 +32,7 @@ void register_window() {
           attr<Range>(0, 16384),
           attr<Step>(1)});
   proto->addField(
-      "height"_key,
+      "height"_rkey,
       field{
           int32_t{0},
           attr<DisplayName>("Height"),
@@ -41,7 +41,7 @@ void register_window() {
           attr<Range>(0, 16384),
           attr<Step>(1)});
   proto->addField(
-      "pos_x"_key,
+      "pos_x"_rkey,
       field{
           int32_t{0},
           attr<DisplayName>("X"),
@@ -49,7 +49,7 @@ void register_window() {
           attr<Category>("Layout"),
           attr<Step>(1)});
   proto->addField(
-      "pos_y"_key,
+      "pos_y"_rkey,
       field{
           int32_t{0},
           attr<DisplayName>("Y"),
@@ -57,7 +57,7 @@ void register_window() {
           attr<Category>("Layout"),
           attr<Step>(1)});
   proto->addField(
-      "closable"_key,
+      "closable"_rkey,
       field{
           bool{false},
           attr<DisplayName>("Closable"),
@@ -65,7 +65,7 @@ void register_window() {
                             "Clicking it emits the 'closed' event."),
           attr<Category>("Behavior")});
   proto->addField(
-      "modal"_key,
+      "modal"_rkey,
       field{
           bool{false},
           attr<DisplayName>("Modal"),
@@ -75,7 +75,7 @@ void register_window() {
                             "a title-bar X that also emits 'closed'."),
           attr<Category>("Behavior")});
   proto->addField(
-      "flags"_key,
+      "flags"_rkey,
       field{
           int32_t{0},
           attr<DisplayName>("Flags"),

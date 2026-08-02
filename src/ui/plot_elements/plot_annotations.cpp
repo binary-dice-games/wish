@@ -12,37 +12,37 @@ using namespace bdg::bison;
 void register_plot_annotations() {
   // PlotText — a text annotation at a specific plot coordinate.
   {
-    auto proto = dynamic_ptr{"PlotText"_key, {}};
+    auto proto = dynamic_ptr{"PlotText"_rkey, {}};
     proto->addField(
-        "text"_key,
+        "text"_rkey,
         field{
             std::string{},
             attr<DisplayName>("Text"),
             attr<Description>("The string to display at the (x, y) plot coordinate."),
             attr<Category>("Content")});
     proto->addField(
-        "x"_key,
+        "x"_rkey,
         field{
             float{0.0f},
             attr<DisplayName>("X"),
             attr<Description>("X coordinate in plot (data) space."),
             attr<Category>("Layout")});
     proto->addField(
-        "y"_key,
+        "y"_rkey,
         field{
             float{0.0f},
             attr<DisplayName>("Y"),
             attr<Description>("Y coordinate in plot (data) space."),
             attr<Category>("Layout")});
     proto->addField(
-        "offset_x"_key,
+        "offset_x"_rkey,
         field{
             float{0.0f},
             attr<DisplayName>("Pixel Offset X"),
             attr<Description>("Horizontal pixel offset applied after coordinate projection."),
             attr<Category>("Layout")});
     proto->addField(
-        "offset_y"_key,
+        "offset_y"_rkey,
         field{
             float{0.0f},
             attr<DisplayName>("Pixel Offset Y"),
@@ -58,9 +58,9 @@ void register_plot_annotations() {
 
   // PlotInfLines — infinite vertical or horizontal reference lines.
   {
-    auto proto = dynamic_ptr{"PlotInfLines"_key, {}};
+    auto proto = dynamic_ptr{"PlotInfLines"_rkey, {}};
     proto->addField(
-        "values"_key,
+        "values"_rkey,
         field{
             std::vector<float>{},
             attr<DisplayName>("Values"),
@@ -69,7 +69,7 @@ void register_plot_annotations() {
                               "when horizontal is true these are Y positions (horizontal lines)."),
             attr<Category>("Data")});
     proto->addField(
-        "horizontal"_key,
+        "horizontal"_rkey,
         field{
             false,
             attr<DisplayName>("Horizontal"),

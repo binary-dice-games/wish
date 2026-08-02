@@ -14,21 +14,21 @@ using namespace bdg::bison;
 
 static void add_xyz_fields(dynamic_ptr& proto) {
   proto->addField(
-      "xs"_key,
+      "xs"_rkey,
       field{
           std::vector<float>{},
           attr<DisplayName>("X Values"),
           attr<Description>("Array of X coordinates, one per data point."),
           attr<Category>("Data")});
   proto->addField(
-      "ys"_key,
+      "ys"_rkey,
       field{
           std::vector<float>{},
           attr<DisplayName>("Y Values"),
           attr<Description>("Array of Y coordinates, one per data point."),
           attr<Category>("Data")});
   proto->addField(
-      "zs"_key,
+      "zs"_rkey,
       field{
           std::vector<float>{},
           attr<DisplayName>("Z Values"),
@@ -39,7 +39,7 @@ static void add_xyz_fields(dynamic_ptr& proto) {
 void register_plot3d_series() {
   // Plot3DLine — a connected 3-D line series.
   {
-    auto proto = dynamic_ptr{"Plot3DLine"_key, {}};
+    auto proto = dynamic_ptr{"Plot3DLine"_rkey, {}};
     add_xyz_fields(proto);
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Plot3DLine"));
     (*proto)[dynamic::CLASS].addAttribute(
@@ -54,7 +54,7 @@ void register_plot3d_series() {
 
   // Plot3DScatter — dots at each 3-D data point, no connecting line.
   {
-    auto proto = dynamic_ptr{"Plot3DScatter"_key, {}};
+    auto proto = dynamic_ptr{"Plot3DScatter"_rkey, {}};
     add_xyz_fields(proto);
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Plot3DScatter"));
     (*proto)[dynamic::CLASS].addAttribute(

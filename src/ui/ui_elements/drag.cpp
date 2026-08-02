@@ -12,44 +12,44 @@ using namespace bdg::bison;
 void register_drag() {
   // DragFloat — click-and-drag (or double-click to type) a float value.
   {
-    auto proto = dynamic_ptr{"DragFloat"_key, {}};
+    auto proto = dynamic_ptr{"DragFloat"_rkey, {}};
     proto->addField(
-        "label"_key,
+        "label"_rkey,
         field{
             std::string{},
             attr<DisplayName>("Label"),
             attr<Description>("Caption shown to the left of the drag widget."),
             attr<Category>("Content")});
     proto->addField(
-        "value"_key,
+        "value"_rkey,
         field{
             float{0.0f},
             attr<DisplayName>("Value"),
             attr<Description>("Current float value."),
             attr<Category>("State")});
     proto->addField(
-        "speed"_key,
+        "speed"_rkey,
         field{
             float{1.0f},
             attr<DisplayName>("Speed"),
             attr<Description>("Change per pixel dragged."),
             attr<Category>("Behavior")});
     proto->addField(
-        "min"_key,
+        "min"_rkey,
         field{
             float{0.0f},
             attr<DisplayName>("Min"),
             attr<Description>("Lower clamp. When min == max the value is unclamped."),
             attr<Category>("Behavior")});
     proto->addField(
-        "max"_key,
+        "max"_rkey,
         field{
             float{0.0f},
             attr<DisplayName>("Max"),
             attr<Description>("Upper clamp. When min == max the value is unclamped."),
             attr<Category>("Behavior")});
     proto->addField(
-        "format"_key,
+        "format"_rkey,
         field{
             std::string{"%.3f"},
             attr<DisplayName>("Format"),
@@ -65,37 +65,37 @@ void register_drag() {
 
   // DragInt — click-and-drag (or double-click to type) an integer value.
   {
-    auto proto = dynamic_ptr{"DragInt"_key, {}};
+    auto proto = dynamic_ptr{"DragInt"_rkey, {}};
     proto->addField(
-        "label"_key,
+        "label"_rkey,
         field{
             std::string{},
             attr<DisplayName>("Label"),
             attr<Description>("Caption shown to the left of the drag widget."),
             attr<Category>("Content")});
     proto->addField(
-        "value"_key,
+        "value"_rkey,
         field{
             int32_t{0},
             attr<DisplayName>("Value"),
             attr<Description>("Current integer value."),
             attr<Category>("State")});
     proto->addField(
-        "speed"_key,
+        "speed"_rkey,
         field{
             float{1.0f},
             attr<DisplayName>("Speed"),
             attr<Description>("Change per pixel dragged."),
             attr<Category>("Behavior")});
     proto->addField(
-        "min"_key,
+        "min"_rkey,
         field{
             int32_t{0},
             attr<DisplayName>("Min"),
             attr<Description>("Lower clamp. When min == max the value is unclamped."),
             attr<Category>("Behavior")});
     proto->addField(
-        "max"_key,
+        "max"_rkey,
         field{
             int32_t{0},
             attr<DisplayName>("Max"),
