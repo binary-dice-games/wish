@@ -12,9 +12,9 @@ using namespace bdg::bison;
 void register_layout() {
   // Layout — intermediate base that adds a spacing field.
   {
-    auto proto = dynamic_ptr{"Layout"_key, {}};
+    auto proto = dynamic_ptr{"Layout"_rkey, {}};
     proto->addField(
-        "spacing"_key,
+        "spacing"_rkey,
         field{
             0.0f,
             attr<DisplayName>("Spacing"),
@@ -23,7 +23,7 @@ void register_layout() {
             attr<Range>(0, 256),
             attr<Step>(0.5)});
     proto->addField(
-        "width"_key,
+        "width"_rkey,
         field{
             0.0f,
             attr<DisplayName>("Width"),
@@ -37,7 +37,7 @@ void register_layout() {
                               "a HorizontalLayout."),
             attr<Category>("Layout")});
     proto->addField(
-        "height"_key,
+        "height"_rkey,
         field{
             0.0f,
             attr<DisplayName>("Height"),
@@ -61,7 +61,7 @@ void register_layout() {
 
   // VerticalLayout — stacks children top-to-bottom; no extra fields.
   {
-    auto proto = dynamic_ptr{"VerticalLayout"_key, {}};
+    auto proto = dynamic_ptr{"VerticalLayout"_rkey, {}};
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Vertical Layout"));
     (*proto)[dynamic::CLASS].addAttribute(attr<Description>("Stacks children top-to-bottom."));
     dynamic::addClass(
@@ -73,9 +73,9 @@ void register_layout() {
 
   // HorizontalLayout — places children side by side.
   {
-    auto proto = dynamic_ptr{"HorizontalLayout"_key, {}};
+    auto proto = dynamic_ptr{"HorizontalLayout"_rkey, {}};
     proto->addField(
-        "align"_key,
+        "align"_rkey,
         field{
             std::string{"left"},
             attr<DisplayName>("Align"),

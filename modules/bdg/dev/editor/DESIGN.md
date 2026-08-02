@@ -1,8 +1,10 @@
 # wish Editor Module — Architecture & Design
 
-**Status: core implemented.** See `server/editor.hpp`/`.cpp`,
-`client/editor.hpp`/`.cpp`. Palette, autocomplete, and a cursor-driven help
-panel are **not implemented** — see "10. Implementation Status" below.
+**Status: core, help panel, autocomplete, and preview highlight
+implemented.** See `server/editor.hpp`/`.cpp`, `client/editor.hpp`/`.cpp`,
+`src/ui/ui_schema_help.hpp`/`.cpp`, `src/imgui/imgui_renderer.cpp`. Only
+the element palette remains unimplemented — see "10. Implementation
+Status" below.
 
 ## 1. Purpose / Scope
 
@@ -53,9 +55,12 @@ this module going forward.
 ### `editor` (server, `form`)
 
 Owns two independent subtrees registered in the session:
-- **Chrome** (`internal_root_key_`): filename label, error banner, source
-  `TextEditor` (`language: "json"`), close-confirmation panel, event log
-  `Table`. Built once in `on_init()`.
+- **Chrome** (`internal_root_key_`): filename label, error banner, an
+  `editor_row` `HorizontalLayout` holding the source `TextEditor`
+  (`language: "json"`, `wish_ui_schema: true`, `width: 600`) and a help
+  panel `Label`, close-confirmation panel, event log `Table`. Built once in
+  `on_init()`. `source`'s explicit `width` is required for it and
+  `help_panel` to actually appear side by side — see "6. Design Decisions".
 - **Preview** (`mock_root_key_ = internal_root_key_ + "_mock"`): the
   live-instantiated result of parsing the current source. Torn down and
   rebuilt on every successful reparse via `try_reparse()`.
@@ -80,6 +85,19 @@ successful `try_reparse()`. Used purely to turn an arbitrary preview
 widget's event into a readable log line (`"main.ok clicked"`); has no
 bearing on rendering.
 
+### `highlighted_path_` (server, private state)
+
+`std::optional<std::string>` -- the dot-path of whichever preview element
+currently has its `"__wish_highlight__"` field set (drawn as a gold box by
+`imgui_renderer::render_node()`, see "6. Design Decisions"). Unlike
+`mock_id_to_path_` (rebuilt wholesale every reparse), this is the one
+piece of highlight state that must *survive* a reparse: `update_highlight()`
+diffs it against the cursor's newly-resolved `element_path` and flips the
+`"__wish_highlight__"` field on the old/new elements directly via a
+`s.ui_objects` dot-path lookup, while `try_reparse()`'s own per-element
+loop reapplies it to the freshly-rebuilt tree by path (not id, which
+changes every reparse for non-root elements).
+
 ### `sandbox_source_state` (client, private state)
 
 Tracks the sandbox filename currently backing the source `TextEditor` and
@@ -87,6 +105,34 @@ the content the client itself last pushed there, so the external-file
 change-watcher thread can distinguish "the file changed because we wrote
 it back" from a genuine external edit (avoiding a re-upload feedback
 loop).
+
+### `ui_schema_help` (shared, `src/ui/ui_schema_help.hpp`/`.cpp`)
+
+Server-only query module the help panel and autocomplete are both built
+on (not editor-specific, despite living outside this directory — mirrors
+`ui_importer.hpp`'s "server-only, `wish_server`-only" contract):
+- `enumerate_ui_element_classes()` / `find_ui_element_class(name)`: walk
+  `bison::dynamic::getRegistry()`'s `"wish"` namespace, filtered to classes
+  whose `PARENT` chain reaches `"Element"_key` (excludes `form` subclasses
+  like `Editor` itself, whose `PARENT == 0` directly), returning each
+  class's own + inherited fields with `DisplayName`/`Description`/
+  `Category`/`Required`/`Range`/`Step`/`Enum`/`EnumFlags` resolved. Class
+  and field literal names are recovered via bison's
+  `lookup_registered_key_name()` (not `DisplayName`, which can mismatch
+  the literal spelling — e.g. `TextEditor`'s `DisplayName` is "Text
+  Editor") — this requires every class/field to be registered with the
+  `_rkey` literal, not `_key` (see "6. Design Decisions").
+- `scan_cursor_context(source, cursor)`: a hand-rolled, single-pass,
+  **backward-only** JSON tokenizer answering "what schema element does the
+  cursor sit in" without requiring `source` to be valid JSON (the normal
+  state while actively typing). See "6. Design Decisions" for why this
+  can't reuse `import_json()`. Returns both `enclosing_type` (the class
+  name, for the help panel/autocomplete) and `element_path` (the same
+  dot-path format `ui_importer.cpp`'s `build_ui_node` produces, for the
+  preview highlight box) -- the scanner tracks a `"children"` value's own
+  extra, otherwise-unmarked object/array frame (`frame::is_children_wrapper`)
+  so a named child's path can be built as `owner_path + "." + name`
+  matching `import_json()`'s own convention exactly.
 
 ## 4. Data Flow / Architecture
 
@@ -105,7 +151,8 @@ In-editor edit:
     → editor::on_event(): dirty_ = true, update_path_label(), try_reparse()
 
 try_reparse():
-  read sandbox file bytes → import_json()
+  read sandbox file bytes → current_source_content_ = bytes (unconditionally,
+    even on the failure path below -- see "Cursor moved" flow) → import_json()
     on throw (invalid JSON / unknown element type):
       set_banner(e.what()); PREVIOUS preview subtree untouched → no flicker
     on success:
@@ -116,6 +163,35 @@ try_reparse():
       merge into ui_objects under mock_root_key_; register as a new
         top_level_objects/top_level_handlers entry
       set_banner("")
+
+Cursor moved (help panel + preview highlight):
+  TextEditor renderer diffs GetMainCursorPosition() each frame (only when
+  wish_ui_schema is set), enqueues "cursor_moved" {line, column} on change
+    → editor::on_event(): update_help_panel(line, column)
+      → ui_schema_help::scan_cursor_context(current_source_content_, {line, column})
+      → update_highlight(ctx.element_path):
+          no-op if unchanged from highlighted_path_; else, via s.ui_objects
+          dot-path lookup, clear "__wish_highlight__" on the old path's
+          element (if any) and set it on the new one; highlighted_path_ = ctx.element_path
+      → if enclosing_type non-empty: find_ui_element_class(enclosing_type),
+        format its display name/description/fields into help_panel_ptr_'s text
+      → else: clear help_panel_ptr_'s text
+    → imgui_renderer::render_node() reads "__wish_highlight__" on every
+      element as it renders and draws a gold GetForegroundDrawList() box
+      around it if set (see "6. Design Decisions")
+
+Autocomplete (type names, field names, enum values):
+  TextEditor renderer configures AutoCompleteConfig once (wish_ui_schema &&
+  language == "json"), callback runs synchronously during Render()
+    → fill_wish_ui_schema_suggestions(state): state.suggestions.clear()
+      (library does not clear between invocations -- see "6. Design Decisions")
+      → scan_cursor_context(editor->GetText(), {state.line, state.searchTermEndIndex})
+      → type_value: enumerate_ui_element_classes(), prefix-filtered
+      → field_key: find_ui_element_class(enclosing_type)'s fields, prefix-
+        filtered, excluding existing_field_names
+      → field_value: the matching field's enum_values, prefix-filtered
+    (rendering/accept-on-Tab/Enter is entirely internal to ImGuiColorTextEdit
+    -- no wish UI popup widget involved, see "6. Design Decisions")
 
 Preview widget event (e.g. a mock Button clicked):
   render loop → editor::on_event(widget_id, event, payload)
@@ -229,6 +305,146 @@ Close:
   `src/imgui/imgui_ui_renderer.cpp`); anything unrecognized falls back to
   `"event#<hash>"` rather than silently dropping the log entry.
 
+- **`_key` → `_rkey` conversion at every UI element class/field
+  registration site (34 files), not a hand-maintained duplicate name
+  table.** The help panel needs no name reversal at all (the type name is
+  already sitting in the source text at the cursor), but autocomplete's
+  *enumeration* of candidate type/field names needs the literal string
+  back from a `key_t` hash, which bison's one-way FNV-1a hash cannot
+  provide unless the name was registered via `_rkey`/`register_key_name()`
+  in the first place. Converting the class-registration and `addField`
+  name arguments (only — never a lookup/parent-key argument, a namespace
+  key, or any per-frame field *read*, which must stay the `constexpr`
+  `_key`) is mechanical, self-updating (a new class/field just needs to
+  keep using `_rkey`, already this repo's convention for exactly this
+  purpose), and avoids a second, drift-prone list duplicating what
+  `addField`/`addClass` already say.
+
+- **`lookup_registered_key_name()` (new bison accessor), not
+  `build_display_dict()`, for recovering a class/field's literal name.**
+  `build_display_dict()` deliberately prefers a `DisplayName` attribute
+  over the raw `_rkey`-registered name (correct for human-readable trace
+  output), which silently gives the *wrong* string for autocomplete
+  insertion whenever the two differ — e.g. `TextEditor`'s `DisplayName` is
+  "Text Editor", `Window.pos_x`'s is "X". `ui_schema_help.cpp` always uses
+  `lookup_registered_key_name()` instead, never `DisplayName`, for any name
+  it intends to insert into JSON text.
+
+- **Cursor-context scanning is backward-only and re-derived from scratch
+  on every call, not incremental.** `scan_cursor_context()` re-scans
+  `source[0, offset)` from byte 0 every time, rather than maintaining
+  parser state across keystrokes. Simpler and correct-by-construction (no
+  stale-state bugs across edits), and fast enough in practice since editor
+  JSON mocks are small; revisit only if this proves a real bottleneck on
+  much larger files. It cannot reuse `import_json()`/nlohmann::json, which
+  require the *whole* document to be valid JSON — true only in the rare
+  instant right after a complete edit, not during the keystroke-by-keystroke
+  typing autocomplete/help panel must work through.
+
+- **Autocomplete uses `AutoCompleteState::searchTermEndIndex`, not
+  `searchTermStartIndex`, as the scan position.** The start index is fixed
+  at the beginning of the in-progress token; using it makes
+  `scan_cursor_context()` see zero characters of the token typed so far, so
+  `partial_text` always comes out empty — which matches every candidate as
+  a prefix and defeats filtering entirely (silently, not as a crash) until
+  this was caught via live automation testing. The end index tracks the
+  current typing position, which is what "characters typed so far" means.
+
+- **The autocomplete callback clears `state.suggestions` itself.**
+  `ImGuiColorTextEdit`'s own doc comment states the suggestion list is
+  *not* cleared between callback invocations (one per keystroke) — a
+  callback that only appends, as an initial implementation did, silently
+  accumulates duplicate suggestions across a typing session (caught live:
+  "Button" appeared twice after typing two keystrokes in quick succession).
+
+- **Autocomplete's popup is entirely `ImGuiColorTextEdit`'s own, not a new
+  wish UI widget.** The vendored library already renders a suggestion
+  popup and handles accept-on-Tab/Enter/click internally once `suggestions`
+  is filled in `AutoCompleteConfig::callback` — this is only possible
+  because wish's ImGui rendering runs **server-side**
+  (`imgui_text_editor_renderer.cpp` is compiled into `wish_server`; the web
+  renderer only streams the resulting draw list), so the callback has
+  synchronous, in-process access to the full document text
+  (`TextEditor::GetText()`, reached via `AutoCompleteConfig::userData`) and
+  the live class registry, with no RMI round-trip. The popup therefore
+  works identically under `--renderer=sdl3` and `--renderer=web` with zero
+  renderer-specific code, same as the rest of `TextEditor`.
+
+- **`source`'s explicit `width: 600` (not `0`/fill), inside a new
+  `editor_row` `HorizontalLayout` wrapping `source` and `help_panel`.**
+  `HorizontalLayout` only wraps a child in its own fixed-width
+  `BeginChild()` when that child's own `width` field is nonzero (the same
+  mechanism `Image`/`Layout` columns use); at `width: 0`, `TextEditor`'s
+  own "fill available width" behavior would consume the entire row with no
+  column constraint, leaving nothing for `help_panel` to render beside it.
+  This moved `source` from `vbox.source` to `vbox.editor_row.source` in the
+  chrome tree — an internal path change, updated in every place the test
+  suite (`tests/test_editor.cpp`) or automation script names it directly.
+
+- **Help panel gated on `wish_ui_schema`, cursor-move tracking gated on it
+  too — both off unless explicitly enabled.** `TextEditor.wish_ui_schema`
+  defaults to `false` so other `TextEditor` uses in wish (Notepad) don't
+  pay for cursor-position tracking or accumulate an otherwise-unconsumed
+  `"cursor_moved"` event stream; the editor module's own `source` entry in
+  `kEditorLayout` is the only place it's set `true`.
+
+- **Preview highlight drawn by a generic field check in the shared
+  `imgui_renderer::render_node()`, not a web/automation-specific hook.**
+  wish already has a per-widget rect-capture mechanism (the automation
+  module's `hit_test_map_` in `web_renderer.cpp`), but it's compiled only
+  under `WISH_ENABLE_AUTOMATION`/`WISH_ENABLE_WEB` and gives rects for
+  *every* widget every frame — overkill for highlighting a single widget,
+  and would make the highlight silently not work in an automation-less or
+  `sdl3` build. Instead, `render_node()` (base `imgui_renderer`, compiled
+  whenever `WISH_ENABLE_IMGUI` is, no gating) checks a single ad-hoc
+  `"__wish_highlight__"` field (like `__wish_id`/`__path__`, never
+  registered via `addField`) right after the node's own dispatch call —
+  the same timing the automation hit-test capture uses for
+  `GetItemRectMin/Max()` — and draws directly via
+  `ImGui::GetForegroundDrawList()->AddRect(...)` if set. Works identically
+  under `sdl3` and `web` renderers with zero renderer-specific code, and
+  needs no per-widget map at all since only ever one widget is highlighted
+  at a time.
+
+- **Container elements now highlight their own bounds, not their
+  last-rendered child's.** `imgui_renderer::render_node()`
+  (`src/imgui/imgui_renderer.cpp`) wraps the dispatch call of any class that
+  actually recurses into children (`VerticalLayout`/`HorizontalLayout`,
+  `TabBar`/`TabItem`, `TreeNode`, `CollapsingHeader`, `Table`/`TableRow`,
+  `Plot`/`Plot3D`) in `ImGui::BeginGroup()`/`EndGroup()`, which makes
+  `GetItemRectMin/Max()` return the bounding box of everything the container
+  drew instead of just the last item; `Window`/`DockSpaceViewport` (which
+  open a genuine new top-level window a group can't see into) self-report
+  their own rect via `ImGui::GetWindowPos()/GetWindowSize()` instead. Leaf
+  widgets are deliberately left unwrapped (wrapping them broke
+  `GetItemID()`/`IsItemActive()` for idle widgets — see the exclusion's doc
+  comment in `render_node()`), so their rects are exactly as precise as
+  before. `MenuBar`/`Menu`/`MenuButton` remain a known, narrower residual
+  limitation: `BeginMenuBar()` internally resets its own layout bookkeeping
+  in a way an outer group can't usefully capture, and `Menu`/`MenuButton`'s
+  own visible identity (the trigger label/button in the current window) is
+  already a correct leaf rect on its own — their real children live in a
+  separate floating popup a group around the current window can't describe
+  anyway.
+
+- **`scan_cursor_context()`'s `element_path` falls back to the *owning*
+  element while the cursor sits in the gap before a child is named yet**
+  (e.g. right after `"children": {`, before any key). Rather than nullopt
+  (no addressable position) or the nonexistent not-yet-named child, the
+  owning element's own path is used, so there's still a sensible highlight
+  target — the element about to receive a new child, not nothing.
+
+- **Highlight state (`highlighted_path_`) is reapplied inline in
+  `try_reparse()`'s existing per-element loop, not via a separate lookup
+  after rebuild.** Every reparse tears down and rebuilds the *entire*
+  preview subtree, discarding any field set on the old tree's elements
+  (including `"__wish_highlight__"`). Since `try_reparse()` already
+  iterates every fresh element by its dot-path while assigning ids, adding
+  one conditional (`if (highlighted_path_ && *highlighted_path_ == path)
+  elem["__wish_highlight__"_key] = true;`) there is simpler than a second
+  `s.ui_objects` lookup pass after the tree is merged in — no extra
+  traversal, and `elem` is already in hand.
+
 - **Close confirmation is an inline panel, not a modal dialog.** wish has
   no dedicated modal/popup element. The panel (`vbox.confirm`) is an
   ordinary child layout that starts `"visible": false` and is toggled by
@@ -271,7 +487,19 @@ Depends on:
   local-file bridging, same contract as Notepad's client runner.
 - `TextEditor` (`src/ui/ui_elements/text_editor.cpp`,
   `src/imgui/imgui_text_editor_renderer.cpp`) — JSON syntax highlighting,
-  file-backed autosave-to-sandbox, `"changed"`/`"saved"` events.
+  file-backed autosave-to-sandbox, `"changed"`/`"saved"`/`"cursor_moved"`
+  events, `wish_ui_schema`-gated autocomplete.
+- `ui_schema_help` (`src/ui/ui_schema_help.hpp`/`.cpp`) — class registry
+  queries and the JSON cursor-context scanner backing the help panel,
+  autocomplete, and preview highlight (shared, not editor-specific,
+  despite having no other consumer yet).
+- `bison::lookup_registered_key_name()`/`Enum`/`EnumFlags::entries()`
+  (`extern/bison`) — literal name recovery and enum/flag value enumeration;
+  see "9. Shared Core Fixes" for why these needed adding.
+- `imgui_renderer::render_node()` (`src/imgui/imgui_renderer.cpp`) — the
+  shared base-class render entry point every widget passes through;
+  reads `"__wish_highlight__"` and draws the preview highlight box (see
+  "6. Design Decisions").
 - `Table` with `ImGuiTableFlags_ScrollY` — event log rendering/scrolling.
 - The web renderer's clipboard bridge (`src/web/DESIGN.md`) — needed for
   copy/paste in the source editor to interoperate with the OS clipboard
@@ -279,12 +507,14 @@ Depends on:
 
 Depended on by: nothing else in wish; this is a leaf module. The
 `wish-module`/`wish-ui` skills reference it as the recommended way to
-preview a UI mock during development.
+preview a UI mock during development. `ui_schema_help` itself has no other
+consumer yet, but is not editor-specific.
 
 ## 9. Shared Core Fixes
 
 Development of this module surfaced three bugs in shared wish core code
-(not specific to the editor, fixed at the source):
+(not specific to the editor, fixed at the source), plus two later additive
+bison accessors for the help panel/autocomplete work:
 
 1. **`with_id()` "##" → "###"** (`src/imgui/imgui_ui_renderer.cpp`) — see
    "6. Design Decisions" above.
@@ -320,6 +550,13 @@ Development of this module surfaced three bugs in shared wish core code
    `GetClipboardTextFn` is a synchronous ImGui callback — the client must
    push `CLIPBOARD_TEXT` and queue any other in-flight key events so
    nothing races ahead of the deliberately-delayed paste keydown).
+5. **`bison::lookup_registered_key_name(hash_t)`** (`bison_common.hpp`/
+   `bison.cpp`) — reads the raw `_rkey`-registered name without
+   `build_display_dict()`'s `DisplayName` overlay. **`Enum`/
+   `EnumFlags::entries()`** (`bison_object.hpp`) — one-line accessors
+   exposing each attribute's name/value table, previously only reachable
+   through `parse()`/`format()` on a specific value. Both purely additive;
+   no existing bison call site or behavior changed.
 
 ## 10. Implementation Status
 
@@ -329,22 +566,21 @@ position/size/focus across edits, generic event log (path + event +
 payload) with a 200-row cap and auto-scroll, filename label with
 `[MODIFIED]` state, Ctrl+S / close-confirmation save flow, external
 file-change watching, OS clipboard copy/paste interop (as of the shared
-core fixes above).
+core fixes above); **help panel** (cursor position → enclosing element's
+description/fields, via `ui_schema_help::scan_cursor_context()` +
+`find_ui_element_class()`); **autocompletion** for element type names,
+field names, and `Enum`/`EnumFlags` values, sourced from the same registry
+and rendered by `ImGuiColorTextEdit`'s own built-in suggestion popup (no
+new wish UI widget); **preview highlight** — a gold box (drawn by
+`imgui_renderer::render_node()`) around the exact preview widget the
+cursor is currently editing, resolved via `scan_cursor_context()`'s
+`element_path` and kept correct across reparses via `highlighted_path_`.
+All five verified end-to-end via the automation module against a live
+`wish client --run=editor --renderer=web` session.
 
-**Not implemented** (explicit non-goals for this pass; see the module's
-`README.md` "Future work" section for the same list from a user-facing
-angle):
-- **Help panel**: detecting the UI element type at the text cursor's
-  position and showing its description/properties/methods (sourced from
-  the same `dynamic` class registry the preview already parses against).
-- **Autocompletion**: JSON-schema-driven completion for element types and
-  fields as the user types.
-- **Element palette**: a browsable list of every registered wish UI class,
-  grouped by collection (`ui`, `plot2d`, `plot3d`, ...).
-
-None of these three have any code scaffolding yet — they were scoped out
-at the start of this module's implementation (a deliberate, explicit user
-decision, not an oversight) precisely because each needs a real design
-pass of its own (in particular, mapping a `TextEditor` cursor position
-back to a JSON AST node for the help panel has no existing wish primitive
-to build on).
+**Not implemented**: **Element palette** — a browsable list of every
+registered wish UI class, grouped by collection (`ui`, `plot2d`,
+`plot3d`, ...). No code scaffolding yet; would reuse
+`ui_schema_help::enumerate_ui_element_classes()` for the class list itself,
+but collection/grouping metadata doesn't exist anywhere in the registry
+today (see `docs/visual-editor-options.md`) and needs its own design pass.

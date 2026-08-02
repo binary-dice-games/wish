@@ -494,11 +494,20 @@ void web_renderer::render_node(const ui_element& node, const context& s) {
   if (id.id == 0)
     return; // node was never assigned an id (e.g. a manually built test tree)
 
+  // last_resolved_rect_min_/max_ is the same rect imgui_renderer::render_node()
+  // just resolved for this node -- the group-wrapped bounding box for most
+  // classes, or the self-reported Begin()/BeginPopupModal() window rect for
+  // Window/DockSpaceViewport -- so a container's captured rect is now its
+  // own bounds instead of whatever its last-rendered descendant drew.
+  // IsItemHovered/Active/Visible() still read the plain post-dispatch ImGui
+  // item state (forwarded correctly across the BeginGroup()/EndGroup() wrap
+  // for the group-wrapped case; unaffected either way for Window/
+  // DockSpaceViewport, which were never wrapped).
   hit_test_map_[id] = automation::hit_test_entry{
-      ImGui::GetItemRectMin().x,
-      ImGui::GetItemRectMin().y,
-      ImGui::GetItemRectMax().x,
-      ImGui::GetItemRectMax().y,
+      last_resolved_rect_min_.x,
+      last_resolved_rect_min_.y,
+      last_resolved_rect_max_.x,
+      last_resolved_rect_max_.y,
       ImGui::IsItemHovered(),
       ImGui::IsItemActive(),
       ImGui::IsItemVisible(),

@@ -10,30 +10,30 @@ namespace bdg::wish {
 using namespace bdg::bison;
 
 void register_input_text() {
-  auto proto = dynamic_ptr{"InputText"_key, {}};
+  auto proto = dynamic_ptr{"InputText"_rkey, {}};
   proto->addField(
-      "label"_key,
+      "label"_rkey,
       field{
           std::string{""},
           attr<DisplayName>("Label"),
           attr<Description>("Input field label."),
           attr<Category>("Content")});
   proto->addField(
-      "value"_key,
+      "value"_rkey,
       field{
           std::string{""},
           attr<DisplayName>("Value"),
           attr<Description>("Current text value."),
           attr<Category>("State")});
   proto->addField(
-      "hint"_key,
+      "hint"_rkey,
       field{
           std::string{""},
           attr<DisplayName>("Hint"),
           attr<Description>("Placeholder text shown when the field is empty."),
           attr<Category>("Content")});
   proto->addField(
-      "max_length"_key,
+      "max_length"_rkey,
       field{
           int32_t{256},
           attr<DisplayName>("Max Length"),
@@ -42,7 +42,7 @@ void register_input_text() {
           attr<Range>(1, 65536),
           attr<Step>(1)});
   proto->addField(
-      "width"_key,
+      "width"_rkey,
       field{
           float{0.0f},
           attr<DisplayName>("Width"),
@@ -50,7 +50,7 @@ void register_input_text() {
                             "-1 fills the remaining content width."),
           attr<Category>("Layout")});
   proto->addField(
-      "flags"_key,
+      "flags"_rkey,
       field{
           int32_t{0},
           attr<DisplayName>("Flags"),

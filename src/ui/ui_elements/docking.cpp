@@ -15,23 +15,23 @@ void register_docking() {
   // entire viewport.  Children that are Windows become independent dockable
   // windows; other children (e.g. MenuBar) are rendered inside the host window.
   {
-    auto proto = dynamic_ptr{"DockSpaceViewport"_key, {}};
+    auto proto = dynamic_ptr{"DockSpaceViewport"_rkey, {}};
     proto->addField(
-        "id"_key,
+        "id"_rkey,
         field{
             std::string{"demo_dockspace"},
             attr<DisplayName>("ID"),
             attr<Description>("Identifier used for both the host window and the DockSpace."),
             attr<Category>("Behavior")});
     proto->addField(
-        "flags"_key,
+        "flags"_rkey,
         field{
             int32_t{0},
             attr<DisplayName>("Flags"),
             attr<Description>("ImGuiDockNodeFlags bitmask."),
             attr<Category>("Behavior")});
     proto->addField(
-        "passthru"_key,
+        "passthru"_rkey,
         field{
             bool{false},
             attr<DisplayName>("Passthru Central Node"),
@@ -50,30 +50,30 @@ void register_docking() {
   // ── DockSpace ─────────────────────────────────────────────────────────────
   // Embeds a named DockSpace at the current cursor position inside any window.
   {
-    auto proto = dynamic_ptr{"DockSpace"_key, {}};
+    auto proto = dynamic_ptr{"DockSpace"_rkey, {}};
     proto->addField(
-        "id"_key,
+        "id"_rkey,
         field{
             std::string{"dockspace"},
             attr<DisplayName>("ID"),
             attr<Description>("String identifier hashed to produce the ImGui DockSpace ID."),
             attr<Category>("Behavior")});
     proto->addField(
-        "width"_key,
+        "width"_rkey,
         field{
             float{0.0f},
             attr<DisplayName>("Width"),
             attr<Description>("DockSpace width; 0 fills available width."),
             attr<Category>("Layout")});
     proto->addField(
-        "height"_key,
+        "height"_rkey,
         field{
             float{0.0f},
             attr<DisplayName>("Height"),
             attr<Description>("DockSpace height; 0 fills available height."),
             attr<Category>("Layout")});
     proto->addField(
-        "flags"_key,
+        "flags"_rkey,
         field{
             int32_t{0},
             attr<DisplayName>("Flags"),

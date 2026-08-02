@@ -311,6 +311,47 @@ void imgui_renderer::render_node(const ui_element& node, const context& s) {
   ImGui::PushID(stable_id(node).c_str());
 
   auto cls = node.as<key_t>(dynamic::CLASS);
+
+  // Window/DockSpaceViewport open a genuine new top-level ImGui window via
+  // Begin()/BeginPopupModal() -- GetItemRectMin/Max() after their dispatch
+  // call reflects whatever was drawn last *inside* that window, not the
+  // window itself, and a BeginGroup()/EndGroup() wrap can't see across a
+  // Begin()/End() boundary either. Those two report their own rect directly
+  // (see the "__wish_win_rect_*__" fields stamped in render_window()/
+  // render_dockspace_viewport()) instead of being wrapped here.
+  bool self_reports_rect = cls == "Window"_key || cls == "DockSpaceViewport"_key;
+
+  // Only classes whose render function actually recurses into ui_element
+  // children need a group wrap to report their own bounding box -- every
+  // leaf class (Button, Label, Checkbox, ...) already reports its own exact
+  // rect via the single ImGui item it draws, and wrapping it anyway would
+  // be actively harmful: EndGroup() unconditionally reassigns
+  // g.LastItemData.ID to 0 unless the group currently contains the active
+  // (or just-deactivated) id (see ImGui::EndGroup(), imgui.cpp), so
+  // GetItemID()/IsItemActive() read after render_node() returns for an idle
+  // leaf widget would silently go from "that widget's real id" to 0 --
+  // breaking anything that keys off a widget's id after the fact (this
+  // broke several existing click-simulation tests in test_imgui_renderer.cpp
+  // during development of this fix, which is how the need for this
+  // exclusion was caught). MenuBar/Menu/MenuButton are deliberately
+  // excluded despite recursing: MenuBar's own internal group already resets
+  // window->DC.CursorMaxPos back to its pre-menu-bar value (so the menu bar
+  // doesn't perturb the parent window's layout), which would make an outer
+  // group's bounding box degenerate rather than useful; Menu/MenuButton's
+  // own visible identity (the "File" label / trigger Button in the
+  // *current* window) is already a single, correctly-reported leaf item --
+  // their actual children render inside a separate floating popup window a
+  // group around the current window can't meaningfully describe anyway, so
+  // there is nothing a wrap would improve for these two, only the same
+  // id-forwarding risk described above to avoid. All three are documented
+  // as a known, narrower residual limitation instead.
+  bool needs_group_wrap = cls == "VerticalLayout"_key || cls == "HorizontalLayout"_key || cls == "TabBar"_key ||
+      cls == "TabItem"_key || cls == "TreeNode"_key || cls == "CollapsingHeader"_key || cls == "Table"_key ||
+      cls == "TableRow"_key || cls == "Plot"_key || cls == "Plot3D"_key;
+
+  if (needs_group_wrap)
+    ImGui::BeginGroup();
+
   auto it = render_fns_.find(cls.id);
   if (it != render_fns_.end()) {
     it->second(*this, node, s);
@@ -320,9 +361,61 @@ void imgui_renderer::render_node(const ui_element& node, const context& s) {
     render_children(*this, node, s);
   }
 
+  if (needs_group_wrap) {
+    // Guarantees EndGroup() always closes over something drawn at THIS
+    // container's own current position. Without this, a container whose
+    // dispatch call drew nothing (a collapsed TreeNode, an empty Layout, a
+    // BeginTabBar()/BeginTable()/BeginPlot() that returned false, ...)
+    // leaves EndGroup()'s bounding-box computation free to fall back to
+    // g.LastItemData.Rect.Max -- a #7543 EndTable() workaround in ImGui
+    // itself -- which is whatever unrelated item was drawn immediately
+    // *before* this container started, silently misattributing this
+    // container's rect to a sibling. Placed after all real content (never
+    // before), a zero-size Dummy() only overwrites this bookkeeping and
+    // never shifts anything the container itself already drew: EndGroup()
+    // discards its cursor position via BackupCursorPos regardless. Same
+    // root cause and idiom as render_image()'s reserve() lambda above.
+    ImGui::Dummy(ImVec2(0.0f, 0.0f));
+    ImGui::EndGroup();
+    last_resolved_rect_min_ = ImGui::GetItemRectMin();
+    last_resolved_rect_max_ = ImGui::GetItemRectMax();
+  } else if (self_reports_rect) {
+    const auto* rx = node.findField("__wish_win_rect_x__"_key);
+    const auto* ry = node.findField("__wish_win_rect_y__"_key);
+    const auto* rw = node.findField("__wish_win_rect_w__"_key);
+    const auto* rh = node.findField("__wish_win_rect_h__"_key);
+    if (rx && rx->is<float>() && ry && ry->is<float>() && rw && rw->is<float>() && rh && rh->is<float>()) {
+      last_resolved_rect_min_ = ImVec2(rx->as<float>(), ry->as<float>());
+      last_resolved_rect_max_ = ImVec2(rx->as<float>() + rw->as<float>(), ry->as<float>() + rh->as<float>());
+    } else {
+      // Defensive fallback only -- shouldn't happen in practice, since
+      // render_window()/render_dockspace_viewport() always stamp these
+      // fields whenever they actually open their window.
+      last_resolved_rect_min_ = ImGui::GetItemRectMin();
+      last_resolved_rect_max_ = ImGui::GetItemRectMax();
+    }
+  } else {
+    // A leaf class (or MenuBar -- see needs_group_wrap's doc comment):
+    // neither wrapped nor self-reporting, so the plain post-dispatch ImGui
+    // item state already IS this node's own rect, unmodified from before
+    // this fix -- exactly as accurate as it always was for these classes.
+    last_resolved_rect_min_ = ImGui::GetItemRectMin();
+    last_resolved_rect_max_ = ImGui::GetItemRectMax();
+  }
+
   // Attaches to whatever ImGui item the dispatch call above drew last -- see
   // handle_drag_drop()'s own doc comment.
   handle_drag_drop(node, s);
+
+  // "__wish_highlight__" is an ad-hoc field (like "__wish_id"/"__path__"
+  // elsewhere) set by the editor module to box whichever preview widget
+  // corresponds to the JSON element enclosing the source TextEditor's
+  // cursor. GetForegroundDrawList() draws over every window, unclipped, so
+  // the box is never hidden behind a sibling.
+  if (node.get_as<bool>("__wish_highlight__"_key, false)) {
+    ImGui::GetForegroundDrawList()->AddRect(
+        last_resolved_rect_min_, last_resolved_rect_max_, IM_COL32(255, 215, 0, 255), 0.0f, 0, 2.5f);
+  }
 
   ImGui::PopID();
   ImGui::PopFont();

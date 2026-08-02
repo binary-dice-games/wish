@@ -10,16 +10,16 @@ namespace bdg::wish {
 using namespace bdg::bison;
 
 void register_radio_button() {
-  auto proto = dynamic_ptr{"RadioButton"_key, {}};
+  auto proto = dynamic_ptr{"RadioButton"_rkey, {}};
   proto->addField(
-      "label"_key,
+      "label"_rkey,
       field{
           std::string{},
           attr<DisplayName>("Label"),
           attr<Description>("Caption shown beside the radio circle."),
           attr<Category>("Content")});
   proto->addField(
-      "active"_key,
+      "active"_rkey,
       field{
           false,
           attr<DisplayName>("Active"),

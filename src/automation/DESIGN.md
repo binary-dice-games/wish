@@ -212,7 +212,7 @@ void web_renderer::render_node(const ui_element& node, const context& s) {
   auto id = node.as<bison::key_t>("__wish_id"_key);
   if (!id) return;
   hit_test_map_[*id] = {
-      ImGui::GetItemRectMin(), ImGui::GetItemRectMax(),
+      last_resolved_rect_min_, last_resolved_rect_max_,  // see "Container/window rects" below
       ImGui::IsItemHovered(), ImGui::IsItemActive(), ImGui::IsItemVisible(),
   };
 }
@@ -638,16 +638,31 @@ beyond, what's specified above:
   with `visible=false`. `web_renderer::render_node()` checks the same
   `visible` field before capturing `GetItemRect*()`, so an invisible node
   doesn't get a stale, unrelated widget's rect attributed to it.
-- **Container/window rects are not meaningful.** `ImGui::GetItemRectMin/Max()`
-  reflects whatever ImGui widget call happened most recently — for a leaf
-  widget (`Button`, `Checkbox`, ...) that's always its own call, since
-  nothing else runs between the widget's own ImGui call and this capture.
-  For a container (`Window`, `Layout`, `TabBar`, ...), `render_children()`
-  runs *before* the capture, so the captured rect actually belongs to
-  whichever descendant rendered last inside it. This was accepted as-is
-  (the design's own sketch has the same property for every element
-  uniformly) rather than adding per-class capture logic; see `CLAUDE.md`'s
-  "Automation" section for the agent-facing version of this caveat.
+- **Container/window rects are now accurate.** `hit_test_map_` no longer
+  reads `ImGui::GetItemRectMin/Max()` directly; it reads
+  `imgui_renderer::last_resolved_rect_min_/max_` (`src/imgui/imgui_renderer.hpp`),
+  which the base class resolves once per `render_node()` call. For a class
+  whose render function recurses into children (`VerticalLayout`/
+  `HorizontalLayout`, `TabBar`/`TabItem`, `TreeNode`, `CollapsingHeader`,
+  `Table`/`TableRow`, `Plot`/`Plot3D`), the dispatch call is wrapped in
+  `ImGui::BeginGroup()`/`EndGroup()`, so the resolved rect is the bounding
+  box of everything the container drew, not just its last child. `Window`/
+  `DockSpaceViewport` open a genuine new top-level window a group can't see
+  into, so they self-report via `ImGui::GetWindowPos()/GetWindowSize()`
+  instead (hidden `__wish_win_rect_*__` fields stamped right after their own
+  `Begin()`/`BeginPopupModal()`). Leaf widgets are deliberately left
+  unwrapped — wrapping every class unconditionally was tried first and
+  broke `GetItemID()`/`IsItemActive()` for idle widgets (`EndGroup()`
+  unconditionally reassigns `g.LastItemData.ID` to 0 unless the group
+  currently contains the active/deactivated id), so only classes that
+  actually recurse are wrapped. `MenuBar`/`Menu`/`MenuButton` remain a
+  known, narrower gap: `BeginMenuBar()` internally resets its own layout
+  bookkeeping in a way no outer group can see through, and `Menu`/
+  `MenuButton`'s own visible identity (the trigger label/button in the
+  current window) is already a correct leaf rect on its own — their actual
+  children render inside a separate floating popup a group around the
+  current window can't describe anyway. See `CLAUDE.md`'s "Automation"
+  section for the agent-facing version of this note.
 - **`AutomationClient` picks its own port.** Rather than passing
   `--web_port 0` (ephemeral) and parsing the server subprocess's stdout to
   discover which port it actually bound — fragile, and `wish server` prints

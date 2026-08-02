@@ -952,6 +952,111 @@ TEST_F(ImguiRendererTest, ExtraRenderFnsOverrideIsPerInstanceNotGlobal) {
   EXPECT_FALSE(g_dummy_render_called);
 }
 
+// ── Container rect capture ────────────────────────────────────────────────────
+//
+// Verifies the fix for the documented "container rect capture" limitation:
+// GetItemRectMin/Max() right after a container's dispatch call used to
+// reflect whatever its last-rendered descendant drew, not the container's
+// own bounds. imgui_renderer::render_node() now resolves each node's own
+// rect into last_resolved_rect_min_/max_ -- the bounding box of everything
+// the container drew (via a BeginGroup()/EndGroup() wrap) for most classes,
+// or the window's own GetWindowPos()/GetWindowSize() (via the
+// "__wish_win_rect_*__" hidden fields) for Window/DockSpaceViewport, which
+// open a new top-level window a group can't see into.
+
+class rect_capturing_renderer : public imgui_renderer {
+ public:
+  bdg::bison::key_t target_class;
+  ImVec2 captured_min{-1.0f, -1.0f};
+  ImVec2 captured_max{-1.0f, -1.0f};
+
+  void render_node(const ui_element& node, const context& s) override {
+    imgui_renderer::render_node(node, s);
+    if (node.as<bdg::bison::key_t>(dynamic::CLASS) == target_class) {
+      captured_min = last_resolved_rect_min_;
+      captured_max = last_resolved_rect_max_;
+    }
+  }
+};
+
+TEST_F(ImguiRendererTest, WindowRectMatchesWindowSizeNotLastChild) {
+  // A small trailing child ("small") would be the last thing GetItemRect*()
+  // saw pre-fix -- its own rect is nowhere near 400x300.
+  auto map = bdg::wish::import_json(
+      R"({"type":"Window","title":"W","width":400,"height":300,"children":{
+            "big":{"type":"Button","label":"Big","width":350,"height":40},
+            "small":{"type":"Button","label":"X","width":10,"height":10}
+          }})");
+
+  rect_capturing_renderer r;
+  r.target_class = "Window"_key;
+  r.begin_frame();
+  r.render_node(*map[""], *sess_);
+  r.end_frame();
+
+  float width = r.captured_max.x - r.captured_min.x;
+  float height = r.captured_max.y - r.captured_min.y;
+  EXPECT_NEAR(width, 400.0f, 1.0f);
+  EXPECT_NEAR(height, 300.0f, 1.0f);
+}
+
+TEST_F(ImguiRendererTest, VerticalLayoutRectSpansAllChildrenNotLastOnly) {
+  auto map = bdg::wish::import_json(
+      R"({"type":"VerticalLayout","children":{
+            "a":{"type":"Button","label":"A","width":300,"height":60},
+            "b":{"type":"Button","label":"B","width":10,"height":10}
+          }})");
+
+  rect_capturing_renderer r;
+  r.target_class = "VerticalLayout"_key;
+  r.begin_frame();
+  in_window([&] { r.render_node(*map[""], *sess_); });
+  r.end_frame();
+
+  float width = r.captured_max.x - r.captured_min.x;
+  float height = r.captured_max.y - r.captured_min.y;
+  // The last child ("b") alone is only 10x10 -- a bounding box spanning both
+  // children must be at least as wide/tall as the bigger first child.
+  EXPECT_GE(width, 300.0f);
+  EXPECT_GE(height, 60.0f);
+}
+
+TEST_F(ImguiRendererTest, TreeNodeCollapsedStillReportsOwnRectWithoutThrow) {
+  // A collapsed TreeNode's dispatch draws only its own header row (no
+  // children) -- exercises the trailing Dummy()'s "container drew something,
+  // but very little" path without a genuinely empty group.
+  auto map = bdg::wish::import_json(
+      R"({"type":"TreeNode","label":"Node","open":false,"children":{
+            "child":{"type":"Label","text":"hidden"}
+          }})");
+
+  rect_capturing_renderer r;
+  r.target_class = "TreeNode"_key;
+  EXPECT_NO_THROW({
+    r.begin_frame();
+    in_window([&] { r.render_node(*map[""], *sess_); });
+    r.end_frame();
+  });
+
+  EXPECT_GT(r.captured_max.x, r.captured_min.x);
+}
+
+TEST_F(ImguiRendererTest, ButtonRectStillPrecise) {
+  // Leaf widgets must remain unaffected by the group-wrap.
+  auto map = bdg::wish::import_json(R"({"type":"Button","label":"OK","width":80,"height":30})");
+
+  rect_capturing_renderer r;
+  r.target_class = "Button"_key;
+  r.begin_frame();
+  in_window([&] { r.render_node(*map[""], *sess_); });
+  r.end_frame();
+
+  float width = r.captured_max.x - r.captured_min.x;
+  float height = r.captured_max.y - r.captured_min.y;
+  EXPECT_NEAR(width, 80.0f, 1.0f);
+  EXPECT_NEAR(height, 30.0f, 1.0f);
+}
+
 // ── Offscreen render target (base class) ─────────────────────────────────────
 
 // The base imgui_renderer has no GPU backend attached, so begin_render_target()

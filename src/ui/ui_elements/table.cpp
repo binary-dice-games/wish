@@ -15,16 +15,16 @@ void register_table() {
   // the renderer iterates them first to call TableSetupColumn, then calls
   // TableHeadersRow if headers == true, then renders the remaining children.
   {
-    auto proto = dynamic_ptr{"Table"_key, {}};
+    auto proto = dynamic_ptr{"Table"_rkey, {}};
     proto->addField(
-        "id"_key,
+        "id"_rkey,
         field{
             std::string{"##table"},
             attr<DisplayName>("ID"),
             attr<Description>("ImGui string identifier for this table."),
             attr<Category>("Behavior")});
     proto->addField(
-        "columns"_key,
+        "columns"_rkey,
         field{
             int32_t{1},
             attr<DisplayName>("Columns"),
@@ -33,35 +33,35 @@ void register_table() {
             attr<Range>(1, 64),
             attr<Step>(1)});
     proto->addField(
-        "flags"_key,
+        "flags"_rkey,
         field{
             int32_t{0},
             attr<DisplayName>("Flags"),
             attr<Description>("ImGuiTableFlags bitmask (e.g. Borders=1920, RowBg=64, Resizable=1)."),
             attr<Category>("Behavior")});
     proto->addField(
-        "outer_width"_key,
+        "outer_width"_rkey,
         field{
             float{0.0f},
             attr<DisplayName>("Outer Width"),
             attr<Description>("Outer container width; 0 fills available width."),
             attr<Category>("Layout")});
     proto->addField(
-        "outer_height"_key,
+        "outer_height"_rkey,
         field{
             float{0.0f},
             attr<DisplayName>("Outer Height"),
             attr<Description>("Outer container height; 0 means no clipping."),
             attr<Category>("Layout")});
     proto->addField(
-        "inner_width"_key,
+        "inner_width"_rkey,
         field{
             float{0.0f},
             attr<DisplayName>("Inner Width"),
             attr<Description>("Width allocated to contents; 0 uses outer width."),
             attr<Category>("Layout")});
     proto->addField(
-        "headers"_key,
+        "headers"_rkey,
         field{
             bool{false},
             attr<DisplayName>("Show Headers"),
@@ -82,30 +82,30 @@ void register_table() {
   // TableColumn — maps to ImGui::TableSetupColumn.
   // Must be a direct child of Table and precede any TableRow children.
   {
-    auto proto = dynamic_ptr{"TableColumn"_key, {}};
+    auto proto = dynamic_ptr{"TableColumn"_rkey, {}};
     proto->addField(
-        "label"_key,
+        "label"_rkey,
         field{
             std::string{},
             attr<DisplayName>("Label"),
             attr<Description>("Column header text, shown when Table.headers is true."),
             attr<Category>("Content")});
     proto->addField(
-        "flags"_key,
+        "flags"_rkey,
         field{
             int32_t{0},
             attr<DisplayName>("Flags"),
             attr<Description>("ImGuiTableColumnFlags bitmask."),
             attr<Category>("Behavior")});
     proto->addField(
-        "init_width"_key,
+        "init_width"_rkey,
         field{
             float{0.0f},
             attr<DisplayName>("Init Width"),
             attr<Description>("Initial column width in pixels (or weight for stretch columns)."),
             attr<Category>("Layout")});
     proto->addField(
-        "column_id"_key,
+        "column_id"_rkey,
         field{
             int32_t{0},
             attr<DisplayName>("Column ID"),
@@ -126,23 +126,23 @@ void register_table() {
   // TableRow — maps to ImGui::TableNextRow.
   // Each direct child of a TableRow is rendered into the next table column.
   {
-    auto proto = dynamic_ptr{"TableRow"_key, {}};
+    auto proto = dynamic_ptr{"TableRow"_rkey, {}};
     proto->addField(
-        "flags"_key,
+        "flags"_rkey,
         field{
             int32_t{0},
             attr<DisplayName>("Flags"),
             attr<Description>("ImGuiTableRowFlags bitmask (e.g. Headers=1)."),
             attr<Category>("Behavior")});
     proto->addField(
-        "min_height"_key,
+        "min_height"_rkey,
         field{
             float{0.0f},
             attr<DisplayName>("Min Height"),
             attr<Description>("Minimum row height in pixels; 0 uses default."),
             attr<Category>("Layout")});
     proto->addField(
-        "selected"_key,
+        "selected"_rkey,
         field{
             false,
             attr<DisplayName>("Selected"),

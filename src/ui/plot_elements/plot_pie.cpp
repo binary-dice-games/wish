@@ -14,9 +14,9 @@ namespace bdg::wish {
 using namespace bdg::bison;
 
 void register_plot_pie() {
-  auto proto = dynamic_ptr{"PlotPieChart"_key, {}};
+  auto proto = dynamic_ptr{"PlotPieChart"_rkey, {}};
   proto->addField(
-      "labels"_key,
+      "labels"_rkey,
       field{
           std::string{},
           attr<DisplayName>("Labels"),
@@ -24,7 +24,7 @@ void register_plot_pie() {
                             "one per entry in the values array."),
           attr<Category>("Content")});
   proto->addField(
-      "values"_key,
+      "values"_rkey,
       field{
           std::vector<float>{},
           attr<DisplayName>("Values"),
@@ -33,7 +33,7 @@ void register_plot_pie() {
                             "when true, they are normalized to sum to 1."),
           attr<Category>("Data")});
   proto->addField(
-      "x"_key,
+      "x"_rkey,
       field{
           float{0.5f},
           attr<DisplayName>("Center X"),
@@ -41,7 +41,7 @@ void register_plot_pie() {
           attr<Category>("Layout"),
           attr<Range>(0.0, 1.0)});
   proto->addField(
-      "y"_key,
+      "y"_rkey,
       field{
           float{0.5f},
           attr<DisplayName>("Center Y"),
@@ -49,7 +49,7 @@ void register_plot_pie() {
           attr<Category>("Layout"),
           attr<Range>(0.0, 1.0)});
   proto->addField(
-      "radius"_key,
+      "radius"_rkey,
       field{
           float{0.4f},
           attr<DisplayName>("Radius"),
@@ -57,7 +57,7 @@ void register_plot_pie() {
           attr<Category>("Layout"),
           attr<Range>(0.0, 1.0)});
   proto->addField(
-      "normalize"_key,
+      "normalize"_rkey,
       field{
           false,
           attr<DisplayName>("Normalize"),
@@ -65,14 +65,14 @@ void register_plot_pie() {
                             "relative to the total sum."),
           attr<Category>("Behavior")});
   proto->addField(
-      "label_fmt"_key,
+      "label_fmt"_rkey,
       field{
           std::string{"%.1f%%"},
           attr<DisplayName>("Label Format"),
           attr<Description>("printf format for the per-slice value label."),
           attr<Category>("Appearance")});
   proto->addField(
-      "angle0"_key,
+      "angle0"_rkey,
       field{
           float{90.0f},
           attr<DisplayName>("Start Angle"),
