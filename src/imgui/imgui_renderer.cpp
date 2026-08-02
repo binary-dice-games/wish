@@ -324,6 +324,18 @@ void imgui_renderer::render_node(const ui_element& node, const context& s) {
   // handle_drag_drop()'s own doc comment.
   handle_drag_drop(node, s);
 
+  // "__wish_highlight__" is an ad-hoc field (like "__wish_id"/"__path__"
+  // elsewhere) set by the editor module to box whichever preview widget
+  // corresponds to the JSON element enclosing the source TextEditor's
+  // cursor. GetForegroundDrawList() draws over every window, unclipped, so
+  // the box is never hidden behind a sibling. Same rect-capture timing (and
+  // the same "reflects whatever was drawn last inside a container" caveat)
+  // as the automation module's own hit-test capture in web_renderer.cpp.
+  if (node.get_as<bool>("__wish_highlight__"_key, false)) {
+    ImGui::GetForegroundDrawList()->AddRect(
+        ImGui::GetItemRectMin(), ImGui::GetItemRectMax(), IM_COL32(255, 215, 0, 255), 0.0f, 0, 2.5f);
+  }
+
   ImGui::PopID();
   ImGui::PopFont();
 }

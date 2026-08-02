@@ -23,7 +23,10 @@ whatever element type encloses the cursor, updated live as the cursor
 moves. The source editor also **autocompletes** element type names, field
 names, and enum/flag values as you type, sourced from the same registered
 class registry `Editor` parses against (see
-[src/ui/ui_schema_help.hpp](../../../../src/ui/ui_schema_help.hpp)).
+[src/ui/ui_schema_help.hpp](../../../../src/ui/ui_schema_help.hpp)). The
+**exact preview widget** the cursor is currently editing is boxed in gold
+in the live preview, moving as the cursor moves — so it's obvious at a
+glance which widget an edit is about to affect.
 
 - **server/**: `Editor` form (`register_editor()`) — owns the filename
   label, error banner, source `TextEditor` (JSON syntax highlighting,
@@ -37,10 +40,12 @@ class registry `Editor` parses against (see
   Logs every preview widget event as `"<dot-path> <event>"` plus a compact
   rendering of its payload, e.g. `"main.volume changed {value=75}"`; the
   log is capped at 200 rows (oldest evicted) and auto-scrolls to the newest
-  entry. Also updates the help panel on every source `TextEditor`
-  `"cursor_moved"` event, via a hand-rolled JSON-cursor scanner
-  (`ui_schema_help::scan_cursor_context()`) that tolerates the transiently
-  invalid JSON typical of an in-progress edit.
+  entry. Also updates the help panel and the preview highlight box on
+  every source `TextEditor` `"cursor_moved"` event, via a hand-rolled
+  JSON-cursor scanner (`ui_schema_help::scan_cursor_context()`) that
+  tolerates the transiently invalid JSON typical of an in-progress edit
+  and resolves the cursor to both an element *type* (for the help panel)
+  and its exact dot-*path* within the preview tree (for the highlight).
 - **client/**: `run_editor(wish_app_host&)`, self-registered as the
   `"editor"` embedded app — owns the local JSON file (`upload_file`/
   `download_file`, same sandbox-bridging rule as Notepad) and a background

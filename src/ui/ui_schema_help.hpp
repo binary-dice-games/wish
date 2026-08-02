@@ -115,6 +115,16 @@ struct cursor_context {
   /// in `scan_cursor_context()`'s doc comment for when this is empty even
   /// though the object does have a type).
   std::string enclosing_type;
+  /// The dot-path of the JSON element enclosing the cursor, in the exact
+  /// same format `ui_importer.cpp`'s `build_ui_node`/`build_ui_children`
+  /// produce (`""` for the document root, `"btn"`, `"btn.icon"`, ...) --
+  /// directly usable against a `ui_tree`'s dot-path keys with no
+  /// translation. `std::nullopt` when the cursor isn't in any addressable
+  /// element position (e.g. inside an unnamed/array-indexed child, which
+  /// `import_json()` itself never assigns a path to either). Set
+  /// independent of `kind`/`enclosing_type` -- even mid-typing the
+  /// element's own `"type"` value, its structural path is already known.
+  std::optional<std::string> element_path;
   /// kind == field_value: which field this value belongs to.
   std::string field_name;
   /// Text already typed in the current in-progress token, for prefix

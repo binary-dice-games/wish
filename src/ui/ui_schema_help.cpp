@@ -185,6 +185,14 @@ struct frame {
   std::string type_value; // this object's own "type" value, once seen
   std::vector<std::string> field_names; // keys seen so far in this object
   std::string pending_key; // most recently closed key awaiting its value
+
+  // Dot-path tracking (matches ui_importer.cpp's build_ui_node/build_ui_children
+  // convention exactly -- see scan_cursor_context's doc comment on why a
+  // "children" value is an extra, otherwise-unmarked nesting level between a
+  // parent element's frame and each of its named children's frames).
+  bool is_children_wrapper = false; // this object/array is the value of a "children" key
+  std::string owner_path; // children-wrapper only: the owning element's own path
+  std::optional<std::string> own_path; // element frames only: this element's dot-path
 };
 
 char last_non_ws_before(std::string_view source, size_t pos) {
@@ -195,6 +203,52 @@ char last_non_ws_before(std::string_view source, size_t pos) {
       return c;
   }
   return '\0';
+}
+
+// Determine the new frame's path-tracking fields from the stack as it stood
+// just before this `{`/`[` was pushed (i.e. `stack.back()` is still the
+// *parent* frame here). See the `frame` struct's own comment for the
+// "children" wrapper concept this distinguishes.
+frame make_frame(const std::vector<frame>& stack, bool is_object) {
+  frame f;
+  f.is_object = is_object;
+
+  if (stack.empty()) {
+    f.own_path = std::string{}; // document root
+    return f;
+  }
+
+  const frame& parent = stack.back();
+  if (parent.pending_key == "children") {
+    // This new frame is the "children" wrapper itself -- not an addressable
+    // element, but its own children need the owning element's path as a prefix.
+    f.is_children_wrapper = true;
+    f.owner_path = parent.own_path.value_or(std::string{});
+    return f;
+  }
+  if (parent.is_children_wrapper) {
+    // A direct entry of a "children" map/array: only a *named* entry (the
+    // wrapper is itself an object, and a key just closed for it) gets a path,
+    // matching import_json()'s own exclusion of unnamed/array-indexed children.
+    if (parent.is_object && !parent.pending_key.empty()) {
+      f.own_path =
+          parent.owner_path.empty() ? parent.pending_key : (parent.owner_path + "." + parent.pending_key);
+    }
+    return f;
+  }
+  // A `{`/`[` value for some field other than "children" -- not a wish
+  // schema-element position; own_path stays nullopt.
+  return f;
+}
+
+// The dot-path of the element @p top represents for highlighting purposes:
+// a children-wrapper frame (cursor positioned in the gap before any child is
+// named yet) falls back to the *owning* element, so there's still a sensible
+// target rather than nothing.
+std::optional<std::string> element_path_of(const frame& top) {
+  if (top.is_children_wrapper)
+    return top.owner_path;
+  return top.own_path;
 }
 
 } // namespace
@@ -244,10 +298,10 @@ cursor_context scan_cursor_context(std::string_view source, text_pos cursor) {
         break;
       }
       case '{':
-        stack.push_back(frame{.is_object = true});
+        stack.push_back(make_frame(stack, /*is_object=*/true));
         break;
       case '[':
-        stack.push_back(frame{.is_object = false});
+        stack.push_back(make_frame(stack, /*is_object=*/false));
         break;
       case '}':
       case ']':
@@ -270,6 +324,7 @@ cursor_context scan_cursor_context(std::string_view source, text_pos cursor) {
     if (!stack.empty() && stack.back().is_object) {
       const frame& top = stack.back();
       result.enclosing_type = top.type_value;
+      result.element_path = element_path_of(top);
       if (role == str_role::key) {
         result.kind = cursor_context_kind::field_key;
         result.existing_field_names = top.field_names;
@@ -288,6 +343,7 @@ cursor_context scan_cursor_context(std::string_view source, text_pos cursor) {
   if (!stack.empty() && stack.back().is_object) {
     const frame& top = stack.back();
     result.enclosing_type = top.type_value;
+    result.element_path = element_path_of(top);
     char prev = last_non_ws_before(source, offset);
     if (prev == '{' || prev == ',') {
       result.kind = cursor_context_kind::field_key;

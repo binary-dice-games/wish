@@ -322,6 +322,11 @@ void editor::try_reparse() {
     c.put_object(id, elem);
     elem["__wish_id"_key] = id;
     mock_id_to_path_[id.id] = path.empty() ? std::string{"root"} : path;
+    // Reapply the highlight to whichever element still has this path in the
+    // freshly-rebuilt tree -- try_reparse() tears down and rebuilds the
+    // *entire* preview subtree, so any field set on the old tree is gone.
+    if (highlighted_path_ && *highlighted_path_ == path)
+      elem["__wish_highlight__"_key] = true;
   }
 
   ui_element_ptr root_ptr = mock[""];
@@ -349,6 +354,11 @@ void editor::clear_mock() {
     }
   });
   mock_id_to_path_.clear();
+  // Deliberately NOT resetting highlighted_path_ here: clear_mock() is
+  // called at the *start* of every try_reparse() (before rebuilding), and
+  // highlighted_path_ must survive that so the reapplication loop below can
+  // reapply it to the fresh tree. request_close() resets it explicitly once
+  // the preview is gone for good.
 }
 
 void editor::set_banner(const std::string& text) {
@@ -366,10 +376,13 @@ void editor::update_path_label() {
 }
 
 void editor::update_help_panel(int32_t line, int32_t column) {
-  if (!help_panel_ptr_)
-    return;
   auto ctx = scan_cursor_context(
       current_source_content_, text_pos{static_cast<size_t>(line), static_cast<size_t>(column)});
+
+  update_highlight(ctx.element_path);
+
+  if (!help_panel_ptr_)
+    return;
   if (ctx.enclosing_type.empty()) {
     (*help_panel_ptr_)["text"_key] = "";
     return;
@@ -378,8 +391,29 @@ void editor::update_help_panel(int32_t line, int32_t column) {
   (*help_panel_ptr_)["text"_key] = found ? format_class_help(*found) : "";
 }
 
+void editor::update_highlight(const std::optional<std::string>& new_path) {
+  if (new_path == highlighted_path_)
+    return;
+
+  with_session([&](context& s) {
+    auto set_flag = [&](const std::string& path, bool value) {
+      std::string key = path.empty() ? mock_root_key_ : (mock_root_key_ + "." + path);
+      auto it = s.ui_objects.find(key);
+      if (it != s.ui_objects.end() && it->second)
+        (*it->second)["__wish_highlight__"_key] = value;
+    };
+    if (highlighted_path_)
+      set_flag(*highlighted_path_, false);
+    if (new_path)
+      set_flag(*new_path, true);
+  });
+
+  highlighted_path_ = new_path;
+}
+
 void editor::request_close() {
   clear_mock();
+  highlighted_path_.reset();
   emit("closed"_key);
   remove_internal_objects();
 }

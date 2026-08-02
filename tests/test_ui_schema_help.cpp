@@ -124,6 +124,59 @@ TEST(ScanCursorContextTest, TopLevelBeforeAnyObjectIsUnknown) {
   EXPECT_EQ(ctx.kind, cursor_context_kind::unknown);
 }
 
+// ── element_path ──────────────────────────────────────────────────────────────
+
+TEST(ScanCursorContextTest, RootElementPathIsEmptyString) {
+  // Mid-typing the root's own "type" value: element_path is set (the root's
+  // structural path is known regardless of whether "type" is complete),
+  // even though enclosing_type/kind reflect the in-progress token.
+  auto ctx = scan_cursor_context(R"({"type": "Win)", {0, 13});
+  EXPECT_EQ(ctx.kind, cursor_context_kind::type_value);
+  ASSERT_TRUE(ctx.element_path.has_value());
+  EXPECT_EQ(*ctx.element_path, "");
+}
+
+TEST(ScanCursorContextTest, NamedChildElementPath) {
+  std::string src = R"({"type": "Window", "children": {"btn": {"type": "Button", "lab)";
+  auto ctx = scan_cursor_context(src, {0, src.size()});
+  ASSERT_TRUE(ctx.element_path.has_value());
+  EXPECT_EQ(*ctx.element_path, "btn");
+}
+
+TEST(ScanCursorContextTest, NestedNamedChildElementPath) {
+  std::string src =
+      R"({"type": "Window", "children": {"a": {"type": "Layout", "children": {"b": {"type": "Button", "lab)";
+  auto ctx = scan_cursor_context(src, {0, src.size()});
+  ASSERT_TRUE(ctx.element_path.has_value());
+  EXPECT_EQ(*ctx.element_path, "a.b");
+}
+
+TEST(ScanCursorContextTest, ChildrenWrapperGapFallsBackToOwnerPath) {
+  // Cursor positioned right after "children": { , before any child is named
+  // yet -- element_path should be the *owning* element's path (root, here),
+  // not empty/nullopt, so there's still a sensible highlight target.
+  std::string src = R"({"type": "Window", "children": {)";
+  auto ctx = scan_cursor_context(src, {0, src.size()});
+  ASSERT_TRUE(ctx.element_path.has_value());
+  EXPECT_EQ(*ctx.element_path, "");
+}
+
+TEST(ScanCursorContextTest, ChildrenWrapperGapInsideNestedOwnerFallsBackToOwnerPath) {
+  std::string src = R"({"type": "Window", "children": {"a": {"type": "Layout", "children": {)";
+  auto ctx = scan_cursor_context(src, {0, src.size()});
+  ASSERT_TRUE(ctx.element_path.has_value());
+  EXPECT_EQ(*ctx.element_path, "a");
+}
+
+TEST(ScanCursorContextTest, ArrayIndexedChildHasNoElementPath) {
+  // Unnamed/array-indexed children get no path from import_json() either
+  // (only named object entries in a "children" map do) -- element_path must
+  // be nullopt, not fabricated.
+  std::string src = R"({"type": "Window", "children": [{"type": "Button", "lab)";
+  auto ctx = scan_cursor_context(src, {0, src.size()});
+  EXPECT_FALSE(ctx.element_path.has_value());
+}
+
 // ── enumerate_ui_element_classes / find_ui_element_class ────────────────────
 
 class UiSchemaHelpRegistryTest : public ::testing::Test {

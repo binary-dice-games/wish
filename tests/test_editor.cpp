@@ -37,6 +37,20 @@ constexpr const char* kValidUi = R"({
   }
 })";
 
+constexpr const char* kValidUiTwoButtons = R"({
+  "type": "Window",
+  "title": "Mock",
+  "children": {
+    "main": {
+      "type": "VerticalLayout",
+      "children": {
+        "ok": { "type": "Button", "label": "OK" },
+        "cancel": { "type": "Button", "label": "Cancel" }
+      }
+    }
+  }
+})";
+
 } // namespace
 
 // ── Local (non-RMI) fixture — checks prototype defaults ───────────────────────
@@ -445,6 +459,84 @@ TEST_F(EditorSourceTest, MockWidgetEventIsLogged) {
   auto row = log_row_text(0);
   ASSERT_TRUE(row.has_value());
   EXPECT_EQ(*row, "main.ok clicked");
+}
+
+TEST_F(EditorSourceTest, CursorMovedHighlightsEnclosingMockWidget) {
+  std::string content = kValidUiTwoButtons;
+  seed_sandbox_file("ui.json", content);
+  set_source("ui.json");
+  ASSERT_TRUE(mock_registered());
+
+  auto ok_id = mock_widget_id("main.ok");
+  auto cancel_id = mock_widget_id("main.cancel");
+  ASSERT_NE(ok_id.id, 0u);
+  ASSERT_NE(cancel_id.id, 0u);
+
+  auto highlighted = [&](const std::string& mock_suffix) {
+    return srv_->last_session->ui_objects.at(mock_root_ + "." + mock_suffix)
+        ->get_as<bool>("__wish_highlight__"_key, false);
+  };
+
+  auto move_cursor_to = [&](const std::string& needle) {
+    size_t offset = content.find(needle);
+    ASSERT_NE(offset, std::string::npos);
+    int32_t line = 0, col = 0;
+    for (size_t i = 0; i < offset; ++i) {
+      if (content[i] == '\n') {
+        ++line;
+        col = 0;
+      } else {
+        ++col;
+      }
+    }
+    dynamic payload;
+    payload["line"_key] = line;
+    payload["column"_key] = col;
+    simulate_chrome_event(chrome_widget_id("vbox.editor_row.source"), "cursor_moved"_key, payload);
+  };
+
+  move_cursor_to("\"label\": \"OK\"");
+  EXPECT_TRUE(highlighted("main.ok"));
+  EXPECT_FALSE(highlighted("main.cancel"));
+
+  move_cursor_to("\"label\": \"Cancel\"");
+  EXPECT_FALSE(highlighted("main.ok"));
+  EXPECT_TRUE(highlighted("main.cancel"));
+}
+
+TEST_F(EditorSourceTest, HighlightSurvivesReparseOfSamePath) {
+  std::string content = kValidUiTwoButtons;
+  seed_sandbox_file("ui.json", content);
+  set_source("ui.json");
+  ASSERT_TRUE(mock_registered());
+
+  size_t offset = content.find("\"label\": \"OK\"");
+  ASSERT_NE(offset, std::string::npos);
+  int32_t line = 0, col = 0;
+  for (size_t i = 0; i < offset; ++i) {
+    if (content[i] == '\n') {
+      ++line;
+      col = 0;
+    } else {
+      ++col;
+    }
+  }
+  dynamic payload;
+  payload["line"_key] = line;
+  payload["column"_key] = col;
+  simulate_chrome_event(chrome_widget_id("vbox.editor_row.source"), "cursor_moved"_key, payload);
+  ASSERT_TRUE(
+      srv_->last_session->ui_objects.at(mock_root_ + ".main.ok")->get_as<bool>("__wish_highlight__"_key, false));
+
+  // An in-editor edit (via a "changed" event, mirroring InEditorChangeMarksModified)
+  // tears down and rebuilds the whole preview subtree -- the highlight must be
+  // reapplied to the same dot-path in the freshly-rebuilt tree, not lost.
+  seed_sandbox_file("ui.json", content);
+  simulate_chrome_event(chrome_widget_id("vbox.editor_row.source"), "changed"_key);
+  ASSERT_TRUE(mock_registered());
+
+  EXPECT_TRUE(
+      srv_->last_session->ui_objects.at(mock_root_ + ".main.ok")->get_as<bool>("__wish_highlight__"_key, false));
 }
 
 TEST_F(EditorSourceTest, SourceEditorSavedEmitsOnSourceSaved) {

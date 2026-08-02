@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <deque>
 #include <functional>
+#include <optional>
 #include <string>
 #include <unordered_map>
 
@@ -41,7 +42,10 @@ namespace bdg::wish {
 /// `src/ui/ui_schema_help.hpp`'s registry queries) and a `"cursor_moved"`
 /// event on every caret move; a help panel next to the source shows the
 /// enclosing element type's description and fields, updated on every
-/// `"cursor_moved"` via `update_help_panel()`.
+/// `"cursor_moved"` via `update_help_panel()`. The same event also drives
+/// `update_highlight()`, which boxes the preview widget corresponding to
+/// the cursor's current element (drawn by `imgui_renderer::render_node()`
+/// reading a `"__wish_highlight__"` field it sets on that widget).
 ///
 /// Emitted events:
 ///   - `"closed"` — user confirmed closing (no unsaved edits, or chose
@@ -103,6 +107,15 @@ class editor : public form {
   /// Clears the panel if no enclosing element type is found (or the type
   /// isn't a registered class -- e.g. still being typed).
   void update_help_panel(int32_t line, int32_t column);
+
+  /// @brief Move the preview highlight box to the element at @p new_path
+  /// (`std::nullopt` clears it without setting a new one). Clears the
+  /// `"__wish_highlight__"` field on the previously-highlighted element (if
+  /// any still exists in the current preview tree) and sets it on the new
+  /// one, via a direct `s.ui_objects` dot-path lookup -- safe to call at any
+  /// time, not just right after a reparse. No-op if @p new_path already
+  /// matches `highlighted_path_`.
+  void update_highlight(const std::optional<std::string>& new_path);
 
   /// @brief Tear down chrome and preview and emit `"closed"`. The actual
   /// close action, run once no confirmation is needed (or the user has
@@ -173,6 +186,13 @@ class editor : public form {
   /// successful reparse; used to resolve a preview widget's event back to a
   /// human-readable path for the log.
   std::unordered_map<uint32_t, std::string> mock_id_to_path_;
+
+  /// Dot-path of the preview element currently showing the cursor
+  /// highlight box, or `std::nullopt` if none. Survives across reparses
+  /// (each of which tears down and rebuilds the whole preview tree) by
+  /// being reapplied inline in `try_reparse()`'s own per-element loop --
+  /// see `update_highlight()`.
+  std::optional<std::string> highlighted_path_;
 };
 
 /// @brief Register Editor in the "wish" bison namespace.
