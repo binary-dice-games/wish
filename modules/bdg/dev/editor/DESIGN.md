@@ -406,22 +406,26 @@ Close:
   needs no per-widget map at all since only ever one widget is highlighted
   at a time.
 
-- **Known limitation: highlighting a container element boxes its
-  last-rendered child, not its own bounds.** `GetItemRectMin/Max()`
-  reflects whatever ImGui item was drawn *last* by a node's own dispatch
-  call — for a leaf widget (`Button`, `Label`, `InputText`, ...) that's the
-  widget itself, but for a container (`Window`, `Layout`, `TabBar`, ...) the
-  dispatch call recurses into `render_children()`, so what's left over is
-  whatever child rendered last, not the container's own rect. This is the
-  exact same caveat already documented for automation's own hit-test
-  capture (`docs/ui-elements.md`/`CLAUDE.md`: "only leaf-widget rects are
-  reliable") — accepted here too rather than solved, since fixing it would
-  need each container's own render function to capture its rect explicitly
-  before recursing into children, a larger per-widget-type change out of
-  scope for this feature. In practice this means highlighting is precise
-  for the common case (cursor inside a leaf widget's own fields) and
-  imprecise only when editing a container's own fields (e.g. a `Window`'s
-  `title`).
+- **Container elements now highlight their own bounds, not their
+  last-rendered child's.** `imgui_renderer::render_node()`
+  (`src/imgui/imgui_renderer.cpp`) wraps the dispatch call of any class that
+  actually recurses into children (`VerticalLayout`/`HorizontalLayout`,
+  `TabBar`/`TabItem`, `TreeNode`, `CollapsingHeader`, `Table`/`TableRow`,
+  `Plot`/`Plot3D`) in `ImGui::BeginGroup()`/`EndGroup()`, which makes
+  `GetItemRectMin/Max()` return the bounding box of everything the container
+  drew instead of just the last item; `Window`/`DockSpaceViewport` (which
+  open a genuine new top-level window a group can't see into) self-report
+  their own rect via `ImGui::GetWindowPos()/GetWindowSize()` instead. Leaf
+  widgets are deliberately left unwrapped (wrapping them broke
+  `GetItemID()`/`IsItemActive()` for idle widgets — see the exclusion's doc
+  comment in `render_node()`), so their rects are exactly as precise as
+  before. `MenuBar`/`Menu`/`MenuButton` remain a known, narrower residual
+  limitation: `BeginMenuBar()` internally resets its own layout bookkeeping
+  in a way an outer group can't usefully capture, and `Menu`/`MenuButton`'s
+  own visible identity (the trigger label/button in the current window) is
+  already a correct leaf rect on its own — their real children live in a
+  separate floating popup a group around the current window can't describe
+  anyway.
 
 - **`scan_cursor_context()`'s `element_path` falls back to the *owning*
   element while the cursor sits in the gap before a child is named yet**

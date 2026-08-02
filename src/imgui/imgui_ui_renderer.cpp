@@ -58,6 +58,26 @@ static std::string with_id(const std::string& label, const ui_element& node) {
   return label + "###" + stable_id(node);
 }
 
+// Stamps the current ImGui window's rect onto @p node as four hidden fields
+// (same idiom as __was_docked__/__float_width__/__float_height__ below),
+// read back by imgui_renderer::render_node() as the authoritative rect for
+// Window/DockSpaceViewport -- the only two classes that open a genuine new
+// top-level ImGui window, whose content a BeginGroup()/EndGroup() wrap
+// around the dispatch call can't see across. A per-node field (rather than
+// a single shared slot) is required because a Window can nest inside
+// another Window/DockSpaceViewport (e.g. a modal opened from within a
+// docked window), which would otherwise clobber a shared slot before the
+// outer container gets to read it. Only valid to call between a successful
+// Begin()/BeginPopupModal() and its matching End()/EndPopup().
+static void report_self_rect(const ui_element& node) {
+  ImVec2 pos = ImGui::GetWindowPos();
+  ImVec2 size = ImGui::GetWindowSize();
+  const_cast<ui_element&>(node)["__wish_win_rect_x__"_key] = pos.x;
+  const_cast<ui_element&>(node)["__wish_win_rect_y__"_key] = pos.y;
+  const_cast<ui_element&>(node)["__wish_win_rect_w__"_key] = size.x;
+  const_cast<ui_element&>(node)["__wish_win_rect_h__"_key] = size.y;
+}
+
 // ── Core ──────────────────────────────────────────────────────────────────────
 
 void render_window(imgui_renderer& r, const ui_element& node, const context& s) {
@@ -109,6 +129,10 @@ void render_window(imgui_renderer& r, const ui_element& node, const context& s) 
 
     bool now_open = ImGui::BeginPopupModal(iml.c_str(), p_open, ImGuiWindowFlags(fl));
     if (now_open) {
+      // BeginPopupModal() returns false without calling Begin() at all when
+      // the popup isn't open -- gating on now_open avoids capturing the
+      // *enclosing* window's rect in that case.
+      report_self_rect(node);
       render_children(r, node, s);
       // App-level code (e.g. a form's on_event()) runs outside any ImGui
       // frame and can't call ImGui::CloseCurrentPopup() directly -- it
@@ -156,7 +180,14 @@ void render_window(imgui_renderer& r, const ui_element& node, const context& s) 
     return;
   }
 
-  if (ImGui::Begin(iml.c_str(), p_open, ImGuiWindowFlags(fl))) {
+  bool window_open = ImGui::Begin(iml.c_str(), p_open, ImGuiWindowFlags(fl));
+  // Begin()/BeginChild() are the only ImGui calls where a matching End() is
+  // required regardless of the return value -- a collapsed/clipped window
+  // still has a valid position/size to report, so this runs unconditionally
+  // (matching the unconditional ImGui::End() below), not just when true.
+  report_self_rect(node);
+
+  if (window_open) {
     // ImGui's docking branch resizes a window to fit its dock node/tab
     // region; on undock it does not restore the pre-dock floating size
     // (docking is handled entirely inside ImGui, invisible to wish). Track
@@ -851,6 +882,7 @@ void render_dockspace_viewport(imgui_renderer& r, const ui_element& node, const 
   });
 
   ImGui::Begin(id.c_str(), nullptr, host_flags);
+  report_self_rect(node);
   ImGui::PopStyleVar(3);
   ImGui::PopStyleColor();
 
