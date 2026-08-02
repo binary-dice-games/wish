@@ -262,6 +262,7 @@ add_library(wish_server STATIC
   src/server/registry.cpp
   src/ui/ui_importer.cpp
   src/ui/ui_element.cpp
+  src/ui/ui_schema_help.cpp
   src/context/context.cpp
   src/server/renderer.cpp
   src/context/file_service.cpp

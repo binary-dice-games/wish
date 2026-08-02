@@ -36,6 +36,13 @@ namespace bdg::wish {
 /// Closing the window with unsaved edits shows an inline
 /// save/discard/cancel confirmation instead of closing immediately.
 ///
+/// The source editor also has `wish_ui_schema` set, which enables autocomplete
+/// for element type names, field names, and enum values (backed by
+/// `src/ui/ui_schema_help.hpp`'s registry queries) and a `"cursor_moved"`
+/// event on every caret move; a help panel next to the source shows the
+/// enclosing element type's description and fields, updated on every
+/// `"cursor_moved"` via `update_help_panel()`.
+///
 /// Emitted events:
 ///   - `"closed"` — user confirmed closing (no unsaved edits, or chose
 ///     "Discard & Close", or "Save & Close" completed); internal UI
@@ -90,6 +97,13 @@ class editor : public form {
   /// @brief Refresh the filename label's text from `display_path_`/`dirty_`.
   void update_path_label();
 
+  /// @brief Recompute the help panel's text for whatever JSON element
+  /// encloses (line, column) in `current_source_content_`, using
+  /// `ui_schema_help`'s cursor-context scanner and class registry query.
+  /// Clears the panel if no enclosing element type is found (or the type
+  /// isn't a registered class -- e.g. still being typed).
+  void update_help_panel(int32_t line, int32_t column);
+
   /// @brief Tear down chrome and preview and emit `"closed"`. The actual
   /// close action, run once no confirmation is needed (or the user has
   /// resolved one via discard/save).
@@ -109,6 +123,7 @@ class editor : public form {
   ui_element_ptr banner_ptr_;
   ui_element_ptr log_table_ptr_;
   ui_element_ptr path_label_ptr_;
+  ui_element_ptr help_panel_ptr_;
 
   // Inline close-confirmation panel (shown in place of a true modal dialog
   // -- see editor.cpp's layout comment) and its three buttons.
@@ -118,6 +133,9 @@ class editor : public form {
   bison::key_t confirm_cancel_id_;
 
   std::string current_source_path_; // sandbox-relative path of the source file
+  std::string current_source_content_; // last content read in try_reparse(), reused by
+                                        // update_help_panel() to avoid a disk read on every
+                                        // cursor move (which fires far more often than edits)
   std::string display_path_; // original local path, shown in the filename label
   bool dirty_{false}; // true once the source has unsaved in-editor edits
   bool pending_close_after_save_{false}; // "Save & Close" is waiting on mark_saved()

@@ -10,9 +10,9 @@ namespace bdg::wish {
 using namespace bdg::bison;
 
 void register_text_editor() {
-  auto proto = dynamic_ptr{"TextEditor"_key, {}};
+  auto proto = dynamic_ptr{"TextEditor"_rkey, {}};
   proto->addField(
-      "file_path"_key,
+      "file_path"_rkey,
       field{
           std::string{""},
           attr<DisplayName>("File Path"),
@@ -22,7 +22,7 @@ void register_text_editor() {
           attr<Category>("Content"),
           attr<Required>()});
   proto->addField(
-      "language"_key,
+      "language"_rkey,
       field{
           std::string{"none"},
           attr<DisplayName>("Language"),
@@ -32,7 +32,7 @@ void register_text_editor() {
                             "\"none\"."),
           attr<Category>("Content")});
   proto->addField(
-      "read_only"_key,
+      "read_only"_rkey,
       field{
           bool{false},
           attr<DisplayName>("Read Only"),
@@ -40,7 +40,7 @@ void register_text_editor() {
                             "\"changed\" events."),
           attr<Category>("Behavior")});
   proto->addField(
-      "width"_key,
+      "width"_rkey,
       field{
           int32_t{0},
           attr<DisplayName>("Width"),
@@ -49,7 +49,7 @@ void register_text_editor() {
           attr<Range>(0, 8192),
           attr<Step>(1)});
   proto->addField(
-      "height"_key,
+      "height"_rkey,
       field{
           int32_t{400},
           attr<DisplayName>("Height"),
@@ -57,6 +57,17 @@ void register_text_editor() {
           attr<Category>("Layout"),
           attr<Range>(0, 8192),
           attr<Step>(1)});
+  proto->addField(
+      "wish_ui_schema"_rkey,
+      field{
+          bool{false},
+          attr<DisplayName>("Wish UI Schema Autocomplete"),
+          attr<Description>("When true and language is \"json\", enables cursor-position tracking "
+                            "(\"cursor_moved\" events) and autocomplete for wish UI element type "
+                            "names, field names, and enum values, sourced from the live class "
+                            "registry (see src/ui/ui_schema_help.hpp). Off by default so unrelated "
+                            "TextEditor uses (e.g. Notepad) are unaffected."),
+          attr<Category>("Behavior")});
   (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Text Editor"));
   (*proto)[dynamic::CLASS].addAttribute(
       attr<Description>("A full-featured code/text editor backed by ImGuiColorTextEdit. "

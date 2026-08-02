@@ -8,6 +8,7 @@
 
 #include <context/file_service.hpp>
 #include <ui/ui_importer.hpp>
+#include <ui/ui_schema_help.hpp>
 
 #include <filesystem>
 #include <fstream>
@@ -94,6 +95,38 @@ std::string format_payload(const dynamic& payload) {
   return out.empty() ? std::string{} : " {" + out + "}";
 }
 
+// Renders one element_class_info as help-panel text: the class's own
+// display name/description, then one line per field (own + inherited from
+// Element) with its display name, category, required/range/enum
+// annotations, and description.
+std::string format_class_help(const element_class_info& info) {
+  std::string out = info.display_name;
+  if (!info.description.empty())
+    out += "\n" + info.description;
+  out += "\n\nFields:";
+  for (const auto& f : info.fields) {
+    out += "\n" + f.display_name;
+    if (!f.category.empty())
+      out += " (" + f.category + ")";
+    if (f.required)
+      out += " [required]";
+    if (f.range)
+      out += " [" + std::to_string(f.range->first) + "-" + std::to_string(f.range->second) + "]";
+    if (!f.enum_values.empty()) {
+      out += f.is_enum_flags ? " [flags: " : " [enum: ";
+      for (size_t i = 0; i < f.enum_values.size(); ++i) {
+        if (i)
+          out += " | ";
+        out += f.enum_values[i];
+      }
+      out += "]";
+    }
+    if (!f.description.empty())
+      out += ": " + f.description;
+  }
+  return out;
+}
+
 } // namespace
 
 // ── UI layout ─────────────────────────────────────────────────────────────────
@@ -139,7 +172,14 @@ static constexpr const char* kEditorLayout = R"json({
           }
         },
         "banner": { "type": "Label", "text": "" },
-        "source": { "type": "TextEditor", "language": "json", "width": 0, "height": 440 },
+        "editor_row": {
+          "type": "HorizontalLayout",
+          "spacing": 8,
+          "children": {
+            "source": { "type": "TextEditor", "language": "json", "width": 600, "height": 440, "wish_ui_schema": true },
+            "help_panel": { "type": "Label", "text": "" }
+          }
+        },
         "log_label": { "type": "Label", "text": "Event Log" },
         "log": {
           "type": "Table",
@@ -178,10 +218,11 @@ void editor::on_init() {
   }
 
   window_id_ = (*tree[""])["__wish_id"_key].as<key_t>();
-  tree.with("vbox.source", [&](const auto& e) {
+  tree.with("vbox.editor_row.source", [&](const auto& e) {
     source_editor_id_ = wish_id_of(e);
     source_editor_ptr_ = e;
   });
+  tree.with("vbox.editor_row.help_panel", [&](const auto& e) { help_panel_ptr_ = e; });
   tree.with("vbox.banner", [&](const auto& e) { banner_ptr_ = e; });
   tree.with("vbox.log", [&](const auto& e) { log_table_ptr_ = e; });
   tree.with("vbox.path_label", [&](const auto& e) { path_label_ptr_ = e; });
@@ -246,6 +287,10 @@ void editor::try_reparse() {
 
   std::ifstream f(resolved, std::ios::binary);
   std::string content{std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>{}};
+  // Cached unconditionally (even on a parse failure below) so the help panel
+  // reflects exactly what's on screen mid-edit, same "no flicker" spirit as
+  // the preview itself.
+  current_source_content_ = content;
 
   ui_tree mock;
   try {
@@ -318,6 +363,19 @@ void editor::update_path_label() {
   if (dirty_)
     text += " [MODIFIED]";
   (*path_label_ptr_)["text"_key] = text;
+}
+
+void editor::update_help_panel(int32_t line, int32_t column) {
+  if (!help_panel_ptr_)
+    return;
+  auto ctx = scan_cursor_context(
+      current_source_content_, text_pos{static_cast<size_t>(line), static_cast<size_t>(column)});
+  if (ctx.enclosing_type.empty()) {
+    (*help_panel_ptr_)["text"_key] = "";
+    return;
+  }
+  auto found = find_ui_element_class(ctx.enclosing_type);
+  (*help_panel_ptr_)["text"_key] = found ? format_class_help(*found) : "";
 }
 
 void editor::request_close() {
@@ -418,6 +476,10 @@ void editor::on_event(key_t id, key_t event, const dynamic& payload) {
     }
     if (event == "saved"_key) {
       emit("on_source_saved"_key);
+      return;
+    }
+    if (event == "cursor_moved"_key) {
+      update_help_panel(payload.as<int32_t>("line"_key), payload.as<int32_t>("column"_key));
       return;
     }
     return;

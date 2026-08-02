@@ -124,7 +124,7 @@ TEST_F(EditorWindowTest, FormRootIsWindow) {
 TEST_F(EditorWindowTest, TreeContainsSource) {
   std::string root = instantiate_and_get_root();
   ASSERT_FALSE(root.empty());
-  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".vbox.source"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".vbox.editor_row.source"));
 }
 
 TEST_F(EditorWindowTest, TreeContainsBanner) {
@@ -451,7 +451,7 @@ TEST_F(EditorSourceTest, SourceEditorSavedEmitsOnSourceSaved) {
   seed_sandbox_file("ui.json", kValidUi);
   set_source("ui.json");
 
-  auto source_id = srv_->last_session->ui_objects.at(root_ + ".vbox.source")->as<bison::key_t>("__wish_id"_key);
+  auto source_id = srv_->last_session->ui_objects.at(root_ + ".vbox.editor_row.source")->as<bison::key_t>("__wish_id"_key);
   auto h = srv_->last_session->top_level_handlers.find(bison::key_t{root_});
   ASSERT_NE(h, srv_->last_session->top_level_handlers.end());
   h->second->on_event(source_id, "saved"_key, dynamic{});
@@ -486,7 +486,7 @@ TEST_F(EditorSourceTest, InEditorChangeMarksModified) {
   seed_sandbox_file("ui.json", kValidUi);
   set_source("ui.json", "/local/path/ui.json");
 
-  simulate_chrome_event(chrome_widget_id("vbox.source"), "changed"_key);
+  simulate_chrome_event(chrome_widget_id("vbox.editor_row.source"), "changed"_key);
 
   EXPECT_EQ(path_label_text(), "Filename: /local/path/ui.json [MODIFIED]");
 }
@@ -494,7 +494,7 @@ TEST_F(EditorSourceTest, InEditorChangeMarksModified) {
 TEST_F(EditorSourceTest, ClosingWithUnsavedChangesShowsConfirmInsteadOfClosing) {
   seed_sandbox_file("ui.json", kValidUi);
   set_source("ui.json", "/local/path/ui.json");
-  simulate_chrome_event(chrome_widget_id("vbox.source"), "changed"_key);
+  simulate_chrome_event(chrome_widget_id("vbox.editor_row.source"), "changed"_key);
   ASSERT_EQ(path_label_text(), "Filename: /local/path/ui.json [MODIFIED]");
 
   simulate_chrome_event(chrome_widget_id(""), "closed"_key);
@@ -508,7 +508,7 @@ TEST_F(EditorSourceTest, ClosingWithUnsavedChangesShowsConfirmInsteadOfClosing) 
 TEST_F(EditorSourceTest, ConfirmCancelHidesPanelAndKeepsEditorOpen) {
   seed_sandbox_file("ui.json", kValidUi);
   set_source("ui.json", "/local/path/ui.json");
-  simulate_chrome_event(chrome_widget_id("vbox.source"), "changed"_key);
+  simulate_chrome_event(chrome_widget_id("vbox.editor_row.source"), "changed"_key);
   simulate_chrome_event(chrome_widget_id(""), "closed"_key);
   ASSERT_TRUE(confirm_panel_visible());
 
@@ -522,7 +522,7 @@ TEST_F(EditorSourceTest, ConfirmCancelHidesPanelAndKeepsEditorOpen) {
 TEST_F(EditorSourceTest, ConfirmDiscardClosesDespiteUnsavedChanges) {
   seed_sandbox_file("ui.json", kValidUi);
   set_source("ui.json", "/local/path/ui.json");
-  simulate_chrome_event(chrome_widget_id("vbox.source"), "changed"_key);
+  simulate_chrome_event(chrome_widget_id("vbox.editor_row.source"), "changed"_key);
   simulate_chrome_event(chrome_widget_id(""), "closed"_key);
   ASSERT_TRUE(confirm_panel_visible());
 
@@ -536,7 +536,7 @@ TEST_F(EditorSourceTest, ConfirmDiscardClosesDespiteUnsavedChanges) {
 TEST_F(EditorSourceTest, ConfirmSaveEmitsOnSourceSavedThenMarkSavedCompletesClose) {
   seed_sandbox_file("ui.json", kValidUi);
   set_source("ui.json", "/local/path/ui.json");
-  simulate_chrome_event(chrome_widget_id("vbox.source"), "changed"_key);
+  simulate_chrome_event(chrome_widget_id("vbox.editor_row.source"), "changed"_key);
   simulate_chrome_event(chrome_widget_id(""), "closed"_key);
   ASSERT_TRUE(confirm_panel_visible());
 

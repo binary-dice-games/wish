@@ -15,10 +15,13 @@ objects — see [ui-elements.md](ui-elements.md) for the full schema and
 catalog. Today the *only* editing tool is `modules/bdg/dev/editor`
 (`wish client --run=editor -- ui.json`, off by default) — a
 syntax-highlighted `TextEditor` next to a live, continuously-reparsed
-preview. It is explicitly **not** WYSIWYG: its own `DESIGN.md` §10 lists an
-element palette, autocompletion, and a cursor→schema help panel as
-deliberately scoped-out "Not implemented" items, each needing "a real
-design pass of its own." There is no drag-and-drop placement, no
+preview. It is explicitly **not** WYSIWYG: since this document was
+written, its cursor→schema help panel and autocompletion (type names,
+field names, enum values) have since been implemented — see its own
+`DESIGN.md` §10 — sourced from a new shared query module,
+`src/ui/ui_schema_help.hpp`, that walks the live class registry in-process
+(server-side, no RMI round-trip needed). Only an element palette remains
+unimplemented. There is still no drag-and-drop placement, no
 click-to-select, no property inspector — every edit is hand-typed JSON.
 
 This document evaluates **ImRAD Studio** (a mature, GPL-licensed, GUI
@@ -164,17 +167,18 @@ idea, just explicitly deferred pending its own design work.
 
 **Shape of the work, in incremental, independently-shippable stages:**
 
-1. **Element palette.** A browsable, categorized list of the 60 registered
+1. **Element palette.** A browsable, categorized list of the registered
    classes (grouped `ui`/`plot2d`/`plot3d` per the DESIGN.md's own
-   framing). Since there's no RMI introspection endpoint, source the list
-   either by (a) walking `dynamic::getRegistry()` server-side and exposing
-   a small new read-only RMI method, or (b) generating the table at build
-   time from the same `addField`/`attr<...>` call sites `ui_elements/*.cpp`
-   already has (mirroring how `docs/ui-elements.md` is hand-maintained
-   today, but generated instead of hand-written — removes that drift risk
-   permanently for both the palette and the docs). Clicking a palette
-   entry inserts a default-field JSON skeleton into the `TextEditor` at
-   the cursor.
+   framing). `ui_schema_help::enumerate_ui_element_classes()` (added since
+   this document was first written; see the editor module's `DESIGN.md`)
+   already provides the flat class list with display names/descriptions/
+   fields in-process — reusable directly for stage 1's own list. What it
+   does *not* provide is collection/grouping metadata (`ui` vs. `plot2d`
+   vs. `plot3d`), which still doesn't exist anywhere in the registry (no
+   class-level `Category` attribute is ever attached) and would need
+   either a new class-level attribute or a hand-maintained grouping table.
+   Clicking a palette entry inserts a default-field JSON skeleton into the
+   `TextEditor` at the cursor.
 2. **Preview → source selection.** Reuse the automation module's existing
    hit-test/screen-rect infrastructure (`build_tree_snapshot()`/
    `automation_query.cpp`) — clicking a widget in the live preview already

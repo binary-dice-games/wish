@@ -18,18 +18,29 @@ prompt instead of closing immediately. Copy/paste in the source editor
 interoperates with the real OS clipboard (see `src/web/DESIGN.md`'s
 "Clipboard Bridging" section).
 
+A **help panel** next to the source shows the description and fields of
+whatever element type encloses the cursor, updated live as the cursor
+moves. The source editor also **autocompletes** element type names, field
+names, and enum/flag values as you type, sourced from the same registered
+class registry `Editor` parses against (see
+[src/ui/ui_schema_help.hpp](../../../../src/ui/ui_schema_help.hpp)).
+
 - **server/**: `Editor` form (`register_editor()`) — owns the filename
-  label, error banner, source `TextEditor` (JSON syntax highlighting), the
-  close-confirmation panel, the event log table, and the preview subtree.
-  Re-parses on every source edit and on every `set_source` call; a
-  successful parse swaps in a new preview registered as its own top-level
-  window (handled by the same form instance, so its events reach the same
-  `on_event`), reusing the same preview window id across reparses so
-  ImGui's own position/size/focus state isn't reset by every edit; a
-  failed parse only updates the banner. Logs every preview widget event as
-  `"<dot-path> <event>"` plus a compact rendering of its payload, e.g.
-  `"main.volume changed {value=75}"`; the log is capped at 200 rows
-  (oldest evicted) and auto-scrolls to the newest entry.
+  label, error banner, source `TextEditor` (JSON syntax highlighting,
+  `wish_ui_schema` enabled), a help panel label, the close-confirmation
+  panel, the event log table, and the preview subtree. Re-parses on every
+  source edit and on every `set_source` call; a successful parse swaps in a
+  new preview registered as its own top-level window (handled by the same
+  form instance, so its events reach the same `on_event`), reusing the same
+  preview window id across reparses so ImGui's own position/size/focus
+  state isn't reset by every edit; a failed parse only updates the banner.
+  Logs every preview widget event as `"<dot-path> <event>"` plus a compact
+  rendering of its payload, e.g. `"main.volume changed {value=75}"`; the
+  log is capped at 200 rows (oldest evicted) and auto-scrolls to the newest
+  entry. Also updates the help panel on every source `TextEditor`
+  `"cursor_moved"` event, via a hand-rolled JSON-cursor scanner
+  (`ui_schema_help::scan_cursor_context()`) that tolerates the transiently
+  invalid JSON typical of an in-progress edit.
 - **client/**: `run_editor(wish_app_host&)`, self-registered as the
   `"editor"` embedded app — owns the local JSON file (`upload_file`/
   `download_file`, same sandbox-bridging rule as Notepad) and a background
@@ -48,14 +59,8 @@ modifier-key handling).
 
 ## Future work
 
-Not implemented in this pass — see the module's server/client sources for
-where each would hook in:
+Not implemented in this pass:
 
-- **Help panel**: detect the UI element type at the text cursor's position
-  and show its description/properties/methods (from the same `dynamic`
-  class registry `Editor` already parses against) in a side panel.
-- **Autocompletion**: JSON-schema-driven completion for element types and
-  fields as the user types, sourced from the same registry.
 - **Element palette**: a browsable list of every registered wish UI class,
   grouped by collection (`ui`, `plot2d`, `plot3d`, ...), for reference and
   drag-in.

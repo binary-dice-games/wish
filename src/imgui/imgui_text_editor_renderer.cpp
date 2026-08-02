@@ -7,10 +7,12 @@
 
 #include <context/file_service.hpp>
 #include <context/style_service.hpp>
+#include <ui/ui_schema_help.hpp>
 
 #include <TextEditor.h>
 #include <imgui.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -30,6 +32,8 @@ struct TextEditorState {
   std::string loaded_lang; // language key last applied
   std::string applied_preset; // palette preset last applied ("dark", "light", ...)
   size_t last_undo_index{0};
+  TextEditor::CursorPosition last_cursor{}; // only tracked when wish_ui_schema is true
+  bool autocomplete_configured{false}; // whether SetAutoCompleteConfig has been applied
 };
 
 std::unordered_map<uint32_t, TextEditorState>& editor_cache() {
@@ -64,6 +68,72 @@ const TextEditor::Language* language_for(const std::string& lang) {
   return nullptr;
 }
 
+// Fills `state.suggestions` for a wish-UI-JSON-schema-aware autocomplete
+// popup, sourced from the live "wish" class registry (src/ui/ui_schema_help.hpp).
+// `state.userData` is the TextEditor instance itself (set via
+// AutoCompleteConfig::userData, see render_text_editor()), needed to read
+// the full document text -- AutoCompleteState alone carries only the
+// in-progress token's position, not the whole buffer.
+void fill_wish_ui_schema_suggestions(TextEditor::AutoCompleteState& state) {
+  // The library does not clear `suggestions` between callback invocations
+  // (one per keystroke while typing) -- without this, matches from an
+  // earlier, shorter prefix pile up alongside the current ones.
+  state.suggestions.clear();
+
+  auto* editor = static_cast<TextEditor*>(state.userData);
+  if (!editor)
+    return;
+
+  // searchTermEndIndex, not searchTermStartIndex: we want the current
+  // in-progress cursor position (end of the token typed so far), not where
+  // the token started -- using the start position makes scan_cursor_context
+  // see zero characters typed yet, always yielding an empty partial_text
+  // (which matches every candidate as a prefix, defeating filtering).
+  text_pos pos{state.line, state.searchTermEndIndex};
+  auto ctx = scan_cursor_context(editor->GetText(), pos);
+
+  switch (ctx.kind) {
+    case cursor_context_kind::type_value:
+      for (const auto& c : enumerate_ui_element_classes()) {
+        if (c.name.starts_with(ctx.partial_text))
+          state.suggestions.push_back(c.name);
+      }
+      break;
+    case cursor_context_kind::field_key: {
+      auto found = find_ui_element_class(ctx.enclosing_type);
+      if (!found)
+        break;
+      for (const auto& f : found->fields) {
+        if (!f.name.starts_with(ctx.partial_text))
+          continue;
+        if (std::find(ctx.existing_field_names.begin(), ctx.existing_field_names.end(), f.name) !=
+            ctx.existing_field_names.end())
+          continue;
+        state.suggestions.push_back(f.name);
+      }
+      break;
+    }
+    case cursor_context_kind::field_value: {
+      auto found = find_ui_element_class(ctx.enclosing_type);
+      if (!found)
+        break;
+      for (const auto& f : found->fields) {
+        if (f.name != ctx.field_name)
+          continue;
+        for (const auto& v : f.enum_values) {
+          if (v.starts_with(ctx.partial_text))
+            state.suggestions.push_back(v);
+        }
+        break;
+      }
+      break;
+    }
+    case cursor_context_kind::unknown:
+    default:
+      break;
+  }
+}
+
 } // namespace
 
 // ── Render function ───────────────────────────────────────────────────────────
@@ -72,6 +142,7 @@ void render_text_editor(imgui_renderer&, const ui_element& node, const context& 
   auto file_path = node.get_as<std::string>("file_path"_key, "");
   auto language = node.get_as<std::string>("language"_key, "none");
   auto read_only = node.get_as<bool>("read_only"_key, false);
+  auto wish_ui_schema = node.get_as<bool>("wish_ui_schema"_key, false);
   int32_t w = node.get_as<int32_t>("width"_key, 0);
   int32_t h = node.get_as<int32_t>("height"_key, 400);
 
@@ -100,6 +171,24 @@ void render_text_editor(imgui_renderer&, const ui_element& node, const context& 
   }
 
   st.editor.SetReadOnlyEnabled(read_only);
+
+  // wish UI JSON schema autocomplete: opt-in (see TextEditor.wish_ui_schema's
+  // doc comment) so unrelated TextEditor uses (e.g. Notepad) are unaffected.
+  // AutoCompleteConfig::setConfig() copies *cfg by value, so a stack local
+  // is safe here -- it does not need to outlive this call.
+  if (wish_ui_schema && language == "json") {
+    if (!st.autocomplete_configured) {
+      st.autocomplete_configured = true;
+      TextEditor::AutoCompleteConfig cfg;
+      cfg.triggerInStrings = true;
+      cfg.userData = &st.editor;
+      cfg.callback = fill_wish_ui_schema_suggestions;
+      st.editor.SetAutoCompleteConfig(&cfg);
+    }
+  } else if (st.autocomplete_configured) {
+    st.autocomplete_configured = false;
+    st.editor.SetAutoCompleteConfig(nullptr);
+  }
 
   // Sync the TextEditor palette with the session's active style preset.
   // TextEditor maintains its own color palette independent of ImGuiStyle.
@@ -140,6 +229,20 @@ void render_text_editor(imgui_renderer&, const ui_element& node, const context& 
     dynamic payload;
     payload["file_path"_key] = file_path;
     enqueue_event(s, id, "changed"_key, std::move(payload));
+  }
+
+  // "cursor_moved": only tracked when wish_ui_schema is set, so unrelated
+  // TextEditor uses (e.g. Notepad) don't accumulate an otherwise-unconsumed
+  // event stream. Mirrors the undo-index diff above.
+  if (wish_ui_schema) {
+    auto current_cursor = st.editor.GetMainCursorPosition();
+    if (current_cursor.line != st.last_cursor.line || current_cursor.column != st.last_cursor.column) {
+      st.last_cursor = current_cursor;
+      dynamic payload;
+      payload["line"_key] = static_cast<int32_t>(current_cursor.line);
+      payload["column"_key] = static_cast<int32_t>(current_cursor.column);
+      enqueue_event(s, id, "cursor_moved"_key, std::move(payload));
+    }
   }
 
   // Ctrl+S → "saved": signals the client to download the finished file.
