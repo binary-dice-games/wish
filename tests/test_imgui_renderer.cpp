@@ -146,6 +146,48 @@ TEST_F(ImguiRendererTest, LabelDoesNotThrowOrEmitEvent) {
   EXPECT_FALSE(event_fired);
 }
 
+TEST_F(ImguiRendererTest, LabelWithTextColorDoesNotThrow) {
+  auto map = bdg::wish::import_json(R"({"type":"Label","text":"hi","text_color":"#7EC8FFFF"})");
+
+  EXPECT_NO_THROW({
+    renderer_->begin_frame();
+    in_window([&] { renderer_->render_node(*map[""], *sess_); });
+    renderer_->end_frame();
+  });
+}
+
+TEST_F(ImguiRendererTest, LabelWithWrapDoesNotThrow) {
+  auto map = bdg::wish::import_json(
+      R"({"type":"Label","text":"a fairly long line of text meant to wrap across more than one line","wrap":true})");
+
+  EXPECT_NO_THROW({
+    renderer_->begin_frame();
+    in_window([&] { renderer_->render_node(*map[""], *sess_); });
+    renderer_->end_frame();
+  });
+}
+
+TEST_F(ImguiRendererTest, LabelWithWrapInsideNarrowTableColumnDoesNotThrow) {
+  // Exercises the "wrap at the current column's boundary, not the window's"
+  // path a bare wrap:true test above doesn't reach on its own.
+  auto map = bdg::wish::import_json(R"({
+    "type": "Table", "id": "##t", "columns": 1,
+    "children": {
+      "col": { "type": "TableColumn", "label": "Col" },
+      "row": { "type": "TableRow", "children": {
+        "cell": { "type": "Label", "wrap": true,
+                  "text": "a fairly long line of text meant to wrap inside a narrow column" }
+      } }
+    }
+  })");
+
+  EXPECT_NO_THROW({
+    renderer_->begin_frame();
+    in_window([&] { renderer_->render_node(*map[""], *sess_); });
+    renderer_->end_frame();
+  });
+}
+
 // ── Button: emits "clicked" on simulated press+release ───────────────────────
 
 TEST_F(ImguiRendererTest, ButtonEmitsClickedEvent) {

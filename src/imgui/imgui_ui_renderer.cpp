@@ -225,7 +225,21 @@ void render_window(imgui_renderer& r, const ui_element& node, const context& s) 
 
 void render_label(imgui_renderer&, const ui_element& node, const context&) {
   auto text = node.get_as<std::string>("text"_key, "");
+  auto color = node.get_as<std::string>("text_color"_key, "");
+  bool wrap = node.get_as<bool>("wrap"_key, false);
+  if (!color.empty())
+    ImGui::PushStyleColor(ImGuiCol_Text, parse_hex_color(color));
+  // GetCursorPosX() + GetContentRegionAvail().x (not PushTextWrapPos(0.0f),
+  // which wraps at the *window's* right edge) so this wraps at the current
+  // table column's boundary when used inside a table cell, not the whole
+  // host window's edge.
+  if (wrap)
+    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x);
   ImGui::TextUnformatted(text.c_str());
+  if (wrap)
+    ImGui::PopTextWrapPos();
+  if (!color.empty())
+    ImGui::PopStyleColor();
 }
 
 void render_button(imgui_renderer&, const ui_element& node, const context& s) {

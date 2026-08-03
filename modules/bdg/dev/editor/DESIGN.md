@@ -54,24 +54,31 @@ this module going forward.
 
 ### `editor` (server, `form`)
 
-Owns two independent subtrees registered in the session:
+Owns three independent subtrees registered in the session:
 - **Chrome** (`internal_root_key_`): filename label, error banner, an
   `editor_row` `HorizontalLayout` holding the source `TextEditor`
-  (`language: "json"`, `wish_ui_schema: true`, `width: 600`) and a help
-  panel `Label`, close-confirmation panel, event log `Table`. Built once in
-  `on_init()`. `source`'s explicit `width` is required for it and
-  `help_panel` to actually appear side by side — see "6. Design Decisions".
+  (`language: "json"`, `wish_ui_schema: true`, `width: 600`),
+  close-confirmation panel, event log `Table`. Built once in `on_init()`.
+- **Help window** (`help_root_key_ = internal_root_key_ + "_help"`): a
+  second, independently dockable `Window` (not nested inside the chrome
+  tree) showing the enclosing element type's display name/description and
+  a 3-column field table (Field / Category / Description). Built once in
+  `on_init()` alongside the chrome tree; its *content* (not its own chrome)
+  is rebuilt by `update_help_panel()` whenever the cursor's enclosing type
+  changes — see "6. Design Decisions".
 - **Preview** (`mock_root_key_ = internal_root_key_ + "_mock"`): the
   live-instantiated result of parsing the current source. Torn down and
   rebuilt on every successful reparse via `try_reparse()`.
 
-Both subtrees are registered as independent entries in
-`sess().top_level_objects`/`top_level_handlers`, both pointing `this` as
+All three subtrees are registered as independent entries in
+`sess().top_level_objects`/`top_level_handlers`, all pointing `this` as
 the event handler — `ui_root::on_event()` is a single catch-all dispatch
 per top-level root, so one `editor::on_event()` override handles chrome
 button clicks *and* arbitrary preview-widget events, distinguished by
 checking known chrome ids first and falling back to a `mock_id_to_path_`
-lookup for anything else (see "6. Design Decisions").
+lookup for anything else (see "6. Design Decisions"). The Help window
+needs no entry in `on_event()`'s id checks: it has no interactive
+widgets of its own, only `Label`s and a read-only `Table`.
 
 Invariant: `mock_window_id_` (the preview root `Window`'s `__wish_id`) is
 **reused** across every successful reparse, never regenerated. See "6.
@@ -164,7 +171,7 @@ try_reparse():
         top_level_objects/top_level_handlers entry
       set_banner("")
 
-Cursor moved (help panel + preview highlight):
+Cursor moved (Help window + preview highlight):
   TextEditor renderer diffs GetMainCursorPosition() each frame (only when
   wish_ui_schema is set), enqueues "cursor_moved" {line, column} on change
     → editor::on_event(): update_help_panel(line, column)
@@ -173,9 +180,19 @@ Cursor moved (help panel + preview highlight):
           no-op if unchanged from highlighted_path_; else, via s.ui_objects
           dot-path lookup, clear "__wish_highlight__" on the old path's
           element (if any) and set it on the new one; highlighted_path_ = ctx.element_path
-      → if enclosing_type non-empty: find_ui_element_class(enclosing_type),
-        format its display name/description/fields into help_panel_ptr_'s text
-      → else: clear help_panel_ptr_'s text
+      → if enclosing_type == last_help_type_: return (nothing else to do --
+        same element as last call, table already reflects it)
+      → clear_help_rows() (erase every field-table row's children-map entry
+        and ctx().objects entries, matching append_log_row()'s eviction
+        bookkeeping but wholesale); clear help_class_name_ptr_/
+        help_class_desc_ptr_'s text
+      → if enclosing_type non-empty and find_ui_element_class(enclosing_type)
+        succeeds: set help_class_name_ptr_/help_class_desc_ptr_'s text to
+        the class's display name/description; append_help_row() once per
+        field (own + inherited), each becoming one TableRow with a
+        colored Field cell, a Category cell, and a wrapped Description cell
+        (range/enum annotations folded in, via format_field_description())
+      → else: table/title stay cleared
     → imgui_renderer::render_node() reads "__wish_highlight__" on every
       element as it renders and draws a gold GetForegroundDrawList() box
       around it if set (see "6. Design Decisions")
@@ -370,16 +387,71 @@ Close:
   works identically under `--renderer=sdl3` and `--renderer=web` with zero
   renderer-specific code, same as the rest of `TextEditor`.
 
-- **`source`'s explicit `width: 600` (not `0`/fill), inside a new
-  `editor_row` `HorizontalLayout` wrapping `source` and `help_panel`.**
-  `HorizontalLayout` only wraps a child in its own fixed-width
-  `BeginChild()` when that child's own `width` field is nonzero (the same
-  mechanism `Image`/`Layout` columns use); at `width: 0`, `TextEditor`'s
-  own "fill available width" behavior would consume the entire row with no
-  column constraint, leaving nothing for `help_panel` to render beside it.
-  This moved `source` from `vbox.source` to `vbox.editor_row.source` in the
-  chrome tree — an internal path change, updated in every place the test
-  suite (`tests/test_editor.cpp`) or automation script names it directly.
+- **`source`'s explicit `width: 600` (not `0`/fill), inside a pre-existing
+  `editor_row` `HorizontalLayout`.** `HorizontalLayout` only wraps a child
+  in its own fixed-width `BeginChild()` when that child's own `width` field
+  is nonzero (the same mechanism `Image`/`Layout` columns use); at
+  `width: 0`, `TextEditor`'s own "fill available width" behavior would
+  consume the entire row. `editor_row` originally wrapped both `source`
+  and an inline `help_panel` `Label` side by side; now that the help
+  content lives in its own separate `Window` (see below), `editor_row`
+  wraps only `source` — deliberately left in place rather than flattened
+  away, since renaming/removing it would touch the `"vbox.editor_row.source"`
+  dot-path in roughly a dozen `tests/test_editor.cpp` call sites for no
+  functional gain. `source` moved from `vbox.source` to
+  `vbox.editor_row.source` in the chrome tree when `editor_row` was first
+  introduced — an internal path change, updated in every place the test
+  suite or automation script names it directly.
+
+- **Help content lives in its own top-level `Window`, not the chrome
+  tree, registered by hand in `on_init()`.** The original single-`Label`
+  help panel (embedded inline next to `source`) read as a wall of
+  unwrapped, uncolored text and couldn't be moved independently of the
+  main Editor window. `form::init()` only auto-registers one
+  `top_level_objects` entry (keyed on `internal_root_key_`), so a second,
+  independently dockable `Window` needs the same manual
+  `s.ui_objects.merge()` + `top_level_objects`/`top_level_handlers`
+  registration `try_reparse()` already does for the preview's
+  `mock_root_key_`, and `file_explorer`'s overwrite-confirmation dialog
+  does for its own secondary root (`remove_objects_at()`, `form.hpp`) —
+  not a new pattern. No module-level `DockSpaceViewport` is needed: every
+  `wish-server`/`wish standalone` session already renders inside an
+  implicit host dockspace (`app/wish_cli/host_renderer.cpp`), so any
+  `Window` without `NoDocking` set is already a dock candidate purely by
+  when its own `Begin()` fires relative to that dockspace. Deliberately
+  **not `closable`**: there is no menu/toggle elsewhere in the editor to
+  reopen a closed panel, so making it closable would risk losing it
+  permanently for the rest of the session.
+
+- **The field table is a `Table` with 3 columns (Field / Category /
+  Description), not 3 separate `Label`s per row.** `ImGui::BeginTable()`
+  gives free column alignment/resizing (`ImGuiTableFlags_Resizable`) across
+  a variable number of fields per class — a fixed 3-`Label`-per-row layout
+  would need its own manual column-width bookkeeping to line up. Rows are
+  built/torn-down in C++ (`append_help_row()`/`clear_help_rows()`),
+  mirroring `append_log_row()`'s exact pattern (one `TableRow` + N cell
+  `Label`s, each with its own `__wish_id`/`ctx().objects` entry) — the same
+  reason dynamically-added table rows aren't independently
+  automation-queryable by dot-path here either (they're never inserted
+  into `s.ui_objects`, only into the table's own in-memory `children` map
+  reached via `for_each_child_ordered()` at render time; see the event
+  log's rows, which have the identical property).
+
+- **Two new, generic `Label` fields (`text_color`, `wrap`) instead of a
+  one-off editor-specific rendering hack.** Making the Field column's text
+  read as visually distinct from Description required a per-widget color
+  override; making a long Description wrap inside its column instead of
+  overflowing/clipping (the root cause of the original panel's "very hard
+  to read" text, beyond just lacking columns) required a per-widget wrap
+  flag. Neither existed on any element (`Image.tint` was the only
+  per-widget JSON-driven color precedent anywhere in the codebase, and
+  nothing wrapped text) — both are additive fields on `Label` itself
+  (`render_label()` gained a `PushStyleColor`/`PushTextWrapPos` pair,
+  each a no-op when unset), reusable by any future feature, not
+  hand-rolled inside the editor module. `wrap`'s implementation uses
+  `PushTextWrapPos(GetCursorPosX() + GetContentRegionAvail().x)`, not
+  `PushTextWrapPos(0.0f)` — the latter wraps at the *window's* right edge,
+  which would ignore the current table column's actual boundary entirely.
 
 - **Help panel gated on `wish_ui_schema`, cursor-move tracking gated on it
   too — both off unless explicitly enabled.** `TextEditor.wish_ui_schema`
@@ -566,12 +638,15 @@ position/size/focus across edits, generic event log (path + event +
 payload) with a 200-row cap and auto-scroll, filename label with
 `[MODIFIED]` state, Ctrl+S / close-confirmation save flow, external
 file-change watching, OS clipboard copy/paste interop (as of the shared
-core fixes above); **help panel** (cursor position → enclosing element's
-description/fields, via `ui_schema_help::scan_cursor_context()` +
-`find_ui_element_class()`); **autocompletion** for element type names,
-field names, and `Enum`/`EnumFlags` values, sourced from the same registry
-and rendered by `ImGuiColorTextEdit`'s own built-in suggestion popup (no
-new wish UI widget); **preview highlight** — a gold box (drawn by
+core fixes above); **Help window** — a separate, independently dockable
+`Window` (cursor position → enclosing element's display name/description
+plus a 3-column field table, via `ui_schema_help::scan_cursor_context()` +
+`find_ui_element_class()`), field names colored via `Label.text_color` and
+descriptions word-wrapped via `Label.wrap`, rebuilt only when the
+enclosing type changes; **autocompletion** for element type names, field
+names, and `Enum`/`EnumFlags` values, sourced from the same registry and
+rendered by `ImGuiColorTextEdit`'s own built-in suggestion popup (no new
+wish UI widget); **preview highlight** — a gold box (drawn by
 `imgui_renderer::render_node()`) around the exact preview widget the
 cursor is currently editing, resolved via `scan_cursor_context()`'s
 `element_path` and kept correct across reparses via `highlighted_path_`.

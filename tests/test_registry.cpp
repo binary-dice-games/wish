@@ -191,6 +191,22 @@ TEST_F(RegistryTest, LabelHasTextAsString) {
   EXPECT_TRUE(obj.findField("text"_key)->is<std::string>());
 }
 
+TEST_F(RegistryTest, LabelHasTextColorAsStringDefaultingEmpty) {
+  auto obj = dynamic::instantiate("wish"_key, "Label"_key);
+  auto* f = obj.findField("text_color"_key);
+  ASSERT_NE(f, nullptr);
+  ASSERT_TRUE(f->is<std::string>());
+  EXPECT_EQ(f->as<std::string>(), "");
+}
+
+TEST_F(RegistryTest, LabelHasWrapAsBoolDefaultingFalse) {
+  auto obj = dynamic::instantiate("wish"_key, "Label"_key);
+  auto* f = obj.findField("wrap"_key);
+  ASSERT_NE(f, nullptr);
+  ASSERT_TRUE(f->is<bool>());
+  EXPECT_FALSE(f->as<bool>());
+}
+
 // ── MenuButton ────────────────────────────────────────────────────────────────
 
 TEST_F(RegistryTest, MenuButtonHasLabelAsString) {

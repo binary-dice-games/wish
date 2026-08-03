@@ -18,6 +18,22 @@ void register_label() {
           attr<DisplayName>("Text"),
           attr<Description>("Displayed text content."),
           attr<Category>("Content")});
+  proto->addField(
+      "text_color"_rkey,
+      field{
+          std::string{""},
+          attr<DisplayName>("Text Color"),
+          attr<Description>("Optional \"#RRGGBBAA\"/\"#RRGGBB\" text color override; empty uses the "
+                            "current theme's text color."),
+          attr<Category>("Appearance")});
+  proto->addField(
+      "wrap"_rkey,
+      field{
+          bool{false},
+          attr<DisplayName>("Wrap"),
+          attr<Description>("When true, wraps text to the available width instead of overflowing/"
+                            "clipping on one line."),
+          attr<Category>("Appearance")});
   (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Label"));
   (*proto)[dynamic::CLASS].addAttribute(attr<Description>("A read-only text element."));
   dynamic::addClass(
