@@ -151,13 +151,16 @@ struct cursor_context {
 /// the cursor means a broken tail -- the normal state while mid-edit --
 /// can never affect the result.
 ///
-/// Known, accepted limitation: since the scan never looks ahead, positioning
-/// the cursor *before* an object's own already-written `"type"` line (e.g.
-/// on a blank line just after that object's opening `{`) yields an empty
-/// `enclosing_type`, even though the object does have one a few lines further
-/// down -- this degrades to `cursor_context_kind::unknown`/no suggestions in
-/// that specific spot. Acceptable since every JSON example in this codebase
-/// (including the editor module's own `kEditorLayout`) writes `"type"` first.
+/// Known, accepted limitation: when the backward scan finds no `"type"` for
+/// the cursor's enclosing object (e.g. the cursor sits before `"type"` has
+/// been typed, right after that object's opening `{`), a small bounded
+/// forward lookahead (`lookahead_type_value()`) scans the *remainder of that
+/// same object's already-typed body* for `"type"`'s value, stopping the
+/// instant it would leave the object (its own closing `}`/`]` at depth 0)
+/// without finding one. So `enclosing_type` only ends up empty when `"type"`
+/// genuinely hasn't been written anywhere reachable from the cursor within
+/// its own enclosing object yet -- not merely because the cursor happens to
+/// precede it textually.
 ///
 /// @param source  Raw JSON source text, valid or not.
 /// @param cursor  Cursor position within @p source.

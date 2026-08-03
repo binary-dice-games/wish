@@ -251,6 +251,69 @@ std::optional<std::string> element_path_of(const frame& top) {
   return top.own_path;
 }
 
+// Small, bounded FORWARD lookahead for the frame's own "type" value, used
+// only when the backward scan hasn't found one yet: the cursor is
+// positioned before "type" was written in this object (right after its
+// opening "{", on a blank line before any field, or before "type" if some
+// other field happens to precede it). Scans only source[offset, end),
+// skipping over sibling values via depth tracking, and stops the instant
+// it would leave the current object/array ('}'/']' at depth 0) before
+// finding "type" -- so content elsewhere in the document (possibly
+// transiently invalid mid-edit -- the reason the main scan stays
+// backward-only) can never leak in: this lookahead is self-limiting to
+// whatever remains of the CURRENT frame's own, already-typed body.
+std::string lookahead_type_value(std::string_view source, size_t offset) {
+  bool in_str = false, escape = false;
+  size_t string_start = 0;
+  std::string pending_key;
+  int depth = 0;
+
+  for (size_t i = offset; i < source.size(); ++i) {
+    char c = source[i];
+    if (in_str) {
+      if (escape) {
+        escape = false;
+      } else if (c == '\\') {
+        escape = true;
+      } else if (c == '"') {
+        in_str = false;
+        if (depth == 0) {
+          std::string content{source.substr(string_start + 1, i - string_start - 1)};
+          char prev = last_non_ws_before(source, string_start);
+          if (prev == ':') {
+            if (pending_key == "type")
+              return content;
+            pending_key.clear();
+          } else {
+            pending_key = content;
+          }
+        }
+      }
+      continue;
+    }
+    switch (c) {
+      case '"':
+        in_str = true;
+        string_start = i;
+        escape = false;
+        break;
+      case '{':
+      case '[':
+        ++depth;
+        break;
+      case '}':
+      case ']':
+        if (depth == 0)
+          return {};
+        --depth;
+        break;
+      default:
+        break;
+    }
+  }
+  return {};
+}
+
 } // namespace
 
 cursor_context scan_cursor_context(std::string_view source, text_pos cursor) {
@@ -343,6 +406,8 @@ cursor_context scan_cursor_context(std::string_view source, text_pos cursor) {
   if (!stack.empty() && stack.back().is_object) {
     const frame& top = stack.back();
     result.enclosing_type = top.type_value;
+    if (result.enclosing_type.empty())
+      result.enclosing_type = lookahead_type_value(source, offset);
     result.element_path = element_path_of(top);
     char prev = last_non_ws_before(source, offset);
     if (prev == '{' || prev == ',') {
