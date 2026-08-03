@@ -155,17 +155,18 @@ class editor : public form {
   bison::key_t source_editor_id_;
   ui_element_ptr source_editor_ptr_;
   ui_element_ptr banner_ptr_;
-  ui_element_ptr log_table_ptr_;
   ui_element_ptr path_label_ptr_;
 
-  // Help window: a second top-level Window (own top_level_objects/
-  // top_level_handlers entry, not nested under window_id_'s chrome tree),
-  // built once in on_init() and torn down explicitly in request_close()
-  // (form::remove_internal_objects() only cleans up internal_root_key_) --
-  // see help_root_key_'s doc comment.
+  // Help and Event Log windows: separate top-level Windows (own
+  // top_level_objects/top_level_handlers entries, not nested under
+  // window_id_'s chrome tree), built once in on_init() and torn down
+  // explicitly in request_close() (form::remove_internal_objects() only
+  // cleans up internal_root_key_) -- see help_root_key_/log_root_key_'s
+  // doc comments.
   ui_element_ptr help_class_name_ptr_;
   ui_element_ptr help_class_desc_ptr_;
   ui_element_ptr help_table_ptr_;
+  ui_element_ptr log_table_ptr_;
 
   // Inline close-confirmation panel (shown in place of a true modal dialog
   // -- see editor.cpp's layout comment) and its three buttons.
@@ -189,6 +190,11 @@ class editor : public form {
   /// the preview, the Help window's own chrome doesn't change across
   /// reparses -- only its content, via `update_help_panel()`).
   std::string help_root_key_;
+
+  /// `top_level_objects`/`top_level_handlers` key for the event log
+  /// window's own root -- set once in `on_init()`
+  /// (`internal_root_key_ + "_log"`), same pattern as `help_root_key_`.
+  std::string log_root_key_;
 
   /// The enclosing type `update_help_panel()` last rebuilt the field table
   /// for (empty if the table is currently empty/cleared). Lets a

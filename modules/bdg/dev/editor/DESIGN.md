@@ -54,11 +54,14 @@ this module going forward.
 
 ### `editor` (server, `form`)
 
-Owns three independent subtrees registered in the session:
+Owns four independent subtrees registered in the session:
 - **Chrome** (`internal_root_key_`): filename label, error banner, an
   `editor_row` `HorizontalLayout` holding the source `TextEditor`
-  (`language: "json"`, `wish_ui_schema: true`, `width: 600`),
-  close-confirmation panel, event log `Table`. Built once in `on_init()`.
+  (`language: "json"`, `wish_ui_schema: true`, `width: 0, height: 0` — both
+  "fill available space", and `editor_row` itself carries `"height": -1`
+  so it stretches to fill whatever vertical space `vbox` has left — see
+  "6. Design Decisions"), close-confirmation panel. Built once in
+  `on_init()`.
 - **Help window** (`help_root_key_ = internal_root_key_ + "_help"`): a
   second, independently dockable `Window` (not nested inside the chrome
   tree) showing the enclosing element type's display name/description and
@@ -66,19 +69,24 @@ Owns three independent subtrees registered in the session:
   `on_init()` alongside the chrome tree; its *content* (not its own chrome)
   is rebuilt by `update_help_panel()` whenever the cursor's enclosing type
   changes — see "6. Design Decisions".
+- **Event log window** (`log_root_key_ = internal_root_key_ + "_log"`): a
+  third, independently dockable `Window` holding the event log `Table` as
+  its sole child. Built once in `on_init()`, same pattern as the Help
+  window; only `append_log_row()`'s target (`log_table_ptr_`) changed when
+  this moved out of the chrome tree, not its FIFO-cap logic.
 - **Preview** (`mock_root_key_ = internal_root_key_ + "_mock"`): the
   live-instantiated result of parsing the current source. Torn down and
   rebuilt on every successful reparse via `try_reparse()`.
 
-All three subtrees are registered as independent entries in
+All four subtrees are registered as independent entries in
 `sess().top_level_objects`/`top_level_handlers`, all pointing `this` as
 the event handler — `ui_root::on_event()` is a single catch-all dispatch
 per top-level root, so one `editor::on_event()` override handles chrome
 button clicks *and* arbitrary preview-widget events, distinguished by
 checking known chrome ids first and falling back to a `mock_id_to_path_`
-lookup for anything else (see "6. Design Decisions"). The Help window
-needs no entry in `on_event()`'s id checks: it has no interactive
-widgets of its own, only `Label`s and a read-only `Table`.
+lookup for anything else (see "6. Design Decisions"). The Help and Event
+Log windows need no entry in `on_event()`'s id checks: neither has any
+interactive widgets of its own, only `Label`s and a read-only `Table`.
 
 Invariant: `mock_window_id_` (the preview root `Window`'s `__wish_id`) is
 **reused** across every successful reparse, never regenerated. See "6.
@@ -194,8 +202,8 @@ Cursor moved (Help window + preview highlight):
         (range/enum annotations folded in, via format_field_description())
       → else: table/title stay cleared
     → imgui_renderer::render_node() reads "__wish_highlight__" on every
-      element as it renders and draws a gold GetForegroundDrawList() box
-      around it if set (see "6. Design Decisions")
+      element as it renders and draws a gold box around it into the
+      *current window's own* draw list if set (see "6. Design Decisions")
 
 Autocomplete (type names, field names, enum values):
   TextEditor renderer configures AutoCompleteConfig once (wish_ui_schema &&
@@ -387,21 +395,46 @@ Close:
   works identically under `--renderer=sdl3` and `--renderer=web` with zero
   renderer-specific code, same as the rest of `TextEditor`.
 
-- **`source`'s explicit `width: 600` (not `0`/fill), inside a pre-existing
-  `editor_row` `HorizontalLayout`.** `HorizontalLayout` only wraps a child
-  in its own fixed-width `BeginChild()` when that child's own `width` field
-  is nonzero (the same mechanism `Image`/`Layout` columns use); at
-  `width: 0`, `TextEditor`'s own "fill available width" behavior would
-  consume the entire row. `editor_row` originally wrapped both `source`
-  and an inline `help_panel` `Label` side by side; now that the help
-  content lives in its own separate `Window` (see below), `editor_row`
-  wraps only `source` — deliberately left in place rather than flattened
-  away, since renaming/removing it would touch the `"vbox.editor_row.source"`
+- **`source`'s `width`/`height` are now `0`/`0` (fill), and `editor_row`
+  itself carries `"height": -1` (stretch).** `source` originally had
+  explicit `width: 600, height: 440` to reserve fixed space for an inline
+  help `Label` sharing its row; once that `Label` moved into its own
+  `Window` (see below), the explicit dimensions were dead weight that left
+  the editor with unused empty space instead of a filled window.
+  `TextEditor`'s own field docs (`text_editor.cpp`) already define `0` as
+  "fill available width/height" for both axes — but `height`'s *default*
+  is `400`, not `0`, so it needs an explicit `"height": 0`, not just
+  removal. Filling `source` alone isn't enough, though: `editor_row` (the
+  `HorizontalLayout` wrapping it, itself a child of the outer `vbox`
+  `VerticalLayout`) had no `"height"` of its own, so `render_vertical_layout()`
+  treated it as an auto-sized row (rendered directly, no `BeginChild`,
+  height only *measured* afterward) — `source`'s own fill request would
+  then resolve against whatever space was left in the *whole window* at
+  that point in the immediate-mode traversal, not a properly reserved
+  region. Adding `"height": -1` to `editor_row` makes `vbox` wrap it in a
+  `BeginChild()` sized from the *stretch* pool (the same per-child height
+  convention `VerticalLayout` rows/`HorizontalLayout` columns already use
+  elsewhere), so `source` fills a correctly-reserved, correctly-bounded
+  region instead. `editor_row` is deliberately kept as a wrapper (not
+  flattened to a direct `vbox` child) even though it now holds only one
+  child — renaming/removing it would touch the `"vbox.editor_row.source"`
   dot-path in roughly a dozen `tests/test_editor.cpp` call sites for no
-  functional gain. `source` moved from `vbox.source` to
-  `vbox.editor_row.source` in the chrome tree when `editor_row` was first
-  introduced — an internal path change, updated in every place the test
-  suite or automation script names it directly.
+  functional gain.
+
+- **Event log window, same pattern as the Help window, not a new
+  mechanism.** Sharing the chrome window meant the log couldn't be
+  docked/moved independently and its `Table` was clipped to a fixed
+  `outer_height: 200` strip. Moved to its own top-level `Window`
+  (`log_root_key_`), registered by hand in `on_init()` exactly like
+  `help_root_key_` (see below) — the table's own `outer_height` changed
+  from a fixed `200` to `-1` (confirmed in
+  `extern/imgui/imgui_tables.cpp`'s `BeginTable()` doc comment: negative
+  `outer_size.y` bottom-aligns to the parent's available height), so it
+  now fills its own dedicated window instead of a fixed strip while the
+  pre-existing `ImGuiTableFlags_ScrollY` auto-scroll-to-bottom-on-growth
+  behavior keeps working unchanged (both only need a *bounded*, not
+  necessarily fixed, outer size). `append_log_row()`'s FIFO-cap logic is
+  untouched — only `log_table_ptr_`'s target tree moved.
 
 - **Help content lives in its own top-level `Window`, not the chrome
   tree, registered by hand in `on_init()`.** The original single-`Label`
@@ -472,11 +505,31 @@ Close:
   `"__wish_highlight__"` field (like `__wish_id`/`__path__`, never
   registered via `addField`) right after the node's own dispatch call —
   the same timing the automation hit-test capture uses for
-  `GetItemRectMin/Max()` — and draws directly via
-  `ImGui::GetForegroundDrawList()->AddRect(...)` if set. Works identically
-  under `sdl3` and `web` renderers with zero renderer-specific code, and
-  needs no per-widget map at all since only ever one widget is highlighted
-  at a time.
+  `GetItemRectMin/Max()` — and draws via the shared `draw_highlight_if_set()`
+  helper (`imgui_renderer.hpp`/`.cpp`) if set. Works identically under
+  `sdl3` and `web` renderers with zero renderer-specific code, and needs no
+  per-widget map at all since only ever one widget is highlighted at a
+  time.
+
+- **Highlight box drawn into the current window's own draw list, not the
+  global foreground layer.** Originally `ImGui::GetForegroundDrawList()->
+  AddRect(...)` — a screen-space, unclipped, always-on-top layer, so the
+  box drew over *every* window regardless of z-order, confusingly
+  appearing "in front of" whatever window happened to visually overlap the
+  preview. `draw_highlight_if_set()` calls `ImGui::GetWindowDrawList()`
+  instead, so the box now participates in normal window compositing — an
+  overlapping window in front correctly covers it. This needs two call
+  sites, not one: `Window`/`DockSpaceViewport` have already called their
+  own matching `End()`/`EndPopup()` by the time `render_node()`'s generic
+  post-dispatch code runs (confirmed by tracing `ImGui::End()`: the
+  current-window stack doesn't drop to null afterward, it falls back to
+  ImGui's own hidden "Debug##Default" window — so `GetWindowDrawList()`
+  there would silently draw into the *wrong* window and spuriously
+  reactivate it, not fail loudly), so those two call `draw_highlight_if_set()`
+  themselves, from inside `render_window()`/`render_dockspace_viewport()`,
+  right before their own `End()`/`EndPopup()` — everything else uses the
+  generic call in `render_node()`, gated on `!self_reports_rect` to avoid
+  drawing it twice.
 
 - **Container elements now highlight their own bounds, not their
   last-rendered child's.** `imgui_renderer::render_node()`

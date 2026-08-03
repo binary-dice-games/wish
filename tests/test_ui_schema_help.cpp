@@ -67,13 +67,50 @@ TEST(ScanCursorContextTest, EnumFieldValuePartial) {
 }
 
 TEST(ScanCursorContextTest, CursorBeforeTypeIsWrittenYieldsNoEnclosingType) {
-  // Known, accepted limitation (see scan_cursor_context's doc comment): the
-  // scanner is backward-only, so a cursor positioned before the object's own
-  // "type" key doesn't know about it yet.
+  // Genuine limitation (see scan_cursor_context's doc comment): "type" isn't
+  // written anywhere in this object at all (not even after the cursor), so
+  // even the forward lookahead finds nothing.
   std::string src = R"({"foo": "bar", )";
   auto ctx = scan_cursor_context(src, {0, src.size()});
   EXPECT_EQ(ctx.kind, cursor_context_kind::field_key);
   EXPECT_TRUE(ctx.enclosing_type.empty());
+}
+
+TEST(ScanCursorContextTest, CursorAfterOpenBraceFindsTypeWrittenLaterInSameObject) {
+  // Cursor sits right after a named child's opening "{", before "type" has
+  // been typed -- the backward scan finds nothing, but "type" does appear
+  // later in this same child object, so the forward lookahead should find it.
+  std::string line0 = R"({"type":"Window","children":{"btn":{)";
+  std::string line1 = R"("type":"Button","label":"OK"}}})";
+  std::string src = line0 + "\n" + line1;
+  auto ctx = scan_cursor_context(src, {0, line0.size()});
+  EXPECT_EQ(ctx.enclosing_type, "Button");
+}
+
+TEST(ScanCursorContextTest, CursorOnBlankLineBeforeTypeFindsTypeWrittenLater) {
+  // Matches the user-reported repro: cursor on a blank, pretty-printed line
+  // right after an object's opening "{", before "type" is typed on a
+  // following line.
+  std::string src =
+      "{\n"
+      "  \"type\": \"Window\",\n"
+      "  \"children\": {\n"
+      "    \"btn\": {\n"
+      "      \n"
+      "      \"type\": \"Button\"\n"
+      "    }\n"
+      "  }\n"
+      "}";
+  auto ctx = scan_cursor_context(src, {4, 6});
+  EXPECT_EQ(ctx.enclosing_type, "Button");
+}
+
+TEST(ScanCursorContextTest, SiblingArrayFieldBeforeTypeIsSkippedByLookahead) {
+  // A sibling array field precedes "type" in the same object; the lookahead
+  // must skip over it via depth tracking rather than bailing at its "[".
+  std::string src = R"({"tags":["a","b"],"type":"Button"})";
+  auto ctx = scan_cursor_context(src, {0, 1}); // right after the opening "{"
+  EXPECT_EQ(ctx.enclosing_type, "Button");
 }
 
 TEST(ScanCursorContextTest, MalformedTailAfterCursorDoesNotAffectResult) {

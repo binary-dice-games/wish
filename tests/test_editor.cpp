@@ -86,12 +86,23 @@ class SessionCapturingServer : public wish::server {
 };
 
 // Helper: find the root key for the internal form tree (starts with
-// "__editor_", no dot, and not the "_mock"/"_help" suffixes used for the
-// preview and Help-window roots respectively).
+// "__editor_", no dot, and not the "_mock"/"_help"/"_log" suffixes used for
+// the preview, Help-window, and Event-Log-window roots respectively).
 static std::string find_form_root(const wish::name_map& objects) {
   for (const auto& [k, _] : objects) {
     if (k.rfind("__editor_", 0) == 0 && k.find('.') == std::string::npos && k.find("_mock") == std::string::npos &&
-        k.find("_help") == std::string::npos)
+        k.find("_help") == std::string::npos && k.find("_log") == std::string::npos)
+      return k;
+  }
+  return {};
+}
+
+// Helper: find a root key ending in @p suffix (e.g. "_help", "_log"),
+// starting with "__editor_" and containing no dot.
+static std::string find_root_with_suffix(const wish::name_map& objects, const std::string& suffix) {
+  for (const auto& [k, _] : objects) {
+    if (k.rfind("__editor_", 0) == 0 && k.find('.') == std::string::npos && k.size() > suffix.size() &&
+        k.compare(k.size() - suffix.size(), suffix.size(), suffix) == 0)
       return k;
   }
   return {};
@@ -100,12 +111,13 @@ static std::string find_form_root(const wish::name_map& objects) {
 // Helper: find the Help window's own root key (starts with "__editor_", no
 // dot, ends with "_help").
 static std::string find_help_root(const wish::name_map& objects) {
-  for (const auto& [k, _] : objects) {
-    if (k.rfind("__editor_", 0) == 0 && k.find('.') == std::string::npos && k.size() > 5 &&
-        k.compare(k.size() - 5, 5, "_help") == 0)
-      return k;
-  }
-  return {};
+  return find_root_with_suffix(objects, "_help");
+}
+
+// Helper: find the Event Log window's own root key (starts with
+// "__editor_", no dot, ends with "_log").
+static std::string find_log_root(const wish::name_map& objects) {
+  return find_root_with_suffix(objects, "_log");
 }
 
 // ── Chrome construction ───────────────────────────────────────────────────────
@@ -161,10 +173,25 @@ TEST_F(EditorWindowTest, TreeContainsBanner) {
   EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".vbox.banner"));
 }
 
-TEST_F(EditorWindowTest, TreeContainsLog) {
+TEST_F(EditorWindowTest, LogWindowIsRegisteredAsSeparateTopLevelWindow) {
   std::string root = instantiate_and_get_root();
   ASSERT_FALSE(root.empty());
-  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".vbox.log"));
+  std::string log_root = root + "_log";
+
+  ASSERT_TRUE(srv_->last_session->top_level_objects.count(bison::key_t{log_root}));
+  auto& log_obj = srv_->last_session->ui_objects.at(log_root);
+  EXPECT_EQ(log_obj->findField(dynamic::CLASS)->as<bison::key_t>(), "Window"_key);
+  EXPECT_EQ(log_obj->as<std::string>("title"_key), "Event Log");
+  // Same rationale as the Help window -- no reopen affordance exists yet.
+  EXPECT_FALSE(log_obj->get_as<bool>("closable"_key, false));
+  EXPECT_NE(log_root, root);
+}
+
+TEST_F(EditorWindowTest, LogWindowTreeContainsTable) {
+  std::string root = instantiate_and_get_root();
+  ASSERT_FALSE(root.empty());
+  std::string log_root = root + "_log";
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(log_root + ".log"));
 }
 
 TEST_F(EditorWindowTest, HelpWindowIsRegisteredAsSeparateTopLevelWindow) {
@@ -213,6 +240,7 @@ class EditorSourceTest : public ::testing::Test {
     ASSERT_FALSE(root_.empty());
     mock_root_ = root_ + "_mock";
     help_root_ = root_ + "_help";
+    log_root_ = root_ + "_log";
 
     auto prev = std::move(srv_->last_session->emit_event);
     events_ = std::make_shared<std::vector<CapturedEvent>>();
@@ -304,7 +332,7 @@ class EditorSourceTest : public ::testing::Test {
   // The `text` field of the second cell in the log table's row at `index`
   // (0-based, in append order). Mirrors notepad's editor_at() helper.
   std::optional<std::string> log_row_text(size_t index) const {
-    auto it = srv_->last_session->ui_objects.find(root_ + ".vbox.log");
+    auto it = srv_->last_session->ui_objects.find(log_root_ + ".log");
     if (it == srv_->last_session->ui_objects.end())
       return std::nullopt;
     auto* cf = it->second->findField("children"_key);
@@ -421,6 +449,7 @@ class EditorSourceTest : public ::testing::Test {
   std::string root_;
   std::string mock_root_;
   std::string help_root_;
+  std::string log_root_;
   std::shared_ptr<std::vector<CapturedEvent>> events_;
 };
 
@@ -480,7 +509,7 @@ TEST_F(EditorSourceTest, EventLogCapsAtMaxRowsAndEvictsOldest) {
   for (int i = 0; i < kMax + 10; ++i)
     simulate_mock_event(ok_id, "clicked"_key);
 
-  auto it = srv_->last_session->ui_objects.find(root_ + ".vbox.log");
+  auto it = srv_->last_session->ui_objects.find(log_root_ + ".log");
   ASSERT_NE(it, srv_->last_session->ui_objects.end());
   auto* cf = it->second->findField("children"_key);
   ASSERT_TRUE(cf && cf->is<dynamic_ptr>() && cf->as<dynamic_ptr>());
