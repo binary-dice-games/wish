@@ -202,6 +202,8 @@ Read-only static text; no events.
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `text` | `string` | `""` | Displayed text content. |
+| `text_color` | `string` | `""` | Optional `"#RRGGBBAA"`/`"#RRGGBB"` text color override; empty uses the current theme's text color. |
+| `wrap` | `bool` | `false` | When true, wraps text to the available width instead of overflowing/clipping on one line. |
 
 #### `Checkbox`
 A toggleable checkbox with a label.
@@ -523,12 +525,16 @@ sandboxed file path.
 | `read_only` | `bool` | `false` | When `true`, editing is disabled and `changed` never fires. |
 | `width` | `int32` | `0` | Width in pixels (0–8192); `0` fills available width. |
 | `height` | `int32` | `400` | Height in pixels (0–8192); `0` fills available height. |
+| `wish_ui_schema` | `bool` | `false` | When `true` and `language` is `"json"`, enables cursor tracking (`cursor_moved` events) and autocomplete for wish UI element type names, field names, and enum values, sourced from the live class registry (see `src/ui/ui_schema_help.hpp`). Used by the `editor` module's source panel; off by default so unrelated `TextEditor` uses (e.g. Notepad) are unaffected. |
 
 **Events:**
 - `changed` — fired when text is edited (and `read_only` is `false`); the
   new content is written to disk first. `{ file_path: string }`.
 - `saved` — fired on Ctrl+S while focused, signaling the client to
   `download_file`. `{ file_path: string }`.
+- `cursor_moved` — fired on every caret move, only when `wish_ui_schema` is
+  `true`. `{ line: int32, column: int32 }` (0-based; `column` counts
+  characters, not visible columns).
 
 ## 5. 2D plotting (`src/ui/plot_elements/`)
 

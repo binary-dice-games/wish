@@ -12,9 +12,9 @@ using namespace bdg::bison;
 void register_tabs() {
   // TabBar — container; children should be TabItem elements.
   {
-    auto proto = dynamic_ptr{"TabBar"_key, {}};
+    auto proto = dynamic_ptr{"TabBar"_rkey, {}};
     proto->addField(
-        "id"_key,
+        "id"_rkey,
         field{
             std::string{"##tabbar"},
             attr<DisplayName>("ID"),
@@ -29,16 +29,16 @@ void register_tabs() {
 
   // TabItem — one tab page inside a TabBar; its children are the page content.
   {
-    auto proto = dynamic_ptr{"TabItem"_key, {}};
+    auto proto = dynamic_ptr{"TabItem"_rkey, {}};
     proto->addField(
-        "label"_key,
+        "label"_rkey,
         field{
             std::string{},
             attr<DisplayName>("Label"),
             attr<Description>("Text shown on the tab button."),
             attr<Category>("Content")});
     proto->addField(
-        "closable"_key,
+        "closable"_rkey,
         field{
             false,
             attr<DisplayName>("Closable"),

@@ -15,23 +15,23 @@ void register_plot3d_mesh() {
   // Plot3DTriangle — a set of filled triangles.
   // xs/ys/zs must have count divisible by 3; each group of 3 is one triangle.
   {
-    auto proto = dynamic_ptr{"Plot3DTriangle"_key, {}};
+    auto proto = dynamic_ptr{"Plot3DTriangle"_rkey, {}};
     proto->addField(
-        "xs"_key,
+        "xs"_rkey,
         field{
             std::vector<float>{},
             attr<DisplayName>("X Vertices"),
             attr<Description>("Vertex X coordinates; length must be a multiple of 3."),
             attr<Category>("Data")});
     proto->addField(
-        "ys"_key,
+        "ys"_rkey,
         field{
             std::vector<float>{},
             attr<DisplayName>("Y Vertices"),
             attr<Description>("Vertex Y coordinates; length must be a multiple of 3."),
             attr<Category>("Data")});
     proto->addField(
-        "zs"_key,
+        "zs"_rkey,
         field{
             std::vector<float>{},
             attr<DisplayName>("Z Vertices"),
@@ -52,23 +52,23 @@ void register_plot3d_mesh() {
   // Plot3DQuad — a set of filled quads.
   // xs/ys/zs must have count divisible by 4; each group of 4 is one quad.
   {
-    auto proto = dynamic_ptr{"Plot3DQuad"_key, {}};
+    auto proto = dynamic_ptr{"Plot3DQuad"_rkey, {}};
     proto->addField(
-        "xs"_key,
+        "xs"_rkey,
         field{
             std::vector<float>{},
             attr<DisplayName>("X Vertices"),
             attr<Description>("Vertex X coordinates; length must be a multiple of 4."),
             attr<Category>("Data")});
     proto->addField(
-        "ys"_key,
+        "ys"_rkey,
         field{
             std::vector<float>{},
             attr<DisplayName>("Y Vertices"),
             attr<Description>("Vertex Y coordinates; length must be a multiple of 4."),
             attr<Category>("Data")});
     proto->addField(
-        "zs"_key,
+        "zs"_rkey,
         field{
             std::vector<float>{},
             attr<DisplayName>("Z Vertices"),
@@ -90,30 +90,30 @@ void register_plot3d_mesh() {
   // indices is a flat list of unsigned integer indices into the vertex arrays;
   // stored as vector<int32_t> and converted to unsigned int at render time.
   {
-    auto proto = dynamic_ptr{"Plot3DMesh"_key, {}};
+    auto proto = dynamic_ptr{"Plot3DMesh"_rkey, {}};
     proto->addField(
-        "xs"_key,
+        "xs"_rkey,
         field{
             std::vector<float>{},
             attr<DisplayName>("Vertex X"),
             attr<Description>("X coordinate of each mesh vertex."),
             attr<Category>("Data")});
     proto->addField(
-        "ys"_key,
+        "ys"_rkey,
         field{
             std::vector<float>{},
             attr<DisplayName>("Vertex Y"),
             attr<Description>("Y coordinate of each mesh vertex."),
             attr<Category>("Data")});
     proto->addField(
-        "zs"_key,
+        "zs"_rkey,
         field{
             std::vector<float>{},
             attr<DisplayName>("Vertex Z"),
             attr<Description>("Z coordinate of each mesh vertex."),
             attr<Category>("Data")});
     proto->addField(
-        "indices"_key,
+        "indices"_rkey,
         field{
             std::vector<int32_t>{},
             attr<DisplayName>("Indices"),

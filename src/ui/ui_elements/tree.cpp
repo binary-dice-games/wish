@@ -12,16 +12,16 @@ using namespace bdg::bison;
 void register_tree() {
   // TreeNode — collapsible node with an arrow; children are sub-tree content.
   {
-    auto proto = dynamic_ptr{"TreeNode"_key, {}};
+    auto proto = dynamic_ptr{"TreeNode"_rkey, {}};
     proto->addField(
-        "label"_key,
+        "label"_rkey,
         field{
             std::string{},
             attr<DisplayName>("Label"),
             attr<Description>("Text shown next to the collapse arrow."),
             attr<Category>("Content")});
     proto->addField(
-        "open"_key,
+        "open"_rkey,
         field{
             false,
             attr<DisplayName>("Open"),
@@ -29,7 +29,7 @@ void register_tree() {
                               "ImGui manages the state afterward)."),
             attr<Category>("State")});
     proto->addField(
-        "leaf"_key,
+        "leaf"_rkey,
         field{
             false,
             attr<DisplayName>("Leaf"),
@@ -45,9 +45,9 @@ void register_tree() {
 
   // CollapsingHeader — bold section header that collapses its children.
   {
-    auto proto = dynamic_ptr{"CollapsingHeader"_key, {}};
+    auto proto = dynamic_ptr{"CollapsingHeader"_rkey, {}};
     proto->addField(
-        "label"_key,
+        "label"_rkey,
         field{std::string{}, attr<DisplayName>("Label"), attr<Description>("Header text."), attr<Category>("Content")});
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("CollapsingHeader"));
     (*proto)[dynamic::CLASS].addAttribute(

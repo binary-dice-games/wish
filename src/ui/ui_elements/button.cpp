@@ -10,9 +10,9 @@ namespace bdg::wish {
 using namespace bdg::bison;
 
 void register_button() {
-  auto proto = dynamic_ptr{"Button"_key, {}};
+  auto proto = dynamic_ptr{"Button"_rkey, {}};
   proto->addField(
-      "label"_key,
+      "label"_rkey,
       field{
           std::string{""},
           attr<DisplayName>("Label"),

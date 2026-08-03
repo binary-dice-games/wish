@@ -408,13 +408,16 @@ def test_saving_shows_confirmation(wish_ui):
   inside a collapsed `TreeNode`, an unopened `TabBar` tab, or a window that
   hasn't been given a chance to draw yet. Navigate to make it visible (or
   `wait_for` the tree to settle) before asserting on its rect or clicking it.
-- **Only leaf-widget rects are reliable.** A container/window element's
-  captured rect actually reflects whatever widget happened to render last
-  *inside* it (an inherent consequence of the hit-test capture happening
-  right after each ImGui call — see "Hit-test capture mechanism" in
-  `src/automation/DESIGN.md`), not a meaningful bounding box for the
-  container itself. Assert on the specific interactive widget you care
-  about, not its enclosing `Window`/`Layout`/`TabBar`.
+- **Container/window rects are now accurate bounding boxes**, not the
+  last-rendered descendant's rect — `imgui_renderer::render_node()` wraps
+  each recursing container's dispatch in `ImGui::BeginGroup()`/`EndGroup()`
+  (or, for `Window`/`DockSpaceViewport`, self-reports via
+  `GetWindowPos()/GetWindowSize()`) before the hit-test capture reads it —
+  see "Hit-test capture mechanism" in `src/automation/DESIGN.md`. The one
+  remaining gap is `MenuBar`: its rect can still reflect stale layout state
+  rather than the menu bar's own strip, since `ImGui::BeginMenuBar()`
+  internally resets its own layout bookkeeping in a way no wrap can see
+  through — assert on the individual `Menu`/`MenuItem` inside it instead.
 - **One dedicated session per launch.** Automation assumes exactly one
   connected app session per server process (see DESIGN.md's "Session model")
   — always launch a fresh server per debugging session / test rather than

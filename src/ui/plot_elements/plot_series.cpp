@@ -16,14 +16,14 @@ using namespace bdg::bison;
 // Shared helper: add the xs/ys array fields to a proto.
 static void add_xy_fields(dynamic_ptr& proto) {
   proto->addField(
-      "xs"_key,
+      "xs"_rkey,
       field{
           std::vector<float>{},
           attr<DisplayName>("X Values"),
           attr<Description>("Array of X coordinates, one per data point."),
           attr<Category>("Data")});
   proto->addField(
-      "ys"_key,
+      "ys"_rkey,
       field{
           std::vector<float>{},
           attr<DisplayName>("Y Values"),
@@ -34,7 +34,7 @@ static void add_xy_fields(dynamic_ptr& proto) {
 void register_plot_series() {
   // PlotLine — a connected line series.
   {
-    auto proto = dynamic_ptr{"PlotLine"_key, {}};
+    auto proto = dynamic_ptr{"PlotLine"_rkey, {}};
     add_xy_fields(proto);
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("PlotLine"));
     (*proto)[dynamic::CLASS].addAttribute(
@@ -46,7 +46,7 @@ void register_plot_series() {
 
   // PlotScatter — dots at each data point, no connecting line.
   {
-    auto proto = dynamic_ptr{"PlotScatter"_key, {}};
+    auto proto = dynamic_ptr{"PlotScatter"_rkey, {}};
     add_xy_fields(proto);
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("PlotScatter"));
     (*proto)[dynamic::CLASS].addAttribute(
@@ -58,7 +58,7 @@ void register_plot_series() {
 
   // PlotStairs — staircase / step interpolation between data points.
   {
-    auto proto = dynamic_ptr{"PlotStairs"_key, {}};
+    auto proto = dynamic_ptr{"PlotStairs"_rkey, {}};
     add_xy_fields(proto);
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("PlotStairs"));
     (*proto)[dynamic::CLASS].addAttribute(
@@ -70,10 +70,10 @@ void register_plot_series() {
 
   // PlotStems — vertical lines from a reference level to each data point.
   {
-    auto proto = dynamic_ptr{"PlotStems"_key, {}};
+    auto proto = dynamic_ptr{"PlotStems"_rkey, {}};
     add_xy_fields(proto);
     proto->addField(
-        "ref"_key,
+        "ref"_rkey,
         field{
             float{0.0f},
             attr<DisplayName>("Reference"),
@@ -89,10 +89,10 @@ void register_plot_series() {
 
   // PlotShaded — filled area between two curves (or between one curve and ref).
   {
-    auto proto = dynamic_ptr{"PlotShaded"_key, {}};
+    auto proto = dynamic_ptr{"PlotShaded"_rkey, {}};
     add_xy_fields(proto);
     proto->addField(
-        "ys2"_key,
+        "ys2"_rkey,
         field{
             std::vector<float>{},
             attr<DisplayName>("Y Values 2"),
@@ -100,7 +100,7 @@ void register_plot_series() {
                               "Leave empty to shade between ys and ref."),
             attr<Category>("Data")});
     proto->addField(
-        "ref"_key,
+        "ref"_rkey,
         field{
             float{0.0f},
             attr<DisplayName>("Reference"),
@@ -116,7 +116,7 @@ void register_plot_series() {
 
   // PlotDigital — binary / digital signal display.
   {
-    auto proto = dynamic_ptr{"PlotDigital"_key, {}};
+    auto proto = dynamic_ptr{"PlotDigital"_rkey, {}};
     add_xy_fields(proto);
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("PlotDigital"));
     (*proto)[dynamic::CLASS].addAttribute(

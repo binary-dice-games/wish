@@ -10,30 +10,30 @@ namespace bdg::wish {
 using namespace bdg::bison;
 
 void register_selectable() {
-  auto proto = dynamic_ptr{"Selectable"_key, {}};
+  auto proto = dynamic_ptr{"Selectable"_rkey, {}};
   proto->addField(
-      "label"_key,
+      "label"_rkey,
       field{
           std::string{},
           attr<DisplayName>("Label"),
           attr<Description>("Text shown inside the selectable area."),
           attr<Category>("Content")});
   proto->addField(
-      "selected"_key,
+      "selected"_rkey,
       field{
           false,
           attr<DisplayName>("Selected"),
           attr<Description>("Whether the item appears highlighted/selected."),
           attr<Category>("State")});
   proto->addField(
-      "width"_key,
+      "width"_rkey,
       field{
           float{0.0f},
           attr<DisplayName>("Width"),
           attr<Description>("Width in pixels. 0 fills the available width."),
           attr<Category>("Layout")});
   proto->addField(
-      "height"_key,
+      "height"_rkey,
       field{
           float{0.0f},
           attr<DisplayName>("Height"),

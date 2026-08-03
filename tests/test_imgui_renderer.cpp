@@ -146,6 +146,48 @@ TEST_F(ImguiRendererTest, LabelDoesNotThrowOrEmitEvent) {
   EXPECT_FALSE(event_fired);
 }
 
+TEST_F(ImguiRendererTest, LabelWithTextColorDoesNotThrow) {
+  auto map = bdg::wish::import_json(R"({"type":"Label","text":"hi","text_color":"#7EC8FFFF"})");
+
+  EXPECT_NO_THROW({
+    renderer_->begin_frame();
+    in_window([&] { renderer_->render_node(*map[""], *sess_); });
+    renderer_->end_frame();
+  });
+}
+
+TEST_F(ImguiRendererTest, LabelWithWrapDoesNotThrow) {
+  auto map = bdg::wish::import_json(
+      R"({"type":"Label","text":"a fairly long line of text meant to wrap across more than one line","wrap":true})");
+
+  EXPECT_NO_THROW({
+    renderer_->begin_frame();
+    in_window([&] { renderer_->render_node(*map[""], *sess_); });
+    renderer_->end_frame();
+  });
+}
+
+TEST_F(ImguiRendererTest, LabelWithWrapInsideNarrowTableColumnDoesNotThrow) {
+  // Exercises the "wrap at the current column's boundary, not the window's"
+  // path a bare wrap:true test above doesn't reach on its own.
+  auto map = bdg::wish::import_json(R"({
+    "type": "Table", "id": "##t", "columns": 1,
+    "children": {
+      "col": { "type": "TableColumn", "label": "Col" },
+      "row": { "type": "TableRow", "children": {
+        "cell": { "type": "Label", "wrap": true,
+                  "text": "a fairly long line of text meant to wrap inside a narrow column" }
+      } }
+    }
+  })");
+
+  EXPECT_NO_THROW({
+    renderer_->begin_frame();
+    in_window([&] { renderer_->render_node(*map[""], *sess_); });
+    renderer_->end_frame();
+  });
+}
+
 // ── Button: emits "clicked" on simulated press+release ───────────────────────
 
 TEST_F(ImguiRendererTest, ButtonEmitsClickedEvent) {
@@ -301,6 +343,81 @@ TEST_F(ImguiRendererTest, MenuButtonOpensPopupAndRendersChildOnClick) {
   // the still-open popup scope, before EndPopup() could reset it.
   EXPECT_NE(r.menu_item_id, btn_id);
   EXPECT_NE(r.menu_item_id, ImGuiID{0});
+}
+
+// Regression test: opening a MenuButton's popup enqueues no wish event (only
+// a later "clicked" MenuItem selection does), so nothing forced the render
+// loop's post-dispatch settle frames (server::render_loop()'s "events not
+// empty" check) -- the newly opened popup's content could sit invisible
+// until an unrelated input event (e.g. a mouse move) drove the next render.
+// render_menu_button() must force those settle frames itself on the frame
+// the popup opens.
+TEST_F(ImguiRendererTest, MenuButtonOpeningPopupMarksSessionDirty) {
+  auto map = bdg::wish::import_json(
+      R"({"type":"MenuButton","label":"Create","children":{"item":{"type":"MenuItem","label":"Object"}}})");
+
+  ImGuiID btn_id{0};
+  renderer_->begin_frame();
+  in_window([&] {
+    renderer_->render_node(*map[""], *sess_);
+    btn_id = ImGui::GetItemID();
+  });
+  renderer_->end_frame();
+
+  sess_->dirty.store(0, std::memory_order_release);
+  ImGui::GetIO().DeltaTime = 1.0f / 60.0f;
+  ImGui::NewFrame();
+  fake_click(btn_id);
+  in_window([&] { renderer_->render_node(*map[""], *sess_); });
+  ImGui::EndFrame();
+
+  EXPECT_GT(sess_->dirty.load(std::memory_order_acquire), 0);
+}
+
+// ── Combo ─────────────────────────────────────────────────────────────────────
+
+// Regression test for the same class of bug: opening a Combo's dropdown
+// (clicking its header) enqueues no wish event either -- only an actual
+// selection change does -- so it needs the identical explicit dirty-store
+// fix as MenuButton above.
+TEST_F(ImguiRendererTest, ComboOpeningDropdownMarksSessionDirty) {
+  auto map = bdg::wish::import_json(R"({"type":"Combo","label":"Pick","items":"A\nB\nC","value":0})");
+
+  // Frame 1: dropdown starts closed -- only the header renders. Compute the
+  // popup's id the same way BeginCombo() does internally (ImHashStr("##Combo
+  // Popup", 0, header_id)) so frame 2 can confirm it actually opened.
+  ImGuiID header_id{0};
+  ImGuiID popup_id{0};
+  bool popup_open_before_click = true;
+  renderer_->begin_frame();
+  in_window([&] {
+    renderer_->render_node(*map[""], *sess_);
+    header_id = ImGui::GetItemID();
+    popup_id = ImHashStr("##ComboPopup", 0, header_id);
+    popup_open_before_click = ImGui::IsPopupOpen(popup_id, ImGuiPopupFlags_None);
+  });
+  renderer_->end_frame();
+  ASSERT_FALSE(popup_open_before_click);
+
+  // Frame 2: simulate press+release on the header -- opens the dropdown in
+  // this same frame (standard ImGui OpenPopup()-then-Begin idiom), same as
+  // MenuButtonOpensPopupAndRendersChildOnClick above.
+  sess_->dirty.store(0, std::memory_order_release);
+  bool popup_open_after_click = false;
+  ImGui::GetIO().DeltaTime = 1.0f / 60.0f;
+  ImGui::NewFrame();
+  fake_click(header_id);
+  in_window([&] {
+    renderer_->render_node(*map[""], *sess_);
+    popup_open_after_click = ImGui::IsPopupOpen(popup_id, ImGuiPopupFlags_None);
+  });
+  ImGui::EndFrame();
+
+  ASSERT_TRUE(popup_open_after_click);
+  // The click only opened the dropdown -- selection (value) did not change --
+  // yet the render loop must still be told to schedule follow-up frames.
+  EXPECT_EQ(map[""]->get_as<int32_t>("value"_key, -1), 0);
+  EXPECT_GT(sess_->dirty.load(std::memory_order_acquire), 0);
 }
 
 // ── Unknown class: no throw ───────────────────────────────────────────────────
@@ -875,6 +992,111 @@ TEST_F(ImguiRendererTest, ExtraRenderFnsOverrideIsPerInstanceNotGlobal) {
     renderer_->end_frame();
   });
   EXPECT_FALSE(g_dummy_render_called);
+}
+
+// ── Container rect capture ────────────────────────────────────────────────────
+//
+// Verifies the fix for the documented "container rect capture" limitation:
+// GetItemRectMin/Max() right after a container's dispatch call used to
+// reflect whatever its last-rendered descendant drew, not the container's
+// own bounds. imgui_renderer::render_node() now resolves each node's own
+// rect into last_resolved_rect_min_/max_ -- the bounding box of everything
+// the container drew (via a BeginGroup()/EndGroup() wrap) for most classes,
+// or the window's own GetWindowPos()/GetWindowSize() (via the
+// "__wish_win_rect_*__" hidden fields) for Window/DockSpaceViewport, which
+// open a new top-level window a group can't see into.
+
+class rect_capturing_renderer : public imgui_renderer {
+ public:
+  bdg::bison::key_t target_class;
+  ImVec2 captured_min{-1.0f, -1.0f};
+  ImVec2 captured_max{-1.0f, -1.0f};
+
+  void render_node(const ui_element& node, const context& s) override {
+    imgui_renderer::render_node(node, s);
+    if (node.as<bdg::bison::key_t>(dynamic::CLASS) == target_class) {
+      captured_min = last_resolved_rect_min_;
+      captured_max = last_resolved_rect_max_;
+    }
+  }
+};
+
+TEST_F(ImguiRendererTest, WindowRectMatchesWindowSizeNotLastChild) {
+  // A small trailing child ("small") would be the last thing GetItemRect*()
+  // saw pre-fix -- its own rect is nowhere near 400x300.
+  auto map = bdg::wish::import_json(
+      R"({"type":"Window","title":"W","width":400,"height":300,"children":{
+            "big":{"type":"Button","label":"Big","width":350,"height":40},
+            "small":{"type":"Button","label":"X","width":10,"height":10}
+          }})");
+
+  rect_capturing_renderer r;
+  r.target_class = "Window"_key;
+  r.begin_frame();
+  r.render_node(*map[""], *sess_);
+  r.end_frame();
+
+  float width = r.captured_max.x - r.captured_min.x;
+  float height = r.captured_max.y - r.captured_min.y;
+  EXPECT_NEAR(width, 400.0f, 1.0f);
+  EXPECT_NEAR(height, 300.0f, 1.0f);
+}
+
+TEST_F(ImguiRendererTest, VerticalLayoutRectSpansAllChildrenNotLastOnly) {
+  auto map = bdg::wish::import_json(
+      R"({"type":"VerticalLayout","children":{
+            "a":{"type":"Button","label":"A","width":300,"height":60},
+            "b":{"type":"Button","label":"B","width":10,"height":10}
+          }})");
+
+  rect_capturing_renderer r;
+  r.target_class = "VerticalLayout"_key;
+  r.begin_frame();
+  in_window([&] { r.render_node(*map[""], *sess_); });
+  r.end_frame();
+
+  float width = r.captured_max.x - r.captured_min.x;
+  float height = r.captured_max.y - r.captured_min.y;
+  // The last child ("b") alone is only 10x10 -- a bounding box spanning both
+  // children must be at least as wide/tall as the bigger first child.
+  EXPECT_GE(width, 300.0f);
+  EXPECT_GE(height, 60.0f);
+}
+
+TEST_F(ImguiRendererTest, TreeNodeCollapsedStillReportsOwnRectWithoutThrow) {
+  // A collapsed TreeNode's dispatch draws only its own header row (no
+  // children) -- exercises the trailing Dummy()'s "container drew something,
+  // but very little" path without a genuinely empty group.
+  auto map = bdg::wish::import_json(
+      R"({"type":"TreeNode","label":"Node","open":false,"children":{
+            "child":{"type":"Label","text":"hidden"}
+          }})");
+
+  rect_capturing_renderer r;
+  r.target_class = "TreeNode"_key;
+  EXPECT_NO_THROW({
+    r.begin_frame();
+    in_window([&] { r.render_node(*map[""], *sess_); });
+    r.end_frame();
+  });
+
+  EXPECT_GT(r.captured_max.x, r.captured_min.x);
+}
+
+TEST_F(ImguiRendererTest, ButtonRectStillPrecise) {
+  // Leaf widgets must remain unaffected by the group-wrap.
+  auto map = bdg::wish::import_json(R"({"type":"Button","label":"OK","width":80,"height":30})");
+
+  rect_capturing_renderer r;
+  r.target_class = "Button"_key;
+  r.begin_frame();
+  in_window([&] { r.render_node(*map[""], *sess_); });
+  r.end_frame();
+
+  float width = r.captured_max.x - r.captured_min.x;
+  float height = r.captured_max.y - r.captured_min.y;
+  EXPECT_NEAR(width, 80.0f, 1.0f);
+  EXPECT_NEAR(height, 30.0f, 1.0f);
 }
 
 // ── Offscreen render target (base class) ─────────────────────────────────────

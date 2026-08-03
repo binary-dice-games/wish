@@ -11,7 +11,7 @@ using namespace bdg::bison;
 
 static void add_bar_fields(dynamic_ptr& proto) {
   proto->addField(
-      "xs"_key,
+      "xs"_rkey,
       field{
           std::vector<float>{},
           attr<DisplayName>("X Positions"),
@@ -19,14 +19,14 @@ static void add_bar_fields(dynamic_ptr& proto) {
                             "If empty, bars are placed at 0, 1, 2, … using the ys values only."),
           attr<Category>("Data")});
   proto->addField(
-      "ys"_key,
+      "ys"_rkey,
       field{
           std::vector<float>{},
           attr<DisplayName>("Y Values"),
           attr<Description>("Array of bar heights (or lengths for horizontal bars)."),
           attr<Category>("Data")});
   proto->addField(
-      "bar_size"_key,
+      "bar_size"_rkey,
       field{
           float{0.67f},
           attr<DisplayName>("Bar Size"),
@@ -38,7 +38,7 @@ static void add_bar_fields(dynamic_ptr& proto) {
 void register_plot_bars() {
   // PlotBars — vertical bar chart.
   {
-    auto proto = dynamic_ptr{"PlotBars"_key, {}};
+    auto proto = dynamic_ptr{"PlotBars"_rkey, {}};
     add_bar_fields(proto);
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("PlotBars"));
     (*proto)[dynamic::CLASS].addAttribute(
@@ -51,7 +51,7 @@ void register_plot_bars() {
 
   // PlotBarsH — horizontal bar chart.
   {
-    auto proto = dynamic_ptr{"PlotBarsH"_key, {}};
+    auto proto = dynamic_ptr{"PlotBarsH"_rkey, {}};
     add_bar_fields(proto);
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("PlotBarsH"));
     (*proto)[dynamic::CLASS].addAttribute(

@@ -13,9 +13,9 @@ void register_plot3d() {
   // Plot3DItem — hidden base class for all series drawn inside a Plot3D element.
   // Carries only the legend label; concrete series types add their data arrays.
   {
-    auto proto = dynamic_ptr{"Plot3DItem"_key, {}};
+    auto proto = dynamic_ptr{"Plot3DItem"_rkey, {}};
     proto->addField(
-        "label"_key,
+        "label"_rkey,
         field{
             std::string{},
             attr<DisplayName>("Label"),
@@ -31,37 +31,37 @@ void register_plot3d() {
 
   // Plot3D — ImPlot3D window container. Children should be Plot3DItem elements.
   {
-    auto proto = dynamic_ptr{"Plot3D"_key, {}};
+    auto proto = dynamic_ptr{"Plot3D"_rkey, {}};
     proto->addField(
-        "title"_key,
+        "title"_rkey,
         field{
             std::string{"##plot3d"},
             attr<DisplayName>("Title"),
             attr<Description>("Plot title shown at the top; prefix ## to hide the title bar."),
             attr<Category>("Content")});
     proto->addField(
-        "x_label"_key,
+        "x_label"_rkey,
         field{
             std::string{},
             attr<DisplayName>("X Label"),
             attr<Description>("X axis label; empty string = no label."),
             attr<Category>("Axes")});
     proto->addField(
-        "y_label"_key,
+        "y_label"_rkey,
         field{
             std::string{},
             attr<DisplayName>("Y Label"),
             attr<Description>("Y axis label; empty string = no label."),
             attr<Category>("Axes")});
     proto->addField(
-        "z_label"_key,
+        "z_label"_rkey,
         field{
             std::string{},
             attr<DisplayName>("Z Label"),
             attr<Description>("Z axis label; empty string = no label."),
             attr<Category>("Axes")});
     proto->addField(
-        "width"_key,
+        "width"_rkey,
         field{
             float{-1.0f},
             attr<DisplayName>("Width"),
@@ -69,7 +69,7 @@ void register_plot3d() {
             attr<Category>("Layout"),
             attr<Range>(-1.0, 8192.0)});
     proto->addField(
-        "height"_key,
+        "height"_rkey,
         field{
             float{400.0f},
             attr<DisplayName>("Height"),
@@ -77,28 +77,28 @@ void register_plot3d() {
             attr<Category>("Layout"),
             attr<Range>(16.0, 8192.0)});
     proto->addField(
-        "flags"_key,
+        "flags"_rkey,
         field{
             int32_t{0},
             attr<DisplayName>("Flags"),
             attr<Description>("ImPlot3DFlags bit field (see implot3d.h)."),
             attr<Category>("Behavior")});
     proto->addField(
-        "x_flags"_key,
+        "x_flags"_rkey,
         field{
             int32_t{0},
             attr<DisplayName>("X Axis Flags"),
             attr<Description>("ImPlot3DAxisFlags for the X axis."),
             attr<Category>("Axes")});
     proto->addField(
-        "y_flags"_key,
+        "y_flags"_rkey,
         field{
             int32_t{0},
             attr<DisplayName>("Y Axis Flags"),
             attr<Description>("ImPlot3DAxisFlags for the Y axis."),
             attr<Category>("Axes")});
     proto->addField(
-        "z_flags"_key,
+        "z_flags"_rkey,
         field{
             int32_t{0},
             attr<DisplayName>("Z Axis Flags"),

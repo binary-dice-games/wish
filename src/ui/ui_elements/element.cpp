@@ -10,30 +10,30 @@ namespace bdg::wish {
 using namespace bdg::bison;
 
 void register_element() {
-  auto proto = dynamic_ptr{"Element"_key, {}};
+  auto proto = dynamic_ptr{"Element"_rkey, {}};
   proto->addField(
-      "visible"_key,
+      "visible"_rkey,
       field{
           true,
           attr<DisplayName>("Visible"),
           attr<Description>("Whether the element is rendered."),
           attr<Category>("Behavior")});
   proto->addField(
-      "children"_key,
+      "children"_rkey,
       field{
           dynamic_ptr{key_t{0U}, {}},
           attr<DisplayName>("Children"),
           attr<Description>("Nested child elements."),
           attr<Category>("Layout")});
   proto->addField(
-      "order"_key,
+      "order"_rkey,
       field{
           int32_t{0},
           attr<DisplayName>("Order"),
           attr<Description>("Render order within parent children. Lower values render first."),
           attr<Category>("Layout")});
   proto->addField(
-      "font_path"_key,
+      "font_path"_rkey,
       field{
           std::string{},
           attr<DisplayName>("Font Path"),
@@ -42,14 +42,14 @@ void register_element() {
                             "require server::set_allow_absolute_paths(true)."),
           attr<Category>("Appearance")});
   proto->addField(
-      "font_size"_key,
+      "font_size"_rkey,
       field{
           float{0.0f},
           attr<DisplayName>("Font Size"),
           attr<Description>("Font size in pixels. 0 uses the default ImGui font."),
           attr<Category>("Appearance")});
   proto->addField(
-      "drag_type"_key,
+      "drag_type"_rkey,
       field{
           std::string{},
           attr<DisplayName>("Drag Type"),
@@ -60,7 +60,7 @@ void register_element() {
                             "see docs/ui-elements.md's \"Drag and drop\" section."),
           attr<Category>("Behavior")});
   proto->addField(
-      "drag_payload"_key,
+      "drag_payload"_rkey,
       field{
           std::string{},
           attr<DisplayName>("Drag Payload"),
@@ -68,7 +68,7 @@ void register_element() {
                             "Delivered verbatim in a drop target's \"dropped\" event payload."),
           attr<Category>("Behavior")});
   proto->addField(
-      "drop_type"_key,
+      "drop_type"_rkey,
       field{
           std::string{},
           attr<DisplayName>("Drop Type"),

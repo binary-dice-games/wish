@@ -9,8 +9,10 @@
 #include <cstdint>
 #include <deque>
 #include <functional>
+#include <optional>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace bdg::wish {
 
@@ -35,6 +37,20 @@ namespace bdg::wish {
 /// live preview immediately but are not written to disk until saved.
 /// Closing the window with unsaved edits shows an inline
 /// save/discard/cancel confirmation instead of closing immediately.
+///
+/// The source editor also has `wish_ui_schema` set, which enables autocomplete
+/// for element type names, field names, and enum values (backed by
+/// `src/ui/ui_schema_help.hpp`'s registry queries) and a `"cursor_moved"`
+/// event on every caret move. A separate, independently dockable "Help"
+/// `Window` (its own `top_level_objects` entry, not nested inside the main
+/// chrome `Window`) shows the enclosing element type's description and a
+/// field table (name / category / description columns), updated on every
+/// `"cursor_moved"` via `update_help_panel()` -- rebuilt only when the
+/// enclosing type actually changes, not on every caret move within the same
+/// element. The same event also drives `update_highlight()`, which boxes
+/// the preview widget corresponding to the cursor's current element (drawn
+/// by `imgui_renderer::render_node()` reading a `"__wish_highlight__"`
+/// field it sets on that widget).
 ///
 /// Emitted events:
 ///   - `"closed"` — user confirmed closing (no unsaved edits, or chose
@@ -90,6 +106,38 @@ class editor : public form {
   /// @brief Refresh the filename label's text from `display_path_`/`dirty_`.
   void update_path_label();
 
+  /// @brief Recompute the Help window's contents for whatever JSON element
+  /// encloses (line, column) in `current_source_content_`, using
+  /// `ui_schema_help`'s cursor-context scanner and class registry query.
+  /// A no-op if the enclosing type is unchanged from the last call (see
+  /// `last_help_type_`); otherwise clears the field table (`clear_help_rows()`)
+  /// and rebuilds it via `append_help_row()`, one row per field. Clears the
+  /// title/description and empties the table if no enclosing element type is
+  /// found (or the type isn't a registered class -- e.g. still being typed).
+  void update_help_panel(int32_t line, int32_t column);
+
+  /// @brief Remove every row currently in the Help window's field table
+  /// (`help_table_ptr_`'s `children`, plus each row/cell's `ctx().objects`
+  /// entry) and reset `next_help_child_key_` to 0. Safe to call when the
+  /// table is already empty.
+  void clear_help_rows();
+
+  /// @brief Append one row to the Help window's field table: a field-name
+  /// cell (colored via `Label.text_color`, `" *"`-suffixed when @p required),
+  /// a category cell, and a wrapped description cell (range/enum annotations
+  /// folded in, same bracket format `format_class_help()` used previously).
+  void append_help_row(
+      const std::string& field_name, bool required, const std::string& category, const std::string& description);
+
+  /// @brief Move the preview highlight box to the element at @p new_path
+  /// (`std::nullopt` clears it without setting a new one). Clears the
+  /// `"__wish_highlight__"` field on the previously-highlighted element (if
+  /// any still exists in the current preview tree) and sets it on the new
+  /// one, via a direct `s.ui_objects` dot-path lookup -- safe to call at any
+  /// time, not just right after a reparse. No-op if @p new_path already
+  /// matches `highlighted_path_`.
+  void update_highlight(const std::optional<std::string>& new_path);
+
   /// @brief Tear down chrome and preview and emit `"closed"`. The actual
   /// close action, run once no confirmation is needed (or the user has
   /// resolved one via discard/save).
@@ -110,6 +158,15 @@ class editor : public form {
   ui_element_ptr log_table_ptr_;
   ui_element_ptr path_label_ptr_;
 
+  // Help window: a second top-level Window (own top_level_objects/
+  // top_level_handlers entry, not nested under window_id_'s chrome tree),
+  // built once in on_init() and torn down explicitly in request_close()
+  // (form::remove_internal_objects() only cleans up internal_root_key_) --
+  // see help_root_key_'s doc comment.
+  ui_element_ptr help_class_name_ptr_;
+  ui_element_ptr help_class_desc_ptr_;
+  ui_element_ptr help_table_ptr_;
+
   // Inline close-confirmation panel (shown in place of a true modal dialog
   // -- see editor.cpp's layout comment) and its three buttons.
   ui_element_ptr confirm_panel_ptr_;
@@ -118,10 +175,27 @@ class editor : public form {
   bison::key_t confirm_cancel_id_;
 
   std::string current_source_path_; // sandbox-relative path of the source file
+  std::string current_source_content_; // last content read in try_reparse(), reused by
+                                        // update_help_panel() to avoid a disk read on every
+                                        // cursor move (which fires far more often than edits)
   std::string display_path_; // original local path, shown in the filename label
   bool dirty_{false}; // true once the source has unsaved in-editor edits
   bool pending_close_after_save_{false}; // "Save & Close" is waiting on mark_saved()
   std::string mock_root_key_; // top_level_objects key for the preview subtree
+
+  /// `top_level_objects`/`top_level_handlers` key for the Help window's own
+  /// root -- set once in `on_init()` (`internal_root_key_ + "_help"`,
+  /// mirroring `mock_root_key_`'s naming), never rebuilt afterwards (unlike
+  /// the preview, the Help window's own chrome doesn't change across
+  /// reparses -- only its content, via `update_help_panel()`).
+  std::string help_root_key_;
+
+  /// The enclosing type `update_help_panel()` last rebuilt the field table
+  /// for (empty if the table is currently empty/cleared). Lets a
+  /// `"cursor_moved"` that stays within the same element skip rebuilding
+  /// the table (fresh RMI ids/`ctx().objects` entries for every row) when
+  /// nothing would actually change.
+  std::string last_help_type_;
 
   /// `__wish_id` reused for the preview root `Window` across successive
   /// reparses. ImGui keys a window's position/size/focus state off its
@@ -151,10 +225,35 @@ class editor : public form {
   size_t next_log_child_key_{0};
   std::deque<log_row_entry> log_rows_; // oldest first
 
+  // Bookkeeping for one live Help-window field-table row, mirroring
+  // log_row_entry above -- enough to fully erase it (its slot in the field
+  // table's "children" map, plus every RMI id put_object() assigned it: the
+  // row itself and its three cells). Unlike the log (FIFO-capped, entries
+  // evicted one at a time), the whole table is cleared and rebuilt at once
+  // (clear_help_rows()) whenever the enclosing type changes, so there is no
+  // analogous "oldest first" ordering requirement.
+  struct help_row_entry {
+    size_t child_key;
+    bison::key_t row_id;
+    bison::key_t field_cell_id;
+    bison::key_t category_cell_id;
+    bison::key_t desc_cell_id;
+  };
+
+  size_t next_help_child_key_{0};
+  std::vector<help_row_entry> help_rows_;
+
   /// `__wish_id.id` -> dot-path within the preview tree, rebuilt on every
   /// successful reparse; used to resolve a preview widget's event back to a
   /// human-readable path for the log.
   std::unordered_map<uint32_t, std::string> mock_id_to_path_;
+
+  /// Dot-path of the preview element currently showing the cursor
+  /// highlight box, or `std::nullopt` if none. Survives across reparses
+  /// (each of which tears down and rebuilds the whole preview tree) by
+  /// being reapplied inline in `try_reparse()`'s own per-element loop --
+  /// see `update_highlight()`.
+  std::optional<std::string> highlighted_path_;
 };
 
 /// @brief Register Editor in the "wish" bison namespace.

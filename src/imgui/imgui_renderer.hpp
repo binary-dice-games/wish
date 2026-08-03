@@ -199,6 +199,19 @@ class imgui_renderer : public renderer {
   /// Loaded texture cache: maps resource path → ImTextureID.
   std::unordered_map<std::string, ImTextureID> texture_cache_;
 
+  /// The screen rect `render_node()` resolved for the most recently
+  /// dispatched node -- for most classes, the bounding box of everything
+  /// drawn by the dispatch call (via a `BeginGroup()`/`EndGroup()` wrap);
+  /// for `Window`/`DockSpaceViewport`, the window's own
+  /// `GetWindowPos()`/`GetWindowSize()`, since those open a new top-level
+  /// window whose content a group can't see into. Set once per
+  /// `render_node()` call, right before `handle_drag_drop()` -- read by the
+  /// `"__wish_highlight__"` box draw, and by `web_renderer::render_node()`'s
+  /// hit-test capture so both consumers share one resolution, instead of
+  /// each re-deriving it (and disagreeing) independently.
+  ImVec2 last_resolved_rect_min_{};
+  ImVec2 last_resolved_rect_max_{};
+
  private:
   /// This instance's full class-id -> render function dispatch table: wish's
   /// built-ins seeded at construction, overridden/extended by whatever was

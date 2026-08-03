@@ -10,23 +10,23 @@ namespace bdg::wish {
 using namespace bdg::bison;
 
 void register_combo() {
-  auto proto = dynamic_ptr{"Combo"_key, {}};
+  auto proto = dynamic_ptr{"Combo"_rkey, {}};
   proto->addField(
-      "label"_key,
+      "label"_rkey,
       field{
           std::string{},
           attr<DisplayName>("Label"),
           attr<Description>("Caption shown to the left of the dropdown."),
           attr<Category>("Content")});
   proto->addField(
-      "items"_key,
+      "items"_rkey,
       field{
           std::string{},
           attr<DisplayName>("Items"),
           attr<Description>("Newline-separated list of option strings (e.g. \"A\\nB\\nC\")."),
           attr<Category>("Content")});
   proto->addField(
-      "value"_key,
+      "value"_rkey,
       field{
           int32_t{0},
           attr<DisplayName>("Value"),

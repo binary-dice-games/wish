@@ -58,6 +58,26 @@ static std::string with_id(const std::string& label, const ui_element& node) {
   return label + "###" + stable_id(node);
 }
 
+// Stamps the current ImGui window's rect onto @p node as four hidden fields
+// (same idiom as __was_docked__/__float_width__/__float_height__ below),
+// read back by imgui_renderer::render_node() as the authoritative rect for
+// Window/DockSpaceViewport -- the only two classes that open a genuine new
+// top-level ImGui window, whose content a BeginGroup()/EndGroup() wrap
+// around the dispatch call can't see across. A per-node field (rather than
+// a single shared slot) is required because a Window can nest inside
+// another Window/DockSpaceViewport (e.g. a modal opened from within a
+// docked window), which would otherwise clobber a shared slot before the
+// outer container gets to read it. Only valid to call between a successful
+// Begin()/BeginPopupModal() and its matching End()/EndPopup().
+static void report_self_rect(const ui_element& node) {
+  ImVec2 pos = ImGui::GetWindowPos();
+  ImVec2 size = ImGui::GetWindowSize();
+  const_cast<ui_element&>(node)["__wish_win_rect_x__"_key] = pos.x;
+  const_cast<ui_element&>(node)["__wish_win_rect_y__"_key] = pos.y;
+  const_cast<ui_element&>(node)["__wish_win_rect_w__"_key] = size.x;
+  const_cast<ui_element&>(node)["__wish_win_rect_h__"_key] = size.y;
+}
+
 // ── Core ──────────────────────────────────────────────────────────────────────
 
 void render_window(imgui_renderer& r, const ui_element& node, const context& s) {
@@ -109,6 +129,10 @@ void render_window(imgui_renderer& r, const ui_element& node, const context& s) 
 
     bool now_open = ImGui::BeginPopupModal(iml.c_str(), p_open, ImGuiWindowFlags(fl));
     if (now_open) {
+      // BeginPopupModal() returns false without calling Begin() at all when
+      // the popup isn't open -- gating on now_open avoids capturing the
+      // *enclosing* window's rect in that case.
+      report_self_rect(node);
       render_children(r, node, s);
       // App-level code (e.g. a form's on_event()) runs outside any ImGui
       // frame and can't call ImGui::CloseCurrentPopup() directly -- it
@@ -156,7 +180,14 @@ void render_window(imgui_renderer& r, const ui_element& node, const context& s) 
     return;
   }
 
-  if (ImGui::Begin(iml.c_str(), p_open, ImGuiWindowFlags(fl))) {
+  bool window_open = ImGui::Begin(iml.c_str(), p_open, ImGuiWindowFlags(fl));
+  // Begin()/BeginChild() are the only ImGui calls where a matching End() is
+  // required regardless of the return value -- a collapsed/clipped window
+  // still has a valid position/size to report, so this runs unconditionally
+  // (matching the unconditional ImGui::End() below), not just when true.
+  report_self_rect(node);
+
+  if (window_open) {
     // ImGui's docking branch resizes a window to fit its dock node/tab
     // region; on undock it does not restore the pre-dock floating size
     // (docking is handled entirely inside ImGui, invisible to wish). Track
@@ -194,7 +225,21 @@ void render_window(imgui_renderer& r, const ui_element& node, const context& s) 
 
 void render_label(imgui_renderer&, const ui_element& node, const context&) {
   auto text = node.get_as<std::string>("text"_key, "");
+  auto color = node.get_as<std::string>("text_color"_key, "");
+  bool wrap = node.get_as<bool>("wrap"_key, false);
+  if (!color.empty())
+    ImGui::PushStyleColor(ImGuiCol_Text, parse_hex_color(color));
+  // GetCursorPosX() + GetContentRegionAvail().x (not PushTextWrapPos(0.0f),
+  // which wraps at the *window's* right edge) so this wraps at the current
+  // table column's boundary when used inside a table cell, not the whole
+  // host window's edge.
+  if (wrap)
+    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x);
   ImGui::TextUnformatted(text.c_str());
+  if (wrap)
+    ImGui::PopTextWrapPos();
+  if (!color.empty())
+    ImGui::PopStyleColor();
 }
 
 void render_button(imgui_renderer&, const ui_element& node, const context& s) {
@@ -545,6 +590,13 @@ void render_menu(imgui_renderer& r, const ui_element& node, const context& s) {
   auto label = node.get_as<std::string>("label"_key, "");
   bool enabled = node.get_as<bool>("enabled"_key, true);
   if (ImGui::BeginMenu(label.c_str(), enabled)) {
+    // Same settle-frames need as render_combo()/render_menu_button(): the
+    // submenu popup enqueues no wish event of its own, so nothing else
+    // forces the couple of follow-up frames ImGui needs to size/render its
+    // newly opened content. IsWindowAppearing() is true exactly the frame
+    // this popup window starts appearing.
+    if (ImGui::IsWindowAppearing())
+      s.dirty.store(kDirtySettleFrames, std::memory_order_release);
     render_children(r, node, s);
     ImGui::EndMenu();
   }
@@ -573,8 +625,13 @@ void render_menu_button(imgui_renderer& r, const ui_element& node, const context
   // ImGui::OpenPopup()'s popup-id namespace don't collide even when given
   // the identical string.
   auto iml = with_id(label, node);
-  if (ImGui::Button(iml.c_str()))
+  if (ImGui::Button(iml.c_str())) {
     ImGui::OpenPopup(iml.c_str());
+    // Same settle-frames need as render_combo() above: opening the popup
+    // enqueues no wish event, so nothing else forces the couple of
+    // follow-up frames ImGui needs to size/render its newly opened content.
+    s.dirty.store(kDirtySettleFrames, std::memory_order_release);
+  }
   if (ImGui::BeginPopup(iml.c_str())) {
     render_children(r, node, s);
     ImGui::EndPopup();
@@ -677,13 +734,36 @@ void render_combo(imgui_renderer&, const ui_element& node, const context& s) {
   if (!items_str.empty())
     items.push_back(items_str.substr(pos));
 
-  std::vector<const char*> ptrs;
-  ptrs.reserve(items.size());
-  for (const auto& item : items)
-    ptrs.push_back(item.c_str());
-
   int cur = sel;
-  if (ImGui::Combo(label.c_str(), &cur, ptrs.data(), int(ptrs.size()))) {
+  bool changed = false;
+  const char* preview = (cur >= 0 && cur < int(items.size())) ? items[size_t(cur)].c_str() : "";
+  // BeginCombo()/EndCombo() (not the Combo() convenience wrapper) so the
+  // popup-opening transition can be observed directly below -- same idiom
+  // render_menu() uses for BeginMenu()'s submenu popup.
+  if (ImGui::BeginCombo(label.c_str(), preview)) {
+    // Opening the dropdown (clicking the combo header) enqueues no wish
+    // event of its own -- unlike a selection change below, there is nothing
+    // for the render loop's "events not empty" check (server::render_loop())
+    // to see, so the popup's follow-up settle frames (see
+    // kDirtySettleFrames's doc comment: ImGui auto-fit sizing can take a
+    // couple of frames) never get scheduled. Without this, the newly opened
+    // option list can sit invisible until an unrelated input event (e.g. a
+    // mouse move) happens to drive the next render. IsWindowAppearing() is
+    // true exactly the frame this popup window starts appearing.
+    if (ImGui::IsWindowAppearing())
+      s.dirty.store(kDirtySettleFrames, std::memory_order_release);
+    for (int i = 0; i < int(items.size()); ++i) {
+      bool is_selected = (cur == i);
+      if (ImGui::Selectable(items[size_t(i)].c_str(), is_selected)) {
+        cur = i;
+        changed = true;
+      }
+      if (is_selected)
+        ImGui::SetItemDefaultFocus();
+    }
+    ImGui::EndCombo();
+  }
+  if (changed) {
     const_cast<ui_element&>(node)["value"_key] = int32_t(cur);
     dynamic payload;
     payload["value"_key] = int32_t(cur);
@@ -816,6 +896,7 @@ void render_dockspace_viewport(imgui_renderer& r, const ui_element& node, const 
   });
 
   ImGui::Begin(id.c_str(), nullptr, host_flags);
+  report_self_rect(node);
   ImGui::PopStyleVar(3);
   ImGui::PopStyleColor();
 

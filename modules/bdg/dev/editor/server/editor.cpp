@@ -8,6 +8,7 @@
 
 #include <context/file_service.hpp>
 #include <ui/ui_importer.hpp>
+#include <ui/ui_schema_help.hpp>
 
 #include <filesystem>
 #include <fstream>
@@ -94,6 +95,27 @@ std::string format_payload(const dynamic& payload) {
   return out.empty() ? std::string{} : " {" + out + "}";
 }
 
+// Builds one field's Description-column text: its own description prefixed
+// by any range/enum annotations, in the same bracket format the previous
+// single-Label help panel used (required/category now get their own
+// column/marker instead -- see append_help_row()).
+std::string format_field_description(const element_field_info& f) {
+  std::string out;
+  if (f.range)
+    out += "[" + std::to_string(f.range->first) + "-" + std::to_string(f.range->second) + "] ";
+  if (!f.enum_values.empty()) {
+    out += f.is_enum_flags ? "[flags: " : "[enum: ";
+    for (size_t i = 0; i < f.enum_values.size(); ++i) {
+      if (i)
+        out += " | ";
+      out += f.enum_values[i];
+    }
+    out += "] ";
+  }
+  out += f.description;
+  return out;
+}
+
 } // namespace
 
 // ── UI layout ─────────────────────────────────────────────────────────────────
@@ -139,7 +161,13 @@ static constexpr const char* kEditorLayout = R"json({
           }
         },
         "banner": { "type": "Label", "text": "" },
-        "source": { "type": "TextEditor", "language": "json", "width": 0, "height": 440 },
+        "editor_row": {
+          "type": "HorizontalLayout",
+          "spacing": 8,
+          "children": {
+            "source": { "type": "TextEditor", "language": "json", "width": 600, "height": 440, "wish_ui_schema": true }
+          }
+        },
         "log_label": { "type": "Label", "text": "Event Log" },
         "log": {
           "type": "Table",
@@ -158,6 +186,49 @@ static constexpr const char* kEditorLayout = R"json({
   }
 })json";
 
+// The Help window: a second, independently dockable top-level Window (see
+// help_root_key_'s doc comment) showing whatever element type encloses the
+// source editor's cursor -- a title/description pair above a 3-column field
+// table (Field / Category / Description), rebuilt by update_help_panel().
+// "flags": 1601 on "fields" = ImGuiTableFlags_Resizable(1) | RowBg(64) |
+// BordersV(1536); col_field/col_category's "flags": 16 = WidthFixed,
+// col_desc's "flags": 8 = WidthStretch (fills whatever width remains).
+static constexpr const char* kHelpWindowLayout = R"json({
+  "type": "Window",
+  "title": "Help",
+  "pos_x": 930,
+  "pos_y": 20,
+  "width": 380,
+  "height": 680,
+  "children": {
+    "vbox": {
+      "type": "VerticalLayout",
+      "children": {
+        "class_name": { "type": "Label", "text": "", "font_size": 20 },
+        "class_desc": { "type": "Label", "text": "", "wrap": true },
+        "sep": { "type": "Separator" },
+        "fields": {
+          "type": "Table",
+          "id": "##help_fields",
+          "columns": 3,
+          "headers": true,
+          "flags": 1601,
+          "children": {
+            "col_field":    { "type": "TableColumn", "label": "Field", "column_id": 0, "flags": 16, "init_width": 150 },
+            "col_category": { "type": "TableColumn", "label": "Category", "column_id": 1, "flags": 16, "init_width": 90 },
+            "col_desc":     { "type": "TableColumn", "label": "Description", "column_id": 2, "flags": 8 }
+          }
+        }
+      }
+    }
+  }
+})json";
+
+// Accent color for the field-name column's text (a light blue, readable on
+// both the dark and light theme presets since Label.text_color is applied
+// via PushStyleColor -- an explicit override, not a theme-derived one).
+static constexpr const char* kHelpFieldNameColor = "#7EC8FFFF";
+
 // ── editor ───────────────────────────────────────────────────────────────────
 
 editor::editor(dynamic&& base) : form(std::move(base)) {}
@@ -166,6 +237,7 @@ void editor::on_init() {
   // See form::internal_root_key_'s doc comment: ordinally-assigned, not pointer-derived.
   internal_root_key_ = next_available_key("__editor_");
   mock_root_key_ = internal_root_key_ + "_mock";
+  help_root_key_ = internal_root_key_ + "_help";
 
   auto tree = import_json(kEditorLayout);
 
@@ -178,7 +250,7 @@ void editor::on_init() {
   }
 
   window_id_ = (*tree[""])["__wish_id"_key].as<key_t>();
-  tree.with("vbox.source", [&](const auto& e) {
+  tree.with("vbox.editor_row.source", [&](const auto& e) {
     source_editor_id_ = wish_id_of(e);
     source_editor_ptr_ = e;
   });
@@ -191,6 +263,28 @@ void editor::on_init() {
   tree.with("vbox.confirm.confirm_row.confirm_cancel", [&](const auto& e) { confirm_cancel_id_ = wish_id_of(e); });
 
   sess().ui_objects.merge(std::move(tree), internal_root_key_);
+
+  // Help window: a second, independent top-level Window -- form::init()
+  // (called right after on_init() returns) only auto-registers a single
+  // top_level_objects entry keyed on internal_root_key_, so this is
+  // registered by hand here, the same way try_reparse() does for the
+  // preview's mock_root_key_ and file_explorer's confirm dialog does for
+  // its own secondary root (see remove_objects_at()'s doc comment).
+  auto help_tree = import_json(kHelpWindowLayout);
+  for (auto& [key, elem] : help_tree) {
+    key_t id = rmi::shared::generate_id();
+    c.put_object(id, elem);
+    elem["__wish_id"_key] = id;
+  }
+  help_tree.with("vbox.class_name", [&](const auto& e) { help_class_name_ptr_ = e; });
+  help_tree.with("vbox.class_desc", [&](const auto& e) { help_class_desc_ptr_ = e; });
+  help_tree.with("vbox.fields", [&](const auto& e) { help_table_ptr_ = e; });
+
+  ui_element_ptr help_root_ptr = help_tree[""];
+  sess().ui_objects.merge(std::move(help_tree), help_root_key_);
+  sess().top_level_objects[key_t{help_root_key_}] = help_root_ptr;
+  sess().top_level_handlers[key_t{help_root_key_}] = this;
+  (*help_root_ptr)["__path__"_key] = help_root_key_;
 }
 
 // ── set_source / reparse ─────────────────────────────────────────────────────
@@ -246,6 +340,10 @@ void editor::try_reparse() {
 
   std::ifstream f(resolved, std::ios::binary);
   std::string content{std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>{}};
+  // Cached unconditionally (even on a parse failure below) so the help panel
+  // reflects exactly what's on screen mid-edit, same "no flicker" spirit as
+  // the preview itself.
+  current_source_content_ = content;
 
   ui_tree mock;
   try {
@@ -277,6 +375,11 @@ void editor::try_reparse() {
     c.put_object(id, elem);
     elem["__wish_id"_key] = id;
     mock_id_to_path_[id.id] = path.empty() ? std::string{"root"} : path;
+    // Reapply the highlight to whichever element still has this path in the
+    // freshly-rebuilt tree -- try_reparse() tears down and rebuilds the
+    // *entire* preview subtree, so any field set on the old tree is gone.
+    if (highlighted_path_ && *highlighted_path_ == path)
+      elem["__wish_highlight__"_key] = true;
   }
 
   ui_element_ptr root_ptr = mock[""];
@@ -304,6 +407,11 @@ void editor::clear_mock() {
     }
   });
   mock_id_to_path_.clear();
+  // Deliberately NOT resetting highlighted_path_ here: clear_mock() is
+  // called at the *start* of every try_reparse() (before rebuilding), and
+  // highlighted_path_ must survive that so the reapplication loop below can
+  // reapply it to the fresh tree. request_close() resets it explicitly once
+  // the preview is gone for good.
 }
 
 void editor::set_banner(const std::string& text) {
@@ -320,10 +428,140 @@ void editor::update_path_label() {
   (*path_label_ptr_)["text"_key] = text;
 }
 
+void editor::update_help_panel(int32_t line, int32_t column) {
+  auto ctx = scan_cursor_context(
+      current_source_content_, text_pos{static_cast<size_t>(line), static_cast<size_t>(column)});
+
+  update_highlight(ctx.element_path);
+
+  // Nothing to rebuild if the enclosing type hasn't actually changed since
+  // the last call -- avoids reallocating every row's RMI id/ctx().objects
+  // entry on every single cursor move within the same element.
+  if (ctx.enclosing_type == last_help_type_)
+    return;
+  last_help_type_ = ctx.enclosing_type;
+
+  clear_help_rows();
+  if (help_class_name_ptr_)
+    (*help_class_name_ptr_)["text"_key] = "";
+  if (help_class_desc_ptr_)
+    (*help_class_desc_ptr_)["text"_key] = "";
+
+  if (ctx.enclosing_type.empty())
+    return;
+  auto found = find_ui_element_class(ctx.enclosing_type);
+  if (!found)
+    return;
+
+  if (help_class_name_ptr_)
+    (*help_class_name_ptr_)["text"_key] = found->display_name;
+  if (help_class_desc_ptr_)
+    (*help_class_desc_ptr_)["text"_key] = found->description;
+  for (const auto& f : found->fields)
+    append_help_row(f.display_name, f.required, f.category, format_field_description(f));
+  if (help_table_ptr_)
+    help_table_ptr_->refresh_children_order();
+}
+
+void editor::clear_help_rows() {
+  if (help_table_ptr_) {
+    if (auto* children_p = help_table_ptr_->findField<dynamic_ptr>("children"_key); children_p && *children_p) {
+      auto& children = *children_p;
+      for (auto& row : help_rows_) {
+        children->erase(row.child_key);
+        ctx().objects.erase(row.row_id.id);
+        ctx().objects.erase(row.field_cell_id.id);
+        ctx().objects.erase(row.category_cell_id.id);
+        ctx().objects.erase(row.desc_cell_id.id);
+      }
+    }
+    help_table_ptr_->refresh_children_order();
+  }
+  help_rows_.clear();
+  next_help_child_key_ = 0;
+}
+
+void editor::append_help_row(
+    const std::string& field_name, bool required, const std::string& category, const std::string& description) {
+  if (!help_table_ptr_)
+    return;
+  auto* children_p = help_table_ptr_->findField<dynamic_ptr>("children"_key);
+  if (!children_p || !*children_p)
+    return;
+  auto& children = *children_p;
+
+  ui_element_ptr row{dynamic::instantiate("wish"_key, "TableRow"_key)};
+  row["order"_key] = static_cast<int32_t>(next_help_child_key_);
+
+  ui_element_ptr cell_field{dynamic::instantiate("wish"_key, "Label"_key)};
+  cell_field["text"_key] = field_name + (required ? " *" : "");
+  cell_field["text_color"_key] = std::string{kHelpFieldNameColor};
+  cell_field["order"_key] = int32_t{0};
+  key_t cell_field_id = rmi::shared::generate_id();
+  ctx().put_object(cell_field_id, cell_field);
+  cell_field["__wish_id"_key] = cell_field_id;
+
+  ui_element_ptr cell_category{dynamic::instantiate("wish"_key, "Label"_key)};
+  cell_category["text"_key] = category.empty() ? std::string{"-"} : category;
+  cell_category["order"_key] = int32_t{1};
+  key_t cell_category_id = rmi::shared::generate_id();
+  ctx().put_object(cell_category_id, cell_category);
+  cell_category["__wish_id"_key] = cell_category_id;
+
+  ui_element_ptr cell_desc{dynamic::instantiate("wish"_key, "Label"_key)};
+  cell_desc["text"_key] = description;
+  cell_desc["wrap"_key] = true;
+  cell_desc["order"_key] = int32_t{2};
+  key_t cell_desc_id = rmi::shared::generate_id();
+  ctx().put_object(cell_desc_id, cell_desc);
+  cell_desc["__wish_id"_key] = cell_desc_id;
+
+  auto row_children = dynamic_ptr{key_t{0U}, {}};
+  (*row_children)[size_t{0}] = dynamic_ptr{cell_field};
+  (*row_children)[size_t{1}] = dynamic_ptr{cell_category};
+  (*row_children)[size_t{2}] = dynamic_ptr{cell_desc};
+  row["children"_key] = row_children;
+  row->refresh_children_order();
+
+  key_t row_id = rmi::shared::generate_id();
+  ctx().put_object(row_id, row);
+  row["__wish_id"_key] = row_id;
+
+  size_t child_key = next_help_child_key_++;
+  (*children)[child_key] = dynamic_ptr{row};
+  help_rows_.push_back({child_key, row_id, cell_field_id, cell_category_id, cell_desc_id});
+}
+
+void editor::update_highlight(const std::optional<std::string>& new_path) {
+  if (new_path == highlighted_path_)
+    return;
+
+  with_session([&](context& s) {
+    auto set_flag = [&](const std::string& path, bool value) {
+      std::string key = path.empty() ? mock_root_key_ : (mock_root_key_ + "." + path);
+      auto it = s.ui_objects.find(key);
+      if (it != s.ui_objects.end() && it->second)
+        (*it->second)["__wish_highlight__"_key] = value;
+    };
+    if (highlighted_path_)
+      set_flag(*highlighted_path_, false);
+    if (new_path)
+      set_flag(*new_path, true);
+  });
+
+  highlighted_path_ = new_path;
+}
+
 void editor::request_close() {
   clear_mock();
+  highlighted_path_.reset();
   emit("closed"_key);
   remove_internal_objects();
+  // remove_internal_objects() only cleans up internal_root_key_ (the main
+  // chrome window) -- the Help window is a separate top-level root and
+  // needs its own explicit teardown, same as file_explorer's confirm
+  // dialog (see remove_objects_at()'s doc comment).
+  remove_objects_at(help_root_key_);
 }
 
 // ── Event log ─────────────────────────────────────────────────────────────────
@@ -418,6 +656,10 @@ void editor::on_event(key_t id, key_t event, const dynamic& payload) {
     }
     if (event == "saved"_key) {
       emit("on_source_saved"_key);
+      return;
+    }
+    if (event == "cursor_moved"_key) {
+      update_help_panel(payload.as<int32_t>("line"_key), payload.as<int32_t>("column"_key));
       return;
     }
     return;

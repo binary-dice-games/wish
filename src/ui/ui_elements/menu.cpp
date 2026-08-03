@@ -14,7 +14,7 @@ void register_menu() {
   // The Window renderer detects a direct MenuBar child and automatically
   // sets ImGuiWindowFlags_MenuBar on the window.
   {
-    auto proto = dynamic_ptr{"MenuBar"_key, {}};
+    auto proto = dynamic_ptr{"MenuBar"_rkey, {}};
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("MenuBar"));
     (*proto)[dynamic::CLASS].addAttribute(
         attr<Description>("Menu bar container. Must be a direct child of a Window. "
@@ -25,16 +25,16 @@ void register_menu() {
 
   // Menu — drop-down submenu. Children are MenuItem, Menu, or Separator.
   {
-    auto proto = dynamic_ptr{"Menu"_key, {}};
+    auto proto = dynamic_ptr{"Menu"_rkey, {}};
     proto->addField(
-        "label"_key,
+        "label"_rkey,
         field{
             std::string{},
             attr<DisplayName>("Label"),
             attr<Description>("Text shown in the parent menu bar or parent menu."),
             attr<Category>("Content")});
     proto->addField(
-        "enabled"_key,
+        "enabled"_rkey,
         field{
             true,
             attr<DisplayName>("Enabled"),
@@ -50,30 +50,30 @@ void register_menu() {
 
   // MenuItem — a single selectable item inside a Menu.
   {
-    auto proto = dynamic_ptr{"MenuItem"_key, {}};
+    auto proto = dynamic_ptr{"MenuItem"_rkey, {}};
     proto->addField(
-        "label"_key,
+        "label"_rkey,
         field{
             std::string{},
             attr<DisplayName>("Label"),
             attr<Description>("Text of the menu item."),
             attr<Category>("Content")});
     proto->addField(
-        "shortcut"_key,
+        "shortcut"_rkey,
         field{
             std::string{},
             attr<DisplayName>("Shortcut"),
             attr<Description>("Optional shortcut hint displayed on the right (decorative only)."),
             attr<Category>("Content")});
     proto->addField(
-        "checked"_key,
+        "checked"_rkey,
         field{
             false,
             attr<DisplayName>("Checked"),
             attr<Description>("Shows a check mark. Updated by the renderer on click."),
             attr<Category>("State")});
     proto->addField(
-        "enabled"_key,
+        "enabled"_rkey,
         field{
             true,
             attr<DisplayName>("Enabled"),
@@ -95,9 +95,9 @@ void register_menu() {
   // ImGui::OpenPopup()/BeginPopup() on click, so it can appear anywhere an
   // ordinary Button can (e.g. a toolbar).
   {
-    auto proto = dynamic_ptr{"MenuButton"_key, {}};
+    auto proto = dynamic_ptr{"MenuButton"_rkey, {}};
     proto->addField(
-        "label"_key,
+        "label"_rkey,
         field{
             std::string{},
             attr<DisplayName>("Label"),
@@ -124,7 +124,7 @@ void register_menu() {
   // block via render_children(). It has no render_node dispatch entry of its
   // own.
   {
-    auto proto = dynamic_ptr{"MenuBarExtension"_key, {}};
+    auto proto = dynamic_ptr{"MenuBarExtension"_rkey, {}};
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("MenuBarExtension"));
     (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
         "Extends the server's chrome menu bar with additional content. Register as a top-level "

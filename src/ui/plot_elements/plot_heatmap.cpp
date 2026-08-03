@@ -10,44 +10,44 @@ namespace bdg::wish {
 using namespace bdg::bison;
 
 void register_plot_heatmap() {
-  auto proto = dynamic_ptr{"PlotHeatmap"_key, {}};
+  auto proto = dynamic_ptr{"PlotHeatmap"_rkey, {}};
   proto->addField(
-      "values"_key,
+      "values"_rkey,
       field{
           std::vector<float>{},
           attr<DisplayName>("Values"),
           attr<Description>("Flattened row-major data array of size rows × cols."),
           attr<Category>("Data")});
   proto->addField(
-      "rows"_key,
+      "rows"_rkey,
       field{
           int32_t{1},
           attr<DisplayName>("Rows"),
           attr<Description>("Number of rows in the 2-D grid."),
           attr<Category>("Layout")});
   proto->addField(
-      "cols"_key,
+      "cols"_rkey,
       field{
           int32_t{1},
           attr<DisplayName>("Cols"),
           attr<Description>("Number of columns in the 2-D grid."),
           attr<Category>("Layout")});
   proto->addField(
-      "scale_min"_key,
+      "scale_min"_rkey,
       field{
           float{0.0f},
           attr<DisplayName>("Scale Min"),
           attr<Description>("Value mapped to the low end of the colormap."),
           attr<Category>("Appearance")});
   proto->addField(
-      "scale_max"_key,
+      "scale_max"_rkey,
       field{
           float{1.0f},
           attr<DisplayName>("Scale Max"),
           attr<Description>("Value mapped to the high end of the colormap."),
           attr<Category>("Appearance")});
   proto->addField(
-      "format"_key,
+      "format"_rkey,
       field{
           std::string{"%.1f"},
           attr<DisplayName>("Label Format"),
@@ -55,28 +55,28 @@ void register_plot_heatmap() {
                             "empty string disables cell labels."),
           attr<Category>("Appearance")});
   proto->addField(
-      "x_min"_key,
+      "x_min"_rkey,
       field{
           float{0.0f},
           attr<DisplayName>("X Min (Bound)"),
           attr<Description>("X coordinate of the left edge of the heatmap bounds."),
           attr<Category>("Layout")});
   proto->addField(
-      "x_max"_key,
+      "x_max"_rkey,
       field{
           float{1.0f},
           attr<DisplayName>("X Max (Bound)"),
           attr<Description>("X coordinate of the right edge of the heatmap bounds."),
           attr<Category>("Layout")});
   proto->addField(
-      "y_min"_key,
+      "y_min"_rkey,
       field{
           float{0.0f},
           attr<DisplayName>("Y Min (Bound)"),
           attr<Description>("Y coordinate of the bottom edge of the heatmap bounds."),
           attr<Category>("Layout")});
   proto->addField(
-      "y_max"_key,
+      "y_max"_rkey,
       field{
           float{1.0f},
           attr<DisplayName>("Y Max (Bound)"),
