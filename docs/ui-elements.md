@@ -202,6 +202,8 @@ Read-only static text; no events.
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `text` | `string` | `""` | Displayed text content. |
+| `text_color` | `string` | `""` | Optional `"#RRGGBBAA"`/`"#RRGGBB"` text color override; empty uses the current theme's text color. |
+| `wrap` | `bool` | `false` | When true, wraps text to the available width instead of overflowing/clipping on one line. |
 
 #### `Checkbox`
 A toggleable checkbox with a label.

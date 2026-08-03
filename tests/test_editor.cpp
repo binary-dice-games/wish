@@ -9,6 +9,7 @@
 #include "src/bison/bison_object.hpp"
 #include "src/rmi/rmi.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <fstream>
 #include <memory>
@@ -85,10 +86,23 @@ class SessionCapturingServer : public wish::server {
 };
 
 // Helper: find the root key for the internal form tree (starts with
-// "__editor_", no dot, and not the "_mock" suffix used for the preview root).
+// "__editor_", no dot, and not the "_mock"/"_help" suffixes used for the
+// preview and Help-window roots respectively).
 static std::string find_form_root(const wish::name_map& objects) {
   for (const auto& [k, _] : objects) {
-    if (k.rfind("__editor_", 0) == 0 && k.find('.') == std::string::npos && k.rfind("_mock") == std::string::npos)
+    if (k.rfind("__editor_", 0) == 0 && k.find('.') == std::string::npos && k.find("_mock") == std::string::npos &&
+        k.find("_help") == std::string::npos)
+      return k;
+  }
+  return {};
+}
+
+// Helper: find the Help window's own root key (starts with "__editor_", no
+// dot, ends with "_help").
+static std::string find_help_root(const wish::name_map& objects) {
+  for (const auto& [k, _] : objects) {
+    if (k.rfind("__editor_", 0) == 0 && k.find('.') == std::string::npos && k.size() > 5 &&
+        k.compare(k.size() - 5, 5, "_help") == 0)
       return k;
   }
   return {};
@@ -153,6 +167,30 @@ TEST_F(EditorWindowTest, TreeContainsLog) {
   EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".vbox.log"));
 }
 
+TEST_F(EditorWindowTest, HelpWindowIsRegisteredAsSeparateTopLevelWindow) {
+  std::string root = instantiate_and_get_root();
+  ASSERT_FALSE(root.empty());
+  std::string help_root = root + "_help";
+
+  ASSERT_TRUE(srv_->last_session->top_level_objects.count(bison::key_t{help_root}));
+  auto& help_obj = srv_->last_session->ui_objects.at(help_root);
+  EXPECT_EQ(help_obj->findField(dynamic::CLASS)->as<bison::key_t>(), "Window"_key);
+  EXPECT_EQ(help_obj->as<std::string>("title"_key), "Help");
+  // Per the answer to "should the Help window be closable" -- not closable,
+  // so there's no way to lose it with no reopen affordance in the editor.
+  EXPECT_FALSE(help_obj->get_as<bool>("closable"_key, false));
+  EXPECT_NE(help_root, root); // distinct root from the main chrome window
+}
+
+TEST_F(EditorWindowTest, HelpWindowTreeContainsFieldsTable) {
+  std::string root = instantiate_and_get_root();
+  ASSERT_FALSE(root.empty());
+  std::string help_root = root + "_help";
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(help_root + ".vbox.class_name"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(help_root + ".vbox.class_desc"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(help_root + ".vbox.fields"));
+}
+
 // ── set_source / reparse / event log ──────────────────────────────────────────
 
 struct CapturedEvent {
@@ -174,6 +212,7 @@ class EditorSourceTest : public ::testing::Test {
     root_ = find_form_root(srv_->last_session->ui_objects);
     ASSERT_FALSE(root_.empty());
     mock_root_ = root_ + "_mock";
+    help_root_ = root_ + "_help";
 
     auto prev = std::move(srv_->last_session->emit_event);
     events_ = std::make_shared<std::vector<CapturedEvent>>();
@@ -299,12 +338,89 @@ class EditorSourceTest : public ::testing::Test {
     return has_event(name);
   }
 
+  // Computes (line, column) for the first occurrence of `needle` in
+  // `content` and simulates a "cursor_moved" event there, same idiom as the
+  // pre-existing highlight tests below.
+  void move_cursor_to(const std::string& content, const std::string& needle) {
+    size_t offset = content.find(needle);
+    ASSERT_NE(offset, std::string::npos);
+    int32_t line = 0, col = 0;
+    for (size_t i = 0; i < offset; ++i) {
+      if (content[i] == '\n') {
+        ++line;
+        col = 0;
+      } else {
+        ++col;
+      }
+    }
+    dynamic payload;
+    payload["line"_key] = line;
+    payload["column"_key] = col;
+    simulate_chrome_event(chrome_widget_id("vbox.editor_row.source"), "cursor_moved"_key, payload);
+  }
+
+  bool help_window_registered() const {
+    return srv_->last_session->top_level_objects.count(bison::key_t{help_root_}) != 0
+        && srv_->last_session->ui_objects.count(help_root_) != 0;
+  }
+
+  std::string help_class_name_text() const {
+    auto it = srv_->last_session->ui_objects.find(help_root_ + ".vbox.class_name");
+    if (it == srv_->last_session->ui_objects.end())
+      return {};
+    return it->second->as<std::string>("text"_key);
+  }
+
+  std::string help_class_desc_text() const {
+    auto it = srv_->last_session->ui_objects.find(help_root_ + ".vbox.class_desc");
+    if (it == srv_->last_session->ui_objects.end())
+      return {};
+    return it->second->as<std::string>("text"_key);
+  }
+
+  // First cell's `text` (the field-name column) of every TableRow currently
+  // in the Help window's field table, in row order.
+  std::vector<std::string> help_row_field_names() const {
+    std::vector<std::string> names;
+    auto it = srv_->last_session->ui_objects.find(help_root_ + ".vbox.fields");
+    if (it == srv_->last_session->ui_objects.end())
+      return names;
+    it->second->for_each_child_ordered([&](bison::key_t, wish::ui_element& row) {
+      if (row.as<bison::key_t>(dynamic::CLASS) != "TableRow"_key)
+        return;
+      bool first = true;
+      row.for_each_child_ordered([&](bison::key_t, wish::ui_element& cell) {
+        if (first) {
+          names.push_back(cell.as<std::string>("text"_key));
+          first = false;
+        }
+      });
+    });
+    return names;
+  }
+
+  // Each TableRow's own `__wish_id` currently in the Help window's field
+  // table, in row order -- lets a test assert row identity is (or isn't)
+  // stable across two update_help_panel() calls.
+  std::vector<bison::key_t> help_row_ids() const {
+    std::vector<bison::key_t> ids;
+    auto it = srv_->last_session->ui_objects.find(help_root_ + ".vbox.fields");
+    if (it == srv_->last_session->ui_objects.end())
+      return ids;
+    it->second->for_each_child_ordered([&](bison::key_t, wish::ui_element& row) {
+      if (row.as<bison::key_t>(dynamic::CLASS) == "TableRow"_key)
+        ids.push_back(row.as<bison::key_t>("__wish_id"_key));
+    });
+    return ids;
+  }
+
   memory_server_transport transport_;
   std::unique_ptr<SessionCapturingServer> srv_;
   std::unique_ptr<bdg::bison::rmi::client> client_;
   std::optional<proxy_t> proxy_;
   std::string root_;
   std::string mock_root_;
+  std::string help_root_;
   std::shared_ptr<std::vector<CapturedEvent>> events_;
 };
 
@@ -537,6 +653,72 @@ TEST_F(EditorSourceTest, HighlightSurvivesReparseOfSamePath) {
 
   EXPECT_TRUE(
       srv_->last_session->ui_objects.at(mock_root_ + ".main.ok")->get_as<bool>("__wish_highlight__"_key, false));
+}
+
+TEST_F(EditorSourceTest, CursorMovedInsideButtonPopulatesHelpFieldTable) {
+  std::string content = kValidUiTwoButtons;
+  seed_sandbox_file("ui.json", content);
+  set_source("ui.json");
+  ASSERT_TRUE(help_window_registered());
+
+  move_cursor_to(content, "\"label\": \"OK\"");
+
+  EXPECT_EQ(help_class_name_text(), "Button");
+  EXPECT_FALSE(help_class_desc_text().empty());
+  auto names = help_row_field_names();
+  EXPECT_FALSE(names.empty());
+  EXPECT_NE(std::find(names.begin(), names.end(), "Label"), names.end());
+}
+
+TEST_F(EditorSourceTest, CursorMovedOutsideAnyElementClearsHelpPanel) {
+  std::string content = kValidUiTwoButtons;
+  seed_sandbox_file("ui.json", content);
+  set_source("ui.json");
+  ASSERT_TRUE(help_window_registered());
+
+  move_cursor_to(content, "\"label\": \"OK\"");
+  ASSERT_FALSE(help_row_field_names().empty());
+
+  // Right after the very last character (the final closing brace): no
+  // enclosing element at all (see scan_cursor_context()'s
+  // RightAfterClosingBraceIsUnknown case). Computed directly from
+  // content.size() rather than move_cursor_to()'s needle search, since a
+  // single "}" character occurs many times earlier in the file too.
+  int32_t line = 0, col = 0;
+  for (char c : content) {
+    if (c == '\n') {
+      ++line;
+      col = 0;
+    } else {
+      ++col;
+    }
+  }
+  dynamic payload;
+  payload["line"_key] = line;
+  payload["column"_key] = col;
+  simulate_chrome_event(chrome_widget_id("vbox.editor_row.source"), "cursor_moved"_key, payload);
+
+  EXPECT_TRUE(help_class_name_text().empty());
+  EXPECT_TRUE(help_row_field_names().empty());
+}
+
+TEST_F(EditorSourceTest, CursorMovingWithinSameEnclosingTypeDoesNotReallocateRows) {
+  // "OK" and "Cancel" are both Buttons -- moving between them should skip
+  // rebuilding the field table entirely (same enclosing_type), so the row
+  // ids stay exactly the same instead of being torn down and recreated.
+  std::string content = kValidUiTwoButtons;
+  seed_sandbox_file("ui.json", content);
+  set_source("ui.json");
+  ASSERT_TRUE(help_window_registered());
+
+  move_cursor_to(content, "\"label\": \"OK\"");
+  auto first_ids = help_row_ids();
+  ASSERT_FALSE(first_ids.empty());
+
+  move_cursor_to(content, "\"label\": \"Cancel\"");
+  auto second_ids = help_row_ids();
+
+  EXPECT_EQ(first_ids, second_ids);
 }
 
 TEST_F(EditorSourceTest, SourceEditorSavedEmitsOnSourceSaved) {
