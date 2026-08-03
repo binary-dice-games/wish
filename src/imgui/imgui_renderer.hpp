@@ -50,6 +50,22 @@ using render_fn_map = std::unordered_map<bison::hash_t, render_fn>;
 ///        `drop_type` fields would never be checked.
 void handle_drag_drop(const ui_element& node, const context& s);
 
+/// @brief Draws a gold highlight box around [@p rect_min, @p rect_max] if
+///        @p node's `"__wish_highlight__"` field is set, into the
+///        *current* window's own draw list (`ImGui::GetWindowDrawList()`)
+///        rather than the global foreground layer -- so the box
+///        participates in normal window z-ordering/clipping instead of
+///        always drawing on top of every window. Only valid to call while
+///        a real wish-tree window is current: for `Window`/
+///        `DockSpaceViewport` (which self-report their own rect and have
+///        already closed their own `Begin()`/`BeginPopupModal()` scope by
+///        the time `imgui_renderer::render_node()` reaches its generic
+///        post-dispatch code), call this from inside `render_window()`/
+///        `render_dockspace_viewport()` themselves, before their own
+///        `End()`/`EndPopup()` -- see those functions' call sites in
+///        `imgui_ui_renderer.cpp`.
+void draw_highlight_if_set(const ui_element& node, ImVec2 rect_min, ImVec2 rect_max);
+
 /**
  * @brief Renderer backend that draws wish UI elements via Dear ImGui.
  *

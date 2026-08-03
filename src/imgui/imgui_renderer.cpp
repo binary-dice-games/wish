@@ -277,6 +277,12 @@ void handle_drag_drop(const ui_element& node, const context& s) {
   }
 }
 
+void draw_highlight_if_set(const ui_element& node, ImVec2 rect_min, ImVec2 rect_max) {
+  if (!node.get_as<bool>("__wish_highlight__"_key, false))
+    return;
+  ImGui::GetWindowDrawList()->AddRect(rect_min, rect_max, IM_COL32(255, 215, 0, 255), 0.0f, 0, 2.5f);
+}
+
 void imgui_renderer::render_node(const ui_element& node, const context& s) {
   if (!node.get_as<bool>("visible"_key, true))
     return;
@@ -410,12 +416,15 @@ void imgui_renderer::render_node(const ui_element& node, const context& s) {
   // "__wish_highlight__" is an ad-hoc field (like "__wish_id"/"__path__"
   // elsewhere) set by the editor module to box whichever preview widget
   // corresponds to the JSON element enclosing the source TextEditor's
-  // cursor. GetForegroundDrawList() draws over every window, unclipped, so
-  // the box is never hidden behind a sibling.
-  if (node.get_as<bool>("__wish_highlight__"_key, false)) {
-    ImGui::GetForegroundDrawList()->AddRect(
-        last_resolved_rect_min_, last_resolved_rect_max_, IM_COL32(255, 215, 0, 255), 0.0f, 0, 2.5f);
-  }
+  // cursor. Drawn into the *current* window's own draw list (see
+  // draw_highlight_if_set()'s doc comment) so it participates in normal
+  // window z-ordering instead of always drawing on top of every window --
+  // Window/DockSpaceViewport already drew their own highlight box (if set)
+  // from inside their own Begin()/End() scope, since by this point their
+  // own End()/EndPopup() has already run and there is no longer a current
+  // window to attribute a GetWindowDrawList() call to.
+  if (!self_reports_rect)
+    draw_highlight_if_set(node, last_resolved_rect_min_, last_resolved_rect_max_);
 
   ImGui::PopID();
   ImGui::PopFont();

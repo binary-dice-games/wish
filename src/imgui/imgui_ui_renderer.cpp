@@ -163,6 +163,11 @@ void render_window(imgui_renderer& r, const ui_element& node, const context& s) 
         // (e.g. a mouse move) happens to trigger the next render.
         s.dirty.store(kDirtySettleFrames, std::memory_order_release);
       }
+      {
+        ImVec2 pos = ImGui::GetWindowPos();
+        ImVec2 size = ImGui::GetWindowSize();
+        draw_highlight_if_set(node, pos, ImVec2(pos.x + size.x, pos.y + size.y));
+      }
       ImGui::EndPopup();
     } else {
       const_cast<ui_element&>(node)["__modal_opened__"_key] = false;
@@ -216,6 +221,16 @@ void render_window(imgui_renderer& r, const ui_element& node, const context& s) 
     }
 
     render_children(r, node, s);
+  }
+  // Drawn before End() (unconditionally, same reasoning as report_self_rect()'s
+  // own unconditional call above) -- imgui_renderer::render_node()'s generic
+  // post-dispatch highlight code can't do this itself for Window/
+  // DockSpaceViewport, since by then this End() has already run and there is
+  // no longer a current window for GetWindowDrawList() to attribute to.
+  {
+    ImVec2 pos = ImGui::GetWindowPos();
+    ImVec2 size = ImGui::GetWindowSize();
+    draw_highlight_if_set(node, pos, ImVec2(pos.x + size.x, pos.y + size.y));
   }
   ImGui::End();
 
@@ -910,6 +925,13 @@ void render_dockspace_viewport(imgui_renderer& r, const ui_element& node, const 
     if (child.as<bison::key_t>(bison::dynamic::CLASS) != "Window"_key)
       r.render_node(child, s);
   });
+
+  // Drawn before End() -- see the identical reasoning in render_window().
+  {
+    ImVec2 pos = ImGui::GetWindowPos();
+    ImVec2 size = ImGui::GetWindowSize();
+    draw_highlight_if_set(node, pos, ImVec2(pos.x + size.x, pos.y + size.y));
+  }
 
   // Host window MUST be closed before Window children are rendered so that
   // ImGui does not try to nest independent top-level windows.

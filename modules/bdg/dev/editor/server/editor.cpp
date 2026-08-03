@@ -164,23 +164,43 @@ static constexpr const char* kEditorLayout = R"json({
         "editor_row": {
           "type": "HorizontalLayout",
           "spacing": 8,
+          "height": -1,
           "children": {
-            "source": { "type": "TextEditor", "language": "json", "width": 600, "height": 440, "wish_ui_schema": true }
-          }
-        },
-        "log_label": { "type": "Label", "text": "Event Log" },
-        "log": {
-          "type": "Table",
-          "id": "##editor_log",
-          "columns": 2,
-          "headers": true,
-          "outer_height": 200,
-          "flags": 33554432,
-          "children": {
-            "col_seq":   { "type": "TableColumn", "label": "#" },
-            "col_event": { "type": "TableColumn", "label": "Event" }
+            "source": { "type": "TextEditor", "language": "json", "height": 0, "wish_ui_schema": true }
           }
         }
+      }
+    }
+  }
+})json";
+
+// The event log window: a second, independently dockable top-level Window
+// (see log_root_key_'s doc comment) showing every event a preview widget
+// fires. "outer_height": -1 on "log" bottom-aligns the table to fill this
+// window's own available height (extern/imgui/imgui_tables.cpp's
+// BeginTable() doc comment) instead of the fixed 200px strip it used to
+// clip to inside the shared chrome window -- ImGuiTableFlags_ScrollY
+// (flags: 33554432) and the auto-scroll-to-bottom-on-growth behavior below
+// both still work, since they only need a bounded (not necessarily fixed)
+// outer size.
+static constexpr const char* kLogWindowLayout = R"json({
+  "type": "Window",
+  "title": "Event Log",
+  "pos_x": 20,
+  "pos_y": 760,
+  "width": 900,
+  "height": 260,
+  "children": {
+    "log": {
+      "type": "Table",
+      "id": "##editor_log",
+      "columns": 2,
+      "headers": true,
+      "outer_height": -1,
+      "flags": 33554432,
+      "children": {
+        "col_seq":   { "type": "TableColumn", "label": "#" },
+        "col_event": { "type": "TableColumn", "label": "Event" }
       }
     }
   }
@@ -238,6 +258,7 @@ void editor::on_init() {
   internal_root_key_ = next_available_key("__editor_");
   mock_root_key_ = internal_root_key_ + "_mock";
   help_root_key_ = internal_root_key_ + "_help";
+  log_root_key_ = internal_root_key_ + "_log";
 
   auto tree = import_json(kEditorLayout);
 
@@ -255,7 +276,6 @@ void editor::on_init() {
     source_editor_ptr_ = e;
   });
   tree.with("vbox.banner", [&](const auto& e) { banner_ptr_ = e; });
-  tree.with("vbox.log", [&](const auto& e) { log_table_ptr_ = e; });
   tree.with("vbox.path_label", [&](const auto& e) { path_label_ptr_ = e; });
   tree.with("vbox.confirm", [&](const auto& e) { confirm_panel_ptr_ = e; });
   tree.with("vbox.confirm.confirm_row.confirm_save", [&](const auto& e) { confirm_save_id_ = wish_id_of(e); });
@@ -285,6 +305,22 @@ void editor::on_init() {
   sess().top_level_objects[key_t{help_root_key_}] = help_root_ptr;
   sess().top_level_handlers[key_t{help_root_key_}] = this;
   (*help_root_ptr)["__path__"_key] = help_root_key_;
+
+  // Event log window: a third, independent top-level Window, registered
+  // the same manual way as the Help window above.
+  auto log_tree = import_json(kLogWindowLayout);
+  for (auto& [key, elem] : log_tree) {
+    key_t id = rmi::shared::generate_id();
+    c.put_object(id, elem);
+    elem["__wish_id"_key] = id;
+  }
+  log_tree.with("log", [&](const auto& e) { log_table_ptr_ = e; });
+
+  ui_element_ptr log_root_ptr = log_tree[""];
+  sess().ui_objects.merge(std::move(log_tree), log_root_key_);
+  sess().top_level_objects[key_t{log_root_key_}] = log_root_ptr;
+  sess().top_level_handlers[key_t{log_root_key_}] = this;
+  (*log_root_ptr)["__path__"_key] = log_root_key_;
 }
 
 // ── set_source / reparse ─────────────────────────────────────────────────────
@@ -558,10 +594,11 @@ void editor::request_close() {
   emit("closed"_key);
   remove_internal_objects();
   // remove_internal_objects() only cleans up internal_root_key_ (the main
-  // chrome window) -- the Help window is a separate top-level root and
-  // needs its own explicit teardown, same as file_explorer's confirm
-  // dialog (see remove_objects_at()'s doc comment).
+  // chrome window) -- the Help and Event Log windows are separate
+  // top-level roots and need their own explicit teardown, same as
+  // file_explorer's confirm dialog (see remove_objects_at()'s doc comment).
   remove_objects_at(help_root_key_);
+  remove_objects_at(log_root_key_);
 }
 
 // ── Event log ─────────────────────────────────────────────────────────────────
