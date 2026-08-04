@@ -293,6 +293,79 @@ class client : public bison::rmi::client {
   /// @brief Convenience wrapper for `log("error", msg)`.
   std::future<void> log_error(const std::string& msg);
 
+  // ── Automation helpers ────────────────────────────────────────────────────
+  //
+  // Native (ABI-driven) automation: drive/introspect the session's UI over
+  // this same RMI connection, without a browser -- see
+  // `src/automation/DESIGN.md`'s "Native (ABI-based) automation" section.
+  // Only available when the server's active renderer implements
+  // `automation::automation_backend` (currently only `sdl3_renderer`);
+  // `automation_supported()` reports whether `on_connect()` resolved it.
+
+  /// @brief True once `on_connect()` has resolved automation support for
+  ///        this session. False for a server whose active renderer doesn't
+  ///        implement `automation::automation_backend` (e.g. the web
+  ///        renderer, which uses its own separate browser-based mechanism).
+  bool automation_supported() const noexcept {
+    return automation_proxy_.has_value();
+  }
+
+  /**
+   * @brief Query the current widget tree/hit-test snapshot.
+   * @param root  Dot-path filter restricting the snapshot to that node and
+   *              its descendants; empty means the whole tree.
+   * @return Future resolved with TREE_SNAPSHOT-shaped JSON text -- see
+   *         `automation::build_tree_snapshot`'s doc comment for the schema.
+   * @throws std::logic_error (via the resolved future) if `automation_supported()` is false.
+   */
+  std::future<std::string> get_automation_tree(const std::string& root = "");
+
+  /**
+   * @brief Retrieve the session's buffered automation log entries.
+   * @return Future resolved with LOG_EVENT-shaped JSON text -- see
+   *         `automation::build_log_event`'s doc comment for the schema.
+   * @throws std::logic_error (via the resolved future) if `automation_supported()` is false.
+   */
+  std::future<std::string> get_automation_logs();
+
+  /**
+   * @brief Capture a screenshot of the next frame the server renders.
+   * @return Future resolved with PNG-encoded image bytes.
+   * @throws std::logic_error (via the resolved future) if `automation_supported()` is false.
+   */
+  std::future<std::vector<uint8_t>> take_screenshot();
+
+  /**
+   * @brief Inject a synthetic mouse-move event.
+   * @param x  Window-relative X coordinate.
+   * @param y  Window-relative Y coordinate.
+   * @throws std::logic_error (via the resolved future) if `automation_supported()` is false.
+   */
+  std::future<void> inject_mouse_move(float x, float y);
+
+  /**
+   * @brief Inject a synthetic mouse-button press/release.
+   * @param button  0 = left, 1 = right, 2 = middle.
+   * @param down    True for press, false for release.
+   * @throws std::logic_error (via the resolved future) if `automation_supported()` is false.
+   */
+  std::future<void> inject_mouse_button(int button, bool down);
+
+  /**
+   * @brief Inject a synthetic key press/release.
+   * @param keycode  Platform keycode (`SDL_Keycode` for `sdl3_renderer`).
+   * @param down     True for press, false for release.
+   * @throws std::logic_error (via the resolved future) if `automation_supported()` is false.
+   */
+  std::future<void> inject_key(int keycode, bool down);
+
+  /**
+   * @brief Inject synthetic text input (e.g. for typing into an InputText).
+   * @param utf8  UTF-8 encoded text.
+   * @throws std::logic_error (via the resolved future) if `automation_supported()` is false.
+   */
+  std::future<void> inject_text(const std::string& utf8);
+
  protected:
   /**
    * @brief Called after `connect()` completes; subclass performs all UI
@@ -335,6 +408,10 @@ class client : public bison::rmi::client {
   std::optional<bison::rmi::proxy::dynamic> fs_proxy_;
   std::optional<bison::rmi::proxy::dynamic> style_proxy_;
   std::optional<bison::rmi::proxy::dynamic> log_proxy_;
+  // Resolved non-fatally in on_connect() -- unset (rather than on_connect()
+  // throwing and breaking the whole connection) when the server's active
+  // renderer doesn't support automation. See automation_supported().
+  std::optional<bison::rmi::proxy::dynamic> automation_proxy_;
 };
 
 } // namespace bdg::wish

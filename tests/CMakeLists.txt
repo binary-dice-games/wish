@@ -98,6 +98,14 @@ if(WISH_ENABLE_IMGUI AND WISH_ENABLE_SDL3)
   wish_add_test(test_sdl3_renderer test_sdl3_renderer.cpp)
 endif()
 
+if(WISH_ENABLE_IMGUI AND WISH_ENABLE_SDL3 AND WISH_ENABLE_AUTOMATION)
+  wish_add_test(test_sdl3_automation test_sdl3_automation.cpp)
+  # Parses query_tree()'s TREE_SNAPSHOT-shaped JSON reply, same as
+  # test_automation_query.cpp.
+  target_include_directories(test_sdl3_automation PRIVATE
+    ${CMAKE_SOURCE_DIR}/extern/bison/extern/json/single_include)
+endif()
+
 if(WISH_ENABLE_IMGUI AND WISH_ENABLE_WEB)
   wish_add_test(test_web_renderer test_web_renderer.cpp)
   # Needs miniz.h directly to independently recompute CRC-32 for its own
@@ -111,6 +119,15 @@ if(WISH_ENABLE_IMGUI AND WISH_ENABLE_WEB AND WISH_ENABLE_AUTOMATION)
   # nlohmann/json.hpp directly; this test parses TREE_SNAPSHOT payloads with
   # it too (see src/automation/automation_query.cpp for the same path).
   target_include_directories(test_automation_query PRIVATE
+    ${CMAKE_SOURCE_DIR}/extern/bison/extern/json/single_include)
+endif()
+
+if(WISH_ENABLE_IMGUI AND WISH_ENABLE_AUTOMATION)
+  # Renderer-agnostic: exercises automation_service's RMI plumbing against a
+  # fake automation_backend, so it needs no SDL3/web renderer at all -- see
+  # test_automation_service.cpp's own header comment.
+  wish_add_test(test_automation_service test_automation_service.cpp)
+  target_include_directories(test_automation_service PRIVATE
     ${CMAKE_SOURCE_DIR}/extern/bison/extern/json/single_include)
 endif()
 

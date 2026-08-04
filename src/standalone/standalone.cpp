@@ -9,6 +9,10 @@
 #include <ui/ui_descriptor.hpp>
 #include <ui/ui_root.hpp>
 
+#ifdef WISH_AUTOMATION_ENABLED
+#include <automation/automation_service.hpp>
+#endif
+
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
@@ -17,6 +21,7 @@
 #include <memory>
 #include <optional>
 #include <shared_mutex>
+#include <stdexcept>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -76,6 +81,12 @@ void standalone::on_session_created(bison::rmi::context& ctx) {
     sess->file_service = file_service::instantiate(sess->resource_dir);
     sess->style_service = style_service::instantiate();
     sess->logger_service = logger_;
+#ifdef WISH_AUTOMATION_ENABLED
+    if (renderer_) {
+      if (auto* backend = renderer_->as_automation_backend())
+        sess->automation_service = automation_service::instantiate(backend, logger_);
+    }
+#endif
     on_session_created(*sess);
   }
 
@@ -83,6 +94,13 @@ void standalone::on_session_created(bison::rmi::context& ctx) {
   fs_proxy_ = instantiate("wish"_key, "__WishFileSystem"_key).get();
   style_proxy_ = instantiate("wish"_key, "__WishStyle"_key).get();
   log_proxy_ = instantiate("wish"_key, "__WishLogger"_key).get();
+  // Non-fatal: mirrors wish::client::on_connect()'s identical try/catch --
+  // the active renderer may not support automation at all.
+  try {
+    automation_proxy_ = instantiate("wish"_key, "__WishAutomation"_key).get();
+  } catch (...) {
+    automation_proxy_.reset();
+  }
 }
 
 void standalone::on_session_destroyed(bison::rmi::context& ctx) {
@@ -367,6 +385,84 @@ std::future<void> standalone::log_warn(const std::string& msg) {
 }
 std::future<void> standalone::log_error(const std::string& msg) {
   return log("error", msg);
+}
+
+// ── Automation helpers (mirror wish::client) ──────────────────────────────────
+
+namespace {
+void require_automation(const std::optional<bison::rmi::proxy::dynamic>& proxy) {
+  if (!proxy)
+    throw std::logic_error(
+        "wish::standalone: this renderer does not support automation "
+        "(see wish::standalone::automation_supported())");
+}
+} // namespace
+
+std::future<std::string> standalone::get_automation_tree(const std::string& root) {
+  return std::async(std::launch::async, [this, root]() -> std::string {
+    require_automation(automation_proxy_);
+    dynamic args;
+    if (!root.empty())
+      args["root"_key] = root;
+    auto result = automation_proxy_->call("get_tree"_key, std::move(args)).get();
+    return result.as<std::string>("json"_key);
+  });
+}
+
+std::future<std::string> standalone::get_automation_logs() {
+  return std::async(std::launch::async, [this]() -> std::string {
+    require_automation(automation_proxy_);
+    auto result = automation_proxy_->call("get_logs"_key, dynamic{}).get();
+    return result.as<std::string>("json"_key);
+  });
+}
+
+std::future<std::vector<uint8_t>> standalone::take_screenshot() {
+  return std::async(std::launch::async, [this]() -> std::vector<uint8_t> {
+    require_automation(automation_proxy_);
+    auto result = automation_proxy_->call("screenshot"_key, dynamic{}).get();
+    auto data = result.as<std::string>("data"_key);
+    return std::vector<uint8_t>(data.begin(), data.end());
+  });
+}
+
+std::future<void> standalone::inject_mouse_move(float x, float y) {
+  return std::async(std::launch::async, [this, x, y]() {
+    require_automation(automation_proxy_);
+    dynamic args;
+    args["x"_key] = x;
+    args["y"_key] = y;
+    automation_proxy_->call("mouse_move"_key, std::move(args), true).get();
+  });
+}
+
+std::future<void> standalone::inject_mouse_button(int button, bool down) {
+  return std::async(std::launch::async, [this, button, down]() {
+    require_automation(automation_proxy_);
+    dynamic args;
+    args["button"_key] = static_cast<int32_t>(button);
+    args["down"_key] = down;
+    automation_proxy_->call("mouse_button"_key, std::move(args), true).get();
+  });
+}
+
+std::future<void> standalone::inject_key(int keycode, bool down) {
+  return std::async(std::launch::async, [this, keycode, down]() {
+    require_automation(automation_proxy_);
+    dynamic args;
+    args["keycode"_key] = static_cast<int32_t>(keycode);
+    args["down"_key] = down;
+    automation_proxy_->call("key_event"_key, std::move(args), true).get();
+  });
+}
+
+std::future<void> standalone::inject_text(const std::string& utf8) {
+  return std::async(std::launch::async, [this, utf8]() {
+    require_automation(automation_proxy_);
+    dynamic args;
+    args["utf8"_key] = utf8;
+    automation_proxy_->call("text_input"_key, std::move(args), true).get();
+  });
 }
 
 } // namespace bdg::wish

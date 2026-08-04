@@ -466,12 +466,15 @@ See [docs/cli.md](docs/cli.md) for the full, authoritative flag reference (all f
 | Field update | `wish_proxy_set_string(p, wish_key("text"), "Hi")` | `proxy.set({{"text"_key, "Hi"}})` |
 | Events | `wish_proxy_on_event(p, "clicked", cb, ud)` | `proxy.onEvent("clicked"_key, handler)` |
 | Wait for quit | `wish_client_wait(c)` inside session callback | `while (!rend->should_quit()) sleep(16ms)` |
+| Automation (tree/screenshot/input, `WISH_ENABLE_AUTOMATION` + a renderer that supports it, e.g. SDL3) | `wish_automation_get_tree` / `wish_automation_get_logs` / `wish_automation_screenshot` / `wish_automation_mouse_move` / `wish_automation_mouse_button` / `wish_automation_key_event` / `wish_automation_text_input` | `client::get_automation_tree()` / `get_automation_logs()` / `take_screenshot()` / `inject_mouse_move()` / `inject_mouse_button()` / `inject_key()` / `inject_text()` |
 
 Keys are computed via `wish_key(name)` which implements the same FNV-1a 32-bit hash (with MSB forced to 1) as the C++ `"name"_key` user-defined literal.
 
 `wish_proxy_t` handles are non-owning pointers into a `std::unordered_map` owned by the `wish_client_s` struct.  They remain valid until the next `wish_instantiate_template` call or the session ends.
 
 `config_panel` (`examples/config_panel/config_panel.c`) is the canonical demonstration: a pure-C settings panel application that connects to a running `wish` server and renders a configuration UI.
+
+The automation row rides this same ABI and connection -- there is no separate socket or subprocess. It returns `WISH_ERR_NOT_FOUND` unless the connected server's active renderer implements native automation (currently only `sdl3_renderer`); see `src/automation/DESIGN.md`'s "Native (ABI-based) automation" section for the full architecture, including the browser-driven alternative used by the web renderer.
 
 ---
 

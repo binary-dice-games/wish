@@ -9,7 +9,8 @@ library re-exports the bison and RMI C ABIs alongside its own.
 
 import ctypes
 import json
-from typing import Any, Callable, List, Optional
+import time
+from typing import Any, Callable, List, Optional, Tuple
 
 from . import _native as _n
 from bison.rmi import Future, Proxy, _as_params
@@ -363,3 +364,155 @@ class Client:
 
     def log_error(self, msg: str) -> None:
         _check(self._lib.wish_log_error(self._handle, msg.encode()), "log_error", self.last_error)
+
+    # ── Automation ────────────────────────────────────────────────────────────
+    #
+    # Native (ABI-driven) automation: drive/introspect this session's UI over
+    # the same connection used to build it -- no browser, no second client,
+    # no subprocess -- see src/automation/DESIGN.md's "Native (ABI-based)
+    # automation" section. Only available when the server's active renderer
+    # implements it (currently only the SDL3 renderer); every method below
+    # raises WishError(code=WISH_ERR_NOT_FOUND) otherwise. Mirrors the
+    # browser-based wish.automation.AutomationClient's API shape (get_tree,
+    # get_widget, click, type_text, drag, screenshot, wait_for, get_logs) so
+    # a script can switch renderers with minimal changes.
+
+    def get_tree(self, root: str = "") -> dict:
+        """Return a tree/hit-test snapshot: ``{"request_id", "widgets": [...]}``.
+
+        Each widget dict has ``path``, ``class``, ``rect``
+        (``{"x0","y0","x1","y1"}`` or ``None`` if never rendered this frame),
+        ``hovered``, ``active``, ``visible``, plus whichever of
+        ``label``/``text``/``value``/``title``/``checked``/``selected``/``hint``
+        the widget has. *root* restricts the snapshot to that dot-path and its
+        descendants; empty (the default) returns the whole tree.
+        """
+        out = ctypes.c_char_p()
+        _check(
+            self._lib.wish_automation_get_tree(self._handle, root.encode(), ctypes.byref(out)),
+            f"get_tree({root!r})",
+            self.last_error,
+        )
+        try:
+            return json.loads(out.value.decode("utf-8"))
+        finally:
+            self._lib.bison_free_string(out)
+
+    def get_widgets(self, root: str = "") -> List[dict]:
+        """Convenience: ``get_tree(root)["widgets"]``."""
+        return self.get_tree(root)["widgets"]
+
+    def get_widget(self, path: str) -> Optional[dict]:
+        """Return one widget's current state by its exact dot-path, or
+        ``None`` if no widget in the tree has that path."""
+        for w in self.get_widgets(path):
+            if w["path"] == path:
+                return w
+        return None
+
+    def get_logs(self) -> List[dict]:
+        """Return the session's buffered automation log entries (bounded, see
+        ``logger::recent_logs()``): ``[{"seq", "timestamp", "level", "message"}, ...]``,
+        oldest first."""
+        out = ctypes.c_char_p()
+        _check(self._lib.wish_automation_get_logs(self._handle, ctypes.byref(out)), "get_logs", self.last_error)
+        try:
+            return json.loads(out.value.decode("utf-8"))["logs"]
+        finally:
+            self._lib.bison_free_string(out)
+
+    def screenshot(self) -> bytes:
+        """Capture the next rendered frame and return it as PNG bytes."""
+        out_data = ctypes.c_char_p()
+        out_len = ctypes.c_size_t(0)
+        _check(
+            self._lib.wish_automation_screenshot(self._handle, ctypes.byref(out_data), ctypes.byref(out_len)),
+            "screenshot",
+            self.last_error,
+        )
+        try:
+            return ctypes.string_at(out_data, out_len.value)
+        finally:
+            self._lib.bison_free_string(out_data)
+
+    def _widget_center(self, path: str) -> Tuple[float, float]:
+        w = self.get_widget(path)
+        if w is None:
+            raise WishError(_n.WISH_ERR_NOT_FOUND, f"_widget_center({path!r})", f"no widget at path {path!r}")
+        rect = w.get("rect")
+        if rect is None:
+            raise WishError(
+                _n.WISH_ERR_NOT_FOUND, f"_widget_center({path!r})", f"widget {path!r} was never rendered (rect is null)"
+            )
+        return ((rect["x0"] + rect["x1"]) / 2.0, (rect["y0"] + rect["y1"]) / 2.0)
+
+    def mouse_move(self, x: float, y: float) -> None:
+        """Inject a synthetic mouse-move event at window-relative (x, y)."""
+        _check(self._lib.wish_automation_mouse_move(self._handle, x, y), "mouse_move", self.last_error)
+
+    def mouse_button(self, button: int, down: bool) -> None:
+        """Inject a synthetic mouse-button press/release. *button*: 0 = left,
+        1 = right, 2 = middle."""
+        _check(
+            self._lib.wish_automation_mouse_button(self._handle, button, 1 if down else 0),
+            "mouse_button",
+            self.last_error,
+        )
+
+    def key_event(self, keycode: int, down: bool) -> None:
+        """Inject a synthetic key press/release. *keycode* is a platform
+        keycode (``SDL_Keycode`` for the SDL3 renderer)."""
+        _check(
+            self._lib.wish_automation_key_event(self._handle, keycode, 1 if down else 0),
+            "key_event",
+            self.last_error,
+        )
+
+    def text_input(self, text: str) -> None:
+        """Inject synthetic text input (e.g. for typing into an InputText)."""
+        _check(self._lib.wish_automation_text_input(self._handle, text.encode()), "text_input", self.last_error)
+
+    def click(self, path: str, button: int = 0) -> None:
+        """Click a widget's center: a real synthetic mouse move+down+up,
+        indistinguishable from user input. Raises if *path* doesn't exist or
+        was never rendered (``rect`` is ``None``)."""
+        x, y = self._widget_center(path)
+        self.mouse_move(x, y)
+        self.mouse_button(button, True)
+        self.mouse_button(button, False)
+
+    def type_text(self, path: str, text: str) -> None:
+        """Focus-click *path*, then type *text* as synthetic input."""
+        self.click(path)
+        self.text_input(text)
+
+    def drag(self, from_path: str, to_path: str, steps: int = 10) -> None:
+        """Real press/move/release drag between two widgets' centers -- for
+        an element with a ``drag_type`` field dropped onto one with a
+        matching ``drop_type`` (see ``docs/ui-elements.md``'s "Drag and
+        drop" section)."""
+        fx, fy = self._widget_center(from_path)
+        tx, ty = self._widget_center(to_path)
+        self.mouse_move(fx, fy)
+        self.mouse_button(0, True)
+        for i in range(1, steps + 1):
+            t = i / steps
+            self.mouse_move(fx + (tx - fx) * t, fy + (ty - fy) * t)
+        self.mouse_button(0, False)
+
+    def wait_for(self, predicate: Callable[["Client"], bool], timeout: float = 5.0, interval: float = 0.05) -> None:
+        """Poll ``predicate(self)`` until it returns truthy, or raise
+        :class:`TimeoutError` after *timeout* seconds.
+
+        Mirrors the browser automation's ``wait_for()``, adapted for a native
+        connection: there's no JS engine to evaluate a string predicate
+        against, so *predicate* is a plain Python callable -- typically
+        calling :meth:`get_tree`/:meth:`get_widget` and checking a field.
+        """
+        deadline = time.monotonic() + timeout
+        while True:
+            if predicate(self):
+                return
+            if time.monotonic() >= deadline:
+                raise TimeoutError(f"wait_for() timed out after {timeout}s")
+            time.sleep(interval)

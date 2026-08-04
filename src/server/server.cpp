@@ -9,6 +9,10 @@
 #include <context/style_service.hpp>
 #include <ui/ui_root.hpp>
 
+#ifdef WISH_AUTOMATION_ENABLED
+#include <automation/automation_service.hpp>
+#endif
+
 #include "ui/ui_template.hpp"
 
 #include <chrono>
@@ -91,6 +95,12 @@ void server::on_session_created(bison::rmi::context& ctx) {
   s.style_service = style_service::instantiate();
   // All sessions share the same global logger instance (set via set_logger()).
   s.logger_service = logger_;
+#ifdef WISH_AUTOMATION_ENABLED
+  if (renderer_) {
+    if (auto* backend = renderer_->as_automation_backend())
+      s.automation_service = automation_service::instantiate(backend, logger_);
+  }
+#endif
   {
     std::ostringstream oss;
     oss << "[rmi] connect     sid=0x" << std::hex << std::setw(8) << std::setfill('0') << ctx.session_id.id;

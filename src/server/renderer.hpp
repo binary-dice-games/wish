@@ -6,6 +6,10 @@
 #include <context/context.hpp>
 #include <ui/ui_element.hpp>
 
+#ifdef WISH_AUTOMATION_ENABLED
+#include <automation/automation_backend.hpp>
+#endif
+
 #include <vector>
 
 namespace bdg::wish {
@@ -175,6 +179,24 @@ class renderer {
    */
   virtual void service_automation_queries() {
   }
+
+#ifdef WISH_AUTOMATION_ENABLED
+  /**
+   * @brief Returns this renderer as an `automation::automation_backend`, if
+   *        it implements native (ABI-driven) automation.
+   *
+   * Checked once per new session, in `server::on_session_created`/
+   * `standalone::on_session_created`: when non-null, the session gets an
+   * `automation_service` ("__WishAutomation") that forwards RMI calls here.
+   * The default returns `nullptr`; only backends that implement
+   * `automation::automation_backend` (currently `sdl3_renderer`) override
+   * this. See `src/automation/DESIGN.md`'s "Native (ABI-based) automation"
+   * section.
+   */
+  virtual automation::automation_backend* as_automation_backend() {
+    return nullptr;
+  }
+#endif
 };
 
 /**

@@ -572,6 +572,97 @@ WISH_API wish_error wish_log_warn(wish_client_handle client, const char* msg);
  */
 WISH_API wish_error wish_log_error(wish_client_handle client, const char* msg);
 
+/* ── Automation ───────────────────────────────────────────────────────────── */
+/*
+ * Native (ABI-driven) automation: query the widget tree, take screenshots,
+ * and inject synthetic input into a running session -- without a browser.
+ * Rides the same RMI connection as every other wish_* call in this header;
+ * no separate socket or subprocess is needed. Only available when the
+ * connected server's active renderer implements the C++
+ * automation::automation_backend interface (currently only the SDL3
+ * renderer) -- see src/automation/DESIGN.md's "Native (ABI-based)
+ * automation" section. Every function below returns WISH_ERR_NOT_FOUND if
+ * the active renderer does not support automation (e.g. the web renderer,
+ * which uses its own separate browser-based mechanism instead).
+ */
+
+/**
+ * @brief Query the current widget tree/hit-test snapshot.
+ *
+ * @param client    Active session handle.
+ * @param root      Dot-path filter restricting the snapshot to that node and
+ *                  its descendants; pass "" or NULL for the whole tree.
+ * @param out_json  Receives a pointer to the allocated JSON string on
+ *                  success. Release with bison_free_string(). Schema:
+ *                  `{"request_id":N,"widgets":[{"path","class",
+ *                  "rect":{"x0","y0","x1","y1"}|null,"hovered","active",
+ *                  "visible", ...content fields...},...]}`.
+ * @return WISH_OK, WISH_ERR_NULL, WISH_ERR_NOT_FOUND, or WISH_ERR_EXCEPTION.
+ */
+WISH_API wish_error wish_automation_get_tree(wish_client_handle client, const char* root, char** out_json);
+
+/**
+ * @brief Retrieve the session's buffered automation log entries.
+ *
+ * @param client    Active session handle.
+ * @param out_json  Receives a pointer to the allocated JSON string on
+ *                  success. Release with bison_free_string(). Schema:
+ *                  `{"logs":[{"seq","timestamp","level","message"},...]}`.
+ * @return WISH_OK, WISH_ERR_NULL, WISH_ERR_NOT_FOUND, or WISH_ERR_EXCEPTION.
+ */
+WISH_API wish_error wish_automation_get_logs(wish_client_handle client, char** out_json);
+
+/**
+ * @brief Capture a screenshot of the next frame the server renders.
+ *
+ * @param client        Active session handle.
+ * @param out_png_data  Receives a pointer to the allocated PNG-encoded image
+ *                       bytes on success; may contain embedded NUL bytes.
+ *                       Release with bison_free_string().
+ * @param out_len       Output length of @p out_png_data in bytes.
+ * @return WISH_OK, WISH_ERR_NULL, WISH_ERR_NOT_FOUND, or WISH_ERR_EXCEPTION.
+ */
+WISH_API wish_error wish_automation_screenshot(wish_client_handle client, char** out_png_data, size_t* out_len);
+
+/**
+ * @brief Inject a synthetic mouse-move event.
+ *
+ * @param client  Active session handle.
+ * @param x       Window-relative X coordinate.
+ * @param y       Window-relative Y coordinate.
+ * @return WISH_OK, WISH_ERR_NULL, WISH_ERR_NOT_FOUND, or WISH_ERR_EXCEPTION.
+ */
+WISH_API wish_error wish_automation_mouse_move(wish_client_handle client, float x, float y);
+
+/**
+ * @brief Inject a synthetic mouse-button press/release.
+ *
+ * @param client  Active session handle.
+ * @param button  0 = left, 1 = right, 2 = middle.
+ * @param down    Nonzero for press, zero for release.
+ * @return WISH_OK, WISH_ERR_NULL, WISH_ERR_NOT_FOUND, or WISH_ERR_EXCEPTION.
+ */
+WISH_API wish_error wish_automation_mouse_button(wish_client_handle client, int button, int down);
+
+/**
+ * @brief Inject a synthetic key press/release.
+ *
+ * @param client   Active session handle.
+ * @param keycode  Platform keycode (SDL_Keycode for the SDL3 renderer).
+ * @param down     Nonzero for press, zero for release.
+ * @return WISH_OK, WISH_ERR_NULL, WISH_ERR_NOT_FOUND, or WISH_ERR_EXCEPTION.
+ */
+WISH_API wish_error wish_automation_key_event(wish_client_handle client, int keycode, int down);
+
+/**
+ * @brief Inject synthetic text input (e.g. for typing into an InputText).
+ *
+ * @param client     Active session handle.
+ * @param utf8_text  Null-terminated UTF-8 text.
+ * @return WISH_OK, WISH_ERR_NULL, WISH_ERR_NOT_FOUND, or WISH_ERR_EXCEPTION.
+ */
+WISH_API wish_error wish_automation_text_input(wish_client_handle client, const char* utf8_text);
+
 #ifdef __cplusplus
 }
 #endif

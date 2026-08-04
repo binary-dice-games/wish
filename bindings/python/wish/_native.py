@@ -220,3 +220,25 @@ def _setup_wish_signatures(lib: ctypes.CDLL) -> None:
 
     lib.wish_log_error.restype = Error
     lib.wish_log_error.argtypes = [ClientHandle, ctypes.c_char_p]
+
+    # ── Automation ───────────────────────────────────────────────────────────
+    lib.wish_automation_get_tree.restype = Error
+    lib.wish_automation_get_tree.argtypes = [ClientHandle, ctypes.c_char_p, P(ctypes.c_char_p)]
+
+    lib.wish_automation_get_logs.restype = Error
+    lib.wish_automation_get_logs.argtypes = [ClientHandle, P(ctypes.c_char_p)]
+
+    lib.wish_automation_screenshot.restype = Error
+    lib.wish_automation_screenshot.argtypes = [ClientHandle, P(ctypes.c_char_p), P(ctypes.c_size_t)]
+
+    lib.wish_automation_mouse_move.restype = Error
+    lib.wish_automation_mouse_move.argtypes = [ClientHandle, ctypes.c_float, ctypes.c_float]
+
+    lib.wish_automation_mouse_button.restype = Error
+    lib.wish_automation_mouse_button.argtypes = [ClientHandle, ctypes.c_int, ctypes.c_int]
+
+    lib.wish_automation_key_event.restype = Error
+    lib.wish_automation_key_event.argtypes = [ClientHandle, ctypes.c_int, ctypes.c_int]
+
+    lib.wish_automation_text_input.restype = Error
+    lib.wish_automation_text_input.argtypes = [ClientHandle, ctypes.c_char_p]

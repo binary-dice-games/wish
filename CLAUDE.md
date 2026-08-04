@@ -218,12 +218,24 @@ eventually pushed.
 ## Automation: debugging and testing a wish UI
 
 wish ships an optional automation module (`src/automation/`, gated by
-`WISH_ENABLE_AUTOMATION`, requires `WISH_ENABLE_WEB=ON`) that lets an agent
-*see and drive* a running wish UI instead of reasoning about it purely from
-source: query the live widget tree (paths, classes, field values, screen
-rects, hover/active/visible state), take a real screenshot, and inject
-mouse/keyboard input — the wish equivalent of Playwright driving a web page.
-Full protocol/architecture: [src/automation/DESIGN.md](src/automation/DESIGN.md).
+`WISH_ENABLE_AUTOMATION`, requires `WISH_ENABLE_WEB=ON` and/or
+`WISH_ENABLE_SDL3=ON`) that lets an agent *see and drive* a running wish UI
+instead of reasoning about it purely from source: query the live widget
+tree (paths, classes, field values, screen rects, hover/active/visible
+state), take a real screenshot, and inject mouse/keyboard input — the wish
+equivalent of Playwright driving a web page. Full protocol/architecture:
+[src/automation/DESIGN.md](src/automation/DESIGN.md).
+
+Two independent implementations exist, one per renderer: the **web
+renderer** uses a Playwright-driven headless browser (`AutomationClient`,
+documented in the rest of this section below); the **SDL3 renderer** — no
+browser tab to drive — exposes the identical capability set directly as
+methods on `wish.Client` (`get_tree`/`click`/`type_text`/`drag`/
+`screenshot`/`get_logs`/`wait_for`), riding the same connection already used
+to build the UI. See [src/automation/DESIGN.md](src/automation/DESIGN.md)'s
+"Native (ABI-based) automation" section and
+[docs/building.md](docs/building.md#running-native-automation-sdl3) for the
+SDL3 workflow; everything below this point describes the web-renderer path.
 
 **Use this whenever you are debugging a UI-visible bug, verifying a fix, or
 writing an e2e regression test for a wish app** — it is almost always faster

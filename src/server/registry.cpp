@@ -5,6 +5,10 @@
 #include <server/registry.hpp>
 #include <context/style_service.hpp>
 
+#ifdef WISH_AUTOMATION_ENABLED
+#include <automation/automation_service.hpp>
+#endif
+
 #include "ui/forms/file_dialog.hpp"
 #include "ui/forms/message_box.hpp"
 #include "ui/plot3d_elements/plot3d_elements.hpp"
@@ -58,6 +62,9 @@ void register_all() {
   register_file_service();
   register_style_service();
   register_logger();
+#ifdef WISH_AUTOMATION_ENABLED
+  register_automation_service();
+#endif
   // Built-in forms.
   register_file_dialog();
   register_message_box();

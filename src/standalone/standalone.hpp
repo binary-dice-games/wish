@@ -19,6 +19,7 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <vector>
 
 namespace bdg::wish {
 
@@ -141,6 +142,34 @@ class standalone : public bison::rmi::standalone {
   /// @copydoc bdg::wish::client::log_error
   std::future<void> log_error(const std::string& msg);
 
+  // ── Automation helpers (mirror wish::client) ─────────────────────────────
+
+  /// @copydoc bdg::wish::client::automation_supported
+  bool automation_supported() const noexcept {
+    return automation_proxy_.has_value();
+  }
+
+  /// @copydoc bdg::wish::client::get_automation_tree
+  std::future<std::string> get_automation_tree(const std::string& root = "");
+
+  /// @copydoc bdg::wish::client::get_automation_logs
+  std::future<std::string> get_automation_logs();
+
+  /// @copydoc bdg::wish::client::take_screenshot
+  std::future<std::vector<uint8_t>> take_screenshot();
+
+  /// @copydoc bdg::wish::client::inject_mouse_move
+  std::future<void> inject_mouse_move(float x, float y);
+
+  /// @copydoc bdg::wish::client::inject_mouse_button
+  std::future<void> inject_mouse_button(int button, bool down);
+
+  /// @copydoc bdg::wish::client::inject_key
+  std::future<void> inject_key(int keycode, bool down);
+
+  /// @copydoc bdg::wish::client::inject_text
+  std::future<void> inject_text(const std::string& utf8);
+
  protected:
   /** @brief Called once the session's services are ready, before the first
    *         object may be instantiated. */
@@ -231,6 +260,9 @@ class standalone : public bison::rmi::standalone {
   std::optional<bison::rmi::proxy::dynamic> fs_proxy_;
   std::optional<bison::rmi::proxy::dynamic> style_proxy_;
   std::optional<bison::rmi::proxy::dynamic> log_proxy_;
+  // Resolved non-fatally in on_session_created() -- mirrors
+  // wish::client::automation_proxy_'s doc comment.
+  std::optional<bison::rmi::proxy::dynamic> automation_proxy_;
 };
 
 } // namespace bdg::wish
