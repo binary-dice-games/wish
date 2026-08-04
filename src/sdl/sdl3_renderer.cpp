@@ -12,6 +12,14 @@
 #include <implot.h>
 #include <implot3d.h>
 
+#ifdef WISH_AUTOMATION_ENABLED
+// stb_image_write is vendored solely for capture_frame_png() -- mirrors
+// web_renderer.cpp's own STB_IMAGE_IMPLEMENTATION/<stb_image.h> pattern for
+// the read side (see that file's comment on civetweb/stb_image isolation).
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include <stb_image_write.h>
+#endif
+
 #include <stdexcept>
 #include <utility>
 
@@ -156,6 +164,28 @@ void sdl3_renderer::begin_frame() {
   if (fonts_dirty_)
     rebuild_font_atlas();
 
+#ifdef WISH_AUTOMATION_ENABLED
+  // hit_test_map_ is cleared here (not in end_frame()) so a query answers
+  // against a complete frame -- mirrors web_renderer::begin_frame().
+  hit_test_map_.clear();
+
+  // Drain synthetic text input queued by inject_text() and feed it to ImGui
+  // directly, before NewFrame() -- see pending_text_inputs_'s doc comment.
+  {
+    std::deque<std::string> texts;
+    {
+      auto lock = pending_text_inputs_.wlock();
+      texts = std::move(*lock);
+      lock->clear();
+    }
+    if (!texts.empty()) {
+      ImGuiIO& io = ImGui::GetIO();
+      for (const auto& t : texts)
+        io.AddInputCharactersUTF8(t.c_str());
+    }
+  }
+#endif
+
   ImGui_ImplSDLRenderer3_NewFrame();
   ImGui_ImplSDL3_NewFrame();
   imgui_renderer::begin_frame(); // → ImGui::NewFrame()
@@ -168,6 +198,26 @@ void sdl3_renderer::end_frame() {
   SDL_SetRenderDrawColor(sdl_renderer_, 30, 30, 30, 255);
   SDL_RenderClear(sdl_renderer_);
   ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), sdl_renderer_);
+
+#ifdef WISH_AUTOMATION_ENABLED
+  // Service any pending screenshot requests here -- after draw data has been
+  // submitted to sdl_renderer_ but before SDL_RenderPresent(), the last
+  // point at which SDL_RenderReadPixels() still sees this frame's pixels.
+  {
+    std::deque<std::promise<std::vector<uint8_t>>> pending;
+    {
+      auto lock = pending_screenshots_.wlock();
+      pending = std::move(*lock);
+      lock->clear();
+    }
+    if (!pending.empty()) {
+      auto png = capture_frame_png();
+      for (auto& p : pending)
+        p.set_value(png);
+    }
+  }
+#endif
+
   SDL_RenderPresent(sdl_renderer_);
 }
 
@@ -294,6 +344,130 @@ void sdl3_renderer::flush_draw_list(ImDrawList& draw_list, int w, int h) {
 
   ImGui_ImplSDLRenderer3_RenderDrawData(&draw_data, sdl_renderer_);
 }
+
+// ── automation ───────────────────────────────────────────────────────────────
+
+#ifdef WISH_AUTOMATION_ENABLED
+
+void sdl3_renderer::render_node(const ui_element& node, const context& s) {
+  imgui_renderer::render_node(node, s); // unchanged dispatch/recursion
+
+  // imgui_renderer::render_node() itself early-returns (draws nothing) for
+  // a node with visible=false, before reaching the class dispatch table --
+  // capturing GetItemRect*() here would then read a stale, unrelated item's
+  // state left over from whatever widget rendered before this one. Mirrors
+  // web_renderer::render_node()'s identical guard.
+  if (!node.get_as<bool>(bison::key_t{"visible"}, true))
+    return;
+
+  auto id = node.get_as<bison::key_t>(bison::key_t{"__wish_id"}, bison::key_t{});
+  if (id.id == 0)
+    return; // node was never assigned an id (e.g. a manually built test tree)
+
+  // last_resolved_rect_min_/max_ is the same rect imgui_renderer::render_node()
+  // just resolved for this node -- see that function's own comments for the
+  // per-class resolution rules (Window/DockSpaceViewport self-report,
+  // container classes are BeginGroup()/EndGroup()-wrapped, leaves read the
+  // plain post-dispatch item rect).
+  hit_test_map_[id] = automation::hit_test_entry{
+      last_resolved_rect_min_.x,
+      last_resolved_rect_min_.y,
+      last_resolved_rect_max_.x,
+      last_resolved_rect_max_.y,
+      ImGui::IsItemHovered(),
+      ImGui::IsItemActive(),
+      ImGui::IsItemVisible(),
+  };
+}
+
+void sdl3_renderer::service_automation_queries(const context& s) {
+  std::deque<pending_tree_query> queries;
+  {
+    auto lock = pending_tree_queries_.wlock();
+    queries = std::move(*lock);
+    lock->clear();
+  }
+  for (auto& q : queries) {
+    auto json = automation::build_tree_snapshot(q.request_id, q.root, s.ui_objects, hit_test_map_);
+    q.reply.set_value(std::move(json));
+  }
+}
+
+std::future<std::string> sdl3_renderer::query_tree(uint32_t request_id, const std::string& root) {
+  pending_tree_query q{request_id, root, {}};
+  auto fut = q.reply.get_future();
+  pending_tree_queries_.wlock()->push_back(std::move(q));
+  return fut;
+}
+
+std::future<std::vector<uint8_t>> sdl3_renderer::capture_screenshot() {
+  std::promise<std::vector<uint8_t>> promise;
+  auto fut = promise.get_future();
+  pending_screenshots_.wlock()->push_back(std::move(promise));
+  return fut;
+}
+
+std::vector<uint8_t> sdl3_renderer::capture_frame_png() {
+  SDL_Surface* surf = SDL_RenderReadPixels(sdl_renderer_, nullptr);
+  if (!surf)
+    return {};
+
+  // Normalize to a predictable, tightly-packed RGBA8888 layout regardless of
+  // whatever pixel format SDL_RenderReadPixels happened to return, so
+  // stbi_write_png_to_func can be called with a fixed comp/stride.
+  SDL_Surface* converted = SDL_ConvertSurface(surf, SDL_PIXELFORMAT_RGBA32);
+  SDL_DestroySurface(surf);
+  if (!converted)
+    return {};
+
+  std::vector<uint8_t> png_bytes;
+  auto write_cb = [](void* ctx, void* data, int size) {
+    auto* out = static_cast<std::vector<uint8_t>*>(ctx);
+    const auto* bytes = static_cast<uint8_t*>(data);
+    out->insert(out->end(), bytes, bytes + size);
+  };
+  stbi_write_png_to_func(write_cb, &png_bytes, converted->w, converted->h, 4, converted->pixels, converted->pitch);
+  SDL_DestroySurface(converted);
+  return png_bytes;
+}
+
+void sdl3_renderer::inject_mouse_move(float x, float y) {
+  SDL_Event event{};
+  event.type = SDL_EVENT_MOUSE_MOTION;
+  event.motion.windowID = window_ ? SDL_GetWindowID(window_) : 0;
+  event.motion.x = x;
+  event.motion.y = y;
+  SDL_PushEvent(&event);
+}
+
+void sdl3_renderer::inject_mouse_button(int button, bool down) {
+  SDL_Event event{};
+  event.type = down ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
+  event.button.windowID = window_ ? SDL_GetWindowID(window_) : 0;
+  // 0 = left, 1 = right, 2 = middle -- mirrors SDL_BUTTON_LEFT/RIGHT/MIDDLE's
+  // own numbering (see automation::automation_backend::inject_mouse_button's
+  // doc comment).
+  event.button.button = static_cast<Uint8>(
+      button == 0 ? SDL_BUTTON_LEFT : (button == 1 ? SDL_BUTTON_RIGHT : SDL_BUTTON_MIDDLE));
+  event.button.down = down;
+  event.button.clicks = 1;
+  SDL_PushEvent(&event);
+}
+
+void sdl3_renderer::inject_key(int keycode, bool down) {
+  SDL_Event event{};
+  event.type = down ? SDL_EVENT_KEY_DOWN : SDL_EVENT_KEY_UP;
+  event.key.windowID = window_ ? SDL_GetWindowID(window_) : 0;
+  event.key.key = static_cast<SDL_Keycode>(keycode);
+  event.key.down = down;
+  SDL_PushEvent(&event);
+}
+
+void sdl3_renderer::inject_text(const std::string& utf8) {
+  pending_text_inputs_.wlock()->push_back(utf8);
+}
+
+#endif // WISH_AUTOMATION_ENABLED
 
 } // namespace bdg::wish
 

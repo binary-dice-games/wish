@@ -13,18 +13,21 @@ option(WISH_BUILD_TESTS      "Build the wish tests"                            O
 option(WISH_ENABLE_IMGUI     "Build the imgui renderer"                       ON)
 option(WISH_ENABLE_SDL3      "Build the SDL3 renderer and calculator example" ON)
 option(WISH_ENABLE_WEB       "Build the web renderer (browser + WebSocket backend)" ON)
-option(WISH_ENABLE_AUTOMATION "Build the automation query API on top of the web renderer \
-     (headless UI automation for AI agents / e2e tests via Playwright)" OFF)
+option(WISH_ENABLE_AUTOMATION "Build the automation query API (headless UI automation for \
+     AI agents / e2e tests): browser-driven via Playwright when WISH_ENABLE_WEB is on, and/or \
+     native ABI-driven automation (no browser) when WISH_ENABLE_SDL3 is on -- requires at \
+     least one of the two" OFF)
 option(WISH_BUILD_SHARED     "Build wish_client shared library with C ABI"   ON)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
-# Automation has no renderer to extend without the web renderer's
-# browser/WebSocket surface -- mirrors src/automation/DESIGN.md's stated
-# configure-time requirement.
-if(WISH_ENABLE_AUTOMATION AND NOT WISH_ENABLE_WEB)
-  message(FATAL_ERROR "WISH_ENABLE_AUTOMATION requires WISH_ENABLE_WEB=ON")
+# Automation has no renderer to extend without at least one of the two
+# backends that implement it: the web renderer's browser/WebSocket surface
+# (src/web/), or the SDL3 renderer's native ABI-driven surface
+# (src/automation/DESIGN.md's "Native (ABI-based) automation" section).
+if(WISH_ENABLE_AUTOMATION AND NOT (WISH_ENABLE_WEB OR WISH_ENABLE_SDL3))
+  message(FATAL_ERROR "WISH_ENABLE_AUTOMATION requires WISH_ENABLE_WEB=ON and/or WISH_ENABLE_SDL3=ON")
 endif()
 
 # Disable bison's own test suite in this build; wish manages its own tests
@@ -183,11 +186,14 @@ add_subdirectory(extern/curl)
 # rejects ALIAS targets, so target the real one directly.
 set_target_properties(libcurl_static PROPERTIES FOLDER extern)
 
-if(WISH_ENABLE_IMGUI AND WISH_ENABLE_WEB)
-  # Single-header PNG/JPEG decoder for web_renderer::get_or_load_texture --
-  # WISH_ENABLE_SDL3 (and its transitive SDL3_image dependency) is not
-  # guaranteed to be on in a web-only build, so this backend needs its own
-  # decoder.
+if(WISH_ENABLE_IMGUI AND (WISH_ENABLE_WEB OR (WISH_ENABLE_SDL3 AND WISH_ENABLE_AUTOMATION)))
+  # Single-header PNG/JPEG codec, vendored via extern/stb: stb_image.h (read
+  # side) backs web_renderer::get_or_load_texture -- WISH_ENABLE_SDL3 (and
+  # its transitive SDL3_image dependency) is not guaranteed to be on in a
+  # web-only build, so this backend needs its own decoder. stb_image_write.h
+  # (write side) backs sdl3_renderer's automation screenshot capture
+  # (capture_frame_png(), see src/automation/DESIGN.md) when automation is
+  # enabled alongside SDL3.
   wish_ensure_submodules(extern/stb)
   add_library(stb_image INTERFACE)
   target_include_directories(stb_image INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/extern/stb)
@@ -337,6 +343,11 @@ if(WISH_ENABLE_IMGUI AND WISH_ENABLE_SDL3)
   )
   target_compile_definitions(wish_server PUBLIC WISH_SDL3_ENABLED)
   target_link_libraries(wish_server PUBLIC SDL3::SDL3 SDL3_image::SDL3_image)
+  if(WISH_ENABLE_AUTOMATION)
+    # stb_image_write.h (screenshot PNG encoding, capture_frame_png()) is
+    # isolated behind sdl3_renderer.cpp; public headers never include it.
+    target_link_libraries(wish_server PRIVATE stb_image)
+  endif()
 endif()
 
 if(WISH_ENABLE_IMGUI AND WISH_ENABLE_WEB)
@@ -354,10 +365,22 @@ if(WISH_ENABLE_IMGUI AND WISH_ENABLE_WEB)
   target_link_libraries(wish_server PRIVATE stb_image)
 endif()
 
-if(WISH_ENABLE_IMGUI AND WISH_ENABLE_WEB AND WISH_ENABLE_AUTOMATION)
+if(WISH_ENABLE_IMGUI AND WISH_ENABLE_AUTOMATION)
+  # Renderer-agnostic automation infrastructure, shared by both backends that
+  # implement it: automation_query.* (tree/hit-test snapshot + log-event JSON
+  # builders, used by both web_renderer and sdl3_renderer) and
+  # automation_backend/automation_service (the RMI service + interface that
+  # let a wish::client drive automation natively over the C ABI -- see
+  # src/automation/DESIGN.md's "Native (ABI-based) automation" section, used
+  # only by sdl3_renderer today but not SDL3-specific itself). Each backend's
+  # own integration glue stays in its own WISH_ENABLE_WEB/WISH_ENABLE_SDL3
+  # block below/above.
   target_sources(wish_server PRIVATE
+    src/automation/automation_backend.hpp
     src/automation/automation_query.hpp
     src/automation/automation_query.cpp
+    src/automation/automation_service.hpp
+    src/automation/automation_service.cpp
   )
   target_compile_definitions(wish_server PUBLIC WISH_AUTOMATION_ENABLED)
   # nlohmann/json is already vendored via bison; only automation_query.cpp

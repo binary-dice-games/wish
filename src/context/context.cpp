@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <iomanip>
+#include <stdexcept>
 #include <system_error>
 #include <vector>
 
@@ -15,6 +16,10 @@
 #include <context/logger.hpp>
 #include <resource_store.hpp>
 #include <context/style_service.hpp>
+
+#ifdef WISH_AUTOMATION_ENABLED
+#include <automation/automation_service.hpp>
+#endif
 
 #include <ui/forms/form.hpp>
 
@@ -33,6 +38,22 @@ bison::dynamic_ptr find_singleton_service(const context& s, bison::key_t klass) 
     return dynamic_ptr{std::static_pointer_cast<dynamic>(s.style_service)};
   if (klass == "__WishLogger"_key && s.logger_service)
     return dynamic_ptr{std::static_pointer_cast<dynamic>(s.logger_service)};
+#ifdef WISH_AUTOMATION_ENABLED
+  if (klass == "__WishAutomation"_key) {
+    // Unlike the singletons above, this one is conditionally present: only
+    // set when the active renderer implements automation::automation_backend
+    // (see context::automation_service's doc comment). Throwing here (rather
+    // than falling through to the "not a singleton class" sentinel below,
+    // which would let bison's default on_create_object construct a useless
+    // object from register_automation_service()'s method-less prototype)
+    // turns "this server doesn't support automation" into a clear exception
+    // at instantiate() time -- wish::client::on_connect() catches it
+    // non-fatally and leaves automation_proxy_ unset.
+    if (s.automation_service)
+      return dynamic_ptr{std::static_pointer_cast<dynamic>(s.automation_service)};
+    throw std::runtime_error("wish: this server's active renderer does not support automation");
+  }
+#endif
   // NOTE: dynamic_ptr{} is NOT a null pointer -- dynamic_ptr's
   // (key_t klass = 0U, ...) constructor shadows shared_ptr's null default,
   // so it would build a real (but methodless) object here instead.  Use the

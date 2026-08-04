@@ -35,6 +35,11 @@ using style_service_ptr = std::shared_ptr<style_service>;
 class logger;
 using logger_ptr = std::shared_ptr<logger>;
 
+#ifdef WISH_AUTOMATION_ENABLED
+class automation_service;
+using automation_service_ptr = std::shared_ptr<automation_service>;
+#endif
+
 /// @brief Number of consecutive render passes `context::dirty` requests by
 /// default whenever something marks a session dirty.
 ///
@@ -155,6 +160,16 @@ struct context : public bison::rmi::context {
 
   /// Logger service instance; forwards client log calls to stdout / log file.
   logger_ptr logger_service;
+
+#ifdef WISH_AUTOMATION_ENABLED
+  /// Automation service instance; only set (by `server::on_session_created`/
+  /// `standalone::on_session_created`) when the active renderer implements
+  /// `automation::automation_backend` -- see `src/automation/DESIGN.md`'s
+  /// "Native (ABI-based) automation" section. Null for renderers (e.g. the
+  /// web renderer, which uses its own separate browser-based mechanism)
+  /// that don't support it.
+  automation_service_ptr automation_service;
+#endif
 
   /// Map of key → root `ui_element_ptr` for every top-level window that the
   /// server must render each frame.  Both template instantiations and form

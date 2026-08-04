@@ -32,6 +32,7 @@
 #include "src/rmi/rmi_c.cpp"
 
 #include <condition_variable>
+#include <cstdint>
 #include <cstring>
 #include <fstream>
 #include <memory>
@@ -39,6 +40,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 // Convenience aliases — mirror the naming convention used by calculator.
 using namespace bdg::bison;
@@ -637,4 +639,115 @@ extern "C" wish_error wish_log_warn(wish_client_handle c, const char* msg) {
 }
 extern "C" wish_error wish_log_error(wish_client_handle c, const char* msg) {
   return wish_log(c, "error", msg);
+}
+
+// ── Automation ────────────────────────────────────────────────────────────────
+
+extern "C" wish_error wish_automation_get_tree(wish_client_handle c, const char* root, char** out_json) {
+  if (!c || !out_json)
+    return WISH_ERR_NULL;
+  if (!c->client_->automation_supported())
+    return WISH_ERR_NOT_FOUND;
+  try {
+    std::string json_str = c->client_->get_automation_tree(root ? std::string{root} : std::string{}).get();
+    char* buf = new char[json_str.size() + 1];
+    std::memcpy(buf, json_str.c_str(), json_str.size() + 1);
+    *out_json = buf;
+    return WISH_OK;
+  } catch (const std::exception& e) {
+    c->last_error_ = e.what();
+    return WISH_ERR_EXCEPTION;
+  }
+}
+
+extern "C" wish_error wish_automation_get_logs(wish_client_handle c, char** out_json) {
+  if (!c || !out_json)
+    return WISH_ERR_NULL;
+  if (!c->client_->automation_supported())
+    return WISH_ERR_NOT_FOUND;
+  try {
+    std::string json_str = c->client_->get_automation_logs().get();
+    char* buf = new char[json_str.size() + 1];
+    std::memcpy(buf, json_str.c_str(), json_str.size() + 1);
+    *out_json = buf;
+    return WISH_OK;
+  } catch (const std::exception& e) {
+    c->last_error_ = e.what();
+    return WISH_ERR_EXCEPTION;
+  }
+}
+
+extern "C" wish_error wish_automation_screenshot(wish_client_handle c, char** out_png_data, size_t* out_len) {
+  if (!c || !out_png_data || !out_len)
+    return WISH_ERR_NULL;
+  if (!c->client_->automation_supported())
+    return WISH_ERR_NOT_FOUND;
+  try {
+    std::vector<uint8_t> png = c->client_->take_screenshot().get();
+    char* buf = new char[png.size()];
+    if (!png.empty())
+      std::memcpy(buf, png.data(), png.size());
+    *out_png_data = buf;
+    *out_len = png.size();
+    return WISH_OK;
+  } catch (const std::exception& e) {
+    c->last_error_ = e.what();
+    return WISH_ERR_EXCEPTION;
+  }
+}
+
+extern "C" wish_error wish_automation_mouse_move(wish_client_handle c, float x, float y) {
+  if (!c)
+    return WISH_ERR_NULL;
+  if (!c->client_->automation_supported())
+    return WISH_ERR_NOT_FOUND;
+  try {
+    c->client_->inject_mouse_move(x, y).get();
+    return WISH_OK;
+  } catch (const std::exception& e) {
+    c->last_error_ = e.what();
+    return WISH_ERR_EXCEPTION;
+  }
+}
+
+extern "C" wish_error wish_automation_mouse_button(wish_client_handle c, int button, int down) {
+  if (!c)
+    return WISH_ERR_NULL;
+  if (!c->client_->automation_supported())
+    return WISH_ERR_NOT_FOUND;
+  try {
+    c->client_->inject_mouse_button(button, down != 0).get();
+    return WISH_OK;
+  } catch (const std::exception& e) {
+    c->last_error_ = e.what();
+    return WISH_ERR_EXCEPTION;
+  }
+}
+
+extern "C" wish_error wish_automation_key_event(wish_client_handle c, int keycode, int down) {
+  if (!c)
+    return WISH_ERR_NULL;
+  if (!c->client_->automation_supported())
+    return WISH_ERR_NOT_FOUND;
+  try {
+    c->client_->inject_key(keycode, down != 0).get();
+    return WISH_OK;
+  } catch (const std::exception& e) {
+    c->last_error_ = e.what();
+    return WISH_ERR_EXCEPTION;
+  }
+}
+
+extern "C" wish_error wish_automation_text_input(wish_client_handle c, const char* utf8_text) {
+  if (!c || !utf8_text)
+    return WISH_ERR_NULL;
+  if (!c->client_->automation_supported())
+    return WISH_ERR_NOT_FOUND;
+  try {
+    c->client_->inject_text(std::string{utf8_text}).get();
+    return WISH_OK;
+  } catch (const std::exception& e) {
+    c->last_error_ = e.what();
+    return WISH_ERR_EXCEPTION;
+  }
 }

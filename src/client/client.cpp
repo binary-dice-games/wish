@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <future>
 #include <sstream>
+#include <stdexcept>
 #include <vector>
 
 namespace bdg::wish {
@@ -34,6 +35,17 @@ void client::on_connect() {
   fs_proxy_ = instantiate("wish"_key, "__WishFileSystem"_key).get();
   style_proxy_ = instantiate("wish"_key, "__WishStyle"_key).get();
   log_proxy_ = instantiate("wish"_key, "__WishLogger"_key).get();
+  // Non-fatal: unlike the protocol handlers above (always present), a
+  // server's active renderer may not implement automation at all (e.g. the
+  // web renderer, which has its own separate browser-based mechanism) --
+  // find_singleton_service() throws for "__WishAutomation" in that case
+  // (see src/context/context.cpp), which must not break the rest of the
+  // connection. automation_proxy_ simply stays unset.
+  try {
+    automation_proxy_ = instantiate("wish"_key, "__WishAutomation"_key).get();
+  } catch (...) {
+    automation_proxy_.reset();
+  }
 }
 
 void client::on_disconnect() {
@@ -41,6 +53,7 @@ void client::on_disconnect() {
   fs_proxy_.reset();
   style_proxy_.reset();
   log_proxy_.reset();
+  automation_proxy_.reset();
 }
 
 // ── Helper: build proxy_map from an indexed apply_descriptor result ───────────
@@ -304,6 +317,91 @@ std::future<void> client::log_warn(const std::string& msg) {
 }
 std::future<void> client::log_error(const std::string& msg) {
   return log("error", msg);
+}
+
+// ── Automation helpers ──────────────────────────────────────────────────────
+
+namespace {
+// Shared guard for every automation helper below -- thrown inside the
+// std::async lambda (not before it), so it surfaces through the returned
+// future's .get() like any other RMI failure, rather than throwing
+// synchronously from the helper call itself.
+void require_automation(const std::optional<bison::rmi::proxy::dynamic>& proxy) {
+  if (!proxy)
+    throw std::logic_error(
+        "wish::client: this server's active renderer does not support automation "
+        "(see wish::client::automation_supported())");
+}
+} // namespace
+
+std::future<std::string> client::get_automation_tree(const std::string& root) {
+  return std::async(std::launch::async, [this, root]() -> std::string {
+    require_automation(automation_proxy_);
+    dynamic args;
+    if (!root.empty())
+      args["root"_key] = root;
+    auto result = automation_proxy_->call("get_tree"_key, std::move(args)).get();
+    return result.as<std::string>("json"_key);
+  });
+}
+
+std::future<std::string> client::get_automation_logs() {
+  return std::async(std::launch::async, [this]() -> std::string {
+    require_automation(automation_proxy_);
+    auto result = automation_proxy_->call("get_logs"_key, dynamic{}).get();
+    return result.as<std::string>("json"_key);
+  });
+}
+
+std::future<std::vector<uint8_t>> client::take_screenshot() {
+  return std::async(std::launch::async, [this]() -> std::vector<uint8_t> {
+    require_automation(automation_proxy_);
+    auto result = automation_proxy_->call("screenshot"_key, dynamic{}).get();
+    auto data = result.as<std::string>("data"_key);
+    return std::vector<uint8_t>(data.begin(), data.end());
+  });
+}
+
+std::future<void> client::inject_mouse_move(float x, float y) {
+  return std::async(std::launch::async, [this, x, y]() {
+    require_automation(automation_proxy_);
+    dynamic args;
+    args["x"_key] = x;
+    args["y"_key] = y;
+    // oneway=true: same reasoning as set_style_preset -- lets the call be
+    // made safely from within event callbacks on the render thread, which
+    // would otherwise deadlock waiting for its own response.
+    automation_proxy_->call("mouse_move"_key, std::move(args), true).get();
+  });
+}
+
+std::future<void> client::inject_mouse_button(int button, bool down) {
+  return std::async(std::launch::async, [this, button, down]() {
+    require_automation(automation_proxy_);
+    dynamic args;
+    args["button"_key] = static_cast<int32_t>(button);
+    args["down"_key] = down;
+    automation_proxy_->call("mouse_button"_key, std::move(args), true).get();
+  });
+}
+
+std::future<void> client::inject_key(int keycode, bool down) {
+  return std::async(std::launch::async, [this, keycode, down]() {
+    require_automation(automation_proxy_);
+    dynamic args;
+    args["keycode"_key] = static_cast<int32_t>(keycode);
+    args["down"_key] = down;
+    automation_proxy_->call("key_event"_key, std::move(args), true).get();
+  });
+}
+
+std::future<void> client::inject_text(const std::string& utf8) {
+  return std::async(std::launch::async, [this, utf8]() {
+    require_automation(automation_proxy_);
+    dynamic args;
+    args["utf8"_key] = utf8;
+    automation_proxy_->call("text_input"_key, std::move(args), true).get();
+  });
 }
 
 } // namespace bdg::wish

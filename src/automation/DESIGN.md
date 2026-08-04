@@ -7,6 +7,12 @@ adjust) what's written below, and why. For agent-facing usage (how to use
 this to debug or test a wish app), see `CLAUDE.md`'s "Automation: debugging
 and testing a wish UI" section.
 
+This document primarily covers the original, **browser-driven** automation
+path (Playwright against the web renderer). A second, independent
+implementation of the same feature set was added later for the **SDL3
+renderer**, built directly into the wish C ABI instead of a browser — see
+"Native (ABI-based) automation for the SDL3 renderer" below.
+
 ## Purpose
 
 wish has no way for an external tool — an AI agent, or an automated e2e
@@ -65,7 +71,12 @@ existing page with Playwright:
 This scope keeps the new C++ surface small: no new renderer class, no new
 socket/port, no new third-party dependency in the server, and — unlike an
 earlier draft of this design that proposed a bespoke libuv-based
-control-plane socket — **no change to `extern/bison` at all**.
+control-plane socket — **no change to `extern/bison` at all**. (This
+reasoning is specific to the web renderer's browser-driven path described
+in this section; the SDL3 renderer has no browser to extend, so its own
+automation support — added later, see "Native (ABI-based) automation" below
+— takes a different approach: new RMI methods on the existing connection,
+rather than a browser.)
 
 An earlier draft of this design also considered rendering screenshots via
 a new offscreen SDL3 render target (`SDL_RenderReadPixels`) or a
@@ -86,20 +97,24 @@ renderers. See "Design Trade-offs" at the end of this document.
 renderer            (abstract, src/server/renderer.hpp)
   └─ imgui_renderer (headless ImGui dispatch, src/imgui/imgui_renderer.cpp)
        ├─ sdl3_renderer   (existing windowed backend)
+       │      [+ WISH_AUTOMATION_ENABLED: render_node override + hit_test_map_ +
+       │       implements automation::automation_backend -- see "Native
+       │       (ABI-based) automation" below]
        └─ web_renderer    (existing headless + civetweb HTTP/WebSocket backend)
               [+ WISH_AUTOMATION_ENABLED: render_node override + hit_test_map_]
 ```
 
 No new renderer class is introduced. `WISH_ENABLE_AUTOMATION` adds a small,
 narrowly-scoped `#ifdef WISH_AUTOMATION_ENABLED` block directly to
-`web_renderer` — consistent with this repo's stated preference for a
-narrow in-file guard over a parallel class/file split when the delta is
-small (`CLAUDE.md`, Platform Support section, states this principle for
-platform differences; the same reasoning applies to a small optional-
-capability delta).
+`web_renderer` (and, for the native path, `sdl3_renderer`) — consistent
+with this repo's stated preference for a narrow in-file guard over a
+parallel class/file split when the delta is small (`CLAUDE.md`, Platform
+Support section, states this principle for platform differences; the same
+reasoning applies to a small optional-capability delta).
 
-`WISH_ENABLE_AUTOMATION` **requires** `WISH_ENABLE_WEB=ON` — automation has
-no meaning without the web renderer's browser/WebSocket surface to extend.
+`WISH_ENABLE_AUTOMATION` **requires** `WISH_ENABLE_WEB=ON` and/or
+`WISH_ENABLE_SDL3=ON` — automation has no renderer to extend without at
+least one of the two backends that implement it.
 
 ### The two-socket-plus-browser model
 
@@ -140,6 +155,10 @@ src/automation/automation_query.hpp/.cpp   tree/hit-test snapshot struct,
                                             mirrors how draw_protocol.hpp
                                             is a pure, network-independent
                                             codec split out of web_renderer)
+src/automation/automation_backend.hpp      renderer-side automation interface for the
+                                            native (ABI-based) path -- see below
+src/automation/automation_service.hpp/.cpp per-session RMI service ("__WishAutomation")
+                                            forwarding to automation_backend -- native path
 src/automation/DESIGN.md                   this document
 
 # Existing files with small, #ifdef-guarded additions:
@@ -147,18 +166,35 @@ src/web/web_renderer.hpp/.cpp              render_node override + hit_test_map_ 
                                             last_broadcast_log_seq_ watermark
 src/web/draw_protocol.hpp/.cpp             QUERY_TREE / TREE_SNAPSHOT / LOG_EVENT
                                             message types
+src/sdl/sdl3_renderer.hpp/.cpp             render_node override + hit_test_map_ +
+                                            implements automation_backend -- native path
 src/context/logger.hpp/.cpp                log_entry struct + bounded recent_logs()
                                             ring buffer, appended to by log()
+src/context/context.hpp/.cpp               automation_service member; find_singleton_service()
+                                            throws for "__WishAutomation" when unset
+src/client/client.hpp/.cpp                 automation_proxy_ + get_automation_tree()/
+                                            take_screenshot()/inject_*() -- native path
+include/wish_client_c.h, src/wish_client_c.cpp  wish_automation_* C ABI functions -- native path
 resources/embedded/web/client.js           window.wish JS shim (tree queries +
                                             window.wish.logs)
 src/server/renderer.hpp                    service_automation_queries() virtual hook (no-op
-                                            default; only web_renderer overrides it)
-src/server/server.cpp                      render_loop() calls the hook per session
-src/standalone/standalone.cpp              same call, standalone's own render_loop()
+                                            default; web_renderer overrides it) +
+                                            as_automation_backend() hook (native path)
+src/server/registry.cpp                    register_automation_service() -- native path
+src/server/server.cpp                      render_loop() calls the hook per session;
+                                            on_session_created() attaches automation_service
+src/standalone/standalone.cpp              same calls, standalone's own render_loop()
 
-# New, gated test:
+# New, gated tests:
 tests/test_automation_query.cpp            mirrors test_web_renderer.cpp's
                                             real-socket, no-browser-required style
+tests/test_automation_service.cpp          automation_service's RMI plumbing against a
+                                            fake automation_backend -- native path,
+                                            renderer-agnostic
+tests/test_sdl3_automation.cpp             sdl3_renderer's automation_backend
+                                            implementation -- native path
+bindings/python/tests/test_native_automation.py  e2e smoke test against a real
+                                            `wish server --renderer sdl3` -- native path
 ```
 
 ---
@@ -567,6 +603,142 @@ back to Playwright. That is judged acceptable here because:
 
 ---
 
+## Native (ABI-based) automation for the SDL3 renderer
+
+Everything above this section is the **browser-driven** path: it only ever
+reaches the web renderer, since Playwright needs a page to drive. The SDL3
+renderer (`src/sdl/sdl3_renderer.hpp/.cpp`) opens a real native window —
+there is no browser tab, no WebSocket, no `client.js` to extend — so an
+agent debugging or e2e-testing an SDL3 wish app had no automation surface
+at all. This section describes the second, independent implementation of
+the same feature set (tree/hit-test queries, screenshots, input injection,
+log access) built for that renderer, added directly to the wish **C ABI**
+(`include/wish_client_c.h` / `wish_client_dll`) instead of a browser.
+
+### Why the ABI instead of another WebSocket protocol
+
+The browser path's wire protocol (`QUERY_TREE`/`TREE_SNAPSHOT`/`LOG_EVENT`
+on `web_renderer`'s civetweb HTTP/WebSocket port) is inherently tied to
+having a browser-served page and a second socket a browser tab connects
+to — neither exists for a windowed SDL3 app. Rather than inventing a
+parallel WebSocket-like control channel for a native renderer, native
+automation rides the **same RMI connection** a script already uses to
+build/control the session's UI: it is implemented as ordinary RMI methods
+on a new per-session service object, `automation_service`
+(`"__WishAutomation"`), exposed through new `wish_automation_*` functions
+in `wish_client_c.h`. This has a real ergonomic upside over the browser
+model: a Python script driving an SDL3 app needs only **one**
+`wish.Client` connection for both building the UI and automating it —
+unlike the browser path's two-client pattern (an RMI client to build the
+UI, a separate Playwright-driven browser to observe/drive it), which exists
+only because a browser tab has no RMI access of its own.
+
+### Architecture
+
+```
+Python script (wish.Client, ctypes)
+   │  get_tree() / click() / screenshot() / ...
+   ▼
+wish_client_c.cpp ("── Automation ──" section)
+   │  wish::client::get_automation_tree() / take_screenshot() / inject_*()
+   ▼
+automation_proxy_ (RMI proxy, resolved like style_proxy_/fs_proxy_)
+   │  over the existing RMI connection
+   ▼
+automation_service ("__WishAutomation", per-session RMI object)
+   │
+   ├─ inject_mouse_move/button/key(): forwards directly to the backend --
+   │  synchronous, no queueing (SDL_PushEvent() is thread-safe)
+   │
+   └─ get_tree() / get_logs() / screenshot(): forwards to the backend and
+      blocks the calling RMI dispatch thread on a std::future until the
+      render thread services the request
+   ▼
+automation::automation_backend (src/automation/automation_backend.hpp)
+   implemented by sdl3_renderer
+```
+
+`automation::automation_backend` is a small interface
+(`query_tree`/`capture_screenshot`/`inject_mouse_move`/`inject_mouse_button`/
+`inject_key`/`inject_text`) that a renderer implements to plug into
+`automation_service`. `renderer::as_automation_backend()`
+(`src/server/renderer.hpp`) is a new virtual hook, analogous to
+`service_automation_queries()`, that returns non-null only for a renderer
+that implements it; `server::on_session_created`/
+`standalone::on_session_created` check it and attach an `automation_service`
+only when it does. `sdl3_renderer` is the only implementer today, but the
+interface itself has no SDL3 dependency — a future renderer could implement
+it too.
+
+### Reused vs. new code
+
+The tree/hit-test snapshot and log-event JSON builders
+(`automation::build_tree_snapshot`/`build_log_event` in
+`src/automation/automation_query.hpp/.cpp`) are pure logic with no web
+dependency, so `sdl3_renderer` reuses them **unchanged** — it just supplies
+its own `wish::ui_tree`/`hit_test_map` inputs instead of `web_renderer`'s.
+Likewise, hit-test rect resolution (`last_resolved_rect_min_/max_`) already
+lives in the shared `imgui_renderer` base class (populated once per
+`render_node()` call, before either subclass's own dispatch), so
+`sdl3_renderer::render_node()`'s override is a near-verbatim copy of
+`web_renderer::render_node()`'s — read the base-resolved rect plus
+`ImGui::IsItemHovered/Active/Visible()`, no new resolution logic.
+
+Genuinely new, SDL3-specific code (`src/sdl/sdl3_renderer.hpp/.cpp`, all
+`#ifdef WISH_AUTOMATION_ENABLED`):
+
+- **Screenshot capture**: `capture_frame_png()` calls
+  `SDL_RenderReadPixels()` on the current frame (right after draw data is
+  submitted to `sdl_renderer_` in `end_frame()`, but before
+  `SDL_RenderPresent()` — the last point the pixels are guaranteed
+  readable), normalizes the surface to RGBA8888 via `SDL_ConvertSurface()`,
+  and PNG-encodes it with the vendored `stb_image_write.h` (`extern/stb`,
+  already used for the read side by `web_renderer`'s texture loader).
+  `capture_screenshot()` (the `automation_backend` method) just queues a
+  `std::promise<std::vector<uint8_t>>`, fulfilled by `end_frame()` the next
+  time it runs.
+- **Tree/hit-test queries**: `render_node()` populates `hit_test_map_`
+  exactly like `web_renderer` does; `query_tree()` queues a
+  `std::promise<std::string>`, fulfilled by a new
+  `service_automation_queries(const context&)` override (the same hook
+  `web_renderer` already implements) using the reused
+  `build_tree_snapshot()`.
+- **Input injection**: `inject_mouse_move/button/key()` build a plain
+  `SDL_Event` and call `SDL_PushEvent()` directly from the calling (RMI
+  dispatch) thread — SDL's event queue is documented thread-safe, so this
+  needs no cross-thread hand-off; the render thread's normal
+  `poll_events()`/`SDL_PollEvent()`/`ImGui_ImplSDL3_ProcessEvent()` path
+  picks it up next frame, indistinguishable from real hardware input.
+  `inject_text()` is the one exception: `SDL_TextInputEvent::text` is a
+  `const char*` whose lifetime a synthetically-pushed `SDL_Event` can't
+  safely own, so injected text instead queues a plain `std::string`,
+  drained at the top of `begin_frame()` (before `ImGui::NewFrame()`) via
+  `ImGuiIO::AddInputCharactersUTF8()` directly — bypassing SDL's event
+  queue for this one case only.
+
+### Python surface
+
+Unlike the browser path's dedicated `wish.automation.AutomationClient`
+(which manages its own Playwright browser/subprocess lifecycle), native
+automation is exposed as ordinary methods directly on `wish.Client`
+(`bindings/python/wish/client.py`) — `get_tree`/`get_widgets`/`get_widget`/
+`click`/`type_text`/`drag`/`screenshot`/`get_logs`/`wait_for`, matching
+`AutomationClient`'s method names/semantics so a script can switch renderers
+with minimal changes. `click`/`type_text`/`drag` compute widget centers
+client-side from a parsed `get_tree()` snapshot and compose the low-level
+`mouse_move`/`mouse_button`/`text_input` calls, mirroring
+`AutomationClient`'s own `_widget_center()` + Playwright-composition logic.
+`wait_for()` takes a plain Python callable (there is no JS engine to
+delegate a string predicate to, unlike `page.wait_for_function()`).
+
+### Not available: `MenuBar`'s rect gap
+
+The one known hit-test gap noted in "Hit-test capture mechanism" below
+(`MenuBar`'s rect can reflect stale layout state) applies equally here,
+since it originates in the shared `imgui_renderer` base, not `web_renderer`.
+
+---
+
 ## Security note
 
 `--web_bind` already defaults to `127.0.0.1` (loopback-only) for the web
@@ -578,6 +750,15 @@ session. It must never be exposed on `--web_bind 0.0.0.0` in a shared or
 untrusted network without additional authentication, which does not exist
 in bison or wish today (see `src/auth/DESIGN.md` for the closest related,
 still-unimplemented, design).
+
+Native (ABI-based) automation carries the identical elevated-sensitivity
+caveat, just via a different transport: since it rides the same RMI
+connection every other `wish_client_c.h` call uses, anyone who can connect
+to a server's RMI transport (`--transport=tcp --port=N`) already gets full
+tree introspection and input injection the moment that server's active
+renderer implements `automation::automation_backend` — there is no separate
+opt-in flag for it. The same "no authentication exists in bison or wish
+today" caveat applies.
 
 ---
 

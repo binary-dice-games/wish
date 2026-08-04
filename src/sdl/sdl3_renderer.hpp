@@ -10,12 +10,24 @@
 
 #include <SDL3/SDL.h>
 
+#ifdef WISH_AUTOMATION_ENABLED
+#include <automation/automation_backend.hpp>
+#include <automation/automation_query.hpp>
+#include "src/bison/bison_sync.hpp"
+#endif
+
 #include <atomic>
 #include <chrono>
 #include <filesystem>
 #include <map>
 #include <set>
 #include <string>
+
+#ifdef WISH_AUTOMATION_ENABLED
+#include <deque>
+#include <future>
+#include <vector>
+#endif
 
 namespace bdg::wish {
 
@@ -36,7 +48,12 @@ namespace bdg::wish {
  * SDL3_image (out of scope).  Loaded textures are cached by filename and
  * freed in `teardown()`.
  */
-class sdl3_renderer : public imgui_renderer {
+class sdl3_renderer : public imgui_renderer
+#ifdef WISH_AUTOMATION_ENABLED
+    ,
+                       public automation::automation_backend
+#endif
+{
  public:
   /**
    * @brief Construct with window parameters.
@@ -143,6 +160,33 @@ class sdl3_renderer : public imgui_renderer {
    */
   void flush_draw_list(ImDrawList& draw_list, int w, int h) override;
 
+#ifdef WISH_AUTOMATION_ENABLED
+  // ── automation ────────────────────────────────────────────────────────────
+
+  /// @brief Draw @p node, then (in addition to the base dispatch) capture its
+  ///        resolved screen rect and interaction flags into `hit_test_map_`.
+  ///        Mirrors `web_renderer::render_node()` -- see
+  ///        `src/automation/DESIGN.md`'s "Native (ABI-based) automation".
+  void render_node(const ui_element& node, const context& s) override;
+
+  /// @brief Answer any tree/hit-test queries queued by `query_tree()` for @p s.
+  void service_automation_queries(const context& s) override;
+
+  /// @brief Returns `this` -- `sdl3_renderer` implements `automation::automation_backend`.
+  automation::automation_backend* as_automation_backend() override {
+    return this;
+  }
+
+  // ── automation::automation_backend ──────────────────────────────────────────
+
+  std::future<std::string> query_tree(uint32_t request_id, const std::string& root) override;
+  std::future<std::vector<uint8_t>> capture_screenshot() override;
+  void inject_mouse_move(float x, float y) override;
+  void inject_mouse_button(int button, bool down) override;
+  void inject_key(int keycode, bool down) override;
+  void inject_text(const std::string& utf8) override;
+#endif
+
  protected:
   /// @brief The underlying SDL_Renderer handle, for tests/subclasses that
   ///        need to issue direct SDL draw/readback calls (e.g. verifying
@@ -212,6 +256,53 @@ class sdl3_renderer : public imgui_renderer {
   /// Render target active immediately before the last begin_render_target()
   /// call, restored by end_render_target(). Null means "the window backbuffer".
   SDL_Texture* saved_render_target_ = nullptr;
+
+#ifdef WISH_AUTOMATION_ENABLED
+  // ── automation ────────────────────────────────────────────────────────────
+  //
+  // Mirrors web_renderer's own hit_test_map_/pending_tree_queries_ (see
+  // src/web/web_renderer.hpp), adapted for a promise/future hand-off instead
+  // of a WebSocket reply -- automation_service's RMI dispatch thread blocks
+  // on the future it gets back from query_tree()/capture_screenshot()
+  // instead of a browser polling a Promise.
+
+  /// Screen rect + interaction flags per widget, keyed by __wish_id, for the
+  /// frame currently being drawn. Render-thread only (written by
+  /// render_node(), read by service_automation_queries() -- both always
+  /// called from the render thread). Cleared at the top of begin_frame() so
+  /// a query always answers against a complete frame, never a
+  /// partially-rendered one.
+  automation::hit_test_map hit_test_map_;
+
+  struct pending_tree_query {
+    uint32_t request_id;
+    std::string root;
+    std::promise<std::string> reply;
+  };
+
+  /// query_tree() (called from an RMI dispatch thread) pushes here; drained
+  /// on the render thread by service_automation_queries().
+  bison::synchronized<std::deque<pending_tree_query>> pending_tree_queries_;
+
+  /// capture_screenshot() (called from an RMI dispatch thread) pushes here;
+  /// drained on the render thread by end_frame(), right after draw data is
+  /// submitted to sdl_renderer_ but before SDL_RenderPresent() -- the last
+  /// point at which SDL_RenderReadPixels() still sees this frame's pixels.
+  bison::synchronized<std::deque<std::promise<std::vector<uint8_t>>>> pending_screenshots_;
+
+  /// @brief Read back the currently-rendered frame from `sdl_renderer_` and
+  ///        PNG-encode it. Render-thread only; called from `end_frame()`.
+  std::vector<uint8_t> capture_frame_png();
+
+  /// inject_text() (called from an RMI dispatch thread) pushes here; drained
+  /// on the render thread at the top of begin_frame(), before ImGui::NewFrame(),
+  /// via ImGuiIO::AddInputCharactersUTF8() -- bypassing SDL's own event queue
+  /// entirely, since SDL_TextInputEvent::text is a `const char*` whose
+  /// lifetime a synthetically-pushed SDL_Event cannot safely own (unlike the
+  /// plain-POD mouse/key events, which SDL_PushEvent copies by value with no
+  /// such lifetime issue).
+  bison::synchronized<std::deque<std::string>> pending_text_inputs_;
+#endif
 };
 
 } // namespace bdg::wish

@@ -288,3 +288,16 @@ build step needed on the Python side, only `pip install playwright`. See
 [src/automation/DESIGN.md](../src/automation/DESIGN.md) for the protocol,
 and `CLAUDE.md`'s "Automation: debugging and testing a wish UI" section for
 the agent-facing workflow.
+
+### Native automation (`wish.Client`, for `--renderer sdl3`)
+
+The SDL3 renderer has no browser tab for Playwright to drive, so it exposes
+the same capability set — `get_tree`/`get_widgets`/`get_widget`/`click`/
+`type_text`/`drag`/`screenshot`/`get_logs`/`wait_for` — directly as methods
+on `wish.Client` (`bindings/python/wish/client.py`), riding the same
+`wish_client_dll`/`ctypes` connection already used to build the UI. No
+Playwright, no browser, no second client: one `Client.tcp(...)` connection
+does both. Raises `WishError(code=WISH_ERR_NOT_FOUND)` if the connected
+server's active renderer doesn't support it. See
+[src/automation/DESIGN.md](../src/automation/DESIGN.md)'s "Native
+(ABI-based) automation" section for the architecture.
