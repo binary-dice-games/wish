@@ -75,12 +75,14 @@ TEST(GitGraphLayout, BranchAndMergeDiamond) {
   EXPECT_TRUE(has_segment(rows[0].bottom, 0, 0));
   EXPECT_TRUE(has_segment(rows[0].bottom, 0, 1));
 
-  // F (row 1): lane 1; top mirrors M's diverging segment (0->1). Its own
-  // line to S stays straight (1->1) at this row -- the convergence into
-  // lane 0 only happens at the row S itself appears (row 2), the latest
-  // possible point, matching git log --graph's own rendering.
+  // F (row 1): lane 1; M's diverging segment (0->1) already performed its
+  // lane change within row 0's own curve, so it arrives here collapsed to a
+  // straight top pass-through (1->1) rather than a duplicated diagonal. Its
+  // own line to S also stays straight (1->1) at this row -- the convergence
+  // into lane 0 only happens at the row S itself appears (row 2), the
+  // latest possible point, matching git log --graph's own rendering.
   EXPECT_EQ(rows[1].lane, 1);
-  EXPECT_TRUE(has_segment(rows[1].top, 0, 1));
+  EXPECT_TRUE(has_segment(rows[1].top, 1, 1));
   EXPECT_TRUE(has_segment(rows[1].bottom, 1, 1));
 
   // S (row 2): back in lane 0; both M's straight-through (0->0, from row 0's

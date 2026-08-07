@@ -236,6 +236,27 @@ static constexpr const char* kDiffLayout = R"({
   }
 })";
 
+static constexpr const char* kLogLayout = R"({
+  "type": "Window", "title": "Log", "width": 900, "height": 260, "pos_x": 0, "pos_y": 720,
+  "children": {
+    "vbox": {
+      "type": "VerticalLayout",
+      "children": {
+        "log_table": {
+          "type": "Table", "id": "##git_log_table", "columns": 4,
+          "flags": 33556417, "headers": true, "outer_height": -1,
+          "children": {
+            "col_seq":     { "type": "TableColumn", "label": "#",       "flags": 16, "init_width": 40,  "column_id": 0 },
+            "col_command": { "type": "TableColumn", "label": "Command", "flags": 16, "init_width": 340, "column_id": 1 },
+            "col_exit":    { "type": "TableColumn", "label": "Exit",    "flags": 16, "init_width": 50,  "column_id": 2 },
+            "col_output":  { "type": "TableColumn", "label": "Output",  "flags": 8,                     "column_id": 3 }
+          }
+        }
+      }
+    }
+  }
+})";
+
 // Mirrors file_explorer.cpp's kConfirmLayout (its own "Confirm Overwrite"
 // modal) exactly -- btn_yes's label is overwritten per show_confirm() call.
 static constexpr const char* kConfirmLayout = R"({
@@ -266,10 +287,12 @@ void git_repo::on_init() {
   internal_root_key_ = next_available_key("__git_");
   files_root_key_ = internal_root_key_ + "_files";
   diff_root_key_ = internal_root_key_ + "_diff";
+  log_root_key_ = internal_root_key_ + "_log";
 
   build_main_window();
   build_files_window();
   build_diff_window();
+  build_log_window();
 
   emit("refresh_requested"_key);
 }
@@ -377,6 +400,25 @@ void git_repo::build_diff_window() {
   sess().top_level_objects[key_t{diff_root_key_}] = root_ptr;
   sess().top_level_handlers[key_t{diff_root_key_}] = this;
   (*root_ptr)["__path__"_key] = diff_root_key_;
+}
+
+void git_repo::build_log_window() {
+  auto tree = import_json(kLogLayout);
+  auto& c = ctx();
+  for (auto& [key, elem] : tree) {
+    key_t id = rmi::shared::generate_id();
+    c.put_object(id, elem);
+    elem["__wish_id"_key] = id;
+  }
+
+  log_window_id_ = (*tree[""])["__wish_id"_key].as<key_t>();
+  tree.with("vbox.log_table", [&](const auto& e) { log_table_ = e; });
+
+  ui_element_ptr root_ptr = tree[""];
+  sess().ui_objects.merge(std::move(tree), log_root_key_);
+  sess().top_level_objects[key_t{log_root_key_}] = root_ptr;
+  sess().top_level_handlers[key_t{log_root_key_}] = this;
+  (*root_ptr)["__path__"_key] = log_root_key_;
 }
 
 // ── Confirmation modal ───────────────────────────────────────────────────────
@@ -966,6 +1008,69 @@ dynamic git_repo::do_command_result(const dynamic& args) {
   return dynamic{};
 }
 
+// ── Log (git-command trace) ─────────────────────────────────────────────────
+
+void git_repo::append_log_row(const std::string& command, int32_t exit_code, bool ok, const std::string& output) {
+  if (!log_table_)
+    return;
+  auto* children_p = log_table_->findField<dynamic_ptr>("children"_key);
+  if (!children_p || !*children_p)
+    return;
+  auto& children = *children_p;
+
+  std::string color_hex = ok ? "#98C379FF" : "#E06C75FF";
+
+  ui_element_ptr row{dynamic::instantiate("wish"_key, "TableRow"_key)};
+  assign_id(row);
+
+  ui_element_ptr cell_seq{dynamic::instantiate("wish"_key, "Label"_key)};
+  cell_seq["text"_key] = std::to_string(++log_seq_);
+  assign_id(cell_seq);
+
+  ui_element_ptr cell_command{dynamic::instantiate("wish"_key, "Label"_key)};
+  cell_command["text"_key] = command;
+  cell_command["text_color"_key] = color_hex;
+  assign_id(cell_command);
+
+  ui_element_ptr cell_exit{dynamic::instantiate("wish"_key, "Label"_key)};
+  cell_exit["text"_key] = std::to_string(exit_code);
+  cell_exit["text_color"_key] = color_hex;
+  assign_id(cell_exit);
+
+  ui_element_ptr cell_output{dynamic::instantiate("wish"_key, "Label"_key)};
+  cell_output["text"_key] = output;
+  cell_output["text_color"_key] = color_hex;
+  assign_id(cell_output);
+
+  set_children_list(row, {cell_seq, cell_command, cell_exit, cell_output});
+
+  size_t child_key = next_log_child_key_++;
+  (*children)[child_key] = dynamic_ptr{row};
+  log_rows_.push_back(
+      {child_key, wish_id_of(row), wish_id_of(cell_seq), wish_id_of(cell_command), wish_id_of(cell_exit),
+       wish_id_of(cell_output)});
+
+  if (log_rows_.size() > kMaxLogRows) {
+    auto& oldest = log_rows_.front();
+    children->erase(oldest.child_key);
+    ctx().objects.erase(oldest.row_id.id);
+    ctx().objects.erase(oldest.cell_seq_id.id);
+    ctx().objects.erase(oldest.cell_command_id.id);
+    ctx().objects.erase(oldest.cell_exit_id.id);
+    ctx().objects.erase(oldest.cell_output_id.id);
+    log_rows_.pop_front();
+  }
+
+  log_table_->refresh_children_order();
+}
+
+dynamic git_repo::do_append_command_log(const dynamic& args) {
+  append_log_row(
+      args.as<std::string>("command"_key), args.as<int32_t>("exit_code"_key), args.as<bool>("ok"_key),
+      args.as<std::string>("output"_key));
+  return dynamic{};
+}
+
 // ── Event routing ─────────────────────────────────────────────────────────────
 
 void git_repo::on_event(key_t id, key_t event, const dynamic& payload) {
@@ -973,6 +1078,7 @@ void git_repo::on_event(key_t id, key_t event, const dynamic& payload) {
     emit("closed"_key);
     remove_objects_at(files_root_key_);
     remove_objects_at(diff_root_key_);
+    remove_objects_at(log_root_key_);
     remove_internal_objects();
     return;
   }
@@ -1057,6 +1163,10 @@ void register_git() {
   proto->addMethod(
       "command_result"_key, bison::method{[](dynamic& self, const dynamic& args) -> dynamic {
         return static_cast<git_repo&>(self).do_command_result(args);
+      }});
+  proto->addMethod(
+      "append_command_log"_key, bison::method{[](dynamic& self, const dynamic& args) -> dynamic {
+        return static_cast<git_repo&>(self).do_append_command_log(args);
       }});
 
   (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("GitRepo"));

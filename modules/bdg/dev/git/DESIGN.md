@@ -46,10 +46,10 @@ LFS, hunk-level staging, external diff/merge tools, search/filter.
 
 ### `git_repo` (server, `form`)
 
-Owns **three independently dockable `Window`s** (mirrors the `editor`
+Owns **four independently dockable `Window`s** (mirrors the `editor`
 module's chrome/Help/Event-log split — `form::init()` only auto-registers
-one top-level root, so the extra two are registered by hand in `on_init()`
-exactly as `editor.cpp` does for its Help/Event-log windows):
+one top-level root, so the extra three are registered by hand in
+`on_init()` exactly as `editor.cpp` does for its Help/Event-log windows):
 
 - **Main** (`internal_root_key_`): toolbar (Commit/Push/Pull/Fetch/Branch/
   Merge/Stash/Refresh), a status label, the sidebar (BRANCHES/REMOTES/TAGS/
@@ -66,6 +66,11 @@ exactly as `editor.cpp` does for its Help/Event-log windows):
   rendered as one `TableRow` per line — a gutter `Label` (`+`/`-`/blank)
   and a content `Label`, both colored via `Label.text_color` (the hex-string
   field the `editor` module added) rather than a new widget.
+- **Log** (`log_root_key_`): a trace of every `git` subprocess invocation
+  the client makes (`do_append_command_log`), one `TableRow` per call —
+  sequence #, full command, exit code, and a trimmed output preview,
+  green/red-colored by success — for debugging/tracing the tool itself, not
+  git repository state. FIFO-capped at `kMaxLogRows` (see §6).
 
 ### `GraphNode` field data (server-computed, see §5)
 
@@ -94,6 +99,18 @@ here, since a `git status` call is comparatively expensive).
 Non-interactive `argv -> {exit_code, stdout, stderr}` helper built directly
 on libuv (`uv_spawn`), **not** `bdg::bison::term::terminal`. See
 `client/git_process.hpp`'s header comment and §6 below for why.
+
+### `git_repo_source::run_logged()` (client)
+
+Every `git` invocation `git_repo_source` makes goes through this thin
+wrapper over `run_git()` rather than calling it directly: it runs the
+command exactly as `run_git()` would, then also pushes a trace row (argv,
+exit code, trimmed output preview) to `GitRepo`'s Log window via
+`append_command_log`. This makes the Log window a complete trace of every
+`git` process actually run — including the read-only ones inside
+`refresh_all()` — not just the subset already user-facing via
+`command_result` (which only reports the one mutating command behind each
+`*_requested` event).
 
 ## 4. Data Flow / Architecture
 
@@ -280,6 +297,35 @@ the leftmost cell of the commit `Table`'s each `TableRow`. This means:
   unambiguous event, the same composition the sidebar already uses
   (`Selectable` + `MenuButton` in one row).
 
+- **`compute_git_graph_layout()`'s top-half segments are collapsed to a
+  straight pass-through, not copied verbatim from the previous row's
+  bottom half.** Adjacent rows share a border, so a lane-change segment
+  crossing it (`{from_lane, to_lane}` with `from_lane != to_lane`) is drawn
+  once, as a diagonal, in the row *above* it, where the lane change
+  actually happens; by the time it reaches the row below, the line is
+  already sitting at `to_lane`. An earlier version copied the bottom-half
+  segment into the next row's top half unchanged, which drew the same
+  diagonal a second time on top of a straight continuation — visible as a
+  duplicated/jagged line at any commit whose parent's row diverges into a
+  new lane (caught visually via an automation-driven screenshot, not by
+  the existing unit tests, since `has_segment()`'s from/to check doesn't
+  distinguish "one correct segment" from "two overlapping ones" — the fix
+  only changed which `{from,to}` pair a segment reports, not whether one
+  exists).
+
+- **The Log window's row cap and eviction (`kMaxLogRows`, `log_row_entry`,
+  `log_rows_`) exactly mirror the `editor` module's own event-log Table**
+  (`editor.hpp`/`.cpp`'s `kMaxLogRows`/`log_row_entry`/`log_rows_`/
+  `append_log_row()`) — a `std::deque` of "enough ids to fully erase this
+  row" (its slot in the table's `children` map, plus every `ctx().objects`
+  id `put_object()` assigned it), so a long-running session's trace stays
+  bounded (500 rows) instead of leaking `ctx().objects` entries or growing
+  the table without limit. `run_logged()` is called far more often than a
+  user fires `*_requested` events (every read-only call inside the ~2s
+  background `refresh_all()` poll counts too), so an uncapped table would
+  grow unbounded within minutes, unlike `editor`'s event log (user-driven
+  events only).
+
 - **`selected_hash_ == ""` doubles as both "the synthetic working-tree row
   is selected" and "nothing selected yet" (the member's default).** A
   known minor architectural wart, not tightened to `std::optional<std::string>`
@@ -339,7 +385,11 @@ untracked-file fallback, and per-commit diffs, live-verified with colored
 +/- lines); branch checkout (including remote-tracking-branch auto-track
 fallback)/create/delete; fetch/pull/push; fast-forward-first merge; stash
 push/pop/apply/drop; background auto-refresh; an inline confirm modal
-(`show_confirm()`, §6) gating delete-branch and stash-drop.
+(`show_confirm()`, §6) gating delete-branch and stash-drop; a Log window
+tracing every `git` subprocess invocation (`run_logged()`/
+`append_command_log`/`do_append_command_log`, live-verified showing
+sequence #, command, exit code, and colored output preview for a real
+refresh cycle).
 
 **Not implemented** (see PLAN.md for the full list and rationale):
 interactive rebase, conflict-resolution UI, cherry-pick/revert/reset,

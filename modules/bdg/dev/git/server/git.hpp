@@ -27,6 +27,7 @@
 #include <ui/forms/form.hpp>
 #include <ui/ui_element.hpp>
 
+#include <deque>
 #include <functional>
 #include <string>
 #include <unordered_map>
@@ -36,12 +37,14 @@ namespace bdg::wish {
 
 /// @brief SourceTree-style git GUI form.
 ///
-/// Owns three independently dockable Windows (mirrors the `editor` module's
+/// Owns four independently dockable Windows (mirrors the `editor` module's
 /// chrome/Help/Event-log split): the main window (toolbar, branches/tags/
 /// stashes/remotes sidebar, commit graph), a Files window (staged/unstaged
-/// working-directory files, or a selected commit's changed files), and a
-/// Diff window (the selected file's diff). All three share this same
-/// git_repo instance as their event handler.
+/// working-directory files, or a selected commit's changed files), a Diff
+/// window (the selected file's diff), and a Log window (every `git`
+/// subprocess invocation the client makes, for debugging/tracing -- see
+/// append_command_log()). All four share this same git_repo instance as
+/// their event handler.
 ///
 /// Emitted events:
 ///   - `"closed"` — user closed the main window; all three internal
@@ -110,6 +113,20 @@ class git_repo : public form {
   ///   - `output` (string) — combined stdout/stderr, shown on failure.
   bison::dynamic do_command_result(const bison::dynamic& args);
 
+  /// @brief RMI method: append one row to the Log window, reporting a
+  /// single `git` subprocess invocation the client just made. Unlike
+  /// command_result (which only reports the one mutating command behind a
+  /// user action, for the status label), this is called by the client for
+  /// *every* git invocation -- including the read-only ones (status, log,
+  /// for-each-ref, ...) issued by refresh_all() -- so the Log window is a
+  /// complete trace, for debugging/tracing the tool itself. @p args holds:
+  ///   - `command` (string) — the full argv, e.g. "git status --porcelain=v1".
+  ///   - `exit_code` (int32).
+  ///   - `ok` (bool).
+  ///   - `output` (string) — trimmed, single-line, length-capped preview of
+  ///     stdout (or stderr on failure).
+  bison::dynamic do_append_command_log(const bison::dynamic& args);
+
  protected:
   void on_init() override;
   void on_event(bison::key_t widget_id, bison::key_t event_name, const bison::dynamic& payload) override;
@@ -119,6 +136,7 @@ class git_repo : public form {
   void build_main_window();
   void build_files_window();
   void build_diff_window();
+  void build_log_window();
 
   // ── Confirmation modal ──────────────────────────────────────────────────
   // Mirrors file_explorer::show_overwrite_confirm()/request_close_confirm()/
@@ -188,8 +206,20 @@ class git_repo : public form {
   // ── Diff ─────────────────────────────────────────────────────────────────
   void clear_diff_rows();
 
+  // ── Log (git-command trace) ─────────────────────────────────────────────
+  // Mirrors the `editor` module's own event-log Table (editor.cpp's
+  // append_log_row()/kMaxLogRows/log_row_entry): a FIFO-capped Table so a
+  // long-running session's Log window stays bounded instead of growing
+  // without limit.
+
+  /// @brief Appends one row (sequence #, command, exit code, output
+  /// preview) to the Log window's table, color-coded green/red by @p ok.
+  /// Evicts the oldest row first once the table already holds kMaxLogRows.
+  void append_log_row(const std::string& command, int32_t exit_code, bool ok, const std::string& output);
+
   std::string files_root_key_;
   std::string diff_root_key_;
+  std::string log_root_key_;
 
   // Confirmation modal (empty confirm_root_key_ == not currently shown)
   std::string confirm_root_key_;
@@ -239,6 +269,31 @@ class git_repo : public form {
   std::string selected_hash_; // "" == working tree, or no selection yet
   std::string selected_path_;
   bool selected_staged_{false};
+
+  // Log window
+  bison::key_t log_window_id_;
+  ui_element_ptr log_table_;
+
+  static constexpr size_t kMaxLogRows = 500;
+
+  // Bookkeeping for one live Log-window row, enough to fully evict it: its
+  // slot in the log table's "children" map plus every RMI id put_object()
+  // assigned it (the row itself and its four cells) -- mirrors editor.hpp's
+  // own log_row_entry, see that type's doc comment for why this is needed
+  // (an eviction that only hid the row from the table, without also erasing
+  // its ctx().objects entries, would leak them over a long session).
+  struct log_row_entry {
+    size_t child_key;
+    bison::key_t row_id;
+    bison::key_t cell_seq_id;
+    bison::key_t cell_command_id;
+    bison::key_t cell_exit_id;
+    bison::key_t cell_output_id;
+  };
+
+  size_t log_seq_{0};
+  size_t next_log_child_key_{0};
+  std::deque<log_row_entry> log_rows_; // oldest first
 
   // Dispatch tables, populated in on_init()/rebuild_* -- keyed by widget id.
   std::unordered_map<bison::key_t, std::function<void()>, bison::key_t, bison::key_t> click_handlers_;

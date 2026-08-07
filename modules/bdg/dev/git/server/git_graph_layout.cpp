@@ -64,8 +64,19 @@ std::vector<git_graph_row> compute_git_graph_layout(const std::vector<git_graph_
     row.color = git_graph_lane_color(lane);
 
     // 2. Top half mirrors the previous row's bottom half -- adjacent rows
-    // share a border, so whatever line crossed it continues unchanged.
-    row.top = (i > 0) ? rows[i - 1].bottom : std::vector<git_graph_segment>{};
+    // share a border, so whatever line crossed it continues. A diagonal
+    // bottom segment ({from,to} with from != to) already performs its full
+    // lane change within the PREVIOUS row's own curve; by the time it
+    // reaches this row's top it is sitting at `to_lane`, so it is collapsed
+    // to a straight {to_lane,to_lane} pass-through here rather than copied
+    // verbatim -- copying the diagonal unchanged would draw a second,
+    // redundant lane-change curve on top of the one already drawn below.
+    row.top.clear();
+    if (i > 0) {
+      row.top.reserve(rows[i - 1].bottom.size());
+      for (const auto& seg : rows[i - 1].bottom)
+        row.top.push_back({seg.to_lane, seg.to_lane, seg.color});
+    }
 
     // 3. Any OTHER lane also waiting for this exact hash (two visible branch
     // tips sharing a descendant) converges into this row's dot: free it, and

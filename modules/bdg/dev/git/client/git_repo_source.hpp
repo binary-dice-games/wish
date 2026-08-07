@@ -16,6 +16,7 @@
 /// here -- the server never touches git or the filesystem directly.
 #pragma once
 
+#include "git_process.hpp"
 #include "src/bison/bison.hpp"
 #include "src/rmi/client/proxy.hpp"
 
@@ -61,6 +62,17 @@ class git_repo_source {
   /// @brief Runs a mutating command, reports its result via GitRepo's
   /// command_result RMI method, and (on success) calls refresh_all().
   void run_and_refresh(const std::string& command_label, const std::vector<std::string>& args);
+
+  /// @brief Runs `git <args>` (via run_git()) and pushes a trace row --
+  /// argv, exit code, and a trimmed stdout/stderr preview -- to GitRepo's
+  /// Log window via its append_command_log RMI method. Every git invocation
+  /// this class makes goes through this wrapper rather than calling
+  /// run_git() directly, so the Log window is a complete trace of every
+  /// `git` process actually run, not just the subset already user-facing
+  /// via command_result (which only reports the one mutating command behind
+  /// each *_requested event, not the read-only refresh calls around it).
+  process_result run_logged(const std::vector<std::string>& args);
+  void push_command_log(const std::vector<std::string>& args, const process_result& r);
 
   std::shared_ptr<bison::rmi::proxy::dynamic> proxy_;
   std::string repo_path_;

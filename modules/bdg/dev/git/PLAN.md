@@ -31,6 +31,12 @@ helper, and the no-modal-dialog interaction model.
      passing. Live-verified: a real fixture repo's merge-commit diamond
      renders with correct lane/color/curve shape (screenshot-confirmed via
      the automation module).
+   - **Fix (post-implementation):** a copied-forward top-half segment was
+     duplicating the previous row's diagonal instead of collapsing to a
+     straight pass-through, producing a visibly discontinuous/doubled line
+     at any commit whose parent's row diverges into a new lane (reported
+     against a real screenshot, root-caused, fixed in
+     `compute_git_graph_layout()`; see DESIGN.md §6). ✅ Done.
 
 4. **Working directory / staging** — `git status --porcelain=v1` parsing,
    staged/unstaged tables with stage/unstage checkboxes, commit message +
@@ -63,11 +69,29 @@ helper, and the no-modal-dialog interaction model.
    result. Fixed: `show_confirm()` (see DESIGN.md §6) gates both behind an
    inline "are you sure?" modal built into `GitRepo`'s own tree. ✅ Done.
 
+9. **Log window (git-command trace)** — a fourth dockable `Window`
+   (`log_root_key_`, `build_log_window()`) showing every `git` subprocess
+   invocation, for debugging/tracing the tool itself: sequence #, full
+   command, exit code, and a trimmed output preview, green/red-colored by
+   success. `git_repo_source::run_logged()` wraps every `run_git()` call
+   site (replacing direct calls throughout `git_repo_source.cpp`) and
+   pushes a row via the new `append_command_log` RMI method
+   (`do_append_command_log`/`append_log_row`); the table is FIFO-capped at
+   `kMaxLogRows` (500), mirroring the `editor` module's own event-log
+   pattern (`log_row_entry`/`log_rows_`). ✅ Done.
+   - Tests: `tests/test_git.cpp`'s `InstantiationCreatesFourWindows` and
+     `AppendCommandLogAddsRowsToLogTable`. Live-verified: a real fixture
+     repo's Log window shows every `git` call from a refresh cycle
+     (`rev-parse`, `for-each-ref`, `tag --list`, `stash list`, `status`,
+     `log`, ...) with sequence numbers, exit codes, and output previews,
+     colored green for success (screenshot-confirmed via the automation
+     module, viewport resized to bring the Log window into frame).
+
 ## Verification
 
 - **Unit tests**: `cmake --build build --target test_git test_git_graph_layout`
   with `-DWISH_MODULE_BDG_DEV_GIT=ON`, then run both binaries directly.
-  14/14 passing as of this pass.
+  15/15 passing as of this pass.
 - **End-to-end** (performed during this implementation, not just described):
   built with `-DWISH_ENABLE_WEB=ON -DWISH_ENABLE_AUTOMATION=ON
   -DWISH_MODULE_BDG_DEV_GIT=ON`; created a throwaway fixture repo (`git
@@ -80,11 +104,14 @@ helper, and the no-modal-dialog interaction model.
   same limitation for its event-log rows). Confirmed: the merge commit's
   diamond graph shape rendered correctly (dot colors, straight lines, and
   Bézier curves all matching `git log --oneline --graph --all`'s own
-  topology); the sidebar showed both branches with the current one
-  starred; clicking a file populated the Diff window with the real,
+  topology, including after the top-half-segment fix — the "feature
+  commit" row's line is now a single continuous segment instead of a
+  duplicated diagonal); the sidebar showed both branches with the current
+  one starred; clicking a file populated the Diff window with the real,
   correctly-colored `git diff` output; clicking a file's stage checkbox
   ran `git add` and the checkbox + status label updated correctly after
-  the resulting refresh.
+  the resulting refresh; the Log window populated with every `git` call
+  from a refresh cycle, sequence-numbered and color-coded by exit status.
 
 ## Not implemented (deferred future work)
 

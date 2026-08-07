@@ -51,6 +51,39 @@ dynamic_ptr string_array(const std::vector<std::string>& items) {
 git_repo_source::git_repo_source(std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::string repo_path)
     : proxy_(std::move(proxy)), repo_path_(std::move(repo_path)) {}
 
+// ── command log (debugging/tracing) ─────────────────────────────────────────
+
+process_result git_repo_source::run_logged(const std::vector<std::string>& args) {
+  auto r = run_git(repo_path_, args);
+  push_command_log(args, r);
+  return r;
+}
+
+void git_repo_source::push_command_log(const std::vector<std::string>& args, const process_result& r) {
+  std::string command = "git";
+  for (auto& a : args)
+    command += " " + a;
+
+  std::string output = r.ok() ? r.stdout_text : (r.stderr_text.empty() ? r.stdout_text : r.stderr_text);
+  while (!output.empty() && (output.back() == '\n' || output.back() == '\r'))
+    output.pop_back();
+  std::replace(output.begin(), output.end(), '\n', ' ');
+  constexpr size_t kMaxOutputPreview = 200;
+  if (output.size() > kMaxOutputPreview)
+    output = output.substr(0, kMaxOutputPreview) + "...";
+
+  dynamic args_out;
+  args_out["command"_key] = command;
+  args_out["exit_code"_key] = r.exit_code;
+  args_out["ok"_key] = r.ok();
+  args_out["output"_key] = output;
+
+  try {
+    proxy_->call("append_command_log"_key, std::move(args_out)).get();
+  } catch (const std::exception&) {
+  }
+}
+
 void git_repo_source::refresh_all() {
   push_refs();
   push_log();
@@ -62,12 +95,12 @@ void git_repo_source::refresh_all() {
 void git_repo_source::push_refs() {
   dynamic args;
 
-  auto head = run_git(repo_path_, {"rev-parse", "--abbrev-ref", "HEAD"});
+  auto head = run_logged({"rev-parse", "--abbrev-ref", "HEAD"});
   std::string current_branch = head.ok() ? head.stdout_text : std::string{};
   while (!current_branch.empty() && (current_branch.back() == '\n' || current_branch.back() == '\r'))
     current_branch.pop_back();
   if (current_branch.empty() || current_branch == "HEAD") {
-    auto sha = run_git(repo_path_, {"rev-parse", "--short", "HEAD"});
+    auto sha = run_logged({"rev-parse", "--short", "HEAD"});
     std::string s = sha.ok() ? sha.stdout_text : std::string{};
     while (!s.empty() && (s.back() == '\n' || s.back() == '\r'))
       s.pop_back();
@@ -77,8 +110,7 @@ void git_repo_source::push_refs() {
 
   dynamic branches;
   size_t bi = 0;
-  auto refs = run_git(
-      repo_path_,
+  auto refs = run_logged(
       {"for-each-ref", "--format=%(refname:short)\t%(upstream:short)\t%(objecttype)", "refs/heads", "refs/remotes"});
   if (refs.ok()) {
     std::istringstream iss(refs.stdout_text);
@@ -95,7 +127,7 @@ void git_repo_source::push_refs() {
 
       int32_t ahead = 0, behind = 0;
       if (!is_remote && !upstream.empty()) {
-        auto counts = run_git(repo_path_, {"rev-list", "--left-right", "--count", name + "..." + upstream});
+        auto counts = run_logged({"rev-list", "--left-right", "--count", name + "..." + upstream});
         if (counts.ok()) {
           std::istringstream cs(counts.stdout_text);
           cs >> ahead >> behind;
@@ -115,7 +147,7 @@ void git_repo_source::push_refs() {
 
   dynamic tags;
   size_t ti = 0;
-  auto tag_list = run_git(repo_path_, {"tag", "--list"});
+  auto tag_list = run_logged({"tag", "--list"});
   if (tag_list.ok()) {
     std::istringstream iss(tag_list.stdout_text);
     std::string line;
@@ -131,7 +163,7 @@ void git_repo_source::push_refs() {
 
   dynamic stashes;
   size_t si = 0;
-  auto stash_list = run_git(repo_path_, {"stash", "list", "--format=%gd\t%s"});
+  auto stash_list = run_logged({"stash", "list", "--format=%gd\t%s"});
   if (stash_list.ok()) {
     std::istringstream iss(stash_list.stdout_text);
     std::string line;
@@ -162,7 +194,7 @@ void git_repo_source::push_refs() {
 // ── log / graph ────────────────────────────────────────────────────────────
 
 bool git_repo_source::working_tree_dirty() {
-  auto r = run_git(repo_path_, {"status", "--porcelain=v1"});
+  auto r = run_logged({"status", "--porcelain=v1"});
   return r.ok() && !r.stdout_text.empty();
 }
 
@@ -173,8 +205,7 @@ void git_repo_source::push_log() {
   // \x1f (unit separator) between fields, \x1e (record separator) between
   // commits -- avoids any collision with real commit-message content,
   // unlike a printable delimiter such as '|'.
-  auto log = run_git(
-      repo_path_,
+  auto log = run_logged(
       {"log",
        "--branches",
        "--tags",
@@ -221,7 +252,7 @@ void git_repo_source::push_status() {
   dynamic staged, unstaged;
   size_t sti = 0, ui = 0;
 
-  auto status = run_git(repo_path_, {"status", "--porcelain=v1"});
+  auto status = run_logged({"status", "--porcelain=v1"});
   if (status.ok()) {
     std::istringstream iss(status.stdout_text);
     std::string line;
@@ -266,7 +297,7 @@ void git_repo_source::on_commit_files_requested(const std::string& hash) {
 
   dynamic files;
   size_t fi = 0;
-  auto r = run_git(repo_path_, {"show", "--name-status", "--format=", hash});
+  auto r = run_logged({"show", "--name-status", "--format=", hash});
   if (r.ok()) {
     std::istringstream iss(r.stdout_text);
     std::string line;
@@ -295,16 +326,16 @@ void git_repo_source::on_commit_files_requested(const std::string& hash) {
 void git_repo_source::on_diff_requested(const std::string& hash, const std::string& path, bool staged) {
   process_result r;
   if (hash.empty()) {
-    r = run_git(repo_path_, staged ? std::vector<std::string>{"diff", "--no-color", "--cached", "--", path}
+    r = run_logged(staged ? std::vector<std::string>{"diff", "--no-color", "--cached", "--", path}
                                     : std::vector<std::string>{"diff", "--no-color", "--", path});
     if (r.ok() && r.stdout_text.empty()) {
       // Nothing under version control to diff against -- likely a brand-new
       // untracked file; show its whole content as an all-added diff instead
       // of a blank panel.
-      r = run_git(repo_path_, {"diff", "--no-color", "--no-index", "--", kNullDevice, path});
+      r = run_logged({"diff", "--no-color", "--no-index", "--", kNullDevice, path});
     }
   } else {
-    r = run_git(repo_path_, {"show", "--no-color", "--format=", hash, "--", path});
+    r = run_logged({"show", "--no-color", "--format=", hash, "--", path});
   }
 
   dynamic args;
@@ -343,7 +374,7 @@ void git_repo_source::on_diff_requested(const std::string& hash, const std::stri
 // ── mutating actions ─────────────────────────────────────────────────────────
 
 void git_repo_source::run_and_refresh(const std::string& command_label, const std::vector<std::string>& args) {
-  auto r = run_git(repo_path_, args);
+  auto r = run_logged(args);
 
   dynamic report;
   report["command"_key] = command_label;
@@ -374,12 +405,12 @@ void git_repo_source::on_commit(const std::string& message) {
 }
 
 void git_repo_source::on_checkout(const std::string& ref) {
-  auto r = run_git(repo_path_, {"switch", ref});
+  auto r = run_logged({"switch", ref});
   if (!r.ok() && ref.find('/') != std::string::npos) {
     // Likely a bare remote-tracking ref (e.g. "origin/feature") with no
     // local counterpart yet -- create+track a local branch for it.
     std::string local = ref.substr(ref.find('/') + 1);
-    r = run_git(repo_path_, {"switch", "--track", "-c", local, ref});
+    r = run_logged({"switch", "--track", "-c", local, ref});
   }
   dynamic report;
   report["command"_key] = std::string{"checkout"};
@@ -417,9 +448,9 @@ void git_repo_source::on_push() {
 }
 
 void git_repo_source::on_merge(const std::string& ref) {
-  auto r = run_git(repo_path_, {"merge", "--ff-only", ref});
+  auto r = run_logged({"merge", "--ff-only", ref});
   if (!r.ok())
-    r = run_git(repo_path_, {"merge", ref});
+    r = run_logged({"merge", ref});
   dynamic report;
   report["command"_key] = std::string{"merge"};
   report["ok"_key] = r.ok();

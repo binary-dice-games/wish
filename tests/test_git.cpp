@@ -139,13 +139,14 @@ class SessionCapturingServer : public wish::server {
   }
 };
 
-// The three internal windows this form registers (see git.hpp's class doc
-// comment) are keyed "__git_N", "__git_N_files", "__git_N_diff" -- find the
-// bare (no-dot) main-window root among session.objects.
+// The four internal windows this form registers (see git.hpp's class doc
+// comment) are keyed "__git_N", "__git_N_files", "__git_N_diff",
+// "__git_N_log" -- find the bare (no-dot) main-window root among
+// session.objects.
 static std::string find_form_root(const wish::name_map& objects) {
   for (const auto& [k, _] : objects) {
     if (k.rfind("__git_", 0) == 0 && k.find('.') == std::string::npos && k.find("_files") == std::string::npos &&
-        k.find("_diff") == std::string::npos)
+        k.find("_diff") == std::string::npos && k.find("_log") == std::string::npos)
       return k;
   }
   return {};
@@ -201,10 +202,11 @@ class GitRepoRmiTest : public ::testing::Test {
   std::string root_;
 };
 
-TEST_F(GitRepoRmiTest, InstantiationCreatesThreeWindows) {
+TEST_F(GitRepoRmiTest, InstantiationCreatesFourWindows) {
   EXPECT_TRUE(srv_->last_session->ui_objects.count(root_));
   EXPECT_TRUE(srv_->last_session->ui_objects.count(root_ + "_files"));
   EXPECT_TRUE(srv_->last_session->ui_objects.count(root_ + "_diff"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root_ + "_log"));
 }
 
 TEST_F(GitRepoRmiTest, MainWindowContainsGraphTableAndSidebarSections) {
@@ -282,4 +284,21 @@ TEST_F(GitRepoRmiTest, UpdateStatusPopulatesFilesTable) {
   // Working-tree mode is the default on a fresh form -- staged + unstaged
   // rows both land in the Files window's table.
   EXPECT_EQ(child_array_count(root_ + "_files.vbox.files_table"), 3u);
+}
+
+TEST_F(GitRepoRmiTest, AppendCommandLogAddsRowsToLogTable) {
+  auto make_log_call_args = [](const std::string& command, int32_t exit_code, bool ok, const std::string& output) {
+    dynamic args;
+    args["command"_key] = command;
+    args["exit_code"_key] = exit_code;
+    args["ok"_key] = ok;
+    args["output"_key] = output;
+    return args;
+  };
+
+  EXPECT_EQ(child_array_count(root_ + "_log.vbox.log_table"), 0u);
+  call("append_command_log"_key, make_log_call_args("git status --porcelain=v1", 0, true, ""));
+  EXPECT_EQ(child_array_count(root_ + "_log.vbox.log_table"), 1u);
+  call("append_command_log"_key, make_log_call_args("git push", 1, false, "rejected"));
+  EXPECT_EQ(child_array_count(root_ + "_log.vbox.log_table"), 2u);
 }

@@ -8,11 +8,13 @@ merge, stash push/pop/apply/drop). This is a pure frontend — it never
 reimplements git internals, only shells out to the `git` binary already on
 the machine.
 
-`wish client --run=git -- /path/to/repo` opens the UI as three independently
+`wish client --run=git -- /path/to/repo` opens the UI as four independently
 dockable windows (drag/resize like any other wish window): **Git** (toolbar,
 sidebar, commit graph), **Files** (staged/unstaged working-directory files,
-or a selected commit's changed files), and **Diff** (the selected file's
-diff, colored by line kind).
+or a selected commit's changed files), **Diff** (the selected file's diff,
+colored by line kind), and **Log** (every `git` subprocess invocation the
+client makes — command, exit code, output preview — for debugging/tracing
+the tool itself).
 
 - **server/**: `GitRepo` form (`register_git()`) — renders whatever snapshot
   it was last given via `update_refs`/`update_log`/`update_status`/
