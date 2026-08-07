@@ -234,9 +234,11 @@ the leftmost cell of the commit `Table`'s each `TableRow`. This means:
   the one remaining member, `next_file_row_key_`, explicitly reset in
   `clear_file_rows()`.
 
-- **No modal-dialog element exists in wish** (confirmed against
-  `docs/ui-elements.md` — `MenuButton`'s popup is the closest thing, and
-  it's a menu, not an arbitrary form). Branch creation uses a small,
+- **wish's only built-in dialog form, `MessageBox` (`src/ui/forms/
+  message_box.hpp`), is a genuine modal (`Window.modal = true`) but has no
+  slot for custom body content** — just a title, message, icon, and a
+  Win32-style OK/Cancel/Yes/No/Retry/Abort button preset — so it can't host
+  a branch-name field or a branch picker. Branch creation uses a small,
   always-visible `InputText` next to the sidebar's BRANCHES header instead
   of a "New Branch" dialog; the merge target is whichever sidebar branch
   row was last clicked (`selected_branch_`), used by the toolbar's Merge
@@ -244,6 +246,27 @@ the leftmost cell of the commit `Table`'s each `TableRow`. This means:
   (delete branch, stash pop/apply/drop, ...) use a `MenuButton` (opens a
   popup of `MenuItem`s) at the end of each sidebar row — the existing wish
   equivalent of a right-click context menu, needing no new widget.
+
+- **Destructive actions (delete branch, stash drop) are gated behind an
+  inline confirm modal**, not fired directly from the `MenuItem` click.
+  Rather than instantiating a standalone `MessageBox` object — which would
+  need the *client* to mediate between two separate RMI objects (wait for
+  its `on_result`, then tell `GitRepo` what to do) — `show_confirm()`
+  builds a second modal `Window` directly inside `GitRepo`'s own tree,
+  exactly mirroring `file_explorer::show_overwrite_confirm()`/
+  `request_close_confirm()`/`remove_confirm_objects()`
+  (`modules/bdg/desktop/file_explorer/server/file_explorer.cpp`): built via
+  `import_json()`, ids assigned through `ctx()` (always valid), but session
+  state (`ui_objects`/`top_level_objects`/`top_level_handlers`) touched via
+  `context_wlock{*sync_ctx_}` rather than `sess()`, since `show_confirm()`
+  is called from `on_event()`, which `form.hpp` documents as running
+  *outside* dispatch (`sess()` would throw there). A single
+  `std::function<void()> pending_confirm_action_` replaces
+  `file_explorer`'s enum-typed `pending_transfer` branching, since
+  `GitRepo` only needs one reusable "are you sure?" shape rather than
+  distinct upload/download variants. "Apply"/"Pop" (reversible-ish) and
+  "Merge into current"/"Checkout" stay un-confirmed, matching SourceTree's
+  own convention of only gating truly destructive, hard-to-reverse actions.
 
 - **A file's Selectable, not `Table`'s row-level `row_selected`, drives
   diff selection in the Files table.** The Files table's first column is
@@ -315,7 +338,8 @@ Refresh); working-directory staging (checkbox -> `git add`/`git restore
 untracked-file fallback, and per-commit diffs, live-verified with colored
 +/- lines); branch checkout (including remote-tracking-branch auto-track
 fallback)/create/delete; fetch/pull/push; fast-forward-first merge; stash
-push/pop/apply/drop; background auto-refresh.
+push/pop/apply/drop; background auto-refresh; an inline confirm modal
+(`show_confirm()`, §6) gating delete-branch and stash-drop.
 
 **Not implemented** (see PLAN.md for the full list and rationale):
 interactive rebase, conflict-resolution UI, cherry-pick/revert/reset,

@@ -47,11 +47,18 @@ for what's implemented vs. deferred to future work.
 - **No conflict-resolution UI.** A non-fast-forward `git merge` that hits
   conflicts surfaces git's own error text in the status label; resolving
   conflicts (or aborting the merge) must be done outside this tool.
-- **No modal dialogs.** wish has no popup/dialog element (see
-  `docs/ui-elements.md`), so branch creation and merge-target selection use
-  small always-visible inline controls (a name field next to the sidebar's
-  BRANCHES header; the last-clicked branch as the merge target) rather than
-  a popup — see `server/git.hpp`'s top-of-file comment.
+- **Branch creation and merge-target selection use inline controls, not a
+  dialog.** wish's only built-in dialog form, `MessageBox`
+  (`src/ui/forms/message_box.hpp`), is a genuine modal (`Window.modal =
+  true`) but carries no slot for custom body content — just a title,
+  message, icon, and a Win32-style button preset — so it can't host a
+  branch-name field or a branch picker. Branch creation uses a small
+  always-visible name field next to the sidebar's BRANCHES header instead;
+  the merge target is the last-clicked sidebar branch — see
+  `server/git.hpp`'s top-of-file comment. Destructive actions (delete
+  branch, stash drop) *do* use a real modal — an inline confirm `Window`
+  built into `GitRepo`'s own tree, mirroring `file_explorer`'s
+  `show_overwrite_confirm()` pattern.
 
 See [PLAN.md](PLAN.md) for the complete list of deferred features
 (interactive rebase, cherry-pick/revert/reset, blame, submodules, LFS,

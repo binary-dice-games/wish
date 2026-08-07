@@ -236,6 +236,21 @@ static constexpr const char* kDiffLayout = R"({
   }
 })";
 
+// Mirrors file_explorer.cpp's kConfirmLayout (its own "Confirm Overwrite"
+// modal) exactly -- btn_yes's label is overwritten per show_confirm() call.
+static constexpr const char* kConfirmLayout = R"({
+  "type": "Window", "title": "Confirm", "modal": true,
+  "flags": "NoResize|NoCollapse|AlwaysAutoResize",
+  "children": {
+    "message": { "type": "Label", "text": "" },
+    "sep": { "type": "Separator" },
+    "buttons": { "type": "HorizontalLayout", "spacing": 6, "children": {
+      "btn_yes": { "type": "Button", "label": "Confirm", "height": 32 },
+      "btn_no": { "type": "Button", "label": "Cancel", "height": 32 }
+    } }
+  }
+})";
+
 // ── git_repo ─────────────────────────────────────────────────────────────────
 
 git_repo::git_repo(dynamic&& base) : form(std::move(base)) {}
@@ -364,6 +379,62 @@ void git_repo::build_diff_window() {
   (*root_ptr)["__path__"_key] = diff_root_key_;
 }
 
+// ── Confirmation modal ───────────────────────────────────────────────────────
+
+void git_repo::show_confirm(const std::string& message, const std::string& confirm_label, std::function<void()> on_confirm) {
+  pending_confirm_action_ = std::move(on_confirm);
+
+  auto tree = import_json(kConfirmLayout);
+  tree.with("message", [&](const auto& e) { e["text"_key] = message; });
+  tree.with("buttons.btn_yes", [&](const auto& e) { e["label"_key] = confirm_label; });
+
+  // ctx() is always valid once init() has run; sess() is not -- show_confirm()
+  // is called from on_event(), which form.hpp documents as running outside
+  // dispatch, so session state below is reached via context_wlock instead
+  // (mirrors file_explorer::show_overwrite_confirm()'s identical handling).
+  auto& c = ctx();
+  for (auto& [key, elem] : tree) {
+    key_t id = rmi::shared::generate_id();
+    c.put_object(id, elem);
+    elem["__wish_id"_key] = id;
+  }
+
+  confirm_window_id_ = (*tree[""])["__wish_id"_key].as<key_t>();
+  tree.with("buttons.btn_yes", [&](const auto& e) { confirm_yes_id_ = wish_id_of(e); });
+  tree.with("buttons.btn_no", [&](const auto& e) { confirm_no_id_ = wish_id_of(e); });
+
+  auto lock = context_wlock{*sync_ctx_};
+  context& s = *lock;
+  // Can't use form::next_available_key() here -- it calls sess(), which
+  // throws outside dispatch (see this function's own comment above) --
+  // so this scans s.top_level_objects directly instead, exactly matching
+  // file_explorer::show_overwrite_confirm()'s own loop.
+  for (int i = 0;; ++i) {
+    std::string candidate = "__git_confirm_" + std::to_string(i);
+    if (s.top_level_objects.find(key_t{candidate}) == s.top_level_objects.end()) {
+      confirm_root_key_ = candidate;
+      break;
+    }
+  }
+
+  s.ui_objects.merge(std::move(tree), confirm_root_key_);
+  auto it = s.ui_objects.find(confirm_root_key_);
+  if (it != s.ui_objects.end()) {
+    s.top_level_objects[key_t{confirm_root_key_}] = it->second;
+    (*it->second)["__path__"_key] = confirm_root_key_;
+    s.top_level_handlers[key_t{confirm_root_key_}] = this;
+  }
+}
+
+void git_repo::request_close_confirm() {
+  request_close_at(confirm_root_key_);
+}
+
+void git_repo::remove_confirm_objects() {
+  remove_objects_at(confirm_root_key_);
+  confirm_root_key_.clear();
+}
+
 // ── Sidebar ──────────────────────────────────────────────────────────────────
 
 ui_element_ptr git_repo::make_menu_item(const std::string& label, std::function<void()> on_click) {
@@ -473,7 +544,12 @@ dynamic git_repo::do_update_refs(const dynamic& args) {
           emit("checkout_requested"_key, payload1("ref"_key, ref));
         },
         {{"Merge into current", [this, ref] { selected_branch_ = ref; emit("merge_requested"_key, payload1("ref"_key, ref)); }},
-         {"Delete", [this, ref] { emit("delete_branch_requested"_key, payload2("name"_key, ref, "force"_key, false)); }}});
+         {"Delete",
+          [this, ref] {
+            show_confirm("Delete branch '" + ref + "'?", "Delete", [this, ref] {
+              emit("delete_branch_requested"_key, payload2("name"_key, ref, "force"_key, false));
+            });
+          }}});
   });
 
   rebuild_section(sidebar_remotes_section_, remote_rows_, remote.size(), [&](size_t i) {
@@ -514,7 +590,13 @@ dynamic git_repo::do_update_refs(const dynamic& args) {
         [] {},
         {{"Apply", [this, idx] { emit("stash_apply_requested"_key, payload1("index"_key, idx)); }},
          {"Pop", [this, idx] { emit("stash_pop_requested"_key, payload1("index"_key, idx)); }},
-         {"Drop", [this, idx] { emit("stash_drop_requested"_key, payload1("index"_key, idx)); }}});
+         {"Drop",
+          [this, idx] {
+            show_confirm(
+                "Drop stash@{" + std::to_string(idx) + "}? This cannot be undone.", "Drop", [this, idx] {
+                  emit("stash_drop_requested"_key, payload1("index"_key, idx));
+                });
+          }}});
   });
 
   return dynamic{};
@@ -893,6 +975,24 @@ void git_repo::on_event(key_t id, key_t event, const dynamic& payload) {
     remove_objects_at(diff_root_key_);
     remove_internal_objects();
     return;
+  }
+
+  if (!confirm_root_key_.empty()) {
+    if (id == confirm_window_id_ && event == "closed"_key) {
+      remove_confirm_objects();
+      pending_confirm_action_ = nullptr;
+      return;
+    }
+    if (id == confirm_yes_id_ && event == "clicked"_key) {
+      if (pending_confirm_action_)
+        pending_confirm_action_();
+      request_close_confirm();
+      return;
+    }
+    if (id == confirm_no_id_ && event == "clicked"_key) {
+      request_close_confirm();
+      return;
+    }
   }
 
   if (event == "clicked"_key) {

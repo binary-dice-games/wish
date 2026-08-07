@@ -9,12 +9,19 @@
 /// RMI methods, and emits high-level *_requested events the client reacts to
 /// by running the corresponding git command and pushing a fresh snapshot.
 ///
-/// wish has no modal-dialog element (see docs/ui-elements.md), so branch
-/// creation and merge target selection use small always-visible inline
-/// controls (a name InputText next to the sidebar's Branches header, and a
-/// "last selected branch" tracked from sidebar clicks) instead of a popup
-/// dialog -- documented as a deliberate V1 simplification in this module's
-/// DESIGN.md, not an oversight.
+/// wish's only built-in dialog form, MessageBox (src/ui/forms/
+/// message_box.hpp), is a genuine modal (Window.modal = true) but has no
+/// slot for custom body content -- just a title, message, icon, and a
+/// Win32-style button preset -- so it can't host a branch-name field or a
+/// branch picker. Branch creation and merge target selection therefore use
+/// small always-visible inline controls (a name InputText next to the
+/// sidebar's Branches header, and a "last selected branch" tracked from
+/// sidebar clicks) instead of a dialog -- documented as a deliberate V1
+/// simplification in this module's DESIGN.md, not an oversight. Destructive
+/// actions (delete branch, stash drop) do use a real modal: an inline
+/// confirm Window built into this form's own tree, mirroring
+/// file_explorer::show_overwrite_confirm()'s pattern -- see show_confirm()
+/// below.
 #pragma once
 
 #include <ui/forms/form.hpp>
@@ -113,6 +120,27 @@ class git_repo : public form {
   void build_files_window();
   void build_diff_window();
 
+  // ── Confirmation modal ──────────────────────────────────────────────────
+  // Mirrors file_explorer::show_overwrite_confirm()/request_close_confirm()/
+  // remove_confirm_objects() (file_explorer.cpp) exactly: a second modal
+  // Window built directly into this form's own tree, not a standalone
+  // MessageBox instantiation (see this file's top-of-file comment and
+  // DESIGN.md §6 for why). A single pending_confirm_action_ replaces
+  // file_explorer's enum-typed pending_transfer branching, since only one
+  // reusable "are you sure?" shape is needed here.
+
+  /// @brief Builds and shows the confirm modal with @p message and a
+  /// confirm button captioned @p confirm_label; @p on_confirm runs if the
+  /// user confirms. Called from on_event() (outside dispatch, per
+  /// form.hpp's documented contract), so session state is reached via
+  /// context_wlock{*sync_ctx_}, not sess() -- exactly matching
+  /// show_overwrite_confirm()'s own dispatch/non-dispatch handling.
+  void show_confirm(const std::string& message, const std::string& confirm_label, std::function<void()> on_confirm);
+  /// @brief Thin wrapper over form::request_close_at(confirm_root_key_).
+  void request_close_confirm();
+  /// @brief Thin wrapper over form::remove_objects_at(confirm_root_key_).
+  void remove_confirm_objects();
+
   // ── Sidebar ──────────────────────────────────────────────────────────────
   struct sidebar_row {
     ui_element_ptr row; // HorizontalLayout: Selectable + MenuButton
@@ -162,6 +190,13 @@ class git_repo : public form {
 
   std::string files_root_key_;
   std::string diff_root_key_;
+
+  // Confirmation modal (empty confirm_root_key_ == not currently shown)
+  std::string confirm_root_key_;
+  bison::key_t confirm_window_id_;
+  bison::key_t confirm_yes_id_;
+  bison::key_t confirm_no_id_;
+  std::function<void()> pending_confirm_action_;
 
   // Main window
   bison::key_t window_id_;

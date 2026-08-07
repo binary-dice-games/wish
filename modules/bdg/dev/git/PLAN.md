@@ -55,6 +55,14 @@ helper, and the no-modal-dialog interaction model.
    test_git.cpp`, `tests/test_git_graph_layout.cpp`, `tests/CMakeLists.txt`
    wiring. ✅ Done.
 
+8. **Confirmation modal for destructive actions** — an initial pass wrongly
+   assumed wish had no modal-dialog mechanism at all (it does:
+   `Window.modal = true`, used by the built-in `MessageBox` form and by
+   `file_explorer`'s own inline confirm-dialog precedent); delete-branch
+   and stash-drop originally fired immediately with no confirmation as a
+   result. Fixed: `show_confirm()` (see DESIGN.md §6) gates both behind an
+   inline "are you sure?" modal built into `GitRepo`'s own tree. ✅ Done.
+
 ## Verification
 
 - **Unit tests**: `cmake --build build --target test_git test_git_graph_layout`
