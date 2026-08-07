@@ -121,6 +121,22 @@ typedef void (*wish_session_fn)(wish_client_handle client, void* userdata);
 WISH_API wish_client_handle wish_client_tcp_create(const char* host, uint16_t port);
 
 /**
+ * @brief Create a TLS-secured TCP socket client.
+ *
+ * Does not connect; call wish_client_run() to establish the session. TLS
+ * trust/identity material (`ca_file`/`ca_pem`, `insecure_skip_verify`,
+ * `cert_file`/`cert_pem`, `key_file`/`key_pem`, `key_password`,
+ * `server_name`) is supplied via wish_client_run_with_params()'s
+ * connect_params, matching `tls_socket_client_transport::open()` (see
+ * `src/rmi/transport/tls_socket_transport.hpp` in bison).
+ *
+ * @param host  Server hostname or IP address (e.g., "127.0.0.1").
+ * @param port  Server port number (0-65535).
+ * @return Non-null handle on success; NULL on allocation failure.
+ */
+WISH_API wish_client_handle wish_client_tls_create(const char* host, uint16_t port);
+
+/**
  * @brief Create a std::iostream-backed stream (FIFO / named pipe) client.
  *
  * Does not connect; call wish_client_run() to establish the session.  Linux

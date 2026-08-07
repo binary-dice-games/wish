@@ -72,7 +72,7 @@ def list_apps() -> List[dict]:
 class Client:
     """RAII wrapper around a ``wish_client_handle``.
 
-    Construct via :meth:`tcp`, :meth:`stream`, :meth:`pipe`, or :meth:`term`,
+    Construct via :meth:`tcp`, :meth:`tls`, :meth:`stream`, :meth:`pipe`, or :meth:`term`,
     then call :meth:`run` to connect, drive the session, and disconnect --
     mirroring ``wish_client_run()``: the session callback runs on the
     library's RMI worker thread and the call blocks until it returns (or a
@@ -91,6 +91,20 @@ class Client:
         h = _n.get_lib().wish_client_tcp_create(host.encode(), port)
         if not h:
             raise MemoryError("wish_client_tcp_create failed")
+        return cls(h)
+
+    @classmethod
+    def tls(cls, host: str, port: int) -> "Client":
+        """Create a TLS-secured TCP client (not yet connected).
+
+        TLS trust/identity material (``ca_file``/``ca_pem``,
+        ``insecure_skip_verify``, ``cert_file``/``cert_pem``,
+        ``key_file``/``key_pem``, ``key_password``, ``server_name``) is
+        supplied via :meth:`run`'s *connect_params*.
+        """
+        h = _n.get_lib().wish_client_tls_create(host.encode(), port)
+        if not h:
+            raise MemoryError("wish_client_tls_create failed")
         return cls(h)
 
     @classmethod

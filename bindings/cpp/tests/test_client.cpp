@@ -16,6 +16,8 @@
 #include <server/server.hpp>
 
 #include "src/rmi/transport/socket_transport.hpp"
+#include "src/rmi/transport/tls_socket_transport.hpp"
+#include "tests/tls_test_certs.hpp"
 
 #include <chrono>
 #include <thread>
@@ -160,4 +162,59 @@ TEST_F(WishCppClientTest, OnEventSubscriptionSucceeds) {
 
     EXPECT_NO_THROW(btn.on_event("clicked"_key, [](wish::value) {}));
   });
+}
+
+// ── client / proxy: end-to-end against a real wish::server over TLS ────────
+//
+// Exercises wish_client_tls_create() (the C ABI factory added alongside
+// bison's tls_socket_client_transport) through the header-only binding's
+// client::tls(), against a real tls_socket_server_transport-backed
+// wish::server -- the same shape as WishCppClientTest above, but over an
+// encrypted, server-authenticated connection.
+
+namespace {
+
+constexpr uint16_t kTlsTestPort = 17075;
+
+class WishCppTlsClientTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    transport_ = std::make_unique<bdg::bison::rmi::transport::tls_socket_server_transport>(
+        "127.0.0.1", kTlsTestPort);
+    server_ = std::make_unique<bdg::wish::server>(*transport_, std::make_unique<bdg::wish::null_renderer>());
+    server_->start(nullptr,
+        bdg::bison::rmi::transport::test::tls_server_params(
+            bdg::bison::rmi::transport::test::kTestServerCert, bdg::bison::rmi::transport::test::kTestServerKey));
+  }
+
+  void TearDown() override { server_->stop(); }
+
+  std::unique_ptr<bdg::bison::rmi::transport::tls_socket_server_transport> transport_;
+  std::unique_ptr<bdg::wish::server> server_;
+};
+
+}  // namespace
+
+TEST_F(WishCppTlsClientTest, RegisterInstantiateAndSetGetRoundTrip) {
+  auto client = wish::client::tls("127.0.0.1", kTlsTestPort);
+  wish::value connect_params;
+  connect_params["ca_pem"_key] = bdg::bison::rmi::transport::test::kTestCaCert;
+  client.run(
+      [](wish::client& c) {
+        c.register_template("win", kWindowDesc);
+        auto root = c.instantiate_template("win", "win");
+        EXPECT_TRUE(root.valid());
+
+        auto label = c.proxy_get("win.label");
+        EXPECT_EQ(*label.get().get_string("text"_key), "hi");
+      },
+      connect_params);
+}
+
+TEST_F(WishCppTlsClientTest, MissingTrustAnchorFailsHandshake) {
+  // No ca_pem supplied and insecure_skip_verify left false -- the client has
+  // no trust anchor for the server's certificate, so the handshake inside
+  // run()'s connect step must fail rather than silently succeeding.
+  auto client = wish::client::tls("127.0.0.1", kTlsTestPort);
+  EXPECT_THROW(client.run([](wish::client&) {}), wish::error);
 }

@@ -39,7 +39,7 @@ public sealed record AppInfo(
 
 /// <summary>
 /// RAII wrapper around a <c>wish_client_handle</c>. Construct via
-/// <see cref="Tcp"/>, <see cref="Stream"/>, <see cref="Pipe"/>, or
+/// <see cref="Tcp"/>, <see cref="Tls"/>, <see cref="Stream"/>, <see cref="Pipe"/>, or
 /// <see cref="Term"/>, then call <see cref="Run"/> to connect, drive the
 /// session, and disconnect -- mirroring <c>wish_client_run()</c>: the
 /// session callback runs on the library's RMI worker thread and the call
@@ -59,6 +59,23 @@ public sealed class Client : IDisposable
         if (h == nint.Zero)
         {
             throw new OutOfMemoryException("wish_client_tcp_create failed");
+        }
+        return new Client(h);
+    }
+
+    /// <summary>
+    /// Creates a TLS-secured TCP client (not yet connected). TLS
+    /// trust/identity material (<c>ca_file</c>/<c>ca_pem</c>,
+    /// <c>insecure_skip_verify</c>, <c>cert_file</c>/<c>cert_pem</c>,
+    /// <c>key_file</c>/<c>key_pem</c>, <c>key_password</c>,
+    /// <c>server_name</c>) is supplied via <see cref="Run"/>'s parameters.
+    /// </summary>
+    public static Client Tls(string host, ushort port)
+    {
+        var h = Native.wish_client_tls_create(host, port);
+        if (h == nint.Zero)
+        {
+            throw new OutOfMemoryException("wish_client_tls_create failed");
         }
         return new Client(h);
     }

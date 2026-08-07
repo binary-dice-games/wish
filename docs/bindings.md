@@ -97,6 +97,24 @@ has the server unpack it into `dest_path` inside the sandbox. See
 [DESIGN.md](../DESIGN.md#bdgwishfile_service) for the chunked-transfer
 protocol these build on.
 
+### TLS
+
+`wish::binding::client::tls(host, port)` is the TLS counterpart of `tcp()` --
+trust/identity material (`ca_file`/`ca_pem`, `insecure_skip_verify`,
+`cert_file`/`cert_pem`, `key_file`/`key_pem`, `key_password`, `server_name`)
+is supplied via `run()`'s `connect_params`:
+
+```cpp
+auto client = wish::client::tls("127.0.0.1", 8443);
+wish::value params;
+params["ca_pem"_key] = ca_cert_pem;
+client.run([](wish::client& c) { /* ... */ }, params);
+```
+
+See [cli.md](cli.md#tls-flags---transport-tls) for the matching `--transport=tls`
+CLI flags and bison's [TLS-Secured Transport](https://github.com/binary-dice-games/bison/blob/main/docs/tls.md)
+doc for the full parameter reference.
+
 ---
 
 ## Python (`bindings/python/`)
@@ -195,6 +213,22 @@ archive and has the server unpack it into `dest_path` inside the sandbox.
 See [DESIGN.md](../DESIGN.md#bdgwishfile_service) for the chunked-transfer
 protocol these build on.
 
+### TLS
+
+`Client.tls(host, port)` is the TLS counterpart of `Client.tcp()` -- trust/
+identity material (`ca_file`/`ca_pem`, `insecure_skip_verify`,
+`cert_file`/`cert_pem`, `key_file`/`key_pem`, `key_password`, `server_name`)
+is supplied via `run()`'s `params`:
+
+```python
+client = Client.tls("127.0.0.1", 8443)
+client.run(session, params={"ca_pem": ca_cert_pem})
+```
+
+See [cli.md](cli.md#tls-flags---transport-tls) for the matching `--transport=tls`
+CLI flags and bison's [TLS-Secured Transport](https://github.com/binary-dice-games/bison/blob/main/docs/tls.md)
+doc for the full parameter reference.
+
 ---
 
 ## C# (`bindings/csharp/`)
@@ -275,6 +309,22 @@ client.Run(c =>
     c.Wait();                           // blocks until an event handler calls c.Quit()
 });
 ```
+
+### TLS
+
+`Client.Tls(host, port)` is the TLS counterpart of `Client.Tcp()` -- trust/
+identity material (`ca_file`/`ca_pem`, `insecure_skip_verify`,
+`cert_file`/`cert_pem`, `key_file`/`key_pem`, `key_password`, `server_name`)
+is supplied via `Run()`'s `parameters`:
+
+```csharp
+using var client = Client.Tls("127.0.0.1", 8443);
+client.Run(c => { /* ... */ }, new Dictionary<string, object> { ["ca_pem"] = caCertPem });
+```
+
+See [cli.md](cli.md#tls-flags---transport-tls) for the matching `--transport=tls`
+CLI flags and bison's [TLS-Secured Transport](https://github.com/binary-dice-games/bison/blob/main/docs/tls.md)
+doc for the full parameter reference.
 
 ### Automation (`bindings/python/wish/automation.py`)
 

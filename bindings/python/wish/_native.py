@@ -125,6 +125,9 @@ def _setup_wish_signatures(lib: ctypes.CDLL) -> None:
     lib.wish_client_tcp_create.restype = ClientHandle
     lib.wish_client_tcp_create.argtypes = [ctypes.c_char_p, ctypes.c_uint16]
 
+    lib.wish_client_tls_create.restype = ClientHandle
+    lib.wish_client_tls_create.argtypes = [ctypes.c_char_p, ctypes.c_uint16]
+
     lib.wish_client_stream_create.restype = ClientHandle
     lib.wish_client_stream_create.argtypes = [ctypes.c_char_p]
 

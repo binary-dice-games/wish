@@ -41,6 +41,14 @@ class TestClientLifecycle(unittest.TestCase):
         # Idempotent.
         client.destroy()
 
+    def test_tls_create_and_destroy(self):
+        client = Client.tls("127.0.0.1", 7070)
+        self.assertTrue(client._handle)
+        client.destroy()
+        self.assertFalse(client._handle)
+        # Idempotent.
+        client.destroy()
+
     def test_destroy_via_del_does_not_raise(self):
         client = Client.tcp("127.0.0.1", 7070)
         del client

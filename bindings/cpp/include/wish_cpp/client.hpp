@@ -58,7 +58,7 @@ inline std::string list_apps_json() {
 /**
  * @brief RAII wrapper around a `wish_client_handle`.
  *
- * Construct via `tcp()`, `stream()`, `pipe()`, or `term()`, then call
+ * Construct via `tcp()`, `tls()`, `stream()`, `pipe()`, or `term()`, then call
  * `run()` to connect, drive the session, and disconnect -- mirroring
  * `wish_client_run_with_params()`: the session callback runs on the
  * library's RMI worker thread and `run()` blocks until it returns (or a
@@ -86,6 +86,19 @@ class client {
   static client tcp(const std::string& host, uint16_t port) {
     wish_client_handle h = wish_client_tcp_create(host.c_str(), port);
     if (!h) throw error(WISH_ERR_EXCEPTION, "client::tcp: wish_client_tcp_create failed");
+    return client(h);
+  }
+
+  /**
+   * @brief Create a TLS-secured TCP socket client (not yet connected).
+   *
+   * TLS trust/identity material (`ca_file`/`ca_pem`, `insecure_skip_verify`,
+   * `cert_file`/`cert_pem`, `key_file`/`key_pem`, `key_password`,
+   * `server_name`) is supplied via `run()`'s `connect_params`.
+   */
+  static client tls(const std::string& host, uint16_t port) {
+    wish_client_handle h = wish_client_tls_create(host.c_str(), port);
+    if (!h) throw error(WISH_ERR_EXCEPTION, "client::tls: wish_client_tls_create failed");
     return client(h);
   }
 

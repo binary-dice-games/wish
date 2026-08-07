@@ -14,6 +14,7 @@
 #include "src/rmi/transport/socket_transport.hpp"
 #include "src/rmi/transport/stream_transport.hpp"
 #include "src/rmi/transport/term_transport.hpp"
+#include "src/rmi/transport/tls_socket_transport.hpp"
 #include "src/term/scoped_terminal_config.hpp"
 
 #include <nlohmann/json.hpp>
@@ -199,6 +200,17 @@ extern "C" wish_client_handle wish_client_tcp_create(const char* host, uint16_t 
   try {
     auto state = std::make_unique<wish_client_handle_>();
     return make_client_handle(std::move(state), std::make_unique<socket_client_transport>(host, port));
+  } catch (...) {
+    return nullptr;
+  }
+}
+
+extern "C" wish_client_handle wish_client_tls_create(const char* host, uint16_t port) {
+  if (!host)
+    return nullptr;
+  try {
+    auto state = std::make_unique<wish_client_handle_>();
+    return make_client_handle(std::move(state), std::make_unique<tls_socket_client_transport>(host, port));
   } catch (...) {
     return nullptr;
   }

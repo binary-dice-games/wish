@@ -8,7 +8,7 @@ A remote UI framework built on [bison](https://github.com/binary-dice-games/biso
 - **~50 built-in widgets** — layouts, inputs, tables, docking/tabs, and full 2D/3D plotting, all backed by Dear ImGui.
 - **Two renderer backends** — windowed (SDL3) or browser-based (`--renderer web`, no GPU/window system required).
 - **JSON/YAML templates** — describe a UI hierarchy as data and instantiate it by name, or build it object-by-object in code.
-- **Multiple transports** — TCP, named pipe/Unix socket, an interactive terminal hop, or in-process (no serialization) for single-binary demos.
+- **Multiple transports** — TCP, TLS-secured TCP, named pipe/Unix socket, an interactive terminal hop, or in-process (no serialization) for single-binary demos.
 - **Per-session sandboxing** — isolated object tree, template registry, and file-service resource folder per connected client.
 - **Automation-ready** — an optional query/screenshot/input-injection API lets Playwright (or an AI agent) drive and introspect a running UI like a browser page; the SDL3 renderer gets the same capabilities natively over the C ABI, no browser required.
 - **C++, Python, and C# clients** — a native C++ API, a header-only C++ binding (`bindings/cpp/`, C ABI only, no bison/wish source to compile), plus generated Python/C# bindings, all layered on the same bison RMI proxy semantics.

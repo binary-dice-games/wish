@@ -41,8 +41,10 @@ class logger;
  *   --web_bind ADDR  Bind address, --renderer web only (default: 127.0.0.1)
  *
  * Plus all flags inherited from server_app (--transport, --host, --port,
- * --name, --cmd, --verbose). Note `--port` is bison's TCP RMI transport
- * port -- unrelated to `--web_port`, the web renderer's HTTP port.
+ * --name, --cmd, --verbose, and the --cert_file/--key_file/--ca_file/etc.
+ * TLS flags for --transport=tls -- see `server_app`'s own doc comment for
+ * the full list). Note `--port` is bison's TCP RMI transport port --
+ * unrelated to `--web_port`, the web renderer's HTTP port.
  *
  * A backend requested via `--renderer` that wasn't compiled in (see
  * `WISH_ENABLE_SDL3`/`WISH_ENABLE_WEB`) makes `run_with_transport()` throw

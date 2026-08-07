@@ -141,7 +141,12 @@ int wish_server_app::run_with_transport(bison::rmi::transport::server_transport_
   auto srv_owner = make_server(transport);
   auto& srv = static_cast<server&>(*srv_owner);
   srv.set_logger(server_log_);
-  srv.start();
+  // Populates cert_file/key_file/etc. from FLAGS_* when --transport=tls
+  // selected it (see bison::app::server_app::on_listen_params()); a no-op
+  // for every other transport.
+  bison::dynamic listen_params;
+  on_listen_params(listen_params);
+  srv.start(nullptr, std::move(listen_params));
   server_log_->info("server started");
   on_listening();
   // Stops on whichever comes first: the renderer's own close signal (sdl3
