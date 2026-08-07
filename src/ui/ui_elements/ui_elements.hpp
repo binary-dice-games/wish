@@ -30,5 +30,6 @@ void register_selectable();
 void register_docking(); // DockSpaceViewport, DockSpace
 void register_table(); // Table, TableColumn, TableRow
 void register_text_editor();
+void register_graph_node();
 
 } // namespace bdg::wish

@@ -43,6 +43,7 @@ void register_all() {
   register_docking();
   register_table();
   register_text_editor();
+  register_graph_node();
   // Plot elements — must come after Element is registered.
   register_plot(); // PlotItem, Plot
   register_plot_series(); // PlotLine, PlotScatter, PlotStairs, PlotStems, PlotShaded, PlotDigital

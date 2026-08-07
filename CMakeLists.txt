@@ -301,6 +301,7 @@ add_library(wish_server STATIC
   src/ui/ui_elements/docking.cpp
   src/ui/ui_elements/table.cpp
   src/ui/ui_elements/text_editor.cpp
+  src/ui/ui_elements/graph_node.cpp
   src/ui/plot_elements/plot.cpp
   src/ui/plot_elements/plot_series.cpp
   src/ui/plot_elements/plot_bars.cpp
@@ -330,6 +331,8 @@ if(WISH_ENABLE_IMGUI)
     src/imgui/imgui_plot3d_renderer.hpp
     src/imgui/imgui_plot3d_renderer.cpp
     src/imgui/imgui_text_editor_renderer.cpp
+    src/imgui/imgui_graph_renderer.hpp
+    src/imgui/imgui_graph_renderer.cpp
   )
   target_compile_definitions(wish_server PUBLIC WISH_IMGUI_ENABLED)
   # PUBLIC so that consumers who include imgui_renderer.hpp have imgui in path.

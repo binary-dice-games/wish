@@ -145,3 +145,12 @@ wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_NOTEPAD           test_notepad   
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_PROCESS_EXPLORER  test_process_explorer  test_process_explorer.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DEV_EDITOR                test_editor            test_editor.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_FILE_EXPLORER      test_file_explorer     test_file_explorer.cpp)
+wish_add_optional_test(WISH_MODULE_BDG_DEV_GIT                   test_git               test_git.cpp)
+# Pure algorithm, no bison/RMI dependency -- still gated on the module
+# option since it lives under modules/bdg/dev/git/ and would otherwise fail
+# to link when that directory isn't part of the build.
+wish_add_optional_test(WISH_MODULE_BDG_DEV_GIT                   test_git_graph_layout  test_git_graph_layout.cpp
+    ${CMAKE_SOURCE_DIR}/modules/bdg/dev/git/server/git_graph_layout.cpp)
+if(TARGET test_git_graph_layout)
+  target_include_directories(test_git_graph_layout PRIVATE ${CMAKE_SOURCE_DIR})
+endif()

@@ -490,6 +490,50 @@ directly, since `TableRow` children are rendered inline rather than through
 the generic per-element dispatch the "Drag and drop" section otherwise
 describes.
 
+### Graph
+
+#### `GraphNode`
+Draws one row's local segment of a lane-based DAG graph (e.g. a git commit
+graph): its own dot, plus every connector line touching that row, split
+into a **top half** (row top → row center) and **bottom half** (row
+center → row bottom) — the same top/bottom-split technique
+`git log --graph`/gitk/magit use to render straight pass-through lines,
+branch-out diagonals, and merge-in diagonals uniformly, meeting at each
+row's dot in the middle.
+
+Meant to sit as the leftmost cell of a `Table` row (a direct child of a
+`TableRow`, alongside ordinary text-column cells): scrolling and row
+selection (`row_selected`/`row_activated`) come from the surrounding
+`Table` for free, so `GraphNode` is a pure drawing widget with **no
+events of its own** and needs no click/hover handling. Not git-specific —
+any lane-assigned DAG can drive it from the same field shape.
+
+Colors are packed `0xRRGGBBAA` `int32` values (unlike `Label.text_color`/
+`Image.tint`'s `"#RRGGBBAA"` hex-string convention), since the per-segment
+arrays below need a field type usable inside `int32[]` — `bison::field`
+has no `string[]` alternative (see `bison_common.hpp`'s `field_base`
+variant) — and the single `color` field matches that for internal
+consistency within this element.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `lane` | `int32` | `0` | This row's own commit dot column (0-based). |
+| `color` | `int32` | `0` | Packed `0xRRGGBBAA` color for this row's own dot. |
+| `is_head` | `bool` | `false` | Draws a ring around the dot marking the current `HEAD`. |
+| `is_working` | `bool` | `false` | Draws a hollow dot instead of filled — for a synthetic "uncommitted changes" row. |
+| `top_from` / `top_to` / `top_color` | `int32[]` | `[]` | Parallel arrays: one entry per line segment in the row's top half, each segment's starting lane, ending lane (at the row's vertical center), and color. |
+| `bottom_from` / `bottom_to` / `bottom_color` | `int32[]` | `[]` | Same shape, for the row's bottom half (starting at the vertical center). |
+| `lane_width` | `float` | `16.0` | Pixel spacing between adjacent lanes (4–64). |
+| `dot_radius` | `float` | `4.5` | Commit dot radius in pixels (1–16). |
+| `row_height` | `float` | `0.0` | Total row height in pixels; `0` uses one text line height with spacing, matching an adjacent text cell's natural row height. |
+
+A segment whose `from`/`to` lane match draws as a straight vertical line;
+a lane-changing segment draws as a smooth cubic Bézier curve between the
+two lanes. The element auto-sizes its reserved width to whichever lane
+(its own dot, or any segment endpoint) sits furthest right, so a
+branch-out/merge-in diagonal that fans wider than the row's own dot isn't
+clipped. No events.
+
 ### Docking
 
 #### `DockSpaceViewport`

@@ -12,6 +12,7 @@
 
 #include <imgui.h>
 
+#include <imgui/imgui_graph_renderer.hpp>
 #include <imgui/imgui_plot3d_renderer.hpp>
 #include <imgui/imgui_plot_renderer.hpp>
 #include <imgui/imgui_ui_renderer.hpp>
@@ -40,6 +41,8 @@ static const render_fn_map& built_in_render_fns() {
       {"Table"_key.id, render_table},
       {"TableColumn"_key.id, render_table_column},
       {"TableRow"_key.id, render_table_row},
+      // Graph (lane-based DAG visualization, e.g. a git commit graph)
+      {"GraphNode"_key.id, render_graph_node},
       // Core
       {"Window"_key.id, render_window},
       {"Label"_key.id, render_label},
