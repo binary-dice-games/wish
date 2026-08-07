@@ -295,6 +295,19 @@ function(wish_finalize_app_modules)
     if(TARGET ${tgt})
       target_sources(${tgt} PRIVATE ${sources})
       target_compile_definitions(${tgt} PRIVATE ${defs})
+      # uv_a (libuv) is already compiled as part of every wish build --
+      # bison's RMI transports depend on it (extern/bison/CMakeLists.txt) --
+      # but only linked PRIVATE into the `bison` target, so it isn't
+      # reachable from module client code without this. Linking it here
+      # costs nothing extra when no module happens to use it directly; it
+      # only exposes symbols/headers already being built. See the `git`
+      # module's client/git_process.hpp for the consumer (a non-interactive
+      # uv_spawn-based subprocess helper -- bison's own bdg::bison::term::
+      # terminal is pty-only and unsuitable for repeated one-shot command
+      # capture, see that file's doc comment for why).
+      if(TARGET uv_a)
+        target_link_libraries(${tgt} PRIVATE uv_a)
+      endif()
     endif()
   endforeach()
 endfunction()
