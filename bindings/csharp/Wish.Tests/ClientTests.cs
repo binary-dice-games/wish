@@ -49,6 +49,15 @@ public class ClientLifecycleTests
     }
 
     [Fact]
+    public void TlsCreateAndDestroy()
+    {
+        var client = Client.Tls("127.0.0.1", 7070);
+        client.Destroy();
+        // Idempotent.
+        client.Destroy();
+    }
+
+    [Fact]
     public void DestroyViaDisposeDoesNotThrow()
     {
         using var client = Client.Tcp("127.0.0.1", 7070);

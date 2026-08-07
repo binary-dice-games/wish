@@ -6,6 +6,8 @@
 #include <ui/ui_descriptor.hpp>
 
 #include "src/rmi/rmi.hpp"
+#include "src/rmi/transport/tls_socket_transport.hpp"
+#include "tests/tls_test_certs.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -298,6 +300,52 @@ TEST(ServerTest, MenuBarExtensionSplicedNotDoubleRendered) {
     }
 
     c.disconnect();
+  }
+
+  srv.stop();
+}
+
+// ── TLS transport (transport=tls) ─────────────────────────────────────────────
+//
+// Exercises the wiring added for server_app/client_app's --transport=tls (see
+// docs/tls.md in bison): wish::server::start()'s listen_params argument must
+// actually reach tls_socket_server_transport::start() -- run_with_transport()
+// used to call listen(dynamic{}, ...) unconditionally, which silently
+// discarded on_listen_params()'s cert_file/key_file before this fix (see
+// app/wish_cli/server/wish_server_app.cpp).
+
+TEST(ServerTest, TlsTransportRoundTrip) {
+  constexpr uint16_t kPort = 17073;
+  tls_socket_server_transport transport{"127.0.0.1", kPort};
+
+  wish::server srv{transport, std::make_unique<wish::null_renderer>()};
+  srv.start(nullptr, rmi::transport::test::tls_server_params(
+                          rmi::transport::test::kTestServerCert, rmi::transport::test::kTestServerKey));
+
+  {
+    client c{std::make_unique<tls_socket_client_transport>("127.0.0.1", kPort)};
+    c.connect(rmi::transport::test::tls_client_params(rmi::transport::test::kTestCaCert));
+    instantiate_template(c, "win", R"({"type":"Window","title":"T"})");
+    c.disconnect();
+  }
+
+  srv.stop();
+}
+
+TEST(ServerTest, TlsTransportRejectsUntrustedCa) {
+  constexpr uint16_t kPort = 17074;
+  tls_socket_server_transport transport{"127.0.0.1", kPort};
+
+  wish::server srv{transport, std::make_unique<wish::null_renderer>()};
+  srv.start(nullptr, rmi::transport::test::tls_server_params(
+                          rmi::transport::test::kTestServerCert, rmi::transport::test::kTestServerKey));
+
+  {
+    // No ca_pem supplied and insecure_skip_verify left false -- the client
+    // has no trust anchor for the server's certificate, so the handshake
+    // (inside connect()) must fail rather than silently succeeding.
+    client c{std::make_unique<tls_socket_client_transport>("127.0.0.1", kPort)};
+    EXPECT_THROW(c.connect(), std::runtime_error);
   }
 
   srv.stop();

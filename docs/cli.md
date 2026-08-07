@@ -37,13 +37,35 @@ all; passing any of `--transport`/`--host`/`--port`/`--name` is an error).
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--transport T` | `term` | `tcp`, `pipe`, or `term`. `term` is an interactive pty/stdio hop the server spawns and the client is expected to run inside — see the [C# bindings example](bindings.md#c-bindingscsharp). |
-| `--host H` | `0.0.0.0` for server, `127.0.0.1` for client | Bind/connect host address (`--transport tcp` only) |
-| `--port P` | `7070` | Bind/connect port (`--transport tcp` only) |
+| `--transport T` | `term` | `tcp`, `pipe`, `tls`, or `term`. `term` is an interactive pty/stdio hop the server spawns and the client is expected to run inside — see the [C# bindings example](bindings.md#c-bindingscsharp). `tls` is a TLS-secured TCP socket. |
+| `--host H` | `0.0.0.0` for server, `127.0.0.1` for client | Bind/connect host address (`--transport tcp`/`tls` only) |
+| `--port P` | `7070` | Bind/connect port (`--transport tcp`/`tls` only) |
 | `--name PATH` | *(empty)* | Named-pipe / Unix-socket path (`--transport pipe` only) |
 | `--cmd C` | *(empty)* | Command to spawn (`server`, `--transport term` only) |
 | `--verbose` | `false` | Print session lifecycle / RMI trace messages to stdout |
 | `--debugger` | `false` | Wait for debugger attachment before starting |
+
+### TLS flags (`--transport tls`)
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--cert_file` / `--cert_pem` | *(empty)* | Certificate chain: server cert (`server`) or client cert for mutual TLS (`client`) |
+| `--key_file` / `--key_pem` | *(empty)* | Private key matching `--cert_file`/`--cert_pem` |
+| `--key_password` | *(empty)* | Passphrase for an encrypted private key |
+| `--client_auth` | `none` | Server mutual TLS mode: `none`, `optional`, or `required` (`server` only) |
+| `--ca_file` / `--ca_pem` | *(empty)* | Trust anchor: verifies client certs (`server`, when `--client_auth != none`) or the server's cert (`client`) |
+| `--server_name` | *(empty)* | SNI / hostname-verification target (`client` only, defaults to `--host`) |
+| `--insecure_skip_verify` | `false` | Skip server certificate verification — unsafe, dev/test only (`client` only) |
+
+```sh
+wish server --transport tls --port 8443 --cert_file server-cert.pem --key_file server-key.pem
+wish client --transport tls --port 8443 --ca_file ca-cert.pem --run notepad
+```
+
+These map 1:1 onto `tls_socket_client_transport`/`tls_socket_server_transport`'s
+own parameters — see [TLS-Secured Transport](https://github.com/binary-dice-games/bison/blob/main/docs/tls.md)
+in bison for the full reference (generating dev certificates, mutual TLS, and
+the underlying transport/C-ABI details).
 
 ## `wish server`
 
@@ -155,15 +177,17 @@ are active at once:
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--downstream_transport T` | `tcp` | `tcp`, `pipe`, or `term` |
-| `--downstream_host H` | `0.0.0.0` | (`downstream_transport=tcp` only) |
-| `--downstream_port P` | `7071` | (`downstream_transport=tcp` only) |
+| `--downstream_transport T` | `tcp` | `tcp`, `pipe`, `tls`, or `term` |
+| `--downstream_host H` | `0.0.0.0` | (`downstream_transport=tcp`/`tls` only) |
+| `--downstream_port P` | `7071` | (`downstream_transport=tcp`/`tls` only) |
 | `--downstream_name PATH` | *(empty)* | (`downstream_transport=pipe` only) |
-| `--upstream_transport T` | `term` | `tcp`, `pipe`, or `term` |
-| `--upstream_host H` | `127.0.0.1` | (`upstream_transport=tcp` only) |
-| `--upstream_port P` | `7070` | (`upstream_transport=tcp` only) |
+| `--downstream_cert_file`/`--downstream_cert_pem`, `--downstream_key_file`/`--downstream_key_pem`, `--downstream_key_password`, `--downstream_client_auth`, `--downstream_ca_file`/`--downstream_ca_pem` | — | Downstream TLS server flags, same meaning as `--cert_file`/etc. above (`downstream_transport=tls` only) |
+| `--upstream_transport T` | `term` | `tcp`, `pipe`, `tls`, or `term` |
+| `--upstream_host H` | `127.0.0.1` | (`upstream_transport=tcp`/`tls` only) |
+| `--upstream_port P` | `7070` | (`upstream_transport=tcp`/`tls` only) |
 | `--upstream_name PATH` | *(empty)* | (`upstream_transport=pipe` only) |
 | `--cmd C` | *(empty)* | Command to spawn (`upstream_transport=term` only) |
+| `--upstream_ca_file`/`--upstream_ca_pem`, `--upstream_server_name`, `--upstream_insecure_skip_verify`, `--upstream_cert_file`/`--upstream_cert_pem`, `--upstream_key_file`/`--upstream_key_pem`, `--upstream_key_password` | — | Upstream TLS client flags, same meaning as `--ca_file`/etc. above (`upstream_transport=tls` only) |
 | `--timeout MS` | `30000` | Upstream connection timeout in milliseconds |
 
 ```sh

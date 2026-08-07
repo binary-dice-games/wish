@@ -91,10 +91,13 @@ class wish_desktop : public bison::rmi::bridge {
  *
  * Extends `bison::app::bridge_app` so it inherits transport selection
  * (downstream `--downstream_transport`/`--downstream_host`/
- * `--downstream_port`/`--downstream_name`/`--cmd`, upstream
+ * `--downstream_port`/`--downstream_name`/`--cmd`, plus its
+ * `--downstream_cert_file`/etc. TLS flags; upstream
  * `--upstream_transport`/`--upstream_host`/`--upstream_port`/
- * `--upstream_name`, shared `--timeout`/`--verbose`/`--debugger`) and the
- * start/stop lifecycle. Only wish-specific behaviour is added here:
+ * `--upstream_name`, plus its `--upstream_ca_file`/etc. TLS flags; shared
+ * `--timeout`/`--verbose`/`--debugger`) and the start/stop lifecycle -- see
+ * `bridge_app`'s own doc comment for the full TLS flag list. Only
+ * wish-specific behaviour is added here:
  *
  * - `make_bridge()` constructs a `wish_desktop` instead of the generic
  *   internal bridge `bison::app::bridge_app` would otherwise build, and

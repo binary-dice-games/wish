@@ -61,11 +61,11 @@ server::~server() {
   }
 }
 
-void server::start(bison::rmi::auth_module_ptr auth_module) {
+void server::start(bison::rmi::auth_module_ptr auth_module, bison::dynamic listen_params) {
   register_all();
   running_.store(true, std::memory_order_release);
   render_thread_ = std::thread([this]() { render_loop(); });
-  listen(bison::dynamic{}, std::move(auth_module));
+  listen(std::move(listen_params), std::move(auth_module));
 }
 
 void server::stop() {

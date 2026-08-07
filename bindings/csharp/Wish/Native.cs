@@ -122,6 +122,9 @@ internal static partial class Native
     public static partial nint wish_client_tcp_create(string host, ushort port);
 
     [LibraryImport(LibName, StringMarshalling = StringMarshalling.Utf8)]
+    public static partial nint wish_client_tls_create(string host, ushort port);
+
+    [LibraryImport(LibName, StringMarshalling = StringMarshalling.Utf8)]
     public static partial nint wish_client_stream_create(string path);
 
     [LibraryImport(LibName, StringMarshalling = StringMarshalling.Utf8)]

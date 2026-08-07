@@ -40,10 +40,14 @@ namespace bdg::wish {
  *
  * CLI flags (consumed via gflags DECLARE_*), same `--transport` scheme as
  * `wish_server_app`:
- *   --transport T  tcp, pipe, or term (default: term)
- *   --host H       Connect host address  (transport=tcp)
- *   --port P       Connect port          (transport=tcp)
+ *   --transport T  tcp, pipe, tls, or term (default: term)
+ *   --host H       Connect host address  (transport=tcp/tls)
+ *   --port P       Connect port          (transport=tcp/tls)
  *   --name PATH    Named-pipe / Unix-socket path (transport=pipe)
+ *   --ca_file/--ca_pem, --insecure_skip_verify, --server_name,
+ *   --cert_file/--cert_pem, --key_file/--key_pem, --key_password
+ *                  TLS trust/identity material (transport=tls); see
+ *                  `client_app`'s own doc comment for details
  *
  * Plus wish-specific flags:
  *   --list                List available embedded apps and exit

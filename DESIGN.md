@@ -409,6 +409,7 @@ render frame: imgui Button("Submit") returns true
 | Transport | Class | Platform | Use case |
 |-----------|-------|----------|---------|
 | TCP socket | `socket_server_transport` / `socket_client_transport` | Linux + MSYS2 | Network or local daemon |
+| TLS-secured TCP | `tls_socket_server_transport` / `tls_socket_client_transport` | Linux + MSYS2 | Network or local daemon, over an untrusted network (`--transport=tls`; see [docs/cli.md](docs/cli.md#tls-flags---transport-tls)) |
 | In-memory | `memory_server_transport` / `memory_client_transport` | Linux + MSYS2 | Unit tests and self-contained examples (e.g. calculator) |
 
 `bdg::wish::server` accepts a `server_transport_iface&` reference, so transport selection is a runtime decision at the call site. No `#ifdef` inside the server or renderer.
@@ -460,7 +461,7 @@ See [docs/cli.md](docs/cli.md) for the full, authoritative flag reference (all f
 
 | Concept | C ABI | C++ equivalent |
 |---------|-------|----------------|
-| Session lifetime | `wish_client_tcp_create` / `wish_client_stream_create` / `wish_client_pipe_create` / `wish_client_term_create`, then `wish_client_run` / `wish_client_destroy` | `wish::client` subclass + `run()` |
+| Session lifetime | `wish_client_tcp_create` / `wish_client_tls_create` / `wish_client_stream_create` / `wish_client_pipe_create` / `wish_client_term_create`, then `wish_client_run` / `wish_client_destroy` | `wish::client` subclass + `run()` |
 | UI templates | `wish_register_template` + `wish_instantiate_template` | `register_template` + `instantiate_template` |
 | Proxy access | `wish_proxy_get(c, "btns.ok")` | `pm.at("btns.ok")` |
 | Field update | `wish_proxy_set_string(p, wish_key("text"), "Hi")` | `proxy.set({{"text"_key, "Hi"}})` |

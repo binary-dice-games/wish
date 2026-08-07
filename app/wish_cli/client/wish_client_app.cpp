@@ -132,6 +132,14 @@ wish_client_app::download_file(const std::string& name, bdg::wish::transfer_prog
 }
 
 void wish_client_app::on_connect_params(bison::dynamic& params) const {
+  // Delegates to the base implementation for --transport=tls's
+  // server_name/ca_file/ca_pem/insecure_skip_verify/cert_file/cert_pem/
+  // key_file/key_pem/key_password params (see client_app::on_connect_params()
+  // in bison), then overrides timeout_ms with FLAGS_timeout directly rather
+  // than relying on the base's `timeout_` member, which is only set once
+  // client_app::run() begins -- on_connect_params() may run before that via
+  // paths that skip straight to run_with_transport().
+  bison::app::client_app::on_connect_params(params);
   params["timeout_ms"_key] = int32_t{FLAGS_timeout};
 }
 

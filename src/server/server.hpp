@@ -63,7 +63,7 @@ class server : public bison::rmi::server {
    * @brief Register wish classes, start the render loop, then begin accepting
    *        client connections.
    *
-   * @param auth_module Optional authentication hook (see
+   * @param auth_module   Optional authentication hook (see
    *                     `bison::rmi::auth_module_iface`), evaluated once per
    *                     connection. `nullptr` (default) disables the
    *                     feature: no session ever gets a persistent sandbox
@@ -71,8 +71,14 @@ class server : public bison::rmi::server {
    *                     A parameter rather than a setter, since the module
    *                     cannot sensibly change once the accept loop is
    *                     running -- mirrors `bison::rmi::server::listen()`.
+   * @param listen_params Forwarded unchanged to the underlying transport's
+   *                     `start()` (via `bison::rmi::server::listen()`) --
+   *                     e.g. `cert_file`/`key_file`/`ca_file`/etc. for a
+   *                     `tls_socket_server_transport` (see
+   *                     `docs/tls.md` in bison). Empty (default) for
+   *                     transports that need no extra parameters.
    */
-  void start(bison::rmi::auth_module_ptr auth_module = nullptr);
+  void start(bison::rmi::auth_module_ptr auth_module = nullptr, bison::dynamic listen_params = bison::dynamic{});
 
   /**
    * @brief Attach a shared logger that all sessions will write through.
