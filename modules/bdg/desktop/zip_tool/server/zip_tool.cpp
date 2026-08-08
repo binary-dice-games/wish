@@ -165,7 +165,7 @@ static constexpr const char* kContentsLayout = R"json({
           "type": "Table", "columns": 4, "headers": true,
           "flags": 33554881, "outer_width": 0, "outer_height": 300,
           "children": {
-            "col_name":       { "type": "TableColumn", "label": "Name", "init_width": 220 },
+            "col_name":       { "type": "TableColumn", "label": "Name" },
             "col_size":       { "type": "TableColumn", "label": "Size", "flags": 16, "init_width": 80 },
             "col_compressed": { "type": "TableColumn", "label": "Compressed", "flags": 16, "init_width": 90 },
             "col_ratio":      { "type": "TableColumn", "label": "Ratio", "flags": 16, "init_width": 70 }

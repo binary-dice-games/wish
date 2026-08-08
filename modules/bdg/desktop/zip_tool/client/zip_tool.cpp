@@ -294,16 +294,21 @@ void run_zip_tool(wish_app_host& s) {
     auto archive_name = payload.as<std::string>("archive_name"_key);
 
     std::thread([tool, cur_dir, path, source_name, archive_name]() {
+      std::string message;
       try {
         compress(fs::path(path), source_name, archive_name);
-        report_status(tool, "Created \"" + archive_name + "\".");
+        message = "Created \"" + archive_name + "\".";
       } catch (const std::exception& e) {
-        report_status(tool, std::string{"Compress failed: "} + e.what());
+        message = std::string{"Compress failed: "} + e.what();
       }
       // Refresh regardless of outcome -- even a failed attempt may have
-      // left a partial archive file behind.
+      // left a partial archive file behind. update_listing()'s handler
+      // unconditionally resets the status label to "Ready.", so the
+      // outcome message must be reported *after* the refresh, not before,
+      // or it would be immediately overwritten and never seen.
       if (*cur_dir == fs::path(path))
         report_listing(tool, cur_dir);
+      report_status(tool, message);
     }).detach();
   });
 
@@ -314,14 +319,19 @@ void run_zip_tool(wish_app_host& s) {
     auto dest_name = payload.as<std::string>("dest_name"_key);
 
     std::thread([tool, cur_dir, path, zip_name, dest_name]() {
+      std::string message;
       try {
         extract(fs::path(path), zip_name, dest_name);
-        report_status(tool, "Extracted to \"" + dest_name + "/\".");
+        message = "Extracted to \"" + dest_name + "/\".";
       } catch (const std::exception& e) {
-        report_status(tool, std::string{"Extract failed: "} + e.what());
+        message = std::string{"Extract failed: "} + e.what();
       }
+      // See the compress handler's comment above: report the outcome after
+      // the refresh, not before, so update_listing()'s "Ready." reset
+      // doesn't clobber it.
       if (*cur_dir == fs::path(path))
         report_listing(tool, cur_dir);
+      report_status(tool, message);
     }).detach();
   });
 
