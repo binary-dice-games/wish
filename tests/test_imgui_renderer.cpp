@@ -420,6 +420,156 @@ TEST_F(ImguiRendererTest, ComboOpeningDropdownMarksSessionDirty) {
   EXPECT_GT(sess_->dirty.load(std::memory_order_acquire), 0);
 }
 
+// ── ContextMenu: right-click popup ───────────────────────────────────────────
+
+// Simulate a right mouse button release at screen position `pos`. Must be
+// called after NewFrame() and before the target item renders this same
+// frame: unlike fake_click()'s ActiveId-based press+release simulation
+// (needed for ButtonBehavior widgets), ImGui::BeginPopupContextItem() relies
+// on IsItemHovered(), which is computed immediately from io.MousePos the
+// moment the item is added -- there is no ActiveId shortcut for it.
+static void fake_right_click_at(ImVec2 pos) {
+  ImGuiIO& io = ImGui::GetIO();
+  io.MousePos = pos;
+  io.MouseDown[1] = false;
+  io.MouseReleased[1] = true;
+}
+
+// Captures the rect of "the last item drawn" right before a ContextMenu
+// node's own dispatch -- i.e. its preceding sibling (or, inside a TableRow,
+// the row's own Selectable) -- the exact item render_context_menu's
+// BeginPopupContextItem() call attaches to. Reading GetItemRectMin/Max()
+// before forwarding to the base class is what makes this the *preceding*
+// item's rect rather than the ContextMenu's own (it draws nothing).
+class preceding_item_rect_capturing_renderer : public imgui_renderer {
+ public:
+  ImVec2 rect_min{}, rect_max{};
+  bool captured{false};
+
+  void render_node(const ui_element& node, const context& s) override {
+    if (!captured && node.as<bdg::bison::key_t>(dynamic::CLASS) == "ContextMenu"_key) {
+      rect_min = ImGui::GetItemRectMin();
+      rect_max = ImGui::GetItemRectMax();
+      captured = true;
+    }
+    imgui_renderer::render_node(node, s);
+  }
+};
+
+TEST_F(ImguiRendererTest, ContextMenuOpensOnRightClickOfPrecedingSibling) {
+  auto map = bdg::wish::import_json(R"({
+    "type": "VerticalLayout",
+    "children": {
+      "btn": { "type": "Button", "label": "Target" },
+      "ctx": { "type": "ContextMenu", "children": {
+        "item": { "type": "MenuItem", "label": "Delete" }
+      }}
+    }
+  })");
+
+  // Frame 1: capture the Button's rect (the ContextMenu's preceding
+  // sibling); the popup starts closed.
+  preceding_item_rect_capturing_renderer rect_r;
+  rect_r.begin_frame();
+  in_window([&] { rect_r.render_node(*map[""], *sess_); });
+  rect_r.end_frame();
+  ASSERT_TRUE(rect_r.captured);
+  ImVec2 center{(rect_r.rect_min.x + rect_r.rect_max.x) * 0.5f, (rect_r.rect_min.y + rect_r.rect_max.y) * 0.5f};
+
+  // Frame 2: right-click the Button's center -- opens the ContextMenu and
+  // renders its MenuItem child in this same frame.
+  menu_item_capturing_renderer item_r;
+  ImGui::GetIO().DeltaTime = 1.0f / 60.0f;
+  ImGui::NewFrame();
+  fake_right_click_at(center);
+  in_window([&] { item_r.render_node(*map[""], *sess_); });
+  ImGui::EndFrame();
+
+  EXPECT_NE(item_r.menu_item_id, ImGuiID{0});
+}
+
+// ── Table row ContextMenu: right-click anywhere on the row ──────────────────
+
+// Captures the ImGui column index a Label cell renders into -- used to
+// confirm a ContextMenu child (regardless of its position among a
+// TableRow's children) never consumes a column slot.
+class column_index_capturing_renderer : public imgui_renderer {
+ public:
+  std::vector<int32_t> label_columns;
+
+  void render_node(const ui_element& node, const context& s) override {
+    if (node.as<bdg::bison::key_t>(dynamic::CLASS) == "Label"_key)
+      label_columns.push_back(ImGui::TableGetColumnIndex());
+    imgui_renderer::render_node(node, s);
+  }
+};
+
+TEST_F(ImguiRendererTest, TableRowContextMenuChildExcludedFromColumnCount) {
+  // ContextMenu is listed *first*, ahead of both real cells -- if it were
+  // ever treated as a column, "c0"/"c1" would land in columns 1/2 instead
+  // of 0/1 (or overflow into a wrapped second row).
+  auto map = bdg::wish::import_json(R"({
+    "type": "Table", "id": "t_ctx2", "columns": 2, "flags": 0, "headers": false,
+    "children": {
+      "ca": { "type": "TableColumn", "label": "Name" },
+      "cb": { "type": "TableColumn", "label": "Value" },
+      "r0": { "type": "TableRow", "children": {
+        "ctx": { "type": "ContextMenu", "children": {
+          "item": { "type": "MenuItem", "label": "Kill" }
+        }},
+        "c0": { "type": "Label", "text": "proc" },
+        "c1": { "type": "Label", "text": "42" }
+      }}
+    }
+  })");
+
+  column_index_capturing_renderer r;
+  r.begin_frame();
+  in_window([&] { r.render_node(*map[""], *sess_); });
+  r.end_frame();
+
+  ASSERT_EQ(r.label_columns.size(), 2u);
+  EXPECT_EQ(r.label_columns[0], 0);
+  EXPECT_EQ(r.label_columns[1], 1);
+}
+
+TEST_F(ImguiRendererTest, TableRowContextMenuOpensOnRightClickAnywhereOnRow) {
+  auto map = bdg::wish::import_json(R"({
+    "type": "Table", "id": "t_ctx3", "columns": 2, "flags": 0, "headers": false,
+    "children": {
+      "ca": { "type": "TableColumn", "label": "Name" },
+      "cb": { "type": "TableColumn", "label": "Value" },
+      "r0": { "type": "TableRow", "children": {
+        "c0": { "type": "Label", "text": "proc" },
+        "c1": { "type": "Label", "text": "42" },
+        "ctx": { "type": "ContextMenu", "children": {
+          "item": { "type": "MenuItem", "label": "Kill" }
+        }}
+      }}
+    }
+  })");
+
+  // Frame 1: capture the row's own Selectable rect (the item immediately
+  // preceding the row's ContextMenu child, per render_table()'s call order).
+  preceding_item_rect_capturing_renderer rect_r;
+  rect_r.begin_frame();
+  in_window([&] { rect_r.render_node(*map[""], *sess_); });
+  rect_r.end_frame();
+  ASSERT_TRUE(rect_r.captured);
+  ImVec2 center{(rect_r.rect_min.x + rect_r.rect_max.x) * 0.5f, (rect_r.rect_min.y + rect_r.rect_max.y) * 0.5f};
+
+  // Frame 2: right-click the row's midpoint -- opens the popup and renders
+  // its MenuItem child in this same frame, same as the standalone case.
+  menu_item_capturing_renderer item_r;
+  ImGui::GetIO().DeltaTime = 1.0f / 60.0f;
+  ImGui::NewFrame();
+  fake_right_click_at(center);
+  in_window([&] { item_r.render_node(*map[""], *sess_); });
+  ImGui::EndFrame();
+
+  EXPECT_NE(item_r.menu_item_id, ImGuiID{0});
+}
+
 // ── Unknown class: no throw ───────────────────────────────────────────────────
 
 TEST_F(ImguiRendererTest, UnknownClassDoesNotThrow) {

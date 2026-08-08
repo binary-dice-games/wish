@@ -30,6 +30,8 @@ struct process_sample {
   char state{'?'}; ///< OS-reported run state (e.g. 'R', 'S', 'D', 'Z', 'T').
   double cpu_percent{0.0}; ///< 0..100*num_cores; delta since the previous sample() call.
   uint64_t mem_rss_bytes{0}; ///< Resident set size.
+  int nice{0}; ///< Scheduling priority, Linux nice-value scale (-20 highest .. 19 lowest).
+  std::vector<int> affinity_cores; ///< Logical core indices this process is currently allowed to run on.
 };
 
 /// @brief System-wide CPU and memory usage at a point in time.

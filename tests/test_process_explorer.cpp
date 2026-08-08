@@ -36,6 +36,8 @@ struct fake_process {
   std::string state;
   float cpu_percent;
   float mem_rss_bytes;
+  int32_t nice_value{0};
+  std::vector<int32_t> affinity_cores{};
 };
 
 // bison::dynamic fields only support float (not double) among floating-
@@ -62,6 +64,8 @@ dynamic make_snapshot_args(
     (*e)["state"_key] = p.state;
     (*e)["cpu_percent"_key] = p.cpu_percent;
     (*e)["mem_rss_bytes"_key] = p.mem_rss_bytes;
+    (*e)["nice_value"_key] = p.nice_value;
+    (*e)["affinity_cores"_key] = p.affinity_cores;
     procs[i++] = dynamic_ptr{e};
   }
   args["processes"_key] = dynamic_ptr{std::make_shared<dynamic>(std::move(procs))};
@@ -304,6 +308,118 @@ class ProcessExplorerSnapshotTest : public ::testing::Test {
     h->second->on_event(table_id, "sorted"_key, std::move(payload));
   }
 
+  // ── Context-menu test helpers ────────────────────────────────────────────
+  //
+  // Row cells (and their ContextMenu/MenuItem children) are registered only
+  // via ctx().put_object() -- not merged into ui_objects' dot-path map, same
+  // as pid_label/name_label/etc. -- so they must be found by walking the
+  // Table's "children" field, same technique as row_pids_in_order() above.
+  // Confirm-kill/affinity/properties dialogs, by contrast, ARE built via
+  // import_json()+ui_objects.merge() (like file_explorer's own confirm
+  // dialog), so those are found by dot-path prefix instead (find_root_with_prefix()).
+
+  dynamic_ptr find_row(int pid) const {
+    auto it = srv_->last_session->ui_objects.find(root_ + ".vbox.proc_table");
+    if (it == srv_->last_session->ui_objects.end())
+      return nullptr;
+    auto* cf = it->second->findField<dynamic_ptr>("children"_key);
+    if (!cf || !*cf)
+      return nullptr;
+    // NOTE: dynamic_ptr's default constructor (dynamic_ptr(key_t klass =
+    // 0U)) allocates a fresh empty dynamic rather than a null shared_ptr, so
+    // a plain `dynamic_ptr found;` is truthy from the start -- a separate
+    // bool tracks whether a real match was assigned.
+    dynamic_ptr found;
+    bool has_found = false;
+    (*cf)->forEach([&](bison::key_t, const field& f) {
+      if (has_found || !f.is<dynamic_ptr>())
+        return;
+      auto row = f.as<dynamic_ptr>();
+      if (!row)
+        return;
+      auto* rc = row->findField<dynamic_ptr>("children"_key);
+      if (!rc || !*rc)
+        return;
+      auto& pid_field = (*rc)->at(size_t{0});
+      if (!pid_field.is<dynamic_ptr>())
+        return;
+      auto pid_label = pid_field.as<dynamic_ptr>();
+      if (pid_label && pid_label->as<std::string>("text"_key) == std::to_string(pid)) {
+        found = row;
+        has_found = true;
+      }
+    });
+    return has_found ? found : nullptr;
+  }
+
+  static dynamic_ptr nth_child(const dynamic_ptr& parent, size_t index) {
+    if (!parent)
+      return nullptr;
+    auto* cf = parent->findField<dynamic_ptr>("children"_key);
+    if (!cf || !*cf)
+      return nullptr;
+    auto& f = (*cf)->at(index);
+    if (!f.is<dynamic_ptr>())
+      return nullptr;
+    return f.as<dynamic_ptr>();
+  }
+
+  static bison::key_t element_id(const dynamic_ptr& elem) {
+    return elem ? elem->as<bison::key_t>("__wish_id"_key) : bison::key_t{};
+  }
+
+  // Row's ContextMenu is its 7th (index 6) child, after the 6 cells.
+  dynamic_ptr context_menu_of(int pid) const {
+    return nth_child(find_row(pid), 6);
+  }
+
+  // ContextMenu children, in build_row_context_menu()'s order.
+  dynamic_ptr properties_item_of(int pid) const {
+    return nth_child(context_menu_of(pid), 0);
+  }
+  dynamic_ptr pause_resume_item_of(int pid) const {
+    return nth_child(context_menu_of(pid), 2);
+  }
+  dynamic_ptr kill_item_of(int pid) const {
+    return nth_child(context_menu_of(pid), 3);
+  }
+  dynamic_ptr priority_menu_of(int pid) const {
+    return nth_child(context_menu_of(pid), 5);
+  }
+  dynamic_ptr priority_item_of(int pid, size_t level_index) const {
+    return nth_child(priority_menu_of(pid), level_index);
+  }
+  dynamic_ptr affinity_item_of(int pid) const {
+    return nth_child(context_menu_of(pid), 6);
+  }
+
+  void fire(bison::key_t id, bison::key_t event, dynamic payload = dynamic{}) {
+    auto h = srv_->last_session->top_level_handlers.find(root_);
+    ASSERT_NE(h, srv_->last_session->top_level_handlers.end());
+    h->second->on_event(id, event, std::move(payload));
+  }
+
+  static std::string find_root_with_prefix(const wish::name_map& objects, const std::string& prefix) {
+    for (const auto& [k, _] : objects) {
+      if (k.rfind(prefix, 0) == 0 && k.find('.') == std::string::npos)
+        return k;
+    }
+    return {};
+  }
+
+  std::string label_text_at(const std::string& dialog_root, const std::string& suffix) const {
+    return label_text(dialog_root + "." + suffix);
+  }
+
+  // emit() defers delivery to the render loop's next frame (see
+  // session.hpp's contract on emit_event), so callers must spin briefly for
+  // it -- same idiom as WindowClosedEmitsClosedAndCleansUp below.
+  static void wait_for(const bool& flag) {
+    auto t0 = std::chrono::steady_clock::now();
+    while (!flag && std::chrono::steady_clock::now() - t0 < std::chrono::seconds(2))
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+
   memory_server_transport transport_;
   std::unique_ptr<SessionCapturingServer> srv_;
   std::unique_ptr<bdg::bison::rmi::client> client_;
@@ -461,4 +577,405 @@ TEST_F(ProcessExplorerSnapshotTest, WindowClosedEmitsClosedAndCleansUp) {
 
   EXPECT_TRUE(got_closed);
   EXPECT_EQ(srv_->last_session->ui_objects.count(root_), 0u);
+}
+
+// ── Row context menu: shape ───────────────────────────────────────────────────
+
+TEST_F(ProcessExplorerSnapshotTest, NewRowGetsContextMenuWithExpectedItems) {
+  update_snapshot(5.0, {10.0f, 20.0f}, 1000.0, 100.0, {{100, "init", "[init]", "S", 5.0, 0.0, 0, {0, 1}}});
+
+  auto menu = context_menu_of(100);
+  ASSERT_TRUE(menu);
+  EXPECT_EQ(menu->as<bison::key_t>(dynamic::CLASS), "ContextMenu"_key);
+
+  EXPECT_EQ(properties_item_of(100)->as<std::string>("label"_key), "Properties...");
+  EXPECT_EQ(pause_resume_item_of(100)->as<std::string>("label"_key), "Pause");
+  EXPECT_EQ(kill_item_of(100)->as<std::string>("label"_key), "Kill Process");
+  EXPECT_EQ(affinity_item_of(100)->as<std::string>("label"_key), "Set CPU Affinity...");
+
+  auto priority_menu = priority_menu_of(100);
+  ASSERT_TRUE(priority_menu);
+  EXPECT_EQ(priority_menu->as<std::string>("label"_key), "Priority");
+  // nice_value defaults to 0 ("Normal", index 2) -- only that entry checked.
+  for (size_t i = 0; i < 6; ++i) {
+    auto item = priority_item_of(100, i);
+    ASSERT_TRUE(item) << "missing priority item " << i;
+    EXPECT_EQ(item->as<bool>("checked"_key), i == 2) << "priority item " << i;
+  }
+}
+
+TEST_F(ProcessExplorerSnapshotTest, PauseResumeItemLabelTracksProcessState) {
+  update_snapshot(5.0, {}, 1000.0, 100.0, {{100, "init", "[init]", "S", 5.0, 0.0}});
+  EXPECT_EQ(pause_resume_item_of(100)->as<std::string>("label"_key), "Pause");
+
+  // 'T' (traced/stopped) is the state a SIGSTOP'd process reports.
+  update_snapshot(5.0, {}, 1000.0, 100.0, {{100, "init", "[init]", "T", 5.0, 0.0}});
+  EXPECT_EQ(pause_resume_item_of(100)->as<std::string>("label"_key), "Resume");
+}
+
+TEST_F(ProcessExplorerSnapshotTest, PriorityCheckmarkTracksNiceValueAcrossSnapshots) {
+  update_snapshot(5.0, {}, 1000.0, 100.0, {{100, "init", "[init]", "S", 5.0, 0.0, 0}});
+  EXPECT_TRUE(priority_item_of(100, 2)->as<bool>("checked"_key)); // Normal
+
+  update_snapshot(5.0, {}, 1000.0, 100.0, {{100, "init", "[init]", "S", 5.0, 0.0, -10}});
+  EXPECT_FALSE(priority_item_of(100, 2)->as<bool>("checked"_key));
+  EXPECT_TRUE(priority_item_of(100, 4)->as<bool>("checked"_key)); // High
+}
+
+// ── Kill: confirmation dialog ─────────────────────────────────────────────────
+
+TEST_F(ProcessExplorerSnapshotTest, KillClickShowsConfirmDialogInsteadOfEmitting) {
+  update_snapshot(5.0, {}, 1000.0, 100.0, {{100, "init", "[init]", "S", 5.0, 0.0}});
+
+  bool got = false;
+  auto prev = std::move(srv_->last_session->emit_event);
+  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
+    if (event == "on_process_action_requested"_key)
+      got = true;
+    if (prev)
+      prev(id, event, std::move(payload));
+  };
+
+  fire(element_id(kill_item_of(100)), "clicked"_key);
+  wait_for(got);
+  EXPECT_FALSE(got) << "kill should be held back pending confirmation";
+
+  std::string confirm_root = find_root_with_prefix(srv_->last_session->ui_objects, "__procexp_confirm_");
+  ASSERT_FALSE(confirm_root.empty()) << "no confirm dialog root registered";
+  EXPECT_TRUE(srv_->last_session->top_level_objects.count(bison::key_t{confirm_root}));
+  EXPECT_NE(label_text_at(confirm_root, "message").find("100"), std::string::npos);
+  EXPECT_NE(label_text_at(confirm_root, "message").find("init"), std::string::npos);
+}
+
+TEST_F(ProcessExplorerSnapshotTest, ConfirmKillYesEmitsOnProcessActionRequestedWithKill) {
+  update_snapshot(5.0, {}, 1000.0, 100.0, {{100, "init", "[init]", "S", 5.0, 0.0}});
+  fire(element_id(kill_item_of(100)), "clicked"_key);
+
+  std::string confirm_root = find_root_with_prefix(srv_->last_session->ui_objects, "__procexp_confirm_");
+  ASSERT_FALSE(confirm_root.empty());
+  auto yes_id = srv_->last_session->ui_objects.at(confirm_root + ".buttons.btn_yes")->as<bison::key_t>("__wish_id"_key);
+
+  bool got = false;
+  dynamic captured;
+  auto prev = std::move(srv_->last_session->emit_event);
+  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
+    if (event == "on_process_action_requested"_key) {
+      got = true;
+      captured = std::move(payload);
+    }
+    if (prev)
+      prev(id, event, std::move(payload));
+  };
+
+  fire(yes_id, "clicked"_key);
+  wait_for(got);
+  ASSERT_TRUE(got);
+  EXPECT_EQ(captured.as<int32_t>("pid"_key), 100);
+  EXPECT_EQ(captured.as<std::string>("action"_key), "kill");
+}
+
+TEST_F(ProcessExplorerSnapshotTest, ConfirmKillNoCancelsWithoutEmitting) {
+  update_snapshot(5.0, {}, 1000.0, 100.0, {{100, "init", "[init]", "S", 5.0, 0.0}});
+  fire(element_id(kill_item_of(100)), "clicked"_key);
+
+  std::string confirm_root = find_root_with_prefix(srv_->last_session->ui_objects, "__procexp_confirm_");
+  ASSERT_FALSE(confirm_root.empty());
+  auto no_id = srv_->last_session->ui_objects.at(confirm_root + ".buttons.btn_no")->as<bison::key_t>("__wish_id"_key);
+
+  bool got = false;
+  auto prev = std::move(srv_->last_session->emit_event);
+  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
+    if (event == "on_process_action_requested"_key)
+      got = true;
+    if (prev)
+      prev(id, event, std::move(payload));
+  };
+
+  fire(no_id, "clicked"_key);
+  wait_for(got);
+  EXPECT_FALSE(got);
+}
+
+// ── Pause/resume and priority: direct emission (no confirmation) ─────────────
+
+TEST_F(ProcessExplorerSnapshotTest, PauseResumeClickEmitsPauseWhenRunning) {
+  update_snapshot(5.0, {}, 1000.0, 100.0, {{100, "init", "[init]", "S", 5.0, 0.0}});
+
+  bool got = false;
+  dynamic captured;
+  srv_->last_session->emit_event = [&](bison::key_t, bison::key_t event, dynamic payload) {
+    if (event == "on_process_action_requested"_key) {
+      got = true;
+      captured = std::move(payload);
+    }
+  };
+
+  fire(element_id(pause_resume_item_of(100)), "clicked"_key);
+  wait_for(got);
+  ASSERT_TRUE(got);
+  EXPECT_EQ(captured.as<int32_t>("pid"_key), 100);
+  EXPECT_EQ(captured.as<std::string>("action"_key), "pause");
+}
+
+TEST_F(ProcessExplorerSnapshotTest, PauseResumeClickEmitsResumeWhenStopped) {
+  update_snapshot(5.0, {}, 1000.0, 100.0, {{100, "init", "[init]", "T", 5.0, 0.0}});
+
+  bool got = false;
+  dynamic captured;
+  srv_->last_session->emit_event = [&](bison::key_t, bison::key_t event, dynamic payload) {
+    if (event == "on_process_action_requested"_key) {
+      got = true;
+      captured = std::move(payload);
+    }
+  };
+
+  fire(element_id(pause_resume_item_of(100)), "clicked"_key);
+  wait_for(got);
+  ASSERT_TRUE(got);
+  EXPECT_EQ(captured.as<std::string>("action"_key), "resume");
+}
+
+TEST_F(ProcessExplorerSnapshotTest, PriorityItemClickEmitsSetPriorityWithCorrectNice) {
+  update_snapshot(5.0, {}, 1000.0, 100.0, {{100, "init", "[init]", "S", 5.0, 0.0}});
+
+  bool got = false;
+  dynamic captured;
+  srv_->last_session->emit_event = [&](bison::key_t, bison::key_t event, dynamic payload) {
+    if (event == "on_process_action_requested"_key) {
+      got = true;
+      captured = std::move(payload);
+    }
+  };
+
+  // Index 4 == "High" == nice -10 (see kPriorityLevels in process_explorer.cpp).
+  fire(element_id(priority_item_of(100, 4)), "clicked"_key);
+  wait_for(got);
+  ASSERT_TRUE(got);
+  EXPECT_EQ(captured.as<int32_t>("pid"_key), 100);
+  EXPECT_EQ(captured.as<std::string>("action"_key), "set_priority");
+  EXPECT_EQ(captured.as<int32_t>("nice"_key), -10);
+}
+
+// ── Set CPU Affinity dialog ───────────────────────────────────────────────────
+
+TEST_F(ProcessExplorerSnapshotTest, AffinityDialogOpensWithCurrentCoresPrechecked) {
+  update_snapshot(
+      5.0, {10.0f, 20.0f, 30.0f, 40.0f}, 1000.0, 100.0, {{100, "init", "[init]", "S", 5.0, 0.0, 0, {0, 2}}});
+
+  fire(element_id(affinity_item_of(100)), "clicked"_key);
+
+  std::string affinity_root = find_root_with_prefix(srv_->last_session->ui_objects, "__procexp_affinity_");
+  ASSERT_FALSE(affinity_root.empty());
+  EXPECT_TRUE(srv_->last_session->top_level_objects.count(bison::key_t{affinity_root}));
+
+  auto core_checked = [&](int i) {
+    return srv_->last_session->ui_objects.at(affinity_root + ".cores.core" + std::to_string(i))
+        ->as<bool>("value"_key);
+  };
+  EXPECT_TRUE(core_checked(0));
+  EXPECT_FALSE(core_checked(1));
+  EXPECT_TRUE(core_checked(2));
+  EXPECT_FALSE(core_checked(3));
+}
+
+TEST_F(ProcessExplorerSnapshotTest, AffinityApplyEmitsSetAffinityWithCheckedCores) {
+  update_snapshot(5.0, {10.0f, 20.0f, 30.0f}, 1000.0, 100.0, {{100, "init", "[init]", "S", 5.0, 0.0, 0, {0, 1, 2}}});
+  fire(element_id(affinity_item_of(100)), "clicked"_key);
+
+  std::string affinity_root = find_root_with_prefix(srv_->last_session->ui_objects, "__procexp_affinity_");
+  ASSERT_FALSE(affinity_root.empty());
+
+  // Uncheck core 1 directly (as if render_checkbox() had already toggled
+  // it), then Apply -- the handler reads each checkbox's current `value`
+  // field rather than tracking a separate "changed" history.
+  srv_->last_session->ui_objects.at(affinity_root + ".cores.core1")["value"_key] = false;
+
+  bool got = false;
+  dynamic captured;
+  srv_->last_session->emit_event = [&](bison::key_t, bison::key_t event, dynamic payload) {
+    if (event == "on_process_action_requested"_key) {
+      got = true;
+      captured = std::move(payload);
+    }
+  };
+
+  auto apply_id =
+      srv_->last_session->ui_objects.at(affinity_root + ".buttons.btn_apply")->as<bison::key_t>("__wish_id"_key);
+  fire(apply_id, "clicked"_key);
+  wait_for(got);
+  ASSERT_TRUE(got);
+  EXPECT_EQ(captured.as<int32_t>("pid"_key), 100);
+  EXPECT_EQ(captured.as<std::string>("action"_key), "set_affinity");
+  auto* cores = captured.findField<std::vector<int32_t>>("cores"_key);
+  ASSERT_NE(cores, nullptr);
+  EXPECT_EQ(*cores, (std::vector<int32_t>{0, 2}));
+}
+
+TEST_F(ProcessExplorerSnapshotTest, AffinityApplyWithNoCoresCheckedDoesNotEmitAndSetsStatus) {
+  update_snapshot(5.0, {10.0f}, 1000.0, 100.0, {{100, "init", "[init]", "S", 5.0, 0.0, 0, {0}}});
+  fire(element_id(affinity_item_of(100)), "clicked"_key);
+
+  std::string affinity_root = find_root_with_prefix(srv_->last_session->ui_objects, "__procexp_affinity_");
+  ASSERT_FALSE(affinity_root.empty());
+  srv_->last_session->ui_objects.at(affinity_root + ".cores.core0")["value"_key] = false;
+
+  bool got = false;
+  srv_->last_session->emit_event = [&](bison::key_t, bison::key_t event, dynamic) {
+    if (event == "on_process_action_requested"_key)
+      got = true;
+  };
+
+  auto apply_id =
+      srv_->last_session->ui_objects.at(affinity_root + ".buttons.btn_apply")->as<bison::key_t>("__wish_id"_key);
+  fire(apply_id, "clicked"_key);
+  wait_for(got);
+  EXPECT_FALSE(got);
+  EXPECT_NE(label_text(root_ + ".vbox.status_label").find("at least one core"), std::string::npos);
+}
+
+// ── Properties dialog ─────────────────────────────────────────────────────────
+
+TEST_F(ProcessExplorerSnapshotTest, PropertiesClickShowsLoadingAndRequestsDetails) {
+  update_snapshot(5.0, {}, 1000.0, 100.0, {{100, "init", "[init]", "S", 5.0, 0.0}});
+
+  bool got = false;
+  dynamic captured;
+  srv_->last_session->emit_event = [&](bison::key_t, bison::key_t event, dynamic payload) {
+    if (event == "on_process_details_requested"_key) {
+      got = true;
+      captured = std::move(payload);
+    }
+  };
+
+  fire(element_id(properties_item_of(100)), "clicked"_key);
+  wait_for(got);
+  ASSERT_TRUE(got);
+  EXPECT_EQ(captured.as<int32_t>("pid"_key), 100);
+
+  std::string properties_root = find_root_with_prefix(srv_->last_session->ui_objects, "__procexp_properties_");
+  ASSERT_FALSE(properties_root.empty());
+  EXPECT_NE(label_text_at(properties_root, "grid.pid_row").find("100"), std::string::npos);
+}
+
+TEST_F(ProcessExplorerSnapshotTest, ReportProcessDetailsPopulatesDialog) {
+  update_snapshot(5.0, {}, 1000.0, 100.0, {{100, "init", "[init]", "S", 5.0, 0.0}});
+  fire(element_id(properties_item_of(100)), "clicked"_key);
+
+  dynamic report;
+  report["pid"_key] = int32_t{100};
+  report["found"_key] = true;
+  report["ppid"_key] = int32_t{1};
+  report["user"_key] = std::string{"root"};
+  report["thread_count"_key] = int32_t{4};
+  report["start_time"_key] = std::string{"2026-08-08 12:00:00"};
+  report["exe_path"_key] = std::string{"/sbin/init"};
+  report["cwd"_key] = std::string{"/"};
+  report["cmdline"_key] = std::string{"/sbin/init"};
+  report["nice"_key] = int32_t{0};
+  report["affinity_cores"_key] = std::vector<int32_t>{0, 1};
+  proxy_->call("report_process_details"_key, std::move(report)).get();
+
+  std::string properties_root = find_root_with_prefix(srv_->last_session->ui_objects, "__procexp_properties_");
+  ASSERT_FALSE(properties_root.empty());
+  EXPECT_NE(label_text_at(properties_root, "grid.ppid_row").find("1"), std::string::npos);
+  EXPECT_NE(label_text_at(properties_root, "grid.user_row").find("root"), std::string::npos);
+  EXPECT_NE(label_text_at(properties_root, "grid.threads_row").find("4"), std::string::npos);
+  EXPECT_NE(label_text_at(properties_root, "grid.exe_row").find("/sbin/init"), std::string::npos);
+}
+
+TEST_F(ProcessExplorerSnapshotTest, ReportProcessDetailsIgnoredForStalePid) {
+  update_snapshot(
+      5.0, {}, 1000.0, 100.0, {{100, "init", "[init]", "S", 5.0, 0.0}, {200, "sshd", "[sshd]", "S", 1.0, 0.0}});
+  fire(element_id(properties_item_of(100)), "clicked"_key);
+
+  std::string properties_root = find_root_with_prefix(srv_->last_session->ui_objects, "__procexp_properties_");
+  ASSERT_FALSE(properties_root.empty());
+
+  // A response for a *different* pid (e.g. a slow response that arrived
+  // after the user closed pid 100's dialog and opened pid 200's) must not
+  // overwrite what's currently showing.
+  dynamic report;
+  report["pid"_key] = int32_t{200};
+  report["found"_key] = true;
+  report["ppid"_key] = int32_t{1};
+  report["user"_key] = std::string{"nobody"};
+  report["thread_count"_key] = int32_t{1};
+  report["start_time"_key] = std::string{};
+  report["exe_path"_key] = std::string{"/usr/sbin/sshd"};
+  report["cwd"_key] = std::string{};
+  report["cmdline"_key] = std::string{};
+  report["nice"_key] = int32_t{0};
+  report["affinity_cores"_key] = std::vector<int32_t>{};
+  proxy_->call("report_process_details"_key, std::move(report)).get();
+
+  // Still showing the "Loading..." placeholder show_properties_dialog()
+  // set for pid 100 -- the pid-200 response must be ignored outright, not
+  // just fail to overwrite a value that happened to already be filled in.
+  EXPECT_EQ(label_text_at(properties_root, "grid.ppid_row"), "Loading...");
+}
+
+TEST_F(ProcessExplorerSnapshotTest, ReportProcessDetailsNotFoundShowsError) {
+  update_snapshot(5.0, {}, 1000.0, 100.0, {{100, "init", "[init]", "S", 5.0, 0.0}});
+  fire(element_id(properties_item_of(100)), "clicked"_key);
+
+  dynamic report;
+  report["pid"_key] = int32_t{100};
+  report["found"_key] = false;
+  report["error"_key] = std::string{"No such process"};
+  proxy_->call("report_process_details"_key, std::move(report)).get();
+
+  std::string properties_root = find_root_with_prefix(srv_->last_session->ui_objects, "__procexp_properties_");
+  ASSERT_FALSE(properties_root.empty());
+  EXPECT_EQ(label_text_at(properties_root, "grid.ppid_row"), "No such process");
+}
+
+// ── Action result: status label ───────────────────────────────────────────────
+
+TEST_F(ProcessExplorerSnapshotTest, ReportActionResultSuccessUpdatesStatusLabel) {
+  dynamic report;
+  report["pid"_key] = int32_t{100};
+  report["action"_key] = std::string{"kill"};
+  report["success"_key] = true;
+  report["error"_key] = std::string{};
+  proxy_->call("report_action_result"_key, std::move(report)).get();
+
+  auto text = label_text(root_ + ".vbox.status_label");
+  EXPECT_NE(text.find("100"), std::string::npos);
+  EXPECT_NE(text.find("succeeded"), std::string::npos);
+}
+
+TEST_F(ProcessExplorerSnapshotTest, ReportActionResultFailureUpdatesStatusLabelWithError) {
+  dynamic report;
+  report["pid"_key] = int32_t{100};
+  report["action"_key] = std::string{"set_priority"};
+  report["success"_key] = false;
+  report["error"_key] = std::string{"Permission denied"};
+  proxy_->call("report_action_result"_key, std::move(report)).get();
+
+  auto text = label_text(root_ + ".vbox.status_label");
+  EXPECT_NE(text.find("failed"), std::string::npos);
+  EXPECT_NE(text.find("Permission denied"), std::string::npos);
+}
+
+// ── Vanished process cleans up its context-menu action mappings ──────────────
+
+TEST_F(ProcessExplorerSnapshotTest, VanishedProcessKillItemNoLongerTriggersConfirm) {
+  update_snapshot(5.0, {}, 1000.0, 100.0, {{100, "init", "[init]", "S", 5.0, 0.0}});
+  auto kill_id = element_id(kill_item_of(100));
+  ASSERT_NE(kill_id.id, 0u);
+
+  update_snapshot(5.0, {}, 1000.0, 100.0, {}); // pid 100 no longer present
+
+  bool got = false;
+  srv_->last_session->emit_event = [&](bison::key_t, bison::key_t event, dynamic) {
+    if (event == "on_process_action_requested"_key)
+      got = true;
+  };
+  // The old kill item's id is no longer registered in action_item_targets_,
+  // so replaying its click must be a no-op instead of resurrecting a
+  // confirm dialog for a process that's already gone.
+  fire(kill_id, "clicked"_key);
+  wait_for(got);
+  EXPECT_FALSE(got);
+  EXPECT_TRUE(find_root_with_prefix(srv_->last_session->ui_objects, "__procexp_confirm_").empty());
 }

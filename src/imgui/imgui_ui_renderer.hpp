@@ -57,6 +57,7 @@ void render_menu_bar(imgui_renderer& r, const ui_element& node, const context& s
 void render_menu(imgui_renderer& r, const ui_element& node, const context& s);
 void render_menu_item(imgui_renderer&, const ui_element& node, const context& s);
 void render_menu_button(imgui_renderer& r, const ui_element& node, const context& s);
+void render_context_menu(imgui_renderer& r, const ui_element& node, const context& s);
 
 // Tabs
 void render_tab_bar(imgui_renderer& r, const ui_element& node, const context& s);

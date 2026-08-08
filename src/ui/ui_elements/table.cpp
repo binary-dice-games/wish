@@ -152,7 +152,9 @@ void register_table() {
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("TableRow"));
     (*proto)[dynamic::CLASS].addAttribute(
         attr<Description>("A row inside a Table. Each child element occupies one column cell "
-                          "in left-to-right order."));
+                          "in left-to-right order, except a ContextMenu child (if present), which "
+                          "is excluded from column layout and instead opens as a right-click menu "
+                          "for the whole row."));
     dynamic::addClass(
         "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_element>("wish"_key, "TableRow"_key));
   }

@@ -385,6 +385,21 @@ register as a top-level object (not nested under a `Window`); children are
 `Menu`/trailing `Label`, same shape as `MenuBar`. Removed automatically on
 session disconnect. No fields, no events.
 
+#### `ContextMenu`
+A right-click popup. It draws nothing itself — it opens when the *previous
+sibling* in the same parent is right-clicked, via
+`ImGui::BeginPopupContextItem()` attaching to that sibling's last-drawn
+ImGui item, the same way `MenuButton` attaches its popup to its own trigger
+`Button`. Works after any normal widget reached through the generic child
+dispatch (`Button`, `Checkbox`, ...). As a child of `TableRow` it is a
+special case instead: `Table`'s renderer excludes it from column layout and
+opens it on a right-click anywhere on that row (see `TableRow` below), since
+a cell's `Label` content has no stable item id of its own to attach to.
+Children should be `MenuItem`, `Menu` (submenu), or `Separator` elements,
+rendered inside the popup exactly as they would inside a `MenuBar`. No
+fields, no events of its own — its `MenuItem` children fire `clicked` the
+same as they would inside a `Menu`.
+
 ### Tabs
 
 #### `TabBar`
@@ -472,7 +487,10 @@ rendered independently. No events.
 | `column_id` | `int32` | `0` | Stable ID echoed back in the parent `Table`'s `sorted` event payload — use it to map a sort click to a semantic field independent of column position. |
 
 #### `TableRow`
-A data row; each child occupies one column cell, left to right.
+A data row; each child occupies one column cell, left to right — except a
+`ContextMenu` child (if present), which is excluded from column layout and
+instead opens as a right-click menu for the whole row (see `ContextMenu`
+under "Menus" above).
 
 | Field | Type | Default | Description |
 |---|---|---|---|
