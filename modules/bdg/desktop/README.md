@@ -12,3 +12,4 @@ or individual modules with their own `WISH_MODULE_BDG_DESKTOP_<NAME>` option
 | [calculator](calculator/README.md) | Four-function calculator; demonstrates self-contained server-side form logic. |
 | [notepad](notepad/README.md) | Multi-file, syntax-highlighted text editor. |
 | [process_explorer](process_explorer/README.md) | top/htop-style system monitor; client samples CPU/memory/processes, server only renders. |
+| [zip_tool](zip_tool/README.md) | Zip/unzip tool for the client's local filesystem; server owns the UI, client does the actual compress/extract/list-contents I/O. |
