@@ -12,7 +12,8 @@
 
 namespace bdg::wish {
 
-/// @brief Read-only, top/htop-style system monitor form.
+/// @brief Top/htop-style system monitor form, with a per-row right-click
+/// menu for managing individual processes.
 ///
 /// Shows CPU and memory history graphs (via `plot_elements`), one meter per
 /// logical CPU core, and a process table the user can sort by clicking any
@@ -27,8 +28,28 @@ namespace bdg::wish {
 /// client owns `upload_file`/`download_file` while the server only manages
 /// tabs.
 ///
+/// Right-clicking a row opens a `ContextMenu` (see `src/ui/ui_elements/menu.cpp`
+/// and `render_table()` in `imgui_ui_renderer.cpp`) with: Properties (opens
+/// an extended-info dialog), Pause/Resume, Kill Process (behind a
+/// confirmation dialog), a Priority submenu, and Set CPU Affinity (opens a
+/// per-core checkbox dialog). Actual process-control work is inherently
+/// OS-specific and happens on the *client's* machine, same rationale as
+/// sampling: this form only builds the menu and, on a click, `emit()`s a
+/// request event for the client to act on (see `on_process_action_requested`/
+/// `on_process_details_requested` below) -- mirroring `file_explorer`'s
+/// `on_upload_requested`/`on_download_requested` pattern.
+///
 /// Emitted events:
 ///   - `"closed"` — user clicked the window X button; internal UI is removed.
+///   - `"on_process_action_requested"` — a context-menu action was
+///     confirmed; `{ pid: int32, action: string }` where `action` is one of
+///     `"kill"`, `"pause"`, `"resume"`, `"set_priority"` (adds `nice: int32`,
+///     the Linux nice-value scale on every platform), or `"set_affinity"`
+///     (adds `cores: int32[]`, the 0-based logical core indices to allow).
+///     The client is expected to call `report_action_result` afterward.
+///   - `"on_process_details_requested"` — the "Properties..." item was
+///     clicked; `{ pid: int32 }`. The client is expected to call
+///     `report_process_details` with the result.
 class process_explorer : public form {
  public:
   explicit process_explorer(bison::dynamic&& base);
@@ -40,7 +61,9 @@ class process_explorer : public form {
   ///   - `mem_total_bytes`, `mem_used_bytes` (float).
   ///   - `processes` (dynamic array) — each entry a dynamic with `pid`
   ///     (int32), `name`, `command`, `state` (single-character string),
-  ///     `cpu_percent` (float), `mem_rss_bytes` (float).
+  ///     `cpu_percent` (float), `mem_rss_bytes` (float), `nice_value`
+  ///     (int32, Linux nice-value scale), `affinity_cores` (int32[],
+  ///     0-based logical core indices).
   /// Rows are reconciled by `pid` (added/updated/removed in place) and kept
   /// sorted by whichever column the user last clicked (see `on_event`'s
   /// `"sorted"` handling below; defaults to `cpu_percent` descending). The
@@ -48,16 +71,44 @@ class process_explorer : public form {
   /// `per_core_percent` length.
   bison::dynamic do_update_snapshot(const bison::dynamic& args);
 
+  /// @brief RMI method: reports the outcome of a previously-requested
+  /// `on_process_action_requested` action. @p args holds `pid` (int32),
+  /// `action` (string), `success` (bool), and `error` (string, only
+  /// meaningful when `success` is false). Updates the status label at the
+  /// bottom of the window.
+  bison::dynamic do_report_action_result(const bison::dynamic& args);
+
+  /// @brief RMI method: delivers the result of a previously-requested
+  /// `on_process_details_requested` lookup. @p args holds `pid` (int32),
+  /// `found` (bool), and -- when `found` is true -- `ppid` (int32), `user`,
+  /// `thread_count` (int32), `start_time`, `exe_path`, `cwd`, `cmdline`,
+  /// `nice` (int32), `affinity_cores` (int32[]); when `found` is false,
+  /// `error` (string) instead. Ignored if the Properties dialog isn't
+  /// currently open for this exact `pid` (it may have been closed, or
+  /// reopened for a different process, before this response arrived).
+  bison::dynamic do_report_process_details(const bison::dynamic& args);
+
  protected:
   void on_init() override;
-  /// @brief Reacts to `"closed"` (window X button) and `"sorted"` (a
+  /// @brief Reacts to: `"closed"` (window X button); `"sorted"` (a
   /// `proc_table_` column header was clicked -- see `Table`'s docs in
-  /// `src/ui/ui_elements/table.cpp`). The latter updates the active sort
-  /// column/direction and immediately re-sorts the existing rows, without
-  /// waiting for the client's next `update_snapshot` call.
+  /// `src/ui/ui_elements/table.cpp`); a row context-menu item's `"clicked"`
+  /// (looked up via `action_item_targets_`); and the confirm-kill/
+  /// set-affinity/properties dialogs' own button clicks.
   void on_event(bison::key_t widget_id, bison::key_t event_name, const bison::dynamic& payload) override;
 
  private:
+  /// Which context-menu action a `MenuItem`'s `__wish_id` maps to (see
+  /// `action_item_targets_`). `priority` additionally carries the nice
+  /// value that specific submenu entry represents.
+  enum class row_action_kind { kill, pause_or_resume, properties, affinity_dialog, priority };
+
+  struct row_action_target {
+    int pid{0};
+    row_action_kind kind{row_action_kind::kill};
+    int32_t nice{0}; ///< Only meaningful when kind == priority.
+  };
+
   struct row_entry {
     ui_element_ptr row;
     ui_element_ptr pid_label;
@@ -66,12 +117,23 @@ class process_explorer : public form {
     ui_element_ptr cpu_bar;
     ui_element_ptr mem_label;
     ui_element_ptr command_label;
+    /// Label toggles "Pause"/"Resume" based on `state`; kept live so
+    /// update_process_table() can refresh it without rebuilding the menu.
+    ui_element_ptr pause_resume_item;
+    /// One MenuItem per kPriorityLevels entry, in the same order; `checked`
+    /// is refreshed from `nice` on every snapshot.
+    std::vector<ui_element_ptr> priority_items;
+    bison::key_t kill_id;
+    bison::key_t properties_id;
+    bison::key_t affinity_id;
     size_t child_key{0};
     std::string name;
     std::string state;
     std::string command;
     float cpu_percent{0.0f};
     float mem_rss_bytes{0.0f};
+    int32_t nice{0};
+    std::vector<int32_t> affinity_cores;
   };
 
   void ensure_core_meters(size_t core_count);
@@ -82,6 +144,31 @@ class process_explorer : public form {
   /// refresh each row's `order` field -- no new data needed, so this can run
   /// directly from `on_event` for instant feedback on a header click.
   void resort_rows();
+
+  /// @brief Builds the row's ContextMenu element (Properties/Pause-Resume/
+  /// Kill/Priority submenu/Set CPU Affinity), registering every item's
+  /// `__wish_id` in `action_item_targets_` and populating @p entry's
+  /// `pause_resume_item`/`priority_items`/`kill_id`/`properties_id`/
+  /// `affinity_id`. Returns the ContextMenu element, appended as the row's
+  /// last child by the caller.
+  ui_element_ptr build_row_context_menu(row_entry& entry, int pid, const std::string& state, int32_t nice);
+  /// @brief Updates an existing row's ContextMenu state (pause/resume
+  /// label, priority checkmarks) from freshly-sampled `state`/`nice` --
+  /// called from update_process_table()'s existing-row branch.
+  void update_row_context_menu(row_entry& entry, const std::string& state, int32_t nice);
+  void set_status(const std::string& text);
+
+  void show_confirm_kill(int pid);
+  void request_close_confirm();
+  void remove_confirm_objects();
+
+  void show_affinity_dialog(int pid);
+  void request_close_affinity();
+  void remove_affinity_objects();
+
+  void show_properties_dialog(int pid);
+  void request_close_properties();
+  void remove_properties_objects();
 
   bison::key_t window_id_;
   bison::key_t proc_table_id_;
@@ -99,6 +186,7 @@ class process_explorer : public form {
   ui_element_ptr cpu_plot_series_;
   ui_element_ptr mem_plot_series_;
   ui_element_ptr proc_table_;
+  ui_element_ptr status_label_;
 
   std::vector<float> cpu_history_;
   std::vector<float> mem_history_;
@@ -106,6 +194,53 @@ class process_explorer : public form {
 
   std::unordered_map<int, row_entry> pid_to_row_;
   size_t next_child_key_{0};
+
+  /// Maps a row context-menu item's `__wish_id` to the (pid, action) it
+  /// represents; erased alongside the row when its process vanishes.
+  std::unordered_map<bison::key_t, row_action_target, bison::key_t, bison::key_t> action_item_targets_;
+
+  /// Confirm-kill dialog (mirrors file_explorer's overwrite-confirmation
+  /// dialog: an internal Window merged as its own top-level object, closed
+  /// via the __request_close__/closed handshake). Only one may be open at a
+  /// time; a new kill request replaces it.
+  std::string confirm_root_key_;
+  bison::key_t confirm_window_id_;
+  bison::key_t confirm_yes_id_;
+  bison::key_t confirm_no_id_;
+  int confirm_kill_pid_{0};
+
+  /// Set CPU Affinity dialog: one Checkbox per logical core (built at
+  /// show-time from the current core count and the row's current
+  /// `affinity_cores`), plus Apply/Cancel. Checkbox state is read directly
+  /// from each element's own `value` field at Apply time -- no separate
+  /// "changed" handler needed, since render_checkbox() already writes it
+  /// back on toggle.
+  std::string affinity_root_key_;
+  bison::key_t affinity_window_id_;
+  bison::key_t affinity_apply_id_;
+  bison::key_t affinity_cancel_id_;
+  int affinity_dialog_pid_{0};
+  std::vector<std::pair<ui_element_ptr, int32_t>> affinity_checkboxes_; ///< (checkbox, core index).
+
+  /// Properties (extended info) dialog: built immediately on click with a
+  /// "Loading..." placeholder; do_report_process_details() fills it in once
+  /// the client responds. Labels are kept live (rather than looked up by
+  /// path) so the RMI handler can update them directly, the same pattern
+  /// do_update_snapshot() uses for cpu_summary_label_/etc.
+  std::string properties_root_key_;
+  bison::key_t properties_window_id_;
+  bison::key_t properties_close_id_;
+  int properties_dialog_pid_{0};
+  ui_element_ptr properties_pid_label_;
+  ui_element_ptr properties_ppid_label_;
+  ui_element_ptr properties_user_label_;
+  ui_element_ptr properties_threads_label_;
+  ui_element_ptr properties_start_label_;
+  ui_element_ptr properties_priority_label_;
+  ui_element_ptr properties_affinity_label_;
+  ui_element_ptr properties_exe_label_;
+  ui_element_ptr properties_cwd_label_;
+  ui_element_ptr properties_cmdline_label_;
 };
 
 /// @brief Register ProcessExplorer in the "wish" bison namespace.

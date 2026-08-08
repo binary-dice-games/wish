@@ -115,6 +115,37 @@ void register_menu() {
         dynamic::make_factory<ui_element>("wish"_key, "MenuButton"_key));
   }
 
+  // ContextMenu — a right-click popup. Its own render dispatch entry
+  // (render_context_menu, imgui_ui_renderer.cpp) attaches it to "the last
+  // ImGui item drawn" via ImGui::BeginPopupContextItem(), exactly like
+  // MenuButton attaches its popup to its own trigger Button -- the
+  // difference is ContextMenu draws nothing itself, so whichever sibling
+  // renders immediately before it in the same parent becomes the item the
+  // right-click is detected on. That works for any normal widget (Button,
+  // Selectable, ...) reached through the generic render_children() dispatch.
+  // A `TableRow` is a special case: its children are cells consumed
+  // positionally as table columns, and cell content (e.g. Label) does not
+  // register a stable ImGui item id for BeginPopupContextItem to attach to.
+  // render_table() therefore excludes a ContextMenu child from column
+  // layout and renders it itself, right after the row's own hit-test
+  // Selectable, so the popup attaches to the row as a whole (see
+  // render_table() in imgui_ui_renderer.cpp and TableRow's docs).
+  {
+    auto proto = dynamic_ptr{"ContextMenu"_rkey, {}};
+    (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("ContextMenu"));
+    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+        "A right-click popup menu. Opens when the previous sibling in the same "
+        "parent is right-clicked (or, as a TableRow child, when that row is "
+        "right-clicked). Children should be MenuItem, Menu (submenu), or "
+        "Separator elements, rendered inside the popup exactly as they would "
+        "inside a MenuBar."));
+    dynamic::addClass(
+        "wish"_key,
+        std::move(proto),
+        "Element"_key,
+        dynamic::make_factory<ui_element>("wish"_key, "ContextMenu"_key));
+  }
+
   // MenuBarExtension — registered by a session (e.g. the desktop bridge) as
   // a top-level object to splice extra content into the *server's* own
   // chrome menu bar, instead of creating a competing menu bar/dockspace.

@@ -8,6 +8,8 @@
 /// touching any other file here.
 #include "process_info.hpp"
 
+#include <sched.h>
+
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
@@ -121,8 +123,8 @@ void read_proc_meminfo(uint64_t& total_bytes, uint64_t& used_bytes) {
 
 // Reads /proc/<pid>/stat, splitting after the last ')' since comm may
 // contain spaces or parentheses. tokens[0] is state (field 3); utime/stime
-// are fields 14/15, i.e. tokens[11]/tokens[12].
-bool read_proc_pid_stat(int pid, char& state, uint64_t& utime, uint64_t& stime) {
+// are fields 14/15 (tokens[11]/tokens[12]); nice is field 19 (tokens[16]).
+bool read_proc_pid_stat(int pid, char& state, uint64_t& utime, uint64_t& stime, int& nice) {
   std::ifstream in("/proc/" + std::to_string(pid) + "/stat");
   if (!in.is_open())
     return false;
@@ -140,7 +142,24 @@ bool read_proc_pid_stat(int pid, char& state, uint64_t& utime, uint64_t& stime) 
   state = tokens[0].empty() ? '?' : tokens[0][0];
   utime = std::stoull(tokens[11]);
   stime = std::stoull(tokens[12]);
+  nice = tokens.size() > 16 ? std::stoi(tokens[16]) : 0;
   return true;
+}
+
+// sched_getaffinity() reports which logical cores `pid` is currently
+// allowed to run on; capped at `num_cores` (the same count per_core_percent
+// is sized to) so a stale/oversized kernel CPU_SETSIZE never produces core
+// indices the UI has no meter/checkbox for.
+std::vector<int> read_affinity_cores(int pid, size_t num_cores) {
+  std::vector<int> cores;
+  cpu_set_t set;
+  CPU_ZERO(&set);
+  if (sched_getaffinity(pid, sizeof(set), &set) != 0)
+    return cores;
+  for (size_t i = 0; i < num_cores && i < CPU_SETSIZE; ++i)
+    if (CPU_ISSET(i, &set))
+      cores.push_back(static_cast<int>(i));
+  return cores;
 }
 
 uint64_t read_proc_pid_rss_bytes(int pid) {
@@ -229,7 +248,8 @@ struct process_info_source::impl {
 
       char state = '?';
       uint64_t utime = 0, stime = 0;
-      if (!read_proc_pid_stat(pid, state, utime, stime))
+      int nice = 0;
+      if (!read_proc_pid_stat(pid, state, utime, stime, nice))
         continue; // process exited mid-scan, or unreadable — skip like top does
 
       process_sample ps;
@@ -240,6 +260,8 @@ struct process_info_source::impl {
       if (ps.command.empty())
         ps.command = "[" + ps.name + "]";
       ps.mem_rss_bytes = read_proc_pid_rss_bytes(pid);
+      ps.nice = nice;
+      ps.affinity_cores = read_affinity_cores(pid, num_cores);
 
       uint64_t jiffies = utime + stime;
       next_prev_proc_jiffies[pid] = jiffies;

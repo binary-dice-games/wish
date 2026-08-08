@@ -653,6 +653,24 @@ void render_menu_button(imgui_renderer& r, const ui_element& node, const context
   }
 }
 
+void render_context_menu(imgui_renderer& r, const ui_element& node, const context& s) {
+  // BeginPopupContextItem(NULL) both detects the right-click (on the last
+  // ImGui item drawn -- normally the previous sibling in this node's own
+  // parent, or the row Selectable when render_table() invokes this out of
+  // its usual child-iteration order -- see ContextMenu's registration
+  // comment in src/ui/ui_elements/menu.cpp) and opens/tracks the popup, so
+  // unlike render_menu_button() there is no separate OpenPopup() call.
+  if (ImGui::BeginPopupContextItem()) {
+    // Same settle-frames need as render_menu()/render_menu_button(): the
+    // popup enqueues no wish event of its own to force the couple of
+    // follow-up frames ImGui needs to size/render its newly opened content.
+    if (ImGui::IsWindowAppearing())
+      s.dirty.store(kDirtySettleFrames, std::memory_order_release);
+    render_children(r, node, s);
+    ImGui::EndPopup();
+  }
+}
+
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 
 void render_tab_bar(imgui_renderer& r, const ui_element& node, const context& s) {
@@ -1060,11 +1078,27 @@ void render_table(imgui_renderer& r, const ui_element& node, const context& s) {
       // render_node() here, only their cells are (below).
       handle_drag_drop(child, s);
 
+      // A ContextMenu child is excluded from column layout (see the loop
+      // below) and rendered here instead, right after the Selectable, so
+      // ImGui::BeginPopupContextItem() (inside render_context_menu) attaches
+      // to the row's own hit-test item -- a cell's Label/etc. content has no
+      // stable ImGui item id of its own for it to fall back to. At most one
+      // ContextMenu child per row is supported; a second one is ignored.
+      ui_element* context_menu = nullptr;
+      child.for_each_child_ordered([&](bison::key_t, ui_element& cell) {
+        if (!context_menu && cell.as<key_t>(dynamic::CLASS) == "ContextMenu"_key)
+          context_menu = &cell;
+      });
+      if (context_menu)
+        r.render_node(*context_menu, s);
+
       // Overlay cell content on the same line as the selectable.
       // SameLine(0,0) for col 0 puts the cursor back to the selectable's
       // start position; TableNextColumn() advances for subsequent columns.
       int32_t col = 0;
       child.for_each_child_ordered([&](bison::key_t, ui_element& cell) {
+        if (cell.as<key_t>(dynamic::CLASS) == "ContextMenu"_key)
+          return;
         if (col == 0)
           ImGui::SameLine(0.0f, 0.0f);
         else

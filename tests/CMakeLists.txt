@@ -154,3 +154,18 @@ wish_add_optional_test(WISH_MODULE_BDG_DEV_GIT                   test_git_graph_
 if(TARGET test_git_graph_layout)
   target_include_directories(test_git_graph_layout PRIVATE ${CMAKE_SOURCE_DIR})
 endif()
+
+# Exercises process_control_linux.cpp directly (kill/pause/resume/priority/
+# affinity/details against a real forked child) -- pure POSIX, no bison/RMI
+# dependency, same pattern as test_git_graph_layout above. Linux/MSYS2 only
+# (matches that file's own scope -- see its header comment); guarded here
+# with UNIX (not WIN32/MSYS2 detection) since a native-Windows build has no
+# way to compile it, unlike the module's own client sources which pick
+# process_control_win.cpp instead via wish_filter_platform_sources().
+if(UNIX)
+  wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_PROCESS_EXPLORER  test_process_control_linux  test_process_control_linux.cpp
+      ${CMAKE_SOURCE_DIR}/modules/bdg/desktop/process_explorer/client/process_control_linux.cpp)
+  if(TARGET test_process_control_linux)
+    target_include_directories(test_process_control_linux PRIVATE ${CMAKE_SOURCE_DIR})
+  endif()
+endif()

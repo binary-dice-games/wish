@@ -64,6 +64,40 @@ uint64_t get_process_rss(HANDLE h) {
   return 0;
 }
 
+// Maps a Win32 priority class back to the same discrete nice-value scale
+// process_control_win.cpp's set_process_priority() maps *forward* from
+// (19/10/0/-5/-10/-20) -- kept in sync with that function's buckets so a
+// process shows the correct checked entry in the Priority submenu without
+// the two files having to share a literal table.
+int priority_class_to_nice(DWORD priority_class) {
+  switch (priority_class) {
+    case IDLE_PRIORITY_CLASS:
+      return 19;
+    case BELOW_NORMAL_PRIORITY_CLASS:
+      return 10;
+    case ABOVE_NORMAL_PRIORITY_CLASS:
+      return -5;
+    case HIGH_PRIORITY_CLASS:
+      return -10;
+    case REALTIME_PRIORITY_CLASS:
+      return -20;
+    case NORMAL_PRIORITY_CLASS:
+    default:
+      return 0;
+  }
+}
+
+std::vector<int> get_process_affinity_cores(HANDLE h) {
+  std::vector<int> cores;
+  DWORD_PTR process_mask = 0, system_mask = 0;
+  if (!GetProcessAffinityMask(h, &process_mask, &system_mask))
+    return cores;
+  for (int i = 0; i < static_cast<int>(sizeof(DWORD_PTR) * 8); ++i)
+    if (process_mask & (static_cast<DWORD_PTR>(1) << i))
+      cores.push_back(i);
+  return cores;
+}
+
 std::string query_process_command(HANDLE h) {
   std::wstring buf;
   DWORD size = 0;
@@ -165,6 +199,8 @@ struct process_info_source::impl {
             }
 
             ps.mem_rss_bytes = get_process_rss(ph);
+            ps.nice = priority_class_to_nice(GetPriorityClass(ph));
+            ps.affinity_cores = get_process_affinity_cores(ph);
 
             // Try to get command (full image path) — may fail for system/privileged processes
             std::string cmd = query_process_command(ph);
