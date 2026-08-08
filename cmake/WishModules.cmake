@@ -308,6 +308,15 @@ function(wish_finalize_app_modules)
       if(TARGET uv_a)
         target_link_libraries(${tgt} PRIVATE uv_a)
       endif()
+      # miniz (zip/unzip) is already compiled as part of every wish build --
+      # wish_server links it PRIVATE for its own embedded-resource unpacking
+      # (src/context/file_service.cpp) -- but that doesn't make it reachable
+      # from module client code without this, same rationale as uv_a above.
+      # See the zip_tool module's client/zip_tool.cpp for the consumer (its
+      # local compress/extract/list-contents logic).
+      if(TARGET miniz)
+        target_link_libraries(${tgt} PRIVATE miniz)
+      endif()
     endif()
   endforeach()
 endfunction()

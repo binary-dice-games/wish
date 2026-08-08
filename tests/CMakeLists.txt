@@ -145,6 +145,7 @@ wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_NOTEPAD           test_notepad   
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_PROCESS_EXPLORER  test_process_explorer  test_process_explorer.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DEV_EDITOR                test_editor            test_editor.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_FILE_EXPLORER      test_file_explorer     test_file_explorer.cpp)
+wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_ZIP_TOOL           test_zip_tool          test_zip_tool.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DEV_GIT                   test_git               test_git.cpp)
 # Pure algorithm, no bison/RMI dependency -- still gated on the module
 # option since it lives under modules/bdg/dev/git/ and would otherwise fail
