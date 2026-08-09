@@ -122,7 +122,7 @@ void wish_client_app::keep_alive(rmi::proxy::dynamic&& proxy) {
 }
 
 bool wish_client_app::read_console_line(std::string& line) {
-  return client_app::read_console_line(line);
+  return client_app::read_console_line("", line);
 }
 
 void wish_client_app::signal_done() {

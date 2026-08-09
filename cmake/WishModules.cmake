@@ -317,6 +317,14 @@ function(wish_finalize_app_modules)
       if(TARGET miniz)
         target_link_libraries(${tgt} PRIVATE miniz)
       endif()
+      # stb_image (single-header decode/encode, see its add_library() site
+      # in the root CMakeLists.txt) is already compiled as part of every
+      # wish build, same rationale as uv_a/miniz above. See the pix
+      # module's client/pix.cpp for the consumer (its local
+      # decode/resize/encode thumbnail + preview pipeline).
+      if(TARGET stb_image)
+        target_link_libraries(${tgt} PRIVATE stb_image)
+      endif()
     endif()
   endforeach()
 endfunction()
