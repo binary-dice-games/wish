@@ -1,16 +1,21 @@
 // MIT License © 2025 Binary Dice Games
 /// @file file_browser_utils.hpp
 /// @brief Shared helpers for forms that render a file/directory listing
-/// (FileDialog, FileExplorer): the type-icon lookup and the icon+label Name
-/// cell it builds, the small `__wish_id` accessor both forms use when
-/// caching widget pointers during on_init(), and the comparison primitives
-/// both forms' click-to-sort-column handling is built on.
+/// (FileDialog, FileExplorer, PixViewer): the type-icon lookup and the
+/// icon+label Name cell it builds, the small `__wish_id` accessor forms use
+/// when caching widget pointers during on_init(), the comparison primitives
+/// click-to-sort-column handling is built on, and the "open in host file
+/// explorer" helper shared by FileExplorer's and PixViewer's own "Open in
+/// Explorer" buttons. Per-module byte-count/timestamp formatting (e.g.
+/// format_bytes()) is deliberately still duplicated per module rather than
+/// shared here -- see zip_tool.cpp's own format_bytes() doc comment.
 #pragma once
 
 #include <ui/ui_element.hpp>
 
 #include "src/bison/bison_object.hpp"
 
+#include <filesystem>
 #include <string>
 
 namespace bdg::wish {
@@ -75,5 +80,17 @@ bool ascii_ci_less(const std::string& a, const std::string& b);
 ///          (e.g. a directory row's blank size) so such rows always sort
 ///          first in ascending order.
 double parse_display_size(const std::string& text);
+
+/// @brief Launches the host OS's file manager at @p path (Explorer on
+/// Windows, xdg-open -- falling back to the WSL host's explorer.exe when
+/// running under WSL -- on Linux/MSYS2).
+///
+/// Deliberately server-side: an "Open in Explorer" button targets the
+/// *sandbox* directory, which lives on this machine, mirroring the
+/// TightVNC reference design's intent to let an operator reach for their
+/// own native tools on the box being administered.
+///
+/// @return true if the file manager was successfully launched.
+bool open_in_host_explorer(const std::filesystem::path& path);
 
 } // namespace bdg::wish

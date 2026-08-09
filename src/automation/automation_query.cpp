@@ -212,7 +212,12 @@ std::string build_tree_snapshot(
   nlohmann::json out;
   out["request_id"] = request_id;
   out["widgets"] = std::move(widgets);
-  return out.dump();
+  // error_handler_t::replace (not the default ::strict) so a field that
+  // happens to hold non-UTF-8 bytes (unusual, but not impossible -- a text
+  // field fed from arbitrary binary content) degrades to U+FFFD replacement
+  // characters instead of throwing and crashing the render loop; matches
+  // build_log_event()'s own reasoning below.
+  return out.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
 }
 
 std::string build_log_event(const std::deque<logger::log_entry>& new_entries) {
@@ -228,7 +233,15 @@ std::string build_log_event(const std::deque<logger::log_entry>& new_entries) {
 
   nlohmann::json out;
   out["logs"] = std::move(entries);
-  return out.dump();
+  // error_handler_t::replace: log messages routinely mirror raw RMI call
+  // traces (server::on_print() -> logger::info(), always recorded
+  // regardless of --verbose -- see logger::log()), and an RMI call
+  // argument can be arbitrary binary data (e.g. any upload_file() payload,
+  // used by Notepad/FileExplorer/ZipTool/Pix alike). The default ::strict
+  // handler throws on the first invalid UTF-8 byte such a trace line
+  // contains, which previously crashed the whole server the instant an
+  // automation client was attached while any binary file was uploaded.
+  return out.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
 }
 
 } // namespace bdg::wish::automation

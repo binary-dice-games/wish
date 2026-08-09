@@ -186,18 +186,27 @@ add_subdirectory(extern/curl)
 # rejects ALIAS targets, so target the real one directly.
 set_target_properties(libcurl_static PROPERTIES FOLDER extern)
 
-if(WISH_ENABLE_IMGUI AND (WISH_ENABLE_WEB OR (WISH_ENABLE_SDL3 AND WISH_ENABLE_AUTOMATION)))
-  # Single-header PNG/JPEG codec, vendored via extern/stb: stb_image.h (read
-  # side) backs web_renderer::get_or_load_texture -- WISH_ENABLE_SDL3 (and
-  # its transitive SDL3_image dependency) is not guaranteed to be on in a
-  # web-only build, so this backend needs its own decoder. stb_image_write.h
-  # (write side) backs sdl3_renderer's automation screenshot capture
-  # (capture_frame_png(), see src/automation/DESIGN.md) when automation is
-  # enabled alongside SDL3.
-  wish_ensure_submodules(extern/stb)
-  add_library(stb_image INTERFACE)
-  target_include_directories(stb_image INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/extern/stb)
-endif()
+# Single-header image codecs, vendored via extern/stb. Unconditional (not
+# gated by WISH_ENABLE_IMGUI/WEB/SDL3, unlike most renderer-only bits above)
+# because more than one thing needs it, at different layers:
+#   - stb_image.h (read side) backs web_renderer::get_or_load_texture --
+#     WISH_ENABLE_SDL3 (and its transitive SDL3_image dependency) is not
+#     guaranteed to be on in a web-only build, so that backend needs its own
+#     decoder.
+#   - stb_image_write.h (write side) backs sdl3_renderer's automation
+#     screenshot capture (capture_frame_png(), see src/automation/DESIGN.md)
+#     when automation is enabled alongside SDL3.
+#   - modules/bdg/desktop/pix's *client-side* thumbnail/preview pipeline
+#     (decode via stb_image.h, resize via stb_image_resize2.h, re-encode via
+#     stb_image_write.h) needs all three regardless of which server
+#     renderer(s) this build enables -- see wish_finalize_app_modules() in
+#     cmake/WishModules.cmake, which links this into module client code
+#     when the target exists.
+# This is an INTERFACE library (include paths only, nothing compiled here),
+# so making it always available costs nothing beyond fetching the submodule.
+wish_ensure_submodules(extern/stb)
+add_library(stb_image INTERFACE)
+target_include_directories(stb_image INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/extern/stb)
 
 # ── miniz — zip (de)compression, used to unpack embedded resources ───────────
 
