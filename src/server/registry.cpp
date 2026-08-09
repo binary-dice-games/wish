@@ -11,6 +11,7 @@
 
 #include "ui/forms/file_dialog.hpp"
 #include "ui/forms/message_box.hpp"
+#include "ui/ui_elements/object_inspector.hpp"
 #include "ui/plot3d_elements/plot3d_elements.hpp"
 #include "ui/plot_elements/plot_elements.hpp"
 #include "ui/ui_template.hpp"
@@ -44,6 +45,7 @@ void register_all() {
   register_table();
   register_text_editor();
   register_graph_node();
+  register_color_edit();
   // Plot elements — must come after Element is registered.
   register_plot(); // PlotItem, Plot
   register_plot_series(); // PlotLine, PlotScatter, PlotStairs, PlotStems, PlotShaded, PlotDigital
@@ -69,6 +71,11 @@ void register_all() {
   // Built-in forms.
   register_file_dialog();
   register_message_box();
+  // ObjectInspector: a real ui_element (unlike the elements above, it needs
+  // its own C++ class -- see object_inspector.hpp), so registered here
+  // alongside the forms rather than in the plain per-file register_*()
+  // block earlier in this function.
+  register_object_inspector();
   // Optional modules (calculator, notepad, process_explorer, ...); see
   // src/ui/forms/DESIGN.md's "Module System" section.
   register_optional_modules();

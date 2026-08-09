@@ -282,6 +282,9 @@ void render_slider_float(imgui_renderer&, const ui_element& node, const context&
   float vmin = node.get_as<float>("min"_key, 0.0f);
   float vmax = node.get_as<float>("max"_key, 1.0f);
   auto fmt = node.get_as<std::string>("format"_key, "%.2f");
+  float width = node.get_as<float>("width"_key, 0.0f);
+  if (width != 0.0f)
+    ImGui::SetNextItemWidth(width);
   if (ImGui::SliderFloat(label.c_str(), &val, vmin, vmax, fmt.c_str())) {
     const_cast<ui_element&>(node)["value"_key] = val;
     dynamic payload;
@@ -295,6 +298,9 @@ void render_slider_int(imgui_renderer&, const ui_element& node, const context& s
   int32_t val = node.get_as<int32_t>("value"_key, 0);
   int32_t vmin = node.get_as<int32_t>("min"_key, 0);
   int32_t vmax = node.get_as<int32_t>("max"_key, 100);
+  float width = node.get_as<float>("width"_key, 0.0f);
+  if (width != 0.0f)
+    ImGui::SetNextItemWidth(width);
   if (ImGui::SliderInt(label.c_str(), &val, vmin, vmax)) {
     const_cast<ui_element&>(node)["value"_key] = val;
     dynamic payload;
@@ -310,6 +316,8 @@ void render_input_text(imgui_renderer&, const ui_element& node, const context& s
   auto current = node.get_as<std::string>("value"_key, "");
   float width = node.get_as<float>("width"_key, 0.0f);
   int32_t flags = node.get_as<int32_t>("flags"_key, 0);
+  bool multiline = node.get_as<bool>("multiline"_key, false);
+  float height = node.get_as<float>("height"_key, 0.0f);
 
   if (width != 0.0f)
     ImGui::SetNextItemWidth(width);
@@ -318,12 +326,49 @@ void render_input_text(imgui_renderer&, const ui_element& node, const context& s
   auto copy_len = std::min(static_cast<size_t>(maxlen), current.size());
   std::copy_n(current.c_str(), copy_len, buf.data());
 
-  bool changed = hint.empty()
-      ? ImGui::InputText(label.c_str(), buf.data(), buf.size(), ImGuiInputTextFlags(flags))
-      : ImGui::InputTextWithHint(label.c_str(), hint.c_str(), buf.data(), buf.size(), ImGuiInputTextFlags(flags));
+  bool changed;
+  if (multiline) {
+    // ImGui::InputTextMultiline has no hint-text overload -- "hint" is
+    // silently ignored for a multiline box, matching ImGui's own API shape.
+    changed = ImGui::InputTextMultiline(
+        label.c_str(), buf.data(), buf.size(), ImVec2(0.0f, height), ImGuiInputTextFlags(flags));
+  } else {
+    changed = hint.empty()
+        ? ImGui::InputText(label.c_str(), buf.data(), buf.size(), ImGuiInputTextFlags(flags))
+        : ImGui::InputTextWithHint(label.c_str(), hint.c_str(), buf.data(), buf.size(), ImGuiInputTextFlags(flags));
+  }
 
   if (changed) {
     std::string new_val(buf.data());
+    const_cast<ui_element&>(node)["value"_key] = new_val;
+    dynamic payload;
+    payload["value"_key] = new_val;
+    enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "changed"_key, std::move(payload));
+  }
+}
+
+void render_color_edit(imgui_renderer&, const ui_element& node, const context& s) {
+  auto label = node.get_as<std::string>("label"_key, "");
+  auto value = node.get_as<std::vector<float>>("value"_key, {});
+  int32_t flags = node.get_as<int32_t>("flags"_key, 0);
+  float width = node.get_as<float>("width"_key, 0.0f);
+  if (width != 0.0f)
+    ImGui::SetNextItemWidth(width);
+
+  // Any component count other than 3/4 is treated as 4 (padding/truncating),
+  // matching this codebase's existing "malformed input is a no-op for the
+  // affected part, not an error" convention (see e.g. genie's
+  // text_to_floats()).
+  bool use_alpha = value.size() != 3;
+  std::array<float, 4> comps{1.0f, 1.0f, 1.0f, 1.0f};
+  for (size_t i = 0; i < value.size() && i < comps.size(); ++i)
+    comps[i] = value[i];
+
+  bool changed = use_alpha ? ImGui::ColorEdit4(label.c_str(), comps.data(), ImGuiColorEditFlags(flags))
+                            : ImGui::ColorEdit3(label.c_str(), comps.data(), ImGuiColorEditFlags(flags));
+
+  if (changed) {
+    std::vector<float> new_val(comps.begin(), comps.begin() + (use_alpha ? 4 : 3));
     const_cast<ui_element&>(node)["value"_key] = new_val;
     dynamic payload;
     payload["value"_key] = new_val;
@@ -756,6 +801,9 @@ void render_combo(imgui_renderer&, const ui_element& node, const context& s) {
   auto label = node.get_as<std::string>("label"_key, "");
   auto items_str = node.get_as<std::string>("items"_key, "");
   int32_t sel = node.get_as<int32_t>("value"_key, 0);
+  float width = node.get_as<float>("width"_key, 0.0f);
+  if (width != 0.0f)
+    ImGui::SetNextItemWidth(width);
 
   // Build per-frame vectors from the newline-separated items string.
   std::vector<std::string> items;
@@ -834,6 +882,9 @@ void render_input_int(imgui_renderer&, const ui_element& node, const context& s)
   int32_t val = node.get_as<int32_t>("value"_key, 0);
   int32_t step = node.get_as<int32_t>("step"_key, 1);
   int32_t step_fast = node.get_as<int32_t>("step_fast"_key, 100);
+  float width = node.get_as<float>("width"_key, 0.0f);
+  if (width != 0.0f)
+    ImGui::SetNextItemWidth(width);
   int v = val;
   if (ImGui::InputInt(label.c_str(), &v, step, step_fast)) {
     const_cast<ui_element&>(node)["value"_key] = int32_t(v);
@@ -849,6 +900,9 @@ void render_input_float(imgui_renderer&, const ui_element& node, const context& 
   float step = node.get_as<float>("step"_key, 0.0f);
   float step_fast = node.get_as<float>("step_fast"_key, 0.0f);
   auto fmt = node.get_as<std::string>("format"_key, "%.3f");
+  float width = node.get_as<float>("width"_key, 0.0f);
+  if (width != 0.0f)
+    ImGui::SetNextItemWidth(width);
   float v = val;
   if (ImGui::InputFloat(label.c_str(), &v, step, step_fast, fmt.c_str())) {
     const_cast<ui_element&>(node)["value"_key] = v;

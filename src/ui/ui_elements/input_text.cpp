@@ -57,6 +57,23 @@ void register_input_text() {
           attr<Description>("ImGuiInputTextFlags bitmask. Notable values: "
                             "EnterReturnsTrue=32 (fire changed only on Enter)."),
           attr<Category>("Behavior")});
+  proto->addField(
+      "multiline"_rkey,
+      field{
+          bool{false},
+          attr<DisplayName>("Multiline"),
+          attr<Description>("When true, renders as a resizable multi-line text "
+                            "box (ImGui::InputTextMultiline) instead of a "
+                            "single-line field."),
+          attr<Category>("Behavior")});
+  proto->addField(
+      "height"_rkey,
+      field{
+          float{0.0f},
+          attr<DisplayName>("Height"),
+          attr<Description>("Box height in pixels when multiline is true; 0 "
+                            "uses ImGui's default (a few lines)."),
+          attr<Category>("Layout")});
   (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Input Text"));
   (*proto)[dynamic::CLASS].addAttribute(attr<Description>("A single-line text input field."));
   dynamic::addClass(

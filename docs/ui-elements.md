@@ -225,6 +225,7 @@ A draggable slider bound to a float or int value.
 | `min` | `float`/`int32` | `0.0` / `0` | Minimum selectable value. |
 | `max` | `float`/`int32` | `1.0` / `100` | Maximum selectable value. |
 | `format` | `string` | `"%.2f"` | (`SliderFloat` only) printf format for the displayed value. |
+| `width` | `float` | `0.0` | Width in pixels; `0` = ImGui default, `-1` = fill remaining width. |
 
 **Events:** `changed` — `{ value: float|int32 }`.
 
@@ -239,9 +240,24 @@ A single-line text field.
 | `max_length` | `int32` | `256` | Max characters (1–65536). |
 | `width` | `float` | `0.0` | Width in pixels; `0` = ImGui default, `-1` = fill remaining width. |
 | `flags` | `int32` (flags) | `0` | ImGuiInputTextFlags bitmask; e.g. `EnterReturnsTrue = 32` makes `changed` fire only on Enter instead of every keystroke. |
+| `multiline` | `bool` | `false` | When true, renders as a resizable multi-line box (`ImGui::InputTextMultiline`) instead of a single-line field. `hint` is ignored in this mode. |
+| `height` | `float` | `0.0` | Box height in pixels when `multiline` is true; `0` uses ImGui's default (a few lines). |
 
 **Events:** `changed` — `{ value: string }`, fired on edit (or only on
 Enter if `flags` includes `EnterReturnsTrue`).
+
+#### `ColorEdit`
+A color swatch that opens a picker popup when clicked.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `label` | `string` | `""` | Caption to the left of the swatch. |
+| `value` | `float[3\|4]` | `[1,1,1,1]` | Current color as `[r,g,b]` or `[r,g,b,a]` components in `[0,1]`. The component count (3 or 4) selects `ColorEdit3` vs. `ColorEdit4`. |
+| `flags` | `int32` (flags) | `0` | ImGuiColorEditFlags bitmask (e.g. `NoAlpha=2`, `NoInputs=32`, `PickerHueWheel=16777216`). |
+| `width` | `float` | `0.0` | Width in pixels; `0` = ImGui default, `-1` = fill remaining width. |
+
+**Events:** `changed` — `{ value: float[] }` (same component count as the
+current `value`).
 
 #### `InputInt` / `InputFloat`
 A numeric field with +/- step buttons.
@@ -253,6 +269,7 @@ A numeric field with +/- step buttons.
 | `step` | `int32`/`float` | `1` / `0.0` | Amount added/subtracted per +/- click. `InputFloat`: `0` hides the buttons. |
 | `step_fast` | `int32`/`float` | `100` / `0.0` | Step amount while Ctrl is held. `InputFloat`: `0` falls back to `step`. |
 | `format` | `string` | `"%.3f"` | (`InputFloat` only) printf display format. |
+| `width` | `float` | `0.0` | Width in pixels; `0` = ImGui default, `-1` = fill remaining width. |
 
 **Events:** `changed` — `{ value: int32|float }`.
 
@@ -278,6 +295,7 @@ A drop-down selection list.
 | `label` | `string` | `""` | Caption to the left of the dropdown. |
 | `items` | `string` | `""` | Newline-separated option strings, e.g. `"A\nB\nC"`. |
 | `value` | `int32` | `0` | Index of the selected item (0-based). |
+| `width` | `float` | `0.0` | Width in pixels; `0` = ImGui default, `-1` = fill remaining width. |
 
 **Events:** `changed` — `{ value: int32 (index), text: string }` (`text`
 present only when `value` is within bounds of `items`).
@@ -748,6 +766,19 @@ A multi-file, syntax-highlighted text editor (module, off by default —
 - Events: `on_request_open`, `on_request_new`, `on_file_opened {path,title}`,
   `on_file_closed {path}`, `on_file_saved {path}`, `on_sync_requested
   {paths}`, `on_error {message}`, `closed`.
+
+#### `ObjectInspector`
+Unlike the forms above, `ObjectInspector` is a plain nestable `Element` (an
+ordinary tree child, not a modal/top-level dialog) — but like them, its
+content is server-side-built, not something you construct field-by-field.
+Set its `target` field to a `dynamic_ptr` and call its `set_target` method
+(a plain `set()` on `target` alone does **not** rebuild it) to reflect over
+`target`'s registered class and render a two-column field table plus a
+description panel — the Unity/Visual-Studio-style property inspector. Full
+detail (the field → widget dispatch table, the `Hidden`/`Order`/
+`ColorField`/`Multiline`/`DropTarget` attributes it reads, and why it needs
+`set_target()` rather than self-populating) is in
+[docs/object-inspector.md](object-inspector.md).
 
 #### `ProcessExplorer`
 A read-only top/htop-style monitor (module, off by default —

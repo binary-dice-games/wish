@@ -263,6 +263,69 @@ TEST_F(ImguiRendererTest, CheckboxEmitsChangedWithCorrectPayload) {
   EXPECT_TRUE(last_value);
 }
 
+// ── InputText: multiline renders via InputTextMultiline without throwing ────
+
+TEST_F(ImguiRendererTest, InputTextMultilineDoesNotThrow) {
+  auto map = bdg::wish::import_json(
+      R"({"type":"InputText","value":"line one\nline two","multiline":true,"height":60})");
+
+  EXPECT_NO_THROW({
+    renderer_->begin_frame();
+    in_window([&] { renderer_->render_node(*map[""], *sess_); });
+    renderer_->end_frame();
+  });
+}
+
+// ── ColorEdit: renders and emits "changed" with the edited components ───────
+
+TEST_F(ImguiRendererTest, ColorEditFourComponentsDoesNotThrow) {
+  auto map = bdg::wish::import_json(R"({"type":"ColorEdit","value":[1.0,0.0,0.0,1.0]})");
+
+  EXPECT_NO_THROW({
+    renderer_->begin_frame();
+    in_window([&] { renderer_->render_node(*map[""], *sess_); });
+    renderer_->end_frame();
+  });
+}
+
+TEST_F(ImguiRendererTest, ColorEditThreeComponentsUsesColorEdit3WithoutThrow) {
+  auto map = bdg::wish::import_json(R"({"type":"ColorEdit","value":[0.2,0.4,0.6]})");
+
+  EXPECT_NO_THROW({
+    renderer_->begin_frame();
+    in_window([&] { renderer_->render_node(*map[""], *sess_); });
+    renderer_->end_frame();
+  });
+}
+
+// ── Table: a mixed fixed-width/stretch column layout (object_inspector's own
+//    shape -- see object_inspector.cpp's set_target()) must not hit ImGui's
+//    TableSetupColumnApply() assertion, which fires whenever a column
+//    supplies a non-zero init_width but the table has no explicit sizing
+//    policy flag. This is a real crash this repo shipped once (an
+//    object_inspector-built Table's "Field" column had init_width set with
+//    neither ImGuiTableColumnFlags_WidthFixed on the column nor
+//    ImGuiTableFlags_SizingFixedFit on the table) -- IM_ASSERT aborts the
+//    process rather than throwing, so EXPECT_NO_THROW alone would not have
+//    caught it, but a crash here still fails the test binary under ctest.
+
+TEST_F(ImguiRendererTest, TableWithFixedAndStretchColumnsDoesNotAssert) {
+  auto map = bdg::wish::import_json(R"({
+    "type": "Table", "columns": 2, "headers": false,
+    "flags": 8256,
+    "children": {
+      "col_field": {"type": "TableColumn", "label": "Field", "flags": 16, "init_width": 140.0},
+      "col_value": {"type": "TableColumn", "label": "Value", "flags": 8}
+    }
+  })");
+
+  EXPECT_NO_THROW({
+    renderer_->begin_frame();
+    in_window([&] { renderer_->render_node(*map[""], *sess_); });
+    renderer_->end_frame();
+  });
+}
+
 // ── MenuButton: opens a popup on click, exposing its children ───────────────
 
 // Captures the MenuItem's ImGui item id from inside render_menu_button()'s
