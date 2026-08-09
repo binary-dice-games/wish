@@ -194,14 +194,22 @@ void object_inspector::set_target(context& s, dynamic_ptr target) {
   auto table = stamp(s, "Table"_key, base_path_ + ".table");
   table["columns"_key] = int32_t{2};
   table["headers"_key] = false;
-  table["flags"_key] = int32_t{64}; // ImGuiTableFlags_RowBg
+  // ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit -- a mixed
+  // fixed-width/stretch column layout (Field fixed, Value stretch) needs
+  // an explicit sizing policy on the table, or ImGui's TableSetupColumn()
+  // asserts the moment a column supplies a non-zero init_width (see
+  // imgui_tables.cpp's TableSetupColumnApply()). Matches the flag
+  // combination file_dialog.cpp's file_table already uses.
+  table["flags"_key] = int32_t{64 | 8192};
   table_id_ = wish_id_of(table);
 
   auto col_field = stamp(s, "TableColumn"_key, base_path_ + ".table.col_field");
   col_field["label"_key] = std::string{"Field"};
+  col_field["flags"_key] = int32_t{16}; // ImGuiTableColumnFlags_WidthFixed
   col_field["init_width"_key] = 140.0f;
   auto col_value = stamp(s, "TableColumn"_key, base_path_ + ".table.col_value");
   col_value["label"_key] = std::string{"Value"};
+  col_value["flags"_key] = int32_t{8}; // ImGuiTableColumnFlags_WidthStretch
 
   auto table_children = dynamic_ptr{key_t{0U}, {}};
   size_t idx = 0;
