@@ -56,6 +56,11 @@ static const render_fn_map& built_in_render_fns() {
       {"SeparatorText"_key.id, render_separator_text},
       {"VerticalLayout"_key.id, render_vertical_layout},
       {"HorizontalLayout"_key.id, render_horizontal_layout},
+      // ObjectInspector's children are always exactly [Table, Label]
+      // (see object_inspector.cpp's set_target()) -- no bespoke render
+      // function needed, it lays out identically to a VerticalLayout.
+      {"ObjectInspector"_key.id, render_vertical_layout},
+      {"ColorEdit"_key.id, render_color_edit},
       // Menu
       {"MenuBar"_key.id, render_menu_bar},
       {"Menu"_key.id, render_menu},

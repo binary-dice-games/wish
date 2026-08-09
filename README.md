@@ -111,6 +111,7 @@ New to wish? [docs/tutorial.md](docs/tutorial.md) walks through building, runnin
 | **Automation** | `WISH_ENABLE_AUTOMATION` adds a widget-tree/hit-test query API, letting a Playwright-driven headless browser (web renderer) or a `wish.Client` connection (SDL3 renderer, no browser) introspect and drive a running wish UI — see [src/automation/DESIGN.md](src/automation/DESIGN.md), [docs/bindings.md](docs/bindings.md#automation-bindingspythonwishautomationpy), and `CLAUDE.md`'s "Automation" section. |
 | **Transports** | TCP socket, named pipe/Unix socket, an interactive terminal hop (`--transport=term`), or an in-memory queue (single-process demos). Chosen at runtime via `--transport`; the renderer and class registry are independent of the transport. See [docs/cli.md](docs/cli.md). |
 | **Extending wish** | New server-side UI element classes are bison RMI prototypes registered in the `"wish"` namespace, same pattern as any bison RMI class. See [DESIGN.md](DESIGN.md#adding-a-new-ui-element-class) for the step-by-step pattern. |
+| **Object Inspector** | `ObjectInspector` reflects over a `bison::dynamic` object's registered class (fields, `DisplayName`/`Description`/`Range`/`Enum`/`ColorField`/... attributes) to build a Unity/Visual-Studio-style property table + description panel — see [docs/object-inspector.md](docs/object-inspector.md). |
 
 ## Security
 
@@ -135,6 +136,7 @@ into a persistent, identity-keyed directory per client via an
 | [docs/visual-editor-options.md](docs/visual-editor-options.md) | Proposal: WYSIWYG editor options — forking ImRAD Studio vs. extending the native `editor` module |
 | [docs/bindings.md](docs/bindings.md) | Python and C# language binding setup and usage |
 | [docs/ai-assisted-development.md](docs/ai-assisted-development.md) | Building wish apps/UI via natural language with the `wish-module`/`wish-ui` AI-agent skills |
+| [docs/object-inspector.md](docs/object-inspector.md) | `ObjectInspector`: reflection-driven property table + description panel, its field → widget dispatch table, and the new `Hidden`/`Order`/`ColorField`/`Multiline`/`DropTarget` bison attributes |
 | [DESIGN.md](DESIGN.md) | Architecture, key abstractions, object model, and design decisions |
 
 ## License

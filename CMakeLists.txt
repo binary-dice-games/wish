@@ -302,6 +302,8 @@ add_library(wish_server STATIC
   src/ui/ui_elements/table.cpp
   src/ui/ui_elements/text_editor.cpp
   src/ui/ui_elements/graph_node.cpp
+  src/ui/ui_elements/color_edit.cpp
+  src/ui/ui_elements/object_inspector.cpp
   src/ui/plot_elements/plot.cpp
   src/ui/plot_elements/plot_series.cpp
   src/ui/plot_elements/plot_bars.cpp

@@ -23,6 +23,7 @@
 
 #include <ui/forms/form.hpp>
 
+#include "ui/ui_elements/object_inspector.hpp"
 #include "ui/ui_template.hpp"
 
 namespace bdg::wish {
@@ -68,6 +69,8 @@ void init_session_object(const bison::dynamic_ptr& obj, bison::rmi::context& ctx
     h->init(ctx, sync_ctx);
   } else if (auto* f = dynamic_cast<form*>(obj.get())) {
     f->init(ctx, sync_ctx);
+  } else if (auto* oi = dynamic_cast<object_inspector*>(obj.get())) {
+    oi->init(ctx, sync_ctx);
   }
 }
 

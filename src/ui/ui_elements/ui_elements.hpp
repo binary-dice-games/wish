@@ -31,5 +31,10 @@ void register_docking(); // DockSpaceViewport, DockSpace
 void register_table(); // Table, TableColumn, TableRow
 void register_text_editor();
 void register_graph_node();
+void register_color_edit();
+// object_inspector (ObjectInspector) is declared in its own header,
+// object_inspector.hpp, mirroring message_box.hpp/file_dialog.hpp -- it is
+// a real C++ class (bison::dynamic subclass), not a plain data-only
+// prototype like the elements above.
 
 } // namespace bdg::wish

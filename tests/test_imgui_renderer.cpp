@@ -263,6 +263,41 @@ TEST_F(ImguiRendererTest, CheckboxEmitsChangedWithCorrectPayload) {
   EXPECT_TRUE(last_value);
 }
 
+// ── InputText: multiline renders via InputTextMultiline without throwing ────
+
+TEST_F(ImguiRendererTest, InputTextMultilineDoesNotThrow) {
+  auto map = bdg::wish::import_json(
+      R"({"type":"InputText","value":"line one\nline two","multiline":true,"height":60})");
+
+  EXPECT_NO_THROW({
+    renderer_->begin_frame();
+    in_window([&] { renderer_->render_node(*map[""], *sess_); });
+    renderer_->end_frame();
+  });
+}
+
+// ── ColorEdit: renders and emits "changed" with the edited components ───────
+
+TEST_F(ImguiRendererTest, ColorEditFourComponentsDoesNotThrow) {
+  auto map = bdg::wish::import_json(R"({"type":"ColorEdit","value":[1.0,0.0,0.0,1.0]})");
+
+  EXPECT_NO_THROW({
+    renderer_->begin_frame();
+    in_window([&] { renderer_->render_node(*map[""], *sess_); });
+    renderer_->end_frame();
+  });
+}
+
+TEST_F(ImguiRendererTest, ColorEditThreeComponentsUsesColorEdit3WithoutThrow) {
+  auto map = bdg::wish::import_json(R"({"type":"ColorEdit","value":[0.2,0.4,0.6]})");
+
+  EXPECT_NO_THROW({
+    renderer_->begin_frame();
+    in_window([&] { renderer_->render_node(*map[""], *sess_); });
+    renderer_->end_frame();
+  });
+}
+
 // ── MenuButton: opens a popup on click, exposing its children ───────────────
 
 // Captures the MenuItem's ImGui item id from inside render_menu_button()'s

@@ -46,6 +46,7 @@ void render_checkbox(imgui_renderer&, const ui_element& node, const context& s);
 void render_slider_float(imgui_renderer&, const ui_element& node, const context& s);
 void render_slider_int(imgui_renderer&, const ui_element& node, const context& s);
 void render_input_text(imgui_renderer&, const ui_element& node, const context& s);
+void render_color_edit(imgui_renderer&, const ui_element& node, const context& s);
 void render_image(imgui_renderer& r, const ui_element& node, const context& s);
 void render_separator(imgui_renderer&, const ui_element&, const context&);
 void render_separator_text(imgui_renderer&, const ui_element& node, const context&);
