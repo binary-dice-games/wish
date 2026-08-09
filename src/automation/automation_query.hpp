@@ -70,15 +70,23 @@ std::optional<query_tree_request> parse_query_tree_request(const std::string& js
 /**
  * @brief Build a TREE_SNAPSHOT JSON payload for one query.
  *
- * Walks @p ui_objects (a session's flat dot-path -> element map), optionally
- * restricted to @p root and its descendants, and emits one JSON object per
- * widget: `path`, `class` (best-effort, see below), a small set of
- * "well-known" content fields when present on that element (`label`, `text`,
- * `value`, `title`, `checked`, `selected`, `hint` -- whichever exist; no
- * separate per-class schema is maintained), and the hit-test rect/flags
- * joined in from @p hits by `__wish_id`. A widget with no entry in @p hits
- * (never rendered, e.g. inside a collapsed/hidden subtree) gets `rect: null`
- * and `hovered`/`active`/`visible` all `false`.
+ * Walks @p ui_objects (a session's flat dot-path -> element map) *and*, for
+ * every element found there, recursively walks its own "children" field for
+ * descendants @p ui_objects has no entry for -- i.e. rows/tabs a form
+ * appended at runtime via direct `children` map assignment rather than
+ * `import_json`'s named-node path (the pattern `ProcessExplorer`'s process
+ * table, `Notepad`'s file tabs, and similar forms all use; see
+ * `collect_unregistered_descendants()` in automation_query.cpp for the full
+ * rationale and how such a descendant's path is synthesized). Both sources
+ * are then treated uniformly: optionally restricted to @p root and its
+ * descendants, and emitted as one JSON object per widget: `path`, `class`
+ * (best-effort, see below), a small set of "well-known" content fields when
+ * present on that element (`label`, `text`, `value`, `title`, `checked`,
+ * `selected`, `hint` -- whichever exist; no separate per-class schema is
+ * maintained), and the hit-test rect/flags joined in from @p hits by
+ * `__wish_id`. A widget with no entry in @p hits (never rendered, e.g.
+ * inside a collapsed/hidden subtree) gets `rect: null` and
+ * `hovered`/`active`/`visible` all `false`.
  *
  * `class` is resolved via `bison::build_display_dict()`, which already maps
  * every registered wish element class's `CLASS` field hash to its name --
