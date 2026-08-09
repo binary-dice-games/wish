@@ -80,6 +80,16 @@ void MyForm::on_event(key_t widget_id, key_t event_name, const dynamic& payload)
 }
 ```
 
+**Tearing down:** call `release(sess())` before dropping your own reference
+to an instance you built directly (or before erasing an RMI-instantiated one
+via `client.destroy()`) — this is *not* automatic on destruction. An
+`ObjectInspector`'s own children can be destroyed as a direct side effect of
+whole-session teardown (`ctx.objects.clear()`), and erasing further entries
+from that same map while it's being cleared is undefined behavior — so,
+like every other wish class that owns dynamically-created children, cleanup
+is explicit, not destructor-driven. Skip the call when you know the whole
+session is being torn down anyway.
+
 ## Field → widget dispatch
 
 A field is skipped entirely if it carries a `Hidden` or `Obsolete` attribute

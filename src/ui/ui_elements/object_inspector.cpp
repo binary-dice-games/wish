@@ -151,6 +151,20 @@ std::string reference_label(const dynamic_ptr& ref) {
 
 object_inspector::object_inspector(dynamic&& base) : ui_element(std::move(base)) {}
 
+void object_inspector::release(context& s) {
+  for (key_t id : built_ids_)
+    s.objects.erase(id.id);
+  built_ids_.clear();
+  for (const auto& path : built_paths_)
+    s.ui_objects.erase(path);
+  built_paths_.clear();
+  table_id_ = key_t{};
+  description_label_.reset();
+  row_field_order_.clear();
+  value_widgets_.clear();
+  drop_widgets_.clear();
+}
+
 context& object_inspector::require_dispatch_session() {
   if (!detail::current_context)
     throw std::logic_error("wish: object_inspector method called outside RMI dispatch");
@@ -170,22 +184,8 @@ wish::ui_element_ptr object_inspector::stamp(context& s, key_t klass, const std:
   return elem;
 }
 
-void object_inspector::clear_built(context& s) {
-  for (key_t id : built_ids_)
-    ctx_->objects.erase(id.id);
-  built_ids_.clear();
-  for (const auto& path : built_paths_)
-    s.ui_objects.erase(path);
-  built_paths_.clear();
-  table_id_ = key_t{};
-  description_label_.reset();
-  row_field_order_.clear();
-  value_widgets_.clear();
-  drop_widgets_.clear();
-}
-
 void object_inspector::set_target(context& s, dynamic_ptr target) {
-  clear_built(s);
+  release(s);
   target_ = std::move(target);
 
   static std::atomic<uint32_t> counter{0};

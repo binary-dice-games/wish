@@ -90,6 +90,33 @@ class object_inspector : public ui_element {
   explicit object_inspector(bison::dynamic&& base);
 
   /**
+   * @brief Erase this instance's own built children (the `Table`/rows/
+   *        description `Label` `set_target()` last built) from @p s.
+   *
+   * Without this, every child this instance ever built would outlive it as
+   * an orphaned, unreachable `ctx.objects`/`ui_objects` entry (never
+   * rendered, never freed) once the caller drops its own reference. Call
+   * this explicitly before releasing an instance you are done with --
+   * deliberately **not** done automatically from a destructor: this
+   * instance may be destroyed as a direct side effect of
+   * `bison::rmi::context::objects.clear()` during whole-session teardown
+   * (see bison's `server::teardown_session()`), and erasing further entries
+   * from `s.objects` *while it is being cleared* is undefined behavior --
+   * the same reason no other wish class (`form`, `ui_template`) touches
+   * `ctx.objects` from its own destructor either. Skip the call only when
+   * you know the whole session is being torn down anyway (every entry,
+   * including this instance's own children, gets destroyed together
+   * regardless of whether you erase them individually first).
+   *
+   * Mirrors the explicit (not destructor-driven) teardown convention this
+   * codebase already uses for dynamically-stamped widgets elsewhere (e.g.
+   * genie's `inspector_window::dynamic_widget_ids_`/`dynamic_widget_paths_`).
+   * Safe to call more than once, and safe to call even if nothing was ever
+   * built.
+   */
+  void release(context& s);
+
+  /**
    * @brief Inject session context.
    *
    * Called once by `wish::server::on_create_object` for an RMI-instantiated
@@ -176,7 +203,6 @@ class object_inspector : public ui_element {
   context& require_dispatch_session();
 
   wish::ui_element_ptr stamp(context& s, bison::key_t klass, const std::string& path);
-  void clear_built(context& s);
 
   bison::rmi::context* ctx_ = nullptr;
   sync_context_ptr sync_ctx_;
