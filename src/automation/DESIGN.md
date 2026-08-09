@@ -299,7 +299,15 @@ vendored (`extern/bison/extern/json/single_include`) and already used by
 Each entry in `widgets` (built by `automation::build_tree_snapshot()` in
 `src/automation/automation_query.cpp`, walking `context::ui_objects` —
 the existing flat dot-path → `ui_element_ptr` map, `src/context/
-context.hpp` — joined against `web_renderer::hit_test_map_` by
+context.hpp` — and then, for every element found there, recursively
+walking its own `"children"` field for descendants `ui_objects` has no
+entry for (rows/tabs a form appends at runtime via direct `children` map
+assignment rather than `import_json`'s named-node path — the pattern
+`ProcessExplorer`'s process table, `Notepad`'s file tabs, and `log_tail`'s
+log rows and tag tabs all use; see `collect_unregistered_descendants()`
+in `automation_query.cpp` for the full rationale and how such a
+descendant's dot-path is synthesized from its sequential child index —
+joined against `web_renderer::hit_test_map_` by
 `__wish_id`) has the shape:
 
 ```json
@@ -807,6 +815,27 @@ beyond, what's specified above:
   field rather than inventing a second name registry. A class hash with no
   such attribute (defined outside `src/ui/ui_elements/`) falls back to its
   hash formatted as `"0x########"`.
+- **Runtime-appended children.** `context::ui_objects` only gets an entry
+  for a *named* JSON node (`import_json`'s `build_ui_node()` stamps
+  `"__path__"` on named children only) — a form that reconciles a live
+  list against a `Table`/`TabBar` by writing directly into an existing
+  element's `"children"` field (`(*children_field)[index] = dynamic_ptr{elem}`,
+  never a named dot-path) produces children `ui_objects` never sees, even
+  though the real renderer draws them fine via
+  `ui_element::for_each_child_ordered()`. `build_tree_snapshot()` closes
+  this gap with `collect_unregistered_descendants()`: for every element it
+  finds via `ui_objects`, it also recurses into that element's `"children"`
+  field looking for `ui_element` children with no `"__path__"` field, and
+  synthesizes a dot-path for each as `<parent_path>.<child_key.id>` — safe
+  because every module using this pattern keys its appended children with a
+  plain sequential `size_t` index (`dynamic::operator[](size_t)` stores at
+  `fields_[static_cast<hash_t>(pos)]` directly), so `child_key.id` is
+  already a small, stable, human-meaningful index rather than a name hash.
+  Recursion continues into a discovered child's own `"children"` field too,
+  so a runtime-appended `TableRow`'s `TableColumn`/`Label` cells are found
+  the same way. A child that *does* carry `"__path__"` is skipped — it is
+  one of `ui_objects`' own entries and will be walked when the outer loop
+  reaches it directly, so recursing into it here would only duplicate work.
 - **Content field probing.** `label`/`text`/`value`/`title`/`checked`/
   `selected`/`hint` (the actual lowercase field-key spellings used across
   `src/ui/ui_elements/*.cpp`) are probed via `dynamic::findField<T>()` for

@@ -16,6 +16,8 @@
 #include <web/draw_protocol.hpp>
 #include <web/web_renderer.hpp>
 
+#include "src/bison/bison_object.hpp"
+
 #include <imgui.h>
 #include <nlohmann/json.hpp>
 
@@ -174,6 +176,134 @@ TEST_F(BuildTreeSnapshotTest, RootFilterRestrictsToNodeAndDescendants) {
   auto j = nlohmann::json::parse(build_tree_snapshot(1, "ok", tree_, hits));
   ASSERT_EQ(j["widgets"].size(), 1u);
   EXPECT_EQ(j["widgets"][0]["path"], "ok");
+}
+
+// ── Runtime-appended children (never registered by dot-path) ──────────────────
+//
+// Mirrors the append_row()-style pattern several forms use to reconcile a
+// live list against a Table/TabBar at runtime -- ProcessExplorer's process
+// rows, Notepad's file tabs, the editor module's event-log rows, and any
+// third-party module built the same way: a child inserted directly into an
+// existing element's "children" field via `(*children_field)[key] = ...`,
+// which never goes through import_json's named-node path and therefore
+// never gets a "__path__" field or a `ui_objects` entry of its own.
+// build_tree_snapshot() must still surface it -- see
+// collect_unregistered_descendants() in automation_query.cpp.
+
+TEST_F(BuildTreeSnapshotTest, IncludesRuntimeAppendedChildWithSynthesizedPath) {
+  // "list" starts with an explicit empty children map (the same
+  // `"children": {}` technique notepad.cpp's tab_bar uses) so the importer
+  // gives this instance its own private children map to append into.
+  bdg::wish::ui_tree tree = bdg::wish::import_json(R"({
+    "type": "Window", "title": "Dialog",
+    "children": { "list": { "type": "VerticalLayout", "children": {} } }
+  })");
+  assign_wish_ids(tree);
+
+  auto* children_f = tree["list"]->findField<dynamic_ptr>("children"_key);
+  ASSERT_NE(children_f, nullptr);
+  ASSERT_TRUE(*children_f);
+
+  bdg::wish::ui_element_ptr row{dynamic::instantiate("wish"_key, "Label"_key)};
+  row["text"_key] = std::string{"appended row"};
+  (*(*children_f))[size_t{0}] = dynamic_ptr{row};
+
+  hit_test_map hits;
+  auto j = nlohmann::json::parse(build_tree_snapshot(1, "", tree, hits));
+
+  bool found = false;
+  for (auto& w : j["widgets"]) {
+    if (w["path"] == "list.0") {
+      found = true;
+      EXPECT_EQ(w["class"], "Label");
+      EXPECT_EQ(w["text"], "appended row");
+    }
+  }
+  EXPECT_TRUE(found) << "expected a synthesized \"list.0\" entry for the runtime-appended child";
+}
+
+TEST_F(BuildTreeSnapshotTest, RuntimeAppendedChildDoesNotDuplicateNamedSiblings) {
+  bdg::wish::ui_tree tree = bdg::wish::import_json(R"({
+    "type": "Window", "title": "Dialog",
+    "children": { "list": { "type": "VerticalLayout", "children": {
+      "header": { "type": "Label", "text": "Header" }
+    } } }
+  })");
+  assign_wish_ids(tree);
+
+  auto* children_f = tree["list"]->findField<dynamic_ptr>("children"_key);
+  ASSERT_NE(children_f, nullptr);
+  ASSERT_TRUE(*children_f);
+  bdg::wish::ui_element_ptr row{dynamic::instantiate("wish"_key, "Label"_key)};
+  row["text"_key] = std::string{"appended row"};
+  (*(*children_f))[size_t{0}] = dynamic_ptr{row};
+
+  hit_test_map hits;
+  auto j = nlohmann::json::parse(build_tree_snapshot(1, "", tree, hits));
+
+  // Window + list + list.header (named, from ui_objects) + list.0 (synthesized).
+  EXPECT_EQ(j["widgets"].size(), 4u);
+  int header_count = 0;
+  for (auto& w : j["widgets"])
+    if (w["path"] == "list.header")
+      ++header_count;
+  EXPECT_EQ(header_count, 1) << "a named child must not also be re-discovered as an unregistered descendant";
+}
+
+TEST_F(BuildTreeSnapshotTest, RecursesIntoChildrenOfARuntimeAppendedChild) {
+  bdg::wish::ui_tree tree = bdg::wish::import_json(R"({
+    "type": "Window", "title": "Dialog",
+    "children": { "table": { "type": "Table", "columns": 1, "children": {} } }
+  })");
+  assign_wish_ids(tree);
+
+  auto* table_children = tree["table"]->findField<dynamic_ptr>("children"_key);
+  ASSERT_NE(table_children, nullptr);
+  ASSERT_TRUE(*table_children);
+
+  // A TableRow appended to the table, itself with an appended Label cell --
+  // two levels of runtime-only nesting, exactly like log_tail's append_row().
+  bdg::wish::ui_element_ptr row{dynamic::instantiate("wish"_key, "TableRow"_key)};
+  bdg::bison::dynamic_ptr row_children{bdg::bison::key_t{0U}};
+  bdg::wish::ui_element_ptr cell{dynamic::instantiate("wish"_key, "Label"_key)};
+  cell["text"_key] = std::string{"cell text"};
+  (*row_children)[size_t{0}] = dynamic_ptr{cell};
+  row["children"_key] = row_children;
+  (*(*table_children))[size_t{0}] = dynamic_ptr{row};
+
+  hit_test_map hits;
+  auto j = nlohmann::json::parse(build_tree_snapshot(1, "", tree, hits));
+
+  bool found_row = false, found_cell = false;
+  for (auto& w : j["widgets"]) {
+    if (w["path"] == "table.0") {
+      found_row = true;
+      EXPECT_EQ(w["class"], "TableRow");
+    }
+    if (w["path"] == "table.0.0") {
+      found_cell = true;
+      EXPECT_EQ(w["class"], "Label");
+      EXPECT_EQ(w["text"], "cell text");
+    }
+  }
+  EXPECT_TRUE(found_row);
+  EXPECT_TRUE(found_cell);
+}
+
+TEST_F(BuildTreeSnapshotTest, RootFilterMatchesASynthesizedPath) {
+  bdg::wish::ui_tree tree = bdg::wish::import_json(R"({
+    "type": "Window", "title": "Dialog",
+    "children": { "list": { "type": "VerticalLayout", "children": {} } }
+  })");
+  assign_wish_ids(tree);
+  auto* children_f = tree["list"]->findField<dynamic_ptr>("children"_key);
+  bdg::wish::ui_element_ptr row{dynamic::instantiate("wish"_key, "Label"_key)};
+  (*(*children_f))[size_t{0}] = dynamic_ptr{row};
+
+  hit_test_map hits;
+  auto j = nlohmann::json::parse(build_tree_snapshot(1, "list.0", tree, hits));
+  ASSERT_EQ(j["widgets"].size(), 1u);
+  EXPECT_EQ(j["widgets"][0]["path"], "list.0");
 }
 
 TEST_F(BuildTreeSnapshotTest, UnknownClassFallsBackToHexHash) {
