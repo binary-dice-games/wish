@@ -286,6 +286,37 @@ TEST_F(ObjectInspectorDispatchTest, DynamicPtrFieldWithDropTargetGetsDropButton)
   EXPECT_EQ(*dt, "MyAsset");
 }
 
+// Every editable value widget must stretch to fill the Value column's
+// available width rather than defaulting to ImGui's intrinsic item width
+// (a real regression once shipped: SliderInt/SliderFloat/InputInt/
+// InputFloat/Combo/ColorEdit never read a "width" field at all, so setting
+// one on object_inspector's stamped widgets alone would have been a no-op
+// -- see imgui_ui_renderer.cpp's render_* functions for the matching
+// SetNextItemWidth(width) support this asserts is actually wired up).
+TEST_F(ObjectInspectorDispatchTest, ValueWidgetsFillTheColumnWidth) {
+  auto check = [&](const char* display_name) {
+    auto w = find_value_widget(display_name);
+    ASSERT_TRUE(w) << display_name;
+    auto* wf = w->findField<float>("width"_key);
+    ASSERT_NE(wf, nullptr) << display_name;
+    EXPECT_FLOAT_EQ(*wf, -1.0f) << display_name;
+  };
+  check("Score");     // SliderInt
+  check("Direction"); // Combo (Enum)
+  check("Perms");     // InputText (EnumFlags)
+  check("Speed");     // SliderFloat
+  check("Name");      // InputText (plain string)
+  check("Color");     // ColorEdit
+  check("Offset");    // InputText (comma-text vector fallback)
+  check("First");     // InputInt (plain int32, no Range/Enum/EnumFlags)
+
+  auto ref = find_value_widget("Ref"); // Button (dynamic_ptr reference)
+  ASSERT_TRUE(ref);
+  auto* rw = ref->findField<int32_t>("width"_key);
+  ASSERT_NE(rw, nullptr);
+  EXPECT_EQ(*rw, -1);
+}
+
 TEST_F(ObjectInspectorDispatchTest, HiddenFieldIsNotShown) {
   EXPECT_FALSE(find_value_widget("Secret"));
 }

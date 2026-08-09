@@ -225,6 +225,7 @@ A draggable slider bound to a float or int value.
 | `min` | `float`/`int32` | `0.0` / `0` | Minimum selectable value. |
 | `max` | `float`/`int32` | `1.0` / `100` | Maximum selectable value. |
 | `format` | `string` | `"%.2f"` | (`SliderFloat` only) printf format for the displayed value. |
+| `width` | `float` | `0.0` | Width in pixels; `0` = ImGui default, `-1` = fill remaining width. |
 
 **Events:** `changed` — `{ value: float|int32 }`.
 
@@ -253,6 +254,7 @@ A color swatch that opens a picker popup when clicked.
 | `label` | `string` | `""` | Caption to the left of the swatch. |
 | `value` | `float[3\|4]` | `[1,1,1,1]` | Current color as `[r,g,b]` or `[r,g,b,a]` components in `[0,1]`. The component count (3 or 4) selects `ColorEdit3` vs. `ColorEdit4`. |
 | `flags` | `int32` (flags) | `0` | ImGuiColorEditFlags bitmask (e.g. `NoAlpha=2`, `NoInputs=32`, `PickerHueWheel=16777216`). |
+| `width` | `float` | `0.0` | Width in pixels; `0` = ImGui default, `-1` = fill remaining width. |
 
 **Events:** `changed` — `{ value: float[] }` (same component count as the
 current `value`).
@@ -267,6 +269,7 @@ A numeric field with +/- step buttons.
 | `step` | `int32`/`float` | `1` / `0.0` | Amount added/subtracted per +/- click. `InputFloat`: `0` hides the buttons. |
 | `step_fast` | `int32`/`float` | `100` / `0.0` | Step amount while Ctrl is held. `InputFloat`: `0` falls back to `step`. |
 | `format` | `string` | `"%.3f"` | (`InputFloat` only) printf display format. |
+| `width` | `float` | `0.0` | Width in pixels; `0` = ImGui default, `-1` = fill remaining width. |
 
 **Events:** `changed` — `{ value: int32|float }`.
 
@@ -292,6 +295,7 @@ A drop-down selection list.
 | `label` | `string` | `""` | Caption to the left of the dropdown. |
 | `items` | `string` | `""` | Newline-separated option strings, e.g. `"A\nB\nC"`. |
 | `value` | `int32` | `0` | Index of the selected item (0-based). |
+| `width` | `float` | `0.0` | Width in pixels; `0` = ImGui default, `-1` = fill remaining width. |
 
 **Events:** `changed` — `{ value: int32 (index), text: string }` (`text`
 present only when `value` is within bounds of `items`).

@@ -282,6 +282,9 @@ void render_slider_float(imgui_renderer&, const ui_element& node, const context&
   float vmin = node.get_as<float>("min"_key, 0.0f);
   float vmax = node.get_as<float>("max"_key, 1.0f);
   auto fmt = node.get_as<std::string>("format"_key, "%.2f");
+  float width = node.get_as<float>("width"_key, 0.0f);
+  if (width != 0.0f)
+    ImGui::SetNextItemWidth(width);
   if (ImGui::SliderFloat(label.c_str(), &val, vmin, vmax, fmt.c_str())) {
     const_cast<ui_element&>(node)["value"_key] = val;
     dynamic payload;
@@ -295,6 +298,9 @@ void render_slider_int(imgui_renderer&, const ui_element& node, const context& s
   int32_t val = node.get_as<int32_t>("value"_key, 0);
   int32_t vmin = node.get_as<int32_t>("min"_key, 0);
   int32_t vmax = node.get_as<int32_t>("max"_key, 100);
+  float width = node.get_as<float>("width"_key, 0.0f);
+  if (width != 0.0f)
+    ImGui::SetNextItemWidth(width);
   if (ImGui::SliderInt(label.c_str(), &val, vmin, vmax)) {
     const_cast<ui_element&>(node)["value"_key] = val;
     dynamic payload;
@@ -345,6 +351,9 @@ void render_color_edit(imgui_renderer&, const ui_element& node, const context& s
   auto label = node.get_as<std::string>("label"_key, "");
   auto value = node.get_as<std::vector<float>>("value"_key, {});
   int32_t flags = node.get_as<int32_t>("flags"_key, 0);
+  float width = node.get_as<float>("width"_key, 0.0f);
+  if (width != 0.0f)
+    ImGui::SetNextItemWidth(width);
 
   // Any component count other than 3/4 is treated as 4 (padding/truncating),
   // matching this codebase's existing "malformed input is a no-op for the
@@ -792,6 +801,9 @@ void render_combo(imgui_renderer&, const ui_element& node, const context& s) {
   auto label = node.get_as<std::string>("label"_key, "");
   auto items_str = node.get_as<std::string>("items"_key, "");
   int32_t sel = node.get_as<int32_t>("value"_key, 0);
+  float width = node.get_as<float>("width"_key, 0.0f);
+  if (width != 0.0f)
+    ImGui::SetNextItemWidth(width);
 
   // Build per-frame vectors from the newline-separated items string.
   std::vector<std::string> items;
@@ -870,6 +882,9 @@ void render_input_int(imgui_renderer&, const ui_element& node, const context& s)
   int32_t val = node.get_as<int32_t>("value"_key, 0);
   int32_t step = node.get_as<int32_t>("step"_key, 1);
   int32_t step_fast = node.get_as<int32_t>("step_fast"_key, 100);
+  float width = node.get_as<float>("width"_key, 0.0f);
+  if (width != 0.0f)
+    ImGui::SetNextItemWidth(width);
   int v = val;
   if (ImGui::InputInt(label.c_str(), &v, step, step_fast)) {
     const_cast<ui_element&>(node)["value"_key] = int32_t(v);
@@ -885,6 +900,9 @@ void render_input_float(imgui_renderer&, const ui_element& node, const context& 
   float step = node.get_as<float>("step"_key, 0.0f);
   float step_fast = node.get_as<float>("step_fast"_key, 0.0f);
   auto fmt = node.get_as<std::string>("format"_key, "%.3f");
+  float width = node.get_as<float>("width"_key, 0.0f);
+  if (width != 0.0f)
+    ImGui::SetNextItemWidth(width);
   float v = val;
   if (ImGui::InputFloat(label.c_str(), &v, step, step_fast, fmt.c_str())) {
     const_cast<ui_element&>(node)["value"_key] = v;

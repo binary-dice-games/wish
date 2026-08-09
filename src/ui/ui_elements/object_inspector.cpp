@@ -257,20 +257,24 @@ void object_inspector::set_target(context& s, dynamic_ptr target) {
           value_widget["label"_key] = std::string{};
           value_widget["items"_key] = items;
           value_widget["value"_key] = selected;
+          value_widget["width"_key] = -1.0f;
         } else if (proto_field.findAttribute<EnumFlags>()) {
           value_widget = stamp(s, "InputText"_key, row_path + ".value");
           value_widget["label"_key] = std::string{};
           value_widget["value"_key] = live.get_as<std::string>();
+          value_widget["width"_key] = -1.0f;
         } else if (const auto* r = proto_field.findAttribute<Range>()) {
           value_widget = stamp(s, "SliderInt"_key, row_path + ".value");
           value_widget["label"_key] = std::string{};
           value_widget["value"_key] = live.as<int32_t>();
           value_widget["min"_key] = static_cast<int32_t>(r->min());
           value_widget["max"_key] = static_cast<int32_t>(r->max());
+          value_widget["width"_key] = -1.0f;
         } else {
           value_widget = stamp(s, "InputInt"_key, row_path + ".value");
           value_widget["label"_key] = std::string{};
           value_widget["value"_key] = live.as<int32_t>();
+          value_widget["width"_key] = -1.0f;
         }
       } else if (proto_field.is<float>()) {
         if (const auto* r = proto_field.findAttribute<Range>()) {
@@ -279,15 +283,18 @@ void object_inspector::set_target(context& s, dynamic_ptr target) {
           value_widget["value"_key] = live.as<float>();
           value_widget["min"_key] = static_cast<float>(r->min());
           value_widget["max"_key] = static_cast<float>(r->max());
+          value_widget["width"_key] = -1.0f;
         } else {
           value_widget = stamp(s, "InputFloat"_key, row_path + ".value");
           value_widget["label"_key] = std::string{};
           value_widget["value"_key] = live.as<float>();
+          value_widget["width"_key] = -1.0f;
         }
       } else if (proto_field.is<std::string>()) {
         value_widget = stamp(s, "InputText"_key, row_path + ".value");
         value_widget["label"_key] = std::string{};
         value_widget["value"_key] = live.as<std::string>();
+        value_widget["width"_key] = -1.0f;
         if (const auto* m = proto_field.findAttribute<Multiline>()) {
           value_widget["multiline"_key] = true;
           value_widget["height"_key] = static_cast<float>(m->lines()) * 18.0f;
@@ -297,15 +304,18 @@ void object_inspector::set_target(context& s, dynamic_ptr target) {
           value_widget = stamp(s, "ColorEdit"_key, row_path + ".value");
           value_widget["label"_key] = std::string{};
           value_widget["value"_key] = live.get_as<std::vector<float>>();
+          value_widget["width"_key] = -1.0f;
         } else {
           value_widget = stamp(s, "InputText"_key, row_path + ".value");
           value_widget["label"_key] = std::string{};
           value_widget["value"_key] = floats_to_text(live.get_as<std::vector<float>>());
+          value_widget["width"_key] = -1.0f;
         }
       } else if (proto_field.is<dynamic_ptr>()) {
         editable = false;
         value_widget = stamp(s, "Button"_key, row_path + ".value");
         value_widget["label"_key] = reference_label(live.as<dynamic_ptr>());
+        value_widget["width"_key] = -1;
         if (const auto* dt = proto_field.findAttribute<DropTarget>()) {
           drop_target = true;
           value_widget["drag_type"_key] = std::string{};
