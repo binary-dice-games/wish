@@ -16,6 +16,7 @@
 #include <filesystem>
 #include <iostream>
 #include <stdexcept>
+#include <vector>
 
 // ── Shared flags — reused from main.cpp / wish_server_app.cpp / ──────────────
 // wish_client_app.cpp so this mode doesn't redefine (and collide with) them.
@@ -129,6 +130,19 @@ bool reject_transport_flags() {
 // ── wish_standalone_app ────────────────────────────────────────────────────────
 
 int wish_standalone_app::run(int argc, char** argv) {
+  // Preserved for the delegating call to standalone_app::run() below -- see
+  // wish_client_app::run()'s identical comment for why re-parsing the
+  // already-stripped argv a second time (losing its "--" marker) would
+  // break dash-prefixed app arguments, why re-parsing the ORIGINAL argv
+  // there instead is safe (standalone_app::run() only consults the
+  // reparsed FLAGS_* globals afterward, never its own argc/argv), and why
+  // this must be a genuine deep copy of the pointer array rather than a
+  // second pointer aliasing the same one (gflags overwrites array slots in
+  // place).
+  std::vector<char*> orig_argv_storage(argv, argv + argc);
+  int orig_argc = argc;
+  char** orig_argv = orig_argv_storage.data();
+
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
   if (reject_transport_flags())
@@ -178,7 +192,7 @@ int wish_standalone_app::run(int argc, char** argv) {
   resolved_app_ = resolution.info;
   app_args_.assign(argv + 1, argv + argc);
 
-  return bison::app::standalone_app::run(argc, argv);
+  return bison::app::standalone_app::run(orig_argc, orig_argv);
 }
 
 void wish_standalone_app::register_classes() {

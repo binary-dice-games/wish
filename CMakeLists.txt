@@ -403,6 +403,12 @@ target_include_directories(wish_server
         # repo root; needed for "modules/<name>/server/..." includes used by
         # registry.cpp and the generated module registry (see WishModules.cmake).
         ${CMAKE_CURRENT_SOURCE_DIR}
+        # nlohmann/json is already vendored via bison (see the
+        # WISH_ENABLE_AUTOMATION block above, the header's other PRIVATE
+        # consumer); modules/bdg/desktop/log_tail/server/log_line_parser.cpp
+        # needs it unconditionally (not gated by WISH_ENABLE_AUTOMATION) to
+        # parse its patterns.json config resource.
+        ${CMAKE_CURRENT_SOURCE_DIR}/extern/bison/extern/json/single_include
     PUBLIC
         src
         # Exposes bison's C++ headers (src/bison/bison_object.hpp, etc.)
