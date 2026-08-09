@@ -11,6 +11,7 @@
 
 #include <iostream>
 #include <stdexcept>
+#include <vector>
 
 // ── Shared flags (defined in main.cpp) ────────────────────────────────────────
 DECLARE_string(host);
@@ -36,6 +37,26 @@ using namespace bison;
 // ── wish_client_app ───────────────────────────────────────────────────────────
 
 int wish_client_app::run(int argc, char** argv) {
+  // Preserved for the delegating call to client_app::run() below -- gflags'
+  // own ParseCommandLineFlags mutates the argv array IN PLACE (stripping
+  // recognized flags and everything through a literal "--"), and that
+  // stripped argv has already lost its "--" marker. Handing it to a SECOND
+  // ParseCommandLineFlags call (inside client_app::run()) would then treat
+  // any dash-prefixed app argument (e.g. log_tail's "-f"/"-n") as an
+  // unrecognized flag and fail outright, instead of the transparent
+  // passthrough documented on this class -- see this class's own doc
+  // comment ("Anything after a literal `--`... is forwarded via
+  // app_args()"). client_app::run() only consults the reparsed FLAGS_*
+  // globals, never its own argc/argv afterward, so re-parsing the original,
+  // unstripped argv there is idempotent and safe -- but the copy must be a
+  // genuine deep copy of the pointer array (not just another pointer
+  // variable aliasing the same array), since gflags overwrites array
+  // *slots* in place (`(*argv)[first_nonopt-1] = (*argv)[0]`), which a
+  // second pointer variable to the same storage would still observe.
+  std::vector<char*> orig_argv_storage(argv, argv + argc);
+  int orig_argc = argc;
+  char** orig_argv = orig_argv_storage.data();
+
   // Override the shared --host default: 0.0.0.0 is a valid bind address for
   // the server but not a connectable address for a client.
   gflags::SetCommandLineOptionWithMode("host", "127.0.0.1", gflags::SET_FLAGS_DEFAULT);
@@ -91,7 +112,9 @@ int wish_client_app::run(int argc, char** argv) {
   app_args_.assign(argv + 1, argv + argc);
 
   // Let parent class handle transport creation and connection lifecycle.
-  return bison::app::client_app::run(argc, argv);
+  // Pass the ORIGINAL argc/argv (not the already-stripped local copy) --
+  // see this function's opening comment.
+  return bison::app::client_app::run(orig_argc, orig_argv);
 }
 
 void wish_client_app::keep_alive(rmi::proxy::dynamic&& proxy) {
