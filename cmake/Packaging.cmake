@@ -118,6 +118,48 @@ else()
       COMPONENT wish)
 endif()
 
+# ── Debian package (COMPONENT runtime) ──────────────────────────────────────
+#
+# A second, narrower component alongside "wish" above: just the binaries,
+# wish_client_dll, and its public headers -- the pieces that make sense
+# inside a system package installed via `apt`/`dpkg`. The "wish" component's
+# docs/bindings-source/PATH-setup-script bundle is meant for a self-contained,
+# extract-anywhere release zip; none of that belongs under /usr on a machine
+# where apt already put `wish` on PATH and libwish_client.so through the
+# dynamic linker's default search path. install(TARGETS/FILES ...) may be
+# called more than once for the same target/file with different COMPONENTs --
+# each call just adds another entry to the install manifest, so this is
+# purely additive and never included unless a packaging run explicitly asks
+# for the "runtime" component (see the CPack DEB section below).
+foreach(_wish_runtime_target IN ITEMS wish-cli wish-server wish-standalone
+                                       wish-client wish-desktop)
+  if(TARGET ${_wish_runtime_target})
+    install(TARGETS ${_wish_runtime_target} RUNTIME DESTINATION bin
+        COMPONENT runtime)
+  endif()
+endforeach()
+unset(_wish_runtime_target)
+
+if(TARGET wish_client_dll)
+  # LIBRARY only (not RUNTIME/ARCHIVE, unlike the "wish" component's copy of
+  # this same target) -- this component only ever gets packaged as a Linux
+  # .deb, where the shared object is the sole Linux artifact type, and
+  # DESTINATION lib (not bin) puts it under CPACK_PACKAGING_INSTALL_PREFIX's
+  # /usr/lib, which cpack_deb_prepare_package_vars() recognizes and
+  # auto-adds an ldconfig call to postinst/postrm for.
+  install(TARGETS wish_client_dll LIBRARY DESTINATION lib COMPONENT runtime)
+  install(FILES
+      include/wish_client_c.h
+      extern/bison/include/bison_c.h
+      extern/bison/include/rmi_c.h
+      DESTINATION include
+      COMPONENT runtime)
+endif()
+
+# Debian policy requires a copyright file at this path.
+install(FILES LICENSE DESTINATION share/doc/wish COMPONENT runtime
+    RENAME copyright)
+
 # ── CPack ────────────────────────────────────────────────────────────────
 #
 # All of this project's own install() rules (above, and the target-owned
@@ -130,6 +172,18 @@ endif()
 # dependency's dev artifacts (pkg-config files, CMake package-config
 # exports, static archives that were never even built in a packaging
 # configure).
+#
+# CPACK_COMPONENTS_ALL only lists "wish" here, so the default
+# `cmake --build build --target package` / bare `cpack` path is unaffected
+# by the "runtime" component added above. scripts/package_deb.py (and the
+# release GitHub Actions workflow) instead invoke
+# `cpack -G DEB -D CPACK_COMPONENTS_ALL=runtime -D CPACK_PACKAGING_INSTALL_PREFIX=/usr`
+# to select just that component and install it under Debian's standard /usr
+# prefix -- both are cpack-invocation-time overrides of variables baked into
+# the generated CPackConfig.cmake, so they must be passed on the `cpack`
+# command line (a plain set() here would just be clobbered right back by
+# whatever this file assigns at configure time). See
+# docs/building.md#building-a-deb-package.
 
 set(CPACK_COMPONENTS_ALL wish)
 set(CPACK_ARCHIVE_COMPONENT_INSTALL ON)
@@ -151,5 +205,23 @@ set(CPACK_PACKAGE_FILE_NAME
     "wish-${WISH_PACKAGE_VERSION}-${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}")
 set(CPACK_GENERATOR "ZIP")
 set(CPACK_VERBATIM_VARIABLES TRUE)
+
+# ── CPack DEB (Debian/Ubuntu package) ───────────────────────────────────────
+#
+# All CPACK_DEBIAN_* variables are only ever read by the DEB generator, so
+# setting them here has no effect on the default ZIP path -- see
+# docs/building.md#building-a-deb-package for the full `cpack -G DEB`
+# invocation (component selection and /usr install prefix are passed on that
+# command line, not set here, per the CPack section comment above).
+set(CPACK_DEB_COMPONENT_INSTALL ON)
+set(CPACK_PACKAGE_CONTACT "Binary Dice Games <opensource@binary-dice-games.com>")
+set(CPACK_DEBIAN_PACKAGE_HOMEPAGE "https://github.com/binary-dice-games/wish")
+set(CPACK_DEBIAN_PACKAGE_SECTION "utils")
+# Auto-detects the runtime shared-library dependencies (libc6, libstdc++6,
+# libx11-6, ...) of the packaged binaries via dpkg-shlibdeps, rather than
+# hand-maintaining a Depends: list that would silently drift from whatever
+# extern/* actually links against.
+set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+set(CPACK_DEBIAN_FILE_NAME "DEB-DEFAULT")
 
 include(CPack)

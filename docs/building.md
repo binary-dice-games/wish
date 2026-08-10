@@ -386,3 +386,59 @@ python3 scripts/package_release.py --build-dir build
 # build -- --skip-configure --skip-build trusts it as-is and just repacks.
 python3 scripts/package_release.py --build-dir build --skip-configure --skip-build
 ```
+
+## Building a .deb package
+
+Linux only. `cmake/Packaging.cmake` adds a second install `COMPONENT`,
+`runtime`, alongside the release zip's `wish` component: just the CLI
+binaries, `wish_client_dll`, its public C headers, and a copyright file --
+the pieces that make sense inside a system package, laid out under
+Debian's standard `/usr` prefix. It deliberately omits everything the `wish`
+component ships for the self-contained zip (docs, binding sources, the
+`wish-env.sh`/`install.sh` PATH-setup scripts) -- none of that belongs
+under `/usr` on a machine where `apt` already puts `wish` on `PATH` and
+`libwish_client.so` through the dynamic linker's default search path (via
+an `ldconfig` call CPack automatically adds to the package's
+postinst/postrm once it sees a shared object under `/usr/lib`).
+
+`scripts/package_deb.py` wraps the whole thing -- configuring a headless
+Release build (`-DWISH_ENABLE_SDL3=OFF -DWISH_ENABLE_WEB=ON`, no window
+system/GPU dependency), building, then running `cpack -G DEB` restricted to
+the `runtime` component:
+
+```sh
+sudo apt-get install -y dpkg-dev   # provides dpkg-shlibdeps, used below
+python3 scripts/package_deb.py --version 1.2.3
+```
+
+Produces `dist/wish_1.2.3_amd64.deb` (the architecture comes from
+`dpkg --print-architecture` on the build machine). Install and remove it
+like any other local `.deb`:
+
+```sh
+sudo apt install ./dist/wish_1.2.3_amd64.deb
+wish --help
+sudo apt remove wish
+```
+
+`CPACK_DEBIAN_PACKAGE_SHLIBDEPS` (set in `cmake/Packaging.cmake`) runs
+`dpkg-shlibdeps` over the packaged binaries so the `.deb`'s `Depends:` list
+(libc6, libstdc++6, the X11/GL libs, ...) is derived from what they actually
+link against, rather than hand-maintained.
+
+Component selection and the `/usr` install prefix are passed as
+`cpack -D ...` overrides at package time (see `scripts/package_deb.py` and
+the "CPack DEB" section comment in `cmake/Packaging.cmake`), not baked into
+the CMake config -- so they have no effect on the default
+`cmake --build build --target package` / bare `cpack -G ZIP` path used for
+the release zip above. A bare `cpack -G DEB` with no `-D` overrides still
+works, but packages the full `wish` component (same content as the zip)
+under the default install prefix instead.
+
+### Automation
+
+[.github/workflows/release-deb.yml](../.github/workflows/release-deb.yml)
+runs `scripts/package_deb.py` on `ubuntu-latest` and attaches the resulting
+`.deb` to the GitHub Release whenever one is published, using the release's
+tag (with a leading `v` stripped, e.g. `v1.2.3` → `1.2.3`) as the package
+version.
