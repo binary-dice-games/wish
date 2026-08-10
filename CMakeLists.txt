@@ -217,7 +217,13 @@ set(BUILD_TESTS     OFF CACHE BOOL "" FORCE)
 set(BUILD_EXAMPLES  OFF CACHE BOOL "" FORCE)
 set(INSTALL_PROJECT OFF CACHE BOOL "" FORCE)
 add_subdirectory(extern/miniz)
-set_target_properties(miniz PROPERTIES FOLDER extern)
+# zip_tool's client-side module code (modules/bdg/desktop/zip_tool/client/)
+# links miniz into wish_client_dll (a SHARED library) when WISH_BUILD_SHARED
+# is ON -- without PIC, linking this static lib into a .so fails with
+# "relocation ... can not be used when making a shared object", the same
+# reason wish_client/wish_server (above/below) already set this.
+set_target_properties(miniz PROPERTIES FOLDER extern
+    POSITION_INDEPENDENT_CODE ON)
 
 # ── Embedded resources — zip the asset tree, then embed as one byte array ────
 #
