@@ -148,7 +148,7 @@ A comprehensive showcase of every wish widget and layout type in a single dockab
 | Text & Numbers | `InputText` (with hint), `InputInt`, `InputFloat` |
 | Selection | `Combo`, `Selectable` |
 | Tree & Collapse | `TreeNode` (nested), `CollapsingHeader` |
-| Misc | `ProgressBar`, `HorizontalLayout`, `VerticalLayout` (nested rows), runtime theme switching |
+| Misc | `ProgressBar`, `HorizontalLayout`, `VerticalLayout` (nested rows), `Splitter`, runtime theme switching |
 | Tables | Static `Table` with borders and row backgrounds; interactive `Table` with buttons in cells |
 | Plots | `Plot` containing `PlotLine`, `PlotScatter`, `PlotStairs`, `PlotStems`, `PlotShaded`, `PlotDigital`, `PlotBars`, `PlotBarsH`, `PlotHistogram`, `PlotHistogram2D`, `PlotHeatmap`, `PlotPieChart`, `PlotText`, `PlotInfLines` |
 | 3-D Plots | `Plot3D` containing `Plot3DLine`, `Plot3DScatter`, `Plot3DSurface`, `Plot3DTriangle`, `Plot3DQuad`, `Plot3DMesh`, `Plot3DText` |

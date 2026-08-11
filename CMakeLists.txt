@@ -296,6 +296,7 @@ add_library(wish_server STATIC
   src/ui/ui_template.cpp
   src/ui/ui_elements/element.cpp
   src/ui/ui_elements/layout.cpp
+  src/ui/ui_elements/splitter.cpp
   src/ui/ui_elements/window.cpp
   src/ui/ui_elements/label.cpp
   src/ui/ui_elements/button.cpp

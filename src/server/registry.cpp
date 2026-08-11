@@ -24,6 +24,7 @@ void register_all() {
   // UI element classes — order matters: parents before children.
   register_element(); // root base: visible, children
   register_layout(); // Layout < Element; VerticalLayout, HorizontalLayout < Layout
+  register_splitter(); // Splitter < Layout
   register_window();
   register_label();
   register_button();

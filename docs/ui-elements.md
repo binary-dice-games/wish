@@ -119,6 +119,43 @@ nest them freely to build rows, columns, and grids.
 
 Neither layout emits events.
 
+### `Splitter`
+
+Arranges its children as resizable panes separated by user-draggable bars
+([dear imgui issue #319](https://github.com/ocornut/imgui/issues/319)'s
+technique, built on the public `InvisibleButton` API — no `imgui_internal.h`
+dependency). All panes but the last get an explicit pixel size, stored in
+that child's own `width` field (`orientation: "vertical"`) or `height`
+field (`orientation: "horizontal"`) — the same field `HorizontalLayout`/
+`VerticalLayout` already read as a column/row-size hint on any child, so a
+pane's current size is readable/settable the same way as any other layout
+child's. A pane left unset (`0`, the default) splits the remaining space
+evenly with its unset siblings on first render. The **last** pane is never
+stored — it always fills whatever space remains after the others and the
+bars' thickness, so leave it unset for the common "fixed sidebar + filling
+content" case. For 3+ panes, nest a `Splitter` inside another `Splitter`'s
+last pane, exactly like #319's own 3-pane demo calls `Splitter()` twice.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `orientation` | `string` | `"vertical"` | `"vertical"` draws a vertical drag bar and arranges panes side by side (sizes go in each pane's `width`). `"horizontal"` draws a horizontal drag bar and stacks panes top to bottom (sizes go in each pane's `height`). |
+| `thickness` | `float` | `4.0` | Pixel thickness of each draggable bar (1–64). |
+| `min_pane_size` | `float` | `20.0` | Minimum pixel size any pane can be dragged down to. |
+
+**Events:** `resized` — fired when a drag bar is released; payload
+`{pane_index: int, size1: float, size2: float}` where `size1`/`size2` are
+the post-drag sizes of the pane before and after that bar.
+
+```json
+{
+  "type": "Splitter", "thickness": 6,
+  "children": {
+    "sidebar": { "type": "TreeNode", "label": "Files", "width": 220 },
+    "content": { "type": "Label", "text": "Select a file" }
+  }
+}
+```
+
 ### Docking
 
 `DockSpaceViewport` (full-viewport dockspace host — nested `Window` children

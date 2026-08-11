@@ -56,6 +56,7 @@ static const render_fn_map& built_in_render_fns() {
       {"SeparatorText"_key.id, render_separator_text},
       {"VerticalLayout"_key.id, render_vertical_layout},
       {"HorizontalLayout"_key.id, render_horizontal_layout},
+      {"Splitter"_key.id, render_splitter},
       // ObjectInspector's children are always exactly [Table, Label]
       // (see object_inspector.cpp's set_target()) -- no bespoke render
       // function needed, it lays out identically to a VerticalLayout.
@@ -360,9 +361,9 @@ void imgui_renderer::render_node(const ui_element& node, const context& s) {
   // there is nothing a wrap would improve for these two, only the same
   // id-forwarding risk described above to avoid. All three are documented
   // as a known, narrower residual limitation instead.
-  bool needs_group_wrap = cls == "VerticalLayout"_key || cls == "HorizontalLayout"_key || cls == "TabBar"_key ||
-      cls == "TabItem"_key || cls == "TreeNode"_key || cls == "CollapsingHeader"_key || cls == "Table"_key ||
-      cls == "TableRow"_key || cls == "Plot"_key || cls == "Plot3D"_key;
+  bool needs_group_wrap = cls == "VerticalLayout"_key || cls == "HorizontalLayout"_key || cls == "Splitter"_key ||
+      cls == "TabBar"_key || cls == "TabItem"_key || cls == "TreeNode"_key || cls == "CollapsingHeader"_key ||
+      cls == "Table"_key || cls == "TableRow"_key || cls == "Plot"_key || cls == "Plot3D"_key;
 
   if (needs_group_wrap)
     ImGui::BeginGroup();

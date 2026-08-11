@@ -615,6 +615,139 @@ void render_horizontal_layout(imgui_renderer& r, const ui_element& node, const c
   ImGui::EndGroup();
 }
 
+// Splitter -- imgui.com/issues/319's resizable-panes technique, implemented
+// with the public InvisibleButton API rather than imgui_internal.h's
+// SplitterBehavior() (no wish renderer file includes imgui_internal.h, and
+// this repo avoids doing so -- see DESIGN.md).
+//
+// All panes but the last carry an explicit pixel size in their own "width"
+// (vertical orientation) or "height" (horizontal orientation) field --
+// exactly the field HorizontalLayout/VerticalLayout already read as a
+// column/row-width hint on ANY child (see render_horizontal_layout()'s own
+// doc comment above), so a Splitter pane's size is visible/settable the
+// same way any other Layout child's is. The last pane is never stored: it
+// always fills whatever space remains after the others and the bars'
+// thickness, mirroring the original imgui.com/issues/319 demo (which
+// likewise only ever persists size1 and recomputes size2 = avail - size1
+// every frame). A drag bar between pane i and pane i+1 adjusts both by
+// equal and opposite deltas, clamped so neither shrinks below
+// "min_pane_size" -- when pane i+1 is the last (unstored) pane, its
+// "current size" for clamping purposes is simply the remainder,
+// recomputed fresh each time. Composability over an N-pane primitive:
+// nest a second Splitter inside the first's last pane for 3+ panes,
+// exactly like the referenced issue's own 3-pane demo calls Splitter()
+// twice.
+void render_splitter(imgui_renderer& r, const ui_element& node, const context& s) {
+  auto orientation = node.get_as<std::string>("orientation"_key, "vertical");
+  bool is_vertical = orientation != "horizontal";
+  float thickness = std::max(1.0f, node.get_as<float>("thickness"_key, 4.0f));
+  float min_pane = std::max(0.0f, node.get_as<float>("min_pane_size"_key, 20.0f));
+  key_t size_field = is_vertical ? "width"_key : "height"_key;
+
+  struct pane_info {
+    ui_element* elem;
+    float size;
+  };
+  std::vector<pane_info> panes;
+  node.for_each_child_ordered(
+      [&](key_t, ui_element& child) { panes.push_back({&child, child.get_as<float>(size_field, 0.0f)}); });
+  if (panes.empty())
+    return;
+  if (panes.size() == 1) {
+    r.render_node(*panes[0].elem, s);
+    return;
+  }
+
+  size_t n = panes.size();
+  float avail = is_vertical ? ImGui::GetContentRegionAvail().x : ImGui::GetContentRegionAvail().y;
+  float usable = std::max(0.0f, avail - thickness * static_cast<float>(n - 1));
+
+  // First render: seed any unset (<= 0) explicit pane with an even split,
+  // same "0 means unset/auto" convention as Layout::width/height. A pane
+  // pre-set in the JSON descriptor (nonzero) keeps its authored size.
+  bool inited = node.get_as<bool>("__splitter_inited__"_key, false);
+  if (!inited) {
+    float even = usable / static_cast<float>(n);
+    for (size_t i = 0; i + 1 < n; ++i)
+      if (panes[i].size <= 0.0f)
+        panes[i].size = even;
+    const_cast<ui_element&>(node)["__splitter_inited__"_key] = true;
+  }
+  for (size_t i = 0; i + 1 < n; ++i)
+    panes[i].size = std::max(panes[i].size, min_pane);
+
+  auto explicit_sum = [&] {
+    float sum = 0.0f;
+    for (size_t i = 0; i + 1 < n; ++i)
+      sum += panes[i].size;
+    return sum;
+  };
+
+  ImGuiMouseCursor cursor = is_vertical ? ImGuiMouseCursor_ResizeEW : ImGuiMouseCursor_ResizeNS;
+  key_t id = node.get_as<key_t>("__wish_id"_key, key_t{});
+  int released_bar = -1;
+
+  ImGui::BeginGroup();
+  for (size_t i = 0; i < n; ++i) {
+    if (i + 1 == n)
+      panes[i].size = std::max(min_pane, usable - explicit_sum());
+
+    if (i > 0 && is_vertical)
+      ImGui::SameLine(0.0f, 0.0f);
+
+    // Same idiom as render_horizontal_layout()'s "##hl_col_" + stable_id(...)
+    // column-child id: disambiguates the literal-repeated BeginChild/
+    // InvisibleButton labels below across panes using each pane's own
+    // stable identity rather than a positional index, so ImGui's persisted
+    // per-id state (scroll position, ...) survives a child being reordered.
+    auto pane_sid = stable_id(*panes[i].elem);
+    auto pane_child_id = "##sp_pane_" + pane_sid;
+    ImVec2 child_size = is_vertical ? ImVec2(panes[i].size, 0.0f) : ImVec2(0.0f, panes[i].size);
+    ImGui::BeginChild(pane_child_id.c_str(), child_size, ImGuiChildFlags_None);
+    r.render_node(*panes[i].elem, s);
+    ImGui::EndChild();
+    ImVec2 pane_extent = ImGui::GetItemRectSize();
+
+    if (i + 1 < n) {
+      if (is_vertical)
+        ImGui::SameLine(0.0f, 0.0f);
+      auto bar_id = "##sp_bar_" + pane_sid;
+      ImVec2 bar_size = is_vertical ? ImVec2(thickness, pane_extent.y) : ImVec2(pane_extent.x, thickness);
+      ImGui::InvisibleButton(bar_id.c_str(), bar_size);
+      if (ImGui::IsItemHovered() || ImGui::IsItemActive())
+        ImGui::SetMouseCursor(cursor);
+      if (ImGui::IsItemActive()) {
+        float delta = is_vertical ? ImGui::GetIO().MouseDelta.x : ImGui::GetIO().MouseDelta.y;
+        float lo = min_pane - panes[i].size;
+        float hi = (i + 2 < n) ? panes[i + 1].size - min_pane
+                                : std::max(min_pane, usable - explicit_sum()) - min_pane;
+        delta = std::clamp(delta, lo, hi);
+        panes[i].size += delta;
+        if (i + 2 < n)
+          panes[i + 1].size -= delta;
+      }
+      if (ImGui::IsItemDeactivated())
+        released_bar = static_cast<int>(i);
+    }
+  }
+  ImGui::EndGroup();
+
+  // Persist every pane's final size, including the last (unstored) one --
+  // so a client get() reflects the effective layout, and a nested widget
+  // that itself reads "width"/"height" (SliderFloat, InputText, ...) picks
+  // up its containing pane's size.
+  for (auto& p : panes)
+    (*p.elem)[size_field] = p.size;
+
+  if (released_bar >= 0) {
+    dynamic payload;
+    payload["pane_index"_key] = static_cast<int32_t>(released_bar);
+    payload["size1"_key] = panes[static_cast<size_t>(released_bar)].size;
+    payload["size2"_key] = panes[static_cast<size_t>(released_bar) + 1].size;
+    enqueue_event(s, id, "resized"_key, std::move(payload));
+  }
+}
+
 // ── Menu ──────────────────────────────────────────────────────────────────────
 
 void render_menu_bar(imgui_renderer& r, const ui_element& node, const context& s) {

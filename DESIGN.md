@@ -78,6 +78,7 @@ Element  (visible, children)
   Layout          (spacing: float)
     VerticalLayout
     HorizontalLayout
+    Splitter        (orientation, thickness, min_pane_size)
   Label           (text)
   Button          (label)
   Checkbox        (label, value: bool)
@@ -172,6 +173,7 @@ Layout classes control how their children are arranged before recursing:
 
 - **`VerticalLayout`** — renders children sequentially in the default imgui top-to-bottom flow, inserting `spacing` pixels of padding between items via `ImGui::SetCursorPosY`.
 - **`HorizontalLayout`** — wraps children in `ImGui::BeginGroup()` / `ImGui::EndGroup()` and calls `ImGui::SameLine(0, spacing)` between items so they share a horizontal line.
+- **`Splitter`** — same family, but interleaves a draggable `ImGui::InvisibleButton()` bar between each pair of children instead of fixed `spacing`, and writes the drag result back into each pane's own `width`/`height` field (the same field the two layouts above already read as a size hint on any child). See `render_splitter()` in `src/imgui/imgui_ui_renderer.cpp` for the drag/clamp/persist algorithm.
 
 Non-layout containers (`Window`) render their children using the default vertical flow. A backend that is not immediate-mode would implement the same two layout types as a two-pass measure-then-place operation.
 
