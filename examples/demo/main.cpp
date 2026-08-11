@@ -171,6 +171,19 @@ static constexpr const char* kTabMiscDesc = R"json(
                 }
               }
             },
+            "lbl_split": { "type": "Label", "text": "Splitter (drag the bar):" },
+            "split_wrap": {
+              "type": "VerticalLayout",
+              "children": {
+                "split_demo": {
+                  "type": "Splitter", "height": 120, "thickness": 6,
+                  "children": {
+                    "split_a": { "type": "Label", "text": "Left pane", "width": 150 },
+                    "split_b": { "type": "Label", "text": "Right pane (fills remaining space)" }
+                  }
+                }
+              }
+            },
             "sec_theme": { "type": "SeparatorText", "label": "Theme" },
             "lbl_theme": { "type": "Label", "text": "Switch the visual theme at runtime:" },
             "theme_row": {
@@ -1147,6 +1160,14 @@ class demo_client : public wish::examples::example_client {
       pm.at(name).onEvent(
           "clicked"_key, [s = status, n = std::string(name)](dynamic) { s("Layout button '" + n + "' clicked."); });
     }
+
+    pm.at("demo_win.tabs_root.tab_misc.split_wrap.split_demo").onEvent("resized"_key, [status](dynamic p) {
+      const auto* s1 = p.findField("size1"_key);
+      const auto* s2 = p.findField("size2"_key);
+      float v1 = (s1 && s1->is<float>()) ? s1->as<float>() : 0.0f;
+      float v2 = (s2 && s2->is<float>()) ? s2->as<float>() : 0.0f;
+      status("Splitter resized: " + std::to_string(int(v1)) + "px / " + std::to_string(int(v2)) + "px");
+    });
 
     pm.at("demo_win.tabs_root.tab_misc.theme_row.theme_dark").onEvent("clicked"_key, [&, status](dynamic) {
       set_style_preset("dark").get();

@@ -10,6 +10,7 @@ namespace bdg::wish {
 
 void register_element();
 void register_layout();
+void register_splitter(); // Splitter: draggable-bar resizable panes, nests inside a Layout
 void register_window();
 void register_label();
 void register_button();

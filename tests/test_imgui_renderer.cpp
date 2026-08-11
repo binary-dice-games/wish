@@ -803,6 +803,149 @@ TEST_F(ImguiRendererTest, VerticalLayoutSpacingZeroAndNonzeroDoNotThrow) {
   });
 }
 
+// ── Splitter ──────────────────────────────────────────────────────────────────
+
+TEST_F(ImguiRendererTest, SplitterWithTwoPanesDoesNotThrow) {
+  constexpr auto desc = R"({
+    "type": "Splitter",
+    "children": {
+      "a": { "type": "Label", "text": "Left"  },
+      "b": { "type": "Label", "text": "Right" }
+    }
+  })";
+  auto map = bdg::wish::import_json(desc);
+  EXPECT_NO_THROW({
+    renderer_->begin_frame();
+    in_window([&] { renderer_->render_node(*map[""], *sess_); });
+    renderer_->end_frame();
+  });
+}
+
+TEST_F(ImguiRendererTest, SplitterSinglePaneRendersChildDirectly) {
+  auto map = bdg::wish::import_json(R"({"type":"Splitter","children":{"a":{"type":"Label","text":"Only"}}})");
+  EXPECT_NO_THROW({
+    renderer_->begin_frame();
+    in_window([&] { renderer_->render_node(*map[""], *sess_); });
+    renderer_->end_frame();
+  });
+}
+
+TEST_F(ImguiRendererTest, SplitterEvenSplitsUnsetPanesOnFirstRender) {
+  auto map = bdg::wish::import_json(
+      R"({"type":"Splitter","children":{"a":{"type":"Label","text":"A"},"b":{"type":"Label","text":"B"}}})");
+
+  renderer_->begin_frame();
+  in_window([&] { renderer_->render_node(*map[""], *sess_); });
+  renderer_->end_frame();
+
+  float wa = map["a"]->get_as<float>("width"_key, -1.0f);
+  float wb = map["b"]->get_as<float>("width"_key, -1.0f);
+  ASSERT_GT(wa, 0.0f);
+  ASSERT_GT(wb, 0.0f);
+  EXPECT_NEAR(wa, wb, 0.5f);
+}
+
+TEST_F(ImguiRendererTest, SplitterHorizontalOrientationUsesHeightField) {
+  auto map = bdg::wish::import_json(R"({
+    "type": "Splitter", "orientation": "horizontal",
+    "children": {
+      "a": { "type": "Label", "text": "Top"    },
+      "b": { "type": "Label", "text": "Bottom" }
+    }
+  })");
+
+  renderer_->begin_frame();
+  in_window([&] { renderer_->render_node(*map[""], *sess_); });
+  renderer_->end_frame();
+
+  // Sizing goes into "height" for a horizontal splitter -- "width" is untouched.
+  EXPECT_GT(map["a"]->get_as<float>("height"_key, -1.0f), 0.0f);
+  EXPECT_FLOAT_EQ(map["a"]->get_as<float>("width"_key, 0.0f), 0.0f);
+}
+
+// Drags the bar between two panes and checks both the live field mutation
+// and the "resized" event fired on release. Uses the same headless
+// press/hold/release technique as ButtonEmitsClickedEvent (forced ActiveId,
+// not a natural hover-click sequence) -- fine here since, unlike drag-drop
+// (see DragDropTest's own doc comment), nothing in render_splitter consults
+// ImGui's natural click-threshold bookkeeping; it only reads IsItemActive()
+// and GetIO().MouseDelta.
+TEST_F(ImguiRendererTest, SplitterDragResizesPanesAndEmitsResizedEvent) {
+  bdg::bison::key_t last_event{hash_t{0}};
+  float last_size1 = -1.0f, last_size2 = -1.0f;
+  sess_->emit_event = [&](bdg::bison::key_t, bdg::bison::key_t ev, dynamic payload) {
+    last_event = ev;
+    const auto* s1 = payload.findField("size1"_key);
+    const auto* s2 = payload.findField("size2"_key);
+    last_size1 = (s1 && s1->is<float>()) ? s1->as<float>() : -1.0f;
+    last_size2 = (s2 && s2->is<float>()) ? s2->as<float>() : -1.0f;
+  };
+
+  // "a" gets an explicit starting width; "b" is the last pane and always
+  // fills the remainder, so it is deliberately left unset.
+  constexpr auto desc = R"({
+    "type": "Splitter", "thickness": 4.0, "min_pane_size": 20.0,
+    "children": {
+      "a": { "type": "Label", "text": "Left",  "width": 200.0 },
+      "b": { "type": "Label", "text": "Right" }
+    }
+  })";
+  auto map = bdg::wish::import_json(desc);
+  auto splitter_sid = bdg::wish::stable_id(*map[""]);
+  auto pane_a_sid = bdg::wish::stable_id(*map["a"]);
+
+  // Frame 1: render once (first-render init is a no-op here since "a" is
+  // already explicit) and compute the drag bar's deterministic ImGui ID
+  // from the same stable-id-based scheme render_splitter uses internally.
+  ImGuiID bar_id{0};
+  renderer_->begin_frame();
+  in_window([&] {
+    renderer_->render_node(*map[""], *sess_);
+    ImGui::PushID(splitter_sid.c_str());
+    bar_id = ImGui::GetID(("##sp_bar_" + pane_a_sid).c_str());
+    ImGui::PopID();
+  });
+  renderer_->end_frame();
+
+  ASSERT_FLOAT_EQ(map["a"]->get_as<float>("width"_key, 0.0f), 200.0f);
+  float b_before = map["b"]->get_as<float>("width"_key, -1.0f);
+  ASSERT_GT(b_before, 0.0f);
+
+  // Frame 2: press-and-hold the bar, dragging 50px along the primary axis.
+  ImGui::GetIO().MousePos.x += 50.0f;
+  ImGui::NewFrame();
+  {
+    ImGuiContext& g = *GImGui;
+    g.ActiveId = bar_id;
+    g.ActiveIdIsAlive = bar_id;
+    g.ActiveIdSource = ImGuiInputSource_Mouse;
+    g.ActiveIdMouseButton = 0;
+    g.ActiveIdWindow = ImGui::FindWindowByName("TestWindow");
+    ImGui::GetIO().MouseDown[0] = true;
+  }
+  in_window([&] { renderer_->render_node(*map[""], *sess_); });
+  ImGui::EndFrame();
+
+  EXPECT_FLOAT_EQ(map["a"]->get_as<float>("width"_key, 0.0f), 250.0f);
+  EXPECT_FLOAT_EQ(map["b"]->get_as<float>("width"_key, 0.0f), b_before - 50.0f);
+
+  // Frame 3: release.
+  ImGui::NewFrame();
+  ImGui::GetIO().MouseDown[0] = false;
+  ImGui::GetIO().MouseReleased[0] = true;
+  in_window([&] { renderer_->render_node(*map[""], *sess_); });
+  ImGui::EndFrame();
+
+  for (auto& ev : sess_->pending_events)
+    if (sess_->emit_event)
+      sess_->emit_event(ev.id, ev.event_name, ev.payload);
+  sess_->pending_events.clear();
+
+  EXPECT_EQ(last_event, "resized"_key);
+  EXPECT_FLOAT_EQ(last_size1, 250.0f);
+  EXPECT_FLOAT_EQ(last_size2, b_before - 50.0f);
+}
+
 // ── Table, TableColumn, TableRow ──────────────────────────────────────────────
 
 TEST_F(ImguiRendererTest, TableWithHeadersAndRowsDoesNotThrow) {
