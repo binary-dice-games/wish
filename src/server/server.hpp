@@ -222,6 +222,11 @@ class server : public bison::rmi::server {
   // frame-rate cap defers the actual render, so the deferred frame isn't
   // lost if no further input arrives before the cap allows rendering again.
   bool pending_render_{false};
+  // Render-thread-only timestamp of the last renderer_->tick() call; caps
+  // simulation-tick rate the same way last_render_time_ caps draw rate (see
+  // renderer::tick()'s doc comment) -- independent of last_render_time_,
+  // since tick() runs every iteration regardless of whether a frame draws.
+  std::chrono::steady_clock::time_point last_tick_time_{};
   logger_ptr logger_;
   bool allow_absolute_paths_{false};
   bool allow_url_fetch_{false};

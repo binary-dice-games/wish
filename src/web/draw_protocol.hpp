@@ -55,6 +55,10 @@ enum class web_msg_type : uint8_t {
   query_tree = 0x20,    ///< Browser -> server: request a tree/hit-test snapshot.
   tree_snapshot = 0x21, ///< Server -> browser: JSON tree/hit-test snapshot.
   log_event = 0x22,     ///< Server -> browser: newly-logged entries, pushed live.
+  request_render = 0x23, ///< Browser -> server: draw and broadcast one more
+                          ///< frame now (only meaningful when the active
+                          ///< renderer opted into `renderer::render_on_demand()`
+                          ///< -- see `renderer::request_render()`).
 #endif
 };
 
@@ -271,6 +275,18 @@ std::vector<std::byte> encode_tree_snapshot(const std::string& json_payload);
  *                       return value.
  */
 std::vector<std::byte> encode_log_event(const std::string& json_payload);
+
+// ── inbound: REQUEST_RENDER ─────────────────────────────────────────────────
+
+/**
+ * @brief Returns `true` if `message` is a well-formed REQUEST_RENDER
+ *        envelope (`msg_type` matches, no payload to decode -- unlike
+ *        QUERY_TREE, this message carries no data of its own).
+ *
+ * @param message  The full envelope-wrapped message bytes as received from
+ *                  the socket.
+ */
+bool decode_request_render_message(std::span<const std::byte> message);
 #endif
 
 } // namespace draw_protocol

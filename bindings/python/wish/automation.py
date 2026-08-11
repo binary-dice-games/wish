@@ -163,7 +163,21 @@ class AutomationClient:
             )
             page = browser.new_page()
             page.goto(url)
-            page.wait_for_function("() => window.wish && window.wish.ready === true", timeout=startup_timeout * 1000)
+            # Against a server started with render_on_demand (e.g. genie's
+            # --render_on_demand), nothing renders automatically -- not even
+            # the very first frame -- so `ready` would otherwise never flip
+            # without this. Opportunistically (re-)requests a render on
+            # every poll until one lands, which self-heals past the brief
+            # window right after goto() where the WebSocket hasn't finished
+            # connecting yet (requestRender() silently no-ops until it has).
+            # A harmless no-op call against an ordinary (non-render_on_demand)
+            # server, which would have rendered on its own regardless.
+            page.wait_for_function(
+                "() => { if (window.wish && window.wish.ready) return true;"
+                " if (window.wish && window.wish.requestRender) window.wish.requestRender();"
+                " return false; }",
+                timeout=startup_timeout * 1000,
+            )
         except Exception:
             playwright.stop()
             if process is not None:
@@ -212,6 +226,28 @@ class AutomationClient:
         """Return one widget's snapshot entry by exact dot-path, or `None`
         if @p path does not currently exist in the tree."""
         return self._page.evaluate("(path) => window.wish.getWidget(path)", path)
+
+    def request_render(self) -> None:
+        """Ask the server to draw and broadcast one more frame now, and
+        block until that frame has actually landed on the canvas.
+
+        Only meaningful (and only ever needed) when the server was launched
+        with a renderer that opted into `render_on_demand()` (e.g. genie's
+        `--render_on_demand`, or a plain wish server started with
+        `web_renderer`'s own `render_on_demand` constructor param) --
+        against such a server, frames are otherwise only drawn on genuine
+        state changes, not on every routine WS/input/resize activity, so
+        there's nothing to look at until a render is explicitly requested.
+        Safe to call regardless of whether the server is render_on_demand
+        (a harmless extra frame if not). `get_tree()`/`get_widget()` already
+        request a fresh render themselves server-side; call this yourself
+        before `screenshot()`, which does not::
+
+            ui.click("toolbar.play")
+            ui.request_render()
+            png = ui.screenshot()
+        """
+        self._page.evaluate("() => window.wish.requestRender()")
 
     def get_logs(self) -> List[Dict[str, Any]]:
         """Return every log entry received so far, oldest first: each

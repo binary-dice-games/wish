@@ -411,6 +411,76 @@ assert ui.get_logs()[-1]["message"] == "saved"
 
 ---
 
+## Render on demand
+
+By default the render loop (`server::render_loop()`/`standalone::render_loop()`)
+draws continuously whenever the session is dirty, which routine WS/input
+activity keeps triggering — every OS event, every automation query, the
+initial post-connect settle window. Fine for wish's own ImGui-only
+`web_renderer`, but a project embedding wish for something GPU-heavier
+(e.g. genie's `web_deferred_renderer`, whose frames are real WebGL2 draws
+executed by a possibly software-rendered browser) pays that draw cost for
+every one of those frames, most of which no automation script is actually
+looking at yet. `renderer::render_on_demand()` (an opt-in virtual on the
+base `renderer` interface, see `src/server/renderer.hpp`) exists to make
+that cost pay-per-use instead.
+
+**Tick/draw decoupling is the prerequisite.** Turning off automatic drawing
+must not also pause whatever time-based state the app owns (a live game's
+simulation should keep running "as in production" whether or not anything
+is watching) — so `renderer::tick(sessions)`, a new hook distinct from
+`render_server_frame()`, is called every `render_loop()` iteration at a
+steady ~60 Hz cadence *unconditionally*, regardless of whether a frame
+actually draws that iteration. A renderer with time-based state overrides
+`tick()` (not `render_server_frame()`, which is only ever called
+immediately before drawing, inside an active ImGui frame, and is meant for
+host-chrome UI) for that state advancement — see genie's `DESIGN.md`
+("Steady-cadence manager tick, decoupled from drawing") for a concrete
+example (`update_session()`).
+
+**What `render_on_demand()` actually gates.** When a renderer returns
+`true`: routine `poll_events()` activity (WS traffic, resize, OS input) no
+longer sets `pending_render_`, and the end-of-frame `wants_continuous_redraw()`
+re-arm is skipped too. `context::dirty` itself is untouched — still checked
+every iteration exactly as before — so a genuinely dirty session (RMI
+dispatch, the initial post-connect settle window) still draws normally.
+The only new, explicit trigger is `renderer::request_render()` /
+`consume_render_request()`: a renderer-owned pending flag (not
+`context::dirty`, since transport callbacks like `on_message()` typically
+run on a worker thread with no session context in hand) that `render_loop()`
+checks unconditionally every iteration and folds into `pending_render_`
+regardless of `render_on_demand()`.
+
+**Wire trigger: `0x23 REQUEST_RENDER`** (browser → server, empty payload,
+gated the same as QUERY_TREE/TREE_SNAPSHOT/LOG_EVENT). Decoded in
+`web_renderer::on_message()` (mirrored identically in genie's
+`web_deferred_renderer::on_message()`), it calls `request_render()`
+directly — no session context needed. `window.wish.requestRender()`
+(`client.js`) sends it and returns a `Promise` resolved once the resulting
+`FRAME` has actually been rendered to the canvas (the same
+`scheduleFrameRender()` rAF callback that flips `window.wish.ready = true`
+also pops and resolves the oldest pending `requestRender()` call, FIFO).
+`AutomationClient.request_render()` (Python) wraps this. A QUERY_TREE
+request also calls `request_render()` internally server-side (see that
+handler in `on_message()`) so `get_tree()`/`get_widget()` are always
+answered against fresh state without the caller having to think about it;
+`screenshot()` does **not** do this automatically (it's a pure
+Playwright/CDP call, no server round trip) — a script that wants a
+guaranteed-fresh screenshot under `render_on_demand()` must call
+`request_render()` itself immediately before `screenshot()`.
+
+**Native SDL3 automation needs none of this wire plumbing.** `sdl3_renderer`'s
+own automation ABI (see "Native (ABI-based) automation" below) already runs
+in-process with direct access to `standalone::request_render()`/
+`context::dirty`, and already calls it before every `query_tree()`/
+`capture_screenshot()` — so a renderer that opts into `render_on_demand()`
+there (genie's `sdl3_gpu_renderer`/`sdl3_gl_renderer` both take the same
+constructor flag) benefits purely from the `poll_events()`-activity
+suppression above; no new message type or `consume_render_request()`
+override is needed on that path.
+
+---
+
 ## Screenshots and input via Playwright
 
 No new server-side code is needed for either capability — both ride on

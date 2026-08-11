@@ -85,6 +85,79 @@ class renderer {
     return false;
   }
 
+  /**
+   * @brief Advance any time-based state this renderer/app owns (game
+   *        simulation, physics, particle/animation systems, ...).
+   *
+   * Called once per `render_loop()` iteration at a steady ~60 Hz cadence
+   * (rate-limited by the caller, same as the draw path's own cap),
+   * independent of `poll_events()`/`dirty` and of whether a frame actually
+   * gets drawn this iteration -- unlike `render_server_frame()` (which is
+   * only ever called immediately before drawing, inside an active ImGui
+   * frame, and is meant for host-chrome UI), `tick()` has no such
+   * constraint and is safe to call at any time, with no session locked by
+   * the caller. This is what lets `render_on_demand()` skip drawing
+   * without also pausing simulation: a renderer whose app has time-based
+   * state (e.g. genie's per-session `update_session()`, ticking
+   * scene/particle/animation/physics managers) should override this, not
+   * `render_server_frame()`, for that state advancement. Default is a
+   * no-op.
+   *
+   * @param sessions  Same session snapshot `render_server_frame()` and
+   *                   `service_automation_queries()` receive/act on.
+   */
+  virtual void tick(const std::vector<sync_context_ptr>& sessions) {
+    (void)sessions;
+  }
+
+  /**
+   * @brief Opt-in: when true, `server::render_loop()`/`standalone::render_loop()`
+   *        stop treating routine `poll_events()` activity (WS traffic,
+   *        input, resize, ...) as a reason to draw a frame -- a frame is
+   *        drawn only when the session is genuinely `dirty` (RMI dispatch,
+   *        the initial post-connect settle window) or `request_render()`
+   *        below was called, while `tick()` above keeps advancing
+   *        simulation at its normal cadence the whole time regardless.
+   *
+   * Meant for automation/testing sessions, where most frames have no
+   * automation script actually looking at them, so there is no reason to
+   * pay a (potentially large, e.g. software-rendered WebGL2) draw cost for
+   * each one just because the browser sent a QUERY_TREE or the OS reported
+   * a resize -- see `src/automation/DESIGN.md`'s "Render on demand"
+   * section. Default returns false (ordinary continuous rendering,
+   * unaffected).
+   */
+  virtual bool render_on_demand() const {
+    return false;
+  }
+
+  /**
+   * @brief Explicitly request one more frame be drawn on the next
+   *        `render_loop()` iteration, even though `render_on_demand()`
+   *        would otherwise suppress it.
+   *
+   * Meant to be called from a renderer's own transport-specific message
+   * handling (e.g. a browser-sent REQUEST_RENDER WebSocket message, see
+   * `draw_protocol::web_msg_type::request_render`) -- the renderer owns
+   * this pending-request flag itself (not `context::dirty`) because
+   * transport callbacks like `on_message()` typically run on a worker
+   * thread with no session context in hand yet. Consumed (and cleared) by
+   * `consume_render_request()`. Default is a no-op; only meaningful for a
+   * renderer that also overrides `render_on_demand()` to return true.
+   */
+  virtual void request_render() {}
+
+  /**
+   * @brief Returns `true` (and clears the pending flag) if
+   *        `request_render()` was called since the last check.
+   *
+   * Called once per `render_loop()` iteration -- see
+   * `render_on_demand()`'s doc comment. Default returns false.
+   */
+  virtual bool consume_render_request() {
+    return false;
+  }
+
   /// @brief Called once before any nodes are rendered in a frame.
   virtual void begin_frame() = 0;
 
