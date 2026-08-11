@@ -147,8 +147,38 @@ void standalone::render_loop() {
       // poll_events() must run every iteration regardless of whether a
       // frame is drawn, so OS event queues are drained and window-close
       // requests are never delayed by an idle skip below.
-      if (renderer_->poll_events())
+      bool had_activity = renderer_->poll_events();
+
+      // standalone embeds at most one session, so the "sessions" list
+      // tick()/render_server_frame() see for chrome-extension purposes is
+      // either empty or a single element. Built unconditionally (not just
+      // when a frame draws) since tick() below needs it every iteration.
+      std::vector<sync_context_ptr> sessions_snapshot;
+      if (context_)
+        sessions_snapshot.push_back(context_);
+
+      // Simulation ticks at a steady ~60 Hz cadence regardless of whether a
+      // frame actually gets drawn this iteration -- see renderer::tick()'s
+      // doc comment. This is what lets render_on_demand() skip drawing
+      // without also pausing whatever time-based state (e.g. genie's game
+      // simulation) the app owns.
+      static constexpr std::chrono::milliseconds kMinTickInterval{16}; // ~60 Hz
+      auto now = std::chrono::steady_clock::now();
+      if (now - last_tick_time_ >= kMinTickInterval) {
+        last_tick_time_ = now;
+        renderer_->tick(sessions_snapshot);
+      }
+
+      // render_on_demand() renderers don't treat routine poll_events()
+      // activity (WS traffic, resize, ...) as a reason to draw -- only
+      // genuine dirty (RMI dispatch, the initial post-connect settle
+      // window) or an explicit request_render() call does. Everything else
+      // is unaffected.
+      if (had_activity && !renderer_->render_on_demand())
         pending_render_ = true;
+      if (renderer_->consume_render_request())
+        pending_render_ = true;
+
       bool needs_render = pending_render_;
       if (!needs_render && context_)
         needs_render = context_rlock{*context_}->dirty.load(std::memory_order_acquire) > 0;
@@ -170,12 +200,6 @@ void standalone::render_loop() {
         pending_render_ = false;
         last_render_time_ = std::chrono::steady_clock::now();
         renderer_->begin_frame();
-        // standalone embeds at most one session, so the "sessions" list
-        // render_server_frame() sees for chrome-extension purposes is either
-        // empty or a single element.
-        std::vector<sync_context_ptr> sessions_snapshot;
-        if (context_)
-          sessions_snapshot.push_back(context_);
         renderer_->render_server_frame(sessions_snapshot);
         // See the matching comment in wish::server::render_loop(): with no
         // embedded session, service_automation_queries(*sess) below never
@@ -237,7 +261,7 @@ void standalone::render_loop() {
             context_wlock{*context_}->dirty.store(kDirtySettleFrames, std::memory_order_release);
         }
         renderer_->end_frame();
-        if (renderer_->wants_continuous_redraw())
+        if (!renderer_->render_on_demand() && renderer_->wants_continuous_redraw())
           pending_render_ = true;
         if (renderer_->should_quit())
           running_.store(false, std::memory_order_release);

@@ -59,9 +59,18 @@ class web_renderer : public imgui_renderer {
    * @param font_size  Base font size in pixels.
    * @param extra_render_fns  Extra/override `render_*` dispatch entries, see
    *                          `imgui_renderer::imgui_renderer()`.
+   * @param render_on_demand  See `renderer::render_on_demand()`. Only
+   *                          meaningful (and only ever settable to
+   *                          anything other than the initially-idle
+   *                          default) when built with
+   *                          `WISH_AUTOMATION_ENABLED` -- nothing can ever
+   *                          call `request_render()` otherwise, since the
+   *                          only trigger is the REQUEST_RENDER wire
+   *                          message, decoded only in that build
+   *                          configuration.
    */
-  explicit web_renderer(
-      std::string bind_addr = "127.0.0.1", int port = 8080, int font_size = 16, render_fn_map extra_render_fns = {});
+  explicit web_renderer(std::string bind_addr = "127.0.0.1", int port = 8080, int font_size = 16,
+      render_fn_map extra_render_fns = {}, bool render_on_demand = false);
 
   ~web_renderer() override;
 
@@ -105,6 +114,16 @@ class web_renderer : public imgui_renderer {
 
   /// @brief Programmatically request shutdown.
   void request_quit();
+
+  bool render_on_demand() const override {
+    return render_on_demand_;
+  }
+  void request_render() override {
+    render_requested_.store(true, std::memory_order_relaxed);
+  }
+  bool consume_render_request() override {
+    return render_requested_.exchange(false, std::memory_order_relaxed);
+  }
 
 #ifdef WISH_AUTOMATION_ENABLED
   // ── automation ───────────────────────────────────────────────────────────
@@ -309,6 +328,12 @@ class web_renderer : public imgui_renderer {
   int port_;
   int font_size_;
   std::atomic<bool> quit_{false};
+  const bool render_on_demand_;
+  // Set by request_render() (via a REQUEST_RENDER wire message decoded in
+  // on_message(), a civetweb worker thread), consumed by
+  // consume_render_request() on the render thread -- mirrors activity_'s
+  // identical worker-thread-write/render-thread-read shape.
+  std::atomic<bool> render_requested_{false};
 
   std::unique_ptr<civetweb_server> server_;
   std::filesystem::path web_assets_dir_;

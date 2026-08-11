@@ -49,6 +49,7 @@ using bdg::wish::context;
 using bdg::wish::logger;
 using bdg::wish::web_renderer;
 using bdg::wish::draw_protocol::decode_query_tree_message;
+using bdg::wish::draw_protocol::decode_request_render_message;
 using bdg::wish::draw_protocol::encode_log_event;
 using bdg::wish::draw_protocol::encode_tree_snapshot;
 
@@ -430,6 +431,18 @@ TEST(DrawProtocolAutomationTest, EncodeLogEvent_WrapsJsonVerbatim) {
   EXPECT_EQ(static_cast<uint8_t>(bytes[0]), static_cast<uint8_t>(bdg::wish::web_msg_type::log_event));
   std::string round_tripped(reinterpret_cast<const char*>(bytes.data() + 8), json.size());
   EXPECT_EQ(round_tripped, json);
+}
+
+// ── inbound: REQUEST_RENDER ─────────────────────────────────────────────────
+
+TEST(DrawProtocolAutomationTest, DecodeRequestRenderMessage_AcceptsEmptyPayload) {
+  auto msg = build_envelope(bdg::wish::web_msg_type::request_render, "");
+  EXPECT_TRUE(decode_request_render_message(msg));
+}
+
+TEST(DrawProtocolAutomationTest, DecodeRequestRenderMessage_RejectsWrongMsgType) {
+  auto msg = build_envelope(bdg::wish::web_msg_type::query_tree, "");
+  EXPECT_FALSE(decode_request_render_message(msg));
 }
 
 // ── end-to-end: QUERY_TREE -> TREE_SNAPSHOT over a real WebSocket ──────────

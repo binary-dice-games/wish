@@ -193,15 +193,13 @@ void server::render_loop() {
       // poll_events() must run every iteration regardless of whether a
       // frame is drawn, so OS event queues are drained and window-close
       // requests are never delayed by an idle skip below.
-      if (renderer_->poll_events())
-        pending_render_ = true;
-      bool needs_render = pending_render_;
+      bool had_activity = renderer_->poll_events();
 
       // Snapshot the set of sync_context pointers under a brief
       // session_contexts() rlock; reused below both for the cheap dirty scan
-      // and (if needed) for rendering. This lets different sessions render
-      // without blocking each other and keeps session_contexts() unblocked
-      // for session lifecycle operations.
+      // and (if needed) for rendering/ticking. This lets different sessions
+      // render without blocking each other and keeps session_contexts()
+      // unblocked for session lifecycle operations.
       std::vector<sync_context_ptr> sessions_snapshot;
       {
         auto lp = session_contexts().rlock();
@@ -210,6 +208,29 @@ void server::render_loop() {
           sessions_snapshot.push_back(sp);
       }
 
+      // Simulation ticks at a steady ~60 Hz cadence regardless of whether a
+      // frame actually gets drawn this iteration -- see renderer::tick()'s
+      // doc comment. This is what lets render_on_demand() skip drawing
+      // without also pausing whatever time-based state (e.g. genie's game
+      // simulation) the app owns.
+      static constexpr std::chrono::milliseconds kMinTickInterval{16}; // ~60 Hz
+      auto now = std::chrono::steady_clock::now();
+      if (now - last_tick_time_ >= kMinTickInterval) {
+        last_tick_time_ = now;
+        renderer_->tick(sessions_snapshot);
+      }
+
+      // render_on_demand() renderers don't treat routine poll_events()
+      // activity (WS traffic, resize, ...) as a reason to draw -- only
+      // genuine dirty (RMI dispatch, the initial post-connect settle
+      // window) or an explicit request_render() call does. Everything else
+      // is unaffected.
+      if (had_activity && !renderer_->render_on_demand())
+        pending_render_ = true;
+      if (renderer_->consume_render_request())
+        pending_render_ = true;
+
+      bool needs_render = pending_render_;
       if (!needs_render) {
         for (const auto& sync_ctx : sessions_snapshot) {
           if (context_rlock{*sync_ctx}->dirty.load(std::memory_order_acquire) > 0) {
@@ -311,7 +332,7 @@ void server::render_loop() {
             context_wlock{*sync_ctx}->dirty.store(kDirtySettleFrames, std::memory_order_release);
         }
         renderer_->end_frame();
-        if (renderer_->wants_continuous_redraw())
+        if (!renderer_->render_on_demand() && renderer_->wants_continuous_redraw())
           pending_render_ = true;
         if (renderer_->should_quit())
           running_.store(false, std::memory_order_release);

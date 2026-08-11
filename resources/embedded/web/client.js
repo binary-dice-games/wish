@@ -37,6 +37,7 @@
     QUERY_TREE: 0x20,
     TREE_SNAPSHOT: 0x21,
     LOG_EVENT: 0x22, // pushed live, no request -- see window.wish.logs below
+    REQUEST_RENDER: 0x23, // see window.wish.requestRender() below
   };
 
   const INPUT_KIND = {
@@ -179,6 +180,10 @@
   function encodeQueryTree(requestId, root) {
     const json = JSON.stringify({ request_id: requestId, root: root });
     return encodeEnvelope(MSG.QUERY_TREE, new TextEncoder().encode(json));
+  }
+
+  function encodeRequestRender() {
+    return encodeEnvelope(MSG.REQUEST_RENDER, new Uint8Array(0));
   }
 
   // CLIPBOARD_TEXT's payload is plain UTF-8 text (see draw_protocol.hpp's
@@ -626,6 +631,10 @@
         // Playwright scripts wait on this before interacting (see
         // src/automation/DESIGN.md's "Readiness").
         window.wish.ready = true;
+        // Resolve exactly one pending requestRender() promise per frame
+        // actually drawn -- see window.wish.requestRender()'s doc comment.
+        const resolve = window.wish._renderResolvers.shift();
+        if (resolve) resolve();
       }
     });
   }
@@ -676,6 +685,7 @@
     // it itself.
     logs: [],
     _nextId: 1,
+    _renderResolvers: [], // FIFO of requestRender() resolvers, see below
 
     /**
      * Query the live widget tree, optionally restricted to `root` (a
@@ -700,6 +710,25 @@
     async getWidget(path) {
       const snap = await this.getTree(path);
       return snap.widgets.find((w) => w.path === path) ?? null;
+    },
+
+    /**
+     * Ask the server to draw and broadcast one more frame now, and resolve
+     * once that frame has actually landed on the canvas -- only meaningful
+     * (and only ever needed) when the server was launched with a renderer
+     * that opted into `renderer::render_on_demand()`, where frames
+     * otherwise aren't drawn just because of routine WS/input activity. Safe
+     * to call regardless (a harmless extra frame if the server isn't
+     * render_on_demand). `getTree()`/`getWidget()` already request a fresh
+     * render themselves server-side; callers that want a guaranteed-fresh
+     * screenshot should await this immediately before capturing pixels.
+     * @returns {Promise<void>}
+     */
+    requestRender() {
+      return new Promise((resolve) => {
+        this._renderResolvers.push(resolve);
+        send(encodeRequestRender());
+      });
     },
 
     /**

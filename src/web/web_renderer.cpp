@@ -40,9 +40,10 @@ namespace bdg::wish {
 
 // ── construction ──────────────────────────────────────────────────────────────
 
-web_renderer::web_renderer(std::string bind_addr, int port, int font_size, render_fn_map extra_render_fns)
+web_renderer::web_renderer(
+    std::string bind_addr, int port, int font_size, render_fn_map extra_render_fns, bool render_on_demand)
     : imgui_renderer(std::move(extra_render_fns)), bind_addr_(std::move(bind_addr)), port_(port),
-      font_size_(font_size) {}
+      font_size_(font_size), render_on_demand_(render_on_demand) {}
 
 web_renderer::~web_renderer() {
   // teardown() is called from the render thread before the render loop
@@ -166,6 +167,13 @@ void web_renderer::setup() {
         } else if (auto query_json = draw_protocol::decode_query_tree_message(message)) {
           pending_tree_queries_.wlock()->push_back({id, std::move(*query_json)});
           activity_.store(true, std::memory_order_relaxed);
+          // A tree query wants this frame's *current* state -- request one
+          // explicitly so it's answered against something fresh even under
+          // render_on_demand() (where activity_ above doesn't by itself
+          // trigger a draw). Harmless, cheap no-op when not render_on_demand().
+          request_render();
+        } else if (draw_protocol::decode_request_render_message(message)) {
+          request_render();
 #endif
         }
         // Unrecognized messages are silently dropped -- decode_*_message()

@@ -403,6 +403,12 @@ std::vector<std::byte> encode_log_event(const std::string& json_payload) {
   return wrap_envelope(web_msg_type::log_event, std::move(payload));
 }
 
+// ── inbound: REQUEST_RENDER ─────────────────────────────────────────────────
+
+bool decode_request_render_message(std::span<const std::byte> message) {
+  return unwrap_envelope(message, web_msg_type::request_render).has_value();
+}
+
 #endif // WISH_AUTOMATION_ENABLED
 
 } // namespace bdg::wish::draw_protocol
