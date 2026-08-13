@@ -9,6 +9,22 @@ project(
 
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
+# SKBUILD is set by scikit-build-core (bindings/python/pyproject.toml) when
+# building the `wish-abi` wheel, whose build.targets=["wish_client_dll",
+# "wish_server_dll"] only needs those two ABI shared libraries. Pre-seed
+# these *before* the option() calls below (a CACHE variable that already
+# exists is left alone by option(), so setting it first is what makes it
+# stick) so a bare `pip install -e` without explicit -D flags still gets a
+# wheel-appropriate configuration: no test suite, both ABI DLLs on. This
+# deliberately leaves WISH_ENABLE_IMGUI/SDL3/WEB at their normal ON
+# defaults -- wish_server_dll (see below) is meant to expose real SDL3/web
+# rendering, not a headless stub.
+if(SKBUILD)
+  set(WISH_BUILD_TESTS        OFF CACHE BOOL "" FORCE)
+  set(WISH_BUILD_SHARED       ON  CACHE BOOL "" FORCE)
+  set(WISH_BUILD_SERVER_SHARED ON CACHE BOOL "" FORCE)
+endif()
+
 option(WISH_BUILD_TESTS      "Build the wish tests"                            ON)
 option(WISH_ENABLE_IMGUI     "Build the imgui renderer"                       ON)
 option(WISH_ENABLE_SDL3      "Build the SDL3 renderer and calculator example" ON)
@@ -18,6 +34,7 @@ option(WISH_ENABLE_AUTOMATION "Build the automation query API (headless UI autom
      native ABI-driven automation (no browser) when WISH_ENABLE_SDL3 is on -- requires at \
      least one of the two" OFF)
 option(WISH_BUILD_SHARED     "Build wish_client shared library with C ABI"   ON)
+option(WISH_BUILD_SERVER_SHARED "Build wish_server shared library with C ABI (SDL3/web rendering, driven headlessly)" OFF)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
@@ -285,6 +302,7 @@ add_library(wish_server STATIC
   src/ui/ui_element.hpp
   src/context/context.hpp
   src/server/renderer.hpp
+  src/server/console_renderer.hpp
   src/context/file_service.hpp
   src/context/logger.hpp
   src/context/style_service.hpp
@@ -301,6 +319,7 @@ add_library(wish_server STATIC
   src/ui/ui_schema_help.cpp
   src/context/context.cpp
   src/server/renderer.cpp
+  src/server/console_renderer.cpp
   src/context/file_service.cpp
   src/context/logger.cpp
   src/context/style_service.cpp
@@ -559,16 +578,78 @@ if(WISH_BUILD_SHARED)
       ARCHIVE_OUTPUT_NAME wish_client_dll  # wish_client_dll.lib — avoids collision with wish_client.lib
       OUTPUT_NAME         wish_client      # MSYS2/Linux fallback
       FOLDER              lib)
-  install(TARGETS wish_client_dll
-      RUNTIME DESTINATION bin COMPONENT wish   # wish_client.dll / libwish_client.so (MSYS2)
-      LIBRARY DESTINATION bin COMPONENT wish   # libwish_client.so (Linux)
-      ARCHIVE DESTINATION lib COMPONENT wish)  # wish_client_dll.lib (MSVC import lib)
-  install(FILES
-      include/wish_client_c.h
+  if(SKBUILD)
+    # Installed straight into the `wish` Python package directory, alongside
+    # its .py sources (wheel.packages = ["wish"] in
+    # bindings/python/pyproject.toml), so wish/_native.py's _find_library()
+    # finds it next to itself with no WISH_LIB / build-dir lookup needed
+    # after `pip install`. wish_client_dll is fully self-contained (embeds
+    # bison + RMI + wish-client), so no separate libbison_abi.so needs to
+    # ship alongside it.
+    install(TARGETS wish_client_dll
+        RUNTIME DESTINATION wish COMPONENT wish   # wish_client.dll (Windows)
+        LIBRARY DESTINATION wish COMPONENT wish)  # libwish_client.so / .dylib
+  else()
+    install(TARGETS wish_client_dll
+        RUNTIME DESTINATION bin COMPONENT wish   # wish_client.dll / libwish_client.so (MSYS2)
+        LIBRARY DESTINATION bin COMPONENT wish   # libwish_client.so (Linux)
+        ARCHIVE DESTINATION lib COMPONENT wish)  # wish_client_dll.lib (MSVC import lib)
+    install(FILES
+        include/wish_client_c.h
+        extern/bison/include/bison_c.h
+        extern/bison/include/rmi_c.h
+        DESTINATION include
+        COMPONENT wish)
+  endif()
+endif()
+
+# ── wish_server_dll — C ABI shared library wrapping wish::server ─────────────
+#
+# A *separate* shared object from wish_client_dll, deliberately: it exposes
+# a different capability (hosting a session + rendering the UI clients
+# build, via the real SDL3/web renderers) and pulls in the full wish_server
+# static lib (imgui/SDL3/civetweb-web and all), so it stays opt-in
+# (WISH_BUILD_SERVER_SHARED, default OFF) rather than folded into the
+# always-on, deliberately light wish_client_dll. src/wish_server_c.cpp
+# #includes bison_c.cpp/rmi_c.cpp directly, the same way wish_client_c.cpp
+# does (see the comment above wish_client_dll) -- do not also compile them
+# as separate sources of this target.
+if(WISH_BUILD_SERVER_SHARED)
+  add_library(wish_server_dll SHARED
+      src/wish_server_c.cpp
+      include/wish_server_c.h
       extern/bison/include/bison_c.h
-      extern/bison/include/rmi_c.h
-      DESTINATION include
-      COMPONENT wish)
+      extern/bison/include/rmi_c.h)
+  target_compile_definitions(wish_server_dll PRIVATE WISH_SERVER_BUILDING_DLL BISON_BUILDING_DLL)
+  if(WIN32 AND NOT MSYS AND NOT CYGWIN)
+    target_compile_definitions(wish_server_dll PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN BISON_NATIVE_WINDOWS)
+  elseif(WIN32)
+    target_compile_definitions(wish_server_dll PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+  endif()
+  target_link_libraries(wish_server_dll PUBLIC wish_server)
+  target_include_directories(wish_server_dll
+      PUBLIC
+          ${CMAKE_CURRENT_SOURCE_DIR}/include
+      PRIVATE
+          ${CMAKE_CURRENT_SOURCE_DIR}
+          ${CMAKE_CURRENT_SOURCE_DIR}/extern/bison
+          ${CMAKE_CURRENT_SOURCE_DIR}/extern/bison/extern/json/single_include)
+  set_target_properties(wish_server_dll PROPERTIES
+      RUNTIME_OUTPUT_NAME wish_server      # wish_server.dll
+      ARCHIVE_OUTPUT_NAME wish_server_dll  # wish_server_dll.lib -- avoids collision with wish_server.lib
+      OUTPUT_NAME         wish_server      # MSYS2/Linux fallback
+      FOLDER              lib)
+  if(SKBUILD)
+    install(TARGETS wish_server_dll
+        RUNTIME DESTINATION wish COMPONENT wish
+        LIBRARY DESTINATION wish COMPONENT wish)
+  else()
+    install(TARGETS wish_server_dll
+        RUNTIME DESTINATION bin COMPONENT wish
+        LIBRARY DESTINATION bin COMPONENT wish
+        ARCHIVE DESTINATION lib COMPONENT wish)
+    install(FILES include/wish_server_c.h DESTINATION include COMPONENT wish)
+  endif()
 endif()
 
 # ─── Android binding (JNI) ─────────────────────────────────────────────────
@@ -585,25 +666,32 @@ if(ANDROID)
   add_subdirectory(bindings/android/jni)
 endif()
 
-add_subdirectory(app)
+# app/, examples/, and bindings/cpp build extra executables (the wish-cli
+# app, demo binaries, C++ binding examples/tests) that a `wish-abi` wheel
+# build (build.targets=["wish_client_dll", "wish_server_dll"]) never needs
+# -- skip them under SKBUILD to keep `pip install` scoped to the two ABI
+# DLLs it actually ships.
+if(NOT SKBUILD)
+  add_subdirectory(app)
 
-# Only auto-run here when wish is the top-level project. A project that
-# consumes wish via add_subdirectory()/FetchContent may still want to
-# register its own out-of-tree modules (see cmake/WishModules.cmake's
-# "Out-of-tree modules" section) before this is finalized -- it must call
-# wish_finalize_app_modules() itself, once, after add_subdirectory(wish)
-# and every wish_add_module() call (its own and wish's built-in ones).
-if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-  wish_finalize_app_modules()
-endif()
+  # Only auto-run here when wish is the top-level project. A project that
+  # consumes wish via add_subdirectory()/FetchContent may still want to
+  # register its own out-of-tree modules (see cmake/WishModules.cmake's
+  # "Out-of-tree modules" section) before this is finalized -- it must call
+  # wish_finalize_app_modules() itself, once, after add_subdirectory(wish)
+  # and every wish_add_module() call (its own and wish's built-in ones).
+  if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    wish_finalize_app_modules()
+  endif()
 
-add_subdirectory(examples)
+  add_subdirectory(examples)
 
-# bindings/cpp — header-only C++ client binding + its examples/tests. Needs
-# wish_client_dll (built above) and, for its test executable, the gtest
-# targets tests/CMakeLists.txt adds -- both must already exist.
-if(WISH_BUILD_SHARED)
-  add_subdirectory(bindings/cpp)
+  # bindings/cpp — header-only C++ client binding + its examples/tests. Needs
+  # wish_client_dll (built above) and, for its test executable, the gtest
+  # targets tests/CMakeLists.txt adds -- both must already exist.
+  if(WISH_BUILD_SHARED)
+    add_subdirectory(bindings/cpp)
+  endif()
 endif()
 
 # Packaging (install() destinations for non-target content + CPack ZIP

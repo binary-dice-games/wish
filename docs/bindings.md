@@ -131,18 +131,39 @@ top. Proxies and futures returned by `wish.Client` are plain
 [extern/bison/docs/bindings.md](../extern/bison/docs/bindings.md) for their
 API (`.get()` / `.set()` / `.call()` / `.on_event()`).
 
-No installation needed — import directly. Every handle is RAII-wrapped
-(`Client`, and the reused bison `Proxy`/`Future`); none of the
-`wish_client_destroy()` / `rmi_*_release()` functions need to be called
-directly outside of matching them 1:1 in code that doesn't use a `with`
-block.
+Two ways to get `wish`, `import`able either way:
 
-**Requirements:** Python 3.x. Build `wish_client_dll` first:
+- **`pip install`** (`bindings/python/pyproject.toml`, scikit-build-core):
+  compiles `wish_client_dll` and `wish_server_dll` from source and ships
+  both inside the installed `wish` package, alongside its `bison-abi`
+  dependency (installed automatically):
+  ```bash
+  git clone --recurse-submodules https://github.com/binary-dice-games/wish.git
+  pip install ./wish/bindings/python
+  ```
+  Needs a C++20 compiler and CMake 3.11+. The configure step also
+  initializes `extern/bison` if missing (wish's root `CMakeLists.txt`'s
+  `add_subdirectory("extern/bison")`); no other submodule needs manual
+  `--recurse-submodules` handling since it's all driven by the same clone.
+  Unlike `bison-abi`'s own pip build, this one is not lightweight — because
+  `wish_server_dll` exposes real SDL3/web rendering (see
+  [wish.Server](#running-a-server-from-python) below), `WISH_ENABLE_IMGUI`/
+  `SDL3`/`WEB` stay at their normal `ON` defaults, so the install compiles
+  Dear ImGui, SDL3, and civetweb too, same as a normal `wish` C++ build. See
+  [bindings/python/README.md](../bindings/python/README.md) for the
+  package's own quick-start. `pip install -e ./wish/bindings/python` also
+  works, for local development.
+- **Import directly, no install** — every handle is RAII-wrapped (`Client`,
+  and the reused bison `Proxy`/`Future`); none of the `wish_client_destroy()`
+  / `rmi_*_release()` functions need to be called directly outside of
+  matching them 1:1 in code that doesn't use a `with` block.
 
-```bash
-cmake -B build
-cmake --build build --target wish_client_dll
-```
+  **Requirements:** Python 3.x. Build `wish_client_dll` first:
+
+  ```bash
+  cmake -B build
+  cmake --build build --target wish_client_dll
+  ```
 
 Set `WISH_LIB` to the full path of the shared library if it is not found
 automatically (default search is `build/libwish_client.so` /
@@ -228,6 +249,37 @@ client.run(session, params={"ca_pem": ca_cert_pem})
 See [cli.md](cli.md#tls-flags---transport-tls) for the matching `--transport=tls`
 CLI flags and bison's [TLS-Secured Transport](https://github.com/binary-dice-games/bison/blob/main/docs/tls.md)
 doc for the full parameter reference.
+
+### Running a server from Python
+
+`wish.Server` (`bindings/python/wish/server.py`, over `wish_server_dll` /
+`wish_server_c.h`) hosts a real wish session from Python, the same protocol
+implementation (`bdg::wish::server`) the `wish server` CLI uses -- template
+registration/instantiation gives each widget its own independently
+addressable proxy, and events work, unlike a server built from the generic
+bison RMI ABI alone. It's a *separate* shared library from `wish_client_dll`
+(`WISH_BUILD_SERVER_SHARED`, off by default in a plain CMake build, on for
+the `wish-abi` pip package) -- import `wish.server` only if you need to host
+a session; `wish.Client` never loads it.
+
+```python
+from wish import Server
+
+server = Server.tcp("127.0.0.1", 7070)
+server.start(renderer="sdl3", title="My App", width=1280, height=720)
+input("Press Enter to stop...\n")
+server.stop()
+```
+
+`renderer` is `"sdl3"` (a real window), `"web"` (pass `web_bind`/`web_port`;
+open the printed URL in a browser, same as `wish server --renderer=web`), or
+`"console"` (a lightweight text dump of the widget tree to stdout as it's
+built/updated -- no display needed, meant for tests/CI, not as a real UI).
+`bindings/python/examples/basic_server_example.py` is a runnable CLI wrapper
+matching the `wish server` app's own flag names; any ABI-based client (any
+language) can connect to it exactly as it would to the compiled `wish
+server` binary. TLS and `--transport=term` aren't exposed by this ABI (TCP
+and named-pipe only) -- use the compiled `wish server` binary for those.
 
 ---
 

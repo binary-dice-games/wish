@@ -21,5 +21,6 @@ Quick start::
 """
 
 from .client import Client, WishError, key
+from .server import Server
 
-__all__ = ["Client", "WishError", "key"]
+__all__ = ["Client", "WishError", "key", "Server"]

@@ -1,0 +1,79 @@
+[build-system]
+requires = ["scikit-build-core>=0.10"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "wish-abi"
+version = "1.0.0"
+description = "Python bindings for the wish remote-UI framework, over the wish_client_dll / wish_server_dll C ABIs"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.8"
+authors = [{ name = "Binary Dice Games" }]
+keywords = ["wish", "ui", "rmi", "ctypes"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: C++",
+    "Topic :: Software Development :: Libraries",
+]
+dependencies = ["bison-abi>=1.0.0"]
+
+[project.urls]
+Homepage = "https://github.com/binary-dice-games/wish"
+Documentation = "https://github.com/binary-dice-games/wish/blob/main/docs/bindings.md"
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+# ─── scikit-build-core ──────────────────────────────────────────────────────
+# This package (bindings/python/) doesn't hold the CMakeLists.txt it builds
+# from -- that's the repo root two levels up, which also builds the wish-cli
+# app, tests, modules, and other bindings. `cmake.source-dir` points there,
+# and `build.targets` restricts the actual build to the two ABI shared
+# libraries the ctypes wrappers in `wish/_native.py`/`wish/_server_native.py`
+# load: `wish_client_dll` (connects to a server) and `wish_server_dll` (hosts
+# one, with real SDL3/web rendering). See the `SKBUILD` branches in the root
+# CMakeLists.txt for the install() rules that place both inside the `wish`
+# package directory, and docs/bindings.md for end-to-end instructions.
+#
+# Unlike bison's own pip package, this one deliberately does NOT force
+# WISH_ENABLE_IMGUI/SDL3/WEB off -- wish_server_dll's whole purpose is to
+# expose real rendering (an SDL3 window, or the web/browser renderer), so
+# `pip install` here needs whatever those already require to build normally
+# (see docs/building.md); it is a heavier build than bison's.
+[tool.scikit-build]
+cmake.source-dir = "../.."
+cmake.build-type = "Release"
+build.targets = ["wish_client_dll", "wish_server_dll"]
+# Restrict `cmake --install` to the `wish` COMPONENT (the SKBUILD install()
+# rules in the root CMakeLists.txt) so vendored dependencies' own install()
+# rules don't dump their untagged headers/static libs into the wheel.
+install.components = ["wish"]
+wheel.packages = ["wish"]
+# No CPython C API used (both DLLs are plain ctypes-loaded shared libraries,
+# not Python extension modules) -- one wheel per platform covers every
+# CPython 3.x, instead of scikit-build-core's default of tagging the wheel
+# to the interpreter it happened to be built with.
+wheel.py-api = "py3"
+
+# No sdist support, for the same reason as bison-abi: cmake.source-dir points
+# outside this directory. `pip install`/`pip install -e` against a full git
+# checkout (see docs/bindings.md) builds directly from the working tree.
+
+[tool.scikit-build.cmake.define]
+PACKAGE_TESTS = "OFF"
+WISH_BUILD_TESTS = "OFF"
+WISH_BUILD_SHARED = "ON"
+WISH_BUILD_SERVER_SHARED = "ON"
+
+# `pip install -e` uses scikit-build-core's default editable settings
+# (mode="redirect", rebuild=false), same reasoning as bison-abi's own
+# pyproject.toml: an in-source rebuild would litter the whole repository.
+# wish/_native.py's/_server_native.py's _find_library() scan sys.path for
+# the redirect mode's site-packages/wish/lib*.so to compensate.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
