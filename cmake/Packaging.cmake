@@ -94,6 +94,19 @@ install(DIRECTORY bindings/csharp/Wish DESTINATION bindings/csharp/src
 install(DIRECTORY bindings/csharp/examples DESTINATION bindings/csharp
     COMPONENT wish)
 
+# bindings/android is a Gradle multi-module project (:wish-lib -- the JNI
+# binding itself, built by cross-compiling this repo's own root
+# CMakeLists.txt with the Android NDK toolchain, see docs/building.md --
+# and :examples:WishExample). There's no Android SDK/NDK at packaging time
+# to build an .aar/.apk from it, so ship the Gradle project and sources
+# as-is, minus local build/cache state.
+install(DIRECTORY bindings/android DESTINATION bindings
+    COMPONENT wish
+    PATTERN ".gradle" EXCLUDE
+    PATTERN ".cxx" EXCLUDE
+    PATTERN "build" EXCLUDE
+    PATTERN "local.properties" EXCLUDE)
+
 # PATH/library-path registration helpers, so `wish` and wish_client.dll /
 # libwish_client.so are discoverable from anywhere in the filesystem after
 # extracting the zip, not just from inside bin/. Two per platform: a

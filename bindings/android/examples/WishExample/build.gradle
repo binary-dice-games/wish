@@ -1,0 +1,48 @@
+// bindings/android/examples/WishExample/build.gradle
+//
+// Example app exercising :wish-lib (com.bdg.wish) against a real wish
+// server: connect over TCP, register/instantiate a small counter template,
+// and drive it in both directions (this app's own buttons and the
+// server's own window) via Client/Proxy/EventHandler. See docs/examples.md
+// for how to build and run it, alongside a `wish server` to connect to.
+
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'com.bdg.wish.example'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.bdg.wish.example"
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+}
+
+dependencies {
+    implementation project(':wish-lib')
+    implementation 'androidx.core:core-ktx:1.13.1'
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+}

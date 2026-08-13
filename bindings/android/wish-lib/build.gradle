@@ -1,0 +1,73 @@
+// bindings/android/wish-lib/build.gradle
+//
+// The Android binding itself: com.bdg.wish's Java sources (src/main/java)
+// plus the JNI glue built straight from this repo's own root CMakeLists.txt
+// (bindings/android/jni/, added there behind an `if(ANDROID)` guard). Only
+// two CMake targets are built for this module -- wish_client_dll (the same
+// C ABI shared library the C#/Python bindings load on desktop) and wish_jni
+// (the thin JNI wrapper over it) -- not bison's own bison_abi/bison_jni,
+// which this binding intentionally does not depend on (see
+// NativeLibrary.java's doc comment).
+
+plugins {
+    id 'com.android.library'
+}
+
+android {
+    namespace 'com.bdg.wish'
+    compileSdk 34
+    ndkVersion '26.1.10909125'
+
+    defaultConfig {
+        // forkpty()/openpty() (extern/bison/src/term/terminal_posix.cpp,
+        // pulled in transitively by wish_client_dll) are exported directly
+        // from Bionic's libc.so starting at API 23 -- 24 keeps a one-level
+        // margin instead of pinning the exact boundary, matching bison's
+        // own bison-lib module.
+        minSdk 24
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+
+        externalNativeBuild {
+            cmake {
+                // Skip configuring tests/examples/wish-cli/other modules --
+                // this module only needs wish_client_dll and wish_jni.
+                arguments "-DPACKAGE_TESTS=OFF", "-DWISH_BUILD_TESTS=OFF",
+                          "-DWISH_ENABLE_IMGUI=OFF", "-DWISH_ENABLE_SDL3=OFF",
+                          "-DWISH_ENABLE_WEB=OFF", "-DWISH_ENABLE_AUTOMATION=OFF",
+                          "-DWISH_BUILD_SHARED=ON"
+                targets "wish_client_dll", "wish_jni"
+            }
+        }
+
+        ndk {
+            // arm64-v8a covers real devices; x86_64 covers the emulator
+            // image used to validate this binding (see docs/examples.md).
+            // Add armeabi-v7a/x86 here for 32-bit device support.
+            abiFilters "arm64-v8a", "x86_64"
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path "../../../CMakeLists.txt"
+            version "3.22.1"
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    androidTestImplementation 'androidx.test.ext:junit:1.2.1'
+    androidTestImplementation 'androidx.test:runner:1.6.2'
+}

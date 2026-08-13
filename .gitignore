@@ -19,3 +19,11 @@ bindings/csharp/tests/obj/
 bindings/csharp/tests/bin/
 # Java build artifacts
 bindings/java/target/
+# Android/Gradle build artifacts (bindings/android) -- build**/ above already
+# covers each module's build/ directory.
+bindings/android/.gradle/
+bindings/android/**/.cxx/
+bindings/android/local.properties
+bindings/android/**/*.iml
+bindings/android/.idea/
+bindings/android/captures/

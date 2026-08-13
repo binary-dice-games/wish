@@ -199,6 +199,55 @@ The full UI descriptor is assembled at compile time from nine per-tab `constexpr
 
 ---
 
+## Android Example (emulator)
+
+`bindings/android/examples/WishExample` is a small Kotlin app exercising
+the Android binding (`bindings/android/` -- see
+[bindings.md](bindings.md#android-java--kotlin-bindingsandroid)) against a
+real wish server: connect over TCP, register/instantiate a small counter
+UI template, and drive it in both directions -- the app's own "+1"/"Reset"
+buttons update the server's remote `Label` (rendered on whatever machine
+`wish server` is running on -- an Android wish client never renders UI
+itself), and clicking the *server's own window's* buttons mirrors back into
+the app's `TextView` via `Proxy.onEvent`. Requires the Android SDK/NDK and
+an emulator or device (Android Studio's SDK Manager is the easiest way to
+get both; see [building.md](building.md#building-for-android) for the NDK
+requirement).
+
+Start a wish server reachable from the emulator first (`10.0.2.2` is the
+emulator's alias for the host machine's own `localhost`, already the app's
+default host):
+
+```bash
+build/app/wish server --transport=tcp --port=7070 --renderer=sdl3
+```
+
+Then, in another terminal, build and install the app:
+
+```bash
+cd bindings/android
+
+./gradlew :examples:WishExample:installDebug
+adb shell am start -n com.bdg.wish.example/.MainActivity
+```
+
+Or open `bindings/android/` directly in Android Studio and run the
+`WishExample` configuration on an `x86_64` AVD (create one via **Tools >
+Device Manager** if needed -- an x86_64 system image gives the emulator
+native-speed CPU emulation, unlike `arm64-v8a` on an x86_64 host). Tap
+**Connect**, then a "Wish Android Counter" window appears on the machine
+running `wish server`; tapping **+1**/**Reset** on either side updates both.
+
+To validate just the binding itself (no server, no UI) the same way CI
+would, run its instrumented test suite instead:
+
+```bash
+./gradlew :wish-lib:connectedAndroidTest
+# Report: bindings/android/wish-lib/build/reports/androidTests/connected/index.html
+```
+
+---
+
 ## Planned examples (not yet implemented)
 
 | Example | Step | Description |

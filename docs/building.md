@@ -65,6 +65,14 @@ No `libuv` package install is needed — on native Windows (detected via
 builds its bundled `extern/libuv` from source instead of looking for a
 system/pkg-config copy, unlike the Linux/MSYS2 path above.
 
+### Android (NDK)
+
+Android NDK r26+ is required for the Android binding (`bindings/android/`),
+which cross-compiles `wish_client_dll` (client-only — a wish client never
+owns a renderer, see [docs/bindings.md](bindings.md#android-java--kotlin-bindingsandroid))
+and its JNI glue. Not needed for the desktop Linux/MSYS2/native-Windows
+build. See [Building for Android](#building-for-android) below.
+
 ---
 
 ## Getting the source
@@ -169,6 +177,68 @@ is configured), so every `app/wish_cli` binary lands under `build/app/`:
 | Ninja / Makefiles (Linux) | `build/app/wish` | `build/app/wish-server`, `build/app/wish-client`, `build/app/wish-standalone`, `build/app/wish-desktop` |
 | Ninja / Makefiles (MSYS2) | `build/app/wish.exe` | `build/app/wish-server.exe`, `build/app/wish-client.exe`, `build/app/wish-standalone.exe`, `build/app/wish-desktop.exe` |
 | Visual Studio (native Windows) | `build/app/Release/wish.exe` | `build/app/Release/wish-server.exe`, `build/app/Release/wish-client.exe`, `build/app/Release/wish-standalone.exe`, `build/app/Release/wish-desktop.exe` |
+
+---
+
+## Building for Android
+
+Android is cross-compiled with the NDK's own CMake toolchain file, same as
+any other NDK-based CMake project. CMake's Android toolchain sets the
+`ANDROID` variable, which this repo's root `CMakeLists.txt` checks in two
+places: it configures `bindings/android/jni` (the JNI glue backing the
+binding, see [docs/bindings.md](bindings.md#android-java--kotlin-bindingsandroid)),
+and it skips civetweb/libcurl (and the `wish_server` sources that need
+them) entirely — a stock NDK sysroot ships no OpenSSL for `libcurl`'s
+`find_package(OpenSSL)` to find, and the Android binding only ever needs
+`wish_client_dll` (never `wish_server`, which owns the renderer/window a
+wish *server* process needs — not meaningful to build for a client-only
+mobile app). `WISH_BUILD_SHARED=ON` (the default) is required.
+
+```bash
+# From an NDK install (r26+; set ANDROID_NDK_ROOT to its path):
+cmake -B build-android-arm64 -G Ninja \
+    -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake" \
+    -DANDROID_ABI=arm64-v8a \
+    -DANDROID_PLATFORM=android-24 \
+    -DWISH_ENABLE_IMGUI=OFF -DWISH_ENABLE_SDL3=OFF -DWISH_ENABLE_WEB=OFF \
+    -DWISH_ENABLE_AUTOMATION=OFF -DWISH_BUILD_TESTS=OFF -DWISH_BUILD_SHARED=ON
+cmake --build build-android-arm64 --target wish_client_dll wish_jni
+
+# For the emulator (x86_64):
+cmake -B build-android-x86_64 -G Ninja \
+    -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake" \
+    -DANDROID_ABI=x86_64 \
+    -DANDROID_PLATFORM=android-24 \
+    -DWISH_ENABLE_IMGUI=OFF -DWISH_ENABLE_SDL3=OFF -DWISH_ENABLE_WEB=OFF \
+    -DWISH_ENABLE_AUTOMATION=OFF -DWISH_BUILD_TESTS=OFF -DWISH_BUILD_SHARED=ON
+cmake --build build-android-x86_64 --target wish_client_dll wish_jni
+```
+
+The `WISH_ENABLE_*` renderer options are turned off above purely to skip
+fetching submodules (SDL3, Dear ImGui, civetweb, curl) this build never
+uses — `wish_client_dll`/`wish_jni` don't depend on them either way, since
+Gradle (below) only ever builds those two targets. `android-24`, not the
+NDK's usual `android-21` floor: `forkpty()`/`openpty()` (pulled in
+transitively by `wish_client_dll` via bison's `term_transport`) are
+exported directly from Bionic's `libc.so` starting at API 23 — 24 keeps a
+one-level margin instead of pinning the exact boundary.
+
+In practice this whole invocation is driven by Gradle's `externalNativeBuild`
+instead of by hand — `bindings/android/wish-lib/build.gradle` points
+straight at this repo's root `CMakeLists.txt` and restricts the build to
+the `wish_client_dll`/`wish_jni` targets, so `./gradlew assembleDebug` (or
+an Android Studio sync) runs the equivalent of the commands above once per
+`abiFilters` entry automatically:
+
+```bash
+cd bindings/android
+./gradlew assembleDebug                        # builds :wish-lib and :examples:WishExample
+./gradlew :wish-lib:connectedAndroidTest        # runs the binding's instrumented tests on a device/emulator
+```
+
+See [docs/bindings.md](bindings.md#android-java--kotlin-bindingsandroid) for
+the binding itself and [docs/examples.md](examples.md) for building/running
+the example app on an emulator.
 
 ---
 

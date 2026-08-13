@@ -122,6 +122,17 @@ endif()
 # src/web/civetweb_server.cpp) and by tests as a throwaway local HTTP server
 # (tests/test_file_service.cpp's TestHttpServer). Neither needs TLS: the
 # server side only ever binds to 127.0.0.1 for local dev/test tooling.
+#
+# Still gated on NOT ANDROID, despite being otherwise unconditional: the
+# Android JNI binding (bindings/android/jni, see the `if(ANDROID)` block
+# below) only ever builds wish_client_dll, never wish_server, so it has no
+# use for civetweb -- and, more importantly, its sibling libcurl block right
+# below unconditionally requires system OpenSSL, which a stock NDK sysroot
+# does not provide (see that block's own comment). Both blocks are gated
+# together so wish_server's HTTP/WebSocket sources (src/net/http_client.*,
+# src/web/civetweb_server.*) stay linkable against real targets on every
+# platform that actually builds wish_server.
+if(NOT ANDROID)
 wish_ensure_submodules(extern/civetweb)
 set(CIVETWEB_ENABLE_WEBSOCKETS        ON  CACHE BOOL "" FORCE)
 set(CIVETWEB_ENABLE_SSL               OFF CACHE BOOL "" FORCE)
@@ -162,7 +173,11 @@ target_compile_definitions(civetweb-c-library PRIVATE SOCKET_TIMEOUT_QUANTUM=100
 # file_service::resolve_or_fetch to download http(s):// resource URLs.
 # Windows uses curl's Schannel backend (native OS TLS, no external OpenSSL
 # DLL dependency); Linux/MSYS2 link the ambient system OpenSSL, same as
-# every other TLS-using tool on those platforms.
+# every other TLS-using tool on those platforms. This whole block is skipped
+# on ANDROID (see the `if(NOT ANDROID)` wrapping this and the civetweb block
+# above) -- a stock NDK sysroot ships no OpenSSL for find_package(OpenSSL)
+# to find, and the Android JNI binding never builds wish_server (the only
+# consumer of net::http_get) in the first place.
 wish_ensure_submodules(extern/curl)
 set(BUILD_CURL_EXE       OFF CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS    OFF CACHE BOOL "" FORCE)
@@ -185,6 +200,7 @@ add_subdirectory(extern/curl)
 # libcurl_static/libcurl_shared BUILD_SHARED_LIBS selected -- set_target_properties
 # rejects ALIAS targets, so target the real one directly.
 set_target_properties(libcurl_static PROPERTIES FOLDER extern)
+endif()  # NOT ANDROID (civetweb + libcurl)
 
 # Single-header image codecs, vendored via extern/stb. Unconditional (not
 # gated by WISH_ENABLE_IMGUI/WEB/SDL3, unlike most renderer-only bits above)
@@ -272,7 +288,6 @@ add_library(wish_server STATIC
   src/context/file_service.hpp
   src/context/logger.hpp
   src/context/style_service.hpp
-  src/net/http_client.hpp
   src/server/server.hpp
   src/auth/local_auth_module.hpp
   src/standalone/standalone.hpp
@@ -289,7 +304,6 @@ add_library(wish_server STATIC
   src/context/file_service.cpp
   src/context/logger.cpp
   src/context/style_service.cpp
-  src/net/http_client.cpp
   src/server/server.cpp
   src/auth/local_auth_module.cpp
   src/standalone/standalone.cpp
@@ -337,6 +351,18 @@ add_library(wish_server STATIC
   src/ui/forms/file_dialog.cpp
   src/ui/forms/message_box.cpp
 )
+
+# src/net/http_client.* (net::http_get, used by file_service::resolve_or_fetch
+# for http(s):// resource URLs) needs libcurl, which -- like civetweb -- isn't
+# built under ANDROID (see that block's comment near the top of this file).
+# wish_server is never actually built for the Android JNI binding (it only
+# needs wish_client_dll), so leaving this out costs that platform nothing.
+if(NOT ANDROID)
+  target_sources(wish_server PRIVATE
+    src/net/http_client.hpp
+    src/net/http_client.cpp
+  )
+endif()
 
 if(WISH_ENABLE_IMGUI)
   target_sources(wish_server PRIVATE
@@ -446,7 +472,11 @@ target_link_libraries(wish_server PRIVATE miniz)
 # civetweb backs civetweb_server's embedded HTTP+WebSocket server;
 # libcurl backs net::http_get (src/net/http_client.cpp). Both PRIVATE since
 # <civetweb.h>/<curl/curl.h> are isolated to their respective .cpp files.
-target_link_libraries(wish_server PRIVATE civetweb-c-library libcurl)
+# Neither target exists under ANDROID (see the civetweb/curl block near the
+# top of this file), matching the http_client.* target_sources() guard above.
+if(NOT ANDROID)
+  target_link_libraries(wish_server PRIVATE civetweb-c-library libcurl)
+endif()
 
 # ── Optional modules — calculator, notepad, process_explorer, ... ────────────
 #
@@ -539,6 +569,20 @@ if(WISH_BUILD_SHARED)
       extern/bison/include/rmi_c.h
       DESTINATION include
       COMPONENT wish)
+endif()
+
+# ─── Android binding (JNI) ─────────────────────────────────────────────────
+# Only configured when cross-compiling with the NDK's CMake toolchain file
+# (which sets ANDROID); the JNI glue is a thin wrapper over wish_client_dll
+# (built above), needing <jni.h>, which the NDK sysroot provides for free
+# and has no reason to exist in a host Linux/Windows build. See
+# docs/bindings.md for the binding itself and docs/building.md for the NDK
+# toolchain invocation.
+if(ANDROID)
+  if(NOT WISH_BUILD_SHARED)
+    message(FATAL_ERROR "Android builds require WISH_BUILD_SHARED=ON (the JNI glue wraps wish_client_dll)")
+  endif()
+  add_subdirectory(bindings/android/jni)
 endif()
 
 add_subdirectory(app)

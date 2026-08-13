@@ -11,7 +11,7 @@ A remote UI framework built on [bison](https://github.com/binary-dice-games/biso
 - **Multiple transports** — TCP, TLS-secured TCP, named pipe/Unix socket, an interactive terminal hop, or in-process (no serialization) for single-binary demos.
 - **Per-session sandboxing** — isolated object tree, template registry, and file-service resource folder per connected client.
 - **Automation-ready** — an optional query/screenshot/input-injection API lets Playwright (or an AI agent) drive and introspect a running UI like a browser page; the SDL3 renderer gets the same capabilities natively over the C ABI, no browser required.
-- **C++, Python, and C# clients** — a native C++ API, a header-only C++ binding (`bindings/cpp/`, C ABI only, no bison/wish source to compile), plus generated Python/C# bindings, all layered on the same bison RMI proxy semantics.
+- **C++, Python, C#, and Android clients** — a native C++ API, a header-only C++ binding (`bindings/cpp/`, C ABI only, no bison/wish source to compile), plus generated Python/C#/Java bindings, all layered on the same bison RMI proxy semantics.
 - **AI-agent-assisted app/UI building** — describe a UI in plain English and have a Claude Code skill build and screenshot-verify it, with no need to know the widget catalog up front. See [docs/ai-assisted-development.md](docs/ai-assisted-development.md).
 
 ## Architecture
@@ -134,7 +134,7 @@ into a persistent, identity-keyed directory per client via an
 | [docs/examples.md](docs/examples.md) | Annotated example walkthroughs |
 | [docs/ui-elements.md](docs/ui-elements.md) | Full UI element/widget catalog (fields, events), window/layout model, JSON template schema, and the `editor` preview tool |
 | [docs/visual-editor-options.md](docs/visual-editor-options.md) | Proposal: WYSIWYG editor options — forking ImRAD Studio vs. extending the native `editor` module |
-| [docs/bindings.md](docs/bindings.md) | Python and C# language binding setup and usage |
+| [docs/bindings.md](docs/bindings.md) | Python, C#, and Android (Java/Kotlin) language binding setup and usage |
 | [docs/ai-assisted-development.md](docs/ai-assisted-development.md) | Building wish apps/UI via natural language with the `wish-module`/`wish-ui` AI-agent skills |
 | [docs/object-inspector.md](docs/object-inspector.md) | `ObjectInspector`: reflection-driven property table + description panel, its field → widget dispatch table, and the new `Hidden`/`Order`/`ColorField`/`Multiline`/`DropTarget` bison attributes |
 | [DESIGN.md](DESIGN.md) | Architecture, key abstractions, object model, and design decisions |
