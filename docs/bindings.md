@@ -351,3 +351,106 @@ does both. Raises `WishError(code=WISH_ERR_NOT_FOUND)` if the connected
 server's active renderer doesn't support it. See
 [src/automation/DESIGN.md](../src/automation/DESIGN.md)'s "Native
 (ABI-based) automation" section for the architecture.
+
+---
+
+## Android (Java / Kotlin) (`bindings/android/`)
+
+Like Android apps generally, this binding ships its own native libraries
+inside the APK instead of loading a precompiled shared library at run time
+(`ctypes.CDLL`/`[LibraryImport]`/link-time, as the other bindings do). It's
+two pieces: `bindings/android/jni/` is JNI glue (the `wish_jni` CMake
+target, built straight from this repo's own root `CMakeLists.txt` -- see
+[docs/building.md](building.md#building-for-android)) linked against
+`wish_client_dll`, and `bindings/android/wish-lib/` is the Java package
+(`com.bdg.wish`) that calls it -- `Client c = Client.tcp(host, port);`
+instead of `wish_client_tcp_create(host, port)`. Both `libwish_client.so`
+and `libwish_jni.so` end up in the app's `jniLibs/<abi>/`;
+`NativeLibrary.ensureLoaded()` (called from every public class's static
+initializer) loads both, `wish_client` first.
+
+Unlike the C#/Python bindings, this one does **not** depend on bison's own
+Android binding (`extern/bison/bindings/android`) -- `com.bdg.wish.Dynamic`/
+`Key` are a self-contained reimplementation of the `bison_c.h` surface
+wish needs, backed by the same single `wish_jni.so` as everything else.
+Loading bison's separately-built `bison_abi.so`/`bison_jni.so` alongside it
+would mean two independent copies of the bison/RMI C ABI in one process --
+harmless in isolation, but any `bison_handle`/`rmi_proxy_handle` this
+binding hands to Java is only ever valid against the exact `wish_client_dll`
+instance that created it, so mixing the two would be a footgun for no
+benefit. (The C#/Python bindings avoid the same footgun differently, by
+redirecting bison's own native-library resolution at `wish_client`'s shared
+object at run time -- see `Native.cs`'s doc comment -- a trick Java's
+`System.loadLibrary` has no equivalent for, hence the different fix here.)
+
+`Client` is `AutoCloseable`, matching the C# binding's `IDisposable` choice
+-- use a try-with-resources block, or call `close()` directly:
+
+```java
+import com.bdg.wish.Client;
+
+try (Client client = Client.tcp("127.0.0.1", 7070)) {
+    client.run(c -> {
+        c.setStylePreset("dark");
+        c.registerTemplate("ui", "{\"type\": \"Window\", \"title\": \"Hi\"}");
+        try (var root = c.instantiateTemplate("ui", "ui")) {
+            root.onEvent("closed", params -> c.quit());
+            c.waitForQuit();   // blocks until an event handler calls c.quit()
+        }
+    });
+}
+```
+
+`Client.run()` blocks the calling thread until the session callback
+returns, and the callback itself runs on the library's internal RMI worker
+thread (not the calling thread) -- run it from a background thread if the
+caller (e.g. an Android `Activity`) needs to stay responsive, the same
+pattern the C# example's `Thread` wrapper uses. See
+`bindings/android/examples/WishExample/.../MainActivity.kt` for a complete
+worked example, including posting results back to the UI thread with
+`runOnUiThread`.
+
+**Requirements:** Android NDK r26+, `compileSdk`/`targetSdk` 34, `minSdk` 24
+(see [docs/building.md](building.md#building-for-android) for why 24, not
+21). No separate `wish_client_dll` build step to run by hand -- Gradle's
+`externalNativeBuild` drives it:
+
+```bash
+cd bindings/android
+./gradlew assembleDebug                     # builds :wish-lib and :examples:WishExample
+./gradlew :wish-lib:connectedAndroidTest    # runs the binding's instrumented tests on a device/emulator
+```
+
+See [docs/examples.md](examples.md#android-example-emulator) for running
+the example app on an emulator, alongside a `wish server` to connect to.
+
+### Gaps versus the C#/Python bindings
+
+- **Only TCP and TLS transports** are bound (`Client.tcp`/`Client.tls`) --
+  named-pipe and terminal (`--transport=term`) aren't meaningful for an
+  Android app process, matching the same choice bison's own Android binding
+  makes for `com.bdg.bison.rmi.Client`.
+- **Only the synchronous `rmi_proxy_*`/`wish_*` calls** are bound -- no
+  `rmi_future_handle`/`_async` variants.
+- **File transfer** is byte-array only (`uploadFile`/`downloadFile`) -- the
+  local-path streaming variants (`wish_upload_file_from_path`/
+  `wish_download_file_to_path`/`wish_upload_package_from_path`) aren't
+  bound; Android's scoped-storage model makes a raw filesystem path a poor
+  fit for this binding's API compared to a `byte[]`/`Uri` the caller already
+  has in hand.
+- **Native automation** (`wish_automation_*`) isn't bound -- it's desktop
+  dev/test tooling for the SDL3 renderer (see the Python binding's "Native
+  automation" section above), not something a deployed Android client
+  needs.
+- **`Dynamic`** covers named-field scalar/vector access, serialization, and
+  JSON -- indexed (numeric) field access, class/method registration
+  (`bison_add_class`/`bison_add_method`), and YAML text interop aren't
+  exposed, matching bison's own Android binding's documented gaps. Unlike
+  bison's binding, though, **`Proxy.onEvent` is exposed** here -- driving a
+  UI template's button clicks and other server-pushed events is this
+  binding's whole point.
+
+None of these are architectural dead ends -- each is a straightforward
+extension of the same JNI-glue-plus-Java-wrapper shape already in place for
+the rest of the surface (see `bindings/android/jni/wish_jni.cpp` and
+`wish_rmi_jni.cpp`).

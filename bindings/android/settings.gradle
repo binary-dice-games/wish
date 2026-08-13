@@ -1,0 +1,29 @@
+// bindings/android/settings.gradle
+//
+// One Gradle project covering the Android binding (:wish-lib, an Android
+// library module wrapping wish_client_dll/wish_jni via JNI -- see
+// docs/bindings.md) and the example app that exercises it
+// (:examples:WishExample -- see docs/examples.md). `cd bindings/android &&
+// ./gradlew assembleDebug` builds both.
+
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.name = "wish-android"
+
+include ':wish-lib'
+include ':examples:WishExample'
+project(':examples:WishExample').projectDir = file('examples/WishExample')
