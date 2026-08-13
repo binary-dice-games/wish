@@ -47,6 +47,16 @@ class TestServerLifecycle(unittest.TestCase):
         server.stop()  # must not raise even though start() was never called
         server.release()
 
+    def test_start_with_renderer_params(self):
+        # Regression test: start()'s params dict must build a bison_handle
+        # against wish_server_dll's *own* loaded library, not bison._native's
+        # process-wide singleton (which a same-process wish.Client would bind
+        # to a different library -- see _server_native.py's module docstring).
+        server = Server.tcp("127.0.0.1", _free_port())
+        server.start(renderer="console", title="Custom Title", width=800, height=600)
+        server.stop()
+        server.release()
+
     def test_should_quit_false_before_start(self):
         server = Server.tcp("127.0.0.1", _free_port())
         self.assertFalse(server.should_quit())

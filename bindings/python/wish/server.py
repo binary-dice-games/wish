@@ -20,7 +20,6 @@ Quick start::
 from typing import Any
 
 from . import _server_native as _n
-from bison.rmi import _as_params
 
 __all__ = ["Server"]
 
@@ -72,8 +71,11 @@ class Server:
             ``"sdl3"``/``"web"``; ``web_bind``, ``web_port`` for ``"web"``
             only. Matches the ``wish server`` CLI's own flags/defaults.
         """
-        with _as_params(params or None) as ph:
+        ph = _n.build_params(self._lib, params) if params else None
+        try:
             self._check(self._lib.wish_server_start(self._handle, renderer.encode(), ph), "start")
+        finally:
+            _n.release_params(self._lib, ph)
         self._started = True
         return self
 

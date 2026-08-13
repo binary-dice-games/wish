@@ -16,7 +16,7 @@ using namespace bison; // NOLINT -- brings in operator""_key, matching client.cp
 void console_renderer::render_node(const ui_element& node, const context& s) {
   std::string indent(static_cast<std::size_t>(depth_) * 2, ' ');
 
-  key_t klass = node.get_as<key_t>(dynamic::CLASS, key_t{});
+  bison::key_t klass = node.get_as<bison::key_t>(dynamic::CLASS, bison::key_t{});
   std::optional<std::string> class_name = lookup_registered_key_name(klass);
 
   std::cout << indent << "- " << (class_name ? *class_name : "?");

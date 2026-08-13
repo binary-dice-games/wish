@@ -34,10 +34,19 @@ option(WISH_ENABLE_AUTOMATION "Build the automation query API (headless UI autom
      native ABI-driven automation (no browser) when WISH_ENABLE_SDL3 is on -- requires at \
      least one of the two" OFF)
 option(WISH_BUILD_SHARED     "Build wish_client shared library with C ABI"   ON)
-option(WISH_BUILD_SERVER_SHARED "Build wish_server shared library with C ABI (SDL3/web rendering, driven headlessly)" OFF)
+option(WISH_BUILD_SERVER_SHARED "Build wish_server shared library with C ABI, hosting/rendering a session via SDL3, the web renderer, or a headless console dump" OFF)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
+
+# Every vendored static-lib dependency below (SDL3, Dear ImGui, civetweb,
+# libcurl, mbedtls, miniz, ...) must be compiled with -fPIC to be linkable
+# into wish_server_dll (a SHARED library) -- setting this once, globally,
+# before any add_subdirectory() pulls those in is simpler and more robust
+# than relying on each vendored project's own CMakeLists to opt in, and
+# costs nothing on the executable-only build path (PIE executables are
+# already the norm on modern Linux/macOS toolchains; MSVC ignores this).
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # Automation has no renderer to extend without at least one of the two
 # backends that implement it: the web renderer's browser/WebSocket surface

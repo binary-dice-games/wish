@@ -135,7 +135,9 @@ wish_server_start(wish_server_handle s, const char* renderer_kind, bison_handle 
     s->server_ = std::make_unique<wish::server>(*s->transport_, std::move(renderer));
     if (s->verbose_) {
       s->logger_ = std::make_shared<wish::logger>(
-          dynamic::instantiate(key_t{"wish"}, key_t{"__WishLogger"}), /*verbose=*/true, std::filesystem::path{});
+          dynamic::instantiate(bdg::bison::key_t{"wish"}, bdg::bison::key_t{"__WishLogger"}),
+          /*verbose=*/true,
+          std::filesystem::path{});
       s->server_->set_logger(s->logger_);
     }
     s->server_->start(nullptr, dynamic{});

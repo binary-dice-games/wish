@@ -8,6 +8,21 @@ not the generic bison RMI server primitives ``bison.rmi.Server`` wraps,
 which can't mint independently-addressable widget proxies or emit events
 from outside C++. Only imported by :mod:`wish.server`; :mod:`wish.client`
 has no dependency on it.
+
+This module deliberately does **not** route ``bison_handle`` construction
+through ``bison._native``/``bison.rmi``: that module is a process-wide
+*singleton* (one ``ctypes.CDLL`` for the whole process), and a
+``bison_handle`` is only valid against the exact shared library that
+created it. If a process uses both :mod:`wish.client` (which redirects
+``bison._native``'s singleton onto ``wish_client_dll``) and
+:mod:`wish.server` in the same process -- e.g. a test that starts a server
+and connects a client to it -- whichever redirects first would silently
+win, leaving the other's ``Dynamic``/``Proxy`` objects bound to the wrong
+library. Instead, :func:`build_params`/:func:`release_params` below call
+``bison_create``/``bison_set_*``/``bison_release`` directly through *this*
+module's own loaded library (embedded the same way ``wish_client_dll``
+embeds them -- see ``src/wish_server_c.cpp``), fully independent of
+``bison._native``'s state.
 """
 
 import ctypes
@@ -15,14 +30,14 @@ import ctypes.util
 import os
 import sys
 import threading
-from typing import Optional
-
-from bison import _native as _bison_native
+from typing import Any, Optional
 
 # ─── Shared C type aliases ─────────────────────────────────────────────────
 
 ServerHandle = ctypes.c_void_p  # wish_server_handle
-Error = ctypes.c_int  # wish_server_error
+Handle = ctypes.c_void_p  # bison_handle
+Hash = ctypes.c_uint32  # bison_hash
+Error = ctypes.c_int  # wish_server_error / bison_error
 
 # ─── wish_server_error codes ────────────────────────────────────────────────
 
@@ -92,11 +107,9 @@ def get_lib() -> ctypes.CDLL:
     """Return the loaded ``wish_server`` library (singleton, thread-safe).
 
     Unlike ``wish._native.get_lib()``, this does **not** redirect
-    ``BISON_LIB``/bind bison's own signatures onto itself: this library is
-    only ever used through its own ``wish_server_*`` entry points (there is
-    no ``bison.rmi.Proxy``/``Dynamic`` traffic through it from Python), so
-    there is nothing to layer on top the way ``wish/_native.py`` does for
-    ``wish_client_dll``.
+    ``BISON_LIB``/touch ``bison._native``'s own singleton -- see the module
+    docstring for why (this library's own embedded ``bison_*`` functions are
+    called directly, via :func:`build_params`, instead).
     """
     global _lib
     if _lib is None:
@@ -109,8 +122,6 @@ def get_lib() -> ctypes.CDLL:
 
 
 def _setup_signatures(lib: ctypes.CDLL) -> None:
-    P = ctypes.POINTER
-
     lib.wish_server_tcp_create.restype = ServerHandle
     lib.wish_server_tcp_create.argtypes = [ctypes.c_char_p, ctypes.c_uint16]
 
@@ -118,7 +129,7 @@ def _setup_signatures(lib: ctypes.CDLL) -> None:
     lib.wish_server_pipe_create.argtypes = [ctypes.c_char_p]
 
     lib.wish_server_start.restype = Error
-    lib.wish_server_start.argtypes = [ServerHandle, ctypes.c_char_p, _bison_native.Handle]
+    lib.wish_server_start.argtypes = [ServerHandle, ctypes.c_char_p, Handle]
 
     lib.wish_server_stop.restype = Error
     lib.wish_server_stop.argtypes = [ServerHandle]
@@ -134,3 +145,60 @@ def _setup_signatures(lib: ctypes.CDLL) -> None:
 
     lib.wish_server_last_error.restype = ctypes.c_char_p
     lib.wish_server_last_error.argtypes = [ServerHandle]
+
+    # ── bison_* subset needed to build wish_server_start()'s `params` ──────
+    # (This library embeds the full bison C ABI -- see the module docstring
+    # for why these are called directly, not via bison._native.)
+    lib.bison_key.restype = Hash
+    lib.bison_key.argtypes = [ctypes.c_char_p]
+
+    lib.bison_create.restype = Handle
+    lib.bison_create.argtypes = [Hash]
+
+    lib.bison_release.restype = None
+    lib.bison_release.argtypes = [Handle]
+
+    lib.bison_set_int.restype = Error
+    lib.bison_set_int.argtypes = [Handle, Hash, ctypes.c_int32]
+
+    lib.bison_set_float.restype = Error
+    lib.bison_set_float.argtypes = [Handle, Hash, ctypes.c_float]
+
+    lib.bison_set_bool.restype = Error
+    lib.bison_set_bool.argtypes = [Handle, Hash, ctypes.c_int]
+
+    lib.bison_set_string.restype = Error
+    lib.bison_set_string.argtypes = [Handle, Hash, ctypes.c_char_p]
+
+
+def build_params(lib: ctypes.CDLL, fields: dict) -> Handle:
+    """Build a ``bison_handle`` (via *this* library's own embedded
+    ``bison_*`` functions) from a flat ``{name: value}`` dict of ``str``,
+    ``bool``, ``int``, or ``float`` values -- everything
+    ``wish_server_start()``'s renderer params need. Release with
+    :func:`release_params`."""
+    h = lib.bison_create(0)
+    if not h:
+        raise MemoryError("bison_create failed")
+    for name, value in fields.items():
+        k = lib.bison_key(str(name).encode())
+        if isinstance(value, bool):
+            rc = lib.bison_set_bool(h, k, int(value))
+        elif isinstance(value, int):
+            rc = lib.bison_set_int(h, k, value)
+        elif isinstance(value, float):
+            rc = lib.bison_set_float(h, k, value)
+        elif isinstance(value, str):
+            rc = lib.bison_set_string(h, k, value.encode())
+        else:
+            lib.bison_release(h)
+            raise TypeError(f"Unsupported params value type for {name!r}: {type(value)}")
+        if rc != 0:
+            lib.bison_release(h)
+            raise RuntimeError(f"failed to set params field {name!r} (bison_error {rc})")
+    return h
+
+
+def release_params(lib: ctypes.CDLL, handle: Any) -> None:
+    if handle:
+        lib.bison_release(handle)
