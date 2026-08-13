@@ -12,13 +12,19 @@ are the exact same C ABI types, exported from the exact same library.
 """
 
 import ctypes
+import ctypes.util
 import os
 import sys
 import threading
 from typing import Optional
 
-# Make the sibling `bison` package importable regardless of CWD: it lives at
-# extern/bison/bindings/python relative to the wish repo root.
+# In a full git checkout (dev builds, docs/bindings.md's "import directly"
+# path), the sibling `bison` package lives at extern/bison/bindings/python
+# and isn't on sys.path by default -- make it importable regardless of CWD.
+# When wish is `pip install`ed as wish-abi, `bison-abi` is a normal declared
+# dependency (see bindings/python/pyproject.toml) and is already importable
+# with no path hack; this insert is a no-op then, since the directory won't
+# exist inside an installed wheel's layout.
 _here = os.path.dirname(os.path.abspath(__file__))
 _wish_repo_root = os.path.dirname(os.path.dirname(os.path.dirname(_here)))  # bindings/python/wish -> repo root
 _bison_bindings = os.path.join(_wish_repo_root, "extern", "bison", "bindings", "python")
@@ -65,23 +71,45 @@ SessionFn = ctypes.CFUNCTYPE(None, ClientHandle, ctypes.c_void_p)
 
 
 def _find_library() -> str:
-    """Locate ``libwish_client`` via ``WISH_LIB``, the ``build/`` dir, or the
-    system library search path."""
+    """Locate ``libwish_client`` via ``WISH_LIB``, alongside this package
+    (the ``pip install``ed layout), every ``sys.path`` entry's ``wish/``
+    subdirectory (``pip install -e``'s redirect editable mode), the
+    ``build/`` dir, or the system library search path."""
     env_path = os.environ.get("WISH_LIB")
     if env_path:
         return env_path
 
-    # Layout: <repo>/bindings/python/wish/_native.py -> <repo>/build/...
-    candidates = [
+    lib_names = ("libwish_client.so", "libwish_client.dylib", "wish_client.dll")
+
+    # The normal `pip install`ed layout: the compiled library lands directly
+    # inside the `wish` package directory next to this file (see the SKBUILD
+    # install() rule for wish_client_dll in the root CMakeLists.txt).
+    installed_candidates = [os.path.join(_here, name) for name in lib_names]
+
+    # `pip install -e`'s default "redirect" editable mode relocates only .py
+    # imports back to this source tree -- the compiled library stays in the
+    # real site-packages install location, so scan every sys.path entry's
+    # own `wish/` subdirectory for it too.
+    sys_path_candidates = [
+        os.path.join(entry, "wish", name) for entry in sys.path if entry for name in lib_names
+    ]
+
+    # Plain dev-checkout-with-a-sibling-build-dir layout (not a pip install).
+    dev_candidates = [
         os.path.join(_wish_repo_root, "build", "libwish_client.so"),
         os.path.join(_wish_repo_root, "build", "libwish_client.dylib"),
         os.path.join(_wish_repo_root, "build", "Release", "wish_client.dll"),
         os.path.join(_wish_repo_root, "build", "Debug", "wish_client.dll"),
         os.path.join(_wish_repo_root, "build", "wish_client.dll"),
     ]
-    for path in candidates:
+
+    for path in installed_candidates + sys_path_candidates + dev_candidates:
         if os.path.isfile(path):
             return path
+
+    found = ctypes.util.find_library("wish_client")
+    if found:
+        return found
 
     raise OSError(
         "libwish_client not found. Build it first "
