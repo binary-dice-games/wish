@@ -5,6 +5,8 @@
 
 #include <gflags/gflags.h>
 
+#include <string>
+
 // Shared transport flags — declared by bison::app::server_app internals.
 DEFINE_string(transport, "term", "Transport to use: tcp, pipe, tls, or term");
 DEFINE_string(host, "0.0.0.0", "Bind host address (transport=tcp/tls)");
@@ -21,6 +23,14 @@ DEFINE_string(key_password, "", "Passphrase for an encrypted server private key 
 DEFINE_string(client_auth, "none", "Mutual TLS mode: none, optional, or required (transport=tls)");
 DEFINE_string(ca_file, "", "Trust anchor file for verifying client certificates (transport=tls, client_auth!=none)");
 DEFINE_string(ca_pem, "", "Trust anchor PEM for verifying client certificates (transport=tls, client_auth!=none)");
+DEFINE_string(theme, "dark",
+    "Default UI theme preset for connecting clients that don't request their own via "
+    "--theme: dark, light, or classic.");
+
+static bool ValidateTheme(const char* /*flag*/, const std::string& value) {
+  return value == "dark" || value == "light" || value == "classic";
+}
+DEFINE_validator(theme, &ValidateTheme);
 
 int main(int argc, char** argv) {
   gflags::SetUsageMessage("wish-server - wish GUI render server");
