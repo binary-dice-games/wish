@@ -39,11 +39,6 @@ internal static partial class Native
 {
     private const string LibName = "wish_client";
 
-    static Native()
-    {
-        NativeLibrary.SetDllImportResolver(typeof(Native).Assembly, ResolveLibrary);
-    }
-
     /// <summary>
     /// Locates <c>libwish_client</c> the same way <c>wish/_native.py</c>'s
     /// <c>_find_library()</c> does: an explicit <c>WISH_LIB</c> path first,
@@ -52,8 +47,13 @@ internal static partial class Native
     /// points <see cref="Bdg.Bison.Key"/>'s own library resolution at the
     /// same file via <c>BISON_LIB</c> (see the class doc comment) unless the
     /// caller already set one explicitly.
+    ///
+    /// Registered with the runtime by <see cref="NativeResolvers"/>, not by
+    /// this class directly -- <c>NativeLibrary.SetDllImportResolver</c> is
+    /// one-per-assembly, and <see cref="ServerNative"/> lives in this same
+    /// assembly with its own, independent library to resolve.
     /// </summary>
-    private static nint ResolveLibrary(string libraryName, System.Reflection.Assembly assembly, DllImportSearchPath? searchPath)
+    internal static nint ResolveLibrary(string libraryName, System.Reflection.Assembly assembly, DllImportSearchPath? searchPath)
     {
         if (libraryName != LibName)
         {

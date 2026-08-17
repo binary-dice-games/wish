@@ -21,6 +21,9 @@
 
 #include "src/rmi/transport/named_pipe_transport.hpp"
 #include "src/rmi/transport/socket_transport.hpp"
+#include "src/rmi/transport/term_transport.hpp"
+#include "src/rmi/transport/tls_socket_transport.hpp"
+#include "src/term/terminal.hpp"
 
 // See the identical comment in wish_client_c.cpp: #including bison_c.cpp/
 // rmi_c.cpp directly gives this file access to their file-local handle
@@ -43,6 +46,12 @@ namespace wish = bdg::wish;
 // ── Server handle ────────────────────────────────────────────────────────────
 
 struct wish_server_handle_ {
+  // Only engaged by wish_server_term_create(). Declared before transport_ so
+  // that member destruction order (reverse of declaration) tears transport_
+  // down first: term_server_transport borrows term_proc_'s read/write fds
+  // (see terminal.hpp), which must still be open while that happens.
+  std::unique_ptr<term::terminal> term_proc_;
+
   // Declared before server_ so that member destruction order (reverse of
   // declaration) tears server_ down first -- wish::server only borrows the
   // transport (see server.hpp's constructor doc: "must outlive the
@@ -61,6 +70,14 @@ struct wish_server_handle_ {
 
 namespace {
 
+// Distinguishes an unknown/unsupported renderer_kind from every other
+// make_renderer()/server construction failure, so wish_server_start() can
+// report WISH_SERVER_ERR_BAD_RENDERER (its documented contract) instead of
+// the generic WISH_SERVER_ERR_EXCEPTION.
+struct bad_renderer_error : std::runtime_error {
+  using std::runtime_error::runtime_error;
+};
+
 std::unique_ptr<wish::renderer> make_renderer(const char* renderer_kind, const dynamic& params) {
   std::string kind{renderer_kind ? renderer_kind : ""};
 
@@ -75,7 +92,8 @@ std::unique_ptr<wish::renderer> make_renderer(const char* renderer_kind, const d
     auto font_size = params.get_as<int32_t>("font_size"_key, 16);
     return std::make_unique<wish::sdl3_renderer>(title.c_str(), width, height, font_size);
 #else
-    throw std::runtime_error("renderer_kind=\"sdl3\" requested but wish_server_dll was built with WISH_ENABLE_SDL3=OFF");
+    throw bad_renderer_error(
+        "renderer_kind=\"sdl3\" requested but wish_server_dll was built with WISH_ENABLE_SDL3=OFF");
 #endif
   }
 
@@ -86,11 +104,12 @@ std::unique_ptr<wish::renderer> make_renderer(const char* renderer_kind, const d
     auto font_size = params.get_as<int32_t>("font_size"_key, 16);
     return std::make_unique<wish::web_renderer>(bind_addr, port, font_size);
 #else
-    throw std::runtime_error("renderer_kind=\"web\" requested but wish_server_dll was built with WISH_ENABLE_WEB=OFF");
+    throw bad_renderer_error(
+        "renderer_kind=\"web\" requested but wish_server_dll was built with WISH_ENABLE_WEB=OFF");
 #endif
   }
 
-  throw std::runtime_error("unknown renderer_kind '" + kind + "' (expected \"sdl3\", \"web\", or \"console\")");
+  throw bad_renderer_error("unknown renderer_kind '" + kind + "' (expected \"sdl3\", \"web\", or \"console\")");
 }
 
 } // namespace
@@ -121,6 +140,31 @@ extern "C" wish_server_handle wish_server_pipe_create(const char* path) {
   }
 }
 
+extern "C" wish_server_handle wish_server_tls_create(const char* host, uint16_t port) {
+  if (!host)
+    return nullptr;
+  try {
+    auto state = std::make_unique<wish_server_handle_>();
+    state->transport_ = std::make_unique<tls_socket_server_transport>(host, port);
+    return state.release();
+  } catch (...) {
+    return nullptr;
+  }
+}
+
+extern "C" wish_server_handle wish_server_term_create(const char* cmd) {
+  try {
+    auto state = std::make_unique<wish_server_handle_>();
+    state->term_proc_ = std::make_unique<term::terminal>(cmd ? cmd : std::string{});
+    state->term_proc_->start_pump();
+    state->transport_ = std::make_unique<term_server_transport>(
+        state->term_proc_->read_handle(), state->term_proc_->write_handle());
+    return state.release();
+  } catch (...) {
+    return nullptr;
+  }
+}
+
 extern "C" wish_server_error
 wish_server_start(wish_server_handle s, const char* renderer_kind, bison_handle params) {
   if (!s || !renderer_kind)
@@ -140,8 +184,15 @@ wish_server_start(wish_server_handle s, const char* renderer_kind, bison_handle 
           std::filesystem::path{});
       s->server_->set_logger(s->logger_);
     }
-    s->server_->start(nullptr, dynamic{});
+    // Forwarded unchanged as listen params -- e.g. cert_file/key_file/etc.
+    // for a wish_server_tls_create() transport; ignored by every other
+    // transport's start().
+    s->server_->start(nullptr, dyn_params);
     return WISH_SERVER_OK;
+  } catch (const bad_renderer_error& e) {
+    s->last_error_ = e.what();
+    s->server_.reset();
+    return WISH_SERVER_ERR_BAD_RENDERER;
   } catch (const std::exception& e) {
     s->last_error_ = e.what();
     s->server_.reset();
@@ -170,6 +221,8 @@ extern "C" wish_server_error wish_server_stop(wish_server_handle s) {
 extern "C" int wish_server_should_quit(wish_server_handle s) {
   if (!s || !s->server_)
     return 0;
+  if (s->term_proc_ && s->term_proc_->has_exited())
+    return 1;
   return s->server_->should_quit() ? 1 : 0;
 }
 

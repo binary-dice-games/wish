@@ -94,10 +94,45 @@ WISH_SERVER_API wish_server_handle wish_server_tcp_create(const char* host, uint
 WISH_SERVER_API wish_server_handle wish_server_pipe_create(const char* path);
 
 /**
+ * @brief Create a TLS-secured TCP socket server.
+ *
+ * Does not listen; call wish_server_start() to begin accepting connections.
+ * TLS material (`cert_file`/`cert_pem`, `key_file`/`key_pem`,
+ * `key_password`, and optionally `client_auth`/`ca_file`/`ca_pem` for mutual
+ * TLS) is supplied via wish_server_start()'s `params`, matching
+ * `tls_socket_server_transport::start()` (see
+ * `src/rmi/transport/tls_socket_transport.hpp` in bison).
+ *
+ * @param host  Bind address (e.g. "127.0.0.1", "0.0.0.0").
+ * @param port  Port number (0-65535).
+ * @return Non-null handle on success; NULL on allocation failure.
+ */
+WISH_SERVER_API wish_server_handle wish_server_tls_create(const char* host, uint16_t port);
+
+/**
+ * @brief Create a terminal (OSC-99 framed) server by spawning a child
+ *        process attached to a new pseudo-terminal.
+ *
+ * The spawned child is expected to be a wish client process using
+ * wish_client_term_create() (or an equivalent term-transport client) over
+ * its own inherited stdio. Does not begin accepting the connection; call
+ * wish_server_start() to do so. wish_server_should_quit() also returns
+ * non-zero once the spawned child exits, in addition to any renderer close
+ * signal.
+ *
+ * @param cmd  Command to exec in the child. NULL or empty spawns the
+ *             operator's `$SHELL` (Linux/MSYS2, falling back to `/bin/sh`)
+ *             or `cmd.exe` (Windows).
+ * @return Non-null handle on success; NULL on spawn/pty allocation failure.
+ */
+WISH_SERVER_API wish_server_handle wish_server_term_create(const char* cmd);
+
+/**
  * @brief Build the requested renderer, start the render loop, and begin
  *        accepting client connections.
  *
- * @param server        Handle from wish_server_tcp_create()/wish_server_pipe_create().
+ * @param server        Handle from wish_server_tcp_create()/wish_server_pipe_create()/
+ *                      wish_server_tls_create()/wish_server_term_create().
  * @param renderer_kind One of:
  *                      - "sdl3": a real SDL3 window (requires the library
  *                        was built with WISH_ENABLE_SDL3=ON).
@@ -115,7 +150,11 @@ WISH_SERVER_API wish_server_handle wish_server_pipe_create(const char* path);
  *                      (int, default 16) for "sdl3"/"web"; "web_bind"
  *                      (string, default "127.0.0.1") and "web_port" (int,
  *                      default 8080) for "web" only. Ignored for "console".
- *                      May be NULL to use every default.
+ *                      Also forwarded unchanged to the transport's own
+ *                      `start()` as listen params -- e.g. `cert_file`/
+ *                      `key_file`/etc. for a server created with
+ *                      wish_server_tls_create(); ignored by every other
+ *                      transport. May be NULL to use every default.
  * @return WISH_SERVER_OK on success; WISH_SERVER_ERR_BAD_RENDERER for an
  *         unrecognized renderer_kind or one this library wasn't built with;
  *         WISH_SERVER_ERR_TRANSPORT if listening failed;
@@ -130,8 +169,10 @@ WISH_SERVER_API wish_server_error wish_server_stop(wish_server_handle server);
 
 /**
  * @brief Returns non-zero once the renderer signals it should close (e.g.
- *        the SDL3 window was closed). The web/console renderers never set
- *        this on their own; stop those with an explicit wish_server_stop().
+ *        the SDL3 window was closed), or -- for a server created with
+ *        wish_server_term_create() -- once the spawned child process has
+ *        exited. The web/console renderers never set this on their own;
+ *        stop those with an explicit wish_server_stop().
  */
 WISH_SERVER_API int wish_server_should_quit(wish_server_handle server);
 

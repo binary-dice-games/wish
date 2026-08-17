@@ -53,6 +53,39 @@ class Server:
             raise MemoryError("wish_server_pipe_create failed")
         return cls(h)
 
+    @classmethod
+    def tls(cls, host: str, port: int) -> "Server":
+        """Create a TLS-secured TCP server (not yet listening).
+
+        TLS material (``cert_file``/``cert_pem``, ``key_file``/``key_pem``,
+        ``key_password``, and optionally ``client_auth``/``ca_file``/
+        ``ca_pem`` for mutual TLS) is supplied via :meth:`start`'s
+        ``**params``.
+        """
+        h = _n.get_lib().wish_server_tls_create(host.encode(), port)
+        if not h:
+            raise MemoryError("wish_server_tls_create failed")
+        return cls(h)
+
+    @classmethod
+    def term(cls, cmd: str = "") -> "Server":
+        """Create a terminal (OSC-99 framed) server by spawning a child
+        process attached to a new pseudo-terminal.
+
+        The spawned child is expected to be a wish client process using
+        ``wish.Client.term()`` (or an equivalent term-transport client) over
+        its own inherited stdio. :meth:`should_quit` also returns ``True``
+        once the spawned child exits, in addition to any renderer close
+        signal.
+
+        :param cmd: Command to exec in the child. Empty (default) spawns the
+            operator's ``$SHELL``/``cmd.exe``.
+        """
+        h = _n.get_lib().wish_server_term_create(cmd.encode() if cmd else None)
+        if not h:
+            raise MemoryError("wish_server_term_create failed")
+        return cls(h)
+
     def set_verbose(self, verbose: bool = True) -> "Server":
         """Enable trace logging of RMI dispatch to stdout. Must be called
         before :meth:`start`."""
@@ -69,7 +102,10 @@ class Server:
         :param params: Renderer-specific keyword arguments, all optional:
             ``title``, ``width``, ``height``, ``font_size`` for
             ``"sdl3"``/``"web"``; ``web_bind``, ``web_port`` for ``"web"``
-            only. Matches the ``wish server`` CLI's own flags/defaults.
+            only. Matches the ``wish server`` CLI's own flags/defaults. Also
+            forwarded unchanged to the transport's own listen params -- e.g.
+            ``cert_file``/``key_file``/etc. for a server created with
+            :meth:`tls`; ignored by every other transport.
         """
         ph = _n.build_params(self._lib, params) if params else None
         try:

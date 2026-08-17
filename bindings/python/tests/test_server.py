@@ -64,8 +64,31 @@ class TestServerLifecycle(unittest.TestCase):
 
     def test_bad_renderer_kind_raises(self):
         server = Server.tcp("127.0.0.1", _free_port())
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(RuntimeError) as ctx:
             server.start(renderer="not-a-real-renderer")
+        # Regression check: an unknown renderer_kind must map to
+        # WISH_SERVER_ERR_BAD_RENDERER specifically, not the generic
+        # WISH_SERVER_ERR_EXCEPTION every other internal failure uses.
+        self.assertIn("Unknown renderer_kind", str(ctx.exception))
+        server.release()
+
+    def test_tls_create_and_destroy(self):
+        server = Server.tls("127.0.0.1", _free_port())
+        self.assertTrue(server._handle)
+        server.release()
+        self.assertFalse(server._handle)
+        # Idempotent.
+        server.release()
+
+    def test_term_create_and_destroy(self):
+        # Empty cmd spawns the operator's $SHELL; should_quit() should
+        # eventually observe the spawned child exiting on its own once its
+        # stdin (the pty master, held open by this handle) is closed.
+        server = Server.term("true")
+        self.assertTrue(server._handle)
+        server.release()
+        self.assertFalse(server._handle)
+        # Idempotent.
         server.release()
 
 

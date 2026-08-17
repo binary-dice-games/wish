@@ -115,6 +115,49 @@ See [cli.md](cli.md#tls-flags---transport-tls) for the matching `--transport=tls
 CLI flags and bison's [TLS-Secured Transport](https://github.com/binary-dice-games/bison/blob/main/docs/tls.md)
 doc for the full parameter reference.
 
+### Running a server from C++
+
+`wish::binding::server` (`bindings/cpp/include/wish_cpp/server.hpp`, over
+`wish_server_dll`/`wish_server_c.h`) hosts a real wish session, the same
+protocol implementation (`bdg::wish::server`) the `wish server` CLI uses --
+template registration/instantiation gives each widget its own independently
+addressable proxy, and events work, unlike a server built from the generic
+bison RMI ABI alone. It's a **separate binding target** from `wish_cpp`
+(`wish_cpp_server`, added automatically when `wish_server_dll` is available,
+i.e. `-DWISH_BUILD_SERVER_SHARED=ON`) over a *separate* shared library from
+`wish_client_dll` -- do not link both `wish_client_dll` and `wish_server_dll`
+into one binary that also uses `wish::binding::value`; see `server.hpp`'s
+file doc comment for why.
+
+```bash
+cmake -B build -DWISH_BUILD_SERVER_SHARED=ON
+cmake --build build --target wish_server_dll
+```
+
+```cpp
+#include <wish_cpp/server.hpp>
+
+namespace wish = bdg::wish::binding;
+
+int main() {
+  auto server = wish::server::tcp("127.0.0.1", 7070);
+  wish::value params;
+  params["title"_key] = std::string{"My App"};
+  server.start("sdl3", params);
+  while (!server.should_quit()) { /* sleep, poll, etc. */ }
+  server.stop();
+}
+```
+
+`renderer` is `"sdl3"` (a real window), `"web"` (pass `web_bind`/`web_port`;
+open the printed URL in a browser), or `"console"` (a lightweight text dump
+of the widget tree to stdout as it's built/updated -- no display needed,
+meant for tests/CI). `server::tls(host, port)` and `server::term(cmd)` are
+the TLS and terminal (spawns a child process on a new pseudo-terminal, `--cmd`
+CLI-flag equivalent) counterparts of `tcp()`/`pipe()`; TLS material is
+supplied via `start()`'s `params`, forwarded unchanged as transport listen
+params.
+
 ---
 
 ## Python (`bindings/python/`)
@@ -278,8 +321,12 @@ built/updated -- no display needed, meant for tests/CI, not as a real UI).
 `bindings/python/examples/basic_server_example.py` is a runnable CLI wrapper
 matching the `wish server` app's own flag names; any ABI-based client (any
 language) can connect to it exactly as it would to the compiled `wish
-server` binary. TLS and `--transport=term` aren't exposed by this ABI (TCP
-and named-pipe only) -- use the compiled `wish server` binary for those.
+server` binary. `Server.tls(host, port)` and `Server.term(cmd="")` are the
+TLS and terminal (spawns a child process on a new pseudo-terminal) counterparts
+of `Server.tcp()`/`Server.pipe()`; TLS material (`cert_file`/`cert_pem`,
+`key_file`/`key_pem`, `key_password`, and optionally `client_auth`/`ca_file`/
+`ca_pem` for mutual TLS) is supplied via `start()`'s `**params`, forwarded
+unchanged as transport listen params.
 
 ---
 
@@ -377,6 +424,39 @@ client.Run(c => { /* ... */ }, new Dictionary<string, object> { ["ca_pem"] = caC
 See [cli.md](cli.md#tls-flags---transport-tls) for the matching `--transport=tls`
 CLI flags and bison's [TLS-Secured Transport](https://github.com/binary-dice-games/bison/blob/main/docs/tls.md)
 doc for the full parameter reference.
+
+### Running a server from C#
+
+`Bdg.Wish.Server` (`bindings/csharp/Wish/Server.cs`, over `wish_server_dll`/
+`wish_server_c.h`) hosts a real wish session, the same protocol
+implementation (`bdg::wish::server`) the `wish server` CLI uses -- template
+registration/instantiation gives each widget its own independently
+addressable proxy, and events work, unlike a server built from the generic
+bison RMI ABI alone. It's a *separate* shared library from `wish_client` --
+set `WISH_SERVER_LIB` the same way `WISH_LIB` locates `wish_client` if it
+isn't found automatically (default search is `build/libwish_server.so`/
+`.dylib`/`build/Debug/wish_server.dll`). `Server` does not depend on
+`Bdg.Bison.Dynamic` (see `ServerNative.cs`'s doc comment for why -- the same
+cross-library `bison_handle` hazard `_server_native.py` avoids in the Python
+binding), so its `Start()` takes a plain `IReadOnlyDictionary<string, object>`
+instead.
+
+```csharp
+using Bdg.Wish;
+
+using var server = Server.Tcp("127.0.0.1", 7070);
+server.Start("sdl3", new Dictionary<string, object> { ["title"] = "My App", ["width"] = 1280, ["height"] = 720 });
+Console.ReadLine();
+server.Stop();
+```
+
+`renderer` is `"sdl3"` (a real window), `"web"` (pass `web_bind`/`web_port`;
+open the printed URL in a browser), or `"console"` (a lightweight text dump
+of the widget tree to stdout as it's built/updated -- no display needed,
+meant for tests/CI). `Server.Tls(host, port)` and `Server.Term(cmd = "")`
+are the TLS and terminal (spawns a child process on a new pseudo-terminal)
+counterparts of `Server.Tcp()`/`Server.Pipe()`; TLS material is supplied via
+`Start()`'s `parameters`, forwarded unchanged as transport listen params.
 
 ### Automation (`bindings/python/wish/automation.py`)
 

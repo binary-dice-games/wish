@@ -128,6 +128,12 @@ def _setup_signatures(lib: ctypes.CDLL) -> None:
     lib.wish_server_pipe_create.restype = ServerHandle
     lib.wish_server_pipe_create.argtypes = [ctypes.c_char_p]
 
+    lib.wish_server_tls_create.restype = ServerHandle
+    lib.wish_server_tls_create.argtypes = [ctypes.c_char_p, ctypes.c_uint16]
+
+    lib.wish_server_term_create.restype = ServerHandle
+    lib.wish_server_term_create.argtypes = [ctypes.c_char_p]
+
     lib.wish_server_start.restype = Error
     lib.wish_server_start.argtypes = [ServerHandle, ctypes.c_char_p, Handle]
 
