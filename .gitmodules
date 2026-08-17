@@ -1,36 +1,44 @@
 [submodule "extern/bison"]
 	path = extern/bison
 	url = https://github.com/binary-dice-games/bison.git
+	branch = main
 [submodule "extern/implot"]
 	path = extern/implot
 	url = https://github.com/epezent/implot.git
-	branch = master
+	branch = v1.0
 [submodule "extern/imgui_color_text_edit"]
 	path = extern/imgui_color_text_edit
 	url = https://github.com/goossens/ImGuiColorTextEdit.git
-	branch = master
+	branch = v1.92.9
 [submodule "extern/imgui"]
 	path = extern/imgui
 	url = https://github.com/ocornut/imgui.git
-	branch = docking
+	branch = v1.92.9b-docking
 [submodule "extern/implot3d"]
 	path = extern/implot3d
 	url = https://github.com/brenocq/implot3d.git
+	branch = v0.4
 [submodule "extern/stb"]
 	path = extern/stb
 	url = https://github.com/nothings/stb.git
+	branch = master
 [submodule "extern/sdl3"]
 	path = extern/sdl3
 	url = https://github.com/libsdl-org/SDL.git
+	branch = release-3.4.x
 [submodule "extern/sdl3_image"]
 	path = extern/sdl3_image
 	url = https://github.com/libsdl-org/SDL_image.git
+	branch = release-3.4.x
 [submodule "extern/civetweb"]
 	path = extern/civetweb
 	url = https://github.com/civetweb/civetweb.git
+	branch = v1.16
 [submodule "extern/miniz"]
 	path = extern/miniz
 	url = https://github.com/richgel999/miniz.git
+	branch = 3.1.2
 [submodule "extern/curl"]
 	path = extern/curl
 	url = https://github.com/curl/curl.git
+	branch = curl-8_21_0
