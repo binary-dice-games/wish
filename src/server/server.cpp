@@ -93,6 +93,7 @@ void server::on_session_created(bison::rmi::context& ctx) {
   s.allow_url_fetch = allow_url_fetch_;
   s.file_service = file_service::instantiate(s.resource_dir);
   s.style_service = style_service::instantiate();
+  s.style_service->set_preset(default_theme_);
   // All sessions share the same global logger instance (set via set_logger()).
   s.logger_service = logger_;
 #ifdef WISH_AUTOMATION_ENABLED

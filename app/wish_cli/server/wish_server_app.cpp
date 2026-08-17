@@ -32,6 +32,7 @@ DECLARE_string(host);
 DECLARE_int32(port);
 DECLARE_string(name);
 DECLARE_string(cmd);
+DECLARE_string(theme);
 
 DEFINE_string(title, "wish", "Window title");
 DEFINE_int32(width, 1280, "Window width in pixels");
@@ -141,6 +142,7 @@ int wish_server_app::run_with_transport(bison::rmi::transport::server_transport_
   auto srv_owner = make_server(transport);
   auto& srv = static_cast<server&>(*srv_owner);
   srv.set_logger(server_log_);
+  srv.set_default_theme(FLAGS_theme);
   // Populates cert_file/key_file/etc. from FLAGS_* when --transport=tls
   // selected it (see bison::app::server_app::on_listen_params()); a no-op
   // for every other transport.

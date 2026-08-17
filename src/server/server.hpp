@@ -123,6 +123,22 @@ class server : public bison::rmi::server {
   }
 
   /**
+   * @brief Set the default UI theme preset applied to each newly-connected
+   *        session's `style_service` before the client does anything.
+   *
+   * A client that never calls `style_service::preset` (or the CLI client's
+   * equivalent `--theme`) keeps whatever this sets; a client that does call
+   * it overrides this default for its own session only.
+   *
+   * Must be called before `start()`.
+   *
+   * @param name One of `"dark"`, `"light"`, `"classic"`.
+   */
+  void set_default_theme(std::string name) {
+    default_theme_ = std::move(name);
+  }
+
+  /**
    * @brief Enable persistent, identity-keyed session sandbox directories.
    *
    * When set, and a connection both supplies a non-empty identity (via
@@ -230,6 +246,7 @@ class server : public bison::rmi::server {
   logger_ptr logger_;
   bool allow_absolute_paths_{false};
   bool allow_url_fetch_{false};
+  std::string default_theme_{"dark"};
   // Empty (default) disables persistent sandbox directories entirely; see
   // set_persistent_sandbox_root().
   std::filesystem::path persistent_sandbox_root_;

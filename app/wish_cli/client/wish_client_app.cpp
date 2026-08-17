@@ -17,18 +17,13 @@
 DECLARE_string(host);
 DECLARE_int32(port);
 DECLARE_string(name);
+DECLARE_string(theme);
 
 // ── Client-mode flags ─────────────────────────────────────────────────────────
 DEFINE_bool(list, false, "List available embedded applications and exit");
 DEFINE_string(run, "", "Name of the embedded application to run");
 DEFINE_string(describe, "", "Print name, description, and parameters for a specific embedded application and exit");
 DEFINE_int32(timeout, 30000, "Connection timeout in milliseconds");
-DEFINE_string(theme, "dark", "UI theme preset: dark, light, or classic.");
-
-static bool ValidateTheme(const char* /*flag*/, const std::string& value) {
-  return value == "dark" || value == "light" || value == "classic";
-}
-DEFINE_validator(theme, &ValidateTheme);
 
 namespace bdg::wish {
 
@@ -176,7 +171,13 @@ int wish_client_app::on_session(bison::rmi::client& c) {
   if (!resolved_app_)
     throw std::runtime_error("unknown app: " + app_name_);
 
-  wish_client_->set_style_preset(FLAGS_theme).get();
+  // Only override the session's theme when --theme was explicitly passed --
+  // otherwise leave the server's default_theme_ (applied server-side in
+  // server::on_session_created, before this client did anything) intact.
+  gflags::CommandLineFlagInfo theme_info;
+  gflags::GetCommandLineFlagInfo("theme", &theme_info);
+  if (!theme_info.is_default)
+    wish_client_->set_style_preset(FLAGS_theme).get();
   resolved_app_->run(*this); // set up proxies and event handlers
   done_future_.wait(); // block until signal_done() fires
   return 0;

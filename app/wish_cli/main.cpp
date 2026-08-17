@@ -43,6 +43,15 @@ DEFINE_int32(port, 7070, "Listen/connect port");
 DEFINE_string(name, "", "Named-pipe / Unix-socket path (transport=pipe)");
 DEFINE_bool(verbose, false, "Print session trace messages to stdout");
 DEFINE_bool(debugger, false, "Wait for debugger attachment before starting");
+// Server: the default preset for sessions that don't request their own.
+// Client: overrides that default for this session only when explicitly
+// passed (see wish_client_app::on_session()).
+DEFINE_string(theme, "dark", "UI theme preset: dark, light, or classic.");
+
+static bool ValidateTheme(const char* /*flag*/, const std::string& value) {
+  return value == "dark" || value == "light" || value == "classic";
+}
+DEFINE_validator(theme, &ValidateTheme);
 
 // ── Server-only flags — consumed by bison::app::server_app ───────────────────
 DEFINE_string(cmd, "", "Command to spawn (transport=term)");
