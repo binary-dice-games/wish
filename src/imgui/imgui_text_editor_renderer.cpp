@@ -32,7 +32,7 @@ struct TextEditorState {
   std::string loaded_lang; // language key last applied
   std::string applied_preset; // palette preset last applied ("dark", "light", ...)
   size_t last_undo_index{0};
-  TextEditor::CursorPosition last_cursor{}; // only tracked when wish_ui_schema is true
+  TextEditor::DocPos last_cursor{}; // only tracked when wish_ui_schema is true
   bool autocomplete_configured{false}; // whether SetAutoCompleteConfig has been applied
 };
 
@@ -84,12 +84,12 @@ void fill_wish_ui_schema_suggestions(TextEditor::AutoCompleteState& state) {
   if (!editor)
     return;
 
-  // searchTermEndIndex, not searchTermStartIndex: we want the current
-  // in-progress cursor position (end of the token typed so far), not where
-  // the token started -- using the start position makes scan_cursor_context
-  // see zero characters typed yet, always yielding an empty partial_text
-  // (which matches every candidate as a prefix, defeating filtering).
-  text_pos pos{state.line, state.searchTermEndIndex};
+  // searchTermEnd, not searchTermStart: we want the current in-progress
+  // cursor position (end of the token typed so far), not where the token
+  // started -- using the start position makes scan_cursor_context see zero
+  // characters typed yet, always yielding an empty partial_text (which
+  // matches every candidate as a prefix, defeating filtering).
+  text_pos pos{state.searchTermEnd.line, state.searchTermEnd.index};
   auto ctx = scan_cursor_context(editor->GetText(), pos);
 
   switch (ctx.kind) {
@@ -236,11 +236,11 @@ void render_text_editor(imgui_renderer&, const ui_element& node, const context& 
   // event stream. Mirrors the undo-index diff above.
   if (wish_ui_schema) {
     auto current_cursor = st.editor.GetMainCursorPosition();
-    if (current_cursor.line != st.last_cursor.line || current_cursor.column != st.last_cursor.column) {
+    if (current_cursor.line != st.last_cursor.line || current_cursor.index != st.last_cursor.index) {
       st.last_cursor = current_cursor;
       dynamic payload;
       payload["line"_key] = static_cast<int32_t>(current_cursor.line);
-      payload["column"_key] = static_cast<int32_t>(current_cursor.column);
+      payload["column"_key] = static_cast<int32_t>(current_cursor.index);
       enqueue_event(s, id, "cursor_moved"_key, std::move(payload));
     }
   }

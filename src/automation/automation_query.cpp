@@ -189,8 +189,6 @@ std::string build_tree_snapshot(
   // unspecified iteration order.
   std::sort(sorted.begin(), sorted.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
 
-  auto class_names = build_display_dict();
-
   nlohmann::json widgets = nlohmann::json::array();
   for (const auto& [path, elem] : sorted) {
     if (!elem || !under_root(path, root))
@@ -200,8 +198,8 @@ std::string build_tree_snapshot(
     w["path"] = path;
 
     key_t klass = elem->get_as<key_t>(dynamic::CLASS, key_t{});
-    auto class_it = class_names.find(klass.id);
-    w["class"] = class_it != class_names.end() ? class_it->second : hex_hash(klass.id);
+    auto class_name = lookup_registered_key_name(static_cast<hash_t>(klass.id));
+    w["class"] = class_name ? *class_name : hex_hash(klass.id);
 
     add_probed_fields(*elem, w);
     add_hit_test(*elem, hits, w);
