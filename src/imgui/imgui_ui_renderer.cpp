@@ -576,8 +576,18 @@ void render_vertical_layout(imgui_renderer& r, const ui_element& node, const con
       float row_h = c.height > 0.0f
           ? c.height
           : (stretch_weight_total > 0.0f ? stretch_pool * (-c.height / stretch_weight_total) : 0.0f);
+      // NoScrollbar/NoScrollWithMouse: this child exists purely to pin the
+      // row to a computed size, not to be independently scrollable -- any
+      // widget inside that actually needs scrolling (a Table's own ScrollY,
+      // ...) already provides its own. Without this, a few pixels of
+      // rounding/measurement lag between the size computed here and what
+      // the child actually renders (worse when nested several rows deep, as
+      // each level's own lag compounds) trips ImGui's overflow check and
+      // pops a spurious scrollbar on this purely-structural wrapper.
       auto child_id = "##vl_row_" + c.id;
-      ImGui::BeginChild(child_id.c_str(), ImVec2(0.0f, row_h), ImGuiChildFlags_None);
+      ImGui::BeginChild(
+          child_id.c_str(), ImVec2(0.0f, row_h), ImGuiChildFlags_None,
+          ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
       r.render_node(*c.elem, s);
       ImGui::EndChild();
     } else {
@@ -712,15 +722,25 @@ void render_horizontal_layout(imgui_renderer& r, const ui_element& node, const c
       // computed pixel height.
       float col_h = 0.0f;
       ImGuiChildFlags child_flags = ImGuiChildFlags_AutoResizeY;
+      // NoScrollbar/NoScrollWithMouse for the same reason as
+      // render_vertical_layout()'s row wrap above: a nonzero-height column
+      // is a pure size-constraint container, not a scroll target, and a few
+      // pixels of measurement lag against its computed col_h (compounded
+      // when this column's own content nests another stretch row/column)
+      // would otherwise trip ImGui's overflow check and add a spurious
+      // scrollbar here on top of whatever's already scrolling inside.
+      ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
       if (c.height > 0.0f) {
         col_h = c.height;
         child_flags = ImGuiChildFlags_None;
+        window_flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
       } else if (c.height < 0.0f) {
         col_h = avail_y;
         child_flags = ImGuiChildFlags_None;
+        window_flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
       }
       auto child_id = "##hl_col_" + stable_id(*c.elem);
-      ImGui::BeginChild(child_id.c_str(), ImVec2(col_w, col_h), child_flags);
+      ImGui::BeginChild(child_id.c_str(), ImVec2(col_w, col_h), child_flags, window_flags);
       r.render_node(*c.elem, s);
       ImGui::EndChild();
     } else {
