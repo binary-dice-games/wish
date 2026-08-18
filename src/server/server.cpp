@@ -226,8 +226,22 @@ void server::render_loop() {
       // genuine dirty (RMI dispatch, the initial post-connect settle
       // window) or an explicit request_render() call does. Everything else
       // is unaffected.
-      if (had_activity && !renderer_->render_on_demand())
+      if (had_activity && !renderer_->render_on_demand()) {
         pending_render_ = true;
+        // Some ImGui-internal transitions triggered by raw input enqueue no
+        // wish event at all (e.g. clicking a window's title-bar collapse
+        // arrow: ButtonBehavior() sets ImGuiWindow::WantCollapseToggle this
+        // frame, but Begin() only applies it -- actually flipping
+        // window->Collapsed -- at the top of the *next* Begin() call). The
+        // "!events.empty()" settle-frame bump further below only fires for
+        // dispatched wish events, so a change like this can be computed
+        // internally by ImGui but never actually rendered until unrelated
+        // input (e.g. a later mouse move) happens to trigger poll_events()
+        // again. Arm every session's settle-frame counter here too so a
+        // couple of follow-up frames are always scheduled after raw input.
+        for (const auto& sync_ctx : sessions_snapshot)
+          context_wlock{*sync_ctx}->dirty.store(kDirtySettleFrames, std::memory_order_release);
+      }
       if (renderer_->consume_render_request())
         pending_render_ = true;
 

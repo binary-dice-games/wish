@@ -192,6 +192,23 @@ void render_window(imgui_renderer& r, const ui_element& node, const context& s) 
   // (matching the unconditional ImGui::End() below), not just when true.
   report_self_rect(node);
 
+  // Detect a collapse/expand transition (title-bar arrow click) the same way
+  // __was_docked__ tracks docking below: the click enqueues no wish event, so
+  // without an explicit settle-frame bump here the collapse re-layout can sit
+  // half-applied until unrelated input (e.g. a title-bar drag) happens to
+  // drive the next render -- same failure mode as render_combo()'s
+  // IsWindowAppearing() check (see kDirtySettleFrames's doc comment).
+  {
+    bool is_collapsed = ImGui::IsWindowCollapsed();
+    const auto* prev_collapsed_f = node.findField("__was_collapsed__"_key);
+    bool was_collapsed = (prev_collapsed_f && prev_collapsed_f->is<bool>())
+                              ? prev_collapsed_f->as<bool>()
+                              : is_collapsed;
+    if (was_collapsed != is_collapsed)
+      s.dirty.store(kDirtySettleFrames, std::memory_order_release);
+    const_cast<ui_element&>(node)["__was_collapsed__"_key] = is_collapsed;
+  }
+
   if (window_open) {
     // ImGui's docking branch resizes a window to fit its dock node/tab
     // region; on undock it does not restore the pre-dock floating size

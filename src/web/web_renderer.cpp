@@ -84,6 +84,15 @@ void web_renderer::setup() {
   ImGuiIO& io = ImGui::GetIO();
   io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
   io.ConfigDockingWithShift = true;
+  // The render loop only calls NewFrame() when activity/dirty triggers a
+  // frame (see server::render_loop()), not once per hardware tick -- so a
+  // fast click's down+up can both land in one input_queue_ drain before the
+  // next frame runs. ImGui's default event trickling would then apply only
+  // the down event this frame and defer the up event to a NewFrame() that
+  // may never come without unrelated further activity, silently stalling
+  // clicks (e.g. a window's collapse arrow) until an incidental mouse move.
+  // Flatten same-frame button transitions instead of trickling them.
+  io.ConfigInputTrickleEventQueue = false;
 
   // Anchor imgui.ini to an absolute path snapshotted now, rather than
   // ImGui's CWD-relative default -- see ini_path_'s doc comment.
