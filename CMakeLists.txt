@@ -405,6 +405,11 @@ if(WISH_ENABLE_IMGUI)
     src/imgui/imgui_text_editor_renderer.cpp
     src/imgui/imgui_graph_renderer.hpp
     src/imgui/imgui_graph_renderer.cpp
+    src/imgui/themes/themes.hpp
+    src/imgui/themes/theme_dark.cpp
+    src/imgui/themes/theme_light.cpp
+    src/imgui/themes/theme_classic.cpp
+    src/imgui/themes/theme_wish.cpp
   )
   target_compile_definitions(wish_server PUBLIC WISH_IMGUI_ENABLED)
   # PUBLIC so that consumers who include imgui_renderer.hpp have imgui in path.

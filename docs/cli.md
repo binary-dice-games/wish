@@ -111,7 +111,7 @@ build has none registered).
 | `--run=<name>` | *(empty)* | Launch the named app (required unless `--list`/`--describe`) |
 | `--describe=<name>` | *(empty)* | Print the named app's description and parameters, and exit |
 | `--timeout MS` | `30000` | Connection timeout in milliseconds |
-| `--theme NAME` | `dark` | UI theme preset: `dark`, `light`, or `classic` |
+| `--theme NAME` | `wish` | UI theme preset. Built in: `dark`, `light`, `classic`, `wish` (a more modern theme built on `dark`, the default). Any name is accepted; one the renderer doesn't recognize falls back to `wish` with a logged warning. |
 
 ```sh
 wish client --list

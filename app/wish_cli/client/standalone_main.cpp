@@ -22,12 +22,10 @@ DEFINE_string(cert_pem, "", "Client certificate PEM, for mutual TLS (transport=t
 DEFINE_string(key_file, "", "Client private key file, for mutual TLS (transport=tls)");
 DEFINE_string(key_pem, "", "Client private key PEM, for mutual TLS (transport=tls)");
 DEFINE_string(key_password, "", "Passphrase for an encrypted client private key (transport=tls)");
-DEFINE_string(theme, "dark", "UI theme preset: dark, light, or classic.");
-
-static bool ValidateTheme(const char* /*flag*/, const std::string& value) {
-  return value == "dark" || value == "light" || value == "classic";
-}
-DEFINE_validator(theme, &ValidateTheme);
+// Not validated here -- an unrecognized name falls back to the renderer's
+// default theme with a logged warning; see style_service.hpp's "Supported
+// preset names".
+DEFINE_string(theme, "wish", "UI theme preset, e.g. dark, light, classic, or wish.");
 
 int main(int argc, char** argv) {
   gflags::SetUsageMessage("wish-client - wish GUI remote client");

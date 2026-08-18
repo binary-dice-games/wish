@@ -270,9 +270,13 @@ sandbox — see [DESIGN.md](../DESIGN.md#bdgwishfile_service) and
 
 ## 9. Style and themes
 
-`set_style_preset` applies one of the three built-in themes and resets any
-per-field overrides to that theme's baseline; `set_style` layers scalar or
-color overrides on top:
+`set_style_preset` applies a named theme and resets any per-field overrides
+to that theme's baseline; `set_style` layers scalar or color overrides on
+top. wish's Dear ImGui renderer registers `"dark"`, `"light"`, `"classic"`,
+and `"wish"` (a more modern theme built on `"dark"`, and the default) out of
+the box; the name isn't validated client-side, so a typo or a name meant for
+a different renderer falls back to `"wish"` with a warning logged
+server-side instead of failing outright:
 
 ```cpp
 set_style_preset("dark").get();

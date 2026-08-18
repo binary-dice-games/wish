@@ -32,7 +32,16 @@ using style_service_ptr = std::shared_ptr<style_service>;
  *
  * ## Supported `preset` names
  *
- * `"dark"`, `"light"`, `"classic"` — map to ImGui::StyleColors{Dark,Light,Classic}.
+ * `set_preset()` accepts any name -- it is stored verbatim, with no
+ * validation here. Whether a name does anything depends entirely on the
+ * renderer actually drawing the session: wish's Dear ImGui backend ships
+ * `"dark"`, `"light"`, `"classic"` (mapping to
+ * `ImGui::StyleColors{Dark,Light,Classic}`) and `"wish"` (a more modern
+ * theme built on top of `"dark"`, and wish's default) via
+ * `imgui_renderer::register_theme()`; a project embedding wish can register
+ * more. A name that renderer doesn't recognize falls back to wish's default
+ * theme with a logged warning -- see `apply_style_fields()`
+ * (imgui_renderer.cpp).
  *
  * ## Field key naming (for `set` / `get`)
  *
@@ -79,9 +88,11 @@ class style_service : public bison::dynamic {
   /// @brief Return the current style as a flat dynamic (copy).
   bison::dynamic get_fields() const;
 
-  /// @brief Replace the style with a named built-in preset.
-  /// @param name  One of `"dark"`, `"light"`, `"classic"`.
-  /// @throws std::runtime_error for unknown preset names.
+  /// @brief Replace the style with a named preset/theme, clearing any
+  ///        per-field overrides.
+  /// @param name  Any name; stored verbatim and not validated here -- see
+  ///              this class's "Supported preset names" doc above for what
+  ///              happens if the active renderer doesn't recognize it.
   void set_preset(const std::string& name);
 
   /// @brief Read-only view of the current style field map.

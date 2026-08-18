@@ -132,7 +132,9 @@ class server : public bison::rmi::server {
    *
    * Must be called before `start()`.
    *
-   * @param name One of `"dark"`, `"light"`, `"classic"`.
+   * @param name A registered theme name, e.g. `"dark"`, `"light"`,
+   *             `"classic"`, or `"wish"` (the default) -- see
+   *             `imgui_renderer::register_theme()`.
    */
   void set_default_theme(std::string name) {
     default_theme_ = std::move(name);
@@ -246,7 +248,7 @@ class server : public bison::rmi::server {
   logger_ptr logger_;
   bool allow_absolute_paths_{false};
   bool allow_url_fetch_{false};
-  std::string default_theme_{"dark"};
+  std::string default_theme_{"wish"};
   // Empty (default) disables persistent sandbox directories entirely; see
   // set_persistent_sandbox_root().
   std::filesystem::path persistent_sandbox_root_;

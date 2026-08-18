@@ -4,12 +4,15 @@
 #include <imgui/imgui_renderer.hpp>
 #include <server/registry.hpp>
 #include <context/context.hpp>
+#include <context/logger.hpp>
 #include <context/style_service.hpp>
 #include <ui/ui_importer.hpp>
 
 #include "src/bison/bison_common.hpp"
 #include "src/bison/bison_object.hpp"
 
+#include <filesystem>
+#include <fstream>
 #include <imgui.h>
 
 using namespace bdg::bison;
@@ -80,8 +83,18 @@ TEST_F(StyleServiceTest, SetPresetClearsPriorOverrides) {
   EXPECT_EQ(fp->as<std::string>(), "light");
 }
 
-TEST_F(StyleServiceTest, UnknownPresetThrows) {
-  EXPECT_THROW(svc_->set_preset("neon"), std::runtime_error);
+TEST_F(StyleServiceTest, SetPresetAcceptsUnknownNameUnvalidated) {
+  EXPECT_NO_THROW(svc_->set_preset("neon"));
+  const auto* f = svc_->current_style().findField("preset"_key);
+  ASSERT_NE(f, nullptr);
+  EXPECT_EQ(f->as<std::string>(), "neon");
+}
+
+TEST_F(StyleServiceTest, SetPresetAcceptsWishTheme) {
+  EXPECT_NO_THROW(svc_->set_preset("wish"));
+  const auto* f = svc_->current_style().findField("preset"_key);
+  ASSERT_NE(f, nullptr);
+  EXPECT_EQ(f->as<std::string>(), "wish");
 }
 
 // ── set_fields / get_fields ───────────────────────────────────────────────────
@@ -163,6 +176,62 @@ TEST_F(StyleServiceTest, RenderSessionAppliesPresetLight) {
   ImGui::StyleColorsDark(&applied); // start from dark
   ImGui::StyleColorsLight(&applied); // apply light
   EXPECT_NEAR(applied.Colors[ImGuiCol_WindowBg].x, light.Colors[ImGuiCol_WindowBg].x, 0.01f);
+}
+
+TEST_F(StyleServiceTest, RenderSessionAppliesWishTheme) {
+  svc_->set_preset("wish");
+
+  auto map = bdg::wish::import_json(R"({"type":"Window","title":"T"})");
+  renderer_->begin_frame();
+  renderer_->render_session(*map[""], *sess_);
+  renderer_->end_frame();
+
+  // render_session restores the global style on return, so read back the
+  // compiled cache render_session populated to check what it actually
+  // applied mid-render, rather than the (now-restored) global ImGuiStyle.
+  auto compiled = std::static_pointer_cast<ImGuiStyle>(svc_->renderer_cache());
+  ASSERT_NE(compiled, nullptr);
+  EXPECT_FLOAT_EQ(compiled->WindowRounding, 6.0f);
+  EXPECT_FLOAT_EQ(compiled->FrameRounding, 4.0f);
+  EXPECT_FLOAT_EQ(compiled->GrabRounding, 4.0f);
+  EXPECT_FLOAT_EQ(compiled->TabRounding, 4.0f);
+  EXPECT_FLOAT_EQ(compiled->WindowPadding.x, 12.0f);
+  EXPECT_FLOAT_EQ(compiled->FramePadding.y, 5.0f);
+  EXPECT_FLOAT_EQ(compiled->WindowBorderSize, 1.0f);
+  EXPECT_FLOAT_EQ(compiled->FrameBorderSize, 0.0f);
+
+  // Still the dark theme's colors underneath the shape tweaks.
+  ImGuiStyle dark;
+  ImGui::StyleColorsDark(&dark);
+  EXPECT_NEAR(compiled->Colors[ImGuiCol_WindowBg].x, dark.Colors[ImGuiCol_WindowBg].x, 0.001f);
+}
+
+TEST_F(StyleServiceTest, RenderSessionUnknownPresetFallsBackToWishAndLogsWarning) {
+  auto log_path = std::filesystem::temp_directory_path() / "wish_test_style_service_unknown_preset.log";
+  std::filesystem::remove(log_path);
+  auto lg = std::make_shared<bdg::wish::logger>(
+      dynamic::instantiate("wish"_key, "__WishLogger"_key), /*verbose=*/false, log_path);
+  sess_->logger_service = lg;
+
+  svc_->set_preset("neon");
+
+  auto map = bdg::wish::import_json(R"({"type":"Window","title":"T"})");
+  renderer_->begin_frame();
+  renderer_->render_session(*map[""], *sess_);
+  renderer_->end_frame();
+
+  // Falls back to the "wish" theme's shape.
+  auto compiled = std::static_pointer_cast<ImGuiStyle>(svc_->renderer_cache());
+  ASSERT_NE(compiled, nullptr);
+  EXPECT_FLOAT_EQ(compiled->WindowRounding, 6.0f);
+
+  // ... with a warning logged about the unrecognized name.
+  lg.reset();
+  std::ifstream f(log_path);
+  std::string content{std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>{}};
+  EXPECT_NE(content.find("[warn]"), std::string::npos);
+  EXPECT_NE(content.find("neon"), std::string::npos);
+  std::filesystem::remove(log_path);
 }
 
 TEST_F(StyleServiceTest, RenderSessionAppliesFloatOverride) {

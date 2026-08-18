@@ -23,14 +23,12 @@ DEFINE_string(key_password, "", "Passphrase for an encrypted server private key 
 DEFINE_string(client_auth, "none", "Mutual TLS mode: none, optional, or required (transport=tls)");
 DEFINE_string(ca_file, "", "Trust anchor file for verifying client certificates (transport=tls, client_auth!=none)");
 DEFINE_string(ca_pem, "", "Trust anchor PEM for verifying client certificates (transport=tls, client_auth!=none)");
-DEFINE_string(theme, "dark",
+// Not validated here -- an unrecognized name falls back to the renderer's
+// default theme with a logged warning; see style_service.hpp's "Supported
+// preset names".
+DEFINE_string(theme, "wish",
     "Default UI theme preset for connecting clients that don't request their own via "
-    "--theme: dark, light, or classic.");
-
-static bool ValidateTheme(const char* /*flag*/, const std::string& value) {
-  return value == "dark" || value == "light" || value == "classic";
-}
-DEFINE_validator(theme, &ValidateTheme);
+    "--theme, e.g. dark, light, classic, or wish.");
 
 int main(int argc, char** argv) {
   gflags::SetUsageMessage("wish-server - wish GUI render server");

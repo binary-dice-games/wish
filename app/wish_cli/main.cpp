@@ -45,13 +45,10 @@ DEFINE_bool(verbose, false, "Print session trace messages to stdout");
 DEFINE_bool(debugger, false, "Wait for debugger attachment before starting");
 // Server: the default preset for sessions that don't request their own.
 // Client: overrides that default for this session only when explicitly
-// passed (see wish_client_app::on_session()).
-DEFINE_string(theme, "dark", "UI theme preset: dark, light, or classic.");
-
-static bool ValidateTheme(const char* /*flag*/, const std::string& value) {
-  return value == "dark" || value == "light" || value == "classic";
-}
-DEFINE_validator(theme, &ValidateTheme);
+// passed (see wish_client_app::on_session()). Not validated here -- an
+// unrecognized name falls back to the renderer's default theme with a
+// logged warning; see style_service.hpp's "Supported preset names".
+DEFINE_string(theme, "wish", "UI theme preset, e.g. dark, light, classic, or wish.");
 
 // ── Server-only flags — consumed by bison::app::server_app ───────────────────
 DEFINE_string(cmd, "", "Command to spawn (transport=term)");

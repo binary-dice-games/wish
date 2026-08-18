@@ -3,7 +3,6 @@
 /// @brief Per-session style/theme RMI service implementation.
 #include <context/style_service.hpp>
 
-#include <stdexcept>
 #include <string>
 
 namespace bdg::wish {
@@ -47,12 +46,11 @@ bison::dynamic style_service::get_fields() const {
 }
 
 void style_service::set_preset(const std::string& name) {
-  if (name != "dark" && name != "light" && name != "classic") {
-    throw std::runtime_error(
-        "wish::style_service: unknown preset '" + name + "'; expected 'dark', 'light', or 'classic'");
-  }
-  // Clear all overrides and record only the preset name.
-  // The renderer applies ImGui::StyleColors<Preset>() on the render thread.
+  // Clear all overrides and record only the preset name, unvalidated. The
+  // renderer looks up and applies the matching registered theme function
+  // (see imgui_renderer::register_theme()) on the render thread, falling
+  // back to the default theme with a logged warning if @p name isn't
+  // registered there.
   style_ = bison::dynamic{};
   style_["preset"_key] = name;
   dirty_.store(true, std::memory_order_release);

@@ -5,6 +5,7 @@
 #include <imgui/imgui_renderer.hpp>
 #include <server/renderer.hpp>
 #include <context/context.hpp>
+#include <context/logger.hpp>
 #include <context/style_service.hpp>
 
 #include "src/bison/bison_common.hpp"
@@ -16,6 +17,7 @@
 #include <imgui/imgui_plot3d_renderer.hpp>
 #include <imgui/imgui_plot_renderer.hpp>
 #include <imgui/imgui_ui_renderer.hpp>
+#include <imgui/themes/themes.hpp>
 
 #include <string>
 #include <unordered_map>
@@ -116,6 +118,38 @@ static const render_fn_map& built_in_render_fns() {
   return tbl;
 }
 
+// ── Theme registry ────────────────────────────────────────────────────────────
+
+static std::unordered_map<std::string, theme_fn>& theme_registry() {
+  static std::unordered_map<std::string, theme_fn> registry;
+  return registry;
+}
+
+void register_theme(const std::string& name, theme_fn fn) {
+  theme_registry()[name] = fn;
+}
+
+// Fallback theme applied -- with a logged warning -- when a session's
+// style_service::preset() names a theme this renderer has no registered
+// function for (e.g. a typo, or a name meant for a different renderer
+// backend). style_service itself does not validate preset names -- see its
+// "Supported preset names" doc comment.
+static constexpr const char* kDefaultThemeName = "wish";
+
+// Each built-in theme is defined in its own src/imgui/themes/theme_*.cpp
+// file (see themes.hpp) and explicitly registered here -- rather than left
+// as file-local static initializers -- so registration doesn't depend on
+// whether that .cpp's object file happens to get pulled out of the static
+// archive (it only would if something else referenced a symbol from it).
+static bool register_built_in_themes() {
+  register_theme_dark();
+  register_theme_light();
+  register_theme_classic();
+  register_theme_wish();
+  return true;
+}
+static const bool built_in_themes_registered_ = register_built_in_themes();
+
 // ── Per-session style helpers ─────────────────────────────────────────────────
 
 // Parse "#RRGGBBAA" or "#RRGGBB" hex color string into an ImVec4. Declared in
@@ -141,18 +175,23 @@ ImVec4 parse_hex_color(const std::string& s) {
   }
 }
 
-// Apply all fields from sd into style.
-static void apply_style_fields(const bison::dynamic& sd, ImGuiStyle& style) {
+// Apply all fields from sd into style. @p logger, if non-null, receives a
+// warning when sd's "preset" field names a theme this renderer has no
+// registered function for (see kDefaultThemeName's doc comment).
+static void apply_style_fields(const bison::dynamic& sd, ImGuiStyle& style, const logger_ptr& logger) {
   // Apply named preset first so per-field overrides can refine it.
   const auto* preset_f = sd.findField("preset"_key);
   if (preset_f && preset_f->is<std::string>()) {
-    const std::string& p = preset_f->as<std::string>();
-    if (p == "dark")
-      ImGui::StyleColorsDark(&style);
-    else if (p == "light")
-      ImGui::StyleColorsLight(&style);
-    else if (p == "classic")
-      ImGui::StyleColorsClassic(&style);
+    const auto& registry = theme_registry();
+    const std::string& name = preset_f->as<std::string>();
+    auto it = registry.find(name);
+    if (it == registry.end()) {
+      if (logger)
+        logger->warn("wish: unknown theme '" + name + "', falling back to '" + kDefaultThemeName + "'");
+      it = registry.find(kDefaultThemeName);
+    }
+    if (it != registry.end())
+      it->second(&style);
   }
 
   // Scalar float overrides.
@@ -450,7 +489,7 @@ void imgui_renderer::render_session(const ui_element& root, const context& s) {
   // has changed the style since the last compiled cache.
   if (s.style_service->is_dirty()) {
     auto compiled = std::make_shared<ImGuiStyle>();
-    apply_style_fields(s.style_service->current_style(), *compiled);
+    apply_style_fields(s.style_service->current_style(), *compiled, s.logger_service);
     s.style_service->set_renderer_cache(compiled);
   }
 

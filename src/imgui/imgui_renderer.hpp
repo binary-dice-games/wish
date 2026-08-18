@@ -26,6 +26,28 @@ class imgui_renderer;
 /// thrown exception or garbage color.
 ImVec4 parse_hex_color(const std::string& s);
 
+/// @brief Resets an `ImGuiStyle` to a theme's base look -- the same
+///        signature as `ImGui::StyleColors{Dark,Light,Classic}`.
+using theme_fn = void (*)(ImGuiStyle*);
+
+/// @brief Register a named theme applied by `apply_style_fields()`
+///        (imgui_renderer.cpp) when a session's `style_service` preset
+///        matches @p name.
+///
+/// Built-ins `"dark"`, `"light"`, `"classic"`, and `"wish"` (a more modern
+/// theme layered on top of `"dark"`, wish's default) are registered
+/// automatically before `main()` runs -- each in its own
+/// src/imgui/themes/theme_*.cpp file, see themes.hpp. A project embedding
+/// wish can register additional named themes the same way -- there is
+/// nothing special about the built-ins. `style_service::set_preset()` does
+/// not validate against this registry: an unrecognized name falls back to
+/// `"wish"` with a logged warning at render time (`apply_style_fields()`).
+///
+/// @param name  Preset name, as passed to `style_service::set_preset()`.
+/// @param fn    Function that resets an `ImGuiStyle` to this theme's colors
+///              and shape. Called with a non-null target style pointer.
+void register_theme(const std::string& name, theme_fn fn);
+
 /// @brief Renders one `ui_element` node's ImGui widget(s); the uniform
 ///        signature every `render_*` function in imgui_ui_renderer.hpp uses.
 using render_fn = void (*)(imgui_renderer&, const ui_element&, const context&);
