@@ -109,15 +109,48 @@ nest them freely to build rows, columns, and grids.
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `spacing` | `float` | `0.0` | Space between child elements in pixels (0–256). |
+| `width` | `float` | `0.0` | Column width hint used when this element is a direct child of a `HorizontalLayout`: `0` sizes to content; a positive value reserves that many fixed pixels; a negative value makes it a stretch column, sharing whatever width remains after fixed columns and spacing, weighted by its magnitude relative to other stretch columns (mirrors ImGui's `ImGuiTableColumnFlags_WidthStretch` weight convention). Ignored outside a `HorizontalLayout`. |
+| `height` | `float` | `0.0` | Row height hint used when this element is a direct child of a `VerticalLayout` — the same convention as `width`, on the height axis. An auto (`0`) row's previous frame's measured height is reserved for this frame's stretch-row sizing, so a fixed header/footer plus one stretch-filling body works regardless of child order. Ignored outside a `VerticalLayout`. |
 
 - **`VerticalLayout`** — stacks children top-to-bottom. No extra fields.
 - **`HorizontalLayout`** — places children left-to-right. Adds:
 
   | Field | Type | Default | Description |
   |---|---|---|---|
-  | `align` | `string` | `"left"` | `"left"` (default) or `"right"`. Right alignment flushes children to the content edge; every child needs an explicit `width` for this to work. |
+  | `align` | `string` | `"left"` | `"left"` (default) or `"right"`. Right alignment flushes children to the content edge; every child needs an explicit `width` for this to work. `Spring` (below) is the more flexible alternative — it also handles centering and space-between. |
 
 Neither layout emits events.
+
+### `Spring`
+
+An expandable, invisible space that shares whatever room is left over in a
+`HorizontalLayout`'s or `VerticalLayout`'s stretch pool — the same pool
+`Layout.width`/`Layout.height`'s negative-value convention draws from — with
+sibling stretch children and other `Spring`s, weighted by its `weight`
+field. Placed among a layout's children, it gives CSS-flexbox-style control
+over alignment without needing every child to have an explicit width:
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `weight` | `float` | `1.0` | Share of the layout's leftover space this `Spring` claims, relative to sibling `Spring`s/stretch children. A value `<= 0` is treated as `1.0`. |
+
+Does not emit events. Ignored (renders as zero-size) outside a
+`HorizontalLayout`/`VerticalLayout`.
+
+```json
+{
+  "type": "HorizontalLayout",
+  "children": {
+    "s1": { "type": "Spring" },
+    "btn": { "type": "Button", "label": "Centered", "width": 100 },
+    "s2": { "type": "Spring" }
+  }
+}
+```
+
+Two `Spring`s around one child centers it; a `Spring` between two children
+pushes them to opposite edges ("space-between"); unequal `weight` values
+bias the split (e.g. `weight: 1` and `weight: 2` splits leftover space 1:2).
 
 ### `Splitter`
 

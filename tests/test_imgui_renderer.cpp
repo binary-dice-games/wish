@@ -12,6 +12,9 @@
 #include <imgui.h>
 #include <imgui_internal.h>
 
+#include <unordered_map>
+#include <utility>
+
 using namespace bdg::bison;
 using bdg::wish::imgui_renderer;
 using bdg::wish::render_children;
@@ -1453,6 +1456,205 @@ TEST_F(ImguiRendererTest, ButtonRectStillPrecise) {
   float height = r.captured_max.y - r.captured_min.y;
   EXPECT_NEAR(width, 80.0f, 1.0f);
   EXPECT_NEAR(height, 30.0f, 1.0f);
+}
+
+// ── Spring ────────────────────────────────────────────────────────────────────
+
+// Captures a target class's rect (like rect_capturing_renderer) AND the rect
+// of every rendered node that has a non-empty "label" field, keyed by that
+// label, all within a single render pass. A Spring test needs both a
+// layout's own rect and one or two labeled widgets' rects at once, and a
+// second, separate begin_frame()/render_node()/end_frame() pass on the same
+// (stable, ID-persisting) window reuses window state left over from the
+// first pass -- e.g. ImGui reactively reserving a scrollbar one frame late
+// -- which shifts the measured content region and produces bogus deltas.
+// One renderer, one pass, avoids that entirely.
+class labeled_rect_capturing_renderer : public imgui_renderer {
+ public:
+  bdg::bison::key_t target_class{};
+  ImVec2 captured_min{-1.0f, -1.0f};
+  ImVec2 captured_max{-1.0f, -1.0f};
+  std::unordered_map<std::string, std::pair<ImVec2, ImVec2>> by_label;
+
+  void render_node(const ui_element& node, const context& s) override {
+    imgui_renderer::render_node(node, s);
+    if (target_class.id != 0 && node.as<bdg::bison::key_t>(dynamic::CLASS) == target_class) {
+      captured_min = last_resolved_rect_min_;
+      captured_max = last_resolved_rect_max_;
+    }
+    auto label = node.get_as<std::string>("label"_key, "");
+    if (!label.empty())
+      by_label[label] = {last_resolved_rect_min_, last_resolved_rect_max_};
+  }
+};
+
+TEST_F(ImguiRendererTest, SpringCentersSingleChildInHorizontalLayout) {
+  constexpr auto desc = R"({
+    "type": "Window", "title": "SpringCenter", "width": 400, "height": 100,
+    "pos_x": 0, "pos_y": 0,
+    "children": {
+      "hl": {
+        "type": "HorizontalLayout",
+        "children": {
+          "s1": { "type": "Spring" },
+          "btn": { "type": "Button", "label": "Mid", "width": 100, "height": 30 },
+          "s2": { "type": "Spring" }
+        }
+      }
+    }
+  })";
+  auto map = bdg::wish::import_json(desc);
+
+  labeled_rect_capturing_renderer r;
+  r.target_class = "HorizontalLayout"_key;
+  r.begin_frame();
+  r.render_node(*map[""], *sess_);
+  r.end_frame();
+
+  auto [bmin, bmax] = r.by_label.at("Mid");
+  float layout_center = (r.captured_min.x + r.captured_max.x) / 2.0f;
+  float button_center = (bmin.x + bmax.x) / 2.0f;
+  EXPECT_NEAR(button_center, layout_center, 2.0f);
+  EXPECT_NEAR(bmax.x - bmin.x, 100.0f, 2.0f);
+}
+
+TEST_F(ImguiRendererTest, SpringSpaceBetweenTwoChildrenInHorizontalLayout) {
+  constexpr auto desc = R"({
+    "type": "Window", "title": "SpringBetween", "width": 400, "height": 100,
+    "pos_x": 0, "pos_y": 0,
+    "children": {
+      "hl": {
+        "type": "HorizontalLayout",
+        "children": {
+          "a": { "type": "Button", "label": "A", "width": 60, "height": 24 },
+          "s": { "type": "Spring" },
+          "b": { "type": "Button", "label": "B", "width": 50, "height": 24 }
+        }
+      }
+    }
+  })";
+  auto map = bdg::wish::import_json(desc);
+
+  labeled_rect_capturing_renderer r;
+  r.target_class = "HorizontalLayout"_key;
+  r.begin_frame();
+  r.render_node(*map[""], *sess_);
+  r.end_frame();
+
+  auto [amin, amax] = r.by_label.at("A");
+  auto [bmin, bmax] = r.by_label.at("B");
+  EXPECT_NEAR(amin.x, r.captured_min.x, 2.0f);
+  EXPECT_NEAR(bmax.x, r.captured_max.x, 2.0f);
+  EXPECT_NEAR(amax.x - amin.x, 60.0f, 2.0f);
+  EXPECT_NEAR(bmax.x - bmin.x, 50.0f, 2.0f);
+}
+
+TEST_F(ImguiRendererTest, SpringWeightBiasesSplitInHorizontalLayout) {
+  constexpr auto desc = R"({
+    "type": "Window", "title": "SpringWeighted", "width": 400, "height": 100,
+    "pos_x": 0, "pos_y": 0,
+    "children": {
+      "hl": {
+        "type": "HorizontalLayout",
+        "children": {
+          "s1": { "type": "Spring", "weight": 1.0 },
+          "btn": { "type": "Button", "label": "Mid", "width": 90, "height": 30 },
+          "s2": { "type": "Spring", "weight": 2.0 }
+        }
+      }
+    }
+  })";
+  auto map = bdg::wish::import_json(desc);
+
+  labeled_rect_capturing_renderer r;
+  r.target_class = "HorizontalLayout"_key;
+  r.begin_frame();
+  r.render_node(*map[""], *sess_);
+  r.end_frame();
+
+  auto [bmin, bmax] = r.by_label.at("Mid");
+  float left_gap = bmin.x - r.captured_min.x;
+  float right_gap = r.captured_max.x - bmax.x;
+  ASSERT_GT(right_gap, 1.0f);
+  // s1:s2 weights are 1:2, so the leftover space should split ~1:2 too.
+  EXPECT_NEAR(left_gap / right_gap, 0.5f, 0.05f);
+}
+
+TEST_F(ImguiRendererTest, SpringWeightZeroOrNegativeClampsToOne) {
+  constexpr auto desc = R"({
+    "type": "Window", "title": "SpringClamp", "width": 400, "height": 100,
+    "pos_x": 0, "pos_y": 0,
+    "children": {
+      "hl": {
+        "type": "HorizontalLayout",
+        "children": {
+          "s1": { "type": "Spring", "weight": -5.0 },
+          "btn": { "type": "Button", "label": "Mid", "width": 100, "height": 30 },
+          "s2": { "type": "Spring", "weight": 1.0 }
+        }
+      }
+    }
+  })";
+  auto map = bdg::wish::import_json(desc);
+
+  labeled_rect_capturing_renderer r;
+  r.target_class = "HorizontalLayout"_key;
+  r.begin_frame();
+  r.render_node(*map[""], *sess_);
+  r.end_frame();
+
+  // A non-positive weight clamps to 1.0, so this behaves identically to two
+  // weight-1.0 springs -- the button stays centered instead of flush left
+  // (which is what a broken, unclamped weight of -5 would produce).
+  auto [bmin, bmax] = r.by_label.at("Mid");
+  float layout_center = (r.captured_min.x + r.captured_max.x) / 2.0f;
+  float button_center = (bmin.x + bmax.x) / 2.0f;
+  EXPECT_NEAR(button_center, layout_center, 2.0f);
+}
+
+TEST_F(ImguiRendererTest, SpringMirrorsVerticalLayout) {
+  constexpr auto desc = R"({
+    "type": "Window", "title": "SpringVertical", "width": 200, "height": 300,
+    "pos_x": 0, "pos_y": 0,
+    "children": {
+      "vl": {
+        "type": "VerticalLayout",
+        "children": {
+          "s1": { "type": "Spring" },
+          "btn": { "type": "Button", "label": "Mid", "width": 80, "height": 30 },
+          "s2": { "type": "Spring" }
+        }
+      }
+    }
+  })";
+  auto map = bdg::wish::import_json(desc);
+
+  labeled_rect_capturing_renderer r;
+  r.target_class = "VerticalLayout"_key;
+  r.begin_frame();
+  r.render_node(*map[""], *sess_);
+  r.end_frame();
+
+  auto [bmin, bmax] = r.by_label.at("Mid");
+  float layout_center = (r.captured_min.y + r.captured_max.y) / 2.0f;
+  float button_center = (bmin.y + bmax.y) / 2.0f;
+  EXPECT_NEAR(button_center, layout_center, 2.0f);
+  EXPECT_NEAR(bmax.y - bmin.y, 30.0f, 2.0f);
+}
+
+TEST_F(ImguiRendererTest, SpringOutsideLayoutRendersZeroSizeWithoutThrow) {
+  auto map = bdg::wish::import_json(R"({"type":"Spring"})");
+
+  rect_capturing_renderer r;
+  r.target_class = "Spring"_key;
+  EXPECT_NO_THROW({
+    r.begin_frame();
+    in_window([&] { r.render_node(*map[""], *sess_); });
+    r.end_frame();
+  });
+
+  EXPECT_NEAR(r.captured_max.x - r.captured_min.x, 0.0f, 0.5f);
+  EXPECT_NEAR(r.captured_max.y - r.captured_min.y, 0.0f, 0.5f);
 }
 
 // ── Offscreen render target (base class) ─────────────────────────────────────

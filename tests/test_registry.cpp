@@ -89,6 +89,23 @@ TEST_F(RegistryTest, LayoutInheritsVisibleFromElement) {
   EXPECT_TRUE(f->is<bool>());
 }
 
+// ── Spring ────────────────────────────────────────────────────────────────────
+
+TEST_F(RegistryTest, SpringHasWeightDefaultingToOne) {
+  auto obj = dynamic::instantiate("wish"_key, "Spring"_key);
+  auto* f = obj.findField("weight"_key);
+  ASSERT_NE(f, nullptr);
+  EXPECT_TRUE(f->is<float>());
+  EXPECT_FLOAT_EQ(f->as<float>(), 1.0f);
+}
+
+TEST_F(RegistryTest, SpringInheritsVisibleFromElement) {
+  auto obj = dynamic::instantiate("wish"_key, "Spring"_key);
+  auto* f = obj.findField("visible"_key);
+  ASSERT_NE(f, nullptr);
+  EXPECT_TRUE(f->is<bool>());
+}
+
 // ── Button ────────────────────────────────────────────────────────────────────
 
 TEST_F(RegistryTest, ButtonHasLabelAsString) {

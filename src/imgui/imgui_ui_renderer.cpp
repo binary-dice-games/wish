@@ -15,6 +15,7 @@
 #include <imgui.h>
 
 #include <algorithm>
+#include <cmath>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -476,6 +477,20 @@ void render_separator_text(imgui_renderer&, const ui_element& node, const contex
   ImGui::SeparatorText(label.c_str());
 }
 
+void render_spring(imgui_renderer&, const ui_element& node, const context&) {
+  // Stashed by render_horizontal_layout()/render_vertical_layout() just
+  // before dispatching to this function (see their pre-scan/render-pass
+  // comments) -- absent when a Spring is used outside either layout, which
+  // falls back to a genuine zero-size no-op, mirroring Layout.width/height's
+  // "ignored outside its layout" convention. Both fields are floats (like
+  // report_self_rect()'s "__wish_win_rect_*__" fields above) rather than an
+  // axis string, so the caller does the one Dummy-size decision and this
+  // function stays a single unconditional call.
+  float w = node.get_as<float>("__wish_spring_w__"_key, 0.0f);
+  float h = node.get_as<float>("__wish_spring_h__"_key, 0.0f);
+  ImGui::Dummy(ImVec2(w, h));
+}
+
 void render_vertical_layout(imgui_renderer& r, const ui_element& node, const context& s) {
   float spacing = node.get_as<float>("spacing"_key, 0.0f);
 
@@ -492,19 +507,36 @@ void render_vertical_layout(imgui_renderer& r, const ui_element& node, const con
   // any auto child's height changing. A plain VerticalLayout of leaf
   // widgets (no height set on any child) takes the same code path it
   // always did, since fixed_total/stretch_weight_total stay at 0.
+  //
+  // A Spring child (see spring.cpp's "weight" field comment) folds its
+  // weight into the same stretch_weight_total pool as a negative-height
+  // child, ahead of the height==0/>0/<0 checks -- it has no "height" field
+  // of its own to read.
   struct child_info {
     ui_element* elem;
     float height;
     std::string id;
+    bool is_spring;
+    float spring_weight;
   };
   std::vector<child_info> children;
   float fixed_total = 0.0f;
   float stretch_weight_total = 0.0f;
   int n = 0;
   node.for_each_child_ordered([&](key_t, ui_element& child) {
+    bool is_spring = child.as<key_t>(dynamic::CLASS) == "Spring"_key;
+    if (is_spring) {
+      float weight = child.get_as<float>("weight"_key, 1.0f);
+      if (weight <= 0.0f)
+        weight = 1.0f;
+      stretch_weight_total += weight;
+      children.push_back({&child, 0.0f, stable_id(child), true, weight});
+      ++n;
+      return;
+    }
     float h = child.get_as<float>("height"_key, 0.0f);
     std::string id = stable_id(child);
-    children.push_back({&child, h, id});
+    children.push_back({&child, h, id, false, 0.0f});
     if (h > 0.0f)
       fixed_total += h;
     else if (h < 0.0f)
@@ -525,7 +557,14 @@ void render_vertical_layout(imgui_renderer& r, const ui_element& node, const con
       ImGui::SetCursorPosY(ImGui::GetCursorPosY() + spacing);
     first = false;
 
-    if (c.height != 0.0f) {
+    if (c.is_spring) {
+      // No content to constrain, so no BeginChild() wrap -- just stamp
+      // this frame's computed extent for render_spring() to read.
+      float row_h = stretch_weight_total > 0.0f ? stretch_pool * (c.spring_weight / stretch_weight_total) : 0.0f;
+      (*c.elem)["__wish_spring_w__"_key] = ImGui::GetContentRegionAvail().x;
+      (*c.elem)["__wish_spring_h__"_key] = row_h;
+      r.render_node(*c.elem, s);
+    } else if (c.height != 0.0f) {
       // Constrain the child to a dedicated child window of the computed
       // row height, so nested "fill available height" fields (Table's
       // outer_height=0/negative) resolve against this row instead of the
@@ -572,17 +611,49 @@ void render_horizontal_layout(imgui_renderer& r, const ui_element& node, const c
   // pass only measures -- rendering happens below -- so a plain
   // HorizontalLayout of leaf widgets (no width set on any child) takes
   // the same code path it always did.
+  //
+  // Also pre-scan each child's own "height" hint, independently of width:
+  // unset/0 keeps the child auto-sized to its content (see the
+  // ImGuiChildFlags_AutoResizeY comment below); a nonzero value (positive
+  // fixed, or negative to fill the row's remaining vertical space) opts
+  // the column into a real fixed-size child window instead, so a nested
+  // "fill available height" field (VerticalLayout row stretch, Table's
+  // outer_height=0) can resolve against the row's actual allocated
+  // height rather than against an auto-sizing container asking itself
+  // to fill "remaining space in itself". Columns sit side by side rather
+  // than stacking, so unlike the width stretch pool above, every stretch
+  // column independently gets the same full row height -- no pool to
+  // divide.
+  //
+  // A Spring child (see spring.cpp's "weight" field comment) folds its
+  // weight into the same stretch_weight_total pool as a negative-width
+  // child, ahead of the width==0/>0/<0 checks -- it has no "width" field
+  // of its own to read.
   struct child_info {
     ui_element* elem;
     float width;
+    float height;
+    bool is_spring;
+    float spring_weight;
   };
   std::vector<child_info> children;
   float fixed_total = 0.0f;
   float stretch_weight_total = 0.0f;
   int n = 0;
   node.for_each_child_ordered([&](key_t, ui_element& child) {
+    bool is_spring = child.as<key_t>(dynamic::CLASS) == "Spring"_key;
+    if (is_spring) {
+      float weight = child.get_as<float>("weight"_key, 1.0f);
+      if (weight <= 0.0f)
+        weight = 1.0f;
+      stretch_weight_total += weight;
+      children.push_back({&child, 0.0f, 0.0f, true, weight});
+      ++n;
+      return;
+    }
     float w = child.get_as<float>("width"_key, 0.0f);
-    children.push_back({&child, w});
+    float h = child.get_as<float>("height"_key, 0.0f);
+    children.push_back({&child, w, h, false, 0.0f});
     if (w > 0.0f)
       fixed_total += w;
     else if (w < 0.0f)
@@ -591,6 +662,7 @@ void render_horizontal_layout(imgui_renderer& r, const ui_element& node, const c
   });
   float spacing_total = (n > 1) ? spacing * static_cast<float>(n - 1) : 0.0f;
   float stretch_pool = std::max(0.0f, ImGui::GetContentRegionAvail().x - fixed_total - spacing_total);
+  float avail_y = ImGui::GetContentRegionAvail().y;
 
   ImGui::BeginGroup();
   bool first = true;
@@ -605,7 +677,14 @@ void render_horizontal_layout(imgui_renderer& r, const ui_element& node, const c
     // off SameLine() for every sibling that follows it -- see DESIGN.md's
     // "HorizontalLayout row containing VerticalLayout columns" case.
     ImGui::BeginGroup();
-    if (c.width != 0.0f) {
+    if (c.is_spring) {
+      // No content to constrain, so no BeginChild() wrap -- just stamp
+      // this frame's computed extent for render_spring() to read.
+      float col_w = stretch_weight_total > 0.0f ? stretch_pool * (c.spring_weight / stretch_weight_total) : 0.0f;
+      (*c.elem)["__wish_spring_w__"_key] = col_w;
+      (*c.elem)["__wish_spring_h__"_key] = avail_y;
+      r.render_node(*c.elem, s);
+    } else if (c.width != 0.0f) {
       // Constrain the child to a dedicated child window of the computed
       // column width, so nested "fill available width" fields (InputText's
       // width=-1, Table's outer_width=0/negative) resolve against this
@@ -619,9 +698,22 @@ void render_horizontal_layout(imgui_renderer& r, const ui_element& node, const c
       // to the full remaining window height, shoving whatever follows this
       // row far down (this broke Notepad's toolbar row: each fixed-width
       // button's child window ate the whole window height, pushing the
-      // tab bar/editor below it into a sliver at the bottom).
+      // tab bar/editor below it into a sliver at the bottom). A column that
+      // opts in via a nonzero "height" (see the pre-scan comment above)
+      // wants the opposite: a real fixed-size child so its own content can
+      // stretch to fill it, so it skips AutoResizeY in favor of an actual
+      // computed pixel height.
+      float col_h = 0.0f;
+      ImGuiChildFlags child_flags = ImGuiChildFlags_AutoResizeY;
+      if (c.height > 0.0f) {
+        col_h = c.height;
+        child_flags = ImGuiChildFlags_None;
+      } else if (c.height < 0.0f) {
+        col_h = avail_y;
+        child_flags = ImGuiChildFlags_None;
+      }
       auto child_id = "##hl_col_" + stable_id(*c.elem);
-      ImGui::BeginChild(child_id.c_str(), ImVec2(col_w, 0.0f), ImGuiChildFlags_AutoResizeY);
+      ImGui::BeginChild(child_id.c_str(), ImVec2(col_w, col_h), child_flags);
       r.render_node(*c.elem, s);
       ImGui::EndChild();
     } else {
@@ -752,9 +844,20 @@ void render_splitter(imgui_renderer& r, const ui_element& node, const context& s
   // Persist every pane's final size, including the last (unstored) one --
   // so a client get() reflects the effective layout, and a nested widget
   // that itself reads "width"/"height" (SliderFloat, InputText, ...) picks
-  // up its containing pane's size.
-  for (auto& p : panes)
-    (*p.elem)[size_field] = p.size;
+  // up its containing pane's size. A pane whose "width"/"height" isn't a
+  // schema-declared field (e.g. a plain Label, unlike a Layout subclass)
+  // gets its field's type from whatever the JSON literal looked like --
+  // an integer literal like `"width": 150` creates an int32_t field, not
+  // a float one -- and `field::operator=` enforces a stable type per
+  // field, throwing if a later frame writes a different alternative.
+  // Match the field's existing type instead of assuming float.
+  for (auto& p : panes) {
+    auto* f = p.elem->findField(size_field);
+    if (f && f->is<int32_t>())
+      (*p.elem)[size_field] = static_cast<int32_t>(std::lround(p.size));
+    else
+      (*p.elem)[size_field] = p.size;
+  }
 
   if (released_bar >= 0) {
     dynamic payload;

@@ -25,6 +25,7 @@ void register_all() {
   register_element(); // root base: visible, children
   register_layout(); // Layout < Element; VerticalLayout, HorizontalLayout < Layout
   register_splitter(); // Splitter < Layout
+  register_spring(); // Spring < Element
   register_window();
   register_label();
   register_button();

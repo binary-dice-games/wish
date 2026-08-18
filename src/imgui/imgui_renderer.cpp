@@ -59,6 +59,7 @@ static const render_fn_map& built_in_render_fns() {
       {"VerticalLayout"_key.id, render_vertical_layout},
       {"HorizontalLayout"_key.id, render_horizontal_layout},
       {"Splitter"_key.id, render_splitter},
+      {"Spring"_key.id, render_spring},
       // ObjectInspector's children are always exactly [Table, Label]
       // (see object_inspector.cpp's set_target()) -- no bespoke render
       // function needed, it lays out identically to a VerticalLayout.

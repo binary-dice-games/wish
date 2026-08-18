@@ -53,6 +53,7 @@ void render_separator_text(imgui_renderer&, const ui_element& node, const contex
 void render_vertical_layout(imgui_renderer& r, const ui_element& node, const context& s);
 void render_horizontal_layout(imgui_renderer& r, const ui_element& node, const context& s);
 void render_splitter(imgui_renderer& r, const ui_element& node, const context& s);
+void render_spring(imgui_renderer&, const ui_element& node, const context&);
 
 // Menu
 void render_menu_bar(imgui_renderer& r, const ui_element& node, const context& s);

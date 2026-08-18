@@ -101,7 +101,7 @@ New to wish? [docs/tutorial.md](docs/tutorial.md) walks through building, runnin
 | Concept | Description |
 |---------|-------------|
 | **Object hierarchy** | UI elements are bison `dynamic` objects forming a tree. Children are addressed by numeric index (lists) or by name (named slots like `"ok"`, `"cancel"`). Layouts are first-class nodes in the tree. |
-| **Layouts** | `VerticalLayout` stacks children top-to-bottom; `HorizontalLayout` places them side by side. Layouts can be nested to create row/column grids and complex arrangements. |
+| **Layouts** | `VerticalLayout` stacks children top-to-bottom; `HorizontalLayout` places them side by side. Layouts can be nested to create row/column grids and complex arrangements. A `Spring` child claims a weighted share of leftover space for flexbox-style alignment (centering, space-between). |
 | **UI templates** | Named JSON/YAML blueprints stored on the server via `register_template`. `instantiate_template(name)` parses and creates a fresh object tree, returning a map of named handles. |
 | **Remote properties** | `proxy.set(fields)` / `proxy.get()` synchronize typed fields. Property sets are one-way (no round-trip) for low-latency visual updates. |
 | **Events** | Server-side interactions emit named events (`clicked`, `changed`, ...) to the client via `proxy.onEvent`. |

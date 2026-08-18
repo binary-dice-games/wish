@@ -72,19 +72,24 @@ std::string format_modified(const fs::file_time_type& ftime) {
 // on_table_sorted()'s doc comment. InputText EnterReturnsTrue=32 so path
 // bars only fire "changed" on Enter, not per keystroke.
 //
-// left_table/right_table use a fixed "outer_height" (300) rather than the
-// stretch-to-fill sentinel (-1): "left"/"right" are HorizontalLayout
-// columns with an explicit "width", so imgui_ui_renderer.cpp's
-// render_horizontal_layout() wraps each in its own child window with
-// ImGuiChildFlags_AutoResizeY (auto height, sized to content -- deliberate,
-// see that function's own comment). A -1 outer_height inside an
-// auto-height parent has no finite bound to stretch against, so the Table
-// never engages its own ScrollY and instead grows to fit every row,
-// pushing the overflow onto the outer Window's own scrollbar -- i.e. one
-// shared scrollbar for the whole window instead of an independent one per
-// panel. A fixed outer_height gives each Table a real bound, so ScrollY
-// activates per-panel (matching FileDialog's own fixed 260.0 for the same
-// reason).
+// "left"/"right" each carry both "width": -1 and "height": -1: the former
+// makes render_horizontal_layout() give each a real, computed pixel-width
+// column (see that function's width pre-scan); the latter opts the same
+// column into a real, computed pixel-height child window (that function's
+// height pre-scan) instead of the default ImGuiChildFlags_AutoResizeY
+// (auto height, sized to content) applied to columns that leave "height"
+// unset. Without "height": -1, each column would size to its own content
+// regardless of the "panels" row's actual allocated height (itself
+// stretch-filled by render_vertical_layout() via "panels"'s own
+// "height": -1) -- leaving a gap between the panels and the status bar
+// when content is shorter than the row, or an unwanted extra scrollbar on
+// the row when content is taller. left_table/right_table mirror this with
+// their own "height": -1 (rather than a fixed pixel value) so each Table
+// fills exactly the remaining space inside its column, letting ImGui's
+// own ScrollY engage per-panel only when a listing doesn't fit -- no
+// "outer_height" override needed, since 0 (the default) already means
+// "fill the remaining space in the parent", and the parent here is now a
+// real fixed-size child window rather than an auto-sizing one.
 
 // Tagged delimiter (R"json(...)json") rather than the untagged R"(...)"
 // convention used elsewhere: "Sandbox (Server)" ends in a ")" immediately
@@ -107,7 +112,7 @@ static constexpr const char* kLayout = R"json({
             "left": {
               "type": "VerticalLayout",
               "spacing": 4,
-              "width": -1,
+              "width": -1, "height": -1,
               "children": {
                 "left_label": { "type": "Label", "text": "Local Machine" },
                 "left_path": {
@@ -117,7 +122,7 @@ static constexpr const char* kLayout = R"json({
                 "left_selected": { "type": "Label", "text": "Selected: (none)" },
                 "left_table": {
                   "type": "Table", "id": "##local_table", "columns": 3, "headers": true,
-                  "flags": 33554889, "outer_width": 0, "outer_height": 300,
+                  "flags": 33554889, "outer_width": 0, "height": -1,
                   "children": {
                     "col_name":     { "type": "TableColumn", "label": "Name", "column_id": 0 },
                     "col_size":     { "type": "TableColumn", "label": "Size", "flags": 16, "init_width": 90, "column_id": 1 },
@@ -131,7 +136,6 @@ static constexpr const char* kLayout = R"json({
               "spacing": 10,
               "width": 80,
               "children": {
-                "spacer_top": { "type": "Separator" },
                 "upload":   { "type": "Button", "label": ">>", "width": 60, "height": 36 },
                 "download": { "type": "Button", "label": "<<", "width": 60, "height": 36 }
               }
@@ -139,7 +143,7 @@ static constexpr const char* kLayout = R"json({
             "right": {
               "type": "VerticalLayout",
               "spacing": 4,
-              "width": -1,
+              "width": -1, "height": -1,
               "children": {
                 "right_header": {
                   "type": "HorizontalLayout",
@@ -156,7 +160,7 @@ static constexpr const char* kLayout = R"json({
                 "right_selected": { "type": "Label", "text": "Selected: (none)" },
                 "right_table": {
                   "type": "Table", "id": "##sandbox_table", "columns": 3, "headers": true,
-                  "flags": 33554889, "outer_width": 0, "outer_height": 300,
+                  "flags": 33554889, "outer_width": 0, "height": -1,
                   "children": {
                     "col_name":     { "type": "TableColumn", "label": "Name", "column_id": 0 },
                     "col_size":     { "type": "TableColumn", "label": "Size", "flags": 16, "init_width": 90, "column_id": 1 },

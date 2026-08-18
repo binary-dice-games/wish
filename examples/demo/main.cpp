@@ -171,6 +171,46 @@ static constexpr const char* kTabMiscDesc = R"json(
                 }
               }
             },
+            "sec_springs": { "type": "SeparatorText", "label": "Spring (flexible alignment)" },
+            "lbl_springs_hint": { "type": "Label",
+              "text": "A Spring is invisible, expandable space that claims a weighted share of a layout's leftover room -- drag the sliders below to move the boxes." },
+            "springs_h_sliders": {
+              "type": "HorizontalLayout", "spacing": 12,
+              "children": {
+                "sld_spring_h1": { "type": "SliderFloat", "label": "Left weight",  "value": 1.0, "min": 0.0, "max": 5.0, "format": "%.1f", "width": 220 },
+                "sld_spring_h2": { "type": "SliderFloat", "label": "Right weight", "value": 1.0, "min": 0.0, "max": 5.0, "format": "%.1f", "width": 220 }
+              }
+            },
+            "springs_h_row": {
+              "type": "HorizontalLayout",
+              "children": {
+                "spring_h1":    { "type": "Spring", "weight": 1.0 },
+                "spring_h_box": { "type": "Button", "label": "Centered Box", "width": 160, "height": 40 },
+                "spring_h2":    { "type": "Spring", "weight": 1.0 }
+              }
+            },
+            "lbl_springs_v_hint": { "type": "Label",
+              "text": "Same idea on the vertical axis (VerticalLayout, 220px tall):" },
+            "springs_v_sliders": {
+              "type": "HorizontalLayout", "spacing": 12,
+              "children": {
+                "sld_spring_v1": { "type": "SliderFloat", "label": "Top weight",    "value": 1.0, "min": 0.0, "max": 5.0, "format": "%.1f", "width": 220 },
+                "sld_spring_v2": { "type": "SliderFloat", "label": "Bottom weight", "value": 1.0, "min": 0.0, "max": 5.0, "format": "%.1f", "width": 220 }
+              }
+            },
+            "springs_v_wrap": {
+              "type": "HorizontalLayout",
+              "children": {
+                "springs_v_row": {
+                  "type": "VerticalLayout", "height": 220,
+                  "children": {
+                    "spring_v1":    { "type": "Spring", "weight": 1.0 },
+                    "spring_v_box": { "type": "Button", "label": "Centered", "width": 160, "height": 30 },
+                    "spring_v2":    { "type": "Spring", "weight": 1.0 }
+                  }
+                }
+              }
+            },
             "lbl_split": { "type": "Label", "text": "Splitter (drag the bar):" },
             "split_wrap": {
               "type": "VerticalLayout",
@@ -1160,6 +1200,36 @@ class demo_client : public wish::examples::example_client {
       pm.at(name).onEvent(
           "clicked"_key, [s = status, n = std::string(name)](dynamic) { s("Layout button '" + n + "' clicked."); });
     }
+
+    // Springs: each slider live-updates its Spring's "weight" field, so
+    // dragging it visibly redistributes the leftover space between the two
+    // Springs and slides the box between them.
+    auto wire_spring_slider = [&pm, status](
+                                   const std::string& slider_path, const std::string& spring_path,
+                                   const std::string& label) {
+      pm.at(slider_path).onEvent("changed"_key, [&pm, status, spring_path, label](dynamic p) {
+        const auto* f = p.findField("value"_key);
+        float v = (f && f->is<float>()) ? f->as<float>() : 1.0f;
+        dynamic fields;
+        fields["weight"_key] = v;
+        pm.at(spring_path).set(std::move(fields));
+        char buf[64];
+        std::snprintf(buf, sizeof(buf), "%s spring weight: %.1f", label.c_str(), v);
+        status(buf);
+      });
+    };
+    wire_spring_slider(
+        "demo_win.tabs_root.tab_misc.springs_h_sliders.sld_spring_h1",
+        "demo_win.tabs_root.tab_misc.springs_h_row.spring_h1", "Left");
+    wire_spring_slider(
+        "demo_win.tabs_root.tab_misc.springs_h_sliders.sld_spring_h2",
+        "demo_win.tabs_root.tab_misc.springs_h_row.spring_h2", "Right");
+    wire_spring_slider(
+        "demo_win.tabs_root.tab_misc.springs_v_sliders.sld_spring_v1",
+        "demo_win.tabs_root.tab_misc.springs_v_wrap.springs_v_row.spring_v1", "Top");
+    wire_spring_slider(
+        "demo_win.tabs_root.tab_misc.springs_v_sliders.sld_spring_v2",
+        "demo_win.tabs_root.tab_misc.springs_v_wrap.springs_v_row.spring_v2", "Bottom");
 
     pm.at("demo_win.tabs_root.tab_misc.split_wrap.split_demo").onEvent("resized"_key, [status](dynamic p) {
       const auto* s1 = p.findField("size1"_key);

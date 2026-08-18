@@ -472,6 +472,11 @@ def test_saving_shows_confirmation(wish_ui):
   no explicit widths it sums to 0, pushing the offset almost to the full
   available width and shoving the row off-screen (`visible: false`).
   Connect first, then drive the app, and this is a non-issue in practice.
+  A `Spring` child is unaffected by any of this — it never gets a
+  `BeginChild()` wrap (it has no content to constrain) — so it's the safer
+  choice for weighted/centered spacing inside a modal `Window`'s
+  `HorizontalLayout`/`VerticalLayout`, where an explicit negative `width`/
+  `height` on a real widget would hit the hover/click issue above.
 
 ## Security Considerations for AI Code Assist
 
