@@ -23,9 +23,11 @@ void register_spring() {
                             "the same weighted-share convention as Layout.width/height's negative-value "
                             "mode (mirrors ImGuiTableColumnFlags_WidthStretch). Two Springs around one "
                             "child centers it; a Spring between two children pushes them to opposite "
-                            "edges (\"space-between\"); unequal weights bias the split. A value <= 0 "
-                            "is treated as 1.0. Ignored (renders as zero-size) outside a "
-                            "HorizontalLayout or VerticalLayout."),
+                            "edges (\"space-between\"); unequal weights bias the split. A value of 0 "
+                            "claims no share at all (the Spring collapses, flushing its neighbor to "
+                            "that edge -- CSS flex-grow's convention), the same as omitting it entirely "
+                            "if every other sibling Spring is also 0. Negative values clamp to 0. "
+                            "Ignored (renders as zero-size) outside a HorizontalLayout or VerticalLayout."),
           attr<Category>("Layout")});
   (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Spring"));
   (*proto)[dynamic::CLASS].addAttribute(

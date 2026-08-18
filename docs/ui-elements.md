@@ -132,7 +132,7 @@ over alignment without needing every child to have an explicit width:
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `weight` | `float` | `1.0` | Share of the layout's leftover space this `Spring` claims, relative to sibling `Spring`s/stretch children. A value `<= 0` is treated as `1.0`. |
+| `weight` | `float` | `1.0` | Share of the layout's leftover space this `Spring` claims, relative to sibling `Spring`s/stretch children. `0` claims no share at all -- the `Spring` collapses, flushing its neighbor to that edge (CSS `flex-grow`'s convention). Negative values clamp to `0`. |
 
 Does not emit events. Ignored (renders as zero-size) outside a
 `HorizontalLayout`/`VerticalLayout`.

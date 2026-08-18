@@ -202,7 +202,7 @@ static constexpr const char* kTabMiscDesc = R"json(
               "type": "HorizontalLayout",
               "children": {
                 "springs_v_row": {
-                  "type": "VerticalLayout", "height": 220,
+                  "type": "VerticalLayout", "width": 200, "height": 220,
                   "children": {
                     "spring_v1":    { "type": "Spring", "weight": 1.0 },
                     "spring_v_box": { "type": "Button", "label": "Centered", "width": 160, "height": 30 },

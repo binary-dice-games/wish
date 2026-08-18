@@ -1580,7 +1580,7 @@ TEST_F(ImguiRendererTest, SpringWeightBiasesSplitInHorizontalLayout) {
   EXPECT_NEAR(left_gap / right_gap, 0.5f, 0.05f);
 }
 
-TEST_F(ImguiRendererTest, SpringWeightZeroOrNegativeClampsToOne) {
+TEST_F(ImguiRendererTest, SpringNegativeWeightClampsToZero) {
   constexpr auto desc = R"({
     "type": "Window", "title": "SpringClamp", "width": 400, "height": 100,
     "pos_x": 0, "pos_y": 0,
@@ -1603,13 +1603,43 @@ TEST_F(ImguiRendererTest, SpringWeightZeroOrNegativeClampsToOne) {
   r.render_node(*map[""], *sess_);
   r.end_frame();
 
-  // A non-positive weight clamps to 1.0, so this behaves identically to two
-  // weight-1.0 springs -- the button stays centered instead of flush left
-  // (which is what a broken, unclamped weight of -5 would produce).
+  // A negative weight clamps to 0 (can't claim negative space), so s1
+  // contributes nothing to the pool and s2 claims all of it -- the button
+  // sits flush against the layout's left edge, right after the collapsed
+  // s1, not centered.
   auto [bmin, bmax] = r.by_label.at("Mid");
-  float layout_center = (r.captured_min.x + r.captured_max.x) / 2.0f;
-  float button_center = (bmin.x + bmax.x) / 2.0f;
-  EXPECT_NEAR(button_center, layout_center, 2.0f);
+  EXPECT_NEAR(bmin.x, r.captured_min.x, 2.0f);
+}
+
+TEST_F(ImguiRendererTest, SpringZeroWeightCollapsesFlushToThatSide) {
+  constexpr auto desc = R"({
+    "type": "Window", "title": "SpringZero", "width": 400, "height": 100,
+    "pos_x": 0, "pos_y": 0,
+    "children": {
+      "hl": {
+        "type": "HorizontalLayout",
+        "children": {
+          "s1": { "type": "Spring", "weight": 0.0 },
+          "btn": { "type": "Button", "label": "Mid", "width": 100, "height": 30 },
+          "s2": { "type": "Spring", "weight": 1.0 }
+        }
+      }
+    }
+  })";
+  auto map = bdg::wish::import_json(desc);
+
+  labeled_rect_capturing_renderer r;
+  r.target_class = "HorizontalLayout"_key;
+  r.begin_frame();
+  r.render_node(*map[""], *sess_);
+  r.end_frame();
+
+  // A weight of exactly 0 is a legitimate "claim no share" value (CSS
+  // flex-grow's convention), not clamped to a default -- s1 collapses and
+  // the button sits flush against the layout's left edge, matching the
+  // negative-weight case above, not centered.
+  auto [bmin, bmax] = r.by_label.at("Mid");
+  EXPECT_NEAR(bmin.x, r.captured_min.x, 2.0f);
 }
 
 TEST_F(ImguiRendererTest, SpringMirrorsVerticalLayout) {

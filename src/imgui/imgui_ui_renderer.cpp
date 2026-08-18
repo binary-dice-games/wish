@@ -527,8 +527,8 @@ void render_vertical_layout(imgui_renderer& r, const ui_element& node, const con
     bool is_spring = child.as<key_t>(dynamic::CLASS) == "Spring"_key;
     if (is_spring) {
       float weight = child.get_as<float>("weight"_key, 1.0f);
-      if (weight <= 0.0f)
-        weight = 1.0f;
+      if (weight < 0.0f)
+        weight = 0.0f;
       stretch_weight_total += weight;
       children.push_back({&child, 0.0f, stable_id(child), true, weight});
       ++n;
@@ -560,8 +560,12 @@ void render_vertical_layout(imgui_renderer& r, const ui_element& node, const con
     if (c.is_spring) {
       // No content to constrain, so no BeginChild() wrap -- just stamp
       // this frame's computed extent for render_spring() to read.
+      // Cross-axis size (width) is 0, not the row's available width -- a
+      // Spring has no content, so it must never be what drives the row's
+      // own size; real siblings (the button, ...) already do that via
+      // ImGui's normal same-line item-height tracking.
       float row_h = stretch_weight_total > 0.0f ? stretch_pool * (c.spring_weight / stretch_weight_total) : 0.0f;
-      (*c.elem)["__wish_spring_w__"_key] = ImGui::GetContentRegionAvail().x;
+      (*c.elem)["__wish_spring_w__"_key] = 0.0f;
       (*c.elem)["__wish_spring_h__"_key] = row_h;
       r.render_node(*c.elem, s);
     } else if (c.height != 0.0f) {
@@ -644,8 +648,8 @@ void render_horizontal_layout(imgui_renderer& r, const ui_element& node, const c
     bool is_spring = child.as<key_t>(dynamic::CLASS) == "Spring"_key;
     if (is_spring) {
       float weight = child.get_as<float>("weight"_key, 1.0f);
-      if (weight <= 0.0f)
-        weight = 1.0f;
+      if (weight < 0.0f)
+        weight = 0.0f;
       stretch_weight_total += weight;
       children.push_back({&child, 0.0f, 0.0f, true, weight});
       ++n;
@@ -679,10 +683,13 @@ void render_horizontal_layout(imgui_renderer& r, const ui_element& node, const c
     ImGui::BeginGroup();
     if (c.is_spring) {
       // No content to constrain, so no BeginChild() wrap -- just stamp
-      // this frame's computed extent for render_spring() to read.
+      // this frame's computed extent for render_spring() to read. Cross-axis
+      // size (height) is 0, not the row's full avail_y -- a Spring has no
+      // content, so it must never be what drives the row's own height; a
+      // real sibling (a fixed-height column, ...) already does that.
       float col_w = stretch_weight_total > 0.0f ? stretch_pool * (c.spring_weight / stretch_weight_total) : 0.0f;
       (*c.elem)["__wish_spring_w__"_key] = col_w;
-      (*c.elem)["__wish_spring_h__"_key] = avail_y;
+      (*c.elem)["__wish_spring_h__"_key] = 0.0f;
       r.render_node(*c.elem, s);
     } else if (c.width != 0.0f) {
       // Constrain the child to a dedicated child window of the computed
@@ -823,9 +830,17 @@ void render_splitter(imgui_renderer& r, const ui_element& node, const context& s
       auto bar_id = "##sp_bar_" + pane_sid;
       ImVec2 bar_size = is_vertical ? ImVec2(thickness, pane_extent.y) : ImVec2(pane_extent.x, thickness);
       ImGui::InvisibleButton(bar_id.c_str(), bar_size);
-      if (ImGui::IsItemHovered() || ImGui::IsItemActive())
+      bool bar_hovered = ImGui::IsItemHovered();
+      bool bar_active = ImGui::IsItemActive();
+      // InvisibleButton draws nothing on its own -- paint the bar using the
+      // theme's own separator colors (brightening on hover/drag) so there is
+      // a visible affordance for where to grab it, not just a cursor change.
+      ImU32 bar_color = ImGui::GetColorU32(
+          bar_active ? ImGuiCol_SeparatorActive : (bar_hovered ? ImGuiCol_SeparatorHovered : ImGuiCol_Separator));
+      ImGui::GetWindowDrawList()->AddRectFilled(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(), bar_color);
+      if (bar_hovered || bar_active)
         ImGui::SetMouseCursor(cursor);
-      if (ImGui::IsItemActive()) {
+      if (bar_active) {
         float delta = is_vertical ? ImGui::GetIO().MouseDelta.x : ImGui::GetIO().MouseDelta.y;
         float lo = min_pane - panes[i].size;
         float hi = (i + 2 < n) ? panes[i + 1].size - min_pane
