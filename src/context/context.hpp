@@ -201,22 +201,6 @@ struct context : public bison::rmi::context {
   /// the lock — preventing deadlocks and iterator-invalidation crashes.
   mutable std::vector<pending_event> pending_events;
 
-  /// @brief Last measured height (pixels) of each auto-sized (`height == 0`)
-  ///        `VerticalLayout` child, keyed by the child's stable id (see
-  ///        `stable_id()` in `imgui_ui_renderer.cpp`).
-  ///
-  /// `render_vertical_layout` cannot know an auto child's height before
-  /// rendering it -- ImGui is immediate-mode, so there is no lookahead.
-  /// Instead it reserves *last frame's* measured height for auto children
-  /// when sizing sibling stretch children (`height < 0`), then overwrites
-  /// the entry with this frame's actual measurement after rendering. This
-  /// makes a fixed-height header/footer plus a stretch-filling body work
-  /// regardless of child order, at the cost of a one-frame lag whenever an
-  /// auto child's height changes -- imperceptible at normal frame rates.
-  /// Only ever touched by the render thread while holding this session's
-  /// rlock, so it needs no synchronization of its own (unlike `dirty`).
-  mutable std::unordered_map<std::string, float> layout_height_cache;
-
   /// @brief Top-level key currently being rendered; set/cleared by the render loop.
   ///
   /// `enqueue_event()` copies this into `pending_event::root_key` so the

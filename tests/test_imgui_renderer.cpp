@@ -14,12 +14,14 @@
 
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 using namespace bdg::bison;
 using bdg::wish::imgui_renderer;
 using bdg::wish::render_children;
 using bdg::wish::context;
 using bdg::wish::ui_element;
+using bdg::wish::vec2f;
 
 // ── Test fixture ──────────────────────────────────────────────────────────────
 
@@ -1605,10 +1607,13 @@ TEST_F(ImguiRendererTest, SpringNegativeWeightClampsToZero) {
 
   // A negative weight clamps to 0 (can't claim negative space), so s1
   // contributes nothing to the pool and s2 claims all of it -- the button
-  // sits flush against the layout's left edge, right after the collapsed
-  // s1, not centered.
+  // sits right after the collapsed s1, not centered. Tolerance is wide
+  // enough to absorb one inter-child gap (arrange_horizontal_layout() still
+  // inserts the active style's ItemSpacing.x next to a collapsed Spring,
+  // same as any other pair of children -- see effective_spacing()) while
+  // still failing if the button were actually centered instead.
   auto [bmin, bmax] = r.by_label.at("Mid");
-  EXPECT_NEAR(bmin.x, r.captured_min.x, 2.0f);
+  EXPECT_NEAR(bmin.x, r.captured_min.x, ImGui::GetStyle().ItemSpacing.x + 2.0f);
 }
 
 TEST_F(ImguiRendererTest, SpringZeroWeightCollapsesFlushToThatSide) {
@@ -1636,10 +1641,10 @@ TEST_F(ImguiRendererTest, SpringZeroWeightCollapsesFlushToThatSide) {
 
   // A weight of exactly 0 is a legitimate "claim no share" value (CSS
   // flex-grow's convention), not clamped to a default -- s1 collapses and
-  // the button sits flush against the layout's left edge, matching the
-  // negative-weight case above, not centered.
+  // the button sits right after it, matching the negative-weight case
+  // above, not centered. See that test's identical tolerance comment.
   auto [bmin, bmax] = r.by_label.at("Mid");
-  EXPECT_NEAR(bmin.x, r.captured_min.x, 2.0f);
+  EXPECT_NEAR(bmin.x, r.captured_min.x, ImGui::GetStyle().ItemSpacing.x + 2.0f);
 }
 
 TEST_F(ImguiRendererTest, SpringMirrorsVerticalLayout) {
@@ -1668,8 +1673,62 @@ TEST_F(ImguiRendererTest, SpringMirrorsVerticalLayout) {
   auto [bmin, bmax] = r.by_label.at("Mid");
   float layout_center = (r.captured_min.y + r.captured_max.y) / 2.0f;
   float button_center = (bmin.y + bmax.y) / 2.0f;
-  EXPECT_NEAR(button_center, layout_center, 2.0f);
+  // Tight tolerance: render_vertical_layout()'s pin_cursor_to_arranged_bottom()
+  // (imgui_ui_renderer.cpp) neutralizes the one style.ItemSpacing.y hop
+  // imgui_renderer::render_node()'s generic BeginGroup()/EndGroup()
+  // rect-capture wrap would otherwise fold into this node's reported
+  // height, so the captured group bounds now match the arranged box
+  // exactly rather than overshooting by one spacing unit.
+  EXPECT_NEAR(button_center, layout_center, 0.5f);
   EXPECT_NEAR(bmax.y - bmin.y, 30.0f, 2.0f);
+}
+
+TEST_F(ImguiRendererTest, DeeplyNestedStretchLayoutsStayWithinWindowBounds) {
+  // Regression test: arrange_node()'s cascade computes every descendant's
+  // position in one shared coordinate frame rooted at the outermost
+  // ensure_arranged() call, but rendering re-enters a *fresh* local
+  // coordinate frame at every nested BeginChild() render_vertical_layout/
+  // render_horizontal_layout open for a nonzero width/height hint. Using
+  // each child's raw, globally-cascaded arranged_pos() directly as a
+  // SetCursorPos() argument (instead of anchoring it to the *current*
+  // rendering frame) made position offsets compound once per nesting
+  // level -- three levels deep, as in file_explorer's real
+  // main -> panels -> right -> right_header tree, this pushed a widget's
+  // on-screen rect far outside the window entirely (observed: an x
+  // coordinate over 1000 inside a 920px-wide window). "left_filler"/
+  // "inner_filler" below exist purely to give each nesting level a large,
+  // nonzero offset -- without them the compounding error is too small to
+  // reliably escape the test window's bounds.
+  constexpr auto desc = R"({
+    "type": "VerticalLayout",
+    "children": {
+      "row": { "type": "HorizontalLayout", "height": -1, "children": {
+        "left_filler": { "type": "Button", "label": "L", "width": 400, "height": 20 },
+        "col": { "type": "VerticalLayout", "width": 300, "height": -1, "children": {
+          "inner_filler": { "type": "Button", "label": "IF", "height": 200 },
+          "inner": { "type": "HorizontalLayout", "height": -1, "children": {
+            "left_filler2": { "type": "Button", "label": "LF2", "width": 150, "height": 20 },
+            "btn": { "type": "Button", "label": "X", "width": 50, "height": 20 }
+          }}
+        }}
+      }}
+    }
+  })";
+  auto map = bdg::wish::import_json(desc);
+
+  labeled_rect_capturing_renderer r;
+  r.begin_frame();
+  in_window([&] { r.render_node(*map[""], *sess_); });
+  r.end_frame();
+
+  ASSERT_TRUE(r.by_label.count("X"));
+  auto [bmin, bmax] = r.by_label.at("X");
+  EXPECT_GE(bmin.x, 0.0f);
+  EXPECT_LE(bmax.x, 800.0f);
+  EXPECT_GE(bmin.y, 0.0f);
+  EXPECT_LE(bmax.y, 600.0f);
+  EXPECT_NEAR(bmax.x - bmin.x, 50.0f, 2.0f);
+  EXPECT_NEAR(bmax.y - bmin.y, 20.0f, 2.0f);
 }
 
 TEST_F(ImguiRendererTest, SpringOutsideLayoutRendersZeroSizeWithoutThrow) {
@@ -1685,6 +1744,62 @@ TEST_F(ImguiRendererTest, SpringOutsideLayoutRendersZeroSizeWithoutThrow) {
 
   EXPECT_NEAR(r.captured_max.x - r.captured_min.x, 0.0f, 0.5f);
   EXPECT_NEAR(r.captured_max.y - r.captured_min.y, 0.0f, 0.5f);
+}
+
+TEST_F(ImguiRendererTest, ScrolledOffscreenHorizontalLayoutChildDoesNotFlicker) {
+  // Regression test for a real user-reported bug: scroll a demo tab so a
+  // HorizontalLayout row sitting next to a Spring is pushed out of the
+  // window's visible region, then keep rendering (any mouse move forces a
+  // new frame) -- an adjacent auto-height sibling (here, a SliderFloat with
+  // an explicit "width" but no "height") visibly flickered every single
+  // frame. Root cause, traced via WISH_LAYOUT_DEBUG_LOG against the real
+  // repro: once scrolled out of view, ImGui's own ItemAdd() clip test
+  // reports the sibling's real item as invisible and leaves it a
+  // degenerate rect; that got fed straight into
+  // ui_element::last_rendered_size() every frame regardless, corrupting
+  // the *next* frame's measure/arrange for the very same node -- a
+  // sustained 2-frame oscillation between the real size and the degenerate
+  // one. Fixed at two points: imgui_renderer.cpp's render_node() now only
+  // updates last_rendered_size() when ImGui::IsItemVisible() is true
+  // (otherwise it keeps whichever size was last known-good); and
+  // render_horizontal_layout()/render_vertical_layout() no longer hand a
+  // literal 0 to ImGui::BeginChild() (that means "fill remaining space" to
+  // ImGui, not "auto-size to content" -- see those call sites' own doc
+  // comments).
+  //
+  // Reproduced deterministically here (no real scrolling needed) with a
+  // huge fixed-height sibling ahead of the row, pushing its cursor position
+  // in a small window far past the window's own visible bottom edge --
+  // exactly like a real scroll, but reproducible without input events.
+  constexpr auto desc = R"({
+    "type": "Window", "title": "P", "width": 400, "height": 200,
+    "pos_x": 0, "pos_y": 0,
+    "children": { "vb": { "type": "VerticalLayout", "children": {
+      "filler": { "type": "Image", "width": 10, "height": 1000 },
+      "hl": { "type": "HorizontalLayout", "children": {
+        "sld": { "type": "SliderFloat", "label": "S", "width": 220.0, "value": 0.5 },
+        "s": { "type": "Spring" }
+      }}
+    }}}
+  })";
+  auto map = bdg::wish::import_json(desc);
+  auto& sld = *map["vb.hl.sld"];
+
+  std::vector<vec2f> sizes;
+  for (int i = 0; i < 6; ++i) {
+    renderer_->begin_frame();
+    renderer_->render_node(*map[""], *sess_);
+    renderer_->end_frame();
+    sizes.push_back(sld.last_rendered_size());
+  }
+
+  // Every frame after the node is first (never-visible) rendered must
+  // report the *same* size -- no oscillation between a real and a
+  // degenerate value.
+  for (size_t i = 1; i < sizes.size(); ++i) {
+    EXPECT_FLOAT_EQ(sizes[i].x, sizes[0].x) << "frame " << i;
+    EXPECT_FLOAT_EQ(sizes[i].y, sizes[0].y) << "frame " << i;
+  }
 }
 
 // ── Offscreen render target (base class) ─────────────────────────────────────

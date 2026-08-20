@@ -88,6 +88,25 @@ void handle_drag_drop(const ui_element& node, const context& s);
 ///        `imgui_ui_renderer.cpp`.
 void draw_highlight_if_set(const ui_element& node, ImVec2 rect_min, ImVec2 rect_max);
 
+/// @brief Resolves @p node's font override (`font_path`/`font_size` fields),
+///        loading it through @p r if needed.
+///
+/// Returns `nullptr` for "no override, use the ambient default font" -- the
+/// same semantics `ImGui::PushFont(nullptr)` already accepts, so
+/// `imgui_renderer::render_node()` passes the result straight through.
+/// Shared with `measure_node()` (`src/imgui/imgui_layout.cpp`) so the
+/// measure pass's `Calc*` size queries run against the exact same font
+/// `render_node()` will actually draw with -- font-metric parity is a
+/// correctness requirement, not a nicety, for a node with a custom
+/// `font_size` inside an auto-sized Layout row.
+///
+/// @param r     Renderer instance -- `get_or_load_font()` is virtual
+///              per-backend (headless/SDL3/web).
+/// @param node  Node whose `font_path`/`font_size` fields to resolve.
+/// @param s     Session context (for `resource_dir`/`allow_absolute_paths`/
+///              `allow_url_fetch`).
+ImFont* resolve_element_font(imgui_renderer& r, const ui_element& node, const context& s);
+
 /**
  * @brief Renderer backend that draws wish UI elements via Dear ImGui.
  *

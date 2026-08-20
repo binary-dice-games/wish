@@ -19,6 +19,10 @@
 #include <imgui/imgui_ui_renderer.hpp>
 #include <imgui/themes/themes.hpp>
 
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <fstream>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -333,26 +337,60 @@ void draw_highlight_if_set(const ui_element& node, ImVec2 rect_min, ImVec2 rect_
   ImGui::GetWindowDrawList()->AddRect(rect_min, rect_max, IM_COL32(255, 215, 0, 255), 0.0f, 0, 2.5f);
 }
 
+// See imgui_layout.cpp's identical WISH_LAYOUT_DEBUG_LOG helper for the full
+// rationale; duplicated locally (rather than shared across translation
+// units) since it's a few lines and this file's own signal is different --
+// this one flags a node's own *rendered* rect (last_resolved_rect_min_/
+// max_, captured below and consumed both by automation and by
+// measure_node()'s last_rendered_size() fallback) changing frame-to-frame
+// even though its class has no wish arrange/measure involvement at all
+// (e.g. a Table-cell Label/ProgressBar, which imgui_layout.cpp's
+// arrange_node() never recurses into) -- catching instability that
+// imgui_layout.cpp's own log can't see, since that log only instruments the
+// arrange pass.
+static std::ofstream* render_debug_log() {
+  static std::ofstream* stream = [] {
+    const char* path = std::getenv("WISH_LAYOUT_DEBUG_LOG");
+    if (!path || !*path)
+      return static_cast<std::ofstream*>(nullptr);
+    auto* f = new std::ofstream(path, std::ios::app);
+    return f->is_open() ? f : (delete f, static_cast<std::ofstream*>(nullptr));
+  }();
+  return stream;
+}
+
+static std::string render_debug_node_label(const ui_element& node) {
+  const auto* path_field = node.findField("__path__"_key);
+  if (path_field && path_field->is<std::string>() && !path_field->as<std::string>().empty())
+    return path_field->as<std::string>();
+  auto cls = node.as<key_t>(dynamic::CLASS);
+  char buf[32];
+  std::snprintf(buf, sizeof(buf), "class#%08x", static_cast<unsigned>(cls.id));
+  return buf;
+}
+
+ImFont* resolve_element_font(imgui_renderer& r, const ui_element& node, const context& s) {
+  auto font_path = node.get_as<std::string>("font_path"_key, "");
+  auto font_size = node.get_as<float>("font_size"_key, 0.0f);
+  if (font_path.empty() && font_size > 0.0f)
+    font_path = "res/fonts/default.ttf";
+  if (font_path.empty() || font_size <= 0.0f)
+    return nullptr;
+  static const std::vector<std::string> kFontExtensions{"ttf", "otf"};
+  auto full = file_service::resolve_or_fetch(
+      font_path, s.resource_dir, s.allow_absolute_paths, s.allow_url_fetch, kFontExtensions);
+  if (full.empty())
+    return nullptr;
+  return r.get_or_load_font(full.string(), font_size);
+}
+
 void imgui_renderer::render_node(const ui_element& node, const context& s) {
   if (!node.get_as<bool>("visible"_key, true))
     return;
 
   // Per-element font override.  PushFont(nullptr) is valid — it selects the
   // default font — so the push/pop pair is always safe to emit.
-  ImFont* font = nullptr;
-  {
-    auto font_path = node.get_as<std::string>("font_path"_key, "");
-    auto font_size = node.get_as<float>("font_size"_key, 0.0f);
-    if (font_path.empty() && font_size > 0.0f)
-      font_path = "res/fonts/default.ttf";
-    if (!font_path.empty() && font_size > 0.0f) {
-      static const std::vector<std::string> kFontExtensions{"ttf", "otf"};
-      auto full = file_service::resolve_or_fetch(
-          font_path, s.resource_dir, s.allow_absolute_paths, s.allow_url_fetch, kFontExtensions);
-      if (!full.empty())
-        font = get_or_load_font(full.string(), font_size);
-    }
-  }
+  ImFont* font = resolve_element_font(*this, node, s);
   ImGui::PushFont(font);
 
   // Scope every widget under this node to stable_id(node) via the ID stack,
@@ -405,6 +443,11 @@ void imgui_renderer::render_node(const ui_element& node, const context& s) {
       cls == "TabBar"_key || cls == "TabItem"_key || cls == "TreeNode"_key || cls == "CollapsingHeader"_key ||
       cls == "Table"_key || cls == "TableRow"_key || cls == "Plot"_key || cls == "Plot3D"_key;
 
+  // Set by whichever rect-capture branch below actually runs; gates the
+  // last_rendered_size() update further down -- see that call site's doc
+  // comment for why a clipped/invisible item must not overwrite it.
+  bool item_visible = true;
+
   if (needs_group_wrap)
     ImGui::BeginGroup();
 
@@ -435,6 +478,7 @@ void imgui_renderer::render_node(const ui_element& node, const context& s) {
     ImGui::EndGroup();
     last_resolved_rect_min_ = ImGui::GetItemRectMin();
     last_resolved_rect_max_ = ImGui::GetItemRectMax();
+    item_visible = ImGui::IsItemVisible();
   } else if (self_reports_rect) {
     const auto* rx = node.findField("__wish_win_rect_x__"_key);
     const auto* ry = node.findField("__wish_win_rect_y__"_key);
@@ -457,6 +501,54 @@ void imgui_renderer::render_node(const ui_element& node, const context& s) {
     // this fix -- exactly as accurate as it always was for these classes.
     last_resolved_rect_min_ = ImGui::GetItemRectMin();
     last_resolved_rect_max_ = ImGui::GetItemRectMax();
+    item_visible = ImGui::IsItemVisible();
+  }
+
+  // Feeds imgui_layout.cpp's measure_node() fallback for any class with no
+  // registered measure_fn (see ui_element::last_rendered_size()'s doc
+  // comment) -- generic, so no per-class code is needed here or there.
+  //
+  // Gated on item_visible: a node whose real ImGui item was entirely
+  // clipped this frame (e.g. scrolled out of an ancestor window's visible
+  // region, or rendered inside a BeginChild() that was itself fully
+  // clipped) gets a degenerate {0,0}-ish rect from ImGui regardless of the
+  // node's actual content -- ItemAdd()'s clip test short-circuits before
+  // the widget draws anything real. Feeding that into last_rendered_size()
+  // unconditionally corrupts the *next* frame's measure/arrange for this
+  // node's siblings (a leaf whose real natural height is, say, 22px
+  // suddenly "measures" as 0), and for a node whose arrange result itself
+  // depends on that measurement (e.g. a HorizontalLayout row's own
+  // BeginChild wrap), the wrong-then-right-then-wrong-again cycle repeats
+  // forever -- confirmed via WISH_LAYOUT_DEBUG_LOG as the mechanism behind
+  // a real user-reported flicker in a HorizontalLayout row sitting next to
+  // a Spring, scrolled out of view. Keeping the previous (real, from when
+  // this node last actually drew something) value instead means a
+  // temporarily-clipped node simply keeps reporting its last known-good
+  // size -- self_reports_rect is exempt since a Window/DockSpaceViewport
+  // that reached this point already succeeded its Begin(), so its
+  // self-reported rect is always real, never a clipped placeholder.
+  if (item_visible || self_reports_rect) {
+    vec2f new_last_rendered_size{
+        last_resolved_rect_max_.x - last_resolved_rect_min_.x, last_resolved_rect_max_.y - last_resolved_rect_min_.y};
+    if (std::ofstream* log = render_debug_log()) {
+      vec2f prev = node.last_rendered_size();
+      constexpr float kEpsilon = 0.5f;
+      // has_arranged() isn't a fit here (this runs for every leaf, arranged
+      // or not); (0,0) is this field's own genuine "never rendered before"
+      // bootstrap default (see ui_element::last_rendered_size()'s doc
+      // comment), so a first-ever transition away from exactly {0,0} is
+      // expected and not logged.
+      bool had_prior = prev.x != 0.0f || prev.y != 0.0f;
+      bool changed = std::abs(prev.x - new_last_rendered_size.x) > kEpsilon ||
+          std::abs(prev.y - new_last_rendered_size.y) > kEpsilon;
+      if (had_prior && changed) {
+        *log << "[frame " << ImGui::GetFrameCount() << "] " << render_debug_node_label(node)
+             << " last_rendered_size changed: (" << prev.x << "," << prev.y << ") -> (" << new_last_rendered_size.x
+             << "," << new_last_rendered_size.y << ")\n";
+        log->flush();
+      }
+    }
+    node.set_last_rendered_size(new_last_rendered_size);
   }
 
   // Attaches to whatever ImGui item the dispatch call above drew last -- see

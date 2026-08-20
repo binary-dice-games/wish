@@ -397,6 +397,8 @@ if(WISH_ENABLE_IMGUI)
   target_sources(wish_server PRIVATE
     src/imgui/imgui_renderer.hpp
     src/imgui/imgui_renderer.cpp
+    src/imgui/imgui_layout.hpp
+    src/imgui/imgui_layout.cpp
     src/imgui/imgui_ui_renderer.hpp
     src/imgui/imgui_ui_renderer.cpp
     src/imgui/imgui_plot_renderer.hpp

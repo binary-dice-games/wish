@@ -10,6 +10,7 @@
 
 #ifdef WISH_IMGUI_ENABLED
 
+#include <imgui/imgui_layout.hpp>
 #include <server/renderer.hpp>
 
 #include <imgui.h>
@@ -79,6 +80,51 @@ static void report_self_rect(const ui_element& node) {
   const_cast<ui_element&>(node)["__wish_win_rect_h__"_key] = size.y;
 }
 
+// The generic BeginGroup()/EndGroup() rect-capture wrap in
+// imgui_renderer::render_node() (needs_group_wrap) submits its own trailing
+// zero-size Dummy() immediately before EndGroup() -- a defensive workaround
+// there for a stale-rect fallback in ImGui's own EndGroup()/EndTable()
+// interplay (see that function's own comment). That Dummy() lands wherever
+// the cursor naturally sits after this node's own last child renders --
+// which, absent this fixup, is one style.ItemSpacing.y *past* the true
+// content bottom (ImGui's normal post-item cursor advance, reserved for
+// wherever the next sibling would start -- this happens whether or not that
+// last child was itself BeginChild()-wrapped). EndGroup()'s own ItemSize()
+// folds that inflated position into the group's reported height, which for
+// a node with no BeginChild() of its own between it and an ancestor Window
+// (nothing to reabsorb the excess into) genuinely extends that Window's own
+// scrollable content region by one ItemSpacing.y -- a real, visible spurious
+// scrollbar, not just an automation-rect inaccuracy.
+//
+// Landing here on (content bottom - ItemSpacing.y), one style.ItemSpacing.y
+// *short* of the true bottom, means this call's own Dummy() automatic
+// post-item advance (+ItemSpacing.y) puts the cursor exactly on the true
+// bottom -- so the outer caller's own trailing Dummy() (whose position
+// can't otherwise be influenced from here) submits there instead of one hop
+// further out. Called at the end of render_vertical_layout()/
+// render_horizontal_layout(), after every child (wrapped or not) has
+// rendered.
+//
+// Deliberately uses content_extent(), not arranged_size(): the latter is
+// "how much space this node was given" (its own row/column allocation, or
+// for a self-healed root, whatever the ambient avail happened to be), which
+// only equals the *true* content bottom when a stretch/fill child soaks up
+// the remainder. A node with no such child (e.g. file_browser_utils.cpp's
+// per-row icon-then-label HorizontalLayout, self-healing inside a Table
+// cell where the ambient GetContentRegionAvail() is "whatever's left in the
+// whole scrollable table region", not this one row) has a true content
+// bottom far short of its arranged_size() -- using arranged_size() there
+// jumped the cursor down by however much of the table's remaining scroll
+// region was ambiently available, opening a large visible gap before the
+// table's next row. See imgui_layout.cpp's arrange_vertical_layout()/
+// arrange_horizontal_layout(), which compute and stash content_extent().
+static void pin_cursor_to_arranged_bottom(const ui_element& node) {
+  vec2f pos = node.arranged_pos();
+  vec2f extent = node.content_extent();
+  ImGui::SetCursorPos(ImVec2(pos.x, pos.y + extent.y - ImGui::GetStyle().ItemSpacing.y));
+  ImGui::Dummy(ImVec2(0.0f, 0.0f));
+}
+
 // ── Core ──────────────────────────────────────────────────────────────────────
 
 void render_window(imgui_renderer& r, const ui_element& node, const context& s) {
@@ -134,6 +180,8 @@ void render_window(imgui_renderer& r, const ui_element& node, const context& s) 
       // the popup isn't open -- gating on now_open avoids capturing the
       // *enclosing* window's rect in that case.
       report_self_rect(node);
+      measure_node(r, node, s);
+      arrange_node(r, node, ImVec2(0.0f, 0.0f), ImGui::GetContentRegionAvail(), s);
       render_children(r, node, s);
       // App-level code (e.g. a form's on_event()) runs outside any ImGui
       // frame and can't call ImGui::CloseCurrentPopup() directly -- it
@@ -238,6 +286,8 @@ void render_window(imgui_renderer& r, const ui_element& node, const context& s) 
       const_cast<ui_element&>(node)["__was_docked__"_key] = is_docked;
     }
 
+    measure_node(r, node, s);
+    arrange_node(r, node, ImVec2(0.0f, 0.0f), ImGui::GetContentRegionAvail(), s);
     render_children(r, node, s);
   }
   // Drawn before End() (unconditionally, same reasoning as report_self_rect()'s
@@ -478,132 +528,110 @@ void render_separator_text(imgui_renderer&, const ui_element& node, const contex
 }
 
 void render_spring(imgui_renderer&, const ui_element& node, const context&) {
-  // Stashed by render_horizontal_layout()/render_vertical_layout() just
-  // before dispatching to this function (see their pre-scan/render-pass
-  // comments) -- absent when a Spring is used outside either layout, which
-  // falls back to a genuine zero-size no-op, mirroring Layout.width/height's
-  // "ignored outside its layout" convention. Both fields are floats (like
-  // report_self_rect()'s "__wish_win_rect_*__" fields above) rather than an
-  // axis string, so the caller does the one Dummy-size decision and this
-  // function stays a single unconditional call.
-  float w = node.get_as<float>("__wish_spring_w__"_key, 0.0f);
-  float h = node.get_as<float>("__wish_spring_h__"_key, 0.0f);
-  ImGui::Dummy(ImVec2(w, h));
+  // Sized by render_horizontal_layout()/render_vertical_layout()'s arrange
+  // pass (via ensure_arranged()) just before dispatching to this function --
+  // {0,0} when a Spring is used outside either layout (no arrange_fn ever
+  // ran for its parent), mirroring Layout.width/height's "ignored outside
+  // its layout" convention.
+  vec2f sz = node.arranged_size();
+  ImGui::Dummy(ImVec2(sz.x, sz.y));
 }
 
 void render_vertical_layout(imgui_renderer& r, const ui_element& node, const context& s) {
-  float spacing = node.get_as<float>("spacing"_key, 0.0f);
+  // ensure_arranged() resolves every child's position/size in one top-down
+  // pass (self-healing against the live cursor if no ancestor Window hook
+  // already did it -- see src/imgui/DESIGN.md) using each child's "height"
+  // hint (see Layout::height's field comment): 0 -> the child's own
+  // measured natural size, +N -> fixed pixels, -N -> a weighted share of
+  // whatever space remains. A Spring child (spring.cpp's "weight" field)
+  // folds its weight into the same stretch pool as a negative-height child.
+  ensure_arranged(r, node, s);
 
-  // Pre-scan children for a "height" hint (see Layout::height's field
-  // comment): 0 leaves a child auto-sized exactly as before; a positive
-  // value reserves fixed pixels; a negative value makes it a stretch row
-  // sharing whatever space remains, weighted by magnitude. ImGui is
-  // immediate-mode, so an auto child's height this frame isn't knowable
-  // ahead of rendering it -- instead its *last frame's* measured height
-  // (from `s.layout_height_cache`) is reserved here, and the cache entry
-  // is overwritten with this frame's actual measurement after it renders.
-  // This lets a fixed-height header/footer plus one stretch-filling body
-  // work regardless of child order, self-correcting within one frame of
-  // any auto child's height changing. A plain VerticalLayout of leaf
-  // widgets (no height set on any child) takes the same code path it
-  // always did, since fixed_total/stretch_weight_total stay at 0.
-  //
-  // A Spring child (see spring.cpp's "weight" field comment) folds its
-  // weight into the same stretch_weight_total pool as a negative-height
-  // child, ahead of the height==0/>0/<0 checks -- it has no "height" field
-  // of its own to read.
-  struct child_info {
-    ui_element* elem;
-    float height;
-    std::string id;
-    bool is_spring;
-    float spring_weight;
-  };
-  std::vector<child_info> children;
-  float fixed_total = 0.0f;
-  float stretch_weight_total = 0.0f;
-  int n = 0;
+  // arrange_node()'s cascade computes every descendant's position in one
+  // shared coordinate frame rooted at the top of this call chain -- but
+  // rendering re-enters a *fresh* local coordinate frame at every nested
+  // BeginChild() (below, and in render_horizontal_layout/render_splitter),
+  // and ImGui::SetCursorPos() always interprets its argument relative to
+  // whichever frame is current. Anchoring each child to
+  // "local_origin + (child_pos - node's own pos)" -- rather than the
+  // child's raw arranged_pos() -- keeps positioning correct however many
+  // BeginChild() levels deep this call happens to be: when unwrapped,
+  // local_origin already equals node's own arranged_pos() (ensure_arranged
+  // used the live cursor as that origin), so this reduces to the child's
+  // absolute position; when wrapped, local_origin is the fresh BeginChild's
+  // own (0,0)-ish start, so this correctly becomes a relative offset
+  // instead of double-counting node's own position a second time.
+  ImVec2 local_origin = ImGui::GetCursorPos();
+  vec2f self_pos = node.arranged_pos();
+
   node.for_each_child_ordered([&](key_t, ui_element& child) {
+    vec2f pos = child.arranged_pos();
+    vec2f size = child.arranged_size();
+    ImGui::SetCursorPos(ImVec2(local_origin.x + (pos.x - self_pos.x), local_origin.y + (pos.y - self_pos.y)));
+
     bool is_spring = child.as<key_t>(dynamic::CLASS) == "Spring"_key;
-    if (is_spring) {
-      float weight = child.get_as<float>("weight"_key, 1.0f);
-      if (weight < 0.0f)
-        weight = 0.0f;
-      stretch_weight_total += weight;
-      children.push_back({&child, 0.0f, stable_id(child), true, weight});
-      ++n;
+    float height_hint = is_spring ? 0.0f : child.get_as<float>("height"_key, 0.0f);
+    // size.x/size.y <= 0 is also treated as "don't wrap", not just an auto
+    // height hint -- ImGui::BeginChild() treats a 0 (or negative) component
+    // as "fill the parent's remaining space on that axis" (CalcItemSize()'s
+    // size==0 branch), NOT "auto-size to content" the way this code
+    // originally assumed. A stretch child (height:-N) whose resolved share
+    // came out to exactly 0 this frame (e.g. the stretch pool momentarily
+    // exhausted) would otherwise get handed BeginChild(w, 0), which ImGui
+    // silently reinterprets as "as tall as whatever's left in the ambient
+    // scroll region" -- often much taller than intended, and if that
+    // inflated real render then feeds back into next frame's own natural-
+    // size fallback for an unregistered leaf sibling, a sustained one-frame-
+    // period oscillation results (confirmed via WISH_LAYOUT_DEBUG_LOG on a
+    // HorizontalLayout row containing a Spring: an adjacent auto-height
+    // slider's rendered size alternated between its real ~22px height and a
+    // multi-hundred-pixel "filled" height every single frame).
+    if (is_spring || height_hint == 0.0f || size.x <= 0.0f || size.y <= 0.0f) {
+      // No BeginChild() wrap: a Spring has no content to constrain, and an
+      // auto (height:0) child renders directly at its own natural size --
+      // wrapping it anyway would change ImGui's "last item" identity (a
+      // BeginChild counts as an item in its own right), breaking anything
+      // that keys off the child's own top-level item after the fact, e.g.
+      // a following ContextMenu sibling's BeginPopupContextItem() attaching
+      // to "the preceding item". Position is still exact even without the
+      // wrap, since SetCursorPos() above already placed it precisely.
+      r.render_node(child, s);
       return;
     }
-    float h = child.get_as<float>("height"_key, 0.0f);
-    std::string id = stable_id(child);
-    children.push_back({&child, h, id, false, 0.0f});
-    if (h > 0.0f)
-      fixed_total += h;
-    else if (h < 0.0f)
-      stretch_weight_total += -h;
-    else {
-      auto it = s.layout_height_cache.find(id);
-      if (it != s.layout_height_cache.end())
-        fixed_total += it->second;
-    }
-    ++n;
+
+    // Constrain the child to a dedicated child window of the computed row
+    // size, so nested "fill available height" fields (Table's
+    // outer_height=0, ...) resolve against this row instead of the whole
+    // VerticalLayout's content region. NoScrollbar/NoScrollWithMouse: this
+    // child exists purely to pin the row to a computed size, not to be
+    // independently scrollable -- any widget inside that actually needs
+    // scrolling (a Table's own ScrollY, ...) already provides its own.
+    // Sizes here are exact (from the measure pass), not estimated -- unlike
+    // the pre-refactor version's *last frame's* cache-based estimate.
+    auto child_id = "##vl_row_" + stable_id(child);
+    ImGui::BeginChild(
+        child_id.c_str(), ImVec2(size.x, size.y), ImGuiChildFlags_None,
+        ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    r.render_node(child, s);
+    ImGui::EndChild();
   });
-  float spacing_total = (n > 1) ? spacing * static_cast<float>(n - 1) : 0.0f;
-  float stretch_pool = std::max(0.0f, ImGui::GetContentRegionAvail().y - fixed_total - spacing_total);
 
-  bool first = true;
-  for (auto& c : children) {
-    if (!first && spacing > 0.0f)
-      ImGui::SetCursorPosY(ImGui::GetCursorPosY() + spacing);
-    first = false;
-
-    if (c.is_spring) {
-      // No content to constrain, so no BeginChild() wrap -- just stamp
-      // this frame's computed extent for render_spring() to read.
-      // Cross-axis size (width) is 0, not the row's available width -- a
-      // Spring has no content, so it must never be what drives the row's
-      // own size; real siblings (the button, ...) already do that via
-      // ImGui's normal same-line item-height tracking.
-      float row_h = stretch_weight_total > 0.0f ? stretch_pool * (c.spring_weight / stretch_weight_total) : 0.0f;
-      (*c.elem)["__wish_spring_w__"_key] = 0.0f;
-      (*c.elem)["__wish_spring_h__"_key] = row_h;
-      r.render_node(*c.elem, s);
-    } else if (c.height != 0.0f) {
-      // Constrain the child to a dedicated child window of the computed
-      // row height, so nested "fill available height" fields (Table's
-      // outer_height=0/negative) resolve against this row instead of the
-      // whole VerticalLayout's content region.
-      float row_h = c.height > 0.0f
-          ? c.height
-          : (stretch_weight_total > 0.0f ? stretch_pool * (-c.height / stretch_weight_total) : 0.0f);
-      // NoScrollbar/NoScrollWithMouse: this child exists purely to pin the
-      // row to a computed size, not to be independently scrollable -- any
-      // widget inside that actually needs scrolling (a Table's own ScrollY,
-      // ...) already provides its own. Without this, a few pixels of
-      // rounding/measurement lag between the size computed here and what
-      // the child actually renders (worse when nested several rows deep, as
-      // each level's own lag compounds) trips ImGui's overflow check and
-      // pops a spurious scrollbar on this purely-structural wrapper.
-      auto child_id = "##vl_row_" + c.id;
-      ImGui::BeginChild(
-          child_id.c_str(), ImVec2(0.0f, row_h), ImGuiChildFlags_None,
-          ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-      r.render_node(*c.elem, s);
-      ImGui::EndChild();
-    } else {
-      float y_before = ImGui::GetCursorPosY();
-      r.render_node(*c.elem, s);
-      s.layout_height_cache[c.id] = ImGui::GetCursorPosY() - y_before;
-    }
-  }
+  pin_cursor_to_arranged_bottom(node);
 }
 
 void render_horizontal_layout(imgui_renderer& r, const ui_element& node, const context& s) {
-  float spacing = node.get_as<float>("spacing"_key, 0.0f);
   auto align = node.get_as<std::string>("align"_key, "left");
 
   if (align == "right") {
-    // Sum explicit child widths to compute the right-edge offset.
+    // Sum explicit child widths to compute the right-edge offset, then
+    // shift the starting cursor before ensure_arranged() below captures it
+    // as this row's origin -- so the whole arrange pass runs against the
+    // already-shifted content region, same as the pre-refactor version.
+    // Must match arrange_horizontal_layout()'s own "spacing" fallback (see
+    // imgui_layout.cpp's effective_spacing()) or this offset and the
+    // arrange pass it precedes would disagree about the row's total width.
+    float spacing_field = node.get_as<float>("spacing"_key, 0.0f);
+    float spacing = spacing_field > 0.0f ? spacing_field : ImGui::GetStyle().ItemSpacing.x;
     float total = 0.0f;
     int n = 0;
     node.for_each_child_ordered([&](key_t, ui_element& child) {
@@ -618,136 +646,79 @@ void render_horizontal_layout(imgui_renderer& r, const ui_element& node, const c
       ImGui::SetCursorPosX(ImGui::GetCursorPosX() + offset);
   }
 
-  // Pre-scan children for a "width" hint (see Layout::width's field
-  // comment): 0 leaves a child auto-sized exactly as before; a positive
-  // value reserves fixed pixels; a negative value makes it a stretch
-  // column sharing whatever space remains, weighted by magnitude. This
-  // pass only measures -- rendering happens below -- so a plain
-  // HorizontalLayout of leaf widgets (no width set on any child) takes
-  // the same code path it always did.
-  //
-  // Also pre-scan each child's own "height" hint, independently of width:
-  // unset/0 keeps the child auto-sized to its content (see the
-  // ImGuiChildFlags_AutoResizeY comment below); a nonzero value (positive
-  // fixed, or negative to fill the row's remaining vertical space) opts
-  // the column into a real fixed-size child window instead, so a nested
-  // "fill available height" field (VerticalLayout row stretch, Table's
-  // outer_height=0) can resolve against the row's actual allocated
-  // height rather than against an auto-sizing container asking itself
-  // to fill "remaining space in itself". Columns sit side by side rather
-  // than stacking, so unlike the width stretch pool above, every stretch
-  // column independently gets the same full row height -- no pool to
-  // divide.
-  //
-  // A Spring child (see spring.cpp's "weight" field comment) folds its
-  // weight into the same stretch_weight_total pool as a negative-width
-  // child, ahead of the width==0/>0/<0 checks -- it has no "width" field
-  // of its own to read.
-  struct child_info {
-    ui_element* elem;
-    float width;
-    float height;
-    bool is_spring;
-    float spring_weight;
-  };
-  std::vector<child_info> children;
-  float fixed_total = 0.0f;
-  float stretch_weight_total = 0.0f;
-  int n = 0;
-  node.for_each_child_ordered([&](key_t, ui_element& child) {
-    bool is_spring = child.as<key_t>(dynamic::CLASS) == "Spring"_key;
-    if (is_spring) {
-      float weight = child.get_as<float>("weight"_key, 1.0f);
-      if (weight < 0.0f)
-        weight = 0.0f;
-      stretch_weight_total += weight;
-      children.push_back({&child, 0.0f, 0.0f, true, weight});
-      ++n;
-      return;
-    }
-    float w = child.get_as<float>("width"_key, 0.0f);
-    float h = child.get_as<float>("height"_key, 0.0f);
-    children.push_back({&child, w, h, false, 0.0f});
-    if (w > 0.0f)
-      fixed_total += w;
-    else if (w < 0.0f)
-      stretch_weight_total += -w;
-    ++n;
-  });
-  float spacing_total = (n > 1) ? spacing * static_cast<float>(n - 1) : 0.0f;
-  float stretch_pool = std::max(0.0f, ImGui::GetContentRegionAvail().x - fixed_total - spacing_total);
-  float avail_y = ImGui::GetContentRegionAvail().y;
+  // ensure_arranged() resolves every child's position/size in one top-down
+  // pass using each child's "width" hint (see Layout::width's field
+  // comment): 0 -> the child's own measured natural size, +N -> fixed
+  // pixels, -N -> a weighted share of whatever space remains. Each child's
+  // own "height" hint is honored independently (0 -> natural, +N -> fixed,
+  // -N -> fill the row) -- see arrange_horizontal_layout() in
+  // imgui_layout.cpp. A Spring child (spring.cpp's "weight" field) folds
+  // its weight into the same width stretch pool as a negative-width child.
+  ensure_arranged(r, node, s);
+
+  // See render_vertical_layout()'s identical comment above: anchor each
+  // child to this call's own current (possibly nested-BeginChild-local)
+  // cursor frame, not the child's raw (globally-cascaded) arranged_pos().
+  ImVec2 local_origin = ImGui::GetCursorPos();
+  vec2f self_pos = node.arranged_pos();
 
   ImGui::BeginGroup();
-  bool first = true;
-  for (auto& c : children) {
-    if (!first)
-      ImGui::SameLine(0.0f, spacing);
-    first = false;
-    // Each child gets its own group so ImGui::SameLine() below anchors to
-    // the child's whole bounding box, not just the last individual widget
-    // it happened to render. Without this, a child that is itself a
-    // multi-widget subtree (a nested VerticalLayout, a Table, ...) throws
-    // off SameLine() for every sibling that follows it -- see DESIGN.md's
-    // "HorizontalLayout row containing VerticalLayout columns" case.
+  node.for_each_child_ordered([&](key_t, ui_element& child) {
+    vec2f pos = child.arranged_pos();
+    vec2f size = child.arranged_size();
+    ImGui::SetCursorPos(ImVec2(local_origin.x + (pos.x - self_pos.x), local_origin.y + (pos.y - self_pos.y)));
+
+    // Each child gets its own group so a container child (a nested
+    // VerticalLayout, a Table, ...) reports one coherent bounding box to
+    // imgui_renderer::render_node()'s own rect-capture wrap, same as
+    // before this refactor -- see DESIGN.md's "HorizontalLayout row
+    // containing VerticalLayout columns" case.
     ImGui::BeginGroup();
-    if (c.is_spring) {
-      // No content to constrain, so no BeginChild() wrap -- just stamp
-      // this frame's computed extent for render_spring() to read. Cross-axis
-      // size (height) is 0, not the row's full avail_y -- a Spring has no
-      // content, so it must never be what drives the row's own height; a
-      // real sibling (a fixed-height column, ...) already does that.
-      float col_w = stretch_weight_total > 0.0f ? stretch_pool * (c.spring_weight / stretch_weight_total) : 0.0f;
-      (*c.elem)["__wish_spring_w__"_key] = col_w;
-      (*c.elem)["__wish_spring_h__"_key] = 0.0f;
-      r.render_node(*c.elem, s);
-    } else if (c.width != 0.0f) {
-      // Constrain the child to a dedicated child window of the computed
-      // column width, so nested "fill available width" fields (InputText's
-      // width=-1, Table's outer_width=0/negative) resolve against this
-      // column instead of the whole HorizontalLayout's content region.
-      float col_w = c.width > 0.0f
-          ? c.width
-          : (stretch_weight_total > 0.0f ? stretch_pool * (-c.width / stretch_weight_total) : 0.0f);
-      // A 0.0f height in BeginChild() means "stretch to fill the parent's
-      // remaining vertical space", not "auto-size to content" -- without
-      // ImGuiChildFlags_AutoResizeY every fixed-width column would balloon
-      // to the full remaining window height, shoving whatever follows this
-      // row far down (this broke Notepad's toolbar row: each fixed-width
-      // button's child window ate the whole window height, pushing the
-      // tab bar/editor below it into a sliver at the bottom). A column that
-      // opts in via a nonzero "height" (see the pre-scan comment above)
-      // wants the opposite: a real fixed-size child so its own content can
-      // stretch to fill it, so it skips AutoResizeY in favor of an actual
-      // computed pixel height.
-      float col_h = 0.0f;
-      ImGuiChildFlags child_flags = ImGuiChildFlags_AutoResizeY;
-      // NoScrollbar/NoScrollWithMouse for the same reason as
-      // render_vertical_layout()'s row wrap above: a nonzero-height column
-      // is a pure size-constraint container, not a scroll target, and a few
-      // pixels of measurement lag against its computed col_h (compounded
-      // when this column's own content nests another stretch row/column)
-      // would otherwise trip ImGui's overflow check and add a spurious
-      // scrollbar here on top of whatever's already scrolling inside.
-      ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
-      if (c.height > 0.0f) {
-        col_h = c.height;
-        child_flags = ImGuiChildFlags_None;
-        window_flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
-      } else if (c.height < 0.0f) {
-        col_h = avail_y;
-        child_flags = ImGuiChildFlags_None;
-        window_flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
-      }
-      auto child_id = "##hl_col_" + stable_id(*c.elem);
-      ImGui::BeginChild(child_id.c_str(), ImVec2(col_w, col_h), child_flags, window_flags);
-      r.render_node(*c.elem, s);
-      ImGui::EndChild();
+    bool is_spring = child.as<key_t>(dynamic::CLASS) == "Spring"_key;
+    float width_hint = is_spring ? 0.0f : child.get_as<float>("width"_key, 0.0f);
+    // size.x/size.y <= 0 also forces "don't wrap" -- see
+    // render_vertical_layout()'s identical guard for the full reasoning.
+    // This is the branch that actually hit it in practice: a column's own
+    // "width" hint is nonzero (entering this branch) while its "height" is
+    // left auto (0, the common case), so size.y falls through to this
+    // child's own measured_size().y -- for an unregistered leaf (e.g.
+    // SliderFloat), that's the last_rendered_size() fallback, which is 0 on
+    // this node's very first frame or right after a prior frame's render
+    // got inflated by this exact bug. The old comment below claiming a
+    // nonzero-width column's auto height is "never an ImGui '0 means
+    // stretch' sentinel" was simply wrong -- confirmed against ImGui's own
+    // BeginChildEx()/CalcItemSize(): a 0 component always means "fill the
+    // parent's remaining space on that axis", not "auto-size to content".
+    if (is_spring || width_hint == 0.0f || size.x <= 0.0f || size.y <= 0.0f) {
+      // No BeginChild() wrap: a Spring has no content to constrain, and an
+      // auto (width:0) child renders directly at its own natural size --
+      // wrapping it anyway would change ImGui's "last item" identity (a
+      // BeginChild counts as an item in its own right), breaking anything
+      // that keys off the child's own top-level item after the fact (see
+      // render_vertical_layout()'s identical reasoning above).
+      r.render_node(child, s);
     } else {
-      r.render_node(*c.elem, s);
+      // Constrain the child to a dedicated child window of the computed
+      // column size, so nested "fill available width/height" fields
+      // (InputText's width=-1, Table's outer_width/height=0, ...) resolve
+      // against this column instead of the whole HorizontalLayout's
+      // content region. NoScrollbar/NoScrollWithMouse for the same reason
+      // as render_vertical_layout()'s row wrap: a purely structural
+      // size-constraint container is not a scroll target. Sizes here are
+      // exact (from the measure pass), not estimated -- this is what
+      // structurally prevents the historical Notepad toolbar regression
+      // (fixed-width buttons ballooning to the full window height).
+      auto child_id = "##hl_col_" + stable_id(child);
+      ImGui::BeginChild(
+          child_id.c_str(), ImVec2(size.x, size.y), ImGuiChildFlags_None,
+          ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+      r.render_node(child, s);
+      ImGui::EndChild();
     }
     ImGui::EndGroup();
-  }
+  });
+
+  pin_cursor_to_arranged_bottom(node);
   ImGui::EndGroup();
 }
 
@@ -774,6 +745,15 @@ void render_horizontal_layout(imgui_renderer& r, const ui_element& node, const c
 // exactly like the referenced issue's own 3-pane demo calls Splitter()
 // twice.
 void render_splitter(imgui_renderer& r, const ui_element& node, const context& s) {
+  // Splitter's own outer box, so a Splitter that is itself an auto/stretch
+  // child of a VerticalLayout/HorizontalLayout gets a resolved rect
+  // (introspectable via automation, same as every other layout-aware
+  // class) -- everything below still reads the live ambient
+  // GetContentRegionAvail(), unchanged, since the wrapping BeginChild an
+  // enclosing Layout already places this Splitter in already constrains
+  // that correctly on its own.
+  ensure_arranged(r, node, s);
+
   auto orientation = node.get_as<std::string>("orientation"_key, "vertical");
   bool is_vertical = orientation != "horizontal";
   float thickness = std::max(1.0f, node.get_as<float>("thickness"_key, 4.0f));
@@ -1332,6 +1312,27 @@ void render_table(imgui_renderer& r, const ui_element& node, const context& s) {
   float outer_h = node.get_as<float>("outer_height"_key, 0.0f);
   float inner_w = node.get_as<float>("inner_width"_key, 0.0f);
   bool headers = node.get_as<bool>("headers"_key, false);
+
+  // outer_width/outer_height of exactly 0 keeps ImGui's own "auto-size to
+  // content" default UNLESS an enclosing VerticalLayout/HorizontalLayout
+  // already gave this Table a real hint-driven box this frame (e.g. a
+  // stretch row/column) -- ensure_arranged() returning true is exactly
+  // that signal: some ancestor's top-down arrange pass already resolved
+  // this node before this call, rather than this call itself having to
+  // self-heal against the ambient window (a bare Table with no Layout
+  // ancestor at all -- a direct Window child, or a test calling
+  // render_node() directly). This is a deliberate, narrower rule (see
+  // src/imgui/PLAN.md step 6) rather than always filling when 0, which
+  // would silently change every Table that intentionally auto-sizes today
+  // -- the direct, named fix for the File Explorer bug's root cause (a
+  // Table inside a stretch VerticalLayout row not filling that row).
+  bool has_layout_box = ensure_arranged(r, node, s);
+  if (has_layout_box) {
+    if (outer_w == 0.0f)
+      outer_w = node.arranged_size().x;
+    if (outer_h == 0.0f)
+      outer_h = node.arranged_size().y;
+  }
 
   if (!ImGui::BeginTable(id.c_str(), columns, ImGuiTableFlags(flags), ImVec2(outer_w, outer_h), inner_w))
     return;
