@@ -159,6 +159,27 @@ void render_window(imgui_renderer& r, const ui_element& node, const context& s) 
 
     bool now_open = ImGui::BeginPopupModal(iml.c_str(), p_open, ImGuiWindowFlags(fl));
     if (now_open) {
+      // Same settle-frames need as render_menu()/render_combo()/
+      // render_menu_button(): opening the modal enqueues no wish event of
+      // its own, so nothing else forces the couple of follow-up frames
+      // ImGui's own AlwaysAutoResize sizing (or any other content whose
+      // natural size comes from ui_element::last_rendered_size() rather
+      // than a measure_fn formula -- see imgui_layout.cpp's
+      // measure_dispatch_fns() comment -- and so needs at least one real
+      // render to know its own size) may need to converge.
+      // IsWindowAppearing() is true exactly the frame this popup starts
+      // appearing. This alone does not fix a node that can never reach a
+      // real first measurement in the first place (see
+      // imgui_renderer.cpp's item_visible/had_prior_confirmed_size gating
+      // for that -- the actual fix for message boxes opening too small
+      // with their message text clipped off entirely), but is still a
+      // real, independent gap on its own: without it, content that
+      // legitimately needs 2-3 frames to settle only gets there if some
+      // unrelated input event happens to keep the render loop alive long
+      // enough, exactly like every other popup-opening call site here.
+      if (ImGui::IsWindowAppearing())
+        s.dirty.store(kDirtySettleFrames, std::memory_order_release);
+
       // BeginPopupModal() returns false without calling Begin() at all when
       // the popup isn't open -- gating on now_open avoids capturing the
       // *enclosing* window's rect in that case.
@@ -242,6 +263,14 @@ void render_window(imgui_renderer& r, const ui_element& node, const context& s) 
   }
 
   if (window_open) {
+    // Same settle-frames need as the modal path above (see its own comment
+    // for the full "AlwaysAutoResize + last_rendered_size()-fallback
+    // content needs a second real frame to converge" reasoning) -- applies
+    // here too since any Window, not just a modal one, can set
+    // "flags":"AlwaysAutoResize".
+    if (ImGui::IsWindowAppearing())
+      s.dirty.store(kDirtySettleFrames, std::memory_order_release);
+
     // ImGui's docking branch resizes a window to fit its dock node/tab
     // region; on undock it does not restore the pre-dock floating size
     // (docking is handled entirely inside ImGui, invisible to wish). Track

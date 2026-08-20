@@ -531,26 +531,52 @@ void imgui_renderer::render_node(const ui_element& node, const context& s) {
   // registered measure_fn (see ui_element::last_rendered_size()'s doc
   // comment) -- generic, so no per-class code is needed here or there.
   //
-  // Gated on item_visible: a node whose real ImGui item was entirely
-  // clipped this frame (e.g. scrolled out of an ancestor window's visible
-  // region, or rendered inside a BeginChild() that was itself fully
-  // clipped) gets a degenerate {0,0}-ish rect from ImGui regardless of the
-  // node's actual content -- ItemAdd()'s clip test short-circuits before
-  // the widget draws anything real. Feeding that into last_rendered_size()
-  // unconditionally corrupts the *next* frame's measure/arrange for this
-  // node's siblings (a leaf whose real natural height is, say, 22px
-  // suddenly "measures" as 0), and for a node whose arrange result itself
-  // depends on that measurement (e.g. a HorizontalLayout row's own
-  // BeginChild wrap), the wrong-then-right-then-wrong-again cycle repeats
-  // forever -- confirmed via WISH_LAYOUT_DEBUG_LOG as the mechanism behind
-  // a real user-reported flicker in a HorizontalLayout row sitting next to
-  // a Spring, scrolled out of view. Keeping the previous (real, from when
-  // this node last actually drew something) value instead means a
-  // temporarily-clipped node simply keeps reporting its last known-good
-  // size -- self_reports_rect is exempt since a Window/DockSpaceViewport
-  // that reached this point already succeeded its Begin(), so its
-  // self-reported rect is always real, never a clipped placeholder.
-  if (item_visible || self_reports_rect) {
+  // Gated on item_visible -- EXCEPT when this node has no prior confirmed-
+  // good value to protect (last_rendered_size() still reads the bootstrap
+  // default {0,0}, meaning it has never captured a real size before), in
+  // which case this frame's computed size is trusted even if currently
+  // reported invisible. Both halves of this rule are load-bearing, each
+  // fixing a distinct real bug:
+  //
+  // - Protecting an EXISTING good value (the original rule) matters
+  //   because a node whose real ImGui item was entirely clipped this frame
+  //   (e.g. scrolled out of an ancestor window's visible region, or
+  //   rendered inside a BeginChild() that was itself fully clipped -- see
+  //   ImGuiWindow::SkipItems, which makes a widget call return before it
+  //   ever computes a real bb at all, e.g. SliderScalar()'s own
+  //   `if (window->SkipItems) return false;`) can get a stale, unrelated
+  //   rect from ImGui regardless of the node's actual content. Feeding
+  //   that into last_rendered_size() unconditionally corrupts the *next*
+  //   frame's measure/arrange for this node's siblings, and for a node
+  //   whose arrange result itself depends on that measurement, the
+  //   wrong-then-right-then-wrong-again cycle repeats forever -- confirmed
+  //   via WISH_LAYOUT_DEBUG_LOG as the mechanism behind a real
+  //   user-reported flicker in a HorizontalLayout row sitting next to a
+  //   Spring, scrolled out of view.
+  // - Trusting a FIRST-EVER measurement even while reported invisible
+  //   matters because refusing to ever go first creates a real, separate
+  //   deadlock: message_box.cpp's icon+message HorizontalLayout, freshly
+  //   built every time the dialog opens, has no measure_fn (see
+  //   imgui_layout.cpp's measure_dispatch_fns() comment) so its own
+  //   AlwaysAutoResize Window starts one frame too small; that put the
+  //   message Label's first real render partially outside the window's
+  //   still-too-small clip rect (IsItemVisible() false). Unconditionally
+  //   gating on item_visible then permanently blocks last_rendered_size()
+  //   from ever updating: visible-depends-on-window-size, window-size-
+  //   depends-on-last-rendered-size, last-rendered-size-update-depends-on-
+  //   visible -- a genuine circular deadlock that persists no matter how
+  //   many more frames render (confirmed via a temporary per-frame stderr
+  //   trace: item_visible stayed false and last_rendered_size stayed
+  //   {0,0} for 100+ consecutive frames). There is no "last known-good"
+  //   value to protect in this case -- the bootstrap {0,0} isn't one --
+  //   so trusting the fresh (real, per ImGui::ItemAdd() stamping
+  //   g.LastItemData.Rect from the widget's own already-computed bb
+  //   *before* its clip early-return -- confirmed against ImGui's own
+  //   source, e.g. TextEx() calls CalcTextSize() and ItemSize() ahead of
+  //   ItemAdd()) measurement is strictly better than leaving it at {0,0}
+  //   forever.
+  bool had_prior_confirmed_size = node.last_rendered_size().x != 0.0f || node.last_rendered_size().y != 0.0f;
+  if (item_visible || self_reports_rect || !had_prior_confirmed_size) {
     vec2f new_last_rendered_size{
         last_resolved_rect_max_.x - last_resolved_rect_min_.x, last_resolved_rect_max_.y - last_resolved_rect_min_.y};
     if (std::ofstream* log = render_debug_log()) {

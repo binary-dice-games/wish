@@ -845,6 +845,73 @@ real per-row icon+filename cells (all fixed, matching the pre-Part-3
 baseline exactly) and the demo's Misc/Tables tabs (unaffected, no
 regression) -- plus the full `ctest` suite.
 
+### Bug found after this revision shipped: `message_box`'s icon+message row deadlocked permanently too small
+
+A user report ("message boxes are failing to render the text and the size
+of the window is too small") turned up a second real bug from the same
+root change as the `stable_id()` one above -- item 3's "auto children
+render via natural ImGui flow" plus the measure-formula deletions above
+combine to make a fresh, never-before-rendered `Label`/`Image` pair's real
+size unknowable until it has rendered once for real (see `DESIGN.md`'s
+"Measure pass" section, "self-correcting immediately after" paragraph).
+`message_box.cpp`'s icon+message `HorizontalLayout` is rebuilt from scratch
+every time any message box opens, inside an `"AlwaysAutoResize"` modal
+`Window` that (being a brand-new ImGui window id with no prior content-size
+data) starts one frame too small. That put the message `Label`'s first
+real render partially outside the window's still-small clip rect
+(`ImGui::IsItemVisible()` false).
+
+`imgui_renderer.cpp`'s `item_visible` gate on updating
+`ui_element::last_rendered_size()` (added for the `ScrolledOffscreen
+HorizontalLayoutChildDoesNotFlicker` fix, Part 1) refused that update
+unconditionally while invisible -- which, for a node that has *never* had
+a real value to protect in the first place, doesn't buy a one-frame lag,
+it creates a permanent deadlock: visible depends on window size, window
+size depends on `last_rendered_size()`, and the `last_rendered_size()`
+update depends on visible. The dialog stayed stuck too small, with its
+message text invisible, no matter how many more frames rendered --
+confirmed via a temporary per-frame stderr trace holding steady at
+`item_visible=false` for 100+ consecutive frames.
+
+Fixed by narrowing the gate: refuse the update while invisible only when
+there is an *existing* confirmed-good value to protect (`last_rendered_
+size()` is not still the `{0,0}` bootstrap default); a node with nothing
+yet to protect trusts this frame's freshly-computed rect even while
+reported invisible. This is safe because `ImGui::ItemAdd()` (confirmed
+against ImGui's own source) stamps `g.LastItemData.Rect` from the widget's
+own already-computed bounding box *before* its clip early-return -- e.g.
+`TextEx()`/`SliderScalar()` both call `CalcTextSize()`/`CalcItemWidth()`
+and `ItemSize()` ahead of `ItemAdd()` -- so "invisible" means "off ImGui's
+clip rect this frame", not "size data is corrupt". The original flicker
+bug's real risk is narrower than "any invisible item": a widget whose
+*own* `ItemAdd()` never even runs because an enclosing `BeginChild()` was
+itself entirely clipped (`window->SkipItems` short-circuits the widget
+call before it computes anything) can leave a genuinely stale/unrelated
+rect behind -- exactly the case where an *existing* good value must be
+protected, which the narrowed gate still does.
+
+Also added (a smaller, independent, and not by itself sufficient fix,
+folded in alongside since it closes a real, separate gap): a
+`kDirtySettleFrames` nudge on `ImGui::IsWindowAppearing()` for a modal
+`Window`'s open transition, mirroring `render_menu()`/`render_combo()`'s
+identical existing pattern -- opening a modal enqueues no wish event of
+its own, so without this nothing else forces the couple of follow-up
+frames some content may need to converge. A non-modal `Window` using
+`"AlwaysAutoResize"` gets the same nudge on its own appearing frame for
+the same reason.
+
+New regression test:
+`AutoResizeWindowGrowsToFitFreshWideLabelInsteadOfDeadlocking`
+(`tests/test_imgui_renderer.cpp`) -- an `AlwaysAutoResize` `Window` around
+a fresh icon+message `HorizontalLayout`, rendered for several frames with
+no other input, asserting the message's real (wide) size gets picked up
+rather than staying stuck at `{0,0}`. `ScrolledOffscreenHorizontalLayout
+ChildDoesNotFlicker`'s own comment was updated to document why the
+narrowed gate doesn't regress it. Verified live via automation against the
+demo's own "Message Box" showcase (all six button presets) and the
+notepad/file-dialog/file-explorer scenarios Part 3's earlier fixes already
+covered, confirming no regression there either.
+
 Verified via the full `ctest` suite (all `test_imgui_layout`/
 `test_imgui_renderer` tests pass unmodified except two `Table`-formula
 tests, which were rewritten to assert against a real render instead of a

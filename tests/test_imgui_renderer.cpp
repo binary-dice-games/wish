@@ -1897,8 +1897,11 @@ TEST_F(ImguiRendererTest, ScrolledOffscreenHorizontalLayoutChildDoesNotFlicker) 
   // the *next* frame's measure/arrange for the very same node -- a
   // sustained 2-frame oscillation between the real size and the degenerate
   // one. Fixed at two points: imgui_renderer.cpp's render_node() now only
-  // updates last_rendered_size() when ImGui::IsItemVisible() is true
-  // (otherwise it keeps whichever size was last known-good); and
+  // updates last_rendered_size() when ImGui::IsItemVisible() is true OR
+  // there is no prior confirmed-good value to protect yet (see that call
+  // site's own doc comment -- the second half of that condition exists for
+  // a different bug, MessageBoxOpensAtCorrectSizeWithoutCorruptingText
+  // below, and must not regress *this* test); and
   // render_horizontal_layout()/render_vertical_layout() no longer hand a
   // literal 0 to ImGui::BeginChild() (that means "fill remaining space" to
   // ImGui, not "auto-size to content" -- see those call sites' own doc
@@ -1937,6 +1940,52 @@ TEST_F(ImguiRendererTest, ScrolledOffscreenHorizontalLayoutChildDoesNotFlicker) 
     EXPECT_FLOAT_EQ(sizes[i].x, sizes[0].x) << "frame " << i;
     EXPECT_FLOAT_EQ(sizes[i].y, sizes[0].y) << "frame " << i;
   }
+}
+
+TEST_F(ImguiRendererTest, AutoResizeWindowGrowsToFitFreshWideLabelInsteadOfDeadlocking) {
+  // Regression test for a real user-reported bug (message_box.cpp's
+  // "Confirm"/etc. dialogs opening far too small with the message text
+  // missing entirely): an "AlwaysAutoResize" Window's own size starts
+  // small on the very first frame a brand-new window id appears (ImGui has
+  // no prior content-size data for it yet), same as message_box.cpp's
+  // icon+message HorizontalLayout -- built fresh every time the dialog
+  // opens, from a fresh Image/Label pair with no measure_fn of their own
+  // (see imgui_layout.cpp's measure_dispatch_fns() comment), so their real
+  // size isn't known until they've rendered once for real. That first real
+  // render lands partially outside the window's still-small clip rect
+  // (ImGui::IsItemVisible() false for the Label). Before this fix,
+  // imgui_renderer.cpp's render_node() unconditionally refused to update
+  // ui_element::last_rendered_size() while invisible, which permanently
+  // blocked the Label's real size from ever being picked up on ANY later
+  // frame either (visible depends on window size, window size depends on
+  // last_rendered_size, last_rendered_size update depends on visible -- a
+  // true deadlock, not a one-frame startup glitch): the window stayed
+  // stuck too small forever, no matter how many more frames rendered.
+  constexpr auto desc = R"({
+    "type": "Window", "title": "MB", "flags": "AlwaysAutoResize",
+    "children": { "body": { "type": "HorizontalLayout", "spacing": 12, "children": {
+      "icon": { "type": "Image", "src": "res/icons/msgbox_question.png", "width": 32, "height": 32 },
+      "message": { "type": "Label", "text": "This is a fairly long message that must not be clipped." }
+    }}}
+  })";
+  auto map = bdg::wish::import_json(desc);
+  auto& message = *map["body.message"];
+  auto& body = *map["body"];
+
+  // Render several frames with no other input -- nothing else nudges this
+  // along; if it's still going to deadlock, it deadlocks here.
+  for (int i = 0; i < 6; ++i) {
+    renderer_->begin_frame();
+    renderer_->render_node(*map[""], *sess_);
+    renderer_->end_frame();
+  }
+
+  // The message must have picked up its real (wide) size, not be stuck at
+  // the {0,0} bootstrap default forever.
+  EXPECT_GT(message.last_rendered_size().x, 100.0f);
+  // "body" (the HorizontalLayout) must have grown to actually contain it,
+  // not stayed pinned to a tiny first-frame guess.
+  EXPECT_GT(body.arranged_size().x, 100.0f);
 }
 
 // ── Offscreen render target (base class) ─────────────────────────────────────

@@ -123,6 +123,33 @@ stretch/spring sibling — the same one-frame-lag trade-off every
 fallback-eligible class already accepts, and only ever a sizing nuance, not
 a visible overlap.
 
+**"Self-correcting immediately after" depends on `last_rendered_size()`'s
+own update rule getting this right, not just on there being a real render
+to pick up.** `imgui_renderer::render_node()` only overwrites
+`last_rendered_size()` when `ImGui::IsItemVisible()` is true for this
+frame's dispatch **or** the node has no prior confirmed-good value yet
+(still reading the `{0,0}` bootstrap default) — see that function's own
+doc comment for the full reasoning. Both halves matter: refusing an update
+while invisible protects an existing good value from a stale/misattributed
+rect (e.g. a widget whose own `ItemAdd()` never ran at all because its
+enclosing `BeginChild()` was itself entirely clipped — `window->SkipItems`
+short-circuits before any real bb is computed); but refusing *every*
+update while invisible, with no exception for a node that has never had a
+good value at all, creates a real deadlock rather than a one-frame lag:
+`message_box.cpp`'s icon+message row, built fresh every time the dialog
+opens inside an `AlwaysAutoResize` `Window`, put the message `Label`'s
+first-ever real render partially outside the window's still-too-small
+(brand-new-id, no prior content-size data) clip rect — and since nothing
+ever gave the fallback its first real number, the row's arrange (hence the
+window's own auto-fit) could never grow to the label's real width on *any*
+later frame either, no matter how many more frames rendered. The dialog
+opened permanently too small with its message text invisible. The
+first-measurement exception breaks the cycle: with nothing yet to protect,
+this frame's freshly-computed rect is trusted even while reported
+invisible (which, per `ImGui::ItemAdd()`'s own source, is a real, accurate
+bb almost all of the time — clip status and rect *correctness* are
+different questions).
+
 **Known simplification, not a bug**: full CSS-style width-then-height
 constraint solving (e.g. a wrapped `Label`'s real height depends on the
 width its parent will eventually give it, which isn't known during a
