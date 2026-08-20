@@ -94,7 +94,13 @@ struct layout_stash {
                          ///< Table cell, where the ambient available height
                          ///< is "however much of the table's scroll region is
                          ///< left", not this node's own row) and none of its
-                         ///< children stretch to fill it.
+                         ///< children stretch to fill it. This -- not
+                         ///< `arranged_size` -- is what render_vertical_
+                         ///< layout()/render_horizontal_layout() size their
+                         ///< own self-managed `BeginChild()` wrap to, so a
+                         ///< self-healed row with no stretch child doesn't
+                         ///< balloon its own panel out to the whole ambient
+                         ///< avail.
   int arranged_frame = -1; ///< `ImGui::GetFrameCount()` at the last arrange
                             ///< write; -1 means "never arranged".
 };

@@ -410,10 +410,24 @@ void imgui_renderer::render_node(const ui_element& node, const context& s) {
   // Begin()/BeginPopupModal() -- GetItemRectMin/Max() after their dispatch
   // call reflects whatever was drawn last *inside* that window, not the
   // window itself, and a BeginGroup()/EndGroup() wrap can't see across a
-  // Begin()/End() boundary either. Those two report their own rect directly
-  // (see the "__wish_win_rect_*__" fields stamped in render_window()/
-  // render_dockspace_viewport()) instead of being wrapped here.
-  bool self_reports_rect = cls == "Window"_key || cls == "DockSpaceViewport"_key;
+  // Begin()/End() boundary either. VerticalLayout/HorizontalLayout wrap
+  // their entire child set in one real BeginChild() of their own now (see
+  // render_vertical_layout()/render_horizontal_layout(), imgui_ui_renderer.cpp)
+  // for the same "own real window" reason -- a BeginChild() is a genuine
+  // ImGui window internally, so it can self-report via GetWindowPos()/
+  // GetWindowSize() the same way Window/DockSpaceViewport do, instead of
+  // needing the BeginGroup()/EndGroup() approximation below. All four
+  // report their own rect directly (Window/DockSpaceViewport via the
+  // "__wish_win_rect_*__" fields stamped by report_self_rect() in
+  // render_window()/render_dockspace_viewport(); VerticalLayout/
+  // HorizontalLayout via the same report_self_rect() call made directly
+  // inside their own BeginChild() scope) instead of being wrapped here. A
+  // degenerate (<=0) self size skips that BeginChild() entirely (see
+  // render_vertical_layout()'s wrap_self guard) -- report_self_rect() then
+  // never ran, so the "defensive fallback" branch below (GetItemRectMin/Max)
+  // is what actually captures the rect in that rare case, not a bug.
+  bool self_reports_rect =
+      cls == "Window"_key || cls == "DockSpaceViewport"_key || cls == "VerticalLayout"_key || cls == "HorizontalLayout"_key;
 
   // Only classes whose render function actually recurses into ui_element
   // children need a group wrap to report their own bounding box -- every
@@ -439,9 +453,9 @@ void imgui_renderer::render_node(const ui_element& node, const context& s) {
   // there is nothing a wrap would improve for these two, only the same
   // id-forwarding risk described above to avoid. All three are documented
   // as a known, narrower residual limitation instead.
-  bool needs_group_wrap = cls == "VerticalLayout"_key || cls == "HorizontalLayout"_key || cls == "Splitter"_key ||
-      cls == "TabBar"_key || cls == "TabItem"_key || cls == "TreeNode"_key || cls == "CollapsingHeader"_key ||
-      cls == "Table"_key || cls == "TableRow"_key || cls == "Plot"_key || cls == "Plot3D"_key;
+  bool needs_group_wrap = cls == "Splitter"_key || cls == "TabBar"_key || cls == "TabItem"_key ||
+      cls == "TreeNode"_key || cls == "CollapsingHeader"_key || cls == "Table"_key || cls == "TableRow"_key ||
+      cls == "Plot"_key || cls == "Plot3D"_key;
 
   // Set by whichever rect-capture branch below actually runs; gates the
   // last_rendered_size() update further down -- see that call site's doc
@@ -488,11 +502,20 @@ void imgui_renderer::render_node(const ui_element& node, const context& s) {
       last_resolved_rect_min_ = ImVec2(rx->as<float>(), ry->as<float>());
       last_resolved_rect_max_ = ImVec2(rx->as<float>() + rw->as<float>(), ry->as<float>() + rh->as<float>());
     } else {
-      // Defensive fallback only -- shouldn't happen in practice, since
-      // render_window()/render_dockspace_viewport() always stamp these
-      // fields whenever they actually open their window.
+      // Fallback: shouldn't happen for Window/DockSpaceViewport (they
+      // always stamp these fields whenever they actually open their
+      // window), but is a real, expected path for VerticalLayout/
+      // HorizontalLayout with a degenerate (<=0) self size -- their own
+      // wrap_self guard (imgui_ui_renderer.cpp) skips BeginChild()/
+      // report_self_rect() entirely in that case, so there is no self-
+      // reported rect to read. item_visible must still be computed here
+      // (unlike the branch above, which is exempt because a real
+      // BeginChild()/Begin() always reports true geometry regardless of
+      // clipping) since this path's rect genuinely can come from a clipped
+      // last item.
       last_resolved_rect_min_ = ImGui::GetItemRectMin();
       last_resolved_rect_max_ = ImGui::GetItemRectMax();
+      item_visible = ImGui::IsItemVisible();
     }
   } else {
     // A leaf class (or MenuBar -- see needs_group_wrap's doc comment):

@@ -683,6 +683,177 @@ screenshot pair documents that.
 
 ---
 
+## Part 3 — Trust ImGui's own flow instead of re-deriving it
+
+**Status: shipped.** A follow-up review (after Part 1 shipped and a
+separate `ItemSpacing`-ignored-by-theme bug was fixed) identified a
+recurring root cause behind that bug and two earlier ones (icon/label
+overlap, `Table` scrollbar overflow): the engine kept re-deriving numbers
+ImGui already computes correctly itself — `measure_table()`'s row-height
+formula duplicating `TableNextRow()`/`TableEndRow()`'s own `CellPadding`
+arithmetic in a second, physically separate place (already flagged once as
+a `Revision` above for leaf classes generally, but `Table` had been kept as
+an exception with its own formula), and per-child `SetCursorPos()`
+stamping in `render_vertical_layout()`/`render_horizontal_layout()`
+bypassing `ItemSpacing` entirely instead of using ImGui's own cursor
+advance.
+
+The fix, narrower than it might sound (today's code already skipped
+wrapping an auto/`hint==0` child — the two real changes are *how* that
+unwrapped child gets positioned, and *whether* the whole row/column gets
+one real container instead of a `BeginGroup()`/`Dummy()` approximation):
+
+1. **`measure_table()` deleted.** `Table` falls off `measure_dispatch_fns()`
+   entirely and uses the same generic `ui_element::last_rendered_size()`
+   fallback every other composite/leaf with no registered `measure_fn`
+   already uses (see the `Revision` section above, which this now also
+   covers `Table` under). An explicit positive `outer_width`/`outer_height`
+   is unaffected either way — `render_table()` passes those straight to
+   `ImGui::BeginTable()` regardless of what `measure_node()` returns for the
+   auto/fallback case.
+2. **One `BeginChild()` per `VerticalLayout`/`HorizontalLayout`, not one
+   per hinted child.** Replaces the `BeginGroup()`/`EndGroup()` +
+   `pin_cursor_to_arranged_bottom()` trailing-`Dummy()` rect-capture
+   approximation with a real child window sized to `content_extent()` (not
+   `arranged_size()` — see `src/imgui/DESIGN.md`'s "Why `content_extent`,
+   not `arranged_size`" for why that distinction is load-bearing, not
+   cosmetic), self-reporting its own rect via `GetWindowPos()`/
+   `GetWindowSize()` the same way `Window`/`DockSpaceViewport` already do
+   (moved from `needs_group_wrap` to `self_reports_rect` in
+   `imgui_renderer.cpp`). Deliberately does **not** pass
+   `ImGuiChildFlags_AlwaysUseWindowPadding` — a wish Layout is a
+   transparent flex container, not a bordered panel; `WindowPadding` was
+   never the thing the `ItemSpacing` bug report was actually about, and
+   applying it would shift every child's position away from the panel's
+   own reported edges, breaking several existing pixel-tolerance `Spring`
+   tests for no requested benefit.
+3. **Auto (`hint == 0`) children render via natural ImGui flow.** No more
+   `SetCursorPos()` to a pre-computed position — just
+   `r.render_node(child, s)`, letting `VerticalLayout`'s default
+   top-to-bottom stacking or an explicit `ImGui::SameLine()` before every
+   non-first `HorizontalLayout` child place it, which is what makes
+   `ItemSpacing` apply for free. This also structurally eliminates the
+   "coordinate-space double-counting across nested `BeginChild()`s" bug
+   class documented under Part 1's shipped-bugs list above (bug #1) — there
+   is no more absolute position to double-count, since nothing is
+   `SetCursorPos()`-stamped anymore.
+4. An explicit `"spacing"` field override became a single
+   `ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ...)`, scoped tightly
+   around each node's own direct children and pushed unconditionally (via
+   `effective_spacing()`, now shared between the arrange pass and the
+   render pass via `imgui_layout.hpp` rather than file-local to
+   `imgui_layout.cpp`) so a nested Layout with no override of its own
+   doesn't inherit an ancestor's explicit value instead of the theme
+   default.
+
+What did **not** change, and why: `Splitter` already computed real
+per-pane boxes and treated pane content as a leaf — this already was the
+"only `VerticalLayout`/`HorizontalLayout`/`Splitter` need custom logic"
+model. The `arrange_vertical_layout()`/`arrange_horizontal_layout()`
+stretch-pool arithmetic itself is untouched — `Spring`/stretch-hint sizing
+still needs it, since ImGui has no "fill remaining space, proportionally
+weighted" primitive.
+
+### Revision: `measure_label()`/`measure_image()`/`measure_tree_node()`/`measure_tab_bar()` also removed
+
+Item 3 above (auto children render via natural ImGui flow) has a
+consequence that wasn't fully drawn out the first time through this Part:
+once an unhinted sibling's on-screen position comes from ImGui's own real
+`SameLine()`/cursor advance rather than a pre-computed `arranged_pos()`,
+the specific failure mode `measure_label()`/`measure_image()` were kept
+around to prevent — a fresh icon+label row's label overlapping the icon
+because the icon's *arranged* width was `{0,0}` before its first real
+render — can no longer happen visually, regardless of whether Image/Label
+have a measure formula. A followup review caught that this file's own
+"what did not change" reasoning above was stale: it was justifying keeping
+those formulas using the *old* absolute-position render model's failure
+mode, after the model itself had already changed underneath it.
+
+`measure_label()`, `measure_image()`, `measure_tree_node()`, and
+`measure_tab_bar()` are deleted; `measure_dispatch_fns()` now holds
+**exactly four entries** — `VerticalLayout`, `HorizontalLayout`, `Splitter`,
+`Spring` — matching the "only VL/HL/Splitter need custom logic" framing
+literally rather than with leaf-class exceptions. `Label`/`Image`/
+`TreeNode`/`TabBar` all fall through to the generic `last_rendered_size()`
+fallback like every other class. The one accepted trade-off: a
+never-before-rendered node's *arrange*-level `arranged_pos()`/
+`arranged_size()` can still read `{0,0}`/stale indefinitely for a node
+whose identity doesn't survive across frames (the list-refresh idiom) --
+this is now purely a measurement nicety (it can misjudge a `Spring`'s
+stretch-pool share or a grandparent's own natural size by one frame, in a
+row that also mixes a brand-new node with a stretch/spring sibling), never
+a visible overlap, since nothing downstream trusts `arranged_pos()` for
+positioning an unhinted sibling anymore.
+
+Verified via a new render-level regression test,
+`FreshIconThenLabelRowDoesNotOverlapOnFirstRealRender`
+(`tests/test_imgui_renderer.cpp`), which renders a brand-new icon+label
+`HorizontalLayout` for the very first time and asserts the real rendered
+rects don't overlap -- the *arrange*-level test that used to cover this
+(`IconThenLabelRowDoesNotOverlapOnFirstFrame`, `tests/test_imgui_layout.cpp`)
+is renamed to `IconThenLabelRowArrangePosCanUnderMeasureBeforeAnyRealRender`
+and now documents the expected (harmless) arrange-level discrepancy
+instead of asserting it away.
+
+### Bug found during this revision's live verification: `stable_id()`'s literal fallback collided across sibling rows
+
+Screenshotting `file_explorer`'s real file listing (not exercised by any
+unit test, and not screenshotted earlier in Part 3 either -- the Misc/
+Tables tab checks used for the earlier steps have no per-row generated
+content) turned up a real, visible bug: every row's entire Name column
+(icon + filename) was blank. Bisected with a `git stash`/rebuild
+comparison against the pre-Part-3 baseline (confirmed present) and a
+temporary revert of just the measure-fn deletion above (confirmed *not*
+the cause -- still blank), isolating it to item 2's "one `BeginChild()` per
+`VerticalLayout`/`HorizontalLayout`" change instead.
+
+Root cause: `stable_id()` (`imgui_ui_renderer.cpp`) falls back to a fixed
+literal (`"0"`) for a node with neither `__path__` nor a nonzero
+`__wish_id` -- exactly `file_browser_utils.cpp`'s `make_name_cell()` per-row
+icon+filename `HorizontalLayout`, a form-generated node with no RMI
+identity of its own, rebuilt fresh on every navigate/sort/select. That
+literal was harmless before item 2: the pre-redesign render path only ever
+wrapped a *hinted* child in a `BeginChild()`, and this row is always an
+*auto* (unhinted) child, so it was never wrapped either. Once every
+`VerticalLayout`/`HorizontalLayout` wraps its own content in a real,
+self-managed `BeginChild(id)` unconditionally, every one of a file
+listing's N sibling rows collided on the exact same ImGui child-window id
+within the same frame.
+
+Fixed at the source: `stable_id()` gained a third fallback tier -- this
+node's own address -- for exactly the case neither `__path__` nor
+`__wish_id` is available (see `src/imgui/DESIGN.md`'s "`stable_id()`'s
+three-tier fallback" for the full reasoning on why an address is
+sufficiently stable for this purpose). This is a general fix, not a
+narrow one-off: it benefits every existing `stable_id()` caller
+(`render_splitter()`'s pane ids, the per-child hinted-wrap ids, `Window`'s
+own `with_id()`), not just the newly-added outer wrap. One existing test,
+`WindowRestoresFloatingSizeAfterUndock`, had hardcoded the *old* literal
+fallback formula (`std::to_string(wish_id.id)`, assuming `wish_id.id == 0`
+prints `"0"`) instead of calling `stable_id()` directly the way
+`MenuButtonOpensPopupAndRendersChildOnClick` already did -- fixed to do the
+same. This closes the "`stable_id()`'s fallback collision" item that used
+to sit under Part 1's Non-goals below (see this file's own history) --
+what was scoped as a minor, deferred `PushID`/widget-identity nuance
+turned out to have a real, visible failure mode once this redesign started
+giving every unhinted `HorizontalLayout`/`VerticalLayout` its own
+`BeginChild()`.
+
+Verified via `WISH_LAYOUT_DEBUG_LOG` and automation screenshots against
+`file_explorer`, `zip_tool`'s file listing, and the notepad file dialog's
+real per-row icon+filename cells (all fixed, matching the pre-Part-3
+baseline exactly) and the demo's Misc/Tables tabs (unaffected, no
+regression) -- plus the full `ctest` suite.
+
+Verified via the full `ctest` suite (all `test_imgui_layout`/
+`test_imgui_renderer` tests pass unmodified except two `Table`-formula
+tests, which were rewritten to assert against a real render instead of a
+hand-derived row-height formula — re-deriving that formula a second time in
+a test would have been the exact duplication bug this change removes) and
+automation before/after screenshots per this file's usual workflow (file
+dialog spacing, `examples/demo`'s Misc tab flicker repro, process_explorer,
+Notepad's toolbar).
+
 ## Non-goals (explicitly deferred, not silently in scope)
 
 - Simulating ImGui's internal cursor/indent advance for `TreeNode`/`TabBar`/
@@ -693,13 +864,6 @@ screenshot pair documents that.
   content — not needed for the current widget set (see Architecture); the
   documented extension point is adding a dedicated `measure_fn` for any
   future widget that violates the assumption.
-- `stable_id()`'s fallback collision for runtime-constructed nodes with no
-  `__path__`/`__wish_id` (e.g. `file_dialog.cpp`'s per-row icons) — a
-  `PushID`/widget-identity issue, unrelated to sizing. This refactor's
-  per-node stash needs no string key at all (unlike the deleted
-  `layout_height_cache`), which incidentally removes one *cross-top-level-
-  root* collision risk that existed in the old cache — but the underlying
-  `stable_id()` gap itself is not fixed here.
 
 ## Risks / must-not-break list
 

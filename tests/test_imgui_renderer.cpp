@@ -356,8 +356,9 @@ TEST_F(ImguiRendererTest, MenuButtonOpensPopupAndRendersChildOnClick) {
   auto map = bdg::wish::import_json(
       R"({"type":"MenuButton","label":"Create","children":{"item":{"type":"MenuItem","label":"Object"}}})");
   // Root has no "__path__"/"__wish_id" in this ad-hoc tree (see
-  // StableIdFallsBackToWishIdWhenPathEmpty above), so stable_id() falls
-  // back to the default key_t{} -- computed via the real helper rather than
+  // StableIdFallsBackToWishIdWhenPathEmpty above and stable_id()'s own doc
+  // comment for its final fallback tier), so stable_id() falls back to this
+  // node's own address -- computed via the real helper rather than
   // hardcoded so this doesn't silently drift from stable_id()'s own logic.
   std::string root_id = bdg::wish::stable_id(*map[""]);
   std::string popup_id = "Create###" + root_id;
@@ -1015,6 +1016,53 @@ TEST_F(ImguiRendererTest, TableCellsRenderWithoutThrowIncludingButton) {
   });
 }
 
+TEST_F(ImguiRendererTest, AutoHeightTableInsideVerticalLayoutDoesNotGrowFrameToFrame) {
+  // Regression test: a Table with no explicit "outer_height" that is an
+  // *auto* (height:0, the default -- not set at all here) child of a
+  // VerticalLayout must render at a stable, row-count-driven size forever,
+  // never compounding. Table has no measure_fn of its own (see
+  // imgui_layout.cpp's measure_dispatch_fns() comment) -- its natural size
+  // comes from ui_element::last_rendered_size(), this node's own previous
+  // frame's *real* rendered size. If render_table() fed that back in as
+  // this frame's outer_height whenever an ancestor's arrange pass merely
+  // touched this node (rather than only when a real hint-driven box was
+  // given), any ImGui-side overhead added on top of a requested
+  // outer_height compounds without bound across frames -- confirmed via
+  // WISH_LAYOUT_DEBUG_LOG against process_explorer's real auto-height
+  // "proc_table" as a sustained growth, never settling, several frames
+  // after this exact scenario was introduced by deleting measure_table()'s
+  // row-height formula in favor of the generic fallback.
+  constexpr auto desc = R"({
+    "type": "Window", "title": "T2", "width": 300, "height": 400,
+    "pos_x": 0, "pos_y": 0,
+    "children": { "vl": { "type": "VerticalLayout", "children": {
+      "tbl": { "type": "Table", "id": "t_auto", "columns": 1, "children": {
+        "c": { "type": "TableColumn", "label": "Col" },
+        "r0": { "type": "TableRow" }
+      }}
+    }}}
+  })";
+  auto map = bdg::wish::import_json(desc);
+  auto& tbl = *map["vl.tbl"];
+
+  std::vector<vec2f> sizes;
+  for (int i = 0; i < 10; ++i) {
+    renderer_->begin_frame();
+    renderer_->render_node(*map[""], *sess_);
+    renderer_->end_frame();
+    sizes.push_back(tbl.last_rendered_size());
+  }
+
+  // Settles after the first frame (a real row-count-driven height) and
+  // never changes again -- not merely "close", but bit-for-bit stable,
+  // since even a slow monotonic drift (the actual bug) would eventually
+  // show up as a real visual/functional regression.
+  for (size_t i = 2; i < sizes.size(); ++i) {
+    EXPECT_FLOAT_EQ(sizes[i].x, sizes[1].x) << "frame " << i;
+    EXPECT_FLOAT_EQ(sizes[i].y, sizes[1].y) << "frame " << i;
+  }
+}
+
 // ── Docking: undock restores pre-dock floating size ──────────────────────────
 
 TEST_F(ImguiRendererTest, WindowRestoresFloatingSizeAfterUndock) {
@@ -1022,13 +1070,17 @@ TEST_F(ImguiRendererTest, WindowRestoresFloatingSizeAfterUndock) {
 
   auto map = bdg::wish::import_json(R"({"type":"Window","title":"Dockable","width":400,"height":300})");
   auto& win = *map[""];
-  auto wish_id =
-      win.get_as<bdg::bison::key_t>("__wish_id"_key, bdg::bison::key_t{});
   // "###" (not "##") matches with_id()'s convention in imgui_ui_renderer.cpp:
-  // the ID must depend only on wish_id, not the visible "Dockable" prefix,
-  // so editing a window's title doesn't reset ImGui's per-window state
-  // (position/size/dock/focus) -- see with_id()'s doc comment.
-  std::string label = "Dockable###" + std::to_string(wish_id.id);
+  // the ID must depend only on stable_id(), not the visible "Dockable"
+  // prefix, so editing a window's title doesn't reset ImGui's per-window
+  // state (position/size/dock/focus) -- see with_id()'s doc comment. Calls
+  // the real stable_id() helper (rather than reimplementing its "__wish_id"
+  // formula here) so this doesn't silently drift from stable_id()'s own
+  // fallback logic -- this ad-hoc `import_json()` tree has no real
+  // "__wish_id" of its own (never registered with a session's object
+  // system), so stable_id() falls back to this node's own address, not a
+  // hardcoded "0" -- see stable_id()'s own doc comment.
+  std::string label = "Dockable###" + bdg::wish::stable_id(win);
 
   // Render one floating frame: establishes the ImGuiCond_Once 400x300 size
   // and populates the hidden __float_width__/__float_height__ fields.
@@ -1382,6 +1434,25 @@ class rect_capturing_renderer : public imgui_renderer {
   }
 };
 
+// Captures every rendered node's rect keyed by its own class, in one render
+// pass -- for a test that needs two different classes' rects at once (e.g.
+// an Image icon and a Label filename) where re-using rect_capturing_renderer
+// twice would mean two separate begin_frame()/render_node()/end_frame()
+// passes on the same (stable, ID-persisting) window, which can shift the
+// measured content region (e.g. ImGui reactively reserving a scrollbar one
+// frame late) and produce bogus deltas -- see labeled_rect_capturing_
+// renderer below for the identical reasoning.
+class by_class_rect_capturing_renderer : public imgui_renderer {
+ public:
+  std::unordered_map<uint32_t, std::pair<ImVec2, ImVec2>> by_class;
+
+  void render_node(const ui_element& node, const context& s) override {
+    imgui_renderer::render_node(node, s);
+    auto cls = node.as<bdg::bison::key_t>(dynamic::CLASS);
+    by_class[cls.id] = {last_resolved_rect_min_, last_resolved_rect_max_};
+  }
+};
+
 TEST_F(ImguiRendererTest, WindowRectMatchesWindowSizeNotLastChild) {
   // A small trailing child ("small") would be the last thing GetItemRect*()
   // saw pre-fix -- its own rect is nowhere near 400x300.
@@ -1422,6 +1493,72 @@ TEST_F(ImguiRendererTest, VerticalLayoutRectSpansAllChildrenNotLastOnly) {
   // children must be at least as wide/tall as the bigger first child.
   EXPECT_GE(width, 300.0f);
   EXPECT_GE(height, 60.0f);
+}
+
+TEST_F(ImguiRendererTest, StretchHeightTableInsideVerticalLayoutFillsTheRow) {
+  // The File Explorer bug this behavior originally fixed (src/imgui/PLAN.md
+  // step 6): a Table with no explicit "outer_height" that is a *stretch*
+  // (height:-1) child of a VerticalLayout must fill the row it was given,
+  // not collapse to ImGui's own row-count auto-fit size.
+  constexpr auto desc = R"({
+    "type": "Window", "title": "T", "width": 300, "height": 400,
+    "pos_x": 0, "pos_y": 0,
+    "children": { "vl": { "type": "VerticalLayout", "children": {
+      "hdr": { "type": "Label", "text": "Header", "height": 20 },
+      "tbl": { "type": "Table", "id": "t_stretch", "columns": 1, "height": -1, "children": {
+        "c": { "type": "TableColumn", "label": "Col" },
+        "r0": { "type": "TableRow" }
+      }}
+    }}}
+  })";
+  auto map = bdg::wish::import_json(desc);
+
+  rect_capturing_renderer r;
+  r.target_class = "Table"_key;
+  r.begin_frame();
+  r.render_node(*map[""], *sess_);
+  r.end_frame();
+
+  float height = r.captured_max.y - r.captured_min.y;
+  // A single-row auto-fit table would be well under 100px; filling the
+  // stretch row of a 400px window (minus the 20px header and window chrome)
+  // is far taller than that.
+  EXPECT_GT(height, 200.0f);
+}
+
+TEST_F(ImguiRendererTest, FreshIconThenLabelRowDoesNotOverlapOnFirstRealRender) {
+  // Regression test for the historical file_explorer bug: a brand-new
+  // HorizontalLayout of an auto-size-to-font Image (icon) followed by a
+  // Label (filename), rendered for the very first time -- matching
+  // file_browser_utils.cpp's make_name_cell(), a fresh instance built on
+  // every navigate/sort/select. Neither Image nor Label has a measure_fn of
+  // its own (see imgui_layout.cpp's measure_dispatch_fns() comment), so
+  // this row's *arrange*-level natural sizes are {0,0} on this first frame
+  // (see test_imgui_layout.cpp's IconThenLabelRowArrangePosCanUnderMeasure
+  // BeforeAnyRealRender) -- but that no longer matters for where things
+  // actually draw: render_horizontal_layout() places an unhinted sibling
+  // via ImGui's own real SameLine() cursor advance, not a pre-computed
+  // arranged position, so the label lands after the icon's actual (real,
+  // nonzero) drawn width regardless of what this frame's measure pass
+  // guessed.
+  auto map = bdg::wish::import_json(R"({"type":"HorizontalLayout","spacing":6,"children":{
+      "icon":{"type":"Image","src":"res/icons/file.png"},
+      "name":{"type":"Label","text":"clang-format"}
+  }})");
+  (*map["icon"])["__auto_size_to_font__"_key] = true;
+
+  by_class_rect_capturing_renderer r;
+  r.begin_frame();
+  in_window([&] { r.render_node(*map[""], *sess_); });
+  r.end_frame();
+
+  ASSERT_TRUE(r.by_class.count("Image"_key.id));
+  ASSERT_TRUE(r.by_class.count("Label"_key.id));
+  auto [icon_min, icon_max] = r.by_class["Image"_key.id];
+  auto [name_min, name_max] = r.by_class["Label"_key.id];
+
+  EXPECT_GT(icon_max.x - icon_min.x, 0.0f);
+  EXPECT_GE(name_min.x, icon_max.x);
 }
 
 TEST_F(ImguiRendererTest, TreeNodeCollapsedStillReportsOwnRectWithoutThrow) {

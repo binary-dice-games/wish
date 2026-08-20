@@ -24,6 +24,23 @@ namespace bdg::wish {
 /// @brief A node's own natural (intrinsic) size, as computed by `measure_node()`.
 using natural_size = vec2f;
 
+/// @brief Resolves a `VerticalLayout`/`HorizontalLayout` node's effective
+///        inter-child gap: its own explicit `"spacing"` field when positive
+///        (the literal pixel gap the author asked for), otherwise @p
+///        axis_item_spacing (the active theme's `ImGuiStyle::ItemSpacing`
+///        for the relevant axis) -- matching what plain sequential ImGui
+///        widgets get for free from their own default cursor advance.
+///        Shared between `imgui_layout.cpp`'s arrange pass (sizing the
+///        stretch pool) and `imgui_ui_renderer.cpp`'s render pass (which
+///        pushes this same value as the real `ImGuiStyleVar_ItemSpacing`
+///        for natural-flow children), so the two can never disagree about
+///        how much visual gap a row/column actually has.
+///
+/// @param node               The `VerticalLayout`/`HorizontalLayout` node.
+/// @param axis_item_spacing  The ambient theme's `ItemSpacing.x` (horizontal)
+///                            or `ItemSpacing.y` (vertical) to fall back to.
+float effective_spacing(const ui_element& node, float axis_item_spacing);
+
 /// @brief Computes @p node's own natural size, recursing into children as
 ///        needed, and stamps the result onto @p node via
 ///        `ui_element::set_measured_size()`.

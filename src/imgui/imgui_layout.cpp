@@ -80,45 +80,6 @@ natural_size measure_node(imgui_renderer& r, const ui_element& node, const conte
 
 static const measure_fn_map& measure_dispatch_fns();
 
-// Label and Image are registered (unlike most other leaves -- see
-// measure_dispatch_fns()'s own comment below for why the rest deliberately
-// aren't) because both are frequently torn down and rebuilt from scratch by
-// this codebase's "clear children, reinstantiate" list-refresh idiom (e.g.
-// file_browser_utils.cpp's make_name_cell(), rebuilt on every navigate/sort/
-// select) and both have a size formula that queries exactly the same
-// primitive ImGui's own render call uses, computed fresh this frame -- not
-// an approximation, and not dependent on the node having rendered before.
-// A brand-new node has last_rendered_size() == {0,0} (never rendered), which
-// for an icon+label row meant the label was positioned as if the icon had
-// zero width while the icon still drew at its real size on top of it --
-// visible overlap on every rebuild, not just a one-frame startup glitch,
-// because these nodes are genuinely new objects each time, never the same
-// instance surviving long enough to "self-correct next frame". Label's
-// CalcTextSize() also tracks a live-updating text field exactly (e.g. a
-// stats readout whose digits change every refresh), where last_rendered_size
-// would otherwise always trail one frame behind the real width.
-static natural_size measure_label(imgui_renderer&, const ui_element& node, const context&) {
-  auto text = node.get_as<std::string>("text"_key, "");
-  ImVec2 sz = ImGui::CalcTextSize(text.c_str());
-  return {sz.x, sz.y};
-}
-
-// Mirrors render_image()'s own early sizing exactly (imgui_ui_renderer.cpp):
-// "__auto_size_to_font__" sizes to the current line height; otherwise the
-// declared width/height fields are used verbatim, with 0 meaning "reserves
-// no space" (render_image() only calls Dummy() when both are positive).
-// Never depends on whether the source file actually resolves/decodes --
-// that's runtime-load state, not layout.
-static natural_size measure_image(imgui_renderer&, const ui_element& node, const context&) {
-  if (node.get_as<bool>("__auto_size_to_font__"_key, false)) {
-    float line = ImGui::GetTextLineHeight();
-    return {line, line};
-  }
-  int32_t w = node.get_as<int32_t>("width"_key, 0);
-  int32_t h = node.get_as<int32_t>("height"_key, 0);
-  return {w > 0 ? float(w) : 0.0f, h > 0 ? float(h) : 0.0f};
-}
-
 // Layout::spacing (src/ui/ui_elements/layout.cpp) defaults to 0.0f, the same
 // sentinel this codebase's other Layout hints (width/height) use for "no
 // explicit opinion, use the default" -- for spacing specifically, "the
@@ -133,7 +94,7 @@ static natural_size measure_image(imgui_renderer&, const ui_element& node, const
 // nonzero ItemSpacing/FramePadding/WindowPadding all set). An explicit
 // positive "spacing" field still wins outright (it's the literal pixel gap
 // the author asked for, not an addition on top of the theme).
-static float effective_spacing(const ui_element& node, float axis_item_spacing) {
+float effective_spacing(const ui_element& node, float axis_item_spacing) {
   float spacing = node.get_as<float>("spacing"_key, 0.0f);
   return spacing > 0.0f ? spacing : axis_item_spacing;
 }
@@ -201,137 +162,66 @@ static natural_size measure_splitter(imgui_renderer& r, const ui_element& node, 
   return is_vertical ? natural_size{total, cross} : natural_size{cross, total};
 }
 
-// Shared by TreeNode/CollapsingHeader: a one-line header (GetFrameHeight())
-// plus, when open, its children stacked exactly like a VerticalLayout.
-// "Open" uses the same previous-frame "__open__" field render_tree_node()/
-// render_collapsing_header() already persist -- this frame's real open
-// state isn't knowable before TreeNodeEx()/CollapsingHeader() actually run,
-// so (like layout_height_cache before it) this is a deliberate one-frame
-// lookback, self-correcting the frame after any toggle.
-static natural_size measure_tree_node(imgui_renderer& r, const ui_element& node, const context& s) {
-  bool leaf = node.get_as<bool>("leaf"_key, false);
-  auto label = node.get_as<std::string>("label"_key, "");
-  float header_h = ImGui::GetFrameHeight();
-  float header_w = ImGui::CalcTextSize(label.c_str(), nullptr, true).x + ImGui::GetTreeNodeToLabelSpacing();
-
-  const auto* open_f = node.findField("__open__"_key);
-  bool is_open =
-      (open_f && open_f->is<bool>()) ? open_f->as<bool>() : node.get_as<bool>("open"_key, false);
-
-  if (leaf || !is_open)
-    return {header_w, header_h};
-
-  float sum_h = 0.0f;
-  float max_w = header_w;
-  node.for_each_child_ordered([&](key_t, ui_element& child) {
-    natural_size sz = measure_node(r, child, s);
-    sum_h += sz.y;
-    max_w = std::max(max_w, sz.x);
-  });
-  return {max_w, header_h + sum_h};
-}
-
-// Only the active tab's content is actually rendered this frame (see
-// render_tab_bar()/render_tab_item()) -- measuring just that one, via the
-// same previous-frame "__selected__" field render_tab_item() persists,
-// mirrors that behavior exactly instead of summing every tab's content.
-static natural_size measure_tab_bar(imgui_renderer& r, const ui_element& node, const context& s) {
-  float tab_strip_h = ImGui::GetFrameHeight();
-  ui_element* selected = nullptr;
-  ui_element* first = nullptr;
-  node.for_each_child_ordered([&](key_t, ui_element& child) {
-    if (!first)
-      first = &child;
-    if (!selected && child.get_as<bool>("__selected__"_key, false))
-      selected = &child;
-  });
-  ui_element* active = selected ? selected : first;
-  if (!active)
-    return {0.0f, tab_strip_h};
-
-  float sum_h = 0.0f;
-  float max_w = 0.0f;
-  active->for_each_child_ordered([&](key_t, ui_element& child) {
-    natural_size sz = measure_node(r, child, s);
-    sum_h += sz.y;
-    max_w = std::max(max_w, sz.x);
-  });
-  return {max_w, tab_strip_h + sum_h};
-}
-
-// TableRow's own row height is always GetTextLineHeightWithSpacing() plus
-// two CellPadding.y's (see render_table()'s row Selectable, and ImGui's own
-// TableNextRow()/TableEndRow(), which extend every row's real footprint by
-// style.CellPadding.y on each side beyond the Selectable's own content
-// height -- omitting this here previously undercounted every row by ~4px,
-// the "few pixels of scrollbar overflow" symptom for any auto-height Table)
-// regardless of cell content, so the table's natural height is exact
-// arithmetic, not a content measurement -- but only as a *fallback*: an
-// explicit positive "outer_width"/"outer_height" (render_table()'s own
-// ImGui outer-size params, a different field than the wish Layout
-// width/height hint that decides whether this table is an auto/fixed/
-// stretch child of its parent) is a deliberate fixed size and must win over
-// the row-count arithmetic -- otherwise a Table meant to stay at a fixed
-// height (e.g. zip_tool's "outer_height": 300 file listing) would instead
-// measure as tall as however many rows it currently has, ballooning its
-// unwrapped parent VerticalLayout/HorizontalLayout (which has no
-// BeginChild to clip against) far past the window itself. TableColumn/
-// TableRow children are never recursed into for the same reason
-// arrange_table() below never recurses into them: they're not wish
-// width/height-hint-driven.
-static natural_size measure_table(imgui_renderer&, const ui_element& node, const context&) {
-  bool headers = node.get_as<bool>("headers"_key, false);
-  float outer_w = node.get_as<float>("outer_width"_key, 0.0f);
-  float outer_h = node.get_as<float>("outer_height"_key, 0.0f);
-  float row_h = ImGui::GetTextLineHeightWithSpacing() + ImGui::GetStyle().CellPadding.y * 2.0f;
-  int32_t row_count = 0;
-  float col_w_sum = 0.0f;
-  node.for_each_child_ordered([&](key_t, ui_element& child) {
-    auto cls = child.as<key_t>(dynamic::CLASS);
-    if (cls == "TableRow"_key)
-      ++row_count;
-    else if (cls == "TableColumn"_key)
-      col_w_sum += child.get_as<float>("init_width"_key, 0.0f);
-  });
-  float natural_h = (headers ? row_h : 0.0f) + float(row_count) * row_h;
-  return {outer_w > 0.0f ? outer_w : col_w_sum, outer_h > 0.0f ? outer_h : natural_h};
-}
-
-// Two kinds of entry here: classes whose own natural size must be known
-// *before* anything renders because they distribute space to children
-// (VerticalLayout/HorizontalLayout/Splitter/Table) or need to recurse into
-// exactly one child ahead of time (TreeNode/CollapsingHeader/TabBar); and
-// leaves with a cheap, exact, render-history-independent formula
-// (Label/Image -- see their own comments above for why those two
-// specifically). Spring keeps its own entry for the circularity reason
-// described on measure_spring() above.
+// Table's own natural size (when acting as an auto/unhinted child, e.g. to
+// feed a sibling Spring's stretch-pool math) is no longer computed by a
+// bespoke row-height formula here -- that formula duplicated ImGui's own
+// TableNextRow()/TableEndRow() row-height arithmetic (CellPadding.y et al.)
+// in a second, physically separate place, which is exactly the kind of
+// drift bug this codebase keeps hitting (it once undercounted every row by
+// ~4px because CellPadding was missing). Table instead falls through to
+// measure_node()'s generic last_rendered_size() fallback below, same as
+// TextEditor/Plot/Button and every other composite/leaf without a
+// registered measure_fn: one frame of lag on a genuinely brand-new Table,
+// self-correcting immediately after, in exchange for zero duplicated math.
+// An explicit positive "outer_width"/"outer_height" is unaffected either
+// way -- render_table() passes those straight to ImGui::BeginTable()
+// regardless of what measure_node() returns for the auto/fallback case.
 //
-// Every other leaf (Button, ProgressBar, SliderFloat, Plot, TextEditor, and
-// anything added in the future) is intentionally absent: measure_node()'s
-// fallback below uses that node's own real, last-rendered size instead, so
-// there is no formula to write or keep in sync with render_*() for the
-// common case of a widget that is created once and re-rendered many times
-// (self-correcting within one frame of any real size change -- see
-// ui_element::last_rendered_size()'s doc comment). That fallback is a
-// deliberate trade-off, not a free lunch: it is only safe for a node whose
-// identity survives across frames. A node that is destroyed and replaced
-// by a fresh instance every time its content changes (this codebase's
-// "clear children, reinstantiate" list-refresh idiom) never accumulates a
-// real last-rendered size to fall back on -- which is exactly what made
-// Label/Image worth promoting to real formulas rather than leaving them on
-// this fallback.
+// Exactly four entries: VerticalLayout/HorizontalLayout/Splitter need their
+// own natural size *before* anything renders because they distribute space
+// to children -- ImGui has no "what would this row's content naturally add
+// up to" query, since that's wish's own declarative fixed/stretch/auto
+// model, not something ImGui itself has any concept of. Spring keeps its
+// own entry for a different reason -- not "ImGui knows this and we don't"
+// (Spring has no ImGui content at all to ask about), but circularity: the
+// generic last_rendered_size() fallback below would be self-referential for
+// Spring specifically, since render_spring() always draws Dummy() at
+// exactly its *previous* arranged size (see measure_spring()'s own comment).
+//
+// Every other class -- Label, Image, TreeNode, TabBar, Table, Button,
+// ProgressBar, TextEditor, Plot, and anything added in the future -- is
+// intentionally absent: measure_node()'s fallback below uses that node's
+// own real, last-rendered size instead (ui_element::last_rendered_size(),
+// populated generically by imgui_renderer::render_node() after every real
+// render, not per-class code) rather than a hand-written formula
+// re-deriving what ImGui already computed correctly itself. This used to be
+// a narrower list -- Label/Image/TreeNode/TabBar each had their own formula
+// -- but every one of those formulas was a second, physically separate
+// place that could (and did) drift out of sync with what its render_*()
+// counterpart actually drew (see the Table row-height bug this same
+// rationale already applies to). The trade-off is one frame of lag on a
+// genuinely brand-new node, self-correcting immediately after -- invisible
+// in practice for anything that renders every frame, and no longer a
+// correctness problem for a node that's destroyed and recreated every frame
+// (e.g. file_browser_utils.cpp's per-row icon+label cells) either: since
+// render_vertical_layout()/render_horizontal_layout() render an unhinted
+// (auto) sibling via ImGui's own natural cursor flow rather than an
+// absolute pre-computed position (see imgui_ui_renderer.cpp), a fresh
+// icon's real (nonzero) width is what a following label's SameLine()
+// actually lands after, regardless of what this pass measured it as -- the
+// one-frame-lag-here risk that made Label/Image worth a bespoke formula no
+// longer exists once nothing downstream trusts a stale measurement for
+// *positioning*. A stale measurement can still misjudge a Spring's
+// stretch-pool share or a grandparent's own natural size by one frame in a
+// row that also mixes a brand-new node with a stretch/spring sibling --
+// exactly the same one-frame-lag tradeoff every other fallback-eligible
+// class already accepts.
 static const measure_fn_map& measure_dispatch_fns() {
   static const measure_fn_map tbl{
       {"Spring"_key.id, measure_spring},
       {"VerticalLayout"_key.id, measure_vertical_layout},
       {"HorizontalLayout"_key.id, measure_horizontal_layout},
       {"Splitter"_key.id, measure_splitter},
-      {"TreeNode"_key.id, measure_tree_node},
-      {"CollapsingHeader"_key.id, measure_tree_node},
-      {"TabBar"_key.id, measure_tab_bar},
-      {"Table"_key.id, measure_table},
-      {"Label"_key.id, measure_label},
-      {"Image"_key.id, measure_image},
   };
   return tbl;
 }
@@ -514,7 +404,8 @@ static void arrange_horizontal_layout(imgui_renderer& r, const ui_element& node,
   // (height) extent is the tallest column actually assigned, not avail.y --
   // a column only reaches avail.y when its own height hint says to (fixed
   // >= avail.y, or an explicit fill), never merely because avail.y was
-  // large.
+  // large. The main-axis (width) extent is the actual x the cursor reached,
+  // not avail.x, for the identical reason.
   node.set_content_extent({x - origin.x, max_col_h});
 }
 

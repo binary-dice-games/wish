@@ -138,24 +138,27 @@ TEST_F(ImguiLayoutTest, VerticalLayoutOfThreeFixedHeightButtonsSumsHeights) {
   EXPECT_FLOAT_EQ(sz.y, 20.0f + 30.0f + 40.0f + 5.0f * 2.0f);
 }
 
-// ── measure_node: Table respects an explicit outer_width/outer_height ───────
+// ── measure_node: Table falls back to last_rendered_size(), like every ─────
+// ── other composite/leaf with no registered measure_fn ──────────────────────
+//
+// Table has no bespoke measure_fn (see imgui_layout.cpp's comment on why it
+// was removed -- it duplicated ImGui's own TableNextRow()/TableEndRow() row-
+// height arithmetic in a second, physically separate place, which drifted
+// out of sync at least once already). Its own natural size instead comes
+// from the same generic ui_element::last_rendered_size() fallback every
+// other composite (TextEditor, Plot) and leaf (Button, ProgressBar) already
+// uses: one frame of lag on a genuinely brand-new Table, self-correcting
+// immediately after a real render -- exercised generically by
+// MeasureNodeMatchesRealSizeAfterOneRealRender above (Table needs no
+// dedicated copy of that test; the mechanism is class-agnostic).
 
-TEST_F(ImguiLayoutTest, MeasureTableRespectsExplicitOuterHeightOverRowCount) {
-  // Regression test: a Table with an explicit "outer_height" (its own
-  // render-time ImGui outer-size param -- distinct from the wish
-  // Layout-hint "height" field that decides whether this Table is an
-  // auto/fixed/stretch child of its parent) must contribute that fixed
-  // size to its parent's own auto-sizing, not row-count*row-height
-  // arithmetic. Getting this wrong made an unwrapped parent VerticalLayout
-  // (e.g. zip_tool's "main") measure as tall as however many rows the
-  // table currently has, pushing later siblings (a button row) far past
-  // the window and into overlapping the table's own (correctly clipped)
-  // content.
-  std::string children;
-  for (int i = 0; i < 20; ++i)
-    children += "\"r" + std::to_string(i) + "\":{\"type\":\"TableRow\"},";
-  auto desc = R"({"type":"Table","columns":1,"outer_height":50,"children":{)" + children +
-      R"("c":{"type":"TableColumn","label":"Col"}}})";
+TEST_F(ImguiLayoutTest, MeasureTableBeforeAnyRealRenderReturnsZero) {
+  // Mirrors MeasureNodeReturnsZeroForNeverRenderedLeaf's reasoning for
+  // Table specifically: no formula, no real render yet, so no size to fall
+  // back to -- the honest {0,0} bootstrap default, not a guess.
+  auto desc = R"({"type":"Table","columns":1,"children":{
+      "r0":{"type":"TableRow"},"c":{"type":"TableColumn","label":"Col"}
+  }})";
   auto map = bdg::wish::import_json(desc);
 
   renderer_->begin_frame();
@@ -163,34 +166,57 @@ TEST_F(ImguiLayoutTest, MeasureTableRespectsExplicitOuterHeightOverRowCount) {
   in_window([&] { sz = measure_node(*renderer_, *map[""], *sess_); });
   renderer_->end_frame();
 
-  EXPECT_FLOAT_EQ(sz.y, 50.0f);
+  EXPECT_FLOAT_EQ(sz.x, 0.0f);
+  EXPECT_FLOAT_EQ(sz.y, 0.0f);
 }
 
-TEST_F(ImguiLayoutTest, MeasureTableRowHeightIncludesCellPadding) {
-  // Regression test: measure_table()'s row-count fallback (no explicit
-  // "outer_height") previously used GetTextLineHeightWithSpacing() alone,
-  // undercounting each row's real footprint by 2*style.CellPadding.y --
-  // ImGui's own TableNextRow()/TableEndRow() add that padding on top of the
-  // row content height. For an auto-height Table that is a direct
-  // (unwrapped) child of a Window, that shortfall directly inflated the
-  // Window's own scrollable content region, producing a spurious few-pixel
-  // vertical scrollbar.
-  auto desc = R"({"type":"Table","columns":1,"children":{
+TEST_F(ImguiLayoutTest, MeasureTableAfterRealRenderMatchesActualRenderedRowHeight) {
+  // The row-height*CellPadding arithmetic the deleted measure_table() used
+  // to hand-compute is now just whatever ImGui's own BeginTable()/
+  // TableNextRow()/EndTable() actually drew -- captured for real via
+  // GetItemRectSize() and confirmed to match a later measure_node() call,
+  // the same pattern as MeasureNodeMatchesRealSizeAfterOneRealRender.
+  //
+  // Deliberately does NOT re-derive ImGui's own row-height formula
+  // (GetTextLineHeightWithSpacing() + CellPadding.y*2, or whatever else
+  // TableNextRow()/TableEndRow() actually do) to compute an expected value
+  // to compare against -- hand-deriving that formula a second time in this
+  // test is exactly the duplication bug measure_table() itself used to
+  // have (it was off by one CellPadding term for a long time). The
+  // multi-row-taller-than-one-row check below is the only invariant this
+  // test needs: real content genuinely has more rows.
+  auto one_row_map = bdg::wish::import_json(
+      R"({"type":"Table","columns":1,"children":{"r0":{"type":"TableRow"},"c":{"type":"TableColumn","label":"Col"}}})");
+  auto three_row_map = bdg::wish::import_json(R"({"type":"Table","columns":1,"children":{
       "r0":{"type":"TableRow"},"r1":{"type":"TableRow"},"r2":{"type":"TableRow"},
       "c":{"type":"TableColumn","label":"Col"}
-  }})";
-  auto map = bdg::wish::import_json(desc);
+  }})");
 
   renderer_->begin_frame();
-  bdg::wish::natural_size sz{};
-  float row_h{};
+  ImVec2 one_row_sz{};
   in_window([&] {
-    sz = measure_node(*renderer_, *map[""], *sess_);
-    row_h = ImGui::GetTextLineHeightWithSpacing() + ImGui::GetStyle().CellPadding.y * 2.0f;
+    renderer_->render_node(*one_row_map[""], *sess_);
+    one_row_sz = ImGui::GetItemRectSize();
   });
   renderer_->end_frame();
 
-  EXPECT_FLOAT_EQ(sz.y, row_h * 3.0f);
+  renderer_->begin_frame();
+  ImVec2 three_row_sz{};
+  in_window([&] {
+    renderer_->render_node(*three_row_map[""], *sess_);
+    three_row_sz = ImGui::GetItemRectSize();
+  });
+  renderer_->end_frame();
+
+  EXPECT_GT(three_row_sz.y, one_row_sz.y);
+
+  renderer_->begin_frame();
+  bdg::wish::natural_size measured_sz{};
+  in_window([&] { measured_sz = measure_node(*renderer_, *three_row_map[""], *sess_); });
+  renderer_->end_frame();
+
+  EXPECT_FLOAT_EQ(measured_sz.x, three_row_sz.x);
+  EXPECT_FLOAT_EQ(measured_sz.y, three_row_sz.y);
 }
 
 // ── measure_node: every leaf class actually used as an auto Layout child ────
@@ -198,26 +224,30 @@ TEST_F(ImguiLayoutTest, MeasureTableRowHeightIncludesCellPadding) {
 // ── IconThenLabelRow: file_explorer/file_dialog's actual row-cell shape ─────
 //
 // file_browser_utils.cpp's make_name_cell() builds a HorizontalLayout of an
-// auto-size-to-font Image (icon) followed by a Label (filename). Both now
-// have real formula-based measure_fns (measure_image()/measure_label() in
-// imgui_layout.cpp) rather than the generic last_rendered_size() fallback --
-// promoted specifically because make_name_cell() is called fresh on every
-// navigate/sort/select (file_explorer.cpp rebuilds its row children from
-// scratch), so a brand-new Image/Label never has a prior real render to fall
-// back to, and last_rendered_size() would stay {0,0} forever in practice,
-// not just for one bootstrap frame.
+// auto-size-to-font Image (icon) followed by a Label (filename), rebuilt
+// from scratch on every navigate/sort/select. Neither Image nor Label has
+// its own measure_fn (see imgui_layout.cpp's measure_dispatch_fns()
+// comment) -- a fresh instance's natural size comes from the generic
+// last_rendered_size() fallback, {0,0} until it has rendered for real once.
+// That's a real, expected discrepancy at the pure arrange level (see
+// IconThenLabelRowArrangePosCanUnderMeasureBeforeAnyRealRender below), but
+// not a visible one: render_horizontal_layout() places an unhinted sibling
+// via ImGui's own real SameLine() cursor advance, not this pre-computed
+// position, so the label lands after the icon's actual drawn width on
+// every frame including the very first -- covered by
+// FreshIconThenLabelRowDoesNotOverlapOnFirstRealRender in
+// test_imgui_renderer.cpp, which exercises a real render (this file's
+// fixture only arranges, never renders for real).
 
-TEST_F(ImguiLayoutTest, IconThenLabelRowDoesNotOverlapOnFirstFrame) {
-  // Regression test for the actual file_explorer bug: a brand-new icon+label
-  // row, measured/arranged WITHOUT ever having rendered before (matching
-  // file_explorer's real usage -- a fresh HorizontalLayout/Image/Label
-  // instantiated by make_name_cell() on every row rebuild). Before Image/
-  // Label got real measure_fns, a never-rendered node's last_rendered_size()
-  // fallback was {0,0}, so the icon's arranged width was 0 and the label's
-  // arranged x coincided with the icon's own position instead of starting
-  // after it -- and since these are fresh objects every rebuild, this was
-  // not a one-frame startup glitch, it reproduced on essentially every
-  // interaction.
+TEST_F(ImguiLayoutTest, IconThenLabelRowArrangePosCanUnderMeasureBeforeAnyRealRender) {
+  // Documents the one caveat the fallback (vs. a bespoke formula) accepts:
+  // arranged_pos()/arranged_size() for a never-rendered auto icon+label
+  // pair reflect {0,0} natural sizes, so the label's arranged x sits right
+  // on top of the icon's arranged x -- this is fine precisely because
+  // nothing downstream trusts arranged_pos() for *positioning* an unhinted
+  // sibling anymore (see the section comment above). This test exists so a
+  // future reader doesn't mistake the gap between "arranged_pos looks
+  // wrong" and "nothing actually overlaps on screen" for a regression.
   auto map = bdg::wish::import_json(R"({"type":"HorizontalLayout","spacing":6,"children":{
       "icon":{"type":"Image","src":"res/icons/file.png"},
       "name":{"type":"Label","text":"clang-format"}
@@ -227,22 +257,20 @@ TEST_F(ImguiLayoutTest, IconThenLabelRowDoesNotOverlapOnFirstFrame) {
   auto& name = *map["name"];
   icon["__auto_size_to_font__"_key] = true;
 
-  // Single frame, no prior render at all.
   renderer_->begin_frame();
   in_window([&] { ensure_arranged(*renderer_, root, *sess_); });
   renderer_->end_frame();
 
-  float line = ImGui::GetTextLineHeight();
-  EXPECT_FLOAT_EQ(icon.arranged_pos().x, name.arranged_pos().x - line - 6.0f);
-  EXPECT_GE(name.arranged_pos().x, icon.arranged_pos().x + icon.arranged_size().x);
+  EXPECT_FLOAT_EQ(icon.arranged_size().x, 0.0f);
+  EXPECT_FLOAT_EQ(icon.arranged_pos().x, name.arranged_pos().x - 6.0f);
 }
 
-TEST_F(ImguiLayoutTest, IconThenLabelRowDoesNotOverlap) {
-  // Same shape, but exercised across two frames (render once for real, then
-  // re-arrange) to confirm the formula-based measure and the real rendered
-  // size agree -- i.e. measure_image()/measure_label() aren't just correct
-  // in isolation, they match what render_image()/render_label() actually
-  // draw.
+TEST_F(ImguiLayoutTest, IconThenLabelRowArrangeMatchesRealSizeAfterOneRealRender) {
+  // Exercised across two frames (render once for real, then re-arrange) to
+  // confirm the generic last_rendered_size() fallback and the real rendered
+  // size agree once a real render has happened -- self-corrects within one
+  // frame, exactly the documented trade-off for any fallback-eligible
+  // class.
   auto map = bdg::wish::import_json(R"({"type":"HorizontalLayout","spacing":6,"children":{
       "icon":{"type":"Image","src":"res/icons/file.png"},
       "name":{"type":"Label","text":"clang-format"}
@@ -266,16 +294,19 @@ TEST_F(ImguiLayoutTest, IconThenLabelRowDoesNotOverlap) {
 }
 
 TEST_F(ImguiLayoutTest, ContentExtentIsSmallEvenWhenSelfHealedWithLargeAmbientAvail) {
-  // Regression test for the bug introduced by pin_cursor_to_arranged_bottom()
-  // itself: a HorizontalLayout with no stretch/fill child (e.g. this same
-  // per-row icon-then-label cell, self-healing inside a Table cell where the
-  // ambient GetContentRegionAvail() is "whatever's left in the whole
+  // Regression test for the bug pin_cursor_to_arranged_bottom() (now
+  // superseded by content_extent()-based BeginChild sizing, see
+  // src/imgui/DESIGN.md's "Why content_extent, not arranged_size") existed
+  // to fix: a HorizontalLayout with no stretch/fill child (e.g. this same
+  // per-row icon-then-label cell, self-healing inside a Table cell where
+  // the ambient GetContentRegionAvail() is "whatever's left in the whole
   // scrollable table region", not this one row) must NOT report its
   // arranged_size() as its true content bottom -- that's the *given* space
-  // (here, in_window()'s ~580px-tall test window, standing in for a table's
-  // large remaining scroll region), not what its children actually used.
-  // content_extent() is the fix: it must stay close to the label's own
-  // single-line height regardless of how large the ambient avail was.
+  // (here, in_window()'s ~580px-tall test window, standing in for a
+  // table's large remaining scroll region), not what its children actually
+  // used. Rendered once for real first so content_extent() reflects real
+  // (small) content rather than the vacuously-small {0,0} a never-rendered
+  // fallback would also satisfy.
   auto map = bdg::wish::import_json(R"({"type":"HorizontalLayout","spacing":6,"children":{
       "icon":{"type":"Image","src":"res/icons/file.png"},
       "name":{"type":"Label","text":"clang-format"}
@@ -283,9 +314,10 @@ TEST_F(ImguiLayoutTest, ContentExtentIsSmallEvenWhenSelfHealedWithLargeAmbientAv
   auto& root = *map[""];
   (*map["icon"])["__auto_size_to_font__"_key] = true;
 
-  // Formula-based measure_image()/measure_label() make a prior real render
-  // unnecessary for this row's own sizing, but ensure_arranged() is still
-  // exercised the same way a self-healed Table cell would call it.
+  renderer_->begin_frame();
+  in_window([&] { renderer_->render_node(root, *sess_); });
+  renderer_->end_frame();
+
   renderer_->begin_frame();
   in_window([&] { ensure_arranged(*renderer_, root, *sess_); });
   renderer_->end_frame();
