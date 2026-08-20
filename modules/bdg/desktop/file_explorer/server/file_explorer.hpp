@@ -39,6 +39,12 @@ namespace bdg::wish {
 ///   - `"on_download_requested"` (`{name}`) — client should call
 ///     `download_file()`, write it under the current local path, then call
 ///     `update_local_listing()` to refresh the left panel.
+///   - `"on_upload_conflict"` (`{name, local_path}`) — the upload target
+///     already exists in the sandbox. The client should confirm with the
+///     user (e.g. via an instantiated `MessageBox`, `buttons: "yes_no"`) and,
+///     if confirmed, proceed exactly as it would for `on_upload_requested`.
+///   - `"on_download_conflict"` (`{name}`) — same as `on_upload_conflict`,
+///     but the download target already exists locally.
 class file_explorer : public form {
  public:
   explicit file_explorer(bison::dynamic&& base);
@@ -92,26 +98,6 @@ class file_explorer : public form {
       const bison::dynamic& payload, std::vector<file_row>& entries, const ui_element_ptr& table,
       int32_t& sort_column_id, bool& sort_ascending);
 
-  /// @brief What the "Overwrite?" confirmation, once accepted, should do.
-  enum class pending_transfer { none, upload, download };
-
-  /// @brief Builds (or rebuilds) the "<name> already exists ... overwrite?"
-  /// modal as a second top-level internal Window (mirrors message_box.cpp's
-  /// rebuild()/register_root(), inlined here rather than instantiating a
-  /// separate MessageBox object -- this form already owns the on_event
-  /// routing and selection state the confirmation needs to act on).
-  void show_overwrite_confirm(pending_transfer kind, const std::string& name);
-
-  /// @brief Thin wrapper over form::request_close_at(confirm_root_key_) --
-  /// see that method's doc comment for why this can't just erase the tree
-  /// directly from a button-click handler.
-  void request_close_confirm();
-
-  /// @brief Thin wrapper over form::remove_objects_at(confirm_root_key_),
-  /// scoped to the confirm dialog's own root instead of internal_root_key_
-  /// (a form only tracks automatic removal for the latter).
-  void remove_confirm_objects();
-
   bool sandbox_has_file(const std::string& name) const;
   bool local_has_file(const std::string& name) const;
 
@@ -159,12 +145,6 @@ class file_explorer : public form {
   bool selected_local_is_dir_{false};
   std::string selected_sandbox_name_;
   bool selected_sandbox_is_dir_{false};
-
-  std::string confirm_root_key_; ///< Empty when no confirm dialog is open.
-  bison::key_t confirm_window_id_;
-  bison::key_t confirm_yes_id_;
-  bison::key_t confirm_no_id_;
-  pending_transfer pending_transfer_{pending_transfer::none};
 };
 
 /// @brief Register FileExplorer in the "wish" bison namespace.

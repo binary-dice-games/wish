@@ -90,6 +90,16 @@ std::string format_modified(const fs::file_time_type& ftime) {
 // "outer_height" override needed, since 0 (the default) already means
 // "fill the remaining space in the parent", and the parent here is now a
 // real fixed-size child window rather than an auto-sizing one.
+//
+// "middle" (the upload/download button column) carries "height": -1 for the
+// same reason as "left"/"right" -- a real fixed-height child window, not one
+// auto-sized to its two buttons -- but for a different purpose: it gives the
+// Spring elements flanking "upload"/"download" somewhere to actually expand
+// into. Two Springs around one child centers it (see docs/ui-elements.md's
+// Spring section); here they flank the *pair*, so the buttons stay adjacent
+// (spacing: 10 between them) while sliding as a group to the vertical center
+// of the column, rather than sitting pinned at the top like every other
+// auto-height column would.
 
 // Tagged delimiter (R"json(...)json") rather than the untagged R"(...)"
 // convention used elsewhere: "Sandbox (Server)" ends in a ")" immediately
@@ -134,10 +144,12 @@ static constexpr const char* kLayout = R"json({
             "middle": {
               "type": "VerticalLayout",
               "spacing": 10,
-              "width": 80,
+              "width": 80, "height": -1,
               "children": {
+                "middle_spring_top":    { "type": "Spring" },
                 "upload":   { "type": "Button", "label": ">>", "width": 60, "height": 36 },
-                "download": { "type": "Button", "label": "<<", "width": 60, "height": 36 }
+                "download": { "type": "Button", "label": "<<", "width": 60, "height": 36 },
+                "middle_spring_bottom": { "type": "Spring" }
               }
             },
             "right": {
@@ -171,7 +183,6 @@ static constexpr const char* kLayout = R"json({
             }
           }
         },
-        "status_sep": { "type": "Separator" },
         "status": { "type": "Label", "text": "Ready." },
         "transfer_progress": { "type": "ProgressBar", "value": 0.0, "label": "", "width": -1 }
       }
@@ -330,78 +341,6 @@ bool file_explorer::local_has_file(const std::string& name) const {
     if (e.type == "file" && e.name == name)
       return true;
   return false;
-}
-
-// ── Overwrite confirmation (inline second modal, see message_box.cpp for ──────
-// the reference pattern this mirrors: an internal Window merged as its own
-// top-level object, closed via the __request_close__/closed handshake.
-
-namespace {
-constexpr const char* kConfirmLayout = R"({
-  "type": "Window", "title": "Confirm Overwrite", "modal": true,
-  "flags": "NoResize|NoCollapse|AlwaysAutoResize",
-  "children": {
-    "message": { "type": "Label", "text": "" },
-    "sep": { "type": "Separator" },
-    "buttons": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_yes": { "type": "Button", "label": "Overwrite", "height": 32 },
-      "btn_no": { "type": "Button", "label": "Cancel", "height": 32 }
-    } }
-  }
-})";
-} // namespace
-
-void file_explorer::show_overwrite_confirm(pending_transfer kind, const std::string& name) {
-  // Called from on_event(), which runs outside dispatch (see form.hpp) --
-  // sess() would throw here, so this acquires context_wlock directly and
-  // avoids next_available_key()/ctx()-via-sess(), mirroring
-  // navigate_sandbox()'s and remove_internal_objects()'s own
-  // dispatch/non-dispatch handling.
-  pending_transfer_ = kind;
-
-  auto tree = import_json(kConfirmLayout);
-  std::string message = kind == pending_transfer::upload
-      ? ("\"" + name + "\" already exists in the sandbox. Overwrite it?")
-      : ("\"" + name + "\" already exists locally. Overwrite it?");
-  tree.with("message", [&](const auto& e) { e["text"_key] = message; });
-
-  auto& c = ctx();
-  for (auto& [key, elem] : tree) {
-    key_t id = rmi::shared::generate_id();
-    c.put_object(id, elem);
-    elem["__wish_id"_key] = id;
-  }
-
-  confirm_window_id_ = (*tree[""])["__wish_id"_key].as<key_t>();
-  tree.with("buttons.btn_yes", [&](const auto& e) { confirm_yes_id_ = wish_id_of(e); });
-  tree.with("buttons.btn_no", [&](const auto& e) { confirm_no_id_ = wish_id_of(e); });
-
-  auto lock = context_wlock{*sync_ctx_};
-  context& s = *lock;
-  for (int i = 0;; ++i) {
-    std::string candidate = "__fileexplorer_confirm_" + std::to_string(i);
-    if (s.top_level_objects.find(key_t{candidate}) == s.top_level_objects.end()) {
-      confirm_root_key_ = candidate;
-      break;
-    }
-  }
-
-  s.ui_objects.merge(std::move(tree), confirm_root_key_);
-  auto it = s.ui_objects.find(confirm_root_key_);
-  if (it != s.ui_objects.end()) {
-    s.top_level_objects[key_t{confirm_root_key_}] = it->second;
-    (*it->second)["__path__"_key] = confirm_root_key_;
-    s.top_level_handlers[key_t{confirm_root_key_}] = this;
-  }
-}
-
-void file_explorer::request_close_confirm() {
-  request_close_at(confirm_root_key_);
-}
-
-void file_explorer::remove_confirm_objects() {
-  remove_objects_at(confirm_root_key_);
-  confirm_root_key_.clear();
 }
 
 // ── Sandbox navigation (server-owned) ────────────────────────────────────────
@@ -641,14 +580,13 @@ void file_explorer::on_event(key_t id, key_t event, const dynamic& payload) {
       set_status("Select a local file to upload.");
       return;
     }
-    if (sandbox_has_file(selected_local_name_)) {
-      show_overwrite_confirm(pending_transfer::upload, selected_local_name_);
-      return;
-    }
     dynamic req;
     req["name"_key] = selected_local_name_;
     req["local_path"_key] = local_path_;
-    emit("on_upload_requested"_key, std::move(req));
+    // A conflicting target asks the client to confirm (via its own
+    // MessageBox, "on_upload_conflict") instead of this form building a
+    // second internal modal -- see file_explorer.hpp's class doc comment.
+    emit(sandbox_has_file(selected_local_name_) ? "on_upload_conflict"_key : "on_upload_requested"_key, std::move(req));
     return;
   }
 
@@ -657,41 +595,10 @@ void file_explorer::on_event(key_t id, key_t event, const dynamic& payload) {
       set_status("Select a sandbox file to download.");
       return;
     }
-    if (local_has_file(selected_sandbox_name_)) {
-      show_overwrite_confirm(pending_transfer::download, selected_sandbox_name_);
-      return;
-    }
     dynamic req;
     req["name"_key] = selected_sandbox_name_;
-    emit("on_download_requested"_key, std::move(req));
+    emit(local_has_file(selected_sandbox_name_) ? "on_download_conflict"_key : "on_download_requested"_key, std::move(req));
     return;
-  }
-
-  if (!confirm_root_key_.empty()) {
-    if (id == confirm_window_id_ && event == "closed"_key) {
-      remove_confirm_objects();
-      pending_transfer_ = pending_transfer::none;
-      return;
-    }
-    if (id == confirm_yes_id_ && event == "clicked"_key) {
-      if (pending_transfer_ == pending_transfer::upload) {
-        dynamic req;
-        req["name"_key] = selected_local_name_;
-        req["local_path"_key] = local_path_;
-        emit("on_upload_requested"_key, std::move(req));
-      } else if (pending_transfer_ == pending_transfer::download) {
-        dynamic req;
-        req["name"_key] = selected_sandbox_name_;
-        emit("on_download_requested"_key, std::move(req));
-      }
-      request_close_confirm();
-      return;
-    }
-    if (id == confirm_no_id_ && event == "clicked"_key) {
-      set_status(pending_transfer_ == pending_transfer::upload ? "Upload cancelled." : "Download cancelled.");
-      request_close_confirm();
-      return;
-    }
   }
 }
 

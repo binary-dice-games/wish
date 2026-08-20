@@ -657,17 +657,16 @@ TEST_F(FileExplorerEventTest, LocalRowSelectedHighlightsSelectedRowOnly) {
 }
 
 // ── Overwrite confirmation ─────────────────────────────────────────────────────
+//
+// The server no longer builds its own second modal window for this -- it
+// just emits "on_upload_conflict"/"on_download_conflict" instead of
+// "on_upload_requested"/"on_download_requested" when the target name already
+// exists, and leaves confirming with the user (via an instantiated
+// MessageBox, "yes_no" preset) to the client -- see
+// modules/bdg/desktop/file_explorer/client/file_explorer.cpp's
+// confirm_overwrite().
 
-// Helper: find the confirm dialog's top-level root key ("__fileexplorer_confirm_N", no dot).
-static std::string find_confirm_root(const wish::name_map& objects) {
-  for (const auto& [k, _] : objects) {
-    if (k.rfind("__fileexplorer_confirm_", 0) == 0 && k.find('.') == std::string::npos)
-      return k;
-  }
-  return {};
-}
-
-TEST_F(FileExplorerEventTest, UploadClickedWithExistingSandboxFileShowsConfirmInsteadOfEmitting) {
+TEST_F(FileExplorerEventTest, UploadClickedWithExistingSandboxFileEmitsConflictInsteadOfRequested) {
   // Seed the sandbox with a file of the same name as the local selection.
   const auto& resource_dir = srv_->last_session->resource_dir;
   for (auto& entry : std::filesystem::directory_iterator{resource_dir})
@@ -680,63 +679,31 @@ TEST_F(FileExplorerEventTest, UploadClickedWithExistingSandboxFileShowsConfirmIn
   sel["index"_key] = int32_t{0};
   handler_->on_event(widget_id(".main.panels.left.left_table"), "row_selected"_key, sel);
 
-  bool got = false;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "on_upload_requested"_key)
-      got = true;
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
-
-  handler_->on_event(widget_id(".main.panels.middle.upload"), "clicked"_key, dynamic{});
-
-  wait_for(got);
-  EXPECT_FALSE(got) << "upload should be held back pending overwrite confirmation";
-
-  std::string confirm_root = find_confirm_root(srv_->last_session->ui_objects);
-  ASSERT_FALSE(confirm_root.empty()) << "no confirm dialog root registered";
-  EXPECT_TRUE(srv_->last_session->top_level_objects.count(bison::key_t{confirm_root}));
-}
-
-TEST_F(FileExplorerEventTest, ConfirmOverwriteYesEmitsOnUploadRequested) {
-  const auto& resource_dir = srv_->last_session->resource_dir;
-  for (auto& entry : std::filesystem::directory_iterator{resource_dir})
-    std::filesystem::remove_all(entry.path());
-  { std::ofstream out(resource_dir / "a.txt"); out << "existing"; }
-  proxy_->call("refresh_sandbox"_key, dynamic{}).get();
-
-  proxy_->call("update_local_listing"_key, make_local_listing_args("/home", {{"a.txt", "file", "1 B", ""}})).get();
-  dynamic sel;
-  sel["index"_key] = int32_t{0};
-  handler_->on_event(widget_id(".main.panels.left.left_table"), "row_selected"_key, sel);
-  handler_->on_event(widget_id(".main.panels.middle.upload"), "clicked"_key, dynamic{});
-
-  std::string confirm_root = find_confirm_root(srv_->last_session->ui_objects);
-  ASSERT_FALSE(confirm_root.empty());
-  auto yes_id =
-      srv_->last_session->ui_objects.at(confirm_root + ".buttons.btn_yes")->as<bison::key_t>("__wish_id"_key);
-
-  bool got = false;
+  bool got_requested = false;
+  bool got_conflict = false;
   dynamic captured;
   auto prev = std::move(srv_->last_session->emit_event);
   srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "on_upload_requested"_key) {
-      got = true;
+    if (event == "on_upload_requested"_key)
+      got_requested = true;
+    if (event == "on_upload_conflict"_key) {
+      got_conflict = true;
       captured = std::move(payload);
     }
     if (prev)
       prev(id, event, std::move(payload));
   };
 
-  handler_->on_event(yes_id, "clicked"_key, dynamic{});
+  handler_->on_event(widget_id(".main.panels.middle.upload"), "clicked"_key, dynamic{});
 
-  wait_for(got);
-  ASSERT_TRUE(got);
+  wait_for(got_conflict);
+  EXPECT_FALSE(got_requested) << "upload should be held back pending overwrite confirmation";
+  ASSERT_TRUE(got_conflict);
   EXPECT_EQ(captured.as<std::string>("name"_key), "a.txt");
+  EXPECT_EQ(captured.as<std::string>("local_path"_key), "/home");
 }
 
-TEST_F(FileExplorerEventTest, ConfirmOverwriteNoCancelsWithoutEmitting) {
+TEST_F(FileExplorerEventTest, DownloadClickedWithExistingLocalFileEmitsConflictInsteadOfRequested) {
   const auto& resource_dir = srv_->last_session->resource_dir;
   for (auto& entry : std::filesystem::directory_iterator{resource_dir})
     std::filesystem::remove_all(entry.path());
@@ -746,28 +713,29 @@ TEST_F(FileExplorerEventTest, ConfirmOverwriteNoCancelsWithoutEmitting) {
   proxy_->call("update_local_listing"_key, make_local_listing_args("/home", {{"a.txt", "file", "1 B", ""}})).get();
   dynamic sel;
   sel["index"_key] = int32_t{0};
-  handler_->on_event(widget_id(".main.panels.left.left_table"), "row_selected"_key, sel);
-  handler_->on_event(widget_id(".main.panels.middle.upload"), "clicked"_key, dynamic{});
+  handler_->on_event(widget_id(".main.panels.right.right_table"), "row_selected"_key, sel);
 
-  std::string confirm_root = find_confirm_root(srv_->last_session->ui_objects);
-  ASSERT_FALSE(confirm_root.empty());
-  auto no_id = srv_->last_session->ui_objects.at(confirm_root + ".buttons.btn_no")->as<bison::key_t>("__wish_id"_key);
-
-  bool got = false;
+  bool got_requested = false;
+  bool got_conflict = false;
+  dynamic captured;
   auto prev = std::move(srv_->last_session->emit_event);
   srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "on_upload_requested"_key)
-      got = true;
+    if (event == "on_download_requested"_key)
+      got_requested = true;
+    if (event == "on_download_conflict"_key) {
+      got_conflict = true;
+      captured = std::move(payload);
+    }
     if (prev)
       prev(id, event, std::move(payload));
   };
 
-  handler_->on_event(no_id, "clicked"_key, dynamic{});
+  handler_->on_event(widget_id(".main.panels.middle.download"), "clicked"_key, dynamic{});
 
-  wait_for(got);
-  EXPECT_FALSE(got);
-  EXPECT_EQ(
-      srv_->last_session->ui_objects.at(root_ + ".main.status")->as<std::string>("text"_key), "Upload cancelled.");
+  wait_for(got_conflict);
+  EXPECT_FALSE(got_requested) << "download should be held back pending overwrite confirmation";
+  ASSERT_TRUE(got_conflict);
+  EXPECT_EQ(captured.as<std::string>("name"_key), "a.txt");
 }
 
 TEST_F(FileExplorerEventTest, WindowClosedEmitsClosedAndCleansUp) {
