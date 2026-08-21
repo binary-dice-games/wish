@@ -109,8 +109,8 @@ struct git_app_registrar {
   git_app_registrar() {
     register_app({
         .name = "git",
-        .organization = WISH_MODULE_BDG_DEV_GIT_ORGANIZATION,
-        .collection = WISH_MODULE_BDG_DEV_GIT_COLLECTION,
+        .organization = WISH_MODULE_BDG_DESKTOP_GIT_ORGANIZATION,
+        .collection = WISH_MODULE_BDG_DESKTOP_GIT_COLLECTION,
         .description = "SourceTree-style git GUI frontend for a local repository "
                         "(wish client --run=git -- /path/to/repo)",
         .params = {},

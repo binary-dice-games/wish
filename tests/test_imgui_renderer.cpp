@@ -1063,6 +1063,65 @@ TEST_F(ImguiRendererTest, AutoHeightTableInsideVerticalLayoutDoesNotGrowFrameToF
   }
 }
 
+TEST_F(ImguiRendererTest, StretchTabBarWrappingFillHeightTableDoesNotGrowFrameToFrame) {
+  // Regression test for a real user-reported bug (modules/bdg/desktop/tail,
+  // git, nano): a "outer_height": -1 Table nested inside a TabItem/TabBar
+  // that is itself an *auto* (height:0, the default) child of a
+  // VerticalLayout grows without bound over successive frames, visible as a
+  // table/window that "keeps getting taller" the longer the app renders.
+  //
+  // TabBar has no measure_fn of its own (see imgui_layout.cpp's
+  // measure_dispatch_fns() comment), so its natural size for the *next*
+  // frame's arrange pass comes from ui_element::last_rendered_size() --
+  // this node's own previous frame's real rendered rect, captured via a
+  // BeginGroup()/EndGroup() wrap (imgui_renderer.cpp's needs_group_wrap)
+  // that spans everything drawn inside the tab strip AND the active tab's
+  // content. Since that content includes a Table asking to fill whatever
+  // ambient region it's given ("outer_height": -1), TabBar's own
+  // last_rendered_size() already embeds however much room the Table filled
+  // -- feeding that back as an *auto* child's own natural height hands the
+  // Table even more room next frame, compounding without bound (confirmed
+  // via WISH_LAYOUT_DEBUG_LOG against a live tail session: +250px per
+  // rendered frame, no ceiling). Marking the TabBar itself as a stretch
+  // (height:-1) child breaks the cycle: its size becomes a deterministic
+  // share of the VerticalLayout's own real avail instead of a function of
+  // what it rendered last time -- see render_vertical_layout() for how a
+  // nonzero height hint gets a real bounding BeginChild() wrap.
+  constexpr auto desc = R"({
+    "type": "Window", "title": "T3", "width": 300, "height": 400,
+    "pos_x": 0, "pos_y": 0,
+    "children": { "vl": { "type": "VerticalLayout", "children": {
+      "hdr": { "type": "Label", "text": "Header" },
+      "tabs": { "type": "TabBar", "id": "tb", "height": -1, "children": {
+        "t0": { "type": "TabItem", "label": "All", "children": {
+          "tbl": { "type": "Table", "id": "t_fill", "columns": 1, "outer_height": -1, "children": {
+            "c": { "type": "TableColumn", "label": "Col" },
+            "r0": { "type": "TableRow" }
+          }}
+        }}
+      }}
+    }}}
+  })";
+  auto map = bdg::wish::import_json(desc);
+  auto& tab_bar = *map["vl.tabs"];
+
+  std::vector<vec2f> sizes;
+  for (int i = 0; i < 10; ++i) {
+    renderer_->begin_frame();
+    renderer_->render_node(*map[""], *sess_);
+    renderer_->end_frame();
+    sizes.push_back(tab_bar.last_rendered_size());
+  }
+
+  // Settles after the first frame and never changes again -- not merely
+  // "close", but bit-for-bit stable, since even a slow monotonic drift (the
+  // actual bug) would eventually show up as a real visual regression.
+  for (size_t i = 2; i < sizes.size(); ++i) {
+    EXPECT_FLOAT_EQ(sizes[i].x, sizes[1].x) << "frame " << i;
+    EXPECT_FLOAT_EQ(sizes[i].y, sizes[1].y) << "frame " << i;
+  }
+}
+
 // ── Docking: undock restores pre-dock floating size ──────────────────────────
 
 TEST_F(ImguiRendererTest, WindowRestoresFloatingSizeAfterUndock) {

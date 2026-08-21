@@ -150,12 +150,12 @@ wish_add_optional_test(WISH_MODULE_BDG_DEV_EDITOR                test_editor    
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_MC                 test_mc                test_mc.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_ZIP                test_zip               test_zip.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_PIX                test_pix               test_pix.cpp)
-wish_add_optional_test(WISH_MODULE_BDG_DEV_GIT                   test_git               test_git.cpp)
+wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_GIT                test_git               test_git.cpp)
 # Pure algorithm, no bison/RMI dependency -- still gated on the module
-# option since it lives under modules/bdg/dev/git/ and would otherwise fail
-# to link when that directory isn't part of the build.
-wish_add_optional_test(WISH_MODULE_BDG_DEV_GIT                   test_git_graph_layout  test_git_graph_layout.cpp
-    ${CMAKE_SOURCE_DIR}/modules/bdg/dev/git/server/git_graph_layout.cpp)
+# option since it lives under modules/bdg/desktop/git/ and would otherwise
+# fail to link when that directory isn't part of the build.
+wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_GIT                test_git_graph_layout  test_git_graph_layout.cpp
+    ${CMAKE_SOURCE_DIR}/modules/bdg/desktop/git/server/git_graph_layout.cpp)
 if(TARGET test_git_graph_layout)
   target_include_directories(test_git_graph_layout PRIVATE ${CMAKE_SOURCE_DIR})
 endif()

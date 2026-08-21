@@ -1,7 +1,7 @@
 // MIT License © 2025 Binary Dice Games
 #include <gtest/gtest.h>
 
-#include "modules/bdg/dev/git/server/git_graph_layout.hpp"
+#include "modules/bdg/desktop/git/server/git_graph_layout.hpp"
 
 #include <algorithm>
 #include <cstdint>

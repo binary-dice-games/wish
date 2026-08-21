@@ -120,6 +120,19 @@ std::string status_color_hex(const std::string& status) {
 // diff_table (no row banding/borders -- diff coloring gives its own
 // structure) = Resizable|ScrollY = 33554433.
 // ImGuiTableColumnFlags: WidthFixed=16, WidthStretch=8.
+//
+// Every "outer_height": -1 table below also carries its own "height": -1 --
+// load-bearing, not cosmetic. "outer_height": -1 asks render_table() to
+// fill whatever ambient region the table is rendered into, but each of
+// these tables is the child of an auto-sized (no height hint of its own)
+// VerticalLayout; without also marking the table itself as a stretch (-1)
+// Layout child, arrange_vertical_layout() falls back to the table's own
+// *previous frame's real rendered height* (measure_node()'s
+// last_rendered_size() fallback, imgui_layout.cpp) as if it were the
+// table's natural size -- which already includes its own fill-driven
+// height, compounding without bound frame over frame (see
+// modules/bdg/desktop/tail/server/tail.cpp's kLayout comment for the full
+// mechanism, confirmed there via WISH_LAYOUT_DEBUG_LOG).
 
 static constexpr const char* kMainLayout = R"({
   "type": "Window", "title": "Git", "width": 900, "height": 720, "pos_x": 0, "pos_y": 0, "closable": true,
@@ -170,7 +183,7 @@ static constexpr const char* kMainLayout = R"({
               "children": {
                 "current_branch_label": { "type": "Label", "text": "" },
                 "graph_table": {
-                  "type": "Table", "id": "##graph_table", "columns": 5,
+                  "type": "Table", "id": "##graph_table", "columns": 5, "height": -1,
                   "flags": 33556417, "headers": true, "outer_height": -1,
                   "children": {
                     "col_graph":  { "type": "TableColumn", "label": "Graph",       "flags": 16, "init_width": 80,  "column_id": 0 },
@@ -197,7 +210,7 @@ static constexpr const char* kFilesLayout = R"({
       "children": {
         "title_label": { "type": "Label", "text": "Uncommitted changes" },
         "files_table": {
-          "type": "Table", "id": "##files_table", "columns": 2,
+          "type": "Table", "id": "##files_table", "columns": 2, "height": -1,
           "flags": 33556417, "outer_height": -1,
           "children": {
             "col_check": { "type": "TableColumn", "flags": 16, "init_width": 28, "column_id": 0 },
@@ -224,7 +237,7 @@ static constexpr const char* kDiffLayout = R"({
       "children": {
         "title_label": { "type": "Label", "text": "" },
         "diff_table": {
-          "type": "Table", "id": "##diff_table", "columns": 2,
+          "type": "Table", "id": "##diff_table", "columns": 2, "height": -1,
           "flags": 33554433, "outer_height": -1,
           "children": {
             "col_gutter": { "type": "TableColumn", "flags": 16, "init_width": 16, "column_id": 0 },
@@ -243,7 +256,7 @@ static constexpr const char* kLogLayout = R"({
       "type": "VerticalLayout",
       "children": {
         "log_table": {
-          "type": "Table", "id": "##git_log_table", "columns": 4,
+          "type": "Table", "id": "##git_log_table", "columns": 4, "height": -1,
           "flags": 33556417, "headers": true, "outer_height": -1,
           "children": {
             "col_seq":     { "type": "TableColumn", "label": "#",       "flags": 16, "init_width": 40,  "column_id": 0 },

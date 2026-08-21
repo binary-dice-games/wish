@@ -48,9 +48,23 @@ constexpr size_t kMaxBufferedRows = 2000;
 // fills whatever width remains, matching kHelpWindowLayout's col_desc in
 // modules/bdg/dev/editor/server/editor.cpp).
 // ImGuiTableFlags: Resizable(1) + RowBg(64) + Borders(1920) +
-// ScrollY(1<<25=33554432) = 33556417 -- see modules/bdg/dev/git/server/git.cpp's
+// ScrollY(1<<25=33554432) = 33556417 -- see modules/bdg/desktop/git/server/git.cpp's
 // identical combination; ScrollY both clips the table to outer_height and
 // (via render_table()'s own auto-scroll logic) keeps the newest row in view.
+// "tab_bar"'s own "height": -1 is load-bearing, not cosmetic: table_all's
+// "outer_height": -1 asks to fill whatever ambient region it's rendered
+// into, but tab_bar has no explicit Layout height hint of its own (the
+// default is 0, "auto -- use my own measured natural size"), so without
+// this, arrange_vertical_layout() would treat tab_bar as an auto child and
+// hand it back its own *previous frame's real rendered height* (via
+// measure_node()'s last_rendered_size() fallback, see imgui_layout.cpp) --
+// which already includes table_all's own fill-driven height, compounding
+// without bound frame over frame (confirmed via WISH_LAYOUT_DEBUG_LOG: the
+// whole vbox/tab_bar/table_all chain grew in lockstep, +250px per rendered
+// frame, with no ceiling). Marking tab_bar itself as a stretch (-1) child
+// makes its size a deterministic share of vbox's own real avail instead,
+// breaking the cycle -- see imgui_ui_renderer.cpp's render_vertical_layout()
+// for how a nonzero height hint gets a real bounding BeginChild() wrap.
 static constexpr const char* kLayout = R"json({
   "type": "Window",
   "title": "Tail",
@@ -72,7 +86,7 @@ static constexpr const char* kLayout = R"json({
         },
         "status_label": { "type": "Label", "text": "0 lines" },
         "tab_bar": {
-          "type": "TabBar", "id": "##tail_tabs",
+          "type": "TabBar", "id": "##tail_tabs", "height": -1,
           "children": {
             "tab_all": {
               "type": "TabItem", "label": "All", "closable": false,

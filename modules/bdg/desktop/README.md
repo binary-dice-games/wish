@@ -16,3 +16,4 @@ or individual modules with their own `WISH_MODULE_BDG_DESKTOP_<NAME>` option
 | [top](top/README.md) | top/htop-style system monitor; client samples CPU/memory/processes, server only renders. |
 | [mc](mc/README.md) | Two-panel file browser for the client's local filesystem vs. session sandbox; server owns the UI, client does the actual filesystem I/O. |
 | [zip](zip/README.md) | Zip/unzip tool for the client's local filesystem; server owns the UI, client does the actual compress/extract/list-contents I/O. |
+| [git](git/README.md) | SourceTree-style git GUI: commit graph, staging/commit, diff viewer, branch/remote operations; server owns the UI, client shells out to the local `git` binary. |

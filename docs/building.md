@@ -105,7 +105,7 @@ cmake -S . -B build
 | `WISH_ENABLE_AUTOMATION` | `OFF` | Build the automation query API: a widget-tree/hit-test query protocol that lets an AI agent (or a pytest-style e2e suite) introspect and drive a running wish UI. On the web renderer this adds a Playwright-driven headless-browser path (screenshot/input control it already gets for free, plus two new WebSocket message types). On the SDL3 renderer this adds a native path built directly into the wish C ABI (no browser). Requires `WISH_ENABLE_WEB=ON` and/or `WISH_ENABLE_SDL3=ON` (configure-time error otherwise). See [src/automation/DESIGN.md](../src/automation/DESIGN.md) and `CLAUDE.md`'s "Automation" section. |
 | `WISH_BUILD_SHARED` | `ON` | Build `wish_client` as a shared library with a C ABI (`wish_client.dll` on MSYS2/native Windows / `libwish_client.so` on Linux). |
 | `WISH_BUILD_TESTS` | `ON` | Build and register the GoogleTest suite. |
-| `WISH_COLLECTION_BDG_DESKTOP` | `OFF` | Include every module in `modules/bdg/desktop/` (bc, tail, nano, pix, top, mc, zip) — see below. |
+| `WISH_COLLECTION_BDG_DESKTOP` | `OFF` | Include every module in `modules/bdg/desktop/` (bc, tail, nano, pix, top, mc, zip, git) — see below. |
 | `WISH_MODULE_BDG_DESKTOP_BC` | `OFF` | Include the bc form (server; a four-function calculator) and its self-registering reference client runner. |
 | `WISH_MODULE_BDG_DESKTOP_TAIL` | `OFF` | Include the tail form (server) and its self-registering reference client runner — a `tail`-like log viewer (`wish client --run=tail -- [-f] [-n N] FILE...`). |
 | `WISH_MODULE_BDG_DESKTOP_NANO` | `OFF` | Include the nano form (server; a multi-file text editor) and its self-registering reference client runner. |
@@ -113,6 +113,7 @@ cmake -S . -B build
 | `WISH_MODULE_BDG_DESKTOP_TOP` | `OFF` | Include the top form (server; a top/htop-style system monitor) and its self-registering reference client runner. |
 | `WISH_MODULE_BDG_DESKTOP_MC` | `OFF` | Include the mc form (server; a two-panel local-filesystem-vs-sandbox file browser) and its self-registering reference client runner. |
 | `WISH_MODULE_BDG_DESKTOP_ZIP` | `OFF` | Include the zip form (server) and its self-registering reference client runner (client-side compress/extract/list-contents via miniz). |
+| `WISH_MODULE_BDG_DESKTOP_GIT` | `OFF` | Include the GitRepo form (server) and its self-registering reference client runner — a SourceTree-style git GUI frontend that shells out to the local `git` binary (`wish client --run=git -- /path/to/repo`). |
 | `WISH_COLLECTION_BDG_DEV` | `OFF` | Include every module in `modules/bdg/dev/` (currently just editor) — see below. |
 | `WISH_MODULE_BDG_DEV_EDITOR` | `OFF` | Include the Editor form (server) and its self-registering reference client runner — a live JSON UI mock editor (`wish client --run=editor -- path/to/ui.json`). |
 

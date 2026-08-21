@@ -64,6 +64,16 @@ std::string language_for_extension(const std::string& path) {
 // importer allocates a private children map for this instance instead of
 // falling back to the Element base prototype's shared default -- mutating
 // that shared default would corrupt every TabBar in the process.
+//
+// tab_bar's "height": -1 is load-bearing, not cosmetic -- see
+// modules/bdg/desktop/tail/server/tail.cpp's kLayout comment for the full
+// mechanism. Each opened file's TextEditor (do_open_file() below) sets its
+// own "height": 0 meaning "fill" per render_text_editor()'s own convention
+// (imgui_text_editor_renderer.cpp treats width/height <= 0 as -1, ImGui's
+// own "fill remaining region" sentinel) -- without tab_bar's own stretch
+// hint, that fill-driven editor's real rendered height feeds back into
+// vbox's own auto-sized natural height via tab_bar's last_rendered_size()
+// fallback, compounding without bound frame over frame.
 static constexpr const char* kNanoLayout = R"({
   "type": "Window",
   "title": "Nano",
@@ -82,7 +92,7 @@ static constexpr const char* kNanoLayout = R"({
             "btn_sync": { "type": "Button", "label": "Sync", "width": 90 }
           }
         },
-        "tab_bar": { "type": "TabBar", "id": "##nano_tabs", "children": {} }
+        "tab_bar": { "type": "TabBar", "id": "##nano_tabs", "height": -1, "children": {} }
       }
     }
   }

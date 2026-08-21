@@ -16,7 +16,7 @@ helper, and the no-modal-dialog interaction model.
      indirectly by `tests/test_git.cpp`'s graph-table row-count assertions
      and live automation screenshot verification.
 
-2. **Module scaffold + subprocess plumbing** — `modules/bdg/dev/git/{server,client}/`,
+2. **Module scaffold + subprocess plumbing** — `modules/bdg/desktop/git/{server,client}/`,
    `register_git()`/`run_git()` boilerplate, `git_process` (libuv), the
    `uv_a` CMake link change in `cmake/WishModules.cmake`. ✅ Done.
    - Deliverables: `wish client --run=git -- /path/to/repo` opens a window
@@ -90,11 +90,11 @@ helper, and the no-modal-dialog interaction model.
 ## Verification
 
 - **Unit tests**: `cmake --build build --target test_git test_git_graph_layout`
-  with `-DWISH_MODULE_BDG_DEV_GIT=ON`, then run both binaries directly.
+  with `-DWISH_MODULE_BDG_DESKTOP_GIT=ON`, then run both binaries directly.
   15/15 passing as of this pass.
 - **End-to-end** (performed during this implementation, not just described):
   built with `-DWISH_ENABLE_WEB=ON -DWISH_ENABLE_AUTOMATION=ON
-  -DWISH_MODULE_BDG_DEV_GIT=ON`; created a throwaway fixture repo (`git
+  -DWISH_MODULE_BDG_DESKTOP_GIT=ON`; created a throwaway fixture repo (`git
   init`, a few commits, a `feature` branch, a `--no-ff` merge back into
   `master`, plus an uncommitted modification and an untracked file);
   launched `wish server --renderer web` and `wish client --run=git -- <repo>`;
