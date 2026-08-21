@@ -108,6 +108,22 @@ static void report_self_rect(const ui_element& node) {
   const_cast<ui_element&>(node)["__wish_win_rect_h__"_key] = size.y;
 }
 
+// Companion to report_self_rect() for a node whose "own wrap" was a plain
+// ImGui::BeginGroup() rather than a real BeginChild() window -- there is no
+// GetWindowPos()/GetWindowSize() to query, so the caller passes the group's
+// own bounding box (from GetItemRectMin/Max() right after EndGroup())
+// directly. Stamps the identical "__wish_win_rect_*__" fields so
+// render_node()'s self_reports_rect branch (imgui_renderer.cpp) reads
+// equally accurate geometry regardless of which wrap mechanism a particular
+// call used -- see render_vertical_layout()/render_horizontal_layout()'s
+// suppress_layout_wrap_self handling.
+static void report_self_rect_from(const ui_element& node, ImVec2 rect_min, ImVec2 rect_max) {
+  const_cast<ui_element&>(node)["__wish_win_rect_x__"_key] = rect_min.x;
+  const_cast<ui_element&>(node)["__wish_win_rect_y__"_key] = rect_min.y;
+  const_cast<ui_element&>(node)["__wish_win_rect_w__"_key] = rect_max.x - rect_min.x;
+  const_cast<ui_element&>(node)["__wish_win_rect_h__"_key] = rect_max.y - rect_min.y;
+}
+
 // ── Core ──────────────────────────────────────────────────────────────────────
 
 void render_window(imgui_renderer& r, const ui_element& node, const context& s) {
@@ -575,19 +591,29 @@ void render_vertical_layout(imgui_renderer& r, const ui_element& node, const con
   // to that whole ambient region instead of hugging its actual content.
   vec2f self_size = node.content_extent();
 
-  // A degenerate (<=0) self size is the same "don't wrap" signal as a
-  // hinted child's own degenerate size below (see that branch's comment):
-  // ImGui::BeginChild() treats a 0/negative component as "fill the parent's
+  // A degenerate (<=0) self size means "don't wrap" outright (see the
+  // hinted-child branch below for the identical reasoning): ImGui::
+  // BeginChild() treats a 0/negative component as "fill the parent's
   // remaining space", not "auto-size to nothing", so an empty/zero-content
   // auto VerticalLayout would otherwise balloon to fill whatever's left in
   // its ambient container. Render children directly in that case (still via
   // natural flow) instead of opening a real child window.
+  bool has_self_size = self_size.x > 0.0f && self_size.y > 0.0f;
   // suppress_layout_wrap_self (set by render_table() around a TableRow
-  // cell's dispatch) overrides this node's own wrap regardless of its
-  // content size -- see that flag's doc comment in context.hpp for why a
-  // real BeginChild() here would otherwise swallow clicks meant for the
-  // row's Selectable.
-  bool wrap_self = self_size.x > 0.0f && self_size.y > 0.0f && !s.suppress_layout_wrap_self;
+  // cell's dispatch -- see that flag's doc comment in context.hpp) means
+  // this node's content must stay click-transparent to the row's Selectable
+  // beneath it: a real BeginChild() is a genuine ImGui window, which always
+  // wins hover/click priority over whatever's behind it in the parent
+  // window regardless of ImGuiSelectableFlags_AllowOverlap. There is no
+  // BeginChild() flag that opts a window out of that priority while still
+  // letting its own descendants receive input (ImGuiWindowFlags_NoMouseInputs
+  // disables input for the whole subtree, which would also break a real
+  // interactive widget placed in a cell, e.g. a Button). So this branch
+  // wraps in a plain BeginGroup() instead when suppressed -- a group is not
+  // a window at all, so there is nothing for it to ever intercept hover
+  // from, matching a plain (unwrapped) Label cell's existing behavior.
+  bool wrap_self = has_self_size && !s.suppress_layout_wrap_self;
+  bool group_wrap_self = has_self_size && s.suppress_layout_wrap_self;
   if (wrap_self) {
     // One real BeginChild for the *whole* row set, not one per hinted
     // child -- self-sizes to this node's own actual content extent and
@@ -606,6 +632,8 @@ void render_vertical_layout(imgui_renderer& r, const ui_element& node, const con
         child_id.c_str(), ImVec2(self_size.x, self_size.y), ImGuiChildFlags_None,
         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     report_self_rect(node);
+  } else if (group_wrap_self) {
+    ImGui::BeginGroup();
   }
 
   // Scoped to only this row set's own direct children -- popped before
@@ -663,8 +691,20 @@ void render_vertical_layout(imgui_renderer& r, const ui_element& node, const con
   });
 
   ImGui::PopStyleVar();
-  if (wrap_self)
+  if (wrap_self) {
     ImGui::EndChild();
+  } else if (group_wrap_self) {
+    // Same trailing zero-size Dummy() before EndGroup() as
+    // imgui_renderer.cpp's needs_group_wrap idiom, and for the identical
+    // reason: guarantees EndGroup() closes over something drawn at this
+    // node's own current position rather than falling back to whatever
+    // unrelated item rendered immediately before this node started (ImGui's
+    // own #7543 EndTable() workaround, which EndGroup()'s bounding-box
+    // computation shares).
+    ImGui::Dummy(ImVec2(0.0f, 0.0f));
+    ImGui::EndGroup();
+    report_self_rect_from(node, ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
+  }
 }
 
 void render_horizontal_layout(imgui_renderer& r, const ui_element& node, const context& s) {
@@ -715,11 +755,15 @@ void render_horizontal_layout(imgui_renderer& r, const ui_element& node, const c
   // See render_vertical_layout()'s identical guard for the full reasoning:
   // a degenerate self size must not be handed to BeginChild() (0/negative
   // means "fill remaining space" to ImGui, not "auto-size to nothing").
+  bool has_self_size = self_size.x > 0.0f && self_size.y > 0.0f;
   // See render_vertical_layout()'s identical guard: suppress_layout_wrap_self
-  // (set by render_table() around a TableRow cell's dispatch) overrides this
-  // node's own wrap so cell content stays click-transparent to the row's
-  // Selectable -- see context::suppress_layout_wrap_self's doc comment.
-  bool wrap_self = self_size.x > 0.0f && self_size.y > 0.0f && !s.suppress_layout_wrap_self;
+  // (set by render_table() around a TableRow cell's dispatch) means this
+  // node's content must stay click-transparent to the row's Selectable
+  // beneath it, which a real BeginChild() window can never be -- so this
+  // wraps in a plain BeginGroup() instead when suppressed, the same as
+  // render_vertical_layout().
+  bool wrap_self = has_self_size && !s.suppress_layout_wrap_self;
+  bool group_wrap_self = has_self_size && s.suppress_layout_wrap_self;
   if (wrap_self) {
     // One real BeginChild for the *whole* column set, not one per hinted
     // child -- see render_vertical_layout()'s identical comment for why
@@ -731,6 +775,8 @@ void render_horizontal_layout(imgui_renderer& r, const ui_element& node, const c
         child_id.c_str(), ImVec2(self_size.x, self_size.y), ImGuiChildFlags_None,
         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     report_self_rect(node);
+  } else if (group_wrap_self) {
+    ImGui::BeginGroup();
   }
 
   // Scoped to only this column set's own direct children -- see
@@ -796,8 +842,15 @@ void render_horizontal_layout(imgui_renderer& r, const ui_element& node, const c
   });
 
   ImGui::PopStyleVar();
-  if (wrap_self)
+  if (wrap_self) {
     ImGui::EndChild();
+  } else if (group_wrap_self) {
+    // See render_vertical_layout()'s identical trailing Dummy()/EndGroup()
+    // pair for why this is needed.
+    ImGui::Dummy(ImVec2(0.0f, 0.0f));
+    ImGui::EndGroup();
+    report_self_rect_from(node, ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
+  }
 }
 
 // Splitter -- imgui.com/issues/319's resizable-panes technique, implemented

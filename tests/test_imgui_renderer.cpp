@@ -1620,35 +1620,45 @@ TEST_F(ImguiRendererTest, FreshIconThenLabelRowDoesNotOverlapOnFirstRealRender) 
   EXPECT_GE(name_min.x, icon_max.x);
 }
 
-TEST_F(ImguiRendererTest, TableRowCellDoesNotOpenChildWindowOverSelectable) {
+TEST_F(ImguiRendererTest, TableRowCellUsesGroupWrapInsteadOfChildWindow) {
   // Regression test for the layout-refactor bug where a Table row with an
   // icon+label HorizontalLayout cell (file_browser_utils.cpp's
   // make_name_cell()) stopped responding to clicks landing on the cell's own
   // content, while clicking empty row space still worked. Root cause:
-  // render_horizontal_layout()'s wrap_self opens a real ImGui::BeginChild()
+  // render_horizontal_layout()'s wrap_self opened a real ImGui::BeginChild()
   // -- a distinct window that always wins hover/click priority over
   // whatever's behind it in the parent window, regardless of
   // ImGuiSelectableFlags_AllowOverlap -- over the row's own spanning
-  // Selectable. context::suppress_layout_wrap_self (set by render_table()
-  // around each cell's dispatch) suppresses exactly that wrap for cell
-  // content. A node that opened a real BeginChild() self-reports its rect
-  // via report_self_rect() (see imgui_ui_renderer.cpp), stamping
-  // "__wish_win_rect_w__" on it -- so that field's absence is a direct,
-  // deterministic signal that no click-stealing child window was opened,
-  // without needing to fight ImGui's full mouse press/release state machine
-  // in a headless test.
+  // Selectable. There is no BeginChild()/window flag that opts a window out
+  // of that priority without also disabling input for its own descendants
+  // (ImGuiWindowFlags_NoMouseInputs would equally block a real interactive
+  // widget placed in a cell, e.g. a Button) -- so a real window cannot be
+  // used here at all. context::suppress_layout_wrap_self (set by
+  // render_table() around each cell's dispatch) makes
+  // render_vertical_layout()/render_horizontal_layout() wrap in a plain
+  // ImGui::BeginGroup() instead of BeginChild() for that one dispatch --
+  // matching the per-child BeginGroup() wrap already used a few lines below
+  // in render_horizontal_layout() (see its own "Each child gets its own
+  // group" comment) -- since a Group is not a window at all, there is
+  // nothing for it to ever intercept hover from. report_self_rect_from()
+  // stamps the identical "__wish_win_rect_*__" fields from the group's own
+  // GetItemRectMin/Max() bounding box, so this switch costs nothing in
+  // self-rect accuracy for automation/hit-testing: the field is still
+  // present, and still describes the real combined icon+label extent, not
+  // just the pre-fix band-aid of silently losing that geometry by skipping
+  // the wrap outright.
   constexpr auto cell_json = R"({ "type": "HorizontalLayout", "spacing": 6, "children": {
     "icon": { "type": "Image", "src": "res/icons/file.png" },
     "name": { "type": "Label", "text": "clang-format" }
   }})";
 
   // Control: the identical HorizontalLayout rendered standalone (not as a
-  // Table cell) must still open its own BeginChild(), proving this content
-  // is exactly the kind that normally gets wrapped -- so the table case
-  // below passing isn't just "this content never wraps anyway". Two frames:
-  // per FreshIconThenLabelRowDoesNotOverlapOnFirstRealRender's own comment,
-  // an Image/Label's *measured* size underestimates (often {0,0}) on the
-  // very first frame, which would make wrap_self's content_extent() look
+  // Table cell) opens a real BeginChild(), proving this content is exactly
+  // the kind that normally gets wrapped -- so the table case below matching
+  // its rect isn't just "this content never wraps anyway". Two frames: per
+  // FreshIconThenLabelRowDoesNotOverlapOnFirstRealRender's own comment, an
+  // Image/Label's *measured* size underestimates (often {0,0}) on the very
+  // first frame, which would make wrap_self's content_extent() look
   // degenerate too -- the second frame reflects the first's real rendered
   // size instead.
   auto standalone = bdg::wish::import_json(cell_json);
@@ -1658,7 +1668,10 @@ TEST_F(ImguiRendererTest, TableRowCellDoesNotOpenChildWindowOverSelectable) {
     in_window([&] { renderer_->render_node(*standalone[""], *sess_); });
     renderer_->end_frame();
   }
-  ASSERT_NE(standalone[""]->findField("__wish_win_rect_w__"_key), nullptr);
+  const auto* standalone_w = standalone[""]->findField("__wish_win_rect_w__"_key);
+  const auto* standalone_h = standalone[""]->findField("__wish_win_rect_h__"_key);
+  ASSERT_NE(standalone_w, nullptr);
+  ASSERT_NE(standalone_h, nullptr);
 
   // The same layout, as a Table row's cell: render_table() sets
   // suppress_layout_wrap_self for the duration of this dispatch.
@@ -1677,7 +1690,18 @@ TEST_F(ImguiRendererTest, TableRowCellDoesNotOpenChildWindowOverSelectable) {
     renderer_->end_frame();
   }
 
-  EXPECT_EQ(map["r0.cell"]->findField("__wish_win_rect_w__"_key), nullptr);
+  // Not opened as a real window: EndGroup() based, so IsWindowHovered()/
+  // hit-testing on an overlapping sibling window is never at stake here.
+  // Still self-reports a rect -- and one that matches the standalone
+  // BeginChild() case's geometry (within a few px of ImGui's own default
+  // Table CellPadding, which the standalone case never pays), not a
+  // degenerate/absent one.
+  const auto* cell_w = map["r0.cell"]->findField("__wish_win_rect_w__"_key);
+  const auto* cell_h = map["r0.cell"]->findField("__wish_win_rect_h__"_key);
+  ASSERT_NE(cell_w, nullptr);
+  ASSERT_NE(cell_h, nullptr);
+  EXPECT_NEAR(cell_w->as<float>(), standalone_w->as<float>(), 2.0f);
+  EXPECT_NEAR(cell_h->as<float>(), standalone_h->as<float>(), 6.0f);
 }
 
 TEST_F(ImguiRendererTest, TreeNodeCollapsedStillReportsOwnRectWithoutThrow) {
