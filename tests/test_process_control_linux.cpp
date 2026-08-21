@@ -9,7 +9,7 @@
 /// in for.
 #include <gtest/gtest.h>
 
-#include "modules/bdg/desktop/process_explorer/client/process_control.hpp"
+#include "modules/bdg/desktop/top/client/process_control.hpp"
 
 #include <sched.h>
 #include <signal.h>

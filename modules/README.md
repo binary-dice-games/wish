@@ -80,16 +80,16 @@ plugin), the three finalize calls above, and why they must run after every
 `register_<name>()` (the module's leaf name only) — this is **not**
 automatically qualified by org/collection, so two different orgs shipping a
 same-leaf-name module's *server* code in the same build get a real C++ link
-error (register_calculator() defined twice). Pick distinctive leaf names,
+error (register_bc() defined twice). Pick distinctive leaf names,
 or fully-qualified `register_<org>_<collection>_<name>()` function names,
 to avoid this.
 
 A module's client *app* name (whatever string it passes to `register_app()`
-— by convention the same as its leaf name, e.g. `"calculator"`) is a
+— by convention the same as its leaf name, e.g. `"bc"`) is a
 different story: two modules registering the same app name is expected to
 happen and is handled, not just avoided by convention. Both remain fully
 visible in `--list`/`wish_list_apps()` (shown qualified, e.g.
-`bdg/desktop/calculator` and `microsoft/tools/calculator`), and
+`bdg/desktop/bc` and `microsoft/tools/bc`), and
 `--run=<name>`/`--describe=<name>`/`wish_run_app()` accept either the short
 name (when only one module registers it) or the fully-qualified
 `organization/collection/name` form (always unambiguous). If the short name

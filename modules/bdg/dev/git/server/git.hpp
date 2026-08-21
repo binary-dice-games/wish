@@ -20,7 +20,7 @@
 /// simplification in this module's DESIGN.md, not an oversight. Destructive
 /// actions (delete branch, stash drop) do use a real modal: an inline
 /// confirm Window built into this form's own tree, mirroring
-/// file_explorer::show_overwrite_confirm()'s pattern -- see show_confirm()
+/// tree::show_overwrite_confirm()'s pattern -- see show_confirm()
 /// below.
 #pragma once
 
@@ -139,12 +139,12 @@ class git_repo : public form {
   void build_log_window();
 
   // ── Confirmation modal ──────────────────────────────────────────────────
-  // Mirrors file_explorer::show_overwrite_confirm()/request_close_confirm()/
-  // remove_confirm_objects() (file_explorer.cpp) exactly: a second modal
+  // Mirrors tree::show_overwrite_confirm()/request_close_confirm()/
+  // remove_confirm_objects() (tree.cpp) exactly: a second modal
   // Window built directly into this form's own tree, not a standalone
   // MessageBox instantiation (see this file's top-of-file comment and
   // DESIGN.md §6 for why). A single pending_confirm_action_ replaces
-  // file_explorer's enum-typed pending_transfer branching, since only one
+  // mc's enum-typed pending_transfer branching, since only one
   // reusable "are you sure?" shape is needed here.
 
   /// @brief Builds and shows the confirm modal with @p message and a

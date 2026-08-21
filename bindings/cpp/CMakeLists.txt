@@ -34,12 +34,12 @@ add_executable(calculator_cpp_binding examples/calculator.cpp)
 target_link_libraries(calculator_cpp_binding PRIVATE wish_cpp)
 set_target_properties(calculator_cpp_binding PROPERTIES FOLDER "bindings/cpp/examples")
 
-add_executable(notepad_cpp_binding examples/notepad.cpp)
-target_link_libraries(notepad_cpp_binding PRIVATE wish_cpp)
-set_target_properties(notepad_cpp_binding PROPERTIES FOLDER "bindings/cpp/examples")
+add_executable(nano_cpp_binding examples/nano.cpp)
+target_link_libraries(nano_cpp_binding PRIVATE wish_cpp)
+set_target_properties(nano_cpp_binding PROPERTIES FOLDER "bindings/cpp/examples")
 
 if(WIN32 OR MSYS OR CYGWIN)
-  foreach(cpp_binding_exe calculator_cpp_binding notepad_cpp_binding)
+  foreach(cpp_binding_exe calculator_cpp_binding nano_cpp_binding)
     add_custom_command(TARGET ${cpp_binding_exe} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 $<TARGET_FILE:wish_client_dll>

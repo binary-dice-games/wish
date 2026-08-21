@@ -1,7 +1,7 @@
 // MIT License © 2025 Binary Dice Games
 /// @file file_browser_utils.cpp
 /// @brief Implementation of shared file-listing helpers -- see the header
-/// for the FileDialog/FileExplorer/PixViewer duplication this factors out.
+/// for the FileDialog/Mc/PixViewer duplication this factors out.
 #include "file_browser_utils.hpp"
 
 #include <algorithm>

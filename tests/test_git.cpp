@@ -181,7 +181,7 @@ class GitRepoRmiTest : public ::testing::Test {
 
   // Numeric-indexed ("array") children count of the element at `path` --
   // excludes the string-keyed TableColumn/section children present from
-  // construction, same convention test_process_explorer.cpp's row_count()
+  // construction, same convention test_top.cpp's row_count()
   // uses for Table rows (dynamically-added TreeNode/Table rows here use the
   // same numeric-key convention -- see git.cpp's rebuild_section()/
   // rebuild_graph_table()/add_file_row()).

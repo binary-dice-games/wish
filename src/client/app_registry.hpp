@@ -35,11 +35,11 @@ struct app_info {
 
   /// @brief Where this app's module lives in the modules/<organization>/
   ///        <collection>/<name> tree (see modules/README.md) -- e.g. "bdg"
-  ///        and "desktop" for the bundled calculator/notepad/process_explorer.
+  ///        and "desktop" for the bundled bc/nano/top.
   ///        Populated automatically by wish_add_module() via the
   ///        WISH_MODULE_ORGANIZATION/WISH_MODULE_COLLECTION compile
   ///        definitions it attaches per-module (see
-  ///        modules/bdg/desktop/calculator/client/calculator.cpp for the
+  ///        modules/bdg/desktop/bc/client/bc.cpp for the
   ///        pattern); empty for a module registered without that convention
   ///        (e.g. a bare `wish_add_module(<name>)` with no org/collection
   ///        segments).
@@ -53,14 +53,14 @@ struct app_info {
 
 /// @brief Registers an embedded app. Each optional module's client runner
 ///        calls this from a static-initialized registrar object (see
-///        modules/bdg/desktop/calculator/client/calculator.cpp for the
+///        modules/bdg/desktop/bc/client/bc.cpp for the
 ///        pattern) --
 ///        callers outside a module's own translation unit should not call
 ///        this directly.
 ///
 /// Two different modules may legitimately register the same short `.name`
-/// (e.g. `bdg/desktop/calculator` and `microsoft/tools/calculator`, both
-/// named `"calculator"`) -- this always succeeds and both remain visible
+/// (e.g. `bdg/desktop/bc` and `microsoft/tools/bc`, both
+/// named `"bc"`) -- this always succeeds and both remain visible
 /// (see `registered_apps()`/`resolve_app()`), rather than one silently
 /// shadowing the other.
 void register_app(app_info info);
@@ -88,7 +88,7 @@ struct app_resolution {
   std::vector<std::string> candidates;  ///< Qualified names of every match; populated iff status == ambiguous.
 };
 
-/// @brief Resolves `name` -- either a short leaf name ("calculator") or a
+/// @brief Resolves `name` -- either a short leaf name ("bc") or a
 ///        fully-qualified "<organization>/<collection>/<name>"
 ///        (see `qualified_app_name()`) -- to exactly one registered app,
 ///        for `--describe=<name>`/`--run=<name>`/`wish_run_app()`.
@@ -102,9 +102,9 @@ struct app_resolution {
 /// `format_ambiguous_error()` renders a message telling them so.
 app_resolution resolve_app(const std::string& name);
 
-/// @brief Formats an "ambiguous app name" error, e.g. "'calculator' is
-///        ambiguous between: bdg/desktop/calculator,
-///        microsoft/tools/calculator -- use the fully-qualified name."
+/// @brief Formats an "ambiguous app name" error, e.g. "'bc' is
+///        ambiguous between: bdg/desktop/bc,
+///        microsoft/tools/bc -- use the fully-qualified name."
 ///        `candidates` is `app_resolution::candidates` from a
 ///        `resolve_app()` call whose `status` was `ambiguous`.
 std::string format_ambiguous_error(const std::string& name, const std::vector<std::string>& candidates);

@@ -43,7 +43,7 @@
 #include <unordered_map>
 #include <vector>
 
-// Convenience aliases — mirror the naming convention used by calculator.
+// Convenience aliases — mirror the naming convention used by bc.
 using namespace bdg::bison;
 using namespace bdg::bison::rmi::transport;
 namespace wish = bdg::wish;
@@ -76,7 +76,7 @@ class c_abi_client : public wish::client {
 // so this is the entire adaptation needed to run a module's client-side
 // run_<name>(wish_app_host&) against a C-ABI-owned session. read_console_line()
 // is the one piece of wish_app_host that has no C-ABI equivalent; none of
-// wish's own bundled apps (calculator/notepad/process_explorer) use it.
+// wish's own bundled apps (bc/nano/top) use it.
 class c_abi_app_host : public wish::wish_app_host {
  public:
   c_abi_app_host(wish::client& client, std::vector<std::string> args) : client_(client), args_(std::move(args)) {}

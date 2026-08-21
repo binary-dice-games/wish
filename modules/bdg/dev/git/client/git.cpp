@@ -90,7 +90,7 @@ void run_git(wish_app_host& s) {
 
   // Periodic background poll so external changes to the working tree (an
   // edit made outside this tool) are picked up without an explicit Refresh
-  // click -- mirrors process_explorer's sampling loop, but far less
+  // click -- mirrors top's sampling loop, but far less
   // frequent since a git status call is comparatively expensive.
   std::thread([source, stop] {
     using namespace std::chrono_literals;

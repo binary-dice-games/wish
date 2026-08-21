@@ -424,7 +424,7 @@ wish_instantiate(wish_client_handle client, wish_hash ns, wish_hash klass, bison
  * @code{.c}
  * char* json = NULL;
  * wish_list_apps(&json);
- * puts(json);   // e.g. [{"name":"calculator","description":"...","params":[]}]
+ * puts(json);   // e.g. [{"name":"bc","description":"...","params":[]}]
  * bison_free_string(json);
  * @endcode
  */
@@ -443,7 +443,7 @@ WISH_API wish_error wish_list_apps(char** out);
  * @param client    A freshly created, not-yet-run client handle (as passed
  *                  to wish_client_run()).
  * @param app_name  Either a short name as reported by wish_list_apps()
- *                  (e.g. `"calculator"`) or its fully-qualified
+ *                  (e.g. `"bc"`) or its fully-qualified
  *                  `"organization/collection/name"` form. Two different
  *                  modules may register the same short name (see
  *                  modules/README.md's "Naming collisions") -- if `app_name`
@@ -451,7 +451,7 @@ WISH_API wish_error wish_list_apps(char** out);
  *                  `WISH_ERR_AMBIGUOUS` with the candidates listed in
  *                  wish_last_error(); pass the fully-qualified name instead.
  * @param args      Positional arguments forwarded to the app (e.g.
- *                  notepad's optional startup file). May be `NULL` if
+ *                  nano's optional startup file). May be `NULL` if
  *                  @p nargs is `0`.
  * @param nargs     Number of entries in @p args.
  * @return `WISH_OK`, `WISH_ERR_NULL`, `WISH_ERR_NOT_FOUND` (unknown

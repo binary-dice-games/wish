@@ -143,12 +143,12 @@ macro(wish_add_optional_test OPTION_NAME TESTNAME)
     endif()
 endmacro()
 
-wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_LOG_TAIL          test_log_tail          test_log_tail.cpp)
-wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_NOTEPAD           test_notepad           test_notepad.cpp)
-wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_PROCESS_EXPLORER  test_process_explorer  test_process_explorer.cpp)
+wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_TAIL               test_tail              test_tail.cpp)
+wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_NANO               test_nano              test_nano.cpp)
+wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_TOP                test_top               test_top.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DEV_EDITOR                test_editor            test_editor.cpp)
-wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_FILE_EXPLORER      test_file_explorer     test_file_explorer.cpp)
-wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_ZIP_TOOL           test_zip_tool          test_zip_tool.cpp)
+wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_MC                 test_mc                test_mc.cpp)
+wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_ZIP                test_zip               test_zip.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_PIX                test_pix               test_pix.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DEV_GIT                   test_git               test_git.cpp)
 # Pure algorithm, no bison/RMI dependency -- still gated on the module
@@ -168,8 +168,8 @@ endif()
 # way to compile it, unlike the module's own client sources which pick
 # process_control_win.cpp instead via wish_filter_platform_sources().
 if(UNIX)
-  wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_PROCESS_EXPLORER  test_process_control_linux  test_process_control_linux.cpp
-      ${CMAKE_SOURCE_DIR}/modules/bdg/desktop/process_explorer/client/process_control_linux.cpp)
+  wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_TOP  test_process_control_linux  test_process_control_linux.cpp
+      ${CMAKE_SOURCE_DIR}/modules/bdg/desktop/top/client/process_control_linux.cpp)
   if(TARGET test_process_control_linux)
     target_include_directories(test_process_control_linux PRIVATE ${CMAKE_SOURCE_DIR})
   endif()

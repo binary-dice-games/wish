@@ -59,7 +59,7 @@ for what's implemented vs. deferred to future work.
   the merge target is the last-clicked sidebar branch — see
   `server/git.hpp`'s top-of-file comment. Destructive actions (delete
   branch, stash drop) *do* use a real modal — an inline confirm `Window`
-  built into `GitRepo`'s own tree, mirroring `file_explorer`'s
+  built into `GitRepo`'s own tree, mirroring `tree`'s
   `show_overwrite_confirm()` pattern.
 
 See [PLAN.md](PLAN.md) for the complete list of deferred features

@@ -259,7 +259,7 @@ set(BUILD_TESTS     OFF CACHE BOOL "" FORCE)
 set(BUILD_EXAMPLES  OFF CACHE BOOL "" FORCE)
 set(INSTALL_PROJECT OFF CACHE BOOL "" FORCE)
 add_subdirectory(extern/miniz)
-# zip_tool's client-side module code (modules/bdg/desktop/zip_tool/client/)
+# zip's client-side module code (modules/bdg/desktop/zip/client/)
 # links miniz into wish_client_dll (a SHARED library) when WISH_BUILD_SHARED
 # is ON -- without PIC, linking this static lib into a .so fails with
 # "relocation ... can not be used when making a shared object", the same
@@ -485,7 +485,7 @@ target_include_directories(wish_server
         ${CMAKE_CURRENT_SOURCE_DIR}
         # nlohmann/json is already vendored via bison (see the
         # WISH_ENABLE_AUTOMATION block above, the header's other PRIVATE
-        # consumer); modules/bdg/desktop/log_tail/server/log_line_parser.cpp
+        # consumer); modules/bdg/desktop/tail/server/log_line_parser.cpp
         # needs it unconditionally (not gated by WISH_ENABLE_AUTOMATION) to
         # parse its patterns.json config resource.
         ${CMAKE_CURRENT_SOURCE_DIR}/extern/bison/extern/json/single_include
@@ -514,7 +514,7 @@ if(NOT ANDROID)
   target_link_libraries(wish_server PRIVATE civetweb-c-library libcurl)
 endif()
 
-# ── Optional modules — calculator, notepad, process_explorer, ... ────────────
+# ── Optional modules — bc, nano, top, ... ────────────────────────────────────
 #
 # Each module is off by default; see cmake/WishModules.cmake for the
 # wish_add_module() framework and modules/<name>/{server,client}/ for the

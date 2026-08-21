@@ -1,0 +1,153 @@
+// MIT License © 2025 Binary Dice Games
+/// @file mc.hpp
+/// @brief Server-side form for mc (a two-panel file browser + transfer UI).
+#pragma once
+
+#include <ui/forms/form.hpp>
+#include <ui/ui_element.hpp>
+
+#include <filesystem>
+#include <string>
+#include <vector>
+
+namespace bdg::wish {
+
+/// @brief Two-panel file browser: local machine (left) vs. session sandbox
+/// (right), with upload/download transfer buttons and a progress bar.
+///
+/// The right panel is entirely server-owned: the session sandbox
+/// (`context::resource_dir`) lives on the same machine as this form, so
+/// navigation, listing, and the "Open in Explorer" button are all handled
+/// here directly via `std::filesystem` + `file_service::resolve_path()`.
+///
+/// The left panel shows the *client's* local machine, which this form has
+/// no direct access to. It follows the same handshake as nano's
+/// `on_request_open`: the form emits `on_local_navigate` when the user wants
+/// to browse a different local directory, and the client responds by
+/// calling `update_local_listing()` with the freshly enumerated contents.
+/// Selecting a row only tracks state; the actual transfer only happens once
+/// the user clicks the upload/download button, which emits
+/// `on_upload_requested`/`on_download_requested` for the client to act on.
+///
+/// Emitted events:
+///   - `"closed"` — window X button; internal UI removed.
+///   - `"on_local_navigate"` (`{name, type}`, `type` is `"dir"` or `"path"`)
+///     — client should re-list the target local directory and call
+///     `update_local_listing()`.
+///   - `"on_upload_requested"` (`{name, local_path}`) — client should read
+///     `local_path/name`, call `upload_file()`, then `refresh_sandbox()`.
+///   - `"on_download_requested"` (`{name}`) — client should call
+///     `download_file()`, write it under the current local path, then call
+///     `update_local_listing()` to refresh the left panel.
+///   - `"on_upload_conflict"` (`{name, local_path}`) — the upload target
+///     already exists in the sandbox. The client should confirm with the
+///     user (e.g. via an instantiated `MessageBox`, `buttons: "yes_no"`) and,
+///     if confirmed, proceed exactly as it would for `on_upload_requested`.
+///   - `"on_download_conflict"` (`{name}`) — same as `on_upload_conflict`,
+///     but the download target already exists locally.
+class mc : public form {
+ public:
+  explicit mc(bison::dynamic&& base);
+
+  /// @brief RMI method: replace the left panel's displayed directory.
+  /// @p args holds `path` (string) and `files` (dynamic array of entries,
+  /// each `{name, type ("file"/"dir"), size, modified}` — `size`/`modified`
+  /// are already client-formatted display strings).
+  bison::dynamic do_update_local_listing(const bison::dynamic& args);
+
+  /// @brief RMI method: re-enumerate the current sandbox directory. Called
+  /// by the client after an upload completes, so the new file appears
+  /// without requiring the user to navigate away and back.
+  bison::dynamic do_refresh_sandbox(const bison::dynamic& args);
+
+  /// @brief Called from the `__setter` prototype method for every set() call.
+  /// Intercepts `local_path`, `sandbox_path`, `status`, `transfer_progress`,
+  /// and `transfer_label` to mirror them into the internal widgets.
+  bison::dynamic on_set(const bison::dynamic& patch);
+
+ protected:
+  void on_init() override;
+  void on_event(bison::key_t widget_id, bison::key_t event_name, const bison::dynamic& payload) override;
+
+ private:
+  struct file_row {
+    std::string name;
+    std::string type; ///< "file" or "dir"
+    std::string size;
+    std::string modified;
+  };
+
+  void fill_table(const ui_element_ptr& table, const std::vector<file_row>& entries, int32_t selected_index = -1);
+  void set_status(const std::string& message);
+
+  /// @brief Sorts @p entries in place by the given file_table column
+  /// (0=Name, 1=Size, 2=Modified -- see kLayout's col_name/col_size/
+  /// col_modified `column_id`), leaving a leading ".." entry (see
+  /// navigate_sandbox()) pinned first regardless of column/direction, the
+  /// way Explorer keeps the parent-directory shortcut from moving under
+  /// sort. Size is compared numerically via parse_display_size()
+  /// (file_browser_utils.hpp), not lexicographically, since "size" is only
+  /// ever a human-formatted string (e.g. "12.3 KB" would otherwise sort
+  /// before "2 KB").
+  void sort_entries(std::vector<file_row>& entries, int32_t sort_column_id, bool ascending) const;
+
+  /// @brief Handle the left/right file_table's "sorted" event (see
+  /// table.cpp's Table.flags doc comment): store the new sort state and
+  /// re-sort + rebuild the given entries/table.
+  void on_table_sorted(
+      const bison::dynamic& payload, std::vector<file_row>& entries, const ui_element_ptr& table,
+      int32_t& sort_column_id, bool& sort_ascending);
+
+  bool sandbox_has_file(const std::string& name) const;
+  bool local_has_file(const std::string& name) const;
+
+  /// @brief Navigate the sandbox panel to @p relative_path ("" = sandbox
+  /// root) and re-list it. Rejects paths that escape the sandbox or are not
+  /// directories, leaving the current listing untouched and setting status.
+  ///
+  /// @p resource_dir / @p allow_absolute_paths must be resolved by the
+  /// caller (via sess() inside dispatch, via context_rlock outside it) --
+  /// this function does not touch sync_ctx_ itself. See the .cpp for why.
+  void navigate_sandbox(std::string relative_path, const std::filesystem::path& resource_dir, bool allow_absolute_paths);
+
+  bison::key_t window_id_;
+  bison::key_t left_path_id_;
+  bison::key_t left_table_id_;
+  bison::key_t right_path_id_;
+  bison::key_t right_table_id_;
+  bison::key_t open_explorer_id_;
+  bison::key_t upload_id_;
+  bison::key_t download_id_;
+
+  ui_element_ptr left_path_ptr_;
+  ui_element_ptr left_table_ptr_;
+  ui_element_ptr left_selected_ptr_;
+  ui_element_ptr right_path_ptr_;
+  ui_element_ptr right_table_ptr_;
+  ui_element_ptr right_selected_ptr_;
+  ui_element_ptr status_label_ptr_;
+  ui_element_ptr transfer_progress_ptr_;
+
+  std::string local_path_;
+  std::string sandbox_path_; ///< Relative to sandbox root; "" == root.
+  std::vector<file_row> local_entries_;
+  std::vector<file_row> sandbox_entries_;
+
+  // Current per-panel sort state, applied by sort_entries() whenever
+  // local_entries_/sandbox_entries_ is (re)built. Defaults to ascending by
+  // Name (column_id 0), matching col_name's position in kLayout.
+  int32_t local_sort_column_id_{0};
+  bool local_sort_ascending_{true};
+  int32_t sandbox_sort_column_id_{0};
+  bool sandbox_sort_ascending_{true};
+
+  std::string selected_local_name_;
+  bool selected_local_is_dir_{false};
+  std::string selected_sandbox_name_;
+  bool selected_sandbox_is_dir_{false};
+};
+
+/// @brief Register Mc in the "wish" bison namespace.
+void register_mc();
+
+} // namespace bdg::wish

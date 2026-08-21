@@ -98,8 +98,8 @@ void add_hit_test(const ui_element& elem, const hit_test_map& hits, nlohmann::js
 // in `src/ui/ui_importer.cpp` only stamps a `"__path__"` field, and only
 // adds to the result `name_map`, for a *named* JSON child). This is the
 // exact pattern every form that reconciles a live list against a `Table`/
-// `TabBar` uses -- `ProcessExplorer`'s process rows, `Notepad`'s file tabs,
-// the `editor` module's event-log rows, `zip_tool`'s file listing, and any
+// `TabBar` uses -- `Top`'s process rows, `nano`'s file tabs,
+// the `editor` module's event-log rows, `zip`'s file listing, and any
 // third-party module built the same way -- so without this walk, an
 // automation snapshot silently omits every row/tab such a form adds after
 // its initial static layout, even though the real renderer draws them
@@ -235,7 +235,7 @@ std::string build_log_event(const std::deque<logger::log_entry>& new_entries) {
   // traces (server::on_print() -> logger::info(), always recorded
   // regardless of --verbose -- see logger::log()), and an RMI call
   // argument can be arbitrary binary data (e.g. any upload_file() payload,
-  // used by Notepad/FileExplorer/ZipTool/Pix alike). The default ::strict
+  // used by nano/Tree/Zip/Pix alike). The default ::strict
   // handler throws on the first invalid UTF-8 byte such a trace line
   // contains, which previously crashed the whole server the instant an
   // automation client was attached while any binary file was uploaded.

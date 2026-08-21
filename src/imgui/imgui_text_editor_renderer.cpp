@@ -173,7 +173,7 @@ void render_text_editor(imgui_renderer&, const ui_element& node, const context& 
   st.editor.SetReadOnlyEnabled(read_only);
 
   // wish UI JSON schema autocomplete: opt-in (see TextEditor.wish_ui_schema's
-  // doc comment) so unrelated TextEditor uses (e.g. Notepad) are unaffected.
+  // doc comment) so unrelated TextEditor uses (e.g. nano) are unaffected.
   // AutoCompleteConfig::setConfig() copies *cfg by value, so a stack local
   // is safe here -- it does not need to outlive this call.
   if (wish_ui_schema && language == "json") {
@@ -232,7 +232,7 @@ void render_text_editor(imgui_renderer&, const ui_element& node, const context& 
   }
 
   // "cursor_moved": only tracked when wish_ui_schema is set, so unrelated
-  // TextEditor uses (e.g. Notepad) don't accumulate an otherwise-unconsumed
+  // TextEditor uses (e.g. nano) don't accumulate an otherwise-unconsumed
   // event stream. Mirrors the undo-index diff above.
   if (wish_ui_schema) {
     auto current_cursor = st.editor.GetMainCursorPosition();

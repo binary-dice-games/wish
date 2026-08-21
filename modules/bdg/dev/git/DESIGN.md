@@ -21,13 +21,13 @@ LFS, hunk-level staging, external diff/merge tools, search/filter.
 
 1. **All git invocation and parsing is client-side.** The repository a user
    wants to operate on lives on their own machine, reachable only from the
-   client — mirrors `process_explorer`'s own reasoning for why sampling is
+   client — mirrors `top`'s own reasoning for why sampling is
    client-side. The server never touches git, the filesystem, or a
    subprocess.
 2. **The server owns all UI/render state** (selection, graph lane layout,
    sidebar structure) and renders whatever snapshot it was last given —
    matches `src/ui/forms/DESIGN.md`'s Design Goal 1 ("server-side logic,
-   client-side data"), same split `process_explorer` uses for its own
+   client-side data"), same split `top` uses for its own
    snapshot/render contract.
 3. **No shell involved in any git invocation.** Every `git` call goes
    through a real argv array via `uv_spawn` (see §6), never a shell command
@@ -91,7 +91,7 @@ either pushing a fresh snapshot directly (`push_refs`/`push_log`/
 `push_log` + `push_status`, in that order) — see Design Goal 4. A background
 thread (`client/git.cpp`) calls `refresh_all()` every ~2s so external
 changes to the working tree are picked up without an explicit Refresh
-click, mirroring `process_explorer`'s sampling loop (far less frequent
+click, mirroring `top`'s sampling loop (far less frequent
 here, since a `git status` call is comparatively expensive).
 
 ### `git_process::run_git()` (client)
@@ -212,7 +212,7 @@ the leftmost cell of the commit `Table`'s each `TableRow`. This means:
   `uv_a` into the module-client targets (a small, wish-side-only CMake
   addition — see that function's comment) so `git_process.cpp` can use it
   directly, with **no bison submodule changes**. libuv already abstracts
-  POSIX vs. Windows process creation, so (unlike `process_explorer`'s
+  POSIX vs. Windows process creation, so (unlike `top`'s
   `process_info_linux.cpp`/`process_info_win.cpp` split) no `_posix`/`_win`
   file split was needed for this file.
 
@@ -270,16 +270,16 @@ the leftmost cell of the commit `Table`'s each `TableRow`. This means:
   need the *client* to mediate between two separate RMI objects (wait for
   its `on_result`, then tell `GitRepo` what to do) — `show_confirm()`
   builds a second modal `Window` directly inside `GitRepo`'s own tree,
-  exactly mirroring `file_explorer::show_overwrite_confirm()`/
+  exactly mirroring `tree::show_overwrite_confirm()`/
   `request_close_confirm()`/`remove_confirm_objects()`
-  (`modules/bdg/desktop/file_explorer/server/file_explorer.cpp`): built via
+  (`modules/bdg/desktop/mc/server/mc.cpp`): built via
   `import_json()`, ids assigned through `ctx()` (always valid), but session
   state (`ui_objects`/`top_level_objects`/`top_level_handlers`) touched via
   `context_wlock{*sync_ctx_}` rather than `sess()`, since `show_confirm()`
   is called from `on_event()`, which `form.hpp` documents as running
   *outside* dispatch (`sess()` would throw there). A single
   `std::function<void()> pending_confirm_action_` replaces
-  `file_explorer`'s enum-typed `pending_transfer` branching, since
+  `tree`'s enum-typed `pending_transfer` branching, since
   `GitRepo` only needs one reusable "are you sure?" shape rather than
   distinct upload/download variants. "Apply"/"Pop" (reversible-ish) and
   "Merge into current"/"Checkout" stay un-confirmed, matching SourceTree's

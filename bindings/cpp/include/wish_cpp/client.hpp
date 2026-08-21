@@ -235,7 +235,7 @@ class client {
    *        blocks until it signals completion, then disconnects.
    *
    * Mirrors `wish client --run=<name> -- <args...>`. @p name may be a short
-   * name (e.g. "calculator") or its fully-qualified
+   * name (e.g. "bc") or its fully-qualified
    * "organization/collection/name" form.
    */
   void run_app(const std::string& name, const std::vector<std::string>& args = {}) {

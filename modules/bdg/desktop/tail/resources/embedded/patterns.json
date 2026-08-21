@@ -1,0 +1,99 @@
+{
+  "_comment": "Line-parsing rules for the tail module (modules/bdg/desktop/tail). Copy this file (it lands per-session at res/bdg/desktop/tail/patterns.json) and edit it to add support for your own log format -- see log_line_parser.hpp for the exact schema and matching rules.",
+
+  "line_formats": [
+    {
+      "name": "docker_timestamps",
+      "description": "`docker logs --timestamps` / `docker compose logs -t`: RFC3339 nanosecond timestamp followed by the log message.",
+      "regex": "^(\\d{4}-\\d{2}-\\d{2}T[0-9:.]+Z)\\s+(.*)$",
+      "timestamp_group": 1,
+      "level_group": -1,
+      "message_group": 2
+    },
+    {
+      "name": "syslog_rfc3164",
+      "description": "Classic syslog: 'Mon dd hh:mm:ss host process[pid]: message'.",
+      "regex": "^(\\w{3}\\s+\\d{1,2}\\s+\\d{2}:\\d{2}:\\d{2})\\s+\\S+\\s+([^:\\[\\s]+)(?:\\[\\d+\\])?:\\s?(.*)$",
+      "timestamp_group": 1,
+      "level_group": -1,
+      "message_group": 3
+    },
+    {
+      "name": "python_logging",
+      "description": "Python `logging` default format: 'YYYY-MM-DD hh:mm:ss,ms - logger - LEVEL - message'.",
+      "regex": "^(\\d{4}-\\d{2}-\\d{2} [0-9:,]+)\\s+-\\s+([\\w.]+)\\s+-\\s+(TRACE|DEBUG|INFO|NOTICE|WARN(?:ING)?|ERROR|FATAL|CRITICAL)\\s+-\\s+(.*)$",
+      "timestamp_group": 1,
+      "level_group": 3,
+      "message_group": 4
+    },
+    {
+      "name": "iso8601_level",
+      "description": "ISO-8601 timestamp followed by a bracketed or bare severity word, e.g. '2024-01-15T10:23:45Z [ERROR] message' or '2024-01-15 10:23:45,001 WARN message'.",
+      "regex": "^(\\d{4}-\\d{2}-\\d{2}[T ][0-9:.,]+(?:Z|[+-]\\d{2}:?\\d{2})?)\\s+[-|]?\\s*\\[?(TRACE|DEBUG|INFO|NOTICE|WARN(?:ING)?|ERROR|FATAL|CRITICAL)\\]?\\s*[:\\-]?\\s*(.*)$",
+      "timestamp_group": 1,
+      "level_group": 2,
+      "message_group": 3
+    },
+    {
+      "name": "bracket_level",
+      "description": "No timestamp, bracketed severity prefix: '[ERROR] message'.",
+      "regex": "^\\[(TRACE|DEBUG|INFO|NOTICE|WARN(?:ING)?|ERROR|FATAL|CRITICAL)\\]\\s*(.*)$",
+      "timestamp_group": -1,
+      "level_group": 1,
+      "message_group": 2
+    },
+    {
+      "name": "level_prefixed",
+      "description": "No timestamp, bare severity prefix: 'ERROR: message'.",
+      "regex": "^(TRACE|DEBUG|INFO|NOTICE|WARN(?:ING)?|ERROR|FATAL|CRITICAL):\\s*(.*)$",
+      "timestamp_group": -1,
+      "level_group": 1,
+      "message_group": 2
+    },
+    {
+      "name": "fallback",
+      "description": "Matches any line unchanged. Must stay last -- line_formats are tried in order and the first match wins.",
+      "regex": "^(.*)$",
+      "timestamp_group": -1,
+      "level_group": -1,
+      "message_group": 1
+    }
+  ],
+
+  "level_rules": [
+    {
+      "level": "fatal",
+      "pattern": "\\b(FATAL|PANIC|EMERGENCY|EMERG)\\b",
+      "color": "#FF453AFF"
+    },
+    {
+      "level": "error",
+      "pattern": "\\b(ERROR|ERR|CRITICAL|CRIT|SEVERE|EXCEPTION|FAILURE|FAILED)\\b",
+      "color": "#FF6961FF"
+    },
+    {
+      "level": "warning",
+      "pattern": "\\b(WARN|WARNING)\\b",
+      "color": "#FFD60AFF"
+    },
+    {
+      "level": "info",
+      "pattern": "\\b(INFO|NOTICE)\\b",
+      "color": "#64D2FFFF"
+    },
+    {
+      "level": "debug",
+      "pattern": "\\b(DEBUG|DBG)\\b",
+      "color": "#B0B0B8FF"
+    },
+    {
+      "level": "trace",
+      "pattern": "\\b(TRACE|VERBOSE)\\b",
+      "color": "#8E8E93FF"
+    }
+  ],
+
+  "default_level_color": "#D0D0D0FF",
+
+  "tag_pattern": "\\[([A-Za-z0-9_][A-Za-z0-9_.:-]*)\\]"
+}

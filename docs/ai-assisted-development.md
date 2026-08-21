@@ -23,7 +23,7 @@ it yourself; it's what the agent reads before writing anything.
 | **Builds** | A new self-contained tool bundled *inside* the wish repo | A UI embedded into *your own, separate* application |
 | **Ends up running as** | `wish client --run=<name>` (or `wish standalone --run=<name>`) | Whatever your app's own entry point is — it links `wish_client_dll` (or a Python/C# binding) and connects to a `wish server` you run alongside it |
 | **Writes server-side code?** | Yes, when the tool needs its own state/logic (a `bison::dynamic` form class) | Never — purely client-side; all logic lives in your app |
-| **Good for** | "Add a calculator/notepad-style tool to wish" | "Add a live status panel / graph / control window to my existing C++, Python, or C# program" |
+| **Good for** | "Add a bc/nano-style tool to wish" | "Add a live status panel / graph / control window to my existing C++, Python, or C# program" |
 
 If you're not sure which one fits, describe what you're building — the
 skill descriptions are specific enough that Claude Code will generally
@@ -43,7 +43,7 @@ Example prompts:
 - "Add a module called `timer` that counts down from a duration I set and
   shows a message when it hits zero."
 - "Add a notepad-style module that can open and save a text file from the
-  client's machine." (the skill will follow the existing `notepad` module's
+  client's machine." (the skill will follow the existing `nano` module's
   file-handshake pattern for this)
 
 ### `wish-ui`

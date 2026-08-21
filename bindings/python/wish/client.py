@@ -289,10 +289,10 @@ class Client:
         until it signals completion, then disconnect.
 
         Mirrors ``wish client --run=<name> -- <args...>``. *args* are
-        forwarded to the app the same way (e.g. notepad's optional startup
+        forwarded to the app the same way (e.g. nano's optional startup
         file).
 
-        *name* may be a short name (``"calculator"``) or its fully-qualified
+        *name* may be a short name (``"bc"``) or its fully-qualified
         ``"organization/collection/name"`` form. Two different modules may
         register the same short name -- if *name* is short and ambiguous
         between more than one, this raises :class:`WishError` with code

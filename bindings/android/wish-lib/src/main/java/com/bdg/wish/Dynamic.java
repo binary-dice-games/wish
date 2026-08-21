@@ -21,7 +21,7 @@ package com.bdg.wish;
  *
  * <h2>Gaps versus bison's own Android binding</h2>
  * This is a wish <em>client</em> binding (like the C#/Python calculator and
- * notepad examples), never a class-registration host, so unlike {@code
+ * nano examples), never a class-registration host, so unlike {@code
  * com.bdg.bison.Dynamic} it has no {@code addMethod}/{@code addClass}/
  * {@code call}/{@code registerClass} -- servers register classes and
  * methods in C++; this binding only builds and reads field values.

@@ -13,7 +13,7 @@
  * bison's own `bindings/android/jni/bison_jni.cpp`, minus the class/method
  * registry section (`bison_add_class`/`bison_add_method`/`bison_call`):
  * this binding is a wish *client* only (like the C#/Python calculator and
- * notepad examples) and never hosts locally-registered classes or methods
+ * nano examples) and never hosts locally-registered classes or methods
  * of its own, so `Dynamic` here is a plain value type -- built and read,
  * never dispatched into.
  */

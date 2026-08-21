@@ -41,7 +41,7 @@ namespace bdg::wish {
  * ```cpp
  * bdg::wish::standalone sa{std::make_unique<my_renderer>(...)};
  * sa.start();
- * auto calc = sa.instantiate("wish"_key, "Calculator"_key).get();
+ * auto calc = sa.instantiate("wish"_key, "Bc"_key).get();
  * calc.onEvent("closed"_key, [](bison::dynamic) { ... });
  * // ... render loop runs on its own thread until the window closes ...
  * sa.destroy(std::move(calc));

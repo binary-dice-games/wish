@@ -84,7 +84,7 @@ public class ErrorMappingTests
     [Fact]
     public void AmbiguousMessage()
     {
-        var ex = new WishException(WishErrorCode.Ambiguous, "run_app('notepad')");
+        var ex = new WishException(WishErrorCode.Ambiguous, "run_app('nano')");
         Assert.Contains("fully-qualified name", ex.Message);
         Assert.Equal(WishErrorCode.Ambiguous, ex.Code);
     }

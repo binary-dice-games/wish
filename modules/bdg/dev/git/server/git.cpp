@@ -35,7 +35,7 @@ void set_children_list(const ui_element_ptr& parent, const std::vector<ui_elemen
 
 // Invokes fn(dynamic&) for each nested-dynamic_ptr entry of the array field
 // `field_key` on `parent` -- the shape every *_args array (commits, branches,
-// staged, ...) uses. Mirrors process_explorer::update_process_table()'s
+// staged, ...) uses. Mirrors top::update_process_table()'s
 // "processes" array walk.
 template <typename Fn>
 void for_each_entry(const dynamic& parent, key_t field_key, Fn&& fn) {
@@ -71,7 +71,7 @@ std::vector<std::string> read_string_array(const dynamic& parent, key_t field_ke
 
 // Small event-payload builders -- bison::dynamic has no initializer-list
 // constructor (see bison_object.hpp), so payloads are built field-by-field,
-// same as every other form in this codebase (see notepad.cpp's
+// same as every other form in this codebase (see nano.cpp's
 // do_open_file()); these just save repeating that boilerplate at each
 // emit() call site below.
 template <typename T>
@@ -257,7 +257,7 @@ static constexpr const char* kLogLayout = R"({
   }
 })";
 
-// Mirrors file_explorer.cpp's kConfirmLayout (its own "Confirm Overwrite"
+// Mirrors tree.cpp's kConfirmLayout (its own "Confirm Overwrite"
 // modal) exactly -- btn_yes's label is overwritten per show_confirm() call.
 static constexpr const char* kConfirmLayout = R"({
   "type": "Window", "title": "Confirm", "modal": true,
@@ -433,7 +433,7 @@ void git_repo::show_confirm(const std::string& message, const std::string& confi
   // ctx() is always valid once init() has run; sess() is not -- show_confirm()
   // is called from on_event(), which form.hpp documents as running outside
   // dispatch, so session state below is reached via context_wlock instead
-  // (mirrors file_explorer::show_overwrite_confirm()'s identical handling).
+  // (mirrors tree::show_overwrite_confirm()'s identical handling).
   auto& c = ctx();
   for (auto& [key, elem] : tree) {
     key_t id = rmi::shared::generate_id();
@@ -450,7 +450,7 @@ void git_repo::show_confirm(const std::string& message, const std::string& confi
   // Can't use form::next_available_key() here -- it calls sess(), which
   // throws outside dispatch (see this function's own comment above) --
   // so this scans s.top_level_objects directly instead, exactly matching
-  // file_explorer::show_overwrite_confirm()'s own loop.
+  // tree::show_overwrite_confirm()'s own loop.
   for (int i = 0;; ++i) {
     std::string candidate = "__git_confirm_" + std::to_string(i);
     if (s.top_level_objects.find(key_t{candidate}) == s.top_level_objects.end()) {

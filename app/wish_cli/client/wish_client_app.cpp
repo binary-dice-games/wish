@@ -37,7 +37,7 @@ int wish_client_app::run(int argc, char** argv) {
   // recognized flags and everything through a literal "--"), and that
   // stripped argv has already lost its "--" marker. Handing it to a SECOND
   // ParseCommandLineFlags call (inside client_app::run()) would then treat
-  // any dash-prefixed app argument (e.g. log_tail's "-f"/"-n") as an
+  // any dash-prefixed app argument (e.g. tail's "-f"/"-n") as an
   // unrecognized flag and fail outright, instead of the transparent
   // passthrough documented on this class -- see this class's own doc
   // comment ("Anything after a literal `--`... is forwarded via

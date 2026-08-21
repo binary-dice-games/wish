@@ -330,7 +330,7 @@ class EditorSourceTest : public ::testing::Test {
   }
 
   // The `text` field of the second cell in the log table's row at `index`
-  // (0-based, in append order). Mirrors notepad's editor_at() helper.
+  // (0-based, in append order). Mirrors nano's editor_at() helper.
   std::optional<std::string> log_row_text(size_t index) const {
     auto it = srv_->last_session->ui_objects.find(log_root_ + ".log");
     if (it == srv_->last_session->ui_objects.end())

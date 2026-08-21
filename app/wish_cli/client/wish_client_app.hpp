@@ -34,7 +34,7 @@ namespace bdg::wish {
  *   `bison::rmi::client`, so `on_session()` can access wish-specific methods
  *   like `upload_file()`/`download_file()`.
  *
- * Session-runner functions (e.g. run_calculator) call `keep_alive()` to store
+ * Session-runner functions (e.g. run_bc) call `keep_alive()` to store
  * proxy handles that must remain valid until the session ends, and call
  * `signal_done()` (typically from an event handler) to unblock `on_session()`.
  *
@@ -56,7 +56,7 @@ namespace bdg::wish {
  *   --timeout MS          Connection timeout in milliseconds (default: 30000)
  *
  * Anything after a literal `--` on the command line is forwarded to the app
- * via `app_args()`, e.g. `wish client --run=notepad -- path/to/file`.
+ * via `app_args()`, e.g. `wish client --run=nano -- path/to/file`.
  */
 class wish_client_app : public bison::app::client_app, public wish_app_host {
  public:

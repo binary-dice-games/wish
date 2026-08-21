@@ -54,7 +54,7 @@ const Enum::table& buttons_enum_table() {
 // msgbox_*.png under resources/embedded/icons/.
 //
 // "flags" includes AlwaysAutoResize, unlike every other form's Window (e.g.
-// calculator.cpp's "NoResize" alone): every message_box instance -- across
+// bc.cpp's "NoResize" alone): every message_box instance -- across
 // ALL SIX presets, with very different content sizes -- shares the SAME
 // pool of recycled stable ids (see form::next_available_key()'s doc
 // comment; e.g. "__message_box_0" for whichever instance happens to be
@@ -269,7 +269,7 @@ void message_box::rebuild() {
     });
   }
 
-  // Assign every element a bison RMI ID. See calculator.cpp's on_init() for
+  // Assign every element a bison RMI ID. See bc.cpp's on_init() for
   // why put_object() (not a direct ctx().objects[id.id] assignment) matters.
   auto& c = ctx();
   for (auto& [key, elem] : tree) {

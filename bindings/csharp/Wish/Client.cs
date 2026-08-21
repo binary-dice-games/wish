@@ -307,7 +307,7 @@ public sealed class Client : IDisposable
     /// blocks until it signals completion, then disconnects. Mirrors
     /// <c>wish client --run=&lt;name&gt; -- &lt;args...&gt;</c>.
     ///
-    /// <paramref name="name"/> may be a short name (<c>"calculator"</c>) or
+    /// <paramref name="name"/> may be a short name (<c>"bc"</c>) or
     /// its fully-qualified <c>"organization/collection/name"</c> form. Two
     /// different modules may register the same short name -- if
     /// <paramref name="name"/> is short and ambiguous between more than one,

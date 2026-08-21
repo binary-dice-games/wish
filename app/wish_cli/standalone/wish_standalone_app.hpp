@@ -22,7 +22,7 @@ namespace bdg::wish {
 /**
  * @brief Extends wish::standalone with the same lifecycle helpers
  *        `wish_client_app` gives CLI client mode, so the same embedded
- *        app runners (`run_calculator` et al.) work unmodified here.
+ *        app runners (`run_bc` et al.) work unmodified here.
  *
  * Unlike `wish_client_app`'s session, there is no remote server to disconnect
  * from -- the session ends either when the app itself signals completion

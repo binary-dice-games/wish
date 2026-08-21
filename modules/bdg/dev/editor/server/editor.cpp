@@ -262,7 +262,7 @@ void editor::on_init() {
 
   auto tree = import_json(kEditorLayout);
 
-  // Assign every chrome element a bison RMI ID, mirroring calculator/notepad.
+  // Assign every chrome element a bison RMI ID, mirroring bc/nano.
   auto& c = ctx();
   for (auto& [key, elem] : tree) {
     key_t id = rmi::shared::generate_id();
@@ -288,7 +288,7 @@ void editor::on_init() {
   // (called right after on_init() returns) only auto-registers a single
   // top_level_objects entry keyed on internal_root_key_, so this is
   // registered by hand here, the same way try_reparse() does for the
-  // preview's mock_root_key_ and file_explorer's confirm dialog does for
+  // preview's mock_root_key_ and mc's confirm dialog does for
   // its own secondary root (see remove_objects_at()'s doc comment).
   auto help_tree = import_json(kHelpWindowLayout);
   for (auto& [key, elem] : help_tree) {
@@ -596,7 +596,7 @@ void editor::request_close() {
   // remove_internal_objects() only cleans up internal_root_key_ (the main
   // chrome window) -- the Help and Event Log windows are separate
   // top-level roots and need their own explicit teardown, same as
-  // file_explorer's confirm dialog (see remove_objects_at()'s doc comment).
+  // mc's confirm dialog (see remove_objects_at()'s doc comment).
   remove_objects_at(help_root_key_);
   remove_objects_at(log_root_key_);
 }

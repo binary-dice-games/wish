@@ -74,8 +74,8 @@ std::optional<query_tree_request> parse_query_tree_request(const std::string& js
  * every element found there, recursively walks its own "children" field for
  * descendants @p ui_objects has no entry for -- i.e. rows/tabs a form
  * appended at runtime via direct `children` map assignment rather than
- * `import_json`'s named-node path (the pattern `ProcessExplorer`'s process
- * table, `Notepad`'s file tabs, and similar forms all use; see
+ * `import_json`'s named-node path (the pattern `Top`'s process
+ * table, `nano`'s file tabs, and similar forms all use; see
  * `collect_unregistered_descendants()` in automation_query.cpp for the full
  * rationale and how such a descendant's path is synthesized). Both sources
  * are then treated uniformly: optionally restricted to @p root and its

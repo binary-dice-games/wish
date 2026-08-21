@@ -221,7 +221,7 @@ TEST_F(ImguiLayoutTest, MeasureTableAfterRealRenderMatchesActualRenderedRowHeigh
 
 // ── measure_node: every leaf class actually used as an auto Layout child ────
 
-// ── IconThenLabelRow: file_explorer/file_dialog's actual row-cell shape ─────
+// ── IconThenLabelRow: mc/file_dialog's actual row-cell shape ─────
 //
 // file_browser_utils.cpp's make_name_cell() builds a HorizontalLayout of an
 // auto-size-to-font Image (icon) followed by a Label (filename), rebuilt

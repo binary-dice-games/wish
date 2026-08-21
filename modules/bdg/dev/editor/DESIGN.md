@@ -40,12 +40,12 @@ this module going forward.
    preview window (and of the source editor itself) must not reset on
    every keystroke-triggered reparse — only content should change.
 3. **The client never touches the server's filesystem and vice versa.**
-   Mirrors every other wish module's file-handling rule (see Notepad):
+   Mirrors every other wish module's file-handling rule (see nano):
    the server form only ever reads/writes its session sandbox; the client
    runner owns the real local file and moves bytes across the wire.
 4. **Explicit save, not silent autosave.** In-editor edits update the live
    preview immediately but are only written back to the user's local file
-   on Ctrl+S (or a confirmed close) — matching Notepad's save contract.
+   on Ctrl+S (or a confirmed close) — matching nano's save contract.
 5. **Generic across arbitrary JSON UIs.** The event log and preview
    instantiation must work for any valid wish UI descriptor, not a
    hardcoded set of element types.
@@ -252,7 +252,7 @@ Close:
 | `Editor.mark_saved()` | RMI method, no args. Clears `dirty_`; if a "Save & Close" was waiting on this call, completes the close and emits `"closed"`. Must be called by the client only after the sandbox file has actually been downloaded and written to local disk. |
 | `"closed"` event | Chrome and preview subtrees fully torn down; the client should call `signal_done()`. Only fires once the user has resolved any unsaved-changes prompt. |
 | `"on_source_saved"` event | The client should `download_file()` the current sandbox path, write it to the original local path, then call `mark_saved()`. Fired by Ctrl+S and by "Save & Close". |
-| `wish client --run=editor -- <path>` | `<path>` is required (not optional, unlike Notepad's startup-file param) — the editor has nothing useful to show without a source file. Created empty if it doesn't exist yet. |
+| `wish client --run=editor -- <path>` | `<path>` is required (not optional, unlike nano's startup-file param) — the editor has nothing useful to show without a source file. Created empty if it doesn't exist yet. |
 
 ## 6. Design Decisions
 
@@ -297,7 +297,7 @@ Close:
 - **A `Table` (with `ImGuiTableFlags_ScrollY`), not a new log-widget
   primitive.** No scrolling-log element existed anywhere in wish. Rather
   than add one, the event log reuses `Table` (headers + fixed
-  `outer_height`) with rows appended the same way Notepad appends
+  `outer_height`) with rows appended the same way nano appends
   `TabItem`s into `tab_bar`'s `children` — raw `dynamic` children-map
   manipulation, not `ui_objects`-registered dot-paths (so appended rows
   don't pollute `mock_id_to_path_`/automation's tree queries; they render
@@ -445,7 +445,7 @@ Close:
   independently dockable `Window` needs the same manual
   `s.ui_objects.merge()` + `top_level_objects`/`top_level_handlers`
   registration `try_reparse()` already does for the preview's
-  `mock_root_key_`, and `file_explorer`'s overwrite-confirmation dialog
+  `mock_root_key_`, and `tree`'s overwrite-confirmation dialog
   does for its own secondary root (`remove_objects_at()`, `form.hpp`) —
   not a new pattern. No module-level `DockSpaceViewport` is needed: every
   `wish-server`/`wish standalone` session already renders inside an
@@ -488,7 +488,7 @@ Close:
 
 - **Help panel gated on `wish_ui_schema`, cursor-move tracking gated on it
   too — both off unless explicitly enabled.** `TextEditor.wish_ui_schema`
-  defaults to `false` so other `TextEditor` uses in wish (Notepad) don't
+  defaults to `false` so other `TextEditor` uses in wish (nano) don't
   pay for cursor-position tracking or accumulate an otherwise-unconsumed
   `"cursor_moved"` event stream; the editor module's own `source` entry in
   `kEditorLayout` is the only place it's set `true`.
@@ -609,7 +609,7 @@ Depends on:
   (`src/ui/ui_importer.hpp`) — server-side UI construction.
 - `file_service::resolve_path` — sandboxed source file access.
 - `wish_app_host` (`upload_file`/`download_file`/`instantiate`) — client
-  local-file bridging, same contract as Notepad's client runner.
+  local-file bridging, same contract as nano's client runner.
 - `TextEditor` (`src/ui/ui_elements/text_editor.cpp`,
   `src/imgui/imgui_text_editor_renderer.cpp`) — JSON syntax highlighting,
   file-backed autosave-to-sandbox, `"changed"`/`"saved"`/`"cursor_moved"`

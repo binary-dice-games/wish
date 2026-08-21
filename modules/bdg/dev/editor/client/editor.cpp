@@ -4,11 +4,11 @@
 ///
 /// The Editor form (server-side) never touches the client's local
 /// filesystem -- it only edits a file already sitting in its session
-/// sandbox (same rule as Notepad, see modules/bdg/desktop/notepad/client/
-/// notepad.cpp). This runner is the bridge: it uploads the local JSON file
-/// once at startup, then owns a background poll loop (mirroring Process
-/// Explorer's sampling thread, see modules/bdg/desktop/process_explorer/
-/// client/process_explorer.cpp) that watches the local file for changes
+/// sandbox (same rule as nano, see modules/bdg/desktop/nano/client/
+/// nano.cpp). This runner is the bridge: it uploads the local JSON file
+/// once at startup, then owns a background poll loop (mirroring top's
+/// sampling thread, see modules/bdg/desktop/top/
+/// client/top.cpp) that watches the local file for changes
 /// made outside the tool and re-uploads it under a fresh sandbox name each
 /// time -- required because TextEditor's renderer only reloads its buffer
 /// when `file_path` itself changes, not when the file underneath an
@@ -111,7 +111,7 @@ void run_editor(wish_app_host& s) {
 
   // Ctrl+S inside the source editor, or a confirmed "Save & Close": download
   // the sandbox file, persist it back to the original local path, and tell
-  // the server the save completed (mirrors Notepad's on_file_saved; the
+  // the server the save completed (mirrors nano's on_file_saved; the
   // mark_saved() call back is what lets the server clear its "unsaved
   // changes" state and finish a pending close).
   ed->onEvent("on_source_saved"_key, [&s, ed, state, local_path](dynamic) {
@@ -139,8 +139,8 @@ void run_editor(wish_app_host& s) {
   });
 
   // `ed`, `state`, and `stop` stay alive via the shared_ptrs captured above
-  // and below -- no separate keep_alive() call needed, mirroring notepad's
-  // `notepad` proxy.
+  // and below -- no separate keep_alive() call needed, mirroring nano's
+  // `nano` proxy.
   std::thread([&s, ed, state, stop, local_path] {
     using namespace std::chrono_literals;
     std::error_code ec;

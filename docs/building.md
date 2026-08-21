@@ -105,13 +105,14 @@ cmake -S . -B build
 | `WISH_ENABLE_AUTOMATION` | `OFF` | Build the automation query API: a widget-tree/hit-test query protocol that lets an AI agent (or a pytest-style e2e suite) introspect and drive a running wish UI. On the web renderer this adds a Playwright-driven headless-browser path (screenshot/input control it already gets for free, plus two new WebSocket message types). On the SDL3 renderer this adds a native path built directly into the wish C ABI (no browser). Requires `WISH_ENABLE_WEB=ON` and/or `WISH_ENABLE_SDL3=ON` (configure-time error otherwise). See [src/automation/DESIGN.md](../src/automation/DESIGN.md) and `CLAUDE.md`'s "Automation" section. |
 | `WISH_BUILD_SHARED` | `ON` | Build `wish_client` as a shared library with a C ABI (`wish_client.dll` on MSYS2/native Windows / `libwish_client.so` on Linux). |
 | `WISH_BUILD_TESTS` | `ON` | Build and register the GoogleTest suite. |
-| `WISH_COLLECTION_BDG_DESKTOP` | `OFF` | Include every module in `modules/bdg/desktop/` (calculator, log_tail, notepad, pix, process_explorer, zip_tool) — see below. |
-| `WISH_MODULE_BDG_DESKTOP_CALCULATOR` | `OFF` | Include the Calculator form (server) and its self-registering reference client runner. |
-| `WISH_MODULE_BDG_DESKTOP_LOG_TAIL` | `OFF` | Include the Log Tail form (server) and its self-registering reference client runner — a `tail`-like log viewer (`wish client --run=log_tail -- [-f] [-n N] FILE...`). |
-| `WISH_MODULE_BDG_DESKTOP_NOTEPAD` | `OFF` | Include the Notepad form (server) and its self-registering reference client runner. |
+| `WISH_COLLECTION_BDG_DESKTOP` | `OFF` | Include every module in `modules/bdg/desktop/` (bc, tail, nano, pix, top, mc, zip) — see below. |
+| `WISH_MODULE_BDG_DESKTOP_BC` | `OFF` | Include the bc form (server; a four-function calculator) and its self-registering reference client runner. |
+| `WISH_MODULE_BDG_DESKTOP_TAIL` | `OFF` | Include the tail form (server) and its self-registering reference client runner — a `tail`-like log viewer (`wish client --run=tail -- [-f] [-n N] FILE...`). |
+| `WISH_MODULE_BDG_DESKTOP_NANO` | `OFF` | Include the nano form (server; a multi-file text editor) and its self-registering reference client runner. |
 | `WISH_MODULE_BDG_DESKTOP_PIX` | `OFF` | Include the Pix form (server) and its self-registering reference client runner — a local image folder viewer (`wish client --run=pix`); the client runner needs `stb_image`/`stb_image_resize2`/`stb_image_write` (`extern/stb`, fetched on demand). |
-| `WISH_MODULE_BDG_DESKTOP_PROCESS_EXPLORER` | `OFF` | Include the Process Explorer form (server) and its self-registering reference client runner. |
-| `WISH_MODULE_BDG_DESKTOP_ZIP_TOOL` | `OFF` | Include the Zip Tool form (server) and its self-registering reference client runner (client-side compress/extract/list-contents via miniz). |
+| `WISH_MODULE_BDG_DESKTOP_TOP` | `OFF` | Include the top form (server; a top/htop-style system monitor) and its self-registering reference client runner. |
+| `WISH_MODULE_BDG_DESKTOP_MC` | `OFF` | Include the mc form (server; a two-panel local-filesystem-vs-sandbox file browser) and its self-registering reference client runner. |
+| `WISH_MODULE_BDG_DESKTOP_ZIP` | `OFF` | Include the zip form (server) and its self-registering reference client runner (client-side compress/extract/list-contents via miniz). |
 | `WISH_COLLECTION_BDG_DEV` | `OFF` | Include every module in `modules/bdg/dev/` (currently just editor) — see below. |
 | `WISH_MODULE_BDG_DEV_EDITOR` | `OFF` | Include the Editor form (server) and its self-registering reference client runner — a live JSON UI mock editor (`wish client --run=editor -- path/to/ui.json`). |
 
@@ -120,7 +121,7 @@ Modules live in a `modules/<organization>/<collection>/<module>` tree (see
 `WISH_MODULE_<ORG>_<COLLECTION>_<NAME>` option can be set directly, or a
 whole collection enabled at once with `-DWISH_COLLECTION_<ORG>_<COLLECTION>=ON`
 (individual module options still override it, e.g.
-`-DWISH_COLLECTION_BDG_DESKTOP=ON -DWISH_MODULE_BDG_DESKTOP_NOTEPAD=OFF`). A
+`-DWISH_COLLECTION_BDG_DESKTOP=ON -DWISH_MODULE_BDG_DESKTOP_NANO=OFF`). A
 3rd-party project consuming wish via `add_subdirectory()`/`FetchContent` can
 register its own module or collection the same way, with its source living
 outside the wish repo — see [Out-of-tree modules](../src/ui/forms/DESIGN.md#out-of-tree-modules-3rd-party-projects)

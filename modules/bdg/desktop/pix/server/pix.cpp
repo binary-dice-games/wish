@@ -401,7 +401,7 @@ dynamic pix_viewer::do_stat_files(const dynamic& args) {
   // Called via addMethod() -- i.e. from within RMI dispatch, where the
   // dispatch wlock is already held -- so resource_dir/allow_absolute_paths
   // are read via sess(), not context_rlock (which would self-deadlock; see
-  // form::sess()'s doc comment and file_explorer::navigate_sandbox()'s).
+  // form::sess()'s doc comment and tree::navigate_sandbox()'s).
   const fs::path& resource_dir = sess().resource_dir;
   bool allow_absolute = sess().allow_absolute_paths;
 

@@ -675,7 +675,7 @@ sandboxed file path.
 | `read_only` | `bool` | `false` | When `true`, editing is disabled and `changed` never fires. |
 | `width` | `int32` | `0` | Width in pixels (0–8192); `0` fills available width. |
 | `height` | `int32` | `400` | Height in pixels (0–8192); `0` fills available height. |
-| `wish_ui_schema` | `bool` | `false` | When `true` and `language` is `"json"`, enables cursor tracking (`cursor_moved` events) and autocomplete for wish UI element type names, field names, and enum values, sourced from the live class registry (see `src/ui/ui_schema_help.hpp`). Used by the `editor` module's source panel; off by default so unrelated `TextEditor` uses (e.g. Notepad) are unaffected. |
+| `wish_ui_schema` | `bool` | `false` | When `true` and `language` is `"json"`, enables cursor tracking (`cursor_moved` events) and autocomplete for wish UI element type names, field names, and enum values, sourced from the live class registry (see `src/ui/ui_schema_help.hpp`). Used by the `editor` module's source panel; off by default so unrelated `TextEditor` uses (e.g. nano) are unaffected. |
 
 **Events:**
 - `changed` — fired when text is edited (and `read_only` is `false`); the
@@ -828,9 +828,9 @@ A modal file picker (Open or Save As, via `confirm_label`).
 - Events: `on_open` `{path}`, `on_navigate` `{name, type: "dir"|"file"|"path"}`,
   `on_cancel` (no payload).
 
-#### `Notepad`
+#### `Nano`
 A multi-file, syntax-highlighted text editor (module, off by default —
-`WISH_MODULE_BDG_DESKTOP_NOTEPAD`). One closable `TabItem` per open file.
+`WISH_MODULE_BDG_DESKTOP_NANO`). One closable `TabItem` per open file.
 
 - Method: `open_file(path, title?)`.
 - Events: `on_request_open`, `on_request_new`, `on_file_opened {path,title}`,
@@ -850,9 +850,9 @@ detail (the field → widget dispatch table, the `Hidden`/`Order`/
 `set_target()` rather than self-populating) is in
 [docs/object-inspector.md](object-inspector.md).
 
-#### `ProcessExplorer`
+#### `Top`
 A read-only top/htop-style monitor (module, off by default —
-`WISH_MODULE_BDG_DESKTOP_PROCESS_EXPLORER`).
+`WISH_MODULE_BDG_DESKTOP_TOP`).
 
 - Method: `update_snapshot(cpu_percent, per_core_percent, mem_total_bytes,
   mem_used_bytes, processes[])`.
@@ -907,7 +907,7 @@ A window split into:
    names, event names, and payload shapes empirically.
 3. Press **Ctrl+S** inside the source panel to persist changes back to the
    local file on disk (in-editor edits update the preview immediately but
-   are **not** written to disk until saved — matching wish's Notepad save
+   are **not** written to disk until saved — matching wish's nano save
    contract).
 4. If the local file changes outside the tool (e.g. another process/agent
    edits it), the editor picks up the change and re-parses automatically.

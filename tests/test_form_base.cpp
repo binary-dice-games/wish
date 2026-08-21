@@ -229,7 +229,7 @@ TEST(FormBase, EmitWithNullEmitEventStillEnqueues) {
 // synchronously and in-process (unlike server mode, where it just enqueues a
 // network send), so a handler that calls back into another RMI operation
 // would deadlock against whatever lock emit() held while calling it inline.
-// This reproduced as a real hang in `wish standalone --run=notepad` (clicking
+// This reproduced as a real hang in `wish standalone --run=nano` (clicking
 // "Open" deadlocked). Verified here by confirming emit_event is simply never
 // called by emit() -- it only shows up afterward in pending_events.
 TEST(FormBase, EmitOutsideDispatchNeverInvokesEmitEventDirectly) {

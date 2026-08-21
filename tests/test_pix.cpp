@@ -229,7 +229,7 @@ class PixFunctionalTest : public ::testing::Test {
   // enqueues onto the session's event queue; delivery to emit_event -- and
   // thus to events_ -- only happens when the render loop's own thread next
   // flushes it, not synchronously with fire_event() returning. Spin briefly
-  // for it, same idiom as test_notepad.cpp's wait_for_event().
+  // for it, same idiom as test_nano.cpp's wait_for_event().
   bool wait_for_event(bison::key_t name, std::chrono::milliseconds timeout = std::chrono::milliseconds(2000)) const {
     auto t0 = std::chrono::steady_clock::now();
     while (!has_event(name) && std::chrono::steady_clock::now() - t0 < timeout)
@@ -248,7 +248,7 @@ class PixFunctionalTest : public ::testing::Test {
   // pix_viewer::rebuild_grid()) are nested dynamic_ptr children reachable
   // only via each ancestor's own "children" field -- unlike the statically
   // imported layout, they are NOT separately registered as their own
-  // dot-path entries in session.ui_objects (mirrors test_notepad.cpp's
+  // dot-path entries in session.ui_objects (mirrors test_nano.cpp's
   // editor_at()/tab_id_at() helpers, which navigate the TabBar's own
   // "children" field the same way rather than assuming a deeper dot-path).
   dynamic_ptr child_at(const dynamic_ptr& parent, size_t index) const {

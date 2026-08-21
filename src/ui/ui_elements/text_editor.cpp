@@ -66,7 +66,7 @@ void register_text_editor() {
                             "(\"cursor_moved\" events) and autocomplete for wish UI element type "
                             "names, field names, and enum values, sourced from the live class "
                             "registry (see src/ui/ui_schema_help.hpp). Off by default so unrelated "
-                            "TextEditor uses (e.g. Notepad) are unaffected."),
+                            "TextEditor uses (e.g. nano) are unaffected."),
           attr<Category>("Behavior")});
   (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Text Editor"));
   (*proto)[dynamic::CLASS].addAttribute(

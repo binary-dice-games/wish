@@ -82,7 +82,7 @@ dockspace, menu bar, and session restart logic are unchanged.
 |------|-------------|
 | `--list` | Print available apps and exit |
 | `--describe=<name>` | Print an app's name, description, and parameters and exit |
-| `--run=<name>` | Launch named app (e.g. `calculator`) |
+| `--run=<name>` | Launch named app (e.g. `bc`) |
 | `--timeout=<ms>` | Connection timeout in milliseconds (default: 30000) |
 
 Transport flags `--host`, `--port`, `--pipe` are shared with server mode.

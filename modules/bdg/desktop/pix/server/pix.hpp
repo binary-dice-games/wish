@@ -18,7 +18,7 @@ namespace bdg::wish {
 /// on the right.
 ///
 /// PixViewer has no direct access to the client's local machine, so (like
-/// FileExplorer's left panel and Notepad's open/save flow) it only owns the
+/// mc's left panel and nano's open/save flow) it only owns the
 /// UI structure and forwards user intent as high-level events; the client
 /// runner (`run_pix`) does all local-filesystem enumeration, image
 /// decoding, thumbnail/preview generation, and sandbox uploads (via
@@ -26,7 +26,7 @@ namespace bdg::wish {
 /// RMI methods (`set_images`, `set_thumbnail`, `set_preview`, `set_info`).
 ///
 /// The "Open Sandbox in Explorer" button is the one piece of this form
-/// that's entirely server-owned (mirrors FileExplorer's own button): the
+/// that's entirely server-owned (mirrors mc's own button): the
 /// sandbox directory lives on this machine, so there's nothing for the
 /// client to do.
 ///

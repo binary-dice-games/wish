@@ -33,7 +33,7 @@ namespace bdg::wish {
 /// widget type the loaded JSON happens to describe, with no per-type wiring.
 ///
 /// Only Ctrl+S inside the source editor persists to the original local
-/// file (mirroring Notepad's save contract) -- in-editor edits update the
+/// file (mirroring nano's save contract) -- in-editor edits update the
 /// live preview immediately but are not written to disk until saved.
 /// Closing the window with unsaved edits shows an inline
 /// save/discard/cancel confirmation instead of closing immediately.
@@ -59,7 +59,7 @@ namespace bdg::wish {
 ///   - `"on_source_saved"` — Ctrl+S, or "Save & Close" confirmed, inside
 ///     the source editor; the client should download the sandbox file,
 ///     persist it to the original local path, and call `mark_saved`
-///     (mirrors Notepad's `on_file_saved`).
+///     (mirrors nano's `on_file_saved`).
 class editor : public form {
  public:
   explicit editor(bison::dynamic&& base);

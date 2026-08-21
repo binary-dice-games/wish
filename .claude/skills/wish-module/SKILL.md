@@ -25,16 +25,16 @@ In order, before writing anything:
    if the module needs a stateful server-side form, "The `form` Base Class"
    and "Form Lifecycle" above it.
 4. **One existing module as a concrete template**, chosen by shape:
-   - `modules/bdg/desktop/calculator/` — simplest complete example: a
+   - `modules/bdg/desktop/bc/` — simplest complete example: a
      server-side `form` subclass owning all logic, a trivial client runner
      that just instantiates it and waits for `"closed"`. Start here for any
      module whose UI reacts to its own state (a game, a tool with
      server-computed output).
-   - `modules/bdg/desktop/notepad/` — demonstrates the client/server file
+   - `modules/bdg/desktop/nano/` — demonstrates the client/server file
      handshake (`on_request_open` → client `upload_file` → `open_file()` →
      `on_file_closed` → client `download_file`). Read this if the module
      needs to read/write files that live on the *client's* machine.
-   - `modules/bdg/desktop/process_explorer/` — a form driven by
+   - `modules/bdg/desktop/top/` — a form driven by
      periodically-refreshed data rather than direct user input; look at
      this for a monitoring/dashboard-shaped module.
 5. `cmake/WishModules.cmake`'s top-of-file comment — the mechanics of
@@ -57,13 +57,13 @@ Before scaffolding, make sure you know:
   (`Window`, `Button`, `Plot`, ...) via `instantiate()`/templates. If the
   UI has its own internal state machine, computed fields, or needs to
   react to its own widget events without a client round trip (like
-  `Calculator`'s arithmetic), it needs a `server/` form subclass.
+  `Bc`'s arithmetic), it needs a `server/` form subclass.
 - **Does it need local files on the client's machine, or files embedded in
-  the binary?** Determines whether to follow the Notepad handshake pattern
+  the binary?** Determines whether to follow the nano handshake pattern
   and/or add a `resources/embedded/` directory.
 - **What does `--describe=<name>` need to say**, and does the app take any
-  positional `app_args()` (see `calculator.cpp`'s empty `.params = {}` vs.
-  notepad's one optional startup-file param)?
+  positional `app_args()` (see `bc.cpp`'s empty `.params = {}` vs.
+  nano's one optional startup-file param)?
 
 Use `AskUserQuestion` if any of the above is genuinely ambiguous from the
 request rather than guessing — the org/collection and the
@@ -76,11 +76,11 @@ Create `modules/<org>/<collection>/<name>/`:
 - `server/<name>.hpp` + `server/<name>.cpp` (only if server logic is
   needed): a class inheriting `bdg::wish::form`, overriding `on_init()` to
   build the internal tree (JSON literal + `import_json()`, exactly like
-  `kLayout` in `calculator.cpp`) and bind widget handlers, plus
+  `kLayout` in `bc.cpp`) and bind widget handlers, plus
   `on_event()` to route clicks/events. Declare and define
   `register_<name>()`, calling `dynamic::addClass()` with
   `dynamic::make_factory<YourForm>("wish"_key, "YourClassName"_key)` — copy
-  the registration block at the bottom of `calculator.cpp` and adapt names.
+  the registration block at the bottom of `bc.cpp` and adapt names.
 - `client/<name>.hpp` + `client/<name>.cpp`: a free function
   `run_<name>(wish_app_host&)` that instantiates the form (or, for a
   client-only module, builds the tree directly), wires `onEvent` handlers,
@@ -90,13 +90,13 @@ Create `modules/<org>/<collection>/<name>/`:
   with `.organization = WISH_MODULE_<ORG>_<COLLECTION>_<NAME>_ORGANIZATION`
   and `.collection = WISH_MODULE_<ORG>_<COLLECTION>_<NAME>_COLLECTION` (the
   macro names are mechanical: uppercase the full `org/collection/name`
-  path) — copy the registrar block at the bottom of `calculator.cpp`.
+  path) — copy the registrar block at the bottom of `bc.cpp`.
 - `resources/embedded/` only if the module ships its own assets (icons,
   fonts) — lands in the session sandbox under
   `res/<org>/<collection>/<name>/...` at runtime, no code changes needed
   beyond creating the directory.
 - `README.md` — one short paragraph plus a `server:`/`client:`/`resources:`
-  bullet list, matching the style of `modules/bdg/desktop/calculator/README.md`.
+  bullet list, matching the style of `modules/bdg/desktop/bc/README.md`.
 
 Follow the coding-style rules in the root `CLAUDE.md` (license header,
 `@file`/`@brief`, 2-space indent, trailing-underscore private members,

@@ -9,7 +9,7 @@
 /// the form's `*_requested` events (see git.hpp's class doc comment) by
 /// running the corresponding mutating git command and refreshing.
 ///
-/// Mirrors process_explorer's client/server split: "gathering this
+/// Mirrors top's client/server split: "gathering this
 /// information is inherently OS-specific, and the machine a user wants
 /// visibility into is their own" there becomes "the repo a user wants to
 /// operate on is on their own machine, reachable only from the client"

@@ -23,7 +23,7 @@ namespace bdg::wish {
 /// @brief Stable per-element identity for use as an ImGui widget ID.
 ///
 /// Returns the element's "__path__" field verbatim (e.g. "dialog.ok", or a
-/// form's ordinally-assigned root key like "__notepad_0" -- see
+/// form's ordinally-assigned root key like "__nano_0" -- see
 /// form::next_available_key() in ui/forms/form.hpp) when present: it is
 /// stamped at template-registration/form-init time and constant across
 /// process runs, so the same window/widget gets the same ImGui ID every

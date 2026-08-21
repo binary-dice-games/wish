@@ -36,7 +36,7 @@ functions consume for sizing, described below.
 
 ## Why a measure/arrange pass exists
 
-A File Explorer bug (a gap between panels and the status bar; up to four
+An mc bug (a gap between panels and the status bar; up to four
 stacked scrollbars for a few pixels of overflow) kept recurring because the
 underlying sizing model was ad hoc: each container computed its own
 available space from `ImGui::GetContentRegionAvail()` independently at
@@ -376,7 +376,7 @@ select) is always an *auto* (unhinted) child, so it was never wrapped
 either. Once every `VerticalLayout`/`HorizontalLayout` wraps its *own*
 content unconditionally, every sibling row's instance hit the same literal
 id within the same frame — confirmed live as a real, visible bug (not just
-a theoretical one): file_explorer's entire file-listing name column
+a theoretical one): mc's entire file-listing name column
 silently failed to render, because N different `ui_element` instances were
 all opening/closing the *same* real ImGui child window by id within one
 frame. A node's own address is stable for exactly as long as the node

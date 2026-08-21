@@ -39,7 +39,7 @@ cmake --build build --target wish_client_dll
 The `wish_cpp` CMake target (`bindings/cpp/CMakeLists.txt`, added
 automatically when `WISH_BUILD_SHARED=ON`) is an `INTERFACE` library that
 sets up the include paths and links `wish_client_dll` -- link your own
-target against it the same way `calculator_cpp_binding`/`notepad_cpp_binding`
+target against it the same way `calculator_cpp_binding`/`nano_cpp_binding`
 do.
 
 ### Running the calculator example
@@ -61,8 +61,8 @@ build/app/wish server --renderer=sdl3
 build/bindings/cpp/calculator_cpp_binding --transport=term
 ```
 
-`bindings/cpp/examples/notepad.cpp` (`notepad_cpp_binding`) is the C++ port
-of [bindings/python/examples/notepad_example.py](../bindings/python/examples/notepad_example.py)
+`bindings/cpp/examples/nano.cpp` (`nano_cpp_binding`) is the C++ port
+of [bindings/python/examples/nano_example.py](../bindings/python/examples/nano_example.py)
 -- run it the same way, with an optional trailing file path to open at
 startup.
 
@@ -382,8 +382,8 @@ build/app/wish server --renderer=sdl3
 dotnet run --project bindings/csharp/examples/CalculatorExample -- --transport=term
 ```
 
-`bindings/csharp/examples/NotepadExample` is the C# port of
-[bindings/python/examples/notepad_example.py](../bindings/python/examples/notepad_example.py)
+`bindings/csharp/examples/NanoExample` is the C# port of
+[bindings/python/examples/nano_example.py](../bindings/python/examples/nano_example.py)
 -- run it the same way, with an optional trailing file path to open at
 startup.
 

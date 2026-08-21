@@ -622,7 +622,7 @@ TEST_F(FileDialogEventsTest, BtnCancelEmitsOnCancelAndRemovesWindow) {
   // fixture's wish::null_renderer has a no-op render_node() (renderer.hpp),
   // so that flag is never processed here -- simulate the render loop's half
   // of the handshake directly instead, same idiom as
-  // test_file_explorer.cpp's WindowClosedEmitsClosedAndCleansUp.
+  // test_mc.cpp's WindowClosedEmitsClosedAndCleansUp.
   auto& objs = srv_->last_session->ui_objects;
   auto it = objs.find(root_);
   ASSERT_NE(it, objs.end());

@@ -71,8 +71,8 @@ directly; the server renders whatever tree of objects the client built.
 - **3D plotting**: `src/ui/plot3d_elements/*.cpp` — `Plot3D`, `Plot3DSeries`,
   `Plot3DSurface`, `Plot3DMesh`, `Plot3DAnnotations`.
 - **Reference forms** (server-side classes with real logic, not just
-  layout): `FileDialog`, `Notepad`, `ProcessExplorer` — documented in full
-  in `src/ui/forms/DESIGN.md` under "Built-in Forms". `Notepad` in
+  layout): `FileDialog`, `Nano`, `Top` — documented in full
+  in `src/ui/forms/DESIGN.md` under "Built-in Forms". `Nano` in
   particular is the canonical example of a client/server file-transfer
   handshake (`upload_file` → `open_file` → `on_file_closed` →
   `download_file`) worth reading before designing anything that touches

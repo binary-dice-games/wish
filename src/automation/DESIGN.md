@@ -119,7 +119,7 @@ least one of the two backends that implement it.
 ### The two-socket-plus-browser model
 
 ```
-   app-under-test (e.g. calculator)          Python (agent or pytest)
+   app-under-test (e.g. bc)          Python (agent or pytest)
         │  existing RMI client                     │  playwright
         │  (TCP / pipe / memory_transport,          │
         │   completely unchanged)                   │
@@ -303,7 +303,7 @@ context.hpp` — and then, for every element found there, recursively
 walking its own `"children"` field for descendants `ui_objects` has no
 entry for (rows/tabs a form appends at runtime via direct `children` map
 assignment rather than `import_json`'s named-node path — the pattern
-`ProcessExplorer`'s process table, `Notepad`'s file tabs, and `log_tail`'s
+`Top`'s process table, `nano`'s file tabs, and `tail`'s
 log rows and tag tabs all use; see `collect_unregistered_descendants()`
 in `automation_query.cpp` for the full rationale and how such a
 descendant's dot-path is synthesized from its sequential child index —

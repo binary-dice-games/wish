@@ -14,7 +14,7 @@
 #     WISH_APP_MODULE_SOURCES / WISH_APP_MODULE_DEFS global properties,
 #     consumed by app/CMakeLists.txt's embedded-app executables and
 #     wish_client_dll. Client apps self-register into app_registry (see
-#     modules/bdg/desktop/calculator/client/calculator.cpp for the pattern),
+#     modules/bdg/desktop/bc/client/bc.cpp for the pattern),
 #     so no further wiring is needed here.
 #   - adds <module_dir>/resources/embedded/ (if present) to the
 #     WISH_MODULE_RESOURCE_DIRS global property, consumed by
@@ -44,8 +44,8 @@
 # so enabling the collection pre-enables every module in it, while each
 # module's own WISH_MODULE_<ORG>_<COLLECTION>_<NAME> option can still be
 # individually overridden (e.g. -DWISH_COLLECTION_BDG_DESKTOP=ON
-# -DWISH_MODULE_BDG_DESKTOP_NOTEPAD=OFF enables everything in bdg/desktop
-# except notepad). If MODULES isn't given, every subdirectory of
+# -DWISH_MODULE_BDG_DESKTOP_NANO=OFF enables everything in bdg/desktop
+# except nano). If MODULES isn't given, every subdirectory of
 # modules/<org>/<collection>/ that looks like a module (has server/, client/,
 # or resources/embedded/) is discovered automatically.
 #
@@ -312,7 +312,7 @@ function(wish_finalize_app_modules)
       # wish_server links it PRIVATE for its own embedded-resource unpacking
       # (src/context/file_service.cpp) -- but that doesn't make it reachable
       # from module client code without this, same rationale as uv_a above.
-      # See the zip_tool module's client/zip_tool.cpp for the consumer (its
+      # See the zip module's client/zip.cpp for the consumer (its
       # local compress/extract/list-contents logic).
       if(TARGET miniz)
         target_link_libraries(${tgt} PRIVATE miniz)

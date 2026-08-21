@@ -1,8 +1,8 @@
 // MIT License © 2025 Binary Dice Games
 /**
  * @file wish_app_host.hpp
- * @brief Minimal surface an embedded app runner (calculator/notepad/
- *        process_explorer) needs from whatever is hosting it.
+ * @brief Minimal surface an embedded app runner (bc/nano/
+ *        top) needs from whatever is hosting it.
  */
 #pragma once
 
@@ -27,7 +27,7 @@ using transfer_progress_callback = std::function<void(std::uint64_t transferred,
  *        (transport-backed, `wish client`) and `wish_standalone_session`
  *        (in-process, `wish standalone`).
  *
- * `run_calculator`/`run_notepad`/`run_process_explorer` are written against
+ * `run_bc`/`run_nano`/`run_top` are written against
  * this interface instead of a concrete session type so the same app code
  * runs unmodified whether the session talks to a server over a transport or
  * hosts the server logic in-process.

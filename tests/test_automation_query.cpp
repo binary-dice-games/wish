@@ -58,7 +58,7 @@ using namespace bdg::bison;
 namespace {
 // import_json() alone never assigns __wish_id (that's done by
 // ui_template::do_instantiate() as part of RMI object registration -- see
-// calculator.cpp's on_init() for the production pattern). Tests that need
+// bc.cpp's on_init() for the production pattern). Tests that need
 // hit_test_map_ to join against a plain import_json() tree assign their own
 // ids directly; a real RMI-driven id from rmi::shared::generate_id() isn't
 // needed here, just any nonzero value.
@@ -182,8 +182,8 @@ TEST_F(BuildTreeSnapshotTest, RootFilterRestrictsToNodeAndDescendants) {
 // ── Runtime-appended children (never registered by dot-path) ──────────────────
 //
 // Mirrors the append_row()-style pattern several forms use to reconcile a
-// live list against a Table/TabBar at runtime -- ProcessExplorer's process
-// rows, Notepad's file tabs, the editor module's event-log rows, and any
+// live list against a Table/TabBar at runtime -- Top's process
+// rows, nano's file tabs, the editor module's event-log rows, and any
 // third-party module built the same way: a child inserted directly into an
 // existing element's "children" field via `(*children_field)[key] = ...`,
 // which never goes through import_json's named-node path and therefore
@@ -193,7 +193,7 @@ TEST_F(BuildTreeSnapshotTest, RootFilterRestrictsToNodeAndDescendants) {
 
 TEST_F(BuildTreeSnapshotTest, IncludesRuntimeAppendedChildWithSynthesizedPath) {
   // "list" starts with an explicit empty children map (the same
-  // `"children": {}` technique notepad.cpp's tab_bar uses) so the importer
+  // `"children": {}` technique nano.cpp's tab_bar uses) so the importer
   // gives this instance its own private children map to append into.
   bdg::wish::ui_tree tree = bdg::wish::import_json(R"({
     "type": "Window", "title": "Dialog",
@@ -263,7 +263,7 @@ TEST_F(BuildTreeSnapshotTest, RecursesIntoChildrenOfARuntimeAppendedChild) {
   ASSERT_TRUE(*table_children);
 
   // A TableRow appended to the table, itself with an appended Label cell --
-  // two levels of runtime-only nesting, exactly like log_tail's append_row().
+  // two levels of runtime-only nesting, exactly like tail's append_row().
   bdg::wish::ui_element_ptr row{dynamic::instantiate("wish"_key, "TableRow"_key)};
   bdg::bison::dynamic_ptr row_children{bdg::bison::key_t{0U}};
   bdg::wish::ui_element_ptr cell{dynamic::instantiate("wish"_key, "Label"_key)};

@@ -149,7 +149,7 @@ TEST_F(WishCppClientTest, ProxyGetForUnknownPathThrows) {
 // src/context/context.hpp's emit_event() / pending_events plumbing) --
 // beyond what a headless null_renderer test fixture can drive. This test
 // covers the C ABI subscription round-trip only (rmi_proxy_on_event()
-// succeeding, callback pointer surviving); the calculator/notepad examples
+// succeeding, callback pointer surviving); the calculator/nano examples
 // under bindings/cpp/examples/ exercise real event delivery end-to-end
 // against a rendering server.
 TEST_F(WishCppClientTest, OnEventSubscriptionSucceeds) {

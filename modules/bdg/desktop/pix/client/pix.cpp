@@ -143,7 +143,7 @@ std::string sandbox_full_path(const std::string& dir_key, const std::string& nam
 }
 
 // Invokes an RMI method on `pix`, retrying a couple of times on failure --
-// see file_explorer.cpp's call_with_retry() for the rationale (a method
+// see tree.cpp's call_with_retry() for the rationale (a method
 // call placed right after a burst of upload_file traffic occasionally
 // races a concurrent session reader).
 dynamic call_with_retry(
@@ -271,7 +271,7 @@ std::vector<image_entry> list_images(const fs::path& dir) {
 
 // Builds the `files` dynamic FileDialog expects from a directory listing
 // (dirs and files both shown, so the user can navigate) -- mirrors
-// notepad.cpp's list_directory().
+// nano.cpp's list_directory().
 dynamic list_directory_for_dialog(const fs::path& dir) {
   dynamic files;
   size_t i = 0;
@@ -523,7 +523,7 @@ void browse_to(wish_app_host& s, const std::shared_ptr<pix_state>& state, const 
 // Shows a FileDialog for picking a folder: navigating updates the dialog's
 // listing, and confirming (Open button or double-clicking a row) treats
 // whatever directory is currently navigated to as the chosen folder --
-// mirrors notepad.cpp's browse_and_open(), adapted for folder rather than
+// mirrors nano.cpp's browse_and_open(), adapted for folder rather than
 // file selection.
 void browse_for_folder(wish_app_host& s, const std::shared_ptr<pix_state>& state) {
   auto cur_dir = std::make_shared<fs::path>(state->cur_dir.empty() ? fs::current_path() : state->cur_dir);

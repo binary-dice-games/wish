@@ -104,7 +104,7 @@ class form : public ui_root {
   /// root Window element's "__path__", which stable_id() in
   /// imgui_ui_renderer.hpp hashes into the ImGui id. next_available_key()
   /// guarantees this stays unique across concurrently-open instances of the
-  /// same form class (e.g. two Notepad windows), while remaining
+  /// same form class (e.g. two nano windows), while remaining
   /// deterministic run-to-run for a given open order/count -- unlike the
   /// pointer-derived id this replaced, which was both run-unstable AND,
   /// since ui_tree::merge() only prefixes ui_objects' *keys* and never
@@ -116,14 +116,14 @@ class form : public ui_root {
   /// candidate not already registered as a top-level object in the current
   /// session.
   ///
-  /// Lets concurrent instances of the same form class (e.g. two Notepad
+  /// Lets concurrent instances of the same form class (e.g. two nano
   /// windows) get distinct keys deterministically, instead of either
   /// colliding (a fixed literal) or being run-unstable (a pointer/address).
   /// Call from on_init() to compute internal_root_key_, before this form's
   /// own root is registered -- so the current instance never sees itself as
   /// already taken.
   ///
-  /// @param prefix  Form-class-specific prefix, e.g. "__notepad_".
+  /// @param prefix  Form-class-specific prefix, e.g. "__nano_".
   std::string next_available_key(const std::string& prefix);
 
   /// @brief Remove all session.objects entries owned by this form.
@@ -151,7 +151,7 @@ class form : public ui_root {
   ///
   /// @param root_key  Top-level key of the internal Window to close, e.g.
   ///                  internal_root_key_ or a subclass's own secondary
-  ///                  internal root (see file_explorer's confirm dialog).
+  ///                  internal root (see mc's confirm dialog).
   void request_close_at(const std::string& root_key);
 
   /// @brief Erase every session.objects entry rooted at @p root_key: the
@@ -160,7 +160,7 @@ class form : public ui_root {
   ///
   /// Generalizes remove_internal_objects() to an arbitrary root key, for
   /// forms that own more than one internal top-level Window (e.g.
-  /// file_explorer's overwrite-confirmation dialog, tracked separately from
+  /// mc's overwrite-confirmation dialog, tracked separately from
   /// internal_root_key_). remove_internal_objects() itself is just this
   /// called with internal_root_key_.
   ///

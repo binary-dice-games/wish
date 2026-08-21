@@ -78,7 +78,7 @@ void register_all() {
   // alongside the forms rather than in the plain per-file register_*()
   // block earlier in this function.
   register_object_inspector();
-  // Optional modules (calculator, notepad, process_explorer, ...); see
+  // Optional modules (bc, nano, top, ...); see
   // src/ui/forms/DESIGN.md's "Module System" section.
   register_optional_modules();
 }

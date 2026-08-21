@@ -1,14 +1,14 @@
 // MIT License © 2025 Binary Dice Games
 /// @file file_browser_utils.hpp
 /// @brief Shared helpers for forms that render a file/directory listing
-/// (FileDialog, FileExplorer, PixViewer): the type-icon lookup and the
+/// (FileDialog, Mc, PixViewer): the type-icon lookup and the
 /// icon+label Name cell it builds, the small `__wish_id` accessor forms use
 /// when caching widget pointers during on_init(), the comparison primitives
 /// click-to-sort-column handling is built on, and the "open in host file
-/// explorer" helper shared by FileExplorer's and PixViewer's own "Open in
+/// explorer" helper shared by mc's and PixViewer's own "Open in
 /// Explorer" buttons. Per-module byte-count/timestamp formatting (e.g.
 /// format_bytes()) is deliberately still duplicated per module rather than
-/// shared here -- see zip_tool.cpp's own format_bytes() doc comment.
+/// shared here -- see zip.cpp's own format_bytes() doc comment.
 #pragma once
 
 #include <ui/ui_element.hpp>
@@ -21,7 +21,7 @@
 namespace bdg::wish {
 
 /// @brief Reads back the `__wish_id` field stamped onto every imported
-/// element during on_init() (see file_dialog.cpp/file_explorer.cpp), so it
+/// element during on_init() (see file_dialog.cpp/mc.cpp), so it
 /// can be cached alongside a widget pointer for on_event() dispatch.
 template <typename Element>
 bison::key_t wish_id_of(const Element& element) {
@@ -41,7 +41,7 @@ bison::key_t wish_id_of(const Element& element) {
 std::string icon_for_entry(const std::string& name, const std::string& type);
 
 /// @brief Builds the Name column cell used by both FileDialog and
-/// FileExplorer's file tables: a HorizontalLayout containing a type icon
+/// mc's file tables: a HorizontalLayout containing a type icon
 /// (via icon_for_entry()) followed by a Label showing @p display_name.
 ///
 /// The icon deliberately does NOT set an explicit "width"/"height" -- see
@@ -56,7 +56,7 @@ std::string icon_for_entry(const std::string& name, const std::string& type);
 /// @param name          Entry's file/directory name, passed to icon_for_entry().
 /// @param type          "dir" or "file", passed to icon_for_entry().
 /// @param display_name  Text shown in the Label (may differ from @p name,
-///                      e.g. FileExplorer's "[dirname]" / ".. [Up]" framing).
+///                      e.g. mc's "[dirname]" / ".. [Up]" framing).
 ui_element_ptr make_name_cell(const std::string& name, const std::string& type, const std::string& display_name);
 
 /// @brief Case-insensitive (ASCII) less-than, for sorting a file listing's
@@ -66,7 +66,7 @@ bool ascii_ci_less(const std::string& a, const std::string& b);
 
 /// @brief Approximates the byte count behind a human-formatted size string
 /// (e.g. "12.3 KB", "1 GB", as produced by format_bytes() in
-/// file_explorer.cpp), for numeric Size-column sorting.
+/// mc.cpp), for numeric Size-column sorting.
 ///
 /// Both the sandbox listing (server-formatted) and the local listing
 /// (client-formatted, see update_local_listing()'s `size` field) only ever

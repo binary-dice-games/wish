@@ -25,7 +25,7 @@ wish <app>      [--transport T] [--host H] [--port P] [--name PATH]
 ```
 
 Anything after a literal `--` is forwarded to the app, e.g.
-`wish client --run=notepad -- path/to/file`.
+`wish client --run=nano -- path/to/file`.
 
 ## Shared transport flags
 
@@ -59,7 +59,7 @@ all; passing any of `--transport`/`--host`/`--port`/`--name` is an error).
 
 ```sh
 wish server --transport tls --port 8443 --cert_file server-cert.pem --key_file server-key.pem
-wish client --transport tls --port 8443 --ca_file ca-cert.pem --run notepad
+wish client --transport tls --port 8443 --ca_file ca-cert.pem --run nano
 ```
 
 These map 1:1 onto `tls_socket_client_transport`/`tls_socket_server_transport`'s
@@ -115,8 +115,8 @@ build has none registered).
 
 ```sh
 wish client --list
-wish client --describe=notepad
-wish client --transport tcp --port 7070 --run=notepad -- path/to/file.txt
+wish client --describe=nano
+wish client --transport tcp --port 7070 --run=nano -- path/to/file.txt
 ```
 
 ### The `wish <app>` alias
@@ -126,7 +126,7 @@ An argument that isn't a known subcommand (`server`/`client`/`standalone`/
 `wish client --run=<app> ...`, forwarding every other argument unchanged:
 
 ```sh
-wish notepad -- path/to/file.txt   # == wish client --run=notepad -- path/to/file.txt
+wish nano -- path/to/file.txt   # == wish client --run=nano -- path/to/file.txt
 ```
 
 ## `wish standalone`
@@ -159,7 +159,7 @@ there is no transport to configure.
 
 ```sh
 wish standalone --list
-wish standalone --run=calculator --renderer sdl3
+wish standalone --run=bc --renderer sdl3
 ```
 
 ## `wish desktop`
@@ -203,8 +203,8 @@ desktop with no flags at all:
 ```sh
 wish desktop                      # downstream defaults to tcp:7071
 # inside the spawned terminal:
-wish client --run notepad         # connects to the desktop's tcp:7071, no flags needed
-wish notepad                      # same thing, via the app-name alias
+wish client --run nano     # connects to the desktop's tcp:7071, no flags needed
+wish nano                  # same thing, via the app-name alias
 ```
 
 ## Environment-variable flag defaults

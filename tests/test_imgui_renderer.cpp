@@ -1028,7 +1028,7 @@ TEST_F(ImguiRendererTest, AutoHeightTableInsideVerticalLayoutDoesNotGrowFrameToF
   // touched this node (rather than only when a real hint-driven box was
   // given), any ImGui-side overhead added on top of a requested
   // outer_height compounds without bound across frames -- confirmed via
-  // WISH_LAYOUT_DEBUG_LOG against process_explorer's real auto-height
+  // WISH_LAYOUT_DEBUG_LOG against top's real auto-height
   // "proc_table" as a sustained growth, never settling, several frames
   // after this exact scenario was introduced by deleting measure_table()'s
   // row-height formula in favor of the generic fallback.
@@ -1527,7 +1527,7 @@ TEST_F(ImguiRendererTest, StretchHeightTableInsideVerticalLayoutFillsTheRow) {
 }
 
 TEST_F(ImguiRendererTest, FreshIconThenLabelRowDoesNotOverlapOnFirstRealRender) {
-  // Regression test for the historical file_explorer bug: a brand-new
+  // Regression test for the historical mc bug: a brand-new
   // HorizontalLayout of an auto-size-to-font Image (icon) followed by a
   // Label (filename), rendered for the very first time -- matching
   // file_browser_utils.cpp's make_name_cell(), a fresh instance built on
@@ -1829,7 +1829,7 @@ TEST_F(ImguiRendererTest, DeeplyNestedStretchLayoutsStayWithinWindowBounds) {
   // each child's raw, globally-cascaded arranged_pos() directly as a
   // SetCursorPos() argument (instead of anchoring it to the *current*
   // rendering frame) made position offsets compound once per nesting
-  // level -- three levels deep, as in file_explorer's real
+  // level -- three levels deep, as in mc's real
   // main -> panels -> right -> right_header tree, this pushed a widget's
   // on-screen rect far outside the window entirely (observed: an x
   // coordinate over 1000 inside a 920px-wide window). "left_filler"/

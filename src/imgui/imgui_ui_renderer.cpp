@@ -33,7 +33,7 @@ using namespace bdg::bison;
 // name at the first "###", keeping only what follows -- so whatever this
 // returns for a Window IS the literal text that ends up in imgui.ini's
 // "[Window][...]" line. A hash would make that file unreadable; the raw
-// dot-path (e.g. "__notepad_0") reads the same as the source that produced
+// dot-path (e.g. "__nano_0") reads the same as the source that produced
 // it, and is exactly as stable across runs as a hash of it would be.
 std::string stable_id(const ui_element& node) {
   const auto* path_field = node.findField("__path__"_key);
@@ -56,7 +56,7 @@ std::string stable_id(const ui_element& node) {
   // their own content in a self-managed BeginChild(id) (see
   // src/imgui/DESIGN.md's "Draw pass"), so N sibling rows sharing one
   // literal id collide on the same real ImGui child window within the same
-  // frame -- confirmed live via file_explorer's file listing: every row's
+  // frame -- confirmed live via tree's file listing: every row's
   // name-cell content silently failed to render (ImGui window-ID reuse).
   // The node's own address is stable for the node's own lifetime and, more
   // importantly, unique among every *other* node alive this same frame
@@ -774,7 +774,7 @@ void render_horizontal_layout(imgui_renderer& r, const ui_element& node, const c
       // as render_vertical_layout()'s row wrap: a purely structural
       // size-constraint container is not a scroll target. Sizes here are
       // exact (from the measure pass), not estimated -- this is what
-      // structurally prevents the historical Notepad toolbar regression
+      // structurally prevents the historical nano toolbar regression
       // (fixed-width buttons ballooning to the full window height).
       auto child_id = "##hl_col_" + stable_id(child);
       ImGui::BeginChild(
@@ -1407,7 +1407,7 @@ void render_table(imgui_renderer& r, const ui_element& node, const context& s) {
   // exact fill logic), every frame's real rendered height would embed
   // whatever ImGui adds on top of a requested outer_height (a few pixels of
   // overhead), compounding without bound -- confirmed via
-  // WISH_LAYOUT_DEBUG_LOG against process_explorer's auto-height
+  // WISH_LAYOUT_DEBUG_LOG against top's auto-height
   // "proc_table" as a sustained +4px-per-frame growth, never settling.
   // Gating on the Table's own hint being nonzero breaks the cycle: a plain
   // auto Table passes outer_height=0 straight to ImGui::BeginTable() every

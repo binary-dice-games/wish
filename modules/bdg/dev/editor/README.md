@@ -53,7 +53,7 @@ glance which widget an edit is about to affect.
   dot-*path* within the preview tree (for the highlight).
 - **client/**: `run_editor(wish_app_host&)`, self-registered as the
   `"editor"` embedded app — owns the local JSON file (`upload_file`/
-  `download_file`, same sandbox-bridging rule as Notepad) and a background
+  `download_file`, same sandbox-bridging rule as nano) and a background
   poll loop that re-uploads the file under a fresh sandbox name whenever it
   changes on disk outside the tool. Requires a startup file path via
   `app_args()`: `wish client --run=editor -- path/to/ui.json` (created
