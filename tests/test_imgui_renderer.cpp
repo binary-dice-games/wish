@@ -1620,6 +1620,66 @@ TEST_F(ImguiRendererTest, FreshIconThenLabelRowDoesNotOverlapOnFirstRealRender) 
   EXPECT_GE(name_min.x, icon_max.x);
 }
 
+TEST_F(ImguiRendererTest, TableRowCellDoesNotOpenChildWindowOverSelectable) {
+  // Regression test for the layout-refactor bug where a Table row with an
+  // icon+label HorizontalLayout cell (file_browser_utils.cpp's
+  // make_name_cell()) stopped responding to clicks landing on the cell's own
+  // content, while clicking empty row space still worked. Root cause:
+  // render_horizontal_layout()'s wrap_self opens a real ImGui::BeginChild()
+  // -- a distinct window that always wins hover/click priority over
+  // whatever's behind it in the parent window, regardless of
+  // ImGuiSelectableFlags_AllowOverlap -- over the row's own spanning
+  // Selectable. context::suppress_layout_wrap_self (set by render_table()
+  // around each cell's dispatch) suppresses exactly that wrap for cell
+  // content. A node that opened a real BeginChild() self-reports its rect
+  // via report_self_rect() (see imgui_ui_renderer.cpp), stamping
+  // "__wish_win_rect_w__" on it -- so that field's absence is a direct,
+  // deterministic signal that no click-stealing child window was opened,
+  // without needing to fight ImGui's full mouse press/release state machine
+  // in a headless test.
+  constexpr auto cell_json = R"({ "type": "HorizontalLayout", "spacing": 6, "children": {
+    "icon": { "type": "Image", "src": "res/icons/file.png" },
+    "name": { "type": "Label", "text": "clang-format" }
+  }})";
+
+  // Control: the identical HorizontalLayout rendered standalone (not as a
+  // Table cell) must still open its own BeginChild(), proving this content
+  // is exactly the kind that normally gets wrapped -- so the table case
+  // below passing isn't just "this content never wraps anyway". Two frames:
+  // per FreshIconThenLabelRowDoesNotOverlapOnFirstRealRender's own comment,
+  // an Image/Label's *measured* size underestimates (often {0,0}) on the
+  // very first frame, which would make wrap_self's content_extent() look
+  // degenerate too -- the second frame reflects the first's real rendered
+  // size instead.
+  auto standalone = bdg::wish::import_json(cell_json);
+  (*standalone["icon"])["__auto_size_to_font__"_key] = true;
+  for (int i = 0; i < 2; ++i) {
+    renderer_->begin_frame();
+    in_window([&] { renderer_->render_node(*standalone[""], *sess_); });
+    renderer_->end_frame();
+  }
+  ASSERT_NE(standalone[""]->findField("__wish_win_rect_w__"_key), nullptr);
+
+  // The same layout, as a Table row's cell: render_table() sets
+  // suppress_layout_wrap_self for the duration of this dispatch.
+  auto map = bdg::wish::import_json(R"({
+    "type": "Table", "id": "t_sel", "columns": 1,
+    "children": {
+      "ca": { "type": "TableColumn", "label": "Name" },
+      "r0": { "type": "TableRow", "children": { "cell": )" + std::string(cell_json) + R"( }}
+    }
+  })");
+  (*map["r0.cell.icon"])["__auto_size_to_font__"_key] = true;
+
+  for (int i = 0; i < 2; ++i) {
+    renderer_->begin_frame();
+    in_window([&] { renderer_->render_node(*map[""], *sess_); });
+    renderer_->end_frame();
+  }
+
+  EXPECT_EQ(map["r0.cell"]->findField("__wish_win_rect_w__"_key), nullptr);
+}
+
 TEST_F(ImguiRendererTest, TreeNodeCollapsedStillReportsOwnRectWithoutThrow) {
   // A collapsed TreeNode's dispatch draws only its own header row (no
   // children) -- exercises the trailing Dummy()'s "container drew something,

@@ -582,7 +582,12 @@ void render_vertical_layout(imgui_renderer& r, const ui_element& node, const con
   // auto VerticalLayout would otherwise balloon to fill whatever's left in
   // its ambient container. Render children directly in that case (still via
   // natural flow) instead of opening a real child window.
-  bool wrap_self = self_size.x > 0.0f && self_size.y > 0.0f;
+  // suppress_layout_wrap_self (set by render_table() around a TableRow
+  // cell's dispatch) overrides this node's own wrap regardless of its
+  // content size -- see that flag's doc comment in context.hpp for why a
+  // real BeginChild() here would otherwise swallow clicks meant for the
+  // row's Selectable.
+  bool wrap_self = self_size.x > 0.0f && self_size.y > 0.0f && !s.suppress_layout_wrap_self;
   if (wrap_self) {
     // One real BeginChild for the *whole* row set, not one per hinted
     // child -- self-sizes to this node's own actual content extent and
@@ -710,7 +715,11 @@ void render_horizontal_layout(imgui_renderer& r, const ui_element& node, const c
   // See render_vertical_layout()'s identical guard for the full reasoning:
   // a degenerate self size must not be handed to BeginChild() (0/negative
   // means "fill remaining space" to ImGui, not "auto-size to nothing").
-  bool wrap_self = self_size.x > 0.0f && self_size.y > 0.0f;
+  // See render_vertical_layout()'s identical guard: suppress_layout_wrap_self
+  // (set by render_table() around a TableRow cell's dispatch) overrides this
+  // node's own wrap so cell content stays click-transparent to the row's
+  // Selectable -- see context::suppress_layout_wrap_self's doc comment.
+  bool wrap_self = self_size.x > 0.0f && self_size.y > 0.0f && !s.suppress_layout_wrap_self;
   if (wrap_self) {
     // One real BeginChild for the *whole* column set, not one per hinted
     // child -- see render_vertical_layout()'s identical comment for why
@@ -1525,6 +1534,11 @@ void render_table(imgui_renderer& r, const ui_element& node, const context& s) {
       // Overlay cell content on the same line as the selectable.
       // SameLine(0,0) for col 0 puts the cursor back to the selectable's
       // start position; TableNextColumn() advances for subsequent columns.
+      // suppress_layout_wrap_self is set for the duration of each cell's
+      // dispatch so a HorizontalLayout/VerticalLayout cell (e.g.
+      // file_browser_utils.cpp's icon+label row) doesn't open its own
+      // input-capturing BeginChild() over the row's Selectable above --
+      // see context::suppress_layout_wrap_self's doc comment.
       int32_t col = 0;
       child.for_each_child_ordered([&](bison::key_t, ui_element& cell) {
         if (cell.as<key_t>(dynamic::CLASS) == "ContextMenu"_key)
@@ -1533,7 +1547,9 @@ void render_table(imgui_renderer& r, const ui_element& node, const context& s) {
           ImGui::SameLine(0.0f, 0.0f);
         else
           ImGui::TableNextColumn();
+        s.suppress_layout_wrap_self = true;
         r.render_node(cell, s);
+        s.suppress_layout_wrap_self = false;
         ++col;
       });
 

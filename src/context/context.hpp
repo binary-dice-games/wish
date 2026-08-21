@@ -214,6 +214,26 @@ struct context : public bison::rmi::context {
   /// teardown.  The render loop snapshots this map before dispatching events.
   std::unordered_map<bison::key_t, ui_root*, bison::key_t, bison::key_t> top_level_handlers;
 
+  /// @brief Set by `render_table()` around a `TableRow` cell's dispatch; read
+  /// by `render_vertical_layout()`/`render_horizontal_layout()`.
+  ///
+  /// A `Table` row's hit-test is one `Selectable` spanning the whole row,
+  /// with cell content overlaid on top via `ImGuiSelectableFlags_AllowOverlap`
+  /// so it renders "on top without blocking input" (see render_table()'s own
+  /// comment). That only holds as long as cell content never opens a real
+  /// ImGui child window of its own: a nested `BeginChild()` is a distinct
+  /// window that always wins hover/click priority over whatever's beneath it
+  /// in the parent window, regardless of overlap flags, silently swallowing
+  /// clicks that land on it before they ever reach the row's `Selectable`.
+  /// `render_vertical_layout()`/`render_horizontal_layout()` normally wrap
+  /// their own content in exactly such a `BeginChild()` (their `wrap_self`)
+  /// for unrelated sizing/rect-report reasons; this flag suppresses that one
+  /// `BeginChild()` for the whole subtree of a single cell dispatch, so a
+  /// cell like `file_browser_utils.cpp`'s icon+label `HorizontalLayout`
+  /// stays click-transparent to the row `Selectable` beneath it, same as a
+  /// plain `Label` cell always has been.
+  mutable bool suppress_layout_wrap_self{false};
+
   /// @brief Construct a session: creates a unique temporary directory.
   /// @param id  Session identifier; used to derive a unique directory name.
   explicit context(bison::key_t id);
