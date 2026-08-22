@@ -9,6 +9,24 @@ namespace bdg::wish {
 
 using namespace bdg::bison;
 
+namespace {
+
+// Shared between DockSpaceViewport.flags and DockSpace.flags -- both map to
+// the same ImGui::DockSpace() flags parameter.
+EnumFlags::table dock_node_flags_table() {
+  return {
+      {"KeepAliveOnly", 1 << 0},
+      {"NoDockingOverCentralNode", 1 << 2},
+      {"PassthruCentralNode", 1 << 3},
+      {"NoDockingSplit", 1 << 4},
+      {"NoResize", 1 << 5},
+      {"AutoHideTabBar", 1 << 6},
+      {"NoUndocking", 1 << 7},
+  };
+}
+
+} // namespace
+
 void register_docking() {
   // ── DockSpaceViewport ─────────────────────────────────────────────────────
   // Creates a fullscreen host window that acts as the docking target for the
@@ -28,8 +46,9 @@ void register_docking() {
         field{
             int32_t{0},
             attr<DisplayName>("Flags"),
-            attr<Description>("ImGuiDockNodeFlags bitmask."),
-            attr<Category>("Behavior")});
+            attr<Description>("ImGuiDockNodeFlags bitmask (combine names with '|')."),
+            attr<Category>("Behavior"),
+            attr<EnumFlags>(dock_node_flags_table())});
     proto->addField(
         "passthru"_rkey,
         field{
@@ -77,8 +96,9 @@ void register_docking() {
         field{
             int32_t{0},
             attr<DisplayName>("Flags"),
-            attr<Description>("ImGuiDockNodeFlags bitmask."),
-            attr<Category>("Behavior")});
+            attr<Description>("ImGuiDockNodeFlags bitmask (combine names with '|')."),
+            attr<Category>("Behavior"),
+            attr<EnumFlags>(dock_node_flags_table())});
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("DockSpace"));
     (*proto)[dynamic::CLASS].addAttribute(attr<Description>("Inline dockspace inside an existing window."));
     dynamic::addClass(

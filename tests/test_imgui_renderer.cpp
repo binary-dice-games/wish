@@ -317,10 +317,10 @@ TEST_F(ImguiRendererTest, ColorEditThreeComponentsUsesColorEdit3WithoutThrow) {
 TEST_F(ImguiRendererTest, TableWithFixedAndStretchColumnsDoesNotAssert) {
   auto map = bdg::wish::import_json(R"({
     "type": "Table", "columns": 2, "headers": false,
-    "flags": 8256,
+    "flags": "SizingFixedFit|RowBg",
     "children": {
-      "col_field": {"type": "TableColumn", "label": "Field", "flags": 16, "init_width": 140.0},
-      "col_value": {"type": "TableColumn", "label": "Value", "flags": 8}
+      "col_field": {"type": "TableColumn", "label": "Field", "flags": "WidthFixed", "init_width": 140.0},
+      "col_value": {"type": "TableColumn", "label": "Value", "flags": "WidthStretch"}
     }
   })");
 
@@ -959,7 +959,7 @@ TEST_F(ImguiRendererTest, TableWithHeadersAndRowsDoesNotThrow) {
     "type": "Window", "title": "tbl",
     "children": {
       "t": { "type": "Table", "id": "t_basic", "columns": 3,
-             "flags": 1985, "headers": true,
+             "flags": "Resizable|RowBg|Borders", "headers": true,
         "children": {
           "ca": { "type": "TableColumn", "label": "Name"     },
           "cb": { "type": "TableColumn", "label": "Price"    },
@@ -992,7 +992,7 @@ TEST_F(ImguiRendererTest, TableCellsRenderWithoutThrowIncludingButton) {
   // are covered by ButtonEmitsClickedEvent; here we focus on table plumbing.
   constexpr auto desc = R"({
     "type": "Table", "id": "t_btn", "columns": 2,
-    "flags": 1920, "headers": true,
+    "flags": "Borders", "headers": true,
     "children": {
       "ca": { "type": "TableColumn", "label": "Name"   },
       "cb": { "type": "TableColumn", "label": "Action" },

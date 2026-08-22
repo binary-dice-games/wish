@@ -37,8 +37,47 @@ void register_table() {
         field{
             int32_t{0},
             attr<DisplayName>("Flags"),
-            attr<Description>("ImGuiTableFlags bitmask (e.g. Borders=1920, RowBg=64, Resizable=1)."),
-            attr<Category>("Behavior")});
+            attr<Description>("ImGuiTableFlags bitmask (combine names with '|')."),
+            attr<Category>("Behavior"),
+            attr<EnumFlags>(EnumFlags::table{
+                {"Resizable", 1 << 0},
+                {"Reorderable", 1 << 1},
+                {"Hideable", 1 << 2},
+                {"Sortable", 1 << 3},
+                {"NoSavedSettings", 1 << 4},
+                {"ContextMenuInBody", 1 << 5},
+                {"RowBg", 1 << 6},
+                {"BordersInnerH", 1 << 7},
+                {"BordersOuterH", 1 << 8},
+                {"BordersInnerV", 1 << 9},
+                {"BordersOuterV", 1 << 10},
+                {"NoBordersInBody", 1 << 11},
+                {"NoBordersInBodyUntilResize", 1 << 12},
+                {"SizingFixedFit", 1 << 13},
+                {"SizingFixedSame", 2 << 13},
+                {"SizingStretchProp", 3 << 13},
+                {"SizingStretchSame", 4 << 13},
+                {"NoHostExtendX", 1 << 16},
+                {"NoHostExtendY", 1 << 17},
+                {"NoKeepColumnsVisible", 1 << 18},
+                {"PreciseWidths", 1 << 19},
+                {"NoClip", 1 << 20},
+                {"PadOuterX", 1 << 21},
+                {"NoPadOuterX", 1 << 22},
+                {"NoPadInnerX", 1 << 23},
+                {"ScrollX", 1 << 24},
+                {"ScrollY", 1 << 25},
+                {"SortMulti", 1 << 26},
+                {"SortTristate", 1 << 27},
+                {"HighlightHoveredColumn", 1 << 28},
+                // Convenience composites — listed after single-bit flags so format()
+                // prefers the fine-grained names when decomposing a value.
+                {"BordersH", (1 << 7) | (1 << 8)},
+                {"BordersV", (1 << 9) | (1 << 10)},
+                {"BordersInner", (1 << 7) | (1 << 9)},
+                {"BordersOuter", (1 << 8) | (1 << 10)},
+                {"Borders", (1 << 7) | (1 << 8) | (1 << 9) | (1 << 10)},
+            })});
     proto->addField(
         "outer_width"_rkey,
         field{
@@ -95,8 +134,29 @@ void register_table() {
         field{
             int32_t{0},
             attr<DisplayName>("Flags"),
-            attr<Description>("ImGuiTableColumnFlags bitmask."),
-            attr<Category>("Behavior")});
+            attr<Description>("ImGuiTableColumnFlags bitmask (combine names with '|')."),
+            attr<Category>("Behavior"),
+            attr<EnumFlags>(EnumFlags::table{
+                {"Disabled", 1 << 0},
+                {"DefaultHide", 1 << 1},
+                {"DefaultSort", 1 << 2},
+                {"WidthStretch", 1 << 3},
+                {"WidthFixed", 1 << 4},
+                {"NoResize", 1 << 5},
+                {"NoReorder", 1 << 6},
+                {"NoHide", 1 << 7},
+                {"NoClip", 1 << 8},
+                {"NoSort", 1 << 9},
+                {"NoSortAscending", 1 << 10},
+                {"NoSortDescending", 1 << 11},
+                {"NoHeaderLabel", 1 << 12},
+                {"NoHeaderWidth", 1 << 13},
+                {"PreferSortAscending", 1 << 14},
+                {"PreferSortDescending", 1 << 15},
+                {"IndentEnable", 1 << 16},
+                {"IndentDisable", 1 << 17},
+                {"AngledHeader", 1 << 18},
+            })});
     proto->addField(
         "init_width"_rkey,
         field{
@@ -132,8 +192,11 @@ void register_table() {
         field{
             int32_t{0},
             attr<DisplayName>("Flags"),
-            attr<Description>("ImGuiTableRowFlags bitmask (e.g. Headers=1)."),
-            attr<Category>("Behavior")});
+            attr<Description>("ImGuiTableRowFlags bitmask (combine names with '|')."),
+            attr<Category>("Behavior"),
+            attr<EnumFlags>(EnumFlags::table{
+                {"Headers", 1 << 0},
+            })});
     proto->addField(
         "min_height"_rkey,
         field{

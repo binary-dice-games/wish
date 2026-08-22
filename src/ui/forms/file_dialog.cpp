@@ -22,10 +22,8 @@ using namespace bison;
 // TableColumns are stored as NAMED children so dynamic::clear() on the
 // children dynamic removes only the indexed row entries, not the columns.
 // Placeholder field values (title, btn_open label) are overwritten in on_init().
-// ImGuiTableFlags: Resizable(1) + RowBg(64) + BordersInnerH(128) +
-//   BordersOuterH(256) + Sortable(8) + ScrollY(1<<25=33554432) = 33554889
-// ImGuiTableColumnFlags: WidthFixed(1<<4=16)
-// ImGuiInputTextFlags: EnterReturnsTrue=32
+// file_table's "flags": "Resizable|Sortable|RowBg|BordersH|ScrollY";
+// columns' "flags": "WidthFixed"; path_input's "flags": "EnterReturnsTrue".
 // col_name/col_type's "column_id" is echoed back in the Table's "sorted"
 // event payload (see table.cpp's TableColumn.column_id doc comment) --
 // on_file_table_sorted() below matches it against these same 0/1 values.
@@ -38,19 +36,19 @@ static constexpr const char* kDialogLayout = R"({
       "children": {
         "path_input": {
           "type": "InputText", "value": "", "hint": "path",
-          "max_length": 1024, "flags": 32, "width": -1.0
+          "max_length": 1024, "flags": "EnterReturnsTrue", "width": -1.0
         },
         "file_table": {
           "type": "Table",
           "columns": 2,
-          "flags": 33554889,
+          "flags": "Resizable|Sortable|RowBg|BordersH|ScrollY",
           "outer_height": 260.0,
           "headers": true,
           "children": {
             "col_name": { "type": "TableColumn", "label": "Name",
-                          "flags": 16, "init_width": 340, "column_id": 0 },
+                          "flags": "WidthFixed", "init_width": 340, "column_id": 0 },
             "col_type": { "type": "TableColumn", "label": "Type",
-                          "flags": 16, "init_width": 80, "column_id": 1 }
+                          "flags": "WidthFixed", "init_width": 80, "column_id": 1 }
           }
         },
         "filename_input": {

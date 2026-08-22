@@ -184,13 +184,13 @@ static constexpr const char* kMainLayout = R"({
                 "current_branch_label": { "type": "Label", "text": "" },
                 "graph_table": {
                   "type": "Table", "id": "##graph_table", "columns": 5, "height": -1,
-                  "flags": 33556417, "headers": true, "outer_height": -1,
+                  "flags": "Resizable|RowBg|Borders|ScrollY", "headers": true, "outer_height": -1,
                   "children": {
-                    "col_graph":  { "type": "TableColumn", "label": "Graph",       "flags": 16, "init_width": 80,  "column_id": 0 },
-                    "col_desc":   { "type": "TableColumn", "label": "Description", "flags": 8,                     "column_id": 1 },
-                    "col_author": { "type": "TableColumn", "label": "Author",      "flags": 16, "init_width": 130, "column_id": 2 },
-                    "col_date":   { "type": "TableColumn", "label": "Date",        "flags": 16, "init_width": 150, "column_id": 3 },
-                    "col_hash":   { "type": "TableColumn", "label": "Commit",      "flags": 16, "init_width": 80,  "column_id": 4 }
+                    "col_graph":  { "type": "TableColumn", "label": "Graph",       "flags": "WidthFixed", "init_width": 80,  "column_id": 0 },
+                    "col_desc":   { "type": "TableColumn", "label": "Description", "flags": "WidthStretch",                     "column_id": 1 },
+                    "col_author": { "type": "TableColumn", "label": "Author",      "flags": "WidthFixed", "init_width": 130, "column_id": 2 },
+                    "col_date":   { "type": "TableColumn", "label": "Date",        "flags": "WidthFixed", "init_width": 150, "column_id": 3 },
+                    "col_hash":   { "type": "TableColumn", "label": "Commit",      "flags": "WidthFixed", "init_width": 80,  "column_id": 4 }
                   }
                 }
               }
@@ -211,10 +211,10 @@ static constexpr const char* kFilesLayout = R"({
         "title_label": { "type": "Label", "text": "Uncommitted changes" },
         "files_table": {
           "type": "Table", "id": "##files_table", "columns": 2, "height": -1,
-          "flags": 33556417, "outer_height": -1,
+          "flags": "Resizable|RowBg|Borders|ScrollY", "outer_height": -1,
           "children": {
-            "col_check": { "type": "TableColumn", "flags": 16, "init_width": 28, "column_id": 0 },
-            "col_path":  { "type": "TableColumn", "flags": 8,                    "column_id": 1 }
+            "col_check": { "type": "TableColumn", "flags": "WidthFixed", "init_width": 28, "column_id": 0 },
+            "col_path":  { "type": "TableColumn", "flags": "WidthStretch",                    "column_id": 1 }
           }
         },
         "commit_row": {
@@ -238,10 +238,10 @@ static constexpr const char* kDiffLayout = R"({
         "title_label": { "type": "Label", "text": "" },
         "diff_table": {
           "type": "Table", "id": "##diff_table", "columns": 2, "height": -1,
-          "flags": 33554433, "outer_height": -1,
+          "flags": "Resizable|ScrollY", "outer_height": -1,
           "children": {
-            "col_gutter": { "type": "TableColumn", "flags": 16, "init_width": 16, "column_id": 0 },
-            "col_text":   { "type": "TableColumn", "flags": 8,                    "column_id": 1 }
+            "col_gutter": { "type": "TableColumn", "flags": "WidthFixed", "init_width": 16, "column_id": 0 },
+            "col_text":   { "type": "TableColumn", "flags": "WidthStretch",                    "column_id": 1 }
           }
         }
       }
@@ -257,12 +257,12 @@ static constexpr const char* kLogLayout = R"({
       "children": {
         "log_table": {
           "type": "Table", "id": "##git_log_table", "columns": 4, "height": -1,
-          "flags": 33556417, "headers": true, "outer_height": -1,
+          "flags": "Resizable|RowBg|Borders|ScrollY", "headers": true, "outer_height": -1,
           "children": {
-            "col_seq":     { "type": "TableColumn", "label": "#",       "flags": 16, "init_width": 40,  "column_id": 0 },
-            "col_command": { "type": "TableColumn", "label": "Command", "flags": 16, "init_width": 340, "column_id": 1 },
-            "col_exit":    { "type": "TableColumn", "label": "Exit",    "flags": 16, "init_width": 50,  "column_id": 2 },
-            "col_output":  { "type": "TableColumn", "label": "Output",  "flags": 8,                     "column_id": 3 }
+            "col_seq":     { "type": "TableColumn", "label": "#",       "flags": "WidthFixed", "init_width": 40,  "column_id": 0 },
+            "col_command": { "type": "TableColumn", "label": "Command", "flags": "WidthFixed", "init_width": 340, "column_id": 1 },
+            "col_exit":    { "type": "TableColumn", "label": "Exit",    "flags": "WidthFixed", "init_width": 50,  "column_id": 2 },
+            "col_output":  { "type": "TableColumn", "label": "Output",  "flags": "WidthStretch",                     "column_id": 3 }
           }
         }
       }

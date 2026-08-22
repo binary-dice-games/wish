@@ -243,7 +243,7 @@ static constexpr const char* kTabTablesDesc = R"json(
             "sec_static": { "type": "SeparatorText",
                             "label": "Static Table (Borders + Row Background + Resizable)" },
             "tbl_catalog": { "type": "Table", "id": "demo_catalog", "columns": 3,
-                             "flags": 1985, "headers": true,
+                             "flags": "Resizable|RowBg|Borders", "headers": true,
               "children": {
                 "col_item":  { "type": "TableColumn", "label": "Item"     },
                 "col_price": { "type": "TableColumn", "label": "Price"    },
@@ -273,12 +273,12 @@ static constexpr const char* kTabTablesDesc = R"json(
             "sec_inter": { "type": "SeparatorText",
                            "label": "Interactive Table (Buttons in Cells)" },
             "tbl_inter": { "type": "Table", "id": "demo_inter", "columns": 3,
-                           "flags": 1921, "headers": true,
+                           "flags": "Resizable|Borders", "headers": true,
               "children": {
                 "col_sensor": { "type": "TableColumn", "label": "Sensor",
-                                "flags": 16, "init_width": 160 },
+                                "flags": "WidthFixed", "init_width": 160 },
                 "col_value":  { "type": "TableColumn", "label": "Value",
-                                "flags": 16, "init_width": 120 },
+                                "flags": "WidthFixed", "init_width": 120 },
                 "col_action": { "type": "TableColumn", "label": "Action" },
                 "row_temp": { "type": "TableRow", "children": {
                   "c0": { "type": "Label",  "text": "Temperature" },
@@ -394,7 +394,7 @@ static constexpr const char* kTabPlotsDesc = R"json(
               "children": {
                 "plt_pie": { "type": "Plot", "title": "Market Share",
                              "height": 260.0,
-                             "x_flags": 15, "y_flags": 15,
+                             "x_flags": "NoDecorations", "y_flags": "NoDecorations",
                   "children": {
                     "pie": { "type": "PlotPieChart", "label": "share",
                              "labels": "Web\nMobile\nDesktop\nTablet\nOther",
@@ -606,9 +606,9 @@ static std::string build_tab_icons_desc(const std::vector<std::string>& icon_fil
             "lbl_icons_hint": { "type": "Label",
                                 "text": "Built-in icons discovered at runtime under this session's res/icons/ folder (see src/resources/DESIGN.md)." },
             "tbl_icons": { "type": "Table", "id": "demo_icons", "columns": 2,
-                           "flags": 1985, "headers": true,
+                           "flags": "Resizable|RowBg|Borders", "headers": true,
               "children": {
-                "col_icon": { "type": "TableColumn", "label": "Icon", "flags": 16, "init_width": 64 },
+                "col_icon": { "type": "TableColumn", "label": "Icon", "flags": "WidthFixed", "init_width": 64 },
                 "col_name": { "type": "TableColumn", "label": "File" },)json" +
       rows + R"json(
               }

@@ -120,9 +120,9 @@ std::string format_field_description(const element_field_info& f) {
 
 // ── UI layout ─────────────────────────────────────────────────────────────────
 //
-// log's "flags": 33554432 = ImGuiTableFlags_ScrollY (1<<25) -- combined with
-// outer_height, this clips the log to a fixed-size scrolling region instead
-// of letting an ever-growing row count push the whole Editor window taller.
+// log's "flags": "ScrollY" -- combined with outer_height, this clips the
+// log to a fixed-size scrolling region instead of letting an ever-growing
+// row count push the whole Editor window taller.
 //
 // "confirm" is an inline stand-in for a modal close-confirmation dialog:
 // wish has no dedicated modal/popup element, so it's just a normally-laid-out
@@ -197,7 +197,7 @@ static constexpr const char* kLogWindowLayout = R"json({
       "columns": 2,
       "headers": true,
       "outer_height": -1,
-      "flags": 33554432,
+      "flags": "ScrollY",
       "children": {
         "col_seq":   { "type": "TableColumn", "label": "#" },
         "col_event": { "type": "TableColumn", "label": "Event" }
@@ -210,9 +210,9 @@ static constexpr const char* kLogWindowLayout = R"json({
 // help_root_key_'s doc comment) showing whatever element type encloses the
 // source editor's cursor -- a title/description pair above a 3-column field
 // table (Field / Category / Description), rebuilt by update_help_panel().
-// "flags": 1601 on "fields" = ImGuiTableFlags_Resizable(1) | RowBg(64) |
-// BordersV(1536); col_field/col_category's "flags": 16 = WidthFixed,
-// col_desc's "flags": 8 = WidthStretch (fills whatever width remains).
+// "flags": "Resizable|RowBg|BordersV" on "fields"; col_field/col_category's
+// "flags": "WidthFixed", col_desc's "flags": "WidthStretch" (fills whatever
+// width remains).
 static constexpr const char* kHelpWindowLayout = R"json({
   "type": "Window",
   "title": "Help",
@@ -232,11 +232,11 @@ static constexpr const char* kHelpWindowLayout = R"json({
           "id": "##help_fields",
           "columns": 3,
           "headers": true,
-          "flags": 1601,
+          "flags": "Resizable|RowBg|BordersV",
           "children": {
-            "col_field":    { "type": "TableColumn", "label": "Field", "column_id": 0, "flags": 16, "init_width": 150 },
-            "col_category": { "type": "TableColumn", "label": "Category", "column_id": 1, "flags": 16, "init_width": 90 },
-            "col_desc":     { "type": "TableColumn", "label": "Description", "column_id": 2, "flags": 8 }
+            "col_field":    { "type": "TableColumn", "label": "Field", "column_id": 0, "flags": "WidthFixed", "init_width": 150 },
+            "col_category": { "type": "TableColumn", "label": "Category", "column_id": 1, "flags": "WidthFixed", "init_width": 90 },
+            "col_desc":     { "type": "TableColumn", "label": "Description", "column_id": 2, "flags": "WidthStretch" }
           }
         }
       }

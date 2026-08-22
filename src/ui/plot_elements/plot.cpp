@@ -9,6 +9,53 @@ namespace bdg::wish {
 
 using namespace bdg::bison;
 
+namespace {
+
+EnumFlags::table plot_flags_table() {
+  return {
+      {"NoTitle", 1 << 0},
+      {"NoLegend", 1 << 1},
+      {"NoMouseText", 1 << 2},
+      {"NoInputs", 1 << 3},
+      {"NoMenus", 1 << 4},
+      {"NoBoxSelect", 1 << 5},
+      {"NoFrame", 1 << 6},
+      {"Equal", 1 << 7},
+      {"Crosshairs", 1 << 8},
+      // Convenience composite — listed after single-bit flags so format()
+      // prefers the fine-grained names when decomposing a value.
+      {"CanvasOnly", (1 << 0) | (1 << 1) | (1 << 4) | (1 << 5) | (1 << 2)},
+  };
+}
+
+// Shared between Plot.x_flags and Plot.y_flags -- both map to ImPlotAxisFlags.
+EnumFlags::table plot_axis_flags_table() {
+  return {
+      {"NoLabel", 1 << 0},
+      {"NoGridLines", 1 << 1},
+      {"NoTickMarks", 1 << 2},
+      {"NoTickLabels", 1 << 3},
+      {"NoInitialFit", 1 << 4},
+      {"NoMenus", 1 << 5},
+      {"NoSideSwitch", 1 << 6},
+      {"NoHighlight", 1 << 7},
+      {"Opposite", 1 << 8},
+      {"Foreground", 1 << 9},
+      {"Invert", 1 << 10},
+      {"AutoFit", 1 << 11},
+      {"RangeFit", 1 << 12},
+      {"PanStretch", 1 << 13},
+      {"LockMin", 1 << 14},
+      {"LockMax", 1 << 15},
+      // Convenience composites — listed after single-bit flags so format()
+      // prefers the fine-grained names when decomposing a value.
+      {"Lock", (1 << 14) | (1 << 15)},
+      {"NoDecorations", (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3)},
+  };
+}
+
+} // namespace
+
 void register_plot() {
   // PlotItem — hidden base class for all series drawn inside a Plot element.
   // Carries only the legend label; concrete series types add their data arrays.
@@ -75,24 +122,27 @@ void register_plot() {
         field{
             int32_t{0},
             attr<DisplayName>("Flags"),
-            attr<Description>("ImPlotFlags bit field (see implot.h)."),
-            attr<Category>("Behavior")});
+            attr<Description>("ImPlotFlags bitmask (combine names with '|'; see implot.h)."),
+            attr<Category>("Behavior"),
+            attr<EnumFlags>(plot_flags_table())});
     proto->addField(
         "x_flags"_rkey,
         field{
             int32_t{0},
             attr<DisplayName>("X Axis Flags"),
-            attr<Description>("ImPlotAxisFlags for the primary X axis.  "
-                              "Use ImPlotAxisFlags_NoDecorations (0x1F) for pie charts."),
-            attr<Category>("Axes")});
+            attr<Description>("ImPlotAxisFlags for the primary X axis (combine names with '|'). "
+                              "Use NoDecorations for pie charts."),
+            attr<Category>("Axes"),
+            attr<EnumFlags>(plot_axis_flags_table())});
     proto->addField(
         "y_flags"_rkey,
         field{
             int32_t{0},
             attr<DisplayName>("Y Axis Flags"),
-            attr<Description>("ImPlotAxisFlags for the primary Y axis.  "
-                              "Use ImPlotAxisFlags_NoDecorations (0x1F) for pie charts."),
-            attr<Category>("Axes")});
+            attr<Description>("ImPlotAxisFlags for the primary Y axis (combine names with '|'). "
+                              "Use NoDecorations for pie charts."),
+            attr<Category>("Axes"),
+            attr<EnumFlags>(plot_axis_flags_table())});
     proto->addField(
         "x_min"_rkey,
         field{

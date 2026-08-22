@@ -75,10 +75,10 @@ std::string strip_zip_suffix(const std::string& name) {
 // ── UI layout ─────────────────────────────────────────────────────────────────
 //
 // Single-panel client-machine browser -- mirrors tree.cpp's local
-// (left) panel. ImGuiTableFlags: Resizable(1) + RowBg(64) + BordersInnerH(128)
-// + BordersOuterH(256) + Sortable(8) + ScrollY(1<<25) = 33554889, same as
-// mc's tables. InputText EnterReturnsTrue=32 so the path bar only
-// fires "changed" on Enter.
+// (left) panel. file_table's "flags": "Resizable|Sortable|RowBg|BordersH|
+// ScrollY" -- unlike mc's tables, no BordersV (this is a single, full-width
+// panel with no sibling table to visually separate from). InputText
+// EnterReturnsTrue so the path bar only fires "changed" on Enter.
 static constexpr const char* kLayout = R"json({
   "type": "Window",
   "width": 640, "height": 520,
@@ -87,15 +87,15 @@ static constexpr const char* kLayout = R"json({
     "main": {
       "type": "VerticalLayout",
       "children": {
-        "path_input": { "type": "InputText", "hint": "Local path...", "value": "", "flags": 32, "width": -1 },
+        "path_input": { "type": "InputText", "hint": "Local path...", "value": "", "flags": "EnterReturnsTrue", "width": -1 },
         "selected_label": { "type": "Label", "text": "Selected: (none)" },
         "file_table": {
           "type": "Table", "columns": 3, "headers": true,
-          "flags": 33554889, "outer_width": 0, "outer_height": 300,
+          "flags": "Resizable|Sortable|RowBg|BordersH|ScrollY", "outer_width": 0, "outer_height": 300,
           "children": {
             "col_name":     { "type": "TableColumn", "label": "Name", "column_id": 0 },
-            "col_size":     { "type": "TableColumn", "label": "Size", "flags": 16, "init_width": 90, "column_id": 1 },
-            "col_modified": { "type": "TableColumn", "label": "Modified", "flags": 16, "init_width": 130, "column_id": 2 }
+            "col_size":     { "type": "TableColumn", "label": "Size", "flags": "WidthFixed", "init_width": 90, "column_id": 1 },
+            "col_modified": { "type": "TableColumn", "label": "Modified", "flags": "WidthFixed", "init_width": 130, "column_id": 2 }
           }
         },
         "btn_sep": { "type": "Separator" },
@@ -150,9 +150,10 @@ static constexpr const char* kConfirmLayout = R"({
   }
 })";
 
-// Read-only archive listing. flags 33554881 = the main table's 33554889
-// minus Sortable(8) -- this table has no click-to-sort handler, same
-// omission tree.cpp's own comment calls out for FileDialog's table.
+// Read-only archive listing. flags "Resizable|RowBg|BordersH|ScrollY" is
+// the main table's flags minus Sortable -- this table has no click-to-sort
+// handler, same omission tree.cpp's own comment calls out for FileDialog's
+// table.
 static constexpr const char* kContentsLayout = R"json({
   "type": "Window", "title": "", "modal": true, "flags": "NoResize|NoCollapse",
   "width": 480, "height": 420,
@@ -163,12 +164,12 @@ static constexpr const char* kContentsLayout = R"json({
         "summary": { "type": "Label", "text": "" },
         "contents_table": {
           "type": "Table", "columns": 4, "headers": true,
-          "flags": 33554881, "outer_width": 0, "outer_height": 300,
+          "flags": "Resizable|RowBg|BordersH|ScrollY", "outer_width": 0, "outer_height": 300,
           "children": {
             "col_name":       { "type": "TableColumn", "label": "Name" },
-            "col_size":       { "type": "TableColumn", "label": "Size", "flags": 16, "init_width": 80 },
-            "col_compressed": { "type": "TableColumn", "label": "Compressed", "flags": 16, "init_width": 90 },
-            "col_ratio":      { "type": "TableColumn", "label": "Ratio", "flags": 16, "init_width": 70 }
+            "col_size":       { "type": "TableColumn", "label": "Size", "flags": "WidthFixed", "init_width": 80 },
+            "col_compressed": { "type": "TableColumn", "label": "Compressed", "flags": "WidthFixed", "init_width": 90 },
+            "col_ratio":      { "type": "TableColumn", "label": "Ratio", "flags": "WidthFixed", "init_width": 70 }
           }
         },
         "sep": { "type": "Separator" },

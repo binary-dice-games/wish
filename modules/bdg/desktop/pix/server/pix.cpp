@@ -28,20 +28,17 @@ namespace {
 constexpr int32_t kGridColumns = 3;
 constexpr float kThumbPx = 84.0f;
 
-// kPixLayout's grid_table/preview_table "flags" fields, spelled out:
-// ImGuiTableFlags RowBg(64) + BordersInnerH(128) + BordersOuterH(256) +
-// ScrollY(1<<25=33554432) = 33554880. preview_table adds ScrollX
-// (1<<24=16777216) on top: 33554880 + 16777216 = 50332096 -- see pix.hpp's
-// class comment for why the preview panel is a scrollable Table rather
-// than a plain Image: its native scrollbars are the pan control once
-// "zoom" grows the Image past the fixed outer_width/outer_height
-// viewport. Every TableColumn's own "flags": 16 is
-// ImGuiTableColumnFlags WidthFixed -- required for init_width to take
-// effect at all (ImGui errors "can only specify width/weight if sizing
-// policy is set explicitly" otherwise); mirrors file_dialog.cpp's
-// col_name/col_type columns.
-// kPixLayout's path_input "flags": ImGuiInputTextFlags EnterReturnsTrue = 32
-// (fire "changed" only on Enter, not per keystroke).
+// kPixLayout's grid_table's "flags": "RowBg|BordersH|ScrollY".
+// preview_table adds "ScrollX" on top: "RowBg|BordersH|ScrollX|ScrollY" --
+// see pix.hpp's class comment for why the preview panel is a scrollable
+// Table rather than a plain Image: its native scrollbars are the pan
+// control once "zoom" grows the Image past the fixed outer_width/
+// outer_height viewport. Every TableColumn's own "flags": "WidthFixed" is
+// required for init_width to take effect at all (ImGui errors "can only
+// specify width/weight if sizing policy is set explicitly" otherwise);
+// mirrors file_dialog.cpp's col_name/col_type columns.
+// kPixLayout's path_input "flags": "EnterReturnsTrue" (fire "changed" only
+// on Enter, not per keystroke).
 //
 // wish_id_of() is declared in file_browser_utils.hpp (included above) --
 // not redeclared here, to avoid an ambiguous redefinition in this
@@ -88,7 +85,7 @@ static constexpr const char* kPixLayout = R"json({
           "children": {
             "path_input": {
               "type": "InputText", "value": "", "hint": "Folder path...",
-              "max_length": 4096, "flags": 32, "width": 520.0
+              "max_length": 4096, "flags": "EnterReturnsTrue", "width": 520.0
             },
             "btn_browse": { "type": "Button", "label": "Browse...", "width": 100 },
             "btn_open_explorer": { "type": "Button", "label": "Open Sandbox in Explorer", "width": 220 }
@@ -106,14 +103,14 @@ static constexpr const char* kPixLayout = R"json({
                 "grid_table": {
                   "type": "Table",
                   "columns": 3,
-                  "flags": 33554880,
+                  "flags": "RowBg|BordersH|ScrollY",
                   "outer_width": 308.0,
                   "outer_height": 560.0,
                   "headers": false,
                   "children": {
-                    "col0": { "type": "TableColumn", "flags": 16, "init_width": 100 },
-                    "col1": { "type": "TableColumn", "flags": 16, "init_width": 100 },
-                    "col2": { "type": "TableColumn", "flags": 16, "init_width": 100 }
+                    "col0": { "type": "TableColumn", "flags": "WidthFixed", "init_width": 100 },
+                    "col1": { "type": "TableColumn", "flags": "WidthFixed", "init_width": 100 },
+                    "col2": { "type": "TableColumn", "flags": "WidthFixed", "init_width": 100 }
                   }
                 }
               }
@@ -138,12 +135,12 @@ static constexpr const char* kPixLayout = R"json({
                 "preview_table": {
                   "type": "Table",
                   "columns": 1,
-                  "flags": 50332096,
+                  "flags": "RowBg|BordersH|ScrollX|ScrollY",
                   "outer_width": 600.0,
                   "outer_height": 440.0,
                   "headers": false,
                   "children": {
-                    "pcol0": { "type": "TableColumn", "flags": 16, "init_width": 600 },
+                    "pcol0": { "type": "TableColumn", "flags": "WidthFixed", "init_width": 600 },
                     "prow0": {
                       "type": "TableRow",
                       "children": {

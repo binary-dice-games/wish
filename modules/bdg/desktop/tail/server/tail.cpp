@@ -78,7 +78,7 @@ static constexpr const char* kLayout = R"json({
           "type": "HorizontalLayout",
           "spacing": 8,
           "children": {
-            "filter_input": { "type": "InputText", "label": "Filter (regex)", "hint": "e.g. error|timeout", "width": 320, "flags": 32 },
+            "filter_input": { "type": "InputText", "label": "Filter (regex)", "hint": "e.g. error|timeout", "width": 320, "flags": "EnterReturnsTrue" },
             "btn_apply_filter": { "type": "Button", "label": "Apply", "width": 80 },
             "btn_clear_filter": { "type": "Button", "label": "Clear Filter", "width": 100 },
             "btn_clear": { "type": "Button", "label": "Clear All", "width": 90 }
@@ -93,13 +93,13 @@ static constexpr const char* kLayout = R"json({
               "children": {
                 "table_all": {
                   "type": "Table", "id": "##tail_all", "columns": 5, "headers": true,
-                  "outer_height": -1, "flags": 33556417,
+                  "outer_height": -1, "flags": "Resizable|RowBg|Borders|ScrollY",
                   "children": {
-                    "col_time":    { "type": "TableColumn", "label": "Time",    "column_id": 0, "flags": 16, "init_width": 90 },
-                    "col_level":   { "type": "TableColumn", "label": "Level",   "column_id": 1, "flags": 16, "init_width": 70 },
-                    "col_tag":     { "type": "TableColumn", "label": "Tag",     "column_id": 2, "flags": 16, "init_width": 100 },
-                    "col_source":  { "type": "TableColumn", "label": "Source",  "column_id": 3, "flags": 16, "init_width": 120 },
-                    "col_message": { "type": "TableColumn", "label": "Message", "column_id": 4, "flags": 8 }
+                    "col_time":    { "type": "TableColumn", "label": "Time",    "column_id": 0, "flags": "WidthFixed", "init_width": 90 },
+                    "col_level":   { "type": "TableColumn", "label": "Level",   "column_id": 1, "flags": "WidthFixed", "init_width": 70 },
+                    "col_tag":     { "type": "TableColumn", "label": "Tag",     "column_id": 2, "flags": "WidthFixed", "init_width": 100 },
+                    "col_source":  { "type": "TableColumn", "label": "Source",  "column_id": 3, "flags": "WidthFixed", "init_width": 120 },
+                    "col_message": { "type": "TableColumn", "label": "Message", "column_id": 4, "flags": "WidthStretch" }
                   }
                 }
               }

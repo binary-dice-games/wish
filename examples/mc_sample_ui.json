@@ -29,7 +29,7 @@
                   "id": "##local_table",
                   "columns": 3,
                   "headers": true,
-                  "flags": 1920,
+                  "flags": "Borders",
                   "outer_width": 0,
                   "outer_height": -1,
                   "children": {
@@ -125,7 +125,7 @@
                   "id": "##sandbox_table",
                   "columns": 3,
                   "headers": true,
-                  "flags": 1920,
+                  "flags": "Borders",
                   "outer_width": 0,
                   "outer_height": -1,
                   "children": {

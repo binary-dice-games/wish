@@ -9,6 +9,47 @@ namespace bdg::wish {
 
 using namespace bdg::bison;
 
+namespace {
+
+EnumFlags::table plot3d_flags_table() {
+  return {
+      {"NoTitle", 1 << 0},
+      {"NoLegend", 1 << 1},
+      {"NoMouseText", 1 << 2},
+      {"NoClip", 1 << 3},
+      {"NoMenus", 1 << 4},
+      {"Equal", 1 << 5},
+      {"NoRotate", 1 << 6},
+      {"NoPan", 1 << 7},
+      {"NoZoom", 1 << 8},
+      {"NoInputs", 1 << 9},
+      // Convenience composite — listed after single-bit flags so format()
+      // prefers the fine-grained names when decomposing a value.
+      {"CanvasOnly", (1 << 0) | (1 << 1) | (1 << 2)},
+  };
+}
+
+// Shared between Plot3D.x_flags/y_flags/z_flags -- all map to ImPlot3DAxisFlags.
+EnumFlags::table plot3d_axis_flags_table() {
+  return {
+      {"NoLabel", 1 << 0},
+      {"NoGridLines", 1 << 1},
+      {"NoTickMarks", 1 << 2},
+      {"NoTickLabels", 1 << 3},
+      {"LockMin", 1 << 4},
+      {"LockMax", 1 << 5},
+      {"AutoFit", 1 << 6},
+      {"Invert", 1 << 7},
+      {"PanStretch", 1 << 8},
+      // Convenience composites — listed after single-bit flags so format()
+      // prefers the fine-grained names when decomposing a value.
+      {"Lock", (1 << 4) | (1 << 5)},
+      {"NoDecorations", (1 << 0) | (1 << 1) | (1 << 3)},
+  };
+}
+
+} // namespace
+
 void register_plot3d() {
   // Plot3DItem — hidden base class for all series drawn inside a Plot3D element.
   // Carries only the legend label; concrete series types add their data arrays.
@@ -81,29 +122,33 @@ void register_plot3d() {
         field{
             int32_t{0},
             attr<DisplayName>("Flags"),
-            attr<Description>("ImPlot3DFlags bit field (see implot3d.h)."),
-            attr<Category>("Behavior")});
+            attr<Description>("ImPlot3DFlags bitmask (combine names with '|'; see implot3d.h)."),
+            attr<Category>("Behavior"),
+            attr<EnumFlags>(plot3d_flags_table())});
     proto->addField(
         "x_flags"_rkey,
         field{
             int32_t{0},
             attr<DisplayName>("X Axis Flags"),
-            attr<Description>("ImPlot3DAxisFlags for the X axis."),
-            attr<Category>("Axes")});
+            attr<Description>("ImPlot3DAxisFlags for the X axis (combine names with '|')."),
+            attr<Category>("Axes"),
+            attr<EnumFlags>(plot3d_axis_flags_table())});
     proto->addField(
         "y_flags"_rkey,
         field{
             int32_t{0},
             attr<DisplayName>("Y Axis Flags"),
-            attr<Description>("ImPlot3DAxisFlags for the Y axis."),
-            attr<Category>("Axes")});
+            attr<Description>("ImPlot3DAxisFlags for the Y axis (combine names with '|')."),
+            attr<Category>("Axes"),
+            attr<EnumFlags>(plot3d_axis_flags_table())});
     proto->addField(
         "z_flags"_rkey,
         field{
             int32_t{0},
             attr<DisplayName>("Z Axis Flags"),
-            attr<Description>("ImPlot3DAxisFlags for the Z axis."),
-            attr<Category>("Axes")});
+            attr<Description>("ImPlot3DAxisFlags for the Z axis (combine names with '|')."),
+            attr<Category>("Axes"),
+            attr<EnumFlags>(plot3d_axis_flags_table())});
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Plot3D"));
     (*proto)[dynamic::CLASS].addAttribute(
         attr<Description>("An ImPlot3D plot window. "

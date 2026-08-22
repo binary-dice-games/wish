@@ -64,13 +64,18 @@ std::string format_modified(const fs::file_time_type& ftime) {
 //
 // Mirrors examples/mc_sample_ui.json (the JSON mock validated
 // interactively in the editor) with the example rows removed -- rows are
-// built at runtime by fill_table(). ImGuiTableFlags: Resizable(1) +
-// RowBg(64) + BordersInnerH(128) + BordersOuterH(256) + Sortable(8) +
-// ScrollY(1<<25) = 33554889 (FileDialog's table adds the same Sortable(8)
-// bit to its own 33554881). col_name/col_size/col_modified's "column_id"
-// (0/1/2) is echoed back in each Table's "sorted" event payload -- see
-// on_table_sorted()'s doc comment. InputText EnterReturnsTrue=32 so path
-// bars only fire "changed" on Enter, not per keystroke.
+// built at runtime by fill_table(). left_table/right_table's "flags" names
+// the same full-border set git.cpp/tail.cpp use for their own grid-style
+// tables, plus Sortable. Unlike FileDialog's borderless picker list
+// (Resizable|RowBg|BordersH|Sortable|ScrollY -- no BordersV), mc's two
+// side-by-side panels have no other visual cue marking where each table
+// ends: without the outer vertical border, RowBg's alternating shading
+// reads as flush against the panel edge with no margin at all, cropped
+// rather than framed. Left/right borders fix that. col_name/col_size/
+// col_modified's "column_id" (0/1/2) is echoed back in each Table's
+// "sorted" event payload -- see on_table_sorted()'s doc comment. InputText
+// EnterReturnsTrue so path bars only fire "changed" on Enter, not per
+// keystroke.
 //
 // "left"/"right" each carry both "width": -1 and "height": -1: the former
 // makes render_horizontal_layout() give each a real, computed pixel-width
@@ -127,16 +132,17 @@ static constexpr const char* kLayout = R"json({
                 "left_label": { "type": "Label", "text": "Local Machine" },
                 "left_path": {
                   "type": "InputText", "hint": "Local path...", "value": "",
-                  "flags": 32, "width": -1
+                  "flags": "EnterReturnsTrue", "width": -1
                 },
                 "left_selected": { "type": "Label", "text": "Selected: (none)" },
                 "left_table": {
                   "type": "Table", "id": "##local_table", "columns": 3, "headers": true,
-                  "flags": 33554889, "outer_width": 0, "height": -1,
+                  "flags": "Resizable|RowBg|Borders|Sortable|ScrollY",
+                  "outer_width": 0, "height": -1,
                   "children": {
                     "col_name":     { "type": "TableColumn", "label": "Name", "column_id": 0 },
-                    "col_size":     { "type": "TableColumn", "label": "Size", "flags": 16, "init_width": 90, "column_id": 1 },
-                    "col_modified": { "type": "TableColumn", "label": "Modified", "flags": 16, "init_width": 130, "column_id": 2 }
+                    "col_size":     { "type": "TableColumn", "label": "Size", "flags": "WidthFixed", "init_width": 90, "column_id": 1 },
+                    "col_modified": { "type": "TableColumn", "label": "Modified", "flags": "WidthFixed", "init_width": 130, "column_id": 2 }
                   }
                 }
               }
@@ -167,16 +173,17 @@ static constexpr const char* kLayout = R"json({
                 },
                 "right_path": {
                   "type": "InputText", "hint": "Sandbox path...", "value": "/",
-                  "flags": 32, "width": -1
+                  "flags": "EnterReturnsTrue", "width": -1
                 },
                 "right_selected": { "type": "Label", "text": "Selected: (none)" },
                 "right_table": {
                   "type": "Table", "id": "##sandbox_table", "columns": 3, "headers": true,
-                  "flags": 33554889, "outer_width": 0, "height": -1,
+                  "flags": "Resizable|RowBg|Borders|Sortable|ScrollY",
+                  "outer_width": 0, "height": -1,
                   "children": {
                     "col_name":     { "type": "TableColumn", "label": "Name", "column_id": 0 },
-                    "col_size":     { "type": "TableColumn", "label": "Size", "flags": 16, "init_width": 90, "column_id": 1 },
-                    "col_modified": { "type": "TableColumn", "label": "Modified", "flags": 16, "init_width": 130, "column_id": 2 }
+                    "col_size":     { "type": "TableColumn", "label": "Size", "flags": "WidthFixed", "init_width": 90, "column_id": 1 },
+                    "col_modified": { "type": "TableColumn", "label": "Modified", "flags": "WidthFixed", "init_width": 130, "column_id": 2 }
                   }
                 }
               }

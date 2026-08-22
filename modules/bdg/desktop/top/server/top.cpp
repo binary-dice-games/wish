@@ -73,13 +73,12 @@ key_t wish_id_of(const Element& element) {
 
 // ── UI layout ─────────────────────────────────────────────────────────────────
 //
-// ImGuiTableFlags_Resizable=1, RowBg=64, Borders=1920, Sortable=8 -> 1993
-// (the first three match the "tbl_catalog" example in examples/demo/main.cpp;
+// "proc_table"'s "flags": "Resizable|RowBg|Borders|Sortable" (the first
+// three match the "tbl_catalog" example in examples/demo/main.cpp;
 // Sortable makes column headers clickable -- see the "sorted" event handling
-// in on_event()/resort_rows()). Each TableColumn's "flags" is
-// ImGuiTableColumnFlags_WidthFixed=16, except "col_cpu" which also ORs in
-// DefaultSort=4 and PreferSortDescending=32768 (16+4+32768=32788) so the
-// column-header UI's initial sort indicator matches sort_column_id_/
+// in on_event()/resort_rows()). Each TableColumn's "flags" is "WidthFixed",
+// except "col_cpu" which also ORs in "DefaultSort|PreferSortDescending" so
+// the column-header UI's initial sort indicator matches sort_column_id_/
 // sort_ascending_'s own defaults below.
 // "cores" is given an explicit empty "children" object -- even though empty
 // -- so the importer allocates a private children map for this instance
@@ -121,13 +120,13 @@ static constexpr const char* kLayout = R"({
         },
         "proc_table": {
           "type": "Table", "id": "##proc_table", "columns": 6,
-          "flags": 1993, "headers": true,
+          "flags": "Resizable|RowBg|Borders|Sortable", "headers": true,
           "children": {
-            "col_pid":   { "type": "TableColumn", "label": "PID",     "flags": 16,    "init_width": 70,  "column_id": 0 },
-            "col_name":  { "type": "TableColumn", "label": "Name",    "flags": 16,    "init_width": 140, "column_id": 1 },
-            "col_state": { "type": "TableColumn", "label": "State",   "flags": 16,    "init_width": 60,  "column_id": 2 },
-            "col_cpu":   { "type": "TableColumn", "label": "CPU %",   "flags": 32788, "init_width": 100, "column_id": 3 },
-            "col_mem":   { "type": "TableColumn", "label": "Memory",  "flags": 16,    "init_width": 100, "column_id": 4 },
+            "col_pid":   { "type": "TableColumn", "label": "PID",     "flags": "WidthFixed", "init_width": 70,  "column_id": 0 },
+            "col_name":  { "type": "TableColumn", "label": "Name",    "flags": "WidthFixed", "init_width": 140, "column_id": 1 },
+            "col_state": { "type": "TableColumn", "label": "State",   "flags": "WidthFixed", "init_width": 60,  "column_id": 2 },
+            "col_cpu":   { "type": "TableColumn", "label": "CPU %",   "flags": "WidthFixed|DefaultSort|PreferSortDescending", "init_width": 100, "column_id": 3 },
+            "col_mem":   { "type": "TableColumn", "label": "Memory",  "flags": "WidthFixed", "init_width": 100, "column_id": 4 },
             "col_cmd":   { "type": "TableColumn", "label": "Command", "column_id": 5 }
           }
         },
