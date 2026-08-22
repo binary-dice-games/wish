@@ -8,6 +8,7 @@
 
 #include <filesystem>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace bdg::wish {
@@ -45,6 +46,21 @@ namespace bdg::wish {
 ///     if confirmed, proceed exactly as it would for `on_upload_requested`.
 ///   - `"on_download_conflict"` (`{name}`) — same as `on_upload_conflict`,
 ///     but the download target already exists locally.
+///   - `"on_local_rename_requested"` (`{old_name, new_name}`) — the user
+///     confirmed the local panel's Rename dialog. The client should rename
+///     `old_name` to `new_name` inside the currently-shown local directory
+///     and then re-report the listing (`update_local_listing()`), mirroring
+///     `on_local_navigate`'s handshake.
+///
+/// Both panels also offer a per-row right-click `ContextMenu` (Properties /
+/// Rename / Copy Path). The sandbox panel handles Rename and Properties
+/// entirely server-side (direct `std::filesystem` access); the local panel's
+/// Rename goes through `on_local_rename_requested` above since only the
+/// client can touch its own filesystem, while its Properties uses the
+/// name/type/size/modified already reported via `update_local_listing()` —
+/// no extra round trip needed. Copy Path never touches the server at all:
+/// it rides `MenuItem.copy_text` (src/ui/ui_elements/menu.cpp), which the
+/// renderer copies to the OS clipboard directly on click.
 class mc : public form {
  public:
   explicit mc(bison::dynamic&& base);
@@ -77,8 +93,42 @@ class mc : public form {
     std::string modified;
   };
 
-  void fill_table(const ui_element_ptr& table, const std::vector<file_row>& entries, int32_t selected_index = -1);
+  /// Which row context-menu action a MenuItem's `__wish_id` maps to (see
+  /// local_menu_targets_/sandbox_menu_targets_), and which panel/entry it
+  /// was built for. Resolved against local_entries_/sandbox_entries_ (by
+  /// `name`) at click time, mirroring top.cpp's own pid-indirection pattern:
+  /// on_event() looks the current entry up by name rather than this struct
+  /// carrying a captured file_row copy, so a Rename/Properties click always
+  /// reflects the freshest size/modified data for that name.
+  enum class row_menu_action { properties, rename, copy_path };
+  struct row_menu_target {
+    row_menu_action action{row_menu_action::properties};
+    bool is_sandbox{false};
+    std::string name;
+  };
+
+  /// @brief Rebuilds @p table's rows from @p entries: name/size/modified
+  /// cells (as before) plus, for every entry except a leading ".." row, a
+  /// per-row ContextMenu (Properties/Rename/Copy Path). @p is_sandbox
+  /// selects which panel's semantics the menu items should carry (see
+  /// row_menu_target), and @p menu_targets is cleared and repopulated with
+  /// this call's fresh set of MenuItem `__wish_id` -> action mappings --
+  /// the previous call's entries are being replaced wholesale, the same way
+  /// @p table's own row children are.
+  void fill_table(
+      const ui_element_ptr& table, const std::vector<file_row>& entries, bool is_sandbox,
+      std::unordered_map<bison::key_t, row_menu_target, bison::key_t, bison::key_t>& menu_targets,
+      int32_t selected_index = -1);
   void set_status(const std::string& message);
+
+  /// @brief Builds one row's ContextMenu element (Properties/Rename/Copy
+  /// Path), registering each MenuItem's `__wish_id` in @p menu_targets.
+  /// @p path_display is the string Copy Path copies to the clipboard --
+  /// the sandbox-relative display path for a sandbox row, or the client's
+  /// reported local path for a local row (see fill_table()'s call sites).
+  ui_element_ptr build_row_context_menu(
+      const file_row& entry, bool is_sandbox, const std::string& path_display,
+      std::unordered_map<bison::key_t, row_menu_target, bison::key_t, bison::key_t>& menu_targets);
 
   /// @brief Sorts @p entries in place by the given file_table column
   /// (0=Name, 1=Size, 2=Modified -- see kLayout's col_name/col_size/
@@ -95,7 +145,8 @@ class mc : public form {
   /// table.cpp's Table.flags doc comment): store the new sort state and
   /// re-sort + rebuild the given entries/table.
   void on_table_sorted(
-      const bison::dynamic& payload, std::vector<file_row>& entries, const ui_element_ptr& table,
+      const bison::dynamic& payload, std::vector<file_row>& entries, const ui_element_ptr& table, bool is_sandbox,
+      std::unordered_map<bison::key_t, row_menu_target, bison::key_t, bison::key_t>& menu_targets,
       int32_t& sort_column_id, bool& sort_ascending);
 
   bool sandbox_has_file(const std::string& name) const;
@@ -110,6 +161,37 @@ class mc : public form {
   /// this function does not touch sync_ctx_ itself. See the .cpp for why.
   void navigate_sandbox(std::string relative_path, const std::filesystem::path& resource_dir, bool allow_absolute_paths);
 
+  // ── Row context-menu actions ────────────────────────────────────────────
+  //
+  // Rename and Properties each use one dialog layout shared by both panels;
+  // Rename needs to remember which panel/name it's acting on between
+  // show_rename_dialog() and apply_rename() (rename_is_sandbox_/
+  // rename_old_name_), while Properties is fully populated at show-time and
+  // needs no persisted target. Mirrors top.cpp's confirm-kill/properties
+  // dialog pattern: a small internal Window merged as its own top-level
+  // object (a secondary root distinct from internal_root_key_), closed via
+  // the __request_close__/closed handshake (see form.hpp's
+  // request_close_at()).
+
+  /// @brief Opens the Rename dialog for @p name in the local (@p is_sandbox
+  /// == false) or sandbox (== true) panel, prefilled with its current name.
+  void show_rename_dialog(bool is_sandbox, const std::string& name);
+  void request_close_rename();
+  void remove_rename_objects();
+  /// @brief Validates and applies the Rename dialog's current input:
+  /// rejects an empty name or one containing a path separator, then either
+  /// renames directly (sandbox) or emits on_local_rename_requested (local).
+  /// Closes the dialog either way.
+  void apply_rename();
+
+  /// @brief Opens the Properties dialog for @p entry from the local (@p
+  /// is_sandbox == false) or sandbox (== true) panel. All fields are
+  /// already known server-side (no client round trip needed even for the
+  /// local panel -- see mc.hpp's class doc comment).
+  void show_properties_dialog(bool is_sandbox, const file_row& entry);
+  void request_close_properties();
+  void remove_properties_objects();
+
   bison::key_t window_id_;
   bison::key_t left_path_id_;
   bison::key_t left_table_id_;
@@ -122,9 +204,13 @@ class mc : public form {
   ui_element_ptr left_path_ptr_;
   ui_element_ptr left_table_ptr_;
   ui_element_ptr left_selected_ptr_;
+  ui_element_ptr left_stats_ptr_;
+  ui_element_ptr left_disk_ptr_;
   ui_element_ptr right_path_ptr_;
   ui_element_ptr right_table_ptr_;
   ui_element_ptr right_selected_ptr_;
+  ui_element_ptr right_stats_ptr_;
+  ui_element_ptr right_disk_ptr_;
   ui_element_ptr status_label_ptr_;
   ui_element_ptr transfer_progress_ptr_;
 
@@ -132,6 +218,28 @@ class mc : public form {
   std::string sandbox_path_; ///< Relative to sandbox root; "" == root.
   std::vector<file_row> local_entries_;
   std::vector<file_row> sandbox_entries_;
+
+  /// MenuItem `__wish_id` -> action, one map per panel since fill_table()
+  /// clears and rebuilds only the panel it was called for.
+  std::unordered_map<bison::key_t, row_menu_target, bison::key_t, bison::key_t> local_menu_targets_;
+  std::unordered_map<bison::key_t, row_menu_target, bison::key_t, bison::key_t> sandbox_menu_targets_;
+
+  std::string rename_root_key_;
+  bison::key_t rename_window_id_;
+  bison::key_t rename_ok_id_;
+  bison::key_t rename_cancel_id_;
+  ui_element_ptr rename_input_ptr_;
+  bool rename_is_sandbox_{false};
+  std::string rename_old_name_;
+
+  std::string properties_root_key_;
+  bison::key_t properties_window_id_;
+  bison::key_t properties_close_id_;
+  ui_element_ptr properties_name_ptr_;
+  ui_element_ptr properties_type_ptr_;
+  ui_element_ptr properties_size_ptr_;
+  ui_element_ptr properties_modified_ptr_;
+  ui_element_ptr properties_path_ptr_;
 
   // Current per-panel sort state, applied by sort_entries() whenever
   // local_entries_/sandbox_entries_ is (re)built. Defaults to ascending by

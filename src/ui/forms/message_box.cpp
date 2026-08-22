@@ -237,7 +237,7 @@ void message_box::rebuild() {
 
   std::string title = title_f ? *title_f : std::string{"Message"};
   std::string message = message_f ? *message_f : std::string{};
-  int32_t icon_val = icon_f ? *icon_f : 0;
+  int32_t icon_val = icon_f ? *icon_f : 1; // "info" -- see the icon field's default.
   int32_t buttons_val = buttons_f ? *buttons_f : 0;
 
   if (icon_val < 0 || icon_val >= kIconCount)
@@ -408,10 +408,13 @@ void register_message_box() {
   proto->addField(
       "icon"_key,
       field{
-          int32_t{0},
+          int32_t{1}, // "info" -- see kIconNames; a MessageBox with no icon
+                      // set at all reads as incomplete/accidental rather
+                      // than intentionally plain, so default to something
+                      // visible instead of "none".
           attr<DisplayName>("Icon"),
           attr<Description>("Icon severity: \"none\", \"info\", \"warning\", \"error\", or \"question\". "
-                            "Out-of-range values are treated as \"none\"."),
+                            "Defaults to \"info\" when unset. Out-of-range values are treated as \"none\"."),
           attr<Category>("Appearance"),
           attr<Enum>(icon_enum_table())});
 

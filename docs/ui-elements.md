@@ -447,11 +447,12 @@ A selectable leaf inside a `Menu`.
 |---|---|---|---|
 | `label` | `string` | `""` | Item text. |
 | `shortcut` | `string` | `""` | Decorative shortcut hint shown on the right (not a real keybinding). |
-| `checked` | `bool` | `false` | Shows a check mark; updated by the renderer on click. |
+| `checked` | `bool` | `false` | Shows a check mark. Purely display -- the renderer never modifies it; the form sets it explicitly (e.g. a radio-style submenu recomputing it from server state). |
 | `enabled` | `bool` | `true` | When `false`, grayed out and cannot be clicked. |
+| `copy_text` | `string` | `""` | When non-empty, clicking the item also copies this text to the OS clipboard (`ImGui::SetClipboardText`, on the render thread) -- a "Copy ..." action with no client round trip. |
 
-**Events:** `clicked` — `{ checked: bool }` (field is updated before the
-event fires).
+**Events:** `clicked` — `{ checked: bool }` (the field's current value,
+unchanged by the click).
 
 #### `MenuButton`
 An ordinary button that opens a popup containing its own children

@@ -70,7 +70,9 @@ void register_menu() {
         field{
             false,
             attr<DisplayName>("Checked"),
-            attr<Description>("Shows a check mark. Updated by the renderer on click."),
+            attr<Description>("Shows a check mark. Display-only: the renderer never modifies "
+                              "this itself (clicking does not toggle it) -- set it explicitly, "
+                              "e.g. for a radio-style submenu recomputed from server state."),
             attr<Category>("State")});
     proto->addField(
         "enabled"_rkey,
@@ -79,10 +81,21 @@ void register_menu() {
             attr<DisplayName>("Enabled"),
             attr<Description>("When false, the item is grayed out and cannot be clicked."),
             attr<Category>("Behavior")});
+    proto->addField(
+        "copy_text"_rkey,
+        field{
+            std::string{},
+            attr<DisplayName>("Copy Text"),
+            attr<Description>("When non-empty, clicking this item copies this text to the OS "
+                              "clipboard (via ImGui::SetClipboardText, on the render thread, "
+                              "before 'clicked' is enqueued) -- a quick way to offer a "
+                              "\"Copy ...\" context-menu action without a client round trip."),
+            attr<Category>("Behavior")});
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("MenuItem"));
     (*proto)[dynamic::CLASS].addAttribute(
         attr<Description>("A selectable item inside a Menu. "
-                          "Emits 'clicked' with {checked: bool} when activated."));
+                          "Emits 'clicked' with {checked: bool} when activated. If 'copy_text' "
+                          "is non-empty, that text is also copied to the OS clipboard on click."));
     dynamic::addClass(
         "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_element>("wish"_key, "MenuItem"_key));
   }

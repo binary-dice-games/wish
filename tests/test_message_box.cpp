@@ -48,11 +48,15 @@ TEST_F(MessageBoxLocalTest, DefaultMessageIsEmpty) {
   EXPECT_EQ(f->as<std::string>(), "");
 }
 
-TEST_F(MessageBoxLocalTest, DefaultIconIsNone) {
+TEST_F(MessageBoxLocalTest, DefaultIconIsInfo) {
+  // A MessageBox with no icon specified at all reads as incomplete/
+  // accidental rather than intentionally plain, so the default is "info"
+  // (not "none") -- callers that genuinely want no icon still can by
+  // setting icon: "none" explicitly.
   auto obj = dynamic::instantiate("wish"_key, "MessageBox"_key);
   auto* f = obj.findField("icon"_key);
   ASSERT_NE(f, nullptr);
-  EXPECT_EQ(f->get_as<std::string>(), "none");
+  EXPECT_EQ(f->get_as<std::string>(), "info");
 }
 
 TEST_F(MessageBoxLocalTest, DefaultButtonsIsOk) {
@@ -242,11 +246,26 @@ TEST_F(MessageBoxConstructTest, IconIsTintedToTextColor) {
   EXPECT_TRUE(objs.at(root + ".body.icon")->findField("__tint_to_text_color__"_key)->as<bool>());
 }
 
-TEST_F(MessageBoxConstructTest, DefaultIconLeavesSrcEmpty) {
-  // icon defaults to "none" -- the Image child should exist (still reserves
+TEST_F(MessageBoxConstructTest, DefaultIconIsInfoIcon) {
+  // icon defaults to "info" (not "none") when unset -- see the icon field's
+  // default value.
+  client_->instantiate("wish"_key, "MessageBox"_key).get();
+
+  std::string root = find_form_root(srv_->last_session->ui_objects);
+  ASSERT_FALSE(root.empty());
+  auto& objs = srv_->last_session->ui_objects;
+  ASSERT_TRUE(objs.count(root + ".body.icon"));
+  EXPECT_EQ(objs.at(root + ".body.icon")->findField("src"_key)->as<std::string>(), "res/icons/msgbox_info.png");
+}
+
+TEST_F(MessageBoxConstructTest, ExplicitNoneIconLeavesSrcEmpty) {
+  // A caller that genuinely wants no icon can still get one by setting
+  // icon: "none" explicitly -- the Image child should exist (still reserves
   // its declared 32x32 via render_image()'s Dummy() fallback) but with no
   // src to load.
-  client_->instantiate("wish"_key, "MessageBox"_key).get();
+  dynamic params;
+  params["icon"_key] = std::string{"none"};
+  client_->instantiate("wish"_key, "MessageBox"_key, std::move(params)).get();
 
   std::string root = find_form_root(srv_->last_session->ui_objects);
   ASSERT_FALSE(root.empty());

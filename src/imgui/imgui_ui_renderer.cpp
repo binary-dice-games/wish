@@ -1067,8 +1067,21 @@ void render_menu_item(imgui_renderer&, const ui_element& node, const context& s)
   bool checked = node.get_as<bool>("checked"_key, false);
   bool enabled = node.get_as<bool>("enabled"_key, true);
   const char* sc = shortcut.empty() ? nullptr : shortcut.c_str();
-  if (ImGui::MenuItem(label.c_str(), sc, &checked, enabled)) {
-    const_cast<ui_element&>(node)["checked"_key] = checked;
+  // `checked` is passed BY VALUE (the ImGuiSelectableFlags-less overload),
+  // not `&checked` -- the pointer overload has ImGui auto-toggle *checked
+  // itself* on every click, turning every plain action item (Properties,
+  // Rename, Copy Path, ...) into a checkbox-style toggle with no way to
+  // opt out. Passing by value still draws the check mark when true, but
+  // leaves the field entirely under the form's own control (e.g. a
+  // radio-style priority submenu that recomputes "checked" from server
+  // state on every update, as top.cpp's row context menu does).
+  if (ImGui::MenuItem(label.c_str(), sc, checked, enabled)) {
+    // Clipboard access needs an active ImGui context, so this must happen
+    // here on the render thread -- not in some later on_event() handler
+    // over on the dispatch thread, which has no ImGui context of its own.
+    auto copy_text = node.get_as<std::string>("copy_text"_key, "");
+    if (!copy_text.empty())
+      ImGui::SetClipboardText(copy_text.c_str());
     dynamic payload;
     payload["checked"_key] = checked;
     enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "clicked"_key, std::move(payload));

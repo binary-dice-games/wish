@@ -105,6 +105,20 @@ std::string format_modified(const fs::file_time_type& ftime) {
 // (spacing: 10 between them) while sliding as a group to the vertical center
 // of the column, rather than sitting pinned at the top like every other
 // auto-height column would.
+//
+// "left_stats"/"left_disk" (and their "right_" twins) are auto-height Labels
+// added *after* left_table/right_table -- render_vertical_layout()'s measure
+// pass sizes them to their own natural single-line height first, and only
+// hands left_table/right_table's height:-1 stretch share whatever's left, so
+// they read as a small summary strip pinned to the bottom of each panel
+// without stealing a fixed chunk of the table's own scrollable area. "_stats"
+// holds "<N> files, <size>" for the currently-listed directory
+// (non-recursive: just the files in view, not their subdirectories'
+// contents); "_disk" holds the used/free/total space of the filesystem that
+// directory lives on. Both start blank and are filled in by
+// do_update_local_listing() (client-reported, since only the client can see
+// the local machine's disk) and navigate_sandbox() (computed directly via
+// std::filesystem, since the sandbox lives on this machine).
 
 // Tagged delimiter (R"json(...)json") rather than the untagged R"(...)"
 // convention used elsewhere: "Sandbox (Server)" ends in a ")" immediately
@@ -144,7 +158,9 @@ static constexpr const char* kLayout = R"json({
                     "col_size":     { "type": "TableColumn", "label": "Size", "flags": "WidthFixed", "init_width": 90, "column_id": 1 },
                     "col_modified": { "type": "TableColumn", "label": "Modified", "flags": "WidthFixed", "init_width": 130, "column_id": 2 }
                   }
-                }
+                },
+                "left_stats": { "type": "Label", "text": "" },
+                "left_disk":  { "type": "Label", "text": "" }
               }
             },
             "middle": {
@@ -185,7 +201,9 @@ static constexpr const char* kLayout = R"json({
                     "col_size":     { "type": "TableColumn", "label": "Size", "flags": "WidthFixed", "init_width": 90, "column_id": 1 },
                     "col_modified": { "type": "TableColumn", "label": "Modified", "flags": "WidthFixed", "init_width": 130, "column_id": 2 }
                   }
-                }
+                },
+                "right_stats": { "type": "Label", "text": "" },
+                "right_disk":  { "type": "Label", "text": "" }
               }
             }
           }
@@ -194,6 +212,51 @@ static constexpr const char* kLayout = R"json({
         "transfer_progress": { "type": "ProgressBar", "value": 0.0, "label": "", "width": -1 }
       }
     }
+  }
+})json";
+
+// Rename dialog -- shared by both panels; show_rename_dialog() fills in
+// "message" and prefills "new_name" with the current name. EnterReturnsTrue
+// lets the user just type-and-press-Enter instead of reaching for "Rename".
+// Mirrors top.cpp's confirm-kill dialog: a small internal Window merged as
+// its own top-level object, closed via the __request_close__/closed
+// handshake (see form.hpp's request_close_at()).
+static constexpr const char* kRenameLayout = R"json({
+  "type": "Window", "title": "Rename", "modal": true,
+  "flags": "NoResize|NoCollapse|AlwaysAutoResize",
+  "children": {
+    "message": { "type": "Label", "text": "" },
+    "new_name": { "type": "InputText", "value": "", "flags": "EnterReturnsTrue", "width": 300 },
+    "sep": { "type": "Separator" },
+    "buttons": { "type": "HorizontalLayout", "spacing": 6, "children": {
+      "btn_ok": { "type": "Button", "label": "Rename", "height": 32 },
+      "btn_cancel": { "type": "Button", "label": "Cancel", "height": 32 }
+    } }
+  }
+})json";
+
+// Properties dialog -- shared by both panels; every field is already known
+// server-side by show-time (see mc.hpp's class doc comment), unlike top.cpp's
+// Properties dialog which has to wait on a client round trip.
+static constexpr const char* kPropertiesLayout = R"json({
+  "type": "Window", "title": "Properties", "modal": true,
+  "flags": "NoCollapse",
+  "width": 480, "height": 280,
+  "children": {
+    "grid": {
+      "type": "VerticalLayout",
+      "children": {
+        "name_row": { "type": "Label", "text": "" },
+        "type_row": { "type": "Label", "text": "" },
+        "size_row": { "type": "Label", "text": "" },
+        "modified_row": { "type": "Label", "text": "" },
+        "path_row": { "type": "Label", "text": "", "wrap": true }
+      }
+    },
+    "sep": { "type": "Separator" },
+    "close_row": { "type": "HorizontalLayout", "children": {
+      "btn_close": { "type": "Button", "label": "Close", "height": 32 }
+    } }
   }
 })json";
 
@@ -226,6 +289,8 @@ void mc::on_init() {
     left_table_id_ = wish_id_of(e);
   });
   ui_tree.with("main.panels.left.left_selected", [&](const auto& e) { left_selected_ptr_ = e; });
+  ui_tree.with("main.panels.left.left_stats", [&](const auto& e) { left_stats_ptr_ = e; });
+  ui_tree.with("main.panels.left.left_disk", [&](const auto& e) { left_disk_ptr_ = e; });
   ui_tree.with("main.panels.right.right_path", [&](const auto& e) {
     right_path_ptr_ = e;
     right_path_id_ = wish_id_of(e);
@@ -235,6 +300,8 @@ void mc::on_init() {
     right_table_id_ = wish_id_of(e);
   });
   ui_tree.with("main.panels.right.right_selected", [&](const auto& e) { right_selected_ptr_ = e; });
+  ui_tree.with("main.panels.right.right_stats", [&](const auto& e) { right_stats_ptr_ = e; });
+  ui_tree.with("main.panels.right.right_disk", [&](const auto& e) { right_disk_ptr_ = e; });
   ui_tree.with(
       "main.panels.right.right_header.open_explorer", [&](const auto& e) { open_explorer_id_ = wish_id_of(e); });
   ui_tree.with("main.panels.middle.upload", [&](const auto& e) { upload_id_ = wish_id_of(e); });
@@ -253,7 +320,9 @@ void mc::on_init() {
 // ── Table population ─────────────────────────────────────────────────────────
 
 void mc::fill_table(
-    const ui_element_ptr& table, const std::vector<file_row>& entries, int32_t selected_index) {
+    const ui_element_ptr& table, const std::vector<file_row>& entries, bool is_sandbox,
+    std::unordered_map<key_t, row_menu_target, key_t, key_t>& menu_targets, int32_t selected_index) {
+  menu_targets.clear();
   if (!table)
     return;
   auto* children_p = table->findField<dynamic_ptr>("children"_key);
@@ -287,12 +356,69 @@ void mc::fill_table(
     (*row_children)[size_t{0}] = dynamic_ptr{name_cell};
     (*row_children)[size_t{1}] = dynamic_ptr{make_label(entry.type == "dir" ? std::string{} : entry.size, 1)};
     (*row_children)[size_t{2}] = dynamic_ptr{make_label(entry.modified, 2)};
+
+    // The ".." pseudo-entry (see navigate_sandbox()) gets no context menu --
+    // there's nothing to rename/inspect/copy-path for "go up a level".
+    if (entry.name != "..") {
+      std::string path_display = is_sandbox
+          ? "/" + (sandbox_path_.empty() ? entry.name : sandbox_path_ + "/" + entry.name)
+          : (local_path_.empty() ? entry.name : (fs::path(local_path_) / entry.name).string());
+      ui_element_ptr menu = build_row_context_menu(entry, is_sandbox, path_display, menu_targets);
+      menu["order"_key] = int32_t{3};
+      (*row_children)[size_t{3}] = dynamic_ptr{menu};
+    }
+
     row["children"_key] = row_children;
 
     (*children)[static_cast<size_t>(idx)] = dynamic_ptr{row};
     ++idx;
   }
   table->refresh_children_order();
+}
+
+ui_element_ptr mc::build_row_context_menu(
+    const file_row& entry, bool is_sandbox, const std::string& path_display,
+    std::unordered_map<key_t, row_menu_target, key_t, key_t>& menu_targets) {
+  auto assign_id = [&](ui_element_ptr& el) {
+    key_t id = rmi::shared::generate_id();
+    ctx().put_object(id, el);
+    el["__wish_id"_key] = id;
+    return id;
+  };
+
+  ui_element_ptr menu{dynamic::instantiate("wish"_key, "ContextMenu"_key)};
+  assign_id(menu);
+
+  ui_element_ptr properties{dynamic::instantiate("wish"_key, "MenuItem"_key)};
+  properties["label"_key] = std::string{"Properties"};
+  menu_targets[assign_id(properties)] = row_menu_target{row_menu_action::properties, is_sandbox, entry.name};
+
+  ui_element_ptr rename{dynamic::instantiate("wish"_key, "MenuItem"_key)};
+  rename["label"_key] = std::string{"Rename..."};
+  menu_targets[assign_id(rename)] = row_menu_target{row_menu_action::rename, is_sandbox, entry.name};
+
+  ui_element_ptr sep{dynamic::instantiate("wish"_key, "Separator"_key)};
+  assign_id(sep);
+
+  ui_element_ptr copy_path{dynamic::instantiate("wish"_key, "MenuItem"_key)};
+  copy_path["label"_key] = std::string{"Copy Path"};
+  // No round trip needed: the renderer copies this to the OS clipboard
+  // directly on click (see MenuItem.copy_text's field comment in
+  // src/ui/ui_elements/menu.cpp). Still routed through menu_targets so
+  // on_event() can show a status confirmation.
+  copy_path["copy_text"_key] = path_display;
+  menu_targets[assign_id(copy_path)] = row_menu_target{row_menu_action::copy_path, is_sandbox, entry.name};
+
+  auto menu_children = dynamic_ptr{key_t{0U}, {}};
+  size_t mk = 0;
+  (*menu_children)[mk++] = dynamic_ptr{properties};
+  (*menu_children)[mk++] = dynamic_ptr{rename};
+  (*menu_children)[mk++] = dynamic_ptr{sep};
+  (*menu_children)[mk++] = dynamic_ptr{copy_path};
+  menu["children"_key] = menu_children;
+  menu->refresh_children_order();
+
+  return menu;
 }
 
 void mc::sort_entries(std::vector<file_row>& entries, int32_t sort_column_id, bool ascending) const {
@@ -318,7 +444,8 @@ void mc::sort_entries(std::vector<file_row>& entries, int32_t sort_column_id, bo
 }
 
 void mc::on_table_sorted(
-    const dynamic& payload, std::vector<file_row>& entries, const ui_element_ptr& table, int32_t& sort_column_id,
+    const dynamic& payload, std::vector<file_row>& entries, const ui_element_ptr& table, bool is_sandbox,
+    std::unordered_map<key_t, row_menu_target, key_t, key_t>& menu_targets, int32_t& sort_column_id,
     bool& sort_ascending) {
   auto* col_f = payload.findField<int32_t>("column_id"_key);
   auto* asc_f = payload.findField<bool>("ascending"_key);
@@ -327,7 +454,7 @@ void mc::on_table_sorted(
   sort_column_id = *col_f;
   sort_ascending = *asc_f;
   sort_entries(entries, sort_column_id, sort_ascending);
-  fill_table(table, entries);
+  fill_table(table, entries, is_sandbox, menu_targets);
 }
 
 void mc::set_status(const std::string& message) {
@@ -384,12 +511,21 @@ void mc::navigate_sandbox(
   if (!relative_path.empty())
     entries.push_back({"..", "dir", "", ""});
 
+  uintmax_t file_count = 0;
+  uintmax_t total_bytes = 0;
   for (auto& dirent : fs::directory_iterator{full, ec}) {
     file_row row;
     row.name = dirent.path().filename().string();
     bool is_dir = dirent.is_directory(ec);
     row.type = is_dir ? "dir" : "file";
-    row.size = is_dir ? std::string{} : format_bytes(dirent.file_size(ec));
+    if (!is_dir) {
+      uintmax_t bytes = dirent.file_size(ec);
+      if (!ec) {
+        ++file_count;
+        total_bytes += bytes;
+      }
+      row.size = format_bytes(bytes);
+    }
     auto ftime = dirent.last_write_time(ec);
     row.modified = ec ? std::string{} : format_modified(ftime);
     entries.push_back(std::move(row));
@@ -401,7 +537,17 @@ void mc::navigate_sandbox(
   // away and back doesn't silently drop it (matches Explorer's own
   // persisted-sort behavior).
   sort_entries(sandbox_entries_, sandbox_sort_column_id_, sandbox_sort_ascending_);
-  fill_table(right_table_ptr_, sandbox_entries_);
+  fill_table(right_table_ptr_, sandbox_entries_, true, sandbox_menu_targets_);
+
+  if (right_stats_ptr_)
+    right_stats_ptr_["text"_key] =
+        std::to_string(file_count) + (file_count == 1 ? " file, " : " files, ") + format_bytes(total_bytes);
+  if (right_disk_ptr_) {
+    auto space_info = fs::space(full, ec);
+    right_disk_ptr_["text"_key] = ec ? std::string{}
+                                      : "Disk: " + format_bytes(space_info.capacity - space_info.free) + " used, " +
+            format_bytes(space_info.free) + " free of " + format_bytes(space_info.capacity);
+  }
 
   std::string display = "/" + relative_path;
   if (right_path_ptr_)
@@ -413,6 +559,197 @@ void mc::navigate_sandbox(
   selected_sandbox_is_dir_ = false;
   if (right_selected_ptr_)
     right_selected_ptr_["text"_key] = "Selected: (none)";
+}
+
+// ── Rename dialog ─────────────────────────────────────────────────────────────
+
+void mc::show_rename_dialog(bool is_sandbox, const std::string& name) {
+  if (!rename_root_key_.empty())
+    remove_rename_objects();
+
+  rename_is_sandbox_ = is_sandbox;
+  rename_old_name_ = name;
+
+  auto tree = import_json(kRenameLayout);
+  tree.with("message", [&](const auto& e) { e["text"_key] = "Rename \"" + name + "\" to:"; });
+
+  auto& c = ctx();
+  for (auto& [key, elem] : tree) {
+    key_t id = rmi::shared::generate_id();
+    c.put_object(id, elem);
+    elem["__wish_id"_key] = id;
+  }
+
+  rename_window_id_ = (*tree[""])["__wish_id"_key].as<key_t>();
+  tree.with("new_name", [&](const auto& e) {
+    e["value"_key] = name;
+    rename_input_ptr_ = e;
+  });
+  tree.with("buttons.btn_ok", [&](const auto& e) { rename_ok_id_ = wish_id_of(e); });
+  tree.with("buttons.btn_cancel", [&](const auto& e) { rename_cancel_id_ = wish_id_of(e); });
+
+  // show_rename_dialog() is only ever called from on_event() (a MenuItem
+  // click), i.e. outside dispatch -- sess()/next_available_key() would
+  // throw here, so this merges the dialog as a secondary top-level root by
+  // hand under context_wlock, exactly like top.cpp's show_confirm_kill().
+  auto lock = context_wlock{*sync_ctx_};
+  context& s = *lock;
+  for (int i = 0;; ++i) {
+    std::string candidate = "__mc_rename_" + std::to_string(i);
+    if (s.top_level_objects.find(key_t{candidate}) == s.top_level_objects.end()) {
+      rename_root_key_ = candidate;
+      break;
+    }
+  }
+  s.ui_objects.merge(std::move(tree), rename_root_key_);
+  auto it = s.ui_objects.find(rename_root_key_);
+  if (it != s.ui_objects.end()) {
+    s.top_level_objects[key_t{rename_root_key_}] = it->second;
+    (*it->second)["__path__"_key] = rename_root_key_;
+    s.top_level_handlers[key_t{rename_root_key_}] = this;
+  }
+}
+
+void mc::request_close_rename() {
+  request_close_at(rename_root_key_);
+}
+
+void mc::remove_rename_objects() {
+  remove_objects_at(rename_root_key_);
+  rename_root_key_.clear();
+  rename_input_ptr_.reset();
+}
+
+void mc::apply_rename() {
+  if (!rename_input_ptr_) {
+    remove_rename_objects();
+    return;
+  }
+  std::string new_name = rename_input_ptr_->as<std::string>("value"_key);
+  if (new_name.empty() || new_name == "." || new_name == ".." || new_name.find('/') != std::string::npos ||
+      new_name.find('\\') != std::string::npos) {
+    set_status("Invalid name.");
+    request_close_rename();
+    return;
+  }
+
+  if (new_name == rename_old_name_) {
+    request_close_rename();
+    return;
+  }
+
+  if (rename_is_sandbox_) {
+    // Mirrors row_activated's own outside-dispatch navigate_sandbox() call
+    // above: resolve resource_dir/allow_absolute_paths via context_rlock,
+    // since on_event() runs outside dispatch and sess() would throw here.
+    auto s = context_rlock{*sync_ctx_};
+    fs::path old_rel = sandbox_path_.empty() ? fs::path(rename_old_name_) : fs::path(sandbox_path_) / rename_old_name_;
+    fs::path new_rel = sandbox_path_.empty() ? fs::path(new_name) : fs::path(sandbox_path_) / new_name;
+    fs::path old_full = file_service::resolve_path(old_rel.string(), s->resource_dir, s->allow_absolute_paths);
+    fs::path new_full = file_service::resolve_path(new_rel.string(), s->resource_dir, s->allow_absolute_paths);
+    std::error_code ec;
+    if (old_full.empty() || new_full.empty()) {
+      set_status("Invalid or out-of-sandbox path.");
+    } else if (fs::exists(new_full, ec)) {
+      set_status("\"" + new_name + "\" already exists.");
+    } else {
+      fs::rename(old_full, new_full, ec);
+      if (ec) {
+        set_status("Rename failed: " + ec.message());
+      } else {
+        navigate_sandbox(sandbox_path_, s->resource_dir, s->allow_absolute_paths);
+        set_status("Renamed.");
+      }
+    }
+  } else {
+    // Only the client can rename its own local file -- emit and let
+    // on_local_rename_requested's handler (client/mc.cpp) report the
+    // outcome via set()/update_local_listing(), same as on_local_navigate.
+    dynamic req;
+    req["old_name"_key] = rename_old_name_;
+    req["new_name"_key] = new_name;
+    emit("on_local_rename_requested"_key, std::move(req));
+    set_status("Renaming...");
+  }
+
+  request_close_rename();
+}
+
+// ── Properties dialog ─────────────────────────────────────────────────────────
+
+void mc::show_properties_dialog(bool is_sandbox, const file_row& entry) {
+  if (!properties_root_key_.empty())
+    remove_properties_objects();
+
+  auto tree = import_json(kPropertiesLayout);
+  (*tree[""])["title"_key] = "Properties - " + entry.name;
+
+  auto& c = ctx();
+  for (auto& [key, elem] : tree) {
+    key_t id = rmi::shared::generate_id();
+    c.put_object(id, elem);
+    elem["__wish_id"_key] = id;
+  }
+
+  properties_window_id_ = (*tree[""])["__wish_id"_key].as<key_t>();
+  tree.with("close_row.btn_close", [&](const auto& e) { properties_close_id_ = wish_id_of(e); });
+  tree.with("grid.name_row", [&](const auto& e) { properties_name_ptr_ = e; });
+  tree.with("grid.type_row", [&](const auto& e) { properties_type_ptr_ = e; });
+  tree.with("grid.size_row", [&](const auto& e) { properties_size_ptr_ = e; });
+  tree.with("grid.modified_row", [&](const auto& e) { properties_modified_ptr_ = e; });
+  tree.with("grid.path_row", [&](const auto& e) { properties_path_ptr_ = e; });
+
+  // Same path-composition rule as fill_table()'s Copy Path -- see that
+  // call site for why the sandbox side stays relative rather than exposing
+  // the server's absolute filesystem layout to the client.
+  std::string path_display = is_sandbox
+      ? "/" + (sandbox_path_.empty() ? entry.name : sandbox_path_ + "/" + entry.name)
+      : (local_path_.empty() ? entry.name : (fs::path(local_path_) / entry.name).string());
+
+  if (properties_name_ptr_)
+    properties_name_ptr_["text"_key] = "Name: " + entry.name;
+  if (properties_type_ptr_)
+    properties_type_ptr_["text"_key] = std::string{"Type: "} + (entry.type == "dir" ? "Folder" : "File");
+  if (properties_size_ptr_)
+    properties_size_ptr_["text"_key] = entry.type == "dir" ? std::string{"Size: --"} : "Size: " + entry.size;
+  if (properties_modified_ptr_) {
+    properties_modified_ptr_["text"_key] =
+        "Modified: " + (entry.modified.empty() ? std::string{"(unknown)"} : entry.modified);
+  }
+  if (properties_path_ptr_)
+    properties_path_ptr_["text"_key] = "Path: " + path_display;
+
+  // Same outside-dispatch secondary-root merge as show_rename_dialog() above.
+  auto lock = context_wlock{*sync_ctx_};
+  context& s = *lock;
+  for (int i = 0;; ++i) {
+    std::string candidate = "__mc_properties_" + std::to_string(i);
+    if (s.top_level_objects.find(key_t{candidate}) == s.top_level_objects.end()) {
+      properties_root_key_ = candidate;
+      break;
+    }
+  }
+  s.ui_objects.merge(std::move(tree), properties_root_key_);
+  auto it = s.ui_objects.find(properties_root_key_);
+  if (it != s.ui_objects.end()) {
+    s.top_level_objects[key_t{properties_root_key_}] = it->second;
+    (*it->second)["__path__"_key] = properties_root_key_;
+    s.top_level_handlers[key_t{properties_root_key_}] = this;
+  }
+}
+
+void mc::request_close_properties() {
+  request_close_at(properties_root_key_);
+}
+
+void mc::remove_properties_objects() {
+  remove_objects_at(properties_root_key_);
+  properties_root_key_.clear();
+  properties_name_ptr_.reset();
+  properties_type_ptr_.reset();
+  properties_size_ptr_.reset();
+  properties_modified_ptr_.reset();
+  properties_path_ptr_.reset();
 }
 
 // ── RMI methods ───────────────────────────────────────────────────────────────
@@ -437,10 +774,29 @@ dynamic mc::do_update_local_listing(const dynamic& args) {
   }
 
   sort_entries(local_entries_, local_sort_column_id_, local_sort_ascending_);
-  fill_table(left_table_ptr_, local_entries_);
+  fill_table(left_table_ptr_, local_entries_, false, local_menu_targets_);
   if (left_path_ptr_)
     left_path_ptr_["value"_key] = local_path_;
   (*this)["local_path"_key] = local_path_;
+
+  // file_count/total_size/disk_* are computed client-side (report_local_listing()
+  // in client/mc.cpp) since only the client can see the local machine's
+  // filesystem/disk -- omitted (left blank) by an older or custom client
+  // that doesn't send them.
+  if (left_stats_ptr_) {
+    auto* count_f = args.findField<int32_t>("file_count"_key);
+    auto* size_f = args.findField<std::string>("total_size"_key);
+    left_stats_ptr_["text"_key] = count_f && size_f
+        ? std::to_string(*count_f) + (*count_f == 1 ? " file, " : " files, ") + *size_f
+        : std::string{};
+  }
+  if (left_disk_ptr_) {
+    auto* used_f = args.findField<std::string>("disk_used"_key);
+    auto* free_f = args.findField<std::string>("disk_free"_key);
+    auto* total_f = args.findField<std::string>("disk_total"_key);
+    left_disk_ptr_["text"_key] =
+        used_f && free_f && total_f ? "Disk: " + *used_f + " used, " + *free_f + " free of " + *total_f : std::string{};
+  }
 
   selected_local_name_.clear();
   selected_local_is_dir_ = false;
@@ -481,7 +837,7 @@ void mc::on_event(key_t id, key_t event, const dynamic& payload) {
         selected_local_is_dir_ = local_entries_[static_cast<size_t>(idx)].type == "dir";
         if (left_selected_ptr_)
           left_selected_ptr_["text"_key] = "Selected: " + selected_local_name_;
-        fill_table(left_table_ptr_, local_entries_, idx);
+        fill_table(left_table_ptr_, local_entries_, false, local_menu_targets_, idx);
       }
       return;
     }
@@ -506,7 +862,9 @@ void mc::on_event(key_t id, key_t event, const dynamic& payload) {
       selected_local_is_dir_ = false;
       if (left_selected_ptr_)
         left_selected_ptr_["text"_key] = "Selected: (none)";
-      on_table_sorted(payload, local_entries_, left_table_ptr_, local_sort_column_id_, local_sort_ascending_);
+      on_table_sorted(
+          payload, local_entries_, left_table_ptr_, false, local_menu_targets_, local_sort_column_id_,
+          local_sort_ascending_);
       return;
     }
   }
@@ -529,7 +887,7 @@ void mc::on_event(key_t id, key_t event, const dynamic& payload) {
         selected_sandbox_is_dir_ = sandbox_entries_[static_cast<size_t>(idx)].type == "dir";
         if (right_selected_ptr_)
           right_selected_ptr_["text"_key] = "Selected: " + selected_sandbox_name_;
-        fill_table(right_table_ptr_, sandbox_entries_, idx);
+        fill_table(right_table_ptr_, sandbox_entries_, true, sandbox_menu_targets_, idx);
       }
       return;
     }
@@ -552,7 +910,9 @@ void mc::on_event(key_t id, key_t event, const dynamic& payload) {
       selected_sandbox_is_dir_ = false;
       if (right_selected_ptr_)
         right_selected_ptr_["text"_key] = "Selected: (none)";
-      on_table_sorted(payload, sandbox_entries_, right_table_ptr_, sandbox_sort_column_id_, sandbox_sort_ascending_);
+      on_table_sorted(
+          payload, sandbox_entries_, right_table_ptr_, true, sandbox_menu_targets_, sandbox_sort_column_id_,
+          sandbox_sort_ascending_);
       return;
     }
   }
@@ -606,6 +966,70 @@ void mc::on_event(key_t id, key_t event, const dynamic& payload) {
     req["name"_key] = selected_sandbox_name_;
     emit(local_has_file(selected_sandbox_name_) ? "on_download_conflict"_key : "on_download_requested"_key, std::move(req));
     return;
+  }
+
+  // Row context-menu items (Properties/Rename/Copy Path) always emit
+  // "clicked" (see MenuItem's own event doc), regardless of which panel
+  // built them -- look the id up in whichever panel's target map has it.
+  if (event == "clicked"_key) {
+    auto* targets = &local_menu_targets_;
+    auto target_it = targets->find(id);
+    if (target_it == targets->end()) {
+      targets = &sandbox_menu_targets_;
+      target_it = targets->find(id);
+    }
+    if (target_it != targets->end()) {
+      const row_menu_target target = target_it->second;
+      auto& entries = target.is_sandbox ? sandbox_entries_ : local_entries_;
+      auto entry_it =
+          std::find_if(entries.begin(), entries.end(), [&](const file_row& e) { return e.name == target.name; });
+      switch (target.action) {
+        case row_menu_action::properties:
+          if (entry_it != entries.end())
+            show_properties_dialog(target.is_sandbox, *entry_it);
+          return;
+        case row_menu_action::rename:
+          if (entry_it != entries.end())
+            show_rename_dialog(target.is_sandbox, target.name);
+          return;
+        case row_menu_action::copy_path:
+          set_status("Copied path for \"" + target.name + "\" to clipboard.");
+          return;
+      }
+    }
+  }
+
+  if (!rename_root_key_.empty()) {
+    if (id == rename_window_id_ && event == "closed"_key) {
+      remove_rename_objects();
+      return;
+    }
+    if (id == rename_ok_id_ && event == "clicked"_key) {
+      apply_rename();
+      return;
+    }
+    // EnterReturnsTrue on the InputText (see kRenameLayout) -- Enter confirms
+    // the rename the same way clicking "Rename" does, mirroring left_path/
+    // right_path's own Enter-to-navigate behavior elsewhere in this form.
+    if (id == wish_id_of(rename_input_ptr_) && event == "changed"_key) {
+      apply_rename();
+      return;
+    }
+    if (id == rename_cancel_id_ && event == "clicked"_key) {
+      request_close_rename();
+      return;
+    }
+  }
+
+  if (!properties_root_key_.empty()) {
+    if (id == properties_window_id_ && event == "closed"_key) {
+      remove_properties_objects();
+      return;
+    }
+    if (id == properties_close_id_ && event == "clicked"_key) {
+      request_close_properties();
+      return;
+    }
   }
 }
 

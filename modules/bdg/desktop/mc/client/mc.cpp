@@ -97,7 +97,12 @@ dynamic call_with_retry(
 
 // Enumerate `dir` and push the listing to the server via
 // update_local_listing(), the shape Mc::do_update_local_listing()
-// expects: {path, files: [{name, type, size, modified}, ...]}.
+// expects: {path, files: [{name, type, size, modified}, ...], file_count,
+// total_size, disk_used, disk_free, disk_total}. The last five are only
+// computable client-side (this machine's own filesystem/disk), which is why
+// mc's disk-usage summary strip is populated from here rather than
+// server-side the way the sandbox panel's own strip is (see
+// Mc::navigate_sandbox() in server/mc.cpp).
 void report_local_listing(
     const std::shared_ptr<rmi::proxy::dynamic>& explorer, const std::shared_ptr<fs::path>& cur_dir) {
   dynamic files;
@@ -110,13 +115,24 @@ void report_local_listing(
     (*e)["modified"_key] = std::string{};
     files[i++] = dynamic_ptr{e};
   }
+  int32_t file_count = 0;
+  uintmax_t total_bytes = 0;
   std::error_code ec;
   for (auto& dirent : fs::directory_iterator{*cur_dir, ec}) {
     auto e = std::make_shared<dynamic>();
     (*e)["name"_key] = dirent.path().filename().string();
     bool is_dir = dirent.is_directory(ec);
     (*e)["type"_key] = is_dir ? std::string{"dir"} : std::string{"file"};
-    (*e)["size"_key] = is_dir ? std::string{} : format_bytes(dirent.file_size(ec));
+    if (!is_dir) {
+      uintmax_t bytes = dirent.file_size(ec);
+      if (!ec) {
+        ++file_count;
+        total_bytes += bytes;
+      }
+      (*e)["size"_key] = format_bytes(bytes);
+    } else {
+      (*e)["size"_key] = std::string{};
+    }
     auto ftime = dirent.last_write_time(ec);
     (*e)["modified"_key] = ec ? std::string{} : format_modified(ftime);
     files[i++] = dynamic_ptr{e};
@@ -125,6 +141,16 @@ void report_local_listing(
   dynamic args;
   args["path"_key] = cur_dir->string();
   args["files"_key] = dynamic_ptr{std::make_shared<dynamic>(std::move(files))};
+  args["file_count"_key] = file_count;
+  args["total_size"_key] = format_bytes(total_bytes);
+
+  auto space_info = fs::space(*cur_dir, ec);
+  if (!ec) {
+    args["disk_used"_key] = format_bytes(space_info.capacity - space_info.free);
+    args["disk_free"_key] = format_bytes(space_info.free);
+    args["disk_total"_key] = format_bytes(space_info.capacity);
+  }
+
   call_with_retry(explorer, "update_local_listing"_key, std::move(args));
 }
 
@@ -164,6 +190,7 @@ void confirm_overwrite(wish_app_host& s, const std::string& message, std::functi
   dynamic params;
   params["title"_key] = std::string{"Confirm Overwrite"};
   params["message"_key] = message;
+  params["icon"_key] = std::string{"question"};
   params["buttons"_key] = std::string{"yes_no"};
   auto raw = s.instantiate("wish"_key, "MessageBox"_key, std::move(params)).get();
   auto mb = std::make_shared<rmi::proxy::dynamic>(std::move(raw));
@@ -189,6 +216,22 @@ void run_mc(wish_app_host& s) {
     if (!fs::is_directory(target, ec))
       return;
     *cur_dir = target;
+    report_local_listing(explorer, cur_dir);
+  });
+
+  // User confirmed the local panel's Rename dialog (server-side, since only
+  // the client can touch its own filesystem -- see mc.hpp's class doc
+  // comment). Fast/local, so this runs inline rather than on a background
+  // thread the way do_upload/do_download do for their own (potentially
+  // slow, network-bound) transfers.
+  explorer->onEvent("on_local_rename_requested"_key, [explorer, cur_dir](dynamic payload) {
+    auto old_name = payload.as<std::string>("old_name"_key);
+    auto new_name = payload.as<std::string>("new_name"_key);
+    std::error_code ec;
+    fs::rename(*cur_dir / old_name, *cur_dir / new_name, ec);
+    dynamic patch;
+    patch["status"_key] = ec ? std::string{"Rename failed: "} + ec.message() : std::string{"Renamed."};
+    explorer->set(std::move(patch)).get();
     report_local_listing(explorer, cur_dir);
   });
 

@@ -56,6 +56,49 @@ dynamic make_local_listing_args(const std::string& path, const std::vector<fake_
   return args;
 }
 
+// Returns the ContextMenu child of TableRow `row` (fill_table()'s per-row
+// ContextMenu is always appended as a child alongside the name/size/modified
+// cells -- see mc.cpp), or a null dynamic_ptr if `row` has none (e.g. the
+// ".." pseudo-row, which fill_table() deliberately skips).
+dynamic_ptr find_row_context_menu(const dynamic& row) {
+  auto* rcf = row.findField<dynamic_ptr>("children"_key);
+  if (!rcf || !*rcf)
+    return nullptr;
+  dynamic_ptr found{nullptr};
+  (*rcf)->forEach([&](bison::key_t, const field& f) {
+    if (found)
+      return;
+    auto* ep = f.get<dynamic_ptr>();
+    if (!ep || !*ep)
+      return;
+    auto* cls = (*ep)->findField(dynamic::CLASS);
+    if (cls && cls->as<bison::key_t>() == "ContextMenu"_key)
+      found = *ep;
+  });
+  return found;
+}
+
+// Returns the MenuItem child of `menu` (a ContextMenu) whose "label" field
+// equals `label`, or a null dynamic_ptr if none match.
+dynamic_ptr find_menu_item(const dynamic& menu, const std::string& label) {
+  auto* cf = menu.findField<dynamic_ptr>("children"_key);
+  if (!cf || !*cf)
+    return nullptr;
+  dynamic_ptr found{nullptr};
+  (*cf)->forEach([&](bison::key_t, const field& f) {
+    if (found)
+      return;
+    auto* ep = f.get<dynamic_ptr>();
+    if (!ep || !*ep)
+      return;
+    auto* cls = (*ep)->findField(dynamic::CLASS);
+    auto* lbl = (*ep)->findField<std::string>("label"_key);
+    if (cls && cls->as<bison::key_t>() == "MenuItem"_key && lbl && *lbl == label)
+      found = *ep;
+  });
+  return found;
+}
+
 } // namespace
 
 // ── Local (non-RMI) fixture — checks prototype defaults ───────────────────────
@@ -342,6 +385,97 @@ TEST_F(McRmiTest, SetTransferLabelMirrorsToProgressBarLabel) {
   EXPECT_EQ(
       srv_->last_session->ui_objects.at(root_ + ".main.transfer_progress")->as<std::string>("label"_key),
       "3 of 5");
+}
+
+// ── Disk-usage summary strip ───────────────────────────────────────────────────
+
+TEST_F(McRmiTest, UpdateLocalListingWithDiskStatsPopulatesSummaryLabels) {
+  dynamic args = make_local_listing_args("/home/user", {{"a.txt", "file", "1 KB", ""}});
+  args["file_count"_key] = int32_t{3};
+  args["total_size"_key] = std::string{"12.0 MB"};
+  args["disk_used"_key] = std::string{"1.0 GB"};
+  args["disk_free"_key] = std::string{"9.0 GB"};
+  args["disk_total"_key] = std::string{"10.0 GB"};
+  proxy_->call("update_local_listing"_key, std::move(args)).get();
+
+  EXPECT_EQ(
+      srv_->last_session->ui_objects.at(root_ + ".main.panels.left.left_stats")->as<std::string>("text"_key),
+      "3 files, 12.0 MB");
+  EXPECT_EQ(
+      srv_->last_session->ui_objects.at(root_ + ".main.panels.left.left_disk")->as<std::string>("text"_key),
+      "Disk: 1.0 GB used, 9.0 GB free of 10.0 GB");
+}
+
+TEST_F(McRmiTest, UpdateLocalListingWithoutDiskStatsLeavesSummaryBlank) {
+  // A client that predates this feature omits file_count/total_size/disk_*
+  // entirely -- do_update_local_listing() must degrade to a blank strip
+  // rather than crashing or showing stale/garbage text.
+  update_local_listing("/home/user", {{"a.txt", "file", "1 KB", ""}});
+
+  EXPECT_EQ(
+      srv_->last_session->ui_objects.at(root_ + ".main.panels.left.left_stats")->as<std::string>("text"_key), "");
+  EXPECT_EQ(
+      srv_->last_session->ui_objects.at(root_ + ".main.panels.left.left_disk")->as<std::string>("text"_key), "");
+}
+
+TEST_F(McRmiTest, SandboxStatsShowsFileCountAndTotalSizeExcludingDirectories) {
+  const auto& resource_dir = srv_->last_session->resource_dir;
+  for (auto& entry : std::filesystem::directory_iterator{resource_dir})
+    std::filesystem::remove_all(entry.path());
+  { std::ofstream out(resource_dir / "a.txt"); out << std::string(1000, 'x'); }
+  { std::ofstream out(resource_dir / "b.txt"); out << std::string(2000, 'x'); }
+  std::filesystem::create_directories(resource_dir / "sub"); // must not count as a file
+  refresh_sandbox();
+
+  EXPECT_EQ(
+      srv_->last_session->ui_objects.at(root_ + ".main.panels.right.right_stats")->as<std::string>("text"_key),
+      "2 files, 2.9 KB");
+
+  auto disk_text = srv_->last_session->ui_objects.at(root_ + ".main.panels.right.right_disk")->as<std::string>("text"_key);
+  EXPECT_EQ(disk_text.rfind("Disk: ", 0), 0u) << "got: " << disk_text;
+}
+
+// ── Row context menu (Properties / Rename / Copy Path) ─────────────────────────
+
+TEST_F(McRmiTest, SandboxRowContextMenuHasExpectedItemsWithSandboxRelativeCopyPath) {
+  const auto& resource_dir = srv_->last_session->resource_dir;
+  for (auto& entry : std::filesystem::directory_iterator{resource_dir})
+    std::filesystem::remove_all(entry.path());
+  { std::ofstream out(resource_dir / "note.txt"); out << "hi"; }
+  refresh_sandbox();
+
+  auto* cf =
+      srv_->last_session->ui_objects.at(root_ + ".main.panels.right.right_table")->findField<dynamic_ptr>("children"_key);
+  ASSERT_NE(cf, nullptr);
+  ASSERT_TRUE(*cf);
+  auto row0 = (**cf)[size_t{0}].as<dynamic_ptr>();
+  ASSERT_TRUE(row0);
+
+  auto menu = find_row_context_menu(*row0);
+  ASSERT_TRUE(menu) << "expected a ContextMenu on the row";
+
+  EXPECT_TRUE(find_menu_item(*menu, "Properties"));
+  EXPECT_TRUE(find_menu_item(*menu, "Rename..."));
+  auto copy_path = find_menu_item(*menu, "Copy Path");
+  ASSERT_TRUE(copy_path);
+  EXPECT_EQ(copy_path->as<std::string>("copy_text"_key), "/note.txt");
+}
+
+TEST_F(McRmiTest, LocalRowContextMenuCopyPathUsesLocalPath) {
+  update_local_listing("/home/user", {{"notes.txt", "file", "1 KB", ""}});
+
+  auto* cf =
+      srv_->last_session->ui_objects.at(root_ + ".main.panels.left.left_table")->findField<dynamic_ptr>("children"_key);
+  ASSERT_NE(cf, nullptr);
+  ASSERT_TRUE(*cf);
+  auto row0 = (**cf)[size_t{0}].as<dynamic_ptr>();
+  ASSERT_TRUE(row0);
+
+  auto menu = find_row_context_menu(*row0);
+  ASSERT_TRUE(menu);
+  auto copy_path = find_menu_item(*menu, "Copy Path");
+  ASSERT_TRUE(copy_path);
+  EXPECT_EQ(copy_path->as<std::string>("copy_text"_key), "/home/user/notes.txt");
 }
 
 // ── Event routing ─────────────────────────────────────────────────────────────
@@ -654,6 +788,244 @@ TEST_F(McEventTest, LocalRowSelectedHighlightsSelectedRowOnly) {
   ASSERT_TRUE(row1);
   EXPECT_FALSE(row0->as<bool>("selected"_key));
   EXPECT_TRUE(row1->as<bool>("selected"_key));
+}
+
+// ── ".." row has no context menu ────────────────────────────────────────────────
+
+TEST_F(McEventTest, DotDotRowHasNoContextMenu) {
+  const auto& resource_dir = srv_->last_session->resource_dir;
+  std::filesystem::create_directories(resource_dir / "sub");
+  proxy_->call("refresh_sandbox"_key, dynamic{}).get();
+
+  // Navigate into "sub" via the right_path InputText's "changed" event (same
+  // idiom as SandboxSortKeepsDotDotPinnedFirst above), which injects a
+  // leading ".." row.
+  dynamic changed;
+  changed["value"_key] = std::string{"/sub"};
+  handler_->on_event(widget_id(".main.panels.right.right_path"), "changed"_key, changed);
+
+  auto* cf =
+      srv_->last_session->ui_objects.at(root_ + ".main.panels.right.right_table")->findField<dynamic_ptr>("children"_key);
+  ASSERT_NE(cf, nullptr);
+  ASSERT_TRUE(*cf);
+  auto row0 = (**cf)[size_t{0}].as<dynamic_ptr>();
+  ASSERT_TRUE(row0);
+  EXPECT_FALSE(find_row_context_menu(*row0)) << "\"..\" row should have no context menu";
+}
+
+// ── Properties dialog ────────────────────────────────────────────────────────────
+
+TEST_F(McEventTest, SandboxPropertiesMenuItemClickOpensDialogWithCorrectInfo) {
+  const auto& resource_dir = srv_->last_session->resource_dir;
+  for (auto& entry : std::filesystem::directory_iterator{resource_dir})
+    std::filesystem::remove_all(entry.path());
+  { std::ofstream out(resource_dir / "note.txt"); out << "hello"; }
+  proxy_->call("refresh_sandbox"_key, dynamic{}).get();
+
+  auto* cf =
+      srv_->last_session->ui_objects.at(root_ + ".main.panels.right.right_table")->findField<dynamic_ptr>("children"_key);
+  auto row0 = (**cf)[size_t{0}].as<dynamic_ptr>();
+  auto menu = find_row_context_menu(*row0);
+  ASSERT_TRUE(menu);
+  auto properties = find_menu_item(*menu, "Properties");
+  ASSERT_TRUE(properties);
+
+  handler_->on_event(properties->as<bison::key_t>("__wish_id"_key), "clicked"_key, dynamic{});
+
+  auto& objs = srv_->last_session->ui_objects;
+  EXPECT_EQ(objs.at("__mc_properties_0.grid.name_row")->as<std::string>("text"_key), "Name: note.txt");
+  EXPECT_EQ(objs.at("__mc_properties_0.grid.type_row")->as<std::string>("text"_key), "Type: File");
+  EXPECT_EQ(objs.at("__mc_properties_0.grid.size_row")->as<std::string>("text"_key), "Size: 5 B");
+  EXPECT_EQ(objs.at("__mc_properties_0.grid.path_row")->as<std::string>("text"_key), "Path: /note.txt");
+
+  // The Close button requests the dialog close; actual removal is deferred
+  // to the Window's own "closed" event, mirroring
+  // WindowClosedEmitsClosedAndCleansUp's pattern for the main window.
+  auto close_id = objs.at("__mc_properties_0.close_row.btn_close")->as<bison::key_t>("__wish_id"_key);
+  handler_->on_event(close_id, "clicked"_key, dynamic{});
+  auto properties_window_id = objs.at("__mc_properties_0")->as<bison::key_t>("__wish_id"_key);
+  handler_->on_event(properties_window_id, "closed"_key, dynamic{});
+  EXPECT_EQ(objs.count("__mc_properties_0"), 0u);
+}
+
+// ── Rename dialog ─────────────────────────────────────────────────────────────
+
+TEST_F(McEventTest, SandboxRenameMenuItemClickOpensDialogPrefilledWithCurrentName) {
+  const auto& resource_dir = srv_->last_session->resource_dir;
+  for (auto& entry : std::filesystem::directory_iterator{resource_dir})
+    std::filesystem::remove_all(entry.path());
+  { std::ofstream out(resource_dir / "note.txt"); out << "hi"; }
+  proxy_->call("refresh_sandbox"_key, dynamic{}).get();
+
+  auto* cf =
+      srv_->last_session->ui_objects.at(root_ + ".main.panels.right.right_table")->findField<dynamic_ptr>("children"_key);
+  auto row0 = (**cf)[size_t{0}].as<dynamic_ptr>();
+  auto menu = find_row_context_menu(*row0);
+  auto rename = find_menu_item(*menu, "Rename...");
+  ASSERT_TRUE(rename);
+
+  handler_->on_event(rename->as<bison::key_t>("__wish_id"_key), "clicked"_key, dynamic{});
+
+  auto& objs = srv_->last_session->ui_objects;
+  EXPECT_EQ(objs.at("__mc_rename_0.new_name")->as<std::string>("value"_key), "note.txt");
+  EXPECT_EQ(objs.at("__mc_rename_0.message")->as<std::string>("text"_key), "Rename \"note.txt\" to:");
+}
+
+TEST_F(McEventTest, SandboxRenameApplyViaOkButtonRenamesFileAndRefreshesListing) {
+  const auto& resource_dir = srv_->last_session->resource_dir;
+  for (auto& entry : std::filesystem::directory_iterator{resource_dir})
+    std::filesystem::remove_all(entry.path());
+  { std::ofstream out(resource_dir / "old.txt"); out << "hi"; }
+  proxy_->call("refresh_sandbox"_key, dynamic{}).get();
+
+  auto* cf =
+      srv_->last_session->ui_objects.at(root_ + ".main.panels.right.right_table")->findField<dynamic_ptr>("children"_key);
+  auto row0 = (**cf)[size_t{0}].as<dynamic_ptr>();
+  auto rename = find_menu_item(*find_row_context_menu(*row0), "Rename...");
+  handler_->on_event(rename->as<bison::key_t>("__wish_id"_key), "clicked"_key, dynamic{});
+
+  auto& objs = srv_->last_session->ui_objects;
+  (*objs.at("__mc_rename_0.new_name"))["value"_key] = std::string{"new.txt"};
+  auto ok_id = objs.at("__mc_rename_0.buttons.btn_ok")->as<bison::key_t>("__wish_id"_key);
+  handler_->on_event(ok_id, "clicked"_key, dynamic{});
+
+  EXPECT_FALSE(std::filesystem::exists(resource_dir / "old.txt"));
+  EXPECT_TRUE(std::filesystem::exists(resource_dir / "new.txt"));
+  EXPECT_EQ(objs.at(root_ + ".main.status")->as<std::string>("text"_key), "Renamed.");
+  EXPECT_EQ(table_name_cell_text(".main.panels.right.right_table", 0), "new.txt");
+
+  // request_close_at() only sets a flag; confirm the dialog is still present
+  // until the Window's own "closed" event actually removes it.
+  ASSERT_EQ(objs.count("__mc_rename_0"), 1u);
+  auto rename_window_id = objs.at("__mc_rename_0")->as<bison::key_t>("__wish_id"_key);
+  handler_->on_event(rename_window_id, "closed"_key, dynamic{});
+  EXPECT_EQ(objs.count("__mc_rename_0"), 0u);
+}
+
+TEST_F(McEventTest, SandboxRenameViaEnterOnInputAppliesRenameSameAsOkButton) {
+  const auto& resource_dir = srv_->last_session->resource_dir;
+  for (auto& entry : std::filesystem::directory_iterator{resource_dir})
+    std::filesystem::remove_all(entry.path());
+  { std::ofstream out(resource_dir / "old.txt"); out << "hi"; }
+  proxy_->call("refresh_sandbox"_key, dynamic{}).get();
+
+  auto* cf =
+      srv_->last_session->ui_objects.at(root_ + ".main.panels.right.right_table")->findField<dynamic_ptr>("children"_key);
+  auto row0 = (**cf)[size_t{0}].as<dynamic_ptr>();
+  auto rename = find_menu_item(*find_row_context_menu(*row0), "Rename...");
+  handler_->on_event(rename->as<bison::key_t>("__wish_id"_key), "clicked"_key, dynamic{});
+
+  auto& objs = srv_->last_session->ui_objects;
+  (*objs.at("__mc_rename_0.new_name"))["value"_key] = std::string{"new.txt"};
+  auto input_id = objs.at("__mc_rename_0.new_name")->as<bison::key_t>("__wish_id"_key);
+  dynamic changed;
+  changed["value"_key] = std::string{"new.txt"};
+  handler_->on_event(input_id, "changed"_key, changed);
+
+  EXPECT_TRUE(std::filesystem::exists(resource_dir / "new.txt"));
+}
+
+TEST_F(McEventTest, SandboxRenameCancelDoesNotRenameAndCleansUpOnClose) {
+  const auto& resource_dir = srv_->last_session->resource_dir;
+  for (auto& entry : std::filesystem::directory_iterator{resource_dir})
+    std::filesystem::remove_all(entry.path());
+  { std::ofstream out(resource_dir / "old.txt"); out << "hi"; }
+  proxy_->call("refresh_sandbox"_key, dynamic{}).get();
+
+  auto* cf =
+      srv_->last_session->ui_objects.at(root_ + ".main.panels.right.right_table")->findField<dynamic_ptr>("children"_key);
+  auto row0 = (**cf)[size_t{0}].as<dynamic_ptr>();
+  auto rename = find_menu_item(*find_row_context_menu(*row0), "Rename...");
+  handler_->on_event(rename->as<bison::key_t>("__wish_id"_key), "clicked"_key, dynamic{});
+
+  auto& objs = srv_->last_session->ui_objects;
+  auto cancel_id = objs.at("__mc_rename_0.buttons.btn_cancel")->as<bison::key_t>("__wish_id"_key);
+  handler_->on_event(cancel_id, "clicked"_key, dynamic{});
+
+  EXPECT_TRUE(std::filesystem::exists(resource_dir / "old.txt"));
+  ASSERT_EQ(objs.count("__mc_rename_0"), 1u) << "Cancel requests close but doesn't remove objects yet";
+
+  auto rename_window_id = objs.at("__mc_rename_0")->as<bison::key_t>("__wish_id"_key);
+  handler_->on_event(rename_window_id, "closed"_key, dynamic{});
+  EXPECT_EQ(objs.count("__mc_rename_0"), 0u);
+}
+
+TEST_F(McEventTest, SandboxRenameRejectsNameWithPathSeparator) {
+  const auto& resource_dir = srv_->last_session->resource_dir;
+  for (auto& entry : std::filesystem::directory_iterator{resource_dir})
+    std::filesystem::remove_all(entry.path());
+  { std::ofstream out(resource_dir / "old.txt"); out << "hi"; }
+  proxy_->call("refresh_sandbox"_key, dynamic{}).get();
+
+  auto* cf =
+      srv_->last_session->ui_objects.at(root_ + ".main.panels.right.right_table")->findField<dynamic_ptr>("children"_key);
+  auto row0 = (**cf)[size_t{0}].as<dynamic_ptr>();
+  auto rename = find_menu_item(*find_row_context_menu(*row0), "Rename...");
+  handler_->on_event(rename->as<bison::key_t>("__wish_id"_key), "clicked"_key, dynamic{});
+
+  auto& objs = srv_->last_session->ui_objects;
+  (*objs.at("__mc_rename_0.new_name"))["value"_key] = std::string{"a/b.txt"};
+  auto ok_id = objs.at("__mc_rename_0.buttons.btn_ok")->as<bison::key_t>("__wish_id"_key);
+  handler_->on_event(ok_id, "clicked"_key, dynamic{});
+
+  EXPECT_TRUE(std::filesystem::exists(resource_dir / "old.txt")) << "invalid rename must not touch the filesystem";
+  EXPECT_EQ(objs.at(root_ + ".main.status")->as<std::string>("text"_key), "Invalid name.");
+}
+
+TEST_F(McEventTest, LocalRenameApplyEmitsOnLocalRenameRequested) {
+  proxy_->call("update_local_listing"_key, make_local_listing_args("/home", {{"old.txt", "file", "1 B", ""}})).get();
+
+  auto* cf =
+      srv_->last_session->ui_objects.at(root_ + ".main.panels.left.left_table")->findField<dynamic_ptr>("children"_key);
+  auto row0 = (**cf)[size_t{0}].as<dynamic_ptr>();
+  auto rename = find_menu_item(*find_row_context_menu(*row0), "Rename...");
+  ASSERT_TRUE(rename);
+  handler_->on_event(rename->as<bison::key_t>("__wish_id"_key), "clicked"_key, dynamic{});
+
+  auto& objs = srv_->last_session->ui_objects;
+  (*objs.at("__mc_rename_0.new_name"))["value"_key] = std::string{"new.txt"};
+
+  bool got = false;
+  dynamic captured;
+  auto prev = std::move(srv_->last_session->emit_event);
+  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
+    if (event == "on_local_rename_requested"_key) {
+      got = true;
+      captured = std::move(payload);
+    }
+    if (prev)
+      prev(id, event, std::move(payload));
+  };
+
+  auto ok_id = objs.at("__mc_rename_0.buttons.btn_ok")->as<bison::key_t>("__wish_id"_key);
+  handler_->on_event(ok_id, "clicked"_key, dynamic{});
+
+  wait_for(got);
+  ASSERT_TRUE(got);
+  EXPECT_EQ(captured.as<std::string>("old_name"_key), "old.txt");
+  EXPECT_EQ(captured.as<std::string>("new_name"_key), "new.txt");
+}
+
+// ── Copy Path ─────────────────────────────────────────────────────────────────
+
+TEST_F(McEventTest, SandboxCopyPathMenuItemClickSetsStatusMessage) {
+  const auto& resource_dir = srv_->last_session->resource_dir;
+  for (auto& entry : std::filesystem::directory_iterator{resource_dir})
+    std::filesystem::remove_all(entry.path());
+  { std::ofstream out(resource_dir / "note.txt"); out << "hi"; }
+  proxy_->call("refresh_sandbox"_key, dynamic{}).get();
+
+  auto* cf =
+      srv_->last_session->ui_objects.at(root_ + ".main.panels.right.right_table")->findField<dynamic_ptr>("children"_key);
+  auto row0 = (**cf)[size_t{0}].as<dynamic_ptr>();
+  auto copy_item = find_menu_item(*find_row_context_menu(*row0), "Copy Path");
+  ASSERT_TRUE(copy_item);
+
+  handler_->on_event(copy_item->as<bison::key_t>("__wish_id"_key), "clicked"_key, dynamic{});
+
+  EXPECT_EQ(
+      srv_->last_session->ui_objects.at(root_ + ".main.status")->as<std::string>("text"_key),
+      "Copied path for \"note.txt\" to clipboard.");
 }
 
 // ── Overwrite confirmation ─────────────────────────────────────────────────────
