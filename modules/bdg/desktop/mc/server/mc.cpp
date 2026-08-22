@@ -15,6 +15,7 @@
 #include <ctime>
 #include <filesystem>
 #include <iomanip>
+#include <set>
 #include <sstream>
 
 namespace bdg::wish {
@@ -321,7 +322,8 @@ void mc::on_init() {
 
 void mc::fill_table(
     const ui_element_ptr& table, const std::vector<file_row>& entries, bool is_sandbox,
-    std::unordered_map<key_t, row_menu_target, key_t, key_t>& menu_targets, int32_t selected_index) {
+    std::unordered_map<key_t, row_menu_target, key_t, key_t>& menu_targets,
+    const std::set<std::string>& selected_names) {
   menu_targets.clear();
   if (!table)
     return;
@@ -335,7 +337,7 @@ void mc::fill_table(
   for (auto& entry : entries) {
     ui_element_ptr row{dynamic::instantiate("wish"_key, "TableRow"_key)};
     row["order"_key] = idx;
-    row["selected"_key] = idx == selected_index;
+    row["selected"_key] = selected_names.count(entry.name) > 0;
 
     auto make_label = [&](const std::string& text, int32_t order) {
       ui_element_ptr lbl{dynamic::instantiate("wish"_key, "Label"_key)};
@@ -446,7 +448,7 @@ void mc::sort_entries(std::vector<file_row>& entries, int32_t sort_column_id, bo
 void mc::on_table_sorted(
     const dynamic& payload, std::vector<file_row>& entries, const ui_element_ptr& table, bool is_sandbox,
     std::unordered_map<key_t, row_menu_target, key_t, key_t>& menu_targets, int32_t& sort_column_id,
-    bool& sort_ascending) {
+    bool& sort_ascending, const std::set<std::string>& selected_names) {
   auto* col_f = payload.findField<int32_t>("column_id"_key);
   auto* asc_f = payload.findField<bool>("ascending"_key);
   if (!col_f || !asc_f)
@@ -454,7 +456,65 @@ void mc::on_table_sorted(
   sort_column_id = *col_f;
   sort_ascending = *asc_f;
   sort_entries(entries, sort_column_id, sort_ascending);
-  fill_table(table, entries, is_sandbox, menu_targets);
+  fill_table(table, entries, is_sandbox, menu_targets, selected_names);
+}
+
+// ── Multi-selection ───────────────────────────────────────────────────────────
+
+void mc::apply_row_click(
+    std::set<std::string>& selected, int32_t& anchor, const std::vector<file_row>& entries, int32_t idx, bool ctrl,
+    bool shift) {
+  const std::string& name = entries[static_cast<size_t>(idx)].name;
+  if (shift && anchor >= 0 && static_cast<size_t>(anchor) < entries.size()) {
+    // Range-select between the anchor and idx, replacing the previous
+    // selection -- matches Explorer's Shift+click/drag semantics. The
+    // anchor itself does not move, so a following Shift+click/drag sweep
+    // keeps redefining the same range's far end.
+    selected.clear();
+    int32_t lo = std::min(anchor, idx);
+    int32_t hi = std::max(anchor, idx);
+    for (int32_t i = lo; i <= hi; ++i)
+      selected.insert(entries[static_cast<size_t>(i)].name);
+  } else if (ctrl) {
+    // Toggle this row alone; becomes the new anchor so a following
+    // Shift+click/drag extends from here.
+    if (!selected.insert(name).second)
+      selected.erase(name);
+    anchor = idx;
+  } else {
+    // Plain click (also the fallback for Shift with no anchor yet):
+    // replace the selection with just this row.
+    selected.clear();
+    selected.insert(name);
+    anchor = idx;
+  }
+}
+
+std::string mc::describe_selection(const std::set<std::string>& selected) {
+  if (selected.empty())
+    return "Selected: (none)";
+  if (selected.size() == 1)
+    return "Selected: " + *selected.begin();
+  return "Selected: " + std::to_string(selected.size()) + " items";
+}
+
+std::vector<std::string> mc::selected_file_names(
+    const std::set<std::string>& selected, const std::vector<file_row>& entries) {
+  std::vector<std::string> names;
+  for (auto& e : entries)
+    if (e.type == "file" && selected.count(e.name))
+      names.push_back(e.name);
+  return names;
+}
+
+dynamic mc::make_names_payload(const std::vector<std::string>& names) {
+  dynamic payload;
+  dynamic arr;
+  size_t i = 0;
+  for (auto& n : names)
+    arr[i++] = n;
+  payload["names"_key] = dynamic_ptr{std::make_shared<dynamic>(std::move(arr))};
+  return payload;
 }
 
 void mc::set_status(const std::string& message) {
@@ -533,11 +593,15 @@ void mc::navigate_sandbox(
 
   sandbox_path_ = relative_path;
   sandbox_entries_ = std::move(entries);
+  // Navigating to a (possibly different) directory invalidates whatever was
+  // selected before -- the old names may not even exist here.
+  selected_sandbox_names_.clear();
+  sandbox_selection_anchor_ = -1;
   // Re-apply whatever sort column the user last clicked, so navigating
   // away and back doesn't silently drop it (matches Explorer's own
   // persisted-sort behavior).
   sort_entries(sandbox_entries_, sandbox_sort_column_id_, sandbox_sort_ascending_);
-  fill_table(right_table_ptr_, sandbox_entries_, true, sandbox_menu_targets_);
+  fill_table(right_table_ptr_, sandbox_entries_, true, sandbox_menu_targets_, selected_sandbox_names_);
 
   if (right_stats_ptr_)
     right_stats_ptr_["text"_key] =
@@ -555,10 +619,8 @@ void mc::navigate_sandbox(
   (*this)["sandbox_path"_key] = relative_path;
   set_status("Ready.");
 
-  selected_sandbox_name_.clear();
-  selected_sandbox_is_dir_ = false;
   if (right_selected_ptr_)
-    right_selected_ptr_["text"_key] = "Selected: (none)";
+    right_selected_ptr_["text"_key] = describe_selection(selected_sandbox_names_);
 }
 
 // ── Rename dialog ─────────────────────────────────────────────────────────────
@@ -773,8 +835,13 @@ dynamic mc::do_update_local_listing(const dynamic& args) {
     });
   }
 
+  // A freshly-reported listing (possibly a different directory) invalidates
+  // whatever was selected before.
+  selected_local_names_.clear();
+  local_selection_anchor_ = -1;
+
   sort_entries(local_entries_, local_sort_column_id_, local_sort_ascending_);
-  fill_table(left_table_ptr_, local_entries_, false, local_menu_targets_);
+  fill_table(left_table_ptr_, local_entries_, false, local_menu_targets_, selected_local_names_);
   if (left_path_ptr_)
     left_path_ptr_["value"_key] = local_path_;
   (*this)["local_path"_key] = local_path_;
@@ -798,10 +865,8 @@ dynamic mc::do_update_local_listing(const dynamic& args) {
         used_f && free_f && total_f ? "Disk: " + *used_f + " used, " + *free_f + " free of " + *total_f : std::string{};
   }
 
-  selected_local_name_.clear();
-  selected_local_is_dir_ = false;
   if (left_selected_ptr_)
-    left_selected_ptr_["text"_key] = "Selected: (none)";
+    left_selected_ptr_["text"_key] = describe_selection(selected_local_names_);
   return dynamic{};
 }
 
@@ -833,11 +898,15 @@ void mc::on_event(key_t id, key_t event, const dynamic& payload) {
     if (event == "row_selected"_key) {
       int32_t idx = payload.as<int32_t>("index"_key);
       if (idx >= 0 && static_cast<size_t>(idx) < local_entries_.size()) {
-        selected_local_name_ = local_entries_[static_cast<size_t>(idx)].name;
-        selected_local_is_dir_ = local_entries_[static_cast<size_t>(idx)].type == "dir";
+        bool ctrl = false, shift = false;
+        if (auto* v = payload.findField<bool>("ctrl"_key))
+          ctrl = *v;
+        if (auto* v = payload.findField<bool>("shift"_key))
+          shift = *v;
+        apply_row_click(selected_local_names_, local_selection_anchor_, local_entries_, idx, ctrl, shift);
         if (left_selected_ptr_)
-          left_selected_ptr_["text"_key] = "Selected: " + selected_local_name_;
-        fill_table(left_table_ptr_, local_entries_, false, local_menu_targets_, idx);
+          left_selected_ptr_["text"_key] = describe_selection(selected_local_names_);
+        fill_table(left_table_ptr_, local_entries_, false, local_menu_targets_, selected_local_names_);
       }
       return;
     }
@@ -855,16 +924,16 @@ void mc::on_event(key_t id, key_t event, const dynamic& payload) {
       return;
     }
     if (event == "sorted"_key) {
-      // Row positions change under the new sort order, so the previous
-      // selection index no longer points at the same entry -- reset it,
-      // mirroring do_update_local_listing()'s own reset-on-reload behavior.
-      selected_local_name_.clear();
-      selected_local_is_dir_ = false;
-      if (left_selected_ptr_)
-        left_selected_ptr_["text"_key] = "Selected: (none)";
+      // Row positions change under the new sort order, so a Shift-range
+      // anchor (an index) would point at the wrong entry -- reset it. The
+      // selection itself is name-keyed (see selected_local_names_'s doc
+      // comment) and survives the reorder unchanged.
+      local_selection_anchor_ = -1;
       on_table_sorted(
           payload, local_entries_, left_table_ptr_, false, local_menu_targets_, local_sort_column_id_,
-          local_sort_ascending_);
+          local_sort_ascending_, selected_local_names_);
+      if (left_selected_ptr_)
+        left_selected_ptr_["text"_key] = describe_selection(selected_local_names_);
       return;
     }
   }
@@ -883,11 +952,15 @@ void mc::on_event(key_t id, key_t event, const dynamic& payload) {
     if (event == "row_selected"_key) {
       int32_t idx = payload.as<int32_t>("index"_key);
       if (idx >= 0 && static_cast<size_t>(idx) < sandbox_entries_.size()) {
-        selected_sandbox_name_ = sandbox_entries_[static_cast<size_t>(idx)].name;
-        selected_sandbox_is_dir_ = sandbox_entries_[static_cast<size_t>(idx)].type == "dir";
+        bool ctrl = false, shift = false;
+        if (auto* v = payload.findField<bool>("ctrl"_key))
+          ctrl = *v;
+        if (auto* v = payload.findField<bool>("shift"_key))
+          shift = *v;
+        apply_row_click(selected_sandbox_names_, sandbox_selection_anchor_, sandbox_entries_, idx, ctrl, shift);
         if (right_selected_ptr_)
-          right_selected_ptr_["text"_key] = "Selected: " + selected_sandbox_name_;
-        fill_table(right_table_ptr_, sandbox_entries_, true, sandbox_menu_targets_, idx);
+          right_selected_ptr_["text"_key] = describe_selection(selected_sandbox_names_);
+        fill_table(right_table_ptr_, sandbox_entries_, true, sandbox_menu_targets_, selected_sandbox_names_);
       }
       return;
     }
@@ -906,13 +979,12 @@ void mc::on_event(key_t id, key_t event, const dynamic& payload) {
       return;
     }
     if (event == "sorted"_key) {
-      selected_sandbox_name_.clear();
-      selected_sandbox_is_dir_ = false;
-      if (right_selected_ptr_)
-        right_selected_ptr_["text"_key] = "Selected: (none)";
+      sandbox_selection_anchor_ = -1;
       on_table_sorted(
           payload, sandbox_entries_, right_table_ptr_, true, sandbox_menu_targets_, sandbox_sort_column_id_,
-          sandbox_sort_ascending_);
+          sandbox_sort_ascending_, selected_sandbox_names_);
+      if (right_selected_ptr_)
+        right_selected_ptr_["text"_key] = describe_selection(selected_sandbox_names_);
       return;
     }
   }
@@ -943,28 +1015,45 @@ void mc::on_event(key_t id, key_t event, const dynamic& payload) {
   }
 
   if (id == upload_id_ && event == "clicked"_key) {
-    if (selected_local_name_.empty() || selected_local_is_dir_) {
+    auto files = selected_file_names(selected_local_names_, local_entries_);
+    if (files.empty()) {
       set_status("Select a local file to upload.");
       return;
     }
-    dynamic req;
-    req["name"_key] = selected_local_name_;
-    req["local_path"_key] = local_path_;
-    // A conflicting target asks the client to confirm (via its own
+    // Split the selection into targets that can upload immediately and
+    // ones that would overwrite an existing sandbox file -- the client
+    // confirms the latter once for the whole batch (via its own
     // MessageBox, "on_upload_conflict") instead of this form building a
     // second internal modal -- see mc.hpp's class doc comment.
-    emit(sandbox_has_file(selected_local_name_) ? "on_upload_conflict"_key : "on_upload_requested"_key, std::move(req));
+    std::vector<std::string> ready, conflicts;
+    for (auto& name : files)
+      (sandbox_has_file(name) ? conflicts : ready).push_back(name);
+    if (!ready.empty()) {
+      dynamic req = make_names_payload(ready);
+      req["local_path"_key] = local_path_;
+      emit("on_upload_requested"_key, std::move(req));
+    }
+    if (!conflicts.empty()) {
+      dynamic req = make_names_payload(conflicts);
+      req["local_path"_key] = local_path_;
+      emit("on_upload_conflict"_key, std::move(req));
+    }
     return;
   }
 
   if (id == download_id_ && event == "clicked"_key) {
-    if (selected_sandbox_name_.empty() || selected_sandbox_is_dir_) {
+    auto files = selected_file_names(selected_sandbox_names_, sandbox_entries_);
+    if (files.empty()) {
       set_status("Select a sandbox file to download.");
       return;
     }
-    dynamic req;
-    req["name"_key] = selected_sandbox_name_;
-    emit(local_has_file(selected_sandbox_name_) ? "on_download_conflict"_key : "on_download_requested"_key, std::move(req));
+    std::vector<std::string> ready, conflicts;
+    for (auto& name : files)
+      (local_has_file(name) ? conflicts : ready).push_back(name);
+    if (!ready.empty())
+      emit("on_download_requested"_key, make_names_payload(ready));
+    if (!conflicts.empty())
+      emit("on_download_conflict"_key, make_names_payload(conflicts));
     return;
   }
 

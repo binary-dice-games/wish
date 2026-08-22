@@ -26,6 +26,7 @@
 #include <sstream>
 #include <string>
 #include <thread>
+#include <vector>
 
 namespace bdg::wish {
 
@@ -34,6 +35,21 @@ using namespace bison;
 namespace {
 
 namespace fs = std::filesystem;
+
+// Reads the plain-string array under `payload["names"]` -- see git.cpp's
+// read_string_array() (modules/bdg/desktop/git/server/git.cpp) for the same
+// convention: array entries are raw std::string fields, not nested
+// dynamic_ptr objects, since bison::field has no vector<string> alternative.
+std::vector<std::string> read_names(const dynamic& payload) {
+  std::vector<std::string> names;
+  if (auto* names_f = payload.findField<dynamic_ptr>("names"_key); names_f && *names_f) {
+    (*names_f)->forEach([&](key_t, const field& f) {
+      if (f.is<std::string>())
+        names.push_back(f.as<std::string>());
+    });
+  }
+  return names;
+}
 
 std::string read_local_file(const fs::path& path) {
   std::ifstream in(path, std::ios::binary);
@@ -235,95 +251,108 @@ void run_mc(wish_app_host& s) {
     report_local_listing(explorer, cur_dir);
   });
 
-  // Reads `local_path/name`, pushes it into the sandbox, then asks the
-  // server to re-list the sandbox panel. Shared by the no-conflict
-  // ("on_upload_requested") and confirmed-overwrite ("on_upload_conflict" +
-  // MessageBox "Yes") paths below.
+  // Uploads every entry of `names` from `local_path_str`, then asks the
+  // server to re-list the sandbox panel once the whole batch is done.
+  // Shared by the no-conflict ("on_upload_requested") and
+  // confirmed-overwrite ("on_upload_conflict" + MessageBox "Yes") paths
+  // below.
   //
-  // The actual transfer runs on a detached background thread rather than
-  // inline in the caller: in standalone mode the handler itself runs on the
-  // RMI dispatch thread while holding the session's write lock (see
+  // The whole batch runs sequentially on one detached background thread
+  // rather than inline in the caller, and rather than one thread per file:
+  // in standalone mode the handler itself runs on the RMI dispatch thread
+  // while holding the session's write lock (see
   // bdg::bison::rmi::standalone's "do not block the worker from within an
   // event handler" contract), and that same lock is needed by the render
-  // loop every frame. Blocking here for the whole transfer would freeze the
-  // entire UI, not just the progress bar.
-  auto do_upload = [&s](const std::shared_ptr<rmi::proxy::dynamic>& explorer, std::string name,
+  // loop every frame, so blocking here would freeze the entire UI, not just
+  // the progress bar; running the batch sequentially (rather than one
+  // thread per file, all racing) keeps the shared transfer_progress bar
+  // showing one coherent file's progress at a time instead of flickering
+  // between concurrent transfers. A failure on one file is reported but
+  // doesn't abort the rest of the batch.
+  auto do_upload = [&s](const std::shared_ptr<rmi::proxy::dynamic>& explorer, std::vector<std::string> names,
                         std::string local_path_str) {
-    fs::path local_path = fs::path(local_path_str) / name;
-    std::thread([&s, explorer, name, local_path]() {
-      try {
-        auto data = read_local_file(local_path);
-        int last_percent = -1;
-        s.upload_file(
-             name, data,
-             [explorer, &last_percent](std::uint64_t transferred, std::uint64_t total) {
-               report_transfer_progress(explorer, last_percent, transferred, total);
-             })
-            .get();
-        clear_transfer_progress(explorer);
-        call_with_retry(explorer, "refresh_sandbox"_key, dynamic{});
-      } catch (const std::exception& e) {
-        clear_transfer_progress(explorer);
-        dynamic patch;
-        patch["status"_key] = std::string{"Upload failed: "} + e.what();
-        explorer->set(std::move(patch)).get();
+    std::thread([&s, explorer, names = std::move(names), local_path_str]() {
+      for (auto& name : names) {
+        try {
+          auto data = read_local_file(fs::path(local_path_str) / name);
+          int last_percent = -1;
+          s.upload_file(
+               name, data,
+               [explorer, &last_percent](std::uint64_t transferred, std::uint64_t total) {
+                 report_transfer_progress(explorer, last_percent, transferred, total);
+               })
+              .get();
+        } catch (const std::exception& e) {
+          dynamic patch;
+          patch["status"_key] = std::string{"Upload failed (\""} + name + "\"): " + e.what();
+          explorer->set(std::move(patch)).get();
+        }
       }
+      clear_transfer_progress(explorer);
+      call_with_retry(explorer, "refresh_sandbox"_key, dynamic{});
     }).detach();
   };
 
-  // Pulls `name` from the sandbox and writes it into the currently-shown
-  // local directory, then re-lists the left panel. Shared the same way as
-  // do_upload above.
+  // Pulls every entry of `names` from the sandbox and writes it into the
+  // currently-shown local directory, then re-lists the left panel once.
+  // Shared the same way as do_upload above.
   auto do_download = [&s](const std::shared_ptr<rmi::proxy::dynamic>& explorer,
-                          const std::shared_ptr<fs::path>& cur_dir, std::string name) {
-    std::thread([&s, explorer, cur_dir, name]() {
-      try {
-        int last_percent = -1;
-        auto data = s.download_file(
-                         name,
-                         [explorer, &last_percent](std::uint64_t transferred, std::uint64_t total) {
-                           report_transfer_progress(explorer, last_percent, transferred, total);
-                         })
-                        .get();
-        write_local_file(*cur_dir / name, data);
-        clear_transfer_progress(explorer);
-        report_local_listing(explorer, cur_dir);
-      } catch (const std::exception& e) {
-        clear_transfer_progress(explorer);
-        dynamic patch;
-        patch["status"_key] = std::string{"Download failed: "} + e.what();
-        explorer->set(std::move(patch)).get();
+                          const std::shared_ptr<fs::path>& cur_dir, std::vector<std::string> names) {
+    std::thread([&s, explorer, cur_dir, names = std::move(names)]() {
+      for (auto& name : names) {
+        try {
+          int last_percent = -1;
+          auto data = s.download_file(
+                           name,
+                           [explorer, &last_percent](std::uint64_t transferred, std::uint64_t total) {
+                             report_transfer_progress(explorer, last_percent, transferred, total);
+                           })
+                          .get();
+          write_local_file(*cur_dir / name, data);
+        } catch (const std::exception& e) {
+          dynamic patch;
+          patch["status"_key] = std::string{"Download failed (\""} + name + "\"): " + e.what();
+          explorer->set(std::move(patch)).get();
+        }
       }
+      clear_transfer_progress(explorer);
+      report_local_listing(explorer, cur_dir);
     }).detach();
   };
 
-  // Upload button clicked with a local file selected and no name conflict.
+  // Upload button clicked with one or more local files selected and no name
+  // conflicts.
   explorer->onEvent("on_upload_requested"_key, [explorer, do_upload](dynamic payload) {
-    do_upload(explorer, payload.as<std::string>("name"_key), payload.as<std::string>("local_path"_key));
+    do_upload(explorer, read_names(payload), payload.as<std::string>("local_path"_key));
   });
 
-  // Upload target already exists in the sandbox: confirm via a MessageBox
-  // before overwriting (see confirm_overwrite() above).
+  // Some/all of the upload targets already exist in the sandbox: confirm
+  // once for the whole batch via a MessageBox before overwriting (see
+  // confirm_overwrite() above).
   explorer->onEvent("on_upload_conflict"_key, [&s, explorer, do_upload](dynamic payload) {
-    auto name = payload.as<std::string>("name"_key);
+    auto names = read_names(payload);
     auto local_path_str = payload.as<std::string>("local_path"_key);
+    std::string message = names.size() == 1
+        ? "\"" + names[0] + "\" already exists in the sandbox. Overwrite it?"
+        : std::to_string(names.size()) + " files already exist in the sandbox. Overwrite them?";
     confirm_overwrite(
-        s, "\"" + name + "\" already exists in the sandbox. Overwrite it?",
-        [explorer, do_upload, name, local_path_str]() { do_upload(explorer, name, local_path_str); });
+        s, message, [explorer, do_upload, names, local_path_str]() { do_upload(explorer, names, local_path_str); });
   });
 
-  // Download button clicked with a sandbox file selected and no name conflict.
+  // Download button clicked with one or more sandbox files selected and no
+  // name conflicts.
   explorer->onEvent("on_download_requested"_key, [explorer, cur_dir, do_download](dynamic payload) {
-    do_download(explorer, cur_dir, payload.as<std::string>("name"_key));
+    do_download(explorer, cur_dir, read_names(payload));
   });
 
-  // Download target already exists locally: confirm via a MessageBox before
-  // overwriting.
+  // Some/all of the download targets already exist locally: confirm once
+  // for the whole batch via a MessageBox before overwriting.
   explorer->onEvent("on_download_conflict"_key, [&s, explorer, cur_dir, do_download](dynamic payload) {
-    auto name = payload.as<std::string>("name"_key);
-    confirm_overwrite(
-        s, "\"" + name + "\" already exists locally. Overwrite it?",
-        [explorer, cur_dir, do_download, name]() { do_download(explorer, cur_dir, name); });
+    auto names = read_names(payload);
+    std::string message = names.size() == 1
+        ? "\"" + names[0] + "\" already exists locally. Overwrite it?"
+        : std::to_string(names.size()) + " files already exist locally. Overwrite them?";
+    confirm_overwrite(s, message, [explorer, cur_dir, do_download, names]() { do_download(explorer, cur_dir, names); });
   });
 
   explorer->onEvent("closed"_key, [&s](dynamic) { s.signal_done(); });

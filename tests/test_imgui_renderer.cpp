@@ -639,6 +639,128 @@ TEST_F(ImguiRendererTest, TableRowContextMenuOpensOnRightClickAnywhereOnRow) {
   EXPECT_NE(item_r.menu_item_id, ImGuiID{0});
 }
 
+// ── Table: Shift+drag range-select extension ─────────────────────────────────
+
+// Captures each TableRow's own Selectable rect via the same "preceding
+// item" trick as preceding_item_rect_capturing_renderer above, keyed by the
+// row's single Label cell text (TableRow itself is handled entirely inside
+// render_table() and never dispatched through render_node(), so there's no
+// direct hook on the row -- only on a cell within it).
+class row_rect_capturing_renderer : public imgui_renderer {
+ public:
+  std::unordered_map<std::string, std::pair<ImVec2, ImVec2>> rects;
+
+  void render_node(const ui_element& node, const context& s) override {
+    if (node.as<bdg::bison::key_t>(dynamic::CLASS) == "Label"_key) {
+      auto text = node.get_as<std::string>("text"_key, "");
+      if (!text.empty() && !rects.count(text))
+        rects[text] = {ImGui::GetItemRectMin(), ImGui::GetItemRectMax()};
+    }
+    imgui_renderer::render_node(node, s);
+  }
+};
+
+class TableDragSelectTest : public ImguiRendererTest {
+ protected:
+  bdg::wish::ui_tree map_;
+  std::unordered_map<std::string, std::pair<ImVec2, ImVec2>> row_rects_;
+  std::vector<bdg::bison::dynamic> captured_row_selected_;
+
+  void SetUp() override {
+    ImguiRendererTest::SetUp();
+    map_ = bdg::wish::import_json(R"({
+      "type": "Table", "id": "t_drag", "columns": 1, "flags": 0, "headers": false,
+      "children": {
+        "ca": { "type": "TableColumn", "label": "Name" },
+        "r0": { "type": "TableRow", "children": { "c0": { "type": "Label", "text": "row0" } } },
+        "r1": { "type": "TableRow", "children": { "c0": { "type": "Label", "text": "row1" } } },
+        "r2": { "type": "TableRow", "children": { "c0": { "type": "Label", "text": "row2" } } }
+      }
+    })");
+    (*map_[""])["__wish_id"_key] = bdg::bison::key_t{hash_t{7}};
+
+    row_rect_capturing_renderer rect_r;
+    rect_r.begin_frame();
+    in_window([&] { rect_r.render_node(*map_[""], *sess_); });
+    rect_r.end_frame();
+    row_rects_ = rect_r.rects;
+
+    sess_->emit_event = [&](bdg::bison::key_t, bdg::bison::key_t ev, bdg::bison::dynamic payload) {
+      if (ev == "row_selected"_key)
+        captured_row_selected_.push_back(std::move(payload));
+    };
+  }
+
+  ImVec2 row_center(const std::string& row) const {
+    auto& [mn, mx] = row_rects_.at(row);
+    return ImVec2((mn.x + mx.x) * 0.5f, (mn.y + mx.y) * 0.5f);
+  }
+
+  // Renders one more frame with the given held-mouse-drag state, then
+  // drains any events the frame enqueued into captured_row_selected_.
+  void drag_frame(const std::string& hovered_row, bool shift, bool mouse_down) {
+    ImGui::GetIO().DeltaTime = 1.0f / 60.0f;
+    ImGui::NewFrame();
+    ImGui::GetIO().KeyShift = shift;
+    ImGui::GetIO().MouseDown[0] = mouse_down;
+    ImGui::GetIO().MousePos = row_center(hovered_row);
+    in_window([&] { renderer_->render_node(*map_[""], *sess_); });
+    ImGui::EndFrame();
+    for (auto& ev : sess_->pending_events)
+      if (sess_->emit_event)
+        sess_->emit_event(ev.id, ev.event_name, ev.payload);
+    sess_->pending_events.clear();
+  }
+};
+
+TEST_F(TableDragSelectTest, ShiftDragExtendsSelectionToEachNewlyHoveredRow) {
+  ASSERT_EQ(row_rects_.size(), 3u);
+
+  drag_frame("row0", /*shift=*/true, /*mouse_down=*/true);
+  ASSERT_EQ(captured_row_selected_.size(), 1u);
+  EXPECT_EQ(captured_row_selected_[0].as<int32_t>("index"_key), 0);
+  EXPECT_TRUE(captured_row_selected_[0].as<bool>("shift"_key));
+  EXPECT_FALSE(captured_row_selected_[0].as<bool>("ctrl"_key));
+  captured_row_selected_.clear();
+
+  // The drag sweeps straight to row2 without pausing on row1 in between --
+  // still extends correctly to whatever row is hovered this frame.
+  drag_frame("row2", /*shift=*/true, /*mouse_down=*/true);
+  ASSERT_EQ(captured_row_selected_.size(), 1u);
+  EXPECT_EQ(captured_row_selected_[0].as<int32_t>("index"_key), 2);
+}
+
+TEST_F(TableDragSelectTest, ShiftDragHoveringTheSameRowAgainDoesNotReemit) {
+  drag_frame("row1", /*shift=*/true, /*mouse_down=*/true);
+  ASSERT_EQ(captured_row_selected_.size(), 1u);
+  captured_row_selected_.clear();
+
+  drag_frame("row1", /*shift=*/true, /*mouse_down=*/true);
+  EXPECT_TRUE(captured_row_selected_.empty())
+      << "hovering the same row again during the same drag must not re-emit";
+}
+
+TEST_F(TableDragSelectTest, ReleasingAndStartingANewShiftDragEmitsAgainForTheSameRow) {
+  drag_frame("row1", /*shift=*/true, /*mouse_down=*/true);
+  ASSERT_EQ(captured_row_selected_.size(), 1u);
+  captured_row_selected_.clear();
+
+  drag_frame("row1", /*shift=*/false, /*mouse_down=*/false); // released
+  captured_row_selected_.clear();
+
+  drag_frame("row1", /*shift=*/true, /*mouse_down=*/true); // fresh drag, same row
+  EXPECT_EQ(captured_row_selected_.size(), 1u)
+      << "the per-table dedupe cache must reset once the mouse button is released";
+}
+
+TEST_F(TableDragSelectTest, PlainClickDragWithoutShiftDoesNotExtendSelection) {
+  // No Shift held: a plain click-drag across rows must stay free for a
+  // row's own drag-and-drop (drag_type/drop_type), not trigger range-select.
+  drag_frame("row0", /*shift=*/false, /*mouse_down=*/true);
+  drag_frame("row2", /*shift=*/false, /*mouse_down=*/true);
+  EXPECT_TRUE(captured_row_selected_.empty());
+}
+
 // ── Unknown class: no throw ───────────────────────────────────────────────────
 
 TEST_F(ImguiRendererTest, UnknownClassDoesNotThrow) {

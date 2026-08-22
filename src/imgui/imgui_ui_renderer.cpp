@@ -1448,6 +1448,17 @@ static std::unordered_map<uint32_t, int32_t>& table_row_count_cache() {
   return cache;
 }
 
+// Row index a Shift+drag range-select gesture (see render_table()'s
+// "drag_extend" check below) last extended to, per table -- lets that check
+// emit a row_selected only when the hovered row actually changes, instead
+// of flooding one event per frame for the whole duration of the drag. -1 ==
+// no drag in progress for this table. Keyed the same way as
+// table_row_count_cache() above.
+static std::unordered_map<uint32_t, int32_t>& table_drag_select_cache() {
+  static std::unordered_map<uint32_t, int32_t> cache;
+  return cache;
+}
+
 void render_table(imgui_renderer& r, const ui_element& node, const context& s) {
   auto id = node.get_as<std::string>("id"_key, "##table");
   int32_t columns = node.get_as<int32_t>("columns"_key, 1);
@@ -1500,6 +1511,14 @@ void render_table(imgui_renderer& r, const ui_element& node, const context& s) {
     return;
 
   const key_t table_id = node.get_as<key_t>("__wish_id"_key, key_t{});
+
+  // Shift+drag range-select support (see the per-row "drag_extend" check
+  // below): reset this table's last-extended-to row once the mouse button
+  // is released, so the next Shift+drag starts clean instead of skipping
+  // its first row because it happens to match a value left over from a
+  // previous drag.
+  if (table_id.id && !ImGui::IsMouseDown(ImGuiMouseButton_Left))
+    table_drag_select_cache()[table_id.id] = -1;
 
   // Column setup must precede any row; iterate TableColumn children first.
   // column_id is passed through as ImGui's per-column user_data so a click
@@ -1576,6 +1595,25 @@ void render_table(imgui_renderer& r, const ui_element& node, const context& s) {
       const bool click_ctrl = ImGui::GetIO().KeyCtrl;
       const bool click_shift = ImGui::GetIO().KeyShift;
 
+      // Shift+drag range-select: sweeping the cursor across other rows
+      // while Shift stays held and the left button remains down (pressed on
+      // an earlier plain click elsewhere in this table) continues to extend
+      // the selection the same way a fresh Shift+click on each newly
+      // hovered row would -- the "group selection" drag gesture. Gated on
+      // Shift specifically so a plain click-drag stays free for this row's
+      // own drag-and-drop (drag_type/drop_type, handled by
+      // handle_drag_drop() right below); deduped via
+      // table_drag_select_cache() so hovering the same row across several
+      // frames only emits once.
+      bool drag_extend = false;
+      if (!sel && !dbl && click_shift && ImGui::IsMouseDown(ImGuiMouseButton_Left) && ImGui::IsItemHovered()) {
+        int32_t& last_drag_row = table_drag_select_cache()[table_id.id];
+        if (last_drag_row != row_idx) {
+          last_drag_row = row_idx;
+          drag_extend = true;
+        }
+      }
+
       // Row-level drag-and-drop: attaches to the Selectable just drawn above
       // (the row's own top-level ImGui item) -- see handle_drag_drop()'s doc
       // comment on why this can't just rely on render_node()'s own generic
@@ -1630,6 +1668,11 @@ void render_table(imgui_renderer& r, const ui_element& node, const context& s) {
         pending_index = row_idx;
         pending_ctrl = click_ctrl;
         pending_shift = click_shift;
+      } else if (drag_extend && !pending_event.id) {
+        pending_event = "row_selected"_key;
+        pending_index = row_idx;
+        pending_ctrl = false;
+        pending_shift = true;
       }
 
       ++row_idx;

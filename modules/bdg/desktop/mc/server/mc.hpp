@@ -7,6 +7,7 @@
 #include <ui/ui_element.hpp>
 
 #include <filesystem>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -30,22 +31,36 @@ namespace bdg::wish {
 /// the user clicks the upload/download button, which emits
 /// `on_upload_requested`/`on_download_requested` for the client to act on.
 ///
+/// Both panels support multi-row selection (see left_table_/right_table_'s
+/// row_selected handling in on_event()): a plain click replaces the
+/// selection with just that row; Ctrl+click toggles one row without
+/// touching the rest; Shift+click (or holding Shift while dragging across
+/// rows -- see Table's own doc comment in src/ui/ui_elements/table.cpp)
+/// selects the contiguous range between the last plain-clicked row (the
+/// "anchor") and the clicked/hovered row. The upload/download buttons act
+/// on every selected *file* in the corresponding panel (selected
+/// directories, and the ".." pseudo-row, are silently skipped).
+///
 /// Emitted events:
 ///   - `"closed"` — window X button; internal UI removed.
 ///   - `"on_local_navigate"` (`{name, type}`, `type` is `"dir"` or `"path"`)
 ///     — client should re-list the target local directory and call
 ///     `update_local_listing()`.
-///   - `"on_upload_requested"` (`{name, local_path}`) — client should read
-///     `local_path/name`, call `upload_file()`, then `refresh_sandbox()`.
-///   - `"on_download_requested"` (`{name}`) — client should call
-///     `download_file()`, write it under the current local path, then call
-///     `update_local_listing()` to refresh the left panel.
-///   - `"on_upload_conflict"` (`{name, local_path}`) — the upload target
-///     already exists in the sandbox. The client should confirm with the
-///     user (e.g. via an instantiated `MessageBox`, `buttons: "yes_no"`) and,
-///     if confirmed, proceed exactly as it would for `on_upload_requested`.
-///   - `"on_download_conflict"` (`{name}`) — same as `on_upload_conflict`,
-///     but the download target already exists locally.
+///   - `"on_upload_requested"` (`{names, local_path}`, `names` a plain-string
+///     array) — client should read `local_path/<name>` for each `names`
+///     entry, `upload_file()` it, then call `refresh_sandbox()` once after
+///     the whole batch.
+///   - `"on_download_requested"` (`{names}`) — client should `download_file()`
+///     each entry, write it under the current local path, then call
+///     `update_local_listing()` once after the whole batch to refresh the
+///     left panel.
+///   - `"on_upload_conflict"` (`{names, local_path}`) — every name in
+///     `names` already exists in the sandbox. The client should confirm
+///     once with the user (e.g. via an instantiated `MessageBox`,
+///     `buttons: "yes_no"`) and, if confirmed, proceed exactly as it would
+///     for `on_upload_requested`.
+///   - `"on_download_conflict"` (`{names}`) — same as `on_upload_conflict`,
+///     but these targets already exist locally.
 ///   - `"on_local_rename_requested"` (`{old_name, new_name}`) — the user
 ///     confirmed the local panel's Rename dialog. The client should rename
 ///     `old_name` to `new_name` inside the currently-shown local directory
@@ -60,7 +75,9 @@ namespace bdg::wish {
 /// name/type/size/modified already reported via `update_local_listing()` —
 /// no extra round trip needed. Copy Path never touches the server at all:
 /// it rides `MenuItem.copy_text` (src/ui/ui_elements/menu.cpp), which the
-/// renderer copies to the OS clipboard directly on click.
+/// renderer copies to the OS clipboard directly on click. Rename/Properties
+/// act on the single row that was right-clicked, independent of the current
+/// multi-selection.
 class mc : public form {
  public:
   explicit mc(bison::dynamic&& base);
@@ -114,12 +131,46 @@ class mc : public form {
   /// row_menu_target), and @p menu_targets is cleared and repopulated with
   /// this call's fresh set of MenuItem `__wish_id` -> action mappings --
   /// the previous call's entries are being replaced wholesale, the same way
-  /// @p table's own row children are.
+  /// @p table's own row children are. @p selected_names marks every row
+  /// whose `name` it contains as `TableRow.selected` (multi-selection
+  /// highlight); defaults to none selected.
   void fill_table(
       const ui_element_ptr& table, const std::vector<file_row>& entries, bool is_sandbox,
       std::unordered_map<bison::key_t, row_menu_target, bison::key_t, bison::key_t>& menu_targets,
-      int32_t selected_index = -1);
+      const std::set<std::string>& selected_names = {});
   void set_status(const std::string& message);
+
+  /// @brief Applies one row click's multi-selection semantics to @p
+  /// selected/@p anchor, given @p entries' current order and the clicked
+  /// row's @p idx plus the Ctrl/Shift modifier state from the click's
+  /// payload (see Table's "row_selected" doc comment, table.cpp):
+  ///   - Shift (a discrete click, or a frame of a Shift+drag sweep) selects
+  ///     the contiguous range between @p anchor and @p idx, replacing the
+  ///     previous selection; @p anchor itself does not move, so repeated
+  ///     Shift+clicks/a drag sweep keep redefining the range's other end.
+  ///     Falls through to plain-click behavior if @p anchor is unset (-1).
+  ///   - Ctrl (with no Shift) toggles @p idx alone, leaving the rest of the
+  ///     selection untouched, and becomes the new @p anchor.
+  ///   - Neither modifier replaces the selection with just @p idx and moves
+  ///     @p anchor there.
+  static void apply_row_click(
+      std::set<std::string>& selected, int32_t& anchor, const std::vector<file_row>& entries, int32_t idx, bool ctrl,
+      bool shift);
+
+  /// @brief Formats the "Selected: ..." label text for a panel's current
+  /// multi-selection: "(none)", the single name, or "N items".
+  static std::string describe_selection(const std::set<std::string>& selected);
+
+  /// @brief Names in @p selected whose entry in @p entries is a file (not a
+  /// directory or the ".." pseudo-row), in @p entries' display order --
+  /// what the upload/download buttons actually act on.
+  static std::vector<std::string> selected_file_names(
+      const std::set<std::string>& selected, const std::vector<file_row>& entries);
+
+  /// @brief Builds an `{names: [string...]}` event payload from @p names
+  /// (a plain-string bison::dynamic array -- see git.cpp's
+  /// read_string_array()/string_array() for the same convention).
+  static bison::dynamic make_names_payload(const std::vector<std::string>& names);
 
   /// @brief Builds one row's ContextMenu element (Properties/Rename/Copy
   /// Path), registering each MenuItem's `__wish_id` in @p menu_targets.
@@ -143,11 +194,14 @@ class mc : public form {
 
   /// @brief Handle the left/right file_table's "sorted" event (see
   /// table.cpp's Table.flags doc comment): store the new sort state and
-  /// re-sort + rebuild the given entries/table.
+  /// re-sort + rebuild the given entries/table. @p selected_names is
+  /// name-keyed (not index-keyed), so it stays valid across the reorder and
+  /// is passed straight through to fill_table() -- only the selection
+  /// *anchor* (an index) goes stale on sort; callers reset that themselves.
   void on_table_sorted(
       const bison::dynamic& payload, std::vector<file_row>& entries, const ui_element_ptr& table, bool is_sandbox,
       std::unordered_map<bison::key_t, row_menu_target, bison::key_t, bison::key_t>& menu_targets,
-      int32_t& sort_column_id, bool& sort_ascending);
+      int32_t& sort_column_id, bool& sort_ascending, const std::set<std::string>& selected_names);
 
   bool sandbox_has_file(const std::string& name) const;
   bool local_has_file(const std::string& name) const;
@@ -249,10 +303,18 @@ class mc : public form {
   int32_t sandbox_sort_column_id_{0};
   bool sandbox_sort_ascending_{true};
 
-  std::string selected_local_name_;
-  bool selected_local_is_dir_{false};
-  std::string selected_sandbox_name_;
-  bool selected_sandbox_is_dir_{false};
+  // Multi-selection state per panel: the set of currently-selected entry
+  // names (name-keyed, not index-keyed, so it survives a re-sort -- see
+  // on_table_sorted()'s doc comment), plus the row index Shift+click/drag
+  // range-selects against (-1 == unset). Reset (selection cleared, anchor
+  // unset) whenever a panel's entries are wholesale replaced -- a fresh
+  // listing (do_update_local_listing()) or sandbox navigation
+  // (navigate_sandbox()) -- since old selected names may no longer exist in
+  // the new directory.
+  std::set<std::string> selected_local_names_;
+  int32_t local_selection_anchor_{-1};
+  std::set<std::string> selected_sandbox_names_;
+  int32_t sandbox_selection_anchor_{-1};
 };
 
 /// @brief Register Mc in the "wish" bison namespace.

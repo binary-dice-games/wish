@@ -110,10 +110,15 @@ void register_table() {
     (*proto)[dynamic::CLASS].addAttribute(
         attr<Description>("A multi-column table. Direct children of type TableColumn define "
                           "column setup; all other children (typically TableRow) provide rows. "
-                          "Emits 'row_selected' / 'row_activated' with {index: int} on row clicks. "
-                          "When flags includes ImGuiTableFlags_Sortable (8) and the user clicks a "
-                          "column header, emits 'sorted' with {column_id: int, ascending: bool} -- "
-                          "the owner is responsible for actually reordering rows in response."));
+                          "Emits 'row_selected' / 'row_activated' with {index: int, ctrl: bool, "
+                          "shift: bool} on row clicks -- ctrl/shift reflect whether those modifiers "
+                          "were held at click time, letting the owner implement multi-selection "
+                          "(ctrl to toggle one row, shift for a contiguous range). Holding Shift "
+                          "while dragging across other rows re-emits row_selected for each newly "
+                          "hovered row (shift: true), extending the same range gesture. When flags "
+                          "includes ImGuiTableFlags_Sortable (8) and the user clicks a column "
+                          "header, emits 'sorted' with {column_id: int, ascending: bool} -- the "
+                          "owner is responsible for actually reordering rows in response."));
     dynamic::addClass(
         "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_element>("wish"_key, "Table"_key));
   }
@@ -209,8 +214,9 @@ void register_table() {
         field{
             false,
             attr<DisplayName>("Selected"),
-            attr<Description>("Whether this row is rendered highlighted, e.g. to show the "
-                              "current selection in a file list."),
+            attr<Description>("Whether this row is rendered highlighted, e.g. to show that it "
+                              "is part of the current selection in a file list -- the owner sets "
+                              "this per row, so multiple rows may be highlighted at once."),
             attr<Category>("Behavior")});
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("TableRow"));
     (*proto)[dynamic::CLASS].addAttribute(

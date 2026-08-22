@@ -99,6 +99,34 @@ dynamic_ptr find_menu_item(const dynamic& menu, const std::string& label) {
   return found;
 }
 
+// Reads the plain-string array under `payload["names"]` -- see git.cpp's
+// read_string_array() for the same convention (array entries are raw
+// std::string fields, not nested dynamic_ptr objects).
+std::vector<std::string> read_names(const dynamic& payload) {
+  std::vector<std::string> names;
+  if (auto* names_f = payload.findField<dynamic_ptr>("names"_key); names_f && *names_f) {
+    (*names_f)->forEach([&](bison::key_t, const field& f) {
+      if (f.is<std::string>())
+        names.push_back(f.as<std::string>());
+    });
+  }
+  return names;
+}
+
+// Simulates a "row_selected" click on `table_id` for row `idx`, optionally
+// with Ctrl/Shift held -- mirrors render_table()'s payload shape
+// (imgui_ui_renderer.cpp), including that ctrl/shift are omitted from a
+// plain click's payload (they default to false server-side).
+void click_row(wish::ui_root* handler, bison::key_t table_id, int32_t idx, bool ctrl = false, bool shift = false) {
+  dynamic sel;
+  sel["index"_key] = idx;
+  if (ctrl)
+    sel["ctrl"_key] = true;
+  if (shift)
+    sel["shift"_key] = true;
+  handler->on_event(table_id, "row_selected"_key, sel);
+}
+
 } // namespace
 
 // ── Local (non-RMI) fixture — checks prototype defaults ───────────────────────
@@ -531,6 +559,23 @@ class McEventTest : public ::testing::Test {
     return (*ncf)->at(size_t{1}).as<dynamic_ptr>()->as<std::string>("text"_key);
   }
 
+  // Reads every row's `selected` bool for the Table at `table_path`, in row
+  // order -- lets a multi-selection test assert the whole highlighted set
+  // at once instead of one row at a time.
+  std::vector<bool> row_selected_flags(const std::string& table_path) const {
+    std::vector<bool> flags;
+    auto& objs = srv_->last_session->ui_objects;
+    auto it = objs.find(root_ + table_path);
+    if (it == objs.end() || !it->second)
+      return flags;
+    auto* cf = it->second->findField<dynamic_ptr>("children"_key);
+    if (!cf || !*cf)
+      return flags;
+    for (size_t i = 0; i < (*cf)->size(); ++i)
+      flags.push_back((*cf)->at(i).as<dynamic_ptr>()->as<bool>("selected"_key));
+    return flags;
+  }
+
   // Simulate a "sorted" event on the Table at `table_path` -- see
   // table.cpp's Table.flags doc comment and imgui_ui_renderer.cpp's
   // render_table(). column_id 0/1/2 = Name/Size/Modified (see kLayout's
@@ -648,7 +693,7 @@ TEST_F(McEventTest, UploadClickedWithSelectionEmitsOnUploadRequested) {
 
   wait_for(got);
   ASSERT_TRUE(got);
-  EXPECT_EQ(captured.as<std::string>("name"_key), "a.txt");
+  EXPECT_EQ(read_names(captured), std::vector<std::string>{"a.txt"});
   EXPECT_EQ(captured.as<std::string>("local_path"_key), "/home");
 }
 
@@ -788,6 +833,186 @@ TEST_F(McEventTest, LocalRowSelectedHighlightsSelectedRowOnly) {
   ASSERT_TRUE(row1);
   EXPECT_FALSE(row0->as<bool>("selected"_key));
   EXPECT_TRUE(row1->as<bool>("selected"_key));
+}
+
+// ── Multi-selection (Ctrl/Shift) ────────────────────────────────────────────────
+
+TEST_F(McEventTest, CtrlClickAddsRowWithoutClearingPreviousSelection) {
+  proxy_->call(
+      "update_local_listing"_key,
+      make_local_listing_args(
+          "/home", {{"a.txt", "file", "1 B", ""}, {"b.txt", "file", "1 B", ""}, {"c.txt", "file", "1 B", ""}}))
+      .get();
+  auto table_id = widget_id(".main.panels.left.left_table");
+
+  click_row(handler_, table_id, 0);
+  click_row(handler_, table_id, 2, /*ctrl=*/true);
+
+  EXPECT_EQ(row_selected_flags(".main.panels.left.left_table"), (std::vector<bool>{true, false, true}));
+  EXPECT_EQ(
+      srv_->last_session->ui_objects.at(root_ + ".main.panels.left.left_selected")->as<std::string>("text"_key),
+      "Selected: 2 items");
+}
+
+TEST_F(McEventTest, CtrlClickOnAlreadySelectedRowTogglesItOff) {
+  proxy_->call(
+      "update_local_listing"_key,
+      make_local_listing_args("/home", {{"a.txt", "file", "1 B", ""}, {"b.txt", "file", "1 B", ""}}))
+      .get();
+  auto table_id = widget_id(".main.panels.left.left_table");
+
+  click_row(handler_, table_id, 0);
+  click_row(handler_, table_id, 1, /*ctrl=*/true);
+  click_row(handler_, table_id, 1, /*ctrl=*/true); // toggle b.txt back off
+
+  EXPECT_EQ(row_selected_flags(".main.panels.left.left_table"), (std::vector<bool>{true, false}));
+  EXPECT_EQ(
+      srv_->last_session->ui_objects.at(root_ + ".main.panels.left.left_selected")->as<std::string>("text"_key),
+      "Selected: a.txt");
+}
+
+TEST_F(McEventTest, ShiftClickSelectsContiguousRangeFromAnchor) {
+  proxy_->call(
+      "update_local_listing"_key,
+      make_local_listing_args(
+          "/home",
+          {{"a.txt", "file", "1 B", ""}, {"b.txt", "file", "1 B", ""}, {"c.txt", "file", "1 B", ""},
+           {"d.txt", "file", "1 B", ""}}))
+      .get();
+  auto table_id = widget_id(".main.panels.left.left_table");
+
+  click_row(handler_, table_id, 0); // anchor
+  click_row(handler_, table_id, 2, /*ctrl=*/false, /*shift=*/true);
+
+  EXPECT_EQ(row_selected_flags(".main.panels.left.left_table"), (std::vector<bool>{true, true, true, false}));
+  EXPECT_EQ(
+      srv_->last_session->ui_objects.at(root_ + ".main.panels.left.left_selected")->as<std::string>("text"_key),
+      "Selected: 3 items");
+}
+
+TEST_F(McEventTest, RepeatedShiftClickRedefinesRangeFromSameAnchor) {
+  // Mirrors a Shift+drag sweep: render_table() re-emits row_selected with
+  // shift=true for each newly hovered row while the button stays down, so
+  // repeated Shift+"clicks" against the same anchor is exactly what a drag
+  // extension looks like from the consumer's side.
+  proxy_->call(
+      "update_local_listing"_key,
+      make_local_listing_args(
+          "/home",
+          {{"a.txt", "file", "1 B", ""}, {"b.txt", "file", "1 B", ""}, {"c.txt", "file", "1 B", ""},
+           {"d.txt", "file", "1 B", ""}}))
+      .get();
+  auto table_id = widget_id(".main.panels.left.left_table");
+
+  click_row(handler_, table_id, 0); // anchor
+  click_row(handler_, table_id, 1, /*ctrl=*/false, /*shift=*/true);
+  click_row(handler_, table_id, 3, /*ctrl=*/false, /*shift=*/true); // sweep extends further
+
+  EXPECT_EQ(row_selected_flags(".main.panels.left.left_table"), (std::vector<bool>{true, true, true, true}));
+}
+
+TEST_F(McEventTest, ShiftClickWithNoPriorAnchorActsAsPlainClick) {
+  proxy_->call(
+      "update_local_listing"_key,
+      make_local_listing_args("/home", {{"a.txt", "file", "1 B", ""}, {"b.txt", "file", "1 B", ""}}))
+      .get();
+  auto table_id = widget_id(".main.panels.left.left_table");
+
+  click_row(handler_, table_id, 1, /*ctrl=*/false, /*shift=*/true);
+
+  EXPECT_EQ(row_selected_flags(".main.panels.left.left_table"), (std::vector<bool>{false, true}));
+}
+
+TEST_F(McEventTest, PlainClickAfterMultiSelectReplacesSelectionWithOneRow) {
+  proxy_->call(
+      "update_local_listing"_key,
+      make_local_listing_args("/home", {{"a.txt", "file", "1 B", ""}, {"b.txt", "file", "1 B", ""}}))
+      .get();
+  auto table_id = widget_id(".main.panels.left.left_table");
+
+  click_row(handler_, table_id, 0);
+  click_row(handler_, table_id, 1, /*ctrl=*/true);
+  click_row(handler_, table_id, 1); // plain click clears the multi-selection
+
+  EXPECT_EQ(row_selected_flags(".main.panels.left.left_table"), (std::vector<bool>{false, true}));
+}
+
+TEST_F(McEventTest, SelectionSurvivesSortByName) {
+  proxy_->call(
+      "update_local_listing"_key,
+      make_local_listing_args("/home", {{"zebra.txt", "file", "1 B", ""}, {"apple.txt", "file", "1 B", ""}}))
+      .get();
+  auto table_id = widget_id(".main.panels.left.left_table");
+  // Default order is ascending by Name: apple.txt(0), zebra.txt(1).
+  click_row(handler_, table_id, 1); // select zebra.txt
+
+  simulate_sorted(".main.panels.left.left_table", /*column_id=*/0, /*ascending=*/false);
+
+  // Descending order flips to zebra.txt(0), apple.txt(1) -- the selection
+  // is name-keyed, so it follows zebra.txt to its new row.
+  ASSERT_EQ(table_name_cell_text(".main.panels.left.left_table", 0), "zebra.txt");
+  EXPECT_EQ(row_selected_flags(".main.panels.left.left_table"), (std::vector<bool>{true, false}));
+  EXPECT_EQ(
+      srv_->last_session->ui_objects.at(root_ + ".main.panels.left.left_selected")->as<std::string>("text"_key),
+      "Selected: zebra.txt");
+}
+
+TEST_F(McEventTest, UploadClickedWithMultipleSelectedFilesEmitsAllNames) {
+  proxy_->call(
+      "update_local_listing"_key,
+      make_local_listing_args(
+          "/home", {{"a.txt", "file", "1 B", ""}, {"b.txt", "file", "1 B", ""}, {"c.txt", "file", "1 B", ""}}))
+      .get();
+  auto table_id = widget_id(".main.panels.left.left_table");
+  click_row(handler_, table_id, 0);
+  click_row(handler_, table_id, 2, /*ctrl=*/true);
+
+  bool got = false;
+  dynamic captured;
+  auto prev = std::move(srv_->last_session->emit_event);
+  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
+    if (event == "on_upload_requested"_key) {
+      got = true;
+      captured = std::move(payload);
+    }
+    if (prev)
+      prev(id, event, std::move(payload));
+  };
+
+  handler_->on_event(widget_id(".main.panels.middle.upload"), "clicked"_key, dynamic{});
+
+  wait_for(got);
+  ASSERT_TRUE(got);
+  EXPECT_EQ(read_names(captured), (std::vector<std::string>{"a.txt", "c.txt"}));
+  EXPECT_EQ(captured.as<std::string>("local_path"_key), "/home");
+}
+
+TEST_F(McEventTest, UploadClickedWithSelectedDirectoryAndFileSkipsTheDirectory) {
+  proxy_->call(
+      "update_local_listing"_key,
+      make_local_listing_args("/home", {{"docs", "dir", "", ""}, {"a.txt", "file", "1 B", ""}}))
+      .get();
+  auto table_id = widget_id(".main.panels.left.left_table");
+  click_row(handler_, table_id, 0); // "docs" (a directory)
+  click_row(handler_, table_id, 1, /*ctrl=*/true); // + "a.txt"
+
+  bool got = false;
+  dynamic captured;
+  auto prev = std::move(srv_->last_session->emit_event);
+  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
+    if (event == "on_upload_requested"_key) {
+      got = true;
+      captured = std::move(payload);
+    }
+    if (prev)
+      prev(id, event, std::move(payload));
+  };
+
+  handler_->on_event(widget_id(".main.panels.middle.upload"), "clicked"_key, dynamic{});
+
+  wait_for(got);
+  ASSERT_TRUE(got);
+  EXPECT_EQ(read_names(captured), std::vector<std::string>{"a.txt"});
 }
 
 // ── ".." row has no context menu ────────────────────────────────────────────────
@@ -1071,7 +1296,7 @@ TEST_F(McEventTest, UploadClickedWithExistingSandboxFileEmitsConflictInsteadOfRe
   wait_for(got_conflict);
   EXPECT_FALSE(got_requested) << "upload should be held back pending overwrite confirmation";
   ASSERT_TRUE(got_conflict);
-  EXPECT_EQ(captured.as<std::string>("name"_key), "a.txt");
+  EXPECT_EQ(read_names(captured), std::vector<std::string>{"a.txt"});
   EXPECT_EQ(captured.as<std::string>("local_path"_key), "/home");
 }
 
@@ -1107,7 +1332,7 @@ TEST_F(McEventTest, DownloadClickedWithExistingLocalFileEmitsConflictInsteadOfRe
   wait_for(got_conflict);
   EXPECT_FALSE(got_requested) << "download should be held back pending overwrite confirmation";
   ASSERT_TRUE(got_conflict);
-  EXPECT_EQ(captured.as<std::string>("name"_key), "a.txt");
+  EXPECT_EQ(read_names(captured), std::vector<std::string>{"a.txt"});
 }
 
 TEST_F(McEventTest, WindowClosedEmitsClosedAndCleansUp) {

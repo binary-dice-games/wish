@@ -559,7 +559,15 @@ other children (typically `TableRow`) provide data rows.
   shift: bool }` (0-based row index, plus whether Ctrl/Shift were held at
   click time — captured the same frame as the click, since the event is only
   delivered later, by which point `ImGuiIO`'s own key state may have moved
-  on).
+  on). The owner is responsible for turning `ctrl`/`shift` into
+  multi-selection: `ctrl` toggles just this row, leaving the rest of the
+  selection untouched; `shift` selects the contiguous range between this row
+  and whatever the owner considers the current anchor (typically the last
+  plain click). Holding Shift while dragging across other rows re-emits
+  `row_selected` for each newly hovered row (`shift: true`, deduped so a
+  multi-frame hover over the same row only fires once) — the "group
+  selection" drag gesture, gated on Shift so a plain click-drag stays free
+  for a row's own `drag_type`/`drop_type` drag-and-drop.
 - `row_activated` — double-click on a `TableRow`; same payload shape as
   `row_selected`. At most one of `row_selected`/`row_activated` fires per
   frame.
@@ -585,7 +593,7 @@ under "Menus" above).
 |---|---|---|---|
 | `flags` | `int32` (flags) | `0` | ImGuiTableRowFlags bitmask, e.g. `Headers=1`. |
 | `min_height` | `float` | `0.0` | Minimum row height; `0` uses default. |
-| `selected` | `bool` | `false` | Renders the row highlighted, e.g. to show the current selection. |
+| `selected` | `bool` | `false` | Renders the row highlighted, e.g. to show it is part of the current selection; the owner sets this per row, so multiple rows may be highlighted at once (multi-selection). |
 
 No events of its own — `row_selected`/`row_activated` are emitted on the
 **parent `Table`**, not on the row.

@@ -8,13 +8,21 @@ listed directory, plus used/free/total space for its filesystem) below its
 table, and each row offers a right-click context menu (Properties, Rename,
 Copy Path).
 
+Both panels support multi-row selection: Ctrl+click toggles one row without
+touching the rest, and Shift+click (or holding Shift while dragging across
+rows) selects the contiguous range from the last plain-clicked row. The
+upload/download buttons act on every selected file at once (selected
+directories are silently skipped).
+
 - **server/**: `Mc` form (`register_mc()`), a
   `bdg::wish::form` subclass owning the window/panels/tables and all
   sandbox navigation/listing (`std::filesystem` + `file_service::resolve_path()`
   against `context::resource_dir`), including the sandbox panel's own
-  disk-usage strip and its rows' Rename/Properties (both handled directly,
-  server-side). Emits `on_local_navigate`, `on_upload_requested`/
-  `on_download_requested` (or, when the transfer target already exists,
+  disk-usage strip, its rows' Rename/Properties (both handled directly,
+  server-side), and each panel's multi-selection state (name-keyed, so it
+  survives a re-sort). Emits `on_local_navigate`, `on_upload_requested`/
+  `on_download_requested` (`{names, ...}`, one event per click covering
+  every selected file — or, when some/all of those targets already exist,
   `on_upload_conflict`/`on_download_conflict`), `on_local_rename_requested`
   (the local panel's Rename dialog was confirmed), and `closed` for the
   client to react to. Copy Path never touches the server round trip at all
@@ -25,7 +33,9 @@ Copy Path).
   local filesystem (and its disk usage) in response to `on_local_navigate`,
   renames a local file/directory in response to
   `on_local_rename_requested`, and moves bytes between the local machine and
-  the sandbox in response to `on_upload_requested`/`on_download_requested`.
-  A conflict event instead instantiates the built-in `MessageBox` form
-  ("yes_no" preset) to confirm with the user before overwriting.
+  the sandbox in response to `on_upload_requested`/`on_download_requested`,
+  transferring a multi-file batch sequentially on one background thread so
+  the shared progress bar shows one coherent transfer at a time. A conflict
+  event instead instantiates the built-in `MessageBox` form ("yes_no"
+  preset) to confirm once with the user before overwriting the whole batch.
 - **resources/**: none.
