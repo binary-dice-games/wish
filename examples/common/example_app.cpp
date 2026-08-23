@@ -13,7 +13,7 @@
 #include <iostream>
 
 DEFINE_bool(verbose, false, "Print verbose trace to stderr.");
-DEFINE_string(theme, "dark", "UI theme preset: dark, light, or classic.");
+DEFINE_string(theme, "wish", "UI theme preset: wish, dark, light, or classic.");
 DEFINE_int32(font_size, 16, "Font size in pixels");
 DEFINE_string(renderer, "web", "Rendering backend: sdl3 or web");
 DEFINE_int32(web_port, 8080, "HTTP/WebSocket port for --renderer web");
@@ -21,7 +21,7 @@ DEFINE_string(web_bind, "127.0.0.1", "Bind address for --renderer web (localhost
 
 namespace {
 bool ValidateTheme(const char* /*flag*/, const std::string& value) {
-  return value == "dark" || value == "light" || value == "classic";
+  return value == "wish" || value == "dark" || value == "light" || value == "classic";
 }
 } // namespace
 DEFINE_validator(theme, &ValidateTheme);

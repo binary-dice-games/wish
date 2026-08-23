@@ -86,7 +86,7 @@ static constexpr const char* kCalcDesc = R"({
 
 class calc_client : public wish::examples::example_client {
  public:
-  calc_client(memory_client_transport t, wish::renderer* renderer, bool verbose = false, std::string theme = "dark")
+  calc_client(memory_client_transport t, wish::renderer* renderer, bool verbose = false, std::string theme = "wish")
       : wish::examples::example_client(std::move(t), renderer, verbose, std::move(theme), "calc") {}
 
  protected:

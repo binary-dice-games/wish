@@ -856,12 +856,19 @@ A modal file picker (Open or Save As, via `confirm_label`).
 
 #### `Nano`
 A multi-file, syntax-highlighted text editor (module, off by default —
-`WISH_MODULE_BDG_DESKTOP_NANO`). One closable `TabItem` per open file.
+`WISH_MODULE_BDG_DESKTOP_NANO`). One closable `TabItem` per open file; a
+tab's label gets a `" *"` suffix while it has unsaved changes. Each tab also
+has its own language `Combo` above the editor, seeded from the file's
+extension but freely overridable — picking a language only changes
+highlighting and does not mark the file dirty.
 
-- Method: `open_file(path, title?)`.
+- Methods: `open_file(path, title?)`, `confirm_close(save)`.
 - Events: `on_request_open`, `on_request_new`, `on_file_opened {path,title}`,
-  `on_file_closed {path}`, `on_file_saved {path}`, `on_sync_requested
-  {paths}`, `on_error {message}`, `closed`.
+  `on_file_closed {path}`, `on_file_saved {path}` (Ctrl+S, or the "Save"
+  button for the active tab), `on_confirm_close {paths}` (window closed with
+  unsaved files — call `confirm_close(save)` with the user's answer, or
+  don't call it at all to cancel the close and leave the window open),
+  `on_error {message}`, `closed`.
 
 #### `ObjectInspector`
 Unlike the forms above, `ObjectInspector` is a plain nestable `Element` (an

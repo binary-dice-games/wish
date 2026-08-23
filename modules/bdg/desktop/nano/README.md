@@ -9,7 +9,8 @@ via `upload_file`/`download_file`.
   text editor UI; files live in the session's sandboxed resource directory.
 - **client/**: `run_nano(wish_app_host&)`, self-registered as the
   `"nano"` embedded app — reacts to the form's high-level events
-  (open/new/sync) by moving bytes into and out of the sandbox. Accepts an
-  optional startup file path via `app_args()`
+  (open/new/save/confirm-close) by moving bytes into and out of the
+  sandbox, showing a `MessageBox` to confirm saving unsaved files before
+  closing. Accepts an optional startup file path via `app_args()`
   (`wish client --run=nano -- path/to/file`).
 - **resources/**: none.

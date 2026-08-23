@@ -56,6 +56,32 @@ std::string language_for_extension(const std::string& path) {
   return "none";
 }
 
+// Every language TextEditor's own "language" field recognizes (see
+// text_editor.cpp's field Description) -- shared by language_for_extension()
+// above (the seeded default) and the per-tab language Combo's own item list,
+// so the two never drift out of sync.
+constexpr const char* kLanguages[] = {
+    "none", "cpp", "c", "cs", "glsl", "hlsl", "lua", "python", "sql", "json", "markdown", "angelscript"};
+constexpr int32_t kLanguageCount = int32_t(sizeof(kLanguages) / sizeof(kLanguages[0]));
+
+int32_t language_index(const std::string& lang) {
+  for (int32_t i = 0; i < kLanguageCount; ++i)
+    if (lang == kLanguages[i])
+      return i;
+  return 0; // "none"
+}
+
+// Builds the Combo's newline-separated "items" field from kLanguages.
+std::string language_combo_items() {
+  std::string out;
+  for (int32_t i = 0; i < kLanguageCount; ++i) {
+    if (i)
+      out += "\n";
+    out += kLanguages[i];
+  }
+  return out;
+}
+
 } // namespace
 
 // ── Hardcoded UI layout ───────────────────────────────────────────────────────
@@ -89,7 +115,7 @@ static constexpr const char* kNanoLayout = R"({
           "children": {
             "btn_open": { "type": "Button", "label": "Open", "width": 90 },
             "btn_new":  { "type": "Button", "label": "New",  "width": 90 },
-            "btn_sync": { "type": "Button", "label": "Sync", "width": 90 }
+            "btn_save": { "type": "Button", "label": "Save", "width": 90 }
           }
         },
         "tab_bar": { "type": "TabBar", "id": "##nano_tabs", "height": -1, "children": {} }
@@ -126,7 +152,7 @@ void nano::on_init() {
   window_id_ = (*tree[""])["__wish_id"_key].as<key_t>();
   tree.with("vbox.toolbar.btn_open", [&](const auto& e) { btn_open_id_ = wish_id_of(e); });
   tree.with("vbox.toolbar.btn_new", [&](const auto& e) { btn_new_id_ = wish_id_of(e); });
-  tree.with("vbox.toolbar.btn_sync", [&](const auto& e) { btn_sync_id_ = wish_id_of(e); });
+  tree.with("vbox.toolbar.btn_save", [&](const auto& e) { btn_save_id_ = wish_id_of(e); });
   tree.with("vbox.tab_bar", [&](const auto& e) { tab_bar_ptr_ = e; });
 
   sess().ui_objects.merge(std::move(tree), internal_root_key_);
@@ -166,25 +192,42 @@ dynamic nano::do_open_file(const dynamic& args) {
   tab["closable"_key] = true;
   tab["order"_key] = static_cast<int32_t>(open_files_.size());
 
+  std::string initial_language = language_for_extension(path);
+
+  // Lets the user override the highlighting language the extension guessed
+  // (or pick one at all for an extensionless/unrecognized file), independent
+  // of the tab's own selected/dirty state.
+  ui_element_ptr lang_combo{dynamic::instantiate("wish"_key, "Combo"_key)};
+  lang_combo["label"_key] = std::string{"Language"};
+  lang_combo["items"_key] = language_combo_items();
+  lang_combo["value"_key] = language_index(initial_language);
+  lang_combo["width"_key] = 150.0f;
+  lang_combo["order"_key] = int32_t{0};
+
   ui_element_ptr editor{dynamic::instantiate("wish"_key, "TextEditor"_key)};
   editor["file_path"_key] = path;
-  editor["language"_key] = language_for_extension(path);
+  editor["language"_key] = initial_language;
   editor["width"_key] = int32_t{0}; // fill available width
   editor["height"_key] = int32_t{0}; // fill available height
-  editor["order"_key] = int32_t{0};
+  editor["order"_key] = int32_t{1};
 
   key_t tab_id = rmi::shared::generate_id();
   ctx().put_object(tab_id, tab);
   tab["__wish_id"_key] = tab_id;
+
+  key_t lang_combo_id = rmi::shared::generate_id();
+  ctx().put_object(lang_combo_id, lang_combo);
+  lang_combo["__wish_id"_key] = lang_combo_id;
 
   key_t editor_id = rmi::shared::generate_id();
   ctx().put_object(editor_id, editor);
   editor["__wish_id"_key] = editor_id;
 
   // Give the TabItem its own private children map (see the layout comment
-  // above) and place the TextEditor inside it.
+  // above) and place the language Combo and the TextEditor inside it.
   auto editor_children = dynamic_ptr{key_t{0U}, {}};
-  (*editor_children)[size_t{0}] = dynamic_ptr{editor};
+  (*editor_children)[size_t{0}] = dynamic_ptr{lang_combo};
+  (*editor_children)[size_t{1}] = dynamic_ptr{editor};
   tab["children"_key] = editor_children;
   tab->refresh_children_order();
 
@@ -192,7 +235,14 @@ dynamic nano::do_open_file(const dynamic& args) {
   (*children)[child_key] = dynamic_ptr{tab};
   tab_bar_ptr_->refresh_children_order();
 
-  open_files_.push_back({path, title, tab_id, editor_id, tab, child_key});
+  // The first tab in a fresh TabBar is auto-selected by ImGui without ever
+  // transitioning through a "was not selected" frame, so render_tab_item()'s
+  // edge-triggered "selected" event (imgui_ui_renderer.cpp) never fires for
+  // it -- track it as active here instead of waiting for that event.
+  bool is_first_tab = open_files_.empty();
+  open_files_.push_back({path, title, tab_id, editor_id, tab, child_key, /*dirty=*/false, editor, lang_combo_id});
+  if (is_first_tab)
+    active_tab_id_ = tab_id;
   rebuild_index_maps();
 
   dynamic opened;
@@ -204,22 +254,31 @@ dynamic nano::do_open_file(const dynamic& args) {
 
 // ── Event routing ─────────────────────────────────────────────────────────────
 
-void nano::on_event(key_t id, key_t event, const dynamic& /*payload*/) {
+void nano::on_event(key_t id, key_t event, const dynamic& payload) {
   if (id == window_id_ && event == "closed"_key) {
-    // Flush every remaining file before tearing down, so closing the whole
-    // Nano has the same "download before discard" guarantee as closing
-    // one tab at a time.
-    for (auto& f : open_files_) {
-      dynamic closed_payload;
-      closed_payload["path"_key] = f.path;
-      emit("on_file_closed"_key, std::move(closed_payload));
-    }
-    open_files_.clear();
-    tab_id_to_index_.clear();
-    editor_id_to_index_.clear();
+    bool any_dirty = false;
+    for (auto& f : open_files_)
+      if (f.dirty) {
+        any_dirty = true;
+        break;
+      }
 
-    emit("closed"_key);
-    remove_internal_objects();
+    if (!any_dirty) {
+      do_close(/*flush_dirty_files=*/true);
+      return;
+    }
+
+    // Don't close yet -- the window stays open (nothing was removed from
+    // top_level_objects) until confirm_close() answers this. Ask the client
+    // which files, if any, should be saved first.
+    dynamic paths;
+    size_t i = 0;
+    for (auto& f : open_files_)
+      if (f.dirty)
+        paths[i++] = f.path;
+    dynamic confirm_payload;
+    confirm_payload["paths"_key] = dynamic_ptr{std::make_shared<dynamic>(std::move(paths))};
+    emit("on_confirm_close"_key, std::move(confirm_payload));
     return;
   }
 
@@ -233,36 +292,100 @@ void nano::on_event(key_t id, key_t event, const dynamic& /*payload*/) {
     return;
   }
 
-  if (id == btn_sync_id_ && event == "clicked"_key) {
-    dynamic paths;
-    size_t i = 0;
-    for (auto& f : open_files_)
-      paths[i++] = f.path;
-    dynamic sync_payload;
-    sync_payload["paths"_key] = dynamic_ptr{std::make_shared<dynamic>(std::move(paths))};
-    emit("on_sync_requested"_key, std::move(sync_payload));
+  if (id == btn_save_id_ && event == "clicked"_key) {
+    auto it = tab_id_to_index_.find(active_tab_id_.id);
+    if (active_tab_id_.id && it != tab_id_to_index_.end()) {
+      size_t index = it->second;
+      open_files_[index].dirty = false;
+      update_tab_label(index);
+      dynamic saved_payload;
+      saved_payload["path"_key] = open_files_[index].path;
+      emit("on_file_saved"_key, std::move(saved_payload));
+    }
     return;
   }
 
-  if (auto it = tab_id_to_index_.find(id.id); it != tab_id_to_index_.end() && event == "closed"_key) {
-    close_file_at(it->second);
+  if (auto it = tab_id_to_index_.find(id.id); it != tab_id_to_index_.end()) {
+    if (event == "closed"_key) {
+      close_file_at(it->second);
+      return;
+    }
+    if (event == "selected"_key) {
+      active_tab_id_ = id;
+      return;
+    }
     return;
   }
 
-  if (auto it = editor_id_to_index_.find(id.id); it != editor_id_to_index_.end() && event == "saved"_key) {
-    // Ctrl+S inside a tab's TextEditor: forward as an explicit per-file save
-    // signal. TextEditor's "changed" event is not forwarded -- it only marks
-    // that the widget already auto-persisted to the sandbox file.
-    dynamic saved_payload;
-    saved_payload["path"_key] = open_files_[it->second].path;
-    emit("on_file_saved"_key, std::move(saved_payload));
+  if (auto it = editor_id_to_index_.find(id.id); it != editor_id_to_index_.end()) {
+    if (event == "changed"_key) {
+      open_files_[it->second].dirty = true;
+      update_tab_label(it->second);
+      return;
+    }
+    if (event == "saved"_key) {
+      // Ctrl+S inside a tab's TextEditor: forward as an explicit per-file save
+      // signal.
+      open_files_[it->second].dirty = false;
+      update_tab_label(it->second);
+      dynamic saved_payload;
+      saved_payload["path"_key] = open_files_[it->second].path;
+      emit("on_file_saved"_key, std::move(saved_payload));
+    }
+    return;
   }
+
+  if (auto it = lang_combo_id_to_index_.find(id.id); it != lang_combo_id_to_index_.end() && event == "changed"_key) {
+    // Retargets the TextEditor's highlighting only -- not a content edit, so
+    // this deliberately does not touch the file's dirty state.
+    int32_t lang_idx = payload.as<int32_t>("value"_key);
+    if (lang_idx >= 0 && lang_idx < kLanguageCount) {
+      auto& f = open_files_[it->second];
+      if (f.editor_ptr)
+        (*f.editor_ptr)["language"_key] = std::string{kLanguages[lang_idx]};
+    }
+  }
+}
+
+dynamic nano::do_confirm_close(const dynamic& args) {
+  do_close(args.as<bool>("save"_key));
+  return dynamic{};
+}
+
+void nano::do_close(bool flush_dirty_files) {
+  // Flush every eligible file before tearing down, so closing the whole
+  // Nano has the same "download before discard" guarantee as closing one
+  // tab at a time -- except a file the user chose not to save is skipped so
+  // its local copy is left untouched.
+  for (auto& f : open_files_) {
+    if (!flush_dirty_files && f.dirty)
+      continue;
+    dynamic closed_payload;
+    closed_payload["path"_key] = f.path;
+    emit("on_file_closed"_key, std::move(closed_payload));
+  }
+  open_files_.clear();
+  tab_id_to_index_.clear();
+  editor_id_to_index_.clear();
+  active_tab_id_ = key_t{};
+
+  emit("closed"_key);
+  remove_internal_objects();
+}
+
+void nano::update_tab_label(size_t index) {
+  auto& f = open_files_[index];
+  if (f.tab_ptr)
+    (*f.tab_ptr)["label"_key] = f.dirty ? (f.title + " *") : f.title;
 }
 
 void nano::close_file_at(size_t index) {
   if (index >= open_files_.size())
     return;
   auto entry = open_files_[index];
+
+  if (active_tab_id_.id == entry.tab_id.id)
+    active_tab_id_ = key_t{};
 
   if (tab_bar_ptr_) {
     if (auto* children_p = tab_bar_ptr_->findField<dynamic_ptr>("children"_key); children_p && *children_p)
@@ -281,9 +404,11 @@ void nano::close_file_at(size_t index) {
 void nano::rebuild_index_maps() {
   tab_id_to_index_.clear();
   editor_id_to_index_.clear();
+  lang_combo_id_to_index_.clear();
   for (size_t i = 0; i < open_files_.size(); ++i) {
     tab_id_to_index_[open_files_[i].tab_id.id] = i;
     editor_id_to_index_[open_files_[i].editor_id.id] = i;
+    lang_combo_id_to_index_[open_files_[i].lang_combo_id.id] = i;
   }
 }
 
@@ -303,13 +428,17 @@ void register_nano() {
   proto->addMethod("open_file"_key, bison::method{[](dynamic& self, const dynamic& args) -> dynamic {
                      return static_cast<nano&>(self).do_open_file(args);
                    }});
+  proto->addMethod("confirm_close"_key, bison::method{[](dynamic& self, const dynamic& args) -> dynamic {
+                     return static_cast<nano&>(self).do_confirm_close(args);
+                   }});
 
   (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Nano"));
   (*proto)[dynamic::CLASS].addAttribute(
       attr<Description>("Multi-file, syntax-highlighted text editor. Files live in the "
                         "session sandbox; the client must upload_file before calling "
-                        "open_file, and download_file in response to on_file_closed, "
-                        "on_file_saved, or on_sync_requested."));
+                        "open_file, and download_file in response to on_file_closed or "
+                        "on_file_saved. If on_confirm_close fires (the window was closed "
+                        "with unsaved changes), ask the user and call confirm_close(save)."));
 
   dynamic::addClass(
       "wish"_key, std::move(proto), key_t{0U}, dynamic::make_factory<nano>("wish"_key, "Nano"_key));

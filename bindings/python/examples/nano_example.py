@@ -185,20 +185,46 @@ def run_nano(client: Client, startup_path: Optional[Path]) -> None:
             return
         write_local_file(local_path, client.download_file(path))
 
-    # Ctrl+S inside a tab: download that one file, keep it open.
+    # Ctrl+S inside a tab, or the "Save" button clicked for the active tab:
+    # download that one file, keep it open.
     def on_file_saved(payload):
         path = payload.path
         local_path = files.local_path_by_sandbox_name.get(path)
         if local_path is not None:
             write_local_file(local_path, client.download_file(path))
 
-    # "Sync" clicked: force-download every currently open file.
-    def on_sync_requested(payload):
-        paths = payload.paths
-        for path in paths:
-            local_path = files.local_path_by_sandbox_name.get(path)
-            if local_path is not None:
-                write_local_file(local_path, client.download_file(path))
+    # The window's title-bar X was clicked while one or more tabs still had
+    # unsaved changes: the server held the close open and is asking whether
+    # to save them first. Confirm via the built-in MessageBox form, then
+    # report the answer back so the server can actually finish closing.
+    # "Cancel" simply never calls confirm_close() -- the window was never
+    # actually removed from top_level_objects while waiting on this prompt,
+    # so leaving it unanswered leaves it open exactly as it was.
+    def on_confirm_close(payload):
+        count = len(payload.paths)
+        message = (
+            "1 file has unsaved changes. Save it before closing?"
+            if count == 1
+            else f"{count} files have unsaved changes. Save them before closing?"
+        )
+        mb = client.instantiate(
+            "MessageBox",
+            "wish",
+            params={"title": "Unsaved Changes", "message": message, "icon": "question", "buttons": "yes_no_cancel"},
+        )
+
+        # `mb` is a local variable here; if on_result didn't reference it,
+        # nothing would keep the proxy alive between now and the user's
+        # click and Python's refcounting GC would release (destroy) the
+        # remote dialog immediately, before it could ever be answered.
+        # Referencing it in the handler -- and releasing it once answered --
+        # keeps it alive exactly as long as needed.
+        def on_result(result):
+            if result.button != "cancel":
+                nano.confirm_close(save=(result.button == "yes"))
+            mb.release()
+
+        mb.on_event("on_result", on_result)
 
     def on_closed(_payload):
         client.quit()
@@ -207,7 +233,7 @@ def run_nano(client: Client, startup_path: Optional[Path]) -> None:
     nano.on_event("on_request_new", on_request_new)
     nano.on_event("on_file_closed", on_file_closed)
     nano.on_event("on_file_saved", on_file_saved)
-    nano.on_event("on_sync_requested", on_sync_requested)
+    nano.on_event("on_confirm_close", on_confirm_close)
     nano.on_event("closed", on_closed)
 
     # A file to open at startup may be passed after `--` on the command line.

@@ -253,7 +253,7 @@ WISH_API const char* wish_last_error(wish_client_handle client);
  * @brief Apply a named built-in style preset for this session.
  *
  * @param client  Active session handle.
- * @param preset  "dark", "light", or "classic".
+ * @param preset  "wish", "dark", "light", or "classic".
  * @return WISH_OK or WISH_ERR_*.
  */
 WISH_API wish_error wish_set_style_preset(wish_client_handle client, const char* preset);
@@ -262,7 +262,7 @@ WISH_API wish_error wish_set_style_preset(wish_client_handle client, const char*
  * @brief Asynchronous variant of wish_set_style_preset().
  *
  * @param client      Active session handle.
- * @param preset      "dark", "light", or "classic".
+ * @param preset      "wish", "dark", "light", or "classic".
  * @param out_future  Output future; the resolved value carries no result, so
  *                     consume it with rmi_future_wait() and discard it with
  *                     rmi_future_release().

@@ -163,7 +163,8 @@ static void RunNano(Client client, string? startupPath)
         }
     });
 
-    // Ctrl+S inside a tab: download that one file, keep it open.
+    // Ctrl+S inside a tab, or the "Save" button clicked for the active tab:
+    // download that one file, keep it open.
     nano.OnEvent("on_file_saved", payload =>
     {
         var path = (string)payload["path"]!;
@@ -173,18 +174,44 @@ static void RunNano(Client client, string? startupPath)
         }
     });
 
-    // "Sync" clicked: force-download every currently open file.
-    nano.OnEvent("on_sync_requested", payload =>
+    // The window's title-bar X was clicked while one or more tabs still had
+    // unsaved changes: the server held the close open and is asking whether
+    // to save them first. Confirm via the built-in MessageBox form, then
+    // report the answer back so the server can actually finish closing.
+    // "Cancel" simply never calls confirm_close() -- the window was never
+    // actually removed from top_level_objects while waiting on this prompt,
+    // so leaving it unanswered leaves it open exactly as it was.
+    nano.OnEvent("on_confirm_close", payload =>
     {
         using var paths = (Dynamic)payload["paths"]!;
-        foreach (var p in paths)
+        var count = 0;
+        foreach (var _ in paths) count++;
+        var message = count == 1
+            ? "1 file has unsaved changes. Save it before closing?"
+            : $"{count} files have unsaved changes. Save them before closing?";
+
+        var mb = client.Instantiate("MessageBox", "wish", new Dictionary<string, object?>
         {
-            var path = (string)p!;
-            if (files.LocalPathBySandboxName.TryGetValue(path, out var localPath))
+            ["title"] = "Unsaved Changes",
+            ["message"] = message,
+            ["icon"] = "question",
+            ["buttons"] = "yes_no_cancel",
+        });
+
+        // `mb` is a local variable here; referencing it inside its own
+        // OnEvent handler (mirroring `dlg` in BrowseAndOpen above) is what
+        // keeps the proxy alive until the user actually answers -- without
+        // that reference the GC could finalize (and so destroy) it first.
+        mb.OnEvent("on_result", result =>
+        {
+            var button = (string)result["button"]!;
+            if (button != "cancel")
             {
-                File.WriteAllBytes(localPath, client.DownloadFile(path));
+                var save = button == "yes";
+                using var callResult = nano.Call("confirm_close", new Dictionary<string, object?> { ["save"] = save });
             }
-        }
+            mb.Release();
+        });
     });
 
     nano.OnEvent("closed", _ => client.Quit());

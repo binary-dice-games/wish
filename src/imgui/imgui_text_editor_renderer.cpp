@@ -193,7 +193,7 @@ void render_text_editor(imgui_renderer&, const ui_element& node, const context& 
   // Sync the TextEditor palette with the session's active style preset.
   // TextEditor maintains its own color palette independent of ImGuiStyle.
   {
-    std::string preset = "dark";
+    std::string preset = "wish";
     if (s.style_service) {
       const auto* f = s.style_service->current_style().findField("preset"_key);
       if (f && f->is<std::string>())

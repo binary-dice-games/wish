@@ -731,7 +731,7 @@ static dynamic list_directory(const std::filesystem::path& dir) {
 
 class demo_client : public wish::examples::example_client {
  public:
-  demo_client(memory_client_transport t, wish::renderer* renderer, bool verbose = false, std::string theme = "dark")
+  demo_client(memory_client_transport t, wish::renderer* renderer, bool verbose = false, std::string theme = "wish")
       : wish::examples::example_client(std::move(t), renderer, verbose, std::move(theme), "demo") {}
 
  protected:

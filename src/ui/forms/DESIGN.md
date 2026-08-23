@@ -317,14 +317,15 @@ dlg["dlg"].onEvent("on_open"_key, [&](bison::dynamic payload) {
 
 **Bison class name:** `"Nano"` in the `"wish"` namespace. Optional module, registered behind `WISH_MODULE_BDG_DESKTOP_NANO` (see [Module System](#module-system)); disabled by default.
 
-**Purpose:** A multi-file, syntax-highlighted text editor. Each open file is one closable tab (`TabItem`) containing a `TextEditor` — the existing `TextEditor` element already reads/writes the session sandbox directly and provides highlighting, so `Nano` itself only manages tabs; it does not duplicate load/save logic.
+**Purpose:** A multi-file, syntax-highlighted text editor. Each open file is one closable tab (`TabItem`) containing a language `Combo` above a `TextEditor` — the existing `TextEditor` element already reads/writes the session sandbox directly and provides highlighting, so `Nano` itself only manages tabs (and which language each editor highlights as); it does not duplicate load/save logic. The combo is seeded from the file's extension (`language_for_extension()` in nano.cpp) but the user may override it at any time; doing so retargets the `TextEditor`'s `language` field only — it does not mark the file dirty.
 
 Files edited by a form live in the session's sandboxed `resource_dir`, but a text editor's files conceptually belong to the *client* (its local disk). `Nano` bridges the two by treating "open" and "close" as an explicit handshake with the client rather than doing any file listing itself:
 
 - **Open** — the client must call `client::upload_file` to place the file's bytes in the sandbox *before* calling the `open_file` method with the resulting sandbox-relative path. `Nano` cannot offer a client-side directory listing itself, so its own "Open" button emits `on_request_open`, asking the connected client to present its own picker (typically by driving a client-owned `FileDialog` instance populated from a local `directory_iterator` — see `modules/bdg/desktop/nano/client/nano.cpp` for the reference client).
 - **New** — the "New" button emits `on_request_new`, the same handshake as "Open" but for a file that may not exist locally yet. The reference client shows a `FileDialog` (confirm label `"New"`) letting the user pick or type a target path, creates it locally if missing, then uploads and calls `open_file` exactly like the Open flow.
-- **Close** — closing a tab (or the whole window) emits `on_file_closed`; the client is expected to call `client::download_file` for that path and persist it locally before discarding its own bookkeeping.
-- **Sync** — the "Sync" toolbar button emits `on_sync_requested` with every currently open path, asking the client to download and overwrite its local copies without closing anything.
+- **Close** — closing a tab emits `on_file_closed`; the client is expected to call `client::download_file` for that path and persist it locally before discarding its own bookkeeping.
+- **Save** — the "Save" toolbar button emits `on_file_saved` for the *active* tab's file only, asking the client to download and overwrite just that one local copy without closing anything. Ctrl+S inside a tab's editor does the same for that tab, regardless of which one is active.
+- **Unsaved-changes tracking** — each open file tracks whether it has been edited (the `TextEditor`'s `"changed"` event) since it was last saved (Ctrl+S, the "Save" button, or flushed on close); its tab's `label` gets a `" *"` suffix while that's true. Closing the whole window while any tab still has unsaved changes does not close immediately — see `on_confirm_close` below.
 
 #### Fields
 
@@ -337,6 +338,7 @@ Files edited by a form live in the session's sandboxed `resource_dir`, but a tex
 | Method | Params | Description |
 |--------|--------|--------------|
 | `open_file` | `path` (string, required), `title` (string, optional) | Registers an already-uploaded sandbox file as a new tab. `path` is validated with `file_service::resolve_path`; an invalid or sandbox-escaping path emits `on_error` instead. A `path` that is already open is a no-op. |
+| `confirm_close` | `save` (bool, required) | Answers a pending `on_confirm_close` prompt and completes the window close it deferred. `save: true` flushes every open file via `on_file_closed` (identical to closing with nothing unsaved); `save: false` flushes only the files that were already saved, leaving each unsaved file's local copy untouched. |
 
 #### Events
 
@@ -345,11 +347,11 @@ Files edited by a form live in the session's sandboxed `resource_dir`, but a tex
 | `on_request_open` | — | The "Open" button was clicked. The client should present its own file picker and, once a file is chosen, `upload_file` it and call `open_file`. |
 | `on_request_new` | — | The "New" button was clicked. Same as `on_request_open`, but the chosen path need not exist locally yet — the client should create it (if missing), then `upload_file` and call `open_file`. |
 | `on_file_opened` | `path`, `title` | A new tab was created. |
-| `on_file_closed` | `path` | A tab was closed (individually, or as part of the whole window closing). The client should `download_file(path)` and persist it locally. |
-| `on_file_saved` | `path` | The user pressed Ctrl+S inside a tab's editor. The client should `download_file(path)` without closing the tab. |
-| `on_sync_requested` | `paths` (list of string) | The "Sync" button was clicked. The client should `download_file` every listed path. |
+| `on_file_closed` | `path` | A tab was closed (individually, or as part of the whole window finishing a close via `confirm_close`). The client should `download_file(path)` and persist it locally. |
+| `on_file_saved` | `path` | Ctrl+S inside a tab's editor, or the "Save" button clicked for the active tab. The client should `download_file(path)` without closing the tab. |
+| `on_confirm_close` | `paths` (list of string) | The window's title-bar X was clicked while one or more tabs still had unsaved changes (listed in `paths`). The window stays open; the client should ask the user whether to save them, discard them, or cancel the close, then call `confirm_close(save)` with the answer -- or, for a canceled close, simply not call it at all, leaving the window open. |
 | `on_error` | `message` | `open_file` was called with an invalid or sandbox-escaping path. |
-| `closed` | — | The whole nano window was closed. `on_file_closed` fires for every file that was still open, before this event. |
+| `closed` | — | The whole nano window finished closing (immediately, if nothing was unsaved, or after `confirm_close` was answered). `on_file_closed` fires for every eligible file before this event. |
 
 #### Internal UI structure (informative)
 
@@ -359,11 +361,22 @@ Window (title from field)
     HorizontalLayout
       Button "Open"  → emits on_request_open
       Button "New"   → emits on_request_new
-      Button "Sync"  → emits on_sync_requested
+      Button "Save"  → emits on_file_saved for the active tab only
     TabBar             ← one TabItem per open file, added/removed at runtime
-      TabItem (closable) ← emits "closed" when its X is clicked
-        TextEditor       ← file_path = sandbox-relative path; language inferred from extension
+      TabItem (closable) ← label suffixed " *" while dirty; emits "closed" when its X is
+                            clicked, "selected" when it becomes the active tab
+        Combo "Language" ← seeded from the file's extension; "changed" retargets the
+                            TextEditor's language field below, does not mark dirty
+        TextEditor       ← file_path = sandbox-relative path
 ```
+
+`render_tab_item()` (`src/imgui/imgui_ui_renderer.cpp`) passes the tab's label
+through `with_id()` (`label + "###" + stable_id(node)`) rather than raw to
+`ImGui::BeginTabItem()`. Without this, the " *" suffix toggling on every
+edit/save silently changes the *active* tab's ImGui ID too — from ImGui's
+point of view the previously-selected tab vanishes and a new one appears in
+its place, and ImGui's own tab-bar fallback hands "selected" to a sibling
+tab instead. Same fix, same rationale as `render_window()`'s title ID.
 
 The internal tree is private, like `FileDialog`'s.
 

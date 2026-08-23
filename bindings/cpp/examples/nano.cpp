@@ -192,23 +192,41 @@ void run_nano(wish::client& client, const std::optional<fs::path>& startup_path)
     files.local_path_by_sandbox_name_.erase(it);
   });
 
-  // Ctrl+S inside a tab: download that one file, keep it open.
+  // Ctrl+S inside a tab, or the "Save" button clicked for the active tab:
+  // download that one file, keep it open.
   nano.on_event("on_file_saved"_key, [&](wish::value payload) {
     std::string path = payload.get_string("path"_key).value_or("");
     auto it = files.local_path_by_sandbox_name_.find(path);
     if (it != files.local_path_by_sandbox_name_.end()) write_local_file(it->second, client.download_file(path));
   });
 
-  // "Sync" clicked: force-download every currently open file.
-  nano.on_event("on_sync_requested"_key, [&](wish::value payload) {
-    auto paths = payload.get_object("paths"_key);
-    if (!paths) return;
-    for (size_t i = 0; i < paths->size(); ++i) {
-      auto path = paths->get_string_at(i);
-      if (!path) continue;
-      auto it = files.local_path_by_sandbox_name_.find(*path);
-      if (it != files.local_path_by_sandbox_name_.end()) write_local_file(it->second, client.download_file(*path));
-    }
+  // The window's title-bar X was clicked while one or more tabs still had
+  // unsaved changes: the server held the close open and is asking whether
+  // to save them first. Confirm via the built-in MessageBox form, then
+  // report the answer back so the server can actually finish closing.
+  // "Cancel" simply never calls confirm_close() -- the window was never
+  // actually removed from top_level_objects while waiting on this prompt,
+  // so leaving it unanswered leaves it open exactly as it was. The
+  // MessageBox proxy is kept alive by capturing it in its own on_event
+  // handler -- same idiom as `dlg` in browse_and_open() above.
+  nano.on_event("on_confirm_close"_key, [&](wish::value payload) {
+    size_t count = 0;
+    if (auto paths = payload.get_object("paths"_key)) count = paths->size();
+
+    wish::value params;
+    params["title"_key] = std::string{"Unsaved Changes"};
+    params["message"_key] = count == 1 ? "1 file has unsaved changes. Save it before closing?"
+                                        : std::to_string(count) + " files have unsaved changes. Save them before closing?";
+    params["icon"_key] = std::string{"question"};
+    params["buttons"_key] = std::string{"yes_no_cancel"};
+    auto mb = std::make_shared<wish::proxy>(client.instantiate("MessageBox"_key, "wish"_key, params));
+    mb->on_event("on_result"_key, [&nano, mb](wish::value result) {
+      auto button = result.get_string("button"_key).value_or("");
+      if (button == "cancel") return;
+      wish::value args;
+      args["save"_key] = button == "yes";
+      nano.call("confirm_close"_key, args);
+    });
   });
 
   nano.on_event("closed"_key, [&client](wish::value) { client.quit(); });
@@ -234,7 +252,7 @@ struct cli_args {
   std::string host = "127.0.0.1";
   uint16_t port = 7070;
   std::string name;
-  std::string theme = "dark";
+  std::string theme = "wish";
   bool verbose = false;
   std::optional<fs::path> file;
 };

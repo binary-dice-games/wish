@@ -1376,6 +1376,57 @@ TEST_F(ImguiRendererTest, StretchTabBarWrappingFillHeightTableDoesNotGrowFrameTo
   }
 }
 
+TEST_F(ImguiRendererTest, RelabelingSelectedTabItemKeepsItSelected) {
+  // Regression test for a real user-reported bug (modules/bdg/desktop/nano):
+  // a tab's whole "label" string used to be passed straight to
+  // ImGui::BeginTabItem() as its ID. nano's unsaved-changes indicator
+  // toggles a tab's label between e.g. "test.txt" and "test.txt *" as the
+  // user edits/saves -- since that changed the ACTIVE tab's ImGui ID too,
+  // ImGui saw the previously-selected tab vanish and a brand-new tab appear
+  // in its place, and its own tab-bar fallback silently handed "selected"
+  // to a sibling tab instead (observed live: saving the active middle tab
+  // moved selection to a neighboring tab, with no click involved at all).
+  // render_tab_item() now suffixes the label with "###<stable_id>" (see
+  // with_id() in imgui_ui_renderer.cpp, the same convention already used
+  // for Window titles -- see WindowRestoresFloatingSizeAfterUndock above)
+  // so a tab's ID depends only on its node identity, never its display text.
+  constexpr auto desc = R"({
+    "type": "Window", "title": "T4", "width": 300, "height": 400,
+    "pos_x": 0, "pos_y": 0,
+    "children": { "tabs": { "type": "TabBar", "id": "tb", "children": {
+      "tab_b": { "type": "TabItem", "label": "b *", "order": 0,
+                 "children": { "marker": { "type": "Label", "text": "b-content" } } },
+      "tab_a": { "type": "TabItem", "label": "a", "order": 1,
+                 "children": { "marker": { "type": "Label", "text": "a-content" } } }
+    }}}
+  })";
+  auto map = bdg::wish::import_json(desc);
+  auto& tab_b = *map["tabs.tab_b"];
+  auto& tab_a = *map["tabs.tab_a"];
+
+  // Frame 1: tab_b is the first TabItem in a fresh TabBar, so it's
+  // auto-selected -- confirm via its own "__selected__" bookkeeping field
+  // (set by render_tab_item()'s edge-triggered "selected" event logic).
+  renderer_->begin_frame();
+  renderer_->render_node(*map[""], *sess_);
+  renderer_->end_frame();
+  ASSERT_TRUE(tab_b.get_as<bool>("__selected__"_key, false));
+  ASSERT_FALSE(tab_a.get_as<bool>("__selected__"_key, false));
+
+  // Frame 2: simulate the "*" suffix clearing (Ctrl+S, or nano's "Save"
+  // button, on the active tab) -- nothing else about the tab changes, and
+  // nothing is clicked.
+  tab_b["label"_key] = std::string{"b"};
+  ImGui::GetIO().DeltaTime = 1.0f / 60.0f;
+  ImGui::NewFrame();
+  renderer_->render_node(*map[""], *sess_);
+  ImGui::EndFrame();
+
+  EXPECT_TRUE(tab_b.get_as<bool>("__selected__"_key, false))
+      << "relabeling the active tab must not hand selection to a sibling";
+  EXPECT_FALSE(tab_a.get_as<bool>("__selected__"_key, false));
+}
+
 // ── Docking: undock restores pre-dock floating size ──────────────────────────
 
 TEST_F(ImguiRendererTest, WindowRestoresFloatingSizeAfterUndock) {

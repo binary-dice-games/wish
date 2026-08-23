@@ -125,10 +125,10 @@ TEST_F(NanoWindowTest, TreeContainsBtnNew) {
   EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".vbox.toolbar.btn_new"));
 }
 
-TEST_F(NanoWindowTest, TreeContainsBtnSync) {
+TEST_F(NanoWindowTest, TreeContainsBtnSave) {
   std::string root = instantiate_and_get_root();
   ASSERT_FALSE(root.empty());
-  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".vbox.toolbar.btn_sync"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".vbox.toolbar.btn_save"));
 }
 
 TEST_F(NanoWindowTest, TreeContainsTabBar) {
@@ -203,8 +203,9 @@ class NanoFilesTest : public ::testing::Test {
     return cf->as<dynamic_ptr>()->size();
   }
 
-  // The sole TextEditor child of the tab stored at children[child_key].
-  dynamic_ptr editor_at(size_t child_key) const {
+  // The tab's Nth child element (0: language Combo, 1: TextEditor) for the
+  // tab stored at children[child_key].
+  dynamic_ptr tab_child_at(size_t child_key, size_t tab_child_index) const {
     auto& objs = srv_->last_session->ui_objects;
     auto it = objs.find(root_ + ".vbox.tab_bar");
     if (it == objs.end() || !it->second)
@@ -219,11 +220,14 @@ class NanoFilesTest : public ::testing::Test {
     auto* tcf = tab.findField("children"_key);
     if (!tcf || !tcf->is<dynamic_ptr>() || !tcf->as<dynamic_ptr>())
       return {};
-    auto& editor_f = tcf->as<dynamic_ptr>()->at(size_t{0});
-    if (!editor_f.is<dynamic_ptr>())
+    auto& child_f = tcf->as<dynamic_ptr>()->at(tab_child_index);
+    if (!child_f.is<dynamic_ptr>())
       return {};
-    return editor_f.as<dynamic_ptr>();
+    return child_f.as<dynamic_ptr>();
   }
+
+  dynamic_ptr lang_combo_at(size_t child_key) const { return tab_child_at(child_key, 0); }
+  dynamic_ptr editor_at(size_t child_key) const { return tab_child_at(child_key, 1); }
 
   bison::key_t tab_id_at(size_t child_key) const {
     auto& objs = srv_->last_session->ui_objects;
@@ -237,6 +241,27 @@ class NanoFilesTest : public ::testing::Test {
     if (!tab_f.is<dynamic_ptr>() || !tab_f.as<dynamic_ptr>())
       return {};
     return tab_f.as<dynamic_ptr>()->as<bison::key_t>("__wish_id"_key);
+  }
+
+  bison::key_t editor_id_at(size_t child_key) const {
+    auto ed = editor_at(child_key);
+    if (!ed)
+      return {};
+    return ed->as<bison::key_t>("__wish_id"_key);
+  }
+
+  std::string tab_label_at(size_t child_key) const {
+    auto& objs = srv_->last_session->ui_objects;
+    auto it = objs.find(root_ + ".vbox.tab_bar");
+    if (it == objs.end() || !it->second)
+      return {};
+    auto* cf = it->second->findField("children"_key);
+    if (!cf || !cf->is<dynamic_ptr>() || !cf->as<dynamic_ptr>())
+      return {};
+    auto& tab_f = cf->as<dynamic_ptr>()->at(child_key);
+    if (!tab_f.is<dynamic_ptr>() || !tab_f.as<dynamic_ptr>())
+      return {};
+    return tab_f.as<dynamic_ptr>()->as<std::string>("label"_key);
   }
 
   bool has_event(bison::key_t name) const {
@@ -290,6 +315,37 @@ class NanoFilesTest : public ::testing::Test {
     h->second->on_event(btn_id, "clicked"_key, dynamic{});
   }
 
+  void simulate_tab_selected(size_t child_key) {
+    auto tab_id = tab_id_at(child_key);
+    auto h = srv_->last_session->top_level_handlers.find(root_);
+    ASSERT_NE(h, srv_->last_session->top_level_handlers.end());
+    h->second->on_event(tab_id, "selected"_key, dynamic{});
+  }
+
+  void simulate_editor_changed(size_t child_key) {
+    auto ed_id = editor_id_at(child_key);
+    auto h = srv_->last_session->top_level_handlers.find(root_);
+    ASSERT_NE(h, srv_->last_session->top_level_handlers.end());
+    h->second->on_event(ed_id, "changed"_key, dynamic{});
+  }
+
+  dynamic confirm_close(bool save) {
+    dynamic args;
+    args["save"_key] = save;
+    return proxy_->call("confirm_close"_key, std::move(args)).get();
+  }
+
+  void simulate_lang_combo_changed(size_t child_key, int32_t value) {
+    auto combo = lang_combo_at(child_key);
+    ASSERT_TRUE(combo);
+    auto combo_id = combo->as<bison::key_t>("__wish_id"_key);
+    auto h = srv_->last_session->top_level_handlers.find(root_);
+    ASSERT_NE(h, srv_->last_session->top_level_handlers.end());
+    dynamic payload;
+    payload["value"_key] = value;
+    h->second->on_event(combo_id, "changed"_key, payload);
+  }
+
   memory_server_transport transport_;
   std::unique_ptr<SessionCapturingServer> srv_;
   std::unique_ptr<bdg::bison::rmi::client> client_;
@@ -307,6 +363,32 @@ TEST_F(NanoFilesTest, OpenFileCreatesTab) {
   ASSERT_TRUE(editor);
   EXPECT_EQ(editor->as<std::string>("file_path"_key), "hello.py");
   EXPECT_EQ(editor->as<std::string>("language"_key), "python");
+}
+
+TEST_F(NanoFilesTest, OpenFileSeedsLangComboFromExtension) {
+  seed_sandbox_file("hello.py", "print('hi')");
+  open_file("hello.py");
+
+  auto combo = lang_combo_at(0);
+  ASSERT_TRUE(combo);
+  auto* items_f = combo->findField<std::string>("items"_key);
+  ASSERT_NE(items_f, nullptr);
+  EXPECT_NE(items_f->find("python"), std::string::npos);
+
+  // "python" is index 7 in nano.cpp's kLanguages table.
+  EXPECT_EQ(combo->as<int32_t>("value"_key), 7);
+}
+
+TEST_F(NanoFilesTest, ChangingLangComboRetargetsEditorWithoutMarkingDirty) {
+  seed_sandbox_file("a.txt", "one");
+  open_file("a.txt", "a.txt");
+  ASSERT_EQ(editor_at(0)->as<std::string>("language"_key), "none");
+
+  // Index 1 is "cpp" in nano.cpp's kLanguages table.
+  simulate_lang_combo_changed(0, 1);
+
+  EXPECT_EQ(editor_at(0)->as<std::string>("language"_key), "cpp");
+  EXPECT_EQ(tab_label_at(0), "a.txt"); // unaffected: a display-only change, not a content edit
 }
 
 TEST_F(NanoFilesTest, OpenFileEmitsOnFileOpened) {
@@ -356,16 +438,66 @@ TEST_F(NanoFilesTest, TabClosedEmitsOnFileClosedAndRemovesTab) {
   EXPECT_EQ(evts[0].payload.as<std::string>("path"_key), "a.txt");
 }
 
-TEST_F(NanoFilesTest, SyncClickedEmitsAllOpenPaths) {
+TEST_F(NanoFilesTest, EditingMarksTabDirtyWithAsteriskSuffix) {
+  seed_sandbox_file("a.txt", "one");
+  open_file("a.txt", "a.txt");
+  EXPECT_EQ(tab_label_at(0), "a.txt");
+
+  simulate_editor_changed(0);
+  EXPECT_EQ(tab_label_at(0), "a.txt *");
+}
+
+TEST_F(NanoFilesTest, SaveClickedSavesOnlyTheActiveFile) {
   seed_sandbox_file("a.txt", "one");
   seed_sandbox_file("b.txt", "two");
-  open_file("a.txt");
-  open_file("b.txt");
+  open_file("a.txt", "a.txt");
+  open_file("b.txt", "b.txt");
 
-  simulate_btn_click("btn_sync");
+  // The first tab opened is active by default (see nano.cpp's do_open_file
+  // comment); dirty both, but only the active one should be saved.
+  simulate_editor_changed(0);
+  simulate_editor_changed(1);
+  ASSERT_EQ(tab_label_at(0), "a.txt *");
+  ASSERT_EQ(tab_label_at(1), "b.txt *");
 
-  ASSERT_TRUE(wait_for_event("on_sync_requested"_key));
-  auto evts = events_of("on_sync_requested"_key);
+  simulate_btn_click("btn_save");
+
+  ASSERT_TRUE(wait_for_event("on_file_saved"_key));
+  auto evts = events_of("on_file_saved"_key);
+  ASSERT_EQ(evts.size(), 1u);
+  EXPECT_EQ(evts[0].payload.as<std::string>("path"_key), "a.txt");
+  EXPECT_EQ(tab_label_at(0), "a.txt");
+  EXPECT_EQ(tab_label_at(1), "b.txt *");
+}
+
+TEST_F(NanoFilesTest, SelectingTabChangesWhichFileSaveTargets) {
+  seed_sandbox_file("a.txt", "one");
+  seed_sandbox_file("b.txt", "two");
+  open_file("a.txt", "a.txt");
+  open_file("b.txt", "b.txt");
+
+  simulate_tab_selected(1);
+  simulate_editor_changed(1);
+  simulate_btn_click("btn_save");
+
+  ASSERT_TRUE(wait_for_event("on_file_saved"_key));
+  auto evts = events_of("on_file_saved"_key);
+  ASSERT_EQ(evts.size(), 1u);
+  EXPECT_EQ(evts[0].payload.as<std::string>("path"_key), "b.txt");
+}
+
+TEST_F(NanoFilesTest, WindowClosedWithDirtyFileAsksForConfirmationInstead) {
+  seed_sandbox_file("a.txt", "one");
+  open_file("a.txt", "a.txt");
+  simulate_editor_changed(0);
+
+  simulate_window_closed();
+
+  ASSERT_TRUE(wait_for_event("on_confirm_close"_key));
+  EXPECT_FALSE(has_event("closed"_key));
+  EXPECT_EQ(tab_count(), 1u); // window was not torn down
+
+  auto evts = events_of("on_confirm_close"_key);
   ASSERT_EQ(evts.size(), 1u);
   auto* paths_f = evts[0].payload.findField<dynamic_ptr>("paths"_key);
   ASSERT_NE(paths_f, nullptr);
@@ -375,9 +507,40 @@ TEST_F(NanoFilesTest, SyncClickedEmitsAllOpenPaths) {
     if (f.is<std::string>())
       paths.push_back(f.as<std::string>());
   });
-  EXPECT_EQ(paths.size(), 2u);
-  EXPECT_NE(std::find(paths.begin(), paths.end(), "a.txt"), paths.end());
-  EXPECT_NE(std::find(paths.begin(), paths.end(), "b.txt"), paths.end());
+  ASSERT_EQ(paths.size(), 1u);
+  EXPECT_EQ(paths[0], "a.txt");
+}
+
+TEST_F(NanoFilesTest, ConfirmCloseWithSaveTrueFlushesEveryFileThenCloses) {
+  seed_sandbox_file("a.txt", "one");
+  open_file("a.txt", "a.txt");
+  simulate_editor_changed(0);
+  simulate_window_closed();
+  ASSERT_TRUE(wait_for_event("on_confirm_close"_key));
+
+  confirm_close(/*save=*/true);
+
+  ASSERT_TRUE(wait_for_event("closed"_key));
+  auto closed_evts = events_of("on_file_closed"_key);
+  ASSERT_EQ(closed_evts.size(), 1u);
+  EXPECT_EQ(closed_evts[0].payload.as<std::string>("path"_key), "a.txt");
+}
+
+TEST_F(NanoFilesTest, ConfirmCloseWithSaveFalseSkipsOnlyTheDirtyFiles) {
+  seed_sandbox_file("a.txt", "one");
+  seed_sandbox_file("b.txt", "two");
+  open_file("a.txt", "a.txt");
+  open_file("b.txt", "b.txt");
+  simulate_editor_changed(0); // a.txt is dirty; b.txt stays clean
+  simulate_window_closed();
+  ASSERT_TRUE(wait_for_event("on_confirm_close"_key));
+
+  confirm_close(/*save=*/false);
+
+  ASSERT_TRUE(wait_for_event("closed"_key));
+  auto closed_evts = events_of("on_file_closed"_key);
+  ASSERT_EQ(closed_evts.size(), 1u);
+  EXPECT_EQ(closed_evts[0].payload.as<std::string>("path"_key), "b.txt");
 }
 
 TEST_F(NanoFilesTest, OpenButtonClickedEmitsOnRequestOpen) {

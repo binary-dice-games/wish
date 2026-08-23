@@ -72,18 +72,26 @@ std::string stable_id(const ui_element& node) {
   return buf;
 }
 
-// Append "###<stable_id>" to a Window's title. Only render_window needs
-// this: ImGui::Begin() computes a top-level window's persistent ID by
-// hashing its name string directly -- unlike every other widget, it does
-// NOT consult the current ID stack -- so PushID() (see render_node() in
-// imgui_renderer.cpp, which scopes every other widget) can't disambiguate
-// windows. Three hashes (not two) is deliberate: ImGui hides everything
-// after "##" from display but still folds the visible prefix into the ID
-// hash, whereas "###" makes the ID depend *only* on what follows it. Using
-// "##" here would let editing the Window's own title field change its
-// ImGui ID out from under it, silently resetting per-ID state ImGui tracks
-// itself -- position/size/dock/focus -- even though the element's actual
-// identity never changed.
+// Append "###<stable_id>" to a label. Needed by any widget whose persisted
+// per-ID ImGui state matters AND whose visible label can change at runtime
+// from a field the app controls -- e.g. a Window's title (position/size/
+// dock/focus) or a TabBar's TabItem label (which tab is selected/active).
+// ImGui folds a widget's whole label string into its ID hash by default, so
+// without this, editing such a label silently changes the widget's ID out
+// from under it -- from ImGui's point of view a brand-new widget appears in
+// the old one's place, discarding whatever state was keyed to the old ID,
+// even though the element's actual identity never changed. Three hashes
+// (not two) is deliberate: ImGui hides everything after "##" from display
+// but still folds the visible prefix into the ID hash, whereas "###" makes
+// the ID depend *only* on what follows it -- required for render_window()
+// specifically, since ImGui::Begin() computes a top-level window's
+// persistent ID by hashing its name string directly and, unlike every other
+// widget, does NOT consult the current ID stack, so PushID() (see
+// render_node() in imgui_renderer.cpp, which scopes every other widget)
+// can't disambiguate windows the way it can for a nested widget like
+// TabItem. Using "###" for TabItem too, rather than relying on the "##"
+// two-hash form, keeps both call sites identical and equally immune to a
+// same-named sibling tab's label colliding with this one's stable suffix.
 static std::string with_id(const std::string& label, const ui_element& node) {
   return label + "###" + stable_id(node);
 }
@@ -1144,7 +1152,16 @@ void render_tab_item(imgui_renderer& r, const ui_element& node, const context& s
   bool open = true;
   bool* p_open = closable ? &open : nullptr;
 
-  bool is_selected = ImGui::BeginTabItem(label.c_str(), p_open);
+  // with_id(), not a raw label: BeginTabItem() folds its whole label string
+  // into the tab's persistent ImGui ID (same as ImGui::Begin() -- see
+  // with_id()'s doc comment above). A TabItem's label can change at runtime
+  // (e.g. nano's unsaved-changes " *" suffix, toggled by editing/saving),
+  // and without this, that content change silently changes the tab's ID too
+  // -- from ImGui's point of view a brand-new tab appears in the old one's
+  // place, which loses its active/selected status and, if it happened to be
+  // the active tab, hands "active" to a neighboring tab instead.
+  auto iml = with_id(label, node);
+  bool is_selected = ImGui::BeginTabItem(iml.c_str(), p_open);
 
   // Emit 'selected' only on the transition from invisible to visible.
   const auto* prev_f = node.findField("__selected__"_key);

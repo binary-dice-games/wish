@@ -316,7 +316,7 @@ struct cli_args {
   std::string host = "127.0.0.1";
   uint16_t port = 7070;
   std::string name;
-  std::string theme = "dark";
+  std::string theme = "wish";
   bool verbose = false;
 };
 

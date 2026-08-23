@@ -1,6 +1,6 @@
 // MIT License © 2025 Binary Dice Games
 /// @file theme_wish.cpp
-/// @brief Registers the "wish" theme: `ImGui::StyleColorsDark` with a more
+/// @brief Registers the "wish" theme: `ImGui::StyleColorsLight` with a more
 ///        modern look layered on top -- wish's default theme.
 #include <imgui/imgui_renderer.hpp>
 #include <imgui/themes/themes.hpp>
@@ -14,7 +14,7 @@ namespace {
 // Softer corner rounding, roomier padding, and no inner frame borders.
 void StyleColorsWish(ImGuiStyle* dst) {
   ImGuiStyle& style = dst ? *dst : ImGui::GetStyle();
-  ImGui::StyleColorsDark(&style);
+  ImGui::StyleColorsLight(&style);
 
   style.WindowRounding = 6.0f;
   style.FrameRounding = 4.0f;

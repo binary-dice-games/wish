@@ -183,7 +183,8 @@ void run_nano(wish_app_host& s) {
     files->local_path_by_sandbox_name.erase(it);
   });
 
-  // Ctrl+S inside a tab: download that one file, keep it open.
+  // Ctrl+S inside a tab, or the "Save" button clicked for the active tab:
+  // download that one file, keep it open.
   nano->onEvent("on_file_saved"_key, [&s, files](dynamic payload) {
     auto path = payload.as<std::string>("path"_key);
     auto it = files->local_path_by_sandbox_name.find(path);
@@ -191,18 +192,39 @@ void run_nano(wish_app_host& s) {
       write_local_file(it->second, s.download_file(path).get());
   });
 
-  // "Sync" clicked: force-download every currently open file.
-  nano->onEvent("on_sync_requested"_key, [&s, files](dynamic payload) {
-    auto* paths_f = payload.findField<dynamic_ptr>("paths"_key);
-    if (!paths_f || !*paths_f)
-      return;
-    (*paths_f)->forEach([&](key_t, const field& f) {
-      if (!f.is<std::string>())
+  // The window's title-bar X was clicked while one or more tabs still had
+  // unsaved changes: the server held the close open (see nano.hpp's class
+  // doc comment) and is asking whether to save them first. Confirm via the
+  // built-in MessageBox form -- same confirmation pattern as
+  // mc/client/mc.cpp's confirm_overwrite -- then report the answer back so
+  // the server can actually finish closing. "Cancel" calls confirm_close()
+  // -- the window was never actually removed from top_level_objects while
+  // waiting on this prompt, so simply not answering leaves it open exactly
+  // as it was. The MessageBox proxy is kept alive by capturing it in its
+  // own on_result handler: a proxy with no live reference is destroyed
+  // immediately, taking the not-yet-answered dialog down with it.
+  nano->onEvent("on_confirm_close"_key, [&s, nano](dynamic payload) {
+    size_t count = 0;
+    if (auto* paths_f = payload.findField<dynamic_ptr>("paths"_key); paths_f && *paths_f)
+      (*paths_f)->forEach([&](key_t, const field&) { ++count; });
+
+    std::string message = count == 1 ? "1 file has unsaved changes. Save it before closing?"
+                                      : std::to_string(count) + " files have unsaved changes. Save them before closing?";
+
+    dynamic params;
+    params["title"_key] = std::string{"Unsaved Changes"};
+    params["message"_key] = message;
+    params["icon"_key] = std::string{"question"};
+    params["buttons"_key] = std::string{"yes_no_cancel"};
+    auto raw = s.instantiate("wish"_key, "MessageBox"_key, std::move(params)).get();
+    auto mb = std::make_shared<rmi::proxy::dynamic>(std::move(raw));
+    mb->onEvent("on_result"_key, [mb, nano](dynamic result) {
+      auto button = result.as<std::string>("button"_key);
+      if (button == "cancel")
         return;
-      auto path = f.as<std::string>();
-      auto it = files->local_path_by_sandbox_name.find(path);
-      if (it != files->local_path_by_sandbox_name.end())
-        write_local_file(it->second, s.download_file(path).get());
+      dynamic args;
+      args["save"_key] = button == "yes";
+      nano->call("confirm_close"_key, std::move(args)).get();
     });
   });
 
