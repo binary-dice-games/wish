@@ -263,8 +263,11 @@ class PixFunctionalTest : public ::testing::Test {
     return child_f.as<dynamic_ptr>();
   }
 
-  // Grid cell at (row, col): grid_table -> row -> cell (VerticalLayout) ->
-  // {0: Image, 1: Selectable}. Returns null if out of range or padding.
+  // Grid cell at (row, col): grid_table -> row -> cell, where the cell
+  // itself is the Selectable (click target), wrapping {0: Image,
+  // 1: Label (filename)} as overlay children -- see render_selectable()'s
+  // children-overlay doc comment in imgui_ui_renderer.cpp. Returns null if
+  // out of range or padding.
   dynamic_ptr grid_cell(size_t row, size_t col) const {
     auto& objs = srv_->last_session->ui_objects;
     auto it = objs.find(root_ + ".vbox.body.left_panel.grid_table");
@@ -296,20 +299,22 @@ class PixFunctionalTest : public ::testing::Test {
 
 TEST_F(PixFunctionalTest, SetImagesBuildsGridWithPlaceholderThumbnails) {
   set_images({"a.png", "b.png"});
-  // Row 0, col 0 -> a VerticalLayout{0: Image, 1: Selectable}.
+  // Row 0, col 0 -> a Selectable{0: Label(filename), 1: Image} -- caption
+  // above the thumbnail so captions stay aligned across cells regardless
+  // of each thumbnail's own aspect-fit height (see rebuild_grid()).
   auto cell = grid_cell(0, 0);
   ASSERT_TRUE(cell);
-  auto image = child_at(cell, 0);
-  auto selectable = child_at(cell, 1);
+  auto name_label = child_at(cell, 0);
+  auto image = child_at(cell, 1);
   ASSERT_TRUE(image);
-  ASSERT_TRUE(selectable);
+  ASSERT_TRUE(name_label);
 
   auto* src = image->findField<std::string>("src"_key);
   ASSERT_NE(src, nullptr);
   EXPECT_EQ(*src, "res/icons/image.png");
-  auto* label = selectable->findField<std::string>("label"_key);
-  ASSERT_NE(label, nullptr);
-  EXPECT_EQ(*label, "a.png");
+  auto* text = name_label->findField<std::string>("text"_key);
+  ASSERT_NE(text, nullptr);
+  EXPECT_EQ(*text, "a.png");
 }
 
 TEST_F(PixFunctionalTest, SetThumbnailUpdatesMatchingCell) {
@@ -319,11 +324,32 @@ TEST_F(PixFunctionalTest, SetThumbnailUpdatesMatchingCell) {
   args["thumb_path"_key] = std::string{"pix_cache/x/thumbs/a.png.png"};
   proxy_->call("set_thumbnail"_key, std::move(args)).get();
 
-  auto image = child_at(grid_cell(0, 0), 0);
+  auto image = child_at(grid_cell(0, 0), 1);
   ASSERT_TRUE(image);
   auto* src = image->findField<std::string>("src"_key);
   ASSERT_NE(src, nullptr);
   EXPECT_EQ(*src, "pix_cache/x/thumbs/a.png.png");
+}
+
+TEST_F(PixFunctionalTest, SetThumbnailWithSizeFitsNonSquareAspectRatioWithoutStretching) {
+  set_images({"a.png"});
+  dynamic args;
+  args["name"_key] = std::string{"a.png"};
+  args["thumb_path"_key] = std::string{"pix_cache/x/thumbs/a.png.png"};
+  // A 96x48 (2:1) source thumbnail must fit inside the 84x84 cell
+  // preserving that ratio (84x42), not stretch back out to 84x84.
+  args["width"_key] = int32_t{96};
+  args["height"_key] = int32_t{48};
+  proxy_->call("set_thumbnail"_key, std::move(args)).get();
+
+  auto image = child_at(grid_cell(0, 0), 1);
+  ASSERT_TRUE(image);
+  auto* w = image->findField<int32_t>("width"_key);
+  auto* h = image->findField<int32_t>("height"_key);
+  ASSERT_NE(w, nullptr);
+  ASSERT_NE(h, nullptr);
+  EXPECT_EQ(*w, 84);
+  EXPECT_EQ(*h, 42);
 }
 
 TEST_F(PixFunctionalTest, SetInfoPopulatesLabelsWithPrefixes) {
@@ -357,6 +383,24 @@ TEST_F(PixFunctionalTest, SetPreviewUpdatesImageAndZoomLabel) {
   EXPECT_EQ(*img->findField<int32_t>("width"_key), 400);
   EXPECT_EQ(*img->findField<int32_t>("height"_key), 300);
   EXPECT_EQ(text_at(root_ + ".vbox.body.right_panel.zoom_bar.zoom_label"), "50%");
+}
+
+TEST_F(PixFunctionalTest, SetPreviewWidensColumnToMatchZoomedImageWidth) {
+  // preview_table's TableColumn has a fixed pixel width (ImGui doesn't
+  // auto-expand a column to an oversized cell's content), so it must track
+  // the image's own current (zoomed) width for ScrollX to pan across the
+  // image's full extent instead of clipping it -- see do_set_preview().
+  dynamic args;
+  args["loading"_key] = false;
+  args["src"_key] = std::string{"pix_cache/x/full/photo.png"};
+  args["width"_key] = int32_t{1500};
+  args["height"_key] = int32_t{900};
+  args["zoom_percent"_key] = 100.0f;
+  proxy_->call("set_preview"_key, std::move(args)).get();
+
+  auto& objs = srv_->last_session->ui_objects;
+  auto& col = objs.at(root_ + ".vbox.body.right_panel.preview_table.pcol0");
+  EXPECT_EQ(*col->findField<float>("init_width"_key), 1500.0f);
 }
 
 TEST_F(PixFunctionalTest, SetPreviewLoadingShowsLoadingLabel) {
@@ -398,6 +442,30 @@ TEST_F(PixFunctionalTest, StatFilesRejectsSandboxEscape) {
   EXPECT_FALSE(entry.as<bool>("exists"_key));
 }
 
+TEST_F(PixFunctionalTest, DeleteFileRemovesUploadedFile) {
+  auto path = srv_->last_session->resource_dir / "evict_me.png";
+  std::ofstream out(path, std::ios::binary);
+  out << "fake png bytes";
+  out.close();
+  ASSERT_TRUE(std::filesystem::exists(path));
+
+  dynamic args;
+  args["path"_key] = std::string{"evict_me.png"};
+  proxy_->call("delete_file"_key, std::move(args)).get();
+
+  EXPECT_FALSE(std::filesystem::exists(path));
+}
+
+TEST_F(PixFunctionalTest, DeleteFileIsNoOpForMissingOrSandboxEscapingPath) {
+  dynamic args;
+  args["path"_key] = std::string{"never_existed.png"};
+  EXPECT_NO_THROW(proxy_->call("delete_file"_key, args.clone()).get());
+
+  dynamic escape_args;
+  escape_args["path"_key] = std::string{"../../etc/passwd"};
+  EXPECT_NO_THROW(proxy_->call("delete_file"_key, std::move(escape_args)).get());
+}
+
 TEST_F(PixFunctionalTest, BrowseButtonEmitsEvent) {
   fire_event(root_ + ".vbox.toolbar.btn_browse", "clicked"_key);
   EXPECT_TRUE(wait_for_event("on_browse_clicked"_key));
@@ -431,8 +499,8 @@ TEST_F(PixFunctionalTest, SelectableClickEmitsImageSelectedWithName) {
   // Row 0, col 1 ("b.png"): a dynamically-created cell, not a statically
   // imported one -- fire the event directly against its own __wish_id
   // (see grid_cell()'s doc comment on why fire_event()'s dot-path lookup
-  // doesn't reach it).
-  auto selectable = child_at(grid_cell(0, 1), 1);
+  // doesn't reach it). The cell itself is the Selectable.
+  auto selectable = grid_cell(0, 1);
   ASSERT_TRUE(selectable);
   auto sel_id = selectable->as<bison::key_t>("__wish_id"_key);
   ASSERT_TRUE(sel_id.id);

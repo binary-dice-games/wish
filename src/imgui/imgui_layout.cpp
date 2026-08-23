@@ -409,7 +409,7 @@ static void arrange_horizontal_layout(imgui_renderer& r, const ui_element& node,
   node.set_content_extent({x - origin.x, max_col_h});
 }
 
-static void arrange_splitter(imgui_renderer&, const ui_element& node, ImVec2 origin, ImVec2 avail, const context&) {
+static void arrange_splitter(imgui_renderer& r, const ui_element& node, ImVec2 origin, ImVec2 avail, const context& s) {
   auto orientation = node.get_as<std::string>("orientation"_key, "vertical");
   bool is_vertical = orientation != "horizontal";
   float thickness = std::max(1.0f, node.get_as<float>("thickness"_key, 4.0f));
@@ -434,12 +434,26 @@ static void arrange_splitter(imgui_renderer&, const ui_element& node, ImVec2 ori
     float sz = is_last ? last_size : std::max(0.0f, panes[i]->get_as<float>(size_field, 0.0f));
     ImVec2 pane_origin = is_vertical ? ImVec2(pos, origin.y) : ImVec2(origin.x, pos);
     ImVec2 pane_avail = is_vertical ? ImVec2(sz, avail.y) : ImVec2(avail.x, sz);
-    // Panes stay leaves from arrange's perspective (like Table): the
-    // pane's own box is stamped directly rather than via arrange_node(),
-    // since Splitter's own pane-dividing logic (render_splitter(), not
-    // this file) owns everything about a pane's content, unchanged by
-    // this refactor.
-    panes[i]->set_arranged_rect({pane_origin.x, pane_origin.y}, {pane_avail.x, pane_avail.y}, frame);
+    // Route through the generic arrange_node() (not a direct
+    // set_arranged_rect() stamp) so a pane that is itself a
+    // VerticalLayout/HorizontalLayout/Table/Splitter gets its own
+    // arrange_fn invoked too, cascading pane_avail down into *its*
+    // children and setting its own content_extent -- exactly like
+    // arrange_vertical_layout()/arrange_horizontal_layout() already do for
+    // every child of theirs, hinted or not. Skipping this (as an earlier
+    // version of this function did, stamping the pane directly) leaves a
+    // Layout/Table pane's content_extent() at its stale/default value,
+    // since nothing else ever calls its arrange_fn -- render_vertical_layout()
+    // then sees a false has_self_size, skips its own BeginChild wrap, and
+    // every further-nested descendant free-falls into ensure_arranged()'s
+    // ambient-GetContentRegionAvail() self-heal instead of the size this
+    // Splitter actually allocated it, drifting further off with each
+    // nesting level (observed: a pane's own Table ending up taller than
+    // the pane itself, and a deeper pane's last child rendering below the
+    // window entirely). A plain leaf pane (Label, TreeNode, ...) is
+    // unaffected either way, since arrange_node() no-ops for any class
+    // without a registered arrange_fn.
+    arrange_node(r, *panes[i], pane_origin, pane_avail, s);
     pos += sz + thickness;
   }
 }

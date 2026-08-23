@@ -1273,17 +1273,42 @@ void render_radio_button(imgui_renderer&, const ui_element& node, const context&
     enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "clicked"_key, dynamic{});
 }
 
-void render_selectable(imgui_renderer&, const ui_element& node, const context& s) {
+void render_selectable(imgui_renderer& r, const ui_element& node, const context& s) {
   auto label = node.get_as<std::string>("label"_key, "");
   bool selected = node.get_as<bool>("selected"_key, false);
   float w = node.get_as<float>("width"_key, 0.0f);
   float h = node.get_as<float>("height"_key, 0.0f);
+
+  // Children (if any) are drawn as overlay content on top of the
+  // Selectable's own hit-test area -- the same AllowOverlap technique
+  // render_table() already uses for a TableRow's row-spanning Selectable --
+  // so a Selectable can wrap richer content (e.g. an Image + a caption
+  // Label) while staying clickable across all of it, not just wherever
+  // Selectable's own text label happens to be drawn. Author an explicit
+  // nonzero width/height when using this: 0 falls back to ImGui's plain
+  // fill-width/single-line sizing, which won't cover taller overlay content.
+  bool has_children = false;
+  node.for_each_child_ordered([&](key_t, ui_element&) { has_children = true; });
+
   bool v = selected;
-  if (ImGui::Selectable(label.c_str(), &v, 0, ImVec2(w, h))) {
+  ImGuiSelectableFlags flags = has_children ? ImGuiSelectableFlags_AllowOverlap : 0;
+  ImVec2 top_left = ImGui::GetCursorScreenPos();
+  if (ImGui::Selectable(label.c_str(), &v, flags, ImVec2(w, h))) {
     const_cast<ui_element&>(node)["selected"_key] = v;
     dynamic payload;
     payload["selected"_key] = v;
     enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "changed"_key, std::move(payload));
+  }
+
+  if (has_children) {
+    ImVec2 box_size = ImGui::GetItemRectSize();
+    ImGui::SetCursorScreenPos(top_left);
+    node.for_each_child_ordered([&](key_t, ui_element& child) { r.render_node(child, s); });
+    // Advance the cursor to the Selectable's own bottom edge, not wherever
+    // the last overlay child's natural flow left it -- otherwise a caller
+    // relying on sequential stacking (e.g. render_vertical_layout()) would
+    // see this cell consume more vertical space than its declared height.
+    ImGui::SetCursorScreenPos(ImVec2(top_left.x, top_left.y + box_size.y));
   }
 }
 

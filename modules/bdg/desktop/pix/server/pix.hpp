@@ -32,12 +32,14 @@ namespace bdg::wish {
 ///
 /// Thumbnails are laid out as a `Table` (fixed column count, `outer_height`
 /// clipped/scrollable) so a folder with many images scrolls independently
-/// of the rest of the window, without requiring any new renderer
-/// primitive: each cell is a small `VerticalLayout` holding an `Image`
-/// (thumbnail, not itself clickable -- Image has no events) and a
-/// `Selectable` (the filename, click target) with its own `__wish_id` for
-/// precise per-cell click routing, entirely independent of the Table's own
-/// `row_selected`/`row_activated` events (which this form does not use).
+/// of the rest of the window. Each cell is a single `Selectable` (the click
+/// target, with its own `__wish_id` for precise per-cell click routing) that
+/// wraps an `Image` (thumbnail) and a filename `Label` as overlay children
+/// (see `render_selectable()`'s children-overlay support in
+/// imgui_ui_renderer.cpp), so clicking anywhere in the cell -- the
+/// thumbnail or the filename -- selects it, entirely independent of the
+/// Table's own `row_selected`/`row_activated` events (which this form does
+/// not use).
 ///
 /// The right preview panel reuses the exact same "Table as a scrollable
 /// clipped viewport" trick for panning: a single-cell `Table` with
@@ -57,15 +59,22 @@ class pix_viewer : public form {
   bison::dynamic do_set_images(const bison::dynamic& args);
 
   /// @brief RMI method: update one grid cell's thumbnail once it has been
-  /// generated and uploaded. @p args holds `name` and `thumb_path`
-  /// (sandbox-relative). A no-op if `name` is no longer in the grid (the
-  /// directory changed while the thumbnail was being generated).
+  /// generated and uploaded. @p args holds `name`, `thumb_path`
+  /// (sandbox-relative), and optionally `width`/`height` (int32, the
+  /// uploaded thumbnail file's own pixel size) -- when present, the
+  /// displayed Image is fit within the grid cell's square preserving that
+  /// aspect ratio instead of being stretched to fill it. A no-op if `name`
+  /// is no longer in the grid (the directory changed while the thumbnail
+  /// was being generated).
   bison::dynamic do_set_thumbnail(const bison::dynamic& args);
 
   /// @brief RMI method: update the right-panel preview. @p args holds
   /// `loading` (bool), and when `loading` is false: `src` (sandbox-relative
   /// path), `width`/`height` (int32, the zoomed display size), and
-  /// `zoom_percent` (float, shown in the zoom label).
+  /// `zoom_percent` (float, shown in the zoom label). Also re-widens
+  /// preview_table's column to `width` so its ScrollX pan range covers the
+  /// image's full current (zoomed) width -- an ImGui table column doesn't
+  /// auto-expand to an oversized cell's content on its own.
   bison::dynamic do_set_preview(const bison::dynamic& args);
 
   /// @brief RMI method: update the info panel. @p args holds `filename`,
@@ -87,6 +96,15 @@ class pix_viewer : public form {
   /// `exists: false` rather than erroring.
   bison::dynamic do_stat_files(const bison::dynamic& args);
 
+  /// @brief RMI method: delete one sandboxed file. @p args holds `path`
+  /// (sandbox-relative). Used by the client to evict a full-image cache
+  /// entry it has LRU-retired (see client/pix.cpp's touch_full_cache()) --
+  /// a sandbox-local action the server performs directly, the same way
+  /// "Open Sandbox in Explorer" does. Best-effort: a missing file is not an
+  /// error, and a path that escapes the sandbox is silently ignored (same
+  /// as `do_stat_files`'s `exists: false` handling).
+  bison::dynamic do_delete_file(const bison::dynamic& args);
+
   /// @brief Called from the `__setter` prototype method for every set() call.
   /// Intercepts `path` to mirror it into the path_input widget.
   bison::dynamic on_set(const bison::dynamic& patch);
@@ -98,9 +116,9 @@ class pix_viewer : public form {
  private:
   struct grid_entry {
     std::string name;
-    ui_element_ptr cell_ptr;       ///< The per-image VerticalLayout cell.
-    ui_element_ptr image_ptr;      ///< Thumbnail Image inside the cell.
-    ui_element_ptr selectable_ptr; ///< Filename Selectable inside the cell.
+    ui_element_ptr cell_ptr;       ///< The per-image Selectable cell (== selectable_ptr).
+    ui_element_ptr image_ptr;      ///< Thumbnail Image, an overlay child of the cell.
+    ui_element_ptr selectable_ptr; ///< The cell's own Selectable (click target).
     bison::key_t selectable_id;
   };
 
@@ -127,6 +145,7 @@ class pix_viewer : public form {
   ui_element_ptr status_label_ptr_;
   ui_element_ptr grid_table_ptr_;
   ui_element_ptr preview_image_ptr_;
+  ui_element_ptr preview_col_ptr_; ///< preview_table's sole TableColumn; see do_set_preview().
   ui_element_ptr zoom_label_ptr_;
   ui_element_ptr info_filename_ptr_;
   ui_element_ptr info_resolution_ptr_;

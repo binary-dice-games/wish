@@ -27,6 +27,16 @@ using namespace bison;
 // col_name/col_type's "column_id" is echoed back in the Table's "sorted"
 // event payload (see table.cpp's TableColumn.column_id doc comment) --
 // on_file_table_sorted() below matches it against these same 0/1 values.
+// file_table's own "width"/"height": -1 make it stretch-fill whatever space
+// vbox's other (auto-height) children don't use, instead of a fixed pixel
+// box, so the table actually fills the window (and tracks it on resize).
+// btn_row right-aligns via a leading Spring rather than "align": "right" +
+// fixed-width buttons -- "align": "right" needs every child's width known
+// up front, which only works when a label is no wider than its hardcoded
+// pixel width; a confirm_label like "Select Folder" can be longer than any
+// one fixed width and would get clipped, so the buttons are left to
+// auto-size to their own label content (no "width" field) and the Spring
+// pushes the pair to the right edge instead.
 static constexpr const char* kDialogLayout = R"({
   "type": "Window",
   "width": 520, "height": 420, "modal": true,
@@ -42,7 +52,8 @@ static constexpr const char* kDialogLayout = R"({
           "type": "Table",
           "columns": 2,
           "flags": "Resizable|Sortable|RowBg|BordersH|ScrollY",
-          "outer_height": 260.0,
+          "width": -1,
+          "height": -1,
           "headers": true,
           "children": {
             "col_name": { "type": "TableColumn", "label": "Name",
@@ -64,10 +75,11 @@ static constexpr const char* kDialogLayout = R"({
         },
         "btn_row": {
           "type": "HorizontalLayout",
-          "spacing": 8.0, "align": "right",
+          "spacing": 8.0,
           "children": {
-            "btn_open":   { "type": "Button", "label": "Open",   "width": 100 },
-            "btn_cancel": { "type": "Button", "label": "Cancel", "width": 100 }
+            "btn_row_spring": { "type": "Spring" },
+            "btn_open":   { "type": "Button", "label": "Open" },
+            "btn_cancel": { "type": "Button", "label": "Cancel" }
           }
         }
       }

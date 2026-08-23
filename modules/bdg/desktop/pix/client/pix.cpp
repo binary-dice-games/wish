@@ -45,10 +45,12 @@
 #include <fstream>
 #include <functional>
 #include <iomanip>
+#include <list>
 #include <memory>
 #include <sstream>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 namespace bdg::wish {
@@ -69,6 +71,12 @@ constexpr float kPreviewViewportW = 600.0f;
 constexpr float kPreviewViewportH = 440.0f;
 constexpr float kMinZoomPercent = 5.0f;
 constexpr float kMaxZoomPercent = 800.0f;
+// Full-resolution images can be tens of MB each and (unlike thumbnails,
+// which stay cheap and per-directory forever) are cached globally across
+// every directory browsed this session -- capped at this many most-
+// recently-selected entries so the sandbox doesn't grow without bound as
+// the user browses many folders. See touch_full_cache().
+constexpr size_t kMaxCachedFullImages = 20;
 
 const std::vector<std::string>& supported_extensions() {
   static const std::vector<std::string> kExts{".png", ".jpg", ".jpeg", ".bmp", ".tga", ".gif"};
@@ -138,8 +146,24 @@ std::string sandbox_thumb_path(const std::string& dir_key, const std::string& na
   return "pix_cache/" + dir_key + "/thumbs/" + name + ".png";
 }
 
-std::string sandbox_full_path(const std::string& dir_key, const std::string& name) {
-  return "pix_cache/" + dir_key + "/full/" + name;
+// The full-resolution image cache is global (shared across every directory
+// browsed this session, unlike thumbnails above), so its key is derived
+// from the image's own full local path rather than a per-directory key --
+// two different directories' "photo.png" must not collide, and revisiting
+// the exact same local file (even after browsing elsewhere) must land on
+// the same cache slot so it counts as a cache hit, not a fresh entry. The
+// extension rides along in the key itself so it doubles as the cache
+// entry's actual sandbox filename (see sandbox_full_cache_path()) without
+// a separate lookup.
+std::string full_cache_key_for(const fs::path& local_path) {
+  std::hash<std::string> hasher;
+  std::ostringstream oss;
+  oss << std::hex << (hasher(local_path.string()) & 0xffffffffu) << local_path.extension().string();
+  return oss.str();
+}
+
+std::string sandbox_full_cache_path(const std::string& cache_key) {
+  return "pix_cache/full_cache/" + cache_key;
 }
 
 // Invokes an RMI method on `pix`, retrying a couple of times on failure --
@@ -252,7 +276,54 @@ struct pix_state {
   // selection or directory is silently dropped instead of clobbering
   // newer state.
   std::shared_ptr<std::atomic<uint64_t>> generation = std::make_shared<std::atomic<uint64_t>>(0);
+
+  // Global full-image cache LRU (see touch_full_cache()): full_cache_lru
+  // holds cache keys, most-recently-used at the front; full_cache_index
+  // maps a key to its list position for O(1) touch/evict. Like
+  // cur_dir/dir_key/images above, touched only from RMI event-handler
+  // callbacks (delivered one at a time, never concurrently), so it needs
+  // no synchronization of its own.
+  std::list<std::string> full_cache_lru;
+  std::unordered_map<std::string, std::list<std::string>::iterator> full_cache_index;
 };
+
+// Marks `cache_key` as the most-recently-used entry in `state`'s global
+// full-image cache. If `cache_key` is already tracked, just moves it to the
+// front (a cache hit -- its sandbox file may still need a staleness check
+// against the local file, which the caller handles separately). Otherwise
+// inserts it as a new entry, evicting the least-recently-used entry first
+// (deleting its sandbox file via the server's own "delete_file" RMI method
+// -- see server/pix.cpp's do_delete_file()) if the cache is already at
+// kMaxCachedFullImages. Must only be called from the RMI event-handler
+// thread (see pix_state::full_cache_lru's doc comment) -- issues a blocking
+// RMI call directly, same as browse_to()'s calls below.
+void touch_full_cache(const std::shared_ptr<pix_state>& state, const std::string& cache_key) {
+  auto it = state->full_cache_index.find(cache_key);
+  if (it != state->full_cache_index.end()) {
+    state->full_cache_lru.erase(it->second);
+    state->full_cache_lru.push_front(cache_key);
+    it->second = state->full_cache_lru.begin();
+    return;
+  }
+
+  if (state->full_cache_lru.size() >= kMaxCachedFullImages) {
+    const std::string& oldest_key = state->full_cache_lru.back();
+    dynamic args;
+    args["path"_key] = sandbox_full_cache_path(oldest_key);
+    try {
+      call_with_retry(state->pix, "delete_file"_key, std::move(args));
+    } catch (const std::exception&) {
+      // Best-effort: worst case the evicted entry's file lingers in the
+      // sandbox; the LRU bookkeeping below still proceeds so this session
+      // doesn't keep retrying the same failing delete on every eviction.
+    }
+    state->full_cache_index.erase(oldest_key);
+    state->full_cache_lru.pop_back();
+  }
+
+  state->full_cache_lru.push_front(cache_key);
+  state->full_cache_index[cache_key] = state->full_cache_lru.begin();
+}
 
 // Lists `dir`'s image files (see is_image_file()), sorted by name.
 std::vector<image_entry> list_images(const fs::path& dir) {
@@ -320,6 +391,12 @@ void generate_and_upload_thumbnail(
     dynamic args;
     args["name"_key] = name;
     args["thumb_path"_key] = thumb_path;
+    // The generated thumbnail's own pixel size (already aspect-preserving
+    // via fit_dims() above) -- PixViewer fits it into its fixed-square grid
+    // cell without stretching it back out to a square. See
+    // server/pix.cpp's do_set_thumbnail().
+    args["width"_key] = static_cast<int32_t>(tw);
+    args["height"_key] = static_cast<int32_t>(th);
     call_with_retry(pix, "set_thumbnail"_key, std::move(args));
   } catch (const std::exception&) {
     // Best-effort: the cell just keeps showing the generic placeholder.
@@ -580,7 +657,13 @@ void run_pix(wish_app_host& s) {
       return;
 
     uint64_t gen = state->generation->fetch_add(1) + 1;
-    std::string full_path = sandbox_full_path(state->dir_key, name);
+    std::string cache_key = full_cache_key_for(it->local_path);
+    std::string full_path = sandbox_full_cache_path(cache_key);
+    // Touch/evict before spawning the background upload -- must happen here
+    // on the event-handler thread, not inside generate_preview_and_info()
+    // (a background thread), since full_cache_lru/full_cache_index are only
+    // safe to touch single-threaded (see pix_state's doc comment).
+    touch_full_cache(state, cache_key);
     {
       auto sel = state->selection.wlock();
       sel->name = name;

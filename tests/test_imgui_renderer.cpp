@@ -268,6 +268,138 @@ TEST_F(ImguiRendererTest, CheckboxEmitsChangedWithCorrectPayload) {
   EXPECT_TRUE(last_value);
 }
 
+// ── Selectable: plain click, and children-overlay support ───────────────────
+
+TEST_F(ImguiRendererTest, SelectableEmitsChangedWithCorrectPayload) {
+  bdg::bison::key_t last_event{hash_t{0}};
+  bool last_selected = false;
+  sess_->emit_event = [&](bdg::bison::key_t, bdg::bison::key_t ev, dynamic payload) {
+    last_event = ev;
+    auto* f = payload.findField("selected"_key);
+    if (f && f->is<bool>())
+      last_selected = f->as<bool>();
+  };
+
+  auto map = bdg::wish::import_json(R"({"type":"Selectable","label":"Item","selected":false})");
+
+  renderer_->begin_frame();
+  ImGuiID sel_id{0};
+  in_window([&] {
+    renderer_->render_node(*map[""], *sess_);
+    sel_id = ImGui::GetItemID();
+  });
+  renderer_->end_frame();
+
+  ImGui::GetIO().DeltaTime = 1.0f / 60.0f;
+  ImGui::NewFrame();
+  fake_click(sel_id);
+  in_window([&] { renderer_->render_node(*map[""], *sess_); });
+  ImGui::EndFrame();
+
+  for (auto& ev : sess_->pending_events)
+    if (sess_->emit_event)
+      sess_->emit_event(ev.id, ev.event_name, ev.payload);
+  sess_->pending_events.clear();
+
+  EXPECT_EQ(last_event, "changed"_key);
+  EXPECT_TRUE(last_selected);
+}
+
+// A Selectable with children renders them as overlay content on top of its
+// own hit-test area (pix's thumbnail grid cells: Image + filename Label),
+// per render_selectable()'s doc comment in imgui_ui_renderer.cpp. Verifies
+// both halves of that support: (1) the reported rect covers the
+// Selectable's own declared box, not just the last overlay child's single
+// text line -- the imgui_renderer.cpp needs_group_wrap fix this depends on
+// -- and (2) a click still fires "changed", proving the overlay children
+// don't swallow the hit-test.
+TEST_F(ImguiRendererTest, SelectableWithChildrenReportsFullRectAndStillClicks) {
+  bdg::bison::key_t last_event{hash_t{0}};
+  bool last_selected = false;
+  sess_->emit_event = [&](bdg::bison::key_t, bdg::bison::key_t ev, dynamic payload) {
+    last_event = ev;
+    auto* f = payload.findField("selected"_key);
+    if (f && f->is<bool>())
+      last_selected = f->as<bool>();
+  };
+
+  auto map = bdg::wish::import_json(R"({
+    "type": "Selectable", "label": "cellsel", "width": 84.0, "height": 108.0,
+    "children": {
+      "thumb": { "type": "Image", "src": "res/icons/file.png", "width": 84, "height": 84 },
+      "caption": { "type": "Label", "text": "a.png" }
+    }
+  })");
+
+  // A group-wrapped node's post-render ImGui::GetItemID() reports 0 on any
+  // frame where nothing was active/deactivated inside the group (see
+  // imgui_renderer.cpp's needs_group_wrap doc comment) -- true for this idle
+  // first frame, so (unlike the plain-leaf case above) the Selectable's own
+  // id can't be read back after render_node() returns. Capture it instead
+  // right as its first overlay child (the "thumb" Image) is about to
+  // render, mirroring MenuButtonOpensPopupAndRendersChildOnClick's
+  // menu_item_capturing_renderer below: render_selectable() draws the
+  // Selectable (setting g.LastItemData.ID) and only then dispatches its
+  // children, so GetItemID() read right before -- not after -- the first
+  // child's own dispatch still reports the Selectable's id, since nothing
+  // in between has touched LastItemData.
+  class selectable_id_capturing_renderer : public imgui_renderer {
+   public:
+    ImGuiID selectable_id{0};
+    bool captured = false;
+    void render_node(const ui_element& node, const context& s) override {
+      if (!captured && node.as<bdg::bison::key_t>(dynamic::CLASS) == "Image"_key) {
+        selectable_id = ImGui::GetItemID();
+        captured = true;
+      }
+      imgui_renderer::render_node(node, s);
+    }
+  };
+  selectable_id_capturing_renderer r;
+
+  // Frame 1: create the window and capture the Selectable's real id.
+  r.begin_frame();
+  in_window([&] { r.render_node(*map[""], *sess_); });
+  r.end_frame();
+  ASSERT_TRUE(r.captured);
+  ImGuiID sel_id = r.selectable_id;
+
+  // ~108px tall, not the ~13-19px a single overlay child's own text line
+  // would report if the group-wrap fix were missing.
+  EXPECT_GT(map[""]->last_rendered_size().y, 90.0f);
+
+  // Frame 2: a plain (non-click) re-render. ImGuiSelectableFlags_AllowOverlap
+  // requires an item to already be g.HoveredIdPreviousFrame before it can
+  // register as hovered (see ImGui::ItemHoverable()'s "AllowOverlap mode"
+  // branch) -- and a window's own hover can't resolve on the very first
+  // frame it exists (ImGui determines the hovered window from the *previous*
+  // frame's window stack, which is empty for a window that didn't exist
+  // yet), so frame 1 above can never leave this Selectable truly hovered.
+  // This settle frame is what real usage gets for free from any window
+  // that's already been open a frame or two -- without it, frame 3's
+  // fake_click() below would set the right ActiveId but ItemHoverable()
+  // would still reject the hover, and the click would silently never fire.
+  ImGui::GetIO().DeltaTime = 1.0f / 60.0f;
+  ImGui::NewFrame();
+  in_window([&] { r.render_node(*map[""], *sess_); });
+  ImGui::EndFrame();
+
+  // Frame 3: simulate press+release on the now-genuinely-hoverable Selectable.
+  ImGui::GetIO().DeltaTime = 1.0f / 60.0f;
+  ImGui::NewFrame();
+  fake_click(sel_id);
+  in_window([&] { r.render_node(*map[""], *sess_); });
+  ImGui::EndFrame();
+
+  for (auto& ev : sess_->pending_events)
+    if (sess_->emit_event)
+      sess_->emit_event(ev.id, ev.event_name, ev.payload);
+  sess_->pending_events.clear();
+
+  EXPECT_EQ(last_event, "changed"_key);
+  EXPECT_TRUE(last_selected);
+}
+
 // ── InputText: multiline renders via InputTextMultiline without throwing ────
 
 TEST_F(ImguiRendererTest, InputTextMultilineDoesNotThrow) {
@@ -2131,6 +2263,67 @@ TEST_F(ImguiRendererTest, DeeplyNestedStretchLayoutsStayWithinWindowBounds) {
   EXPECT_LE(bmax.y, 600.0f);
   EXPECT_NEAR(bmax.x - bmin.x, 50.0f, 2.0f);
   EXPECT_NEAR(bmax.y - bmin.y, 20.0f, 2.0f);
+}
+
+// Regression: arrange_splitter() (imgui_layout.cpp) used to stamp each
+// pane's box directly (set_arranged_rect()) instead of routing through the
+// generic arrange_node(), so a pane that is itself a VerticalLayout never
+// got its own arrange_fn invoked this frame -- its content_extent() stayed
+// at its stale/default value, render_vertical_layout() then saw a false
+// has_self_size and skipped its own BeginChild wrap, and each of its
+// children rendered via plain sequential ImGui flow, free-falling into its
+// own ensure_arranged() ambient GetContentRegionAvail() self-heal instead
+// of a coordinated stretch-pool distribution. That self-heal is invisible
+// with a single child (nothing else competes for the same ambient space,
+// so it happens to land on the right number anyway) -- it only shows up
+// with an auto-height sibling *after* the stretch child: the stretch
+// child's self-heal greedily claims all remaining ambient space with no
+// coordination reserving room for what comes after it, pushing that
+// trailing sibling below the window entirely. This exact shape (auto
+// header, stretch middle, auto footer) is pix's real right_panel
+// (zoom_bar / preview_table / info_panel) -- info_panel required
+// scrolling to reach before this fix.
+TEST_F(ImguiRendererTest, SplitterPaneThatIsLayoutPropagatesArrangeToDescendants) {
+  // Buttons (not Labels): labeled_rect_capturing_renderer keys by_label off
+  // the generic "label" field (Button/Selectable/...), which Label doesn't
+  // have -- it uses "text" instead -- so a Label here would never appear
+  // in by_label regardless of this test's outcome.
+  auto map = bdg::wish::import_json(R"({
+    "type": "Splitter",
+    "children": {
+      "left": { "type": "VerticalLayout", "width": 200, "children": {
+        "header": { "type": "Button", "label": "Header" },
+        "middle": { "type": "VerticalLayout", "height": -1, "children": {
+          "leaf": { "type": "Button", "label": "X" }
+        }},
+        "footer": { "type": "Button", "label": "Footer" }
+      }},
+      "right": { "type": "Button", "label": "R" }
+    }
+  })");
+
+  labeled_rect_capturing_renderer r;
+  // Two frames: "header"/"footer" are plain Buttons with no registered
+  // measure_fn, so their auto-height contribution to "left"'s stretch-pool
+  // math comes from measure_node()'s last_rendered_size() fallback -- {0,0}
+  // until they've actually rendered once (see imgui_layout.cpp's
+  // measure_dispatch_fns() doc comment on this general, accepted one-frame
+  // self-heal lag). Asserting after frame 1 would conflate that ordinary,
+  // already-documented lag with the bug this test targets.
+  r.begin_frame();
+  in_window([&] { r.render_node(*map[""], *sess_); });
+  r.end_frame();
+  ImGui::GetIO().DeltaTime = 1.0f / 60.0f;
+  r.begin_frame();
+  in_window([&] { r.render_node(*map[""], *sess_); });
+  r.end_frame();
+
+  // "footer" must actually render within the 800x600 test window -- not
+  // pushed off past the window's bottom edge by "middle"'s self-heal
+  // having greedily claimed space that should have been reserved for it.
+  ASSERT_TRUE(r.by_label.count("Footer"));
+  auto [fmin, fmax] = r.by_label.at("Footer");
+  EXPECT_LE(fmax.y, 600.0f);
 }
 
 TEST_F(ImguiRendererTest, SpringOutsideLayoutRendersZeroSizeWithoutThrow) {

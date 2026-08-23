@@ -453,9 +453,17 @@ void imgui_renderer::render_node(const ui_element& node, const context& s) {
   // there is nothing a wrap would improve for these two, only the same
   // id-forwarding risk described above to avoid. All three are documented
   // as a known, narrower residual limitation instead.
+  // Selectable only recurses into children when it actually has any (see
+  // render_selectable()'s children-overlay support) -- a plain childless
+  // Selectable stays a leaf and must NOT be wrapped, for the same
+  // ID-forwarding reason documented above.
+  bool selectable_has_children = false;
+  if (cls == "Selectable"_key)
+    node.for_each_child_ordered([&](key_t, ui_element&) { selectable_has_children = true; });
+
   bool needs_group_wrap = cls == "Splitter"_key || cls == "TabBar"_key || cls == "TabItem"_key ||
       cls == "TreeNode"_key || cls == "CollapsingHeader"_key || cls == "Table"_key || cls == "TableRow"_key ||
-      cls == "Plot"_key || cls == "Plot3D"_key;
+      cls == "Plot"_key || cls == "Plot3D"_key || selectable_has_children;
 
   // Set by whichever rect-capture branch below actually runs; gates the
   // last_rendered_size() update further down -- see that call site's doc

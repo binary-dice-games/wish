@@ -396,6 +396,23 @@ A highlight-on-hover row, useful for building list boxes or custom menus.
 
 **Events:** `changed` — `{ selected: bool }`.
 
+If given `children`, they render as overlay content on top of the
+Selectable's own clickable area instead of `label` — e.g. an `Image` plus a
+caption `Label`, so clicking anywhere in the tile (not just the caption
+text) fires `changed`. Give a childful `Selectable` an explicit nonzero
+`width`/`height` covering the children's combined size: `0` falls back to
+plain fill-width/single-line sizing, which won't cover taller content.
+
+```json
+{
+  "type": "Selectable", "width": 84, "height": 108,
+  "children": {
+    "thumb": { "type": "Image", "src": "cat.png", "width": 84, "height": 84 },
+    "caption": { "type": "Label", "text": "cat.png" }
+  }
+}
+```
+
 #### `ProgressBar`
 Non-interactive horizontal progress indicator; no events.
 

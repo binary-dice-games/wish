@@ -10,6 +10,7 @@
 #include <context/file_service.hpp>
 #include <ui/ui_importer.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <iomanip>
@@ -27,16 +28,45 @@ namespace {
 // is kThumbPx square.
 constexpr int32_t kGridColumns = 3;
 constexpr float kThumbPx = 84.0f;
+// Extra height reserved below the thumbnail for its filename caption, on
+// top of kThumbPx -- see rebuild_grid()'s per-cell Selectable, which needs
+// an explicit height covering both (see render_selectable()'s
+// children-overlay doc comment in imgui_ui_renderer.cpp for why 0/auto
+// isn't enough here).
+constexpr float kCellCaptionPx = 24.0f;
 
-// kPixLayout's grid_table's "flags": "RowBg|BordersH|ScrollY".
-// preview_table adds "ScrollX" on top: "RowBg|BordersH|ScrollX|ScrollY" --
+// Largest w x h that fits within kThumbPx x kThumbPx while preserving
+// src_w:src_h's aspect ratio (never upscaling) -- mirrors client/pix.cpp's
+// identical fit_dims() helper, used there to size the generated thumbnail
+// file itself; this one instead sizes the Image element that *displays*
+// it, so a non-square thumbnail isn't stretched back out to a square grid
+// cell. See do_set_thumbnail()'s doc comment.
+void fit_dims(int32_t src_w, int32_t src_h, float max_w, float max_h, int32_t& out_w, int32_t& out_h) {
+  if (src_w <= 0 || src_h <= 0) {
+    out_w = out_h = 0;
+    return;
+  }
+  double scale = std::min({1.0, static_cast<double>(max_w) / src_w, static_cast<double>(max_h) / src_h});
+  out_w = std::max(1, static_cast<int32_t>(src_w * scale));
+  out_h = std::max(1, static_cast<int32_t>(src_h * scale));
+}
+
+// kPixLayout's grid_table's "flags": "RowBg|Borders|ScrollY|NoPadInnerX"
+// ("Borders" is the BordersH|BordersV composite -- see table.cpp's flags
+// map -- so both cell grid lines render, not just the horizontal ones;
+// "NoPadInnerX" drops the gap ImGui otherwise reserves between adjacent
+// columns' content, so thumbnails sit close together like a real file
+// browser's icon grid instead of visibly separated).
+// preview_table adds "ScrollX" on top: "RowBg|Borders|ScrollX|ScrollY" --
 // see pix.hpp's class comment for why the preview panel is a scrollable
 // Table rather than a plain Image: its native scrollbars are the pan
-// control once "zoom" grows the Image past the fixed outer_width/
-// outer_height viewport. Every TableColumn's own "flags": "WidthFixed" is
-// required for init_width to take effect at all (ImGui errors "can only
-// specify width/weight if sizing policy is set explicitly" otherwise);
-// mirrors file_dialog.cpp's col_name/col_type columns.
+// control once "zoom" grows the Image past the viewport (see grid_table/
+// preview_table's own "width"/"height": -1 fields, just below, for how that
+// viewport now tracks its enclosing pane's size instead of a fixed pixel
+// box). Every TableColumn's own "flags": "WidthFixed" is required for
+// init_width to take effect at all (ImGui errors "can only specify
+// width/weight if sizing policy is set explicitly" otherwise); mirrors
+// file_dialog.cpp's col_name/col_type columns.
 // kPixLayout's path_input "flags": "EnterReturnsTrue" (fire "changed" only
 // on Enter, not per keystroke).
 //
@@ -58,11 +88,26 @@ int64_t file_time_to_unix_seconds(const fs::file_time_type& ftime) {
 
 // ── Hardcoded UI layout ───────────────────────────────────────────────────────
 //
-// grid_table/preview_table use fixed outer_width/outer_height (rather than
-// the 0/-1 auto/fill sentinels) so both stay independently scrollable
-// regardless of the surrounding VerticalLayout's own auto-sizing -- see
-// pix.hpp's class comment for why a Table (not a bespoke scroll widget) is
-// used for both the thumbnail grid and the pannable preview viewport.
+// "body" is a plain HorizontalLayout: left_panel's own "width": 320 is a
+// fixed pixel size (not a resizable Splitter pane -- the grid's column
+// count is itself fixed at kGridColumns, so a user-resizable left_panel
+// would just grow/shrink dead margin around the same 3 columns rather than
+// showing more of them; see rebuild_grid()'s own comment on why the column
+// count doesn't adapt to available width), sized to comfortably fit those
+// 3 fixed-width columns plus borders/scrollbar. right_panel's "width": -1
+// makes it the sole stretch column, so it takes all remaining horizontal
+// space. Both panels (and "body" itself) carry "height": -1 so they
+// stretch-fill whatever vertical space toolbar/status_label don't use --
+// unlike a Splitter, a plain HorizontalLayout only gives a child the full
+// cross-axis extent when that child's own "height" hint asks for it (see
+// Layout.height's doc comment in docs/ui-elements.md), hence setting it on
+// both. grid_table/preview_table each carry "width"/"height": -1 in turn
+// so they fill their own panel rather than sitting at a fixed pixel size --
+// still independently scrollable regardless of the enclosing panel's own
+// auto-sizing, same as a fixed size would give, just now responsive to
+// window resizing. See pix.hpp's class comment for why a Table (not a
+// bespoke scroll widget) is used for both the thumbnail grid and the
+// pannable preview viewport.
 // R"json(...)json" (not the plain R"(...)" delimiter) because the pan hint
 // label's text ends in a literal ")" -- "pan)" immediately followed by the
 // JSON string's closing '"' would otherwise spell out the plain delimiter's
@@ -95,17 +140,19 @@ static constexpr const char* kPixLayout = R"json({
         "body": {
           "type": "HorizontalLayout",
           "spacing": 8.0,
+          "height": -1,
           "children": {
             "left_panel": {
               "type": "VerticalLayout",
               "width": 320,
+              "height": -1,
               "children": {
                 "grid_table": {
                   "type": "Table",
                   "columns": 3,
-                  "flags": "RowBg|BordersH|ScrollY",
-                  "outer_width": 308.0,
-                  "outer_height": 560.0,
+                  "flags": "RowBg|Borders|ScrollY|NoPadInnerX",
+                  "width": -1,
+                  "height": -1,
                   "headers": false,
                   "children": {
                     "col0": { "type": "TableColumn", "flags": "WidthFixed", "init_width": 100 },
@@ -118,6 +165,7 @@ static constexpr const char* kPixLayout = R"json({
             "right_panel": {
               "type": "VerticalLayout",
               "width": -1,
+              "height": -1,
               "spacing": 4.0,
               "children": {
                 "zoom_bar": {
@@ -135,9 +183,9 @@ static constexpr const char* kPixLayout = R"json({
                 "preview_table": {
                   "type": "Table",
                   "columns": 1,
-                  "flags": "RowBg|BordersH|ScrollX|ScrollY",
-                  "outer_width": 600.0,
-                  "outer_height": 440.0,
+                  "flags": "RowBg|Borders|ScrollX|ScrollY",
+                  "width": -1,
+                  "height": -1,
                   "headers": false,
                   "children": {
                     "pcol0": { "type": "TableColumn", "flags": "WidthFixed", "init_width": 600 },
@@ -205,6 +253,7 @@ void pix_viewer::on_init() {
   tree.with("vbox.body.right_panel.zoom_bar.btn_zoom_100", [&](const auto& e) { btn_zoom_100_id_ = wish_id_of(e); });
   tree.with(
       "vbox.body.right_panel.preview_table.prow0.preview_image", [&](const auto& e) { preview_image_ptr_ = e; });
+  tree.with("vbox.body.right_panel.preview_table.pcol0", [&](const auto& e) { preview_col_ptr_ = e; });
   tree.with("vbox.body.right_panel.info_panel.info_filename", [&](const auto& e) { info_filename_ptr_ = e; });
   tree.with("vbox.body.right_panel.info_panel.info_resolution", [&](const auto& e) { info_resolution_ptr_ = e; });
   tree.with("vbox.body.right_panel.info_panel.info_format", [&](const auto& e) { info_format_ptr_ = e; });
@@ -242,37 +291,51 @@ void pix_viewer::rebuild_grid() {
       if (idx < images_.size()) {
         auto& entry = images_[idx];
 
-        ui_element_ptr vcell{dynamic::instantiate("wish"_key, "VerticalLayout"_key)};
-        vcell["order"_key] = col;
+        // Caption first (order 0, fixed at the cell's top edge) and image
+        // second (order 1, below it): a landscape/portrait thumbnail's
+        // aspect-fit height (see do_set_thumbnail()) varies cell to cell,
+        // so anchoring the caption below a variable-height image would
+        // leave captions at different y positions across the row.
+        // Anchoring it above instead keeps every caption in a row (and
+        // across rows) aligned to the same y, matching a real file
+        // browser's grid look.
+        ui_element_ptr name_label{dynamic::instantiate("wish"_key, "Label"_key)};
+        name_label["text"_key] = entry.name;
+        name_label["order"_key] = int32_t{0};
 
         ui_element_ptr img{dynamic::instantiate("wish"_key, "Image"_key)};
         img["src"_key] = std::string{"res/icons/image.png"};
         img["width"_key] = static_cast<int32_t>(kThumbPx);
         img["height"_key] = static_cast<int32_t>(kThumbPx);
-        img["order"_key] = int32_t{0};
+        img["order"_key] = int32_t{1};
 
+        // The Selectable itself is the cell: img/name_label render as its
+        // overlay children (see render_selectable()'s doc comment), so
+        // clicking the thumbnail image selects the entry just as clicking
+        // its filename caption already did.
         ui_element_ptr sel{dynamic::instantiate("wish"_key, "Selectable"_key)};
-        sel["label"_key] = entry.name;
+        sel["label"_key] = std::string{};
         sel["width"_key] = kThumbPx;
-        sel["order"_key] = int32_t{1};
+        sel["height"_key] = kThumbPx + kCellCaptionPx;
+        sel["order"_key] = col;
 
         key_t sel_id = rmi::shared::generate_id();
         ctx().put_object(sel_id, sel);
         sel["__wish_id"_key] = sel_id;
 
-        auto vcell_children = dynamic_ptr{key_t{0U}, {}};
-        (*vcell_children)[size_t{0}] = dynamic_ptr{img};
-        (*vcell_children)[size_t{1}] = dynamic_ptr{sel};
-        vcell["children"_key] = vcell_children;
-        vcell->refresh_children_order();
+        auto sel_children = dynamic_ptr{key_t{0U}, {}};
+        (*sel_children)[size_t{0}] = dynamic_ptr{name_label};
+        (*sel_children)[size_t{1}] = dynamic_ptr{img};
+        sel["children"_key] = sel_children;
+        sel->refresh_children_order();
 
-        entry.cell_ptr = vcell;
+        entry.cell_ptr = sel;
         entry.image_ptr = img;
         entry.selectable_ptr = sel;
         entry.selectable_id = sel_id;
         selectable_id_to_index_[sel_id.id] = idx;
 
-        cell = vcell;
+        cell = sel;
       } else {
         // Pad the last row so every TableRow has exactly kGridColumns cells.
         cell = ui_element_ptr{dynamic::instantiate("wish"_key, "Label"_key)};
@@ -333,9 +396,28 @@ dynamic pix_viewer::do_set_images(const dynamic& args) {
 dynamic pix_viewer::do_set_thumbnail(const dynamic& args) {
   auto name = args.as<std::string>("name"_key);
   auto thumb_path = args.as<std::string>("thumb_path"_key);
+  // "width"/"height" (optional): the uploaded thumbnail file's own actual
+  // pixel size -- already aspect-preserving (client/pix.cpp's
+  // generate_and_upload_thumbnail() fits it within a square before
+  // encoding), but that square may itself not be kThumbPx x kThumbPx (see
+  // client/pix.cpp's kThumbMax doc comment on why the two constants don't
+  // need to match). Fit it again into the display cell's square so a
+  // non-square source image isn't stretched back out by the Image element
+  // scaling an unrelated width/height onto it.
+  int32_t src_w = 0, src_h = 0;
+  if (auto* w = args.findField<int32_t>("width"_key))
+    src_w = *w;
+  if (auto* h = args.findField<int32_t>("height"_key))
+    src_h = *h;
   for (auto& e : images_) {
     if (e.name == name && e.image_ptr) {
       (*e.image_ptr)["src"_key] = thumb_path;
+      if (src_w > 0 && src_h > 0) {
+        int32_t disp_w, disp_h;
+        fit_dims(src_w, src_h, kThumbPx, kThumbPx, disp_w, disp_h);
+        (*e.image_ptr)["width"_key] = disp_w;
+        (*e.image_ptr)["height"_key] = disp_h;
+      }
       break;
     }
   }
@@ -355,8 +437,17 @@ dynamic pix_viewer::do_set_preview(const dynamic& args) {
 
   if (preview_image_ptr_) {
     (*preview_image_ptr_)["src"_key] = args.as<std::string>("src"_key);
-    if (auto* w = args.findField<int32_t>("width"_key))
+    if (auto* w = args.findField<int32_t>("width"_key)) {
       (*preview_image_ptr_)["width"_key] = *w;
+      // preview_table's sole column has a fixed pixel width (ImGui table
+      // columns don't auto-expand to an oversized cell's content) -- track
+      // it to the image's own current (zoomed) width so ScrollX's pannable
+      // range actually reaches the image's full width instead of clipping
+      // it at whatever init_width happened to be set to last. A width
+      // smaller than the viewport is harmless (just no horizontal scroll).
+      if (preview_col_ptr_ && *w > 0)
+        (*preview_col_ptr_)["init_width"_key] = static_cast<float>(*w);
+    }
     if (auto* h = args.findField<int32_t>("height"_key))
       (*preview_image_ptr_)["height"_key] = *h;
   }
@@ -427,6 +518,23 @@ dynamic pix_viewer::do_stat_files(const dynamic& args) {
     });
   }
   return results;
+}
+
+dynamic pix_viewer::do_delete_file(const dynamic& args) {
+  // Sandbox-local action (like "Open Sandbox in Explorer") -- the client's
+  // full-image LRU cache (see client/pix.cpp's touch_full_cache()) evicts
+  // its least-recently-used entry by asking the server to delete the file
+  // directly, rather than needing its own sandbox filesystem access.
+  // Called via addMethod() -- see do_stat_files()'s identical doc comment
+  // on why resource_dir/allow_absolute_paths come from sess(), not
+  // context_rlock.
+  auto rel = args.as<std::string>("path"_key);
+  auto resolved = file_service::resolve_path(rel, sess().resource_dir, sess().allow_absolute_paths);
+  if (!resolved.empty()) {
+    std::error_code ec;
+    fs::remove(resolved, ec); // Best-effort: a missing file is not an error.
+  }
+  return dynamic{};
 }
 
 dynamic pix_viewer::on_set(const dynamic& patch) {
@@ -535,6 +643,9 @@ void register_pix() {
                    }});
   proto->addMethod("stat_files"_key, bison::method{[](dynamic& self, const dynamic& args) -> dynamic {
                      return static_cast<pix_viewer&>(self).do_stat_files(args);
+                   }});
+  proto->addMethod("delete_file"_key, bison::method{[](dynamic& self, const dynamic& args) -> dynamic {
+                     return static_cast<pix_viewer&>(self).do_delete_file(args);
                    }});
   proto->addMethod("__setter"_key, bison::method{[](dynamic& self, const dynamic& patch) -> dynamic {
                      return static_cast<pix_viewer&>(self).on_set(patch);
