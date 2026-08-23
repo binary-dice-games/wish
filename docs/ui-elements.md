@@ -342,6 +342,7 @@ A numeric field with +/- step buttons.
 | `step_fast` | `int32`/`float` | `100` / `0.0` | Step amount while Ctrl is held. `InputFloat`: `0` falls back to `step`. |
 | `format` | `string` | `"%.3f"` | (`InputFloat` only) printf display format. |
 | `width` | `float` | `0.0` | Width in pixels; `0` = ImGui default, `-1` = fill remaining width. |
+| `flags` | `int32` (flags) | `0` | (`InputInt` only) ImGuiInputTextFlags bitmask: `EnterReturnsTrue=64` (fire `changed` only on Enter/deactivation, not every keystroke -- useful when `changed` triggers an expensive owner-side reaction), `ReadOnly=512`, `AutoSelectAll=4096`. |
 
 **Events:** `changed` — `{ value: int32|float }`.
 
@@ -571,6 +572,7 @@ other children (typically `TableRow`) provide data rows.
 | `outer_height` | `float` | `0.0` | Outer container height; `0` = no clipping/scroll region. |
 | `inner_width` | `float` | `0.0` | Width allocated to contents; `0` uses outer width. |
 | `headers` | `bool` | `false` | Render a header row from `TableColumn` labels. |
+| `auto_scroll` | `bool` | `true` | When `flags` includes `ScrollY` and this is true, automatically scroll to the newest row whenever the row count grows (e.g. a live log table following its latest entry). Set `false` to leave the scroll position alone as rows are appended. |
 
 **Events:**
 - `sorted` — fired when `flags` includes `Sortable` (`8`) and the sort spec
@@ -619,6 +621,13 @@ under "Menus" above).
 
 No events of its own — `row_selected`/`row_activated` are emitted on the
 **parent `Table`**, not on the row.
+
+Unlike most elements, `TableRow` is rendered inline by `render_table()`
+rather than through the generic per-element dispatch — but it still honors
+its inherited `visible` field (see `Element` above): setting it `false`
+skips the row entirely (no cells, no row-index bump for click events),
+letting an owner hide/show already-buffered rows on the fly, e.g. to
+implement a retroactive filter without re-adding rows.
 
 Like any element, a `TableRow` may also set `drag_type`/`drag_payload`/
 `drop_type` (see "Drag and drop" below) to act as a drag source and/or drop

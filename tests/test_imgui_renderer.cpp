@@ -1383,6 +1383,102 @@ TEST_F(ImguiRendererTest, AutoHeightTableInsideVerticalLayoutDoesNotGrowFrameToF
   }
 }
 
+TEST_F(ImguiRendererTest, ScrollYTableSticksToTrueBottomAfterABatchOfNewRowsInOneFrame) {
+  // Regression test for a real user-reported bug (modules/bdg/desktop/tail
+  // running "tail -f": several lines appended to the watched file between
+  // two polls arrive as one push_lines() batch, all landing in a single
+  // render frame). The sticky-bottom auto-scroll (render_table()'s "Stick
+  // to the bottom..." block) used to target SetScrollY(GetScrollMaxY()).
+  // GetScrollMaxY() reflects the content height ImGui finished computing
+  // at the *previous* frame's End()/EndChild(), not whatever was just
+  // rendered this frame -- invisible for rows trickling in one per frame
+  // (each frame's stale target still moves closer, settling within a
+  // frame or two) but visibly wrong for a whole batch landing in one
+  // frame: the view lands exactly where the bottom was *before* that
+  // batch, one batch short of the real bottom, and never catches up
+  // (row_idx == last_count on every later frame, so the "just grew"
+  // branch never fires again). Fixed by SetScrollHereY(1.0f), which
+  // targets the cursor position actually reached this frame, reflecting
+  // the whole batch immediately.
+  constexpr auto desc = R"({
+    "type": "Window", "title": "T3b", "width": 300, "height": 220,
+    "pos_x": 0, "pos_y": 0,
+    "children": { "tbl": {
+      "type": "Table", "id": "t_scroll", "columns": 1, "outer_height": 60,
+      "flags": "ScrollY",
+      "children": { "c": { "type": "TableColumn", "label": "Col" } }
+    }}
+  })";
+  auto map = bdg::wish::import_json(desc);
+  auto& tbl = *map["tbl"];
+  // A unique string key (not a small int like the id{7}/{42}/{99} used by
+  // other tests in this file) so this test's entry in render_table()'s
+  // process-lifetime table_row_count_cache() can never collide with one
+  // left behind by another test.
+  tbl["__wish_id"_key] = "__ScrollYTableSticksToTrueBottomAfterABatchOfNewRowsInOneFrame__"_key;
+
+  size_t next_row_key = 0;
+  auto add_rows = [&](int count) {
+    auto* children_p = tbl.findField<dynamic_ptr>("children"_key);
+    ASSERT_NE(children_p, nullptr);
+    ASSERT_TRUE(static_cast<bool>(*children_p));
+    auto& children = *children_p;
+    for (int i = 0; i < count; ++i) {
+      bdg::wish::ui_element_ptr cell{dynamic::instantiate("wish"_key, "Label"_key)};
+      (*cell)["text"_key] = "row " + std::to_string(next_row_key);
+      auto row_children = dynamic_ptr{bdg::bison::key_t{0U}, {}};
+      (*row_children)[size_t{0}] = dynamic_ptr{cell};
+
+      bdg::wish::ui_element_ptr row{dynamic::instantiate("wish"_key, "TableRow"_key)};
+      (*row)["children"_key] = row_children;
+      (*row)["order"_key] = static_cast<int32_t>(next_row_key);
+
+      (*children)[next_row_key] = dynamic_ptr{row};
+      ++next_row_key;
+    }
+    tbl.refresh_children_order();
+  };
+
+  auto render_frame = [&] {
+    renderer_->begin_frame();
+    renderer_->render_node(*map[""], *sess_);
+    renderer_->end_frame();
+  };
+
+  // Frame 1: a handful of rows. First-ever render for this table id also
+  // counts as "growth" (last_count starts at 0), so this already scrolls
+  // toward the bottom for these rows.
+  add_rows(3);
+  render_frame();
+
+  // Frame 2: no new rows -- lets the scroll target frame 1 set actually
+  // apply (ImGui applies a pending scroll target at the *next* frame's
+  // window Begin()).
+  render_frame();
+
+  // Frame 3: a whole batch lands in one call, exactly like several new
+  // lines arriving between two polls of a followed file.
+  add_rows(20);
+  render_frame();
+
+  // Frame 4: no new rows -- lets frame 3's scroll target apply, and lets
+  // ScrollMax catch up to frame 3's real (23-row) content height.
+  render_frame();
+
+  ImGuiContext& g = *ImGui::GetCurrentContext();
+  ImGuiWindow* inner = nullptr;
+  for (ImGuiWindow* w : g.Windows) {
+    if ((w->Flags & ImGuiWindowFlags_ChildWindow) && w->ScrollMax.y > 0.0f) {
+      inner = w;
+      break;
+    }
+  }
+  ASSERT_NE(inner, nullptr) << "no scrollable child window found -- table never needed to scroll";
+  EXPECT_NEAR(inner->Scroll.y, inner->ScrollMax.y, 1.0f)
+      << "scroll.y=" << inner->Scroll.y << " scroll_max.y=" << inner->ScrollMax.y
+      << " -- view is stuck short of the true bottom after the batch";
+}
+
 TEST_F(ImguiRendererTest, StretchTabBarWrappingFillHeightTableDoesNotGrowFrameToFrame) {
   // Regression test for a real user-reported bug (modules/bdg/desktop/tail,
   // git, nano): a "outer_height": -1 Table nested inside a TabItem/TabBar

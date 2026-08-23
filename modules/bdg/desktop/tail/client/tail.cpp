@@ -15,13 +15,28 @@
 ///   wish client --run=tail -- [-f] [-n N|+N] [-e REGEX] FILE [FILE...]
 ///
 ///   -f, --follow        Keep watching each file for appended lines.
-///   -n, --lines N       Show the last N lines initially (default 10).
+///   -n, --lines N       Show the last N lines initially (default 100).
 ///   -n +N               Show lines starting from line N (from the start).
 ///   -q, -v              Accepted for command-line compatibility with real
 ///                       `tail`; every row already carries its own Source
 ///                       column, so there is no separate per-file header to
 ///                       suppress/force.
 ///   -e, --filter REGEX  Set the form's initial filter regex.
+///
+/// The initial line count is also reflected in the server-side toolbar's
+/// Lines field (via set_line_count -- see run_tail()), which doubles as a
+/// *live* cap on each table's row count from then on: the server drops the
+/// oldest row(s) whenever a table would exceed whatever the field
+/// currently holds, whether that's from new lines arriving or the user
+/// lowering the field itself (see tail::do_set_line_count()/append_row()
+/// in the server form) -- this runner has no part in that eviction, it
+/// only ever pushes lines forward. Raising the field is different: the
+/// server has no filesystem access of its own to pull in more history, so
+/// it clears its tables and emits 'rescan_requested' with {line_count:
+/// int} instead, which this runner *does* act on (see requested_line_
+/// count_/tail_file()'s own poll loop below) -- it re-tails every file's
+/// last N lines from scratch, the same "last N lines" semantics
+/// regardless of whether this run started with `-n N` or `-n +N`.
 #include "modules/bdg/desktop/tail/client/tail.hpp"
 
 #include "src/client/app_registry.hpp"
@@ -51,7 +66,7 @@ namespace fs = std::filesystem;
 
 struct tail_options {
   bool follow = false;
-  int32_t line_count = 10;
+  int32_t line_count = 100;
   bool lines_from_start = false; // true for "-n +N"; false for "-n N" (last N lines)
   std::string filter;
   std::vector<std::string> files;
@@ -180,12 +195,14 @@ void push_lines(const std::shared_ptr<rmi::proxy::dynamic>& proxy, const std::ve
 }
 
 // One file's tail: an initial batch (the last `line_count` lines, or
-// starting from line `line_count` if `lines_from_start`), then -- if
-// `follow` -- polls for appended content until `stop` is set. A file that
-// shrinks (truncation, or rotation that recreates it) is reopened and
-// re-tailed from the start.
-void tail_file(std::shared_ptr<rmi::proxy::dynamic> proxy, std::shared_ptr<std::atomic<bool>> stop, std::string path,
-    tail_options opt) {
+// starting from line `line_count` if `lines_from_start`), then polls until
+// `stop` is set -- both to follow appended content (only if `follow`) and
+// to notice a UI-driven rescan request (see `requested_line_count`, always
+// -- an interactive Lines raise is honored even for a one-shot, non-`-f`
+// tail). A file that shrinks (truncation, or rotation that recreates it)
+// is reopened and re-tailed from the start.
+void tail_file(std::shared_ptr<rmi::proxy::dynamic> proxy, std::shared_ptr<std::atomic<bool>> stop,
+    std::shared_ptr<std::atomic<int32_t>> requested_line_count, std::string path, tail_options opt) {
   std::string source = fs::path(path).filename().string();
 
   std::ifstream in(path, std::ios::binary);
@@ -210,30 +227,48 @@ void tail_file(std::shared_ptr<rmi::proxy::dynamic> proxy, std::shared_ptr<std::
     push_lines(proxy, lines, source);
   }
 
-  if (!opt.follow)
-    return;
+  // Tracks the last line count this file was (re)scanned with -- matches
+  // `requested_line_count`'s starting value (see run_tail()) until the user
+  // edits the toolbar's Lines field, so the initial scan above is never
+  // immediately redone on this loop's first iteration.
+  int32_t applied_line_count = opt.line_count;
 
   using namespace std::chrono_literals;
   while (!stop->load(std::memory_order_relaxed)) {
-    std::error_code ec;
-    auto size = fs::file_size(path, ec);
-    if (ec) {
-      // Missing (e.g. rotated away) -- keep polling; it may reappear.
-      std::this_thread::sleep_for(300ms);
-      continue;
-    }
-    if (size < offset) {
-      // Truncated or replaced with a new file at the same path.
-      in.close();
-      in.open(path, std::ios::binary);
-      offset = 0;
-    }
-    if (size > offset) {
-      std::uintmax_t new_offset = offset;
-      auto lines = read_lines_from(in, offset, new_offset);
-      offset = new_offset;
+    int32_t desired_line_count = requested_line_count->load(std::memory_order_relaxed);
+    if (desired_line_count != applied_line_count) {
+      applied_line_count = desired_line_count;
+      // Server already cleared every buffered row (all files' rows, once,
+      // for this single UI event) before emitting 'rescan_requested' -- see
+      // tail::on_event()'s handling of the Lines field -- so this file's
+      // own re-read is simply pushed back in like any other batch, no
+      // separate clear here.
+      auto start_offset = offset_of_last_n_lines(in, desired_line_count);
+      auto lines = read_lines_from(in, start_offset, offset);
       push_lines(proxy, lines, source);
     }
+
+    if (opt.follow) {
+      std::error_code ec;
+      auto size = fs::file_size(path, ec);
+      if (ec) {
+        // Missing (e.g. rotated away) -- keep polling; it may reappear.
+      } else {
+        if (size < offset) {
+          // Truncated or replaced with a new file at the same path.
+          in.close();
+          in.open(path, std::ios::binary);
+          offset = 0;
+        }
+        if (size > offset) {
+          std::uintmax_t new_offset = offset;
+          auto lines = read_lines_from(in, offset, new_offset);
+          offset = new_offset;
+          push_lines(proxy, lines, source);
+        }
+      }
+    }
+
     std::this_thread::sleep_for(300ms);
   }
 }
@@ -274,12 +309,37 @@ void run_tail(wish_app_host& s) {
     }
   }
 
-  // `proxy`/`stop` stay alive via the shared_ptrs captured by the "closed"
-  // handler above and by each tail_file thread below -- no separate
-  // keep_alive() call needed, mirroring top's own
-  // background-sampling thread.
+  // Reflect the actual starting line count in the toolbar's Lines field --
+  // this also becomes the server's live row cap for every table from this
+  // point on (see file doc comment / tail::do_set_line_count()).
+  {
+    dynamic lines_args;
+    lines_args["count"_key] = opt.line_count;
+    try {
+      proxy->call("set_line_count"_key, std::move(lines_args)).get();
+    } catch (const std::exception&) {
+    }
+  }
+
+  // Shared by every tail_file() thread below (one per file): starts at
+  // this run's own line count, so each thread's loop sees no change on its
+  // first iteration (the initial scan it just did already used this
+  // value). Editing the toolbar's Lines field emits 'rescan_requested',
+  // which updates this -- every thread notices independently on its own
+  // next poll and re-tails its own file for the new count, regardless of
+  // how many files are open.
+  auto requested_line_count = std::make_shared<std::atomic<int32_t>>(opt.line_count);
+  proxy->onEvent("rescan_requested"_key, [requested_line_count](dynamic payload) {
+    if (auto* c = payload.findField<int32_t>("line_count"_key))
+      requested_line_count->store(*c, std::memory_order_relaxed);
+  });
+
+  // `proxy`/`stop`/`requested_line_count` stay alive via the shared_ptrs
+  // captured by the "closed"/"rescan_requested" handlers above and by each
+  // tail_file thread below -- no separate keep_alive() call needed,
+  // mirroring top's own background-sampling thread.
   for (auto& file : opt.files)
-    std::thread(tail_file, proxy, stop, file, opt).detach();
+    std::thread(tail_file, proxy, stop, requested_line_count, file, opt).detach();
 }
 
 namespace {

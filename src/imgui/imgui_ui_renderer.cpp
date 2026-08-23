@@ -1357,11 +1357,12 @@ void render_input_int(imgui_renderer&, const ui_element& node, const context& s)
   int32_t val = node.get_as<int32_t>("value"_key, 0);
   int32_t step = node.get_as<int32_t>("step"_key, 1);
   int32_t step_fast = node.get_as<int32_t>("step_fast"_key, 100);
+  int32_t flags = node.get_as<int32_t>("flags"_key, 0);
   float width = node.get_as<float>("width"_key, 0.0f);
   if (width != 0.0f)
     ImGui::SetNextItemWidth(width);
   int v = val;
-  if (ImGui::InputInt(label.c_str(), &v, step, step_fast)) {
+  if (ImGui::InputInt(label.c_str(), &v, step, step_fast, ImGuiInputTextFlags(flags))) {
     const_cast<ui_element&>(node)["value"_key] = int32_t(v);
     dynamic payload;
     payload["value"_key] = int32_t(v);
@@ -1634,6 +1635,17 @@ void render_table(imgui_renderer& r, const ui_element& node, const context& s) {
       return;
 
     if (child.as<key_t>(dynamic::CLASS) == "TableRow"_key) {
+      // TableRow children are rendered inline rather than through the
+      // generic per-element dispatch (imgui_renderer::render_node()), which
+      // is where Element's own "visible" field is normally enforced -- so
+      // it's checked explicitly here instead. A hidden row is skipped
+      // entirely (no TableNextRow, no cells, no row_idx bump) rather than
+      // rendered blank, so e.g. a log table's regex filter can hide
+      // already-buffered rows without disturbing the visible rows' own
+      // click-index numbering.
+      if (!child.get_as<bool>("visible"_key, true))
+        return;
+
       int32_t row_flags = child.get_as<int32_t>("flags"_key, 0);
       float min_h = child.get_as<float>("min_height"_key, 0.0f);
       ImGui::TableNextRow(ImGuiTableRowFlags(row_flags), min_h);
@@ -1748,11 +1760,30 @@ void render_table(imgui_renderer& r, const ui_element& node, const context& s) {
   // log's newest entry is always visible without the caller managing scroll
   // position. Only fires on growth (not on shrink/reset) so it never fights
   // a user who scrolled up to read older rows while the count is unchanged.
+  // Gated on auto_scroll (default true) so a caller can offer a "Follow"
+  // toggle (e.g. modules/bdg/desktop/tail) that stops the pull-to-bottom
+  // without stopping row growth -- last_count is still updated either way,
+  // so re-enabling auto_scroll only snaps to bottom on the *next* new row,
+  // not immediately on toggle.
+  //
+  // SetScrollHereY(1.0f), not SetScrollY(GetScrollMaxY()): ScrollMax is the
+  // content height ImGui finished computing at the *previous* frame's
+  // End()/EndChild(), so it doesn't yet know about any row(s) just rendered
+  // this frame. That's invisible one row at a time (each new frame's stale
+  // target still lands one row short of a target that itself moves down
+  // next frame, so it settles within a frame or two) but breaks visibly for
+  // a batch of several rows landing in one push_lines() call/frame -- the
+  // view lands wherever the bottom was *before* that whole batch. Calling
+  // SetScrollHereY() right here instead targets the cursor's current Y,
+  // which already reflects every row drawn this frame, batch or not (this
+  // is Dear ImGui's own documented pattern for stateless bottom-follow --
+  // see imgui_demo.cpp's ShowExampleAppLog/ShowExampleAppConsole).
   if (table_id.id && (ImGuiTableFlags(flags) & ImGuiTableFlags_ScrollY)) {
     auto& cache = table_row_count_cache();
     auto& last_count = cache[table_id.id];
-    if (row_idx > last_count)
-      ImGui::SetScrollY(ImGui::GetScrollMaxY());
+    bool auto_scroll = node.get_as<bool>("auto_scroll"_key, true);
+    if (auto_scroll && row_idx > last_count)
+      ImGui::SetScrollHereY(1.0f);
     last_count = row_idx;
   }
 

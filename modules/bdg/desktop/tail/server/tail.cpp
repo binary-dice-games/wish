@@ -31,19 +31,40 @@ std::string to_upper(const std::string& s) {
   return out;
 }
 
-/// Every table (the "All" tab's, and each dynamically-created tag tab's)
-/// keeps at most this many rows, oldest evicted first -- a live tail could
-/// otherwise run for hours and accumulate an unbounded RMI object count.
+/// Absolute ceiling on tail::max_rows_ (the toolbar Lines field's live
+/// per-table row cap, oldest evicted first): a live tail could otherwise
+/// run for hours and, if the user sets an extreme Lines value, accumulate
+/// an unbounded RMI object count.
 constexpr size_t kMaxBufferedRows = 2000;
 
 } // namespace
 
 // ── UI layout ─────────────────────────────────────────────────────────────────
 //
-// ImGuiInputTextFlags_EnterReturnsTrue = 32: the filter box only fires
-// "changed" on Enter, not on every keystroke -- filtering re-walks nothing
-// retroactively (see class doc comment) so this just avoids a "changed"
-// storm while the user is still typing a pattern.
+// The filter box has no Apply/Clear buttons: it fires "changed" on every
+// keystroke (plain InputText, no EnterReturnsTrue flag), and on_event()
+// re-applies the filter from its current value on each one -- an empty
+// value clears the filter the same way (see do_set_filter's
+// pattern.empty() branch). Filtering only toggles row visibility (see
+// class doc comment), so a "changed" per keystroke costs one regex compile
+// plus one `visible` write per already-buffered row (reapply_filter_
+// visibility()), not a re-render of the whole table.
+//
+// "lines_input"'s "step": 0/"step_fast": 0 hides InputInt's +/- spinner
+// buttons (see ImGui::InputInt()'s own `step > 0 ? &step : NULL`), leaving
+// a plain text box that fills its whole widget rect -- confirmed live via
+// the automation module that with the buttons shown, a plain center-click
+// (what both a real user aiming at a narrow control and
+// AutomationClient.click()/type_text() do) lands on the "-"/"+" pair
+// rather than the much narrower text portion, since they visually
+// dominate an 80px-wide control. "EnterReturnsTrue" (unlike the filter
+// box) is deliberate here for a stronger reason than the filter's own
+// "avoid wasted work": changing Lines *evicts* rows down to the new cap
+// (see do_set_line_count()), which -- unlike the filter's reversible
+// visibility toggle -- is destructive and unrecoverable. Firing that per
+// keystroke while typing a multi-digit number (e.g. hitting "5" on the
+// way to "50") would irreversibly drop rows a moment before the field
+// settles on a larger value that would have kept them.
 // ImGuiTableColumnFlags: WidthFixed=16, WidthStretch=8 (message column
 // fills whatever width remains, matching kHelpWindowLayout's col_desc in
 // modules/bdg/dev/editor/server/editor.cpp).
@@ -78,10 +99,10 @@ static constexpr const char* kLayout = R"json({
           "type": "HorizontalLayout",
           "spacing": 8,
           "children": {
-            "filter_input": { "type": "InputText", "label": "Filter (regex)", "hint": "e.g. error|timeout", "width": 320, "flags": "EnterReturnsTrue" },
-            "btn_apply_filter": { "type": "Button", "label": "Apply", "width": 80 },
-            "btn_clear_filter": { "type": "Button", "label": "Clear Filter", "width": 100 },
-            "btn_clear": { "type": "Button", "label": "Clear All", "width": 90 }
+            "filter_input": { "type": "InputText", "label": "Filter (regex)", "hint": "e.g. error|timeout", "width": 320 },
+            "lines_input": { "type": "InputInt", "label": "Lines", "value": 10, "step": 0, "step_fast": 0, "width": 80, "flags": "EnterReturnsTrue" },
+            "chk_follow": { "type": "Checkbox", "label": "Follow", "value": true },
+            "btn_clear": { "type": "Button", "label": "Clear All" }
           }
         },
         "status_label": { "type": "Label", "text": "0 lines" },
@@ -93,7 +114,7 @@ static constexpr const char* kLayout = R"json({
               "children": {
                 "table_all": {
                   "type": "Table", "id": "##tail_all", "columns": 5, "headers": true,
-                  "outer_height": -1, "flags": "Resizable|RowBg|Borders|ScrollY",
+                  "outer_height": -1, "flags": "Resizable|RowBg|Borders|ScrollY", "auto_scroll": true,
                   "children": {
                     "col_time":    { "type": "TableColumn", "label": "Time",    "column_id": 0, "flags": "WidthFixed", "init_width": 90 },
                     "col_level":   { "type": "TableColumn", "label": "Level",   "column_id": 1, "flags": "WidthFixed", "init_width": 70 },
@@ -139,8 +160,11 @@ void tail::on_init() {
     filter_input_ptr_ = e;
     filter_input_id_ = wish_id_of(e);
   });
-  tree.with("vbox.toolbar.btn_apply_filter", [&](const auto& e) { btn_apply_filter_id_ = wish_id_of(e); });
-  tree.with("vbox.toolbar.btn_clear_filter", [&](const auto& e) { btn_clear_filter_id_ = wish_id_of(e); });
+  tree.with("vbox.toolbar.lines_input", [&](const auto& e) {
+    lines_input_ptr_ = e;
+    lines_input_id_ = wish_id_of(e);
+  });
+  tree.with("vbox.toolbar.chk_follow", [&](const auto& e) { follow_checkbox_id_ = wish_id_of(e); });
   tree.with("vbox.toolbar.btn_clear", [&](const auto& e) { btn_clear_id_ = wish_id_of(e); });
   tree.with("vbox.status_label", [&](const auto& e) { status_label_ptr_ = e; });
   tree.with("vbox.tab_bar", [&](const auto& e) { tab_bar_ptr_ = e; });
@@ -165,6 +189,7 @@ void tail::on_init() {
     }
   }
 
+  apply_follow_state();
   update_status();
 }
 
@@ -219,8 +244,36 @@ dynamic tail::do_set_filter(const dynamic& args) {
 
   if (filter_input_ptr_)
     filter_input_ptr_["value"_key] = pattern;
+  reapply_filter_visibility();
   update_status();
   return dynamic{};
+}
+
+dynamic tail::do_set_line_count(const dynamic& args) {
+  int32_t count = static_cast<int32_t>(max_rows_);
+  if (auto* c = args.findField<int32_t>("count"_key))
+    count = *c;
+  if (count < 1)
+    count = 1;
+  else if (count > static_cast<int32_t>(kMaxBufferedRows))
+    count = static_cast<int32_t>(kMaxBufferedRows);
+
+  max_rows_ = static_cast<size_t>(count);
+  if (lines_input_ptr_)
+    lines_input_ptr_["value"_key] = count;
+
+  evict_to_cap(all_table_);
+  if (all_table_.table_ptr)
+    all_table_.table_ptr->refresh_children_order();
+  for (auto& [tag, state] : tag_tabs_) {
+    evict_to_cap(state.table);
+    if (state.table.table_ptr)
+      state.table.table_ptr->refresh_children_order();
+  }
+
+  dynamic result;
+  result["count"_key] = count;
+  return result;
 }
 
 // ── Line ingestion / rendering ────────────────────────────────────────────────
@@ -229,11 +282,9 @@ void tail::ingest_line(const std::string& raw, const std::string& source) {
   parsed_log_line pl = parser_.parse(raw, source);
   ++total_lines_received_;
 
-  if (passes_filter(raw)) {
-    append_row(all_table_, pl);
-    if (!pl.tag.empty())
-      append_row(ensure_tag_tab(pl.tag).table, pl);
-  }
+  append_row(all_table_, pl, raw);
+  if (!pl.tag.empty())
+    append_row(ensure_tag_tab(pl.tag).table, pl, raw);
 
   update_status();
 }
@@ -244,7 +295,7 @@ bool tail::passes_filter(const std::string& raw) const {
   return std::regex_search(raw, *filter_regex_);
 }
 
-void tail::append_row(log_table_state& state, const parsed_log_line& pl) {
+void tail::append_row(log_table_state& state, const parsed_log_line& pl, const std::string& raw) {
   if (!state.table_ptr)
     return;
   auto* children_p = state.table_ptr->findField<dynamic_ptr>("children"_key);
@@ -285,6 +336,10 @@ void tail::append_row(log_table_state& state, const parsed_log_line& pl) {
 
   ui_element_ptr row{dynamic::instantiate("wish"_key, "TableRow"_key)};
   row["order"_key] = static_cast<int32_t>(state.next_child_key);
+  // Filtering hides rows rather than gating admission (see class doc
+  // comment) -- render_table() skips a row entirely when its inherited
+  // "visible" field is false (see docs/ui-elements.md's TableRow section).
+  row["visible"_key] = passes_filter(raw);
 
   auto row_children = dynamic_ptr{key_t{0U}, {}};
   (*row_children)[size_t{0}] = dynamic_ptr{time_cell};
@@ -302,12 +357,25 @@ void tail::append_row(log_table_state& state, const parsed_log_line& pl) {
   size_t child_key = state.next_child_key++;
   (*children)[child_key] = dynamic_ptr{row};
   state.rows.push_back({child_key, row_id, wish_id_of(time_cell), wish_id_of(level_cell), wish_id_of(tag_cell),
-      wish_id_of(source_cell), wish_id_of(message_cell)});
+      wish_id_of(source_cell), wish_id_of(message_cell), raw});
 
-  // FIFO cap: a live tail has no natural upper bound on how many lines it
-  // will ever see, so the oldest row (and every RMI object it owns) is
-  // dropped once the cap is exceeded -- mirrors editor.cpp's append_log_row.
-  if (state.rows.size() > kMaxBufferedRows) {
+  // Live FIFO cap: the toolbar's Lines field (see class doc comment) --
+  // a live tail has no natural upper bound on how many lines it will ever
+  // see, so the oldest row is dropped once max_rows_ is exceeded.
+  evict_to_cap(state);
+
+  state.table_ptr->refresh_children_order();
+}
+
+void tail::evict_to_cap(log_table_state& state) {
+  if (!state.table_ptr)
+    return;
+  auto* children_p = state.table_ptr->findField<dynamic_ptr>("children"_key);
+  if (!children_p || !*children_p)
+    return;
+  auto& children = *children_p;
+
+  while (state.rows.size() > max_rows_) {
     auto& oldest = state.rows.front();
     children->erase(oldest.child_key);
     ctx().objects.erase(oldest.row_id.id);
@@ -318,8 +386,6 @@ void tail::append_row(log_table_state& state, const parsed_log_line& pl) {
     ctx().objects.erase(oldest.message_id.id);
     state.rows.pop_front();
   }
-
-  state.table_ptr->refresh_children_order();
 }
 
 // ── Tag tabs ───────────────────────────────────────────────────────────────────
@@ -331,6 +397,7 @@ ui_element_ptr tail::build_log_table(log_table_state& state) {
   table["headers"_key] = true;
   table["outer_height"_key] = -1.0f;
   table["flags"_key] = int32_t{33556417}; // Resizable|RowBg|Borders|ScrollY -- see kLayout's comment.
+  table["auto_scroll"_key] = follow_enabled_;
 
   auto make_col = [&](const char* label, int32_t col_id, int32_t flags, float w, int32_t order) {
     ui_element_ptr col{dynamic::instantiate("wish"_key, "TableColumn"_key)};
@@ -345,12 +412,23 @@ ui_element_ptr tail::build_log_table(log_table_state& state) {
     return col;
   };
 
+  // Named (string-hash) keys, not numeric 0..4: this table's "children" map
+  // later also holds TableRow entries added by append_row() via
+  // log_table_state::next_child_key, which counts up from a *numeric* 0 --
+  // using plain size_t{0}..{4} here for the columns would collide with the
+  // first few rows appended (dynamic's operator[](size_t) and
+  // operator[](key_t) share the same underlying field map, see
+  // bison_object.hpp), silently overwriting each TableColumn with a
+  // TableRow and losing both the header labels and the column widths.
+  // Mirrors kLayout's own JSON child names (col_time, col_level, ...),
+  // whose hashed string keys are subject to the same rule but never
+  // collide with a small numeric row index in practice.
   auto children = dynamic_ptr{key_t{0U}, {}};
-  (*children)[size_t{0}] = dynamic_ptr{make_col("Time", 0, 16, 90.0f, 0)};
-  (*children)[size_t{1}] = dynamic_ptr{make_col("Level", 1, 16, 70.0f, 1)};
-  (*children)[size_t{2}] = dynamic_ptr{make_col("Tag", 2, 16, 100.0f, 2)};
-  (*children)[size_t{3}] = dynamic_ptr{make_col("Source", 3, 16, 120.0f, 3)};
-  (*children)[size_t{4}] = dynamic_ptr{make_col("Message", 4, 8, 0.0f, 4)};
+  (*children)["col_time"_key] = dynamic_ptr{make_col("Time", 0, 16, 90.0f, 0)};
+  (*children)["col_level"_key] = dynamic_ptr{make_col("Level", 1, 16, 70.0f, 1)};
+  (*children)["col_tag"_key] = dynamic_ptr{make_col("Tag", 2, 16, 100.0f, 2)};
+  (*children)["col_source"_key] = dynamic_ptr{make_col("Source", 3, 16, 120.0f, 3)};
+  (*children)["col_message"_key] = dynamic_ptr{make_col("Message", 4, 8, 0.0f, 4)};
   table["children"_key] = children;
   table->refresh_children_order();
 
@@ -371,7 +449,10 @@ tail::tag_tab_state& tail::ensure_tag_tab(const std::string& tag) {
 
   ui_element_ptr tab{dynamic::instantiate("wish"_key, "TabItem"_key)};
   tab["label"_key] = "[" + tag + "]";
-  tab["closable"_key] = true;
+  // Not closable, matching the "All" tab (see kLayout's own "closable":
+  // false) -- a tag's tab is a permanent part of the session's tab bar
+  // once created, the same way "All" is; the user cannot remove either.
+  tab["closable"_key] = false;
   tab["order"_key] = static_cast<int32_t>(next_tab_child_key_ + 1);
 
   auto tab_children = dynamic_ptr{key_t{0U}, {}};
@@ -387,52 +468,48 @@ tail::tag_tab_state& tail::ensure_tag_tab(const std::string& tag) {
     if (auto* children_p = tab_bar_ptr_->findField<dynamic_ptr>("children"_key); children_p && *children_p) {
       size_t child_key = next_tab_child_key_++;
       (*(*children_p))[child_key] = dynamic_ptr{tab};
-      state.tab_bar_child_key = child_key;
       tab_bar_ptr_->refresh_children_order();
     }
   }
 
   state.tab_ptr = tab;
-  state.tab_id = tab_id;
-  tab_id_to_tag_[tab_id.id] = tag;
 
   auto [ins_it, ok] = tag_tabs_.emplace(tag, std::move(state));
   return ins_it->second;
 }
 
-void tail::close_tag_tab(const std::string& tag) {
-  auto it = tag_tabs_.find(tag);
-  if (it == tag_tabs_.end())
-    return;
-  auto& state = it->second;
+// ── Toolbar actions ───────────────────────────────────────────────────────────
 
-  if (tab_bar_ptr_) {
-    if (auto* children_p = tab_bar_ptr_->findField<dynamic_ptr>("children"_key); children_p && *children_p)
-      (*children_p)->erase(state.tab_bar_child_key);
-    tab_bar_ptr_->refresh_children_order();
+void tail::apply_follow_state() {
+  if (all_table_.table_ptr)
+    all_table_.table_ptr["auto_scroll"_key] = follow_enabled_;
+  for (auto& [tag, state] : tag_tabs_) {
+    if (state.table.table_ptr)
+      state.table.table_ptr["auto_scroll"_key] = follow_enabled_;
   }
-
-  // Sweep every RMI object this tag's tab owns (its rows' cells, its
-  // TableColumns, the Table itself) -- children map entries alone don't
-  // release ctx().objects (see append_row()'s FIFO-eviction comment).
-  if (state.table.table_ptr) {
-    if (auto* cols_p = state.table.table_ptr->findField<dynamic_ptr>("children"_key); cols_p && *cols_p) {
-      (*cols_p)->forEach([&](key_t, const field& f) {
-        if (!f.is<dynamic_ptr>())
-          return;
-        if (auto ptr = f.as<dynamic_ptr>())
-          ctx().objects.erase(ptr->as<key_t>("__wish_id"_key).id);
-      });
-    }
-    ctx().objects.erase(state.table.table_ptr->as<key_t>("__wish_id"_key).id);
-  }
-  ctx().objects.erase(state.tab_id.id);
-
-  tab_id_to_tag_.erase(state.tab_id.id);
-  tag_tabs_.erase(it);
 }
 
-// ── Toolbar actions ───────────────────────────────────────────────────────────
+void tail::reapply_filter_visibility() {
+  auto reapply = [&](log_table_state& state) {
+    if (!state.table_ptr)
+      return;
+    auto* children_p = state.table_ptr->findField<dynamic_ptr>("children"_key);
+    if (!children_p || !*children_p)
+      return;
+    auto& children = *children_p;
+    for (auto& entry : state.rows) {
+      auto& row_f = (*children)[entry.child_key];
+      if (row_f.is<dynamic_ptr>()) {
+        if (auto row = row_f.as<dynamic_ptr>())
+          row["visible"_key] = passes_filter(entry.raw);
+      }
+    }
+  };
+
+  reapply(all_table_);
+  for (auto& [tag, state] : tag_tabs_)
+    reapply(state.table);
+}
 
 void tail::apply_filter_from_input() {
   if (!filter_input_ptr_)
@@ -482,34 +559,47 @@ void tail::update_status() {
 
 // ── Event routing ─────────────────────────────────────────────────────────────
 
-void tail::on_event(key_t id, key_t event, const dynamic& /*payload*/) {
+void tail::on_event(key_t id, key_t event, const dynamic& payload) {
   if (id == window_id_ && event == "closed"_key) {
     emit("closed"_key);
     remove_internal_objects();
     return;
   }
 
-  if ((id == filter_input_id_ && event == "changed"_key) || (id == btn_apply_filter_id_ && event == "clicked"_key)) {
+  if (id == filter_input_id_ && event == "changed"_key) {
     apply_filter_from_input();
     return;
   }
 
-  if (id == btn_clear_filter_id_ && event == "clicked"_key) {
-    if (filter_input_ptr_)
-      filter_input_ptr_["value"_key] = std::string{};
+  if (id == lines_input_id_ && event == "changed"_key) {
     dynamic args;
-    args["pattern"_key] = std::string{};
-    do_set_filter(args);
+    if (auto* v = payload.findField<int32_t>("value"_key))
+      args["count"_key] = *v;
+    int32_t count = do_set_line_count(args).as<int32_t>("count"_key);
+
+    // do_set_line_count()'s own evict_to_cap() only ever trims -- it has no
+    // way to pull in *more* history when the user raises the count, since
+    // this form never touches the filesystem. Only the interactive path
+    // asks the client to do that: clear every table (so the client's
+    // rescanned lines replace what's shown instead of appending after it,
+    // which would duplicate whatever's still within the new count) and
+    // emit 'rescan_requested' for the client to react to.
+    clear_all();
+    dynamic payload_out;
+    payload_out["line_count"_key] = count;
+    emit("rescan_requested"_key, std::move(payload_out));
+    return;
+  }
+
+  if (id == follow_checkbox_id_ && event == "changed"_key) {
+    if (auto* v = payload.findField<bool>("value"_key))
+      follow_enabled_ = *v;
+    apply_follow_state();
     return;
   }
 
   if (id == btn_clear_id_ && event == "clicked"_key) {
     clear_all();
-    return;
-  }
-
-  if (auto it = tab_id_to_tag_.find(id.id); it != tab_id_to_tag_.end() && event == "closed"_key) {
-    close_tag_tab(it->second);
     return;
   }
 }
@@ -537,17 +627,36 @@ void register_tail() {
         return static_cast<tail&>(self).do_set_filter(args);
       }});
 
+  proto->addMethod(
+      "set_line_count"_key, bison::method{[](dynamic& self, const dynamic& args) -> dynamic {
+        return static_cast<tail&>(self).do_set_line_count(args);
+      }});
+
   (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Tail"));
   (*proto)[dynamic::CLASS].addAttribute(
       attr<Description>("`tail`-like log viewer. The client owns reading (and, with -f, "
                         "following) local log files and calls push_lines with each new batch "
                         "of raw text; this form parses/colorizes them (severity level, "
                         "[Tag] tokens -- rules configurable via the module's patterns.json "
-                        "resource), renders them into a scrolling, auto-following table, and "
-                        "mirrors any line carrying a [Tag] into its own dedicated tab. "
-                        "set_filter applies a live regex filter prospectively only -- like "
-                        "`tail -f | grep`, it does not retroactively hide/show already-received "
-                        "rows. Listen for the 'closed' event to detect when the user is done."));
+                        "resource), renders them into a scrolling table, and mirrors any line "
+                        "carrying a [Tag] into its own dedicated tab. The toolbar's Follow "
+                        "checkbox controls whether the table(s) auto-scroll to the newest row "
+                        "as lines arrive; unchecking it lets the user browse older rows without "
+                        "being pulled back to the bottom. "
+                        "set_filter applies a live regex filter to row *visibility*: every "
+                        "ingested line always becomes a row, and changing the pattern "
+                        "immediately shows/hides already-received rows to match, so the filter "
+                        "can be edited dynamically to search through lines already on screen. "
+                        "set_line_count sets the toolbar's Lines field, which doubles as a live "
+                        "per-table row cap: whenever a table would hold more rows than this, the "
+                        "oldest are dropped immediately, whether growth came from a newly "
+                        "ingested line or from lowering the field itself. This form has no "
+                        "filesystem access, so it cannot pull in more history on its own -- "
+                        "editing the field in the UI additionally clears every table and emits "
+                        "'rescan_requested' with {line_count: int} for the client to answer by "
+                        "re-reading each tailed file's last N lines, so raising the count really "
+                        "does surface more history. Listen for the 'closed' event to detect when "
+                        "the user is done."));
 
   dynamic::addClass(
       "wish"_key, std::move(proto), key_t{0U}, dynamic::make_factory<tail>("wish"_key, "Tail"_key));

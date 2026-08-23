@@ -41,6 +41,21 @@ void register_input_number() {
             attr<DisplayName>("Step Fast"),
             attr<Description>("Amount added/subtracted when Ctrl is held while clicking +/-."),
             attr<Category>("Behavior")});
+    proto->addField(
+        "flags"_rkey,
+        field{
+            int32_t{0},
+            attr<DisplayName>("Flags"),
+            attr<Description>("ImGuiInputTextFlags bitmask (combine names with '|'). "
+                              "Notable value: EnterReturnsTrue (fire changed only on Enter/"
+                              "deactivation, not on every keystroke -- useful when 'changed' "
+                              "triggers an expensive owner-side reaction)."),
+            attr<Category>("Behavior"),
+            attr<EnumFlags>(EnumFlags::table{
+                {"EnterReturnsTrue", 1 << 6},
+                {"ReadOnly", 1 << 9},
+                {"AutoSelectAll", 1 << 12},
+            })});
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("InputInt"));
     (*proto)[dynamic::CLASS].addAttribute(
         attr<Description>("An integer input field with increment/decrement buttons. "

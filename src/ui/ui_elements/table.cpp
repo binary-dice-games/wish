@@ -106,6 +106,17 @@ void register_table() {
             attr<DisplayName>("Show Headers"),
             attr<Description>("Render a header row from TableColumn labels."),
             attr<Category>("Appearance")});
+    proto->addField(
+        "auto_scroll"_rkey,
+        field{
+            bool{true},
+            attr<DisplayName>("Auto Scroll"),
+            attr<Description>("When the table is scrollable (flags includes ScrollY) and this is "
+                              "true, automatically scroll to the newest row whenever the row count "
+                              "grows -- e.g. a live log/event table following its latest entry. Set "
+                              "false to leave the scroll position alone as rows are appended, e.g. "
+                              "to let the user browse older rows without being pulled to the bottom."),
+            attr<Category>("Behavior")});
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Table"));
     (*proto)[dynamic::CLASS].addAttribute(
         attr<Description>("A multi-column table. Direct children of type TableColumn define "
