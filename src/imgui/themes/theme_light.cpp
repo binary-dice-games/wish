@@ -9,7 +9,7 @@
 namespace bdg::wish {
 
 void register_theme_light() {
-  register_theme("light", ImGui::StyleColorsLight);
+  register_theme("light", ImGui::StyleColorsLight, /*is_light=*/true);
 }
 
 } // namespace bdg::wish

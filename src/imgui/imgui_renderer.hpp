@@ -35,7 +35,7 @@ using theme_fn = void (*)(ImGuiStyle*);
 ///        matches @p name.
 ///
 /// Built-ins `"dark"`, `"light"`, `"classic"`, and `"wish"` (a more modern
-/// theme layered on top of `"dark"`, wish's default) are registered
+/// theme layered on top of `"light"`, wish's default) are registered
 /// automatically before `main()` runs -- each in its own
 /// src/imgui/themes/theme_*.cpp file, see themes.hpp. A project embedding
 /// wish can register additional named themes the same way -- there is
@@ -43,10 +43,24 @@ using theme_fn = void (*)(ImGuiStyle*);
 /// not validate against this registry: an unrecognized name falls back to
 /// `"wish"` with a logged warning at render time (`apply_style_fields()`).
 ///
-/// @param name  Preset name, as passed to `style_service::set_preset()`.
-/// @param fn    Function that resets an `ImGuiStyle` to this theme's colors
-///              and shape. Called with a non-null target style pointer.
-void register_theme(const std::string& name, theme_fn fn);
+/// @param name      Preset name, as passed to `style_service::set_preset()`.
+/// @param fn        Function that resets an `ImGuiStyle` to this theme's
+///                   colors and shape. Called with a non-null target style
+///                   pointer.
+/// @param is_light  Whether this theme reads as a light theme -- declared
+///                   explicitly here (once, by whoever registers the theme)
+///                   rather than inferred from its compiled colors
+///                   elsewhere. `render_session()` records the active
+///                   theme's `is_light` into `style_service::is_light_theme()`
+///                   after compiling its style, so any render function with
+///                   access to the session (`render_label()`,
+///                   `render_text_editor()`, ...) reads the *same* answer,
+///                   live, every frame, rather than each re-deriving
+///                   light/dark its own way or a caller baking one color
+///                   into data once (see `Label.text_color_light`/
+///                   `text_color_dark` and `tail::append_row()` for the
+///                   pattern that replaced doing that).
+void register_theme(const std::string& name, theme_fn fn, bool is_light);
 
 /// @brief Renders one `ui_element` node's ImGui widget(s); the uniform
 ///        signature every `render_*` function in imgui_ui_renderer.hpp uses.

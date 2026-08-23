@@ -30,7 +30,8 @@ also mirrored into its own dedicated tab.
 - **resources/**: `patterns.json` -- the line-parsing rule set: regexes that
   extract a timestamp/severity/message from a raw line (`line_formats`, first
   match wins), regexes that classify a severity level and its display color
-  (`level_rules`), and the regex used to spot `[Tag]` tokens (`tag_pattern`).
+  for both a light and a dark background (`level_rules`, `light_color` /
+  `dark_color`), and the regex used to spot `[Tag]` tokens (`tag_pattern`).
   Lands per-session at `res/bdg/desktop/tail/patterns.json` (see
   `modules/README.md`'s "Per-module embedded resources"); edit the source
   file and rebuild to add support for your own log format, or to change how

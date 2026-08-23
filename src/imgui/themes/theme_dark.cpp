@@ -9,7 +9,7 @@
 namespace bdg::wish {
 
 void register_theme_dark() {
-  register_theme("dark", ImGui::StyleColorsDark);
+  register_theme("dark", ImGui::StyleColorsDark, /*is_light=*/false);
 }
 
 } // namespace bdg::wish

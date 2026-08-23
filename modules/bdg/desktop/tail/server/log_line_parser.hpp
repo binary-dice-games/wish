@@ -23,11 +23,15 @@ struct log_line_format_rule {
 
 /// @brief One severity classification rule: if `regex` matches (case
 /// insensitive) the text being classified, the line is `level`, displayed
-/// in `color` ("#RRGGBBAA", matches `Label.text_color`).
+/// in `light_color`/`dark_color` ("#RRGGBBAA", matches `Label.text_color`)
+/// depending on which one is readable against the client's active theme --
+/// see `parsed_log_line::light_color`/`dark_color` and
+/// `tail::append_row()`, which picks between them.
 struct log_level_rule {
   std::string level;
   std::regex regex;
-  std::string color;
+  std::string light_color;
+  std::string dark_color;
 };
 
 /// @brief Result of parsing one raw log line.
@@ -36,7 +40,12 @@ struct parsed_log_line {
   std::string source; ///< Caller-supplied origin (e.g. file name); may be empty.
   std::string timestamp; ///< Extracted timestamp text, or empty if not found.
   std::string level; ///< Canonical lowercase level name ("error", "info", ...), or empty if unclassified.
-  std::string color; ///< "#RRGGBBAA" text color to use for this line's Level/Message cells.
+  /// "#RRGGBBAA" text colors to use for this line's Level/Message cells --
+  /// one tuned for a light background, one for dark. The caller (see
+  /// `tail::append_row()`) picks whichever matches the client's actual
+  /// active theme; `log_line_parser` itself has no notion of theming.
+  std::string light_color;
+  std::string dark_color;
   std::string tag; ///< First non-severity `[Tag]` token found in the line, or empty.
   std::string message; ///< Extracted message body (falls back to `raw` if no rule captured one).
 };
@@ -62,8 +71,8 @@ class log_line_parser {
   /// @brief Classify one raw line: match it against `line_formats` (first
   /// match wins; the built-in fallback rule, `^(.*)$` as the whole
   /// message, always matches if the config's own rules didn't), extract a
-  /// severity level and color, and look for a `[Tag]` token via
-  /// `tag_pattern` (skipping any bracketed token that is itself a known
+  /// severity level and its light/dark colors, and look for a `[Tag]` token
+  /// via `tag_pattern` (skipping any bracketed token that is itself a known
   /// severity word, e.g. `[ERROR]`).
   parsed_log_line parse(const std::string& raw, const std::string& source) const;
 
@@ -72,7 +81,8 @@ class log_line_parser {
 
   std::vector<log_line_format_rule> line_formats_;
   std::vector<log_level_rule> level_rules_;
-  std::string default_color_{"#D0D0D0FF"};
+  std::string default_light_color_{"#3A3A3CFF"};
+  std::string default_dark_color_{"#D0D0D0FF"};
   std::regex tag_regex_;
 };
 

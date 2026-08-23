@@ -67,15 +67,18 @@ void log_line_parser::load_builtin_defaults() {
   fallback.message_group = 1;
   line_formats_.push_back(std::move(fallback));
 
-  level_rules_.push_back({"fatal", std::regex(R"(\b(FATAL|PANIC|EMERGENCY|EMERG)\b)", std::regex::icase), "#FF453AFF"});
   level_rules_.push_back(
-      {"error", std::regex(R"(\b(ERROR|ERR|CRITICAL|CRIT|SEVERE)\b)", std::regex::icase), "#FF6961FF"});
-  level_rules_.push_back({"warning", std::regex(R"(\b(WARN|WARNING)\b)", std::regex::icase), "#FFD60AFF"});
-  level_rules_.push_back({"info", std::regex(R"(\b(INFO|NOTICE)\b)", std::regex::icase), "#64D2FFFF"});
-  level_rules_.push_back({"debug", std::regex(R"(\b(DEBUG|DBG)\b)", std::regex::icase), "#B0B0B8FF"});
-  level_rules_.push_back({"trace", std::regex(R"(\b(TRACE|VERBOSE)\b)", std::regex::icase), "#8E8E93FF"});
+      {"fatal", std::regex(R"(\b(FATAL|PANIC|EMERGENCY|EMERG)\b)", std::regex::icase), "#D70015FF", "#FF453AFF"});
+  level_rules_.push_back(
+      {"error", std::regex(R"(\b(ERROR|ERR|CRITICAL|CRIT|SEVERE)\b)", std::regex::icase), "#D70015FF", "#FF6961FF"});
+  level_rules_.push_back(
+      {"warning", std::regex(R"(\b(WARN|WARNING)\b)", std::regex::icase), "#A05A00FF", "#FFD60AFF"});
+  level_rules_.push_back({"info", std::regex(R"(\b(INFO|NOTICE)\b)", std::regex::icase), "#0066CCFF", "#64D2FFFF"});
+  level_rules_.push_back({"debug", std::regex(R"(\b(DEBUG|DBG)\b)", std::regex::icase), "#5A5A60FF", "#B0B0B8FF"});
+  level_rules_.push_back({"trace", std::regex(R"(\b(TRACE|VERBOSE)\b)", std::regex::icase), "#7A7A80FF", "#8E8E93FF"});
 
-  default_color_ = "#D0D0D0FF";
+  default_light_color_ = "#3A3A3CFF";
+  default_dark_color_ = "#D0D0D0FF";
   tag_regex_ = std::regex(R"(\[([A-Za-z0-9_][A-Za-z0-9_.:-]*)\])");
 }
 
@@ -129,7 +132,8 @@ void log_line_parser::load_from_json(const std::string& json_text) {
                    << '\n';
         continue;
       }
-      rule.color = item.value("color", default_color_);
+      rule.light_color = item.value("light_color", default_light_color_);
+      rule.dark_color = item.value("dark_color", default_dark_color_);
       level_rules.push_back(std::move(rule));
     }
   }
@@ -139,7 +143,8 @@ void log_line_parser::load_from_json(const std::string& json_text) {
     return;
   }
 
-  std::string default_color = root.value("default_level_color", default_color_);
+  std::string default_light_color = root.value("default_level_light_color", default_light_color_);
+  std::string default_dark_color = root.value("default_level_dark_color", default_dark_color_);
 
   std::regex tag_regex = tag_regex_;
   if (root.contains("tag_pattern") && root["tag_pattern"].is_string()) {
@@ -152,7 +157,8 @@ void log_line_parser::load_from_json(const std::string& json_text) {
 
   line_formats_ = std::move(line_formats);
   level_rules_ = std::move(level_rules);
-  default_color_ = default_color;
+  default_light_color_ = default_light_color;
+  default_dark_color_ = default_dark_color;
   tag_regex_ = std::move(tag_regex);
 }
 
@@ -175,15 +181,18 @@ parsed_log_line log_line_parser::parse(const std::string& raw, const std::string
     for (auto& rule : level_rules_) {
       if (std::regex_search(level_source, rule.regex)) {
         pl.level = rule.level;
-        pl.color = rule.color;
+        pl.light_color = rule.light_color;
+        pl.dark_color = rule.dark_color;
         break;
       }
     }
     break;
   }
 
-  if (pl.color.empty())
-    pl.color = default_color_;
+  if (pl.light_color.empty())
+    pl.light_color = default_light_color_;
+  if (pl.dark_color.empty())
+    pl.dark_color = default_dark_color_;
 
   auto begin = std::sregex_iterator(raw.begin(), raw.end(), tag_regex_);
   auto end = std::sregex_iterator();

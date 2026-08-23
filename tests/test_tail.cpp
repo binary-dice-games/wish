@@ -155,7 +155,10 @@ static std::string cell_text(const dynamic_ptr& row, size_t column) {
   return cell ? cell->as<std::string>("text"_key) : std::string{};
 }
 
-static std::string cell_color(const dynamic_ptr& row, size_t column) {
+// @p color_key is "text_color_light"_key or "text_color_dark"_key -- tail
+// stores both on a classified cell (see tail::append_row()) and leaves the
+// actual light/dark pick to render_label() at render time.
+static std::string cell_color(const dynamic_ptr& row, size_t column, bison::key_t color_key) {
   if (!row)
     return {};
   auto* cf = row->findField<dynamic_ptr>("children"_key);
@@ -167,7 +170,7 @@ static std::string cell_color(const dynamic_ptr& row, size_t column) {
   auto cell = f.as<dynamic_ptr>();
   if (!cell)
     return {};
-  auto* color_f = cell->findField<std::string>("text_color"_key);
+  auto* color_f = cell->findField<std::string>(color_key);
   return color_f ? *color_f : std::string{};
 }
 
@@ -302,15 +305,28 @@ TEST_F(TailTest, PlainLineAddsRowToAllTable) {
   EXPECT_EQ(cell_text(row, 3), "app.log");
 }
 
+// tail::append_row() stores *both* colors a classified line carries
+// (patterns.json's per-level light_color/dark_color) on each cell, as
+// "text_color_light"/"text_color_dark" -- it never picks one itself.
+// render_label() (imgui_ui_renderer.cpp) picks between them at render time,
+// live against style_service::is_light_theme() every frame -- see
+// ImguiRendererTest.LabelWithThemeColorsFollowsIsLightTheme
+// (test_imgui_renderer.cpp) for that half. Storing both, undecided, means a
+// theme change mid-session recolors already-ingested lines on the very next
+// frame instead of leaving them stuck with whatever theme was active when
+// each line first arrived.
 TEST_F(TailTest, LevelPrefixedLineIsClassifiedError) {
   push_line("ERROR: disk full", "app.log");
   auto row = first_row(all_table());
   ASSERT_NE(row, nullptr);
   EXPECT_EQ(cell_text(row, 1), "ERROR");
   EXPECT_EQ(cell_text(row, 4), "disk full");
-  // patterns.json's "error" level_rules color -- see resources/embedded/patterns.json.
-  EXPECT_EQ(cell_color(row, 1), "#FF6961FF");
-  EXPECT_EQ(cell_color(row, 4), "#FF6961FF");
+  // patterns.json's "error" level_rules light_color/dark_color -- see
+  // resources/embedded/patterns.json.
+  EXPECT_EQ(cell_color(row, 1, "text_color_light"_key), "#D70015FF");
+  EXPECT_EQ(cell_color(row, 4, "text_color_light"_key), "#D70015FF");
+  EXPECT_EQ(cell_color(row, 1, "text_color_dark"_key), "#FF6961FF");
+  EXPECT_EQ(cell_color(row, 4, "text_color_dark"_key), "#FF6961FF");
 }
 
 TEST_F(TailTest, TaggedLineCreatesTagTab) {

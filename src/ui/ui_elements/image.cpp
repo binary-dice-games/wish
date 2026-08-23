@@ -47,6 +47,23 @@ void register_image() {
                             "visible against both light and dark themes). Empty (the default) "
                             "draws the image unmodified."),
           attr<Category>("Appearance")});
+  proto->addField(
+      "tint_light"_rkey,
+      field{
+          std::string{""},
+          attr<DisplayName>("Tint (Light Theme)"),
+          attr<Description>("Overrides tint while the session's active theme is light-based; "
+                            "re-evaluated every frame, so it follows a theme change made after "
+                            "this Image was created. Ignored when empty."),
+          attr<Category>("Appearance")});
+  proto->addField(
+      "tint_dark"_rkey,
+      field{
+          std::string{""},
+          attr<DisplayName>("Tint (Dark Theme)"),
+          attr<Description>("Same as tint_light, used instead while the active theme is dark-based. "
+                            "Ignored when empty."),
+          attr<Category>("Appearance")});
   (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Image"));
   (*proto)[dynamic::CLASS].addAttribute(attr<Description>("Displays an image uploaded via the file service."));
   dynamic::addClass(

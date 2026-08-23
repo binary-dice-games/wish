@@ -32,7 +32,7 @@ void StyleColorsWish(ImGuiStyle* dst) {
 } // namespace
 
 void register_theme_wish() {
-  register_theme("wish", StyleColorsWish);
+  register_theme("wish", StyleColorsWish, /*is_light=*/true);
 }
 
 } // namespace bdg::wish

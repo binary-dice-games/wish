@@ -10,6 +10,7 @@
 
 #ifdef WISH_IMGUI_ENABLED
 
+#include <context/style_service.hpp>
 #include <imgui/imgui_layout.hpp>
 #include <server/renderer.hpp>
 
@@ -342,10 +343,30 @@ void render_window(imgui_renderer& r, const ui_element& node, const context& s) 
     enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "closed"_key, dynamic{});
 }
 
-void render_label(imgui_renderer&, const ui_element& node, const context&) {
+// Reads a "#RRGGBBAA"/"#RRGGBB" hex color field, preferring a
+// `<field>_light`/`<field>_dark` variant over the plain field when the
+// variant matching the session's *current* active theme is set. Read live
+// every frame via style_service::is_light_theme() -- not cached -- so a
+// theme change made after the element was created recolors it on the very
+// next frame, instead of a caller baking in one color at data-creation
+// time and having it go stale (the motivating case: tail's per-severity
+// log line colors, set once at ingest time via tail::append_row(); see
+// Label.text_color_light/text_color_dark's doc comments, label.cpp).
+// @param light_key/dark_key  The `<field>_light`/`<field>_dark` keys.
+// @param base_key            The plain, theme-independent field to fall
+//                             back to when the matching variant is empty.
+static std::string get_theme_color(const ui_element& node, const context& s, key_t base_key, key_t light_key,
+    key_t dark_key) {
+  bool is_light = !s.style_service || s.style_service->is_light_theme();
+  auto variant = node.get_as<std::string>(is_light ? light_key : dark_key, "");
+  return !variant.empty() ? variant : node.get_as<std::string>(base_key, "");
+}
+
+void render_label(imgui_renderer&, const ui_element& node, const context& s) {
   auto text = node.get_as<std::string>("text"_key, "");
-  auto color = node.get_as<std::string>("text_color"_key, "");
+  auto color = get_theme_color(node, s, "text_color"_key, "text_color_light"_key, "text_color_dark"_key);
   bool wrap = node.get_as<bool>("wrap"_key, false);
+
   if (!color.empty())
     ImGui::PushStyleColor(ImGuiCol_Text, parse_hex_color(color));
   // GetCursorPosX() + GetContentRegionAvail().x (not PushTextWrapPos(0.0f),
@@ -540,7 +561,7 @@ void render_image(imgui_renderer& r, const ui_element& node, const context& s) {
     reserve();
     return;
   }
-  auto tint = node.get_as<std::string>("tint"_key, "");
+  auto tint = get_theme_color(node, s, "tint"_key, "tint_light"_key, "tint_dark"_key);
   ImVec4 tint_col = tint.empty() ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : parse_hex_color(tint);
   // Internal-only escape hatch, same idiom as "__auto_size_to_font__" above:
   // form-generated icons (file_dialog.cpp's per-row type icon) want to track

@@ -48,9 +48,9 @@ bison::dynamic style_service::get_fields() const {
 void style_service::set_preset(const std::string& name) {
   // Clear all overrides and record only the preset name, unvalidated. The
   // renderer looks up and applies the matching registered theme function
-  // (see imgui_renderer::register_theme()) on the render thread, falling
-  // back to the default theme with a logged warning if @p name isn't
-  // registered there.
+  // (see imgui_renderer::register_theme()) -- and records is_light_theme()
+  // -- on the render thread, falling back to the default theme with a
+  // logged warning if @p name isn't registered there.
   style_ = bison::dynamic{};
   style_["preset"_key] = name;
   dirty_.store(true, std::memory_order_release);

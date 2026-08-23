@@ -273,6 +273,8 @@ Read-only static text; no events.
 |---|---|---|---|
 | `text` | `string` | `""` | Displayed text content. |
 | `text_color` | `string` | `""` | Optional `"#RRGGBBAA"`/`"#RRGGBB"` text color override; empty uses the current theme's text color. |
+| `text_color_light` | `string` | `""` | Overrides `text_color` while the session's active theme is light-based; re-evaluated every frame, so it follows a theme change made after this Label was created. Ignored when empty. |
+| `text_color_dark` | `string` | `""` | Same as `text_color_light`, used instead while the active theme is dark-based. Ignored when empty. |
 | `wrap` | `bool` | `false` | When true, wraps text to the available width instead of overflowing/clipping on one line. |
 
 #### `Checkbox`
@@ -431,6 +433,9 @@ Displays an image previously uploaded via the file service; no events.
 | `src` | `string` | `""` (required) | Resource file name in the session sandbox folder. |
 | `width` | `int32` | `0` | Display width; `0` uses the image's natural width (0–16384). |
 | `height` | `int32` | `0` | Display height; `0` uses the image's natural height (0–16384). |
+| `tint` | `string` | `""` | Optional `"#RRGGBBAA"`/`"#RRGGBB"` hex color multiplied over the whole image; empty draws it unmodified. |
+| `tint_light` | `string` | `""` | Overrides `tint` while the session's active theme is light-based; re-evaluated every frame. Ignored when empty. |
+| `tint_dark` | `string` | `""` | Same as `tint_light`, used instead while the active theme is dark-based. Ignored when empty. |
 
 #### `Separator` / `SeparatorText`
 Visual dividers; no events.

@@ -252,11 +252,23 @@ void tail::append_row(log_table_state& state, const parsed_log_line& pl) {
     return;
   auto& children = *children_p;
 
-  auto make_cell = [&](const std::string& text, const std::string& color, int32_t order) {
+  // Both colors pl carries for a classified line are stored on the cell,
+  // undecided -- render_label() (imgui_ui_renderer.cpp) picks between
+  // "text_color_light"/"text_color_dark" at render time, live against the
+  // session's actual active theme every frame, the same way
+  // render_text_editor() picks the Nano TextEditor's syntax palette. This
+  // form never touches style_service at all: baking in one color here,
+  // resolved once at ingest time, would leave already-ingested lines stuck
+  // with whatever theme was active when each line first arrived instead of
+  // following a theme change made later in the same session.
+  auto make_cell = [&](const std::string& text, const std::string& light_color, const std::string& dark_color,
+                        int32_t order) {
     ui_element_ptr cell{dynamic::instantiate("wish"_key, "Label"_key)};
     cell["text"_key] = text;
-    if (!color.empty())
-      cell["text_color"_key] = color;
+    if (!light_color.empty())
+      cell["text_color_light"_key] = light_color;
+    if (!dark_color.empty())
+      cell["text_color_dark"_key] = dark_color;
     cell["order"_key] = order;
     key_t id = rmi::shared::generate_id();
     ctx().put_object(id, cell);
@@ -265,11 +277,11 @@ void tail::append_row(log_table_state& state, const parsed_log_line& pl) {
   };
 
   std::string level_display = pl.level.empty() ? std::string{"-"} : to_upper(pl.level);
-  ui_element_ptr time_cell = make_cell(pl.timestamp, "", 0);
-  ui_element_ptr level_cell = make_cell(level_display, pl.color, 1);
-  ui_element_ptr tag_cell = make_cell(pl.tag, "", 2);
-  ui_element_ptr source_cell = make_cell(pl.source, "", 3);
-  ui_element_ptr message_cell = make_cell(pl.message, pl.color, 4);
+  ui_element_ptr time_cell = make_cell(pl.timestamp, "", "", 0);
+  ui_element_ptr level_cell = make_cell(level_display, pl.light_color, pl.dark_color, 1);
+  ui_element_ptr tag_cell = make_cell(pl.tag, "", "", 2);
+  ui_element_ptr source_cell = make_cell(pl.source, "", "", 3);
+  ui_element_ptr message_cell = make_cell(pl.message, pl.light_color, pl.dark_color, 4);
 
   ui_element_ptr row{dynamic::instantiate("wish"_key, "TableRow"_key)};
   row["order"_key] = static_cast<int32_t>(state.next_child_key);

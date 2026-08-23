@@ -9,7 +9,8 @@
 namespace bdg::wish {
 
 void register_theme_classic() {
-  register_theme("classic", ImGui::StyleColorsClassic);
+  // StyleColorsClassic's WindowBg is a near-black (0,0,0,0.85) -- dark.
+  register_theme("classic", ImGui::StyleColorsClassic, /*is_light=*/false);
 }
 
 } // namespace bdg::wish

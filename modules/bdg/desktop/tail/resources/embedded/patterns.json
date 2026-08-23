@@ -64,36 +64,43 @@
     {
       "level": "fatal",
       "pattern": "\\b(FATAL|PANIC|EMERGENCY|EMERG)\\b",
-      "color": "#FF453AFF"
+      "light_color": "#D70015FF",
+      "dark_color": "#FF453AFF"
     },
     {
       "level": "error",
       "pattern": "\\b(ERROR|ERR|CRITICAL|CRIT|SEVERE|EXCEPTION|FAILURE|FAILED)\\b",
-      "color": "#FF6961FF"
+      "light_color": "#D70015FF",
+      "dark_color": "#FF6961FF"
     },
     {
       "level": "warning",
       "pattern": "\\b(WARN|WARNING)\\b",
-      "color": "#FFD60AFF"
+      "light_color": "#A05A00FF",
+      "dark_color": "#FFD60AFF"
     },
     {
       "level": "info",
       "pattern": "\\b(INFO|NOTICE)\\b",
-      "color": "#64D2FFFF"
+      "light_color": "#0066CCFF",
+      "dark_color": "#64D2FFFF"
     },
     {
       "level": "debug",
       "pattern": "\\b(DEBUG|DBG)\\b",
-      "color": "#B0B0B8FF"
+      "light_color": "#5A5A60FF",
+      "dark_color": "#B0B0B8FF"
     },
     {
       "level": "trace",
       "pattern": "\\b(TRACE|VERBOSE)\\b",
-      "color": "#8E8E93FF"
+      "light_color": "#7A7A80FF",
+      "dark_color": "#8E8E93FF"
     }
   ],
 
-  "default_level_color": "#D0D0D0FF",
+  "default_level_light_color": "#3A3A3CFF",
+  "default_level_dark_color": "#D0D0D0FF",
 
   "tag_pattern": "\\[([A-Za-z0-9_][A-Za-z0-9_.:-]*)\\]"
 }

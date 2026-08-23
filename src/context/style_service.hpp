@@ -123,10 +123,44 @@ class style_service : public bison::dynamic {
     dirty_.store(false, std::memory_order_release);
   }
 
+  /// @brief Whether the session's active theme is light-based.
+  ///
+  /// Set once per render pass by `imgui_renderer::render_session()`
+  /// (alongside `set_renderer_cache()`, from the same resolved theme
+  /// entry -- see that method and `apply_style_fields()` in
+  /// imgui_renderer.cpp), not computed here. Each theme declares this
+  /// explicitly at registration (see `imgui_renderer::register_theme()`'s
+  /// `is_light` parameter) rather than having it inferred from compiled
+  /// colors -- e.g. "wish" reports light even though its preset name
+  /// doesn't say "light", because it was registered with `is_light=true`.
+  ///
+  /// Only ever read from *render* functions (`render_label()`,
+  /// `render_text_editor()`, ...), which always run after
+  /// `render_session()` has updated this for the current frame -- so it is
+  /// always current by the time anything reads it. Server-side form code
+  /// must not read this directly to bake a color into data at creation
+  /// time (that was the actual bug it used to cause: a `tail -f` pushing a
+  /// file's lines right after connecting could race ahead of the first
+  /// render pass, *and* the baked-in color would go stale the moment the
+  /// theme changed again). Instead, store both a light and a dark color
+  /// (e.g. `Label.text_color_light`/`text_color_dark`) and let the render
+  /// function pick between them every frame -- see `tail::append_row()`
+  /// for the actual pattern this replaced. Defaults to `true` (wish's own
+  /// default theme is light-based) until the first render compiles a style.
+  bool is_light_theme() const noexcept {
+    return is_light_theme_.load(std::memory_order_acquire);
+  }
+
+  /// @brief Record whether the just-compiled style reads as light. Render-thread only.
+  void set_is_light_theme(bool is_light) noexcept {
+    is_light_theme_.store(is_light, std::memory_order_release);
+  }
+
  private:
   bison::dynamic style_;
   std::atomic<bool> dirty_{true};
   std::shared_ptr<void> renderer_cache_;
+  std::atomic<bool> is_light_theme_{true};
 };
 
 /// @brief Register `"__WishStyle"` in the `"wish"` bison class namespace.

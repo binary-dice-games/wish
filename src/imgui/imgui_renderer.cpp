@@ -125,13 +125,21 @@ static const render_fn_map& built_in_render_fns() {
 
 // ── Theme registry ────────────────────────────────────────────────────────────
 
-static std::unordered_map<std::string, theme_fn>& theme_registry() {
-  static std::unordered_map<std::string, theme_fn> registry;
+// A theme's is_light bit is declared once here, at registration, rather than
+// inferred elsewhere from its compiled colors -- see register_theme()'s doc
+// comment (imgui_renderer.hpp) for why.
+struct theme_entry {
+  theme_fn fn;
+  bool is_light;
+};
+
+static std::unordered_map<std::string, theme_entry>& theme_registry() {
+  static std::unordered_map<std::string, theme_entry> registry;
   return registry;
 }
 
-void register_theme(const std::string& name, theme_fn fn) {
-  theme_registry()[name] = fn;
+void register_theme(const std::string& name, theme_fn fn, bool is_light) {
+  theme_registry()[name] = {fn, is_light};
 }
 
 // Fallback theme applied -- with a logged warning -- when a session's
@@ -180,10 +188,17 @@ ImVec4 parse_hex_color(const std::string& s) {
   }
 }
 
-// Apply all fields from sd into style. @p logger, if non-null, receives a
-// warning when sd's "preset" field names a theme this renderer has no
-// registered function for (see kDefaultThemeName's doc comment).
-static void apply_style_fields(const bison::dynamic& sd, ImGuiStyle& style, const logger_ptr& logger) {
+// Apply all fields from sd into style, returning whether the resolved theme
+// is light-based (its registered is_light -- see register_theme()'s doc
+// comment -- not inferred from the compiled colors below). @p logger, if
+// non-null, receives a warning when sd's "preset" field names a theme this
+// renderer has no registered function for (see kDefaultThemeName's doc
+// comment). Defaults to `true` (matching kDefaultThemeName's own "wish" =
+// light) when sd has no "preset" field at all -- e.g. a session that only
+// ever used per-field `set()` overrides without a preceding `preset()` call.
+static bool apply_style_fields(const bison::dynamic& sd, ImGuiStyle& style, const logger_ptr& logger) {
+  bool is_light = true;
+
   // Apply named preset first so per-field overrides can refine it.
   const auto* preset_f = sd.findField("preset"_key);
   if (preset_f && preset_f->is<std::string>()) {
@@ -195,8 +210,10 @@ static void apply_style_fields(const bison::dynamic& sd, ImGuiStyle& style, cons
         logger->warn("wish: unknown theme '" + name + "', falling back to '" + kDefaultThemeName + "'");
       it = registry.find(kDefaultThemeName);
     }
-    if (it != registry.end())
-      it->second(&style);
+    if (it != registry.end()) {
+      it->second.fn(&style);
+      is_light = it->second.is_light;
+    }
   }
 
   // Scalar float overrides.
@@ -284,6 +301,8 @@ static void apply_style_fields(const bison::dynamic& sd, ImGuiStyle& style, cons
   cset("color_text_selected_bg"_key, style.Colors[ImGuiCol_TextSelectedBg]);
   cset("color_modal_window_dim_bg"_key, style.Colors[ImGuiCol_ModalWindowDimBg]);
   cset("color_docking_empty_bg"_key, style.Colors[ImGuiCol_DockingEmptyBg]);
+
+  return is_light;
 }
 
 // ── imgui_renderer ────────────────────────────────────────────────────────────
@@ -639,7 +658,14 @@ void imgui_renderer::render_session(const ui_element& root, const context& s) {
   // has changed the style since the last compiled cache.
   if (s.style_service->is_dirty()) {
     auto compiled = std::make_shared<ImGuiStyle>();
-    apply_style_fields(s.style_service->current_style(), *compiled, s.logger_service);
+    bool is_light = apply_style_fields(s.style_service->current_style(), *compiled, s.logger_service);
+    // Record the resolved theme's declared is_light (see register_theme()'s
+    // doc comment) so render functions with access to the session --
+    // render_label(), render_text_editor(), ... -- can pick a
+    // theme-appropriate color live every frame via
+    // style_service::is_light_theme(), rather than any of them baking a
+    // color into data once and having it go stale on a later theme change.
+    s.style_service->set_is_light_theme(is_light);
     s.style_service->set_renderer_cache(compiled);
   }
 

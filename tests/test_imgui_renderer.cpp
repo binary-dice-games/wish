@@ -1,6 +1,7 @@
 // MIT License © 2025 Binary Dice Games
 #include <gtest/gtest.h>
 
+#include <context/style_service.hpp>
 #include <imgui/imgui_renderer.hpp>
 #include <imgui/imgui_ui_renderer.hpp>
 #include <server/registry.hpp>
@@ -20,6 +21,7 @@ using namespace bdg::bison;
 using bdg::wish::imgui_renderer;
 using bdg::wish::render_children;
 using bdg::wish::context;
+using bdg::wish::style_service;
 using bdg::wish::ui_element;
 using bdg::wish::vec2f;
 
@@ -157,6 +159,70 @@ TEST_F(ImguiRendererTest, LabelWithTextColorDoesNotThrow) {
   EXPECT_NO_THROW({
     renderer_->begin_frame();
     in_window([&] { renderer_->render_node(*map[""], *sess_); });
+    renderer_->end_frame();
+  });
+}
+
+// text_color_light/text_color_dark let a Label pick its color live from the
+// session's active theme (style_service::is_light_theme()), re-read every
+// frame -- unlike a fixed text_color baked in once, which goes stale the
+// moment the theme changes (see tail::append_row(), the motivating case).
+// Verifies the actual rendered glyph color, not just "does not throw": the
+// vertices render_label() emits via ImGui::TextUnformatted() are colored
+// with whichever ImGuiCol_Text PushStyleColor() was in effect, so the first
+// non-transparent vertex added during the render call reveals the color
+// that was actually picked.
+TEST_F(ImguiRendererTest, LabelWithThemeColorsFollowsIsLightTheme) {
+  auto svc = std::make_shared<style_service>(dynamic::instantiate("wish"_key, "__WishStyle"_key));
+  sess_->style_service = svc;
+
+  auto map = bdg::wish::import_json(
+      R"({"type":"Label","text":"hi","text_color_light":"#FF0000FF","text_color_dark":"#00FF00FF"})");
+
+  auto render_and_capture_color = [&]() -> ImU32 {
+    ImU32 found = 0;
+    renderer_->begin_frame();
+    in_window([&] {
+      ImDrawList* draw_list = ImGui::GetWindowDrawList();
+      int before = draw_list->VtxBuffer.Size;
+      renderer_->render_session(*map[""], *sess_);
+      for (int i = before; i < draw_list->VtxBuffer.Size; ++i) {
+        if (draw_list->VtxBuffer[i].col != 0) {
+          found = draw_list->VtxBuffer[i].col;
+          break;
+        }
+      }
+    });
+    renderer_->end_frame();
+    return found;
+  };
+
+  svc->set_preset("light");
+  ImU32 light_col = render_and_capture_color();
+  EXPECT_EQ(light_col, ImGui::ColorConvertFloat4ToU32(bdg::wish::parse_hex_color("#FF0000FF")));
+
+  svc->set_preset("dark");
+  ImU32 dark_col = render_and_capture_color();
+  EXPECT_EQ(dark_col, ImGui::ColorConvertFloat4ToU32(bdg::wish::parse_hex_color("#00FF00FF")));
+}
+
+// Image.tint_light/tint_dark go through the same get_theme_color() helper
+// as Label.text_color_light/text_color_dark (see imgui_ui_renderer.cpp) --
+// that shared logic is already verified in detail by
+// LabelWithThemeColorsFollowsIsLightTheme above, so this just confirms
+// render_image() actually wires the fields through without throwing.
+TEST_F(ImguiRendererTest, ImageWithThemeColorsDoesNotThrow) {
+  auto svc = std::make_shared<style_service>(dynamic::instantiate("wish"_key, "__WishStyle"_key));
+  sess_->style_service = svc;
+  svc->set_preset("dark");
+
+  auto map = bdg::wish::import_json(
+      R"({"type":"Image","src":"res/icons/file.png","width":16,"height":16,)"
+      R"("tint_light":"#FF0000FF","tint_dark":"#00FF00FF"})");
+
+  EXPECT_NO_THROW({
+    renderer_->begin_frame();
+    in_window([&] { renderer_->render_session(*map[""], *sess_); });
     renderer_->end_frame();
   });
 }
@@ -2524,26 +2590,10 @@ TEST_F(ImguiRendererTest, BaseFlushDrawListIsSafeNoOp) {
   EXPECT_NO_THROW(renderer_->flush_draw_list(draw_list, 4, 4));
 }
 
-// ── TextEditor palette follows the actual compiled ImGuiStyle ────────────────
-
-// "wish" is registered on top of ImGui::StyleColorsLight (see
-// theme_wish.cpp), whose window background is a light color -- the embedded
-// TextEditor must pick the light syntax palette for it, same as it would for
-// "light" itself. Regression test for a bug where the palette was chosen by
-// matching the style_service preset *name* and only "light" was recognized,
-// leaving the code editor dark inside an otherwise light "wish" theme.
-TEST(TextEditorPaletteTest, LightWindowBackgroundUsesLightPalette) {
-  EXPECT_TRUE(bdg::wish::text_editor_palette_is_light(ImVec4(0.94f, 0.94f, 0.94f, 1.0f))); // StyleColorsLight's WindowBg
-  EXPECT_TRUE(bdg::wish::text_editor_palette_is_light(ImVec4(1.0f, 1.0f, 1.0f, 1.0f)));
-}
-
-TEST(TextEditorPaletteTest, DarkWindowBackgroundUsesDarkPalette) {
-  EXPECT_FALSE(bdg::wish::text_editor_palette_is_light(ImVec4(0.06f, 0.06f, 0.06f, 0.94f))); // StyleColorsDark's WindowBg
-  EXPECT_FALSE(bdg::wish::text_editor_palette_is_light(ImVec4(0.0f, 0.0f, 0.0f, 1.0f)));
-}
-
-TEST(TextEditorPaletteTest, BoundaryChannelValueIsNotLight) {
-  // Exactly at the midpoint reads as dark -- the threshold is a strict ">".
-  EXPECT_FALSE(bdg::wish::text_editor_palette_is_light(ImVec4(0.5f, 0.5f, 0.5f, 1.0f)));
-  EXPECT_TRUE(bdg::wish::text_editor_palette_is_light(ImVec4(0.5001f, 0.5f, 0.5f, 1.0f)));
-}
+// TextEditor's syntax palette (light vs dark) is chosen inside
+// render_text_editor() from style_service::is_light_theme() -- see that
+// class's doc comment (context/style_service.hpp) for the underlying
+// registered-per-theme design and test_style_service.cpp's
+// "RenderSessionSetsIsLightThemeFor{Light,Wish,Dark}Preset" tests, which
+// cover the flag itself (including the regression this once was: "wish" is
+// light-based even though its preset name doesn't say "light").

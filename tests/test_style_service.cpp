@@ -207,6 +207,42 @@ TEST_F(StyleServiceTest, RenderSessionAppliesWishTheme) {
   EXPECT_NEAR(compiled->Colors[ImGuiCol_WindowBg].x, light.Colors[ImGuiCol_WindowBg].x, 0.001f);
 }
 
+// ── is_light_theme() ─────────────────────────────────────────────────────────
+
+TEST_F(StyleServiceTest, IsLightThemeDefaultsTrueBeforeAnyRender) {
+  EXPECT_TRUE(svc_->is_light_theme());
+}
+
+TEST_F(StyleServiceTest, RenderSessionSetsIsLightThemeForLightPreset) {
+  svc_->set_preset("light");
+  auto map = bdg::wish::import_json(R"({"type":"Window","title":"T"})");
+  renderer_->begin_frame();
+  renderer_->render_session(*map[""], *sess_);
+  renderer_->end_frame();
+  EXPECT_TRUE(svc_->is_light_theme());
+}
+
+// "wish" is registered with is_light=true (see theme_wish.cpp) even though
+// its preset name doesn't say "light" -- is_light_theme() must follow that
+// registered flag, not the preset name string.
+TEST_F(StyleServiceTest, RenderSessionSetsIsLightThemeForWishPreset) {
+  svc_->set_preset("wish");
+  auto map = bdg::wish::import_json(R"({"type":"Window","title":"T"})");
+  renderer_->begin_frame();
+  renderer_->render_session(*map[""], *sess_);
+  renderer_->end_frame();
+  EXPECT_TRUE(svc_->is_light_theme());
+}
+
+TEST_F(StyleServiceTest, RenderSessionSetsIsLightThemeFalseForDarkPreset) {
+  svc_->set_preset("dark");
+  auto map = bdg::wish::import_json(R"({"type":"Window","title":"T"})");
+  renderer_->begin_frame();
+  renderer_->render_session(*map[""], *sess_);
+  renderer_->end_frame();
+  EXPECT_FALSE(svc_->is_light_theme());
+}
+
 TEST_F(StyleServiceTest, RenderSessionUnknownPresetFallsBackToWishAndLogsWarning) {
   auto log_path = std::filesystem::temp_directory_path() / "wish_test_style_service_unknown_preset.log";
   std::filesystem::remove(log_path);

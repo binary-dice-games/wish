@@ -27,6 +27,24 @@ void register_label() {
                             "current theme's text color."),
           attr<Category>("Appearance")});
   proto->addField(
+      "text_color_light"_rkey,
+      field{
+          std::string{""},
+          attr<DisplayName>("Text Color (Light Theme)"),
+          attr<Description>("Optional \"#RRGGBBAA\"/\"#RRGGBB\" text color used instead of text_color "
+                            "while the session's active theme is light-based (see "
+                            "style_service::is_light_theme()); re-evaluated every frame, so it follows "
+                            "a theme change made after this Label was created. Ignored when empty."),
+          attr<Category>("Appearance")});
+  proto->addField(
+      "text_color_dark"_rkey,
+      field{
+          std::string{""},
+          attr<DisplayName>("Text Color (Dark Theme)"),
+          attr<Description>("Same as text_color_light, used instead while the active theme is "
+                            "dark-based. Ignored when empty."),
+          attr<Category>("Appearance")});
+  proto->addField(
       "wrap"_rkey,
       field{
           bool{false},

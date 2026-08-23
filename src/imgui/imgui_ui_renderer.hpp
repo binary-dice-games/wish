@@ -87,17 +87,6 @@ void render_progress_bar(imgui_renderer&, const ui_element& node, const context&
 // Text editor
 void render_text_editor(imgui_renderer&, const ui_element& node, const context& s);
 
-// True when @p window_bg_color (typically the compiled
-// ImGuiStyle::Colors[ImGuiCol_WindowBg] for the session being rendered)
-// reads as a light background -- its brightest channel exceeds the
-// midpoint -- meaning the embedded TextEditor should use
-// TextEditor::GetLightPalette() rather than GetDarkPalette() to match.
-// Judging light/dark from the actual compiled style color, rather than a
-// style_service preset name, means any theme -- built-in or a project's own
-// custom one -- and any per-field color override layered on top of it gets
-// the matching syntax palette with nothing to keep in sync by hand.
-bool text_editor_palette_is_light(const ImVec4& window_bg_color);
-
 // Docking
 void render_dockspace_viewport(imgui_renderer& r, const ui_element& node, const context& s);
 void render_dockspace(imgui_renderer&, const ui_element& node, const context&);
