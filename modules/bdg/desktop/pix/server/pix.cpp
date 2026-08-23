@@ -116,7 +116,7 @@ int64_t file_time_to_unix_seconds(const fs::file_time_type& ftime) {
 // gotcha).
 static constexpr const char* kPixLayout = R"json({
   "type": "Window",
-  "title": "Pix",
+  "title": "Image Viewer",
   "width": 1000, "height": 700,
   "closable": true,
   "children": {
@@ -150,7 +150,7 @@ static constexpr const char* kPixLayout = R"json({
                 "grid_table": {
                   "type": "Table",
                   "columns": 3,
-                  "flags": "RowBg|Borders|ScrollY|NoPadInnerX",
+                  "flags": "RowBg|BordersOuter|ScrollY",
                   "width": -1,
                   "height": -1,
                   "headers": false,
@@ -183,7 +183,7 @@ static constexpr const char* kPixLayout = R"json({
                 "preview_table": {
                   "type": "Table",
                   "columns": 1,
-                  "flags": "RowBg|Borders|ScrollX|ScrollY",
+                  "flags": "RowBg|ScrollX|ScrollY",
                   "width": -1,
                   "height": -1,
                   "headers": false,

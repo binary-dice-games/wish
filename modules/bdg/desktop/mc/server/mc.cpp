@@ -222,42 +222,74 @@ static constexpr const char* kLayout = R"json({
 // Mirrors top.cpp's confirm-kill dialog: a small internal Window merged as
 // its own top-level object, closed via the __request_close__/closed
 // handshake (see form.hpp's request_close_at()).
+//
+// Same resizable-window / stretch-content-pinning-the-footer style as
+// kPropertiesLayout below (see that constant's own doc comment for why the
+// stretch hint needs a VerticalLayout parent to read it from): "content"
+// wraps message/new_name with "height": -1 so it -- not sep/buttons --
+// absorbs any extra height the user resizes the window to.
 static constexpr const char* kRenameLayout = R"json({
   "type": "Window", "title": "Rename", "modal": true,
-  "flags": "NoResize|NoCollapse|AlwaysAutoResize",
+  "flags": "NoCollapse",
+  "width": 400, "height": 160,
   "children": {
-    "message": { "type": "Label", "text": "" },
-    "new_name": { "type": "InputText", "value": "", "flags": "EnterReturnsTrue", "width": 300 },
-    "sep": { "type": "Separator" },
-    "buttons": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_ok": { "type": "Button", "label": "Rename", "height": 32 },
-      "btn_cancel": { "type": "Button", "label": "Cancel", "height": 32 }
-    } }
+    "vbox": {
+      "type": "VerticalLayout",
+      "children": {
+        "content": {
+          "type": "VerticalLayout",
+          "height": -1,
+          "children": {
+            "message": { "type": "Label", "text": "" },
+            "new_name": { "type": "InputText", "value": "", "flags": "EnterReturnsTrue", "width": 300 }
+          }
+        },
+        "sep": { "type": "Separator" },
+        "buttons": { "type": "HorizontalLayout", "spacing": 6, "children": {
+          "btn_ok": { "type": "Button", "label": "Rename", "height": 32 },
+          "btn_cancel": { "type": "Button", "label": "Cancel", "height": 32 }
+        } }
+      }
+    }
   }
 })json";
 
 // Properties dialog -- shared by both panels; every field is already known
 // server-side by show-time (see mc.hpp's class doc comment), unlike top.cpp's
 // Properties dialog which has to wait on a client round trip.
+// "vbox" wraps grid/sep/close_row (rather than leaving them direct Window
+// children) so grid's "height": -1 has a VerticalLayout parent to actually
+// read that stretch hint from -- Window itself doesn't distribute space to
+// its children the way VerticalLayout/HorizontalLayout do, so an unwrapped
+// grid would only ever auto-size to its own 5 labels' natural height,
+// leaving dead space below close_row whenever the (user-resizable) window
+// is taller than that. kRenameLayout above uses the identical pattern.
 static constexpr const char* kPropertiesLayout = R"json({
   "type": "Window", "title": "Properties", "modal": true,
   "flags": "NoCollapse",
   "width": 480, "height": 280,
   "children": {
-    "grid": {
+    "vbox": {
       "type": "VerticalLayout",
       "children": {
-        "name_row": { "type": "Label", "text": "" },
-        "type_row": { "type": "Label", "text": "" },
-        "size_row": { "type": "Label", "text": "" },
-        "modified_row": { "type": "Label", "text": "" },
-        "path_row": { "type": "Label", "text": "", "wrap": true }
+        "grid": {
+          "type": "VerticalLayout",
+          "height": -1,
+          "children": {
+            "name_row": { "type": "Label", "text": "" },
+            "type_row": { "type": "Label", "text": "" },
+            "size_row": { "type": "Label", "text": "" },
+            "modified_row": { "type": "Label", "text": "" },
+            "path_row": { "type": "Label", "text": "", "wrap": true }
+          }
+        },
+        "sep": { "type": "Separator" },
+        "close_row": { "type": "HorizontalLayout", "children": {
+          "btn_close": { "type": "Button", "label": "Close", "height": 32 }
+        } }
       }
-    },
-    "sep": { "type": "Separator" },
-    "close_row": { "type": "HorizontalLayout", "children": {
-      "btn_close": { "type": "Button", "label": "Close", "height": 32 }
-    } }
+    }
+
   }
 })json";
 
@@ -271,7 +303,7 @@ void mc::on_init() {
   auto ui_tree = import_json(kLayout);
 
   auto* title_f = findField<std::string>("title"_key);
-  (*ui_tree[""])["title"_key] = title_f ? *title_f : std::string{"Mc"};
+  (*ui_tree[""])["title"_key] = title_f ? *title_f : std::string{"File Explorer"};
 
   auto& c = ctx();
   for (auto& [key, elem] : ui_tree) {
@@ -346,13 +378,9 @@ void mc::fill_table(
       return lbl;
     };
 
-    std::string display_name = entry.name == ".." ? std::string{".. [Up]"}
-        : entry.type == "dir"                     ? ("[" + entry.name + "]")
-                                                    : entry.name;
-
     // Name column shows a small type icon ahead of the label, mirroring
     // file_dialog.cpp's file table (see make_name_cell()'s doc comment).
-    ui_element_ptr name_cell = make_name_cell(entry.name, entry.type, display_name);
+    ui_element_ptr name_cell = make_name_cell(entry.name, entry.type, entry.name);
 
     auto row_children = dynamic_ptr{key_t{0U}, {}};
     (*row_children)[size_t{0}] = dynamic_ptr{name_cell};
@@ -633,7 +661,7 @@ void mc::show_rename_dialog(bool is_sandbox, const std::string& name) {
   rename_old_name_ = name;
 
   auto tree = import_json(kRenameLayout);
-  tree.with("message", [&](const auto& e) { e["text"_key] = "Rename \"" + name + "\" to:"; });
+  tree.with("vbox.content.message", [&](const auto& e) { e["text"_key] = "Rename \"" + name + "\" to:"; });
 
   auto& c = ctx();
   for (auto& [key, elem] : tree) {
@@ -643,12 +671,12 @@ void mc::show_rename_dialog(bool is_sandbox, const std::string& name) {
   }
 
   rename_window_id_ = (*tree[""])["__wish_id"_key].as<key_t>();
-  tree.with("new_name", [&](const auto& e) {
+  tree.with("vbox.content.new_name", [&](const auto& e) {
     e["value"_key] = name;
     rename_input_ptr_ = e;
   });
-  tree.with("buttons.btn_ok", [&](const auto& e) { rename_ok_id_ = wish_id_of(e); });
-  tree.with("buttons.btn_cancel", [&](const auto& e) { rename_cancel_id_ = wish_id_of(e); });
+  tree.with("vbox.buttons.btn_ok", [&](const auto& e) { rename_ok_id_ = wish_id_of(e); });
+  tree.with("vbox.buttons.btn_cancel", [&](const auto& e) { rename_cancel_id_ = wish_id_of(e); });
 
   // show_rename_dialog() is only ever called from on_event() (a MenuItem
   // click), i.e. outside dispatch -- sess()/next_available_key() would
@@ -754,12 +782,12 @@ void mc::show_properties_dialog(bool is_sandbox, const file_row& entry) {
   }
 
   properties_window_id_ = (*tree[""])["__wish_id"_key].as<key_t>();
-  tree.with("close_row.btn_close", [&](const auto& e) { properties_close_id_ = wish_id_of(e); });
-  tree.with("grid.name_row", [&](const auto& e) { properties_name_ptr_ = e; });
-  tree.with("grid.type_row", [&](const auto& e) { properties_type_ptr_ = e; });
-  tree.with("grid.size_row", [&](const auto& e) { properties_size_ptr_ = e; });
-  tree.with("grid.modified_row", [&](const auto& e) { properties_modified_ptr_ = e; });
-  tree.with("grid.path_row", [&](const auto& e) { properties_path_ptr_ = e; });
+  tree.with("vbox.close_row.btn_close", [&](const auto& e) { properties_close_id_ = wish_id_of(e); });
+  tree.with("vbox.grid.name_row", [&](const auto& e) { properties_name_ptr_ = e; });
+  tree.with("vbox.grid.type_row", [&](const auto& e) { properties_type_ptr_ = e; });
+  tree.with("vbox.grid.size_row", [&](const auto& e) { properties_size_ptr_ = e; });
+  tree.with("vbox.grid.modified_row", [&](const auto& e) { properties_modified_ptr_ = e; });
+  tree.with("vbox.grid.path_row", [&](const auto& e) { properties_path_ptr_ = e; });
 
   // Same path-composition rule as fill_table()'s Copy Path -- see that
   // call site for why the sandbox side stays relative rather than exposing
@@ -1130,7 +1158,7 @@ void register_mc() {
   proto->addField(
       "title"_key,
       field{
-          std::string{"Mc"},
+          std::string{"File Explorer"},
           attr<DisplayName>("Title"),
           attr<Description>("Window title."),
           attr<Category>("Appearance")});

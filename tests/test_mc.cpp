@@ -1058,15 +1058,15 @@ TEST_F(McEventTest, SandboxPropertiesMenuItemClickOpensDialogWithCorrectInfo) {
   handler_->on_event(properties->as<bison::key_t>("__wish_id"_key), "clicked"_key, dynamic{});
 
   auto& objs = srv_->last_session->ui_objects;
-  EXPECT_EQ(objs.at("__mc_properties_0.grid.name_row")->as<std::string>("text"_key), "Name: note.txt");
-  EXPECT_EQ(objs.at("__mc_properties_0.grid.type_row")->as<std::string>("text"_key), "Type: File");
-  EXPECT_EQ(objs.at("__mc_properties_0.grid.size_row")->as<std::string>("text"_key), "Size: 5 B");
-  EXPECT_EQ(objs.at("__mc_properties_0.grid.path_row")->as<std::string>("text"_key), "Path: /note.txt");
+  EXPECT_EQ(objs.at("__mc_properties_0.vbox.grid.name_row")->as<std::string>("text"_key), "Name: note.txt");
+  EXPECT_EQ(objs.at("__mc_properties_0.vbox.grid.type_row")->as<std::string>("text"_key), "Type: File");
+  EXPECT_EQ(objs.at("__mc_properties_0.vbox.grid.size_row")->as<std::string>("text"_key), "Size: 5 B");
+  EXPECT_EQ(objs.at("__mc_properties_0.vbox.grid.path_row")->as<std::string>("text"_key), "Path: /note.txt");
 
   // The Close button requests the dialog close; actual removal is deferred
   // to the Window's own "closed" event, mirroring
   // WindowClosedEmitsClosedAndCleansUp's pattern for the main window.
-  auto close_id = objs.at("__mc_properties_0.close_row.btn_close")->as<bison::key_t>("__wish_id"_key);
+  auto close_id = objs.at("__mc_properties_0.vbox.close_row.btn_close")->as<bison::key_t>("__wish_id"_key);
   handler_->on_event(close_id, "clicked"_key, dynamic{});
   auto properties_window_id = objs.at("__mc_properties_0")->as<bison::key_t>("__wish_id"_key);
   handler_->on_event(properties_window_id, "closed"_key, dynamic{});
@@ -1092,8 +1092,8 @@ TEST_F(McEventTest, SandboxRenameMenuItemClickOpensDialogPrefilledWithCurrentNam
   handler_->on_event(rename->as<bison::key_t>("__wish_id"_key), "clicked"_key, dynamic{});
 
   auto& objs = srv_->last_session->ui_objects;
-  EXPECT_EQ(objs.at("__mc_rename_0.new_name")->as<std::string>("value"_key), "note.txt");
-  EXPECT_EQ(objs.at("__mc_rename_0.message")->as<std::string>("text"_key), "Rename \"note.txt\" to:");
+  EXPECT_EQ(objs.at("__mc_rename_0.vbox.content.new_name")->as<std::string>("value"_key), "note.txt");
+  EXPECT_EQ(objs.at("__mc_rename_0.vbox.content.message")->as<std::string>("text"_key), "Rename \"note.txt\" to:");
 }
 
 TEST_F(McEventTest, SandboxRenameApplyViaOkButtonRenamesFileAndRefreshesListing) {
@@ -1110,8 +1110,8 @@ TEST_F(McEventTest, SandboxRenameApplyViaOkButtonRenamesFileAndRefreshesListing)
   handler_->on_event(rename->as<bison::key_t>("__wish_id"_key), "clicked"_key, dynamic{});
 
   auto& objs = srv_->last_session->ui_objects;
-  (*objs.at("__mc_rename_0.new_name"))["value"_key] = std::string{"new.txt"};
-  auto ok_id = objs.at("__mc_rename_0.buttons.btn_ok")->as<bison::key_t>("__wish_id"_key);
+  (*objs.at("__mc_rename_0.vbox.content.new_name"))["value"_key] = std::string{"new.txt"};
+  auto ok_id = objs.at("__mc_rename_0.vbox.buttons.btn_ok")->as<bison::key_t>("__wish_id"_key);
   handler_->on_event(ok_id, "clicked"_key, dynamic{});
 
   EXPECT_FALSE(std::filesystem::exists(resource_dir / "old.txt"));
@@ -1141,8 +1141,8 @@ TEST_F(McEventTest, SandboxRenameViaEnterOnInputAppliesRenameSameAsOkButton) {
   handler_->on_event(rename->as<bison::key_t>("__wish_id"_key), "clicked"_key, dynamic{});
 
   auto& objs = srv_->last_session->ui_objects;
-  (*objs.at("__mc_rename_0.new_name"))["value"_key] = std::string{"new.txt"};
-  auto input_id = objs.at("__mc_rename_0.new_name")->as<bison::key_t>("__wish_id"_key);
+  (*objs.at("__mc_rename_0.vbox.content.new_name"))["value"_key] = std::string{"new.txt"};
+  auto input_id = objs.at("__mc_rename_0.vbox.content.new_name")->as<bison::key_t>("__wish_id"_key);
   dynamic changed;
   changed["value"_key] = std::string{"new.txt"};
   handler_->on_event(input_id, "changed"_key, changed);
@@ -1164,7 +1164,7 @@ TEST_F(McEventTest, SandboxRenameCancelDoesNotRenameAndCleansUpOnClose) {
   handler_->on_event(rename->as<bison::key_t>("__wish_id"_key), "clicked"_key, dynamic{});
 
   auto& objs = srv_->last_session->ui_objects;
-  auto cancel_id = objs.at("__mc_rename_0.buttons.btn_cancel")->as<bison::key_t>("__wish_id"_key);
+  auto cancel_id = objs.at("__mc_rename_0.vbox.buttons.btn_cancel")->as<bison::key_t>("__wish_id"_key);
   handler_->on_event(cancel_id, "clicked"_key, dynamic{});
 
   EXPECT_TRUE(std::filesystem::exists(resource_dir / "old.txt"));
@@ -1189,8 +1189,8 @@ TEST_F(McEventTest, SandboxRenameRejectsNameWithPathSeparator) {
   handler_->on_event(rename->as<bison::key_t>("__wish_id"_key), "clicked"_key, dynamic{});
 
   auto& objs = srv_->last_session->ui_objects;
-  (*objs.at("__mc_rename_0.new_name"))["value"_key] = std::string{"a/b.txt"};
-  auto ok_id = objs.at("__mc_rename_0.buttons.btn_ok")->as<bison::key_t>("__wish_id"_key);
+  (*objs.at("__mc_rename_0.vbox.content.new_name"))["value"_key] = std::string{"a/b.txt"};
+  auto ok_id = objs.at("__mc_rename_0.vbox.buttons.btn_ok")->as<bison::key_t>("__wish_id"_key);
   handler_->on_event(ok_id, "clicked"_key, dynamic{});
 
   EXPECT_TRUE(std::filesystem::exists(resource_dir / "old.txt")) << "invalid rename must not touch the filesystem";
@@ -1208,7 +1208,7 @@ TEST_F(McEventTest, LocalRenameApplyEmitsOnLocalRenameRequested) {
   handler_->on_event(rename->as<bison::key_t>("__wish_id"_key), "clicked"_key, dynamic{});
 
   auto& objs = srv_->last_session->ui_objects;
-  (*objs.at("__mc_rename_0.new_name"))["value"_key] = std::string{"new.txt"};
+  (*objs.at("__mc_rename_0.vbox.content.new_name"))["value"_key] = std::string{"new.txt"};
 
   bool got = false;
   dynamic captured;
@@ -1222,7 +1222,7 @@ TEST_F(McEventTest, LocalRenameApplyEmitsOnLocalRenameRequested) {
       prev(id, event, std::move(payload));
   };
 
-  auto ok_id = objs.at("__mc_rename_0.buttons.btn_ok")->as<bison::key_t>("__wish_id"_key);
+  auto ok_id = objs.at("__mc_rename_0.vbox.buttons.btn_ok")->as<bison::key_t>("__wish_id"_key);
   handler_->on_event(ok_id, "clicked"_key, dynamic{});
 
   wait_for(got);

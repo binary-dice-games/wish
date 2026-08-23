@@ -51,7 +51,7 @@ static constexpr const char* kDialogLayout = R"({
         "file_table": {
           "type": "Table",
           "columns": 2,
-          "flags": "Resizable|Sortable|RowBg|BordersH|ScrollY",
+          "flags": "Resizable|Sortable|RowBg|Borders|ScrollY",
           "width": -1,
           "height": -1,
           "headers": true,
