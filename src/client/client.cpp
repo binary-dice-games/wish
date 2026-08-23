@@ -54,6 +54,8 @@ void client::on_disconnect() {
   style_proxy_.reset();
   log_proxy_.reset();
   automation_proxy_.reset();
+  if (on_disconnected_)
+    on_disconnected_();
 }
 
 // ── Helper: build proxy_map from an indexed apply_descriptor result ───────────

@@ -2523,3 +2523,27 @@ TEST_F(ImguiRendererTest, BaseFlushDrawListIsSafeNoOp) {
   draw_list.AddRectFilled(ImVec2(0, 0), ImVec2(4, 4), IM_COL32(255, 0, 0, 255));
   EXPECT_NO_THROW(renderer_->flush_draw_list(draw_list, 4, 4));
 }
+
+// ── TextEditor palette follows the actual compiled ImGuiStyle ────────────────
+
+// "wish" is registered on top of ImGui::StyleColorsLight (see
+// theme_wish.cpp), whose window background is a light color -- the embedded
+// TextEditor must pick the light syntax palette for it, same as it would for
+// "light" itself. Regression test for a bug where the palette was chosen by
+// matching the style_service preset *name* and only "light" was recognized,
+// leaving the code editor dark inside an otherwise light "wish" theme.
+TEST(TextEditorPaletteTest, LightWindowBackgroundUsesLightPalette) {
+  EXPECT_TRUE(bdg::wish::text_editor_palette_is_light(ImVec4(0.94f, 0.94f, 0.94f, 1.0f))); // StyleColorsLight's WindowBg
+  EXPECT_TRUE(bdg::wish::text_editor_palette_is_light(ImVec4(1.0f, 1.0f, 1.0f, 1.0f)));
+}
+
+TEST(TextEditorPaletteTest, DarkWindowBackgroundUsesDarkPalette) {
+  EXPECT_FALSE(bdg::wish::text_editor_palette_is_light(ImVec4(0.06f, 0.06f, 0.06f, 0.94f))); // StyleColorsDark's WindowBg
+  EXPECT_FALSE(bdg::wish::text_editor_palette_is_light(ImVec4(0.0f, 0.0f, 0.0f, 1.0f)));
+}
+
+TEST(TextEditorPaletteTest, BoundaryChannelValueIsNotLight) {
+  // Exactly at the midpoint reads as dark -- the threshold is a strict ">".
+  EXPECT_FALSE(bdg::wish::text_editor_palette_is_light(ImVec4(0.5f, 0.5f, 0.5f, 1.0f)));
+  EXPECT_TRUE(bdg::wish::text_editor_palette_is_light(ImVec4(0.5001f, 0.5f, 0.5f, 1.0f)));
+}

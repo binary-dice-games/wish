@@ -121,6 +121,14 @@ wish_client_app::run()
 `session.signal_done()` to unblock `on_session()`. For the calculator this is
 triggered by registering a `"closed"` event handler on the Calculator form proxy.
 
+`on_session()` also calls `signal_done()` if the server closes the connection
+first (via `wish::client::set_on_disconnected()`, registered at the top of
+`wish_client_app::on_session()`) -- otherwise a `"closed"` event that would
+have triggered it can never arrive, and the process hangs forever after the
+server exits instead of unblocking `done_future_.wait()` and exiting cleanly.
+The C ABI's `wish_client_wait()`/`wish_run_app()` mirror this via
+`c_abi_client::on_disconnect()` in `src/wish_client_c.cpp`.
+
 ---
 
 ## Calculator app (proof of concept)

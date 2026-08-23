@@ -1,5 +1,7 @@
 # bc
 
+<img src="bc.png" alt="bc" height="200"/>
+
 Four-function calculator; demonstrates self-contained server-side form
 logic — all arithmetic runs server-side, the client only instantiates the
 form and listens for the `"closed"` event.

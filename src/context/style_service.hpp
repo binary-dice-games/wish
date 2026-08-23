@@ -37,7 +37,7 @@ using style_service_ptr = std::shared_ptr<style_service>;
  * renderer actually drawing the session: wish's Dear ImGui backend ships
  * `"dark"`, `"light"`, `"classic"` (mapping to
  * `ImGui::StyleColors{Dark,Light,Classic}`) and `"wish"` (a more modern
- * theme built on top of `"dark"`, and wish's default) via
+ * theme built on top of `"light"`, and wish's default) via
  * `imgui_renderer::register_theme()`; a project embedding wish can register
  * more. A name that renderer doesn't recognize falls back to wish's default
  * theme with a logged warning -- see `apply_style_fields()`

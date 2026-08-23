@@ -163,6 +163,10 @@ void wish_client_app::on_connect_params(bison::dynamic& params) const {
 
 int wish_client_app::on_session(bison::rmi::client& c) {
   wish_client_ = static_cast<wish::client*>(&c);
+  // Unblock done_future_.wait() below if the server closes the connection --
+  // otherwise a "closed" event that would have called signal_done() can
+  // never arrive, and the process hangs forever after the server exits.
+  wish_client_->set_on_disconnected([this] { signal_done(); });
 
   // resolved_app_ is set once in run(), before the transport/connection even
   // exists -- resolving again here would risk a different (ambiguous)

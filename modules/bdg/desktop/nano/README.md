@@ -1,5 +1,7 @@
 # nano
 
+<img src="nano.png" alt="nano" height="200"/>
+
 Multi-file, syntax-highlighted text editor. The server-side form never
 touches the client's local filesystem — it only edits files already
 uploaded into its session sandbox; the client-side runner bridges the two

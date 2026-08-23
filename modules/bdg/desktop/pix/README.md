@@ -1,5 +1,7 @@
 # pix
 
+<img src="pix.png" alt="pix" height="200"/>
+
 Local image folder viewer: a thumbnail grid on the left, a zoomable/
 pannable full preview + metadata panel on the right. Demonstrates a form
 that's almost entirely client-driven — the server only owns UI structure

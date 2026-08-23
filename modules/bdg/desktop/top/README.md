@@ -1,5 +1,7 @@
 # top
 
+<img src="top.png" alt="top" height="200"/>
+
 top/htop-style system monitor: CPU and memory history graphs, one meter per
 logical core, and a sortable process table. All sampling is client-side
 (inherently OS-specific, and the machine a user wants visibility into is

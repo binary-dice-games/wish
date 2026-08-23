@@ -12,6 +12,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <future>
 #include <istream>
 #include <memory>
@@ -75,6 +76,23 @@ class client : public bison::rmi::client {
    *                        prior behavior.
    */
   void run(bison::dynamic connect_params = bison::dynamic{});
+
+  /**
+   * @brief Register a callback fired once this session's connection has
+   *        ended, whether via a clean caller-initiated `disconnect()`/`run()`
+   *        return or the server unexpectedly closing the connection.
+   *
+   * Intended for a caller blocked on its own completion signal (e.g. an
+   * app waiting for a `"closed"` event that can now never arrive, since the
+   * server that would have sent it is gone) to wake up instead of hanging
+   * forever. Fires from `on_disconnect()`, which -- per
+   * `bison::rmi::client::on_disconnect()`'s doc comment -- may run on the
+   * RMI worker thread rather than the thread that initiated the session, so
+   * the callback must be non-blocking and must not make RMI calls.
+   */
+  void set_on_disconnected(std::function<void()> cb) {
+    on_disconnected_ = std::move(cb);
+  }
 
   /**
    * @brief Register a named UI template on the server.
@@ -412,6 +430,9 @@ class client : public bison::rmi::client {
   // throwing and breaking the whole connection) when the server's active
   // renderer doesn't support automation. See automation_supported().
   std::optional<bison::rmi::proxy::dynamic> automation_proxy_;
+
+  // Set via set_on_disconnected(); invoked from on_disconnect().
+  std::function<void()> on_disconnected_;
 };
 
 } // namespace bdg::wish

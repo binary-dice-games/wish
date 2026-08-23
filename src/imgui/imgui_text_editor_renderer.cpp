@@ -6,7 +6,6 @@
 #include "src/bison/bison_object.hpp"
 
 #include <context/file_service.hpp>
-#include <context/style_service.hpp>
 #include <ui/ui_schema_help.hpp>
 
 #include <TextEditor.h>
@@ -15,6 +14,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <string>
 #include <unordered_map>
 
@@ -30,7 +30,7 @@ struct TextEditorState {
   TextEditor editor;
   std::string loaded_path; // full path last loaded into the editor
   std::string loaded_lang; // language key last applied
-  std::string applied_preset; // palette preset last applied ("dark", "light", ...)
+  std::optional<bool> applied_is_light; // TextEditor::Get{Light,Dark}Palette() last applied
   size_t last_undo_index{0};
   TextEditor::DocPos last_cursor{}; // only tracked when wish_ui_schema is true
   bool autocomplete_configured{false}; // whether SetAutoCompleteConfig has been applied
@@ -136,6 +136,10 @@ void fill_wish_ui_schema_suggestions(TextEditor::AutoCompleteState& state) {
 
 } // namespace
 
+bool text_editor_palette_is_light(const ImVec4& window_bg_color) {
+  return std::max({window_bg_color.x, window_bg_color.y, window_bg_color.z}) > 0.5f;
+}
+
 // ── Render function ───────────────────────────────────────────────────────────
 
 void render_text_editor(imgui_renderer&, const ui_element& node, const context& s) {
@@ -190,18 +194,20 @@ void render_text_editor(imgui_renderer&, const ui_element& node, const context& 
     st.editor.SetAutoCompleteConfig(nullptr);
   }
 
-  // Sync the TextEditor palette with the session's active style preset.
-  // TextEditor maintains its own color palette independent of ImGuiStyle.
+  // Sync the TextEditor palette with the session's actual compiled
+  // ImGuiStyle -- already swapped into ImGui::GetStyle() for this render,
+  // see imgui_renderer::render_session() -- rather than the style_service
+  // preset name. TextEditor maintains its own color palette independent of
+  // ImGuiStyle, and judging light/dark straight from the window background
+  // color (instead of matching preset names one by one) means any theme,
+  // built-in or a project's own custom one, plus any per-field color
+  // override a client layers on top of it, gets the matching syntax
+  // palette automatically.
   {
-    std::string preset = "wish";
-    if (s.style_service) {
-      const auto* f = s.style_service->current_style().findField("preset"_key);
-      if (f && f->is<std::string>())
-        preset = f->as<std::string>();
-    }
-    if (st.applied_preset != preset) {
-      st.applied_preset = preset;
-      st.editor.SetPalette(preset == "light" ? TextEditor::GetLightPalette() : TextEditor::GetDarkPalette());
+    bool is_light = text_editor_palette_is_light(ImGui::GetStyle().Colors[ImGuiCol_WindowBg]);
+    if (!st.applied_is_light || *st.applied_is_light != is_light) {
+      st.applied_is_light = is_light;
+      st.editor.SetPalette(is_light ? TextEditor::GetLightPalette() : TextEditor::GetDarkPalette());
     }
   }
 

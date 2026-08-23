@@ -1,5 +1,7 @@
 # mc
 
+<img src="mc.png" alt="mc" height="200"/>
+
 Two-panel file browser: the local machine (left, client-driven) next to the
 session sandbox (right, server-driven), with upload/download transfer
 buttons and an "Open in Explorer" shortcut for the sandbox side. Each panel

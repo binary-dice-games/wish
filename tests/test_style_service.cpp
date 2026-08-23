@@ -200,10 +200,11 @@ TEST_F(StyleServiceTest, RenderSessionAppliesWishTheme) {
   EXPECT_FLOAT_EQ(compiled->WindowBorderSize, 1.0f);
   EXPECT_FLOAT_EQ(compiled->FrameBorderSize, 0.0f);
 
-  // Still the dark theme's colors underneath the shape tweaks.
-  ImGuiStyle dark;
-  ImGui::StyleColorsDark(&dark);
-  EXPECT_NEAR(compiled->Colors[ImGuiCol_WindowBg].x, dark.Colors[ImGuiCol_WindowBg].x, 0.001f);
+  // Still the light theme's colors underneath the shape tweaks (see
+  // theme_wish.cpp: "wish" is StyleColorsLight with rounding/padding tweaks).
+  ImGuiStyle light;
+  ImGui::StyleColorsLight(&light);
+  EXPECT_NEAR(compiled->Colors[ImGuiCol_WindowBg].x, light.Colors[ImGuiCol_WindowBg].x, 0.001f);
 }
 
 TEST_F(StyleServiceTest, RenderSessionUnknownPresetFallsBackToWishAndLogsWarning) {

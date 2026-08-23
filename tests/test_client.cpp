@@ -11,12 +11,16 @@
 #include <miniz_zip.h>
 
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <mutex>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -577,4 +581,58 @@ TEST(ClientTest, UploadPackageExtractsFilesIntoDestFolder) {
   srv.stop();
 
   std::filesystem::remove(zip_path);
+}
+
+// ── Disconnect propagation ────────────────────────────────────────────────────
+//
+// When the server goes away (process exit, srv.stop(), etc.), on_disconnect()
+// must fire so a caller blocked on its own completion signal (e.g.
+// wish_client_app::on_session()'s done_future_.wait(), mirrored by
+// waiting_client::on_session() below) wakes up instead of hanging forever --
+// see wish::client::set_on_disconnected()'s doc comment. memory_server_transport
+// can't exercise this: memory_client_transport never overrides is_connected()
+// (the base client_transport_iface default always returns true), so
+// bison::rmi::client::worker_loop()'s abrupt-disconnect detection never fires
+// over it -- a real socket transport is required to reproduce the EOF the
+// worker loop actually reacts to.
+
+TEST(ClientTest, OnDisconnectedFiresWhenServerClosesConnection) {
+  constexpr uint16_t kPort = 17075;
+  socket_server_transport transport{"127.0.0.1", kPort};
+  wish::server srv{transport, std::make_unique<wish::null_renderer>()};
+  srv.start();
+
+  class waiting_client : public wish::client {
+   public:
+    using wish::client::client;
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool disconnected{false};
+
+   protected:
+    void on_session() override {
+      set_on_disconnected([this] {
+        {
+          std::lock_guard<std::mutex> lk(mtx);
+          disconnected = true;
+        }
+        cv.notify_all();
+      });
+      // Bounded even if on_disconnect() never fires, so a regression here
+      // fails this test instead of hanging the whole suite.
+      std::unique_lock<std::mutex> lk(mtx);
+      cv.wait_for(lk, std::chrono::seconds(5), [this] { return disconnected; });
+    }
+  };
+
+  waiting_client c{std::make_unique<socket_client_transport>("127.0.0.1", kPort)};
+  std::thread session_thread([&c] { c.run(); });
+
+  // Let the client finish connecting before severing it.
+  std::this_thread::sleep_for(std::chrono::milliseconds{200});
+  srv.stop(); // closes the underlying socket -- same as the server process exiting
+
+  session_thread.join(); // bounded by on_session()'s own 5s wait above
+
+  EXPECT_TRUE(c.disconnected) << "on_session() unblocked via the 5s timeout instead of on_disconnect() firing";
 }

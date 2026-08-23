@@ -62,6 +62,7 @@ class c_abi_client : public wish::client {
 
  protected:
   void on_session() override;
+  void on_disconnect() override;
 
  private:
   wish_client_handle_* state_;
@@ -159,11 +160,17 @@ struct wish_client_handle_ {
   // invoking session_fn_.
   const wish::app_info* pending_app_info_ = nullptr;
   std::vector<std::string> pending_app_args_;
+
+  // Set for the duration of on_session()'s c_abi_app_host path so
+  // c_abi_client::on_disconnect() can unblock host.wait_done() if the
+  // server closes the connection before the app's own "closed" event does.
+  c_abi_app_host* active_host_ = nullptr;
 };
 
 void c_abi_client::on_session() {
   if (state_->pending_app_info_) {
     c_abi_app_host host(*this, state_->pending_app_args_);
+    state_->active_host_ = &host;
     try {
       state_->pending_app_info_->run(host);
       host.wait_done();
@@ -172,10 +179,26 @@ void c_abi_client::on_session() {
     } catch (...) {
       state_->last_error_ = "unknown exception";
     }
+    state_->active_host_ = nullptr;
     return;
   }
   if (state_->session_fn_)
     state_->session_fn_(state_, state_->session_ud_);
+}
+
+// Fires on a clean disconnect() as well as an abrupt server-initiated one
+// (see wish::client::on_disconnect()'s doc comment for which thread this
+// runs on) -- unblocks whichever completion signal this session is waiting
+// on so the server going away doesn't hang the caller forever.
+void c_abi_client::on_disconnect() {
+  wish::client::on_disconnect();
+  if (state_->active_host_)
+    state_->active_host_->signal_done();
+  {
+    std::lock_guard<std::mutex> lk(state_->wait_mtx_);
+    state_->quit_ = true;
+  }
+  state_->wait_cv_.notify_all();
 }
 
 // ── wish_key ──────────────────────────────────────────────────────────────────
