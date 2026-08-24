@@ -18,10 +18,9 @@
 /// sidebar's Branches header, and a "last selected branch" tracked from
 /// sidebar clicks) instead of a dialog -- documented as a deliberate V1
 /// simplification in this module's DESIGN.md, not an oversight. Destructive
-/// actions (delete branch, stash drop) do use a real modal: an inline
-/// confirm Window built into this form's own tree, mirroring
-/// tree::show_overwrite_confirm()'s pattern -- see show_confirm()
-/// below.
+/// actions (delete branch, stash drop) do use a real modal: a
+/// privately-instantiated MessageBox (see form::instantiate_child_form())
+/// with a "yes_no" preset -- see show_confirm() below.
 #pragma once
 
 #include <ui/forms/form.hpp>
@@ -34,6 +33,8 @@
 #include <vector>
 
 namespace bdg::wish {
+
+class message_box;
 
 /// @brief SourceTree-style git GUI form.
 ///
@@ -139,25 +140,17 @@ class git_repo : public form {
   void build_log_window();
 
   // ── Confirmation modal ──────────────────────────────────────────────────
-  // Mirrors tree::show_overwrite_confirm()/request_close_confirm()/
-  // remove_confirm_objects() (tree.cpp) exactly: a second modal
-  // Window built directly into this form's own tree, not a standalone
-  // MessageBox instantiation (see this file's top-of-file comment and
-  // DESIGN.md §6 for why). A single pending_confirm_action_ replaces
-  // mc's enum-typed pending_transfer branching, since only one
-  // reusable "are you sure?" shape is needed here.
+  // A privately-instantiated MessageBox (see form::instantiate_child_form())
+  // with a "yes_no" preset, gating destructive actions (delete branch,
+  // stash drop) -- see DESIGN.md §6.
 
-  /// @brief Builds and shows the confirm modal with @p message and a
-  /// confirm button captioned @p confirm_label; @p on_confirm runs if the
-  /// user confirms. Called from on_event() (outside dispatch, per
-  /// form.hpp's documented contract), so session state is reached via
-  /// context_wlock{*sync_ctx_}, not sess() -- exactly matching
-  /// show_overwrite_confirm()'s own dispatch/non-dispatch handling.
+  /// @brief Shows a "yes_no" MessageBox confirm dialog with @p message;
+  /// @p on_confirm runs if the user clicks Yes. @p confirm_label is
+  /// unused: MessageBox's "yes_no" preset has fixed Yes/No button labels,
+  /// so callers' custom captions ("Delete", "Drop") no longer have anywhere
+  /// to go -- kept in the signature since every caller still passes one and
+  /// the message text alone already says what's happening.
   void show_confirm(const std::string& message, const std::string& confirm_label, std::function<void()> on_confirm);
-  /// @brief Thin wrapper over form::request_close_at(confirm_root_key_).
-  void request_close_confirm();
-  /// @brief Thin wrapper over form::remove_objects_at(confirm_root_key_).
-  void remove_confirm_objects();
 
   // ── Sidebar ──────────────────────────────────────────────────────────────
   struct sidebar_row {
@@ -221,12 +214,13 @@ class git_repo : public form {
   std::string diff_root_key_;
   std::string log_root_key_;
 
-  // Confirmation modal (empty confirm_root_key_ == not currently shown)
-  std::string confirm_root_key_;
-  bison::key_t confirm_window_id_;
-  bison::key_t confirm_yes_id_;
-  bison::key_t confirm_no_id_;
-  std::function<void()> pending_confirm_action_;
+  /// Confirm dialog: a privately-instantiated MessageBox (see
+  /// form::instantiate_child_form()) with a "yes_no" preset, gating delete
+  /// branch/stash drop. Only one may be open at a time; a new confirm
+  /// request just overwrites this member -- the stale instance's destructor
+  /// tears down its own internal objects, same effect the old direct
+  /// remove_objects_at() call had.
+  std::shared_ptr<message_box> confirm_dialog_;
 
   // Main window
   bison::key_t window_id_;

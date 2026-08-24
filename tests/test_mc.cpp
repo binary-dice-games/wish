@@ -535,6 +535,61 @@ class McEventTest : public ::testing::Test {
     return srv_->last_session->ui_objects.at(root_ + path)->as<bison::key_t>("__wish_id"_key);
   }
 
+  static std::string find_root_with_prefix(const wish::name_map& objects, const std::string& prefix) {
+    for (const auto& [k, _] : objects) {
+      if (k.rfind(prefix, 0) == 0 && k.find('.') == std::string::npos)
+        return k;
+    }
+    return {};
+  }
+
+  // Reads one row's displayed value text out of the Properties dialog's
+  // internal ObjectInspector (see properties_dialog.hpp/object_inspector.hpp),
+  // mirroring test_top.cpp's process_details_value() -- see its doc comment
+  // for why this walks the object graph from properties_root + ".vbox.inspector"
+  // and matches by @p display_name rather than a numeric row index.
+  std::string file_properties_value(const std::string& properties_root, const std::string& display_name) const {
+    auto it = srv_->last_session->ui_objects.find(properties_root + ".vbox.inspector");
+    if (it == srv_->last_session->ui_objects.end())
+      return {};
+    auto* cf = it->second->findField<dynamic_ptr>("children"_key);
+    if (!cf || !*cf)
+      return {};
+    auto& table_field = (*cf)->at(size_t{0});
+    if (!table_field.is<dynamic_ptr>())
+      return {};
+    auto table = table_field.as<dynamic_ptr>();
+    if (!table)
+      return {};
+    auto* tc = table->findField<dynamic_ptr>("children"_key);
+    if (!tc || !*tc)
+      return {};
+    std::string result;
+    (*tc)->forEach([&](bison::key_t, const field& f) {
+      if (!result.empty() || !f.is<dynamic_ptr>())
+        return;
+      auto row = f.as<dynamic_ptr>();
+      if (!row)
+        return;
+      auto* rc = row->findField<dynamic_ptr>("children"_key);
+      if (!rc || !*rc) // TableColumn entries share this map but have no "children".
+        return;
+      auto& name_field = (*rc)->at(size_t{0});
+      if (!name_field.is<dynamic_ptr>())
+        return;
+      auto name_label = name_field.as<dynamic_ptr>();
+      if (!name_label || name_label->as<std::string>("text"_key) != display_name)
+        return;
+      auto& value_field = (*rc)->at(size_t{1});
+      if (!value_field.is<dynamic_ptr>())
+        return;
+      auto value_widget = value_field.as<dynamic_ptr>();
+      if (value_widget)
+        result = value_widget->as<std::string>("text"_key);
+    });
+    return result;
+  }
+
   // Reads the Name column's Label text for row_idx in the Table at
   // `table_path` (e.g. ".main.panels.left.left_table"). Column 0 is a
   // make_name_cell() wrapper -- a HorizontalLayout holding a type icon at
@@ -1057,20 +1112,31 @@ TEST_F(McEventTest, SandboxPropertiesMenuItemClickOpensDialogWithCorrectInfo) {
 
   handler_->on_event(properties->as<bison::key_t>("__wish_id"_key), "clicked"_key, dynamic{});
 
+  // The Properties dialog is a privately-instantiated PropertiesDialog (see
+  // form::instantiate_child_form()) -- "__properties_dialog_..." is that
+  // form class's own next_available_key() prefix, and (unlike mc's own
+  // on_event()) its widgets are handled by ITS OWN on_event(), registered
+  // under its own root, not root_ -- see test_top.cpp's fire_at() doc
+  // comment for the identical situation there.
   auto& objs = srv_->last_session->ui_objects;
-  EXPECT_EQ(objs.at("__mc_properties_0.vbox.grid.name_row")->as<std::string>("text"_key), "Name: note.txt");
-  EXPECT_EQ(objs.at("__mc_properties_0.vbox.grid.type_row")->as<std::string>("text"_key), "Type: File");
-  EXPECT_EQ(objs.at("__mc_properties_0.vbox.grid.size_row")->as<std::string>("text"_key), "Size: 5 B");
-  EXPECT_EQ(objs.at("__mc_properties_0.vbox.grid.path_row")->as<std::string>("text"_key), "Path: /note.txt");
+  std::string properties_root = find_root_with_prefix(objs, "__properties_dialog_");
+  ASSERT_FALSE(properties_root.empty());
+  EXPECT_EQ(file_properties_value(properties_root, "Name"), "note.txt");
+  EXPECT_EQ(file_properties_value(properties_root, "Type"), "File");
+  EXPECT_EQ(file_properties_value(properties_root, "Size"), "5 B");
+  EXPECT_EQ(file_properties_value(properties_root, "Path"), "/note.txt");
+
+  auto properties_handler = srv_->last_session->top_level_handlers.find(properties_root)->second;
+  ASSERT_NE(properties_handler, nullptr);
 
   // The Close button requests the dialog close; actual removal is deferred
   // to the Window's own "closed" event, mirroring
   // WindowClosedEmitsClosedAndCleansUp's pattern for the main window.
-  auto close_id = objs.at("__mc_properties_0.vbox.close_row.btn_close")->as<bison::key_t>("__wish_id"_key);
-  handler_->on_event(close_id, "clicked"_key, dynamic{});
-  auto properties_window_id = objs.at("__mc_properties_0")->as<bison::key_t>("__wish_id"_key);
-  handler_->on_event(properties_window_id, "closed"_key, dynamic{});
-  EXPECT_EQ(objs.count("__mc_properties_0"), 0u);
+  auto close_id = objs.at(properties_root + ".vbox.close_row.btn_close")->as<bison::key_t>("__wish_id"_key);
+  properties_handler->on_event(close_id, "clicked"_key, dynamic{});
+  auto properties_window_id = objs.at(properties_root)->as<bison::key_t>("__wish_id"_key);
+  properties_handler->on_event(properties_window_id, "closed"_key, dynamic{});
+  EXPECT_EQ(objs.count(properties_root), 0u);
 }
 
 // ── Rename dialog ─────────────────────────────────────────────────────────────

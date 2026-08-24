@@ -1668,6 +1668,13 @@ void render_table(imgui_renderer& r, const ui_element& node, const context& s) {
       const auto sf = ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowDoubleClick |
           ImGuiSelectableFlags_AllowOverlap;
       bool sel = ImGui::Selectable(sel_id, row_selected, sf, ImVec2(0.0f, row_h));
+      // TableRow is rendered inline (see this loop's own doc comment above)
+      // rather than via render_node(), so it never reaches that function's
+      // generic automation hit-test capture -- ask for it explicitly here,
+      // right after the row's own item, so `get_tree()`/`get_widget()` can
+      // address a row directly (and so it's included among a click's
+      // eligible targets for browser-driven automation).
+      r.capture_hit_test_for_last_item(child);
       const bool dbl = sel && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
       if (dbl)
         sel = false; // promote to double-click only

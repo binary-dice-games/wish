@@ -163,6 +163,26 @@ class imgui_renderer : public renderer {
   void render_node(const ui_element& node, const context& s) override;
 
   /**
+   * @brief Captures automation hit-test data (screen rect, hover/active/
+   * visible) for @p node from whatever ImGui item was *just* drawn --
+   * for an element rendered via a bespoke inline path that bypasses
+   * `render_node()`'s generic class dispatch (and so never reaches the
+   * hit-test capture every ordinary element gets automatically from
+   * it), yet still has an accurate, self-contained rect worth exposing
+   * to automation. Currently only `Table`'s `TableRow` needs this: its
+   * row-spanning `Selectable` (`ImGuiSelectableFlags_SpanAllColumns`) is
+   * drawn inline by `render_table()` (`imgui_ui_renderer.cpp`), not via
+   * `render_node()`, since row rendering must interleave with the
+   * enclosing `Table`'s own `TableNextRow()`/`TableSetColumnIndex()`
+   * calls. Call this immediately after drawing that item and before any
+   * other ImGui call, so `ImGui::GetItemRectMin/Max()` still refers to
+   * it. Base implementation is a no-op -- automation support is opt-in
+   * (`WISH_AUTOMATION_ENABLED`); see `sdl3_renderer`/`web_renderer` for
+   * the real implementation.
+   */
+  virtual void capture_hit_test_for_last_item(const ui_element& /*node*/) {}
+
+  /**
    * @brief Render a session's element tree with per-session style isolation.
    *
    * Saves the global ImGuiStyle, applies the session's style (from

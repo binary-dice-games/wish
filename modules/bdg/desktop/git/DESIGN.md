@@ -264,26 +264,28 @@ the leftmost cell of the commit `Table`'s each `TableRow`. This means:
   popup of `MenuItem`s) at the end of each sidebar row — the existing wish
   equivalent of a right-click context menu, needing no new widget.
 
-- **Destructive actions (delete branch, stash drop) are gated behind an
-  inline confirm modal**, not fired directly from the `MenuItem` click.
-  Rather than instantiating a standalone `MessageBox` object — which would
-  need the *client* to mediate between two separate RMI objects (wait for
-  its `on_result`, then tell `GitRepo` what to do) — `show_confirm()`
-  builds a second modal `Window` directly inside `GitRepo`'s own tree,
-  exactly mirroring `tree::show_overwrite_confirm()`/
-  `request_close_confirm()`/`remove_confirm_objects()`
-  (`modules/bdg/desktop/mc/server/mc.cpp`): built via
-  `import_json()`, ids assigned through `ctx()` (always valid), but session
-  state (`ui_objects`/`top_level_objects`/`top_level_handlers`) touched via
-  `context_wlock{*sync_ctx_}` rather than `sess()`, since `show_confirm()`
-  is called from `on_event()`, which `form.hpp` documents as running
-  *outside* dispatch (`sess()` would throw there). A single
-  `std::function<void()> pending_confirm_action_` replaces
-  `tree`'s enum-typed `pending_transfer` branching, since
-  `GitRepo` only needs one reusable "are you sure?" shape rather than
-  distinct upload/download variants. "Apply"/"Pop" (reversible-ish) and
-  "Merge into current"/"Checkout" stay un-confirmed, matching SourceTree's
-  own convention of only gating truly destructive, hard-to-reverse actions.
+- **Destructive actions (delete branch, stash drop) are gated behind a
+  confirm dialog**, not fired directly from the `MenuItem` click.
+  `show_confirm()` privately instantiates the built-in `MessageBox` form
+  (`form::instantiate_child_form()`, `src/ui/forms/message_box.hpp`) with a
+  `"yes_no"` preset: the child builds and owns its own internal Window/
+  buttons exactly as it would for a real client (its own `on_init()`,
+  `on_event()`, closing itself on Close/window-X), and its `"on_result"`
+  event (`{button: "yes"|"no"}`) is wired straight to an in-process
+  `on_result` callback via `set_local_result_sink()` — no real client-side
+  RMI round trip needed, and no second RMI object for the client to
+  mediate. `confirm_dialog_` (a `std::shared_ptr<message_box>`) is the only
+  state `GitRepo` keeps for it; `GitRepo::on_event()` no longer needs any
+  confirm-specific branch, since the MessageBox handles its own Yes/No/
+  close routing internally. Only one confirm dialog may be open at a time —
+  a new `show_confirm()` call just overwrites `confirm_dialog_`, tearing
+  down the stale instance. `confirm_label` (the caller's custom button
+  caption, e.g. "Delete"/"Drop") no longer has anywhere to go, since
+  `MessageBox`'s `"yes_no"` preset has fixed Yes/No labels — an accepted
+  trade-off, since every caller's message text already says what's
+  happening. "Apply"/"Pop" (reversible-ish) and "Merge into current"/
+  "Checkout" stay un-confirmed, matching SourceTree's own convention of
+  only gating truly destructive, hard-to-reverse actions.
 
 - **A file's Selectable, not `Table`'s row-level `row_selected`, drives
   diff selection in the Files table.** The Files table's first column is
@@ -384,7 +386,7 @@ Refresh); working-directory staging (checkbox -> `git add`/`git restore
 untracked-file fallback, and per-commit diffs, live-verified with colored
 +/- lines); branch checkout (including remote-tracking-branch auto-track
 fallback)/create/delete; fetch/pull/push; fast-forward-first merge; stash
-push/pop/apply/drop; background auto-refresh; an inline confirm modal
+push/pop/apply/drop; background auto-refresh; a MessageBox confirm dialog
 (`show_confirm()`, §6) gating delete-branch and stash-drop; a Log window
 tracing every `git` subprocess invocation (`run_logged()`/
 `append_command_log`/`do_append_command_log`, live-verified showing

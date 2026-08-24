@@ -11,6 +11,7 @@
 
 #include "ui/forms/file_dialog.hpp"
 #include "ui/forms/message_box.hpp"
+#include "ui/forms/properties_dialog.hpp"
 #include "ui/ui_elements/object_inspector.hpp"
 #include "ui/plot3d_elements/plot3d_elements.hpp"
 #include "ui/plot_elements/plot_elements.hpp"
@@ -76,8 +77,12 @@ void register_all() {
   // ObjectInspector: a real ui_element (unlike the elements above, it needs
   // its own C++ class -- see object_inspector.hpp), so registered here
   // alongside the forms rather than in the plain per-file register_*()
-  // block earlier in this function.
+  // block earlier in this function. PropertiesDialog wraps one internally,
+  // so it's listed right after -- registration order itself doesn't matter
+  // (class lookups all happen later, at instantiate()/import_json() time),
+  // this is purely for readability.
   register_object_inspector();
+  register_properties_dialog();
   // Optional modules (bc, nano, top, ...); see
   // src/ui/forms/DESIGN.md's "Module System" section.
   register_optional_modules();

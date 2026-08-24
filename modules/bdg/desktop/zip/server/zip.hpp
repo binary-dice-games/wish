@@ -12,6 +12,8 @@
 
 namespace bdg::wish {
 
+class message_box;
+
 /// @brief Client-machine file browser with compress/extract/view-contents
 /// actions for zip archives.
 ///
@@ -121,9 +123,9 @@ class zip : public form {
   void on_prompt_confirmed();
 
   // ── Overwrite confirmation dialog (Compress/Extract, second step) ────────
-  void show_overwrite_confirm(const std::string& message);
-  void request_close_confirm();
-  void remove_confirm_objects();
+  void show_overwrite_confirm(
+      pending_action action, const std::string& source_name, const std::string& target_name,
+      const std::string& message);
 
   /// @brief Emit the compress/extract request event for @p action, using
   /// @p target_name as the archive name (compress) or destination folder
@@ -166,14 +168,13 @@ class zip : public form {
   std::string prompt_source_name_; ///< Entry the pending action acts on.
   std::string prompt_value_;       ///< Live-tracked InputText value.
 
-  // Overwrite confirm dialog state.
-  std::string confirm_root_key_; ///< Empty when no confirm dialog is open.
-  bison::key_t confirm_window_id_;
-  bison::key_t confirm_yes_id_;
-  bison::key_t confirm_no_id_;
-  pending_action confirm_action_{pending_action::none};
-  std::string confirm_source_name_;
-  std::string confirm_target_name_; ///< Archive name (compress) or dest folder name (extract).
+  /// Overwrite-confirmation dialog (Compress/Extract, second step): a
+  /// privately-instantiated MessageBox (see form::instantiate_child_form())
+  /// with a "yes_no" preset. Only one may be open at a time; a new
+  /// confirmation request just overwrites this member -- the stale
+  /// instance's destructor tears down its own internal objects, same effect
+  /// the old direct remove_objects_at() call had.
+  std::shared_ptr<message_box> confirm_dialog_;
 
   // View Contents dialog state.
   std::string contents_root_key_; ///< Empty when no contents dialog is open.

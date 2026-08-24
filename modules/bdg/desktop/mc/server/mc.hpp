@@ -7,12 +7,15 @@
 #include <ui/ui_element.hpp>
 
 #include <filesystem>
+#include <memory>
 #include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
 namespace bdg::wish {
+
+class properties_dialog;
 
 /// @brief Two-panel file browser: local machine (left) vs. session sandbox
 /// (right), with upload/download transfer buttons and a progress bar.
@@ -241,10 +244,10 @@ class mc : public form {
   /// @brief Opens the Properties dialog for @p entry from the local (@p
   /// is_sandbox == false) or sandbox (== true) panel. All fields are
   /// already known server-side (no client round trip needed even for the
-  /// local panel -- see mc.hpp's class doc comment).
+  /// local panel -- see mc.hpp's class doc comment), so unlike top.cpp's
+  /// Properties dialog this never needs to retarget an already-open
+  /// instance -- see form::instantiate_child_form().
   void show_properties_dialog(bool is_sandbox, const file_row& entry);
-  void request_close_properties();
-  void remove_properties_objects();
 
   bison::key_t window_id_;
   bison::key_t left_path_id_;
@@ -286,14 +289,12 @@ class mc : public form {
   bool rename_is_sandbox_{false};
   std::string rename_old_name_;
 
-  std::string properties_root_key_;
-  bison::key_t properties_window_id_;
-  bison::key_t properties_close_id_;
-  ui_element_ptr properties_name_ptr_;
-  ui_element_ptr properties_type_ptr_;
-  ui_element_ptr properties_size_ptr_;
-  ui_element_ptr properties_modified_ptr_;
-  ui_element_ptr properties_path_ptr_;
+  /// Properties dialog: a privately-instantiated PropertiesDialog (see
+  /// form::instantiate_child_form()). Only one may be open at a time; a new
+  /// Properties click just overwrites this member -- the stale instance's
+  /// destructor tears down its own internal objects, same effect the old
+  /// direct remove_objects_at() call had.
+  std::shared_ptr<properties_dialog> properties_dialog_;
 
   // Current per-panel sort state, applied by sort_entries() whenever
   // local_entries_/sandbox_entries_ is (re)built. Defaults to ascending by

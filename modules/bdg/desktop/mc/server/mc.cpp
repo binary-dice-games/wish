@@ -6,6 +6,7 @@
 #include "src/bison/bison_object.hpp"
 #include "src/rmi/shared/ids.hpp"
 #include "ui/forms/file_browser_utils.hpp"
+#include "ui/forms/properties_dialog.hpp"
 
 #include <context/file_service.hpp>
 #include <ui/ui_importer.hpp>
@@ -254,44 +255,13 @@ static constexpr const char* kRenameLayout = R"json({
   }
 })json";
 
-// Properties dialog -- shared by both panels; every field is already known
-// server-side by show-time (see mc.hpp's class doc comment), unlike top.cpp's
-// Properties dialog which has to wait on a client round trip.
-// "vbox" wraps grid/sep/close_row (rather than leaving them direct Window
-// children) so grid's "height": -1 has a VerticalLayout parent to actually
-// read that stretch hint from -- Window itself doesn't distribute space to
-// its children the way VerticalLayout/HorizontalLayout do, so an unwrapped
-// grid would only ever auto-size to its own 5 labels' natural height,
-// leaving dead space below close_row whenever the (user-resizable) window
-// is taller than that. kRenameLayout above uses the identical pattern.
-static constexpr const char* kPropertiesLayout = R"json({
-  "type": "Window", "title": "Properties", "modal": true,
-  "flags": "NoCollapse",
-  "width": 480, "height": 280,
-  "children": {
-    "vbox": {
-      "type": "VerticalLayout",
-      "children": {
-        "grid": {
-          "type": "VerticalLayout",
-          "height": -1,
-          "children": {
-            "name_row": { "type": "Label", "text": "" },
-            "type_row": { "type": "Label", "text": "" },
-            "size_row": { "type": "Label", "text": "" },
-            "modified_row": { "type": "Label", "text": "" },
-            "path_row": { "type": "Label", "text": "", "wrap": true }
-          }
-        },
-        "sep": { "type": "Separator" },
-        "close_row": { "type": "HorizontalLayout", "children": {
-          "btn_close": { "type": "Button", "label": "Close", "height": 32 }
-        } }
-      }
-    }
-
-  }
-})json";
+// Properties is a privately-instantiated PropertiesDialog (see
+// form::instantiate_child_form()) reflecting over a FileProperties instance
+// (see register_file_properties_class()) rather than a raw element tree --
+// every field is already known server-side by show-time (see mc.hpp's class
+// doc comment), unlike top.cpp's Properties dialog which has to wait on a
+// client round trip, so show_properties_dialog() below never needs to
+// retarget an already-open instance.
 
 // ── mc ─────────────────────────────────────────────────────────────
 
@@ -768,27 +738,6 @@ void mc::apply_rename() {
 // ── Properties dialog ─────────────────────────────────────────────────────────
 
 void mc::show_properties_dialog(bool is_sandbox, const file_row& entry) {
-  if (!properties_root_key_.empty())
-    remove_properties_objects();
-
-  auto tree = import_json(kPropertiesLayout);
-  (*tree[""])["title"_key] = "Properties - " + entry.name;
-
-  auto& c = ctx();
-  for (auto& [key, elem] : tree) {
-    key_t id = rmi::shared::generate_id();
-    c.put_object(id, elem);
-    elem["__wish_id"_key] = id;
-  }
-
-  properties_window_id_ = (*tree[""])["__wish_id"_key].as<key_t>();
-  tree.with("vbox.close_row.btn_close", [&](const auto& e) { properties_close_id_ = wish_id_of(e); });
-  tree.with("vbox.grid.name_row", [&](const auto& e) { properties_name_ptr_ = e; });
-  tree.with("vbox.grid.type_row", [&](const auto& e) { properties_type_ptr_ = e; });
-  tree.with("vbox.grid.size_row", [&](const auto& e) { properties_size_ptr_ = e; });
-  tree.with("vbox.grid.modified_row", [&](const auto& e) { properties_modified_ptr_ = e; });
-  tree.with("vbox.grid.path_row", [&](const auto& e) { properties_path_ptr_ = e; });
-
   // Same path-composition rule as fill_table()'s Copy Path -- see that
   // call site for why the sandbox side stays relative rather than exposing
   // the server's absolute filesystem layout to the client.
@@ -796,50 +745,22 @@ void mc::show_properties_dialog(bool is_sandbox, const file_row& entry) {
       ? "/" + (sandbox_path_.empty() ? entry.name : sandbox_path_ + "/" + entry.name)
       : (local_path_.empty() ? entry.name : (fs::path(local_path_) / entry.name).string());
 
-  if (properties_name_ptr_)
-    properties_name_ptr_["text"_key] = "Name: " + entry.name;
-  if (properties_type_ptr_)
-    properties_type_ptr_["text"_key] = std::string{"Type: "} + (entry.type == "dir" ? "Folder" : "File");
-  if (properties_size_ptr_)
-    properties_size_ptr_["text"_key] = entry.type == "dir" ? std::string{"Size: --"} : "Size: " + entry.size;
-  if (properties_modified_ptr_) {
-    properties_modified_ptr_["text"_key] =
-        "Modified: " + (entry.modified.empty() ? std::string{"(unknown)"} : entry.modified);
-  }
-  if (properties_path_ptr_)
-    properties_path_ptr_["text"_key] = "Path: " + path_display;
+  dynamic_ptr details{dynamic::instantiate("wish"_key, "FileProperties"_key)};
+  details["name"_key] = entry.name;
+  details["type"_key] = entry.type == "dir" ? std::string{"Folder"} : std::string{"File"};
+  details["size"_key] = entry.type == "dir" ? std::string{"--"} : entry.size;
+  details["modified"_key] = entry.modified.empty() ? std::string{"(unknown)"} : entry.modified;
+  details["path"_key] = path_display;
 
-  // Same outside-dispatch secondary-root merge as show_rename_dialog() above.
-  auto lock = context_wlock{*sync_ctx_};
-  context& s = *lock;
-  for (int i = 0;; ++i) {
-    std::string candidate = "__mc_properties_" + std::to_string(i);
-    if (s.top_level_objects.find(key_t{candidate}) == s.top_level_objects.end()) {
-      properties_root_key_ = candidate;
-      break;
-    }
-  }
-  s.ui_objects.merge(std::move(tree), properties_root_key_);
-  auto it = s.ui_objects.find(properties_root_key_);
-  if (it != s.ui_objects.end()) {
-    s.top_level_objects[key_t{properties_root_key_}] = it->second;
-    (*it->second)["__path__"_key] = properties_root_key_;
-    s.top_level_handlers[key_t{properties_root_key_}] = this;
-  }
-}
+  dynamic params;
+  params["title"_key] = "Properties - " + entry.name;
+  params["target"_key] = details;
 
-void mc::request_close_properties() {
-  request_close_at(properties_root_key_);
-}
-
-void mc::remove_properties_objects() {
-  remove_objects_at(properties_root_key_);
-  properties_root_key_.clear();
-  properties_name_ptr_.reset();
-  properties_type_ptr_.reset();
-  properties_size_ptr_.reset();
-  properties_modified_ptr_.reset();
-  properties_path_ptr_.reset();
+  // Overwriting properties_dialog_ (rather than requiring it be empty
+  // first) is safe even if a properties dialog is already open for a
+  // different entry -- see top.cpp's confirm_dialog_ doc comment for why
+  // (properties_dialog_ follows the identical pattern).
+  properties_dialog_ = instantiate_child_form<properties_dialog>("PropertiesDialog"_key, std::move(params));
 }
 
 // ── RMI methods ───────────────────────────────────────────────────────────────
@@ -1138,21 +1059,39 @@ void mc::on_event(key_t id, key_t event, const dynamic& payload) {
     }
   }
 
-  if (!properties_root_key_.empty()) {
-    if (id == properties_window_id_ && event == "closed"_key) {
-      remove_properties_objects();
-      return;
-    }
-    if (id == properties_close_id_ && event == "clicked"_key) {
-      request_close_properties();
-      return;
-    }
-  }
 }
 
 // ── Registration ──────────────────────────────────────────────────────────────
 
+// Pure-data class reflected over by the PropertiesDialog show_properties_dialog()
+// opens (see that method): every field is a plain, already-display-formatted
+// string (formatting happens server-side in show_properties_dialog(), not
+// via bison attributes) shown read-only, so Order alone (not Range/Enum/
+// etc.) is all that's needed to match the original hand-built grid's row
+// order.
+void register_file_properties_class() {
+  auto proto = dynamic_ptr{"FileProperties"_key, {}};
+
+  auto add_field = [&](const char* name, const char* display_name, int32_t order) {
+    proto->addField(key_t{name}, field{std::string{}, attr<DisplayName>(display_name), attr<Order>(order)});
+  };
+
+  add_field("name", "Name", 0);
+  add_field("type", "Type", 1);
+  add_field("size", "Size", 2);
+  add_field("modified", "Modified", 3);
+  add_field("path", "Path", 4);
+
+  (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("File Properties"));
+  (*proto)[dynamic::CLASS].addAttribute(
+      attr<Description>("File/folder info shown by mc's Properties dialog (see mc::show_properties_dialog())."));
+
+  dynamic::addClass("wish"_key, std::move(proto), key_t{0U});
+}
+
 void register_mc() {
+  register_file_properties_class();
+
   auto proto = dynamic_ptr{"Mc"_key, {}};
 
   proto->addField(

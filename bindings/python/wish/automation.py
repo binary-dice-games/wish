@@ -35,6 +35,19 @@ from typing import Any, Dict, List, Optional, Sequence
 
 __all__ = ["AutomationClient", "AutomationError"]
 
+# Maps the SDL3-native `wish.Client.click()` button convention (0=left,
+# 1=right, 2=middle -- see `bindings/python/wish/client.py`) onto
+# Playwright's own string-typed `MouseButton` literal, so both automation
+# paths share one button numbering scheme.
+_PLAYWRIGHT_BUTTON_NAMES = {0: "left", 1: "right", 2: "middle"}
+
+# Milliseconds Playwright waits between a click's mousedown and mouseup (its
+# own default is ~0ms, back-to-back in the same event-loop tick). See
+# click()'s doc comment for why a real gap is required for ImGui's own click
+# detection to register the press-then-release at all -- an artifact of the
+# render loop polling for input once per frame, not a wish/client.js bug.
+_CLICK_DELAY_MS = 60
+
 
 class AutomationError(RuntimeError):
     """Raised for automation-specific failures (missing widget, launch
@@ -281,7 +294,7 @@ class AutomationClient:
             raise AutomationError(f"widget {path!r} exists but was never rendered (no rect)")
         return ((rect["x0"] + rect["x1"]) / 2, (rect["y0"] + rect["y1"]) / 2)
 
-    def click(self, path: str) -> None:
+    def click(self, path: str, button: int = 0) -> None:
         """Click the center of the widget at @p path.
 
         Resolves @p path to a screen rect via `get_widget()`, then issues a
@@ -289,9 +302,23 @@ class AutomationClient:
         by `client.js`'s existing listeners into an INPUT WebSocket message
         exactly as a human user's click would be. Raises `AutomationError`
         if @p path doesn't exist or was never rendered.
+
+        @param button  0 = left (default), 1 = right, 2 = middle -- matches
+                        `wish.Client`'s SDL3-native `click()` signature. Use
+                        `1` to open a widget's `ContextMenu` (right-click).
+
+        A `delay` (see `_CLICK_DELAY_MS`) is passed between the mousedown and
+        mouseup, both to `page.mouse.click()` here: without it, the button
+        down/up land in the same render-loop poll and ImGui's own click
+        detection (`BeginPopupContextItem()`'s default
+        `ImGuiPopupFlags_MouseButtonRight`, in particular) never sees a
+        press-then-release across two distinct frames, so nothing happens --
+        confirmed the hard way driving `top`'s row `ContextMenu`: an
+        immediate down+up right-click silently did nothing, while the exact
+        same click with a real gap in between opened the popup every time.
         """
         cx, cy = self._widget_center(path)
-        self._page.mouse.click(cx, cy)
+        self._page.mouse.click(cx, cy, button=_PLAYWRIGHT_BUTTON_NAMES[button], delay=_CLICK_DELAY_MS)
 
     def type_text(self, path: str, text: str) -> None:
         """Click the widget at @p path to focus it, then type @p text one

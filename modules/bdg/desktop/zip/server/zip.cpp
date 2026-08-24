@@ -12,6 +12,7 @@
 #include "src/bison/bison_object.hpp"
 #include "src/rmi/shared/ids.hpp"
 #include "ui/forms/file_browser_utils.hpp"
+#include "ui/forms/message_box.hpp"
 
 #include <ui/ui_importer.hpp>
 
@@ -91,7 +92,7 @@ static constexpr const char* kLayout = R"json({
         "selected_label": { "type": "Label", "text": "Selected: (none)" },
         "file_table": {
           "type": "Table", "columns": 3, "headers": true,
-          "flags": "Resizable|Sortable|RowBg|BordersH|ScrollY", "outer_width": 0, "outer_height": 300,
+          "flags": "Resizable|Sortable|RowBg|Borders|ScrollY", "outer_width": 0, "outer_height": 300,
           "children": {
             "col_name":     { "type": "TableColumn", "label": "Name", "column_id": 0 },
             "col_size":     { "type": "TableColumn", "label": "Size", "flags": "WidthFixed", "init_width": 90, "column_id": 1 },
@@ -134,21 +135,11 @@ static constexpr const char* kPromptLayout = R"({
   }
 })";
 
-// Second step for both actions when the name typed at the prompt already
-// exists (per the cached listing) -- mirrors tree.cpp's
-// overwrite-confirm dialog.
-static constexpr const char* kConfirmLayout = R"({
-  "type": "Window", "title": "Confirm Overwrite", "modal": true,
-  "flags": "NoResize|NoCollapse|AlwaysAutoResize",
-  "children": {
-    "message": { "type": "Label", "text": "" },
-    "sep": { "type": "Separator" },
-    "buttons": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_yes": { "type": "Button", "label": "Overwrite", "height": 32 },
-      "btn_no": { "type": "Button", "label": "Cancel", "height": 32 }
-    } }
-  }
-})";
+// The second step for both actions, when the name typed at the prompt
+// already exists (per the cached listing), is a privately-instantiated
+// built-in MessageBox form (see form::instantiate_child_form()) rather than
+// a raw element tree owned directly by this form -- see
+// show_overwrite_confirm() below.
 
 // Read-only archive listing. flags "Resizable|RowBg|BordersH|ScrollY" is
 // the main table's flags minus Sortable -- this table has no click-to-sort
@@ -247,11 +238,7 @@ void zip::fill_table(const std::vector<file_row>& entries, int32_t selected_inde
       return lbl;
     };
 
-    std::string display_name = entry.name == ".." ? std::string{".. [Up]"}
-        : entry.type == "dir"                     ? ("[" + entry.name + "]")
-                                                    : entry.name;
-
-    ui_element_ptr name_cell = make_name_cell(entry.name, entry.type, display_name);
+    ui_element_ptr name_cell = make_name_cell(entry.name, entry.type, entry.name);
 
     auto row_children = dynamic_ptr{key_t{0U}, {}};
     (*row_children)[size_t{0}] = dynamic_ptr{name_cell};
@@ -532,14 +519,13 @@ void zip::on_prompt_confirmed() {
     // before overwriting/merging (this form only has that cached listing to
     // check against; the client re-validates against the real filesystem
     // when it actually performs the operation).
-    confirm_action_ = prompt_action_;
-    confirm_source_name_ = prompt_source_name_;
-    confirm_target_name_ = value;
+    pending_action action = prompt_action_;
+    std::string source_name = prompt_source_name_;
     request_close_prompt();
-    std::string message = prompt_action_ == pending_action::compress
+    std::string message = action == pending_action::compress
         ? ("\"" + value + "\" already exists. Overwrite it?")
         : ("\"" + value + "\" already exists. Merge and overwrite its contents?");
-    show_overwrite_confirm(message);
+    show_overwrite_confirm(action, source_name, value, message);
     return;
   }
 
@@ -552,47 +538,31 @@ void zip::on_prompt_confirmed() {
 
 // ── Overwrite confirmation dialog ────────────────────────────────────────────
 
-void zip::show_overwrite_confirm(const std::string& message) {
-  auto tree = import_json(kConfirmLayout);
-  tree.with("message", [&](const auto& e) { e["text"_key] = message; });
+void zip::show_overwrite_confirm(
+    pending_action action, const std::string& source_name, const std::string& target_name,
+    const std::string& message) {
+  dynamic params;
+  params["title"_key] = std::string{"Confirm Overwrite"};
+  params["message"_key] = message;
+  params["icon"_key] = std::string{"warning"};
+  params["buttons"_key] = std::string{"yes_no"};
 
-  auto& c = ctx();
-  for (auto& [key, elem] : tree) {
-    key_t id = rmi::shared::generate_id();
-    c.put_object(id, elem);
-    elem["__wish_id"_key] = id;
-  }
-
-  confirm_window_id_ = (*tree[""])["__wish_id"_key].as<key_t>();
-  tree.with("buttons.btn_yes", [&](const auto& e) { confirm_yes_id_ = wish_id_of(e); });
-  tree.with("buttons.btn_no", [&](const auto& e) { confirm_no_id_ = wish_id_of(e); });
-
-  auto lock = context_wlock{*sync_ctx_};
-  context& s = *lock;
-  for (int i = 0;; ++i) {
-    std::string candidate = "__zip_confirm_" + std::to_string(i);
-    if (s.top_level_objects.find(key_t{candidate}) == s.top_level_objects.end()) {
-      confirm_root_key_ = candidate;
-      break;
-    }
-  }
-
-  s.ui_objects.merge(std::move(tree), confirm_root_key_);
-  auto it = s.ui_objects.find(confirm_root_key_);
-  if (it != s.ui_objects.end()) {
-    s.top_level_objects[key_t{confirm_root_key_}] = it->second;
-    (*it->second)["__path__"_key] = confirm_root_key_;
-    s.top_level_handlers[key_t{confirm_root_key_}] = this;
-  }
-}
-
-void zip::request_close_confirm() {
-  request_close_at(confirm_root_key_);
-}
-
-void zip::remove_confirm_objects() {
-  remove_objects_at(confirm_root_key_);
-  confirm_root_key_.clear();
+  // Overwriting confirm_dialog_ (rather than requiring it be empty first) is
+  // safe even if a confirm dialog is already open for a different action --
+  // see confirm_dialog_'s doc comment. action/source_name/target_name are
+  // captured by value below rather than stashed in member fields (the old
+  // confirm_action_/confirm_source_name_/confirm_target_name_), since the
+  // lambda is the only place that still needs them.
+  confirm_dialog_ = instantiate_child_form<message_box>(
+      "MessageBox"_key, std::move(params),
+      [this, action, source_name, target_name](key_t /*event_name*/, const dynamic& payload) {
+        if (payload.as<std::string>("button"_key) == "yes") {
+          emit_action_request(action, source_name, target_name);
+          set_status(action == pending_action::compress ? "Compressing..." : "Extracting...");
+        } else {
+          set_status(action == pending_action::compress ? "Compress cancelled." : "Extract cancelled.");
+        }
+      });
 }
 
 // ── View Contents dialog ──────────────────────────────────────────────────────
@@ -778,25 +748,6 @@ void zip::on_event(key_t id, key_t event, const dynamic& payload) {
     if (id == prompt_cancel_id_ && event == "clicked"_key) {
       set_status(prompt_action_ == pending_action::compress ? "Compress cancelled." : "Extract cancelled.");
       request_close_prompt();
-      return;
-    }
-  }
-
-  if (!confirm_root_key_.empty()) {
-    if (id == confirm_window_id_ && event == "closed"_key) {
-      remove_confirm_objects();
-      confirm_action_ = pending_action::none;
-      return;
-    }
-    if (id == confirm_yes_id_ && event == "clicked"_key) {
-      emit_action_request(confirm_action_, confirm_source_name_, confirm_target_name_);
-      set_status(confirm_action_ == pending_action::compress ? "Compressing..." : "Extracting...");
-      request_close_confirm();
-      return;
-    }
-    if (id == confirm_no_id_ && event == "clicked"_key) {
-      set_status(confirm_action_ == pending_action::compress ? "Compress cancelled." : "Extract cancelled.");
-      request_close_confirm();
       return;
     }
   }

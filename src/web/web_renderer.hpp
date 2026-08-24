@@ -142,6 +142,11 @@ class web_renderer : public imgui_renderer {
    */
   void render_node(const ui_element& node, const context& s) override;
 
+  /// @brief See `imgui_renderer::capture_hit_test_for_last_item()` -- used by
+  ///        `render_table()` for `TableRow`, whose row-spanning `Selectable`
+  ///        is drawn inline rather than via `render_node()`.
+  void capture_hit_test_for_last_item(const ui_element& node) override;
+
   /**
    * @brief Answer any QUERY_TREE requests queued since the last call, and
    *        push a LOG_EVENT for any log entries logged since the last call.

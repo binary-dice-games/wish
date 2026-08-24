@@ -96,6 +96,10 @@ void form::init(bison::rmi::context& ctx, sync_context_ptr sync_ctx) {
 }
 
 void form::emit(bison::key_t event_name, bison::dynamic payload) {
+  if (local_result_sink_) {
+    local_result_sink_(event_name, payload);
+    return;
+  }
   if (!sync_ctx_)
     return;
   // Resolve our own RMI ID lazily on the first call by scanning the object

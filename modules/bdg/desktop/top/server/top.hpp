@@ -6,11 +6,15 @@
 #include <ui/forms/form.hpp>
 #include <ui/ui_element.hpp>
 
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
 namespace bdg::wish {
+
+class message_box;
+class properties_dialog;
 
 /// @brief Top/htop-style system monitor form, with a per-row right-click
 /// menu for managing individual processes.
@@ -93,8 +97,11 @@ class top : public form {
   /// @brief Reacts to: `"closed"` (window X button); `"sorted"` (a
   /// `proc_table_` column header was clicked -- see `Table`'s docs in
   /// `src/ui/ui_elements/table.cpp`); a row context-menu item's `"clicked"`
-  /// (looked up via `action_item_targets_`); and the confirm-kill/
-  /// set-affinity/properties dialogs' own button clicks.
+  /// (looked up via `action_item_targets_`); and the set-affinity dialog's
+  /// own button clicks (the confirm-kill/properties dialogs are privately
+  /// instantiated MessageBox/PropertiesDialog forms -- see
+  /// show_confirm_kill()/show_properties_dialog() -- and handle their own
+  /// button clicks internally).
   void on_event(bison::key_t widget_id, bison::key_t event_name, const bison::dynamic& payload) override;
 
  private:
@@ -159,16 +166,21 @@ class top : public form {
   void set_status(const std::string& text);
 
   void show_confirm_kill(int pid);
-  void request_close_confirm();
-  void remove_confirm_objects();
 
   void show_affinity_dialog(int pid);
   void request_close_affinity();
   void remove_affinity_objects();
 
   void show_properties_dialog(int pid);
-  void request_close_properties();
-  void remove_properties_objects();
+
+  /// @brief Builds a "ProcessDetails" dynamic (see register_top()) from the
+  /// fields do_report_process_details() receives -- pid alone (everything
+  /// else at its type default) for the placeholder shown immediately by
+  /// show_properties_dialog(), or the full set once the client responds.
+  static bison::dynamic_ptr make_process_details(
+      int32_t pid, int32_t ppid, const std::string& user, int32_t thread_count, const std::string& start_time,
+      const std::string& exe_path, const std::string& cwd, const std::string& cmdline, int32_t nice,
+      const std::vector<int32_t>& affinity_cores);
 
   bison::key_t window_id_;
   bison::key_t proc_table_id_;
@@ -199,15 +211,12 @@ class top : public form {
   /// represents; erased alongside the row when its process vanishes.
   std::unordered_map<bison::key_t, row_action_target, bison::key_t, bison::key_t> action_item_targets_;
 
-  /// Confirm-kill dialog (mirrors mc's overwrite-confirmation
-  /// dialog: an internal Window merged as its own top-level object, closed
-  /// via the __request_close__/closed handshake). Only one may be open at a
-  /// time; a new kill request replaces it.
-  std::string confirm_root_key_;
-  bison::key_t confirm_window_id_;
-  bison::key_t confirm_yes_id_;
-  bison::key_t confirm_no_id_;
-  int confirm_kill_pid_{0};
+  /// Confirm-kill dialog: a privately-instantiated MessageBox (see
+  /// form::instantiate_child_form()) with a "yes_no" preset. Only one may
+  /// be open at a time; a new kill request just overwrites this member --
+  /// the stale instance's destructor tears down its own internal objects,
+  /// same effect the old direct remove_objects_at() call had.
+  std::shared_ptr<message_box> confirm_dialog_;
 
   /// Set CPU Affinity dialog: one Checkbox per logical core (built at
   /// show-time from the current core count and the row's current
@@ -222,25 +231,13 @@ class top : public form {
   int affinity_dialog_pid_{0};
   std::vector<std::pair<ui_element_ptr, int32_t>> affinity_checkboxes_; ///< (checkbox, core index).
 
-  /// Properties (extended info) dialog: built immediately on click with a
-  /// "Loading..." placeholder; do_report_process_details() fills it in once
-  /// the client responds. Labels are kept live (rather than looked up by
-  /// path) so the RMI handler can update them directly, the same pattern
-  /// do_update_snapshot() uses for cpu_summary_label_/etc.
-  std::string properties_root_key_;
-  bison::key_t properties_window_id_;
-  bison::key_t properties_close_id_;
+  /// Properties (extended info) dialog: a privately-instantiated
+  /// PropertiesDialog (see form::instantiate_child_form()), opened
+  /// immediately with a pid-only placeholder target; do_report_process_details()
+  /// calls its set_target() again once the client responds, if it's still
+  /// open for the same pid (see properties_dialog_pid_'s staleness check).
+  std::shared_ptr<properties_dialog> properties_dialog_;
   int properties_dialog_pid_{0};
-  ui_element_ptr properties_pid_label_;
-  ui_element_ptr properties_ppid_label_;
-  ui_element_ptr properties_user_label_;
-  ui_element_ptr properties_threads_label_;
-  ui_element_ptr properties_start_label_;
-  ui_element_ptr properties_priority_label_;
-  ui_element_ptr properties_affinity_label_;
-  ui_element_ptr properties_exe_label_;
-  ui_element_ptr properties_cwd_label_;
-  ui_element_ptr properties_cmdline_label_;
 };
 
 /// @brief Register Top in the "wish" bison namespace.

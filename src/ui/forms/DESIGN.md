@@ -85,6 +85,66 @@ class form : public bison::dynamic {
 
 `init()` is called from `server::on_create_object` via `dynamic_cast<form*>`, the same pattern used for `ui_template`. Every concrete form class must register itself in `registry.cpp` so the server knows the cast target.
 
+### Reusing a built-in form as a private child dialog
+
+A form's own dialogs are normally raw element trees it builds and owns
+directly (a second `import_json()`ed tree merged under its own
+`top_level_objects`/`top_level_handlers` entry, e.g. `top`'s Set-CPU-Affinity
+dialog) — see "Form Lifecycle" below. But a *shared* dialog shape (a
+Win32-style message box, a read-only properties grid) shouldn't be
+reimplemented per module. `form::instantiate_child_form<Child>(klass,
+construct_params, on_result)` lets one form privately instantiate another
+built-in `form` subclass (`MessageBox`, `PropertiesDialog`) in-process,
+without a real client-side `instantiate()` round trip:
+
+```cpp
+dynamic params;
+params["title"_key] = std::string{"Confirm Kill"};
+params["message"_key] = message;
+params["icon"_key] = std::string{"warning"};
+params["buttons"_key] = std::string{"yes_no"};
+
+confirm_dialog_ = instantiate_child_form<message_box>(
+    "MessageBox"_key, std::move(params), [this, pid](key_t, const dynamic& payload) {
+      if (payload.as<std::string>("button"_key) == "yes")
+        emit("on_process_action_requested"_key, ...);
+    });
+```
+
+The child instantiates via the registered factory, runs its own `on_init()`/
+`"__construct"` exactly as a real RMI `instantiate()` would, and self-registers
+as its own `top_level_handlers` entry — so it manages its own internal
+Window/widgets and tears itself down on close, same as if a remote client had
+created it. The one thing it can't do without help is report a result: it was
+never added to `ctx().objects`, so no remote client can hear its `emit()`
+calls. `instantiate_child_form()` wires `set_local_result_sink()` so `emit()`
+routes to the `on_result` callback in-process instead — the parent's C++
+observes the child's public events (`MessageBox`'s `"on_result"`) directly,
+without inventing a bespoke callback per dialog type.
+
+A stale instance (the caller reopening the same private dialog for a new
+target) is superseded by simply overwriting the caller's own
+`std::shared_ptr<Child>` member with a fresh call — the old instance's
+destructor runs `~form()`'s usual `remove_internal_objects()`, same as an
+explicit close.
+
+**Caution for a child form that owns a `ui_element` with its own C++
+behavior** (e.g. `ObjectInspector`, not a plain declarative element): that
+child element cannot be declared inside the host form's `import_json()`
+layout string. `import_json()`/`build_ui_node()` always constructs a plain
+`ui_element`, never a registered subclass's factory (see
+`src/ui/ui_elements/object_inspector.hpp`'s "Reflection is process-local"
+note and `properties_dialog.cpp`'s `kLayout` comment) — it must be built
+separately via `bison::dynamic::create_instance(ns, klass)` (which *does*
+consult the registered factory) and spliced into the parent's children map
+by hand, as `PropertiesDialog` does for its internal `ObjectInspector`.
+Also: never call that element's own `release()`-style teardown method from a
+destructor — only from a still-alive-session path (a graceful close handler,
+or before rebuilding). See `object_inspector::release()`'s and
+`properties_dialog::release_inspector()`'s doc comments: doing so from a
+destructor risks erasing `ctx().objects` entries while that same map is
+mid-teardown, which is undefined behavior.
+
 ---
 
 ## Form Lifecycle

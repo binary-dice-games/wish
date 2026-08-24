@@ -6,6 +6,8 @@
 #include "src/bison/bison_object.hpp"
 #include "src/rmi/shared/ids.hpp"
 
+#include <ui/forms/message_box.hpp>
+#include <ui/forms/properties_dialog.hpp>
 #include <ui/ui_importer.hpp>
 
 #include <algorithm>
@@ -151,68 +153,10 @@ static constexpr const char* kLayout = R"({
   }
 })";
 
-// Confirm-kill dialog -- mirrors mc's overwrite-confirmation
-// dialog: a small internal Window merged as its own top-level object,
-// closed via the __request_close__/closed handshake (see form.hpp's
-// request_close_at()).
-static constexpr const char* kConfirmKillLayout = R"({
-  "type": "Window", "title": "Confirm Kill", "modal": true,
-  "flags": "NoResize|NoCollapse|AlwaysAutoResize",
-  "children": {
-    "message": { "type": "Label", "text": "" },
-    "sep": { "type": "Separator" },
-    "buttons": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_yes": { "type": "Button", "label": "Kill", "height": 32 },
-      "btn_no": { "type": "Button", "label": "Cancel", "height": 32 }
-    } }
-  }
-})";
-
-// Properties (extended info) dialog -- fixed shape, populated with
-// "Loading..." at show-time and filled in once do_report_process_details()
-// delivers the client's response (see that method's doc comment).
-//
-// Resizable (no "AlwaysAutoResize"/"NoResize") with an explicit starting
-// size, same as mc.cpp's kRenameLayout/kPropertiesLayout: "vbox" wraps
-// grid/sep/close_row so "grid"'s "height": -1 has a VerticalLayout parent to
-// actually read that stretch hint from (a bare Window doesn't distribute
-// space to its children the way VerticalLayout/HorizontalLayout do). This
-// makes "grid" -- not "sep"/"close_row" -- absorb any extra height the user
-// resizes the window to, so the separator and Close button stay pinned to
-// the bottom instead of drifting to wherever the (variable-length, wrapped)
-// text rows happen to end.
-static constexpr const char* kPropertiesLayout = R"({
-  "type": "Window", "title": "Process Properties", "modal": true,
-  "flags": "NoCollapse",
-  "width": 460, "height": 420,
-  "children": {
-    "vbox": {
-      "type": "VerticalLayout",
-      "children": {
-        "grid": {
-          "type": "VerticalLayout",
-          "height": -1,
-          "children": {
-            "pid_row": { "type": "Label", "text": "" },
-            "ppid_row": { "type": "Label", "text": "" },
-            "user_row": { "type": "Label", "text": "" },
-            "threads_row": { "type": "Label", "text": "" },
-            "start_row": { "type": "Label", "text": "" },
-            "priority_row": { "type": "Label", "text": "" },
-            "affinity_row": { "type": "Label", "text": "" },
-            "exe_row": { "type": "Label", "text": "", "wrap": true },
-            "cwd_row": { "type": "Label", "text": "", "wrap": true },
-            "cmdline_row": { "type": "Label", "text": "", "wrap": true }
-          }
-        },
-        "sep": { "type": "Separator" },
-        "close_row": { "type": "HorizontalLayout", "children": {
-          "btn_close": { "type": "Button", "label": "Close", "height": 32 }
-        } }
-      }
-    }
-  }
-})";
+// Confirm-kill and Process Properties are both privately-instantiated
+// built-in forms (MessageBox / PropertiesDialog, see form::instantiate_child_form())
+// rather than raw element trees owned directly by this form -- see
+// show_confirm_kill()/show_properties_dialog() below.
 
 // ── top ─────────────────────────────────────────────────────────
 
@@ -330,18 +274,62 @@ dynamic top::do_report_action_result(const dynamic& args) {
   return dynamic{};
 }
 
+dynamic_ptr top::make_process_details(
+    int32_t pid, int32_t ppid, const std::string& user, int32_t thread_count, const std::string& start_time,
+    const std::string& exe_path, const std::string& cwd, const std::string& cmdline, int32_t nice,
+    const std::vector<int32_t>& affinity_cores) {
+  dynamic_ptr details{dynamic::instantiate("wish"_key, "ProcessDetails"_key)};
+  details["pid"_key] = pid;
+  details["ppid"_key] = ppid;
+  details["user"_key] = user.empty() ? std::string{"(unknown)"} : user;
+  details["thread_count"_key] = thread_count;
+  details["start_time"_key] = start_time.empty() ? std::string{"(unknown)"} : start_time;
+
+  std::string level_label = "Custom";
+  for (auto& level : kPriorityLevels)
+    if (level.nice == nice)
+      level_label = level.label;
+  details["priority"_key] = level_label + " (nice " + std::to_string(nice) + ")";
+
+  std::ostringstream affinity_oss;
+  if (affinity_cores.empty()) {
+    affinity_oss << "(unknown)";
+  } else {
+    for (size_t i = 0; i < affinity_cores.size(); ++i) {
+      if (i > 0)
+        affinity_oss << ", ";
+      affinity_oss << affinity_cores[i];
+    }
+  }
+  details["affinity"_key] = affinity_oss.str();
+
+  details["exe_path"_key] = exe_path.empty() ? std::string{"(unknown)"} : exe_path;
+  details["cwd"_key] = cwd.empty() ? std::string{"(unavailable)"} : cwd;
+  details["cmdline"_key] = cmdline;
+  return details;
+}
+
 dynamic top::do_report_process_details(const dynamic& args) {
   int32_t pid = args.as<int32_t>("pid"_key);
   // Stale response guard: the Properties dialog may have been closed, or
   // reopened for a different pid, before this RMI call arrived.
-  if (properties_root_key_.empty() || pid != properties_dialog_pid_)
+  if (!properties_dialog_ || pid != properties_dialog_pid_)
     return dynamic{};
 
   bool found = args.as<bool>("found"_key);
   if (!found) {
     std::string error = args.as<std::string>("error"_key);
-    if (properties_ppid_label_)
-      properties_ppid_label_["text"_key] = error.empty() ? std::string{"Process no longer exists."} : error;
+    std::string message = error.empty() ? std::string{"Process no longer exists."} : error;
+    dynamic_ptr details{dynamic::instantiate("wish"_key, "ProcessDetails"_key)};
+    details["pid"_key] = pid;
+    details["user"_key] = message;
+    details["start_time"_key] = message;
+    details["priority"_key] = message;
+    details["affinity"_key] = message;
+    details["exe_path"_key] = message;
+    details["cwd"_key] = message;
+    details["cmdline"_key] = message;
+    properties_dialog_->set_target(details);
     return dynamic{};
   }
 
@@ -358,40 +346,8 @@ dynamic top::do_report_process_details(const dynamic& args) {
   if (auto* af = args.findField<std::vector<int32_t>>("affinity_cores"_key))
     affinity_cores = *af;
 
-  if (properties_ppid_label_)
-    properties_ppid_label_["text"_key] = "Parent PID: " + std::to_string(ppid);
-  if (properties_user_label_)
-    properties_user_label_["text"_key] = "User: " + (user.empty() ? std::string{"(unknown)"} : user);
-  if (properties_threads_label_)
-    properties_threads_label_["text"_key] = "Threads: " + std::to_string(threads);
-  if (properties_start_label_)
-    properties_start_label_["text"_key] = "Started: " + (start_time.empty() ? std::string{"(unknown)"} : start_time);
-  if (properties_priority_label_) {
-    std::string level_label = "Custom";
-    for (auto& level : kPriorityLevels)
-      if (level.nice == nice)
-        level_label = level.label;
-    properties_priority_label_["text"_key] = "Priority: " + level_label + " (nice " + std::to_string(nice) + ")";
-  }
-  if (properties_affinity_label_) {
-    std::ostringstream oss;
-    oss << "CPU Affinity: ";
-    if (affinity_cores.empty())
-      oss << "(unknown)";
-    for (size_t i = 0; i < affinity_cores.size(); ++i) {
-      if (i > 0)
-        oss << ", ";
-      oss << affinity_cores[i];
-    }
-    properties_affinity_label_["text"_key] = oss.str();
-  }
-  if (properties_exe_label_)
-    properties_exe_label_["text"_key] = "Executable: " + (exe_path.empty() ? std::string{"(unknown)"} : exe_path);
-  if (properties_cwd_label_)
-    properties_cwd_label_["text"_key] = "Working Dir: " + (cwd.empty() ? std::string{"(unavailable)"} : cwd);
-  if (properties_cmdline_label_)
-    properties_cmdline_label_["text"_key] = "Command: " + cmdline;
-
+  properties_dialog_->set_target(
+      make_process_details(pid, ppid, user, threads, start_time, exe_path, cwd, cmdline, nice, affinity_cores));
   return dynamic{};
 }
 
@@ -527,54 +483,29 @@ void top::update_row_context_menu(row_entry& entry, const std::string& state, in
 // ── Confirm-kill dialog ───────────────────────────────────────────────────────
 
 void top::show_confirm_kill(int pid) {
-  if (!confirm_root_key_.empty())
-    remove_confirm_objects();
-
   auto row_it = pid_to_row_.find(pid);
   std::string name = row_it != pid_to_row_.end() ? row_it->second.name : std::string{};
-  confirm_kill_pid_ = pid;
-
-  auto tree = import_json(kConfirmKillLayout);
   std::string message = "Kill process " + std::to_string(pid) + (name.empty() ? std::string{} : " (" + name + ")") +
       "? This cannot be undone.";
-  tree.with("message", [&](const auto& e) { e["text"_key] = message; });
 
-  auto& c = ctx();
-  for (auto& [key, elem] : tree) {
-    key_t id = rmi::shared::generate_id();
-    c.put_object(id, elem);
-    elem["__wish_id"_key] = id;
-  }
+  dynamic params;
+  params["title"_key] = std::string{"Confirm Kill"};
+  params["message"_key] = message;
+  params["icon"_key] = std::string{"warning"};
+  params["buttons"_key] = std::string{"yes_no"};
 
-  confirm_window_id_ = (*tree[""])["__wish_id"_key].as<key_t>();
-  tree.with("buttons.btn_yes", [&](const auto& e) { confirm_yes_id_ = wish_id_of(e); });
-  tree.with("buttons.btn_no", [&](const auto& e) { confirm_no_id_ = wish_id_of(e); });
-
-  auto lock = context_wlock{*sync_ctx_};
-  context& s = *lock;
-  for (int i = 0;; ++i) {
-    std::string candidate = "__top_confirm_" + std::to_string(i);
-    if (s.top_level_objects.find(key_t{candidate}) == s.top_level_objects.end()) {
-      confirm_root_key_ = candidate;
-      break;
-    }
-  }
-  s.ui_objects.merge(std::move(tree), confirm_root_key_);
-  auto it = s.ui_objects.find(confirm_root_key_);
-  if (it != s.ui_objects.end()) {
-    s.top_level_objects[key_t{confirm_root_key_}] = it->second;
-    (*it->second)["__path__"_key] = confirm_root_key_;
-    s.top_level_handlers[key_t{confirm_root_key_}] = this;
-  }
-}
-
-void top::request_close_confirm() {
-  request_close_at(confirm_root_key_);
-}
-
-void top::remove_confirm_objects() {
-  remove_objects_at(confirm_root_key_);
-  confirm_root_key_.clear();
+  // Overwriting confirm_dialog_ (rather than requiring it be empty first)
+  // is safe even if a confirm dialog is already open for a different pid --
+  // see confirm_dialog_'s doc comment.
+  confirm_dialog_ = instantiate_child_form<message_box>(
+      "MessageBox"_key, std::move(params), [this, pid](key_t /*event_name*/, const dynamic& payload) {
+        if (payload.as<std::string>("button"_key) != "yes")
+          return;
+        dynamic req;
+        req["pid"_key] = static_cast<int32_t>(pid);
+        req["action"_key] = std::string{"kill"};
+        emit("on_process_action_requested"_key, std::move(req));
+      });
 }
 
 // ── Set CPU Affinity dialog ───────────────────────────────────────────────────
@@ -616,7 +547,7 @@ void top::show_affinity_dialog(int pid) {
   layout << R"({
     "type": "Window", "title": "Set CPU Affinity - PID )" << pid << R"(", "modal": true,
     "flags": "NoCollapse",
-    "width": 280, "height": 320,
+    "width": 480, "height": 320,
     "children": {
       "vbox": {
         "type": "VerticalLayout",
@@ -683,83 +614,38 @@ void top::remove_affinity_objects() {
 // ── Properties (extended info) dialog ─────────────────────────────────────────
 
 void top::show_properties_dialog(int pid) {
-  if (!properties_root_key_.empty())
-    remove_properties_objects();
-
   properties_dialog_pid_ = pid;
 
-  auto tree = import_json(kPropertiesLayout);
-  auto& c = ctx();
-  for (auto& [key, elem] : tree) {
-    key_t id = rmi::shared::generate_id();
-    c.put_object(id, elem);
-    elem["__wish_id"_key] = id;
-  }
+  // Placeholder shown immediately, before the client's asynchronous
+  // response arrives -- do_report_process_details() replaces it via
+  // set_target() once "on_process_details_requested" is answered.
+  dynamic_ptr placeholder{dynamic::instantiate("wish"_key, "ProcessDetails"_key)};
+  placeholder["pid"_key] = static_cast<int32_t>(pid);
+  placeholder["user"_key] = std::string{"Loading..."};
+  placeholder["start_time"_key] = std::string{"Loading..."};
+  placeholder["priority"_key] = std::string{"Loading..."};
+  placeholder["affinity"_key] = std::string{"Loading..."};
+  placeholder["exe_path"_key] = std::string{"Loading..."};
+  placeholder["cwd"_key] = std::string{"Loading..."};
+  placeholder["cmdline"_key] = std::string{"Loading..."};
 
-  properties_window_id_ = (*tree[""])["__wish_id"_key].as<key_t>();
-  (*tree[""])["title"_key] = "Process Properties - PID " + std::to_string(pid);
-  tree.with("vbox.close_row.btn_close", [&](const auto& e) { properties_close_id_ = wish_id_of(e); });
-  tree.with("vbox.grid.pid_row", [&](const auto& e) { properties_pid_label_ = e; });
-  tree.with("vbox.grid.ppid_row", [&](const auto& e) { properties_ppid_label_ = e; });
-  tree.with("vbox.grid.user_row", [&](const auto& e) { properties_user_label_ = e; });
-  tree.with("vbox.grid.threads_row", [&](const auto& e) { properties_threads_label_ = e; });
-  tree.with("vbox.grid.start_row", [&](const auto& e) { properties_start_label_ = e; });
-  tree.with("vbox.grid.priority_row", [&](const auto& e) { properties_priority_label_ = e; });
-  tree.with("vbox.grid.affinity_row", [&](const auto& e) { properties_affinity_label_ = e; });
-  tree.with("vbox.grid.exe_row", [&](const auto& e) { properties_exe_label_ = e; });
-  tree.with("vbox.grid.cwd_row", [&](const auto& e) { properties_cwd_label_ = e; });
-  tree.with("vbox.grid.cmdline_row", [&](const auto& e) { properties_cmdline_label_ = e; });
+  dynamic params;
+  params["title"_key] = "Process Properties - PID " + std::to_string(pid);
+  params["target"_key] = placeholder;
 
-  if (properties_pid_label_)
-    properties_pid_label_["text"_key] = "PID: " + std::to_string(pid);
-  if (properties_ppid_label_)
-    properties_ppid_label_["text"_key] = std::string{"Loading..."};
-
-  {
-    auto lock = context_wlock{*sync_ctx_};
-    context& s = *lock;
-    for (int i = 0;; ++i) {
-      std::string candidate = "__top_properties_" + std::to_string(i);
-      if (s.top_level_objects.find(key_t{candidate}) == s.top_level_objects.end()) {
-        properties_root_key_ = candidate;
-        break;
-      }
-    }
-    s.ui_objects.merge(std::move(tree), properties_root_key_);
-    auto it = s.ui_objects.find(properties_root_key_);
-    if (it != s.ui_objects.end()) {
-      s.top_level_objects[key_t{properties_root_key_}] = it->second;
-      (*it->second)["__path__"_key] = properties_root_key_;
-      s.top_level_handlers[key_t{properties_root_key_}] = this;
-    }
-  }
+  // Overwriting properties_dialog_ (rather than requiring it be empty
+  // first) is safe even if a properties dialog is already open for a
+  // different pid -- see confirm_dialog_'s doc comment (properties_dialog_
+  // follows the identical pattern).
+  properties_dialog_ = instantiate_child_form<properties_dialog>("PropertiesDialog"_key, std::move(params));
 
   // emit() acquires the session wlock itself when called outside dispatch
-  // (see form::emit()) -- must run after the block above releases `lock`,
-  // not while it's still held, or this deadlocks on the same non-recursive
-  // mutex.
+  // (see form::emit()) -- must run after instantiate_child_form() releases
+  // its own wlock, not while it's still held, or this deadlocks on the
+  // same non-recursive mutex.
   dynamic req;
   req["pid"_key] = static_cast<int32_t>(pid);
   emit("on_process_details_requested"_key, std::move(req));
-}
-
-void top::request_close_properties() {
-  request_close_at(properties_root_key_);
-}
-
-void top::remove_properties_objects() {
-  remove_objects_at(properties_root_key_);
-  properties_root_key_.clear();
-  properties_pid_label_.reset();
-  properties_ppid_label_.reset();
-  properties_user_label_.reset();
-  properties_threads_label_.reset();
-  properties_start_label_.reset();
-  properties_priority_label_.reset();
-  properties_affinity_label_.reset();
-  properties_exe_label_.reset();
-  properties_cwd_label_.reset();
-  properties_cmdline_label_.reset();
 }
 
 // ── Process table reconciliation ─────────────────────────────────────────────
@@ -990,26 +876,6 @@ void top::on_event(key_t id, key_t event, const dynamic& payload) {
     }
   }
 
-  if (!confirm_root_key_.empty()) {
-    if (id == confirm_window_id_ && event == "closed"_key) {
-      remove_confirm_objects();
-      confirm_kill_pid_ = 0;
-      return;
-    }
-    if (id == confirm_yes_id_ && event == "clicked"_key) {
-      dynamic req;
-      req["pid"_key] = static_cast<int32_t>(confirm_kill_pid_);
-      req["action"_key] = std::string{"kill"};
-      emit("on_process_action_requested"_key, std::move(req));
-      request_close_confirm();
-      return;
-    }
-    if (id == confirm_no_id_ && event == "clicked"_key) {
-      request_close_confirm();
-      return;
-    }
-  }
-
   if (!affinity_root_key_.empty()) {
     if (id == affinity_window_id_ && event == "closed"_key) {
       remove_affinity_objects();
@@ -1038,23 +904,47 @@ void top::on_event(key_t id, key_t event, const dynamic& payload) {
       return;
     }
   }
-
-  if (!properties_root_key_.empty()) {
-    if (id == properties_window_id_ && event == "closed"_key) {
-      remove_properties_objects();
-      properties_dialog_pid_ = 0;
-      return;
-    }
-    if (id == properties_close_id_ && event == "clicked"_key) {
-      request_close_properties();
-      return;
-    }
-  }
 }
 
 // ── Registration ──────────────────────────────────────────────────────────────
 
+// Pure-data class reflected over by the PropertiesDialog show_properties_dialog()
+// opens (see make_process_details()): every field is a plain, already-
+// display-formatted string or int32 (formatting -- e.g. "Normal (nice 0)"
+// for priority, "0, 1, 2" for affinity -- happens server-side in
+// make_process_details(), not via bison attributes) shown read-only, so
+// Order alone (not Range/Enum/etc.) is all that's needed to match the
+// original hand-built grid's row order.
+void register_process_details_class() {
+  auto proto = dynamic_ptr{"ProcessDetails"_key, {}};
+
+  auto add_field = [&](const char* name, auto default_value, const char* display_name, int32_t order) {
+    proto->addField(
+        key_t{name}, field{default_value, attr<DisplayName>(display_name), attr<Order>(order)});
+  };
+
+  add_field("pid", int32_t{0}, "PID", 0);
+  add_field("ppid", int32_t{0}, "Parent PID", 1);
+  add_field("user", std::string{}, "User", 2);
+  add_field("thread_count", int32_t{0}, "Threads", 3);
+  add_field("start_time", std::string{}, "Started", 4);
+  add_field("priority", std::string{}, "Priority", 5);
+  add_field("affinity", std::string{}, "CPU Affinity", 6);
+  add_field("exe_path", std::string{}, "Executable", 7);
+  add_field("cwd", std::string{}, "Working Dir", 8);
+  add_field("cmdline", std::string{}, "Command", 9);
+
+  (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Process Details"));
+  (*proto)[dynamic::CLASS].addAttribute(
+      attr<Description>("Extended per-process info shown by top's Properties dialog "
+                        "(see top::make_process_details())."));
+
+  dynamic::addClass("wish"_key, std::move(proto), key_t{0U});
+}
+
 void register_top() {
+  register_process_details_class();
+
   auto proto = dynamic_ptr{"Top"_key, {}};
 
   proto->addField(

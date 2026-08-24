@@ -394,7 +394,18 @@ class TopSnapshotTest : public ::testing::Test {
   }
 
   void fire(bison::key_t id, bison::key_t event, dynamic payload = dynamic{}) {
-    auto h = srv_->last_session->top_level_handlers.find(root_);
+    fire_at(root_, id, event, std::move(payload));
+  }
+
+  // Confirm-kill/properties are privately-instantiated MessageBox/
+  // PropertiesDialog form instances (see form::instantiate_child_form()),
+  // each registered as its OWN top_level_handlers entry (keyed by ITS OWN
+  // root, not root_) -- unlike the old raw-element dialogs, whose widget
+  // ids were all routed through top's own on_event(). fire() alone can no
+  // longer reach a confirm/properties dialog's buttons; use this instead,
+  // with the dialog's own root (e.g. from find_root_with_prefix()).
+  void fire_at(const std::string& handler_root, bison::key_t id, bison::key_t event, dynamic payload = dynamic{}) {
+    auto h = srv_->last_session->top_level_handlers.find(handler_root);
     ASSERT_NE(h, srv_->last_session->top_level_handlers.end());
     h->second->on_event(id, event, std::move(payload));
   }
@@ -409,6 +420,62 @@ class TopSnapshotTest : public ::testing::Test {
 
   std::string label_text_at(const std::string& dialog_root, const std::string& suffix) const {
     return label_text(dialog_root + "." + suffix);
+  }
+
+  // Reads one row's displayed value text out of the Properties dialog's
+  // internal ObjectInspector (see properties_dialog.hpp/object_inspector.hpp):
+  // @p properties_root is the PropertiesDialog's own root (e.g. from
+  // find_root_with_prefix(objects, "__properties_dialog_")); the
+  // ObjectInspector itself stamps its Table's rows at an independent path
+  // (its own base_path_ counter, not nested under properties_root -- see
+  // object_inspector::set_target()'s doc comment), so rows are found by
+  // walking the object graph from properties_root + ".vbox.inspector"
+  // rather than guessing a path. Matches by @p display_name (the field's
+  // DisplayName, e.g. "Parent PID") rather than a numeric row index,
+  // mirroring find_row()'s own by-content matching style -- robust against
+  // register_process_details_class()'s field declaration order changing.
+  // ProcessDetails' PropertiesDialog is always read_only, so every row's
+  // value widget is a plain Label; returns "" if no such row is found.
+  std::string process_details_value(const std::string& properties_root, const std::string& display_name) const {
+    auto it = srv_->last_session->ui_objects.find(properties_root + ".vbox.inspector");
+    if (it == srv_->last_session->ui_objects.end())
+      return {};
+    auto* cf = it->second->findField<dynamic_ptr>("children"_key);
+    if (!cf || !*cf)
+      return {};
+    auto& table_field = (*cf)->at(size_t{0});
+    if (!table_field.is<dynamic_ptr>())
+      return {};
+    auto table = table_field.as<dynamic_ptr>();
+    if (!table)
+      return {};
+    auto* tc = table->findField<dynamic_ptr>("children"_key);
+    if (!tc || !*tc)
+      return {};
+    std::string result;
+    (*tc)->forEach([&](bison::key_t, const field& f) {
+      if (!result.empty() || !f.is<dynamic_ptr>())
+        return;
+      auto row = f.as<dynamic_ptr>();
+      if (!row)
+        return;
+      auto* rc = row->findField<dynamic_ptr>("children"_key);
+      if (!rc || !*rc) // TableColumn entries share this map but have no "children".
+        return;
+      auto& name_field = (*rc)->at(size_t{0});
+      if (!name_field.is<dynamic_ptr>())
+        return;
+      auto name_label = name_field.as<dynamic_ptr>();
+      if (!name_label || name_label->as<std::string>("text"_key) != display_name)
+        return;
+      auto& value_field = (*rc)->at(size_t{1});
+      if (!value_field.is<dynamic_ptr>())
+        return;
+      auto value_widget = value_field.as<dynamic_ptr>();
+      if (value_widget)
+        result = value_widget->as<std::string>("text"_key);
+    });
+    return result;
   }
 
   // emit() defers delivery to the render loop's next frame (see
@@ -640,20 +707,24 @@ TEST_F(TopSnapshotTest, KillClickShowsConfirmDialogInsteadOfEmitting) {
   wait_for(got);
   EXPECT_FALSE(got) << "kill should be held back pending confirmation";
 
-  std::string confirm_root = find_root_with_prefix(srv_->last_session->ui_objects, "__top_confirm_");
+  // Confirm-kill is a privately-instantiated MessageBox (see
+  // form::instantiate_child_form()) -- "__message_box_..." is that form
+  // class's own next_available_key() prefix, matching message_box.cpp's
+  // kLayoutYesNo ("body.message", "buttons.btn0"/"btn1" for Yes/No).
+  std::string confirm_root = find_root_with_prefix(srv_->last_session->ui_objects, "__message_box_");
   ASSERT_FALSE(confirm_root.empty()) << "no confirm dialog root registered";
   EXPECT_TRUE(srv_->last_session->top_level_objects.count(bison::key_t{confirm_root}));
-  EXPECT_NE(label_text_at(confirm_root, "message").find("100"), std::string::npos);
-  EXPECT_NE(label_text_at(confirm_root, "message").find("init"), std::string::npos);
+  EXPECT_NE(label_text_at(confirm_root, "body.message").find("100"), std::string::npos);
+  EXPECT_NE(label_text_at(confirm_root, "body.message").find("init"), std::string::npos);
 }
 
 TEST_F(TopSnapshotTest, ConfirmKillYesEmitsOnProcessActionRequestedWithKill) {
   update_snapshot(5.0, {}, 1000.0, 100.0, {{100, "init", "[init]", "S", 5.0, 0.0}});
   fire(element_id(kill_item_of(100)), "clicked"_key);
 
-  std::string confirm_root = find_root_with_prefix(srv_->last_session->ui_objects, "__top_confirm_");
+  std::string confirm_root = find_root_with_prefix(srv_->last_session->ui_objects, "__message_box_");
   ASSERT_FALSE(confirm_root.empty());
-  auto yes_id = srv_->last_session->ui_objects.at(confirm_root + ".buttons.btn_yes")->as<bison::key_t>("__wish_id"_key);
+  auto yes_id = srv_->last_session->ui_objects.at(confirm_root + ".buttons.btn0")->as<bison::key_t>("__wish_id"_key);
 
   bool got = false;
   dynamic captured;
@@ -667,7 +738,10 @@ TEST_F(TopSnapshotTest, ConfirmKillYesEmitsOnProcessActionRequestedWithKill) {
       prev(id, event, std::move(payload));
   };
 
-  fire(yes_id, "clicked"_key);
+  // The Yes button belongs to the confirm MessageBox's own internal tree,
+  // handled by ITS OWN on_event() (top_level_handlers[confirm_root]) --
+  // not top's -- so this must go through fire_at(), not fire().
+  fire_at(confirm_root, yes_id, "clicked"_key);
   wait_for(got);
   ASSERT_TRUE(got);
   EXPECT_EQ(captured.as<int32_t>("pid"_key), 100);
@@ -678,9 +752,9 @@ TEST_F(TopSnapshotTest, ConfirmKillNoCancelsWithoutEmitting) {
   update_snapshot(5.0, {}, 1000.0, 100.0, {{100, "init", "[init]", "S", 5.0, 0.0}});
   fire(element_id(kill_item_of(100)), "clicked"_key);
 
-  std::string confirm_root = find_root_with_prefix(srv_->last_session->ui_objects, "__top_confirm_");
+  std::string confirm_root = find_root_with_prefix(srv_->last_session->ui_objects, "__message_box_");
   ASSERT_FALSE(confirm_root.empty());
-  auto no_id = srv_->last_session->ui_objects.at(confirm_root + ".buttons.btn_no")->as<bison::key_t>("__wish_id"_key);
+  auto no_id = srv_->last_session->ui_objects.at(confirm_root + ".buttons.btn1")->as<bison::key_t>("__wish_id"_key);
 
   bool got = false;
   auto prev = std::move(srv_->last_session->emit_event);
@@ -691,7 +765,7 @@ TEST_F(TopSnapshotTest, ConfirmKillNoCancelsWithoutEmitting) {
       prev(id, event, std::move(payload));
   };
 
-  fire(no_id, "clicked"_key);
+  fire_at(confirm_root, no_id, "clicked"_key);
   wait_for(got);
   EXPECT_FALSE(got);
 }
@@ -769,7 +843,7 @@ TEST_F(TopSnapshotTest, AffinityDialogOpensWithCurrentCoresPrechecked) {
   EXPECT_TRUE(srv_->last_session->top_level_objects.count(bison::key_t{affinity_root}));
 
   auto core_checked = [&](int i) {
-    return srv_->last_session->ui_objects.at(affinity_root + ".cores.core" + std::to_string(i))
+    return srv_->last_session->ui_objects.at(affinity_root + ".vbox.cores.core" + std::to_string(i))
         ->as<bool>("value"_key);
   };
   EXPECT_TRUE(core_checked(0));
@@ -788,7 +862,7 @@ TEST_F(TopSnapshotTest, AffinityApplyEmitsSetAffinityWithCheckedCores) {
   // Uncheck core 1 directly (as if render_checkbox() had already toggled
   // it), then Apply -- the handler reads each checkbox's current `value`
   // field rather than tracking a separate "changed" history.
-  srv_->last_session->ui_objects.at(affinity_root + ".cores.core1")["value"_key] = false;
+  srv_->last_session->ui_objects.at(affinity_root + ".vbox.cores.core1")["value"_key] = false;
 
   bool got = false;
   dynamic captured;
@@ -800,7 +874,7 @@ TEST_F(TopSnapshotTest, AffinityApplyEmitsSetAffinityWithCheckedCores) {
   };
 
   auto apply_id =
-      srv_->last_session->ui_objects.at(affinity_root + ".buttons.btn_apply")->as<bison::key_t>("__wish_id"_key);
+      srv_->last_session->ui_objects.at(affinity_root + ".vbox.buttons.btn_apply")->as<bison::key_t>("__wish_id"_key);
   fire(apply_id, "clicked"_key);
   wait_for(got);
   ASSERT_TRUE(got);
@@ -817,7 +891,7 @@ TEST_F(TopSnapshotTest, AffinityApplyWithNoCoresCheckedDoesNotEmitAndSetsStatus)
 
   std::string affinity_root = find_root_with_prefix(srv_->last_session->ui_objects, "__top_affinity_");
   ASSERT_FALSE(affinity_root.empty());
-  srv_->last_session->ui_objects.at(affinity_root + ".cores.core0")["value"_key] = false;
+  srv_->last_session->ui_objects.at(affinity_root + ".vbox.cores.core0")["value"_key] = false;
 
   bool got = false;
   srv_->last_session->emit_event = [&](bison::key_t, bison::key_t event, dynamic) {
@@ -826,7 +900,7 @@ TEST_F(TopSnapshotTest, AffinityApplyWithNoCoresCheckedDoesNotEmitAndSetsStatus)
   };
 
   auto apply_id =
-      srv_->last_session->ui_objects.at(affinity_root + ".buttons.btn_apply")->as<bison::key_t>("__wish_id"_key);
+      srv_->last_session->ui_objects.at(affinity_root + ".vbox.buttons.btn_apply")->as<bison::key_t>("__wish_id"_key);
   fire(apply_id, "clicked"_key);
   wait_for(got);
   EXPECT_FALSE(got);
@@ -852,9 +926,12 @@ TEST_F(TopSnapshotTest, PropertiesClickShowsLoadingAndRequestsDetails) {
   ASSERT_TRUE(got);
   EXPECT_EQ(captured.as<int32_t>("pid"_key), 100);
 
-  std::string properties_root = find_root_with_prefix(srv_->last_session->ui_objects, "__top_properties_");
+  // The Properties dialog is a privately-instantiated PropertiesDialog (see
+  // form::instantiate_child_form()) -- "__properties_dialog_..." is that
+  // form class's own next_available_key() prefix.
+  std::string properties_root = find_root_with_prefix(srv_->last_session->ui_objects, "__properties_dialog_");
   ASSERT_FALSE(properties_root.empty());
-  EXPECT_NE(label_text_at(properties_root, "grid.pid_row").find("100"), std::string::npos);
+  EXPECT_EQ(process_details_value(properties_root, "PID"), "100");
 }
 
 TEST_F(TopSnapshotTest, ReportProcessDetailsPopulatesDialog) {
@@ -875,12 +952,12 @@ TEST_F(TopSnapshotTest, ReportProcessDetailsPopulatesDialog) {
   report["affinity_cores"_key] = std::vector<int32_t>{0, 1};
   proxy_->call("report_process_details"_key, std::move(report)).get();
 
-  std::string properties_root = find_root_with_prefix(srv_->last_session->ui_objects, "__top_properties_");
+  std::string properties_root = find_root_with_prefix(srv_->last_session->ui_objects, "__properties_dialog_");
   ASSERT_FALSE(properties_root.empty());
-  EXPECT_NE(label_text_at(properties_root, "grid.ppid_row").find("1"), std::string::npos);
-  EXPECT_NE(label_text_at(properties_root, "grid.user_row").find("root"), std::string::npos);
-  EXPECT_NE(label_text_at(properties_root, "grid.threads_row").find("4"), std::string::npos);
-  EXPECT_NE(label_text_at(properties_root, "grid.exe_row").find("/sbin/init"), std::string::npos);
+  EXPECT_EQ(process_details_value(properties_root, "Parent PID"), "1");
+  EXPECT_EQ(process_details_value(properties_root, "User"), "root");
+  EXPECT_EQ(process_details_value(properties_root, "Threads"), "4");
+  EXPECT_EQ(process_details_value(properties_root, "Executable"), "/sbin/init");
 }
 
 TEST_F(TopSnapshotTest, ReportProcessDetailsIgnoredForStalePid) {
@@ -888,7 +965,7 @@ TEST_F(TopSnapshotTest, ReportProcessDetailsIgnoredForStalePid) {
       5.0, {}, 1000.0, 100.0, {{100, "init", "[init]", "S", 5.0, 0.0}, {200, "sshd", "[sshd]", "S", 1.0, 0.0}});
   fire(element_id(properties_item_of(100)), "clicked"_key);
 
-  std::string properties_root = find_root_with_prefix(srv_->last_session->ui_objects, "__top_properties_");
+  std::string properties_root = find_root_with_prefix(srv_->last_session->ui_objects, "__properties_dialog_");
   ASSERT_FALSE(properties_root.empty());
 
   // A response for a *different* pid (e.g. a slow response that arrived
@@ -911,7 +988,7 @@ TEST_F(TopSnapshotTest, ReportProcessDetailsIgnoredForStalePid) {
   // Still showing the "Loading..." placeholder show_properties_dialog()
   // set for pid 100 -- the pid-200 response must be ignored outright, not
   // just fail to overwrite a value that happened to already be filled in.
-  EXPECT_EQ(label_text_at(properties_root, "grid.ppid_row"), "Loading...");
+  EXPECT_EQ(process_details_value(properties_root, "User"), "Loading...");
 }
 
 TEST_F(TopSnapshotTest, ReportProcessDetailsNotFoundShowsError) {
@@ -924,9 +1001,9 @@ TEST_F(TopSnapshotTest, ReportProcessDetailsNotFoundShowsError) {
   report["error"_key] = std::string{"No such process"};
   proxy_->call("report_process_details"_key, std::move(report)).get();
 
-  std::string properties_root = find_root_with_prefix(srv_->last_session->ui_objects, "__top_properties_");
+  std::string properties_root = find_root_with_prefix(srv_->last_session->ui_objects, "__properties_dialog_");
   ASSERT_FALSE(properties_root.empty());
-  EXPECT_EQ(label_text_at(properties_root, "grid.ppid_row"), "No such process");
+  EXPECT_EQ(process_details_value(properties_root, "User"), "No such process");
 }
 
 // ── Action result: status label ───────────────────────────────────────────────
@@ -977,5 +1054,5 @@ TEST_F(TopSnapshotTest, VanishedProcessKillItemNoLongerTriggersConfirm) {
   fire(kill_id, "clicked"_key);
   wait_for(got);
   EXPECT_FALSE(got);
-  EXPECT_TRUE(find_root_with_prefix(srv_->last_session->ui_objects, "__top_confirm_").empty());
+  EXPECT_TRUE(find_root_with_prefix(srv_->last_session->ui_objects, "__message_box_").empty());
 }

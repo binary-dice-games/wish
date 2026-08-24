@@ -84,6 +84,15 @@ namespace bdg::wish {
  * contract, e.g. a curve editor) is out of scope here -- tag it `Hidden`
  * and have the owning app append its own widget as an extra row after this
  * table, exactly as it would have built the whole row by hand before.
+ *
+ * `read_only` (default `false`) replaces every entry in the dispatch table
+ * above with a plain read-only `Label` (formatted via
+ * `field::get_as<std::string>()`, so an `Enum`/`EnumFlags` field still shows
+ * its name rather than a raw index) instead of the type-appropriate editable
+ * widget, and disables `DropTarget` handling -- used e.g. by
+ * `PropertiesDialog` (`src/ui/forms/properties_dialog.hpp`) for a purely
+ * informational view. `show_description_panel` (default `true`) omits the
+ * description `Label` below the field table entirely when `false`.
  */
 class object_inspector : public ui_element {
  public:

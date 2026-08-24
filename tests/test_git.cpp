@@ -9,9 +9,11 @@
 #include "src/bison/bison_object.hpp"
 #include "src/rmi/rmi.hpp"
 
+#include <chrono>
 #include <memory>
 #include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 using namespace bdg::bison;
@@ -195,6 +197,80 @@ class GitRepoRmiTest : public ::testing::Test {
     return (*cf)->size();
   }
 
+  // ── Confirm-dialog test helpers ──────────────────────────────────────────
+  //
+  // Sidebar rows (and their MenuButton/MenuItem children) are registered
+  // only via rebuild_section()'s direct children-map assignment -- not
+  // merged into ui_objects' dot-path map -- so they must be found by
+  // walking the section's "children" field, same technique test_top.cpp's
+  // find_row()/nth_child() use for row cells. The confirm dialog itself,
+  // by contrast, is a privately-instantiated MessageBox (form::
+  // instantiate_child_form()), found by dot-path prefix instead
+  // (find_root_with_prefix()).
+
+  static dynamic_ptr nth_child(const dynamic_ptr& parent, size_t index) {
+    if (!parent)
+      return nullptr;
+    auto* cf = parent->findField<dynamic_ptr>("children"_key);
+    if (!cf || !*cf)
+      return nullptr;
+    auto& f = (*cf)->at(index);
+    if (!f.is<dynamic_ptr>())
+      return nullptr;
+    return f.as<dynamic_ptr>();
+  }
+
+  static bison::key_t element_id(const dynamic_ptr& elem) {
+    return elem ? elem->as<bison::key_t>("__wish_id"_key) : bison::key_t{};
+  }
+
+  // Branch sidebar row at `index` (HorizontalLayout: Selectable + MenuButton).
+  dynamic_ptr branch_row(size_t index) const {
+    auto it = srv_->last_session->ui_objects.find(root_ + ".vbox.body.sidebar.branches");
+    if (it == srv_->last_session->ui_objects.end())
+      return nullptr;
+    return nth_child(it->second, index);
+  }
+
+  // Row's "Delete" MenuItem -- second entry in make_sidebar_row()'s
+  // menu_items list ({"Merge into current", "Delete"}), under the row's
+  // MenuButton (its second child, after the Selectable).
+  dynamic_ptr delete_item_of_branch(size_t index) const {
+    return nth_child(nth_child(branch_row(index), 1), 1);
+  }
+
+  void fire(bison::key_t id, bison::key_t event, dynamic payload = dynamic{}) {
+    fire_at(root_, id, event, std::move(payload));
+  }
+
+  // The confirm dialog is a privately-instantiated MessageBox form
+  // instance (see form::instantiate_child_form()), registered as its OWN
+  // top_level_handlers entry (keyed by ITS OWN root, not root_) -- fire()
+  // alone can't reach its buttons; use this instead, with the dialog's
+  // own root (e.g. from find_root_with_prefix()).
+  void fire_at(const std::string& handler_root, bison::key_t id, bison::key_t event, dynamic payload = dynamic{}) {
+    auto h = srv_->last_session->top_level_handlers.find(handler_root);
+    ASSERT_NE(h, srv_->last_session->top_level_handlers.end());
+    h->second->on_event(id, event, std::move(payload));
+  }
+
+  static std::string find_root_with_prefix(const wish::name_map& objects, const std::string& prefix) {
+    for (const auto& [k, _] : objects) {
+      if (k.rfind(prefix, 0) == 0 && k.find('.') == std::string::npos)
+        return k;
+    }
+    return {};
+  }
+
+  // emit() defers delivery to the render loop's next frame (see
+  // session.hpp's contract on emit_event), so callers must spin briefly for
+  // it -- same idiom test_top.cpp's wait_for() uses.
+  static void wait_for(const bool& flag) {
+    auto t0 = std::chrono::steady_clock::now();
+    while (!flag && std::chrono::steady_clock::now() - t0 < std::chrono::seconds(2))
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+
   memory_server_transport transport_;
   std::unique_ptr<SessionCapturingServer> srv_;
   std::unique_ptr<bdg::bison::rmi::client> client_;
@@ -301,4 +377,86 @@ TEST_F(GitRepoRmiTest, AppendCommandLogAddsRowsToLogTable) {
   EXPECT_EQ(child_array_count(root_ + "_log.vbox.log_table"), 1u);
   call("append_command_log"_key, make_log_call_args("git push", 1, false, "rejected"));
   EXPECT_EQ(child_array_count(root_ + "_log.vbox.log_table"), 2u);
+}
+
+// ── Delete branch: confirmation dialog ────────────────────────────────────────
+
+TEST_F(GitRepoRmiTest, DeleteBranchClickShowsConfirmDialogInsteadOfEmitting) {
+  call("update_refs"_key, make_refs_args("main", {{"feature", false, "", 0, 0}}));
+
+  bool got = false;
+  auto prev = std::move(srv_->last_session->emit_event);
+  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
+    if (event == "delete_branch_requested"_key)
+      got = true;
+    if (prev)
+      prev(id, event, std::move(payload));
+  };
+
+  fire(element_id(delete_item_of_branch(0)), "clicked"_key);
+  wait_for(got);
+  EXPECT_FALSE(got) << "delete should be held back pending confirmation";
+
+  // The confirm dialog is a privately-instantiated MessageBox (see
+  // form::instantiate_child_form()) -- "__message_box_..." is that form
+  // class's own next_available_key() prefix, matching message_box.cpp's
+  // kLayoutYesNo ("body.message", "buttons.btn0"/"btn1" for Yes/No).
+  std::string confirm_root = find_root_with_prefix(srv_->last_session->ui_objects, "__message_box_");
+  ASSERT_FALSE(confirm_root.empty()) << "no confirm dialog root registered";
+  EXPECT_TRUE(srv_->last_session->top_level_objects.count(bison::key_t{confirm_root}));
+  auto it = srv_->last_session->ui_objects.find(confirm_root + ".body.message");
+  ASSERT_NE(it, srv_->last_session->ui_objects.end());
+  EXPECT_NE(it->second->as<std::string>("text"_key).find("feature"), std::string::npos);
+}
+
+TEST_F(GitRepoRmiTest, ConfirmDeleteBranchYesEmitsDeleteBranchRequested) {
+  call("update_refs"_key, make_refs_args("main", {{"feature", false, "", 0, 0}}));
+  fire(element_id(delete_item_of_branch(0)), "clicked"_key);
+
+  std::string confirm_root = find_root_with_prefix(srv_->last_session->ui_objects, "__message_box_");
+  ASSERT_FALSE(confirm_root.empty());
+  auto yes_id = srv_->last_session->ui_objects.at(confirm_root + ".buttons.btn0")->as<bison::key_t>("__wish_id"_key);
+
+  bool got = false;
+  dynamic captured;
+  auto prev = std::move(srv_->last_session->emit_event);
+  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
+    if (event == "delete_branch_requested"_key) {
+      got = true;
+      captured = std::move(payload);
+    }
+    if (prev)
+      prev(id, event, std::move(payload));
+  };
+
+  // The Yes button belongs to the confirm MessageBox's own internal tree,
+  // handled by ITS OWN on_event() (top_level_handlers[confirm_root]) --
+  // not git_repo's -- so this must go through fire_at(), not fire().
+  fire_at(confirm_root, yes_id, "clicked"_key);
+  wait_for(got);
+  ASSERT_TRUE(got);
+  EXPECT_EQ(captured.as<std::string>("name"_key), "feature");
+  EXPECT_FALSE(captured.as<bool>("force"_key));
+}
+
+TEST_F(GitRepoRmiTest, ConfirmDeleteBranchNoCancelsWithoutEmitting) {
+  call("update_refs"_key, make_refs_args("main", {{"feature", false, "", 0, 0}}));
+  fire(element_id(delete_item_of_branch(0)), "clicked"_key);
+
+  std::string confirm_root = find_root_with_prefix(srv_->last_session->ui_objects, "__message_box_");
+  ASSERT_FALSE(confirm_root.empty());
+  auto no_id = srv_->last_session->ui_objects.at(confirm_root + ".buttons.btn1")->as<bison::key_t>("__wish_id"_key);
+
+  bool got = false;
+  auto prev = std::move(srv_->last_session->emit_event);
+  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
+    if (event == "delete_branch_requested"_key)
+      got = true;
+    if (prev)
+      prev(id, event, std::move(payload));
+  };
+
+  fire_at(confirm_root, no_id, "clicked"_key);
+  wait_for(got);
+  EXPECT_FALSE(got);
 }

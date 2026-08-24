@@ -129,12 +129,15 @@ class SessionCapturingServer : public wish::server {
 
 // Helper: find the root key for the internal form tree (starts with
 // "__zip_", no dot -- i.e. it is the top-level entry not a child path).
-// Excludes the prompt/confirm/contents sub-dialog roots, which use their own
-// "__zip_prompt_"/"__zip_confirm_"/"__zip_contents_" prefixes.
+// Excludes the prompt/contents sub-dialog roots, which use their own
+// "__zip_prompt_"/"__zip_contents_" prefixes. (The overwrite-confirm dialog
+// is a privately-instantiated MessageBox -- see form::instantiate_child_form()
+// -- so it uses that form class's own "__message_box_" prefix instead, and
+// never needed excluding here.)
 static std::string find_form_root(const wish::name_map& objects) {
   for (const auto& [k, _] : objects) {
     if (k.rfind("__zip_", 0) == 0 && k.find('.') == std::string::npos && k.find("_prompt_") == std::string::npos &&
-        k.find("_confirm_") == std::string::npos && k.find("_contents_") == std::string::npos)
+        k.find("_contents_") == std::string::npos)
       return k;
   }
   return {};
@@ -546,7 +549,10 @@ TEST_F(ZipEventTest, CompressNameCollidingWithExistingEntryShowsOverwriteConfirm
   wait_for(got);
   EXPECT_FALSE(got) << "compress should be held back pending overwrite confirmation";
 
-  std::string confirm_root = find_root_with_prefix(srv_->last_session->ui_objects, "__zip_confirm_");
+  // Overwrite-confirm is a privately-instantiated MessageBox (see
+  // form::instantiate_child_form()) -- "__message_box_..." is that form
+  // class's own next_available_key() prefix.
+  std::string confirm_root = find_root_with_prefix(srv_->last_session->ui_objects, "__message_box_");
   ASSERT_FALSE(confirm_root.empty());
   EXPECT_TRUE(srv_->last_session->top_level_objects.count(bison::key_t{confirm_root}));
 }
@@ -563,9 +569,12 @@ TEST_F(ZipEventTest, ConfirmOverwriteYesEmitsOnCompressRequested) {
   handler_->on_event(widget_id_at(prompt_root + ".name_input"), "changed"_key, changed);
   handler_->on_event(widget_id_at(prompt_root + ".buttons.btn_ok"), "clicked"_key, dynamic{});
 
-  std::string confirm_root = find_root_with_prefix(srv_->last_session->ui_objects, "__zip_confirm_");
+  // Overwrite-confirm is a privately-instantiated MessageBox (see
+  // form::instantiate_child_form()), with a "yes_no" preset ("buttons.btn0"/
+  // "btn1" for Yes/No -- see message_box.cpp's kLayoutYesNo).
+  std::string confirm_root = find_root_with_prefix(srv_->last_session->ui_objects, "__message_box_");
   ASSERT_FALSE(confirm_root.empty());
-  auto yes_id = widget_id_at(confirm_root + ".buttons.btn_yes");
+  auto yes_id = widget_id_at(confirm_root + ".buttons.btn0");
 
   bool got = false;
   dynamic captured;
@@ -579,7 +588,13 @@ TEST_F(ZipEventTest, ConfirmOverwriteYesEmitsOnCompressRequested) {
       prev(id, event, std::move(payload));
   };
 
-  handler_->on_event(yes_id, "clicked"_key, dynamic{});
+  // The Yes button belongs to the confirm MessageBox's own internal tree,
+  // handled by ITS OWN on_event() (top_level_handlers[confirm_root]) -- not
+  // zip's -- so this must be looked up separately rather than routed
+  // through handler_.
+  auto confirm_handler = srv_->last_session->top_level_handlers.find(confirm_root)->second;
+  ASSERT_NE(confirm_handler, nullptr);
+  confirm_handler->on_event(yes_id, "clicked"_key, dynamic{});
 
   wait_for(got);
   ASSERT_TRUE(got);
@@ -598,9 +613,9 @@ TEST_F(ZipEventTest, ConfirmOverwriteNoCancelsWithoutEmitting) {
   handler_->on_event(widget_id_at(prompt_root + ".name_input"), "changed"_key, changed);
   handler_->on_event(widget_id_at(prompt_root + ".buttons.btn_ok"), "clicked"_key, dynamic{});
 
-  std::string confirm_root = find_root_with_prefix(srv_->last_session->ui_objects, "__zip_confirm_");
+  std::string confirm_root = find_root_with_prefix(srv_->last_session->ui_objects, "__message_box_");
   ASSERT_FALSE(confirm_root.empty());
-  auto no_id = widget_id_at(confirm_root + ".buttons.btn_no");
+  auto no_id = widget_id_at(confirm_root + ".buttons.btn1");
 
   bool got = false;
   auto prev = std::move(srv_->last_session->emit_event);
@@ -611,7 +626,11 @@ TEST_F(ZipEventTest, ConfirmOverwriteNoCancelsWithoutEmitting) {
       prev(id, event, std::move(payload));
   };
 
-  handler_->on_event(no_id, "clicked"_key, dynamic{});
+  // See ConfirmOverwriteYesEmitsOnCompressRequested above for why this goes
+  // through the confirm MessageBox's own handler, not handler_.
+  auto confirm_handler = srv_->last_session->top_level_handlers.find(confirm_root)->second;
+  ASSERT_NE(confirm_handler, nullptr);
+  confirm_handler->on_event(no_id, "clicked"_key, dynamic{});
 
   wait_for(got);
   EXPECT_FALSE(got);
@@ -705,7 +724,7 @@ TEST_F(ZipEventTest, ExtractDestCollidingWithExistingFileIsRejected) {
   EXPECT_EQ(
       srv_->last_session->ui_objects.at(root_ + ".main.status")->as<std::string>("text"_key),
       "A file with that name already exists.");
-  EXPECT_TRUE(find_root_with_prefix(srv_->last_session->ui_objects, "__zip_confirm_").empty());
+  EXPECT_TRUE(find_root_with_prefix(srv_->last_session->ui_objects, "__message_box_").empty());
 }
 
 TEST_F(ZipEventTest, ViewContentsClickedRequiresAZipFileSelection) {

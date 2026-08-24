@@ -531,6 +531,31 @@ void web_renderer::render_node(const ui_element& node, const context& s) {
   };
 }
 
+void web_renderer::capture_hit_test_for_last_item(const ui_element& node) {
+  if (!node.get_as<bool>(bison::key_t{"visible"}, true))
+    return;
+
+  auto id = node.get_as<bison::key_t>(bison::key_t{"__wish_id"}, bison::key_t{});
+  if (id.id == 0)
+    return; // node was never assigned an id (e.g. a manually built test tree)
+
+  // Unlike render_node()'s hit-test capture, which reads last_resolved_rect_min_/
+  // max_ (resolved via render_node()'s own BeginGroup()/EndGroup()-wrap or
+  // self-report logic), this reads ImGui's plain post-item state directly --
+  // correct here because the caller (render_table(), for a TableRow's
+  // row-spanning Selectable) guarantees this runs immediately after drawing
+  // the one item that IS this node's whole rect, with no wrap needed.
+  hit_test_map_[id] = automation::hit_test_entry{
+      ImGui::GetItemRectMin().x,
+      ImGui::GetItemRectMin().y,
+      ImGui::GetItemRectMax().x,
+      ImGui::GetItemRectMax().y,
+      ImGui::IsItemHovered(),
+      ImGui::IsItemActive(),
+      ImGui::IsItemVisible(),
+  };
+}
+
 namespace {
 /// Drains `queries` (a `pending_tree_queries_` snapshot) and sends each a
 /// `TREE_SNAPSHOT` reply built against @p ui_objects / @p hits. Shared by

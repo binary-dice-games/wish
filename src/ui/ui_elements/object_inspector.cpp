@@ -216,6 +216,11 @@ void object_inspector::set_target(context& s, dynamic_ptr target) {
   (*table_children)[idx++] = dynamic_ptr{col_field};
   (*table_children)[idx++] = dynamic_ptr{col_value};
 
+  auto* read_only_f = findField<bool>("read_only"_key);
+  bool read_only = read_only_f && *read_only_f;
+  auto* show_description_f = findField<bool>("show_description_panel"_key);
+  bool show_description_panel = !show_description_f || *show_description_f;
+
   if (target_) {
     for (const auto& rf : reflect_fields(*target_)) {
       std::string display_name;
@@ -237,7 +242,19 @@ void object_inspector::set_target(context& s, dynamic_ptr target) {
       const field& proto_field = *rf.proto_field;
       field& live = (*target_)[rf.field_key]; // resolves + caches attrs onto the instance
 
-      if (proto_field.is<bool>()) {
+      if (read_only && (proto_field.is<bool>() || proto_field.is<int32_t>() || proto_field.is<float>() ||
+                        proto_field.is<std::string>() || proto_field.is<std::vector<float>>())) {
+        // read_only skips every otherwise-editable widget type in favor of a
+        // plain Label -- field::get_as<std::string>() already formats an
+        // Enum/EnumFlags int32 by name rather than raw index, so this is
+        // strictly more readable than the editable widgets it replaces, not
+        // just a disabled version of them.
+        editable = false;
+        value_widget = stamp(s, "Label"_key, row_path + ".value");
+        value_widget["text"_key] = proto_field.is<std::vector<float>>()
+            ? floats_to_text(live.get_as<std::vector<float>>())
+            : live.get_as<std::string>();
+      } else if (proto_field.is<bool>()) {
         value_widget = stamp(s, "Checkbox"_key, row_path + ".value");
         value_widget["label"_key] = std::string{};
         value_widget["value"_key] = live.as<bool>();
@@ -316,7 +333,7 @@ void object_inspector::set_target(context& s, dynamic_ptr target) {
         value_widget = stamp(s, "Button"_key, row_path + ".value");
         value_widget["label"_key] = reference_label(live.as<dynamic_ptr>());
         value_widget["width"_key] = -1;
-        if (const auto* dt = proto_field.findAttribute<DropTarget>()) {
+        if (const auto* dt = read_only ? nullptr : proto_field.findAttribute<DropTarget>()) {
           drop_target = true;
           value_widget["drag_type"_key] = std::string{};
           value_widget["drop_type"_key] = dt->drop_type();
@@ -351,15 +368,18 @@ void object_inspector::set_target(context& s, dynamic_ptr target) {
 
   table["children"_key] = table_children;
 
-  description_label_ = stamp(s, "Label"_key, base_path_ + ".description");
-  description_label_["wrap"_key] = true;
-  description_label_["text"_key] = std::string{"Select a field to see its description."};
+  if (show_description_panel) {
+    description_label_ = stamp(s, "Label"_key, base_path_ + ".description");
+    description_label_["wrap"_key] = true;
+    description_label_["text"_key] = std::string{"Select a field to see its description."};
+  }
 
   auto* existing = findField<dynamic_ptr>("children"_key);
   dynamic_ptr self_children = (existing && *existing) ? *existing : dynamic_ptr{key_t{0U}, {}};
   self_children->clear();
   (*self_children)[size_t{0}] = dynamic_ptr{table};
-  (*self_children)[size_t{1}] = dynamic_ptr{description_label_};
+  if (show_description_panel)
+    (*self_children)[size_t{1}] = dynamic_ptr{description_label_};
   (*this)["children"_key] = self_children;
 }
 
@@ -452,6 +472,26 @@ void register_object_inspector() {
                             "call the set_target() method (or instantiate with target in the "
                             "construct params), which does."),
           attr<Category>("Content")});
+
+  proto->addField(
+      "read_only"_key,
+      field{
+          false,
+          attr<DisplayName>("Read Only"),
+          attr<Description>("When true, every field renders as a plain read-only Label instead "
+                            "of its normal type-appropriate editable widget, and dynamic_ptr "
+                            "fields are never drop targets even if DropTarget-attributed."),
+          attr<Category>("Behavior")});
+
+  proto->addField(
+      "show_description_panel"_key,
+      field{
+          true,
+          attr<DisplayName>("Show Description Panel"),
+          attr<Description>("When false, the description Label below the field table -- which "
+                            "normally shows the selected row's field description -- is omitted "
+                            "entirely."),
+          attr<Category>("Appearance")});
 
   proto->addMethod(
       "__construct"_key, method{[](dynamic& s, const dynamic& p) -> dynamic {
