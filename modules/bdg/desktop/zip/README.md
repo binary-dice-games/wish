@@ -1,9 +1,13 @@
 # zip
 
 A zip/unzip tool for the client's local filesystem: browse a directory,
-compress a selected file or folder into a `.zip`, extract a selected `.zip`
-into a folder, and view an archive's contents (name, size, compressed size,
-ratio) without extracting it.
+compress one or more selected files/folders into a `.zip`, extract a
+selected `.zip` into a folder, and view an archive's contents (name, size,
+compressed size, ratio) without extracting it. The file table fills the
+window (mc/top-style stretch layout) and supports mc-style multi-row
+selection (plain click, Ctrl+click, Shift+click/drag); a progress bar at
+the bottom of the window tracks the current compress/extract operation
+while the status label names the file currently being processed.
 
 - **server/**: `Zip` form (`register_zip()`), a `bdg::wish::form`
   subclass owning the window/browser/table and all selection and

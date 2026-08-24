@@ -21,6 +21,33 @@ key_t wish_id_of(const Element& element) {
   return element->template as<key_t>("__wish_id"_key);
 }
 
+// Applies one ObjectInspector::field_edit onto `target` in place. Mirrors
+// message_box::on_construct()'s "extract the concrete value and assign that"
+// idiom (see its doc comment): `edit.new_value[edit.field_name]` is itself an
+// attribute-less field (freshly built by handle_changed(), never cloned from
+// a prototype), so assigning it onto `target`'s own field via a raw field
+// copy-assignment would wipe whatever Enum/EnumFlags/etc. attribute that
+// field's prototype declaration carries. Going through the templated
+// field::operator=(const T&) instead -- same as every other value type
+// handled here -- preserves it, and for a std::string committed onto an
+// int32_t Enum/EnumFlags field (handle_changed()'s encoding for those, see
+// its own doc comment) actually parses it via that attribute.
+void apply_field_edit(const dynamic_ptr& target, const object_inspector::field_edit& edit) {
+  if (!target)
+    return;
+  auto& v = edit.new_value[edit.field_name];
+  if (v.is<bool>())
+    (*target)[edit.field_name] = v.as<bool>();
+  else if (v.is<int32_t>())
+    (*target)[edit.field_name] = v.as<int32_t>();
+  else if (v.is<float>())
+    (*target)[edit.field_name] = v.as<float>();
+  else if (v.is<std::string>())
+    (*target)[edit.field_name] = v.as<std::string>();
+  else if (v.is<std::vector<float>>())
+    (*target)[edit.field_name] = v.as<std::vector<float>>();
+}
+
 // The ObjectInspector itself is deliberately NOT declared here -- unlike
 // every other element in this layout, import_json()/build_ui_node() always
 // constructs a plain ui_element (see ui_element.hpp's "All wish element
@@ -120,8 +147,17 @@ void properties_dialog::rebuild() {
   dynamic_ptr inspector_dyn = dynamic::create_instance(key_t{hash("wish")}, "ObjectInspector"_key);
   inspector_elem_ = ui_element_ptr{std::static_pointer_cast<ui_element>(std::shared_ptr<dynamic>(inspector_dyn))};
   inspector_elem_["height"_key] = -1.0f;
-  inspector_elem_["read_only"_key] = true;
-  inspector_elem_["show_description_panel"_key] = false;
+
+  // Forwarded verbatim from this form's own fields (see
+  // register_properties_dialog()) -- read_only defaults true and
+  // show_description_panel defaults false, matching the always-read-only
+  // viewer behavior this form had before these became configurable.
+  auto* read_only_f = findField<bool>("read_only"_key);
+  bool read_only = !read_only_f || *read_only_f;
+  auto* show_description_f = findField<bool>("show_description_panel"_key);
+  bool show_description_panel = show_description_f && *show_description_f;
+  inspector_elem_["read_only"_key] = read_only;
+  inspector_elem_["show_description_panel"_key] = show_description_panel;
   key_t inspector_id = rmi::shared::generate_id();
   c.put_object(inspector_id, inspector_dyn);
   inspector_elem_["__wish_id"_key] = inspector_id;
@@ -170,6 +206,8 @@ void properties_dialog::on_construct(const dynamic& params) {
       return;
     if (v.is<std::string>())
       (*this)[k] = v.as<std::string>();
+    else if (v.is<bool>())
+      (*this)[k] = v.as<bool>();
     else if (v.is<dynamic_ptr>())
       (*this)[k] = v.as<dynamic_ptr>();
   });
@@ -189,12 +227,34 @@ void properties_dialog::set_target(dynamic_ptr target) {
     insp->set_target(sess(), target_);
 }
 
-void properties_dialog::on_event(key_t id, key_t event, const dynamic& /*payload*/) {
+void properties_dialog::on_event(key_t id, key_t event, const dynamic& payload) {
+  // Forward every event to the inspector first: row_selected/row_activated
+  // keep the (optional) description panel in sync, and -- only relevant
+  // when read_only is false -- a value widget's "changed" event resolves to
+  // a field_edit committed straight onto target_, so it always reflects the
+  // live-edited state by the time on_result reports it below. Both no-op
+  // harmlessly for ids/events that aren't theirs (e.g. window_id_'s
+  // "closed"), so this is safe to run unconditionally before the
+  // window/button-specific handling.
+  if (auto* insp = dynamic_cast<object_inspector*>(inspector_elem_.get())) {
+    insp->handle_row_event(id, event, payload);
+    if (event == "changed"_key) {
+      if (auto edit = insp->handle_changed(id, payload))
+        apply_field_edit(target_, *edit);
+    }
+  }
+
   // Mirrors message_box::on_event()'s own window "closed" handling: only
   // safe to tear the tree down once the Window's own "closed" event
   // confirms ImGui actually closed the popup requested via
-  // request_close_at() below.
+  // request_close_at() below. Reports target_ (possibly edited above) back
+  // to the caller first -- this is the only place a close can be observed
+  // from, regardless of whether it came from the Close button or the
+  // window's own X button.
   if (id == window_id_ && event == "closed"_key) {
+    dynamic result;
+    result["target"_key] = target_;
+    emit("on_result"_key, std::move(result));
     release_inspector();
     remove_internal_objects();
     return;
@@ -227,6 +287,32 @@ void register_properties_dialog() {
                             "\"Reflection is process-local\" note)."),
           attr<Category>("Content")});
 
+  proto->addField(
+      "read_only"_key,
+      field{
+          true,
+          attr<DisplayName>("Read Only"),
+          attr<Description>("When true (the default), every field renders as a plain read-only "
+                            "row -- a pure viewer. Set to false to make this an in-place editor: "
+                            "each edit is committed onto `target` as the user makes it, and the "
+                            "(possibly edited) target is reported back in the on_result event's "
+                            "payload when the dialog closes. Forwarded verbatim to the internal "
+                            "ObjectInspector's own `read_only` field."),
+          attr<Category>("Behavior")});
+
+  proto->addField(
+      "show_description_panel"_key,
+      field{
+          false,
+          attr<DisplayName>("Show Description Panel"),
+          attr<Description>("When true, a description panel below the field table shows the "
+                            "selected row's field description. Defaults to false -- the extra "
+                            "panel has no room to earn its keep in a dialog this small, but is "
+                            "available for a larger or more self-explanatory target class. "
+                            "Forwarded verbatim to the internal ObjectInspector's own "
+                            "`show_description_panel` field."),
+          attr<Category>("Appearance")});
+
   // Lets instantiate(..., params) configure title/target at construction
   // time, same rationale as message_box's own __construct hook.
   proto->addMethod("__construct"_key, bison::method{[](dynamic& s, const dynamic& p) -> dynamic {
@@ -236,9 +322,11 @@ void register_properties_dialog() {
 
   (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("PropertiesDialog"));
   (*proto)[dynamic::CLASS].addAttribute(
-      attr<Description>("Read-only \"Properties\" dialog: an ObjectInspector reflecting over "
-                        "`target`'s registered class (via bison attributes) to show one row per "
-                        "visible field, plus a Close button. See properties_dialog.hpp."));
+      attr<Description>("\"Properties\" dialog: an ObjectInspector reflecting over `target`'s "
+                        "registered class (via bison attributes) to show (read_only: true, the "
+                        "default) or edit (read_only: false) one row per visible field, plus a "
+                        "Close button. Closing the dialog emits on_result with the (possibly "
+                        "edited) target. See properties_dialog.hpp."));
 
   dynamic::addClass(
       "wish"_key, std::move(proto), key_t{0U},

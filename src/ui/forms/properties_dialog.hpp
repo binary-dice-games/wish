@@ -10,34 +10,46 @@
 
 namespace bdg::wish {
 
-/// @brief Read-only "Properties" dialog: a title bar, an `ObjectInspector`
+/// @brief "Properties" dialog: a title bar, an `ObjectInspector`
 /// (`src/ui/ui_elements/object_inspector.hpp`) reflecting over `target`, and
 /// a single Close button.
 ///
-/// Built-in reusable counterpart to `MessageBox` for the "show a grid of an
-/// object's fields" dialog every file-manager-style tool otherwise
-/// re-implements by hand as a fixed set of `Label` rows (see e.g. `top`'s
-/// process-properties dialog, `mc`'s file-properties dialog): set `target`
-/// to any bison object whose class is registered in this process (see
-/// `object_inspector.hpp`'s "Reflection is process-local" note), and every
-/// visible field renders as a read-only row automatically, keyed off the
-/// same `DisplayName`/`Description`/`Order` attributes the class was
+/// Built-in reusable counterpart to `MessageBox` for the "show (or edit) a
+/// grid of an object's fields" dialog every file-manager-style tool
+/// otherwise re-implements by hand as a fixed set of `Label`/widget rows
+/// (see e.g. `top`'s process-properties dialog, `mc`'s file-properties
+/// dialog): set `target` to any bison object whose class is registered in
+/// this process (see `object_inspector.hpp`'s "Reflection is process-local"
+/// note), and every visible field renders as a row automatically, keyed off
+/// the same `DisplayName`/`Description`/`Order` attributes the class was
 /// registered with -- no per-field UI code, and no separate "how do I
 /// display this field" logic to keep in sync with the class definition.
 ///
-/// The internal `ObjectInspector` is always built with `read_only: true`
-/// and `show_description_panel: false` -- this form is a pure viewer, not
-/// an editor, and the extra description panel has no room to earn its
-/// keep in a dialog this small.
+/// The internal `ObjectInspector` is built from this form's own `read_only`
+/// (default `true`) and `show_description_panel` (default `false`) fields,
+/// forwarded verbatim -- see those fields' own doc comments in
+/// `register_properties_dialog()`. The read-only default keeps this a pure
+/// viewer out of the box (matching every existing caller, `top`/`mc`'s
+/// process/file properties dialogs); set `read_only: false` to make it a
+/// real in-place editor instead.
+///
+/// When editable, this form applies each field edit onto `target` itself as
+/// the user makes it (via `ObjectInspector::handle_changed()`), so `target`
+/// always reflects the live-edited state. A `DropTarget`-attributed
+/// `dynamic_ptr` field's drop is not handled here -- resolving a dropped
+/// payload into an object is app-specific (see
+/// `ObjectInspector::field_drop`'s doc comment), which this generic form has
+/// no way to do on its own.
 ///
 /// Like `MessageBox`, this can be instantiated remotely by a client (over
 /// RMI) or privately by another server-side `form` via
 /// `form::instantiate_child_form<properties_dialog>(...)` -- the latter is
 /// how `top`/`mc` show their own process/file properties dialogs without
-/// reimplementing this layout. There is no `on_result` event to listen for
-/// (a properties view has nothing to report back); the dialog just closes
-/// itself when its own Close button or the window's own X button is
-/// clicked.
+/// reimplementing this layout. Closing the dialog -- via its own Close
+/// button or the window's own X button -- emits a single `on_result` event
+/// with a `target` field holding the (possibly edited) object, so the
+/// caller always receives the up-to-date object back, then removes the
+/// internal UI tree.
 class properties_dialog : public form {
  public:
   explicit properties_dialog(bison::dynamic&& base);

@@ -7,6 +7,7 @@
 #include <ui/ui_element.hpp>
 
 #include <cstdint>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -31,23 +32,39 @@ class message_box;
 /// `modules/bdg/desktop/zip/client/zip.cpp` for the reference
 /// client, which does the actual miniz-based zip I/O).
 ///
+/// The file table supports mc-style multi-row selection (see
+/// apply_row_click()): a plain click replaces the selection with just that
+/// row, Ctrl+click toggles one row, Shift+click/drag range-selects between
+/// the last plain-clicked row and the hovered one. Compress acts on every
+/// selected file/folder (the ".." pseudo-row is skipped); Extract and View
+/// Contents only act when exactly one `.zip` file is selected.
+///
 /// The "already exists?" overwrite check (for both Compress's archive name
 /// and Extract's destination folder name) is answered from the cached
 /// listing last reported via `update_listing()`, not a filesystem probe --
 /// this form never touches disk, so it has nothing else to check against.
+///
+/// While a compress/extract is in flight, the client streams per-file
+/// progress back via `set({"progress": ..., "progress_label": ...,
+/// "status": ...})` -- `progress` (0..1) and `progress_label` drive the
+/// progress bar at the bottom of the window, while `status` names the file
+/// currently being processed, mirroring mc's `transfer_progress`/
+/// `transfer_label` fields for its own upload/download transfers.
 ///
 /// Emitted events:
 ///   - `"closed"` — window X button; internal UI removed.
 ///   - `"on_navigate"` (`{name, type}`, `type` is `"dir"` or `"path"`) —
 ///     client should re-list the target directory and call
 ///     `update_listing()`.
-///   - `"on_compress_requested"` (`{path, source_name, archive_name}`) —
-///     client should create `path/archive_name` containing `path/source_name`
-///     (recursively, if it is a directory), then report the outcome via
-///     `set({"status": ...})` and refresh via `update_listing()`.
+///   - `"on_compress_requested"` (`{path, source_names, archive_name}`,
+///     `source_names` a plain-string array) — client should create
+///     `path/archive_name` containing every `path/<name>` in `source_names`
+///     (recursively, for a directory), reporting per-file progress as
+///     described above, then report the outcome via `set({"status": ...})`
+///     and refresh via `update_listing()`.
 ///   - `"on_extract_requested"` (`{path, zip_name, dest_name}`) — client
-///     should extract `path/zip_name` into `path/dest_name`, then report the
-///     outcome the same way.
+///     should extract `path/zip_name` into `path/dest_name`, reporting
+///     per-file progress the same way, then report the outcome the same way.
 ///   - `"on_view_contents_requested"` (`{path, name}`) — client should read
 ///     `path/name`'s central directory (without extracting) and call
 ///     `show_contents(name, entries)`.
@@ -70,7 +87,9 @@ class zip : public form {
   bison::dynamic do_show_contents(const bison::dynamic& args);
 
   /// @brief Called from the `__setter` prototype method for every set() call.
-  /// Intercepts `status` to mirror it into the internal status label.
+  /// Intercepts `status` to mirror it into the internal status label, and
+  /// `progress`/`progress_label` to mirror them into the internal progress
+  /// bar.
   bison::dynamic on_set(const bison::dynamic& patch);
 
  protected:
@@ -98,7 +117,7 @@ class zip : public form {
   /// do -- mirrors tree.cpp's `pending_transfer`.
   enum class pending_action { none, compress, extract };
 
-  void fill_table(const std::vector<file_row>& entries, int32_t selected_index = -1);
+  void fill_table(const std::vector<file_row>& entries, const std::set<std::string>& selected_names = {});
   void fill_contents_table(const ui_element_ptr& table, const std::vector<archive_entry>& entries) const;
   void set_status(const std::string& message);
   bool is_zip_name(const std::string& name) const;
@@ -116,21 +135,51 @@ class zip : public form {
   void sort_entries(std::vector<file_row>& entries, int32_t sort_column_id, bool ascending) const;
   void on_table_sorted(const bison::dynamic& payload);
 
+  // ── Multi-selection ──────────────────────────────────────────────────────
+  //
+  // Mirrors mc.cpp's own apply_row_click()/describe_selection() exactly --
+  // see mc.hpp's class doc comment and apply_row_click()'s doc comment there
+  // for the full Ctrl/Shift semantics this reproduces.
+
+  /// @brief Applies one row click's multi-selection semantics to @p
+  /// selected_names_/@p selection_anchor_, given the clicked row's @p idx
+  /// plus the Ctrl/Shift modifier state from the click's payload.
+  static void apply_row_click(
+      std::set<std::string>& selected, int32_t& anchor, const std::vector<file_row>& entries, int32_t idx, bool ctrl,
+      bool shift);
+
+  /// @brief Formats the "Selected: ..." label text for the current
+  /// multi-selection: "(none)", the single name, or "N items".
+  static std::string describe_selection(const std::set<std::string>& selected);
+
+  /// @brief Names in @p selected present in @p entries, excluding the ".."
+  /// pseudo-row -- what the Compress button acts on (unlike mc's
+  /// selected_file_names(), directories are included: Compress archives
+  /// files and folders alike).
+  static std::vector<std::string> selected_target_names(
+      const std::set<std::string>& selected, const std::vector<file_row>& entries);
+
+  /// @brief Builds a `{names: [string...]}` event payload from @p names, the
+  /// same convention as mc.cpp's make_names_payload().
+  static bison::dynamic make_names_payload(const std::vector<std::string>& names);
+
   // ── Name/destination prompt dialog (Compress/Extract, first step) ────────
-  void show_prompt(pending_action action, const std::string& source_name, const std::string& default_value);
+  void show_prompt(
+      pending_action action, const std::vector<std::string>& source_names, const std::string& default_value);
   void request_close_prompt();
   void remove_prompt_objects();
   void on_prompt_confirmed();
 
   // ── Overwrite confirmation dialog (Compress/Extract, second step) ────────
   void show_overwrite_confirm(
-      pending_action action, const std::string& source_name, const std::string& target_name,
+      pending_action action, const std::vector<std::string>& source_names, const std::string& target_name,
       const std::string& message);
 
   /// @brief Emit the compress/extract request event for @p action, using
   /// @p target_name as the archive name (compress) or destination folder
   /// name (extract).
-  void emit_action_request(pending_action action, const std::string& source_name, const std::string& target_name);
+  void emit_action_request(
+      pending_action action, const std::vector<std::string>& source_names, const std::string& target_name);
 
   // ── View Contents dialog ──────────────────────────────────────────────────
   void show_contents_dialog(const std::string& zip_name, const std::vector<archive_entry>& entries);
@@ -149,14 +198,22 @@ class zip : public form {
   ui_element_ptr file_table_ptr_;
   ui_element_ptr selected_label_ptr_;
   ui_element_ptr status_label_ptr_;
+  ui_element_ptr progress_ptr_;
 
   std::string path_; ///< Last directory path reported by the client via update_listing().
   std::vector<file_row> entries_;
   int32_t sort_column_id_{0};
   bool sort_ascending_{true};
 
-  std::string selected_name_;
-  std::string selected_type_; ///< "file" or "dir"; empty if nothing selected.
+  // Multi-selection state: the set of currently-selected entry names
+  // (name-keyed, not index-keyed, so it survives a re-sort -- see
+  // on_table_sorted()'s doc comment), plus the row index Shift+click/drag
+  // range-selects against (-1 == unset). Reset (selection cleared, anchor
+  // unset) whenever entries_ is wholesale replaced by a fresh listing --
+  // see do_update_listing(). Mirrors mc.hpp's selected_local_names_/
+  // local_selection_anchor_ exactly.
+  std::set<std::string> selected_names_;
+  int32_t selection_anchor_{-1};
 
   // Prompt dialog state.
   std::string prompt_root_key_; ///< Empty when no prompt dialog is open.
@@ -165,8 +222,8 @@ class zip : public form {
   bison::key_t prompt_ok_id_;
   bison::key_t prompt_cancel_id_;
   pending_action prompt_action_{pending_action::none};
-  std::string prompt_source_name_; ///< Entry the pending action acts on.
-  std::string prompt_value_;       ///< Live-tracked InputText value.
+  std::vector<std::string> prompt_source_names_; ///< Entries the pending action acts on.
+  std::string prompt_value_;                     ///< Live-tracked InputText value.
 
   /// Overwrite-confirmation dialog (Compress/Extract, second step): a
   /// privately-instantiated MessageBox (see form::instantiate_child_form())

@@ -80,6 +80,14 @@ std::string strip_zip_suffix(const std::string& name) {
 // ScrollY" -- unlike mc's tables, no BordersV (this is a single, full-width
 // panel with no sibling table to visually separate from). InputText
 // EnterReturnsTrue so the path bar only fires "changed" on Enter.
+//
+// file_table carries "height": -1 rather than a fixed "outer_height", the
+// same mc.cpp left_table_/right_table_ technique its own kLayout comment
+// explains: "main" (this Window's sole direct child) hands path_input/
+// selected_label/btn_sep/btn_row/status_sep/status/progress_bar their own
+// natural size first, then gives file_table whatever's left, so the table
+// fills the window and only btn_row/status/progress_bar stay pinned to the
+// bottom regardless of how tall the window is resized.
 static constexpr const char* kLayout = R"json({
   "type": "Window",
   "width": 640, "height": 520,
@@ -92,7 +100,7 @@ static constexpr const char* kLayout = R"json({
         "selected_label": { "type": "Label", "text": "Selected: (none)" },
         "file_table": {
           "type": "Table", "columns": 3, "headers": true,
-          "flags": "Resizable|Sortable|RowBg|Borders|ScrollY", "outer_width": 0, "outer_height": 300,
+          "flags": "Resizable|Sortable|RowBg|Borders|ScrollY", "outer_width": 0, "height": -1,
           "children": {
             "col_name":     { "type": "TableColumn", "label": "Name", "column_id": 0 },
             "col_size":     { "type": "TableColumn", "label": "Size", "flags": "WidthFixed", "init_width": 90, "column_id": 1 },
@@ -111,7 +119,8 @@ static constexpr const char* kLayout = R"json({
           }
         },
         "status_sep": { "type": "Separator" },
-        "status": { "type": "Label", "text": "Ready." }
+        "status": { "type": "Label", "text": "Ready." },
+        "progress_bar": { "type": "ProgressBar", "value": 0.0, "label": "", "width": -1 }
       }
     }
   }
@@ -145,8 +154,17 @@ static constexpr const char* kPromptLayout = R"({
 // the main table's flags minus Sortable -- this table has no click-to-sort
 // handler, same omission tree.cpp's own comment calls out for FileDialog's
 // table.
+//
+// Resizable (no "NoResize"), with contents_table's "height": -1 absorbing
+// any extra height the user resizes into -- the same resizable-window /
+// stretch-content-pinning-the-footer pattern as properties_dialog.cpp's
+// kLayout (src/ui/forms/properties_dialog.cpp): "vbox" (this Window's sole
+// direct child) hands "summary"/"sep"/"btn_row" their own natural size
+// first, then gives contents_table whatever's left, so a long archive
+// listing scrolls inside its own table instead of pushing "btn_row" off the
+// bottom of the window.
 static constexpr const char* kContentsLayout = R"json({
-  "type": "Window", "title": "", "modal": true, "flags": "NoResize|NoCollapse",
+  "type": "Window", "title": "", "modal": true, "flags": "NoCollapse",
   "width": 480, "height": 420,
   "children": {
     "vbox": {
@@ -155,7 +173,7 @@ static constexpr const char* kContentsLayout = R"json({
         "summary": { "type": "Label", "text": "" },
         "contents_table": {
           "type": "Table", "columns": 4, "headers": true,
-          "flags": "Resizable|RowBg|BordersH|ScrollY", "outer_width": 0, "outer_height": 300,
+          "flags": "Resizable|RowBg|BordersH|ScrollY", "outer_width": 0, "height": -1,
           "children": {
             "col_name":       { "type": "TableColumn", "label": "Name" },
             "col_size":       { "type": "TableColumn", "label": "Size", "flags": "WidthFixed", "init_width": 80 },
@@ -206,6 +224,7 @@ void zip::on_init() {
   tree.with("main.btn_row.btn_view", [&](const auto& e) { btn_view_id_ = wish_id_of(e); });
   tree.with("main.btn_row.btn_refresh", [&](const auto& e) { btn_refresh_id_ = wish_id_of(e); });
   tree.with("main.status", [&](const auto& e) { status_label_ptr_ = e; });
+  tree.with("main.progress_bar", [&](const auto& e) { progress_ptr_ = e; });
 
   sess().ui_objects.merge(std::move(tree), internal_root_key_);
 
@@ -216,7 +235,7 @@ void zip::on_init() {
 
 // ── Table population and sorting ─────────────────────────────────────────────
 
-void zip::fill_table(const std::vector<file_row>& entries, int32_t selected_index) {
+void zip::fill_table(const std::vector<file_row>& entries, const std::set<std::string>& selected_names) {
   if (!file_table_ptr_)
     return;
   auto* children_p = file_table_ptr_->findField<dynamic_ptr>("children"_key);
@@ -229,7 +248,7 @@ void zip::fill_table(const std::vector<file_row>& entries, int32_t selected_inde
   for (auto& entry : entries) {
     ui_element_ptr row{dynamic::instantiate("wish"_key, "TableRow"_key)};
     row["order"_key] = idx;
-    row["selected"_key] = idx == selected_index;
+    row["selected"_key] = selected_names.count(entry.name) > 0;
 
     auto make_label = [&](const std::string& text, int32_t order) {
       ui_element_ptr lbl{dynamic::instantiate("wish"_key, "Label"_key)};
@@ -318,14 +337,69 @@ void zip::on_table_sorted(const dynamic& payload) {
     return;
   sort_column_id_ = *col_f;
   sort_ascending_ = *asc_f;
+  // Row positions change under the new sort order, so a Shift-range anchor
+  // (an index) would point at the wrong entry -- reset it. The selection
+  // itself is name-keyed and survives the reorder unchanged (mirrors
+  // mc.cpp's own on_table_sorted() doc comment).
+  selection_anchor_ = -1;
   sort_entries(entries_, sort_column_id_, sort_ascending_);
-  fill_table(entries_);
+  fill_table(entries_, selected_names_);
 }
 
 void zip::set_status(const std::string& message) {
   (*this)["status"_key] = message;
   if (status_label_ptr_)
     status_label_ptr_["text"_key] = message;
+}
+
+// ── Multi-selection ───────────────────────────────────────────────────────────
+
+void zip::apply_row_click(
+    std::set<std::string>& selected, int32_t& anchor, const std::vector<file_row>& entries, int32_t idx, bool ctrl,
+    bool shift) {
+  const std::string& name = entries[static_cast<size_t>(idx)].name;
+  if (shift && anchor >= 0 && static_cast<size_t>(anchor) < entries.size()) {
+    selected.clear();
+    int32_t lo = std::min(anchor, idx);
+    int32_t hi = std::max(anchor, idx);
+    for (int32_t i = lo; i <= hi; ++i)
+      selected.insert(entries[static_cast<size_t>(i)].name);
+  } else if (ctrl) {
+    if (!selected.insert(name).second)
+      selected.erase(name);
+    anchor = idx;
+  } else {
+    selected.clear();
+    selected.insert(name);
+    anchor = idx;
+  }
+}
+
+std::string zip::describe_selection(const std::set<std::string>& selected) {
+  if (selected.empty())
+    return "Selected: (none)";
+  if (selected.size() == 1)
+    return "Selected: " + *selected.begin();
+  return "Selected: " + std::to_string(selected.size()) + " items";
+}
+
+std::vector<std::string> zip::selected_target_names(
+    const std::set<std::string>& selected, const std::vector<file_row>& entries) {
+  std::vector<std::string> names;
+  for (auto& e : entries)
+    if (e.name != ".." && selected.count(e.name))
+      names.push_back(e.name);
+  return names;
+}
+
+dynamic zip::make_names_payload(const std::vector<std::string>& names) {
+  dynamic payload;
+  dynamic arr;
+  size_t i = 0;
+  for (auto& n : names)
+    arr[i++] = n;
+  payload["names"_key] = dynamic_ptr{std::make_shared<dynamic>(std::move(arr))};
+  return payload;
 }
 
 bool zip::is_zip_name(const std::string& name) const {
@@ -365,17 +439,20 @@ dynamic zip::do_update_listing(const dynamic& args) {
     });
   }
 
+  // A freshly-reported listing (possibly a different directory) invalidates
+  // whatever was selected before -- the old names may not even exist here.
+  selected_names_.clear();
+  selection_anchor_ = -1;
+
   sort_entries(entries_, sort_column_id_, sort_ascending_);
-  fill_table(entries_);
+  fill_table(entries_, selected_names_);
   if (path_input_ptr_)
     path_input_ptr_["value"_key] = path_;
   (*this)["path"_key] = path_;
   set_status("Ready.");
 
-  selected_name_.clear();
-  selected_type_.clear();
   if (selected_label_ptr_)
-    selected_label_ptr_["text"_key] = "Selected: (none)";
+    selected_label_ptr_["text"_key] = describe_selection(selected_names_);
   return dynamic{};
 }
 
@@ -407,23 +484,30 @@ dynamic zip::do_show_contents(const dynamic& args) {
 dynamic zip::on_set(const dynamic& patch) {
   if (auto* v = patch.findField<std::string>("status"_key); v && status_label_ptr_)
     status_label_ptr_["text"_key] = *v;
+  if (auto* v = patch.findField<float>("progress"_key); v && progress_ptr_)
+    progress_ptr_["value"_key] = *v;
+  if (auto* v = patch.findField<std::string>("progress_label"_key); v && progress_ptr_)
+    progress_ptr_["label"_key] = *v;
   return patch;
 }
 
 // ── Name/destination prompt dialog ───────────────────────────────────────────
 
-void zip::show_prompt(pending_action action, const std::string& source_name, const std::string& default_value) {
+void zip::show_prompt(
+    pending_action action, const std::vector<std::string>& source_names, const std::string& default_value) {
   // Called from on_event(), outside dispatch -- mirrors
   // tree.cpp's show_overwrite_confirm() for the same reason: sess()
   // would throw here, so this acquires context_wlock directly.
   prompt_action_ = action;
-  prompt_source_name_ = source_name;
+  prompt_source_names_ = source_names;
   prompt_value_ = default_value;
 
   auto tree = import_json(kPromptLayout);
   std::string title = action == pending_action::compress ? "Compress" : "Extract";
-  std::string message = action == pending_action::compress ? ("Create archive from \"" + source_name + "\":")
-                                                             : ("Extract \"" + source_name + "\" to folder:");
+  std::string source_desc = source_names.size() == 1 ? ("\"" + source_names[0] + "\"")
+                                                       : (std::to_string(source_names.size()) + " items");
+  std::string message = action == pending_action::compress ? ("Create archive from " + source_desc + ":")
+                                                             : ("Extract " + source_desc + " to folder:");
   std::string ok_label = action == pending_action::compress ? "Create" : "Extract";
 
   (*tree[""])["title"_key] = title;
@@ -472,15 +556,19 @@ void zip::remove_prompt_objects() {
 }
 
 void zip::emit_action_request(
-    pending_action action, const std::string& source_name, const std::string& target_name) {
+    pending_action action, const std::vector<std::string>& source_names, const std::string& target_name) {
   dynamic req;
   req["path"_key] = path_;
   if (action == pending_action::compress) {
-    req["source_name"_key] = source_name;
+    dynamic arr;
+    size_t i = 0;
+    for (auto& n : source_names)
+      arr[i++] = n;
+    req["source_names"_key] = dynamic_ptr{std::make_shared<dynamic>(std::move(arr))};
     req["archive_name"_key] = target_name;
     emit("on_compress_requested"_key, std::move(req));
   } else if (action == pending_action::extract) {
-    req["zip_name"_key] = source_name;
+    req["zip_name"_key] = source_names.empty() ? std::string{} : source_names[0];
     req["dest_name"_key] = target_name;
     emit("on_extract_requested"_key, std::move(req));
   }
@@ -499,7 +587,8 @@ void zip::on_prompt_confirmed() {
     return;
   }
 
-  if (prompt_action_ == pending_action::compress && value == prompt_source_name_) {
+  if (prompt_action_ == pending_action::compress &&
+      std::find(prompt_source_names_.begin(), prompt_source_names_.end(), value) != prompt_source_names_.end()) {
     set_status("Archive name must differ from the source.");
     return;
   }
@@ -520,26 +609,26 @@ void zip::on_prompt_confirmed() {
     // check against; the client re-validates against the real filesystem
     // when it actually performs the operation).
     pending_action action = prompt_action_;
-    std::string source_name = prompt_source_name_;
+    std::vector<std::string> source_names = prompt_source_names_;
     request_close_prompt();
     std::string message = action == pending_action::compress
         ? ("\"" + value + "\" already exists. Overwrite it?")
         : ("\"" + value + "\" already exists. Merge and overwrite its contents?");
-    show_overwrite_confirm(action, source_name, value, message);
+    show_overwrite_confirm(action, source_names, value, message);
     return;
   }
 
   pending_action action = prompt_action_;
-  std::string source_name = prompt_source_name_;
+  std::vector<std::string> source_names = prompt_source_names_;
   request_close_prompt();
-  emit_action_request(action, source_name, value);
+  emit_action_request(action, source_names, value);
   set_status(action == pending_action::compress ? "Compressing..." : "Extracting...");
 }
 
 // ── Overwrite confirmation dialog ────────────────────────────────────────────
 
 void zip::show_overwrite_confirm(
-    pending_action action, const std::string& source_name, const std::string& target_name,
+    pending_action action, const std::vector<std::string>& source_names, const std::string& target_name,
     const std::string& message) {
   dynamic params;
   params["title"_key] = std::string{"Confirm Overwrite"};
@@ -549,15 +638,15 @@ void zip::show_overwrite_confirm(
 
   // Overwriting confirm_dialog_ (rather than requiring it be empty first) is
   // safe even if a confirm dialog is already open for a different action --
-  // see confirm_dialog_'s doc comment. action/source_name/target_name are
+  // see confirm_dialog_'s doc comment. action/source_names/target_name are
   // captured by value below rather than stashed in member fields (the old
   // confirm_action_/confirm_source_name_/confirm_target_name_), since the
   // lambda is the only place that still needs them.
   confirm_dialog_ = instantiate_child_form<message_box>(
       "MessageBox"_key, std::move(params),
-      [this, action, source_name, target_name](key_t /*event_name*/, const dynamic& payload) {
+      [this, action, source_names, target_name](key_t /*event_name*/, const dynamic& payload) {
         if (payload.as<std::string>("button"_key) == "yes") {
-          emit_action_request(action, source_name, target_name);
+          emit_action_request(action, source_names, target_name);
           set_status(action == pending_action::compress ? "Compressing..." : "Extracting...");
         } else {
           set_status(action == pending_action::compress ? "Compress cancelled." : "Extract cancelled.");
@@ -644,11 +733,15 @@ void zip::on_event(key_t id, key_t event, const dynamic& payload) {
     if (event == "row_selected"_key) {
       int32_t idx = payload.as<int32_t>("index"_key);
       if (idx >= 0 && static_cast<size_t>(idx) < entries_.size()) {
-        selected_name_ = entries_[static_cast<size_t>(idx)].name;
-        selected_type_ = entries_[static_cast<size_t>(idx)].type;
+        bool ctrl = false, shift = false;
+        if (auto* v = payload.findField<bool>("ctrl"_key))
+          ctrl = *v;
+        if (auto* v = payload.findField<bool>("shift"_key))
+          shift = *v;
+        apply_row_click(selected_names_, selection_anchor_, entries_, idx, ctrl, shift);
         if (selected_label_ptr_)
-          selected_label_ptr_["text"_key] = "Selected: " + selected_name_;
-        fill_table(entries_, idx);
+          selected_label_ptr_["text"_key] = describe_selection(selected_names_);
+        fill_table(entries_, selected_names_);
       }
       return;
     }
@@ -673,11 +766,9 @@ void zip::on_event(key_t id, key_t event, const dynamic& payload) {
       return;
     }
     if (event == "sorted"_key) {
-      selected_name_.clear();
-      selected_type_.clear();
-      if (selected_label_ptr_)
-        selected_label_ptr_["text"_key] = "Selected: (none)";
       on_table_sorted(payload);
+      if (selected_label_ptr_)
+        selected_label_ptr_["text"_key] = describe_selection(selected_names_);
       return;
     }
   }
@@ -701,31 +792,43 @@ void zip::on_event(key_t id, key_t event, const dynamic& payload) {
   }
 
   if (id == btn_compress_id_ && event == "clicked"_key) {
-    if (selected_name_.empty() || selected_name_ == "..") {
-      set_status("Select a file or folder to compress.");
+    auto names = selected_target_names(selected_names_, entries_);
+    if (names.empty()) {
+      set_status("Select one or more files/folders to compress.");
       return;
     }
-    show_prompt(pending_action::compress, selected_name_, selected_name_ + ".zip");
+    std::string default_value = names.size() == 1 ? (names[0] + ".zip") : std::string{"Archive.zip"};
+    show_prompt(pending_action::compress, names, default_value);
     return;
   }
 
   if (id == btn_extract_id_ && event == "clicked"_key) {
-    if (selected_name_.empty() || selected_type_ != "file" || !is_zip_name(selected_name_)) {
+    if (selected_names_.size() != 1) {
+      set_status("Select a single .zip file to extract.");
+      return;
+    }
+    const std::string& name = *selected_names_.begin();
+    if (cached_entry_type(name) != "file" || !is_zip_name(name)) {
       set_status("Select a .zip file to extract.");
       return;
     }
-    show_prompt(pending_action::extract, selected_name_, strip_zip_suffix(selected_name_));
+    show_prompt(pending_action::extract, {name}, strip_zip_suffix(name));
     return;
   }
 
   if (id == btn_view_id_ && event == "clicked"_key) {
-    if (selected_name_.empty() || selected_type_ != "file" || !is_zip_name(selected_name_)) {
+    if (selected_names_.size() != 1) {
+      set_status("Select a single .zip file to view its contents.");
+      return;
+    }
+    const std::string& name = *selected_names_.begin();
+    if (cached_entry_type(name) != "file" || !is_zip_name(name)) {
       set_status("Select a .zip file to view its contents.");
       return;
     }
     dynamic req;
     req["path"_key] = path_;
-    req["name"_key] = selected_name_;
+    req["name"_key] = name;
     emit("on_view_contents_requested"_key, std::move(req));
     return;
   }
@@ -793,6 +896,23 @@ void register_zip() {
           std::string{"Ready."},
           attr<DisplayName>("Status"),
           attr<Description>("Text shown in the status bar at the bottom of the window."),
+          attr<Category>("Data")});
+
+  proto->addField(
+      "progress"_key,
+      field{
+          0.0f,
+          attr<DisplayName>("Progress"),
+          attr<Description>("Fill fraction (0..1) of the compress/extract progress bar. The client "
+                            "drives this while an operation is in flight."),
+          attr<Category>("Data")});
+
+  proto->addField(
+      "progress_label"_key,
+      field{
+          std::string{""},
+          attr<DisplayName>("Progress Label"),
+          attr<Description>("Text overlaid on the progress bar (e.g. \"3 / 20 items\")."),
           attr<Category>("Data")});
 
   proto->addMethod(

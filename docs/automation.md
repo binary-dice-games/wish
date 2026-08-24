@@ -383,3 +383,63 @@ def test_saving_shows_confirmation(wish_ui):
   choice for weighted/centered spacing inside a modal `Window`'s
   `HorizontalLayout`/`VerticalLayout`, where an explicit negative `width`/
   `height` on a real widget would hit the hover/click issue above.
+- **`TableRow` children have no automation-trackable `rect`, even the row
+  itself.** `render_table()`'s row loop (`imgui_ui_renderer.cpp`) does call
+  `capture_hit_test_for_last_item()` right after each row's spanning
+  `Selectable()`, but the rows built by a form's own `fill_table()` (mc's,
+  top's, zip's, ...) are constructed via `dynamic::instantiate()` and never
+  assigned a `__wish_id`/`put_object()` the way `import_json()`-built
+  elements are (see e.g. zip.cpp's `fill_table()`) — so `get_widget()` for
+  `"<table_path>.<row_idx>"` (or any of its cells) always returns `rect:
+  null`, and `click()`/`_widget_center()` can't be used on a table row at
+  all. To click a row, compute the pixel position yourself from the
+  *table's own* rect (which *is* tracked): `y = table_rect.y0 + header_h +
+  row_h * row_idx + row_h / 2`, with `header_h`/`row_h` both
+  `ImGui::GetTextLineHeightWithSpacing()` at the default font (24px at this
+  repo's default `--font_size`) — then `ui._page.mouse.click(x, y)`
+  directly rather than going through `click(path)`. This is consistently
+  reliable for a plain click and for the first couple of rows below the
+  header; see the next bullet for why a click deep in a long table can
+  still occasionally miss.
+- **A `Ctrl+click`/`Shift+click` synthesized via `keyboard.down("Control")`
+  + `mouse.click()` is noticeably less reliable than a plain click**, and
+  the failure is silent (no exception; the click just doesn't toggle the
+  row) rather than loud. Across repeated identical attempts in the same
+  session, an individual modifier-click landed anywhere from ~40–100% of
+  the time with no code-side pattern found (browser-side diagnostics
+  confirmed the `keydown`/`keyup` reach `window` correctly and the
+  resulting `mousedown`/`mouseup` do carry `ctrlKey: true` by the time they
+  reach the canvas — see this bullet's own investigation for the checks run
+  — so the flakiness sits somewhere in CDP-command-to-render-loop timing,
+  not in `client.js` or the C++ side). Mitigations: hold `Control` for
+  ~300-400ms before and after the click (`keyboard.down()`, sleep, `click`,
+  sleep, `keyboard.up()`); verify the row's `selected` field via a fresh
+  `get_widget()`/`get_tree()` afterward rather than trusting a screenshot's
+  highlight (a hovered-but-unselected row and a selected row can render
+  with very similar/overlapping blue tones depending on theme — read the
+  `selected` field, don't eyeball it); if a single attempt doesn't stick,
+  prefer re-verifying-then-retrying over blindly retrying — see the next
+  bullet for a trap that direct retries fall into.
+- **Retrying a click at the exact same pixel is not a safe fallback for the
+  above** — two clicks (even each individually a distinct `mouse.click()`
+  call) landing on the same row within ImGui's default double-click
+  window/distance get fused into a double-click *regardless of whether
+  Ctrl was held for either one* (`table.cpp`'s row loop calls
+  `ImGui::IsMouseDoubleClicked()` unconditionally once `Selectable()`
+  reports a hit, with no modifier check gating it — true for every table
+  built this way: mc, top, zip, ...). The promoted double-click fires
+  `row_activated` instead of `row_selected`, which for a directory row
+  navigates away entirely (and for a file/table with `on_navigate`-style
+  handling, clears the whole selection via the resulting fresh listing) —
+  a confusing failure mode if you're mid-multi-select and suddenly find
+  the *entire* selection gone, not just the one row that failed to toggle.
+  If a modifier-click doesn't stick, don't just re-click the same spot;
+  either accept the miss (most workflows don't need a specific row count)
+  or reset from a known state (re-navigate/re-launch) before retrying.
+- **Two intentional clicks close together at the same spot double as a
+  reliable way to *force* `row_activated`** (double-click) when that's
+  what you actually want — e.g. opening a file/archive's detail view
+  without going through a separate "select, then click an action button"
+  two-step (which itself needs the row selection to land first). Two
+  `mouse.click(x, y, delay=50)` calls ~50ms apart at the same coordinates
+  triggered it consistently in practice.
