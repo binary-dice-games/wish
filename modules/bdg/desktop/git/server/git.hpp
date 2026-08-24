@@ -181,6 +181,13 @@ class git_repo : public form {
   ui_element_ptr make_menu_item(const std::string& label, std::function<void()> on_click);
   void assign_id(const ui_element_ptr& el);
 
+  /// @brief Sets status_label_'s text and theme-aware (green/red)
+  /// text_color_light/text_color_dark, a no-op if status_label_ is null.
+  /// Shared by do_command_result() and every purely-local confirmation
+  /// message (e.g. "Copied log entry to clipboard.", "Log cleared.") that
+  /// has no underlying git command/`ok` result of its own to report.
+  void set_status(const std::string& text, bool ok);
+
   /// @brief Emits `create_branch_requested` for whatever's currently in
   /// new_branch_name_text_ (a no-op if empty), then clears both it and the
   /// InputText's own displayed value. Shared by the toolbar's "Branch"

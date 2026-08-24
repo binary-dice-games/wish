@@ -576,6 +576,38 @@ the leftmost cell of the commit `Table`'s each `TableRow`. This means:
   button (both call the shared `submit_new_branch()`) as the two ways to
   submit -- no Enter-to-submit shortcut for this particular field.
 
+- **Every semantic color (file status, diff lines, Log window rows, the
+  status label) is a `text_color_light`/`text_color_dark` pair, not a
+  single `text_color`.** Originally every `Label` this module colors set
+  only `text_color` with One Dark-style pastel hues (`#98C379FF` green,
+  `#E06C75FF` red, `#61AFEFFF` blue, ...) — readable against the dark theme
+  the module was developed/screenshotted against, but reported as hard to
+  read once tested against the light theme, where those same pastel hues
+  sit at low contrast on a near-white background. Fixed the same way
+  `tail` already handles per-severity log-line colors (`tail.cpp`'s
+  `append_row()`/`make_cell()`, which this module's `git.cpp` now mirrors
+  directly): every color is a `theme_hex{light, dark}` pair (a small local
+  struct, not a UI element field of its own), applied via
+  `set_theme_text_color()` to a `Label`'s existing, already-theme-aware
+  `text_color_light`/`text_color_dark` fields (`label.cpp`,
+  `get_theme_color()` in `imgui_ui_renderer.cpp` — resolved live every
+  frame against `style_service::is_light_theme()`, not baked in once).
+  `status_theme_color()` (file status letters) and
+  `diff_kind_theme_color()` (diff line gutter/text) replace the old
+  `status_color_hex()`/inline ternary chain; `set_status()` (new, shared by
+  `do_command_result()` and every purely-local confirmation message —
+  "Copied log entry to clipboard.", "Log cleared.") centralizes the
+  success/failure pair for `status_label_`. The actual color values are
+  GitHub's own Primer diff/status tokens (light/dark pairs) rather than
+  reinventing a palette — a natural fit given this module is explicitly a
+  git-diff-adjacent GUI. **Not covered by this pass**: `GraphNode`'s lane/
+  dot colors (`git_graph_layout.cpp`'s `kPalette`) are still the original
+  One Dark palette, packed `int32` values with no light/dark distinction of
+  their own (see §5's "packed 0xRRGGBBAA" design note) — a separate,
+  larger change (that field shape has no light/dark variant slot at all)
+  not attempted here since the reported problem was specifically text
+  readability, not the graph's dot/line colors.
+
 ## 7. Constraints and Invariants
 
 - The server form never touches the filesystem or spawns a process;

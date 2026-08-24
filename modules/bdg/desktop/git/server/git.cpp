@@ -97,19 +97,62 @@ dynamic payload3(key_t k1, T1 v1, key_t k2, T2 v2, key_t k3, T3 v3) {
   return d;
 }
 
-// Status-code -> Label.text_color hex string ("#RRGGBBAA", the format
-// Image.tint/Label.text_color use -- see parse_hex_color() in
-// src/imgui/imgui_renderer.cpp), loosely matching SourceTree's own
-// file-list coloring: green for additions, red for removals, purple for
-// renames, blue for modifications (the default).
-std::string status_color_hex(const std::string& status) {
+// A "#RRGGBBAA" pair for Label.text_color_light/text_color_dark (see
+// label.cpp's field doc comments and get_theme_color() in
+// imgui_ui_renderer.cpp) -- every semantic color this module uses is
+// theme-dependent, the same reasoning as tail's own per-severity log-line
+// colors (tail.cpp's append_row()/make_cell()): a single text_color tuned
+// for one theme reads poorly against the other (this module originally set
+// only text_color with One Dark-style pastel hues, unreadable against the
+// light theme's near-white background -- reported live). Values below are
+// GitHub's own Primer diff/status color tokens (light/dark pairs), a
+// natural fit given this module is explicitly a git-diff-adjacent GUI.
+struct theme_hex {
+  std::string light, dark;
+};
+
+constexpr const char* kGreenLight = "#1A7F37FF"; // add / success
+constexpr const char* kGreenDark = "#3FB950FF";
+constexpr const char* kRedLight = "#CF222EFF"; // delete / failure
+constexpr const char* kRedDark = "#F85149FF";
+constexpr const char* kPurpleLight = "#8250DFFF"; // rename
+constexpr const char* kPurpleDark = "#AB7DF8FF";
+constexpr const char* kBlueLight = "#0969DAFF"; // modified / diff header / default
+constexpr const char* kBlueDark = "#4493F8FF";
+constexpr const char* kGrayLight = "#656D76FF"; // diff context line (neutral)
+constexpr const char* kGrayDark = "#8B949EFF";
+
+// Applies a theme_hex pair to an element's text_color_light/text_color_dark
+// fields -- every call site below builds a Label (or Label-rendered cell)
+// this way instead of setting the single, theme-independent text_color.
+void set_theme_text_color(const ui_element_ptr& el, const theme_hex& c) {
+  el["text_color_light"_key] = c.light;
+  el["text_color_dark"_key] = c.dark;
+}
+
+// Status-code -> color, loosely matching SourceTree's own file-list
+// coloring: green for additions, red for removals, purple for renames,
+// blue for modifications (the default).
+theme_hex status_theme_color(const std::string& status) {
   if (status == "A" || status == "?")
-    return "#98C379FF"; // green
+    return {kGreenLight, kGreenDark};
   if (status == "D")
-    return "#E06C75FF"; // red
+    return {kRedLight, kRedDark};
   if (status == "R")
-    return "#C678DDFF"; // purple (rename)
-  return "#61AFEFFF"; // blue (modified, default)
+    return {kPurpleLight, kPurpleDark};
+  return {kBlueLight, kBlueDark}; // modified, default
+}
+
+// Diff line kind -> color: green for additions, red for removals, blue for
+// the file/hunk header lines, gray for unchanged context.
+theme_hex diff_kind_theme_color(const std::string& kind) {
+  if (kind == "add")
+    return {kGreenLight, kGreenDark};
+  if (kind == "del")
+    return {kRedLight, kRedDark};
+  if (kind == "header")
+    return {kBlueLight, kBlueDark};
+  return {kGrayLight, kGrayDark}; // context, default
 }
 
 } // namespace
@@ -872,7 +915,7 @@ void git_repo::add_file_row(const std::string& path, const std::string& status, 
   } else {
     marker = ui_element_ptr{dynamic::instantiate("wish"_key, "Label"_key)};
     marker["text"_key] = status;
-    marker["text_color"_key] = status_color_hex(status);
+    set_theme_text_color(marker, status_theme_color(status));
     assign_id(marker);
   }
 
@@ -995,19 +1038,19 @@ dynamic git_repo::do_update_diff(const dynamic& args) {
     std::string text = e.as<std::string>("text"_key);
 
     std::string gutter = "add" == kind ? "+" : "del" == kind ? "-" : " ";
-    std::string color_hex = "add" == kind ? "#98C379FF" : "del" == kind ? "#E06C75FF" : "header" == kind ? "#61AFEFFF" : "#ABB2BFFF";
+    theme_hex color = diff_kind_theme_color(kind);
 
     ui_element_ptr row{dynamic::instantiate("wish"_key, "TableRow"_key)};
     assign_id(row);
 
     ui_element_ptr gutter_l{dynamic::instantiate("wish"_key, "Label"_key)};
     gutter_l["text"_key] = gutter;
-    gutter_l["text_color"_key] = color_hex;
+    set_theme_text_color(gutter_l, color);
     assign_id(gutter_l);
 
     ui_element_ptr text_l{dynamic::instantiate("wish"_key, "Label"_key)};
     text_l["text"_key] = text;
-    text_l["text_color"_key] = color_hex;
+    set_theme_text_color(text_l, color);
     assign_id(text_l);
 
     set_children_list(row, {gutter_l, text_l});
@@ -1020,15 +1063,18 @@ dynamic git_repo::do_update_diff(const dynamic& args) {
 
 // ── command_result ─────────────────────────────────────────────────────────
 
+void git_repo::set_status(const std::string& text, bool ok) {
+  if (!status_label_)
+    return;
+  status_label_["text"_key] = text;
+  set_theme_text_color(status_label_, ok ? theme_hex{kGreenLight, kGreenDark} : theme_hex{kRedLight, kRedDark});
+}
+
 dynamic git_repo::do_command_result(const dynamic& args) {
   std::string command = args.as<std::string>("command"_key);
   bool ok = args.as<bool>("ok"_key);
   std::string output = args.as<std::string>("output"_key);
-  if (status_label_) {
-    std::string text = ok ? (command + ": OK") : (command + " failed: " + output);
-    status_label_["text"_key] = text;
-    status_label_["text_color"_key] = ok ? std::string{"#98C379FF"} : std::string{"#E06C75FF"};
-  }
+  set_status(ok ? (command + ": OK") : (command + " failed: " + output), ok);
   return dynamic{};
 }
 
@@ -1042,7 +1088,7 @@ void git_repo::append_log_row(const std::string& command, int32_t exit_code, boo
     return;
   auto& children = *children_p;
 
-  std::string color_hex = ok ? "#98C379FF" : "#E06C75FF";
+  theme_hex color = ok ? theme_hex{kGreenLight, kGreenDark} : theme_hex{kRedLight, kRedDark};
 
   ui_element_ptr row{dynamic::instantiate("wish"_key, "TableRow"_key)};
   assign_id(row);
@@ -1053,17 +1099,17 @@ void git_repo::append_log_row(const std::string& command, int32_t exit_code, boo
 
   ui_element_ptr cell_command{dynamic::instantiate("wish"_key, "Label"_key)};
   cell_command["text"_key] = command;
-  cell_command["text_color"_key] = color_hex;
+  set_theme_text_color(cell_command, color);
   assign_id(cell_command);
 
   ui_element_ptr cell_exit{dynamic::instantiate("wish"_key, "Label"_key)};
   cell_exit["text"_key] = std::to_string(exit_code);
-  cell_exit["text_color"_key] = color_hex;
+  set_theme_text_color(cell_exit, color);
   assign_id(cell_exit);
 
   ui_element_ptr cell_output{dynamic::instantiate("wish"_key, "Label"_key)};
   cell_output["text"_key] = output;
-  cell_output["text_color"_key] = color_hex;
+  set_theme_text_color(cell_output, color);
   assign_id(cell_output);
 
   // Right-click any row for "Copy Entry" (this row's command/exit code/
@@ -1078,12 +1124,7 @@ void git_repo::append_log_row(const std::string& command, int32_t exit_code, boo
   copy_item["label"_key] = std::string{"Copy Entry"};
   copy_item["copy_text"_key] = command + "\nexit: " + std::to_string(exit_code) + "\n" + output;
   assign_id(copy_item);
-  click_handlers_[wish_id_of(copy_item)] = [this] {
-    if (status_label_) {
-      status_label_["text"_key] = "Copied log entry to clipboard.";
-      status_label_["text_color"_key] = std::string{"#98C379FF"};
-    }
-  };
+  click_handlers_[wish_id_of(copy_item)] = [this] { set_status("Copied log entry to clipboard.", true); };
 
   ui_element_ptr clear_item{dynamic::instantiate("wish"_key, "MenuItem"_key)};
   clear_item["label"_key] = std::string{"Clear Log"};
@@ -1132,10 +1173,7 @@ void git_repo::clear_log_rows() {
   log_seq_ = 0;
   log_table_->refresh_children_order();
 
-  if (status_label_) {
-    status_label_["text"_key] = "Log cleared.";
-    status_label_["text_color"_key] = std::string{"#98C379FF"};
-  }
+  set_status("Log cleared.", true);
 }
 
 dynamic git_repo::do_append_command_log(const dynamic& args) {
