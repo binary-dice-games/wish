@@ -509,6 +509,73 @@ the leftmost cell of the commit `Table`'s each `TableRow`. This means:
   [this] { emit("refresh_requested"_key); })`), which fires it well after
   the client has long since finished wiring its handlers.
 
+- **`graph_table`'s `auto_scroll` is `false`, opposite of `Table`'s own
+  default.** `Table`'s built-in auto-scroll assumes a log-like table where
+  the newest row is the *last* one (see `log_table`, which correctly keeps
+  the default `true`). The commit graph is the reverse — newest commit (or
+  the synthetic "Uncommitted changes" row) is always row 0 — so the default
+  behavior scrolled to the *oldest* commit on every load, reported as
+  needing a manual scroll-up to see anything current. With `auto_scroll`
+  off, ImGui's own default scroll position for a table (top) already shows
+  the newest commit with no code needed, and a user's manual scroll
+  position through history now survives a Refresh instead of jumping.
+
+- **Switching branches is a "Checkout" menu action, not a plain row
+  click.** Local/remote branch rows' `Selectable` used to call
+  `emit("checkout_requested", ...)` directly on click — a single accidental
+  click on a sidebar row silently switched the whole working tree, no
+  confirmation, with no `row_activated`/double-click concept even involved
+  (sidebar rows are plain `Selectable`s in a `HorizontalLayout`, not `Table`
+  rows). Reported as confusing (a real branch switch happening from what
+  reads as just "selecting" a row). Fixed to match how tags already
+  worked: a click only sets `selected_branch_` (the Merge button's target);
+  "Checkout" is now the first entry in the row's `MenuButton` (before
+  "Merge into current"/"Delete"), a deliberate action with its own visible
+  label rather than an implicit side effect of selection.
+
+- **The Log window's `TableRow`s each carry a `ContextMenu` child** ("Copy
+  Entry" / "Clear Log"), built alongside the row's four cells in
+  `append_log_row()` since "Copy Entry" needs that specific row's own
+  command/exit-code/output text. "Copy Entry" uses `MenuItem.copy_text`
+  (the same renderer-side, no-round-trip clipboard mechanism `mc.cpp`'s
+  "Copy Path" already uses) rather than a server round trip. "Clear Log" is
+  offered from *every* row's menu (not just a dedicated toolbar button) for
+  discoverability, and calls the new `clear_log_rows()` — which mirrors
+  `append_log_row()`'s own `kMaxLogRows` eviction exactly (erasing each
+  row's `ctx().objects` entries, not just hiding it from the table),
+  refactored into a shared `erase_log_row_objects()` helper so the two
+  paths can't drift apart. Resets `log_seq_` back to 0, so a cleared log
+  starts a fresh sequence rather than resuming a running count.
+
+- **New-branch creation gained an adjacent "Create" button; the field does
+  *not* use `EnterReturnsTrue`, unlike this codebase's other "type a name,
+  press Enter" fields (e.g. `mc.cpp`'s rename dialog).** Reported as
+  unclear that a name typed into the sidebar's `new_branch_input` is
+  submitted via the *toolbar*'s unrelated, visually distant "Branch"
+  button. First attempt: add `EnterReturnsTrue` to the field so Enter
+  submits directly, plus a same-row "Create" button as a second, clearer
+  path. That combination is actually broken:
+  `render_input_text()`/`imgui_ui_renderer.cpp` only pushes the field's
+  current text into `node["value"]` (and hence, via the `"changed"` event,
+  into `new_branch_name_text_`) when `ImGui::InputText()` returns `true` --
+  and with `EnterReturnsTrue` set, that's *only* on Enter, not per
+  keystroke. A plain `Button` click carries no text payload of its own, so
+  the adjacent "Create" button — clicked without an intervening Enter
+  press, the obvious way to use it — read whatever `new_branch_name_text_`
+  last held (empty, at the very start of a session), silently no-oping.
+  Live-verified both ways: typing a name and clicking "Create" first
+  created nothing (only after also fixing this); the field's own displayed
+  `value` looked "cleared" in both cases, but for different reasons (a
+  genuine clear via `submit_new_branch()` after a real create, vs. simply
+  having never been set from typed keystrokes at all with `EnterReturnsTrue`
+  in place) -- a trap worth remembering if this pattern comes up again:
+  a field driving a *separate* button (not just its own Enter key) must
+  keep firing `"changed"` per keystroke, full stop. Fixed by dropping
+  `EnterReturnsTrue` entirely, restoring continuous per-keystroke sync, and
+  keeping only the toolbar's "Branch" button and the new adjacent "Create"
+  button (both call the shared `submit_new_branch()`) as the two ways to
+  submit -- no Enter-to-submit shortcut for this particular field.
+
 ## 7. Constraints and Invariants
 
 - The server form never touches the filesystem or spawns a process;

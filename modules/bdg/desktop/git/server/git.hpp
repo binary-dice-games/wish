@@ -181,6 +181,17 @@ class git_repo : public form {
   ui_element_ptr make_menu_item(const std::string& label, std::function<void()> on_click);
   void assign_id(const ui_element_ptr& el);
 
+  /// @brief Emits `create_branch_requested` for whatever's currently in
+  /// new_branch_name_text_ (a no-op if empty), then clears both it and the
+  /// InputText's own displayed value. Shared by the toolbar's "Branch"
+  /// button and the adjacent "Create" button next to the input field itself
+  /// -- the latter added because the field-only-plus-a-distant-toolbar-
+  /// button pairing (the original design) was reported as unclear; the
+  /// field intentionally has no EnterReturnsTrue flag, since this button's
+  /// click carries no text payload of its own and depends on
+  /// new_branch_name_text_ already being in sync with every keystroke.
+  void submit_new_branch();
+
   // ── Graph ────────────────────────────────────────────────────────────────
   void rebuild_graph_table(const bison::dynamic& args);
   void select_row(int32_t index);
@@ -214,7 +225,17 @@ class git_repo : public form {
   /// @brief Appends one row (sequence #, command, exit code, output
   /// preview) to the Log window's table, color-coded green/red by @p ok.
   /// Evicts the oldest row first once the table already holds kMaxLogRows.
+  /// Each row's own right-click ContextMenu ("Copy Entry"/"Clear Log") is
+  /// built here too, since it needs this row's own command/exit_code/output
+  /// to fill in "Copy Entry"'s clipboard text.
   void append_log_row(const std::string& command, int32_t exit_code, bool ok, const std::string& output);
+
+  /// @brief Erases every Log window row, including their `ctx().objects`
+  /// entries (see log_row_entry's doc comment) -- called from any row's
+  /// "Clear Log" context-menu action. Resets log_seq_ back to 0 so the next
+  /// appended row starts a fresh sequence, matching a "clear" that should
+  /// feel like starting over rather than resuming a running count.
+  void clear_log_rows();
 
   std::string files_root_key_;
   std::string diff_root_key_;
@@ -294,6 +315,16 @@ class git_repo : public form {
   size_t log_seq_{0};
   size_t next_log_child_key_{0};
   std::deque<log_row_entry> log_rows_; // oldest first
+
+  /// @brief Erases one Log row's `ctx().objects` entries (row + all cells).
+  /// Shared by clear_log_rows() and append_log_row()'s own kMaxLogRows
+  /// eviction so the two don't duplicate the same five erase() calls.
+  /// Declared here (not up near append_log_row()/clear_log_rows() above)
+  /// because it needs log_row_entry, a nested type defined just above --
+  /// unlike a function body, a member function's own parameter list is not
+  /// a complete-class context, so it cannot forward-reference a nested type
+  /// declared later in the class.
+  void erase_log_row_objects(const log_row_entry& entry);
 
   // Dispatch tables, populated in on_init()/rebuild_* -- keyed by widget id.
   std::unordered_map<bison::key_t, std::function<void()>, bison::key_t, bison::key_t> click_handlers_;

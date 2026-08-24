@@ -55,10 +55,13 @@ for what's implemented vs. deferred to future work.
   true`) but carries no slot for custom body content — just a title,
   message, icon, and a Win32-style button preset — so it can't host a
   branch-name field or a branch picker. Branch creation uses a small
-  always-visible name field next to the sidebar's BRANCHES header instead;
-  the merge target is the last-clicked sidebar branch — see
-  `server/git.hpp`'s top-of-file comment. Destructive actions (delete
-  branch, stash drop) *do* use a real modal — an inline confirm `Window`
+  always-visible name field with an adjacent "Create" button next to the
+  sidebar's BRANCHES header instead (also reachable via the toolbar's
+  "Branch" button, which submits the same field); the merge target is the
+  last-clicked sidebar branch, and switching branches is a deliberate
+  "Checkout" action in each branch row's "..." menu rather than a plain
+  click — see `server/git.hpp`'s top-of-file comment. Destructive actions
+  (delete branch, stash drop) *do* use a real modal — an inline confirm `Window`
   built into `GitRepo`'s own tree, mirroring `tree`'s
   `show_overwrite_confirm()` pattern.
 

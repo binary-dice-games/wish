@@ -152,6 +152,18 @@ std::string status_color_hex(const std::string& status) {
 // VerticalLayout-next-to-a-fill-Table pattern already used by e.g.
 // modules/bdg/desktop/mc/server/mc.cpp's "left"/"right" panels
 // ("width": -1, "height": -1" on both).
+//
+// graph_table's own "auto_scroll": false overrides Table's own default
+// (true, "stick to the newest row at the bottom as the row count grows" --
+// see docs/ui-elements.md's Table.auto_scroll entry): that default assumes
+// a log-like table where the newest entry is the LAST row, e.g. this same
+// file's log_table. The commit graph is the opposite -- newest commit (or
+// the synthetic "Uncommitted changes" row) is always row 0 -- so the
+// default behavior scrolled to the *oldest* commit on every load/refresh,
+// the exact opposite of useful. With auto_scroll off, ImGui's own default
+// (top of a freshly-created scroll region) already puts the newest commit
+// in view with no code needed, and a user's manual scroll position across
+// commit history survives a refresh instead of jumping back and forth.
 
 static constexpr const char* kMainLayout = R"({
   "type": "Window", "title": "Git", "width": 900, "height": 720, "pos_x": 0, "pos_y": 0, "closable": true,
@@ -183,7 +195,8 @@ static constexpr const char* kMainLayout = R"({
                 "new_branch_row": {
                   "type": "HorizontalLayout", "spacing": 4,
                   "children": {
-                    "new_branch_input": { "type": "InputText", "hint": "New branch name", "width": 180 }
+                    "new_branch_input": { "type": "InputText", "hint": "New branch name", "width": 150 },
+                    "btn_create_branch": { "type": "Button", "label": "Create", "width": 64 }
                   }
                 },
                 "sep_sidebar": { "type": "Separator" },
@@ -204,6 +217,7 @@ static constexpr const char* kMainLayout = R"({
                 "graph_table": {
                   "type": "Table", "id": "##graph_table", "columns": 5, "height": -1,
                   "flags": "Resizable|RowBg|Borders|ScrollY", "headers": true, "outer_height": -1,
+                  "auto_scroll": false,
                   "children": {
                     "col_graph":  { "type": "TableColumn", "label": "Graph",       "flags": "WidthFixed", "init_width": 80,  "column_id": 0 },
                     "col_desc":   { "type": "TableColumn", "label": "Description", "flags": "WidthStretch",                     "column_id": 1 },
@@ -358,12 +372,8 @@ void git_repo::build_main_window() {
   bind_click("vbox.toolbar.btn_push", [this] { emit("push_requested"_key); });
   bind_click("vbox.toolbar.btn_pull", [this] { emit("pull_requested"_key); });
   bind_click("vbox.toolbar.btn_fetch", [this] { emit("fetch_requested"_key); });
-  bind_click("vbox.toolbar.btn_branch", [this] {
-    if (!new_branch_name_text_.empty())
-      emit(
-          "create_branch_requested"_key,
-          payload2("name"_key, new_branch_name_text_, "start_point"_key, std::string{}));
-  });
+  bind_click("vbox.toolbar.btn_branch", [this] { submit_new_branch(); });
+  bind_click("vbox.body.sidebar.new_branch_row.btn_create_branch", [this] { submit_new_branch(); });
   bind_click("vbox.toolbar.btn_merge", [this] {
     if (!selected_branch_.empty())
       emit("merge_requested"_key, payload1("ref"_key, selected_branch_));
@@ -535,6 +545,17 @@ void git_repo::rebuild_section(
   section->refresh_children_order();
 }
 
+// ── New branch creation ──────────────────────────────────────────────────
+
+void git_repo::submit_new_branch() {
+  if (new_branch_name_text_.empty())
+    return;
+  emit("create_branch_requested"_key, payload2("name"_key, new_branch_name_text_, "start_point"_key, std::string{}));
+  new_branch_name_text_.clear();
+  if (new_branch_input_)
+    new_branch_input_["value"_key] = std::string{};
+}
+
 // ── update_refs ────────────────────────────────────────────────────────────
 
 dynamic git_repo::do_update_refs(const dynamic& args) {
@@ -568,13 +589,16 @@ dynamic git_repo::do_update_refs(const dynamic& args) {
     if (b.ahead > 0 || b.behind > 0)
       label += " (" + std::to_string(b.ahead) + "\xE2\x86\x91 " + std::to_string(b.behind) + "\xE2\x86\x93)";
     std::string ref = b.name;
+    // A plain click only selects the row (sets selected_branch_, the Merge
+    // button's target) rather than checking the branch out immediately --
+    // switching branches is a deliberate action with real side effects
+    // (working-tree files change), so it belongs behind an explicit
+    // "Checkout" menu action (below), the same way tags already work, not
+    // behind an easy-to-trigger-by-accident single click.
     return make_sidebar_row(
-        label,
-        [this, ref] {
-          selected_branch_ = ref;
-          emit("checkout_requested"_key, payload1("ref"_key, ref));
-        },
-        {{"Merge into current", [this, ref] { selected_branch_ = ref; emit("merge_requested"_key, payload1("ref"_key, ref)); }},
+        label, [this, ref] { selected_branch_ = ref; },
+        {{"Checkout", [this, ref] { selected_branch_ = ref; emit("checkout_requested"_key, payload1("ref"_key, ref)); }},
+         {"Merge into current", [this, ref] { selected_branch_ = ref; emit("merge_requested"_key, payload1("ref"_key, ref)); }},
          {"Delete",
           [this, ref] {
             show_confirm("Delete branch '" + ref + "'?", "Delete", [this, ref] {
@@ -587,12 +611,9 @@ dynamic git_repo::do_update_refs(const dynamic& args) {
     const auto& b = remote[i];
     std::string ref = b.name;
     return make_sidebar_row(
-        ref,
-        [this, ref] {
-          selected_branch_ = ref;
-          emit("checkout_requested"_key, payload1("ref"_key, ref));
-        },
-        {{"Merge into current", [this, ref] { selected_branch_ = ref; emit("merge_requested"_key, payload1("ref"_key, ref)); }}});
+        ref, [this, ref] { selected_branch_ = ref; },
+        {{"Checkout", [this, ref] { selected_branch_ = ref; emit("checkout_requested"_key, payload1("ref"_key, ref)); }},
+         {"Merge into current", [this, ref] { selected_branch_ = ref; emit("merge_requested"_key, payload1("ref"_key, ref)); }}});
   });
 
   std::vector<std::string> tags;
@@ -1045,7 +1066,32 @@ void git_repo::append_log_row(const std::string& command, int32_t exit_code, boo
   cell_output["text_color"_key] = color_hex;
   assign_id(cell_output);
 
-  set_children_list(row, {cell_seq, cell_command, cell_exit, cell_output});
+  // Right-click any row for "Copy Entry" (this row's command/exit code/
+  // output, via MenuItem.copy_text -- the renderer copies it to the OS
+  // clipboard directly on click, no round trip needed) and "Clear Log"
+  // (every row, not just this one -- offered from every row's menu purely
+  // for discoverability, same as a real log viewer's right-click menu).
+  ui_element_ptr context_menu{dynamic::instantiate("wish"_key, "ContextMenu"_key)};
+  assign_id(context_menu);
+
+  ui_element_ptr copy_item{dynamic::instantiate("wish"_key, "MenuItem"_key)};
+  copy_item["label"_key] = std::string{"Copy Entry"};
+  copy_item["copy_text"_key] = command + "\nexit: " + std::to_string(exit_code) + "\n" + output;
+  assign_id(copy_item);
+  click_handlers_[wish_id_of(copy_item)] = [this] {
+    if (status_label_) {
+      status_label_["text"_key] = "Copied log entry to clipboard.";
+      status_label_["text_color"_key] = std::string{"#98C379FF"};
+    }
+  };
+
+  ui_element_ptr clear_item{dynamic::instantiate("wish"_key, "MenuItem"_key)};
+  clear_item["label"_key] = std::string{"Clear Log"};
+  assign_id(clear_item);
+  click_handlers_[wish_id_of(clear_item)] = [this] { clear_log_rows(); };
+
+  set_children_list(context_menu, {copy_item, clear_item});
+  set_children_list(row, {cell_seq, cell_command, cell_exit, cell_output, context_menu});
 
   size_t child_key = next_log_child_key_++;
   (*children)[child_key] = dynamic_ptr{row};
@@ -1054,17 +1100,42 @@ void git_repo::append_log_row(const std::string& command, int32_t exit_code, boo
        wish_id_of(cell_output)});
 
   if (log_rows_.size() > kMaxLogRows) {
-    auto& oldest = log_rows_.front();
-    children->erase(oldest.child_key);
-    ctx().objects.erase(oldest.row_id.id);
-    ctx().objects.erase(oldest.cell_seq_id.id);
-    ctx().objects.erase(oldest.cell_command_id.id);
-    ctx().objects.erase(oldest.cell_exit_id.id);
-    ctx().objects.erase(oldest.cell_output_id.id);
+    erase_log_row_objects(log_rows_.front());
+    children->erase(log_rows_.front().child_key);
     log_rows_.pop_front();
   }
 
   log_table_->refresh_children_order();
+}
+
+void git_repo::erase_log_row_objects(const log_row_entry& entry) {
+  ctx().objects.erase(entry.row_id.id);
+  ctx().objects.erase(entry.cell_seq_id.id);
+  ctx().objects.erase(entry.cell_command_id.id);
+  ctx().objects.erase(entry.cell_exit_id.id);
+  ctx().objects.erase(entry.cell_output_id.id);
+}
+
+void git_repo::clear_log_rows() {
+  if (!log_table_)
+    return;
+  auto* children_p = log_table_->findField<dynamic_ptr>("children"_key);
+  if (!children_p || !*children_p)
+    return;
+  auto& children = *children_p;
+
+  for (auto& entry : log_rows_) {
+    erase_log_row_objects(entry);
+    children->erase(entry.child_key);
+  }
+  log_rows_.clear();
+  log_seq_ = 0;
+  log_table_->refresh_children_order();
+
+  if (status_label_) {
+    status_label_["text"_key] = "Log cleared.";
+    status_label_["text_color"_key] = std::string{"#98C379FF"};
+  }
 }
 
 dynamic git_repo::do_append_command_log(const dynamic& args) {
@@ -1099,6 +1170,14 @@ void git_repo::on_event(key_t id, key_t event, const dynamic& payload) {
       return;
     }
     if (id == new_branch_input_id_) {
+      // Deliberately no EnterReturnsTrue here (unlike e.g. mc.cpp's rename
+      // field): this field's "changed" fires per keystroke so
+      // new_branch_name_text_ always reflects what's currently typed,
+      // which the adjacent "Create" button's click handler (submit_new_
+      // branch()) depends on -- EnterReturnsTrue would leave this field
+      // (and the button) reading stale/empty text between the last
+      // keystroke and an Enter press that may never come, since a plain
+      // Button click carries no text payload of its own to fall back on.
       new_branch_name_text_ = payload.as<std::string>("value"_key);
       return;
     }

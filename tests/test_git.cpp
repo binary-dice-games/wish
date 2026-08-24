@@ -276,11 +276,11 @@ class GitRepoRmiTest : public ::testing::Test {
     return nth_child(it->second, index);
   }
 
-  // Row's "Delete" MenuItem -- second entry in make_sidebar_row()'s
-  // menu_items list ({"Merge into current", "Delete"}), under the row's
-  // MenuButton (its second child, after the Selectable).
+  // Row's "Delete" MenuItem -- third entry in make_sidebar_row()'s
+  // menu_items list ({"Checkout", "Merge into current", "Delete"}), under
+  // the row's MenuButton (its second child, after the Selectable).
   dynamic_ptr delete_item_of_branch(size_t index) const {
-    return nth_child(nth_child(branch_row(index), 1), 1);
+    return nth_child(nth_child(branch_row(index), 1), 2);
   }
 
   // Selects a commit graph row the same way a real click does: fires
