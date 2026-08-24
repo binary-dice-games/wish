@@ -144,4 +144,14 @@ process_result run_git(const std::string& cwd, const std::vector<std::string>& a
   return result;
 }
 
+std::string resolve_repo_root(const std::string& path) {
+  auto r = run_git(path, {"rev-parse", "--show-toplevel"});
+  if (!r.ok() || r.stdout_text.empty())
+    return path;
+  std::string root = r.stdout_text;
+  while (!root.empty() && (root.back() == '\n' || root.back() == '\r'))
+    root.pop_back();
+  return root;
+}
+
 } // namespace bdg::wish::git

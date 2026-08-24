@@ -340,6 +340,14 @@ void git_repo_source::on_diff_requested(const std::string& hash, const std::stri
 
   dynamic args;
   args["path"_key] = path;
+  // Echoed back so the server's do_update_diff() can tell a stale response
+  // (for a selection the user has since navigated away from) apart from
+  // the current one -- see that method's own comment. Without these, the
+  // server had no way to validate the response at all: "path" alone can't
+  // distinguish e.g. the same file re-selected under a different commit,
+  // or a staged/unstaged toggle of the same working-tree path.
+  args["hash"_key] = hash;
+  args["staged"_key] = staged;
 
   dynamic lines;
   size_t li = 0;

@@ -16,11 +16,8 @@
 
 #include "src/bison/bison.hpp"
 
-#include <atomic>
-#include <chrono>
 #include <iostream>
 #include <memory>
-#include <thread>
 
 namespace bdg::wish {
 
@@ -32,20 +29,27 @@ void run_git(wish_app_host& s) {
     s.signal_done();
     return;
   }
-  const std::string repo_path = s.app_args()[0];
+  const std::string repo_path_arg = s.app_args()[0];
 
   {
-    auto check = git::run_git(repo_path, {"rev-parse", "--is-inside-work-tree"});
+    auto check = git::run_git(repo_path_arg, {"rev-parse", "--is-inside-work-tree"});
     if (!check.ok()) {
-      std::cerr << "git: '" << repo_path << "' is not a git repository (or git is not on PATH)\n";
+      std::cerr << "git: '" << repo_path_arg << "' is not a git repository (or git is not on PATH)\n";
       s.signal_done();
       return;
     }
   }
 
+  // Resolve to the repo's actual top-level directory rather than using
+  // repo_path_arg (e.g. "." or any other relative/non-root path) verbatim
+  // as every subsequent git subprocess's cwd -- see resolve_repo_root()'s
+  // doc comment for why this matters (a real, live-reproduced bug when
+  // wish itself is launched from somewhere other than the repo root, not
+  // merely theoretical -- see DESIGN.md's "Design Decisions" entry).
+  const std::string repo_path = git::resolve_repo_root(repo_path_arg);
+
   auto proxy = std::make_shared<rmi::proxy::dynamic>(s.instantiate("wish"_key, "GitRepo"_key).get());
   auto source = std::make_shared<git::git_repo_source>(proxy, repo_path);
-  auto stop = std::make_shared<std::atomic<bool>>(false);
 
   proxy->onEvent("refresh_requested"_key, [source](dynamic) { source->refresh_all(); });
 
@@ -83,25 +87,20 @@ void run_git(wish_app_host& s) {
         payload.as<std::string>("hash"_key), payload.as<std::string>("path"_key), payload.as<bool>("staged"_key));
   });
 
-  proxy->onEvent("closed"_key, [&s, stop](dynamic) {
-    stop->store(true, std::memory_order_relaxed);
-    s.signal_done();
-  });
+  proxy->onEvent("closed"_key, [&s](dynamic) { s.signal_done(); });
 
-  // Periodic background poll so external changes to the working tree (an
-  // edit made outside this tool) are picked up without an explicit Refresh
-  // click -- mirrors top's sampling loop, but far less
-  // frequent since a git status call is comparatively expensive.
-  std::thread([source, stop] {
-    using namespace std::chrono_literals;
-    while (!stop->load(std::memory_order_relaxed)) {
-      for (int i = 0; i < 20 && !stop->load(std::memory_order_relaxed); ++i)
-        std::this_thread::sleep_for(100ms);
-      if (stop->load(std::memory_order_relaxed))
-        break;
-      source->refresh_all();
-    }
-  }).detach();
+  // Initial population. GitRepo::on_init() (server) used to emit its own
+  // one-time "refresh_requested" for this, but that event fires as part of
+  // on_init() itself -- i.e. before instantiate() above even returns, let
+  // alone before the onEvent() wiring just above runs -- so it was reliably
+  // lost (confirmed live: graph/sidebar/files/log all stayed empty
+  // indefinitely with no user interaction). It went unnoticed for as long
+  // as the client also ran a ~2s background refresh_all() poll (removed --
+  // see DESIGN.md's "no background polling" entry), whose first tick
+  // silently papered over the missing initial load. Calling refresh_all()
+  // directly here, now that every handler above is registered, has no such
+  // race.
+  source->refresh_all();
 }
 
 namespace {

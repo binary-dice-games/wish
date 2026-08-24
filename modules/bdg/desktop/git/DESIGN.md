@@ -39,8 +39,9 @@ LFS, hunk-level staging, external diff/merge tools, search/filter.
    diffing against the previous state — simpler to reason about and correct
    by construction, at the cost of some redundant `ui_element`
    creation/`ctx().objects` churn on every refresh. Acceptable for an
-   interactive desktop tool refreshing on user action or a slow (~2s)
-   background poll, not a hot loop.
+   interactive desktop tool refreshing only on an explicit user action (a
+   toolbar click or the Refresh button — see §6's "no background polling"
+   entry), not a hot loop.
 
 ## 3. Key Abstractions
 
@@ -88,11 +89,12 @@ Owns the repository path and every actual git invocation. One method per
 either pushing a fresh snapshot directly (`push_refs`/`push_log`/
 `push_status`, no git mutation involved) or running a mutating command via
 `git_process::run_git()` and then calling `refresh_all()` (`push_refs` +
-`push_log` + `push_status`, in that order) — see Design Goal 4. A background
-thread (`client/git.cpp`) calls `refresh_all()` every ~2s so external
-changes to the working tree are picked up without an explicit Refresh
-click, mirroring `top`'s sampling loop (far less frequent
-here, since a `git status` call is comparatively expensive).
+`push_log` + `push_status`, in that order) — see Design Goal 4.
+`refresh_all()` only ever runs in response to an explicit user action (a
+mutating toolbar/menu click, or the Refresh button itself, which the
+server maps straight to a `"refresh_requested"` event) — see §6's "no
+background polling" entry for why an earlier ~2s background-poll thread
+was removed rather than kept.
 
 ### `git_process::run_git()` (client)
 
@@ -118,10 +120,13 @@ exit code, trimmed output preview) to `GitRepo`'s Log window via
 Startup:
   run_git(host) -- requires app_args()[0] = repo path
     validate: `git rev-parse --is-inside-work-tree` (fail fast + signal_done() if not a repo)
+    resolve_repo_root(app_args()[0]) -> repo_path (see §6's cwd-resolution entry)
     instantiate GitRepo -> proxy
     wire proxy.onEvent(...) for every *_requested event (see git.hpp)
-    proxy.onEvent("refresh_requested", source->refresh_all())  -- server emits this once from on_init()
-    background thread: refresh_all() every ~2s until "closed"
+    source->refresh_all()  -- explicit initial call, once every handler above is wired (see §6's
+      "initial refresh race" entry for why this isn't done via an on_init()-emitted event instead)
+    proxy.onEvent("refresh_requested", source->refresh_all())  -- fires again on every user click of
+      the toolbar's Refresh button; no background polling after that (§6)
 
 refresh_all() (client):
   push_refs()   -> `for-each-ref` (branches+remotes), `tag --list`, `stash list`,
@@ -322,11 +327,13 @@ the leftmost cell of the commit `Table`'s each `TableRow`. This means:
   row" (its slot in the table's `children` map, plus every `ctx().objects`
   id `put_object()` assigned it), so a long-running session's trace stays
   bounded (500 rows) instead of leaking `ctx().objects` entries or growing
-  the table without limit. `run_logged()` is called far more often than a
-  user fires `*_requested` events (every read-only call inside the ~2s
-  background `refresh_all()` poll counts too), so an uncapped table would
-  grow unbounded within minutes, unlike `editor`'s event log (user-driven
-  events only).
+  the table without limit. Each `refresh_all()` call (an explicit Refresh
+  click or the click behind any mutating action — see the "no background
+  polling" entry below) makes several `run_logged()` calls at once
+  (`push_refs` alone runs `for-each-ref`, `tag --list`, `stash list`,
+  `rev-parse`, and one `rev-list` per local branch), so even purely
+  user-driven usage can add up over a long session; the cap stays for that
+  reason, not because of any longer-running background source of calls.
 
 - **`selected_hash_ == ""` doubles as both "the synthetic working-tree row
   is selected" and "nothing selected yet" (the member's default).** A
@@ -340,6 +347,167 @@ the leftmost cell of the commit `Table`'s each `TableRow`. This means:
   empty until a file is explicitly clicked — is correct SourceTree-like
   UX anyway. Worth revisiting if a future change needs to distinguish
   "no selection" from "the working row" more explicitly.
+
+- **`graph_panel` (the `VerticalLayout` wrapping `current_branch_label` +
+  `graph_table`, `kMainLayout` in `server/git.cpp`) must set `"height": -1`
+  on itself, not just `"width": -1`.** Live-reproduced bug: the graph
+  rendered as blank space (the `Table` never getting a real rect) even
+  though `rebuild_graph_table()` was populating rows correctly and
+  `update_log`/RMI dispatch were succeeding — a rendering-layer bug, not a
+  data bug. Root cause: `graph_panel` is itself a child of the `"body"`
+  `HorizontalLayout`, and `arrange_horizontal_layout()`'s cross-axis
+  (height) sizing (`src/imgui/imgui_layout.cpp`) falls back to a
+  no-height-hint child's own *measured/natural* height. `graph_table`
+  already carries `"height": -1` (a stretch/fill hint, per the comment
+  above `kMainLayout`), and `measure_vertical_layout()` deliberately counts
+  such a stretch child as contributing 0 to its parent's natural height sum
+  (it "wants to fill whatever's left over, not define it") — so without its
+  own `"height": -1`, `graph_panel`'s measured height collapsed to just
+  `current_branch_label`'s height, starving `graph_table` down to a few
+  pixels. Fixed by adding `"height": -1` to `graph_panel`, matching the
+  working pattern already used one module over:
+  `modules/bdg/desktop/mc/server/mc.cpp`'s `"left"`/`"right"` panels both
+  set `"width": -1, "height": -1` on the `VerticalLayout` wrapping their
+  own fill-`Table`. **Invariant**: any `VerticalLayout`/`HorizontalLayout`
+  that both (a) is a stretch/fill child on its own axis (`width`/`height`:
+  `-1`) *and* (b) contains a fill-sized `Table` (or other stretch child) on
+  the perpendicular axis needs an explicit `-1` hint on *that* axis too —
+  omitting it silently starves the child to near-zero size rather than
+  erroring, since `measure_vertical_layout()`/`measure_horizontal_layout()`
+  have no way to signal "this natural size is meaningless, don't trust it
+  for cross-axis sizing."
+
+- **`do_update_diff()` must guard against a stale response the same way
+  `do_update_commit_files()` already does, and the client must echo back
+  enough of the request to check.** Reported bug: after selecting an older
+  commit and clicking one of its changed files, the Diff window's title
+  correctly updated to the file's path but the table body stayed
+  completely empty. Live investigation (automation module, driven against
+  this repo's own history — see `docs/automation.md`'s workflow) found the
+  request/response round trip itself works correctly for a single,
+  unhurried click (confirmed via a screenshot showing real, colored +/-
+  lines for `1cab34ab` / `src/client/client.hpp`) — the actual defect is
+  architectural, not a rendering or data-shape bug: `do_update_diff()` had
+  **no staleness check at all**, unlike its sibling `do_update_commit_
+  files()` (which already discards a response whose `hash` no longer
+  matches `selected_hash_`). Worse, the client's `on_diff_requested()` only
+  ever echoed back `path` in the `update_diff` args — not `hash`/`staged`
+  — so even adding a guard needed a matching client-side change to give
+  the server enough to compare against. `request_diff_for_selected()`
+  re-reads `selected_hash_`/`selected_path_`/`selected_staged_` at the
+  moment a file's `Selectable` is clicked, but the client's `git show`/
+  `git diff` subprocess and the RMI round trip both take real wall-clock
+  time; without a guard, a response for a selection the user has since
+  navigated away from (a different file, a different commit, or back to
+  the working tree) can arrive **after** a fresher response and silently
+  overwrite what's currently displayed with stale or mismatched content —
+  demonstrated deterministically in `tests/test_git.cpp`'s
+  `StaleDiffResponseIgnoredAfterSelectionChanges` (calls `update_diff`
+  out of order via the RMI test harness, bypassing real subprocess/network
+  timing entirely) rather than by trying to win a live timing race, which
+  proved unreliable to force purposefully through browser automation.
+  Fixed by having the client echo `hash`/`staged` back in the
+  `update_diff` args and having `do_update_diff()` discard the call
+  (return without touching `diff_title_label_`/`diff_table_`) whenever
+  `path`/`hash`/`staged` no longer all match the current selection —
+  exactly mirroring `do_update_commit_files()`'s existing pattern.
+  **Invariant**: any RMI method that repopulates UI state in response to
+  an event whose payload was captured *before* an async client round trip
+  (not just this one — `do_update_commit_files()`/`do_update_diff()` are
+  the two instances so far) must echo back enough of that original request
+  in its response args to let the server verify the response still matches
+  current selection state before applying it; a response that doesn't
+  match must be silently discarded, never applied "because it's the only
+  data we have."
+
+- **The repo path argument must be resolved to its actual `git
+  rev-parse --show-toplevel` before being used as every git subprocess's
+  `cwd` — using it verbatim (`client/git.cpp`'s old behavior) breaks every
+  file-specific diff whenever wish itself is launched from anywhere other
+  than the repo root.** This is the bug the staleness-guard fix above
+  did *not* actually fix, despite initially looking like the same symptom
+  (title populates, diff body stays empty) — the guard fix was a real,
+  independent correctness issue, confirmed via a deterministic regression
+  test, but it wasn't what the user kept hitting. The user's own repro —
+  `./wish standalone --run git --theme light -- .`, launched from inside
+  `build/app/` rather than the repo root — only reproduced once launched
+  the same way here: `git_repo_source::run_logged()` passes whatever
+  `repo_path` the client was constructed with straight through to
+  `run_git()`'s `cwd`, and prior to this fix `repo_path` was `s.app_args()
+  [0]` **unresolved** — literally `"."` in this case, relative to
+  wherever the wish *process* itself happened to be launched from, not
+  the repo root. `git status`/`log`/`show --name-status` all report paths
+  relative to the repo root *regardless* of cwd (verified directly:
+  `git status --porcelain` from a subdirectory still prints repo-root-
+  relative paths), so the sidebar, graph, and Files panel all looked
+  completely correct — but `git diff -- <path>` / `git show <hash> --
+  <path>` (`on_diff_requested()`) resolve that same repo-root-relative
+  pathspec **relative to cwd**, so unless cwd happens to equal the repo
+  root exactly, the pathspec matches nothing: `git diff` silently returns
+  empty stdout (no error), `git show` fails outright with `fatal:
+  pathspec '<path>' did not match any file(s) known to git` — the exact
+  stderr text visible in the tool's own status label at one point during
+  this investigation. Fixed by extracting `git_process::resolve_repo_root()`
+  (`client/git_process.hpp`/`.cpp`) — runs `git rev-parse --show-toplevel`
+  against whatever path was given and returns its absolute output (falling
+  back to the input path if that fails) — and calling it once in
+  `run_git(wish_app_host&)` right after the existing `--is-inside-work-tree`
+  check, before constructing `git_repo_source`. Regression-tested in
+  `tests/test_git_process.cpp` against a real, throwaway `git init`'d repo
+  (this module never mocks git — Design Goal 1) rather than against the
+  RMI layer, since the bug lived entirely in client startup wiring, not in
+  `GitRepo`'s server-side logic. **Lesson for live-verifying this module
+  going forward**: always launch it from more than one cwd during
+  verification (repo root *and* an unrelated subdirectory) — a repro run
+  only from the repo root cannot distinguish a cwd-resolution bug like
+  this one from a genuinely fixed diff path, since the two are
+  indistinguishable exactly when cwd == repo root.
+
+- **No background polling — every refresh is user-initiated.** An earlier
+  version had `client/git.cpp` spawn a detached background thread calling
+  `refresh_all()` on a ~2s cycle (mirroring `top`'s own sampling loop) so
+  external changes to the working tree showed up without an explicit
+  Refresh click. Removed at the user's request: on a real repo the ~2s
+  `git status`/`git log` cycle was visibly reformatting the Main window
+  every tick — enough to shift focus and cause layout "vibration" while
+  the user was mid-interaction (typing a commit message, clicking a
+  sidebar row) — and flooded the Log window with hundreds of trace rows
+  from calls the user never asked for, several times faster than the
+  actual per-click Log rationale above assumes. `refresh_all()` now runs
+  *only* in direct response to a `"refresh_requested"` event: once from
+  `on_init()` (the initial population) and once per explicit Refresh
+  button click, plus implicitly at the end of every mutating action
+  (stage/commit/checkout/fetch/pull/push/merge/stash — see
+  `git_repo_source::run_and_refresh()`), same as before. There is no
+  longer any timer, thread, or `std::atomic` stop flag in `client/git.cpp`
+  — picking up an out-of-band change to the working tree (an edit made
+  outside this tool) now requires clicking Refresh, a deliberate trade-off
+  of staleness-between-clicks for a stable, non-jittery UI. If background
+  refresh is ever wanted again, it would need to be considerably less
+  frequent and/or debounced against active user input, not simply
+  reintroduced at the old cadence.
+
+- **Initial-load race, exposed by removing the background poll above:
+  `GitRepo::on_init()` emitting `"refresh_requested"` was not actually how
+  the tool's first population ever worked.** `on_init()` runs synchronously
+  as part of the server handling `instantiate()` — its `emit()` call fires,
+  and is gone, before `instantiate(...).get()` even returns to the client,
+  let alone before `run_git()`'s `proxy->onEvent("refresh_requested", ...)`
+  registration a few lines later runs. Live-verified after removing the
+  background-poll thread: with nothing else triggering a refresh, the app
+  opened to a *permanently* empty graph, sidebar, Files panel, and Log
+  window — confirmed by polling `get_tree()` for 10s with zero user
+  interaction and seeing row counts stay at 0 the entire time. This exact
+  gap existed before this pass too; it just went unnoticed because the old
+  background thread's first tick (~2s after startup) reliably repainted
+  real data before anyone looked, making the tool merely *feel*
+  instant-on. Fixed by having `run_git()` (client) call `source->
+  refresh_all()` directly, once, as the last thing it does after every
+  `onEvent()` handler is registered — no server-emitted event, no race
+  window at all. `on_init()` no longer emits `"refresh_requested"`; the
+  event still exists for the toolbar's Refresh button (`bind_click(...,
+  [this] { emit("refresh_requested"_key); })`), which fires it well after
+  the client has long since finished wiring its handlers.
 
 ## 7. Constraints and Invariants
 
@@ -386,7 +554,8 @@ Refresh); working-directory staging (checkbox -> `git add`/`git restore
 untracked-file fallback, and per-commit diffs, live-verified with colored
 +/- lines); branch checkout (including remote-tracking-branch auto-track
 fallback)/create/delete; fetch/pull/push; fast-forward-first merge; stash
-push/pop/apply/drop; background auto-refresh; a MessageBox confirm dialog
+push/pop/apply/drop; user-initiated refresh only, no background polling
+(§6); a MessageBox confirm dialog
 (`show_confirm()`, §6) gating delete-branch and stash-drop; a Log window
 tracing every `git` subprocess invocation (`run_logged()`/
 `append_command_log`/`do_append_command_log`, live-verified showing

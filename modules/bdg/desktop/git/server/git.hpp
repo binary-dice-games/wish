@@ -104,6 +104,12 @@ class git_repo : public form {
 
   /// @brief RMI method: replace the Diff panel's content. @p args holds:
   ///   - `path` (string) — shown as the panel title.
+  ///   - `hash` (string, empty = working tree) / `staged` (bool) — echoed
+  ///     back from the `"diff_requested"` event that triggered this call;
+  ///     discarded (no-op) if they no longer match `selected_hash_`/
+  ///     `selected_path_`/`selected_staged_`, i.e. the user has since
+  ///     selected something else and this is a stale response arriving
+  ///     late — mirrors do_update_commit_files()'s own `hash` guard above.
   ///   - `lines` (dynamic array), each `{ kind ("add"/"del"/"context"/"header"), text }`.
   bison::dynamic do_update_diff(const bison::dynamic& args);
 

@@ -108,6 +108,50 @@ dynamic make_status_args(const std::vector<fake_status_entry>& staged, const std
   return args;
 }
 
+struct fake_diff_line {
+  std::string kind;
+  std::string text;
+};
+
+// Builds the args shape update_diff expects (see git.hpp's do_update_diff
+// doc comment): hash/staged are echoed back exactly as
+// git_repo_source::on_diff_requested() sends them, so a test can simulate
+// a response arriving for a selection that no longer matches current state.
+dynamic make_diff_args(
+    const std::string& path, const std::string& hash, bool staged, const std::vector<fake_diff_line>& lines) {
+  dynamic args;
+  args["path"_key] = path;
+  args["hash"_key] = hash;
+  args["staged"_key] = staged;
+  dynamic arr;
+  size_t i = 0;
+  for (auto& l : lines) {
+    auto ep = std::make_shared<dynamic>();
+    (*ep)["kind"_key] = l.kind;
+    (*ep)["text"_key] = l.text;
+    arr[i++] = dynamic_ptr{ep};
+  }
+  args["lines"_key] = dynamic_ptr{std::make_shared<dynamic>(std::move(arr))};
+  return args;
+}
+
+// Builds the args shape update_commit_files expects (see git.hpp's
+// do_update_commit_files doc comment): `{ hash, files: [{path, status}] }`.
+dynamic make_commit_files_args(const std::string& hash, const std::vector<fake_status_entry>& files) {
+  dynamic args;
+  args["hash"_key] = hash;
+  dynamic arr;
+  size_t i = 0;
+  for (auto& f : files) {
+    auto ep = std::make_shared<dynamic>();
+    (*ep)["path"_key] = f.path;
+    (*ep)["status"_key] = f.status;
+    arr[i++] = dynamic_ptr{ep};
+  }
+  args["files"_key] = dynamic_ptr{std::make_shared<dynamic>(std::move(arr))};
+  return args;
+}
+
 } // namespace
 
 // ── Local (non-RMI) fixture — checks prototype registration ──────────────────
@@ -237,6 +281,38 @@ class GitRepoRmiTest : public ::testing::Test {
   // MenuButton (its second child, after the Selectable).
   dynamic_ptr delete_item_of_branch(size_t index) const {
     return nth_child(nth_child(branch_row(index), 1), 1);
+  }
+
+  // Selects a commit graph row the same way a real click does: fires
+  // row_selected on the graph_table's own wish_id with the row's index --
+  // see imgui_ui_renderer.cpp's table-row loop (pending_index == the
+  // TableRow's ordinal position, same as its numeric children-map key
+  // here since rebuild_graph_table() always assigns a fresh, contiguous
+  // 0-based sequence -- see git.hpp's "dynamic::size() gotcha").
+  void select_graph_row(int32_t index) {
+    auto table_id =
+        srv_->last_session->ui_objects.at(root_ + ".vbox.body.graph_panel.graph_table")->as<bison::key_t>("__wish_id"_key);
+    dynamic payload;
+    payload["index"_key] = index;
+    fire(table_id, "row_selected"_key, std::move(payload));
+  }
+
+  // Files table row's own Selectable (second cell -- see add_file_row()),
+  // at `index` in the files table's children map.
+  bison::key_t files_row_selectable_id(size_t index) const {
+    auto it = srv_->last_session->ui_objects.find(root_ + "_files.vbox.files_table");
+    if (it == srv_->last_session->ui_objects.end())
+      return {};
+    return element_id(nth_child(nth_child(it->second, index), 1));
+  }
+
+  // Clicks a Files-table row's path Selectable the same way a real click
+  // does (a "changed" event with selected=true -- see git.cpp's
+  // selectable_handlers_ dispatch under on_event()).
+  void click_file_row(size_t index) {
+    dynamic payload;
+    payload["selected"_key] = true;
+    fire(files_row_selectable_id(index), "changed"_key, std::move(payload));
   }
 
   void fire(bison::key_t id, bison::key_t event, dynamic payload = dynamic{}) {
@@ -459,4 +535,57 @@ TEST_F(GitRepoRmiTest, ConfirmDeleteBranchNoCancelsWithoutEmitting) {
   fire_at(confirm_root, no_id, "clicked"_key);
   wait_for(got);
   EXPECT_FALSE(got);
+}
+
+// ── update_diff staleness guard ────────────────────────────────────────────
+//
+// Reproduces the bug reported live: selecting an older commit's changed
+// file left the Diff window's title correctly updated but its table
+// permanently empty. Investigation (docs/automation.md's workflow, driven
+// against this exact repo via the automation module) found the request/
+// response round trip itself works correctly for a single, unhurried
+// click; the real defect is that do_update_diff() -- unlike its sibling
+// do_update_commit_files(), which already guards on `hash != selected_
+// hash_` -- had no way to tell a stale response (for a selection the user
+// has since navigated away from) apart from the current one, since the
+// client didn't even echo `hash`/`staged` back for it to compare against.
+// A late-arriving stale response could then silently overwrite whatever
+// the user is now looking at -- exactly the "title says one thing, body
+// shows something else (here, nothing)" symptom reported.
+
+TEST_F(GitRepoRmiTest, DiffPopulatesWhenResponseMatchesCurrentSelection) {
+  call("update_log"_key, make_log_args({{"c1", {}, "Ada", "2026-01-01 10:00", "first"}}, /*working_dirty=*/false));
+  select_graph_row(0); // the only row -- commit c1.
+  call("update_commit_files"_key, make_commit_files_args("c1", {{"foo.txt", "M"}}));
+  click_file_row(0); // selects foo.txt under c1 (would emit diff_requested{hash:"c1", path:"foo.txt", staged:false}).
+
+  call("update_diff"_key, make_diff_args("foo.txt", "c1", false, {{"add", "+ line"}}));
+
+  EXPECT_EQ(child_array_count(root_ + "_diff.vbox.diff_table"), 1u);
+  auto title_it = srv_->last_session->ui_objects.find(root_ + "_diff.vbox.title_label");
+  ASSERT_NE(title_it, srv_->last_session->ui_objects.end());
+  EXPECT_EQ(title_it->second->as<std::string>("text"_key), "foo.txt");
+}
+
+TEST_F(GitRepoRmiTest, StaleDiffResponseIgnoredAfterSelectionChanges) {
+  call("update_log"_key, make_log_args({{"c1", {}, "Ada", "2026-01-01 10:00", "first"}}, /*working_dirty=*/true));
+  // Row 0 is the synthetic "Uncommitted changes" row; row 1 is c1.
+  select_graph_row(1);
+  call("update_commit_files"_key, make_commit_files_args("c1", {{"foo.txt", "M"}}));
+  click_file_row(0); // selects foo.txt under c1.
+
+  // The user navigates away (e.g. back to the working tree) before the
+  // client's diff_requested response for c1/foo.txt comes back.
+  select_graph_row(0);
+
+  // That now-stale response finally arrives.
+  call("update_diff"_key, make_diff_args("foo.txt", "c1", false, {{"add", "+ stale, must be dropped"}}));
+
+  // Must be silently discarded -- no rows added, title untouched (still
+  // its construction-time default, never having been set for a selection
+  // that was current when the response arrived).
+  EXPECT_EQ(child_array_count(root_ + "_diff.vbox.diff_table"), 0u);
+  auto title_it = srv_->last_session->ui_objects.find(root_ + "_diff.vbox.title_label");
+  ASSERT_NE(title_it, srv_->last_session->ui_objects.end());
+  EXPECT_EQ(title_it->second->as<std::string>("text"_key), "");
 }

@@ -300,6 +300,20 @@ def test_saving_shows_confirmation(wish_ui):
 
 ## Gotchas
 
+- **A blank/empty-space UI bug (a `Table` or other content region rendering
+  as nothing) is often a starved-layout bug, not a data bug — check `rect`
+  sizes via `get_tree()` before suspecting the row-building code.** A wide,
+  near-zero-height (or -width) `rect` on the container one or two levels
+  above the empty-looking widget — while a sibling at the same nesting
+  level gets a full-size `rect` — is the signature of a `VerticalLayout`/
+  `HorizontalLayout` that needs an explicit `-1` (fill) hint on its own
+  cross-axis but only has one on its main axis (e.g. `"width": -1` with no
+  `"height": -1`, as a child of a `HorizontalLayout`). Compare the
+  suspect container's `rect` against a sibling's in the same `get_tree()`
+  dump before reading any render/data-population code — this diagnosed a
+  real bug in ~2 minutes (`modules/bdg/desktop/git/DESIGN.md`'s §6 entry on
+  `graph_panel`) that would otherwise look exactly like a row-construction
+  or RMI-dispatch bug from a screenshot alone.
 - **A widget with `rect: null` was never rendered this frame** — e.g. it's
   inside a collapsed `TreeNode`, an unopened `TabBar` tab, or a window that
   hasn't been given a chance to draw yet. Navigate to make it visible (or
@@ -400,7 +414,55 @@ def test_saving_shows_confirmation(wish_ui):
   directly rather than going through `click(path)`. This is consistently
   reliable for a plain click and for the first couple of rows below the
   header; see the next bullet for why a click deep in a long table can
-  still occasionally miss.
+  still occasionally miss. **This does not apply to every table** — the
+  `git` module (`modules/bdg/desktop/git/server/git.cpp`) calls
+  `assign_id()` (which does `ctx().put_object()` + sets `__wish_id`) on
+  every `TableRow` and cell it builds (`add_row()`/`add_file_row()`,
+  unlike `fill_table()`'s pattern above), so its rows and cells *do* get
+  real, queryable rects and *can* be targeted directly by `click(path)`/
+  `get_widget(path)` — check whether the table's own row-building code
+  calls `assign_id()` on the row before assuming pixel math is required.
+- **A plain, undelayed `click(path)` on a `git`-module `TableRow` (the
+  invisible row-spanning `Selectable` in `render_table()`'s row loop, not
+  a real `Selectable`/`Button` widget) frequently fails to register at
+  all** — even with `click()`'s existing 60ms `_CLICK_DELAY_MS`, repeated
+  attempts left the row merely `hovered: true` afterward (confirmed
+  non-selection by moving the mouse away and re-screenshotting: the
+  highlight vanished, proving it was hover styling, not a real selected
+  state) with **no server-side event fired at all** (verified via
+  temporary `--verbose`-visible tracing in the row's event handler). A
+  manual `mouse.move(cx, cy)` → sleep ~100ms → `mouse.down()` → sleep
+  ~200ms → `mouse.up()` → sleep ~300ms sequence was reliable across every
+  attempt in the same session. This is a *plain left click* failing, not
+  the already-documented right-click/ContextMenu or Ctrl/Shift-click
+  cases above — worth trying a longer manual down/up gap first if a table
+  row's `click(path)` looks like it should have worked (correct rect,
+  correct path) but the row's own selection/click handler never runs.
+- **A `Selectable`'s clickable-content field in `get_tree()`/`get_widget()`
+  is `label`, not `text`.** Filtering a bulk `get_tree()` dump for a
+  `Selectable` by `w.get("text") == target` silently matches nothing (no
+  error — `text` is just absent on that widget class) even though the row
+  is right there; use `w.get("label")` instead. Easy to get wrong when a
+  table mixes `Selectable` cells (e.g. a file path) with `Label` cells
+  (e.g. a status code) in the same row and you filter all cells the same
+  way.
+- **A scrollable `Table`'s ImGui scroll position is server-side session
+  state, not per-browser-connection state — it survives a fresh
+  `AutomationClient.launch()` reconnect to the same running server.**
+  `ImGuiContext` lives with the wish session (one per server process, per
+  "one dedicated session per launch" above), not the WebSocket connection,
+  so a table left scrolled to row 280 by one script run is still scrolled
+  there when a *later, independent* script attaches and calls
+  `get_tree()`. A row far outside the current scroll window still returns
+  a non-null `rect` — a real but wildly out-of-viewport one (e.g. `y0:
+  -6910`) — so `rect is not None` alone does not mean a row is visible or
+  clickable; also check the rect actually falls within the scrolling
+  container's own visible bounds (its parent `Table`'s `rect`) before
+  clicking. To bring a specific row into view, `mouse.move()` over the
+  table then repeated `mouse.wheel(0, -400)` (up) / `(0, 400)` (down)
+  calls with a short sleep between each reliably scrolls a long table;
+  re-query `get_tree()`/`get_widget()` afterward to confirm the target
+  row's `rect` now falls inside the table's own bounds before clicking.
 - **A `Ctrl+click`/`Shift+click` synthesized via `keyboard.down("Control")`
   + `mouse.click()` is noticeably less reliable than a plain click**, and
   the failure is silent (no exception; the click just doesn't toggle the
@@ -443,3 +505,22 @@ def test_saving_shows_confirmation(wish_ui):
   two-step (which itself needs the row selection to land first). Two
   `mouse.click(x, y, delay=50)` calls ~50ms apart at the same coordinates
   triggered it consistently in practice.
+- **A repro that only ever launches the app under test from the repo root
+  can't catch a cwd-resolution bug, because that's exactly the one launch
+  directory where the bug is invisible.** A user reported the `git`
+  module's diff panel staying empty; two rounds of live automation repro
+  (server+client over tcp, then standalone) both launched from the repo
+  root and both showed the diff populating correctly — a fix looked
+  confirmed, but the user's own report (`./wish standalone ... -- .`
+  launched from `build/app/`, not the repo root) still failed. The actual
+  bug — an unresolved relative repo-path argument used verbatim as every
+  git subprocess's `cwd`, breaking any pathspec-taking command
+  (`modules/bdg/desktop/git/DESIGN.md`'s §6 entry on `resolve_repo_root()`)
+  — only reproduced once the app was launched from a *different*
+  directory than the repo it was pointed at. When a bug report's repro
+  command includes a relative path argument (`-- .`, a relative
+  `--config=./foo`, ...) or the report doesn't say what directory the app
+  was launched from, deliberately try at least two: the repo/working-
+  directory root itself, and an unrelated subdirectory (`cd build/ &&
+  ./app ... -- .` or similar) — don't assume a repo-root repro that looks
+  clean generalizes to how the user is actually invoking the tool.

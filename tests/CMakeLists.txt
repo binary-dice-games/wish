@@ -161,6 +161,21 @@ if(TARGET test_git_graph_layout)
   target_include_directories(test_git_graph_layout PRIVATE ${CMAKE_SOURCE_DIR})
 endif()
 
+# Exercises resolve_repo_root() (git_process.cpp) against a real, throwaway
+# `git init`'d repo -- client-side, no bison/RMI dependency, same pattern as
+# test_git_graph_layout above. Needs uv_a (libuv) directly since git_process.cpp
+# calls uv_spawn(); wish links it PRIVATE, so it doesn't propagate to this
+# target automatically -- same rationale as wish_finalize_app_modules()'s own
+# uv_a linking for module client targets (cmake/WishModules.cmake).
+wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_GIT                test_git_process       test_git_process.cpp
+    ${CMAKE_SOURCE_DIR}/modules/bdg/desktop/git/client/git_process.cpp)
+if(TARGET test_git_process)
+  target_include_directories(test_git_process PRIVATE ${CMAKE_SOURCE_DIR})
+  if(TARGET uv_a)
+    target_link_libraries(test_git_process PRIVATE uv_a)
+  endif()
+endif()
+
 # Exercises process_control_linux.cpp directly (kill/pause/resume/priority/
 # affinity/details against a real forked child) -- pure POSIX, no bison/RMI
 # dependency, same pattern as test_git_graph_layout above. Linux/MSYS2 only

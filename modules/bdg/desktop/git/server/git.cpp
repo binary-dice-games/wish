@@ -134,6 +134,24 @@ std::string status_color_hex(const std::string& status) {
 // height, compounding without bound frame over frame (see
 // modules/bdg/desktop/tail/server/tail.cpp's kLayout comment for the full
 // mechanism, confirmed there via WISH_LAYOUT_DEBUG_LOG).
+//
+// The same "height": -1 requirement propagates one level further up here:
+// "graph_panel" (the VerticalLayout wrapping current_branch_label +
+// graph_table) is itself a HorizontalLayout child ("body"), and must carry
+// its own "height": -1 too, not just "width": -1. Without it,
+// arrange_horizontal_layout()'s cross-axis sizing (imgui_layout.cpp) falls
+// back to graph_panel's *natural/measured* height for the "no hint"
+// (auto) case -- and measure_vertical_layout() deliberately counts a
+// "height": -1 child (graph_table) as contributing 0 to that natural sum
+// (a stretch child "wants to fill whatever's left over, not define it"),
+// so graph_panel's measured height collapses to just
+// current_branch_label's own height, starving graph_table down to a few
+// pixels and rendering the whole graph as blank space -- this was a real,
+// live-reproduced bug (see DESIGN.md's Implementation Status / this fix's
+// history) fixed by adding "height": -1 here, matching the sibling
+// VerticalLayout-next-to-a-fill-Table pattern already used by e.g.
+// modules/bdg/desktop/mc/server/mc.cpp's "left"/"right" panels
+// ("width": -1, "height": -1" on both).
 
 static constexpr const char* kMainLayout = R"({
   "type": "Window", "title": "Git", "width": 900, "height": 720, "pos_x": 0, "pos_y": 0, "closable": true,
@@ -180,7 +198,7 @@ static constexpr const char* kMainLayout = R"({
               }
             },
             "graph_panel": {
-              "type": "VerticalLayout", "width": -1,
+              "type": "VerticalLayout", "width": -1, "height": -1,
               "children": {
                 "current_branch_label": { "type": "Label", "text": "" },
                 "graph_table": {
@@ -296,7 +314,11 @@ void git_repo::on_init() {
   build_diff_window();
   build_log_window();
 
-  emit("refresh_requested"_key);
+  // Initial population is triggered client-side instead of by emitting
+  // "refresh_requested" here -- an event fired this early (during on_init()
+  // itself, before the client has even finished wiring its onEvent
+  // handlers) was reliably lost; see client/git.cpp's run_git() comment on
+  // its own explicit initial refresh_all() call.
 }
 
 void git_repo::build_main_window() {
@@ -916,6 +938,20 @@ void git_repo::clear_diff_rows() {
 
 dynamic git_repo::do_update_diff(const dynamic& args) {
   std::string path = args.as<std::string>("path"_key);
+  std::string hash = args.as<std::string>("hash"_key);
+  bool staged = args.as<bool>("staged"_key);
+  // Stale response for a selection that has since changed -- mirrors
+  // do_update_commit_files()'s own guard just above. request_diff_for_
+  // selected() re-reads selected_hash_/selected_path_/selected_staged_ at
+  // the moment the file's Selectable is clicked, but the client's git
+  // show/diff call and RMI round trip both take real wall-clock time; if
+  // the user selects a different commit or file (or the working row) while
+  // that request is still in flight, its eventual response must not
+  // silently overwrite whatever is now displayed -- a real, reproducible
+  // hazard since this method previously had no such check at all (see
+  // DESIGN.md's "Design Decisions" entry on this fix).
+  if (path != selected_path_ || hash != selected_hash_ || staged != selected_staged_)
+    return dynamic{};
   if (diff_title_label_)
     diff_title_label_["text"_key] = path;
   if (!diff_table_)
