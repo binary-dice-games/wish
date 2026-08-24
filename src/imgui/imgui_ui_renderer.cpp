@@ -1598,6 +1598,14 @@ void render_table(imgui_renderer& r, const ui_element& node, const context& s) {
     ImGui::TableSetupColumn(label.c_str(), ImGuiTableColumnFlags(col_fl), col_w, ImGuiID(col_id));
   });
 
+  // Pin the header row to the top of the scroll region instead of letting it
+  // scroll away with the body -- ImGui requires TableSetupScrollFreeze() to
+  // be called (after column setup, before the first row) once per table to
+  // opt into this; it only takes effect when ScrollY is also set, since a
+  // non-scrolling table has nothing for the header to stay fixed against.
+  if (headers && (ImGuiTableFlags(flags) & ImGuiTableFlags_ScrollY))
+    ImGui::TableSetupScrollFreeze(0, 1);
+
   if (headers)
     ImGui::TableHeadersRow();
 

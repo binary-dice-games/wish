@@ -571,7 +571,7 @@ other children (typically `TableRow`) provide data rows.
 | `outer_width` | `float` | `0.0` | Outer container width; `0` fills available width. |
 | `outer_height` | `float` | `0.0` | Outer container height; `0` = no clipping/scroll region. |
 | `inner_width` | `float` | `0.0` | Width allocated to contents; `0` uses outer width. |
-| `headers` | `bool` | `false` | Render a header row from `TableColumn` labels. |
+| `headers` | `bool` | `false` | Render a header row from `TableColumn` labels. When `flags` also includes `ScrollY`, the header row is pinned to the top of the scroll region instead of scrolling away with the body. |
 | `auto_scroll` | `bool` | `true` | When `flags` includes `ScrollY` and this is true, automatically scroll to the newest row whenever the row count grows (e.g. a live log table following its latest entry). Set `false` to leave the scroll position alone as rows are appended. |
 
 **Events:**
