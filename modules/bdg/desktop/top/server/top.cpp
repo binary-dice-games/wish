@@ -73,8 +73,8 @@ key_t wish_id_of(const Element& element) {
 
 // ── UI layout ─────────────────────────────────────────────────────────────────
 //
-// "proc_table"'s "flags": "Resizable|RowBg|Borders|Sortable" (the first
-// three match the "tbl_catalog" example in examples/demo/main.cpp;
+// "proc_table"'s "flags": "Resizable|RowBg|Borders|Sortable|ScrollY" (the
+// first three match the "tbl_catalog" example in examples/demo/main.cpp;
 // Sortable makes column headers clickable -- see the "sorted" event handling
 // in on_event()/resort_rows()). Each TableColumn's "flags" is "WidthFixed",
 // except "col_cpu" which also ORs in "DefaultSort|PreferSortDescending" so
@@ -85,6 +85,20 @@ key_t wish_id_of(const Element& element) {
 // instead of sharing the Element base prototype's default (see nano.cpp's
 // tab_bar for the same technique). Rows in "proc_table" are added, updated,
 // and removed at runtime by update_snapshot(), same as nano's tabs.
+//
+// "proc_table" also carries "height": -1 (mc.cpp's left_table/right_table
+// technique): "vbox" (a VerticalLayout, and the Window's sole direct child
+// so it already fills the whole window body) hands every *other* child --
+// "summary", "cores", the two fixed-height Plots, and "status_label" -- its
+// own natural/fixed size first, then gives "proc_table" whatever's left,
+// wrapped in a real child window (see render_vertical_layout()'s
+// height_hint handling in imgui_ui_renderer.cpp). "ScrollY" then engages
+// the Table's own internal scroll region against that fixed allocation, so
+// only the process list scrolls -- the CPU/memory summary, graphs, and the
+// status label at the bottom stay pinned on screen regardless of how many
+// rows are in view. Without "height": -1 here, "proc_table" would auto-size
+// to its full (unclipped) row count and push "status_label" off the bottom
+// of the window, forcing the *whole window* to scroll instead.
 
 static constexpr const char* kLayout = R"({
   "type": "Window",
@@ -120,7 +134,8 @@ static constexpr const char* kLayout = R"({
         },
         "proc_table": {
           "type": "Table", "id": "##proc_table", "columns": 6,
-          "flags": "Resizable|RowBg|Borders|Sortable", "headers": true,
+          "flags": "Resizable|RowBg|Borders|Sortable|ScrollY", "headers": true,
+          "outer_width": 0, "height": -1,
           "children": {
             "col_pid":   { "type": "TableColumn", "label": "PID",     "flags": "WidthFixed", "init_width": 70,  "column_id": 0 },
             "col_name":  { "type": "TableColumn", "label": "Name",    "flags": "WidthFixed", "init_width": 140, "column_id": 1 },
@@ -156,30 +171,46 @@ static constexpr const char* kConfirmKillLayout = R"({
 // Properties (extended info) dialog -- fixed shape, populated with
 // "Loading..." at show-time and filled in once do_report_process_details()
 // delivers the client's response (see that method's doc comment).
+//
+// Resizable (no "AlwaysAutoResize"/"NoResize") with an explicit starting
+// size, same as mc.cpp's kRenameLayout/kPropertiesLayout: "vbox" wraps
+// grid/sep/close_row so "grid"'s "height": -1 has a VerticalLayout parent to
+// actually read that stretch hint from (a bare Window doesn't distribute
+// space to its children the way VerticalLayout/HorizontalLayout do). This
+// makes "grid" -- not "sep"/"close_row" -- absorb any extra height the user
+// resizes the window to, so the separator and Close button stay pinned to
+// the bottom instead of drifting to wherever the (variable-length, wrapped)
+// text rows happen to end.
 static constexpr const char* kPropertiesLayout = R"({
   "type": "Window", "title": "Process Properties", "modal": true,
-  "flags": "NoResize|NoCollapse|AlwaysAutoResize",
-  "width": 420,
+  "flags": "NoCollapse",
+  "width": 460, "height": 420,
   "children": {
-    "grid": {
+    "vbox": {
       "type": "VerticalLayout",
       "children": {
-        "pid_row": { "type": "Label", "text": "" },
-        "ppid_row": { "type": "Label", "text": "" },
-        "user_row": { "type": "Label", "text": "" },
-        "threads_row": { "type": "Label", "text": "" },
-        "start_row": { "type": "Label", "text": "" },
-        "priority_row": { "type": "Label", "text": "" },
-        "affinity_row": { "type": "Label", "text": "" },
-        "exe_row": { "type": "Label", "text": "", "wrap": true },
-        "cwd_row": { "type": "Label", "text": "", "wrap": true },
-        "cmdline_row": { "type": "Label", "text": "", "wrap": true }
+        "grid": {
+          "type": "VerticalLayout",
+          "height": -1,
+          "children": {
+            "pid_row": { "type": "Label", "text": "" },
+            "ppid_row": { "type": "Label", "text": "" },
+            "user_row": { "type": "Label", "text": "" },
+            "threads_row": { "type": "Label", "text": "" },
+            "start_row": { "type": "Label", "text": "" },
+            "priority_row": { "type": "Label", "text": "" },
+            "affinity_row": { "type": "Label", "text": "" },
+            "exe_row": { "type": "Label", "text": "", "wrap": true },
+            "cwd_row": { "type": "Label", "text": "", "wrap": true },
+            "cmdline_row": { "type": "Label", "text": "", "wrap": true }
+          }
+        },
+        "sep": { "type": "Separator" },
+        "close_row": { "type": "HorizontalLayout", "children": {
+          "btn_close": { "type": "Button", "label": "Close", "height": 32 }
+        } }
       }
-    },
-    "sep": { "type": "Separator" },
-    "close_row": { "type": "HorizontalLayout", "children": {
-      "btn_close": { "type": "Button", "label": "Close", "height": 32 }
-    } }
+    }
   }
 })";
 
@@ -576,18 +607,29 @@ void top::show_affinity_dialog(int pid) {
                      << "\", \"value\": " << (is_set(static_cast<int32_t>(i)) ? "true" : "false") << " }";
   }
 
+  // Resizable, with "cores"'s "height": -1 absorbing any extra height the
+  // user resizes into -- same mc.cpp kRenameLayout/kPropertiesLayout pattern
+  // as kPropertiesLayout above -- so "sep"/"buttons" stay pinned to the
+  // bottom instead of drifting up against a short core-checkbox list or
+  // being pushed off-window by a long one.
   std::ostringstream layout;
   layout << R"({
     "type": "Window", "title": "Set CPU Affinity - PID )" << pid << R"(", "modal": true,
-    "flags": "NoResize|NoCollapse|AlwaysAutoResize",
+    "flags": "NoCollapse",
+    "width": 280, "height": 320,
     "children": {
-      "cores": { "type": "VerticalLayout", "children": { )"
+      "vbox": {
+        "type": "VerticalLayout",
+        "children": {
+          "cores": { "type": "VerticalLayout", "height": -1, "children": { )"
          << checkboxes_json.str() << R"( } },
-      "sep": { "type": "Separator" },
-      "buttons": { "type": "HorizontalLayout", "spacing": 6, "children": {
-        "btn_apply": { "type": "Button", "label": "Apply", "height": 32 },
-        "btn_cancel": { "type": "Button", "label": "Cancel", "height": 32 }
-      } }
+          "sep": { "type": "Separator" },
+          "buttons": { "type": "HorizontalLayout", "spacing": 6, "children": {
+            "btn_apply": { "type": "Button", "label": "Apply", "height": 32 },
+            "btn_cancel": { "type": "Button", "label": "Cancel", "height": 32 }
+          } }
+        }
+      }
     }
   })";
 
@@ -600,12 +642,12 @@ void top::show_affinity_dialog(int pid) {
   }
 
   affinity_window_id_ = (*tree[""])["__wish_id"_key].as<key_t>();
-  tree.with("buttons.btn_apply", [&](const auto& e) { affinity_apply_id_ = wish_id_of(e); });
-  tree.with("buttons.btn_cancel", [&](const auto& e) { affinity_cancel_id_ = wish_id_of(e); });
+  tree.with("vbox.buttons.btn_apply", [&](const auto& e) { affinity_apply_id_ = wish_id_of(e); });
+  tree.with("vbox.buttons.btn_cancel", [&](const auto& e) { affinity_cancel_id_ = wish_id_of(e); });
 
   affinity_checkboxes_.clear();
   for (size_t i = 0; i < core_count; ++i) {
-    tree.with("cores.core" + std::to_string(i), [&](const auto& e) {
+    tree.with("vbox.cores.core" + std::to_string(i), [&](const auto& e) {
       affinity_checkboxes_.push_back({e, static_cast<int32_t>(i)});
     });
   }
@@ -656,17 +698,17 @@ void top::show_properties_dialog(int pid) {
 
   properties_window_id_ = (*tree[""])["__wish_id"_key].as<key_t>();
   (*tree[""])["title"_key] = "Process Properties - PID " + std::to_string(pid);
-  tree.with("close_row.btn_close", [&](const auto& e) { properties_close_id_ = wish_id_of(e); });
-  tree.with("grid.pid_row", [&](const auto& e) { properties_pid_label_ = e; });
-  tree.with("grid.ppid_row", [&](const auto& e) { properties_ppid_label_ = e; });
-  tree.with("grid.user_row", [&](const auto& e) { properties_user_label_ = e; });
-  tree.with("grid.threads_row", [&](const auto& e) { properties_threads_label_ = e; });
-  tree.with("grid.start_row", [&](const auto& e) { properties_start_label_ = e; });
-  tree.with("grid.priority_row", [&](const auto& e) { properties_priority_label_ = e; });
-  tree.with("grid.affinity_row", [&](const auto& e) { properties_affinity_label_ = e; });
-  tree.with("grid.exe_row", [&](const auto& e) { properties_exe_label_ = e; });
-  tree.with("grid.cwd_row", [&](const auto& e) { properties_cwd_label_ = e; });
-  tree.with("grid.cmdline_row", [&](const auto& e) { properties_cmdline_label_ = e; });
+  tree.with("vbox.close_row.btn_close", [&](const auto& e) { properties_close_id_ = wish_id_of(e); });
+  tree.with("vbox.grid.pid_row", [&](const auto& e) { properties_pid_label_ = e; });
+  tree.with("vbox.grid.ppid_row", [&](const auto& e) { properties_ppid_label_ = e; });
+  tree.with("vbox.grid.user_row", [&](const auto& e) { properties_user_label_ = e; });
+  tree.with("vbox.grid.threads_row", [&](const auto& e) { properties_threads_label_ = e; });
+  tree.with("vbox.grid.start_row", [&](const auto& e) { properties_start_label_ = e; });
+  tree.with("vbox.grid.priority_row", [&](const auto& e) { properties_priority_label_ = e; });
+  tree.with("vbox.grid.affinity_row", [&](const auto& e) { properties_affinity_label_ = e; });
+  tree.with("vbox.grid.exe_row", [&](const auto& e) { properties_exe_label_ = e; });
+  tree.with("vbox.grid.cwd_row", [&](const auto& e) { properties_cwd_label_ = e; });
+  tree.with("vbox.grid.cmdline_row", [&](const auto& e) { properties_cmdline_label_ = e; });
 
   if (properties_pid_label_)
     properties_pid_label_["text"_key] = "PID: " + std::to_string(pid);
