@@ -138,6 +138,7 @@ into a persistent, identity-keyed directory per client via an
 | [docs/ai-assisted-development.md](docs/ai-assisted-development.md) | Building wish apps/UI via natural language with the `wish-module`/`wish-ui` AI-agent skills |
 | [docs/automation.md](docs/automation.md) | Driving a running wish UI programmatically (widget tree queries, screenshots, input injection) for debugging and e2e tests |
 | [docs/object-inspector.md](docs/object-inspector.md) | `ObjectInspector`: reflection-driven property table + description panel, its field → widget dispatch table, and the new `Hidden`/`Order`/`ColorField`/`Multiline`/`DropTarget` bison attributes |
+| [docs/profiling.md](docs/profiling.md) | Capturing a Perfetto trace of the server render loop/layout engine via bison's profiler, and viewing it at ui.perfetto.dev |
 | [DESIGN.md](DESIGN.md) | Architecture, key abstractions, object model, and design decisions |
 
 ## License

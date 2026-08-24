@@ -12,6 +12,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <filesystem>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -66,6 +67,50 @@ TEST(ServerTest, StartStopDoesNotHang) {
   memory_server_transport transport;
   tracking_server srv{transport, std::make_unique<wish::null_renderer>()};
   srv.start();
+  srv.stop();
+}
+
+// ── Profiling ─────────────────────────────────────────────────────────────────
+
+TEST(ServerTest, ProfilingCapturesAndWritesTraceFile) {
+  auto tmp_dir = std::filesystem::temp_directory_path() / "wish_profiling_test";
+  std::filesystem::remove_all(tmp_dir);
+  std::filesystem::create_directories(tmp_dir);
+
+  memory_server_transport transport;
+  tracking_server srv{transport, std::make_unique<wish::null_renderer>()};
+  srv.enable_profiling(tmp_dir);
+  srv.start();
+  ASSERT_TRUE(srv.start_capture_now("test"));
+  // Let render_loop's BISON_TRACE_SCOPE calls tick and flush at least once
+  // (recorder flushes every ~200ms); no externally observable state to poll
+  // for "a flush happened" short of test-only hooks, so a coarse sleep is
+  // used here (this is a wiring smoke test, not a timing-sensitive unit
+  // test -- bison's own tests/rmi_profiler_tests.cpp covers flush timing).
+  std::this_thread::sleep_for(std::chrono::milliseconds{300});
+  srv.stop_capture_now();
+  srv.stop();
+
+  int file_count = 0;
+  std::filesystem::path trace_file;
+  for (auto& entry : std::filesystem::directory_iterator(tmp_dir)) {
+    if (entry.path().extension() == ".perfetto-trace") {
+      file_count++;
+      trace_file = entry.path();
+    }
+  }
+  ASSERT_EQ(file_count, 1);
+  EXPECT_GT(std::filesystem::file_size(trace_file), 0u);
+
+  std::filesystem::remove_all(tmp_dir);
+}
+
+TEST(ServerTest, StartCaptureNowIsNoopWithoutProfilingEnabled) {
+  memory_server_transport transport;
+  tracking_server srv{transport, std::make_unique<wish::null_renderer>()};
+  srv.start();
+  EXPECT_FALSE(srv.start_capture_now("test"));
+  EXPECT_FALSE(srv.is_capture_active_now());
   srv.stop();
 }
 

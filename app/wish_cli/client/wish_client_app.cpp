@@ -163,6 +163,7 @@ void wish_client_app::on_connect_params(bison::dynamic& params) const {
 
 int wish_client_app::on_session(bison::rmi::client& c) {
   wish_client_ = static_cast<wish::client*>(&c);
+  profiler_recorder_ = bison::rmi::attach_profiling(c);
   // Unblock done_future_.wait() below if the server closes the connection --
   // otherwise a "closed" event that would have called signal_done() can
   // never arrive, and the process hangs forever after the server exits.

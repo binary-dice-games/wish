@@ -44,6 +44,8 @@ DEFINE_string(renderer, "web", "Rendering backend: sdl3 or web");
 // renderer's HTTP/WebSocket port.
 DEFINE_int32(web_port, 8080, "HTTP/WebSocket port for --renderer web");
 DEFINE_string(web_bind, "127.0.0.1", "Bind address for --renderer web (localhost-only by default)");
+DEFINE_string(profiling_dir, "", "Directory for Perfetto trace output; empty disables profiling");
+DEFINE_bool(profiling_autostart, false, "Start capture immediately on server startup (requires --profiling_dir)");
 
 namespace bdg::wish {
 
@@ -148,7 +150,15 @@ int wish_server_app::run_with_transport(bison::rmi::transport::server_transport_
   // for every other transport.
   bison::dynamic listen_params;
   on_listen_params(listen_params);
+  if (!FLAGS_profiling_dir.empty())
+    srv.enable_profiling(FLAGS_profiling_dir);
   srv.start(nullptr, std::move(listen_params));
+  if (FLAGS_profiling_autostart) {
+    if (FLAGS_profiling_dir.empty())
+      server_log_->info("--profiling_autostart requires --profiling_dir; ignoring");
+    else
+      srv.start_capture_now("startup");
+  }
   server_log_->info("server started");
   on_listening();
   // Stops on whichever comes first: the renderer's own close signal (sdl3
@@ -158,6 +168,7 @@ int wish_server_app::run_with_transport(bison::rmi::transport::server_transport_
   // handler for this process.
   while (!srv.should_quit() && !is_shutdown_requested())
     std::this_thread::sleep_for(std::chrono::milliseconds{50});
+  srv.stop_capture_now();
   srv.stop();
   server_log_.reset();
   return 0;

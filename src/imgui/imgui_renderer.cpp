@@ -10,6 +10,7 @@
 
 #include "src/bison/bison_common.hpp"
 #include "src/bison/bison_object.hpp"
+#include "src/rmi/shared/profiling.hpp"
 
 #include <imgui.h>
 
@@ -404,6 +405,7 @@ ImFont* resolve_element_font(imgui_renderer& r, const ui_element& node, const co
 }
 
 void imgui_renderer::render_node(const ui_element& node, const context& s) {
+  BISON_TRACE_SCOPE("render_node");
   if (!node.get_as<bool>("visible"_key, true))
     return;
 
@@ -649,6 +651,7 @@ void imgui_renderer::render_node(const ui_element& node, const context& s) {
 }
 
 void imgui_renderer::render_session(const ui_element& root, const context& s) {
+  BISON_TRACE_SCOPE("render_session");
   if (!s.style_service) {
     render_node(root, s);
     return;

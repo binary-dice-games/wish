@@ -11,6 +11,7 @@
 
 #include "src/app/client/client_app.hpp"
 #include "src/client/client.hpp"
+#include "src/rmi/client/profiler_client.hpp"
 
 #include <future>
 #include <memory>
@@ -111,6 +112,7 @@ class wish_client_app : public bison::app::client_app, public wish_app_host {
   std::future<void> done_future_{done_.get_future()};
   std::vector<bison::rmi::proxy::dynamic> live_proxies_;
   wish::client* wish_client_ = nullptr;
+  std::shared_ptr<bison::rmi::client_recorder> profiler_recorder_;
 };
 
 } // namespace bdg::wish

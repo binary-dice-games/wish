@@ -7,6 +7,7 @@
 #include <server/registry.hpp>
 #include <server/server.hpp>
 #include <context/style_service.hpp>
+#include "src/rmi/shared/profiling.hpp"
 #include <ui/ui_root.hpp>
 
 #ifdef WISH_AUTOMATION_ENABLED
@@ -191,6 +192,7 @@ void server::render_loop() {
     renderer_->setup();
   while (running_.load(std::memory_order_acquire)) {
     if (renderer_) {
+      BISON_TRACE_SCOPE("render_loop_tick");
       // poll_events() must run every iteration regardless of whether a
       // frame is drawn, so OS event queues are drained and window-close
       // requests are never delayed by an idle skip below.
@@ -218,6 +220,7 @@ void server::render_loop() {
       auto now = std::chrono::steady_clock::now();
       if (now - last_tick_time_ >= kMinTickInterval) {
         last_tick_time_ = now;
+        BISON_TRACE_SCOPE("tick");
         renderer_->tick(sessions_snapshot);
       }
 
@@ -274,6 +277,7 @@ void server::render_loop() {
       // sessions resubmitted) or none of it is, leaving the previous
       // presented frame on screen unchanged.
       if (needs_render && running_.load(std::memory_order_acquire)) {
+        BISON_TRACE_SCOPE("render_frame");
         pending_render_ = false;
         last_render_time_ = std::chrono::steady_clock::now();
         renderer_->begin_frame();
