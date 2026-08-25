@@ -122,6 +122,7 @@ static constexpr const char* kLayout = R"({
         "cores": { "type": "HorizontalLayout", "spacing": 6, "children": {} },
         "cpu_plot": {
           "type": "Plot", "title": "CPU % History", "height": 160,
+          "profiler_marker": "CPU Plot",
           "y_label": "%",
           "children": {
             "cpu_series": { "type": "PlotShaded", "label": "CPU %" }
@@ -129,6 +130,7 @@ static constexpr const char* kLayout = R"({
         },
         "mem_plot": {
           "type": "Plot", "title": "Memory % History", "height": 160,
+          "profiler_marker": "Memory Plot",
           "y_label": "%",
           "children": {
             "mem_series": { "type": "PlotLine", "label": "Memory %" }
@@ -136,6 +138,7 @@ static constexpr const char* kLayout = R"({
         },
         "proc_table": {
           "type": "Table", "id": "##proc_table", "columns": 6,
+          "profiler_marker": "Process Table",
           "flags": "Resizable|RowBg|Borders|Sortable|ScrollY", "headers": true,
           "outer_width": 0, "height": -1,
           "children": {

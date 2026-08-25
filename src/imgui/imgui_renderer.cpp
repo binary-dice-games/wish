@@ -408,6 +408,13 @@ void imgui_renderer::render_node(const ui_element& node, const context& s) {
   if (!node.get_as<bool>("visible"_key, true))
     return;
 
+  const char* profiler_marker = nullptr;
+  const auto* pm = node.findField("profiler_marker"_key);
+  if (pm && pm->is<std::string>() && !pm->as<std::string>().empty()) {
+    profiler_marker = pm->as<std::string>().c_str();
+  }
+  BISON_TRACE_SCOPE(profiler_marker);
+
   // Per-element font override.  PushFont(nullptr) is valid — it selects the
   // default font — so the push/pop pair is always safe to emit.
   ImFont* font = resolve_element_font(*this, node, s);

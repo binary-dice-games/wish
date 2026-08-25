@@ -33,6 +33,13 @@ void register_element() {
           attr<Description>("Render order within parent children. Lower values render first."),
           attr<Category>("Layout")});
   proto->addField(
+      "profiler_marker"_rkey,
+      field{
+          std::string{},
+          attr<DisplayName>("Profiler Marker"),
+          attr<Description>("If set and the profiler is enabled, the rendering of this element will be profiled."),
+          attr<Category>("Performance")});
+  proto->addField(
       "font_path"_rkey,
       field{
           std::string{},

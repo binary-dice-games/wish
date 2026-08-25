@@ -234,6 +234,13 @@ natural_size measure_node(imgui_renderer& r, const ui_element& node, const conte
     return {0.0f, 0.0f};
   }
 
+  const char* profiler_marker = nullptr;
+  const auto* pm = node.findField("profiler_marker"_key);
+  if (pm && pm->is<std::string>() && !pm->as<std::string>().empty()) {
+    profiler_marker = pm->as<std::string>().c_str();
+  }
+  BISON_TRACE_SCOPE(profiler_marker);
+
   ImFont* font = resolve_element_font(r, node, s);
   ImGui::PushFont(font);
 
