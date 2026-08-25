@@ -49,13 +49,13 @@ static std::ofstream* layout_debug_log() {
 }
 
 static std::string debug_node_label(const ui_element& node) {
-  const auto* path_field = node.findField("__path__"_key);
-  if (path_field && path_field->is<std::string>() && !path_field->as<std::string>().empty())
-    return path_field->as<std::string>();
+  std::string path = node.path();
+  if (!path.empty())
+    return path;
   // No "__path__" (e.g. a form-generated TableRow cell -- see stable_id()'s
   // identical fallback in imgui_ui_renderer.cpp): identify by class hash id
   // instead of leaving the log line unattributed.
-  auto cls = node.as<key_t>(dynamic::CLASS);
+  auto cls = node.class_key();
   char buf[32];
   std::snprintf(buf, sizeof(buf), "class#%08x", static_cast<unsigned>(cls.id));
   return buf;
@@ -107,7 +107,7 @@ static natural_size measure_vertical_layout(imgui_renderer& r, const ui_element&
   float max_w = 0.0f;
   int n = 0;
   node.for_each_child_ordered([&](key_t, ui_element& child) {
-    bool is_spring = child.as<key_t>(dynamic::CLASS) == "Spring"_key;
+    bool is_spring = child.class_key() == "Spring"_key;
     natural_size child_sz = measure_node(r, child, s);
     if (!is_spring) {
       float h = child.get_as<float>("height"_key, 0.0f);
@@ -129,7 +129,7 @@ static natural_size measure_horizontal_layout(imgui_renderer& r, const ui_elemen
   float max_h = 0.0f;
   int n = 0;
   node.for_each_child_ordered([&](key_t, ui_element& child) {
-    bool is_spring = child.as<key_t>(dynamic::CLASS) == "Spring"_key;
+    bool is_spring = child.class_key() == "Spring"_key;
     natural_size child_sz = measure_node(r, child, s);
     if (!is_spring) {
       float w = child.get_as<float>("width"_key, 0.0f);
@@ -229,22 +229,18 @@ static const measure_fn_map& measure_dispatch_fns() {
 }
 
 natural_size measure_node(imgui_renderer& r, const ui_element& node, const context& s) {
-  if (!node.get_as<bool>("visible"_key, true)) {
+  if (!node.visible()) {
     node.set_measured_size({0.0f, 0.0f}, ImGui::GetFrameCount());
     return {0.0f, 0.0f};
   }
 
-  const char* profiler_marker = nullptr;
-  const auto* pm = node.findField("profiler_marker"_key);
-  if (pm && pm->is<std::string>() && !pm->as<std::string>().empty()) {
-    profiler_marker = pm->as<std::string>().c_str();
-  }
-  BISON_TRACE_SCOPE(profiler_marker);
+  const std::string* profiler_marker = node.profiler_marker();
+  BISON_TRACE_SCOPE(profiler_marker ? profiler_marker->c_str() : nullptr);
 
   ImFont* font = resolve_element_font(r, node, s);
   ImGui::PushFont(font);
 
-  auto cls = node.as<key_t>(dynamic::CLASS);
+  auto cls = node.class_key();
   natural_size sz{0.0f, 0.0f};
   auto it = measure_dispatch_fns().find(cls.id);
   if (it != measure_dispatch_fns().end()) {
@@ -286,7 +282,7 @@ static void arrange_vertical_layout(imgui_renderer& r, const ui_element& node, I
   float stretch_weight_total = 0.0f;
   int n = 0;
   node.for_each_child_ordered([&](key_t, ui_element& child) {
-    bool is_spring = child.as<key_t>(dynamic::CLASS) == "Spring"_key;
+    bool is_spring = child.class_key() == "Spring"_key;
     if (is_spring) {
       float weight = std::max(0.0f, child.get_as<float>("weight"_key, 1.0f));
       stretch_weight_total += weight;
@@ -353,7 +349,7 @@ static void arrange_horizontal_layout(imgui_renderer& r, const ui_element& node,
   float stretch_weight_total = 0.0f;
   int n = 0;
   node.for_each_child_ordered([&](key_t, ui_element& child) {
-    bool is_spring = child.as<key_t>(dynamic::CLASS) == "Spring"_key;
+    bool is_spring = child.class_key() == "Spring"_key;
     if (is_spring) {
       float weight = std::max(0.0f, child.get_as<float>("weight"_key, 1.0f));
       stretch_weight_total += weight;
@@ -508,7 +504,7 @@ void arrange_node(imgui_renderer& r, const ui_element& node, ImVec2 origin, ImVe
   }
 
   node.set_arranged_rect({origin.x, origin.y}, {avail.x, avail.y}, ImGui::GetFrameCount());
-  auto cls = node.as<key_t>(dynamic::CLASS);
+  auto cls = node.class_key();
   auto it = arrange_dispatch_fns().find(cls.id);
   if (it != arrange_dispatch_fns().end())
     it->second(r, node, origin, avail, s);

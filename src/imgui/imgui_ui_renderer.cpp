@@ -40,13 +40,10 @@ using namespace bdg::bison;
 // dot-path (e.g. "__nano_0") reads the same as the source that produced
 // it, and is exactly as stable across runs as a hash of it would be.
 std::string stable_id(const ui_element& node) {
-  const auto* path_field = node.findField("__path__"_key);
-  if (path_field && path_field->is<std::string>()) {
-    const std::string& path = path_field->as<std::string>();
-    if (!path.empty())
-      return path;
-  }
-  key_t wish_id = node.get_as<key_t>("__wish_id"_key, key_t{});
+  std::string path = node.path();
+  if (!path.empty())
+    return path;
+  key_t wish_id = node.wish_id();
   if (wish_id.id != 0)
     return std::to_string(wish_id.id);
   // Neither "__path__" nor "__wish_id" -- a form-generated node with no RMI
@@ -150,7 +147,7 @@ void render_window(imgui_renderer& r, const ui_element& node, const context& s) 
 
   // Automatically reserve menu bar space when a direct MenuBar child exists.
   node.for_each_child_ordered([&](key_t, ui_element& child) {
-    if (child.as<key_t>(dynamic::CLASS) == "MenuBar"_key)
+    if (child.class_key() == "MenuBar"_key)
       fl |= ImGuiWindowFlags_MenuBar;
   });
 
@@ -266,11 +263,11 @@ void render_window(imgui_renderer& r, const ui_element& node, const context& s) 
     if (closable) {
       // Title-bar X path: identical detection to the non-modal case below.
       if (!open)
-        enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "closed"_key, dynamic{});
+        enqueue_event(s, node.wish_id(), "closed"_key, dynamic{});
     } else if (was_open && !now_open) {
       // No title bar to close from -- this transition means an in-content
       // handler called ImGui::CloseCurrentPopup().
-      enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "closed"_key, dynamic{});
+      enqueue_event(s, node.wish_id(), "closed"_key, dynamic{});
     }
     return;
   }
@@ -360,7 +357,7 @@ void render_window(imgui_renderer& r, const ui_element& node, const context& s) 
   ImGui::End();
 
   if (closable && !open)
-    enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "closed"_key, dynamic{});
+    enqueue_event(s, node.wish_id(), "closed"_key, dynamic{});
 }
 
 // Reads a "#RRGGBBAA"/"#RRGGBB" hex color field, preferring a
@@ -407,7 +404,7 @@ void render_button(imgui_renderer&, const ui_element& node, const context& s) {
   int32_t w = node.get_as<int32_t>("width"_key, 0);
   int32_t h = node.get_as<int32_t>("height"_key, 0);
   if (ImGui::Button(label.c_str(), ImVec2(float(w), float(h))))
-    enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "clicked"_key, dynamic{});
+    enqueue_event(s, node.wish_id(), "clicked"_key, dynamic{});
 }
 
 void render_checkbox(imgui_renderer&, const ui_element& node, const context& s) {
@@ -417,7 +414,7 @@ void render_checkbox(imgui_renderer&, const ui_element& node, const context& s) 
     const_cast<ui_element&>(node)["value"_key] = val;
     dynamic payload;
     payload["value"_key] = val;
-    enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "changed"_key, std::move(payload));
+    enqueue_event(s, node.wish_id(), "changed"_key, std::move(payload));
   }
 }
 
@@ -434,7 +431,7 @@ void render_slider_float(imgui_renderer&, const ui_element& node, const context&
     const_cast<ui_element&>(node)["value"_key] = val;
     dynamic payload;
     payload["value"_key] = val;
-    enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "changed"_key, std::move(payload));
+    enqueue_event(s, node.wish_id(), "changed"_key, std::move(payload));
   }
 }
 
@@ -450,7 +447,7 @@ void render_slider_int(imgui_renderer&, const ui_element& node, const context& s
     const_cast<ui_element&>(node)["value"_key] = val;
     dynamic payload;
     payload["value"_key] = val;
-    enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "changed"_key, std::move(payload));
+    enqueue_event(s, node.wish_id(), "changed"_key, std::move(payload));
   }
 }
 
@@ -488,7 +485,7 @@ void render_input_text(imgui_renderer&, const ui_element& node, const context& s
     const_cast<ui_element&>(node)["value"_key] = new_val;
     dynamic payload;
     payload["value"_key] = new_val;
-    enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "changed"_key, std::move(payload));
+    enqueue_event(s, node.wish_id(), "changed"_key, std::move(payload));
   }
 }
 
@@ -517,7 +514,7 @@ void render_color_edit(imgui_renderer&, const ui_element& node, const context& s
     const_cast<ui_element&>(node)["value"_key] = new_val;
     dynamic payload;
     payload["value"_key] = new_val;
-    enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "changed"_key, std::move(payload));
+    enqueue_event(s, node.wish_id(), "changed"_key, std::move(payload));
   }
 }
 
@@ -696,7 +693,7 @@ void render_vertical_layout(imgui_renderer& r, const ui_element& node, const con
   ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(ImGui::GetStyle().ItemSpacing.x, spacing));
 
   node.for_each_child_ordered([&](key_t, ui_element& child) {
-    bool is_spring = child.as<key_t>(dynamic::CLASS) == "Spring"_key;
+    bool is_spring = child.class_key() == "Spring"_key;
     float height_hint = is_spring ? 0.0f : child.get_as<float>("height"_key, 0.0f);
     vec2f size = child.arranged_size();
     // size.x/size.y <= 0 is also treated as "don't wrap", not just an auto
@@ -846,7 +843,7 @@ void render_horizontal_layout(imgui_renderer& r, const ui_element& node, const c
     // DESIGN.md's "HorizontalLayout row containing VerticalLayout columns"
     // case.
     ImGui::BeginGroup();
-    bool is_spring = child.as<key_t>(dynamic::CLASS) == "Spring"_key;
+    bool is_spring = child.class_key() == "Spring"_key;
     float width_hint = is_spring ? 0.0f : child.get_as<float>("width"_key, 0.0f);
     vec2f size = child.arranged_size();
     // size.x/size.y <= 0 also forces "don't wrap" -- see
@@ -980,7 +977,7 @@ void render_splitter(imgui_renderer& r, const ui_element& node, const context& s
   };
 
   ImGuiMouseCursor cursor = is_vertical ? ImGuiMouseCursor_ResizeEW : ImGuiMouseCursor_ResizeNS;
-  key_t id = node.get_as<key_t>("__wish_id"_key, key_t{});
+  key_t id = node.wish_id();
   int released_bar = -1;
 
   ImGui::BeginGroup();
@@ -1073,7 +1070,7 @@ void render_menu_bar(imgui_renderer& r, const ui_element& node, const context& s
     // their own, no explicit SameLine needed).
     ui_element* trailing_label = nullptr;
     node.for_each_child_ordered([&](key_t, ui_element& child) {
-      trailing_label = (child.as<key_t>(dynamic::CLASS) == "Label"_key) ? &child : nullptr;
+      trailing_label = (child.class_key() == "Label"_key) ? &child : nullptr;
     });
 
     node.for_each_child_ordered([&](key_t, ui_element& child) {
@@ -1133,7 +1130,7 @@ void render_menu_item(imgui_renderer&, const ui_element& node, const context& s)
       ImGui::SetClipboardText(copy_text.c_str());
     dynamic payload;
     payload["checked"_key] = checked;
-    enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "clicked"_key, std::move(payload));
+    enqueue_event(s, node.wish_id(), "clicked"_key, std::move(payload));
   }
 }
 
@@ -1209,7 +1206,7 @@ void render_tab_item(imgui_renderer& r, const ui_element& node, const context& s
   bool was_selected = (prev_f && prev_f->is<bool>()) ? prev_f->as<bool>() : is_selected;
   const_cast<ui_element&>(node)["__selected__"_key] = is_selected;
   if (is_selected && !was_selected)
-    enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "selected"_key, dynamic{});
+    enqueue_event(s, node.wish_id(), "selected"_key, dynamic{});
 
   if (is_selected) {
     render_children(r, node, s);
@@ -1217,7 +1214,7 @@ void render_tab_item(imgui_renderer& r, const ui_element& node, const context& s
   }
 
   if (closable && !open)
-    enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "closed"_key, dynamic{});
+    enqueue_event(s, node.wish_id(), "closed"_key, dynamic{});
 }
 
 // ── Tree ──────────────────────────────────────────────────────────────────────
@@ -1239,7 +1236,7 @@ void render_tree_node(imgui_renderer& r, const ui_element& node, const context& 
   if (is_open != was_open) {
     dynamic payload;
     payload["open"_key] = is_open;
-    enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "toggled"_key, std::move(payload));
+    enqueue_event(s, node.wish_id(), "toggled"_key, std::move(payload));
   }
 
   if (is_open && !leaf) {
@@ -1258,7 +1255,7 @@ void render_collapsing_header(imgui_renderer& r, const ui_element& node, const c
   if (is_open != was_open) {
     dynamic payload;
     payload["open"_key] = is_open;
-    enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "toggled"_key, std::move(payload));
+    enqueue_event(s, node.wish_id(), "toggled"_key, std::move(payload));
   }
 
   if (is_open)
@@ -1320,7 +1317,7 @@ void render_combo(imgui_renderer&, const ui_element& node, const context& s) {
     payload["value"_key] = int32_t(cur);
     if (cur >= 0 && cur < int(items.size()))
       payload["text"_key] = items[size_t(cur)];
-    enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "changed"_key, std::move(payload));
+    enqueue_event(s, node.wish_id(), "changed"_key, std::move(payload));
   }
 }
 
@@ -1328,7 +1325,7 @@ void render_radio_button(imgui_renderer&, const ui_element& node, const context&
   auto label = node.get_as<std::string>("label"_key, "");
   bool active = node.get_as<bool>("active"_key, false);
   if (ImGui::RadioButton(label.c_str(), active))
-    enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "clicked"_key, dynamic{});
+    enqueue_event(s, node.wish_id(), "clicked"_key, dynamic{});
 }
 
 void render_selectable(imgui_renderer& r, const ui_element& node, const context& s) {
@@ -1355,7 +1352,7 @@ void render_selectable(imgui_renderer& r, const ui_element& node, const context&
     const_cast<ui_element&>(node)["selected"_key] = v;
     dynamic payload;
     payload["selected"_key] = v;
-    enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "changed"_key, std::move(payload));
+    enqueue_event(s, node.wish_id(), "changed"_key, std::move(payload));
   }
 
   if (has_children) {
@@ -1386,7 +1383,7 @@ void render_input_int(imgui_renderer&, const ui_element& node, const context& s)
     const_cast<ui_element&>(node)["value"_key] = int32_t(v);
     dynamic payload;
     payload["value"_key] = int32_t(v);
-    enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "changed"_key, std::move(payload));
+    enqueue_event(s, node.wish_id(), "changed"_key, std::move(payload));
   }
 }
 
@@ -1404,7 +1401,7 @@ void render_input_float(imgui_renderer&, const ui_element& node, const context& 
     const_cast<ui_element&>(node)["value"_key] = v;
     dynamic payload;
     payload["value"_key] = v;
-    enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "changed"_key, std::move(payload));
+    enqueue_event(s, node.wish_id(), "changed"_key, std::move(payload));
   }
 }
 
@@ -1420,7 +1417,7 @@ void render_drag_float(imgui_renderer&, const ui_element& node, const context& s
     const_cast<ui_element&>(node)["value"_key] = v;
     dynamic payload;
     payload["value"_key] = v;
-    enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "changed"_key, std::move(payload));
+    enqueue_event(s, node.wish_id(), "changed"_key, std::move(payload));
   }
 }
 
@@ -1435,7 +1432,7 @@ void render_drag_int(imgui_renderer&, const ui_element& node, const context& s) 
     const_cast<ui_element&>(node)["value"_key] = int32_t(v);
     dynamic payload;
     payload["value"_key] = int32_t(v);
-    enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "changed"_key, std::move(payload));
+    enqueue_event(s, node.wish_id(), "changed"_key, std::move(payload));
   }
 }
 
@@ -1474,7 +1471,7 @@ void render_dockspace_viewport(imgui_renderer& r, const ui_element& node, const 
       ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus |
       ImGuiWindowFlags_NoNavFocus;
   node.for_each_child_ordered([&](bison::key_t, ui_element& child) {
-    if (child.as<bison::key_t>(bison::dynamic::CLASS) == "MenuBar"_key)
+    if (child.class_key() == "MenuBar"_key)
       host_flags |= ImGuiWindowFlags_MenuBar;
   });
 
@@ -1490,7 +1487,7 @@ void render_dockspace_viewport(imgui_renderer& r, const ui_element& node, const 
 
   // Non-Window children (e.g. MenuBar) are rendered inside the host window.
   node.for_each_child_ordered([&](bison::key_t, ui_element& child) {
-    if (child.as<bison::key_t>(bison::dynamic::CLASS) != "Window"_key)
+    if (child.class_key() != "Window"_key)
       r.render_node(child, s);
   });
 
@@ -1508,7 +1505,7 @@ void render_dockspace_viewport(imgui_renderer& r, const ui_element& node, const 
   // Window children are rendered at the top level — they will dock into
   // the dockspace created above.
   node.for_each_child_ordered([&](bison::key_t, ui_element& child) {
-    if (child.as<bison::key_t>(bison::dynamic::CLASS) == "Window"_key)
+    if (child.class_key() == "Window"_key)
       r.render_node(child, s);
   });
 }
@@ -1585,16 +1582,19 @@ void render_table(imgui_renderer& r, const ui_element& node, const context& s) {
   // frame to compound.
   float own_width_hint = node.get_as<float>("width"_key, 0.0f);
   float own_height_hint = node.get_as<float>("height"_key, 0.0f);
-  ensure_arranged(r, node, s);
-  if (own_width_hint != 0.0f && outer_w == 0.0f)
-    outer_w = node.arranged_size().x;
-  if (own_height_hint != 0.0f && outer_h == 0.0f)
-    outer_h = node.arranged_size().y;
-
+  {
+    BISON_TRACE_SCOPE("table::ensure_arranged");
+    ensure_arranged(r, node, s);
+    if (own_width_hint != 0.0f && outer_w == 0.0f)
+      outer_w = node.arranged_size().x;
+    if (own_height_hint != 0.0f && outer_h == 0.0f)
+      outer_h = node.arranged_size().y;
+  }
+  
   if (!ImGui::BeginTable(id.c_str(), columns, ImGuiTableFlags(flags), ImVec2(outer_w, outer_h), inner_w))
     return;
 
-  const key_t table_id = node.get_as<key_t>("__wish_id"_key, key_t{});
+  const key_t table_id = node.wish_id();
 
   // Shift+drag range-select support (see the per-row "drag_extend" check
   // below): reset this table's last-extended-to row once the mouse button
@@ -1609,7 +1609,7 @@ void render_table(imgui_renderer& r, const ui_element& node, const context& s) {
   // on this column's header can be mapped back to it by ColumnUserID rather
   // than by position (see the sort-spec handling below).
   node.for_each_child_ordered([&](bison::key_t, ui_element& child) {
-    if (child.as<bison::key_t>(bison::dynamic::CLASS) != "TableColumn"_key)
+    if (child.class_key() != "TableColumn"_key)
       return;
     auto label = child.get_as<std::string>("label"_key, "");
     int32_t col_fl = child.get_as<int32_t>("flags"_key, 0);
@@ -1658,138 +1658,141 @@ void render_table(imgui_renderer& r, const ui_element& node, const context& s) {
   // Render non-column children in declaration order.  TableRow children get
   // an invisible spanning Selectable so single- and double-clicks on any cell
   // emit row_selected / row_activated on the table's wish_id.
-  node.for_each_child_ordered([&](bison::key_t, ui_element& child) {
-    if (child.as<key_t>(dynamic::CLASS) == "TableColumn"_key)
-      return;
-
-    if (child.as<key_t>(dynamic::CLASS) == "TableRow"_key) {
-      // TableRow children are rendered inline rather than through the
-      // generic per-element dispatch (imgui_renderer::render_node()), which
-      // is where Element's own "visible" field is normally enforced -- so
-      // it's checked explicitly here instead. A hidden row is skipped
-      // entirely (no TableNextRow, no cells, no row_idx bump) rather than
-      // rendered blank, so e.g. a log table's regex filter can hide
-      // already-buffered rows without disturbing the visible rows' own
-      // click-index numbering.
-      if (!child.get_as<bool>("visible"_key, true))
+  {
+    BISON_TRACE_SCOPE("table::render_rows");
+    node.for_each_child_ordered([&](bison::key_t, ui_element& child) {
+      if (child.class_key() == "TableColumn"_key)
         return;
 
-      int32_t row_flags = child.get_as<int32_t>("flags"_key, 0);
-      float min_h = child.get_as<float>("min_height"_key, 0.0f);
-      ImGui::TableNextRow(ImGuiTableRowFlags(row_flags), min_h);
-      ImGui::TableSetColumnIndex(0);
-
-      // Invisible selectable spanning all columns acts as the row hit-test.
-      // AllowOverlap lets the cell Labels render on top without blocking input.
-      char sel_id[32];
-      std::snprintf(sel_id, sizeof(sel_id), "##row%d", row_idx);
-      const float row_h = ImGui::GetTextLineHeightWithSpacing();
-      const bool row_selected = child.get_as<bool>("selected"_key, false);
-      const auto sf = ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowDoubleClick |
-          ImGuiSelectableFlags_AllowOverlap;
-      bool sel = ImGui::Selectable(sel_id, row_selected, sf, ImVec2(0.0f, row_h));
-      // TableRow is rendered inline (see this loop's own doc comment above)
-      // rather than via render_node(), so it never reaches that function's
-      // generic automation hit-test capture -- ask for it explicitly here,
-      // right after the row's own item, so `get_tree()`/`get_widget()` can
-      // address a row directly (and so it's included among a click's
-      // eligible targets for browser-driven automation).
-      r.capture_hit_test_for_last_item(child);
-      const bool dbl = sel && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
-      if (dbl)
-        sel = false; // promote to double-click only
-      // Modifier keys must be read here, the same frame the click happens --
-      // by the time the enqueued event is dispatched (a later frame/message),
-      // ImGuiIO's keys may have moved on -- so they ride along in the payload
-      // rather than being re-queried by the event's eventual handler.
-      const bool click_ctrl = ImGui::GetIO().KeyCtrl;
-      const bool click_shift = ImGui::GetIO().KeyShift;
-
-      // Shift+drag range-select: sweeping the cursor across other rows
-      // while Shift stays held and the left button remains down (pressed on
-      // an earlier plain click elsewhere in this table) continues to extend
-      // the selection the same way a fresh Shift+click on each newly
-      // hovered row would -- the "group selection" drag gesture. Gated on
-      // Shift specifically so a plain click-drag stays free for this row's
-      // own drag-and-drop (drag_type/drop_type, handled by
-      // handle_drag_drop() right below); deduped via
-      // table_drag_select_cache() so hovering the same row across several
-      // frames only emits once.
-      bool drag_extend = false;
-      if (!sel && !dbl && click_shift && ImGui::IsMouseDown(ImGuiMouseButton_Left) && ImGui::IsItemHovered()) {
-        int32_t& last_drag_row = table_drag_select_cache()[table_id.id];
-        if (last_drag_row != row_idx) {
-          last_drag_row = row_idx;
-          drag_extend = true;
-        }
-      }
-
-      // Row-level drag-and-drop: attaches to the Selectable just drawn above
-      // (the row's own top-level ImGui item) -- see handle_drag_drop()'s doc
-      // comment on why this can't just rely on render_node()'s own generic
-      // call, since TableRow children are never dispatched through
-      // render_node() here, only their cells are (below).
-      handle_drag_drop(child, s);
-
-      // A ContextMenu child is excluded from column layout (see the loop
-      // below) and rendered here instead, right after the Selectable, so
-      // ImGui::BeginPopupContextItem() (inside render_context_menu) attaches
-      // to the row's own hit-test item -- a cell's Label/etc. content has no
-      // stable ImGui item id of its own for it to fall back to. At most one
-      // ContextMenu child per row is supported; a second one is ignored.
-      ui_element* context_menu = nullptr;
-      child.for_each_child_ordered([&](bison::key_t, ui_element& cell) {
-        if (!context_menu && cell.as<key_t>(dynamic::CLASS) == "ContextMenu"_key)
-          context_menu = &cell;
-      });
-      if (context_menu)
-        r.render_node(*context_menu, s);
-
-      // Overlay cell content on the same line as the selectable.
-      // SameLine(0,0) for col 0 puts the cursor back to the selectable's
-      // start position; TableNextColumn() advances for subsequent columns.
-      // suppress_layout_wrap_self is set for the duration of each cell's
-      // dispatch so a HorizontalLayout/VerticalLayout cell (e.g.
-      // file_browser_utils.cpp's icon+label row) doesn't open its own
-      // input-capturing BeginChild() over the row's Selectable above --
-      // see context::suppress_layout_wrap_self's doc comment.
-      int32_t col = 0;
-      child.for_each_child_ordered([&](bison::key_t, ui_element& cell) {
-        if (cell.as<key_t>(dynamic::CLASS) == "ContextMenu"_key)
+      if (child.class_key() == "TableRow"_key) {
+        // TableRow children are rendered inline rather than through the
+        // generic per-element dispatch (imgui_renderer::render_node()), which
+        // is where Element's own "visible" field is normally enforced -- so
+        // it's checked explicitly here instead. A hidden row is skipped
+        // entirely (no TableNextRow, no cells, no row_idx bump) rather than
+        // rendered blank, so e.g. a log table's regex filter can hide
+        // already-buffered rows without disturbing the visible rows' own
+        // click-index numbering.
+        if (!child.visible())
           return;
-        if (col == 0)
-          ImGui::SameLine(0.0f, 0.0f);
-        else
-          ImGui::TableNextColumn();
-        s.suppress_layout_wrap_self = true;
-        r.render_node(cell, s);
-        s.suppress_layout_wrap_self = false;
-        ++col;
-      });
 
-      // Record at most one event per frame; the last clicked row wins.
-      if (dbl) {
-        pending_event = "row_activated"_key;
-        pending_index = row_idx;
-        pending_ctrl = click_ctrl;
-        pending_shift = click_shift;
-      } else if (sel && !pending_event.id) {
-        pending_event = "row_selected"_key;
-        pending_index = row_idx;
-        pending_ctrl = click_ctrl;
-        pending_shift = click_shift;
-      } else if (drag_extend && !pending_event.id) {
-        pending_event = "row_selected"_key;
-        pending_index = row_idx;
-        pending_ctrl = false;
-        pending_shift = true;
+        int32_t row_flags = child.get_as<int32_t>("flags"_key, 0);
+        float min_h = child.get_as<float>("min_height"_key, 0.0f);
+        ImGui::TableNextRow(ImGuiTableRowFlags(row_flags), min_h);
+        ImGui::TableSetColumnIndex(0);
+
+        // Invisible selectable spanning all columns acts as the row hit-test.
+        // AllowOverlap lets the cell Labels render on top without blocking input.
+        char sel_id[32];
+        std::snprintf(sel_id, sizeof(sel_id), "##row%d", row_idx);
+        const float row_h = ImGui::GetTextLineHeightWithSpacing();
+        const bool row_selected = child.get_as<bool>("selected"_key, false);
+        const auto sf = ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowDoubleClick |
+            ImGuiSelectableFlags_AllowOverlap;
+        bool sel = ImGui::Selectable(sel_id, row_selected, sf, ImVec2(0.0f, row_h));
+        // TableRow is rendered inline (see this loop's own doc comment above)
+        // rather than via render_node(), so it never reaches that function's
+        // generic automation hit-test capture -- ask for it explicitly here,
+        // right after the row's own item, so `get_tree()`/`get_widget()` can
+        // address a row directly (and so it's included among a click's
+        // eligible targets for browser-driven automation).
+        r.capture_hit_test_for_last_item(child);
+        const bool dbl = sel && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
+        if (dbl)
+          sel = false; // promote to double-click only
+        // Modifier keys must be read here, the same frame the click happens --
+        // by the time the enqueued event is dispatched (a later frame/message),
+        // ImGuiIO's keys may have moved on -- so they ride along in the payload
+        // rather than being re-queried by the event's eventual handler.
+        const bool click_ctrl = ImGui::GetIO().KeyCtrl;
+        const bool click_shift = ImGui::GetIO().KeyShift;
+
+        // Shift+drag range-select: sweeping the cursor across other rows
+        // while Shift stays held and the left button remains down (pressed on
+        // an earlier plain click elsewhere in this table) continues to extend
+        // the selection the same way a fresh Shift+click on each newly
+        // hovered row would -- the "group selection" drag gesture. Gated on
+        // Shift specifically so a plain click-drag stays free for this row's
+        // own drag-and-drop (drag_type/drop_type, handled by
+        // handle_drag_drop() right below); deduped via
+        // table_drag_select_cache() so hovering the same row across several
+        // frames only emits once.
+        bool drag_extend = false;
+        if (!sel && !dbl && click_shift && ImGui::IsMouseDown(ImGuiMouseButton_Left) && ImGui::IsItemHovered()) {
+          int32_t& last_drag_row = table_drag_select_cache()[table_id.id];
+          if (last_drag_row != row_idx) {
+            last_drag_row = row_idx;
+            drag_extend = true;
+          }
+        }
+
+        // Row-level drag-and-drop: attaches to the Selectable just drawn above
+        // (the row's own top-level ImGui item) -- see handle_drag_drop()'s doc
+        // comment on why this can't just rely on render_node()'s own generic
+        // call, since TableRow children are never dispatched through
+        // render_node() here, only their cells are (below).
+        handle_drag_drop(child, s);
+
+        // A ContextMenu child is excluded from column layout (see the loop
+        // below) and rendered here instead, right after the Selectable, so
+        // ImGui::BeginPopupContextItem() (inside render_context_menu) attaches
+        // to the row's own hit-test item -- a cell's Label/etc. content has no
+        // stable ImGui item id of its own for it to fall back to. At most one
+        // ContextMenu child per row is supported; a second one is ignored.
+        ui_element* context_menu = nullptr;
+        child.for_each_child_ordered([&](bison::key_t, ui_element& cell) {
+          if (!context_menu && cell.class_key() == "ContextMenu"_key)
+            context_menu = &cell;
+        });
+        if (context_menu)
+          r.render_node(*context_menu, s);
+
+        // Overlay cell content on the same line as the selectable.
+        // SameLine(0,0) for col 0 puts the cursor back to the selectable's
+        // start position; TableNextColumn() advances for subsequent columns.
+        // suppress_layout_wrap_self is set for the duration of each cell's
+        // dispatch so a HorizontalLayout/VerticalLayout cell (e.g.
+        // file_browser_utils.cpp's icon+label row) doesn't open its own
+        // input-capturing BeginChild() over the row's Selectable above --
+        // see context::suppress_layout_wrap_self's doc comment.
+        int32_t col = 0;
+        child.for_each_child_ordered([&](bison::key_t, ui_element& cell) {
+          if (cell.class_key() == "ContextMenu"_key)
+            return;
+          if (col == 0)
+            ImGui::SameLine(0.0f, 0.0f);
+          else
+            ImGui::TableNextColumn();
+          s.suppress_layout_wrap_self = true;
+          r.render_node(cell, s);
+          s.suppress_layout_wrap_self = false;
+          ++col;
+        });
+
+        // Record at most one event per frame; the last clicked row wins.
+        if (dbl) {
+          pending_event = "row_activated"_key;
+          pending_index = row_idx;
+          pending_ctrl = click_ctrl;
+          pending_shift = click_shift;
+        } else if (sel && !pending_event.id) {
+          pending_event = "row_selected"_key;
+          pending_index = row_idx;
+          pending_ctrl = click_ctrl;
+          pending_shift = click_shift;
+        } else if (drag_extend && !pending_event.id) {
+          pending_event = "row_selected"_key;
+          pending_index = row_idx;
+          pending_ctrl = false;
+          pending_shift = true;
+        }
+
+        ++row_idx;
+      } else {
+        r.render_node(child, s);
       }
-
-      ++row_idx;
-    } else {
-      r.render_node(child, s);
-    }
-  });
+    });
+  }
 
   // Stick to the bottom when a scrollable table just grew a row, so a live
   // log's newest entry is always visible without the caller managing scroll

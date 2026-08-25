@@ -154,7 +154,7 @@ void render_text_editor(imgui_renderer&, const ui_element& node, const context& 
   if (full_path.empty())
     return;
 
-  auto id = node.get_as<key_t>("__wish_id"_key, key_t{});
+  auto id = node.wish_id();
   auto& st = editor_cache()[id.id];
 
   // Reload when the file path changes.

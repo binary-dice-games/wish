@@ -143,6 +143,54 @@ that needs to access session data across calls must hold a `sync_session_ptr`
 - Keep lock scope tight.
 - Use condition variables with explicit shutdown/stop flags.
 
+### Performance: hot-path `bison::dynamic` field access
+
+`ui_element` walks its own tree 1-3x per frame (measure, arrange, render), so
+a `findField()`/`get_as()`/`as()` call on a field read on (nearly) every node
+in one of those passes runs at real volume — even though `findField()` is
+already O(1) via `field_lookup_`, a warm `unordered_map` lookup still costs
+more than a plain member read at that call volume. **Prefer caching the
+`field*` pointer**, not the field's value, as a `mutable bison::field*`
+member on `ui_element` (see `class_key()`/`visible()`/`path()`/`wish_id()`/
+`font_path()`/`font_size()`/`highlight()`/`profiler_marker()` in
+`src/ui/ui_element.hpp`):
+
+- `bison::dynamic` never erases a *named*-key field once created — the only
+  erase paths (`erase(size_t)`, `clear()` in `bison_object.hpp`) operate
+  strictly on the numeric/array-index range, never on named keys like
+  `"visible"_key` or `dynamic::CLASS`.
+- `fields_` is a node-based `std::map<key_t, field>` — inserting/erasing
+  *other* keys never invalidates pointers/references to existing elements.
+- So once a named field exists, its `field*` is stable for the object's
+  lifetime. Reading through the cached pointer (`->is<T>()`/`->as<T>()`)
+  always observes the live value — **no invalidation logic needed**, no
+  matter how many of `dynamic`'s independent, non-virtual write paths
+  (`operator[](key_t)`, `as<T>()`, `addField()`, direct `field*` mutation)
+  touch the field. Caching the field's *value* instead would go stale, since
+  none of those write paths are virtual or funnel through one choke point.
+- The only edge case: a field that doesn't exist yet at first read. The
+  cache stays null and falls back to a default; re-attempt `findField()` on
+  each access while still null, then freeze permanently once found.
+
+Use `ui_element::cached_field()`/`cached_field_or<T>()` to write a new
+accessor without hand-rolling the pattern — add one `mutable bison::field*`
+member and a one-line accessor:
+
+```cpp
+bool highlight() const {
+  return cached_field_or<bool>(highlight_field_, bison::key_t{"__wish_highlight__"}, false);
+}
+```
+
+Only add a pointer-cache accessor for a field read on (nearly) every node of
+a hot traversal (measure/arrange/render) — not for fields read once per call,
+from a cold/debug path, or only on one specific widget class. For a field
+that's genuinely hot but specific to one widget class (e.g. a `Table`- or
+`Splitter`-only field), prefer a typed `ui_element` subclass registered as
+that class's instantiation factory (`dynamic::make_factory<your_class>(...)`
+in place of the default `make_factory<ui_element>(...)`) over adding a
+generic `ui_element`-level accessor for a field most nodes don't have.
+
 ## Platform Support
 
 wish targets **Linux, MSYS2, and native Windows (MSVC)**. MSYS2 provides the

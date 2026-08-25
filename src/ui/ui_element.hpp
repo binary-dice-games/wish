@@ -185,6 +185,89 @@ class ui_element : public bison::cloneable_dynamic<ui_element> {
    */
   void for_each_child_ordered(const std::function<void(bison::key_t, ui_element&)>& fn) const;
 
+  // ── Hot field pointer cache ─────────────────────────────────────────────────
+  //
+  // Lazily-cached `field*` pointers for hot fields read on (nearly) every
+  // node in every measure/arrange/render pass. Caches the *pointer* returned
+  // by `findField()`, not the field's value: `bison::dynamic` never erases a
+  // named-key field once created (only numeric/array-index entries, via
+  // `erase(size_t)`/`clear()`), and `fields_` is a node-based `std::map`, so
+  // a named field's address is stable for the object's lifetime. Reading
+  // through the cached pointer always observes the current value, so this
+  // needs no invalidation logic on write, no matter which of `dynamic`'s
+  // several independent write paths touched the field. See `CLAUDE.md`'s
+  // "Performance: hot-path bison::dynamic field access" section before
+  // adding more of these.
+  //
+  // `cached_field()`/`cached_field_or()` below factor out the boilerplate
+  // shared by every accessor: resolve `findField()` at most once (caching
+  // whatever it returns, including null -- a field that doesn't exist yet
+  // gets a fresh lookup attempt on each call until it does), then either
+  // hand back the raw `field*` (for callers with their own is<T>()/emptiness
+  // logic, e.g. `profiler_marker()`) or a `T` with a default substituted for
+  // "absent or wrong type" (the common case). These are generic across any
+  // field, not just the ones cached here -- reuse them for the next hot
+  // field found, rather than hand-rolling the pattern again.
+
+  /// @brief Resolve and cache `findField(key)` in `*cache`, reusing it on
+  ///        every later call. `*cache` must be a `mutable field*` member
+  ///        dedicated to this one field.
+  bison::field* cached_field(bison::field*& cache, bison::key_t key) const {
+    if (!cache)
+      cache = findField(key);
+    return cache;
+  }
+
+  /// @brief Like `cached_field()`, but returns the field's value as `T`
+  ///        (via `field::as<T>()`), or @p default_value if the field is
+  ///        absent or holds a different type.
+  template <typename T>
+  T cached_field_or(bison::field*& cache, bison::key_t key, T default_value) const {
+    bison::field* f = cached_field(cache, key);
+    return (f && f->is<T>()) ? f->as<T>() : default_value;
+  }
+
+  /// @brief Cached `as<key_t>(dynamic::CLASS)`. CLASS is set exactly once
+  ///        per instance, inside `bison::dynamic::instantiate()`, and never
+  ///        reassigned afterward in production code.
+  bison::key_t class_key() const { return cached_field_or<bison::key_t>(class_field_, dynamic::CLASS, bison::key_t{}); }
+
+  /// @brief Cached `get_as<bool>("visible"_key, true)`.
+  bool visible() const { return cached_field_or<bool>(visible_field_, bison::key_t{"visible"}, true); }
+
+  /// @brief Cached `findField("__path__"_key)`'s string value, or `""` if
+  ///        absent -- e.g. a form-generated node with no RMI identity of its
+  ///        own (see `stable_id()` in `src/imgui/imgui_ui_renderer.cpp`).
+  std::string path() const { return cached_field_or<std::string>(path_field_, bison::key_t{"__path__"}, std::string{}); }
+
+  /// @brief Cached `get_as<key_t>("__wish_id"_key, key_t{})`.
+  bison::key_t wish_id() const {
+    return cached_field_or<bison::key_t>(wish_id_field_, bison::key_t{"__wish_id"}, bison::key_t{});
+  }
+
+  /// @brief Cached `get_as<std::string>("font_path"_key, "")`.
+  std::string font_path() const {
+    return cached_field_or<std::string>(font_path_field_, bison::key_t{"font_path"}, std::string{});
+  }
+
+  /// @brief Cached `get_as<float>("font_size"_key, 0.0f)`.
+  float font_size() const { return cached_field_or<float>(font_size_field_, bison::key_t{"font_size"}, 0.0f); }
+
+  /// @brief Cached `get_as<bool>("__wish_highlight__"_key, false)`.
+  bool highlight() const {
+    return cached_field_or<bool>(highlight_field_, bison::key_t{"__wish_highlight__"}, false);
+  }
+
+  /// @brief Cached, non-empty `"profiler_marker"` string, or `nullptr` if
+  ///        the field is absent, not a string, or empty. Returns a raw
+  ///        pointer (rather than going through `cached_field_or()`) because
+  ///        callers need "absent" and "present but empty" to both mean "no
+  ///        marker", matching `BISON_TRACE_SCOPE`'s `const char*` contract.
+  const std::string* profiler_marker() const {
+    bison::field* f = cached_field(profiler_marker_field_, bison::key_t{"profiler_marker"});
+    return (f && f->is<std::string>() && !f->as<std::string>().empty()) ? &f->as<std::string>() : nullptr;
+  }
+
   // ── Layout stash ──────────────────────────────────────────────────────────
   //
   // Native C++ accessors for the transient per-frame geometry described by
@@ -271,6 +354,14 @@ class ui_element : public bison::cloneable_dynamic<ui_element> {
   bool is_measure_fresh(int current_frame) const { return layout_stash_.measured_frame == current_frame; }
 
  private:
+  mutable bison::field* class_field_ = nullptr;
+  mutable bison::field* visible_field_ = nullptr;
+  mutable bison::field* path_field_ = nullptr;
+  mutable bison::field* wish_id_field_ = nullptr;
+  mutable bison::field* font_path_field_ = nullptr;
+  mutable bison::field* font_size_field_ = nullptr;
+  mutable bison::field* highlight_field_ = nullptr;
+  mutable bison::field* profiler_marker_field_ = nullptr;
   mutable layout_stash layout_stash_;
 };
 

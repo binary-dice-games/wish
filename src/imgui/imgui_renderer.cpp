@@ -345,14 +345,14 @@ void handle_drag_drop(const ui_element& node, const context& s) {
       payload["type"_key] = drop_type;
       payload["payload"_key] =
           std::string(static_cast<const char*>(accepted->Data), static_cast<size_t>(accepted->DataSize));
-      enqueue_event(s, node.get_as<key_t>("__wish_id"_key, key_t{}), "dropped"_key, std::move(payload));
+      enqueue_event(s, node.wish_id(), "dropped"_key, std::move(payload));
     }
     ImGui::EndDragDropTarget();
   }
 }
 
 void draw_highlight_if_set(const ui_element& node, ImVec2 rect_min, ImVec2 rect_max) {
-  if (!node.get_as<bool>("__wish_highlight__"_key, false))
+  if (!node.highlight())
     return;
   ImGui::GetWindowDrawList()->AddRect(rect_min, rect_max, IM_COL32(255, 215, 0, 255), 0.0f, 0, 2.5f);
 }
@@ -380,18 +380,18 @@ static std::ofstream* render_debug_log() {
 }
 
 static std::string render_debug_node_label(const ui_element& node) {
-  const auto* path_field = node.findField("__path__"_key);
-  if (path_field && path_field->is<std::string>() && !path_field->as<std::string>().empty())
-    return path_field->as<std::string>();
-  auto cls = node.as<key_t>(dynamic::CLASS);
+  std::string path = node.path();
+  if (!path.empty())
+    return path;
+  auto cls = node.class_key();
   char buf[32];
   std::snprintf(buf, sizeof(buf), "class#%08x", static_cast<unsigned>(cls.id));
   return buf;
 }
 
 ImFont* resolve_element_font(imgui_renderer& r, const ui_element& node, const context& s) {
-  auto font_path = node.get_as<std::string>("font_path"_key, "");
-  auto font_size = node.get_as<float>("font_size"_key, 0.0f);
+  auto font_path = node.font_path();
+  auto font_size = node.font_size();
   if (font_path.empty() && font_size > 0.0f)
     font_path = "res/fonts/default.ttf";
   if (font_path.empty() || font_size <= 0.0f)
@@ -405,15 +405,11 @@ ImFont* resolve_element_font(imgui_renderer& r, const ui_element& node, const co
 }
 
 void imgui_renderer::render_node(const ui_element& node, const context& s) {
-  if (!node.get_as<bool>("visible"_key, true))
+  if (!node.visible())
     return;
 
-  const char* profiler_marker = nullptr;
-  const auto* pm = node.findField("profiler_marker"_key);
-  if (pm && pm->is<std::string>() && !pm->as<std::string>().empty()) {
-    profiler_marker = pm->as<std::string>().c_str();
-  }
-  BISON_TRACE_SCOPE(profiler_marker);
+  const std::string* profiler_marker = node.profiler_marker();
+  BISON_TRACE_SCOPE(profiler_marker ? profiler_marker->c_str() : nullptr);
 
   // Per-element font override.  PushFont(nullptr) is valid — it selects the
   // default font — so the push/pop pair is always safe to emit.
@@ -431,7 +427,7 @@ void imgui_renderer::render_node(const ui_element& node, const context& s) {
   // survive a restart the same way render_window's title id does.
   ImGui::PushID(stable_id(node).c_str());
 
-  auto cls = node.as<key_t>(dynamic::CLASS);
+  auto cls = node.class_key();
 
   // Window/DockSpaceViewport open a genuine new top-level ImGui window via
   // Begin()/BeginPopupModal() -- GetItemRectMin/Max() after their dispatch

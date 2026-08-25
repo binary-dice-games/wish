@@ -71,7 +71,7 @@ void add_probed_fields(const ui_element& elem, nlohmann::json& out) {
 }
 
 void add_hit_test(const ui_element& elem, const hit_test_map& hits, nlohmann::json& out) {
-  key_t id = elem.get_as<key_t>("__wish_id"_key, key_t{});
+  key_t id = elem.wish_id();
   auto it = id.id != 0 ? hits.find(id) : hits.end();
   if (it == hits.end()) {
     // Never rendered this frame (e.g. inside a collapsed window, an
@@ -135,7 +135,7 @@ void collect_unregistered_descendants(
     auto child_elem = std::dynamic_pointer_cast<ui_element>(child_dyn);
     if (!child_elem)
       return; // not a ui_element (shouldn't normally happen in a wish tree)
-    if (child_elem->findField<std::string>("__path__"_key))
+    if (!child_elem->path().empty())
       return; // named/registered -- already (or will be) covered via ui_objects
 
     std::string child_path = parent_path + "." + std::to_string(child_key.id);

@@ -504,7 +504,7 @@ void web_renderer::render_node(const ui_element& node, const context& s) {
   // a node with visible=false, before reaching the class dispatch table --
   // capturing GetItemRect*() here would then read a stale, unrelated
   // item's state left over from whatever widget rendered before this one.
-  if (!node.get_as<bool>(bison::key_t{"visible"}, true))
+  if (!node.visible())
     return;
 
   auto id = node.get_as<bison::key_t>(bison::key_t{"__wish_id"}, bison::key_t{});
@@ -532,7 +532,7 @@ void web_renderer::render_node(const ui_element& node, const context& s) {
 }
 
 void web_renderer::capture_hit_test_for_last_item(const ui_element& node) {
-  if (!node.get_as<bool>(bison::key_t{"visible"}, true))
+  if (!node.visible())
     return;
 
   auto id = node.get_as<bison::key_t>(bison::key_t{"__wish_id"}, bison::key_t{});
