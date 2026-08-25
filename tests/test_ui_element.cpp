@@ -87,3 +87,113 @@ TEST_F(UiElementTest, VisibleReflectsSecondWriteNotJustFirst) {
   node["visible"_key] = true;
   EXPECT_TRUE(node.visible());
 }
+
+// ── Round 2: label(), width()/width_i(), value_bool()/value_float(), selected() ──
+
+TEST_F(UiElementTest, LabelDefaultsToArgumentWhenFieldNeverSet) {
+  // Spring has no "label" field in its schema, so the field is genuinely
+  // absent (as opposed to Button, whose schema pre-populates "label" with
+  // "" -- a set-but-empty field, which correctly ignores the fallback).
+  auto map = bdg::wish::import_json(R"({"type":"Spring"})");
+  ui_element& node = *map[""];
+
+  EXPECT_EQ(node.label("fallback"), "fallback");
+}
+
+TEST_F(UiElementTest, LabelReflectsWriteThroughUiElementOperator) {
+  auto map = bdg::wish::import_json(R"({"type":"Button","label":"hi"})");
+  ui_element& node = *map[""];
+
+  ASSERT_EQ(node.label(), "hi");
+  node["label"_key] = std::string("bye");
+  EXPECT_EQ(node.label(), "bye");
+}
+
+TEST_F(UiElementTest, LabelReflectsWriteThroughBaseDynamicReference) {
+  auto map = bdg::wish::import_json(R"({"type":"Button","label":"hi"})");
+  ui_element& node = *map[""];
+  dynamic& base = node;
+
+  ASSERT_EQ(node.label(), "hi");
+  base["label"_key] = std::string("bye");
+  EXPECT_EQ(node.label(), "bye");
+}
+
+TEST_F(UiElementTest, LabelReflectsSecondWriteNotJustFirst) {
+  auto map = bdg::wish::import_json(R"({"type":"Button","label":"hi"})");
+  ui_element& node = *map[""];
+
+  node["label"_key] = std::string("first");
+  ASSERT_EQ(node.label(), "first");
+  node["label"_key] = std::string("second");
+  EXPECT_EQ(node.label(), "second");
+}
+
+TEST_F(UiElementTest, WidthAndWidthIShareOneCachedFieldButReadTheirOwnType) {
+  // width()/width_i() share one mutable field* cache member -- the cache
+  // pins the field's location, not its stored type, so each accessor still
+  // reads whichever type that particular node's "width" field actually
+  // holds.
+  auto float_map = bdg::wish::import_json(R"({"type":"Button","width":12.5})");
+  ui_element& float_node = *float_map[""];
+  EXPECT_FLOAT_EQ(float_node.width(), 12.5f);
+  EXPECT_FLOAT_EQ(float_node.width(), 12.5f);  // second call hits the cache
+
+  auto int_map = bdg::wish::import_json(R"({"type":"Window"})");
+  ui_element& int_node = *int_map[""];
+  int_node["width"_key] = int32_t(200);
+  EXPECT_EQ(int_node.width_i(), 200);
+  EXPECT_EQ(int_node.width_i(), 200);  // second call hits the cache
+}
+
+TEST_F(UiElementTest, WidthDefaultsToArgumentWhenFieldNeverSet) {
+  auto map = bdg::wish::import_json(R"({"type":"Button"})");
+  ui_element& node = *map[""];
+
+  EXPECT_FLOAT_EQ(node.width(-1.0f), -1.0f);
+  EXPECT_EQ(node.width_i(7), 7);
+}
+
+TEST_F(UiElementTest, ValueBoolAndValueFloatShareOneCachedFieldButReadTheirOwnType) {
+  auto bool_map = bdg::wish::import_json(R"({"type":"Checkbox"})");
+  ui_element& bool_node = *bool_map[""];
+  bool_node["value"_key] = true;
+  EXPECT_TRUE(bool_node.value_bool());
+  EXPECT_TRUE(bool_node.value_bool());  // second call hits the cache
+
+  auto float_map = bdg::wish::import_json(R"({"type":"SliderFloat"})");
+  ui_element& float_node = *float_map[""];
+  float_node["value"_key] = 3.5f;
+  EXPECT_FLOAT_EQ(float_node.value_float(), 3.5f);
+  EXPECT_FLOAT_EQ(float_node.value_float(), 3.5f);  // second call hits the cache
+}
+
+TEST_F(UiElementTest, WidthCoercesIntFieldToFloatLikeGetAsDid) {
+  // Regression test: a JSON integer literal like "width": -1 (e.g.
+  // file_dialog.cpp's stretch-to-fill Table) is parsed as an int32_t
+  // field. The old `node.get_as<float>("width"_key, 0.0f)` call coerced
+  // that to -1.0f via field::get_as<T>()'s cross-type conversion.
+  // cached_field_or() must do the same via field::get_as<T>(), not the
+  // stricter field::as<T>()/is<T>() pair -- using the latter silently
+  // fell back to the default (0.0f) for an int32_t-stored field, which
+  // misclassified a stretch-fill Table as "auto" in arrange_vertical_
+  // layout() and reintroduced the unbounded per-frame growth bug this
+  // code's own comments describe.
+  auto map = bdg::wish::import_json(R"({"type":"Button","width":-1})");
+  ui_element& node = *map[""];
+
+  ASSERT_TRUE(node.findField("width"_key)->is<int32_t>());
+  EXPECT_FLOAT_EQ(node.width(0.0f), -1.0f);
+  EXPECT_FLOAT_EQ(node.width(0.0f), -1.0f);  // second call hits the cache
+}
+
+TEST_F(UiElementTest, SelectedDefaultsFalseAndReflectsWrites) {
+  auto map = bdg::wish::import_json(R"({"type":"Selectable","label":"row"})");
+  ui_element& node = *map[""];
+
+  EXPECT_FALSE(node.selected());
+  node["selected"_key] = true;
+  EXPECT_TRUE(node.selected());
+  node["selected"_key] = false;
+  EXPECT_FALSE(node.selected());
+}

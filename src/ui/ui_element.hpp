@@ -30,6 +30,8 @@
 
 #include <functional>
 #include <memory>
+#include <string>
+#include <vector>
 
 namespace bdg::wish {
 
@@ -219,12 +221,19 @@ class ui_element : public bison::cloneable_dynamic<ui_element> {
   }
 
   /// @brief Like `cached_field()`, but returns the field's value as `T`
-  ///        (via `field::as<T>()`), or @p default_value if the field is
-  ///        absent or holds a different type.
+  ///        (via `field::get_as<T>()`, which cross-type-converts -- e.g. a
+  ///        JSON integer literal like `"width": -1` is stored as an
+  ///        `int32_t` field, and a `float`-typed accessor must still see
+  ///        `-1.0f`, not silently fall back to @p default_value), or
+  ///        @p default_value if the field is absent. Matches
+  ///        `dynamic::get_as<T>(key, default_value)`'s semantics exactly --
+  ///        including throwing for a genuinely incompatible stored type --
+  ///        so callers migrating from `get_as()` to a cached accessor see
+  ///        no behavior change.
   template <typename T>
   T cached_field_or(bison::field*& cache, bison::key_t key, T default_value) const {
     bison::field* f = cached_field(cache, key);
-    return (f && f->is<T>()) ? f->as<T>() : default_value;
+    return f ? f->get_as<T>() : default_value;
   }
 
   /// @brief Cached `as<key_t>(dynamic::CLASS)`. CLASS is set exactly once
@@ -266,6 +275,155 @@ class ui_element : public bison::cloneable_dynamic<ui_element> {
   const std::string* profiler_marker() const {
     bison::field* f = cached_field(profiler_marker_field_, bison::key_t{"profiler_marker"});
     return (f && f->is<std::string>() && !f->as<std::string>().empty()) ? &f->as<std::string>() : nullptr;
+  }
+
+  /// @brief Cached `get_as<std::string>("label"_key, def)`.
+  std::string label(std::string def = {}) const {
+    return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
+  }
+
+  /// @brief Cached `get_as<std::string>("text"_key, def)`.
+  std::string text(std::string def = {}) const {
+    return cached_field_or<std::string>(text_field_, bison::key_t{"text"}, std::move(def));
+  }
+
+  /// @brief Cached `get_as<std::string>("hint"_key, def)`.
+  std::string hint(std::string def = {}) const {
+    return cached_field_or<std::string>(hint_field_, bison::key_t{"hint"}, std::move(def));
+  }
+
+  /// @brief Cached `get_as<float>("width"_key, def)`. Most widgets store
+  ///        `width` as `float`; use `width_i()` for widgets (window,
+  ///        dockspace) that store it as `int32_t` -- both accessors share
+  ///        one cached `field*`, since the cache only pins the field's
+  ///        location, not its stored type. `def` lets each call site match
+  ///        its previous `get_as()` default.
+  float width(float def = 0.0f) const { return cached_field_or<float>(width_field_, bison::key_t{"width"}, def); }
+
+  /// @brief Cached `get_as<int32_t>("width"_key, def)`. See `width()`.
+  int32_t width_i(int32_t def = 0) const {
+    return cached_field_or<int32_t>(width_field_, bison::key_t{"width"}, def);
+  }
+
+  /// @brief Cached `get_as<float>("height"_key, def)`. See `width()` for
+  ///        why this shares a cache with `height_i()`.
+  float height(float def = 0.0f) const { return cached_field_or<float>(height_field_, bison::key_t{"height"}, def); }
+
+  /// @brief Cached `get_as<int32_t>("height"_key, def)`. See `height()`.
+  int32_t height_i(int32_t def = 0) const {
+    return cached_field_or<int32_t>(height_field_, bison::key_t{"height"}, def);
+  }
+
+  /// @brief Cached `get_as<int32_t>("flags"_key, def)`.
+  int32_t flags(int32_t def = 0) const { return cached_field_or<int32_t>(flags_field_, bison::key_t{"flags"}, def); }
+
+  /// @brief Cached `get_as<std::string>("id"_key, def)`.
+  std::string id(std::string def = {}) const {
+    return cached_field_or<std::string>(id_field_, bison::key_t{"id"}, std::move(def));
+  }
+
+  /// @brief Cached `get_as<bool>("value"_key, def)`. `value` is stored as
+  ///        a different type per widget (bool/float/int32_t/std::string/
+  ///        `std::vector<float>`); all `value_*()` accessors below share one
+  ///        cached `field*` -- see `width()`.
+  bool value_bool(bool def = false) const { return cached_field_or<bool>(value_field_, bison::key_t{"value"}, def); }
+
+  /// @brief Cached `get_as<float>("value"_key, def)`. See `value_bool()`.
+  float value_float(float def = 0.0f) const {
+    return cached_field_or<float>(value_field_, bison::key_t{"value"}, def);
+  }
+
+  /// @brief Cached `get_as<int32_t>("value"_key, def)`. See `value_bool()`.
+  int32_t value_int(int32_t def = 0) const {
+    return cached_field_or<int32_t>(value_field_, bison::key_t{"value"}, def);
+  }
+
+  /// @brief Cached `get_as<std::string>("value"_key, def)`. See `value_bool()`.
+  std::string value_string(std::string def = {}) const {
+    return cached_field_or<std::string>(value_field_, bison::key_t{"value"}, std::move(def));
+  }
+
+  /// @brief Cached `get_as<std::vector<float>>("value"_key, {})`. See `value_bool()`.
+  std::vector<float> value_floats() const {
+    return cached_field_or<std::vector<float>>(value_field_, bison::key_t{"value"}, std::vector<float>{});
+  }
+
+  /// @brief Cached `get_as<float>("min"_key, def)`. `min` is `float` on
+  ///        `*_float` numeric widgets, `int32_t` on `*_int` ones; both
+  ///        accessors share one cached `field*` -- see `width()`.
+  float min_float(float def = 0.0f) const { return cached_field_or<float>(min_field_, bison::key_t{"min"}, def); }
+
+  /// @brief Cached `get_as<int32_t>("min"_key, def)`. See `min_float()`.
+  int32_t min_int(int32_t def = 0) const { return cached_field_or<int32_t>(min_field_, bison::key_t{"min"}, def); }
+
+  /// @brief Cached `get_as<float>("max"_key, def)`. See `min_float()`.
+  float max_float(float def = 0.0f) const { return cached_field_or<float>(max_field_, bison::key_t{"max"}, def); }
+
+  /// @brief Cached `get_as<int32_t>("max"_key, def)`. See `min_float()`.
+  int32_t max_int(int32_t def = 0) const { return cached_field_or<int32_t>(max_field_, bison::key_t{"max"}, def); }
+
+  /// @brief Cached `get_as<int32_t>("step"_key, def)`. `step` is `int32_t` on
+  ///        `*_int` numeric widgets, `float` on `*_float` ones; both
+  ///        accessors share one cached `field*` -- see `width()`.
+  int32_t step_int(int32_t def = 0) const { return cached_field_or<int32_t>(step_field_, bison::key_t{"step"}, def); }
+
+  /// @brief Cached `get_as<float>("step"_key, def)`. See `step_int()`.
+  float step_float(float def = 0.0f) const { return cached_field_or<float>(step_field_, bison::key_t{"step"}, def); }
+
+  /// @brief Cached `get_as<int32_t>("step_fast"_key, def)`. `step_fast` is
+  ///        `int32_t` on `*_int` numeric widgets, `float` on `*_float` ones
+  ///        (see `step_fast_float()`); both share one cached `field*`.
+  int32_t step_fast_int(int32_t def = 0) const {
+    return cached_field_or<int32_t>(step_fast_field_, bison::key_t{"step_fast"}, def);
+  }
+
+  /// @brief Cached `get_as<float>("step_fast"_key, def)`. See `step_fast_int()`.
+  float step_fast_float(float def = 0.0f) const {
+    return cached_field_or<float>(step_fast_field_, bison::key_t{"step_fast"}, def);
+  }
+
+  /// @brief Cached `get_as<float>("speed"_key, def)`.
+  float speed(float def = 0.0f) const { return cached_field_or<float>(speed_field_, bison::key_t{"speed"}, def); }
+
+  /// @brief Cached `get_as<std::string>("format"_key, def)`.
+  std::string format(std::string def = {}) const {
+    return cached_field_or<std::string>(format_field_, bison::key_t{"format"}, std::move(def));
+  }
+
+  /// @brief Cached `get_as<std::string>("orientation"_key, def)`.
+  std::string orientation(std::string def = {}) const {
+    return cached_field_or<std::string>(orientation_field_, bison::key_t{"orientation"}, std::move(def));
+  }
+
+  /// @brief Cached `get_as<float>("thickness"_key, def)`.
+  float thickness(float def = 0.0f) const {
+    return cached_field_or<float>(thickness_field_, bison::key_t{"thickness"}, def);
+  }
+
+  /// @brief Cached `get_as<float>("weight"_key, def)`.
+  float weight(float def = 0.0f) const { return cached_field_or<float>(weight_field_, bison::key_t{"weight"}, def); }
+
+  /// @brief Cached `get_as<float>("spacing"_key, def)`.
+  float spacing(float def = 0.0f) const {
+    return cached_field_or<float>(spacing_field_, bison::key_t{"spacing"}, def);
+  }
+
+  /// @brief Cached `get_as<bool>("selected"_key, def)`.
+  bool selected(bool def = false) const {
+    return cached_field_or<bool>(selected_field_, bison::key_t{"selected"}, def);
+  }
+
+  /// @brief Cached `get_as<bool>("enabled"_key, def)`.
+  bool enabled(bool def = true) const { return cached_field_or<bool>(enabled_field_, bison::key_t{"enabled"}, def); }
+
+  /// @brief Cached `get_as<bool>("closable"_key, def)`.
+  bool closable(bool def = false) const {
+    return cached_field_or<bool>(closable_field_, bison::key_t{"closable"}, def);
+  }
+
+  /// @brief Cached `get_as<float>("min_height"_key, def)`.
+  float min_height(float def = 0.0f) const {
+    return cached_field_or<float>(min_height_field_, bison::key_t{"min_height"}, def);
   }
 
   // ── Layout stash ──────────────────────────────────────────────────────────
@@ -362,6 +520,28 @@ class ui_element : public bison::cloneable_dynamic<ui_element> {
   mutable bison::field* font_size_field_ = nullptr;
   mutable bison::field* highlight_field_ = nullptr;
   mutable bison::field* profiler_marker_field_ = nullptr;
+  mutable bison::field* label_field_ = nullptr;
+  mutable bison::field* text_field_ = nullptr;
+  mutable bison::field* hint_field_ = nullptr;
+  mutable bison::field* width_field_ = nullptr;
+  mutable bison::field* height_field_ = nullptr;
+  mutable bison::field* flags_field_ = nullptr;
+  mutable bison::field* id_field_ = nullptr;
+  mutable bison::field* value_field_ = nullptr;
+  mutable bison::field* min_field_ = nullptr;
+  mutable bison::field* max_field_ = nullptr;
+  mutable bison::field* step_field_ = nullptr;
+  mutable bison::field* step_fast_field_ = nullptr;
+  mutable bison::field* speed_field_ = nullptr;
+  mutable bison::field* format_field_ = nullptr;
+  mutable bison::field* orientation_field_ = nullptr;
+  mutable bison::field* thickness_field_ = nullptr;
+  mutable bison::field* weight_field_ = nullptr;
+  mutable bison::field* spacing_field_ = nullptr;
+  mutable bison::field* selected_field_ = nullptr;
+  mutable bison::field* enabled_field_ = nullptr;
+  mutable bison::field* closable_field_ = nullptr;
+  mutable bison::field* min_height_field_ = nullptr;
   mutable layout_stash layout_stash_;
 };
 

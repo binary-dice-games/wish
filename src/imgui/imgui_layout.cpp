@@ -97,7 +97,7 @@ static const measure_fn_map& measure_dispatch_fns();
 // positive "spacing" field still wins outright (it's the literal pixel gap
 // the author asked for, not an addition on top of the theme).
 float effective_spacing(const ui_element& node, float axis_item_spacing) {
-  float spacing = node.get_as<float>("spacing"_key, 0.0f);
+  float spacing = node.spacing(0.0f);
   return spacing > 0.0f ? spacing : axis_item_spacing;
 }
 
@@ -110,7 +110,7 @@ static natural_size measure_vertical_layout(imgui_renderer& r, const ui_element&
     bool is_spring = child.class_key() == "Spring"_key;
     natural_size child_sz = measure_node(r, child, s);
     if (!is_spring) {
-      float h = child.get_as<float>("height"_key, 0.0f);
+      float h = child.height(0.0f);
       // A stretch child (h < 0) contributes 0 to the parent's own natural
       // height -- it wants to fill whatever's left over, not define it.
       total_h += h > 0.0f ? h : (h < 0.0f ? 0.0f : child_sz.y);
@@ -132,7 +132,7 @@ static natural_size measure_horizontal_layout(imgui_renderer& r, const ui_elemen
     bool is_spring = child.class_key() == "Spring"_key;
     natural_size child_sz = measure_node(r, child, s);
     if (!is_spring) {
-      float w = child.get_as<float>("width"_key, 0.0f);
+      float w = child.width(0.0f);
       total_w += w > 0.0f ? w : (w < 0.0f ? 0.0f : child_sz.x);
       max_h = std::max(max_h, child_sz.y);
     }
@@ -144,9 +144,9 @@ static natural_size measure_horizontal_layout(imgui_renderer& r, const ui_elemen
 }
 
 static natural_size measure_splitter(imgui_renderer& r, const ui_element& node, const context& s) {
-  auto orientation = node.get_as<std::string>("orientation"_key, "vertical");
+  auto orientation = node.orientation("vertical");
   bool is_vertical = orientation != "horizontal";
-  float thickness = std::max(1.0f, node.get_as<float>("thickness"_key, 4.0f));
+  float thickness = std::max(1.0f, node.thickness(4.0f));
   key_t size_field = is_vertical ? "width"_key : "height"_key;
   float total = 0.0f;
   float cross = 0.0f;
@@ -284,13 +284,13 @@ static void arrange_vertical_layout(imgui_renderer& r, const ui_element& node, I
   node.for_each_child_ordered([&](key_t, ui_element& child) {
     bool is_spring = child.class_key() == "Spring"_key;
     if (is_spring) {
-      float weight = std::max(0.0f, child.get_as<float>("weight"_key, 1.0f));
+      float weight = std::max(0.0f, child.weight(1.0f));
       stretch_weight_total += weight;
       children.push_back({&child, 0.0f, true, weight});
       ++n;
       return;
     }
-    float h = child.get_as<float>("height"_key, 0.0f);
+    float h = child.height(0.0f);
     children.push_back({&child, h, false, 0.0f});
     if (h > 0.0f)
       fixed_total += h;
@@ -351,13 +351,13 @@ static void arrange_horizontal_layout(imgui_renderer& r, const ui_element& node,
   node.for_each_child_ordered([&](key_t, ui_element& child) {
     bool is_spring = child.class_key() == "Spring"_key;
     if (is_spring) {
-      float weight = std::max(0.0f, child.get_as<float>("weight"_key, 1.0f));
+      float weight = std::max(0.0f, child.weight(1.0f));
       stretch_weight_total += weight;
       children.push_back({&child, 0.0f, true, weight});
       ++n;
       return;
     }
-    float w = child.get_as<float>("width"_key, 0.0f);
+    float w = child.width(0.0f);
     children.push_back({&child, w, false, 0.0f});
     if (w > 0.0f)
       fixed_total += w;
@@ -395,7 +395,7 @@ static void arrange_horizontal_layout(imgui_renderer& r, const ui_element& node,
     if (c.is_spring) {
       col_h = 0.0f;
     } else {
-      float h_hint = c.elem->get_as<float>("height"_key, 0.0f);
+      float h_hint = c.elem->height(0.0f);
       col_h = h_hint > 0.0f ? h_hint : (h_hint < 0.0f ? avail.y : c.elem->measured_size().y);
     }
 
@@ -415,9 +415,9 @@ static void arrange_horizontal_layout(imgui_renderer& r, const ui_element& node,
 }
 
 static void arrange_splitter(imgui_renderer& r, const ui_element& node, ImVec2 origin, ImVec2 avail, const context& s) {
-  auto orientation = node.get_as<std::string>("orientation"_key, "vertical");
+  auto orientation = node.orientation("vertical");
   bool is_vertical = orientation != "horizontal";
-  float thickness = std::max(1.0f, node.get_as<float>("thickness"_key, 4.0f));
+  float thickness = std::max(1.0f, node.thickness(4.0f));
   key_t size_field = is_vertical ? "width"_key : "height"_key;
 
   std::vector<ui_element*> panes;

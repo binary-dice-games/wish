@@ -184,12 +184,44 @@ bool highlight() const {
 
 Only add a pointer-cache accessor for a field read on (nearly) every node of
 a hot traversal (measure/arrange/render) — not for fields read once per call,
-from a cold/debug path, or only on one specific widget class. For a field
-that's genuinely hot but specific to one widget class (e.g. a `Table`- or
-`Splitter`-only field), prefer a typed `ui_element` subclass registered as
-that class's instantiation factory (`dynamic::make_factory<your_class>(...)`
-in place of the default `make_factory<ui_element>(...)`) over adding a
-generic `ui_element`-level accessor for a field most nodes don't have.
+from a cold/debug path, or only on one specific widget class.
+
+**Default to the flat approach**: add the accessor directly on base
+`ui_element`, even when only a subset of widget classes actually populate
+that field — most widgets (Button, Slider*, Drag*, Table, Splitter, Layout,
+Menu*, etc.) are instantiated as plain `ui_element` via
+`dynamic::make_factory<ui_element>(...)`, with no widget-specific C++
+subclass, so a subclass-per-field would mean introducing new factory
+subclasses just to host one accessor. Reserve a typed `ui_element` subclass
+(`dynamic::make_factory<your_class>(...)` in place of the default) for a
+field that's genuinely hot *and* the widget already has (or clearly
+warrants) its own subclass for other reasons — not as the default answer to
+"this field is widget-specific."
+
+For a field whose *stored type* varies by widget (e.g. `"width"`/`"height"`
+are `float` on most widgets but `int32_t` literals on window/dockspace),
+share one `mutable field*` cache member across multiple typed accessors
+instead of introducing per-widget-type subclasses — the cache holds the
+field's *location*, not its type, so each accessor can read it as whatever
+type that particular node actually stores (see `width()`/`width_i()` in
+`ui_element.hpp`).
+
+**`cached_field_or<T>()` must coerce, not just type-match.** A JSON literal
+like `"width": -1` is stored as an `int32_t` field even though most
+`width()`-style accessors return `float`. `cached_field_or<T>()` calls
+`field::get_as<T>()` (which cross-type-converts, e.g. `int32_t -> float`)
+rather than the stricter `field::is<T>() ? field::as<T>() : default`
+pair — using the strict pair silently returns the *default* for any field
+whose stored type doesn't exactly match the accessor's `T`, which is a easy
+mistake to reintroduce when adding a new accessor by hand instead of going
+through `cached_field_or<T>()`. This exact bug previously reintroduced an
+unbounded per-frame table-growth regression (`file_dialog.cpp`'s
+stretch-fill file list has `"width": -1`/`"height": -1` int literals; a
+strict-typed accessor made `arrange_vertical_layout()` misclassify the
+Table as "auto" instead of "stretch", which fed the Table's own previous
+`last_rendered_size()` back into its measured size every frame). Always add
+new hot-field accessors via `cached_field_or<T>()` rather than hand-rolling
+the `is<T>()`/`as<T>()` check.
 
 ## Platform Support
 
