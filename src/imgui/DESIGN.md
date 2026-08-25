@@ -294,11 +294,13 @@ cases, without needing to detect which one applies.
 before doing anything else. If `node` already carries a stash written
 *this same frame* (`ui_element::is_arrange_fresh()`), it's a no-op — some
 ancestor's top-down `arrange_node()` pass already resolved it via the hook
-points below. Otherwise it runs `measure_node(r, node, s)` then
-`arrange_node(r, node, ImGui::GetCursorPos(), ImGui::GetContentRegionAvail(),
-s)`, treating `node`'s own live cursor position as a locally-scoped root —
-the exact same `arrange_node()` call an ancestor would have made, never a
-second algorithm.
+points below. Otherwise it runs `arrange_node(r, node, ImGui::GetCursorPos(),
+ImGui::GetContentRegionAvail(), s)`, treating `node`'s own live cursor
+position as a locally-scoped root — the exact same `arrange_node()` call an
+ancestor would have made, never a second algorithm. It also runs
+`measure_node(r, node, s)` first, unless `ui_element::is_measure_fresh()`
+says this subtree was already measured this frame — see "Hook points"
+below for why that's the common case, not the exception.
 
 This is **load-bearing, not optional**: `tests/test_imgui_renderer.cpp`
 has multiple tests (e.g. `VerticalLayoutWithThreeLabelsDoesNotThrow`) that
@@ -320,8 +322,23 @@ recompute rather than trusting a stale rect from whenever it last rendered.
 `render_window()` (`imgui_ui_renderer.cpp`) calls `measure_node()` then
 `arrange_node(node, ImVec2(0,0), ImGui::GetContentRegionAvail(), s)`
 immediately before each of its two `render_children(r, node, s)` calls
-(the modal and non-modal paths), so every top-level window's subtree gets
-a fresh top-down pass once per frame before anything under it renders.
+(the modal and non-modal paths). These two calls are **not** symmetric in
+how far they reach: `measure_node()`'s fallback for an unregistered class
+(`Window` has no `measure_dispatch_fns()` entry) unconditionally recurses
+into every descendant regardless of class, so this alone measures the
+*entire* subtree, every frame — `ui_element::is_measure_fresh()` is what
+that primes. `arrange_node()`, by contrast, only recurses through
+`arrange_dispatch_fns()` entries (`VerticalLayout`/`HorizontalLayout`/
+`Splitter`/`Table`), and `Window` has none — it stamps its own rect and
+stops there. Descendant arranging is left entirely to each top-level
+child's own `ensure_arranged()` self-heal, since `Window`'s children flow
+via ImGui's own live cursor rather than one managed algorithm the way a
+`VerticalLayout`'s children do. This is why `ensure_arranged()` (above)
+still needs its own `arrange_node()` call every time it isn't fresh, but
+can — and should — skip `measure_node()` whenever `is_measure_fresh()`
+says `render_window()`'s pass already covered it this frame; without that
+check, every top-level layout's subtree would be measured twice per
+frame (once by `render_window()`, once more by its own self-heal).
 `Window`'s own `width`/`height` (`ImGuiCond_FirstUseEver`, live user
 resize) stays completely outside this system — genuinely live ImGui/OS
 window state, correctly left alone. `TreeNode`/`TabBar`/`Splitter`'s own

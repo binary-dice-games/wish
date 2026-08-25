@@ -436,6 +436,38 @@ TEST_F(ImguiLayoutTest, EnsureArrangedNoOpWhenAlreadyFreshThisFrame) {
   renderer_->end_frame();
 }
 
+TEST_F(ImguiLayoutTest, EnsureArrangedSkipsRedundantMeasureWhenAlreadyMeasuredThisFrame) {
+  // Reproduces render_window()'s real sequence: an enclosing pass measures
+  // (but, unlike arrange, never arranges -- Window has no arrange_dispatch_fns
+  // entry) the subtree first, then a descendant layout's own ensure_arranged()
+  // self-heal runs. Before this fix, ensure_arranged() re-measured
+  // unconditionally, doubling every measure_node() walk each frame -- see
+  // src/imgui/DESIGN.md's "Hook points" section.
+  auto map = bdg::wish::import_json(R"({"type":"VerticalLayout","children":{
+      "a":{"type":"Label","text":"x"}
+  }})");
+  auto& root = *map[""];
+
+  renderer_->begin_frame();
+  in_window([&] {
+    measure_node(*renderer_, root, *sess_);
+    EXPECT_TRUE(root.is_measure_fresh(ImGui::GetFrameCount()));
+    EXPECT_FALSE(root.is_arrange_fresh(ImGui::GetFrameCount()));
+
+    // Stamp a sentinel measured size so a redundant re-measure inside
+    // ensure_arranged() would be observable -- measure_node() on this
+    // content always recomputes a real (non-sentinel) size.
+    root.set_measured_size({777.0f, 888.0f}, ImGui::GetFrameCount());
+
+    bool was_fresh = ensure_arranged(*renderer_, root, *sess_);
+    EXPECT_FALSE(was_fresh); // still needed to arrange, just not re-measure
+    EXPECT_TRUE(root.is_arrange_fresh(ImGui::GetFrameCount()));
+    EXPECT_FLOAT_EQ(root.measured_size().x, 777.0f);
+    EXPECT_FLOAT_EQ(root.measured_size().y, 888.0f);
+  });
+  renderer_->end_frame();
+}
+
 // ── Font-metric parity: measure must match what render actually draws at ────
 
 TEST_F(ImguiLayoutTest, LabelWithExplicitFontSizeMeasuresConsistentlyWithRender) {

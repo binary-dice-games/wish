@@ -62,6 +62,8 @@ struct vec2f {
  */
 struct layout_stash {
   vec2f measured; ///< Node's own natural (intrinsic) size.
+  int measured_frame = -1; ///< `ImGui::GetFrameCount()` at the last measure
+                            ///< write; -1 means "never measured".
   vec2f last_rendered_size; ///< This node's own real, ImGui-computed item
                              ///< rect size from the last time it was
                              ///< actually rendered (`imgui_renderer::
@@ -199,7 +201,13 @@ class ui_element : public bison::cloneable_dynamic<ui_element> {
   /// @brief Node's own natural size, as of the last measure pass.
   vec2f measured_size() const { return layout_stash_.measured; }
   /// @brief Record this frame's measured natural size.
-  void set_measured_size(vec2f size) const { layout_stash_.measured = size; }
+  /// @param size   Node's own natural size.
+  /// @param frame  `ImGui::GetFrameCount()` at write time; drives
+  ///               `is_measure_fresh()`.
+  void set_measured_size(vec2f size, int frame) const {
+    layout_stash_.measured = size;
+    layout_stash_.measured_frame = frame;
+  }
 
   /// @brief This node's real, ImGui-computed item rect size from the last
   ///        time it was actually rendered. See `layout_stash::
@@ -248,6 +256,19 @@ class ui_element : public bison::cloneable_dynamic<ui_element> {
   /// stale leftover from a frame where an ancestor `Window`/`TreeNode` was
   /// collapsed or not rendered -- a stale rect must never be trusted.
   bool is_arrange_fresh(int current_frame) const { return layout_stash_.arranged_frame == current_frame; }
+
+  /// @brief True when this node's measured-size stash was written during
+  ///        @p current_frame.
+  ///
+  /// Lets `ensure_arranged()` (`src/imgui/imgui_layout.cpp`) skip a
+  /// redundant `measure_node()` walk of this subtree when an enclosing
+  /// `Window`/modal's own unconditional top-level `measure_node()` call
+  /// already primed it earlier this frame -- only the `arrange_node()` call
+  /// still needs to run, since (unlike measure) `Window` has no
+  /// `arrange_dispatch_fns()` entry and so never arranges descendants
+  /// itself. See `src/imgui/DESIGN.md`'s "ensure_arranged() -- the
+  /// self-heal mechanism" section.
+  bool is_measure_fresh(int current_frame) const { return layout_stash_.measured_frame == current_frame; }
 
  private:
   mutable layout_stash layout_stash_;

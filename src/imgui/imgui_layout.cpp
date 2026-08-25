@@ -231,7 +231,7 @@ static const measure_fn_map& measure_dispatch_fns() {
 natural_size measure_node(imgui_renderer& r, const ui_element& node, const context& s) {
   BISON_TRACE_SCOPE("measure_node");
   if (!node.get_as<bool>("visible"_key, true)) {
-    node.set_measured_size({0.0f, 0.0f});
+    node.set_measured_size({0.0f, 0.0f}, ImGui::GetFrameCount());
     return {0.0f, 0.0f};
   }
 
@@ -254,7 +254,7 @@ natural_size measure_node(imgui_renderer& r, const ui_element& node, const conte
   }
 
   ImGui::PopFont();
-  node.set_measured_size(sz);
+  node.set_measured_size(sz, ImGui::GetFrameCount());
   return sz;
 }
 
@@ -511,9 +511,17 @@ void arrange_node(imgui_renderer& r, const ui_element& node, ImVec2 origin, ImVe
 
 bool ensure_arranged(imgui_renderer& r, const ui_element& node, const context& s) {
   BISON_TRACE_SCOPE("ensure_arranged");
-  if (node.is_arrange_fresh(ImGui::GetFrameCount()))
+  int frame = ImGui::GetFrameCount();
+  if (node.is_arrange_fresh(frame))
     return true;
-  measure_node(r, node, s);
+  // An enclosing Window/modal's own unconditional top-level measure_node()
+  // call (imgui_ui_renderer.cpp's render_window()) already primed this
+  // subtree's measured_size stash earlier this frame -- only arrange_node()
+  // still needs to run, since Window has no arrange_dispatch_fns() entry
+  // and so never arranges descendants itself. Re-measuring here would
+  // redundantly re-walk the whole subtree a second time every frame.
+  if (!node.is_measure_fresh(frame))
+    measure_node(r, node, s);
   arrange_node(r, node, ImGui::GetCursorPos(), ImGui::GetContentRegionAvail(), s);
   return false;
 }
