@@ -30,15 +30,20 @@ ui_element_ptr::operator bison::dynamic_ptr() const {
 ui_element::ui_element(dynamic&& base) : cloneable_dynamic(std::move(base)) {}
 
 void ui_element::refresh_children_order() {
-  auto* children_field = findField("children"_key);
+  auto* children_field = cached_field(children_field_, "children"_key);
   if (!children_field || !children_field->is<dynamic_ptr>())
     return;
   auto& children = children_field->as<dynamic_ptr>();
   if (!children)
     return;
 
-  // Collect (key, order_value) for every child in the children map.
-  std::vector<std::pair<key_t, int32_t>> entries;
+  // Collect (key, order_value, child) for every child in the children map.
+  struct entry {
+    key_t key;
+    int32_t order;
+    dynamic_ptr child;
+  };
+  std::vector<entry> entries;
   children->forEach([&](key_t k, const field& f) {
     if (!f.is<dynamic_ptr>())
       return;
@@ -49,48 +54,49 @@ void ui_element::refresh_children_order() {
       if (of && of->is<int32_t>())
         order = of->as<int32_t>();
     }
-    entries.emplace_back(k, order);
+    entries.push_back({k, order, child});
   });
 
   // Stable-sort ascending so equal order values preserve declaration sequence.
-  std::stable_sort(entries.begin(), entries.end(), [](const auto& a, const auto& b) { return a.second < b.second; });
+  std::stable_sort(entries.begin(), entries.end(),
+                    [](const entry& a, const entry& b) { return a.order < b.order; });
 
-  // Write sorted key sequence into the cache.  Each slot i holds the raw
-  // hash_t of the child key cast to int32_t (well-defined 2's-complement).
+  // Write sorted key sequence into "__children_order__" (kept for any
+  // external/observability consumers) and rebuild resolved_children_order_,
+  // the cache for_each_child_ordered() actually iterates -- resolving each
+  // child's ui_element* once here instead of on every for_each_child_ordered()
+  // call (1-3x per node per frame during measure/arrange/render). Non-
+  // ui_element children (e.g. in a manually-constructed tree) are dropped
+  // from the resolved cache, matching for_each_child_ordered()'s previous
+  // silent-skip behavior.
   auto cache = dynamic_ptr{key_t{0U}, {}};
+  resolved_children_order_.clear();
+  resolved_children_order_.reserve(entries.size());
   for (size_t i = 0; i < entries.size(); ++i) {
-    (*cache)[i] = static_cast<int32_t>(entries[i].first.id);
+    (*cache)[i] = static_cast<int32_t>(entries[i].key.id);
+    if (auto elem = std::dynamic_pointer_cast<ui_element>(std::shared_ptr<dynamic>(entries[i].child)))
+      resolved_children_order_.emplace_back(entries[i].key, ui_element_ptr(std::move(elem)));
   }
+  has_resolved_children_order_ = true;
   (*this)["__children_order__"_key] = cache;
 }
 
 void ui_element::for_each_child_ordered(const std::function<void(key_t, ui_element&)>& fn) const {
-  auto* children_field = findField("children"_key);
+  auto* children_field = cached_field(children_field_, "children"_key);
   if (!children_field || !children_field->is<dynamic_ptr>())
     return;
   const auto& children = children_field->as<dynamic_ptr>();
   if (!children)
     return;
 
-  auto* cache_field = findField("__children_order__"_key);
-  if (cache_field && cache_field->is<dynamic_ptr>()) {
-    const auto& cache = cache_field->as<dynamic_ptr>();
-    if (cache) {
-      // Cache entries are indexed 0, 1, 2 ... so forEach visits them in
-      // ascending integer order — the intended render order.
-      cache->forEach([&](key_t, const field& entry) {
-        if (!entry.is<int32_t>())
-          return;
-        key_t child_key{static_cast<hash_t>(entry.as<int32_t>())};
-        auto* child_field = children->findField(child_key);
-        if (!child_field || !child_field->is<dynamic_ptr>())
-          return;
-        auto* elem = dynamic_cast<ui_element*>(child_field->as<dynamic_ptr>().get());
-        if (elem)
-          fn(child_key, *elem);
-      });
-      return;
+  if (has_resolved_children_order_) {
+    // Cache built by refresh_children_order() -- already in render order,
+    // already resolved to live ui_element_ptrs. No further field lookups.
+    for (auto& [key, elem] : resolved_children_order_) {
+      if (elem)
+        fn(key, *elem);
     }
+    return;
   }
 
   // Fallback: no cache — use forEachChild<ui_element> (hash-sorted order).

@@ -31,6 +31,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace bdg::wish {
@@ -543,6 +544,26 @@ class ui_element : public bison::cloneable_dynamic<ui_element> {
   mutable bison::field* closable_field_ = nullptr;
   mutable bison::field* min_height_field_ = nullptr;
   mutable layout_stash layout_stash_;
+
+  // ── for_each_child_ordered() cache ──────────────────────────────────────
+  //
+  // `children_field_` caches the "children" findField() lookup shared by
+  // both `refresh_children_order()` and `for_each_child_ordered()`.
+  // `resolved_children_order_` caches the actual (key, ui_element_ptr)
+  // pairs in render order, rebuilt by `refresh_children_order()` -- so
+  // `for_each_child_ordered()` (called 1-3x per node per frame during
+  // measure/arrange/render) iterates it directly with zero further
+  // findField() calls, instead of re-resolving every child's field* from
+  // "children" via `children->findField(child_key)` on every call. Holds
+  // `ui_element_ptr` (not a raw pointer) so each cached child stays alive
+  // between refreshes, matching the existing contract that callers re-run
+  // `refresh_children_order()` after structurally adding/removing children
+  // (see `file_dialog.cpp`, `properties_dialog.cpp`). `__children_order__`
+  // is still written to a field for any external/observability consumers,
+  // but `for_each_child_ordered()` no longer reads it back.
+  mutable bison::field* children_field_ = nullptr;
+  mutable std::vector<std::pair<bison::key_t, ui_element_ptr>> resolved_children_order_;
+  mutable bool has_resolved_children_order_ = false;
 };
 
 } // namespace bdg::wish
