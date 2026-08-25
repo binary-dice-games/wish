@@ -229,7 +229,6 @@ static const measure_fn_map& measure_dispatch_fns() {
 }
 
 natural_size measure_node(imgui_renderer& r, const ui_element& node, const context& s) {
-  BISON_TRACE_SCOPE("measure_node");
   if (!node.get_as<bool>("visible"_key, true)) {
     node.set_measured_size({0.0f, 0.0f}, ImGui::GetFrameCount());
     return {0.0f, 0.0f};
@@ -481,7 +480,6 @@ static const arrange_fn_map& arrange_dispatch_fns() {
 }
 
 void arrange_node(imgui_renderer& r, const ui_element& node, ImVec2 origin, ImVec2 avail, const context& s) {
-  BISON_TRACE_SCOPE("arrange_node");
   if (std::ofstream* log = layout_debug_log()) {
     // Compare against last frame's stash *before* overwriting it. Skip a
     // node's first-ever arrange (has_arranged() false): everything would log
@@ -510,7 +508,6 @@ void arrange_node(imgui_renderer& r, const ui_element& node, ImVec2 origin, ImVe
 }
 
 bool ensure_arranged(imgui_renderer& r, const ui_element& node, const context& s) {
-  BISON_TRACE_SCOPE("ensure_arranged");
   int frame = ImGui::GetFrameCount();
   if (node.is_arrange_fresh(frame))
     return true;

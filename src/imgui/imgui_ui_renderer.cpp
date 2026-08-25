@@ -14,6 +14,8 @@
 #include <imgui/imgui_layout.hpp>
 #include <server/renderer.hpp>
 
+#include "src/rmi/shared/profiling.hpp"
+
 #include <imgui.h>
 
 #include <algorithm>
@@ -210,9 +212,18 @@ void render_window(imgui_renderer& r, const ui_element& node, const context& s) 
       // the popup isn't open -- gating on now_open avoids capturing the
       // *enclosing* window's rect in that case.
       report_self_rect(node);
-      measure_node(r, node, s);
-      arrange_node(r, node, ImVec2(0.0f, 0.0f), ImGui::GetContentRegionAvail(), s);
-      render_children(r, node, s);
+      {
+        BISON_TRACE_SCOPE("measure_node");
+        measure_node(r, node, s);
+      }
+      {
+        BISON_TRACE_SCOPE("arrange_node");
+        arrange_node(r, node, ImVec2(0.0f, 0.0f), ImGui::GetContentRegionAvail(), s);
+      }
+      {
+        BISON_TRACE_SCOPE("render_children");
+        render_children(r, node, s);
+      }
       // App-level code (e.g. a form's on_event()) runs outside any ImGui
       // frame and can't call ImGui::CloseCurrentPopup() directly -- it
       // requests a close by setting this hidden field instead (see
@@ -323,10 +334,18 @@ void render_window(imgui_renderer& r, const ui_element& node, const context& s) 
 
       const_cast<ui_element&>(node)["__was_docked__"_key] = is_docked;
     }
-
-    measure_node(r, node, s);
-    arrange_node(r, node, ImVec2(0.0f, 0.0f), ImGui::GetContentRegionAvail(), s);
-    render_children(r, node, s);
+    {
+      BISON_TRACE_SCOPE("measure_node");
+      measure_node(r, node, s);
+    }
+    {
+      BISON_TRACE_SCOPE("arrange_node");
+      arrange_node(r, node, ImVec2(0.0f, 0.0f), ImGui::GetContentRegionAvail(), s);
+    }
+    {
+      BISON_TRACE_SCOPE("render_children");
+      render_children(r, node, s);
+    }
   }
   // Drawn before End() (unconditionally, same reasoning as report_self_rect()'s
   // own unconditional call above) -- imgui_renderer::render_node()'s generic

@@ -405,7 +405,6 @@ ImFont* resolve_element_font(imgui_renderer& r, const ui_element& node, const co
 }
 
 void imgui_renderer::render_node(const ui_element& node, const context& s) {
-  BISON_TRACE_SCOPE("render_node");
   if (!node.get_as<bool>("visible"_key, true))
     return;
 
