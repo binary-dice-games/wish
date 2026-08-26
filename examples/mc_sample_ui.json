@@ -16,6 +16,7 @@
               "type": "VerticalLayout",
               "spacing": 4,
               "width": -1,
+              "height": -1,
               "children": {
                 "left_label": { "type": "Label", "text": "Local Machine" },
                 "left_path": {
@@ -30,6 +31,7 @@
                   "columns": 3,
                   "headers": true,
                   "flags": "Borders",
+                  "height": -1,
                   "outer_width": 0,
                   "outer_height": -1,
                   "children": {
@@ -105,6 +107,7 @@
               "type": "VerticalLayout",
               "spacing": 4,
               "width": -1,
+              "height": -1,
               "children": {
                 "right_header": {
                   "type": "HorizontalLayout",
@@ -126,6 +129,7 @@
                   "columns": 3,
                   "headers": true,
                   "flags": "Borders",
+                  "height": -1,
                   "outer_width": 0,
                   "outer_height": -1,
                   "children": {

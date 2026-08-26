@@ -166,7 +166,7 @@ static constexpr const char* kEditorLayout = R"json({
           "spacing": 8,
           "height": -1,
           "children": {
-            "source": { "type": "TextEditor", "language": "json", "height": 0, "wish_ui_schema": true }
+            "source": { "type": "TextEditor", "language": "json", "width": -1, "height": -1, "wish_ui_schema": true }
           }
         }
       }

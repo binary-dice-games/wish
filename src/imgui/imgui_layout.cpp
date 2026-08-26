@@ -78,6 +78,29 @@ static natural_size measure_spring(imgui_renderer&, const ui_element&, const con
   return {0.0f, 0.0f};
 }
 
+// TextEditor shares Spring's exact hazard: render_text_editor()
+// (imgui_text_editor_renderer.cpp) turns an unhinted width/height of 0 into
+// ImGui's own "-1 = fill remaining space" convention, not a genuine
+// content-derived natural size -- there is no "natural" width/height for a
+// scrolling code editor the way there is for a Label's text extent. Letting
+// it fall through to the generic last_rendered_size() fallback below (as it
+// did before this entry existed) creates the identical unbounded feedback
+// loop as Spring would: an enclosing HorizontalLayout/VerticalLayout with no
+// stretch child reads this node's last real render as its own cross-axis
+// content_extent, wraps a BeginChild of exactly that size around it, and
+// TextEditor's own "-1 fill" then renders slightly smaller inside that
+// child window (BeginChild padding/border overhead) every single frame --
+// confirmed live via a "shrinking text editor" bug report. Returning {0,0}
+// here means an unhinted TextEditor renders at 0x0 (visibly blank) instead
+// of slowly shrinking -- a loud, immediately-diagnosable failure instead of
+// a silent one. A TextEditor placed outside any wish Layout (e.g. nano's
+// TabItem child) never calls measure_node() at all and is unaffected either
+// way. Always give a Layout-nested TextEditor an explicit "width": -1,
+// "height": -1 (or a fixed size) rather than leaving it auto/0.
+static natural_size measure_text_editor(imgui_renderer&, const ui_element&, const context&) {
+  return {0.0f, 0.0f};
+}
+
 natural_size measure_node(imgui_renderer& r, const ui_element& node, const context& s);
 
 static const measure_fn_map& measure_dispatch_fns();
@@ -173,27 +196,82 @@ static natural_size measure_splitter(imgui_renderer& r, const ui_element& node0,
 // drift bug this codebase keeps hitting (it once undercounted every row by
 // ~4px because CellPadding was missing). Table instead falls through to
 // measure_node()'s generic last_rendered_size() fallback below, same as
-// TextEditor/Plot/Button and every other composite/leaf without a
-// registered measure_fn: one frame of lag on a genuinely brand-new Table,
+// Plot/Button and every other composite/leaf without a registered
+// measure_fn: one frame of lag on a genuinely brand-new Table,
 // self-correcting immediately after, in exchange for zero duplicated math.
 // An explicit positive "outer_width"/"outer_height" is unaffected either
 // way -- render_table() passes those straight to ImGui::BeginTable()
 // regardless of what measure_node() returns for the auto/fallback case.
 //
-// Exactly four entries: VerticalLayout/HorizontalLayout/Splitter need their
-// own natural size *before* anything renders because they distribute space
-// to children -- ImGui has no "what would this row's content naturally add
-// up to" query, since that's wish's own declarative fixed/stretch/auto
-// model, not something ImGui itself has any concept of. Spring keeps its
-// own entry for a different reason -- not "ImGui knows this and we don't"
-// (Spring has no ImGui content at all to ask about), but circularity: the
-// generic last_rendered_size() fallback below would be self-referential for
-// Spring specifically, since render_spring() always draws Dummy() at
-// exactly its *previous* arranged size (see measure_spring()'s own comment).
+// A *negative* "outer_width"/"outer_height", though, is the same hazard as
+// Spring/TextEditor below on that one axis: it asks ImGui::BeginTable() to
+// fill whatever ambient region it renders into (extern/imgui/
+// imgui_tables.cpp's BeginTable() doc comment), not a value derived from
+// this Table's own content -- there is no genuine natural size to report on
+// that axis. Falling through to last_rendered_size() on that axis is
+// self-referential exactly like Spring/TextEditor: an ancestor
+// VerticalLayout/HorizontalLayout with this Table left at its default
+// Layout width/height hint of 0 (auto) sums this Table's last real render
+// into its own natural size (measure_vertical_layout()/
+// measure_horizontal_layout() above), that sum becomes the BeginChild this
+// Table renders inside next frame, and BeginTable()'s own "-1 fill" then
+// resolves against a region that already embeds last frame's render --
+// confirmed live via mc_sample_ui.json's "left_table"/"right_table", each
+// an "outer_height": -1 Table nested in a default (height: 0) VerticalLayout
+// column, drifting per frame the exact same way TextEditor did. This is the
+// identical hazard already fixed once from the *other* direction in
+// render_table() itself (see its "own_width_hint"/"own_height_hint" gate
+// and the "sustained +4px-per-frame growth" incident cited there) -- that
+// gate only intercepts a Table reading its *own* stale arranged_size() back
+// into its *own* render call; it does nothing for an ancestor summing this
+// Table's stale last_rendered_size() into *its* natural size instead, which
+// is the path mc_sample_ui.json's Tables actually hit. measure_table()
+// below closes that second path. The non-filling axis (outer_width/
+// outer_height == 0, genuine ImGui auto-size-to-content) is unaffected --
+// it keeps using last_rendered_size(), same as the general case above.
+// Always give an "outer_width"/"outer_height": -1 Table's *enclosing*
+// Layout child a matching negative "width"/"height" hint (mirroring
+// TextEditor's fix) so the ancestor treats it as a genuine stretch/fill
+// child -- computed live from the stretch pool -- instead of an auto child
+// whose size depends on this Table's own last render.
+static natural_size measure_table(imgui_renderer&, const ui_element& node0, const context&) {
+  const auto& node = static_cast<const ui_table&>(node0);
+  natural_size sz = node.last_rendered_size();
+  if (node.outer_width(0.0f) < 0.0f)
+    sz.x = 0.0f;
+  if (node.outer_height(0.0f) < 0.0f)
+    sz.y = 0.0f;
+  return sz;
+}
 //
-// Every other class -- Label, Image, TreeNode, TabBar, Table, Button,
-// ProgressBar, TextEditor, Plot, and anything added in the future -- is
-// intentionally absent: measure_node()'s fallback below uses that node's
+// Exactly six entries, in two distinct categories:
+// - VerticalLayout/HorizontalLayout/Splitter need their own natural size
+//   *before* anything renders because they distribute space to children --
+//   ImGui has no "what would this row's content naturally add up to" query,
+//   since that's wish's own declarative fixed/stretch/auto model, not
+//   something ImGui itself has any concept of.
+// - Spring, TextEditor, and Table keep their own entries for a different
+//   reason -- not "ImGui knows this and we don't" (Spring has no ImGui
+//   content at all to ask about; TextEditor's content is a scrolling buffer
+//   with no meaningful "natural" extent; Table's outer_width/outer_height
+//   fields can request an ImGui-level fill on either axis independently of
+//   its own Layout width/height hint), but circularity: the generic
+//   last_rendered_size() fallback below would be self-referential for all
+//   three, since their render_*() functions draw at exactly whatever size
+//   they were last given on the affected axis -- render_spring() via
+//   Dummy() at its previous arranged size (see measure_spring()'s own
+//   comment), render_text_editor() via ImGui's own "-1 = fill remaining
+//   space" convention for an unhinted width/height (see
+//   measure_text_editor()'s own comment), render_table() via that same "-1
+//   fill" convention whenever outer_width/outer_height is negative (see
+//   measure_table()'s own comment). Any future class whose render function
+//   does the same "0/auto -> ImGui ambient fill" translation (rather than
+//   computing a genuine content-derived size) needs the identical
+//   treatment -- {0,0} on the affected axis, not the fallback.
+//
+// Every other class -- Label, Image, TreeNode, TabBar, Button,
+// ProgressBar, Plot, and anything added in the future -- is intentionally
+// absent: measure_node()'s fallback below uses that node's
 // own real, last-rendered size instead (ui_element::last_rendered_size(),
 // populated generically by imgui_renderer::render_node() after every real
 // render, not per-class code) rather than a hand-written formula
@@ -222,6 +300,8 @@ static natural_size measure_splitter(imgui_renderer& r, const ui_element& node0,
 static const measure_fn_map& measure_dispatch_fns() {
   static const measure_fn_map tbl{
       {"Spring"_key.id, measure_spring},
+      {"TextEditor"_key.id, measure_text_editor},
+      {"Table"_key.id, measure_table},
       {"VerticalLayout"_key.id, measure_vertical_layout},
       {"HorizontalLayout"_key.id, measure_horizontal_layout},
       {"Splitter"_key.id, measure_splitter},

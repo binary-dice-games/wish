@@ -1570,21 +1570,24 @@ void render_table(imgui_renderer& r, const ui_element& node0, const context& s) 
   // (height:0) Table -- for that case the "arranged size" they hand back is
   // just this Table's own last-measured natural size, not a real externally
   // imposed constraint. Filling from it anyway would create a real feedback
-  // loop specific to Table (the one class whose own render call reads its
-  // own measured/arranged size back into its own rendering): Table has no
-  // measure_fn of its own (see measure_dispatch_fns()' comment in
-  // imgui_layout.cpp), so its "natural size" is last_rendered_size() --
-  // this node's own *previous frame's real render*. If that previous
-  // render's outer_height was itself derived from arranged_size() (this
-  // exact fill logic), every frame's real rendered height would embed
-  // whatever ImGui adds on top of a requested outer_height (a few pixels of
-  // overhead), compounding without bound -- confirmed via
-  // WISH_LAYOUT_DEBUG_LOG against top's auto-height
+  // loop specific to Table (the one class whose own render call can read its
+  // own measured/arranged size back into its own rendering): on an
+  // outer_width/outer_height == 0 axis, Table's own measure_fn
+  // (measure_table() in imgui_layout.cpp) reports last_rendered_size() --
+  // this node's own *previous frame's real render* -- for the same
+  // "genuine auto-size-to-content" reason the generic fallback used to.
+  // If that previous render's outer_height was itself derived from
+  // arranged_size() (this exact fill logic), every frame's real rendered
+  // height would embed whatever ImGui adds on top of a requested
+  // outer_height (a few pixels of overhead), compounding without bound --
+  // confirmed via WISH_LAYOUT_DEBUG_LOG against top's auto-height
   // "proc_table" as a sustained +4px-per-frame growth, never settling.
   // Gating on the Table's own hint being nonzero breaks the cycle: a plain
   // auto Table passes outer_height=0 straight to ImGui::BeginTable() every
   // frame, unconditionally, with nothing carried over from the previous
-  // frame to compound.
+  // frame to compound. (A negative outer_width/outer_height is a separate,
+  // already-{0,0}-guarded axis in measure_table() -- see that function's
+  // comment -- so this gate only needs to worry about the ==0 case.)
   float own_width_hint = node.width(0.0f);
   float own_height_hint = node.height(0.0f);
   {
