@@ -23,7 +23,7 @@ namespace bdg::wish {
 /// Clicking any button emits a single `on_result` event with a `button` field
 /// holding one of "ok", "cancel", "yes", "no", "retry", "abort", "ignore" (the
 /// name of the clicked button), then removes the internal UI tree.
-class message_box : public form {
+class message_box : public cloneable_ui_element<message_box, form> {
  public:
   explicit message_box(bison::dynamic&& base);
 

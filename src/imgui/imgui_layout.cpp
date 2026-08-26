@@ -143,7 +143,8 @@ static natural_size measure_horizontal_layout(imgui_renderer& r, const ui_elemen
   return {total_w, max_h};
 }
 
-static natural_size measure_splitter(imgui_renderer& r, const ui_element& node, const context& s) {
+static natural_size measure_splitter(imgui_renderer& r, const ui_element& node0, const context& s) {
+  const auto& node = static_cast<const ui_splitter&>(node0);
   auto orientation = node.orientation("vertical");
   bool is_vertical = orientation != "horizontal";
   float thickness = std::max(1.0f, node.thickness(4.0f));
@@ -414,7 +415,8 @@ static void arrange_horizontal_layout(imgui_renderer& r, const ui_element& node,
   node.set_content_extent({x - origin.x, max_col_h});
 }
 
-static void arrange_splitter(imgui_renderer& r, const ui_element& node, ImVec2 origin, ImVec2 avail, const context& s) {
+static void arrange_splitter(imgui_renderer& r, const ui_element& node0, ImVec2 origin, ImVec2 avail, const context& s) {
+  const auto& node = static_cast<const ui_splitter&>(node0);
   auto orientation = node.orientation("vertical");
   bool is_vertical = orientation != "horizontal";
   float thickness = std::max(1.0f, node.thickness(4.0f));

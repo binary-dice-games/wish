@@ -5,6 +5,7 @@
 #include <imgui/imgui_renderer.hpp>
 #include <imgui/imgui_ui_renderer.hpp>
 #include <server/registry.hpp>
+#include <ui/ui_elements/window.hpp>
 #include <ui/ui_importer.hpp>
 
 #include "src/bison/bison_common.hpp"
@@ -1424,12 +1425,14 @@ TEST_F(ImguiRendererTest, ScrollYTableSticksToTrueBottomAfterABatchOfNewRowsInOn
     ASSERT_TRUE(static_cast<bool>(*children_p));
     auto& children = *children_p;
     for (int i = 0; i < count; ++i) {
-      bdg::wish::ui_element_ptr cell{dynamic::instantiate("wish"_key, "Label"_key)};
+      bdg::wish::ui_element_ptr cell{std::static_pointer_cast<bdg::wish::ui_element>(
+          std::shared_ptr<dynamic>(dynamic::create_instance("wish"_key, "Label"_key)))};
       (*cell)["text"_key] = "row " + std::to_string(next_row_key);
       auto row_children = dynamic_ptr{bdg::bison::key_t{0U}, {}};
       (*row_children)[size_t{0}] = dynamic_ptr{cell};
 
-      bdg::wish::ui_element_ptr row{dynamic::instantiate("wish"_key, "TableRow"_key)};
+      bdg::wish::ui_element_ptr row{std::static_pointer_cast<bdg::wish::ui_element>(
+          std::shared_ptr<dynamic>(dynamic::create_instance("wish"_key, "TableRow"_key)))};
       (*row)["children"_key] = row_children;
       (*row)["order"_key] = static_cast<int32_t>(next_row_key);
 
@@ -1563,17 +1566,17 @@ TEST_F(ImguiRendererTest, RelabelingSelectedTabItemKeepsItSelected) {
     }}}
   })";
   auto map = bdg::wish::import_json(desc);
-  auto& tab_b = *map["tabs.tab_b"];
-  auto& tab_a = *map["tabs.tab_a"];
+  auto& tab_b = static_cast<bdg::wish::ui_tab_item&>(*map["tabs.tab_b"]);
+  auto& tab_a = static_cast<bdg::wish::ui_tab_item&>(*map["tabs.tab_a"]);
 
   // Frame 1: tab_b is the first TabItem in a fresh TabBar, so it's
-  // auto-selected -- confirm via its own "__selected__" bookkeeping field
+  // auto-selected -- confirm via its own is_selected() bookkeeping
   // (set by render_tab_item()'s edge-triggered "selected" event logic).
   renderer_->begin_frame();
   renderer_->render_node(*map[""], *sess_);
   renderer_->end_frame();
-  ASSERT_TRUE(tab_b.get_as<bool>("__selected__"_key, false));
-  ASSERT_FALSE(tab_a.get_as<bool>("__selected__"_key, false));
+  ASSERT_TRUE(tab_b.is_selected());
+  ASSERT_FALSE(tab_a.is_selected());
 
   // Frame 2: simulate the "*" suffix clearing (Ctrl+S, or nano's "Save"
   // button, on the active tab) -- nothing else about the tab changes, and
@@ -1584,9 +1587,8 @@ TEST_F(ImguiRendererTest, RelabelingSelectedTabItemKeepsItSelected) {
   renderer_->render_node(*map[""], *sess_);
   ImGui::EndFrame();
 
-  EXPECT_TRUE(tab_b.get_as<bool>("__selected__"_key, false))
-      << "relabeling the active tab must not hand selection to a sibling";
-  EXPECT_FALSE(tab_a.get_as<bool>("__selected__"_key, false));
+  EXPECT_TRUE(tab_b.is_selected()) << "relabeling the active tab must not hand selection to a sibling";
+  EXPECT_FALSE(tab_a.is_selected());
 }
 
 // ── Docking: undock restores pre-dock floating size ──────────────────────────
@@ -1595,7 +1597,7 @@ TEST_F(ImguiRendererTest, WindowRestoresFloatingSizeAfterUndock) {
   ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
   auto map = bdg::wish::import_json(R"({"type":"Window","title":"Dockable","width":400,"height":300})");
-  auto& win = *map[""];
+  auto& win = static_cast<bdg::wish::window&>(*map[""]);
   // "###" (not "##") matches with_id()'s convention in imgui_ui_renderer.cpp:
   // the ID must depend only on stable_id(), not the visible "Dockable"
   // prefix, so editing a window's title doesn't reset ImGui's per-window
@@ -1613,8 +1615,8 @@ TEST_F(ImguiRendererTest, WindowRestoresFloatingSizeAfterUndock) {
   renderer_->begin_frame();
   renderer_->render_node(win, *sess_);
   renderer_->end_frame();
-  EXPECT_EQ(win.get_as<int32_t>("__float_width__"_key, 0), 400);
-  EXPECT_EQ(win.get_as<int32_t>("__float_height__"_key, 0), 300);
+  EXPECT_EQ(win.float_width(), 400);
+  EXPECT_EQ(win.float_height(), 300);
 
   // Programmatically dock the window via DockBuilder (no simulated drag
   // needed -- imgui_internal.h is already included above).
@@ -1694,7 +1696,7 @@ TEST_F(ImguiRendererTest, ModalWindowStaysOpenAcrossFramesWithoutReopening) {
   // one-shot latch (__modal_opened__) stays true, with no crash from a
   // mismatched Begin/End or popup-stack assertion.
   auto map = bdg::wish::import_json(R"({"type":"Window","title":"MB","modal":true})");
-  auto& win = *map[""];
+  auto& win = static_cast<bdg::wish::window&>(*map[""]);
   std::string label = "MB###" + bdg::wish::stable_id(win);
 
   // ImGui::IsPopupOpen(name) requires an active window scope (it calls
@@ -1711,7 +1713,7 @@ TEST_F(ImguiRendererTest, ModalWindowStaysOpenAcrossFramesWithoutReopening) {
       bdg::wish::render_window(*renderer_, win, *sess_);
       renderer_->end_frame();
     });
-    EXPECT_TRUE(win.get_as<bool>("__modal_opened__"_key, false));
+    EXPECT_TRUE(win.modal_opened());
   }
   auto* w = ImGui::FindWindowByName(label.c_str());
   ASSERT_NE(w, nullptr);
@@ -1728,13 +1730,13 @@ TEST_F(ImguiRendererTest, NonClosableModalEmitsClosedWhenPopupClosedProgrammatic
   sess_->emit_event = [&](bdg::bison::key_t, bdg::bison::key_t ev, dynamic) { last_event = ev; };
 
   auto map = bdg::wish::import_json(R"({"type":"Window","title":"MB","modal":true})");
-  auto& win = *map[""];
+  auto& win = static_cast<bdg::wish::window&>(*map[""]);
   win["__wish_id"_key] = bdg::bison::key_t{hash_t{99}};
 
   renderer_->begin_frame();
   bdg::wish::render_window(*renderer_, win, *sess_);
   renderer_->end_frame();
-  EXPECT_TRUE(win.get_as<bool>("__modal_opened__"_key, false));
+  EXPECT_TRUE(win.modal_opened());
 
   ImGui::ClosePopupToLevel(0, true);
 
@@ -1742,7 +1744,7 @@ TEST_F(ImguiRendererTest, NonClosableModalEmitsClosedWhenPopupClosedProgrammatic
   bdg::wish::render_window(*renderer_, win, *sess_);
   renderer_->end_frame();
 
-  EXPECT_FALSE(win.get_as<bool>("__modal_opened__"_key, false));
+  EXPECT_FALSE(win.modal_opened());
   for (auto& ev : sess_->pending_events)
     if (sess_->emit_event)
       sess_->emit_event(ev.id, ev.event_name, ev.payload);
@@ -1783,12 +1785,12 @@ TEST_F(ImguiRendererTest, RequestCloseFieldClosesPopupAndFiresClosedEvent) {
   sess_->emit_event = [&](bdg::bison::key_t, bdg::bison::key_t ev, dynamic) { last_event = ev; };
 
   auto map = bdg::wish::import_json(R"({"type":"Window","title":"MB","modal":true})");
-  auto& win = *map[""];
+  auto& win = static_cast<bdg::wish::window&>(*map[""]);
 
   renderer_->begin_frame();
   bdg::wish::render_window(*renderer_, win, *sess_);
   renderer_->end_frame();
-  ASSERT_TRUE(win.get_as<bool>("__modal_opened__"_key, false));
+  ASSERT_TRUE(win.modal_opened());
 
   // Simulate an app handler's request_close(): set the field directly,
   // exactly as message_box::request_close() does via a session lock, with
@@ -1817,7 +1819,7 @@ TEST_F(ImguiRendererTest, RequestCloseFieldClosesPopupAndFiresClosedEvent) {
   sess_->pending_events.clear();
 
   EXPECT_EQ(last_event, "closed"_key);
-  EXPECT_FALSE(win.get_as<bool>("__modal_opened__"_key, true));
+  EXPECT_FALSE(win.modal_opened());
 }
 
 TEST_F(ImguiRendererTest, SecondModalReusingSameStableIdOpensCleanlyAfterProperClose) {
@@ -1829,13 +1831,13 @@ TEST_F(ImguiRendererTest, SecondModalReusingSameStableIdOpensCleanlyAfterProperC
   // reconciles. This only holds if the first instance was closed the
   // proper way (ImGui::CloseCurrentPopup(), not just abandoned).
   auto map1 = bdg::wish::import_json(R"({"type":"Window","title":"First","modal":true})");
-  auto& win1 = *map1[""];
+  auto& win1 = static_cast<bdg::wish::window&>(*map1[""]);
   win1["__path__"_key] = std::string{"__test_modal_reuse__"};
 
   renderer_->begin_frame();
   bdg::wish::render_window(*renderer_, win1, *sess_);
   renderer_->end_frame();
-  ASSERT_TRUE(win1.get_as<bool>("__modal_opened__"_key, false));
+  ASSERT_TRUE(win1.modal_opened());
 
   // Properly close it -- the fixed request_close()/"__request_close__" path.
   win1["__request_close__"_key] = true;
@@ -1845,12 +1847,12 @@ TEST_F(ImguiRendererTest, SecondModalReusingSameStableIdOpensCleanlyAfterProperC
   renderer_->begin_frame();
   bdg::wish::render_window(*renderer_, win1, *sess_);
   renderer_->end_frame();
-  ASSERT_FALSE(win1.get_as<bool>("__modal_opened__"_key, true));
+  ASSERT_FALSE(win1.modal_opened());
   // win1 is now abandoned (as remove_internal_objects() would do) -- never
   // rendered again, same as a real form after its "closed" event fires.
 
   auto map2 = bdg::wish::import_json(R"({"type":"Window","title":"Second","modal":true})");
-  auto& win2 = *map2[""];
+  auto& win2 = static_cast<bdg::wish::window&>(*map2[""]);
   win2["__path__"_key] = std::string{"__test_modal_reuse__"}; // same stable id as win1
 
   renderer_->begin_frame();
@@ -1858,7 +1860,7 @@ TEST_F(ImguiRendererTest, SecondModalReusingSameStableIdOpensCleanlyAfterProperC
   renderer_->end_frame();
 
   // Must open on this very first render -- no extra frame/input needed.
-  EXPECT_TRUE(win2.get_as<bool>("__modal_opened__"_key, false));
+  EXPECT_TRUE(win2.modal_opened());
   std::string label = "Second###" + bdg::wish::stable_id(win2);
   auto* w = ImGui::FindWindowByName(label.c_str());
   ASSERT_NE(w, nullptr);

@@ -45,7 +45,7 @@ void register_menu() {
         attr<Description>("A drop-down menu. "
                           "Children may be MenuItem, Menu (submenu), or Separator elements."));
     dynamic::addClass(
-        "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_element>("wish"_key, "Menu"_key));
+        "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_menu>("wish"_key, "Menu"_key));
   }
 
   // MenuItem — a single selectable item inside a Menu.
@@ -97,7 +97,7 @@ void register_menu() {
                           "Emits 'clicked' with {checked: bool} when activated. If 'copy_text' "
                           "is non-empty, that text is also copied to the OS clipboard on click."));
     dynamic::addClass(
-        "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_element>("wish"_key, "MenuItem"_key));
+        "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_menu_item>("wish"_key, "MenuItem"_key));
   }
 
   // MenuButton — an ordinary Button that opens a popup containing its own
@@ -125,7 +125,7 @@ void register_menu() {
         "wish"_key,
         std::move(proto),
         "Element"_key,
-        dynamic::make_factory<ui_element>("wish"_key, "MenuButton"_key));
+        dynamic::make_factory<ui_menu_button>("wish"_key, "MenuButton"_key));
   }
 
   // ContextMenu — a right-click popup. Its own render dispatch entry

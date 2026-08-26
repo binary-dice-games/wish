@@ -363,7 +363,7 @@ void top::ensure_core_meters(size_t core_count) {
   auto& children = *children_p;
 
   for (size_t i = 0; i < core_count; ++i) {
-    ui_element_ptr bar{dynamic::instantiate("wish"_key, "ProgressBar"_key)};
+    ui_element_ptr bar = ui_element_ptr::create("wish"_key, "ProgressBar"_key);
     bar["label"_key] = "Core " + std::to_string(i) + ": --";
     bar["width"_key] = 90.0f;
     bar["order"_key] = static_cast<int32_t>(i);
@@ -410,7 +410,7 @@ ui_element_ptr top::build_row_context_menu(row_entry& entry, int pid, const std:
   ui_element_ptr menu{dynamic::instantiate("wish"_key, "ContextMenu"_key)};
   assign_id(menu);
 
-  ui_element_ptr properties{dynamic::instantiate("wish"_key, "MenuItem"_key)};
+  ui_element_ptr properties = ui_element_ptr::create("wish"_key, "MenuItem"_key);
   properties["label"_key] = std::string{"Properties..."};
   key_t properties_id = assign_id(properties);
   entry.properties_id = properties_id;
@@ -419,13 +419,13 @@ ui_element_ptr top::build_row_context_menu(row_entry& entry, int pid, const std:
   ui_element_ptr sep1{dynamic::instantiate("wish"_key, "Separator"_key)};
   assign_id(sep1);
 
-  ui_element_ptr pause_resume{dynamic::instantiate("wish"_key, "MenuItem"_key)};
+  ui_element_ptr pause_resume = ui_element_ptr::create("wish"_key, "MenuItem"_key);
   pause_resume["label"_key] = std::string{state == "T" ? "Resume" : "Pause"};
   key_t pause_resume_id = assign_id(pause_resume);
   action_item_targets_[pause_resume_id] = row_action_target{pid, row_action_kind::pause_or_resume, 0};
   entry.pause_resume_item = pause_resume;
 
-  ui_element_ptr kill{dynamic::instantiate("wish"_key, "MenuItem"_key)};
+  ui_element_ptr kill = ui_element_ptr::create("wish"_key, "MenuItem"_key);
   kill["label"_key] = std::string{"Kill Process"};
   key_t kill_id = assign_id(kill);
   entry.kill_id = kill_id;
@@ -434,7 +434,7 @@ ui_element_ptr top::build_row_context_menu(row_entry& entry, int pid, const std:
   ui_element_ptr sep2{dynamic::instantiate("wish"_key, "Separator"_key)};
   assign_id(sep2);
 
-  ui_element_ptr priority_menu{dynamic::instantiate("wish"_key, "Menu"_key)};
+  ui_element_ptr priority_menu = ui_element_ptr::create("wish"_key, "Menu"_key);
   priority_menu["label"_key] = std::string{"Priority"};
   assign_id(priority_menu);
 
@@ -443,7 +443,7 @@ ui_element_ptr top::build_row_context_menu(row_entry& entry, int pid, const std:
   auto priority_children = dynamic_ptr{key_t{0U}, {}};
   size_t pk = 0;
   for (auto& level : kPriorityLevels) {
-    ui_element_ptr item{dynamic::instantiate("wish"_key, "MenuItem"_key)};
+    ui_element_ptr item = ui_element_ptr::create("wish"_key, "MenuItem"_key);
     item["label"_key] = std::string{level.label};
     item["checked"_key] = nice == level.nice;
     key_t item_id = assign_id(item);
@@ -454,7 +454,7 @@ ui_element_ptr top::build_row_context_menu(row_entry& entry, int pid, const std:
   priority_menu["children"_key] = priority_children;
   priority_menu->refresh_children_order();
 
-  ui_element_ptr affinity{dynamic::instantiate("wish"_key, "MenuItem"_key)};
+  ui_element_ptr affinity = ui_element_ptr::create("wish"_key, "MenuItem"_key);
   affinity["label"_key] = std::string{"Set CPU Affinity..."};
   key_t affinity_id = assign_id(affinity);
   entry.affinity_id = affinity_id;
@@ -688,25 +688,25 @@ void top::update_process_table(const dynamic& args) {
       auto it = pid_to_row_.find(pid);
       if (it == pid_to_row_.end()) {
         row_entry entry;
-        entry.row = ui_element_ptr{dynamic::instantiate("wish"_key, "TableRow"_key)};
+        entry.row = ui_element_ptr::create("wish"_key, "TableRow"_key);
 
-        entry.pid_label = ui_element_ptr{dynamic::instantiate("wish"_key, "Label"_key)};
+        entry.pid_label = ui_element_ptr::create("wish"_key, "Label"_key);
         entry.pid_label["text"_key] = std::to_string(pid);
 
-        entry.name_label = ui_element_ptr{dynamic::instantiate("wish"_key, "Label"_key)};
+        entry.name_label = ui_element_ptr::create("wish"_key, "Label"_key);
         entry.name_label["text"_key] = name;
 
-        entry.state_label = ui_element_ptr{dynamic::instantiate("wish"_key, "Label"_key)};
+        entry.state_label = ui_element_ptr::create("wish"_key, "Label"_key);
         entry.state_label["text"_key] = state;
 
-        entry.cpu_bar = ui_element_ptr{dynamic::instantiate("wish"_key, "ProgressBar"_key)};
+        entry.cpu_bar = ui_element_ptr::create("wish"_key, "ProgressBar"_key);
         entry.cpu_bar["value"_key] = cpu_percent / 100.0f;
         entry.cpu_bar["label"_key] = format_percent(cpu_percent);
 
-        entry.mem_label = ui_element_ptr{dynamic::instantiate("wish"_key, "Label"_key)};
+        entry.mem_label = ui_element_ptr::create("wish"_key, "Label"_key);
         entry.mem_label["text"_key] = format_bytes(mem_rss);
 
-        entry.command_label = ui_element_ptr{dynamic::instantiate("wish"_key, "Label"_key)};
+        entry.command_label = ui_element_ptr::create("wish"_key, "Label"_key);
         entry.command_label["text"_key] = command;
 
         auto assign_id = [&](ui_element_ptr& el) {

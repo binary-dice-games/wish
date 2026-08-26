@@ -24,7 +24,7 @@ void register_checkbox() {
   (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Checkbox"));
   (*proto)[dynamic::CLASS].addAttribute(attr<Description>("A toggleable checkbox with a label."));
   dynamic::addClass(
-      "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_element>("wish"_key, "Checkbox"_key));
+      "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_checkbox>("wish"_key, "Checkbox"_key));
 }
 
 } // namespace bdg::wish

@@ -246,12 +246,12 @@ void zip::fill_table(const std::vector<file_row>& entries, const std::set<std::s
 
   int32_t idx = 0;
   for (auto& entry : entries) {
-    ui_element_ptr row{dynamic::instantiate("wish"_key, "TableRow"_key)};
+    ui_element_ptr row = ui_element_ptr::create("wish"_key, "TableRow"_key);
     row["order"_key] = idx;
     row["selected"_key] = selected_names.count(entry.name) > 0;
 
     auto make_label = [&](const std::string& text, int32_t order) {
-      ui_element_ptr lbl{dynamic::instantiate("wish"_key, "Label"_key)};
+      ui_element_ptr lbl = ui_element_ptr::create("wish"_key, "Label"_key);
       lbl["text"_key] = text;
       lbl["order"_key] = order;
       return lbl;
@@ -281,13 +281,13 @@ void zip::fill_contents_table(const ui_element_ptr& table, const std::vector<arc
 
   int32_t idx = 0;
   for (auto& entry : entries) {
-    ui_element_ptr row{dynamic::instantiate("wish"_key, "TableRow"_key)};
+    ui_element_ptr row = ui_element_ptr::create("wish"_key, "TableRow"_key);
     row["order"_key] = idx;
 
     ui_element_ptr name_cell = make_name_cell(entry.name, entry.is_dir ? "dir" : "file", entry.name);
 
     auto make_label = [&](const std::string& text, int32_t order) {
-      ui_element_ptr lbl{dynamic::instantiate("wish"_key, "Label"_key)};
+      ui_element_ptr lbl = ui_element_ptr::create("wish"_key, "Label"_key);
       lbl["text"_key] = text;
       lbl["order"_key] = order;
       return lbl;

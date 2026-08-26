@@ -85,7 +85,7 @@ static constexpr const char* kLayout = R"({
 
 // ── properties_dialog ────────────────────────────────────────────────────────
 
-properties_dialog::properties_dialog(dynamic&& base) : form(std::move(base)) {}
+properties_dialog::properties_dialog(dynamic&& base) : cloneable_ui_element(std::move(base)) {}
 
 void properties_dialog::on_init() {
   rebuild();

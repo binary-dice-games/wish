@@ -60,7 +60,7 @@ void register_drag() {
         attr<Description>("A float value editor: click-and-drag to change, double-click to type. "
                           "Emits 'changed' with {value: float} when edited."));
     dynamic::addClass(
-        "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_element>("wish"_key, "DragFloat"_key));
+        "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_drag_float>("wish"_key, "DragFloat"_key));
   }
 
   // DragInt — click-and-drag (or double-click to type) an integer value.
@@ -106,7 +106,7 @@ void register_drag() {
         attr<Description>("An integer value editor: click-and-drag to change, double-click to type. "
                           "Emits 'changed' with {value: int} when edited."));
     dynamic::addClass(
-        "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_element>("wish"_key, "DragInt"_key));
+        "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_drag_int>("wish"_key, "DragInt"_key));
   }
 }
 

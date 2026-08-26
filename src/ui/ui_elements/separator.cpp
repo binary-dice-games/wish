@@ -33,7 +33,7 @@ void register_separator() {
         "wish"_key,
         std::move(proto),
         "Element"_key,
-        dynamic::make_factory<ui_element>("wish"_key, "SeparatorText"_key));
+        dynamic::make_factory<ui_separator_text>("wish"_key, "SeparatorText"_key));
   }
 }
 

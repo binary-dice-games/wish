@@ -24,7 +24,7 @@ void register_tabs() {
     (*proto)[dynamic::CLASS].addAttribute(
         attr<Description>("A horizontal tab bar. Children should be TabItem elements."));
     dynamic::addClass(
-        "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_element>("wish"_key, "TabBar"_key));
+        "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_tab_bar>("wish"_key, "TabBar"_key));
   }
 
   // TabItem — one tab page inside a TabBar; its children are the page content.
@@ -50,7 +50,7 @@ void register_tabs() {
                           "Emits 'selected' when it becomes the active tab. "
                           "Emits 'closed' when the close button is clicked (requires closable: true)."));
     dynamic::addClass(
-        "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_element>("wish"_key, "TabItem"_key));
+        "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_tab_item>("wish"_key, "TabItem"_key));
   }
 }
 

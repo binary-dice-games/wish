@@ -102,7 +102,8 @@ ui_element_ptr build_ui_node(const dynamic& node, const std::string& path, bool 
     }
   }
 
-  ui_element_ptr obj = dynamic::instantiate<ui_element>("wish"_key, type_key);
+  ui_element_ptr obj{std::static_pointer_cast<ui_element>(
+      std::shared_ptr<dynamic>(dynamic::create_instance("wish"_key, type_key)))};
 
   const_cast<dynamic&>(node).forEach([&](key_t k, const field& value) {
     if (k == "__type__"_key || k == "__name__"_key || k == "children"_key)

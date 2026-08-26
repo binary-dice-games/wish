@@ -30,6 +30,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -128,7 +129,27 @@ class ui_element_ptr : public std::shared_ptr<ui_element> {
   ui_element_ptr(std::shared_ptr<ui_element>&& that);
 
   /// @brief Construct by upgrading a plain bison::dynamic rvalue into a ui_element.
+  ///
+  /// Always produces a plain `ui_element`, even for a class registered with a
+  /// more-derived factory (e.g. `"TableRow"` -> `ui_table_row`). Prefer
+  /// `ui_element_ptr::create()` for runtime-constructed nodes (e.g. table rows
+  /// rebuilt from data) so the resulting object matches the C++ type any
+  /// render code may `static_cast` it to; this constructor exists for classes
+  /// intentionally registered with `dynamic::make_factory<ui_element>()`.
   explicit ui_element_ptr(bison::dynamic&& base);
+
+  /// @brief Instantiate a registered class through its factory (see
+  /// `bison::dynamic::create_instance()`), producing the actual registered
+  /// C++ type (e.g. `ui_table_row` for `"TableRow"`) rather than a plain
+  /// `ui_element`. Use this instead of the `dynamic&&` constructor above for
+  /// any class that may have a typed factory -- code that later
+  /// `static_cast`s a child to its typed subclass (e.g. `render_table`'s
+  /// `static_cast<const ui_table_row&>`) relies on the object actually being
+  /// that type, not just carrying the right `CLASS` field value.
+  static ui_element_ptr create(bison::key_t ns, bison::key_t klass) {
+    return ui_element_ptr{std::static_pointer_cast<ui_element>(
+        std::shared_ptr<bison::dynamic>(bison::dynamic::create_instance(ns, klass)))};
+  }
 
   /// @brief Field access: `ptr["key"_key] = value` without needing `(*ptr)`.
   template <typename K>
@@ -278,21 +299,6 @@ class ui_element : public bison::cloneable_dynamic<ui_element> {
     return (f && f->is<std::string>() && !f->as<std::string>().empty()) ? &f->as<std::string>() : nullptr;
   }
 
-  /// @brief Cached `get_as<std::string>("label"_key, def)`.
-  std::string label(std::string def = {}) const {
-    return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
-  }
-
-  /// @brief Cached `get_as<std::string>("text"_key, def)`.
-  std::string text(std::string def = {}) const {
-    return cached_field_or<std::string>(text_field_, bison::key_t{"text"}, std::move(def));
-  }
-
-  /// @brief Cached `get_as<std::string>("hint"_key, def)`.
-  std::string hint(std::string def = {}) const {
-    return cached_field_or<std::string>(hint_field_, bison::key_t{"hint"}, std::move(def));
-  }
-
   /// @brief Cached `get_as<float>("width"_key, def)`. Most widgets store
   ///        `width` as `float`; use `width_i()` for widgets (window,
   ///        dockspace) that store it as `int32_t` -- both accessors share
@@ -315,116 +321,12 @@ class ui_element : public bison::cloneable_dynamic<ui_element> {
     return cached_field_or<int32_t>(height_field_, bison::key_t{"height"}, def);
   }
 
-  /// @brief Cached `get_as<int32_t>("flags"_key, def)`.
-  int32_t flags(int32_t def = 0) const { return cached_field_or<int32_t>(flags_field_, bison::key_t{"flags"}, def); }
-
-  /// @brief Cached `get_as<std::string>("id"_key, def)`.
-  std::string id(std::string def = {}) const {
-    return cached_field_or<std::string>(id_field_, bison::key_t{"id"}, std::move(def));
-  }
-
-  /// @brief Cached `get_as<bool>("value"_key, def)`. `value` is stored as
-  ///        a different type per widget (bool/float/int32_t/std::string/
-  ///        `std::vector<float>`); all `value_*()` accessors below share one
-  ///        cached `field*` -- see `width()`.
-  bool value_bool(bool def = false) const { return cached_field_or<bool>(value_field_, bison::key_t{"value"}, def); }
-
-  /// @brief Cached `get_as<float>("value"_key, def)`. See `value_bool()`.
-  float value_float(float def = 0.0f) const {
-    return cached_field_or<float>(value_field_, bison::key_t{"value"}, def);
-  }
-
-  /// @brief Cached `get_as<int32_t>("value"_key, def)`. See `value_bool()`.
-  int32_t value_int(int32_t def = 0) const {
-    return cached_field_or<int32_t>(value_field_, bison::key_t{"value"}, def);
-  }
-
-  /// @brief Cached `get_as<std::string>("value"_key, def)`. See `value_bool()`.
-  std::string value_string(std::string def = {}) const {
-    return cached_field_or<std::string>(value_field_, bison::key_t{"value"}, std::move(def));
-  }
-
-  /// @brief Cached `get_as<std::vector<float>>("value"_key, {})`. See `value_bool()`.
-  std::vector<float> value_floats() const {
-    return cached_field_or<std::vector<float>>(value_field_, bison::key_t{"value"}, std::vector<float>{});
-  }
-
-  /// @brief Cached `get_as<float>("min"_key, def)`. `min` is `float` on
-  ///        `*_float` numeric widgets, `int32_t` on `*_int` ones; both
-  ///        accessors share one cached `field*` -- see `width()`.
-  float min_float(float def = 0.0f) const { return cached_field_or<float>(min_field_, bison::key_t{"min"}, def); }
-
-  /// @brief Cached `get_as<int32_t>("min"_key, def)`. See `min_float()`.
-  int32_t min_int(int32_t def = 0) const { return cached_field_or<int32_t>(min_field_, bison::key_t{"min"}, def); }
-
-  /// @brief Cached `get_as<float>("max"_key, def)`. See `min_float()`.
-  float max_float(float def = 0.0f) const { return cached_field_or<float>(max_field_, bison::key_t{"max"}, def); }
-
-  /// @brief Cached `get_as<int32_t>("max"_key, def)`. See `min_float()`.
-  int32_t max_int(int32_t def = 0) const { return cached_field_or<int32_t>(max_field_, bison::key_t{"max"}, def); }
-
-  /// @brief Cached `get_as<int32_t>("step"_key, def)`. `step` is `int32_t` on
-  ///        `*_int` numeric widgets, `float` on `*_float` ones; both
-  ///        accessors share one cached `field*` -- see `width()`.
-  int32_t step_int(int32_t def = 0) const { return cached_field_or<int32_t>(step_field_, bison::key_t{"step"}, def); }
-
-  /// @brief Cached `get_as<float>("step"_key, def)`. See `step_int()`.
-  float step_float(float def = 0.0f) const { return cached_field_or<float>(step_field_, bison::key_t{"step"}, def); }
-
-  /// @brief Cached `get_as<int32_t>("step_fast"_key, def)`. `step_fast` is
-  ///        `int32_t` on `*_int` numeric widgets, `float` on `*_float` ones
-  ///        (see `step_fast_float()`); both share one cached `field*`.
-  int32_t step_fast_int(int32_t def = 0) const {
-    return cached_field_or<int32_t>(step_fast_field_, bison::key_t{"step_fast"}, def);
-  }
-
-  /// @brief Cached `get_as<float>("step_fast"_key, def)`. See `step_fast_int()`.
-  float step_fast_float(float def = 0.0f) const {
-    return cached_field_or<float>(step_fast_field_, bison::key_t{"step_fast"}, def);
-  }
-
-  /// @brief Cached `get_as<float>("speed"_key, def)`.
-  float speed(float def = 0.0f) const { return cached_field_or<float>(speed_field_, bison::key_t{"speed"}, def); }
-
-  /// @brief Cached `get_as<std::string>("format"_key, def)`.
-  std::string format(std::string def = {}) const {
-    return cached_field_or<std::string>(format_field_, bison::key_t{"format"}, std::move(def));
-  }
-
-  /// @brief Cached `get_as<std::string>("orientation"_key, def)`.
-  std::string orientation(std::string def = {}) const {
-    return cached_field_or<std::string>(orientation_field_, bison::key_t{"orientation"}, std::move(def));
-  }
-
-  /// @brief Cached `get_as<float>("thickness"_key, def)`.
-  float thickness(float def = 0.0f) const {
-    return cached_field_or<float>(thickness_field_, bison::key_t{"thickness"}, def);
-  }
-
   /// @brief Cached `get_as<float>("weight"_key, def)`.
   float weight(float def = 0.0f) const { return cached_field_or<float>(weight_field_, bison::key_t{"weight"}, def); }
 
   /// @brief Cached `get_as<float>("spacing"_key, def)`.
   float spacing(float def = 0.0f) const {
     return cached_field_or<float>(spacing_field_, bison::key_t{"spacing"}, def);
-  }
-
-  /// @brief Cached `get_as<bool>("selected"_key, def)`.
-  bool selected(bool def = false) const {
-    return cached_field_or<bool>(selected_field_, bison::key_t{"selected"}, def);
-  }
-
-  /// @brief Cached `get_as<bool>("enabled"_key, def)`.
-  bool enabled(bool def = true) const { return cached_field_or<bool>(enabled_field_, bison::key_t{"enabled"}, def); }
-
-  /// @brief Cached `get_as<bool>("closable"_key, def)`.
-  bool closable(bool def = false) const {
-    return cached_field_or<bool>(closable_field_, bison::key_t{"closable"}, def);
-  }
-
-  /// @brief Cached `get_as<float>("min_height"_key, def)`.
-  float min_height(float def = 0.0f) const {
-    return cached_field_or<float>(min_height_field_, bison::key_t{"min_height"}, def);
   }
 
   // ── Layout stash ──────────────────────────────────────────────────────────
@@ -521,28 +423,10 @@ class ui_element : public bison::cloneable_dynamic<ui_element> {
   mutable bison::field* font_size_field_ = nullptr;
   mutable bison::field* highlight_field_ = nullptr;
   mutable bison::field* profiler_marker_field_ = nullptr;
-  mutable bison::field* label_field_ = nullptr;
-  mutable bison::field* text_field_ = nullptr;
-  mutable bison::field* hint_field_ = nullptr;
   mutable bison::field* width_field_ = nullptr;
   mutable bison::field* height_field_ = nullptr;
-  mutable bison::field* flags_field_ = nullptr;
-  mutable bison::field* id_field_ = nullptr;
-  mutable bison::field* value_field_ = nullptr;
-  mutable bison::field* min_field_ = nullptr;
-  mutable bison::field* max_field_ = nullptr;
-  mutable bison::field* step_field_ = nullptr;
-  mutable bison::field* step_fast_field_ = nullptr;
-  mutable bison::field* speed_field_ = nullptr;
-  mutable bison::field* format_field_ = nullptr;
-  mutable bison::field* orientation_field_ = nullptr;
-  mutable bison::field* thickness_field_ = nullptr;
   mutable bison::field* weight_field_ = nullptr;
   mutable bison::field* spacing_field_ = nullptr;
-  mutable bison::field* selected_field_ = nullptr;
-  mutable bison::field* enabled_field_ = nullptr;
-  mutable bison::field* closable_field_ = nullptr;
-  mutable bison::field* min_height_field_ = nullptr;
   mutable layout_stash layout_stash_;
 
   // ── for_each_child_ordered() cache ──────────────────────────────────────
@@ -564,6 +448,674 @@ class ui_element : public bison::cloneable_dynamic<ui_element> {
   mutable bison::field* children_field_ = nullptr;
   mutable std::vector<std::pair<bison::key_t, ui_element_ptr>> resolved_children_order_;
   mutable bool has_resolved_children_order_ = false;
+};
+
+/**
+ * @brief CRTP mixin fixing clone-slicing one level below
+ *        `bison::cloneable_dynamic<Derived>`.
+ *
+ * `bison::cloneable_dynamic<ui_element>::clone_ptr()` (inherited by every
+ * `ui_element` subclass) hardcodes `std::make_shared<ui_element>(...)` --
+ * correct for plain `ui_element` instances, but it slices any further
+ * subclass (e.g. `ui_button`) down to base `ui_element` when cloned, which
+ * is exactly what `ui_template.cpp`'s prototype instantiation does on every
+ * `"instantiate"_key` call. A subsequent `static_cast<const ui_button&>`
+ * on the clone (as every per-class `render_*` function now performs) is
+ * then undefined behavior.
+ *
+ * Deriving a leaf class from `cloneable_ui_element<Leaf, Base>` instead of
+ * `Base` directly overrides `clone_ptr()` to reconstruct the correct
+ * concrete `Leaf` type, while still cloning through `Base`'s (and
+ * `dynamic`'s) field map via `clone_into()`.
+ *
+ * @tparam Derived  The concrete leaf class being defined.
+ * @tparam Base     Immediate base class (defaults to `ui_element`; use
+ *                   e.g. `ui_root` or `form` for classes deeper in the
+ *                   hierarchy).
+ */
+template <typename Derived, typename Base = ui_element>
+class cloneable_ui_element : public Base {
+ public:
+  explicit cloneable_ui_element(bison::dynamic&& base) : Base(std::move(base)) {}
+
+  bison::dynamic_ptr clone_ptr() const override {
+    bison::dynamic_ptr result{std::make_shared<Derived>(bison::dynamic{})};
+    this->clone_into(*result);
+    return result;
+  }
+};
+
+// ── Buttons, labels, static text ────────────────────────────────────────────
+
+class ui_button : public cloneable_ui_element<ui_button> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string label(std::string def = {}) const {
+    return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
+  }
+
+ private:
+  mutable bison::field* label_field_ = nullptr;
+};
+
+class ui_label : public cloneable_ui_element<ui_label> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string text(std::string def = {}) const {
+    return cached_field_or<std::string>(text_field_, bison::key_t{"text"}, std::move(def));
+  }
+  bool wrap(bool def = false) const { return cached_field_or<bool>(wrap_field_, bison::key_t{"wrap"}, def); }
+
+ private:
+  mutable bison::field* text_field_ = nullptr;
+  mutable bison::field* wrap_field_ = nullptr;
+};
+
+class ui_separator_text : public cloneable_ui_element<ui_separator_text> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string label(std::string def = {}) const {
+    return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
+  }
+
+ private:
+  mutable bison::field* label_field_ = nullptr;
+};
+
+// ── Images, layout ───────────────────────────────────────────────────────────
+
+class ui_image : public cloneable_ui_element<ui_image> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string src(std::string def = {}) const {
+    return cached_field_or<std::string>(src_field_, bison::key_t{"src"}, std::move(def));
+  }
+  bool auto_size_to_font(bool def = false) const {
+    return cached_field_or<bool>(auto_size_to_font_field_, bison::key_t{"__auto_size_to_font__"}, def);
+  }
+  bool tint_to_text_color(bool def = false) const {
+    return cached_field_or<bool>(tint_to_text_color_field_, bison::key_t{"__tint_to_text_color__"}, def);
+  }
+
+ private:
+  mutable bison::field* src_field_ = nullptr;
+  mutable bison::field* auto_size_to_font_field_ = nullptr;
+  mutable bison::field* tint_to_text_color_field_ = nullptr;
+};
+
+class ui_horizontal_layout : public cloneable_ui_element<ui_horizontal_layout> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string align(std::string def = {}) const {
+    return cached_field_or<std::string>(align_field_, bison::key_t{"align"}, std::move(def));
+  }
+
+ private:
+  mutable bison::field* align_field_ = nullptr;
+};
+
+// ── Checkboxes, radio buttons, selectables ──────────────────────────────────
+
+class ui_checkbox : public cloneable_ui_element<ui_checkbox> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string label(std::string def = {}) const {
+    return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
+  }
+  bool value_bool(bool def = false) const { return cached_field_or<bool>(value_field_, bison::key_t{"value"}, def); }
+
+ private:
+  mutable bison::field* label_field_ = nullptr;
+  mutable bison::field* value_field_ = nullptr;
+};
+
+class ui_radio_button : public cloneable_ui_element<ui_radio_button> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string label(std::string def = {}) const {
+    return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
+  }
+  bool active(bool def = false) const { return cached_field_or<bool>(active_field_, bison::key_t{"active"}, def); }
+
+ private:
+  mutable bison::field* label_field_ = nullptr;
+  mutable bison::field* active_field_ = nullptr;
+};
+
+class ui_selectable : public cloneable_ui_element<ui_selectable> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string label(std::string def = {}) const {
+    return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
+  }
+  bool selected(bool def = false) const {
+    return cached_field_or<bool>(selected_field_, bison::key_t{"selected"}, def);
+  }
+
+ private:
+  mutable bison::field* label_field_ = nullptr;
+  mutable bison::field* selected_field_ = nullptr;
+};
+
+// ── Sliders, drags ──────────────────────────────────────────────────────────
+
+class ui_slider_float : public cloneable_ui_element<ui_slider_float> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string label(std::string def = {}) const {
+    return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
+  }
+  float value_float(float def = 0.0f) const {
+    return cached_field_or<float>(value_field_, bison::key_t{"value"}, def);
+  }
+  float min_float(float def = 0.0f) const { return cached_field_or<float>(min_field_, bison::key_t{"min"}, def); }
+  float max_float(float def = 0.0f) const { return cached_field_or<float>(max_field_, bison::key_t{"max"}, def); }
+  std::string format(std::string def = {}) const {
+    return cached_field_or<std::string>(format_field_, bison::key_t{"format"}, std::move(def));
+  }
+
+ private:
+  mutable bison::field* label_field_ = nullptr;
+  mutable bison::field* value_field_ = nullptr;
+  mutable bison::field* min_field_ = nullptr;
+  mutable bison::field* max_field_ = nullptr;
+  mutable bison::field* format_field_ = nullptr;
+};
+
+class ui_slider_int : public cloneable_ui_element<ui_slider_int> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string label(std::string def = {}) const {
+    return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
+  }
+  int32_t value_int(int32_t def = 0) const { return cached_field_or<int32_t>(value_field_, bison::key_t{"value"}, def); }
+  int32_t min_int(int32_t def = 0) const { return cached_field_or<int32_t>(min_field_, bison::key_t{"min"}, def); }
+  int32_t max_int(int32_t def = 0) const { return cached_field_or<int32_t>(max_field_, bison::key_t{"max"}, def); }
+
+ private:
+  mutable bison::field* label_field_ = nullptr;
+  mutable bison::field* value_field_ = nullptr;
+  mutable bison::field* min_field_ = nullptr;
+  mutable bison::field* max_field_ = nullptr;
+};
+
+class ui_drag_float : public cloneable_ui_element<ui_drag_float> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string label(std::string def = {}) const {
+    return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
+  }
+  float value_float(float def = 0.0f) const {
+    return cached_field_or<float>(value_field_, bison::key_t{"value"}, def);
+  }
+  float speed(float def = 0.0f) const { return cached_field_or<float>(speed_field_, bison::key_t{"speed"}, def); }
+  float min_float(float def = 0.0f) const { return cached_field_or<float>(min_field_, bison::key_t{"min"}, def); }
+  float max_float(float def = 0.0f) const { return cached_field_or<float>(max_field_, bison::key_t{"max"}, def); }
+  std::string format(std::string def = {}) const {
+    return cached_field_or<std::string>(format_field_, bison::key_t{"format"}, std::move(def));
+  }
+
+ private:
+  mutable bison::field* label_field_ = nullptr;
+  mutable bison::field* value_field_ = nullptr;
+  mutable bison::field* speed_field_ = nullptr;
+  mutable bison::field* min_field_ = nullptr;
+  mutable bison::field* max_field_ = nullptr;
+  mutable bison::field* format_field_ = nullptr;
+};
+
+class ui_drag_int : public cloneable_ui_element<ui_drag_int> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string label(std::string def = {}) const {
+    return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
+  }
+  int32_t value_int(int32_t def = 0) const { return cached_field_or<int32_t>(value_field_, bison::key_t{"value"}, def); }
+  float speed(float def = 0.0f) const { return cached_field_or<float>(speed_field_, bison::key_t{"speed"}, def); }
+  int32_t min_int(int32_t def = 0) const { return cached_field_or<int32_t>(min_field_, bison::key_t{"min"}, def); }
+  int32_t max_int(int32_t def = 0) const { return cached_field_or<int32_t>(max_field_, bison::key_t{"max"}, def); }
+
+ private:
+  mutable bison::field* label_field_ = nullptr;
+  mutable bison::field* value_field_ = nullptr;
+  mutable bison::field* speed_field_ = nullptr;
+  mutable bison::field* min_field_ = nullptr;
+  mutable bison::field* max_field_ = nullptr;
+};
+
+// ── Numeric / text inputs ────────────────────────────────────────────────────
+
+class ui_input_int : public cloneable_ui_element<ui_input_int> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string label(std::string def = {}) const {
+    return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
+  }
+  int32_t value_int(int32_t def = 0) const { return cached_field_or<int32_t>(value_field_, bison::key_t{"value"}, def); }
+  int32_t step_int(int32_t def = 0) const { return cached_field_or<int32_t>(step_field_, bison::key_t{"step"}, def); }
+  int32_t step_fast_int(int32_t def = 0) const {
+    return cached_field_or<int32_t>(step_fast_field_, bison::key_t{"step_fast"}, def);
+  }
+  int32_t flags(int32_t def = 0) const { return cached_field_or<int32_t>(flags_field_, bison::key_t{"flags"}, def); }
+
+ private:
+  mutable bison::field* label_field_ = nullptr;
+  mutable bison::field* value_field_ = nullptr;
+  mutable bison::field* step_field_ = nullptr;
+  mutable bison::field* step_fast_field_ = nullptr;
+  mutable bison::field* flags_field_ = nullptr;
+};
+
+class ui_input_float : public cloneable_ui_element<ui_input_float> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string label(std::string def = {}) const {
+    return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
+  }
+  float value_float(float def = 0.0f) const {
+    return cached_field_or<float>(value_field_, bison::key_t{"value"}, def);
+  }
+  float step_float(float def = 0.0f) const { return cached_field_or<float>(step_field_, bison::key_t{"step"}, def); }
+  float step_fast_float(float def = 0.0f) const {
+    return cached_field_or<float>(step_fast_field_, bison::key_t{"step_fast"}, def);
+  }
+  std::string format(std::string def = {}) const {
+    return cached_field_or<std::string>(format_field_, bison::key_t{"format"}, std::move(def));
+  }
+
+ private:
+  mutable bison::field* label_field_ = nullptr;
+  mutable bison::field* value_field_ = nullptr;
+  mutable bison::field* step_field_ = nullptr;
+  mutable bison::field* step_fast_field_ = nullptr;
+  mutable bison::field* format_field_ = nullptr;
+};
+
+class ui_input_text : public cloneable_ui_element<ui_input_text> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string label(std::string def = {}) const {
+    return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
+  }
+  std::string hint(std::string def = {}) const {
+    return cached_field_or<std::string>(hint_field_, bison::key_t{"hint"}, std::move(def));
+  }
+  std::string value_string(std::string def = {}) const {
+    return cached_field_or<std::string>(value_field_, bison::key_t{"value"}, std::move(def));
+  }
+  int32_t flags(int32_t def = 0) const { return cached_field_or<int32_t>(flags_field_, bison::key_t{"flags"}, def); }
+  bool multiline(bool def = false) const {
+    return cached_field_or<bool>(multiline_field_, bison::key_t{"multiline"}, def);
+  }
+  int32_t max_length(int32_t def = 256) const {
+    return cached_field_or<int32_t>(max_length_field_, bison::key_t{"max_length"}, def);
+  }
+
+ private:
+  mutable bison::field* label_field_ = nullptr;
+  mutable bison::field* hint_field_ = nullptr;
+  mutable bison::field* value_field_ = nullptr;
+  mutable bison::field* flags_field_ = nullptr;
+  mutable bison::field* multiline_field_ = nullptr;
+  mutable bison::field* max_length_field_ = nullptr;
+};
+
+class ui_color_edit : public cloneable_ui_element<ui_color_edit> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string label(std::string def = {}) const {
+    return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
+  }
+  std::vector<float> value_floats() const {
+    return cached_field_or<std::vector<float>>(value_field_, bison::key_t{"value"}, std::vector<float>{});
+  }
+  int32_t flags(int32_t def = 0) const { return cached_field_or<int32_t>(flags_field_, bison::key_t{"flags"}, def); }
+
+ private:
+  mutable bison::field* label_field_ = nullptr;
+  mutable bison::field* value_field_ = nullptr;
+  mutable bison::field* flags_field_ = nullptr;
+};
+
+class ui_combo : public cloneable_ui_element<ui_combo> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string label(std::string def = {}) const {
+    return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
+  }
+  int32_t value_int(int32_t def = 0) const { return cached_field_or<int32_t>(value_field_, bison::key_t{"value"}, def); }
+  std::string items(std::string def = {}) const {
+    return cached_field_or<std::string>(items_field_, bison::key_t{"items"}, std::move(def));
+  }
+
+ private:
+  mutable bison::field* label_field_ = nullptr;
+  mutable bison::field* value_field_ = nullptr;
+  mutable bison::field* items_field_ = nullptr;
+};
+
+class ui_progress_bar : public cloneable_ui_element<ui_progress_bar> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string label(std::string def = {}) const {
+    return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
+  }
+  float value_float(float def = 0.0f) const {
+    return cached_field_or<float>(value_field_, bison::key_t{"value"}, def);
+  }
+
+ private:
+  mutable bison::field* label_field_ = nullptr;
+  mutable bison::field* value_field_ = nullptr;
+};
+
+// ── Menus ────────────────────────────────────────────────────────────────────
+
+class ui_menu : public cloneable_ui_element<ui_menu> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string label(std::string def = {}) const {
+    return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
+  }
+  bool enabled(bool def = true) const { return cached_field_or<bool>(enabled_field_, bison::key_t{"enabled"}, def); }
+
+ private:
+  mutable bison::field* label_field_ = nullptr;
+  mutable bison::field* enabled_field_ = nullptr;
+};
+
+class ui_menu_item : public cloneable_ui_element<ui_menu_item> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string label(std::string def = {}) const {
+    return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
+  }
+  bool enabled(bool def = true) const { return cached_field_or<bool>(enabled_field_, bison::key_t{"enabled"}, def); }
+  std::string shortcut(std::string def = {}) const {
+    return cached_field_or<std::string>(shortcut_field_, bison::key_t{"shortcut"}, std::move(def));
+  }
+  bool checked(bool def = false) const { return cached_field_or<bool>(checked_field_, bison::key_t{"checked"}, def); }
+  std::string copy_text(std::string def = {}) const {
+    return cached_field_or<std::string>(copy_text_field_, bison::key_t{"copy_text"}, std::move(def));
+  }
+
+ private:
+  mutable bison::field* label_field_ = nullptr;
+  mutable bison::field* enabled_field_ = nullptr;
+  mutable bison::field* shortcut_field_ = nullptr;
+  mutable bison::field* checked_field_ = nullptr;
+  mutable bison::field* copy_text_field_ = nullptr;
+};
+
+class ui_menu_button : public cloneable_ui_element<ui_menu_button> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string label(std::string def = {}) const {
+    return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
+  }
+
+ private:
+  mutable bison::field* label_field_ = nullptr;
+};
+
+// ── Tabs ─────────────────────────────────────────────────────────────────────
+
+class ui_tab_item : public cloneable_ui_element<ui_tab_item> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string label(std::string def = {}) const {
+    return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
+  }
+  bool closable(bool def = false) const {
+    return cached_field_or<bool>(closable_field_, bison::key_t{"closable"}, def);
+  }
+
+  /// @brief True iff @p is_selected differs from the selected state
+  /// recorded on the previous call (or this is the first call); always
+  /// updates the recorded state. Replaces `"__selected__"`.
+  bool toggled_since_last_frame(bool is_selected) const {
+    bool was = was_selected_.value_or(is_selected);
+    was_selected_ = is_selected;
+    return was != is_selected;
+  }
+
+  /// @brief Last selected state recorded by toggled_since_last_frame(),
+  /// without mutating it. false before the first render.
+  bool is_selected() const { return was_selected_.value_or(false); }
+
+ private:
+  mutable bison::field* label_field_ = nullptr;
+  mutable bison::field* closable_field_ = nullptr;
+  mutable std::optional<bool> was_selected_;
+};
+
+class ui_tab_bar : public cloneable_ui_element<ui_tab_bar> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string id(std::string def = {}) const {
+    return cached_field_or<std::string>(id_field_, bison::key_t{"id"}, std::move(def));
+  }
+
+ private:
+  mutable bison::field* id_field_ = nullptr;
+};
+
+// ── Splitter ─────────────────────────────────────────────────────────────────
+
+class ui_splitter : public cloneable_ui_element<ui_splitter> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string orientation(std::string def = {}) const {
+    return cached_field_or<std::string>(orientation_field_, bison::key_t{"orientation"}, std::move(def));
+  }
+  float thickness(float def = 0.0f) const {
+    return cached_field_or<float>(thickness_field_, bison::key_t{"thickness"}, def);
+  }
+  float min_pane_size(float def = 20.0f) const {
+    return cached_field_or<float>(min_pane_size_field_, bison::key_t{"min_pane_size"}, def);
+  }
+
+  /// @brief True the first time this is called, false on every later call.
+  /// Replaces `"__splitter_inited__"` -- pure per-frame render bookkeeping
+  /// never read outside render_splitter(), so it doesn't need to be a
+  /// bison::dynamic field.
+  bool consume_init_guard() const {
+    if (inited_)
+      return false;
+    inited_ = true;
+    return true;
+  }
+
+ private:
+  mutable bison::field* orientation_field_ = nullptr;
+  mutable bison::field* thickness_field_ = nullptr;
+  mutable bison::field* min_pane_size_field_ = nullptr;
+  mutable bool inited_ = false;
+};
+
+// ── Tree ─────────────────────────────────────────────────────────────────────
+
+class ui_tree_node : public cloneable_ui_element<ui_tree_node> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string label(std::string def = {}) const {
+    return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
+  }
+  bool open(bool def = false) const { return cached_field_or<bool>(open_field_, bison::key_t{"open"}, def); }
+  bool leaf(bool def = false) const { return cached_field_or<bool>(leaf_field_, bison::key_t{"leaf"}, def); }
+
+  /// @brief True iff @p is_open differs from the open state recorded on the
+  /// previous call (or this is the first call); always updates the
+  /// recorded state. Replaces `"__open__"`.
+  bool toggled_since_last_frame(bool is_open) const {
+    bool was = was_open_.value_or(is_open);
+    was_open_ = is_open;
+    return was != is_open;
+  }
+
+ private:
+  mutable bison::field* label_field_ = nullptr;
+  mutable bison::field* open_field_ = nullptr;
+  mutable bison::field* leaf_field_ = nullptr;
+  mutable std::optional<bool> was_open_;
+};
+
+class ui_collapsing_header : public cloneable_ui_element<ui_collapsing_header> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string label(std::string def = {}) const {
+    return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
+  }
+
+  /// @brief True iff @p is_open differs from the open state recorded on the
+  /// previous call (or this is the first call); always updates the
+  /// recorded state. Replaces `"__open__"`.
+  bool toggled_since_last_frame(bool is_open) const {
+    bool was = was_open_.value_or(is_open);
+    was_open_ = is_open;
+    return was != is_open;
+  }
+
+ private:
+  mutable bison::field* label_field_ = nullptr;
+  mutable std::optional<bool> was_open_;
+};
+
+// ── Docking, table ───────────────────────────────────────────────────────────
+
+class ui_dockspace_viewport : public cloneable_ui_element<ui_dockspace_viewport> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string id(std::string def = {}) const {
+    return cached_field_or<std::string>(id_field_, bison::key_t{"id"}, std::move(def));
+  }
+  int32_t flags(int32_t def = 0) const { return cached_field_or<int32_t>(flags_field_, bison::key_t{"flags"}, def); }
+  bool passthru(bool def = false) const {
+    return cached_field_or<bool>(passthru_field_, bison::key_t{"passthru"}, def);
+  }
+
+ private:
+  mutable bison::field* id_field_ = nullptr;
+  mutable bison::field* flags_field_ = nullptr;
+  mutable bison::field* passthru_field_ = nullptr;
+};
+
+class ui_dockspace : public cloneable_ui_element<ui_dockspace> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string id(std::string def = {}) const {
+    return cached_field_or<std::string>(id_field_, bison::key_t{"id"}, std::move(def));
+  }
+  int32_t flags(int32_t def = 0) const { return cached_field_or<int32_t>(flags_field_, bison::key_t{"flags"}, def); }
+
+ private:
+  mutable bison::field* id_field_ = nullptr;
+  mutable bison::field* flags_field_ = nullptr;
+};
+
+class ui_table : public cloneable_ui_element<ui_table> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string id(std::string def = {}) const {
+    return cached_field_or<std::string>(id_field_, bison::key_t{"id"}, std::move(def));
+  }
+  int32_t flags(int32_t def = 0) const { return cached_field_or<int32_t>(flags_field_, bison::key_t{"flags"}, def); }
+  int32_t columns(int32_t def = 1) const { return cached_field_or<int32_t>(columns_field_, bison::key_t{"columns"}, def); }
+  float outer_width(float def = 0.0f) const {
+    return cached_field_or<float>(outer_width_field_, bison::key_t{"outer_width"}, def);
+  }
+  float outer_height(float def = 0.0f) const {
+    return cached_field_or<float>(outer_height_field_, bison::key_t{"outer_height"}, def);
+  }
+  float inner_width(float def = 0.0f) const {
+    return cached_field_or<float>(inner_width_field_, bison::key_t{"inner_width"}, def);
+  }
+  bool headers(bool def = false) const { return cached_field_or<bool>(headers_field_, bison::key_t{"headers"}, def); }
+  bool auto_scroll(bool def = true) const {
+    return cached_field_or<bool>(auto_scroll_field_, bison::key_t{"auto_scroll"}, def);
+  }
+
+ private:
+  mutable bison::field* id_field_ = nullptr;
+  mutable bison::field* flags_field_ = nullptr;
+  mutable bison::field* columns_field_ = nullptr;
+  mutable bison::field* outer_width_field_ = nullptr;
+  mutable bison::field* outer_height_field_ = nullptr;
+  mutable bison::field* inner_width_field_ = nullptr;
+  mutable bison::field* headers_field_ = nullptr;
+  mutable bison::field* auto_scroll_field_ = nullptr;
+};
+
+class ui_table_row : public cloneable_ui_element<ui_table_row> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  float min_height(float def = 0.0f) const {
+    return cached_field_or<float>(min_height_field_, bison::key_t{"min_height"}, def);
+  }
+  int32_t flags(int32_t def = 0) const { return cached_field_or<int32_t>(flags_field_, bison::key_t{"flags"}, def); }
+  bool selected(bool def = false) const {
+    return cached_field_or<bool>(selected_field_, bison::key_t{"selected"}, def);
+  }
+
+ private:
+  mutable bison::field* min_height_field_ = nullptr;
+  mutable bison::field* flags_field_ = nullptr;
+  mutable bison::field* selected_field_ = nullptr;
+};
+
+/// @brief TableColumn: read generically from render_table's column-setup
+/// loop only after it has already narrowed to class_key() ==
+/// "TableColumn"_key, so it casts rather than keeping these on base.
+class ui_table_column : public cloneable_ui_element<ui_table_column> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string label(std::string def = {}) const {
+    return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
+  }
+  int32_t flags(int32_t def = 0) const { return cached_field_or<int32_t>(flags_field_, bison::key_t{"flags"}, def); }
+  float init_width(float def = 0.0f) const {
+    return cached_field_or<float>(init_width_field_, bison::key_t{"init_width"}, def);
+  }
+  int32_t column_id(int32_t def = 0) const {
+    return cached_field_or<int32_t>(column_id_field_, bison::key_t{"column_id"}, def);
+  }
+
+ private:
+  mutable bison::field* label_field_ = nullptr;
+  mutable bison::field* flags_field_ = nullptr;
+  mutable bison::field* init_width_field_ = nullptr;
+  mutable bison::field* column_id_field_ = nullptr;
 };
 
 } // namespace bdg::wish

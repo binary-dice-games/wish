@@ -40,7 +40,7 @@ void register_tree() {
         attr<Description>("A collapsible tree node with an arrow. "
                           "Emits 'toggled' with {open: bool} when expanded or collapsed."));
     dynamic::addClass(
-        "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_element>("wish"_key, "TreeNode"_key));
+        "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_tree_node>("wish"_key, "TreeNode"_key));
   }
 
   // CollapsingHeader — bold section header that collapses its children.
@@ -57,7 +57,7 @@ void register_tree() {
         "wish"_key,
         std::move(proto),
         "Element"_key,
-        dynamic::make_factory<ui_element>("wish"_key, "CollapsingHeader"_key));
+        dynamic::make_factory<ui_collapsing_header>("wish"_key, "CollapsingHeader"_key));
   }
 }
 

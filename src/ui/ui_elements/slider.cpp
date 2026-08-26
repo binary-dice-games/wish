@@ -54,7 +54,7 @@ void register_slider() {
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Slider (Float)"));
     (*proto)[dynamic::CLASS].addAttribute(attr<Description>("A float-valued slider control."));
     dynamic::addClass(
-        "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_element>("wish"_key, "SliderFloat"_key));
+        "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_slider_float>("wish"_key, "SliderFloat"_key));
   }
 
   // SliderInt
@@ -94,7 +94,7 @@ void register_slider() {
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Slider (Int)"));
     (*proto)[dynamic::CLASS].addAttribute(attr<Description>("An integer-valued slider control."));
     dynamic::addClass(
-        "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_element>("wish"_key, "SliderInt"_key));
+        "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_slider_int>("wish"_key, "SliderInt"_key));
   }
 }
 

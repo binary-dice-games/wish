@@ -281,7 +281,7 @@ void pix_viewer::rebuild_grid() {
 
   size_t row_count = (images_.size() + kGridColumns - 1) / kGridColumns;
   for (size_t row_idx = 0; row_idx < row_count; ++row_idx) {
-    ui_element_ptr row{dynamic::instantiate("wish"_key, "TableRow"_key)};
+    ui_element_ptr row = ui_element_ptr::create("wish"_key, "TableRow"_key);
     row["order"_key] = static_cast<int32_t>(row_idx);
 
     auto row_children = dynamic_ptr{key_t{0U}, {}};
@@ -299,11 +299,11 @@ void pix_viewer::rebuild_grid() {
         // Anchoring it above instead keeps every caption in a row (and
         // across rows) aligned to the same y, matching a real file
         // browser's grid look.
-        ui_element_ptr name_label{dynamic::instantiate("wish"_key, "Label"_key)};
+        ui_element_ptr name_label = ui_element_ptr::create("wish"_key, "Label"_key);
         name_label["text"_key] = entry.name;
         name_label["order"_key] = int32_t{0};
 
-        ui_element_ptr img{dynamic::instantiate("wish"_key, "Image"_key)};
+        ui_element_ptr img = ui_element_ptr::create("wish"_key, "Image"_key);
         img["src"_key] = std::string{"res/icons/image.png"};
         img["width"_key] = static_cast<int32_t>(kThumbPx);
         img["height"_key] = static_cast<int32_t>(kThumbPx);
@@ -313,7 +313,7 @@ void pix_viewer::rebuild_grid() {
         // overlay children (see render_selectable()'s doc comment), so
         // clicking the thumbnail image selects the entry just as clicking
         // its filename caption already did.
-        ui_element_ptr sel{dynamic::instantiate("wish"_key, "Selectable"_key)};
+        ui_element_ptr sel = ui_element_ptr::create("wish"_key, "Selectable"_key);
         sel["label"_key] = std::string{};
         sel["width"_key] = kThumbPx;
         sel["height"_key] = kThumbPx + kCellCaptionPx;
@@ -338,7 +338,7 @@ void pix_viewer::rebuild_grid() {
         cell = sel;
       } else {
         // Pad the last row so every TableRow has exactly kGridColumns cells.
-        cell = ui_element_ptr{dynamic::instantiate("wish"_key, "Label"_key)};
+        cell = ui_element_ptr::create("wish"_key, "Label"_key);
         cell["text"_key] = std::string{};
         cell["order"_key] = col;
       }

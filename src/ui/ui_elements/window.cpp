@@ -11,7 +11,7 @@ namespace bdg::wish {
 
 using namespace bdg::bison;
 
-window::window(bison::dynamic&& base) : ui_root(std::move(base)) {}
+window::window(bison::dynamic&& base) : cloneable_ui_element<window, ui_root>(std::move(base)) {}
 
 void register_window() {
   auto proto = dynamic_ptr{"Window"_rkey, {}};

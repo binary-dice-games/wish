@@ -67,7 +67,7 @@ void register_color_edit() {
                         "Emits 'changed' with {value: [float, ...]} when the "
                         "color changes."));
   dynamic::addClass(
-      "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_element>("wish"_key, "ColorEdit"_key));
+      "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_color_edit>("wish"_key, "ColorEdit"_key));
 }
 
 } // namespace bdg::wish

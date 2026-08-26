@@ -31,7 +31,7 @@ void register_radio_button() {
       attr<Description>("A single radio button. "
                         "Emits 'clicked' when the user presses the button."));
   dynamic::addClass(
-      "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_element>("wish"_key, "RadioButton"_key));
+      "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_radio_button>("wish"_key, "RadioButton"_key));
 }
 
 } // namespace bdg::wish

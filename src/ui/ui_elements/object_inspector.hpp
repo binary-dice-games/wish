@@ -94,7 +94,7 @@ namespace bdg::wish {
  * informational view. `show_description_panel` (default `true`) omits the
  * description `Label` below the field table entirely when `false`.
  */
-class object_inspector : public ui_element {
+class object_inspector : public cloneable_ui_element<object_inspector> {
  public:
   explicit object_inspector(bison::dynamic&& base);
 

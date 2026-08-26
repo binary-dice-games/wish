@@ -89,7 +89,7 @@ static constexpr const char* kDialogLayout = R"({
 
 // ── file_dialog ───────────────────────────────────────────────────────────────
 
-file_dialog::file_dialog(dynamic&& base) : form(std::move(base)) {}
+file_dialog::file_dialog(dynamic&& base) : cloneable_ui_element(std::move(base)) {}
 
 // ── on_init ───────────────────────────────────────────────────────────────────
 
@@ -280,7 +280,7 @@ void file_dialog::rebuild_file_rows(const bison::dynamic& files) {
   for (auto& v : visible) {
     row_to_file_idx_.push_back(v.orig_idx);
 
-    ui_element_ptr row{dynamic::instantiate("wish"_key, "TableRow"_key)};
+    ui_element_ptr row = ui_element_ptr::create("wish"_key, "TableRow"_key);
     row["order"_key] = row_idx;
 
     auto row_children = dynamic_ptr{key_t{0U}, {}};
@@ -290,7 +290,7 @@ void file_dialog::rebuild_file_rows(const bison::dynamic& files) {
     // the icon has no explicit width/height.
     ui_element_ptr icon_row = make_name_cell(v.name, v.type, v.name);
 
-    ui_element_ptr type_lbl{dynamic::instantiate("wish"_key, "Label"_key)};
+    ui_element_ptr type_lbl = ui_element_ptr::create("wish"_key, "Label"_key);
     type_lbl["text"_key] = v.type;
     type_lbl["order"_key] = int32_t{1};
 

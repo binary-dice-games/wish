@@ -61,7 +61,7 @@ void register_input_number() {
         attr<Description>("An integer input field with increment/decrement buttons. "
                           "Emits 'changed' with {value: int} when edited."));
     dynamic::addClass(
-        "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_element>("wish"_key, "InputInt"_key));
+        "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_input_int>("wish"_key, "InputInt"_key));
   }
 
   // InputFloat — float input with optional step buttons.
@@ -107,7 +107,7 @@ void register_input_number() {
         attr<Description>("A float input field with optional increment/decrement buttons. "
                           "Emits 'changed' with {value: float} when edited."));
     dynamic::addClass(
-        "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_element>("wish"_key, "InputFloat"_key));
+        "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_input_float>("wish"_key, "InputFloat"_key));
   }
 }
 

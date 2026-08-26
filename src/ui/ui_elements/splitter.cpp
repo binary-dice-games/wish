@@ -52,7 +52,7 @@ void register_splitter() {
                         "Emits 'resized' with {pane_index: int, size1: float, size2: float} "
                         "when a drag bar is released."));
   dynamic::addClass(
-      "wish"_key, std::move(proto), "Layout"_key, dynamic::make_factory<ui_element>("wish"_key, "Splitter"_key));
+      "wish"_key, std::move(proto), "Layout"_key, dynamic::make_factory<ui_splitter>("wish"_key, "Splitter"_key));
 }
 
 } // namespace bdg::wish

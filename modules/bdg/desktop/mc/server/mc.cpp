@@ -337,12 +337,12 @@ void mc::fill_table(
 
   int32_t idx = 0;
   for (auto& entry : entries) {
-    ui_element_ptr row{dynamic::instantiate("wish"_key, "TableRow"_key)};
+    ui_element_ptr row = ui_element_ptr::create("wish"_key, "TableRow"_key);
     row["order"_key] = idx;
     row["selected"_key] = selected_names.count(entry.name) > 0;
 
     auto make_label = [&](const std::string& text, int32_t order) {
-      ui_element_ptr lbl{dynamic::instantiate("wish"_key, "Label"_key)};
+      ui_element_ptr lbl = ui_element_ptr::create("wish"_key, "Label"_key);
       lbl["text"_key] = text;
       lbl["order"_key] = order;
       return lbl;
@@ -389,18 +389,18 @@ ui_element_ptr mc::build_row_context_menu(
   ui_element_ptr menu{dynamic::instantiate("wish"_key, "ContextMenu"_key)};
   assign_id(menu);
 
-  ui_element_ptr properties{dynamic::instantiate("wish"_key, "MenuItem"_key)};
+  ui_element_ptr properties = ui_element_ptr::create("wish"_key, "MenuItem"_key);
   properties["label"_key] = std::string{"Properties"};
   menu_targets[assign_id(properties)] = row_menu_target{row_menu_action::properties, is_sandbox, entry.name};
 
-  ui_element_ptr rename{dynamic::instantiate("wish"_key, "MenuItem"_key)};
+  ui_element_ptr rename = ui_element_ptr::create("wish"_key, "MenuItem"_key);
   rename["label"_key] = std::string{"Rename..."};
   menu_targets[assign_id(rename)] = row_menu_target{row_menu_action::rename, is_sandbox, entry.name};
 
   ui_element_ptr sep{dynamic::instantiate("wish"_key, "Separator"_key)};
   assign_id(sep);
 
-  ui_element_ptr copy_path{dynamic::instantiate("wish"_key, "MenuItem"_key)};
+  ui_element_ptr copy_path = ui_element_ptr::create("wish"_key, "MenuItem"_key);
   copy_path["label"_key] = std::string{"Copy Path"};
   // No round trip needed: the renderer copies this to the OS clipboard
   // directly on click (see MenuItem.copy_text's field comment in

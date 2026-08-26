@@ -223,7 +223,7 @@ const preset& preset_for(int32_t buttons) {
 
 // ── message_box ──────────────────────────────────────────────────────────────
 
-message_box::message_box(dynamic&& base) : form(std::move(base)) {}
+message_box::message_box(dynamic&& base) : cloneable_ui_element(std::move(base)) {}
 
 void message_box::on_init() {
   rebuild();

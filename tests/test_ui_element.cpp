@@ -91,18 +91,18 @@ TEST_F(UiElementTest, VisibleReflectsSecondWriteNotJustFirst) {
 // ── Round 2: label(), width()/width_i(), value_bool()/value_float(), selected() ──
 
 TEST_F(UiElementTest, LabelDefaultsToArgumentWhenFieldNeverSet) {
-  // Spring has no "label" field in its schema, so the field is genuinely
-  // absent (as opposed to Button, whose schema pre-populates "label" with
-  // "" -- a set-but-empty field, which correctly ignores the fallback).
-  auto map = bdg::wish::import_json(R"({"type":"Spring"})");
-  ui_element& node = *map[""];
+  // Constructed directly rather than through the registered "Button"
+  // prototype (which pre-populates "label" with "" -- a set-but-empty
+  // field, which correctly ignores the fallback), so the field is
+  // genuinely absent.
+  bdg::wish::ui_button node{dynamic{}};
 
   EXPECT_EQ(node.label("fallback"), "fallback");
 }
 
 TEST_F(UiElementTest, LabelReflectsWriteThroughUiElementOperator) {
   auto map = bdg::wish::import_json(R"({"type":"Button","label":"hi"})");
-  ui_element& node = *map[""];
+  auto& node = static_cast<bdg::wish::ui_button&>(*map[""]);
 
   ASSERT_EQ(node.label(), "hi");
   node["label"_key] = std::string("bye");
@@ -111,7 +111,7 @@ TEST_F(UiElementTest, LabelReflectsWriteThroughUiElementOperator) {
 
 TEST_F(UiElementTest, LabelReflectsWriteThroughBaseDynamicReference) {
   auto map = bdg::wish::import_json(R"({"type":"Button","label":"hi"})");
-  ui_element& node = *map[""];
+  auto& node = static_cast<bdg::wish::ui_button&>(*map[""]);
   dynamic& base = node;
 
   ASSERT_EQ(node.label(), "hi");
@@ -121,7 +121,7 @@ TEST_F(UiElementTest, LabelReflectsWriteThroughBaseDynamicReference) {
 
 TEST_F(UiElementTest, LabelReflectsSecondWriteNotJustFirst) {
   auto map = bdg::wish::import_json(R"({"type":"Button","label":"hi"})");
-  ui_element& node = *map[""];
+  auto& node = static_cast<bdg::wish::ui_button&>(*map[""]);
 
   node["label"_key] = std::string("first");
   ASSERT_EQ(node.label(), "first");
@@ -156,13 +156,13 @@ TEST_F(UiElementTest, WidthDefaultsToArgumentWhenFieldNeverSet) {
 
 TEST_F(UiElementTest, ValueBoolAndValueFloatShareOneCachedFieldButReadTheirOwnType) {
   auto bool_map = bdg::wish::import_json(R"({"type":"Checkbox"})");
-  ui_element& bool_node = *bool_map[""];
+  auto& bool_node = static_cast<bdg::wish::ui_checkbox&>(*bool_map[""]);
   bool_node["value"_key] = true;
   EXPECT_TRUE(bool_node.value_bool());
   EXPECT_TRUE(bool_node.value_bool());  // second call hits the cache
 
   auto float_map = bdg::wish::import_json(R"({"type":"SliderFloat"})");
-  ui_element& float_node = *float_map[""];
+  auto& float_node = static_cast<bdg::wish::ui_slider_float&>(*float_map[""]);
   float_node["value"_key] = 3.5f;
   EXPECT_FLOAT_EQ(float_node.value_float(), 3.5f);
   EXPECT_FLOAT_EQ(float_node.value_float(), 3.5f);  // second call hits the cache
@@ -189,7 +189,7 @@ TEST_F(UiElementTest, WidthCoercesIntFieldToFloatLikeGetAsDid) {
 
 TEST_F(UiElementTest, SelectedDefaultsFalseAndReflectsWrites) {
   auto map = bdg::wish::import_json(R"({"type":"Selectable","label":"row"})");
-  ui_element& node = *map[""];
+  auto& node = static_cast<bdg::wish::ui_selectable&>(*map[""]);
 
   EXPECT_FALSE(node.selected());
   node["selected"_key] = true;

@@ -526,10 +526,10 @@ void editor::append_help_row(
     return;
   auto& children = *children_p;
 
-  ui_element_ptr row{dynamic::instantiate("wish"_key, "TableRow"_key)};
+  ui_element_ptr row = ui_element_ptr::create("wish"_key, "TableRow"_key);
   row["order"_key] = static_cast<int32_t>(next_help_child_key_);
 
-  ui_element_ptr cell_field{dynamic::instantiate("wish"_key, "Label"_key)};
+  ui_element_ptr cell_field = ui_element_ptr::create("wish"_key, "Label"_key);
   cell_field["text"_key] = field_name + (required ? " *" : "");
   cell_field["text_color"_key] = std::string{kHelpFieldNameColor};
   cell_field["order"_key] = int32_t{0};
@@ -537,14 +537,14 @@ void editor::append_help_row(
   ctx().put_object(cell_field_id, cell_field);
   cell_field["__wish_id"_key] = cell_field_id;
 
-  ui_element_ptr cell_category{dynamic::instantiate("wish"_key, "Label"_key)};
+  ui_element_ptr cell_category = ui_element_ptr::create("wish"_key, "Label"_key);
   cell_category["text"_key] = category.empty() ? std::string{"-"} : category;
   cell_category["order"_key] = int32_t{1};
   key_t cell_category_id = rmi::shared::generate_id();
   ctx().put_object(cell_category_id, cell_category);
   cell_category["__wish_id"_key] = cell_category_id;
 
-  ui_element_ptr cell_desc{dynamic::instantiate("wish"_key, "Label"_key)};
+  ui_element_ptr cell_desc = ui_element_ptr::create("wish"_key, "Label"_key);
   cell_desc["text"_key] = description;
   cell_desc["wrap"_key] = true;
   cell_desc["order"_key] = int32_t{2};
@@ -611,17 +611,17 @@ void editor::append_log_row(const std::string& text) {
     return;
   auto& children = *children_p;
 
-  ui_element_ptr row{dynamic::instantiate("wish"_key, "TableRow"_key)};
+  ui_element_ptr row = ui_element_ptr::create("wish"_key, "TableRow"_key);
   row["order"_key] = static_cast<int32_t>(next_log_child_key_);
 
-  ui_element_ptr cell_seq{dynamic::instantiate("wish"_key, "Label"_key)};
+  ui_element_ptr cell_seq = ui_element_ptr::create("wish"_key, "Label"_key);
   cell_seq["text"_key] = std::to_string(++log_seq_);
   cell_seq["order"_key] = int32_t{0};
   key_t cell_seq_id = rmi::shared::generate_id();
   ctx().put_object(cell_seq_id, cell_seq);
   cell_seq["__wish_id"_key] = cell_seq_id;
 
-  ui_element_ptr cell_text{dynamic::instantiate("wish"_key, "Label"_key)};
+  ui_element_ptr cell_text = ui_element_ptr::create("wish"_key, "Label"_key);
   cell_text["text"_key] = text;
   cell_text["order"_key] = int32_t{1};
   key_t cell_text_id = rmi::shared::generate_id();

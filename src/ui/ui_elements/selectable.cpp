@@ -44,7 +44,7 @@ void register_selectable() {
       attr<Description>("A highlight-on-hover item suitable for building list boxes or menus. "
                         "Emits 'changed' with {selected: bool} on click."));
   dynamic::addClass(
-      "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_element>("wish"_key, "Selectable"_key));
+      "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_selectable>("wish"_key, "Selectable"_key));
 }
 
 } // namespace bdg::wish

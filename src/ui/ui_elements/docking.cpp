@@ -63,7 +63,7 @@ void register_docking() {
         "wish"_key,
         std::move(proto),
         "Element"_key,
-        dynamic::make_factory<ui_element>("wish"_key, "DockSpaceViewport"_key));
+        dynamic::make_factory<ui_dockspace_viewport>("wish"_key, "DockSpaceViewport"_key));
   }
 
   // ── DockSpace ─────────────────────────────────────────────────────────────
@@ -102,7 +102,7 @@ void register_docking() {
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("DockSpace"));
     (*proto)[dynamic::CLASS].addAttribute(attr<Description>("Inline dockspace inside an existing window."));
     dynamic::addClass(
-        "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_element>("wish"_key, "DockSpace"_key));
+        "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_dockspace>("wish"_key, "DockSpace"_key));
   }
 }
 

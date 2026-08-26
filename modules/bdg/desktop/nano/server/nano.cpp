@@ -187,7 +187,7 @@ dynamic nano::do_open_file(const dynamic& args) {
     return dynamic{};
   auto& children = *children_p;
 
-  ui_element_ptr tab{dynamic::instantiate("wish"_key, "TabItem"_key)};
+  ui_element_ptr tab = ui_element_ptr::create("wish"_key, "TabItem"_key);
   tab["label"_key] = title;
   tab["closable"_key] = true;
   tab["order"_key] = static_cast<int32_t>(open_files_.size());
@@ -197,7 +197,7 @@ dynamic nano::do_open_file(const dynamic& args) {
   // Lets the user override the highlighting language the extension guessed
   // (or pick one at all for an extensionless/unrecognized file), independent
   // of the tab's own selected/dirty state.
-  ui_element_ptr lang_combo{dynamic::instantiate("wish"_key, "Combo"_key)};
+  ui_element_ptr lang_combo = ui_element_ptr::create("wish"_key, "Combo"_key);
   lang_combo["label"_key] = std::string{"Language"};
   lang_combo["items"_key] = language_combo_items();
   lang_combo["value"_key] = language_index(initial_language);

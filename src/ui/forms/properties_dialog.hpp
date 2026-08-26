@@ -50,7 +50,7 @@ namespace bdg::wish {
 /// with a `target` field holding the (possibly edited) object, so the
 /// caller always receives the up-to-date object back, then removes the
 /// internal UI tree.
-class properties_dialog : public form {
+class properties_dialog : public cloneable_ui_element<properties_dialog, form> {
  public:
   explicit properties_dialog(bison::dynamic&& base);
 

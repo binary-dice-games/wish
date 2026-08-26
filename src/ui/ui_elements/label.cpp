@@ -55,7 +55,7 @@ void register_label() {
   (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Label"));
   (*proto)[dynamic::CLASS].addAttribute(attr<Description>("A read-only text element."));
   dynamic::addClass(
-      "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_element>("wish"_key, "Label"_key));
+      "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_label>("wish"_key, "Label"_key));
 }
 
 } // namespace bdg::wish

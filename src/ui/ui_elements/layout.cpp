@@ -89,7 +89,7 @@ void register_layout() {
         "wish"_key,
         std::move(proto),
         "Layout"_key,
-        dynamic::make_factory<ui_element>("wish"_key, "HorizontalLayout"_key));
+        dynamic::make_factory<ui_horizontal_layout>("wish"_key, "HorizontalLayout"_key));
   }
 }
 

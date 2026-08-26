@@ -104,7 +104,7 @@ void register_input_text() {
   (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Input Text"));
   (*proto)[dynamic::CLASS].addAttribute(attr<Description>("A single-line text input field."));
   dynamic::addClass(
-      "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_element>("wish"_key, "InputText"_key));
+      "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_input_text>("wish"_key, "InputText"_key));
 }
 
 } // namespace bdg::wish

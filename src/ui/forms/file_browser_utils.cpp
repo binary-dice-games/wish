@@ -61,11 +61,11 @@ std::string icon_for_entry(const std::string& name, const std::string& type) {
 }
 
 ui_element_ptr make_name_cell(const std::string& name, const std::string& type, const std::string& display_name) {
-  ui_element_ptr icon_row{dynamic::instantiate("wish"_key, "HorizontalLayout"_key)};
+  ui_element_ptr icon_row = ui_element_ptr::create("wish"_key, "HorizontalLayout"_key);
   icon_row["spacing"_key] = 6.0f;
   icon_row["order"_key] = int32_t{0};
 
-  ui_element_ptr icon_img{dynamic::instantiate("wish"_key, "Image"_key)};
+  ui_element_ptr icon_img = ui_element_ptr::create("wish"_key, "Image"_key);
   icon_img["src"_key] = "res/icons/" + icon_for_entry(name, type) + ".png";
   icon_img["__auto_size_to_font__"_key] = true;
   // The icon PNGs are white/monochrome so they can be tinted; without this
@@ -74,7 +74,7 @@ ui_element_ptr make_name_cell(const std::string& name, const std::string& type, 
   icon_img["__tint_to_text_color__"_key] = true;
   icon_img["order"_key] = int32_t{0};
 
-  ui_element_ptr name_lbl{dynamic::instantiate("wish"_key, "Label"_key)};
+  ui_element_ptr name_lbl = ui_element_ptr::create("wish"_key, "Label"_key);
   name_lbl["text"_key] = display_name;
   name_lbl["order"_key] = int32_t{1};
 

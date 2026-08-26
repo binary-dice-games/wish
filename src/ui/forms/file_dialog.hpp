@@ -29,7 +29,7 @@ namespace bdg::wish {
 /// The internal Window is rendered as a true input-blocking modal popup
 /// (Window.modal = true, same as message_box) and is not dockable — the user
 /// must Open or Cancel to dismiss it.
-class file_dialog : public form {
+class file_dialog : public cloneable_ui_element<file_dialog, form> {
  public:
   explicit file_dialog(bison::dynamic&& base);
 

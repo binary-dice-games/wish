@@ -37,7 +37,7 @@ void register_combo() {
       attr<Description>("A drop-down selection widget. "
                         "Emits 'changed' with {value: index, text: string} when the selection changes."));
   dynamic::addClass(
-      "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_element>("wish"_key, "Combo"_key));
+      "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_combo>("wish"_key, "Combo"_key));
 }
 
 } // namespace bdg::wish

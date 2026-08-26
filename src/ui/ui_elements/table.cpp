@@ -131,7 +131,7 @@ void register_table() {
                           "header, emits 'sorted' with {column_id: int, ascending: bool} -- the "
                           "owner is responsible for actually reordering rows in response."));
     dynamic::addClass(
-        "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_element>("wish"_key, "Table"_key));
+        "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_table>("wish"_key, "Table"_key));
   }
 
   // TableColumn — maps to ImGui::TableSetupColumn.
@@ -196,7 +196,8 @@ void register_table() {
         attr<Description>("Defines one column inside a Table. "
                           "Processed by the parent Table for setup; not rendered independently."));
     dynamic::addClass(
-        "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_element>("wish"_key, "TableColumn"_key));
+        "wish"_key, std::move(proto), "Element"_key,
+        dynamic::make_factory<ui_table_column>("wish"_key, "TableColumn"_key));
   }
 
   // TableRow — maps to ImGui::TableNextRow.
@@ -236,7 +237,7 @@ void register_table() {
                           "is excluded from column layout and instead opens as a right-click menu "
                           "for the whole row."));
     dynamic::addClass(
-        "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_element>("wish"_key, "TableRow"_key));
+        "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_table_row>("wish"_key, "TableRow"_key));
   }
 }
 

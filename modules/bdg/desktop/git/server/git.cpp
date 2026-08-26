@@ -522,7 +522,7 @@ void git_repo::show_confirm(
 // ── Sidebar ──────────────────────────────────────────────────────────────────
 
 ui_element_ptr git_repo::make_menu_item(const std::string& label, std::function<void()> on_click) {
-  ui_element_ptr item{dynamic::instantiate("wish"_key, "MenuItem"_key)};
+  ui_element_ptr item = ui_element_ptr::create("wish"_key, "MenuItem"_key);
   item["label"_key] = label;
   assign_id(item);
   click_handlers_[wish_id_of(item)] = std::move(on_click);
@@ -533,17 +533,17 @@ ui_element_ptr git_repo::make_sidebar_row(
     const std::string& label,
     std::function<void()> on_click,
     const std::vector<std::pair<std::string, std::function<void()>>>& menu_items) {
-  ui_element_ptr row{dynamic::instantiate("wish"_key, "HorizontalLayout"_key)};
+  ui_element_ptr row = ui_element_ptr::create("wish"_key, "HorizontalLayout"_key);
   row["spacing"_key] = 4.0f;
   assign_id(row);
 
-  ui_element_ptr sel{dynamic::instantiate("wish"_key, "Selectable"_key)};
+  ui_element_ptr sel = ui_element_ptr::create("wish"_key, "Selectable"_key);
   sel["label"_key] = label;
   sel["width"_key] = 180.0f;
   assign_id(sel);
   selectable_handlers_[wish_id_of(sel)] = std::move(on_click);
 
-  ui_element_ptr menu{dynamic::instantiate("wish"_key, "MenuButton"_key)};
+  ui_element_ptr menu = ui_element_ptr::create("wish"_key, "MenuButton"_key);
   menu["label"_key] = "...";
   assign_id(menu);
   std::vector<ui_element_ptr> items;
@@ -759,7 +759,7 @@ void git_repo::rebuild_graph_table(const dynamic& args) {
                       bool is_working,
                       const std::vector<git_graph_segment>& top,
                       const std::vector<git_graph_segment>& bottom) {
-    ui_element_ptr row{dynamic::instantiate("wish"_key, "TableRow"_key)};
+    ui_element_ptr row = ui_element_ptr::create("wish"_key, "TableRow"_key);
     assign_id(row);
 
     ui_element_ptr graph_cell{dynamic::instantiate("wish"_key, "GraphNode"_key)};
@@ -788,19 +788,19 @@ void git_repo::rebuild_graph_table(const dynamic& args) {
     }
     assign_id(graph_cell);
 
-    ui_element_ptr desc{dynamic::instantiate("wish"_key, "Label"_key)};
+    ui_element_ptr desc = ui_element_ptr::create("wish"_key, "Label"_key);
     desc["text"_key] = subject;
     assign_id(desc);
 
-    ui_element_ptr author_l{dynamic::instantiate("wish"_key, "Label"_key)};
+    ui_element_ptr author_l = ui_element_ptr::create("wish"_key, "Label"_key);
     author_l["text"_key] = author;
     assign_id(author_l);
 
-    ui_element_ptr date_l{dynamic::instantiate("wish"_key, "Label"_key)};
+    ui_element_ptr date_l = ui_element_ptr::create("wish"_key, "Label"_key);
     date_l["text"_key] = date;
     assign_id(date_l);
 
-    ui_element_ptr hash_l{dynamic::instantiate("wish"_key, "Label"_key)};
+    ui_element_ptr hash_l = ui_element_ptr::create("wish"_key, "Label"_key);
     hash_l["text"_key] = hash.substr(0, 8);
     assign_id(hash_l);
 
@@ -901,25 +901,25 @@ void git_repo::add_file_row(const std::string& path, const std::string& status, 
     return;
   auto& children = *children_p;
 
-  ui_element_ptr row{dynamic::instantiate("wish"_key, "TableRow"_key)};
+  ui_element_ptr row = ui_element_ptr::create("wish"_key, "TableRow"_key);
   assign_id(row);
 
   ui_element_ptr marker;
   if (show_checkbox) {
-    marker = ui_element_ptr{dynamic::instantiate("wish"_key, "Checkbox"_key)};
+    marker = ui_element_ptr::create("wish"_key, "Checkbox"_key);
     marker["value"_key] = staged;
     assign_id(marker);
     checkbox_handlers_[wish_id_of(marker)] = [this, path](bool checked) {
       emit(checked ? "stage_requested"_key : "unstage_requested"_key, payload1("path"_key, path));
     };
   } else {
-    marker = ui_element_ptr{dynamic::instantiate("wish"_key, "Label"_key)};
+    marker = ui_element_ptr::create("wish"_key, "Label"_key);
     marker["text"_key] = status;
     set_theme_text_color(marker, status_theme_color(status));
     assign_id(marker);
   }
 
-  ui_element_ptr path_sel{dynamic::instantiate("wish"_key, "Selectable"_key)};
+  ui_element_ptr path_sel = ui_element_ptr::create("wish"_key, "Selectable"_key);
   path_sel["label"_key] = path;
   assign_id(path_sel);
   selectable_handlers_[wish_id_of(path_sel)] = [this, path, staged] {
@@ -1040,15 +1040,15 @@ dynamic git_repo::do_update_diff(const dynamic& args) {
     std::string gutter = "add" == kind ? "+" : "del" == kind ? "-" : " ";
     theme_hex color = diff_kind_theme_color(kind);
 
-    ui_element_ptr row{dynamic::instantiate("wish"_key, "TableRow"_key)};
+    ui_element_ptr row = ui_element_ptr::create("wish"_key, "TableRow"_key);
     assign_id(row);
 
-    ui_element_ptr gutter_l{dynamic::instantiate("wish"_key, "Label"_key)};
+    ui_element_ptr gutter_l = ui_element_ptr::create("wish"_key, "Label"_key);
     gutter_l["text"_key] = gutter;
     set_theme_text_color(gutter_l, color);
     assign_id(gutter_l);
 
-    ui_element_ptr text_l{dynamic::instantiate("wish"_key, "Label"_key)};
+    ui_element_ptr text_l = ui_element_ptr::create("wish"_key, "Label"_key);
     text_l["text"_key] = text;
     set_theme_text_color(text_l, color);
     assign_id(text_l);
@@ -1090,24 +1090,24 @@ void git_repo::append_log_row(const std::string& command, int32_t exit_code, boo
 
   theme_hex color = ok ? theme_hex{kGreenLight, kGreenDark} : theme_hex{kRedLight, kRedDark};
 
-  ui_element_ptr row{dynamic::instantiate("wish"_key, "TableRow"_key)};
+  ui_element_ptr row = ui_element_ptr::create("wish"_key, "TableRow"_key);
   assign_id(row);
 
-  ui_element_ptr cell_seq{dynamic::instantiate("wish"_key, "Label"_key)};
+  ui_element_ptr cell_seq = ui_element_ptr::create("wish"_key, "Label"_key);
   cell_seq["text"_key] = std::to_string(++log_seq_);
   assign_id(cell_seq);
 
-  ui_element_ptr cell_command{dynamic::instantiate("wish"_key, "Label"_key)};
+  ui_element_ptr cell_command = ui_element_ptr::create("wish"_key, "Label"_key);
   cell_command["text"_key] = command;
   set_theme_text_color(cell_command, color);
   assign_id(cell_command);
 
-  ui_element_ptr cell_exit{dynamic::instantiate("wish"_key, "Label"_key)};
+  ui_element_ptr cell_exit = ui_element_ptr::create("wish"_key, "Label"_key);
   cell_exit["text"_key] = std::to_string(exit_code);
   set_theme_text_color(cell_exit, color);
   assign_id(cell_exit);
 
-  ui_element_ptr cell_output{dynamic::instantiate("wish"_key, "Label"_key)};
+  ui_element_ptr cell_output = ui_element_ptr::create("wish"_key, "Label"_key);
   cell_output["text"_key] = output;
   set_theme_text_color(cell_output, color);
   assign_id(cell_output);
@@ -1120,13 +1120,13 @@ void git_repo::append_log_row(const std::string& command, int32_t exit_code, boo
   ui_element_ptr context_menu{dynamic::instantiate("wish"_key, "ContextMenu"_key)};
   assign_id(context_menu);
 
-  ui_element_ptr copy_item{dynamic::instantiate("wish"_key, "MenuItem"_key)};
+  ui_element_ptr copy_item = ui_element_ptr::create("wish"_key, "MenuItem"_key);
   copy_item["label"_key] = std::string{"Copy Entry"};
   copy_item["copy_text"_key] = command + "\nexit: " + std::to_string(exit_code) + "\n" + output;
   assign_id(copy_item);
   click_handlers_[wish_id_of(copy_item)] = [this] { set_status("Copied log entry to clipboard.", true); };
 
-  ui_element_ptr clear_item{dynamic::instantiate("wish"_key, "MenuItem"_key)};
+  ui_element_ptr clear_item = ui_element_ptr::create("wish"_key, "MenuItem"_key);
   clear_item["label"_key] = std::string{"Clear Log"};
   assign_id(clear_item);
   click_handlers_[wish_id_of(clear_item)] = [this] { clear_log_rows(); };

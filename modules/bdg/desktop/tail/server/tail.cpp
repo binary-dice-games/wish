@@ -314,7 +314,7 @@ void tail::append_row(log_table_state& state, const parsed_log_line& pl, const s
   // following a theme change made later in the same session.
   auto make_cell = [&](const std::string& text, const std::string& light_color, const std::string& dark_color,
                         int32_t order) {
-    ui_element_ptr cell{dynamic::instantiate("wish"_key, "Label"_key)};
+    ui_element_ptr cell = ui_element_ptr::create("wish"_key, "Label"_key);
     cell["text"_key] = text;
     if (!light_color.empty())
       cell["text_color_light"_key] = light_color;
@@ -334,7 +334,7 @@ void tail::append_row(log_table_state& state, const parsed_log_line& pl, const s
   ui_element_ptr source_cell = make_cell(pl.source, "", "", 3);
   ui_element_ptr message_cell = make_cell(pl.message, pl.light_color, pl.dark_color, 4);
 
-  ui_element_ptr row{dynamic::instantiate("wish"_key, "TableRow"_key)};
+  ui_element_ptr row = ui_element_ptr::create("wish"_key, "TableRow"_key);
   row["order"_key] = static_cast<int32_t>(state.next_child_key);
   // Filtering hides rows rather than gating admission (see class doc
   // comment) -- render_table() skips a row entirely when its inherited
@@ -391,7 +391,7 @@ void tail::evict_to_cap(log_table_state& state) {
 // ── Tag tabs ───────────────────────────────────────────────────────────────────
 
 ui_element_ptr tail::build_log_table(log_table_state& state) {
-  ui_element_ptr table{dynamic::instantiate("wish"_key, "Table"_key)};
+  ui_element_ptr table = ui_element_ptr::create("wish"_key, "Table"_key);
   table["id"_key] = "##tail_tbl_" + std::to_string(next_table_seq_++);
   table["columns"_key] = int32_t{5};
   table["headers"_key] = true;
@@ -400,7 +400,7 @@ ui_element_ptr tail::build_log_table(log_table_state& state) {
   table["auto_scroll"_key] = follow_enabled_;
 
   auto make_col = [&](const char* label, int32_t col_id, int32_t flags, float w, int32_t order) {
-    ui_element_ptr col{dynamic::instantiate("wish"_key, "TableColumn"_key)};
+    ui_element_ptr col = ui_element_ptr::create("wish"_key, "TableColumn"_key);
     col["label"_key] = std::string{label};
     col["column_id"_key] = col_id;
     col["flags"_key] = flags;
@@ -447,7 +447,7 @@ tail::tag_tab_state& tail::ensure_tag_tab(const std::string& tag) {
   tag_tab_state state;
   ui_element_ptr table = build_log_table(state.table);
 
-  ui_element_ptr tab{dynamic::instantiate("wish"_key, "TabItem"_key)};
+  ui_element_ptr tab = ui_element_ptr::create("wish"_key, "TabItem"_key);
   tab["label"_key] = "[" + tag + "]";
   // Not closable, matching the "All" tab (see kLayout's own "closable":
   // false) -- a tag's tab is a permanent part of the session's tab bar

@@ -67,7 +67,7 @@ void register_image() {
   (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Image"));
   (*proto)[dynamic::CLASS].addAttribute(attr<Description>("Displays an image uploaded via the file service."));
   dynamic::addClass(
-      "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_element>("wish"_key, "Image"_key));
+      "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_image>("wish"_key, "Image"_key));
 }
 
 } // namespace bdg::wish

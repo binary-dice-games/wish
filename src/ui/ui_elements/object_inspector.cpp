@@ -149,7 +149,7 @@ std::string reference_label(const dynamic_ptr& ref) {
 
 // ── object_inspector ─────────────────────────────────────────────────────────
 
-object_inspector::object_inspector(dynamic&& base) : ui_element(std::move(base)) {}
+object_inspector::object_inspector(dynamic&& base) : cloneable_ui_element(std::move(base)) {}
 
 void object_inspector::release(context& s) {
   for (key_t id : built_ids_)
@@ -174,7 +174,7 @@ context& object_inspector::require_dispatch_session() {
 wish::ui_element_ptr object_inspector::stamp(context& s, key_t klass, const std::string& path) {
   if (!ctx_)
     throw std::logic_error("wish: object_inspector::init() was never called");
-  ui_element_ptr elem{dynamic::instantiate("wish"_key, klass)};
+  ui_element_ptr elem = ui_element_ptr::create("wish"_key, klass);
   key_t id = rmi::shared::generate_id();
   ctx_->put_object(id, elem);
   elem["__wish_id"_key] = id;
