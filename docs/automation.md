@@ -524,3 +524,41 @@ def test_saving_shows_confirmation(wish_ui):
   directory root itself, and an unrelated subdirectory (`cd build/ &&
   ./app ... -- .` or similar) — don't assume a repo-root repro that looks
   clean generalizes to how the user is actually invoking the tool.
+- **A `TabItem`'s `get_widget()`/`get_tree()` `rect` is only meaningful while
+  that tab is selected — an inactive tab's `rect` can be a degenerate point
+  (`x0==x1`, `y0==y1`) left over from an unrelated part of the window**, not
+  the tab header's real on-screen position in the tab strip. `click(path)`
+  on an inactive `TabItem` therefore does not reliably land on the header —
+  screenshot the window first, read the header's pixel position off the tab
+  strip, and drive `ui._page.mouse.move(x, y)` → `down()` → sleep ~100-150ms
+  → `up()` directly instead. Also don't trust a `TabItem`'s `active` field as
+  "is this the selected tab" — it tracks ImGui's momentary mouse-press state
+  (true only while the header is actively being clicked), not tab selection;
+  confirm a tab switch actually happened via its *content* rendering (a
+  screenshot or a `get_widget()` on a child only visible in that tab), not
+  `active`.
+- **A `Combo` (or any framed widget whose `render_*` only calls
+  `SetNextItemWidth()` when an explicit `"width"` field is set — Slider,
+  InputText/Int/Float, ColorEdit, Drag* share the identical shape) placed as
+  the sole/only-auto child of a `HorizontalLayout`/`VerticalLayout` can
+  visibly shrink to nothing over a handful of frames, settling near 0 width
+  within under a second.** Root cause: such a widget's *default* (unhinted)
+  ImGui behavior is "fill to the ambient window's right edge", not a genuine
+  content-derived natural size — when nothing else in the row pins a size,
+  the enclosing Layout's own self-report wrap (`wrap_self` in
+  `render_horizontal_layout()`/`render_vertical_layout()`,
+  `imgui_ui_renderer.cpp`) reads the widget's last real render as its own
+  natural `content_extent()` and wraps a `BeginChild()` of exactly that
+  (already-shrunk) size around it next frame — a real, reproducible
+  feedback loop, not a one-off glitch. If a bug report describes a
+  form/dialog field "disappearing" or "shrinking" after it opens, poll the
+  same `get_widget(path)["rect"]` a handful of times ~0.5s apart (a single
+  read right after opening can catch it mid-shrink and look like a static,
+  smaller-than-expected size instead of the geometric decay it actually
+  is) — a fresh `AutomationClient.launch()` reconnect right after opening
+  the dialog can also land after several frames have already elapsed,
+  again masking the decay as a static wrong size. The fix lives in
+  `imgui_layout.cpp`'s `measure_dispatch_fns()` (give the affected class
+  its own `measure_fn` returning `{0,0}`, the same treatment already
+  applied to `Spring`/`TextEditor` for the identical hazard), not in the
+  render function itself.

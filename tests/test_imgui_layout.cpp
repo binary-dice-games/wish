@@ -121,6 +121,56 @@ TEST_F(ImguiLayoutTest, MeasureNodeMatchesRealSizeAfterOneRealRender) {
   EXPECT_FLOAT_EQ(measured_sz.y, rendered_sz.y);
 }
 
+// ── measure_node: Combo's width is exempt from the last_rendered_size() ─────
+// ── fallback, but its height still reports a real, stable value ────────────
+//
+// Unlike Button/Label/ProgressBar (whose real rendered width comes purely
+// from their own content, independent of ambient window size), an unhinted
+// Combo's real width defaults to "fill to the ambient window's right edge"
+// (render_combo() only calls SetNextItemWidth() when an explicit "width"
+// field is set). Falling back to last_rendered_size() for that case created
+// an unbounded shrink: a HorizontalLayout with no other sized child reads
+// the Combo's last real render as its own natural content_extent, wraps a
+// BeginChild of exactly that size around the row, and the Combo renders
+// slightly smaller inside that child window every single frame. Combo's
+// width must stay pinned at 0, the same fix already applied to Spring/
+// TextEditor for the identical hazard (see measure_combo()'s doc comment in
+// imgui_layout.cpp) -- but unlike Spring/TextEditor, Combo's *height* is a
+// perfectly ordinary, ambient-independent natural quantity
+// (ImGui::GetFrameHeight()), so it must NOT also be zeroed: doing so once
+// under-predicted an auto-height enclosing row's real screen space, handing
+// too much of a sibling stretch/fill row's budget and pushing later content
+// (a real "Open"/"Cancel" button row disappearing below a taller-than-
+// expected file list) outside the window entirely.
+
+TEST_F(ImguiLayoutTest, MeasureNodeZeroesComboWidthButReportsRealHeightAfterOneRealRender) {
+  auto map = bdg::wish::import_json(R"({"type":"Combo","label":"","items":"a\nb\nc"})");
+  auto& node = *map[""];
+
+  renderer_->begin_frame();
+  ImVec2 rendered_sz{};
+  in_window([&] {
+    renderer_->render_node(node, *sess_);
+    rendered_sz = ImGui::GetItemRectSize();
+  });
+  renderer_->end_frame();
+
+  // Sanity: the Combo really did render at some nonzero real width (ImGui's
+  // own default fill-to-edge behavior against the 800px-wide test window)
+  // and height, so the assertions below are exercising the exemption, not a
+  // widget that never rendered anything in the first place.
+  ASSERT_GT(rendered_sz.x, 0.0f);
+  ASSERT_GT(rendered_sz.y, 0.0f);
+
+  renderer_->begin_frame();
+  bdg::wish::natural_size measured_sz{};
+  in_window([&] { measured_sz = measure_node(*renderer_, node, *sess_); });
+  renderer_->end_frame();
+
+  EXPECT_FLOAT_EQ(measured_sz.x, 0.0f);
+  EXPECT_FLOAT_EQ(measured_sz.y, rendered_sz.y);
+}
+
 // ── measure_node: VerticalLayout sums fixed-height children + spacing ────────
 
 TEST_F(ImguiLayoutTest, VerticalLayoutOfThreeFixedHeightButtonsSumsHeights) {

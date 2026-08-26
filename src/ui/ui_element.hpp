@@ -189,6 +189,33 @@ class ui_element : public bison::cloneable_dynamic<ui_element> {
   explicit ui_element(bison::dynamic&& base);
 
   /**
+   * @brief Deep-clone this element, then rebuild its (and every descendant's)
+   *        render-order cache.
+   *
+   * `bison::cloneable_dynamic<ui_element>::clone_ptr()` would otherwise be
+   * inherited as-is: it copies fields via `clone_into()` -- recursing into
+   * "children" and cloning each descendant's most-derived type -- but
+   * `resolved_children_order_`/`has_resolved_children_order_` are plain
+   * (non-field) members that `clone_into()` never touches, so a freshly
+   * cloned node always starts with `has_resolved_children_order_ = false`.
+   * `for_each_child_ordered()` then silently falls back to hash-sorted map
+   * order on the entire cloned subtree. This matters in practice because
+   * `ui_template::do_instantiate()` (`ui_template.cpp`) builds every
+   * template-instantiated tree -- e.g. the whole widget-demo UI -- via
+   * exactly this clone path. `clone_into()` clones children bottom-up (a
+   * child's `clone_ptr()` returns before its parent's `clone_into()` call
+   * returns), so calling `refresh_children_order()` here, after
+   * `clone_into()`, is enough to fix this node; each descendant fixes
+   * itself the same way as its own `clone_ptr()` unwinds.
+   */
+  bison::dynamic_ptr clone_ptr() const override {
+    bison::dynamic_ptr result{std::make_shared<ui_element>(bison::dynamic{})};
+    clone_into(*result);
+    static_cast<ui_element&>(*result).refresh_children_order();
+    return result;
+  }
+
+  /**
    * @brief Rebuild the render-order cache from children's `order` fields.
    *
    * Reads each child's `order` field, stable-sorts the children ascending, and
@@ -494,6 +521,9 @@ class cloneable_ui_element : public Base {
   bison::dynamic_ptr clone_ptr() const override {
     bison::dynamic_ptr result{std::make_shared<Derived>(bison::dynamic{})};
     this->clone_into(*result);
+    // Rebuild the render-order cache on the clone -- see ui_element::
+    // clone_ptr()'s doc comment for why this is required after clone_into().
+    static_cast<ui_element&>(*result).refresh_children_order();
     return result;
   }
 };
