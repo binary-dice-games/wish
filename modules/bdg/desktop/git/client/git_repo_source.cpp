@@ -110,8 +110,19 @@ void git_repo_source::push_refs() {
 
   dynamic branches;
   size_t bi = 0;
+  // %(upstream:track) reports ahead/behind (or "[gone]" if the configured
+  // upstream ref no longer exists, e.g. a deleted/pruned remote branch)
+  // directly from refs already loaded by for-each-ref -- no separate
+  // `rev-list name...upstream` subprocess needed. That extra call used to
+  // run unconditionally whenever a branch had *any* configured upstream,
+  // including a "gone" one, where it reliably failed with "fatal: ambiguous
+  // argument ... unknown revision" and polluted the command log on every
+  // refresh.
   auto refs = run_logged(
-      {"for-each-ref", "--format=%(refname:short)\t%(upstream:short)\t%(objecttype)", "refs/heads", "refs/remotes"});
+      {"for-each-ref",
+       "--format=%(refname:short)\t%(upstream:short)\t%(objecttype)\t%(upstream:track)",
+       "refs/heads",
+       "refs/remotes"});
   if (refs.ok()) {
     std::istringstream iss(refs.stdout_text);
     std::string line;
@@ -123,15 +134,17 @@ void git_repo_source::push_refs() {
         continue;
       std::string name = cols[0];
       std::string upstream = cols.size() > 1 ? cols[1] : std::string{};
+      std::string track = cols.size() > 3 ? cols[3] : std::string{};
       const bool is_remote = name.rfind("origin/", 0) == 0 || name.find('/') != std::string::npos;
 
       int32_t ahead = 0, behind = 0;
-      if (!is_remote && !upstream.empty()) {
-        auto counts = run_logged({"rev-list", "--left-right", "--count", name + "..." + upstream});
-        if (counts.ok()) {
-          std::istringstream cs(counts.stdout_text);
-          cs >> ahead >> behind;
-        }
+      if (!track.empty() && track != "[gone]") {
+        auto ahead_pos = track.find("ahead ");
+        if (ahead_pos != std::string::npos)
+          ahead = std::atoi(track.c_str() + ahead_pos + 6);
+        auto behind_pos = track.find("behind ");
+        if (behind_pos != std::string::npos)
+          behind = std::atoi(track.c_str() + behind_pos + 7);
       }
 
       auto e = std::make_shared<dynamic>();
