@@ -234,14 +234,7 @@ int wish_standalone_app::on_session(bison::rmi::standalone& sa) {
     std::cout << "[wish] open http://" << FLAGS_web_bind << ':' << FLAGS_web_port << " in a browser\n" << std::flush;
   }
 
-  // Only override the session's theme when --theme was explicitly passed --
-  // otherwise leave the style_service's default (no preset key -- the
-  // renderer's own default theme) intact. Mirrors wish_client_app::on_session().
-  gflags::CommandLineFlagInfo theme_info;
-  gflags::GetCommandLineFlagInfo("theme", &theme_info);
-  if (!theme_info.is_default)
-    session.set_style_preset(FLAGS_theme).get();
-
+  session.set_style_preset(FLAGS_theme).get();
   resolved_app_->run(session); // set up proxies and event handlers
   session.wait_until_done();
   return 0;

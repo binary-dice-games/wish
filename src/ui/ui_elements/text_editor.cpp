@@ -74,7 +74,8 @@ void register_text_editor() {
                         "Reads and writes a local file; use upload_file / download_file "
                         "for remote transports."));
   dynamic::addClass(
-      "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_element>("wish"_key, "TextEditor"_key));
+      "wish"_key, std::move(proto), "Element"_key,
+      dynamic::make_factory<ui_text_editor>("wish"_key, "TextEditor"_key));
 }
 
 } // namespace bdg::wish

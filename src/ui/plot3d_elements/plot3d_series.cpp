@@ -49,7 +49,7 @@ void register_plot3d_series() {
         "wish"_key,
         std::move(proto),
         "Plot3DItem"_key,
-        dynamic::make_factory<ui_element>("wish"_key, "Plot3DLine"_key));
+        dynamic::make_factory<ui_plot3d_xyz_series>("wish"_key, "Plot3DLine"_key));
   }
 
   // Plot3DScatter — dots at each 3-D data point, no connecting line.
@@ -64,7 +64,7 @@ void register_plot3d_series() {
         "wish"_key,
         std::move(proto),
         "Plot3DItem"_key,
-        dynamic::make_factory<ui_element>("wish"_key, "Plot3DScatter"_key));
+        dynamic::make_factory<ui_plot3d_xyz_series>("wish"_key, "Plot3DScatter"_key));
   }
 }
 

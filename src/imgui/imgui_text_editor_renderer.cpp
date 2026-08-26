@@ -139,13 +139,14 @@ void fill_wish_ui_schema_suggestions(TextEditor::AutoCompleteState& state) {
 
 // ── Render function ───────────────────────────────────────────────────────────
 
-void render_text_editor(imgui_renderer&, const ui_element& node, const context& s) {
-  auto file_path = node.get_as<std::string>("file_path"_key, "");
-  auto language = node.get_as<std::string>("language"_key, "none");
-  auto read_only = node.get_as<bool>("read_only"_key, false);
-  auto wish_ui_schema = node.get_as<bool>("wish_ui_schema"_key, false);
-  int32_t w = node.get_as<int32_t>("width"_key, 0);
-  int32_t h = node.get_as<int32_t>("height"_key, 400);
+void render_text_editor(imgui_renderer&, const ui_element& node_base, const context& s) {
+  const auto& node = static_cast<const ui_text_editor&>(node_base);
+  auto file_path = node.file_path();
+  auto language = node.language("none");
+  auto read_only = node.read_only();
+  auto wish_ui_schema = node.wish_ui_schema();
+  int32_t w = node.width_i(0);
+  int32_t h = node.height_i(400);
 
   if (file_path.empty())
     return;

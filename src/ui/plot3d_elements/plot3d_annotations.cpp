@@ -71,7 +71,7 @@ void register_plot3d_annotations() {
         "wish"_key,
         std::move(proto),
         "Plot3DItem"_key,
-        dynamic::make_factory<ui_element>("wish"_key, "Plot3DText"_key));
+        dynamic::make_factory<ui_plot3d_text>("wish"_key, "Plot3DText"_key));
   }
 }
 

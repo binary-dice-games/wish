@@ -258,6 +258,19 @@ class ui_element : public bison::cloneable_dynamic<ui_element> {
     return f ? f->get_as<T>() : default_value;
   }
 
+  /// @brief Like `cached_field_or()`, but for a field storing a
+  ///        `std::vector<T>` that hot code needs to iterate without
+  ///        copying (e.g. plot series data). Returns `nullptr` if the field
+  ///        is absent or not exactly a `std::vector<T>` -- unlike
+  ///        `cached_field_or()`, there is no cross-type coercion for
+  ///        vectors, matching the pre-refactor `vec_field()`/
+  ///        `i32_vec_field()` helpers this replaces.
+  template <typename T>
+  const std::vector<T>* cached_vector_field(bison::field*& cache, bison::key_t key) const {
+    bison::field* f = cached_field(cache, key);
+    return (f && f->is<std::vector<T>>()) ? &f->as<std::vector<T>>() : nullptr;
+  }
+
   /// @brief Cached `as<key_t>(dynamic::CLASS)`. CLASS is set exactly once
   ///        per instance, inside `bison::dynamic::instantiate()`, and never
   ///        reassigned afterward in production code.
@@ -1116,6 +1129,548 @@ class ui_table_column : public cloneable_ui_element<ui_table_column> {
   mutable bison::field* flags_field_ = nullptr;
   mutable bison::field* init_width_field_ = nullptr;
   mutable bison::field* column_id_field_ = nullptr;
+};
+
+// ── Graph node ───────────────────────────────────────────────────────────────
+
+class ui_graph_node : public cloneable_ui_element<ui_graph_node> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  int32_t lane(int32_t def = 0) const { return cached_field_or<int32_t>(lane_field_, bison::key_t{"lane"}, def); }
+  int32_t color(int32_t def = 0) const { return cached_field_or<int32_t>(color_field_, bison::key_t{"color"}, def); }
+  bool is_head(bool def = false) const { return cached_field_or<bool>(is_head_field_, bison::key_t{"is_head"}, def); }
+  bool is_working(bool def = false) const {
+    return cached_field_or<bool>(is_working_field_, bison::key_t{"is_working"}, def);
+  }
+  float lane_width(float def = 16.0f) const {
+    return cached_field_or<float>(lane_width_field_, bison::key_t{"lane_width"}, def);
+  }
+  float dot_radius(float def = 4.5f) const {
+    return cached_field_or<float>(dot_radius_field_, bison::key_t{"dot_radius"}, def);
+  }
+  float row_height(float def = 0.0f) const {
+    return cached_field_or<float>(row_height_field_, bison::key_t{"row_height"}, def);
+  }
+  const std::vector<int32_t>* top_from() const {
+    return cached_vector_field<int32_t>(top_from_field_, bison::key_t{"top_from"});
+  }
+  const std::vector<int32_t>* top_to() const {
+    return cached_vector_field<int32_t>(top_to_field_, bison::key_t{"top_to"});
+  }
+  const std::vector<int32_t>* top_color() const {
+    return cached_vector_field<int32_t>(top_color_field_, bison::key_t{"top_color"});
+  }
+  const std::vector<int32_t>* bottom_from() const {
+    return cached_vector_field<int32_t>(bottom_from_field_, bison::key_t{"bottom_from"});
+  }
+  const std::vector<int32_t>* bottom_to() const {
+    return cached_vector_field<int32_t>(bottom_to_field_, bison::key_t{"bottom_to"});
+  }
+  const std::vector<int32_t>* bottom_color() const {
+    return cached_vector_field<int32_t>(bottom_color_field_, bison::key_t{"bottom_color"});
+  }
+
+ private:
+  mutable bison::field* lane_field_ = nullptr;
+  mutable bison::field* color_field_ = nullptr;
+  mutable bison::field* is_head_field_ = nullptr;
+  mutable bison::field* is_working_field_ = nullptr;
+  mutable bison::field* lane_width_field_ = nullptr;
+  mutable bison::field* dot_radius_field_ = nullptr;
+  mutable bison::field* row_height_field_ = nullptr;
+  mutable bison::field* top_from_field_ = nullptr;
+  mutable bison::field* top_to_field_ = nullptr;
+  mutable bison::field* top_color_field_ = nullptr;
+  mutable bison::field* bottom_from_field_ = nullptr;
+  mutable bison::field* bottom_to_field_ = nullptr;
+  mutable bison::field* bottom_color_field_ = nullptr;
+};
+
+// ── Plot (ImPlot) ────────────────────────────────────────────────────────────
+//
+// PlotItem, the hidden schema base class every concrete series class
+// inherits from at the `bison::dynamic` class-registration level, is never
+// itself instantiated/rendered, so it keeps the plain `ui_element` factory
+// registered for it and has no dedicated C++ type here.
+//
+// Several sibling series classes (PlotLine/PlotScatter/PlotStairs/
+// PlotDigital; PlotBars/PlotBarsH; Plot3DLine/Plot3DScatter/Plot3DTriangle/
+// Plot3DQuad below) share an identical field shape and accessor set, so one
+// C++ type is registered as the factory for each of those sibling classes
+// rather than duplicating an otherwise-identical class body per class key --
+// `class_key()` (already cached on the base) is what a render function uses
+// to tell them apart, not the C++ type.
+
+class ui_plot : public cloneable_ui_element<ui_plot> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string title(std::string def = {}) const {
+    return cached_field_or<std::string>(title_field_, bison::key_t{"title"}, std::move(def));
+  }
+  int32_t flags(int32_t def = 0) const { return cached_field_or<int32_t>(flags_field_, bison::key_t{"flags"}, def); }
+  std::string x_label(std::string def = {}) const {
+    return cached_field_or<std::string>(x_label_field_, bison::key_t{"x_label"}, std::move(def));
+  }
+  std::string y_label(std::string def = {}) const {
+    return cached_field_or<std::string>(y_label_field_, bison::key_t{"y_label"}, std::move(def));
+  }
+  int32_t x_flags(int32_t def = 0) const {
+    return cached_field_or<int32_t>(x_flags_field_, bison::key_t{"x_flags"}, def);
+  }
+  int32_t y_flags(int32_t def = 0) const {
+    return cached_field_or<int32_t>(y_flags_field_, bison::key_t{"y_flags"}, def);
+  }
+  float x_min(float def = 0.0f) const { return cached_field_or<float>(x_min_field_, bison::key_t{"x_min"}, def); }
+  float x_max(float def = 0.0f) const { return cached_field_or<float>(x_max_field_, bison::key_t{"x_max"}, def); }
+  float y_min(float def = 0.0f) const { return cached_field_or<float>(y_min_field_, bison::key_t{"y_min"}, def); }
+  float y_max(float def = 0.0f) const { return cached_field_or<float>(y_max_field_, bison::key_t{"y_max"}, def); }
+
+ private:
+  mutable bison::field* title_field_ = nullptr;
+  mutable bison::field* flags_field_ = nullptr;
+  mutable bison::field* x_label_field_ = nullptr;
+  mutable bison::field* y_label_field_ = nullptr;
+  mutable bison::field* x_flags_field_ = nullptr;
+  mutable bison::field* y_flags_field_ = nullptr;
+  mutable bison::field* x_min_field_ = nullptr;
+  mutable bison::field* x_max_field_ = nullptr;
+  mutable bison::field* y_min_field_ = nullptr;
+  mutable bison::field* y_max_field_ = nullptr;
+};
+
+/// @brief Shared C++ type for PlotLine, PlotScatter, PlotStairs, and
+/// PlotDigital -- all four are `label` + `xs` + `ys`, differing only in
+/// which ImPlot::PlotXxx() call the renderer dispatches to by `class_key()`.
+class ui_plot_xy_series : public cloneable_ui_element<ui_plot_xy_series> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string label(std::string def = {}) const {
+    return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
+  }
+  const std::vector<float>* xs() const { return cached_vector_field<float>(xs_field_, bison::key_t{"xs"}); }
+  const std::vector<float>* ys() const { return cached_vector_field<float>(ys_field_, bison::key_t{"ys"}); }
+
+ private:
+  mutable bison::field* label_field_ = nullptr;
+  mutable bison::field* xs_field_ = nullptr;
+  mutable bison::field* ys_field_ = nullptr;
+};
+
+class ui_plot_stems : public cloneable_ui_element<ui_plot_stems> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string label(std::string def = {}) const {
+    return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
+  }
+  const std::vector<float>* xs() const { return cached_vector_field<float>(xs_field_, bison::key_t{"xs"}); }
+  const std::vector<float>* ys() const { return cached_vector_field<float>(ys_field_, bison::key_t{"ys"}); }
+  float ref(float def = 0.0f) const { return cached_field_or<float>(ref_field_, bison::key_t{"ref"}, def); }
+
+ private:
+  mutable bison::field* label_field_ = nullptr;
+  mutable bison::field* xs_field_ = nullptr;
+  mutable bison::field* ys_field_ = nullptr;
+  mutable bison::field* ref_field_ = nullptr;
+};
+
+class ui_plot_shaded : public cloneable_ui_element<ui_plot_shaded> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string label(std::string def = {}) const {
+    return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
+  }
+  const std::vector<float>* xs() const { return cached_vector_field<float>(xs_field_, bison::key_t{"xs"}); }
+  const std::vector<float>* ys() const { return cached_vector_field<float>(ys_field_, bison::key_t{"ys"}); }
+  const std::vector<float>* ys2() const { return cached_vector_field<float>(ys2_field_, bison::key_t{"ys2"}); }
+  float ref(float def = 0.0f) const { return cached_field_or<float>(ref_field_, bison::key_t{"ref"}, def); }
+
+ private:
+  mutable bison::field* label_field_ = nullptr;
+  mutable bison::field* xs_field_ = nullptr;
+  mutable bison::field* ys_field_ = nullptr;
+  mutable bison::field* ys2_field_ = nullptr;
+  mutable bison::field* ref_field_ = nullptr;
+};
+
+/// @brief Shared C++ type for PlotBars and PlotBarsH -- identical fields;
+/// only the ImPlotBarsFlags_Horizontal dispatch differs by `class_key()`.
+class ui_plot_bars : public cloneable_ui_element<ui_plot_bars> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string label(std::string def = {}) const {
+    return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
+  }
+  const std::vector<float>* xs() const { return cached_vector_field<float>(xs_field_, bison::key_t{"xs"}); }
+  const std::vector<float>* ys() const { return cached_vector_field<float>(ys_field_, bison::key_t{"ys"}); }
+  float bar_size(float def = 0.67f) const {
+    return cached_field_or<float>(bar_size_field_, bison::key_t{"bar_size"}, def);
+  }
+
+ private:
+  mutable bison::field* label_field_ = nullptr;
+  mutable bison::field* xs_field_ = nullptr;
+  mutable bison::field* ys_field_ = nullptr;
+  mutable bison::field* bar_size_field_ = nullptr;
+};
+
+class ui_plot_histogram : public cloneable_ui_element<ui_plot_histogram> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string label(std::string def = {}) const {
+    return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
+  }
+  const std::vector<float>* values() const {
+    return cached_vector_field<float>(values_field_, bison::key_t{"values"});
+  }
+  int32_t bins(int32_t def = -1) const { return cached_field_or<int32_t>(bins_field_, bison::key_t{"bins"}, def); }
+  bool cumulative(bool def = false) const {
+    return cached_field_or<bool>(cumulative_field_, bison::key_t{"cumulative"}, def);
+  }
+  bool density(bool def = false) const {
+    return cached_field_or<bool>(density_field_, bison::key_t{"density"}, def);
+  }
+  float range_min(float def = 0.0f) const {
+    return cached_field_or<float>(range_min_field_, bison::key_t{"range_min"}, def);
+  }
+  float range_max(float def = 0.0f) const {
+    return cached_field_or<float>(range_max_field_, bison::key_t{"range_max"}, def);
+  }
+
+ private:
+  mutable bison::field* label_field_ = nullptr;
+  mutable bison::field* values_field_ = nullptr;
+  mutable bison::field* bins_field_ = nullptr;
+  mutable bison::field* cumulative_field_ = nullptr;
+  mutable bison::field* density_field_ = nullptr;
+  mutable bison::field* range_min_field_ = nullptr;
+  mutable bison::field* range_max_field_ = nullptr;
+};
+
+class ui_plot_histogram2d : public cloneable_ui_element<ui_plot_histogram2d> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string label(std::string def = {}) const {
+    return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
+  }
+  const std::vector<float>* xs() const { return cached_vector_field<float>(xs_field_, bison::key_t{"xs"}); }
+  const std::vector<float>* ys() const { return cached_vector_field<float>(ys_field_, bison::key_t{"ys"}); }
+  int32_t x_bins(int32_t def = -1) const {
+    return cached_field_or<int32_t>(x_bins_field_, bison::key_t{"x_bins"}, def);
+  }
+  int32_t y_bins(int32_t def = -1) const {
+    return cached_field_or<int32_t>(y_bins_field_, bison::key_t{"y_bins"}, def);
+  }
+
+ private:
+  mutable bison::field* label_field_ = nullptr;
+  mutable bison::field* xs_field_ = nullptr;
+  mutable bison::field* ys_field_ = nullptr;
+  mutable bison::field* x_bins_field_ = nullptr;
+  mutable bison::field* y_bins_field_ = nullptr;
+};
+
+class ui_plot_heatmap : public cloneable_ui_element<ui_plot_heatmap> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string label(std::string def = {}) const {
+    return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
+  }
+  const std::vector<float>* values() const {
+    return cached_vector_field<float>(values_field_, bison::key_t{"values"});
+  }
+  int32_t rows(int32_t def = 1) const { return cached_field_or<int32_t>(rows_field_, bison::key_t{"rows"}, def); }
+  int32_t cols(int32_t def = 1) const { return cached_field_or<int32_t>(cols_field_, bison::key_t{"cols"}, def); }
+  float scale_min(float def = 0.0f) const {
+    return cached_field_or<float>(scale_min_field_, bison::key_t{"scale_min"}, def);
+  }
+  float scale_max(float def = 1.0f) const {
+    return cached_field_or<float>(scale_max_field_, bison::key_t{"scale_max"}, def);
+  }
+  std::string format(std::string def = {}) const {
+    return cached_field_or<std::string>(format_field_, bison::key_t{"format"}, std::move(def));
+  }
+  float x_min(float def = 0.0f) const { return cached_field_or<float>(x_min_field_, bison::key_t{"x_min"}, def); }
+  float x_max(float def = 1.0f) const { return cached_field_or<float>(x_max_field_, bison::key_t{"x_max"}, def); }
+  float y_min(float def = 0.0f) const { return cached_field_or<float>(y_min_field_, bison::key_t{"y_min"}, def); }
+  float y_max(float def = 1.0f) const { return cached_field_or<float>(y_max_field_, bison::key_t{"y_max"}, def); }
+
+ private:
+  mutable bison::field* label_field_ = nullptr;
+  mutable bison::field* values_field_ = nullptr;
+  mutable bison::field* rows_field_ = nullptr;
+  mutable bison::field* cols_field_ = nullptr;
+  mutable bison::field* scale_min_field_ = nullptr;
+  mutable bison::field* scale_max_field_ = nullptr;
+  mutable bison::field* format_field_ = nullptr;
+  mutable bison::field* x_min_field_ = nullptr;
+  mutable bison::field* x_max_field_ = nullptr;
+  mutable bison::field* y_min_field_ = nullptr;
+  mutable bison::field* y_max_field_ = nullptr;
+};
+
+class ui_plot_pie_chart : public cloneable_ui_element<ui_plot_pie_chart> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string labels(std::string def = {}) const {
+    return cached_field_or<std::string>(labels_field_, bison::key_t{"labels"}, std::move(def));
+  }
+  const std::vector<float>* values() const {
+    return cached_vector_field<float>(values_field_, bison::key_t{"values"});
+  }
+  float x(float def = 0.5f) const { return cached_field_or<float>(x_field_, bison::key_t{"x"}, def); }
+  float y(float def = 0.5f) const { return cached_field_or<float>(y_field_, bison::key_t{"y"}, def); }
+  float radius(float def = 0.4f) const {
+    return cached_field_or<float>(radius_field_, bison::key_t{"radius"}, def);
+  }
+  bool normalize(bool def = false) const {
+    return cached_field_or<bool>(normalize_field_, bison::key_t{"normalize"}, def);
+  }
+  std::string label_fmt(std::string def = {}) const {
+    return cached_field_or<std::string>(label_fmt_field_, bison::key_t{"label_fmt"}, std::move(def));
+  }
+  float angle0(float def = 90.0f) const {
+    return cached_field_or<float>(angle0_field_, bison::key_t{"angle0"}, def);
+  }
+
+ private:
+  mutable bison::field* labels_field_ = nullptr;
+  mutable bison::field* values_field_ = nullptr;
+  mutable bison::field* x_field_ = nullptr;
+  mutable bison::field* y_field_ = nullptr;
+  mutable bison::field* radius_field_ = nullptr;
+  mutable bison::field* normalize_field_ = nullptr;
+  mutable bison::field* label_fmt_field_ = nullptr;
+  mutable bison::field* angle0_field_ = nullptr;
+};
+
+class ui_plot_text : public cloneable_ui_element<ui_plot_text> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string text(std::string def = {}) const {
+    return cached_field_or<std::string>(text_field_, bison::key_t{"text"}, std::move(def));
+  }
+  float x(float def = 0.0f) const { return cached_field_or<float>(x_field_, bison::key_t{"x"}, def); }
+  float y(float def = 0.0f) const { return cached_field_or<float>(y_field_, bison::key_t{"y"}, def); }
+  float offset_x(float def = 0.0f) const {
+    return cached_field_or<float>(offset_x_field_, bison::key_t{"offset_x"}, def);
+  }
+  float offset_y(float def = 0.0f) const {
+    return cached_field_or<float>(offset_y_field_, bison::key_t{"offset_y"}, def);
+  }
+
+ private:
+  mutable bison::field* text_field_ = nullptr;
+  mutable bison::field* x_field_ = nullptr;
+  mutable bison::field* y_field_ = nullptr;
+  mutable bison::field* offset_x_field_ = nullptr;
+  mutable bison::field* offset_y_field_ = nullptr;
+};
+
+class ui_plot_inf_lines : public cloneable_ui_element<ui_plot_inf_lines> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string label(std::string def = {}) const {
+    return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
+  }
+  const std::vector<float>* values() const {
+    return cached_vector_field<float>(values_field_, bison::key_t{"values"});
+  }
+  bool horizontal(bool def = false) const {
+    return cached_field_or<bool>(horizontal_field_, bison::key_t{"horizontal"}, def);
+  }
+
+ private:
+  mutable bison::field* label_field_ = nullptr;
+  mutable bison::field* values_field_ = nullptr;
+  mutable bison::field* horizontal_field_ = nullptr;
+};
+
+// ── Plot3D (ImPlot3D) ────────────────────────────────────────────────────────
+//
+// Plot3DItem, like PlotItem above, is a hidden schema base never itself
+// instantiated, so it keeps the plain `ui_element` factory.
+
+class ui_plot3d : public cloneable_ui_element<ui_plot3d> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string title(std::string def = {}) const {
+    return cached_field_or<std::string>(title_field_, bison::key_t{"title"}, std::move(def));
+  }
+  std::string x_label(std::string def = {}) const {
+    return cached_field_or<std::string>(x_label_field_, bison::key_t{"x_label"}, std::move(def));
+  }
+  std::string y_label(std::string def = {}) const {
+    return cached_field_or<std::string>(y_label_field_, bison::key_t{"y_label"}, std::move(def));
+  }
+  std::string z_label(std::string def = {}) const {
+    return cached_field_or<std::string>(z_label_field_, bison::key_t{"z_label"}, std::move(def));
+  }
+  int32_t flags(int32_t def = 0) const { return cached_field_or<int32_t>(flags_field_, bison::key_t{"flags"}, def); }
+  int32_t x_flags(int32_t def = 0) const {
+    return cached_field_or<int32_t>(x_flags_field_, bison::key_t{"x_flags"}, def);
+  }
+  int32_t y_flags(int32_t def = 0) const {
+    return cached_field_or<int32_t>(y_flags_field_, bison::key_t{"y_flags"}, def);
+  }
+  int32_t z_flags(int32_t def = 0) const {
+    return cached_field_or<int32_t>(z_flags_field_, bison::key_t{"z_flags"}, def);
+  }
+
+ private:
+  mutable bison::field* title_field_ = nullptr;
+  mutable bison::field* x_label_field_ = nullptr;
+  mutable bison::field* y_label_field_ = nullptr;
+  mutable bison::field* z_label_field_ = nullptr;
+  mutable bison::field* flags_field_ = nullptr;
+  mutable bison::field* x_flags_field_ = nullptr;
+  mutable bison::field* y_flags_field_ = nullptr;
+  mutable bison::field* z_flags_field_ = nullptr;
+};
+
+/// @brief Shared C++ type for Plot3DLine, Plot3DScatter, Plot3DTriangle, and
+/// Plot3DQuad -- all four are `label` + `xs` + `ys` + `zs`, differing only
+/// in which ImPlot3D::PlotXxx() call the renderer dispatches to.
+class ui_plot3d_xyz_series : public cloneable_ui_element<ui_plot3d_xyz_series> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string label(std::string def = {}) const {
+    return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
+  }
+  const std::vector<float>* xs() const { return cached_vector_field<float>(xs_field_, bison::key_t{"xs"}); }
+  const std::vector<float>* ys() const { return cached_vector_field<float>(ys_field_, bison::key_t{"ys"}); }
+  const std::vector<float>* zs() const { return cached_vector_field<float>(zs_field_, bison::key_t{"zs"}); }
+
+ private:
+  mutable bison::field* label_field_ = nullptr;
+  mutable bison::field* xs_field_ = nullptr;
+  mutable bison::field* ys_field_ = nullptr;
+  mutable bison::field* zs_field_ = nullptr;
+};
+
+class ui_plot3d_surface : public cloneable_ui_element<ui_plot3d_surface> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string label(std::string def = {}) const {
+    return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
+  }
+  const std::vector<float>* xs() const { return cached_vector_field<float>(xs_field_, bison::key_t{"xs"}); }
+  const std::vector<float>* ys() const { return cached_vector_field<float>(ys_field_, bison::key_t{"ys"}); }
+  const std::vector<float>* zs() const { return cached_vector_field<float>(zs_field_, bison::key_t{"zs"}); }
+  int32_t x_count(int32_t def = 2) const {
+    return cached_field_or<int32_t>(x_count_field_, bison::key_t{"x_count"}, def);
+  }
+  int32_t y_count(int32_t def = 2) const {
+    return cached_field_or<int32_t>(y_count_field_, bison::key_t{"y_count"}, def);
+  }
+  float scale_min(float def = 0.0f) const {
+    return cached_field_or<float>(scale_min_field_, bison::key_t{"scale_min"}, def);
+  }
+  float scale_max(float def = 0.0f) const {
+    return cached_field_or<float>(scale_max_field_, bison::key_t{"scale_max"}, def);
+  }
+
+ private:
+  mutable bison::field* label_field_ = nullptr;
+  mutable bison::field* xs_field_ = nullptr;
+  mutable bison::field* ys_field_ = nullptr;
+  mutable bison::field* zs_field_ = nullptr;
+  mutable bison::field* x_count_field_ = nullptr;
+  mutable bison::field* y_count_field_ = nullptr;
+  mutable bison::field* scale_min_field_ = nullptr;
+  mutable bison::field* scale_max_field_ = nullptr;
+};
+
+class ui_plot3d_mesh : public cloneable_ui_element<ui_plot3d_mesh> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string label(std::string def = {}) const {
+    return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
+  }
+  const std::vector<float>* xs() const { return cached_vector_field<float>(xs_field_, bison::key_t{"xs"}); }
+  const std::vector<float>* ys() const { return cached_vector_field<float>(ys_field_, bison::key_t{"ys"}); }
+  const std::vector<float>* zs() const { return cached_vector_field<float>(zs_field_, bison::key_t{"zs"}); }
+  const std::vector<int32_t>* indices() const {
+    return cached_vector_field<int32_t>(indices_field_, bison::key_t{"indices"});
+  }
+
+ private:
+  mutable bison::field* label_field_ = nullptr;
+  mutable bison::field* xs_field_ = nullptr;
+  mutable bison::field* ys_field_ = nullptr;
+  mutable bison::field* zs_field_ = nullptr;
+  mutable bison::field* indices_field_ = nullptr;
+};
+
+class ui_plot3d_text : public cloneable_ui_element<ui_plot3d_text> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string text(std::string def = {}) const {
+    return cached_field_or<std::string>(text_field_, bison::key_t{"text"}, std::move(def));
+  }
+  float x(float def = 0.0f) const { return cached_field_or<float>(x_field_, bison::key_t{"x"}, def); }
+  float y(float def = 0.0f) const { return cached_field_or<float>(y_field_, bison::key_t{"y"}, def); }
+  float z(float def = 0.0f) const { return cached_field_or<float>(z_field_, bison::key_t{"z"}, def); }
+  float angle(float def = 0.0f) const {
+    return cached_field_or<float>(angle_field_, bison::key_t{"angle"}, def);
+  }
+  float offset_x(float def = 0.0f) const {
+    return cached_field_or<float>(offset_x_field_, bison::key_t{"offset_x"}, def);
+  }
+  float offset_y(float def = 0.0f) const {
+    return cached_field_or<float>(offset_y_field_, bison::key_t{"offset_y"}, def);
+  }
+
+ private:
+  mutable bison::field* text_field_ = nullptr;
+  mutable bison::field* x_field_ = nullptr;
+  mutable bison::field* y_field_ = nullptr;
+  mutable bison::field* z_field_ = nullptr;
+  mutable bison::field* angle_field_ = nullptr;
+  mutable bison::field* offset_x_field_ = nullptr;
+  mutable bison::field* offset_y_field_ = nullptr;
+};
+
+// ── Text editor ──────────────────────────────────────────────────────────────
+
+class ui_text_editor : public cloneable_ui_element<ui_text_editor> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  std::string file_path(std::string def = {}) const {
+    return cached_field_or<std::string>(file_path_field_, bison::key_t{"file_path"}, std::move(def));
+  }
+  std::string language(std::string def = {}) const {
+    return cached_field_or<std::string>(language_field_, bison::key_t{"language"}, std::move(def));
+  }
+  bool read_only(bool def = false) const {
+    return cached_field_or<bool>(read_only_field_, bison::key_t{"read_only"}, def);
+  }
+  bool wish_ui_schema(bool def = false) const {
+    return cached_field_or<bool>(wish_ui_schema_field_, bison::key_t{"wish_ui_schema"}, def);
+  }
+
+ private:
+  mutable bison::field* file_path_field_ = nullptr;
+  mutable bison::field* language_field_ = nullptr;
+  mutable bison::field* read_only_field_ = nullptr;
+  mutable bison::field* wish_ui_schema_field_ = nullptr;
 };
 
 } // namespace bdg::wish

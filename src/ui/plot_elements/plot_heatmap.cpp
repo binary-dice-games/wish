@@ -87,7 +87,8 @@ void register_plot_heatmap() {
       attr<Description>("Draws a 2-D heatmap from a flat row-major values array.  "
                         "Must be a child of a Plot element with axes configured to match bounds."));
   dynamic::addClass(
-      "wish"_key, std::move(proto), "PlotItem"_key, dynamic::make_factory<ui_element>("wish"_key, "PlotHeatmap"_key));
+      "wish"_key, std::move(proto), "PlotItem"_key,
+      dynamic::make_factory<ui_plot_heatmap>("wish"_key, "PlotHeatmap"_key));
 }
 
 } // namespace bdg::wish

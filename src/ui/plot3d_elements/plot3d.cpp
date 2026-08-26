@@ -154,7 +154,7 @@ void register_plot3d() {
         attr<Description>("An ImPlot3D plot window. "
                           "Children should be Plot3DItem elements (Plot3DLine, Plot3DSurface, etc.)."));
     dynamic::addClass(
-        "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_element>("wish"_key, "Plot3D"_key));
+        "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_plot3d>("wish"_key, "Plot3D"_key));
   }
 }
 

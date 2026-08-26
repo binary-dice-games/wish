@@ -204,7 +204,7 @@ dynamic nano::do_open_file(const dynamic& args) {
   lang_combo["width"_key] = 150.0f;
   lang_combo["order"_key] = int32_t{0};
 
-  ui_element_ptr editor{dynamic::instantiate("wish"_key, "TextEditor"_key)};
+  ui_element_ptr editor = ui_element_ptr::create("wish"_key, "TextEditor"_key);
   editor["file_path"_key] = path;
   editor["language"_key] = initial_language;
   editor["width"_key] = int32_t{0}; // fill available width

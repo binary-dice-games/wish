@@ -205,7 +205,7 @@ TEST_F(BuildTreeSnapshotTest, IncludesRuntimeAppendedChildWithSynthesizedPath) {
   ASSERT_NE(children_f, nullptr);
   ASSERT_TRUE(*children_f);
 
-  bdg::wish::ui_element_ptr row{dynamic::instantiate("wish"_key, "Label"_key)};
+  bdg::wish::ui_element_ptr row = bdg::wish::ui_element_ptr::create("wish"_key, "Label"_key);
   row["text"_key] = std::string{"appended row"};
   (*(*children_f))[size_t{0}] = dynamic_ptr{row};
 
@@ -235,7 +235,7 @@ TEST_F(BuildTreeSnapshotTest, RuntimeAppendedChildDoesNotDuplicateNamedSiblings)
   auto* children_f = tree["list"]->findField<dynamic_ptr>("children"_key);
   ASSERT_NE(children_f, nullptr);
   ASSERT_TRUE(*children_f);
-  bdg::wish::ui_element_ptr row{dynamic::instantiate("wish"_key, "Label"_key)};
+  bdg::wish::ui_element_ptr row = bdg::wish::ui_element_ptr::create("wish"_key, "Label"_key);
   row["text"_key] = std::string{"appended row"};
   (*(*children_f))[size_t{0}] = dynamic_ptr{row};
 
@@ -264,9 +264,9 @@ TEST_F(BuildTreeSnapshotTest, RecursesIntoChildrenOfARuntimeAppendedChild) {
 
   // A TableRow appended to the table, itself with an appended Label cell --
   // two levels of runtime-only nesting, exactly like tail's append_row().
-  bdg::wish::ui_element_ptr row{dynamic::instantiate("wish"_key, "TableRow"_key)};
+  bdg::wish::ui_element_ptr row = bdg::wish::ui_element_ptr::create("wish"_key, "TableRow"_key);
   bdg::bison::dynamic_ptr row_children{bdg::bison::key_t{0U}};
-  bdg::wish::ui_element_ptr cell{dynamic::instantiate("wish"_key, "Label"_key)};
+  bdg::wish::ui_element_ptr cell = bdg::wish::ui_element_ptr::create("wish"_key, "Label"_key);
   cell["text"_key] = std::string{"cell text"};
   (*row_children)[size_t{0}] = dynamic_ptr{cell};
   row["children"_key] = row_children;
@@ -298,7 +298,7 @@ TEST_F(BuildTreeSnapshotTest, RootFilterMatchesASynthesizedPath) {
   })");
   assign_wish_ids(tree);
   auto* children_f = tree["list"]->findField<dynamic_ptr>("children"_key);
-  bdg::wish::ui_element_ptr row{dynamic::instantiate("wish"_key, "Label"_key)};
+  bdg::wish::ui_element_ptr row = bdg::wish::ui_element_ptr::create("wish"_key, "Label"_key);
   (*(*children_f))[size_t{0}] = dynamic_ptr{row};
 
   hit_test_map hits;

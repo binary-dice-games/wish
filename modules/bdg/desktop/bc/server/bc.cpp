@@ -28,7 +28,7 @@ key_t wish_id_of(const Element& element) {
 
 static constexpr const char* kLayout = R"({
   "type": "Window",
-  "title": "Bc",
+  "title": "Calculator",
   "width": 328,
   "height": 420,
   "flags": "NoResize",

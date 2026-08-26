@@ -17,11 +17,6 @@ using namespace bdg::bison;
 
 namespace {
 
-const std::vector<int32_t>* i32_vec_field(const dynamic& obj, key_t k) {
-  const auto* f = obj.findField(k);
-  return (f && f->is<std::vector<int32_t>>()) ? &f->as<std::vector<int32_t>>() : nullptr;
-}
-
 /// @brief Unpacks a 0xRRGGBBAA int32 (see GraphNode's field docs/
 /// docs/ui-elements.md) into an ImGui-ready ImU32, going through the
 /// IM_COL32(r,g,b,a) macro rather than assuming ImGui's internal channel
@@ -37,23 +32,24 @@ ImU32 unpack_color(int32_t packed) {
 
 } // namespace
 
-void render_graph_node(imgui_renderer&, const ui_element& node, const context&) {
-  const int32_t lane = node.get_as<int32_t>("lane"_key, 0);
-  const int32_t color = node.get_as<int32_t>("color"_key, 0);
-  const bool is_head = node.get_as<bool>("is_head"_key, false);
-  const bool is_working = node.get_as<bool>("is_working"_key, false);
-  const float lane_width = node.get_as<float>("lane_width"_key, 16.0f);
-  const float dot_radius = node.get_as<float>("dot_radius"_key, 4.5f);
-  float row_height = node.get_as<float>("row_height"_key, 0.0f);
+void render_graph_node(imgui_renderer&, const ui_element& node_base, const context&) {
+  const auto& node = static_cast<const ui_graph_node&>(node_base);
+  const int32_t lane = node.lane();
+  const int32_t color = node.color();
+  const bool is_head = node.is_head();
+  const bool is_working = node.is_working();
+  const float lane_width = node.lane_width();
+  const float dot_radius = node.dot_radius();
+  float row_height = node.row_height();
   if (row_height <= 0.0f)
     row_height = ImGui::GetTextLineHeightWithSpacing();
 
-  const auto* top_from = i32_vec_field(node, "top_from"_key);
-  const auto* top_to = i32_vec_field(node, "top_to"_key);
-  const auto* top_color = i32_vec_field(node, "top_color"_key);
-  const auto* bottom_from = i32_vec_field(node, "bottom_from"_key);
-  const auto* bottom_to = i32_vec_field(node, "bottom_to"_key);
-  const auto* bottom_color = i32_vec_field(node, "bottom_color"_key);
+  const auto* top_from = node.top_from();
+  const auto* top_to = node.top_to();
+  const auto* top_color = node.top_color();
+  const auto* bottom_from = node.bottom_from();
+  const auto* bottom_to = node.bottom_to();
+  const auto* bottom_color = node.bottom_color();
 
   // Reserve at least enough width for every lane any segment (or this row's
   // own dot) touches, so a row whose lines fan out further than its own dot

@@ -762,7 +762,7 @@ void git_repo::rebuild_graph_table(const dynamic& args) {
     ui_element_ptr row = ui_element_ptr::create("wish"_key, "TableRow"_key);
     assign_id(row);
 
-    ui_element_ptr graph_cell{dynamic::instantiate("wish"_key, "GraphNode"_key)};
+    ui_element_ptr graph_cell = ui_element_ptr::create("wish"_key, "GraphNode"_key);
     graph_cell["lane"_key] = lane;
     graph_cell["color"_key] = color;
     graph_cell["is_head"_key] = is_head;
@@ -1117,7 +1117,7 @@ void git_repo::append_log_row(const std::string& command, int32_t exit_code, boo
   // clipboard directly on click, no round trip needed) and "Clear Log"
   // (every row, not just this one -- offered from every row's menu purely
   // for discoverability, same as a real log viewer's right-click menu).
-  ui_element_ptr context_menu{dynamic::instantiate("wish"_key, "ContextMenu"_key)};
+  ui_element_ptr context_menu = ui_element_ptr::create("wish"_key, "ContextMenu"_key);
   assign_id(context_menu);
 
   ui_element_ptr copy_item = ui_element_ptr::create("wish"_key, "MenuItem"_key);

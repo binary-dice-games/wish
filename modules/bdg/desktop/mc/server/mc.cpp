@@ -386,7 +386,7 @@ ui_element_ptr mc::build_row_context_menu(
     return id;
   };
 
-  ui_element_ptr menu{dynamic::instantiate("wish"_key, "ContextMenu"_key)};
+  ui_element_ptr menu = ui_element_ptr::create("wish"_key, "ContextMenu"_key);
   assign_id(menu);
 
   ui_element_ptr properties = ui_element_ptr::create("wish"_key, "MenuItem"_key);
@@ -397,7 +397,7 @@ ui_element_ptr mc::build_row_context_menu(
   rename["label"_key] = std::string{"Rename..."};
   menu_targets[assign_id(rename)] = row_menu_target{row_menu_action::rename, is_sandbox, entry.name};
 
-  ui_element_ptr sep{dynamic::instantiate("wish"_key, "Separator"_key)};
+  ui_element_ptr sep = ui_element_ptr::create("wish"_key, "Separator"_key);
   assign_id(sep);
 
   ui_element_ptr copy_path = ui_element_ptr::create("wish"_key, "MenuItem"_key);

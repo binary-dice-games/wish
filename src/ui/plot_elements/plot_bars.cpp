@@ -46,7 +46,8 @@ void register_plot_bars() {
                           "If xs is empty, bars are placed at integer positions 0, 1, 2, …  "
                           "Must be a child of a Plot element."));
     dynamic::addClass(
-        "wish"_key, std::move(proto), "PlotItem"_key, dynamic::make_factory<ui_element>("wish"_key, "PlotBars"_key));
+        "wish"_key, std::move(proto), "PlotItem"_key,
+        dynamic::make_factory<ui_plot_bars>("wish"_key, "PlotBars"_key));
   }
 
   // PlotBarsH — horizontal bar chart.
@@ -59,7 +60,8 @@ void register_plot_bars() {
                           "Implemented via ImPlot::PlotBars with ImPlotBarsFlags_Horizontal.  "
                           "Must be a child of a Plot element."));
     dynamic::addClass(
-        "wish"_key, std::move(proto), "PlotItem"_key, dynamic::make_factory<ui_element>("wish"_key, "PlotBarsH"_key));
+        "wish"_key, std::move(proto), "PlotItem"_key,
+        dynamic::make_factory<ui_plot_bars>("wish"_key, "PlotBarsH"_key));
   }
 }
 

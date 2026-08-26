@@ -86,7 +86,8 @@ void register_plot_pie() {
                         "Place inside a Plot with x_flags=31 (NoDecorations) and y_flags=31, "
                         "and set Plot axis limits to [0,1] x [0,1] for correct scaling."));
   dynamic::addClass(
-      "wish"_key, std::move(proto), "PlotItem"_key, dynamic::make_factory<ui_element>("wish"_key, "PlotPieChart"_key));
+      "wish"_key, std::move(proto), "PlotItem"_key,
+      dynamic::make_factory<ui_plot_pie_chart>("wish"_key, "PlotPieChart"_key));
 }
 
 } // namespace bdg::wish

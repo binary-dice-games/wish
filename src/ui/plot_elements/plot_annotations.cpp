@@ -53,7 +53,8 @@ void register_plot_annotations() {
         attr<Description>("Draws a text string at a plot coordinate.  "
                           "Must be a child of a Plot element."));
     dynamic::addClass(
-        "wish"_key, std::move(proto), "PlotItem"_key, dynamic::make_factory<ui_element>("wish"_key, "PlotText"_key));
+        "wish"_key, std::move(proto), "PlotItem"_key,
+        dynamic::make_factory<ui_plot_text>("wish"_key, "PlotText"_key));
   }
 
   // PlotInfLines — infinite vertical or horizontal reference lines.
@@ -84,7 +85,7 @@ void register_plot_annotations() {
         "wish"_key,
         std::move(proto),
         "PlotItem"_key,
-        dynamic::make_factory<ui_element>("wish"_key, "PlotInfLines"_key));
+        dynamic::make_factory<ui_plot_inf_lines>("wish"_key, "PlotInfLines"_key));
   }
 }
 

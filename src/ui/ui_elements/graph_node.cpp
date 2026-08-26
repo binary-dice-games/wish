@@ -119,7 +119,8 @@ void register_graph_node() {
       "specific to git: any lane-assigned DAG (branch/merge graphs, dependency graphs, ...) can "
       "drive it from the same field shape."));
   dynamic::addClass(
-      "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_element>("wish"_key, "GraphNode"_key));
+      "wish"_key, std::move(proto), "Element"_key,
+      dynamic::make_factory<ui_graph_node>("wish"_key, "GraphNode"_key));
 }
 
 } // namespace bdg::wish

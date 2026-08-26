@@ -407,7 +407,7 @@ ui_element_ptr top::build_row_context_menu(row_entry& entry, int pid, const std:
     return id;
   };
 
-  ui_element_ptr menu{dynamic::instantiate("wish"_key, "ContextMenu"_key)};
+  ui_element_ptr menu = ui_element_ptr::create("wish"_key, "ContextMenu"_key);
   assign_id(menu);
 
   ui_element_ptr properties = ui_element_ptr::create("wish"_key, "MenuItem"_key);
@@ -416,7 +416,7 @@ ui_element_ptr top::build_row_context_menu(row_entry& entry, int pid, const std:
   entry.properties_id = properties_id;
   action_item_targets_[properties_id] = row_action_target{pid, row_action_kind::properties, 0};
 
-  ui_element_ptr sep1{dynamic::instantiate("wish"_key, "Separator"_key)};
+  ui_element_ptr sep1 = ui_element_ptr::create("wish"_key, "Separator"_key);
   assign_id(sep1);
 
   ui_element_ptr pause_resume = ui_element_ptr::create("wish"_key, "MenuItem"_key);
@@ -431,7 +431,7 @@ ui_element_ptr top::build_row_context_menu(row_entry& entry, int pid, const std:
   entry.kill_id = kill_id;
   action_item_targets_[kill_id] = row_action_target{pid, row_action_kind::kill, 0};
 
-  ui_element_ptr sep2{dynamic::instantiate("wish"_key, "Separator"_key)};
+  ui_element_ptr sep2 = ui_element_ptr::create("wish"_key, "Separator"_key);
   assign_id(sep2);
 
   ui_element_ptr priority_menu = ui_element_ptr::create("wish"_key, "Menu"_key);

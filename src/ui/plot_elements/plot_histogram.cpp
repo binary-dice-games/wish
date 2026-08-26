@@ -67,7 +67,7 @@ void register_plot_histogram() {
         "wish"_key,
         std::move(proto),
         "PlotItem"_key,
-        dynamic::make_factory<ui_element>("wish"_key, "PlotHistogram"_key));
+        dynamic::make_factory<ui_plot_histogram>("wish"_key, "PlotHistogram"_key));
   }
 
   // PlotHistogram2D — 2-D frequency heatmap.
@@ -109,7 +109,7 @@ void register_plot_histogram() {
         "wish"_key,
         std::move(proto),
         "PlotItem"_key,
-        dynamic::make_factory<ui_element>("wish"_key, "PlotHistogram2D"_key));
+        dynamic::make_factory<ui_plot_histogram2d>("wish"_key, "PlotHistogram2D"_key));
   }
 }
 

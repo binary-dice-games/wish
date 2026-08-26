@@ -41,7 +41,8 @@ void register_plot_series() {
         attr<Description>("Draws a connected line through the (xs, ys) data points.  "
                           "Must be a child of a Plot element."));
     dynamic::addClass(
-        "wish"_key, std::move(proto), "PlotItem"_key, dynamic::make_factory<ui_element>("wish"_key, "PlotLine"_key));
+        "wish"_key, std::move(proto), "PlotItem"_key,
+        dynamic::make_factory<ui_plot_xy_series>("wish"_key, "PlotLine"_key));
   }
 
   // PlotScatter — dots at each data point, no connecting line.
@@ -53,7 +54,8 @@ void register_plot_series() {
         attr<Description>("Draws a marker at each (xs[i], ys[i]) coordinate without connecting lines.  "
                           "Must be a child of a Plot element."));
     dynamic::addClass(
-        "wish"_key, std::move(proto), "PlotItem"_key, dynamic::make_factory<ui_element>("wish"_key, "PlotScatter"_key));
+        "wish"_key, std::move(proto), "PlotItem"_key,
+        dynamic::make_factory<ui_plot_xy_series>("wish"_key, "PlotScatter"_key));
   }
 
   // PlotStairs — staircase / step interpolation between data points.
@@ -65,7 +67,8 @@ void register_plot_series() {
         attr<Description>("Draws a staircase (step-interpolated) line through the data.  "
                           "Must be a child of a Plot element."));
     dynamic::addClass(
-        "wish"_key, std::move(proto), "PlotItem"_key, dynamic::make_factory<ui_element>("wish"_key, "PlotStairs"_key));
+        "wish"_key, std::move(proto), "PlotItem"_key,
+        dynamic::make_factory<ui_plot_xy_series>("wish"_key, "PlotStairs"_key));
   }
 
   // PlotStems — vertical lines from a reference level to each data point.
@@ -84,7 +87,8 @@ void register_plot_series() {
         attr<Description>("Draws vertical stems from the reference level to each (xs[i], ys[i]).  "
                           "Must be a child of a Plot element."));
     dynamic::addClass(
-        "wish"_key, std::move(proto), "PlotItem"_key, dynamic::make_factory<ui_element>("wish"_key, "PlotStems"_key));
+        "wish"_key, std::move(proto), "PlotItem"_key,
+        dynamic::make_factory<ui_plot_stems>("wish"_key, "PlotStems"_key));
   }
 
   // PlotShaded — filled area between two curves (or between one curve and ref).
@@ -111,7 +115,8 @@ void register_plot_series() {
         attr<Description>("Draws a shaded region between two curves, or between ys and a reference.  "
                           "Must be a child of a Plot element."));
     dynamic::addClass(
-        "wish"_key, std::move(proto), "PlotItem"_key, dynamic::make_factory<ui_element>("wish"_key, "PlotShaded"_key));
+        "wish"_key, std::move(proto), "PlotItem"_key,
+        dynamic::make_factory<ui_plot_shaded>("wish"_key, "PlotShaded"_key));
   }
 
   // PlotDigital — binary / digital signal display.
@@ -123,7 +128,8 @@ void register_plot_series() {
         attr<Description>("Draws a digital signal trace: xs = timestamps, ys = 0 or 1.  "
                           "Must be a child of a Plot element."));
     dynamic::addClass(
-        "wish"_key, std::move(proto), "PlotItem"_key, dynamic::make_factory<ui_element>("wish"_key, "PlotDigital"_key));
+        "wish"_key, std::move(proto), "PlotItem"_key,
+        dynamic::make_factory<ui_plot_xy_series>("wish"_key, "PlotDigital"_key));
   }
 }
 

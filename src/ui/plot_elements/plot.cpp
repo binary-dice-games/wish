@@ -180,7 +180,7 @@ void register_plot() {
         attr<Description>("An ImPlot plot window.  "
                           "Children should be PlotItem elements (PlotLine, PlotBars, etc.)."));
     dynamic::addClass(
-        "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_element>("wish"_key, "Plot"_key));
+        "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_plot>("wish"_key, "Plot"_key));
   }
 }
 

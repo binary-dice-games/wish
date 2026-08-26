@@ -46,7 +46,7 @@ void register_plot3d_mesh() {
         "wish"_key,
         std::move(proto),
         "Plot3DItem"_key,
-        dynamic::make_factory<ui_element>("wish"_key, "Plot3DTriangle"_key));
+        dynamic::make_factory<ui_plot3d_xyz_series>("wish"_key, "Plot3DTriangle"_key));
   }
 
   // Plot3DQuad — a set of filled quads.
@@ -83,7 +83,7 @@ void register_plot3d_mesh() {
         "wish"_key,
         std::move(proto),
         "Plot3DItem"_key,
-        dynamic::make_factory<ui_element>("wish"_key, "Plot3DQuad"_key));
+        dynamic::make_factory<ui_plot3d_xyz_series>("wish"_key, "Plot3DQuad"_key));
   }
 
   // Plot3DMesh — indexed triangle mesh with separate vertex and index arrays.
@@ -128,7 +128,7 @@ void register_plot3d_mesh() {
         "wish"_key,
         std::move(proto),
         "Plot3DItem"_key,
-        dynamic::make_factory<ui_element>("wish"_key, "Plot3DMesh"_key));
+        dynamic::make_factory<ui_plot3d_mesh>("wish"_key, "Plot3DMesh"_key));
   }
 }
 

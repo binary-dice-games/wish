@@ -76,7 +76,7 @@ void register_plot3d_surface() {
         "wish"_key,
         std::move(proto),
         "Plot3DItem"_key,
-        dynamic::make_factory<ui_element>("wish"_key, "Plot3DSurface"_key));
+        dynamic::make_factory<ui_plot3d_surface>("wish"_key, "Plot3DSurface"_key));
   }
 }
 
