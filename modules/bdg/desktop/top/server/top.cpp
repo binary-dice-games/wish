@@ -140,7 +140,7 @@ static constexpr const char* kLayout = R"({
           "type": "Table", "id": "##proc_table", "columns": 6,
           "profiler_marker": "Process Table",
           "flags": "Resizable|RowBg|Borders|Sortable|ScrollY", "headers": true,
-          "outer_width": 0, "height": -1,
+          "outer_width": 0, "height": -1, "auto_scroll": false,
           "children": {
             "col_pid":   { "type": "TableColumn", "label": "PID",     "flags": "WidthFixed", "init_width": 70,  "column_id": 0 },
             "col_name":  { "type": "TableColumn", "label": "Name",    "flags": "WidthFixed", "init_width": 140, "column_id": 1 },

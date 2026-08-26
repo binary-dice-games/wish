@@ -36,11 +36,15 @@ DECLARE_int32(font_size);
 DECLARE_string(renderer);
 DECLARE_int32(web_port);
 DECLARE_string(web_bind);
+DECLARE_string(profiling_dir);
+DECLARE_bool(profiling_autostart);
 #else
 DEFINE_int32(font_size, 16, "Font size in pixels");
 DEFINE_string(renderer, "web", "Rendering backend: sdl3 or web");
 DEFINE_int32(web_port, 8080, "HTTP/WebSocket port for --renderer web");
 DEFINE_string(web_bind, "127.0.0.1", "Bind address for --renderer web (localhost-only by default)");
+DEFINE_string(profiling_dir, "", "Directory for Perfetto trace output; empty disables profiling");
+DEFINE_bool(profiling_autostart, false, "Start capture immediately on startup (requires --profiling_dir)");
 #endif
 
 DECLARE_bool(list);
@@ -217,11 +221,22 @@ std::unique_ptr<bison::rmi::standalone> wish_standalone_app::make_standalone() {
 }
 
 void wish_standalone_app::open_session(bison::rmi::standalone& sa) {
-  static_cast<wish_standalone_session&>(sa).start();
+  auto& session = static_cast<wish_standalone_session&>(sa);
+  if (!FLAGS_profiling_dir.empty())
+    session.enable_profiling(FLAGS_profiling_dir);
+  session.start();
+  if (FLAGS_profiling_autostart) {
+    if (FLAGS_profiling_dir.empty())
+      std::cout << "[wish standalone] --profiling_autostart requires --profiling_dir; ignoring\n";
+    else
+      session.start_capture_now("startup");
+  }
 }
 
 void wish_standalone_app::close_session(bison::rmi::standalone& sa) {
-  static_cast<wish_standalone_session&>(sa).stop();
+  auto& session = static_cast<wish_standalone_session&>(sa);
+  session.stop_capture_now();
+  session.stop();
 }
 
 int wish_standalone_app::on_session(bison::rmi::standalone& sa) {
