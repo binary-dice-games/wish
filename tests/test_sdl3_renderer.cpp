@@ -13,6 +13,7 @@ namespace bdg::wish {
 // they run without throwing.
 class testable_sdl3_renderer : public sdl3_renderer {
  public:
+  using sdl3_renderer::display_scale;
   using sdl3_renderer::sdl_renderer;
 };
 
@@ -56,6 +57,28 @@ class Sdl3RendererTest : public ::testing::Test {
 };
 
 } // namespace
+
+// display_scale() compensates for SDL3 not separating window "points" from
+// physical pixels on Windows (see its doc comment in sdl3_renderer.hpp):
+// setup() must never leave it at zero or negative -- SDL_GetWindowDisplayScale()
+// returning 0.0f (documented failure case, and the expected result under the
+// headless "dummy" driver used here) must fall back to 1.0f, not propagate
+// into style.FontSizeBase/ScaleAllSizes as a zero/negative multiplier that
+// would collapse the whole UI to nothing.
+TEST_F(Sdl3RendererTest, DisplayScaleFallsBackToOneUnderHeadlessDriver) {
+  EXPECT_FLOAT_EQ(renderer_->display_scale(), 1.0f);
+}
+
+// FontSizeBase must track font_size_ * display_scale() so the default font
+// renders at the compensated size, not the raw --font_size flag value.
+// rebuild_font_atlas() (where FontSizeBase is set) only runs lazily off
+// fonts_dirty_, on the first begin_frame() -- not in setup() -- so drive one
+// frame first.
+TEST_F(Sdl3RendererTest, FontSizeBaseIsScaledByDisplayScale) {
+  renderer_->begin_frame();
+  renderer_->end_frame();
+  EXPECT_FLOAT_EQ(ImGui::GetStyle().FontSizeBase, 16.0f * renderer_->display_scale());
+}
 
 TEST_F(Sdl3RendererTest, BeginRenderTargetReturnsNonNullTexture) {
   ImTextureID tex = renderer_->begin_render_target(64, 64);

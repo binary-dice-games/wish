@@ -201,12 +201,37 @@ class sdl3_renderer : public imgui_renderer
     return sdl_renderer_;
   }
 
+  /// @brief The Windows content-scale factor applied to fonts/style in
+  ///        setup()/rebuild_font_atlas() to compensate for SDL3 not
+  ///        separating window "points" from physical pixels there. See
+  ///        display_scale_'s doc comment. Exposed for tests only.
+  float display_scale() const {
+    return display_scale_;
+  }
+
  private:
   const char* title_;
   int width_;
   int height_;
   int font_size_;
   SDL_Window* window_ = nullptr;
+
+  // Windows content-scale factor (e.g. 1.5 at 150% display scaling), read
+  // once in setup() via SDL_GetWindowDisplayScale(). Unlike web_renderer
+  // (where the browser reports canvas size in DPI-normalized CSS px and
+  // devicePixelRatio separately), SDL3's window size on Windows *is* the
+  // literal physical pixel count -- SDL_GetWindowSize() and
+  // SDL_GetWindowSizeInPixels() return the same value, so
+  // io.DisplayFramebufferScale computed by ImGui_ImplSDL3_NewFrame() is
+  // always ~1.0 there regardless of the OS scale setting. Left uncorrected,
+  // this makes the whole UI (fonts, padding, spacing) render at a fixed
+  // physical pixel size that ignores Windows' Display Scale setting, so it
+  // looks visibly smaller than the equivalent web UI at the same logical
+  // width/height. rebuild_font_atlas() and setup() multiply font sizes and
+  // ImGuiStyle by this factor to compensate. Not updated if the window is
+  // later dragged to a monitor with a different scale.
+  float display_scale_ = 1.0f;
+
   SDL_Renderer* sdl_renderer_ = nullptr;
   std::atomic<bool> quit_{false};
 

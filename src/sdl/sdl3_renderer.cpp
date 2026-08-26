@@ -49,6 +49,13 @@ void sdl3_renderer::setup() {
     throw std::runtime_error(std::string("SDL_CreateWindow failed: ") + SDL_GetError());
   }
 
+  // See display_scale_'s doc comment in the header: SDL3 on Windows doesn't
+  // separate window "points" from physical pixels, so this is the only
+  // signal we get for the OS Display Scale setting.
+  display_scale_ = SDL_GetWindowDisplayScale(window_);
+  if (display_scale_ <= 0.0f)
+    display_scale_ = 1.0f;
+
   sdl_renderer_ = SDL_CreateRenderer(window_, nullptr);
   if (!sdl_renderer_) {
     SDL_DestroyWindow(window_);
@@ -64,6 +71,12 @@ void sdl3_renderer::setup() {
   ImPlot::CreateContext();
   ImPlot3D::CreateContext();
   ImGui::StyleColorsDark();
+  // Compensate for SDL3's lack of Windows content-scale normalization (see
+  // display_scale_'s doc comment) by scaling padding/spacing/rounding etc.
+  // to match what a DPI-normalized backend (like web_renderer) renders at
+  // the same logical width/height. Font size is scaled separately in
+  // rebuild_font_atlas(), since ScaleAllSizes() doesn't touch fonts.
+  ImGui::GetStyle().ScaleAllSizes(display_scale_);
 
   ImGuiIO& io = ImGui::GetIO();
   io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
@@ -248,21 +261,28 @@ ImFont* sdl3_renderer::get_or_load_font(const std::string& path, float size) {
 
 void sdl3_renderer::rebuild_font_atlas() {
   ImGuiStyle& style = ImGui::GetStyle();
-  style.FontSizeBase = font_size_;
+  style.FontSizeBase = font_size_ * display_scale_;
 
   ImGuiIO& io = ImGui::GetIO();
   io.Fonts->Clear();
   io.Fonts->AddFontDefaultVector();
 
   // Re-add all previously loaded fonts (ImFont* pointers must be refreshed).
+  // Cache keys stay in the caller's logical `size`; only the actual
+  // rasterized size is scaled, so an explicit widget font size (e.g. from
+  // ui_element::font_size()) matches the same display_scale_ compensation
+  // as the default font above.
   for (auto& [key, ptr] : font_cache_) {
-    ptr = std::filesystem::exists(key.path) ? io.Fonts->AddFontFromFileTTF(key.path.c_str(), key.size) : nullptr;
+    ptr = std::filesystem::exists(key.path)
+              ? io.Fonts->AddFontFromFileTTF(key.path.c_str(), key.size * display_scale_)
+              : nullptr;
   }
 
   // Add newly requested fonts, skipping any whose file cannot be found.
   for (const auto& key : pending_fonts_) {
-    font_cache_[key] =
-        std::filesystem::exists(key.path) ? io.Fonts->AddFontFromFileTTF(key.path.c_str(), key.size) : nullptr;
+    font_cache_[key] = std::filesystem::exists(key.path)
+                            ? io.Fonts->AddFontFromFileTTF(key.path.c_str(), key.size * display_scale_)
+                            : nullptr;
   }
   pending_fonts_.clear();
 
