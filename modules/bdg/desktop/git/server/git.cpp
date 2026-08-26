@@ -741,6 +741,7 @@ void git_repo::rebuild_graph_table(const dynamic& args) {
   });
 
   const bool working_dirty = args.as<bool>("working_dirty"_key);
+  const std::string head_hash = args.as<std::string>("head_hash"_key);
   auto layout = compute_git_graph_layout(commit_inputs);
 
   // Local, freshly-zeroed counter: this table's children map was just fully
@@ -820,7 +821,7 @@ void git_repo::rebuild_graph_table(const dynamic& args) {
   }
 
   for (size_t i = 0; i < metas.size(); ++i) {
-    const bool is_head = (i == 0) && !working_dirty;
+    const bool is_head = !working_dirty && !head_hash.empty() && metas[i].hash == head_hash;
     add_row(
         metas[i].hash,
         metas[i].subject,

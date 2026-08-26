@@ -86,6 +86,10 @@ class git_repo : public form {
   ///     display order (newest first, topologically sorted).
   ///   - `working_dirty` (bool) — true if the working tree has uncommitted
   ///     changes; prepends a synthetic "Uncommitted changes" row.
+  ///   - `head_hash` (string) — full SHA of the current `HEAD` commit, used
+  ///     to mark that row's `GraphNode.is_head` instead of assuming row 0
+  ///     is HEAD (the log spans `--branches --tags`, so the newest commit
+  ///     across *all* refs is often not the checked-out branch's tip).
   bison::dynamic do_update_log(const bison::dynamic& args);
 
   /// @brief RMI method: replace the Files panel with the working directory's

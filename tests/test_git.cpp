@@ -34,9 +34,10 @@ struct fake_commit {
   std::string subject;
 };
 
-dynamic make_log_args(const std::vector<fake_commit>& commits, bool working_dirty) {
+dynamic make_log_args(const std::vector<fake_commit>& commits, bool working_dirty, std::string head_hash = {}) {
   dynamic args;
   args["working_dirty"_key] = working_dirty;
+  args["head_hash"_key] = head_hash;
 
   dynamic arr;
   size_t i = 0;
@@ -418,6 +419,44 @@ TEST_F(GitRepoRmiTest, UpdateLogAddsSyntheticWorkingRowWhenDirty) {
 
   // The synthetic "Uncommitted changes" row plus the one real commit.
   EXPECT_EQ(child_array_count(root_ + ".vbox.body.graph_panel.graph_table"), 2u);
+}
+
+TEST_F(GitRepoRmiTest, UpdateLogMarksHeadRowByHashNotPosition) {
+  // "c2" is the newest commit by log order (row 0), but head_hash points at
+  // the older "c1" -- e.g. a checked-out branch whose tip is behind another
+  // branch's tip in --branches --tags --date-order. is_head must follow the
+  // hash, not default to row 0.
+  call("update_log"_key,
+       make_log_args(
+           {
+               {"c2", {"c1"}, "Ada", "2026-01-02 10:00", "second"},
+               {"c1", {}, "Ada", "2026-01-01 10:00", "first"},
+           },
+           /*working_dirty=*/false,
+           /*head_hash=*/"c1"));
+
+  auto table = srv_->last_session->ui_objects.at(root_ + ".vbox.body.graph_panel.graph_table");
+  auto row0_cell = nth_child(nth_child(table, 0), 0);
+  auto row1_cell = nth_child(nth_child(table, 1), 0);
+  ASSERT_TRUE(row0_cell);
+  ASSERT_TRUE(row1_cell);
+  EXPECT_FALSE(row0_cell->as<bool>("is_head"_key));
+  EXPECT_TRUE(row1_cell->as<bool>("is_head"_key));
+}
+
+TEST_F(GitRepoRmiTest, UpdateLogMarksNoRowHeadWhenHashUnknown) {
+  call("update_log"_key,
+       make_log_args(
+           {
+               {"c1", {}, "Ada", "2026-01-01 10:00", "first"},
+           },
+           /*working_dirty=*/false,
+           /*head_hash=*/""));
+
+  auto table = srv_->last_session->ui_objects.at(root_ + ".vbox.body.graph_panel.graph_table");
+  auto row0_cell = nth_child(nth_child(table, 0), 0);
+  ASSERT_TRUE(row0_cell);
+  EXPECT_FALSE(row0_cell->as<bool>("is_head"_key));
 }
 
 TEST_F(GitRepoRmiTest, UpdateLogRebuildReplacesRowsRatherThanAccumulating) {

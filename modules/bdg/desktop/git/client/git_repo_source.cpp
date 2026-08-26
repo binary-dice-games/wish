@@ -202,6 +202,12 @@ void git_repo_source::push_log() {
   dynamic args;
   args["working_dirty"_key] = working_tree_dirty();
 
+  auto head_sha = run_logged({"rev-parse", "HEAD"});
+  std::string head_hash = head_sha.ok() ? head_sha.stdout_text : std::string{};
+  while (!head_hash.empty() && (head_hash.back() == '\n' || head_hash.back() == '\r'))
+    head_hash.pop_back();
+  args["head_hash"_key] = head_hash;
+
   // \x1f (unit separator) between fields, \x1e (record separator) between
   // commits -- avoids any collision with real commit-message content,
   // unlike a printable delimiter such as '|'.
