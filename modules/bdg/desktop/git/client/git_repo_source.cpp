@@ -434,10 +434,18 @@ void git_repo_source::on_commit(const std::string& message) {
 void git_repo_source::on_checkout(const std::string& ref) {
   auto r = run_logged({"switch", ref});
   if (!r.ok() && ref.find('/') != std::string::npos) {
-    // Likely a bare remote-tracking ref (e.g. "origin/feature") with no
-    // local counterpart yet -- create+track a local branch for it.
+    // ref looks like a remote-tracking ref (e.g. "origin/feature") -- `git
+    // switch` refuses to check that out directly (it insists on --detach
+    // for a non-branch ref, unlike `git checkout`'s DWIM). Try the
+    // equivalent local branch name first: it may already exist (checked
+    // out before, or created independently of this remote-tracking ref),
+    // in which case just switching to it is correct and `-c` would fail
+    // with "a branch named ... already exists". Only create+track a new
+    // local branch if none exists yet.
     std::string local = ref.substr(ref.find('/') + 1);
-    r = run_logged({"switch", "--track", "-c", local, ref});
+    r = run_logged({"switch", local});
+    if (!r.ok())
+      r = run_logged({"switch", "--track", "-c", local, ref});
   }
   dynamic report;
   report["command"_key] = std::string{"checkout"};
