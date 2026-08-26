@@ -23,7 +23,7 @@ TEST_F(UiElementTest, ClassKeyMatchesRawClassField) {
   auto map = bdg::wish::import_json(R"({"type":"Button","label":"hi"})");
   ui_element& node = *map[""];
 
-  EXPECT_EQ(node.class_key(), node.as<key_t>(dynamic::CLASS));
+  EXPECT_EQ(node.class_key(), node.as<bdg::bison::key_t>(dynamic::CLASS));
   EXPECT_EQ(node.class_key(), "Button"_key);
 }
 
@@ -31,7 +31,7 @@ TEST_F(UiElementTest, ClassKeyStableAcrossRepeatedCalls) {
   auto map = bdg::wish::import_json(R"({"type":"Button","label":"hi"})");
   ui_element& node = *map[""];
 
-  key_t first = node.class_key();
+  bdg::bison::key_t first = node.class_key();
   for (int i = 0; i < 5; ++i)
     EXPECT_EQ(node.class_key(), first);
 }
