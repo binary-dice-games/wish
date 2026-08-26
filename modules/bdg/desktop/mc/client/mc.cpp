@@ -270,14 +270,16 @@ void run_mc(wish_app_host& s) {
   // between concurrent transfers. A failure on one file is reported but
   // doesn't abort the rest of the batch.
   auto do_upload = [&s](const std::shared_ptr<rmi::proxy::dynamic>& explorer, std::vector<std::string> names,
-                        std::string local_path_str) {
-    std::thread([&s, explorer, names = std::move(names), local_path_str]() {
+                        std::string local_path_str, std::string sandbox_path_str) {
+    std::thread([&s, explorer, names = std::move(names), local_path_str, sandbox_path_str]() {
       for (auto& name : names) {
         try {
           auto data = read_local_file(fs::path(local_path_str) / name);
+          std::string remote_name =
+              sandbox_path_str.empty() ? name : sandbox_path_str + "/" + name;
           int last_percent = -1;
           s.upload_file(
-               name, data,
+               remote_name, data,
                [explorer, &last_percent](std::uint64_t transferred, std::uint64_t total) {
                  report_transfer_progress(explorer, last_percent, transferred, total);
                })
@@ -297,13 +299,16 @@ void run_mc(wish_app_host& s) {
   // currently-shown local directory, then re-lists the left panel once.
   // Shared the same way as do_upload above.
   auto do_download = [&s](const std::shared_ptr<rmi::proxy::dynamic>& explorer,
-                          const std::shared_ptr<fs::path>& cur_dir, std::vector<std::string> names) {
-    std::thread([&s, explorer, cur_dir, names = std::move(names)]() {
+                          const std::shared_ptr<fs::path>& cur_dir, std::vector<std::string> names,
+                          std::string sandbox_path_str) {
+    std::thread([&s, explorer, cur_dir, names = std::move(names), sandbox_path_str]() {
       for (auto& name : names) {
         try {
+          std::string remote_name =
+              sandbox_path_str.empty() ? name : sandbox_path_str + "/" + name;
           int last_percent = -1;
           auto data = s.download_file(
-                           name,
+                           remote_name,
                            [explorer, &last_percent](std::uint64_t transferred, std::uint64_t total) {
                              report_transfer_progress(explorer, last_percent, transferred, total);
                            })
@@ -323,7 +328,8 @@ void run_mc(wish_app_host& s) {
   // Upload button clicked with one or more local files selected and no name
   // conflicts.
   explorer->onEvent("on_upload_requested"_key, [explorer, do_upload](dynamic payload) {
-    do_upload(explorer, read_names(payload), payload.as<std::string>("local_path"_key));
+    do_upload(explorer, read_names(payload), payload.as<std::string>("local_path"_key),
+        payload.as<std::string>("sandbox_path"_key));
   });
 
   // Some/all of the upload targets already exist in the sandbox: confirm
@@ -332,27 +338,32 @@ void run_mc(wish_app_host& s) {
   explorer->onEvent("on_upload_conflict"_key, [&s, explorer, do_upload](dynamic payload) {
     auto names = read_names(payload);
     auto local_path_str = payload.as<std::string>("local_path"_key);
+    auto sandbox_path_str = payload.as<std::string>("sandbox_path"_key);
     std::string message = names.size() == 1
         ? "\"" + names[0] + "\" already exists in the sandbox. Overwrite it?"
         : std::to_string(names.size()) + " files already exist in the sandbox. Overwrite them?";
-    confirm_overwrite(
-        s, message, [explorer, do_upload, names, local_path_str]() { do_upload(explorer, names, local_path_str); });
+    confirm_overwrite(s, message, [explorer, do_upload, names, local_path_str, sandbox_path_str]() {
+      do_upload(explorer, names, local_path_str, sandbox_path_str);
+    });
   });
 
   // Download button clicked with one or more sandbox files selected and no
   // name conflicts.
   explorer->onEvent("on_download_requested"_key, [explorer, cur_dir, do_download](dynamic payload) {
-    do_download(explorer, cur_dir, read_names(payload));
+    do_download(explorer, cur_dir, read_names(payload), payload.as<std::string>("sandbox_path"_key));
   });
 
   // Some/all of the download targets already exist locally: confirm once
   // for the whole batch via a MessageBox before overwriting.
   explorer->onEvent("on_download_conflict"_key, [&s, explorer, cur_dir, do_download](dynamic payload) {
     auto names = read_names(payload);
+    auto sandbox_path_str = payload.as<std::string>("sandbox_path"_key);
     std::string message = names.size() == 1
         ? "\"" + names[0] + "\" already exists locally. Overwrite it?"
         : std::to_string(names.size()) + " files already exist locally. Overwrite them?";
-    confirm_overwrite(s, message, [explorer, cur_dir, do_download, names]() { do_download(explorer, cur_dir, names); });
+    confirm_overwrite(s, message, [explorer, cur_dir, do_download, names, sandbox_path_str]() {
+      do_download(explorer, cur_dir, names, sandbox_path_str);
+    });
   });
 
   explorer->onEvent("closed"_key, [&s](dynamic) { s.signal_done(); });

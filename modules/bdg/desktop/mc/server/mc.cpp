@@ -980,11 +980,13 @@ void mc::on_event(key_t id, key_t event, const dynamic& payload) {
     if (!ready.empty()) {
       dynamic req = make_names_payload(ready);
       req["local_path"_key] = local_path_;
+      req["sandbox_path"_key] = sandbox_path_;
       emit("on_upload_requested"_key, std::move(req));
     }
     if (!conflicts.empty()) {
       dynamic req = make_names_payload(conflicts);
       req["local_path"_key] = local_path_;
+      req["sandbox_path"_key] = sandbox_path_;
       emit("on_upload_conflict"_key, std::move(req));
     }
     return;
@@ -999,10 +1001,16 @@ void mc::on_event(key_t id, key_t event, const dynamic& payload) {
     std::vector<std::string> ready, conflicts;
     for (auto& name : files)
       (local_has_file(name) ? conflicts : ready).push_back(name);
-    if (!ready.empty())
-      emit("on_download_requested"_key, make_names_payload(ready));
-    if (!conflicts.empty())
-      emit("on_download_conflict"_key, make_names_payload(conflicts));
+    if (!ready.empty()) {
+      dynamic req = make_names_payload(ready);
+      req["sandbox_path"_key] = sandbox_path_;
+      emit("on_download_requested"_key, std::move(req));
+    }
+    if (!conflicts.empty()) {
+      dynamic req = make_names_payload(conflicts);
+      req["sandbox_path"_key] = sandbox_path_;
+      emit("on_download_conflict"_key, std::move(req));
+    }
     return;
   }
 

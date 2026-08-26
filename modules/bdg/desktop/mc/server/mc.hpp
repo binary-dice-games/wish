@@ -49,21 +49,25 @@ class properties_dialog;
 ///   - `"on_local_navigate"` (`{name, type}`, `type` is `"dir"` or `"path"`)
 ///     — client should re-list the target local directory and call
 ///     `update_local_listing()`.
-///   - `"on_upload_requested"` (`{names, local_path}`, `names` a plain-string
-///     array) — client should read `local_path/<name>` for each `names`
-///     entry, `upload_file()` it, then call `refresh_sandbox()` once after
+///   - `"on_upload_requested"` (`{names, local_path, sandbox_path}`, `names`
+///     a plain-string array) — client should read `local_path/<name>` for
+///     each `names` entry and `upload_file()` it to
+///     `"<sandbox_path>/<name>"` (or just `<name>` when `sandbox_path` is
+///     empty, i.e. sandbox root), then call `refresh_sandbox()` once after
 ///     the whole batch.
-///   - `"on_download_requested"` (`{names}`) — client should `download_file()`
-///     each entry, write it under the current local path, then call
+///   - `"on_download_requested"` (`{names, sandbox_path}`) — client should
+///     `download_file("<sandbox_path>/<name>")` (or just `<name>` when
+///     `sandbox_path` is empty, i.e. sandbox root) for each `names` entry,
+///     write it under the current local path, then call
 ///     `update_local_listing()` once after the whole batch to refresh the
 ///     left panel.
-///   - `"on_upload_conflict"` (`{names, local_path}`) — every name in
-///     `names` already exists in the sandbox. The client should confirm
+///   - `"on_upload_conflict"` (`{names, local_path, sandbox_path}`) — every
+///     name in `names` already exists in the sandbox. The client should confirm
 ///     once with the user (e.g. via an instantiated `MessageBox`,
 ///     `buttons: "yes_no"`) and, if confirmed, proceed exactly as it would
 ///     for `on_upload_requested`.
-///   - `"on_download_conflict"` (`{names}`) — same as `on_upload_conflict`,
-///     but these targets already exist locally.
+///   - `"on_download_conflict"` (`{names, sandbox_path}`) — same as
+///     `on_upload_conflict`, but these targets already exist locally.
 ///   - `"on_local_rename_requested"` (`{old_name, new_name}`) — the user
 ///     confirmed the local panel's Rename dialog. The client should rename
 ///     `old_name` to `new_name` inside the currently-shown local directory
