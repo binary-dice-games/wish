@@ -101,6 +101,42 @@ static natural_size measure_text_editor(imgui_renderer&, const ui_element&, cons
   return {0.0f, 0.0f};
 }
 
+// Combo's *width* shares Spring/TextEditor's exact hazard: render_combo()
+// (imgui_ui_renderer.cpp) only calls SetNextItemWidth() when an explicit
+// "width" field is set -- an unhinted Combo renders at ImGui's own default
+// item width, which (absent a PushItemWidth()) is "fill to the current
+// window's right edge", not a genuine content-derived natural size the way
+// a Label/Button's auto width is. Falling through to the generic
+// last_rendered_size() fallback below created the identical unbounded
+// feedback loop Spring/TextEditor's own comments describe: an enclosing
+// HorizontalLayout with no other sized sibling reads this Combo's last real
+// render as its own natural content_extent, wraps a BeginChild of exactly
+// that (already-once-shrunk) size around the row, and the Combo's "fill to
+// edge" default then renders slightly smaller inside that child window
+// every single frame -- confirmed live via a real "extension filter combo
+// shrinks to nothing" bug report (a lone, unhinted Combo inside its own
+// HorizontalLayout row, e.g. file_dialog.cpp's filter_row).
+//
+// Combo's *height*, unlike its width, is NOT ambient-dependent -- a single-
+// line framed widget's height is always exactly ImGui::GetFrameHeight()
+// (font size + frame padding), the same stable, content-derived quantity a
+// Button's height is. Zeroing it out too (matching Spring/TextEditor's
+// return {0,0} verbatim, tried first) under-predicts an auto-height
+// enclosing row's real screen space: a sibling row that resolves *its* own
+// height from "whatever's left over" (a stretch/fill child, e.g.
+// file_dialog.cpp's file_table with "height": -1) then gets handed too
+// much of the budget, overflowing the window's real available height and
+// pushing/clipping everything after it -- confirmed live as the Open/Cancel
+// buttons disappearing below an Open File dialog's now-taller file list
+// once the width-only fix landed. Reporting the real frame height keeps
+// every sibling row's space budget accurate while still fixing the width
+// hazard -- always give a Layout-nested Combo an explicit "width" (or let
+// it stay the sole/last child of a row with no self-wrap trigger) if it
+// needs a specific one.
+static natural_size measure_combo(imgui_renderer&, const ui_element&, const context&) {
+  return {0.0f, ImGui::GetFrameHeight()};
+}
+
 natural_size measure_node(imgui_renderer& r, const ui_element& node, const context& s);
 
 static const measure_fn_map& measure_dispatch_fns();
@@ -301,6 +337,7 @@ static const measure_fn_map& measure_dispatch_fns() {
   static const measure_fn_map tbl{
       {"Spring"_key.id, measure_spring},
       {"TextEditor"_key.id, measure_text_editor},
+      {"Combo"_key.id, measure_combo},
       {"Table"_key.id, measure_table},
       {"VerticalLayout"_key.id, measure_vertical_layout},
       {"HorizontalLayout"_key.id, measure_horizontal_layout},

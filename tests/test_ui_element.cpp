@@ -7,6 +7,9 @@
 #include "src/bison/bison_common.hpp"
 #include "src/bison/bison_object.hpp"
 
+#include <string>
+#include <vector>
+
 using namespace bdg::bison;
 using bdg::wish::ui_element;
 
@@ -196,4 +199,71 @@ TEST_F(UiElementTest, SelectedDefaultsFalseAndReflectsWrites) {
   EXPECT_TRUE(node.selected());
   node["selected"_key] = false;
   EXPECT_FALSE(node.selected());
+}
+
+// ── for_each_child_ordered() / clone_ptr() ──────────────────────────────────
+//
+// Regression coverage for a bug where cloning a tree (as ui_template.cpp's
+// prototype instantiation does for every template-instantiated UI) left the
+// clone's for_each_child_ordered() cache unbuilt, silently falling back to
+// hash-sorted map order instead of declaration order -- see ui_element::
+// clone_ptr()'s doc comment.
+
+static std::vector<std::string> collect_labels_in_order(const ui_element& node) {
+  std::vector<std::string> labels;
+  node.for_each_child_ordered(
+      [&](bdg::bison::key_t, ui_element& child) { labels.push_back(child.as<std::string>("label"_key)); });
+  return labels;
+}
+
+TEST_F(UiElementTest, ForEachChildOrderedMatchesDeclarationOrderBeforeClone) {
+  // Named children whose keys hash in a different order than they're
+  // declared -- if for_each_child_ordered() ever fell back to hash-sorted
+  // map order, this would catch it even before any clone is involved.
+  auto map = bdg::wish::import_json(R"({
+    "type": "VerticalLayout",
+    "children": {
+      "zzz_child": {"type": "Button", "label": "First"},
+      "aaa_child": {"type": "Button", "label": "Second"},
+      "mmm_child": {"type": "Button", "label": "Third"}
+    }
+  })");
+  ui_element& root = *map[""];
+
+  EXPECT_EQ(collect_labels_in_order(root), (std::vector<std::string>{"First", "Second", "Third"}));
+}
+
+TEST_F(UiElementTest, ForEachChildOrderedMatchesDeclarationOrderAfterClone) {
+  auto map = bdg::wish::import_json(R"({
+    "type": "VerticalLayout",
+    "children": {
+      "zzz_child": {"type": "Button", "label": "First"},
+      "aaa_child": {"type": "Button", "label": "Second"},
+      "mmm_child": {"type": "Button", "label": "Third"}
+    }
+  })");
+  ui_element& root = *map[""];
+
+  auto cloned = std::static_pointer_cast<ui_element>(std::shared_ptr<dynamic>(root.clone_ptr()));
+
+  EXPECT_EQ(collect_labels_in_order(*cloned), (std::vector<std::string>{"First", "Second", "Third"}));
+}
+
+TEST_F(UiElementTest, ForEachChildOrderedMatchesDeclarationOrderAfterCloneOfTypedLeaf) {
+  // Same as above but for a leaf that goes through cloneable_ui_element<T>
+  // (e.g. TabBar/TabItem) rather than plain ui_element's own clone_ptr() --
+  // both override clone_ptr() independently and both need the fix.
+  auto map = bdg::wish::import_json(R"({
+    "type": "TabBar",
+    "children": {
+      "zzz_tab": {"type": "TabItem", "label": "First"},
+      "aaa_tab": {"type": "TabItem", "label": "Second"},
+      "mmm_tab": {"type": "TabItem", "label": "Third"}
+    }
+  })");
+  ui_element& root = *map[""];
+
+  auto cloned = std::static_pointer_cast<ui_element>(std::shared_ptr<dynamic>(root.clone_ptr()));
+
+  EXPECT_EQ(collect_labels_in_order(*cloned), (std::vector<std::string>{"First", "Second", "Third"}));
 }
