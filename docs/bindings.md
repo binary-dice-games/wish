@@ -234,39 +234,15 @@ $env:WISH_LIB = "$PWD\build\Debug\wish_client.dll"
 
 ### Publishing wheels to PyPI
 
-`pip install wish-abi` resolves to a pre-built wheel; the release pipeline
-that produces those wheels lives in
-[`.github/workflows/release-pypi.yml`](../.github/workflows/release-pypi.yml).
-
-One-time setup:
-
-1. Reserve the `wish-abi` project on PyPI and add this repository's
-   `release-pypi.yml` workflow as a
-   [Trusted Publisher](https://docs.pypi.org/trusted-publishers/) (OIDC) —
-   no API-token secret is stored in the repo. Add a GitHub Environment
-   named `pypi` for the `publish` job.
-2. Publish `bison-abi` wheels first — it is a hard dependency, so pip must
-   be able to resolve it from PyPI when `wish-abi` installs.
-
-Each release:
-
-1. Bump `project.version` in `bindings/python/pyproject.toml` (the wheel
-   version is read from that file; the tag only starts the run).
-2. Tag and push: `git tag py-v<version> && git push origin py-v<version>`.
-3. `build-wheels` runs [cibuildwheel](https://cibuildwheel.pypa.io/) on
-   Linux / macOS / Windows — configured by `[tool.cibuildwheel]` in
-   `bindings/python/pyproject.toml`. It must run from the repo root with
-   submodules checked out, because `cmake.source-dir` points there; the
-   workflow's `actions/checkout` uses `submodules: recursive`.
-4. `publish` uploads every wheel to PyPI via
-   `pypa/gh-action-pypi-publish`.
-
-To dry-run the wheel build locally:
-
-```bash
-git submodule update --init --recursive
-pipx run cibuildwheel --output-dir wheelhouse bindings/python
-```
+The full release runbook — PyPI Trusted Publisher setup, the GitHub
+`pypi` environment, the TestPyPI rehearsal, and the per-release tag steps —
+is in [docs/publishing-python.md](publishing-python.md). In short: bump
+`project.version` in `bindings/python/pyproject.toml`, then
+`git tag py-v<version> && git push origin py-v<version>`;
+[`.github/workflows/release-pypi.yml`](../.github/workflows/release-pypi.yml)
+builds the wheels with [cibuildwheel](https://cibuildwheel.pypa.io/) and
+publishes them. `bison-abi` must be published first — it is a hard
+dependency.
 
 ### Running the calculator example
 
