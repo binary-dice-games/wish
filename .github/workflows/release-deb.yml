@@ -1,12 +1,14 @@
 name: Build and publish .deb
 
 # Builds a Debian/Ubuntu package (see cmake/Packaging.cmake's "runtime"
-# COMPONENT and scripts/package_deb.py) and attaches it to the GitHub
-# Release that triggered the run. Only produces a Linux amd64 .deb --
-# dpkg-shlibdeps and ldconfig postinst/postrm generation are Debian-tooling
-# specific, so this intentionally doesn't attempt MSYS2/Windows here (see
-# scripts/package_release.py / docs/building.md for the cross-platform
-# release zip instead).
+# COMPONENT and scripts/package_deb.py), attaches it to the GitHub Release
+# that triggered the run, and refreshes the signed APT repository published
+# to GitHub Pages so the package is installable with `apt` (see
+# scripts/build_apt_repo.py and docs/publishing-apt.md). Only produces a
+# Linux amd64 .deb -- dpkg-shlibdeps and ldconfig postinst/postrm generation
+# are Debian-tooling specific, so this intentionally doesn't attempt
+# MSYS2/Windows here (see scripts/package_release.py / docs/building.md for
+# the cross-platform release zip instead).
 on:
   release:
     types: [published]
@@ -46,3 +48,83 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release upload "${{ github.event.release.tag_name }}" dist/*.deb --clobber
+
+      - name: Upload .deb as a workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb
+          path: dist/*.deb
+
+  publish-apt:
+    # Refresh the GitHub Pages APT repo with the .deb built above. Runs only
+    # once the signing key is configured -- see the guard in the first step.
+    needs: build-deb
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the signing key is configured
+        id: gate
+        env:
+          APT_GPG_PRIVATE_KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
+        run: |
+          if [ -z "$APT_GPG_PRIVATE_KEY" ]; then
+            echo "::warning::APT_GPG_PRIVATE_KEY secret not set -- skipping the apt repo publish. See docs/publishing-apt.md for one-time setup."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check out the existing apt repo (gh-pages)
+        if: steps.gate.outputs.ready == 'true'
+        uses: actions/checkout@v4
+        continue-on-error: true
+        with:
+          ref: gh-pages
+          path: apt-repo
+
+      - name: Download the built .deb
+        if: steps.gate.outputs.ready == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: deb
+          path: dist
+
+      - name: Assemble and publish the signed apt repo
+        if: steps.gate.outputs.ready == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APT_GPG_PRIVATE_KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
+          APT_GPG_PASSPHRASE: ${{ secrets.APT_GPG_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update && sudo apt-get install -y apt-utils
+
+          export GNUPGHOME="$(mktemp -d)"
+          chmod 700 "$GNUPGHOME"
+          printf '%s' "$APT_GPG_PRIVATE_KEY" | gpg --batch --import
+          key_id="$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr:/ {print $10; exit}')"
+          echo "Signing Release with $key_id"
+
+          # gh-pages checkout leaves its own .git here; drop it so the
+          # publish step below starts a clean single-commit branch.
+          rm -rf apt-repo/.git
+          mkdir -p apt-repo
+
+          python3 scripts/build_apt_repo.py \
+            --repo-dir apt-repo --key-id "$key_id" --add dist/*.deb
+
+          # Ship the public half of the signing key next to the index so the
+          # install instructions can curl it straight from the Pages site.
+          gpg --armor --export "$key_id" > apt-repo/wish-archive-keyring.asc
+          cp packaging/apt/index.html apt-repo/index.html
+
+          cd apt-repo
+          git init -q -b gh-pages
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "apt repo: ${GITHUB_REF_NAME}"
+          git push -f \
+            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            gh-pages

@@ -529,3 +529,9 @@ runs `scripts/package_deb.py` on `ubuntu-latest` and attaches the resulting
 `.deb` to the GitHub Release whenever one is published, using the release's
 tag (with a leading `v` stripped, e.g. `v1.2.3` → `1.2.3`) as the package
 version.
+
+The same workflow then refreshes a signed APT repository on GitHub Pages so
+the package is installable with `apt install wish` (not just a manual
+`dpkg -i`) — see
+[docs/publishing-apt.md](publishing-apt.md) for that repo's setup and
+`scripts/build_apt_repo.py` for how the index is built and signed.
