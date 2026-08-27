@@ -383,9 +383,12 @@ produce a release zip directly:
 cmake --build build --target package   # or: cd build && cpack -G ZIP
 ```
 
-That zip has the CLI binaries, `wish_client_dll` + its public C headers,
-`docs/` + `README.md`, and the binding sources and examples
-(`bindings/{cpp,python,csharp}/examples/`). `scripts/package_release.py`
+That zip has the CLI binaries, `wish_client_dll` and `wish_server_dll` +
+their public C headers, `docs/` + `README.md`, and the binding sources and
+examples (`bindings/{cpp,python,csharp}/examples/`). `wish_server_dll` is
+only in the zip when the build was configured with
+`-DWISH_BUILD_SERVER_SHARED=ON` (off by default, but
+`scripts/package_release.py` always passes it). `scripts/package_release.py`
 wraps this end to end — configuring a Release build with the recommended
 options, building, running `cpack`, then bolting on the pieces CPack can't
 produce on its own: compiled C# binding DLLs (via `dotnet publish`, if
