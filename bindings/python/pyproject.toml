@@ -101,17 +101,25 @@ build-verbosity = 1
 test-command = "python -c \"import wish, wish.client, wish.server\""
 
 [tool.cibuildwheel.linux]
+# The default manylinux2014 image ships devtoolset-10 (GCC 10), whose
+# libstdc++ lacks `std::bit_cast` and other C++20 library features bison
+# (a bundled dependency) uses.  manylinux_2_28 (AlmaLinux 8) provides
+# gcc-toolset-12, which links the newer libstdc++/libgcc bits statically --
+# the wheel still runs against the stock system runtime and gains no
+# dependencies; it only raises the glibc floor to 2.28 (2018+).
+manylinux-x86_64-image = "manylinux_2_28"
+manylinux-aarch64-image = "manylinux_2_28"
 # manylinux images are minimal; SDL3 needs X11 / OpenGL / Wayland dev headers
 # to compile its video backends. SDL3 links statically into wish_server_dll
 # (root CMakeLists.txt forces BUILD_SHARED_LIBS=OFF) and dlopen's the X11/GL
 # runtime libs lazily, so auditwheel does not vendor them -- a host that
 # opens a real SDL3 window still needs those runtime libs installed, same as
 # any SDL application; the client and the headless `console` renderer do not.
-before-all = "yum install -y libX11-devel libXext-devel libXrandr-devel libXi-devel libXcursor-devel libXfixes-devel mesa-libGL-devel wayland-devel libxkbcommon-devel"
+before-all = "dnf install -y libX11-devel libXext-devel libXrandr-devel libXi-devel libXcursor-devel libXfixes-devel mesa-libGL-devel wayland-devel libxkbcommon-devel"
 # The wheel test runs in a fresh manylinux container without `before-all`;
 # pull in the runtime X11/GL libs so `import wish.server` resolves (SDL3
 # dlopen's them lazily, but keep them present for a faithful smoke test).
-before-test = "yum install -y libX11 libXext mesa-libGL libxkbcommon wayland-libs || true"
+before-test = "dnf install -y libX11 libXext mesa-libGL libxkbcommon libwayland-client libwayland-cursor || true"
 
 [tool.cibuildwheel.macos]
 archs = ["x86_64", "arm64"]
