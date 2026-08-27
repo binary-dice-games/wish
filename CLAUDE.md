@@ -11,6 +11,22 @@ Rules:
 - When you add or change a feature, update the relevant section in `README.md` (or the relevant `docs/` file) to reflect the change. Do not leave stale content.
 - If you add a new `docs/` file, add a row for it in the "Further Documentation" table in `README.md`.
 
+## CHANGELOG.md — user-facing change log
+
+After successfully completing any task that changes code in the project, add an
+entry to `CHANGELOG.md` under the `## [Unreleased]` section (create that section
+at the top, above the most recent release, if it does not exist).
+
+Rules:
+- Keep entries very brief: state *what* was done, not *how* or *why*.
+- Record only changes that affect users of wish (public API, widget/UI behavior,
+  CLI, build outputs, bindings, transports, server behavior). Do not log internal
+  refactors, test-only changes, or documentation-only changes.
+- Group entries under `### Added`, `### Changed`, `### Fixed`, `### Deprecated`,
+  or `### Removed` as appropriate.
+- Follow the [Keep a Changelog](https://keepachangelog.com/) format already used
+  in the file.
+
 ## Code documentation
 
 Maintain clear, concise doc comments in code, especially for public APIs, classes, and module-level contracts. Prefer brief Doxygen comments that explain intent, parameters, return values, and failure modes.

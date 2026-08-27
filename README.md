@@ -143,6 +143,7 @@ into a persistent, identity-keyed directory per client via an
 | [docs/object-inspector.md](docs/object-inspector.md) | `ObjectInspector`: reflection-driven property table + description panel, its field → widget dispatch table, and the new `Hidden`/`Order`/`ColorField`/`Multiline`/`DropTarget` bison attributes |
 | [docs/profiling.md](docs/profiling.md) | Capturing a Perfetto trace of the server render loop/layout engine via bison's profiler, and viewing it at ui.perfetto.dev |
 | [DESIGN.md](DESIGN.md) | Architecture, key abstractions, object model, and design decisions |
+| [CHANGELOG.md](CHANGELOG.md) | User-facing changes between releases |
 
 ## License
 

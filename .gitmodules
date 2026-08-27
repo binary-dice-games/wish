@@ -1,7 +1,7 @@
 [submodule "extern/bison"]
 	path = extern/bison
 	url = https://github.com/binary-dice-games/bison.git
-	branch = main
+	branch = v1.0.0
 [submodule "extern/implot"]
 	path = extern/implot
 	url = https://github.com/epezent/implot.git
