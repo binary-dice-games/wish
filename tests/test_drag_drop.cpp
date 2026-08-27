@@ -53,6 +53,14 @@ class DragDropTest : public ::testing::Test {
     ctx_ = nullptr;
   }
 
+  // ImGuiWindowFlags_NoNav: the drag gesture begins on the frame right after
+  // this window is first created, and ImGui's nav-init request auto-assigns
+  // NavId (and NavJustMovedToId) to the first focusable item that frame. With
+  // that pending, SetActiveID() on the source Button's mouse press records
+  // ActiveIdSource as Keyboard rather than Mouse, and ButtonBehavior's
+  // "process while held" branch then immediately ClearActiveID()s it -- so
+  // BeginDragDropSource() never sees the source held. These tests exercise
+  // pure mouse drag-and-drop, so nav is simply disabled for the host window.
   void in_window(const std::function<void()>& fn) {
     ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(800, 600), ImGuiCond_Always);
@@ -60,7 +68,7 @@ class DragDropTest : public ::testing::Test {
         "TestWindow",
         nullptr,
         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
-            ImGuiWindowFlags_NoScrollbar);
+            ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoNav);
     fn();
     ImGui::End();
   }
@@ -198,8 +206,11 @@ TEST_F(DragDropTest, DraggingSourceOntoMatchingTargetEmitsDroppedWithPayload) {
 TEST_F(DragDropTest, MismatchedDragAndDropTypesNeverEmitDropped) {
   auto [src, tgt] = make_source_and_target("GenieAsset", "payload", "SomethingElse");
 
-  bool event_fired = false;
-  sess_->emit_event = [&](bdg::bison::key_t, bdg::bison::key_t, dynamic) { event_fired = true; };
+  bool dropped_fired = false;
+  sess_->emit_event = [&](bdg::bison::key_t, bdg::bison::key_t ev, dynamic) {
+    if (ev == "dropped"_key)
+      dropped_fired = true;
+  };
 
   ImVec2 src_center{0, 0}, tgt_center{0, 0};
   renderer_->begin_frame();
@@ -219,7 +230,7 @@ TEST_F(DragDropTest, MismatchedDragAndDropTypesNeverEmitDropped) {
   render_frame(*src, *tgt, tgt_center, false);
   drain_events();
 
-  EXPECT_FALSE(event_fired);
+  EXPECT_FALSE(dropped_fired);
 }
 
 // ── Release without ever dragging onto a target -> no event ─────────────────
@@ -227,8 +238,11 @@ TEST_F(DragDropTest, MismatchedDragAndDropTypesNeverEmitDropped) {
 TEST_F(DragDropTest, PressAndReleaseOnSourceWithoutDraggingDoesNotEmitDropped) {
   auto [src, tgt] = make_source_and_target("GenieAsset", "payload", "GenieAsset");
 
-  bool event_fired = false;
-  sess_->emit_event = [&](bdg::bison::key_t, bdg::bison::key_t, dynamic) { event_fired = true; };
+  bool dropped_fired = false;
+  sess_->emit_event = [&](bdg::bison::key_t, bdg::bison::key_t ev, dynamic) {
+    if (ev == "dropped"_key)
+      dropped_fired = true;
+  };
 
   ImVec2 src_center{0, 0};
   renderer_->begin_frame();
@@ -246,5 +260,5 @@ TEST_F(DragDropTest, PressAndReleaseOnSourceWithoutDraggingDoesNotEmitDropped) {
   render_frame(*src, *tgt, src_center, false);
   drain_events();
 
-  EXPECT_FALSE(event_fired);
+  EXPECT_FALSE(dropped_fired);
 }

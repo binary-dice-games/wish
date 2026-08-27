@@ -470,7 +470,7 @@ TEST_F(ZipEventTest, CompressClickedWithNoSelectionSetsStatus) {
 
   EXPECT_EQ(
       srv_->last_session->ui_objects.at(root_ + ".main.status")->as<std::string>("text"_key),
-      "Select a file or folder to compress.");
+      "Select one or more files/folders to compress.");
   EXPECT_TRUE(find_root_with_prefix(srv_->last_session->ui_objects, "__zip_prompt_").empty());
 }
 
@@ -515,7 +515,11 @@ TEST_F(ZipEventTest, ConfirmingCompressPromptEmitsOnCompressRequested) {
   wait_for(got);
   ASSERT_TRUE(got);
   EXPECT_EQ(captured.as<std::string>("path"_key), "/home");
-  EXPECT_EQ(captured.as<std::string>("source_name"_key), "notes.txt");
+  auto* names_f = captured.findField<dynamic_ptr>("source_names"_key);
+  ASSERT_NE(names_f, nullptr);
+  ASSERT_TRUE(*names_f);
+  ASSERT_EQ((*names_f)->size(), 1u);
+  EXPECT_EQ((*names_f)->at(size_t{0}).as<std::string>(), "notes.txt");
   EXPECT_EQ(captured.as<std::string>("archive_name"_key), "notes.txt.zip");
   EXPECT_EQ(srv_->last_session->ui_objects.at(root_ + ".main.status")->as<std::string>("text"_key), "Compressing...");
 }

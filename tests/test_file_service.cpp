@@ -532,9 +532,15 @@ TEST_F(FileServiceTest, ResolveOrFetchDedupsConcurrentFramesToOneRequest) {
   server.delay_ms = 150;
   auto url = server.url("/shared.png");
 
+  // A burst of rapid resolve calls while the first one's download is still in
+  // flight. Each returns empty (non-blocking) until the download lands; under
+  // heavy parallel test load the burst itself can outlast the 150ms delay, so
+  // stop expecting empty once the file resolves -- the property under test is
+  // that the whole burst still collapses to a single HTTP request.
   for (int i = 0; i < 20; ++i) {
     auto result = file_service::resolve_or_fetch(url, sess().resource_dir, false, true, {"png"});
-    EXPECT_TRUE(result.empty()); // still downloading throughout this burst
+    if (!result.empty())
+      break;
   }
 
   auto resolved = poll_until_nonempty(

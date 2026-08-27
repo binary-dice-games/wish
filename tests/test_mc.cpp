@@ -150,7 +150,7 @@ TEST_F(McLocalTest, DefaultTitle) {
   auto* f = obj.findField("title"_key);
   ASSERT_NE(f, nullptr);
   EXPECT_TRUE(f->is<std::string>());
-  EXPECT_EQ(f->as<std::string>(), "Mc");
+  EXPECT_EQ(f->as<std::string>(), "File Explorer");
 }
 
 TEST_F(McLocalTest, DefaultStatus) {
@@ -845,7 +845,7 @@ TEST_F(McEventTest, SandboxSortKeepsDotDotPinnedFirst) {
 
   // Descending by name would normally put "zzz.txt" first, but ".." must
   // stay pinned at row 0 regardless of sort column/direction.
-  EXPECT_EQ(table_name_cell_text(".main.panels.right.right_table", 0), ".. [Up]");
+  EXPECT_EQ(table_name_cell_text(".main.panels.right.right_table", 0), "..");
   EXPECT_EQ(table_name_cell_text(".main.panels.right.right_table", 1), "zzz.txt");
 }
 
