@@ -23,6 +23,7 @@ dependencies = ["bison-abi>=1.0.0"]
 
 [project.urls]
 Homepage = "https://github.com/binary-dice-games/wish"
+Repository = "https://github.com/binary-dice-games/wish"
 Documentation = "https://github.com/binary-dice-games/wish/blob/main/docs/bindings.md"
 
 [project.optional-dependencies]
@@ -74,6 +75,50 @@ WISH_BUILD_SERVER_SHARED = "ON"
 # pyproject.toml: an in-source rebuild would litter the whole repository.
 # wish/_native.py's/_server_native.py's _find_library() scan sys.path for
 # the redirect mode's site-packages/wish/lib*.so to compensate.
+
+# ─── cibuildwheel ──────────────────────────────────────────────────────────
+# Produces the pre-built platform wheels published to PyPI, so end users get
+# `pip install wish-abi` with no compiler, no CMake, and no submodule
+# checkout -- pip only falls back to a source build when no wheel matches.
+# `.github/workflows/release-pypi.yml` runs this on a `py-v*` tag.
+#
+# Because `cmake.source-dir = "../.."`, cibuildwheel must run from the repo
+# root (with submodules already checked out) so the whole tree is in the
+# build context:
+#
+#   git submodule update --init --recursive
+#   pipx run cibuildwheel --output-dir wheelhouse bindings/python
+#
+# `wheel.py-api = "py3"` above means one wheel per platform serves every
+# CPython 3.8+, so we build against a single interpreter rather than the
+# full matrix.
+[tool.cibuildwheel]
+build = "cp312-*"
+skip = ["*_i686", "*-musllinux_*", "pp*"]
+build-verbosity = 1
+# Smoke-test the freshly repaired wheel in an isolated venv: both ABI libs
+# must load and `bison-abi` must resolve as a normal dependency.
+test-command = "python -c \"import wish, wish.client, wish.server\""
+
+[tool.cibuildwheel.linux]
+# manylinux images are minimal; SDL3 needs X11 / OpenGL / Wayland dev headers
+# to compile its video backends. SDL3 links statically into wish_server_dll
+# (root CMakeLists.txt forces BUILD_SHARED_LIBS=OFF) and dlopen's the X11/GL
+# runtime libs lazily, so auditwheel does not vendor them -- a host that
+# opens a real SDL3 window still needs those runtime libs installed, same as
+# any SDL application; the client and the headless `console` renderer do not.
+before-all = "yum install -y libX11-devel libXext-devel libXrandr-devel libXi-devel libXcursor-devel libXfixes-devel mesa-libGL-devel wayland-devel libxkbcommon-devel"
+# The wheel test runs in a fresh manylinux container without `before-all`;
+# pull in the runtime X11/GL libs so `import wish.server` resolves (SDL3
+# dlopen's them lazily, but keep them present for a faithful smoke test).
+before-test = "yum install -y libX11 libXext mesa-libGL libxkbcommon wayland-libs || true"
+
+[tool.cibuildwheel.macos]
+archs = ["x86_64", "arm64"]
+
+[tool.cibuildwheel.windows]
+before-build = "pip install delvewheel"
+repair-wheel-command = "delvewheel repair -w {dest_dir} {wheel}"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

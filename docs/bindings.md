@@ -176,10 +176,19 @@ API (`.get()` / `.set()` / `.call()` / `.on_event()`).
 
 Two ways to get `wish`, `import`able either way:
 
-- **`pip install`** (`bindings/python/pyproject.toml`, scikit-build-core):
-  compiles `wish_client_dll` and `wish_server_dll` from source and ships
-  both inside the installed `wish` package, alongside its `bison-abi`
-  dependency (installed automatically):
+- **`pip install wish-abi`** — pre-built platform wheels from PyPI, no
+  compiler / CMake / git checkout needed. Wheels bundle `wish_client_dll`
+  and `wish_server_dll`; `bison-abi` resolves as a normal dependency. pip
+  only falls back to a source build when no wheel matches the platform.
+  Wheels are published for Linux (x86_64 / aarch64), macOS
+  (x86_64 / arm64), and Windows (amd64) by
+  [`.github/workflows/release-pypi.yml`](../.github/workflows/release-pypi.yml)
+  (cibuildwheel, driven by `[tool.cibuildwheel]` in
+  `bindings/python/pyproject.toml`) on a `py-v<version>` tag.
+- **`pip install` from a source checkout** (`bindings/python/pyproject.toml`,
+  scikit-build-core): compiles `wish_client_dll` and `wish_server_dll` from
+  source and ships both inside the installed `wish` package, alongside its
+  `bison-abi` dependency (installed automatically):
   ```bash
   git clone --recurse-submodules https://github.com/binary-dice-games/wish.git
   pip install ./wish/bindings/python
@@ -221,6 +230,42 @@ export WISH_LIB=$(pwd)/build/libwish_client.dylib
 set WISH_LIB=%cd%\build\Debug\wish_client.dll
 # Windows (powershell):
 $env:WISH_LIB = "$PWD\build\Debug\wish_client.dll"
+```
+
+### Publishing wheels to PyPI
+
+`pip install wish-abi` resolves to a pre-built wheel; the release pipeline
+that produces those wheels lives in
+[`.github/workflows/release-pypi.yml`](../.github/workflows/release-pypi.yml).
+
+One-time setup:
+
+1. Reserve the `wish-abi` project on PyPI and add this repository's
+   `release-pypi.yml` workflow as a
+   [Trusted Publisher](https://docs.pypi.org/trusted-publishers/) (OIDC) —
+   no API-token secret is stored in the repo. Add a GitHub Environment
+   named `pypi` for the `publish` job.
+2. Publish `bison-abi` wheels first — it is a hard dependency, so pip must
+   be able to resolve it from PyPI when `wish-abi` installs.
+
+Each release:
+
+1. Bump `project.version` in `bindings/python/pyproject.toml` (the wheel
+   version is read from that file; the tag only starts the run).
+2. Tag and push: `git tag py-v<version> && git push origin py-v<version>`.
+3. `build-wheels` runs [cibuildwheel](https://cibuildwheel.pypa.io/) on
+   Linux / macOS / Windows — configured by `[tool.cibuildwheel]` in
+   `bindings/python/pyproject.toml`. It must run from the repo root with
+   submodules checked out, because `cmake.source-dir` points there; the
+   workflow's `actions/checkout` uses `submodules: recursive`.
+4. `publish` uploads every wheel to PyPI via
+   `pypa/gh-action-pypi-publish`.
+
+To dry-run the wheel build locally:
+
+```bash
+git submodule update --init --recursive
+pipx run cibuildwheel --output-dir wheelhouse bindings/python
 ```
 
 ### Running the calculator example
