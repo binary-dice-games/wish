@@ -1,6 +1,7 @@
 // MIT License © 2025 Binary Dice Games
 #include <gtest/gtest.h>
 
+#include <context/logger.hpp>
 #include <server/registry.hpp>
 #include <server/server.hpp>
 #include <ui/ui_descriptor.hpp>
@@ -348,6 +349,72 @@ TEST(ServerTest, MenuBarExtensionSplicedNotDoubleRendered) {
   }
 
   srv.stop();
+}
+
+// ── RMI trace verbosity ──────────────────────────────────────────────────────
+//
+// wish::server always routes RMI trace lines to the log file, but the decoded
+// call payloads (`args=`, `set` values, response bodies) they can carry make
+// server.log grow fast. set_logger() gates those payloads on the logger's
+// verbose flag: envelope metadata is always logged, payloads only when
+// verbose.
+
+namespace {
+
+// Captures every trace line wish::server hands to on_print().
+class print_capturing_server : public wish::server {
+ public:
+  print_capturing_server(server_transport_iface& t, std::unique_ptr<wish::renderer> r)
+      : wish::server(t, std::move(r)) {}
+
+  std::mutex mtx;
+  std::string joined_lines;
+
+ protected:
+  void on_print(bdg::bison::key_t /*sid*/, const std::string& line) override {
+    std::lock_guard<std::mutex> lk(mtx);
+    joined_lines += line;
+    joined_lines += '\n';
+  }
+};
+
+std::string capture_trace_with_logger(bool verbose) {
+  wish::register_all();
+  auto lg = std::make_shared<wish::logger>(
+      dynamic::instantiate("wish"_key, "__WishLogger"_key), verbose, std::filesystem::path{});
+
+  memory_server_transport transport;
+  print_capturing_server srv{transport, std::make_unique<wish::null_renderer>()};
+  srv.set_logger(lg);
+  srv.start();
+
+  {
+    client c{transport.connect()};
+    c.connect();
+    auto proxy = c.instantiate("wish"_key, "Window"_key).get();
+    dynamic fields;
+    fields["title"_key] = std::string{"TRACE_SENTINEL"};
+    proxy.set(std::move(fields)).get();
+    c.disconnect();
+  }
+
+  srv.stop();
+  std::lock_guard<std::mutex> lk(srv.mtx);
+  return srv.joined_lines;
+}
+
+} // namespace
+
+TEST(ServerTest, NonVerboseLoggerOmitsTracePayloads) {
+  const std::string out = capture_trace_with_logger(/*verbose=*/false);
+  EXPECT_NE(out.find("[rmi]"), std::string::npos); // trace lines still emitted
+  EXPECT_EQ(out.find("TRACE_SENTINEL"), std::string::npos);
+  EXPECT_EQ(out.find("args="), std::string::npos);
+}
+
+TEST(ServerTest, VerboseLoggerIncludesTracePayloads) {
+  const std::string out = capture_trace_with_logger(/*verbose=*/true);
+  EXPECT_NE(out.find("TRACE_SENTINEL"), std::string::npos);
 }
 
 // ── TLS transport (transport=tls) ─────────────────────────────────────────────

@@ -87,9 +87,15 @@ class server : public bison::rmi::server {
    * sessions therefore share a single log file.  Pass `nullptr` to disable
    * client-side logging.
    * Must be called before `start()`.
+   *
+   * The RMI trace lines this server routes to the log (see `on_print()`)
+   * include decoded call payloads (`args=...`, `set` values, response
+   * bodies) only when the logger is verbose; otherwise the trace keeps just
+   * the envelope metadata so the log file stays compact.
    */
   void set_logger(logger_ptr logger) {
     logger_ = std::move(logger);
+    set_trace_payloads(logger_ && logger_->is_verbose());
   }
 
   /**

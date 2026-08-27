@@ -42,7 +42,7 @@ all; passing any of `--transport`/`--host`/`--port`/`--name` is an error).
 | `--port P` | `7070` | Bind/connect port (`--transport tcp`/`tls` only) |
 | `--name PATH` | *(empty)* | Named-pipe / Unix-socket path (`--transport pipe` only) |
 | `--cmd C` | *(empty)* | Command to spawn (`server`, `--transport term` only) |
-| `--verbose` | `false` | Print session lifecycle / RMI trace messages to stdout |
+| `--verbose` | `false` | Mirror session lifecycle / RMI trace messages to stdout, and include decoded call payloads (`args=`, `set` values, response bodies) in the `wish_logs/server.log` trace lines (metadata-only otherwise) |
 | `--debugger` | `false` | Wait for debugger attachment before starting |
 
 ### TLS flags (`--transport tls`)
