@@ -1,0 +1,106 @@
+name: Build and publish release binaries
+
+# On a published GitHub Release, builds the self-contained wish release zip
+# (scripts/package_release.py -> dist/wish-<version>-<System>-<arch>.zip) on
+# each target platform and attaches every zip to that release.
+#
+# Trigger: publishing a release whose tag is `v<version>` (e.g. v1.2.3). The
+# zip version is taken from the tag with the leading `v` stripped, matching
+# release-deb.yml. `workflow_dispatch` runs the same build for a dry run and
+# only uploads the zips as workflow artifacts (nothing is attached to a
+# release).
+#
+# Platforms:
+#   - Linux x86_64  / aarch64  -- Ninja + GCC, needs the X11/Wayland/GL -dev
+#     packages (same list as docs/building.md).
+#   - macOS arm64              -- Ninja + AppleClang (macos-14 is arm64).
+#   - native Windows x86_64    -- MSVC via the "Visual Studio 17 2022"
+#     generator; no mingw runtime DLLs are bundled, so end users need the
+#     Microsoft Visual C++ redistributable.
+#
+# The Debian/Ubuntu `.deb` is produced separately by release-deb.yml.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: Package on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest,    generator: Ninja }
+          - { os: ubuntu-24.04-arm, generator: Ninja }
+          - { os: macos-14,         generator: Ninja }
+          - { os: windows-latest,   generator: Visual Studio 17 2022 }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Linux build prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            ninja-build build-essential \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev \
+            libwayland-dev libxkbcommon-dev \
+            libgl1-mesa-dev libgles2-mesa-dev
+
+      - name: Install macOS build prerequisites
+        if: runner.os == 'macOS'
+        run: brew install ninja
+
+      # package_release.py invokes `python` and `cmake`/`cpack`; pin both so
+      # the runners resolve them identically. (CMake is preinstalled on all
+      # three images, but setup-python guarantees a `python` on PATH -- the
+      # Ubuntu images only ship `python3`.)
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # dotnet is preinstalled on most GitHub images; setup-dotnet makes the
+      # compiled C# binding DLLs land in every platform's zip consistently
+      # (package_release.py silently ships only the C# *source* if `dotnet`
+      # is absent). Non-fatal: a missing SDK just means a source-only zip.
+      - uses: actions/setup-dotnet@v4
+        continue-on-error: true
+        with:
+          dotnet-version: '8.0'
+
+      - name: Derive version from the release tag
+        id: version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            echo "arg=--version ${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "arg=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build and package
+        shell: bash
+        run: |
+          python scripts/package_release.py \
+            --generator "${{ matrix.generator }}" ${{ steps.version.outputs.arg }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-zip-${{ matrix.os }}
+          path: dist/*.zip
+          if-no-files-found: error
+
+      - name: Attach zip to the release
+        if: github.event_name == 'release'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.event.release.tag_name }}" dist/*.zip --clobber

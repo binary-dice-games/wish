@@ -136,6 +136,7 @@ into a persistent, identity-keyed directory per client via an
 | [docs/visual-editor-options.md](docs/visual-editor-options.md) | Proposal: WYSIWYG editor options — forking ImRAD Studio vs. extending the native `editor` module |
 | [docs/bindings.md](docs/bindings.md) | Python, C#, and Android (Java/Kotlin) language binding setup and usage |
 | [docs/publishing-python.md](docs/publishing-python.md) | Release runbook for the `wish-abi` PyPI package: Trusted Publisher setup, cibuildwheel matrix, per-release tag steps |
+| [docs/publishing-binaries.md](docs/publishing-binaries.md) | Release runbook for the downloadable binary zips (`.deb` included) attached to each GitHub Release: the CI workflows, platform coverage, per-release steps |
 | [docs/ai-assisted-development.md](docs/ai-assisted-development.md) | Building wish apps/UI via natural language with the `wish-module`/`wish-ui` AI-agent skills |
 | [docs/automation.md](docs/automation.md) | Driving a running wish UI programmatically (widget tree queries, screenshots, input injection) for debugging and e2e tests |
 | [docs/object-inspector.md](docs/object-inspector.md) | `ObjectInspector`: reflection-driven property table + description panel, its field → widget dispatch table, and the new `Hidden`/`Order`/`ColorField`/`Multiline`/`DropTarget` bison attributes |

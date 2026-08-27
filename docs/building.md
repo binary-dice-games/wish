@@ -395,6 +395,13 @@ python3 scripts/package_release.py --version 1.2.3
 Produces `dist/wish-<version>-<System>-<arch>.zip`. Run it once per platform
 (Linux, MSYS2, native Windows) to produce that platform's release asset.
 
+On a published GitHub Release this runs automatically:
+`.github/workflows/release-binaries.yml` builds the zip on Linux
+(x86_64 + aarch64), macOS arm64, and native Windows (MSVC), and
+`.github/workflows/release-deb.yml` builds the amd64 `.deb` — all attached
+to the release. See [docs/publishing-binaries.md](publishing-binaries.md)
+for the runbook.
+
 ### Putting the release on PATH
 
 The zip also ships a pair of small scripts (`packaging/unix/` on Linux,
