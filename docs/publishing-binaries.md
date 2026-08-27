@@ -20,10 +20,11 @@ Two workflows fire on `release: published`:
 | [`.github/workflows/release-deb.yml`](../.github/workflows/release-deb.yml) | `wish_<version>_amd64.deb` | `ubuntu-latest` |
 
 Each matrix job runs
-[`scripts/package_release.py`](../scripts/package_release.py) (Linux/macOS
-via the **Ninja** generator, Windows via **Visual Studio 17 2022** / MSVC),
-then `gh release upload <tag> dist/*.zip --clobber` attaches the result to
-the release that triggered the run. `--clobber` makes re-runs idempotent.
+[`scripts/package_release.py`](../scripts/package_release.py) with the
+**Ninja** generator (on Windows, MSVC `cl.exe` is put on `PATH` first by
+`ilammy/msvc-dev-cmd` — see the Windows note below), then
+`gh release upload <tag> dist/*.zip --clobber` attaches the result to the
+release that triggered the run. `--clobber` makes re-runs idempotent.
 
 The zip version comes from the git tag with the leading `v` stripped
 (`v1.2.3` -> `1.2.3`), passed as `package_release.py --version`. Keep tags
@@ -32,9 +33,13 @@ way.
 
 ### Platform notes
 
-- **Windows** zips are MSVC builds and do **not** bundle the mingw runtime
-  DLLs (that path in `package_release.py` needs `ldd`/`/mingw64`, i.e.
-  MSYS2). End users need the
+- **Windows** zips are MSVC (`cl.exe`) builds via the Ninja generator. The
+  build step runs under `bash`, which strips the `ProgramFiles(x86)` env
+  var that CMake's "Visual Studio" generator relies on to find a VS
+  instance, so the workflow sets up the compiler explicitly with
+  `ilammy/msvc-dev-cmd` and builds with Ninja instead. The zip does **not**
+  bundle the mingw runtime DLLs (that path in `package_release.py` needs
+  `ldd`/`/mingw64`, i.e. MSYS2), so end users need the
   [Microsoft Visual C++ redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe).
   An MSYS2 zip can still be produced by hand (`package_release.py` from an
   MSYS2 shell) if a self-contained mingw build is wanted.

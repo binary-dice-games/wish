@@ -14,9 +14,14 @@ name: Build and publish release binaries
 #   - Linux x86_64  / aarch64  -- Ninja + GCC, needs the X11/Wayland/GL -dev
 #     packages (same list as docs/building.md).
 #   - macOS arm64              -- Ninja + AppleClang (macos-14 is arm64).
-#   - native Windows x86_64    -- MSVC via the "Visual Studio 17 2022"
-#     generator; no mingw runtime DLLs are bundled, so end users need the
-#     Microsoft Visual C++ redistributable.
+#   - native Windows x86_64    -- Ninja + MSVC (cl.exe). The build steps run
+#     under `bash`, which strips the `ProgramFiles(x86)` env var (invalid
+#     shell identifier) that CMake's "Visual Studio" generator needs to
+#     locate a VS instance -- so we set up the MSVC environment explicitly
+#     with ilammy/msvc-dev-cmd and use the Ninja generator + cl.exe, which
+#     needs only INCLUDE/LIB/PATH (all valid identifiers, kept by bash).
+#     No mingw runtime DLLs are bundled, so end users need the Microsoft
+#     Visual C++ redistributable.
 #
 # The Debian/Ubuntu `.deb` is produced separately by release-deb.yml.
 
@@ -35,11 +40,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { os: ubuntu-latest,    generator: Ninja }
-          - { os: ubuntu-24.04-arm, generator: Ninja }
-          - { os: macos-14,         generator: Ninja }
-          - { os: windows-latest,   generator: Visual Studio 17 2022 }
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-14, windows-latest]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -59,10 +60,9 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install ninja
 
-      # package_release.py invokes `python` and `cmake`/`cpack`; pin both so
-      # the runners resolve them identically. (CMake is preinstalled on all
-      # three images, but setup-python guarantees a `python` on PATH -- the
-      # Ubuntu images only ship `python3`.)
+      # package_release.py invokes `python` and `cmake`/`cpack`; setup-python
+      # guarantees a `python` on PATH (the Ubuntu images only ship
+      # `python3`). CMake is preinstalled on all three images.
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -75,6 +75,18 @@ jobs:
         continue-on-error: true
         with:
           dotnet-version: '8.0'
+
+      - name: Set up MSVC environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Select Ninja + MSVC toolchain (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          python -m pip install ninja
+          echo "CC=cl" >> "$GITHUB_ENV"
+          echo "CXX=cl" >> "$GITHUB_ENV"
 
       - name: Derive version from the release tag
         id: version
@@ -90,7 +102,7 @@ jobs:
         shell: bash
         run: |
           python scripts/package_release.py \
-            --generator "${{ matrix.generator }}" ${{ steps.version.outputs.arg }}
+            --generator Ninja ${{ steps.version.outputs.arg }}
 
       - uses: actions/upload-artifact@v4
         with:
