@@ -123,6 +123,13 @@ before-test = "dnf install -y libX11 libXext mesa-libGL libxkbcommon libwayland-
 
 [tool.cibuildwheel.macos]
 archs = ["x86_64", "arm64"]
+# Apple's libc++ marks all of `std::filesystem` unavailable below macOS
+# 10.15 (the filesystem runtime first shipped in the platform dylib in
+# 10.15).  wish -- and bundled bison -- use `std::filesystem::path` in
+# public headers, and cibuildwheel's default deployment target for the
+# x86_64 build is 10.13.  Bump it here; cibuildwheel auto-clamps the arm64
+# build to 11.0, so this only affects the Intel wheel.
+environment = { MACOSX_DEPLOYMENT_TARGET = "10.15" }
 
 [tool.cibuildwheel.windows]
 before-build = "pip install delvewheel"

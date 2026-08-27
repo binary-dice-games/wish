@@ -198,3 +198,10 @@ submodules — in the build context.
   etc.), check that the `manylinux_2_28` image override in
   `[tool.cibuildwheel.linux]` is still present — the default
   `manylinux2014` image's GCC 10 toolchain is too old.
+- If the **macOS x86_64** build fails with `'path' is unavailable:
+  introduced in macOS 10.15` (or similar `std::filesystem` errors), check
+  that `MACOSX_DEPLOYMENT_TARGET = "10.15"` is still set in
+  `[tool.cibuildwheel.macos]`. cibuildwheel's default for the Intel build
+  is 10.13, below `std::filesystem`'s libc++ availability floor. The arm64
+  job won't catch a regression here — it's always ≥ 11.0, and `macos-14`
+  only tests the native arch.
