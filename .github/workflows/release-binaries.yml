@@ -14,6 +14,11 @@ name: Build and publish release binaries
 #   - Linux x86_64  / aarch64  -- Ninja + GCC, needs the X11/Wayland/GL -dev
 #     packages (same list as docs/building.md).
 #   - macOS arm64              -- Ninja + AppleClang (macos-14 is arm64).
+#     The bdg/desktop module collection (bc/git/mc/nano/tail/top/zip/pix) is
+#     dropped here (-DWISH_COLLECTION_BDG_DESKTOP=OFF): its process-control
+#     backends are *_linux.cpp / *_win.cpp only, and macOS is not a wish
+#     target per CLAUDE.md. The macOS zip is the core framework + client/
+#     server libs + bindings, minus those example apps.
 #   - native Windows x86_64    -- Ninja + MSVC (cl.exe). The build steps run
 #     under `bash`, which strips the `ProgramFiles(x86)` env var (invalid
 #     shell identifier) that CMake's "Visual Studio" generator needs to
@@ -40,7 +45,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm, macos-14, windows-latest]
+        include:
+          - { os: ubuntu-latest }
+          - { os: ubuntu-24.04-arm }
+          - { os: macos-14, pkg_args: "--cmake-arg=-DWISH_COLLECTION_BDG_DESKTOP=OFF" }
+          - { os: windows-latest }
     steps:
       - uses: actions/checkout@v4
         with:
@@ -102,7 +111,7 @@ jobs:
         shell: bash
         run: |
           python scripts/package_release.py \
-            --generator Ninja ${{ steps.version.outputs.arg }}
+            --generator Ninja ${{ matrix.pkg_args }} ${{ steps.version.outputs.arg }}
 
       - uses: actions/upload-artifact@v4
         with:

@@ -43,8 +43,15 @@ way.
   [Microsoft Visual C++ redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe).
   An MSYS2 zip can still be produced by hand (`package_release.py` from an
   MSYS2 shell) if a self-contained mingw build is wanted.
-- **macOS** builds arm64 only (`macos-14`). Intel Macs are not covered by a
-  prebuilt zip; those users build from source.
+- **macOS** builds arm64 only (`macos-14`), and **without the `bdg/desktop`
+  module collection** (`--cmake-arg=-DWISH_COLLECTION_BDG_DESKTOP=OFF`).
+  macOS is not a wish target per CLAUDE.md — `top`'s process-control /
+  process-info backends are `*_linux.cpp` / `*_win.cpp` only, so the
+  collection fails to link there. The macOS zip is the core framework
+  (`wish`, `wish-server`, `wish-standalone`, `wish-desktop`),
+  `wish_client_dll` + headers, docs, and binding sources — but not the
+  bc/git/mc/nano/tail/top/zip/pix example apps. Intel Macs build from
+  source.
 - **Linux** zips are dynamically linked against the system X11/Wayland/GL
   libraries (same runtime requirement as any SDL3 app — see
   [docs/publishing-python.md](publishing-python.md#the-one-runtime-caveat-sdl3-display-libraries)).
@@ -93,11 +100,15 @@ wish-server --help
 git submodule update --init --recursive
 python3 scripts/package_release.py --version <version>
 # -> dist/wish-<version>-<System>-<arch>.zip
+
+# On macOS, match the CI build (skip the not-macOS-portable desktop apps):
+python3 scripts/package_release.py --version <version> \
+    --cmake-arg=-DWISH_COLLECTION_BDG_DESKTOP=OFF
 ```
 
 Run once per platform. See
 [docs/building.md](building.md#packaging-a-release) for `--build-dir` /
-`--generator` / `--skip-configure` details.
+`--generator` / `--skip-configure` / `--cmake-arg` details.
 
 ## Gotchas
 

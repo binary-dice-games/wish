@@ -46,7 +46,8 @@ def run(cmd, cwd=None):
     subprocess.run(cmd, cwd=cwd, check=True)
 
 
-def configure(build_dir: Path, generator: str, version: str | None):
+def configure(build_dir: Path, generator: str, version: str | None,
+              extra_args: list[str] | None = None):
     args = [
         "cmake", "-S", str(REPO_ROOT), "-B", str(build_dir),
         "-G", generator,
@@ -58,6 +59,10 @@ def configure(build_dir: Path, generator: str, version: str | None):
     ]
     if version:
         args.append(f"-DWISH_PACKAGE_VERSION={version}")
+    # Passed through verbatim after the defaults, so a later -D wins (e.g.
+    # the macOS release CI drops the not-macOS-portable bdg/desktop modules
+    # with --cmake-arg -DWISH_COLLECTION_BDG_DESKTOP=OFF).
+    args += extra_args or []
     run(args)
 
 
@@ -162,13 +167,21 @@ def main():
                               "CMake project version)")
     parser.add_argument("--skip-configure", action="store_true")
     parser.add_argument("--skip-build", action="store_true")
+    parser.add_argument("--cmake-arg", action="append", dest="cmake_args",
+                         metavar="ARG",
+                         help="Extra argument passed verbatim to the CMake "
+                              "configure step (repeatable). Appended after "
+                              "the built-in flags, so it overrides them. Use "
+                              "the attached form so argparse doesn't read the "
+                              "value as a flag: "
+                              "--cmake-arg=-DWISH_COLLECTION_BDG_DESKTOP=OFF")
     args = parser.parse_args()
 
     build_dir = (REPO_ROOT / args.build_dir).resolve()
     output_dir = (REPO_ROOT / args.output_dir).resolve()
 
     if not args.skip_configure:
-        configure(build_dir, args.generator, args.version)
+        configure(build_dir, args.generator, args.version, args.cmake_args)
     if not args.skip_build:
         build(build_dir)
 
