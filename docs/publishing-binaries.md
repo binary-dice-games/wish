@@ -7,8 +7,9 @@ covers what the automation does and the per-release steps.
 For the packaging mechanics (what goes in the zip, how to build one
 locally, PATH-setup scripts), see
 [docs/building.md](building.md#packaging-a-release). For the `.deb`, see
-[docs/building.md](building.md#building-a-deb-package). For the `wish-abi`
-PyPI package, see [docs/publishing-python.md](publishing-python.md).
+[docs/building.md](building.md#building-a-deb-package); for making it
+`apt install`-able, see [docs/publishing-apt.md](publishing-apt.md). For the
+`wish-abi` PyPI package, see [docs/publishing-python.md](publishing-python.md).
 
 ## How it works
 
@@ -17,7 +18,7 @@ Two workflows fire on `release: published`:
 | Workflow | Produces | Runner(s) |
 |---|---|---|
 | [`.github/workflows/release-binaries.yml`](../.github/workflows/release-binaries.yml) | `wish-<version>-Linux-x86_64.zip`, `-Linux-aarch64.zip`, `-Darwin-arm64.zip`, `-Windows-AMD64.zip` | `ubuntu-latest`, `ubuntu-24.04-arm`, `macos-14`, `windows-latest` |
-| [`.github/workflows/release-deb.yml`](../.github/workflows/release-deb.yml) | `wish_<version>_amd64.deb` | `ubuntu-latest` |
+| [`.github/workflows/release-deb.yml`](../.github/workflows/release-deb.yml) | `wish_<version>_amd64.deb`, plus a refresh of the [APT repo on GitHub Pages](publishing-apt.md) | `ubuntu-latest` |
 
 Each matrix job runs
 [`scripts/package_release.py`](../scripts/package_release.py) with the
@@ -62,11 +63,16 @@ way.
 
 ## One-time setup
 
-None. The workflows use the automatic `GITHUB_TOKEN` (`permissions:
-contents: write`) — no PyPI-style Trusted Publisher, environment, or
-secret. `ubuntu-24.04-arm` runners are free for public repos; if `wish`
-goes private without org-enabled arm64 runners, that matrix entry queues
-forever — drop it or swap in QEMU.
+None for the zips and the `.deb` asset — those workflows use the automatic
+`GITHUB_TOKEN` (`permissions: contents: write`), no PyPI-style Trusted
+Publisher, environment, or secret. `ubuntu-24.04-arm` runners are free for
+public repos; if `wish` goes private without org-enabled arm64 runners, that
+matrix entry queues forever — drop it or swap in QEMU.
+
+The **APT-repo** half of `release-deb.yml` does need a one-time signing key
+and GitHub Pages setup — see
+[docs/publishing-apt.md](publishing-apt.md#one-time-setup). Until it's done,
+that job logs a warning and skips; the `.deb` still attaches to the release.
 
 ## Each release
 
