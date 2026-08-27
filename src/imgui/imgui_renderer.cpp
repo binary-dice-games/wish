@@ -314,6 +314,10 @@ imgui_renderer::imgui_renderer(render_fn_map extra_render_fns) : render_fns_(bui
 }
 
 void imgui_renderer::begin_frame() {
+  // Cleared here, re-set this frame by whichever dockspace host renders
+  // first: an opt-in server-frame host wrapper (`dockspace_renderer`,
+  // `host_renderer`) or a `DockSpaceViewport` element in a session's tree.
+  ambient_dockspace_id_ = 0;
   ImGuiIO& io = ImGui::GetIO();
   if (io.DisplaySize.x <= 0.0f || io.DisplaySize.y <= 0.0f)
     io.DisplaySize = ImVec2(800.0f, 600.0f);
@@ -484,7 +488,16 @@ void imgui_renderer::render_node(const ui_element& node, const context& s) {
   if (cls == "Selectable"_key)
     node.for_each_child_ordered([&](key_t, ui_element&) { selectable_has_children = true; });
 
-  bool needs_group_wrap = cls == "Splitter"_key || cls == "TabBar"_key || cls == "TabItem"_key ||
+  // TabItem is deliberately NOT wrapped: a BeginGroup()/EndGroup() around a
+  // BeginTabItem()/EndTabItem() pair is not a sanctioned ImGui pattern, and
+  // EndGroup()'s trailing Dummy()+ItemSize() advances the enclosing window's
+  // DC.CursorMaxPos by one ItemSpacing.y *per non-selected tab* -- content the
+  // window never actually drew (a non-selected tab renders only its button, up
+  // in the strip). With many tabs that phantom height (N * ItemSpacing.y) is
+  // enough to give the enclosing window a spurious scrollbar. render_tab_item()
+  // relies on ImGui's own tab-content layout (EndTabBar() reconciles
+  // CurrTabsContentsHeight) and, for a "scroll" tab, its own BeginChild().
+  bool needs_group_wrap = cls == "Splitter"_key || cls == "TabBar"_key ||
       cls == "TreeNode"_key || cls == "CollapsingHeader"_key || cls == "Table"_key || cls == "TableRow"_key ||
       cls == "Plot"_key || cls == "Plot3D"_key || selectable_has_children;
 

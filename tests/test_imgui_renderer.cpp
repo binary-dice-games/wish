@@ -1591,6 +1591,127 @@ TEST_F(ImguiRendererTest, RelabelingSelectedTabItemKeepsItSelected) {
   EXPECT_FALSE(tab_a.is_selected());
 }
 
+TEST_F(ImguiRendererTest, TabItemScrollGivesContentItsOwnScrollRegion) {
+  // Regression test for a real user-reported bug (examples/demo): scrolling
+  // down inside a tab used to scroll the whole enclosing Window, carrying the
+  // TabBar's tab-selection row out of view. "scroll": true on a TabItem now
+  // wraps its content in a BeginChild() that fills the region below the tab
+  // row, so overflow scrolls inside the tab and the row stays pinned.
+  auto build = [](bool scroll) {
+    std::string rows;
+    for (int i = 0; i < 60; ++i)
+      rows += "\"l" + std::to_string(i) + "\": { \"type\": \"Label\", \"text\": \"row " + std::to_string(i) + "\" },";
+    rows.pop_back();
+    // A header label + separator above the TabBar, mirroring examples/demo's
+    // status bar -- this is what makes GetContentRegionAvail() at the tab
+    // content point differ from the whole-window height.
+    return std::string(R"({
+      "type": "Window", "title": "TS", "width": 300, "height": 200, "pos_x": 0, "pos_y": 0,
+      "children": {
+        "hdr": { "type": "Label", "text": "header" },
+        "sep": { "type": "Separator" },
+        "tabs": { "type": "TabBar", "id": "tb", "children": {
+          "t0": { "type": "TabItem", "label": "One", "scroll": )") +
+           (scroll ? "true" : "false") + R"(, "children": { )" + rows + R"( } }
+        }}
+      }
+    })";
+  };
+
+  auto render = [&](const std::string& desc) {
+    auto map = bdg::wish::import_json(desc);
+    // A few frames to let ImGui settle any first-frame scrollbar reservation.
+    for (int i = 0; i < 4; ++i) {
+      renderer_->begin_frame();
+      renderer_->render_node(*map[""], *sess_);
+      renderer_->end_frame();
+    }
+  };
+
+  auto find_window = [](auto pred) -> ImGuiWindow* {
+    for (ImGuiWindow* w : ImGui::GetCurrentContext()->Windows)
+      if (w->WasActive && pred(w))
+        return w;
+    return nullptr;
+  };
+  auto is_tab_scroll_child = [](ImGuiWindow* w) {
+    return (w->Flags & ImGuiWindowFlags_ChildWindow) && std::string(w->Name).find("tabscroll_") != std::string::npos;
+  };
+  auto is_outer = [](ImGuiWindow* w) {
+    return !(w->Flags & ImGuiWindowFlags_ChildWindow) && std::string(w->Name).rfind("TS", 0) == 0;
+  };
+
+  // scroll:true -- an inner "##tabscroll_" child owns the overflow; the
+  // top-level Window itself does not need to scroll, so the tab row stays put.
+  render(build(true));
+  ImGuiWindow* inner = find_window(is_tab_scroll_child);
+  ASSERT_NE(inner, nullptr) << "scroll:true did not create a tab content child window";
+  EXPECT_GT(inner->ScrollMax.y, 0.0f) << "tab content child should overflow and scroll internally";
+  ImGuiWindow* outer = find_window(is_outer);
+  ASSERT_NE(outer, nullptr);
+  EXPECT_LE(outer->ScrollMax.y, 2.0f)
+      << "outer window must not scroll when the tab owns its scroll region -- ScrollMax.y=" << outer->ScrollMax.y;
+
+  // The fill child fills the enclosing window's visible height (bar a small
+  // bottom margin) -- it is never starved to a sliver, and never overruns
+  // past the window edge (which would clip its own lower rows).
+  float outer_visible_bottom = outer->InnerClipRect.Max.y;
+  float child_bottom = inner->Pos.y + inner->Size.y;
+  EXPECT_GT(child_bottom, outer_visible_bottom - 24.0f)
+      << "tab content child stops well short of the window bottom: child_bottom=" << child_bottom
+      << " window_visible_bottom=" << outer_visible_bottom;
+  EXPECT_LT(child_bottom, outer_visible_bottom + 2.0f)
+      << "tab content child overruns the window bottom: child_bottom=" << child_bottom
+      << " window_visible_bottom=" << outer_visible_bottom;
+
+  // scroll:false baseline -- no such child; the overflow lands on the Window.
+  render(build(false));
+  EXPECT_EQ(find_window(is_tab_scroll_child), nullptr);
+  ImGuiWindow* outer2 = find_window(is_outer);
+  ASSERT_NE(outer2, nullptr);
+  EXPECT_GT(outer2->ScrollMax.y, 100.0f) << "baseline: the whole window scrolls, carrying the tab row out of view";
+}
+
+TEST_F(ImguiRendererTest, ManyTabTabBarDoesNotInflateEnclosingWindowContentSize) {
+  // Regression test for a real user-reported bug (examples/demo, docked): a
+  // TabBar with many tabs gave its enclosing Window a spurious scrollbar even
+  // when the content clearly fit. render_node() used to wrap every TabItem in
+  // BeginGroup()/EndGroup(); EndGroup()'s trailing Dummy()+ItemSize() advances
+  // the enclosing window's DC.CursorMaxPos by one ItemSpacing.y for *every
+  // non-selected tab* -- height the window never actually drew (a non-selected
+  // tab renders only its button, in the strip). N tabs => (N-1)*ItemSpacing.y
+  // of phantom content. TabItem is no longer group-wrapped.
+  auto content_size_with = [&](int n_tabs) {
+    std::string tabs;
+    for (int i = 0; i < n_tabs; ++i) {
+      if (i) tabs += ",";
+      tabs += "\"t" + std::to_string(i) + "\": { \"type\": \"TabItem\", \"label\": \"Tab " + std::to_string(i) +
+              "\", \"children\": { \"x" + std::to_string(i) + "\": { \"type\": \"Label\", \"text\": \"hi\" } } }";
+    }
+    auto map = bdg::wish::import_json(
+        std::string(R"({ "type": "Window", "title": "MT", "width": 400, "height": 500, "pos_x": 0, "pos_y": 0,
+          "children": { "tabs": { "type": "TabBar", "id": "tb", "children": { )") +
+        tabs + R"( }}}})");
+    for (int i = 0; i < 4; ++i) {
+      renderer_->begin_frame();
+      renderer_->render_node(*map[""], *sess_);
+      renderer_->end_frame();
+    }
+    for (ImGuiWindow* w : ImGui::GetCurrentContext()->Windows)
+      if (w->WasActive && std::string(w->Name).rfind("MT", 0) == 0 && !(w->Flags & ImGuiWindowFlags_ChildWindow))
+        return w->ContentSize.y;
+    return -1.0f;
+  };
+
+  float c2 = content_size_with(2);
+  float c20 = content_size_with(20);
+  ASSERT_GT(c2, 0.0f);
+  ASSERT_GT(c20, 0.0f);
+  // The visible content (one tab's single Label) is identical regardless of
+  // tab count -- so is the window's content height, bar sub-pixel rounding.
+  EXPECT_NEAR(c20, c2, 2.0f) << "content height grew with tab count: 2 tabs=" << c2 << " 20 tabs=" << c20;
+}
+
 // ── Docking: undock restores pre-dock floating size ──────────────────────────
 
 TEST_F(ImguiRendererTest, WindowRestoresFloatingSizeAfterUndock) {
@@ -2695,3 +2816,137 @@ TEST_F(ImguiRendererTest, BaseFlushDrawListIsSafeNoOp) {
 // "RenderSessionSetsIsLightThemeFor{Light,Wish,Dark}Preset" tests, which
 // cover the flag itself (including the regression this once was: "wish" is
 // light-based even though its preset name doesn't say "light").
+
+// ── Window auto-placement: unpositioned modal / dock-by-default ──────────────
+
+TEST_F(ImguiRendererTest, UnpositionedModalCentersOnViewport) {
+  // No pos_x/pos_y (both default to -1): render_window centers the modal on
+  // the main viewport instead of leaving it at ImGui's top-left default.
+  auto map = bdg::wish::import_json(
+      R"({"type":"Window","title":"MB","modal":true,"width":200,"height":120})");
+  auto& win = *map[""];
+  std::string label = "MB###" + bdg::wish::stable_id(win);
+
+  for (int i = 0; i < 4; ++i) {
+    renderer_->begin_frame();
+    bdg::wish::render_window(*renderer_, win, *sess_);
+    renderer_->end_frame();
+  }
+
+  auto* w = ImGui::FindWindowByName(label.c_str());
+  ASSERT_NE(w, nullptr);
+  const ImVec2 vp_center = ImGui::GetMainViewport()->GetCenter(); // (400, 300)
+  EXPECT_NEAR(w->Pos.x + w->Size.x * 0.5f, vp_center.x, 1.0f);
+  EXPECT_NEAR(w->Pos.y + w->Size.y * 0.5f, vp_center.y, 1.0f);
+}
+
+TEST_F(ImguiRendererTest, ExplicitlyPositionedModalIsNotRecentered) {
+  auto map = bdg::wish::import_json(
+      R"({"type":"Window","title":"MB2","modal":true,"width":200,"height":120,
+          "pos_x":40,"pos_y":50})");
+  auto& win = *map[""];
+  std::string label = "MB2###" + bdg::wish::stable_id(win);
+
+  for (int i = 0; i < 4; ++i) {
+    renderer_->begin_frame();
+    bdg::wish::render_window(*renderer_, win, *sess_);
+    renderer_->end_frame();
+  }
+
+  auto* w = ImGui::FindWindowByName(label.c_str());
+  ASSERT_NE(w, nullptr);
+  EXPECT_NEAR(w->Pos.x, 40.0f, 1.0f);
+  EXPECT_NEAR(w->Pos.y, 50.0f, 1.0f);
+}
+
+TEST_F(ImguiRendererTest, UnpositionedWindowDocksIntoAmbientDockspace) {
+  // A dockable Window with no explicit position picks up the frame's ambient
+  // dockspace (normally set by the host chrome / a DockSpaceViewport) as its
+  // default dock target, so a tool opens docked rather than floating.
+  auto map = bdg::wish::import_json(
+      R"({"type":"Window","title":"Tool","width":400,"height":300})");
+  auto& win = *map[""];
+  std::string label = "Tool###" + bdg::wish::stable_id(win);
+
+  ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+  ImGuiID dock_id = ImHashStr("AmbientTestDock");
+
+  bool docked = false;
+  for (int i = 0; i < 12 && !docked; ++i) {
+    renderer_->begin_frame();
+    // Stand in for host_renderer::render_server_frame(): a live DockSpace()
+    // host plus the ambient-id hint render_window() reads.
+    ImGui::SetNextWindowPos(ImVec2(0, 0));
+    ImGui::SetNextWindowSize(ImVec2(800, 600));
+    ImGui::Begin("Host", nullptr,
+        ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+            ImGuiWindowFlags_NoMove);
+    ImGui::DockSpace(dock_id, ImVec2(0, 0), ImGuiDockNodeFlags_None);
+    ImGui::End();
+    renderer_->set_ambient_dockspace_id(dock_id);
+    renderer_->render_node(win, *sess_);
+    renderer_->end_frame();
+    auto* w = ImGui::FindWindowByName(label.c_str());
+    docked = w && w->DockIsActive;
+  }
+  auto* w = ImGui::FindWindowByName(label.c_str());
+  ASSERT_NE(w, nullptr);
+  // render_window() issued the default dock request into the ambient id...
+  EXPECT_EQ(w->DockId, dock_id);
+  // ...and ImGui merged it into a live dock node.
+  EXPECT_TRUE(docked);
+}
+
+TEST_F(ImguiRendererTest, ExplicitlyPositionedWindowDoesNotAutoDock) {
+  auto map = bdg::wish::import_json(
+      R"({"type":"Window","title":"Floaty","width":400,"height":300,"pos_x":10,"pos_y":20})");
+  auto& win = *map[""];
+  std::string label = "Floaty###" + bdg::wish::stable_id(win);
+
+  ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+  ImGuiID dock_id = ImHashStr("AmbientTestDock2");
+
+  for (int i = 0; i < 6; ++i) {
+    renderer_->begin_frame();
+    ImGui::SetNextWindowPos(ImVec2(0, 0));
+    ImGui::SetNextWindowSize(ImVec2(800, 600));
+    ImGui::Begin("Host2", nullptr,
+        ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+            ImGuiWindowFlags_NoMove);
+    ImGui::DockSpace(dock_id, ImVec2(0, 0), ImGuiDockNodeFlags_None);
+    ImGui::End();
+    renderer_->set_ambient_dockspace_id(dock_id);
+    renderer_->render_node(win, *sess_);
+    renderer_->end_frame();
+  }
+
+  auto* w = ImGui::FindWindowByName(label.c_str());
+  ASSERT_NE(w, nullptr);
+  EXPECT_FALSE(w->DockIsActive);
+  EXPECT_NEAR(w->Pos.x, 10.0f, 1.0f);
+  EXPECT_NEAR(w->Pos.y, 20.0f, 1.0f);
+}
+
+TEST_F(ImguiRendererTest, BareImguiRendererDrawsNoServerChrome) {
+  // The bare imgui backend (sdl3_renderer / web_renderer used directly, e.g.
+  // by an example app that roots its UI in its own DockSpaceViewport) must
+  // draw nothing at the server level and leave the ambient dockspace id
+  // unset -- otherwise a second fullscreen dockspace stacks behind the app's
+  // own and swallows its windows (examples/demo showed an empty window).
+  ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+
+  for (int i = 0; i < 3; ++i) {
+    renderer_->begin_frame();
+    renderer_->render_server_frame({});
+    renderer_->end_frame();
+    EXPECT_EQ(renderer_->ambient_dockspace_id(), 0u);
+  }
+  auto* chrome = ImGui::FindWindowByName("##wish_host_chrome");
+  EXPECT_TRUE(chrome == nullptr || !chrome->WasActive);
+}
+
+// The opt-in server host wrapper that draws the fullscreen dockspace (which a
+// session's un-positioned Windows then dock into) lives in src/wish_server_c.cpp
+// (dockspace_renderer) and app/wish_cli/host_renderer.cpp, exercised via those
+// paths. UnpositionedWindowDocksIntoAmbientDockspace above covers the
+// render_window side of that contract with a stand-in DockSpace host.

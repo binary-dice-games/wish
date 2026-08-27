@@ -82,6 +82,10 @@ void host_renderer<Base>::render_server_frame(const std::vector<sync_context_ptr
 
   ImGuiID dock_id = ImGui::GetID("HostDockSpace");
   ImGui::DockSpace(dock_id, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_PassthruCentralNode);
+  // Every connected session's un-positioned, dockable top-level Windows dock
+  // into this shell by default (see render_window). Set each frame, before
+  // the per-session render pass in server::render_loop().
+  this->set_ambient_dockspace_id(dock_id);
 
   ImGui::End();
 }

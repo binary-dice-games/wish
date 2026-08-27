@@ -934,6 +934,9 @@ class ui_tab_item : public cloneable_ui_element<ui_tab_item> {
   bool closable(bool def = false) const {
     return cached_field_or<bool>(closable_field_, bison::key_t{"closable"}, def);
   }
+  bool scroll(bool def = false) const {
+    return cached_field_or<bool>(scroll_field_, bison::key_t{"scroll"}, def);
+  }
 
   /// @brief True iff @p is_selected differs from the selected state
   /// recorded on the previous call (or this is the first call); always
@@ -951,6 +954,7 @@ class ui_tab_item : public cloneable_ui_element<ui_tab_item> {
  private:
   mutable bison::field* label_field_ = nullptr;
   mutable bison::field* closable_field_ = nullptr;
+  mutable bison::field* scroll_field_ = nullptr;
   mutable std::optional<bool> was_selected_;
 };
 

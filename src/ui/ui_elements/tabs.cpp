@@ -44,6 +44,18 @@ void register_tabs() {
             attr<DisplayName>("Closable"),
             attr<Description>("When true, a close button appears on the tab."),
             attr<Category>("Behavior")});
+    proto->addField(
+        "scroll"_rkey,
+        field{
+            false,
+            attr<DisplayName>("Scroll"),
+            attr<Description>("When true, the tab's content is placed in its own scroll region that "
+                             "fills the remaining space below the tab row, so overflowing content "
+                             "scrolls inside the tab instead of scrolling the enclosing window (which "
+                             "would carry the tab row out of view). The region extends to the bottom "
+                             "of the current window, so keep any widgets that must stay pinned below "
+                             "the tabs out of the same window."),
+            attr<Category>("Behavior")});
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("TabItem"));
     (*proto)[dynamic::CLASS].addAttribute(
         attr<Description>("A single tab page inside a TabBar. "

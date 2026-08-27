@@ -27,7 +27,7 @@ namespace wish = bdg::wish;
 // ── Tab descriptors (one per TabBar entry) ────────────────────────────────────
 
 static constexpr const char* kTabBasicsDesc = R"json(
-        "tab_basics": { "type": "TabItem", "label": "Basics",
+        "tab_basics": { "type": "TabItem", "scroll": true, "label": "Basics",
           "children": {
             "sec_labels":  { "type": "SeparatorText", "label": "Labels" },
             "lbl_static":  { "type": "Label", "text": "Static label — text set in JSON." },
@@ -60,7 +60,7 @@ static constexpr const char* kTabBasicsDesc = R"json(
         })json";
 
 static constexpr const char* kTabSlidersDesc = R"json(
-        "tab_sliders": { "type": "TabItem", "label": "Sliders & Drags",
+        "tab_sliders": { "type": "TabItem", "scroll": true, "label": "Sliders & Drags",
           "children": {
             "sec_sliders": { "type": "SeparatorText", "label": "Sliders" },
             "sf_opacity":  { "type": "SliderFloat", "label": "Opacity", "value": 1.0,  "min": 0.0,    "max": 1.0,   "format": "%.2f"     },
@@ -73,7 +73,7 @@ static constexpr const char* kTabSlidersDesc = R"json(
         })json";
 
 static constexpr const char* kTabInputsDesc = R"json(
-        "tab_inputs": { "type": "TabItem", "label": "Text & Numbers",
+        "tab_inputs": { "type": "TabItem", "scroll": true, "label": "Text & Numbers",
           "children": {
             "sec_text":  { "type": "SeparatorText", "label": "Text Input" },
             "txt_name":  { "type": "InputText", "label": "Name",    "value": "",            "hint": "Type your name..." },
@@ -85,7 +85,7 @@ static constexpr const char* kTabInputsDesc = R"json(
         })json";
 
 static constexpr const char* kTabSelectionDesc = R"json(
-        "tab_selection": { "type": "TabItem", "label": "Selection",
+        "tab_selection": { "type": "TabItem", "scroll": true, "label": "Selection",
           "children": {
             "sec_combo": { "type": "SeparatorText", "label": "Combo Box" },
             "cmb_fruit": { "type": "Combo", "label": "Fruit",
@@ -101,7 +101,7 @@ static constexpr const char* kTabSelectionDesc = R"json(
         })json";
 
 static constexpr const char* kTabTreeDesc = R"json(
-        "tab_tree": { "type": "TabItem", "label": "Tree & Collapse",
+        "tab_tree": { "type": "TabItem", "scroll": true, "label": "Tree & Collapse",
           "children": {
             "sec_tree": { "type": "SeparatorText", "label": "TreeNode" },
             "tn_root":  { "type": "TreeNode", "label": "Root node", "open": true,
@@ -135,7 +135,7 @@ static constexpr const char* kTabTreeDesc = R"json(
         })json";
 
 static constexpr const char* kTabMiscDesc = R"json(
-        "tab_misc": { "type": "TabItem", "label": "Misc",
+        "tab_misc": { "type": "TabItem", "scroll": true, "label": "Misc",
           "children": {
             "sec_progress": { "type": "SeparatorText", "label": "Progress Bar" },
             "pb_download":  { "type": "ProgressBar", "value": 0.65, "label": "65 %" },
@@ -238,7 +238,7 @@ static constexpr const char* kTabMiscDesc = R"json(
         })json";
 
 static constexpr const char* kTabTablesDesc = R"json(
-        "tab_tables": { "type": "TabItem", "label": "Tables",
+        "tab_tables": { "type": "TabItem", "scroll": true, "label": "Tables",
           "children": {
             "sec_static": { "type": "SeparatorText",
                             "label": "Static Table (Borders + Row Background + Resizable)" },
@@ -301,7 +301,7 @@ static constexpr const char* kTabTablesDesc = R"json(
         })json";
 
 static constexpr const char* kTabPlotsDesc = R"json(
-        "tab_plots": { "type": "TabItem", "label": "Plots",
+        "tab_plots": { "type": "TabItem", "scroll": true, "label": "Plots",
           "children": {
 
             "ch_line": { "type": "CollapsingHeader", "label": "Line, Scatter & Stairs",
@@ -425,7 +425,7 @@ static constexpr const char* kTabPlotsDesc = R"json(
         })json";
 
 static constexpr const char* kTabPlot3DDesc = R"json(
-        "tab_plot3d": { "type": "TabItem", "label": "3-D Plots",
+        "tab_plot3d": { "type": "TabItem", "scroll": true, "label": "3-D Plots",
           "children": {
 
             "ch3_line": { "type": "CollapsingHeader", "label": "Line & Scatter",
@@ -492,7 +492,7 @@ static constexpr const char* kTabPlot3DDesc = R"json(
         })json";
 
 static constexpr const char* kTabFilesDesc = R"json(
-        "tab_files": { "type": "TabItem", "label": "Files",
+        "tab_files": { "type": "TabItem", "scroll": true, "label": "Files",
           "children": {
             "sec_image":    { "type": "SeparatorText", "label": "Image Viewer" },
             "lbl_img_hint": { "type": "Label",
@@ -538,7 +538,7 @@ static constexpr const char* kTabFilesDesc = R"json(
         })json";
 
 static constexpr const char* kTabFormsDesc = R"json(
-        "tab_forms": { "type": "TabItem", "label": "Forms",
+        "tab_forms": { "type": "TabItem", "scroll": true, "label": "Forms",
           "children": {
             "sec_filedialog": { "type": "SeparatorText", "label": "File Dialog" },
             "lbl_filedialog_hint": { "type": "Label",
@@ -600,7 +600,7 @@ static std::string build_tab_icons_desc(const std::vector<std::string>& icon_fil
   }
 
   return R"json(
-        "tab_icons": { "type": "TabItem", "label": "Icons",
+        "tab_icons": { "type": "TabItem", "scroll": true, "label": "Icons",
           "children": {
             "sec_icons": { "type": "SeparatorText", "label": "Embedded Icons" },
             "lbl_icons_hint": { "type": "Label",
@@ -667,19 +667,22 @@ static std::string build_demo_desc_str(const std::string& tab_icons_desc) {
     "demo_win": { "type": "Window", "title": "wish Widget Demo",
       "width": 900, "height": 800,
       "children": {
+        "lbl_ev_hdr": { "type": "Label", "text": "Last event:" },
+        "lbl_status": { "type": "Label", "text": "(interact with any widget to see its event here)" },
+        "sep_status": { "type": "Separator" },
         "tabs_root": { "type": "TabBar", "id": "demo_tabs",
           "children": {)json" +
       kTabBasicsDesc + "," + kTabSlidersDesc + "," + kTabInputsDesc + "," + kTabSelectionDesc + "," + kTabTreeDesc +
       "," + kTabMiscDesc + "," + kTabTablesDesc + "," + kTabPlotsDesc + "," + kTabPlot3DDesc + "," + kTabFilesDesc +
       "," + kTabFormsDesc + "," + tab_icons_desc
-      // Close tab bar, add status bar, close window and dockspace.
+      // Close tab bar, close window and dockspace. The status bar sits above
+      // the TabBar (not below): each TabItem now uses "scroll": true, so its
+      // content region fills to the bottom of demo_win -- a widget placed
+      // after the TabBar would be pushed out of view.
       + R"json(
 
           }
-        },
-        "sep_status": { "type": "Separator" },
-        "lbl_ev_hdr": { "type": "Label", "text": "Last event:" },
-        "lbl_status": { "type": "Label", "text": "(interact with any widget to see its event here)" }
+        }
       }
     }
   }

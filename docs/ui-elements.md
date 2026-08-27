@@ -90,8 +90,8 @@ one (directly or via nested layouts).
 | `title` | `string` | `""` | Window title bar text. |
 | `width` | `int32` | `0` | Window width in pixels (0–16384). |
 | `height` | `int32` | `0` | Window height in pixels (0–16384). |
-| `pos_x` | `int32` | `0` | Horizontal position in pixels. |
-| `pos_y` | `int32` | `0` | Vertical position in pixels. |
+| `pos_x` | `int32` | `-1` | Horizontal position in pixels. `-1` (with `pos_y`) leaves the window unpositioned: a modal centers on the viewport, a normal dockable window docks into the ambient dockspace (the server's fullscreen host window, or a `DockSpaceViewport`'s), and either falls back to ImGui's own placement when neither applies. A user drag is remembered by `imgui.ini` regardless. |
+| `pos_y` | `int32` | `-1` | Vertical position in pixels. See `pos_x` for the `-1` (unpositioned) behavior. |
 | `closable` | `bool` | `false` | Show a close button (X) on the title bar; clicking it emits `closed`. |
 | `flags` | `int32` (flags) | `0` | Bitmask, combine names with `\|`: `NoTitleBar`, `NoResize`, `NoMove`, `NoScrollbar`, `NoScrollWithMouse`, `NoCollapse`, `AlwaysAutoResize`, `NoBackground`, `NoSavedSettings`, `NoMouseInputs`, `MenuBar`, `HorizontalScrollbar`, `NoFocusOnAppearing`, `NoBringToFrontOnFocus`, `AlwaysVerticalScrollbar`, `AlwaysHorizontalScrollbar`, `NoNavInputs`, `NoNavFocus`, `UnsavedDocument`, `NoDocking`, and composites `NoNav`, `NoDecoration`, `NoInputs`. |
 
@@ -530,6 +530,7 @@ One page inside a `TabBar`.
 |---|---|---|---|
 | `label` | `string` | `""` | Tab button text. |
 | `closable` | `bool` | `false` | Show a close (×) button on the tab. |
+| `scroll` | `bool` | `false` | Put the tab's content in its own scroll region filling the space below the tab row, so overflow scrolls inside the tab instead of scrolling the enclosing window (which would carry the tab row out of view). The region extends to the bottom of the current window — keep widgets that must stay pinned below the tabs in a different window. |
 
 **Events:**
 - `selected` — fired once on the transition to being the active tab; no payload.
@@ -684,7 +685,9 @@ clipped. No events.
 
 #### `DockSpaceViewport`
 Full-viewport dockspace host; `Window` children nested under it become
-independently dockable panels. No events.
+independently dockable panels. A child `Window` with no explicit `pos_x`/
+`pos_y` docks into this dockspace by default (see `Window.pos_x`); give it a
+position or the `NoDocking` flag to keep it floating. No events.
 
 | Field | Type | Default | Description |
 |---|---|---|---|

@@ -29,9 +29,11 @@ namespace bdg::wish {
  * after the bridge starts listening) -- it does not wait for a downstream
  * client to connect, since it must be usable even with no clients attached
  * (e.g. to later host client processes spawned by the desktop itself).
- * Downstream clients' own Windows dock into it automatically: ImGui docks
- * any window without `NoDocking` into whichever dockspace is open that
- * frame, so no per-client bookkeeping is needed here.
+ * Downstream clients' own Windows dock into it automatically: an
+ * un-positioned, dockable top-level `Window` picks up the host chrome's
+ * dockspace as its default dock target (see `render_window` and
+ * `imgui_renderer::ambient_dockspace_id()`), so no per-client bookkeeping is
+ * needed here.
  */
 class wish_desktop : public bison::rmi::bridge {
  public:

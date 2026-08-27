@@ -111,6 +111,22 @@ gotcha you hit and didn't record is one the next agent will hit again.
   discoverable, running process (the redirected log file wasn't even
   created), while `run_in_background: true` started the server reliably
   and kept it running across subsequent, separate tool calls.
+- **Run the Playwright script itself via `run_in_background: true` too, with
+  no output redirection.** In one session (after a WSL restart), wrapping a
+  `python3 -c "... AutomationClient.launch(server_cmd=[...]) ..."` call in
+  `timeout N ...`, or backgrounding it with `... &` + a poll loop, or adding
+  `> log 2>&1`, made the whole command die immediately with a bare exit 144
+  and **zero output** — not even the first `print()` ran. The identical
+  script launched with the Bash tool's `run_in_background: true` and no
+  redirect (let the tool capture stdout/stderr) ran fine and produced the
+  widget dump + screenshot. The failure was intermittent (the same wrapped
+  form worked earlier in the same session), so treat a no-output exit 144
+  from an automation script as "re-run it plainly in the background", not a
+  code problem. `pkill -9 -f chrome`/`-f headless` (NOT `-f node` — that can
+  take out the IDE/harness) between attempts helps clear stuck browsers.
+- **A dark/blank `screenshot()` while `get_tree()` returns a full, correctly
+  laid-out widget list is the headless-WebGL-not-painting issue, not a real
+  regression.** It comes and goes; trust the tree, retry the shot.
 
 ## Prerequisites
 

@@ -43,17 +43,21 @@ void register_window() {
   proto->addField(
       "pos_x"_rkey,
       field{
-          int32_t{0},
+          int32_t{-1},
           attr<DisplayName>("X"),
-          attr<Description>("Horizontal position in pixels."),
+          attr<Description>("Horizontal position in pixels. -1 (with pos_y) leaves the window "
+                            "unpositioned: a modal centers on the viewport, a normal window "
+                            "docks into the ambient dockspace, and either falls back to ImGui's "
+                            "own placement when neither applies."),
           attr<Category>("Layout"),
           attr<Step>(1)});
   proto->addField(
       "pos_y"_rkey,
       field{
-          int32_t{0},
+          int32_t{-1},
           attr<DisplayName>("Y"),
-          attr<Description>("Vertical position in pixels."),
+          attr<Description>("Vertical position in pixels. See pos_x for the -1 (unpositioned) "
+                            "behavior."),
           attr<Category>("Layout"),
           attr<Step>(1)});
   proto->addField(

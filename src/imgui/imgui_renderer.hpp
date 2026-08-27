@@ -156,7 +156,21 @@ class imgui_renderer : public renderer {
 
   /// @brief Prepares a new ImGui frame.  Sets sensible IO defaults if the
   ///        caller has not done so (useful for headless/test contexts).
+  ///        Also clears `ambient_dockspace_id()` back to 0.
   void begin_frame() override;
+
+  /// @brief The ImGui dockspace id that an un-positioned, dockable top-level
+  ///        `Window` docks into by default this frame (see `render_window`).
+  ///
+  /// Set each frame by whichever dockspace host renders first -- an opt-in
+  /// server-frame host wrapper (`dockspace_renderer` for the C ABI, the
+  /// wish CLI's richer `host_renderer`) or a `DockSpaceViewport` element in a
+  /// session's tree -- and reset to 0 by `begin_frame()`. 0 means "no ambient
+  /// dockspace this frame" (the common case for an app that draws through a
+  /// bare `imgui_renderer` backend), in which case `render_window` leaves
+  /// placement to ImGui/imgui.ini.
+  void set_ambient_dockspace_id(ImGuiID id) { ambient_dockspace_id_ = id; }
+  ImGuiID ambient_dockspace_id() const { return ambient_dockspace_id_; }
 
   /// @brief Dispatches the element to its ImGui widget(s) and recurses into
   ///        children where required.
@@ -194,6 +208,12 @@ class imgui_renderer : public renderer {
 
   /// @brief Ends the ImGui frame (`ImGui::EndFrame`).
   void end_frame() override;
+
+  // render_server_frame() is intentionally NOT overridden here: the base
+  // `renderer::render_server_frame` no-op is correct for a bare imgui
+  // backend. A server that wants a fullscreen host dockspace opts in by
+  // wrapping the backend -- `dockspace_renderer` (C ABI, src/wish_server_c.cpp)
+  // or `host_renderer` (wish CLI).
 
   /// @brief True while an active ImGui text-input widget wants a blinking
   ///        caret drawn (`ImGuiIO::WantTextInput`). Custom widgets that draw
@@ -302,6 +322,9 @@ class imgui_renderer : public renderer {
   /// each re-deriving it (and disagreeing) independently.
   ImVec2 last_resolved_rect_min_{};
   ImVec2 last_resolved_rect_max_{};
+
+  /// See `ambient_dockspace_id()`. Reset every `begin_frame()`.
+  ImGuiID ambient_dockspace_id_ = 0;
 
  private:
   /// This instance's full class-id -> render function dispatch table: wish's

@@ -24,14 +24,20 @@ key_t wish_id_of(const Element& element) {
 
 // ── UI layout ─────────────────────────────────────────────────────────────────
 //
-// ImGuiWindowFlags_NoResize = 1<<1 = 2
+// ImGuiWindowFlags_NoResize = 1<<1 = 2, ImGuiWindowFlags_NoDocking = 1<<19.
+//
+// NoDocking is deliberate: the calculator's button grid is a fixed 328x420
+// layout (hence NoResize too), so docking it into a dockspace -- which would
+// stretch it to fill a dock node -- would just break the grid. It stays a
+// floating window even when launched into a desktop shell. Every other
+// desktop tool omits pos_x/pos_y and docks by default (see render_window).
 
 static constexpr const char* kLayout = R"({
   "type": "Window",
   "title": "Calculator",
   "width": 328,
   "height": 420,
-  "flags": "NoResize",
+  "flags": "NoResize|NoDocking",
   "closable": true,
   "children": {
     "display": { "type": "Label", "text": "0", "font_size": 32 },

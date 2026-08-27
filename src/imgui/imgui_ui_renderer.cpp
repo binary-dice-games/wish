@@ -159,7 +159,12 @@ void render_window(imgui_renderer& r, const ui_element& node0, const context& s)
   // again on every fresh launch. FirstUseEver instead only falls back to
   // these values when the window has no persisted ini entry yet, so a
   // user's manual move/resize actually survives a restart.
-  if (px >= 0 && py >= 0)
+  //
+  // pos_x/pos_y default to -1 ("unpositioned"): an explicit position pins
+  // the window there, while -1 opts into the auto-placement below --
+  // centered (modal) or docked (normal) -- instead of ImGui's own cascade.
+  bool has_explicit_pos = px >= 0 && py >= 0;
+  if (has_explicit_pos)
     ImGui::SetNextWindowPos(ImVec2(float(px), float(py)), ImGuiCond_FirstUseEver);
   if (w > 0 && h > 0)
     ImGui::SetNextWindowSize(ImVec2(float(w), float(h)), ImGuiCond_FirstUseEver);
@@ -181,6 +186,16 @@ void render_window(imgui_renderer& r, const ui_element& node0, const context& s)
     if (!was_open) {
       ImGui::OpenPopup(iml.c_str());
       node.set_modal_opened(true);
+    }
+
+    // An un-positioned modal centers on the viewport (the Win32-MessageBox
+    // convention) rather than falling to ImGui's default top-left placement.
+    // FirstUseEver, not Appearing: a user who drags the dialog elsewhere
+    // still has that position remembered by imgui.ini across reopens, matching
+    // every other Window here. An explicit pos_x/pos_y opts out.
+    if (!has_explicit_pos) {
+      ImGui::SetNextWindowPos(
+          ImGui::GetMainViewport()->GetCenter(), ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
     }
 
     bool now_open = ImGui::BeginPopupModal(iml.c_str(), p_open, ImGuiWindowFlags(fl));
@@ -272,6 +287,16 @@ void render_window(imgui_renderer& r, const ui_element& node0, const context& s)
     }
     return;
   }
+
+  // An un-positioned, dockable window docks into the frame's ambient
+  // dockspace (the app host chrome's, or a DockSpaceViewport's) by default,
+  // so a tool launched into a desktop shell opens docked instead of as a
+  // loose floating window. FirstUseEver: once the user drags it out, that
+  // choice is remembered by imgui.ini. An explicit pos_x/pos_y or a
+  // NoDocking flag opts out; so does the absence of any dockspace this frame
+  // (ambient_dockspace_id() == 0), leaving placement to ImGui.
+  if (!has_explicit_pos && !(fl & ImGuiWindowFlags_NoDocking) && r.ambient_dockspace_id() != 0)
+    ImGui::SetNextWindowDockID(r.ambient_dockspace_id(), ImGuiCond_FirstUseEver);
 
   bool window_open = ImGui::Begin(iml.c_str(), p_open, ImGuiWindowFlags(fl));
   // Begin()/BeginChild() are the only ImGui calls where a matching End() is
@@ -1207,7 +1232,32 @@ void render_tab_item(imgui_renderer& r, const ui_element& node0, const context& 
     enqueue_event(s, node.wish_id(), "selected"_key, dynamic{});
 
   if (is_selected) {
-    render_children(r, node, s);
+    // scroll: give the tab page its own BeginChild() scroll region so
+    // overflowing content scrolls inside the tab instead of scrolling the
+    // enclosing window (which would carry the tab-selection row out of
+    // view). Any sibling widgets meant to stay pinned below the TabBar must
+    // live in a different window -- the region runs to the enclosing
+    // window's content bottom (documented on the field).
+    //
+    // Height is GetContentRegionAvail().y (scroll-invariant, per ImGui's
+    // Begin() math: the -Scroll.y terms in the content-region bottom and the
+    // cursor position cancel) minus one WindowPadding.y. A plain
+    // BeginChild(0, 0) fill overruns the enclosing window's content bottom by
+    // exactly that padding, leaving the window itself with a sliver of
+    // permanent scroll range (enough to let the tab row drift); reserving it
+    // keeps the window's own ScrollMax at zero. The subtraction is a small
+    // fixed amount, so the child is never starved even if avail is briefly
+    // odd during a dock/resize transition.
+    if (node.scroll(false)) {
+      auto child_id = "##tabscroll_" + stable_id(node);
+      float child_h = ImGui::GetContentRegionAvail().y - ImGui::GetStyle().WindowPadding.y;
+      ImGui::BeginChild(
+          child_id.c_str(), ImVec2(0, child_h > 1.0f ? child_h : 1.0f), ImGuiChildFlags_None);
+      render_children(r, node, s);
+      ImGui::EndChild();
+    } else {
+      render_children(r, node, s);
+    }
     ImGui::EndTabItem();
   }
 
@@ -1486,7 +1536,13 @@ void render_dockspace_viewport(imgui_renderer& r, const ui_element& node0, const
   ImGuiDockNodeFlags dock_flags = ImGuiDockNodeFlags(flags);
   if (passthru)
     dock_flags |= ImGuiDockNodeFlags_PassthruCentralNode;
-  ImGui::DockSpace(ImGui::GetID(id.c_str()), ImVec2(0.0f, 0.0f), dock_flags);
+  // GetID() hashes against the current window, so capture the id inside this
+  // host-window scope (it is no longer current once End() runs below, when
+  // the Window children actually render).
+  ImGuiID dockspace_id = ImGui::GetID(id.c_str());
+  ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), dock_flags);
+  // Un-positioned Window children dock here by default (see render_window).
+  r.set_ambient_dockspace_id(dockspace_id);
 
   // Non-Window children (e.g. MenuBar) are rendered inside the host window.
   node.for_each_child_ordered([&](bison::key_t, ui_element& child) {

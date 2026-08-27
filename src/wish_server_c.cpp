@@ -18,6 +18,9 @@
 #ifdef WISH_WEB_ENABLED
 #include <web/web_renderer.hpp>
 #endif
+#if defined(WISH_SDL3_ENABLED) || defined(WISH_WEB_ENABLED)
+#include <imgui.h>
+#endif
 
 #include "src/rmi/transport/named_pipe_transport.hpp"
 #include "src/rmi/transport/socket_transport.hpp"
@@ -78,19 +81,67 @@ struct bad_renderer_error : std::runtime_error {
   using std::runtime_error::runtime_error;
 };
 
+#if defined(WISH_SDL3_ENABLED) || defined(WISH_WEB_ENABLED)
+// Wraps an imgui-based renderer backend (sdl3_renderer / web_renderer) with a
+// single fullscreen, chrome-less host window whose only content is an
+// ImGui::DockSpace. That dockspace becomes the frame's ambient_dockspace_id(),
+// so every connected session's un-positioned, dockable top-level Window docks
+// into it by default (see render_window) -- letting one server host several
+// clients' windows in a coherent docked layout. This is the same role
+// host_renderer plays for the `wish server` CLI (which also adds a menu bar);
+// the bare imgui_renderer draws no server-level chrome of its own, so an app
+// that drives sdl3/web directly and roots its UI in its own DockSpaceViewport
+// is never given a second, competing fullscreen dockspace. Uses the same
+// host-window/dockspace ids as host_renderer so an imgui.ini layout carries
+// across.
+template <typename Base>
+class dockspace_renderer : public Base {
+ public:
+  using Base::Base;
+
+  void render_server_frame(const std::vector<wish::sync_context_ptr>& /*sessions*/) override {
+    const ImGuiViewport* vp = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(vp->WorkPos);
+    ImGui::SetNextWindowSize(vp->WorkSize);
+    ImGui::SetNextWindowViewport(vp->ID);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImGui::GetStyle().Colors[ImGuiCol_DockingEmptyBg]);
+
+    constexpr ImGuiWindowFlags host_flags = ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar |
+        ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+        ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
+
+    ImGui::Begin("##wish_host_chrome", nullptr, host_flags);
+    ImGui::PopStyleVar(3);
+    ImGui::PopStyleColor();
+
+    ImGuiID dock_id = ImGui::GetID("HostDockSpace");
+    ImGui::DockSpace(dock_id, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_PassthruCentralNode);
+    this->set_ambient_dockspace_id(dock_id);
+
+    ImGui::End();
+  }
+};
+#endif
+
 std::unique_ptr<wish::renderer> make_renderer(const char* renderer_kind, const dynamic& params) {
   std::string kind{renderer_kind ? renderer_kind : ""};
 
   if (kind == "console")
     return std::make_unique<wish::console_renderer>();
 
+  // sdl3/web backends are wrapped in dockspace_renderer (above) so the
+  // hosted server gets a fullscreen dockspace for its sessions' windows.
   if (kind == "sdl3") {
 #ifdef WISH_SDL3_ENABLED
     auto title = params.get_as<std::string>("title"_key, "wish");
     auto width = params.get_as<int32_t>("width"_key, 1280);
     auto height = params.get_as<int32_t>("height"_key, 720);
     auto font_size = params.get_as<int32_t>("font_size"_key, 16);
-    return std::make_unique<wish::sdl3_renderer>(title.c_str(), width, height, font_size);
+    return std::make_unique<dockspace_renderer<wish::sdl3_renderer>>(
+        title.c_str(), width, height, font_size);
 #else
     throw bad_renderer_error(
         "renderer_kind=\"sdl3\" requested but wish_server_dll was built with WISH_ENABLE_SDL3=OFF");
@@ -102,7 +153,8 @@ std::unique_ptr<wish::renderer> make_renderer(const char* renderer_kind, const d
     auto bind_addr = params.get_as<std::string>("web_bind"_key, "127.0.0.1");
     auto port = params.get_as<int32_t>("web_port"_key, 8080);
     auto font_size = params.get_as<int32_t>("font_size"_key, 16);
-    return std::make_unique<wish::web_renderer>(bind_addr, port, font_size);
+    return std::make_unique<dockspace_renderer<wish::web_renderer>>(
+        bind_addr, port, font_size);
 #else
     throw bad_renderer_error(
         "renderer_kind=\"web\" requested but wish_server_dll was built with WISH_ENABLE_WEB=OFF");
