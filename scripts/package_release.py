@@ -4,8 +4,8 @@
 This is a thin orchestrator around the packaging CMake already knows how to
 do (see cmake/Packaging.cmake): configure a Release build, build it, run
 `cpack` to get a ZIP containing everything install()-tagged COMPONENT wish
-(binaries, wish_client_dll + headers, docs, binding sources -- including
-extern/bison/bindings/python/bison/, a sibling import
+(binaries, wish_client_dll + wish_server_dll + headers, docs, binding
+sources -- including extern/bison/bindings/python/bison/, a sibling import
 bindings/python/wish/_native.py requires at runtime), then bolt on the one
 thing that genuinely isn't a CMake build-tree artifact and can't be an
 install() rule:
@@ -55,6 +55,7 @@ def configure(build_dir: Path, generator: str, version: str | None,
         "-DWISH_ENABLE_WEB=ON",
         "-DWISH_ENABLE_AUTOMATION=OFF",
         "-DWISH_BUILD_SHARED=ON",
+        "-DWISH_BUILD_SERVER_SHARED=ON",
         "-DWISH_BUILD_TESTS=OFF",
     ]
     if version:

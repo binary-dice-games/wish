@@ -49,9 +49,9 @@ way.
   process-info backends are `*_linux.cpp` / `*_win.cpp` only, so the
   collection fails to link there. The macOS zip is the core framework
   (`wish`, `wish-server`, `wish-standalone`, `wish-desktop`),
-  `wish_client_dll` + headers, docs, and binding sources — but not the
-  bc/git/mc/nano/tail/top/zip/pix example apps. Intel Macs build from
-  source.
+  `wish_client_dll` + `wish_server_dll` + headers, docs, and binding
+  sources — but not the bc/git/mc/nano/tail/top/zip/pix example apps. Intel
+  Macs build from source.
 - **Linux** zips are dynamically linked against the system X11/Wayland/GL
   libraries (same runtime requirement as any SDL3 app — see
   [docs/publishing-python.md](publishing-python.md#the-one-runtime-caveat-sdl3-display-libraries)).
