@@ -16,6 +16,11 @@
 (function () {
   "use strict";
 
+  // Module-level singletons -- TextEncoder/TextDecoder are stateless; a fresh
+  // one per call is pure allocation waste.
+  const TEXT_ENCODER = new TextEncoder();
+  const TEXT_DECODER = new TextDecoder();
+
   // ── wire format constants (must match draw_protocol.hpp exactly) ─────────
 
   const MSG = {
@@ -179,7 +184,7 @@
   // fixed-width fields to encode here, unlike the other outbound messages.
   function encodeQueryTree(requestId, root) {
     const json = JSON.stringify({ request_id: requestId, root: root });
-    return encodeEnvelope(MSG.QUERY_TREE, new TextEncoder().encode(json));
+    return encodeEnvelope(MSG.QUERY_TREE, TEXT_ENCODER.encode(json));
   }
 
   function encodeRequestRender() {
@@ -189,7 +194,7 @@
   // CLIPBOARD_TEXT's payload is plain UTF-8 text (see draw_protocol.hpp's
   // decode_clipboard_text_message()) -- no fixed-width fields either.
   function encodeClipboardText(text) {
-    return encodeEnvelope(MSG.CLIPBOARD_TEXT, new TextEncoder().encode(text));
+    return encodeEnvelope(MSG.CLIPBOARD_TEXT, TEXT_ENCODER.encode(text));
   }
 
   // ── WebGL2 renderer ────────────────────────────────────────────────────────
@@ -292,6 +297,11 @@
       // `this.textures` under the same id, so an ordinary draw command can
       // sample it like any other texture once rendered.
       this.renderTargets = new Map();
+
+      // Reused every _drawCmdLists() call -- the orthographic projection is
+      // recomputed in place rather than allocating a fresh Float32Array(16)
+      // per frame.
+      this._proj = new Float32Array(16);
     }
 
     _createSolidTexture(r, g, b, a) {
@@ -391,13 +401,13 @@
       const L = frame.displayPos.x, R = frame.displayPos.x + frame.displaySize.x;
       const top = frame.displayPos.y, bottom = frame.displayPos.y + frame.displaySize.y;
       const T = flipY ? bottom : top, B = flipY ? top : bottom;
-      // Column-major orthographic projection matching imgui_impl_opengl3.
-      const proj = new Float32Array([
-        2 / (R - L), 0, 0, 0,
-        0, 2 / (T - B), 0, 0,
-        0, 0, -1, 0,
-        (R + L) / (L - R), (T + B) / (B - T), 0, 1,
-      ]);
+      // Column-major orthographic projection matching imgui_impl_opengl3,
+      // written into the reused buffer rather than a fresh allocation.
+      const proj = this._proj;
+      proj[0] = 2 / (R - L); proj[1] = 0; proj[2] = 0; proj[3] = 0;
+      proj[4] = 0; proj[5] = 2 / (T - B); proj[6] = 0; proj[7] = 0;
+      proj[8] = 0; proj[9] = 0; proj[10] = -1; proj[11] = 0;
+      proj[12] = (R + L) / (L - R); proj[13] = (T + B) / (B - T); proj[14] = 0; proj[15] = 1;
       gl.uniformMatrix4fv(this.locProjMtx, false, proj);
       gl.uniform1i(this.locTexture, 0);
       gl.activeTexture(gl.TEXTURE0);
@@ -595,7 +605,7 @@
     const crc32 = view.getUint32(offset + 13, true);
     const pathLen = view.getUint32(offset + 17, true);
     const pathBytes = new Uint8Array(view.buffer, view.byteOffset + offset + 21, pathLen);
-    const path = new TextDecoder().decode(pathBytes);
+    const path = TEXT_DECODER.decode(pathBytes);
     return { textureId, format, width, height, crc32, path };
   }
 
@@ -616,17 +626,20 @@
   // "Latest frame wins": if several FRAME messages arrive before the next
   // rAF tick, only the most recent is drawn -- the server always resends
   // the complete scene every frame (ImGui is immediate-mode), so nothing is
-  // lost by skipping intermediate ones.
-  let pendingFrame = null;
+  // lost by skipping intermediate ones. Only the raw DataView is held here;
+  // decodeFrame() runs inside the rAF callback so superseded frames are
+  // never decoded at all.
+  let pendingFrameView = null;
   let frameRafScheduled = false;
   function scheduleFrameRender() {
     if (frameRafScheduled) return;
     frameRafScheduled = true;
     requestAnimationFrame(() => {
       frameRafScheduled = false;
-      if (pendingFrame) {
-        renderer.render(pendingFrame);
-        pendingFrame = null;
+      if (pendingFrameView) {
+        const frame = decodeFrame(pendingFrameView, 8);
+        pendingFrameView = null;
+        renderer.render(frame);
         // First FRAME processed means the canvas now shows something real --
         // Playwright scripts wait on this before interacting (see
         // src/automation/DESIGN.md's "Readiness").
@@ -652,9 +665,17 @@
   const ws = new WebSocket(proto + "//" + window.location.host + "/ws");
   ws.binaryType = "arraybuffer";
 
-  function send(bytes) {
-    if (ws.readyState === WebSocket.OPEN)
-      ws.send(bytes);
+  // Local send buffer size past which coalesced pointer motion is dropped
+  // rather than queued -- keeps a slow/congested link from accumulating an
+  // unbounded backlog of stale samples. Button/key/wheel messages pass
+  // `droppable` falsy and are always sent.
+  const SEND_BACKPRESSURE_LIMIT = 1 << 20; // 1 MiB
+  function send(bytes, droppable) {
+    if (ws.readyState !== WebSocket.OPEN)
+      return;
+    if (droppable && ws.bufferedAmount > SEND_BACKPRESSURE_LIMIT)
+      return;
+    ws.send(bytes);
   }
 
   function sendResize() {
@@ -773,17 +794,19 @@
     const offset = 8;
     switch (type) {
       case MSG.FRAME: {
-        const frame = decodeFrame(view, offset);
-        if (frame.targetId !== 0) {
+        // Peek the target id (first payload field, offset 8) without decoding
+        // the whole frame.
+        const targetId = view.getUint32(offset, true);
+        if (targetId !== 0) {
           // An offscreen render-target frame is a side effect a later
-          // canvas frame's compositing draw command depends on -- render it
-          // synchronously rather than through the rAF-deferred "latest
-          // frame wins" path below, which would silently drop it if a
+          // canvas frame's compositing draw command depends on -- decode and
+          // render it synchronously rather than through the rAF-deferred
+          // "latest frame wins" path below, which would silently drop it if a
           // canvas FRAME lands in the same tick. See "Offscreen Render
           // Targets" in src/web/DESIGN.md.
-          renderer.renderToTarget(frame);
+          renderer.renderToTarget(decodeFrame(view, offset));
         } else {
-          pendingFrame = frame;
+          pendingFrameView = view;
           scheduleFrameRender();
         }
         break;
@@ -824,7 +847,7 @@
       }
       case MSG.TREE_SNAPSHOT: {
         const jsonBytes = new Uint8Array(view.buffer, view.byteOffset + offset, payloadLen);
-        const snapshot = JSON.parse(new TextDecoder().decode(jsonBytes));
+        const snapshot = JSON.parse(TEXT_DECODER.decode(jsonBytes));
         const pending = window.wish._pending.get(snapshot.request_id);
         if (pending) {
           window.wish._pending.delete(snapshot.request_id);
@@ -836,7 +859,7 @@
         // Pushed unprompted, no request_id to resolve against -- just
         // append to window.wish.logs in the order it arrived.
         const jsonBytes = new Uint8Array(view.buffer, view.byteOffset + offset, payloadLen);
-        const event = JSON.parse(new TextDecoder().decode(jsonBytes));
+        const event = JSON.parse(TEXT_DECODER.decode(jsonBytes));
         window.wish.logs.push(...event.logs);
         break;
       }
@@ -848,7 +871,7 @@
         // (e.g. permission denied) rather than surfacing a popup, same as
         // ImGui's own fallback would do nothing visible either.
         const textBytes = new Uint8Array(view.buffer, view.byteOffset + offset, payloadLen);
-        const text = new TextDecoder().decode(textBytes);
+        const text = TEXT_DECODER.decode(textBytes);
         if (navigator.clipboard && navigator.clipboard.writeText)
           navigator.clipboard.writeText(text).catch(() => {});
         break;
@@ -860,21 +883,48 @@
 
   window.addEventListener("resize", sendResize);
 
+  // canvas.getBoundingClientRect() forces a synchronous layout. The canvas is
+  // a single fixed full-viewport element, so its rect only moves on resize or
+  // scroll -- cache it and refresh only then, instead of reading it on every
+  // pointer event.
+  let canvasRect = canvas.getBoundingClientRect();
+  function refreshCanvasRect() {
+    canvasRect = canvas.getBoundingClientRect();
+  }
+  window.addEventListener("resize", refreshCanvasRect);
+  window.addEventListener("scroll", refreshCanvasRect, true);
+
   // DOM MouseEvent.button: 0=left,1=middle,2=right. ImGui: 0=left,1=right,2=middle.
   const DOM_BUTTON_TO_IMGUI = { 0: 0, 1: 2, 2: 1 };
 
   function canvasPos(e) {
-    const rect = canvas.getBoundingClientRect();
-    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    return { x: e.clientX - canvasRect.left, y: e.clientY - canvasRect.top };
   }
 
+  // Coalesce pointer motion to at most one INPUT message per animation frame.
+  // A high-poll-rate mouse emits hundreds of mousemove events per second, but
+  // the server caps rendering near 60 FPS and applies its own 4 px / 100 ms
+  // motion debounce, so sub-frame motion samples are pure wire traffic.
+  let pendingMove = null;
+  let moveRafScheduled = false;
+  function flushPendingMove() {
+    moveRafScheduled = false;
+    if (pendingMove) {
+      send(encodeMouseMove(pendingMove.x, pendingMove.y), /*droppable=*/true);
+      pendingMove = null;
+    }
+  }
   window.addEventListener("mousemove", (e) => {
-    const p = canvasPos(e);
-    send(encodeMouseMove(p.x, p.y));
+    pendingMove = canvasPos(e);
+    if (!moveRafScheduled) {
+      moveRafScheduled = true;
+      requestAnimationFrame(flushPendingMove);
+    }
   });
   canvas.addEventListener("mousedown", (e) => {
     e.preventDefault();
     canvas.focus();
+    flushPendingMove(); // keep motion ordered before the button press
     const p = canvasPos(e);
     const btn = DOM_BUTTON_TO_IMGUI[e.button];
     if (btn !== undefined)
@@ -883,6 +933,7 @@
   window.addEventListener("mouseup", (e) => {
     const btn = DOM_BUTTON_TO_IMGUI[e.button];
     if (btn !== undefined) {
+      flushPendingMove();
       const p = canvasPos(e);
       send(encodeMouseButton(btn, false, p.x, p.y));
     }

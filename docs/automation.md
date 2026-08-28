@@ -384,6 +384,14 @@ def test_saving_shows_confirmation(wish_ui):
   `ui._page.mouse` directly, keep that gap: `mouse.move(x, y)`,
   `mouse.down(button="right")`, a real sleep (tens of ms), `mouse.up(button=
   "right")`.
+- **The web client coalesces `mousemove` to one `INPUT` message per animation
+  frame** (and the server debounces sub-4 px / sub-100 ms motion on top of
+  that), so a tight `for` loop of `ui._page.mouse.move(...)` calls with no
+  delay collapses to roughly one delivered position — the *last* one. Drive
+  hover-dependent interactions with a `move` → short sleep → next `move`
+  rhythm, not a burst. A `mouse.down()`/`mouse.up()` flushes any pending
+  coalesced move synchronously first, so press/release positions are always
+  delivered exactly.
 - **`get_tree()` measurements right after triggering a state change can
   reflect a not-yet-settled frame.** An auto-height row's size (see
   `docs/ui-elements.md`'s `height` field doc) is *the previous frame's*

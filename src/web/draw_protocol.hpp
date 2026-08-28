@@ -137,6 +137,19 @@ namespace draw_protocol {
 std::vector<std::byte> encode_frame(const ImDrawData& draw_data, uint32_t target_id = 0);
 
 /**
+ * @brief Encode one ImDrawData snapshot as a FRAME message into @p out.
+ *
+ * Byte-for-byte identical wire output to the allocating overload above, but
+ * reuses @p out's storage: `out` is cleared, reserved once to the exact final
+ * size (derived from `draw_data`'s vertex/index/command counts), and filled
+ * in place -- no separate payload vector and no second copy through an
+ * envelope wrapper. `web_renderer::end_frame()` calls this every frame with a
+ * persistent scratch buffer so the per-frame broadcast costs one buffer build
+ * and no heap allocation once the capacity has settled.
+ */
+void encode_frame(const ImDrawData& draw_data, uint32_t target_id, std::vector<std::byte>& out);
+
+/**
  * @brief Encode a texture (re)upload as a TEX_CREATE or TEX_UPDATE message.
  *
  * The message type is chosen from `tex.Status`: `ImTextureStatus_WantCreate`

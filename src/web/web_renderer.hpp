@@ -17,6 +17,7 @@
 #include "src/bison/bison_sync.hpp"
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <deque>
 #include <filesystem>
@@ -329,6 +330,21 @@ class web_renderer : public imgui_renderer {
   static const char* get_clipboard_text(ImGuiContext* ctx);
   static void set_clipboard_text(ImGuiContext* ctx, const char* text);
 
+  /**
+   * @brief `true` if a browser mouse-move to (@p x, @p y) is far/old enough
+   *        from the last significant one to warrant drawing a frame.
+   *
+   * Mirrors `sdl3_renderer::mouse_motion_significant()` (4 px / 100 ms): a
+   * bare hover over the canvas should not force a full re-render +
+   * `encode_frame` + broadcast every frame the way it did when every inbound
+   * message unconditionally set `activity_`. The move is still queued into
+   * `input_queue_` regardless, so `begin_frame()` feeds ImGuiIO the exact
+   * cursor path on the frames that do render. Called from civetweb worker
+   * threads (`on_message`), so the baseline it updates is guarded by
+   * `mouse_motion_filter_`.
+   */
+  bool mouse_move_significant(float x, float y);
+
   std::string bind_addr_;
   int port_;
   int font_size_;
@@ -403,7 +419,32 @@ class web_renderer : public imgui_renderer {
   // Set by on_connect/on_disconnect/on_message (civetweb worker threads),
   // consumed by poll_events() (render thread). A single bool needs no
   // synchronized<T> wrapper -- mirrors sdl3_renderer::quit_.
+  //
+  // A mouse-move message only sets this when mouse_move_significant() says so
+  // (mirroring sdl3_renderer's poll_events() motion debounce); every other
+  // inbound message kind still sets it unconditionally.
   std::atomic<bool> activity_{false};
+
+  // Baseline for mouse_move_significant(), written only from civetweb worker
+  // threads (on_message). Mirrors sdl3_renderer::last_motion_x_/y_/time_/
+  // has_motion_baseline_, wrapped because multiple connections' on_message
+  // callbacks can run on different worker threads.
+  struct motion_filter {
+    float last_x = 0.0f;
+    float last_y = 0.0f;
+    std::chrono::steady_clock::time_point last_time{};
+    bool has_baseline = false;
+  };
+  bison::synchronized<motion_filter> mouse_motion_filter_;
+
+  // Reused every begin_frame() as the drain target for input_queue_, instead
+  // of move-constructing a fresh deque each frame.
+  std::deque<web_input_event> input_scratch_;
+
+  // Reused every end_frame() to build the broadcast FRAME message in place
+  // (see draw_protocol::encode_frame()'s out-param overload) -- render-thread
+  // only, keeps its grown capacity across frames.
+  std::vector<std::byte> frame_scratch_;
 
   // Left/right modifier key state, tracked from individual LeftShift/
   // RightShift/... key events so begin_frame() can additionally emit the
