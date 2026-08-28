@@ -377,10 +377,10 @@ void sdl3_renderer::render_node(const ui_element& node, const context& s) {
   // capturing GetItemRect*() here would then read a stale, unrelated item's
   // state left over from whatever widget rendered before this one. Mirrors
   // web_renderer::render_node()'s identical guard.
-  if (!node.get_as<bool>(bison::key_t{"visible"}, true))
+  if (!node.visible())
     return;
 
-  auto id = node.get_as<bison::key_t>(bison::key_t{"__wish_id"}, bison::key_t{});
+  auto id = node.wish_id();
   if (id.id == 0)
     return; // node was never assigned an id (e.g. a manually built test tree)
 
@@ -401,10 +401,10 @@ void sdl3_renderer::render_node(const ui_element& node, const context& s) {
 }
 
 void sdl3_renderer::capture_hit_test_for_last_item(const ui_element& node) {
-  if (!node.get_as<bool>(bison::key_t{"visible"}, true))
+  if (!node.visible())
     return;
 
-  auto id = node.get_as<bison::key_t>(bison::key_t{"__wish_id"}, bison::key_t{});
+  auto id = node.wish_id();
   if (id.id == 0)
     return; // node was never assigned an id (e.g. a manually built test tree)
 

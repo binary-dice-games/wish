@@ -201,6 +201,75 @@ TEST_F(UiElementTest, SelectedDefaultsFalseAndReflectsWrites) {
   EXPECT_FALSE(node.selected());
 }
 
+// ── drag_type() / drag_payload() / drop_type() ─────────────────────────────
+
+TEST_F(UiElementTest, DragDropAccessorsDefaultEmptyAndReflectWrites) {
+  auto map = bdg::wish::import_json(R"({"type":"Button","label":"hi"})");
+  ui_element& node = *map[""];
+
+  EXPECT_EQ(node.drag_type(), "");
+  EXPECT_EQ(node.drag_payload(), "");
+  EXPECT_EQ(node.drop_type(), "");
+
+  node["drag_type"_key] = std::string("file");
+  node["drag_payload"_key] = std::string("/tmp/a");
+  node["drop_type"_key] = std::string("file");
+  EXPECT_EQ(node.drag_type(), "file");
+  EXPECT_EQ(node.drag_payload(), "/tmp/a");
+  EXPECT_EQ(node.drop_type(), "file");
+
+  // Second write after the field pointer is cached must still be observed.
+  node["drag_payload"_key] = std::string("/tmp/b");
+  EXPECT_EQ(node.drag_payload(), "/tmp/b");
+}
+
+// ── set_self_rect() / self_rect() ──────────────────────────────────────────
+
+TEST_F(UiElementTest, SelfRectReturnsFalseUntilStamped) {
+  auto map = bdg::wish::import_json(R"({"type":"VerticalLayout"})");
+  ui_element& node = *map[""];
+
+  bdg::wish::vec2f pos{1.0f, 1.0f};
+  bdg::wish::vec2f size{2.0f, 2.0f};
+  EXPECT_FALSE(node.self_rect(pos, size));
+  // Outputs left untouched on a miss.
+  EXPECT_FLOAT_EQ(pos.x, 1.0f);
+  EXPECT_FLOAT_EQ(size.x, 2.0f);
+}
+
+TEST_F(UiElementTest, SelfRectRoundTripsThroughStampedFields) {
+  auto map = bdg::wish::import_json(R"({"type":"VerticalLayout"})");
+  ui_element& node = *map[""];
+
+  node.set_self_rect({10.0f, 20.0f}, {300.0f, 400.0f});
+
+  bdg::wish::vec2f pos;
+  bdg::wish::vec2f size;
+  ASSERT_TRUE(node.self_rect(pos, size));
+  EXPECT_FLOAT_EQ(pos.x, 10.0f);
+  EXPECT_FLOAT_EQ(pos.y, 20.0f);
+  EXPECT_FLOAT_EQ(size.x, 300.0f);
+  EXPECT_FLOAT_EQ(size.y, 400.0f);
+
+  // A later frame's re-stamp is observed through the cached field pointers.
+  node.set_self_rect({11.0f, 21.0f}, {301.0f, 401.0f});
+  ASSERT_TRUE(node.self_rect(pos, size));
+  EXPECT_FLOAT_EQ(pos.x, 11.0f);
+  EXPECT_FLOAT_EQ(size.y, 401.0f);
+}
+
+TEST_F(UiElementTest, SelfRectVisibleThroughRawFields) {
+  // render_node() previously read these back via findField() directly; the
+  // stamped values must be visible under the literal "__wish_win_rect_*__"
+  // keys for any external/observability consumer.
+  auto map = bdg::wish::import_json(R"({"type":"Window","title":"w"})");
+  ui_element& node = *map[""];
+
+  node.set_self_rect({5.0f, 6.0f}, {7.0f, 8.0f});
+  EXPECT_FLOAT_EQ(node.as<float>("__wish_win_rect_x__"_key), 5.0f);
+  EXPECT_FLOAT_EQ(node.as<float>("__wish_win_rect_h__"_key), 8.0f);
+}
+
 // ── for_each_child_ordered() / clone_ptr() ──────────────────────────────────
 //
 // Regression coverage for a bug where cloning a tree (as ui_template.cpp's

@@ -112,10 +112,7 @@ static std::string with_id(const std::string& label, const ui_element& node) {
 static void report_self_rect(const ui_element& node) {
   ImVec2 pos = ImGui::GetWindowPos();
   ImVec2 size = ImGui::GetWindowSize();
-  const_cast<ui_element&>(node)["__wish_win_rect_x__"_key] = pos.x;
-  const_cast<ui_element&>(node)["__wish_win_rect_y__"_key] = pos.y;
-  const_cast<ui_element&>(node)["__wish_win_rect_w__"_key] = size.x;
-  const_cast<ui_element&>(node)["__wish_win_rect_h__"_key] = size.y;
+  node.set_self_rect({pos.x, pos.y}, {size.x, size.y});
 }
 
 // Companion to report_self_rect() for a node whose "own wrap" was a plain
@@ -128,10 +125,7 @@ static void report_self_rect(const ui_element& node) {
 // call used -- see render_vertical_layout()/render_horizontal_layout()'s
 // suppress_layout_wrap_self handling.
 static void report_self_rect_from(const ui_element& node, ImVec2 rect_min, ImVec2 rect_max) {
-  const_cast<ui_element&>(node)["__wish_win_rect_x__"_key] = rect_min.x;
-  const_cast<ui_element&>(node)["__wish_win_rect_y__"_key] = rect_min.y;
-  const_cast<ui_element&>(node)["__wish_win_rect_w__"_key] = rect_max.x - rect_min.x;
-  const_cast<ui_element&>(node)["__wish_win_rect_h__"_key] = rect_max.y - rect_min.y;
+  node.set_self_rect({rect_min.x, rect_min.y}, {rect_max.x - rect_min.x, rect_max.y - rect_min.y});
 }
 
 // ── Core ──────────────────────────────────────────────────────────────────────
@@ -965,8 +959,9 @@ void render_splitter(imgui_renderer& r, const ui_element& node0, const context& 
     float size;
   };
   std::vector<pane_info> panes;
-  node.for_each_child_ordered(
-      [&](key_t, ui_element& child) { panes.push_back({&child, child.get_as<float>(size_field, 0.0f)}); });
+  node.for_each_child_ordered([&](key_t, ui_element& child) {
+    panes.push_back({&child, is_vertical ? child.width(0.0f) : child.height(0.0f)});
+  });
   if (panes.empty())
     return;
   if (panes.size() == 1) {

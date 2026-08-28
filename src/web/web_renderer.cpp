@@ -540,7 +540,7 @@ void web_renderer::render_node(const ui_element& node, const context& s) {
   if (!node.visible())
     return;
 
-  auto id = node.get_as<bison::key_t>(bison::key_t{"__wish_id"}, bison::key_t{});
+  auto id = node.wish_id();
   if (id.id == 0)
     return; // node was never assigned an id (e.g. a manually built test tree)
 
@@ -568,7 +568,7 @@ void web_renderer::capture_hit_test_for_last_item(const ui_element& node) {
   if (!node.visible())
     return;
 
-  auto id = node.get_as<bison::key_t>(bison::key_t{"__wish_id"}, bison::key_t{});
+  auto id = node.wish_id();
   if (id.id == 0)
     return; // node was never assigned an id (e.g. a manually built test tree)
 
