@@ -88,14 +88,17 @@ class server : public bison::rmi::server {
    * client-side logging.
    * Must be called before `start()`.
    *
-   * The RMI trace lines this server routes to the log (see `on_print()`)
-   * include decoded call payloads (`args=...`, `set` values, response
-   * bodies) only when the logger is verbose; otherwise the trace keeps just
-   * the envelope metadata so the log file stays compact.
+   * The logger's `log_level` also drives the underlying bison trace hooks:
+   * RMI trace lines (see `on_print()`) are produced only at `info` or above,
+   * and carry decoded call payloads (`args=...`, `set` values, response
+   * bodies) only at `trace`.  Below `info` the trace string is never even
+   * formatted.
    */
   void set_logger(logger_ptr logger) {
     logger_ = std::move(logger);
-    set_trace_payloads(logger_ && logger_->is_verbose());
+    const log_level lvl = logger_ ? logger_->level() : log_level::none;
+    set_trace_lines(lvl >= log_level::info);
+    set_trace_payloads(lvl >= log_level::trace);
   }
 
   /**

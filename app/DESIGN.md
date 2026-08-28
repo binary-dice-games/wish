@@ -16,7 +16,7 @@ Shared transport flags (all modes):
 |------|-------------|
 | `--host`, `--port` | TCP socket (default: `0.0.0.0:7070` for server, `127.0.0.1:7070` for client) |
 | `--pipe=<path>` | Named pipe / Unix socket |
-| `--verbose` | Trace RMI messages |
+| `--verbose=<level>` | Log verbosity: `none` (default) \| `fatal` \| `error` \| `warning` \| `info` \| `trace` (RMI trace lines at `info`+, decoded payloads at `trace`) |
 
 `desktop` mode reuses the shared transport flags for its downstream side and
 adds `--upstream_transport`, `--upstream_host`, `--upstream_port`,

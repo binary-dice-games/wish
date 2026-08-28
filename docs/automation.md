@@ -363,9 +363,10 @@ def test_saving_shows_confirmation(wish_ui):
   returns an empty/near-empty `widgets` list even though `instantiate` clearly
   succeeded). Always assign it: `proxy = client.instantiate(...)`, and keep
   `proxy` in scope for as long as the object should exist. Server-side
-  `--verbose` (prints `connect`/`instantiate`/`destroy`/`disconnect` trace
-  lines) is the fastest way to confirm this is what happened — an `instantiate
-  ok` immediately followed by `destroy` for the same object is the signature.
+  `--verbose=info` (prints `connect`/`instantiate`/`destroy`/`disconnect` trace
+  lines; `--verbose=trace` adds decoded payloads) is the fastest way to confirm
+  this is what happened — an `instantiate ok` immediately followed by `destroy`
+  for the same object is the signature.
 - **`bison.Dynamic` (Python) is not a dict — it has no `.get()`.** Read a
   field with `payload["field_name"]`, not `payload.get("field_name")`.
   Calling `.get(...)` resolves through `Dynamic.__getattr__`'s generic
@@ -454,7 +455,7 @@ def test_saving_shows_confirmation(wish_ui):
   non-selection by moving the mouse away and re-screenshotting: the
   highlight vanished, proving it was hover styling, not a real selected
   state) with **no server-side event fired at all** (verified via
-  temporary `--verbose`-visible tracing in the row's event handler). A
+  temporary `--verbose=info`-visible tracing in the row's event handler). A
   manual `mouse.move(cx, cy)` → sleep ~100ms → `mouse.down()` → sleep
   ~200ms → `mouse.up()` → sleep ~300ms sequence was reliable across every
   attempt in the same session. This is a *plain left click* failing, not

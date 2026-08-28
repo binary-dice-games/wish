@@ -9,7 +9,9 @@
 
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <string>
+#include <string_view>
 
 #ifdef WISH_AUTOMATION_ENABLED
 #include <cstdint>
@@ -17,6 +19,30 @@
 #endif
 
 namespace bdg::wish {
+
+/**
+ * @brief Server log verbosity, ordered from least to most verbose.
+ *
+ * Selected by the `--verbose` CLI flag (default `none`).  Two thresholds
+ * matter:
+ *  - `>= info`  : RMI request/response trace lines and session lifecycle
+ *                 lines are produced (and mirrored to stdout).
+ *  - `>= trace` : those trace lines additionally carry decoded payloads
+ *                 (`args=`, `set` values, response bodies).
+ *
+ * `fatal`/`error`/`warning` produce no RMI trace output at all; they only
+ * raise the severity floor for client `logger.log()` messages written to the
+ * log file.  `none` writes nothing.
+ */
+enum class log_level { none = 0, fatal, error, warning, info, trace };
+
+/// @brief Parse a level name (case-insensitive). Accepts `warn` for
+///        `warning` and `debug` for `trace`. Returns `std::nullopt` if
+///        @p s names no level.
+std::optional<log_level> parse_log_level(std::string_view s);
+
+/// @brief Canonical lowercase name of @p lvl (e.g. `"info"`).
+std::string_view to_string(log_level lvl);
 
 class logger;
 using logger_ptr = std::shared_ptr<logger>;
@@ -28,9 +54,12 @@ using logger_ptr = std::shared_ptr<logger>;
  * creates one instance per connected client in `on_session_created`; the client
  * reaches it via `wish::client` helper methods.
  *
- * When @p verbose is `true` each message is also written to `std::cout`.
- * A log file at @p log_path is always written (truncated on construction).
- * If @p log_path is empty no file is opened.
+ * The configured @ref log_level gates output: a message is written to the
+ * log file only when the logger is verbose enough for its severity, and is
+ * additionally mirrored to `std::cout` when the level is `info` or higher.
+ * At `none` nothing is written.  A log file at @p log_path is opened
+ * regardless of level (so it exists once the server starts); if @p log_path
+ * is empty no file is opened.
  *
  * ## RMI method exposed to clients
  *
@@ -54,10 +83,10 @@ class logger : public bison::dynamic {
   /**
    * @brief Construct and register the RMI `log` method.
    * @param base      Prototype-initialised dynamic base (from `dynamic::instantiate`).
-   * @param verbose   When true, mirror every message to `std::cout`.
+   * @param level     Verbosity floor; see @ref log_level.
    * @param log_path  File to append messages to; ignored when empty.
    */
-  logger(bison::dynamic&& base, bool verbose, std::filesystem::path log_path);
+  logger(bison::dynamic&& base, log_level level, std::filesystem::path log_path);
 
   // ── Public C++ API ────────────────────────────────────────────────────────────
 
@@ -79,9 +108,9 @@ class logger : public bison::dynamic {
     log("error", msg);
   }
 
-  /// @brief Returns true when verbose mode is on (stdout mirroring enabled).
-  bool is_verbose() const noexcept {
-    return verbose_;
+  /// @brief The configured verbosity floor.
+  log_level level() const noexcept {
+    return level_;
   }
 
 #ifdef WISH_AUTOMATION_ENABLED
@@ -112,7 +141,7 @@ class logger : public bison::dynamic {
 #endif
 
  private:
-  bool verbose_;
+  log_level level_;
   std::filesystem::path log_path_;
 
   /// @brief Mutable state shared across `log()` calls, guarded by `state_`.

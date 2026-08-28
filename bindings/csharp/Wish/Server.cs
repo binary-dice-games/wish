@@ -163,10 +163,20 @@ public sealed class Server : IDisposable
         return ptr == nint.Zero ? "" : Marshal.PtrToStringUTF8(ptr) ?? "";
     }
 
-    /// <summary>Enables/disables verbose trace logging of RMI dispatch to stdout. Must be called before <see cref="Start"/>.</summary>
+    /// <summary>Deprecated: prefer <see cref="SetLogLevel"/>. <c>true</c> maps to <c>"trace"</c>, <c>false</c> to <c>"none"</c>. Must be called before <see cref="Start"/>.</summary>
     public void SetVerbose(bool verbose = true)
     {
         WishServerException.Check(ServerNative.wish_server_set_verbose(_handle, verbose ? 1 : 0), "set_verbose", LastError);
+    }
+
+    /// <summary>
+    /// Sets log verbosity: one of <c>"none"</c>, <c>"fatal"</c>, <c>"error"</c>, <c>"warning"</c>, <c>"info"</c>, <c>"trace"</c>
+    /// (default <c>"none"</c>). RMI trace lines appear at <c>"info"</c> and above, decoded payloads at <c>"trace"</c>.
+    /// Must be called before <see cref="Start"/>.
+    /// </summary>
+    public void SetLogLevel(string level)
+    {
+        WishServerException.Check(ServerNative.wish_server_set_log_level(_handle, level), "set_log_level", LastError);
     }
 
     /// <summary>

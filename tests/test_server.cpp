@@ -353,11 +353,11 @@ TEST(ServerTest, MenuBarExtensionSplicedNotDoubleRendered) {
 
 // ── RMI trace verbosity ──────────────────────────────────────────────────────
 //
-// wish::server always routes RMI trace lines to the log file, but the decoded
-// call payloads (`args=`, `set` values, response bodies) they can carry make
-// server.log grow fast. set_logger() gates those payloads on the logger's
-// verbose flag: envelope metadata is always logged, payloads only when
-// verbose.
+// set_logger() maps the logger's log_level onto bison's trace hooks:
+//  - below `info`  : per-request trace lines are not produced at all;
+//  - `info`+       : envelope-metadata trace lines are produced;
+//  - `trace`       : those lines also carry decoded payloads (`args=`, `set`
+//                    values, response bodies).
 
 namespace {
 
@@ -378,10 +378,10 @@ class print_capturing_server : public wish::server {
   }
 };
 
-std::string capture_trace_with_logger(bool verbose) {
+std::string capture_trace_with_logger(wish::log_level level) {
   wish::register_all();
   auto lg = std::make_shared<wish::logger>(
-      dynamic::instantiate("wish"_key, "__WishLogger"_key), verbose, std::filesystem::path{});
+      dynamic::instantiate("wish"_key, "__WishLogger"_key), level, std::filesystem::path{});
 
   memory_server_transport transport;
   print_capturing_server srv{transport, std::make_unique<wish::null_renderer>()};
@@ -405,15 +405,23 @@ std::string capture_trace_with_logger(bool verbose) {
 
 } // namespace
 
-TEST(ServerTest, NonVerboseLoggerOmitsTracePayloads) {
-  const std::string out = capture_trace_with_logger(/*verbose=*/false);
-  EXPECT_NE(out.find("[rmi]"), std::string::npos); // trace lines still emitted
+TEST(ServerTest, NoneLevelSuppressesPerRequestTrace) {
+  const std::string out = capture_trace_with_logger(wish::log_level::none);
+  EXPECT_EQ(out.find("class=Window"), std::string::npos); // no instantiate trace
+  EXPECT_EQ(out.find("method="), std::string::npos);
+  EXPECT_EQ(out.find("TRACE_SENTINEL"), std::string::npos);
+}
+
+TEST(ServerTest, InfoLevelTracesMetadataWithoutPayloads) {
+  const std::string out = capture_trace_with_logger(wish::log_level::info);
+  EXPECT_NE(out.find("[rmi]"), std::string::npos);
+  EXPECT_NE(out.find("class=Window"), std::string::npos);
   EXPECT_EQ(out.find("TRACE_SENTINEL"), std::string::npos);
   EXPECT_EQ(out.find("args="), std::string::npos);
 }
 
-TEST(ServerTest, VerboseLoggerIncludesTracePayloads) {
-  const std::string out = capture_trace_with_logger(/*verbose=*/true);
+TEST(ServerTest, TraceLevelIncludesDecodedPayloads) {
+  const std::string out = capture_trace_with_logger(wish::log_level::trace);
   EXPECT_NE(out.find("TRACE_SENTINEL"), std::string::npos);
 }
 

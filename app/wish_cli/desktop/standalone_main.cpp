@@ -12,7 +12,7 @@ DEFINE_int32(port, 7071, "Downstream listen port (downstream_transport=tcp)");
 DEFINE_string(name, "", "Downstream named-pipe / Unix-socket path (downstream_transport=pipe)");
 DEFINE_string(cmd, "", "Command to spawn (downstream_transport=term)");
 DEFINE_int32(timeout, 30000, "Upstream per-request timeout in milliseconds");
-DEFINE_bool(verbose, false, "Print downstream request/response trace messages to stdout");
+DEFINE_string(verbose, "none", "Log verbosity: none|fatal|error|warning|info|trace");
 DEFINE_bool(debugger, false, "Wait for debugger attachment before starting");
 
 int main(int argc, char** argv) {

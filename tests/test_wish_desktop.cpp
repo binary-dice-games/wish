@@ -15,7 +15,7 @@
 // for the real binaries, neither of which this test links) and DEFINEs the
 // upstream_* flags itself -- mirrors extern/bison/tests/bridge_app_tests.cpp.
 DEFINE_string(cmd, "", "test default");
-DEFINE_bool(verbose, false, "test default");
+DEFINE_string(verbose, "none", "test default");
 DEFINE_bool(debugger, false, "test default");
 DEFINE_int32(timeout, 30000, "test default");
 

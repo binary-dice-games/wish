@@ -176,8 +176,25 @@ WISH_SERVER_API wish_server_error wish_server_stop(wish_server_handle server);
  */
 WISH_SERVER_API int wish_server_should_quit(wish_server_handle server);
 
-/** @brief Enable/disable verbose trace logging of RMI dispatch to stdout. */
+/**
+ * @brief Deprecated: prefer wish_server_set_log_level(). `verbose != 0` maps to
+ *        log level "trace", `0` maps to "none".
+ */
 WISH_SERVER_API wish_server_error wish_server_set_verbose(wish_server_handle server, int verbose);
+
+/**
+ * @brief Set the server log verbosity. One of
+ *        "none" | "fatal" | "error" | "warning" | "info" | "trace"
+ *        (case-insensitive; "warn"/"debug" also accepted). Default "none".
+ *
+ * RMI request/response trace lines are produced only at "info" and above
+ * (mirrored to stdout), and carry decoded payloads only at "trace". Lower
+ * levels only raise the severity floor for client log messages.
+ *
+ * Must be called before wish_server_start(). Returns WISH_SERVER_ERR_EXCEPTION
+ * for an unrecognised level or if the server is already started.
+ */
+WISH_SERVER_API wish_server_error wish_server_set_log_level(wish_server_handle server, const char* level);
 
 /** @brief Stop (if still running) and free a server handle. */
 WISH_SERVER_API void wish_server_destroy(wish_server_handle server);

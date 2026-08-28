@@ -6,7 +6,7 @@
  *
  * Usage:
  *   wish server     [--transport T] [--host H] [--port P] [--name PATH] [--cmd C]
- *                   [--title T] [--width W] [--height H] [--verbose]
+ *                   [--title T] [--width W] [--height H] [--verbose LEVEL]
  *   wish client     [--transport T] [--host H] [--port P] [--name PATH]
  *                   (--list | --run=<app>) [--timeout MS] [-- app-args...]
  *   wish standalone [--title T] [--width W] [--height H]
@@ -41,7 +41,7 @@ DEFINE_string(transport, "term", "Transport to use: tcp, pipe, tls, or term");
 DEFINE_string(host, "0.0.0.0", "Bind/connect host address");
 DEFINE_int32(port, 7070, "Listen/connect port");
 DEFINE_string(name, "", "Named-pipe / Unix-socket path (transport=pipe)");
-DEFINE_bool(verbose, false, "Print session trace messages to stdout");
+DEFINE_string(verbose, "none", "Log verbosity: none|fatal|error|warning|info|trace");
 DEFINE_bool(debugger, false, "Wait for debugger attachment before starting");
 // Server: the default preset for sessions that don't request their own.
 // Client: overrides that default for this session only when explicitly
@@ -71,7 +71,7 @@ static void print_usage() {
                "\n"
                "Usage:\n"
                "  wish server     [--transport T] [--host H] [--port P] [--name PATH] [--cmd C]\n"
-               "                  [--title T] [--width W] [--height H] [--verbose]\n"
+               "                  [--title T] [--width W] [--height H] [--verbose LEVEL]\n"
                "  wish client     [--transport T] [--host H] [--port P] [--name PATH]\n"
                "                  (--list | --run=<app>) [--timeout MS] [-- app-args...]\n"
                "  wish standalone [--title T] [--width W] [--height H]\n"
@@ -97,7 +97,8 @@ static void print_usage() {
                "  --port P       Port                        (default: 7070)\n"
                "  --name PATH    Named-pipe / Unix-socket path (transport=pipe)\n"
                "  --cmd C        Command to spawn             (transport=term, server only)\n"
-               "  --verbose      Print RMI trace messages\n"
+               "  --verbose L    Log verbosity: none|fatal|error|warning|info|trace\n"
+               "                 (default none; RMI trace lines at info+, payloads at trace)\n"
                "  --debugger     Wait for debugger attachment before starting\n"
                "\n"
                "TLS flags (--transport=tls, see docs/cli.md and docs/tls.md for the full\n"
