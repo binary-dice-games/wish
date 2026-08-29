@@ -1,0 +1,17 @@
+[package]
+name = "wish"
+version = "1.0.0"
+edition = "2021"
+rust-version = "1.74"
+description = "Rust bindings for wish's client C ABI (wish_client_c.h)"
+license = "MIT"
+publish = false
+build = "build.rs"
+
+[lib]
+name = "wish"
+path = "src/lib.rs"
+
+[dependencies]
+
+[dev-dependencies]
