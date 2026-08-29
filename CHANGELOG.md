@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `wish_server_set_log_level()` (C ABI) and `set_log_level()` / `SetLogLevel()` (C++, Python, C# bindings): set the server log verbosity by name.
+- Rust (`bindings/rust/`) and Go (`bindings/go/`) client language bindings for the wish client C ABI.
 
 ### Changed
 
