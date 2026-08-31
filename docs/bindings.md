@@ -708,6 +708,10 @@ cargo test -p wish-server
 
 ## Go (`bindings/go/`)
 
+The module holds two packages: `wish` (this section) is the client binding;
+`wishserver` (see [Running a server from Go](#running-a-server-from-go)
+below) is the separate server binding over `wish_server_c.h`.
+
 A `cgo`-based wrapper over `wish_client_c.h` plus the subset of
 `bison_c.h`/`rmi_c.h` the client side needs, split across
 `wish/native.go` (the cgo preamble, plus the C-callable trampolines that
@@ -852,6 +856,70 @@ primitives bison's own Go binding does — see
 [extern/bison/docs/bindings.md](../extern/bison/docs/bindings.md#go-bindingsgo)
 for more on that layer's design (there is no `NewStandaloneClient()` here,
 though — the wish client ABI has no in-process/standalone mode).
+
+### Running a server from Go
+
+The `wishserver` package (`bindings/go/wishserver/`, over `wish_server_dll`
+/ `wish_server_c.h`) hosts a real wish session from Go — the same protocol
+implementation (`bdg::wish::server`) the `wish server` CLI uses, so template
+registration/instantiation gives each widget its own independently
+addressable proxy and events work, unlike a server built from the generic
+bison RMI ABI alone.
+
+It is a **separate package** from `wish` (the client binding): `libwish_client`
+and `libwish_server` both export the `bison_*`/`rmi_*` C ABI, so a single
+binary must link exactly one of them (the same reason `bindings/cpp/` has
+two targets and `bindings/rust/` has two crates). `wishserver` therefore has
+its own `#cgo` directives (`-lwish_server`) and a small `Params` builder
+(the server-side stand-in for `wish.Value`, built against `libwish_server`'s
+own embedded `bison_*` functions). `wish_server_c.h` has no callbacks, so
+this package needs none of the client binding's `cgo.Handle` trampolines or
+C shims.
+
+`wish_server` is gated behind a non-default CMake option, so build it
+explicitly:
+
+```bash
+cmake -B build -DWISH_BUILD_SERVER_SHARED=ON
+cmake --build build --target wish_server_dll
+```
+
+```go
+server, _ := wishserver.NewTCPServer("127.0.0.1", 7070)
+defer server.Destroy()
+
+params := wishserver.NewParams().SetString("title", "My App").SetInt("width", 1280)
+defer params.Close()
+server.Start("sdl3", params)
+for !server.ShouldQuit() {
+    time.Sleep(50 * time.Millisecond)
+}
+server.Stop()
+```
+
+`renderer` is `"sdl3"` (a real window), `"web"` (pass `web_bind`/`web_port`;
+open the printed URL in a browser), or `"console"` (a lightweight text dump
+of the widget tree to stdout — no display needed, meant for tests/CI).
+`NewTLSServer(host, port)` and `NewTermServer(cmd)` are the TLS and terminal
+(spawns a child process on a new pseudo-terminal) counterparts of
+`NewTCPServer()`/`NewPipeServer()`; TLS material (`cert_file`/`cert_pem`,
+`key_file`/`key_pem`, `key_password`, and optionally `client_auth`/`ca_file`/
+`ca_pem` for mutual TLS) is passed through `Start()`'s `params`, forwarded
+unchanged as transport listen params.
+
+`bindings/go/examples/basic_server_example/main.go` is a runnable CLI
+wrapper matching the `wish server` app's own flag names; any ABI-based
+client (any language) can connect to it exactly as it would to the compiled
+`wish server` binary:
+
+```bash
+cd bindings/go
+go run ./examples/basic_server_example -transport=tcp -port=7070 -renderer=console
+# in another terminal:
+go run ./examples/calculator_example -transport=tcp -host=127.0.0.1 -port=7070
+
+go test ./wishserver/
+```
 
 ---
 

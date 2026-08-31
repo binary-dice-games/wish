@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `wish_server_set_log_level()` (C ABI) and `set_log_level()` / `SetLogLevel()` (C++, Python, C# bindings): set the server log verbosity by name.
 - Rust (`bindings/rust/`) and Go (`bindings/go/`) client language bindings for the wish client C ABI.
-- Rust server language binding (`bindings/rust/wish-server/`): host and render a real wish session from Rust over `wish_server_c.h` (`Server`, `Params`).
+- Rust (`bindings/rust/wish-server/`) and Go (`bindings/go/wishserver/`) server language bindings: host and render a real wish session over `wish_server_c.h` (`Server`, `Params`).
 
 ### Changed
 
