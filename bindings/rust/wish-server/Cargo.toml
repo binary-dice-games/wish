@@ -1,0 +1,19 @@
+# See `../Cargo.toml`'s comment for why this is a separate crate from `wish`
+# (the client binding) rather than a feature of it.
+[package]
+name = "wish-server"
+version = "1.0.0"
+edition = "2021"
+rust-version = "1.74"
+description = "Rust bindings for wish's server C ABI (wish_server_c.h) -- host and render a real wish session"
+license = "MIT"
+publish = false
+build = "build.rs"
+
+[lib]
+name = "wish_server"
+path = "src/lib.rs"
+
+[dependencies]
+
+[dev-dependencies]

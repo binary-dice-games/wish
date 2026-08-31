@@ -521,6 +521,10 @@ P-Invoke at run time), Rust links `wish_client` at **build** time via
 needs to be compiled in, just `cargo build` against the prebuilt
 `wish_client` shared library.
 
+`bindings/rust/` is a two-crate workspace: `wish` (this section) is the
+client binding; `wish-server` (see [Running a server from Rust](#running-a-server-from-rust)
+below) is the separate server binding over `wish_server_c.h`.
+
 There is no header-only equivalent of `bdg::bison::dynamic` reachable from
 this crate (that class is compiled/linked C++ library code), so — like
 `wish_cpp::value` — `wish::Value` is a thin, self-contained RAII wrapper
@@ -635,6 +639,70 @@ primitives bison's own Rust binding does — see
 [extern/bison/docs/bindings.md](../extern/bison/docs/bindings.md#rust-bindingsrust)
 for more on that layer's design (there is no `Client::standalone()` here,
 though — the wish client ABI has no in-process/standalone mode).
+
+### Running a server from Rust
+
+The `wish-server` crate (`bindings/rust/wish-server/`, over `wish_server_dll`
+/ `wish_server_c.h`) hosts a real wish session from Rust — the same protocol
+implementation (`bdg::wish::server`) the `wish server` CLI uses, so template
+registration/instantiation gives each widget its own independently
+addressable proxy and events work, unlike a server built from the generic
+bison RMI ABI alone.
+
+It is a **separate crate** from `wish` (the client binding), not a feature of
+it: `libwish_client` and `libwish_server` both export the `bison_*`/`rmi_*` C
+ABI, so a single binary must link exactly one of them (the same reason
+`bindings/cpp/` has two targets and the Python binding has two `ctypes`
+modules). `wish-server` therefore has its own hand-maintained `sys` FFI
+layer and a small `Params` builder (the server-side stand-in for
+`wish::Value`, built against `libwish_server`'s own embedded `bison_*`
+functions), instead of sharing the client crate's.
+
+`build.rs` follows the same resolution order as the client crate, only the
+env override differs — `WISH_SERVER_LIB` (a full path to
+`libwish_server.so`/`.dylib`/`wish_server.dll`), then a sibling `build/`
+directory, then the OS library search path. `wish_server` is gated behind a
+non-default CMake option, so build it explicitly:
+
+```bash
+cmake -B build -DWISH_BUILD_SERVER_SHARED=ON
+cmake --build build --target wish_server_dll
+```
+
+```rust
+use wish_server::{Params, Server};
+
+let mut server = Server::tcp("127.0.0.1", 7070);
+server.start("sdl3", Some(&Params::new().string("title", "My App").int("width", 1280))).unwrap();
+while !server.should_quit() {
+    std::thread::sleep(std::time::Duration::from_millis(50));
+}
+server.stop().unwrap();
+```
+
+`renderer` is `"sdl3"` (a real window), `"web"` (pass `web_bind`/`web_port`;
+open the printed URL in a browser), or `"console"` (a lightweight text dump
+of the widget tree to stdout — no display needed, meant for tests/CI).
+`Server::tls(host, port)` and `Server::term(cmd)` are the TLS and terminal
+(spawns a child process on a new pseudo-terminal) counterparts of
+`Server::tcp()`/`Server::pipe()`; TLS material (`cert_file`/`cert_pem`,
+`key_file`/`key_pem`, `key_password`, and optionally `client_auth`/`ca_file`/
+`ca_pem` for mutual TLS) is passed through `start()`'s `params`, forwarded
+unchanged as transport listen params.
+
+`bindings/rust/wish-server/examples/basic_server.rs` is a runnable CLI
+wrapper matching the `wish server` app's own flag names; any ABI-based
+client (any language) can connect to it exactly as it would to the compiled
+`wish server` binary:
+
+```bash
+cd bindings/rust
+cargo run -p wish-server --example basic_server -- --transport=tcp --port=7070 --renderer=console
+# in another terminal:
+cargo run --example calculator -- --transport=tcp --host=127.0.0.1 --port=7070
+
+cargo test -p wish-server
+```
 
 ---
 

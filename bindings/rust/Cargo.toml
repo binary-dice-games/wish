@@ -1,3 +1,12 @@
+# `wish` (this package) is the client binding; `wish-server/` is a sibling
+# crate wrapping `wish_server_c.h`. They are kept separate -- never one crate
+# with a feature flag -- because `libwish_client` and `libwish_server` both
+# export the `bison_*`/`rmi_*` C ABI symbols, so a single binary must link
+# exactly one of them (the same constraint `bindings/cpp/`'s two targets and
+# the Python binding's two `ctypes` modules document).
+[workspace]
+members = ["wish-server"]
+
 [package]
 name = "wish"
 version = "1.0.0"

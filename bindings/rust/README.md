@@ -1,15 +1,23 @@
 # wish
 
-Rust bindings for [wish](https://github.com/binary-dice-games/wish)'s
-**client** C ABI (`wish_client_c.h`) -- connect to a running `wish server`
-process and drive UI templates from Rust. This is a client-only binding: it
-does not wrap `wish_server_c.h` (the real UI-hosting server, SDL3/web
-rendering), which has no analogue here.
+Rust bindings for [wish](https://github.com/binary-dice-games/wish):
 
-This crate links directly against the precompiled `wish_client` shared
-library at build time (via `build.rs`) -- the same model `bindings/cpp/`
-uses. It is not published to crates.io; use it from a checkout of this
-repository.
+- **`wish`** (this crate) wraps the **client** C ABI (`wish_client_c.h`) --
+  connect to a running `wish server` process and drive UI templates from
+  Rust.
+- **`wish-server`** ([`wish-server/`](wish-server/)) wraps the **server** C
+  ABI (`wish_server_c.h`) -- host and render a real wish session from Rust,
+  the same `bdg::wish::server` implementation the `wish server` CLI uses.
+
+They are **separate crates on purpose**: `libwish_client` and
+`libwish_server` both export the `bison_*`/`rmi_*` C ABI symbols, so a single
+binary must link exactly one of them (the same constraint `bindings/cpp/`'s
+two targets and the Python binding's two `ctypes` modules carry). Depend on
+`wish` to drive a UI, on `wish-server` to host one.
+
+Both crates link directly against their precompiled shared library at build
+time (via `build.rs`) -- the same model `bindings/cpp/` uses. Neither is
+published to crates.io; use them from a checkout of this repository.
 
 ## Build
 
@@ -72,6 +80,34 @@ cargo run --example calculator -- --transport=tcp --host=127.0.0.1 --port=7070
 
 cargo test
 ```
+
+## Hosting a server (`wish-server/`)
+
+```bash
+# Build the server shared library (a non-default CMake option):
+cmake -B build -DWISH_BUILD_SERVER_SHARED=ON
+cmake --build build --target wish_server_dll
+
+cd bindings/rust
+cargo run -p wish-server --example basic_server -- --transport=tcp --port=7070 --renderer=console
+cargo test -p wish-server
+```
+
+```rust
+use wish_server::{Params, Server};
+
+let mut server = Server::tcp("127.0.0.1", 7070);
+server.start("sdl3", Some(&Params::new().string("title", "My App").int("width", 1280))).unwrap();
+while !server.should_quit() {
+    std::thread::sleep(std::time::Duration::from_millis(50));
+}
+server.stop().unwrap();
+```
+
+`build.rs` locates `libwish_server` via `WISH_SERVER_LIB` (or the sibling
+`build/` directory), the server-side counterpart of the client crate's
+`WISH_LIB`. `renderer` is `"sdl3"`, `"web"`, or `"console"`; see
+[docs/bindings.md](../../docs/bindings.md#running-a-server-from-rust).
 
 Full binding documentation (API surface, error handling, transports) lives
 in [docs/bindings.md](../../docs/bindings.md#rust-bindingsrust). Proxies and

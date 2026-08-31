@@ -5,3 +5,7 @@ version = 3
 [[package]]
 name = "wish"
 version = "1.0.0"
+
+[[package]]
+name = "wish-server"
+version = "1.0.0"
