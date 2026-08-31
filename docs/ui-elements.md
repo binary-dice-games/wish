@@ -36,6 +36,7 @@ contributes these fields to every widget (not repeated per element below):
 | `order` | `int32` | `0` | Render order within the parent's children; lower renders first. |
 | `font_path` | `string` | `""` | Path to a TTF font file (sandboxed; see `CLAUDE.md`'s security section). |
 | `font_size` | `float` | `0.0` | Font size in pixels; `0` uses the default font. |
+| `tooltip` | `string` | `""` | Text shown via `ImGui::SetTooltip()` while the element is hovered. See "Tooltips" below. |
 | `drag_type` | `string` | `""` | Opaque type tag; non-empty makes this element a drag source. See "Drag and drop" below. |
 | `drag_payload` | `string` | `""` | Opaque payload bytes carried by a drag started from this element. |
 | `drop_type` | `string` | `""` | Opaque type tag; non-empty makes this element a drop target that accepts drags whose `drag_type` matches exactly. |
@@ -44,6 +45,24 @@ Children are addressed by **dot-path**: a child keyed `"ok"` under a window
 named at the root is `"ok"`; nested further, `"row.ok"`. Numerically-indexed
 children (an array under `children`) are addressed by integer index instead
 and are not given a name.
+
+### Tooltips
+
+Any element shows a hover tooltip by setting a non-empty `tooltip` string.
+`imgui_renderer::render_node()` calls `handle_tooltip()`
+(`src/imgui/imgui_renderer.cpp`) for every element after its own dispatch: if
+the field is non-empty and the element is hovered
+(`ImGui::IsItemHovered()`), the text is shown via `ImGui::SetTooltip()`.
+Implemented once, generically, so it works on any element without extra
+wiring.
+
+**Only meaningful on a leaf element** whose render function draws exactly one
+top-level ImGui item (`Button`, `Label`, `Image`, `Checkbox`, ...) — like
+drag-and-drop, `handle_tooltip()` attaches to "whatever item was drawn last,"
+so setting `tooltip` on a container/layout element attaches to its
+last-rendered child instead of the container itself. `render_table()` also
+calls `handle_tooltip()` directly for each `TableRow`, since `TableRow`
+children never go through `render_node()`.
 
 ### Drag and drop
 

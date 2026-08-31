@@ -2950,3 +2950,76 @@ TEST_F(ImguiRendererTest, BareImguiRendererDrawsNoServerChrome) {
 // (dockspace_renderer) and app/wish_cli/host_renderer.cpp, exercised via those
 // paths. UnpositionedWindowDocksIntoAmbientDockspace above covers the
 // render_window side of that contract with a stand-in DockSpace host.
+
+// ── Per-element tooltip ("tooltip" field -> ImGui::SetTooltip) ──────────────
+
+namespace {
+
+// Renders `root` for two frames with the mouse parked at `mouse_pos`, then
+// returns the "##Tooltip_00" window if it is currently active this frame.
+// Two frames: ImGui's hover bookkeeping (g.HoveredIdPreviousFrame) needs one
+// settled frame before IsItemHovered() reports true.
+ImGuiWindow* render_and_get_tooltip_window(
+    imgui_renderer& r, ui_element& root, context& s, ImVec2 mouse_pos,
+    const std::function<void(const std::function<void()>&)>& in_window) {
+  for (int i = 0; i < 2; ++i) {
+    ImGui::GetIO().MousePos = mouse_pos;
+    r.begin_frame();
+    in_window([&] { r.render_node(root, s); });
+    r.end_frame();
+  }
+  ImGuiWindow* tw = ImGui::FindWindowByName("##Tooltip_00");
+  return (tw && tw->Active) ? tw : nullptr;
+}
+
+} // namespace
+
+TEST_F(ImguiRendererTest, HoveringElementWithTooltipFieldShowsTooltip) {
+  auto map = bdg::wish::import_json(R"({"type":"Button","label":"Hi","tooltip":"Helpful text"})");
+
+  // Locate the button's rect first (mouse away from it).
+  ImVec2 center{0, 0};
+  renderer_->begin_frame();
+  in_window([&] {
+    renderer_->render_node(*map[""], *sess_);
+    ImVec2 mn = ImGui::GetItemRectMin(), mx = ImGui::GetItemRectMax();
+    center = ImVec2((mn.x + mx.x) * 0.5f, (mn.y + mx.y) * 0.5f);
+  });
+  renderer_->end_frame();
+
+  ImGuiWindow* tw =
+      render_and_get_tooltip_window(*renderer_, *map[""], *sess_, center, [&](const std::function<void()>& f) {
+        in_window(f);
+      });
+  ASSERT_NE(tw, nullptr) << "hovering a Button with a \"tooltip\" field must open a tooltip window";
+}
+
+TEST_F(ImguiRendererTest, ElementWithNoTooltipFieldShowsNoTooltip) {
+  auto map = bdg::wish::import_json(R"({"type":"Button","label":"Hi"})");
+
+  ImVec2 center{0, 0};
+  renderer_->begin_frame();
+  in_window([&] {
+    renderer_->render_node(*map[""], *sess_);
+    ImVec2 mn = ImGui::GetItemRectMin(), mx = ImGui::GetItemRectMax();
+    center = ImVec2((mn.x + mx.x) * 0.5f, (mn.y + mx.y) * 0.5f);
+  });
+  renderer_->end_frame();
+
+  ImGuiWindow* tw =
+      render_and_get_tooltip_window(*renderer_, *map[""], *sess_, center, [&](const std::function<void()>& f) {
+        in_window(f);
+      });
+  EXPECT_EQ(tw, nullptr);
+}
+
+TEST_F(ImguiRendererTest, TooltipNotShownWhenElementNotHovered) {
+  auto map = bdg::wish::import_json(R"({"type":"Button","label":"Hi","tooltip":"Helpful text"})");
+
+  // Mouse parked far from the button (still inside the host window).
+  ImGuiWindow* tw =
+      render_and_get_tooltip_window(*renderer_, *map[""], *sess_, ImVec2(700, 550), [&](const std::function<void()>& f) {
+        in_window(f);
+      });
+  EXPECT_EQ(tw, nullptr);
+}

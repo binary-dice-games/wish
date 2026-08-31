@@ -1794,6 +1794,11 @@ void render_table(imgui_renderer& r, const ui_element& node0, const context& s) 
         // render_node() here, only their cells are (below).
         handle_drag_drop(child, s);
 
+        // Row-level tooltip, same rationale as the handle_drag_drop() call
+        // above: TableRow is never dispatched through render_node(), so its
+        // own "tooltip" field would otherwise never be checked.
+        handle_tooltip(child);
+
         // A ContextMenu child is excluded from column layout (see the loop
         // below) and rendered here instead, right after the Selectable, so
         // ImGui::BeginPopupContextItem() (inside render_context_menu) attaches

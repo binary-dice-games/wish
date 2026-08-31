@@ -343,6 +343,14 @@ class ui_element : public bison::cloneable_dynamic<ui_element> {
     return cached_field_or<bool>(highlight_field_, bison::key_t{"__wish_highlight__"}, false);
   }
 
+  /// @brief Cached `get_as<std::string>("tooltip"_key, "")`. When non-empty,
+  ///        `imgui_renderer::render_node()` shows it via `ImGui::SetTooltip()`
+  ///        whenever this element is hovered. Read once per node per render
+  ///        pass, so cached like every other hot field here.
+  std::string tooltip() const {
+    return cached_field_or<std::string>(tooltip_field_, bison::key_t{"tooltip"}, std::string{});
+  }
+
   /// @brief Cached, non-empty `"profiler_marker"` string, or `nullptr` if
   ///        the field is absent, not a string, or empty. Returns a raw
   ///        pointer (rather than going through `cached_field_or()`) because
@@ -537,6 +545,7 @@ class ui_element : public bison::cloneable_dynamic<ui_element> {
   mutable bison::field* font_path_field_ = nullptr;
   mutable bison::field* font_size_field_ = nullptr;
   mutable bison::field* highlight_field_ = nullptr;
+  mutable bison::field* tooltip_field_ = nullptr;
   mutable bison::field* profiler_marker_field_ = nullptr;
   mutable bison::field* width_field_ = nullptr;
   mutable bison::field* height_field_ = nullptr;

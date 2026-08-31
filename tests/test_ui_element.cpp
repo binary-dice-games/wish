@@ -223,6 +223,22 @@ TEST_F(UiElementTest, DragDropAccessorsDefaultEmptyAndReflectWrites) {
   EXPECT_EQ(node.drag_payload(), "/tmp/b");
 }
 
+// ── tooltip() ─────────────────────────────────────────────────────────────
+
+TEST_F(UiElementTest, TooltipDefaultsEmptyAndReflectsWrites) {
+  auto map = bdg::wish::import_json(R"({"type":"Button","label":"hi"})");
+  ui_element& node = *map[""];
+
+  EXPECT_EQ(node.tooltip(), "");
+
+  node["tooltip"_key] = std::string("Click me");
+  EXPECT_EQ(node.tooltip(), "Click me");
+
+  // Second write after the field pointer is cached must still be observed.
+  node["tooltip"_key] = std::string("Now do it");
+  EXPECT_EQ(node.tooltip(), "Now do it");
+}
+
 // ── set_self_rect() / self_rect() ──────────────────────────────────────────
 
 TEST_F(UiElementTest, SelfRectReturnsFalseUntilStamped) {

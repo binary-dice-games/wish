@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Rust (`bindings/rust/`) and Go (`bindings/go/`) client language bindings for the wish client C ABI.
 - Rust (`bindings/rust/wish-server/`) and Go (`bindings/go/wishserver/`) server language bindings: host and render a real wish session over `wish_server_c.h` (`Server`, `Params`).
 - `examples/ui/json/` and `examples/ui/yaml/` — standalone editor example UIs, one file per tab of the `demo` app, in both formats.
+- `tooltip` field on every UI element: when non-empty, its text is shown via `ImGui::SetTooltip()` while the element is hovered.
 
 ### Changed
 

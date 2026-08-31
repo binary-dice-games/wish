@@ -355,6 +355,17 @@ void handle_drag_drop(const ui_element& node, const context& s) {
   }
 }
 
+void handle_tooltip(const ui_element& node) {
+  auto tooltip = node.tooltip();
+  if (tooltip.empty())
+    return;
+  // Classic `if (IsItemHovered()) SetTooltip(...)` idiom (see imgui.h's
+  // SetTooltip() comment): attaches to the last item drawn by the node's
+  // dispatch call -- see this function's doc comment.
+  if (ImGui::IsItemHovered())
+    ImGui::SetTooltip("%s", tooltip.c_str());
+}
+
 void draw_highlight_if_set(const ui_element& node, ImVec2 rect_min, ImVec2 rect_max) {
   if (!node.highlight())
     return;
@@ -645,6 +656,10 @@ void imgui_renderer::render_node(const ui_element& node, const context& s) {
   // Attaches to whatever ImGui item the dispatch call above drew last -- see
   // handle_drag_drop()'s own doc comment.
   handle_drag_drop(node, s);
+
+  // Generic per-element tooltip: attaches to the same last-drawn item as
+  // handle_drag_drop() above, so it shares the "leaf element only" caveat.
+  handle_tooltip(node);
 
   // "__wish_highlight__" is an ad-hoc field (like "__wish_id"/"__path__"
   // elsewhere) set by the editor module to box whichever preview widget
