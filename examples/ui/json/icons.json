@@ -1,0 +1,81 @@
+{
+  "type": "Window",
+  "title": "Icons - wish demo",
+  "width": 900,
+  "height": 800,
+  "children": {
+    "note": {
+      "type": "Label",
+      "text": "The demo app builds one row per file discovered under the session's res/icons/ folder at runtime. This static example just shows the Table + Image row shape; the src paths won't resolve outside a real demo session.",
+      "wrap": true
+    },
+    "sec_icons": {
+      "type": "SeparatorText",
+      "label": "Embedded Icons"
+    },
+    "tbl_icons": {
+      "type": "Table",
+      "id": "demo_icons",
+      "columns": 2,
+      "flags": "Resizable|RowBg|Borders",
+      "headers": true,
+      "children": {
+        "col_icon": {
+          "type": "TableColumn",
+          "label": "Icon",
+          "flags": "WidthFixed",
+          "init_width": 64
+        },
+        "col_name": {
+          "type": "TableColumn",
+          "label": "File"
+        },
+        "row0": {
+          "type": "TableRow",
+          "children": {
+            "c0": {
+              "type": "Image",
+              "src": "res/icons/folder.png",
+              "width": 32,
+              "height": 32
+            },
+            "c1": {
+              "type": "Label",
+              "text": "folder.png"
+            }
+          }
+        },
+        "row1": {
+          "type": "TableRow",
+          "children": {
+            "c0": {
+              "type": "Image",
+              "src": "res/icons/file.png",
+              "width": 32,
+              "height": 32
+            },
+            "c1": {
+              "type": "Label",
+              "text": "file.png"
+            }
+          }
+        },
+        "row2": {
+          "type": "TableRow",
+          "children": {
+            "c0": {
+              "type": "Image",
+              "src": "res/icons/gear.png",
+              "width": 32,
+              "height": 32
+            },
+            "c1": {
+              "type": "Label",
+              "text": "gear.png"
+            }
+          }
+        }
+      }
+    }
+  }
+}

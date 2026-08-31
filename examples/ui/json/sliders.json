@@ -1,0 +1,56 @@
+{
+  "type": "Window",
+  "title": "Sliders & Drags - wish demo",
+  "width": 900,
+  "height": 800,
+  "children": {
+    "sec_sliders": {
+      "type": "SeparatorText",
+      "label": "Sliders"
+    },
+    "sf_opacity": {
+      "type": "SliderFloat",
+      "label": "Opacity",
+      "value": 1.0,
+      "min": 0.0,
+      "max": 1.0,
+      "format": "%.2f"
+    },
+    "sf_angle": {
+      "type": "SliderFloat",
+      "label": "Angle",
+      "value": 0.0,
+      "min": -180.0,
+      "max": 180.0,
+      "format": "%.0f deg"
+    },
+    "si_count": {
+      "type": "SliderInt",
+      "label": "Count",
+      "value": 10,
+      "min": 0,
+      "max": 50
+    },
+    "sec_drags": {
+      "type": "SeparatorText",
+      "label": "Drag Widgets"
+    },
+    "df_val": {
+      "type": "DragFloat",
+      "label": "Float drag",
+      "value": 1.5,
+      "speed": 0.05,
+      "min": 0.0,
+      "max": 10.0,
+      "format": "%.2f"
+    },
+    "di_val": {
+      "type": "DragInt",
+      "label": "Int drag",
+      "value": 42,
+      "speed": 0.5,
+      "min": 0,
+      "max": 200
+    }
+  }
+}

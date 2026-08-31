@@ -1,0 +1,69 @@
+{
+  "type": "Window",
+  "title": "Forms - wish demo",
+  "width": 900,
+  "height": 800,
+  "children": {
+    "note": {
+      "type": "Label",
+      "text": "These buttons open the FileDialog and MessageBox forms in the demo app. In the editor preview they render but the dialogs are wired up by the demo client.",
+      "wrap": true
+    },
+    "sec_filedialog": {
+      "type": "SeparatorText",
+      "label": "File Dialog"
+    },
+    "lbl_filedialog_hint": {
+      "type": "Label",
+      "text": "Standalone file-picker dialog (the FileDialog form)."
+    },
+    "btn_open_filedialog": {
+      "type": "Button",
+      "label": "Open File Dialog..."
+    },
+    "sec_msgbox": {
+      "type": "SeparatorText",
+      "label": "Message Box"
+    },
+    "lbl_msgbox_hint": {
+      "type": "Label",
+      "text": "Win32-MessageBox-style modal dialog (the MessageBox form) -- click a button to show one:"
+    },
+    "msgbox_row1": {
+      "type": "HorizontalLayout",
+      "spacing": 8,
+      "children": {
+        "btn_mb_ok": {
+          "type": "Button",
+          "label": "OK"
+        },
+        "btn_mb_ok_cancel": {
+          "type": "Button",
+          "label": "OK / Cancel"
+        },
+        "btn_mb_yes_no": {
+          "type": "Button",
+          "label": "Yes / No"
+        }
+      }
+    },
+    "msgbox_row2": {
+      "type": "HorizontalLayout",
+      "spacing": 8,
+      "children": {
+        "btn_mb_yes_no_cancel": {
+          "type": "Button",
+          "label": "Yes / No / Cancel"
+        },
+        "btn_mb_retry_cancel": {
+          "type": "Button",
+          "label": "Retry / Cancel"
+        },
+        "btn_mb_abort_retry_ignore": {
+          "type": "Button",
+          "label": "Abort / Retry / Ignore"
+        }
+      }
+    }
+  }
+}

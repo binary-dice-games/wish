@@ -1,8 +1,8 @@
 // MIT License © 2025 Binary Dice Games
 /// @file ui_schema_help.hpp
 /// @brief Server-only queries over the registered "wish" UI element class
-///        registry, plus a JSON-cursor-position scanner -- the shared basis
-///        for the editor module's help panel and autocompletion.
+///        registry, plus JSON and YAML cursor-position scanners -- the shared
+///        basis for the editor module's help panel and autocompletion.
 ///
 /// Like `ui_importer.hpp`, this depends on bison's class registry
 /// (`bison::dynamic::getRegistry()`), which is only populated server-side by
@@ -165,5 +165,23 @@ struct cursor_context {
 /// @param source  Raw JSON source text, valid or not.
 /// @param cursor  Cursor position within @p source.
 cursor_context scan_cursor_context(std::string_view source, text_pos cursor);
+
+/// @brief YAML counterpart of `scan_cursor_context()` — same contract and
+/// same `cursor_context` result, for a YAML UI descriptor instead of JSON.
+///
+/// YAML has no braces to balance, so this is a line-and-indentation scanner
+/// rather than a token scanner: it walks the complete lines of
+/// `source[0, offset)`, maintaining a stack of open block mappings keyed by
+/// indent column, then classifies the (possibly partial) cursor line. Like
+/// the JSON scanner it only reads up to the cursor, so a broken tail while
+/// mid-edit can't affect the result; the one forward peek is the same
+/// bounded "is there a `type:` sibling I haven't reached yet" lookahead,
+/// limited to lines at or deeper than the cursor's own indent.
+///
+/// `element_path` follows the exact same dot-path convention as the JSON
+/// scanner and `ui_importer.cpp` (`children:` is an unnamed wrapper level;
+/// only a *named* mapping key under it contributes a path segment). Sequence
+/// (`- `) entries are treated as unnamed, matching `import_yaml()`.
+cursor_context scan_cursor_context_yaml(std::string_view source, text_pos cursor);
 
 } // namespace bdg::wish

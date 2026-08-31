@@ -587,3 +587,17 @@ def test_saving_shows_confirmation(wish_ui):
   its own `measure_fn` returning `{0,0}`, the same treatment already
   applied to `Spring`/`TextEditor` for the identical hazard), not in the
   render function itself.
+- **The `editor` module's source `TextEditor` is not automation-drivable.**
+  `get_widget("<...>.editor_row.source")` returns `rect: null`
+  (ImGuiColorTextEdit renders its own scrolled child region and never calls
+  `capture_hit_test_for_last_item()`), so `click()`/`type_text()` can't
+  reach it, and the standalone-launched editor docks its live preview
+  `Window` *over* the chrome `Window` (only one is frontmost). To verify
+  editor-side behavior that depends on the source panel (YAML/JSON
+  highlighting, schema autocomplete, the cursor-tracked Help window),
+  prefer a unit test against the `editor` form (drive `set_source` +
+  simulate a `"cursor_moved"` chrome event, then read
+  `<help_root>.vbox.class_name`) — see `tests/test_editor.cpp`'s
+  `YamlCursorContextDrivesHelpPanel`. Automation is still the right tool
+  for confirming the *preview* subtree (`<...>_mock.*`) rendered what the
+  source describes.

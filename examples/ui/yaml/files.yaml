@@ -1,0 +1,110 @@
+type: Window
+title: Files - wish demo
+width: 900
+height: 800
+children:
+  note:
+    type: Label
+    text: The Image/TextEditor paths are blank here; the demo app wires up the browse buttons and file
+      loading at runtime. Paths are resolved inside the session's sandbox resource directory.
+    wrap: true
+  sec_image:
+    type: SeparatorText
+    label: Image Viewer
+  lbl_img_hint:
+    type: Label
+    text: 'Enter a path to a BMP image file, or click ... to browse:'
+  img_path_row:
+    type: HorizontalLayout
+    spacing: 4
+    children:
+      txt_img_path:
+        type: InputText
+        label: Image Path
+        value: ""
+        max_length: 512
+      btn_img_browse:
+        type: Button
+        label: '...'
+  img_view:
+    type: Image
+    src: ""
+    width: 512
+    height: 300
+  sec_editor:
+    type: SeparatorText
+    label: Text / Code Editor
+  lbl_ed_hint:
+    type: Label
+    text: 'Enter a path to a text or code file, or click ... to browse:'
+  ed_path_row:
+    type: HorizontalLayout
+    spacing: 4
+    children:
+      txt_ed_path:
+        type: InputText
+        label: File Path
+        value: ""
+        max_length: 512
+      btn_ed_browse:
+        type: Button
+        label: '...'
+  cmb_lang:
+    type: Combo
+    label: Language
+    items: 'none
+
+      cpp
+
+      c
+
+      cs
+
+      glsl
+
+      hlsl
+
+      lua
+
+      python
+
+      sql
+
+      json
+
+      markdown
+
+      angelscript'
+    value: 0
+  editor:
+    type: TextEditor
+    file_path: ""
+    language: none
+    height: 400
+  sec_font:
+    type: SeparatorText
+    label: Font Override
+  lbl_font_hint:
+    type: Label
+    text: 'Enter a path to a TTF font file, or click ... to browse:'
+  font_path_row:
+    type: HorizontalLayout
+    spacing: 4
+    children:
+      txt_font_path:
+        type: InputText
+        label: Font Path
+        value: ""
+        max_length: 512
+      btn_font_browse:
+        type: Button
+        label: '...'
+  sld_font_size:
+    type: SliderFloat
+    label: Font Size (px)
+    value: 16.0
+    min: 8.0
+    max: 72.0
+  lbl_font_sample:
+    type: Label
+    text: The quick brown fox jumps over the lazy dog

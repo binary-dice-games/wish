@@ -1,0 +1,131 @@
+type: Window
+title: Tables - wish demo
+width: 900
+height: 800
+children:
+  sec_static:
+    type: SeparatorText
+    label: Static Table (Borders + Row Background + Resizable)
+  tbl_catalog:
+    type: Table
+    id: demo_catalog
+    columns: 3
+    flags: Resizable|RowBg|Borders
+    headers: true
+    children:
+      col_item:
+        type: TableColumn
+        label: Item
+      col_price:
+        type: TableColumn
+        label: Price
+      col_cat:
+        type: TableColumn
+        label: Category
+      row0:
+        type: TableRow
+        children:
+          c0:
+            type: Label
+            text: Widget Alpha
+          c1:
+            type: Label
+            text: $12.99
+          c2:
+            type: Label
+            text: Hardware
+      row1:
+        type: TableRow
+        children:
+          c0:
+            type: Label
+            text: Widget Beta
+          c1:
+            type: Label
+            text: $7.50
+          c2:
+            type: Label
+            text: Software
+      row2:
+        type: TableRow
+        children:
+          c0:
+            type: Label
+            text: Widget Gamma
+          c1:
+            type: Label
+            text: $24.00
+          c2:
+            type: Label
+            text: Hardware
+      row3:
+        type: TableRow
+        children:
+          c0:
+            type: Label
+            text: Widget Delta
+          c1:
+            type: Label
+            text: $3.25
+          c2:
+            type: Label
+            text: Consumable
+  sec_inter:
+    type: SeparatorText
+    label: Interactive Table (Buttons in Cells)
+  tbl_inter:
+    type: Table
+    id: demo_inter
+    columns: 3
+    flags: Resizable|Borders
+    headers: true
+    children:
+      col_sensor:
+        type: TableColumn
+        label: Sensor
+        flags: WidthFixed
+        init_width: 160
+      col_value:
+        type: TableColumn
+        label: Value
+        flags: WidthFixed
+        init_width: 120
+      col_action:
+        type: TableColumn
+        label: Action
+      row_temp:
+        type: TableRow
+        children:
+          c0:
+            type: Label
+            text: Temperature
+          c1:
+            type: Label
+            text: 25.0 degC
+          c2:
+            type: Button
+            label: "Read##temp"
+      row_hum:
+        type: TableRow
+        children:
+          c0:
+            type: Label
+            text: Humidity
+          c1:
+            type: Label
+            text: 60 % RH
+          c2:
+            type: Button
+            label: "Read##hum"
+      row_pres:
+        type: TableRow
+        children:
+          c0:
+            type: Label
+            text: Pressure
+          c1:
+            type: Label
+            text: 1013 hPa
+          c2:
+            type: Button
+            label: "Read##pres"

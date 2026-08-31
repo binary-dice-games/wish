@@ -214,6 +214,115 @@ TEST(ScanCursorContextTest, ArrayIndexedChildHasNoElementPath) {
   EXPECT_FALSE(ctx.element_path.has_value());
 }
 
+// ── scan_cursor_context_yaml ────────────────────────────────────────────────
+
+TEST(ScanCursorContextYamlTest, MidTypingTypeValue) {
+  auto ctx = scan_cursor_context_yaml("type: But", {0, 9});
+  EXPECT_EQ(ctx.kind, cursor_context_kind::type_value);
+  EXPECT_EQ(ctx.partial_text, "But");
+  ASSERT_TRUE(ctx.element_path.has_value());
+  EXPECT_EQ(*ctx.element_path, "");
+}
+
+TEST(ScanCursorContextYamlTest, FieldKeyMidPartialReflectsEnclosingType) {
+  std::string src =
+      "type: Button\n"
+      "lab";
+  auto ctx = scan_cursor_context_yaml(src, {1, 3});
+  EXPECT_EQ(ctx.kind, cursor_context_kind::field_key);
+  EXPECT_EQ(ctx.partial_text, "lab");
+  EXPECT_EQ(ctx.enclosing_type, "Button");
+}
+
+TEST(ScanCursorContextYamlTest, FieldKeyExcludesExistingSiblings) {
+  std::string src =
+      "type: Button\n"
+      "label: OK\n"
+      "vis";
+  auto ctx = scan_cursor_context_yaml(src, {2, 3});
+  EXPECT_EQ(ctx.kind, cursor_context_kind::field_key);
+  EXPECT_NE(std::find(ctx.existing_field_names.begin(), ctx.existing_field_names.end(), "type"),
+            ctx.existing_field_names.end());
+  EXPECT_NE(std::find(ctx.existing_field_names.begin(), ctx.existing_field_names.end(), "label"),
+            ctx.existing_field_names.end());
+}
+
+TEST(ScanCursorContextYamlTest, FieldValuePartial) {
+  std::string src =
+      "type: Table\n"
+      "flags: Res";
+  auto ctx = scan_cursor_context_yaml(src, {1, 10});
+  EXPECT_EQ(ctx.kind, cursor_context_kind::field_value);
+  EXPECT_EQ(ctx.field_name, "flags");
+  EXPECT_EQ(ctx.partial_text, "Res");
+  EXPECT_EQ(ctx.enclosing_type, "Table");
+}
+
+TEST(ScanCursorContextYamlTest, CursorOnBlankChildLineFindsTypeWrittenLater) {
+  std::string src =
+      "type: Window\n"
+      "width: 400\n";
+  // Cursor at end -- top-level, enclosing type already seen.
+  auto ctx = scan_cursor_context_yaml(src, {2, 0});
+  EXPECT_EQ(ctx.enclosing_type, "Window");
+  ASSERT_TRUE(ctx.element_path.has_value());
+  EXPECT_EQ(*ctx.element_path, "");
+}
+
+TEST(ScanCursorContextYamlTest, NamedChildElementPathAndType) {
+  std::string src =
+      "type: Window\n"
+      "children:\n"
+      "  ok:\n"
+      "    type: Button\n"
+      "    lab";
+  auto ctx = scan_cursor_context_yaml(src, {4, 7});
+  EXPECT_EQ(ctx.kind, cursor_context_kind::field_key);
+  EXPECT_EQ(ctx.enclosing_type, "Button");
+  ASSERT_TRUE(ctx.element_path.has_value());
+  EXPECT_EQ(*ctx.element_path, "ok");
+}
+
+TEST(ScanCursorContextYamlTest, NestedNamedChildElementPath) {
+  std::string src =
+      "type: Window\n"
+      "children:\n"
+      "  panel:\n"
+      "    type: VerticalLayout\n"
+      "    children:\n"
+      "      go:\n"
+      "        type: Butto";
+  auto ctx = scan_cursor_context_yaml(src, {6, 19});
+  EXPECT_EQ(ctx.kind, cursor_context_kind::type_value);
+  ASSERT_TRUE(ctx.element_path.has_value());
+  EXPECT_EQ(*ctx.element_path, "panel.go");
+}
+
+TEST(ScanCursorContextYamlTest, TypeLookaheadWithinSameMapping) {
+  // Cursor on a field line above where `type:` is written.
+  std::string src =
+      "children:\n"
+      "  ok:\n"
+      "    lab\n"
+      "    type: Button\n";
+  auto ctx = scan_cursor_context_yaml(src, {2, 7});
+  EXPECT_EQ(ctx.kind, cursor_context_kind::field_key);
+  EXPECT_EQ(ctx.enclosing_type, "Button");
+  ASSERT_TRUE(ctx.element_path.has_value());
+  EXPECT_EQ(*ctx.element_path, "ok");
+}
+
+TEST(ScanCursorContextYamlTest, MalformedTailAfterCursorIsIgnored) {
+  std::string src =
+      "type: Button\n"
+      "label: OK\n"
+      "   : : broken\n"
+      "type: Window\n";
+  auto ctx = scan_cursor_context_yaml(src, {1, 9});
+  EXPECT_EQ(ctx.kind, cursor_context_kind::field_value);
+  EXPECT_EQ(ctx.enclosing_type, "Button");
+}
+
 // ── enumerate_ui_element_classes / find_ui_element_class ────────────────────
 
 class UiSchemaHelpRegistryTest : public ::testing::Test {

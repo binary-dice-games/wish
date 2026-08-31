@@ -1,0 +1,42 @@
+{
+  "type": "Window",
+  "title": "Text & Numbers - wish demo",
+  "width": 900,
+  "height": 800,
+  "children": {
+    "sec_text": {
+      "type": "SeparatorText",
+      "label": "Text Input"
+    },
+    "txt_name": {
+      "type": "InputText",
+      "label": "Name",
+      "value": "",
+      "hint": "Type your name..."
+    },
+    "txt_msg": {
+      "type": "InputText",
+      "label": "Message",
+      "value": "Hello, wish!"
+    },
+    "sec_nums": {
+      "type": "SeparatorText",
+      "label": "Numeric Input"
+    },
+    "ii_qty": {
+      "type": "InputInt",
+      "label": "Quantity",
+      "value": 1,
+      "step": 1,
+      "step_fast": 10
+    },
+    "if_price": {
+      "type": "InputFloat",
+      "label": "Price ($)",
+      "value": 9.99,
+      "step": 0.01,
+      "step_fast": 1.0,
+      "format": "%.2f"
+    }
+  }
+}

@@ -1,10 +1,18 @@
 # editor
 
-Live JSON UI mock editor: open a wish UI JSON file, see it re-parsed and
+Live JSON/YAML UI mock editor: open a wish UI file, see it re-parsed and
 live-instantiated as you (or an agent) type, with a log of every event the
 instantiated preview fires. Meant for iterating on a UI's design and for the
 wish skills to visualize a mock to the user during development — see
 `.claude/skills/wish-module` and `.claude/skills/wish-ui`.
+
+The source file's extension picks the importer, the source-panel syntax
+highlighting, the schema-aware autocomplete, and the cursor-context scanner
+behind the Help window: `.yaml`/`.yml` is treated as YAML, anything else as
+JSON. Both formats get the same feature set.
+
+`examples/ui/json/` and `examples/ui/yaml/` hold ready-made example files
+(one per tab of the `demo` app) to open as starting points.
 
 A syntax error in the source shows an error banner above the source panel
 but leaves the last valid preview on screen, so a typo never makes the
@@ -13,8 +21,10 @@ focus survive every re-edit — only its content changes. The underlying
 file is also watched for changes made outside the tool (e.g. in the user's
 own editor) and reloaded automatically. A filename label shows the local
 path and an `[MODIFIED]` marker when there are unsaved edits; closing with
-unsaved edits shows an inline Save & Close / Discard & Close / Cancel
-prompt instead of closing immediately. Copy/paste in the source editor
+unsaved edits pops a Yes / No / Cancel `MessageBox` ("Save changes … before
+closing?") — Yes saves then closes, No discards and closes, Cancel keeps
+editing — a privately-instantiated `MessageBox` form
+(`form::instantiate_child_form()`), not a hand-rolled panel. Copy/paste in the source editor
 interoperates with the real OS clipboard (see `src/web/DESIGN.md`'s
 "Clipboard Bridging" section).
 
@@ -33,10 +43,11 @@ in the live preview, moving as the cursor moves — so it's obvious at a
 glance which widget an edit is about to affect.
 
 - **server/**: `Editor` form (`register_editor()`) — owns the filename
-  label, error banner, source `TextEditor` (JSON syntax highlighting,
-  `wish_ui_schema` enabled, fills its window), the close-confirmation
-  panel, a separate Help window, a separate event log window, and the
-  preview subtree. Re-parses on every source edit and on every
+  label, error banner, source `TextEditor` (`language` set to `json`/`yaml`
+  per the source extension, `wish_ui_schema` always on; fills its window),
+  a privately-instantiated `MessageBox` close-confirm dialog
+  (`close_dialog_`), a separate Help window, a separate event log window,
+  and the preview subtree. Re-parses on every source edit and on every
   `set_source` call; a successful parse swaps in a new preview registered
   as its own top-level window (handled by the same form instance, so its
   events reach the same `on_event`), reusing the same preview window id
@@ -46,18 +57,20 @@ glance which widget an edit is about to affect.
   payload, e.g. `"main.volume changed {value=75}"`; the log is capped at
   200 rows (oldest evicted) and auto-scrolls to the newest entry. Also
   updates the Help window's content and the preview highlight box on every
-  source `TextEditor` `"cursor_moved"` event, via a hand-rolled JSON-cursor
-  scanner (`ui_schema_help::scan_cursor_context()`) that tolerates the
-  transiently invalid JSON typical of an in-progress edit and resolves the
-  cursor to both an element *type* (for the Help window) and its exact
-  dot-*path* within the preview tree (for the highlight).
+  source `TextEditor` `"cursor_moved"` event, via a hand-rolled cursor
+  scanner (`ui_schema_help::scan_cursor_context()` for JSON,
+  `scan_cursor_context_yaml()` for YAML) that tolerates the transiently
+  invalid source typical of an in-progress edit and resolves the cursor to
+  both an element *type* (for the Help window) and its exact dot-*path*
+  within the preview tree (for the highlight).
 - **client/**: `run_editor(wish_app_host&)`, self-registered as the
-  `"editor"` embedded app — owns the local JSON file (`upload_file`/
+  `"editor"` embedded app — owns the local source file (`upload_file`/
   `download_file`, same sandbox-bridging rule as nano) and a background
-  poll loop that re-uploads the file under a fresh sandbox name whenever it
+  poll loop that re-uploads the file under a fresh sandbox name (keeping the
+  original extension so the server picks the right importer) whenever it
   changes on disk outside the tool. Requires a startup file path via
-  `app_args()`: `wish client --run=editor -- path/to/ui.json` (created
-  empty if it doesn't exist yet). Only Ctrl+S (or a confirmed close)
+  `app_args()`: `wish client --run=editor -- path/to/ui.json` (or
+  `.yaml`/`.yml`; created empty if it doesn't exist yet). Only Ctrl+S (or a confirmed close)
   persists edits back to the local file — in-editor edits update the live
   preview immediately but are not written to disk until saved.
 - **resources/**: none.

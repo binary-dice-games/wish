@@ -1,0 +1,189 @@
+type: Window
+title: Plots - wish demo
+width: 900
+height: 800
+children:
+  note:
+    type: Label
+    text: Plot series carry no data in this file -- the demo app fills xs/ys at runtime. This example
+      is here to show how a Plot and its series children are structured.
+    wrap: true
+  ch_line:
+    type: CollapsingHeader
+    label: Line, Scatter & Stairs
+    children:
+      plt_lines:
+        type: Plot
+        title: Line Series
+        height: 220.0
+        x_label: x
+        y_label: y
+        children:
+          l_sin:
+            type: PlotLine
+            label: sin(x)
+          l_cos:
+            type: PlotScatter
+            label: cos(x) noisy
+          l_stairs:
+            type: PlotStairs
+            label: cos(x) stairs
+  ch_area:
+    type: CollapsingHeader
+    label: Stems & Shaded Area
+    children:
+      plt_area:
+        type: Plot
+        title: Stems & Shaded
+        height: 220.0
+        x_label: x
+        y_label: y
+        children:
+          a_stems:
+            type: PlotStems
+            label: sin(x) stems
+          a_shaded:
+            type: PlotShaded
+            label: ±0.4 band
+  ch_digital:
+    type: CollapsingHeader
+    label: Digital Signals
+    children:
+      plt_digital:
+        type: Plot
+        title: Digital Signals
+        height: 160.0
+        x_label: t (s)
+        children:
+          d_pwm:
+            type: PlotDigital
+            label: PWM 67%
+          d_clk:
+            type: PlotDigital
+            label: Clock 50%
+  ch_bars:
+    type: CollapsingHeader
+    label: Bar Charts
+    children:
+      plt_bars:
+        type: Plot
+        title: Vertical Bars
+        height: 200.0
+        x_label: Month
+        y_label: Units
+        children:
+          b_monthly:
+            type: PlotBars
+            label: Sales 2025
+      plt_barsh:
+        type: Plot
+        title: Horizontal Bars
+        height: 180.0
+        x_label: Revenue ($k)
+        y_label: Quarter
+        children:
+          b_qtr:
+            type: PlotBarsH
+            label: Revenue
+  ch_hist:
+    type: CollapsingHeader
+    label: Histograms
+    children:
+      plt_hist1:
+        type: Plot
+        title: 1-D Histogram
+        height: 200.0
+        x_label: Value
+        y_label: Count
+        children:
+          h_norm:
+            type: PlotHistogram
+            label: Normal dist.
+            bins: 40
+      plt_hist2:
+        type: Plot
+        title: 2-D Histogram
+        height: 220.0
+        x_label: X
+        y_label: Y
+        children:
+          h_2d:
+            type: PlotHistogram2D
+            label: Bivariate
+            x_bins: 25
+            y_bins: 25
+  ch_heatmap:
+    type: CollapsingHeader
+    label: Heatmap
+    children:
+      plt_heat:
+        type: Plot
+        title: Gaussian Heatmap
+        height: 260.0
+        children:
+          hm:
+            type: PlotHeatmap
+            label: Intensity
+            rows: 10
+            cols: 10
+            scale_min: 0.0
+            scale_max: 1.0
+            format: '%.2f'
+            x_max: 1.0
+            y_max: 1.0
+  ch_pie:
+    type: CollapsingHeader
+    label: Pie Chart
+    children:
+      plt_pie:
+        type: Plot
+        title: Market Share
+        height: 260.0
+        x_flags: NoDecorations
+        y_flags: NoDecorations
+        children:
+          pie:
+            type: PlotPieChart
+            label: share
+            labels: 'Web
+
+              Mobile
+
+              Desktop
+
+              Tablet
+
+              Other'
+            normalize: true
+            label_fmt: '%.0f%%'
+            angle0: 90.0
+            x: 0.5
+            y: 0.5
+            radius: 0.4
+  ch_annot:
+    type: CollapsingHeader
+    label: Annotations
+    children:
+      plt_annot:
+        type: Plot
+        title: Annotations
+        height: 220.0
+        x_label: x
+        y_label: y
+        children:
+          an_line:
+            type: PlotLine
+            label: sin(x)
+          an_txt:
+            type: PlotText
+            text: Peak
+            x: 1.5708
+            y: 1.05
+            offset_y: -12.0
+          an_vref:
+            type: PlotInfLines
+            label: x = pi/2
+          an_href:
+            type: PlotInfLines
+            label: y = 0
+            horizontal: true

@@ -7,9 +7,12 @@
 #include "src/rmi/shared/ids.hpp"
 
 #include <context/file_service.hpp>
+#include <ui/forms/message_box.hpp>
 #include <ui/ui_importer.hpp>
 #include <ui/ui_schema_help.hpp>
 
+#include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
@@ -23,6 +26,15 @@ namespace {
 template <typename Element>
 key_t wish_id_of(const Element& element) {
   return element->template as<key_t>("__wish_id"_key);
+}
+
+// True when @p path names a YAML source file (case-insensitive `.yaml` /
+// `.yml` extension). Anything else -- including no extension -- is treated
+// as JSON, matching the module's historical JSON-only default.
+bool is_yaml_source_path(const std::string& path) {
+  std::string ext = std::filesystem::path{path}.extension().string();
+  std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return std::tolower(c); });
+  return ext == ".yaml" || ext == ".yml";
 }
 
 // Event names emitted by wish's built-in element renderers (see
@@ -124,10 +136,10 @@ std::string format_field_description(const element_field_info& f) {
 // log to a fixed-size scrolling region instead of letting an ever-growing
 // row count push the whole Editor window taller.
 //
-// "confirm" is an inline stand-in for a modal close-confirmation dialog:
-// wish has no dedicated modal/popup element, so it's just a normally-laid-out
-// panel that starts hidden ("visible": false) and is shown/hidden by toggling
-// that field, rather than a true blocking overlay.
+// Closing with unsaved edits is confirmed via a privately-instantiated
+// MessageBox form (form::instantiate_child_form(), same pattern as git's/
+// top's confirm dialogs) -- not an inline panel -- so there is no
+// close-confirmation widget in this layout.
 
 // Uses a custom raw-string delimiter (R"json(...)json" instead of R"(...)")
 // because the content below contains a literal `)"` (in "Filename: (none)"),
@@ -144,22 +156,6 @@ static constexpr const char* kEditorLayout = R"json({
       "type": "VerticalLayout",
       "children": {
         "path_label": { "type": "Label", "text": "Filename: (none)" },
-        "confirm": {
-          "type": "VerticalLayout",
-          "visible": false,
-          "children": {
-            "confirm_text": { "type": "Label", "text": "You have unsaved changes." },
-            "confirm_row": {
-              "type": "HorizontalLayout",
-              "spacing": 8,
-              "children": {
-                "confirm_save": { "type": "Button", "label": "Save & Close" },
-                "confirm_discard": { "type": "Button", "label": "Discard & Close" },
-                "confirm_cancel": { "type": "Button", "label": "Cancel" }
-              }
-            }
-          }
-        },
         "banner": { "type": "Label", "text": "" },
         "editor_row": {
           "type": "HorizontalLayout",
@@ -277,10 +273,6 @@ void editor::on_init() {
   });
   tree.with("vbox.banner", [&](const auto& e) { banner_ptr_ = e; });
   tree.with("vbox.path_label", [&](const auto& e) { path_label_ptr_ = e; });
-  tree.with("vbox.confirm", [&](const auto& e) { confirm_panel_ptr_ = e; });
-  tree.with("vbox.confirm.confirm_row.confirm_save", [&](const auto& e) { confirm_save_id_ = wish_id_of(e); });
-  tree.with("vbox.confirm.confirm_row.confirm_discard", [&](const auto& e) { confirm_discard_id_ = wish_id_of(e); });
-  tree.with("vbox.confirm.confirm_row.confirm_cancel", [&](const auto& e) { confirm_cancel_id_ = wish_id_of(e); });
 
   sess().ui_objects.merge(std::move(tree), internal_root_key_);
 
@@ -329,8 +321,16 @@ dynamic editor::do_set_source(const dynamic& args) {
   current_source_path_ = args.as<std::string>("path"_key);
   if (auto* dp = args.findField<std::string>("display_path"_key); dp && !dp->empty())
     display_path_ = *dp;
-  if (source_editor_ptr_)
+  // Pick the importer, source-panel syntax highlighting, and cursor-context
+  // scanner from the file extension: the real local name if the client sent
+  // one, else the sandbox name. Both formats get the same live preview,
+  // schema autocomplete, and cursor-tracked Help panel.
+  source_is_yaml_ = is_yaml_source_path(display_path_.empty() ? current_source_path_ : display_path_);
+  if (source_editor_ptr_) {
     (*source_editor_ptr_)["file_path"_key] = current_source_path_;
+    (*source_editor_ptr_)["language"_key] = std::string{source_is_yaml_ ? "yaml" : "json"};
+    (*source_editor_ptr_)["wish_ui_schema"_key] = true;
+  }
   // The sandbox now matches disk (initial load, or the client re-uploading
   // after an external edit) -- any prior in-editor edit is superseded.
   dirty_ = false;
@@ -383,7 +383,7 @@ void editor::try_reparse() {
 
   ui_tree mock;
   try {
-    mock = import_json(content);
+    mock = source_is_yaml_ ? import_yaml(content) : import_json(content);
   } catch (const std::runtime_error& e) {
     set_banner(e.what());
     return;
@@ -465,8 +465,9 @@ void editor::update_path_label() {
 }
 
 void editor::update_help_panel(int32_t line, int32_t column) {
-  auto ctx = scan_cursor_context(
-      current_source_content_, text_pos{static_cast<size_t>(line), static_cast<size_t>(column)});
+  text_pos pos{static_cast<size_t>(line), static_cast<size_t>(column)};
+  auto ctx = source_is_yaml_ ? scan_cursor_context_yaml(current_source_content_, pos)
+                             : scan_cursor_context(current_source_content_, pos);
 
   update_highlight(ctx.element_path);
 
@@ -588,6 +589,40 @@ void editor::update_highlight(const std::optional<std::string>& new_path) {
   highlighted_path_ = new_path;
 }
 
+void editor::show_close_confirm() {
+  dynamic params;
+  params["title"_key] = std::string{"Unsaved changes"};
+  params["message"_key] = "Save changes to " +
+      (display_path_.empty() ? std::string{"this file"} : display_path_) + " before closing?";
+  params["icon"_key] = std::string{"warning"};
+  params["buttons"_key] = std::string{"yes_no_cancel"};
+
+  // Privately-instantiated MessageBox, same pattern as git's/top's confirm
+  // dialogs (form::instantiate_child_form()). Overwriting close_dialog_ is
+  // safe even if one is somehow still open -- the stale instance's
+  // destructor tears down its own internal objects.
+  //   Yes -> save, then close once the client reports the save landed
+  //          (do_mark_saved -> request_close via pending_close_after_save_)
+  //   No  -> discard and close now
+  //   Cancel / window-X -> keep editing (MessageBox closes itself)
+  //
+  // The callback must NOT destroy close_dialog_ (e.g. via request_close()
+  // resetting it): message_box::on_event() calls its OWN request_close()
+  // right after emit()-ing "on_result", so freeing the box here would be a
+  // use-after-free of the frame we're returning into. request_close() only
+  // tears down the editor's chrome -- the MessageBox tears itself down.
+  close_dialog_ = instantiate_child_form<message_box>(
+      "MessageBox"_key, std::move(params), [this](key_t /*event_name*/, const dynamic& payload) {
+        const std::string button = payload.as<std::string>("button"_key);
+        if (button == "yes") {
+          pending_close_after_save_ = true;
+          emit("on_source_saved"_key);
+        } else if (button == "no") {
+          request_close();
+        }
+      });
+}
+
 void editor::request_close() {
   clear_mock();
   highlighted_path_.reset();
@@ -658,29 +693,10 @@ void editor::append_log_row(const std::string& text) {
 
 void editor::on_event(key_t id, key_t event, const dynamic& payload) {
   if (id == window_id_ && event == "closed"_key) {
-    if (dirty_) {
-      // Don't close yet -- ask the user via the inline confirmation panel.
-      // A second X click while it's already showing just re-shows it.
-      if (confirm_panel_ptr_)
-        (*confirm_panel_ptr_)["visible"_key] = true;
-    } else {
+    if (dirty_)
+      show_close_confirm();
+    else
       request_close();
-    }
-    return;
-  }
-
-  if (id == confirm_save_id_ && event == "clicked"_key) {
-    pending_close_after_save_ = true;
-    emit("on_source_saved"_key);
-    return;
-  }
-  if (id == confirm_discard_id_ && event == "clicked"_key) {
-    request_close();
-    return;
-  }
-  if (id == confirm_cancel_id_ && event == "clicked"_key) {
-    if (confirm_panel_ptr_)
-      (*confirm_panel_ptr_)["visible"_key] = false;
     return;
   }
 

@@ -3,7 +3,7 @@
 A complete reference for every built-in wish UI element: what it's for,
 its fields, and the events it emits — plus how windows/layouts work, the
 JSON/YAML template schema, and how to use the `editor` tool to preview a
-UI from a JSON file without writing any client code.
+UI from a JSON or YAML file without writing any client code.
 
 This document is self-contained: it exists so a human or an AI agent can
 write a correct wish UI JSON template from this file alone, without
@@ -714,11 +714,11 @@ sandboxed file path.
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `file_path` | `string` | `""` (required) | Path to edit, sandboxed to the session resource dir (relative) or requiring `set_allow_absolute_paths(true)` (absolute). |
-| `language` | `string` | `"none"` | Syntax highlighting: `"cpp"` (or `"c++"` alias), `"c"`, `"cs"`, `"glsl"`, `"hlsl"`, `"lua"`, `"python"`, `"sql"`, `"json"`, `"markdown"`, `"angelscript"`, `"none"`. |
+| `language` | `string` | `"none"` | Syntax highlighting: `"cpp"` (or `"c++"` alias), `"c"`, `"cs"`, `"glsl"`, `"hlsl"`, `"lua"`, `"python"`, `"sql"`, `"json"`, `"yaml"` (`"yml"` alias), `"markdown"`, `"angelscript"`, `"none"`. |
 | `read_only` | `bool` | `false` | When `true`, editing is disabled and `changed` never fires. |
 | `width` | `int32` | `0` | Width in pixels (0–8192); `0` fills available width. |
 | `height` | `int32` | `400` | Height in pixels (0–8192); `0` fills available height. |
-| `wish_ui_schema` | `bool` | `false` | When `true` and `language` is `"json"`, enables cursor tracking (`cursor_moved` events) and autocomplete for wish UI element type names, field names, and enum values, sourced from the live class registry (see `src/ui/ui_schema_help.hpp`). Used by the `editor` module's source panel; off by default so unrelated `TextEditor` uses (e.g. nano) are unaffected. |
+| `wish_ui_schema` | `bool` | `false` | When `true` and `language` is `"json"` or `"yaml"`, enables cursor tracking (`cursor_moved` events) and autocomplete for wish UI element type names, field names, and enum values, sourced from the live class registry (see `src/ui/ui_schema_help.hpp`). Used by the `editor` module's source panel; off by default so unrelated `TextEditor` uses (e.g. nano) are unaffected. |
 
 **Events:**
 - `changed` — fired when text is edited (and `read_only` is `false`); the
@@ -908,9 +908,9 @@ A read-only top/htop-style monitor (module, off by default —
   mem_used_bytes, processes[])`.
 - Events: `closed`.
 
-## 8. The `editor` tool: previewing a UI from a JSON file
+## 8. The `editor` tool: previewing a UI from a JSON or YAML file
 
-wish ships a live JSON UI mock editor as an optional module
+wish ships a live JSON/YAML UI mock editor as an optional module
 (`WISH_MODULE_BDG_DEV_EDITOR`, off by default) — the fastest way to iterate
 on a hand-written or agent-generated UI template without writing any client
 code or doing a build/re-run cycle for every change.
@@ -921,26 +921,43 @@ code or doing a build/re-run cycle for every change.
 cmake -S . -B build -DWISH_MODULE_BDG_DEV_EDITOR=ON
 cmake --build build --target wish-standalone   # or wish-client / wish-cli
 
-# Edit (and create, if missing) a local JSON file:
+# Edit (and create, if missing) a local JSON or YAML file:
 build/app/wish-standalone --run=editor -- path/to/ui.json
+build/app/wish-standalone --run=editor -- path/to/ui.yaml
 ```
+
+The importer, syntax highlighting, schema-aware autocomplete, and the
+cursor-tracked Help panel described below are all chosen from the file
+extension: `.yaml`/`.yml` is treated as YAML, anything else as JSON. Both
+formats get the same feature set.
 
 `wish client --run=editor -- path/to/ui.json` works the same way against a
 separately-running `wish server`. `standalone` is the simplest choice for
 solo iteration since it needs no separate server process.
+
+### Ready-made examples
+
+`examples/ui/json/` and `examples/ui/yaml/` contain one file per tab of the
+`demo` app — `basics`, `sliders`, `inputs`, `selection`, `tree`, `misc`,
+`tables`, `plots`, `plot3d`, `files`, `forms`, `icons` — each a
+self-contained `Window`. Open any of them in the editor as a starting point:
+
+```sh
+build/app/wish-standalone --run=editor -- examples/ui/yaml/tables.yaml
+```
 
 ### What it shows
 
 A window split into:
 - a **filename label** showing the local path and a `[MODIFIED]` marker
   once there are unsaved edits,
-- a syntax-highlighted **source panel** (a `TextEditor` bound to the JSON
-  file) — edit here directly,
+- a syntax-highlighted **source panel** (a `TextEditor` bound to the source
+  file, JSON or YAML) — edit here directly,
 - an **error banner**, shown only when the current source fails to parse
-  (invalid JSON or an unknown element `type`); the last successfully-parsed
-  preview stays on screen unchanged while the banner is up, so a syntax typo
-  never blanks the preview,
-- a live **preview window** — the actual instantiated UI the JSON
+  (invalid JSON/YAML or an unknown element `type`); the last
+  successfully-parsed preview stays on screen unchanged while the banner is
+  up, so a syntax typo never blanks the preview,
+- a live **preview window** — the actual instantiated UI the source
   describes, re-parsed and swapped in on every edit,
 - an **event log** table — every event any preview widget fires is appended
   as `"<dot-path> <event> {payload}"`, e.g. `"row.ok clicked"` — useful for
@@ -949,9 +966,9 @@ A window split into:
 
 ### Editing workflow
 
-1. Type JSON in the source panel; the preview re-parses and updates on
-   every keystroke (a failed parse only updates the error banner, per
-   above).
+1. Type JSON (or YAML) in the source panel; the preview re-parses and
+   updates on every keystroke (a failed parse only updates the error
+   banner, per above).
 2. Interact with the live preview (click buttons, drag sliders, ...) — each
    interaction appends a row to the event log, letting you verify field
    names, event names, and payload shapes empirically.
@@ -961,8 +978,10 @@ A window split into:
    contract).
 4. If the local file changes outside the tool (e.g. another process/agent
    edits it), the editor picks up the change and re-parses automatically.
-5. Closing the window with unsaved edits shows an inline confirmation
-   (Save & Close / Discard & Close / Cancel) instead of closing immediately.
+5. Closing the window with unsaved edits shows a Yes / No / Cancel
+   `MessageBox` ("Save changes … before closing?") instead of closing
+   immediately — Yes saves then closes, No discards and closes, Cancel
+   keeps editing.
 
 ### Why this is useful for an AI agent
 
