@@ -420,6 +420,63 @@ TEST_F(WebRendererTest, BeginFrame_DrainsQueuedMouseMoveIntoImGuiIO) {
   close_socket(sock);
 }
 
+TEST_F(WebRendererTest, PollEvents_SubThresholdMouseMoveDoesNotTriggerAFrame) {
+  // A bare hover over the canvas must not force a full re-render +
+  // encode_frame + broadcast: web_renderer applies the same 4 px / 100 ms
+  // motion debounce sdl3_renderer::poll_events() does. Every other input
+  // kind still triggers unconditionally.
+  int port = renderer_->actual_port();
+  ASSERT_GT(port, 0);
+  int sock = connect_ws_client(port);
+  ASSERT_GE(sock, 0);
+
+  auto drain_activity = [&] {
+    for (int i = 0; i < 200; ++i) {
+      if (renderer_->poll_events())
+        return true;
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    return false;
+  };
+  ASSERT_TRUE(drain_activity()); // the connect itself
+
+  auto send_move = [&](float x, float y) {
+    std::vector<std::byte> payload;
+    push_u8(payload, static_cast<uint8_t>(web_input_kind::mouse_move));
+    push_f32(payload, x);
+    push_f32(payload, y);
+    send_ws_binary(sock, build_envelope(web_msg_type::input, payload));
+  };
+
+  // First move establishes the baseline (always significant) and sets
+  // activity_; a tiny follow-up move ~1.4 px away does not. Send both
+  // back-to-back so the worker thread processes them microseconds apart,
+  // well inside the 100 ms time threshold.
+  send_move(10.0f, 10.0f);
+  send_move(11.0f, 11.0f);
+  ASSERT_TRUE(drain_activity()); // from the first move
+
+  // The sub-threshold move must never flip activity_ back on.
+  for (int i = 0; i < 8; ++i) {
+    EXPECT_FALSE(renderer_->poll_events());
+    std::this_thread::sleep_for(std::chrono::milliseconds(3));
+  }
+
+  // A clearly significant move does trigger again.
+  send_move(200.0f, 200.0f);
+  EXPECT_TRUE(drain_activity());
+
+  // ...and so does a non-move event even without any motion.
+  std::vector<std::byte> wheel;
+  push_u8(wheel, static_cast<uint8_t>(web_input_kind::mouse_wheel));
+  push_f32(wheel, 0.0f);
+  push_f32(wheel, 1.0f);
+  send_ws_binary(sock, build_envelope(web_msg_type::input, wheel));
+  EXPECT_TRUE(drain_activity());
+
+  close_socket(sock);
+}
+
 TEST_F(WebRendererTest, BeginFrame_LeftCtrlKeyEventAlsoSetsMergedModFlag) {
   // Regression test for a bug where ImGui-wide Ctrl-modified shortcuts
   // (Ctrl+A/C/V/X/... in any widget, including TextEditor) silently never
@@ -592,6 +649,23 @@ TEST_F(WebRendererTest, EncodeFrame_NonZeroTargetIdRoundTrips) {
 
   size_t pos = 8; // envelope header
   EXPECT_EQ(read_u32(bytes, pos), 42u);
+}
+
+TEST_F(WebRendererTest, EncodeFrame_OutParamOverloadMatchesAllocatingOverload) {
+  const ImDrawData* draw_data = render_test_frame();
+  ASSERT_NE(draw_data, nullptr);
+  ASSERT_TRUE(draw_data->Valid);
+
+  const auto expected = encode_frame(*draw_data, /*target_id=*/7);
+
+  // Pre-fill with junk to prove the overload clears rather than appends.
+  std::vector<std::byte> scratch(999, std::byte{0xAB});
+  bdg::wish::draw_protocol::encode_frame(*draw_data, /*target_id=*/7, scratch);
+  EXPECT_EQ(scratch, expected);
+
+  // Reusing the same (now correctly-sized) buffer yields identical bytes.
+  bdg::wish::draw_protocol::encode_frame(*draw_data, /*target_id=*/7, scratch);
+  EXPECT_EQ(scratch, expected);
 }
 
 // ── get_or_load_texture() ─────────────────────────────────────────────────────

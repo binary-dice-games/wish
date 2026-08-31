@@ -1,6 +1,7 @@
 // MIT License © 2025 Binary Dice Games
 #include <gtest/gtest.h>
 
+#include <context/logger.hpp>
 #include <server/registry.hpp>
 #include <server/server.hpp>
 #include <ui/ui_descriptor.hpp>
@@ -348,6 +349,80 @@ TEST(ServerTest, MenuBarExtensionSplicedNotDoubleRendered) {
   }
 
   srv.stop();
+}
+
+// ── RMI trace verbosity ──────────────────────────────────────────────────────
+//
+// set_logger() maps the logger's log_level onto bison's trace hooks:
+//  - below `info`  : per-request trace lines are not produced at all;
+//  - `info`+       : envelope-metadata trace lines are produced;
+//  - `trace`       : those lines also carry decoded payloads (`args=`, `set`
+//                    values, response bodies).
+
+namespace {
+
+// Captures every trace line wish::server hands to on_print().
+class print_capturing_server : public wish::server {
+ public:
+  print_capturing_server(server_transport_iface& t, std::unique_ptr<wish::renderer> r)
+      : wish::server(t, std::move(r)) {}
+
+  std::mutex mtx;
+  std::string joined_lines;
+
+ protected:
+  void on_print(bdg::bison::key_t /*sid*/, const std::string& line) override {
+    std::lock_guard<std::mutex> lk(mtx);
+    joined_lines += line;
+    joined_lines += '\n';
+  }
+};
+
+std::string capture_trace_with_logger(wish::log_level level) {
+  wish::register_all();
+  auto lg = std::make_shared<wish::logger>(
+      dynamic::instantiate("wish"_key, "__WishLogger"_key), level, std::filesystem::path{});
+
+  memory_server_transport transport;
+  print_capturing_server srv{transport, std::make_unique<wish::null_renderer>()};
+  srv.set_logger(lg);
+  srv.start();
+
+  {
+    client c{transport.connect()};
+    c.connect();
+    auto proxy = c.instantiate("wish"_key, "Window"_key).get();
+    dynamic fields;
+    fields["title"_key] = std::string{"TRACE_SENTINEL"};
+    proxy.set(std::move(fields)).get();
+    c.disconnect();
+  }
+
+  srv.stop();
+  std::lock_guard<std::mutex> lk(srv.mtx);
+  return srv.joined_lines;
+}
+
+} // namespace
+
+TEST(ServerTest, NoneLevelSuppressesPerRequestTrace) {
+  const std::string out = capture_trace_with_logger(wish::log_level::none);
+  EXPECT_EQ(out.find("class=Window"), std::string::npos); // no instantiate trace
+  EXPECT_EQ(out.find("method="), std::string::npos);
+  EXPECT_EQ(out.find("TRACE_SENTINEL"), std::string::npos);
+}
+
+TEST(ServerTest, InfoLevelTracesMetadataWithoutPayloads) {
+  const std::string out = capture_trace_with_logger(wish::log_level::info);
+  EXPECT_NE(out.find("[rmi]"), std::string::npos);
+  EXPECT_NE(out.find("class=Window"), std::string::npos);
+  EXPECT_EQ(out.find("TRACE_SENTINEL"), std::string::npos);
+  EXPECT_EQ(out.find("args="), std::string::npos);
+}
+
+TEST(ServerTest, TraceLevelIncludesDecodedPayloads) {
+  const std::string out = capture_trace_with_logger(wish::log_level::trace);
+  EXPECT_NE(out.find("TRACE_SENTINEL"), std::string::npos);
 }
 
 // ── TLS transport (transport=tls) ─────────────────────────────────────────────

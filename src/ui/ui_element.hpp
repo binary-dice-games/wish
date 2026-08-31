@@ -269,6 +269,20 @@ class ui_element : public bison::cloneable_dynamic<ui_element> {
     return cache;
   }
 
+  /// @brief Like `cached_field()`, but never returns null: a field absent
+  ///        from this instance and its prototype chain is created (as an
+  ///        empty entry) via `operator[]` and cached. For hot *write* paths
+  ///        that stamp a field on (nearly) every node every frame -- e.g.
+  ///        `report_self_rect()`'s per-frame window-rect fields. `const`
+  ///        (writing through a `mutable field*` cache into the `mutable`
+  ///        `fields_` map) so it stays callable through the `const
+  ///        ui_element&` every `render_*` function receives.
+  bison::field* ensured_field(bison::field*& cache, bison::key_t key) const {
+    if (!cache)
+      cache = &(const_cast<ui_element&>(*this))[key];
+    return cache;
+  }
+
   /// @brief Like `cached_field()`, but returns the field's value as `T`
   ///        (via `field::get_as<T>()`, which cross-type-converts -- e.g. a
   ///        JSON integer literal like `"width": -1` is stored as an
@@ -329,6 +343,14 @@ class ui_element : public bison::cloneable_dynamic<ui_element> {
     return cached_field_or<bool>(highlight_field_, bison::key_t{"__wish_highlight__"}, false);
   }
 
+  /// @brief Cached `get_as<std::string>("tooltip"_key, "")`. When non-empty,
+  ///        `imgui_renderer::render_node()` shows it via `ImGui::SetTooltip()`
+  ///        whenever this element is hovered. Read once per node per render
+  ///        pass, so cached like every other hot field here.
+  std::string tooltip() const {
+    return cached_field_or<std::string>(tooltip_field_, bison::key_t{"tooltip"}, std::string{});
+  }
+
   /// @brief Cached, non-empty `"profiler_marker"` string, or `nullptr` if
   ///        the field is absent, not a string, or empty. Returns a raw
   ///        pointer (rather than going through `cached_field_or()`) because
@@ -367,6 +389,67 @@ class ui_element : public bison::cloneable_dynamic<ui_element> {
   /// @brief Cached `get_as<float>("spacing"_key, def)`.
   float spacing(float def = 0.0f) const {
     return cached_field_or<float>(spacing_field_, bison::key_t{"spacing"}, def);
+  }
+
+  // ── Drag & drop ───────────────────────────────────────────────────────────
+  //
+  // `handle_drag_drop()` (`src/imgui/imgui_renderer.cpp`) is called for every
+  // node on every frame, and read `"drag_type"`/`"drag_payload"`/`"drop_type"`
+  // off each one -- three `get_as<std::string>()` map lookups per node per
+  // frame even though the overwhelming majority of nodes set none of them.
+  // Cached like every other hot field.
+
+  /// @brief Cached `get_as<std::string>("drag_type"_key, "")`.
+  std::string drag_type() const {
+    return cached_field_or<std::string>(drag_type_field_, bison::key_t{"drag_type"}, std::string{});
+  }
+  /// @brief Cached `get_as<std::string>("drag_payload"_key, "")`.
+  std::string drag_payload() const {
+    return cached_field_or<std::string>(drag_payload_field_, bison::key_t{"drag_payload"}, std::string{});
+  }
+  /// @brief Cached `get_as<std::string>("drop_type"_key, "")`.
+  std::string drop_type() const {
+    return cached_field_or<std::string>(drop_type_field_, bison::key_t{"drop_type"}, std::string{});
+  }
+
+  // ── Self-reported window / group rect ─────────────────────────────────────
+  //
+  // The four classes that open their own real ImGui window or `BeginChild`
+  // (Window, DockSpaceViewport, VerticalLayout, HorizontalLayout) stamp their
+  // own screen-space rect here every frame via `report_self_rect()`
+  // (`src/imgui/imgui_ui_renderer.cpp`); `imgui_renderer::render_node()` reads
+  // it straight back the same frame as the authoritative rect for those
+  // classes (a `BeginGroup()/EndGroup()` wrap around their dispatch call
+  // cannot see across the `Begin()/End()` / `BeginChild()/EndChild()`
+  // boundary). Both the write and the read run per frame on every such
+  // container, so both go through cached `field*`s -- four named keys that,
+  // once created, are never erased, exactly like every other hot field here.
+
+  /// @brief Stamp this frame's self-reported rect (screen-space top-left
+  ///        @p pos and @p size). `const` for the same reason as the layout
+  ///        stash setters below.
+  void set_self_rect(vec2f pos, vec2f size) const {
+    *ensured_field(win_rect_x_field_, bison::key_t{"__wish_win_rect_x__"}) = pos.x;
+    *ensured_field(win_rect_y_field_, bison::key_t{"__wish_win_rect_y__"}) = pos.y;
+    *ensured_field(win_rect_w_field_, bison::key_t{"__wish_win_rect_w__"}) = size.x;
+    *ensured_field(win_rect_h_field_, bison::key_t{"__wish_win_rect_h__"}) = size.y;
+  }
+
+  /// @brief Read back the rect stamped by `set_self_rect()`. Returns `false`,
+  ///        leaving @p pos / @p size untouched, when any component is absent
+  ///        or not a `float` -- the expected path for a VerticalLayout/
+  ///        HorizontalLayout with a degenerate (<=0) self size that skipped
+  ///        its own `BeginChild()`/`set_self_rect()` this frame.
+  bool self_rect(vec2f& pos, vec2f& size) const {
+    const bison::field* x = cached_field(win_rect_x_field_, bison::key_t{"__wish_win_rect_x__"});
+    const bison::field* y = cached_field(win_rect_y_field_, bison::key_t{"__wish_win_rect_y__"});
+    const bison::field* w = cached_field(win_rect_w_field_, bison::key_t{"__wish_win_rect_w__"});
+    const bison::field* h = cached_field(win_rect_h_field_, bison::key_t{"__wish_win_rect_h__"});
+    if (!x || !x->is<float>() || !y || !y->is<float>() || !w || !w->is<float>() || !h || !h->is<float>())
+      return false;
+    pos = {x->as<float>(), y->as<float>()};
+    size = {w->as<float>(), h->as<float>()};
+    return true;
   }
 
   // ── Layout stash ──────────────────────────────────────────────────────────
@@ -462,11 +545,19 @@ class ui_element : public bison::cloneable_dynamic<ui_element> {
   mutable bison::field* font_path_field_ = nullptr;
   mutable bison::field* font_size_field_ = nullptr;
   mutable bison::field* highlight_field_ = nullptr;
+  mutable bison::field* tooltip_field_ = nullptr;
   mutable bison::field* profiler_marker_field_ = nullptr;
   mutable bison::field* width_field_ = nullptr;
   mutable bison::field* height_field_ = nullptr;
   mutable bison::field* weight_field_ = nullptr;
   mutable bison::field* spacing_field_ = nullptr;
+  mutable bison::field* drag_type_field_ = nullptr;
+  mutable bison::field* drag_payload_field_ = nullptr;
+  mutable bison::field* drop_type_field_ = nullptr;
+  mutable bison::field* win_rect_x_field_ = nullptr;
+  mutable bison::field* win_rect_y_field_ = nullptr;
+  mutable bison::field* win_rect_w_field_ = nullptr;
+  mutable bison::field* win_rect_h_field_ = nullptr;
   mutable layout_stash layout_stash_;
 
   // ── for_each_child_ordered() cache ──────────────────────────────────────

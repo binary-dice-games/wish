@@ -87,9 +87,18 @@ class Server:
         return cls(h)
 
     def set_verbose(self, verbose: bool = True) -> "Server":
-        """Enable trace logging of RMI dispatch to stdout. Must be called
-        before :meth:`start`."""
+        """Deprecated: prefer :meth:`set_log_level`. ``True`` maps to
+        ``"trace"``, ``False`` to ``"none"``. Must be called before
+        :meth:`start`."""
         self._check(self._lib.wish_server_set_verbose(self._handle, 1 if verbose else 0), "set_verbose")
+        return self
+
+    def set_log_level(self, level: str) -> "Server":
+        """Set log verbosity: one of ``"none"``, ``"fatal"``, ``"error"``,
+        ``"warning"``, ``"info"``, ``"trace"`` (default ``"none"``). RMI trace
+        lines appear at ``"info"`` and above, decoded payloads at ``"trace"``.
+        Must be called before :meth:`start`."""
+        self._check(self._lib.wish_server_set_log_level(self._handle, level.encode()), "set_log_level")
         return self
 
     def start(self, renderer: str = "sdl3", **params: Any) -> "Server":

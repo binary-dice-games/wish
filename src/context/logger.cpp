@@ -3,6 +3,8 @@
 /// @brief Per-session logging RMI service implementation.
 #include <context/logger.hpp>
 
+#include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <ctime>
 #include <iomanip>
@@ -13,6 +15,54 @@
 namespace bdg::wish {
 
 using namespace bison;
+
+// ── log_level ─────────────────────────────────────────────────────────────────
+
+std::string_view to_string(log_level lvl) {
+  switch (lvl) {
+    case log_level::none:
+      return "none";
+    case log_level::fatal:
+      return "fatal";
+    case log_level::error:
+      return "error";
+    case log_level::warning:
+      return "warning";
+    case log_level::info:
+      return "info";
+    case log_level::trace:
+      return "trace";
+  }
+  return "none";
+}
+
+std::optional<log_level> parse_log_level(std::string_view s) {
+  std::string lower(s);
+  std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) {
+    return static_cast<char>(std::tolower(c));
+  });
+  if (lower == "none")
+    return log_level::none;
+  if (lower == "fatal")
+    return log_level::fatal;
+  if (lower == "error")
+    return log_level::error;
+  if (lower == "warning" || lower == "warn")
+    return log_level::warning;
+  if (lower == "info")
+    return log_level::info;
+  if (lower == "trace" || lower == "debug")
+    return log_level::trace;
+  return std::nullopt;
+}
+
+// Severity of a client-supplied `logger.log()` level string, as a log_level.
+// Unknown labels are treated as `info` so they surface at the usual verbosity.
+static log_level severity_of(const std::string& level) {
+  if (auto lvl = parse_log_level(level))
+    return *lvl == log_level::none ? log_level::info : *lvl;
+  return log_level::info;
+}
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -32,8 +82,8 @@ static std::string timestamp() {
 
 // ── logger ────────────────────────────────────────────────────────────────────
 
-logger::logger(bison::dynamic&& base, bool verbose, std::filesystem::path log_path)
-    : dynamic(std::move(base)), verbose_(verbose), log_path_(std::move(log_path)) {
+logger::logger(bison::dynamic&& base, log_level level, std::filesystem::path log_path)
+    : dynamic(std::move(base)), level_(level), log_path_(std::move(log_path)) {
   if (!log_path_.empty()) {
     // Ensure parent directory exists.
     std::filesystem::create_directories(log_path_.parent_path());
@@ -55,9 +105,14 @@ void logger::log(const std::string& level, const std::string& msg) {
 }
 
 void logger::write_locked(state& s, const std::string& level, const std::string& msg) {
+  // Drop messages more verbose than the configured floor (e.g. an "info"
+  // message when the level is "error"). `none` drops everything.
+  if (static_cast<int>(level_) < static_cast<int>(severity_of(level)))
+    return;
+
   // Format: [YYYY-MM-DD HH:MM:SS] [LEVEL] message
   std::string line = "[" + timestamp() + "] [" + level + "] " + msg + "\n";
-  if (verbose_) {
+  if (level_ >= log_level::info) {
     std::cout << line << std::flush;
   }
   if (s.log_file.is_open()) {

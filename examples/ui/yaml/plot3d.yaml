@@ -1,0 +1,104 @@
+type: Window
+title: 3-D Plots - wish demo
+width: 900
+height: 800
+children:
+  note:
+    type: Label
+    text: Plot3D series carry no data in this file -- the demo app fills xs/ys/zs at runtime. This example
+      is here to show how a Plot3D and its series children are structured.
+    wrap: true
+  ch3_line:
+    type: CollapsingHeader
+    label: Line & Scatter
+    children:
+      plt3_ls:
+        type: Plot3D
+        title: Helix & Sphere
+        height: 300.0
+        x_label: X
+        y_label: Y
+        z_label: Z
+        children:
+          p3_helix:
+            type: Plot3DLine
+            label: Helix
+          p3_sphere:
+            type: Plot3DScatter
+            label: Fibonacci sphere
+  ch3_surf:
+    type: CollapsingHeader
+    label: Surface
+    children:
+      plt3_surf:
+        type: Plot3D
+        title: Sinc Surface
+        height: 300.0
+        x_label: X
+        y_label: Y
+        z_label: Z
+        children:
+          p3_sinc:
+            type: Plot3DSurface
+            label: sinc(r)
+            x_count: 25
+            y_count: 25
+            scale_min: -0.25
+            scale_max: 1.0
+  ch3_mesh:
+    type: CollapsingHeader
+    label: Triangle, Quad & Mesh
+    children:
+      plt3_shapes:
+        type: Plot3D
+        title: 3-D Shapes
+        height: 320.0
+        children:
+          p3_tetra:
+            type: Plot3DTriangle
+            label: Tetrahedron
+          p3_cube:
+            type: Plot3DQuad
+            label: Cube
+          p3_octa:
+            type: Plot3DMesh
+            label: Octahedron
+  ch3_text:
+    type: CollapsingHeader
+    label: Text Annotation
+    children:
+      plt3_text:
+        type: Plot3D
+        title: Axis Labels
+        height: 260.0
+        x_label: X
+        y_label: Y
+        z_label: Z
+        children:
+          p3_axpts:
+            type: Plot3DScatter
+            label: Axis tips
+          p3_txt0:
+            type: Plot3DText
+            text: Origin
+            x: 0.0
+            y: 0.0
+            z: 0.0
+          p3_txtx:
+            type: Plot3DText
+            text: +X
+            x: 1.0
+            y: 0.0
+            z: 0.0
+          p3_txty:
+            type: Plot3DText
+            text: +Y
+            x: 0.0
+            y: 1.0
+            z: 0.0
+          p3_txtz:
+            type: Plot3DText
+            text: +Z
+            x: 0.0
+            y: 0.0
+            z: 1.0

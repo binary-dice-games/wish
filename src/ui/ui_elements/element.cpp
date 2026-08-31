@@ -56,6 +56,16 @@ void register_element() {
           attr<Description>("Font size in pixels. 0 uses the default ImGui font."),
           attr<Category>("Appearance")});
   proto->addField(
+      "tooltip"_rkey,
+      field{
+          std::string{},
+          attr<DisplayName>("Tooltip"),
+          attr<Description>("Text shown via ImGui::SetTooltip() while this element is hovered. "
+                           "Empty (the default) shows no tooltip. Only meaningful on a leaf "
+                           "element whose render function draws exactly one top-level ImGui "
+                           "item (Button, Label, Image, ...) -- see docs/ui-elements.md."),
+          attr<Category>("Behavior")});
+  proto->addField(
       "drag_type"_rkey,
       field{
           std::string{},

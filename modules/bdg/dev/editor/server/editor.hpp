@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <deque>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -16,10 +17,16 @@
 
 namespace bdg::wish {
 
-/// @brief Live JSON UI mock editor.
+class message_box;
+
+/// @brief Live JSON / YAML UI mock editor.
 ///
-/// Shows a syntax-highlighted `TextEditor` bound to a sandboxed JSON source
-/// file next to a live preview of the UI it describes. The source is
+/// Shows a syntax-highlighted `TextEditor` bound to a sandboxed JSON or
+/// YAML source file next to a live preview of the UI it describes. The
+/// importer, source-panel highlighting, and cursor-context scanner are all
+/// chosen from the source file's extension (`.yaml`/`.yml` -> YAML,
+/// anything else -> JSON); both formats get the same live preview, schema
+/// autocomplete, and cursor-tracked Help panel. The source is
 /// re-parsed on every edit (the `TextEditor`'s own `"changed"` event) and
 /// every time the client pushes new content via `set_source` (used both for
 /// the initial load and to pick up changes made outside the tool -- see the
@@ -35,8 +42,11 @@ namespace bdg::wish {
 /// Only Ctrl+S inside the source editor persists to the original local
 /// file (mirroring nano's save contract) -- in-editor edits update the
 /// live preview immediately but are not written to disk until saved.
-/// Closing the window with unsaved edits shows an inline
-/// save/discard/cancel confirmation instead of closing immediately.
+/// Closing the window with unsaved edits shows a Yes/No/Cancel confirm
+/// dialog -- a privately-instantiated `MessageBox` form
+/// (`form::instantiate_child_form()`, same pattern as git's/top's confirm
+/// dialogs), not a hand-rolled panel: Yes saves then closes, No discards
+/// and closes, Cancel keeps editing.
 ///
 /// The source editor also has `wish_ui_schema` set, which enables autocomplete
 /// for element type names, field names, and enum values (backed by
@@ -54,11 +64,11 @@ namespace bdg::wish {
 ///
 /// Emitted events:
 ///   - `"closed"` — user confirmed closing (no unsaved edits, or chose
-///     "Discard & Close", or "Save & Close" completed); internal UI
-///     (chrome and preview) is removed.
-///   - `"on_source_saved"` — Ctrl+S, or "Save & Close" confirmed, inside
-///     the source editor; the client should download the sandbox file,
-///     persist it to the original local path, and call `mark_saved`
+///     "No" / discard, or a "Yes" / save completed); internal UI (chrome
+///     and preview) is removed.
+///   - `"on_source_saved"` — Ctrl+S, or the close-confirm dialog's "Yes",
+///     inside the source editor; the client should download the sandbox
+///     file, persist it to the original local path, and call `mark_saved`
 ///     (mirrors nano's `on_file_saved`).
 class editor : public form {
  public:
@@ -76,7 +86,7 @@ class editor : public form {
   /// @brief RMI method: the client has finished writing the sandbox file
   /// back to the local disk file in response to `on_source_saved`. Clears
   /// the "unsaved changes" state and, if a close was waiting on this save
-  /// ("Save & Close"), completes the close.
+  /// (the close-confirm dialog's "Yes"), completes the close.
   bison::dynamic do_mark_saved(const bison::dynamic& args);
 
  protected:
@@ -85,9 +95,10 @@ class editor : public form {
 
  private:
   /// @brief Read the current source file from the sandbox and try to import
-  /// it. On success, replaces the preview subtree and clears the error
-  /// banner. On failure (invalid JSON / unknown element type), sets the
-  /// banner to the error message and leaves any existing preview alone.
+  /// it (as JSON or YAML, per `source_is_yaml_`). On success, replaces the
+  /// preview subtree and clears the error banner. On failure (invalid
+  /// JSON/YAML / unknown element type), sets the banner to the error
+  /// message and leaves any existing preview alone.
   void try_reparse();
 
   /// @brief Remove the preview subtree (ui_objects, top_level_objects,
@@ -138,9 +149,18 @@ class editor : public form {
   /// matches `highlighted_path_`.
   void update_highlight(const std::optional<std::string>& new_path);
 
+  /// @brief Show the Yes/No/Cancel "save before closing?" confirm dialog: a
+  /// privately-instantiated `MessageBox` form (`instantiate_child_form()`),
+  /// held alive by `close_dialog_`. Yes -> emit `"on_source_saved"` and
+  /// close once `mark_saved` lands (`pending_close_after_save_`); No ->
+  /// `request_close()` now; Cancel / window-X -> nothing (the dialog closes
+  /// itself). Called from `on_event()` when the chrome window's close is
+  /// requested while `dirty_`.
+  void show_close_confirm();
+
   /// @brief Tear down chrome and preview and emit `"closed"`. The actual
   /// close action, run once no confirmation is needed (or the user has
-  /// resolved one via discard/save).
+  /// resolved one via No/Yes on the confirm dialog).
   void request_close();
 
   /// @brief Run @p fn with a valid `wish::context&`, whether called from
@@ -168,20 +188,24 @@ class editor : public form {
   ui_element_ptr help_table_ptr_;
   ui_element_ptr log_table_ptr_;
 
-  // Inline close-confirmation panel (shown in place of a true modal dialog
-  // -- see editor.cpp's layout comment) and its three buttons.
-  ui_element_ptr confirm_panel_ptr_;
-  bison::key_t confirm_save_id_;
-  bison::key_t confirm_discard_id_;
-  bison::key_t confirm_cancel_id_;
+  /// Close-confirmation dialog: a privately-instantiated `MessageBox` form
+  /// (`form::instantiate_child_form()`, `yes_no_cancel` preset). Only one
+  /// may be open at a time; a fresh `show_close_confirm()` just overwrites
+  /// this member, and its destructor tears down the stale instance's own
+  /// internal objects -- same pattern as git's/top's `confirm_dialog_`.
+  std::shared_ptr<message_box> close_dialog_;
 
   std::string current_source_path_; // sandbox-relative path of the source file
   std::string current_source_content_; // last content read in try_reparse(), reused by
                                         // update_help_panel() to avoid a disk read on every
                                         // cursor move (which fires far more often than edits)
   std::string display_path_; // original local path, shown in the filename label
+  bool source_is_yaml_{false}; // true when the source file is `.yaml`/`.yml` --
+                                // selects import_yaml() over import_json(),
+                                // YAML source highlighting, and
+                                // scan_cursor_context_yaml() for the Help panel
   bool dirty_{false}; // true once the source has unsaved in-editor edits
-  bool pending_close_after_save_{false}; // "Save & Close" is waiting on mark_saved()
+  bool pending_close_after_save_{false}; // close-confirm "Yes" is waiting on mark_saved()
   std::string mock_root_key_; // top_level_objects key for the preview subtree
 
   /// `top_level_objects`/`top_level_handlers` key for the Help window's own

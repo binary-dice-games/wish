@@ -1,0 +1,184 @@
+type: Window
+title: Misc - wish demo
+width: 900
+height: 800
+children:
+  sec_progress:
+    type: SeparatorText
+    label: Progress Bar
+  pb_download:
+    type: ProgressBar
+    value: 0.65
+    label: 65 %
+  pb_notext:
+    type: ProgressBar
+    value: 0.3
+  sec_layouts:
+    type: SeparatorText
+    label: Layouts
+  lbl_hlay:
+    type: Label
+    text: 'HorizontalLayout (spacing 12):'
+  hlay:
+    type: HorizontalLayout
+    spacing: 12
+    children:
+      hl_a:
+        type: Button
+        label: Alpha
+      hl_b:
+        type: Button
+        label: Beta
+      hl_c:
+        type: Button
+        label: Gamma
+  lbl_vlay:
+    type: Label
+    text: 'VerticalLayout (spacing 4):'
+  vlay:
+    type: VerticalLayout
+    spacing: 4
+    children:
+      vr1:
+        type: HorizontalLayout
+        spacing: 6
+        children:
+          vr1c1:
+            type: Button
+            label: R1 C1
+          vr1c2:
+            type: Button
+            label: R1 C2
+          vr1c3:
+            type: Button
+            label: R1 C3
+      vr2:
+        type: HorizontalLayout
+        spacing: 6
+        children:
+          vr2c1:
+            type: Button
+            label: R2 C1
+          vr2c2:
+            type: Button
+            label: R2 C2
+  sec_springs:
+    type: SeparatorText
+    label: Spring (flexible alignment)
+  lbl_springs_hint:
+    type: Label
+    text: A Spring is invisible, expandable space that claims a weighted share of a layout's leftover
+      room -- drag the sliders below to move the boxes.
+  springs_h_sliders:
+    type: HorizontalLayout
+    spacing: 12
+    children:
+      sld_spring_h1:
+        type: SliderFloat
+        label: Left weight
+        value: 1.0
+        min: 0.0
+        max: 5.0
+        format: '%.1f'
+        width: 220
+      sld_spring_h2:
+        type: SliderFloat
+        label: Right weight
+        value: 1.0
+        min: 0.0
+        max: 5.0
+        format: '%.1f'
+        width: 220
+  springs_h_row:
+    type: HorizontalLayout
+    children:
+      spring_h1:
+        type: Spring
+        weight: 1.0
+      spring_h_box:
+        type: Button
+        label: Centered Box
+        width: 160
+        height: 40
+      spring_h2:
+        type: Spring
+        weight: 1.0
+  lbl_springs_v_hint:
+    type: Label
+    text: 'Same idea on the vertical axis (VerticalLayout, 220px tall):'
+  springs_v_sliders:
+    type: HorizontalLayout
+    spacing: 12
+    children:
+      sld_spring_v1:
+        type: SliderFloat
+        label: Top weight
+        value: 1.0
+        min: 0.0
+        max: 5.0
+        format: '%.1f'
+        width: 220
+      sld_spring_v2:
+        type: SliderFloat
+        label: Bottom weight
+        value: 1.0
+        min: 0.0
+        max: 5.0
+        format: '%.1f'
+        width: 220
+  springs_v_wrap:
+    type: HorizontalLayout
+    children:
+      springs_v_row:
+        type: VerticalLayout
+        width: 200
+        height: 220
+        children:
+          spring_v1:
+            type: Spring
+            weight: 1.0
+          spring_v_box:
+            type: Button
+            label: Centered
+            width: 160
+            height: 30
+          spring_v2:
+            type: Spring
+            weight: 1.0
+  lbl_split:
+    type: Label
+    text: 'Splitter (drag the bar):'
+  split_wrap:
+    type: VerticalLayout
+    children:
+      split_demo:
+        type: Splitter
+        height: 120
+        thickness: 6
+        children:
+          split_a:
+            type: Label
+            text: Left pane
+            width: 150
+          split_b:
+            type: Label
+            text: Right pane (fills remaining space)
+  sec_theme:
+    type: SeparatorText
+    label: Theme
+  lbl_theme:
+    type: Label
+    text: 'Switch the visual theme at runtime:'
+  theme_row:
+    type: HorizontalLayout
+    spacing: 8
+    children:
+      theme_dark:
+        type: Button
+        label: Dark
+      theme_light:
+        type: Button
+        label: Light
+      theme_classic:
+        type: Button
+        label: Classic

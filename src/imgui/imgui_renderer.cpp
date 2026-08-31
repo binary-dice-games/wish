@@ -335,14 +335,14 @@ bool imgui_renderer::wants_continuous_redraw() const {
 }
 
 void handle_drag_drop(const ui_element& node, const context& s) {
-  auto drag_type = node.get_as<std::string>("drag_type"_key, "");
+  auto drag_type = node.drag_type();
   if (!drag_type.empty() && ImGui::BeginDragDropSource()) {
-    auto drag_payload = node.get_as<std::string>("drag_payload"_key, "");
+    auto drag_payload = node.drag_payload();
     ImGui::SetDragDropPayload(drag_type.c_str(), drag_payload.data(), drag_payload.size());
     ImGui::TextUnformatted(drag_payload.c_str());
     ImGui::EndDragDropSource();
   }
-  auto drop_type = node.get_as<std::string>("drop_type"_key, "");
+  auto drop_type = node.drop_type();
   if (!drop_type.empty() && ImGui::BeginDragDropTarget()) {
     if (const ImGuiPayload* accepted = ImGui::AcceptDragDropPayload(drop_type.c_str())) {
       dynamic payload;
@@ -353,6 +353,17 @@ void handle_drag_drop(const ui_element& node, const context& s) {
     }
     ImGui::EndDragDropTarget();
   }
+}
+
+void handle_tooltip(const ui_element& node) {
+  auto tooltip = node.tooltip();
+  if (tooltip.empty())
+    return;
+  // Classic `if (IsItemHovered()) SetTooltip(...)` idiom (see imgui.h's
+  // SetTooltip() comment): attaches to the last item drawn by the node's
+  // dispatch call -- see this function's doc comment.
+  if (ImGui::IsItemHovered())
+    ImGui::SetTooltip("%s", tooltip.c_str());
 }
 
 void draw_highlight_if_set(const ui_element& node, ImVec2 rect_min, ImVec2 rect_max) {
@@ -538,13 +549,11 @@ void imgui_renderer::render_node(const ui_element& node, const context& s) {
     last_resolved_rect_max_ = ImGui::GetItemRectMax();
     item_visible = ImGui::IsItemVisible();
   } else if (self_reports_rect) {
-    const auto* rx = node.findField("__wish_win_rect_x__"_key);
-    const auto* ry = node.findField("__wish_win_rect_y__"_key);
-    const auto* rw = node.findField("__wish_win_rect_w__"_key);
-    const auto* rh = node.findField("__wish_win_rect_h__"_key);
-    if (rx && rx->is<float>() && ry && ry->is<float>() && rw && rw->is<float>() && rh && rh->is<float>()) {
-      last_resolved_rect_min_ = ImVec2(rx->as<float>(), ry->as<float>());
-      last_resolved_rect_max_ = ImVec2(rx->as<float>() + rw->as<float>(), ry->as<float>() + rh->as<float>());
+    vec2f self_pos;
+    vec2f self_size;
+    if (node.self_rect(self_pos, self_size)) {
+      last_resolved_rect_min_ = ImVec2(self_pos.x, self_pos.y);
+      last_resolved_rect_max_ = ImVec2(self_pos.x + self_size.x, self_pos.y + self_size.y);
     } else {
       // Fallback: shouldn't happen for Window/DockSpaceViewport (they
       // always stamp these fields whenever they actually open their
@@ -647,6 +656,10 @@ void imgui_renderer::render_node(const ui_element& node, const context& s) {
   // Attaches to whatever ImGui item the dispatch call above drew last -- see
   // handle_drag_drop()'s own doc comment.
   handle_drag_drop(node, s);
+
+  // Generic per-element tooltip: attaches to the same last-drawn item as
+  // handle_drag_drop() above, so it shares the "leaf element only" caveat.
+  handle_tooltip(node);
 
   // "__wish_highlight__" is an ad-hoc field (like "__wish_id"/"__path__"
   // elsewhere) set by the editor module to box whichever preview widget

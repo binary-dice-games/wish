@@ -1,0 +1,53 @@
+type: Window
+title: Tree & Collapse - wish demo
+width: 900
+height: 800
+children:
+  sec_tree:
+    type: SeparatorText
+    label: TreeNode
+  tn_root:
+    type: TreeNode
+    label: Root node
+    open: true
+    children:
+      tn_child_a:
+        type: TreeNode
+        label: Child A
+        children:
+          tn_leaf_1:
+            type: TreeNode
+            label: Leaf 1
+            leaf: true
+          tn_leaf_2:
+            type: TreeNode
+            label: Leaf 2
+            leaf: true
+      tn_child_b:
+        type: TreeNode
+        label: Child B
+        children:
+          tn_leaf_3:
+            type: TreeNode
+            label: Leaf 3
+            leaf: true
+  sec_collap:
+    type: SeparatorText
+    label: CollapsingHeader
+  ch_details:
+    type: CollapsingHeader
+    label: Details
+    children:
+      ch_lbl_a:
+        type: Label
+        text: Line A inside collapsing header.
+      ch_lbl_b:
+        type: Label
+        text: Line B inside collapsing header.
+  ch_advanced:
+    type: CollapsingHeader
+    label: Advanced
+    children:
+      ch_lbl_c:
+        type: Label
+        text: Advanced options would live here.

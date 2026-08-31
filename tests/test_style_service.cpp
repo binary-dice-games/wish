@@ -247,7 +247,7 @@ TEST_F(StyleServiceTest, RenderSessionUnknownPresetFallsBackToWishAndLogsWarning
   auto log_path = std::filesystem::temp_directory_path() / "wish_test_style_service_unknown_preset.log";
   std::filesystem::remove(log_path);
   auto lg = std::make_shared<bdg::wish::logger>(
-      dynamic::instantiate("wish"_key, "__WishLogger"_key), /*verbose=*/false, log_path);
+      dynamic::instantiate("wish"_key, "__WishLogger"_key), bdg::wish::log_level::warning, log_path);
   sess_->logger_service = lg;
 
   svc_->set_preset("neon");

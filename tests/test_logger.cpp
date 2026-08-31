@@ -25,8 +25,8 @@ class LoggerTest : public ::testing::Test {
     std::filesystem::remove(log_path_);
   }
 
-  bdg::wish::logger make_logger(bool verbose = false) {
-    return bdg::wish::logger{dynamic::instantiate("wish"_key, "__WishLogger"_key), verbose, log_path_};
+  bdg::wish::logger make_logger(bdg::wish::log_level level = bdg::wish::log_level::trace) {
+    return bdg::wish::logger{dynamic::instantiate("wish"_key, "__WishLogger"_key), level, log_path_};
   }
 
   std::string read_log() const {
@@ -91,7 +91,38 @@ TEST_F(LoggerTest, GenericLogMethodWithCustomLevel) {
 // ── No file path ──────────────────────────────────────────────────────────────
 
 TEST_F(LoggerTest, EmptyLogPathDoesNotCreateFile) {
-  bdg::wish::logger lg{dynamic::instantiate("wish"_key, "__WishLogger"_key), false, {}};
+  bdg::wish::logger lg{dynamic::instantiate("wish"_key, "__WishLogger"_key), bdg::wish::log_level::trace, {}};
   lg.info("should not appear on disk");
   EXPECT_FALSE(std::filesystem::exists(log_path_));
+}
+
+// ── Level filtering ───────────────────────────────────────────────────────────
+
+TEST_F(LoggerTest, NoneLevelWritesNothing) {
+  auto lg = make_logger(bdg::wish::log_level::none);
+  lg.info("i");
+  lg.error("e");
+  EXPECT_TRUE(read_log().empty());
+}
+
+TEST_F(LoggerTest, SeverityFloorDropsMoreVerboseMessages) {
+  auto lg = make_logger(bdg::wish::log_level::warning);
+  lg.error("keep-err");
+  lg.warn("keep-wrn");
+  lg.info("drop-info");
+  lg.debug("drop-dbg");
+  const auto content = read_log();
+  EXPECT_NE(content.find("keep-err"), std::string::npos);
+  EXPECT_NE(content.find("keep-wrn"), std::string::npos);
+  EXPECT_EQ(content.find("drop-info"), std::string::npos);
+  EXPECT_EQ(content.find("drop-dbg"), std::string::npos);
+}
+
+TEST(LogLevelParse, RoundTripsAndAliases) {
+  using bdg::wish::log_level;
+  EXPECT_EQ(bdg::wish::parse_log_level("INFO"), log_level::info);
+  EXPECT_EQ(bdg::wish::parse_log_level("warn"), log_level::warning);
+  EXPECT_EQ(bdg::wish::parse_log_level("debug"), log_level::trace);
+  EXPECT_EQ(bdg::wish::parse_log_level("nope"), std::nullopt);
+  EXPECT_EQ(bdg::wish::to_string(log_level::warning), "warning");
 }

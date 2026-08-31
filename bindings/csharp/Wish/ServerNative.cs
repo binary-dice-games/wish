@@ -129,6 +129,9 @@ internal static partial class ServerNative
     [LibraryImport(LibName)]
     public static partial int wish_server_set_verbose(nint server, int verbose);
 
+    [LibraryImport(LibName, StringMarshalling = StringMarshalling.Utf8)]
+    public static partial int wish_server_set_log_level(nint server, string level);
+
     [LibraryImport(LibName)]
     public static partial void wish_server_destroy(nint server);
 

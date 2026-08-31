@@ -11,7 +11,7 @@ A remote UI framework built on [bison](https://github.com/binary-dice-games/biso
 - **Multiple transports** — TCP, TLS-secured TCP, named pipe/Unix socket, an interactive terminal hop, or in-process (no serialization) for single-binary demos.
 - **Per-session sandboxing** — isolated object tree, template registry, and file-service resource folder per connected client.
 - **Automation-ready** — an optional query/screenshot/input-injection API lets Playwright (or an AI agent) drive and introspect a running UI like a browser page; the SDL3 renderer gets the same capabilities natively over the C ABI, no browser required.
-- **C++, Python, C#, and Android clients** — a native C++ API, a header-only C++ binding (`bindings/cpp/`, C ABI only, no bison/wish source to compile), plus generated Python/C#/Java bindings, all layered on the same bison RMI proxy semantics.
+- **C++, Python, C#, Rust, Go, and Android clients** — a native C++ API, a header-only C++ binding (`bindings/cpp/`, C ABI only, no bison/wish source to compile), plus Python/C#/Rust/Go/Java bindings, all layered on the same bison RMI proxy semantics.
 - **AI-agent-assisted app/UI building** — describe a UI in plain English and have a Claude Code skill build and screenshot-verify it, with no need to know the widget catalog up front. See [docs/ai-assisted-development.md](docs/ai-assisted-development.md).
 
 ## Architecture
@@ -134,7 +134,7 @@ into a persistent, identity-keyed directory per client via an
 | [docs/examples.md](docs/examples.md) | Annotated example walkthroughs |
 | [docs/ui-elements.md](docs/ui-elements.md) | Full UI element/widget catalog (fields, events), window/layout model, JSON template schema, and the `editor` preview tool |
 | [docs/visual-editor-options.md](docs/visual-editor-options.md) | Proposal: WYSIWYG editor options — forking ImRAD Studio vs. extending the native `editor` module |
-| [docs/bindings.md](docs/bindings.md) | Python, C#, and Android (Java/Kotlin) language binding setup and usage |
+| [docs/bindings.md](docs/bindings.md) | Python, C#, Rust, Go, and Android (Java/Kotlin) language binding setup and usage |
 | [docs/publishing-python.md](docs/publishing-python.md) | Release runbook for the `wish-abi` PyPI package: Trusted Publisher setup, cibuildwheel matrix, per-release tag steps |
 | [docs/publishing-binaries.md](docs/publishing-binaries.md) | Release runbook for the downloadable binary zips (`.deb` included) attached to each GitHub Release: the CI workflows, platform coverage, per-release steps |
 | [docs/publishing-apt.md](docs/publishing-apt.md) | Release runbook for the `apt install wish` repository: GitHub Pages hosting, signing-key setup, `build_apt_repo.py` |

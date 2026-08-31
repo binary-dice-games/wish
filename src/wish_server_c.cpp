@@ -63,7 +63,7 @@ struct wish_server_handle_ {
   std::unique_ptr<server_transport_iface> transport_;
   std::unique_ptr<wish::server> server_;
 
-  bool verbose_ = false;
+  wish::log_level log_level_ = wish::log_level::none;
   wish::logger_ptr logger_;
 
   std::string last_error_;
@@ -229,10 +229,10 @@ wish_server_start(wish_server_handle s, const char* renderer_kind, bison_handle 
     dynamic dyn_params = bison_handle_to_dynamic(params);
     auto renderer = make_renderer(renderer_kind, dyn_params);
     s->server_ = std::make_unique<wish::server>(*s->transport_, std::move(renderer));
-    if (s->verbose_) {
+    if (s->log_level_ != wish::log_level::none) {
       s->logger_ = std::make_shared<wish::logger>(
           dynamic::instantiate(bdg::bison::key_t{"wish"}, bdg::bison::key_t{"__WishLogger"}),
-          /*verbose=*/true,
+          s->log_level_,
           std::filesystem::path{});
       s->server_->set_logger(s->logger_);
     }
@@ -285,7 +285,25 @@ extern "C" wish_server_error wish_server_set_verbose(wish_server_handle s, int v
     s->last_error_ = "wish_server_set_verbose() must be called before wish_server_start()";
     return WISH_SERVER_ERR_EXCEPTION;
   }
-  s->verbose_ = verbose != 0;
+  // Back-compat: the old boolean maps onto the two ends of the level scale.
+  s->log_level_ = verbose != 0 ? wish::log_level::trace : wish::log_level::none;
+  return WISH_SERVER_OK;
+}
+
+extern "C" wish_server_error wish_server_set_log_level(wish_server_handle s, const char* level) {
+  if (!s || !level)
+    return WISH_SERVER_ERR_NULL;
+  if (s->server_) {
+    s->last_error_ = "wish_server_set_log_level() must be called before wish_server_start()";
+    return WISH_SERVER_ERR_EXCEPTION;
+  }
+  auto parsed = wish::parse_log_level(level);
+  if (!parsed) {
+    s->last_error_ = std::string{"invalid log level '"} + level +
+                     "' (expected none|fatal|error|warning|info|trace)";
+    return WISH_SERVER_ERR_EXCEPTION;
+  }
+  s->log_level_ = *parsed;
   return WISH_SERVER_OK;
 }
 

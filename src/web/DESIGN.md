@@ -311,7 +311,11 @@ civetweb worker threads (started by civetweb_server::start())
                      pending_sync_, sets activity_)
   WS message:        civetweb_server invokes on_message; web_renderer decodes
                      it (INPUT → input_queue_, RESIZE → pending_resize_) and
-                     sets activity_
+                     sets activity_ — except a mouse-move INPUT only sets
+                     activity_ when it clears web_renderer::mouse_move_
+                     significant() (4 px / 100 ms, mirroring sdl3_renderer's
+                     poll_events() motion debounce); the move is still queued
+                     into input_queue_ regardless
   WS close:          civetweb_server removes the connection, invokes
                      on_disconnect (web_renderer removes it from
                      connected_ids_ and awaiting_cache_response_)
@@ -321,7 +325,7 @@ Shared state uses `bison::synchronized<T>`, never raw `std::mutex`, per the repo
 
 - `civetweb_server`'s connection set (for `broadcast()`).
 - `web_renderer::pending_sync_`, `connected_ids_`, `input_queue_`, `pending_resize_`.
-- `web_renderer::activity_` is a plain `std::atomic<bool>` (mirrors `sdl3_renderer::quit_`) — `poll_events()` exchanges it to `false`, letting `wish::server::render_loop` skip drawing frames no browser is interacting with.
+- `web_renderer::activity_` is a plain `std::atomic<bool>` (mirrors `sdl3_renderer::quit_`) — `poll_events()` exchanges it to `false`, letting `wish::server::render_loop` skip drawing frames no browser is interacting with. A bare mouse hover no longer keeps it set every frame: `on_message` runs mouse-move events through `mouse_move_significant()` (guarded by `mouse_motion_filter_`) first, so sub-threshold motion is queued for ImGuiIO without forcing a full render + `encode_frame` + broadcast.
 
 No ImGui state is ever touched from a civetweb worker thread; texture/frame bytes are serialized entirely on the render thread before crossing to `civetweb_server`.
 
@@ -332,6 +336,8 @@ No ImGui state is ever touched from a civetweb worker thread; texture/frame byte
 `resources/embedded/web/{index.html,client.js,style.css}` are plain static assets, folded into wish's existing embedded-resource archive (`resources/embedded/`, packed by the existing miniz + `GenerateResource.cmake` pipeline — no new build machinery). `web_renderer::setup()` extracts the archive once into a process-global temp directory (distinct from the per-session extraction `context::context()` already does) and points `civetweb_server`'s `document_root` at it.
 
 `client.js` decodes the wire protocol above, issues WebGL2 draw calls (with scissor rects from clip rects, and a fragment shader that broadcasts a single-channel Alpha8 texture's red channel into RGBA — WebGL2/GLES3 has no hardware texture swizzle), and forwards DOM mouse/keyboard/resize events back as `INPUT`/`RESIZE` messages.
+
+Two client-side throttles keep the socket quiet: a canvas `FRAME` is stored undecoded and only `decodeFrame`d inside the `requestAnimationFrame` callback (superseded frames in a burst are never decoded), and `mousemove` is coalesced to at most one `INPUT` message per animation frame (a button/key press flushes the pending move first so ordering is preserved). `send()` also drops coalesced motion once `WebSocket.bufferedAmount` exceeds ~1 MiB; button/key/wheel messages are never dropped.
 
 ---
 

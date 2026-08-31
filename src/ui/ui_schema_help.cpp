@@ -421,4 +421,253 @@ cursor_context scan_cursor_context(std::string_view source, text_pos cursor) {
   return result;
 }
 
+// ── YAML cursor-context scanner ────────────────────────────────────────────
+
+namespace {
+
+/// One open YAML block mapping. `indent` is the column of the `key:` line
+/// that opened it (the document root uses -1). The path bookkeeping mirrors
+/// the JSON `frame` exactly -- see `make_frame()` above.
+struct yframe {
+  int indent = -1;
+  std::string type_value;
+  std::vector<std::string> field_names;
+  bool is_children_wrapper = false;
+  std::string owner_path;              // children-wrapper: owning element's path
+  std::optional<std::string> own_path; // element frames: this element's dot-path
+};
+
+std::optional<std::string> element_path_of(const yframe& f) {
+  if (f.is_children_wrapper)
+    return f.owner_path;
+  return f.own_path;
+}
+
+int leading_indent(std::string_view line) {
+  int n = 0;
+  for (char c : line) {
+    if (c == ' ' || c == '\t')
+      ++n;
+    else
+      break;
+  }
+  return n;
+}
+
+std::string trim_ws(std::string_view s) {
+  size_t a = s.find_first_not_of(" \t");
+  if (a == std::string_view::npos)
+    return {};
+  size_t b = s.find_last_not_of(" \t\r");
+  return std::string{s.substr(a, b - a + 1)};
+}
+
+// Drop a trailing `# ...` comment (a `#` at line start or preceded by
+// whitespace, and not inside a quoted scalar).
+std::string strip_inline_comment(std::string_view s) {
+  bool in_single = false, in_double = false;
+  for (size_t i = 0; i < s.size(); ++i) {
+    char c = s[i];
+    if (c == '\'' && !in_double)
+      in_single = !in_single;
+    else if (c == '"' && !in_single)
+      in_double = !in_double;
+    else if (c == '#' && !in_single && !in_double && (i == 0 || s[i - 1] == ' ' || s[i - 1] == '\t'))
+      return std::string{s.substr(0, i)};
+  }
+  return std::string{s};
+}
+
+std::string unquote_scalar(const std::string& s) {
+  if (s.size() >= 2 && ((s.front() == '"' && s.back() == '"') || (s.front() == '\'' && s.back() == '\'')))
+    return s.substr(1, s.size() - 2);
+  return s;
+}
+
+struct yaml_kv {
+  std::string key;
+  bool has_colon = false;
+  bool has_value = false;
+  std::string value;
+};
+
+// Split a trimmed line body into `key: value`. A `:` only separates when
+// followed by whitespace or end-of-line and not inside a quoted scalar --
+// matching YAML's own rule, so a `:` inside a value (`format: %H:%M`) or a
+// quoted key is not mistaken for the separator.
+yaml_kv split_yaml_kv(const std::string& body) {
+  yaml_kv r;
+  bool in_single = false, in_double = false;
+  for (size_t i = 0; i < body.size(); ++i) {
+    char c = body[i];
+    if (c == '\'' && !in_double)
+      in_single = !in_single;
+    else if (c == '"' && !in_single)
+      in_double = !in_double;
+    else if (c == ':' && !in_single && !in_double &&
+             (i + 1 == body.size() || body[i + 1] == ' ' || body[i + 1] == '\t')) {
+      r.has_colon = true;
+      r.key = unquote_scalar(trim_ws(std::string_view{body}.substr(0, i)));
+      std::string v = trim_ws(std::string_view{body}.substr(i + 1));
+      if (!v.empty()) {
+        r.has_value = true;
+        r.value = v;
+      }
+      return r;
+    }
+  }
+  r.key = unquote_scalar(trim_ws(body));
+  return r;
+}
+
+// Strip leading `- ` sequence markers, bumping the effective content indent
+// by 2 per marker. Returns the remaining body; @p indent and @p seq_entry
+// are updated in place.
+std::string strip_seq_markers(std::string body, int& indent, bool& seq_entry) {
+  while (body == "-" || body.rfind("- ", 0) == 0) {
+    seq_entry = true;
+    indent += 2;
+    body = body == "-" ? std::string{} : trim_ws(body.substr(2));
+  }
+  return body;
+}
+
+} // namespace
+
+cursor_context scan_cursor_context_yaml(std::string_view source, text_pos cursor) {
+  size_t offset = to_offset(source, cursor);
+  std::string_view prefix = source.substr(0, offset);
+
+  // Complete lines before the cursor, plus the (possibly partial) cursor line.
+  std::vector<std::string_view> lines;
+  size_t line_start = 0;
+  for (size_t i = 0; i < prefix.size(); ++i) {
+    if (prefix[i] == '\n') {
+      lines.push_back(prefix.substr(line_start, i - line_start));
+      line_start = i + 1;
+    }
+  }
+  std::string_view cursor_line = prefix.substr(line_start);
+
+  std::vector<yframe> stack;
+  stack.push_back(yframe{});
+  stack.back().own_path = std::string{}; // document root
+
+  auto pop_to = [&](int indent) {
+    while (stack.size() > 1 && stack.back().indent >= indent)
+      stack.pop_back();
+  };
+
+  for (std::string_view raw : lines) {
+    std::string content = strip_inline_comment(raw);
+    std::string body = trim_ws(content);
+    if (body.empty() || body == "---" || body == "...")
+      continue;
+    int indent = leading_indent(content);
+    bool seq_entry = false;
+    body = strip_seq_markers(std::move(body), indent, seq_entry);
+    if (body.empty())
+      continue;
+
+    pop_to(indent);
+    yframe& parent = stack.back();
+
+    yaml_kv kv = split_yaml_kv(body);
+    if (kv.key.empty() && !kv.has_colon)
+      continue;
+
+    if (!seq_entry && !kv.key.empty())
+      parent.field_names.push_back(kv.key);
+
+    if (kv.has_colon && kv.has_value) {
+      if (kv.key == "type")
+        parent.type_value = unquote_scalar(kv.value);
+      continue; // scalar entry -- opens no block
+    }
+    if (kv.has_colon && !kv.has_value) {
+      yframe nf;
+      nf.indent = indent;
+      if (kv.key == "children") {
+        nf.is_children_wrapper = true;
+        nf.owner_path = parent.own_path.value_or(std::string{});
+      } else if (parent.is_children_wrapper && !seq_entry) {
+        nf.own_path = parent.owner_path.empty() ? kv.key : (parent.owner_path + "." + kv.key);
+      }
+      stack.push_back(std::move(nf));
+    }
+  }
+
+  // ── Classify the cursor line ──
+  int cur_indent = leading_indent(cursor_line);
+  std::string typed =
+      cursor_line.size() > static_cast<size_t>(cur_indent) ? std::string{cursor_line.substr(cur_indent)} : std::string{};
+  {
+    bool seq_entry = false;
+    typed = strip_seq_markers(std::move(typed), cur_indent, seq_entry);
+  }
+
+  pop_to(cur_indent);
+  const yframe& top = stack.back();
+
+  cursor_context result;
+  result.enclosing_type = top.type_value;
+  result.element_path = element_path_of(top);
+
+  // Bounded forward peek for a `type:` sibling of the cursor line not yet
+  // reached: scan whole lines after the cursor, staying within the current
+  // block (indent >= cur_indent), and take a `type:` at exactly cur_indent.
+  if (result.enclosing_type.empty()) {
+    size_t p = offset;
+    while (p < source.size() && source[p] != '\n')
+      ++p;
+    while (p < source.size()) {
+      ++p; // step past '\n'
+      size_t ls = p;
+      while (p < source.size() && source[p] != '\n')
+        ++p;
+      std::string lc = strip_inline_comment(source.substr(ls, p - ls));
+      std::string lb = trim_ws(lc);
+      if (lb.empty() || lb == "---" || lb == "...")
+        continue;
+      int li = leading_indent(lc);
+      if (li < cur_indent)
+        break;
+      if (li == cur_indent) {
+        yaml_kv q = split_yaml_kv(lb);
+        if (q.key == "type" && q.has_value) {
+          result.enclosing_type = unquote_scalar(q.value);
+          break;
+        }
+      }
+    }
+  }
+
+  yaml_kv cp = split_yaml_kv(typed);
+  if (!cp.has_colon) {
+    result.kind = cursor_context_kind::field_key;
+    result.partial_text = trim_ws(typed);
+    result.existing_field_names = top.field_names;
+  } else {
+    size_t cpos = typed.find(':');
+    std::string after = cpos == std::string::npos ? std::string{} : trim_ws(typed.substr(cpos + 1));
+    // Strip an opening quote (and a matching close, if already typed) so the
+    // prefix filter sees the bare value text.
+    if (!after.empty() && (after.front() == '"' || after.front() == '\'')) {
+      char q = after.front();
+      after.erase(after.begin());
+      if (!after.empty() && after.back() == q)
+        after.pop_back();
+    }
+    if (cp.key == "type") {
+      result.kind = cursor_context_kind::type_value;
+      result.partial_text = after;
+    } else {
+      result.kind = cursor_context_kind::field_value;
+      result.field_name = cp.key;
+      result.partial_text = after;
+    }
+  }
+  return result;
+}
+
 } // namespace bdg::wish

@@ -327,7 +327,8 @@ class LoggerAutomationTest : public ::testing::Test {
   }
 
   logger make_logger() {
-    return logger{dynamic::instantiate("wish"_key, "__WishLogger"_key), /*verbose=*/false, std::filesystem::path{}};
+    return logger{
+        dynamic::instantiate("wish"_key, "__WishLogger"_key), bdg::wish::log_level::trace, std::filesystem::path{}};
   }
 };
 
@@ -716,7 +717,7 @@ TEST_F(WebRendererAutomationTest, LogEventsBroadcastLiveWithoutResendingOlderEnt
 
   context ctx{"automation_log_test"_key};
   ctx.logger_service = std::make_shared<logger>(
-      dynamic::instantiate("wish"_key, "__WishLogger"_key), /*verbose=*/false, std::filesystem::path{});
+      dynamic::instantiate("wish"_key, "__WishLogger"_key), bdg::wish::log_level::trace, std::filesystem::path{});
 
   ctx.logger_service->info("clicked ok");
   renderer_->service_automation_queries(ctx);

@@ -42,8 +42,111 @@ std::unordered_map<uint32_t, TextEditorState>& editor_cache() {
   return cache;
 }
 
+// ── YAML syntax highlighting ─────────────────────────────────────────────────
+//
+// ImGuiColorTextEdit (extern/, a third-party submodule wish does not modify)
+// ships no YAML language definition, so wish assembles a lightweight one here
+// from the public `TextEditor::Language` API. It covers what a wish UI
+// descriptor actually uses: `#` line comments, single/double-quoted scalars,
+// `true`/`false`/`null` and numeric scalars, `- ` sequence markers, and --
+// via the custom tokenizer -- the `key:` of every mapping entry.
+
+using TeIter = TextEditor::Iterator;
+
+// A YAML mapping-key character. Unquoted keys in our descriptors are plain
+// identifiers; also allow '-', '.', '/' and '$' so keys like "x_label" or
+// "font-size" still colorize as one token. ('#' is deliberately excluded --
+// it starts a comment.)
+bool is_yaml_key_char(ImWchar c) {
+  return TextEditor::CodePoint::isXidContinue(c) || c == '-' || c == '.' || c == '/' || c == '$';
+}
+
+// Custom tokenizer: colors a leading `key` (up to, not including, its `:`) as
+// an identifier so mapping keys read differently from scalar values, and
+// colors block-scalar / anchor / alias / tag indicators as punctuation.
+// Everything else is deferred to getIdentifier/getNumber/isPunctuation.
+TeIter tokenize_yaml(TeIter start, TeIter end, TextEditor::Color& color) {
+  ImWchar first = start < end ? *start : 0;
+  if (first == '|' || first == '>' || first == '&' || first == '*' || first == '!' || first == '%') {
+    TeIter i = start;
+    ++i;
+    while (i < end && !TextEditor::CodePoint::isWhiteSpace(*i))
+      ++i;
+    color = TextEditor::Color::punctuation;
+    return i;
+  }
+
+  if (!is_yaml_key_char(first))
+    return start;
+
+  TeIter key_end = start;
+  while (key_end < end && is_yaml_key_char(*key_end))
+    ++key_end;
+
+  TeIter after = key_end;
+  while (after < end && (*after == ' ' || *after == '\t'))
+    ++after;
+  if (after < end && *after == ':') {
+    TeIter past_colon = after;
+    ++past_colon;
+    if (past_colon >= end || *past_colon == ' ' || *past_colon == '\t') {
+      color = TextEditor::Color::identifier;
+      return key_end; // the ':' itself is left for isPunctuation
+    }
+  }
+  return start;
+}
+
+TeIter yaml_identifier(TeIter start, TeIter end) {
+  TeIter i = start;
+  if (i < end && (TextEditor::CodePoint::isXidStart(*i) || *i == '_')) {
+    ++i;
+    while (i < end && TextEditor::CodePoint::isXidContinue(*i))
+      ++i;
+  }
+  return i;
+}
+
+TeIter yaml_number(TeIter start, TeIter end) {
+  TeIter i = start;
+  if (i < end && (*i == '-' || *i == '+'))
+    ++i;
+  bool any = false;
+  while (i < end && (TextEditor::CodePoint::isNumber(*i) || *i == '.')) {
+    any = true;
+    ++i;
+  }
+  return any ? i : start;
+}
+
+bool yaml_punctuation(ImWchar c) {
+  return c == ':' || c == '-' || c == '?' || c == ',' || c == '[' || c == ']' || c == '{' || c == '}';
+}
+
+const TextEditor::Language* yaml_language() {
+  static const TextEditor::Language language = [] {
+    TextEditor::Language l;
+    l.name = "YAML";
+    l.singleLineComment = "#";
+    l.hasSingleQuotedStrings = true;
+    l.hasDoubleQuotedStrings = true;
+    l.stringEscape = '\\';
+    for (const char* kw : {"true", "false", "null", "yes", "no", "on", "off", "True", "False", "Null", "TRUE", "FALSE",
+                           "NULL", "Yes", "No", "On", "Off", "~"})
+      l.keywords.insert(kw);
+    l.customTokenizer = tokenize_yaml;
+    l.getIdentifier = yaml_identifier;
+    l.getNumber = yaml_number;
+    l.isPunctuation = yaml_punctuation;
+    return l;
+  }();
+  return &language;
+}
+
 // Map wish language string → TextEditor::Language factory.
 const TextEditor::Language* language_for(const std::string& lang) {
+  if (lang == "yaml" || lang == "yml")
+    return yaml_language();
   if (lang == "cpp" || lang == "c++")
     return TextEditor::Language::Cpp();
   if (lang == "c")
@@ -91,7 +194,9 @@ void fill_wish_ui_schema_suggestions(TextEditor::AutoCompleteState& state) {
   // characters typed yet, always yielding an empty partial_text (which
   // matches every candidate as a prefix, defeating filtering).
   text_pos pos{state.searchTermEnd.line, state.searchTermEnd.index};
-  auto ctx = scan_cursor_context(editor->GetText(), pos);
+  const auto* lang = editor->GetLanguage();
+  bool is_yaml = lang && lang->name == "YAML";
+  auto ctx = is_yaml ? scan_cursor_context_yaml(editor->GetText(), pos) : scan_cursor_context(editor->GetText(), pos);
 
   switch (ctx.kind) {
     case cursor_context_kind::type_value:
@@ -178,7 +283,7 @@ void render_text_editor(imgui_renderer&, const ui_element& node_base, const cont
   // doc comment) so unrelated TextEditor uses (e.g. nano) are unaffected.
   // AutoCompleteConfig::setConfig() copies *cfg by value, so a stack local
   // is safe here -- it does not need to outlive this call.
-  if (wish_ui_schema && language == "json") {
+  if (wish_ui_schema && (language == "json" || language == "yaml")) {
     if (!st.autocomplete_configured) {
       st.autocomplete_configured = true;
       TextEditor::AutoCompleteConfig cfg;

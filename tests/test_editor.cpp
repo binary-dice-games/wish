@@ -297,11 +297,33 @@ class EditorSourceTest : public ::testing::Test {
     return it->second->as<std::string>("text"_key);
   }
 
-  bool confirm_panel_visible() const {
-    auto it = srv_->last_session->ui_objects.find(root_ + ".vbox.confirm");
-    if (it == srv_->last_session->ui_objects.end())
-      return false;
-    return it->second->as<bool>("visible"_key);
+  // The close-confirmation dialog is a privately-instantiated MessageBox
+  // form (form::instantiate_child_form()), registered under its own
+  // "__message_box_..." root -- message_box.cpp's kLayoutYesNoCancel has
+  // "buttons.btn0"/"btn1"/"btn2" = Yes/No/Cancel.
+  std::string close_dialog_root() const {
+    for (const auto& [k, _] : srv_->last_session->ui_objects)
+      if (k.rfind("__message_box_", 0) == 0 && k.find('.') == std::string::npos)
+        return k;
+    return {};
+  }
+
+  bool close_dialog_open() const {
+    std::string r = close_dialog_root();
+    return !r.empty() && srv_->last_session->top_level_objects.count(bison::key_t{r}) != 0;
+  }
+
+  // Click a button on the close-confirmation MessageBox (0=Yes, 1=No,
+  // 2=Cancel). Routed through the MessageBox's OWN on_event handler, which
+  // emits "on_result" back to the editor via its local result sink.
+  void click_close_dialog_button(int index) {
+    std::string r = close_dialog_root();
+    ASSERT_FALSE(r.empty()) << "no close-confirmation dialog is open";
+    auto btn = srv_->last_session->ui_objects.at(r + ".buttons.btn" + std::to_string(index));
+    auto id = btn->as<bison::key_t>("__wish_id"_key);
+    auto h = srv_->last_session->top_level_handlers.find(bison::key_t{r});
+    ASSERT_NE(h, srv_->last_session->top_level_handlers.end());
+    h->second->on_event(id, "clicked"_key, dynamic{});
   }
 
   std::string banner_text() const {
@@ -592,6 +614,104 @@ TEST_F(EditorSourceTest, ReparsingValidJsonClearsBanner) {
   EXPECT_EQ(banner_text(), "");
 }
 
+// ── YAML source support ──────────────────────────────────────────────────────
+
+namespace {
+constexpr const char* kValidYamlUi = R"(type: Window
+title: Mock
+children:
+  main:
+    type: VerticalLayout
+    children:
+      ok:
+        type: Button
+        label: OK
+)";
+} // namespace
+
+TEST_F(EditorSourceTest, ValidYamlInstantiatesPreview) {
+  seed_sandbox_file("ui.yaml", kValidYamlUi);
+  set_source("ui.yaml");
+
+  EXPECT_TRUE(mock_registered());
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(mock_root_ + ".main.ok"));
+  EXPECT_EQ(banner_text(), "");
+}
+
+TEST_F(EditorSourceTest, YmlExtensionAlsoParsesAsYaml) {
+  seed_sandbox_file("ui.yml", kValidYamlUi);
+  set_source("ui.yml");
+
+  EXPECT_TRUE(mock_registered());
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(mock_root_ + ".main.ok"));
+}
+
+TEST_F(EditorSourceTest, YamlFormatSelectedByDisplayPathExtension) {
+  // The sandbox copy has a generic name; the real (display) path is what
+  // tags it as YAML -- mirrors how the client runner calls set_source.
+  seed_sandbox_file("source_0.tmp", kValidYamlUi);
+  set_source("source_0.tmp", "/local/path/ui.yaml");
+
+  EXPECT_TRUE(mock_registered());
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(mock_root_ + ".main.ok"));
+  EXPECT_EQ(banner_text(), "");
+}
+
+TEST_F(EditorSourceTest, InvalidYamlSetsBannerAndKeepsPreviousPreview) {
+  seed_sandbox_file("good.yaml", kValidYamlUi);
+  set_source("good.yaml");
+  ASSERT_TRUE(mock_registered());
+  ASSERT_TRUE(srv_->last_session->ui_objects.count(mock_root_ + ".main.ok"));
+
+  seed_sandbox_file("bad.yaml", "type: NotARealWidgetType\n");
+  set_source("bad.yaml");
+
+  EXPECT_NE(banner_text(), "");
+  // Previous (still valid) preview must be untouched -- no flicker.
+  EXPECT_TRUE(mock_registered());
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(mock_root_ + ".main.ok"));
+}
+
+TEST_F(EditorSourceTest, YamlSourceSetsYamlLanguageAndKeepsSchemaOnSourceEditor) {
+  seed_sandbox_file("ui.yaml", kValidYamlUi);
+  set_source("ui.yaml");
+  auto& src = srv_->last_session->ui_objects.at(root_ + ".vbox.editor_row.source");
+  EXPECT_EQ(src->as<std::string>("language"_key), "yaml");
+  EXPECT_TRUE(src->as<bool>("wish_ui_schema"_key));
+}
+
+TEST_F(EditorSourceTest, JsonSourceKeepsJsonLanguageAndSchemaOnSourceEditor) {
+  seed_sandbox_file("ui.json", kValidUi);
+  set_source("ui.json");
+  auto& src = srv_->last_session->ui_objects.at(root_ + ".vbox.editor_row.source");
+  EXPECT_EQ(src->as<std::string>("language"_key), "json");
+  EXPECT_TRUE(src->as<bool>("wish_ui_schema"_key));
+}
+
+TEST_F(EditorSourceTest, YamlCursorContextDrivesHelpPanel) {
+  // Cursor inside the Button child's body -> Help panel shows "Button".
+  const char* yaml =
+      "type: Window\n"
+      "children:\n"
+      "  ok:\n"
+      "    type: Button\n"
+      "    label: OK\n";
+  seed_sandbox_file("ui.yaml", yaml);
+  set_source("ui.yaml");
+  ASSERT_TRUE(mock_registered());
+
+  auto src_id = chrome_widget_id("vbox.editor_row.source");
+  ASSERT_NE(src_id.id, 0u);
+  dynamic payload;
+  payload["line"_key] = int32_t{4}; // the "label: OK" line
+  payload["column"_key] = int32_t{9};
+  simulate_chrome_event(src_id, "cursor_moved"_key, payload);
+
+  auto name_it = srv_->last_session->ui_objects.find(help_root_ + ".vbox.class_name");
+  ASSERT_NE(name_it, srv_->last_session->ui_objects.end());
+  EXPECT_EQ(name_it->second->as<std::string>("text"_key), "Button");
+}
+
 TEST_F(EditorSourceTest, MockWidgetEventIsLogged) {
   seed_sandbox_file("ui.json", kValidUi);
   set_source("ui.json");
@@ -802,48 +922,69 @@ TEST_F(EditorSourceTest, ClosingWithUnsavedChangesShowsConfirmInsteadOfClosing) 
 
   simulate_chrome_event(chrome_widget_id(""), "closed"_key);
 
-  EXPECT_TRUE(confirm_panel_visible());
+  EXPECT_TRUE(close_dialog_open());
+  // The dialog's message names the file being closed.
+  auto msg = srv_->last_session->ui_objects.at(close_dialog_root() + ".body.message")->as<std::string>("text"_key);
+  EXPECT_NE(msg.find("/local/path/ui.json"), std::string::npos);
   EXPECT_TRUE(srv_->last_session->ui_objects.count(root_)); // not torn down
   EXPECT_TRUE(mock_registered()); // preview untouched
   EXPECT_FALSE(has_event("closed"_key));
 }
 
-TEST_F(EditorSourceTest, ConfirmCancelHidesPanelAndKeepsEditorOpen) {
+TEST_F(EditorSourceTest, ConfirmCancelKeepsEditorOpen) {
   seed_sandbox_file("ui.json", kValidUi);
   set_source("ui.json", "/local/path/ui.json");
   simulate_chrome_event(chrome_widget_id("vbox.editor_row.source"), "changed"_key);
   simulate_chrome_event(chrome_widget_id(""), "closed"_key);
-  ASSERT_TRUE(confirm_panel_visible());
+  ASSERT_TRUE(close_dialog_open());
 
-  simulate_chrome_event(chrome_widget_id("vbox.confirm.confirm_row.confirm_cancel"), "clicked"_key);
+  click_close_dialog_button(2); // Cancel
 
-  EXPECT_FALSE(confirm_panel_visible());
   EXPECT_TRUE(srv_->last_session->ui_objects.count(root_));
   EXPECT_FALSE(has_event("closed"_key));
 }
 
-TEST_F(EditorSourceTest, ConfirmDiscardClosesDespiteUnsavedChanges) {
+TEST_F(EditorSourceTest, ConfirmNoClosesDespiteUnsavedChanges) {
   seed_sandbox_file("ui.json", kValidUi);
   set_source("ui.json", "/local/path/ui.json");
   simulate_chrome_event(chrome_widget_id("vbox.editor_row.source"), "changed"_key);
   simulate_chrome_event(chrome_widget_id(""), "closed"_key);
-  ASSERT_TRUE(confirm_panel_visible());
+  ASSERT_TRUE(close_dialog_open());
 
-  simulate_chrome_event(chrome_widget_id("vbox.confirm.confirm_row.confirm_discard"), "clicked"_key);
+  click_close_dialog_button(1); // No -- discard and close
 
   EXPECT_TRUE(wait_for_event("closed"_key));
   EXPECT_FALSE(srv_->last_session->ui_objects.count(root_));
   EXPECT_FALSE(has_event("on_source_saved"_key));
 }
 
-TEST_F(EditorSourceTest, ConfirmSaveEmitsOnSourceSavedThenMarkSavedCompletesClose) {
+TEST_F(EditorSourceTest, SecondCloseRequestReplacesDialogNotStacks) {
+  seed_sandbox_file("ui.json", kValidUi);
+  set_source("ui.json", "/local/path/ui.json");
+  simulate_chrome_event(chrome_widget_id("vbox.editor_row.source"), "changed"_key);
+
+  simulate_chrome_event(chrome_widget_id(""), "closed"_key);
+  ASSERT_TRUE(close_dialog_open());
+  simulate_chrome_event(chrome_widget_id(""), "closed"_key); // click X again
+
+  // Still exactly one MessageBox root registered, editor still open.
+  int roots = 0;
+  for (const auto& [k, _] : srv_->last_session->ui_objects)
+    if (k.rfind("__message_box_", 0) == 0 && k.find('.') == std::string::npos)
+      ++roots;
+  EXPECT_EQ(roots, 1);
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root_));
+  EXPECT_FALSE(has_event("closed"_key));
+}
+
+TEST_F(EditorSourceTest, ConfirmYesEmitsOnSourceSavedThenMarkSavedCompletesClose) {
   seed_sandbox_file("ui.json", kValidUi);
   set_source("ui.json", "/local/path/ui.json");
   simulate_chrome_event(chrome_widget_id("vbox.editor_row.source"), "changed"_key);
   simulate_chrome_event(chrome_widget_id(""), "closed"_key);
-  ASSERT_TRUE(confirm_panel_visible());
+  ASSERT_TRUE(close_dialog_open());
 
-  simulate_chrome_event(chrome_widget_id("vbox.confirm.confirm_row.confirm_save"), "clicked"_key);
+  click_close_dialog_button(0); // Yes -- save, then close
 
   ASSERT_TRUE(wait_for_event("on_source_saved"_key));
   EXPECT_FALSE(has_event("closed"_key)); // waiting on mark_saved()

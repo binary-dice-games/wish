@@ -27,7 +27,7 @@
 #include <thread>
 #include <vector>
 
-DECLARE_bool(verbose);
+DECLARE_string(verbose);
 DECLARE_string(host);
 DECLARE_int32(port);
 DECLARE_string(name);
@@ -73,10 +73,18 @@ static std::unique_ptr<renderer> make_renderer() {
   throw std::runtime_error("unknown --renderer value '" + FLAGS_renderer + "' (expected sdl3 or web)");
 }
 
+// Parse --verbose into a log_level, or abort with a clear message.
+static log_level verbose_flag_level() {
+  if (auto lvl = parse_log_level(FLAGS_verbose))
+    return *lvl;
+  throw std::runtime_error(
+      "--verbose: invalid level '" + FLAGS_verbose + "' (expected none|fatal|error|warning|info|trace)");
+}
+
 static std::shared_ptr<logger> make_server_logger() {
   return std::make_shared<logger>(
       bison::dynamic::instantiate(bison::key_t{"wish"}, bison::key_t{"__WishLogger"}),
-      FLAGS_verbose,
+      verbose_flag_level(),
       std::filesystem::path{"wish_logs"} / "server.log");
 }
 

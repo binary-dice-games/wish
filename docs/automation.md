@@ -363,9 +363,10 @@ def test_saving_shows_confirmation(wish_ui):
   returns an empty/near-empty `widgets` list even though `instantiate` clearly
   succeeded). Always assign it: `proxy = client.instantiate(...)`, and keep
   `proxy` in scope for as long as the object should exist. Server-side
-  `--verbose` (prints `connect`/`instantiate`/`destroy`/`disconnect` trace
-  lines) is the fastest way to confirm this is what happened — an `instantiate
-  ok` immediately followed by `destroy` for the same object is the signature.
+  `--verbose=info` (prints `connect`/`instantiate`/`destroy`/`disconnect` trace
+  lines; `--verbose=trace` adds decoded payloads) is the fastest way to confirm
+  this is what happened — an `instantiate ok` immediately followed by `destroy`
+  for the same object is the signature.
 - **`bison.Dynamic` (Python) is not a dict — it has no `.get()`.** Read a
   field with `payload["field_name"]`, not `payload.get("field_name")`.
   Calling `.get(...)` resolves through `Dynamic.__getattr__`'s generic
@@ -384,6 +385,14 @@ def test_saving_shows_confirmation(wish_ui):
   `ui._page.mouse` directly, keep that gap: `mouse.move(x, y)`,
   `mouse.down(button="right")`, a real sleep (tens of ms), `mouse.up(button=
   "right")`.
+- **The web client coalesces `mousemove` to one `INPUT` message per animation
+  frame** (and the server debounces sub-4 px / sub-100 ms motion on top of
+  that), so a tight `for` loop of `ui._page.mouse.move(...)` calls with no
+  delay collapses to roughly one delivered position — the *last* one. Drive
+  hover-dependent interactions with a `move` → short sleep → next `move`
+  rhythm, not a burst. A `mouse.down()`/`mouse.up()` flushes any pending
+  coalesced move synchronously first, so press/release positions are always
+  delivered exactly.
 - **`get_tree()` measurements right after triggering a state change can
   reflect a not-yet-settled frame.** An auto-height row's size (see
   `docs/ui-elements.md`'s `height` field doc) is *the previous frame's*
@@ -446,7 +455,7 @@ def test_saving_shows_confirmation(wish_ui):
   non-selection by moving the mouse away and re-screenshotting: the
   highlight vanished, proving it was hover styling, not a real selected
   state) with **no server-side event fired at all** (verified via
-  temporary `--verbose`-visible tracing in the row's event handler). A
+  temporary `--verbose=info`-visible tracing in the row's event handler). A
   manual `mouse.move(cx, cy)` → sleep ~100ms → `mouse.down()` → sleep
   ~200ms → `mouse.up()` → sleep ~300ms sequence was reliable across every
   attempt in the same session. This is a *plain left click* failing, not
@@ -578,3 +587,17 @@ def test_saving_shows_confirmation(wish_ui):
   its own `measure_fn` returning `{0,0}`, the same treatment already
   applied to `Spring`/`TextEditor` for the identical hazard), not in the
   render function itself.
+- **The `editor` module's source `TextEditor` is not automation-drivable.**
+  `get_widget("<...>.editor_row.source")` returns `rect: null`
+  (ImGuiColorTextEdit renders its own scrolled child region and never calls
+  `capture_hit_test_for_last_item()`), so `click()`/`type_text()` can't
+  reach it, and the standalone-launched editor docks its live preview
+  `Window` *over* the chrome `Window` (only one is frontmost). To verify
+  editor-side behavior that depends on the source panel (YAML/JSON
+  highlighting, schema autocomplete, the cursor-tracked Help window),
+  prefer a unit test against the `editor` form (drive `set_source` +
+  simulate a `"cursor_moved"` chrome event, then read
+  `<help_root>.vbox.class_name`) — see `tests/test_editor.cpp`'s
+  `YamlCursorContextDrivesHelpPanel`. Automation is still the right tool
+  for confirming the *preview* subtree (`<...>_mock.*`) rendered what the
+  source describes.

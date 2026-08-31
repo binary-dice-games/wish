@@ -144,6 +144,38 @@ structural nodes don't get their own map entry, but their named descendants
 still do). Instantiating the same template again returns an independent
 tree with a fresh set of proxies; the server keeps them isolated per call.
 
+### Learning the schema from example files
+
+You don't have to write a descriptor from a blank page. `examples/ui/`
+holds a ready-made library of them, one file per tab of the `demo` app
+(the same catalog documented in [docs/examples.md](examples.md)), in both
+formats:
+
+```
+examples/ui/json/    basics.json  sliders.json  tables.json  plots.json  ...
+examples/ui/yaml/    basics.yaml  sliders.yaml  tables.yaml  plots.yaml  ...
+```
+
+Each file is a self-contained `Window` you can read as a reference, copy
+fields out of, or open live in the **`editor` module** — a split-pane tool
+that re-parses the file and re-renders the UI on every keystroke, with an
+event log for every widget interaction:
+
+```sh
+# Build the editor module (off by default) and open an example:
+cmake -S . -B build -DWISH_MODULE_BDG_DEV_EDITOR=ON
+cmake --build build --target wish-standalone
+build/app/wish-standalone --run=editor -- examples/ui/json/basics.json
+build/app/wish-standalone --run=editor -- examples/ui/yaml/tables.yaml
+```
+
+The importer, syntax highlighting, and the live field-reference/autocomplete
+panel all pick JSON vs. YAML from the file extension — both formats get the
+same treatment. Edit a copy, watch the preview update, and press **Ctrl+S**
+to save — see
+[docs/ui-elements.md](ui-elements.md#8-the-editor-tool-previewing-a-ui-from-a-json-or-yaml-file)
+for the full editor walkthrough.
+
 ## 4. Building UI by hand
 
 For a UI you're constructing programmatically (from external data, or that

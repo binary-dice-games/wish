@@ -14,7 +14,7 @@ DEFINE_string(transport, "term", "Not supported in standalone mode");
 DEFINE_string(host, "0.0.0.0", "Not supported in standalone mode");
 DEFINE_int32(port, 7070, "Not supported in standalone mode");
 DEFINE_string(name, "", "Not supported in standalone mode");
-DEFINE_bool(verbose, false, "Print session trace messages to stdout");
+DEFINE_string(verbose, "none", "Log verbosity: none|fatal|error|warning|info|trace");
 DEFINE_bool(debugger, false, "Wait for debugger attachment before starting");
 DEFINE_string(theme, "wish", "UI theme preset, e.g. dark, light, classic, or wish.");
 

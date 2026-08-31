@@ -14,9 +14,11 @@
 /// when `file_path` itself changes, not when the file underneath an
 /// unchanged path is overwritten.
 ///
-/// The JSON file to edit is passed after `--` on the command line, e.g.
+/// The file to edit is passed after `--` on the command line, e.g.
 /// `wish client --run=editor -- path/to/ui.json` (see
-/// `wish_app_host::app_args()`).
+/// `wish_app_host::app_args()`). A `.yaml`/`.yml` path is parsed as YAML
+/// instead of JSON; the sandbox copy keeps the same extension so the
+/// server-side form can tell which importer to use.
 #include "modules/bdg/dev/editor/client/editor.hpp"
 
 #include "src/client/app_registry.hpp"
@@ -25,7 +27,9 @@
 #include "src/bison/bison.hpp"
 #include "src/bison/bison_sync.hpp"
 
+#include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -73,10 +77,19 @@ void push_local_file(
     const std::shared_ptr<sync_state>& state,
     const fs::path& local_path) {
   auto data = read_local_file(local_path);
+  // Keep the sandbox file's extension in sync with the local file's so the
+  // server-side form picks the right importer (`.yaml`/`.yml` -> YAML) and
+  // syntax highlighting; default to `.json` for any other (or missing)
+  // extension.
+  std::string ext = local_path.extension().string();
+  std::string ext_lower = ext;
+  std::transform(ext_lower.begin(), ext_lower.end(), ext_lower.begin(), [](unsigned char c) { return std::tolower(c); });
+  if (ext_lower != ".yaml" && ext_lower != ".yml")
+    ext = ".json";
   std::string name;
   {
     auto lock = state->wlock();
-    name = "source_" + std::to_string(lock->counter++) + ".json";
+    name = "source_" + std::to_string(lock->counter++) + ext;
     lock->sandbox_name = name;
     lock->last_uploaded_content = data;
   }
@@ -94,7 +107,7 @@ void run_editor(wish_app_host& s) {
   namespace fs = std::filesystem;
 
   if (s.app_args().empty()) {
-    std::cerr << "[editor] usage: wish client --run=editor -- path/to/ui.json\n";
+    std::cerr << "[editor] usage: wish client --run=editor -- path/to/ui.json (or .yaml)\n";
     s.signal_done();
     return;
   }
@@ -109,8 +122,8 @@ void run_editor(wish_app_host& s) {
 
   push_local_file(s, ed, state, local_path);
 
-  // Ctrl+S inside the source editor, or a confirmed "Save & Close": download
-  // the sandbox file, persist it back to the original local path, and tell
+  // Ctrl+S inside the source editor, or "Yes" on the close-confirm dialog:
+  // download the sandbox file, persist it back to the original local path, and tell
   // the server the save completed (mirrors nano's on_file_saved; the
   // mark_saved() call back is what lets the server clear its "unsaved
   // changes" state and finish a pending close).
@@ -184,8 +197,8 @@ struct editor_app_registrar {
         .name = "editor",
         .organization = WISH_MODULE_BDG_DEV_EDITOR_ORGANIZATION,
         .collection = WISH_MODULE_BDG_DEV_EDITOR_COLLECTION,
-        .description = "Live JSON UI mock editor -- edit, preview, and watch events in real time",
-        .params = {{"file", "Path to the JSON UI file to edit"}},
+        .description = "Live JSON/YAML UI mock editor -- edit, preview, and watch events in real time",
+        .params = {{"file", "Path to the JSON or YAML UI file to edit (.json / .yaml / .yml)"}},
         .run = run_editor,
     });
   }

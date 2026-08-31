@@ -122,27 +122,51 @@ std::optional<std::span<const std::byte>> unwrap_envelope(std::span<const std::b
 // Payload layout: uint32 target_id, then display pos/size/framebuffer-scale,
 // then per ImDrawList as documented on encode_frame() in the header.
 
-std::vector<std::byte> encode_frame(const ImDrawData& draw_data, uint32_t target_id) {
-  std::vector<std::byte> payload;
+void encode_frame(const ImDrawData& draw_data, uint32_t target_id, std::vector<std::byte>& out) {
+  // Fixed frame header after the 8-byte envelope: target_id (4) + display
+  // pos/size/framebuffer-scale (6 * 4) + total vtx/idx/cmd-list counts (3 * 4).
+  constexpr size_t kFrameHeaderBytes = 4 + 6 * 4 + 3 * 4;
+  // Per command list: vtx/idx counts (8) + real-cmd count (4), then the raw
+  // vertex/index buffers, then 32 bytes per renderable command (4 clip floats
+  // + tex id + vtx/idx offsets + elem count). CmdBuffer.Size is an upper bound
+  // on the renderable-command count (UserCallback entries are skipped).
+  size_t total = 8 + kFrameHeaderBytes;
+  total += static_cast<size_t>(draw_data.TotalVtxCount) * sizeof(ImDrawVert);
+  total += static_cast<size_t>(draw_data.TotalIdxCount) * sizeof(ImDrawIdx);
+  for (int i = 0; i < draw_data.CmdListsCount; ++i)
+    total += 12 + static_cast<size_t>(draw_data.CmdLists[i]->CmdBuffer.Size) * 32;
 
-  put_u32(payload, target_id);
-  put_f32(payload, draw_data.DisplayPos.x);
-  put_f32(payload, draw_data.DisplayPos.y);
-  put_f32(payload, draw_data.DisplaySize.x);
-  put_f32(payload, draw_data.DisplaySize.y);
-  put_f32(payload, draw_data.FramebufferScale.x);
-  put_f32(payload, draw_data.FramebufferScale.y);
-  put_u32(payload, static_cast<uint32_t>(draw_data.TotalVtxCount));
-  put_u32(payload, static_cast<uint32_t>(draw_data.TotalIdxCount));
-  put_u32(payload, static_cast<uint32_t>(draw_data.CmdListsCount));
+  out.clear();
+  out.reserve(total);
+
+  // Envelope header: msg_type + 3 reserved zero bytes + payload length. The
+  // length isn't known until the payload is built, so backpatch it at the end.
+  put_u8(out, static_cast<uint8_t>(web_msg_type::frame));
+  put_u8(out, 0);
+  put_u8(out, 0);
+  put_u8(out, 0);
+  const size_t len_pos = out.size();
+  put_u32(out, 0); // payload_len placeholder
+  const size_t payload_start = out.size();
+
+  put_u32(out, target_id);
+  put_f32(out, draw_data.DisplayPos.x);
+  put_f32(out, draw_data.DisplayPos.y);
+  put_f32(out, draw_data.DisplaySize.x);
+  put_f32(out, draw_data.DisplaySize.y);
+  put_f32(out, draw_data.FramebufferScale.x);
+  put_f32(out, draw_data.FramebufferScale.y);
+  put_u32(out, static_cast<uint32_t>(draw_data.TotalVtxCount));
+  put_u32(out, static_cast<uint32_t>(draw_data.TotalIdxCount));
+  put_u32(out, static_cast<uint32_t>(draw_data.CmdListsCount));
 
   for (int i = 0; i < draw_data.CmdListsCount; ++i) {
     const ImDrawList& cmd_list = *draw_data.CmdLists[i];
 
-    put_u32(payload, static_cast<uint32_t>(cmd_list.VtxBuffer.Size));
-    put_u32(payload, static_cast<uint32_t>(cmd_list.IdxBuffer.Size));
-    put_bytes(payload, cmd_list.VtxBuffer.Data, static_cast<size_t>(cmd_list.VtxBuffer.Size) * sizeof(ImDrawVert));
-    put_bytes(payload, cmd_list.IdxBuffer.Data, static_cast<size_t>(cmd_list.IdxBuffer.Size) * sizeof(ImDrawIdx));
+    put_u32(out, static_cast<uint32_t>(cmd_list.VtxBuffer.Size));
+    put_u32(out, static_cast<uint32_t>(cmd_list.IdxBuffer.Size));
+    put_bytes(out, cmd_list.VtxBuffer.Data, static_cast<size_t>(cmd_list.VtxBuffer.Size) * sizeof(ImDrawVert));
+    put_bytes(out, cmd_list.IdxBuffer.Data, static_cast<size_t>(cmd_list.IdxBuffer.Size) * sizeof(ImDrawIdx));
 
     // ImDrawCmd::UserCallback entries (e.g. ImDrawCallback_ResetRenderState)
     // have no meaning to the browser's WebGL2 renderer and are dropped;
@@ -151,23 +175,30 @@ std::vector<std::byte> encode_frame(const ImDrawData& draw_data, uint32_t target
     for (const ImDrawCmd& cmd : cmd_list.CmdBuffer)
       if (!cmd.UserCallback)
         ++real_cmd_count;
-    put_u32(payload, real_cmd_count);
+    put_u32(out, real_cmd_count);
 
     for (const ImDrawCmd& cmd : cmd_list.CmdBuffer) {
       if (cmd.UserCallback)
         continue;
-      put_f32(payload, cmd.ClipRect.x);
-      put_f32(payload, cmd.ClipRect.y);
-      put_f32(payload, cmd.ClipRect.z);
-      put_f32(payload, cmd.ClipRect.w);
-      put_u32(payload, static_cast<uint32_t>(cmd.GetTexID()));
-      put_u32(payload, cmd.VtxOffset);
-      put_u32(payload, cmd.IdxOffset);
-      put_u32(payload, cmd.ElemCount);
+      put_f32(out, cmd.ClipRect.x);
+      put_f32(out, cmd.ClipRect.y);
+      put_f32(out, cmd.ClipRect.z);
+      put_f32(out, cmd.ClipRect.w);
+      put_u32(out, static_cast<uint32_t>(cmd.GetTexID()));
+      put_u32(out, cmd.VtxOffset);
+      put_u32(out, cmd.IdxOffset);
+      put_u32(out, cmd.ElemCount);
     }
   }
 
-  return wrap_envelope(web_msg_type::frame, std::move(payload));
+  const uint32_t payload_len = static_cast<uint32_t>(out.size() - payload_start);
+  std::memcpy(out.data() + len_pos, &payload_len, sizeof(payload_len));
+}
+
+std::vector<std::byte> encode_frame(const ImDrawData& draw_data, uint32_t target_id) {
+  std::vector<std::byte> out;
+  encode_frame(draw_data, target_id, out);
+  return out;
 }
 
 // ── outbound: TEX_CREATE / TEX_UPDATE ───────────────────────────────────────

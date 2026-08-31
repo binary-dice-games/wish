@@ -207,13 +207,12 @@ static natural_size measure_splitter(imgui_renderer& r, const ui_element& node0,
   auto orientation = node.orientation("vertical");
   bool is_vertical = orientation != "horizontal";
   float thickness = std::max(1.0f, node.thickness(4.0f));
-  key_t size_field = is_vertical ? "width"_key : "height"_key;
   float total = 0.0f;
   float cross = 0.0f;
   int n = 0;
   node.for_each_child_ordered([&](key_t, ui_element& child) {
     natural_size sz = measure_node(r, child, s);
-    float own = child.get_as<float>(size_field, 0.0f);
+    float own = is_vertical ? child.width(0.0f) : child.height(0.0f);
     float extent = is_vertical ? sz.x : sz.y;
     total += own > 0.0f ? own : extent;
     cross = std::max(cross, is_vertical ? sz.y : sz.x);
@@ -537,7 +536,6 @@ static void arrange_splitter(imgui_renderer& r, const ui_element& node0, ImVec2 
   auto orientation = node.orientation("vertical");
   bool is_vertical = orientation != "horizontal";
   float thickness = std::max(1.0f, node.thickness(4.0f));
-  key_t size_field = is_vertical ? "width"_key : "height"_key;
 
   std::vector<ui_element*> panes;
   node.for_each_child_ordered([&](key_t, ui_element& child) { panes.push_back(&child); });
@@ -548,14 +546,15 @@ static void arrange_splitter(imgui_renderer& r, const ui_element& node0, ImVec2 
   float usable = std::max(0.0f, main_avail - thickness * float(panes.size() > 1 ? panes.size() - 1 : 0));
   float used = 0.0f;
   for (size_t i = 0; i + 1 < panes.size(); ++i)
-    used += std::max(0.0f, panes[i]->get_as<float>(size_field, 0.0f));
+    used += std::max(0.0f, is_vertical ? panes[i]->width(0.0f) : panes[i]->height(0.0f));
   float last_size = std::max(0.0f, usable - used);
 
   float pos = is_vertical ? origin.x : origin.y;
   int frame = ImGui::GetFrameCount();
   for (size_t i = 0; i < panes.size(); ++i) {
     bool is_last = (i + 1 == panes.size());
-    float sz = is_last ? last_size : std::max(0.0f, panes[i]->get_as<float>(size_field, 0.0f));
+    float sz =
+        is_last ? last_size : std::max(0.0f, is_vertical ? panes[i]->width(0.0f) : panes[i]->height(0.0f));
     ImVec2 pane_origin = is_vertical ? ImVec2(pos, origin.y) : ImVec2(origin.x, pos);
     ImVec2 pane_avail = is_vertical ? ImVec2(sz, avail.y) : ImVec2(avail.x, sz);
     // Route through the generic arrange_node() (not a direct

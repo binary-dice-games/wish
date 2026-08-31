@@ -28,8 +28,8 @@ void register_text_editor() {
           attr<DisplayName>("Language"),
           attr<Description>("Syntax highlighting language. Supported values: "
                             "\"cpp\", \"c\", \"cs\", \"glsl\", \"hlsl\", \"lua\", "
-                            "\"python\", \"sql\", \"json\", \"markdown\", \"angelscript\", "
-                            "\"none\"."),
+                            "\"python\", \"sql\", \"json\", \"yaml\", \"markdown\", "
+                            "\"angelscript\", \"none\"."),
           attr<Category>("Content")});
   proto->addField(
       "read_only"_rkey,
@@ -62,9 +62,9 @@ void register_text_editor() {
       field{
           bool{false},
           attr<DisplayName>("Wish UI Schema Autocomplete"),
-          attr<Description>("When true and language is \"json\", enables cursor-position tracking "
-                            "(\"cursor_moved\" events) and autocomplete for wish UI element type "
-                            "names, field names, and enum values, sourced from the live class "
+          attr<Description>("When true and language is \"json\" or \"yaml\", enables cursor-position "
+                            "tracking (\"cursor_moved\" events) and autocomplete for wish UI element "
+                            "type names, field names, and enum values, sourced from the live class "
                             "registry (see src/ui/ui_schema_help.hpp). Off by default so unrelated "
                             "TextEditor uses (e.g. nano) are unaffected."),
           attr<Category>("Behavior")});

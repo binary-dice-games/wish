@@ -1,0 +1,95 @@
+{
+  "type": "Window",
+  "title": "Basics - wish demo",
+  "width": 900,
+  "height": 800,
+  "children": {
+    "sec_labels": {
+      "type": "SeparatorText",
+      "label": "Labels"
+    },
+    "lbl_static": {
+      "type": "Label",
+      "text": "Static label - text set in the descriptor."
+    },
+    "lbl_dynamic": {
+      "type": "Label",
+      "text": "(updated by events in the demo app)"
+    },
+    "lbl_clicks": {
+      "type": "Label",
+      "text": "Click counter: 0"
+    },
+    "sec_buttons": {
+      "type": "SeparatorText",
+      "label": "Buttons"
+    },
+    "btn_row": {
+      "type": "HorizontalLayout",
+      "spacing": 8,
+      "children": {
+        "btn_click": {
+          "type": "Button",
+          "label": "Click me"
+        },
+        "btn_reset": {
+          "type": "Button",
+          "label": "Reset counter"
+        },
+        "btn_wide": {
+          "type": "Button",
+          "label": "Wide button",
+          "width": 160
+        }
+      }
+    },
+    "sec_checks": {
+      "type": "SeparatorText",
+      "label": "Checkboxes"
+    },
+    "chk_a": {
+      "type": "Checkbox",
+      "label": "Option A",
+      "value": false
+    },
+    "chk_b": {
+      "type": "Checkbox",
+      "label": "Option B",
+      "value": true
+    },
+    "chk_vis": {
+      "type": "Checkbox",
+      "label": "Show hidden label",
+      "value": true
+    },
+    "lbl_hidden": {
+      "type": "Label",
+      "text": "    This label is toggled by the checkbox above."
+    },
+    "sec_radio": {
+      "type": "SeparatorText",
+      "label": "Radio Buttons"
+    },
+    "radio_row": {
+      "type": "HorizontalLayout",
+      "spacing": 12,
+      "children": {
+        "rb_a": {
+          "type": "RadioButton",
+          "label": "Alpha",
+          "active": true
+        },
+        "rb_b": {
+          "type": "RadioButton",
+          "label": "Beta",
+          "active": false
+        },
+        "rb_c": {
+          "type": "RadioButton",
+          "label": "Gamma",
+          "active": false
+        }
+      }
+    }
+  }
+}

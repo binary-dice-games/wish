@@ -8,13 +8,40 @@ Status" below.
 
 ## 1. Purpose / Scope
 
-The `editor` module (`wish client --run=editor -- path/to/ui.json`) is a
-live JSON UI mock editor: a syntax-highlighted source panel next to a
-continuously re-parsed, live-instantiated preview of the UI that JSON
-describes, plus an event log showing every interaction the preview widget
-tree fires. It exists so a developer — or the agentic AI itself, per the
-`wish-module`/`wish-ui` skills — can iterate on a UI layout and see the
+The `editor` module (`wish client --run=editor -- path/to/ui.json`, or a
+`.yaml`/`.yml` path) is a live JSON/YAML UI mock editor: a source panel
+next to a continuously re-parsed, live-instantiated preview of the UI that
+source describes, plus an event log showing every interaction the preview
+widget tree fires. It exists so a developer — or the agentic AI itself, per
+the `wish-module`/`wish-ui` skills — can iterate on a UI layout and see the
 result immediately, without a build/re-run cycle.
+
+The source file's extension selects everything format-specific
+(`is_yaml_source_path()` in `server/editor.cpp`, checked against the
+client-supplied `display_path` when present, else the sandbox path):
+`.yaml`/`.yml` -> `import_yaml` + `language: "yaml"` +
+`scan_cursor_context_yaml()`; anything else -> `import_json` +
+`language: "json"` + `scan_cursor_context()`. `wish_ui_schema` is on for
+both. `do_set_source()` rewrites the `TextEditor`'s `language` and
+`wish_ui_schema` fields on every call so switching a session's source
+between formats stays consistent. Both formats get the identical feature
+set — live preview, hot-reload, event log, schema autocomplete, and the
+cursor-tracked Help window / preview highlight.
+
+Two pieces make the YAML path work without touching the vendored
+`extern/imgui_color_text_edit` submodule:
+- **Highlighting**: `src/imgui/imgui_text_editor_renderer.cpp` builds a
+  `TextEditor::Language` for YAML at runtime from the public `Language`
+  API (`#` comments, quoted scalars, `true`/`false`/`null` keywords, a
+  small custom tokenizer that colors `key:` mapping keys). `language_for()`
+  returns it for `"yaml"`/`"yml"`.
+- **Cursor context**: `scan_cursor_context_yaml()`
+  (`src/ui/ui_schema_help.cpp`) is a line-and-indentation scanner — YAML
+  has no braces to balance — producing the same `cursor_context` struct as
+  the JSON scanner (same dot-path convention, same bounded forward
+  `type:`-lookahead, same read-only-up-to-the-cursor rule). The autocomplete
+  callback and `editor::update_help_panel()` each pick the scanner by
+  format.
 
 This directory owns:
 - `server/editor.hpp`/`.cpp` — the `editor` form (chrome, reparse loop,
@@ -57,11 +84,13 @@ this module going forward.
 Owns four independent subtrees registered in the session:
 - **Chrome** (`internal_root_key_`): filename label, error banner, an
   `editor_row` `HorizontalLayout` holding the source `TextEditor`
-  (`language: "json"`, `wish_ui_schema: true`, `width: 0, height: 0` — both
+  (`wish_ui_schema: true`; `language` set to `"json"` or `"yaml"` by
+  `do_set_source()` per the source extension; `width: 0, height: 0` — both
   "fill available space", and `editor_row` itself carries `"height": -1`
   so it stretches to fill whatever vertical space `vbox` has left — see
-  "6. Design Decisions"), close-confirmation panel. Built once in
-  `on_init()`.
+  "6. Design Decisions"). Built once in `on_init()`. The close-confirmation
+  dialog is **not** part of this tree — it's a privately-instantiated
+  `MessageBox` form (`close_dialog_`, see "6. Design Decisions").
 - **Help window** (`help_root_key_ = internal_root_key_ + "_help"`): a
   second, independently dockable `Window` (not nested inside the chrome
   tree) showing the enclosing element type's display name/description and
@@ -148,6 +177,12 @@ on (not editor-specific, despite living outside this directory — mirrors
   extra, otherwise-unmarked object/array frame (`frame::is_children_wrapper`)
   so a named child's path can be built as `owner_path + "." + name`
   matching `import_json()`'s own convention exactly.
+- `scan_cursor_context_yaml(source, cursor)`: the YAML counterpart, same
+  `cursor_context` result and same read-only-up-to-the-cursor rule, but a
+  line-and-indentation scanner (YAML has no braces): it maintains a stack
+  of open block mappings keyed by indent column. `children:` is the
+  unnamed wrapper level; sequence (`- `) entries are unnamed, matching
+  `import_yaml()`.
 
 ## 4. Data Flow / Architecture
 
@@ -155,10 +190,13 @@ on (not editor-specific, despite living outside this directory — mirrors
 Startup:
   run_editor(host)
     → instantiate Editor
-    → push_local_file(): upload local JSON under a fresh sandbox name,
-      call set_source({path, display_path})
+    → push_local_file(): upload local source file under a fresh sandbox
+      name (same extension as the local file), call
+      set_source({path, display_path})
         → editor::do_set_source(): points source TextEditor.file_path at
-          the sandbox file, clears dirty_, calls try_reparse()
+          the sandbox file, sets source_is_yaml_ + the TextEditor
+          language/wish_ui_schema fields from the extension, clears dirty_,
+          calls try_reparse()
 
 In-editor edit:
   TextEditor renderer auto-writes the sandbox file on every undo-stack
@@ -167,8 +205,9 @@ In-editor edit:
 
 try_reparse():
   read sandbox file bytes → current_source_content_ = bytes (unconditionally,
-    even on the failure path below -- see "Cursor moved" flow) → import_json()
-    on throw (invalid JSON / unknown element type):
+    even on the failure path below -- see "Cursor moved" flow) →
+    import_yaml() if source_is_yaml_ else import_json()
+    on throw (invalid JSON/YAML / unknown element type):
       set_banner(e.what()); PREVIOUS preview subtree untouched → no flicker
     on success:
       clear_mock() (removes old preview's ui_objects/top_level_* entries
@@ -183,7 +222,8 @@ Cursor moved (Help window + preview highlight):
   TextEditor renderer diffs GetMainCursorPosition() each frame (only when
   wish_ui_schema is set), enqueues "cursor_moved" {line, column} on change
     → editor::on_event(): update_help_panel(line, column)
-      → ui_schema_help::scan_cursor_context(current_source_content_, {line, column})
+      → scan_cursor_context_yaml() if source_is_yaml_ else scan_cursor_context()
+        (current_source_content_, {line, column})
       → update_highlight(ctx.element_path):
           no-op if unchanged from highlighted_path_; else, via s.ui_objects
           dot-path lookup, clear "__wish_highlight__" on the old path's
@@ -207,10 +247,11 @@ Cursor moved (Help window + preview highlight):
 
 Autocomplete (type names, field names, enum values):
   TextEditor renderer configures AutoCompleteConfig once (wish_ui_schema &&
-  language == "json"), callback runs synchronously during Render()
+  language is "json" or "yaml"), callback runs synchronously during Render()
     → fill_wish_ui_schema_suggestions(state): state.suggestions.clear()
       (library does not clear between invocations -- see "6. Design Decisions")
-      → scan_cursor_context(editor->GetText(), {state.line, state.searchTermEndIndex})
+      → (scan_cursor_context_yaml if editor->GetLanguage()->name == "YAML"
+         else scan_cursor_context)(editor->GetText(), {state.line, state.searchTermEndIndex})
       → type_value: enumerate_ui_element_classes(), prefix-filtered
       → field_key: find_ui_element_class(enclosing_type)'s fields, prefix-
         filtered, excluding existing_field_names
@@ -231,7 +272,7 @@ External file change (edited outside the tool):
       TextEditor renderer only reloads its buffer when file_path itself
       changes) → do_set_source() → try_reparse()
 
-Save (Ctrl+S, or "Save & Close"):
+Save (Ctrl+S, or the close-confirm dialog's "Yes"):
   editor emits "on_source_saved" → client downloads the sandbox file,
   writes it to the local path, calls mark_saved()
     → editor::do_mark_saved(): dirty_ = false; if a close was pending
@@ -239,8 +280,11 @@ Save (Ctrl+S, or "Save & Close"):
 
 Close:
   window "closed" event
-    if dirty_: show the inline confirm panel (Save & Close / Discard &
-      Close / Cancel) instead of closing
+    if dirty_: show_close_confirm() -- instantiate a MessageBox
+      (yes_no_cancel) via form::instantiate_child_form(); its on_result:
+        "yes"    -> pending_close_after_save_ = true; emit("on_source_saved")
+        "no"     -> request_close() now
+        "cancel" -> nothing (MessageBox closes itself)
     else: request_close() -- clear_mock(), emit("closed"), remove chrome
 ```
 
@@ -249,9 +293,9 @@ Close:
 | Symbol | Contract |
 |---|---|
 | `Editor.set_source(path, display_path?)` | RMI method. `path` sandbox-relative, required. `display_path` optional, shown in the filename label. Clears `dirty_` (sandbox is now known to match disk) and immediately reparses. Safe to call repeatedly (startup, and every external-file-change detection). |
-| `Editor.mark_saved()` | RMI method, no args. Clears `dirty_`; if a "Save & Close" was waiting on this call, completes the close and emits `"closed"`. Must be called by the client only after the sandbox file has actually been downloaded and written to local disk. |
+| `Editor.mark_saved()` | RMI method, no args. Clears `dirty_`; if a close-confirm "Yes" was waiting on this call, completes the close and emits `"closed"`. Must be called by the client only after the sandbox file has actually been downloaded and written to local disk. |
 | `"closed"` event | Chrome and preview subtrees fully torn down; the client should call `signal_done()`. Only fires once the user has resolved any unsaved-changes prompt. |
-| `"on_source_saved"` event | The client should `download_file()` the current sandbox path, write it to the original local path, then call `mark_saved()`. Fired by Ctrl+S and by "Save & Close". |
+| `"on_source_saved"` event | The client should `download_file()` the current sandbox path, write it to the original local path, then call `mark_saved()`. Fired by Ctrl+S and by the close-confirm dialog's "Yes". |
 | `wish client --run=editor -- <path>` | `<path>` is required (not optional, unlike nano's startup-file param) — the editor has nothing useful to show without a source file. Created empty if it doesn't exist yet. |
 
 ## 6. Design Decisions
@@ -570,12 +614,26 @@ Close:
   `s.ui_objects` lookup pass after the tree is merged in — no extra
   traversal, and `elem` is already in hand.
 
-- **Close confirmation is an inline panel, not a modal dialog.** wish has
-  no dedicated modal/popup element. The panel (`vbox.confirm`) is an
-  ordinary child layout that starts `"visible": false` and is toggled by
-  setting that field — not a true blocking overlay. A second X-click while
-  it's already showing just re-shows it (idempotent), since the window
-  itself is never actually torn down while `dirty_` is true.
+- **Close confirmation is a privately-instantiated `MessageBox` form, not a
+  hand-rolled panel.** `show_close_confirm()` calls
+  `form::instantiate_child_form<message_box>("MessageBox", {buttons:
+  "yes_no_cancel", icon: "warning", ...}, on_result)` — the same pattern
+  git's and top's confirm dialogs use (`src/ui/forms/message_box.hpp`). The
+  MessageBox is a genuine `Window.modal = true` blocking overlay, builds
+  and owns its own tree, and closes itself on any button or its window-X;
+  the editor only keeps `close_dialog_` (a `std::shared_ptr<message_box>`)
+  alive and reads back `"on_result"` (`{button: "yes"|"no"|"cancel"}`) via
+  the in-process result sink. A second X-click while it's open just
+  overwrites `close_dialog_` with a fresh instance (the stale one's
+  destructor tears itself down) — never two dialogs. The result-sink
+  callback must **not** free `close_dialog_` (e.g. by having
+  `request_close()` reset it): `message_box::on_event()` calls its own
+  `request_close()` immediately after `emit()`-ing `"on_result"`, so
+  destroying the box from inside that callback is a use-after-free of the
+  frame being returned into. `request_close()` therefore tears down only
+  the editor's own chrome; the MessageBox always tears *itself* down, and
+  `close_dialog_` is released whenever it's overwritten or the editor form
+  is destroyed.
 
 - **`with_session()` dual dispatch/non-dispatch path.** `try_reparse()`
   and `clear_mock()` need `wish::context&` (for `resource_dir`,
@@ -605,18 +663,20 @@ Close:
 ## 8. Integration Boundaries
 
 Depends on:
-- `wish::form`, `ui_root::on_event`'s catch-all dispatch, `import_json()`
-  (`src/ui/ui_importer.hpp`) — server-side UI construction.
+- `wish::form`, `ui_root::on_event`'s catch-all dispatch, `import_json()` /
+  `import_yaml()` (`src/ui/ui_importer.hpp`) — server-side UI construction.
 - `file_service::resolve_path` — sandboxed source file access.
 - `wish_app_host` (`upload_file`/`download_file`/`instantiate`) — client
   local-file bridging, same contract as nano's client runner.
 - `TextEditor` (`src/ui/ui_elements/text_editor.cpp`,
-  `src/imgui/imgui_text_editor_renderer.cpp`) — JSON syntax highlighting,
-  file-backed autosave-to-sandbox, `"changed"`/`"saved"`/`"cursor_moved"`
-  events, `wish_ui_schema`-gated autocomplete.
+  `src/imgui/imgui_text_editor_renderer.cpp`) — JSON and YAML syntax
+  highlighting (the YAML `TextEditor::Language` is assembled in the
+  renderer, not the vendored lib), file-backed autosave-to-sandbox,
+  `"changed"`/`"saved"`/`"cursor_moved"` events, `wish_ui_schema`-gated
+  autocomplete.
 - `ui_schema_help` (`src/ui/ui_schema_help.hpp`/`.cpp`) — class registry
-  queries and the JSON cursor-context scanner backing the help panel,
-  autocomplete, and preview highlight (shared, not editor-specific,
+  queries and the JSON/YAML cursor-context scanners backing the help
+  panel, autocomplete, and preview highlight (shared, not editor-specific,
   despite having no other consumer yet).
 - `bison::lookup_registered_key_name()`/`Enum`/`EnumFlags::entries()`
   (`extern/bison`) — literal name recovery and enum/flag value enumeration;
@@ -685,7 +745,7 @@ bison accessors for the help panel/autocomplete work:
 
 ## 10. Implementation Status
 
-**Implemented**: source panel with JSON syntax highlighting and live
+**Implemented**: source panel with JSON/YAML syntax highlighting and live
 reparse, no-flicker error banner, live preview with stable
 position/size/focus across edits, generic event log (path + event +
 payload) with a 200-row cap and auto-scroll, filename label with

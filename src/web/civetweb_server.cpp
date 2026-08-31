@@ -26,6 +26,12 @@ struct civetweb_server::impl {
   mg_context* ctx = nullptr;
   bison::synchronized<std::vector<mg_connection*>> connections;
 
+  // Reused by broadcast() as the snapshot target so the per-call frame
+  // broadcast doesn't allocate a fresh connection vector every frame.
+  // broadcast() is only ever called from the render thread, so this needs no
+  // synchronization of its own (the `connections` snapshot into it is locked).
+  std::vector<mg_connection*> broadcast_targets;
+
   // ── WebSocket callbacks (civetweb worker threads) ─────────────────────────
   //
   // Defined as members (not free functions) so they can name `impl` despite
@@ -142,8 +148,14 @@ int civetweb_server::actual_port() const {
 
 void civetweb_server::broadcast(std::span<const std::byte> bytes) {
   // Snapshot the connection list under the lock, then write outside it so a
-  // slow client write can't block connect/disconnect callbacks.
-  std::vector<mg_connection*> targets = impl_->connections.copy();
+  // slow client write can't block connect/disconnect callbacks. The snapshot
+  // buffer is reused across calls (render-thread only) to avoid a per-frame
+  // allocation.
+  auto& targets = impl_->broadcast_targets;
+  {
+    auto lock = impl_->connections.rlock();
+    targets.assign(lock->begin(), lock->end());
+  }
   const char* data = reinterpret_cast<const char*>(bytes.data());
   for (mg_connection* conn : targets)
     mg_websocket_write(conn, MG_WEBSOCKET_OPCODE_BINARY, data, bytes.size());

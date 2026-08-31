@@ -11,7 +11,7 @@ where each binary lands after a build. Everything below applies equally to
 
 ```
 wish server     [--transport T] [--host H] [--port P] [--name PATH] [--cmd C]
-                [--title T] [--width W] [--height H] [--verbose]
+                [--title T] [--width W] [--height H] [--verbose LEVEL]
 wish client     [--transport T] [--host H] [--port P] [--name PATH]
                 (--list | --run=<app>) [--timeout MS] [-- app-args...]
 wish standalone [--title T] [--width W] [--height H]
@@ -42,8 +42,22 @@ all; passing any of `--transport`/`--host`/`--port`/`--name` is an error).
 | `--port P` | `7070` | Bind/connect port (`--transport tcp`/`tls` only) |
 | `--name PATH` | *(empty)* | Named-pipe / Unix-socket path (`--transport pipe` only) |
 | `--cmd C` | *(empty)* | Command to spawn (`server`, `--transport term` only) |
-| `--verbose` | `false` | Print session lifecycle / RMI trace messages to stdout |
+| `--verbose LEVEL` | `none` | Log verbosity: `none` \| `fatal` \| `error` \| `warning` \| `info` \| `trace`. See [Log verbosity](#log-verbosity) below. |
 | `--debugger` | `false` | Wait for debugger attachment before starting |
+
+### Log verbosity
+
+`--verbose` selects a level (ascending verbosity). The server always opens
+`wish_logs/server.log`; what gets written depends on the level:
+
+| Level | Effect |
+|-------|--------|
+| `none` (default) | Nothing written. RMI trace strings are never even formatted. |
+| `fatal` / `error` / `warning` | Only client `logger.log()` messages at that severity or higher are written to the log file. Still no RMI trace lines. |
+| `info` | Adds RMI request/response trace lines (envelope metadata) and session lifecycle lines; all output is also mirrored to stdout. |
+| `trace` | Adds decoded call payloads (`args=`, `set` values, response bodies) to those trace lines. |
+
+`WISH_VERBOSE=<level>` sets the default (an explicit `--verbose` still wins).
 
 ### TLS flags (`--transport tls`)
 

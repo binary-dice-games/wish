@@ -1,0 +1,55 @@
+type: Window
+title: Selection - wish demo
+width: 900
+height: 800
+children:
+  sec_combo:
+    type: SeparatorText
+    label: Combo Box
+  cmb_fruit:
+    type: Combo
+    label: Fruit
+    items: 'Apple
+
+      Banana
+
+      Cherry
+
+      Date
+
+      Elder
+
+      Fig
+
+      Grape'
+    value: 0
+  cmb_size:
+    type: Combo
+    label: Size
+    items: 'Small
+
+      Medium
+
+      Large
+
+      Extra Large'
+    value: 1
+  sec_sel:
+    type: SeparatorText
+    label: Selectables
+  sel_a:
+    type: Selectable
+    label: Item Alpha
+    selected: false
+  sel_b:
+    type: Selectable
+    label: Item Beta
+    selected: true
+  sel_c:
+    type: Selectable
+    label: Item Gamma
+    selected: false
+  sel_d:
+    type: Selectable
+    label: Item Delta
+    selected: false

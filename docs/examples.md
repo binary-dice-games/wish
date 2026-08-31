@@ -139,7 +139,7 @@ A comprehensive showcase of every wish widget and layout type in a single dockab
 
 - **DockSpaceViewport root** — the top-level node is a `DockSpaceViewport` so the inner window can be undocked, resized, and rearranged by the user.
 - **Menu bar** — a `MenuBar` with File, View, and Options menus; menu-item `clicked` and `checked` events are forwarded to the status bar.
-- **TabBar with nine tabs** — each tab is a self-contained widget group:
+- **TabBar with twelve tabs** — each tab is a self-contained widget group:
 
 | Tab | Widgets shown |
 |-----|---------------|
@@ -148,10 +148,13 @@ A comprehensive showcase of every wish widget and layout type in a single dockab
 | Text & Numbers | `InputText` (with hint), `InputInt`, `InputFloat` |
 | Selection | `Combo`, `Selectable` |
 | Tree & Collapse | `TreeNode` (nested), `CollapsingHeader` |
-| Misc | `ProgressBar`, `HorizontalLayout`, `VerticalLayout` (nested rows), `Splitter`, runtime theme switching |
+| Misc | `ProgressBar`, `HorizontalLayout`, `VerticalLayout` (nested rows), `Spring`, `Splitter`, runtime theme switching |
 | Tables | Static `Table` with borders and row backgrounds; interactive `Table` with buttons in cells |
 | Plots | `Plot` containing `PlotLine`, `PlotScatter`, `PlotStairs`, `PlotStems`, `PlotShaded`, `PlotDigital`, `PlotBars`, `PlotBarsH`, `PlotHistogram`, `PlotHistogram2D`, `PlotHeatmap`, `PlotPieChart`, `PlotText`, `PlotInfLines` |
 | 3-D Plots | `Plot3D` containing `Plot3DLine`, `Plot3DScatter`, `Plot3DSurface`, `Plot3DTriangle`, `Plot3DQuad`, `Plot3DMesh`, `Plot3DText` |
+| Files | `Image`, `TextEditor`, `Combo`, font override via `SliderFloat` |
+| Forms | `Button`s that open the `FileDialog` and `MessageBox` forms |
+| Icons | `Table` of `Image` rows built at runtime from the session's `res/icons/` folder |
 
 - **Status bar** — a `Label` at the bottom of the window that displays the last event received from any widget.
 - **Runtime theme switching** — `set_style_preset` is called at startup and also wired to the theme buttons and View menu, showing how the server-side style can be changed while the session is live.
@@ -175,6 +178,28 @@ Command-line flags:
 | `--theme dark\|light\|classic` / `-t <theme>` | Set the initial ImGui theme (default: `dark`) |
 
 A 900 × 950 window opens titled "wish Widget Demo". Use the tab bar to browse widget groups. Every interaction updates the status label at the bottom of the window.
+
+### Editor example files (`examples/ui/`)
+
+The same per-tab UI hierarchies are also checked in as standalone descriptor files — one `Window` per demo tab, in both formats:
+
+```
+examples/ui/json/    basics.json  sliders.json  inputs.json  selection.json  tree.json
+                     misc.json    tables.json   plots.json   plot3d.json     files.json
+                     forms.json   icons.json
+examples/ui/yaml/    (the same twelve, as .yaml)
+```
+
+They aren't built or run on their own — they're reference material and inputs for the `editor` module, which re-parses and re-renders a file live as you edit it:
+
+```sh
+cmake -S . -B build -DWISH_MODULE_BDG_DEV_EDITOR=ON
+cmake --build build --target wish-standalone
+build/app/wish-standalone --run=editor -- examples/ui/json/tables.json
+build/app/wish-standalone --run=editor -- examples/ui/yaml/plots.yaml
+```
+
+The importer is chosen by extension. Plot/Plot3D series and the Files/Icons resource paths are left empty — the demo app fills those in at runtime — so those previews show structure rather than data. See [docs/ui-elements.md](ui-elements.md#8-the-editor-tool-previewing-a-ui-from-a-json-or-yaml-file) for the editor walkthrough.
 
 ### Architecture of the example
 

@@ -21,7 +21,7 @@
 // ── Shared flags (defined in main.cpp for wish-cli, or desktop/standalone_main.cpp
 // for the standalone wish-desktop binary) ────────────────────────────────────
 DECLARE_string(cmd);
-DECLARE_bool(verbose);
+DECLARE_string(verbose);
 DECLARE_bool(debugger);
 // Shared with wish client's --timeout: both express "per-request timeout to
 // the remote peer" (there, the wish server; here, the upstream server).

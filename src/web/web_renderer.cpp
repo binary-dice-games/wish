@@ -33,6 +33,7 @@
 #include <unistd.h>
 #endif
 
+#include <chrono>
 #include <cstring>
 #include <fstream>
 #include <iterator>
@@ -160,7 +161,12 @@ void web_renderer::setup() {
       [this](ws_connection_id id, std::span<const std::byte> message) {
         if (auto ev = draw_protocol::decode_input_message(message)) {
           input_queue_.wlock()->push_back(*ev);
-          activity_.store(true, std::memory_order_relaxed);
+          // A bare mouse-move over the canvas should not force a full
+          // re-render + encode_frame + broadcast every frame -- only count it
+          // as activity when it clears the same significance threshold
+          // sdl3_renderer applies. Every other input kind always does.
+          if (ev->kind != web_input_kind::mouse_move || mouse_move_significant(ev->x, ev->y))
+            activity_.store(true, std::memory_order_relaxed);
         } else if (auto resize = draw_protocol::decode_resize_message(message)) {
           *pending_resize_.wlock() = *resize;
           activity_.store(true, std::memory_order_relaxed);
@@ -215,6 +221,11 @@ void web_renderer::teardown() {
   connected_ids_.wlock()->clear();
   awaiting_cache_response_.wlock()->clear();
   cache_response_queue_.wlock()->clear();
+  *mouse_motion_filter_.wlock() = motion_filter{};
+  input_scratch_.clear();
+  input_scratch_.shrink_to_fit();
+  frame_scratch_.clear();
+  frame_scratch_.shrink_to_fit();
   render_target_id_ = 0;
   render_target_w_ = 0;
   render_target_h_ = 0;
@@ -235,6 +246,28 @@ void web_renderer::teardown() {
 
 bool web_renderer::poll_events() {
   return activity_.exchange(false, std::memory_order_relaxed);
+}
+
+bool web_renderer::mouse_move_significant(float x, float y) {
+  // Same thresholds as sdl3_renderer::mouse_motion_significant().
+  static constexpr float kMotionPixelThreshold = 4.0f;
+  static constexpr auto kMotionTimeThreshold = std::chrono::milliseconds{100};
+
+  auto lock = mouse_motion_filter_.wlock();
+  auto now = std::chrono::steady_clock::now();
+  float dx = x - lock->last_x;
+  float dy = y - lock->last_y;
+  bool far_enough = dx * dx + dy * dy >= kMotionPixelThreshold * kMotionPixelThreshold;
+  bool long_enough = now - lock->last_time >= kMotionTimeThreshold;
+
+  if (lock->has_baseline && !far_enough && !long_enough)
+    return false;
+
+  lock->last_x = x;
+  lock->last_y = y;
+  lock->last_time = now;
+  lock->has_baseline = true;
+  return true;
 }
 
 void web_renderer::begin_frame() {
@@ -258,13 +291,12 @@ void web_renderer::begin_frame() {
     io.DisplayFramebufferScale = ImVec2(resize->dpr, resize->dpr);
   }
 
-  std::deque<web_input_event> events;
+  input_scratch_.clear();
   {
     auto lock = input_queue_.wlock();
-    events = std::move(*lock);
-    lock->clear();
+    input_scratch_.swap(*lock);
   }
-  for (const web_input_event& ev : events) {
+  for (const web_input_event& ev : input_scratch_) {
     switch (ev.kind) {
       case web_input_kind::mouse_move:
         io.AddMousePosEvent(ev.x, ev.y);
@@ -405,7 +437,7 @@ void web_renderer::end_frame() {
   // response that arrived in the same tick as a fresh connection is handled
   // in a deterministic order relative to it.
   std::deque<std::pair<ws_connection_id, web_cache_response>> cache_responses;
-  {
+  if (!cache_response_queue_.rlock()->empty()) {
     auto lock = cache_response_queue_.wlock();
     cache_responses = std::move(*lock);
     lock->clear();
@@ -440,7 +472,7 @@ void web_renderer::end_frame() {
   // have this exact (path, crc32) persisted from an earlier session, saving
   // the pixel payload entirely.
   std::vector<ws_connection_id> pending;
-  {
+  if (!pending_sync_.rlock()->empty()) {
     auto lock = pending_sync_.wlock();
     pending = std::move(*lock);
     lock->clear();
@@ -482,7 +514,8 @@ void web_renderer::end_frame() {
     }
   }
 
-  server_->broadcast(draw_protocol::encode_frame(*draw_data));
+  draw_protocol::encode_frame(*draw_data, /*target_id=*/0, frame_scratch_);
+  server_->broadcast(frame_scratch_);
 }
 
 bool web_renderer::should_quit() const {
@@ -507,7 +540,7 @@ void web_renderer::render_node(const ui_element& node, const context& s) {
   if (!node.visible())
     return;
 
-  auto id = node.get_as<bison::key_t>(bison::key_t{"__wish_id"}, bison::key_t{});
+  auto id = node.wish_id();
   if (id.id == 0)
     return; // node was never assigned an id (e.g. a manually built test tree)
 
@@ -535,7 +568,7 @@ void web_renderer::capture_hit_test_for_last_item(const ui_element& node) {
   if (!node.visible())
     return;
 
-  auto id = node.get_as<bison::key_t>(bison::key_t{"__wish_id"}, bison::key_t{});
+  auto id = node.wish_id();
   if (id.id == 0)
     return; // node was never assigned an id (e.g. a manually built test tree)
 

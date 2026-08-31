@@ -86,6 +86,17 @@ using render_fn_map = std::unordered_map<bison::hash_t, render_fn>;
 ///        `drop_type` fields would never be checked.
 void handle_drag_drop(const ui_element& node, const context& s);
 
+/// @brief If @p node's `"tooltip"` field is a non-empty string and the item
+///        the node's dispatch call drew last is hovered, show it via
+///        `ImGui::SetTooltip()`. Like `handle_drag_drop()`, this attaches to
+///        "whatever ImGui item was drawn last", so it is only meaningful on a
+///        leaf element that draws exactly one top-level item (`Button`,
+///        `Label`, `Image`, ...). `"tooltip"` defaults to empty on every
+///        element (element.cpp), so this is a no-op for the overwhelming
+///        majority of calls. Called by `imgui_renderer::render_node()` for
+///        every element after its own dispatch.
+void handle_tooltip(const ui_element& node);
+
 /// @brief Draws a gold highlight box around [@p rect_min, @p rect_max] if
 ///        @p node's `"__wish_highlight__"` field is set, into the
 ///        *current* window's own draw list (`ImGui::GetWindowDrawList()`)

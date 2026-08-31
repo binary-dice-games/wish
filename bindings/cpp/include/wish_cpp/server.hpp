@@ -133,9 +133,22 @@ class server {
     return msg ? msg : "";
   }
 
-  /** @brief Enable/disable verbose trace logging of RMI dispatch to stdout. Must be called before `start()`. */
+  /**
+   * @brief Deprecated: prefer `set_log_level()`. `true` maps to `"trace"`,
+   *        `false` to `"none"`. Must be called before `start()`.
+   */
   void set_verbose(bool verbose = true) {
     detail::throw_if_wish_server_error(wish_server_set_verbose(h_, verbose ? 1 : 0), "server::set_verbose", h_);
+  }
+
+  /**
+   * @brief Set log verbosity: `"none"` | `"fatal"` | `"error"` | `"warning"` |
+   *        `"info"` | `"trace"` (default `"none"`). RMI trace lines appear at
+   *        `"info"`+, decoded payloads at `"trace"`. Must be called before
+   *        `start()`.
+   */
+  void set_log_level(const char* level) {
+    detail::throw_if_wish_server_error(wish_server_set_log_level(h_, level), "server::set_log_level", h_);
   }
 
   /**

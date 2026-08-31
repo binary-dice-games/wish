@@ -146,6 +146,9 @@ def _setup_signatures(lib: ctypes.CDLL) -> None:
     lib.wish_server_set_verbose.restype = Error
     lib.wish_server_set_verbose.argtypes = [ServerHandle, ctypes.c_int]
 
+    lib.wish_server_set_log_level.restype = Error
+    lib.wish_server_set_log_level.argtypes = [ServerHandle, ctypes.c_char_p]
+
     lib.wish_server_destroy.restype = None
     lib.wish_server_destroy.argtypes = [ServerHandle]
 
