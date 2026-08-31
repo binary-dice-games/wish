@@ -507,6 +507,422 @@ server's active renderer doesn't support it. See
 
 ---
 
+## Rust (`bindings/rust/`)
+
+Hand-maintained `extern "C"` wrapper (`bindings/rust/src/sys.rs`) over
+`wish_client_c.h` plus the subset of `bison_c.h`/`rmi_c.h` the client side
+needs, wrapped in a safe layer (`wish::client`, `wish::value`,
+`wish::proxy`) exposing typed getters/setters, `Result<T, WishError>` /
+`Result<T, RmiError>` / `Result<T, BisonError>` instead of raw return
+codes, and RAII wrappers (`Client`, `Proxy`, `Future`, `Value`) that release
+their handle on `Drop`. Unlike the Python and C# bindings (`dlopen`/
+P-Invoke at run time), Rust links `wish_client` at **build** time via
+`build.rs`, the same model `bindings/cpp/` uses — no bison/wish source
+needs to be compiled in, just `cargo build` against the prebuilt
+`wish_client` shared library.
+
+`bindings/rust/` is a two-crate workspace: `wish` (this section) is the
+client binding; `wish-server` (see [Running a server from Rust](#running-a-server-from-rust)
+below) is the separate server binding over `wish_server_c.h`.
+
+There is no header-only equivalent of `bdg::bison::dynamic` reachable from
+this crate (that class is compiled/linked C++ library code), so — like
+`wish_cpp::value` — `wish::Value` is a thin, self-contained RAII wrapper
+built directly on the `bison_*` C ABI functions `libwish_client` re-exports,
+covering scalar/nested/indexed field access and JSON/YAML import/export;
+there is no class-registry or method-registration support, since the wish
+client never registers classes, only builds/reads field payloads.
+
+`Proxy::on_event`'s closure must be `'static` (Rust's FFI-callback
+requirement), so it cannot borrow a `&Client`/`&Proxy` from the enclosing
+`Client::run` closure directly. Use `Client::quit_handle()` for a cheap,
+`Copy`/`Send`/`Sync` token whose `.quit()` calls back into the client from
+inside such a closure, and `Arc`/`Arc<Mutex<_>>` to share proxies/state
+across multiple handlers — see `examples/calculator.rs` for the full
+pattern.
+
+**Requirements:** A `wish_client_dll` build (any platform) and a Rust
+toolchain (1.74+; edition 2021). Build `wish_client_dll` first:
+
+```bash
+cmake -B build -DWISH_BUILD_SHARED=ON
+cmake --build build --target wish_client_dll
+```
+
+`build.rs` follows the same resolution order every other binding
+documents: the `WISH_LIB` environment variable (a full path to the shared
+library) first, then a sibling `build/` directory next to
+`bindings/rust/` (trying `Release`/`Debug` subdirectories on Windows), then
+the OS's normal library search path. On Linux, an rpath is also embedded
+for a resolved `WISH_LIB`/`build/` directory so built binaries find the
+`.so` at run time without `LD_LIBRARY_PATH`.
+
+```bash
+export WISH_LIB=$(pwd)/build/libwish_client.so   # if not auto-detected
+cd bindings/rust
+cargo build
+```
+
+### Running the calculator example
+
+```bash
+# --transport=tcp, then in another terminal:
+build/app/wish server --transport=tcp --port=7070 --renderer=sdl3
+cargo run --example calculator -- --transport=tcp --host=127.0.0.1 --port=7070
+
+# --transport=term (the server's default): the server spawns its own
+# terminal and expects the client to run *inside* it, wrapping that
+# process's own inherited stdio (Client::term()):
+build/app/wish server --renderer=sdl3
+# -- inside the terminal the server just spawned --
+cargo run --example calculator -- --transport=term
+```
+
+`--renderer=web` also works and needs no display (open the printed URL in
+a browser, or skip that step entirely for a headless smoke test) — useful
+for verifying the binding in CI or a sandboxed environment without a
+window system.
+
+Run the tests with:
+
+```bash
+cargo test
+```
+
+Quick-start snippet:
+
+```rust
+use wish::{Client, Value};
+
+let client = Client::tcp("127.0.0.1", 7070);
+client.run(|c| {
+    c.set_style_preset("dark").unwrap();
+    c.register_template("ui", r#"{"type": "Window", "title": "Hi"}"#).unwrap();
+    let root = c.instantiate_template("ui", "ui").unwrap();
+    println!("{}", root.get(-1).unwrap().get_string("title").unwrap());   // "Hi"
+    c.wait();   // blocks until an event handler calls c.quit_handle().quit()
+}).unwrap();
+```
+
+### File transfer
+
+`Client::upload_file(name, &[u8])` / `download_file(name) -> Vec<u8>` move a
+whole file in one call. `upload_file_from_path`/`download_file_to_path`
+stream a local file's content in chunks instead of buffering it in memory
+(mirroring the C ABI's own streaming functions), and
+`upload_package(dest_path, local_zip_path)` uploads a local zip archive and
+has the server unpack it into `dest_path` inside the sandbox. See
+[DESIGN.md](../DESIGN.md#bdgwishfile_service) for the chunked-transfer
+protocol these build on.
+
+### TLS
+
+`Client::tls(host, port)` is the TLS counterpart of `Client::tcp()` --
+trust/identity material (`ca_file`/`ca_pem`, `insecure_skip_verify`,
+`cert_file`/`cert_pem`, `key_file`/`key_pem`, `key_password`,
+`server_name`) is supplied via `run_with_params()`'s `connect_params`:
+
+```rust
+let client = Client::tls("127.0.0.1", 8443);
+let mut params = Value::new();
+params.set_string("ca_pem", ca_cert_pem).unwrap();
+client.run_with_params(|c| { /* ... */ }, Some(&params)).unwrap();
+```
+
+See [cli.md](cli.md#tls-flags---transport-tls) for the matching
+`--transport=tls` CLI flags and bison's
+[TLS-Secured Transport](https://github.com/binary-dice-games/bison/blob/main/docs/tls.md)
+doc for the full parameter reference.
+
+Proxies and futures wrap the same `rmi_proxy_handle`/`rmi_future_handle`
+primitives bison's own Rust binding does — see
+[extern/bison/docs/bindings.md](../extern/bison/docs/bindings.md#rust-bindingsrust)
+for more on that layer's design (there is no `Client::standalone()` here,
+though — the wish client ABI has no in-process/standalone mode).
+
+### Running a server from Rust
+
+The `wish-server` crate (`bindings/rust/wish-server/`, over `wish_server_dll`
+/ `wish_server_c.h`) hosts a real wish session from Rust — the same protocol
+implementation (`bdg::wish::server`) the `wish server` CLI uses, so template
+registration/instantiation gives each widget its own independently
+addressable proxy and events work, unlike a server built from the generic
+bison RMI ABI alone.
+
+It is a **separate crate** from `wish` (the client binding), not a feature of
+it: `libwish_client` and `libwish_server` both export the `bison_*`/`rmi_*` C
+ABI, so a single binary must link exactly one of them (the same reason
+`bindings/cpp/` has two targets and the Python binding has two `ctypes`
+modules). `wish-server` therefore has its own hand-maintained `sys` FFI
+layer and a small `Params` builder (the server-side stand-in for
+`wish::Value`, built against `libwish_server`'s own embedded `bison_*`
+functions), instead of sharing the client crate's.
+
+`build.rs` follows the same resolution order as the client crate, only the
+env override differs — `WISH_SERVER_LIB` (a full path to
+`libwish_server.so`/`.dylib`/`wish_server.dll`), then a sibling `build/`
+directory, then the OS library search path. `wish_server` is gated behind a
+non-default CMake option, so build it explicitly:
+
+```bash
+cmake -B build -DWISH_BUILD_SERVER_SHARED=ON
+cmake --build build --target wish_server_dll
+```
+
+```rust
+use wish_server::{Params, Server};
+
+let mut server = Server::tcp("127.0.0.1", 7070);
+server.start("sdl3", Some(&Params::new().string("title", "My App").int("width", 1280))).unwrap();
+while !server.should_quit() {
+    std::thread::sleep(std::time::Duration::from_millis(50));
+}
+server.stop().unwrap();
+```
+
+`renderer` is `"sdl3"` (a real window), `"web"` (pass `web_bind`/`web_port`;
+open the printed URL in a browser), or `"console"` (a lightweight text dump
+of the widget tree to stdout — no display needed, meant for tests/CI).
+`Server::tls(host, port)` and `Server::term(cmd)` are the TLS and terminal
+(spawns a child process on a new pseudo-terminal) counterparts of
+`Server::tcp()`/`Server::pipe()`; TLS material (`cert_file`/`cert_pem`,
+`key_file`/`key_pem`, `key_password`, and optionally `client_auth`/`ca_file`/
+`ca_pem` for mutual TLS) is passed through `start()`'s `params`, forwarded
+unchanged as transport listen params.
+
+`bindings/rust/wish-server/examples/basic_server.rs` is a runnable CLI
+wrapper matching the `wish server` app's own flag names; any ABI-based
+client (any language) can connect to it exactly as it would to the compiled
+`wish server` binary:
+
+```bash
+cd bindings/rust
+cargo run -p wish-server --example basic_server -- --transport=tcp --port=7070 --renderer=console
+# in another terminal:
+cargo run --example calculator -- --transport=tcp --host=127.0.0.1 --port=7070
+
+cargo test -p wish-server
+```
+
+---
+
+## Go (`bindings/go/`)
+
+The module holds two packages: `wish` (this section) is the client binding;
+`wishserver` (see [Running a server from Go](#running-a-server-from-go)
+below) is the separate server binding over `wish_server_c.h`.
+
+A `cgo`-based wrapper over `wish_client_c.h` plus the subset of
+`bison_c.h`/`rmi_c.h` the client side needs, split across
+`wish/native.go` (the cgo preamble, plus the C-callable trampolines that
+dispatch session/event callbacks into Go closures), `wish/value.go`
+(`bison_c.h`), `wish/proxy.go` (`rmi_c.h`), and `wish/client.go`
+(`wish_client_c.h`) — each exposing typed getters/setters, `error` return
+values (a `*WishError`/`*RmiError`/`*BisonError` carrying the raw C error
+code), and RAII-ish wrappers (`Client`, `Proxy`, `Future`, `Value`) whose
+`Close()`/`Destroy()` release the underlying handle (backstopped by a
+`runtime.SetFinalizer` safety net, whose timing is not guaranteed, so
+`Close`/`Destroy` via `defer` is the primary pattern). Like Rust, Go links
+`wish_client` at **build** time via `cgo`, rather than `dlopen`/P-Invoke-ing
+it at run time the way the Python and C# bindings do — `cgo` is also the
+only practical way for this binding to hand C a function pointer that
+calls back into Go (`wish_session_fn` and `rmi_proxy_event_fn` both need
+this), since Go's `//export` mechanism requires it.
+
+`wish_client_run`/`wish_client_run_with_params`/`rmi_proxy_on_event`'s
+`void*` context parameter is a `runtime/cgo.Handle` under the hood; since
+cgo's pointer-passing rules (and `go vet`'s `unsafeptr` check) disallow
+converting that handle to `unsafe.Pointer` directly on the Go side,
+`wish/shim.c` — an ordinary C file cgo compiles alongside the Go sources —
+provides tiny shims that accept the handle as a `uintptr_t` and perform the
+cast to `void*` entirely in C (mirroring
+`extern/bison/bindings/go/bison/shim.c`'s identical rationale).
+
+There is no ABI-reachable equivalent of `bdg::bison::dynamic` for this
+package to bind against directly, so — like `wish_cpp::value` — `Value` is
+a thin, self-contained wrapper built directly on the `bison_*` C ABI
+functions `libwish_client` re-exports, covering scalar/nested/indexed field
+access and JSON/YAML import/export; there is no class-registry or
+method-registration support, since the wish client never registers
+classes, only builds/reads field payloads.
+
+`Proxy.OnEvent`'s handler may run on a different goroutine than the one
+that registered it (the RMI worker thread delivering the push event, not
+necessarily the goroutine that called `OnEvent`) — share state across
+handlers with a mutex or channel, as `examples/calculator_example/main.go`
+does. A panic inside a session/event callback is recovered and swallowed
+(or, for the session callback, re-raised by `Run`/`RunWithParams` once the
+underlying C call returns) at the C ABI boundary rather than allowed to
+unwind into C++.
+
+**Requirements:** A `wish_client_dll` build (any platform), Go 1.21+,
+`CGO_ENABLED=1` (the default), and a C compiler on `PATH` for cgo to
+invoke. Build `wish_client_dll` first:
+
+```bash
+cmake -B build -DWISH_BUILD_SHARED=ON
+cmake --build build --target wish_client_dll
+```
+
+`wish/native.go`'s `#cgo` directives resolve `wish_client_c.h` (this
+checkout's own `include/`), `bison_c.h`/`rmi_c.h` (`extern/bison/include/`
+— wish's C++ build picks those up transitively from the `bison` CMake
+target's public include dirs, a shortcut not available to a cgo preamble),
+and `libwish_client` (`build/`) against this checkout's layout by default.
+Override with `CGO_CFLAGS`/`CGO_LDFLAGS` to build against a `wish_client`
+installed elsewhere (the Go toolchain merges env-supplied flags with the
+`#cgo` directives automatically):
+
+```bash
+cd bindings/go
+go build ./...
+```
+
+### Running the calculator example
+
+```bash
+# --transport=tcp, then in another terminal:
+build/app/wish server --transport=tcp --port=7070 --renderer=sdl3
+go run ./examples/calculator_example -transport=tcp -host=127.0.0.1 -port=7070
+
+# --transport=term (the server's default): the server spawns its own
+# terminal and expects the client to run *inside* it, wrapping that
+# process's own inherited stdio (wish.NewTermClient()):
+build/app/wish server --renderer=sdl3
+# -- inside the terminal the server just spawned --
+go run ./examples/calculator_example -transport=term
+```
+
+`--renderer=web` also works and needs no display -- useful for verifying
+the binding in CI or a sandboxed environment without a window system.
+
+Run the tests with:
+
+```bash
+go test ./...
+```
+
+Quick-start snippet:
+
+```go
+client, _ := wish.NewTCPClient("127.0.0.1", 7070)
+defer client.Destroy()
+client.Run(func(c *wish.Client) {
+    c.SetStylePreset("dark")
+    c.RegisterTemplate("ui", `{"type": "Window", "title": "Hi"}`)
+    root, _ := c.InstantiateTemplate("ui", "ui")
+    defer root.Close()
+    snapshot, _ := root.Get(nil, -1)
+    defer snapshot.Close()
+    title, _ := snapshot.GetString("title")
+    fmt.Println(title)   // "Hi"
+    c.Wait()              // blocks until an event handler calls c.Quit()
+})
+```
+
+### File transfer
+
+`Client.UploadFile(name, []byte)` / `DownloadFile(name) ([]byte, error)`
+move a whole file in one call. `UploadFileFromPath`/`DownloadFileToPath`
+stream a local file's content in chunks instead of buffering it in memory
+(mirroring the C ABI's own streaming functions), and
+`UploadPackage(destPath, localZipPath)` uploads a local zip archive and has
+the server unpack it into `destPath` inside the sandbox. See
+[DESIGN.md](../DESIGN.md#bdgwishfile_service) for the chunked-transfer
+protocol these build on.
+
+### TLS
+
+`NewTLSClient(host, port)` is the TLS counterpart of `NewTCPClient()` --
+trust/identity material (`ca_file`/`ca_pem`, `insecure_skip_verify`,
+`cert_file`/`cert_pem`, `key_file`/`key_pem`, `key_password`,
+`server_name`) is supplied via `RunWithParams`'s `connectParams`:
+
+```go
+client, _ := wish.NewTLSClient("127.0.0.1", 8443)
+params, _ := wish.NewValue()
+defer params.Close()
+params.SetString("ca_pem", caCertPEM)
+client.RunWithParams(func(c *wish.Client) { /* ... */ }, params)
+```
+
+See [cli.md](cli.md#tls-flags---transport-tls) for the matching
+`--transport=tls` CLI flags and bison's
+[TLS-Secured Transport](https://github.com/binary-dice-games/bison/blob/main/docs/tls.md)
+doc for the full parameter reference.
+
+Proxies and futures wrap the same `rmi_proxy_handle`/`rmi_future_handle`
+primitives bison's own Go binding does — see
+[extern/bison/docs/bindings.md](../extern/bison/docs/bindings.md#go-bindingsgo)
+for more on that layer's design (there is no `NewStandaloneClient()` here,
+though — the wish client ABI has no in-process/standalone mode).
+
+### Running a server from Go
+
+The `wishserver` package (`bindings/go/wishserver/`, over `wish_server_dll`
+/ `wish_server_c.h`) hosts a real wish session from Go — the same protocol
+implementation (`bdg::wish::server`) the `wish server` CLI uses, so template
+registration/instantiation gives each widget its own independently
+addressable proxy and events work, unlike a server built from the generic
+bison RMI ABI alone.
+
+It is a **separate package** from `wish` (the client binding): `libwish_client`
+and `libwish_server` both export the `bison_*`/`rmi_*` C ABI, so a single
+binary must link exactly one of them (the same reason `bindings/cpp/` has
+two targets and `bindings/rust/` has two crates). `wishserver` therefore has
+its own `#cgo` directives (`-lwish_server`) and a small `Params` builder
+(the server-side stand-in for `wish.Value`, built against `libwish_server`'s
+own embedded `bison_*` functions). `wish_server_c.h` has no callbacks, so
+this package needs none of the client binding's `cgo.Handle` trampolines or
+C shims.
+
+`wish_server` is gated behind a non-default CMake option, so build it
+explicitly:
+
+```bash
+cmake -B build -DWISH_BUILD_SERVER_SHARED=ON
+cmake --build build --target wish_server_dll
+```
+
+```go
+server, _ := wishserver.NewTCPServer("127.0.0.1", 7070)
+defer server.Destroy()
+
+params := wishserver.NewParams().SetString("title", "My App").SetInt("width", 1280)
+defer params.Close()
+server.Start("sdl3", params)
+for !server.ShouldQuit() {
+    time.Sleep(50 * time.Millisecond)
+}
+server.Stop()
+```
+
+`renderer` is `"sdl3"` (a real window), `"web"` (pass `web_bind`/`web_port`;
+open the printed URL in a browser), or `"console"` (a lightweight text dump
+of the widget tree to stdout — no display needed, meant for tests/CI).
+`NewTLSServer(host, port)` and `NewTermServer(cmd)` are the TLS and terminal
+(spawns a child process on a new pseudo-terminal) counterparts of
+`NewTCPServer()`/`NewPipeServer()`; TLS material (`cert_file`/`cert_pem`,
+`key_file`/`key_pem`, `key_password`, and optionally `client_auth`/`ca_file`/
+`ca_pem` for mutual TLS) is passed through `Start()`'s `params`, forwarded
+unchanged as transport listen params.
+
+`bindings/go/examples/basic_server_example/main.go` is a runnable CLI
+wrapper matching the `wish server` app's own flag names; any ABI-based
+client (any language) can connect to it exactly as it would to the compiled
+`wish server` binary:
+
+```bash
+cd bindings/go
+go run ./examples/basic_server_example -transport=tcp -port=7070 -renderer=console
+# in another terminal:
+go run ./examples/calculator_example -transport=tcp -host=127.0.0.1 -port=7070
+
+go test ./wishserver/
+```
+
+---
+
 ## Android (Java / Kotlin) (`bindings/android/`)
 
 Like Android apps generally, this binding ships its own native libraries
