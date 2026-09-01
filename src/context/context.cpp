@@ -5,6 +5,7 @@
 
 #include "src/bison/bison_common.hpp"
 #include "src/bison/bison_object.hpp"
+#include "src/rmi/shared/constants.hpp"
 
 #include <algorithm>
 #include <iomanip>
@@ -72,6 +73,11 @@ void init_session_object(const bison::dynamic_ptr& obj, bison::rmi::context& ctx
   } else if (auto* oi = dynamic_cast<object_inspector*>(obj.get())) {
     oi->init(ctx, sync_ctx);
   }
+}
+
+bool is_read_only_op(bison::key_t op) {
+  namespace k = bison::rmi::shared::constants;
+  return op == k::OP_GET || op == k::OP_DESCRIBE || op == k::OP_DICTIONARY || op == k::OP_HELP;
 }
 
 } // namespace detail

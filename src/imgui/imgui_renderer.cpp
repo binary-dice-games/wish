@@ -335,14 +335,14 @@ bool imgui_renderer::wants_continuous_redraw() const {
 }
 
 void handle_drag_drop(const ui_element& node, const context& s) {
-  auto drag_type = node.drag_type();
+  const std::string& drag_type = node.drag_type_ref();
   if (!drag_type.empty() && ImGui::BeginDragDropSource()) {
-    auto drag_payload = node.drag_payload();
+    const std::string& drag_payload = node.drag_payload_ref();
     ImGui::SetDragDropPayload(drag_type.c_str(), drag_payload.data(), drag_payload.size());
     ImGui::TextUnformatted(drag_payload.c_str());
     ImGui::EndDragDropSource();
   }
-  auto drop_type = node.drop_type();
+  const std::string& drop_type = node.drop_type_ref();
   if (!drop_type.empty() && ImGui::BeginDragDropTarget()) {
     if (const ImGuiPayload* accepted = ImGui::AcceptDragDropPayload(drop_type.c_str())) {
       dynamic payload;
@@ -356,7 +356,7 @@ void handle_drag_drop(const ui_element& node, const context& s) {
 }
 
 void handle_tooltip(const ui_element& node) {
-  auto tooltip = node.tooltip();
+  const std::string& tooltip = node.tooltip_ref();
   if (tooltip.empty())
     return;
   // Classic `if (IsItemHovered()) SetTooltip(...)` idiom (see imgui.h's
@@ -395,7 +395,7 @@ static std::ofstream* render_debug_log() {
 }
 
 static std::string render_debug_node_label(const ui_element& node) {
-  std::string path = node.path();
+  const std::string& path = node.path_ref();
   if (!path.empty())
     return path;
   auto cls = node.class_key();
@@ -405,12 +405,15 @@ static std::string render_debug_node_label(const ui_element& node) {
 }
 
 ImFont* resolve_element_font(imgui_renderer& r, const ui_element& node, const context& s) {
-  auto font_path = node.font_path();
-  auto font_size = node.font_size();
-  if (font_path.empty() && font_size > 0.0f)
-    font_path = "res/fonts/default.ttf";
-  if (font_path.empty() || font_size <= 0.0f)
+  float font_size = node.font_size();
+  // No per-element font override at all -- the overwhelmingly common case;
+  // matches the original "font_path.empty() || font_size <= 0" guard, since a
+  // font is only ever resolved when font_size > 0.
+  if (font_size <= 0.0f)
     return nullptr;
+  static const std::string kDefaultFontPath{"res/fonts/default.ttf"};
+  const std::string& font_path_field = node.font_path_ref();
+  const std::string& font_path = font_path_field.empty() ? kDefaultFontPath : font_path_field;
   static const std::vector<std::string> kFontExtensions{"ttf", "otf"};
   auto full = file_service::resolve_or_fetch(
       font_path, s.resource_dir, s.allow_absolute_paths, s.allow_url_fetch, kFontExtensions);
@@ -440,7 +443,14 @@ void imgui_renderer::render_node(const ui_element& node, const context& s) {
   // dot-path where available — makes persisted per-widget ImGui state
   // (TreeNode/CollapsingHeader open state, Table column widths, etc.)
   // survive a restart the same way render_window's title id does.
-  ImGui::PushID(stable_id(node).c_str());
+  // Fast path: a node with a "__path__" (the common case for template/form-
+  // built trees) needs no allocation -- stable_id() returns that same string
+  // verbatim. Only the synthesized-id fallbacks (wish_id number / node
+  // address) still build a temporary.
+  if (const std::string& node_path = node.path_ref(); !node_path.empty())
+    ImGui::PushID(node_path.c_str());
+  else
+    ImGui::PushID(stable_id(node).c_str());
 
   auto cls = node.class_key();
 
@@ -495,9 +505,7 @@ void imgui_renderer::render_node(const ui_element& node, const context& s) {
   // render_selectable()'s children-overlay support) -- a plain childless
   // Selectable stays a leaf and must NOT be wrapped, for the same
   // ID-forwarding reason documented above.
-  bool selectable_has_children = false;
-  if (cls == "Selectable"_key)
-    node.for_each_child_ordered([&](key_t, ui_element&) { selectable_has_children = true; });
+  bool selectable_has_children = cls == "Selectable"_key && node.has_children();
 
   // TabItem is deliberately NOT wrapped: a BeginGroup()/EndGroup() around a
   // BeginTabItem()/EndTabItem() pair is not a sanctioned ImGui pattern, and
@@ -700,8 +708,12 @@ void imgui_renderer::render_session(const ui_element& root, const context& s) {
     s.style_service->set_renderer_cache(compiled);
   }
 
-  // RAII guard: swap in the cached style, render, restore.
-  const ImGuiStyle& compiled = *std::static_pointer_cast<ImGuiStyle>(s.style_service->renderer_cache());
+  // RAII guard: swap in the cached style, render, restore. static_cast off the
+  // shared_ptr<void> rather than static_pointer_cast (which would build a
+  // temporary shared_ptr<ImGuiStyle>, i.e. an atomic refcount inc/dec) just to
+  // read it -- the style_service keeps the cache alive for the whole call.
+  const ImGuiStyle& compiled =
+      *static_cast<const ImGuiStyle*>(s.style_service->renderer_cache().get());
   ImGuiStyle saved = ImGui::GetStyle();
   ImGui::GetStyle() = compiled;
   try {

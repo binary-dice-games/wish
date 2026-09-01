@@ -41,7 +41,7 @@ using namespace bdg::bison;
 // dot-path (e.g. "__nano_0") reads the same as the source that produced
 // it, and is exactly as stable across runs as a hash of it would be.
 std::string stable_id(const ui_element& node) {
-  std::string path = node.path();
+  const std::string& path = node.path_ref();
   if (!path.empty())
     return path;
   key_t wish_id = node.wish_id();
@@ -98,6 +98,24 @@ static std::string with_id(const std::string& label, const ui_element& node) {
   return label + "###" + stable_id(node);
 }
 
+// Builds "<prefix><stable-id-of-node>" into a reused per-thread buffer and
+// returns a C-string valid until the next call on this thread. The layout
+// render functions build a BeginChild id per (hinted) child per frame; this
+// avoids the std::string operator+ allocations that cost. The returned
+// pointer must be consumed before the next call -- every call site passes it
+// straight into an ImGui::BeginChild()/PushID() that copies it immediately,
+// so a later render_node() recursion reusing the buffer is harmless.
+static const char* prefixed_stable_id(const char* prefix, const ui_element& node) {
+  static thread_local std::string buf;
+  buf.assign(prefix);
+  const std::string& path = node.path_ref();
+  if (!path.empty())
+    buf += path;
+  else
+    buf += stable_id(node);
+  return buf.c_str();
+}
+
 // Stamps the current ImGui window's rect onto @p node as four hidden fields
 // (same idiom as __was_docked__/__float_width__/__float_height__ below),
 // read back by imgui_renderer::render_node() as the authoritative rect for
@@ -141,11 +159,10 @@ void render_window(imgui_renderer& r, const ui_element& node0, const context& s)
   bool closable = node.closable(false);
   bool modal = node.modal(false);
 
-  // Automatically reserve menu bar space when a direct MenuBar child exists.
-  node.for_each_child_ordered([&](key_t, ui_element& child) {
-    if (child.class_key() == "MenuBar"_key)
-      fl |= ImGuiWindowFlags_MenuBar;
-  });
+  // Automatically reserve menu bar space when a direct MenuBar child exists
+  // (cached on the node -- see ui_element::has_menu_bar_child()).
+  if (node.has_menu_bar_child())
+    fl |= ImGuiWindowFlags_MenuBar;
 
   // FirstUseEver (not Once): Once re-applies the descriptor's pos/size on
   // every process run regardless of what's saved in imgui.ini -- since
@@ -387,8 +404,9 @@ static std::string get_theme_color(const ui_element& node, const context& s, key
 
 void render_label(imgui_renderer&, const ui_element& node0, const context& s) {
   const auto& node = static_cast<const ui_label&>(node0);
-  auto text = node.text("");
-  auto color = get_theme_color(node, s, "text_color"_key, "text_color_light"_key, "text_color_dark"_key);
+  const std::string& text = node.text_ref();
+  bool is_light = !s.style_service || s.style_service->is_light_theme();
+  const std::string& color = node.text_color_ref(is_light);
   bool wrap = node.wrap(false);
 
   if (!color.empty())
@@ -408,7 +426,7 @@ void render_label(imgui_renderer&, const ui_element& node0, const context& s) {
 
 void render_button(imgui_renderer&, const ui_element& node0, const context& s) {
   const auto& node = static_cast<const ui_button&>(node0);
-  auto label = node.label("");
+  const std::string& label = node.label_ref();
   int32_t w = node.width_i(0);
   int32_t h = node.height_i(0);
   if (ImGui::Button(label.c_str(), ImVec2(float(w), float(h))))
@@ -688,9 +706,8 @@ void render_vertical_layout(imgui_renderer& r, const ui_element& node, const con
     // not WindowPadding (a margin around the container's own edge, which
     // was never part of what was broken and would shift every child's
     // position away from this node's own reported edges).
-    auto child_id = "##vl_" + stable_id(node);
     ImGui::BeginChild(
-        child_id.c_str(), ImVec2(self_size.x, self_size.y), ImGuiChildFlags_None,
+        prefixed_stable_id("##vl_", node), ImVec2(self_size.x, self_size.y), ImGuiChildFlags_None,
         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     report_self_rect(node);
   } else if (group_wrap_self) {
@@ -743,9 +760,8 @@ void render_vertical_layout(imgui_renderer& r, const ui_element& node, const con
     // is wherever ImGui's own natural flow currently sits -- a BeginChild is
     // itself a normal item, so it slots into the vertical stack exactly
     // like an unwrapped child does.
-    auto child_id = "##vl_row_" + stable_id(child);
     ImGui::BeginChild(
-        child_id.c_str(), ImVec2(size.x, size.y), ImGuiChildFlags_None,
+        prefixed_stable_id("##vl_row_", child), ImVec2(size.x, size.y), ImGuiChildFlags_None,
         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     r.render_node(child, s);
     ImGui::EndChild();
@@ -832,9 +848,8 @@ void render_horizontal_layout(imgui_renderer& r, const ui_element& node0, const 
     // this replaces the old BeginGroup()/trailing-Dummy() rect-capture
     // approximation (and why it deliberately does not use
     // AlwaysUseWindowPadding).
-    auto child_id = "##hl_" + stable_id(node);
     ImGui::BeginChild(
-        child_id.c_str(), ImVec2(self_size.x, self_size.y), ImGuiChildFlags_None,
+        prefixed_stable_id("##hl_", node), ImVec2(self_size.x, self_size.y), ImGuiChildFlags_None,
         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     report_self_rect(node);
   } else if (group_wrap_self) {
@@ -893,9 +908,8 @@ void render_horizontal_layout(imgui_renderer& r, const ui_element& node0, const 
       // exact (from the measure pass), not estimated -- this is what
       // structurally prevents the historical nano toolbar regression
       // (fixed-width buttons ballooning to the full window height).
-      auto child_id = "##hl_col_" + stable_id(child);
       ImGui::BeginChild(
-          child_id.c_str(), ImVec2(size.x, size.y), ImGuiChildFlags_None,
+          prefixed_stable_id("##hl_col_", child), ImVec2(size.x, size.y), ImGuiChildFlags_None,
           ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
       r.render_node(child, s);
       ImGui::EndChild();
@@ -959,6 +973,7 @@ void render_splitter(imgui_renderer& r, const ui_element& node0, const context& 
     float size;
   };
   std::vector<pane_info> panes;
+  panes.reserve(node.resolved_child_count());
   node.for_each_child_ordered([&](key_t, ui_element& child) {
     panes.push_back({&child, is_vertical ? child.width(0.0f) : child.height(0.0f)});
   });
@@ -1095,7 +1110,7 @@ void render_menu_bar(imgui_renderer& r, const ui_element& node, const context& s
     });
 
     if (trailing_label) {
-      auto text = static_cast<const ui_label*>(trailing_label)->text("");
+      const std::string& text = static_cast<const ui_label*>(trailing_label)->text_ref();
       float text_w = ImGui::CalcTextSize(text.c_str()).x;
       float avail = ImGui::GetContentRegionAvail().x;
       if (avail > text_w)
@@ -1384,8 +1399,7 @@ void render_selectable(imgui_renderer& r, const ui_element& node0, const context
   // Selectable's own text label happens to be drawn. Author an explicit
   // nonzero width/height when using this: 0 falls back to ImGui's plain
   // fill-width/single-line sizing, which won't cover taller overlay content.
-  bool has_children = false;
-  node.for_each_child_ordered([&](key_t, ui_element&) { has_children = true; });
+  bool has_children = node.has_children();
 
   bool v = selected;
   ImGuiSelectableFlags flags = has_children ? ImGuiSelectableFlags_AllowOverlap : 0;
@@ -1518,10 +1532,8 @@ void render_dockspace_viewport(imgui_renderer& r, const ui_element& node0, const
   ImGuiWindowFlags host_flags = ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse |
       ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus |
       ImGuiWindowFlags_NoNavFocus;
-  node.for_each_child_ordered([&](bison::key_t, ui_element& child) {
-    if (child.class_key() == "MenuBar"_key)
-      host_flags |= ImGuiWindowFlags_MenuBar;
-  });
+  if (node.has_menu_bar_child())
+    host_flags |= ImGuiWindowFlags_MenuBar;
 
   ImGui::Begin(id.c_str(), nullptr, host_flags);
   report_self_rect(node);

@@ -229,7 +229,7 @@ class standalone : public bison::rmi::standalone {
   void on_session_created(bison::rmi::context& ctx) override final;
   void on_session_destroyed(bison::rmi::context& ctx) override final;
   void on_before_dispatch(bison::rmi::context& ctx) override final;
-  void on_after_dispatch(bison::rmi::context& ctx) noexcept override final;
+  void on_after_dispatch(bison::rmi::context& ctx, bison::key_t op) noexcept override final;
 
   void render_loop();
 

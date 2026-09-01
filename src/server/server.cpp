@@ -179,11 +179,15 @@ void server::on_before_dispatch(bison::rmi::context& ctx) {
   detail::current_context = &static_cast<context&>(ctx);
 }
 
-void server::on_after_dispatch(bison::rmi::context& ctx) noexcept {
-  // Any dispatched RMI call may have mutated session state (properties,
-  // tree structure, style); flag the session so the render loop redraws it
-  // instead of skipping the next idle-check.
-  static_cast<context&>(ctx).dirty.store(kDirtySettleFrames, std::memory_order_release);
+void server::on_after_dispatch(bison::rmi::context& ctx, bison::key_t op) noexcept {
+  // A mutating RMI call may have changed session state (properties, tree
+  // structure, style); flag the session so the render loop redraws it. A
+  // purely read-only op (a client polling a widget value with OP_GET, or
+  // introspecting the schema) never changes what's on screen, so skip the
+  // settle-frame bump for those -- otherwise a polling client pins the
+  // session at full framerate (kDirtySettleFrames full tree walks per poll).
+  if (!detail::is_read_only_op(op))
+    static_cast<context&>(ctx).dirty.store(kDirtySettleFrames, std::memory_order_release);
   detail::current_context = nullptr;
 }
 
@@ -243,7 +247,7 @@ void server::render_loop() {
         // again. Arm every session's settle-frame counter here too so a
         // couple of follow-up frames are always scheduled after raw input.
         for (const auto& sync_ctx : sessions_snapshot)
-          context_wlock{*sync_ctx}->dirty.store(kDirtySettleFrames, std::memory_order_release);
+          context_rlock{*sync_ctx}->dirty.store(kDirtySettleFrames, std::memory_order_release);
       }
       if (renderer_->consume_render_request())
         pending_render_ = true;
@@ -315,7 +319,7 @@ void server::render_loop() {
               // MenuBarExtension top-levels are spliced into the server's own
               // chrome menu bar by render_server_frame() above; rendering
               // them again here as standalone windows would double-draw them.
-              if (win && win->as<bison::key_t>(bison::dynamic::CLASS) != bison::key_t{"MenuBarExtension"}) {
+              if (win && win->class_key() != bison::key_t{"MenuBarExtension"}) {
                 sess->current_top_level_key = key;
                 renderer_->render_session(*win, *sess);
               }
@@ -324,8 +328,13 @@ void server::render_loop() {
             detail::current_context = nullptr;
             renderer_->service_automation_queries(*sess);
             events = std::move(sess->pending_events);
-            handlers = sess->top_level_handlers;
-            client_emit = sess->emit_event;
+            // handlers / client_emit are only used to dispatch events below;
+            // skip both copies (the map copy allocates per node) on the
+            // overwhelmingly common no-event frame.
+            if (!events.empty()) {
+              handlers = sess->top_level_handlers;
+              client_emit = sess->emit_event;
+            }
           }
           // Dispatch events with no lock held: handlers may modify session state.
           for (auto& ev : events) {
@@ -348,7 +357,7 @@ void server::render_loop() {
           // any further OS input arriving; force more renders so the
           // change reaches the screen instead of being skipped as idle.
           if (!events.empty())
-            context_wlock{*sync_ctx}->dirty.store(kDirtySettleFrames, std::memory_order_release);
+            context_rlock{*sync_ctx}->dirty.store(kDirtySettleFrames, std::memory_order_release);
         }
         renderer_->end_frame();
         if (!renderer_->render_on_demand() && renderer_->wants_continuous_redraw())

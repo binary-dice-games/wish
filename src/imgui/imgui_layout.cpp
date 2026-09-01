@@ -359,8 +359,9 @@ natural_size measure_node(imgui_renderer& r, const ui_element& node, const conte
 
   auto cls = node.class_key();
   natural_size sz{0.0f, 0.0f};
-  auto it = measure_dispatch_fns().find(cls.id);
-  if (it != measure_dispatch_fns().end()) {
+  const auto& tbl = measure_dispatch_fns();
+  auto it = tbl.find(cls.id);
+  if (it != tbl.end()) {
     sz = it->second(r, node, s);
   } else {
     // Unregistered class: this node's own real, last-rendered size (see
@@ -395,6 +396,7 @@ static void arrange_vertical_layout(imgui_renderer& r, const ui_element& node, I
     float spring_weight;
   };
   std::vector<child_info> children;
+  children.reserve(node.resolved_child_count());
   float fixed_total = 0.0f;
   float stretch_weight_total = 0.0f;
   int n = 0;
@@ -462,6 +464,7 @@ static void arrange_horizontal_layout(imgui_renderer& r, const ui_element& node,
     float spring_weight;
   };
   std::vector<child_info> children;
+  children.reserve(node.resolved_child_count());
   float fixed_total = 0.0f;
   float stretch_weight_total = 0.0f;
   int n = 0;
@@ -538,6 +541,7 @@ static void arrange_splitter(imgui_renderer& r, const ui_element& node0, ImVec2 
   float thickness = std::max(1.0f, node.thickness(4.0f));
 
   std::vector<ui_element*> panes;
+  panes.reserve(node.resolved_child_count());
   node.for_each_child_ordered([&](key_t, ui_element& child) { panes.push_back(&child); });
   if (panes.empty())
     return;
@@ -623,8 +627,9 @@ void arrange_node(imgui_renderer& r, const ui_element& node, ImVec2 origin, ImVe
 
   node.set_arranged_rect({origin.x, origin.y}, {avail.x, avail.y}, ImGui::GetFrameCount());
   auto cls = node.class_key();
-  auto it = arrange_dispatch_fns().find(cls.id);
-  if (it != arrange_dispatch_fns().end())
+  const auto& tbl = arrange_dispatch_fns();
+  auto it = tbl.find(cls.id);
+  if (it != tbl.end())
     it->second(r, node, origin, avail, s);
 }
 

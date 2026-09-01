@@ -239,6 +239,82 @@ TEST_F(UiElementTest, TooltipDefaultsEmptyAndReflectsWrites) {
   EXPECT_EQ(node.tooltip(), "Now do it");
 }
 
+// ── zero-copy string accessors (path_ref / tooltip_ref / text_ref) ─────────
+
+TEST_F(UiElementTest, PathRefMatchesPathAndIsStableAcrossCalls) {
+  auto map = bdg::wish::import_json(R"({"type":"Button","label":"hi"})");
+  ui_element& node = *map[""];
+  node["__path__"_key] = std::string("dialog.body.ok_button");
+
+  EXPECT_EQ(node.path_ref(), node.path());
+  // The reference must bind to the stored field, not a fresh copy each call.
+  const std::string& a = node.path_ref();
+  const std::string& b = node.path_ref();
+  EXPECT_EQ(&a, &b);
+  EXPECT_EQ(a, "dialog.body.ok_button");
+}
+
+TEST_F(UiElementTest, StringRefAccessorsDefaultToSharedEmptyString) {
+  auto map = bdg::wish::import_json(R"({"type":"Button","label":"hi"})");
+  ui_element& node = *map[""];
+
+  EXPECT_TRUE(node.path_ref().empty());
+  EXPECT_TRUE(node.tooltip_ref().empty());
+  EXPECT_TRUE(node.font_path_ref().empty());
+  EXPECT_TRUE(node.drag_type_ref().empty());
+}
+
+TEST_F(UiElementTest, TooltipRefReflectsWritesIncludingAfterCaching) {
+  auto map = bdg::wish::import_json(R"({"type":"Button","label":"hi"})");
+  ui_element& node = *map[""];
+
+  node["tooltip"_key] = std::string("first");
+  EXPECT_EQ(node.tooltip_ref(), "first");
+  node["tooltip"_key] = std::string("second");
+  EXPECT_EQ(node.tooltip_ref(), "second");
+}
+
+TEST_F(UiElementTest, LabelTextRefReadThroughTypedLeaf) {
+  auto map = bdg::wish::import_json(R"({"type":"Label","text":"hello world"})");
+  auto& label = static_cast<bdg::wish::ui_label&>(*map[""]);
+
+  EXPECT_EQ(label.text_ref(), "hello world");
+  label["text"_key] = std::string("changed");
+  EXPECT_EQ(label.text_ref(), "changed");
+}
+
+TEST_F(UiElementTest, LabelTextColorRefPrefersThemeVariantThenBase) {
+  auto map = bdg::wish::import_json(
+      R"({"type":"Label","text":"x","text_color":"#111111","text_color_dark":"#222222"})");
+  auto& label = static_cast<bdg::wish::ui_label&>(*map[""]);
+
+  EXPECT_EQ(label.text_color_ref(/*is_light=*/false), "#222222"); // dark variant wins
+  EXPECT_EQ(label.text_color_ref(/*is_light=*/true), "#111111");  // no light variant -> base
+}
+
+// ── has_children() / has_menu_bar_child() ──────────────────────────────────
+
+TEST_F(UiElementTest, HasChildrenReflectsChildSet) {
+  auto leaf = bdg::wish::import_json(R"({"type":"Button","label":"hi"})");
+  EXPECT_FALSE(leaf[""]->has_children());
+
+  auto parent = bdg::wish::import_json(
+      R"({"type":"VerticalLayout","children":{"a":{"type":"Label","text":"x"}}})");
+  EXPECT_TRUE(parent[""]->has_children());
+}
+
+TEST_F(UiElementTest, HasMenuBarChildDetectsDirectMenuBarChild) {
+  auto without = bdg::wish::import_json(
+      R"({"type":"Window","title":"W","children":{"a":{"type":"Label","text":"x"}}})");
+  EXPECT_FALSE(without[""]->has_menu_bar_child());
+  EXPECT_FALSE(without[""]->has_menu_bar_child()); // cached answer is stable
+
+  auto with = bdg::wish::import_json(
+      R"({"type":"Window","title":"W","children":{"mb":{"type":"MenuBar"},"a":{"type":"Label","text":"x"}}})");
+  EXPECT_TRUE(with[""]->has_menu_bar_child());
+  EXPECT_TRUE(with[""]->has_menu_bar_child());
+}
+
 // ── set_self_rect() / self_rect() ──────────────────────────────────────────
 
 TEST_F(UiElementTest, SelfRectReturnsFalseUntilStamped) {

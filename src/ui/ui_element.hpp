@@ -28,6 +28,8 @@
 
 #include "src/bison/bison_object.hpp"
 
+#include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -232,9 +234,71 @@ class ui_element : public bison::cloneable_dynamic<ui_element> {
    * to hash-sorted map order otherwise.  Children that are not `ui_element`
    * instances (e.g. in manually-constructed trees) are silently skipped.
    *
-   * @param fn  Called as `fn(key, child)` for each child in render order.
+   * A template (rather than a `std::function` parameter) because this is called
+   * 1-3x per node per frame during measure/arrange/render: a `std::function`
+   * temporary forced a type-erased indirect call (and, for a lambda capturing
+   * more than the small-object buffer, a heap allocation) on the hottest path
+   * in the renderer. Matches `bison::dynamic::forEach`/`forEachChild`.
+   *
+   * @param fn  Called as `fn(bison::key_t, ui_element&)` for each child in
+   *            render order.
    */
-  void for_each_child_ordered(const std::function<void(bison::key_t, ui_element&)>& fn) const;
+  template <typename F>
+  void for_each_child_ordered(F&& fn) const {
+    bison::field* children_field = cached_field(children_field_, bison::key_t{"children"});
+    if (!children_field || !children_field->is<bison::dynamic_ptr>())
+      return;
+    const auto& children = children_field->as<bison::dynamic_ptr>();
+    if (!children)
+      return;
+
+    if (has_resolved_children_order_) {
+      // Cache built by refresh_children_order() -- already in render order,
+      // already resolved to live ui_element_ptrs. No further field lookups.
+      for (auto& [key, elem] : resolved_children_order_) {
+        if (elem)
+          fn(key, *elem);
+      }
+      return;
+    }
+
+    // Fallback: no cache -- use forEachChild<ui_element> (hash-sorted order).
+    children->template forEachChild<ui_element>(std::forward<F>(fn));
+  }
+
+  /// @brief True if this node has at least one `ui_element` child. O(1) on the
+  ///        common (resolved-order-cache present) path -- avoids a full
+  ///        `for_each_child_ordered` walk at the "probe then iterate" call
+  ///        sites (`render_selectable()`, `render_node()`'s Selectable check).
+  bool has_children() const {
+    if (has_resolved_children_order_)
+      return !resolved_children_order_.empty();
+    bool any = false;
+    for_each_child_ordered([&](bison::key_t, ui_element&) { any = true; });
+    return any;
+  }
+
+  /// @brief Number of `ui_element` children when the resolved-order cache is
+  ///        present, else `0`. Intended only as a `vector::reserve` hint in
+  ///        the layout arrange functions -- `0` simply means "no hint".
+  std::size_t resolved_child_count() const {
+    return has_resolved_children_order_ ? resolved_children_order_.size() : 0;
+  }
+
+  /// @brief True if a direct child has class `MenuBar` -- cached (lazily
+  ///        computed once, invalidated by `refresh_children_order()`), so
+  ///        `render_window()`/`render_dockspace_viewport()` don't rescan every
+  ///        child every frame just to decide `ImGuiWindowFlags_MenuBar`.
+  bool has_menu_bar_child() const {
+    if (has_menu_bar_child_ < 0) {
+      has_menu_bar_child_ = 0;
+      for_each_child_ordered([&](bison::key_t, ui_element& child) {
+        if (child.class_key() == bison::key_t{"MenuBar"})
+          has_menu_bar_child_ = 1;
+      });
+    }
+    return has_menu_bar_child_ != 0;
+  }
 
   // ── Hot field pointer cache ─────────────────────────────────────────────────
   //
@@ -312,6 +376,26 @@ class ui_element : public bison::cloneable_dynamic<ui_element> {
     return (f && f->is<std::vector<T>>()) ? &f->as<std::vector<T>>() : nullptr;
   }
 
+  /// @brief Like `cached_field_or<std::string>()`, but returns a `const
+  ///        std::string&` bound directly to the stored field value -- no
+  ///        copy. Returns a reference to a shared empty string when the
+  ///        field is absent or does not currently hold a `std::string`.
+  ///
+  /// Unlike `cached_field_or()` there is **no** cross-type coercion: only use
+  /// this for a field whose stored type is always `std::string`. Intended for
+  /// hot accessors (`path`, `tooltip`, `font_path`, a leaf's `text`/`label`,
+  /// ...) read once per node per frame and only ever `.c_str()`'d, compared,
+  /// or `.empty()`-tested -- the by-value `cached_field_or<std::string>()`
+  /// form copied the string on every such call. The returned reference is
+  /// valid for the node's lifetime (a named field's address is stable -- see
+  /// the `cached_field()` note above; the empty-string fallback is a
+  /// function-local `static`).
+  const std::string& cached_field_str(bison::field*& cache, bison::key_t key) const {
+    static const std::string kEmpty;
+    bison::field* f = cached_field(cache, key);
+    return (f && f->is<std::string>()) ? f->as<std::string>() : kEmpty;
+  }
+
   /// @brief Cached `as<key_t>(dynamic::CLASS)`. CLASS is set exactly once
   ///        per instance, inside `bison::dynamic::instantiate()`, and never
   ///        reassigned afterward in production code.
@@ -325,6 +409,10 @@ class ui_element : public bison::cloneable_dynamic<ui_element> {
   ///        own (see `stable_id()` in `src/imgui/imgui_ui_renderer.cpp`).
   std::string path() const { return cached_field_or<std::string>(path_field_, bison::key_t{"__path__"}, std::string{}); }
 
+  /// @brief Zero-copy form of `path()` -- see `cached_field_str()`. Read on
+  ///        every node every frame by `stable_id()`.
+  const std::string& path_ref() const { return cached_field_str(path_field_, bison::key_t{"__path__"}); }
+
   /// @brief Cached `get_as<key_t>("__wish_id"_key, key_t{})`.
   bison::key_t wish_id() const {
     return cached_field_or<bison::key_t>(wish_id_field_, bison::key_t{"__wish_id"}, bison::key_t{});
@@ -334,6 +422,10 @@ class ui_element : public bison::cloneable_dynamic<ui_element> {
   std::string font_path() const {
     return cached_field_or<std::string>(font_path_field_, bison::key_t{"font_path"}, std::string{});
   }
+
+  /// @brief Zero-copy form of `font_path()` -- see `cached_field_str()`. Read
+  ///        on every node every frame by `resolve_element_font()`.
+  const std::string& font_path_ref() const { return cached_field_str(font_path_field_, bison::key_t{"font_path"}); }
 
   /// @brief Cached `get_as<float>("font_size"_key, 0.0f)`.
   float font_size() const { return cached_field_or<float>(font_size_field_, bison::key_t{"font_size"}, 0.0f); }
@@ -350,6 +442,10 @@ class ui_element : public bison::cloneable_dynamic<ui_element> {
   std::string tooltip() const {
     return cached_field_or<std::string>(tooltip_field_, bison::key_t{"tooltip"}, std::string{});
   }
+
+  /// @brief Zero-copy form of `tooltip()` -- see `cached_field_str()`. Read on
+  ///        every node every frame by `handle_tooltip()`.
+  const std::string& tooltip_ref() const { return cached_field_str(tooltip_field_, bison::key_t{"tooltip"}); }
 
   /// @brief Cached, non-empty `"profiler_marker"` string, or `nullptr` if
   ///        the field is absent, not a string, or empty. Returns a raw
@@ -411,6 +507,15 @@ class ui_element : public bison::cloneable_dynamic<ui_element> {
   std::string drop_type() const {
     return cached_field_or<std::string>(drop_type_field_, bison::key_t{"drop_type"}, std::string{});
   }
+
+  /// @brief Zero-copy forms of the three drag/drop accessors -- see
+  ///        `cached_field_str()`. `handle_drag_drop()` reads all three on
+  ///        every node every frame just to `.empty()`-test them.
+  const std::string& drag_type_ref() const { return cached_field_str(drag_type_field_, bison::key_t{"drag_type"}); }
+  const std::string& drag_payload_ref() const {
+    return cached_field_str(drag_payload_field_, bison::key_t{"drag_payload"});
+  }
+  const std::string& drop_type_ref() const { return cached_field_str(drop_type_field_, bison::key_t{"drop_type"}); }
 
   // ── Self-reported window / group rect ─────────────────────────────────────
   //
@@ -579,6 +684,10 @@ class ui_element : public bison::cloneable_dynamic<ui_element> {
   mutable bison::field* children_field_ = nullptr;
   mutable std::vector<std::pair<bison::key_t, ui_element_ptr>> resolved_children_order_;
   mutable bool has_resolved_children_order_ = false;
+
+  /// -1 = not yet computed, 0/1 = cached result of `has_menu_bar_child()`.
+  /// Reset to -1 by `refresh_children_order()` when the child set changes.
+  mutable std::int8_t has_menu_bar_child_ = -1;
 };
 
 /**
@@ -629,6 +738,10 @@ class ui_button : public cloneable_ui_element<ui_button> {
     return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
   }
 
+  /// @brief Zero-copy form of `label()` (empty-string fallback) -- see
+  ///        `cached_field_str()`. `render_button()` reads this every frame.
+  const std::string& label_ref() const { return cached_field_str(label_field_, bison::key_t{"label"}); }
+
  private:
   mutable bison::field* label_field_ = nullptr;
 };
@@ -640,11 +753,37 @@ class ui_label : public cloneable_ui_element<ui_label> {
   std::string text(std::string def = {}) const {
     return cached_field_or<std::string>(text_field_, bison::key_t{"text"}, std::move(def));
   }
+
+  /// @brief Zero-copy form of `text()` (empty-string fallback) -- see
+  ///        `cached_field_str()`. Labels are the highest-volume node type
+  ///        (table cells, `tail` log lines); `render_label()` reads this
+  ///        every frame.
+  const std::string& text_ref() const { return cached_field_str(text_field_, bison::key_t{"text"}); }
+
   bool wrap(bool def = false) const { return cached_field_or<bool>(wrap_field_, bison::key_t{"wrap"}, def); }
+
+  /// @brief Resolved text color hex string for the active theme: the
+  ///        `text_color_light`/`text_color_dark` variant matching @p is_light
+  ///        when set, else the plain `text_color`, else `""`. Zero-copy and
+  ///        field-pointer-cached (three `mutable field*`) -- `render_label()`
+  ///        calls this every Label every frame; the previous free-function
+  ///        `get_theme_color()` did two uncached `findField` + `std::string`
+  ///        copies per call.
+  const std::string& text_color_ref(bool is_light) const {
+    const std::string& variant = is_light
+        ? cached_field_str(text_color_light_field_, bison::key_t{"text_color_light"})
+        : cached_field_str(text_color_dark_field_, bison::key_t{"text_color_dark"});
+    if (!variant.empty())
+      return variant;
+    return cached_field_str(text_color_field_, bison::key_t{"text_color"});
+  }
 
  private:
   mutable bison::field* text_field_ = nullptr;
   mutable bison::field* wrap_field_ = nullptr;
+  mutable bison::field* text_color_field_ = nullptr;
+  mutable bison::field* text_color_light_field_ = nullptr;
+  mutable bison::field* text_color_dark_field_ = nullptr;
 };
 
 class ui_separator_text : public cloneable_ui_element<ui_separator_text> {

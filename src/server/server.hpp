@@ -224,7 +224,7 @@ class server : public bison::rmi::server {
   // so dispatch and rendering remain serialised per-session without
   // blocking other sessions.
   void on_before_dispatch(bison::rmi::context& ctx) override;
-  void on_after_dispatch(bison::rmi::context& ctx) noexcept override;
+  void on_after_dispatch(bison::rmi::context& ctx, bison::key_t op) noexcept override;
 
  protected:
   // Returns session-aware objects for protocol classes (__WishTemplate,

@@ -78,29 +78,8 @@ void ui_element::refresh_children_order() {
       resolved_children_order_.emplace_back(entries[i].key, ui_element_ptr(std::move(elem)));
   }
   has_resolved_children_order_ = true;
+  has_menu_bar_child_ = -1; // child set changed; recompute lazily on next query
   (*this)["__children_order__"_key] = cache;
-}
-
-void ui_element::for_each_child_ordered(const std::function<void(key_t, ui_element&)>& fn) const {
-  auto* children_field = cached_field(children_field_, "children"_key);
-  if (!children_field || !children_field->is<dynamic_ptr>())
-    return;
-  const auto& children = children_field->as<dynamic_ptr>();
-  if (!children)
-    return;
-
-  if (has_resolved_children_order_) {
-    // Cache built by refresh_children_order() -- already in render order,
-    // already resolved to live ui_element_ptrs. No further field lookups.
-    for (auto& [key, elem] : resolved_children_order_) {
-      if (elem)
-        fn(key, *elem);
-    }
-    return;
-  }
-
-  // Fallback: no cache — use forEachChild<ui_element> (hash-sorted order).
-  children->template forEachChild<ui_element>(fn);
 }
 
 } // namespace bdg::wish
