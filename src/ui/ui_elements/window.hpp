@@ -35,6 +35,10 @@ class window : public cloneable_ui_element<window, ui_root> {
   std::string title(std::string def = {}) const {
     return cached_field_or<std::string>(title_field_, bison::key_t{"title"}, std::move(def));
   }
+  /// @brief Zero-copy form of `title()` (empty fallback) -- see
+  ///        `ui_element::cached_field_str()`. `render_window()` reads this
+  ///        every frame.
+  const std::string& title_ref() const { return cached_field_str(title_field_, bison::key_t{"title"}); }
 
   /// @brief Cached `get_as<bool>("modal"_key, def)`.
   bool modal(bool def = false) const {

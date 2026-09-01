@@ -3,6 +3,8 @@
 
 #include <context/context.hpp>
 
+#include "src/rmi/shared/constants.hpp"
+
 #include <filesystem>
 
 using bdg::wish::context;
@@ -29,6 +31,27 @@ TEST(ContextTest, DestructorRemovesResourceDir) {
 TEST(ContextTest, ResourceDirPersistentDefaultsFalse) {
   context s{"s2b"_key};
   EXPECT_FALSE(s.resource_dir_persistent);
+}
+
+// ── detail::is_read_only_op() ────────────────────────────────────────────────
+
+TEST(ContextTest, IsReadOnlyOpClassifiesIntrospectionOpsOnly) {
+  namespace k = bdg::bison::rmi::shared::constants;
+  using bdg::wish::detail::is_read_only_op;
+
+  EXPECT_TRUE(is_read_only_op(k::OP_GET));
+  EXPECT_TRUE(is_read_only_op(k::OP_DESCRIBE));
+  EXPECT_TRUE(is_read_only_op(k::OP_DICTIONARY));
+  EXPECT_TRUE(is_read_only_op(k::OP_HELP));
+
+  // Anything that can mutate session state must NOT be treated as read-only.
+  EXPECT_FALSE(is_read_only_op(k::OP_SET));
+  EXPECT_FALSE(is_read_only_op(k::OP_CALL));
+  EXPECT_FALSE(is_read_only_op(k::OP_INSTANTIATE));
+  EXPECT_FALSE(is_read_only_op(k::OP_CLEAR));
+  EXPECT_FALSE(is_read_only_op(k::OP_DESTROY));
+  EXPECT_FALSE(is_read_only_op(k::OP_CONNECT));
+  EXPECT_FALSE(is_read_only_op(bdg::bison::key_t{}));
 }
 
 TEST(ContextTest, DestructorSkipsRemovalWhenResourceDirPersistent) {

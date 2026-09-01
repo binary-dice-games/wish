@@ -319,6 +319,17 @@ namespace detail {
 /// dispatch.
 extern thread_local context* current_context;
 
+/// @brief True if @p op is a purely read-only RMI operation -- one that can
+///        never change what a session renders (`OP_GET`, `OP_DESCRIBE`,
+///        `OP_DICTIONARY`, `OP_HELP`).
+///
+/// The server / standalone `on_after_dispatch` hooks use this to skip the
+/// per-dispatch redraw bump for such ops, so a client polling widget values
+/// with `OP_GET` doesn't pin the session at full framerate. Every other op
+/// (`OP_SET`, `OP_CALL`, `OP_INSTANTIATE`, `OP_CLEAR`, `OP_DESTROY`,
+/// `OP_CONNECT`, ...) is treated as potentially mutating.
+bool is_read_only_op(bison::key_t op);
+
 /// @brief Return the per-session singleton instance for a `__Wish*` protocol
 ///        class (`__WishFileSystem`, `__WishStyle`, `__WishLogger`).
 ///

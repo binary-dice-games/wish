@@ -129,11 +129,13 @@ void standalone::on_before_dispatch(bison::rmi::context& /*ctx*/) {
   detail::current_context = &**tl_standalone_dispatch_wlock;
 }
 
-void standalone::on_after_dispatch(bison::rmi::context& /*ctx*/) noexcept {
-  // Any dispatched RMI call may have mutated session state (properties,
-  // tree structure, style); flag the session so the render loop redraws it
-  // instead of skipping the next idle-check.
-  if (tl_standalone_dispatch_wlock)
+void standalone::on_after_dispatch(bison::rmi::context& /*ctx*/, bison::key_t op) noexcept {
+  // A mutating op may have changed session state (properties, tree structure,
+  // style); flag the session so the render loop redraws it. A purely
+  // read-only op (OP_GET/OP_DESCRIBE/OP_DICTIONARY/OP_HELP) never changes
+  // what's on screen -- skip the settle-frame bump so a polling client
+  // doesn't pin the session at full framerate. See detail::is_read_only_op().
+  if (tl_standalone_dispatch_wlock && !detail::is_read_only_op(op))
     (*tl_standalone_dispatch_wlock)->dirty.store(kDirtySettleFrames, std::memory_order_release);
   detail::current_context = nullptr;
   tl_standalone_dispatch_wlock.reset();

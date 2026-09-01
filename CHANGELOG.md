@@ -23,8 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `--verbose` is now a verbosity level (`none` | `fatal` | `error` | `warning` | `info` | `trace`, default `none`) instead of an on/off flag. RMI trace lines and session lifecycle lines in `wish_logs/server.log` (and mirrored to stdout) are produced only at `info` and above; decoded call payloads (`args=`, `set` values, response bodies) only at `trace`. `fatal`/`error`/`warning` only raise the severity floor for client log messages. At `none` (the default) the server log stays silent and the trace string is never built.
 - `wish_server_set_verbose()` / binding `set_verbose(bool)` are deprecated: `true` now maps to log level `trace`, `false` to `none`.
-- Web renderer: a bare mouse hover over the canvas no longer forces a full re-render and frame broadcast every frame — mouse-move is debounced (4 px / 100 ms, matching the SDL3 renderer) server-side and coalesced to one message per animation frame in the browser client. Also removes redundant per-frame buffer copies when encoding and broadcasting each frame.
-- Web renderer: a bare mouse hover over the canvas no longer forces a full re-render and frame broadcast every frame — mouse-move is debounced (4 px / 100 ms, matching the SDL3 renderer) server-side and coalesced to one message per animation frame in the browser client. Also removes redundant per-frame buffer copies when encoding and broadcasting each frame.
+- Server render loop: reduced per-frame CPU and heap-allocation churn — zero-copy string field access on the render/measure/arrange hot path, `ui_element::for_each_child_ordered()` no longer allocates per call, cached MenuBar-child detection, and fewer per-frame map/style copies in the render loop. No behavior change.
+- Read-only RMI requests (`get` / `describe` / `dictionary` / `help`) no longer schedule redraw frames — a client polling widget values with `get` no longer holds a session at full framerate. Mutating requests (`set`, `call`, `instantiate`, …) are unaffected.
 
 ## [1.0.0] - 2026-08-27
 

@@ -34,12 +34,12 @@ using namespace bdg::bison;
 
 void render_plot(imgui_renderer& r, const ui_element& node_base, const context& s) {
   const auto& node = static_cast<const ui_plot&>(node_base);
-  auto title = node.title();
+  const std::string& title = node.title_ref();
   float w = node.width();
   float h = node.height();
   int32_t flags = node.flags();
-  auto x_label = node.x_label();
-  auto y_label = node.y_label();
+  const std::string& x_label = node.x_label_ref();
+  const std::string& y_label = node.y_label_ref();
   int32_t xf = node.x_flags();
   int32_t yf = node.y_flags();
   float x_min = node.x_min();
@@ -71,7 +71,7 @@ void render_plot(imgui_renderer& r, const ui_element& node_base, const context& 
 
 void render_plot_line(imgui_renderer&, const ui_element& node_base, const context&) {
   const auto& node = static_cast<const ui_plot_xy_series&>(node_base);
-  auto label = node.label();
+  const std::string& label = node.label_ref();
   const auto* xs = node.xs();
   const auto* ys = node.ys();
   if (!xs || !ys)
@@ -83,7 +83,7 @@ void render_plot_line(imgui_renderer&, const ui_element& node_base, const contex
 
 void render_plot_scatter(imgui_renderer&, const ui_element& node_base, const context&) {
   const auto& node = static_cast<const ui_plot_xy_series&>(node_base);
-  auto label = node.label();
+  const std::string& label = node.label_ref();
   const auto* xs = node.xs();
   const auto* ys = node.ys();
   if (!xs || !ys)
@@ -95,7 +95,7 @@ void render_plot_scatter(imgui_renderer&, const ui_element& node_base, const con
 
 void render_plot_stairs(imgui_renderer&, const ui_element& node_base, const context&) {
   const auto& node = static_cast<const ui_plot_xy_series&>(node_base);
-  auto label = node.label();
+  const std::string& label = node.label_ref();
   const auto* xs = node.xs();
   const auto* ys = node.ys();
   if (!xs || !ys)
@@ -107,7 +107,7 @@ void render_plot_stairs(imgui_renderer&, const ui_element& node_base, const cont
 
 void render_plot_stems(imgui_renderer&, const ui_element& node_base, const context&) {
   const auto& node = static_cast<const ui_plot_stems&>(node_base);
-  auto label = node.label();
+  const std::string& label = node.label_ref();
   float ref = node.ref();
   const auto* xs = node.xs();
   const auto* ys = node.ys();
@@ -120,7 +120,7 @@ void render_plot_stems(imgui_renderer&, const ui_element& node_base, const conte
 
 void render_plot_shaded(imgui_renderer&, const ui_element& node_base, const context&) {
   const auto& node = static_cast<const ui_plot_shaded&>(node_base);
-  auto label = node.label();
+  const std::string& label = node.label_ref();
   float ref = node.ref();
   const auto* xs = node.xs();
   const auto* ys = node.ys();
@@ -143,7 +143,7 @@ void render_plot_shaded(imgui_renderer&, const ui_element& node_base, const cont
 
 void render_plot_digital(imgui_renderer&, const ui_element& node_base, const context&) {
   const auto& node = static_cast<const ui_plot_xy_series&>(node_base);
-  auto label = node.label();
+  const std::string& label = node.label_ref();
   const auto* xs = node.xs();
   const auto* ys = node.ys();
   if (!xs || !ys)
@@ -157,7 +157,7 @@ void render_plot_digital(imgui_renderer&, const ui_element& node_base, const con
 
 void render_plot_bars(imgui_renderer&, const ui_element& node_base, const context&) {
   const auto& node = static_cast<const ui_plot_bars&>(node_base);
-  auto label = node.label();
+  const std::string& label = node.label_ref();
   float bar_size = node.bar_size();
   const auto* xs = node.xs();
   const auto* ys = node.ys();
@@ -172,7 +172,7 @@ void render_plot_bars(imgui_renderer&, const ui_element& node_base, const contex
 
 void render_plot_bars_h(imgui_renderer&, const ui_element& node_base, const context&) {
   const auto& node = static_cast<const ui_plot_bars&>(node_base);
-  auto label = node.label();
+  const std::string& label = node.label_ref();
   float bar_size = node.bar_size();
   const auto* xs = node.xs();
   const auto* ys = node.ys();
@@ -191,7 +191,7 @@ void render_plot_bars_h(imgui_renderer&, const ui_element& node_base, const cont
 
 void render_plot_histogram(imgui_renderer&, const ui_element& node_base, const context&) {
   const auto& node = static_cast<const ui_plot_histogram&>(node_base);
-  auto label = node.label();
+  const std::string& label = node.label_ref();
   int32_t bins = node.bins(); // -1 = Sturges
   bool cumul = node.cumulative();
   bool density = node.density();
@@ -219,7 +219,7 @@ void render_plot_histogram(imgui_renderer&, const ui_element& node_base, const c
 
 void render_plot_histogram2d(imgui_renderer&, const ui_element& node_base, const context&) {
   const auto& node = static_cast<const ui_plot_histogram2d&>(node_base);
-  auto label = node.label();
+  const std::string& label = node.label_ref();
   int32_t x_bins = node.x_bins();
   int32_t y_bins = node.y_bins();
   const auto* xs = node.xs();
@@ -237,12 +237,12 @@ void render_plot_histogram2d(imgui_renderer&, const ui_element& node_base, const
 
 void render_plot_heatmap(imgui_renderer&, const ui_element& node_base, const context&) {
   const auto& node = static_cast<const ui_plot_heatmap&>(node_base);
-  auto label = node.label();
+  const std::string& label = node.label_ref();
   int32_t rows = node.rows();
   int32_t cols = node.cols();
   float scale_min = node.scale_min();
   float scale_max = node.scale_max();
-  auto fmt = node.format();
+  const std::string& fmt = node.format_ref();
   float x_min = node.x_min();
   float x_max = node.x_max();
   float y_min = node.y_min();
@@ -267,12 +267,12 @@ void render_plot_heatmap(imgui_renderer&, const ui_element& node_base, const con
 
 void render_plot_pie_chart(imgui_renderer&, const ui_element& node_base, const context&) {
   const auto& node = static_cast<const ui_plot_pie_chart&>(node_base);
-  auto labels_str = node.labels();
+  const std::string& labels_str = node.labels_ref();
   float cx = node.x();
   float cy = node.y();
   float radius = node.radius();
   bool normalize = node.normalize();
-  auto fmt = node.label_fmt();
+  const std::string& fmt = node.label_fmt_ref();
   float angle0 = node.angle0();
   const auto* vals = node.values();
   if (!vals || vals->empty())
@@ -317,7 +317,7 @@ void render_plot_pie_chart(imgui_renderer&, const ui_element& node_base, const c
 
 void render_plot_text(imgui_renderer&, const ui_element& node_base, const context&) {
   const auto& node = static_cast<const ui_plot_text&>(node_base);
-  auto text = node.text();
+  const std::string& text = node.text_ref();
   float x = node.x();
   float y = node.y();
   float offset_x = node.offset_x();
@@ -328,7 +328,7 @@ void render_plot_text(imgui_renderer&, const ui_element& node_base, const contex
 
 void render_plot_inf_lines(imgui_renderer&, const ui_element& node_base, const context&) {
   const auto& node = static_cast<const ui_plot_inf_lines&>(node_base);
-  auto label = node.label();
+  const std::string& label = node.label_ref();
   bool horiz = node.horizontal();
   const auto* vals = node.values();
   if (!vals || vals->empty())
