@@ -33,13 +33,13 @@ using namespace bdg::bison;
 
 void render_plot3d(imgui_renderer& r, const ui_element& node_base, const context& s) {
   const auto& node = static_cast<const ui_plot3d&>(node_base);
-  auto title = node.title();
+  const std::string& title = node.title_ref();
   float w = node.width();
   float h = node.height();
   int32_t flags = node.flags();
-  auto x_label = node.x_label();
-  auto y_label = node.y_label();
-  auto z_label = node.z_label();
+  const std::string& x_label = node.x_label_ref();
+  const std::string& y_label = node.y_label_ref();
+  const std::string& z_label = node.z_label_ref();
   int32_t xf = node.x_flags();
   int32_t yf = node.y_flags();
   int32_t zf = node.z_flags();
@@ -63,7 +63,7 @@ void render_plot3d(imgui_renderer& r, const ui_element& node_base, const context
 
 void render_plot3d_line(imgui_renderer&, const ui_element& node_base, const context&) {
   const auto& node = static_cast<const ui_plot3d_xyz_series&>(node_base);
-  auto label = node.label();
+  const std::string& label = node.label_ref();
   const auto* xs = node.xs();
   const auto* ys = node.ys();
   const auto* zs = node.zs();
@@ -76,7 +76,7 @@ void render_plot3d_line(imgui_renderer&, const ui_element& node_base, const cont
 
 void render_plot3d_scatter(imgui_renderer&, const ui_element& node_base, const context&) {
   const auto& node = static_cast<const ui_plot3d_xyz_series&>(node_base);
-  auto label = node.label();
+  const std::string& label = node.label_ref();
   const auto* xs = node.xs();
   const auto* ys = node.ys();
   const auto* zs = node.zs();
@@ -91,7 +91,7 @@ void render_plot3d_scatter(imgui_renderer&, const ui_element& node_base, const c
 
 void render_plot3d_surface(imgui_renderer&, const ui_element& node_base, const context&) {
   const auto& node = static_cast<const ui_plot3d_surface&>(node_base);
-  auto label = node.label();
+  const std::string& label = node.label_ref();
   int32_t x_count = node.x_count();
   int32_t y_count = node.y_count();
   float scale_min = node.scale_min();
@@ -115,7 +115,7 @@ void render_plot3d_surface(imgui_renderer&, const ui_element& node_base, const c
 
 void render_plot3d_triangle(imgui_renderer&, const ui_element& node_base, const context&) {
   const auto& node = static_cast<const ui_plot3d_xyz_series&>(node_base);
-  auto label = node.label();
+  const std::string& label = node.label_ref();
   const auto* xs = node.xs();
   const auto* ys = node.ys();
   const auto* zs = node.zs();
@@ -130,7 +130,7 @@ void render_plot3d_triangle(imgui_renderer&, const ui_element& node_base, const 
 
 void render_plot3d_quad(imgui_renderer&, const ui_element& node_base, const context&) {
   const auto& node = static_cast<const ui_plot3d_xyz_series&>(node_base);
-  auto label = node.label();
+  const std::string& label = node.label_ref();
   const auto* xs = node.xs();
   const auto* ys = node.ys();
   const auto* zs = node.zs();
@@ -145,7 +145,7 @@ void render_plot3d_quad(imgui_renderer&, const ui_element& node_base, const cont
 
 void render_plot3d_mesh(imgui_renderer&, const ui_element& node_base, const context&) {
   const auto& node = static_cast<const ui_plot3d_mesh&>(node_base);
-  auto label = node.label();
+  const std::string& label = node.label_ref();
   const auto* xs = node.xs();
   const auto* ys = node.ys();
   const auto* zs = node.zs();
@@ -176,7 +176,7 @@ void render_plot3d_mesh(imgui_renderer&, const ui_element& node_base, const cont
 
 void render_plot3d_text(imgui_renderer&, const ui_element& node_base, const context&) {
   const auto& node = static_cast<const ui_plot3d_text&>(node_base);
-  auto text = node.text();
+  const std::string& text = node.text_ref();
   float x = node.x();
   float y = node.y();
   float z = node.z();

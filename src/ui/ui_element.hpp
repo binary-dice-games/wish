@@ -793,6 +793,8 @@ class ui_separator_text : public cloneable_ui_element<ui_separator_text> {
   std::string label(std::string def = {}) const {
     return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
   }
+  /// @brief Zero-copy form of `label()` (empty fallback) -- see `cached_field_str()`.
+  const std::string& label_ref() const { return cached_field_str(label_field_, bison::key_t{"label"}); }
 
  private:
   mutable bison::field* label_field_ = nullptr;
@@ -807,6 +809,8 @@ class ui_image : public cloneable_ui_element<ui_image> {
   std::string src(std::string def = {}) const {
     return cached_field_or<std::string>(src_field_, bison::key_t{"src"}, std::move(def));
   }
+  /// @brief Zero-copy form of `src()` (empty fallback) -- see `cached_field_str()`.
+  const std::string& src_ref() const { return cached_field_str(src_field_, bison::key_t{"src"}); }
   bool auto_size_to_font(bool def = false) const {
     return cached_field_or<bool>(auto_size_to_font_field_, bison::key_t{"__auto_size_to_font__"}, def);
   }
@@ -841,6 +845,8 @@ class ui_checkbox : public cloneable_ui_element<ui_checkbox> {
   std::string label(std::string def = {}) const {
     return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
   }
+  /// @brief Zero-copy form of `label()` (empty fallback) -- see `cached_field_str()`.
+  const std::string& label_ref() const { return cached_field_str(label_field_, bison::key_t{"label"}); }
   bool value_bool(bool def = false) const { return cached_field_or<bool>(value_field_, bison::key_t{"value"}, def); }
 
  private:
@@ -855,6 +861,8 @@ class ui_radio_button : public cloneable_ui_element<ui_radio_button> {
   std::string label(std::string def = {}) const {
     return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
   }
+  /// @brief Zero-copy form of `label()` (empty fallback) -- see `cached_field_str()`.
+  const std::string& label_ref() const { return cached_field_str(label_field_, bison::key_t{"label"}); }
   bool active(bool def = false) const { return cached_field_or<bool>(active_field_, bison::key_t{"active"}, def); }
 
  private:
@@ -869,6 +877,8 @@ class ui_selectable : public cloneable_ui_element<ui_selectable> {
   std::string label(std::string def = {}) const {
     return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
   }
+  /// @brief Zero-copy form of `label()` (empty fallback) -- see `cached_field_str()`.
+  const std::string& label_ref() const { return cached_field_str(label_field_, bison::key_t{"label"}); }
   bool selected(bool def = false) const {
     return cached_field_or<bool>(selected_field_, bison::key_t{"selected"}, def);
   }
@@ -887,6 +897,8 @@ class ui_slider_float : public cloneable_ui_element<ui_slider_float> {
   std::string label(std::string def = {}) const {
     return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
   }
+  /// @brief Zero-copy form of `label()` (empty fallback) -- see `cached_field_str()`.
+  const std::string& label_ref() const { return cached_field_str(label_field_, bison::key_t{"label"}); }
   float value_float(float def = 0.0f) const {
     return cached_field_or<float>(value_field_, bison::key_t{"value"}, def);
   }
@@ -911,6 +923,8 @@ class ui_slider_int : public cloneable_ui_element<ui_slider_int> {
   std::string label(std::string def = {}) const {
     return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
   }
+  /// @brief Zero-copy form of `label()` (empty fallback) -- see `cached_field_str()`.
+  const std::string& label_ref() const { return cached_field_str(label_field_, bison::key_t{"label"}); }
   int32_t value_int(int32_t def = 0) const { return cached_field_or<int32_t>(value_field_, bison::key_t{"value"}, def); }
   int32_t min_int(int32_t def = 0) const { return cached_field_or<int32_t>(min_field_, bison::key_t{"min"}, def); }
   int32_t max_int(int32_t def = 0) const { return cached_field_or<int32_t>(max_field_, bison::key_t{"max"}, def); }
@@ -929,6 +943,8 @@ class ui_drag_float : public cloneable_ui_element<ui_drag_float> {
   std::string label(std::string def = {}) const {
     return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
   }
+  /// @brief Zero-copy form of `label()` (empty fallback) -- see `cached_field_str()`.
+  const std::string& label_ref() const { return cached_field_str(label_field_, bison::key_t{"label"}); }
   float value_float(float def = 0.0f) const {
     return cached_field_or<float>(value_field_, bison::key_t{"value"}, def);
   }
@@ -955,6 +971,8 @@ class ui_drag_int : public cloneable_ui_element<ui_drag_int> {
   std::string label(std::string def = {}) const {
     return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
   }
+  /// @brief Zero-copy form of `label()` (empty fallback) -- see `cached_field_str()`.
+  const std::string& label_ref() const { return cached_field_str(label_field_, bison::key_t{"label"}); }
   int32_t value_int(int32_t def = 0) const { return cached_field_or<int32_t>(value_field_, bison::key_t{"value"}, def); }
   float speed(float def = 0.0f) const { return cached_field_or<float>(speed_field_, bison::key_t{"speed"}, def); }
   int32_t min_int(int32_t def = 0) const { return cached_field_or<int32_t>(min_field_, bison::key_t{"min"}, def); }
@@ -977,6 +995,8 @@ class ui_input_int : public cloneable_ui_element<ui_input_int> {
   std::string label(std::string def = {}) const {
     return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
   }
+  /// @brief Zero-copy form of `label()` (empty fallback) -- see `cached_field_str()`.
+  const std::string& label_ref() const { return cached_field_str(label_field_, bison::key_t{"label"}); }
   int32_t value_int(int32_t def = 0) const { return cached_field_or<int32_t>(value_field_, bison::key_t{"value"}, def); }
   int32_t step_int(int32_t def = 0) const { return cached_field_or<int32_t>(step_field_, bison::key_t{"step"}, def); }
   int32_t step_fast_int(int32_t def = 0) const {
@@ -999,6 +1019,8 @@ class ui_input_float : public cloneable_ui_element<ui_input_float> {
   std::string label(std::string def = {}) const {
     return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
   }
+  /// @brief Zero-copy form of `label()` (empty fallback) -- see `cached_field_str()`.
+  const std::string& label_ref() const { return cached_field_str(label_field_, bison::key_t{"label"}); }
   float value_float(float def = 0.0f) const {
     return cached_field_or<float>(value_field_, bison::key_t{"value"}, def);
   }
@@ -1031,6 +1053,12 @@ class ui_input_text : public cloneable_ui_element<ui_input_text> {
   std::string value_string(std::string def = {}) const {
     return cached_field_or<std::string>(value_field_, bison::key_t{"value"}, std::move(def));
   }
+  /// @brief Zero-copy forms of `label()`/`hint()`/`value_string()` (empty
+  ///        fallback) -- see `cached_field_str()`. `render_input_text()` reads
+  ///        all three every frame.
+  const std::string& label_ref() const { return cached_field_str(label_field_, bison::key_t{"label"}); }
+  const std::string& hint_ref() const { return cached_field_str(hint_field_, bison::key_t{"hint"}); }
+  const std::string& value_string_ref() const { return cached_field_str(value_field_, bison::key_t{"value"}); }
   int32_t flags(int32_t def = 0) const { return cached_field_or<int32_t>(flags_field_, bison::key_t{"flags"}, def); }
   bool multiline(bool def = false) const {
     return cached_field_or<bool>(multiline_field_, bison::key_t{"multiline"}, def);
@@ -1055,6 +1083,8 @@ class ui_color_edit : public cloneable_ui_element<ui_color_edit> {
   std::string label(std::string def = {}) const {
     return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
   }
+  /// @brief Zero-copy form of `label()` (empty fallback) -- see `cached_field_str()`.
+  const std::string& label_ref() const { return cached_field_str(label_field_, bison::key_t{"label"}); }
   std::vector<float> value_floats() const {
     return cached_field_or<std::vector<float>>(value_field_, bison::key_t{"value"}, std::vector<float>{});
   }
@@ -1077,6 +1107,10 @@ class ui_combo : public cloneable_ui_element<ui_combo> {
   std::string items(std::string def = {}) const {
     return cached_field_or<std::string>(items_field_, bison::key_t{"items"}, std::move(def));
   }
+  /// @brief Zero-copy forms of `label()`/`items()` (empty fallback) -- see
+  ///        `cached_field_str()`. `render_combo()` reads both every frame.
+  const std::string& label_ref() const { return cached_field_str(label_field_, bison::key_t{"label"}); }
+  const std::string& items_ref() const { return cached_field_str(items_field_, bison::key_t{"items"}); }
 
  private:
   mutable bison::field* label_field_ = nullptr;
@@ -1091,6 +1125,8 @@ class ui_progress_bar : public cloneable_ui_element<ui_progress_bar> {
   std::string label(std::string def = {}) const {
     return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
   }
+  /// @brief Zero-copy form of `label()` (empty fallback) -- see `cached_field_str()`.
+  const std::string& label_ref() const { return cached_field_str(label_field_, bison::key_t{"label"}); }
   float value_float(float def = 0.0f) const {
     return cached_field_or<float>(value_field_, bison::key_t{"value"}, def);
   }
@@ -1109,6 +1145,8 @@ class ui_menu : public cloneable_ui_element<ui_menu> {
   std::string label(std::string def = {}) const {
     return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
   }
+  /// @brief Zero-copy form of `label()` (empty fallback) -- see `cached_field_str()`.
+  const std::string& label_ref() const { return cached_field_str(label_field_, bison::key_t{"label"}); }
   bool enabled(bool def = true) const { return cached_field_or<bool>(enabled_field_, bison::key_t{"enabled"}, def); }
 
  private:
@@ -1131,6 +1169,12 @@ class ui_menu_item : public cloneable_ui_element<ui_menu_item> {
   std::string copy_text(std::string def = {}) const {
     return cached_field_or<std::string>(copy_text_field_, bison::key_t{"copy_text"}, std::move(def));
   }
+  /// @brief Zero-copy forms of `label()`/`shortcut()`/`copy_text()` (empty
+  ///        fallback) -- see `cached_field_str()`. `render_menu_item()` reads
+  ///        all three every frame.
+  const std::string& label_ref() const { return cached_field_str(label_field_, bison::key_t{"label"}); }
+  const std::string& shortcut_ref() const { return cached_field_str(shortcut_field_, bison::key_t{"shortcut"}); }
+  const std::string& copy_text_ref() const { return cached_field_str(copy_text_field_, bison::key_t{"copy_text"}); }
 
  private:
   mutable bison::field* label_field_ = nullptr;
@@ -1147,6 +1191,8 @@ class ui_menu_button : public cloneable_ui_element<ui_menu_button> {
   std::string label(std::string def = {}) const {
     return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
   }
+  /// @brief Zero-copy form of `label()` (empty fallback) -- see `cached_field_str()`.
+  const std::string& label_ref() const { return cached_field_str(label_field_, bison::key_t{"label"}); }
 
  private:
   mutable bison::field* label_field_ = nullptr;
@@ -1161,6 +1207,8 @@ class ui_tab_item : public cloneable_ui_element<ui_tab_item> {
   std::string label(std::string def = {}) const {
     return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
   }
+  /// @brief Zero-copy form of `label()` (empty fallback) -- see `cached_field_str()`.
+  const std::string& label_ref() const { return cached_field_str(label_field_, bison::key_t{"label"}); }
   bool closable(bool def = false) const {
     return cached_field_or<bool>(closable_field_, bison::key_t{"closable"}, def);
   }
@@ -1195,6 +1243,9 @@ class ui_tab_bar : public cloneable_ui_element<ui_tab_bar> {
   std::string id(std::string def = {}) const {
     return cached_field_or<std::string>(id_field_, bison::key_t{"id"}, std::move(def));
   }
+  /// @brief Zero-copy form of `id()` (empty fallback -- caller substitutes its
+  ///        own default) -- see `cached_field_str()`.
+  const std::string& id_ref() const { return cached_field_str(id_field_, bison::key_t{"id"}); }
 
  private:
   mutable bison::field* id_field_ = nullptr;
@@ -1243,6 +1294,8 @@ class ui_tree_node : public cloneable_ui_element<ui_tree_node> {
   std::string label(std::string def = {}) const {
     return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
   }
+  /// @brief Zero-copy form of `label()` (empty fallback) -- see `cached_field_str()`.
+  const std::string& label_ref() const { return cached_field_str(label_field_, bison::key_t{"label"}); }
   bool open(bool def = false) const { return cached_field_or<bool>(open_field_, bison::key_t{"open"}, def); }
   bool leaf(bool def = false) const { return cached_field_or<bool>(leaf_field_, bison::key_t{"leaf"}, def); }
 
@@ -1269,6 +1322,8 @@ class ui_collapsing_header : public cloneable_ui_element<ui_collapsing_header> {
   std::string label(std::string def = {}) const {
     return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
   }
+  /// @brief Zero-copy form of `label()` (empty fallback) -- see `cached_field_str()`.
+  const std::string& label_ref() const { return cached_field_str(label_field_, bison::key_t{"label"}); }
 
   /// @brief True iff @p is_open differs from the open state recorded on the
   /// previous call (or this is the first call); always updates the
@@ -1293,6 +1348,8 @@ class ui_dockspace_viewport : public cloneable_ui_element<ui_dockspace_viewport>
   std::string id(std::string def = {}) const {
     return cached_field_or<std::string>(id_field_, bison::key_t{"id"}, std::move(def));
   }
+  /// @brief Zero-copy form of `id()` (empty fallback) -- see `cached_field_str()`.
+  const std::string& id_ref() const { return cached_field_str(id_field_, bison::key_t{"id"}); }
   int32_t flags(int32_t def = 0) const { return cached_field_or<int32_t>(flags_field_, bison::key_t{"flags"}, def); }
   bool passthru(bool def = false) const {
     return cached_field_or<bool>(passthru_field_, bison::key_t{"passthru"}, def);
@@ -1311,6 +1368,8 @@ class ui_dockspace : public cloneable_ui_element<ui_dockspace> {
   std::string id(std::string def = {}) const {
     return cached_field_or<std::string>(id_field_, bison::key_t{"id"}, std::move(def));
   }
+  /// @brief Zero-copy form of `id()` (empty fallback) -- see `cached_field_str()`.
+  const std::string& id_ref() const { return cached_field_str(id_field_, bison::key_t{"id"}); }
   int32_t flags(int32_t def = 0) const { return cached_field_or<int32_t>(flags_field_, bison::key_t{"flags"}, def); }
 
  private:
@@ -1325,6 +1384,8 @@ class ui_table : public cloneable_ui_element<ui_table> {
   std::string id(std::string def = {}) const {
     return cached_field_or<std::string>(id_field_, bison::key_t{"id"}, std::move(def));
   }
+  /// @brief Zero-copy form of `id()` (empty fallback) -- see `cached_field_str()`.
+  const std::string& id_ref() const { return cached_field_str(id_field_, bison::key_t{"id"}); }
   int32_t flags(int32_t def = 0) const { return cached_field_or<int32_t>(flags_field_, bison::key_t{"flags"}, def); }
   int32_t columns(int32_t def = 1) const { return cached_field_or<int32_t>(columns_field_, bison::key_t{"columns"}, def); }
   float outer_width(float def = 0.0f) const {
@@ -1380,6 +1441,8 @@ class ui_table_column : public cloneable_ui_element<ui_table_column> {
   std::string label(std::string def = {}) const {
     return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
   }
+  /// @brief Zero-copy form of `label()` (empty fallback) -- see `cached_field_str()`.
+  const std::string& label_ref() const { return cached_field_str(label_field_, bison::key_t{"label"}); }
   int32_t flags(int32_t def = 0) const { return cached_field_or<int32_t>(flags_field_, bison::key_t{"flags"}, def); }
   float init_width(float def = 0.0f) const {
     return cached_field_or<float>(init_width_field_, bison::key_t{"init_width"}, def);
@@ -1480,6 +1543,12 @@ class ui_plot : public cloneable_ui_element<ui_plot> {
   std::string y_label(std::string def = {}) const {
     return cached_field_or<std::string>(y_label_field_, bison::key_t{"y_label"}, std::move(def));
   }
+  /// @brief Zero-copy forms of `title()`/`x_label()`/`y_label()` (empty
+  ///        fallback) -- see `cached_field_str()`. `render_plot()` reads all
+  ///        three every frame.
+  const std::string& title_ref() const { return cached_field_str(title_field_, bison::key_t{"title"}); }
+  const std::string& x_label_ref() const { return cached_field_str(x_label_field_, bison::key_t{"x_label"}); }
+  const std::string& y_label_ref() const { return cached_field_str(y_label_field_, bison::key_t{"y_label"}); }
   int32_t x_flags(int32_t def = 0) const {
     return cached_field_or<int32_t>(x_flags_field_, bison::key_t{"x_flags"}, def);
   }
@@ -1514,6 +1583,8 @@ class ui_plot_xy_series : public cloneable_ui_element<ui_plot_xy_series> {
   std::string label(std::string def = {}) const {
     return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
   }
+  /// @brief Zero-copy form of `label()` (empty fallback) -- see `cached_field_str()`.
+  const std::string& label_ref() const { return cached_field_str(label_field_, bison::key_t{"label"}); }
   const std::vector<float>* xs() const { return cached_vector_field<float>(xs_field_, bison::key_t{"xs"}); }
   const std::vector<float>* ys() const { return cached_vector_field<float>(ys_field_, bison::key_t{"ys"}); }
 
@@ -1530,6 +1601,8 @@ class ui_plot_stems : public cloneable_ui_element<ui_plot_stems> {
   std::string label(std::string def = {}) const {
     return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
   }
+  /// @brief Zero-copy form of `label()` (empty fallback) -- see `cached_field_str()`.
+  const std::string& label_ref() const { return cached_field_str(label_field_, bison::key_t{"label"}); }
   const std::vector<float>* xs() const { return cached_vector_field<float>(xs_field_, bison::key_t{"xs"}); }
   const std::vector<float>* ys() const { return cached_vector_field<float>(ys_field_, bison::key_t{"ys"}); }
   float ref(float def = 0.0f) const { return cached_field_or<float>(ref_field_, bison::key_t{"ref"}, def); }
@@ -1548,6 +1621,8 @@ class ui_plot_shaded : public cloneable_ui_element<ui_plot_shaded> {
   std::string label(std::string def = {}) const {
     return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
   }
+  /// @brief Zero-copy form of `label()` (empty fallback) -- see `cached_field_str()`.
+  const std::string& label_ref() const { return cached_field_str(label_field_, bison::key_t{"label"}); }
   const std::vector<float>* xs() const { return cached_vector_field<float>(xs_field_, bison::key_t{"xs"}); }
   const std::vector<float>* ys() const { return cached_vector_field<float>(ys_field_, bison::key_t{"ys"}); }
   const std::vector<float>* ys2() const { return cached_vector_field<float>(ys2_field_, bison::key_t{"ys2"}); }
@@ -1570,6 +1645,8 @@ class ui_plot_bars : public cloneable_ui_element<ui_plot_bars> {
   std::string label(std::string def = {}) const {
     return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
   }
+  /// @brief Zero-copy form of `label()` (empty fallback) -- see `cached_field_str()`.
+  const std::string& label_ref() const { return cached_field_str(label_field_, bison::key_t{"label"}); }
   const std::vector<float>* xs() const { return cached_vector_field<float>(xs_field_, bison::key_t{"xs"}); }
   const std::vector<float>* ys() const { return cached_vector_field<float>(ys_field_, bison::key_t{"ys"}); }
   float bar_size(float def = 0.67f) const {
@@ -1590,6 +1667,8 @@ class ui_plot_histogram : public cloneable_ui_element<ui_plot_histogram> {
   std::string label(std::string def = {}) const {
     return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
   }
+  /// @brief Zero-copy form of `label()` (empty fallback) -- see `cached_field_str()`.
+  const std::string& label_ref() const { return cached_field_str(label_field_, bison::key_t{"label"}); }
   const std::vector<float>* values() const {
     return cached_vector_field<float>(values_field_, bison::key_t{"values"});
   }
@@ -1624,6 +1703,8 @@ class ui_plot_histogram2d : public cloneable_ui_element<ui_plot_histogram2d> {
   std::string label(std::string def = {}) const {
     return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
   }
+  /// @brief Zero-copy form of `label()` (empty fallback) -- see `cached_field_str()`.
+  const std::string& label_ref() const { return cached_field_str(label_field_, bison::key_t{"label"}); }
   const std::vector<float>* xs() const { return cached_vector_field<float>(xs_field_, bison::key_t{"xs"}); }
   const std::vector<float>* ys() const { return cached_vector_field<float>(ys_field_, bison::key_t{"ys"}); }
   int32_t x_bins(int32_t def = -1) const {
@@ -1648,6 +1729,8 @@ class ui_plot_heatmap : public cloneable_ui_element<ui_plot_heatmap> {
   std::string label(std::string def = {}) const {
     return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
   }
+  /// @brief Zero-copy form of `label()` (empty fallback) -- see `cached_field_str()`.
+  const std::string& label_ref() const { return cached_field_str(label_field_, bison::key_t{"label"}); }
   const std::vector<float>* values() const {
     return cached_vector_field<float>(values_field_, bison::key_t{"values"});
   }
@@ -1662,6 +1745,8 @@ class ui_plot_heatmap : public cloneable_ui_element<ui_plot_heatmap> {
   std::string format(std::string def = {}) const {
     return cached_field_or<std::string>(format_field_, bison::key_t{"format"}, std::move(def));
   }
+  /// @brief Zero-copy form of `format()` (empty fallback) -- see `cached_field_str()`.
+  const std::string& format_ref() const { return cached_field_str(format_field_, bison::key_t{"format"}); }
   float x_min(float def = 0.0f) const { return cached_field_or<float>(x_min_field_, bison::key_t{"x_min"}, def); }
   float x_max(float def = 1.0f) const { return cached_field_or<float>(x_max_field_, bison::key_t{"x_max"}, def); }
   float y_min(float def = 0.0f) const { return cached_field_or<float>(y_min_field_, bison::key_t{"y_min"}, def); }
@@ -1688,6 +1773,8 @@ class ui_plot_pie_chart : public cloneable_ui_element<ui_plot_pie_chart> {
   std::string labels(std::string def = {}) const {
     return cached_field_or<std::string>(labels_field_, bison::key_t{"labels"}, std::move(def));
   }
+  /// @brief Zero-copy form of `labels()` (empty fallback) -- see `cached_field_str()`.
+  const std::string& labels_ref() const { return cached_field_str(labels_field_, bison::key_t{"labels"}); }
   const std::vector<float>* values() const {
     return cached_vector_field<float>(values_field_, bison::key_t{"values"});
   }
@@ -1702,6 +1789,8 @@ class ui_plot_pie_chart : public cloneable_ui_element<ui_plot_pie_chart> {
   std::string label_fmt(std::string def = {}) const {
     return cached_field_or<std::string>(label_fmt_field_, bison::key_t{"label_fmt"}, std::move(def));
   }
+  /// @brief Zero-copy form of `label_fmt()` (empty fallback) -- see `cached_field_str()`.
+  const std::string& label_fmt_ref() const { return cached_field_str(label_fmt_field_, bison::key_t{"label_fmt"}); }
   float angle0(float def = 90.0f) const {
     return cached_field_or<float>(angle0_field_, bison::key_t{"angle0"}, def);
   }
@@ -1724,6 +1813,8 @@ class ui_plot_text : public cloneable_ui_element<ui_plot_text> {
   std::string text(std::string def = {}) const {
     return cached_field_or<std::string>(text_field_, bison::key_t{"text"}, std::move(def));
   }
+  /// @brief Zero-copy form of `text()` (empty fallback) -- see `cached_field_str()`.
+  const std::string& text_ref() const { return cached_field_str(text_field_, bison::key_t{"text"}); }
   float x(float def = 0.0f) const { return cached_field_or<float>(x_field_, bison::key_t{"x"}, def); }
   float y(float def = 0.0f) const { return cached_field_or<float>(y_field_, bison::key_t{"y"}, def); }
   float offset_x(float def = 0.0f) const {
@@ -1748,6 +1839,8 @@ class ui_plot_inf_lines : public cloneable_ui_element<ui_plot_inf_lines> {
   std::string label(std::string def = {}) const {
     return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
   }
+  /// @brief Zero-copy form of `label()` (empty fallback) -- see `cached_field_str()`.
+  const std::string& label_ref() const { return cached_field_str(label_field_, bison::key_t{"label"}); }
   const std::vector<float>* values() const {
     return cached_vector_field<float>(values_field_, bison::key_t{"values"});
   }
@@ -1782,6 +1875,12 @@ class ui_plot3d : public cloneable_ui_element<ui_plot3d> {
   std::string z_label(std::string def = {}) const {
     return cached_field_or<std::string>(z_label_field_, bison::key_t{"z_label"}, std::move(def));
   }
+  /// @brief Zero-copy forms of the axis-label accessors (empty fallback) --
+  ///        see `cached_field_str()`. `render_plot3d()` reads all four every frame.
+  const std::string& title_ref() const { return cached_field_str(title_field_, bison::key_t{"title"}); }
+  const std::string& x_label_ref() const { return cached_field_str(x_label_field_, bison::key_t{"x_label"}); }
+  const std::string& y_label_ref() const { return cached_field_str(y_label_field_, bison::key_t{"y_label"}); }
+  const std::string& z_label_ref() const { return cached_field_str(z_label_field_, bison::key_t{"z_label"}); }
   int32_t flags(int32_t def = 0) const { return cached_field_or<int32_t>(flags_field_, bison::key_t{"flags"}, def); }
   int32_t x_flags(int32_t def = 0) const {
     return cached_field_or<int32_t>(x_flags_field_, bison::key_t{"x_flags"}, def);
@@ -1814,6 +1913,8 @@ class ui_plot3d_xyz_series : public cloneable_ui_element<ui_plot3d_xyz_series> {
   std::string label(std::string def = {}) const {
     return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
   }
+  /// @brief Zero-copy form of `label()` (empty fallback) -- see `cached_field_str()`.
+  const std::string& label_ref() const { return cached_field_str(label_field_, bison::key_t{"label"}); }
   const std::vector<float>* xs() const { return cached_vector_field<float>(xs_field_, bison::key_t{"xs"}); }
   const std::vector<float>* ys() const { return cached_vector_field<float>(ys_field_, bison::key_t{"ys"}); }
   const std::vector<float>* zs() const { return cached_vector_field<float>(zs_field_, bison::key_t{"zs"}); }
@@ -1832,6 +1933,8 @@ class ui_plot3d_surface : public cloneable_ui_element<ui_plot3d_surface> {
   std::string label(std::string def = {}) const {
     return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
   }
+  /// @brief Zero-copy form of `label()` (empty fallback) -- see `cached_field_str()`.
+  const std::string& label_ref() const { return cached_field_str(label_field_, bison::key_t{"label"}); }
   const std::vector<float>* xs() const { return cached_vector_field<float>(xs_field_, bison::key_t{"xs"}); }
   const std::vector<float>* ys() const { return cached_vector_field<float>(ys_field_, bison::key_t{"ys"}); }
   const std::vector<float>* zs() const { return cached_vector_field<float>(zs_field_, bison::key_t{"zs"}); }
@@ -1866,6 +1969,8 @@ class ui_plot3d_mesh : public cloneable_ui_element<ui_plot3d_mesh> {
   std::string label(std::string def = {}) const {
     return cached_field_or<std::string>(label_field_, bison::key_t{"label"}, std::move(def));
   }
+  /// @brief Zero-copy form of `label()` (empty fallback) -- see `cached_field_str()`.
+  const std::string& label_ref() const { return cached_field_str(label_field_, bison::key_t{"label"}); }
   const std::vector<float>* xs() const { return cached_vector_field<float>(xs_field_, bison::key_t{"xs"}); }
   const std::vector<float>* ys() const { return cached_vector_field<float>(ys_field_, bison::key_t{"ys"}); }
   const std::vector<float>* zs() const { return cached_vector_field<float>(zs_field_, bison::key_t{"zs"}); }
@@ -1888,6 +1993,8 @@ class ui_plot3d_text : public cloneable_ui_element<ui_plot3d_text> {
   std::string text(std::string def = {}) const {
     return cached_field_or<std::string>(text_field_, bison::key_t{"text"}, std::move(def));
   }
+  /// @brief Zero-copy form of `text()` (empty fallback) -- see `cached_field_str()`.
+  const std::string& text_ref() const { return cached_field_str(text_field_, bison::key_t{"text"}); }
   float x(float def = 0.0f) const { return cached_field_or<float>(x_field_, bison::key_t{"x"}, def); }
   float y(float def = 0.0f) const { return cached_field_or<float>(y_field_, bison::key_t{"y"}, def); }
   float z(float def = 0.0f) const { return cached_field_or<float>(z_field_, bison::key_t{"z"}, def); }
@@ -1920,6 +2027,8 @@ class ui_text_editor : public cloneable_ui_element<ui_text_editor> {
   std::string file_path(std::string def = {}) const {
     return cached_field_or<std::string>(file_path_field_, bison::key_t{"file_path"}, std::move(def));
   }
+  /// @brief Zero-copy form of `file_path()` (empty fallback) -- see `cached_field_str()`.
+  const std::string& file_path_ref() const { return cached_field_str(file_path_field_, bison::key_t{"file_path"}); }
   std::string language(std::string def = {}) const {
     return cached_field_or<std::string>(language_field_, bison::key_t{"language"}, std::move(def));
   }

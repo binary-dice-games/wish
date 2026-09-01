@@ -246,7 +246,7 @@ void fill_wish_ui_schema_suggestions(TextEditor::AutoCompleteState& state) {
 
 void render_text_editor(imgui_renderer&, const ui_element& node_base, const context& s) {
   const auto& node = static_cast<const ui_text_editor&>(node_base);
-  auto file_path = node.file_path();
+  const std::string& file_path = node.file_path_ref();
   auto language = node.language("none");
   auto read_only = node.read_only();
   auto wish_ui_schema = node.wish_ui_schema();
