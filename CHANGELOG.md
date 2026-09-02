@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `tooltip` field on every UI element: when non-empty, its text is shown via `ImGui::SetTooltip()` while the element is hovered.
 - `VerticalLayout` (and `TabItem`) gain a `scroll` boolean field: when true, the layout's children render inside a vertically-scrolling child region sized to the space the layout was given, so overflowing content scrolls instead of clipping the enclosing window.
 
+### Fixed
+
+- `CollapsingHeader` could not be collapsed/expanded by clicking unless the app wrote the new state back onto its `open` field in the `toggled` handler. The renderer now writes `open` back on toggle itself (matching `Checkbox`/`Slider`), so clicks work without app-side wiring.
+
 ### Changed
 
 - `editor` module: loads `.yaml` / `.yml` UI files in addition to JSON, selected by file extension, with full feature parity — YAML syntax highlighting, schema-aware autocomplete, and the cursor-tracked Help panel / preview highlight all work for YAML sources.

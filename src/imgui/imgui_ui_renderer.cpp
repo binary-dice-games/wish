@@ -1341,6 +1341,13 @@ void render_collapsing_header(imgui_renderer& r, const ui_element& node0, const 
   bool is_open = ImGui::CollapsingHeader(label.c_str());
 
   if (node.toggled_since_last_frame(is_open)) {
+    // Keep the server-authoritative field in sync with the click straight
+    // away (same write-back as render_checkbox()/render_slider_*), so the
+    // header stays responsive even when the app's "toggled" handler does not
+    // itself write "open" back. A subtree rebuilt from a prototype every
+    // frame simply overwrites this again next frame -- harmless, and
+    // ImGuiCond_Always still suppresses the spurious flip in that case.
+    const_cast<ui_element&>(node0)["open"_key] = is_open;
     dynamic payload;
     payload["open"_key] = is_open;
     enqueue_event(s, node.wish_id(), "toggled"_key, std::move(payload));

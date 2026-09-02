@@ -561,7 +561,21 @@ def test_saving_shows_confirmation(wish_ui):
   (true only while the header is actively being clicked), not tab selection;
   confirm a tab switch actually happened via its *content* rendering (a
   screenshot or a `get_widget()` on a child only visible in that tab), not
-  `active`.
+  `active`. A single `_page.mouse.click()` on the tab strip is also flaky in
+  this environment — retry the move/down/up (with a `request_render()` after
+  each) in a small loop until a child of that tab reports a non-null `rect`.
+- **A `CollapsingHeader`'s `get_widget()` `rect` spans the whole expanded
+  subtree (header bar *plus* all its children), not just the clickable header
+  row.** Clicking the rect *center* while the header is open lands on a child
+  widget, not the header, so the toggle never fires. Click near the top of the
+  rect instead (`y = rect.y0 + ~10`). When collapsed, the rect is just the
+  header row and its center is fine.
+- **`CollapsingHeader`'s `open` state is server-authoritative** (forced into
+  ImGui every frame via `ImGuiCond_Always`). `render_collapsing_header()`
+  writes the field back on toggle itself, so a click sticks without app-side
+  wiring; but an app that *rebuilds* the header's subtree from a prototype
+  every frame resets `open` to the prototype value each frame — for that
+  pattern the rebuild source (not a `toggled` handler) must carry the state.
 - **A `Combo` (or any framed widget whose `render_*` only calls
   `SetNextItemWidth()` when an explicit `"width"` field is set — Slider,
   InputText/Int/Float, ColorEdit, Drag* share the identical shape) placed as

@@ -2416,6 +2416,78 @@ TEST_F(ImguiRendererTest, CollapsingHeaderRebuiltEveryFrameWithStableOpenEmitsNo
   EXPECT_EQ(toggled_count, 0);
 }
 
+TEST_F(ImguiRendererTest, CollapsingHeaderToggleWritesOpenBackAndEmitsToggled) {
+  // Because "open" is forced into ImGui every frame (ImGuiCond_Always), a
+  // click only sticks if the renderer writes the new state back onto the
+  // node itself -- otherwise next frame re-forces the old value and the
+  // header can never be collapsed. Guards that write-back (same contract as
+  // render_checkbox()/render_slider_*).
+  // by_label keys on "label", so use a Button child (Labels carry "text").
+  auto map = bdg::wish::import_json(
+      R"({"type":"CollapsingHeader","label":"Sec","open":true,"children":{
+            "c":{"type":"Button","label":"Inside"}
+          }})");
+
+  bdg::bison::key_t last_event{hash_t{0}};
+  bool last_open = true;
+  sess_->emit_event = [&](bdg::bison::key_t, bdg::bison::key_t ev, dynamic p) {
+    last_event = ev;
+    const auto* f = p.findField("open"_key);
+    if (f && f->is<bool>())
+      last_open = f->as<bool>();
+  };
+
+  // Frame 1: header renders open. Compute its ImGui id the same way
+  // render_node()->render_collapsing_header() does (PushID(stable_id(node))
+  // then the window hashes the label) -- GetItemID() after render_node()
+  // returns 0 for a group-wrapped recursing node (see the EndGroup() note in
+  // imgui_renderer.cpp).
+  ImGuiID header_id{0};
+  renderer_->begin_frame();
+  in_window([&] {
+    ImGui::PushID(bdg::wish::stable_id(*map[""]).c_str());
+    header_id = ImGui::GetID("Sec");
+    ImGui::PopID();
+    renderer_->render_node(*map[""], *sess_);
+  });
+  renderer_->end_frame();
+  ASSERT_NE(header_id, 0u);
+  ASSERT_TRUE(map[""]->get_as<bool>("open"_key, false));
+
+  // Frame 2: drive a nav "collapse" (Left on an open header) -- reaches
+  // TreeNodeBehavior's toggle path without needing a hoverable mouse press
+  // (group-wrapped widgets like a recursing CollapsingHeader don't resolve
+  // hover cleanly under fake_click; see the EndGroup() note in
+  // imgui_renderer.cpp). The renderer's response to the toggle is identical.
+  ImGui::GetIO().DeltaTime = 1.0f / 60.0f;
+  ImGui::NewFrame();
+  {
+    ImGuiContext& g = *GImGui;
+    g.NavId = header_id;
+    g.NavMoveDir = ImGuiDir_Left;
+  }
+  in_window([&] { renderer_->render_node(*map[""], *sess_); });
+  ImGui::EndFrame();
+
+  for (auto& ev : sess_->pending_events)
+    if (sess_->emit_event)
+      sess_->emit_event(ev.id, ev.event_name, ev.payload);
+  sess_->pending_events.clear();
+
+  EXPECT_EQ(last_event, "toggled"_key);
+  EXPECT_FALSE(last_open);
+  // The server-authoritative field now reflects the click.
+  EXPECT_FALSE(map[""]->get_as<bool>("open"_key, true));
+
+  // Frame 3: no interaction -- the header stays collapsed (children not drawn)
+  // because the written-back field feeds SetNextItemOpen(false).
+  labeled_rect_capturing_renderer r3;
+  r3.begin_frame();
+  in_window([&] { r3.render_node(*map[""], *sess_); });
+  r3.end_frame();
+  EXPECT_EQ(r3.by_label.count("Inside"), 0u);
+}
+
 TEST_F(ImguiRendererTest, SpringCentersSingleChildInHorizontalLayout) {
   constexpr auto desc = R"({
     "type": "Window", "title": "SpringCenter", "width": 400, "height": 100,
