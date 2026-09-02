@@ -691,9 +691,32 @@ void render_vertical_layout(imgui_renderer& r, const ui_element& node, const con
   // wraps in a plain BeginGroup() instead when suppressed -- a group is not
   // a window at all, so there is nothing for it to ever intercept hover
   // from, matching a plain (unwrapped) Label cell's existing behavior.
-  bool wrap_self = has_self_size && !s.suppress_layout_wrap_self;
+  //
+  // "scroll": children render inside their own vertically-scrolling child
+  // region sized to the space this layout was *given* (arranged_size, i.e. a
+  // stretch/fixed height its parent handed it), NOT to its own content
+  // extent -- so overflowing content scrolls here instead of clipping or
+  // ratcheting the enclosing window. Same idiom as render_tab_item()'s
+  // scroll branch. A scroll layout's children should be auto/fixed height,
+  // not stretch (there is no bounded remainder to stretch against).
+  // Never open a real child window inside a TableRow cell (see
+  // suppress_layout_wrap_self's note above) -- a scroll region there would
+  // steal the row's click-through; fall back to the plain path.
+  bool want_scroll = node.scroll(false) && !s.suppress_layout_wrap_self;
+  bool wrap_self = has_self_size && !s.suppress_layout_wrap_self && !want_scroll;
   bool group_wrap_self = has_self_size && s.suppress_layout_wrap_self;
-  if (wrap_self) {
+  if (want_scroll) {
+    // Prefer the live content region (this layout renders inside whatever box
+    // its parent's arrange pass already gave it); fall back to arranged_size
+    // for the rare self-healed-root case where no ancestor constrained it.
+    ImVec2 avail = ImGui::GetContentRegionAvail();
+    float sw = avail.x > 1.0f ? avail.x : node.arranged_size().x;
+    float sh = avail.y > 1.0f ? avail.y : node.arranged_size().y;
+    auto child_id = "##vlscroll_" + stable_id(node);
+    ImGui::BeginChild(
+        child_id.c_str(), ImVec2(sw > 1.0f ? sw : 1.0f, sh > 1.0f ? sh : 1.0f), ImGuiChildFlags_None);
+    report_self_rect(node);
+  } else if (wrap_self) {
     // One real BeginChild for the *whole* row set, not one per hinted
     // child -- self-sizes to this node's own actual content extent and
     // reports its own rect via GetWindowPos()/GetWindowSize() (see
@@ -768,7 +791,7 @@ void render_vertical_layout(imgui_renderer& r, const ui_element& node, const con
   });
 
   ImGui::PopStyleVar();
-  if (wrap_self) {
+  if (want_scroll || wrap_self) {
     ImGui::EndChild();
   } else if (group_wrap_self) {
     // Same trailing zero-size Dummy() before EndGroup() as
@@ -1304,12 +1327,28 @@ void render_tree_node(imgui_renderer& r, const ui_element& node0, const context&
 void render_collapsing_header(imgui_renderer& r, const ui_element& node0, const context& s) {
   const auto& node = static_cast<const ui_collapsing_header&>(node0);
   const std::string& label = node.label_ref();
+
+  // Server-authoritative open state: force it every frame so ImGui never owns
+  // it. A freshly-rebuilt header (a new ImGui ID each rebuild, or an ID
+  // colliding with a just-freed sibling's stale storage) would otherwise
+  // report a spurious open/close flip on nearly every frame; any caller that
+  // rebuilds its subtree in response to "toggled" (e.g. genie's Inspector)
+  // then re-triggers itself without bound. Forcing is_open to match the wish
+  // field means toggled_since_last_frame() sees no change on a fresh node's
+  // first frame -- no spurious event, no loop.
+  bool want_open = node.open(true);
+  ImGui::SetNextItemOpen(want_open, ImGuiCond_Always);
   bool is_open = ImGui::CollapsingHeader(label.c_str());
 
   if (node.toggled_since_last_frame(is_open)) {
     dynamic payload;
     payload["open"_key] = is_open;
     enqueue_event(s, node.wish_id(), "toggled"_key, std::move(payload));
+    // The click enqueues an event, so the render loop keeps going, but a
+    // consumer that rebuilds its tree in the handler needs a couple of
+    // settle frames for the new content to converge (same reason
+    // render_combo() bumps this when a popup opens).
+    s.dirty.store(kDirtySettleFrames, std::memory_order_release);
   }
 
   if (is_open)

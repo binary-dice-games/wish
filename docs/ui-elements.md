@@ -131,7 +131,11 @@ nest them freely to build rows, columns, and grids.
 | `width` | `float` | `0.0` | Column width hint used when this element is a direct child of a `HorizontalLayout`: `0` sizes to content; a positive value reserves that many fixed pixels; a negative value makes it a stretch column, sharing whatever width remains after fixed columns and spacing, weighted by its magnitude relative to other stretch columns (mirrors ImGui's `ImGuiTableColumnFlags_WidthStretch` weight convention). Ignored outside a `HorizontalLayout`. |
 | `height` | `float` | `0.0` | Row height hint used when this element is a direct child of a `VerticalLayout` — the same convention as `width`, on the height axis. An auto (`0`) row's previous frame's measured height is reserved for this frame's stretch-row sizing, so a fixed header/footer plus one stretch-filling body works regardless of child order. Ignored outside a `VerticalLayout`. |
 
-- **`VerticalLayout`** — stacks children top-to-bottom. No extra fields.
+- **`VerticalLayout`** — stacks children top-to-bottom. Adds:
+
+  | Field | Type | Default | Description |
+  |---|---|---|---|
+  | `scroll` | `bool` | `false` | When `true`, children render inside a vertically-scrolling child region sized to the space this layout was given (a stretch/fixed `height`, else the available height), so overflowing content scrolls here instead of clipping or ratcheting the enclosing window. Give it `height: -1` (or a fixed height) so its parent hands it a bounded box; its own children should be auto/fixed height, not stretch. |
 - **`HorizontalLayout`** — places children left-to-right. Adds:
 
   | Field | Type | Default | Description |
@@ -574,6 +578,7 @@ A bold section header toggling visibility of its children.
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `label` | `string` | `""` | Header text. |
+| `open` | `bool` | `true` | Expanded/collapsed state. **Server-authoritative:** forced into ImGui every frame (`ImGuiCond_Always`), unlike `TreeNode.open`. Update this field in the `toggled` handler to keep the header responsive to clicks; leaving it stale pins the header regardless of user input. Rebuilding the header's subtree every frame is safe as long as `open` stays consistent. |
 
 **Events:** `toggled` — `{ open: bool }`.
 

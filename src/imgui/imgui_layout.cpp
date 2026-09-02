@@ -179,6 +179,15 @@ static natural_size measure_vertical_layout(imgui_renderer& r, const ui_element&
   });
   if (n > 1)
     total_h += spacing * float(n - 1);
+  // A "scroll" VerticalLayout has no intrinsic height -- its children scroll
+  // inside whatever box its parent hands it (render_vertical_layout()'s
+  // want_scroll branch). Reporting the summed child height would make an
+  // auto-height ancestor try to grow to fit content the scroll region is
+  // meant to absorb. Report 0 on that axis (same "size me from outside"
+  // convention as Spring), still returning the measured max width. Children
+  // were already measured above so their own self-heal stashes are fresh.
+  if (node.scroll(false))
+    return {max_w, 0.0f};
   return {max_w, total_h};
 }
 

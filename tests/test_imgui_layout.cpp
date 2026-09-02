@@ -188,6 +188,25 @@ TEST_F(ImguiLayoutTest, VerticalLayoutOfThreeFixedHeightButtonsSumsHeights) {
   EXPECT_FLOAT_EQ(sz.y, 20.0f + 30.0f + 40.0f + 5.0f * 2.0f);
 }
 
+// A "scroll" VerticalLayout has no intrinsic height -- its children scroll
+// inside whatever box its parent hands it, so measure must report 0 on the Y
+// axis (not the summed child height) to keep an auto-height ancestor from
+// trying to grow to fit content the scroll region is meant to absorb.
+TEST_F(ImguiLayoutTest, ScrollVerticalLayoutReportsZeroIntrinsicHeight) {
+  auto map = bdg::wish::import_json(R"({"type":"VerticalLayout","scroll":true,"children":{
+      "a":{"type":"Button","label":"A","height":20},
+      "b":{"type":"Button","label":"B","height":30},
+      "c":{"type":"Button","label":"C","height":40}
+  }})");
+
+  renderer_->begin_frame();
+  bdg::wish::natural_size sz{};
+  in_window([&] { sz = measure_node(*renderer_, *map[""], *sess_); });
+  renderer_->end_frame();
+
+  EXPECT_FLOAT_EQ(sz.y, 0.0f);
+}
+
 // ── measure_node: Table falls back to last_rendered_size(), like every ─────
 // ── other composite/leaf with no registered measure_fn ──────────────────────
 //

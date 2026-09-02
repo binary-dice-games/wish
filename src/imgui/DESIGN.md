@@ -254,6 +254,19 @@ hand-written sequence of ImGui calls would work:
   `size == 0` branch), **not** "auto-size to nothing" — handing it a literal
   `0` would balloon an empty/zero-content panel out to whatever's left in
   its ambient container.
+- A `VerticalLayout` with `"scroll": true` takes a different outer wrap: one
+  `BeginChild()` sized to the space it was *given* (the live
+  `GetContentRegionAvail()`, or `arranged_size()` as a self-healed-root
+  fallback) **with scrollbars enabled**, so overflowing children scroll here
+  instead of clipping/ratcheting the enclosing window. Its `measure_fn`
+  reports `0` intrinsic height (like `Spring`) so an auto-height ancestor
+  doesn't try to grow to fit the content the scroll region absorbs — give the
+  scroll layout a `height: -1` (or fixed) hint so its parent hands it a
+  bounded box, and keep its own children auto/fixed height (a stretch child
+  has no bounded remainder to stretch against inside a scroll region). Same
+  idiom as `TabItem`'s pre-existing `"scroll"` field. Suppressed inside a
+  `TableRow` cell (a real child window there would steal the row's
+  click-through).
 - An explicit `"spacing"` field override becomes a single
   `ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ...)` scoped tightly around
   this node's own direct children (pushed *after* the outer `BeginChild()`

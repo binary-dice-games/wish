@@ -14,13 +14,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Rust (`bindings/rust/wish-server/`) and Go (`bindings/go/wishserver/`) server language bindings: host and render a real wish session over `wish_server_c.h` (`Server`, `Params`).
 - `examples/ui/json/` and `examples/ui/yaml/` — standalone editor example UIs, one file per tab of the `demo` app, in both formats.
 - `tooltip` field on every UI element: when non-empty, its text is shown via `ImGui::SetTooltip()` while the element is hovered.
+- `VerticalLayout` (and `TabItem`) gain a `scroll` boolean field: when true, the layout's children render inside a vertically-scrolling child region sized to the space the layout was given, so overflowing content scrolls instead of clipping the enclosing window.
 
 ### Changed
 
 - `editor` module: loads `.yaml` / `.yml` UI files in addition to JSON, selected by file extension, with full feature parity — YAML syntax highlighting, schema-aware autocomplete, and the cursor-tracked Help panel / preview highlight all work for YAML sources.
 - `editor` module: closing with unsaved edits now uses a real modal `MessageBox` ("Save changes … before closing?", Yes / No / Cancel) instead of an inline panel.
 - `TextEditor`: new `"yaml"` value for the `language` field (YAML syntax highlighting); `wish_ui_schema` autocomplete now also applies when `language` is `"yaml"`.
-
+- `CollapsingHeader`'s `open` field is now server-authoritative: it is forced into ImGui every frame (`ImGuiCond_Always`) instead of being applied once and then owned by ImGui. Update the field in the `toggled` handler to keep the header responsive to clicks. This fixes a spurious open/close oscillation when a `CollapsingHeader`'s subtree is rebuilt every frame.
 - `--verbose` is now a verbosity level (`none` | `fatal` | `error` | `warning` | `info` | `trace`, default `none`) instead of an on/off flag. RMI trace lines and session lifecycle lines in `wish_logs/server.log` (and mirrored to stdout) are produced only at `info` and above; decoded call payloads (`args=`, `set` values, response bodies) only at `trace`. `fatal`/`error`/`warning` only raise the severity floor for client log messages. At `none` (the default) the server log stays silent and the trace string is never built.
 - `wish_server_set_verbose()` / binding `set_verbose(bool)` are deprecated: `true` now maps to log level `trace`, `false` to `none`.
 - Server render loop: reduced per-frame CPU and heap-allocation churn — zero-copy string field access on the render/measure/arrange hot path, `ui_element::for_each_child_ordered()` no longer allocates per call, cached MenuBar-child detection, and fewer per-frame map/style copies in the render loop. No behavior change.

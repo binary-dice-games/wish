@@ -2360,6 +2360,62 @@ class labeled_rect_capturing_renderer : public imgui_renderer {
   }
 };
 
+// ── CollapsingHeader: server-authoritative "open" state ──────────────────────
+
+TEST_F(ImguiRendererTest, CollapsingHeaderHidesChildrenWhenServerOpenIsFalse) {
+  // by_label keys on the "label" field, so use a Button child (Labels carry
+  // "text", not "label").
+  auto closed = bdg::wish::import_json(
+      R"({"type":"CollapsingHeader","label":"Sec","open":false,"children":{
+            "c":{"type":"Button","label":"Inside"}
+          }})");
+  labeled_rect_capturing_renderer r;
+  r.begin_frame();
+  in_window([&] { r.render_node(*closed[""], *sess_); });
+  r.end_frame();
+  EXPECT_EQ(r.by_label.count("Inside"), 0u);
+
+  auto open = bdg::wish::import_json(
+      R"({"type":"CollapsingHeader","label":"Sec","open":true,"children":{
+            "c":{"type":"Button","label":"Inside"}
+          }})");
+  labeled_rect_capturing_renderer r2;
+  r2.begin_frame();
+  in_window([&] { r2.render_node(*open[""], *sess_); });
+  r2.end_frame();
+  EXPECT_EQ(r2.by_label.count("Inside"), 1u);
+}
+
+TEST_F(ImguiRendererTest, CollapsingHeaderRebuiltEveryFrameWithStableOpenEmitsNoToggled) {
+  // Regression guard for the infinite-refresh loop genie's Inspector hit:
+  // rebuilding the header subtree from scratch every frame (fresh nodes, so
+  // fresh was_open_) must not spuriously fire "toggled" as long as the
+  // server-owned "open" field is stable. Before SetNextItemOpen(Always),
+  // ImGui's own (ID-collision-prone) open state disagreed with the wish node
+  // and this oscillated.
+  int toggled_count = 0;
+  sess_->emit_event = [&](bdg::bison::key_t, bdg::bison::key_t ev, dynamic) {
+    if (ev == "toggled"_key)
+      ++toggled_count;
+  };
+
+  for (int frame = 0; frame < 6; ++frame) {
+    auto map = bdg::wish::import_json(
+        R"({"type":"CollapsingHeader","label":"Sec","open":true,"children":{
+              "c":{"type":"Label","text":"Inside"}
+            }})");
+    renderer_->begin_frame();
+    in_window([&] { renderer_->render_node(*map[""], *sess_); });
+    renderer_->end_frame();
+    for (auto& ev : sess_->pending_events)
+      if (sess_->emit_event)
+        sess_->emit_event(ev.id, ev.event_name, ev.payload);
+    sess_->pending_events.clear();
+  }
+
+  EXPECT_EQ(toggled_count, 0);
+}
+
 TEST_F(ImguiRendererTest, SpringCentersSingleChildInHorizontalLayout) {
   constexpr auto desc = R"({
     "type": "Window", "title": "SpringCenter", "width": 400, "height": 100,

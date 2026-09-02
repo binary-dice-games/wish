@@ -487,6 +487,15 @@ class ui_element : public bison::cloneable_dynamic<ui_element> {
     return cached_field_or<float>(spacing_field_, bison::key_t{"spacing"}, def);
   }
 
+  /// @brief Cached `get_as<bool>("scroll"_key, def)`. When true on a
+  ///        `VerticalLayout` (or a `TabItem`), the layout's children render
+  ///        inside their own vertically-scrolling child region sized to the
+  ///        available height, instead of overflowing/clipping the enclosing
+  ///        window -- see `render_vertical_layout()`/`render_tab_item()`.
+  bool scroll(bool def = false) const {
+    return cached_field_or<bool>(scroll_field_, bison::key_t{"scroll"}, def);
+  }
+
   // ── Drag & drop ───────────────────────────────────────────────────────────
   //
   // `handle_drag_drop()` (`src/imgui/imgui_renderer.cpp`) is called for every
@@ -656,6 +665,7 @@ class ui_element : public bison::cloneable_dynamic<ui_element> {
   mutable bison::field* height_field_ = nullptr;
   mutable bison::field* weight_field_ = nullptr;
   mutable bison::field* spacing_field_ = nullptr;
+  mutable bison::field* scroll_field_ = nullptr;
   mutable bison::field* drag_type_field_ = nullptr;
   mutable bison::field* drag_payload_field_ = nullptr;
   mutable bison::field* drop_type_field_ = nullptr;
@@ -1212,9 +1222,8 @@ class ui_tab_item : public cloneable_ui_element<ui_tab_item> {
   bool closable(bool def = false) const {
     return cached_field_or<bool>(closable_field_, bison::key_t{"closable"}, def);
   }
-  bool scroll(bool def = false) const {
-    return cached_field_or<bool>(scroll_field_, bison::key_t{"scroll"}, def);
-  }
+  // `scroll()` is inherited from `ui_element` (same "children render inside a
+  // vertically-scrolling child region" contract for TabItem and VerticalLayout).
 
   /// @brief True iff @p is_selected differs from the selected state
   /// recorded on the previous call (or this is the first call); always
@@ -1232,7 +1241,6 @@ class ui_tab_item : public cloneable_ui_element<ui_tab_item> {
  private:
   mutable bison::field* label_field_ = nullptr;
   mutable bison::field* closable_field_ = nullptr;
-  mutable bison::field* scroll_field_ = nullptr;
   mutable std::optional<bool> was_selected_;
 };
 
@@ -1325,6 +1333,12 @@ class ui_collapsing_header : public cloneable_ui_element<ui_collapsing_header> {
   /// @brief Zero-copy form of `label()` (empty fallback) -- see `cached_field_str()`.
   const std::string& label_ref() const { return cached_field_str(label_field_, bison::key_t{"label"}); }
 
+  /// @brief Server-authoritative open state (default true). Forced into ImGui
+  /// every frame via `ImGuiCond_Always` -- see `render_collapsing_header()`.
+  bool open(bool def = true) const {
+    return cached_field_or<bool>(open_field_, bison::key_t{"open"}, def);
+  }
+
   /// @brief True iff @p is_open differs from the open state recorded on the
   /// previous call (or this is the first call); always updates the
   /// recorded state. Replaces `"__open__"`.
@@ -1336,6 +1350,7 @@ class ui_collapsing_header : public cloneable_ui_element<ui_collapsing_header> {
 
  private:
   mutable bison::field* label_field_ = nullptr;
+  mutable bison::field* open_field_ = nullptr;
   mutable std::optional<bool> was_open_;
 };
 

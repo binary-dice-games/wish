@@ -49,10 +49,21 @@ void register_tree() {
     proto->addField(
         "label"_rkey,
         field{std::string{}, attr<DisplayName>("Label"), attr<Description>("Header text."), attr<Category>("Content")});
+    proto->addField(
+        "open"_rkey,
+        field{
+            true,
+            attr<DisplayName>("Open"),
+            attr<Description>("Expanded/collapsed state. Unlike TreeNode's 'open', this is forced "
+                              "into ImGui every frame (ImGuiCond_Always): the server owns the state, "
+                              "ImGui never drives it. Update this field in the 'toggled' handler to "
+                              "keep the header responsive to clicks."),
+            attr<Category>("State")});
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("CollapsingHeader"));
     (*proto)[dynamic::CLASS].addAttribute(
         attr<Description>("A bold section header that toggles visibility of its children. "
-                          "Emits 'toggled' with {open: bool} when expanded or collapsed."));
+                          "Emits 'toggled' with {open: bool} when expanded or collapsed. "
+                          "Its 'open' field is server-authoritative (forced every frame)."));
     dynamic::addClass(
         "wish"_key,
         std::move(proto),
