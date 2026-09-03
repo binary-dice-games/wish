@@ -40,6 +40,76 @@ std::string trim_eol(std::string s) {
   return s;
 }
 
+// Whitespace-run split, dropping empty fields -- `kubectl top ... --no-headers`
+// columns are separated by variable-width padding, not tabs.
+std::vector<std::string> ws_split(const std::string& s) {
+  std::vector<std::string> out;
+  std::istringstream iss(s);
+  std::string t;
+  while (iss >> t)
+    out.push_back(t);
+  return out;
+}
+
+// `kubectl top` CPU column -> millicores. "5m" -> 5 ; "1" -> 1000 (whole
+// cores) ; "1500000n" -> 1.5 ; "250000u" -> 0.25.
+float parse_cpu_millicores(const std::string& s) {
+  if (s.empty())
+    return 0.0f;
+  try {
+    size_t idx = 0;
+    double v = std::stod(s, &idx);
+    const std::string unit = s.substr(idx);
+    if (unit == "n")
+      return static_cast<float>(v / 1e6);
+    if (unit == "u")
+      return static_cast<float>(v / 1e3);
+    if (unit == "m")
+      return static_cast<float>(v);
+    return static_cast<float>(v * 1000.0);
+  } catch (const std::exception&) {
+    return 0.0f;
+  }
+}
+
+// `kubectl top` memory column -> MiB. Handles Ki/Mi/Gi/Ti, K/M/G (SI), and
+// bare bytes.
+float parse_mem_mib(const std::string& s) {
+  if (s.empty())
+    return 0.0f;
+  try {
+    size_t idx = 0;
+    double v = std::stod(s, &idx);
+    const std::string unit = s.substr(idx);
+    if (unit == "Ki")
+      return static_cast<float>(v / 1024.0);
+    if (unit == "Mi")
+      return static_cast<float>(v);
+    if (unit == "Gi")
+      return static_cast<float>(v * 1024.0);
+    if (unit == "Ti")
+      return static_cast<float>(v * 1024.0 * 1024.0);
+    if (unit == "K" || unit == "k")
+      return static_cast<float>(v * 1000.0 / 1048576.0);
+    if (unit == "M")
+      return static_cast<float>(v * 1e6 / 1048576.0);
+    if (unit == "G")
+      return static_cast<float>(v * 1e9 / 1048576.0);
+    return static_cast<float>(v / 1048576.0);
+  } catch (const std::exception&) {
+    return 0.0f;
+  }
+}
+
+// "30%" -> 30.0f ; "<unknown>" / "" -> 0. std::stof stops at the '%'.
+float parse_pct(const std::string& s) {
+  try {
+    return std::stof(s);
+  } catch (const std::exception&) {
+    return 0.0f;
+  }
+}
+
 std::string first_token(const std::string& s) {
   auto ws = s.find_first_not_of(" \t");
   if (ws == std::string::npos)
@@ -196,12 +266,99 @@ kubectl_source::kubectl_source(std::shared_ptr<bison::rmi::proxy::dynamic> proxy
 
 kubectl_source::~kubectl_source() {
   stop_follow();
+  stop_stats_polling();
 }
 
 void kubectl_source::stop_follow() {
   if (follow_stop_)
     follow_stop_->store(true, std::memory_order_relaxed);
   follow_stop_.reset();
+}
+
+void kubectl_source::stop_stats_polling() {
+  if (stats_stop_)
+    stats_stop_->store(true, std::memory_order_relaxed);
+  stats_stop_.reset();
+}
+
+void kubectl_source::start_stats_polling() {
+  if (stats_stop_)
+    return; // already polling
+
+  auto stop = std::make_shared<std::atomic<bool>>(false);
+  stats_stop_ = stop;
+  auto proxy = proxy_;
+  std::thread([proxy, stop] {
+    using namespace std::chrono_literals;
+    while (!stop->load(std::memory_order_relaxed)) {
+      // run_kubectl_cli() directly, NOT run_logged() -- a ~10 s re-poll of
+      // two commands would flood the Console window (git's Log-window lesson).
+      auto pods_r = run_kubectl_cli({"top", "pods", "-A", "--no-headers"});
+      auto nodes_r = run_kubectl_cli({"top", "nodes", "--no-headers"});
+
+      dynamic args;
+      dynamic pods_arr;
+      dynamic nodes_arr;
+      size_t pi = 0;
+      size_t ni = 0;
+      std::string error;
+
+      if (pods_r.ok()) {
+        std::istringstream iss(pods_r.stdout_text);
+        std::string line;
+        while (std::getline(iss, line)) {
+          auto c = ws_split(line);
+          if (c.size() < 4)
+            continue;
+          auto e = std::make_shared<dynamic>();
+          (*e)["namespace"_key] = c[0];
+          (*e)["name"_key] = c[1];
+          (*e)["cpu"_key] = c[2];
+          (*e)["cpu_m"_key] = parse_cpu_millicores(c[2]);
+          (*e)["mem"_key] = c[3];
+          (*e)["mem_mib"_key] = parse_mem_mib(c[3]);
+          pods_arr[pi++] = dynamic_ptr{e};
+        }
+      } else {
+        error = trim_eol(pods_r.stderr_text.empty() ? pods_r.stdout_text : pods_r.stderr_text);
+      }
+
+      if (nodes_r.ok()) {
+        std::istringstream iss(nodes_r.stdout_text);
+        std::string line;
+        while (std::getline(iss, line)) {
+          auto c = ws_split(line);
+          if (c.size() < 5)
+            continue;
+          auto e = std::make_shared<dynamic>();
+          (*e)["name"_key] = c[0];
+          (*e)["cpu"_key] = c[1];
+          (*e)["cpu_m"_key] = parse_cpu_millicores(c[1]);
+          (*e)["cpu_pct"_key] = parse_pct(c[2]);
+          (*e)["mem"_key] = c[3];
+          (*e)["mem_mib"_key] = parse_mem_mib(c[3]);
+          (*e)["mem_pct"_key] = parse_pct(c[4]);
+          nodes_arr[ni++] = dynamic_ptr{e};
+        }
+      } else if (error.empty()) {
+        error = trim_eol(nodes_r.stderr_text.empty() ? nodes_r.stdout_text : nodes_r.stderr_text);
+      }
+
+      args["pods"_key] = dynamic_ptr{std::make_shared<dynamic>(std::move(pods_arr))};
+      args["nodes"_key] = dynamic_ptr{std::make_shared<dynamic>(std::move(nodes_arr))};
+      if (!error.empty())
+        args["error"_key] = error;
+
+      try {
+        proxy->call("update_stats"_key, std::move(args)).get();
+      } catch (const std::exception&) {
+        break; // form torn down.
+      }
+
+      for (int k = 0; k < 100 && !stop->load(std::memory_order_relaxed); ++k)
+        std::this_thread::sleep_for(100ms);
+    }
+  }).detach();
 }
 
 void kubectl_source::refresh_all() {

@@ -76,6 +76,10 @@ void run_docker(wish_app_host& s) {
   // handler is registered, rather than via a form-emitted event that would
   // race ahead of this wiring (git's documented initial-load-race fix).
   source->refresh_all();
+
+  // Live `docker stats` graphs in the Stats window: a background poll thread
+  // (3 s cadence) that never touches the Console window.
+  source->start_stats_polling();
 }
 
 namespace {

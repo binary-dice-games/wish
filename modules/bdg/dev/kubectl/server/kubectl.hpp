@@ -31,6 +31,7 @@
 
 #include <deque>
 #include <functional>
+#include <map>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -104,6 +105,18 @@ class kubectl_frontend : public form {
   /// single-line preview). Color-coded green/red by `ok`; the table is
   /// FIFO-capped at kMaxConsoleRows. Mirrors git_repo::do_append_command_log.
   bison::dynamic do_append_command_log(const bison::dynamic& args);
+
+  /// @brief RMI method: push one live `kubectl top` sample to the Top
+  /// window. @p args holds `pods` -- each `{ namespace, name, cpu (string
+  /// "5m"), cpu_m (float millicores), mem (string "12Mi"), mem_mib (float
+  /// MiB) }` -- `nodes` -- each `{ name, cpu (string), cpu_m (float),
+  /// cpu_pct (float), mem (string), mem_mib (float), mem_pct (float) }` --
+  /// and an optional `error` (string; shown in the status label when
+  /// `kubectl top` could not run, e.g. metrics-server missing). Appends one
+  /// point to every per-pod / per-node line plus each plot's aggregate line,
+  /// and rebuilds the two current-values tables. Fed by kubectl_source's
+  /// background poll thread -- deliberately NOT traced in the Console window.
+  bison::dynamic do_update_stats(const bison::dynamic& args);
 
  protected:
   void on_init() override;
@@ -272,6 +285,58 @@ class kubectl_frontend : public form {
   /// entries); reset the sequence counter. From any row's "Clear Console".
   void clear_console_rows();
   void erase_console_row_objects(const console_row_entry& entry);
+
+  // ── Top window (live `kubectl top` CPU/memory graphs) ───────────────
+  //
+  // docker.cpp's Stats-window pattern: rolling per-series Plot histories fed
+  // one sample per update_stats call. Four plots -- pod CPU (millicores),
+  // pod memory (MiB), node CPU %, node memory % -- each with a per-entity
+  // line per pod/node (capped at kMaxStatsSeries by current value) plus an
+  // aggregate line ("Total" for the additive pod plots, "Cluster avg" for
+  // the node % plots), and two current-values tables.
+  static constexpr size_t kMaxStatsHistory = 120;
+  static constexpr size_t kMaxStatsSeries = 15;
+
+  struct stats_series {
+    ui_element_ptr el;
+    std::vector<float> hist;
+    bison::key_t id;
+    size_t child_key{0};
+  };
+
+  struct stats_plot {
+    ui_element_ptr plot;
+    stats_series aggregate;  // child_key 0, never removed
+    bool average{false};     // aggregate = mean instead of sum
+    std::map<std::string, stats_series> series;
+    size_t next_child_key{0};
+  };
+
+  std::string top_root_key_;
+  bison::key_t top_window_id_;
+  ui_element_ptr top_status_label_;
+  ui_element_ptr top_pods_table_;
+  ui_element_ptr top_nodes_table_;
+  stats_plot pods_cpu_plot_;
+  stats_plot pods_mem_plot_;
+  stats_plot nodes_cpu_plot_;
+  stats_plot nodes_mem_plot_;
+  std::vector<float> stats_xs_;
+  std::vector<bison::key_t> top_pods_row_ids_;
+  std::vector<bison::key_t> top_nodes_row_ids_;
+  size_t next_top_pods_key_{0};
+  size_t next_top_nodes_key_{0};
+
+  void build_top_window();
+  void init_stats_plot(
+      stats_plot& sp, const ui_element_ptr& plot_el, const std::string& aggregate_label, bool average);
+  void update_stats_plot(stats_plot& sp, const std::map<std::string, float>& values);
+  void rebuild_top_table(
+      const ui_element_ptr& table, std::vector<bison::key_t>& row_ids, size_t& next_key,
+      const bison::dynamic& args, bison::key_t array_key,
+      const std::function<std::vector<ui_element_ptr>(const bison::dynamic&)>& make_cells);
+  static void push_stats_history(std::vector<float>& history, float value);
+  void update_stats_xs(size_t count);
 
   std::unordered_map<bison::key_t, std::function<void()>, bison::key_t, bison::key_t> click_handlers_;
   std::unordered_map<bison::key_t, row_action, bison::key_t, bison::key_t> menu_action_targets_;

@@ -38,6 +38,16 @@ std::string trim_eol(std::string s) {
   return s;
 }
 
+// "12.34%" -> 12.34f ; "--" / "" / unparseable -> 0. std::stof stops at the
+// trailing '%' on its own.
+float parse_percent(const std::string& s) {
+  try {
+    return std::stof(s);
+  } catch (const std::exception&) {
+    return 0.0f;
+  }
+}
+
 // Pushes one Console-window trace row for a finished `docker <argv>` run.
 // Best-effort: a torn-down form just swallows the call.
 void push_command_log(
@@ -106,12 +116,73 @@ docker_source::docker_source(std::shared_ptr<bison::rmi::proxy::dynamic> proxy) 
 
 docker_source::~docker_source() {
   stop_follow();
+  stop_stats_polling();
 }
 
 void docker_source::stop_follow() {
   if (follow_stop_)
     follow_stop_->store(true, std::memory_order_relaxed);
   follow_stop_.reset();
+}
+
+void docker_source::stop_stats_polling() {
+  if (stats_stop_)
+    stats_stop_->store(true, std::memory_order_relaxed);
+  stats_stop_.reset();
+}
+
+void docker_source::start_stats_polling() {
+  if (stats_stop_)
+    return; // already polling
+
+  auto stop = std::make_shared<std::atomic<bool>>(false);
+  stats_stop_ = stop;
+  auto proxy = proxy_;
+  std::thread([proxy, stop] {
+    using namespace std::chrono_literals;
+    while (!stop->load(std::memory_order_relaxed)) {
+      // `docker stats --no-stream` samples for ~1 s internally; the
+      // tab-delimited Go template mirrors push_list()'s parsing shape.
+      // run_docker_cli() directly, NOT run_logged() -- a ~3 s re-poll would
+      // flood the Console window (git's Log-window lesson).
+      auto r = run_docker_cli(
+          {"stats", "--no-stream", "--no-trunc", "--format",
+           "{{.ID}}\t{{.Name}}\t{{.CPUPerc}}\t{{.MemPerc}}\t{{.MemUsage}}"});
+
+      dynamic args;
+      dynamic arr;
+      size_t n = 0;
+      if (r.ok()) {
+        std::istringstream iss(r.stdout_text);
+        std::string line;
+        while (std::getline(iss, line)) {
+          line = trim_eol(line);
+          if (line.empty())
+            continue;
+          auto cols = split(line, '\t');
+          cols.resize(5);
+          auto e = std::make_shared<dynamic>();
+          (*e)["id"_key] = cols[0];
+          (*e)["name"_key] = cols[1].empty() ? cols[0].substr(0, 12) : cols[1];
+          (*e)["cpu_percent"_key] = parse_percent(cols[2]);
+          (*e)["mem_percent"_key] = parse_percent(cols[3]);
+          (*e)["mem_usage"_key] = cols[4];
+          arr[n++] = dynamic_ptr{e};
+        }
+      } else {
+        args["error"_key] = trim_eol(r.stderr_text.empty() ? r.stdout_text : r.stderr_text);
+      }
+      args["entries"_key] = dynamic_ptr{std::make_shared<dynamic>(std::move(arr))};
+      try {
+        proxy->call("update_stats"_key, std::move(args)).get();
+      } catch (const std::exception&) {
+        break; // form torn down.
+      }
+
+      for (int k = 0; k < 30 && !stop->load(std::memory_order_relaxed); ++k)
+        std::this_thread::sleep_for(100ms);
+    }
+  }).detach();
 }
 
 void docker_source::refresh_all() {

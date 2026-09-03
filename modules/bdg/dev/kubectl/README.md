@@ -12,16 +12,19 @@ cluster the `kubectl` CLI itself would: the current kubeconfig /
 `KUBECONFIG` / current-context). Opens as independently dockable windows
 (drag/resize/tab like any other wish window).
 
-Refresh is **manual**: a Refresh button per window plus an automatic refresh
-after every mutating action — no background polling (the `git` module's
-window-jitter lesson, inherited via `docker`). Destructive actions
+Refresh of the list windows is **manual**: a Refresh button per window plus
+an automatic refresh after every mutating action — no background polling
+(the `git` module's window-jitter lesson, inherited via `docker`). The
+**Top** window is the exception: it graphs live `kubectl top` pod/node
+CPU/memory usage from a background poll (~10 s), which is deliberately kept
+out of the Console trace. Destructive actions
 (**Delete**, **Drain**) are gated behind a `MessageBox` confirm; everything
 else (rollout restart, cordon, uncordon, logs, describe) fires directly.
 
 - **server/**: `KubectlFrontend` form (`register_kubectl()`) — renders
   whatever snapshot it was last given via `update_pods` /
   `update_deployments` / `update_services` / `update_nodes` / `update_logs`
-  / `update_describe` / `append_command_log`, and emits `*_requested` events (see
+  / `update_describe` / `append_command_log` / `update_stats`, and emits `*_requested` events (see
   `server/kubectl.hpp`'s class doc comment for the full contract) for the
   client to react to by running the corresponding `kubectl` command.
 - **client/**: `run_kubectl(wish_app_host&)`, self-registered as the
@@ -44,7 +47,7 @@ for what's implemented vs. deferred.
 
 ## Implementation status
 
-All seven windows are implemented and unit-tested over `memory_transport`
+All eight windows are implemented and unit-tested over `memory_transport`
 (`tests/test_kubectl.cpp`, `tests/test_kubectl_process.cpp`):
 
 - **Pods / Deployments / Services / Nodes** — each a toolbar + `Table` with
@@ -59,6 +62,12 @@ All seven windows are implemented and unit-tested over `memory_transport`
   command the module ran (`#` / Command / Exit / Output), green on
   success, red on failure; right-click a row for "Copy Entry" or "Clear
   Console". (`git`'s "Log" window, renamed to avoid clashing with Logs.)
+- **Top** — live `kubectl top`: pod CPU (millicores) and pod memory (MiB)
+  graphs with a line per pod (busiest 15) plus "Total", node CPU % and node
+  memory % graphs with a line per node plus "Cluster avg", and pod + node
+  current-values tables. Sampled every ~10 s on a background thread; these
+  polls are *not* shown in the Console. Shows a message when `kubectl top`
+  is unavailable (e.g. metrics-server not installed).
 
 Plus a `kubectl version` startup gate and a `MessageBox` confirm for Delete
 and Drain.

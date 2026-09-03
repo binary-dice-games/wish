@@ -1,8 +1,8 @@
 # wish kubectl Module — Architecture & Design
 
 **Status: implemented, unit-tested, not yet live-verified against a
-cluster.** All seven windows (Pods / Deployments / Services / Nodes / Logs /
-Describe / Console) are built and covered by `tests/test_kubectl.cpp` over
+cluster.** All eight windows (Pods / Deployments / Services / Nodes / Logs /
+Describe / Console / Top) are built and covered by `tests/test_kubectl.cpp` over
 `memory_transport`. See [PLAN.md](PLAN.md) and "10. Implementation Status".
 
 The **Console** window is a FIFO-capped `Table` (# / Command / Exit /
@@ -46,13 +46,17 @@ Scope for this pass:
   no context / namespace switcher.
 
 Explicitly deferred — see §10 and [PLAN.md](PLAN.md): `kubectl apply` /
-`edit`, scale-to-N, `exec` / `port-forward`, `kubectl top` (metrics),
+`edit`, scale-to-N, `exec` / `port-forward`,
 `kubectl get events`, rollout history / undo, CRD browsing, context and
 namespace switching.
 
+Live `kubectl top` metrics **are** covered — the **Top** window (added
+after the initial pass) graphs pod and node CPU/memory usage with
+`Plot`/`PlotLine` elements, fed by a background poll thread (§6).
+
 This directory owns:
 
-- `server/kubectl.hpp`/`.cpp` — the `KubectlFrontend` form (seven windows,
+- `server/kubectl.hpp`/`.cpp` — the `KubectlFrontend` form (eight windows,
   the `update_*` render methods, the `append_command_log` Console trace
   method, the `*_requested` events).
 - `client/kubectl.hpp`/`.cpp` — the client runner (`run_kubectl`, event
@@ -85,12 +89,12 @@ destructive-only confirmation) — see
 
 ### `KubectlFrontend` (server, `form`)
 
-Bison class `"KubectlFrontend"` in the `"wish"` namespace. Owns **seven
+Bison class `"KubectlFrontend"` in the `"wish"` namespace. Owns **eight
 independently dockable `Window`s**, built exactly as `docker.cpp` builds
 its: `build_list_window()` for the four `list_window`s (Pods is
 `internal_root_key_`, the rest are `internal_root_key_ + "_deployments" /
 "_services" / "_nodes"`), `build_text_window()` for Logs / Describe /
-Console (`_logs` / `_describe` / `_console`). The `...` menu dispatch keys on a `{scope, name,
+Console (`_logs` / `_describe` / `_console` / `_top`). The `...` menu dispatch keys on a `{scope, name,
 ns, action}` `row_action`, so one `on_event()` clause routes every window's
 actions.
 
@@ -129,9 +133,21 @@ Per-window specifics:
   `ContextMenu` offers "Copy Entry" and "Clear Console". `git`'s "Log"
   window, renamed to avoid clashing with **Logs**. Fed only by
   `append_command_log`.
+- **Top** (`_top`): a scrolling `VerticalLayout` with a status `Label`,
+  four `Plot`s — pod CPU (millicores), pod memory (MiB), node CPU %, node
+  memory % — and two current-values `Table`s (pods: Namespace / Pod / CPU
+  / Memory; nodes: Name / CPU / CPU % / Memory / Memory %). Each `Plot`
+  holds one `PlotLine` per pod/node (child key 0 is the aggregate — "Total"
+  for the additive pod plots, "Cluster avg" for the node % plots;
+  per-entity lines added/removed at runtime, capped at
+  `kMaxStatsSeries = 15`) over a `kMaxStatsHistory = 120` rolling sample
+  history. Fed only by the `update_stats` RMI method, which
+  `kubectl_source`'s poll thread calls every ~10 s (§6). `stats_plot`
+  tracks each line's `child_key` explicitly (`dynamic::size()` goes sparse
+  once lines are removed — `top`'s per-row-key note).
 
-Closing any window emits `"closed"` and tears down all seven subtrees
-(`remove_objects_at` for the six extra roots + `remove_internal_objects` —
+Closing any window emits `"closed"` and tears down all eight subtrees
+(`remove_objects_at` for the seven extra roots + `remove_internal_objects` —
 `docker.cpp`'s `on_event` close branch).
 
 ### `kubectl_source` (client)
@@ -224,6 +240,7 @@ open target (`docker`'s `do_update_logs` staleness guard).
 | `KubectlFrontend.update_describe(args)` | `{ kind, name, namespace, title, text }`. Same staleness guard on all three of `kind`/`name`/`namespace`. |
 | `KubectlFrontend.command_result(args)` | `{ command (string), ok (bool), output (string, shown on failure), scope ("pods"/"deployments"/"services"/"nodes", default "pods") }`. Writes that window's status `Label` green/red. |
 | `KubectlFrontend.append_command_log(args)` | `{ command (string), exit_code (int32), ok (bool), output (string, single-line preview) }`. Appends one row to the **Console** window's trace table, green/red by `ok`; FIFO-capped at 500 rows. |
+| `KubectlFrontend.update_stats(args)` | RMI method. `args.pods` — each `{ namespace, name, cpu (string "5m"), cpu_m (float millicores), mem (string "12Mi"), mem_mib (float) }`; `args.nodes` — each `{ name, cpu (string), cpu_m (float), cpu_pct (float), mem (string), mem_mib (float), mem_pct (float) }`; optional `args.error` (string; shown in the Top status label). Appends one sample to each plot's per-entity / aggregate lines, adds/removes lines as pods/nodes appear/vanish (top 15 by current value), and rebuilds the pod + node tables. Called by `kubectl_source`'s poll thread every ~10 s; **not** traced in the Console. |
 | `"refresh_requested"` event | No payload. Client re-runs all four `kubectl get` snapshots. |
 | `"pod_action_requested"` event | `{ name, namespace, action }` — `action` ∈ `delete`. |
 | `"deployment_action_requested"` event | `{ name, namespace, action }` — `action` ∈ `restart`, `delete`. |
@@ -231,7 +248,7 @@ open target (`docker`'s `do_update_logs` staleness guard).
 | `"node_action_requested"` event | `{ name, action }` — `action` ∈ `cordon`, `uncordon`, `drain`. No `namespace` (cluster-scoped). |
 | `"logs_requested"` event | `{ name, namespace, follow (bool), lines (int32) }`. |
 | `"describe_requested"` event | `{ kind, name, namespace }` — `kind` ∈ `pod`, `deployment`, `service`, `node`. |
-| `"closed"` event | Any window's X was clicked; all seven subtrees torn down. The client should `signal_done()`. |
+| `"closed"` event | Any window's X was clicked; all eight subtrees torn down. The client should `signal_done()`. |
 | `wish client --run=kubectl` | No positional args — the module talks to whatever cluster the `kubectl` CLI itself would (current kubeconfig / context). |
 
 The internal `ui_element` tree of every window is private.
@@ -239,13 +256,16 @@ The internal `ui_element` tree of every window is private.
 ## 6. Design Decisions
 
 Everything in [../docker/DESIGN.md §6](../docker/DESIGN.md) applies verbatim
-(libuv over `terminal`, the `binary` test parameter, no background polling,
-full clear-and-rebuild, per-rebuild-local row-key counter, `MessageBox` for
-destructive actions, inline toolbar fields, client-side "Follow" re-poll,
-the logs/describe staleness guard, theme-paired colours, separate dockable
-windows, the plain line-table text viewer, the `version` startup gate, and
-the **Console** subprocess-trace window fed by `run_logged()` /
-`append_command_log`). The `kubectl`-specific decisions:
+(libuv over `terminal`, the `binary` test parameter, no background polling
+of the list windows, full clear-and-rebuild, per-rebuild-local row-key
+counter, `MessageBox` for destructive actions, inline toolbar fields,
+client-side "Follow" re-poll, the logs/describe staleness guard,
+theme-paired colours, separate dockable windows, the plain line-table text
+viewer, the `version` startup gate, the **Console** subprocess-trace window
+fed by `run_logged()` / `append_command_log`, and the **Stats/Top** window's
+one always-on `Plot`-feeding background poll thread that uses
+`run_*_cli()` directly so it never reaches the Console). The
+`kubectl`-specific decisions:
 
 - **A tab-delimited `-o jsonpath` template per list, split on `\t` — not
   `-o json` and no JSON library.** `docker` chose a Go `--format` template
@@ -291,6 +311,27 @@ the **Console** subprocess-trace window fed by `run_logged()` /
   only when the node is schedulable, Uncordon only when it is cordoned —
   the same shape as `docker`'s container menu keying on `.State`.
 
+- **The Top window parses `kubectl top … --no-headers`, not `-o json`.**
+  `kubectl top` has no jsonpath output; `--no-headers` gives fixed
+  whitespace-delimited columns (`ws_split`). `kubectl_source` converts the
+  CPU column to millicores (`5m` → 5, `1` → 1000, `1500000n` → 1.5) and the
+  memory column to MiB (`Ki`/`Mi`/`Gi`/`Ti` + SI + bare bytes) as
+  file-local helpers, and forwards the original strings too for the tables.
+  The pod plots aggregate by **sum** ("Total"); the node % plots by
+  **mean** ("Cluster avg") — summing percentages is meaningless. When
+  `kubectl top` exits non-zero (no metrics-server), the client sends
+  `{ pods:[], nodes:[], error }` and the form shows the reason in the Top
+  status label rather than a blank window.
+
+- **`kubectl top` runs on a background poll thread (~10 s), the module's
+  one always-on poll.** `kubectl_source::start_stats_polling()` (called
+  once from `run_kubectl()` after wiring) runs `kubectl top pods -A
+  --no-headers` + `kubectl top nodes --no-headers` and calls `update_stats`.
+  `run_kubectl_cli()` directly, **never `run_logged()`** — a 10 s two-command
+  re-poll would flood the Console (`git`'s Log-window lesson). Stops on
+  `~kubectl_source` / RMI throw. metrics-server itself only updates every
+  ~15 s, so 10 s is comfortably fast enough.
+
 - **Startup gate is `kubectl version -o json`.** The direct analog of
   `docker version --format '{{.Server.Version}}'`: modern `kubectl` contacts
   the API server for `serverVersion` and exits non-zero when the cluster is
@@ -321,7 +362,7 @@ Depended on by: nothing else in wish; a leaf module.
 
 - **`tests/test_kubectl.cpp`** — instantiate `KubectlFrontend` over
   `memory_transport`, feed hand-built `update_*` snapshots, and assert:
-  table row counts and status-label counts; that all seven windows register;
+  table row counts and status-label counts; that all eight windows register;
   that a row's Delete menu item opens a `MessageBox` (root key prefix
   `"__message_box_"`) whose message names the resource + namespace, and that
   Yes emits `pod_action_requested {action:"delete", namespace:…}` while No
@@ -332,7 +373,11 @@ Depended on by: nothing else in wish; a leaf module.
   Logs / Describe menu items set the target label + emit, that
   `update_logs` splits on `\n` and drops a mismatched target; that
   `append_command_log` appends Console rows and "Clear Console" empties
-  them. No cluster required.
+  them. The `*Top*` / `*Stats*` cases feed `update_stats` twice and assert
+  the Top window builds, each `Plot` gains one `PlotLine` per pod/node plus
+  the aggregate, a later call with fewer entities drops the stale
+  lines/rows, and an `error` field lands in the status label. No cluster
+  required.
 - **`tests/test_kubectl_process.cpp`** — `run_kubectl_cli({"hello"},
   "printf")` captures stdout; `{...}, "false"` reports a non-zero exit; a
   missing binary reports `exit_code == -1`; a brace/quote-heavy jsonpath arg
@@ -362,13 +407,26 @@ Depended on by: nothing else in wish; a leaf module.
 - Console: a dockable FIFO-capped `Table` trace of every one-shot `kubectl`
   invocation (`append_command_log`, fed by `kubectl_source::run_logged()` /
   `push_command_log()`), green/red by exit status, "Copy Entry" / "Clear
-  Console" per-row context menu. The Follow re-poll thread is not traced.
+  Console" per-row context menu. Neither the Follow re-poll thread nor the
+  Top `kubectl top` poll is traced.
+- Top: a scrolling window with four `Plot`s (pod CPU millicores, pod memory
+  MiB, node CPU %, node memory %) — one `PlotLine` per pod/node + an
+  aggregate line, rolling 120-sample history — and pod + node values
+  tables, fed by `update_stats` from
+  `kubectl_source::start_stats_polling()`'s ~10 s `kubectl top` thread.
+  Shows a status message when `kubectl top` is unavailable.
 - `kubectl version` startup gate; `MessageBox` confirm for delete and drain;
-  no background polling.
+  no background polling of the list windows.
 
 **Not planned for v1** (deferred future work): `kubectl apply` / `edit` /
 scale-to-N; `exec` / `port-forward` (needs PTY / socket streaming over RMI);
-`kubectl top` metrics columns and sparklines; `kubectl get events`; rollout
-history / undo; ReplicaSet / StatefulSet / DaemonSet / Job / ConfigMap /
-Secret / Ingress / PVC / CRD windows; context and namespace switching UI;
-true `kubectl logs -f` streaming and multi-container log selection.
+`kubectl get events`; rollout history / undo; ReplicaSet / StatefulSet /
+DaemonSet / Job / ConfigMap / Secret / Ingress / PVC / CRD windows; context
+and namespace switching UI; true `kubectl logs -f` streaming and
+multi-container log selection.
+
+Live `kubectl top` metrics is **done** — the Top window (added after this
+list was first written): four per-entity `Plot`s + pod/node values tables,
+fed by a ~10 s background poll of `kubectl top pods`/`nodes`. `test_kubectl`'s
+`*Top*` cases cover it; end-to-end cluster verification still pending (needs
+a cluster with metrics-server installed).

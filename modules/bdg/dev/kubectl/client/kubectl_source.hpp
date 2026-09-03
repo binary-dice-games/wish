@@ -53,6 +53,16 @@ class kubectl_source {
   /// to update_describe (verbatim text, never parsed).
   void on_describe_requested(const std::string& kind, const std::string& name, const std::string& ns);
 
+  /// @brief Starts a background thread that runs `kubectl top pods -A` and
+  /// `kubectl top nodes` every ~10 s and pushes each sample to the form's
+  /// update_stats RMI method until destruction. The `top` client's
+  /// sampling-thread pattern; runs run_kubectl_cli() directly (never
+  /// run_logged()) so these frequent polls never reach the Console window.
+  /// Idempotent -- a second call is a no-op while a thread is already running.
+  void start_stats_polling();
+  /// @brief Signals the stats poll thread to stop and forgets it.
+  void stop_stats_polling();
+
  private:
   void push_pods();
   void push_deployments();
@@ -83,6 +93,10 @@ class kubectl_source {
 
   // Logs "Follow" background thread (top's sampling-thread pattern).
   std::shared_ptr<std::atomic<bool>> follow_stop_;
+
+  // `kubectl top` background poll thread (started once, runs for the life of
+  // the form). Independent lifetime from follow_stop_.
+  std::shared_ptr<std::atomic<bool>> stats_stop_;
 };
 
 } // namespace bdg::wish::kubectl

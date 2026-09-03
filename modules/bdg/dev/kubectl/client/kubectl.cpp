@@ -79,6 +79,10 @@ void run_kubectl(wish_app_host& s) {
   // race ahead of this wiring (docker's / git's documented initial-load-race
   // fix).
   source->refresh_all();
+
+  // Live `kubectl top` graphs in the Top window: a background poll thread
+  // (10 s cadence) that never touches the Console window.
+  source->start_stats_polling();
 }
 
 namespace {

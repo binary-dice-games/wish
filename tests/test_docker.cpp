@@ -14,6 +14,7 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <vector>
 
 using namespace bdg::bison;
@@ -145,6 +146,25 @@ class DockerRmiTest : public ::testing::Test {
     if (!cf || !*cf)
       return 0;
     return (*cf)->size();
+  }
+
+  // Count of live dynamic_ptr children, robust to sparse numeric keys left
+  // by erase() (dynamic::size() reports "highest key + 1", not a true count
+  // -- see docker.cpp's row-key-counter note). Used for the Stats plots,
+  // whose PlotLine children are added/removed at runtime.
+  size_t child_elem_count(const std::string& path) const {
+    auto it = srv_->last_session->ui_objects.find(path);
+    if (it == srv_->last_session->ui_objects.end())
+      return 0;
+    auto* cf = it->second->findField<dynamic_ptr>("children"_key);
+    if (!cf || !*cf)
+      return 0;
+    size_t n = 0;
+    (*cf)->forEach([&](bison::key_t, const field& f) {
+      if (f.is<dynamic_ptr>() && f.as<dynamic_ptr>())
+        ++n;
+    });
+    return n;
   }
 
   static dynamic_ptr nth_child(const dynamic_ptr& parent, size_t index) {
@@ -809,4 +829,69 @@ TEST_F(DockerRmiTest, AppendCommandLogAddsRowsAndClearConsoleEmptiesThem) {
   ASSERT_NE(clear.id, 0u);
   fire_at(root_ + "_console", clear, "clicked"_key);
   EXPECT_EQ(row_count(root_ + "_console.vbox.table"), 0u);
+}
+
+// ── Stats window (live `docker stats` graphs) ────────────────────────────
+
+namespace {
+dynamic make_stats_args(
+    const std::vector<std::tuple<std::string, float, float, std::string>>& entries,
+    const std::string& error = {}) {
+  dynamic args;
+  dynamic arr;
+  size_t i = 0;
+  for (auto& [name, cpu, mem, usage] : entries) {
+    auto e = std::make_shared<dynamic>();
+    (*e)["name"_key] = name;
+    (*e)["cpu_percent"_key] = cpu;
+    (*e)["mem_percent"_key] = mem;
+    (*e)["mem_usage"_key] = usage;
+    arr[i++] = dynamic_ptr{e};
+  }
+  args["entries"_key] = dynamic_ptr{std::make_shared<dynamic>(std::move(arr))};
+  if (!error.empty())
+    args["error"_key] = error;
+  return args;
+}
+} // namespace
+
+TEST_F(DockerRmiTest, InstantiationBuildsStatsWindow) {
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root_ + "_stats.vbox.cpu_plot"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root_ + "_stats.vbox.mem_plot"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root_ + "_stats.vbox.table"));
+  EXPECT_TRUE(srv_->last_session->top_level_handlers.count(bison::key_t{root_ + "_stats"}));
+  // Each plot starts with just its aggregate "Total" line.
+  EXPECT_EQ(child_elem_count(root_ + "_stats.vbox.cpu_plot"), 1u);
+}
+
+TEST_F(DockerRmiTest, UpdateStatsAddsPerContainerLinesAndTableRows) {
+  call("update_stats"_key, make_stats_args({
+                               {"web", 12.5f, 3.0f, "30MiB / 1GiB"},
+                               {"db", 40.0f, 8.0f, "80MiB / 1GiB"},
+                           }));
+  // aggregate + 2 per-container lines in each plot.
+  EXPECT_EQ(child_elem_count(root_ + "_stats.vbox.cpu_plot"), 3u);
+  EXPECT_EQ(child_elem_count(root_ + "_stats.vbox.mem_plot"), 3u);
+  EXPECT_EQ(row_count(root_ + "_stats.vbox.table"), 2u);
+
+  auto status = srv_->last_session->ui_objects.at(root_ + "_stats.vbox.status")->as<std::string>("text"_key);
+  EXPECT_NE(status.find("2 running containers"), std::string::npos);
+}
+
+TEST_F(DockerRmiTest, UpdateStatsDropsSeriesForVanishedContainers) {
+  call("update_stats"_key, make_stats_args({
+                               {"web", 12.5f, 3.0f, "30MiB / 1GiB"},
+                               {"db", 40.0f, 8.0f, "80MiB / 1GiB"},
+                           }));
+  EXPECT_EQ(child_elem_count(root_ + "_stats.vbox.cpu_plot"), 3u);
+
+  call("update_stats"_key, make_stats_args({{"web", 15.0f, 4.0f, "40MiB / 1GiB"}}));
+  EXPECT_EQ(child_elem_count(root_ + "_stats.vbox.cpu_plot"), 2u); // aggregate + web
+  EXPECT_EQ(row_count(root_ + "_stats.vbox.table"), 1u);
+}
+
+TEST_F(DockerRmiTest, UpdateStatsErrorShownInStatusLabel) {
+  call("update_stats"_key, make_stats_args({}, "Cannot connect to the Docker daemon"));
+  auto status = srv_->last_session->ui_objects.at(root_ + "_stats.vbox.status")->as<std::string>("text"_key);
+  EXPECT_NE(status.find("Cannot connect"), std::string::npos);
 }

@@ -74,6 +74,30 @@ for destructive actions, and the six-window layout.
    `docs/building.md` CMake-options table, `CHANGELOG.md` `### Added`,
    `modules/bdg/dev/README.md` (collection README). ✅ Done.
 
+7. **Stats window — live `docker stats` graphs** (added after the initial
+   six steps shipped). ✅ Done.
+   - `server/docker.{hpp,cpp}`: an 8th dockable window (`_stats`) — a CPU %
+     and a Memory % `Plot`, each with one `PlotLine` per running container
+     (top 15 by current value) plus a "Total" line over a rolling
+     `kMaxStatsHistory = 120` sample buffer, and a current-values `Table`
+     (Name / CPU % / Mem % / Mem Usage). New `update_stats` RMI method +
+     `stats_plot` line tracker (`top.cpp`'s `push_history` / rolling-index
+     `xs`, `ensure_core_meters`-style dynamic child add/remove; tracks each
+     line's `child_key` since `dynamic::size()` goes sparse after removals).
+   - `client/docker_source.{hpp,cpp}`: `start_stats_polling()` — a detached
+     thread running `docker stats --no-stream --format '<tab template>'`
+     every ~3 s, parsed (strip `%`) into `update_stats`. Uses
+     `run_docker_cli()` directly, **never `run_logged()`**, so the poll
+     never reaches the Console. Stops on `~docker_source` / RMI throw.
+     `client/docker.cpp` calls it once after wiring.
+   - Tests: 4 more in `test_docker.cpp` (`*Stats*`) — window builds, per
+     container lines + aggregate added, stale lines/rows dropped, `error`
+     shown in the status label. 35 total across both suites, all passing.
+   - Live-verified against a real daemon: two `busybox` fixtures (one
+     CPU-spinning); the Stats window showed a `PlotLine` per container +
+     "Total", the table tracked ~88 % CPU on the spinner, and `get_tree()`
+     confirmed the Console had zero `docker stats` rows.
+
 ## Verification
 
 - **Unit tests** (no Docker daemon needed):
@@ -104,7 +128,6 @@ for destructive actions, and the six-window layout.
 - **`docker build` / Buildx** — no build UI or build-cache view.
 - **`exec` / interactive terminal into a container** — needs PTY streaming
   over RMI.
-- **Live `docker stats`** — no CPU/memory columns or sparklines.
 - **True `docker logs -f` streaming** — the v1 "Follow" toggle is a 2 s
   re-poll of `docker logs --tail N`.
 - **Registry login / image push**, image history & layer inspection.

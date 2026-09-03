@@ -16,6 +16,11 @@
 #include <ui/forms/message_box.hpp>
 
 #include <algorithm>
+#include <cmath>
+#include <iomanip>
+#include <limits>
+#include <set>
+#include <sstream>
 
 namespace bdg::wish {
 
@@ -68,6 +73,12 @@ constexpr const char* kWarnLight = "#9A6700FF";
 constexpr const char* kWarnDark = "#D29922FF";
 constexpr const char* kBadLight = "#CF222EFF";
 constexpr const char* kBadDark = "#F85149FF";
+
+std::string format_percent(float pct) {
+  std::ostringstream oss;
+  oss << std::fixed << std::setprecision(1) << pct << "%";
+  return oss.str();
+}
 
 // Container `docker ps` .State -> (light, dark) status-text colour.
 std::pair<const char*, const char*> state_colour(const std::string& state) {
@@ -265,6 +276,40 @@ static constexpr const char* kConsoleLayout = R"json({
   } } }
 })json";
 
+// The Stats window: two `top`-style rolling Plots (CPU %, Memory %) fed one
+// sample per update_stats call by docker_source's background poll thread,
+// plus a current-values Table. Each Plot starts with an empty children map;
+// build_stats_window() creates the aggregate "Total" line and per-container
+// lines are added/removed at runtime by update_stats_plot().
+
+static constexpr const char* kStatsLayout = R"json({
+  "type": "Window", "title": "Stats", "width": 940, "height": 620,
+  "pos_x": 0, "pos_y": 300, "closable": true,
+  "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
+    "status": { "type": "Label", "text": "" },
+    "cpu_plot": {
+      "type": "Plot", "title": "CPU %  (per container)", "height": 200,
+      "profiler_marker": "Docker CPU Plot", "y_label": "%", "children": {}
+    },
+    "mem_plot": {
+      "type": "Plot", "title": "Memory %  (per container)", "height": 200,
+      "profiler_marker": "Docker Mem Plot", "y_label": "%", "children": {}
+    },
+    "sep": { "type": "Separator" },
+    "table": {
+      "type": "Table", "id": "##docker_stats_table", "columns": 4,
+      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "headers": true,
+      "height": -1, "outer_height": -1, "auto_scroll": false,
+      "children": {
+        "col_name":  { "type": "TableColumn", "label": "Name",      "flags": "WidthStretch",                  "column_id": 0 },
+        "col_cpu":   { "type": "TableColumn", "label": "CPU %",     "flags": "WidthFixed", "init_width": 90,  "column_id": 1 },
+        "col_mem":   { "type": "TableColumn", "label": "Mem %",     "flags": "WidthFixed", "init_width": 90,  "column_id": 2 },
+        "col_usage": { "type": "TableColumn", "label": "Mem Usage", "flags": "WidthFixed", "init_width": 190, "column_id": 3 }
+      }
+    }
+  } } }
+})json";
+
 } // namespace
 
 // ── docker_frontend ────────────────────────────────────────────────────────
@@ -412,6 +457,9 @@ void docker_frontend::on_init() {
 
   console_root_key_ = internal_root_key_ + "_console";
   build_text_window(console_root_key_, kConsoleLayout, console_window_id_, console_table_, [](ui_tree&) {});
+
+  stats_root_key_ = internal_root_key_ + "_stats";
+  build_stats_window();
 
   // Initial population is triggered client-side (run_docker() calls
   // source->refresh_all() after wiring every handler) -- never via an
@@ -845,6 +893,219 @@ dynamic docker_frontend::do_command_result(const dynamic& args) {
   return dynamic{};
 }
 
+// ── Stats window (live `docker stats` graphs) ──────────────────────────────
+
+void docker_frontend::build_stats_window() {
+  auto tree = import_json(kStatsLayout);
+  auto& c = ctx();
+  for (auto& [key, elem] : tree) {
+    key_t id = rmi::shared::generate_id();
+    c.put_object(id, elem);
+    elem["__wish_id"_key] = id;
+  }
+  stats_window_id_ = (*tree[""])["__wish_id"_key].as<key_t>();
+  tree.with("vbox.status", [&](const auto& e) { stats_status_label_ = e; });
+  tree.with("vbox.table", [&](const auto& e) { stats_table_ = e; });
+  tree.with("vbox.cpu_plot", [&](const auto& e) { init_stats_plot(stats_cpu_, e, "Total"); });
+  tree.with("vbox.mem_plot", [&](const auto& e) { init_stats_plot(stats_mem_, e, "Total"); });
+
+  // X is a rolling sample index: hide its numeric labels
+  // (ImPlotAxisFlags_NoTickLabels = 1 << 3) and keep it continuously
+  // auto-fitted to the collected history (ImPlotAxisFlags_AutoFit = 1 << 11)
+  // so the trace always fills the frame from the first sample. Y auto-fits
+  // on the CPU plot (a busy multi-core container can exceed 100 %); the
+  // memory plot is a true 0..100 % gauge.
+  constexpr int32_t kNoTickLabels = 1 << 3;
+  constexpr int32_t kAutoFit = 1 << 11;
+  auto fit_x = [&](const auto& e) { e["x_flags"_key] = kNoTickLabels | kAutoFit; };
+  tree.with("vbox.cpu_plot", [&](const auto& e) {
+    fit_x(e);
+    e["y_flags"_key] = kAutoFit;
+  });
+  tree.with("vbox.mem_plot", [&](const auto& e) {
+    fit_x(e);
+    e["y_min"_key] = 0.0f;
+    e["y_max"_key] = 100.0f;
+  });
+
+  ui_element_ptr root_ptr = tree[""];
+  sess().ui_objects.merge(std::move(tree), stats_root_key_);
+  sess().top_level_objects[key_t{stats_root_key_}] = root_ptr;
+  sess().top_level_handlers[key_t{stats_root_key_}] = this;
+  (*root_ptr)["__path__"_key] = stats_root_key_;
+}
+
+void docker_frontend::init_stats_plot(
+    stats_plot& sp, const ui_element_ptr& plot_el, const std::string& aggregate_label) {
+  sp.plot = plot_el;
+  auto* children_p = plot_el->findField<dynamic_ptr>("children"_key);
+  if (!children_p || !*children_p)
+    return;
+  ui_element_ptr line = ui_element_ptr::create("wish"_key, "PlotLine"_key);
+  line["label"_key] = aggregate_label;
+  line["order"_key] = static_cast<int32_t>(0); // aggregate draws first / atop the legend
+  assign_id(line);
+  sp.aggregate.el = line;
+  sp.aggregate.id = wish_id_of(line);
+  sp.aggregate.child_key = 0;
+  sp.next_child_key = 0;
+  (**children_p)[static_cast<size_t>(0)] = dynamic_ptr{line};
+  plot_el->refresh_children_order();
+}
+
+void docker_frontend::push_stats_history(std::vector<float>& history, float value) {
+  history.push_back(value);
+  if (history.size() > kMaxStatsHistory)
+    history.erase(history.begin());
+}
+
+void docker_frontend::update_stats_xs(size_t count) {
+  if (stats_xs_.size() == count)
+    return;
+  stats_xs_.resize(count);
+  for (size_t i = 0; i < count; ++i)
+    stats_xs_[i] = static_cast<float>(i);
+}
+
+void docker_frontend::update_stats_plot(stats_plot& sp, const std::map<std::string, float>& values) {
+  if (!sp.plot)
+    return;
+  auto* children_p = sp.plot->findField<dynamic_ptr>("children"_key);
+  if (!children_p || !*children_p)
+    return;
+  auto& children = *children_p;
+
+  // Aggregate over every container -- not just the plotted top-N.
+  float agg = 0.0f;
+  for (const auto& [name, v] : values)
+    agg += v;
+  push_stats_history(sp.aggregate.hist, agg);
+
+  // Keep the top kMaxStatsSeries containers by current value.
+  std::vector<std::pair<std::string, float>> ranked(values.begin(), values.end());
+  std::stable_sort(
+      ranked.begin(), ranked.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
+  std::set<std::string> keep;
+  for (size_t i = 0; i < ranked.size() && i < kMaxStatsSeries; ++i)
+    keep.insert(ranked[i].first);
+
+  // Drop series that fell out of the top-N or disappeared.
+  for (auto it = sp.series.begin(); it != sp.series.end();) {
+    if (keep.count(it->first)) {
+      ++it;
+      continue;
+    }
+    children->erase(it->second.child_key);
+    ctx().objects.erase(it->second.id.id);
+    it = sp.series.erase(it);
+  }
+
+  // Create newly-entering series, back-filled with NaN so the line starts at
+  // the right edge of the rolling window instead of x = 0.
+  const float nan = std::numeric_limits<float>::quiet_NaN();
+  for (const auto& name : keep) {
+    if (sp.series.count(name))
+      continue;
+    ui_element_ptr line = ui_element_ptr::create("wish"_key, "PlotLine"_key);
+    line["label"_key] = name;
+    line["order"_key] = static_cast<int32_t>(1);
+    assign_id(line);
+    stats_series s;
+    s.el = line;
+    s.id = wish_id_of(line);
+    s.child_key = ++sp.next_child_key;
+    s.hist.assign(sp.aggregate.hist.empty() ? 0 : sp.aggregate.hist.size() - 1, nan);
+    (*children)[s.child_key] = dynamic_ptr{line};
+    sp.series.emplace(name, std::move(s));
+  }
+
+  // Extend every kept series with this tick's sample.
+  for (const auto& name : keep)
+    push_stats_history(sp.series.at(name).hist, values.at(name));
+
+  update_stats_xs(sp.aggregate.hist.size());
+
+  sp.aggregate.el["xs"_key] = stats_xs_;
+  sp.aggregate.el["ys"_key] = sp.aggregate.hist;
+  for (auto& [name, s] : sp.series) {
+    s.el["xs"_key] = stats_xs_;
+    s.el["ys"_key] = s.hist;
+  }
+  sp.plot->refresh_children_order();
+}
+
+void docker_frontend::rebuild_stats_table(const dynamic& args) {
+  if (!stats_table_)
+    return;
+  auto* children_p = stats_table_->findField<dynamic_ptr>("children"_key);
+  if (!children_p || !*children_p)
+    return;
+  auto& children = *children_p;
+
+  std::vector<key_t> to_erase;
+  children->forEach([&](key_t k, const field& f) {
+    if (f.is<dynamic_ptr>() && f.as<dynamic_ptr>() &&
+        f.as<dynamic_ptr>()->as<key_t>(dynamic::CLASS) == "TableRow"_key)
+      to_erase.push_back(k);
+  });
+  for (auto k : to_erase)
+    children->erase(k.id);
+  for (auto id : stats_table_row_ids_)
+    ctx().objects.erase(id.id);
+  stats_table_row_ids_.clear();
+  next_stats_table_key_ = 0;
+
+  for_each_entry(args, "entries"_key, [&](const dynamic& e) {
+    std::vector<ui_element_ptr> cells = {
+        make_label(e.as<std::string>("name"_key)),
+        make_label(format_percent(e.as<float>("cpu_percent"_key))),
+        make_label(format_percent(e.as<float>("mem_percent"_key))),
+        make_label(e.as<std::string>("mem_usage"_key)),
+    };
+    ui_element_ptr row = ui_element_ptr::create("wish"_key, "TableRow"_key);
+    assign_id(row);
+    for (auto& cell : cells)
+      stats_table_row_ids_.push_back(wish_id_of(cell));
+    stats_table_row_ids_.push_back(wish_id_of(row));
+    set_children_list(row, cells);
+    (*children)[next_stats_table_key_++] = dynamic_ptr{row};
+  });
+  stats_table_->refresh_children_order();
+}
+
+dynamic docker_frontend::do_update_stats(const dynamic& args) {
+  std::map<std::string, float> cpu;
+  std::map<std::string, float> mem;
+  size_t count = 0;
+  for_each_entry(args, "entries"_key, [&](const dynamic& e) {
+    const std::string name = e.as<std::string>("name"_key);
+    cpu[name] = e.as<float>("cpu_percent"_key);
+    mem[name] = e.as<float>("mem_percent"_key);
+    ++count;
+  });
+
+  update_stats_plot(stats_cpu_, cpu);
+  update_stats_plot(stats_mem_, mem);
+  rebuild_stats_table(args);
+
+  if (stats_status_label_) {
+    std::string error;
+    if (const auto* ef = args.findField<std::string>("error"_key))
+      error = *ef;
+    if (!error.empty()) {
+      stats_status_label_["text"_key] = "docker stats unavailable: " + error;
+      stats_status_label_["text_color_light"_key] = std::string{kBadLight};
+      stats_status_label_["text_color_dark"_key] = std::string{kBadDark};
+    } else {
+      stats_status_label_["text"_key] =
+          std::to_string(count) + (count == 1 ? " running container" : " running containers");
+      stats_status_label_["text_color_light"_key] = std::string{kIdleLight};
+      stats_status_label_["text_color_dark"_key] = std::string{kIdleDark};
+    }
+  }
+  return dynamic{};
+}
+
 // ── Console window (client `docker` subprocess trace) ──────────────────────
 
 void docker_frontend::append_console_row(
@@ -941,7 +1202,7 @@ void docker_frontend::on_event(key_t id, key_t event, const dynamic& payload) {
   if (event == "closed"_key &&
       (id == containers_.window_id || id == images_.window_id || id == volumes_.window_id ||
        id == networks_.window_id || id == logs_window_id_ || id == inspect_window_id_ ||
-       id == console_window_id_)) {
+       id == console_window_id_ || id == stats_window_id_)) {
     emit("closed"_key);
     remove_objects_at(images_.root_key);
     remove_objects_at(volumes_.root_key);
@@ -949,6 +1210,7 @@ void docker_frontend::on_event(key_t id, key_t event, const dynamic& payload) {
     remove_objects_at(logs_root_key_);
     remove_objects_at(inspect_root_key_);
     remove_objects_at(console_root_key_);
+    remove_objects_at(stats_root_key_);
     remove_internal_objects();
     return;
   }
@@ -1058,6 +1320,7 @@ void register_docker() {
   add_method("update_inspect"_key, &docker_frontend::do_update_inspect);
   add_method("command_result"_key, &docker_frontend::do_command_result);
   add_method("append_command_log"_key, &docker_frontend::do_append_command_log);
+  add_method("update_stats"_key, &docker_frontend::do_update_stats);
 
   (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("DockerFrontend"));
   (*proto)[dynamic::CLASS].addAttribute(attr<Description>(

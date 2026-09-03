@@ -29,6 +29,7 @@
 
 #include <deque>
 #include <functional>
+#include <map>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -101,6 +102,18 @@ class docker_frontend : public form {
   /// single-line preview). Color-coded green/red by `ok`; the table is
   /// FIFO-capped at kMaxConsoleRows. Mirrors git_repo::do_append_command_log.
   bison::dynamic do_append_command_log(const bison::dynamic& args);
+
+  /// @brief RMI method: push one live `docker stats` sample to the Stats
+  /// window. @p args holds `entries` -- a dynamic array, each `{ name,
+  /// cpu_percent (float), mem_percent (float), mem_usage (string) }` -- and
+  /// an optional `error` (string; shown in the status label when the client
+  /// could not run `docker stats`). Each call appends one point to every
+  /// per-container CPU%/Mem% line plus the aggregate "Total" line, rebuilds
+  /// the current-values table, and adds/removes series as containers come
+  /// and go. Fed by docker_source's background poll thread -- deliberately
+  /// NOT traced in the Console window (a 3 s re-poll would flood it, the
+  /// same reason the Logs "Follow" thread bypasses it).
+  bison::dynamic do_update_stats(const bison::dynamic& args);
 
  protected:
   void on_init() override;
@@ -287,6 +300,60 @@ class docker_frontend : public form {
   /// entries); reset the sequence counter. From any row's "Clear Console".
   void clear_console_rows();
   void erase_console_row_objects(const console_row_entry& entry);
+
+  // ── Stats window (live `docker stats` CPU/memory graphs) ─────────────
+  //
+  // The `top` module's Plot pattern: a rolling per-series history fed one
+  // sample per RMI call, a locked rolling-index X axis, and a fixed set of
+  // Y limits. Unlike `top` (one CPU line, one memory line), each running
+  // container gets its own PlotLine in both plots, capped at
+  // kMaxStatsSeries by current value, plus an always-present aggregate
+  // "Total" line. Series are added/removed as containers appear/disappear.
+  static constexpr size_t kMaxStatsHistory = 120; // samples kept per line
+  static constexpr size_t kMaxStatsSeries = 15;   // per-container lines per plot
+
+  struct stats_series {
+    ui_element_ptr el;
+    std::vector<float> hist;
+    bison::key_t id;
+    size_t child_key{0};
+  };
+
+  struct stats_plot {
+    ui_element_ptr plot;
+    stats_series aggregate;            // the "Total" line (child_key 0, never removed)
+    std::map<std::string, stats_series> series; // per-container, key = display name
+    size_t next_child_key{0};
+  };
+
+  std::string stats_root_key_;
+  bison::key_t stats_window_id_;
+  ui_element_ptr stats_status_label_;
+  ui_element_ptr stats_table_;
+  stats_plot stats_cpu_;
+  stats_plot stats_mem_;
+  std::vector<float> stats_xs_; ///< shared rolling-index X axis for both plots
+  std::vector<bison::key_t> stats_table_row_ids_;
+  size_t next_stats_table_key_{0};
+
+  /// @brief Import kStatsLayout, register it as its own dockable root, cache
+  /// the status label / table / two plots, and create each plot's aggregate
+  /// "Total" line.
+  void build_stats_window();
+  /// @brief Create the aggregate line for @p sp as child 0 of @p plot_el.
+  void init_stats_plot(stats_plot& sp, const ui_element_ptr& plot_el, const std::string& aggregate_label);
+  /// @brief Append one sample to every line of @p sp: aggregate = sum of all
+  /// @p values; each named entry extends (or creates) its own line; lines
+  /// outside the top kMaxStatsSeries (or absent this tick) are removed.
+  void update_stats_plot(stats_plot& sp, const std::map<std::string, float>& values);
+  /// @brief Fully rebuild the current-values table (Name / CPU % / Mem % /
+  /// Mem Usage), one row per @p entries element.
+  void rebuild_stats_table(const bison::dynamic& args);
+  /// @brief Append @p value to @p history, dropping the oldest past
+  /// kMaxStatsHistory (top::push_history's shape).
+  static void push_stats_history(std::vector<float>& history, float value);
+  /// @brief Resize stats_xs_ to `0, 1, ... count-1` if it isn't already.
+  void update_stats_xs(size_t count);
 
   std::unordered_map<bison::key_t, std::function<void()>, bison::key_t, bison::key_t> click_handlers_;
   std::unordered_map<bison::key_t, row_action, bison::key_t, bison::key_t> menu_action_targets_;

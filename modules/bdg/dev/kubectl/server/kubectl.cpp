@@ -16,6 +16,11 @@
 #include <ui/forms/message_box.hpp>
 
 #include <algorithm>
+#include <cmath>
+#include <iomanip>
+#include <limits>
+#include <set>
+#include <sstream>
 
 namespace bdg::wish {
 
@@ -295,6 +300,54 @@ static constexpr const char* kConsoleLayout = R"json({
   } } }
 })json";
 
+// The Top window: four `top`-style rolling Plots fed one sample per
+// update_stats call by kubectl_source's background poll thread, plus two
+// current-values Tables, inside a scrolling VerticalLayout. Each Plot starts
+// with an empty children map; build_top_window() creates the aggregate line
+// and per-pod / per-node lines are added/removed at runtime.
+
+static constexpr const char* kTopLayout = R"json({
+  "type": "Window", "title": "Top", "width": 960, "height": 660,
+  "pos_x": 0, "pos_y": 300, "closable": true,
+  "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "scroll": true, "children": {
+    "status": { "type": "Label", "text": "" },
+    "pods_cpu_plot":  { "type": "Plot", "title": "Pods CPU (millicores)", "height": 170, "profiler_marker": "K8s Pods CPU", "y_label": "m",   "children": {} },
+    "pods_mem_plot":  { "type": "Plot", "title": "Pods Memory (MiB)",     "height": 170, "profiler_marker": "K8s Pods Mem", "y_label": "MiB", "children": {} },
+    "nodes_cpu_plot": { "type": "Plot", "title": "Nodes CPU %",           "height": 170, "profiler_marker": "K8s Nodes CPU", "y_label": "%",  "children": {} },
+    "nodes_mem_plot": { "type": "Plot", "title": "Nodes Memory %",        "height": 170, "profiler_marker": "K8s Nodes Mem", "y_label": "%",  "children": {} },
+    "sep": { "type": "Separator" },
+    "pods_table": {
+      "type": "Table", "id": "##k8s_top_pods", "columns": 4,
+      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "headers": true,
+      "height": 200, "outer_height": 200, "auto_scroll": false,
+      "children": {
+        "col_ns":   { "type": "TableColumn", "label": "Namespace", "flags": "WidthFixed", "init_width": 150, "column_id": 0 },
+        "col_name": { "type": "TableColumn", "label": "Pod",       "flags": "WidthStretch",                   "column_id": 1 },
+        "col_cpu":  { "type": "TableColumn", "label": "CPU",       "flags": "WidthFixed", "init_width": 90,  "column_id": 2 },
+        "col_mem":  { "type": "TableColumn", "label": "Memory",    "flags": "WidthFixed", "init_width": 100, "column_id": 3 }
+      }
+    },
+    "nodes_table": {
+      "type": "Table", "id": "##k8s_top_nodes", "columns": 5,
+      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "headers": true,
+      "height": 170, "outer_height": 170, "auto_scroll": false,
+      "children": {
+        "col_name": { "type": "TableColumn", "label": "Node",     "flags": "WidthStretch",                   "column_id": 0 },
+        "col_cpu":  { "type": "TableColumn", "label": "CPU",      "flags": "WidthFixed", "init_width": 90,  "column_id": 1 },
+        "col_cpup": { "type": "TableColumn", "label": "CPU %",    "flags": "WidthFixed", "init_width": 70,  "column_id": 2 },
+        "col_mem":  { "type": "TableColumn", "label": "Memory",   "flags": "WidthFixed", "init_width": 100, "column_id": 3 },
+        "col_memp": { "type": "TableColumn", "label": "Memory %", "flags": "WidthFixed", "init_width": 80,  "column_id": 4 }
+      }
+    }
+  } } }
+})json";
+
+std::string format_pct(float pct) {
+  std::ostringstream oss;
+  oss << std::fixed << std::setprecision(0) << pct << "%";
+  return oss.str();
+}
+
 const char* noun_for(const std::string& scope) {
   if (scope == "pod")
     return "pod";
@@ -421,6 +474,9 @@ void kubectl_frontend::on_init() {
 
   console_root_key_ = internal_root_key_ + "_console";
   build_text_window(console_root_key_, kConsoleLayout, console_window_id_, console_table_, [](ui_tree&) {});
+
+  top_root_key_ = internal_root_key_ + "_top";
+  build_top_window();
 
   // Initial population is triggered client-side (run_kubectl() calls
   // source->refresh_all() after wiring every handler) -- never via an
@@ -962,6 +1018,249 @@ dynamic kubectl_frontend::do_append_command_log(const dynamic& args) {
   return dynamic{};
 }
 
+// ── Top window (live `kubectl top` graphs) ─────────────────────────────────
+
+void kubectl_frontend::build_top_window() {
+  auto tree = import_json(kTopLayout);
+  auto& c = ctx();
+  for (auto& [key, elem] : tree) {
+    key_t id = rmi::shared::generate_id();
+    c.put_object(id, elem);
+    elem["__wish_id"_key] = id;
+  }
+  top_window_id_ = (*tree[""])["__wish_id"_key].as<key_t>();
+  tree.with("vbox.status", [&](const auto& e) { top_status_label_ = e; });
+  tree.with("vbox.pods_table", [&](const auto& e) { top_pods_table_ = e; });
+  tree.with("vbox.nodes_table", [&](const auto& e) { top_nodes_table_ = e; });
+  tree.with("vbox.pods_cpu_plot", [&](const auto& e) { init_stats_plot(pods_cpu_plot_, e, "Total", false); });
+  tree.with("vbox.pods_mem_plot", [&](const auto& e) { init_stats_plot(pods_mem_plot_, e, "Total", false); });
+  tree.with("vbox.nodes_cpu_plot", [&](const auto& e) { init_stats_plot(nodes_cpu_plot_, e, "Cluster avg", true); });
+  tree.with("vbox.nodes_mem_plot", [&](const auto& e) { init_stats_plot(nodes_mem_plot_, e, "Cluster avg", true); });
+
+  // X is a rolling sample index: hide its numeric labels
+  // (ImPlotAxisFlags_NoTickLabels = 1 << 3) and keep it continuously
+  // auto-fitted to the collected history (ImPlotAxisFlags_AutoFit = 1 << 11)
+  // so the trace always fills the frame from the first sample. The node %
+  // plots are true 0..100 gauges; the pod millicore / MiB plots auto-fit Y.
+  constexpr int32_t kNoTickLabels = 1 << 3;
+  constexpr int32_t kAutoFit = 1 << 11;
+  auto fit_xy = [&](const auto& e) {
+    e["x_flags"_key] = kNoTickLabels | kAutoFit;
+    e["y_flags"_key] = kAutoFit;
+  };
+  auto fit_x_pct_y = [&](const auto& e) {
+    e["x_flags"_key] = kNoTickLabels | kAutoFit;
+    e["y_min"_key] = 0.0f;
+    e["y_max"_key] = 100.0f;
+  };
+  tree.with("vbox.pods_cpu_plot", fit_xy);
+  tree.with("vbox.pods_mem_plot", fit_xy);
+  tree.with("vbox.nodes_cpu_plot", fit_x_pct_y);
+  tree.with("vbox.nodes_mem_plot", fit_x_pct_y);
+
+  ui_element_ptr root_ptr = tree[""];
+  sess().ui_objects.merge(std::move(tree), top_root_key_);
+  sess().top_level_objects[key_t{top_root_key_}] = root_ptr;
+  sess().top_level_handlers[key_t{top_root_key_}] = this;
+  (*root_ptr)["__path__"_key] = top_root_key_;
+}
+
+void kubectl_frontend::init_stats_plot(
+    stats_plot& sp, const ui_element_ptr& plot_el, const std::string& aggregate_label, bool average) {
+  sp.plot = plot_el;
+  sp.average = average;
+  auto* children_p = plot_el->findField<dynamic_ptr>("children"_key);
+  if (!children_p || !*children_p)
+    return;
+  ui_element_ptr line = ui_element_ptr::create("wish"_key, "PlotLine"_key);
+  line["label"_key] = aggregate_label;
+  line["order"_key] = static_cast<int32_t>(0);
+  assign_id(line);
+  sp.aggregate.el = line;
+  sp.aggregate.id = wish_id_of(line);
+  sp.aggregate.child_key = 0;
+  sp.next_child_key = 0;
+  (**children_p)[static_cast<size_t>(0)] = dynamic_ptr{line};
+  plot_el->refresh_children_order();
+}
+
+void kubectl_frontend::push_stats_history(std::vector<float>& history, float value) {
+  history.push_back(value);
+  if (history.size() > kMaxStatsHistory)
+    history.erase(history.begin());
+}
+
+void kubectl_frontend::update_stats_xs(size_t count) {
+  if (stats_xs_.size() == count)
+    return;
+  stats_xs_.resize(count);
+  for (size_t i = 0; i < count; ++i)
+    stats_xs_[i] = static_cast<float>(i);
+}
+
+void kubectl_frontend::update_stats_plot(stats_plot& sp, const std::map<std::string, float>& values) {
+  if (!sp.plot)
+    return;
+  auto* children_p = sp.plot->findField<dynamic_ptr>("children"_key);
+  if (!children_p || !*children_p)
+    return;
+  auto& children = *children_p;
+
+  float agg = 0.0f;
+  for (const auto& [name, v] : values)
+    agg += v;
+  if (sp.average && !values.empty())
+    agg /= static_cast<float>(values.size());
+  push_stats_history(sp.aggregate.hist, agg);
+
+  std::vector<std::pair<std::string, float>> ranked(values.begin(), values.end());
+  std::stable_sort(
+      ranked.begin(), ranked.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
+  std::set<std::string> keep;
+  for (size_t i = 0; i < ranked.size() && i < kMaxStatsSeries; ++i)
+    keep.insert(ranked[i].first);
+
+  for (auto it = sp.series.begin(); it != sp.series.end();) {
+    if (keep.count(it->first)) {
+      ++it;
+      continue;
+    }
+    children->erase(it->second.child_key);
+    ctx().objects.erase(it->second.id.id);
+    it = sp.series.erase(it);
+  }
+
+  const float nan = std::numeric_limits<float>::quiet_NaN();
+  for (const auto& name : keep) {
+    if (sp.series.count(name))
+      continue;
+    ui_element_ptr line = ui_element_ptr::create("wish"_key, "PlotLine"_key);
+    line["label"_key] = name;
+    line["order"_key] = static_cast<int32_t>(1);
+    assign_id(line);
+    stats_series s;
+    s.el = line;
+    s.id = wish_id_of(line);
+    s.child_key = ++sp.next_child_key;
+    s.hist.assign(sp.aggregate.hist.empty() ? 0 : sp.aggregate.hist.size() - 1, nan);
+    (*children)[s.child_key] = dynamic_ptr{line};
+    sp.series.emplace(name, std::move(s));
+  }
+
+  for (const auto& name : keep)
+    push_stats_history(sp.series.at(name).hist, values.at(name));
+
+  update_stats_xs(sp.aggregate.hist.size());
+
+  sp.aggregate.el["xs"_key] = stats_xs_;
+  sp.aggregate.el["ys"_key] = sp.aggregate.hist;
+  for (auto& [name, s] : sp.series) {
+    s.el["xs"_key] = stats_xs_;
+    s.el["ys"_key] = s.hist;
+  }
+  sp.plot->refresh_children_order();
+}
+
+void kubectl_frontend::rebuild_top_table(
+    const ui_element_ptr& table, std::vector<key_t>& row_ids, size_t& next_key, const dynamic& args,
+    key_t array_key, const std::function<std::vector<ui_element_ptr>(const dynamic&)>& make_cells) {
+  if (!table)
+    return;
+  auto* children_p = table->findField<dynamic_ptr>("children"_key);
+  if (!children_p || !*children_p)
+    return;
+  auto& children = *children_p;
+
+  std::vector<key_t> to_erase;
+  children->forEach([&](key_t k, const field& f) {
+    if (f.is<dynamic_ptr>() && f.as<dynamic_ptr>() &&
+        f.as<dynamic_ptr>()->as<key_t>(dynamic::CLASS) == "TableRow"_key)
+      to_erase.push_back(k);
+  });
+  for (auto k : to_erase)
+    children->erase(k.id);
+  for (auto id : row_ids)
+    ctx().objects.erase(id.id);
+  row_ids.clear();
+  next_key = 0;
+
+  for_each_entry(args, array_key, [&](const dynamic& e) {
+    std::vector<ui_element_ptr> cells = make_cells(e);
+    ui_element_ptr row = ui_element_ptr::create("wish"_key, "TableRow"_key);
+    assign_id(row);
+    for (auto& cell : cells)
+      row_ids.push_back(wish_id_of(cell));
+    row_ids.push_back(wish_id_of(row));
+    set_children_list(row, cells);
+    (*children)[next_key++] = dynamic_ptr{row};
+  });
+  table->refresh_children_order();
+}
+
+dynamic kubectl_frontend::do_update_stats(const dynamic& args) {
+  std::map<std::string, float> pod_cpu;
+  std::map<std::string, float> pod_mem;
+  std::map<std::string, float> node_cpu;
+  std::map<std::string, float> node_mem;
+  size_t pod_count = 0;
+  size_t node_count = 0;
+
+  for_each_entry(args, "pods"_key, [&](const dynamic& e) {
+    const std::string key = e.as<std::string>("namespace"_key) + "/" + e.as<std::string>("name"_key);
+    pod_cpu[key] = e.as<float>("cpu_m"_key);
+    pod_mem[key] = e.as<float>("mem_mib"_key);
+    ++pod_count;
+  });
+  for_each_entry(args, "nodes"_key, [&](const dynamic& e) {
+    const std::string key = e.as<std::string>("name"_key);
+    node_cpu[key] = e.as<float>("cpu_pct"_key);
+    node_mem[key] = e.as<float>("mem_pct"_key);
+    ++node_count;
+  });
+
+  update_stats_plot(pods_cpu_plot_, pod_cpu);
+  update_stats_plot(pods_mem_plot_, pod_mem);
+  update_stats_plot(nodes_cpu_plot_, node_cpu);
+  update_stats_plot(nodes_mem_plot_, node_mem);
+
+  rebuild_top_table(
+      top_pods_table_, top_pods_row_ids_, next_top_pods_key_, args, "pods"_key, [&](const dynamic& e) {
+        return std::vector<ui_element_ptr>{
+            make_label(e.as<std::string>("namespace"_key)),
+            make_label(e.as<std::string>("name"_key)),
+            make_label(e.as<std::string>("cpu"_key)),
+            make_label(e.as<std::string>("mem"_key)),
+        };
+      });
+  rebuild_top_table(
+      top_nodes_table_, top_nodes_row_ids_, next_top_nodes_key_, args, "nodes"_key, [&](const dynamic& e) {
+        return std::vector<ui_element_ptr>{
+            make_label(e.as<std::string>("name"_key)),
+            make_label(e.as<std::string>("cpu"_key)),
+            make_label(format_pct(e.as<float>("cpu_pct"_key))),
+            make_label(e.as<std::string>("mem"_key)),
+            make_label(format_pct(e.as<float>("mem_pct"_key))),
+        };
+      });
+
+  if (top_status_label_) {
+    std::string error;
+    if (const auto* ef = args.findField<std::string>("error"_key))
+      error = *ef;
+    if (!error.empty()) {
+      top_status_label_["text"_key] = "kubectl top unavailable: " + error;
+      top_status_label_["text_color_light"_key] = std::string{kBadLight};
+      top_status_label_["text_color_dark"_key] = std::string{kBadDark};
+    } else {
+      top_status_label_["text"_key] =
+          std::to_string(pod_count) + " pods, " + std::to_string(node_count) + " nodes";
+      top_status_label_["text_color_light"_key] = std::string{kIdleLight};
+      top_status_label_["text_color_dark"_key] = std::string{kIdleDark};
+    }
+  }
+  return dynamic{};
+}
+
 // ── Event routing ──────────────────────────────────────────────────────────
 
 void kubectl_frontend::on_event(key_t id, key_t event, const dynamic& payload) {
@@ -969,7 +1268,7 @@ void kubectl_frontend::on_event(key_t id, key_t event, const dynamic& payload) {
   if (event == "closed"_key &&
       (id == pods_.window_id || id == deployments_.window_id || id == services_.window_id ||
        id == nodes_.window_id || id == logs_window_id_ || id == describe_window_id_ ||
-       id == console_window_id_)) {
+       id == console_window_id_ || id == top_window_id_)) {
     emit("closed"_key);
     remove_objects_at(deployments_.root_key);
     remove_objects_at(services_.root_key);
@@ -977,6 +1276,7 @@ void kubectl_frontend::on_event(key_t id, key_t event, const dynamic& payload) {
     remove_objects_at(logs_root_key_);
     remove_objects_at(describe_root_key_);
     remove_objects_at(console_root_key_);
+    remove_objects_at(top_root_key_);
     remove_internal_objects();
     return;
   }
@@ -1093,6 +1393,7 @@ void register_kubectl() {
   add_method("update_describe"_key, &kubectl_frontend::do_update_describe);
   add_method("command_result"_key, &kubectl_frontend::do_command_result);
   add_method("append_command_log"_key, &kubectl_frontend::do_append_command_log);
+  add_method("update_stats"_key, &kubectl_frontend::do_update_stats);
 
   (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("KubectlFrontend"));
   (*proto)[dynamic::CLASS].addAttribute(attr<Description>(

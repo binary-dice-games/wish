@@ -12,16 +12,19 @@ Docker daemon the `docker` CLI itself would: `DOCKER_HOST` / the default
 socket / the current `docker context`). Opens as independently dockable
 windows (drag/resize/tab like any other wish window).
 
-Refresh is **manual**: a Refresh button per window plus an automatic
-refresh after every mutating action — no background polling (the `git`
-module's window-jitter lesson). Destructive actions (**Stop**, **Kill**,
+Refresh of the list windows is **manual**: a Refresh button per window plus
+an automatic refresh after every mutating action — no background polling
+(the `git` module's window-jitter lesson). The **Stats** window is the
+exception: it graphs live `docker stats` CPU/memory usage from a background
+poll (~3 s), which is deliberately kept out of the Console trace.
+Destructive actions (**Stop**, **Kill**,
 **Remove**, **Prune**) are gated behind a `MessageBox` confirm; everything
 else (Start, Restart, Pause, Unpause, Pull, Run, …) fires directly.
 
 - **server/**: `DockerFrontend` form (`register_docker()`) — renders
   whatever snapshot it was last given via `update_containers` /
   `update_images` / `update_volumes` / `update_networks` / `update_logs` /
-  `update_inspect` / `append_command_log`, and emits `*_requested` events (see `server/docker.hpp`'s
+  `update_inspect` / `append_command_log` / `update_stats`, and emits `*_requested` events (see `server/docker.hpp`'s
   class doc comment for the full contract) for the client to react to by
   running the corresponding `docker` command.
 - **client/**: `run_docker(wish_app_host&)`, self-registered as the
@@ -44,7 +47,7 @@ for what's implemented vs. deferred.
 
 ## Implementation status
 
-All seven windows are implemented and live-verified against a real Docker
+All eight windows are implemented and live-verified against a real Docker
 daemon:
 
 - **Containers / Images / Volumes / Networks** — each a toolbar + `Table`
@@ -60,6 +63,10 @@ daemon:
   command the module ran (`#` / Command / Exit / Output), green on
   success, red on failure; right-click a row for "Copy Entry" or "Clear
   Console". (`git`'s "Log" window, renamed to avoid clashing with Logs.)
+- **Stats** — live `docker stats`: a CPU % and a Memory % graph with one
+  line per running container (busiest 15) plus a "Total" line, and a
+  current-values table (Name / CPU % / Mem % / Mem Usage). Sampled every
+  ~3 s on a background thread; these polls are *not* shown in the Console.
 
 Plus a `docker version` startup gate and a `MessageBox` confirm for
 Stop/Kill/Remove and every Prune.

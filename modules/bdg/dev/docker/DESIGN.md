@@ -1,8 +1,8 @@
 # wish docker Module — Architecture & Design
 
-**Status: implemented and live-verified.** All seven windows (Containers /
-Images / Volumes / Networks / Logs / Inspect / Console) work against a real
-Docker daemon. See [PLAN.md](PLAN.md) and "10. Implementation Status" below.
+**Status: implemented and live-verified.** All eight windows (Containers /
+Images / Volumes / Networks / Logs / Inspect / Console / Stats) work against a
+real Docker daemon. See [PLAN.md](PLAN.md) and "10. Implementation Status" below.
 
 The **Console** window is a FIFO-capped `Table` (# / Command / Exit /
 Output) tracing every one-shot `docker` invocation the client ran, colour-
@@ -38,13 +38,17 @@ Scope for this pass, agreed with the user up front:
   gated behind the built-in `MessageBox` form (see §6).
 
 Explicitly deferred — see §10 and [PLAN.md](PLAN.md): `docker compose`,
-`docker build`/Buildx, `exec`/interactive terminal, live `docker stats`
-CPU/memory streaming, true `docker logs -f` streaming, registry
-login/push, image history/layers, Docker context switching.
+`docker build`/Buildx, `exec`/interactive terminal, true `docker logs -f`
+streaming, registry login/push, image history/layers, Docker context
+switching.
+
+Live `docker stats` CPU/memory usage **is** covered — the **Stats** window
+(added after the initial pass) graphs it with `Plot`/`PlotLine` elements,
+fed by a background poll thread (§6).
 
 This directory owns:
 
-- `server/docker.hpp`/`.cpp` — the `DockerFrontend` form (seven windows,
+- `server/docker.hpp`/`.cpp` — the `DockerFrontend` form (eight windows,
   the `update_*` render methods, the `append_command_log` Console trace
   method, the `*_requested` events).
 - `client/docker.hpp`/`.cpp` — the client runner (`run_docker`, event
@@ -100,7 +104,7 @@ This directory owns:
 
 ### `DockerFrontend` (server, `form`)
 
-Bison class `"DockerFrontend"` in the `"wish"` namespace. Owns **seven
+Bison class `"DockerFrontend"` in the `"wish"` namespace. Owns **eight
 independently dockable `Window`s** (`form::init()` auto-registers only one
 top-level root; the others are registered by hand in `on_init()` exactly
 as `git.cpp`'s `build_*_window()` and `editor.cpp`'s Help/Log windows do —
@@ -112,7 +116,7 @@ as `git.cpp`'s `build_*_window()` and `editor.cpp`'s Help/Log windows do —
 dispatch keys on a `{scope, key, action}` `row_action`, so one
 `on_event()` clause routes every window's actions. Root keys are
 `internal_root_key_` and `internal_root_key_ + "_images" / "_volumes" /
-"_networks" / "_logs" / "_inspect"`.
+"_networks" / "_logs" / "_inspect" / "_console" / "_stats"`.
 
 - **Containers** (`internal_root_key_`, the main window): toolbar (Refresh,
   Prune stopped, a filter `InputText`, a state `Combo`), a status `Label`,
@@ -149,9 +153,19 @@ dispatch keys on a `{scope, key, action}` `row_action`, so one
   right-click `ContextMenu` offers "Copy Entry" (clipboard, no round trip)
   and "Clear Console". `git`'s "Log" window, renamed to avoid clashing
   with **Logs**. Fed only by `append_command_log`.
+- **Stats** (`internal_root_key_ + "_stats"`): a status `Label`, two
+  `Plot`s (CPU % and Memory %) and a current-values `Table` (Name / CPU % /
+  Mem % / Mem Usage). Each `Plot` holds one `PlotLine` per running
+  container (child key 0 is the aggregate "Total" line; per-container lines
+  are added/removed at runtime, capped at `kMaxStatsSeries = 15` by current
+  value) with a `kMaxStatsHistory = 120` rolling sample history. Fed only
+  by the `update_stats` RMI method, which `docker_source`'s poll thread
+  calls every ~3 s (§6). `dynamic::size()` is unusable on the `Plot`
+  children map once lines have been removed (sparse keys) — `stats_plot`
+  tracks each line's `child_key` explicitly, `top`'s per-row-key note.
 
-Closing any window emits `"closed"` and tears down all seven subtrees
-(`remove_objects_at` for the six extra roots + `remove_internal_objects` —
+Closing any window emits `"closed"` and tears down all eight subtrees
+(`remove_objects_at` for the seven extra roots + `remove_internal_objects` —
 `git.cpp`'s `on_event` close branch).
 
 ### `docker_source` (client)
@@ -265,6 +279,7 @@ DockerFrontend.update_logs / update_inspect (server):
 | `DockerFrontend.update_inspect(args)` | `{ kind, target_id, title, text }`. Same staleness guard on `target_id`. |
 | `DockerFrontend.command_result(args)` | `{ command (string), ok (bool), output (string, shown on failure) }`. Writes the relevant window's status `Label` green/red. |
 | `DockerFrontend.append_command_log(args)` | `{ command (string), exit_code (int32), ok (bool), output (string, single-line preview) }`. Appends one row to the **Console** window's trace table, green/red by `ok`; FIFO-capped at 500 rows. |
+| `DockerFrontend.update_stats(args)` | RMI method. `args.entries` — dynamic array, each `{ name, cpu_percent (float), mem_percent (float), mem_usage (string, e.g. "18MiB / 8GiB") }` — plus optional `args.error` (string; shown in the Stats status label). Appends one sample to each plot's per-container / "Total" lines, adds/removes lines as containers appear/vanish (top 15 by current value), and rebuilds the current-values table. Called by `docker_source`'s poll thread every ~3 s; **not** traced in the Console. |
 | `"refresh_requested"` event | No payload. Client re-runs all four `docker … ls` snapshots. Fired by any window's Refresh button. |
 | `"container_action_requested"` event | `{ id, action }` — `action` ∈ `start`, `stop`, `restart`, `pause`, `unpause`, `kill`, `remove`. |
 | `"image_action_requested"` event | `{ id, action }` — `action` ∈ `run`, `remove`. |
@@ -275,7 +290,7 @@ DockerFrontend.update_logs / update_inspect (server):
 | `"create_volume_requested"` event | `{ name }` — from the Volumes window's inline field. |
 | `"logs_requested"` event | `{ id, follow (bool), lines (int32) }`. |
 | `"inspect_requested"` event | `{ kind, id }` — `kind` ∈ `container`, `image`, `volume`, `network`. |
-| `"closed"` event | Any window's X was clicked; all seven subtrees torn down. The client should `signal_done()`. |
+| `"closed"` event | Any window's X was clicked; all eight subtrees torn down. The client should `signal_done()`. |
 | `wish client --run=docker` | No positional args — the module talks to whatever Docker daemon the `docker` CLI itself would (`DOCKER_HOST` / default socket / current context). |
 
 The internal `ui_element` tree of every window is private — clients must
@@ -304,17 +319,32 @@ use only the methods/events above).
   because a throwaway `git init` repo is trivial to create in a test but a
   running Docker daemon is not.
 
-- **No background polling — every refresh is user-initiated.** `git`
-  removed a ~2 s background `refresh_all()` poll after it caused visible
-  window "vibration" (full-tree rebuild every tick shifting focus and
-  layout mid-interaction) and flooded its trace window. This module starts
-  from that lesson: `refresh_all()` runs only from `run_docker()`'s
-  explicit initial call, a Refresh button click (`"refresh_requested"`),
-  or the tail of a mutating action (`run_and_refresh`). Picking up an
-  out-of-band change (a container started from another terminal) requires
-  clicking Refresh. The one bounded exception is the Logs window's
-  "Follow" toggle (below), which re-polls a *single* command into a
-  *single* `TextEditor` — no tree rebuild, no focus theft.
+- **No background polling of the list windows — every refresh is
+  user-initiated.** `git` removed a ~2 s background `refresh_all()` poll
+  after it caused visible window "vibration" (full-tree rebuild every tick
+  shifting focus and layout mid-interaction) and flooded its trace window.
+  This module starts from that lesson: `refresh_all()` runs only from
+  `run_docker()`'s explicit initial call, a Refresh button click
+  (`"refresh_requested"`), or the tail of a mutating action
+  (`run_and_refresh`). Picking up an out-of-band change (a container
+  started from another terminal) requires clicking Refresh. Two bounded
+  exceptions poll on a background thread, both re-poll a *single* command
+  into a *single* widget subtree — no list-table rebuild, no focus theft:
+  the Logs window's "Follow" toggle (below), and the **Stats** window's
+  `docker stats` poll (next point).
+
+- **The Stats window's `docker stats` poll is the module's one always-on
+  background thread.** `docker_source::start_stats_polling()` (called once
+  from `run_docker()` after wiring) spawns a detached thread that runs
+  `docker stats --no-stream --format '<tab template>'` every ~3 s and calls
+  `update_stats`. It uses `run_docker_cli()` **directly, never
+  `run_logged()`** — a 3 s re-poll would flood the Console, the exact
+  `git` Log-window lesson that already keeps the Follow thread out of it.
+  The thread stops on `~docker_source` (a stop `atomic<bool>`) or when the
+  RMI call throws (form torn down). `docker stats --no-stream` samples for
+  ~1 s internally, so the effective cadence is ~4 s; acceptable for a
+  monitoring graph. This is a genuine "server owns render state, client
+  owns data" fit — the server just extends rolling `PlotLine` histories.
 
 - **Every `update_*` is a full clear-and-rebuild, not `top`-style per-row
   reconciliation by container id.** `top` reconciles because it refreshes
@@ -487,9 +517,13 @@ Depended on by: nothing else in wish; this is a leaf module.
   each state; that a row's "Remove" menu item opens a `MessageBox` (root
   key prefix `"__message_box_"`) and clicking its Yes button emits
   `container_action_requested {action:"remove"}` while No emits nothing;
-  that `update_logs` with a mismatched `container_id` is a no-op. Mirrors
-  `tests/test_git.cpp`'s `DeleteBranchClickShowsConfirmDialog…` /
-  `StaleDiffResponseIgnored…` tests. No Docker daemon required.
+  that `update_logs` with a mismatched `container_id` is a no-op. The
+  `*Stats*` cases feed `update_stats` twice and assert the Stats window
+  builds, each `Plot` gains one `PlotLine` per entry plus the aggregate, a
+  later call with fewer entries drops the stale lines/rows, and an `error`
+  field lands in the status label. Mirrors `tests/test_git.cpp`'s
+  `DeleteBranchClickShowsConfirmDialog…` / `StaleDiffResponseIgnored…`
+  tests. No Docker daemon required.
 - **`tests/test_docker_process.cpp`** — `run_docker_cli({"hello"},
   "printf")` captures stdout; `run_docker_cli({...}, "false")` reports a
   non-zero exit; a missing binary reports `exit_code == -1`. Compiles
@@ -521,7 +555,12 @@ Depended on by: nothing else in wish; this is a leaf module.
 - Console: a dockable FIFO-capped `Table` trace of every one-shot `docker`
   invocation (`append_command_log`, fed by `docker_source::run_logged()` /
   `push_command_log()`), green/red by exit status, "Copy Entry" / "Clear
-  Console" per-row context menu. The Follow re-poll thread is not traced.
+  Console" per-row context menu. Neither the Follow re-poll thread nor the
+  Stats `docker stats` poll is traced.
+- Stats: a dockable window with a CPU % and a Memory % `Plot` (one
+  `PlotLine` per running container + a "Total" line, rolling 120-sample
+  history) and a current-values `Table`, fed by `update_stats` from
+  `docker_source::start_stats_polling()`'s ~3 s `docker stats` thread.
 - `docker version` startup gate; `MessageBox` confirm for stop/kill/remove
   and every prune; no background polling of the list windows.
 
@@ -531,8 +570,16 @@ volume create, four-window grid, `docker logs` / `docker inspect` panes.
 
 **Not planned for v1** (deferred future work): `docker compose` project
 view and up/down; `docker build` / Buildx; `exec` / interactive terminal
-into a container (needs PTY streaming over RMI); live `docker stats`
-CPU/memory columns and sparklines; true `docker logs -f` streaming (v1
-Follow is a 2 s re-poll); registry login / image push; image history and
-layer inspection; volume / network creation with options beyond a name;
-Docker context switching UI; Extensions / Scout / Dev Environments.
+into a container (needs PTY streaming over RMI); true `docker logs -f`
+streaming (v1 Follow is a 2 s re-poll); registry login / image push; image
+history and layer inspection; volume / network creation with options
+beyond a name; Docker context switching UI; Extensions / Scout / Dev
+Environments.
+
+Live `docker stats` CPU/memory is **done** — the Stats window (added after
+this list was first written): two per-container `Plot`s + a values table,
+fed by a ~3 s background poll. `test_docker`'s `*Stats*` cases cover it;
+end-to-end verified against a real daemon (two `busybox` fixtures, one
+CPU-spinning: the Stats window showed a `PlotLine` per container + "Total",
+the table tracked ~88 % CPU on the spinner, and the Console had zero
+`docker stats` rows).

@@ -14,6 +14,7 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <vector>
 
 using namespace bdg::bison;
@@ -130,6 +131,24 @@ class KubectlRmiTest : public ::testing::Test {
     if (!cf || !*cf)
       return 0;
     return (*cf)->size();
+  }
+
+  // Count of live dynamic_ptr children, robust to sparse numeric keys left
+  // by erase() (dynamic::size() reports "highest key + 1"). Used for the Top
+  // window's plots, whose PlotLine children are added/removed at runtime.
+  size_t child_elem_count(const std::string& path) const {
+    auto it = srv_->last_session->ui_objects.find(path);
+    if (it == srv_->last_session->ui_objects.end())
+      return 0;
+    auto* cf = it->second->findField<dynamic_ptr>("children"_key);
+    if (!cf || !*cf)
+      return 0;
+    size_t n = 0;
+    (*cf)->forEach([&](bison::key_t, const field& f) {
+      if (f.is<dynamic_ptr>() && f.as<dynamic_ptr>())
+        ++n;
+    });
+    return n;
   }
 
   static dynamic_ptr nth_child(const dynamic_ptr& parent, size_t index) {
@@ -582,4 +601,83 @@ TEST_F(KubectlRmiTest, AppendCommandLogAddsRowsAndClearConsoleEmptiesThem) {
   ASSERT_NE(clear.id, 0u);
   fire_at(root_ + "_console", clear, "clicked"_key);
   EXPECT_EQ(row_count(root_ + "_console.vbox.table"), 0u);
+}
+
+// ── Top window (live `kubectl top` graphs) ──────────────────────────────
+
+namespace {
+dynamic make_top_args(
+    const std::vector<std::tuple<std::string, std::string, float, float>>& pods,
+    const std::vector<std::tuple<std::string, float, float>>& nodes, const std::string& error = {}) {
+  dynamic args;
+  dynamic pods_arr;
+  dynamic nodes_arr;
+  size_t i = 0;
+  for (auto& [ns, name, cpu_m, mem_mib] : pods) {
+    auto e = std::make_shared<dynamic>();
+    (*e)["namespace"_key] = ns;
+    (*e)["name"_key] = name;
+    (*e)["cpu"_key] = std::string{"1m"};
+    (*e)["cpu_m"_key] = cpu_m;
+    (*e)["mem"_key] = std::string{"1Mi"};
+    (*e)["mem_mib"_key] = mem_mib;
+    pods_arr[i++] = dynamic_ptr{e};
+  }
+  size_t j = 0;
+  for (auto& [name, cpu_pct, mem_pct] : nodes) {
+    auto e = std::make_shared<dynamic>();
+    (*e)["name"_key] = name;
+    (*e)["cpu"_key] = std::string{"100m"};
+    (*e)["cpu_m"_key] = 100.0f;
+    (*e)["cpu_pct"_key] = cpu_pct;
+    (*e)["mem"_key] = std::string{"500Mi"};
+    (*e)["mem_mib"_key] = 500.0f;
+    (*e)["mem_pct"_key] = mem_pct;
+    nodes_arr[j++] = dynamic_ptr{e};
+  }
+  args["pods"_key] = dynamic_ptr{std::make_shared<dynamic>(std::move(pods_arr))};
+  args["nodes"_key] = dynamic_ptr{std::make_shared<dynamic>(std::move(nodes_arr))};
+  if (!error.empty())
+    args["error"_key] = error;
+  return args;
+}
+} // namespace
+
+TEST_F(KubectlRmiTest, InstantiationBuildsTopWindow) {
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root_ + "_top.vbox.pods_cpu_plot"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root_ + "_top.vbox.nodes_mem_plot"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root_ + "_top.vbox.pods_table"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root_ + "_top.vbox.nodes_table"));
+  EXPECT_TRUE(srv_->last_session->top_level_handlers.count(bison::key_t{root_ + "_top"}));
+  EXPECT_EQ(child_elem_count(root_ + "_top.vbox.pods_cpu_plot"), 1u); // aggregate only
+}
+
+TEST_F(KubectlRmiTest, UpdateStatsAddsPerPodAndPerNodeLines) {
+  call("update_stats"_key, make_top_args(
+                               {{"default", "web", 20.0f, 64.0f}, {"kube-system", "coredns", 5.0f, 14.0f}},
+                               {{"node-a", 30.0f, 40.0f}}));
+  EXPECT_EQ(child_elem_count(root_ + "_top.vbox.pods_cpu_plot"), 3u);  // aggregate + 2 pods
+  EXPECT_EQ(child_elem_count(root_ + "_top.vbox.nodes_cpu_plot"), 2u); // aggregate + 1 node
+  EXPECT_EQ(row_count(root_ + "_top.vbox.pods_table"), 2u);
+  EXPECT_EQ(row_count(root_ + "_top.vbox.nodes_table"), 1u);
+
+  auto status = srv_->last_session->ui_objects.at(root_ + "_top.vbox.status")->as<std::string>("text"_key);
+  EXPECT_NE(status.find("2 pods, 1 nodes"), std::string::npos);
+}
+
+TEST_F(KubectlRmiTest, UpdateStatsDropsSeriesForVanishedPods) {
+  call("update_stats"_key, make_top_args(
+                               {{"default", "web", 20.0f, 64.0f}, {"kube-system", "coredns", 5.0f, 14.0f}},
+                               {{"node-a", 30.0f, 40.0f}}));
+  EXPECT_EQ(child_elem_count(root_ + "_top.vbox.pods_cpu_plot"), 3u);
+
+  call("update_stats"_key, make_top_args({{"default", "web", 25.0f, 70.0f}}, {{"node-a", 33.0f, 42.0f}}));
+  EXPECT_EQ(child_elem_count(root_ + "_top.vbox.pods_cpu_plot"), 2u); // aggregate + web
+  EXPECT_EQ(row_count(root_ + "_top.vbox.pods_table"), 1u);
+}
+
+TEST_F(KubectlRmiTest, UpdateStatsErrorShownInStatusLabel) {
+  call("update_stats"_key, make_top_args({}, {}, "metrics not available (metrics-server not installed)"));
+  auto status = srv_->last_session->ui_objects.at(root_ + "_top.vbox.status")->as<std::string>("text"_key);
+  EXPECT_NE(status.find("metrics-server not installed"), std::string::npos);
 }

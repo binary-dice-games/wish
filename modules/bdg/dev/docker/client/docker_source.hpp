@@ -56,6 +56,16 @@ class docker_source {
   /// update_inspect (verbatim JSON text, never parsed).
   void on_inspect_requested(const std::string& kind, const std::string& id);
 
+  /// @brief Starts a background thread that runs `docker stats --no-stream`
+  /// every ~3 s and pushes each sample to the form's update_stats RMI method
+  /// until destruction. The `top` client's sampling-thread pattern; runs
+  /// `run_docker_cli()` directly (never run_logged()) so these frequent
+  /// polls never reach the Console window. Idempotent -- a second call is a
+  /// no-op while a thread is already running.
+  void start_stats_polling();
+  /// @brief Signals the stats poll thread to stop and forgets it.
+  void stop_stats_polling();
+
  private:
   void push_containers();
   void push_images();
@@ -88,6 +98,11 @@ class docker_source {
 
   // Logs "Follow" background thread (top's sampling-thread pattern).
   std::shared_ptr<std::atomic<bool>> follow_stop_;
+
+  // `docker stats` background poll thread (started once, runs for the life
+  // of the form). Separate stop flag from follow_stop_ -- the two threads
+  // have independent lifetimes.
+  std::shared_ptr<std::atomic<bool>> stats_stop_;
 };
 
 } // namespace bdg::wish::docker

@@ -51,6 +51,29 @@ the `MessageBox` confirm for destructive actions, and the six-window layout.
    new gotchas in `docs/automation.md` and flip DESIGN.md §10 to
    "live-verified".
 
+5. **Top window — live `kubectl top` graphs** (added after steps 1-3
+   shipped). ✅ Done.
+   - `server/kubectl.{hpp,cpp}`: an 8th dockable window (`_top`) — a
+     scrolling `VerticalLayout` with four `Plot`s (pod CPU millicores, pod
+     memory MiB, node CPU %, node memory %), each one `PlotLine` per
+     pod/node (top 15) plus an aggregate ("Total" for the additive pod
+     plots, "Cluster avg" for the node % plots) over a rolling
+     `kMaxStatsHistory = 120` buffer, and pod + node current-values
+     `Table`s. New `update_stats` RMI method + `stats_plot` line tracker
+     (shared shape with `docker`'s Stats window).
+   - `client/kubectl_source.{hpp,cpp}`: `start_stats_polling()` — a detached
+     thread running `kubectl top pods -A --no-headers` +
+     `kubectl top nodes --no-headers` every ~10 s, with file-local
+     millicore / MiB / percent parse helpers, into `update_stats`. Uses
+     `run_kubectl_cli()` directly, **never `run_logged()`**, so the poll
+     never reaches the Console. On `kubectl top` failure (no metrics-server)
+     it sends `{pods:[], nodes:[], error}` and the form shows the reason.
+     `client/kubectl.cpp` calls it once after wiring.
+   - Tests: 4 more in `test_kubectl.cpp` (`*Top*`) — window builds, per
+     pod/node lines + aggregate added, stale lines/rows dropped, `error`
+     shown in the status label. 25 total across both suites, all passing.
+   - End-to-end still pending a cluster with metrics-server.
+
 ## Verification
 
 - **Unit tests** (no cluster needed):
@@ -58,9 +81,11 @@ the `MessageBox` confirm for destructive actions, and the six-window layout.
   `-DWISH_MODULE_BDG_DEV_KUBECTL=ON`, then run both binaries. `test_kubectl`
   drives `KubectlFrontend` over `memory_transport` with synthetic `update_*`
   snapshots; `test_kubectl_process` drives `run_kubectl_cli()` with stub
-  binaries (`printf` / `false`). 23/23 passing.
+  binaries (`printf` / `false`). 25/25 passing (incl. the `*Top*` cases).
 
-- **End-to-end**: see Step 4 — pending a cluster.
+- **End-to-end**: see Step 4 — pending a cluster. The Top window's error
+  path is exercisable against any reachable cluster without metrics-server
+  (`kubectl top` exits non-zero → the status label shows the reason).
 
 ## Not implemented (deferred future work)
 
@@ -68,7 +93,6 @@ the `MessageBox` confirm for destructive actions, and the six-window layout.
   scale dialog (v1 has no numeric input for replica count).
 - **`exec` / `port-forward` into a pod** — needs PTY / socket streaming over
   RMI.
-- **`kubectl top`** — no CPU/memory columns or sparklines.
 - **`kubectl get events`**, rollout history / `undo`.
 - **True `kubectl logs -f` streaming** and multi-container log selection —
   the v1 "Follow" toggle is a 2 s re-poll of `kubectl logs --tail N` on the
