@@ -1,8 +1,15 @@
 # wish docker Module — Architecture & Design
 
-**Status: implemented and live-verified.** All six windows (Containers /
-Images / Volumes / Networks / Logs / Inspect) work against a real Docker
-daemon. See [PLAN.md](PLAN.md) and "10. Implementation Status" below.
+**Status: implemented and live-verified.** All seven windows (Containers /
+Images / Volumes / Networks / Logs / Inspect / Console) work against a real
+Docker daemon. See [PLAN.md](PLAN.md) and "10. Implementation Status" below.
+
+The **Console** window is a FIFO-capped `Table` (# / Command / Exit /
+Output) tracing every one-shot `docker` invocation the client ran, colour-
+coded green/red — `git`'s "Log" window, renamed to avoid clashing with the
+container **Logs** window. Fed by the `append_command_log` RMI method
+(client-side choke point: `docker_source::run_logged()`). The Logs "Follow"
+2 s re-poll thread is deliberately *not* traced (it would flood the window).
 
 ## 1. Purpose / Scope
 
@@ -33,13 +40,13 @@ Scope for this pass, agreed with the user up front:
 Explicitly deferred — see §10 and [PLAN.md](PLAN.md): `docker compose`,
 `docker build`/Buildx, `exec`/interactive terminal, live `docker stats`
 CPU/memory streaming, true `docker logs -f` streaming, registry
-login/push, image history/layers, a `docker`-subprocess trace window
-(`git` has one), Docker context switching.
+login/push, image history/layers, Docker context switching.
 
 This directory owns:
 
-- `server/docker.hpp`/`.cpp` — the `DockerFrontend` form (six windows, the
-  `update_*` render methods, the `*_requested` events).
+- `server/docker.hpp`/`.cpp` — the `DockerFrontend` form (seven windows,
+  the `update_*` render methods, the `append_command_log` Console trace
+  method, the `*_requested` events).
 - `client/docker.hpp`/`.cpp` — the client runner (`run_docker`, event
   wiring, app registration).
 - `client/docker_process.hpp`/`.cpp` — a non-interactive libuv-based
@@ -93,7 +100,7 @@ This directory owns:
 
 ### `DockerFrontend` (server, `form`)
 
-Bison class `"DockerFrontend"` in the `"wish"` namespace. Owns **six
+Bison class `"DockerFrontend"` in the `"wish"` namespace. Owns **seven
 independently dockable `Window`s** (`form::init()` auto-registers only one
 top-level root; the others are registered by hand in `on_init()` exactly
 as `git.cpp`'s `build_*_window()` and `editor.cpp`'s Help/Log windows do —
@@ -136,10 +143,16 @@ dispatch keys on a `{scope, key, action}` `row_action`, so one
   `TextEditor` fed a client-uploaded sandbox file (`language: "none"` /
   `"json"`, gives selection + syntax highlighting at the cost of an
   upload round trip per refresh).
+- **Console** (`internal_root_key_ + "_console"`): a FIFO-capped `Table`
+  (# / Command / Exit / Output, `kMaxConsoleRows = 500`) tracing every
+  one-shot `docker` invocation, green/red by exit status. Each row's
+  right-click `ContextMenu` offers "Copy Entry" (clipboard, no round trip)
+  and "Clear Console". `git`'s "Log" window, renamed to avoid clashing
+  with **Logs**. Fed only by `append_command_log`.
 
-Closing the Containers window emits `"closed"` and tears down all six
-subtrees (`remove_objects_at` for the five extra roots +
-`remove_internal_objects` — `git.cpp`'s `on_event` close branch).
+Closing any window emits `"closed"` and tears down all seven subtrees
+(`remove_objects_at` for the six extra roots + `remove_internal_objects` —
+`git.cpp`'s `on_event` close branch).
 
 ### `docker_source` (client)
 
@@ -170,11 +183,14 @@ which had to add that link, this module needs no CMake change.
 
 ### `docker_source::run_logged()` (client)
 
-Every `docker` invocation goes through this thin wrapper over
-`run_docker_cli()` (`git_repo_source::run_logged`'s shape). For this pass
-it just runs the command; a `docker`-subprocess trace window (like `git`'s
-Log window) is deferred (§10), so `run_logged` currently only exists as
-the single choke point a future trace hook would attach to.
+Every one-shot `docker` invocation goes through this thin wrapper over
+`run_docker_cli()` (`git_repo_source::run_logged`'s shape): it runs the
+command, then pushes one `append_command_log` trace row (command string,
+exit code, `ok`, single-line output preview capped at 200 chars) to the
+**Console** window. `push_list()` (the four `… ls` snapshots) calls the
+same `push_command_log()` helper inline. The **one** exception is the Logs
+"Follow" 2 s re-poll thread, which calls `run_docker_cli()` directly — a
+re-poll every 2 s would flood the Console (`git`'s Log-window lesson).
 
 ## 4. Data Flow / Architecture
 
@@ -248,6 +264,7 @@ DockerFrontend.update_logs / update_inspect (server):
 | `DockerFrontend.update_logs(args)` | `{ container_id, title, text }`. `container_id` echoed from `logs_requested`; discarded if it no longer matches the Logs window's open target. |
 | `DockerFrontend.update_inspect(args)` | `{ kind, target_id, title, text }`. Same staleness guard on `target_id`. |
 | `DockerFrontend.command_result(args)` | `{ command (string), ok (bool), output (string, shown on failure) }`. Writes the relevant window's status `Label` green/red. |
+| `DockerFrontend.append_command_log(args)` | `{ command (string), exit_code (int32), ok (bool), output (string, single-line preview) }`. Appends one row to the **Console** window's trace table, green/red by `ok`; FIFO-capped at 500 rows. |
 | `"refresh_requested"` event | No payload. Client re-runs all four `docker … ls` snapshots. Fired by any window's Refresh button. |
 | `"container_action_requested"` event | `{ id, action }` — `action` ∈ `start`, `stop`, `restart`, `pause`, `unpause`, `kill`, `remove`. |
 | `"image_action_requested"` event | `{ id, action }` — `action` ∈ `run`, `remove`. |
@@ -258,7 +275,7 @@ DockerFrontend.update_logs / update_inspect (server):
 | `"create_volume_requested"` event | `{ name }` — from the Volumes window's inline field. |
 | `"logs_requested"` event | `{ id, follow (bool), lines (int32) }`. |
 | `"inspect_requested"` event | `{ kind, id }` — `kind` ∈ `container`, `image`, `volume`, `network`. |
-| `"closed"` event | The Containers window's X was clicked; all six subtrees torn down. The client should `signal_done()`. |
+| `"closed"` event | Any window's X was clicked; all seven subtrees torn down. The client should `signal_done()`. |
 | `wish client --run=docker` | No positional args — the module talks to whatever Docker daemon the `docker` CLI itself would (`DOCKER_HOST` / default socket / current context). |
 
 The internal `ui_element` tree of every window is private — clients must
@@ -393,8 +410,8 @@ use only the methods/events above).
   success/failure reuses the green/red pair. A single `text_color` tuned
   for one theme reads poorly against the other (the reported `git` bug).
 
-- **Six separate dockable windows, no unified nav sidebar** (the user's
-  choice). This matches `git` (4 windows) and `editor` (4 windows) and is
+- **Separate dockable windows, no unified nav sidebar** (the user's
+  choice). This matches `git` and `editor` and is
   the more "wish-native" shape: every `Window` without `NoDocking` is
   already a dock candidate in the session's implicit host dockspace, so
   the user arranges them (tabbed, split, floating) however they like. A
@@ -417,7 +434,7 @@ use only the methods/events above).
   form.** Mirrors `git`'s `rev-parse --is-inside-work-tree` fast-fail: if
   the daemon isn't reachable (`docker` not on `PATH`, socket permission,
   daemon down), print one clear line to stderr and `signal_done()` rather
-  than opening six empty windows. `--format '{{.Server.Version}}'` also
+  than opening empty windows. `--format '{{.Server.Version}}'` also
   confirms the *daemon* answered, not just that the client binary exists.
 
 ## 7. Constraints and Invariants
@@ -501,20 +518,21 @@ Depended on by: nothing else in wish; this is a leaf module.
   `inspect_requested` runs `docker <kind> inspect` (JSON shown verbatim).
   `update_logs`/`update_inspect` carry a `container_id`/`target_id`
   staleness guard.
+- Console: a dockable FIFO-capped `Table` trace of every one-shot `docker`
+  invocation (`append_command_log`, fed by `docker_source::run_logged()` /
+  `push_command_log()`), green/red by exit status, "Copy Entry" / "Clear
+  Console" per-row context menu. The Follow re-poll thread is not traced.
 - `docker version` startup gate; `MessageBox` confirm for stop/kill/remove
   and every prune; no background polling of the list windows.
 
-33 tests pass across `test_docker` (28) and `test_docker_process` (5).
-End-to-end verified against a real Docker daemon: container stop with
-confirm, image remove with confirm, volume create, four-window grid,
-`docker logs` / `docker inspect` panes.
+`test_docker` and `test_docker_process` pass. End-to-end verified against a
+real Docker daemon: container stop with confirm, image remove with confirm,
+volume create, four-window grid, `docker logs` / `docker inspect` panes.
 
 **Not planned for v1** (deferred future work): `docker compose` project
 view and up/down; `docker build` / Buildx; `exec` / interactive terminal
 into a container (needs PTY streaming over RMI); live `docker stats`
 CPU/memory columns and sparklines; true `docker logs -f` streaming (v1
 Follow is a 2 s re-poll); registry login / image push; image history and
-layer inspection; volume / network creation with options beyond a name; a
-dedicated `docker`-subprocess trace window (`git` has one — `run_logged`
-is the choke point it would attach to); Docker context switching UI;
-Extensions / Scout / Dev Environments.
+layer inspection; volume / network creation with options beyond a name;
+Docker context switching UI; Extensions / Scout / Dev Environments.

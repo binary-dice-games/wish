@@ -529,3 +529,32 @@ TEST_F(KubectlRmiTest, ClosingAnyWindowEmitsClosed) {
   wait_for(got);
   EXPECT_TRUE(got);
 }
+
+// ── Console window (client `kubectl` subprocess trace) ────────────────────
+
+TEST_F(KubectlRmiTest, InstantiationBuildsConsoleWindow) {
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root_ + "_console.vbox.table"));
+  EXPECT_TRUE(srv_->last_session->top_level_handlers.count(bison::key_t{root_ + "_console"}));
+}
+
+TEST_F(KubectlRmiTest, AppendCommandLogAddsRowsAndClearConsoleEmptiesThem) {
+  auto log_args = [](const std::string& command, int32_t exit_code, bool ok, const std::string& output) {
+    dynamic a;
+    a["command"_key] = command;
+    a["exit_code"_key] = exit_code;
+    a["ok"_key] = ok;
+    a["output"_key] = output;
+    return a;
+  };
+
+  EXPECT_EQ(row_count(root_ + "_console.vbox.table"), 0u);
+  call("append_command_log"_key, log_args("kubectl get pods -A", 0, true, ""));
+  EXPECT_EQ(row_count(root_ + "_console.vbox.table"), 1u);
+  call("append_command_log"_key, log_args("kubectl delete pod x -n d", 1, false, "not found"));
+  EXPECT_EQ(row_count(root_ + "_console.vbox.table"), 2u);
+
+  auto clear = menu_id_in(root_ + "_console.vbox.table", 0, "Clear Console");
+  ASSERT_NE(clear.id, 0u);
+  fire_at(root_ + "_console", clear, "clicked"_key);
+  EXPECT_EQ(row_count(root_ + "_console.vbox.table"), 0u);
+}

@@ -21,7 +21,7 @@ else (Start, Restart, Pause, Unpause, Pull, Run, …) fires directly.
 - **server/**: `DockerFrontend` form (`register_docker()`) — renders
   whatever snapshot it was last given via `update_containers` /
   `update_images` / `update_volumes` / `update_networks` / `update_logs` /
-  `update_inspect`, and emits `*_requested` events (see `server/docker.hpp`'s
+  `update_inspect` / `append_command_log`, and emits `*_requested` events (see `server/docker.hpp`'s
   class doc comment for the full contract) for the client to react to by
   running the corresponding `docker` command.
 - **client/**: `run_docker(wish_app_host&)`, self-registered as the
@@ -44,7 +44,7 @@ for what's implemented vs. deferred.
 
 ## Implementation status
 
-All six windows are implemented and live-verified against a real Docker
+All seven windows are implemented and live-verified against a real Docker
 daemon:
 
 - **Containers / Images / Volumes / Networks** — each a toolbar + `Table`
@@ -56,6 +56,10 @@ daemon:
 - **Logs** — `docker logs --tail N --timestamps` in a scrolling pane; the
   "Follow" checkbox starts a 2 s client-side re-poll.
 - **Inspect** — `docker <kind> inspect` output shown verbatim.
+- **Console** — a scrolling, FIFO-capped table tracing every `docker`
+  command the module ran (`#` / Command / Exit / Output), green on
+  success, red on failure; right-click a row for "Copy Entry" or "Clear
+  Console". (`git`'s "Log" window, renamed to avoid clashing with Logs.)
 
 Plus a `docker version` startup gate and a `MessageBox` confirm for
 Stop/Kill/Remove and every Prune.

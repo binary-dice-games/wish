@@ -109,7 +109,5 @@ for destructive actions, and the six-window layout.
   re-poll of `docker logs --tail N`.
 - **Registry login / image push**, image history & layer inspection.
 - **Volume / network creation with options** beyond a bare name.
-- **A `docker`-subprocess trace window** (`git` has one — `run_logged()` is
-  the choke point it would attach to).
 - **Docker context switching UI**; Extensions / Scout / Dev Environments.
 - **In-app credential / permission prompts.**

@@ -243,6 +243,28 @@ static constexpr const char* kInspectLayout = R"json({
   } } }
 })json";
 
+// The Console window: a FIFO-capped `Table` tracing every `docker` command
+// the client ran (git's "Log" window, renamed to avoid clashing with the
+// container Logs window). "auto_scroll": true so it follows the newest row.
+
+static constexpr const char* kConsoleLayout = R"json({
+  "type": "Window", "title": "Console", "width": 940, "height": 240,
+  "pos_x": 0, "pos_y": 760, "closable": true,
+  "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
+    "table": {
+      "type": "Table", "id": "##docker_console_table", "columns": 4,
+      "flags": "Resizable|RowBg|Borders|ScrollY", "headers": true,
+      "height": -1, "outer_height": -1, "auto_scroll": true,
+      "children": {
+        "col_seq":     { "type": "TableColumn", "label": "#",       "flags": "WidthFixed", "init_width": 44,  "column_id": 0 },
+        "col_command": { "type": "TableColumn", "label": "Command", "flags": "WidthFixed", "init_width": 360, "column_id": 1 },
+        "col_exit":    { "type": "TableColumn", "label": "Exit",    "flags": "WidthFixed", "init_width": 50,  "column_id": 2 },
+        "col_output":  { "type": "TableColumn", "label": "Output",  "flags": "WidthStretch",                     "column_id": 3 }
+      }
+    }
+  } } }
+})json";
+
 } // namespace
 
 // ── docker_frontend ────────────────────────────────────────────────────────
@@ -387,6 +409,9 @@ void docker_frontend::on_init() {
       click_handlers_[wish_id_of(e)] = [this] { emit_inspect_request(); };
     });
   });
+
+  console_root_key_ = internal_root_key_ + "_console";
+  build_text_window(console_root_key_, kConsoleLayout, console_window_id_, console_table_, [](ui_tree&) {});
 
   // Initial population is triggered client-side (run_docker() calls
   // source->refresh_all() after wiring every handler) -- never via an
@@ -820,19 +845,110 @@ dynamic docker_frontend::do_command_result(const dynamic& args) {
   return dynamic{};
 }
 
+// ── Console window (client `docker` subprocess trace) ──────────────────────
+
+void docker_frontend::append_console_row(
+    const std::string& command, int32_t exit_code, bool ok, const std::string& output) {
+  if (!console_table_)
+    return;
+  auto* children_p = console_table_->findField<dynamic_ptr>("children"_key);
+  if (!children_p || !*children_p)
+    return;
+  auto& children = *children_p;
+
+  const char* cl = ok ? kOkLight : kBadLight;
+  const char* cd = ok ? kOkDark : kBadDark;
+
+  ui_element_ptr row = ui_element_ptr::create("wish"_key, "TableRow"_key);
+  assign_id(row);
+
+  ui_element_ptr cell_seq = make_label(std::to_string(++console_seq_), kIdleLight, kIdleDark);
+  ui_element_ptr cell_command = make_label(command, cl, cd);
+  ui_element_ptr cell_exit = make_label(std::to_string(exit_code), cl, cd);
+  ui_element_ptr cell_output = make_label(output, cl, cd);
+
+  // Right-click any row for "Copy Entry" (this row's command/exit/output,
+  // via MenuItem.copy_text -- the renderer copies it straight to the OS
+  // clipboard on click) and "Clear Console" (every row). git's Log window.
+  ui_element_ptr context_menu = ui_element_ptr::create("wish"_key, "ContextMenu"_key);
+  assign_id(context_menu);
+
+  ui_element_ptr copy_item = ui_element_ptr::create("wish"_key, "MenuItem"_key);
+  copy_item["label"_key] = std::string{"Copy Entry"};
+  copy_item["copy_text"_key] = command + "\nexit: " + std::to_string(exit_code) + "\n" + output;
+  assign_id(copy_item);
+
+  ui_element_ptr clear_item = ui_element_ptr::create("wish"_key, "MenuItem"_key);
+  clear_item["label"_key] = std::string{"Clear Console"};
+  assign_id(clear_item);
+  click_handlers_[wish_id_of(clear_item)] = [this] { clear_console_rows(); };
+
+  set_children_list(context_menu, {copy_item, clear_item});
+  set_children_list(row, {cell_seq, cell_command, cell_exit, cell_output, context_menu});
+
+  console_row_entry entry;
+  entry.child_key = next_console_child_key_++;
+  entry.object_ids = {
+      wish_id_of(row),       wish_id_of(cell_seq),      wish_id_of(cell_command), wish_id_of(cell_exit),
+      wish_id_of(cell_output), wish_id_of(context_menu), wish_id_of(copy_item),   wish_id_of(clear_item)};
+  (*children)[entry.child_key] = dynamic_ptr{row};
+  console_rows_.push_back(std::move(entry));
+
+  if (console_rows_.size() > kMaxConsoleRows) {
+    erase_console_row_objects(console_rows_.front());
+    children->erase(console_rows_.front().child_key);
+    console_rows_.pop_front();
+  }
+  console_table_->refresh_children_order();
+}
+
+void docker_frontend::erase_console_row_objects(const console_row_entry& entry) {
+  for (auto id : entry.object_ids) {
+    ctx().objects.erase(id.id);
+    click_handlers_.erase(id);
+  }
+}
+
+void docker_frontend::clear_console_rows() {
+  if (!console_table_)
+    return;
+  auto* children_p = console_table_->findField<dynamic_ptr>("children"_key);
+  if (!children_p || !*children_p)
+    return;
+  auto& children = *children_p;
+
+  for (auto& entry : console_rows_) {
+    erase_console_row_objects(entry);
+    children->erase(entry.child_key);
+  }
+  console_rows_.clear();
+  console_seq_ = 0;
+  next_console_child_key_ = 0; // every numeric child key was just erased.
+  console_table_->refresh_children_order();
+}
+
+dynamic docker_frontend::do_append_command_log(const dynamic& args) {
+  append_console_row(
+      args.as<std::string>("command"_key), args.as<int32_t>("exit_code"_key), args.as<bool>("ok"_key),
+      args.as<std::string>("output"_key));
+  return dynamic{};
+}
+
 // ── Event routing ──────────────────────────────────────────────────────────
 
 void docker_frontend::on_event(key_t id, key_t event, const dynamic& payload) {
   // Any window's X button -> tear everything down.
   if (event == "closed"_key &&
       (id == containers_.window_id || id == images_.window_id || id == volumes_.window_id ||
-       id == networks_.window_id || id == logs_window_id_ || id == inspect_window_id_)) {
+       id == networks_.window_id || id == logs_window_id_ || id == inspect_window_id_ ||
+       id == console_window_id_)) {
     emit("closed"_key);
     remove_objects_at(images_.root_key);
     remove_objects_at(volumes_.root_key);
     remove_objects_at(networks_.root_key);
     remove_objects_at(logs_root_key_);
     remove_objects_at(inspect_root_key_);
+    remove_objects_at(console_root_key_);
     remove_internal_objects();
     return;
   }
@@ -941,6 +1057,7 @@ void register_docker() {
   add_method("update_logs"_key, &docker_frontend::do_update_logs);
   add_method("update_inspect"_key, &docker_frontend::do_update_inspect);
   add_method("command_result"_key, &docker_frontend::do_command_result);
+  add_method("append_command_log"_key, &docker_frontend::do_append_command_log);
 
   (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("DockerFrontend"));
   (*proto)[dynamic::CLASS].addAttribute(attr<Description>(

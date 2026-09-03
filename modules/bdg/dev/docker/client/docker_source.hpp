@@ -62,6 +62,14 @@ class docker_source {
   void push_volumes();
   void push_networks();
 
+  /// @brief Runs `docker <args>` via run_docker_cli() and pushes a trace row
+  /// to the Console window (DockerFrontend's append_command_log RMI method).
+  /// Every one-shot `docker` invocation goes through here so the Console
+  /// window is a complete trace -- the exception is the Logs "Follow"
+  /// re-poll thread, which would flood it every ~2 s (git's Log-window
+  /// lesson). Mirrors git_repo_source::run_logged().
+  process_result run_logged(const std::vector<std::string>& args);
+
   /// @brief Runs a mutating `docker` command, reports its result via
   /// DockerFrontend's command_result RMI method (tagged with @p scope so
   /// the right window's status label is written), and calls refresh_all().

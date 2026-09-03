@@ -756,3 +756,32 @@ TEST_F(DockerRmiTest, InspectMenuActionEmitsAndUpdateInspectFills) {
   call("update_inspect"_key, std::move(resp));
   EXPECT_EQ(row_count(root_ + "_inspect.vbox.table"), 3u);
 }
+
+// ── Console window (client `docker` subprocess trace) ─────────────────────
+
+TEST_F(DockerRmiTest, InstantiationBuildsConsoleWindow) {
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root_ + "_console.vbox.table"));
+  EXPECT_TRUE(srv_->last_session->top_level_handlers.count(bison::key_t{root_ + "_console"}));
+}
+
+TEST_F(DockerRmiTest, AppendCommandLogAddsRowsAndClearConsoleEmptiesThem) {
+  auto log_args = [](const std::string& command, int32_t exit_code, bool ok, const std::string& output) {
+    dynamic a;
+    a["command"_key] = command;
+    a["exit_code"_key] = exit_code;
+    a["ok"_key] = ok;
+    a["output"_key] = output;
+    return a;
+  };
+
+  EXPECT_EQ(row_count(root_ + "_console.vbox.table"), 0u);
+  call("append_command_log"_key, log_args("docker ps -a", 0, true, ""));
+  EXPECT_EQ(row_count(root_ + "_console.vbox.table"), 1u);
+  call("append_command_log"_key, log_args("docker rm -f c1", 1, false, "no such container"));
+  EXPECT_EQ(row_count(root_ + "_console.vbox.table"), 2u);
+
+  auto clear = menu_id_in(srv_->last_session->ui_objects, root_ + "_console.vbox.table", 0, "Clear Console");
+  ASSERT_NE(clear.id, 0u);
+  fire_at(root_ + "_console", clear, "clicked"_key);
+  EXPECT_EQ(row_count(root_ + "_console.vbox.table"), 0u);
+}

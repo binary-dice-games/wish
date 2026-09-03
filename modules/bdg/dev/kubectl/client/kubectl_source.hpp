@@ -59,6 +59,14 @@ class kubectl_source {
   void push_services();
   void push_nodes();
 
+  /// @brief Runs `kubectl <args>` via run_kubectl_cli() and pushes a trace
+  /// row to the Console window (KubectlFrontend's append_command_log RMI
+  /// method). Every one-shot `kubectl` invocation goes through here so the
+  /// Console window is a complete trace -- the exception is the Logs
+  /// "Follow" re-poll thread, which would flood it every ~2 s (git's
+  /// Log-window lesson). Mirrors docker_source::run_logged().
+  process_result run_logged(const std::vector<std::string>& args);
+
   /// @brief Runs a mutating `kubectl` command, reports its result via
   /// KubectlFrontend's command_result RMI method (tagged with @p scope so
   /// the right window's status label is written), and calls refresh_all().

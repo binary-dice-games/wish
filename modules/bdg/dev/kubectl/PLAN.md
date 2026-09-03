@@ -77,5 +77,4 @@ the `MessageBox` confirm for destructive actions, and the six-window layout.
   CronJobs, ConfigMaps, Secrets, Ingresses, PVCs, CRDs.
 - **Context / namespace switching UI** — lists are always `-A` + client-side
   filter.
-- **A `kubectl`-subprocess trace window** (`git` has one).
 - **In-app kubeconfig / auth prompts.**

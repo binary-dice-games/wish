@@ -17,8 +17,10 @@
 /// MessageBox form (form::instantiate_child_form(), "yes_no" preset) -- see
 /// show_confirm() below, a direct port of docker_frontend::show_confirm().
 ///
-/// Owns six independently dockable Windows -- Pods (the main root),
-/// Deployments, Services, Nodes, Logs, Describe -- registered by hand in
+/// Owns seven independently dockable Windows -- Pods (the main root),
+/// Deployments, Services, Nodes, Logs, Describe, and Console (a FIFO-capped
+/// trace of every `kubectl` command the client ran, fed by
+/// append_command_log -- git's "Log" window) -- registered by hand in
 /// on_init() exactly as docker.cpp's build_list_window() / build_text_window()
 /// do.
 #pragma once
@@ -27,6 +29,7 @@
 #include <ui/ui_element.hpp>
 #include <ui/ui_importer.hpp>
 
+#include <deque>
 #include <functional>
 #include <memory>
 #include <string>
@@ -94,6 +97,13 @@ class kubectl_frontend : public form {
   /// optional `scope` ("pods"/"deployments"/"services"/"nodes", default
   /// "pods") selecting which window's status label to write.
   bison::dynamic do_command_result(const bison::dynamic& args);
+
+  /// @brief RMI method: append one row to the Console window's `kubectl`
+  /// subprocess trace. @p args holds `command` (string, e.g. `"kubectl get
+  /// pods -A"`), `exit_code` (int32), `ok` (bool) and `output` (string, a
+  /// single-line preview). Color-coded green/red by `ok`; the table is
+  /// FIFO-capped at kMaxConsoleRows. Mirrors git_repo::do_append_command_log.
+  bison::dynamic do_append_command_log(const bison::dynamic& args);
 
  protected:
   void on_init() override;
@@ -235,6 +245,33 @@ class kubectl_frontend : public form {
   std::string open_describe_name_;
   std::string open_describe_ns_;
   std::string open_describe_kind_;
+
+  // ── Console window (client `kubectl` subprocess trace) ──────────────
+  //
+  // git's "Log" window, renamed to avoid clashing with the pod Logs window
+  // above. A FIFO-capped `Table` (# / Command / Exit / Output) so a long
+  // session stays bounded rather than growing without limit.
+  std::string console_root_key_;
+  bison::key_t console_window_id_;
+  ui_element_ptr console_table_;
+
+  static constexpr size_t kMaxConsoleRows = 500;
+
+  struct console_row_entry {
+    size_t child_key;
+    std::vector<bison::key_t> object_ids;
+  };
+  size_t console_seq_{0};
+  size_t next_console_child_key_{0};
+  std::deque<console_row_entry> console_rows_; // oldest first
+
+  /// @brief Append one trace row (sequence #, command, exit code, output
+  /// preview), green/red by @p ok; evict the oldest first past kMaxConsoleRows.
+  void append_console_row(const std::string& command, int32_t exit_code, bool ok, const std::string& output);
+  /// @brief Erase every Console row (+ their ctx().objects / click_handlers_
+  /// entries); reset the sequence counter. From any row's "Clear Console".
+  void clear_console_rows();
+  void erase_console_row_objects(const console_row_entry& entry);
 
   std::unordered_map<bison::key_t, std::function<void()>, bison::key_t, bison::key_t> click_handlers_;
   std::unordered_map<bison::key_t, row_action, bison::key_t, bison::key_t> menu_action_targets_;

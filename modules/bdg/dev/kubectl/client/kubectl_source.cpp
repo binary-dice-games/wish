@@ -3,6 +3,7 @@
 /// @brief Implementation of kubectl_source.
 #include "kubectl_source.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -126,6 +127,34 @@ std::string humanize_age(const std::string& ts) {
   return std::to_string(d / (86400L * 365)) + "y";
 }
 
+// Pushes one Console-window trace row for a finished `kubectl <argv>` run.
+// Best-effort: a torn-down form just swallows the call. Mirrors
+// docker_source's push_command_log().
+void push_command_log(
+    const std::shared_ptr<bison::rmi::proxy::dynamic>& proxy, const std::vector<std::string>& argv,
+    const process_result& r) {
+  std::string command = "kubectl";
+  for (auto& a : argv)
+    command += ' ' + a;
+
+  std::string output =
+      trim_eol(r.ok() ? r.stdout_text : (r.stderr_text.empty() ? r.stdout_text : r.stderr_text));
+  std::replace(output.begin(), output.end(), '\n', ' ');
+  constexpr size_t kMaxOutputPreview = 200;
+  if (output.size() > kMaxOutputPreview)
+    output = output.substr(0, kMaxOutputPreview) + "...";
+
+  dynamic args;
+  args["command"_key] = command;
+  args["exit_code"_key] = r.exit_code;
+  args["ok"_key] = r.ok();
+  args["output"_key] = std::move(output);
+  try {
+    proxy->call("append_command_log"_key, std::move(args)).get();
+  } catch (const std::exception&) {
+  }
+}
+
 // Runs one `kubectl get <kind> -A -o jsonpath=<tmpl>`, calls @p fill once per
 // output line with the tab-split fields (padded to @p ncols), then calls
 // @p rmi_method with the collected array under @p array_key. Mirrors
@@ -134,6 +163,7 @@ void push_list(
     const std::shared_ptr<bison::rmi::proxy::dynamic>& proxy, const std::vector<std::string>& argv, size_t ncols,
     key_t array_key, key_t rmi_method, const std::function<void(dynamic&, const std::vector<std::string>&)>& fill) {
   auto r = run_kubectl_cli(argv);
+  push_command_log(proxy, argv, r);
 
   dynamic arr;
   size_t i = 0;
@@ -258,9 +288,15 @@ void kubectl_source::push_nodes() {
 
 // ── mutating actions ───────────────────────────────────────────────────────
 
+process_result kubectl_source::run_logged(const std::vector<std::string>& args) {
+  auto r = run_kubectl_cli(args);
+  push_command_log(proxy_, args, r);
+  return r;
+}
+
 void kubectl_source::run_and_refresh(
     const std::string& label, const std::string& scope, const std::vector<std::string>& args) {
-  auto r = run_kubectl_cli(args);
+  auto r = run_logged(args);
 
   dynamic report;
   report["command"_key] = label;
@@ -310,7 +346,7 @@ void kubectl_source::on_node_action(const std::string& name, const std::string& 
 void kubectl_source::push_logs_snapshot(
     const std::string& name, const std::string& ns, int32_t lines, bool following) {
   const std::string tail = std::to_string(lines > 0 ? lines : 500);
-  auto r = run_kubectl_cli({"logs", name, "-n", ns, "--tail", tail, "--timestamps"});
+  auto r = run_logged({"logs", name, "-n", ns, "--tail", tail, "--timestamps"});
   std::string text = r.ok() ? r.stdout_text : (r.stderr_text.empty() ? r.stdout_text : r.stderr_text);
 
   dynamic args;
@@ -345,6 +381,8 @@ void kubectl_source::on_logs_requested(
         std::this_thread::sleep_for(100ms);
       if (stop->load(std::memory_order_relaxed))
         break;
+      // Deliberately run_kubectl_cli(), not run_logged() -- a ~2 s re-poll
+      // would flood the Console window (git's Log-window lesson).
       auto r = run_kubectl_cli(
           {"logs", name, "-n", ns, "--tail", std::to_string(lines > 0 ? lines : 500), "--timestamps"});
       dynamic args;
@@ -371,7 +409,7 @@ void kubectl_source::on_describe_requested(
     argv = {"describe", "node", name};
   else
     argv = {"describe", k, name, "-n", ns};
-  auto r = run_kubectl_cli(argv);
+  auto r = run_logged(argv);
 
   dynamic args;
   args["kind"_key] = kind;

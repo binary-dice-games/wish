@@ -21,7 +21,7 @@ else (rollout restart, cordon, uncordon, logs, describe) fires directly.
 - **server/**: `KubectlFrontend` form (`register_kubectl()`) — renders
   whatever snapshot it was last given via `update_pods` /
   `update_deployments` / `update_services` / `update_nodes` / `update_logs`
-  / `update_describe`, and emits `*_requested` events (see
+  / `update_describe` / `append_command_log`, and emits `*_requested` events (see
   `server/kubectl.hpp`'s class doc comment for the full contract) for the
   client to react to by running the corresponding `kubectl` command.
 - **client/**: `run_kubectl(wish_app_host&)`, self-registered as the
@@ -44,7 +44,7 @@ for what's implemented vs. deferred.
 
 ## Implementation status
 
-All six windows are implemented and unit-tested over `memory_transport`
+All seven windows are implemented and unit-tested over `memory_transport`
 (`tests/test_kubectl.cpp`, `tests/test_kubectl_process.cpp`):
 
 - **Pods / Deployments / Services / Nodes** — each a toolbar + `Table` with
@@ -55,6 +55,10 @@ All six windows are implemented and unit-tested over `memory_transport`
 - **Logs** — `kubectl logs --tail N --timestamps` in a scrolling pane; the
   "Follow" checkbox starts a 2 s client-side re-poll.
 - **Describe** — `kubectl describe <kind>` output shown verbatim.
+- **Console** — a scrolling, FIFO-capped table tracing every `kubectl`
+  command the module ran (`#` / Command / Exit / Output), green on
+  success, red on failure; right-click a row for "Copy Entry" or "Clear
+  Console". (`git`'s "Log" window, renamed to avoid clashing with Logs.)
 
 Plus a `kubectl version` startup gate and a `MessageBox` confirm for Delete
 and Drain.

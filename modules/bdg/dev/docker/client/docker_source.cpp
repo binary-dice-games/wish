@@ -3,6 +3,7 @@
 /// @brief Implementation of docker_source.
 #include "docker_source.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <functional>
 #include <sstream>
@@ -37,6 +38,33 @@ std::string trim_eol(std::string s) {
   return s;
 }
 
+// Pushes one Console-window trace row for a finished `docker <argv>` run.
+// Best-effort: a torn-down form just swallows the call.
+void push_command_log(
+    const std::shared_ptr<bison::rmi::proxy::dynamic>& proxy, const std::vector<std::string>& argv,
+    const process_result& r) {
+  std::string command = "docker";
+  for (auto& a : argv)
+    command += ' ' + a;
+
+  std::string output =
+      trim_eol(r.ok() ? r.stdout_text : (r.stderr_text.empty() ? r.stdout_text : r.stderr_text));
+  std::replace(output.begin(), output.end(), '\n', ' ');
+  constexpr size_t kMaxOutputPreview = 200;
+  if (output.size() > kMaxOutputPreview)
+    output = output.substr(0, kMaxOutputPreview) + "...";
+
+  dynamic args;
+  args["command"_key] = command;
+  args["exit_code"_key] = r.exit_code;
+  args["ok"_key] = r.ok();
+  args["output"_key] = std::move(output);
+  try {
+    proxy->call("append_command_log"_key, std::move(args)).get();
+  } catch (const std::exception&) {
+  }
+}
+
 // Runs one `docker <ls-command>` with a tab-delimited Go template, calls
 // @p push once per output line with the split fields (padded to @p ncols),
 // then calls @p rmi_method with the collected array under @p array_key.
@@ -45,6 +73,7 @@ void push_list(
     key_t array_key, key_t rmi_method,
     const std::function<void(dynamic&, const std::vector<std::string>&)>& fill) {
   auto r = run_docker_cli(argv);
+  push_command_log(proxy, argv, r);
 
   dynamic arr;
   size_t i = 0;
@@ -146,9 +175,15 @@ void docker_source::push_networks() {
 
 // ── mutating actions ───────────────────────────────────────────────────────
 
+process_result docker_source::run_logged(const std::vector<std::string>& args) {
+  auto r = run_docker_cli(args);
+  push_command_log(proxy_, args, r);
+  return r;
+}
+
 void docker_source::run_and_refresh(
     const std::string& label, const std::string& scope, const std::vector<std::string>& args) {
-  auto r = run_docker_cli(args);
+  auto r = run_logged(args);
 
   dynamic report;
   report["command"_key] = label;
@@ -210,7 +245,7 @@ void docker_source::on_create_volume(const std::string& name) {
 
 void docker_source::push_logs_snapshot(const std::string& id, int32_t lines) {
   const std::string tail = std::to_string(lines > 0 ? lines : 500);
-  auto r = run_docker_cli({"logs", "--tail", tail, "--timestamps", id});
+  auto r = run_logged({"logs", "--tail", tail, "--timestamps", id});
   std::string text = r.ok() ? r.stdout_text + r.stderr_text // docker logs writes app stderr too
                             : (r.stderr_text.empty() ? r.stdout_text : r.stderr_text);
 
@@ -244,6 +279,8 @@ void docker_source::on_logs_requested(const std::string& id, bool follow, int32_
         std::this_thread::sleep_for(100ms);
       if (stop->load(std::memory_order_relaxed))
         break;
+      // Deliberately run_docker_cli(), not run_logged() -- a ~2 s re-poll
+      // would flood the Console window (git's Log-window lesson).
       auto r = run_docker_cli({"logs", "--tail", std::to_string(lines > 0 ? lines : 500), "--timestamps", id});
       dynamic args;
       args["container_id"_key] = id;
@@ -270,7 +307,7 @@ void docker_source::on_inspect_requested(const std::string& kind, const std::str
     argv = {kind, "inspect", id};
   else
     argv = {"inspect", id};
-  auto r = run_docker_cli(argv);
+  auto r = run_logged(argv);
 
   dynamic args;
   args["target_id"_key] = id;
