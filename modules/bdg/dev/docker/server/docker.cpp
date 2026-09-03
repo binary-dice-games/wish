@@ -105,7 +105,7 @@ static constexpr const char* kContainersLayout = R"json({
     "sep": { "type": "Separator" },
     "table": {
       "type": "Table", "id": "##containers_table", "columns": 6,
-      "flags": "Resizable|RowBg|Borders|ScrollY", "headers": true,
+      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "headers": true,
       "height": -1, "outer_height": -1, "auto_scroll": false,
       "children": {
         "col_name":    { "type": "TableColumn", "label": "Name",    "flags": "WidthFixed", "init_width": 150, "column_id": 0 },
@@ -133,7 +133,7 @@ static constexpr const char* kImagesLayout = R"json({
     "sep": { "type": "Separator" },
     "table": {
       "type": "Table", "id": "##images_table", "columns": 6,
-      "flags": "Resizable|RowBg|Borders|ScrollY", "headers": true,
+      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "headers": true,
       "height": -1, "outer_height": -1, "auto_scroll": false,
       "children": {
         "col_repo":    { "type": "TableColumn", "label": "Repository", "flags": "WidthStretch",                    "column_id": 0 },
@@ -161,7 +161,7 @@ static constexpr const char* kVolumesLayout = R"json({
     "sep": { "type": "Separator" },
     "table": {
       "type": "Table", "id": "##volumes_table", "columns": 4,
-      "flags": "Resizable|RowBg|Borders|ScrollY", "headers": true,
+      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "headers": true,
       "height": -1, "outer_height": -1, "auto_scroll": false,
       "children": {
         "col_name":   { "type": "TableColumn", "label": "Name",       "flags": "WidthFixed", "init_width": 220, "column_id": 0 },
@@ -185,7 +185,7 @@ static constexpr const char* kNetworksLayout = R"json({
     "sep": { "type": "Separator" },
     "table": {
       "type": "Table", "id": "##networks_table", "columns": 5,
-      "flags": "Resizable|RowBg|Borders|ScrollY", "headers": true,
+      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "headers": true,
       "height": -1, "outer_height": -1, "auto_scroll": false,
       "children": {
         "col_name":   { "type": "TableColumn", "label": "Name",       "flags": "WidthFixed", "init_width": 200, "column_id": 0 },
@@ -217,9 +217,9 @@ static constexpr const char* kLogsLayout = R"json({
     "sep": { "type": "Separator" },
     "table": {
       "type": "Table", "id": "##logs_table", "columns": 1,
-      "flags": "ScrollY", "headers": false,
+      "flags": "ScrollX|ScrollY", "headers": false,
       "height": -1, "outer_height": -1, "auto_scroll": true,
-      "children": { "col_line": { "type": "TableColumn", "flags": "WidthStretch", "column_id": 0 } }
+      "children": { "col_line": { "type": "TableColumn", "flags": "WidthFixed", "column_id": 0 } }
     }
   } } }
 })json";
@@ -236,9 +236,9 @@ static constexpr const char* kInspectLayout = R"json({
     "sep": { "type": "Separator" },
     "table": {
       "type": "Table", "id": "##inspect_table", "columns": 1,
-      "flags": "ScrollY", "headers": false,
+      "flags": "ScrollX|ScrollY", "headers": false,
       "height": -1, "outer_height": -1, "auto_scroll": false,
-      "children": { "col_line": { "type": "TableColumn", "flags": "WidthStretch", "column_id": 0 } }
+      "children": { "col_line": { "type": "TableColumn", "flags": "WidthFixed", "column_id": 0 } }
     }
   } } }
 })json";
@@ -253,7 +253,7 @@ static constexpr const char* kConsoleLayout = R"json({
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "table": {
       "type": "Table", "id": "##docker_console_table", "columns": 4,
-      "flags": "Resizable|RowBg|Borders|ScrollY", "headers": true,
+      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "headers": true,
       "height": -1, "outer_height": -1, "auto_scroll": true,
       "children": {
         "col_seq":     { "type": "TableColumn", "label": "#",       "flags": "WidthFixed", "init_width": 44,  "column_id": 0 },

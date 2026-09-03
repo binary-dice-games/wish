@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `docker` / `kubectl` modules: list, log, and console tables now scroll both horizontally and vertically; the Inspect / Describe views no longer clip long lines.
 - `editor` module: loads `.yaml` / `.yml` UI files in addition to JSON, selected by file extension, with full feature parity — YAML syntax highlighting, schema-aware autocomplete, and the cursor-tracked Help panel / preview highlight all work for YAML sources.
 - `editor` module: closing with unsaved edits now uses a real modal `MessageBox` ("Save changes … before closing?", Yes / No / Cancel) instead of an inline panel.
 - `TextEditor`: new `"yaml"` value for the `language` field (YAML syntax highlighting); `wish_ui_schema` autocomplete now also applies when `language` is `"yaml"`.

@@ -220,6 +220,31 @@ TEST_F(KubectlRmiTest, InstantiationBuildsAllSixWindows) {
   EXPECT_TRUE(srv_->last_session->top_level_handlers.count(bison::key_t{root_ + "_nodes"}));
 }
 
+// Both scroll axes must be enabled on every scrollable table: ImGui has no
+// single "Scroll" flag, so the descriptor lists ScrollX|ScrollY explicitly.
+// The single-column Logs/Describe line tables additionally use a WidthFixed
+// col_line so ScrollX has a content width to pan over (a WidthStretch column
+// is clamped to the viewport and long lines get clipped, not scrolled).
+TEST_F(KubectlRmiTest, ScrollableTablesEnableBothScrollAxes) {
+  constexpr int32_t kScrollX = 1 << 24;
+  constexpr int32_t kScrollY = 1 << 25;
+  constexpr int32_t kWidthFixed = 1 << 4;
+  for (const char* suffix : {".vbox.table", "_deployments.vbox.table", "_services.vbox.table",
+                             "_nodes.vbox.table", "_logs.vbox.table", "_describe.vbox.table",
+                             "_console.vbox.table"}) {
+    auto it = srv_->last_session->ui_objects.find(root_ + suffix);
+    ASSERT_NE(it, srv_->last_session->ui_objects.end()) << suffix;
+    int32_t flags = it->second->as<int32_t>("flags"_key);
+    EXPECT_TRUE(flags & kScrollX) << suffix;
+    EXPECT_TRUE(flags & kScrollY) << suffix;
+  }
+  for (const char* col_path : {"_logs.vbox.table.col_line", "_describe.vbox.table.col_line"}) {
+    auto it = srv_->last_session->ui_objects.find(root_ + col_path);
+    ASSERT_NE(it, srv_->last_session->ui_objects.end()) << col_path;
+    EXPECT_TRUE(it->second->as<int32_t>("flags"_key) & kWidthFixed) << col_path;
+  }
+}
+
 TEST_F(KubectlRmiTest, UpdatePodsPopulatesTableAndStatusCounts) {
   call("update_pods"_key,
        make_list_args("pods", {
