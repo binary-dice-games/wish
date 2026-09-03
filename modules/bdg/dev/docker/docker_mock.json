@@ -1,0 +1,394 @@
+{
+  "//": "UI MOCKUP for the `docker` module -- open with: wish-standalone --run=editor -- modules/bdg/dev/docker/docker_mock.json",
+  "//tabs": "The real module splits these six tabs into six independently dockable Windows (git/editor style). Tabs here are only so the whole UI renders as one editor preview. Sample rows are illustrative.",
+  "type": "Window",
+  "title": "Docker",
+  "width": 1000,
+  "height": 640,
+  "closable": true,
+  "children": {
+    "root": {
+      "type": "VerticalLayout",
+      "children": {
+        "tabs": {
+          "type": "TabBar",
+          "id": "##docker_tabs",
+          "height": -1,
+          "children": {
+
+            "containers_tab": {
+              "type": "TabItem",
+              "label": "Containers",
+              "scroll": false,
+              "children": {
+                "c_box": {
+                  "type": "VerticalLayout",
+                  "spacing": 4,
+                  "children": {
+                    "c_toolbar": {
+                      "type": "HorizontalLayout",
+                      "spacing": 6,
+                      "children": {
+                        "c_refresh": { "type": "Button", "label": "Refresh", "width": 90 },
+                        "c_prune":   { "type": "Button", "label": "Prune stopped...", "width": 130 },
+                        "c_filter":  { "type": "InputText", "hint": "Filter by name / image", "width": 220 },
+                        "c_state":   { "type": "Combo", "items": "All\nRunning\nStopped", "value": 0, "width": 110 }
+                      }
+                    },
+                    "c_status": { "type": "Label", "text": "3 containers (2 running)" },
+                    "c_sep": { "type": "Separator" },
+                    "c_table": {
+                      "type": "Table",
+                      "id": "##containers_table",
+                      "columns": 6,
+                      "flags": "Resizable|RowBg|Borders|ScrollY",
+                      "headers": true,
+                      "height": -1,
+                      "outer_height": -1,
+                      "auto_scroll": false,
+                      "children": {
+                        "col_name":    { "type": "TableColumn", "label": "Name",    "flags": "WidthFixed", "init_width": 150, "column_id": 0 },
+                        "col_image":   { "type": "TableColumn", "label": "Image",   "flags": "WidthStretch",                    "column_id": 1 },
+                        "col_status":  { "type": "TableColumn", "label": "Status",  "flags": "WidthFixed", "init_width": 175, "column_id": 2 },
+                        "col_ports":   { "type": "TableColumn", "label": "Ports",   "flags": "WidthFixed", "init_width": 150, "column_id": 3 },
+                        "col_created": { "type": "TableColumn", "label": "Created", "flags": "WidthFixed", "init_width": 100, "column_id": 4 },
+                        "col_actions": { "type": "TableColumn", "label": "",        "flags": "WidthFixed", "init_width": 36,  "column_id": 5 },
+                        "row0": {
+                          "type": "TableRow",
+                          "children": {
+                            "n": { "type": "Label", "text": "web" },
+                            "i": { "type": "Label", "text": "nginx:latest" },
+                            "st": { "type": "Label", "text": "Up 3 hours", "text_color_light": "#1A7F37FF", "text_color_dark": "#3FB950FF" },
+                            "p": { "type": "Label", "text": "0.0.0.0:8080->80/tcp" },
+                            "cr": { "type": "Label", "text": "3 hours ago" },
+                            "act": {
+                              "type": "MenuButton", "label": "...",
+                              "children": {
+                                "a_start":   { "type": "MenuItem", "label": "Start" },
+                                "a_stop":    { "type": "MenuItem", "label": "Stop..." },
+                                "a_restart": { "type": "MenuItem", "label": "Restart" },
+                                "a_pause":   { "type": "MenuItem", "label": "Pause" },
+                                "a_unpause": { "type": "MenuItem", "label": "Unpause" },
+                                "a_kill":    { "type": "MenuItem", "label": "Kill..." },
+                                "a_rm":      { "type": "MenuItem", "label": "Remove..." },
+                                "a_sep":     { "type": "Separator" },
+                                "a_logs":    { "type": "MenuItem", "label": "Logs" },
+                                "a_inspect": { "type": "MenuItem", "label": "Inspect" }
+                              }
+                            }
+                          }
+                        },
+                        "row1": {
+                          "type": "TableRow",
+                          "children": {
+                            "n": { "type": "Label", "text": "db" },
+                            "i": { "type": "Label", "text": "postgres:16" },
+                            "st": { "type": "Label", "text": "Up 3 hours (healthy)", "text_color_light": "#1A7F37FF", "text_color_dark": "#3FB950FF" },
+                            "p": { "type": "Label", "text": "5432/tcp" },
+                            "cr": { "type": "Label", "text": "3 hours ago" },
+                            "act": { "type": "MenuButton", "label": "...", "children": {
+                              "a_stop": { "type": "MenuItem", "label": "Stop..." },
+                              "a_logs": { "type": "MenuItem", "label": "Logs" },
+                              "a_inspect": { "type": "MenuItem", "label": "Inspect" }
+                            } }
+                          }
+                        },
+                        "row2": {
+                          "type": "TableRow",
+                          "children": {
+                            "n": { "type": "Label", "text": "migrate-once" },
+                            "i": { "type": "Label", "text": "myapp:dev" },
+                            "st": { "type": "Label", "text": "Exited (0) 2 hours ago", "text_color_light": "#656D76FF", "text_color_dark": "#8B949EFF" },
+                            "p": { "type": "Label", "text": "" },
+                            "cr": { "type": "Label", "text": "5 hours ago" },
+                            "act": { "type": "MenuButton", "label": "...", "children": {
+                              "a_start": { "type": "MenuItem", "label": "Start" },
+                              "a_rm": { "type": "MenuItem", "label": "Remove..." },
+                              "a_inspect": { "type": "MenuItem", "label": "Inspect" }
+                            } }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+
+            "images_tab": {
+              "type": "TabItem",
+              "label": "Images",
+              "children": {
+                "i_box": {
+                  "type": "VerticalLayout",
+                  "spacing": 4,
+                  "children": {
+                    "i_toolbar": {
+                      "type": "HorizontalLayout",
+                      "spacing": 6,
+                      "children": {
+                        "i_refresh": { "type": "Button", "label": "Refresh", "width": 90 },
+                        "i_pullref": { "type": "InputText", "hint": "repo:tag to pull", "width": 220 },
+                        "i_pull":    { "type": "Button", "label": "Pull", "width": 70 },
+                        "i_prune":   { "type": "Button", "label": "Prune dangling...", "width": 140 }
+                      }
+                    },
+                    "i_status": { "type": "Label", "text": "4 images - 1.9 GB" },
+                    "i_sep": { "type": "Separator" },
+                    "i_table": {
+                      "type": "Table",
+                      "id": "##images_table",
+                      "columns": 6,
+                      "flags": "Resizable|RowBg|Borders|ScrollY",
+                      "headers": true,
+                      "height": -1,
+                      "outer_height": -1,
+                      "auto_scroll": false,
+                      "children": {
+                        "col_repo":    { "type": "TableColumn", "label": "Repository", "flags": "WidthStretch",                    "column_id": 0 },
+                        "col_tag":     { "type": "TableColumn", "label": "Tag",        "flags": "WidthFixed", "init_width": 100, "column_id": 1 },
+                        "col_id":      { "type": "TableColumn", "label": "Image ID",   "flags": "WidthFixed", "init_width": 130, "column_id": 2 },
+                        "col_created": { "type": "TableColumn", "label": "Created",    "flags": "WidthFixed", "init_width": 120, "column_id": 3 },
+                        "col_size":    { "type": "TableColumn", "label": "Size",       "flags": "WidthFixed", "init_width": 90,  "column_id": 4 },
+                        "col_actions": { "type": "TableColumn", "label": "",           "flags": "WidthFixed", "init_width": 40,  "column_id": 5 },
+                        "row0": {
+                          "type": "TableRow",
+                          "children": {
+                            "r": { "type": "Label", "text": "nginx" },
+                            "t": { "type": "Label", "text": "latest" },
+                            "id": { "type": "Label", "text": "sha256:a1b2c3d4e5f6" },
+                            "c": { "type": "Label", "text": "2 weeks ago" },
+                            "sz": { "type": "Label", "text": "187 MB" },
+                            "act": { "type": "MenuButton", "label": "...", "children": {
+                              "a_run": { "type": "MenuItem", "label": "Run" },
+                              "a_rm": { "type": "MenuItem", "label": "Remove..." },
+                              "a_inspect": { "type": "MenuItem", "label": "Inspect" }
+                            } }
+                          }
+                        },
+                        "row1": {
+                          "type": "TableRow",
+                          "children": {
+                            "r": { "type": "Label", "text": "postgres" },
+                            "t": { "type": "Label", "text": "16" },
+                            "id": { "type": "Label", "text": "sha256:9f8e7d6c5b4a" },
+                            "c": { "type": "Label", "text": "3 weeks ago" },
+                            "sz": { "type": "Label", "text": "431 MB" },
+                            "act": { "type": "MenuButton", "label": "...", "children": {
+                              "a_run": { "type": "MenuItem", "label": "Run" },
+                              "a_rm": { "type": "MenuItem", "label": "Remove..." },
+                              "a_inspect": { "type": "MenuItem", "label": "Inspect" }
+                            } }
+                          }
+                        },
+                        "row2": {
+                          "type": "TableRow",
+                          "children": {
+                            "r": { "type": "Label", "text": "<none>", "text_color_light": "#656D76FF", "text_color_dark": "#8B949EFF" },
+                            "t": { "type": "Label", "text": "<none>", "text_color_light": "#656D76FF", "text_color_dark": "#8B949EFF" },
+                            "id": { "type": "Label", "text": "sha256:0011223344ab" },
+                            "c": { "type": "Label", "text": "6 days ago" },
+                            "sz": { "type": "Label", "text": "1.1 GB" },
+                            "act": { "type": "MenuButton", "label": "...", "children": {
+                              "a_rm": { "type": "MenuItem", "label": "Remove..." },
+                              "a_inspect": { "type": "MenuItem", "label": "Inspect" }
+                            } }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+
+            "volumes_tab": {
+              "type": "TabItem",
+              "label": "Volumes",
+              "children": {
+                "v_box": {
+                  "type": "VerticalLayout",
+                  "spacing": 4,
+                  "children": {
+                    "v_toolbar": {
+                      "type": "HorizontalLayout",
+                      "spacing": 6,
+                      "children": {
+                        "v_refresh": { "type": "Button", "label": "Refresh", "width": 90 },
+                        "v_name":    { "type": "InputText", "hint": "new volume name", "width": 200 },
+                        "v_create":  { "type": "Button", "label": "Create", "width": 80 },
+                        "v_prune":   { "type": "Button", "label": "Prune...", "width": 90 }
+                      }
+                    },
+                    "v_status": { "type": "Label", "text": "2 volumes" },
+                    "v_sep": { "type": "Separator" },
+                    "v_table": {
+                      "type": "Table",
+                      "id": "##volumes_table",
+                      "columns": 4,
+                      "flags": "Resizable|RowBg|Borders|ScrollY",
+                      "headers": true,
+                      "height": -1,
+                      "outer_height": -1,
+                      "auto_scroll": false,
+                      "children": {
+                        "col_name":   { "type": "TableColumn", "label": "Name",       "flags": "WidthFixed", "init_width": 220, "column_id": 0 },
+                        "col_driver": { "type": "TableColumn", "label": "Driver",     "flags": "WidthFixed", "init_width": 90,  "column_id": 1 },
+                        "col_mount":  { "type": "TableColumn", "label": "Mountpoint", "flags": "WidthStretch",                    "column_id": 2 },
+                        "col_act":    { "type": "TableColumn", "label": "",           "flags": "WidthFixed", "init_width": 40,  "column_id": 3 },
+                        "row0": {
+                          "type": "TableRow",
+                          "children": {
+                            "n": { "type": "Label", "text": "pgdata" },
+                            "d": { "type": "Label", "text": "local" },
+                            "m": { "type": "Label", "text": "/var/lib/docker/volumes/pgdata/_data" },
+                            "act": { "type": "MenuButton", "label": "...", "children": {
+                              "a_rm": { "type": "MenuItem", "label": "Remove..." },
+                              "a_inspect": { "type": "MenuItem", "label": "Inspect" }
+                            } }
+                          }
+                        },
+                        "row1": {
+                          "type": "TableRow",
+                          "children": {
+                            "n": { "type": "Label", "text": "build-cache" },
+                            "d": { "type": "Label", "text": "local" },
+                            "m": { "type": "Label", "text": "/var/lib/docker/volumes/build-cache/_data" },
+                            "act": { "type": "MenuButton", "label": "...", "children": {
+                              "a_rm": { "type": "MenuItem", "label": "Remove..." },
+                              "a_inspect": { "type": "MenuItem", "label": "Inspect" }
+                            } }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+
+            "networks_tab": {
+              "type": "TabItem",
+              "label": "Networks",
+              "children": {
+                "n_box": {
+                  "type": "VerticalLayout",
+                  "spacing": 4,
+                  "children": {
+                    "n_toolbar": {
+                      "type": "HorizontalLayout",
+                      "spacing": 6,
+                      "children": {
+                        "n_refresh": { "type": "Button", "label": "Refresh", "width": 90 },
+                        "n_prune":   { "type": "Button", "label": "Prune...", "width": 90 }
+                      }
+                    },
+                    "n_status": { "type": "Label", "text": "4 networks" },
+                    "n_sep": { "type": "Separator" },
+                    "n_table": {
+                      "type": "Table",
+                      "id": "##networks_table",
+                      "columns": 4,
+                      "flags": "Resizable|RowBg|Borders|ScrollY",
+                      "headers": true,
+                      "height": -1,
+                      "outer_height": -1,
+                      "auto_scroll": false,
+                      "children": {
+                        "col_name":   { "type": "TableColumn", "label": "Name",   "flags": "WidthFixed", "init_width": 200, "column_id": 0 },
+                        "col_driver": { "type": "TableColumn", "label": "Driver", "flags": "WidthFixed", "init_width": 100, "column_id": 1 },
+                        "col_scope":  { "type": "TableColumn", "label": "Scope",  "flags": "WidthFixed", "init_width": 100, "column_id": 2 },
+                        "col_id":     { "type": "TableColumn", "label": "Network ID", "flags": "WidthStretch",                "column_id": 3 },
+                        "row0": {
+                          "type": "TableRow",
+                          "children": {
+                            "n": { "type": "Label", "text": "bridge" },
+                            "d": { "type": "Label", "text": "bridge" },
+                            "s": { "type": "Label", "text": "local" },
+                            "id": { "type": "Label", "text": "b1c2d3e4f5a6" }
+                          }
+                        },
+                        "row1": {
+                          "type": "TableRow",
+                          "children": {
+                            "n": { "type": "Label", "text": "myapp_default" },
+                            "d": { "type": "Label", "text": "bridge" },
+                            "s": { "type": "Label", "text": "local" },
+                            "id": { "type": "Label", "text": "0a9b8c7d6e5f" }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+
+            "logs_tab": {
+              "type": "TabItem",
+              "label": "Logs",
+              "scroll": false,
+              "children": {
+                "l_box": {
+                  "type": "VerticalLayout",
+                  "spacing": 4,
+                  "children": {
+                    "l_toolbar": {
+                      "type": "HorizontalLayout",
+                      "spacing": 8,
+                      "children": {
+                        "l_target": { "type": "Label", "text": "web  (nginx:latest)" },
+                        "l_follow": { "type": "Checkbox", "label": "Follow", "value": true },
+                        "l_lines":  { "type": "InputInt", "label": "Lines", "value": 1000, "step": 100, "width": 120 },
+                        "l_refresh": { "type": "Button", "label": "Refresh", "width": 90 }
+                      }
+                    },
+                    "l_sep": { "type": "Separator" },
+                    "l_body": {
+                      "type": "InputText",
+                      "multiline": true,
+                      "width": -1,
+                      "height": -1,
+                      "value": "2026-09-03T09:41:02Z  Configuration complete; ready for start up\n2026-09-03T09:41:02Z  [notice] nginx/1.27.2\n2026-09-03T09:41:02Z  [notice] start worker processes\n2026-09-03T09:44:18Z  172.18.0.1 - GET / HTTP/1.1 200\n2026-09-03T09:44:19Z  172.18.0.1 - GET /favicon.ico HTTP/1.1 404"
+                    }
+                  }
+                }
+              }
+            },
+
+            "inspect_tab": {
+              "type": "TabItem",
+              "label": "Inspect",
+              "scroll": false,
+              "children": {
+                "x_box": {
+                  "type": "VerticalLayout",
+                  "spacing": 4,
+                  "children": {
+                    "x_toolbar": {
+                      "type": "HorizontalLayout",
+                      "spacing": 8,
+                      "children": {
+                        "x_target": { "type": "Label", "text": "container: web" },
+                        "x_refresh": { "type": "Button", "label": "Refresh", "width": 90 }
+                      }
+                    },
+                    "x_sep": { "type": "Separator" },
+                    "x_body": {
+                      "type": "InputText",
+                      "multiline": true,
+                      "width": -1,
+                      "height": -1,
+                      "value": "[\n  {\n    \"Id\": \"a1b2c3d4e5f6...\",\n    \"Name\": \"/web\",\n    \"State\": { \"Status\": \"running\", \"Running\": true, \"Pid\": 40912 },\n    \"Config\": { \"Image\": \"nginx:latest\", \"ExposedPorts\": { \"80/tcp\": {} } },\n    \"NetworkSettings\": { \"Ports\": { \"80/tcp\": [ { \"HostIp\": \"0.0.0.0\", \"HostPort\": \"8080\" } ] } }\n  }\n]"
+                    }
+                  }
+                }
+              }
+            }
+
+          }
+        }
+      }
+    }
+  }
+}

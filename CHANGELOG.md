@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `docker` module (`WISH_MODULE_BDG_DEV_DOCKER`, off by default): a Docker Desktop-style GUI frontend for the local `docker` CLI, run with `wish client --run=docker`. Ships four dockable windows — Containers, Images, Volumes, Networks — each a table with a state-aware per-row `...` action menu (start/stop/restart/pause/unpause/kill/remove, image run/remove, volume/network remove, inspect), plus name/image and running/stopped container filters, inline pull-image and create-volume fields, and a `MessageBox` confirm on stop/kill/remove/prune. All `docker` invocation is client-side; refresh is manual (Refresh button + after every action), no background polling.
 - `wish_server_set_log_level()` (C ABI) and `set_log_level()` / `SetLogLevel()` (C++, Python, C# bindings): set the server log verbosity by name.
 - Rust (`bindings/rust/`) and Go (`bindings/go/`) client language bindings for the wish client C ABI.
 - Rust (`bindings/rust/wish-server/`) and Go (`bindings/go/wishserver/`) server language bindings: host and render a real wish session over `wish_server_c.h` (`Server`, `Params`).

@@ -1,0 +1,394 @@
+<title>Docker Frontend Mockup</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --ground: #e9ebef;
+    --panel: #f7f8fa;
+    --panel-head: #dfe3e8;
+    --row-alt: #eef0f3;
+    --ink: #1b1f24;
+    --ink-soft: #5b6572;
+    --hair: #c4cad2;
+    --sel: #cfe0fb;
+    --accent: #1f6feb;
+    --ok: #1a7f37;
+    --idle: #656d76;
+    --warn: #9a6700;
+    --bad: #cf222e;
+    --confirm-chip: #fbe9d0;
+    --confirm-chip-ink: #9a6700;
+    --shadow: 0 10px 30px -12px rgba(20,30,50,.28), 0 2px 6px -2px rgba(20,30,50,.16);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #16191d;
+      --panel: #1e2228;
+      --panel-head: #2b313a;
+      --row-alt: #23272e;
+      --ink: #e7eaee;
+      --ink-soft: #9aa4b0;
+      --hair: #3a424c;
+      --sel: #1e3a5f;
+      --accent: #4493f8;
+      --ok: #3fb950;
+      --idle: #8b949e;
+      --warn: #d29922;
+      --bad: #f85149;
+      --confirm-chip: #3a2d16;
+      --confirm-chip-ink: #d29922;
+      --shadow: 0 12px 32px -14px rgba(0,0,0,.6), 0 2px 8px -3px rgba(0,0,0,.5);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #16191d;
+    --panel: #1e2228;
+    --panel-head: #2b313a;
+    --row-alt: #23272e;
+    --ink: #e7eaee;
+    --ink-soft: #9aa4b0;
+    --hair: #3a424c;
+    --sel: #1e3a5f;
+    --accent: #4493f8;
+    --ok: #3fb950;
+    --idle: #8b949e;
+    --warn: #d29922;
+    --bad: #f85149;
+    --confirm-chip: #3a2d16;
+    --confirm-chip-ink: #d29922;
+    --shadow: 0 12px 32px -14px rgba(0,0,0,.6), 0 2px 8px -3px rgba(0,0,0,.5);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    line-height: 1.5;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 40px 24px 72px; }
+
+  header { margin-bottom: 8px; }
+  .kicker {
+    font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--accent); font-weight: 600; margin: 0 0 6px;
+  }
+  h1 {
+    font-size: 26px; font-weight: 600; margin: 0 0 8px; text-wrap: balance;
+    letter-spacing: -.01em;
+  }
+  .lede { max-width: 64ch; color: var(--ink-soft); margin: 0 0 4px; font-size: 15px; }
+  .note {
+    margin: 18px 0 34px; padding: 10px 14px; font-size: 13px;
+    border-left: 3px solid var(--accent); background: var(--panel);
+    color: var(--ink-soft);
+  }
+  .note strong { color: var(--ink); font-weight: 600; }
+
+  .grid {
+    display: grid; gap: 22px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+
+  /* ImGui-style window */
+  .win {
+    background: var(--panel); border: 1px solid var(--hair);
+    box-shadow: var(--shadow); display: flex; flex-direction: column;
+    min-width: 0;
+  }
+  .win.tall { grid-column: 1 / -1; }
+  .titlebar {
+    background: var(--panel-head); padding: 6px 10px;
+    font-size: 12.5px; font-weight: 600; letter-spacing: .02em;
+    display: flex; align-items: center; gap: 8px;
+    border-bottom: 1px solid var(--hair);
+  }
+  .titlebar .dot { color: var(--accent); }
+  .titlebar .x { margin-left: auto; color: var(--ink-soft); font-weight: 400; }
+
+  .toolbar {
+    display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+    padding: 8px 10px; border-bottom: 1px solid var(--hair);
+    font-size: 12px;
+  }
+  .btn {
+    border: 1px solid var(--hair); background: var(--panel-head);
+    padding: 3px 9px; border-radius: 2px; color: var(--ink);
+    font: inherit; font-size: 12px;
+  }
+  .field {
+    border: 1px solid var(--hair); background: var(--ground);
+    padding: 3px 8px; border-radius: 2px; color: var(--ink-soft);
+    min-width: 150px; flex: 1;
+  }
+  .combo {
+    border: 1px solid var(--hair); background: var(--ground);
+    padding: 3px 8px; border-radius: 2px; color: var(--ink);
+  }
+  .spacer { flex: 1; }
+  .count { padding: 5px 10px; font-size: 12px; color: var(--ink-soft); border-bottom: 1px solid var(--hair); }
+
+  .tablescroll { overflow-x: auto; }
+  table {
+    width: 100%; border-collapse: collapse;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 12px;
+  }
+  th {
+    text-align: left; font-weight: 500; color: var(--ink-soft);
+    background: var(--panel-head); padding: 5px 10px;
+    border-bottom: 1px solid var(--hair); white-space: nowrap;
+    font-family: "IBM Plex Sans", sans-serif; font-size: 11.5px;
+    letter-spacing: .03em; text-transform: uppercase;
+  }
+  td {
+    padding: 5px 10px; border-bottom: 1px solid var(--hair);
+    white-space: nowrap; font-variant-numeric: tabular-nums;
+  }
+  tr:nth-child(even) td { background: var(--row-alt); }
+  .s-ok { color: var(--ok); }
+  .s-idle { color: var(--idle); }
+  .s-warn { color: var(--warn); }
+  .s-bad { color: var(--bad); }
+  .muted { color: var(--ink-soft); }
+  .kebab {
+    display: inline-block; width: 22px; text-align: center;
+    border: 1px solid var(--hair); border-radius: 2px; background: var(--panel-head);
+    color: var(--ink-soft); letter-spacing: 1px;
+  }
+  td.act { width: 1%; }
+
+  .viewer {
+    font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 12px;
+    background: var(--ground); color: var(--ink);
+    padding: 10px 12px; white-space: pre; overflow-x: auto;
+    border: none; min-height: 132px; line-height: 1.5;
+  }
+  .viewer .lg { color: var(--idle); }
+
+  /* reference block */
+  .ref { margin-top: 40px; display: grid; gap: 22px; grid-template-columns: 1fr 1fr; }
+  @media (max-width: 900px) { .ref { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--panel); border: 1px solid var(--hair); padding: 16px 18px;
+  }
+  .card h2 {
+    font-size: 12px; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--ink-soft); margin: 0 0 12px; font-weight: 600;
+  }
+  .actline { display: flex; gap: 8px; padding: 4px 0; font-size: 13px; align-items: baseline; flex-wrap: wrap; }
+  .actline .lbl { font-family: "IBM Plex Mono", monospace; min-width: 96px; color: var(--ink); }
+  .chip {
+    font-size: 11px; padding: 1px 7px; border-radius: 999px;
+    background: var(--confirm-chip); color: var(--confirm-chip-ink); font-weight: 500;
+    white-space: nowrap;
+  }
+  .chip.free { background: transparent; color: var(--ink-soft); border: 1px solid var(--hair); }
+  .evt { font-family: "IBM Plex Mono", monospace; font-size: 12px; line-height: 1.85; }
+  .evt b { color: var(--accent); font-weight: 500; }
+  .evt .p { color: var(--ink-soft); }
+
+  footer { margin-top: 44px; font-size: 12.5px; color: var(--ink-soft); border-top: 1px solid var(--hair); padding-top: 16px; }
+  code { font-family: "IBM Plex Mono", monospace; font-size: .92em; background: var(--panel-head); padding: 1px 5px; border-radius: 3px; }
+</style>
+
+<div class="wrap">
+  <header>
+    <p class="kicker">wish module &middot; modules/bdg/dev/docker</p>
+    <h1>Docker frontend &mdash; UI mockup</h1>
+    <p class="lede">A Docker Desktop&ndash;style GUI over the local <code>docker</code> CLI. Six independently
+      dockable windows, git-module style: list views for containers / images / volumes / networks, plus
+      Logs and Inspect. All <code>docker</code> calls run client-side; the server form only renders.</p>
+  </header>
+
+  <div class="note">
+    <strong>Static stand-in.</strong> This page mirrors the widget tree in
+    <code>docker_mock.json</code> (which renders live in the <code>editor</code> tool &mdash; verified).
+    It exists to review columns, toolbars, and the confirm-gating at full width in one view. Sample rows
+    are illustrative, not real daemon output.
+  </div>
+
+  <div class="grid">
+
+    <!-- Containers -->
+    <section class="win tall">
+      <div class="titlebar"><span class="dot">&#9679;</span> Containers <span class="x">&times;</span></div>
+      <div class="toolbar">
+        <button class="btn">Refresh</button>
+        <button class="btn">Prune stopped&hellip;</button>
+        <input class="field" value="" placeholder="Filter by name / image">
+        <select class="combo"><option>All</option><option>Running</option><option>Stopped</option></select>
+      </div>
+      <div class="count">3 containers (2 running)</div>
+      <div class="tablescroll">
+        <table>
+          <thead><tr><th>Name</th><th>Image</th><th>Status</th><th>Ports</th><th>Created</th><th></th></tr></thead>
+          <tbody>
+            <tr><td>web</td><td>nginx:latest</td><td class="s-ok">Up 3 hours</td><td>0.0.0.0:8080-&gt;80/tcp</td><td class="muted">3 hours ago</td><td class="act"><span class="kebab">&middot;&middot;&middot;</span></td></tr>
+            <tr><td>db</td><td>postgres:16</td><td class="s-ok">Up 3 hours (healthy)</td><td>5432/tcp</td><td class="muted">3 hours ago</td><td class="act"><span class="kebab">&middot;&middot;&middot;</span></td></tr>
+            <tr><td>migrate-once</td><td>myapp:dev</td><td class="s-idle">Exited (0) 2 hours ago</td><td class="muted">&mdash;</td><td class="muted">5 hours ago</td><td class="act"><span class="kebab">&middot;&middot;&middot;</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Images -->
+    <section class="win">
+      <div class="titlebar"><span class="dot">&#9679;</span> Images <span class="x">&times;</span></div>
+      <div class="toolbar">
+        <button class="btn">Refresh</button>
+        <input class="field" value="" placeholder="repo:tag to pull">
+        <button class="btn">Pull</button>
+        <button class="btn">Prune dangling&hellip;</button>
+      </div>
+      <div class="count">4 images &middot; 1.9 GB</div>
+      <div class="tablescroll">
+        <table>
+          <thead><tr><th>Repository</th><th>Tag</th><th>Image ID</th><th>Created</th><th>Size</th><th></th></tr></thead>
+          <tbody>
+            <tr><td>nginx</td><td>latest</td><td class="muted">a1b2c3d4e5f6</td><td class="muted">2 weeks ago</td><td>187 MB</td><td class="act"><span class="kebab">&middot;&middot;&middot;</span></td></tr>
+            <tr><td>postgres</td><td>16</td><td class="muted">9f8e7d6c5b4a</td><td class="muted">3 weeks ago</td><td>431 MB</td><td class="act"><span class="kebab">&middot;&middot;&middot;</span></td></tr>
+            <tr><td class="muted">&lt;none&gt;</td><td class="muted">&lt;none&gt;</td><td class="muted">0011223344ab</td><td class="muted">6 days ago</td><td>1.1 GB</td><td class="act"><span class="kebab">&middot;&middot;&middot;</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Volumes -->
+    <section class="win">
+      <div class="titlebar"><span class="dot">&#9679;</span> Volumes <span class="x">&times;</span></div>
+      <div class="toolbar">
+        <button class="btn">Refresh</button>
+        <input class="field" value="" placeholder="new volume name">
+        <button class="btn">Create</button>
+        <button class="btn">Prune&hellip;</button>
+      </div>
+      <div class="count">2 volumes</div>
+      <div class="tablescroll">
+        <table>
+          <thead><tr><th>Name</th><th>Driver</th><th>Mountpoint</th><th></th></tr></thead>
+          <tbody>
+            <tr><td>pgdata</td><td>local</td><td class="muted">/var/lib/docker/volumes/pgdata/_data</td><td class="act"><span class="kebab">&middot;&middot;&middot;</span></td></tr>
+            <tr><td>build-cache</td><td>local</td><td class="muted">/var/lib/docker/volumes/build-cache/_data</td><td class="act"><span class="kebab">&middot;&middot;&middot;</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Networks -->
+    <section class="win">
+      <div class="titlebar"><span class="dot">&#9679;</span> Networks <span class="x">&times;</span></div>
+      <div class="toolbar">
+        <button class="btn">Refresh</button>
+        <button class="btn">Prune&hellip;</button>
+      </div>
+      <div class="count">4 networks</div>
+      <div class="tablescroll">
+        <table>
+          <thead><tr><th>Name</th><th>Driver</th><th>Scope</th><th>Network ID</th><th></th></tr></thead>
+          <tbody>
+            <tr><td>bridge</td><td>bridge</td><td>local</td><td class="muted">b1c2d3e4f5a6</td><td class="act"><span class="kebab">&middot;&middot;&middot;</span></td></tr>
+            <tr><td>myapp_default</td><td>bridge</td><td>local</td><td class="muted">0a9b8c7d6e5f</td><td class="act"><span class="kebab">&middot;&middot;&middot;</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Logs -->
+    <section class="win">
+      <div class="titlebar"><span class="dot">&#9679;</span> Logs <span class="x">&times;</span></div>
+      <div class="toolbar">
+        <span class="muted">web &nbsp;(nginx:latest)</span>
+        <span class="spacer"></span>
+        <label><input type="checkbox" checked> Follow</label>
+        <span>Lines <input class="combo" style="width:64px" value="1000"></span>
+        <button class="btn">Refresh</button>
+      </div>
+      <div class="viewer"><span class="lg">2026-09-03T09:41:02Z</span>  Configuration complete; ready for start up
+<span class="lg">2026-09-03T09:41:02Z</span>  [notice] nginx/1.27.2
+<span class="lg">2026-09-03T09:41:02Z</span>  [notice] start worker processes
+<span class="lg">2026-09-03T09:44:18Z</span>  172.18.0.1 - GET / HTTP/1.1 200
+<span class="lg">2026-09-03T09:44:19Z</span>  172.18.0.1 - GET /favicon.ico HTTP/1.1 404</div>
+    </section>
+
+    <!-- Inspect -->
+    <section class="win">
+      <div class="titlebar"><span class="dot">&#9679;</span> Inspect <span class="x">&times;</span></div>
+      <div class="toolbar">
+        <span class="muted">container: web</span>
+        <span class="spacer"></span>
+        <button class="btn">Refresh</button>
+      </div>
+      <div class="viewer">[
+  {
+    "Id": "a1b2c3d4e5f6...",
+    "Name": "/web",
+    "State": { "Status": "running", "Running": true, "Pid": 40912 },
+    "Config": { "Image": "nginx:latest",
+      "ExposedPorts": { "80/tcp": {} } },
+    "NetworkSettings": { "Ports": {
+      "80/tcp": [ { "HostIp": "0.0.0.0", "HostPort": "8080" } ] } }
+  }
+]</div>
+    </section>
+
+  </div>
+
+  <div class="ref">
+    <div class="card">
+      <h2>Row actions &middot; the <span style="font-family:'IBM Plex Mono',monospace">&middot;&middot;&middot;</span> menu</h2>
+      <div class="actline"><span class="lbl">Container</span>
+        <span class="chip free">Start</span><span class="chip free">Restart</span><span class="chip free">Pause</span><span class="chip free">Unpause</span>
+        <span class="chip">Stop</span><span class="chip">Kill</span><span class="chip">Remove</span>
+        <span class="chip free">Logs</span><span class="chip free">Inspect</span>
+      </div>
+      <div class="actline"><span class="lbl">Image</span>
+        <span class="chip free">Run</span><span class="chip">Remove</span><span class="chip free">Inspect</span>
+      </div>
+      <div class="actline"><span class="lbl">Volume</span>
+        <span class="chip">Remove</span><span class="chip free">Inspect</span>
+      </div>
+      <div class="actline"><span class="lbl">Network</span>
+        <span class="chip">Remove</span><span class="chip free">Inspect</span>
+      </div>
+      <div class="actline"><span class="lbl">Toolbar</span>
+        <span class="chip">Prune stopped / dangling / volumes / networks</span>
+      </div>
+      <p style="font-size:12.5px;color:var(--ink-soft);margin:12px 0 0">
+        <span class="chip" style="vertical-align:middle">amber</span> &nbsp;= confirmed via the server
+        <code>MessageBox</code> (yes/no, warning icon), exactly like the git module.
+        <span class="chip free" style="vertical-align:middle">outline</span> &nbsp;= fires immediately.
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>Server &rarr; client events</h2>
+      <div class="evt">
+        <b>refresh_requested</b> <span class="p">{}</span><br>
+        <b>container_action_requested</b> <span class="p">{ id, action }</span><br>
+        <b>image_action_requested</b> <span class="p">{ id, action }</span><br>
+        <b>volume_action_requested</b> <span class="p">{ name, action }</span><br>
+        <b>network_action_requested</b> <span class="p">{ id, action }</span><br>
+        <b>prune_requested</b> <span class="p">{ scope }</span><br>
+        <b>pull_image_requested</b> <span class="p">{ ref }</span><br>
+        <b>create_volume_requested</b> <span class="p">{ name }</span><br>
+        <b>logs_requested</b> <span class="p">{ id, follow, lines }</span><br>
+        <b>inspect_requested</b> <span class="p">{ kind, id }</span><br>
+        <b>closed</b> <span class="p">{}</span>
+      </div>
+      <p style="font-size:12.5px;color:var(--ink-soft);margin:12px 0 0">
+        Client &rarr; server render methods: <code>update_containers</code>, <code>update_images</code>,
+        <code>update_volumes</code>, <code>update_networks</code>, <code>update_logs</code>,
+        <code>update_inspect</code>, <code>command_result</code>.
+      </p>
+    </div>
+  </div>
+
+  <footer>
+    Refresh is manual: a Refresh button per window plus an automatic refresh after every mutating action
+    &mdash; no background polling (the git module's jitter lesson). The Logs &ldquo;Follow&rdquo; toggle is a
+    2&thinsp;s client-side re-poll, not <code>docker logs -f</code> streaming.
+    Full rationale in <code>modules/bdg/dev/docker/DESIGN.md</code>.
+  </footer>
+</div>

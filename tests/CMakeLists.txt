@@ -152,6 +152,19 @@ wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_TAIL               test_tail     
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_NANO               test_nano              test_nano.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_TOP                test_top               test_top.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DEV_EDITOR                test_editor            test_editor.cpp)
+wish_add_optional_test(WISH_MODULE_BDG_DEV_DOCKER               test_docker            test_docker.cpp)
+# Exercises run_docker_cli() (docker_process.cpp) against stub binaries
+# (printf/false -- never `docker`), so it needs no Docker daemon. Client-side,
+# no bison/RMI dependency; needs uv_a directly since docker_process.cpp calls
+# uv_spawn() -- same rationale as test_git_process below.
+wish_add_optional_test(WISH_MODULE_BDG_DEV_DOCKER               test_docker_process    test_docker_process.cpp
+    ${CMAKE_SOURCE_DIR}/modules/bdg/dev/docker/client/docker_process.cpp)
+if(TARGET test_docker_process)
+  target_include_directories(test_docker_process PRIVATE ${CMAKE_SOURCE_DIR})
+  if(TARGET uv_a)
+    target_link_libraries(test_docker_process PRIVATE uv_a)
+  endif()
+endif()
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_MC                 test_mc                test_mc.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_ZIP                test_zip               test_zip.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_PIX                test_pix               test_pix.cpp)
