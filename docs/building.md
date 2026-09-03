@@ -114,9 +114,10 @@ cmake -S . -B build
 | `WISH_MODULE_BDG_DESKTOP_MC` | `ON`¹ | Include the mc form (server; a two-panel local-filesystem-vs-sandbox file browser) and its self-registering reference client runner. |
 | `WISH_MODULE_BDG_DESKTOP_ZIP` | `ON`¹ | Include the zip form (server) and its self-registering reference client runner (client-side compress/extract/list-contents via miniz). |
 | `WISH_MODULE_BDG_DESKTOP_GIT` | `ON`¹ | Include the GitRepo form (server) and its self-registering reference client runner — a SourceTree-style git GUI frontend that shells out to the local `git` binary (`wish client --run=git -- /path/to/repo`). |
-| `WISH_COLLECTION_BDG_DEV` | `OFF` | Include every module in `modules/bdg/dev/` (editor, docker) — see below. |
+| `WISH_COLLECTION_BDG_DEV` | `OFF` | Include every module in `modules/bdg/dev/` (editor, docker, kubectl) — see below. |
 | `WISH_MODULE_BDG_DEV_EDITOR` | `OFF` | Include the Editor form (server) and its self-registering reference client runner — a live JSON UI mock editor (`wish client --run=editor -- path/to/ui.json`). |
 | `WISH_MODULE_BDG_DEV_DOCKER` | `OFF` | Include the DockerFrontend form (server) and its self-registering reference client runner — a Docker Desktop-style GUI that shells out to the local `docker` binary (`wish client --run=docker`). |
+| `WISH_MODULE_BDG_DEV_KUBECTL` | `OFF` | Include the KubectlFrontend form (server) and its self-registering reference client runner — a Kubernetes-dashboard-style GUI that shells out to the local `kubectl` binary (`wish client --run=kubectl`). |
 
 ¹ Each `WISH_MODULE_BDG_DESKTOP_*` option inherits its collection's default
 (`WISH_COLLECTION_BDG_DESKTOP`, `ON`), so these modules are built unless the

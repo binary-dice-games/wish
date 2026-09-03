@@ -1,0 +1,443 @@
+{
+  "//": "UI MOCKUP for the `kubectl` module -- open with: wish-standalone --run=editor -- modules/bdg/dev/kubectl/kubectl_mock.json",
+  "//tabs": "The real module splits these six tabs into six independently dockable Windows (docker/git/editor style). Tabs here are only so the whole UI renders as one editor preview. Sample rows are illustrative.",
+  "type": "Window",
+  "title": "Kubernetes",
+  "width": 1000,
+  "height": 640,
+  "closable": true,
+  "children": {
+    "root": {
+      "type": "VerticalLayout",
+      "children": {
+        "tabs": {
+          "type": "TabBar",
+          "id": "##kubectl_tabs",
+          "height": -1,
+          "children": {
+
+            "pods_tab": {
+              "type": "TabItem",
+              "label": "Pods",
+              "scroll": false,
+              "children": {
+                "p_box": {
+                  "type": "VerticalLayout",
+                  "spacing": 4,
+                  "children": {
+                    "p_toolbar": {
+                      "type": "HorizontalLayout",
+                      "spacing": 6,
+                      "children": {
+                        "p_refresh": { "type": "Button", "label": "Refresh", "width": 90 },
+                        "p_filter":  { "type": "InputText", "hint": "Filter by name", "width": 200 },
+                        "p_ns":      { "type": "InputText", "hint": "Namespace", "width": 150 },
+                        "p_state":   { "type": "Combo", "items": "All\nRunning\nPending\nSucceeded\nFailed", "value": 0, "width": 120 }
+                      }
+                    },
+                    "p_status": { "type": "Label", "text": "4 pods (3 running)" },
+                    "p_sep": { "type": "Separator" },
+                    "p_table": {
+                      "type": "Table",
+                      "id": "##pods_table",
+                      "columns": 7,
+                      "flags": "Resizable|RowBg|Borders|ScrollY",
+                      "headers": true,
+                      "height": -1,
+                      "outer_height": -1,
+                      "auto_scroll": false,
+                      "children": {
+                        "col_ns":       { "type": "TableColumn", "label": "Namespace", "flags": "WidthFixed", "init_width": 130, "column_id": 0 },
+                        "col_name":     { "type": "TableColumn", "label": "Name",      "flags": "WidthStretch",                    "column_id": 1 },
+                        "col_ready":    { "type": "TableColumn", "label": "Ready",     "flags": "WidthFixed", "init_width": 64,  "column_id": 2 },
+                        "col_status":   { "type": "TableColumn", "label": "Status",    "flags": "WidthFixed", "init_width": 150, "column_id": 3 },
+                        "col_restarts": { "type": "TableColumn", "label": "Restarts",  "flags": "WidthFixed", "init_width": 72,  "column_id": 4 },
+                        "col_age":      { "type": "TableColumn", "label": "Age",       "flags": "WidthFixed", "init_width": 80,  "column_id": 5 },
+                        "col_actions":  { "type": "TableColumn", "label": "",          "flags": "WidthFixed", "init_width": 40,  "column_id": 6 },
+                        "row0": {
+                          "type": "TableRow",
+                          "children": {
+                            "ns": { "type": "Label", "text": "default", "text_color_light": "#656D76FF", "text_color_dark": "#8B949EFF" },
+                            "n":  { "type": "Label", "text": "web-6d8c-abcde" },
+                            "rd": { "type": "Label", "text": "1/1", "text_color_light": "#1A7F37FF", "text_color_dark": "#3FB950FF" },
+                            "st": { "type": "Label", "text": "Running", "text_color_light": "#1A7F37FF", "text_color_dark": "#3FB950FF" },
+                            "rs": { "type": "Label", "text": "0" },
+                            "ag": { "type": "Label", "text": "3h", "text_color_light": "#656D76FF", "text_color_dark": "#8B949EFF" },
+                            "act": {
+                              "type": "MenuButton", "label": "...",
+                              "children": {
+                                "a_logs":     { "type": "MenuItem", "label": "Logs" },
+                                "a_describe": { "type": "MenuItem", "label": "Describe" },
+                                "a_sep":      { "type": "Separator" },
+                                "a_delete":   { "type": "MenuItem", "label": "Delete..." }
+                              }
+                            }
+                          }
+                        },
+                        "row1": {
+                          "type": "TableRow",
+                          "children": {
+                            "ns": { "type": "Label", "text": "default", "text_color_light": "#656D76FF", "text_color_dark": "#8B949EFF" },
+                            "n":  { "type": "Label", "text": "worker-55f9-zzzzz" },
+                            "rd": { "type": "Label", "text": "0/1", "text_color_light": "#9A6700FF", "text_color_dark": "#D29922FF" },
+                            "st": { "type": "Label", "text": "CrashLoopBackOff", "text_color_light": "#CF222EFF", "text_color_dark": "#F85149FF" },
+                            "rs": { "type": "Label", "text": "6", "text_color_light": "#9A6700FF", "text_color_dark": "#D29922FF" },
+                            "ag": { "type": "Label", "text": "3h", "text_color_light": "#656D76FF", "text_color_dark": "#8B949EFF" },
+                            "act": { "type": "MenuButton", "label": "...", "children": {
+                              "a_logs":     { "type": "MenuItem", "label": "Logs" },
+                              "a_describe": { "type": "MenuItem", "label": "Describe" },
+                              "a_delete":   { "type": "MenuItem", "label": "Delete..." }
+                            } }
+                          }
+                        },
+                        "row2": {
+                          "type": "TableRow",
+                          "children": {
+                            "ns": { "type": "Label", "text": "kube-system", "text_color_light": "#656D76FF", "text_color_dark": "#8B949EFF" },
+                            "n":  { "type": "Label", "text": "coredns-787d-11111" },
+                            "rd": { "type": "Label", "text": "1/1", "text_color_light": "#1A7F37FF", "text_color_dark": "#3FB950FF" },
+                            "st": { "type": "Label", "text": "Running", "text_color_light": "#1A7F37FF", "text_color_dark": "#3FB950FF" },
+                            "rs": { "type": "Label", "text": "0" },
+                            "ag": { "type": "Label", "text": "40d", "text_color_light": "#656D76FF", "text_color_dark": "#8B949EFF" },
+                            "act": { "type": "MenuButton", "label": "...", "children": {
+                              "a_logs":     { "type": "MenuItem", "label": "Logs" },
+                              "a_describe": { "type": "MenuItem", "label": "Describe" },
+                              "a_delete":   { "type": "MenuItem", "label": "Delete..." }
+                            } }
+                          }
+                        },
+                        "row3": {
+                          "type": "TableRow",
+                          "children": {
+                            "ns": { "type": "Label", "text": "batch", "text_color_light": "#656D76FF", "text_color_dark": "#8B949EFF" },
+                            "n":  { "type": "Label", "text": "import-once-ffff" },
+                            "rd": { "type": "Label", "text": "0/1", "text_color_light": "#9A6700FF", "text_color_dark": "#D29922FF" },
+                            "st": { "type": "Label", "text": "Succeeded", "text_color_light": "#656D76FF", "text_color_dark": "#8B949EFF" },
+                            "rs": { "type": "Label", "text": "0" },
+                            "ag": { "type": "Label", "text": "2h", "text_color_light": "#656D76FF", "text_color_dark": "#8B949EFF" },
+                            "act": { "type": "MenuButton", "label": "...", "children": {
+                              "a_logs":     { "type": "MenuItem", "label": "Logs" },
+                              "a_describe": { "type": "MenuItem", "label": "Describe" },
+                              "a_delete":   { "type": "MenuItem", "label": "Delete..." }
+                            } }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+
+            "deploy_tab": {
+              "type": "TabItem",
+              "label": "Deployments",
+              "scroll": false,
+              "children": {
+                "d_box": {
+                  "type": "VerticalLayout",
+                  "spacing": 4,
+                  "children": {
+                    "d_toolbar": {
+                      "type": "HorizontalLayout",
+                      "spacing": 6,
+                      "children": {
+                        "d_refresh": { "type": "Button", "label": "Refresh", "width": 90 },
+                        "d_filter":  { "type": "InputText", "hint": "Filter by name", "width": 200 },
+                        "d_ns":      { "type": "InputText", "hint": "Namespace", "width": 150 }
+                      }
+                    },
+                    "d_status": { "type": "Label", "text": "2 deployments" },
+                    "d_sep": { "type": "Separator" },
+                    "d_table": {
+                      "type": "Table",
+                      "id": "##deployments_table",
+                      "columns": 7,
+                      "flags": "Resizable|RowBg|Borders|ScrollY",
+                      "headers": true,
+                      "height": -1,
+                      "outer_height": -1,
+                      "auto_scroll": false,
+                      "children": {
+                        "col_ns":        { "type": "TableColumn", "label": "Namespace",  "flags": "WidthFixed", "init_width": 130, "column_id": 0 },
+                        "col_name":      { "type": "TableColumn", "label": "Name",       "flags": "WidthStretch",                    "column_id": 1 },
+                        "col_ready":     { "type": "TableColumn", "label": "Ready",      "flags": "WidthFixed", "init_width": 70,  "column_id": 2 },
+                        "col_uptodate":  { "type": "TableColumn", "label": "Up-to-date", "flags": "WidthFixed", "init_width": 90,  "column_id": 3 },
+                        "col_available": { "type": "TableColumn", "label": "Available",  "flags": "WidthFixed", "init_width": 80,  "column_id": 4 },
+                        "col_age":       { "type": "TableColumn", "label": "Age",        "flags": "WidthFixed", "init_width": 80,  "column_id": 5 },
+                        "col_actions":   { "type": "TableColumn", "label": "",           "flags": "WidthFixed", "init_width": 40,  "column_id": 6 },
+                        "row0": {
+                          "type": "TableRow",
+                          "children": {
+                            "ns": { "type": "Label", "text": "default", "text_color_light": "#656D76FF", "text_color_dark": "#8B949EFF" },
+                            "n":  { "type": "Label", "text": "web" },
+                            "rd": { "type": "Label", "text": "3/3", "text_color_light": "#1A7F37FF", "text_color_dark": "#3FB950FF" },
+                            "ut": { "type": "Label", "text": "3" },
+                            "av": { "type": "Label", "text": "3" },
+                            "ag": { "type": "Label", "text": "10d", "text_color_light": "#656D76FF", "text_color_dark": "#8B949EFF" },
+                            "act": { "type": "MenuButton", "label": "...", "children": {
+                              "a_restart":  { "type": "MenuItem", "label": "Restart" },
+                              "a_describe": { "type": "MenuItem", "label": "Describe" },
+                              "a_sep":      { "type": "Separator" },
+                              "a_delete":   { "type": "MenuItem", "label": "Delete..." }
+                            } }
+                          }
+                        },
+                        "row1": {
+                          "type": "TableRow",
+                          "children": {
+                            "ns": { "type": "Label", "text": "default", "text_color_light": "#656D76FF", "text_color_dark": "#8B949EFF" },
+                            "n":  { "type": "Label", "text": "worker" },
+                            "rd": { "type": "Label", "text": "1/2", "text_color_light": "#9A6700FF", "text_color_dark": "#D29922FF" },
+                            "ut": { "type": "Label", "text": "2" },
+                            "av": { "type": "Label", "text": "1" },
+                            "ag": { "type": "Label", "text": "10d", "text_color_light": "#656D76FF", "text_color_dark": "#8B949EFF" },
+                            "act": { "type": "MenuButton", "label": "...", "children": {
+                              "a_restart":  { "type": "MenuItem", "label": "Restart" },
+                              "a_describe": { "type": "MenuItem", "label": "Describe" },
+                              "a_delete":   { "type": "MenuItem", "label": "Delete..." }
+                            } }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+
+            "svc_tab": {
+              "type": "TabItem",
+              "label": "Services",
+              "scroll": false,
+              "children": {
+                "s_box": {
+                  "type": "VerticalLayout",
+                  "spacing": 4,
+                  "children": {
+                    "s_toolbar": {
+                      "type": "HorizontalLayout",
+                      "spacing": 6,
+                      "children": {
+                        "s_refresh": { "type": "Button", "label": "Refresh", "width": 90 },
+                        "s_filter":  { "type": "InputText", "hint": "Filter by name", "width": 200 },
+                        "s_ns":      { "type": "InputText", "hint": "Namespace", "width": 150 }
+                      }
+                    },
+                    "s_status": { "type": "Label", "text": "2 services" },
+                    "s_sep": { "type": "Separator" },
+                    "s_table": {
+                      "type": "Table",
+                      "id": "##services_table",
+                      "columns": 7,
+                      "flags": "Resizable|RowBg|Borders|ScrollY",
+                      "headers": true,
+                      "height": -1,
+                      "outer_height": -1,
+                      "auto_scroll": false,
+                      "children": {
+                        "col_ns":     { "type": "TableColumn", "label": "Namespace",  "flags": "WidthFixed", "init_width": 130, "column_id": 0 },
+                        "col_name":   { "type": "TableColumn", "label": "Name",       "flags": "WidthStretch",                    "column_id": 1 },
+                        "col_type":   { "type": "TableColumn", "label": "Type",       "flags": "WidthFixed", "init_width": 110, "column_id": 2 },
+                        "col_ip":     { "type": "TableColumn", "label": "Cluster-IP", "flags": "WidthFixed", "init_width": 130, "column_id": 3 },
+                        "col_ports":  { "type": "TableColumn", "label": "Ports",      "flags": "WidthFixed", "init_width": 140, "column_id": 4 },
+                        "col_age":    { "type": "TableColumn", "label": "Age",        "flags": "WidthFixed", "init_width": 80,  "column_id": 5 },
+                        "col_actions":{ "type": "TableColumn", "label": "",           "flags": "WidthFixed", "init_width": 40,  "column_id": 6 },
+                        "row0": {
+                          "type": "TableRow",
+                          "children": {
+                            "ns": { "type": "Label", "text": "default", "text_color_light": "#656D76FF", "text_color_dark": "#8B949EFF" },
+                            "n":  { "type": "Label", "text": "web" },
+                            "tp": { "type": "Label", "text": "ClusterIP" },
+                            "ip": { "type": "Label", "text": "10.96.0.42", "text_color_light": "#656D76FF", "text_color_dark": "#8B949EFF" },
+                            "po": { "type": "Label", "text": "80, 443" },
+                            "ag": { "type": "Label", "text": "10d", "text_color_light": "#656D76FF", "text_color_dark": "#8B949EFF" },
+                            "act": { "type": "MenuButton", "label": "...", "children": {
+                              "a_describe": { "type": "MenuItem", "label": "Describe" },
+                              "a_sep":      { "type": "Separator" },
+                              "a_delete":   { "type": "MenuItem", "label": "Delete..." }
+                            } }
+                          }
+                        },
+                        "row1": {
+                          "type": "TableRow",
+                          "children": {
+                            "ns": { "type": "Label", "text": "default", "text_color_light": "#656D76FF", "text_color_dark": "#8B949EFF" },
+                            "n":  { "type": "Label", "text": "kubernetes" },
+                            "tp": { "type": "Label", "text": "ClusterIP" },
+                            "ip": { "type": "Label", "text": "10.96.0.1", "text_color_light": "#656D76FF", "text_color_dark": "#8B949EFF" },
+                            "po": { "type": "Label", "text": "443" },
+                            "ag": { "type": "Label", "text": "40d", "text_color_light": "#656D76FF", "text_color_dark": "#8B949EFF" },
+                            "act": { "type": "MenuButton", "label": "...", "children": {
+                              "a_describe": { "type": "MenuItem", "label": "Describe" },
+                              "a_delete":   { "type": "MenuItem", "label": "Delete..." }
+                            } }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+
+            "nodes_tab": {
+              "type": "TabItem",
+              "label": "Nodes",
+              "scroll": false,
+              "children": {
+                "no_box": {
+                  "type": "VerticalLayout",
+                  "spacing": 4,
+                  "children": {
+                    "no_toolbar": {
+                      "type": "HorizontalLayout",
+                      "spacing": 6,
+                      "children": {
+                        "no_refresh": { "type": "Button", "label": "Refresh", "width": 90 },
+                        "no_filter":  { "type": "InputText", "hint": "Filter by name", "width": 200 }
+                      }
+                    },
+                    "no_status": { "type": "Label", "text": "2 nodes (2 ready)" },
+                    "no_sep": { "type": "Separator" },
+                    "no_table": {
+                      "type": "Table",
+                      "id": "##nodes_table",
+                      "columns": 5,
+                      "flags": "Resizable|RowBg|Borders|ScrollY",
+                      "headers": true,
+                      "height": -1,
+                      "outer_height": -1,
+                      "auto_scroll": false,
+                      "children": {
+                        "col_name":   { "type": "TableColumn", "label": "Name",    "flags": "WidthStretch",                    "column_id": 0 },
+                        "col_status": { "type": "TableColumn", "label": "Status",  "flags": "WidthFixed", "init_width": 200, "column_id": 1 },
+                        "col_ver":    { "type": "TableColumn", "label": "Version", "flags": "WidthFixed", "init_width": 130, "column_id": 2 },
+                        "col_age":    { "type": "TableColumn", "label": "Age",     "flags": "WidthFixed", "init_width": 90,  "column_id": 3 },
+                        "col_actions":{ "type": "TableColumn", "label": "",        "flags": "WidthFixed", "init_width": 40,  "column_id": 4 },
+                        "row0": {
+                          "type": "TableRow",
+                          "children": {
+                            "n":  { "type": "Label", "text": "kind-control-plane" },
+                            "st": { "type": "Label", "text": "Ready", "text_color_light": "#1A7F37FF", "text_color_dark": "#3FB950FF" },
+                            "ve": { "type": "Label", "text": "v1.29.2", "text_color_light": "#656D76FF", "text_color_dark": "#8B949EFF" },
+                            "ag": { "type": "Label", "text": "40d", "text_color_light": "#656D76FF", "text_color_dark": "#8B949EFF" },
+                            "act": { "type": "MenuButton", "label": "...", "children": {
+                              "a_cordon":   { "type": "MenuItem", "label": "Cordon" },
+                              "a_drain":    { "type": "MenuItem", "label": "Drain..." },
+                              "a_sep":      { "type": "Separator" },
+                              "a_describe": { "type": "MenuItem", "label": "Describe" }
+                            } }
+                          }
+                        },
+                        "row1": {
+                          "type": "TableRow",
+                          "children": {
+                            "n":  { "type": "Label", "text": "kind-worker" },
+                            "st": { "type": "Label", "text": "Ready,SchedulingDisabled", "text_color_light": "#9A6700FF", "text_color_dark": "#D29922FF" },
+                            "ve": { "type": "Label", "text": "v1.29.2", "text_color_light": "#656D76FF", "text_color_dark": "#8B949EFF" },
+                            "ag": { "type": "Label", "text": "40d", "text_color_light": "#656D76FF", "text_color_dark": "#8B949EFF" },
+                            "act": { "type": "MenuButton", "label": "...", "children": {
+                              "a_uncordon": { "type": "MenuItem", "label": "Uncordon" },
+                              "a_drain":    { "type": "MenuItem", "label": "Drain..." },
+                              "a_sep":      { "type": "Separator" },
+                              "a_describe": { "type": "MenuItem", "label": "Describe" }
+                            } }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+
+            "logs_tab": {
+              "type": "TabItem",
+              "label": "Logs",
+              "scroll": false,
+              "children": {
+                "l_box": {
+                  "type": "VerticalLayout",
+                  "spacing": 4,
+                  "children": {
+                    "l_toolbar": {
+                      "type": "HorizontalLayout",
+                      "spacing": 8,
+                      "children": {
+                        "l_target": { "type": "Label", "text": "default/web-6d8c-abcde" },
+                        "l_spring": { "type": "Spring" },
+                        "l_follow": { "type": "Checkbox", "label": "Follow", "value": false },
+                        "l_lines":  { "type": "InputInt", "label": "Lines", "value": 500, "step": 100, "width": 130 },
+                        "l_refresh":{ "type": "Button", "label": "Refresh", "width": 90 }
+                      }
+                    },
+                    "l_sep": { "type": "Separator" },
+                    "l_table": {
+                      "type": "Table",
+                      "id": "##logs_table",
+                      "columns": 1,
+                      "flags": "ScrollY",
+                      "headers": false,
+                      "height": -1,
+                      "outer_height": -1,
+                      "auto_scroll": true,
+                      "children": {
+                        "col_line": { "type": "TableColumn", "flags": "WidthStretch", "column_id": 0 },
+                        "r0": { "type": "TableRow", "children": { "c": { "type": "Label", "text": "2026-09-03T09:12:01Z  Listening on :8080" } } },
+                        "r1": { "type": "TableRow", "children": { "c": { "type": "Label", "text": "2026-09-03T09:12:34Z  GET /healthz 200" } } },
+                        "r2": { "type": "TableRow", "children": { "c": { "type": "Label", "text": "2026-09-03T09:13:02Z  GET /api/items 200" } } }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+
+            "describe_tab": {
+              "type": "TabItem",
+              "label": "Describe",
+              "scroll": false,
+              "children": {
+                "de_box": {
+                  "type": "VerticalLayout",
+                  "spacing": 4,
+                  "children": {
+                    "de_toolbar": {
+                      "type": "HorizontalLayout",
+                      "spacing": 8,
+                      "children": {
+                        "de_target": { "type": "Label", "text": "pod: default/web-6d8c-abcde" },
+                        "de_spring": { "type": "Spring" },
+                        "de_refresh":{ "type": "Button", "label": "Refresh", "width": 90 }
+                      }
+                    },
+                    "de_sep": { "type": "Separator" },
+                    "de_table": {
+                      "type": "Table",
+                      "id": "##describe_table",
+                      "columns": 1,
+                      "flags": "ScrollY",
+                      "headers": false,
+                      "height": -1,
+                      "outer_height": -1,
+                      "auto_scroll": false,
+                      "children": {
+                        "col_line": { "type": "TableColumn", "flags": "WidthStretch", "column_id": 0 },
+                        "r0": { "type": "TableRow", "children": { "c": { "type": "Label", "text": "Name:         web-6d8c-abcde" } } },
+                        "r1": { "type": "TableRow", "children": { "c": { "type": "Label", "text": "Namespace:    default" } } },
+                        "r2": { "type": "TableRow", "children": { "c": { "type": "Label", "text": "Node:         kind-control-plane/172.18.0.2" } } },
+                        "r3": { "type": "TableRow", "children": { "c": { "type": "Label", "text": "Status:       Running" } } }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+
+          }
+        }
+      }
+    }
+  }
+}

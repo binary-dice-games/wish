@@ -12,3 +12,4 @@ their own `WISH_MODULE_BDG_DEV_<NAME>` option (see
 |--------|-------------|
 | [editor](editor/README.md) | Live JSON/YAML UI mock editor: a syntax-highlighted source panel next to a continuously re-parsed preview, plus an event log and schema-aware autocomplete. The tool the `wish-module` / `wish-ui` skills use to preview a UI. |
 | [docker](docker/README.md) | Docker Desktop-style GUI for the local `docker` CLI: dockable windows for containers/images/volumes/networks with per-row lifecycle actions, plus logs and inspect. Server owns the UI, client shells out to the `docker` binary. |
+| [kubectl](kubectl/README.md) | Kubernetes-dashboard-style GUI for the local `kubectl` CLI: dockable windows for pods/deployments/services/nodes with per-row lifecycle actions, plus logs and describe. Server owns the UI, client shells out to the `kubectl` binary against the current kubeconfig context. |

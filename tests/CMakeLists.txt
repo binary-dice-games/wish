@@ -165,6 +165,19 @@ if(TARGET test_docker_process)
     target_link_libraries(test_docker_process PRIVATE uv_a)
   endif()
 endif()
+wish_add_optional_test(WISH_MODULE_BDG_DEV_KUBECTL              test_kubectl           test_kubectl.cpp)
+# Exercises run_kubectl_cli() (kubectl_process.cpp) against stub binaries
+# (printf/false -- never `kubectl`), so it needs no cluster. Client-side, no
+# bison/RMI dependency; needs uv_a directly since kubectl_process.cpp calls
+# uv_spawn() -- same rationale as test_docker_process above.
+wish_add_optional_test(WISH_MODULE_BDG_DEV_KUBECTL              test_kubectl_process   test_kubectl_process.cpp
+    ${CMAKE_SOURCE_DIR}/modules/bdg/dev/kubectl/client/kubectl_process.cpp)
+if(TARGET test_kubectl_process)
+  target_include_directories(test_kubectl_process PRIVATE ${CMAKE_SOURCE_DIR})
+  if(TARGET uv_a)
+    target_link_libraries(test_kubectl_process PRIVATE uv_a)
+  endif()
+endif()
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_MC                 test_mc                test_mc.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_ZIP                test_zip               test_zip.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_PIX                test_pix               test_pix.cpp)
