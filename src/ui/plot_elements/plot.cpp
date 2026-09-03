@@ -54,6 +54,36 @@ EnumFlags::table plot_axis_flags_table() {
   };
 }
 
+// Plot.legend_location -> ImPlotLocation (a single choice, not a bitmask, but
+// the compass points are OR-able so an EnumFlags table renders them cleanly).
+EnumFlags::table plot_legend_location_table() {
+  return {
+      {"Center", 0},
+      {"North", 1 << 0},
+      {"South", 1 << 1},
+      {"West", 1 << 2},
+      {"East", 1 << 3},
+      {"NorthWest", (1 << 0) | (1 << 2)},
+      {"NorthEast", (1 << 0) | (1 << 3)},
+      {"SouthWest", (1 << 1) | (1 << 2)},
+      {"SouthEast", (1 << 1) | (1 << 3)},
+  };
+}
+
+// Plot.legend_flags -> ImPlotLegendFlags.
+EnumFlags::table plot_legend_flags_table() {
+  return {
+      {"NoButtons", 1 << 0},
+      {"NoHighlightItem", 1 << 1},
+      {"NoHighlightAxis", 1 << 2},
+      {"NoMenus", 1 << 3},
+      {"Outside", 1 << 4},
+      {"Horizontal", 1 << 5},
+      {"Sort", 1 << 6},
+      {"Reverse", 1 << 7},
+  };
+}
+
 } // namespace
 
 void register_plot() {
@@ -175,6 +205,27 @@ void register_plot() {
             attr<Description>("Fixed upper Y-axis limit, locked every frame.  "
                               "Ignored (axis auto-fits normally) when equal to y_min."),
             attr<Category>("Axes")});
+    proto->addField(
+        "legend_location"_rkey,
+        field{
+            int32_t{-1},
+            attr<DisplayName>("Legend Location"),
+            attr<Description>("Where the legend sits (ImPlotLocation: North/South/West/East and the "
+                              "corner combinations, or Center). -1 (default) keeps ImPlot's own "
+                              "default of top-left inside the plot. Combine with legend_flags Outside "
+                              "to move the legend out of the plot area entirely."),
+            attr<Category>("Legend"),
+            attr<EnumFlags>(plot_legend_location_table())});
+    proto->addField(
+        "legend_flags"_rkey,
+        field{
+            int32_t{0},
+            attr<DisplayName>("Legend Flags"),
+            attr<Description>("ImPlotLegendFlags bitmask (combine names with '|'): Outside renders the "
+                              "legend outside the plot frame, Horizontal lays entries in a row, plus "
+                              "NoButtons / NoMenus / Sort / Reverse."),
+            attr<Category>("Legend"),
+            attr<EnumFlags>(plot_legend_flags_table())});
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Plot"));
     (*proto)[dynamic::CLASS].addAttribute(
         attr<Description>("An ImPlot plot window.  "

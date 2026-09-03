@@ -62,6 +62,16 @@ void render_plot(imgui_renderer& r, const ui_element& node_base, const context& 
       ImPlot::SetupAxisLimits(ImAxis_X1, x_min, x_max, ImPlotCond_Always);
     if (y_min != y_max)
       ImPlot::SetupAxisLimits(ImAxis_Y1, y_min, y_max, ImPlotCond_Always);
+    // Legend placement is opt-in: only touch it when the element sets a
+    // location (>= 0) or any legend flag. Otherwise ImPlot keeps its default
+    // (top-left, inside the plot).
+    int32_t legend_location = node.legend_location();
+    int32_t legend_flags = node.legend_flags();
+    if (legend_location >= 0 || legend_flags != 0) {
+      ImPlot::SetupLegend(
+          ImPlotLocation(legend_location < 0 ? ImPlotLocation_NorthWest : legend_location),
+          ImPlotLegendFlags(legend_flags));
+    }
     render_children(r, node, s);
     ImPlot::EndPlot();
   }

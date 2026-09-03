@@ -144,7 +144,15 @@ Per-window specifics:
   history. Fed only by the `update_stats` RMI method, which
   `kubectl_source`'s poll thread calls every ~10 s (§6). `stats_plot`
   tracks each line's `child_key` explicitly (`dynamic::size()` goes sparse
-  once lines are removed — `top`'s per-row-key note).
+  once lines are removed — `top`'s per-row-key note). Each `Plot`'s legend
+  is placed below the frame as a single vertical column (`legend_location:
+  South` + `legend_flags: Outside`): ImPlot shrinks the trace area to fit
+  the whole column, so the legend never covers the trace and every pod/node
+  line stays visible (a horizontal legend gets clamped to the plot width
+  and crops the tail). The Top window is a scrolling `VerticalLayout`, so
+  the extra plot height is absorbed by the scroll region. The pod series
+  are keyed/labelled by bare pod name (unique within a cluster) rather than
+  `namespace/name`.
 
 Closing any window emits `"closed"` and tears down all eight subtrees
 (`remove_objects_at` for the seven extra roots + `remove_internal_objects` —

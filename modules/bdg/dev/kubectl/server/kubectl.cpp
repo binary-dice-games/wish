@@ -311,10 +311,10 @@ static constexpr const char* kTopLayout = R"json({
   "pos_x": 0, "pos_y": 300, "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "scroll": true, "children": {
     "status": { "type": "Label", "text": "" },
-    "pods_cpu_plot":  { "type": "Plot", "title": "Pods CPU (millicores)", "height": 170, "profiler_marker": "K8s Pods CPU", "y_label": "m",   "children": {} },
-    "pods_mem_plot":  { "type": "Plot", "title": "Pods Memory (MiB)",     "height": 170, "profiler_marker": "K8s Pods Mem", "y_label": "MiB", "children": {} },
-    "nodes_cpu_plot": { "type": "Plot", "title": "Nodes CPU %",           "height": 170, "profiler_marker": "K8s Nodes CPU", "y_label": "%",  "children": {} },
-    "nodes_mem_plot": { "type": "Plot", "title": "Nodes Memory %",        "height": 170, "profiler_marker": "K8s Nodes Mem", "y_label": "%",  "children": {} },
+    "pods_cpu_plot":  { "type": "Plot", "title": "Pods CPU (millicores)", "height": 420, "profiler_marker": "K8s Pods CPU", "y_label": "m",   "children": {} },
+    "pods_mem_plot":  { "type": "Plot", "title": "Pods Memory (MiB)",     "height": 420, "profiler_marker": "K8s Pods Mem", "y_label": "MiB", "children": {} },
+    "nodes_cpu_plot": { "type": "Plot", "title": "Nodes CPU %",           "height": 200, "profiler_marker": "K8s Nodes CPU", "y_label": "%",  "children": {} },
+    "nodes_mem_plot": { "type": "Plot", "title": "Nodes Memory %",        "height": 200, "profiler_marker": "K8s Nodes Mem", "y_label": "%",  "children": {} },
     "sep": { "type": "Separator" },
     "pods_table": {
       "type": "Table", "id": "##k8s_top_pods", "columns": 4,
@@ -1044,14 +1044,28 @@ void kubectl_frontend::build_top_window() {
   // plots are true 0..100 gauges; the pod millicore / MiB plots auto-fit Y.
   constexpr int32_t kNoTickLabels = 1 << 3;
   constexpr int32_t kAutoFit = 1 << 11;
+  constexpr int32_t kLegendSouth = 1 << 1;   // ImPlotLocation_South
+  constexpr int32_t kLegendOutside = 1 << 4; // ImPlotLegendFlags_Outside
+  // A busy cluster puts a dozen-plus pod lines on the plot. Keep the legend
+  // below the frame as a single vertical column: ImPlot shrinks the trace
+  // area to fit the *whole* column (no clipping), so every pod/node line
+  // stays labelled. A horizontal legend would be clamped to the plot width
+  // and crop the tail entries. The Top window is a scrolling VerticalLayout,
+  // so the extra height is absorbed by the scroll region.
+  auto legend_below = [&](const auto& e) {
+    e["legend_location"_key] = kLegendSouth;
+    e["legend_flags"_key] = kLegendOutside;
+  };
   auto fit_xy = [&](const auto& e) {
     e["x_flags"_key] = kNoTickLabels | kAutoFit;
     e["y_flags"_key] = kAutoFit;
+    legend_below(e);
   };
   auto fit_x_pct_y = [&](const auto& e) {
     e["x_flags"_key] = kNoTickLabels | kAutoFit;
     e["y_min"_key] = 0.0f;
     e["y_max"_key] = 100.0f;
+    legend_below(e);
   };
   tree.with("vbox.pods_cpu_plot", fit_xy);
   tree.with("vbox.pods_mem_plot", fit_xy);
@@ -1206,7 +1220,11 @@ dynamic kubectl_frontend::do_update_stats(const dynamic& args) {
   size_t node_count = 0;
 
   for_each_entry(args, "pods"_key, [&](const dynamic& e) {
-    const std::string key = e.as<std::string>("namespace"_key) + "/" + e.as<std::string>("name"_key);
+    // Pod names carry a unique suffix (ReplicaSet/DaemonSet hash, or the node
+    // name for static control-plane pods), so the bare name is a safe series
+    // key -- and a far shorter legend label than "namespace/name". The
+    // namespace is still its own column in the pods table.
+    const std::string key = e.as<std::string>("name"_key);
     pod_cpu[key] = e.as<float>("cpu_m"_key);
     pod_mem[key] = e.as<float>("mem_mib"_key);
     ++pod_count;

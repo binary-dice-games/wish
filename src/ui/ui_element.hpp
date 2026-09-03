@@ -1574,6 +1574,16 @@ class ui_plot : public cloneable_ui_element<ui_plot> {
   float x_max(float def = 0.0f) const { return cached_field_or<float>(x_max_field_, bison::key_t{"x_max"}, def); }
   float y_min(float def = 0.0f) const { return cached_field_or<float>(y_min_field_, bison::key_t{"y_min"}, def); }
   float y_max(float def = 0.0f) const { return cached_field_or<float>(y_max_field_, bison::key_t{"y_max"}, def); }
+  /// @brief ImPlotLocation for the legend; `-1` (the default) leaves ImPlot's
+  ///        own default (top-left, inside). `render_plot()` only calls
+  ///        `ImPlot::SetupLegend()` when this is `>= 0` or `legend_flags != 0`.
+  int32_t legend_location(int32_t def = -1) const {
+    return cached_field_or<int32_t>(legend_location_field_, bison::key_t{"legend_location"}, def);
+  }
+  /// @brief ImPlotLegendFlags bitmask (e.g. `Outside`, `Horizontal`).
+  int32_t legend_flags(int32_t def = 0) const {
+    return cached_field_or<int32_t>(legend_flags_field_, bison::key_t{"legend_flags"}, def);
+  }
 
  private:
   mutable bison::field* title_field_ = nullptr;
@@ -1586,6 +1596,8 @@ class ui_plot : public cloneable_ui_element<ui_plot> {
   mutable bison::field* x_max_field_ = nullptr;
   mutable bison::field* y_min_field_ = nullptr;
   mutable bison::field* y_max_field_ = nullptr;
+  mutable bison::field* legend_location_field_ = nullptr;
+  mutable bison::field* legend_flags_field_ = nullptr;
 };
 
 /// @brief Shared C++ type for PlotLine, PlotScatter, PlotStairs, and

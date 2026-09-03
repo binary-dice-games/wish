@@ -283,16 +283,16 @@ static constexpr const char* kConsoleLayout = R"json({
 // lines are added/removed at runtime by update_stats_plot().
 
 static constexpr const char* kStatsLayout = R"json({
-  "type": "Window", "title": "Stats", "width": 940, "height": 620,
+  "type": "Window", "title": "Stats", "width": 940, "height": 800,
   "pos_x": 0, "pos_y": 300, "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "status": { "type": "Label", "text": "" },
     "cpu_plot": {
-      "type": "Plot", "title": "CPU %  (per container)", "height": 200,
+      "type": "Plot", "title": "CPU %  (per container)", "height": 300,
       "profiler_marker": "Docker CPU Plot", "y_label": "%", "children": {}
     },
     "mem_plot": {
-      "type": "Plot", "title": "Memory %  (per container)", "height": 200,
+      "type": "Plot", "title": "Memory %  (per container)", "height": 300,
       "profiler_marker": "Docker Mem Plot", "y_label": "%", "children": {}
     },
     "sep": { "type": "Separator" },
@@ -917,13 +917,23 @@ void docker_frontend::build_stats_window() {
   // memory plot is a true 0..100 % gauge.
   constexpr int32_t kNoTickLabels = 1 << 3;
   constexpr int32_t kAutoFit = 1 << 11;
-  auto fit_x = [&](const auto& e) { e["x_flags"_key] = kNoTickLabels | kAutoFit; };
+  constexpr int32_t kLegendSouth = 1 << 1;   // ImPlotLocation_South
+  constexpr int32_t kLegendOutside = 1 << 4; // ImPlotLegendFlags_Outside
+  // Keep the legend below the frame, laid out as a single vertical column:
+  // ImPlot shrinks the trace area to fit the *whole* column (no clipping),
+  // so every container line stays labelled and visible. A horizontal legend
+  // would instead be clamped to the plot width and crop the tail entries.
+  auto common = [&](const auto& e) {
+    e["x_flags"_key] = kNoTickLabels | kAutoFit;
+    e["legend_location"_key] = kLegendSouth;
+    e["legend_flags"_key] = kLegendOutside;
+  };
   tree.with("vbox.cpu_plot", [&](const auto& e) {
-    fit_x(e);
+    common(e);
     e["y_flags"_key] = kAutoFit;
   });
   tree.with("vbox.mem_plot", [&](const auto& e) {
-    fit_x(e);
+    common(e);
     e["y_min"_key] = 0.0f;
     e["y_max"_key] = 100.0f;
   });

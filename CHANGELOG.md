@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `Plot` gains `legend_location` (`ImPlotLocation`) and `legend_flags` (`ImPlotLegendFlags`) fields for placing the legend — e.g. `legend_location: "South"` + `legend_flags: "Outside"` renders it below the plot instead of over the trace.
 - `docker` module: new **Stats** window — live `docker stats` CPU % and memory % history graphs (one `PlotLine` per running container, capped at the 15 busiest, plus a "Total" line) and a current-values table (Name / CPU % / Mem % / Mem Usage). Sampled by a background poll thread every ~3 s; these polls are not shown in the Console window.
 - `kubectl` module: new **Top** window — live `kubectl top` graphs: pod CPU (millicores) and pod memory (MiB) with a per-pod line (top 15) plus "Total", node CPU % and node memory % with a per-node line plus "Cluster avg", and current-values tables for pods and nodes. Sampled by a background poll thread every ~10 s; these polls are not shown in the Console window. Shows a status message when `kubectl top` is unavailable (e.g. metrics-server not installed).
 

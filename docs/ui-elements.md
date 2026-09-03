@@ -772,6 +772,8 @@ elements emit events.
 | `x_flags` / `y_flags` | `int32` (flags) | `0` | ImPlotAxisFlags per axis; use `31` (`NoDecorations`) for pie charts. |
 | `x_min` / `x_max` | `float` | `0.0` | Fixed X-axis limits, locked every frame; ignored (auto-fit) when `x_min == x_max`. |
 | `y_min` / `y_max` | `float` | `0.0` | Fixed Y-axis limits, same auto-fit-when-equal rule. |
+| `legend_location` | `int32` (flags) | `-1` | Legend placement (`ImPlotLocation`: `North`/`South`/`West`/`East`, the corners, or `Center`). `-1` keeps ImPlot's default (top-left, inside). |
+| `legend_flags` | `int32` (flags) | `0` | `ImPlotLegendFlags` bitmask: `Outside` moves the legend out of the plot frame, `Horizontal` rows the entries, plus `NoButtons` / `NoMenus` / `Sort` / `Reverse`. |
 
 #### `PlotLine`, `PlotScatter`, `PlotStairs`, `PlotDigital`
 Share `xs`, `ys` (`float[]`, one entry per data point) — a connected line,

@@ -163,6 +163,11 @@ dispatch keys on a `{scope, key, action}` `row_action`, so one
   calls every ~3 s (§6). `dynamic::size()` is unusable on the `Plot`
   children map once lines have been removed (sparse keys) — `stats_plot`
   tracks each line's `child_key` explicitly, `top`'s per-row-key note.
+  Each `Plot`'s legend is placed below the frame as a single vertical
+  column (`legend_location: South` + `legend_flags: Outside`): ImPlot
+  shrinks the trace area to fit the whole column, so it never covers the
+  trace *and* every container line stays visible (a horizontal legend gets
+  clamped to the plot width and crops the tail entries).
 
 Closing any window emits `"closed"` and tears down all eight subtrees
 (`remove_objects_at` for the seven extra roots + `remove_internal_objects` —
