@@ -14,6 +14,7 @@
 #include <stdexcept>
 #include <string>
 #include <type_traits>
+#include <vector>
 
 namespace bdg::wish {
 
@@ -143,9 +144,32 @@ class form : public ui_root {
 
   /// @brief Remove all session.objects entries owned by this form.
   ///
-  /// Erases the root key and every key with the `"<root>."` prefix. Safe to
-  /// call more than once (subsequent calls are no-ops). Also called by ~form().
+  /// Erases `internal_root_key_` and every extra internal root registered via
+  /// `set_default_dock_layout()` (and their `"<root>."`-prefixed children).
+  /// Safe to call more than once (subsequent calls are no-ops). Also called
+  /// by ~form().
   void remove_internal_objects();
+
+  /// @brief Register a built-in default docking arrangement for this form's
+  /// windows.
+  ///
+  /// @p layout_root is a `DockLayout` element and its `DockSplit`/`DockArea`
+  /// child tree -- build it with `bdg::wish::dock::layout()`
+  /// (src/ui/dock_layout_spec.hpp). Each `DockArea`'s `windows` names a
+  /// `Window`'s `__path__`, i.e. the root key each `build_*_window()`
+  /// registered (`internal_root_key_` and the secondary roots a multi-window
+  /// form stamps into `(*root)["__path__"]`).
+  ///
+  /// The arrangement is applied once by the renderer -- on the first run
+  /// whose `imgui.ini` has no node for the target dockspace, or after the
+  /// element's `version` increases -- then owned by `imgui.ini` like any user
+  /// drag. A no-op at render time if the host provides no ambient dockspace
+  /// and the element names no explicit `target`.
+  ///
+  /// Call once from `on_init()` after every window is registered. The
+  /// `DockLayout` object is torn down automatically with the form
+  /// (`remove_internal_objects()` / `~form()`).
+  void set_default_dock_layout(ui_element_ptr layout_root);
 
   /// @brief Ask the internal Window rooted at @p root_key to close itself,
   /// via the hidden "__request_close__" field render_window()'s modal
@@ -266,6 +290,10 @@ class form : public ui_root {
 
  private:
   bison::rmi::context* ctx_{nullptr};
+  /// Extra internal top-level roots (beyond `internal_root_key_`) this form
+  /// registered -- currently just the `set_default_dock_layout()` object.
+  /// Cleared by `remove_internal_objects()`.
+  std::vector<std::string> extra_internal_roots_;
   /// Lazily resolved on the first call to emit().
   bison::key_t own_id_;
   /// Set by set_local_result_sink(); when present, emit() routes through it

@@ -3,6 +3,8 @@
 /// @brief Implementation of the wish::form base class.
 #include "ui/forms/form.hpp"
 
+#include "src/rmi/shared/ids.hpp"
+
 namespace bdg::wish {
 
 using namespace bison;
@@ -17,6 +19,32 @@ form::~form() {
 
 void form::remove_internal_objects() {
   remove_objects_at(internal_root_key_);
+  for (const auto& root : extra_internal_roots_)
+    remove_objects_at(root);
+  extra_internal_roots_.clear();
+}
+
+void form::set_default_dock_layout(ui_element_ptr layout_root) {
+  if (!layout_root)
+    return;
+
+  auto& s = sess();
+  const std::string root_key = next_available_key("__docklayout_");
+
+  // The renderer emits no events for a DockLayout, but give it an RMI id and
+  // register it under ctx().objects like every other top-level object so
+  // group cleanup (OP_DESTROY_GROUP) treats it consistently. Its DockSplit/
+  // DockArea children need no ids -- they are walked as plain data by
+  // render_dock_layout(), never rendered or addressed.
+  key_t id = rmi::shared::generate_id();
+  ctx().put_object(id, layout_root);
+  (*layout_root)["__wish_id"_key] = id;
+  (*layout_root)["__path__"_key] = root_key;
+
+  s.ui_objects[root_key] = layout_root;
+  s.top_level_objects[key_t{root_key}] = layout_root;
+  s.top_level_handlers[key_t{root_key}] = this;
+  extra_internal_roots_.push_back(root_key);
 }
 
 void form::remove_objects_at(const std::string& root_key) {

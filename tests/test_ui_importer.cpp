@@ -5,6 +5,8 @@
 #include <ui/ui_importer.hpp>
 #include "src/bison/bison_object.hpp"
 
+#include <vector>
+
 using namespace bdg::bison;
 
 class UiImporterTest : public ::testing::Test {
@@ -253,4 +255,61 @@ visible: false
   auto result = bdg::wish::import_yaml(yaml_desc);
   ASSERT_TRUE(result.count(""));
   EXPECT_FALSE(result[""]->findField("visible"_key)->as<bool>());
+}
+
+// ── DockLayout / DockSplit / DockArea ─────────────────────────────────────────
+
+TEST_F(UiImporterTest, DockLayoutFamilyResolvesThroughImporter) {
+  EXPECT_EQ(bdg::wish::import_json(R"({"type":"DockLayout"})")[""]->class_key(), "DockLayout"_key);
+  EXPECT_EQ(bdg::wish::import_json(R"({"type":"DockSplit"})")[""]->class_key(), "DockSplit"_key);
+  EXPECT_EQ(bdg::wish::import_json(R"({"type":"DockArea"})")[""]->class_key(), "DockArea"_key);
+}
+
+TEST_F(UiImporterTest, DockLayoutDescriptorRoundTrips) {
+  constexpr auto desc = R"({
+    "type": "DockLayout", "version": 3,
+    "children": [
+      { "type": "DockSplit", "dir": "left", "ratio": 0.62, "children": [
+        { "type": "DockArea", "windows": "containers\nimages\nstats", "focused": "containers" },
+        { "type": "DockArea", "windows": "logs" }
+      ] }
+    ]
+  })";
+
+  auto result = bdg::wish::import_json(desc);
+  auto& root = result[""];
+  ASSERT_NE(root, nullptr);
+  EXPECT_EQ(root->class_key(), "DockLayout"_key);
+  EXPECT_EQ(root->findField("version"_key)->get_as<int32_t>(), 3);
+
+  // Single DockSplit child.
+  const bdg::wish::ui_element* split = nullptr;
+  root->for_each_child_ordered([&](bdg::bison::key_t, bdg::wish::ui_element& c) { split = &c; });
+  ASSERT_NE(split, nullptr);
+  EXPECT_EQ(split->class_key(), "DockSplit"_key);
+  EXPECT_EQ(split->findField("dir"_key)->as<std::string>(), "left");
+  EXPECT_FLOAT_EQ(split->findField("ratio"_key)->get_as<float>(), 0.62f);
+
+  // Two ordered DockArea children; first keeps the newline-joined window list.
+  std::vector<bdg::wish::ui_element*> areas;
+  split->for_each_child_ordered([&](bdg::bison::key_t, bdg::wish::ui_element& c) { areas.push_back(&c); });
+  ASSERT_EQ(areas.size(), 2u);
+  EXPECT_EQ(areas[0]->class_key(), "DockArea"_key);
+  EXPECT_EQ(areas[0]->findField("windows"_key)->as<std::string>(), "containers\nimages\nstats");
+  EXPECT_EQ(areas[0]->findField("focused"_key)->as<std::string>(), "containers");
+  EXPECT_EQ(areas[1]->findField("windows"_key)->as<std::string>(), "logs");
+}
+
+// Guards against "improving" DockArea.windows into a JSON array: the client
+// descriptor importer silently drops array/object-valued scalar fields, so a
+// template would lose the window list entirely.
+TEST_F(UiImporterTest, DockAreaWindowsStaysAScalarString) {
+  auto result = bdg::wish::import_json(
+      R"({ "type": "DockArea", "windows": "a\nb\nc" })");
+  auto& area = result[""];
+  ASSERT_NE(area, nullptr);
+  const auto* f = area->findField("windows"_key);
+  ASSERT_NE(f, nullptr);
+  EXPECT_TRUE(f->is<std::string>());
+  EXPECT_EQ(f->as<std::string>(), "a\nb\nc");
 }

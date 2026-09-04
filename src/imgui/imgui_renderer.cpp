@@ -14,6 +14,7 @@
 
 #include <imgui.h>
 
+#include <imgui/imgui_dock_layout.hpp>
 #include <imgui/imgui_graph_renderer.hpp>
 #include <imgui/imgui_plot3d_renderer.hpp>
 #include <imgui/imgui_plot_renderer.hpp>
@@ -44,6 +45,7 @@ static const render_fn_map& built_in_render_fns() {
       // Docking
       {"DockSpaceViewport"_key.id, render_dockspace_viewport},
       {"DockSpace"_key.id, render_dockspace},
+      {"DockLayout"_key.id, render_dock_layout},
       // Table
       {"Table"_key.id, render_table},
       {"TableColumn"_key.id, render_table_column},
@@ -318,6 +320,9 @@ void imgui_renderer::begin_frame() {
   // first: an opt-in server-frame host wrapper (`dockspace_renderer`,
   // `host_renderer`) or a `DockSpaceViewport` element in a session's tree.
   ambient_dockspace_id_ = 0;
+  // Register the [WishDockLayout] settings handler before the first
+  // NewFrame() so it participates in the initial imgui.ini load (idempotent).
+  install_dock_layout_settings_handler();
   ImGuiIO& io = ImGui::GetIO();
   if (io.DisplaySize.x <= 0.0f || io.DisplaySize.y <= 0.0f)
     io.DisplaySize = ImVec2(800.0f, 600.0f);

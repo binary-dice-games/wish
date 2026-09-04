@@ -13,6 +13,7 @@
 #include "src/bison/bison_object.hpp"
 #include "src/rmi/shared/ids.hpp"
 
+#include <ui/dock_layout_spec.hpp>
 #include <ui/forms/message_box.hpp>
 
 #include <algorithm>
@@ -93,6 +94,13 @@ std::pair<const char*, const char*> state_colour(const std::string& state) {
 
 // ── Window layouts ─────────────────────────────────────────────────────────
 //
+// The windows carry no "pos_x"/"pos_y": each opens un-positioned and docks
+// into the ambient host dockspace. The *arrangement* (which pane, split
+// sizes, tab groups) is seeded once at the end of on_init() via
+// form::set_default_dock_layout(), then owned by imgui.ini like any user
+// drag. "width"/"height" remain as the floating size a pane restores to when
+// undocked.
+//
 // Each list table carries both "height": -1 (stretch row in `vbox`) and
 // "outer_height": -1 (fill that region) -- the load-bearing pair documented
 // in git.cpp / tail.cpp. `vbox` is each Window's sole direct child so it
@@ -104,7 +112,7 @@ std::pair<const char*, const char*> state_colour(const std::string& state) {
 
 static constexpr const char* kContainersLayout = R"json({
   "type": "Window", "title": "Containers", "width": 940, "height": 500,
-  "pos_x": 0, "pos_y": 0, "closable": true,
+  "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
       "btn_refresh": { "type": "Button", "label": "Refresh", "width": 90 },
@@ -132,7 +140,7 @@ static constexpr const char* kContainersLayout = R"json({
 
 static constexpr const char* kImagesLayout = R"json({
   "type": "Window", "title": "Images", "width": 820, "height": 420,
-  "pos_x": 948, "pos_y": 0, "closable": true,
+  "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
       "btn_refresh": { "type": "Button", "label": "Refresh", "width": 90 },
@@ -160,7 +168,7 @@ static constexpr const char* kImagesLayout = R"json({
 
 static constexpr const char* kVolumesLayout = R"json({
   "type": "Window", "title": "Volumes", "width": 720, "height": 300,
-  "pos_x": 0, "pos_y": 508, "closable": true,
+  "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
       "btn_refresh": { "type": "Button", "label": "Refresh", "width": 90 },
@@ -186,7 +194,7 @@ static constexpr const char* kVolumesLayout = R"json({
 
 static constexpr const char* kNetworksLayout = R"json({
   "type": "Window", "title": "Networks", "width": 720, "height": 300,
-  "pos_x": 728, "pos_y": 508, "closable": true,
+  "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
       "btn_refresh": { "type": "Button", "label": "Refresh", "width": 90 },
@@ -216,7 +224,7 @@ static constexpr const char* kNetworksLayout = R"json({
 
 static constexpr const char* kLogsLayout = R"json({
   "type": "Window", "title": "Logs", "width": 900, "height": 420,
-  "pos_x": 948, "pos_y": 440, "closable": true,
+  "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 8, "children": {
       "target":     { "type": "Label", "text": "(no container selected)" },
@@ -237,7 +245,7 @@ static constexpr const char* kLogsLayout = R"json({
 
 static constexpr const char* kInspectLayout = R"json({
   "type": "Window", "title": "Inspect", "width": 820, "height": 420,
-  "pos_x": 948, "pos_y": 440, "closable": true,
+  "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 8, "children": {
       "target":     { "type": "Label", "text": "(nothing selected)" },
@@ -260,7 +268,7 @@ static constexpr const char* kInspectLayout = R"json({
 
 static constexpr const char* kConsoleLayout = R"json({
   "type": "Window", "title": "Console", "width": 940, "height": 240,
-  "pos_x": 0, "pos_y": 760, "closable": true,
+  "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "table": {
       "type": "Table", "id": "##docker_console_table", "columns": 4,
@@ -284,7 +292,7 @@ static constexpr const char* kConsoleLayout = R"json({
 
 static constexpr const char* kStatsLayout = R"json({
   "type": "Window", "title": "Stats", "width": 940, "height": 800,
-  "pos_x": 0, "pos_y": 300, "closable": true,
+  "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "status": { "type": "Label", "text": "" },
     "cpu_plot": {
@@ -460,6 +468,30 @@ void docker_frontend::on_init() {
 
   stats_root_key_ = internal_root_key_ + "_stats";
   build_stats_window();
+
+  // Seed the first-run arrangement (see the "Window layouts" comment above):
+  // a wide left column of tabbed list/stats windows over a Console strip, and
+  // a narrower right column with Logs + Inspect. Owned by imgui.ini after the
+  // first run; bump the version arg to layout() if this arrangement changes.
+  {
+    using namespace dock;
+    const std::string images = internal_root_key_ + "_images";
+    const std::string volumes = internal_root_key_ + "_volumes";
+    const std::string networks = internal_root_key_ + "_networks";
+    // split(dir, ratio, near, far): `near` is the pane on the `dir` side and
+    // takes `ratio` of the space. So: carve the left 62% off for a column
+    // that is itself split -- a Console strip along its bottom 24%, the
+    // tabbed list/stats windows filling the rest -- and leave the right 38%
+    // for Logs + Inspect.
+    set_default_dock_layout(layout(
+        split(
+            dir::left, 0.62f,
+            split(
+                dir::down, 0.24f,
+                area({console_root_key_}),
+                area({internal_root_key_, images, volumes, networks, stats_root_key_}, internal_root_key_)),
+            area({logs_root_key_, inspect_root_key_}, logs_root_key_))));
+  }
 
   // Initial population is triggered client-side (run_docker() calls
   // source->refresh_all() after wiring every handler) -- never via an

@@ -133,6 +133,7 @@ into a persistent, identity-keyed directory per client via an
 | [docs/cli.md](docs/cli.md) | Full `wish` CLI reference: `server`/`client`/`standalone`/`desktop` |
 | [docs/examples.md](docs/examples.md) | Annotated example walkthroughs |
 | [docs/ui-elements.md](docs/ui-elements.md) | Full UI element/widget catalog (fields, events), window/layout model, JSON template schema, and the `editor` preview tool |
+| [docs/dock-layout.md](docs/dock-layout.md) | Shipping a built-in default docking arrangement with `DockLayout` (from a form or a client template) |
 | [docs/visual-editor-options.md](docs/visual-editor-options.md) | Proposal: WYSIWYG editor options — forking ImRAD Studio vs. extending the native `editor` module |
 | [docs/bindings.md](docs/bindings.md) | Python, C#, Rust, Go, and Android (Java/Kotlin) language binding setup and usage |
 | [docs/publishing-python.md](docs/publishing-python.md) | Release runbook for the `wish-abi` PyPI package: Trusted Publisher setup, cibuildwheel matrix, per-release tag steps |

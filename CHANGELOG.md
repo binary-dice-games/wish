@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `DockLayout` / `DockSplit` / `DockArea` elements: a UI (a server-side `wish::form` via `form::set_default_dock_layout()`, or a client-registered template descriptor) can declare the initial docking arrangement of its windows. The renderer realizes the split tree once via ImGui's DockBuilder — on the first run whose `imgui.ini` has no node for the target dockspace, or after the element's `version` increases — then leaves it to `imgui.ini` like any user drag. Build the tree from C++ with the `bdg::wish::dock::` helpers in `src/ui/dock_layout_spec.hpp`. See [docs/dock-layout.md](docs/dock-layout.md).
 - `Plot` gains `legend_location` (`ImPlotLocation`) and `legend_flags` (`ImPlotLegendFlags`) fields for placing the legend — e.g. `legend_location: "South"` + `legend_flags: "Outside"` renders it below the plot instead of over the trace.
 - `docker` module: new **Stats** window — live `docker stats` CPU % and memory % history graphs (one `PlotLine` per running container, capped at the 15 busiest, plus a "Total" line) and a current-values table (Name / CPU % / Mem % / Mem Usage). Sampled by a background poll thread every ~3 s; these polls are not shown in the Console window.
 - `kubectl` module: new **Top** window — live `kubectl top` graphs: pod CPU (millicores) and pod memory (MiB) with a per-pod line (top 15) plus "Total", node CPU % and node memory % with a per-node line plus "Cluster avg", and current-values tables for pods and nodes. Sampled by a background poll thread every ~10 s; these polls are not shown in the Console window. Shows a status message when `kubectl top` is unavailable (e.g. metrics-server not installed).
@@ -28,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `docker` module: the windows open pre-arranged into a docked layout (tabbed list/stats column over a Console strip on the left, Logs + Inspect tabbed on the right) on the first run instead of as floating windows. Rearranging and restarting keeps your own arrangement.
 - `docker` / `kubectl` modules: list, log, and console tables now scroll both horizontally and vertically; the Inspect / Describe views no longer clip long lines.
 - `editor` module: loads `.yaml` / `.yml` UI files in addition to JSON, selected by file extension, with full feature parity — YAML syntax highlighting, schema-aware autocomplete, and the cursor-tracked Help panel / preview highlight all work for YAML sources.
 - `editor` module: closing with unsaved edits now uses a real modal `MessageBox` ("Save changes … before closing?", Yes / No / Cancel) instead of an inline panel.

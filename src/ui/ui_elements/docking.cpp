@@ -104,6 +104,108 @@ void register_docking() {
     dynamic::addClass(
         "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<ui_dockspace>("wish"_key, "DockSpace"_key));
   }
+
+  // ── DockLayout / DockSplit / DockArea ─────────────────────────────────────
+  // A declarative default docking arrangement. The renderer walks the
+  // DockSplit/DockArea child tree once and realizes it via ImGui's
+  // DockBuilder API (render_dock_layout, imgui_ui_renderer.cpp), then leaves
+  // the result to imgui.ini like any user drag. Flows through every path
+  // that carries a UI tree: a server-side form (form::set_default_dock_layout),
+  // a client-registered template descriptor, or a hand-authored import_json
+  // tree.
+  {
+    auto proto = dynamic_ptr{"DockLayout"_rkey, {}};
+    proto->addField(
+        "target"_rkey,
+        field{
+            std::string{},
+            attr<DisplayName>("Target"),
+            attr<Description>("Dockspace id to seed. Empty (default) targets the ambient host/viewport "
+                              "dockspace; a non-empty value is hashed like DockSpace.id to seed a named "
+                              "inline dockspace instead."),
+            attr<Category>("Behavior")});
+    proto->addField(
+        "version"_rkey,
+        field{
+            int32_t{1},
+            attr<DisplayName>("Version"),
+            attr<Description>("Layout revision. The arrangement is applied once per distinct value "
+                              "(on the first run whose imgui.ini has no node for the target, or after "
+                              "this number increases); bump it to re-apply the default even if the "
+                              "user has rearranged the windows."),
+            attr<Category>("Behavior")});
+    (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("DockLayout"));
+    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+        "Declarative default docking arrangement. Its single child is a DockSplit or DockArea tree "
+        "naming Window paths. Realized once via DockBuilder, then owned by imgui.ini. No-op if there "
+        "is no ambient dockspace and no target. Draws nothing."));
+    dynamic::addClass(
+        "wish"_key,
+        std::move(proto),
+        "Element"_key,
+        dynamic::make_factory<ui_dock_layout>("wish"_key, "DockLayout"_key));
+  }
+
+  {
+    auto proto = dynamic_ptr{"DockSplit"_rkey, {}};
+    proto->addField(
+        "dir"_rkey,
+        field{
+            std::string{"left"},
+            attr<DisplayName>("Direction"),
+            attr<Description>("\"left\", \"right\", \"up\", or \"down\". The first child is placed in "
+                              "this direction, the second in the opposite one."),
+            attr<Category>("Layout")});
+    proto->addField(
+        "ratio"_rkey,
+        field{
+            0.5f,
+            attr<DisplayName>("Ratio"),
+            attr<Description>("Fraction (0..1) of the parent node given to the first child (the one "
+                              "placed in \"dir\")."),
+            attr<Category>("Layout"),
+            attr<Range>(0.05, 0.95),
+            attr<Step>(0.05)});
+    (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("DockSplit"));
+    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+        "One binary split in a DockLayout tree. Exactly two ordered children, each a DockSplit or "
+        "DockArea. Only meaningful inside a DockLayout."));
+    dynamic::addClass(
+        "wish"_key,
+        std::move(proto),
+        "Element"_key,
+        dynamic::make_factory<ui_dock_split>("wish"_key, "DockSplit"_key));
+  }
+
+  {
+    auto proto = dynamic_ptr{"DockArea"_rkey, {}};
+    proto->addField(
+        "windows"_rkey,
+        field{
+            std::string{},
+            attr<DisplayName>("Windows"),
+            attr<Description>("Newline-separated list of Window paths to dock into this node as tabs. "
+                              "A path is the Window's \"__path__\": its form root key server-side, or "
+                              "its descriptor dot-path in a template."),
+            attr<Category>("Behavior")});
+    proto->addField(
+        "focused"_rkey,
+        field{
+            std::string{},
+            attr<DisplayName>("Focused"),
+            attr<Description>("Which of \"windows\" is the initially-selected tab. Empty means the "
+                              "first entry."),
+            attr<Category>("Behavior")});
+    (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("DockArea"));
+    (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+        "A leaf of a DockLayout tree: one dock node holding one or more tabbed Windows. Only "
+        "meaningful inside a DockLayout."));
+    dynamic::addClass(
+        "wish"_key,
+        std::move(proto),
+        "Element"_key,
+        dynamic::make_factory<ui_dock_area>("wish"_key, "DockArea"_key));
+  }
 }
 
 } // namespace bdg::wish

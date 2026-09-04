@@ -453,6 +453,18 @@ use only the methods/events above).
   Docker-Desktop-style left rail would mean one window swapping content
   panels — rejected as less flexible and not what the user asked for.
 
+  The windows carry no `pos_x`/`pos_y`. `on_init()` seeds a default
+  arrangement — a tabbed list/stats column over a Console strip on the
+  left (62%), Logs + Inspect tabbed on the right — via
+  `form::set_default_dock_layout()` (`dock::layout(dock::split(...))`,
+  `src/ui/dock_layout_spec.hpp`). That produces a hidden `DockLayout`
+  top-level object the renderer realizes once into the host dockspace
+  (`imgui_dock_layout.cpp`); after the first run the arrangement is owned
+  by `imgui.ini` and the user rearranges freely. Bump the `version`
+  argument if the default layout here changes. Without this seed the eight
+  windows would still dock, but all stacked as tabs in one node (ImGui has
+  no split geometry on a fresh `imgui.ini`).
+
 - **The Logs / Inspect body is a text viewer, not a live-updating tree.**
   Two workable widgets: (a) a multiline read-only `InputText` — renders
   immediately, no session-sandbox file, no round trip, but no syntax

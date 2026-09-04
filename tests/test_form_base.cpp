@@ -1,6 +1,7 @@
 // MIT License © 2025 Binary Dice Games
 #include <gtest/gtest.h>
 
+#include <ui/dock_layout_spec.hpp>
 #include <ui/forms/form.hpp>
 #include <server/registry.hpp>
 #include <server/server.hpp>
@@ -354,4 +355,79 @@ TEST(FormServerInjection, TwoInstantiationsBothGetInit) {
   }
 
   srv.stop();
+}
+
+// ── set_default_dock_layout ──────────────────────────────────────────────────
+
+namespace {
+
+// A form that registers one window plus a default dock layout in on_init().
+class dock_layout_form : public wish::form {
+ public:
+  explicit dock_layout_form(dynamic&& base) : form(std::move(base)) {}
+
+ protected:
+  void on_init() override {
+    using namespace bdg::wish::dock;
+    internal_root_key_ = next_available_key("__dlf_");
+    auto win = bdg::wish::ui_element_ptr::create("wish"_key, "Window"_key);
+    (*win)["title"_key] = std::string{"W"};
+    sess().ui_objects[internal_root_key_] = win;
+
+    set_default_dock_layout(layout(area({internal_root_key_}, internal_root_key_)));
+  }
+};
+
+wish::sync_context_ptr make_dlf_session(const char* name) {
+  return std::make_shared<wish::sync_context>(std::in_place, std::make_unique<wish::context>(bison::key_t{name}));
+}
+
+} // namespace
+
+TEST(FormDockLayout, RegistersDockLayoutTopLevelObject) {
+  ensure_registered();
+  dock_layout_form f{dynamic{}};
+  rmi::context ctx;
+  auto sync_sess = make_dlf_session("form_dl_reg");
+  {
+    auto lk = wish::context_wlock{*sync_sess};
+    wish::detail::current_context = &(*lk);
+    f.init(ctx, sync_sess);
+
+    auto it = lk->top_level_objects.find("__docklayout_0"_key);
+    ASSERT_NE(it, lk->top_level_objects.end());
+    EXPECT_EQ(it->second->class_key(), "DockLayout"_key);
+    EXPECT_EQ(it->second->path_ref(), "__docklayout_0");
+
+    // Its DockArea child names the window path.
+    const bdg::wish::ui_element* area = nullptr;
+    it->second->for_each_child_ordered([&](bison::key_t, bdg::wish::ui_element& c) { area = &c; });
+    ASSERT_NE(area, nullptr);
+    EXPECT_EQ(area->class_key(), "DockArea"_key);
+    EXPECT_EQ(area->findField("windows"_key)->as<std::string>(), "__dlf_0");
+
+    wish::detail::current_context = nullptr;
+  }
+}
+
+TEST(FormDockLayout, TornDownWithForm) {
+  ensure_registered();
+  rmi::context ctx;
+  auto sync_sess = make_dlf_session("form_dl_teardown");
+
+  auto f = std::make_unique<dock_layout_form>(dynamic{});
+  {
+    auto lk = wish::context_wlock{*sync_sess};
+    wish::detail::current_context = &(*lk);
+    f->init(ctx, sync_sess);
+    ASSERT_TRUE(lk->top_level_objects.count("__docklayout_0"_key));
+    wish::detail::current_context = nullptr;
+  }
+
+  // ~form() runs outside dispatch and takes the session lock itself.
+  f.reset();
+
+  auto lk = wish::context_wlock{*sync_sess};
+  EXPECT_FALSE(lk->top_level_objects.count("__docklayout_0"_key));
+  EXPECT_FALSE(lk->ui_objects.count("__docklayout_0"));
 }

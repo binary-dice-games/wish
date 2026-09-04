@@ -3079,6 +3079,228 @@ TEST_F(ImguiRendererTest, BareImguiRendererDrawsNoServerChrome) {
 // paths. UnpositionedWindowDocksIntoAmbientDockspace above covers the
 // render_window side of that contract with a stand-in DockSpace host.
 
+// ── Docking: default layout (DockLayout element) ────────────────────────────
+
+namespace {
+
+// Build a Window element with a fixed __path__ so its ImGui id is a stable
+// hash of that path (see stable_id()/with_id()), matching what
+// DockBuilderDockWindow(path) targets.
+bdg::wish::ui_element_ptr make_docked_window(const char* title, const char* path) {
+  auto map = bdg::wish::import_json(std::string(R"({"type":"Window","title":")") + title +
+                                    R"(","width":300,"height":200})");
+  auto win = map[""];
+  (*win)["__path__"_key] = std::string{path};
+  return win;
+}
+
+// Drive `frames` frames: a stand-in host DockSpace + ambient id, then the
+// DockLayout, then every window.
+void drive_dock_frames(bdg::wish::imgui_renderer& r, bdg::wish::context& s, ImGuiID dock_id,
+                       const bdg::wish::ui_element& layout,
+                       const std::vector<bdg::wish::ui_element_ptr>& windows, int frames) {
+  for (int i = 0; i < frames; ++i) {
+    r.begin_frame();
+    ImGui::SetNextWindowPos(ImVec2(0, 0));
+    ImGui::SetNextWindowSize(ImVec2(800, 600));
+    ImGui::Begin("Host", nullptr,
+        ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+            ImGuiWindowFlags_NoMove);
+    ImGui::DockSpace(dock_id, ImVec2(0, 0), ImGuiDockNodeFlags_None);
+    ImGui::End();
+    r.set_ambient_dockspace_id(dock_id);
+    r.render_node(layout, s);
+    for (const auto& w : windows)
+      r.render_node(*w, s);
+    r.end_frame();
+  }
+}
+
+} // namespace
+
+TEST_F(ImguiRendererTest, DockLayoutBuildsSplitTreeIntoAmbientDockspace) {
+  ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+
+  auto wa = make_docked_window("A", "wA");
+  auto wb = make_docked_window("B", "wB");
+  auto lay = bdg::wish::import_json(R"({
+    "type": "DockLayout",
+    "children": [ { "type": "DockSplit", "dir": "left", "ratio": 0.5, "children": [
+      { "type": "DockArea", "windows": "wA" },
+      { "type": "DockArea", "windows": "wB" } ] } ]
+  })")[""];
+
+  ImGuiID dock_id = ImHashStr("DL_SplitTest");
+  drive_dock_frames(*renderer_, *sess_, dock_id, *lay, {wa, wb}, 12);
+
+  ImGuiDockNode* root = ImGui::DockBuilderGetNode(dock_id);
+  ASSERT_NE(root, nullptr);
+  EXPECT_TRUE(root->IsSplitNode());
+
+  auto* a = ImGui::FindWindowByName("A###wA");
+  auto* b = ImGui::FindWindowByName("B###wB");
+  ASSERT_NE(a, nullptr);
+  ASSERT_NE(b, nullptr);
+  EXPECT_NE(a->DockId, 0u);
+  EXPECT_NE(b->DockId, 0u);
+  EXPECT_NE(a->DockId, b->DockId);          // landed in different nodes
+  EXPECT_NE(a->DockId, dock_id);            // ...both below the root split
+  EXPECT_TRUE(a->DockIsActive && b->DockIsActive);
+
+  // `dir: "left"` puts the FIRST child (wA) in the left node.
+  ImGuiDockNode* na = ImGui::DockBuilderGetNode(a->DockId);
+  ImGuiDockNode* nb = ImGui::DockBuilderGetNode(b->DockId);
+  ASSERT_NE(na, nullptr);
+  ASSERT_NE(nb, nullptr);
+  EXPECT_LT(na->Pos.x, nb->Pos.x);
+}
+
+TEST_F(ImguiRendererTest, DockLayoutDoesNotReapplyOnceNodeExists) {
+  ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+
+  auto wa = make_docked_window("A", "wA2");
+  auto wb = make_docked_window("B", "wB2");
+  auto lay = bdg::wish::import_json(R"({
+    "type": "DockLayout",
+    "children": [ { "type": "DockSplit", "dir": "left", "ratio": 0.5, "children": [
+      { "type": "DockArea", "windows": "wA2" },
+      { "type": "DockArea", "windows": "wB2" } ] } ]
+  })")[""];
+
+  ImGuiID dock_id = ImHashStr("DL_NoReapply");
+  drive_dock_frames(*renderer_, *sess_, dock_id, *lay, {wa, wb}, 12);
+
+  // User moves B into A's node.
+  ImGuiID a_dock = ImGui::FindWindowByName("A###wA2")->DockId;
+  ImGui::DockBuilderDockWindow("B###wB2", a_dock);
+  ImGui::DockBuilderFinish(ImGui::DockBuilderGetNode(a_dock)->ID);
+
+  drive_dock_frames(*renderer_, *sess_, dock_id, *lay, {wa, wb}, 6);
+
+  // The manual move survived -- the layout was not re-applied.
+  EXPECT_EQ(ImGui::FindWindowByName("B###wB2")->DockId, a_dock);
+}
+
+TEST_F(ImguiRendererTest, DockLayoutReappliesOnVersionBump) {
+  ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+
+  auto wa = make_docked_window("A", "wA3");
+  auto wb = make_docked_window("B", "wB3");
+  auto v1 = bdg::wish::import_json(R"({
+    "type": "DockLayout", "version": 1,
+    "children": [ { "type": "DockSplit", "dir": "left", "ratio": 0.5, "children": [
+      { "type": "DockArea", "windows": "wA3" },
+      { "type": "DockArea", "windows": "wB3" } ] } ]
+  })")[""];
+
+  ImGuiID dock_id = ImHashStr("DL_VersionBump");
+  drive_dock_frames(*renderer_, *sess_, dock_id, *v1, {wa, wb}, 12);
+
+  ImGuiID a_dock = ImGui::FindWindowByName("A###wA3")->DockId;
+  ImGui::DockBuilderDockWindow("B###wB3", a_dock);
+  ImGui::DockBuilderFinish(ImGui::DockBuilderGetNode(a_dock)->ID);
+  drive_dock_frames(*renderer_, *sess_, dock_id, *v1, {wa, wb}, 4);
+  ASSERT_EQ(ImGui::FindWindowByName("B###wB3")->DockId, a_dock); // move stuck
+
+  // Same tree, bumped version -> re-applied once, B back in its own node.
+  (*v1)["version"_key] = int32_t{2};
+  drive_dock_frames(*renderer_, *sess_, dock_id, *v1, {wa, wb}, 12);
+  EXPECT_NE(ImGui::FindWindowByName("B###wB3")->DockId, a_dock);
+}
+
+TEST_F(ImguiRendererTest, DockLayoutFocusedWindowBecomesSelectedTab) {
+  ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+
+  auto w1 = make_docked_window("One", "t1");
+  auto w2 = make_docked_window("Two", "t2");
+  auto w3 = make_docked_window("Three", "t3");
+  auto lay = bdg::wish::import_json(R"({
+    "type": "DockLayout",
+    "children": [ { "type": "DockArea", "windows": "t1\nt2\nt3", "focused": "t3" } ]
+  })")[""];
+
+  ImGuiID dock_id = ImHashStr("DL_Focus");
+  drive_dock_frames(*renderer_, *sess_, dock_id, *lay, {w1, w2, w3}, 12);
+
+  auto* w = ImGui::FindWindowByName("Three###t3");
+  ASSERT_NE(w, nullptr);
+  ASSERT_NE(w->DockNode, nullptr);
+  ASSERT_NE(w->DockNode->TabBar, nullptr);
+  EXPECT_EQ(w->DockNode->TabBar->SelectedTabId, w->TabId);
+}
+
+TEST_F(ImguiRendererTest, DockLayoutNoOpWithoutAmbientDockspace) {
+  ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+  auto lay = bdg::wish::import_json(R"({
+    "type": "DockLayout",
+    "children": [ { "type": "DockArea", "windows": "nope" } ]
+  })")[""];
+
+  ImGuiID absent = ImHashStr("DL_NoAmbient");
+  for (int i = 0; i < 3; ++i) {
+    renderer_->begin_frame();
+    // No set_ambient_dockspace_id(), empty target -> render_dock_layout returns.
+    EXPECT_NO_THROW(renderer_->render_node(*lay, *sess_));
+    renderer_->end_frame();
+  }
+  EXPECT_EQ(ImGui::DockBuilderGetNode(absent), nullptr);
+}
+
+TEST_F(ImguiRendererTest, DockLayoutMalformedTreeDoesNotThrow) {
+  ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+  auto wa = make_docked_window("A", "mA");
+  // DockSplit with only one child + a bogus direction elsewhere.
+  auto lay = bdg::wish::import_json(R"({
+    "type": "DockLayout",
+    "children": [ { "type": "DockSplit", "dir": "sideways", "ratio": 0.5, "children": [
+      { "type": "DockArea", "windows": "mA" } ] } ]
+  })")[""];
+
+  ImGuiID dock_id = ImHashStr("DL_Malformed");
+  EXPECT_NO_THROW(drive_dock_frames(*renderer_, *sess_, dock_id, *lay, {wa}, 6));
+}
+
+TEST_F(ImguiRendererTest, DockLayoutAsDockSpaceViewportChildApplies) {
+  // The client-template shape: a DockSpaceViewport root with Window children
+  // and a DockLayout sibling, all rendered as one tree (no RMI layer).
+  ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+
+  auto tree = bdg::wish::import_json(R"({
+    "type": "DockSpaceViewport", "id": "tpl_dock",
+    "children": {
+      "win_a": { "type": "Window", "title": "Alpha" },
+      "win_b": { "type": "Window", "title": "Beta" },
+      "layout": { "type": "DockLayout", "children": [
+        { "type": "DockSplit", "dir": "left", "ratio": 0.5, "children": [
+          { "type": "DockArea", "windows": "win_a" },
+          { "type": "DockArea", "windows": "win_b" } ] } ] }
+    }
+  })");
+  auto& root = *tree[""];
+
+  bool both_docked = false;
+  for (int i = 0; i < 14 && !both_docked; ++i) {
+    renderer_->begin_frame();
+    renderer_->render_node(root, *sess_);
+    renderer_->end_frame();
+    auto* a = ImGui::FindWindowByName("Alpha###win_a");
+    auto* b = ImGui::FindWindowByName("Beta###win_b");
+    both_docked = a && b && a->DockIsActive && b->DockIsActive;
+  }
+  auto* a = ImGui::FindWindowByName("Alpha###win_a");
+  auto* b = ImGui::FindWindowByName("Beta###win_b");
+  ASSERT_NE(a, nullptr);
+  ASSERT_NE(b, nullptr);
+  EXPECT_TRUE(a->DockIsActive && b->DockIsActive);
+  // Different leaf nodes under a shared root => the split was realized (a
+  // no-op DockLayout would leave both in one tab node).
+  ASSERT_NE(a->DockNode, nullptr);
+  ASSERT_NE(b->DockNode, nullptr);
+  EXPECT_NE(a->DockNode, b->DockNode);
+  EXPECT_EQ(ImGui::DockNodeGetRootNode(a->DockNode), ImGui::DockNodeGetRootNode(b->DockNode));
+  EXPECT_TRUE(ImGui::DockNodeGetRootNode(a->DockNode)->IsSplitNode());
+}
+
 // ── Per-element tooltip ("tooltip" field -> ImGui::SetTooltip) ──────────────
 
 namespace {

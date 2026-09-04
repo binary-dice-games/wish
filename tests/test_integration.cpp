@@ -49,6 +49,18 @@ class integration_server : public wish::server {
     return 0;
   }
 
+  // True if the (single) active session has a ui_objects element of @p klass.
+  bool session_has_element_class(bdg::bison::key_t klass) {
+    auto lp = session_contexts().rlock();
+    for (auto& [id, holder] : *lp) {
+      auto clp = holder->rlock();
+      for (auto& [path, elem] : static_cast<wish::context&>(**clp).ui_objects)
+        if (elem && elem->class_key() == klass)
+          return true;
+    }
+    return false;
+  }
+
  protected:
   void on_session_created(wish::context& s) override {
     emit_fn = s.emit_event;
@@ -246,4 +258,46 @@ TEST_F(IntegrationTest, DestroyingTemplateRootRemovesTopLevelObject) {
   EXPECT_GT(c.count_before_destroy, c.count_after_destroy)
       << "expected destroying the template root to remove its top_level_objects entry";
   EXPECT_EQ(c.count_after_destroy, 0u) << "expected no top-level objects left after destroying the only template";
+}
+
+// ── A client template can carry a DockLayout ─────────────────────────────────
+
+static constexpr const char* kDockTemplateDesc = R"({
+  "type": "DockSpaceViewport", "id": "tpl_main",
+  "children": {
+    "explorer": { "type": "Window", "title": "Explorer" },
+    "editor":   { "type": "Window", "title": "Editor" },
+    "layout": { "type": "DockLayout", "version": 1, "children": [
+      { "type": "DockSplit", "dir": "left", "ratio": 0.3, "children": [
+        { "type": "DockArea", "windows": "explorer" },
+        { "type": "DockArea", "windows": "editor" }
+      ] }
+    ] }
+  }
+})";
+
+TEST_F(IntegrationTest, ClientTemplateCanCarryDockLayout) {
+  class test_client : public wish::client {
+   public:
+    using wish::client::client;
+    integration_server* srv{nullptr};
+    bool has_windows{false};
+    bool server_has_dock_layout{false};
+
+   protected:
+    void on_session() override {
+      register_template("ui"_key, wish::import_descriptor_json(kDockTemplateDesc)).get();
+      auto pm = instantiate_template("ui"_key).get();
+      has_windows = pm.count("explorer") && pm.count("editor");
+      server_has_dock_layout = srv->session_has_element_class("DockLayout"_key);
+    }
+  };
+
+  test_client c{transport_.connect()};
+  c.srv = srv_.get();
+  c.run();
+
+  EXPECT_TRUE(c.has_windows) << "template windows missing from proxy map";
+  EXPECT_TRUE(c.server_has_dock_layout)
+      << "DockLayout element did not survive template register -> instantiate";
 }

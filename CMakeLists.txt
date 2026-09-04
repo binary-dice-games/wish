@@ -309,6 +309,7 @@ add_library(wish_server STATIC
   src/server/registry.hpp
   src/ui/ui_importer.hpp
   src/ui/ui_element.hpp
+  src/ui/dock_layout_spec.hpp
   src/context/context.hpp
   src/server/renderer.hpp
   src/server/console_renderer.hpp
@@ -398,6 +399,8 @@ if(WISH_ENABLE_IMGUI)
   target_sources(wish_server PRIVATE
     src/imgui/imgui_renderer.hpp
     src/imgui/imgui_renderer.cpp
+    src/imgui/imgui_dock_layout.hpp
+    src/imgui/imgui_dock_layout.cpp
     src/imgui/imgui_layout.hpp
     src/imgui/imgui_layout.cpp
     src/imgui/imgui_ui_renderer.hpp
@@ -548,6 +551,14 @@ target_link_libraries(wish INTERFACE wish_server wish_client)
 
 if(WISH_BUILD_TESTS)
     enable_testing()
+    # Enumerate tests at ctest time rather than emitting a per-target
+    # "<name>[1]_tests.cmake" file into the build graph. CMake >= 3.29 puts
+    # literal '[' ']' in that filename, which Ninja treats as a glob and
+    # reports as a self-dependency cycle ("dependency cycle:
+    # tests/test_web_renderer[1]_tests.cmake -> ..."), breaking `ninja all`.
+    # PRE_TEST avoids the generated file entirely. Applies to every
+    # gtest_discover_tests() call below (honoured since CMake 3.22).
+    set(CMAKE_GTEST_DISCOVER_TESTS_DISCOVERY_MODE PRE_TEST)
     include(GoogleTest)
     add_subdirectory(tests)
 endif()

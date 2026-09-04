@@ -90,6 +90,9 @@ void render_text_editor(imgui_renderer&, const ui_element& node, const context& 
 // Docking
 void render_dockspace_viewport(imgui_renderer& r, const ui_element& node, const context& s);
 void render_dockspace(imgui_renderer&, const ui_element& node, const context&);
+void render_dock_layout(imgui_renderer& r, const ui_element& node, const context& s);
+// DockSplit / DockArea have no render function: they are never rendered
+// directly, only walked by render_dock_layout() as plain data.
 
 // Table
 void render_table(imgui_renderer& r, const ui_element& node, const context& s);

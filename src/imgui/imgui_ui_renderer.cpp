@@ -1634,6 +1634,12 @@ void render_dockspace(imgui_renderer&, const ui_element& node0, const context&) 
       ImGuiDockNodeFlags(flags));
 }
 
+// DockLayout draws nothing. Its whole implementation -- and the sole
+// `imgui_internal.h` dependency in the renderer -- lives in
+// imgui_dock_layout.cpp (render_dock_layout() is defined there); it is only
+// forward-declared in imgui_ui_renderer.hpp and wired into the dispatch
+// table in imgui_renderer.cpp.
+
 // ── Table elements ────────────────────────────────────────────────────────────
 
 // Per-widget last-seen row count, so a scrollable table (ImGuiTableFlags_

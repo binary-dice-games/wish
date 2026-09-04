@@ -1392,6 +1392,70 @@ class ui_dockspace : public cloneable_ui_element<ui_dockspace> {
   mutable bison::field* flags_field_ = nullptr;
 };
 
+/// @brief Typed C++ class for the `DockLayout` element -- a declarative
+///        default docking arrangement realized once via ImGui's DockBuilder
+///        (see `render_dock_layout()` in imgui_ui_renderer.cpp). Its single
+///        child is a `DockSplit` or `DockArea` tree.
+class ui_dock_layout : public cloneable_ui_element<ui_dock_layout> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  /// @brief Zero-copy form of the `"target"` field: the dockspace id to
+  ///        seed. Empty (default) means the ambient host/viewport dockspace.
+  const std::string& target_ref() const { return cached_field_str(target_field_, bison::key_t{"target"}); }
+  /// @brief Layout revision. The arrangement is applied once per distinct
+  ///        value; bumping it re-applies the default even if the user has
+  ///        since rearranged the windows.
+  int32_t version(int32_t def = 1) const {
+    return cached_field_or<int32_t>(version_field_, bison::key_t{"version"}, def);
+  }
+
+ private:
+  mutable bison::field* target_field_ = nullptr;
+  mutable bison::field* version_field_ = nullptr;
+};
+
+/// @brief Typed C++ class for the `DockSplit` element -- one binary split in
+///        a `DockLayout` tree. Has exactly two ordered children (each a
+///        `DockSplit` or `DockArea`): the first goes in `dir`, the second
+///        opposite.
+class ui_dock_split : public cloneable_ui_element<ui_dock_split> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  /// @brief Zero-copy form of the `"dir"` field: `"left"`, `"right"`,
+  ///        `"up"`, or `"down"`.
+  const std::string& dir_ref() const { return cached_field_str(dir_field_, bison::key_t{"dir"}); }
+  /// @brief Fraction (0..1) of the parent node handed to the first child
+  ///        (the one placed in `dir`).
+  float ratio(float def = 0.5f) const {
+    return cached_field_or<float>(ratio_field_, bison::key_t{"ratio"}, def);
+  }
+
+ private:
+  mutable bison::field* dir_field_ = nullptr;
+  mutable bison::field* ratio_field_ = nullptr;
+};
+
+/// @brief Typed C++ class for the `DockArea` element -- a leaf of a
+///        `DockLayout` tree: one dock node holding one or more tabbed
+///        `Window`s, named by their `__path__`.
+class ui_dock_area : public cloneable_ui_element<ui_dock_area> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  /// @brief Zero-copy form of the `"windows"` field: a newline-separated
+  ///        list of `Window` paths to dock into this node.
+  const std::string& windows_ref() const { return cached_field_str(windows_field_, bison::key_t{"windows"}); }
+  /// @brief Zero-copy form of the `"focused"` field: which of `windows` is
+  ///        the initially-selected tab. Empty means the first.
+  const std::string& focused_ref() const { return cached_field_str(focused_field_, bison::key_t{"focused"}); }
+
+ private:
+  mutable bison::field* windows_field_ = nullptr;
+  mutable bison::field* focused_field_ = nullptr;
+};
+
 class ui_table : public cloneable_ui_element<ui_table> {
  public:
   using cloneable_ui_element::cloneable_ui_element;

@@ -215,10 +215,11 @@ the post-drag sizes of the pane before and after that bar.
 ### Docking
 
 `DockSpaceViewport` (full-viewport dockspace host — nested `Window` children
-become independently dockable) and `DockSpace` (an inline dockspace inside
-an existing window) are covered in §4's docking section below; they're
-listed here only as a pointer since they're conceptually part of the
-window/layout system.
+become independently dockable), `DockSpace` (an inline dockspace inside an
+existing window), and `DockLayout` / `DockSplit` / `DockArea` (a declarative
+default arrangement seeded once, then owned by `imgui.ini`) are covered in
+§4's docking section below; they're listed here only as a pointer since
+they're conceptually part of the window/layout system.
 
 ## 3. The JSON/YAML template schema
 
@@ -728,6 +729,76 @@ An inline dockspace inside an existing window. No events.
 | `width` | `float` | `0.0` | Width; `0` fills available width. |
 | `height` | `float` | `0.0` | Height; `0` fills available height. |
 | `flags` | `int32` (flags) | `0` | ImGuiDockNodeFlags bitmask. |
+
+#### `DockLayout`
+A **declarative default docking arrangement**. Its single child is a
+`DockSplit` / `DockArea` tree naming `Window` paths. The renderer realizes
+the tree once via ImGui's DockBuilder — on the first run whose `imgui.ini`
+has no node for the target dockspace, or after `version` increases — then
+leaves the arrangement to `imgui.ini` like any user drag. Draws nothing, no
+events. A **no-op** if the host provides no ambient dockspace and `target`
+is empty.
+
+`DockLayout` works anywhere a UI tree is carried:
+- from a `wish::form` via `form::set_default_dock_layout()` (build the tree
+  with the `bdg::wish::dock::` helpers in `src/ui/dock_layout_spec.hpp`);
+- from a **client-registered template** — put a `{"type":"DockLayout", …}`
+  node in the descriptor;
+- as a `DockSpaceViewport` child in a hand-authored tree.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `target` | `string` | `""` | Dockspace id to seed. Empty ⇒ the ambient host/viewport dockspace; non-empty is hashed like `DockSpace.id`. |
+| `version` | `int32` | `1` | Layout revision. Applied once per distinct value; bump it to re-apply the default even after the user has rearranged. |
+
+A window path is the `Window`'s `__path__`: its **form root key**
+server-side (`internal_root_key_` and the secondary roots a multi-window
+form stamps), or its **descriptor dot-path** in a template
+(`demo_win`, `panels.logs`).
+
+#### `DockSplit`
+One binary split in a `DockLayout` tree. Exactly two ordered children (each
+a `DockSplit` or `DockArea`): the **first child is the pane on the `dir`
+side** and takes `ratio` of the space, the second fills the rest. Only
+meaningful inside a `DockLayout`.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `dir` | `string` | `"left"` | `"left"`, `"right"`, `"up"`, or `"down"` — which side the first child occupies. |
+| `ratio` | `float` | `0.5` | Fraction (0..1) of the parent given to the first child. |
+
+#### `DockArea`
+A leaf of a `DockLayout` tree: one dock node holding one or more tabbed
+`Window`s. Only meaningful inside a `DockLayout`.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `windows` | `string` | `""` | **Newline-separated** list of `Window` paths, in tab order. (A string, not a JSON array — the template descriptor importer drops array-valued fields.) |
+| `focused` | `string` | `""` | Which of `windows` starts as the active tab. Empty ⇒ the first. |
+
+Descriptor example (a client template):
+
+```json
+{
+  "type": "DockSpaceViewport", "id": "main",
+  "children": {
+    "explorer": { "type": "Window", "title": "Explorer" },
+    "editor":   { "type": "Window", "title": "Editor" },
+    "output":   { "type": "Window", "title": "Output" },
+    "layout": { "type": "DockLayout", "version": 1, "children": [
+      { "type": "DockSplit", "dir": "left", "ratio": 0.25, "children": [
+        { "type": "DockArea", "windows": "explorer" },
+        { "type": "DockSplit", "dir": "down", "ratio": 0.3, "children": [
+          { "type": "DockArea", "windows": "output" },
+          { "type": "DockArea", "windows": "editor" }
+        ] }
+      ] }
+    ] }
+  }
+}
+```
+
+See **[docs/dock-layout.md](dock-layout.md)** for a full tutorial.
 
 ### Text editing
 

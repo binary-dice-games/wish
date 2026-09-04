@@ -1,6 +1,6 @@
 {
   "//": "UI MOCKUP for the `docker` module -- open with: wish-standalone --run=editor -- modules/bdg/dev/docker/docker_mock.json",
-  "//tabs": "The real module splits these six tabs into six independently dockable Windows (git/editor style). Tabs here are only so the whole UI renders as one editor preview. Sample rows are illustrative.",
+  "//tabs": "The real module splits these six tabs into six independently dockable Windows (git/editor style) and seeds their first-run split arrangement with a DockLayout (see server/docker.cpp on_init / docs/dock-layout.md). Tabs here are only so the whole UI renders as one editor preview. Sample rows are illustrative.",
   "type": "Window",
   "title": "Docker",
   "width": 1000,
