@@ -1,6 +1,6 @@
 {
   "//": "UI MOCKUP for the `kubectl` module -- open with: wish-standalone --run=editor -- modules/bdg/dev/kubectl/kubectl_mock.json",
-  "//tabs": "The real module splits these six tabs into six independently dockable Windows (docker/git/editor style). Tabs here are only so the whole UI renders as one editor preview. Sample rows are illustrative.",
+  "//tabs": "The real module splits these six tabs into six independently dockable Windows (docker/git/editor style) and seeds their first-run split arrangement with a DockLayout (see server/kubectl.cpp on_init / docs/dock-layout.md). Tabs here are only so the whole UI renders as one editor preview. Sample rows are illustrative.",
   "type": "Window",
   "title": "Kubernetes",
   "width": 1000,

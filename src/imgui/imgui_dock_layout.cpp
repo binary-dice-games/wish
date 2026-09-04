@@ -119,12 +119,62 @@ bool realize_node(const ui_element& node, ImGuiID node_id, logger* log) {
   return false;
 }
 
+// Visit every DockArea in a DockLayout tree, calling fn(window_path) for each
+// listed window in order.
+template <typename Fn>
+void for_each_layout_window(const ui_element& node, Fn&& fn) {
+  if (node.class_key() == "DockArea"_key) {
+    for (const auto& w : split_lines(static_cast<const ui_dock_area&>(node).windows_ref()))
+      fn(w);
+  }
+  node.for_each_child_ordered([&](key_t, ui_element& c) { for_each_layout_window(c, fn); });
+}
+
+// A stable identity for one DockLayout, independent of the dockspace it
+// targets: the hash of its window-path list. Two different apps sharing the
+// same ambient dockspace (docker vs kubectl vs git, all docking into the
+// host chrome's HostDockSpace) get distinct identities, so each tracks its
+// own applied version and neither blocks the other.
+ImGuiID layout_identity(const ui_element& layout_root) {
+  std::string all;
+  for_each_layout_window(layout_root, [&](const std::string& w) {
+    all += w;
+    all += '\n';
+  });
+  return ImHashStr(all.c_str(), all.size());
+}
+
+// True iff every window the layout names is currently docked into a live
+// node whose root is target_id -- i.e. this layout's arrangement is the one
+// on screen. False if any window is undocked, was never seen, or sits under
+// a node that no longer exists (a sibling app rebuilt the dockspace).
+bool layout_windows_are_live(const ui_element& layout_root, ImGuiID target_id) {
+  bool any = false;
+  bool all_live = true;
+  for_each_layout_window(layout_root, [&](const std::string& path) {
+    any = true;
+    if (!all_live)
+      return;
+    const ImGuiID wid = ImHashStr(path.c_str(), path.size());
+    ImGuiID dock_id = 0;
+    if (ImGuiWindow* w = ImGui::FindWindowByID(wid))
+      dock_id = w->DockId;
+    else if (ImGuiWindowSettings* ws = ImGui::FindWindowSettingsByID(wid))
+      dock_id = ws->DockId;
+    ImGuiDockNode* node = dock_id ? ImGui::DockBuilderGetNode(dock_id) : nullptr;
+    if (!node || ImGui::DockNodeGetRootNode(node)->ID != target_id)
+      all_live = false;
+  });
+  return any && all_live;
+}
+
 // ── Applied-version persistence ([WishDockLayout] in imgui.ini) ──────────────
 //
-// The map is keyed by target dockspace id. It is process-global (wish drives
-// one ImGui context) but guarded by the context pointer it was populated for,
-// so a test that destroys and recreates the context starts clean instead of
-// seeing a previous test's "already applied" entries.
+// The map is keyed by layout_identity() (NOT the dockspace id -- see that
+// helper). It is process-global (wish drives one ImGui context) but guarded
+// by the context pointer it was populated for, so a test that destroys and
+// recreates the context starts clean instead of seeing a previous test's
+// "already applied" entries.
 
 std::unordered_map<ImGuiID, int32_t>& applied_versions() {
   static std::unordered_map<ImGuiID, int32_t> m;
@@ -199,17 +249,29 @@ bool build_dock_layout(const ui_element& layout_root, ImGuiID target_id, ImVec2 
   return ok;
 }
 
-bool should_apply_dock_layout(ImGuiID target_id, int32_t version) {
+bool should_apply_dock_layout(const ui_element& layout_root, ImGuiID target_id, int32_t version) {
   reset_if_new_context();
+
+  // Never applied at this version (covers first run and an author's bump).
+  auto it = applied_versions().find(layout_identity(layout_root));
+  if (it == applied_versions().end() || version > it->second)
+    return true;
+
+  // No dockspace tree at all yet.
   if (ImGui::DockBuilderGetNode(target_id) == nullptr)
     return true;
-  auto it = applied_versions().find(target_id);
-  return it == applied_versions().end() || it->second < version;
+
+  // Applied before, same version, tree exists -> only (re)apply if this
+  // layout's windows are NOT the ones currently laid out under target_id
+  // (e.g. a sibling app that shares the dockspace rebuilt it). A user's own
+  // rearrangement of THIS app keeps every window docked under target_id, so
+  // it is left untouched.
+  return !layout_windows_are_live(layout_root, target_id);
 }
 
-void note_dock_layout_applied(ImGuiID target_id, int32_t version) {
+void note_dock_layout_applied(const ui_element& layout_root, int32_t version) {
   reset_if_new_context();
-  applied_versions()[target_id] = version;
+  applied_versions()[layout_identity(layout_root)] = version;
   ImGui::MarkIniSettingsDirty();
 }
 
@@ -254,12 +316,12 @@ void render_dock_layout(imgui_renderer& r, const ui_element& node0, const contex
     return; // no ambient dockspace this frame and no resolvable target
 
   const int32_t version = node.version(1);
-  if (!should_apply_dock_layout(target_id, version))
+  if (!should_apply_dock_layout(node, target_id, version))
     return;
 
   const ImVec2 size = ImGui::GetMainViewport()->WorkSize;
   if (build_dock_layout(node, target_id, size, s.logger_service.get()))
-    note_dock_layout_applied(target_id, version);
+    note_dock_layout_applied(node, version);
 }
 
 } // namespace bdg::wish

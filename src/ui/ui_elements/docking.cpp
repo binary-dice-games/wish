@@ -129,10 +129,10 @@ void register_docking() {
         field{
             int32_t{1},
             attr<DisplayName>("Version"),
-            attr<Description>("Layout revision. The arrangement is applied once per distinct value "
-                              "(on the first run whose imgui.ini has no node for the target, or after "
-                              "this number increases); bump it to re-apply the default even if the "
-                              "user has rearranged the windows."),
+            attr<Description>("Layout revision. Bump it to force the arrangement to re-apply once "
+                              "even over a user's own rearrangement -- otherwise the layout is "
+                              "applied on first run and when a sibling tool sharing the dockspace "
+                              "has rebuilt it, and is left alone once its windows are in place."),
             attr<Category>("Behavior")});
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("DockLayout"));
     (*proto)[dynamic::CLASS].addAttribute(attr<Description>(

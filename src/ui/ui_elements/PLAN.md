@@ -56,11 +56,20 @@ leaves the arrangement to `imgui.ini`.
    `render_dock_layout` in `imgui_ui_renderer.cpp` stays on the public API
    and calls into that TU.
 
-5. **Apply-once, version-gated.** Apply when the target dock node does not
-   exist (`DockBuilderGetNode == nullptr`, fresh `imgui.ini`) **or** a
-   persisted "applied version" `< DockLayout.version`. The version is
-   persisted in `imgui.ini` via a `[WishDockLayout]` `ImGuiSettingsHandler`
-   installed in `imgui_renderer::begin_frame()` before the first `NewFrame`.
+5. **Apply on first run / version bump / sibling takeover; else leave it.**
+   `render_dock_layout` (re)applies when: the layout has no persisted record
+   at its current `version` (fresh `imgui.ini`, or an author bumped it);
+   `DockBuilderGetNode(target) == nullptr`; **or** the windows the layout
+   names are not currently docked under `target` (`layout_windows_are_live`
+   is false — e.g. docker / kubectl / git all share the host chrome's one
+   `HostDockSpace`, so running one after another must re-lay-out each).
+   Once a layout's windows *are* live under `target` it is untouched, so a
+   user's own rearrangement survives. State is persisted per layout in
+   `imgui.ini` under `[WishDockLayout]`, **keyed by the hash of the layout's
+   window-path list** (`layout_identity()`), not the dockspace id — so two
+   apps sharing a dockspace keep independent records. The
+   `ImGuiSettingsHandler` is installed in `imgui_renderer::begin_frame()`
+   before the first `NewFrame`.
 
 ### Files
 
@@ -82,9 +91,9 @@ leaves the arrangement to `imgui.ini`.
 | Test | File | Covers |
 |---|---|---|
 | `DockLayoutFamilyResolvesThroughImporter`, `DockLayoutDescriptorRoundTrips`, `DockAreaWindowsStaysAScalarString` | `test_ui_importer.cpp` | element registration + descriptor/`build_ui_node` path |
-| `DockLayoutBuildsSplitTreeIntoAmbientDockspace`, `DockLayoutDoesNotReapplyOnceNodeExists`, `DockLayoutReappliesOnVersionBump`, `DockLayoutFocusedWindowBecomesSelectedTab`, `DockLayoutNoOpWithoutAmbientDockspace`, `DockLayoutMalformedTreeDoesNotThrow`, `DockLayoutAsDockSpaceViewportChildApplies` | `test_imgui_renderer.cpp` | `DockBuilder` realization, apply-once, version bump, focus, no-op, robustness, template shape |
+| 8 `DockLayout*` / `TwoLayoutsSharingOneDockspace*` cases in `test_imgui_renderer.cpp` | `DockBuilder` realization, side semantics, no-reapply / version bump, shared-dockspace takeover, focus, no-op, robustness, template shape |
 | `FormDockLayout.RegistersDockLayoutTopLevelObject`, `FormDockLayout.TornDownWithForm` | `test_form_base.cpp` | `set_default_dock_layout` registration + teardown |
-| `DockerRmiTest.RegistersDefaultDockLayout`, `DockerRmiTest.ClosingAWindowAlsoTearsDownDockLayout` | `test_docker.cpp` | docker module wiring |
+| `RegistersDefaultDockLayout` + a close-teardown case in `test_docker.cpp`, `test_kubectl.cpp`, `test_git.cpp` | each module's dock-layout wiring |
 | `IntegrationTest.ClientTemplateCanCarryDockLayout` | `test_integration.cpp` | client `register_template` → `instantiate` round trip |
 
 ## Deviations from the original plan
@@ -105,10 +114,14 @@ leaves the arrangement to `imgui.ini`.
 
 ## Verified live
 
-`wish standalone --renderer sdl3 --run=docker` against a fresh `imgui.ini`
-writes `[WishDockLayout][…] Version=1` and a `[Docking][Data]` tree matching
-the intended arrangement: left 62% column (list/stats tabs over a 24%
-Console strip), right 38% Logs + Inspect.
+`wish standalone --renderer sdl3 --run=<docker|kubectl|git>` against a fresh
+`imgui.ini` writes `[WishDockLayout][…] Version=1` and a `[Docking][Data]`
+tree matching the intended arrangement:
+
+- **docker / kubectl** — left 62% (list/stats tabs over a 24% Console
+  strip), right 38% (Logs + Inspect/Describe tabbed).
+- **git** — left 70% (commit graph over a 27% Log strip), right 30% (Files
+  over Diff).
 
 ## Known limitations (documented in docs/dock-layout.md)
 

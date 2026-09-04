@@ -73,6 +73,12 @@ one top-level root, so the extra three are registered by hand in
   green/red-colored by success — for debugging/tracing the tool itself, not
   git repository state. FIFO-capped at `kMaxLogRows` (see §6).
 
+The windows carry no `pos_x`/`pos_y`; `on_init()` seeds a default split —
+Main filling the left ~70% with a Log strip along its bottom, Files over
+Diff on the right ~30% — via `form::set_default_dock_layout()`
+(`dock::layout()`, `src/ui/dock_layout_spec.hpp`). It is applied once, then
+owned by `imgui.ini`; see [docs/dock-layout.md](../../../../docs/dock-layout.md).
+
 ### `GraphNode` field data (server-computed, see §5)
 
 `rebuild_graph_table()` turns `update_log`'s raw `{hash, parents[], ...}`

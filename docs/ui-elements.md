@@ -733,11 +733,11 @@ An inline dockspace inside an existing window. No events.
 #### `DockLayout`
 A **declarative default docking arrangement**. Its single child is a
 `DockSplit` / `DockArea` tree naming `Window` paths. The renderer realizes
-the tree once via ImGui's DockBuilder — on the first run whose `imgui.ini`
-has no node for the target dockspace, or after `version` increases — then
-leaves the arrangement to `imgui.ini` like any user drag. Draws nothing, no
-events. A **no-op** if the host provides no ambient dockspace and `target`
-is empty.
+the tree via ImGui's DockBuilder on first run, after `version` increases, or
+when a sibling tool sharing the dockspace has rebuilt it — otherwise it
+leaves the arrangement to `imgui.ini` like any user drag (see
+[docs/dock-layout.md](dock-layout.md)). Draws nothing, no events. A
+**no-op** if the host provides no ambient dockspace and `target` is empty.
 
 `DockLayout` works anywhere a UI tree is carried:
 - from a `wish::form` via `form::set_default_dock_layout()` (build the tree

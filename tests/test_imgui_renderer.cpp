@@ -3208,6 +3208,49 @@ TEST_F(ImguiRendererTest, DockLayoutReappliesOnVersionBump) {
   EXPECT_NE(ImGui::FindWindowByName("B###wB3")->DockId, a_dock);
 }
 
+TEST_F(ImguiRendererTest, TwoLayoutsSharingOneDockspaceEachReapplyAfterTheOther) {
+  // docker / kubectl / git all dock into the same ambient HostDockSpace and
+  // share one imgui.ini. Running one after another must give each its own
+  // arrangement, not leave the second piled into the first's tree.
+  ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+  ImGuiID dock_id = ImHashStr("DL_Shared");
+
+  auto a1 = make_docked_window("A1", "sa1");
+  auto a2 = make_docked_window("A2", "sa2");
+  auto app_a = bdg::wish::import_json(R"({
+    "type": "DockLayout",
+    "children": [ { "type": "DockSplit", "dir": "left", "ratio": 0.5, "children": [
+      { "type": "DockArea", "windows": "sa1" }, { "type": "DockArea", "windows": "sa2" } ] } ]
+  })")[""];
+
+  auto b1 = make_docked_window("B1", "sb1");
+  auto b2 = make_docked_window("B2", "sb2");
+  auto app_b = bdg::wish::import_json(R"({
+    "type": "DockLayout",
+    "children": [ { "type": "DockSplit", "dir": "down", "ratio": 0.5, "children": [
+      { "type": "DockArea", "windows": "sb1" }, { "type": "DockArea", "windows": "sb2" } ] } ]
+  })")[""];
+
+  // App A runs -> its two windows land in distinct sibling nodes.
+  drive_dock_frames(*renderer_, *sess_, dock_id, *app_a, {a1, a2}, 12);
+  ASSERT_TRUE(ImGui::FindWindowByName("A1###sa1")->DockIsActive);
+  EXPECT_NE(ImGui::FindWindowByName("A1###sa1")->DockId, ImGui::FindWindowByName("A2###sa2")->DockId);
+
+  // App B runs into the SAME dockspace -> it rebuilds; B's windows split.
+  drive_dock_frames(*renderer_, *sess_, dock_id, *app_b, {b1, b2}, 12);
+  ASSERT_TRUE(ImGui::FindWindowByName("B1###sb1")->DockIsActive);
+  EXPECT_NE(ImGui::FindWindowByName("B1###sb1")->DockId, ImGui::FindWindowByName("B2###sb2")->DockId);
+
+  // App A runs again -> its windows were wiped by B's rebuild, so A re-applies
+  // its own split rather than inheriting B's tree.
+  drive_dock_frames(*renderer_, *sess_, dock_id, *app_a, {a1, a2}, 12);
+  auto* pa1 = ImGui::FindWindowByName("A1###sa1");
+  auto* pa2 = ImGui::FindWindowByName("A2###sa2");
+  ASSERT_TRUE(pa1->DockIsActive && pa2->DockIsActive);
+  EXPECT_NE(pa1->DockId, pa2->DockId);
+  EXPECT_LT(ImGui::DockBuilderGetNode(pa1->DockId)->Pos.x, ImGui::DockBuilderGetNode(pa2->DockId)->Pos.x);
+}
+
 TEST_F(ImguiRendererTest, DockLayoutFocusedWindowBecomesSelectedTab) {
   ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 

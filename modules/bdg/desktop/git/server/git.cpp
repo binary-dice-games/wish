@@ -7,6 +7,7 @@
 #include "src/bison/bison_object.hpp"
 #include "src/rmi/shared/ids.hpp"
 
+#include <ui/dock_layout_spec.hpp>
 #include <ui/forms/message_box.hpp>
 #include <ui/ui_importer.hpp>
 
@@ -209,7 +210,7 @@ theme_hex diff_kind_theme_color(const std::string& kind) {
 // commit history survives a refresh instead of jumping back and forth.
 
 static constexpr const char* kMainLayout = R"({
-  "type": "Window", "title": "Git", "width": 900, "height": 720, "pos_x": 0, "pos_y": 0, "closable": true,
+  "type": "Window", "title": "Git", "width": 900, "height": 720, "closable": true,
   "children": {
     "vbox": {
       "type": "VerticalLayout",
@@ -279,7 +280,7 @@ static constexpr const char* kMainLayout = R"({
 })";
 
 static constexpr const char* kFilesLayout = R"({
-  "type": "Window", "title": "Files", "width": 380, "height": 360, "pos_x": 900, "pos_y": 0,
+  "type": "Window", "title": "Files", "width": 380, "height": 360,
   "children": {
     "vbox": {
       "type": "VerticalLayout",
@@ -306,7 +307,7 @@ static constexpr const char* kFilesLayout = R"({
 })";
 
 static constexpr const char* kDiffLayout = R"({
-  "type": "Window", "title": "Diff", "width": 380, "height": 360, "pos_x": 900, "pos_y": 360,
+  "type": "Window", "title": "Diff", "width": 380, "height": 360,
   "children": {
     "vbox": {
       "type": "VerticalLayout",
@@ -326,7 +327,7 @@ static constexpr const char* kDiffLayout = R"({
 })";
 
 static constexpr const char* kLogLayout = R"({
-  "type": "Window", "title": "Log", "width": 900, "height": 260, "pos_x": 0, "pos_y": 720,
+  "type": "Window", "title": "Log", "width": 900, "height": 260,
   "children": {
     "vbox": {
       "type": "VerticalLayout",
@@ -370,6 +371,20 @@ void git_repo::on_init() {
   build_files_window();
   build_diff_window();
   build_log_window();
+
+  // Seed the first-run arrangement: the commit graph / detail Git window
+  // filling the left ~70% with a Log strip along its bottom, and a
+  // Files-over-Diff column on the right ~30%. The windows carry no
+  // pos_x/pos_y; this is applied once, then owned by imgui.ini (see
+  // docs/dock-layout.md). Bump the version arg to layout() if it changes.
+  {
+    using namespace dock;
+    set_default_dock_layout(layout(
+        split(
+            dir::left, 0.70f,
+            split(dir::down, 0.27f, area({log_root_key_}), area({internal_root_key_})),
+            split(dir::down, 0.50f, area({diff_root_key_}), area({files_root_key_})))));
+  }
 
   // Initial population is triggered client-side instead of by emitting
   // "refresh_requested" here -- an event fired this early (during on_init()

@@ -10,6 +10,7 @@
 #include "src/rmi/rmi.hpp"
 
 #include <chrono>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -360,6 +361,43 @@ TEST_F(GitRepoRmiTest, InstantiationCreatesFourWindows) {
   EXPECT_TRUE(srv_->last_session->ui_objects.count(root_ + "_files"));
   EXPECT_TRUE(srv_->last_session->ui_objects.count(root_ + "_diff"));
   EXPECT_TRUE(srv_->last_session->ui_objects.count(root_ + "_log"));
+}
+
+TEST_F(GitRepoRmiTest, RegistersDefaultDockLayout) {
+  const std::string dl = find_root_with_prefix(srv_->last_session->ui_objects, "__docklayout_");
+  ASSERT_FALSE(dl.empty());
+  auto& obj = srv_->last_session->ui_objects.at(dl);
+  EXPECT_EQ(obj->class_key(), "DockLayout"_key);
+  EXPECT_TRUE(srv_->last_session->top_level_objects.count(bison::key_t{dl}));
+
+  std::vector<std::string> tokens;
+  std::function<void(bdg::wish::ui_element&)> walk = [&](bdg::wish::ui_element& n) {
+    if (n.class_key() == "DockArea"_key) {
+      const std::string& w = n.findField("windows"_key)->as<std::string>();
+      size_t start = 0;
+      while (start <= w.size()) {
+        size_t nl = w.find('\n', start);
+        tokens.push_back(w.substr(start, nl == std::string::npos ? std::string::npos : nl - start));
+        if (nl == std::string::npos)
+          break;
+        start = nl + 1;
+      }
+    }
+    n.for_each_child_ordered([&](bison::key_t, bdg::wish::ui_element& c) { walk(c); });
+  };
+  walk(*obj);
+
+  ASSERT_EQ(tokens.size(), 4u); // main + files + diff + log, one per DockArea
+  for (const auto& t : tokens)
+    EXPECT_TRUE(srv_->last_session->top_level_objects.count(bison::key_t{t})) << "unresolved DockArea window: " << t;
+}
+
+TEST_F(GitRepoRmiTest, ClosingMainWindowAlsoTearsDownDockLayout) {
+  // Only the main Git window is closable; closing it tears everything down.
+  ASSERT_FALSE(find_root_with_prefix(srv_->last_session->ui_objects, "__docklayout_").empty());
+  auto win = srv_->last_session->ui_objects.at(root_)->as<bison::key_t>("__wish_id"_key);
+  fire_at(root_, win, "closed"_key);
+  EXPECT_TRUE(find_root_with_prefix(srv_->last_session->ui_objects, "__docklayout_").empty());
 }
 
 TEST_F(GitRepoRmiTest, MainWindowContainsGraphTableAndSidebarSections) {

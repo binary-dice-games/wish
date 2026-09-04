@@ -94,7 +94,12 @@ independently dockable `Window`s**, built exactly as `docker.cpp` builds
 its: `build_list_window()` for the four `list_window`s (Pods is
 `internal_root_key_`, the rest are `internal_root_key_ + "_deployments" /
 "_services" / "_nodes"`), `build_text_window()` for Logs / Describe /
-Console (`_logs` / `_describe` / `_console` / `_top`). The `...` menu dispatch keys on a `{scope, name,
+Console (`_logs` / `_describe` / `_console` / `_top`). The windows carry no
+`pos_x`/`pos_y`; `on_init()` seeds a default split (tabbed list/top column
+over a Console strip on the left, Logs + Describe tabbed on the right) via
+`form::set_default_dock_layout()` — same as `docker`, see
+[../docker/DESIGN.md](../docker/DESIGN.md) and
+[docs/dock-layout.md](../../../../docs/dock-layout.md). The `...` menu dispatch keys on a `{scope, name,
 ns, action}` `row_action`, so one `on_event()` clause routes every window's
 actions.
 

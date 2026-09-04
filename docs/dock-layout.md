@@ -148,26 +148,33 @@ so an array would vanish in a template.
 
 ## Versioning and re-applying
 
-The layout is applied when the target dockspace has **no recorded
-`[WishDockLayout]` version** and either has no dock node yet or has one but
-no prior record — i.e. the first run of a build that carries this
-`DockLayout`. That means when you *add* a `DockLayout` to an app that
-shipped without one, existing users get it applied once over whatever
-window positions they had. After that the recorded version is saved and the
-user owns the layout.
+The renderer applies a `DockLayout` when **any** of:
 
-When you change the default arrangement in a later release, **bump
+1. it has never been applied at its current `version` — the first run of a
+   build carrying this layout, or after you bump the number;
+2. the target dockspace has no dock-node tree yet (a fresh `imgui.ini`);
+3. its tree exists but **this layout's windows aren't the ones currently
+   arranged under the target** — e.g. another wish tool that shares the same
+   dockspace (docker / kubectl / git all dock into the host chrome's one
+   `HostDockSpace`) ran in between and rebuilt it.
+
+Once a layout's windows *are* live under the target, it is left alone — so a
+user's own rearrangement (which keeps every window docked under the target)
+survives restarts. Re-open the same tool and you get your layout back; run a
+different tool and it lays itself out; come back to the first and it
+restores itself.
+
+To push a *changed* default to users who never customized theirs, **bump
 `version`** (`dock::layout(tree, 2)`, or `"version": 2` in a descriptor).
-On the next run the renderer notices `2 > 1` (the recorded value), applies
-the new tree once, and records `2`. Users who never touched their layout
-get the new one; users who customized theirs also get it re-applied once —
-that's the trade-off of a version bump, so do it deliberately.
+That forces one re-apply even over a user's own arrangement, so do it
+deliberately.
 
-The recorded version lives in `imgui.ini`:
+State is persisted per layout (keyed by its window-path list, not the
+dockspace) in `imgui.ini`:
 
 ```
-[WishDockLayout][0x8f3ab21c]
-Version=2
+[WishDockLayout][0x0913a362]
+Version=1
 ```
 
 Deleting `imgui.ini` resets everything to a fresh first run.
@@ -182,11 +189,11 @@ Deleting `imgui.ini` resets everything to a fresh first run.
   tree, or an explicit `target`. A bare `wish server` with no host chrome
   ignores it.
 - **`imgui.ini` is one shared file** next to the executable, keyed by hashed
-  window ids. Two apps whose window paths collide will fight over the same
-  ini entries. Give windows app-distinctive paths.
-- **Re-instantiating the same template twice** already collides on window
-  paths (a pre-existing template limitation); the second `DockLayout` is a
-  no-op because the node now exists.
+  window ids. Give windows app-distinctive paths (`__mytool_0_logs`, not
+  `logs`) so two tools' windows and layouts never collide.
+- **Re-instantiating the same template twice** collides on window paths (a
+  pre-existing template limitation); the second `DockLayout` sees its
+  windows already live and is a no-op.
 - **Docking still needs Shift.** wish sets `io.ConfigDockingWithShift`, so
   *manual* re-docking is Shift+drag. `DockLayout` is programmatic and
   unaffected.

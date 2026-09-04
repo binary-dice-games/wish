@@ -160,11 +160,12 @@ class form : public ui_root {
   /// registered (`internal_root_key_` and the secondary roots a multi-window
   /// form stamps into `(*root)["__path__"]`).
   ///
-  /// The arrangement is applied once by the renderer -- on the first run
-  /// whose `imgui.ini` has no node for the target dockspace, or after the
-  /// element's `version` increases -- then owned by `imgui.ini` like any user
-  /// drag. A no-op at render time if the host provides no ambient dockspace
-  /// and the element names no explicit `target`.
+  /// The renderer applies the arrangement on first run, after the element's
+  /// `version` increases, or when a sibling tool that shares the dockspace
+  /// has rebuilt it -- otherwise the user's own arrangement (kept in
+  /// `imgui.ini`) is left alone. A no-op at render time if the host provides
+  /// no ambient dockspace and the element names no explicit `target`. See
+  /// docs/dock-layout.md.
   ///
   /// Call once from `on_init()` after every window is registered. The
   /// `DockLayout` object is torn down automatically with the form

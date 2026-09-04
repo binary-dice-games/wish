@@ -1403,9 +1403,10 @@ class ui_dock_layout : public cloneable_ui_element<ui_dock_layout> {
   /// @brief Zero-copy form of the `"target"` field: the dockspace id to
   ///        seed. Empty (default) means the ambient host/viewport dockspace.
   const std::string& target_ref() const { return cached_field_str(target_field_, bison::key_t{"target"}); }
-  /// @brief Layout revision. The arrangement is applied once per distinct
-  ///        value; bumping it re-applies the default even if the user has
-  ///        since rearranged the windows.
+  /// @brief Layout revision. Bumping it forces the arrangement to re-apply
+  ///        once even over a user's own rearrangement; see
+  ///        `render_dock_layout()` / docs/dock-layout.md for the full
+  ///        apply/leave-alone rules.
   int32_t version(int32_t def = 1) const {
     return cached_field_or<int32_t>(version_field_, bison::key_t{"version"}, def);
   }

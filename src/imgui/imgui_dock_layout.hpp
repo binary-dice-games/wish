@@ -41,15 +41,20 @@ class logger;
 ///         malformed (in which case an empty node is left at @p target_id).
 bool build_dock_layout(const ui_element& layout_root, ImGuiID target_id, ImVec2 node_size, logger* log);
 
-/// @brief Whether the layout for @p target_id should be (re)applied this
-///        run: true when no dock node exists yet (fresh imgui.ini) or when
-///        @p version exceeds the version last recorded as applied for that
-///        target (persisted in imgui.ini under `[WishDockLayout]`).
-bool should_apply_dock_layout(ImGuiID target_id, int32_t version);
+/// @brief Whether @p layout_root should be (re)applied this run. True when it
+///        has never been applied at @p version (fresh imgui.ini, or the
+///        author bumped `version`), or when its dockspace tree exists but the
+///        windows it names are not the ones currently laid out under
+///        @p target_id (a sibling app sharing the dockspace rebuilt it).
+///        False once its arrangement is live, so a user's own rearrangement
+///        is left alone. State is persisted in imgui.ini under
+///        `[WishDockLayout]`, keyed by the layout's window-path list, not the
+///        dockspace id.
+bool should_apply_dock_layout(const ui_element& layout_root, ImGuiID target_id, int32_t version);
 
-/// @brief Record @p version as the applied layout version for @p target_id
-///        and mark imgui.ini dirty so it is persisted.
-void note_dock_layout_applied(ImGuiID target_id, int32_t version);
+/// @brief Record that @p layout_root was applied at @p version and mark
+///        imgui.ini dirty so it is persisted.
+void note_dock_layout_applied(const ui_element& layout_root, int32_t version);
 
 /// @brief Install the `[WishDockLayout]` `ImGuiSettingsHandler` on the
 ///        current ImGui context if not already present. Must be called
