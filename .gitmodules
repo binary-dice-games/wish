@@ -30,6 +30,7 @@
 	path = extern/sdl3_image
 	url = https://github.com/libsdl-org/SDL_image.git
 	branch = release-3.4.x
+	ignore = dirty
 [submodule "extern/civetweb"]
 	path = extern/civetweb
 	url = https://github.com/civetweb/civetweb.git
