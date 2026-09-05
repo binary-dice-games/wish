@@ -124,7 +124,7 @@ void dbg_source::push_threads() {
     (*arr)[i++] = dynamic_ptr{std::make_shared<dynamic>(std::move(entry))};
   }
   args["threads"_key] = arr;
-  proxy_->call("update_threads"_key, args);
+  proxy_->call("update_threads"_key, std::move(args));
 }
 
 void dbg_source::push_callstack(uint32_t thread_id) {
@@ -142,7 +142,7 @@ void dbg_source::push_callstack(uint32_t thread_id) {
     (*arr)[i++] = dynamic_ptr{std::make_shared<dynamic>(std::move(entry))};
   }
   args["frames"_key] = arr;
-  proxy_->call("update_callstack"_key, args);
+  proxy_->call("update_callstack"_key, std::move(args));
 }
 
 void dbg_source::push_watch(uint32_t frame_id) {
@@ -159,7 +159,7 @@ void dbg_source::push_watch(uint32_t frame_id) {
     (*arr)[i++] = dynamic_ptr{std::make_shared<dynamic>(std::move(entry))};
   }
   args["entries"_key] = arr;
-  proxy_->call("update_watch"_key, args);
+  proxy_->call("update_watch"_key, std::move(args));
 }
 
 void dbg_source::push_breakpoints() {
@@ -174,7 +174,7 @@ void dbg_source::push_breakpoints() {
     (*arr)[i++] = dynamic_ptr{std::make_shared<dynamic>(std::move(entry))};
   }
   args["breakpoints"_key] = arr;
-  proxy_->call("update_breakpoints"_key, args);
+  proxy_->call("update_breakpoints"_key, std::move(args));
 }
 
 void dbg_source::handle_stop(const stop_event& ev) {
@@ -187,7 +187,7 @@ void dbg_source::handle_stop(const stop_event& ev) {
   dynamic out_args;
   out_args["text"_key] = ev.reason + " at " + ev.file + ":" + std::to_string(ev.line);
   out_args["level"_key] = std::string{"info"};
-  proxy_->call("append_output"_key, out_args);
+  proxy_->call("append_output"_key, std::move(out_args));
 }
 
 } // namespace bdg::wish::dbg
