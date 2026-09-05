@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `tooltip` field on every UI element: when non-empty, its text is shown via `ImGui::SetTooltip()` while the element is hovered.
 - `VerticalLayout` (and `TabItem`) gain a `scroll` boolean field: when true, the layout's children render inside a vertically-scrolling child region sized to the space the layout was given, so overflowing content scrolls instead of clipping the enclosing window.
 - `TextEditor` gains `breakpoint_lines` (int array, 1-based) and `current_line` (int, 1-based, 0 = none) fields, rendering a breakpoint dot / current-line arrow in the gutter, and a `"line_context_menu"` event (`{line, has_breakpoint}`) emitted on a gutter right-click.
+- `dbg` module (`WISH_MODULE_BDG_DEV_DBG`, off by default): scaffold of a Visual-Studio-style debugger GUI frontend, run with `wish client --run=dbg`. Ships six dockable windows — Source, Threads, Call Stack, Watch, Breakpoints, Output — driven by server-side `update_*` RMI methods against a client-side `debug_backend` seam; Threads/Call Stack rows are wired end-to-end (row click emits `select_thread_requested`/`select_frame_requested`). No real process-attach backend yet.
 
 ### Fixed
 

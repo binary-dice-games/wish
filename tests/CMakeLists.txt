@@ -153,6 +153,7 @@ wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_NANO               test_nano     
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_TOP                test_top               test_top.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DEV_EDITOR                test_editor            test_editor.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DEV_DOCKER               test_docker            test_docker.cpp)
+wish_add_optional_test(WISH_MODULE_BDG_DEV_DBG                  test_dbg               test_dbg.cpp)
 # Exercises run_docker_cli() (docker_process.cpp) against stub binaries
 # (printf/false -- never `docker`), so it needs no Docker daemon. Client-side,
 # no bison/RMI dependency; needs uv_a directly since docker_process.cpp calls
