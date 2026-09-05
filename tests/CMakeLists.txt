@@ -221,3 +221,32 @@ if(UNIX)
     target_include_directories(test_process_control_linux PRIVATE ${CMAKE_SOURCE_DIR})
   endif()
 endif()
+
+# win32_debug_backend (PLAN.md Step 4) is Windows-only -- it wraps the Win32
+# debug API (DebugActiveProcess/WaitForDebugEvent/...) and DbgHelp, neither
+# of which exist on Linux/MSYS2's POSIX layer, so it's guarded with WIN32
+# (not UNIX/MSYS2 detection) same rationale as test_process_control_linux
+# above but for the opposite platform.
+if(WIN32)
+  # Small standalone attach target with known, simple control flow (see the
+  # file's own header comment) -- built as a plain executable, not part of
+  # any wish library, so its debug-info layout stays predictable. Always
+  # built with debug info even in Release configs so the test can resolve
+  # file/line via DbgHelp regardless of the overall build configuration.
+  add_executable(dbg_fixture ${CMAKE_SOURCE_DIR}/tests/fixtures/dbg_fixture.cpp)
+  set_target_properties(dbg_fixture PROPERTIES FOLDER tests)
+  if(MSVC)
+    target_compile_options(dbg_fixture PRIVATE /Od /Zi)
+    target_link_options(dbg_fixture PRIVATE /DEBUG /INCREMENTAL:NO)
+  endif()
+
+  wish_add_optional_test(WISH_MODULE_BDG_DEV_DBG  test_win32_debug_backend  test_win32_debug_backend.cpp
+      ${CMAKE_SOURCE_DIR}/modules/bdg/dev/dbg/client/win32_debug_backend.cpp)
+  if(TARGET test_win32_debug_backend)
+    target_include_directories(test_win32_debug_backend PRIVATE ${CMAKE_SOURCE_DIR})
+    target_link_libraries(test_win32_debug_backend PRIVATE dbghelp)
+    target_compile_definitions(test_win32_debug_backend PRIVATE
+        WISH_DBG_FIXTURE_PATH="$<TARGET_FILE:dbg_fixture>")
+    add_dependencies(test_win32_debug_backend dbg_fixture)
+  endif()
+endif()

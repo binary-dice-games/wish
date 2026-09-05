@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `VerticalLayout` (and `TabItem`) gain a `scroll` boolean field: when true, the layout's children render inside a vertically-scrolling child region sized to the space the layout was given, so overflowing content scrolls instead of clipping the enclosing window.
 - `TextEditor` gains `breakpoint_lines` (int array, 1-based) and `current_line` (int, 1-based, 0 = none) fields, rendering a breakpoint dot / current-line arrow in the gutter, and a `"line_context_menu"` event (`{line, has_breakpoint}`) emitted on a gutter right-click.
 - `dbg` module (`WISH_MODULE_BDG_DEV_DBG`, off by default): scaffold of a Visual-Studio-style debugger GUI frontend, run with `wish client --run=dbg`. Ships six dockable windows — Source, Threads, Call Stack, Watch, Breakpoints, Output — driven by server-side `update_*` RMI methods against a client-side `debug_backend` seam; Threads/Call Stack rows are wired end-to-end (row click emits `select_thread_requested`/`select_frame_requested`). No real process-attach backend yet.
+- `win32_debug_backend` (Windows-only client-side implementation of the `dbg` module's `debug_backend` seam): attach/detach a real process via the Win32 debug API (`DebugActiveProcess`/`WaitForDebugEvent`/`ContinueDebugEvent` on a dedicated debug thread), pause/resume, step into/over/out, and file:line software breakpoints (INT3 patch/restore) resolved via DbgHelp. Not yet wired into the `dbg` module's client runner — still exercised only by its own test.
 
 ### Fixed
 
