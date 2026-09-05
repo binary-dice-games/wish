@@ -38,8 +38,13 @@ static void set_field_from_json(dynamic& obj, key_t field_key, const json& value
     obj[field_key] = value.get<float>();
   else if (value.is_string())
     obj[field_key] = value.get<std::string>();
-  // Other JSON value kinds (null, nested object/array as a scalar field) are
-  // silently ignored — only "type" and "children" nodes are ever objects.
+  else if (value.is_array() &&
+           std::all_of(value.begin(), value.end(), [](const json& e) { return e.is_number_integer(); })) {
+    obj[field_key] = value.get<std::vector<int32_t>>();
+  }
+  // Other JSON value kinds (null, nested object as a scalar field, or an
+  // array with non-integer elements) are silently ignored — only "type" and
+  // "children" nodes are ever objects.
 }
 
 // ── JSON → generic dynamic tree ───────────────────────────────────────────────

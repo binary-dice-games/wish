@@ -53,6 +53,8 @@ static void set_field_from_dynamic(dynamic& obj, key_t field_key, const field& v
       dst = static_cast<float>(value.as<int32_t>());
   } else if (dst.is<std::string>() && value.is<std::string>()) {
     dst = value.as<std::string>();
+  } else if (dst.is<std::vector<int32_t>>() && value.is<std::vector<int32_t>>()) {
+    dst = value.as<std::vector<int32_t>>();
   }
   // Type mismatches for unknown fields are silently ignored.
 }

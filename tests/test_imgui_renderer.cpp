@@ -14,6 +14,8 @@
 #include <imgui.h>
 #include <imgui_internal.h>
 
+#include <filesystem>
+#include <fstream>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -2944,6 +2946,130 @@ TEST_F(ImguiRendererTest, BaseFlushDrawListIsSafeNoOp) {
 // "RenderSessionSetsIsLightThemeFor{Light,Wish,Dark}Preset" tests, which
 // cover the flag itself (including the regression this once was: "wish" is
 // light-based even though its preset name doesn't say "light").
+
+// ── TextEditor: breakpoint_lines / current_line / line_context_menu ─────────
+//
+// Helper: write @p contents to a file inside the session sandbox and return
+// a TextEditor node map pointing at it (relative file_path, as file_service
+// requires).
+static std::unordered_map<std::string, bdg::wish::ui_element_ptr> make_text_editor_map(
+    const std::filesystem::path& resource_dir, const std::string& name, const std::string& contents,
+    const std::string& extra_fields) {
+  std::filesystem::create_directories(resource_dir);
+  std::ofstream(resource_dir / name, std::ios::binary) << contents;
+  return bdg::wish::import_json(
+      R"({"type":"TextEditor","file_path":")" + name + R"(","width":400,"height":300)" + extra_fields + "}");
+}
+
+TEST_F(ImguiRendererTest, BreakpointAndCurrentLineFieldsDriveLineDecorator) {
+  auto map = make_text_editor_map(
+      sess_->resource_dir, "bp.txt", "line1\nline2\nline3\n",
+      R"(,"breakpoint_lines":[1,3],"current_line":2)");
+
+  renderer_->begin_frame();
+  in_window([&] { renderer_->render_node(*map[""], *sess_); });
+  renderer_->end_frame();
+
+  // render_text_editor() registers SetLineDecorator(1, ...) the first time
+  // it sees a TextEditor node -- confirms the new fields' presence actually
+  // drives the vendored library's decorator state (not just parsed and
+  // ignored).
+  auto& node = static_cast<bdg::wish::ui_text_editor&>(*map[""]);
+  ASSERT_NE(node.breakpoint_lines(), nullptr);
+  EXPECT_EQ(*node.breakpoint_lines(), (std::vector<int32_t>{1, 3}));
+  EXPECT_EQ(node.current_line(), 2);
+}
+
+TEST_F(ImguiRendererTest, LineNumberRightClickEmitsLineContextMenuWithHasBreakpoint) {
+  bdg::bison::key_t last_event{hash_t{0}};
+  int32_t last_line = -1;
+  bool last_has_breakpoint = true;
+  sess_->emit_event = [&](bdg::bison::key_t, bdg::bison::key_t ev, dynamic payload) {
+    last_event = ev;
+    if (auto* f = payload.findField("line"_key); f && f->is<int32_t>())
+      last_line = f->as<int32_t>();
+    if (auto* f = payload.findField("has_breakpoint"_key); f && f->is<bool>())
+      last_has_breakpoint = f->as<bool>();
+  };
+
+  // Many lines so the line-number gutter is wide enough (2-digit line
+  // numbers) that a small, font-metric-independent offset from the gutter's
+  // left edge reliably lands inside it.
+  std::string contents;
+  for (int i = 0; i < 20; ++i)
+    contents += "line\n";
+  auto map = make_text_editor_map(sess_->resource_dir, "rc.txt", contents, "");
+
+  // Frame 1: render once to register the context-menu callback and obtain
+  // the TextEditor child region's screen rect.
+  renderer_->begin_frame();
+  ImVec2 rect_min;
+  in_window([&] {
+    renderer_->render_node(*map[""], *sess_);
+    rect_min = ImGui::GetItemRectMin();
+  });
+  renderer_->end_frame();
+
+  // Frame 2: place the mouse just inside the gutter's top-left (line 0,
+  // within TextEditor's default 1-glyph left margin..2-digit-wide gutter)
+  // and fake a right-button click -- handleMouseInteractions() reads raw
+  // IsMouseClicked(Right)/IsWindowHovered(), not a widget ID, so (unlike
+  // fake_click()) setting io.MouseDown transitions across NewFrame is
+  // enough; no ActiveId manipulation needed.
+  float glyph_x = ImGui::CalcTextSize("0").x;
+  float glyph_y = ImGui::GetTextLineHeight();
+  ImVec2 right_click_pos(rect_min.x + glyph_x * 1.5f, rect_min.y + glyph_y * 0.5f);
+  ImGui::GetIO().MousePos = right_click_pos;
+  ImGui::GetIO().MouseDown[1] = true;
+  ImGui::GetIO().DeltaTime = 1.0f / 60.0f;
+  ImGui::NewFrame();
+  in_window([&] { renderer_->render_node(*map[""], *sess_); });
+  ImGui::EndFrame();
+  ImGui::GetIO().MouseDown[1] = false;
+
+  // Frame 3: a freshly-opened popup is marked Hidden/!WasActive for its
+  // first frame (ImGui's auto-resize "sizing" pass, used to measure content
+  // before ever showing it) -- FindHoveredWindowEx() (called from the next
+  // frame's NewFrame(), using state as of the END of the previous frame)
+  // skips any window with `Hidden` set, so the popup cannot be the hovered
+  // window until one full frame after it first appeared. Render one settle
+  // frame with the mouse left at the right-click position and no button
+  // transition so the popup's Hidden/WasActive bookkeeping catches up
+  // before we try to hover/click its "Add Breakpoint" item.
+  ImGui::NewFrame();
+  in_window([&] { renderer_->render_node(*map[""], *sess_); });
+  ImGui::EndFrame();
+
+  // Frame 4: the popup opened by frame 2's right click is now hoverable.
+  // ImGui opens a plain BeginPopup() at the mouse position it was opened at,
+  // offset by the popup window's own padding -- move the mouse onto the
+  // first menu item ("Add Breakpoint") before clicking it, the same way a
+  // real user's cursor lands on the item directly under a context-menu
+  // click. Raw ImGui::MenuItem() reads mouse press+release, no fake_click()
+  // needed.
+  ImVec2 menu_item_pos(
+      right_click_pos.x + ImGui::GetStyle().WindowPadding.x + 4.0f,
+      right_click_pos.y + ImGui::GetStyle().WindowPadding.y + glyph_y * 0.5f);
+  ImGui::GetIO().MousePos = menu_item_pos;
+  ImGui::GetIO().MouseDown[0] = true;
+  ImGui::NewFrame();
+  in_window([&] { renderer_->render_node(*map[""], *sess_); });
+  ImGui::EndFrame();
+  ImGui::GetIO().MouseDown[0] = false;
+  ImGui::GetIO().MouseReleased[0] = true;
+  ImGui::NewFrame();
+  in_window([&] { renderer_->render_node(*map[""], *sess_); });
+  ImGui::EndFrame();
+
+  for (auto& ev : sess_->pending_events)
+    if (sess_->emit_event)
+      sess_->emit_event(ev.id, ev.event_name, ev.payload);
+  sess_->pending_events.clear();
+
+  EXPECT_EQ(last_event, "line_context_menu"_key);
+  EXPECT_EQ(last_line, 1); // 1-based first line
+  EXPECT_FALSE(last_has_breakpoint); // "rc.txt" has no breakpoint_lines
+}
 
 // ── Window auto-placement: unpositioned modal / dock-by-default ──────────────
 

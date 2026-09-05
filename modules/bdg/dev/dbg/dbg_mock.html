@@ -1,0 +1,381 @@
+<title>Debugger Frontend Mockup</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --ground: #e9ebef;
+    --panel: #f7f8fa;
+    --panel-head: #dfe3e8;
+    --row-alt: #eef0f3;
+    --ink: #1b1f24;
+    --ink-soft: #5b6572;
+    --hair: #c4cad2;
+    --sel: #cfe0fb;
+    --accent: #1f6feb;
+    --ok: #1a7f37;
+    --idle: #656d76;
+    --warn: #9a6700;
+    --bad: #cf222e;
+    --bp: #cf222e;
+    --curline: #fff3c4;
+    --curline-ink: #7a5b00;
+    --shadow: 0 10px 30px -12px rgba(20,30,50,.28), 0 2px 6px -2px rgba(20,30,50,.16);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #16191d;
+      --panel: #1e2228;
+      --panel-head: #2b313a;
+      --row-alt: #23272e;
+      --ink: #e7eaee;
+      --ink-soft: #9aa4b0;
+      --hair: #3a424c;
+      --sel: #1e3a5f;
+      --accent: #4493f8;
+      --ok: #3fb950;
+      --idle: #8b949e;
+      --warn: #d29922;
+      --bad: #f85149;
+      --bp: #f85149;
+      --curline: #3a3316;
+      --curline-ink: #d29922;
+      --shadow: 0 12px 32px -14px rgba(0,0,0,.6), 0 2px 8px -3px rgba(0,0,0,.5);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #16191d;
+    --panel: #1e2228;
+    --panel-head: #2b313a;
+    --row-alt: #23272e;
+    --ink: #e7eaee;
+    --ink-soft: #9aa4b0;
+    --hair: #3a424c;
+    --sel: #1e3a5f;
+    --accent: #4493f8;
+    --ok: #3fb950;
+    --idle: #8b949e;
+    --warn: #d29922;
+    --bad: #f85149;
+    --bp: #f85149;
+    --curline: #3a3316;
+    --curline-ink: #d29922;
+    --shadow: 0 12px 32px -14px rgba(0,0,0,.6), 0 2px 8px -3px rgba(0,0,0,.5);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    line-height: 1.5;
+  }
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 40px 24px 72px; }
+
+  header { margin-bottom: 8px; }
+  .kicker {
+    font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--accent); font-weight: 600; margin: 0 0 6px;
+  }
+  h1 {
+    font-size: 26px; font-weight: 600; margin: 0 0 8px; text-wrap: balance;
+    letter-spacing: -.01em;
+  }
+  .lede { max-width: 68ch; color: var(--ink-soft); margin: 0 0 4px; font-size: 15px; }
+  .note {
+    margin: 18px 0 28px; padding: 10px 14px; font-size: 13px;
+    border-left: 3px solid var(--accent); background: var(--panel);
+    color: var(--ink-soft);
+  }
+  .note strong { color: var(--ink); font-weight: 600; }
+
+  /* Docked layout: Source spans the top, four small panes + Output row below */
+  .dock {
+    display: grid; gap: 10px;
+    grid-template-columns: 1.1fr 1fr 1fr;
+    grid-template-rows: auto auto;
+  }
+  @media (max-width: 980px) { .dock { grid-template-columns: 1fr; } }
+
+  .win {
+    background: var(--panel); border: 1px solid var(--hair);
+    box-shadow: var(--shadow); display: flex; flex-direction: column;
+    min-width: 0; min-height: 0;
+  }
+  .win.source { grid-column: 1 / -1; grid-row: 1; }
+  .win.threads { grid-column: 1; grid-row: 2; }
+  .win.callstack { grid-column: 2; grid-row: 2; }
+  .win.watch { grid-column: 3; grid-row: 2; }
+  .win.breakpoints { grid-column: 1 / 3; grid-row: 3; }
+  .win.output { grid-column: 3; grid-row: 3; }
+  @media (max-width: 980px) {
+    .win.source, .win.threads, .win.callstack, .win.watch, .win.breakpoints, .win.output {
+      grid-column: 1; grid-row: auto;
+    }
+  }
+
+  .titlebar {
+    background: var(--panel-head); padding: 6px 10px;
+    font-size: 12.5px; font-weight: 600; letter-spacing: .02em;
+    display: flex; align-items: center; gap: 8px;
+    border-bottom: 1px solid var(--hair);
+  }
+  .titlebar .dot { color: var(--accent); }
+  .titlebar .x { margin-left: auto; color: var(--ink-soft); font-weight: 400; }
+
+  .toolbar {
+    display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+    padding: 8px 10px; border-bottom: 1px solid var(--hair);
+    font-size: 12px;
+  }
+  .btn {
+    border: 1px solid var(--hair); background: var(--panel-head);
+    padding: 3px 9px; border-radius: 2px; color: var(--ink);
+    font: inherit; font-size: 12px;
+  }
+  .btn[disabled] { color: var(--ink-soft); opacity: .55; }
+  .field {
+    border: 1px solid var(--hair); background: var(--ground);
+    padding: 3px 8px; border-radius: 2px; color: var(--ink-soft);
+    width: 70px;
+  }
+  .spacer { flex: 1; }
+  .state-chip { font-size: 11.5px; padding: 2px 8px; border-radius: 999px; background: var(--curline); color: var(--curline-ink); font-weight: 500; }
+
+  .filetabs { display: flex; gap: 2px; padding: 4px 4px 0; background: var(--panel-head); border-bottom: 1px solid var(--hair); }
+  .filetab { padding: 5px 12px; font-size: 12px; background: var(--panel); border: 1px solid var(--hair); border-bottom: none; border-radius: 3px 3px 0 0; color: var(--ink-soft); }
+  .filetab.active { color: var(--ink); font-weight: 500; }
+
+  .src { display: flex; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 12.5px; }
+  .gutter { flex: none; width: 56px; text-align: right; padding: 0 8px; color: var(--idle); background: var(--panel-head); border-right: 1px solid var(--hair); user-select: none; }
+  .gutter .ln { display: flex; align-items: center; justify-content: flex-end; gap: 5px; height: 20px; }
+  .gutter .bp { color: var(--bp); }
+  .code { flex: 1; padding: 0 10px; overflow-x: auto; }
+  .code .ln { height: 20px; white-space: pre; }
+  .code .ln.cur { background: var(--curline); }
+  .code .ln.cur::before { content: "\25B6  "; color: var(--curline-ink); }
+  .code .kw { color: var(--accent); }
+  .code .cm { color: var(--idle); }
+
+  .tablescroll { overflow-x: auto; }
+  table {
+    width: 100%; border-collapse: collapse;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 12px;
+  }
+  th {
+    text-align: left; font-weight: 500; color: var(--ink-soft);
+    background: var(--panel-head); padding: 5px 10px;
+    border-bottom: 1px solid var(--hair); white-space: nowrap;
+    font-family: "IBM Plex Sans", sans-serif; font-size: 11.5px;
+    letter-spacing: .03em; text-transform: uppercase;
+  }
+  td {
+    padding: 5px 10px; border-bottom: 1px solid var(--hair);
+    white-space: nowrap; font-variant-numeric: tabular-nums;
+  }
+  tr:nth-child(even) td { background: var(--row-alt); }
+  tr.sel td { background: var(--sel); }
+  .s-ok { color: var(--ok); }
+  .s-idle { color: var(--idle); }
+  .s-warn { color: var(--warn); }
+  .s-bad { color: var(--bad); }
+  .muted { color: var(--ink-soft); }
+  .kebab {
+    display: inline-block; width: 22px; text-align: center;
+    border: 1px solid var(--hair); border-radius: 2px; background: var(--panel-head);
+    color: var(--ink-soft); letter-spacing: 1px;
+  }
+  td.act { width: 1%; }
+
+  .out { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 12px; padding: 6px 10px; overflow-y: auto; }
+  .out div { padding: 2px 0; white-space: pre-wrap; }
+
+  .ref { margin-top: 34px; display: grid; gap: 22px; grid-template-columns: 1fr 1fr; }
+  @media (max-width: 900px) { .ref { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--hair); padding: 16px 18px; }
+  .card h2 { font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-soft); margin: 0 0 12px; font-weight: 600; }
+  .evt { font-family: "IBM Plex Mono", monospace; font-size: 12px; line-height: 1.9; }
+  .evt b { color: var(--accent); font-weight: 500; }
+  .evt .p { color: var(--ink-soft); }
+
+  footer { margin-top: 44px; font-size: 12.5px; color: var(--ink-soft); border-top: 1px solid var(--hair); padding-top: 16px; }
+  code { font-family: "IBM Plex Mono", monospace; font-size: .92em; background: var(--panel-head); padding: 1px 5px; border-radius: 3px; }
+</style>
+
+<div class="wrap">
+  <header>
+    <p class="kicker">wish module &middot; modules/bdg/dev/dbg</p>
+    <h1>Debugger frontend &mdash; UI mockup</h1>
+    <p class="lede">A VS Code&ndash;style debugger over Windows' native debug API. The client attaches to a
+      process, drives <code>DebugActiveProcess</code>/<code>WaitForDebugEvent</code> and <code>DbgHelp</code>
+      symbol resolution locally; the server only renders six independently dockable windows from the
+      snapshots it's sent. No OS debug-API call is ever made server-side.</p>
+  </header>
+
+  <div class="note">
+    <strong>Static stand-in.</strong> This page previews the real docked arrangement described in
+    <code>DESIGN.md</code> &sect;3; <code>dbg_mock.json</code> (which renders live in the <code>editor</code>
+    tool) shows the same six windows as tabs instead, since the editor tool can't preview multiple
+    independently dockable windows at once. Sample rows/values are illustrative, not a real attach.
+    The breakpoint dot and current-line arrow in the Source gutter below are what
+    <code>TextEditor</code>'s new <code>breakpoint_lines</code>/<code>current_line</code> fields (Step 2)
+    will actually draw via <code>SetLineDecorator</code> &mdash; today's <code>TextEditor</code> has no
+    such gutter.
+  </div>
+
+  <div class="dock">
+
+    <!-- Source -->
+    <section class="win source">
+      <div class="titlebar"><span class="dot">&#9679;</span> Source <span class="x">&times;</span></div>
+      <div class="toolbar">
+        <input class="field" value="4212" placeholder="PID">
+        <button class="btn">Attach</button>
+        <button class="btn">Detach</button>
+        <span style="border-left:1px solid var(--hair);height:16px;margin:0 2px"></span>
+        <button class="btn" disabled>Pause</button>
+        <button class="btn">Continue</button>
+        <span style="border-left:1px solid var(--hair);height:16px;margin:0 2px"></span>
+        <button class="btn">Step Into</button>
+        <button class="btn">Step Over</button>
+        <button class="btn">Step Out</button>
+        <span class="spacer"></span>
+        <span class="state-chip">paused</span>
+      </div>
+      <div class="filetabs">
+        <span class="filetab active">util.cpp</span>
+        <span class="filetab">main.cpp</span>
+      </div>
+      <div class="src">
+        <div class="gutter">
+          <div class="ln">38</div>
+          <div class="ln">39</div>
+          <div class="ln">40</div>
+          <div class="ln">41</div>
+          <div class="ln bp">&#9679; 42</div>
+          <div class="ln">43</div>
+          <div class="ln">44</div>
+          <div class="ln">45</div>
+        </div>
+        <div class="code">
+          <div class="ln">size_t <span class="kw">compute_total</span>(const Batch&amp; batch) {</div>
+          <div class="ln">&nbsp;&nbsp;<span class="cm">// sum every item's contribution</span></div>
+          <div class="ln">&nbsp;&nbsp;size_t total = 0;</div>
+          <div class="ln">&nbsp;&nbsp;<span class="kw">for</span> (const auto&amp; item : batch.items()) {</div>
+          <div class="ln cur">&nbsp;&nbsp;&nbsp;&nbsp;total += item.weight() * item.count();</div>
+          <div class="ln">&nbsp;&nbsp;}</div>
+          <div class="ln">&nbsp;&nbsp;<span class="kw">return</span> total;</div>
+          <div class="ln">}</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Threads -->
+    <section class="win threads">
+      <div class="titlebar"><span class="dot">&#9679;</span> Threads <span class="x">&times;</span></div>
+      <div class="tablescroll">
+        <table>
+          <thead><tr><th>Id</th><th>State</th><th>Current Function</th></tr></thead>
+          <tbody>
+            <tr class="sel"><td>4212</td><td class="s-warn">suspended</td><td>main</td></tr>
+            <tr><td>4380</td><td class="s-ok">running</td><td>worker_thread</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Call Stack -->
+    <section class="win callstack">
+      <div class="titlebar"><span class="dot">&#9679;</span> Call Stack <span class="x">&times;</span></div>
+      <div class="tablescroll">
+        <table>
+          <thead><tr><th>#</th><th>Function</th><th>File</th><th>Line</th></tr></thead>
+          <tbody>
+            <tr class="sel"><td>0</td><td>compute_total</td><td class="muted">util.cpp</td><td>42</td></tr>
+            <tr><td>1</td><td>process_batch</td><td class="muted">main.cpp</td><td>118</td></tr>
+            <tr><td>2</td><td>main</td><td class="muted">main.cpp</td><td>20</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Watch -->
+    <section class="win watch">
+      <div class="titlebar"><span class="dot">&#9679;</span> Watch <span class="x">&times;</span></div>
+      <div class="toolbar">
+        <input class="field" style="width:120px;flex:1" placeholder="Expression">
+        <button class="btn">Add</button>
+      </div>
+      <div class="tablescroll">
+        <table>
+          <thead><tr><th>Name</th><th>Value</th><th>Type</th></tr></thead>
+          <tbody>
+            <tr><td>total</td><td>1024</td><td class="muted">int</td></tr>
+            <tr><td>batch.size()</td><td>16</td><td class="muted">size_t</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Breakpoints -->
+    <section class="win breakpoints">
+      <div class="titlebar"><span class="dot">&#9679;</span> Breakpoints <span class="x">&times;</span></div>
+      <div class="tablescroll">
+        <table>
+          <thead><tr><th>File</th><th>Line</th><th>Enabled</th><th></th></tr></thead>
+          <tbody>
+            <tr><td>util.cpp</td><td>42</td><td><input type="checkbox" checked></td><td class="act"><span class="kebab">&middot;&middot;&middot;</span></td></tr>
+            <tr><td>main.cpp</td><td>118</td><td><input type="checkbox"></td><td class="act"><span class="kebab">&middot;&middot;&middot;</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Output -->
+    <section class="win output">
+      <div class="titlebar"><span class="dot">&#9679;</span> Output <span class="x">&times;</span></div>
+      <div class="out">
+        <div class="muted">[info] Attached to process 4212 (myapp.exe)</div>
+        <div class="s-ok">[info] Breakpoint hit at util.cpp:42</div>
+        <div class="s-warn">[warn] Symbol for module 'shcore.dll' could not be loaded</div>
+        <div class="s-bad">[error] Access violation reading location 0x00000000</div>
+      </div>
+    </section>
+
+  </div>
+
+  <div class="ref">
+    <div class="card">
+      <h2>Window &rarr; server RMI methods</h2>
+      <div class="evt">
+        <b>update_threads</b> <span class="p">{ threads: [...] }</span><br>
+        <b>update_callstack</b> <span class="p">{ thread_id, frames: [...] }</span><br>
+        <b>update_watch</b> <span class="p">{ frame_id, entries: [...] }</span><br>
+        <b>update_breakpoints</b> <span class="p">{ breakpoints: [...] }</span><br>
+        <b>update_source</b> <span class="p">{ path, breakpoint_lines, current_line }</span><br>
+        <b>append_output</b> <span class="p">{ text, level }</span><br>
+        <b>set_run_state</b> <span class="p">{ state }</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Client &rarr; server events</h2>
+      <div class="evt">
+        <b>attach_requested</b> <span class="p">{ pid }</span><br>
+        <b>detach_requested</b> / <b>pause_requested</b> / <b>resume_requested</b><br>
+        <b>step_requested</b> <span class="p">{ kind, thread_id }</span><br>
+        <b>toggle_breakpoint_requested</b> <span class="p">{ path, line }</span><br>
+        <b>select_thread_requested</b> <span class="p">{ thread_id }</span><br>
+        <b>select_frame_requested</b> <span class="p">{ frame_id }</span><br>
+        <b>add_watch_requested</b> <span class="p">{ expr }</span><br>
+        <b>line_context_menu</b> <span class="p">{ line, has_breakpoint }</span> <span class="muted">(on TextEditor)</span>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    See <code>DESIGN.md</code> for the full client/server split, the
+    <code>set_allow_absolute_paths(true)</code> tradeoff for source files, and why breakpoint markers
+    extend wish's own <code>TextEditor</code> wrapper instead of a custom table-based source view.
+  </footer>
+</div>

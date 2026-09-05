@@ -35,6 +35,9 @@ struct TextEditorState {
   size_t last_undo_index{0};
   TextEditor::DocPos last_cursor{}; // only tracked when wish_ui_schema is true
   bool autocomplete_configured{false}; // whether SetAutoCompleteConfig has been applied
+  bool decorator_configured{false}; // whether SetLineDecorator has been applied
+  std::vector<int32_t> breakpoint_lines; // 1-based, refreshed from the field every frame
+  int32_t current_line{0}; // 1-based, 0 = none; refreshed from the field every frame
 };
 
 std::unordered_map<uint32_t, TextEditorState>& editor_cache() {
@@ -314,6 +317,61 @@ void render_text_editor(imgui_renderer&, const ui_element& node_base, const cont
       st.editor.SetPalette(is_light ? TextEditor::GetLightPalette() : TextEditor::GetDarkPalette());
     }
   }
+
+  // Breakpoint/current-line gutter markers: refresh the cached, 1-based
+  // snapshot every frame (cheap -- a handful of ints) so the decorator
+  // callback below, registered once, always reads live state through `&st`.
+  if (const auto* bps = node.breakpoint_lines())
+    st.breakpoint_lines = *bps;
+  else
+    st.breakpoint_lines.clear();
+  st.current_line = node.current_line();
+
+  // Gutter decorator: a filled dot for each breakpoint line, or (taking
+  // priority when a line is both) a filled triangle for the current
+  // execution line -- mirrors how real debuggers show the active line's
+  // marker over a breakpoint dot on the same line. ImGuiColorTextEdit
+  // (vendored, never modified -- see DESIGN.md) exposes no line-background
+  // highlight hook, so the arrow is the current-line indicator; width is 1
+  // glyph, enough for either marker.
+  if (!st.decorator_configured) {
+    st.decorator_configured = true;
+    st.editor.SetLineDecorator(1, [&st](TextEditor::Decorator& decorator) {
+      int32_t line_1based = static_cast<int32_t>(decorator.line) + 1;
+      auto* draw_list = ImGui::GetWindowDrawList();
+      ImVec2 origin = ImGui::GetCursorScreenPos();
+      ImVec2 center{origin.x + decorator.width * 0.5f, origin.y + decorator.height * 0.5f};
+      float size = std::min(decorator.width, decorator.height) * 0.35f;
+
+      if (line_1based == st.current_line) {
+        ImU32 color = IM_COL32(230, 190, 40, 255);
+        ImVec2 p1{center.x - size * 0.5f, center.y - size};
+        ImVec2 p2{center.x - size * 0.5f, center.y + size};
+        ImVec2 p3{center.x + size, center.y};
+        draw_list->AddTriangleFilled(p1, p2, p3, color);
+      } else if (std::find(st.breakpoint_lines.begin(), st.breakpoint_lines.end(), line_1based) !=
+                 st.breakpoint_lines.end()) {
+        ImU32 color = IM_COL32(200, 50, 50, 255);
+        draw_list->AddCircleFilled(center, size, color);
+      }
+    });
+  }
+
+  // Right-click on a line number: "Toggle Breakpoint" menu item emitting
+  // "line_context_menu" -- reassigned every frame (cheap std::function
+  // move) so the closure captures this frame's `s`/`id`/`full_path` rather
+  // than risking a dangling reference to a prior frame's context.
+  st.editor.SetLineNumberContextMenuCallback([&s, id, &st](TextEditor::PopupData& data) {
+    int32_t line_1based = static_cast<int32_t>(data.pos.line) + 1;
+    bool has_breakpoint = std::find(st.breakpoint_lines.begin(), st.breakpoint_lines.end(), line_1based) !=
+                          st.breakpoint_lines.end();
+    if (ImGui::MenuItem(has_breakpoint ? "Remove Breakpoint" : "Add Breakpoint")) {
+      dynamic payload;
+      payload["line"_key] = line_1based;
+      payload["has_breakpoint"_key] = has_breakpoint;
+      enqueue_event(s, id, "line_context_menu"_key, std::move(payload));
+    }
+  });
 
   // "##te" alone is enough: render_node() (imgui_renderer.cpp) already wraps
   // this call in ImGui::PushID(stable_id(node)), which TextEditor::Render's

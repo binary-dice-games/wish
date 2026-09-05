@@ -68,6 +68,23 @@ void register_text_editor() {
                             "registry (see src/ui/ui_schema_help.hpp). Off by default so unrelated "
                             "TextEditor uses (e.g. nano) are unaffected."),
           attr<Category>("Behavior")});
+  proto->addField(
+      "breakpoint_lines"_rkey,
+      field{
+          std::vector<int32_t>{},
+          attr<DisplayName>("Breakpoint Lines"),
+          attr<Description>("1-based source line numbers marked with a breakpoint dot in the gutter. "
+                            "Right-clicking a line number emits \"line_context_menu\" so a caller can "
+                            "toggle membership in this list."),
+          attr<Category>("Debugging")});
+  proto->addField(
+      "current_line"_rkey,
+      field{
+          int32_t{0},
+          attr<DisplayName>("Current Line"),
+          attr<Description>("1-based source line marked with a current-execution arrow in the gutter. "
+                            "0 means no current line."),
+          attr<Category>("Debugging")});
   (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Text Editor"));
   (*proto)[dynamic::CLASS].addAttribute(
       attr<Description>("A full-featured code/text editor backed by ImGuiColorTextEdit. "

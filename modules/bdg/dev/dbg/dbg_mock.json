@@ -1,0 +1,355 @@
+{
+  "//": "UI MOCKUP for the `dbg` module -- open with: wish-standalone --run=editor -- modules/bdg/dev/dbg/dbg_mock.json",
+  "//tabs": "The real module splits these six tabs into six independently dockable Windows (git/editor/docker style), each hand-registered in DebuggerFrontend::on_init() with its own root key (see DESIGN.md sec 3 / server/dbg.cpp). Tabs here are only so the whole UI renders as one editor preview; see dbg_mock.html for a docked-layout preview instead. Sample rows/values are illustrative -- the TextEditor tab below has no real file backing in this static preview (breakpoint_lines/current_line fields don't exist on TextEditor yet, that's Step 2; the dot/arrow markers shown are approximated here with Label/text prefixes).",
+  "type": "Window",
+  "title": "Debugger",
+  "width": 1100,
+  "height": 700,
+  "closable": true,
+  "children": {
+    "root": {
+      "type": "VerticalLayout",
+      "children": {
+        "tabs": {
+          "type": "TabBar",
+          "id": "##dbg_tabs",
+          "height": -1,
+          "children": {
+
+            "source_tab": {
+              "type": "TabItem",
+              "label": "Source",
+              "scroll": false,
+              "children": {
+                "s_box": {
+                  "type": "VerticalLayout",
+                  "spacing": 4,
+                  "children": {
+                    "s_toolbar": {
+                      "type": "HorizontalLayout",
+                      "spacing": 6,
+                      "children": {
+                        "s_pid":     { "type": "InputText", "hint": "PID", "width": 90 },
+                        "s_attach":  { "type": "Button", "label": "Attach", "width": 70 },
+                        "s_detach":  { "type": "Button", "label": "Detach", "width": 70, "enabled": false },
+                        "s_sep1":    { "type": "Separator" },
+                        "s_pause":   { "type": "Button", "label": "Pause", "width": 70, "enabled": false },
+                        "s_resume":  { "type": "Button", "label": "Continue", "width": 85, "enabled": true },
+                        "s_sep2":    { "type": "Separator" },
+                        "s_into":    { "type": "Button", "label": "Step Into", "width": 90, "enabled": true },
+                        "s_over":    { "type": "Button", "label": "Step Over", "width": 90, "enabled": true },
+                        "s_out":     { "type": "Button", "label": "Step Out", "width": 90, "enabled": true },
+                        "s_state":   { "type": "Label", "text": "paused", "text_color_light": "#9A6700FF", "text_color_dark": "#D29922FF" }
+                      }
+                    },
+                    "s_files": {
+                      "type": "TabBar",
+                      "id": "##dbg_source_files",
+                      "height": -1,
+                      "children": {
+                        "file_main": {
+                          "type": "TabItem",
+                          "label": "main.cpp",
+                          "scroll": false,
+                          "children": {
+                            "file_main_editor": {
+                              "type": "TextEditor",
+                              "file_path": "main.cpp",
+                              "language": "cpp",
+                              "read_only": true,
+                              "width": -1,
+                              "height": -1
+                            }
+                          }
+                        },
+                        "file_util": {
+                          "type": "TabItem",
+                          "label": "util.cpp",
+                          "scroll": false,
+                          "children": {
+                            "file_util_editor": {
+                              "type": "TextEditor",
+                              "file_path": "util.cpp",
+                              "language": "cpp",
+                              "read_only": true,
+                              "width": -1,
+                              "height": -1
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "s_hint": { "type": "Label", "text": "(breakpoint dot / current-line arrow markers land in the real gutter once TextEditor gains breakpoint_lines/current_line -- Step 2)" }
+                  }
+                }
+              }
+            },
+
+            "threads_tab": {
+              "type": "TabItem",
+              "label": "Threads",
+              "scroll": false,
+              "children": {
+                "t_box": {
+                  "type": "VerticalLayout",
+                  "spacing": 4,
+                  "children": {
+                    "t_table": {
+                      "type": "Table",
+                      "id": "##threads_table",
+                      "columns": 3,
+                      "flags": "Resizable|RowBg|Borders|ScrollY",
+                      "headers": true,
+                      "height": -1,
+                      "outer_height": -1,
+                      "children": {
+                        "col_id":   { "type": "TableColumn", "label": "Id",              "flags": "WidthFixed", "init_width": 60,  "column_id": 0 },
+                        "col_state":{ "type": "TableColumn", "label": "State",           "flags": "WidthFixed", "init_width": 110, "column_id": 1 },
+                        "col_func": { "type": "TableColumn", "label": "Current Function","flags": "WidthStretch",                   "column_id": 2 },
+                        "row0": {
+                          "type": "TableRow",
+                          "children": {
+                            "id": { "type": "Label", "text": "4212" },
+                            "st": { "type": "Label", "text": "suspended", "text_color_light": "#9A6700FF", "text_color_dark": "#D29922FF" },
+                            "fn": { "type": "Label", "text": "main" }
+                          }
+                        },
+                        "row1": {
+                          "type": "TableRow",
+                          "children": {
+                            "id": { "type": "Label", "text": "4380" },
+                            "st": { "type": "Label", "text": "running", "text_color_light": "#1A7F37FF", "text_color_dark": "#3FB950FF" },
+                            "fn": { "type": "Label", "text": "worker_thread" }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+
+            "callstack_tab": {
+              "type": "TabItem",
+              "label": "Call Stack",
+              "scroll": false,
+              "children": {
+                "cs_box": {
+                  "type": "VerticalLayout",
+                  "spacing": 4,
+                  "children": {
+                    "cs_table": {
+                      "type": "Table",
+                      "id": "##callstack_table",
+                      "columns": 4,
+                      "flags": "Resizable|RowBg|Borders|ScrollY",
+                      "headers": true,
+                      "height": -1,
+                      "outer_height": -1,
+                      "children": {
+                        "col_idx":  { "type": "TableColumn", "label": "#",        "flags": "WidthFixed", "init_width": 36,  "column_id": 0 },
+                        "col_func": { "type": "TableColumn", "label": "Function", "flags": "WidthStretch",                  "column_id": 1 },
+                        "col_file": { "type": "TableColumn", "label": "File",     "flags": "WidthFixed", "init_width": 130, "column_id": 2 },
+                        "col_line": { "type": "TableColumn", "label": "Line",     "flags": "WidthFixed", "init_width": 60,  "column_id": 3 },
+                        "row0": {
+                          "type": "TableRow",
+                          "children": {
+                            "i": { "type": "Label", "text": "0" },
+                            "f": { "type": "Label", "text": "compute_total" },
+                            "fl": { "type": "Label", "text": "util.cpp" },
+                            "ln": { "type": "Label", "text": "42" }
+                          }
+                        },
+                        "row1": {
+                          "type": "TableRow",
+                          "children": {
+                            "i": { "type": "Label", "text": "1" },
+                            "f": { "type": "Label", "text": "process_batch" },
+                            "fl": { "type": "Label", "text": "main.cpp" },
+                            "ln": { "type": "Label", "text": "118" }
+                          }
+                        },
+                        "row2": {
+                          "type": "TableRow",
+                          "children": {
+                            "i": { "type": "Label", "text": "2" },
+                            "f": { "type": "Label", "text": "main" },
+                            "fl": { "type": "Label", "text": "main.cpp" },
+                            "ln": { "type": "Label", "text": "20" }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+
+            "watch_tab": {
+              "type": "TabItem",
+              "label": "Watch",
+              "scroll": false,
+              "children": {
+                "w_box": {
+                  "type": "VerticalLayout",
+                  "spacing": 4,
+                  "children": {
+                    "w_toolbar": {
+                      "type": "HorizontalLayout",
+                      "spacing": 6,
+                      "children": {
+                        "w_expr": { "type": "InputText", "hint": "Expression", "width": 220 },
+                        "w_add":  { "type": "Button", "label": "Add", "width": 60 }
+                      }
+                    },
+                    "w_table": {
+                      "type": "Table",
+                      "id": "##watch_table",
+                      "columns": 3,
+                      "flags": "Resizable|RowBg|Borders|ScrollY",
+                      "headers": true,
+                      "height": -1,
+                      "outer_height": -1,
+                      "children": {
+                        "col_name": { "type": "TableColumn", "label": "Name",  "flags": "WidthFixed", "init_width": 140, "column_id": 0 },
+                        "col_val":  { "type": "TableColumn", "label": "Value", "flags": "WidthStretch",                  "column_id": 1 },
+                        "col_type": { "type": "TableColumn", "label": "Type",  "flags": "WidthFixed", "init_width": 100, "column_id": 2 },
+                        "row0": {
+                          "type": "TableRow",
+                          "children": {
+                            "n": { "type": "Label", "text": "total" },
+                            "v": { "type": "Label", "text": "1024" },
+                            "t": { "type": "Label", "text": "int" }
+                          }
+                        },
+                        "row1": {
+                          "type": "TableRow",
+                          "children": {
+                            "n": { "type": "Label", "text": "batch.size()" },
+                            "v": { "type": "Label", "text": "16" },
+                            "t": { "type": "Label", "text": "size_t" }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+
+            "breakpoints_tab": {
+              "type": "TabItem",
+              "label": "Breakpoints",
+              "scroll": false,
+              "children": {
+                "b_box": {
+                  "type": "VerticalLayout",
+                  "spacing": 4,
+                  "children": {
+                    "b_table": {
+                      "type": "Table",
+                      "id": "##breakpoints_table",
+                      "columns": 4,
+                      "flags": "Resizable|RowBg|Borders|ScrollY",
+                      "headers": true,
+                      "height": -1,
+                      "outer_height": -1,
+                      "children": {
+                        "col_file":    { "type": "TableColumn", "label": "File",    "flags": "WidthStretch",                  "column_id": 0 },
+                        "col_line":    { "type": "TableColumn", "label": "Line",    "flags": "WidthFixed", "init_width": 60,  "column_id": 1 },
+                        "col_enabled": { "type": "TableColumn", "label": "Enabled", "flags": "WidthFixed", "init_width": 70,  "column_id": 2 },
+                        "col_actions": { "type": "TableColumn", "label": "",        "flags": "WidthFixed", "init_width": 36,  "column_id": 3 },
+                        "row0": {
+                          "type": "TableRow",
+                          "children": {
+                            "f":  { "type": "Label", "text": "util.cpp" },
+                            "ln": { "type": "Label", "text": "42" },
+                            "en": { "type": "Checkbox", "label": "", "value": true },
+                            "act": {
+                              "type": "MenuButton", "label": "...",
+                              "children": {
+                                "a_disable": { "type": "MenuItem", "label": "Disable" },
+                                "a_remove":  { "type": "MenuItem", "label": "Remove" }
+                              }
+                            }
+                          }
+                        },
+                        "row1": {
+                          "type": "TableRow",
+                          "children": {
+                            "f":  { "type": "Label", "text": "main.cpp" },
+                            "ln": { "type": "Label", "text": "118" },
+                            "en": { "type": "Checkbox", "label": "", "value": false },
+                            "act": {
+                              "type": "MenuButton", "label": "...",
+                              "children": {
+                                "a_enable": { "type": "MenuItem", "label": "Enable" },
+                                "a_remove": { "type": "MenuItem", "label": "Remove" }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+
+            "output_tab": {
+              "type": "TabItem",
+              "label": "Output",
+              "scroll": false,
+              "children": {
+                "o_box": {
+                  "type": "VerticalLayout",
+                  "spacing": 4,
+                  "children": {
+                    "o_table": {
+                      "type": "Table",
+                      "id": "##output_table",
+                      "columns": 1,
+                      "flags": "RowBg|ScrollY",
+                      "headers": false,
+                      "height": -1,
+                      "outer_height": -1,
+                      "auto_scroll": true,
+                      "children": {
+                        "col_text": { "type": "TableColumn", "label": "", "flags": "WidthStretch", "column_id": 0 },
+                        "row0": {
+                          "type": "TableRow",
+                          "children": {
+                            "t": { "type": "Label", "text": "[info] Attached to process 4212 (myapp.exe)", "text_color_light": "#656D76FF", "text_color_dark": "#8B949EFF" }
+                          }
+                        },
+                        "row1": {
+                          "type": "TableRow",
+                          "children": {
+                            "t": { "type": "Label", "text": "[info] Breakpoint hit at util.cpp:42", "text_color_light": "#1A7F37FF", "text_color_dark": "#3FB950FF" }
+                          }
+                        },
+                        "row2": {
+                          "type": "TableRow",
+                          "children": {
+                            "t": { "type": "Label", "text": "[warn] Symbol for module 'shcore.dll' could not be loaded", "text_color_light": "#9A6700FF", "text_color_dark": "#D29922FF" }
+                          }
+                        },
+                        "row3": {
+                          "type": "TableRow",
+                          "children": {
+                            "t": { "type": "Label", "text": "[error] Access violation reading location 0x00000000", "text_color_light": "#CF222EFF", "text_color_dark": "#F85149FF" }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+
+          }
+        }
+      }
+    }
+  }
+}
