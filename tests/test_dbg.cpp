@@ -247,6 +247,13 @@ class DbgRmiTest : public ::testing::Test {
     return proxy_->call(method, std::move(args)).get();
   }
 
+  // `dynamic_object::size()` reports `last_index + 1`, not a live entry
+  // count -- correct for tables that are fully cleared and rebuilt from
+  // index 0 each time (Threads/Call Stack/Watch/Breakpoints), but wrong for
+  // a FIFO-capped table like Output, whose numeric child keys only ever
+  // increase and whose oldest (lowest-index) entries are erased in place,
+  // leaving gaps below the highest index. Count and index live children by
+  // walking `forEach` (ascending key order == insertion order) instead.
   size_t row_count(const std::string& path) const {
     auto it = srv_->last_session->ui_objects.find(path);
     if (it == srv_->last_session->ui_objects.end())
@@ -254,7 +261,14 @@ class DbgRmiTest : public ::testing::Test {
     auto* cf = it->second->findField<dynamic_ptr>("children"_key);
     if (!cf || !*cf)
       return 0;
-    return (*cf)->size();
+    size_t count = 0;
+    (*cf)->forEach([&](bison::key_t, const bison::field& f) {
+      // TableColumn children live in the same numeric "children" array as
+      // TableRow children; only rows count toward "row_count".
+      if (f.is<dynamic_ptr>() && f.as<dynamic_ptr>()->as<bison::key_t>(dynamic::CLASS) != "TableColumn"_key)
+        ++count;
+    });
+    return count;
   }
 
   static dynamic_ptr nth_child(const dynamic_ptr& parent, size_t index) {
@@ -263,8 +277,15 @@ class DbgRmiTest : public ::testing::Test {
     auto* cf = parent->findField<dynamic_ptr>("children"_key);
     if (!cf || !*cf)
       return nullptr;
-    auto& f = (*cf)->at(index);
-    return f.is<dynamic_ptr>() ? f.as<dynamic_ptr>() : nullptr;
+    dynamic_ptr result;
+    size_t seen = 0;
+    (*cf)->forEach([&](bison::key_t, const bison::field& f) {
+      if (!f.is<dynamic_ptr>() || f.as<dynamic_ptr>()->as<bison::key_t>(dynamic::CLASS) == "TableColumn"_key)
+        return;
+      if (seen++ == index)
+        result = f.as<dynamic_ptr>();
+    });
+    return result;
   }
 
   void fire(bison::key_t id, bison::key_t event, dynamic payload = dynamic{}) {
@@ -555,4 +576,162 @@ TEST_F(DbgRmiTest, LineContextMenuTogglesBreakpointAndRebuildsTable) {
   // round trip and assert the Breakpoints table rebuilds correctly.
   call("update_breakpoints"_key, make_breakpoints_args({{"main.cpp", 20, true}}));
   EXPECT_EQ(row_count(root_ + "_breakpoints.vbox.table"), 1u);
+}
+
+// ── update_watch ──────────────────────────────────────────────────────────
+
+struct fake_watch_entry {
+  std::string name;
+  std::string value;
+  std::string type;
+};
+
+static dynamic make_watch_args(uint32_t frame_id, const std::vector<fake_watch_entry>& entries) {
+  dynamic args;
+  args["frame_id"_key] = static_cast<int32_t>(frame_id);
+  dynamic arr;
+  size_t i = 0;
+  for (auto& e : entries) {
+    auto ep = std::make_shared<dynamic>();
+    (*ep)["name"_key] = e.name;
+    (*ep)["value"_key] = e.value;
+    (*ep)["type"_key] = e.type;
+    arr[i++] = dynamic_ptr{ep};
+  }
+  args["entries"_key] = dynamic_ptr{std::make_shared<dynamic>(std::move(arr))};
+  return args;
+}
+
+TEST_F(DbgRmiTest, UpdateWatchWithStaleFrameIdIsNoOp) {
+  // Select thread 1's frame 0 (Call Stack row click sets has_selected_frame_
+  // / selected_frame_id_ server-side, same guard mechanism as
+  // update_callstack's thread_id staleness check).
+  call("update_threads"_key, make_threads_args({{1, "suspended", "main"}}));
+  auto threads_table_id =
+      srv_->last_session->ui_objects.at(root_ + "_threads.vbox.table")->as<bison::key_t>("__wish_id"_key);
+  dynamic tsel;
+  tsel["index"_key] = int32_t{0};
+  fire_at(root_ + "_threads", threads_table_id, "row_selected"_key, std::move(tsel));
+
+  call("update_callstack"_key,
+       make_callstack_args(1, {
+                                   {0, "inner_function", "dbg_fixture.cpp", 24},
+                                   {1, "outer_function", "dbg_fixture.cpp", 29},
+                               }));
+  auto callstack_table_id =
+      srv_->last_session->ui_objects.at(root_ + "_callstack.vbox.table")->as<bison::key_t>("__wish_id"_key);
+  dynamic fsel;
+  fsel["index"_key] = int32_t{1}; // selects frame 1, not frame 0
+  fire_at(root_ + "_callstack", callstack_table_id, "row_selected"_key, std::move(fsel));
+
+  // A snapshot computed for frame 0 (not the currently-selected frame 1)
+  // must be discarded, not applied.
+  call("update_watch"_key, make_watch_args(0, {{"x", "0", "int"}}));
+  EXPECT_EQ(row_count(root_ + "_watch.vbox.table"), 0u);
+
+  // A snapshot for the actually-selected frame (1) is applied normally.
+  call("update_watch"_key, make_watch_args(1, {{"x", "0", "int"}}));
+  EXPECT_EQ(row_count(root_ + "_watch.vbox.table"), 1u);
+}
+
+TEST_F(DbgRmiTest, WatchAddButtonEmitsAddWatchRequestedWithTypedExpression) {
+  auto expr_input_id = srv_->last_session->ui_objects.at(root_ + "_watch.vbox.toolbar.expr")
+                            ->as<bison::key_t>("__wish_id"_key);
+  auto add_button_id = srv_->last_session->ui_objects.at(root_ + "_watch.vbox.toolbar.add")
+                            ->as<bison::key_t>("__wish_id"_key);
+
+  dynamic changed;
+  changed["value"_key] = std::string{"counter"};
+  fire_at(root_ + "_watch", expr_input_id, "changed"_key, std::move(changed));
+
+  bool got = false;
+  dynamic cap;
+  auto prev = std::move(srv_->last_session->emit_event);
+  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
+    if (event == "add_watch_requested"_key) {
+      got = true;
+      cap = payload.clone();
+    }
+    if (prev)
+      prev(id, event, std::move(payload));
+  };
+
+  fire_at(root_ + "_watch", add_button_id, "clicked"_key);
+  wait_for(got);
+  ASSERT_TRUE(got);
+  EXPECT_EQ(cap.as<std::string>("expr"_key), "counter");
+}
+
+TEST_F(DbgRmiTest, WatchAddButtonWithEmptyExpressionIsNoOp) {
+  auto add_button_id = srv_->last_session->ui_objects.at(root_ + "_watch.vbox.toolbar.add")
+                            ->as<bison::key_t>("__wish_id"_key);
+
+  bool got = false;
+  auto prev = std::move(srv_->last_session->emit_event);
+  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
+    if (event == "add_watch_requested"_key)
+      got = true;
+    if (prev)
+      prev(id, event, std::move(payload));
+  };
+
+  fire_at(root_ + "_watch", add_button_id, "clicked"_key);
+  wait_for(got);
+  EXPECT_FALSE(got);
+}
+
+// ── append_output ─────────────────────────────────────────────────────────
+
+static dynamic make_output_args(const std::string& text, const std::string& level) {
+  dynamic args;
+  args["text"_key] = text;
+  args["level"_key] = level;
+  return args;
+}
+
+TEST_F(DbgRmiTest, AppendOutputColorCodesBySeverity) {
+  call("append_output"_key, make_output_args("attach ok", "info"));
+  call("append_output"_key, make_output_args("slow step", "warn"));
+  call("append_output"_key, make_output_args("access violation", "error"));
+
+  auto table = get_dp(srv_->last_session->ui_objects, root_ + "_output.vbox.table");
+  ASSERT_TRUE(table);
+
+  auto info_cell = nth_child(nth_child(table, 0), 0);
+  ASSERT_TRUE(info_cell);
+  EXPECT_EQ(info_cell->as<std::string>("text"_key), "[info] attach ok");
+  EXPECT_EQ(info_cell->as<std::string>("text_color_light"_key), "#656D76FF");
+  EXPECT_EQ(info_cell->as<std::string>("text_color_dark"_key), "#8B949EFF");
+
+  auto warn_cell = nth_child(nth_child(table, 1), 0);
+  ASSERT_TRUE(warn_cell);
+  EXPECT_EQ(warn_cell->as<std::string>("text"_key), "[warn] slow step");
+  EXPECT_EQ(warn_cell->as<std::string>("text_color_light"_key), "#9A6700FF");
+  EXPECT_EQ(warn_cell->as<std::string>("text_color_dark"_key), "#D29922FF");
+
+  auto error_cell = nth_child(nth_child(table, 2), 0);
+  ASSERT_TRUE(error_cell);
+  EXPECT_EQ(error_cell->as<std::string>("text"_key), "[error] access violation");
+  EXPECT_EQ(error_cell->as<std::string>("text_color_light"_key), "#CF222EFF");
+  EXPECT_EQ(error_cell->as<std::string>("text_color_dark"_key), "#F85149FF");
+}
+
+TEST_F(DbgRmiTest, AppendOutputFifoCapsAtMaxRowsAndEvictsOldest) {
+  // 500 mirrors debugger_frontend's own kMaxOutputRows (server/dbg.hpp) --
+  // not exposed via the header, so duplicated here; keep in sync if that
+  // constant changes (same convention as test_tail.cpp's kMaxBufferedRows
+  // comment).
+  constexpr int kMaxOutputRows = 500;
+  for (int i = 0; i < kMaxOutputRows + 2; ++i)
+    call("append_output"_key, make_output_args("line " + std::to_string(i), "info"));
+
+  EXPECT_EQ(row_count(root_ + "_output.vbox.table"), static_cast<size_t>(kMaxOutputRows));
+
+  // Oldest two rows (line 0, line 1) were evicted; the table's first
+  // remaining row is line 2 and the last is the most recently appended.
+  auto table = get_dp(srv_->last_session->ui_objects, root_ + "_output.vbox.table");
+  ASSERT_TRUE(table);
+  auto first_cell = nth_child(nth_child(table, 0), 0);
+  ASSERT_TRUE(first_cell);
+  EXPECT_EQ(first_cell->as<std::string>("text"_key), "[info] line 2");
 }

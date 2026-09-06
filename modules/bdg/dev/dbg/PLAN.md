@@ -12,7 +12,7 @@ the current-execution-line indicator, and the six-window layout.
    in the `editor` tool) and `dbg_mock.html` (full-width review of all six
    windows: Source, Threads, Call Stack, Watch, Breakpoints, Output). To be
    validated with the user before implementation begins, per every other
-   module's Step 1 convention.
+   module's Step 1 convention. ✅ Done.
 
 2. **`TextEditor` extension** — add `breakpoint_lines` (int array) and
    `current_line` (int, 0 = none) fields plus a `"line_context_menu"` event
@@ -24,7 +24,7 @@ the current-execution-line indicator, and the six-window layout.
    {line, has_breakpoint}`.
    - Tests: a renderer/RMI-level test confirming the new fields drive the
      vendored library's `SetUserData`/`SetLineDecorator` state correctly
-     and the event payload shape on a simulated right-click.
+     and the event payload shape on a simulated right-click. ✅ Done.
 
 3. **Scaffold + Threads/Call Stack windows against a fake backend** —
    `server/dbg.{hpp,cpp}` (`DebuggerFrontend` form, all six window
@@ -36,7 +36,7 @@ the current-execution-line indicator, and the six-window layout.
    contract before `win32_debug_backend` exists.
    - Tests: `tests/test_dbg.cpp` — window construction, `update_threads` /
      `update_callstack` full-rebuild correctness, stale `thread_id` no-op,
-     Threads row click emits `select_thread_requested`.
+     Threads row click emits `select_thread_requested`. ✅ Done.
 
 4. **`win32_debug_backend`** — `client/win32_debug_backend.{hpp,cpp}`:
    `attach`/`detach` (`DebugActiveProcess`/`DebugActiveProcessStop`), the
@@ -48,7 +48,7 @@ the current-execution-line indicator, and the six-window layout.
    - Tests: `tests/test_win32_debug_backend.cpp` against a small, checked-in
      test executable with debug info — attach, resume, assert the initial
      stop reports the expected module/entry location; detach cleanly.
-     Windows-only, skipped on other platforms.
+     Windows-only, skipped on other platforms. ✅ Done.
 
 5. **Source window + breakpoints end-to-end** — `open_file_requested` /
    tab management in `server/dbg.cpp`; `toggle_breakpoint_requested` wired
@@ -62,7 +62,7 @@ the current-execution-line indicator, and the six-window layout.
      resume / assert-stop-at-expected-line / detach-leaves-no-`INT3` case;
      extend `test_dbg.cpp` with the right-click "Toggle Breakpoint" menu
      action emitting `toggle_breakpoint_requested` and
-     `update_breakpoints` rebuild correctness.
+     `update_breakpoints` rebuild correctness. ✅ Done.
 
 6. **Step execution + Watch** — `step_requested{kind, thread_id}` wired to
    `win32_debug_backend::step_into/over/out` (trap-flag single-step for
@@ -74,20 +74,23 @@ the current-execution-line indicator, and the six-window layout.
    - Tests: step-into/over/out cases in `test_win32_debug_backend.cpp`
      against known control flow in the test executable; `test_dbg.cpp`
      cases for `update_watch`'s `frame_id` staleness guard and the Watch
-     window's Add flow.
+     window's Add flow. ✅ Done.
 
 7. **Output/Debug Log window** — `append_output` fed by debug events
    (attach, stop reason, exceptions) and debuggee output
-   (`OUTPUT_DEBUG_STRING_EVENT`, plus redirected stdout/stderr pipes set up
-   at attach/launch time), FIFO-capped exactly like `docker`'s Console /
-   `tail`'s `push_lines`.
+   (`OUTPUT_DEBUG_STRING_EVENT`), FIFO-capped exactly like `docker`'s
+   Console / `tail`'s `push_lines`. Redirected stdout/stderr pipes turned
+   out not to apply to v1: `dbg` attaches to an already-running process via
+   `DebugActiveProcess` rather than launching it, so there is no process
+   creation step at which to set up a pipe — see DESIGN.md §1's "Debuggee
+   output (v1)" note.
    - Tests: `test_dbg.cpp` cases for FIFO capping and severity colour
-     coding.
+     coding. ✅ Done.
 
 8. **Docs** — this `PLAN.md`, `DESIGN.md` status/§10 update to
    "implemented", module `README.md`, `docs/building.md` CMake option
    (`WISH_MODULE_BDG_DEV_DBG`), `CHANGELOG.md` `### Added`,
-   `modules/bdg/dev/README.md` row.
+   `modules/bdg/dev/README.md` row. ✅ Done.
 
 ## Verification
 

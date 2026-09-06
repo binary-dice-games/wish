@@ -43,6 +43,35 @@ backend, remote (cross-machine) debuggee attach, conditional/logpoint
 breakpoints, full expression evaluation, edit-and-continue, a
 memory/disassembly view, and multi-process debugging.
 
+**Watch scope (v1)**: `evaluate()` resolves **simple local-variable reads**
+by matching the expression verbatim against a local/parameter name in scope
+at the given frame's address (via DbgHelp's `SymEnumSymbols`) — not
+arbitrary C++ expressions (no member access, indexing, arithmetic, or
+function calls). Within that scope:
+
+- Scalar built-in types (`bool`, `char`/`wchar_t`, integer, float/double)
+  are decoded and formatted as their natural value.
+- Any other type (struct, array, pointer, ...) is shown as a raw hex byte
+  dump of its storage rather than a decoded value — no attempt at member
+  formatting.
+- A variable that the compiler has placed entirely in a register at the
+  requested address (`SYMFLAG_REGISTER`, only possible in optimized code)
+  has no memory location to read from a stack-frame snapshot and is
+  reported as `<unavailable>` rather than a wrong value.
+- Register-relative locals (`SYMFLAG_REGREL`, the common case) are resolved
+  against the frame/stack pointer for x86/x64; ARM64 is treated like x64
+  (frame-pointer relative) as an approximation, not a verified ARM64 CV
+  register mapping.
+
+**Debuggee output (v1)**: the Output window's debuggee-generated rows come
+from `OutputDebugString`/`OutputDebugStringW` calls only. `dbg` attaches to
+an already-running process via `DebugActiveProcess` (§3) rather than
+launching it, so there is no process creation step at which to redirect
+stdout/stderr to a pipe; a debuggee's plain `printf`/`std::cout` output is
+therefore **not** captured by this module (it still goes to whatever
+console/handle the debuggee already has). Launching the debuggee directly
+(enabling stdout/stderr redirection) is future work, not v1 scope.
+
 This directory owns:
 
 - `server/dbg.hpp`/`.cpp` — the `DebuggerFrontend` form (six windows, the
@@ -173,11 +202,23 @@ class debug_backend {
   // (breakpoint hit, step complete, exception, pause):
   using stop_callback = std::function<void(const stop_event&)>;
   virtual void on_stop(stop_callback cb) = 0;
+  // Fired for debuggee output that isn't a stop (OutputDebugString calls
+  // the debuggee makes while running) -- feeds the Output window (§4)
+  // independently of on_stop(), since it can arrive while running.
+  using log_callback = std::function<void(const std::string& text, const std::string& level)>;
+  virtual void on_log(log_callback cb) = 0;
 };
 ```
 
 `stop_event` carries `{thread_id, reason, file, line}` — the information
 needed to drive the Source/Threads/Call Stack refresh fan-out (§4).
+`reason` is one of `"attach"`, `"breakpoint"`, `"step"`, `"pause"`, or
+`"exception"` (a first-chance exception other than the single-step/INT3
+ones the backend consumes itself, reported so the debuggee stops instead of
+silently forwarding it — surfaced in the Output window at `"error"`
+severity, see §4). A second-chance exception is forwarded unhandled instead
+of stopping, since every SEH handler has already run and the process is
+about to terminate.
 
 ### `win32_debug_backend` (client, v1 implementation)
 
@@ -472,9 +513,14 @@ Depended on by: nothing else in wish; this is a leaf module.
 
 ## 10. Implementation Status
 
-**Not yet implemented.** This DESIGN.md and the accompanying
-[PLAN.md](PLAN.md) are the pre-implementation design pass; see PLAN.md's
-Steps for what ships in what order and its "Not implemented" section for
-what is explicitly out of scope for v1 (Linux/macOS backend, remote
-attach, conditional/logpoint breakpoints, full expression evaluation,
-edit-and-continue, memory/disassembly view, multi-process debugging).
+**Implemented** (PLAN.md Steps 1-8): the six-window UI (Source, Threads,
+Call Stack, Watch, Breakpoints, Output), `win32_debug_backend` (attach/
+detach, pause/resume, breakpoints, step into/over/out, Watch evaluation via
+DbgHelp, Output feed from `OutputDebugString` and unexpected first-chance
+exceptions), and the client/server RMI wiring end to end. See PLAN.md's
+"Not implemented" section for what remains explicitly out of scope for v1
+(Linux/macOS backend, remote attach, conditional/logpoint breakpoints, full
+expression evaluation beyond simple scalar local reads — see §1's "Watch
+scope (v1)" note, edit-and-continue, memory/disassembly view, multi-process
+debugging, and stdout/stderr capture for attach-only debugging — see §1's
+"Debuggee output (v1)" note).

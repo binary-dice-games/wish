@@ -57,6 +57,9 @@ class dbg_source {
   /// the stopped thread, sets run state to "paused", and appends an Output
   /// row describing the stop.
   void handle_stop(const stop_event& ev);
+  /// @brief debug_backend::on_log callback: forwards debuggee output
+  /// (OutputDebugString, ...) to the Output window (append_output RMI).
+  void handle_log(const std::string& text, const std::string& level);
 
   std::shared_ptr<bison::rmi::proxy::dynamic> proxy_;
   std::unique_ptr<debug_backend> backend_;
@@ -64,6 +67,14 @@ class dbg_source {
   bool attached_{false};
   uint32_t selected_thread_id_{0};
   bool has_selected_thread_{false};
+
+  // Frame currently shown in the Watch window (the last one passed to
+  // push_watch(), whether from a stop or a Call Stack row click) --
+  // on_add_watch_requested() re-evaluates against this so adding a watch
+  // expression while stopped refreshes the table immediately instead of
+  // waiting for the next thread/frame selection.
+  uint32_t current_frame_id_{0};
+  bool has_current_frame_{false};
 
   // Tracked so on_toggle_breakpoint_requested can flip enabled state and
   // push_breakpoints() can rebuild the full table (full-rebuild pattern,

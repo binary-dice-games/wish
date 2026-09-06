@@ -67,6 +67,7 @@ class win32_debug_backend : public debug_backend {
   std::vector<watch_entry> evaluate(uint32_t frame_id, const std::vector<std::string>& exprs) override;
 
   void on_stop(stop_callback cb) override;
+  void on_log(log_callback cb) override;
 
  private:
   struct breakpoint_state {
@@ -90,6 +91,10 @@ class win32_debug_backend : public debug_backend {
   void handle_load_dll(const DEBUG_EVENT& ev);
   void handle_exit_thread(const DEBUG_EVENT& ev);
   DWORD handle_exception(const DEBUG_EVENT& ev, bool& should_stop, stop_event& out);
+  /// @brief Reads an `OUTPUT_DEBUG_STRING_EVENT`'s string out of the
+  ///        debuggee (respecting `fUnicode`/`nDebugStringLength`) and
+  ///        forwards it to the registered log_callback, if any.
+  void handle_output_debug_string(const DEBUG_EVENT& ev);
 
   /// @brief Resolves an instruction pointer to {function, file, line} via
   ///        DbgHelp. Returns false (leaving `out` partially filled with
@@ -146,6 +151,7 @@ class win32_debug_backend : public debug_backend {
   bison::synchronized<std::map<uint32_t, HANDLE>> thread_handles_;
   bison::synchronized<std::vector<breakpoint_state>> breakpoints_;
   bison::synchronized<stop_callback> on_stop_cb_;
+  bison::synchronized<log_callback> on_log_cb_;
 
   DWORD64 module_base_{0};
   bool sym_initialized_{false};

@@ -81,6 +81,17 @@ class debug_backend {
   ///        Only one callback is supported; a later call replaces the
   ///        earlier one (dbg_source registers exactly one, at construction).
   virtual void on_stop(stop_callback cb) = 0;
+
+  using log_callback = std::function<void(const std::string& text, const std::string& level)>;
+  /// @brief Registers the callback invoked for debuggee output that isn't a
+  ///        stop (e.g. `OutputDebugString`/`OutputDebugStringW` calls the
+  ///        debuggee makes while running) -- feeds the Output window
+  ///        (PLAN.md Step 7) independently of on_stop(), since output can
+  ///        arrive while the debuggee is running, not just while paused.
+  ///        `level` is one of "info"/"warn"/"error", same vocabulary as
+  ///        `append_output`'s RMI payload (server/dbg.hpp). Only one
+  ///        callback is supported, same as on_stop().
+  virtual void on_log(log_callback cb) = 0;
 };
 
 } // namespace bdg::wish::dbg

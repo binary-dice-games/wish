@@ -150,5 +150,138 @@ TEST(Win32DebugBackendTest, DetachWithoutBreakpointsLetsProcessRunToCompletion) 
   CloseHandle(pi.hProcess);
 }
 
+TEST(Win32DebugBackendTest, StepOverSkipsCalleeAndLandsOnNextLine) {
+  PROCESS_INFORMATION pi{};
+  uint32_t pid = launch_fixture(pi);
+  ASSERT_NE(pid, 0u);
+
+  win32_debug_backend backend;
+  stop_event_queue events;
+  backend.on_stop([&](const stop_event& ev) { events.push(ev); });
+
+  ASSERT_TRUE(backend.attach(pid));
+  stop_event attach_ev;
+  ASSERT_TRUE(events.pop(attach_ev));
+
+  // Line 29 is outer_function()'s `int r = inner_function(x);` call site --
+  // step_over from here must skip over inner_function() entirely (not stop
+  // on its line-24 breakpoint, since none is set). The landing address is
+  // the call's return address, which MSVC's line table still attributes to
+  // line 29 (the store into `r` is part of the same statement) -- matching
+  // what StepOutReturnsToCallSite independently confirms for the same
+  // call-site address -- so the stop is still reported as line 29, not 30.
+  ASSERT_TRUE(backend.set_breakpoint("dbg_fixture.cpp", 29));
+  backend.resume();
+
+  stop_event bp_ev;
+  ASSERT_TRUE(events.pop(bp_ev));
+  ASSERT_EQ(bp_ev.reason, "breakpoint");
+  ASSERT_EQ(bp_ev.line, 29);
+
+  backend.step_over(bp_ev.thread_id);
+  stop_event step_ev;
+  ASSERT_TRUE(events.pop(step_ev));
+  EXPECT_EQ(step_ev.reason, "step");
+  EXPECT_EQ(step_ev.line, 29);
+
+  backend.clear_breakpoint("dbg_fixture.cpp", 29);
+  backend.detach();
+
+  DWORD wait_result = WaitForSingleObject(pi.hProcess, 10000);
+  ASSERT_EQ(wait_result, WAIT_OBJECT_0);
+  DWORD exit_code = 0;
+  ASSERT_TRUE(GetExitCodeProcess(pi.hProcess, &exit_code));
+  EXPECT_EQ(exit_code, 42u);
+
+  CloseHandle(pi.hThread);
+  CloseHandle(pi.hProcess);
+}
+
+TEST(Win32DebugBackendTest, StepOutReturnsToCallSite) {
+  PROCESS_INFORMATION pi{};
+  uint32_t pid = launch_fixture(pi);
+  ASSERT_NE(pid, 0u);
+
+  win32_debug_backend backend;
+  stop_event_queue events;
+  backend.on_stop([&](const stop_event& ev) { events.push(ev); });
+
+  ASSERT_TRUE(backend.attach(pid));
+  stop_event attach_ev;
+  ASSERT_TRUE(events.pop(attach_ev));
+
+  // Line 24 is inside inner_function(); step_out must unwind to
+  // outer_function()'s call site (line 29) via the return address, not
+  // single-step through the rest of inner_function() line by line.
+  ASSERT_TRUE(backend.set_breakpoint("dbg_fixture.cpp", 24));
+  backend.resume();
+
+  stop_event bp_ev;
+  ASSERT_TRUE(events.pop(bp_ev));
+  ASSERT_EQ(bp_ev.reason, "breakpoint");
+  ASSERT_EQ(bp_ev.line, 24);
+
+  backend.step_out(bp_ev.thread_id);
+  stop_event step_ev;
+  ASSERT_TRUE(events.pop(step_ev));
+  EXPECT_EQ(step_ev.reason, "step");
+  EXPECT_EQ(step_ev.line, 29);
+
+  backend.clear_breakpoint("dbg_fixture.cpp", 24);
+  backend.detach();
+
+  DWORD wait_result = WaitForSingleObject(pi.hProcess, 10000);
+  ASSERT_EQ(wait_result, WAIT_OBJECT_0);
+  DWORD exit_code = 0;
+  ASSERT_TRUE(GetExitCodeProcess(pi.hProcess, &exit_code));
+  EXPECT_EQ(exit_code, 42u);
+
+  CloseHandle(pi.hThread);
+  CloseHandle(pi.hProcess);
+}
+
+TEST(Win32DebugBackendTest, EvaluateResolvesLocalParameter) {
+  PROCESS_INFORMATION pi{};
+  uint32_t pid = launch_fixture(pi);
+  ASSERT_NE(pid, 0u);
+
+  win32_debug_backend backend;
+  stop_event_queue events;
+  backend.on_stop([&](const stop_event& ev) { events.push(ev); });
+
+  ASSERT_TRUE(backend.attach(pid));
+  stop_event attach_ev;
+  ASSERT_TRUE(events.pop(attach_ev));
+
+  ASSERT_TRUE(backend.set_breakpoint("dbg_fixture.cpp", 24));
+  backend.resume();
+
+  stop_event bp_ev;
+  ASSERT_TRUE(events.pop(bp_ev));
+  ASSERT_EQ(bp_ev.reason, "breakpoint");
+  ASSERT_EQ(bp_ev.line, 24);
+
+  // First loop iteration: inner_function(x) is called with counter == 0, so
+  // its parameter x should resolve to "0" (DESIGN.md §1's Watch scope --
+  // simple scalar local reads via DbgHelp, no full expression evaluation).
+  std::vector<watch_entry> entries = backend.evaluate(0, {"x"});
+  ASSERT_EQ(entries.size(), 1u);
+  EXPECT_EQ(entries[0].name, "x");
+  EXPECT_EQ(entries[0].value, "0");
+  EXPECT_NE(entries[0].type.find("int"), std::string::npos);
+
+  backend.clear_breakpoint("dbg_fixture.cpp", 24);
+  backend.detach();
+
+  DWORD wait_result = WaitForSingleObject(pi.hProcess, 10000);
+  ASSERT_EQ(wait_result, WAIT_OBJECT_0);
+  DWORD exit_code = 0;
+  ASSERT_TRUE(GetExitCodeProcess(pi.hProcess, &exit_code));
+  EXPECT_EQ(exit_code, 42u);
+
+  CloseHandle(pi.hThread);
+  CloseHandle(pi.hProcess);
+}
+
 } // namespace
 } // namespace bdg::wish::dbg

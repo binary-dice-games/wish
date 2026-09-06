@@ -26,6 +26,7 @@ dynamic payload2(key_t k1, T1 v1, key_t k2, T2 v2) {
 dbg_source::dbg_source(std::shared_ptr<rmi::proxy::dynamic> proxy, std::unique_ptr<debug_backend> backend)
     : proxy_(std::move(proxy)), backend_(std::move(backend)) {
   backend_->on_stop([this](const stop_event& ev) { handle_stop(ev); });
+  backend_->on_log([this](const std::string& text, const std::string& level) { handle_log(text, level); });
 }
 
 void dbg_source::on_attach_requested(uint32_t pid) {
@@ -42,6 +43,7 @@ void dbg_source::on_detach_requested() {
   backend_->detach();
   attached_ = false;
   has_selected_thread_ = false;
+  has_current_frame_ = false;
   current_stop_file_.clear();
   current_stop_line_ = 0;
   proxy_->call("set_run_state"_key, payload1("state"_key, std::string{"detached"}));
@@ -57,6 +59,7 @@ void dbg_source::on_resume_requested() {
   backend_->resume();
   current_stop_file_.clear();
   current_stop_line_ = 0;
+  has_current_frame_ = false;
   proxy_->call("set_run_state"_key, payload1("state"_key, std::string{"running"}));
 }
 
@@ -103,6 +106,8 @@ void dbg_source::on_select_thread_requested(uint32_t thread_id) {
 }
 
 void dbg_source::on_select_frame_requested(uint32_t frame_id) {
+  current_frame_id_ = frame_id;
+  has_current_frame_ = true;
   push_watch(frame_id);
   // DESIGN.md §4's "Thread/frame selection" flow: selecting a frame also
   // opens/focuses that frame's file at its line in the Source window, not
@@ -121,13 +126,12 @@ void dbg_source::on_open_file_requested(const std::string& path, int32_t line) {
 
 void dbg_source::on_add_watch_requested(const std::string& expr) {
   watch_exprs_.push_back(expr);
-  if (has_selected_thread_) {
-    // Re-evaluate against frame 0 of the currently-selected thread's stack
-    // -- the Watch window always shows the innermost frame's view unless
-    // the user has explicitly selected a different Call Stack row (tracked
-    // server-side; this client doesn't need to know which frame index was
-    // last clicked, only push_watch(frame_id) does).
-  }
+  // Re-evaluate against whichever frame the Watch window is currently
+  // showing (the innermost frame after a stop, or a Call Stack row the
+  // user explicitly clicked) so the new expression appears immediately
+  // instead of waiting for the next stop/selection.
+  if (has_current_frame_)
+    push_watch(current_frame_id_);
 }
 
 void dbg_source::push_threads() {
@@ -215,14 +219,26 @@ void dbg_source::handle_stop(const stop_event& ev) {
   has_selected_thread_ = true;
   current_stop_file_ = ev.file;
   current_stop_line_ = ev.line;
+  current_frame_id_ = 0;
+  has_current_frame_ = true;
   proxy_->call("set_run_state"_key, payload1("state"_key, std::string{"paused"}));
   push_threads();
   push_callstack(ev.thread_id);
   push_source(ev.file, ev.line);
+  // DESIGN.md §4's stop flow re-evaluates the Watch table against the
+  // innermost frame on every stop, not just an explicit frame selection.
+  push_watch(0);
 
   dynamic out_args;
   out_args["text"_key] = ev.reason + " at " + ev.file + ":" + std::to_string(ev.line);
-  out_args["level"_key] = std::string{"info"};
+  out_args["level"_key] = std::string{ev.reason == "exception" ? "error" : "info"};
+  proxy_->call("append_output"_key, std::move(out_args));
+}
+
+void dbg_source::handle_log(const std::string& text, const std::string& level) {
+  dynamic out_args;
+  out_args["text"_key] = text;
+  out_args["level"_key] = level;
   proxy_->call("append_output"_key, std::move(out_args));
 }
 
