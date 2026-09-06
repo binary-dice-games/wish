@@ -144,97 +144,22 @@ ImGuiID layout_identity(const ui_element& layout_root) {
   return ImHashStr(all.c_str(), all.size());
 }
 
-// True iff AT LEAST ONE window the layout names is currently docked into a
-// live node whose root is target_id -- i.e. this layout still has some
-// footprint in target_id's dockspace, so it hasn't been fully displaced.
-// False only when NONE of its windows are there any more (a sibling app
-// that shares the dockspace rebuilt it from scratch, replacing every one of
-// this layout's windows with its own).
-//
-// Deliberately "any", not "all": a user can drag one of this layout's
-// windows out to float it standalone (a normal, supported rearrangement,
-// same as moving it to a different split) while every other window in the
-// layout stays docked under target_id. That must not look like a sibling
-// rebuild -- an "all must still be docked" check would treat the one
-// floated window as proof the whole arrangement was displaced and rebuild
-// the hard-coded default over the *other*, untouched windows too. A genuine
-// sibling rebuild replaces the dockspace wholesale, so it always clears
-// every one of this layout's windows at once -- "any" still correctly
-// catches that.
-//
-// This reads real, persisted state (window->DockId, restored by ImGui
-// itself from imgui.ini at startup) rather than any in-process bookkeeping,
-// which is what makes it able to detect a rebuild that happened in a
-// *previous process* -- see the comment on target_generations() below for
-// why that matters and isn't covered by the generation counter alone.
-bool layout_windows_are_live(const ui_element& layout_root, ImGuiID target_id) {
-  bool any_named = false;
-  bool any_live = false;
-  for_each_layout_window(layout_root, [&](const std::string& path) {
-    any_named = true;
-    if (any_live)
-      return;
-    const ImGuiID wid = ImHashStr(path.c_str(), path.size());
-    ImGuiID dock_id = 0;
-    if (ImGuiWindow* w = ImGui::FindWindowByID(wid))
-      dock_id = w->DockId;
-    else if (ImGuiWindowSettings* ws = ImGui::FindWindowSettingsByID(wid))
-      dock_id = ws->DockId;
-    ImGuiDockNode* node = dock_id ? ImGui::DockBuilderGetNode(dock_id) : nullptr;
-    if (node && ImGui::DockNodeGetRootNode(node)->ID == target_id)
-      any_live = true;
-  });
-  return any_named && any_live;
-}
-
 // ── Applied-version persistence ([WishDockLayout] in imgui.ini) ──────────────
 //
 // The map is keyed by layout_identity() (NOT the dockspace id -- see that
-// helper). It is process-global (wish drives one ImGui context) but guarded
-// by the context pointer it was populated for, so a test that destroys and
-// recreates the context starts clean instead of seeing a previous test's
-// "already applied" entries.
+// helper). It is the ONLY state should_apply_dock_layout() consults: has
+// this exact layout, at this `version`, ever been applied before, in this
+// process or a prior one? Persisted in imgui.ini, so it's a real "have I
+// ever seen this before" fact, not something reconstructed from a moment's
+// worth of live ImGui docking state that a drag, a float-out, or a sibling
+// app's rebuild can all make transiently look the same. It is
+// process-global (wish drives one ImGui context) but guarded by the context
+// pointer it was populated for, so a test that destroys and recreates the
+// context starts clean instead of seeing a previous test's "already
+// applied" entries.
 
 std::unordered_map<ImGuiID, int32_t>& applied_versions() {
   static std::unordered_map<ImGuiID, int32_t> m;
-  return m;
-}
-
-// ── Rebuild-generation tracking (in-memory only, not persisted) ─────────────
-//
-// should_apply_dock_layout()'s steady-state check -- "has target_id been
-// rebuilt since I last touched it" -- has two possible sources of truth:
-//
-//  1. An exact, in-process counter bumped once per build_dock_layout() call
-//     (the only place that ever tears down and rebuilds target_id). Cheap,
-//     instant, and immune to ordinary user rearranging (dragging, dropping,
-//     floating a window out never calls build_dock_layout(), so they never
-//     move it) -- but it lives only in memory, so it knows nothing about
-//     rebuilds from *before this process started*, e.g. a different wish
-//     tool (docker, then git, then docker again -- each its own process)
-//     sharing the same on-disk imgui.ini and the same ambient dockspace id.
-//     To that counter, "0 == 0" looks identical whether nothing has ever
-//     touched target_id, or a sibling process rebuilt it five minutes ago
-//     right before this one started.
-//
-//  2. layout_windows_are_live() above, which reads real, persisted window
-//     state and so sees a cross-process rebuild correctly -- but is a
-//     heuristic over DockId, which a mid-drag or just-dropped window can
-//     transiently misrepresent (see should_apply_dock_layout()'s use of
-//     both).
-//
-// The fix is to use each for what it's good at: trust the fast, exact
-// counter once this session has established a baseline for a layout (via
-// building it, or via a real liveness check below), and fall back to real
-// liveness only on the first check per layout per session -- which is
-// exactly the moment a previous process's rebuild would otherwise go
-// undetected.
-std::unordered_map<ImGuiID, uint64_t>& target_generations() {
-  static std::unordered_map<ImGuiID, uint64_t> m;
-  return m;
-}
-std::unordered_map<ImGuiID, uint64_t>& last_seen_generations() {
-  static std::unordered_map<ImGuiID, uint64_t> m;
   return m;
 }
 
@@ -247,8 +172,6 @@ void reset_if_new_context() {
   ImGuiContext* g = ImGui::GetCurrentContext();
   if (installed_ctx() != g) {
     applied_versions().clear();
-    target_generations().clear();
-    last_seen_generations().clear();
     installed_ctx() = g;
   }
 }
@@ -284,8 +207,6 @@ void dl_WriteAll(ImGuiContext*, ImGuiSettingsHandler* handler, ImGuiTextBuffer* 
 
 void dl_ClearAll(ImGuiContext*, ImGuiSettingsHandler*) {
   applied_versions().clear();
-  target_generations().clear();
-  last_seen_generations().clear();
 }
 
 } // namespace
@@ -306,12 +227,6 @@ bool build_dock_layout(const ui_element& layout_root, ImGuiID target_id, ImVec2 
   if (node_size.x > 0.0f && node_size.y > 0.0f)
     ImGui::DockBuilderSetNodeSize(target_id, node_size);
 
-  // target_id's tree just got torn down and rebuilt from scratch -- bump its
-  // generation so should_apply_dock_layout() can tell any layout that was
-  // built against the old tree that it's now stale (see the comment on
-  // target_generations() above). This is the ONLY place that happens.
-  ++target_generations()[target_id];
-
   const bool ok = realize_node(*root_child, target_id, log);
   ImGui::DockBuilderFinish(target_id);
   return ok;
@@ -325,58 +240,23 @@ bool should_apply_dock_layout(const ui_element& layout_root, ImGuiID target_id, 
   if (it == applied_versions().end() || version > it->second)
     return true;
 
-  // No dockspace tree at all yet.
-  if (ImGui::DockBuilderGetNode(target_id) == nullptr)
-    return true;
-
-  const ImGuiID id = layout_identity(layout_root);
-
-  // Fast, exact path: if this session already has a generation baseline for
-  // this layout (from building it itself, or from a real liveness check
-  // below) and target_id's rebuild counter hasn't moved since, nothing has
-  // touched it -- true regardless of how many times a user has dragged or
-  // floated windows within it this session, since neither ever bumps the
-  // counter. See target_generations()'s comment for why this alone isn't
-  // enough on the very first check.
-  auto gen_it = last_seen_generations().find(id);
-  if (gen_it != last_seen_generations().end() && gen_it->second == target_generations()[target_id])
-    return false;
-
-  // A window is mid drag-to-dock (title bar or tab drag): ImGui transiently
-  // detaches it from its dock node for the gesture's duration. Only
-  // reachable here on a layout's first check this session (the fast path
-  // above handles every later frame), but guard it anyway rather than let
-  // the liveness fallback below possibly misread it as a sibling's rebuild.
-  if (GImGui && GImGui->MovingWindow != nullptr)
-    return false;
-
-  // No generation baseline yet this session for an already-applied layout:
-  // either truly the first frame after startup, or -- the case that
-  // matters -- this process just started and a *different* process last
-  // touched target_id (a sibling wish tool sharing the same ambient
-  // dockspace, since exited). The in-memory counter can't see that, so
-  // fall back to real, persisted state: are any of this layout's windows
-  // still, in fact, docked under target_id?
-  if (layout_windows_are_live(layout_root, target_id)) {
-    // Establish the baseline now so every later frame this session takes
-    // the fast path above instead of re-deriving this from window state.
-    last_seen_generations()[id] = target_generations()[target_id];
-    return false;
-  }
-  return true;
+  // Already applied at this version -- leave it alone, full stop. No matter
+  // what has happened to target_id since (the user rearranged it, floated a
+  // window out, is mid-drag, or a sibling app sharing the dockspace rebuilt
+  // it wholesale with its own windows): once applied_versions() says this
+  // exact layout has been applied at this version, ImGui's own imgui.ini
+  // persistence is what owns the arrangement from here on, the same as any
+  // window the user dragged by hand. The only exception is a dockspace tree
+  // that doesn't exist at all (e.g. a hand-edited imgui.ini with no
+  // [Docking] data) -- rare, but worth a real dockspace over silently
+  // leaving every window undocked.
+  return ImGui::DockBuilderGetNode(target_id) == nullptr;
 }
 
-void note_dock_layout_applied(const ui_element& layout_root, ImGuiID target_id, int32_t version) {
+void note_dock_layout_applied(const ui_element& layout_root, int32_t version) {
   reset_if_new_context();
-  const ImGuiID id = layout_identity(layout_root);
-  applied_versions()[id] = version;
-  last_seen_generations()[id] = target_generations()[target_id];
+  applied_versions()[layout_identity(layout_root)] = version;
   ImGui::MarkIniSettingsDirty();
-}
-
-void reset_dock_layout_generation_tracking_for_test() {
-  target_generations().clear();
-  last_seen_generations().clear();
 }
 
 void install_dock_layout_settings_handler() {
@@ -425,7 +305,7 @@ void render_dock_layout(imgui_renderer& r, const ui_element& node0, const contex
 
   const ImVec2 size = ImGui::GetMainViewport()->WorkSize;
   if (build_dock_layout(node, target_id, size, s.logger_service.get()))
-    note_dock_layout_applied(node, target_id, version);
+    note_dock_layout_applied(node, version);
 }
 
 } // namespace bdg::wish

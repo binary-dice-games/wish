@@ -3311,12 +3311,10 @@ TEST_F(ImguiRendererTest, DockLayoutDoesNotReapplyOnceNodeExists) {
 TEST_F(ImguiRendererTest, DockLayoutDoesNotReapplyWhenOneWindowIsFloatedOut) {
   // Regression test: dragging one of a layout's windows out to float it
   // standalone (a normal rearrangement, same category as moving it to a
-  // different split) makes THAT window's DockId 0 -- which used to look
-  // indistinguishable, at that single window, from "a sibling app rebuilt
-  // the shared dockspace". should_apply_dock_layout() now tracks rebuilds
-  // directly (see target_generations() in imgui_dock_layout.cpp) instead of
-  // inferring them from window state, so floating a window out -- which
-  // never calls build_dock_layout() -- can never be mistaken for one.
+  // different split) makes THAT window's DockId 0. should_apply_dock_layout()
+  // never reapplies a layout once it has been applied at its current
+  // version -- full stop -- so this can never trigger a rebuild no matter
+  // what state the window's DockId is in.
   ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
   auto wa = make_docked_window("A", "wA5");
@@ -3361,14 +3359,12 @@ TEST_F(ImguiRendererTest, DockLayoutDoesNotReapplyWhenOneWindowIsFloatedOut) {
 TEST_F(ImguiRendererTest, DockLayoutDoesNotReapplyWhileWindowIsBeingDragged) {
   // Regression test: a real interactive drag (title bar or tab) transiently
   // detaches the dragged window from its dock node -- ImGui models this via
-  // GImGui->MovingWindow -- and that must not look like "a sibling app
-  // rebuilt the dockspace" and trigger a reapply, which would cancel the
-  // gesture mid-drag by rebuilding the hard-coded default tree underneath
-  // it. should_apply_dock_layout() only reacts to target_id actually being
-  // rebuilt via build_dock_layout() (see target_generations() in
-  // imgui_dock_layout.cpp), which a drag -- in progress or just-dropped --
-  // never triggers, so no debounce or MovingWindow special-casing is needed
-  // for this to hold.
+  // GImGui->MovingWindow -- and that must not trigger a reapply, which
+  // would cancel the gesture mid-drag by rebuilding the hard-coded default
+  // tree underneath it. should_apply_dock_layout() never reapplies a layout
+  // once it has been applied at its current version, so a drag -- in
+  // progress or just-dropped -- can never trigger one; no special-casing of
+  // MovingWindow or DockId is needed.
   //
   // should_apply_dock_layout() is exercised directly (rather than driving a
   // full extra frame) so the test can simulate "window A is momentarily
@@ -3410,9 +3406,10 @@ TEST_F(ImguiRendererTest, DockLayoutDoesNotReapplyWhileWindowIsBeingDragged) {
     EXPECT_FALSE(bdg::wish::should_apply_dock_layout(*lay, dock_id, /*version=*/1));
   GImGui->MovingWindow = nullptr; // don't leak into later tests
 
-  // Genuine reconciliation -- target_id actually rebuilt from under this
-  // layout by a sibling app -- is covered end-to-end by
-  // TwoLayoutsSharingOneDockspaceEachReapplyAfterTheOther below.
+  // A sibling app rebuilding target_id out from under this layout is
+  // covered by DockLayoutIsNeverForciblyReappliedAfterSiblingRebuild below
+  // -- and, per should_apply_dock_layout()'s doc comment, is deliberately
+  // NOT reconciled: once applied, a layout is left alone either way.
 }
 
 TEST_F(ImguiRendererTest, DockLayoutReappliesOnVersionBump) {
@@ -3442,62 +3439,22 @@ TEST_F(ImguiRendererTest, DockLayoutReappliesOnVersionBump) {
   EXPECT_NE(ImGui::FindWindowByName("B###wB3")->DockId, a_dock);
 }
 
-TEST_F(ImguiRendererTest, TwoLayoutsSharingOneDockspaceEachReapplyAfterTheOther) {
-  // docker / kubectl / git all dock into the same ambient HostDockSpace and
-  // share one imgui.ini. Running one after another must give each its own
-  // arrangement, not leave the second piled into the first's tree.
+TEST_F(ImguiRendererTest, DockLayoutIsNeverForciblyReappliedAfterSiblingRebuild) {
+  // Regression test for the exact real-world sequence reported against the
+  // old design: `./wish-standalone --run=docker`, then separately
+  // `./wish-standalone --run=git`, then `./wish-standalone --run=docker`
+  // again -- three separate processes sharing one on-disk imgui.ini and the
+  // same ambient dockspace id (docker / kubectl / git all dock into the
+  // host chrome's one HostDockSpace). The old design tried to reconcile
+  // this by detecting the displacement and silently rebuilding docker's
+  // hard-coded default over it -- which also meant it rebuilt over any
+  // *manual* rearranging the user had done, discarding it. There is no
+  // process boundary left to simulate any more (should_apply_dock_layout()
+  // keeps no in-memory-only state -- applied_versions() is exactly what
+  // persists to imgui.ini), so this test drives all three "runs" in one
+  // process and still exercises the real bug.
   ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
   ImGuiID dock_id = ImHashStr("DL_Shared");
-
-  auto a1 = make_docked_window("A1", "sa1");
-  auto a2 = make_docked_window("A2", "sa2");
-  auto app_a = bdg::wish::import_json(R"({
-    "type": "DockLayout",
-    "children": [ { "type": "DockSplit", "dir": "left", "ratio": 0.5, "children": [
-      { "type": "DockArea", "windows": "sa1" }, { "type": "DockArea", "windows": "sa2" } ] } ]
-  })")[""];
-
-  auto b1 = make_docked_window("B1", "sb1");
-  auto b2 = make_docked_window("B2", "sb2");
-  auto app_b = bdg::wish::import_json(R"({
-    "type": "DockLayout",
-    "children": [ { "type": "DockSplit", "dir": "down", "ratio": 0.5, "children": [
-      { "type": "DockArea", "windows": "sb1" }, { "type": "DockArea", "windows": "sb2" } ] } ]
-  })")[""];
-
-  // App A runs -> its two windows land in distinct sibling nodes.
-  drive_dock_frames(*renderer_, *sess_, dock_id, *app_a, {a1, a2}, 12);
-  ASSERT_TRUE(ImGui::FindWindowByName("A1###sa1")->DockIsActive);
-  EXPECT_NE(ImGui::FindWindowByName("A1###sa1")->DockId, ImGui::FindWindowByName("A2###sa2")->DockId);
-
-  // App B runs into the SAME dockspace -> it rebuilds; B's windows split.
-  drive_dock_frames(*renderer_, *sess_, dock_id, *app_b, {b1, b2}, 12);
-  ASSERT_TRUE(ImGui::FindWindowByName("B1###sb1")->DockIsActive);
-  EXPECT_NE(ImGui::FindWindowByName("B1###sb1")->DockId, ImGui::FindWindowByName("B2###sb2")->DockId);
-
-  // App A runs again -> its windows were wiped by B's rebuild, so A re-applies
-  // its own split rather than inheriting B's tree.
-  drive_dock_frames(*renderer_, *sess_, dock_id, *app_a, {a1, a2}, 12);
-  auto* pa1 = ImGui::FindWindowByName("A1###sa1");
-  auto* pa2 = ImGui::FindWindowByName("A2###sa2");
-  ASSERT_TRUE(pa1->DockIsActive && pa2->DockIsActive);
-  EXPECT_NE(pa1->DockId, pa2->DockId);
-  EXPECT_LT(ImGui::DockBuilderGetNode(pa1->DockId)->Pos.x, ImGui::DockBuilderGetNode(pa2->DockId)->Pos.x);
-}
-
-TEST_F(ImguiRendererTest, DockLayoutDetectsRebuildFromPriorProcessOnFirstCheck) {
-  // Regression test: `./wish-standalone --run=docker`, then separately
-  // `./wish-standalone --run=git`, then `./wish-standalone --run=docker`
-  // again -- three separate PROCESSES sharing one on-disk imgui.ini and the
-  // same ambient dockspace id. Git's process rebuilds the shared dockspace
-  // with its own windows and then exits; docker's second process must still
-  // detect that and reapply its own layout, even though the in-memory
-  // rebuild-generation counter that normally makes this check fast and
-  // exact (see target_generations() in imgui_dock_layout.cpp) is reset to
-  // zero by the fresh process and so cannot itself see a rebuild that
-  // happened before this process even started.
-  ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-  ImGuiID dock_id = ImHashStr("DL_CrossProcess");
 
   auto d1 = make_docked_window("D1", "cd1");
   auto d2 = make_docked_window("D2", "cd2");
@@ -3515,38 +3472,33 @@ TEST_F(ImguiRendererTest, DockLayoutDetectsRebuildFromPriorProcessOnFirstCheck) 
       { "type": "DockArea", "windows": "cg1" }, { "type": "DockArea", "windows": "cg2" } ] } ]
   })")[""];
 
-  // Process 1: docker runs and applies its layout.
+  // docker runs -> applies its layout, its two windows land in distinct
+  // sibling nodes.
   drive_dock_frames(*renderer_, *sess_, dock_id, *docker_layout, {d1, d2}, 12);
   ASSERT_TRUE(ImGui::FindWindowByName("D1###cd1")->DockIsActive);
+  EXPECT_NE(ImGui::FindWindowByName("D1###cd1")->DockId, ImGui::FindWindowByName("D2###cd2")->DockId);
 
-  // Process 1 exits (simulated: nothing on disk carries the generation
-  // counters -- see reset_dock_layout_generation_tracking_for_test()).
-  bdg::wish::reset_dock_layout_generation_tracking_for_test();
-
-  // Process 2: git runs into the SAME dockspace and rebuilds it wholesale.
+  // git runs into the SAME dockspace -> it is applying for the first time
+  // too, so it rebuilds target_id wholesale with its own windows. This
+  // really does wipe docker's split tree -- unavoidable when two apps
+  // share one physical dockspace id and neither has run before.
   drive_dock_frames(*renderer_, *sess_, dock_id, *git_layout, {g1, g2}, 12);
   ASSERT_TRUE(ImGui::FindWindowByName("G1###cg1")->DockIsActive);
-  // git's rebuild really did wipe docker's windows out of the dockspace.
   ImGuiWindow* pd1 = ImGui::FindWindowByName("D1###cd1");
   ASSERT_NE(pd1, nullptr);
   if (ImGuiDockNode* n = pd1->DockId ? ImGui::DockBuilderGetNode(pd1->DockId) : nullptr)
-    ASSERT_NE(ImGui::DockNodeGetRootNode(n)->ID, dock_id);
+    ASSERT_NE(ImGui::DockNodeGetRootNode(n)->ID, dock_id); // docker's windows really got displaced
 
-  // Process 2 exits too.
-  bdg::wish::reset_dock_layout_generation_tracking_for_test();
-
-  // Process 3: docker runs again. Its own applied_versions entry (the only
-  // thing that really persists to imgui.ini) says "already applied at
-  // version 1", and the dockspace tree that exists is git's, not docker's
-  // -- docker must still detect the displacement and reapply, via the
-  // first-check liveness fallback, not silently trust a same-valued
-  // generation counter that only looks unchanged because it was reset.
-  drive_dock_frames(*renderer_, *sess_, dock_id, *docker_layout, {d1, d2}, 12);
+  // docker runs again -> already applied once at this version, so it must
+  // be left alone: its windows come back wherever ImGui puts them
+  // (floating, since the nodes they used to live in are gone), NOT rebuilt
+  // back to docker's hard-coded default over whatever happened in between.
+  ASSERT_FALSE(bdg::wish::should_apply_dock_layout(*docker_layout, dock_id, /*version=*/1));
+  drive_dock_frames(*renderer_, *sess_, dock_id, *docker_layout, {d1, d2}, 4);
   ImGuiWindow* pd1_again = ImGui::FindWindowByName("D1###cd1");
-  ImGuiWindow* pd2_again = ImGui::FindWindowByName("D2###cd2");
-  ASSERT_TRUE(pd1_again->DockIsActive && pd2_again->DockIsActive);
-  EXPECT_NE(pd1_again->DockId, pd2_again->DockId);
-  EXPECT_EQ(ImGui::DockNodeGetRootNode(ImGui::DockBuilderGetNode(pd1_again->DockId))->ID, dock_id);
+  ASSERT_NE(pd1_again, nullptr);
+  if (ImGuiDockNode* n = pd1_again->DockId ? ImGui::DockBuilderGetNode(pd1_again->DockId) : nullptr)
+    EXPECT_NE(ImGui::DockNodeGetRootNode(n)->ID, dock_id); // still not rebuilt into dock_id
 }
 
 TEST_F(ImguiRendererTest, DockLayoutFocusedWindowBecomesSelectedTab) {

@@ -26,9 +26,12 @@ if you bump its `version`.
 `DockArea`). It renders nothing. When the renderer reaches it and a
 dockspace is available, it checks whether to apply:
 
-- the target dock node doesn't exist yet (a fresh `imgui.ini`), **or**
 - the `version` on the element is higher than the one last recorded as
-  applied (persisted in `imgui.ini` under `[WishDockLayout]`).
+  applied for this exact layout (persisted in `imgui.ini` under
+  `[WishDockLayout]`) — covers a fresh `imgui.ini` (nothing recorded yet)
+  and an author's deliberate `version` bump, **or**
+- the target dock node doesn't exist at all (rare — e.g. a hand-edited
+  `imgui.ini` missing its `[Docking]` data).
 
 If so, it walks the `DockSplit`/`DockArea` tree and realizes it with ImGui's
 `DockBuilder` API — one `DockBuilderSplitNode` per `DockSplit`, one
@@ -148,21 +151,23 @@ so an array would vanish in a template.
 
 ## Versioning and re-applying
 
-The renderer applies a `DockLayout` when **any** of:
+A `DockLayout` is applied **at most once per `version`** — full stop. Once
+applied, nothing brings it back: not a drag, not floating a window out
+standalone, not a sibling wish tool that shares the same host dockspace
+(docker / kubectl / git all dock into the host chrome's one `HostDockSpace`)
+rebuilding it wholesale with its own windows in between. From that point on
+`imgui.ini` — ImGui's own window and dock-node persistence — owns the
+arrangement, exactly like any window the user dragged by hand.
 
-1. it has never been applied at its current `version` — the first run of a
-   build carrying this layout, or after you bump the number;
-2. the target dockspace has no dock-node tree yet (a fresh `imgui.ini`);
-3. its tree exists but **this layout's windows aren't the ones currently
-   arranged under the target** — e.g. another wish tool that shares the same
-   dockspace (docker / kubectl / git all dock into the host chrome's one
-   `HostDockSpace`) ran in between and rebuilt it.
-
-Once a layout's windows *are* live under the target, it is left alone — so a
-user's own rearrangement (which keeps every window docked under the target)
-survives restarts. Re-open the same tool and you get your layout back; run a
-different tool and it lays itself out; come back to the first and it
-restores itself.
+That means running a different tool that shares your dockspace, then coming
+back to this one, does **not** restore this tool's split arrangement the way
+an earlier design attempted — the earlier design inferred "a sibling rebuilt
+the dockspace" from transient docking state, which also misfired on
+ordinary drags and floats, so it was removed. If a sibling app displaces
+your windows, they come back as plain floating windows on your next run
+rather than being silently rebuilt back to the hard-coded default over
+anything you'd customized. Give each tool with meaningfully different window
+sets a distinct `target` if this matters for your app.
 
 To push a *changed* default to users who never customized theirs, **bump
 `version`** (`dock::layout(tree, 2)`, or `"version": 2` in a descriptor).

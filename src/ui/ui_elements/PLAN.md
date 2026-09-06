@@ -56,20 +56,25 @@ leaves the arrangement to `imgui.ini`.
    `render_dock_layout` in `imgui_ui_renderer.cpp` stays on the public API
    and calls into that TU.
 
-5. **Apply on first run / version bump / sibling takeover; else leave it.**
-   `render_dock_layout` (re)applies when: the layout has no persisted record
-   at its current `version` (fresh `imgui.ini`, or an author bumped it);
-   `DockBuilderGetNode(target) == nullptr`; **or** the windows the layout
-   names are not currently docked under `target` (`layout_windows_are_live`
-   is false — e.g. docker / kubectl / git all share the host chrome's one
-   `HostDockSpace`, so running one after another must re-lay-out each).
-   Once a layout's windows *are* live under `target` it is untouched, so a
-   user's own rearrangement survives. State is persisted per layout in
-   `imgui.ini` under `[WishDockLayout]`, **keyed by the hash of the layout's
-   window-path list** (`layout_identity()`), not the dockspace id — so two
-   apps sharing a dockspace keep independent records. The
-   `ImGuiSettingsHandler` is installed in `imgui_renderer::begin_frame()`
-   before the first `NewFrame`.
+5. **Apply at most once per version; else leave it alone, unconditionally.**
+   `render_dock_layout` (re)applies only when: the layout has no persisted
+   record at its current `version` (fresh `imgui.ini`, or an author bumped
+   it), or `DockBuilderGetNode(target) == nullptr` (no tree at all). Once
+   applied at a version, nothing reapplies it again at that version — not a
+   drag, not a float-out, not a sibling wish tool sharing the same host
+   dockspace (docker / kubectl / git all share the host chrome's one
+   `HostDockSpace`) rebuilding it wholesale. An earlier revision of this
+   design also reapplied when the layout's windows were no longer live under
+   `target`, to re-lay-out a tool displaced by a sibling's rebuild — dropped
+   because inferring "displaced by a sibling" from transient docking state
+   is indistinguishable from an ordinary drag or float-out reaching the same
+   state, and treating either as license to rebuild discarded users' own
+   rearrangements. State is persisted per layout in `imgui.ini` under
+   `[WishDockLayout]`, **keyed by the hash of the layout's window-path list**
+   (`layout_identity()`), not the dockspace id — so two apps sharing a
+   dockspace keep independent records. The `ImGuiSettingsHandler` is
+   installed in `imgui_renderer::begin_frame()` before the first
+   `NewFrame`.
 
 ### Files
 

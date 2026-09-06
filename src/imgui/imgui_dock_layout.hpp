@@ -41,53 +41,38 @@ class logger;
 ///         malformed (in which case an empty node is left at @p target_id).
 bool build_dock_layout(const ui_element& layout_root, ImGuiID target_id, ImVec2 node_size, logger* log);
 
-/// @brief Whether @p layout_root should be (re)applied this run. True when it
-///        has never been applied at @p version (fresh imgui.ini, or the
-///        author bumped `version`), or when its dockspace tree exists but
-///        @p target_id has been rebuilt (via `build_dock_layout()`) by
-///        someone else since @p layout_root last built it itself -- i.e. a
-///        sibling app sharing the dockspace rebuilt it, wholesale, with its
-///        own windows.
+/// @brief Whether @p layout_root should be (re)applied this run. True only
+///        when it has never been applied at @p version before -- a fresh
+///        `imgui.ini` (this exact set of windows has never existed), or the
+///        author bumped `version` to force a new default onto existing
+///        users -- or when @p target_id has no dock-node tree at all yet.
+///        Persisted in imgui.ini under `[WishDockLayout]`, keyed by the
+///        layout's window-path list, not the dockspace id, so this is a
+///        real "have I ever applied this before" fact rather than anything
+///        inferred from a moment's worth of live docking state.
 ///
-///        Rebuilds are tracked with an exact per-target counter for most
-///        frames: ordinary user rearranging (dragging a window to a new
-///        split, floating one out standalone, or a window mid drag-to-dock
-///        with its `DockId` transiently detached) never calls
-///        `build_dock_layout()` and so never moves it, regardless of how
-///        `DockId` looks while or after it happens, and a same-process
-///        sibling rebuild is caught immediately. That counter lives only in
-///        memory, though, so it can't see a rebuild from a *previous*
-///        process (e.g. running `docker`, then `git`, then `docker` again,
-///        each a separate process sharing one imgui.ini and ambient
-///        dockspace) -- the first check per layout each session instead
-///        falls back to real, persisted window state (are any of its
-///        windows still docked under @p target_id) to catch that case, then
-///        establishes the counter baseline so later frames use the fast
-///        path.
-///        State is persisted in imgui.ini under `[WishDockLayout]`, keyed by
-///        the layout's window-path list, not the dockspace id.
+///        Once applied at a given version, @p layout_root is never
+///        reapplied again at that version, no matter what happens to
+///        @p target_id afterwards: the user rearranging it, floating a
+///        window out standalone, a window mid drag-to-dock, or a sibling
+///        app sharing the same dockspace rebuilding it wholesale with its
+///        own windows. From that point on `imgui.ini` (ImGui's own window
+///        and dock-node persistence) owns the arrangement, exactly like any
+///        window the user dragged by hand -- if a sibling app's rebuild
+///        displaces this layout's windows, they come back as plain floating
+///        windows next run rather than being silently rebuilt back to the
+///        hard-coded default over the user's own customization.
 bool should_apply_dock_layout(const ui_element& layout_root, ImGuiID target_id, int32_t version);
 
-/// @brief Record that @p layout_root was applied at @p version against
-///        @p target_id's current rebuild generation, and mark imgui.ini
-///        dirty so the version is persisted.
-void note_dock_layout_applied(const ui_element& layout_root, ImGuiID target_id, int32_t version);
+/// @brief Record that @p layout_root was applied at @p version, and mark
+///        imgui.ini dirty so the version is persisted.
+void note_dock_layout_applied(const ui_element& layout_root, int32_t version);
 
 /// @brief Install the `[WishDockLayout]` `ImGuiSettingsHandler` on the
 ///        current ImGui context if not already present. Must be called
 ///        before the first `ImGui::NewFrame()` so the handler participates
 ///        in the initial `imgui.ini` load. Idempotent.
 void install_dock_layout_settings_handler();
-
-/// @brief Test-only seam: discard should_apply_dock_layout()'s in-memory
-///        rebuild-generation bookkeeping (never persisted to imgui.ini in
-///        production either) while leaving `applied_versions` and the
-///        actual ImGui dock tree untouched. This is what genuinely differs
-///        between "still the same process" and "a fresh process that
-///        reloaded imgui.ini" -- see `should_apply_dock_layout()`'s
-///        doc comment -- so tests use it to exercise that first-check
-///        fallback path without a real process boundary.
-void reset_dock_layout_generation_tracking_for_test();
 
 } // namespace bdg::wish
 
