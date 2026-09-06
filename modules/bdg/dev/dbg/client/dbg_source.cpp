@@ -31,8 +31,9 @@ dbg_source::dbg_source(std::shared_ptr<rmi::proxy::dynamic> proxy, std::unique_p
 
 void dbg_source::on_attach_requested(uint32_t pid) {
   attached_ = backend_->attach(pid);
-  proxy_->call(
-      "set_run_state"_key, payload1("state"_key, std::string{attached_ ? "running" : "detached"}));
+  proxy_
+      ->call("set_run_state"_key, payload1("state"_key, std::string{attached_ ? "running" : "detached"}))
+      .get();
   if (!attached_)
     return;
   push_breakpoints();
@@ -46,12 +47,12 @@ void dbg_source::on_detach_requested() {
   has_current_frame_ = false;
   current_stop_file_.clear();
   current_stop_line_ = 0;
-  proxy_->call("set_run_state"_key, payload1("state"_key, std::string{"detached"}));
+  proxy_->call("set_run_state"_key, payload1("state"_key, std::string{"detached"})).get();
 }
 
 void dbg_source::on_pause_requested() {
   backend_->pause();
-  proxy_->call("set_run_state"_key, payload1("state"_key, std::string{"paused"}));
+  proxy_->call("set_run_state"_key, payload1("state"_key, std::string{"paused"})).get();
   push_threads();
 }
 
@@ -60,7 +61,7 @@ void dbg_source::on_resume_requested() {
   current_stop_file_.clear();
   current_stop_line_ = 0;
   has_current_frame_ = false;
-  proxy_->call("set_run_state"_key, payload1("state"_key, std::string{"running"}));
+  proxy_->call("set_run_state"_key, payload1("state"_key, std::string{"running"})).get();
 }
 
 void dbg_source::on_step_requested(const std::string& kind, uint32_t thread_id) {
@@ -147,7 +148,7 @@ void dbg_source::push_threads() {
     (*arr)[i++] = dynamic_ptr{std::make_shared<dynamic>(std::move(entry))};
   }
   args["threads"_key] = arr;
-  proxy_->call("update_threads"_key, std::move(args));
+  proxy_->call("update_threads"_key, std::move(args)).get();
 }
 
 void dbg_source::push_callstack(uint32_t thread_id) {
@@ -166,7 +167,7 @@ void dbg_source::push_callstack(uint32_t thread_id) {
     (*arr)[i++] = dynamic_ptr{std::make_shared<dynamic>(std::move(entry))};
   }
   args["frames"_key] = arr;
-  proxy_->call("update_callstack"_key, std::move(args));
+  proxy_->call("update_callstack"_key, std::move(args)).get();
 }
 
 void dbg_source::push_watch(uint32_t frame_id) {
@@ -183,7 +184,7 @@ void dbg_source::push_watch(uint32_t frame_id) {
     (*arr)[i++] = dynamic_ptr{std::make_shared<dynamic>(std::move(entry))};
   }
   args["entries"_key] = arr;
-  proxy_->call("update_watch"_key, std::move(args));
+  proxy_->call("update_watch"_key, std::move(args)).get();
 }
 
 void dbg_source::push_breakpoints() {
@@ -198,7 +199,7 @@ void dbg_source::push_breakpoints() {
     (*arr)[i++] = dynamic_ptr{std::make_shared<dynamic>(std::move(entry))};
   }
   args["breakpoints"_key] = arr;
-  proxy_->call("update_breakpoints"_key, std::move(args));
+  proxy_->call("update_breakpoints"_key, std::move(args)).get();
 }
 
 void dbg_source::push_source(const std::string& file, int32_t line) {
@@ -211,7 +212,7 @@ void dbg_source::push_source(const std::string& file, int32_t line) {
       lines.push_back(bp.line);
   }
   args["breakpoint_lines"_key] = std::move(lines);
-  proxy_->call("update_source"_key, std::move(args));
+  proxy_->call("update_source"_key, std::move(args)).get();
 }
 
 void dbg_source::handle_stop(const stop_event& ev) {
@@ -221,7 +222,7 @@ void dbg_source::handle_stop(const stop_event& ev) {
   current_stop_line_ = ev.line;
   current_frame_id_ = 0;
   has_current_frame_ = true;
-  proxy_->call("set_run_state"_key, payload1("state"_key, std::string{"paused"}));
+  proxy_->call("set_run_state"_key, payload1("state"_key, std::string{"paused"})).get();
   push_threads();
   push_callstack(ev.thread_id);
   push_source(ev.file, ev.line);
@@ -232,14 +233,14 @@ void dbg_source::handle_stop(const stop_event& ev) {
   dynamic out_args;
   out_args["text"_key] = ev.reason + " at " + ev.file + ":" + std::to_string(ev.line);
   out_args["level"_key] = std::string{ev.reason == "exception" ? "error" : "info"};
-  proxy_->call("append_output"_key, std::move(out_args));
+  proxy_->call("append_output"_key, std::move(out_args)).get();
 }
 
 void dbg_source::handle_log(const std::string& text, const std::string& level) {
   dynamic out_args;
   out_args["text"_key] = text;
   out_args["level"_key] = level;
-  proxy_->call("append_output"_key, std::move(out_args));
+  proxy_->call("append_output"_key, std::move(out_args)).get();
 }
 
 } // namespace bdg::wish::dbg

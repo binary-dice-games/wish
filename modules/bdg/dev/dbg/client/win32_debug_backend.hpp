@@ -148,6 +148,20 @@ class win32_debug_backend : public debug_backend {
   DWORD continue_status_{DBG_CONTINUE};
   pending_step pending_step_;
 
+  // DbgHelp (SymInitialize/SymFromAddr/SymGetLineFromAddr64/StackWalk64/
+  // SymEnumSymbols/SymEnumLines/SymLoadModuleEx/SymCleanup, all keyed off
+  // `process_`) is documented by Microsoft as single-threaded per process
+  // handle: concurrent calls from more than one thread cause "unexpected
+  // behavior or memory corruption". dbg_source can legitimately call into
+  // this backend from two different real OS threads at once -- most
+  // notably right after attach(), where the caller's own thread (running
+  // on_attach_requested) calls get_threads() while the freshly-spawned
+  // debug thread is concurrently handling the initial CREATE_PROCESS stop
+  // and calling resolve_address()/get_threads() itself for the same
+  // event -- so every DbgHelp-touching call site must hold this for its
+  // whole run of DbgHelp calls (see resolve_address()'s callers).
+  std::mutex sym_mtx_;
+
   bison::synchronized<std::map<uint32_t, HANDLE>> thread_handles_;
   bison::synchronized<std::vector<breakpoint_state>> breakpoints_;
   bison::synchronized<stop_callback> on_stop_cb_;

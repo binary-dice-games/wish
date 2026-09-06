@@ -299,12 +299,64 @@ BOOL CALLBACK enum_locals_cb(PSYMBOL_INFO sym, ULONG /*size*/, PVOID user) {
   return TRUE;
 }
 
+/// @brief Enables SE_DEBUG_NAME on the current process's token.
+///
+/// DebugActiveProcess() silently fails (returns FALSE) against any process
+/// this one didn't itself spawn -- e.g. attaching to an already-running PID
+/// from the UI, as opposed to the test fixture's self-spawned child, which
+/// succeeds without this because a process can already debug its own
+/// direct children -- unless SeDebugPrivilege is enabled on this process's
+/// token first. Administrators hold this privilege but it is disabled by
+/// default; it must be turned on explicitly via AdjustTokenPrivileges.
+/// Returns false (with *last_error set) if the privilege could not be
+/// enabled, or was enabled but the token doesn't actually hold it (per
+/// AdjustTokenPrivileges' well-known quirk of returning TRUE while leaving
+/// ERROR_NOT_ALL_ASSIGNED in GetLastError()).
+bool enable_debug_privilege(DWORD* last_error) {
+  HANDLE token = nullptr;
+  if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token)) {
+    *last_error = GetLastError();
+    return false;
+  }
+
+  LUID luid{};
+  if (!LookupPrivilegeValueA(nullptr, SE_DEBUG_NAME, &luid)) {
+    *last_error = GetLastError();
+    CloseHandle(token);
+    return false;
+  }
+
+  TOKEN_PRIVILEGES priv{};
+  priv.PrivilegeCount = 1;
+  priv.Privileges[0].Luid = luid;
+  priv.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+
+  BOOL adjusted = AdjustTokenPrivileges(token, FALSE, &priv, sizeof(priv), nullptr, nullptr);
+  DWORD adjust_error = GetLastError();
+  CloseHandle(token);
+
+  if (!adjusted) {
+    *last_error = adjust_error;
+    return false;
+  }
+  if (adjust_error == ERROR_NOT_ALL_ASSIGNED) {
+    // AdjustTokenPrivileges returns TRUE here even though it did not
+    // actually grant the privilege -- this process's token isn't entitled
+    // to SeDebugPrivilege at all (e.g. not running elevated).
+    *last_error = adjust_error;
+    return false;
+  }
+  return true;
+}
+
 } // namespace
 
 win32_debug_backend::~win32_debug_backend() {
   detach();
-  if (sym_initialized_ && process_)
+  if (sym_initialized_ && process_) {
+    std::lock_guard<std::mutex> lk(sym_mtx_);
     SymCleanup(process_);
+  }
 }
 
 bool win32_debug_backend::attach(uint32_t pid) {
@@ -315,10 +367,34 @@ bool win32_debug_backend::attach(uint32_t pid) {
   resume_signaled_ = false;
   pending_step_ = pending_step{};
 
+  // Attaching to a process we didn't spawn ourselves (the common case: an
+  // arbitrary PID typed into the UI) requires SeDebugPrivilege -- without
+  // it, DebugActiveProcess() below fails with no indication why beyond
+  // GetLastError(). Report but don't hard-fail on this: some environments
+  // (attaching to one's own already-running child, certain service
+  // contexts) succeed without it, so let DebugActiveProcess itself be the
+  // final authority.
+  DWORD priv_error = 0;
+  if (!enable_debug_privilege(&priv_error)) {
+    log_callback cb = *on_log_cb_.rlock();
+    if (cb) {
+      cb("Could not enable SeDebugPrivilege (error " + std::to_string(priv_error) +
+             "); attach may fail unless this process is running elevated.",
+         "warn");
+    }
+  }
+
   auto started = std::make_shared<std::promise<bool>>();
   std::future<bool> fut = started->get_future();
   debug_thread_ = std::thread([this, pid, started]() {
     if (!DebugActiveProcess(pid)) {
+      DWORD err = GetLastError();
+      log_callback cb = *on_log_cb_.rlock();
+      if (cb) {
+        cb("DebugActiveProcess(pid=" + std::to_string(pid) + ") failed (error " +
+               std::to_string(err) + ").",
+           "error");
+      }
       started->set_value(false);
       return;
     }
@@ -483,10 +559,14 @@ bool win32_debug_backend::set_breakpoint(const std::string& file, int line) {
     return false;
 
   line_search_state st{&file, line};
-  // Pass the known module base explicitly rather than 0 ("all modules") --
-  // SymEnumLines needs a specific module to search, and with symbols loaded
-  // eagerly (see handle_create_process) this is the only one that matters.
-  SymEnumLines(process_, module_base_, nullptr, nullptr, enum_lines_cb, &st);
+  {
+    std::lock_guard<std::mutex> lk(sym_mtx_);
+    // Pass the known module base explicitly rather than 0 ("all modules")
+    // -- SymEnumLines needs a specific module to search, and with symbols
+    // loaded eagerly (see handle_create_process) this is the only one that
+    // matters.
+    SymEnumLines(process_, module_base_, nullptr, nullptr, enum_lines_cb, &st);
+  }
   if (st.best_addr == 0)
     return false;
 
@@ -525,6 +605,10 @@ void win32_debug_backend::clear_breakpoint(const std::string& file, int line) {
 
 std::vector<thread_info> win32_debug_backend::get_threads() {
   std::vector<thread_info> result;
+  // Held for the whole loop: each iteration calls resolve_address(), which
+  // makes DbgHelp calls against the same process_ handle a concurrent
+  // debug-thread callback may be using right now (see sym_mtx_'s comment).
+  std::lock_guard<std::mutex> sym_lk(sym_mtx_);
   auto rl = thread_handles_.rlock();
   for (auto& [tid, handle] : *rl) {
     thread_info info;
@@ -561,6 +645,10 @@ std::vector<frame_info> win32_debug_backend::get_callstack(uint32_t thread_id) {
   frame.AddrStack.Mode = AddrModeFlat;
   CONTEXT walk_ctx = ctx;
 
+  // Held for the whole walk: StackWalk64 and resolve_address() both make
+  // DbgHelp calls against the same process_ handle a concurrent debug-thread
+  // callback may be using right now (see sym_mtx_'s comment).
+  std::lock_guard<std::mutex> sym_lk(sym_mtx_);
   for (int32_t i = 0; i < 64; ++i) {
     if (!StackWalk64(kMachineType, process_, th, &frame, &walk_ctx, nullptr, SymFunctionTableAccess64,
                       SymGetModuleBase64, nullptr))
@@ -599,6 +687,12 @@ std::vector<watch_entry> win32_debug_backend::evaluate(uint32_t frame_id, const 
   frame.AddrStack.Offset = ctx_sp(ctx);
   frame.AddrStack.Mode = AddrModeFlat;
   CONTEXT walk_ctx = ctx;
+
+  // Held for the whole walk + scope/enum below: all of StackWalk64,
+  // SymSetScopeFromAddr, and SymEnumSymbols make DbgHelp calls against the
+  // same process_ handle a concurrent debug-thread callback may be using
+  // right now (see sym_mtx_'s comment).
+  std::lock_guard<std::mutex> sym_lk(sym_mtx_);
 
   // Walk to the requested frame (frame_id 0 == innermost, matching
   // get_callstack()'s indexing) so locals are resolved against the right
@@ -651,8 +745,14 @@ void win32_debug_backend::debug_thread_main(uint32_t pid) {
           evt.thread_id = dbg_event.dwThreadId;
           evt.reason = "attach";
           std::string fn;
-          resolve_address(reinterpret_cast<DWORD64>(dbg_event.u.CreateProcessInfo.lpStartAddress), fn, evt.file,
-                           evt.line);
+          {
+            // See sym_mtx_'s comment: this races against the attaching
+            // caller's own thread, which may be calling get_threads() (or
+            // similar) on this same process_ handle right now.
+            std::lock_guard<std::mutex> sym_lk(sym_mtx_);
+            resolve_address(reinterpret_cast<DWORD64>(dbg_event.u.CreateProcessInfo.lpStartAddress), fn, evt.file,
+                             evt.line);
+          }
           should_stop = true;
         }
         if (dbg_event.u.CreateProcessInfo.hFile)
@@ -712,6 +812,10 @@ void win32_debug_backend::handle_create_process(const DEBUG_EVENT& ev) {
   // practice. Eager loading costs a bit of attach latency but keeps
   // resolve_address()/set_breakpoint() simple and correct.
   SymSetOptions(SYMOPT_LOAD_LINES | SYMOPT_UNDNAME);
+  // See sym_mtx_'s comment: SymInitialize/SymLoadModuleEx race against the
+  // attaching caller's own thread, which may already be calling into
+  // DbgHelp (get_threads()) on this same process_ handle right now.
+  std::lock_guard<std::mutex> sym_lk(sym_mtx_);
   if (SymInitialize(process_, nullptr, FALSE)) {
     sym_initialized_ = true;
     module_base_ = SymLoadModuleEx(process_, ev.u.CreateProcessInfo.hFile, nullptr, nullptr,
@@ -722,6 +826,7 @@ void win32_debug_backend::handle_create_process(const DEBUG_EVENT& ev) {
 void win32_debug_backend::handle_load_dll(const DEBUG_EVENT& ev) {
   if (!sym_initialized_)
     return;
+  std::lock_guard<std::mutex> sym_lk(sym_mtx_);
   SymLoadModuleEx(process_, ev.u.LoadDll.hFile, nullptr, nullptr,
                    reinterpret_cast<DWORD64>(ev.u.LoadDll.lpBaseOfDll), 0, nullptr, 0);
 }
@@ -806,7 +911,12 @@ DWORD win32_debug_backend::handle_exception(const DEBUG_EVENT& ev, bool& should_
         out.thread_id = ev.dwThreadId;
         out.reason = "step";
         std::string fn;
-        resolve_address(pc, fn, out.file, out.line);
+        {
+          // See sym_mtx_'s comment: resolve_address() races against a
+          // concurrent caller thread using DbgHelp on this process_ handle.
+          std::lock_guard<std::mutex> sym_lk(sym_mtx_);
+          resolve_address(pc, fn, out.file, out.line);
+        }
         should_stop = true;
       }
       return DBG_CONTINUE;
@@ -817,7 +927,10 @@ DWORD win32_debug_backend::handle_exception(const DEBUG_EVENT& ev, bool& should_
       out.thread_id = ev.dwThreadId;
       out.reason = "step";
       std::string fn;
-      resolve_address(pc, fn, out.file, out.line);
+      {
+        std::lock_guard<std::mutex> sym_lk(sym_mtx_);
+        resolve_address(pc, fn, out.file, out.line);
+      }
       should_stop = true;
     }
     return DBG_CONTINUE;
@@ -840,7 +953,10 @@ DWORD win32_debug_backend::handle_exception(const DEBUG_EVENT& ev, bool& should_
       out.thread_id = ev.dwThreadId;
       out.reason = "step";
       std::string fn;
-      resolve_address(hit_addr, fn, out.file, out.line);
+      {
+        std::lock_guard<std::mutex> sym_lk(sym_mtx_);
+        resolve_address(hit_addr, fn, out.file, out.line);
+      }
       should_stop = true;
       return DBG_CONTINUE;
     }
@@ -871,7 +987,10 @@ DWORD win32_debug_backend::handle_exception(const DEBUG_EVENT& ev, bool& should_
       out.thread_id = ev.dwThreadId;
       out.reason = "pause";
       std::string fn;
-      resolve_address(ctx_pc(ctx), fn, out.file, out.line);
+      {
+        std::lock_guard<std::mutex> sym_lk(sym_mtx_);
+        resolve_address(ctx_pc(ctx), fn, out.file, out.line);
+      }
       should_stop = true;
       return DBG_CONTINUE;
     }
@@ -897,7 +1016,10 @@ DWORD win32_debug_backend::handle_exception(const DEBUG_EVENT& ev, bool& should_
   out.thread_id = ev.dwThreadId;
   out.reason = "exception";
   std::string fn;
-  resolve_address(ctx_pc(ctx), fn, out.file, out.line);
+  {
+    std::lock_guard<std::mutex> sym_lk(sym_mtx_);
+    resolve_address(ctx_pc(ctx), fn, out.file, out.line);
+  }
   should_stop = true;
   return DBG_EXCEPTION_NOT_HANDLED;
 }

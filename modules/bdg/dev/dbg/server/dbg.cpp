@@ -344,6 +344,13 @@ void debugger_frontend::build_source_window() {
   source_window_id_ = (*tree[""])["__wish_id"_key].as<key_t>();
   tree.with("vbox.toolbar.pid", [&](const auto& e) { pid_input_ = e; });
   tree.with("vbox.toolbar.state", [&](const auto& e) { run_state_label_ = e; });
+  tree.with("vbox.toolbar.attach", [&](const auto& e) { attach_button_ = e; });
+  tree.with("vbox.toolbar.detach", [&](const auto& e) { detach_button_ = e; });
+  tree.with("vbox.toolbar.pause", [&](const auto& e) { pause_button_ = e; });
+  tree.with("vbox.toolbar.resume", [&](const auto& e) { resume_button_ = e; });
+  tree.with("vbox.toolbar.into", [&](const auto& e) { step_into_button_ = e; });
+  tree.with("vbox.toolbar.over", [&](const auto& e) { step_over_button_ = e; });
+  tree.with("vbox.toolbar.out", [&](const auto& e) { step_out_button_ = e; });
   tree.with("vbox.files", [&](const auto& e) { source_tabbar_ = e; });
 
   auto bind_click = [&](const std::string& path, std::function<void()> handler) {
@@ -530,15 +537,22 @@ void debugger_frontend::rebuild_threads(const dynamic& args) {
     (*children)[row_key++] = dynamic_ptr{row};
     thread_row_ids_.push_back(id);
   });
+  threads_table_->refresh_children_order();
 }
 
 dynamic debugger_frontend::do_update_callstack(const dynamic& args) {
   uint32_t thread_id = static_cast<uint32_t>(args.as<int32_t>("thread_id"_key));
   // Staleness guard: discard if this snapshot no longer matches the
   // Threads window's current selection (docker's do_update_logs /
-  // do_update_inspect container_id/kind+id guard, ported verbatim).
-  if (!has_selected_thread_ || thread_id != selected_thread_id_)
+  // do_update_inspect container_id/kind+id guard, ported verbatim). When
+  // there is no selection yet, adopt this thread_id as the selection
+  // instead of dropping the update -- otherwise the very first automatic
+  // snapshot pushed by a stop (before any Threads row has been clicked)
+  // would always be discarded.
+  if (has_selected_thread_ && thread_id != selected_thread_id_)
     return dynamic{};
+  selected_thread_id_ = thread_id;
+  has_selected_thread_ = true;
   rebuild_callstack(args);
   return dynamic{};
 }
@@ -585,14 +599,18 @@ void debugger_frontend::rebuild_callstack(const dynamic& args) {
     frame_row_files_.push_back(file);
     frame_row_lines_.push_back(line);
   });
+  callstack_table_->refresh_children_order();
 }
 
 // ── update_watch / update_breakpoints / update_source / append_output ──────
 
 dynamic debugger_frontend::do_update_watch(const dynamic& args) {
   uint32_t frame_id = static_cast<uint32_t>(args.as<int32_t>("frame_id"_key));
-  if (!has_selected_frame_ || frame_id != selected_frame_id_)
+  // Same "adopt on first snapshot" rule as do_update_callstack above.
+  if (has_selected_frame_ && frame_id != selected_frame_id_)
     return dynamic{};
+  selected_frame_id_ = frame_id;
+  has_selected_frame_ = true;
   rebuild_watch(args);
   return dynamic{};
 }
@@ -625,6 +643,7 @@ void debugger_frontend::rebuild_watch(const dynamic& args) {
     set_children_list(row, {name_cell, value_cell, type_cell});
     (*children)[row_key++] = dynamic_ptr{row};
   });
+  watch_table_->refresh_children_order();
 }
 
 dynamic debugger_frontend::do_update_breakpoints(const dynamic& args) {
@@ -683,6 +702,7 @@ void debugger_frontend::rebuild_breakpoints(const dynamic& args) {
     set_children_list(row, {file_cell, line_cell, enabled_cell, actions_cell});
     (*children)[row_key++] = dynamic_ptr{row};
   });
+  breakpoints_table_->refresh_children_order();
 }
 
 dynamic debugger_frontend::do_update_source(const dynamic& args) {
@@ -749,6 +769,7 @@ dynamic debugger_frontend::do_append_output(const dynamic& args) {
       children->erase(erase_key.id);
   }
 
+  output_table_->refresh_children_order();
   return dynamic{};
 }
 
@@ -756,6 +777,32 @@ dynamic debugger_frontend::do_set_run_state(const dynamic& args) {
   std::string state = args.as<std::string>("state"_key);
   if (run_state_label_)
     run_state_label_["text"_key] = state;
+  bool detached = state == "detached";
+  bool running = state == "running";
+  bool paused = state == "paused";
+  if (detached) {
+    // Clear the Call Stack/Watch selection so the next attach's first
+    // automatic stop is treated as a fresh snapshot to adopt (see the
+    // "adopt on first snapshot" comment in do_update_callstack/
+    // do_update_watch) instead of being compared against a thread/frame id
+    // left over from the previous session.
+    has_selected_thread_ = false;
+    has_selected_frame_ = false;
+  }
+  if (attach_button_)
+    attach_button_["enabled"_key] = detached;
+  if (detach_button_)
+    detach_button_["enabled"_key] = !detached;
+  if (pause_button_)
+    pause_button_["enabled"_key] = running;
+  if (resume_button_)
+    resume_button_["enabled"_key] = paused;
+  if (step_into_button_)
+    step_into_button_["enabled"_key] = paused;
+  if (step_over_button_)
+    step_over_button_["enabled"_key] = paused;
+  if (step_out_button_)
+    step_out_button_["enabled"_key] = paused;
   return dynamic{};
 }
 

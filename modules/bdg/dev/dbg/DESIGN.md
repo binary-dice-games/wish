@@ -224,16 +224,48 @@ about to terminate.
 
 Implements `debug_backend` on Windows:
 
-- `attach()` calls `DebugActiveProcess`, then starts a **dedicated debug
-  thread** that loops on `WaitForDebugEvent`/`ContinueDebugEvent` — per
-  the Win32 API's own constraint that only the thread which attached to
-  the process may wait for its debug events, this loop cannot run on the
-  RMI dispatch thread or any general worker thread.
+- `attach()` first tries to enable `SeDebugPrivilege` on the current
+  process's token (`OpenProcessToken` + `LookupPrivilegeValueA` +
+  `AdjustTokenPrivileges`) before calling `DebugActiveProcess`.
+  `DebugActiveProcess` against a process this one didn't itself spawn —
+  the common case: an arbitrary PID typed into the UI — can fail outright
+  without this privilege, depending on the target's owner/integrity level
+  and the debugger's own token; attaching to a self-spawned direct child
+  (as in the unit tests' `dbg_fixture.exe`) does not require it. Failure
+  to enable the privilege is logged via `on_log()` as a "warn" (surfacing
+  in the Output window) but does not itself abort the attach — some
+  environments still succeed without it, so `DebugActiveProcess`'s own
+  result is the final authority. A `DebugActiveProcess` failure is also
+  now logged via `on_log()` as an "error" with `GetLastError()`, instead
+  of silently leaving the run state at "detached" with no visible reason.
+  Then a **dedicated debug thread** loops on
+  `WaitForDebugEvent`/`ContinueDebugEvent` — per the Win32 API's own
+  constraint that only the thread which attached to the process may wait
+  for its debug events, this loop cannot run on the RMI dispatch thread or
+  any general worker thread.
 - Symbol/line resolution uses `DbgHelp`: `SymInitialize` once per attached
   process, `SymLoadModuleEx` on each `LOAD_DLL_DEBUG_EVENT` /
   `CREATE_PROCESS_DEBUG_EVENT`, `SymFromAddr` + `SymGetLineFromAddr64` to
   turn an instruction pointer into `{function, file, line}` for the call
   stack and the current-execution-line indicator.
+- **DbgHelp is single-threaded per process handle** (Microsoft's own
+  documentation: concurrent calls from more than one thread cause
+  "unexpected behavior or memory corruption"). `dbg_source` legitimately
+  calls into this backend from two different real OS threads at once --
+  most notably right after `attach()` returns (which happens before the
+  debug thread has even processed the initial `CREATE_PROCESS_DEBUG_EVENT`),
+  the caller's own thread can call `get_threads()` while the debug thread
+  is concurrently handling that same "attach" stop and calling
+  `SymInitialize`/`resolve_address()` itself. Every DbgHelp call site
+  (`get_threads`, `get_callstack`, `evaluate`, `set_breakpoint`,
+  `handle_create_process`, `handle_load_dll`, every `resolve_address()`
+  call in the debug-event switch, and the destructor's `SymCleanup`) holds
+  a single `sym_mtx_` for its whole run of DbgHelp calls.
+  `resolve_address()` itself stays unlocked internally -- callers hold the
+  mutex around it instead -- so a caller that already makes several DbgHelp
+  calls in a row (e.g. `get_callstack()`'s `StackWalk64` loop plus its
+  per-frame `resolve_address()`) can cover all of them with one lock
+  acquisition without needing a recursive mutex.
 - Breakpoints are software breakpoints: `set_breakpoint` resolves
   file:line to an address via `DbgHelp`, saves the original byte, and
   writes `0xCC` (`INT3`) via `WriteProcessMemory`; the debug thread

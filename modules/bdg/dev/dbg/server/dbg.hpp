@@ -131,6 +131,13 @@ class debugger_frontend : public form {
   ui_element_ptr pid_input_;
   std::string pid_text_;
   ui_element_ptr run_state_label_;
+  ui_element_ptr attach_button_;
+  ui_element_ptr detach_button_;
+  ui_element_ptr pause_button_;
+  ui_element_ptr resume_button_;
+  ui_element_ptr step_into_button_;
+  ui_element_ptr step_over_button_;
+  ui_element_ptr step_out_button_;
 
   // ── Threads window ───────────────────────────────────────────────────────
   ui_element_ptr threads_table_;

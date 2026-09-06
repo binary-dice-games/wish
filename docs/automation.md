@@ -127,6 +127,21 @@ gotcha you hit and didn't record is one the next agent will hit again.
 - **A dark/blank `screenshot()` while `get_tree()` returns a full, correctly
   laid-out widget list is the headless-WebGL-not-painting issue, not a real
   regression.** It comes and goes; trust the tree, retry the shot.
+- **A screenshot missing specific rows (e.g. a table) while `get_tree()`
+  shows those exact rows present and correct is a *different*, real bug --
+  don't mistake it for the WebGL flakiness above and just retry.** This
+  pattern means server-side data is right but the render pass never drew
+  it. One confirmed cause (`dbg` module, 2026-09): a `rebuild_*()` handler
+  mutated a `Table`'s `children` `bison::dynamic` map directly to add/
+  remove `TableRow`s but never called `ui_element::refresh_children_order()`
+  afterward, so the renderer's cached child-render order
+  (`for_each_child_ordered()`, populated by `refresh_children_order()`) went
+  stale at whatever it was when the table was first imported (typically
+  empty) -- `get_tree()` reads the raw `bison::dynamic` model directly and
+  so looked correct throughout. If a repro like this comes up again, check
+  whether the widget in question has children being added/removed outside
+  the normal form-template/`order`-field path, and confirm
+  `refresh_children_order()` is called after each such mutation.
 
 ## Prerequisites
 
@@ -334,6 +349,20 @@ def test_saving_shows_confirmation(wish_ui):
   inside a collapsed `TreeNode`, an unopened `TabBar` tab, or a window that
   hasn't been given a chance to draw yet. Navigate to make it visible (or
   `wait_for` the tree to settle) before asserting on its rect or clicking it.
+- **This sandboxed tool environment can make Win32 debug-API calls fail in
+  ways a normal desktop session wouldn't, even against your own
+  same-user child process.** `DebugActiveProcess()` against a
+  `subprocess.Popen`-spawned child returned `ERROR_ACCESS_DENIED` (5) when
+  run through the sandboxed `Bash`/`PowerShell` tools, but succeeded
+  immediately (same command, same machine, same non-elevated account) once
+  re-run with `dangerouslyDisableSandbox: true`. Same-user process-to-process
+  debug attach normally needs no special privilege at all (only attaching
+  across users/integrity levels needs `SeDebugPrivilege`) — so a
+  `DebugActiveProcess`/`OpenProcess(PROCESS_ALL_ACCESS)`-style failure seen
+  only through the sandboxed tool, and not reproducible outside it, is the
+  sandbox's own token restrictions, not a real bug. Always disable the
+  sandbox before trusting a live repro's *failure* to attach/debug a process
+  as evidence of anything in `dbg`-module code.
 - **Container/window rects are now accurate bounding boxes**, not the
   last-rendered descendant's rect — `imgui_renderer::render_node()` wraps
   each recursing container's dispatch in `ImGui::BeginGroup()`/`EndGroup()`
@@ -615,3 +644,30 @@ def test_saving_shows_confirmation(wish_ui):
   `YamlCursorContextDrivesHelpPanel`. Automation is still the right tool
   for confirming the *preview* subtree (`<...>_mock.*`) rendered what the
   source describes.
+- **For `dbg` module live-attach repros, use a genuinely long-running host
+  process, not `tests/dbg_fixture.exe`.** The fixture runs a fast bit-shift
+  loop to completion (2^20 iterations) in well under a second when it
+  isn't already being debugged, so a scripted sequence launched after it
+  starts (type PID, click Attach) can't reliably attach before it exits on
+  its own — the attach silently races the fixture's own exit. Launch a
+  plain, long-lived **console** process as the attach target instead --
+  e.g. `PING.EXE -t 127.0.0.1` (kill it with `Popen.terminate()` when
+  done). Do **not** use `notepad.exe` on Windows 11: it's a
+  packaged/protected app, and `DebugActiveProcess` against it fails with
+  `ERROR_ACCESS_DENIED` (error 5) unconditionally -- this is a property of
+  the target process itself, not the sandbox (it fails identically with
+  `dangerouslyDisableSandbox: true`), and not a wish bug. Neither target
+  has a matching PDB, so Source/Watch won't show meaningful data, but
+  Threads/Call Stack/Output need no app-specific symbols and are enough to
+  confirm attach/stop plumbing end-to-end. Also note:
+  `dbg_source.cpp`/`dbg.cpp` never call `client.log_info()` or similar —
+  `append_output` only populates the Output window's own `Table` widget,
+  not the automation `get_logs()` channel — so `get_logs()` is not a
+  useful signal for this module's Output content; read
+  `<...>_output.vbox.table` rows directly via `get_tree()`/`get_widget()`
+  instead. Similarly, standalone mode's `--verbose trace` writes to
+  `wish_logs/standalone.log`, not stdout, and in this module's case never
+  populated it at all during a full repro run — likely because a
+  single-process embedded app has no separate "client connects" RMI
+  lifecycle event to log — so don't rely on it here; read the widget tree
+  and the Output table directly instead.

@@ -24,6 +24,12 @@ using namespace bdg::bison::rmi::transport;
 
 namespace {
 
+dynamic payload1(bison::key_t k, std::string v) {
+  dynamic d;
+  d[k] = std::move(v);
+  return d;
+}
+
 struct fake_thread {
   uint32_t id;
   std::string state;
@@ -271,6 +277,27 @@ class DbgRmiTest : public ::testing::Test {
     return count;
   }
 
+  // Unlike row_count() above, this walks the same path the renderer itself
+  // uses (ui_element::for_each_child_ordered(), backed by the resolved-order
+  // cache that refresh_children_order() rebuilds) instead of the raw
+  // bison::dynamic children map. A rebuild_*() that mutates the "children"
+  // dynamic_ptr directly but forgets to call refresh_children_order() leaves
+  // that cache stale (still whatever it was at import time, typically empty
+  // rows) -- row_count() would not notice, since it reads the underlying
+  // dynamic straight through, but this would, matching what a real client
+  // actually renders.
+  size_t rendered_row_count(const std::string& path) const {
+    auto it = srv_->last_session->ui_objects.find(path);
+    if (it == srv_->last_session->ui_objects.end())
+      return 0;
+    size_t count = 0;
+    it->second->for_each_child_ordered([&](bison::key_t, const wish::ui_element& child) {
+      if (child.class_key() != "TableColumn"_key)
+        ++count;
+    });
+    return count;
+  }
+
   static dynamic_ptr nth_child(const dynamic_ptr& parent, size_t index) {
     if (!parent)
       return nullptr;
@@ -354,6 +381,24 @@ TEST_F(DbgRmiTest, UpdateThreadsPopulatesTable) {
            {2, "suspended", "worker_loop"},
        }));
   EXPECT_EQ(row_count(root_ + "_threads.vbox.table"), 2u);
+}
+
+// Regression test for a rebuild that mutates the "children" bison::dynamic
+// directly (as every rebuild_*() in dbg.cpp does) without calling
+// refresh_children_order() afterward: row_count() (raw dynamic walk) would
+// see the new rows just fine, but the renderer's own iteration path
+// (for_each_child_ordered(), backed by the resolved-order cache built at
+// import time) would keep rendering whatever it cached back when the table
+// had zero rows -- i.e. nothing. This is exactly the bug a live browser
+// session caught: get_tree() (which reads the underlying dynamic model)
+// showed correct rows while the screen stayed blank.
+TEST_F(DbgRmiTest, UpdateThreadsRowsAreVisibleToRenderIteration) {
+  call("update_threads"_key,
+       make_threads_args({
+           {1, "running", "main"},
+           {2, "suspended", "worker_loop"},
+       }));
+  EXPECT_EQ(rendered_row_count(root_ + "_threads.vbox.table"), 2u);
 }
 
 TEST_F(DbgRmiTest, UpdateThreadsFullRebuildReplacesRows) {
@@ -734,4 +779,118 @@ TEST_F(DbgRmiTest, AppendOutputFifoCapsAtMaxRowsAndEvictsOldest) {
   auto first_cell = nth_child(nth_child(table, 0), 0);
   ASSERT_TRUE(first_cell);
   EXPECT_EQ(first_cell->as<std::string>("text"_key), "[info] line 2");
+}
+
+// ── set_run_state ────────────────────────────────────────────────────────
+
+namespace {
+struct button_states {
+  bool attach, detach, pause, resume, into, over, out;
+};
+
+button_states read_button_states(const wish::name_map& objects, const std::string& root) {
+  // Absent "enabled" field (kSourceLayout's default-enabled "attach"
+  // button before the first set_run_state call) reads as `true` here --
+  // widgets with no explicit "enabled" field render enabled.
+  auto enabled = [&](const char* name) {
+    auto dp = get_dp(objects, root + ".vbox.toolbar." + name);
+    if (!dp)
+      return false;
+    auto* f = dp->findField<bool>("enabled"_key);
+    return !f || *f;
+  };
+  return {enabled("attach"), enabled("detach"), enabled("pause"),
+          enabled("resume"), enabled("into"),   enabled("over"), enabled("out")};
+}
+} // namespace
+
+TEST_F(DbgRmiTest, SetRunStateDrivesToolbarButtonEnablement) {
+  // Freshly constructed: matches kSourceLayout's static "enabled": false on
+  // every button but Attach (default-enabled, no explicit field).
+  auto initial = read_button_states(srv_->last_session->ui_objects, root_);
+  EXPECT_TRUE(initial.attach);
+  EXPECT_FALSE(initial.detach);
+  EXPECT_FALSE(initial.pause);
+  EXPECT_FALSE(initial.resume);
+  EXPECT_FALSE(initial.into);
+  EXPECT_FALSE(initial.over);
+  EXPECT_FALSE(initial.out);
+
+  call("set_run_state"_key, payload1("state"_key, std::string{"running"}));
+  auto running = read_button_states(srv_->last_session->ui_objects, root_);
+  EXPECT_FALSE(running.attach);
+  EXPECT_TRUE(running.detach);
+  EXPECT_TRUE(running.pause);
+  EXPECT_FALSE(running.resume);
+  EXPECT_FALSE(running.into);
+  EXPECT_FALSE(running.over);
+  EXPECT_FALSE(running.out);
+
+  call("set_run_state"_key, payload1("state"_key, std::string{"paused"}));
+  auto paused = read_button_states(srv_->last_session->ui_objects, root_);
+  EXPECT_FALSE(paused.attach);
+  EXPECT_TRUE(paused.detach);
+  EXPECT_FALSE(paused.pause);
+  EXPECT_TRUE(paused.resume);
+  EXPECT_TRUE(paused.into);
+  EXPECT_TRUE(paused.over);
+  EXPECT_TRUE(paused.out);
+
+  call("set_run_state"_key, payload1("state"_key, std::string{"detached"}));
+  auto detached = read_button_states(srv_->last_session->ui_objects, root_);
+  EXPECT_TRUE(detached.attach);
+  EXPECT_FALSE(detached.detach);
+  EXPECT_FALSE(detached.pause);
+  EXPECT_FALSE(detached.resume);
+  EXPECT_FALSE(detached.into);
+  EXPECT_FALSE(detached.over);
+  EXPECT_FALSE(detached.out);
+}
+
+// ── update_callstack / update_watch: first automatic snapshot ──────────────
+
+TEST_F(DbgRmiTest, UpdateCallstackAdoptsFirstSnapshotWithNoPriorSelection) {
+  // No Threads row has been clicked yet -- this mirrors dbg_source's
+  // handle_stop() pushing a callstack snapshot immediately after an
+  // attach/breakpoint stop, before the user has selected anything.
+  call("update_callstack"_key, make_callstack_args(7, {{0, "main", "main.cpp", 42}}));
+  EXPECT_EQ(row_count(root_ + "_callstack.vbox.table"), 1u);
+
+  // Having adopted thread 7 as the selection, a snapshot for a different,
+  // now-stale thread id is still dropped (staleness guard still works).
+  call("update_callstack"_key, make_callstack_args(9, {{0, "worker_fn", "w.cpp", 10}}));
+  EXPECT_EQ(row_count(root_ + "_callstack.vbox.table"), 1u);
+
+  // ...but a snapshot for the adopted thread id (7) still applies normally.
+  call("update_callstack"_key,
+       make_callstack_args(7, {{0, "main", "main.cpp", 42}, {1, "start", "crt.cpp", 1}}));
+  EXPECT_EQ(row_count(root_ + "_callstack.vbox.table"), 2u);
+}
+
+TEST_F(DbgRmiTest, UpdateWatchAdoptsFirstSnapshotWithNoPriorSelection) {
+  // No Call Stack row has been clicked yet -- mirrors handle_stop()'s
+  // push_watch(0) firing right after a stop.
+  call("update_watch"_key, make_watch_args(3, {{"x", "0", "int"}}));
+  EXPECT_EQ(row_count(root_ + "_watch.vbox.table"), 1u);
+
+  // A snapshot for a different, now-stale frame id is dropped.
+  call("update_watch"_key, make_watch_args(5, {{"y", "1", "int"}}));
+  EXPECT_EQ(row_count(root_ + "_watch.vbox.table"), 1u);
+}
+
+TEST_F(DbgRmiTest, SetRunStateToDetachedResetsCallstackAndWatchSelection) {
+  // Adopt thread 7 / frame 3 as the current selection (as a first stop
+  // would).
+  call("update_callstack"_key, make_callstack_args(7, {{0, "main", "main.cpp", 42}}));
+  call("update_watch"_key, make_watch_args(3, {{"x", "0", "int"}}));
+
+  // Detach: the next attach's first stop may report a different thread/
+  // frame id (e.g. a different process instance) and must not be treated
+  // as stale against the previous session's selection.
+  call("set_run_state"_key, payload1("state"_key, std::string{"detached"}));
+
+  call("update_callstack"_key, make_callstack_args(2, {{0, "other_main", "other.cpp", 1}}));
+  EXPECT_EQ(row_count(root_ + "_callstack.vbox.table"), 1u);
+  call("update_watch"_key, make_watch_args(1, {{"z", "0", "int"}}));
+  EXPECT_EQ(row_count(root_ + "_watch.vbox.table"), 1u);
 }
