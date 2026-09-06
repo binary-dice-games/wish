@@ -42,6 +42,8 @@ void dbg_source::on_detach_requested() {
   backend_->detach();
   attached_ = false;
   has_selected_thread_ = false;
+  current_stop_file_.clear();
+  current_stop_line_ = 0;
   proxy_->call("set_run_state"_key, payload1("state"_key, std::string{"detached"}));
 }
 
@@ -53,6 +55,8 @@ void dbg_source::on_pause_requested() {
 
 void dbg_source::on_resume_requested() {
   backend_->resume();
+  current_stop_file_.clear();
+  current_stop_line_ = 0;
   proxy_->call("set_run_state"_key, payload1("state"_key, std::string{"running"}));
 }
 
@@ -81,6 +85,7 @@ void dbg_source::on_toggle_breakpoint_requested(const std::string& path, int32_t
   } else if (!now_enabled) {
     backend_->clear_breakpoint(path, line);
     push_breakpoints();
+    push_source(path, current_stop_file_ == path ? current_stop_line_ : 0);
     return;
   }
   if (now_enabled)
@@ -88,6 +93,7 @@ void dbg_source::on_toggle_breakpoint_requested(const std::string& path, int32_t
   else
     backend_->clear_breakpoint(path, line);
   push_breakpoints();
+  push_source(path, current_stop_file_ == path ? current_stop_line_ : 0);
 }
 
 void dbg_source::on_select_thread_requested(uint32_t thread_id) {
@@ -98,6 +104,19 @@ void dbg_source::on_select_thread_requested(uint32_t thread_id) {
 
 void dbg_source::on_select_frame_requested(uint32_t frame_id) {
   push_watch(frame_id);
+  // DESIGN.md §4's "Thread/frame selection" flow: selecting a frame also
+  // opens/focuses that frame's file at its line in the Source window, not
+  // just the Watch table.
+  for (auto& f : last_frames_) {
+    if (static_cast<uint32_t>(f.index) == frame_id) {
+      push_source(f.file, f.line);
+      break;
+    }
+  }
+}
+
+void dbg_source::on_open_file_requested(const std::string& path, int32_t line) {
+  push_source(path, line);
 }
 
 void dbg_source::on_add_watch_requested(const std::string& expr) {
@@ -129,6 +148,7 @@ void dbg_source::push_threads() {
 
 void dbg_source::push_callstack(uint32_t thread_id) {
   auto frames = backend_->get_callstack(thread_id);
+  last_frames_ = frames;
   dynamic args;
   args["thread_id"_key] = static_cast<int32_t>(thread_id);
   dynamic_ptr arr{key_t{0U}, {}};
@@ -177,12 +197,28 @@ void dbg_source::push_breakpoints() {
   proxy_->call("update_breakpoints"_key, std::move(args));
 }
 
+void dbg_source::push_source(const std::string& file, int32_t line) {
+  dynamic args;
+  args["path"_key] = file;
+  args["current_line"_key] = line;
+  std::vector<int32_t> lines;
+  for (auto& bp : breakpoints_) {
+    if (bp.file == file && bp.enabled)
+      lines.push_back(bp.line);
+  }
+  args["breakpoint_lines"_key] = std::move(lines);
+  proxy_->call("update_source"_key, std::move(args));
+}
+
 void dbg_source::handle_stop(const stop_event& ev) {
   selected_thread_id_ = ev.thread_id;
   has_selected_thread_ = true;
+  current_stop_file_ = ev.file;
+  current_stop_line_ = ev.line;
   proxy_->call("set_run_state"_key, payload1("state"_key, std::string{"paused"}));
   push_threads();
   push_callstack(ev.thread_id);
+  push_source(ev.file, ev.line);
 
   dynamic out_args;
   out_args["text"_key] = ev.reason + " at " + ev.file + ":" + std::to_string(ev.line);

@@ -151,6 +151,20 @@ class debugger_frontend : public form {
   uint32_t selected_frame_id_{0};
   bool has_selected_frame_{false};
 
+  // ── Source window tab management ─────────────────────────────────────────
+  ui_element_ptr source_tabbar_;
+  std::unordered_map<std::string, ui_element_ptr> source_tabs_by_path_;
+  std::unordered_map<bison::key_t, std::string, bison::key_t, bison::key_t> source_editor_path_by_id_;
+  size_t next_source_tab_child_key_{0};
+  std::vector<std::string> frame_row_files_; // row index -> frame file, parallel to frame_row_ids_
+  std::vector<int32_t> frame_row_lines_;     // row index -> frame line, parallel to frame_row_ids_
+
+  /// @brief Ensures a TabItem/TextEditor tab exists for @p path (creating one
+  ///        and appending it to source_tabbar_ if not), returning the
+  ///        TextEditor element so the caller can set breakpoint_lines /
+  ///        current_line on it.
+  ui_element_ptr ensure_source_tab(const std::string& path);
+
   // ── Breakpoints window ───────────────────────────────────────────────────
   ui_element_ptr breakpoints_table_;
 

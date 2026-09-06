@@ -69,6 +69,35 @@ dynamic make_callstack_args(uint32_t thread_id, const std::vector<fake_frame>& f
   return args;
 }
 
+struct fake_breakpoint {
+  std::string file;
+  int32_t line;
+  bool enabled;
+};
+
+dynamic make_breakpoints_args(const std::vector<fake_breakpoint>& bps) {
+  dynamic args;
+  dynamic arr;
+  size_t i = 0;
+  for (auto& bp : bps) {
+    auto e = std::make_shared<dynamic>();
+    (*e)["file"_key] = bp.file;
+    (*e)["line"_key] = bp.line;
+    (*e)["enabled"_key] = bp.enabled;
+    arr[i++] = dynamic_ptr{e};
+  }
+  args["breakpoints"_key] = dynamic_ptr{std::make_shared<dynamic>(std::move(arr))};
+  return args;
+}
+
+dynamic make_source_args(const std::string& path, const std::vector<int32_t>& breakpoint_lines, int32_t current_line) {
+  dynamic args;
+  args["path"_key] = path;
+  args["breakpoint_lines"_key] = breakpoint_lines;
+  args["current_line"_key] = current_line;
+  return args;
+}
+
 } // namespace
 
 // ── Local (non-RMI) fixture ─────────────────────────────────────────────────
@@ -121,6 +150,74 @@ static std::string find_root_with_prefix(const wish::name_map& objects, const st
     if (k.rfind(prefix, 0) == 0 && k.find('.') == std::string::npos)
       return k;
   return {};
+}
+
+// ── Tree-walking helpers for Source-window tabs (added outside the dot-path
+// map) ────────────────────────────────────────────────────────────────────
+// ensure_source_tab() (server/dbg.cpp) creates its TabItem/TextEditor pair
+// the same way tail.cpp's ensure_tag_tab() does: assign_id() +
+// ctx().put_object() only, never registered into ui_objects by dot-path.
+// Mirroring test_tail.cpp's find_tab_item()/find_tab_table() helpers, these
+// walk the (dot-path-registered) TabBar's own "children" field directly.
+//
+// NOTE: dynamic_ptr's default constructor allocates a fresh, non-null
+// dynamic (see bison_common.hpp) -- every "not found" sentinel below is
+// explicitly dynamic_ptr{nullptr}.
+
+static dynamic_ptr get_dp(const wish::name_map& objects, const std::string& path) {
+  auto it = objects.find(path);
+  return it == objects.end() ? dynamic_ptr{nullptr} : it->second;
+}
+
+static dynamic_ptr find_tab_item(const dynamic_ptr& tab_bar, const std::string& label) {
+  dynamic_ptr result{nullptr};
+  if (!tab_bar)
+    return result;
+  auto* cf = tab_bar->findField<dynamic_ptr>("children"_key);
+  if (!cf || !*cf)
+    return result;
+  (*cf)->forEach([&](bison::key_t, const field& f) {
+    if (result || !f.is<dynamic_ptr>())
+      return;
+    auto tab = f.as<dynamic_ptr>();
+    if (tab && tab->as<bison::key_t>(dynamic::CLASS) == "TabItem"_key && tab->as<std::string>("label"_key) == label)
+      result = tab;
+  });
+  return result;
+}
+
+static size_t count_children_of_class(const dynamic_ptr& parent, bison::key_t klass) {
+  size_t count = 0;
+  if (!parent)
+    return count;
+  auto* cf = parent->findField<dynamic_ptr>("children"_key);
+  if (!cf || !*cf)
+    return count;
+  (*cf)->forEach([&](bison::key_t, const field& f) {
+    if (!f.is<dynamic_ptr>())
+      return;
+    auto child = f.as<dynamic_ptr>();
+    if (child && child->as<bison::key_t>(dynamic::CLASS) == klass)
+      ++count;
+  });
+  return count;
+}
+
+static dynamic_ptr find_child_of_class(const dynamic_ptr& parent, bison::key_t klass) {
+  dynamic_ptr result{nullptr};
+  if (!parent)
+    return result;
+  auto* cf = parent->findField<dynamic_ptr>("children"_key);
+  if (!cf || !*cf)
+    return result;
+  (*cf)->forEach([&](bison::key_t, const field& f) {
+    if (result || !f.is<dynamic_ptr>())
+      return;
+    auto child = f.as<dynamic_ptr>();
+    if (child && child->as<bison::key_t>(dynamic::CLASS) == klass)
+      result = child;
+  });
+  return result;
 }
 
 class DbgRmiTest : public ::testing::Test {
@@ -381,4 +478,81 @@ TEST_F(DbgRmiTest, ClosingAnyWindowEmitsClosedAndTearsDownAllSix) {
   EXPECT_FALSE(srv_->last_session->ui_objects.count(root_ + "_watch"));
   EXPECT_FALSE(srv_->last_session->ui_objects.count(root_ + "_breakpoints"));
   EXPECT_FALSE(srv_->last_session->ui_objects.count(root_ + "_output"));
+}
+
+// ── update_source ────────────────────────────────────────────────────────────
+
+TEST_F(DbgRmiTest, UpdateSourceOpensTabAndSetsFields) {
+  call("update_source"_key, make_source_args("main.cpp", {10, 20}, 10));
+
+  auto tab_bar = get_dp(srv_->last_session->ui_objects, root_ + ".vbox.files");
+  ASSERT_TRUE(tab_bar);
+  auto tab = find_tab_item(tab_bar, "main.cpp");
+  ASSERT_TRUE(tab);
+  auto editor = find_child_of_class(tab, "TextEditor"_key);
+  ASSERT_TRUE(editor);
+  EXPECT_EQ(editor->as<std::string>("file_path"_key), "main.cpp");
+
+  auto* lines_f = editor->findField<std::vector<int32_t>>("breakpoint_lines"_key);
+  ASSERT_NE(lines_f, nullptr);
+  EXPECT_EQ(*lines_f, (std::vector<int32_t>{10, 20}));
+  EXPECT_EQ(editor->as<int32_t>("current_line"_key), 10);
+}
+
+TEST_F(DbgRmiTest, UpdateSourceReusesExistingTabForSamePath) {
+  call("update_source"_key, make_source_args("main.cpp", {}, 5));
+  call("update_source"_key, make_source_args("main.cpp", {7}, 8));
+
+  auto tab_bar = get_dp(srv_->last_session->ui_objects, root_ + ".vbox.files");
+  // Only one TabItem for "main.cpp" -- the second update_source call must
+  // reuse the tab created by the first, not append a duplicate.
+  EXPECT_EQ(count_children_of_class(tab_bar, "TabItem"_key), 1u);
+
+  auto tab = find_tab_item(tab_bar, "main.cpp");
+  auto editor = find_child_of_class(tab, "TextEditor"_key);
+  ASSERT_TRUE(editor);
+  EXPECT_EQ(editor->as<int32_t>("current_line"_key), 8);
+}
+
+// ── line_context_menu -> toggle_breakpoint_requested -> update_breakpoints ──
+
+TEST_F(DbgRmiTest, LineContextMenuTogglesBreakpointAndRebuildsTable) {
+  call("update_source"_key, make_source_args("main.cpp", {}, 0));
+
+  auto tab_bar = get_dp(srv_->last_session->ui_objects, root_ + ".vbox.files");
+  auto tab = find_tab_item(tab_bar, "main.cpp");
+  auto editor = find_child_of_class(tab, "TextEditor"_key);
+  ASSERT_TRUE(editor);
+  auto editor_id = editor->as<bison::key_t>("__wish_id"_key);
+
+  bool got = false;
+  dynamic cap;
+  auto prev = std::move(srv_->last_session->emit_event);
+  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
+    if (event == "toggle_breakpoint_requested"_key) {
+      got = true;
+      cap = payload.clone();
+    }
+    if (prev)
+      prev(id, event, std::move(payload));
+  };
+
+  // TextEditor's own gutter right-click -- text_editor.cpp: "Right-clicking
+  // a line number emits 'line_context_menu'". The Source window's own
+  // handler (debugger_frontend::on_event) turns this into
+  // toggle_breakpoint_requested{path, line}.
+  dynamic ctx_payload;
+  ctx_payload["line"_key] = int32_t{20};
+  ctx_payload["has_breakpoint"_key] = false;
+  fire(editor_id, "line_context_menu"_key, std::move(ctx_payload));
+  wait_for(got);
+  ASSERT_TRUE(got);
+  EXPECT_EQ(cap.as<std::string>("path"_key), "main.cpp");
+  EXPECT_EQ(cap.as<int32_t>("line"_key), 20);
+
+  // Client's on_toggle_breakpoint_requested reaction would normally call
+  // update_breakpoints with the full, newly-rebuilt list; simulate that
+  // round trip and assert the Breakpoints table rebuilds correctly.
+  call("update_breakpoints"_key, make_breakpoints_args({{"main.cpp", 20, true}}));
+  EXPECT_EQ(row_count(root_ + "_breakpoints.vbox.table"), 1u);
 }

@@ -325,6 +325,15 @@ function(wish_finalize_app_modules)
       if(TARGET stb_image)
         target_link_libraries(${tgt} PRIVATE stb_image)
       endif()
+      # dbghelp (Win32 symbol/line resolution) is a system import library, not
+      # a target this tree builds -- linked unconditionally on Windows rather
+      # than guarded by if(TARGET ...) like uv_a/miniz/stb_image above. See
+      # the dbg module's client/win32_debug_backend.cpp for the consumer
+      # (breakpoint file:line <-> address resolution via SymFromAddr /
+      # SymGetLineFromAddr64).
+      if(WIN32)
+        target_link_libraries(${tgt} PRIVATE dbghelp)
+      endif()
     endif()
   endforeach()
 endfunction()

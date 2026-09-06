@@ -9,6 +9,7 @@
 #include <ui/dock_layout_spec.hpp>
 #include <ui/ui_importer.hpp>
 
+#include <cctype>
 #include <cstdint>
 
 namespace bdg::wish {
@@ -54,6 +55,45 @@ void for_each_entry(const dynamic& parent, key_t field_key, Fn&& fn) {
       return;
     fn(*entry_ptr);
   });
+}
+
+// Maps a source file's extension to one of TextEditor's supported
+// `language` values (see text_editor.cpp's field doc comment) for syntax
+// highlighting in the Source window's tabs. Falls back to "none" for
+// anything unrecognized rather than guessing.
+std::string guess_language(const std::string& path) {
+  auto dot = path.find_last_of('.');
+  if (dot == std::string::npos)
+    return "none";
+  std::string ext = path.substr(dot + 1);
+  for (auto& c : ext)
+    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  if (ext == "cpp" || ext == "cc" || ext == "cxx" || ext == "hpp" || ext == "hh" || ext == "hxx")
+    return "cpp";
+  if (ext == "c" || ext == "h")
+    return "c";
+  if (ext == "cs")
+    return "cs";
+  if (ext == "py")
+    return "python";
+  if (ext == "lua")
+    return "lua";
+  if (ext == "json")
+    return "json";
+  if (ext == "yaml" || ext == "yml")
+    return "yaml";
+  if (ext == "md")
+    return "markdown";
+  if (ext == "sql")
+    return "sql";
+  return "none";
+}
+
+// Tab label: last path component only (matches how most editors title an
+// open-file tab), falling back to the whole path if it has no separator.
+std::string basename_of(const std::string& path) {
+  auto pos = path.find_last_of("/\\");
+  return pos == std::string::npos ? path : path.substr(pos + 1);
 }
 
 // ── Layout literals ──────────────────────────────────────────────────────────
@@ -231,6 +271,40 @@ ui_element_ptr debugger_frontend::make_label(const std::string& text, const char
   return l;
 }
 
+ui_element_ptr debugger_frontend::ensure_source_tab(const std::string& path) {
+  if (auto it = source_tabs_by_path_.find(path); it != source_tabs_by_path_.end())
+    return it->second;
+
+  ui_element_ptr editor = ui_element_ptr::create("wish"_key, "TextEditor"_key);
+  editor["file_path"_key] = path;
+  editor["language"_key] = guess_language(path);
+  editor["read_only"_key] = true;
+  editor["height"_key] = int32_t{-1};
+  assign_id(editor);
+
+  ui_element_ptr tab = ui_element_ptr::create("wish"_key, "TabItem"_key);
+  tab["label"_key] = basename_of(path);
+  tab["closable"_key] = false;
+  assign_id(tab);
+
+  auto tab_children = dynamic_ptr{key_t{0U}, {}};
+  (*tab_children)[size_t{0}] = dynamic_ptr{editor};
+  tab["children"_key] = tab_children;
+  tab->refresh_children_order();
+
+  if (source_tabbar_) {
+    if (auto* children_p = source_tabbar_->findField<dynamic_ptr>("children"_key); children_p && *children_p) {
+      size_t child_key = next_source_tab_child_key_++;
+      (*(*children_p))[child_key] = dynamic_ptr{tab};
+      source_tabbar_->refresh_children_order();
+    }
+  }
+
+  source_tabs_by_path_[path] = editor;
+  source_editor_path_by_id_[wish_id_of(editor)] = path;
+  return editor;
+}
+
 void debugger_frontend::on_init() {
   // See form::internal_root_key_'s doc comment: ordinally-assigned, not
   // pointer-derived. Source is the main window (internal_root_key_ itself);
@@ -270,6 +344,7 @@ void debugger_frontend::build_source_window() {
   source_window_id_ = (*tree[""])["__wish_id"_key].as<key_t>();
   tree.with("vbox.toolbar.pid", [&](const auto& e) { pid_input_ = e; });
   tree.with("vbox.toolbar.state", [&](const auto& e) { run_state_label_ = e; });
+  tree.with("vbox.files", [&](const auto& e) { source_tabbar_ = e; });
 
   auto bind_click = [&](const std::string& path, std::function<void()> handler) {
     tree.with(path, [&](const auto& e) { click_handlers_[wish_id_of(e)] = std::move(handler); });
@@ -486,6 +561,8 @@ void debugger_frontend::rebuild_callstack(const dynamic& args) {
   for (auto k : to_erase)
     children->erase(k.id);
   frame_row_ids_.clear();
+  frame_row_files_.clear();
+  frame_row_lines_.clear();
 
   size_t row_key = 0;
   for_each_entry(args, "frames"_key, [&](const dynamic& e) {
@@ -505,6 +582,8 @@ void debugger_frontend::rebuild_callstack(const dynamic& args) {
     set_children_list(row, {idx_cell, func_cell, file_cell, line_cell});
     (*children)[row_key++] = dynamic_ptr{row};
     frame_row_ids_.push_back(index);
+    frame_row_files_.push_back(file);
+    frame_row_lines_.push_back(line);
   });
 }
 
@@ -606,11 +685,17 @@ void debugger_frontend::rebuild_breakpoints(const dynamic& args) {
   });
 }
 
-dynamic debugger_frontend::do_update_source(const dynamic& /*args*/) {
-  // Tab management (ensuring a TextEditor tab exists for `path`, setting its
-  // breakpoint_lines/current_line fields) is deferred to PLAN.md Step 5
-  // ("Source window + breakpoints end-to-end") -- Step 3's scope is the
-  // scaffold plus Threads/Call Stack against a fake backend.
+dynamic debugger_frontend::do_update_source(const dynamic& args) {
+  std::string path = args.as<std::string>("path"_key);
+  if (path.empty())
+    return dynamic{};
+
+  ui_element_ptr editor = ensure_source_tab(path);
+  if (!editor)
+    return dynamic{};
+
+  editor["breakpoint_lines"_key] = args.get_as<std::vector<int32_t>>("breakpoint_lines"_key);
+  editor["current_line"_key] = args.get_as<int32_t>("current_line"_key, 0);
   return dynamic{};
 }
 
@@ -737,7 +822,27 @@ void debugger_frontend::on_event(key_t id, key_t event, const dynamic& payload) 
     int32_t frame_id = frame_row_ids_[static_cast<size_t>(index)];
     selected_frame_id_ = static_cast<uint32_t>(frame_id);
     has_selected_frame_ = true;
+    // DESIGN.md §4/§5: double-clicking a frame whose file has no open tab
+    // yet additionally emits "open_file_requested" so the client opens it
+    // (an already-open tab needs no round trip -- the client's own
+    // select_frame_requested handling already focuses/updates it).
+    if (event == "row_activated"_key && static_cast<size_t>(index) < frame_row_files_.size()) {
+      const std::string& file = frame_row_files_[static_cast<size_t>(index)];
+      if (!file.empty() && !source_tabs_by_path_.count(file)) {
+        int32_t line = frame_row_lines_[static_cast<size_t>(index)];
+        emit("open_file_requested"_key, payload2("path"_key, file, "line"_key, line));
+      }
+    }
     emit("select_frame_requested"_key, payload1("frame_id"_key, static_cast<int32_t>(selected_frame_id_)));
+    return;
+  }
+
+  if (event == "line_context_menu"_key) {
+    auto it = source_editor_path_by_id_.find(id);
+    if (it != source_editor_path_by_id_.end()) {
+      int32_t line = payload.get_as<int32_t>("line"_key, 0);
+      emit("toggle_breakpoint_requested"_key, payload2("path"_key, it->second, "line"_key, line));
+    }
     return;
   }
 }

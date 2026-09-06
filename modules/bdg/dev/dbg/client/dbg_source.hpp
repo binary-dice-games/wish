@@ -36,6 +36,7 @@ class dbg_source {
   void on_select_thread_requested(uint32_t thread_id);
   void on_select_frame_requested(uint32_t frame_id);
   void on_add_watch_requested(const std::string& expr);
+  void on_open_file_requested(const std::string& path, int32_t line);
 
  private:
   /// @brief Pushes a fresh Threads snapshot (update_threads RMI call).
@@ -48,6 +49,9 @@ class dbg_source {
   void push_watch(uint32_t frame_id);
   /// @brief Pushes the full Breakpoints table (update_breakpoints RMI call).
   void push_breakpoints();
+  /// @brief Ensures the Source tab for @p file is open and its
+  /// breakpoint_lines/current_line fields are set (update_source RMI call).
+  void push_source(const std::string& file, int32_t line);
 
   /// @brief debug_backend::on_stop callback: pushes threads + callstack for
   /// the stopped thread, sets run state to "paused", and appends an Output
@@ -72,6 +76,20 @@ class dbg_source {
   std::vector<breakpoint_entry> breakpoints_;
 
   std::vector<std::string> watch_exprs_;
+
+  // Last Call Stack snapshot pushed to the server, kept so
+  // on_select_frame_requested can resolve a frame_id to its file/line for
+  // push_source() (DESIGN.md §4's "Thread/frame selection" flow: selecting
+  // a frame also opens/focuses its file in the Source window).
+  std::vector<frame_info> last_frames_;
+
+  // Where execution is currently stopped (last handle_stop()), so
+  // on_toggle_breakpoint_requested's push_source() call (needed to refresh
+  // that tab's breakpoint_lines) doesn't clobber the current-line arrow
+  // with 0 when the toggled file happens to be the one execution is
+  // stopped in.
+  std::string current_stop_file_;
+  int32_t current_stop_line_{0};
 };
 
 } // namespace bdg::wish::dbg
