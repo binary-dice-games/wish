@@ -324,12 +324,18 @@ void debugger_frontend::on_init() {
   build_output_window();
 
   using namespace dock;
-  set_default_dock_layout(layout(split(
-      dir::left, 0.62f,
-      split(dir::down, 0.7f, area({internal_root_key_}), area({output_root_key_})),
-      split(
-          dir::down, 0.34f, area({threads_root_key_}),
-          split(dir::down, 0.5f, area({callstack_root_key_}), split(dir::down, 0.5f, area({watch_root_key_}), area({breakpoints_root_key_})))))));
+  set_default_dock_layout(viewport(
+      "dbg_dock", "Debugger",
+      layout(
+          split(
+              dir::left, 0.62f,
+              split(dir::down, 0.7f, area({internal_root_key_}), area({output_root_key_})),
+              split(
+                  dir::down, 0.34f, area({threads_root_key_}),
+                  split(
+                      dir::down, 0.5f, area({callstack_root_key_}),
+                      split(dir::down, 0.5f, area({watch_root_key_}), area({breakpoints_root_key_}))))),
+          /*version=*/1, /*target=*/"dbg_dock")));
 }
 
 void debugger_frontend::build_source_window() {

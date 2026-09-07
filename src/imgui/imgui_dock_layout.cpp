@@ -130,17 +130,37 @@ void for_each_layout_window(const ui_element& node, Fn&& fn) {
   node.for_each_child_ordered([&](key_t, ui_element& c) { for_each_layout_window(c, fn); });
 }
 
-// A stable identity for one DockLayout, independent of the dockspace it
-// targets: the hash of its window-path list. Two different apps sharing the
-// same ambient dockspace (docker vs kubectl vs git, all docking into the
-// host chrome's HostDockSpace) get distinct identities, so each tracks its
-// own applied version and neither blocks the other.
-ImGuiID layout_identity(const ui_element& layout_root) {
+// A stable identity for one DockLayout: the hash of its window-path list
+// *plus* the dockspace it targets. Two different apps sharing the same
+// ambient dockspace (docker vs kubectl vs git, all docking into the host
+// chrome's HostDockSpace) already get distinct identities from having
+// different window sets, so each tracks its own applied version and
+// neither blocks the other -- folding target_id in on top of that doesn't
+// change that. What it does fix: an app switching its *own* layout from
+// the ambient dockspace to a named, nested one (e.g. opting into
+// `dock::viewport(...)` -- see PLAN.md's "Isolating an app's dockspace
+// from siblings") keeps the exact same window-path list and version
+// number, so without target_id the switch is indistinguishable from
+// "already applied" -- and the stale imgui.ini record then blocks
+// `should_apply_dock_layout()` from ever running `build_dock_layout()`
+// against the new node. Worse, its one escape hatch (re-apply if the
+// target node doesn't exist) never fires either: `ImGui::DockSpace()`
+// (called by `render_dockspace_viewport()` just before its children,
+// including this `DockLayout`, render) auto-creates an empty node at the
+// new target_id as a side effect *before* this check runs, so
+// `DockBuilderGetNode(target_id)` is already non-null the very first
+// frame -- silently discarding the layout and leaving every window
+// undocked. Hashing target_id in makes a changed target a new identity,
+// exactly like a changed window-path list already was.
+ImGuiID layout_identity(const ui_element& layout_root, ImGuiID target_id) {
   std::string all;
   for_each_layout_window(layout_root, [&](const std::string& w) {
     all += w;
     all += '\n';
   });
+  char buf[16];
+  std::snprintf(buf, sizeof(buf), "@%08X", target_id);
+  all += buf;
   return ImHashStr(all.c_str(), all.size());
 }
 
@@ -236,7 +256,7 @@ bool should_apply_dock_layout(const ui_element& layout_root, ImGuiID target_id, 
   reset_if_new_context();
 
   // Never applied at this version (covers first run and an author's bump).
-  auto it = applied_versions().find(layout_identity(layout_root));
+  auto it = applied_versions().find(layout_identity(layout_root, target_id));
   if (it == applied_versions().end() || version > it->second)
     return true;
 
@@ -253,9 +273,9 @@ bool should_apply_dock_layout(const ui_element& layout_root, ImGuiID target_id, 
   return ImGui::DockBuilderGetNode(target_id) == nullptr;
 }
 
-void note_dock_layout_applied(const ui_element& layout_root, int32_t version) {
+void note_dock_layout_applied(const ui_element& layout_root, ImGuiID target_id, int32_t version) {
   reset_if_new_context();
-  applied_versions()[layout_identity(layout_root)] = version;
+  applied_versions()[layout_identity(layout_root, target_id)] = version;
   ImGui::MarkIniSettingsDirty();
 }
 
@@ -291,10 +311,19 @@ void render_dock_layout(imgui_renderer& r, const ui_element& node0, const contex
   if (target.empty()) {
     target_id = r.ambient_dockspace_id();
   } else if (ImGuiWindow* w = GImGui ? GImGui->CurrentWindow : nullptr) {
-    // A named target seeds the id the same way render_dockspace() does --
-    // hashed against the current window. Only reachable when the DockLayout
-    // renders inside a window (e.g. as a DockSpaceViewport child).
-    target_id = w->GetID(target.c_str());
+    // A named target must reproduce the id render_dockspace_viewport()
+    // published for its own nested ImGui::DockSpace(id) call -- computed as
+    // ImGui::GetID(id) *immediately* after Begin(), before any child has
+    // rendered. `w->GetID()` instead hashes against the CURRENT ID stack
+    // top, which by the time this DockLayout (a child several levels into
+    // the tree-walk dispatch) renders has one or more PushID() scopes from
+    // sibling/ancestor elements pushed on top of it -- a different seed,
+    // producing an unrelated, orphan dock node that gets silently discarded
+    // by ImGui's per-frame housekeeping one frame after being built. Hash
+    // directly against window->ID (the seed at the very top of Begin/End,
+    // before anything else was pushed) to match regardless of how deep the
+    // DockLayout sits in the tree.
+    target_id = ImHashStr(target.c_str(), 0, w->ID);
   }
   if (target_id == 0)
     return; // no ambient dockspace this frame and no resolvable target
@@ -305,7 +334,7 @@ void render_dock_layout(imgui_renderer& r, const ui_element& node0, const contex
 
   const ImVec2 size = ImGui::GetMainViewport()->WorkSize;
   if (build_dock_layout(node, target_id, size, s.logger_service.get()))
-    note_dock_layout_applied(node, version);
+    note_dock_layout_applied(node, target_id, version);
 }
 
 } // namespace bdg::wish

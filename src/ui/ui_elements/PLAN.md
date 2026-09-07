@@ -76,6 +76,113 @@ leaves the arrangement to `imgui.ini`.
    installed in `imgui_renderer::begin_frame()` before the first
    `NewFrame`.
 
+6. **Isolating an app's dockspace from siblings: nest it, don't tag it.**
+   Sharing one host dockspace across apps (docker / kubectl / git) means
+   any of them rebuilding its layout can rearrange or evict a sibling's
+   windows, because `DockArea.windows` names land in the same physical
+   dock node. Rather than adding per-window ownership/exclusion logic to
+   the shared node, `DockSpaceViewport` gained an `embedded` bool: when
+   true it renders as an ordinary dockable window (one tile, docking into
+   whatever's ambient on first use — the same `SetNextWindowDockID(...,
+   ImGuiCond_FirstUseEver)` fallback `render_window` already uses) instead
+   of the fullscreen host chrome, and hosts its own **nested**
+   `ImGui::DockSpace()`. `dock::viewport(id, layout(..., target=id))`
+   wraps that up: the app's whole window set lives in a physically
+   distinct node no sibling can ever reach. `DockLayout.target` resolving
+   a named id had already been implemented for this exact purpose but was
+   untested until this pass surfaced a real bug in it (see next point).
+7. **`DockLayout.target` must hash against `window->ID`, not the current ID
+   stack top.** `render_dock_layout()`'s named-target resolution originally
+   called `window->GetID(target)`, which hashes against whatever is on top
+   of `IDStack` *at the point this code runs* — and a `DockLayout` nested
+   several levels into the tree-walk dispatch runs behind other elements'
+   own `PushID()` scopes, so that top is **not** `window->ID` by the time
+   it gets there. `render_dockspace_viewport()`, by contrast, computes its
+   nested dockspace id via `ImGui::GetID(id)` immediately after `Begin()`,
+   before any child (and thus any `PushID`) has run — a different, stable
+   seed. The mismatch built a second, orphan dock node every frame,
+   silently discarded by ImGui's housekeeping one frame later, so a
+   window targeting it never stayed docked. Fixed by hashing directly:
+   `ImHashStr(target.c_str(), 0, w->ID)`, matching `ImGui::GetID`'s own
+   seed regardless of dispatch depth.
+
+8. **`layout_identity()` must fold in the target dockspace, not just the
+   window-path list.** After decisions 6/7 shipped, a live run reported
+   "the layout is completely broken, no window is attached to the docking
+   space" -- a real regression the unit-test suite above did not catch.
+   Root cause: docker/kubectl/git/dbg's window sets and `version` didn't
+   change when they opted into `dock::viewport(...)`, only their
+   `DockLayout.target` did (ambient → a named nested id). `imgui.ini` from
+   before the opt-in already recorded that exact window-path-list identity
+   as "applied at version 1", so `should_apply_dock_layout()`'s primary
+   check said "already applied" -- and its only fallback
+   (`DockBuilderGetNode(target_id) == nullptr`) never fired either, because
+   `render_dockspace_viewport()` calls `ImGui::DockSpace(new_target_id,
+   ...)` (which auto-creates an empty node at that id) *before* the nested
+   `DockLayout` child renders, so the node already existed the instant the
+   check ran. Net effect: `build_dock_layout()` never ran against the new
+   node, so every window the layout would have placed there was left
+   wherever ImGui's (unrelated, stale) per-window ini state put it --
+   silently, with no error. Fixed by hashing `target_id` into
+   `layout_identity()` alongside the window-path list, so a layout whose
+   target changed is a new identity regardless of window set or version.
+   See `DockLayoutReappliesWhenTargetChangesEvenAtSameVersion` in
+   `test_imgui_renderer.cpp`, which drives this exact "already-applied
+   under the old target, now pointed at a fresh, auto-created node" trap
+   directly against `should_apply_dock_layout()`/`build_dock_layout()` --
+   confirmed to fail (windows left with `DockId == 0`) against the
+   pre-fix code before being confirmed to pass against the fix.
+
+9. **Decision 8 was necessary but not sufficient: the real, remaining root
+   cause was top-level-object render order, not `layout_identity()`.**
+   After decision 8 shipped, live testing (`wish-standalone --run=docker`,
+   fresh `imgui.ini`) still showed every window sharing one tabbed node
+   instead of the intended split -- a plain unit test could not have
+   caught this, because every existing test drives a hand-picked,
+   author-controlled render order (`DockLayout` before its windows), while
+   production renders a session's `top_level_objects`
+   (`std::unordered_map`, see `src/context/context.hpp`) in **arbitrary**
+   order. Debug instrumentation on a live server confirmed all of
+   docker's `Window` top-levels called `Begin()` -- resolving
+   `SetNextWindowDockID(ambient, ImGuiCond_FirstUseEver)` -- *before* its
+   `DockSpaceViewport`/`DockLayout` rendered, in the very frame
+   `should_apply_dock_layout()` first returned true. That ordering means
+   `DockBuilderDockWindow()` reassigns windows to the new split nodes only
+   *after* their placement for that frame is already resolved; ImGui then
+   prunes the freshly-built, still-unhosted nodes at end of frame,
+   collapsing the split permanently (no second chance, per decision
+   above: applies at most once per identity). Fixed by rendering a
+   session's `DockLayout`/`DockSpaceViewport` top-levels in a first pass,
+   before every other top-level, in both `src/standalone/standalone.cpp`
+   and `src/server/server.cpp` -- confirmed live afterward (server debug
+   log showed the corrected ordering; a Playwright `getTree()` probe
+   showed the intended 62/38 split with tabbed groups and a console
+   strip, not one flat shared node). See
+   [docs/dock-layout.md](../../../docs/dock-layout.md)'s "Render-order
+   hazard" section.
+
+10. **`DockSpaceViewport.id` is never user-facing, so a separate `title`
+    field was added rather than reusing `id` for display.** `id` doubles
+    as the ImGui window's ID-stack anchor -- `ImGui::GetID(id)` derives
+    the DockSpace id, and a nested `DockLayout.target` matches it via
+    `ImHashStr(target, 0, w->ID)`, which only works if `target` and `id`
+    are the exact same string. Once embedded viewports became visible
+    tiles (decision above's `embedded` field), their tab showed that raw
+    internal id (e.g. `docker_dock`) instead of a name a user would
+    recognize. Rather than let a display string leak into the identity
+    hash, `title` layers a friendly name on top using the same
+    `"Title###id"` trick `with_id()` already uses for ordinary windows --
+    `ImHashStr()` resets and hashes only what follows `###`, so
+    `ImGui::GetID("Docker###docker_dock")` (Begin()'s window label) and
+    `ImGui::GetID("docker_dock")` (used for the DockSpace id, and by
+    `DockLayout.target`) hash identically; changing `title` can never
+    change dock identity. `dock::viewport(id, title, layout(...))` now
+    takes the display name as a required second argument; confirmed live
+    afterward via a Playwright `getTree()` probe against `wish-server
+    --run=docker` (the `DockSpaceViewport` node reports `title: "Docker"`
+    while its `path`/id stays `__docklayout_0`, and the split geometry is
+    byte-for-byte unchanged from before the change).
+
 ### Files
 
 | File | Change |
@@ -90,6 +197,12 @@ leaves the arrangement to `imgui.ini`.
 | `modules/bdg/dev/docker/server/docker.cpp` | drop `pos_x`/`pos_y`; seed the grid in `on_init()` |
 | `CMakeLists.txt` | new sources |
 | `docs/ui-elements.md`, `docs/dock-layout.md`, `README.md`, `CHANGELOG.md`, `docker/DESIGN.md`, `docker/docker_mock.json` | docs |
+| `src/ui/ui_elements/docking.cpp`, `src/ui/ui_element.hpp` | new `embedded` bool field on `DockSpaceViewport` |
+| `src/imgui/imgui_ui_renderer.cpp` | `render_dockspace_viewport()`: embedded-mode `Begin` flags/title, ambient-id capture + restore |
+| `src/imgui/imgui_dock_layout.cpp` | `render_dock_layout()`'s named-`target` resolution fixed to hash against `window->ID` (see key decision above) |
+| `src/ui/dock_layout_spec.hpp` | new — `dock::viewport(id, layout(...))` builder |
+| `modules/bdg/dev/docker/server/docker.cpp`, `modules/bdg/dev/kubectl/server/kubectl.cpp`, `modules/bdg/desktop/git/server/git.cpp`, `modules/bdg/dev/dbg/server/dbg.cpp` | opted into `dock::viewport(...)` for per-app dockspace isolation |
+| `src/imgui/imgui_dock_layout.{hpp,cpp}` | `layout_identity()`/`should_apply_dock_layout()`/`note_dock_layout_applied()` fold `target_id` into the persisted identity (see key decision 8 -- fixes the "no window attached" regression) |
 
 ### Tests
 
@@ -97,8 +210,9 @@ leaves the arrangement to `imgui.ini`.
 |---|---|---|
 | `DockLayoutFamilyResolvesThroughImporter`, `DockLayoutDescriptorRoundTrips`, `DockAreaWindowsStaysAScalarString` | `test_ui_importer.cpp` | element registration + descriptor/`build_ui_node` path |
 | 8 `DockLayout*` / `TwoLayoutsSharingOneDockspace*` cases in `test_imgui_renderer.cpp` | `DockBuilder` realization, side semantics, no-reapply / version bump, shared-dockspace takeover, focus, no-op, robustness, template shape |
+| `EmbeddedDockSpaceViewportDocksIntoOuterAmbient`, `EmbeddedDockSpaceViewportNestedLayoutTargetsOwnNode`, `EmbeddedDockSpaceViewportRestoresOuterAmbientAfterward`, `DockerAndGitInSeparateShellsDoNotDisturbEachOther`, `DockLayoutReappliesWhenTargetChangesEvenAtSameVersion` | `test_imgui_renderer.cpp` | embedded-mode ambient docking, `DockLayout.target`'s id-hash fix realizing a physically distinct nested node, ambient-id restore after use, the concrete two-app isolation regression, and the "already applied under old target" regression (key decision 8) |
 | `FormDockLayout.RegistersDockLayoutTopLevelObject`, `FormDockLayout.TornDownWithForm` | `test_form_base.cpp` | `set_default_dock_layout` registration + teardown |
-| `RegistersDefaultDockLayout` + a close-teardown case in `test_docker.cpp`, `test_kubectl.cpp`, `test_git.cpp` | each module's dock-layout wiring |
+| `RegistersDefaultDockLayout` + a close-teardown case in `test_docker.cpp`, `test_kubectl.cpp`, `test_git.cpp` | each module's dock-layout wiring (now asserts a `DockSpaceViewport` root, since each opts into `dock::viewport(...)`) |
 | `IntegrationTest.ClientTemplateCanCarryDockLayout` | `test_integration.cpp` | client `register_template` → `instantiate` round trip |
 
 ## Deviations from the original plan

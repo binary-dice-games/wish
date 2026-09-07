@@ -104,4 +104,30 @@ inline ui_element_ptr layout(ui_element_ptr root, std::int32_t version = 1, cons
   return e;
 }
 
+/// @brief Wrap a `dock::layout()` tree in an embedded `DockSpaceViewport`,
+///        so the whole app renders as one dockable tile (docked into
+///        whatever dockspace is already ambient, e.g. the host chrome's)
+///        with its own nested dockspace for its windows -- isolated from
+///        any sibling app sharing that same outer dockspace. Pass @p id as
+///        both this call's @p id and the `target` of the `layout()` tree
+///        handed in, so `DockLayout` seeds the nested dockspace this
+///        element just published rather than the outer ambient one.
+/// @param id      Unique-per-app id for both the dockable tile and its
+///                nested dockspace (must match the wrapped layout's target).
+///                Never shown to the user -- see @p title.
+/// @param title   User-facing name shown on the tile's tab/title bar (e.g.
+///                "Docker"). Purely cosmetic: it has no effect on the
+///                DockSpace/DockBuilder identity, which is always derived
+///                from @p id alone, so the wrapped layout's `target` still
+///                names @p id, never this.
+/// @param wrapped A `dock::layout(..., target = id)` tree.
+inline ui_element_ptr viewport(const std::string& id, const std::string& title, ui_element_ptr wrapped) {
+  auto e = ui_element_ptr::create(bison::key_t{"wish"}, bison::key_t{"DockSpaceViewport"});
+  (*e)[bison::key_t{"id"}] = id;
+  (*e)[bison::key_t{"title"}] = title;
+  (*e)[bison::key_t{"embedded"}] = true;
+  detail::set_children(e, {std::move(wrapped)});
+  return e;
+}
+
 } // namespace bdg::wish::dock

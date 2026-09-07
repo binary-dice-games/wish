@@ -42,6 +42,17 @@ void register_docking() {
             attr<Description>("Identifier used for both the host window and the DockSpace."),
             attr<Category>("Behavior")});
     proto->addField(
+        "title"_rkey,
+        field{
+            std::string{},
+            attr<DisplayName>("Title"),
+            attr<Description>(
+                "User-facing name shown on the tab/title bar when embedded (falls back to 'id' "
+                "when empty). Does not affect the DockSpace/DockBuilder identity, which is always "
+                "derived from 'id' alone -- so 'target' in a nested DockLayout still names 'id', "
+                "never this."),
+            attr<Category>("Behavior")});
+    proto->addField(
         "flags"_rkey,
         field{
             int32_t{0},
@@ -57,6 +68,15 @@ void register_docking() {
             attr<Description>("Let the central node be transparent to mouse/keyboard."),
             attr<Category>("Behavior")});
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("DockSpaceViewport"));
+    proto->addField(
+        "embedded"_rkey,
+        field{
+            bool{false},
+            attr<DisplayName>("Embedded"),
+            attr<Description>(
+                "Render as an ordinary dockable window (title bar, auto-docks into the ambient "
+                "dockspace) instead of a fullscreen NoDocking host, so this element is one tile "
+                "among siblings with its own nested dockspace for its children.")});
     (*proto)[dynamic::CLASS].addAttribute(
         attr<Description>("Full-viewport dockspace host. Windows nested as children become dockable."));
     dynamic::addClass(

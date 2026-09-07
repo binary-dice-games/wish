@@ -379,11 +379,14 @@ void git_repo::on_init() {
   // docs/dock-layout.md). Bump the version arg to layout() if it changes.
   {
     using namespace dock;
-    set_default_dock_layout(layout(
-        split(
-            dir::left, 0.70f,
-            split(dir::down, 0.27f, area({log_root_key_}), area({internal_root_key_})),
-            split(dir::down, 0.50f, area({diff_root_key_}), area({files_root_key_})))));
+    set_default_dock_layout(viewport(
+        "git_dock", "Git",
+        layout(
+            split(
+                dir::left, 0.70f,
+                split(dir::down, 0.27f, area({log_root_key_}), area({internal_root_key_})),
+                split(dir::down, 0.50f, area({diff_root_key_}), area({files_root_key_}))),
+            /*version=*/1, /*target=*/"git_dock")));
   }
 
   // Initial population is triggered client-side instead of by emitting

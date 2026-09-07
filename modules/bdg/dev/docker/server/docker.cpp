@@ -483,14 +483,17 @@ void docker_frontend::on_init() {
     // that is itself split -- a Console strip along its bottom 24%, the
     // tabbed list/stats windows filling the rest -- and leave the right 38%
     // for Logs + Inspect.
-    set_default_dock_layout(layout(
-        split(
-            dir::left, 0.62f,
+    set_default_dock_layout(viewport(
+        "docker_dock", "Docker",
+        layout(
             split(
-                dir::down, 0.24f,
-                area({console_root_key_}),
-                area({internal_root_key_, images, volumes, networks, stats_root_key_}, internal_root_key_)),
-            area({logs_root_key_, inspect_root_key_}, logs_root_key_))));
+                dir::left, 0.62f,
+                split(
+                    dir::down, 0.24f,
+                    area({console_root_key_}),
+                    area({internal_root_key_, images, volumes, networks, stats_root_key_}, internal_root_key_)),
+                area({logs_root_key_, inspect_root_key_}, logs_root_key_)),
+            /*version=*/1, /*target=*/"docker_dock")));
   }
 
   // Initial population is triggered client-side (run_docker() calls

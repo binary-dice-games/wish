@@ -6,6 +6,7 @@
 #include <imgui/imgui_renderer.hpp>
 #include <imgui/imgui_ui_renderer.hpp>
 #include <server/registry.hpp>
+#include <ui/dock_layout_spec.hpp>
 #include <ui/ui_elements/window.hpp>
 #include <ui/ui_importer.hpp>
 
@@ -3501,6 +3502,58 @@ TEST_F(ImguiRendererTest, DockLayoutIsNeverForciblyReappliedAfterSiblingRebuild)
     EXPECT_NE(ImGui::DockNodeGetRootNode(n)->ID, dock_id); // still not rebuilt into dock_id
 }
 
+TEST_F(ImguiRendererTest, DockLayoutReappliesWhenTargetChangesEvenAtSameVersion) {
+  // Regression test for a real-world "layout completely broken, no window
+  // attached to the docking space" report: an app switches its
+  // `set_default_dock_layout()` from targeting the ambient dockspace to a
+  // named, nested one (e.g. opting into `dock::viewport(...)` -- see
+  // PLAN.md's "Isolating an app's dockspace from siblings") while keeping
+  // the exact same window-path list and the same `version`. Without
+  // target_id folded into the persisted identity, imgui.ini's "already
+  // applied" record from the OLD target made should_apply_dock_layout()
+  // think this exact layout had already run -- and its only escape hatch
+  // ("target node doesn't exist") never fired either, because
+  // `ImGui::DockSpace(new_target, ...)` (what render_dockspace_viewport()
+  // calls right before a nested DockLayout renders) auto-creates an empty
+  // node at new_target as a side effect, so DockBuilderGetNode(new_target)
+  // was already non-null the moment the check ran. Net effect: the layout
+  // was silently never applied to the new node, so every window it names
+  // was left wherever ImGui's stale per-window ini state (or nothing) put
+  // it -- exactly "no window attached to the docking space".
+  ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+
+  auto wa = make_docked_window("A", "wA_retgt");
+  auto wb = make_docked_window("B", "wB_retgt");
+  auto lay = bdg::wish::import_json(R"({
+    "type": "DockLayout", "version": 1,
+    "children": [ { "type": "DockSplit", "dir": "left", "ratio": 0.5, "children": [
+      { "type": "DockArea", "windows": "wA_retgt" },
+      { "type": "DockArea", "windows": "wB_retgt" } ] } ]
+  })")[""];
+
+  ImGuiID old_target = ImHashStr("DL_Retarget_Old");
+  drive_dock_frames(*renderer_, *sess_, old_target, *lay, {wa, wb}, 12);
+  ASSERT_FALSE(bdg::wish::should_apply_dock_layout(*lay, old_target, /*version=*/1));
+
+  // Same layout object (same window-path list, same version) now targets a
+  // brand-new, never-before-seen id -- as happens when an app wraps its
+  // existing layout() call in dock::viewport(...) without bumping version.
+  ImGuiID new_target = ImHashStr("DL_Retarget_New");
+  // drive_dock_frames() reproduces the exact trap on its very first frame:
+  // it calls ImGui::DockSpace(new_target, ...) -- auto-creating an empty
+  // node there as a side effect -- BEFORE rendering the DockLayout, exactly
+  // the order render_dockspace_viewport() uses for a nested DockSpaceViewport.
+  drive_dock_frames(*renderer_, *sess_, new_target, *lay, {wa, wb}, 12);
+  ImGuiWindow* pa = ImGui::FindWindowByName("A###wA_retgt");
+  ImGuiWindow* pb = ImGui::FindWindowByName("B###wB_retgt");
+  ASSERT_NE(pa, nullptr);
+  ASSERT_NE(pb, nullptr);
+  ASSERT_NE(pa->DockId, 0u);
+  ASSERT_NE(pb->DockId, 0u);
+  EXPECT_EQ(ImGui::DockNodeGetRootNode(ImGui::DockBuilderGetNode(pa->DockId))->ID, new_target);
+  EXPECT_EQ(ImGui::DockNodeGetRootNode(ImGui::DockBuilderGetNode(pb->DockId))->ID, new_target);
+}
+
 TEST_F(ImguiRendererTest, DockLayoutFocusedWindowBecomesSelectedTab) {
   ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
@@ -3592,6 +3645,184 @@ TEST_F(ImguiRendererTest, DockLayoutAsDockSpaceViewportChildApplies) {
   EXPECT_NE(a->DockNode, b->DockNode);
   EXPECT_EQ(ImGui::DockNodeGetRootNode(a->DockNode), ImGui::DockNodeGetRootNode(b->DockNode));
   EXPECT_TRUE(ImGui::DockNodeGetRootNode(a->DockNode)->IsSplitNode());
+}
+
+// ── Docking: embedded DockSpaceViewport (one app = one tile, own dockspace) ─
+
+namespace {
+
+// Drive `frames` frames of an outer host DockSpace (the shared, ambient
+// chrome) plus whatever top-level elements are passed -- mirrors how
+// host_renderer/dockspace_renderer set the ambient id once per frame and
+// every session's top-level objects (an embedded DockSpaceViewport among
+// them) render against it.
+// `focus_window`, when given, is re-selected as the active tab every frame
+// (ImGui::SetWindowFocus) -- needed once more than one embedded viewport
+// shares the outer ambient node: only the *visible* tab's Begin() actually
+// runs its content (ImGui sets SkipItems on background tabs), so a
+// backgrounded viewport's nested DockSpace() never gets to host its own
+// windows until it is the selected tab at least once.
+void drive_embedded_frames(bdg::wish::imgui_renderer& r, bdg::wish::context& s, ImGuiID outer_dock_id,
+                           const std::vector<bdg::wish::ui_element_ptr>& roots, int frames,
+                           const char* focus_window = nullptr) {
+  for (int i = 0; i < frames; ++i) {
+    r.begin_frame();
+    ImGui::SetNextWindowPos(ImVec2(0, 0));
+    ImGui::SetNextWindowSize(ImVec2(800, 600));
+    ImGui::Begin("Host", nullptr,
+        ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+            ImGuiWindowFlags_NoMove);
+    ImGui::DockSpace(outer_dock_id, ImVec2(0, 0), ImGuiDockNodeFlags_None);
+    ImGui::End();
+    if (focus_window)
+      ImGui::SetWindowFocus(focus_window);
+    r.set_ambient_dockspace_id(outer_dock_id);
+    for (const auto& root : roots)
+      r.render_node(*root, s);
+    r.end_frame();
+  }
+}
+
+// A `viewport(id, layout(...))` tree, built directly as JSON: an embedded
+// DockSpaceViewport whose only child is a DockLayout targeting its own id.
+bdg::wish::ui_element_ptr make_app_shell(const std::string& id, const char* dock_area_windows) {
+  auto tree = bdg::wish::import_json(std::string(R"({
+    "type": "DockSpaceViewport", "id": ")") + id +
+      R"(", "embedded": true,
+    "children": [ { "type": "DockLayout", "target": ")" + id + R"(", "children": [
+      { "type": "DockArea", "windows": ")" + dock_area_windows + R"(" } ] } ]
+  })");
+  return tree[""];
+}
+
+} // namespace
+
+TEST_F(ImguiRendererTest, EmbeddedDockSpaceViewportDocksIntoOuterAmbient) {
+  // An embedded DockSpaceViewport is never explicitly positioned, so -- just
+  // like an ordinary un-positioned Window -- it must dock into whatever
+  // dockspace is already ambient when it first renders.
+  ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+  ImGuiID outer = ImHashStr("Embedded_Outer1");
+
+  auto shell = make_app_shell("shell1", "shell1_win");
+  drive_embedded_frames(*renderer_, *sess_, outer, {shell}, 8);
+
+  auto* w = ImGui::FindWindowByName("shell1");
+  ASSERT_NE(w, nullptr);
+  ASSERT_NE(w->DockNode, nullptr);
+  EXPECT_EQ(ImGui::DockNodeGetRootNode(w->DockNode)->ID, outer);
+}
+
+TEST_F(ImguiRendererTest, EmbeddedDockSpaceViewportNestedLayoutTargetsOwnNode) {
+  // The DockLayout child targets the viewport's own id, which resolves
+  // against the viewport's own window's id (not the current ID stack, which
+  // by the time a nested child renders has other elements' PushID scopes on
+  // top of it) -- so its DockArea windows land in a node distinct from,
+  // though descended from, the outer ambient node.
+  ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+  ImGuiID outer = ImHashStr("Embedded_Outer2");
+
+  auto shell = make_app_shell("shell2", "shell2_win");
+  auto win = make_docked_window("Alpha", "shell2_win");
+  drive_embedded_frames(*renderer_, *sess_, outer, {shell, win}, 20);
+
+  auto* shell_w = ImGui::FindWindowByName("shell2");
+  auto* alpha = ImGui::FindWindowByName("Alpha###shell2_win");
+  ASSERT_NE(shell_w, nullptr);
+  ASSERT_NE(alpha, nullptr);
+  ASSERT_TRUE(alpha->DockIsActive);
+
+  // Same hash render_dock_layout() computed at apply time: ImHashStr(id, 0,
+  // window->ID) -- the id ImGui::GetID(id) produces right after Begin(),
+  // before any child's PushID.
+  ImGuiID expected_nested = ImHashStr("shell2", 0, shell_w->ID);
+  EXPECT_NE(expected_nested, outer);
+  ASSERT_NE(alpha->DockNode, nullptr);
+  EXPECT_EQ(ImGui::DockNodeGetRootNode(alpha->DockNode)->ID, expected_nested);
+}
+
+TEST_F(ImguiRendererTest, EmbeddedDockSpaceViewportRestoresOuterAmbientAfterward) {
+  // Once the embedded viewport finishes rendering, ambient_dockspace_id()
+  // must be back to the outer id -- otherwise a sibling top-level object
+  // (or the next session sharing this same process-wide slot) would
+  // wrongly auto-dock into the app's private nested dockspace instead of
+  // the shared host one.
+  ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+  ImGuiID outer = ImHashStr("Embedded_Outer3");
+
+  auto shell = make_app_shell("shell3", "shell3_win");
+  auto shell_win = make_docked_window("Alpha", "shell3_win");
+  // Unrelated sibling, not listed in shell3's DockArea -- must fall back to
+  // whatever is ambient *after* the shell renders, i.e. the outer id.
+  auto sibling = bdg::wish::import_json(R"({"type":"Window","title":"Sibling"})")[""];
+
+  drive_embedded_frames(*renderer_, *sess_, outer, {shell, shell_win, sibling}, 10);
+
+  auto* sib = ImGui::FindWindowByName(("Sibling###" + bdg::wish::stable_id(*sibling)).c_str());
+  ASSERT_NE(sib, nullptr);
+  ASSERT_NE(sib->DockNode, nullptr);
+  EXPECT_EQ(ImGui::DockNodeGetRootNode(sib->DockNode)->ID, outer);
+}
+
+TEST_F(ImguiRendererTest, DockerAndGitInSeparateShellsDoNotDisturbEachOther) {
+  // The concrete regression for the reported bug: two apps, each wrapped in
+  // its own viewport(...), share the same outer host dockspace but no
+  // longer the same physical dock node -- so settling one's layout can
+  // never rearrange or evict the other's.
+  ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+  ImGuiID outer = ImHashStr("Embedded_Outer4");
+
+  using namespace bdg::wish::dock;
+  // A real split (not make_app_shell's single flat DockArea) so d1/d2 land
+  // in two distinct dock nodes -- proving docker's internal arrangement,
+  // not just its outer tile, survives git running alongside it.
+  auto docker_shell = viewport("docker_dock", "Docker",
+      layout(split(dir::left, 0.5f, area({"d1"}), area({"d2"})), 1, "docker_dock"));
+  auto d1 = make_docked_window("D1", "d1");
+  auto d2 = make_docked_window("D2", "d2");
+
+  auto git_shell = viewport("git_dock", "Git",
+      layout(split(dir::left, 0.5f, area({"g1"}), area({"g2"})), 1, "git_dock"));
+  auto g1 = make_docked_window("G1", "g1");
+  auto g2 = make_docked_window("G2", "g2");
+
+  // "docker runs" first and settles.
+  drive_embedded_frames(*renderer_, *sess_, outer, {docker_shell, d1, d2}, 20);
+  auto* pd1 = ImGui::FindWindowByName("D1###d1");
+  ASSERT_NE(pd1, nullptr);
+  ASSERT_TRUE(pd1->DockIsActive);
+  ImGuiID docker_root_before = ImGui::DockNodeGetRootNode(pd1->DockNode)->ID;
+
+  // "git runs" alongside it, into the same outer chrome. Both shells are
+  // un-positioned, so they land as tabs of the same outer node; only the
+  // selected tab's Begin() actually executes its content (ImGui hides
+  // background tabs), so git needs to be the focused tab at least once for
+  // its own nested dockspace to ever host g1/g2 -- focus it explicitly
+  // rather than relying on "last rendered" tab-selection order.
+  drive_embedded_frames(*renderer_, *sess_, outer, {docker_shell, d1, d2, git_shell, g1, g2}, 20, "git_dock");
+
+  auto* pg1 = ImGui::FindWindowByName("G1###g1");
+  auto* pg2 = ImGui::FindWindowByName("G2###g2");
+  ASSERT_NE(pg1, nullptr);
+  ASSERT_NE(pg2, nullptr);
+  ASSERT_TRUE(pg1->DockIsActive);
+  ASSERT_TRUE(pg2->DockIsActive);
+
+  // Bring docker back to the front and confirm its own split is untouched
+  // by git having run in between.
+  drive_embedded_frames(*renderer_, *sess_, outer, {docker_shell, d1, d2, git_shell, g1, g2}, 5, "docker_dock");
+
+  pd1 = ImGui::FindWindowByName("D1###d1");
+  auto* pd2 = ImGui::FindWindowByName("D2###d2");
+  ASSERT_NE(pd1, nullptr);
+  ASSERT_NE(pd2, nullptr);
+  ASSERT_TRUE(pd1->DockIsActive);
+  ASSERT_TRUE(pd2->DockIsActive);
+  // Docker's own split survived untouched.
+  EXPECT_EQ(ImGui::DockNodeGetRootNode(pd1->DockNode)->ID, docker_root_before);
+  EXPECT_NE(pd1->DockNode, pd2->DockNode);
+  // Docker's and git's nested trees are physically distinct nodes.
+  EXPECT_NE(ImGui::DockNodeGetRootNode(pd1->DockNode)->ID, ImGui::DockNodeGetRootNode(pg1->DockNode)->ID);
 }
 
 // ── Per-element tooltip ("tooltip" field -> ImGui::SetTooltip) ──────────────

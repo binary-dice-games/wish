@@ -1365,15 +1365,38 @@ class ui_dockspace_viewport : public cloneable_ui_element<ui_dockspace_viewport>
   }
   /// @brief Zero-copy form of `id()` (empty fallback) -- see `cached_field_str()`.
   const std::string& id_ref() const { return cached_field_str(id_field_, bison::key_t{"id"}); }
+  /// @brief User-facing name shown on the tab/title bar when `embedded` is
+  ///        true (falls back to `id()` when empty). Never affects the
+  ///        DockSpace/DockBuilder identity, which is always derived from
+  ///        `id()` alone -- a nested `DockLayout.target` still names `id()`,
+  ///        never this.
+  std::string title(std::string def = {}) const {
+    return cached_field_or<std::string>(title_field_, bison::key_t{"title"}, std::move(def));
+  }
+  /// @brief Zero-copy form of `title()` (empty fallback) -- see `cached_field_str()`.
+  const std::string& title_ref() const { return cached_field_str(title_field_, bison::key_t{"title"}); }
   int32_t flags(int32_t def = 0) const { return cached_field_or<int32_t>(flags_field_, bison::key_t{"flags"}, def); }
   bool passthru(bool def = false) const {
     return cached_field_or<bool>(passthru_field_, bison::key_t{"passthru"}, def);
   }
+  /// @brief When true, renders as an ordinary dockable window (title bar,
+  ///        resizable/movable, auto-docks into whatever dockspace is
+  ///        already ambient via `ImGuiCond_FirstUseEver`) instead of a
+  ///        fullscreen, `NoDocking` host -- so this element becomes one
+  ///        dockable tile among siblings, with its own nested dockspace for
+  ///        its children. Lets one app isolate its own dock tree from a
+  ///        sibling app sharing the same outer/host dockspace. Default
+  ///        false preserves the original fullscreen-host behavior.
+  bool embedded(bool def = false) const {
+    return cached_field_or<bool>(embedded_field_, bison::key_t{"embedded"}, def);
+  }
 
  private:
   mutable bison::field* id_field_ = nullptr;
+  mutable bison::field* title_field_ = nullptr;
   mutable bison::field* flags_field_ = nullptr;
   mutable bison::field* passthru_field_ = nullptr;
+  mutable bison::field* embedded_field_ = nullptr;
 };
 
 class ui_dockspace : public cloneable_ui_element<ui_dockspace> {

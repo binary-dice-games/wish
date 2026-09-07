@@ -13,6 +13,7 @@ if you bump its `version`.
 
 - [How it works](#how-it-works)
 - [From a server-side form](#from-a-server-side-form)
+- [Isolating one app's dockspace from others](#isolating-one-apps-dockspace-from-others)
 - [From a client-registered template](#from-a-client-registered-template)
 - [The tree grammar](#the-tree-grammar)
 - [Versioning and re-applying](#versioning-and-re-applying)
@@ -83,6 +84,73 @@ takes `ratio` of the space; `far` fills the rest.
 
 The docker module (`modules/bdg/dev/docker/server/docker.cpp`) is a
 worked example.
+
+---
+
+## Isolating one app's dockspace from others
+
+By default every app's windows auto-dock into the **one** shared, ambient
+dockspace the host chrome publishes each frame (`ambient_dockspace_id()`,
+set once by `host_renderer`/`wish_server_c.cpp`'s `dockspace_renderer`
+before any session renders). That's fine when only one app is ever open,
+but running app A, then app B, then app A again means all three runs
+share the *same physical dock node* — B's layout can rearrange or evict
+A's windows, because there's nothing to tell them apart.
+
+`dock::viewport(id, title, layout(...))` wraps an app's layout in an
+**embedded `DockSpaceViewport`**: the whole app then presents as a single
+dockable tile in the host chrome (it docks into the ambient dockspace
+like any other un-positioned window), and that tile hosts its own
+**nested** dockspace for the app's own windows. Two apps wrapped this way
+can never physically share a dock node, no matter what order they run
+in.
+
+```cpp
+using namespace bdg::wish::dock;
+set_default_dock_layout(viewport(
+    "docker_dock", "Docker",
+    layout(
+        split(dir::left, 0.62f,
+            split(dir::down, 0.24f, area({console_root_key_}), area({internal_root_key_})),
+            area({logs_root_key_, inspect_root_key_}, logs_root_key_)),
+        /*version=*/1, /*target=*/"docker_dock")));
+```
+
+Pass the same id string as both `viewport()`'s `id` and the wrapped
+`layout()`'s `target`: `DockLayout.target` resolves a named (non-ambient)
+dock id by hashing the string against the enclosing window's `ID`
+(`ImHashStr(target, 0, window->ID)`) — the same seed `ImGui::GetID(id)`
+uses immediately after that window's `Begin()`, which is exactly what the
+`DockSpaceViewport` published for its own nested `ImGui::DockSpace()`
+call one level up. Hashing against `window->ID` specifically (rather than
+whatever is on top of the ID stack at the point the `DockLayout` happens
+to render) matters because the `DockLayout` sits several levels into the
+tree-walk dispatch, behind other elements' own `PushID()` scopes; giving
+`viewport()` and `layout()` different id strings also targets the wrong
+node.
+
+`viewport()`'s `title` is purely cosmetic — the name shown on the tile's
+tab/title bar (e.g. "Docker") — and never affects `id`. Internally, the
+window's ImGui label is built as `"Title###id"`, the same pattern
+`with_id()` uses for ordinary windows: `ImHashStr()` resets and hashes
+only what follows `"###"`, so `ImGui::GetID("Docker###docker_dock")` and
+`ImGui::GetID("docker_dock")` land on the identical id. Change `title`
+freely; `id` (and therefore `layout()`'s `target`) must stay untouched.
+
+**Limitation:** only windows *listed in the wrapped layout's `DockArea`
+nodes* are guaranteed to land inside the nested dockspace — `DockLayout`
+assigns them explicitly (`DockBuilderDockWindow(path, target_id)`),
+independent of render order. A window created dynamically at runtime and
+never added to any `DockArea` (e.g. docker's per-container Logs window)
+still falls back to the **outer/host** ambient dockspace on its first
+appearance, landing as its own tile next to the app's shell rather than
+inside it — the app's nested dockspace id is only ambient while the
+`DockSpaceViewport` element itself is rendering, and is restored to the
+outer id immediately afterward. Solving this in general needs either
+per-window explicit dock targets or making such windows real tree
+children of the shell; until then, list every window you can predict
+ahead of time in the `DockArea` tree, and treat windows outside it as
+independently placed.
 
 ---
 
@@ -174,6 +242,13 @@ To push a *changed* default to users who never customized theirs, **bump
 That forces one re-apply even over a user's own arrangement, so do it
 deliberately.
 
+**Changing `target` counts as a change, even at the same `version`.**
+Moving a layout from the ambient dockspace to a named one (or from one
+named `target` to another -- e.g. adopting `dock::viewport(...)`, see
+above) is tracked as a distinct layout from its old target, so it applies
+on the next run even though its window set and `version` didn't change.
+You don't need to bump `version` for this specific case.
+
 State is persisted per layout (keyed by its window-path list, not the
 dockspace) in `imgui.ini`:
 
@@ -183,6 +258,49 @@ Version=1
 ```
 
 Deleting `imgui.ini` resets everything to a fresh first run.
+
+---
+
+## Render-order hazard: DockLayout must render before its own windows
+
+`session::top_level_objects` is an `unordered_map`, so the order a
+session's top-level objects render in each frame is **arbitrary**, not
+insertion order and not sorted by key. That matters because a `Window`'s
+very first `ImGui::Begin()` call resolves
+`SetNextWindowDockID(ambient, ImGuiCond_FirstUseEver)` immediately, while
+`DockLayout`/`DockSpaceViewport` reassign windows to their real split
+nodes later, via `DockBuilderDockWindow()`. If one of an app's own
+windows happens to render (and call that first-ever `Begin()`) *before*
+its sibling `DockLayout`/`DockSpaceViewport` renders in the same frame —
+which `unordered_map` iteration order can produce on any given run — the
+window's placement for that frame is already resolved before
+`DockBuilderDockWindow()` ever runs. ImGui's own end-of-frame dock-node
+garbage collection then prunes the freshly-built, still-unhosted split
+nodes, permanently collapsing the intended split into one shared tabbed
+node — because `DockLayout` only ever applies once per version (see
+above), there is no later frame where it gets a second chance.
+
+This is a real, previously-shipped bug (not specific to nested
+viewports): it reproduced reliably running `docker` standalone, with all
+of docker's windows tabbed into a single node instead of the intended
+62/38 split with a console strip. It was root-caused by instrumenting
+the render path and observing, in a live server log, that all of
+docker's `Window` top-levels called `Begin()` before its
+`DockSpaceViewport`/`DockLayout` rendered that frame — and confirmed
+fixed the same way, by observing the corrected ordering and the
+resulting widget tree (via `docs/automation.md`'s Playwright
+`getTree()` probe) live afterward.
+
+The fix: both application render loops
+([src/standalone/standalone.cpp](../src/standalone/standalone.cpp) and
+[src/server/server.cpp](../src/server/server.cpp)) render a session's
+top-level objects in **two passes** every frame — any
+`DockLayout`/`DockSpaceViewport` top-level first, then everything else —
+so `DockBuilderDockWindow()` assignments always land before sibling
+windows' `Begin()` calls that same frame, regardless of
+`top_level_objects`'s hash order. If you add a new place that iterates
+and renders a session's top-level objects, you must preserve this
+two-pass ordering or the same collapse can reappear.
 
 ---
 

@@ -367,7 +367,10 @@ TEST_F(GitRepoRmiTest, RegistersDefaultDockLayout) {
   const std::string dl = find_root_with_prefix(srv_->last_session->ui_objects, "__docklayout_");
   ASSERT_FALSE(dl.empty());
   auto& obj = srv_->last_session->ui_objects.at(dl);
-  EXPECT_EQ(obj->class_key(), "DockLayout"_key);
+  // git opts into its own nested dockspace (dock::viewport(...)), so the
+  // registered root is the embedded DockSpaceViewport wrapping the actual
+  // DockLayout, not a bare DockLayout.
+  EXPECT_EQ(obj->class_key(), "DockSpaceViewport"_key);
   EXPECT_TRUE(srv_->last_session->top_level_objects.count(bison::key_t{dl}));
 
   std::vector<std::string> tokens;

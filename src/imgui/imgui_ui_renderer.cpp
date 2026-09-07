@@ -1558,14 +1558,44 @@ void render_progress_bar(imgui_renderer&, const ui_element& node0, const context
 void render_dockspace_viewport(imgui_renderer& r, const ui_element& node0, const context& s) {
   const auto& node = static_cast<const ui_dockspace_viewport&>(node0);
   const std::string& id_stored = node.id_ref();
+  bool embedded = node.embedded(false);
+  // Embedded mode gives this element a readable tab name once docked among
+  // siblings; the fullscreen host has no visible chrome, so its id can stay
+  // hidden behind "##".
   const char* id = id_stored.empty() ? "##viewport_dockspace" : id_stored.c_str();
+  // The visible tab/title bar name is `title` when set, but the ImGui
+  // ID -- and therefore the DockSpace/DockBuilder identity a nested
+  // DockLayout.target resolves against -- must stay derived from `id`
+  // alone. "Title###id" gives ImHashStr() exactly that split (it resets
+  // and hashes only what follows "###"), the same pattern with_id() uses
+  // for ordinary windows.
+  const std::string& title_stored = node.title_ref();
+  std::string window_label_buf;
+  const char* window_label = id;
+  if (embedded && !title_stored.empty()) {
+    window_label_buf = title_stored + "###" + id;
+    window_label = window_label_buf.c_str();
+  }
   int32_t flags = node.flags(0);
   bool passthru = node.passthru(false);
 
-  const ImGuiViewport* vp = ImGui::GetMainViewport();
-  ImGui::SetNextWindowPos(vp->WorkPos);
-  ImGui::SetNextWindowSize(vp->WorkSize);
-  ImGui::SetNextWindowViewport(vp->ID);
+  // Restored unconditionally after this element (both loops) finishes, so a
+  // sibling top-level object -- or the next session sharing this same
+  // process-wide, mutable slot -- never inherits the nested id set below.
+  ImGuiID prior_ambient = r.ambient_dockspace_id();
+
+  if (!embedded) {
+    const ImGuiViewport* vp = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(vp->WorkPos);
+    ImGui::SetNextWindowSize(vp->WorkSize);
+    ImGui::SetNextWindowViewport(vp->ID);
+  } else if (prior_ambient != 0) {
+    // Mirrors render_window()'s own fallback: an embedded viewport is never
+    // explicitly positioned, so on first use it docks into whatever
+    // dockspace is already ambient (typically the host chrome's) -- one
+    // tile among siblings, same as any other un-positioned Window.
+    ImGui::SetNextWindowDockID(prior_ambient, ImGuiCond_FirstUseEver);
+  }
   ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
   ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
   ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
@@ -1575,14 +1605,17 @@ void render_dockspace_viewport(imgui_renderer& r, const ui_element& node0, const
   // ImGuiCol_WindowBg, which the dark preset sets close to black.
   ImGui::PushStyleColor(ImGuiCol_WindowBg, ImGui::GetStyle().Colors[ImGuiCol_DockingEmptyBg]);
 
-  // Reserve menu bar space if any direct child is a MenuBar.
-  ImGuiWindowFlags host_flags = ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse |
-      ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus |
-      ImGuiWindowFlags_NoNavFocus;
+  ImGuiWindowFlags host_flags = ImGuiWindowFlags_NoCollapse;
+  if (!embedded) {
+    // The fullscreen host chrome is not itself a window a user can drag,
+    // resize, or dock -- it just carries the dockspace.
+    host_flags |= ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
+  }
   if (node.has_menu_bar_child())
     host_flags |= ImGuiWindowFlags_MenuBar;
 
-  ImGui::Begin(id, nullptr, host_flags);
+  ImGui::Begin(window_label, nullptr, host_flags);
   report_self_rect(node);
   ImGui::PopStyleVar(3);
   ImGui::PopStyleColor();
@@ -1598,7 +1631,9 @@ void render_dockspace_viewport(imgui_renderer& r, const ui_element& node0, const
   // Un-positioned Window children dock here by default (see render_window).
   r.set_ambient_dockspace_id(dockspace_id);
 
-  // Non-Window children (e.g. MenuBar) are rendered inside the host window.
+  // Non-Window children (e.g. MenuBar, or a DockLayout targeting this same
+  // id -- see DockLayout.target's doc comment) are rendered inside the host
+  // window.
   node.for_each_child_ordered([&](bison::key_t, ui_element& child) {
     if (child.class_key() != "Window"_key)
       r.render_node(child, s);
@@ -1621,6 +1656,8 @@ void render_dockspace_viewport(imgui_renderer& r, const ui_element& node0, const
     if (child.class_key() == "Window"_key)
       r.render_node(child, s);
   });
+
+  r.set_ambient_dockspace_id(prior_ambient);
 }
 
 void render_dockspace(imgui_renderer&, const ui_element& node0, const context&) {

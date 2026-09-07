@@ -493,14 +493,17 @@ void kubectl_frontend::on_init() {
     const std::string deployments = internal_root_key_ + "_deployments";
     const std::string services = internal_root_key_ + "_services";
     const std::string nodes = internal_root_key_ + "_nodes";
-    set_default_dock_layout(layout(
-        split(
-            dir::left, 0.62f,
+    set_default_dock_layout(viewport(
+        "kubectl_dock", "Kubectl",
+        layout(
             split(
-                dir::down, 0.24f,
-                area({console_root_key_}),
-                area({internal_root_key_, deployments, services, nodes, top_root_key_}, internal_root_key_)),
-            area({logs_root_key_, describe_root_key_}, logs_root_key_))));
+                dir::left, 0.62f,
+                split(
+                    dir::down, 0.24f,
+                    area({console_root_key_}),
+                    area({internal_root_key_, deployments, services, nodes, top_root_key_}, internal_root_key_)),
+                area({logs_root_key_, describe_root_key_}, logs_root_key_)),
+            /*version=*/1, /*target=*/"kubectl_dock")));
   }
 
   // Initial population is triggered client-side (run_kubectl() calls

@@ -64,9 +64,15 @@ bool build_dock_layout(const ui_element& layout_root, ImGuiID target_id, ImVec2 
 ///        hard-coded default over the user's own customization.
 bool should_apply_dock_layout(const ui_element& layout_root, ImGuiID target_id, int32_t version);
 
-/// @brief Record that @p layout_root was applied at @p version, and mark
-///        imgui.ini dirty so the version is persisted.
-void note_dock_layout_applied(const ui_element& layout_root, int32_t version);
+/// @brief Record that @p layout_root was applied at @p version against
+///        @p target_id, and mark imgui.ini dirty so the version is
+///        persisted. @p target_id must be the same id passed to the
+///        preceding `should_apply_dock_layout()` call -- it is folded into
+///        the persisted identity so a layout whose window set is unchanged
+///        but whose target dockspace changed (e.g. an app opting into
+///        `dock::viewport(...)`'s nested dockspace) is treated as a new
+///        layout, not "already applied".
+void note_dock_layout_applied(const ui_element& layout_root, ImGuiID target_id, int32_t version);
 
 /// @brief Install the `[WishDockLayout]` `ImGuiSettingsHandler` on the
 ///        current ImGui context if not already present. Must be called

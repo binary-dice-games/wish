@@ -226,8 +226,27 @@ void standalone::render_loop() {
             if (d > 0)
               sess->dirty.store(d - 1, std::memory_order_release);
             detail::current_context = &*sess;
+            // Render DockLayout/DockSpaceViewport top-levels before every
+            // other top-level object this frame. top_level_objects is an
+            // unordered_map, so its iteration order is arbitrary and
+            // otherwise uncontrolled -- if one of an app's own Windows
+            // happened to render (and call its first-ever ImGui::Begin())
+            // before the app's DockLayout/DockSpaceViewport got a chance to
+            // realize the DockBuilder split for it this same frame, the
+            // window's placement is already resolved for that frame before
+            // DockBuilderDockWindow() ever runs, and ImGui's own dock-node
+            // garbage collection then prunes the freshly-split, still-empty
+            // nodes at end of frame -- permanently collapsing the intended
+            // split into one shared tabbed node, since DockLayout applies
+            // its layout at most once. See docs/dock-layout.md.
             for (const auto& [key, win] : sess->top_level_objects) {
-              if (win) {
+              if (win && (win->class_key() == "DockLayout"_key || win->class_key() == "DockSpaceViewport"_key)) {
+                sess->current_top_level_key = key;
+                renderer_->render_session(*win, *sess);
+              }
+            }
+            for (const auto& [key, win] : sess->top_level_objects) {
+              if (win && win->class_key() != "DockLayout"_key && win->class_key() != "DockSpaceViewport"_key) {
                 sess->current_top_level_key = key;
                 renderer_->render_session(*win, *sess);
               }
