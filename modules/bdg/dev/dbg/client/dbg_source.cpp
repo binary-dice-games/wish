@@ -130,9 +130,12 @@ void dbg_source::on_add_watch_requested(const std::string& expr) {
   // Re-evaluate against whichever frame the Watch window is currently
   // showing (the innermost frame after a stop, or a Call Stack row the
   // user explicitly clicked) so the new expression appears immediately
-  // instead of waiting for the next stop/selection.
-  if (has_current_frame_)
-    push_watch(current_frame_id_);
+  // instead of waiting for the next stop/selection. Always push, even with
+  // no current frame (e.g. added before the first stop) -- backend_->
+  // evaluate() just returns no entries for it yet, but the round trip must
+  // still happen or the row silently never appears at all once a frame
+  // *is* available, since nothing else re-sends watch_exprs_ on its own.
+  push_watch(has_current_frame_ ? current_frame_id_ : 0);
 }
 
 void dbg_source::push_threads() {
@@ -231,7 +234,13 @@ void dbg_source::handle_stop(const stop_event& ev) {
   push_watch(0);
 
   dynamic out_args;
-  out_args["text"_key] = ev.reason + " at " + ev.file + ":" + std::to_string(ev.line);
+  // resolve_address() can legitimately find no line info for some stop
+  // addresses (e.g. a loader thunk on attach, or a system DLL with no PDB)
+  // -- fall back to just the reason instead of printing the misleading
+  // "<reason> at :0" that an empty ev.file/zero ev.line would otherwise
+  // produce.
+  out_args["text"_key] =
+      ev.file.empty() ? ev.reason : ev.reason + " at " + ev.file + ":" + std::to_string(ev.line);
   out_args["level"_key] = std::string{ev.reason == "exception" ? "error" : "info"};
   proxy_->call("append_output"_key, std::move(out_args)).get();
 }

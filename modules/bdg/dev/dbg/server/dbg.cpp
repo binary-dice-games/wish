@@ -786,12 +786,19 @@ dynamic debugger_frontend::do_set_run_state(const dynamic& args) {
   bool detached = state == "detached";
   bool running = state == "running";
   bool paused = state == "paused";
-  if (detached) {
-    // Clear the Call Stack/Watch selection so the next attach's first
-    // automatic stop is treated as a fresh snapshot to adopt (see the
+  if (detached || paused) {
+    // Clear the Call Stack/Watch selection so the next callstack/watch
+    // snapshot is treated as fresh and adopted unconditionally (see the
     // "adopt on first snapshot" comment in do_update_callstack/
-    // do_update_watch) instead of being compared against a thread/frame id
-    // left over from the previous session.
+    // do_update_watch) instead of being compared against -- and possibly
+    // silently dropped in favor of -- a thread/frame id the user selected
+    // before this stop (e.g. by clicking a Call Stack row) or left over
+    // from a previous session. dbg_source::handle_stop() calls
+    // set_run_state("paused") before pushing the new stop's callstack/
+    // watch snapshot (every attach/breakpoint/step/pause/exception), so
+    // resetting here -- not just on detach -- is what makes stepping
+    // repeatedly refresh those two windows instead of getting stuck on
+    // whatever thread/frame was selected before the step.
     has_selected_thread_ = false;
     has_selected_frame_ = false;
   }

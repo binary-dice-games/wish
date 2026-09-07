@@ -285,6 +285,56 @@ TEST(Win32DebugBackendTest, EvaluateResolvesLocalParameter) {
   CloseHandle(pi.hProcess);
 }
 
+// Regression test for the INT3-overshoot bug in handle_exception()'s
+// pause-requested branch: DebugBreakProcess() spawns a dedicated remote
+// thread in the debuggee that executes the actual INT3 (ntdll's
+// DbgUserBreakPoint), so ctx_pc(ctx) at the resulting EXCEPTION_BREAKPOINT
+// is one byte past that instruction -- same as a real software breakpoint
+// hit -- and resolving it without the ctx_pc(ctx)-1 correction lands
+// mid-instruction. Because that remote thread's break address is always in
+// ntdll (no PDB loaded for it -- only the debuggee's own module), a
+// pause_ev never actually resolves file/line either way; this test's
+// purpose is to confirm the corrected address computation doesn't crash or
+// desync the continue-status handshake, not to assert a resolved location.
+TEST(Win32DebugBackendTest, PauseWhileRunningStopsCleanlyWithPauseReason) {
+  PROCESS_INFORMATION pi{};
+  uint32_t pid = launch_fixture(pi);
+  ASSERT_NE(pid, 0u);
+
+  win32_debug_backend backend;
+  stop_event_queue events;
+  backend.on_stop([&](const stop_event& ev) { events.push(ev); });
+
+  ASSERT_TRUE(backend.attach(pid));
+  stop_event attach_ev;
+  ASSERT_TRUE(events.pop(attach_ev));
+
+  backend.resume();
+  // Let the fixture's loop run for a bit so the pause lands inside its
+  // steady-state code rather than racing process startup.
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  backend.pause();
+
+  stop_event pause_ev;
+  ASSERT_TRUE(events.pop(pause_ev));
+  EXPECT_EQ(pause_ev.reason, "pause");
+  // Whatever resolve_address() did or didn't find, it must be internally
+  // consistent: a non-empty file always comes with a real (non-zero) line.
+  if (!pause_ev.file.empty())
+    EXPECT_NE(pause_ev.line, 0);
+
+  // The corrected continue-status handshake must still let the process
+  // resume normally afterwards -- confirms the fix didn't desync anything.
+  backend.resume();
+  backend.detach();
+
+  DWORD wait_result = WaitForSingleObject(pi.hProcess, 10000);
+  ASSERT_EQ(wait_result, WAIT_OBJECT_0);
+
+  CloseHandle(pi.hThread);
+  CloseHandle(pi.hProcess);
+}
+
 // Regression guard for the "everything after attach is silently dead"
 // bug: attach() returns to its caller before the debug thread has even
 // begun processing the initial CREATE_PROCESS_DEBUG_EVENT (which itself

@@ -38,6 +38,7 @@ struct TextEditorState {
   bool decorator_configured{false}; // whether SetLineDecorator has been applied
   std::vector<int32_t> breakpoint_lines; // 1-based, refreshed from the field every frame
   int32_t current_line{0}; // 1-based, 0 = none; refreshed from the field every frame
+  int32_t last_scrolled_line{0}; // current_line already scrolled to, 0 = none yet
 };
 
 std::unordered_map<uint32_t, TextEditorState>& editor_cache() {
@@ -326,6 +327,16 @@ void render_text_editor(imgui_renderer&, const ui_element& node_base, const cont
   else
     st.breakpoint_lines.clear();
   st.current_line = node.current_line();
+  // Scroll the viewport to keep the current execution line visible whenever
+  // it changes (new stop, step, or Call Stack frame selection) -- otherwise
+  // the editor stays scrolled wherever it happened to be (e.g. top of file
+  // on first open) and only the gutter marker below shows where execution
+  // actually is. Gated on an actual change so this doesn't fight the user's
+  // own manual scrolling every single frame while current_line is unchanged.
+  if (st.current_line != 0 && st.current_line != st.last_scrolled_line) {
+    st.last_scrolled_line = st.current_line;
+    st.editor.ScrollToLine(static_cast<size_t>(st.current_line - 1), TextEditor::Scroll::alignMiddle);
+  }
 
   // Gutter decorator: a filled dot for each breakpoint line, or (taking
   // priority when a line is both) a filled triangle for the current

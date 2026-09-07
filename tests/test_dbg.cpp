@@ -894,3 +894,22 @@ TEST_F(DbgRmiTest, SetRunStateToDetachedResetsCallstackAndWatchSelection) {
   call("update_watch"_key, make_watch_args(1, {{"z", "0", "int"}}));
   EXPECT_EQ(row_count(root_ + "_watch.vbox.table"), 1u);
 }
+
+TEST_F(DbgRmiTest, SetRunStateToPausedResetsCallstackAndWatchSelection) {
+  // Adopt thread 7 / frame 3 as the current selection, e.g. by the user
+  // clicking a Call Stack row before stepping.
+  call("update_callstack"_key, make_callstack_args(7, {{0, "main", "main.cpp", 42}}));
+  call("update_watch"_key, make_watch_args(3, {{"x", "0", "int"}}));
+
+  // dbg_source::handle_stop() calls set_run_state("paused") before pushing
+  // the fresh callstack/watch snapshot for every stop -- attach, breakpoint,
+  // step, pause, exception -- not just on detach. A step landing on a
+  // different thread/frame id than whatever was selected before the step
+  // must not be dropped as stale.
+  call("set_run_state"_key, payload1("state"_key, std::string{"paused"}));
+
+  call("update_callstack"_key, make_callstack_args(2, {{0, "other_main", "other.cpp", 1}}));
+  EXPECT_EQ(row_count(root_ + "_callstack.vbox.table"), 1u);
+  call("update_watch"_key, make_watch_args(0, {{"z", "0", "int"}}));
+  EXPECT_EQ(row_count(root_ + "_watch.vbox.table"), 1u);
+}

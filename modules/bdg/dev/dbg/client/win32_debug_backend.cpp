@@ -784,10 +784,17 @@ void win32_debug_backend::debug_thread_main(uint32_t pid) {
 
     if (should_stop) {
       last_event_tid_ = dbg_event.dwThreadId;
+      // Freeze the world: only dbg_event.dwThreadId is actually halted by
+      // the OS at this point (see suspend_other_threads()'s doc comment).
+      // Every sibling thread must be explicitly suspended too, or the
+      // Threads/Call Stack windows' per-thread queries race a still-running
+      // thread instead of reading a stable snapshot.
+      suspend_other_threads(dbg_event.dwThreadId);
       stop_callback cb = *on_stop_cb_.rlock();
       if (cb)
         cb(evt);
       wait_for_continue_command();
+      resume_other_threads(dbg_event.dwThreadId);
     }
 
     ContinueDebugEvent(dbg_event.dwProcessId, dbg_event.dwThreadId, continue_status);
@@ -984,12 +991,19 @@ DWORD win32_debug_backend::handle_exception(const DEBUG_EVENT& ev, bool& should_
 
     if (pause_requested_) {
       pause_requested_ = false;
+      // Same INT3-overshoot correction as the real-breakpoint case above:
+      // DebugBreakProcess() injects a remote thread that executes an INT3,
+      // so ctx_pc(ctx) here is one byte past the breakpoint instruction --
+      // resolving that address directly lands mid-instruction (or past the
+      // end of the containing line's range) and SymGetLineFromAddr64 fails,
+      // reporting no file/line at all.
+      DWORD64 hit_addr = ctx_pc(ctx) - 1;
       out.thread_id = ev.dwThreadId;
       out.reason = "pause";
       std::string fn;
       {
         std::lock_guard<std::mutex> sym_lk(sym_mtx_);
-        resolve_address(ctx_pc(ctx), fn, out.file, out.line);
+        resolve_address(hit_addr, fn, out.file, out.line);
       }
       should_stop = true;
       return DBG_CONTINUE;
@@ -1120,6 +1134,22 @@ HANDLE win32_debug_backend::thread_handle(uint32_t thread_id) {
   auto rl = thread_handles_.rlock();
   auto it = rl->find(thread_id);
   return it == rl->end() ? nullptr : it->second;
+}
+
+void win32_debug_backend::suspend_other_threads(DWORD except_tid) {
+  auto rl = thread_handles_.rlock();
+  for (auto& [tid, handle] : *rl) {
+    if (tid != except_tid && handle)
+      SuspendThread(handle);
+  }
+}
+
+void win32_debug_backend::resume_other_threads(DWORD except_tid) {
+  auto rl = thread_handles_.rlock();
+  for (auto& [tid, handle] : *rl) {
+    if (tid != except_tid && handle)
+      ResumeThread(handle);
+  }
 }
 
 } // namespace bdg::wish::dbg

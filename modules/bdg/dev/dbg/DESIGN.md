@@ -266,6 +266,18 @@ Implements `debug_backend` on Windows:
   calls in a row (e.g. `get_callstack()`'s `StackWalk64` loop plus its
   per-frame `resolve_address()`) can cover all of them with one lock
   acquisition without needing a recursive mutex.
+- **The Win32 debug-event API only halts the thread that actually raised
+  the current debug event** — it stays blocked in the kernel until
+  `ContinueDebugEvent`, but every other thread in the process keeps
+  running freely unless explicitly suspended. `get_threads()`'s reported
+  `"suspended"` state, and `get_callstack()`'s `GetThreadContext`/
+  `StackWalk64` calls against whatever thread the user selects in the
+  Threads window, both assume the whole process is genuinely halted while
+  stopped. `debug_thread_main()` therefore calls `suspend_other_threads()`
+  (`SuspendThread` on every tracked thread but the one that reported the
+  stop) right before invoking `on_stop`, and `resume_other_threads()`
+  right after `wait_for_continue_command()` returns — this is what makes
+  it safe to query an arbitrary thread's callstack while stopped.
 - Breakpoints are software breakpoints: `set_breakpoint` resolves
   file:line to an address via `DbgHelp`, saves the original byte, and
   writes `0xCC` (`INT3`) via `WriteProcessMemory`; the debug thread
@@ -343,6 +355,12 @@ Step flow:
 
 Pause/Resume/Detach:
   pause_requested  -> backend->pause() (DebugBreakProcess) -> on_stop(evt), set_run_state("paused")
+    Note: DebugBreakProcess() spawns a dedicated remote thread in the
+    debuggee that itself executes the INT3 (ntdll's DbgUserBreakPoint) --
+    the reported evt.thread_id is that new thread, not whatever thread was
+    actually running, and its address is always inside ntdll. resolve_address()
+    correctly finds no file/line for it (no PDB loaded for ntdll); the Output
+    window's "pause" message falls back to just the reason instead of "at :0".
   resume_requested -> backend->resume() (ContinueDebugEvent(DBG_CONTINUE)) -> set_run_state("running")
   detach_requested -> backend->detach() (clear all breakpoints' INT3 patches, DebugActiveProcessStop)
 ```

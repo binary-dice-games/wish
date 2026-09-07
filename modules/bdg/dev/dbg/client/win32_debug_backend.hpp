@@ -119,6 +119,21 @@ class win32_debug_backend : public debug_backend {
   void restore_all_breakpoints(); ///< Un-patches every INT3 byte (detach()).
   HANDLE thread_handle(uint32_t thread_id);
 
+  /// @brief Suspends every tracked thread except `except_tid` via
+  ///        SuspendThread(). The Win32 debug API only halts the thread that
+  ///        actually raised the current debug event (it stays blocked in
+  ///        the kernel until ContinueDebugEvent) -- every other thread in
+  ///        the process keeps running. get_threads()'s hardcoded "suspended"
+  ///        state and get_callstack()'s GetThreadContext/StackWalk64 calls
+  ///        on an arbitrary thread_id both assume the whole process is
+  ///        halted while stopped, so debug_thread_main() calls this right
+  ///        before reporting a stop (attach/breakpoint/step/pause/exception)
+  ///        and resume_other_threads() right after the caller continues.
+  void suspend_other_threads(DWORD except_tid);
+  /// @brief Undoes suspend_other_threads() -- ResumeThread() on every
+  ///        tracked thread except `except_tid`.
+  void resume_other_threads(DWORD except_tid);
+
   HANDLE process_{nullptr};
   DWORD pid_{0};
   std::thread debug_thread_;
