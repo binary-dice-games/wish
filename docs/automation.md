@@ -671,3 +671,53 @@ def test_saving_shows_confirmation(wish_ui):
   single-process embedded app has no separate "client connects" RMI
   lifecycle event to log — so don't rely on it here; read the widget tree
   and the Output table directly instead.
+- **To verify the `dbg` module's Source window actually renders real file
+  content (not just an empty tab), you must reach a stop whose *topmost*
+  frame has a resolved file/line, and the Source tab opens for that
+  frame's file — not necessarily the file you want.** A plain `Pause`
+  (`DebugBreakProcess`) almost always lands inside kernel/syscall code
+  with no symbol (`NtDelayExecution`, `ZwWaitForWorkViaWorkerFactory`,
+  etc.), so its own Source push is empty and no tab opens at all — don't
+  loop on `Pause` expecting this to resolve itself. Instead: attach, click
+  **Step Over** once (this is what makes the *rest* of the Call Stack
+  resolve function names/file/line — right after attach, most frames are
+  blank), then find a Call Stack row whose File column is non-empty and
+  double-click it (`row_activated`) to force that specific frame's file
+  open via `open_file_requested`, regardless of which frame the debuggee
+  is actually stopped in. A frame for `dbg_fixture.exe`'s own `main()` (a
+  real, on-disk local path) reliably appears a few frames up from the
+  innermost frame (which is usually deep in `std::this_thread::sleep_for`
+  → `NtDelayExecution`) — that frame is what actually proves file content
+  renders, since CRT/STL frames above it (`invoke_main`,
+  `mainCRTStartup`, `_Thrd_sleep_for`'s own `sharedmutex.cpp`, etc.) carry
+  file paths baked into Microsoft's public PDBs pointing at an internal CI
+  build path (`D:\a\_work\1\s\...`) that doesn't exist on a normal
+  machine, so those tabs open but *legitimately* stay empty — that is not
+  a bug. This also means `dbg_fixture.exe` (previously written off in the
+  gotcha above as useless for Source content since it lacked a
+  long-enough lifetime) works fine for this once given a long enough
+  loop to survive the attach race.
+- **The Call Stack `Table` auto-scrolls to the innermost frame, and a
+  `get_tree()` `rect` for a now-scrolled-away row is stale, not
+  absent.** The row still appears in `get_tree()` with a plausible-looking
+  `rect`, so clicking at that rect's coordinates silently lands wherever
+  the table has scrolled to *by click time* (often blank space, or a
+  different row) instead of erroring — a bug that looks exactly like "the
+  click didn't do anything." Before clicking a Call Stack row by its
+  `rect`, re-`get_tree()` immediately beforehand and prefer a row inside
+  the range that's already visible (e.g. the bottommost few, right after
+  the table auto-scrolled there); to reach an earlier row, scroll the
+  table first — `page.mouse.move()` to its center then
+  `page.mouse.wheel(0, -120)` — and re-query the tree before computing a
+  click target.
+- **`row_activated` (double-click) needs two separate `AutomationClient`
+  clicks with a real gap, not `page.mouse.dblclick()` and not two raw
+  `page.mouse.click()` calls back to back.** `dblclick()` and an
+  undelayed `click()` send mousedown+mouseup within the same poll/frame,
+  which ImGui's `Selectable()` needs to see as two distinct
+  press-release cycles to recognize a double-click (`IsMouseDoubleClicked`)
+  — same underlying issue as the right-click/`ContextMenu` gotcha above.
+  Call `ui.click(path)` (which already inserts `_CLICK_DELAY_MS` between
+  down/up) twice, with a real `time.sleep()` of 100-200ms between the two
+  calls — comfortably under ImGui's ~300ms double-click window but long
+  enough to land in separate frames.

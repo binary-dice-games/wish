@@ -38,6 +38,7 @@ DECLARE_int32(web_port);
 DECLARE_string(web_bind);
 DECLARE_string(profiling_dir);
 DECLARE_bool(profiling_autostart);
+DECLARE_bool(allow_absolute_paths);
 #else
 DEFINE_int32(font_size, 16, "Font size in pixels");
 DEFINE_string(renderer, "web", "Rendering backend: sdl3 or web");
@@ -45,6 +46,10 @@ DEFINE_int32(web_port, 8080, "HTTP/WebSocket port for --renderer web");
 DEFINE_string(web_bind, "127.0.0.1", "Bind address for --renderer web (localhost-only by default)");
 DEFINE_string(profiling_dir, "", "Directory for Perfetto trace output; empty disables profiling");
 DEFINE_bool(profiling_autostart, false, "Start capture immediately on startup (requires --profiling_dir)");
+DEFINE_bool(allow_absolute_paths, false,
+            "Allow widgets (e.g. dbg's Source view, editor, nano) to reference files by "
+            "absolute path outside the session sandbox. Safe in standalone mode -- server "
+            "and client are the same process -- see wish::standalone::set_allow_absolute_paths().");
 #endif
 
 DECLARE_bool(list);
@@ -224,6 +229,7 @@ std::unique_ptr<bison::rmi::standalone> wish_standalone_app::make_standalone() {
 #else
   auto session = std::make_unique<wish_standalone_session>(make_renderer(), app_args_);
   session->set_logger(make_standalone_logger()); // must be called before start()
+  session->set_allow_absolute_paths(FLAGS_allow_absolute_paths); // must be called before start()
   return session;
 #endif
 }

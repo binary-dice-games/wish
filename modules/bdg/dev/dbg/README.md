@@ -11,6 +11,18 @@ the server only renders whatever snapshot it's given.
 window's toolbar and click Attach). Opens as six independently dockable
 windows: Source, Threads, Call Stack, Watch, Breakpoints, Output.
 
+**Deployment requirement:** the server hosting `dbg` must be started with
+`--allow_absolute_paths` (`wish server --allow_absolute_paths` or `wish
+standalone --run=dbg --allow_absolute_paths`). Source files are opened by
+their absolute on-disk path as reported by the debug backend/PDB, and
+`TextEditor` refuses to render an absolute path unless the server opts in —
+without this flag, the Source window's tabs open with the right label but
+stay empty. Only enable it for a trusted, single-operator deployment: it
+lets any connected client make the server read arbitrary local files by
+absolute path (see `wish::server::set_allow_absolute_paths()`'s doc
+comment). `wish standalone` runs server and client in one process, so this
+is always safe there.
+
 - **server/**: `DebuggerFrontend` form (`register_dbg()`) — renders
   whatever snapshot it was last given via `update_threads` /
   `update_callstack` / `update_watch` / `update_breakpoints` /

@@ -46,6 +46,10 @@ DEFINE_int32(web_port, 8080, "HTTP/WebSocket port for --renderer web");
 DEFINE_string(web_bind, "127.0.0.1", "Bind address for --renderer web (localhost-only by default)");
 DEFINE_string(profiling_dir, "", "Directory for Perfetto trace output; empty disables profiling");
 DEFINE_bool(profiling_autostart, false, "Start capture immediately on server startup (requires --profiling_dir)");
+DEFINE_bool(allow_absolute_paths, false,
+            "Allow widgets (e.g. dbg's Source view, editor, nano) to reference files by "
+            "absolute path outside the session sandbox. Only enable for trusted, "
+            "single-operator deployments -- see wish::server::set_allow_absolute_paths().");
 
 namespace bdg::wish {
 
@@ -153,6 +157,7 @@ int wish_server_app::run_with_transport(bison::rmi::transport::server_transport_
   auto& srv = static_cast<server&>(*srv_owner);
   srv.set_logger(server_log_);
   srv.set_default_theme(FLAGS_theme);
+  srv.set_allow_absolute_paths(FLAGS_allow_absolute_paths);
   // Populates cert_file/key_file/etc. from FLAGS_* when --transport=tls
   // selected it (see bison::app::server_app::on_listen_params()); a no-op
   // for every other transport.

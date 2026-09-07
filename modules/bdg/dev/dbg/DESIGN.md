@@ -471,8 +471,9 @@ use only the methods/events above).
   debuggee's address space.
 - **Deployment requirement**: because source files are opened via
   `set_allow_absolute_paths(true)` (§6), the server process must be run
-  with that flag enabled, and the deployment must trust the client's
-  reported source paths — document this plainly in the module's
+  with that flag enabled (`wish server`/`wish standalone`'s
+  `--allow_absolute_paths` CLI flag), and the deployment must trust the
+  client's reported source paths — documented in the module's
   `README.md`, the same way `docker`'s README documents its own "`docker`
   must be on `PATH`" requirement.
 - Every `update_*` RMI handler fully clears its owned table/tree before
