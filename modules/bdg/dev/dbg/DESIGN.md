@@ -16,15 +16,23 @@ reimplementation of it.
 
 Scope for v1, established with the user up front:
 
-- **Backend**: Windows only. The client-side debug engine uses the Win32
-  debug API (`DebugActiveProcess` / `WaitForDebugEvent` /
-  `ContinueDebugEvent`) and `DbgHelp` (`SymInitialize` /
-  `SymLoadModuleEx` / `SymFromAddr` / `SymGetLineFromAddr64`) for
-  PDB-based symbol and file/line resolution — the API the user pointed at
-  directly ([Win32 Debugging Functions](https://learn.microsoft.com/en-us/windows/win32/debug/debugging-functions)).
-  Behind a small `debug_backend` interface (§3) so a Linux ptrace+DWARF
-  backend can be added later without redesigning the rest of the module —
-  explicitly deferred, see §10.
+- **Backend**: two implementations behind one small `debug_backend`
+  interface (§3).
+  - **Windows** (`win32_debug_backend`): the Win32 debug API
+    (`DebugActiveProcess` / `WaitForDebugEvent` / `ContinueDebugEvent`) and
+    `DbgHelp` (`SymInitialize` / `SymLoadModuleEx` / `SymFromAddr` /
+    `SymGetLineFromAddr64`) for PDB-based symbol and file/line resolution —
+    the API the user pointed at directly
+    ([Win32 Debugging Functions](https://learn.microsoft.com/en-us/windows/win32/debug/debugging-functions)).
+  - **Linux / macOS** (`posix_debug_backend`, added after v1 — see §10):
+    rather than a native `ptrace`+DWARF engine on Linux and a separate Mach
+    engine on macOS, one backend that spawns the platform's real debugger
+    (`gdb --interpreter=mi`, or `lldb-mi`) as a child process and drives it
+    over the GDB/MI machine-interface protocol — the same "GUI frontend
+    over the real tool" split `docker`/`git`/`kubectl` use for their own
+    underlying CLI. Requires `gdb` (or `lldb-mi`) on the client's `PATH`,
+    or `$WISH_DBG_DEBUGGER` pointing at one. A native in-process engine
+    with no external dependency stays deferred (§10).
 - **Debugging functionality**: attach/detach, pause/resume, step
   into/over/out, source-line breakpoints, call stack + thread list
   (clicking a thread swaps the shown call stack), a variable watch, and a
@@ -38,8 +46,9 @@ Scope for v1, established with the user up front:
   reference. One deliberate divergence is called out in §6 (breakpoint
   toggling is right-click, not left-click).
 
-Explicitly deferred — see §10 and [PLAN.md](PLAN.md): a Linux/macOS
-backend, remote (cross-machine) debuggee attach, conditional/logpoint
+Explicitly deferred — see §10 and [PLAN.md](PLAN.md): a native
+(dependency-free) Linux/macOS debug engine, remote (cross-machine)
+debuggee attach, conditional/logpoint
 breakpoints, full expression evaluation, edit-and-continue, a
 memory/disassembly view, and multi-process debugging.
 
@@ -82,6 +91,10 @@ This directory owns:
   interface.
 - `client/win32_debug_backend.hpp`/`.cpp` — the Windows implementation
   (Win32 debug API + DbgHelp).
+- `client/posix_debug_backend.hpp`/`.cpp` — the Linux/macOS implementation
+  (drives a child `gdb --interpreter=mi` / `lldb-mi`).
+- `client/mi_parser.hpp`/`.cpp` — pure GDB/MI output-record parser used by
+  `posix_debug_backend` (no I/O, unit-tested on every platform).
 - `client/dbg_source.hpp`/`.cpp` — owns the backend + proxy, translates
   backend callbacks into `update_*` RMI calls and `*_requested` events into
   backend calls.
@@ -288,6 +301,60 @@ Implements `debug_backend` on Windows:
   Step Over/Out — the same approach cited in the researched Win32
   debugging references.
 
+### `posix_debug_backend` (client, Linux/macOS implementation)
+
+Implements `debug_backend` by spawning the platform's real debugger as a
+child and speaking GDB/MI to it — no `ptrace`/DWARF/Mach code of its own.
+
+- **Debugger discovery**: `$WISH_DBG_DEBUGGER` if set (absolute path or a
+  name to resolve on `PATH`), else the first of `gdb`, `lldb-mi` on
+  `PATH`. `attach()` fails (logging an `"error"`) if none is found. gdb is
+  launched as `gdb --interpreter=mi --nx -q`; `lldb-mi` needs no selector
+  flag (it *is* the MI interpreter).
+- **Process/pipe model**: plain POSIX `fork`+`execv` with a stdin pipe (MI
+  commands) and a merged stdout+stderr pipe (MI records). `SIGPIPE` is
+  ignored process-wide so a write to a dead debugger returns an error
+  instead of killing the wish client. One file covers both platforms
+  (`fork`/`execv`/`pipe` are POSIX); it `#if`s out entirely on Windows.
+- **Three threads**:
+  - the **reader thread** owns the read pipe, parses each line
+    (`mi_parser.hpp`), and routes it: `^`/result records complete the one
+    in-flight `send_command()`; `*stopped` and stream records are pushed
+    to a queue.
+  - the **dispatch thread** drains that queue and invokes the
+    `on_stop`/`on_log` callbacks. It is separate from the reader thread
+    *specifically* so a callback (`dbg_source::handle_stop`) can re-enter
+    `get_threads()`/`get_callstack()`/`evaluate()` — each issuing its own
+    `send_command()` — without deadlocking against the thread that has to
+    service that command's reply. (This is the MI analogue of the Win32
+    backend's rule that the debug-event thread is the only one that may
+    `WaitForDebugEvent`.)
+  - public methods run on the RMI dispatch thread and serialise through
+    `send_command()` (`send_mtx_`, one outstanding command, correlated by
+    a numeric token prefix).
+- **Async MI is mandatory** (`-gdb-set mi-async on`): in synchronous mode
+  gdb stops reading commands until the target next stops, so
+  `-exec-interrupt` (what `pause()` issues) would sit unread while the
+  debuggee runs. All-stop mode is kept (one `*stopped` per event); the
+  reader/dispatch thread split above is exactly what makes consuming the
+  now-asynchronous `*stopped` safe.
+- **MI command mapping**: `-target-attach` / `-target-detach`,
+  `-break-insert file:line` / `-break-delete N`, `-exec-continue` /
+  `-exec-interrupt`, `-exec-step` / `-exec-next` / `-exec-finish`,
+  `-thread-info`, `-stack-list-frames`, and for Watch
+  `-data-evaluate-expression` (value) plus `-interpreter-exec … "whatis"`
+  (type, read from the `~` console-stream echo — DESIGN §1's simple-local
+  scope). `*stopped` `reason` maps to the module's vocabulary:
+  `breakpoint-hit` → `"breakpoint"`; `end-stepping-range` /
+  `function-finished` → `"step"`; `signal-received` → `"pause"` when we
+  asked for it, else `"exception"`; the first post-attach stop →
+  `"attach"`; `exited*` is logged and marks the session detached.
+- **Native-engine limitations vs. the Win32 backend**: no `SeDebugPrivilege`
+  analogue (ptrace scope / `task_for_pid` entitlements are the debugger's
+  problem, and on a locked-down host attach simply fails with a logged MI
+  error); source paths come from MI `fullname` (absolute, like the Win32
+  backend's DbgHelp paths).
+
 ### `dbg_source` (client)
 
 Owns the proxy and a `debug_backend`. Wires every `*_requested` event to a
@@ -435,18 +502,26 @@ use only the methods/events above).
   A left-click gutter toggle would require adding a *new* hook to the
   vendored library, which Design Goal 5 rules out for v1.
 
-- **Windows-only v1, behind a `debug_backend` interface.** The user's own
-  reference and hardware are Windows; a Linux ptrace+DWARF backend is a
-  substantial, independently-scoped effort (different attach model,
-  different symbol format, different breakpoint/step mechanics). Defining
-  `debug_backend` now (§3) means `DebuggerFrontend`, `dbg_source`, and
-  every RMI contract are backend-agnostic from the start — adding
-  `linux_debug_backend` later is additive, not a redesign. This mirrors
-  bison's own `debugger_posix.cpp` / `debugger_win.cpp` split (TracerPid
-  polling vs. `IsDebuggerPresent()`) for a comparable OS-detection
-  divergence, and follows CLAUDE.md's Platform Support guidance to keep
-  genuine platform differences behind a narrow, well-defined seam rather
-  than scattering `#ifdef`s.
+- **A `debug_backend` interface with a per-platform implementation.** v1
+  shipped Windows only (`win32_debug_backend`); the Linux/macOS
+  implementation (`posix_debug_backend`, PLAN.md Step 9) was added behind
+  the same seam with no change to `DebuggerFrontend`, `dbg_source`, or any
+  RMI contract — the interface earning its keep exactly as intended.
+  - A **native** Linux ptrace+DWARF engine (plus a separate macOS Mach
+    engine) is a substantial, independently-scoped effort: different
+    attach model, symbol format, and breakpoint/step mechanics per OS, and
+    no DWARF library is vendored. Instead `posix_debug_backend` spawns the
+    platform's real debugger (`gdb --interpreter=mi`, or `lldb-mi`) as a
+    child and drives it over GDB/MI — the same "GUI frontend over the real
+    tool, never a reimplementation of it" principle (§1) that has
+    `docker`/`git`/`kubectl` shell out to their own CLI. One file serves
+    both Linux and macOS; the cost is a runtime dependency on a debugger
+    being installed. A dependency-free native engine stays deferred (§10).
+  - This still mirrors bison's own `debugger_posix.cpp` /
+    `debugger_win.cpp` split for a comparable OS divergence, and follows
+    CLAUDE.md's Platform Support guidance to keep genuine platform
+    differences behind a narrow seam (here, `#if !defined(_WIN32)` around
+    one POSIX file) rather than scattering `#ifdef`s.
 
 - **Full rebuild per update, never incremental, with staleness guards on
   selection-driven data.** Directly reused from `docker`/`git` (§2 Goals
@@ -553,6 +628,20 @@ Depended on by: nothing else in wish; this is a leaf module.
   expected file/line; single-step; detach and confirm the process
   continues to completion with no leftover `INT3` (i.e. the patched byte
   was restored). Windows-only test, skipped on other platforms.
+- **`tests/test_mi_parser.cpp`** — pure unit tests for the GDB/MI record
+  parser (`mi_parser.hpp`): result/async/stream records, leading tokens,
+  C-string escapes, nested `{...}`/`[...]` values, and the specific shapes
+  `posix_debug_backend` depends on (`*stopped` with a `frame` tuple,
+  `-break-insert`, `-stack-list-frames`, `-thread-info`). Runs on every
+  platform.
+- **`tests/test_posix_debug_backend.cpp`** — UNIX-only. A full scripted MI
+  session against `tests/fixtures/fake_mi_debugger.py` (a canned MI
+  responder, needs no real debugger) exercising spawn / discovery /
+  token correlation / stream capture / `*stopped` dispatch / callstack +
+  evaluate parsing / clean detach; plus live attach / breakpoint / step /
+  detach cases against the real `dbg_fixture` that `GTEST_SKIP`
+  themselves when no `gdb`/`lldb-mi` is on `PATH` (same graceful
+  degradation as `tests/test_docker_process.cpp` without Docker).
 - **`tests/test_text_editor_breakpoints.cpp`** (or added to an existing
   `TextEditor` test file) — the extended fields/event: setting
   `breakpoint_lines`/`current_line` and asserting the renderer invokes the
@@ -568,10 +657,18 @@ Depended on by: nothing else in wish; this is a leaf module.
 Call Stack, Watch, Breakpoints, Output), `win32_debug_backend` (attach/
 detach, pause/resume, breakpoints, step into/over/out, Watch evaluation via
 DbgHelp, Output feed from `OutputDebugString` and unexpected first-chance
-exceptions), and the client/server RMI wiring end to end. See PLAN.md's
-"Not implemented" section for what remains explicitly out of scope for v1
-(Linux/macOS backend, remote attach, conditional/logpoint breakpoints, full
-expression evaluation beyond simple scalar local reads — see §1's "Watch
-scope (v1)" note, edit-and-continue, memory/disassembly view, multi-process
-debugging, and stdout/stderr capture for attach-only debugging — see §1's
-"Debuggee output (v1)" note).
+exceptions), and the client/server RMI wiring end to end.
+
+**Implemented** (PLAN.md Step 9): `posix_debug_backend` — the Linux/macOS
+`debug_backend`, driving a child `gdb --interpreter=mi` / `lldb-mi` over
+GDB/MI (attach/detach, pause/resume, breakpoints, step into/over/out,
+thread list, call stack, simple-local Watch, debuggee output to the Output
+window). `dbg.cpp` selects it on non-Windows; the `debug_backend` seam and
+every RMI contract are unchanged. Needs a debugger on the client `PATH`.
+
+See PLAN.md's "Not implemented" section for what remains out of scope
+(a native dependency-free Linux/macOS engine, remote attach,
+conditional/logpoint breakpoints, full expression evaluation beyond simple
+scalar local reads — see §1's "Watch scope (v1)" note, edit-and-continue,
+memory/disassembly view, multi-process debugging, and stdout/stderr
+capture for attach-only debugging — see §1's "Debuggee output (v1)" note).

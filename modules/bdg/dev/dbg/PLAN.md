@@ -92,6 +92,22 @@ the current-execution-line indicator, and the six-window layout.
    (`WISH_MODULE_BDG_DEV_DBG`), `CHANGELOG.md` `### Added`,
    `modules/bdg/dev/README.md` row. ✅ Done.
 
+9. **Linux/macOS backend** — `client/posix_debug_backend.{hpp,cpp}` +
+   `client/mi_parser.{hpp,cpp}`: rather than a native `ptrace`+DWARF engine
+   (Linux) and a separate Mach engine (macOS), one backend that spawns the
+   platform's real debugger (`gdb --interpreter=mi`, or `lldb-mi`) as a
+   child and drives it over the GDB/MI protocol — the same "frontend over
+   the real tool" shape `docker`/`git`/`kubectl` use. `dbg.cpp` selects
+   `win32_debug_backend` on Windows and `posix_debug_backend` elsewhere;
+   the `debug_backend` seam and every RMI contract are unchanged.
+   - Tests: `tests/test_mi_parser.cpp` (pure MI-record parser, runs on all
+     platforms); `tests/test_posix_debug_backend.cpp` (UNIX-only) — a
+     scripted MI session against a fake debugger stand-in
+     (`tests/fixtures/fake_mi_debugger.py`, no real debugger needed) plus
+     live attach/breakpoint/step/detach cases against the real
+     `dbg_fixture` that skip themselves when no `gdb`/`lldb-mi` is on
+     `PATH`. ✅ Done.
+
 ## Verification
 
 - **Unit tests** (no live attach needed for most): `cmake --build build
@@ -117,8 +133,12 @@ the current-execution-line indicator, and the six-window layout.
 
 ## Not implemented (deferred future work)
 
-- **Linux/macOS debug backend** (ptrace + DWARF) — `debug_backend` is
-  defined to make this additive later, but no implementation exists in v1.
+- **Native Linux/macOS debug engine** (`ptrace`+DWARF / Mach) — the
+  Linux/macOS backend (`posix_debug_backend`, Step 9) drives a child
+  `gdb`/`lldb-mi` rather than talking to `ptrace` / Mach directly, so it
+  needs a debugger installed on the client (`gdb`, or `lldb-mi`). An
+  in-process native engine with no external dependency is still future
+  work.
 - **Remote (cross-machine) debuggee attach** — the client always attaches
   to a process on its own machine in v1.
 - **Conditional breakpoints and logpoints.**

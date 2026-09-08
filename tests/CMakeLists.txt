@@ -222,31 +222,66 @@ if(UNIX)
   endif()
 endif()
 
-# win32_debug_backend (PLAN.md Step 4) is Windows-only -- it wraps the Win32
-# debug API (DebugActiveProcess/WaitForDebugEvent/...) and DbgHelp, neither
-# of which exist on Linux/MSYS2's POSIX layer, so it's guarded with WIN32
-# (not UNIX/MSYS2 detection) same rationale as test_process_control_linux
-# above but for the opposite platform.
-if(WIN32)
+# dbg module backend tests. The MI-parser test is pure and cross-platform;
+# the live-attach backend test is platform-split -- win32_debug_backend
+# wraps the Win32 debug API + DbgHelp, posix_debug_backend drives a child
+# gdb/lldb-mi -- so each is guarded by its platform, same rationale as
+# test_process_control_linux above.
+if(WISH_MODULE_BDG_DEV_DBG)
   # Small standalone attach target with known, simple control flow (see the
   # file's own header comment) -- built as a plain executable, not part of
   # any wish library, so its debug-info layout stays predictable. Always
-  # built with debug info even in Release configs so the test can resolve
-  # file/line via DbgHelp regardless of the overall build configuration.
+  # built with debug info even in Release configs so either backend test can
+  # resolve file/line regardless of the overall build configuration. Shared
+  # by test_win32_debug_backend and test_posix_debug_backend.
   add_executable(dbg_fixture ${CMAKE_SOURCE_DIR}/tests/fixtures/dbg_fixture.cpp)
   set_target_properties(dbg_fixture PROPERTIES FOLDER tests)
   if(MSVC)
     target_compile_options(dbg_fixture PRIVATE /Od /Zi)
     target_link_options(dbg_fixture PRIVATE /DEBUG /INCREMENTAL:NO)
+  else()
+    target_compile_options(dbg_fixture PRIVATE -O0 -g)
   endif()
 
-  wish_add_optional_test(WISH_MODULE_BDG_DEV_DBG  test_win32_debug_backend  test_win32_debug_backend.cpp
-      ${CMAKE_SOURCE_DIR}/modules/bdg/dev/dbg/client/win32_debug_backend.cpp)
-  if(TARGET test_win32_debug_backend)
-    target_include_directories(test_win32_debug_backend PRIVATE ${CMAKE_SOURCE_DIR})
-    target_link_libraries(test_win32_debug_backend PRIVATE dbghelp)
-    target_compile_definitions(test_win32_debug_backend PRIVATE
-        WISH_DBG_FIXTURE_PATH="$<TARGET_FILE:dbg_fixture>")
-    add_dependencies(test_win32_debug_backend dbg_fixture)
+  # Pure MI output-record parser -- no subprocess, no OS calls, runs everywhere.
+  wish_add_optional_test(WISH_MODULE_BDG_DEV_DBG  test_mi_parser  test_mi_parser.cpp
+      ${CMAKE_SOURCE_DIR}/modules/bdg/dev/dbg/client/mi_parser.cpp)
+  if(TARGET test_mi_parser)
+    target_include_directories(test_mi_parser PRIVATE ${CMAKE_SOURCE_DIR})
+  endif()
+
+  if(WIN32)
+    wish_add_optional_test(WISH_MODULE_BDG_DEV_DBG  test_win32_debug_backend  test_win32_debug_backend.cpp
+        ${CMAKE_SOURCE_DIR}/modules/bdg/dev/dbg/client/win32_debug_backend.cpp)
+    if(TARGET test_win32_debug_backend)
+      target_include_directories(test_win32_debug_backend PRIVATE ${CMAKE_SOURCE_DIR})
+      target_link_libraries(test_win32_debug_backend PRIVATE dbghelp)
+      target_compile_definitions(test_win32_debug_backend PRIVATE
+          WISH_DBG_FIXTURE_PATH="$<TARGET_FILE:dbg_fixture>")
+      add_dependencies(test_win32_debug_backend dbg_fixture)
+    endif()
+  elseif(UNIX)
+    # Drives posix_debug_backend against a real attached dbg_fixture. Skips
+    # itself at runtime (GTEST_SKIP) when no gdb/lldb-mi is on PATH, the same
+    # way test_docker_process degrades without a Docker daemon.
+    wish_add_optional_test(WISH_MODULE_BDG_DEV_DBG  test_posix_debug_backend  test_posix_debug_backend.cpp
+        ${CMAKE_SOURCE_DIR}/modules/bdg/dev/dbg/client/posix_debug_backend.cpp
+        ${CMAKE_SOURCE_DIR}/modules/bdg/dev/dbg/client/mi_parser.cpp)
+    if(TARGET test_posix_debug_backend)
+      target_include_directories(test_posix_debug_backend PRIVATE ${CMAKE_SOURCE_DIR})
+      # A scripted MI stand-in (needs no real debugger) so the subprocess /
+      # command-correlation / *stopped-dispatch plumbing is still covered on
+      # a host with no gdb; copied with the execute bit so execv() can run it
+      # via its shebang.
+      file(COPY ${CMAKE_SOURCE_DIR}/tests/fixtures/fake_mi_debugger.py
+          DESTINATION ${CMAKE_CURRENT_BINARY_DIR}
+          FILE_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
+      target_compile_definitions(test_posix_debug_backend PRIVATE
+          WISH_DBG_FIXTURE_PATH="$<TARGET_FILE:dbg_fixture>"
+          WISH_FAKE_MI_DEBUGGER="${CMAKE_CURRENT_BINARY_DIR}/fake_mi_debugger.py")
+      add_dependencies(test_posix_debug_backend dbg_fixture)
+      find_package(Threads REQUIRED)
+      target_link_libraries(test_posix_debug_backend PRIVATE Threads::Threads)
+    endif()
   endif()
 endif()

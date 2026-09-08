@@ -1,11 +1,22 @@
 # dbg
 
-A source-level debugger front end for native Windows processes: attach by
-PID, set breakpoints by right-clicking a source line, step, watch simple
-local variables, and see debug/exception output — all in dockable windows,
-in the same "GUI frontend over a real client-side backend" shape as `docker`
-and `git`. All Win32 debug API / DbgHelp interaction happens client-side;
-the server only renders whatever snapshot it's given.
+A source-level debugger front end: attach by PID, set breakpoints by
+right-clicking a source line, step, watch simple local variables, and see
+debug/exception output — all in dockable windows, in the same "GUI frontend
+over a real client-side backend" shape as `docker` and `git`. All debugger
+interaction happens client-side; the server only renders whatever snapshot
+it's given.
+
+Two client backends, selected at compile time, behind one `debug_backend`
+interface:
+
+- **Windows** — the Win32 debug API + DbgHelp directly (`win32_debug_backend`).
+- **Linux / macOS** — drives a child `gdb --interpreter=mi` (or `lldb-mi`)
+  over the GDB/MI protocol (`posix_debug_backend`). Needs `gdb` (or
+  `lldb-mi`) on the client's `PATH`; override the choice with the
+  `WISH_DBG_DEBUGGER` environment variable (an absolute path or a bare
+  name). On macOS `gdb` requires code-signing, so `lldb-mi` is usually the
+  practical choice there.
 
 `wish client --run=dbg` (no positional args — enter a PID in the Source
 window's toolbar and click Attach). Opens as six independently dockable
@@ -33,20 +44,22 @@ is always safe there.
   embedded app. `client/debug_backend.hpp` is the platform-agnostic seam
   (`attach`/`detach`, `pause`/`resume`, `step_into`/`step_over`/`step_out`,
   `set_breakpoint`/`clear_breakpoint`, `get_threads`/`get_callstack`/
-  `evaluate`, `on_stop`/`on_log`); `client/win32_debug_backend.hpp/.cpp` is
-  the only implementation (Windows-only — `DebugActiveProcess` /
-  `WaitForDebugEvent` / `ContinueDebugEvent` on a dedicated debug thread,
-  `DbgHelp` for symbol/line/type resolution, `INT3` software breakpoints).
-  `client/dbg_source.hpp/.cpp` owns the RMI proxy, reacts to the form's
-  `*_requested` events by calling the backend, and reacts to
-  `debug_backend::on_stop`/`on_log` by pushing fresh `update_*` snapshots.
+  `evaluate`, `on_stop`/`on_log`). `client/win32_debug_backend.hpp/.cpp`
+  implements it on Windows (`DebugActiveProcess` / `WaitForDebugEvent` /
+  `ContinueDebugEvent` on a dedicated debug thread, `DbgHelp` for
+  symbol/line/type resolution, `INT3` software breakpoints);
+  `client/posix_debug_backend.hpp/.cpp` implements it on Linux/macOS by
+  spawning a child `gdb`/`lldb-mi` and driving it over GDB/MI, parsed by
+  `client/mi_parser.hpp/.cpp`. `client/dbg_source.hpp/.cpp` owns the RMI
+  proxy, reacts to the form's `*_requested` events by calling the backend,
+  and reacts to `debug_backend::on_stop`/`on_log` by pushing fresh
+  `update_*` snapshots.
 - **resources/**: none.
 
 Build: off by default. `cmake -S . -B build -DWISH_MODULE_BDG_DEV_DBG=ON`
 (or `-DWISH_COLLECTION_BDG_DEV=ON` for the whole `bdg/dev` collection).
-Windows-only in practice: the module configures on Linux/macOS too, but
-`win32_debug_backend` compiles to nothing there and no other backend exists
-yet (see "Known limitations" below).
+Builds on Windows, Linux, and macOS; on Linux/macOS it needs a `gdb` (or
+`lldb-mi`) installed on the machine running `wish client` at run time.
 
 See [DESIGN.md](DESIGN.md) for the full architecture and [PLAN.md](PLAN.md)
 for what's implemented vs. deferred.
@@ -67,27 +80,36 @@ against a real attached process:
   frame's file/line in the Source window.
 - **Watch** — type an expression and click Add; each entry resolves as a
   simple local-variable read (name / value / type) against the
-  currently-selected frame via `DbgHelp` symbol enumeration.
+  currently-selected frame — via `DbgHelp` symbol enumeration on Windows,
+  or `gdb`'s `-data-evaluate-expression` / `whatis` on Linux/macOS.
 - **Breakpoints** — File / Line / Enabled, with a per-row `...` menu to
   remove.
 - **Output** — a FIFO-capped trace of attach/stop/exception events and
-  debuggee `OutputDebugString` calls, colour-coded by severity
+  debuggee output (Windows `OutputDebugString` calls; Linux/macOS output
+  the debugger surfaces over MI), colour-coded by severity
   (info/warn/error).
 
 ## Known limitations (v1)
 
-- **Windows only.** No Linux/macOS backend, no remote (cross-machine)
-  attach.
+- **No remote (cross-machine) attach** — the debuggee must be on the same
+  machine as `wish client`.
+- **Linux/macOS needs a debugger installed.** `posix_debug_backend` drives
+  a child `gdb`/`lldb-mi`; there is no dependency-free native engine. See
+  DESIGN.md §6.
 - **No conditional breakpoints or logpoints.**
 - **Watch resolves simple scalar local-variable reads only** — not
   arbitrary C++ expressions (no member access, indexing, arithmetic, or
-  calls); a register-resident (optimized-out) local reports as
-  `<unavailable>`; a non-scalar type is shown as a raw hex byte dump. See
-  DESIGN.md §1's "Watch scope (v1)" note.
+  calls). On Windows a register-resident (optimized-out) local reports as
+  `<unavailable>` and a non-scalar type is shown as a raw hex byte dump; on
+  Linux/macOS the value/type are whatever `gdb`'s
+  `-data-evaluate-expression` / `whatis` return. See DESIGN.md §1's "Watch
+  scope (v1)" note.
 - **No stdout/stderr capture.** `dbg` attaches to an already-running
-  process (`DebugActiveProcess`), so there is no process-launch step at
-  which to redirect its standard handles — only `OutputDebugString` calls
-  reach the Output window. See DESIGN.md §1's "Debuggee output (v1)" note.
+  process, so there is no process-launch step at which to redirect its
+  standard handles — on Windows only `OutputDebugString` calls reach the
+  Output window; on Linux/macOS only output the debugger surfaces over MI
+  (`@` target-stream records) does. See DESIGN.md §1's "Debuggee output
+  (v1)" note.
 - **No edit-and-continue, memory/disassembly view, or multi-process
   debugging** (no auto-attach to child processes).
 
