@@ -7,20 +7,36 @@ over a real client-side backend" shape as `docker` and `git`. All debugger
 interaction happens client-side; the server only renders whatever snapshot
 it's given.
 
-Two client backends, selected at compile time, behind one `debug_backend`
-interface:
+Backends behind one `debug_backend` interface, selected at launch with
+`-- --backend <name>` (the repo-wide convention for module arguments):
 
-- **Windows** — the Win32 debug API + DbgHelp directly (`win32_debug_backend`).
-- **Linux / macOS** — drives a child `gdb --interpreter=mi` (or `lldb-mi`)
-  over the GDB/MI protocol (`posix_debug_backend`). Needs `gdb` (or
-  `lldb-mi`) on the client's `PATH`; override the choice with the
-  `WISH_DBG_DEBUGGER` environment variable (an absolute path or a bare
-  name). On macOS `gdb` requires code-signing, so `lldb-mi` is usually the
-  practical choice there.
+- **`native`** (default) — debugs a native/compiled process:
+  - **Windows** — the Win32 debug API + DbgHelp directly (`win32_debug_backend`).
+  - **Linux / macOS** — drives a child `gdb --interpreter=mi` (or `lldb-mi`)
+    over the GDB/MI protocol (`posix_debug_backend`). Needs `gdb` (or
+    `lldb-mi`) on the client's `PATH`; override with `WISH_DBG_DEBUGGER`
+    (absolute path or a bare name). On macOS `gdb` requires code-signing,
+    so `lldb-mi` is usually the practical choice there.
+- **`python`** — debugs a **Python** process by driving Microsoft's
+  `debugpy` over the Debug Adapter Protocol, the same adapter/protocol VS
+  Code's Python debugger uses (`python_debug_backend`, cross-platform).
+  Needs `debugpy` installed (`pip install debugpy`); `WISH_DBG_PYTHON`
+  overrides the interpreter. Two ways to attach:
+  - **by PID** (default): `wish client --run=dbg -- --backend python`, then
+    enter the target's PID in the Source toolbar. `python -m debugpy.adapter`
+    injects `debugpy` into the process — which, like `ptrace` for the GDB
+    backend, needs OS support (a `gdb`/`lldb` for `debugpy`'s injector, or a
+    CPython new enough for `sys.remote_exec`); on a locked-down host the
+    attach fails with a logged message in the Output window.
+  - **connect**: `wish client --run=dbg -- --backend python --connect
+    HOST:PORT` attaches to a `debugpy` server the target started itself with
+    `debugpy.listen((HOST, PORT))` — no injection, works everywhere.
+    `WISH_DBG_DAP_CONNECT=HOST:PORT` is equivalent. (The PID field is
+    ignored in this mode.)
 
-`wish client --run=dbg` (no positional args — enter a PID in the Source
-window's toolbar and click Attach). Opens as six independently dockable
-windows: Source, Threads, Call Stack, Watch, Breakpoints, Output.
+`wish client --run=dbg` opens six independently dockable windows: Source,
+Threads, Call Stack, Watch, Breakpoints, Output. With no `--connect`, enter
+a PID in the Source window's toolbar and click Attach.
 
 **Deployment requirement:** the server hosting `dbg` must be started with
 `--allow_absolute_paths` (`wish server --allow_absolute_paths` or `wish
@@ -50,16 +66,22 @@ is always safe there.
   symbol/line/type resolution, `INT3` software breakpoints);
   `client/posix_debug_backend.hpp/.cpp` implements it on Linux/macOS by
   spawning a child `gdb`/`lldb-mi` and driving it over GDB/MI, parsed by
-  `client/mi_parser.hpp/.cpp`. `client/dbg_source.hpp/.cpp` owns the RMI
-  proxy, reacts to the form's `*_requested` events by calling the backend,
-  and reacts to `debug_backend::on_stop`/`on_log` by pushing fresh
-  `update_*` snapshots.
+  `client/mi_parser.hpp/.cpp`. `client/python_debug_backend.hpp/.cpp`
+  implements it on all platforms for Python debuggees by driving `debugpy`
+  over the Debug Adapter Protocol (JSON over a socket, framed/parsed by
+  `client/dap_protocol.hpp/.cpp`), using libuv (`uv_spawn` / `uv_tcp_t`)
+  for the child process and connection. `client/dbg.cpp`'s `run_dbg` picks
+  the backend from the `-- --backend` argument. `client/dbg_source.hpp/.cpp`
+  owns the RMI proxy, reacts to the form's `*_requested` events by calling
+  the backend, and reacts to `debug_backend::on_stop`/`on_log` by pushing
+  fresh `update_*` snapshots.
 - **resources/**: none.
 
 Build: off by default. `cmake -S . -B build -DWISH_MODULE_BDG_DEV_DBG=ON`
 (or `-DWISH_COLLECTION_BDG_DEV=ON` for the whole `bdg/dev` collection).
-Builds on Windows, Linux, and macOS; on Linux/macOS it needs a `gdb` (or
-`lldb-mi`) installed on the machine running `wish client` at run time.
+Builds on Windows, Linux, and macOS. Run-time dependencies (client machine):
+the `native` backend needs `gdb`/`lldb-mi` on Linux/macOS; the `python`
+backend needs `debugpy` (`pip install debugpy`).
 
 See [DESIGN.md](DESIGN.md) for the full architecture and [PLAN.md](PLAN.md)
 for what's implemented vs. deferred.
@@ -78,10 +100,10 @@ against a real attached process:
 - **Call Stack** — # / Function / File / Line for the selected thread;
   click a frame to select it (drives the Watch window) and re-focuses that
   frame's file/line in the Source window.
-- **Watch** — type an expression and click Add; each entry resolves as a
-  simple local-variable read (name / value / type) against the
-  currently-selected frame — via `DbgHelp` symbol enumeration on Windows,
-  or `gdb`'s `-data-evaluate-expression` / `whatis` on Linux/macOS.
+- **Watch** — type an expression and click Add; each entry resolves (name /
+  value / type) against the currently-selected frame — via `DbgHelp` symbol
+  enumeration on Windows, `gdb`'s `-data-evaluate-expression` / `whatis` on
+  Linux/macOS, or DAP `evaluate` (context `watch`) for the `python` backend.
 - **Breakpoints** — File / Line / Enabled, with a per-row `...` menu to
   remove.
 - **Output** — a FIFO-capped trace of attach/stop/exception events and
@@ -93,9 +115,15 @@ against a real attached process:
 
 - **No remote (cross-machine) attach** — the debuggee must be on the same
   machine as `wish client`.
-- **Linux/macOS needs a debugger installed.** `posix_debug_backend` drives
-  a child `gdb`/`lldb-mi`; there is no dependency-free native engine. See
+- **The debug engine must be installed on the client.** The `native`
+  backend drives a child `gdb`/`lldb-mi` on Linux/macOS; the `python`
+  backend drives `debugpy`. There is no dependency-free engine. See
   DESIGN.md §6.
+- **`python` backend, PID attach needs an injector.** `debugpy` injects
+  itself into a running process via `gdb`/`lldb` (or `sys.remote_exec` on a
+  new enough CPython); where neither is available the attach fails — use
+  `--connect host:port` against a `debugpy.listen()` the target opened
+  itself instead.
 - **No conditional breakpoints or logpoints.**
 - **Watch resolves simple scalar local-variable reads only** — not
   arbitrary C++ expressions (no member access, indexing, arithmetic, or

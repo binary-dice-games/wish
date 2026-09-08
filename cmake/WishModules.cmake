@@ -308,6 +308,15 @@ function(wish_finalize_app_modules)
       if(TARGET uv_a)
         target_link_libraries(${tgt} PRIVATE uv_a)
       endif()
+      # nlohmann/json is header-only and already vendored via bison
+      # (extern/bison/extern/json), exposed to wish_server/wish_client on
+      # their own PRIVATE include paths. Module client code that speaks a
+      # genuinely JSON-native wire protocol needs it too -- see the dbg
+      # module's client/dap_protocol.hpp (the Debug Adapter Protocol its
+      # `python` backend drives debugpy over is JSON, unlike docker/kubectl
+      # which deliberately pick line/template output to avoid this dep).
+      target_include_directories(${tgt} PRIVATE
+          ${WISH_MODULES_CMAKE_DIR}/../extern/bison/extern/json/single_include)
       # miniz (zip/unzip) is already compiled as part of every wish build --
       # wish_server links it PRIVATE for its own embedded-resource unpacking
       # (src/context/file_service.cpp) -- but that doesn't make it reachable

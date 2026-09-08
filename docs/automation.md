@@ -721,3 +721,21 @@ def test_saving_shows_confirmation(wish_ui):
   down/up) twice, with a real `time.sleep()` of 100-200ms between the two
   calls — comfortably under ImGui's ~300ms double-click window but long
   enough to land in separate frames.
+- **`dbg` module `--backend python` (2026-09): drive it with connect mode,
+  not PID injection.** `wish client --run=dbg -- --backend python --connect
+  127.0.0.1:PORT` attaches to a `debugpy` server the target opened with
+  `debugpy.listen(("127.0.0.1", PORT))` — no `gdb`/`sys.remote_exec`
+  injector needed, so it works in a bare container. Recipe that worked:
+  (1) run a fixture that calls `debugpy.listen(...)` then loops, launched
+  with `python3 -Xfrozen_modules=off fixture.py` (the `-X` flag silences a
+  debugpy warning and matters on CPython 3.13+); (2) `wish server
+  --transport tcp --port 7071 --renderer web --web_port 8099
+  --allow_absolute_paths`; (3) `wish client --transport tcp --port 7071
+  --run=dbg -- --backend python --connect 127.0.0.1:PORT`;
+  (4) `AutomationClient.launch(url="http://127.0.0.1:8099")`, then
+  `ui.click("__dbg_0.vbox.toolbar.attach")` (the PID field is ignored in
+  connect mode). Output then shows `debugpy: connected to ...` and
+  `attached to <script> (pid N)`; Threads/state populate. Clicking `pause`
+  stops the (freely running) target, opens its Source tab, and fills Call
+  Stack; `over`/`into`/`out` then step it. Set `WISH_DBG_DAP_TRACE=1` in
+  the client's environment to dump every DAP message to its stderr.

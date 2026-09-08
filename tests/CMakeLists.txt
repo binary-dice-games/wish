@@ -250,6 +250,47 @@ if(WISH_MODULE_BDG_DEV_DBG)
     target_include_directories(test_mi_parser PRIVATE ${CMAKE_SOURCE_DIR})
   endif()
 
+  # Pure DAP (Debug Adapter Protocol) framing helpers -- no socket, no
+  # subprocess, runs everywhere (counterpart of test_mi_parser for the
+  # `--backend python` engine).
+  wish_add_optional_test(WISH_MODULE_BDG_DEV_DBG  test_dap_protocol  test_dap_protocol.cpp
+      ${CMAKE_SOURCE_DIR}/modules/bdg/dev/dbg/client/dap_protocol.cpp)
+  if(TARGET test_dap_protocol)
+    target_include_directories(test_dap_protocol PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/extern/bison/extern/json/single_include)
+  endif()
+
+  # Drives python_debug_backend (the debugpy / DAP engine) against the
+  # canned fake DAP server (no debugpy needed) and, when debugpy is
+  # installed, a real debugpy server. UNIX-only: the child-spawn helpers in
+  # the test use POSIX posix_spawn; the protocol layer is covered on every
+  # platform by test_dap_protocol above.
+  if(UNIX)
+    wish_add_optional_test(WISH_MODULE_BDG_DEV_DBG  test_python_debug_backend  test_python_debug_backend.cpp
+        ${CMAKE_SOURCE_DIR}/modules/bdg/dev/dbg/client/python_debug_backend.cpp
+        ${CMAKE_SOURCE_DIR}/modules/bdg/dev/dbg/client/dap_protocol.cpp)
+    if(TARGET test_python_debug_backend)
+      target_include_directories(test_python_debug_backend PRIVATE
+          ${CMAKE_SOURCE_DIR}
+          ${CMAKE_SOURCE_DIR}/extern/bison/extern/json/single_include)
+      # configure_file (not file(COPY)) so editing a fixture re-copies it on
+      # the next build, not only on the next CMake reconfigure.
+      configure_file(${CMAKE_SOURCE_DIR}/tests/fixtures/fake_dap_server.py
+                     ${CMAKE_CURRENT_BINARY_DIR}/fake_dap_server.py COPYONLY)
+      configure_file(${CMAKE_SOURCE_DIR}/tests/fixtures/dbg_fixture.py
+                     ${CMAKE_CURRENT_BINARY_DIR}/dbg_fixture.py COPYONLY)
+      target_compile_definitions(test_python_debug_backend PRIVATE
+          WISH_FAKE_DAP_SERVER="${CMAKE_CURRENT_BINARY_DIR}/fake_dap_server.py"
+          WISH_DBG_PY_FIXTURE="${CMAKE_CURRENT_BINARY_DIR}/dbg_fixture.py")
+      find_package(Threads REQUIRED)
+      target_link_libraries(test_python_debug_backend PRIVATE Threads::Threads)
+      if(TARGET uv_a)
+        target_link_libraries(test_python_debug_backend PRIVATE uv_a)
+      endif()
+    endif()
+  endif()
+
   if(WIN32)
     wish_add_optional_test(WISH_MODULE_BDG_DEV_DBG  test_win32_debug_backend  test_win32_debug_backend.cpp
         ${CMAKE_SOURCE_DIR}/modules/bdg/dev/dbg/client/win32_debug_backend.cpp)

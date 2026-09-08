@@ -16,8 +16,9 @@ reimplementation of it.
 
 Scope for v1, established with the user up front:
 
-- **Backend**: two implementations behind one small `debug_backend`
-  interface (§3).
+- **Backend**: implementations behind one small `debug_backend` interface
+  (§3), chosen at launch with `wish client --run=dbg -- --backend <name>`
+  (`native`, the default, or `python`).
   - **Windows** (`win32_debug_backend`): the Win32 debug API
     (`DebugActiveProcess` / `WaitForDebugEvent` / `ContinueDebugEvent`) and
     `DbgHelp` (`SymInitialize` / `SymLoadModuleEx` / `SymFromAddr` /
@@ -33,6 +34,21 @@ Scope for v1, established with the user up front:
     underlying CLI. Requires `gdb` (or `lldb-mi`) on the client's `PATH`,
     or `$WISH_DBG_DEBUGGER` pointing at one. A native in-process engine
     with no external dependency stays deferred (§10).
+  - **Python** (`python_debug_backend`, added after v1 — see §10): drives
+    Microsoft's `debugpy` over the Debug Adapter Protocol (DAP) — the exact
+    adapter and JSON protocol VS Code's own Python debugger uses. Same
+    "GUI frontend over the real tool via its machine-interface protocol"
+    split; DAP is to `debugpy` what GDB/MI is to `gdb`. Selected with
+    `-- --backend python`. Attaches by PID (spawning
+    `python -m debugpy.adapter`, which injects `debugpy` into the target)
+    or, with `-- --backend python --connect host:port` /
+    `$WISH_DBG_DAP_CONNECT`, connects straight to a `debugpy` server the
+    target opened itself with `debugpy.listen((host, port))`. Requires
+    `debugpy` installed on the client; `$WISH_DBG_PYTHON` overrides the
+    interpreter. Cross-platform — the child process and socket both come
+    from libuv (`uv_spawn` / `uv_tcp_t`), already built into every wish
+    binary, so unlike `posix_debug_backend` this backend also compiles and
+    runs on Windows.
 - **Debugging functionality**: attach/detach, pause/resume, step
   into/over/out, source-line breakpoints, call stack + thread list
   (clicking a thread swaps the shown call stack), a variable watch, and a
@@ -95,6 +111,10 @@ This directory owns:
   (drives a child `gdb --interpreter=mi` / `lldb-mi`).
 - `client/mi_parser.hpp`/`.cpp` — pure GDB/MI output-record parser used by
   `posix_debug_backend` (no I/O, unit-tested on every platform).
+- `client/python_debug_backend.hpp`/`.cpp` — the Python implementation
+  (drives `debugpy` over DAP, all platforms).
+- `client/dap_protocol.hpp`/`.cpp` — pure DAP `Content-Length` message
+  framing used by `python_debug_backend` (no I/O, unit-tested everywhere).
 - `client/dbg_source.hpp`/`.cpp` — owns the backend + proxy, translates
   backend callbacks into `update_*` RMI calls and `*_requested` events into
   backend calls.
@@ -355,6 +375,59 @@ child and speaking GDB/MI to it — no `ptrace`/DWARF/Mach code of its own.
   error); source paths come from MI `fullname` (absolute, like the Win32
   backend's DbgHelp paths).
 
+### `python_debug_backend` (client, Python implementation)
+
+Implements `debug_backend` for a Python debuggee by driving `debugpy` over
+DAP — no Python tracer code of its own, exactly as `posix_debug_backend`
+has no `ptrace`/DWARF code of its own.
+
+- **Transport**: one TCP socket (`uv_tcp_t`), speaking DAP's
+  `Content-Length: N\r\n\r\n<json>` framing (`dap_protocol.hpp` — the pure,
+  I/O-free parser/serialiser, the DAP analogue of `mi_parser.hpp`; JSON via
+  `nlohmann::json`, exposed to module client code by
+  `cmake/WishModules.cmake` since DAP is JSON-native, unlike the
+  line/template output `docker`/`kubectl` deliberately pick to avoid that
+  dependency).
+- **Two attach modes** behind the one `attach(pid)`:
+  - **adapter mode** (default): `uv_spawn` `python -m debugpy.adapter
+    --host 127.0.0.1 --port <auto>` (a free port picked via a throwaway
+    `uv_tcp` bind), connect to it, DAP `attach` with `{"processId": pid}`.
+    `debugpy` runs its own injector against the target. Where the injector
+    can't run (no `gdb`/`lldb`, older CPython), the `attach` response comes
+    back `success:false` with the reason, surfaced in Output — the same
+    graceful failure as the GDB backend on a ptrace-locked host.
+  - **connect mode**: `$WISH_DBG_DAP_CONNECT` / `--connect host:port` — skip
+    the adapter, connect straight to the target's own `debugpy.listen()`
+    server, DAP `attach` with no locator. No injection; works everywhere;
+    also the mode the backend's live test uses.
+- **Threads** (mirrors `posix_debug_backend`'s reader/dispatch split):
+  - the **loop thread** owns the libuv loop (socket, `uv_async`-fed write
+    queue, and — adapter mode — the child process). It parses each DAP
+    message and routes it: `response` records complete the one in-flight
+    `request()` (`send_mtx_`, correlated by DAP `seq`); `event` records
+    (`stopped`, `output`, `continued`, `terminated`, …) go to
+    `dispatch_queue_`.
+  - the **dispatch thread** drains that queue and invokes `on_stop`/`on_log`
+    — separate so a callback can re-enter `get_threads()` /
+    `get_callstack()` / `evaluate()` without deadlocking the thread that
+    services their replies.
+- **The `attach` response is deferred** behind the `initialized` →
+  (`setBreakpoints`) → `configurationDone` exchange, so `do_handshake()`
+  fires `attach` without blocking, waits for the `initialized` *event*,
+  sends `configurationDone`, then collects the late `attach` response
+  out-of-band (tracked by its own `seq`).
+- **Frame identity**: DAP frame ids are opaque global ints; the Call Stack
+  is shown with sequential indices and `get_callstack()` records
+  `index -> DAP frame id`, which `evaluate()` maps back through — the same
+  role `-stack-list-frames`'s `level` plays for the MI backend.
+- **Breakpoints**: DAP `setBreakpoints` replaces a source's whole list, so
+  the backend keeps `file -> {lines}` and resends the file's full set on
+  every add/remove.
+- **`stopped` has no location** in DAP, so the dispatch thread issues a
+  one-frame `stackTrace` to fill `stop_event`'s `file`/`line`. Reason maps:
+  `breakpoint*` → `"breakpoint"`; `step`/`entry` → `"step"`; `pause` →
+  `"pause"`; `exception` → `"exception"`.
+
 ### `dbg_source` (client)
 
 Owns the proxy and a `debug_backend`. Wires every `*_requested` event to a
@@ -597,6 +670,16 @@ Depends on:
   `DbgHelp` (`SymInitialize`, `SymLoadModuleEx`, `SymFromAddr`,
   `SymGetLineFromAddr64`) — Windows-only, linked only into
   `win32_debug_backend`'s translation unit.
+- libuv (`uv_a`, vendored via bison, linked into the module's client
+  targets by `cmake/WishModules.cmake`) — `python_debug_backend`'s child
+  process (`uv_spawn`) and DAP socket (`uv_tcp_t`).
+- `nlohmann::json` (header-only, vendored via bison, its include path added
+  to the module's client targets by `cmake/WishModules.cmake`) —
+  `dap_protocol.hpp`'s message encode/decode. DAP is JSON-native, so unlike
+  `docker`/`kubectl` (which pick line/template CLI output to avoid this) the
+  dependency is unavoidable here.
+- `debugpy` (Python package on the client, not a wish build dependency) —
+  the real tool `python_debug_backend` drives.
 
 Extends:
 
@@ -642,6 +725,20 @@ Depended on by: nothing else in wish; this is a leaf module.
   detach cases against the real `dbg_fixture` that `GTEST_SKIP`
   themselves when no `gdb`/`lldb-mi` is on `PATH` (same graceful
   degradation as `tests/test_docker_process.cpp` without Docker).
+- **`tests/test_dap_protocol.cpp`** — pure unit tests for the DAP
+  `Content-Length` message framing (`dap_protocol.hpp`): reassembly across
+  arbitrary chunk boundaries, back-to-back messages, case-insensitive
+  headers, malformed-header/JSON tolerance, `dap_frame`/`dap_make_request`
+  round-trip. Runs on every platform (the DAP analogue of
+  `test_mi_parser.cpp`).
+- **`tests/test_python_debug_backend.cpp`** — UNIX-only. Drives
+  `python_debug_backend` against `tests/fixtures/fake_dap_server.py` (a
+  canned DAP responder, needs no `debugpy`) for the full session
+  (handshake / setBreakpoints / `stopped` → on_stop / threads / callstack /
+  evaluate / step / pause / detach), plus a live connect-mode case against a
+  real `debugpy` server started by `tests/fixtures/dbg_fixture.py` that
+  `GTEST_SKIP`s when `debugpy` isn't installed, and a
+  connect-to-nothing-fails-cleanly case.
 - **`tests/test_text_editor_breakpoints.cpp`** (or added to an existing
   `TextEditor` test file) — the extended fields/event: setting
   `breakpoint_lines`/`current_line` and asserting the renderer invokes the
@@ -663,8 +760,18 @@ exceptions), and the client/server RMI wiring end to end.
 `debug_backend`, driving a child `gdb --interpreter=mi` / `lldb-mi` over
 GDB/MI (attach/detach, pause/resume, breakpoints, step into/over/out,
 thread list, call stack, simple-local Watch, debuggee output to the Output
-window). `dbg.cpp` selects it on non-Windows; the `debug_backend` seam and
-every RMI contract are unchanged. Needs a debugger on the client `PATH`.
+window). `dbg.cpp` selects it on non-Windows as the default backend; the
+`debug_backend` seam and every RMI contract are unchanged. Needs a debugger
+on the client `PATH`.
+
+**Implemented** (PLAN.md Step 10): `python_debug_backend` — the Python
+`debug_backend`, driving `debugpy` over DAP (attach by PID or `--connect`,
+pause/resume, breakpoints, step into/over/out, thread list, call stack,
+Watch via DAP `evaluate`, debuggee output to the Output window). Selected
+with `-- --backend python`; cross-platform (libuv for the child process and
+socket). `dbg.cpp`'s `run_dbg` parses `-- --backend`/`--connect` from
+`app_args()` and constructs the chosen backend. The `debug_backend` seam
+and every RMI contract are unchanged. Needs `debugpy` on the client.
 
 See PLAN.md's "Not implemented" section for what remains out of scope
 (a native dependency-free Linux/macOS engine, remote attach,

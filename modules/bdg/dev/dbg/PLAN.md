@@ -108,6 +108,25 @@ the current-execution-line indicator, and the six-window layout.
      `dbg_fixture` that skip themselves when no `gdb`/`lldb-mi` is on
      `PATH`. ✅ Done.
 
+10. **Python backend** — `client/python_debug_backend.{hpp,cpp}` +
+    `client/dap_protocol.{hpp,cpp}`: drive Microsoft's `debugpy` over the
+    Debug Adapter Protocol (JSON over a socket) rather than writing a Python
+    tracer — the same "frontend over the real tool via its
+    machine-interface protocol" shape as Step 9's GDB/MI backend, and the
+    exact adapter VS Code's Python debugger uses. `dbg.cpp`'s `run_dbg`
+    parses `-- --backend <native|python>` (and `--connect host:port`) from
+    `app_args()` and constructs the chosen backend; the `debug_backend`
+    seam and every RMI contract are unchanged. Attaches by PID (spawning
+    `python -m debugpy.adapter`) or straight to a `debugpy.listen()` server
+    (`--connect`). Cross-platform — child process + socket via libuv, so it
+    also builds/runs on Windows. Needs `debugpy` installed on the client.
+    - Tests: `tests/test_dap_protocol.cpp` (pure DAP framing parser, runs
+      on all platforms); `tests/test_python_debug_backend.cpp` (UNIX-only) —
+      a full canned session against `tests/fixtures/fake_dap_server.py` (no
+      `debugpy` needed), a live connect-mode case against a real `debugpy`
+      server (`tests/fixtures/dbg_fixture.py`) that skips itself when
+      `debugpy` isn't installed, and a connect-failure case. ✅ Done.
+
 ## Verification
 
 - **Unit tests** (no live attach needed for most): `cmake --build build
@@ -138,7 +157,8 @@ the current-execution-line indicator, and the six-window layout.
   `gdb`/`lldb-mi` rather than talking to `ptrace` / Mach directly, so it
   needs a debugger installed on the client (`gdb`, or `lldb-mi`). An
   in-process native engine with no external dependency is still future
-  work.
+  work. Likewise the `python` backend (Step 10) needs `debugpy` installed;
+  a from-scratch `sys.settrace`-based engine is not in scope.
 - **Remote (cross-machine) debuggee attach** — the client always attaches
   to a process on its own machine in v1.
 - **Conditional breakpoints and logpoints.**
