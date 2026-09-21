@@ -1,0 +1,331 @@
+{
+  "//": "UI MOCKUP for the `curl` module -- open with: wish-standalone --run=editor -- modules/bdg/dev/curl/curl_mock.json",
+  "//tabs": "The real module splits these six tabs into six independently dockable Windows (docker/kubectl style) and seeds their first-run split arrangement with a DockLayout (see server/curl.cpp on_init). Tabs here are only so the whole UI renders as one editor preview. Sample rows are illustrative.",
+  "type": "Window",
+  "title": "Curl",
+  "width": 1040,
+  "height": 700,
+  "closable": true,
+  "children": {
+    "root": {
+      "type": "VerticalLayout",
+      "children": {
+        "tabs": {
+          "type": "TabBar",
+          "id": "##curl_mock_tabs",
+          "height": -1,
+          "children": {
+
+            "request_tab": {
+              "type": "TabItem",
+              "label": "Request",
+              "children": {
+                "r_box": {
+                  "type": "VerticalLayout",
+                  "spacing": 4,
+                  "children": {
+                    "r_toolbar": {
+                      "type": "HorizontalLayout",
+                      "spacing": 6,
+                      "children": {
+                        "r_method": { "type": "Combo", "items": "GET\nPOST\nPUT\nPATCH\nDELETE\nHEAD\nOPTIONS", "value": 0, "width": 100 },
+                        "r_url":    { "type": "InputText", "value": "https://api.example.com/v1/users", "width": 420 },
+                        "r_env":    { "type": "Combo", "items": "No Environment\nLocal\nStaging", "value": 1, "width": 140 },
+                        "r_follow": { "type": "Checkbox", "label": "Follow redirects", "value": true },
+                        "r_send":   { "type": "Button", "label": "Send", "width": 90 }
+                      }
+                    },
+                    "r_save_bar": {
+                      "type": "HorizontalLayout",
+                      "spacing": 6,
+                      "children": {
+                        "r_save_label": { "type": "Label", "text": "Save as:" },
+                        "r_save_name":  { "type": "InputText", "hint": "request name", "width": 200 },
+                        "r_save_coll":  { "type": "InputText", "hint": "collection", "width": 200 },
+                        "r_save_btn":   { "type": "Button", "label": "Save", "width": 80 }
+                      }
+                    },
+                    "r_status": { "type": "Label", "text": "200 OK    118 ms    1.2 KB", "text_color_light": "#1A7F37FF", "text_color_dark": "#3FB950FF" },
+                    "r_sep": { "type": "Separator" },
+                    "r_subtabs": {
+                      "type": "TabBar",
+                      "id": "##curl_mock_request_subtabs",
+                      "height": -1,
+                      "children": {
+                        "params_tab": {
+                          "type": "TabItem",
+                          "label": "Params",
+                          "children": {
+                            "p_toolbar": { "type": "HorizontalLayout", "children": { "p_add": { "type": "Button", "label": "+ Add Param", "width": 120 } } },
+                            "p_table": {
+                              "type": "Table", "id": "##mock_params_table", "columns": 4,
+                              "flags": "Resizable|RowBg|Borders", "headers": true, "height": 220, "outer_height": 220,
+                              "children": {
+                                "col_en":  { "type": "TableColumn", "label": "", "flags": "WidthFixed", "init_width": 30, "column_id": 0 },
+                                "col_key": { "type": "TableColumn", "label": "Key", "flags": "WidthStretch", "column_id": 1 },
+                                "col_val": { "type": "TableColumn", "label": "Value", "flags": "WidthStretch", "column_id": 2 },
+                                "col_rm":  { "type": "TableColumn", "label": "", "flags": "WidthFixed", "init_width": 34, "column_id": 3 },
+                                "row0": { "type": "TableRow", "children": {
+                                  "c0": { "type": "Checkbox", "value": true },
+                                  "c1": { "type": "InputText", "value": "page" },
+                                  "c2": { "type": "InputText", "value": "1" },
+                                  "c3": { "type": "Button", "label": "x", "width": 26 }
+                                } }
+                              }
+                            }
+                          }
+                        },
+                        "headers_tab": {
+                          "type": "TabItem",
+                          "label": "Headers",
+                          "children": {
+                            "h_toolbar": { "type": "HorizontalLayout", "children": { "h_add": { "type": "Button", "label": "+ Add Header", "width": 120 } } },
+                            "h_table": {
+                              "type": "Table", "id": "##mock_headers_table", "columns": 4,
+                              "flags": "Resizable|RowBg|Borders", "headers": true, "height": 220, "outer_height": 220,
+                              "children": {
+                                "col_en":  { "type": "TableColumn", "label": "", "flags": "WidthFixed", "init_width": 30, "column_id": 0 },
+                                "col_key": { "type": "TableColumn", "label": "Key", "flags": "WidthStretch", "column_id": 1 },
+                                "col_val": { "type": "TableColumn", "label": "Value", "flags": "WidthStretch", "column_id": 2 },
+                                "col_rm":  { "type": "TableColumn", "label": "", "flags": "WidthFixed", "init_width": 34, "column_id": 3 },
+                                "row0": { "type": "TableRow", "children": {
+                                  "c0": { "type": "Checkbox", "value": true },
+                                  "c1": { "type": "InputText", "value": "Accept" },
+                                  "c2": { "type": "InputText", "value": "application/json" },
+                                  "c3": { "type": "Button", "label": "x", "width": 26 }
+                                } }
+                              }
+                            }
+                          }
+                        },
+                        "body_tab": {
+                          "type": "TabItem",
+                          "label": "Body",
+                          "children": {
+                            "b_mode": { "type": "Combo", "items": "None\nRaw\nJSON\nForm URL-Encoded", "value": 2, "width": 200 },
+                            "b_text": { "type": "InputText", "multiline": true, "value": "{\n  \"name\": \"Ada\"\n}", "height": 220, "width": -1 }
+                          }
+                        },
+                        "auth_tab": {
+                          "type": "TabItem",
+                          "label": "Auth",
+                          "children": {
+                            "a_mode": { "type": "Combo", "items": "None\nBasic Auth\nBearer Token", "value": 2, "width": 200 },
+                            "a_token": { "type": "InputText", "label": "Token", "value": "eyJhbGciOi...", "width": 400 }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+
+            "response_tab": {
+              "type": "TabItem",
+              "label": "Response",
+              "children": {
+                "resp_box": {
+                  "type": "VerticalLayout",
+                  "spacing": 4,
+                  "children": {
+                    "resp_status": { "type": "Label", "text": "200 OK    118 ms    1.2 KB", "text_color_light": "#1A7F37FF", "text_color_dark": "#3FB950FF" },
+                    "resp_sep": { "type": "Separator" },
+                    "resp_subtabs": {
+                      "type": "TabBar",
+                      "id": "##curl_mock_response_subtabs",
+                      "height": -1,
+                      "children": {
+                        "resp_body_tab": {
+                          "type": "TabItem",
+                          "label": "Body",
+                          "children": {
+                            "resp_editor": { "type": "TextEditor", "language": "json", "read_only": true, "height": 320, "width": 0 }
+                          }
+                        },
+                        "resp_headers_tab": {
+                          "type": "TabItem",
+                          "label": "Headers",
+                          "children": {
+                            "resp_h_table": {
+                              "type": "Table", "id": "##mock_response_headers_table", "columns": 2,
+                              "flags": "Resizable|RowBg|Borders", "headers": true, "height": 220, "outer_height": 220,
+                              "children": {
+                                "col_name":  { "type": "TableColumn", "label": "Name", "flags": "WidthFixed", "init_width": 220, "column_id": 0 },
+                                "col_value": { "type": "TableColumn", "label": "Value", "flags": "WidthStretch", "column_id": 1 },
+                                "row0": { "type": "TableRow", "children": {
+                                  "c0": { "type": "Label", "text": "Content-Type" },
+                                  "c1": { "type": "Label", "text": "application/json" }
+                                } }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+
+            "history_tab": {
+              "type": "TabItem",
+              "label": "History",
+              "children": {
+                "hist_box": {
+                  "type": "VerticalLayout",
+                  "spacing": 4,
+                  "children": {
+                    "hist_toolbar": { "type": "HorizontalLayout", "children": { "hist_clear": { "type": "Button", "label": "Clear History", "width": 120 } } },
+                    "hist_status": { "type": "Label", "text": "2 requests" },
+                    "hist_table": {
+                      "type": "Table", "id": "##mock_history_table", "columns": 6,
+                      "flags": "Resizable|RowBg|Borders", "headers": true, "height": 260, "outer_height": 260,
+                      "children": {
+                        "col_method": { "type": "TableColumn", "label": "Method", "flags": "WidthFixed", "init_width": 70, "column_id": 0 },
+                        "col_url":    { "type": "TableColumn", "label": "URL", "flags": "WidthStretch", "column_id": 1 },
+                        "col_status": { "type": "TableColumn", "label": "Status", "flags": "WidthFixed", "init_width": 70, "column_id": 2 },
+                        "col_time":   { "type": "TableColumn", "label": "Time", "flags": "WidthFixed", "init_width": 80, "column_id": 3 },
+                        "col_when":   { "type": "TableColumn", "label": "When", "flags": "WidthFixed", "init_width": 140, "column_id": 4 },
+                        "col_act":    { "type": "TableColumn", "label": "", "flags": "WidthFixed", "init_width": 40, "column_id": 5 },
+                        "row0": { "type": "TableRow", "children": {
+                          "c0": { "type": "Label", "text": "GET" },
+                          "c1": { "type": "Label", "text": "https://api.example.com/v1/users" },
+                          "c2": { "type": "Label", "text": "200", "text_color_light": "#1A7F37FF", "text_color_dark": "#3FB950FF" },
+                          "c3": { "type": "Label", "text": "118 ms" },
+                          "c4": { "type": "Label", "text": "2026-01-01 10:00:00" },
+                          "c5": { "type": "MenuButton", "label": "...", "children": { "mi0": { "type": "MenuItem", "label": "Load" } } }
+                        } }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+
+            "collections_tab": {
+              "type": "TabItem",
+              "label": "Collections",
+              "children": {
+                "coll_box": {
+                  "type": "VerticalLayout",
+                  "spacing": 4,
+                  "children": {
+                    "coll_status": { "type": "Label", "text": "1 saved request" },
+                    "coll_table": {
+                      "type": "Table", "id": "##mock_collections_table", "columns": 5,
+                      "flags": "Resizable|RowBg|Borders", "headers": true, "height": 260, "outer_height": 260,
+                      "children": {
+                        "col_collection": { "type": "TableColumn", "label": "Collection", "flags": "WidthFixed", "init_width": 140, "column_id": 0 },
+                        "col_name":       { "type": "TableColumn", "label": "Name", "flags": "WidthFixed", "init_width": 160, "column_id": 1 },
+                        "col_method":     { "type": "TableColumn", "label": "Method", "flags": "WidthFixed", "init_width": 70, "column_id": 2 },
+                        "col_url":        { "type": "TableColumn", "label": "URL", "flags": "WidthStretch", "column_id": 3 },
+                        "col_act":        { "type": "TableColumn", "label": "", "flags": "WidthFixed", "init_width": 40, "column_id": 4 },
+                        "row0": { "type": "TableRow", "children": {
+                          "c0": { "type": "Label", "text": "Users API" },
+                          "c1": { "type": "Label", "text": "Get Users" },
+                          "c2": { "type": "Label", "text": "GET" },
+                          "c3": { "type": "Label", "text": "https://api.example.com/v1/users" },
+                          "c4": { "type": "MenuButton", "label": "...", "children": {
+                            "mi0": { "type": "MenuItem", "label": "Load" },
+                            "mi1": { "type": "MenuItem", "label": "Duplicate" },
+                            "mi2": { "type": "MenuItem", "label": "Delete" }
+                          } }
+                        } }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+
+            "environments_tab": {
+              "type": "TabItem",
+              "label": "Environments",
+              "children": {
+                "env_box": {
+                  "type": "VerticalLayout",
+                  "spacing": 4,
+                  "children": {
+                    "env_toolbar": {
+                      "type": "HorizontalLayout",
+                      "spacing": 6,
+                      "children": {
+                        "env_new_name": { "type": "InputText", "hint": "new environment name", "width": 220 },
+                        "env_new_btn":  { "type": "Button", "label": "New Environment", "width": 140 }
+                      }
+                    },
+                    "env_table": {
+                      "type": "Table", "id": "##mock_env_table", "columns": 3,
+                      "flags": "Resizable|RowBg|Borders", "headers": true, "height": 150, "outer_height": 150,
+                      "children": {
+                        "col_name":  { "type": "TableColumn", "label": "Name", "flags": "WidthStretch", "column_id": 0 },
+                        "col_count": { "type": "TableColumn", "label": "Variables", "flags": "WidthFixed", "init_width": 90, "column_id": 1 },
+                        "col_act":   { "type": "TableColumn", "label": "", "flags": "WidthFixed", "init_width": 40, "column_id": 2 },
+                        "row0": { "type": "TableRow", "children": {
+                          "c0": { "type": "Label", "text": "Local" },
+                          "c1": { "type": "Label", "text": "1" },
+                          "c2": { "type": "MenuButton", "label": "...", "children": {
+                            "mi0": { "type": "MenuItem", "label": "Edit" },
+                            "mi1": { "type": "MenuItem", "label": "Delete" }
+                          } }
+                        } }
+                      }
+                    },
+                    "env_sep": { "type": "Separator" },
+                    "env_editor_label": { "type": "Label", "text": "Variables for: Local" },
+                    "env_var_toolbar": {
+                      "type": "HorizontalLayout",
+                      "spacing": 6,
+                      "children": {
+                        "env_add_var":   { "type": "Button", "label": "+ Add Variable", "width": 130 },
+                        "env_save_vars": { "type": "Button", "label": "Save Variables", "width": 130 }
+                      }
+                    },
+                    "env_vars_table": {
+                      "type": "Table", "id": "##mock_env_vars_table", "columns": 3,
+                      "flags": "Resizable|RowBg|Borders", "headers": true, "height": 150, "outer_height": 150,
+                      "children": {
+                        "col_key":   { "type": "TableColumn", "label": "Key", "flags": "WidthStretch", "column_id": 0 },
+                        "col_value": { "type": "TableColumn", "label": "Value", "flags": "WidthStretch", "column_id": 1 },
+                        "col_rm":    { "type": "TableColumn", "label": "", "flags": "WidthFixed", "init_width": 34, "column_id": 2 },
+                        "row0": { "type": "TableRow", "children": {
+                          "c0": { "type": "InputText", "value": "base_url" },
+                          "c1": { "type": "InputText", "value": "http://localhost:8080" },
+                          "c2": { "type": "Button", "label": "x", "width": 26 }
+                        } }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+
+            "console_tab": {
+              "type": "TabItem",
+              "label": "Console",
+              "children": {
+                "console_table": {
+                  "type": "Table", "id": "##mock_console_table", "columns": 4,
+                  "flags": "Resizable|RowBg|Borders", "headers": true, "height": 260, "outer_height": 260,
+                  "children": {
+                    "col_seq":     { "type": "TableColumn", "label": "#", "flags": "WidthFixed", "init_width": 44, "column_id": 0 },
+                    "col_command": { "type": "TableColumn", "label": "Command", "flags": "WidthFixed", "init_width": 400, "column_id": 1 },
+                    "col_exit":    { "type": "TableColumn", "label": "Exit", "flags": "WidthFixed", "init_width": 50, "column_id": 2 },
+                    "col_output":  { "type": "TableColumn", "label": "Output", "flags": "WidthStretch", "column_id": 3 },
+                    "row0": { "type": "TableRow", "children": {
+                      "c0": { "type": "Label", "text": "1" },
+                      "c1": { "type": "Label", "text": "curl -sS -i -L -X GET ... https://api.example.com/v1/users?page=1" },
+                      "c2": { "type": "Label", "text": "0", "text_color_light": "#1A7F37FF", "text_color_dark": "#3FB950FF" },
+                      "c3": { "type": "Label", "text": "HTTP/1.1 200 OK ..." }
+                    } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

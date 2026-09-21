@@ -179,6 +179,31 @@ if(TARGET test_kubectl_process)
     target_link_libraries(test_kubectl_process PRIVATE uv_a)
   endif()
 endif()
+wish_add_optional_test(WISH_MODULE_BDG_DEV_CURL                 test_curl              test_curl.cpp)
+# Exercises run_curl_cli() (curl_process.cpp) against stub binaries
+# (printf/false -- never `curl`), so it needs no network access. Client-side,
+# no bison/RMI dependency; needs uv_a directly since curl_process.cpp calls
+# uv_spawn() -- same rationale as test_docker_process above.
+wish_add_optional_test(WISH_MODULE_BDG_DEV_CURL                 test_curl_process      test_curl_process.cpp
+    ${CMAKE_SOURCE_DIR}/modules/bdg/dev/curl/client/curl_process.cpp)
+if(TARGET test_curl_process)
+  target_include_directories(test_curl_process PRIVATE ${CMAKE_SOURCE_DIR})
+  if(TARGET uv_a)
+    target_link_libraries(test_curl_process PRIVATE uv_a)
+  endif()
+endif()
+# Pure string parsing (parse_curl_output(), curl_response_parser.cpp) --
+# zero framework/bison/RMI/libuv dependency, so this compiles and links
+# faster than every other curl test. See its own file comment: this split
+# exists specifically so a regression like the one it catches (a JSON body
+# ending in its own trailing newline being silently dropped) has a unit
+# test at all, rather than only surfacing via a full automation-driven
+# end-to-end run.
+wish_add_optional_test(WISH_MODULE_BDG_DEV_CURL                 test_curl_response_parser test_curl_response_parser.cpp
+    ${CMAKE_SOURCE_DIR}/modules/bdg/dev/curl/client/curl_response_parser.cpp)
+if(TARGET test_curl_response_parser)
+  target_include_directories(test_curl_response_parser PRIVATE ${CMAKE_SOURCE_DIR})
+endif()
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_MC                 test_mc                test_mc.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_ZIP                test_zip               test_zip.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_PIX                test_pix               test_pix.cpp)

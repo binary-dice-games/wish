@@ -142,6 +142,37 @@ gotcha you hit and didn't record is one the next agent will hit again.
   whether the widget in question has children being added/removed outside
   the normal form-template/`order`-field path, and confirm
   `refresh_children_order()` is called after each such mutation.
+- **A docked window that is behind another tab is a real widget with a
+  real `path` and rect, but `visible: false` and no usable interaction
+  target** — `click()`/`type_text()` on any of its children raise
+  `"widget ... exists but was never rendered (no rect)"` even though
+  `get_tree()`/`get_widget()` happily return the widget's *last-known*
+  state. This came up verifying the `curl` module (2026-09): Response/
+  History/Collections/Environments share one ImGui dock-tab group, and
+  only the active tab's subtree actually renders each frame. **ImGui's
+  own dock-tab strip is not a wish element** (it has no dot-path), so
+  there is no `click("...tab_name")` to bring a background tab to front.
+  Raw-pixel `ui._page.mouse.click(x, y)` (Playwright's page object,
+  reachable via `AutomationClient`'s `_page` attribute) aimed at the tab
+  label's on-screen position — read off a `screenshot()` — was tried as a
+  workaround and did **not** reliably switch the active tab in this
+  environment (repeated across several nearby coordinates and delays, no
+  effect on the target window's `visible` field); root cause not
+  confirmed (possibly a canvas/devicePixelRatio scaling mismatch between
+  screenshot pixels and the coordinates `page.mouse.click()` injects, or
+  the docking tab strip's hit-test needing a different event shape than a
+  plain click). **Workaround that does work**: don't drive the tabbed
+  window's widgets through the browser at all for anything that doesn't
+  strictly require it — a Save/Send/create flow whose *inputs* live in an
+  always-visible window (not tabbed) still runs its full effect
+  server/client-side regardless of which tab happens to be frontmost;
+  verify the result by reading back whatever ground-truth state it wrote
+  (a local file, a database, a subsequent RMI snapshot) instead of trying
+  to bring the tabbed output window to front. If you need to actually
+  verify content *rendered inside* a background dock tab, seeding a
+  default single-tab-per-window layout for the debugging session (or
+  reordering `set_default_dock_layout()`'s groups so the tab under test
+  starts active) sidesteps the problem entirely.
 
 ## Prerequisites
 
