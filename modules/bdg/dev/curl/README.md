@@ -38,17 +38,21 @@ Response, History, Collections, Environments, Console.
 Build: off by default. `cmake -S . -B build -DWISH_MODULE_BDG_DEV_CURL=ON`
 (or `-DWISH_COLLECTION_BDG_DEV=ON` for the whole `bdg/dev` collection).
 
-See [DESIGN.md](DESIGN.md) for the full architecture and [PLAN.md](PLAN.md)
-for what's implemented vs. deferred.
+See [DESIGN.md](DESIGN.md) for the full architecture, [PLAN.md](PLAN.md)
+for what's implemented vs. deferred, and [VALIDATION.md](VALIDATION.md) for
+a reproducible checklist of example requests to run against the live app.
 
 ## Implementation status
 
-All six windows are implemented and unit-tested. The request/response/
-Console/Save-to-collection path is also live-verified against a real HTTP
-endpoint; reload/delete/environment-substitution are implemented and
-unit-tested but not yet driven through a live browser session (a dock-tab
-automation limitation, not a known product issue — see PLAN.md's
-Verification checklist):
+All six windows are implemented and unit-tested. The request/response
+pipeline — all seven HTTP methods, `-L` redirects, 2xx/4xx/5xx status
+colouring, large/binary-ish response bodies — plus Console tracing and
+Save-to-collection are live-verified against real endpoints
+(`httpbin.org`, `google.com`); four real bugs were found and fixed this
+way (see PLAN.md's Verification checklist, DESIGN.md §6/§10, and
+VALIDATION.md for the reproducible example list). Reload/delete/
+environment-substitution are implemented and unit-tested but not yet
+re-exercised in a live browser session — see PLAN.md:
 
 - **Request** — Method/URL/Environment/Follow-redirects toolbar, an inline
   "Save as" row, and four tabs: Params/Headers (editable key-value tables

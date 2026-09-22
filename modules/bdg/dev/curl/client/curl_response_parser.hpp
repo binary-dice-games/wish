@@ -46,11 +46,24 @@ struct parsed_response {
 /// final (post-redirect) status code/text, timing, size, response
 /// headers, and the raw response body.
 ///
-/// Strips the `-w` sentinel trailer from the raw text FIRST, before doing
-/// any header/body boundary detection -- see the implementation's comment
-/// for why scanning for boundaries first silently drops the body whenever
-/// it already ends in its own trailing newline (routine for a JSON API
-/// response).
+/// Two boundary-detection pitfalls this function's implementation
+/// specifically guards against (both found live, via the automation
+/// module, against real endpoints -- see DESIGN.md "Command construction
+/// & response parsing"):
+///  1. Strips the `-w` sentinel trailer from the raw text FIRST, before
+///     doing any header/body boundary detection -- scanning for
+///     boundaries first silently drops the body whenever it already ends
+///     in its own trailing newline (routine for a JSON API response;
+///     found against `https://httpbin.org/get`).
+///  2. Only ever treats a blank-line sequence as a header/body boundary
+///     when it is reached by walking forward from a position that itself
+///     starts with "HTTP/" (chaining through `-L` redirect hops) --
+///     never by scanning the whole text for *every* blank-line
+///     occurrence and picking the last one. A body large enough to
+///     contain its own coincidental blank-line sequence (any real HTML/
+///     JS page; found against `https://www.google.com`) would otherwise
+///     be misread as containing an extra redirect hop, truncating the
+///     real body and misparsing a chunk of it as headers.
 parsed_response parse_curl_output(const std::string& stdout_text);
 
 } // namespace bdg::wish::curl

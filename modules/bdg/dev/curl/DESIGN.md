@@ -1,13 +1,17 @@
 # wish curl Module — Architecture & Design
 
-**Status: implemented and live-verified** for the request/response/
-Console/Params-Headers-editing/Save-to-collection paths, via unit tests
-(28/28 passing) plus a real automation-module run against
-`https://httpbin.org` (see [PLAN.md](PLAN.md) and "10. Implementation
-Status"). Reload-from-History/Collections, the delete-confirm flow, and
-environment substitution are implemented and unit-tested but not yet
-watched happen in a live browser — see PLAN.md's Verification checklist
-for why (a dock-tab automation limitation, not a known product issue).
+**Status: implemented and live-verified.** Unit tests (29/29 passing)
+plus two rounds of automation-module runs against real endpoints
+(`https://httpbin.org`, `https://www.google.com`) found and fixed four
+real bugs — see "10. Implementation Status" and PLAN.md's Verification
+checklist for the full list and what each automation pass covered.
+Reload-from-History/Collections, the delete-confirm flow, and environment
+substitution are implemented and unit-tested; driving them live was
+initially blocked by what looked like a dock-tab automation limitation,
+but that turned out to be a testing-technique mistake (missing click
+delay / verifying with a fixed sleep instead of polling — see
+docs/automation.md), not a real constraint — switching tabs and driving
+those flows live is possible and merely not yet exercised in this pass.
 
 This is a close sibling of the [docker](../docker/DESIGN.md) and
 [kubectl](../kubectl/DESIGN.md) modules: a server-side `form` that owns
@@ -356,6 +360,20 @@ The internal `ui_element` tree of every window is private.
   so the chosen method never depends on curl's "a body implies POST"
   default.
 
+- **A HEAD request also gets `--head`, not just `-X HEAD`.** Found live
+  (2026-09, automation module against `https://httpbin.org/anything`):
+  `-X HEAD` alone still leaves curl expecting `Content-Length` bytes of
+  body; when a real HEAD response correctly sends none, curl reports exit
+  18 ("transfer closed with N bytes remaining to read") even though the
+  request itself succeeded — `send_request()` surfaced this as a false
+  "Request failed" for a request that actually worked. `--head` (curl's
+  own `-I`) is what actually suppresses that expectation; confirmed
+  directly (`curl -X HEAD ...` → exit 18, `curl --head -X HEAD ...` →
+  exit 0 on the identical URL) before fixing. `send_request()` now adds
+  `--head` specifically when the selected method is `HEAD`, alongside
+  (not instead of) the usual `-X HEAD` — every method is still passed the
+  same uniform way.
+
 - **A binary-body heuristic, not real Content-Type sniffing.** The
   Response Body viewer needs *some* file to point a `TextEditor` at (or
   none, for a one-line "binary response" fallback) — v1 checks for an
@@ -363,6 +381,20 @@ The internal `ui_element` tree of every window is private.
   Simple and correct for the overwhelmingly common REST-API-testing case
   (JSON/text/XML bodies); a real image/PDF download would need a proper
   Content-Type allowlist, deferred (§10).
+
+- **Each response body is uploaded under a fresh, unique sandbox filename
+  — never a fixed `curl_response.txt`.** Found live (2026-09, automation
+  module cycling all seven HTTP methods against one URL in a single
+  session): with a fixed filename, the Response Body `TextEditor`'s
+  `file_path` field is byte-for-byte identical response after response
+  even though the sandbox file's *content* legitimately changed each
+  time — nothing ever signals the client-side editor to re-fetch it, so
+  the Body pane silently kept showing the *first* response's body forever
+  while the status line, headers table, and Console (all driven by
+  ordinary RMI field writes, not a file re-fetch) updated correctly every
+  time. `send_request()` now names each upload `new_id("curl_response") +
+  ".txt"`, so `file_path` genuinely changes on every response and the
+  editor always reloads.
 
 - **Local persistence lives outside the session sandbox, in a small
   hand-rolled JSON store.** See DESIGN.md-level rationale in
@@ -481,32 +513,51 @@ Depended on by: nothing else in wish; this is a leaf module.
   `tests/test_docker_process.cpp`. No network access required.
 - **`tests/test_curl_response_parser.cpp`** — pure `parse_curl_output()`
   string-parsing cases, zero framework dependency: a body ending in its
-  own trailing newline is preserved (the exact regression found live, see
-  §6/§10); a body with no trailing newline is preserved exactly; a
-  simulated `-L` redirect chain isolates the *final* hop's status/headers;
+  own trailing newline is preserved (the httpbin.org regression, see §6/
+  §10); a body with no trailing newline is preserved exactly; a simulated
+  `-L` redirect chain isolates the *final* hop's status/headers; a body
+  containing its own embedded blank line is not mistaken for an extra
+  redirect hop and truncated (the google.com regression, see §6/§10);
   empty input and sentinel-less/truncated input degrade gracefully instead
   of crashing. Fastest-building of the three test binaries (no bison/RMI/
   libuv link needed at all). No network access required.
-- **End-to-end** (done for the core path, see §10): automation module
-  against `wish client --run=curl` with a real GET against
-  `https://httpbin.org/get`, verifying status/timing/size, the response
-  headers table, the JSON-pretty-printed/syntax-highlighted body, the
-  Console trace, and a Save-to-collection write to the local store. Found
-  and fixed the response-parsing bug documented in §6. Reload-from-
+- **End-to-end** (see §10): two rounds of automation-module runs against
+  real endpoints. Round 1 (`https://httpbin.org/get`, then
+  `https://www.google.com`) found and fixed the two response-parsing bugs
+  documented in §6. Round 2 (all seven HTTP methods cycled against
+  `https://httpbin.org/anything` in one session, plus a fresh session
+  each for a `-L` redirect chain and 404/500 status colouring) found and
+  fixed the HEAD `--head` bug and the stale-response-body-file bug, also
+  in §6, and confirmed status-line colour coding (green 2xx, red 4xx/5xx)
+  and `-L` redirect-chain handling both render correctly. Reload-from-
   History/Collections, delete-confirm, and environment substitution are
-  not yet driven this way — see PLAN.md's Verification checklist.
+  unit-tested and (per the corrected docs/automation.md guidance) are
+  known to be drivable live the same way, but weren't re-exercised in
+  this pass — see PLAN.md's Verification checklist.
 
 ## 10. Implementation Status
 
-**Implemented and live-verified** for the request/response/Console/
-Params-Headers-editing/Save-to-collection paths (see PLAN.md's
-Verification checklist for exactly what was driven through a real browser
-via the automation module, and what is implemented + unit-tested but not
-yet watched happen live). `server/curl.{hpp,cpp}`, `client/curl*.{hpp,cpp}`,
-`client/curl_response_parser.{hpp,cpp}`, `tests/test_curl*.cpp` are in
-place; all three test binaries (`test_curl`, `test_curl_process`,
-`test_curl_response_parser`) require neither network access nor a running
-server and all 28 cases pass.
+**Implemented and live-verified.** `server/curl.{hpp,cpp}`,
+`client/curl*.{hpp,cpp}`, `client/curl_response_parser.{hpp,cpp}`,
+`tests/test_curl*.cpp` are in place; all three test binaries (`test_curl`,
+`test_curl_process`, `test_curl_response_parser`) require neither network
+access nor a running server and all 29 cases pass. Two automation-module
+verification passes against real endpoints (see §9's "End-to-end" bullet)
+found and fixed four real bugs, all now covered by regression tests or
+documented fixes:
+1. A JSON response body ending in its own trailing newline was silently
+   dropped (found against `https://httpbin.org/get`).
+2. A large HTML/JS body containing its own coincidental blank-line
+   sequence was truncated and partly misparsed as headers (found against
+   `https://www.google.com`).
+3. `HEAD` requests failed with curl exit 18 even though they succeeded,
+   because `-X HEAD` alone doesn't suppress curl's body-length check
+   (found against `https://httpbin.org/anything`).
+4. The Response Body pane silently kept showing the *first* response's
+   content forever once more than one request had been sent in the same
+   session, because every response reused the same sandbox filename
+   (found by cycling all seven HTTP methods in one session against
+   `https://httpbin.org/anything`).
 
 **Not planned for v1** (deferred future work): multipart/file-upload
 request bodies; a cookie jar (curl's `-c`/`-b` are stateless per-request

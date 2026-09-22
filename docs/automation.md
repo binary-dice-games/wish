@@ -143,36 +143,49 @@ gotcha you hit and didn't record is one the next agent will hit again.
   the normal form-template/`order`-field path, and confirm
   `refresh_children_order()` is called after each such mutation.
 - **A docked window that is behind another tab is a real widget with a
-  real `path` and rect, but `visible: false` and no usable interaction
-  target** — `click()`/`type_text()` on any of its children raise
-  `"widget ... exists but was never rendered (no rect)"` even though
-  `get_tree()`/`get_widget()` happily return the widget's *last-known*
-  state. This came up verifying the `curl` module (2026-09): Response/
-  History/Collections/Environments share one ImGui dock-tab group, and
-  only the active tab's subtree actually renders each frame. **ImGui's
-  own dock-tab strip is not a wish element** (it has no dot-path), so
-  there is no `click("...tab_name")` to bring a background tab to front.
-  Raw-pixel `ui._page.mouse.click(x, y)` (Playwright's page object,
-  reachable via `AutomationClient`'s `_page` attribute) aimed at the tab
-  label's on-screen position — read off a `screenshot()` — was tried as a
-  workaround and did **not** reliably switch the active tab in this
-  environment (repeated across several nearby coordinates and delays, no
-  effect on the target window's `visible` field); root cause not
-  confirmed (possibly a canvas/devicePixelRatio scaling mismatch between
-  screenshot pixels and the coordinates `page.mouse.click()` injects, or
-  the docking tab strip's hit-test needing a different event shape than a
-  plain click). **Workaround that does work**: don't drive the tabbed
-  window's widgets through the browser at all for anything that doesn't
-  strictly require it — a Save/Send/create flow whose *inputs* live in an
-  always-visible window (not tabbed) still runs its full effect
-  server/client-side regardless of which tab happens to be frontmost;
-  verify the result by reading back whatever ground-truth state it wrote
-  (a local file, a database, a subsequent RMI snapshot) instead of trying
-  to bring the tabbed output window to front. If you need to actually
-  verify content *rendered inside* a background dock tab, seeding a
-  default single-tab-per-window layout for the debugging session (or
-  reordering `set_default_dock_layout()`'s groups so the tab under test
-  starts active) sidesteps the problem entirely.
+  real `path` and rect, but `visible: false` until its dock tab is
+  brought to front** — `click()`/`type_text()` on any of its children
+  raise `"widget ... exists but was never rendered (no rect)"` while it's
+  inactive, exactly as expected. This came up verifying the `curl` module
+  (2026-09): Response/History/Collections/Environments share one ImGui
+  dock-tab group, and only the active tab's subtree renders each frame.
+  **ImGui's own dock-tab strip is not a wish element** (it has no
+  dot-path), so there is no `click("...tab_name")` for it — but a
+  raw-pixel click through Playwright's page object
+  (`ui._page.mouse.click(x, y, delay=60)`, `AutomationClient`'s `_page`
+  attribute, coordinates read off a `screenshot()`) **does** reliably
+  switch it, exactly like clicking any other widget. Two things need to
+  both be right, and an earlier pass through this same investigation
+  mistook a mix of both for "raw dock-tab clicks just don't work" before
+  finding the real cause:
+  1. **Always pass `delay=60`ms** on a raw `page.mouse.click()` (matching
+     `click()`'s own `_CLICK_DELAY_MS` internally) — an instant down+up
+     lands in the same render-loop poll and ImGui's click detection never
+     sees a press-then-release across two distinct frames, so nothing
+     happens. This is the exact same gotcha `click()`'s own doc comment
+     already calls out for a `ContextMenu` right-click; it applies just
+     as much to a plain left-click on a dock tab (and to a `Combo`
+     popup's items — see the next bullet).
+  2. **Verify with `wait_for(...)`, never a fixed `time.sleep()` +
+     one-shot `get_widget()` check.** The state change can legitimately
+     take longer than a short fixed sleep to land over the WebSocket
+     round trip; polling with `wait_for()` (as the rest of this document
+     already recommends for everything else) is what actually
+     distinguishes "still catching up" from "didn't work".
+  Get both right and `click()`ing a dock tab, a `Combo` popup item, or a
+  wish `TabItem` (see the next bullet) all work the same as clicking any
+  other widget — there is no dock-tab-specific limitation.
+- **A `Combo`'s dropdown items are not individually addressable wish
+  elements** (no dot-path — same as the dock-tab strip above), but a
+  raw-pixel click at the item's on-screen row **does** select it,
+  updating the `Combo`'s own `value` field — subject to the exact same
+  two requirements as the dock-tab bullet above (`delay=60`, and confirm
+  with `wait_for()` polling the `Combo`'s `value`, not a fixed sleep).
+  ImGui opens the popup directly below the closed `Combo`'s rect with
+  items in declaration order at a fixed row height (~20px in the default
+  theme) — read the exact positions off a `screenshot()` taken right
+  after opening it (`click()` the `Combo` itself first) rather than
+  guessing.
 
 ## Prerequisites
 

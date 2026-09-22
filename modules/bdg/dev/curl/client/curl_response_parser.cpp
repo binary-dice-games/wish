@@ -67,16 +67,26 @@ parsed_response parse_curl_output(const std::string& stdout_text) {
     }
   }
 
-  // Collect every blank-line boundary within the (now sentinel-free)
-  // headers+body text -- `-L` prints one header block per redirect hop,
-  // all concatenated ahead of the final body -- so we can pick out just
-  // the *last* hop's status line + headers.
-  std::vector<size_t> starts;
-  std::vector<size_t> ends;
-  size_t search_from = 0;
-  for (;;) {
-    size_t p_crlf = head_and_body.find("\r\n\r\n", search_from);
-    size_t p_lf = head_and_body.find("\n\n", search_from);
+  // Walk forward from position 0, one header block at a time -- `-L`
+  // prints one full "HTTP/x.x ... \r\n...headers...\r\n\r\n" block per
+  // redirect hop, each one immediately followed by either the *next*
+  // hop's own "HTTP/" status line or, on the final hop, the body. A
+  // header block's own boundary is only ever the FIRST blank-line
+  // sequence found starting from a position that itself begins with
+  // "HTTP/" -- unlike scanning the *whole* text for every blank-line
+  // occurrence and picking the last one, this can never be fooled by a
+  // blank-line sequence that happens to occur *inside* the body itself
+  // (e.g. a large HTML/JS page, entirely plausible and confirmed live
+  // against google.com -- see DESIGN.md "Command construction & response
+  // parsing"). If the boundary found isn't immediately followed by
+  // another "HTTP/" line, it's the real header/body split and the loop
+  // stops; everything from there to the (already-stripped) sentinel is
+  // the body, however many blank lines it happens to contain.
+  size_t hop_start = 0;
+  bool found_boundary = false;
+  while (hop_start < head_and_body.size() && head_and_body.compare(hop_start, 5, "HTTP/") == 0) {
+    size_t p_crlf = head_and_body.find("\r\n\r\n", hop_start);
+    size_t p_lf = head_and_body.find("\n\n", hop_start);
     size_t p = std::string::npos;
     size_t len = 0;
     if (p_crlf != std::string::npos && (p_lf == std::string::npos || p_crlf <= p_lf)) {
@@ -87,19 +97,24 @@ parsed_response parse_curl_output(const std::string& stdout_text) {
       len = 2;
     }
     if (p == std::string::npos)
-      break;
-    starts.push_back(p);
-    ends.push_back(p + len);
-    search_from = p + len;
+      break; // malformed (no blank line found at all) -- stop, keep what we have.
+
+    size_t boundary_end = p + len;
+    if (boundary_end < head_and_body.size() && head_and_body.compare(boundary_end, 5, "HTTP/") == 0) {
+      hop_start = boundary_end; // another redirect hop follows -- keep going.
+      continue;
+    }
+
+    pr.header_block = head_and_body.substr(hop_start, p - hop_start);
+    pr.body = head_and_body.substr(boundary_end);
+    found_boundary = true;
+    break;
   }
 
-  if (!ends.empty()) {
-    size_t header_start = ends.size() >= 2 ? ends[ends.size() - 2] : 0;
-    pr.header_block = head_and_body.substr(header_start, starts.back() - header_start);
-    pr.body = head_and_body.substr(ends.back());
-  } else {
-    // No blank-line boundary found at all (shouldn't normally happen for
-    // a real HTTP response) -- treat the whole thing as body, no headers.
+  if (!found_boundary) {
+    // No "HTTP/"-prefixed status line at position 0, or no blank line
+    // ever found (shouldn't normally happen for a real HTTP response) --
+    // treat the whole thing as body, no headers, rather than guessing.
     pr.body = head_and_body;
   }
 

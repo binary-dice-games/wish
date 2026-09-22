@@ -889,8 +889,20 @@ void curl_source::send_request(const request_state& raw) {
   std::vector<std::string> argv = {"-sS", "-i"};
   if (s.follow_redirects)
     argv.push_back("-L");
+  const std::string method = s.method.empty() ? std::string{"GET"} : s.method;
+  // A HEAD request has no response body, but plain `-X HEAD` doesn't tell
+  // curl that -- it still expects Content-Length bytes of body and, when
+  // (correctly) none arrive, fails with exit 18 ("transfer closed with N
+  // bytes remaining to read"), even though the request itself succeeded.
+  // `--head` (curl's own `-I`) is what actually suppresses that
+  // expectation; kept alongside `-X HEAD` (rather than replacing it) so
+  // the method is still always passed the same uniform way as every
+  // other method. Confirmed live: `curl -X HEAD https://httpbin.org/...`
+  // reports exit 18, `curl --head -X HEAD` the same URL reports exit 0.
+  if (method == "HEAD")
+    argv.push_back("--head");
   argv.push_back("-X");
-  argv.push_back(s.method.empty() ? std::string{"GET"} : s.method);
+  argv.push_back(method);
 
   for (auto& h : s.headers) {
     if (!h.enabled || h.key.empty())
@@ -990,7 +1002,17 @@ void curl_source::send_request(const request_state& raw) {
 
     std::string body_file;
     if (!looks_binary) {
-      body_file = "curl_response.txt";
+      // A unique name per response, not a fixed "curl_response.txt" --
+      // found live (2026-09, automation module cycling all seven HTTP
+      // methods against one URL in a single session): reusing the same
+      // filename every time means the TextEditor's file_path field value
+      // is byte-for-byte identical response after response even though
+      // the underlying sandbox file's *content* legitimately changed, so
+      // nothing ever signals the client-side editor to re-fetch it -- the
+      // Body pane silently kept showing the very first response forever,
+      // while the status line/headers/Console (driven by ordinary RMI
+      // field writes, not a file re-fetch) updated correctly every time.
+      body_file = new_id("curl_response") + ".txt";
       try {
         host_.upload_file(body_file, pr.body).get();
       } catch (const std::exception&) {

@@ -74,6 +74,42 @@ TEST(CurlResponseParserTest, FollowsRedirectsToTheFinalHopOnly) {
   EXPECT_EQ(pr.headers[0].value, "text/plain");
 }
 
+// Regression test for a second, distinct bug found end-to-end (automation
+// module against a live GET https://www.google.com): a large HTML body can
+// easily contain its own "\n\n" sequence (routine in minified HTML/JS) --
+// scanning the *whole* text for every blank-line occurrence and picking the
+// last one misreads that body-internal blank line as an extra `-L` redirect
+// hop, truncating the real body to just whatever followed it and misparsing
+// a large chunk of the actual body as "headers". The fix only ever treats a
+// blank line as a boundary when reached by walking forward from a position
+// that itself starts with "HTTP/".
+TEST(CurlResponseParserTest, BodyContainingItsOwnBlankLineIsNotTruncated) {
+  const std::string raw =
+      "HTTP/2 200\r\n"
+      "content-type: text/html; charset=ISO-8859-1\r\n"
+      "server: gws\r\n"
+      "\r\n"
+      "<!doctype html><html><head></head><body>\n"
+      "\n" // a blank line occurring naturally inside the HTML body
+      "<div>content after the embedded blank line</div>\n"
+      "</body></html>"
+      "\n" // the -w format's own leading "\n" -- body itself has none of its own
+      "__WISH_CURL_META__\t200\t0.53\t84819\n";
+
+  auto pr = parse_curl_output(raw);
+  EXPECT_EQ(pr.status_code, 200);
+  EXPECT_FLOAT_EQ(pr.size_bytes, 84819.0f);
+  EXPECT_EQ(
+      pr.body,
+      "<!doctype html><html><head></head><body>\n"
+      "\n"
+      "<div>content after the embedded blank line</div>\n"
+      "</body></html>");
+  ASSERT_EQ(pr.headers.size(), 2u);
+  EXPECT_EQ(pr.headers[0].key, "content-type");
+  EXPECT_EQ(pr.headers[1].key, "server");
+}
+
 TEST(CurlResponseParserTest, EmptyInputDoesNotCrash) {
   auto pr = parse_curl_output("");
   EXPECT_EQ(pr.status_code, 0);
