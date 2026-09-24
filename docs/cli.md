@@ -96,6 +96,7 @@ launch.
 | `--renderer NAME` | `web` | Rendering backend: `sdl3` or `web` |
 | `--web_port PORT` | `8080` | HTTP/WebSocket port (`--renderer web` only) |
 | `--web_bind ADDR` | `127.0.0.1` | Bind address (`--renderer web` only; localhost-only by default) |
+| `--sandbox_root PATH` | *(empty)* | Keep session sandboxes across connections: each client gets `PATH/<username>` (its `--username`, else `default`) instead of a temp directory deleted on disconnect. Trusts the client-supplied name (`local_auth_module`) — local/single-user use only; see [src/auth/DESIGN.md](../src/auth/DESIGN.md) |
 
 ```sh
 # TCP, windowed:
@@ -125,6 +126,7 @@ build has none registered).
 | `--run=<name>` | *(empty)* | Launch the named app (required unless `--list`/`--describe`) |
 | `--describe=<name>` | *(empty)* | Print the named app's description and parameters, and exit |
 | `--timeout MS` | `30000` | Connection timeout in milliseconds |
+| `--username NAME` | *(empty)* | Identity sent on connect; picks the persistent sandbox directory on a server started with `--sandbox_root` (empty: the server's `default`) |
 | `--theme NAME` | `wish` | UI theme preset. Built in: `dark`, `light`, `classic`, `wish` (a more modern theme built on `dark`, the default). Any name is accepted; one the renderer doesn't recognize falls back to `wish` with a logged warning. |
 
 ```sh
@@ -166,6 +168,7 @@ SDL3, it still supports `--renderer sdl3|web` at runtime exactly like
 | `--height N` | `720` | Initial window height in pixels (`--renderer sdl3` only) |
 | `--renderer NAME` | `web` | Rendering backend: `sdl3` or `web` |
 | `--web_port PORT` / `--web_bind ADDR` | `8080` / `127.0.0.1` | Same as `server` (`--renderer web` only) |
+| `--sandbox_root PATH` / `--username NAME` | *(empty)* / `default` | Persist the session sandbox in `PATH/<username>` across runs instead of a temp directory deleted on exit |
 
 `standalone` has no `--transport`/`--host`/`--port`/`--name`/`--theme`
 flags — passing a transport flag is rejected with an explicit error, since

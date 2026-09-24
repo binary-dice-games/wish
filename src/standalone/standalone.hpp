@@ -17,6 +17,7 @@
 #include <future>
 #include <memory>
 #include <optional>
+#include <filesystem>
 #include <string>
 #include <thread>
 #include <vector>
@@ -95,6 +96,19 @@ class standalone : public bison::rmi::standalone {
    */
   void set_allow_absolute_paths(bool allow) {
     allow_absolute_paths_ = allow;
+  }
+
+  /**
+   * @brief Keep the session sandbox across runs: the session's `resource_dir`
+   *        becomes `root / identity` instead of a throwaway temp directory.
+   *
+   * Mirrors `wish::server::set_persistent_sandbox_root()` plus the identity a
+   * client would supply. Ignored if @p identity is not a single safe path
+   * segment (see `is_safe_sandbox_identity()`). Must be called before `start()`.
+   */
+  void set_persistent_sandbox(std::filesystem::path root, std::string identity) {
+    persistent_sandbox_root_ = std::move(root);
+    persistent_identity_ = std::move(identity);
   }
 
   // ── wish-level convenience helpers (mirror wish::client) ─────────────────
@@ -259,6 +273,8 @@ class standalone : public bison::rmi::standalone {
   std::chrono::steady_clock::time_point last_tick_time_{};
   logger_ptr logger_;
   bool allow_absolute_paths_{false};
+  std::filesystem::path persistent_sandbox_root_;
+  std::string persistent_identity_;
 
   // Populated by on_session_created(context&); mirrors wish::client::on_connect().
   std::optional<bison::rmi::proxy::dynamic> template_proxy_;

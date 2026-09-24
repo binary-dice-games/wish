@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
+#include <fstream>
 #include <map>
 
 namespace bdg::wish::sq {
@@ -390,7 +391,7 @@ void sq_source::on_query(const std::string& sql, int32_t max_rows) {
   call(proxy_, "update_result"_key, std::move(args));
 }
 
-void sq_source::on_export(const std::string& path, bool overwrite) {
+void sq_source::on_export(const std::string& path, const upload_fn& upload) {
   if (last_sql_.empty()) {
     report("results", false, "Run a query first; Export CSV writes the last result.");
     return;
@@ -402,23 +403,23 @@ void sq_source::on_export(const std::string& path, bool overwrite) {
 
   namespace fs = std::filesystem;
   std::error_code ec;
-  const fs::path target{path};
-  if (fs::is_directory(target, ec)) {
-    report("results", false, path + " is a directory.");
+  const fs::path tmp = fs::temp_directory_path(ec) /
+      ("sq_export_" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".csv");
+  auto r = run_logged({"sql", "--src", last_handle_, "--csv", "--output", tmp.string(), "--", last_sql_});
+  if (!r.ok()) {
+    fs::remove(tmp, ec);
+    report("results", false, error_text(r));
     return;
   }
-  if (!overwrite && fs::exists(target, ec)) {
-    report("results", false, path + " already exists; tick Overwrite to replace it.");
-    return;
+  try {
+    std::ifstream in(tmp, std::ios::binary);
+    const std::string data{std::istreambuf_iterator<char>(in), {}};
+    upload(path, data);
+    report("results", true, "Exported the full result to " + path + " (in the session folder on the server)");
+  } catch (const std::exception& e) {
+    report("results", false, std::string{"Could not store the CSV on the server: "} + e.what());
   }
-  const fs::path parent = target.parent_path();
-  if (!parent.empty() && !fs::is_directory(parent, ec)) {
-    report("results", false, "Directory " + parent.string() + " does not exist.");
-    return;
-  }
-
-  auto r = run_logged({"sql", "--src", last_handle_, "--csv", "--output", path, "--", last_sql_});
-  report("results", r.ok(), r.ok() ? "Exported the full result to " + path : error_text(r));
+  fs::remove(tmp, ec);
 }
 
 } // namespace bdg::wish::sq

@@ -24,6 +24,9 @@ DEFINE_bool(list, false, "List available embedded applications and exit");
 DEFINE_string(run, "", "Name of the embedded application to run");
 DEFINE_string(describe, "", "Print name, description, and parameters for a specific embedded application and exit");
 DEFINE_int32(timeout, 30000, "Connection timeout in milliseconds");
+DEFINE_string(username, "",
+              "Identity sent to the server on connect; with a server started with --sandbox_root it "
+              "selects which persistent sandbox directory this client gets (empty: the server's default)");
 
 namespace bdg::wish {
 
@@ -159,6 +162,8 @@ void wish_client_app::on_connect_params(bison::dynamic& params) const {
   // paths that skip straight to run_with_transport().
   bison::app::client_app::on_connect_params(params);
   params["timeout_ms"_key] = int32_t{FLAGS_timeout};
+  if (!FLAGS_username.empty())
+    params["username"_key] = FLAGS_username;
 }
 
 int wish_client_app::on_session(bison::rmi::client& c) {

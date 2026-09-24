@@ -17,6 +17,7 @@
 #include "src/bison/bison.hpp"
 #include "src/rmi/client/proxy.hpp"
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -41,9 +42,13 @@ class sq_source {
   /// @brief Runs @p sql (after the read-only check) against the active
   /// database and pushes update_result with at most @p max_rows rows.
   void on_query(const std::string& sql, int32_t max_rows);
-  /// @brief Re-runs the last successful query in full and writes it as CSV
-  /// to @p path (refusing to replace an existing file unless @p overwrite).
-  void on_export(const std::string& path, bool overwrite);
+  /// @brief Stores @p name (a path relative to the session's server-side
+  /// sandbox) with content @p data; throws on failure.
+  using upload_fn = std::function<void(const std::string& name, const std::string& data)>;
+  /// @brief Re-runs the last successful query in full as CSV (into a local
+  /// temp file) and hands it to @p upload as @p path, so the file ends up on
+  /// the server. The form has already validated @p path and overwrite.
+  void on_export(const std::string& path, const upload_fn& upload);
 
  private:
   void push_drivers();

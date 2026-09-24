@@ -78,6 +78,8 @@ void standalone::on_session_created(bison::rmi::context& ctx) {
     auto sess = context_wlock{*context_};
     sess->emit_event = ctx.emit_event;
     sess->allow_absolute_paths = allow_absolute_paths_;
+    if (!persistent_sandbox_root_.empty() && is_safe_sandbox_identity(persistent_identity_))
+      sess->adopt_persistent_resource_dir(persistent_sandbox_root_ / persistent_identity_);
     sess->file_service = file_service::instantiate(sess->resource_dir);
     sess->style_service = style_service::instantiate();
     sess->logger_service = logger_;

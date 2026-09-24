@@ -39,6 +39,8 @@ DECLARE_string(web_bind);
 DECLARE_string(profiling_dir);
 DECLARE_bool(profiling_autostart);
 DECLARE_bool(allow_absolute_paths);
+DECLARE_string(sandbox_root);
+DECLARE_string(username);
 #else
 DEFINE_int32(font_size, 16, "Font size in pixels");
 DEFINE_string(renderer, "web", "Rendering backend: sdl3 or web");
@@ -50,6 +52,11 @@ DEFINE_bool(allow_absolute_paths, false,
             "Allow widgets (e.g. dbg's Source view, editor, nano) to reference files by "
             "absolute path outside the session sandbox. Safe in standalone mode -- server "
             "and client are the same process -- see wish::standalone::set_allow_absolute_paths().");
+DEFINE_string(sandbox_root, "",
+              "Directory under which the session sandbox persists across runs: the session uses "
+              "<sandbox_root>/<username> (--username, or 'default') instead of a temp directory "
+              "deleted on exit.");
+DEFINE_string(username, "", "Selects the persistent sandbox directory under --sandbox_root (empty: 'default')");
 #endif
 
 DECLARE_bool(list);
@@ -230,6 +237,8 @@ std::unique_ptr<bison::rmi::standalone> wish_standalone_app::make_standalone() {
   auto session = std::make_unique<wish_standalone_session>(make_renderer(), app_args_);
   session->set_logger(make_standalone_logger()); // must be called before start()
   session->set_allow_absolute_paths(FLAGS_allow_absolute_paths); // must be called before start()
+  if (!FLAGS_sandbox_root.empty()) // must be called before start()
+    session->set_persistent_sandbox(FLAGS_sandbox_root, FLAGS_username.empty() ? "default" : FLAGS_username);
   return session;
 #endif
 }

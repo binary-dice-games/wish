@@ -9,17 +9,20 @@
 /// *_requested events the client reacts to -- the same split as the
 /// docker/kubectl/curl modules.
 ///
-/// Owns six independently dockable Windows: SQL Editor (the main root:
+/// Owns seven independently dockable Windows: SQL Editor (the main root:
 /// active-database picker, a SQL-highlighting TextEditor, Run), Results (Export CSV
-/// plus a dynamic-column grid), Connections (sq sources + an inline "add" form),
-/// Navigator (a tree of the active database's tables/views/columns),
-/// Structure (the selected table's columns, keys and references) and
-/// Console (a trace of every `sq` command run).
+/// plus a dynamic-column grid), Chart (plots the last result: chart type,
+/// X column and Y columns chosen by the user), Connections (sq sources + an
+/// inline "add" form), Navigator (a tree of the active database's
+/// tables/views/columns), Structure (the selected table's columns, keys and
+/// references) and Console (a trace of every `sq` command run).
 ///
 /// The module is query-only: no event or RMI method here can request a
 /// data change (the client additionally rejects non-SELECT SQL, see
 /// client/sq_query_guard.hpp).
 #pragma once
+
+#include "sq_chart_render.hpp"
 
 #include <ui/forms/form.hpp>
 #include <ui/ui_element.hpp>
@@ -53,7 +56,13 @@ class message_box;
 ///   - `"query_requested"` -- `{ sql, max_rows }` run @p sql, display at
 ///     most @p max_rows rows.
 ///   - `"export_requested"` -- `{ path, overwrite }` re-run the last
-///     executed query in full and write it to @p path as CSV.
+///     executed query in full and upload it as CSV to @p path in the
+///     session's server-side sandbox folder (already validated: relative,
+///     inside the sandbox, not a directory, not an existing file unless
+///     @p overwrite).
+///
+/// The Chart window's "Save PNG" is handled entirely by the form: it writes
+/// the image to the same server-side sandbox folder (no event).
 class sq_frontend : public form {
  public:
   explicit sq_frontend(bison::dynamic&& base);
@@ -84,7 +93,7 @@ class sq_frontend : public form {
   bison::dynamic do_update_result(const bison::dynamic& args);
 
   /// @brief RMI method: show a message in a window's status label.
-  /// @p args holds `scope` ("editor"/"results"/"connections"), `ok` and `message`.
+  /// @p args holds `scope` ("editor"/"results"/"chart"/"connections"), `ok` and `message`.
   bison::dynamic do_command_result(const bison::dynamic& args);
 
   /// @brief RMI method: append one row to the Console trace. @p args holds
@@ -151,6 +160,25 @@ class sq_frontend : public form {
   void show_structure(size_t table_index);
   void append_console_row(const std::string& command, int32_t exit_code, bool ok, const std::string& output);
   void emit_query(const std::string& sql);
+
+  // ── Chart ────────────────────────────────────────────────────────────
+  /// @brief Rebuild the Chart window's X combo and Y-column checkboxes for
+  /// the just-received result, keeping the previous choices by column name.
+  void reset_chart_controls();
+  /// @brief Rebuild the Plot's series from the result and the current
+  /// chart controls (type, X, Y checkboxes, bins).
+  void rebuild_chart();
+  /// @brief Render chart_spec_ to a PNG and write it to the path typed in
+  /// the Chart window, resolved inside the session sandbox.
+  void save_chart_png();
+  /// @brief Open the session sandbox folder (where exports land) in the file
+  /// manager of the machine running the wish server; reports to @p status.
+  void open_sandbox_folder(const ui_element_ptr& status);
+  /// @brief Validate a user-typed output @p path for a server-side file
+  /// write: it must resolve inside the sandbox, not be a directory, and not
+  /// exist unless @p overwrite. On failure sets @p status and returns "".
+  std::filesystem::path resolve_output_path(
+      const std::string& path, bool overwrite, bool allow_absolute, const ui_element_ptr& status);
   /// @brief The editor's current text (read from its sandbox file).
   std::string read_sql();
   /// @brief Replace the editor's text (writes a new sandbox file and
@@ -164,11 +192,13 @@ class sq_frontend : public form {
   bison::key_t structure_window_id_;
   bison::key_t results_window_id_;
   bison::key_t console_window_id_;
+  bison::key_t chart_window_id_;
   std::string connections_root_key_;
   std::string navigator_root_key_;
   std::string structure_root_key_;
   std::string results_root_key_;
   std::string console_root_key_;
+  std::string chart_root_key_;
 
   // Editor.
   ui_element_ptr sql_input_; ///< the TextEditor
@@ -211,6 +241,25 @@ class sq_frontend : public form {
   std::vector<bison::key_t> result_ids_;
   size_t result_seq_{0};
 
+  // Chart. The displayed result is kept as text; numbers are parsed on demand.
+  std::vector<std::string> result_columns_;
+  std::vector<std::vector<std::string>> result_cells_;
+  ui_element_ptr chart_type_combo_;
+  ui_element_ptr chart_x_combo_;
+  ui_element_ptr chart_bins_combo_;
+  ui_element_ptr chart_ycols_;   ///< TreeNode holding one Checkbox per column
+  ui_element_ptr chart_status_;
+  ui_element_ptr chart_plot_;
+  ui_element_ptr chart_path_input_;
+  ui_element_ptr chart_overwrite_checkbox_;
+  sq_chart::chart_spec chart_spec_; ///< what the plot currently shows (for PNG export)
+  std::vector<ui_element_ptr> chart_y_boxes_; ///< Y checkboxes (parallel to result_columns_)
+  std::vector<bison::key_t> chart_y_ids_;
+  size_t chart_seq_{0};
+  std::vector<bison::key_t> chart_series_ids_;
+  std::vector<std::string> chart_y_selected_; ///< remembered Y choices, by column name
+  std::string chart_x_selected_;              ///< remembered X choice ("" = row #)
+
   // Console.
   ui_element_ptr console_table_;
   static constexpr size_t kMaxConsoleRows = 500;
@@ -225,6 +274,7 @@ class sq_frontend : public form {
   std::shared_ptr<message_box> dialog_;
 
   std::unordered_map<bison::key_t, std::function<void()>, bison::key_t, bison::key_t> click_handlers_;
+  std::unordered_map<bison::key_t, std::function<void()>, bison::key_t, bison::key_t> change_handlers_;
 };
 
 /// @brief Register SqFrontend in the "wish" bison namespace.

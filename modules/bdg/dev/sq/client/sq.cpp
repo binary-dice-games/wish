@@ -65,8 +65,12 @@ void run_sq(wish_app_host& s) {
   proxy->onEvent("query_requested"_key, [source](dynamic p) {
     source->on_query(p.as<std::string>("sql"_key), p.as<int32_t>("max_rows"_key));
   });
-  proxy->onEvent("export_requested"_key, [source](dynamic p) {
-    source->on_export(p.as<std::string>("path"_key), p.as<bool>("overwrite"_key));
+  proxy->onEvent("export_requested"_key, [&s, source](dynamic p) {
+    // Runs on the RMI event thread; the chunked upload (progress callback
+    // set) never blocks it for a whole-file round trip.
+    source->on_export(p.as<std::string>("path"_key), [&s](const std::string& name, const std::string& data) {
+      s.upload_file(name, data, [](std::uint64_t, std::uint64_t) {}).get();
+    });
   });
 
   // Initial population, called directly now that every handler is wired

@@ -115,6 +115,16 @@ void context::populate_resource_dir() {
     embedded_crc32s["res/" + rel] = crc;
 }
 
+void context::adopt_persistent_resource_dir(const std::filesystem::path& dir) {
+  if (!resource_dir.empty() && !resource_dir_persistent) {
+    std::error_code ec;
+    std::filesystem::remove_all(resource_dir, ec);
+  }
+  resource_dir = dir;
+  resource_dir_persistent = true;
+  populate_resource_dir();
+}
+
 // ── Debug dump ────────────────────────────────────────────────────────────────
 
 void dump_session_tree(const context& s, std::ostream& out) {

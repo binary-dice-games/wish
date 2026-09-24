@@ -8,9 +8,9 @@ results grid, and export a result to CSV. This is a pure frontend — every
 action runs the real `sq` binary already on the machine, against the
 sources in your own `sq` configuration; it never links a database driver.
 
-`wish client --run=sq` (no positional args). Opens as six independently
-dockable windows: SQL Editor, Results, Connections, Navigator, Structure,
-Console.
+`wish client --run=sq` (no positional args). Opens as seven independently
+dockable windows: SQL Editor, Results, Chart, Connections, Navigator,
+Structure, Console.
 
 If `sq` is not on `PATH` the windows still open, with a message and a
 dialog pointing at <https://github.com/neilotoole/sq> (see its Install
@@ -54,6 +54,18 @@ CSV-hostile text), tables whose names need quoting (`order details`,
 - **Results** — Export CSV (target path + Overwrite) above the last result
   as a grid (`#` + one column per result column; SQL NULL shown as
   `NULL`), with a "N rows in T ms" status.
+- **Chart** — plots the displayed rows of the last result with `Plot`
+  widgets. Pick the chart type (line, scatter, stairs, stems, area, bars,
+  horizontal bars, histogram, pie), the X column (or the row number) and
+  any number of Y columns (checkboxes; multiple bar series are grouped
+  side by side). Non-numeric and NULL cells are skipped; a non-numeric X
+  falls back to row numbers. Histograms take a bins choice; pies use the
+  first Y column for slice sizes and the X column for labels (first 50
+  rows). Choices are remembered across queries by column name.
+  **Save PNG** (target path + Overwrite) writes the chart as a 1000x600
+  image on the server, in the session folder (see below). The image is drawn by a
+  small built-in rasterizer (`server/sq_chart_render.*`, anti-aliased, text in the UI's own default font), so it resembles
+  the on-screen plot but is not pixel-identical.
 - **Connections** — your sq sources (handle / driver / masked location),
   a per-row menu (Connect, Ping, Remove) and an inline form to add one
   (driver, handle, location, password).
@@ -78,9 +90,15 @@ CSV-hostile text), tables whose names need quoting (`order details`,
   `--src <handle>`; the tool never runs `sq src`, so your shell's active
   `sq` source does not change. On start it picks up `sq`'s active source.
 - **Only the first N rows are displayed** (the row-limit picker), but
-  **Export CSV** re-runs the last query in full and streams it to the
-  file via `sq --csv --output`. It refuses to replace an existing file
-  unless *Overwrite* is ticked, and the target directory must exist.
+  **Export CSV** re-runs the last query in full (`sq --csv --output` into
+  a client-side temp file) and uploads it to the server.
+- **Export CSV and Save PNG write on the server** (the **Open folder** button next to each opens that folder in the server machine's file manager), into the session's
+  sandbox folder: the path must be relative (no absolute paths, no `..`),
+  subfolders are created, and an existing file is only replaced when
+  *Overwrite* is ticked. The folder is deleted when the client disconnects
+  unless the server was started with `wish server --sandbox_root PATH`
+  (files then persist under `PATH/<--username of the client>`), so copy the file out (e.g. with a file-service
+  download) before closing.
 - **Passwords never appear on a command line**: the Add form passes the
   password to `sq add -p` on stdin, and locations are masked in the
   Connections table and the Console.
@@ -92,6 +110,6 @@ CSV-hostile text), tables whose names need quoting (`order details`,
 - SQL only — sq's own SLQ query language is not exposed.
 - An empty result shows no columns (`sq --jsonl` prints nothing for it).
 - The whole result is read into memory before the first N rows are
-  displayed; very large queries should use a `LIMIT` (Export CSV streams).
+  displayed; very large queries should use a `LIMIT` (Export CSV reads the result into memory too, on upload).
 - One query at a time, no query history/tabs, no cancel.
 - `sq` must be on `PATH`; sources are added/removed through `sq` itself.

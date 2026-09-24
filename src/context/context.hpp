@@ -24,6 +24,13 @@
 
 namespace bdg::wish {
 
+/// @brief True if @p identity is usable as a single directory name under a
+/// persistent sandbox root: non-empty, with no '/', '\\' or "..".
+inline bool is_safe_sandbox_identity(const std::string& identity) {
+  return !identity.empty() && identity.find('/') == std::string::npos && identity.find('\\') == std::string::npos &&
+      identity.find("..") == std::string::npos;
+}
+
 class ui_root; // defined in <wish/ui_root.hpp>
 
 class file_service;
@@ -254,6 +261,15 @@ struct context : public bison::rmi::context {
   /// original inline version): a client that can't see built-in icons/fonts
   /// is degraded, not fatal.
   void populate_resource_dir();
+
+  /// @brief Switch this session to the persistent directory @p dir: deletes
+  ///        the throwaway temp `resource_dir` created by the constructor,
+  ///        adopts @p dir (created if missing), marks it persistent so the
+  ///        destructor keeps it, and re-populates `res/`. Does not touch
+  ///        `file_service` -- callers re-instantiate it against the new
+  ///        `resource_dir`. Used by `server::on_authenticated()` and
+  ///        `standalone::on_session_created()`.
+  void adopt_persistent_resource_dir(const std::filesystem::path& dir);
 
   context(const context&) = delete;
   context& operator=(const context&) = delete;

@@ -11,8 +11,10 @@ bool local_auth_module::authenticate(bison::rmi::context& ctx, const bison::dyna
     std::string& out_identity) {
   (void)ctx;
   const auto* f = payload.findField("username"_key);
-  if (f && f->is<std::string>())
+  if (f && f->is<std::string>() && !f->as<std::string>().empty())
     out_identity = f->as<std::string>();
+  else
+    out_identity = default_identity_;
   return true;
 }
 

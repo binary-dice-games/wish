@@ -10,6 +10,7 @@
 #include "src/rmi/rmi.hpp"
 
 #include "modules/bdg/dev/sq/server/sq.hpp"
+#include "modules/bdg/dev/sq/server/sq_chart_render.hpp"
 
 #include <chrono>
 #include <filesystem>
@@ -289,12 +290,14 @@ class SqRmiTest : public ::testing::Test {
 
 // ── Construction ───────────────────────────────────────────────────────────
 
-TEST_F(SqRmiTest, InstantiationBuildsAllSixWindows) {
-  for (const char* suffix : {"", "_connections", "_navigator", "_structure", "_results", "_console"})
+TEST_F(SqRmiTest, InstantiationBuildsAllSevenWindows) {
+  for (const char* suffix : {"", "_connections", "_navigator", "_structure", "_results", "_console", "_chart"})
     EXPECT_TRUE(obj(root_ + suffix)) << suffix;
   EXPECT_TRUE(obj(root_ + ".vbox.sql"));
   EXPECT_TRUE(obj(root_ + ".vbox.toolbar.btn_run"));
   EXPECT_TRUE(obj(root_ + "_results.vbox.export.btn_export"));
+  EXPECT_TRUE(obj(root_ + "_results.vbox.export.btn_open"));
+  EXPECT_TRUE(obj(root_ + "_chart.vbox.save.btn_open"));
 }
 
 TEST_F(SqRmiTest, QuoteIdentifierFollowsTheDriver) {
@@ -303,6 +306,173 @@ TEST_F(SqRmiTest, QuoteIdentifierFollowsTheDriver) {
   EXPECT_EQ(sq_frontend::quote_identifier("postgres", "a\"b"), "\"a\"\"b\"");
   EXPECT_EQ(sq_frontend::quote_identifier("mysql", "t`x"), "`t``x`");
   EXPECT_EQ(sq_frontend::quote_identifier("sqlserver", "a]b"), "[a]]b]");
+}
+
+// ── Chart ──────────────────────────────────────────────────────────────────
+
+namespace {
+const char* const kChartRoot = "_chart";
+}
+
+class SqChartTest : public SqRmiTest {
+ protected:
+  // Rows {a, b}: a numeric, b numeric with one NULL.
+  void load() {
+    call("update_result"_key, make_result({{"1", "10"}, {"2", "\x01"}, {"4", "30"}}, 3, false));
+  }
+  dynamic_ptr chart(const char* path) const { return obj(root_ + kChartRoot + path); }
+  std::vector<dynamic_ptr> series() const { return children_of(chart(".vbox.plot")); }
+  void select(const char* combo, int32_t value) {
+    auto c = chart(combo);
+    ASSERT_TRUE(c);
+    (*c)["value"_key] = value;
+    dynamic p;
+    p["value"_key] = value;
+    fire_at(root_ + kChartRoot, element_id(c), "changed"_key, std::move(p));
+  }
+  static std::vector<float> floats(const dynamic_ptr& e, const char* f) {
+    const auto* v = e->findField<std::vector<float>>(bison::key_t{f});
+    return v ? *v : std::vector<float>{};
+  }
+};
+
+TEST_F(SqChartTest, ResultDefaultsToALineOfTheFirstNumericColumn) {
+  load();
+  auto s = series();
+  ASSERT_EQ(s.size(), 1u);
+  EXPECT_EQ(s[0]->as<bison::key_t>(dynamic::CLASS), "PlotLine"_key);
+  EXPECT_EQ(s[0]->as<std::string>("label"_key), "a");
+  EXPECT_EQ(floats(s[0], "xs"), (std::vector<float>{1, 2, 3}));
+  EXPECT_EQ(floats(s[0], "ys"), (std::vector<float>{1, 2, 4}));
+  EXPECT_EQ(chart(".vbox.toolbar.x")->as<std::string>("items"_key), "(row #)\na\nb");
+}
+
+TEST_F(SqChartTest, XColumnAndNullsAreHonoured) {
+  load();
+  select(".vbox.toolbar.x", 1); // X = a
+  // Tick Y column b (the second checkbox), untick a.
+  auto boxes = children_of(chart(".vbox.ycols"));
+  ASSERT_EQ(boxes.size(), 2u);
+  for (size_t i = 0; i < 2; ++i) {
+    (*boxes[i])["value"_key] = i == 1;
+    dynamic p;
+    p["value"_key] = i == 1;
+    fire_at(root_ + kChartRoot, element_id(boxes[i]), "changed"_key, std::move(p));
+  }
+  auto s = series();
+  ASSERT_EQ(s.size(), 1u);
+  EXPECT_EQ(floats(s[0], "xs"), (std::vector<float>{1, 4}));
+  EXPECT_EQ(floats(s[0], "ys"), (std::vector<float>{10, 30})); // the NULL row is skipped
+}
+
+TEST_F(SqChartTest, ChartTypesMapToPlotClasses) {
+  load();
+  const std::pair<int32_t, const char*> expected[] = {
+      {1, "PlotScatter"}, {2, "PlotStairs"}, {3, "PlotStems"}, {4, "PlotShaded"},
+      {5, "PlotBars"},    {6, "PlotBarsH"},  {7, "PlotHistogram"}, {8, "PlotPieChart"}};
+  for (auto& [idx, cls] : expected) {
+    select(".vbox.toolbar.type", idx);
+    auto s = series();
+    ASSERT_EQ(s.size(), 1u) << cls;
+    EXPECT_EQ(s[0]->as<bison::key_t>(dynamic::CLASS), bison::key_t{cls}) << cls;
+  }
+  // Pie hides the axes; other types restore them.
+  EXPECT_EQ(chart(".vbox.plot")->as<int32_t>("x_flags"_key), 31);
+  select(".vbox.toolbar.type", 0);
+  EXPECT_EQ(chart(".vbox.plot")->as<int32_t>("x_flags"_key), 0);
+}
+
+TEST_F(SqChartTest, HistogramUsesTheBinsChoice) {
+  load();
+  select(".vbox.toolbar.type", 7);
+  select(".vbox.toolbar.bins", 5); // 20 bins
+  auto s = series();
+  ASSERT_EQ(s.size(), 1u);
+  EXPECT_EQ(s[0]->as<int32_t>("bins"_key), 20);
+  EXPECT_EQ(floats(s[0], "values"), (std::vector<float>{1, 2, 4}));
+}
+
+TEST_F(SqChartTest, NoYColumnShowsAHintAndNoSeries) {
+  load();
+  auto boxes = children_of(chart(".vbox.ycols"));
+  ASSERT_FALSE(boxes.empty());
+  (*boxes[0])["value"_key] = false;
+  fire_at(root_ + kChartRoot, element_id(boxes[0]), "changed"_key);
+  EXPECT_TRUE(series().empty());
+  EXPECT_NE(text_of(chart(".vbox.status")).find("Y column"), std::string::npos);
+}
+
+TEST_F(SqChartTest, SavePngWritesTheFileInTheServerSandbox) {
+  load();
+  (*chart(".vbox.save.path"))["value"_key] = std::string{"out/chart.png"};
+  fire_at(root_ + kChartRoot, element_id(chart(".vbox.save.btn_save")), "clicked"_key);
+  std::ifstream f(srv_->last_session->resource_dir / "out" / "chart.png", std::ios::binary);
+  ASSERT_TRUE(f);
+  std::string head(8, '\0');
+  f.read(head.data(), 8);
+  EXPECT_EQ(head, std::string("\x89PNG\r\n\x1a\n", 8));
+
+  // A second save needs Overwrite.
+  fire_at(root_ + kChartRoot, element_id(chart(".vbox.save.btn_save")), "clicked"_key);
+  EXPECT_NE(text_of(chart(".vbox.status")).find("already exists"), std::string::npos);
+  (*chart(".vbox.save.overwrite"))["value"_key] = true;
+  fire_at(root_ + kChartRoot, element_id(chart(".vbox.save.btn_save")), "clicked"_key);
+  EXPECT_NE(text_of(chart(".vbox.status")).find("Saved"), std::string::npos);
+}
+
+TEST_F(SqChartTest, SavePngRejectsEmptyEscapingAndDatalessRequests) {
+  load();
+  auto save = [&](const std::string& path) {
+    (*chart(".vbox.save.path"))["value"_key] = path;
+    fire_at(root_ + kChartRoot, element_id(chart(".vbox.save.btn_save")), "clicked"_key);
+    return text_of(chart(".vbox.status"));
+  };
+  EXPECT_NE(save("").find("Enter the file"), std::string::npos);
+  EXPECT_NE(save("../escape.png").find("not allowed"), std::string::npos);
+  EXPECT_NE(save("/tmp/abs.png").find("not allowed"), std::string::npos);
+  EXPECT_FALSE(std::filesystem::exists(srv_->last_session->resource_dir.parent_path() / "escape.png"));
+}
+
+TEST(SqChartRender, EveryKindProducesAPng) {
+  namespace sc = bdg::wish::sq_chart;
+  for (int k = 0; k <= 8; ++k) {
+    sc::chart_spec spec;
+    spec.type = static_cast<sc::kind>(k);
+    spec.x_label = "x";
+    spec.y_label = "y";
+    spec.pie_labels = {"a", "b", "c"};
+    spec.data.push_back({"s1", {1, 2, 3}, {3, 1, 2}});
+    spec.data.push_back({"s2", {1, 2, 3}, {2, 2, 5}});
+    const std::string png = sc::render_png(spec, 320, 200);
+    ASSERT_GT(png.size(), 8u) << k;
+    EXPECT_EQ(png.substr(1, 3), "PNG") << k;
+  }
+}
+
+TEST(SqChartRender, InvalidFontFallsBackToTheBuiltInOne) {
+  namespace sc = bdg::wish::sq_chart;
+  sc::chart_spec spec;
+  spec.font_ttf = "definitely not a truetype file";
+  spec.x_label = "x";
+  spec.data.push_back({"s", {1, 2}, {1, 2}});
+  EXPECT_GT(sc::render_png(spec, 200, 120).size(), 8u);
+}
+
+TEST(SqChartRender, EmptyDataOrSizeGivesNoImage) {
+  namespace sc = bdg::wish::sq_chart;
+  sc::chart_spec spec;
+  EXPECT_TRUE(sc::render_png(spec, 100, 100).empty());
+  spec.data.push_back({"s", {1}, {1}});
+  EXPECT_TRUE(sc::render_png(spec, 0, 100).empty());
+}
+
+TEST(SqChartRender, HistogramBinRules) {
+  namespace sc = bdg::wish::sq_chart;
+  EXPECT_EQ(sc::histogram_bin_count(20, 5, 1, 1), 20);
+  EXPECT_EQ(sc::histogram_bin_count(-1, 8, 1, 1), 4);   // Sturges: log2(8)+1
+  EXPECT_EQ(sc::histogram_bin_count(-3, 8, 1, 1), 4);   // Rice: 2*cbrt(8)
+  EXPECT_EQ(sc::histogram_bin_count(-4, 16, 1, 1), 4);  // sqrt
+  EXPECT_GE(sc::histogram_bin_count(-2, 100, 0, 0), 1); // degenerate spread
 }
 
 // ── Connections ────────────────────────────────────────────────────────────
@@ -526,7 +696,7 @@ TEST_F(SqRmiTest, FailedResultShowsTheErrorAndClearsTheGrid) {
 }
 
 TEST_F(SqRmiTest, ExportEmitsPathAndOverwriteFlag) {
-  (*obj(root_ + "_results.vbox.export.path"))["value"_key] = std::string{"/tmp/out.csv"};
+  (*obj(root_ + "_results.vbox.export.path"))["value"_key] = std::string{"out.csv"};
   (*obj(root_ + "_results.vbox.export.overwrite"))["value"_key] = true;
   std::vector<emitted> got;
   capture(got);
@@ -534,8 +704,26 @@ TEST_F(SqRmiTest, ExportEmitsPathAndOverwriteFlag) {
   wait_events(got, 1);
   ASSERT_EQ(got.size(), 1u);
   EXPECT_EQ(got[0].name, "export_requested"_key);
-  EXPECT_EQ(got[0].payload.as<std::string>("path"_key), "/tmp/out.csv");
+  EXPECT_EQ(got[0].payload.as<std::string>("path"_key), "out.csv");
   EXPECT_TRUE(got[0].payload.as<bool>("overwrite"_key));
+}
+
+TEST_F(SqRmiTest, ExportRejectsPathsOutsideTheSandboxOrExistingFiles) {
+  std::vector<emitted> got;
+  capture(got);
+  auto click = [&](const std::string& path, bool overwrite) {
+    (*obj(root_ + "_results.vbox.export.path"))["value"_key] = path;
+    (*obj(root_ + "_results.vbox.export.overwrite"))["value"_key] = overwrite;
+    fire_at(root_, element_id(obj(root_ + "_results.vbox.export.btn_export")), "clicked"_key);
+    return text_of(obj(root_ + "_results.vbox.status"));
+  };
+  EXPECT_NE(click("/tmp/out.csv", true).find("not allowed"), std::string::npos);
+  EXPECT_NE(click("../out.csv", true).find("not allowed"), std::string::npos);
+  EXPECT_NE(click("", true).find("Enter the file"), std::string::npos);
+  std::ofstream(srv_->last_session->resource_dir / "taken.csv") << "x";
+  EXPECT_NE(click("taken.csv", false).find("already exists"), std::string::npos);
+  std::this_thread::sleep_for(std::chrono::milliseconds(100)); // events are async
+  EXPECT_TRUE(got.empty());
 }
 
 // ── Console / status / unavailable ─────────────────────────────────────────
@@ -594,7 +782,7 @@ TEST_F(SqRmiTest, ClosingAnyWindowEmitsClosedAndTearsDownEveryRoot) {
   for (int i = 0; i < 400 && !closed; ++i)
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
   EXPECT_TRUE(closed);
-  for (const char* suffix : {"_connections", "_navigator", "_structure", "_results", "_console"})
+  for (const char* suffix : {"_connections", "_navigator", "_structure", "_results", "_console", "_chart"})
     EXPECT_FALSE(obj(root_ + suffix)) << suffix;
 }
 

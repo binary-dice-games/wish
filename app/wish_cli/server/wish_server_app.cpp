@@ -8,6 +8,7 @@
 #include "app/wish_cli/env_flags.hpp"
 #include "app/wish_cli/host_renderer.hpp"
 
+#include <auth/local_auth_module.hpp>
 #include <context/logger.hpp>
 #include <server/registry.hpp>
 #include <sdl/sdl3_renderer.hpp>
@@ -50,6 +51,12 @@ DEFINE_bool(allow_absolute_paths, false,
             "Allow widgets (e.g. dbg's Source view, editor, nano) to reference files by "
             "absolute path outside the session sandbox. Only enable for trusted, "
             "single-operator deployments -- see wish::server::set_allow_absolute_paths().");
+
+DEFINE_string(sandbox_root, "",
+              "Directory under which session sandboxes persist across connections: each client gets "
+              "<sandbox_root>/<username> (its --username, or 'default') instead of a temp directory "
+              "deleted on disconnect. Trusts the client-supplied username -- local/single-user "
+              "deployments only; see wish::server::set_persistent_sandbox_root().");
 
 namespace bdg::wish {
 
@@ -165,7 +172,13 @@ int wish_server_app::run_with_transport(bison::rmi::transport::server_transport_
   on_listen_params(listen_params);
   if (!FLAGS_profiling_dir.empty())
     srv.enable_profiling(FLAGS_profiling_dir);
-  srv.start(nullptr, std::move(listen_params));
+  bison::rmi::auth_module_ptr auth;
+  if (!FLAGS_sandbox_root.empty()) {
+    srv.set_persistent_sandbox_root(FLAGS_sandbox_root);
+    auth = std::make_shared<local_auth_module>("default");
+    server_log_->info("persistent sandboxes under " + FLAGS_sandbox_root);
+  }
+  srv.start(auth, std::move(listen_params));
   if (FLAGS_profiling_autostart) {
     if (FLAGS_profiling_dir.empty())
       server_log_->info("--profiling_autostart requires --profiling_dir; ignoring");

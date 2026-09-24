@@ -78,6 +78,29 @@ class AuthTest : public ::testing::Test {
   std::filesystem::path root_;
 };
 
+TEST_F(AuthTest, DefaultIdentityGivesNamelessClientsAPersistentSandbox) {
+  memory_server_transport transport;
+  wish::server srv{transport, std::make_unique<wish::null_renderer>()};
+  srv.set_persistent_sandbox_root(root_);
+  srv.start(std::make_shared<wish::local_auth_module>("default"));
+
+  {
+    auth_test_client c{transport.connect()};
+    c.upload_name = "keep.txt";
+    c.upload_data = "kept";
+    c.run(dynamic{}); // no username
+  }
+  EXPECT_TRUE(std::filesystem::exists(root_ / "default" / "keep.txt"));
+  {
+    auth_test_client c{transport.connect()};
+    c.download_name = "keep.txt";
+    c.run(dynamic{});
+    EXPECT_TRUE(c.download_ok) << c.download_error;
+    EXPECT_EQ(c.downloaded, "kept");
+  }
+  srv.stop();
+}
+
 TEST_F(AuthTest, UploadPersistsAcrossReconnectWithSameIdentity) {
   memory_server_transport transport;
   wish::server srv{transport, std::make_unique<wish::null_renderer>()};

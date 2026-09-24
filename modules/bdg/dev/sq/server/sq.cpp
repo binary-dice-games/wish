@@ -10,14 +10,19 @@
 
 #include "src/bison/bison_object.hpp"
 #include "src/rmi/shared/ids.hpp"
+#include "sq_chart_render.hpp"
 
 #include <context/file_service.hpp>
+#include <ui/forms/file_browser_utils.hpp>
 #include <ui/dock_layout_spec.hpp>
 #include <ui/forms/message_box.hpp>
 
 #include <algorithm>
+#include <cmath>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <sstream>
 
 namespace bdg::wish {
@@ -25,11 +30,6 @@ namespace bdg::wish {
 using namespace bison;
 
 namespace {
-
-template <typename Element>
-key_t wish_id_of(const Element& element) {
-  return element->template as<key_t>("__wish_id"_key);
-}
 
 template <typename T>
 dynamic payload1(key_t k, T v) {
@@ -69,6 +69,10 @@ constexpr const char* kKeyLight = "#9A6700FF";
 constexpr const char* kKeyDark = "#D29922FF";
 
 constexpr size_t kMaxCellChars = 300;
+constexpr size_t kMaxPieSlices = 50;
+constexpr int32_t kNoDecorations = 31; // ImPlotAxisFlags_NoDecorations (pie charts)
+// Histogram bins per "bins" combo entry: negative = ImPlot's automatic rules.
+constexpr int32_t kBinChoices[] = {-1, -2, -3, -4, 10, 20, 50, 100};
 constexpr int32_t kRowLimits[] = {100, 500, 1000, 5000};
 
 // ── Window layouts ─────────────────────────────────────────────────────────
@@ -98,8 +102,9 @@ static constexpr const char* kResultsLayout = R"json({
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "export": { "type": "HorizontalLayout", "spacing": 6, "children": {
       "btn_export": { "type": "Button", "label": "Export CSV", "width": 100 },
-      "path":      { "type": "InputText", "hint": "CSV file to write, e.g. /tmp/result.csv", "width": 380 },
-      "overwrite": { "type": "Checkbox", "label": "Overwrite", "value": false }
+      "path":      { "type": "InputText", "hint": "CSV file in the session folder, e.g. result.csv", "width": 380 },
+      "overwrite": { "type": "Checkbox", "label": "Overwrite", "value": false },
+      "btn_open":  { "type": "Button", "label": "Open folder", "width": 100 }
     } },
     "status": { "type": "Label", "text": "Run a query to see its results." },
     "sep": { "type": "Separator" },
@@ -191,9 +196,42 @@ static constexpr const char* kConsoleLayout = R"json({
   } } }
 })json";
 
+static constexpr const char* kChartLayout = R"json({
+  "type": "Window", "title": "Chart", "width": 900, "height": 420,
+  "closable": true,
+  "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
+    "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
+      "type": { "type": "Combo", "items": "Line\nScatter\nStairs\nStems\nArea\nBars\nHorizontal bars\nHistogram\nPie", "value": 0, "width": 140 },
+      "x":    { "type": "Combo", "items": "(row #)", "value": 0, "width": 200 },
+      "bins": { "type": "Combo", "items": "Auto (Sturges)\nScott\nRice\nSquare root\n10 bins\n20 bins\n50 bins\n100 bins", "value": 0, "width": 140 }
+    } },
+    "ycols": { "type": "TreeNode", "label": "Y columns", "open": true, "children": {} },
+    "save": { "type": "HorizontalLayout", "spacing": 6, "children": {
+      "btn_save":  { "type": "Button", "label": "Save PNG", "width": 90 },
+      "path":      { "type": "InputText", "hint": "PNG file in the session folder, e.g. chart.png", "width": 380 },
+      "overwrite": { "type": "Checkbox", "label": "Overwrite", "value": false },
+      "btn_open":  { "type": "Button", "label": "Open folder", "width": 100 }
+    } },
+    "status": { "type": "Label", "text": "Run a query to chart its results." },
+    "plot": { "type": "Plot", "title": "##sq_chart_0", "height": -1, "children": {} }
+  } } }
+})json";
+
 // Live text of an InputText widget ("" when the widget is not built yet).
 std::string text_of(const ui_element_ptr& input) {
   return input ? input->as<std::string>("value"_key) : std::string{};
+}
+
+// A finite number parsed from the whole of @p s, else nullopt (NULL cells and
+// text are not numbers).
+std::optional<float> parse_number(const std::string& s) {
+  if (s.empty() || s == sq_frontend::kNullCell)
+    return std::nullopt;
+  char* end = nullptr;
+  const double v = std::strtod(s.c_str(), &end);
+  if (end == s.c_str() || *end != '\0' || !std::isfinite(v))
+    return std::nullopt;
+  return static_cast<float>(v);
 }
 
 std::string join_lines(const std::vector<std::string>& items) {
@@ -303,6 +341,7 @@ void sq_frontend::release_ids(std::vector<key_t>& ids) {
   for (auto id : ids) {
     ctx().objects.erase(id.id);
     click_handlers_.erase(id);
+    change_handlers_.erase(id);
   }
   ids.clear();
 }
@@ -441,13 +480,50 @@ void sq_frontend::on_init() {
     tree.with("vbox.table", [&](const auto& e) { results_table_ = e; });
     tree.with("vbox.export.path", [&](const auto& e) { export_path_input_ = e; });
     tree.with("vbox.export.overwrite", [&](const auto& e) { overwrite_checkbox_ = e; });
+    tree.with("vbox.export.btn_open", [&](const auto& e) {
+      click_handlers_[wish_id_of(e)] = [this] { open_sandbox_folder(results_status_); };
+    });
     tree.with("vbox.export.btn_export", [&](const auto& e) {
       click_handlers_[wish_id_of(e)] = [this] {
+        const std::string path = text_of(export_path_input_);
+        const bool overwrite = overwrite_checkbox_ && overwrite_checkbox_->as<bool>("value"_key);
+        // The client uploads through file_service, which never accepts
+        // absolute paths, so neither does the check here.
+        if (resolve_output_path(path, overwrite, /*allow_absolute=*/false, results_status_).empty())
+          return;
         dynamic p;
-        p["path"_key] = text_of(export_path_input_);
-        p["overwrite"_key] = overwrite_checkbox_ && overwrite_checkbox_->as<bool>("value"_key);
+        p["path"_key] = path;
+        p["overwrite"_key] = overwrite;
         emit("export_requested"_key, std::move(p));
       };
+    });
+  });
+
+  chart_root_key_ = internal_root_key_ + "_chart";
+  build_window(kChartLayout, chart_root_key_, chart_window_id_, [&](ui_tree& tree) {
+    auto on_change = [&](const auto& e) { change_handlers_[wish_id_of(e)] = [this] { rebuild_chart(); }; };
+    tree.with("vbox.toolbar.type", [&](const auto& e) {
+      chart_type_combo_ = e;
+      on_change(e);
+    });
+    tree.with("vbox.toolbar.x", [&](const auto& e) {
+      chart_x_combo_ = e;
+      on_change(e);
+    });
+    tree.with("vbox.toolbar.bins", [&](const auto& e) {
+      chart_bins_combo_ = e;
+      on_change(e);
+    });
+    tree.with("vbox.ycols", [&](const auto& e) { chart_ycols_ = e; });
+    tree.with("vbox.status", [&](const auto& e) { chart_status_ = e; });
+    tree.with("vbox.plot", [&](const auto& e) { chart_plot_ = e; });
+    tree.with("vbox.save.path", [&](const auto& e) { chart_path_input_ = e; });
+    tree.with("vbox.save.overwrite", [&](const auto& e) { chart_overwrite_checkbox_ = e; });
+    tree.with("vbox.save.btn_open", [&](const auto& e) {
+      click_handlers_[wish_id_of(e)] = [this] { open_sandbox_folder(chart_status_); };
+    });
+    tree.with("vbox.save.btn_save", [&](const auto& e) {
+      click_handlers_[wish_id_of(e)] = [this] { save_chart_png(); };
     });
   });
 
@@ -470,7 +546,7 @@ void sq_frontend::on_init() {
                 split(
                     dir::up, 0.40f,
                     area({internal_root_key_}),
-                    area({console_root_key_, results_root_key_}, results_root_key_))),
+                    area({console_root_key_, chart_root_key_, results_root_key_}, results_root_key_))),
             /*version=*/1, /*target=*/"sq_dock")));
   }
 
@@ -775,17 +851,21 @@ dynamic sq_frontend::do_update_result(const dynamic& args) {
     add_column(names[i], 150.0f, static_cast<int32_t>(i + 1));
 
   size_t row_no = 0;
+  result_columns_ = names;
+  result_cells_.clear();
   const auto* arr_f = args.findField<dynamic_ptr>("rows"_key);
   if (arr_f && *arr_f) {
     (*arr_f)->forEach([&](key_t, const field& f) {
       if (!f.is<dynamic_ptr>() || !f.as<dynamic_ptr>())
         return;
       std::vector<ui_element_ptr> cells = {make_label(std::to_string(++row_no), kIdleLight, kIdleDark)};
+      std::vector<std::string> raw;
       size_t col = 0;
       f.as<dynamic_ptr>()->forEach([&](key_t, const field& cf) {
         if (col++ >= names.size() || !cf.is<std::string>())
           return;
         const std::string& v = cf.as<std::string>();
+        raw.push_back(v);
         if (v == kNullCell) {
           cells.push_back(make_label("NULL", kIdleLight, kIdleDark));
         } else if (v.size() > kMaxCellChars) {
@@ -796,6 +876,8 @@ dynamic sq_frontend::do_update_result(const dynamic& args) {
       });
       while (cells.size() < names.size() + 1)
         cells.push_back(make_label(""));
+      raw.resize(names.size());
+      result_cells_.push_back(std::move(raw));
       kids.push_back(make_row(result_ids_, cells));
     });
   }
@@ -816,13 +898,330 @@ dynamic sq_frontend::do_update_result(const dynamic& args) {
   status += " in " + std::to_string(args.as<int32_t>("elapsed_ms"_key)) + " ms";
   set_status(results_status_, status, true);
   set_status(editor_status_, status, true);
+  reset_chart_controls();
+  rebuild_chart();
   return dynamic{};
+}
+
+// ── Chart ──────────────────────────────────────────────────────────────────
+
+std::filesystem::path sq_frontend::resolve_output_path(
+    const std::string& path, bool overwrite, bool allow_absolute, const ui_element_ptr& status) {
+  namespace fs = std::filesystem;
+  if (path.empty()) {
+    set_status(status, "Enter the file to write.", false);
+    return {};
+  }
+  auto full = file_service::resolve_path(path, resource_dir_, allow_absolute);
+  if (full.empty()) {
+    set_status(status, path + " is not allowed: use a path inside the session folder (no absolute paths or \"..\").", false);
+    return {};
+  }
+  std::error_code ec;
+  if (fs::is_directory(full, ec)) {
+    set_status(status, path + " is a directory.", false);
+    return {};
+  }
+  if (!overwrite && fs::exists(full, ec)) {
+    set_status(status, path + " already exists; tick Overwrite to replace it.", false);
+    return {};
+  }
+  return full;
+}
+
+void sq_frontend::open_sandbox_folder(const ui_element_ptr& status) {
+  // The folder is on the machine running the wish server (the same place
+  // Export CSV / Save PNG write to); resource_dir_ is copied in on_init().
+  const bool ok = open_in_host_explorer(resource_dir_);
+  set_status(status, ok ? "Opened the session folder in the server's file explorer." : "Could not open the file explorer.", ok);
+}
+
+void sq_frontend::save_chart_png() {
+  const std::string path = text_of(chart_path_input_);
+  const bool overwrite = chart_overwrite_checkbox_ && chart_overwrite_checkbox_->as<bool>("value"_key);
+  const auto full = resolve_output_path(path, overwrite, allow_absolute_paths_, chart_status_);
+  if (full.empty())
+    return;
+  // Text uses the same font as the UI (the default one extracted into the
+  // session folder); the renderer falls back to a small built-in font if
+  // it is missing.
+  sq_chart::chart_spec spec = chart_spec_;
+  if (const auto font = file_service::resolve_path("res/fonts/default.ttf", resource_dir_, false); !font.empty()) {
+    std::ifstream f(font, std::ios::binary);
+    spec.font_ttf.assign(std::istreambuf_iterator<char>(f), {});
+  }
+  const std::string png = sq_chart::render_png(spec, 1000, 600);
+  if (png.empty()) {
+    set_status(chart_status_, "Nothing to save: the chart has no data.", false);
+    return;
+  }
+  std::error_code ec;
+  std::filesystem::create_directories(full.parent_path(), ec);
+  std::ofstream f(full, std::ios::binary | std::ios::trunc);
+  f.write(png.data(), static_cast<std::streamsize>(png.size()));
+  f.close();
+  set_status(chart_status_, f.fail() ? "Could not write " + path : "Saved the chart to " + path, !f.fail());
+}
+
+void sq_frontend::reset_chart_controls() {
+  if (!chart_x_combo_ || !chart_ycols_)
+    return;
+  release_ids(chart_y_ids_);
+  chart_y_boxes_.clear();
+
+  // Numeric column: at least one value and every non-NULL value parses.
+  auto numeric = [&](size_t col) {
+    size_t n = 0;
+    for (const auto& row : result_cells_) {
+      if (row[col] == kNullCell)
+        continue;
+      if (!parse_number(row[col]))
+        return false;
+      ++n;
+    }
+    return n > 0;
+  };
+
+  std::vector<std::string> x_items = {"(row #)"};
+  int32_t x_sel = 0;
+  for (size_t i = 0; i < result_columns_.size(); ++i) {
+    x_items.push_back(result_columns_[i]);
+    if (result_columns_[i] == chart_x_selected_)
+      x_sel = static_cast<int32_t>(i + 1);
+  }
+  chart_x_combo_["items"_key] = join_lines(x_items);
+  chart_x_combo_["value"_key] = x_sel;
+
+  auto remembered = [&](const std::string& name) {
+    return std::find(chart_y_selected_.begin(), chart_y_selected_.end(), name) != chart_y_selected_.end();
+  };
+  bool any = false;
+  for (const auto& name : result_columns_)
+    any = any || remembered(name);
+  if (!any) { // new column set: default to the first numeric column other than X
+    chart_y_selected_.clear();
+    for (size_t i = 0; i < result_columns_.size(); ++i) {
+      if (static_cast<int32_t>(i + 1) != x_sel && numeric(i)) {
+        chart_y_selected_.push_back(result_columns_[i]);
+        break;
+      }
+    }
+  }
+
+  std::vector<ui_element_ptr> boxes;
+  for (const auto& name : result_columns_) {
+    ui_element_ptr cb = ui_element_ptr::create("wish"_key, "Checkbox"_key);
+    cb["label"_key] = name;
+    cb["value"_key] = remembered(name);
+    assign_id(cb);
+    chart_y_ids_.push_back(wish_id_of(cb));
+    change_handlers_[wish_id_of(cb)] = [this] { rebuild_chart(); };
+    chart_y_boxes_.push_back(cb);
+    boxes.push_back(cb);
+  }
+  chart_ycols_["open"_key] = result_columns_.size() <= 8;
+  set_children_list(chart_ycols_, boxes);
+}
+
+void sq_frontend::rebuild_chart() {
+  if (!chart_plot_ || !chart_type_combo_)
+    return;
+  release_ids(chart_series_ids_);
+
+  // Sync the remembered choices from the widgets.
+  const int32_t x_sel = std::max(int32_t{0}, chart_x_combo_->as<int32_t>("value"_key));
+  const bool has_x = x_sel > 0 && static_cast<size_t>(x_sel) <= result_columns_.size();
+  chart_x_selected_ = has_x ? result_columns_[x_sel - 1] : std::string{};
+  std::vector<size_t> ycols;
+  chart_y_selected_.clear();
+  for (size_t i = 0; i < chart_y_boxes_.size(); ++i) {
+    if (chart_y_boxes_[i]->as<bool>("value"_key)) {
+      ycols.push_back(i);
+      chart_y_selected_.push_back(result_columns_[i]);
+    }
+  }
+
+  const int32_t type_idx = std::clamp(chart_type_combo_->as<int32_t>("value"_key), 0, 8);
+  const auto type = static_cast<sq_chart::kind>(type_idx);
+  const int32_t bins_idx =
+      std::clamp(chart_bins_combo_->as<int32_t>("value"_key), 0, static_cast<int32_t>(std::size(kBinChoices)) - 1);
+  const bool pie = type == sq_chart::kind::pie;
+  const bool hist = type == sq_chart::kind::histogram;
+
+  chart_spec_ = {};
+  chart_spec_.type = type;
+  chart_spec_.bins = kBinChoices[bins_idx];
+  auto finish = [&](const std::vector<ui_element_ptr>& series, const std::string& status, bool ok) {
+    set_children_list(chart_plot_, series);
+    chart_plot_["title"_key] = "##sq_chart_" + std::to_string(++chart_seq_); // fresh id: refit axes
+    chart_plot_["x_flags"_key] = pie ? kNoDecorations : int32_t{0};
+    chart_plot_["y_flags"_key] = pie ? kNoDecorations : int32_t{0};
+    chart_plot_["x_min"_key] = 0.0f;
+    chart_plot_["x_max"_key] = pie ? 1.0f : 0.0f;
+    chart_plot_["y_min"_key] = 0.0f;
+    chart_plot_["y_max"_key] = pie ? 1.0f : 0.0f;
+    set_status(chart_status_, status, ok);
+  };
+  auto track = [&](const ui_element_ptr& el) {
+    assign_id(el);
+    chart_series_ids_.push_back(wish_id_of(el));
+    return el;
+  };
+
+  auto sync_spec_labels = [&] {
+    chart_spec_.x_label = chart_plot_->as<std::string>("x_label"_key);
+    chart_spec_.y_label = chart_plot_->as<std::string>("y_label"_key);
+  };
+  if (result_columns_.empty() || result_cells_.empty()) {
+    chart_plot_["x_label"_key] = std::string{};
+    chart_plot_["y_label"_key] = std::string{};
+    finish({}, "Run a query that returns rows to chart it.", true);
+    return;
+  }
+  if (ycols.empty()) {
+    finish({}, "Tick at least one Y column.", false);
+    return;
+  }
+
+  // X positions: the X column when every non-NULL cell is numeric, else the
+  // 1-based row number.
+  const size_t n = result_cells_.size();
+  std::vector<std::optional<float>> xs(n);
+  bool x_numeric = has_x;
+  for (size_t r = 0; r < n && x_numeric; ++r) {
+    xs[r] = parse_number(result_cells_[r][x_sel - 1]);
+    if (!xs[r] && result_cells_[r][x_sel - 1] != kNullCell)
+      x_numeric = false;
+  }
+  if (!x_numeric)
+    for (size_t r = 0; r < n; ++r)
+      xs[r] = static_cast<float>(r + 1);
+
+  std::string note;
+  if (has_x && !x_numeric && !pie)
+    note = "  (X is not numeric; using row numbers)";
+
+  std::string y_names;
+  for (size_t c : ycols)
+    y_names += (y_names.empty() ? "" : ", ") + result_columns_[c];
+  chart_plot_["x_label"_key] = (pie || hist) ? std::string{} : has_x ? result_columns_[x_sel - 1] : std::string{"row #"};
+  chart_plot_["y_label"_key] = pie ? std::string{} : hist ? std::string{"count"} : y_names;
+
+  std::vector<ui_element_ptr> series;
+  size_t points = 0;
+
+  if (pie) {
+    // One slice per row of the first Y column, labelled by the X column.
+    const size_t c = ycols.front();
+    std::string labels;
+    std::vector<float> values;
+    for (size_t r = 0; r < n && values.size() < kMaxPieSlices; ++r) {
+      auto v = parse_number(result_cells_[r][c]);
+      if (!v || *v < 0)
+        continue;
+      values.push_back(*v);
+      labels += (labels.empty() ? "" : "\n") + (has_x ? result_cells_[r][x_sel - 1] : std::to_string(r + 1));
+    }
+    ui_element_ptr p = ui_element_ptr::create("wish"_key, "PlotPieChart"_key);
+    p["labels"_key] = labels;
+    p["values"_key] = values;
+    p["normalize"_key] = true;
+    chart_spec_.data.push_back({"", {}, values});
+    chart_spec_.pie_labels.clear();
+    {
+      std::istringstream ls(labels);
+      for (std::string l; std::getline(ls, l);)
+        chart_spec_.pie_labels.push_back(l);
+    }
+    points = values.size();
+    series.push_back(track(p));
+    if (n > kMaxPieSlices)
+      note = "  (first " + std::to_string(kMaxPieSlices) + " rows only)";
+  } else if (hist) {
+    for (size_t c : ycols) {
+      std::vector<float> values;
+      for (const auto& row : result_cells_)
+        if (auto v = parse_number(row[c]))
+          values.push_back(*v);
+      ui_element_ptr h = ui_element_ptr::create("wish"_key, "PlotHistogram"_key);
+      h["label"_key] = result_columns_[c];
+      h["values"_key] = values;
+      h["bins"_key] = kBinChoices[bins_idx];
+      chart_spec_.data.push_back({result_columns_[c], {}, values});
+      points += values.size();
+      series.push_back(track(h));
+    }
+  } else {
+    // Bars are grouped side by side: each of the S series gets 1/S of the
+    // bar width around its X position. The base width is 0.67 of the
+    // smallest gap between X values.
+    const bool bars = type == sq_chart::kind::bars || type == sq_chart::kind::bars_h;
+    float gap = 1.0f;
+    if (bars && x_numeric) {
+      std::vector<float> sorted;
+      for (auto& x : xs)
+        if (x)
+          sorted.push_back(*x);
+      std::sort(sorted.begin(), sorted.end());
+      float min_gap = 0.0f;
+      for (size_t i = 1; i < sorted.size(); ++i) {
+        const float d = sorted[i] - sorted[i - 1];
+        if (d > 0 && (min_gap == 0.0f || d < min_gap))
+          min_gap = d;
+      }
+      if (min_gap > 0)
+        gap = min_gap;
+    }
+    const float bar_size = 0.67f * gap / static_cast<float>(ycols.size());
+
+    static constexpr const char* kSeriesClass[] = {
+        "PlotLine", "PlotScatter", "PlotStairs", "PlotStems", "PlotShaded", "PlotBars", "PlotBarsH"};
+    for (size_t s_idx = 0; s_idx < ycols.size(); ++s_idx) {
+      const size_t c = ycols[s_idx];
+      std::vector<float> px, py;
+      const float offset = (static_cast<float>(s_idx) - (ycols.size() - 1) / 2.0f) * bar_size;
+      for (size_t r = 0; r < n; ++r) {
+        auto y = parse_number(result_cells_[r][c]);
+        if (!xs[r] || !y)
+          continue;
+        px.push_back(bars ? *xs[r] + offset : *xs[r]);
+        py.push_back(*y);
+      }
+      ui_element_ptr el = ui_element_ptr::create("wish"_key, key_t{kSeriesClass[type_idx]});
+      el["label"_key] = result_columns_[c];
+      if (type == sq_chart::kind::bars_h) { // PlotBarsH: length = xs, position = ys
+        el["xs"_key] = py;
+        el["ys"_key] = px;
+      } else {
+        el["xs"_key] = px;
+        el["ys"_key] = py;
+      }
+      if (bars) {
+        el["bar_size"_key] = bar_size;
+        chart_spec_.bar_size = bar_size;
+      }
+      chart_spec_.data.push_back(
+          {result_columns_[c], type == sq_chart::kind::bars_h ? py : px, type == sq_chart::kind::bars_h ? px : py});
+      points += px.size();
+      series.push_back(track(el));
+    }
+  }
+
+  sync_spec_labels();
+  finish(
+      series,
+      std::to_string(points) + (points == 1 ? " point" : " points") + " in " + std::to_string(series.size()) +
+          " series" + note,
+      points > 0);
 }
 
 dynamic sq_frontend::do_command_result(const dynamic& args) {
   const std::string scope = str_of(args, "scope"_key);
   set_status(
-      scope == "connections" ? connections_status_ : scope == "results" ? results_status_ : editor_status_,
+      scope == "connections" ? connections_status_
+      : scope == "results"  ? results_status_
+      : scope == "chart"    ? chart_status_
+                            : editor_status_,
       str_of(args, "message"_key), args.as<bool>("ok"_key));
   return dynamic{};
 }
@@ -886,13 +1285,15 @@ dynamic sq_frontend::do_append_command_log(const dynamic& args) {
 void sq_frontend::on_event(key_t id, key_t event, const dynamic& payload) {
   if (event == "closed"_key &&
       (id == editor_window_id_ || id == connections_window_id_ || id == navigator_window_id_ ||
-       id == structure_window_id_ || id == results_window_id_ || id == console_window_id_)) {
+       id == structure_window_id_ || id == results_window_id_ || id == console_window_id_ ||
+       id == chart_window_id_)) {
     emit("closed"_key);
     remove_objects_at(connections_root_key_);
     remove_objects_at(navigator_root_key_);
     remove_objects_at(structure_root_key_);
     remove_objects_at(results_root_key_);
     remove_objects_at(console_root_key_);
+    remove_objects_at(chart_root_key_);
     remove_internal_objects();
     return;
   }
@@ -903,6 +1304,8 @@ void sq_frontend::on_event(key_t id, key_t event, const dynamic& payload) {
       if (idx >= 0 && static_cast<size_t>(idx) < handles_.size() && handles_[idx] != active_handle_)
         emit("activate_requested"_key, payload1("handle"_key, handles_[idx]));
     }
+    if (auto ch = change_handlers_.find(id); ch != change_handlers_.end())
+      ch->second();
     return;
   }
 
