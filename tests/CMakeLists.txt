@@ -154,6 +154,30 @@ wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_TOP                test_top      
 wish_add_optional_test(WISH_MODULE_BDG_DEV_EDITOR                test_editor            test_editor.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DEV_DOCKER               test_docker            test_docker.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DEV_DBG                  test_dbg               test_dbg.cpp)
+wish_add_optional_test(WISH_MODULE_BDG_DEV_SQ                   test_sq                test_sq.cpp)
+if(TARGET test_sq)
+  target_include_directories(test_sq PRIVATE ${CMAKE_SOURCE_DIR})
+endif()
+# Exercises run_sq_cli() (sq_process.cpp) against stub binaries (printf/cat/
+# false -- never `sq`), so it needs no sq install. Client-side, no bison/RMI
+# dependency; needs uv_a directly since sq_process.cpp calls uv_spawn() --
+# same rationale as test_docker_process above.
+wish_add_optional_test(WISH_MODULE_BDG_DEV_SQ                   test_sq_process        test_sq_process.cpp
+    ${CMAKE_SOURCE_DIR}/modules/bdg/dev/sq/client/sq_process.cpp)
+if(TARGET test_sq_process)
+  target_include_directories(test_sq_process PRIVATE ${CMAKE_SOURCE_DIR})
+  if(TARGET uv_a)
+    target_link_libraries(test_sq_process PRIVATE uv_a)
+  endif()
+endif()
+# Pure string handling (JSONL result parser, connection-location masking,
+# read-only SQL guard) -- no framework/bison/RMI/libuv dependency.
+wish_add_optional_test(WISH_MODULE_BDG_DEV_SQ                   test_sq_parsers        test_sq_parsers.cpp
+    ${CMAKE_SOURCE_DIR}/modules/bdg/dev/sq/client/sq_result_parser.cpp
+    ${CMAKE_SOURCE_DIR}/modules/bdg/dev/sq/client/sq_query_guard.cpp)
+if(TARGET test_sq_parsers)
+  target_include_directories(test_sq_parsers PRIVATE ${CMAKE_SOURCE_DIR})
+endif()
 # Exercises run_docker_cli() (docker_process.cpp) against stub binaries
 # (printf/false -- never `docker`), so it needs no Docker daemon. Client-side,
 # no bison/RMI dependency; needs uv_a directly since docker_process.cpp calls

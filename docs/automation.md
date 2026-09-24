@@ -187,6 +187,19 @@ gotcha you hit and didn't record is one the next agent will hit again.
   after opening it (`click()` the `Combo` itself first) rather than
   guessing.
 
+- **`type_text()` appends; Ctrl+A/Delete does not clear a multiline
+  `InputText`** (`sq` module, 2026-09). Driving a second, different query
+  into the same box through `page.keyboard.press("Control+A")` +
+  `"Delete"` left the old text in place, so the "new" query re-ran the old
+  one. Use a fresh session per distinct input, or set the widget's `value`
+  from a form-side path (e.g. a Navigator button that writes the editor).
+- **Dock-tab focus follows window creation order, not `DockArea.focused`
+  or the order of the `area({...})` list** (`sq` module): in a tab group
+  the *last-created* window ended up frontmost, so a window that must open
+  in front (e.g. Results) has to be built last among its group's members.
+  Widgets inside a background tab raise "never rendered (no rect)" on
+  `click()`.
+
 ## Prerequisites
 
 ```sh
