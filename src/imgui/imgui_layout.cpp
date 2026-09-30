@@ -431,6 +431,14 @@ static void arrange_vertical_layout(imgui_renderer& r, const ui_element& node, I
   float spacing_total = n > 1 ? spacing * float(n - 1) : 0.0f;
   float stretch_pool = std::max(0.0f, avail.y - fixed_total - spacing_total);
 
+  // A "scroll" layout whose rows overflow its height gets a vertical
+  // scrollbar inside render_vertical_layout()'s scroll child, which eats
+  // ScrollbarSize off the content width. Rows arranged at the full avail.x
+  // would then extend under the scrollbar and be clipped on the right.
+  float row_avail_w = avail.x;
+  if (node.scroll(false) && fixed_total + spacing_total > avail.y)
+    row_avail_w = std::max(0.0f, avail.x - ImGui::GetStyle().ScrollbarSize);
+
   float y = origin.y;
   bool first = true;
   for (auto& c : children) {
@@ -451,7 +459,7 @@ static void arrange_vertical_layout(imgui_renderer& r, const ui_element& node, I
     // Cross-axis (width): a Spring has no content, so it must never be
     // what drives the row's own size -- 0, not the full row width, same
     // as render_vertical_layout()'s pre-refactor spring stamping.
-    float row_w = c.is_spring ? 0.0f : avail.x;
+    float row_w = c.is_spring ? 0.0f : row_avail_w;
     arrange_node(r, *c.elem, ImVec2(origin.x, y), ImVec2(row_w, row_h), s);
     y += row_h;
   }

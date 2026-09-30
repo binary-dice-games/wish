@@ -451,6 +451,34 @@ TEST_F(ImguiLayoutTest, ArrangeNodePlacesFixedAndStretchChildren) {
   EXPECT_FLOAT_EQ(stretch.arranged_size().y, 200.0f);
 }
 
+// ── arrange_node: overflowing "scroll" layout reserves scrollbar width ──────
+
+// An overflowing "scroll" VerticalLayout shows a vertical scrollbar, so its
+// rows must be arranged narrower by ScrollbarSize -- otherwise their right
+// edge renders under the scrollbar and is clipped (kubectl's Top window).
+TEST_F(ImguiLayoutTest, ScrollVerticalLayoutReservesScrollbarWidthOnOverflow) {
+  auto desc = R"({"type":"VerticalLayout","scroll":true,"children":{
+      "a":{"type":"Button","label":"A","height":200},
+      "b":{"type":"Button","label":"B","height":200}
+  }})";
+  auto overflow = bdg::wish::import_json(desc);
+  auto fits = bdg::wish::import_json(desc);
+  float scrollbar = ImGui::GetStyle().ScrollbarSize;
+
+  renderer_->begin_frame();
+  in_window([&] {
+    measure_node(*renderer_, *overflow[""], *sess_);
+    bdg::wish::arrange_node(*renderer_, *overflow[""], ImVec2(0.0f, 0.0f), ImVec2(500.0f, 300.0f), *sess_);
+    measure_node(*renderer_, *fits[""], *sess_);
+    bdg::wish::arrange_node(*renderer_, *fits[""], ImVec2(0.0f, 0.0f), ImVec2(500.0f, 1000.0f), *sess_);
+  });
+  renderer_->end_frame();
+
+  EXPECT_FLOAT_EQ(overflow["a"]->arranged_size().x, 500.0f - scrollbar);
+  EXPECT_FLOAT_EQ(overflow["b"]->arranged_size().x, 500.0f - scrollbar);
+  EXPECT_FLOAT_EQ(fits["a"]->arranged_size().x, 500.0f);
+}
+
 // ── ensure_arranged: self-heal without going through render_window ──────────
 
 TEST_F(ImguiLayoutTest, EnsureArrangedOnBareNodePopulatesStashFromCursor) {

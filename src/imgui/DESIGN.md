@@ -263,8 +263,10 @@ hand-written sequence of ImGui calls would work:
   doesn't try to grow to fit the content the scroll region absorbs — give the
   scroll layout a `height: -1` (or fixed) hint so its parent hands it a
   bounded box, and keep its own children auto/fixed height (a stretch child
-  has no bounded remainder to stretch against inside a scroll region). Same
-  idiom as `TabItem`'s pre-existing `"scroll"` field. Suppressed inside a
+  has no bounded remainder to stretch against inside a scroll region). When
+  its fixed/auto rows overflow the given height, the arrange pass narrows
+  every row by `ScrollbarSize` so rows don't render under the vertical
+  scrollbar and get clipped on the right. Same idiom as `TabItem`'s pre-existing `"scroll"` field. Suppressed inside a
   `TableRow` cell (a real child window there would steal the row's
   click-through).
 - An explicit `"spacing"` field override becomes a single

@@ -175,6 +175,15 @@ gotcha you hit and didn't record is one the next agent will hit again.
   Get both right and `click()`ing a dock tab, a `Combo` popup item, or a
   wish `TabItem` (see the next bullet) all work the same as clicking any
   other widget — there is no dock-tab-specific limitation.
+- **A dock-tab click can highlight the tab without switching it** (seen
+  switching `kubectl`'s Top tab, 2026-09): the tab showed as hovered but the
+  window below never changed. What worked: `mouse.move(x, y)`, a ~300 ms
+  pause, then `mouse.click(x, y, delay=60)`, followed by polling
+  `request_render()` + `get_widget(child)` until the child has a `rect`
+  (retrying the click if it doesn't). A single `wait_for()` on
+  `getWidget(...)?.rect != null` returned without error in that session
+  even though `get_tree()` still showed no rect, so check the real state
+  afterwards instead of trusting `wait_for()` alone.
 - **A `Combo`'s dropdown items are not individually addressable wish
   elements** (no dot-path — same as the dock-tab strip above), but a
   raw-pixel click at the item's on-screen row **does** select it,
