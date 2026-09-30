@@ -37,6 +37,9 @@ the tool itself).
   `wish client --run=git -- /path/to/repo`.
 - **resources/**: none.
 
+Build: off by default. `cmake -S . -B build -DWISH_MODULE_BDG_DEV_GIT=ON`
+(or `-DWISH_COLLECTION_BDG_DEV=ON` for the whole `bdg/dev` collection).
+
 See [DESIGN.md](DESIGN.md) for the full architecture and [PLAN.md](PLAN.md)
 for what's implemented vs. deferred to future work.
 

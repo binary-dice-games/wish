@@ -3,7 +3,7 @@
 /// @brief Cross-platform, non-interactive "run a command, capture its
 ///        output" helper, built on libuv (`uv_spawn`).
 ///
-/// A near-verbatim copy of `modules/bdg/desktop/git/client/git_process.hpp`
+/// A near-verbatim copy of `modules/bdg/dev/git/client/git_process.hpp`
 /// (see that file's header comment for the full rationale). In short:
 /// `bdg::bison::term::terminal` is a pty-attached, shell-string,
 /// stdio-hijacking helper for the interactive `--transport term` session --

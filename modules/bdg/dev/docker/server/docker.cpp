@@ -2,7 +2,7 @@
 /// @file docker.cpp
 /// @brief Implementation of the DockerFrontend form.
 ///
-/// A close port of modules/bdg/desktop/git/server/git.cpp: inline JSON
+/// A close port of modules/bdg/dev/git/server/git.cpp: inline JSON
 /// window layouts + import_json(), C++-built table rows, a per-row `...`
 /// MenuButton, show_confirm() via a privately-instantiated MessageBox, and
 /// an id -> handler dispatch map rebuilt on every update_*. The four list

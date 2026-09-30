@@ -4,7 +4,7 @@
 ///        output" helper, built on libuv (`uv_spawn`).
 ///
 /// A near-verbatim copy of `modules/bdg/dev/docker/client/docker_process.hpp`
-/// (itself a copy of `modules/bdg/desktop/git/client/git_process.hpp` --
+/// (itself a copy of `modules/bdg/dev/git/client/git_process.hpp` --
 /// see that file's header comment for the full rationale). In short:
 /// `bdg::bison::term::terminal` is a pty-attached, shell-string,
 /// stdio-hijacking helper unsuitable for issuing many quick argv-array

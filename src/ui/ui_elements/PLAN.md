@@ -201,7 +201,7 @@ leaves the arrangement to `imgui.ini`.
 | `src/imgui/imgui_ui_renderer.cpp` | `render_dockspace_viewport()`: embedded-mode `Begin` flags/title, ambient-id capture + restore |
 | `src/imgui/imgui_dock_layout.cpp` | `render_dock_layout()`'s named-`target` resolution fixed to hash against `window->ID` (see key decision above) |
 | `src/ui/dock_layout_spec.hpp` | new — `dock::viewport(id, layout(...))` builder |
-| `modules/bdg/dev/docker/server/docker.cpp`, `modules/bdg/dev/kubectl/server/kubectl.cpp`, `modules/bdg/desktop/git/server/git.cpp`, `modules/bdg/dev/dbg/server/dbg.cpp` | opted into `dock::viewport(...)` for per-app dockspace isolation |
+| `modules/bdg/dev/docker/server/docker.cpp`, `modules/bdg/dev/kubectl/server/kubectl.cpp`, `modules/bdg/dev/git/server/git.cpp`, `modules/bdg/dev/dbg/server/dbg.cpp` | opted into `dock::viewport(...)` for per-app dockspace isolation |
 | `src/imgui/imgui_dock_layout.{hpp,cpp}` | `layout_identity()`/`should_apply_dock_layout()`/`note_dock_layout_applied()` fold `target_id` into the persisted identity (see key decision 8 -- fixes the "no window attached" regression) |
 
 ### Tests

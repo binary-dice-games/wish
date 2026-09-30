@@ -105,7 +105,7 @@ cmake -S . -B build
 | `WISH_ENABLE_AUTOMATION` | `OFF` | Build the automation query API: a widget-tree/hit-test query protocol that lets an AI agent (or a pytest-style e2e suite) introspect and drive a running wish UI. On the web renderer this adds a Playwright-driven headless-browser path (screenshot/input control it already gets for free, plus two new WebSocket message types). On the SDL3 renderer this adds a native path built directly into the wish C ABI (no browser). Requires `WISH_ENABLE_WEB=ON` and/or `WISH_ENABLE_SDL3=ON` (configure-time error otherwise). See [src/automation/DESIGN.md](../src/automation/DESIGN.md) and `CLAUDE.md`'s "Automation" section. |
 | `WISH_BUILD_SHARED` | `ON` | Build `wish_client` as a shared library with a C ABI (`wish_client.dll` on MSYS2/native Windows / `libwish_client.so` on Linux). |
 | `WISH_BUILD_TESTS` | `ON` | Build and register the GoogleTest suite. |
-| `WISH_COLLECTION_BDG_DESKTOP` | `ON` | Include every module in `modules/bdg/desktop/` (bc, tail, nano, pix, top, mc, zip, git) — see below. **Linux and native Windows only**: `top`'s process-control/process-info backends are `*_linux.cpp` / `*_win.cpp`, so a macOS build must set this `OFF`. |
+| `WISH_COLLECTION_BDG_DESKTOP` | `ON` | Include every module in `modules/bdg/desktop/` (bc, tail, nano, pix, top, mc, zip) — see below. **Linux and native Windows only**: `top`'s process-control/process-info backends are `*_linux.cpp` / `*_win.cpp`, so a macOS build must set this `OFF`. |
 | `WISH_MODULE_BDG_DESKTOP_BC` | `ON`¹ | Include the bc form (server; a four-function calculator) and its self-registering reference client runner. |
 | `WISH_MODULE_BDG_DESKTOP_TAIL` | `ON`¹ | Include the tail form (server) and its self-registering reference client runner — a `tail`-like log viewer (`wish client --run=tail -- [-f] [-n N] FILE...`). |
 | `WISH_MODULE_BDG_DESKTOP_NANO` | `ON`¹ | Include the nano form (server; a multi-file text editor) and its self-registering reference client runner. |
@@ -113,13 +113,13 @@ cmake -S . -B build
 | `WISH_MODULE_BDG_DESKTOP_TOP` | `ON`¹ | Include the top form (server; a top/htop-style system monitor) and its self-registering reference client runner. |
 | `WISH_MODULE_BDG_DESKTOP_MC` | `ON`¹ | Include the mc form (server; a two-panel local-filesystem-vs-sandbox file browser) and its self-registering reference client runner. |
 | `WISH_MODULE_BDG_DESKTOP_ZIP` | `ON`¹ | Include the zip form (server) and its self-registering reference client runner (client-side compress/extract/list-contents via miniz). |
-| `WISH_MODULE_BDG_DESKTOP_GIT` | `ON`¹ | Include the GitRepo form (server) and its self-registering reference client runner — a SourceTree-style git GUI frontend that shells out to the local `git` binary (`wish client --run=git -- /path/to/repo`). |
-| `WISH_COLLECTION_BDG_DEV` | `OFF` | Include every module in `modules/bdg/dev/` (editor, docker, kubectl, curl, sq, dbg) — see below. |
+| `WISH_COLLECTION_BDG_DEV` | `OFF` | Include every module in `modules/bdg/dev/` (editor, docker, kubectl, curl, sq, git, dbg) — see below. |
 | `WISH_MODULE_BDG_DEV_EDITOR` | `OFF` | Include the Editor form (server) and its self-registering reference client runner — a live JSON UI mock editor (`wish client --run=editor -- path/to/ui.json`). |
 | `WISH_MODULE_BDG_DEV_DOCKER` | `OFF` | Include the DockerFrontend form (server) and its self-registering reference client runner — a Docker Desktop-style GUI that shells out to the local `docker` binary (`wish client --run=docker`). |
 | `WISH_MODULE_BDG_DEV_KUBECTL` | `OFF` | Include the KubectlFrontend form (server) and its self-registering reference client runner — a Kubernetes-dashboard-style GUI that shells out to the local `kubectl` binary (`wish client --run=kubectl`). |
 | `WISH_MODULE_BDG_DEV_CURL` | `OFF` | Include the CurlFrontend form (server) and its self-registering reference client runner — a Postman-style REST API client GUI that shells out to the local `curl` binary (`wish client --run=curl`). |
 | `WISH_MODULE_BDG_DEV_SQ` | `OFF` | Include the SqFrontend form (server) and its self-registering reference client runner — a DBeaver-style, query-only database GUI that shells out to the local `sq` binary (`wish client --run=sq`). |
+| `WISH_MODULE_BDG_DEV_GIT` | `OFF` | Include the GitRepo form (server) and its self-registering reference client runner — a SourceTree-style git GUI frontend that shells out to the local `git` binary (`wish client --run=git -- /path/to/repo`). |
 | `WISH_MODULE_BDG_DEV_DBG` | `OFF` | Include the DebuggerFrontend form (server) and its self-registering reference client runner — a source-level debugger GUI attaching to a local process by PID (`wish client --run=dbg`). Windows-only backend (`win32_debug_backend`); compiles to nothing on other platforms. |
 
 ¹ Each `WISH_MODULE_BDG_DESKTOP_*` option inherits its collection's default

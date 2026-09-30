@@ -300,7 +300,7 @@ use only the methods/events above).
 
 - **`docker_process::run_docker_cli()` is built on libuv (`uv_spawn`), not
   `bdg::bison::term::terminal`** — verbatim the rationale in
-  `modules/bdg/desktop/git/client/git_process.hpp`: `terminal` is
+  `modules/bdg/dev/git/client/git_process.hpp`: `terminal` is
   PTY-attached, takes a shell *string*, and redirects the calling
   process's own stdio for its lifetime — none of which is safe for many
   quick argv-array `docker <args>` calls from inside a long-running

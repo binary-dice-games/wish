@@ -59,6 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `git` module moved from the `bdg/desktop` collection to `bdg/dev` (now `modules/bdg/dev/git`): its option is renamed `WISH_MODULE_BDG_DESKTOP_GIT` → `WISH_MODULE_BDG_DEV_GIT` and it is now off by default (enable with `-DWISH_MODULE_BDG_DEV_GIT=ON` or `-DWISH_COLLECTION_BDG_DEV=ON`); `--list` shows it as `bdg/dev/git`.
 - `docker` Logs/Inspect and `kubectl` Logs/Describe windows now show their output in a read-only, syntax-highlighted `TextEditor` (logs: `log`, auto-scrolled to the newest line; Inspect: JSON; Describe: YAML) instead of a plain line table.
 - `docker`, `kubectl`, and `git` modules: the windows open pre-arranged into a docked layout on the first run instead of as floating windows — `docker`/`kubectl` show a tabbed list column over a Console strip on the left with Logs + Inspect/Describe tabbed on the right; `git` fills the left with the commit graph over a Log strip and stacks Files over Diff on the right. Rearranging and restarting keeps your own arrangement.
 - `docker` / `kubectl` modules: list, log, and console tables now scroll both horizontally and vertically; the Inspect / Describe views no longer clip long lines.

@@ -231,12 +231,12 @@ endif()
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_MC                 test_mc                test_mc.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_ZIP                test_zip               test_zip.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_PIX                test_pix               test_pix.cpp)
-wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_GIT                test_git               test_git.cpp)
+wish_add_optional_test(WISH_MODULE_BDG_DEV_GIT                test_git               test_git.cpp)
 # Pure algorithm, no bison/RMI dependency -- still gated on the module
-# option since it lives under modules/bdg/desktop/git/ and would otherwise
+# option since it lives under modules/bdg/dev/git/ and would otherwise
 # fail to link when that directory isn't part of the build.
-wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_GIT                test_git_graph_layout  test_git_graph_layout.cpp
-    ${CMAKE_SOURCE_DIR}/modules/bdg/desktop/git/server/git_graph_layout.cpp)
+wish_add_optional_test(WISH_MODULE_BDG_DEV_GIT                test_git_graph_layout  test_git_graph_layout.cpp
+    ${CMAKE_SOURCE_DIR}/modules/bdg/dev/git/server/git_graph_layout.cpp)
 if(TARGET test_git_graph_layout)
   target_include_directories(test_git_graph_layout PRIVATE ${CMAKE_SOURCE_DIR})
 endif()
@@ -247,8 +247,8 @@ endif()
 # calls uv_spawn(); wish links it PRIVATE, so it doesn't propagate to this
 # target automatically -- same rationale as wish_finalize_app_modules()'s own
 # uv_a linking for module client targets (cmake/WishModules.cmake).
-wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_GIT                test_git_process       test_git_process.cpp
-    ${CMAKE_SOURCE_DIR}/modules/bdg/desktop/git/client/git_process.cpp)
+wish_add_optional_test(WISH_MODULE_BDG_DEV_GIT                test_git_process       test_git_process.cpp
+    ${CMAKE_SOURCE_DIR}/modules/bdg/dev/git/client/git_process.cpp)
 if(TARGET test_git_process)
   target_include_directories(test_git_process PRIVATE ${CMAKE_SOURCE_DIR})
   if(TARGET uv_a)

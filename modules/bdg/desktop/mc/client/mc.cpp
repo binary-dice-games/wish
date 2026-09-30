@@ -37,7 +37,7 @@ namespace {
 namespace fs = std::filesystem;
 
 // Reads the plain-string array under `payload["names"]` -- see git.cpp's
-// read_string_array() (modules/bdg/desktop/git/server/git.cpp) for the same
+// read_string_array() (modules/bdg/dev/git/server/git.cpp) for the same
 // convention: array entries are raw std::string fields, not nested
 // dynamic_ptr objects, since bison::field has no vector<string> alternative.
 std::vector<std::string> read_names(const dynamic& payload) {

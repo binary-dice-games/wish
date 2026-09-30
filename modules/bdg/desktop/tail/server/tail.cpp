@@ -69,7 +69,7 @@ constexpr size_t kMaxBufferedRows = 2000;
 // fills whatever width remains, matching kHelpWindowLayout's col_desc in
 // modules/bdg/dev/editor/server/editor.cpp).
 // ImGuiTableFlags: Resizable(1) + RowBg(64) + Borders(1920) +
-// ScrollY(1<<25=33554432) = 33556417 -- see modules/bdg/desktop/git/server/git.cpp's
+// ScrollY(1<<25=33554432) = 33556417 -- see modules/bdg/dev/git/server/git.cpp's
 // identical combination; ScrollY both clips the table to outer_height and
 // (via render_table()'s own auto-scroll logic) keeps the newest row in view.
 // "tab_bar"'s own "height": -1 is load-bearing, not cosmetic: table_all's

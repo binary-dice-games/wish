@@ -1,7 +1,7 @@
 // MIT License © 2025 Binary Dice Games
 #include <gtest/gtest.h>
 
-#include "modules/bdg/desktop/git/client/git_process.hpp"
+#include "modules/bdg/dev/git/client/git_process.hpp"
 
 #include <filesystem>
 #include <string>

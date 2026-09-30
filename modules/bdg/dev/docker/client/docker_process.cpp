@@ -3,7 +3,7 @@
 /// @brief libuv-based implementation of run_docker_cli().
 ///
 /// Structurally identical to
-/// `modules/bdg/desktop/git/client/git_process.cpp`.
+/// `modules/bdg/dev/git/client/git_process.cpp`.
 #include "docker_process.hpp"
 
 #include <uv.h>

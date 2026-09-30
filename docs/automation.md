@@ -418,7 +418,7 @@ def test_saving_shows_confirmation(wish_ui):
   `"height": -1`, as a child of a `HorizontalLayout`). Compare the
   suspect container's `rect` against a sibling's in the same `get_tree()`
   dump before reading any render/data-population code — this diagnosed a
-  real bug in ~2 minutes (`modules/bdg/desktop/git/DESIGN.md`'s §6 entry on
+  real bug in ~2 minutes (`modules/bdg/dev/git/DESIGN.md`'s §6 entry on
   `graph_panel`) that would otherwise look exactly like a row-construction
   or RMI-dispatch bug from a screenshot alone.
 - **A widget with `rect: null` was never rendered this frame** — e.g. it's
@@ -545,7 +545,7 @@ def test_saving_shows_confirmation(wish_ui):
   reliable for a plain click and for the first couple of rows below the
   header; see the next bullet for why a click deep in a long table can
   still occasionally miss. **This does not apply to every table** — the
-  `git` module (`modules/bdg/desktop/git/server/git.cpp`) calls
+  `git` module (`modules/bdg/dev/git/server/git.cpp`) calls
   `assign_id()` (which does `ctx().put_object()` + sets `__wish_id`) on
   every `TableRow` and cell it builds (`add_row()`/`add_file_row()`,
   unlike `fill_table()`'s pattern above), so its rows and cells *do* get
@@ -645,7 +645,7 @@ def test_saving_shows_confirmation(wish_ui):
   launched from `build/app/`, not the repo root) still failed. The actual
   bug — an unresolved relative repo-path argument used verbatim as every
   git subprocess's `cwd`, breaking any pathspec-taking command
-  (`modules/bdg/desktop/git/DESIGN.md`'s §6 entry on `resolve_repo_root()`)
+  (`modules/bdg/dev/git/DESIGN.md`'s §6 entry on `resolve_repo_root()`)
   — only reproduced once the app was launched from a *different*
   directory than the repo it was pointed at. When a bug report's repro
   command includes a relative path argument (`-- .`, a relative
