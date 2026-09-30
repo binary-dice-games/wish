@@ -49,7 +49,7 @@ DEFINE_string(web_bind, "127.0.0.1", "Bind address for --renderer web (localhost
 DEFINE_string(profiling_dir, "", "Directory for Perfetto trace output; empty disables profiling");
 DEFINE_bool(profiling_autostart, false, "Start capture immediately on startup (requires --profiling_dir)");
 DEFINE_bool(allow_absolute_paths, false,
-            "Allow widgets (e.g. dbg's Source view, editor, nano) to reference files by "
+            "Allow widgets (e.g. editor, nano) to reference files by "
             "absolute path outside the session sandbox. Safe in standalone mode -- server "
             "and client are the same process -- see wish::standalone::set_allow_absolute_paths().");
 DEFINE_string(sandbox_root, "",

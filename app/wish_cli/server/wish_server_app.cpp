@@ -48,7 +48,7 @@ DEFINE_string(web_bind, "127.0.0.1", "Bind address for --renderer web (localhost
 DEFINE_string(profiling_dir, "", "Directory for Perfetto trace output; empty disables profiling");
 DEFINE_bool(profiling_autostart, false, "Start capture immediately on server startup (requires --profiling_dir)");
 DEFINE_bool(allow_absolute_paths, false,
-            "Allow widgets (e.g. dbg's Source view, editor, nano) to reference files by "
+            "Allow widgets (e.g. editor, nano) to reference files by "
             "absolute path outside the session sandbox. Only enable for trusted, "
             "single-operator deployments -- see wish::server::set_allow_absolute_paths().");
 

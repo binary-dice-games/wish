@@ -131,7 +131,7 @@ gotcha you hit and didn't record is one the next agent will hit again.
   shows those exact rows present and correct is a *different*, real bug --
   don't mistake it for the WebGL flakiness above and just retry.** This
   pattern means server-side data is right but the render pass never drew
-  it. One confirmed cause (`dbg` module, 2026-09): a `rebuild_*()` handler
+  it. One confirmed cause (2026-09): a `rebuild_*()` handler
   mutated a `Table`'s `children` `bison::dynamic` map directly to add/
   remove `TableRow`s but never called `ui_element::refresh_children_order()`
   afterward, so the renderer's cached child-render order
@@ -425,20 +425,6 @@ def test_saving_shows_confirmation(wish_ui):
   inside a collapsed `TreeNode`, an unopened `TabBar` tab, or a window that
   hasn't been given a chance to draw yet. Navigate to make it visible (or
   `wait_for` the tree to settle) before asserting on its rect or clicking it.
-- **This sandboxed tool environment can make Win32 debug-API calls fail in
-  ways a normal desktop session wouldn't, even against your own
-  same-user child process.** `DebugActiveProcess()` against a
-  `subprocess.Popen`-spawned child returned `ERROR_ACCESS_DENIED` (5) when
-  run through the sandboxed `Bash`/`PowerShell` tools, but succeeded
-  immediately (same command, same machine, same non-elevated account) once
-  re-run with `dangerouslyDisableSandbox: true`. Same-user process-to-process
-  debug attach normally needs no special privilege at all (only attaching
-  across users/integrity levels needs `SeDebugPrivilege`) — so a
-  `DebugActiveProcess`/`OpenProcess(PROCESS_ALL_ACCESS)`-style failure seen
-  only through the sandboxed tool, and not reproducible outside it, is the
-  sandbox's own token restrictions, not a real bug. Always disable the
-  sandbox before trusting a live repro's *failure* to attach/debug a process
-  as evidence of anything in `dbg`-module code.
 - **Container/window rects are now accurate bounding boxes**, not the
   last-rendered descendant's rect — `imgui_renderer::render_node()` wraps
   each recursing container's dispatch in `ImGui::BeginGroup()`/`EndGroup()`
@@ -720,66 +706,13 @@ def test_saving_shows_confirmation(wish_ui):
   `YamlCursorContextDrivesHelpPanel`. Automation is still the right tool
   for confirming the *preview* subtree (`<...>_mock.*`) rendered what the
   source describes.
-- **For `dbg` module live-attach repros, use a genuinely long-running host
-  process, not `tests/dbg_fixture.exe`.** The fixture runs a fast bit-shift
-  loop to completion (2^20 iterations) in well under a second when it
-  isn't already being debugged, so a scripted sequence launched after it
-  starts (type PID, click Attach) can't reliably attach before it exits on
-  its own — the attach silently races the fixture's own exit. Launch a
-  plain, long-lived **console** process as the attach target instead --
-  e.g. `PING.EXE -t 127.0.0.1` (kill it with `Popen.terminate()` when
-  done). Do **not** use `notepad.exe` on Windows 11: it's a
-  packaged/protected app, and `DebugActiveProcess` against it fails with
-  `ERROR_ACCESS_DENIED` (error 5) unconditionally -- this is a property of
-  the target process itself, not the sandbox (it fails identically with
-  `dangerouslyDisableSandbox: true`), and not a wish bug. Neither target
-  has a matching PDB, so Source/Watch won't show meaningful data, but
-  Threads/Call Stack/Output need no app-specific symbols and are enough to
-  confirm attach/stop plumbing end-to-end. Also note:
-  `dbg_source.cpp`/`dbg.cpp` never call `client.log_info()` or similar —
-  `append_output` only populates the Output window's own `Table` widget,
-  not the automation `get_logs()` channel — so `get_logs()` is not a
-  useful signal for this module's Output content; read
-  `<...>_output.vbox.table` rows directly via `get_tree()`/`get_widget()`
-  instead. Similarly, standalone mode's `--verbose trace` writes to
-  `wish_logs/standalone.log`, not stdout, and in this module's case never
-  populated it at all during a full repro run — likely because a
-  single-process embedded app has no separate "client connects" RMI
-  lifecycle event to log — so don't rely on it here; read the widget tree
-  and the Output table directly instead.
-- **To verify the `dbg` module's Source window actually renders real file
-  content (not just an empty tab), you must reach a stop whose *topmost*
-  frame has a resolved file/line, and the Source tab opens for that
-  frame's file — not necessarily the file you want.** A plain `Pause`
-  (`DebugBreakProcess`) almost always lands inside kernel/syscall code
-  with no symbol (`NtDelayExecution`, `ZwWaitForWorkViaWorkerFactory`,
-  etc.), so its own Source push is empty and no tab opens at all — don't
-  loop on `Pause` expecting this to resolve itself. Instead: attach, click
-  **Step Over** once (this is what makes the *rest* of the Call Stack
-  resolve function names/file/line — right after attach, most frames are
-  blank), then find a Call Stack row whose File column is non-empty and
-  double-click it (`row_activated`) to force that specific frame's file
-  open via `open_file_requested`, regardless of which frame the debuggee
-  is actually stopped in. A frame for `dbg_fixture.exe`'s own `main()` (a
-  real, on-disk local path) reliably appears a few frames up from the
-  innermost frame (which is usually deep in `std::this_thread::sleep_for`
-  → `NtDelayExecution`) — that frame is what actually proves file content
-  renders, since CRT/STL frames above it (`invoke_main`,
-  `mainCRTStartup`, `_Thrd_sleep_for`'s own `sharedmutex.cpp`, etc.) carry
-  file paths baked into Microsoft's public PDBs pointing at an internal CI
-  build path (`D:\a\_work\1\s\...`) that doesn't exist on a normal
-  machine, so those tabs open but *legitimately* stay empty — that is not
-  a bug. This also means `dbg_fixture.exe` (previously written off in the
-  gotcha above as useless for Source content since it lacked a
-  long-enough lifetime) works fine for this once given a long enough
-  loop to survive the attach race.
-- **The Call Stack `Table` auto-scrolls to the innermost frame, and a
+- **In a `Table` that auto-scrolls (e.g. to its last row), a
   `get_tree()` `rect` for a now-scrolled-away row is stale, not
   absent.** The row still appears in `get_tree()` with a plausible-looking
   `rect`, so clicking at that rect's coordinates silently lands wherever
   the table has scrolled to *by click time* (often blank space, or a
   different row) instead of erroring — a bug that looks exactly like "the
-  click didn't do anything." Before clicking a Call Stack row by its
+  click didn't do anything." Before clicking such a row by its
   `rect`, re-`get_tree()` immediately beforehand and prefer a row inside
   the range that's already visible (e.g. the bottommost few, right after
   the table auto-scrolled there); to reach an earlier row, scroll the
