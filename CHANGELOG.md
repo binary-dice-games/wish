@@ -36,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Buttons in the `curl`, `sq`, `docker`, `kubectl` and `dbg` modules size to their label instead of using a fixed width, so labels are no longer cropped.
+
 - A scrolling `VerticalLayout` (`"scroll": true`) no longer draws its children under the vertical scrollbar, which cut off the right edge of the `kubectl` Top window's graphs and tables.
 - wish server: fixed an intermittent crash when a client disconnected while the server was delivering it a widget event.
 - `wish::server::start()` now stops its render loop again when listening fails (e.g. port already in use) before throwing, instead of leaving it running until the server is destroyed.

@@ -109,13 +109,13 @@ static constexpr const char* kSourceLayout = R"({
           "spacing": 6,
           "children": {
             "pid":     { "type": "InputText", "hint": "PID", "width": 90 },
-            "attach":  { "type": "Button", "label": "Attach", "width": 70 },
-            "detach":  { "type": "Button", "label": "Detach", "width": 70, "enabled": false },
-            "pause":   { "type": "Button", "label": "Pause", "width": 70, "enabled": false },
-            "resume":  { "type": "Button", "label": "Continue", "width": 85, "enabled": false },
-            "into":    { "type": "Button", "label": "Step Into", "width": 90, "enabled": false },
-            "over":    { "type": "Button", "label": "Step Over", "width": 90, "enabled": false },
-            "out":     { "type": "Button", "label": "Step Out", "width": 90, "enabled": false },
+            "attach":  { "type": "Button", "label": "Attach" },
+            "detach":  { "type": "Button", "label": "Detach", "enabled": false },
+            "pause":   { "type": "Button", "label": "Pause", "enabled": false },
+            "resume":  { "type": "Button", "label": "Continue", "enabled": false },
+            "into":    { "type": "Button", "label": "Step Into", "enabled": false },
+            "over":    { "type": "Button", "label": "Step Over", "enabled": false },
+            "out":     { "type": "Button", "label": "Step Out", "enabled": false },
             "state":   { "type": "Label", "text": "detached" }
           }
         },
@@ -183,7 +183,7 @@ static constexpr const char* kWatchLayout = R"({
           "spacing": 6,
           "children": {
             "expr": { "type": "InputText", "hint": "Expression", "width": 220 },
-            "add":  { "type": "Button", "label": "Add", "width": 60 }
+            "add":  { "type": "Button", "label": "Add" }
           }
         },
         "table": {

@@ -30,15 +30,15 @@
                       "spacing": 6,
                       "children": {
                         "s_pid":     { "type": "InputText", "hint": "PID", "width": 90 },
-                        "s_attach":  { "type": "Button", "label": "Attach", "width": 70 },
-                        "s_detach":  { "type": "Button", "label": "Detach", "width": 70, "enabled": false },
+                        "s_attach":  { "type": "Button", "label": "Attach" },
+                        "s_detach":  { "type": "Button", "label": "Detach", "enabled": false },
                         "s_sep1":    { "type": "Separator" },
-                        "s_pause":   { "type": "Button", "label": "Pause", "width": 70, "enabled": false },
-                        "s_resume":  { "type": "Button", "label": "Continue", "width": 85, "enabled": true },
+                        "s_pause":   { "type": "Button", "label": "Pause", "enabled": false },
+                        "s_resume":  { "type": "Button", "label": "Continue", "enabled": true },
                         "s_sep2":    { "type": "Separator" },
-                        "s_into":    { "type": "Button", "label": "Step Into", "width": 90, "enabled": true },
-                        "s_over":    { "type": "Button", "label": "Step Over", "width": 90, "enabled": true },
-                        "s_out":     { "type": "Button", "label": "Step Out", "width": 90, "enabled": true },
+                        "s_into":    { "type": "Button", "label": "Step Into", "enabled": true },
+                        "s_over":    { "type": "Button", "label": "Step Over", "enabled": true },
+                        "s_out":     { "type": "Button", "label": "Step Out", "enabled": true },
                         "s_state":   { "type": "Label", "text": "paused", "text_color_light": "#9A6700FF", "text_color_dark": "#D29922FF" }
                       }
                     },
@@ -199,7 +199,7 @@
                       "spacing": 6,
                       "children": {
                         "w_expr": { "type": "InputText", "hint": "Expression", "width": 220 },
-                        "w_add":  { "type": "Button", "label": "Add", "width": 60 }
+                        "w_add":  { "type": "Button", "label": "Add" }
                       }
                     },
                     "w_table": {

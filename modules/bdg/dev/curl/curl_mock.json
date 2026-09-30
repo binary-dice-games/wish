@@ -32,7 +32,7 @@
                         "r_url":    { "type": "InputText", "value": "https://api.example.com/v1/users", "width": 420 },
                         "r_env":    { "type": "Combo", "items": "No Environment\nLocal\nStaging", "value": 1, "width": 140 },
                         "r_follow": { "type": "Checkbox", "label": "Follow redirects", "value": true },
-                        "r_send":   { "type": "Button", "label": "Send", "width": 90 }
+                        "r_send":   { "type": "Button", "label": "Send" }
                       }
                     },
                     "r_save_bar": {
@@ -42,7 +42,7 @@
                         "r_save_label": { "type": "Label", "text": "Save as:" },
                         "r_save_name":  { "type": "InputText", "hint": "request name", "width": 200 },
                         "r_save_coll":  { "type": "InputText", "hint": "collection", "width": 200 },
-                        "r_save_btn":   { "type": "Button", "label": "Save", "width": 80 }
+                        "r_save_btn":   { "type": "Button", "label": "Save" }
                       }
                     },
                     "r_status": { "type": "Label", "text": "200 OK    118 ms    1.2 KB", "text_color_light": "#1A7F37FF", "text_color_dark": "#3FB950FF" },
@@ -56,7 +56,7 @@
                           "type": "TabItem",
                           "label": "Params",
                           "children": {
-                            "p_toolbar": { "type": "HorizontalLayout", "children": { "p_add": { "type": "Button", "label": "+ Add Param", "width": 120 } } },
+                            "p_toolbar": { "type": "HorizontalLayout", "children": { "p_add": { "type": "Button", "label": "+ Add Param" } } },
                             "p_table": {
                               "type": "Table", "id": "##mock_params_table", "columns": 4,
                               "flags": "Resizable|RowBg|Borders", "headers": true, "height": 220, "outer_height": 220,
@@ -69,7 +69,7 @@
                                   "c0": { "type": "Checkbox", "value": true },
                                   "c1": { "type": "InputText", "value": "page" },
                                   "c2": { "type": "InputText", "value": "1" },
-                                  "c3": { "type": "Button", "label": "x", "width": 26 }
+                                  "c3": { "type": "Button", "label": "x" }
                                 } }
                               }
                             }
@@ -79,7 +79,7 @@
                           "type": "TabItem",
                           "label": "Headers",
                           "children": {
-                            "h_toolbar": { "type": "HorizontalLayout", "children": { "h_add": { "type": "Button", "label": "+ Add Header", "width": 120 } } },
+                            "h_toolbar": { "type": "HorizontalLayout", "children": { "h_add": { "type": "Button", "label": "+ Add Header" } } },
                             "h_table": {
                               "type": "Table", "id": "##mock_headers_table", "columns": 4,
                               "flags": "Resizable|RowBg|Borders", "headers": true, "height": 220, "outer_height": 220,
@@ -92,7 +92,7 @@
                                   "c0": { "type": "Checkbox", "value": true },
                                   "c1": { "type": "InputText", "value": "Accept" },
                                   "c2": { "type": "InputText", "value": "application/json" },
-                                  "c3": { "type": "Button", "label": "x", "width": 26 }
+                                  "c3": { "type": "Button", "label": "x" }
                                 } }
                               }
                             }
@@ -176,7 +176,7 @@
                   "type": "VerticalLayout",
                   "spacing": 4,
                   "children": {
-                    "hist_toolbar": { "type": "HorizontalLayout", "children": { "hist_clear": { "type": "Button", "label": "Clear History", "width": 120 } } },
+                    "hist_toolbar": { "type": "HorizontalLayout", "children": { "hist_clear": { "type": "Button", "label": "Clear History" } } },
                     "hist_status": { "type": "Label", "text": "2 requests" },
                     "hist_table": {
                       "type": "Table", "id": "##mock_history_table", "columns": 6,
@@ -252,7 +252,7 @@
                       "spacing": 6,
                       "children": {
                         "env_new_name": { "type": "InputText", "hint": "new environment name", "width": 220 },
-                        "env_new_btn":  { "type": "Button", "label": "New Environment", "width": 140 }
+                        "env_new_btn":  { "type": "Button", "label": "New Environment" }
                       }
                     },
                     "env_table": {
@@ -278,8 +278,8 @@
                       "type": "HorizontalLayout",
                       "spacing": 6,
                       "children": {
-                        "env_add_var":   { "type": "Button", "label": "+ Add Variable", "width": 130 },
-                        "env_save_vars": { "type": "Button", "label": "Save Variables", "width": 130 }
+                        "env_add_var":   { "type": "Button", "label": "+ Add Variable" },
+                        "env_save_vars": { "type": "Button", "label": "Save Variables" }
                       }
                     },
                     "env_vars_table": {
@@ -292,7 +292,7 @@
                         "row0": { "type": "TableRow", "children": {
                           "c0": { "type": "InputText", "value": "base_url" },
                           "c1": { "type": "InputText", "value": "http://localhost:8080" },
-                          "c2": { "type": "Button", "label": "x", "width": 26 }
+                          "c2": { "type": "Button", "label": "x" }
                         } }
                       }
                     }

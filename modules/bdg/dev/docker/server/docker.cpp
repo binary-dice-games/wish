@@ -118,8 +118,8 @@ static constexpr const char* kContainersLayout = R"json({
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_refresh": { "type": "Button", "label": "Refresh", "width": 90 },
-      "btn_prune":   { "type": "Button", "label": "Prune stopped...", "width": 130 },
+      "btn_refresh": { "type": "Button", "label": "Refresh" },
+      "btn_prune":   { "type": "Button", "label": "Prune stopped..." },
       "filter":      { "type": "InputText", "hint": "Filter by name / image", "width": 240 },
       "state":       { "type": "Combo", "items": "All\nRunning\nStopped", "value": 0, "width": 110 }
     } },
@@ -146,10 +146,10 @@ static constexpr const char* kImagesLayout = R"json({
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_refresh": { "type": "Button", "label": "Refresh", "width": 90 },
+      "btn_refresh": { "type": "Button", "label": "Refresh" },
       "pull_ref":    { "type": "InputText", "hint": "repo:tag to pull", "width": 220 },
-      "btn_pull":    { "type": "Button", "label": "Pull", "width": 70 },
-      "btn_prune":   { "type": "Button", "label": "Prune dangling...", "width": 140 }
+      "btn_pull":    { "type": "Button", "label": "Pull" },
+      "btn_prune":   { "type": "Button", "label": "Prune dangling..." }
     } },
     "status": { "type": "Label", "text": "" },
     "sep": { "type": "Separator" },
@@ -174,10 +174,10 @@ static constexpr const char* kVolumesLayout = R"json({
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_refresh": { "type": "Button", "label": "Refresh", "width": 90 },
+      "btn_refresh": { "type": "Button", "label": "Refresh" },
       "vol_name":    { "type": "InputText", "hint": "new volume name", "width": 200 },
-      "btn_create":  { "type": "Button", "label": "Create", "width": 80 },
-      "btn_prune":   { "type": "Button", "label": "Prune...", "width": 90 }
+      "btn_create":  { "type": "Button", "label": "Create" },
+      "btn_prune":   { "type": "Button", "label": "Prune..." }
     } },
     "status": { "type": "Label", "text": "" },
     "sep": { "type": "Separator" },
@@ -200,8 +200,8 @@ static constexpr const char* kNetworksLayout = R"json({
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_refresh": { "type": "Button", "label": "Refresh", "width": 90 },
-      "btn_prune":   { "type": "Button", "label": "Prune...", "width": 90 }
+      "btn_refresh": { "type": "Button", "label": "Refresh" },
+      "btn_prune":   { "type": "Button", "label": "Prune..." }
     } },
     "status": { "type": "Label", "text": "" },
     "sep": { "type": "Separator" },
@@ -234,7 +234,7 @@ static constexpr const char* kLogsLayout = R"json({
       "spring":     { "type": "Spring" },
       "follow":     { "type": "Checkbox", "label": "Follow", "value": false },
       "lines":      { "type": "InputInt", "label": "Lines", "value": 500, "step": 100, "width": 130 },
-      "btn_refresh":{ "type": "Button", "label": "Refresh", "width": 90 }
+      "btn_refresh":{ "type": "Button", "label": "Refresh" }
     } },
     "sep": { "type": "Separator" },
     "editor": {
@@ -251,7 +251,7 @@ static constexpr const char* kInspectLayout = R"json({
     "toolbar": { "type": "HorizontalLayout", "spacing": 8, "children": {
       "target":     { "type": "Label", "text": "(nothing selected)" },
       "spring":     { "type": "Spring" },
-      "btn_refresh":{ "type": "Button", "label": "Refresh", "width": 90 }
+      "btn_refresh":{ "type": "Button", "label": "Refresh" }
     } },
     "sep": { "type": "Separator" },
     "editor": {

@@ -86,10 +86,10 @@ static constexpr const char* kEditorLayout = R"json({
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_run":  { "type": "Button", "label": "Run", "width": 70 },
+      "btn_run":  { "type": "Button", "label": "Run" },
       "conn":     { "type": "Combo", "items": "(no connection)", "value": 0, "width": 220 },
       "rows":     { "type": "Combo", "items": "100 rows\n500 rows\n1000 rows\n5000 rows", "value": 1, "width": 110 },
-      "btn_refresh": { "type": "Button", "label": "Refresh", "width": 80 }
+      "btn_refresh": { "type": "Button", "label": "Refresh" }
     } },
     "status": { "type": "Label", "text": "Read-only queries only: SELECT / WITH / VALUES / SHOW / DESCRIBE / EXPLAIN." },
     "sql": { "type": "TextEditor", "language": "sql", "file_path": "", "width": -1, "height": -1 }
@@ -101,10 +101,10 @@ static constexpr const char* kResultsLayout = R"json({
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "export": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_export": { "type": "Button", "label": "Export CSV", "width": 100 },
+      "btn_export": { "type": "Button", "label": "Export CSV" },
       "path":      { "type": "InputText", "hint": "CSV file in the session folder, e.g. result.csv", "width": 380 },
       "overwrite": { "type": "Checkbox", "label": "Overwrite", "value": false },
-      "btn_open":  { "type": "Button", "label": "Open folder", "width": 100 }
+      "btn_open":  { "type": "Button", "label": "Open folder" }
     } },
     "status": { "type": "Label", "text": "Run a query to see its results." },
     "sep": { "type": "Separator" },
@@ -129,7 +129,7 @@ static constexpr const char* kConnectionsLayout = R"json({
     } },
     "new_row2": { "type": "HorizontalLayout", "spacing": 6, "children": {
       "password": { "type": "InputText", "hint": "password (optional)", "flags": "Password", "width": 170 },
-      "btn_add":  { "type": "Button", "label": "Add connection", "width": 130 }
+      "btn_add":  { "type": "Button", "label": "Add connection" }
     } },
     "status": { "type": "Label", "text": "" },
     "sep": { "type": "Separator" },
@@ -207,10 +207,10 @@ static constexpr const char* kChartLayout = R"json({
     } },
     "ycols": { "type": "TreeNode", "label": "Y columns", "open": true, "children": {} },
     "save": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_save":  { "type": "Button", "label": "Save PNG", "width": 90 },
+      "btn_save":  { "type": "Button", "label": "Save PNG" },
       "path":      { "type": "InputText", "hint": "PNG file in the session folder, e.g. chart.png", "width": 380 },
       "overwrite": { "type": "Checkbox", "label": "Overwrite", "value": false },
-      "btn_open":  { "type": "Button", "label": "Open folder", "width": 100 }
+      "btn_open":  { "type": "Button", "label": "Open folder" }
     } },
     "status": { "type": "Label", "text": "Run a query to chart its results." },
     "plot": { "type": "Plot", "title": "##sq_chart_0", "height": -1, "children": {} }

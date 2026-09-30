@@ -29,8 +29,8 @@
                       "type": "HorizontalLayout",
                       "spacing": 6,
                       "children": {
-                        "c_refresh": { "type": "Button", "label": "Refresh", "width": 90 },
-                        "c_prune":   { "type": "Button", "label": "Prune stopped...", "width": 130 },
+                        "c_refresh": { "type": "Button", "label": "Refresh" },
+                        "c_prune":   { "type": "Button", "label": "Prune stopped..." },
                         "c_filter":  { "type": "InputText", "hint": "Filter by name / image", "width": 220 },
                         "c_state":   { "type": "Combo", "items": "All\nRunning\nStopped", "value": 0, "width": 110 }
                       }
@@ -127,10 +127,10 @@
                       "type": "HorizontalLayout",
                       "spacing": 6,
                       "children": {
-                        "i_refresh": { "type": "Button", "label": "Refresh", "width": 90 },
+                        "i_refresh": { "type": "Button", "label": "Refresh" },
                         "i_pullref": { "type": "InputText", "hint": "repo:tag to pull", "width": 220 },
-                        "i_pull":    { "type": "Button", "label": "Pull", "width": 70 },
-                        "i_prune":   { "type": "Button", "label": "Prune dangling...", "width": 140 }
+                        "i_pull":    { "type": "Button", "label": "Pull" },
+                        "i_prune":   { "type": "Button", "label": "Prune dangling..." }
                       }
                     },
                     "i_status": { "type": "Label", "text": "4 images - 1.9 GB" },
@@ -214,10 +214,10 @@
                       "type": "HorizontalLayout",
                       "spacing": 6,
                       "children": {
-                        "v_refresh": { "type": "Button", "label": "Refresh", "width": 90 },
+                        "v_refresh": { "type": "Button", "label": "Refresh" },
                         "v_name":    { "type": "InputText", "hint": "new volume name", "width": 200 },
-                        "v_create":  { "type": "Button", "label": "Create", "width": 80 },
-                        "v_prune":   { "type": "Button", "label": "Prune...", "width": 90 }
+                        "v_create":  { "type": "Button", "label": "Create" },
+                        "v_prune":   { "type": "Button", "label": "Prune..." }
                       }
                     },
                     "v_status": { "type": "Label", "text": "2 volumes" },
@@ -279,8 +279,8 @@
                       "type": "HorizontalLayout",
                       "spacing": 6,
                       "children": {
-                        "n_refresh": { "type": "Button", "label": "Refresh", "width": 90 },
-                        "n_prune":   { "type": "Button", "label": "Prune...", "width": 90 }
+                        "n_refresh": { "type": "Button", "label": "Refresh" },
+                        "n_prune":   { "type": "Button", "label": "Prune..." }
                       }
                     },
                     "n_status": { "type": "Label", "text": "4 networks" },
@@ -340,7 +340,7 @@
                         "l_target": { "type": "Label", "text": "web  (nginx:latest)" },
                         "l_follow": { "type": "Checkbox", "label": "Follow", "value": true },
                         "l_lines":  { "type": "InputInt", "label": "Lines", "value": 1000, "step": 100, "width": 120 },
-                        "l_refresh": { "type": "Button", "label": "Refresh", "width": 90 }
+                        "l_refresh": { "type": "Button", "label": "Refresh" }
                       }
                     },
                     "l_sep": { "type": "Separator" },
@@ -370,7 +370,7 @@
                       "spacing": 8,
                       "children": {
                         "x_target": { "type": "Label", "text": "container: web" },
-                        "x_refresh": { "type": "Button", "label": "Refresh", "width": 90 }
+                        "x_refresh": { "type": "Button", "label": "Refresh" }
                       }
                     },
                     "x_sep": { "type": "Separator" },

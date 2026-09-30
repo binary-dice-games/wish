@@ -29,7 +29,7 @@
                       "type": "HorizontalLayout",
                       "spacing": 6,
                       "children": {
-                        "p_refresh": { "type": "Button", "label": "Refresh", "width": 90 },
+                        "p_refresh": { "type": "Button", "label": "Refresh" },
                         "p_filter":  { "type": "InputText", "hint": "Filter by name", "width": 200 },
                         "p_ns":      { "type": "InputText", "hint": "Namespace", "width": 150 },
                         "p_state":   { "type": "Combo", "items": "All\nRunning\nPending\nSucceeded\nFailed", "value": 0, "width": 120 }
@@ -142,7 +142,7 @@
                       "type": "HorizontalLayout",
                       "spacing": 6,
                       "children": {
-                        "d_refresh": { "type": "Button", "label": "Refresh", "width": 90 },
+                        "d_refresh": { "type": "Button", "label": "Refresh" },
                         "d_filter":  { "type": "InputText", "hint": "Filter by name", "width": 200 },
                         "d_ns":      { "type": "InputText", "hint": "Namespace", "width": 150 }
                       }
@@ -219,7 +219,7 @@
                       "type": "HorizontalLayout",
                       "spacing": 6,
                       "children": {
-                        "s_refresh": { "type": "Button", "label": "Refresh", "width": 90 },
+                        "s_refresh": { "type": "Button", "label": "Refresh" },
                         "s_filter":  { "type": "InputText", "hint": "Filter by name", "width": 200 },
                         "s_ns":      { "type": "InputText", "hint": "Namespace", "width": 150 }
                       }
@@ -294,7 +294,7 @@
                       "type": "HorizontalLayout",
                       "spacing": 6,
                       "children": {
-                        "no_refresh": { "type": "Button", "label": "Refresh", "width": 90 },
+                        "no_refresh": { "type": "Button", "label": "Refresh" },
                         "no_filter":  { "type": "InputText", "hint": "Filter by name", "width": 200 }
                       }
                     },
@@ -369,7 +369,7 @@
                         "l_spring": { "type": "Spring" },
                         "l_follow": { "type": "Checkbox", "label": "Follow", "value": false },
                         "l_lines":  { "type": "InputInt", "label": "Lines", "value": 500, "step": 100, "width": 130 },
-                        "l_refresh":{ "type": "Button", "label": "Refresh", "width": 90 }
+                        "l_refresh":{ "type": "Button", "label": "Refresh" }
                       }
                     },
                     "l_sep": { "type": "Separator" },
@@ -409,7 +409,7 @@
                       "children": {
                         "de_target": { "type": "Label", "text": "pod: default/web-6d8c-abcde" },
                         "de_spring": { "type": "Spring" },
-                        "de_refresh":{ "type": "Button", "label": "Refresh", "width": 90 }
+                        "de_refresh":{ "type": "Button", "label": "Refresh" }
                       }
                     },
                     "de_sep": { "type": "Separator" },
