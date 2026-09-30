@@ -30,6 +30,7 @@
 #include <ui/ui_importer.hpp>
 
 #include <deque>
+#include <filesystem>
 #include <functional>
 #include <map>
 #include <memory>
@@ -195,11 +196,21 @@ class kubectl_frontend : public form {
   void rebuild_nodes(const bison::dynamic& args);
 
   // ── Logs / Describe text panes ──────────────────────────────────────
+  /// @brief Build a toolbar + body window (Logs, Describe, Console) from
+  /// @p layout_json and register it as a top-level object under @p root_key.
+  /// @p wire binds that window's own toolbar controls and body widget.
   void build_text_window(
-      const std::string& root_key, const char* layout_json, bison::key_t& window_id_out,
-      ui_element_ptr& table_out, const std::function<void(ui_tree&)>& wire_toolbar);
-  void set_text_lines(
-      const ui_element_ptr& table, std::vector<bison::key_t>& line_ids, size_t& next_key, const std::string& text);
+      const std::string& root_key,
+      const char* layout_json,
+      bison::key_t& window_id_out,
+      const std::function<void(ui_tree&)>& wire);
+  /// @brief Show @p text in a Logs/Describe `TextEditor`: write it to a new
+  /// file `private/<root>_<stem>_<n>.txt` in the session sandbox, point
+  /// @p editor's `file_path` at it and delete the file it replaced (tracked
+  /// in @p file). A write failure leaves the editor unchanged.
+  void set_editor_text(const ui_element_ptr& editor, std::string& file, const char* stem, const std::string& text);
+  /// @brief Delete the sandbox file named by @p file (if any) and clear it.
+  void remove_editor_file(std::string& file);
   void emit_logs_request();
   void emit_describe_request();
 
@@ -237,12 +248,11 @@ class kubectl_frontend : public form {
   // Logs window.
   std::string logs_root_key_;
   bison::key_t logs_window_id_;
-  ui_element_ptr logs_table_;
+  ui_element_ptr logs_editor_;
+  std::string logs_file_; // sandbox-relative file logs_editor_ shows
   ui_element_ptr logs_target_label_;
   bison::key_t logs_follow_id_;
   bison::key_t logs_lines_id_;
-  std::vector<bison::key_t> logs_line_ids_;
-  size_t next_logs_line_key_{0};
   std::string open_logs_name_;
   std::string open_logs_ns_;
   bool logs_follow_{false};
@@ -251,13 +261,15 @@ class kubectl_frontend : public form {
   // Describe window.
   std::string describe_root_key_;
   bison::key_t describe_window_id_;
-  ui_element_ptr describe_table_;
+  ui_element_ptr describe_editor_;
+  std::string describe_file_; // sandbox-relative file describe_editor_ shows
   ui_element_ptr describe_target_label_;
-  std::vector<bison::key_t> describe_line_ids_;
-  size_t next_describe_line_key_{0};
   std::string open_describe_name_;
   std::string open_describe_ns_;
   std::string open_describe_kind_;
+
+  std::filesystem::path resource_dir_; // session sandbox root (set in on_init())
+  size_t next_editor_file_seq_{0}; // makes each set_editor_text() file name unique
 
   // ── Console window (client `kubectl` subprocess trace) ──────────────
   //

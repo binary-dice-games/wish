@@ -147,10 +147,104 @@ const TextEditor::Language* yaml_language() {
   return &language;
 }
 
+// ── Log syntax highlighting ──────────────────────────────────────────────────
+//
+// Plain-text process/container log output (`docker logs`, `kubectl logs`)
+// has no grammar, so this is deliberately loose: severity levels as
+// (case-insensitive) keywords, digit runs -- including the separators of
+// dates, times and IPs, so a whole `2026-09-30T12:00:01.5Z` timestamp reads
+// as one number token -- double-quoted strings (JSON-lines logs), and
+// bracket/`=`/`:` punctuation. Single quotes are NOT strings: an apostrophe
+// in free text ("can't") would otherwise color the rest of the line.
+
+TeIter log_number(TeIter start, TeIter end) {
+  TeIter i = start;
+  if (i >= end || !TextEditor::CodePoint::isNumber(*i))
+    return start;
+  while (i < end) {
+    ImWchar c = *i;
+    if (TextEditor::CodePoint::isNumber(c)) {
+      ++i;
+      continue;
+    }
+    // A separator only extends the token when a digit follows it (or, for
+    // the ISO-8601 'T'/'Z' markers, when it sits inside/at the end of a
+    // timestamp), so "10:" or "3-" leave their trailing punctuation alone.
+    TeIter next = i;
+    ++next;
+    bool digit_next = next < end && TextEditor::CodePoint::isNumber(*next);
+    if ((c == '.' || c == ':' || c == '-' || c == '/' || c == 'T' || c == '+' || c == ',') && digit_next) {
+      i = next;
+      continue;
+    }
+    if (c == 'Z' || c == 's' || c == 'm') { // trailing 'Z' (UTC), durations ("12ms", "3s")
+      if (c == 'm' && next < end && *next == 's')
+        ++next;
+      if (next >= end || !TextEditor::CodePoint::isXidContinue(*next))
+        i = next;
+    }
+    break;
+  }
+  return i;
+}
+
+TeIter log_identifier(TeIter start, TeIter end) {
+  TeIter i = start;
+  if (i < end && (TextEditor::CodePoint::isXidStart(*i) || *i == '_')) {
+    ++i;
+    while (i < end && TextEditor::CodePoint::isXidContinue(*i))
+      ++i;
+  }
+  return i;
+}
+
+bool log_punctuation(ImWchar c) {
+  return c == '[' || c == ']' || c == '(' || c == ')' || c == '{' || c == '}' || c == '=' || c == ':' || c == ',' ||
+      c == '|';
+}
+
+const TextEditor::Language* log_language() {
+  static const TextEditor::Language language = [] {
+    TextEditor::Language l;
+    l.name = "Log";
+    l.caseSensitive = false; // keywords below must therefore be lower case
+    l.hasDoubleQuotedStrings = true;
+    l.stringEscape = '\\';
+    // Problem severities as keywords, routine ones as declarations, so the
+    // two groups get distinct palette colors.
+    for (const char* kw :
+         {"error",
+          "err",
+          "fatal",
+          "panic",
+          "critical",
+          "crit",
+          "severe",
+          "alert",
+          "emerg",
+          "emergency",
+          "exception",
+          "failed",
+          "failure",
+          "warn",
+          "warning"})
+      l.keywords.insert(kw);
+    for (const char* decl : {"info", "information", "notice", "debug", "dbug", "trace", "verbose"})
+      l.declarations.insert(decl);
+    l.getIdentifier = log_identifier;
+    l.getNumber = log_number;
+    l.isPunctuation = log_punctuation;
+    return l;
+  }();
+  return &language;
+}
+
 // Map wish language string → TextEditor::Language factory.
 const TextEditor::Language* language_for(const std::string& lang) {
   if (lang == "yaml" || lang == "yml")
     return yaml_language();
+  if (lang == "log")
+    return log_language();
   if (lang == "cpp" || lang == "c++")
     return TextEditor::Language::Cpp();
   if (lang == "c")
@@ -254,6 +348,7 @@ void render_text_editor(imgui_renderer&, const ui_element& node_base, const cont
   auto language = node.language("none");
   auto read_only = node.read_only();
   auto wish_ui_schema = node.wish_ui_schema();
+  auto auto_scroll = node.auto_scroll();
   int32_t w = node.width_i(0);
   int32_t h = node.height_i(400);
 
@@ -275,6 +370,11 @@ void render_text_editor(imgui_renderer&, const ui_element& node_base, const cont
     st.loaded_lang = language;
     st.editor.SetLanguage(language_for(language));
     st.last_undo_index = st.editor.GetUndoIndex();
+    // Must follow SetText(), which resets scrolling (see TextEditor.h's
+    // "note on setting scrolling and cursor position"); applied by the
+    // Render() call below.
+    if (auto_scroll && st.editor.GetLineCount() > 0)
+      st.editor.ScrollToLine(st.editor.GetLineCount() - 1, TextEditor::Scroll::alignBottom);
   } else if (st.loaded_lang != language) {
     // Language changed without a file change — reapply highlighting.
     st.loaded_lang = language;

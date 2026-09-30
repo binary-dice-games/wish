@@ -17,7 +17,11 @@ class LoggerTest : public ::testing::Test {
  protected:
   void SetUp() override {
     bdg::wish::register_all();
-    log_path_ = std::filesystem::temp_directory_path() / "wish_test_logger.log";
+    // Unique per test: ctest runs each test case as its own process, in
+    // parallel with -j, so a shared fixed name would let one test's
+    // SetUp()/TearDown() delete or append to another test's log.
+    log_path_ = std::filesystem::temp_directory_path() /
+        (std::string{"wish_test_logger_"} + ::testing::UnitTest::GetInstance()->current_test_info()->name() + ".log");
     std::filesystem::remove(log_path_); // start clean
   }
 

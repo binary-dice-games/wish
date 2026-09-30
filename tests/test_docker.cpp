@@ -1,6 +1,8 @@
 // MIT License © 2026 Binary Dice Games
 #include <gtest/gtest.h>
 
+#include "session_event_recorder.hpp"
+
 #include <server/registry.hpp>
 #include <server/server.hpp>
 #include <context/context.hpp>
@@ -10,7 +12,10 @@
 #include "src/rmi/rmi.hpp"
 
 #include <chrono>
+#include <filesystem>
+#include <fstream>
 #include <functional>
+#include <iterator>
 #include <memory>
 #include <optional>
 #include <string>
@@ -82,10 +87,13 @@ class SessionCapturingServer : public wish::server {
   SessionCapturingServer(server_transport_iface& t, std::unique_ptr<wish::renderer> r)
       : wish::server(t, std::move(r)) {}
   wish::context* last_session{nullptr};
+  /// Every event the session emits (see session_event_recorder.hpp).
+  std::shared_ptr<session_event_recorder> events = std::make_shared<session_event_recorder>();
 
  protected:
   void on_session_created(wish::context& s) override {
     last_session = &s;
+    session_event_recorder::attach(events, s);
   }
 };
 
@@ -137,6 +145,24 @@ class DockerRmiTest : public ::testing::Test {
 
   dynamic call(bison::key_t method, dynamic args) {
     return proxy_->call(method, std::move(args)).get();
+  }
+
+  // file_path of the TextEditor at @p path ("" if missing/unset).
+  std::string editor_file(const std::string& path) const {
+    auto it = srv_->last_session->ui_objects.find(path);
+    if (it == srv_->last_session->ui_objects.end())
+      return {};
+    auto* f = it->second->findField<std::string>("file_path"_key);
+    return f ? *f : std::string{};
+  }
+
+  // Contents of the sandbox file the TextEditor at @p path displays.
+  std::string editor_text(const std::string& path) const {
+    auto rel = editor_file(path);
+    if (rel.empty())
+      return {};
+    std::ifstream in(srv_->last_session->resource_dir / rel, std::ios::binary);
+    return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>{}};
   }
 
   size_t row_count(const std::string& path) const {
@@ -230,12 +256,6 @@ class DockerRmiTest : public ::testing::Test {
     h->second->on_event(id, event, std::move(payload));
   }
 
-  static void wait_for(const bool& flag) {
-    auto t0 = std::chrono::steady_clock::now();
-    while (!flag && std::chrono::steady_clock::now() - t0 < std::chrono::seconds(2))
-      std::this_thread::sleep_for(std::chrono::milliseconds(5));
-  }
-
   // Widget id of a toolbar / table element addressable by dot-path.
   bison::key_t id_at(const std::string& dot_path) const {
     auto it = srv_->last_session->ui_objects.find(root_ + "." + dot_path);
@@ -295,16 +315,10 @@ TEST_F(DockerRmiTest, RemoveClickShowsConfirmDialogInsteadOfEmitting) {
        make_containers_args({{"a1", "web", "nginx", "running", "Up", "", "now"}}));
 
   bool got = false;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "container_action_requested"_key)
-      got = true;
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
 
   fire(menu_item_id(0, "Remove..."), "clicked"_key);
-  wait_for(got);
+  got = srv_->events->wait_for("container_action_requested"_key, since).has_value();
   EXPECT_FALSE(got) << "remove must be held back pending confirmation";
 
   std::string confirm_root = find_root_with_prefix(srv_->last_session->ui_objects, "__message_box_");
@@ -324,18 +338,13 @@ TEST_F(DockerRmiTest, ConfirmRemoveYesEmitsContainerActionRequested) {
 
   bool got = false;
   dynamic captured;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "container_action_requested"_key) {
-      got = true;
-      captured = payload.clone();
-    }
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
 
   fire_at(confirm_root, yes_id, "clicked"_key);
-  wait_for(got);
+  if (auto ev = srv_->events->wait_for("container_action_requested"_key, since)) {
+    got = true;
+    captured = std::move(*ev);
+  }
   ASSERT_TRUE(got);
   EXPECT_EQ(captured.as<std::string>("id"_key), "a1");
   EXPECT_EQ(captured.as<std::string>("action"_key), "remove");
@@ -351,16 +360,10 @@ TEST_F(DockerRmiTest, ConfirmRemoveNoCancelsWithoutEmitting) {
   auto no_id = srv_->last_session->ui_objects.at(confirm_root + ".buttons.btn1")->as<bison::key_t>("__wish_id"_key);
 
   bool got = false;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "container_action_requested"_key)
-      got = true;
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
 
   fire_at(confirm_root, no_id, "clicked"_key);
-  wait_for(got);
+  got = srv_->events->wait_for("container_action_requested"_key, since).has_value();
   EXPECT_FALSE(got);
 }
 
@@ -370,18 +373,13 @@ TEST_F(DockerRmiTest, ReversibleActionFiresImmediately) {
 
   bool got = false;
   dynamic captured;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "container_action_requested"_key) {
-      got = true;
-      captured = payload.clone();
-    }
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
 
   fire(menu_item_id(0, "Start"), "clicked"_key);
-  wait_for(got);
+  if (auto ev = srv_->events->wait_for("container_action_requested"_key, since)) {
+    got = true;
+    captured = std::move(*ev);
+  }
   ASSERT_TRUE(got);
   EXPECT_EQ(captured.as<std::string>("action"_key), "start");
   EXPECT_TRUE(find_root_with_prefix(srv_->last_session->ui_objects, "__message_box_").empty());
@@ -389,15 +387,9 @@ TEST_F(DockerRmiTest, ReversibleActionFiresImmediately) {
 
 TEST_F(DockerRmiTest, RefreshButtonEmitsRefreshRequested) {
   bool got = false;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "refresh_requested"_key)
-      got = true;
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
   fire(id_at("vbox.toolbar.btn_refresh"), "clicked"_key);
-  wait_for(got);
+  got = srv_->events->wait_for("refresh_requested"_key, since).has_value();
   EXPECT_TRUE(got);
 }
 
@@ -540,17 +532,12 @@ TEST_F(DockerRmiTest, ImageRemoveConfirmsThenEmitsImageActionRequested) {
 
   bool got = false;
   dynamic cap;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "image_action_requested"_key) {
-      got = true;
-      cap = payload.clone();
-    }
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
   fire_at(cr, yes, "clicked"_key);
-  wait_for(got);
+  if (auto ev = srv_->events->wait_for("image_action_requested"_key, since)) {
+    got = true;
+    cap = std::move(*ev);
+  }
   ASSERT_TRUE(got);
   EXPECT_EQ(cap.as<std::string>("id"_key), "abc123");
   EXPECT_EQ(cap.as<std::string>("action"_key), "remove");
@@ -568,17 +555,12 @@ TEST_F(DockerRmiTest, VolumeRemoveEmitsWithNameField) {
 
   bool got = false;
   dynamic cap;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "volume_action_requested"_key) {
-      got = true;
-      cap = payload.clone();
-    }
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
   fire_at(cr, yes, "clicked"_key);
-  wait_for(got);
+  if (auto ev = srv_->events->wait_for("volume_action_requested"_key, since)) {
+    got = true;
+    cap = std::move(*ev);
+  }
   ASSERT_TRUE(got);
   EXPECT_EQ(cap.as<std::string>("name"_key), "pgdata");
 }
@@ -602,17 +584,12 @@ TEST_F(DockerRmiTest, PruneImagesConfirmsThenEmitsScope) {
 
   bool got = false;
   dynamic cap;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "prune_requested"_key) {
-      got = true;
-      cap = payload.clone();
-    }
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
   fire_at(cr, yes, "clicked"_key);
-  wait_for(got);
+  if (auto ev = srv_->events->wait_for("prune_requested"_key, since)) {
+    got = true;
+    cap = std::move(*ev);
+  }
   ASSERT_TRUE(got);
   EXPECT_EQ(cap.as<std::string>("scope"_key), "images");
 }
@@ -625,18 +602,13 @@ TEST_F(DockerRmiTest, PullButtonEmitsPullImageRequestedFromInlineField) {
 
   bool got = false;
   dynamic cap;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "pull_image_requested"_key) {
-      got = true;
-      cap = payload.clone();
-    }
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
   auto btn = srv_->last_session->ui_objects.at(root_ + "_images.vbox.toolbar.btn_pull")->as<bison::key_t>("__wish_id"_key);
   fire_at(root_ + "_images", btn, "clicked"_key);
-  wait_for(got);
+  if (auto ev = srv_->events->wait_for("pull_image_requested"_key, since)) {
+    got = true;
+    cap = std::move(*ev);
+  }
   ASSERT_TRUE(got);
   EXPECT_EQ(cap.as<std::string>("ref"_key), "redis:7");
 }
@@ -654,49 +626,48 @@ TEST_F(DockerRmiTest, CommandResultScopeRoutesToRightWindowStatus) {
 
 TEST_F(DockerRmiTest, ClosingAnyWindowEmitsClosed) {
   bool got = false;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "closed"_key)
-      got = true;
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
   auto win = srv_->last_session->ui_objects.at(root_ + "_volumes")->as<bison::key_t>("__wish_id"_key);
   fire_at(root_ + "_volumes", win, "closed"_key);
-  wait_for(got);
+  got = srv_->events->wait_for("closed"_key, since).has_value();
   EXPECT_TRUE(got);
 }
 
 // ── Logs / Inspect windows ────────────────────────────────────────────────
 
 TEST_F(DockerRmiTest, InstantiationBuildsLogsAndInspectWindows) {
-  EXPECT_TRUE(srv_->last_session->ui_objects.count(root_ + "_logs.vbox.table"));
-  EXPECT_TRUE(srv_->last_session->ui_objects.count(root_ + "_inspect.vbox.table"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root_ + "_logs.vbox.editor"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root_ + "_inspect.vbox.editor"));
   EXPECT_TRUE(srv_->last_session->top_level_handlers.count(bison::key_t{root_ + "_logs"}));
 }
 
 // Both scroll axes must be enabled on every scrollable table: ImGui has no
 // single "Scroll" flag, so the descriptor lists ScrollX|ScrollY explicitly.
-// The single-column Logs/Inspect line tables additionally use a WidthFixed
-// col_line so ScrollX has a content width to pan over (a WidthStretch column
-// is clamped to the viewport and long lines get clipped, not scrolled).
 TEST_F(DockerRmiTest, ScrollableTablesEnableBothScrollAxes) {
   constexpr int32_t kScrollX = 1 << 24;
   constexpr int32_t kScrollY = 1 << 25;
-  constexpr int32_t kWidthFixed = 1 << 4;
-  for (const char* suffix : {".vbox.table", "_images.vbox.table", "_volumes.vbox.table",
-                             "_networks.vbox.table", "_logs.vbox.table", "_inspect.vbox.table",
-                             "_console.vbox.table"}) {
+  for (const char* suffix :
+       {".vbox.table", "_images.vbox.table", "_volumes.vbox.table", "_networks.vbox.table", "_console.vbox.table"}) {
     auto it = srv_->last_session->ui_objects.find(root_ + suffix);
     ASSERT_NE(it, srv_->last_session->ui_objects.end()) << suffix;
     int32_t flags = it->second->as<int32_t>("flags"_key);
     EXPECT_TRUE(flags & kScrollX) << suffix;
     EXPECT_TRUE(flags & kScrollY) << suffix;
   }
-  for (const char* col_path : {"_logs.vbox.table.col_line", "_inspect.vbox.table.col_line"}) {
-    auto it = srv_->last_session->ui_objects.find(root_ + col_path);
-    ASSERT_NE(it, srv_->last_session->ui_objects.end()) << col_path;
-    EXPECT_TRUE(it->second->as<int32_t>("flags"_key) & kWidthFixed) << col_path;
+}
+
+// Logs / Inspect are read-only, syntax-highlighted TextEditors; only Logs
+// follows the newest line.
+TEST_F(DockerRmiTest, LogsAndInspectPanesAreReadOnlyTextEditors) {
+  for (auto [suffix, lang, auto_scroll] :
+       {std::tuple{"_logs.vbox.editor", "log", true}, std::tuple{"_inspect.vbox.editor", "json", false}}) {
+    auto it = srv_->last_session->ui_objects.find(root_ + suffix);
+    ASSERT_NE(it, srv_->last_session->ui_objects.end()) << suffix;
+    EXPECT_EQ(it->second->as<bison::key_t>(dynamic::CLASS), "TextEditor"_key) << suffix;
+    EXPECT_EQ(it->second->as<std::string>("language"_key), lang) << suffix;
+    EXPECT_TRUE(it->second->as<bool>("read_only"_key)) << suffix;
+    EXPECT_EQ(it->second->as<bool>("auto_scroll"_key), auto_scroll) << suffix;
+    EXPECT_EQ(editor_file(root_ + suffix), "") << suffix;
   }
 }
 
@@ -706,17 +677,12 @@ TEST_F(DockerRmiTest, LogsMenuActionSetsTargetAndEmitsLogsRequested) {
 
   bool got = false;
   dynamic cap;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "logs_requested"_key) {
-      got = true;
-      cap = payload.clone();
-    }
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
   fire(menu_item_id(0, "Logs"), "clicked"_key);
-  wait_for(got);
+  if (auto ev = srv_->events->wait_for("logs_requested"_key, since)) {
+    got = true;
+    cap = std::move(*ev);
+  }
   ASSERT_TRUE(got);
   EXPECT_EQ(cap.as<std::string>("id"_key), "cid42");
   EXPECT_FALSE(cap.as<bool>("follow"_key));
@@ -725,7 +691,7 @@ TEST_F(DockerRmiTest, LogsMenuActionSetsTargetAndEmitsLogsRequested) {
   EXPECT_NE(target.find("web"), std::string::npos);
 }
 
-TEST_F(DockerRmiTest, UpdateLogsSplitsTextAndGuardsAgainstStaleTarget) {
+TEST_F(DockerRmiTest, UpdateLogsWritesEditorFileAndGuardsAgainstStaleTarget) {
   call("update_containers"_key,
        make_containers_args({{"cid42", "web", "nginx", "running", "Up", "", "now"}}));
   fire(menu_item_id(0, "Logs"), "clicked"_key); // sets open_logs_id_ = "cid42"
@@ -735,7 +701,9 @@ TEST_F(DockerRmiTest, UpdateLogsSplitsTextAndGuardsAgainstStaleTarget) {
   ok["title"_key] = std::string{"logs: cid42"};
   ok["text"_key] = std::string{"line one\nline two\nline three"};
   call("update_logs"_key, std::move(ok));
-  EXPECT_EQ(row_count(root_ + "_logs.vbox.table"), 3u);
+  const std::string first = editor_file(root_ + "_logs.vbox.editor");
+  EXPECT_EQ(first.rfind("private/", 0), 0u) << first;
+  EXPECT_EQ(editor_text(root_ + "_logs.vbox.editor"), "line one\nline two\nline three");
 
   // A response for a container the user is no longer viewing is discarded.
   dynamic stale;
@@ -743,7 +711,39 @@ TEST_F(DockerRmiTest, UpdateLogsSplitsTextAndGuardsAgainstStaleTarget) {
   stale["title"_key] = std::string{"stale"};
   stale["text"_key] = std::string{"a\nb\nc\nd\ne"};
   call("update_logs"_key, std::move(stale));
-  EXPECT_EQ(row_count(root_ + "_logs.vbox.table"), 3u);
+  EXPECT_EQ(editor_file(root_ + "_logs.vbox.editor"), first);
+  EXPECT_EQ(editor_text(root_ + "_logs.vbox.editor"), "line one\nline two\nline three");
+
+  // Every update gets a fresh file (the editor reloads only on a file_path
+  // change) and the one it replaced is deleted.
+  dynamic again;
+  again["container_id"_key] = std::string{"cid42"};
+  again["title"_key] = std::string{"logs"};
+  again["text"_key] = std::string{"line four"};
+  call("update_logs"_key, std::move(again));
+  EXPECT_NE(editor_file(root_ + "_logs.vbox.editor"), first);
+  EXPECT_EQ(editor_text(root_ + "_logs.vbox.editor"), "line four");
+  EXPECT_FALSE(std::filesystem::exists(srv_->last_session->resource_dir / first));
+}
+
+TEST_F(DockerRmiTest, ClosingDeletesLogsEditorFile) {
+  call("update_containers"_key, make_containers_args({{"cid42", "web", "nginx", "running", "Up", "", "now"}}));
+  fire(menu_item_id(0, "Logs"), "clicked"_key);
+  dynamic ok;
+  ok["container_id"_key] = std::string{"cid42"};
+  ok["title"_key] = std::string{"logs"};
+  ok["text"_key] = std::string{"hello"};
+  call("update_logs"_key, std::move(ok));
+  const auto file = srv_->last_session->resource_dir / editor_file(root_ + "_logs.vbox.editor");
+  ASSERT_TRUE(std::filesystem::exists(file));
+
+  bool got = false;
+  size_t since = srv_->events->mark();
+  auto win = srv_->last_session->ui_objects.at(root_ + "_logs")->as<bison::key_t>("__wish_id"_key);
+  fire_at(root_ + "_logs", win, "closed"_key);
+  got = srv_->events->wait_for("closed"_key, since).has_value();
+  ASSERT_TRUE(got);
+  EXPECT_FALSE(std::filesystem::exists(file));
 }
 
 TEST_F(DockerRmiTest, LogsFollowCheckboxReEmitsWithFollowTrue) {
@@ -751,24 +751,15 @@ TEST_F(DockerRmiTest, LogsFollowCheckboxReEmitsWithFollowTrue) {
        make_containers_args({{"cid42", "web", "nginx", "running", "Up", "", "now"}}));
   fire(menu_item_id(0, "Logs"), "clicked"_key);
 
-  bool got = false;
-  dynamic cap;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "logs_requested"_key) {
-      got = true;
-      cap = payload.clone();
-    }
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
   auto follow = srv_->last_session->ui_objects.at(root_ + "_logs.vbox.toolbar.follow")->as<bison::key_t>("__wish_id"_key);
   dynamic p;
   p["value"_key] = true;
   fire_at(root_ + "_logs", follow, "changed"_key, std::move(p));
-  wait_for(got);
-  ASSERT_TRUE(got);
-  EXPECT_TRUE(cap.as<bool>("follow"_key));
+  // Match on follow == true: the Logs click above also emits a
+  // logs_requested (follow = false) that may be delivered after the mark.
+  EXPECT_TRUE(
+      srv_->events->wait_for("logs_requested"_key, since, [](const dynamic& e) { return e.as<bool>("follow"_key); }));
 }
 
 TEST_F(DockerRmiTest, InspectMenuActionEmitsAndUpdateInspectFills) {
@@ -777,19 +768,14 @@ TEST_F(DockerRmiTest, InspectMenuActionEmitsAndUpdateInspectFills) {
 
   bool got = false;
   dynamic cap;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "inspect_requested"_key) {
-      got = true;
-      cap = payload.clone();
-    }
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
   auto ins = menu_id_in(srv_->last_session->ui_objects, root_ + "_networks.vbox.table", 0, "Inspect");
   ASSERT_NE(ins.id, 0u);
   fire_at(root_ + "_networks", ins, "clicked"_key);
-  wait_for(got);
+  if (auto ev = srv_->events->wait_for("inspect_requested"_key, since)) {
+    got = true;
+    cap = std::move(*ev);
+  }
   ASSERT_TRUE(got);
   EXPECT_EQ(cap.as<std::string>("kind"_key), "network");
   EXPECT_EQ(cap.as<std::string>("id"_key), "netid9");
@@ -798,9 +784,10 @@ TEST_F(DockerRmiTest, InspectMenuActionEmitsAndUpdateInspectFills) {
   resp["target_id"_key] = std::string{"netid9"};
   resp["kind"_key] = std::string{"network"};
   resp["title"_key] = std::string{"network: netid9"};
-  resp["text"_key] = std::string{"[\n  { \"Name\": \"mynet\" }\n]"};
+  const std::string resp_text = "[\n  { \"Name\": \"mynet\" }\n]";
+  resp["text"_key] = resp_text;
   call("update_inspect"_key, std::move(resp));
-  EXPECT_EQ(row_count(root_ + "_inspect.vbox.table"), 3u);
+  EXPECT_EQ(editor_text(root_ + "_inspect.vbox.editor"), resp_text);
 }
 
 // ── Console window (client `docker` subprocess trace) ─────────────────────

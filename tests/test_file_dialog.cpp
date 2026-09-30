@@ -1,6 +1,8 @@
 // MIT License © 2025 Binary Dice Games
 #include <gtest/gtest.h>
 
+#include "session_event_recorder.hpp"
+
 #include <server/registry.hpp>
 #include <server/server.hpp>
 #include <context/context.hpp>
@@ -10,6 +12,7 @@
 #include "src/rmi/rmi.hpp"
 
 #include <chrono>
+#include <deque>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -81,10 +84,13 @@ class SessionCapturingServer : public wish::server {
       : wish::server(t, std::move(r)) {}
 
   wish::context* last_session{nullptr};
+  /// Every event the session emits (see session_event_recorder.hpp).
+  std::shared_ptr<session_event_recorder> events = std::make_shared<session_event_recorder>();
 
  protected:
   void on_session_created(wish::context& s) override {
     last_session = &s;
+    session_event_recorder::attach(events, s);
   }
 };
 
@@ -500,16 +506,7 @@ class FileDialogEventsTest : public ::testing::Test {
     root_ = find_form_root(srv_->last_session->ui_objects);
     ASSERT_FALSE(root_.empty());
 
-    // Wrap emit_event to capture high-level events emitted by form::emit().
-    auto prev = std::move(srv_->last_session->emit_event);
-    events_ = std::make_shared<std::vector<CapturedEvent>>();
-    auto evts = events_;
-    srv_->last_session->emit_event = [prev, evts](bison::key_t id, bison::key_t event, dynamic payload) {
-      if (event == "on_open"_key || event == "on_cancel"_key || event == "on_navigate"_key)
-        evts->push_back({event, payload});
-      if (prev)
-        prev(id, event, std::move(payload));
-    };
+    events_since_ = srv_->events->mark();
   }
 
   void TearDown() override {
@@ -568,7 +565,7 @@ class FileDialogEventsTest : public ::testing::Test {
   }
 
   bool has_event(bison::key_t name) const {
-    for (auto& e : *events_)
+    for (auto& e : events())
       if (e.name.id == name.id)
         return true;
     return false;
@@ -586,7 +583,7 @@ class FileDialogEventsTest : public ::testing::Test {
   }
 
   const CapturedEvent* find_event(bison::key_t name) const {
-    for (auto& e : *events_)
+    for (auto& e : events())
       if (e.name.id == name.id)
         return &e;
     return nullptr;
@@ -598,7 +595,19 @@ class FileDialogEventsTest : public ::testing::Test {
   std::unique_ptr<bdg::bison::rmi::client> client_;
   std::optional<bdg::bison::rmi::proxy::dynamic> proxy_;
   std::string root_;
-  std::shared_ptr<std::vector<CapturedEvent>> events_;
+  // The form-level events the session emitted since SetUp(), refreshed from its
+  // thread-safe recorder (session_event_recorder.hpp) on every call. Append-
+  // only std::deque, so references/pointers into it stay valid.
+  const std::deque<CapturedEvent>& events() const {
+    for (auto& e : srv_->events->snapshot(events_since_)) {
+      ++events_since_;
+      if (e.name == "on_open"_key || e.name == "on_cancel"_key || e.name == "on_navigate"_key)
+        events_cache_.push_back({e.name, std::move(e.payload)});
+    }
+    return events_cache_;
+  }
+  mutable size_t events_since_{0};
+  mutable std::deque<CapturedEvent> events_cache_;
 };
 
 TEST_F(FileDialogEventsTest, BtnOpenEmitsOnOpen) {

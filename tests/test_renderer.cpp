@@ -1,6 +1,8 @@
 // MIT License © 2025 Binary Dice Games
 #include <gtest/gtest.h>
 
+#include "src/rmi/shared/ids.hpp"
+
 #include <server/registry.hpp>
 #include <server/renderer.hpp>
 #include <ui/ui_importer.hpp>
@@ -39,7 +41,10 @@ class RendererTest : public ::testing::Test {
  protected:
   void SetUp() override {
     bdg::wish::register_all();
-    sess_ = std::make_unique<context>("renderer_test"_key);
+    // A fresh id per test: resource_dir is /tmp/wish_<id> and ~context()
+    // deletes it, so a fixed id made parallel ctest processes share -- and
+    // delete -- one another's sandbox.
+    sess_ = std::make_unique<context>(bdg::bison::rmi::shared::generate_id());
   }
 
   context& sess() {

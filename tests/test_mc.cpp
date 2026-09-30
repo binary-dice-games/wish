@@ -1,6 +1,8 @@
 // MIT License © 2025 Binary Dice Games
 #include <gtest/gtest.h>
 
+#include "session_event_recorder.hpp"
+
 #include <server/registry.hpp>
 #include <server/server.hpp>
 #include <context/context.hpp>
@@ -168,10 +170,13 @@ class SessionCapturingServer : public wish::server {
       : wish::server(t, std::move(r)) {}
 
   wish::context* last_session{nullptr};
+  /// Every event the session emits (see session_event_recorder.hpp).
+  std::shared_ptr<session_event_recorder> events = std::make_shared<session_event_recorder>();
 
  protected:
   void on_session_created(wish::context& s) override {
     last_session = &s;
+    session_event_recorder::attach(events, s);
   }
 };
 
@@ -642,14 +647,6 @@ class McEventTest : public ::testing::Test {
     handler_->on_event(widget_id(table_path), "sorted"_key, payload);
   }
 
-  // form::emit() defers delivery to the render loop's next frame, so spin
-  // briefly for it, same idiom as test_top.cpp.
-  void wait_for(bool& flag) const {
-    auto t0 = std::chrono::steady_clock::now();
-    while (!flag && std::chrono::steady_clock::now() - t0 < std::chrono::seconds(2))
-      std::this_thread::sleep_for(std::chrono::milliseconds(5));
-  }
-
   memory_server_transport transport_;
   std::unique_ptr<SessionCapturingServer> srv_;
   std::unique_ptr<bdg::bison::rmi::client> client_;
@@ -661,21 +658,16 @@ class McEventTest : public ::testing::Test {
 TEST_F(McEventTest, LocalPathBarChangedEmitsOnLocalNavigate) {
   bool got = false;
   dynamic captured;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "on_local_navigate"_key) {
-      got = true;
-      captured = std::move(payload);
-    }
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
 
   dynamic payload;
   payload["value"_key] = std::string{"/some/local/dir"};
   handler_->on_event(widget_id(".main.panels.left.left_path"), "changed"_key, payload);
 
-  wait_for(got);
+  if (auto ev = srv_->events->wait_for("on_local_navigate"_key, since)) {
+    got = true;
+    captured = std::move(*ev);
+  }
   ASSERT_TRUE(got);
   EXPECT_EQ(captured.as<std::string>("name"_key), "/some/local/dir");
   EXPECT_EQ(captured.as<std::string>("type"_key), "path");
@@ -686,21 +678,16 @@ TEST_F(McEventTest, LocalRowActivatedOnDirEmitsOnLocalNavigate) {
 
   bool got = false;
   dynamic captured;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "on_local_navigate"_key) {
-      got = true;
-      captured = std::move(payload);
-    }
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
 
   dynamic payload;
   payload["index"_key] = int32_t{0};
   handler_->on_event(widget_id(".main.panels.left.left_table"), "row_activated"_key, payload);
 
-  wait_for(got);
+  if (auto ev = srv_->events->wait_for("on_local_navigate"_key, since)) {
+    got = true;
+    captured = std::move(*ev);
+  }
   ASSERT_TRUE(got);
   EXPECT_EQ(captured.as<std::string>("name"_key), "sub");
   EXPECT_EQ(captured.as<std::string>("type"_key), "dir");
@@ -708,17 +695,11 @@ TEST_F(McEventTest, LocalRowActivatedOnDirEmitsOnLocalNavigate) {
 
 TEST_F(McEventTest, UploadClickedWithNoSelectionSetsStatusInsteadOfEmitting) {
   bool got = false;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "on_upload_requested"_key)
-      got = true;
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
 
   handler_->on_event(widget_id(".main.panels.middle.upload"), "clicked"_key, dynamic{});
 
-  wait_for(got);
+  got = srv_->events->wait_for("on_upload_requested"_key, since).has_value();
   EXPECT_FALSE(got);
   EXPECT_EQ(
       srv_->last_session->ui_objects.at(root_ + ".main.status")->as<std::string>("text"_key),
@@ -734,19 +715,14 @@ TEST_F(McEventTest, UploadClickedWithSelectionEmitsOnUploadRequested) {
 
   bool got = false;
   dynamic captured;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "on_upload_requested"_key) {
-      got = true;
-      captured = std::move(payload);
-    }
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
 
   handler_->on_event(widget_id(".main.panels.middle.upload"), "clicked"_key, dynamic{});
 
-  wait_for(got);
+  if (auto ev = srv_->events->wait_for("on_upload_requested"_key, since)) {
+    got = true;
+    captured = std::move(*ev);
+  }
   ASSERT_TRUE(got);
   EXPECT_EQ(read_names(captured), std::vector<std::string>{"a.txt"});
   EXPECT_EQ(captured.as<std::string>("local_path"_key), "/home");
@@ -851,17 +827,11 @@ TEST_F(McEventTest, SandboxSortKeepsDotDotPinnedFirst) {
 
 TEST_F(McEventTest, DownloadClickedWithNoSelectionSetsStatusInsteadOfEmitting) {
   bool got = false;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "on_download_requested"_key)
-      got = true;
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
 
   handler_->on_event(widget_id(".main.panels.middle.download"), "clicked"_key, dynamic{});
 
-  wait_for(got);
+  got = srv_->events->wait_for("on_download_requested"_key, since).has_value();
   EXPECT_FALSE(got);
   EXPECT_EQ(
       srv_->last_session->ui_objects.at(root_ + ".main.status")->as<std::string>("text"_key),
@@ -1024,19 +994,14 @@ TEST_F(McEventTest, UploadClickedWithMultipleSelectedFilesEmitsAllNames) {
 
   bool got = false;
   dynamic captured;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "on_upload_requested"_key) {
-      got = true;
-      captured = std::move(payload);
-    }
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
 
   handler_->on_event(widget_id(".main.panels.middle.upload"), "clicked"_key, dynamic{});
 
-  wait_for(got);
+  if (auto ev = srv_->events->wait_for("on_upload_requested"_key, since)) {
+    got = true;
+    captured = std::move(*ev);
+  }
   ASSERT_TRUE(got);
   EXPECT_EQ(read_names(captured), (std::vector<std::string>{"a.txt", "c.txt"}));
   EXPECT_EQ(captured.as<std::string>("local_path"_key), "/home");
@@ -1053,19 +1018,14 @@ TEST_F(McEventTest, UploadClickedWithSelectedDirectoryAndFileSkipsTheDirectory) 
 
   bool got = false;
   dynamic captured;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "on_upload_requested"_key) {
-      got = true;
-      captured = std::move(payload);
-    }
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
 
   handler_->on_event(widget_id(".main.panels.middle.upload"), "clicked"_key, dynamic{});
 
-  wait_for(got);
+  if (auto ev = srv_->events->wait_for("on_upload_requested"_key, since)) {
+    got = true;
+    captured = std::move(*ev);
+  }
   ASSERT_TRUE(got);
   EXPECT_EQ(read_names(captured), std::vector<std::string>{"a.txt"});
 }
@@ -1278,20 +1238,15 @@ TEST_F(McEventTest, LocalRenameApplyEmitsOnLocalRenameRequested) {
 
   bool got = false;
   dynamic captured;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "on_local_rename_requested"_key) {
-      got = true;
-      captured = std::move(payload);
-    }
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
 
   auto ok_id = objs.at("__mc_rename_0.vbox.buttons.btn_ok")->as<bison::key_t>("__wish_id"_key);
   handler_->on_event(ok_id, "clicked"_key, dynamic{});
 
-  wait_for(got);
+  if (auto ev = srv_->events->wait_for("on_local_rename_requested"_key, since)) {
+    got = true;
+    captured = std::move(*ev);
+  }
   ASSERT_TRUE(got);
   EXPECT_EQ(captured.as<std::string>("old_name"_key), "old.txt");
   EXPECT_EQ(captured.as<std::string>("new_name"_key), "new.txt");
@@ -1342,28 +1297,15 @@ TEST_F(McEventTest, UploadClickedWithExistingSandboxFileEmitsConflictInsteadOfRe
   sel["index"_key] = int32_t{0};
   handler_->on_event(widget_id(".main.panels.left.left_table"), "row_selected"_key, sel);
 
-  bool got_requested = false;
-  bool got_conflict = false;
-  dynamic captured;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "on_upload_requested"_key)
-      got_requested = true;
-    if (event == "on_upload_conflict"_key) {
-      got_conflict = true;
-      captured = std::move(payload);
-    }
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
-
+  size_t since = srv_->events->mark();
   handler_->on_event(widget_id(".main.panels.middle.upload"), "clicked"_key, dynamic{});
 
-  wait_for(got_conflict);
-  EXPECT_FALSE(got_requested) << "upload should be held back pending overwrite confirmation";
-  ASSERT_TRUE(got_conflict);
-  EXPECT_EQ(read_names(captured), std::vector<std::string>{"a.txt"});
-  EXPECT_EQ(captured.as<std::string>("local_path"_key), "/home");
+  auto captured = srv_->events->wait_for("on_upload_conflict"_key, since);
+  EXPECT_FALSE(srv_->events->saw("on_upload_requested"_key, since))
+      << "upload should be held back pending overwrite confirmation";
+  ASSERT_TRUE(captured);
+  EXPECT_EQ(read_names(*captured), std::vector<std::string>{"a.txt"});
+  EXPECT_EQ(captured->as<std::string>("local_path"_key), "/home");
 }
 
 TEST_F(McEventTest, DownloadClickedWithExistingLocalFileEmitsConflictInsteadOfRequested) {
@@ -1378,42 +1320,23 @@ TEST_F(McEventTest, DownloadClickedWithExistingLocalFileEmitsConflictInsteadOfRe
   sel["index"_key] = int32_t{0};
   handler_->on_event(widget_id(".main.panels.right.right_table"), "row_selected"_key, sel);
 
-  bool got_requested = false;
-  bool got_conflict = false;
-  dynamic captured;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "on_download_requested"_key)
-      got_requested = true;
-    if (event == "on_download_conflict"_key) {
-      got_conflict = true;
-      captured = std::move(payload);
-    }
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
-
+  size_t since = srv_->events->mark();
   handler_->on_event(widget_id(".main.panels.middle.download"), "clicked"_key, dynamic{});
 
-  wait_for(got_conflict);
-  EXPECT_FALSE(got_requested) << "download should be held back pending overwrite confirmation";
-  ASSERT_TRUE(got_conflict);
-  EXPECT_EQ(read_names(captured), std::vector<std::string>{"a.txt"});
+  auto captured = srv_->events->wait_for("on_download_conflict"_key, since);
+  EXPECT_FALSE(srv_->events->saw("on_download_requested"_key, since))
+      << "download should be held back pending overwrite confirmation";
+  ASSERT_TRUE(captured);
+  EXPECT_EQ(read_names(*captured), std::vector<std::string>{"a.txt"});
 }
 
 TEST_F(McEventTest, WindowClosedEmitsClosedAndCleansUp) {
   bool got_closed = false;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "closed"_key)
-      got_closed = true;
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
 
   handler_->on_event(widget_id(""), "closed"_key, dynamic{});
 
-  wait_for(got_closed);
+  got_closed = srv_->events->wait_for("closed"_key, since).has_value();
   EXPECT_TRUE(got_closed);
   EXPECT_EQ(srv_->last_session->ui_objects.count(root_), 0u);
 }

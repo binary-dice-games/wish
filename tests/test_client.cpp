@@ -5,6 +5,7 @@
 #include <server/server.hpp>
 #include <ui/ui_descriptor.hpp>
 
+#include "free_port_server.hpp"
 #include "src/rmi/rmi.hpp"
 
 #include <miniz.h>
@@ -597,20 +598,24 @@ TEST(ClientTest, UploadPackageExtractsFilesIntoDestFolder) {
 // worker loop actually reacts to.
 
 TEST(ClientTest, OnDisconnectedFiresWhenServerClosesConnection) {
-  constexpr uint16_t kPort = 17075;
-  socket_server_transport transport{"127.0.0.1", kPort};
-  wish::server srv{transport, std::make_unique<wish::null_renderer>()};
-  srv.start();
+  auto srv = start_on_free_port<socket_server_transport>(0);
+  const uint16_t kPort = srv.port;
 
   class waiting_client : public wish::client {
    public:
     using wish::client::client;
     std::mutex mtx;
     std::condition_variable cv;
+    bool in_session{false};
     bool disconnected{false};
 
    protected:
     void on_session() override {
+      {
+        std::lock_guard<std::mutex> lk(mtx);
+        in_session = true;
+      }
+      cv.notify_all();
       set_on_disconnected([this] {
         {
           std::lock_guard<std::mutex> lk(mtx);
@@ -626,13 +631,30 @@ TEST(ClientTest, OnDisconnectedFiresWhenServerClosesConnection) {
   };
 
   waiting_client c{std::make_unique<socket_client_transport>("127.0.0.1", kPort)};
-  std::thread session_thread([&c] { c.run(); });
+  std::string run_error;
+  std::thread session_thread([&c, &run_error] {
+    // Catch here: an exception escaping a std::thread aborts the whole test
+    // process instead of failing this test.
+    try {
+      c.run();
+    } catch (const std::exception& e) {
+      run_error = e.what();
+    }
+  });
 
-  // Let the client finish connecting before severing it.
-  std::this_thread::sleep_for(std::chrono::milliseconds{200});
-  srv.stop(); // closes the underlying socket -- same as the server process exiting
+  // Sever the connection only once the handshake has completed and
+  // on_session() is running -- a fixed sleep raced the handshake under
+  // parallel ctest load, dropping the connection mid-connect.
+  {
+    std::unique_lock<std::mutex> lk(c.mtx);
+    c.cv.wait_for(lk, std::chrono::seconds(5), [&c] { return c.in_session || c.disconnected; });
+  }
+  srv.server->stop(); // closes the underlying socket -- same as the server process exiting
 
   session_thread.join(); // bounded by on_session()'s own 5s wait above
+
+  ASSERT_TRUE(run_error.empty()) << run_error;
+  ASSERT_TRUE(c.in_session) << "the client never finished connecting";
 
   EXPECT_TRUE(c.disconnected) << "on_session() unblocked via the 5s timeout instead of on_disconnect() firing";
 }

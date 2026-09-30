@@ -1,6 +1,8 @@
 // MIT License © 2025 Binary Dice Games
 #include <gtest/gtest.h>
 
+#include "session_event_recorder.hpp"
+
 #include <server/registry.hpp>
 #include <server/server.hpp>
 #include <context/context.hpp>
@@ -11,6 +13,7 @@
 #include "src/rmi/rmi.hpp"
 
 #include <chrono>
+#include <deque>
 #include <optional>
 #include <string>
 #include <thread>
@@ -81,10 +84,13 @@ class SessionCapturingServer : public wish::server {
       : wish::server(t, std::move(r)) {}
 
   wish::context* last_session{nullptr};
+  /// Every event the session emits (see session_event_recorder.hpp).
+  std::shared_ptr<session_event_recorder> events = std::make_shared<session_event_recorder>();
 
  protected:
   void on_session_created(wish::context& s) override {
     last_session = &s;
+    session_event_recorder::attach(events, s);
   }
 };
 
@@ -221,16 +227,7 @@ class PropertiesDialogEditTest : public ::testing::Test {
     ASSERT_TRUE(proxy_->valid());
     root_ = find_form_root(srv_->last_session->ui_objects);
 
-    // Wrap emit_event to capture high-level events emitted by form::emit().
-    auto prev = std::move(srv_->last_session->emit_event);
-    events_ = std::make_shared<std::vector<CapturedEvent>>();
-    auto evts = events_;
-    srv_->last_session->emit_event = [prev, evts](bison::key_t id, bison::key_t event, dynamic payload) {
-      if (event == "on_result"_key)
-        evts->push_back({event, payload});
-      if (prev)
-        prev(id, event, std::move(payload));
-    };
+    events_since_ = srv_->events->mark();
   }
 
   void TearDown() override {
@@ -243,7 +240,7 @@ class PropertiesDialogEditTest : public ::testing::Test {
 
   bool wait_for_event(bison::key_t name, std::chrono::milliseconds timeout = std::chrono::milliseconds(2000)) const {
     auto has = [&] {
-      for (auto& e : *events_)
+      for (auto& e : events())
         if (e.name.id == name.id)
           return true;
       return false;
@@ -255,7 +252,7 @@ class PropertiesDialogEditTest : public ::testing::Test {
   }
 
   const CapturedEvent* find_event(bison::key_t name) const {
-    for (auto& e : *events_)
+    for (auto& e : events())
       if (e.name.id == name.id)
         return &e;
     return nullptr;
@@ -266,7 +263,19 @@ class PropertiesDialogEditTest : public ::testing::Test {
   std::unique_ptr<bison::rmi::client> client_;
   std::optional<bison::rmi::proxy::dynamic> proxy_;
   std::string root_;
-  std::shared_ptr<std::vector<CapturedEvent>> events_;
+  // The form-level events the session emitted since SetUp(), refreshed from its
+  // thread-safe recorder (session_event_recorder.hpp) on every call. Append-
+  // only std::deque, so references/pointers into it stay valid.
+  const std::deque<CapturedEvent>& events() const {
+    for (auto& e : srv_->events->snapshot(events_since_)) {
+      ++events_since_;
+      if (e.name == "on_result"_key)
+        events_cache_.push_back({e.name, std::move(e.payload)});
+    }
+    return events_cache_;
+  }
+  mutable size_t events_since_{0};
+  mutable std::deque<CapturedEvent> events_cache_;
 };
 
 TEST_F(PropertiesDialogEditTest, ChangingCheckboxCommitsOntoTarget) {

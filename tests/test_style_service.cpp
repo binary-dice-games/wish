@@ -10,6 +10,7 @@
 
 #include "src/bison/bison_common.hpp"
 #include "src/bison/bison_object.hpp"
+#include "src/rmi/shared/ids.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -38,7 +39,10 @@ class StyleServiceTest : public ::testing::Test {
     io.Fonts->SetTexID(ImTextureID{1});
 
     svc_ = std::make_shared<style_service>(dynamic::instantiate("wish"_key, "__WishStyle"_key));
-    sess_ = std::make_unique<context>("style_test"_key);
+    // A fresh id per test: resource_dir is /tmp/wish_<id> and ~context()
+    // deletes it, so a fixed id made parallel ctest processes share -- and
+    // delete -- one another's sandbox.
+    sess_ = std::make_unique<context>(bdg::bison::rmi::shared::generate_id());
     sess_->style_service = svc_;
     renderer_ = std::make_unique<imgui_renderer>();
   }

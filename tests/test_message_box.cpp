@@ -1,6 +1,8 @@
 // MIT License © 2025 Binary Dice Games
 #include <gtest/gtest.h>
 
+#include "session_event_recorder.hpp"
+
 #include <server/registry.hpp>
 #include <server/server.hpp>
 #include <context/context.hpp>
@@ -10,6 +12,7 @@
 #include "src/rmi/rmi.hpp"
 
 #include <chrono>
+#include <deque>
 #include <string>
 #include <thread>
 
@@ -74,10 +77,13 @@ class SessionCapturingServer : public wish::server {
       : wish::server(t, std::move(r)) {}
 
   wish::context* last_session{nullptr};
+  /// Every event the session emits (see session_event_recorder.hpp).
+  std::shared_ptr<session_event_recorder> events = std::make_shared<session_event_recorder>();
 
  protected:
   void on_session_created(wish::context& s) override {
     last_session = &s;
+    session_event_recorder::attach(events, s);
   }
 };
 
@@ -282,15 +288,7 @@ TEST_F(MessageBoxConstructTest, ClickingButtonFromConstructedYesNoCancelEmitsCor
   std::string root = find_form_root(srv_->last_session->ui_objects);
   ASSERT_FALSE(root.empty());
 
-  bison::key_t last_event{hash_t{0}};
-  dynamic last_payload;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t, bison::key_t event, dynamic payload) {
-    last_event = event;
-    last_payload = std::move(payload);
-    if (prev)
-      prev(bison::key_t{}, event, dynamic{});
-  };
+  size_t since = srv_->events->mark();
 
   auto& objs = srv_->last_session->ui_objects;
   auto it = objs.find(root + ".buttons.btn1"); // "No"
@@ -301,14 +299,11 @@ TEST_F(MessageBoxConstructTest, ClickingButtonFromConstructedYesNoCancelEmitsCor
   h->second->on_event(btn_id, "clicked"_key, dynamic{});
 
   // form::emit() only enqueues into pending_events; delivery happens on the
-  // render loop's next frame (see test_file_dialog.cpp's wait_for_event for
-  // the same idiom), so poll briefly rather than asserting synchronously.
-  auto t0 = std::chrono::steady_clock::now();
-  while (last_event.id == 0 && std::chrono::steady_clock::now() - t0 < std::chrono::milliseconds(2000))
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
-
-  EXPECT_EQ(last_event, "on_result"_key);
-  EXPECT_EQ(last_payload.as<std::string>("button"_key), "no");
+  // render loop's next frame, so wait for it rather than asserting
+  // synchronously.
+  auto result = srv_->events->wait_for("on_result"_key, since);
+  ASSERT_TRUE(result);
+  EXPECT_EQ(result->as<std::string>("button"_key), "no");
   // The internal Window is *not* removed synchronously on click: closing a
   // modal popup requires ImGui to actually observe the close (see
   // render_window()'s "__request_close__" handling in imgui_ui_renderer.cpp)
@@ -385,16 +380,7 @@ class MessageBoxEventsTest : public ::testing::Test {
     root_ = find_form_root(srv_->last_session->ui_objects);
     ASSERT_FALSE(root_.empty());
 
-    // Wrap emit_event to capture high-level events emitted by form::emit().
-    auto prev = std::move(srv_->last_session->emit_event);
-    events_ = std::make_shared<std::vector<CapturedEvent>>();
-    auto evts = events_;
-    srv_->last_session->emit_event = [prev, evts](bison::key_t id, bison::key_t event, dynamic payload) {
-      if (event == "on_result"_key)
-        evts->push_back({event, payload});
-      if (prev)
-        prev(id, event, std::move(payload));
-    };
+    events_since_ = srv_->events->mark();
   }
 
   void TearDown() override {
@@ -417,7 +403,7 @@ class MessageBoxEventsTest : public ::testing::Test {
 
   bool wait_for_event(bison::key_t name, std::chrono::milliseconds timeout = std::chrono::milliseconds(2000)) const {
     auto has = [&] {
-      for (auto& e : *events_)
+      for (auto& e : events())
         if (e.name.id == name.id)
           return true;
       return false;
@@ -429,7 +415,7 @@ class MessageBoxEventsTest : public ::testing::Test {
   }
 
   const CapturedEvent* find_event(bison::key_t name) const {
-    for (auto& e : *events_)
+    for (auto& e : events())
       if (e.name.id == name.id)
         return &e;
     return nullptr;
@@ -440,7 +426,19 @@ class MessageBoxEventsTest : public ::testing::Test {
   std::unique_ptr<bdg::bison::rmi::client> client_;
   std::optional<bdg::bison::rmi::proxy::dynamic> proxy_;
   std::string root_;
-  std::shared_ptr<std::vector<CapturedEvent>> events_;
+  // The form-level events the session emitted since SetUp(), refreshed from its
+  // thread-safe recorder (session_event_recorder.hpp) on every call. Append-
+  // only std::deque, so references/pointers into it stay valid.
+  const std::deque<CapturedEvent>& events() const {
+    for (auto& e : srv_->events->snapshot(events_since_)) {
+      ++events_since_;
+      if (e.name == "on_result"_key)
+        events_cache_.push_back({e.name, std::move(e.payload)});
+    }
+    return events_cache_;
+  }
+  mutable size_t events_since_{0};
+  mutable std::deque<CapturedEvent> events_cache_;
 };
 
 TEST_F(MessageBoxEventsTest, ClickingOkEmitsOnResultWithOkButton) {

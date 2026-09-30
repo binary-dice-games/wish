@@ -4,11 +4,20 @@
 #include "modules/bdg/desktop/git/client/git_process.hpp"
 
 #include <filesystem>
+#include <string>
 
 using bdg::wish::git::resolve_repo_root;
 using bdg::wish::git::run_git;
 
 namespace {
+
+// A temp-dir path unique to the running test: ctest runs each test case as
+// its own process, in parallel with -j, so a single fixed name let one
+// test's SetUp()/TearDown() delete the repo another test was using.
+std::filesystem::path unique_temp_path(const std::string& stem) {
+  const auto* info = ::testing::UnitTest::GetInstance()->current_test_info();
+  return std::filesystem::temp_directory_path() / (stem + "_" + info->name());
+}
 
 // Real, throwaway `git init`'d repo -- this module never mocks git (see
 // DESIGN.md's Design Goal 1), so resolve_repo_root() is exercised against
@@ -16,7 +25,7 @@ namespace {
 class GitProcessTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    root_ = std::filesystem::temp_directory_path() / "wish_git_process_test_repo";
+    root_ = unique_temp_path("wish_git_process_test_repo");
     std::filesystem::remove_all(root_);
     subdir_ = root_ / "a" / "b";
     std::filesystem::create_directories(subdir_);
@@ -47,7 +56,7 @@ TEST_F(GitProcessTest, ResolvesRepoRootItselfToItself) {
 }
 
 TEST_F(GitProcessTest, FallsBackToInputPathWhenNotInsideAWorkTree) {
-  const auto outside = std::filesystem::temp_directory_path() / "wish_git_process_test_outside";
+  const auto outside = unique_temp_path("wish_git_process_test_outside");
   std::filesystem::remove_all(outside);
   std::filesystem::create_directories(outside);
   EXPECT_EQ(resolve_repo_root(outside.string()), outside.string());

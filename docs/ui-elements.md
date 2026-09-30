@@ -809,8 +809,9 @@ sandboxed file path.
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `file_path` | `string` | `""` (required) | Path to edit, sandboxed to the session resource dir (relative) or requiring `set_allow_absolute_paths(true)` (absolute). |
-| `language` | `string` | `"none"` | Syntax highlighting: `"cpp"` (or `"c++"` alias), `"c"`, `"cs"`, `"glsl"`, `"hlsl"`, `"lua"`, `"python"`, `"sql"`, `"json"`, `"yaml"` (`"yml"` alias), `"markdown"`, `"angelscript"`, `"none"`. |
+| `language` | `string` | `"none"` | Syntax highlighting: `"cpp"` (or `"c++"` alias), `"c"`, `"cs"`, `"glsl"`, `"hlsl"`, `"lua"`, `"python"`, `"sql"`, `"json"`, `"yaml"` (`"yml"` alias), `"markdown"`, `"angelscript"`, `"log"` (plain-text log output: severity words such as `ERROR`/`WARN`/`INFO`, numbers and timestamps, double-quoted strings), `"none"`. |
 | `read_only` | `bool` | `false` | When `true`, editing is disabled and `changed` never fires. |
+| `auto_scroll` | `bool` | `false` | When `true`, scrolls to the last line each time the file is (re)loaded, i.e. whenever `file_path` changes. For append-style views such as logs; point `file_path` at a new file to show new content, since rewriting the same file does not trigger a reload. |
 | `width` | `int32` | `0` | Width in pixels (0–8192); `0` fills available width. |
 | `height` | `int32` | `400` | Height in pixels (0–8192); `0` fills available height. |
 | `wish_ui_schema` | `bool` | `false` | When `true` and `language` is `"json"` or `"yaml"`, enables cursor tracking (`cursor_moved` events) and autocomplete for wish UI element type names, field names, and enum values, sourced from the live class registry (see `src/ui/ui_schema_help.hpp`). Used by the `editor` module's source panel; off by default so unrelated `TextEditor` uses (e.g. nano) are unaffected. |

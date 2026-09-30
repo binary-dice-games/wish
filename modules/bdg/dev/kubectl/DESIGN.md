@@ -128,10 +128,13 @@ Per-window specifics:
   Cordon on a schedulable node, Uncordon on a cordoned one; then Drain
   (confirm) and Describe.
 - **Logs** (`_logs`): toolbar (a target `Label`, a Follow `Checkbox`, a
-  Lines `InputInt`, Refresh), a read-only single-column scrolling `Table` of
-  `Label` lines showing `kubectl logs` output.
-- **Describe** (`_describe`): toolbar (a target `Label`, Refresh), the same
-  read-only line table showing `kubectl describe` output verbatim.
+  Lines `InputInt`, Refresh), a read-only `TextEditor` (`language: "log"`,
+  `auto_scroll: true`) showing `kubectl logs` output.
+- **Describe** (`_describe`): toolbar (a target `Label`, Refresh), a
+  read-only `TextEditor` (`language: "yaml"` -- `kubectl describe` output is
+  `Key:  value` lines, close enough to YAML to highlight well). The form
+  writes each update to a sandbox file exactly as docker's Logs/Inspect do
+  (see [../docker/DESIGN.md §6](../docker/DESIGN.md)).
 - **Console** (`_console`): a FIFO-capped `Table` (# / Command / Exit /
   Output, `kMaxConsoleRows = 500`) tracing every one-shot `kubectl`
   invocation, green/red by exit status. Each row's right-click

@@ -12,6 +12,7 @@
 
 #include "src/bison/bison_common.hpp"
 #include "src/bison/bison_object.hpp"
+#include "src/rmi/shared/ids.hpp"
 
 #include <imgui.h>
 #include <imgui_internal.h>
@@ -54,7 +55,10 @@ class ImguiRendererTest : public ::testing::Test {
     io.Fonts->SetTexID(ImTextureID{1});
     // Place mouse somewhere valid so window hover detection works.
     io.MousePos = ImVec2(10.0f, 10.0f);
-    sess_ = std::make_unique<context>("imgui_test"_key);
+    // A fresh id per test: resource_dir is /tmp/wish_<id> and ~context()
+    // deletes it, so a fixed id made parallel ctest processes share -- and
+    // delete -- one another's sandbox.
+    sess_ = std::make_unique<context>(bdg::bison::rmi::shared::generate_id());
     renderer_ = std::make_unique<imgui_renderer>();
   }
 
@@ -2980,6 +2984,57 @@ TEST_F(ImguiRendererTest, BreakpointAndCurrentLineFieldsDriveLineDecorator) {
   ASSERT_NE(node.breakpoint_lines(), nullptr);
   EXPECT_EQ(*node.breakpoint_lines(), (std::vector<int32_t>{1, 3}));
   EXPECT_EQ(node.current_line(), 2);
+}
+
+// ── TextEditor: auto_scroll ──────────────────────────────────────────────────
+//
+// Renders a 200-line file in a 300px editor for a few frames and returns the
+// editor child window's {ScrollY, ScrollMaxY}. ScrollToLine() is a request
+// Render() applies, so allow it a frame or two to settle.
+static std::pair<float, float> text_editor_scroll_after_load(
+    bdg::wish::imgui_renderer& renderer,
+    bdg::wish::context& sess,
+    const std::function<void(const std::function<void()>&)>& in_window,
+    const std::string& file_name,
+    bool auto_scroll) {
+  std::string contents;
+  for (int i = 0; i < 200; ++i)
+    contents += "line " + std::to_string(i) + "\n";
+  auto map = make_text_editor_map(
+      sess.resource_dir,
+      file_name,
+      contents,
+      std::string{R"(,"read_only":true,"auto_scroll":)"} + (auto_scroll ? "true" : "false"));
+  // A distinct __wish_id: render_text_editor()'s TextEditor cache is keyed
+  // by it and outlives the test, so a shared id would inherit another
+  // test's editor (and scroll position).
+  (*map[""])["__wish_id"_key] = bdg::bison::key_t{file_name};
+  std::pair<float, float> scroll{-1.0f, -1.0f};
+  for (int frame = 0; frame < 3; ++frame) {
+    renderer.begin_frame();
+    in_window([&] {
+      renderer.render_node(*map[""], sess);
+      auto& children = ImGui::GetCurrentWindow()->DC.ChildWindows;
+      if (!children.empty())
+        scroll = {children.back()->Scroll.y, children.back()->ScrollMax.y};
+    });
+    renderer.end_frame();
+  }
+  return scroll;
+}
+
+TEST_F(ImguiRendererTest, TextEditorAutoScrollScrollsToLastLineOnLoad) {
+  auto in_win = [this](const std::function<void()>& fn) { in_window(fn); };
+  auto [y, max_y] = text_editor_scroll_after_load(*renderer_, *sess_, in_win, "as_on.txt", true);
+  ASSERT_GT(max_y, 0.0f);
+  EXPECT_FLOAT_EQ(y, max_y);
+}
+
+TEST_F(ImguiRendererTest, TextEditorWithoutAutoScrollStaysAtTop) {
+  auto in_win = [this](const std::function<void()>& fn) { in_window(fn); };
+  auto [y, max_y] = text_editor_scroll_after_load(*renderer_, *sess_, in_win, "as_off.txt", false);
+  ASSERT_GT(max_y, 0.0f);
+  EXPECT_EQ(y, 0.0f);
 }
 
 TEST_F(ImguiRendererTest, LineNumberRightClickEmitsLineContextMenuWithHasBreakpoint) {

@@ -1,6 +1,8 @@
 // MIT License © 2026 Binary Dice Games
 #include <gtest/gtest.h>
 
+#include "session_event_recorder.hpp"
+
 #include <server/registry.hpp>
 #include <server/server.hpp>
 #include <context/context.hpp>
@@ -10,7 +12,10 @@
 #include "src/rmi/rmi.hpp"
 
 #include <chrono>
+#include <filesystem>
+#include <fstream>
 #include <functional>
+#include <iterator>
 #include <memory>
 #include <optional>
 #include <string>
@@ -67,10 +72,13 @@ class SessionCapturingServer : public wish::server {
   SessionCapturingServer(server_transport_iface& t, std::unique_ptr<wish::renderer> r)
       : wish::server(t, std::move(r)) {}
   wish::context* last_session{nullptr};
+  /// Every event the session emits (see session_event_recorder.hpp).
+  std::shared_ptr<session_event_recorder> events = std::make_shared<session_event_recorder>();
 
  protected:
   void on_session_created(wish::context& s) override {
     last_session = &s;
+    session_event_recorder::attach(events, s);
   }
 };
 
@@ -122,6 +130,24 @@ class KubectlRmiTest : public ::testing::Test {
 
   dynamic call(bison::key_t method, dynamic args) {
     return proxy_->call(method, std::move(args)).get();
+  }
+
+  // file_path of the TextEditor at @p path ("" if missing/unset).
+  std::string editor_file(const std::string& path) const {
+    auto it = srv_->last_session->ui_objects.find(path);
+    if (it == srv_->last_session->ui_objects.end())
+      return {};
+    auto* f = it->second->findField<std::string>("file_path"_key);
+    return f ? *f : std::string{};
+  }
+
+  // Contents of the sandbox file the TextEditor at @p path displays.
+  std::string editor_text(const std::string& path) const {
+    auto rel = editor_file(path);
+    if (rel.empty())
+      return {};
+    std::ifstream in(srv_->last_session->resource_dir / rel, std::ios::binary);
+    return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>{}};
   }
 
   size_t row_count(const std::string& path) const {
@@ -209,12 +235,6 @@ class KubectlRmiTest : public ::testing::Test {
     fire_at(root_, id, event, std::move(payload));
   }
 
-  static void wait_for(const bool& flag) {
-    auto t0 = std::chrono::steady_clock::now();
-    while (!flag && std::chrono::steady_clock::now() - t0 < std::chrono::seconds(2))
-      std::this_thread::sleep_for(std::chrono::milliseconds(5));
-  }
-
   bison::key_t id_at(const std::string& abs_path) const {
     auto it = srv_->last_session->ui_objects.find(abs_path);
     return it == srv_->last_session->ui_objects.end() ? bison::key_t{}
@@ -235,33 +255,38 @@ TEST_F(KubectlRmiTest, InstantiationBuildsAllSixWindows) {
   EXPECT_TRUE(srv_->last_session->ui_objects.count(root_ + "_deployments"));
   EXPECT_TRUE(srv_->last_session->ui_objects.count(root_ + "_services"));
   EXPECT_TRUE(srv_->last_session->ui_objects.count(root_ + "_nodes"));
-  EXPECT_TRUE(srv_->last_session->ui_objects.count(root_ + "_logs.vbox.table"));
-  EXPECT_TRUE(srv_->last_session->ui_objects.count(root_ + "_describe.vbox.table"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root_ + "_logs.vbox.editor"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root_ + "_describe.vbox.editor"));
   EXPECT_TRUE(srv_->last_session->top_level_handlers.count(bison::key_t{root_ + "_nodes"}));
 }
 
 // Both scroll axes must be enabled on every scrollable table: ImGui has no
 // single "Scroll" flag, so the descriptor lists ScrollX|ScrollY explicitly.
-// The single-column Logs/Describe line tables additionally use a WidthFixed
-// col_line so ScrollX has a content width to pan over (a WidthStretch column
-// is clamped to the viewport and long lines get clipped, not scrolled).
 TEST_F(KubectlRmiTest, ScrollableTablesEnableBothScrollAxes) {
   constexpr int32_t kScrollX = 1 << 24;
   constexpr int32_t kScrollY = 1 << 25;
-  constexpr int32_t kWidthFixed = 1 << 4;
-  for (const char* suffix : {".vbox.table", "_deployments.vbox.table", "_services.vbox.table",
-                             "_nodes.vbox.table", "_logs.vbox.table", "_describe.vbox.table",
-                             "_console.vbox.table"}) {
+  for (const char* suffix :
+       {".vbox.table", "_deployments.vbox.table", "_services.vbox.table", "_nodes.vbox.table", "_console.vbox.table"}) {
     auto it = srv_->last_session->ui_objects.find(root_ + suffix);
     ASSERT_NE(it, srv_->last_session->ui_objects.end()) << suffix;
     int32_t flags = it->second->as<int32_t>("flags"_key);
     EXPECT_TRUE(flags & kScrollX) << suffix;
     EXPECT_TRUE(flags & kScrollY) << suffix;
   }
-  for (const char* col_path : {"_logs.vbox.table.col_line", "_describe.vbox.table.col_line"}) {
-    auto it = srv_->last_session->ui_objects.find(root_ + col_path);
-    ASSERT_NE(it, srv_->last_session->ui_objects.end()) << col_path;
-    EXPECT_TRUE(it->second->as<int32_t>("flags"_key) & kWidthFixed) << col_path;
+}
+
+// Logs / Describe are read-only, syntax-highlighted TextEditors; only Logs
+// follows the newest line.
+TEST_F(KubectlRmiTest, LogsAndDescribePanesAreReadOnlyTextEditors) {
+  for (auto [suffix, lang, auto_scroll] :
+       {std::tuple{"_logs.vbox.editor", "log", true}, std::tuple{"_describe.vbox.editor", "yaml", false}}) {
+    auto it = srv_->last_session->ui_objects.find(root_ + suffix);
+    ASSERT_NE(it, srv_->last_session->ui_objects.end()) << suffix;
+    EXPECT_EQ(it->second->as<bison::key_t>(dynamic::CLASS), "TextEditor"_key) << suffix;
+    EXPECT_EQ(it->second->as<std::string>("language"_key), lang) << suffix;
+    EXPECT_TRUE(it->second->as<bool>("read_only"_key)) << suffix;
+    EXPECT_EQ(it->second->as<bool>("auto_scroll"_key), auto_scroll) << suffix;
+    EXPECT_EQ(editor_file(root_ + suffix), "") << suffix;
   }
 }
 
@@ -290,20 +315,10 @@ TEST_F(KubectlRmiTest, PodDeleteConfirmsThenEmitsWithNamespace) {
   call("update_pods"_key,
        make_list_args("pods", {{{"namespace", "prod"}, {"name", "api-7"}, {"phase", "Running"}, {"ready", "1/1"}, {"age", "1d"}}}));
 
-  dynamic cap;
-  bool got = false;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "pod_action_requested"_key) {
-      got = true;
-      cap = payload.clone();
-    }
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
   fire(menu_id_in(root_ + ".vbox.table", 0, "Delete..."), "clicked"_key);
-  wait_for(got);
-  EXPECT_FALSE(got) << "delete must be held back pending confirmation";
+  EXPECT_FALSE(srv_->events->wait_for("pod_action_requested"_key, since))
+      << "delete must be held back pending confirmation";
 
   std::string cr = find_root_with_prefix(srv_->last_session->ui_objects, "__message_box_");
   ASSERT_FALSE(cr.empty());
@@ -313,11 +328,11 @@ TEST_F(KubectlRmiTest, PodDeleteConfirmsThenEmitsWithNamespace) {
 
   auto yes = srv_->last_session->ui_objects.at(cr + ".buttons.btn0")->as<bison::key_t>("__wish_id"_key);
   fire_at(cr, yes, "clicked"_key);
-  wait_for(got);
-  ASSERT_TRUE(got);
-  EXPECT_EQ(cap.as<std::string>("name"_key), "api-7");
-  EXPECT_EQ(cap.as<std::string>("namespace"_key), "prod");
-  EXPECT_EQ(cap.as<std::string>("action"_key), "delete");
+  auto cap = srv_->events->wait_for("pod_action_requested"_key, since);
+  ASSERT_TRUE(cap);
+  EXPECT_EQ(cap->as<std::string>("name"_key), "api-7");
+  EXPECT_EQ(cap->as<std::string>("namespace"_key), "prod");
+  EXPECT_EQ(cap->as<std::string>("action"_key), "delete");
 }
 
 TEST_F(KubectlRmiTest, DeleteNoCancelsWithoutEmitting) {
@@ -329,15 +344,9 @@ TEST_F(KubectlRmiTest, DeleteNoCancelsWithoutEmitting) {
   auto no = srv_->last_session->ui_objects.at(cr + ".buttons.btn1")->as<bison::key_t>("__wish_id"_key);
 
   bool got = false;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "pod_action_requested"_key)
-      got = true;
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
   fire_at(cr, no, "clicked"_key);
-  wait_for(got);
+  got = srv_->events->wait_for("pod_action_requested"_key, since).has_value();
   EXPECT_FALSE(got);
 }
 
@@ -347,17 +356,12 @@ TEST_F(KubectlRmiTest, DeploymentRestartFiresImmediately) {
 
   bool got = false;
   dynamic cap;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "deployment_action_requested"_key) {
-      got = true;
-      cap = payload.clone();
-    }
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
   fire_at(root_ + "_deployments", menu_id_in(root_ + "_deployments.vbox.table", 0, "Restart"), "clicked"_key);
-  wait_for(got);
+  if (auto ev = srv_->events->wait_for("deployment_action_requested"_key, since)) {
+    got = true;
+    cap = std::move(*ev);
+  }
   ASSERT_TRUE(got);
   EXPECT_EQ(cap.as<std::string>("action"_key), "restart");
   EXPECT_TRUE(find_root_with_prefix(srv_->last_session->ui_objects, "__message_box_").empty());
@@ -385,17 +389,12 @@ TEST_F(KubectlRmiTest, NodeDrainConfirmsThenEmitsNameOnly) {
 
   bool got = false;
   dynamic cap;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "node_action_requested"_key) {
-      got = true;
-      cap = payload.clone();
-    }
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
   fire_at(cr, yes, "clicked"_key);
-  wait_for(got);
+  if (auto ev = srv_->events->wait_for("node_action_requested"_key, since)) {
+    got = true;
+    cap = std::move(*ev);
+  }
   ASSERT_TRUE(got);
   EXPECT_EQ(cap.as<std::string>("name"_key), "node-a");
   EXPECT_EQ(cap.as<std::string>("action"_key), "drain");
@@ -404,15 +403,9 @@ TEST_F(KubectlRmiTest, NodeDrainConfirmsThenEmitsNameOnly) {
 
 TEST_F(KubectlRmiTest, RefreshButtonEmitsRefreshRequested) {
   bool got = false;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "refresh_requested"_key)
-      got = true;
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
   fire(id_at(root_ + ".vbox.toolbar.btn_refresh"), "clicked"_key);
-  wait_for(got);
+  got = srv_->events->wait_for("refresh_requested"_key, since).has_value();
   EXPECT_TRUE(got);
 }
 
@@ -463,17 +456,12 @@ TEST_F(KubectlRmiTest, LogsMenuActionSetsTargetAndEmitsLogsRequested) {
 
   bool got = false;
   dynamic cap;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "logs_requested"_key) {
-      got = true;
-      cap = payload.clone();
-    }
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
   fire(menu_id_in(root_ + ".vbox.table", 0, "Logs"), "clicked"_key);
-  wait_for(got);
+  if (auto ev = srv_->events->wait_for("logs_requested"_key, since)) {
+    got = true;
+    cap = std::move(*ev);
+  }
   ASSERT_TRUE(got);
   EXPECT_EQ(cap.as<std::string>("name"_key), "api-7");
   EXPECT_EQ(cap.as<std::string>("namespace"_key), "prod");
@@ -483,7 +471,7 @@ TEST_F(KubectlRmiTest, LogsMenuActionSetsTargetAndEmitsLogsRequested) {
   EXPECT_NE(target.find("api-7"), std::string::npos);
 }
 
-TEST_F(KubectlRmiTest, UpdateLogsSplitsTextAndGuardsAgainstStaleTarget) {
+TEST_F(KubectlRmiTest, UpdateLogsWritesEditorFileAndGuardsAgainstStaleTarget) {
   call("update_pods"_key,
        make_list_args("pods", {{{"namespace", "prod"}, {"name", "api-7"}, {"phase", "Running"}, {"ready", "1/1"}, {"age", "1d"}}}));
   fire(menu_id_in(root_ + ".vbox.table", 0, "Logs"), "clicked"_key);
@@ -494,7 +482,9 @@ TEST_F(KubectlRmiTest, UpdateLogsSplitsTextAndGuardsAgainstStaleTarget) {
   ok["title"_key] = std::string{"logs: prod/api-7"};
   ok["text"_key] = std::string{"line one\nline two\nline three"};
   call("update_logs"_key, std::move(ok));
-  EXPECT_EQ(row_count(root_ + "_logs.vbox.table"), 3u);
+  const std::string first = editor_file(root_ + "_logs.vbox.editor");
+  EXPECT_EQ(first.rfind("private/", 0), 0u) << first;
+  EXPECT_EQ(editor_text(root_ + "_logs.vbox.editor"), "line one\nline two\nline three");
 
   dynamic stale;
   stale["name"_key] = std::string{"other"};
@@ -502,7 +492,44 @@ TEST_F(KubectlRmiTest, UpdateLogsSplitsTextAndGuardsAgainstStaleTarget) {
   stale["title"_key] = std::string{"stale"};
   stale["text"_key] = std::string{"a\nb\nc\nd\ne"};
   call("update_logs"_key, std::move(stale));
-  EXPECT_EQ(row_count(root_ + "_logs.vbox.table"), 3u);
+  EXPECT_EQ(editor_file(root_ + "_logs.vbox.editor"), first);
+  EXPECT_EQ(editor_text(root_ + "_logs.vbox.editor"), "line one\nline two\nline three");
+
+  // Every update gets a fresh file (the editor reloads only on a file_path
+  // change) and the one it replaced is deleted.
+  dynamic again;
+  again["name"_key] = std::string{"api-7"};
+  again["namespace"_key] = std::string{"prod"};
+  again["title"_key] = std::string{"logs"};
+  again["text"_key] = std::string{"line four"};
+  call("update_logs"_key, std::move(again));
+  EXPECT_NE(editor_file(root_ + "_logs.vbox.editor"), first);
+  EXPECT_EQ(editor_text(root_ + "_logs.vbox.editor"), "line four");
+  EXPECT_FALSE(std::filesystem::exists(srv_->last_session->resource_dir / first));
+}
+
+TEST_F(KubectlRmiTest, ClosingDeletesLogsEditorFile) {
+  call(
+      "update_pods"_key,
+      make_list_args(
+          "pods", {{{"namespace", "prod"}, {"name", "api-7"}, {"phase", "Running"}, {"ready", "1/1"}, {"age", "1d"}}}));
+  fire(menu_id_in(root_ + ".vbox.table", 0, "Logs"), "clicked"_key);
+  dynamic ok;
+  ok["name"_key] = std::string{"api-7"};
+  ok["namespace"_key] = std::string{"prod"};
+  ok["title"_key] = std::string{"logs"};
+  ok["text"_key] = std::string{"hello"};
+  call("update_logs"_key, std::move(ok));
+  const auto file = srv_->last_session->resource_dir / editor_file(root_ + "_logs.vbox.editor");
+  ASSERT_TRUE(std::filesystem::exists(file));
+
+  bool got = false;
+  size_t since = srv_->events->mark();
+  auto win = srv_->last_session->ui_objects.at(root_ + "_logs")->as<bison::key_t>("__wish_id"_key);
+  fire_at(root_ + "_logs", win, "closed"_key);
+  got = srv_->events->wait_for("closed"_key, since).has_value();
+  ASSERT_TRUE(got);
+  EXPECT_FALSE(std::filesystem::exists(file));
 }
 
 TEST_F(KubectlRmiTest, LogsFollowCheckboxReEmitsWithFollowTrue) {
@@ -510,23 +537,14 @@ TEST_F(KubectlRmiTest, LogsFollowCheckboxReEmitsWithFollowTrue) {
        make_list_args("pods", {{{"namespace", "prod"}, {"name", "api-7"}, {"phase", "Running"}, {"ready", "1/1"}, {"age", "1d"}}}));
   fire(menu_id_in(root_ + ".vbox.table", 0, "Logs"), "clicked"_key);
 
-  bool got = false;
-  dynamic cap;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "logs_requested"_key) {
-      got = true;
-      cap = payload.clone();
-    }
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
   dynamic p;
   p["value"_key] = true;
   fire_at(root_ + "_logs", id_at(root_ + "_logs.vbox.toolbar.follow"), "changed"_key, std::move(p));
-  wait_for(got);
-  ASSERT_TRUE(got);
-  EXPECT_TRUE(cap.as<bool>("follow"_key));
+  // Match on follow == true: the Logs click above also emits a
+  // logs_requested (follow = false) that may be delivered after the mark.
+  EXPECT_TRUE(
+      srv_->events->wait_for("logs_requested"_key, since, [](const dynamic& e) { return e.as<bool>("follow"_key); }));
 }
 
 TEST_F(KubectlRmiTest, DescribeMenuActionEmitsAndUpdateDescribeFills) {
@@ -535,17 +553,12 @@ TEST_F(KubectlRmiTest, DescribeMenuActionEmitsAndUpdateDescribeFills) {
 
   bool got = false;
   dynamic cap;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "describe_requested"_key) {
-      got = true;
-      cap = payload.clone();
-    }
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
   fire_at(root_ + "_services", menu_id_in(root_ + "_services.vbox.table", 0, "Describe"), "clicked"_key);
-  wait_for(got);
+  if (auto ev = srv_->events->wait_for("describe_requested"_key, since)) {
+    got = true;
+    cap = std::move(*ev);
+  }
   ASSERT_TRUE(got);
   EXPECT_EQ(cap.as<std::string>("kind"_key), "service");
   EXPECT_EQ(cap.as<std::string>("name"_key), "web");
@@ -555,23 +568,18 @@ TEST_F(KubectlRmiTest, DescribeMenuActionEmitsAndUpdateDescribeFills) {
   resp["name"_key] = std::string{"web"};
   resp["namespace"_key] = std::string{"default"};
   resp["title"_key] = std::string{"service: default/web"};
-  resp["text"_key] = std::string{"Name:  web\nNamespace:  default\nType:  ClusterIP"};
+  const std::string resp_text = "Name:  web\nNamespace:  default\nType:  ClusterIP";
+  resp["text"_key] = resp_text;
   call("update_describe"_key, std::move(resp));
-  EXPECT_EQ(row_count(root_ + "_describe.vbox.table"), 3u);
+  EXPECT_EQ(editor_text(root_ + "_describe.vbox.editor"), resp_text);
 }
 
 TEST_F(KubectlRmiTest, ClosingAnyWindowEmitsClosed) {
   bool got = false;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "closed"_key)
-      got = true;
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
   auto win = srv_->last_session->ui_objects.at(root_ + "_services")->as<bison::key_t>("__wish_id"_key);
   fire_at(root_ + "_services", win, "closed"_key);
-  wait_for(got);
+  got = srv_->events->wait_for("closed"_key, since).has_value();
   EXPECT_TRUE(got);
 }
 

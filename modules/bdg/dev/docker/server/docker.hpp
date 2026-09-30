@@ -28,6 +28,7 @@
 #include <ui/ui_importer.hpp>
 
 #include <deque>
+#include <filesystem>
 #include <functional>
 #include <map>
 #include <memory>
@@ -187,16 +188,21 @@ class docker_frontend : public form {
   void rebuild_networks(const bison::dynamic& args);
 
   // ── Logs / Inspect text panes ────────────────────────────────────────
-  /// @brief Build a Logs- or Inspect-style window: a toolbar + a
-  /// single-column scrolling `Table` of `Label` lines. @p wire_toolbar
-  /// binds that window's own toolbar controls.
+  /// @brief Build a toolbar + body window (Logs, Inspect, Console) from
+  /// @p layout_json and register it as a top-level object under @p root_key.
+  /// @p wire binds that window's own toolbar controls and body widget.
   void build_text_window(
-      const std::string& root_key, const char* layout_json, bison::key_t& window_id_out,
-      ui_element_ptr& table_out, const std::function<void(ui_tree&)>& wire_toolbar);
-  /// @brief Clear @p table's rows (+ their ctx().objects entries recorded in
-  /// @p line_ids) and repopulate one `Label` row per line of @p text.
-  void set_text_lines(
-      const ui_element_ptr& table, std::vector<bison::key_t>& line_ids, size_t& next_key, const std::string& text);
+      const std::string& root_key,
+      const char* layout_json,
+      bison::key_t& window_id_out,
+      const std::function<void(ui_tree&)>& wire);
+  /// @brief Show @p text in a Logs/Inspect `TextEditor`: write it to a new
+  /// file `private/<root>_<stem>_<n>.txt` in the session sandbox, point
+  /// @p editor's `file_path` at it and delete the file it replaced (tracked
+  /// in @p file). A write failure leaves the editor unchanged.
+  void set_editor_text(const ui_element_ptr& editor, std::string& file, const char* stem, const std::string& text);
+  /// @brief Delete the sandbox file named by @p file (if any) and clear it.
+  void remove_editor_file(std::string& file);
   void emit_logs_request();
   void emit_inspect_request();
 
@@ -249,12 +255,11 @@ class docker_frontend : public form {
   // Logs window.
   std::string logs_root_key_;
   bison::key_t logs_window_id_;
-  ui_element_ptr logs_table_;
+  ui_element_ptr logs_editor_;
+  std::string logs_file_; // sandbox-relative file logs_editor_ shows
   ui_element_ptr logs_target_label_;
   bison::key_t logs_follow_id_;
   bison::key_t logs_lines_id_;
-  std::vector<bison::key_t> logs_line_ids_;
-  size_t next_logs_line_key_{0};
   std::string open_logs_id_;   // container id whose logs the window shows
   std::string open_logs_name_; // its display name (for the target label)
   bool logs_follow_{false};
@@ -263,13 +268,15 @@ class docker_frontend : public form {
   // Inspect window.
   std::string inspect_root_key_;
   bison::key_t inspect_window_id_;
-  ui_element_ptr inspect_table_;
+  ui_element_ptr inspect_editor_;
+  std::string inspect_file_; // sandbox-relative file inspect_editor_ shows
   ui_element_ptr inspect_target_label_;
-  std::vector<bison::key_t> inspect_line_ids_;
-  size_t next_inspect_line_key_{0};
   std::string open_inspect_id_;
   std::string open_inspect_kind_;
   std::string open_inspect_name_;
+
+  std::filesystem::path resource_dir_; // session sandbox root (set in on_init())
+  size_t next_editor_file_seq_{0}; // makes each set_editor_text() file name unique
 
   // ── Console window (client `docker` subprocess trace) ────────────────
   //

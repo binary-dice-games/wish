@@ -13,11 +13,14 @@
 #include "src/bison/bison_object.hpp"
 #include "src/rmi/shared/ids.hpp"
 
+#include <context/file_service.hpp>
 #include <ui/dock_layout_spec.hpp>
 #include <ui/forms/message_box.hpp>
 
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
+#include <fstream>
 #include <iomanip>
 #include <limits>
 #include <set>
@@ -217,10 +220,10 @@ static constexpr const char* kNetworksLayout = R"json({
   } } }
 })json";
 
-// Logs / Inspect are a toolbar + a single-column scrolling Table of Label
-// lines (git.cpp's diff-viewer shape -- no session-sandbox file, no
-// InputText max_length cap). "auto_scroll": true on the Logs table so it
-// follows the newest line as `docker logs` output arrives.
+// Logs / Inspect are a toolbar + a read-only, syntax-highlighted TextEditor
+// ("log" / "json"). A TextEditor displays a file, so set_editor_text()
+// writes each update into the session sandbox. "auto_scroll": true on the
+// Logs editor so it follows the newest line as `docker logs` output arrives.
 
 static constexpr const char* kLogsLayout = R"json({
   "type": "Window", "title": "Logs", "width": 900, "height": 420,
@@ -234,11 +237,9 @@ static constexpr const char* kLogsLayout = R"json({
       "btn_refresh":{ "type": "Button", "label": "Refresh", "width": 90 }
     } },
     "sep": { "type": "Separator" },
-    "table": {
-      "type": "Table", "id": "##logs_table", "columns": 1,
-      "flags": "ScrollX|ScrollY", "headers": false,
-      "height": -1, "outer_height": -1, "auto_scroll": true,
-      "children": { "col_line": { "type": "TableColumn", "flags": "WidthFixed", "column_id": 0 } }
+    "editor": {
+      "type": "TextEditor", "file_path": "", "language": "log", "read_only": true,
+      "auto_scroll": true, "width": -1, "height": -1
     }
   } } }
 })json";
@@ -253,11 +254,9 @@ static constexpr const char* kInspectLayout = R"json({
       "btn_refresh":{ "type": "Button", "label": "Refresh", "width": 90 }
     } },
     "sep": { "type": "Separator" },
-    "table": {
-      "type": "Table", "id": "##inspect_table", "columns": 1,
-      "flags": "ScrollX|ScrollY", "headers": false,
-      "height": -1, "outer_height": -1, "auto_scroll": false,
-      "children": { "col_line": { "type": "TableColumn", "flags": "WidthFixed", "column_id": 0 } }
+    "editor": {
+      "type": "TextEditor", "file_path": "", "language": "json", "read_only": true,
+      "width": -1, "height": -1
     }
   } } }
 })json";
@@ -445,8 +444,13 @@ void docker_frontend::on_init() {
     });
   });
 
+  // Captured once: on_event() (the close path) runs outside dispatch, where
+  // sess() is unavailable, and resource_dir is fixed for the session.
+  resource_dir_ = sess().resource_dir;
+
   logs_root_key_ = internal_root_key_ + "_logs";
-  build_text_window(logs_root_key_, kLogsLayout, logs_window_id_, logs_table_, [&](ui_tree& tree) {
+  build_text_window(logs_root_key_, kLogsLayout, logs_window_id_, [&](ui_tree& tree) {
+    tree.with("vbox.editor", [&](const auto& e) { logs_editor_ = e; });
     tree.with("vbox.toolbar.target", [&](const auto& e) { logs_target_label_ = e; });
     tree.with("vbox.toolbar.follow", [&](const auto& e) { logs_follow_id_ = wish_id_of(e); });
     tree.with("vbox.toolbar.lines", [&](const auto& e) { logs_lines_id_ = wish_id_of(e); });
@@ -456,7 +460,8 @@ void docker_frontend::on_init() {
   });
 
   inspect_root_key_ = internal_root_key_ + "_inspect";
-  build_text_window(inspect_root_key_, kInspectLayout, inspect_window_id_, inspect_table_, [&](ui_tree& tree) {
+  build_text_window(inspect_root_key_, kInspectLayout, inspect_window_id_, [&](ui_tree& tree) {
+    tree.with("vbox.editor", [&](const auto& e) { inspect_editor_ = e; });
     tree.with("vbox.toolbar.target", [&](const auto& e) { inspect_target_label_ = e; });
     tree.with("vbox.toolbar.btn_refresh", [&](const auto& e) {
       click_handlers_[wish_id_of(e)] = [this] { emit_inspect_request(); };
@@ -464,7 +469,9 @@ void docker_frontend::on_init() {
   });
 
   console_root_key_ = internal_root_key_ + "_console";
-  build_text_window(console_root_key_, kConsoleLayout, console_window_id_, console_table_, [](ui_tree&) {});
+  build_text_window(console_root_key_, kConsoleLayout, console_window_id_, [&](ui_tree& tree) {
+    tree.with("vbox.table", [&](const auto& e) { console_table_ = e; });
+  });
 
   stats_root_key_ = internal_root_key_ + "_stats";
   build_stats_window();
@@ -502,8 +509,10 @@ void docker_frontend::on_init() {
 }
 
 void docker_frontend::build_text_window(
-    const std::string& root_key, const char* layout_json, key_t& window_id_out, ui_element_ptr& table_out,
-    const std::function<void(ui_tree&)>& wire_toolbar) {
+    const std::string& root_key,
+    const char* layout_json,
+    key_t& window_id_out,
+    const std::function<void(ui_tree&)>& wire) {
   auto tree = import_json(layout_json);
   auto& c = ctx();
   for (auto& [key, elem] : tree) {
@@ -512,8 +521,7 @@ void docker_frontend::build_text_window(
     elem["__wish_id"_key] = id;
   }
   window_id_out = (*tree[""])["__wish_id"_key].as<key_t>();
-  tree.with("vbox.table", [&](const auto& e) { table_out = e; });
-  wire_toolbar(tree);
+  wire(tree);
 
   ui_element_ptr root_ptr = tree[""];
   sess().ui_objects.merge(std::move(tree), root_key);
@@ -522,50 +530,42 @@ void docker_frontend::build_text_window(
   (*root_ptr)["__path__"_key] = root_key;
 }
 
-void docker_frontend::set_text_lines(
-    const ui_element_ptr& table, std::vector<key_t>& line_ids, size_t& next_key, const std::string& text) {
-  if (!table)
+void docker_frontend::set_editor_text(
+    const ui_element_ptr& editor,
+    std::string& file,
+    const char* stem,
+    const std::string& text) {
+  if (!editor)
     return;
-  auto* children_p = table->findField<dynamic_ptr>("children"_key);
-  if (!children_p || !*children_p)
+  // A fresh name every call: the TextEditor renderer only reloads when
+  // file_path changes, so rewriting one fixed file would leave the pane
+  // showing stale content (see curl_source.cpp's body_file comment).
+  // Under "private/" because docker output can carry secrets (env vars,
+  // tokens) -- see context.hpp's resource_dir doc comment.
+  std::string rel =
+      "private/" + internal_root_key_ + "_" + stem + "_" + std::to_string(next_editor_file_seq_++) + ".txt";
+  auto path = file_service::resolve_path(rel, resource_dir_, /*allow_absolute=*/false);
+  if (path.empty())
     return;
-  auto& children = *children_p;
-
-  // Clear prior line rows + their ctx().objects entries (git's diff-rebuild).
-  std::vector<key_t> to_erase;
-  children->forEach([&](key_t k, const field& f) {
-    if (f.is<dynamic_ptr>() && f.as<dynamic_ptr>() && f.as<dynamic_ptr>()->as<key_t>(dynamic::CLASS) == "TableRow"_key)
-      to_erase.push_back(k);
-  });
-  for (auto k : to_erase)
-    children->erase(k.id);
-  for (auto id : line_ids)
-    ctx().objects.erase(id.id);
-  line_ids.clear();
-  next_key = 0;
-
-  size_t start = 0;
-  while (start <= text.size()) {
-    size_t nl = text.find('\n', start);
-    std::string line = text.substr(start, nl == std::string::npos ? std::string::npos : nl - start);
-    if (!line.empty() && line.back() == '\r')
-      line.pop_back();
-
-    ui_element_ptr row = ui_element_ptr::create("wish"_key, "TableRow"_key);
-    assign_id(row);
-    ui_element_ptr cell = ui_element_ptr::create("wish"_key, "Label"_key);
-    cell["text"_key] = line;
-    assign_id(cell);
-    set_children_list(row, {cell});
-    line_ids.push_back(wish_id_of(row));
-    line_ids.push_back(wish_id_of(cell));
-    (*children)[next_key++] = dynamic_ptr{row};
-
-    if (nl == std::string::npos)
-      break;
-    start = nl + 1;
+  std::error_code ec;
+  std::filesystem::create_directories(path.parent_path(), ec);
+  {
+    std::ofstream out(path, std::ios::binary);
+    if (!out)
+      return;
+    out.write(text.data(), static_cast<std::streamsize>(text.size()));
   }
-  table->refresh_children_order();
+  remove_editor_file(file);
+  file = rel;
+  editor["file_path"_key] = rel;
+}
+
+void docker_frontend::remove_editor_file(std::string& file) {
+  if (file.empty())
+    return;
+  std::error_code ec;
+  std::filesystem::remove(resource_dir_ / file, ec);
+  file.clear();
 }
 
 void docker_frontend::emit_logs_request() {
@@ -898,7 +898,7 @@ dynamic docker_frontend::do_update_logs(const dynamic& args) {
     return dynamic{}; // stale response for a container the user navigated away from.
   if (logs_target_label_)
     logs_target_label_["text"_key] = args.as<std::string>("title"_key);
-  set_text_lines(logs_table_, logs_line_ids_, next_logs_line_key_, args.as<std::string>("text"_key));
+  set_editor_text(logs_editor_, logs_file_, "logs", args.as<std::string>("text"_key));
   return dynamic{};
 }
 
@@ -907,7 +907,7 @@ dynamic docker_frontend::do_update_inspect(const dynamic& args) {
     return dynamic{};
   if (inspect_target_label_)
     inspect_target_label_["text"_key] = args.as<std::string>("title"_key);
-  set_text_lines(inspect_table_, inspect_line_ids_, next_inspect_line_key_, args.as<std::string>("text"_key));
+  set_editor_text(inspect_editor_, inspect_file_, "inspect", args.as<std::string>("text"_key));
   return dynamic{};
 }
 
@@ -1248,6 +1248,8 @@ void docker_frontend::on_event(key_t id, key_t event, const dynamic& payload) {
       (id == containers_.window_id || id == images_.window_id || id == volumes_.window_id ||
        id == networks_.window_id || id == logs_window_id_ || id == inspect_window_id_ ||
        id == console_window_id_ || id == stats_window_id_)) {
+    remove_editor_file(logs_file_);
+    remove_editor_file(inspect_file_);
     emit("closed"_key);
     remove_objects_at(images_.root_key);
     remove_objects_at(volumes_.root_key);

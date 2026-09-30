@@ -15,6 +15,7 @@
 #include <server/registry.hpp>
 #include <server/server.hpp>
 
+#include "../../../tests/free_port_server.hpp"
 #include "src/rmi/transport/socket_transport.hpp"
 #include "src/rmi/transport/tls_socket_transport.hpp"
 #include "tests/tls_test_certs.hpp"
@@ -100,7 +101,6 @@ TEST(WishCppValueTest, ArrayIndexRoundTrips) {
 
 namespace {
 
-constexpr uint16_t kTestPort = 17071;
 constexpr const char* kWindowDesc = R"({
   "type": "Window",
   "title": "T",
@@ -110,21 +110,25 @@ constexpr const char* kWindowDesc = R"({
 class WishCppClientTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    transport_ = std::make_unique<bdg::bison::rmi::transport::socket_server_transport>("127.0.0.1", kTestPort);
-    server_ = std::make_unique<bdg::wish::server>(*transport_, std::make_unique<bdg::wish::null_renderer>());
-    server_->start();
+    // A free port, not a fixed one: ctest runs these tests as parallel
+    // processes (see tests/free_port_server.hpp).
+    auto s = start_on_free_port<bdg::bison::rmi::transport::socket_server_transport>(0);
+    transport_ = std::move(s.transport);
+    server_ = std::move(s.server);
+    port_ = s.port;
   }
 
   void TearDown() override { server_->stop(); }
 
   std::unique_ptr<bdg::bison::rmi::transport::socket_server_transport> transport_;
   std::unique_ptr<bdg::wish::server> server_;
+  uint16_t port_{0};
 };
 
 }  // namespace
 
 TEST_F(WishCppClientTest, RegisterInstantiateAndSetGetRoundTrip) {
-  auto client = wish::client::tcp("127.0.0.1", kTestPort);
+  auto client = wish::client::tcp("127.0.0.1", port_);
   client.run([](wish::client& c) {
     c.register_template("win", kWindowDesc);
     auto root = c.instantiate_template("win", "win");
@@ -141,7 +145,7 @@ TEST_F(WishCppClientTest, RegisterInstantiateAndSetGetRoundTrip) {
 }
 
 TEST_F(WishCppClientTest, ProxyGetForUnknownPathThrows) {
-  auto client = wish::client::tcp("127.0.0.1", kTestPort);
+  auto client = wish::client::tcp("127.0.0.1", port_);
   client.run([](wish::client& c) { EXPECT_THROW(c.proxy_get("no.such.path"), wish::error); });
 }
 
@@ -153,7 +157,7 @@ TEST_F(WishCppClientTest, ProxyGetForUnknownPathThrows) {
 // under bindings/cpp/examples/ exercise real event delivery end-to-end
 // against a rendering server.
 TEST_F(WishCppClientTest, OnEventSubscriptionSucceeds) {
-  auto client = wish::client::tcp("127.0.0.1", kTestPort);
+  auto client = wish::client::tcp("127.0.0.1", port_);
   client.run([](wish::client& c) {
     c.register_template(
         "btnwin", R"({"type":"Window","title":"T","children":{"btn":{"type":"Button","label":"go"}}})");
@@ -174,29 +178,30 @@ TEST_F(WishCppClientTest, OnEventSubscriptionSucceeds) {
 
 namespace {
 
-constexpr uint16_t kTlsTestPort = 17075;
-
 class WishCppTlsClientTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    transport_ = std::make_unique<bdg::bison::rmi::transport::tls_socket_server_transport>(
-        "127.0.0.1", kTlsTestPort);
-    server_ = std::make_unique<bdg::wish::server>(*transport_, std::make_unique<bdg::wish::null_renderer>());
-    server_->start(nullptr,
+    auto s = start_on_free_port<bdg::bison::rmi::transport::tls_socket_server_transport>(
+        0,
+        bdg::bison::rmi::auth_module_ptr{},
         bdg::bison::rmi::transport::test::tls_server_params(
             bdg::bison::rmi::transport::test::kTestServerCert, bdg::bison::rmi::transport::test::kTestServerKey));
+    transport_ = std::move(s.transport);
+    server_ = std::move(s.server);
+    port_ = s.port;
   }
 
   void TearDown() override { server_->stop(); }
 
   std::unique_ptr<bdg::bison::rmi::transport::tls_socket_server_transport> transport_;
   std::unique_ptr<bdg::wish::server> server_;
+  uint16_t port_{0};
 };
 
 }  // namespace
 
 TEST_F(WishCppTlsClientTest, RegisterInstantiateAndSetGetRoundTrip) {
-  auto client = wish::client::tls("127.0.0.1", kTlsTestPort);
+  auto client = wish::client::tls("127.0.0.1", port_);
   wish::value connect_params;
   connect_params["ca_pem"_key] = bdg::bison::rmi::transport::test::kTestCaCert;
   client.run(
@@ -215,6 +220,6 @@ TEST_F(WishCppTlsClientTest, MissingTrustAnchorFailsHandshake) {
   // No ca_pem supplied and insecure_skip_verify left false -- the client has
   // no trust anchor for the server's certificate, so the handshake inside
   // run()'s connect step must fail rather than silently succeeding.
-  auto client = wish::client::tls("127.0.0.1", kTlsTestPort);
+  auto client = wish::client::tls("127.0.0.1", port_);
   EXPECT_THROW(client.run([](wish::client&) {}), wish::error);
 }

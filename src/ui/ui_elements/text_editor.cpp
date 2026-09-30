@@ -29,7 +29,8 @@ void register_text_editor() {
           attr<Description>("Syntax highlighting language. Supported values: "
                             "\"cpp\", \"c\", \"cs\", \"glsl\", \"hlsl\", \"lua\", "
                             "\"python\", \"sql\", \"json\", \"yaml\", \"markdown\", "
-                            "\"angelscript\", \"none\"."),
+                            "\"angelscript\", \"log\" (plain-text log output: severity "
+                            "levels, numbers/timestamps, quoted strings), \"none\"."),
           attr<Category>("Content")});
   proto->addField(
       "read_only"_rkey,
@@ -38,6 +39,15 @@ void register_text_editor() {
           attr<DisplayName>("Read Only"),
           attr<Description>("When true, the editor is read-only and emits no "
                             "\"changed\" events."),
+          attr<Category>("Behavior")});
+  proto->addField(
+      "auto_scroll"_rkey,
+      field{
+          bool{false},
+          attr<DisplayName>("Auto Scroll"),
+          attr<Description>("When true, scrolls to the last line every time the file is (re)loaded "
+                            "-- i.e. whenever file_path changes. Intended for read-only, append-style "
+                            "views such as log output."),
           attr<Category>("Behavior")});
   proto->addField(
       "width"_rkey,

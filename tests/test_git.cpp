@@ -1,6 +1,8 @@
 // MIT License © 2025 Binary Dice Games
 #include <gtest/gtest.h>
 
+#include "session_event_recorder.hpp"
+
 #include <server/registry.hpp>
 #include <server/server.hpp>
 #include <context/context.hpp>
@@ -180,10 +182,13 @@ class SessionCapturingServer : public wish::server {
       : wish::server(t, std::move(r)) {}
 
   wish::context* last_session{nullptr};
+  /// Every event the session emits (see session_event_recorder.hpp).
+  std::shared_ptr<session_event_recorder> events = std::make_shared<session_event_recorder>();
 
  protected:
   void on_session_created(wish::context& s) override {
     last_session = &s;
+    session_event_recorder::attach(events, s);
   }
 };
 
@@ -338,15 +343,6 @@ class GitRepoRmiTest : public ::testing::Test {
         return k;
     }
     return {};
-  }
-
-  // emit() defers delivery to the render loop's next frame (see
-  // session.hpp's contract on emit_event), so callers must spin briefly for
-  // it -- same idiom test_top.cpp's wait_for() uses.
-  static void wait_for(const bool& flag) {
-    auto t0 = std::chrono::steady_clock::now();
-    while (!flag && std::chrono::steady_clock::now() - t0 < std::chrono::seconds(2))
-      std::this_thread::sleep_for(std::chrono::milliseconds(5));
   }
 
   memory_server_transport transport_;
@@ -541,16 +537,10 @@ TEST_F(GitRepoRmiTest, DeleteBranchClickShowsConfirmDialogInsteadOfEmitting) {
   call("update_refs"_key, make_refs_args("main", {{"feature", false, "", 0, 0}}));
 
   bool got = false;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "delete_branch_requested"_key)
-      got = true;
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
 
   fire(element_id(delete_item_of_branch(0)), "clicked"_key);
-  wait_for(got);
+  got = srv_->events->wait_for("delete_branch_requested"_key, since).has_value();
   EXPECT_FALSE(got) << "delete should be held back pending confirmation";
 
   // The confirm dialog is a privately-instantiated MessageBox (see
@@ -575,21 +565,16 @@ TEST_F(GitRepoRmiTest, ConfirmDeleteBranchYesEmitsDeleteBranchRequested) {
 
   bool got = false;
   dynamic captured;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "delete_branch_requested"_key) {
-      got = true;
-      captured = std::move(payload);
-    }
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
 
   // The Yes button belongs to the confirm MessageBox's own internal tree,
   // handled by ITS OWN on_event() (top_level_handlers[confirm_root]) --
   // not git_repo's -- so this must go through fire_at(), not fire().
   fire_at(confirm_root, yes_id, "clicked"_key);
-  wait_for(got);
+  if (auto ev = srv_->events->wait_for("delete_branch_requested"_key, since)) {
+    got = true;
+    captured = std::move(*ev);
+  }
   ASSERT_TRUE(got);
   EXPECT_EQ(captured.as<std::string>("name"_key), "feature");
   EXPECT_FALSE(captured.as<bool>("force"_key));
@@ -604,16 +589,10 @@ TEST_F(GitRepoRmiTest, ConfirmDeleteBranchNoCancelsWithoutEmitting) {
   auto no_id = srv_->last_session->ui_objects.at(confirm_root + ".buttons.btn1")->as<bison::key_t>("__wish_id"_key);
 
   bool got = false;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "delete_branch_requested"_key)
-      got = true;
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
 
   fire_at(confirm_root, no_id, "clicked"_key);
-  wait_for(got);
+  got = srv_->events->wait_for("delete_branch_requested"_key, since).has_value();
   EXPECT_FALSE(got);
 }
 

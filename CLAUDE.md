@@ -264,6 +264,27 @@ Linux/MSYS2 will compile on MSVC without verification.
 - Prefer `ASSERT_*` for preconditions and `EXPECT_*` for subsequent checks.
 - Group tests with clear section banners in larger test files.
 - Keep tests deterministic and avoid timing-sensitive flakiness where possible.
+- ctest runs every test case as its **own process, in parallel** (`-j`), so
+  tests must not share anything across processes (each of these has caused
+  intermittent failures):
+  - **Never assign `last_session->emit_event` in a server-backed test.** The
+    render loop calls it from its own thread, and late events can arrive
+    after the test body returns, so a `[&]` hook reads dead stack variables
+    (SIGSEGV). Attach `tests/session_event_recorder.hpp` once from the
+    fixture server's `on_session_created()`, then use `events->mark()` +
+    `events->wait_for(name, since, pred)`. Add a payload predicate when an
+    earlier action emits the same event name.
+  - **Never poll a plain `bool` written by another thread**; wait on
+    something synchronized (the recorder, a condition variable).
+  - **No fixed TCP ports.** Start socket/TLS servers with
+    `start_on_free_port<Transport>()` from `tests/free_port_server.hpp`.
+  - **No fixed `context` session ids in fixtures.** `resource_dir` is
+    `/tmp/wish_<id>` and `~context()` deletes it; use
+    `bdg::bison::rmi::shared::generate_id()`.
+  - **No fixed temp-file names shared by several tests**; include the
+    current gtest test name (`current_test_info()->name()`).
+- Don't wait for "it's connected / it's rendered" with a fixed sleep; wait
+  for the condition itself (with a bounded timeout).
 
 ## Python/C#/Java Binding Style
 

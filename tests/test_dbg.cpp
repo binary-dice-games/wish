@@ -1,6 +1,8 @@
 // MIT License © 2026 Binary Dice Games
 #include <gtest/gtest.h>
 
+#include "session_event_recorder.hpp"
+
 #include <server/registry.hpp>
 #include <server/server.hpp>
 #include <context/context.hpp>
@@ -129,10 +131,13 @@ class SessionCapturingServer : public wish::server {
   SessionCapturingServer(server_transport_iface& t, std::unique_ptr<wish::renderer> r)
       : wish::server(t, std::move(r)) {}
   wish::context* last_session{nullptr};
+  /// Every event the session emits (see session_event_recorder.hpp).
+  std::shared_ptr<session_event_recorder> events = std::make_shared<session_event_recorder>();
 
  protected:
   void on_session_created(wish::context& s) override {
     last_session = &s;
+    session_event_recorder::attach(events, s);
   }
 };
 
@@ -324,12 +329,6 @@ class DbgRmiTest : public ::testing::Test {
     h->second->on_event(id, event, std::move(payload));
   }
 
-  static void wait_for(const bool& flag) {
-    auto t0 = std::chrono::steady_clock::now();
-    while (!flag && std::chrono::steady_clock::now() - t0 < std::chrono::seconds(2))
-      std::this_thread::sleep_for(std::chrono::milliseconds(5));
-  }
-
   bison::key_t id_at(const std::string& dot_path) const {
     auto it = srv_->last_session->ui_objects.find(root_ + "." + dot_path);
     return it == srv_->last_session->ui_objects.end() ? bison::key_t{}
@@ -467,20 +466,15 @@ TEST_F(DbgRmiTest, ThreadsRowClickEmitsSelectThreadRequested) {
 
   bool got = false;
   dynamic cap;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "select_thread_requested"_key) {
-      got = true;
-      cap = payload.clone();
-    }
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
 
   dynamic sel;
   sel["index"_key] = int32_t{1}; // second row -> thread id 20
   fire_at(root_ + "_threads", threads_table_id, "row_selected"_key, std::move(sel));
-  wait_for(got);
+  if (auto ev = srv_->events->wait_for("select_thread_requested"_key, since)) {
+    got = true;
+    cap = std::move(*ev);
+  }
   ASSERT_TRUE(got);
   EXPECT_EQ(cap.as<int32_t>("thread_id"_key), 20);
 }
@@ -503,20 +497,15 @@ TEST_F(DbgRmiTest, CallstackRowClickEmitsSelectFrameRequested) {
 
   bool got = false;
   dynamic cap;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "select_frame_requested"_key) {
-      got = true;
-      cap = payload.clone();
-    }
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
 
   dynamic fsel;
   fsel["index"_key] = int32_t{1};
   fire_at(root_ + "_callstack", callstack_table_id, "row_selected"_key, std::move(fsel));
-  wait_for(got);
+  if (auto ev = srv_->events->wait_for("select_frame_requested"_key, since)) {
+    got = true;
+    cap = std::move(*ev);
+  }
   ASSERT_TRUE(got);
   EXPECT_EQ(cap.as<int32_t>("frame_id"_key), 1);
 }
@@ -525,17 +514,11 @@ TEST_F(DbgRmiTest, CallstackRowClickEmitsSelectFrameRequested) {
 
 TEST_F(DbgRmiTest, ClosingAnyWindowEmitsClosedAndTearsDownAllSix) {
   bool got = false;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "closed"_key)
-      got = true;
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
 
   auto win = window_id("_watch");
   fire_at(root_ + "_watch", win, "closed"_key);
-  wait_for(got);
+  got = srv_->events->wait_for("closed"_key, since).has_value();
   EXPECT_TRUE(got);
 
   EXPECT_FALSE(srv_->last_session->ui_objects.count(root_));
@@ -593,15 +576,7 @@ TEST_F(DbgRmiTest, LineContextMenuTogglesBreakpointAndRebuildsTable) {
 
   bool got = false;
   dynamic cap;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "toggle_breakpoint_requested"_key) {
-      got = true;
-      cap = payload.clone();
-    }
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
 
   // TextEditor's own gutter right-click -- text_editor.cpp: "Right-clicking
   // a line number emits 'line_context_menu'". The Source window's own
@@ -611,7 +586,10 @@ TEST_F(DbgRmiTest, LineContextMenuTogglesBreakpointAndRebuildsTable) {
   ctx_payload["line"_key] = int32_t{20};
   ctx_payload["has_breakpoint"_key] = false;
   fire(editor_id, "line_context_menu"_key, std::move(ctx_payload));
-  wait_for(got);
+  if (auto ev = srv_->events->wait_for("toggle_breakpoint_requested"_key, since)) {
+    got = true;
+    cap = std::move(*ev);
+  }
   ASSERT_TRUE(got);
   EXPECT_EQ(cap.as<std::string>("path"_key), "main.cpp");
   EXPECT_EQ(cap.as<int32_t>("line"_key), 20);
@@ -691,18 +669,13 @@ TEST_F(DbgRmiTest, WatchAddButtonEmitsAddWatchRequestedWithTypedExpression) {
 
   bool got = false;
   dynamic cap;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "add_watch_requested"_key) {
-      got = true;
-      cap = payload.clone();
-    }
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
 
   fire_at(root_ + "_watch", add_button_id, "clicked"_key);
-  wait_for(got);
+  if (auto ev = srv_->events->wait_for("add_watch_requested"_key, since)) {
+    got = true;
+    cap = std::move(*ev);
+  }
   ASSERT_TRUE(got);
   EXPECT_EQ(cap.as<std::string>("expr"_key), "counter");
 }
@@ -712,16 +685,10 @@ TEST_F(DbgRmiTest, WatchAddButtonWithEmptyExpressionIsNoOp) {
                             ->as<bison::key_t>("__wish_id"_key);
 
   bool got = false;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "add_watch_requested"_key)
-      got = true;
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
 
   fire_at(root_ + "_watch", add_button_id, "clicked"_key);
-  wait_for(got);
+  got = srv_->events->wait_for("add_watch_requested"_key, since).has_value();
   EXPECT_FALSE(got);
 }
 

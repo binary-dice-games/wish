@@ -52,7 +52,14 @@ void server::start(bison::rmi::auth_module_ptr auth_module, bison::dynamic liste
   register_all();
   running_.store(true, std::memory_order_release);
   render_thread_ = std::thread([this]() { render_loop(); });
-  listen(std::move(listen_params), std::move(auth_module));
+  try {
+    listen(std::move(listen_params), std::move(auth_module));
+  } catch (...) {
+    // E.g. the port is already in use: don't leave a render loop running
+    // for a server that never started listening.
+    stop();
+    throw;
+  }
 }
 
 void server::stop() {
@@ -284,7 +291,6 @@ void server::render_loop() {
         for (const auto& sync_ctx : sessions_snapshot) {
           std::vector<context::pending_event> events;
           std::unordered_map<bison::key_t, ui_root*, bison::key_t, bison::key_t> handlers;
-          std::function<void(bison::key_t, bison::key_t, bison::dynamic)> client_emit;
           {
             auto sess = context_wlock{*sync_ctx};
             // Decrement dirty before rendering, not after (and not straight
@@ -335,21 +341,30 @@ void server::render_loop() {
             detail::current_context = nullptr;
             renderer_->service_automation_queries(*sess);
             events = std::move(sess->pending_events);
-            // handlers / client_emit are only used to dispatch events below;
-            // skip both copies (the map copy allocates per node) on the
-            // overwhelmingly common no-event frame.
-            if (!events.empty()) {
+            // handlers is only used to dispatch events below; skip the copy
+            // (it allocates per node) on the overwhelmingly common no-event
+            // frame.
+            if (!events.empty())
               handlers = sess->top_level_handlers;
-              client_emit = sess->emit_event;
-            }
           }
-          // Dispatch events with no lock held: handlers may modify session state.
+          // Forward each event to the client under the session's read lock,
+          // then run its handler with no lock held (handlers may modify
+          // session state). emit_event must never be copied out and called
+          // unlocked: it captures the raw client connection, which bison
+          // destroys on disconnect right after clearing emit_event under
+          // this session's write lock -- a copy called after that is a
+          // use-after-free (seen as intermittent SIGSEGVs in the form tests'
+          // TearDown). Holding the lock across send() is safe: every server
+          // transport's send() only enqueues or writes the frame.
           for (auto& ev : events) {
-            if (client_emit) {
-              try {
-                client_emit(ev.id, ev.event_name, ev.payload);
-              } catch (...) {
-              } // client may have disconnected between render and dispatch
+            {
+              auto sess = context_rlock{*sync_ctx};
+              if (sess->emit_event) {
+                try {
+                  sess->emit_event(ev.id, ev.event_name, ev.payload);
+                } catch (...) {
+                } // a transport error must not take down the render loop
+              }
             }
             if (ev.root_key.id != 0) {
               auto it = handlers.find(ev.root_key);

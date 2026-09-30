@@ -1,6 +1,8 @@
 // MIT License © 2026 Binary Dice Games
 #include <gtest/gtest.h>
 
+#include "session_event_recorder.hpp"
+
 #include <server/registry.hpp>
 #include <server/server.hpp>
 #include <context/context.hpp>
@@ -121,10 +123,13 @@ class SessionCapturingServer : public wish::server {
   SessionCapturingServer(server_transport_iface& t, std::unique_ptr<wish::renderer> r)
       : wish::server(t, std::move(r)) {}
   wish::context* last_session{nullptr};
+  /// Every event the session emits (see session_event_recorder.hpp).
+  std::shared_ptr<session_event_recorder> events = std::make_shared<session_event_recorder>();
 
  protected:
   void on_session_created(wish::context& s) override {
     last_session = &s;
+    session_event_recorder::attach(events, s);
   }
 };
 
@@ -258,26 +263,44 @@ class SqRmiTest : public ::testing::Test {
     bison::key_t name;
     dynamic payload;
   };
-  // Records every emitted event whose name is in @p names.
-  void capture(std::vector<emitted>& out) {
-    auto prev = std::move(srv_->last_session->emit_event);
-    srv_->last_session->emit_event = [&out, prev](bison::key_t id, bison::key_t event, dynamic payload) {
-      if (event.id != "clicked"_key.id && event.id != "changed"_key.id && event.id != "closed"_key.id) {
-        emitted e;
-        e.name = event;
-        e.payload = payload.clone();
-        out.push_back(std::move(e));
-      }
-      if (prev)
-        prev(id, event, std::move(payload));
-    };
+  // Form-level events emitted since capture() was called -- widget
+  // clicked/changed/closed notifications are filtered out. Every accessor
+  // reads a fresh, thread-safe snapshot of the session's recorder, so a
+  // late-delivered event can never touch test-local storage.
+  class event_log {
+   public:
+    event_log(std::shared_ptr<session_event_recorder> recorder, size_t since)
+        : recorder_(std::move(recorder)), since_(since) {}
+    std::vector<emitted> all() const {
+      std::vector<emitted> out;
+      for (auto& e : recorder_->snapshot(since_))
+        if (e.name.id != "clicked"_key.id && e.name.id != "changed"_key.id && e.name.id != "closed"_key.id)
+          out.push_back({e.name, std::move(e.payload)});
+      return out;
+    }
+    size_t size() const {
+      return all().size();
+    }
+    bool empty() const {
+      return all().empty();
+    }
+    emitted operator[](size_t i) const {
+      return all().at(i);
+    }
+
+   private:
+    std::shared_ptr<session_event_recorder> recorder_;
+    size_t since_;
+  };
+  event_log capture() {
+    return {srv_->events, srv_->events->mark()};
   }
 
-  // Events reach the client callback asynchronously; poll until @p out holds
+  // Events reach the client callback asynchronously; poll until @p log holds
   // at least @p n of them (or 2 s pass).
-  static void wait_events(const std::vector<emitted>& out, size_t n) {
+  static void wait_events(const event_log& log, size_t n) {
     auto t0 = std::chrono::steady_clock::now();
-    while (out.size() < n && std::chrono::steady_clock::now() - t0 < std::chrono::seconds(2))
+    while (log.size() < n && std::chrono::steady_clock::now() - t0 < std::chrono::seconds(2))
       std::this_thread::sleep_for(std::chrono::milliseconds(5));
   }
 
@@ -495,8 +518,7 @@ TEST_F(SqRmiTest, RebuildingConnectionsIsIdempotentInRowCount) {
 
 TEST_F(SqRmiTest, PickerChangeEmitsActivateForAnotherHandle) {
   call("update_connections"_key, make_connections("@a", {{"@a", "sqlite3"}, {"@b", "postgres"}}));
-  std::vector<emitted> got;
-  capture(got);
+  auto got = capture();
   const auto combo_id = element_id(obj(root_ + ".vbox.toolbar.conn"));
 
   dynamic same;
@@ -516,8 +538,7 @@ TEST_F(SqRmiTest, PickerChangeEmitsActivateForAnotherHandle) {
 
 TEST_F(SqRmiTest, RemoveIsHeldBackUntilConfirmed) {
   call("update_connections"_key, make_connections("@a", {{"@a", "sqlite3"}, {"@b", "postgres"}}));
-  std::vector<emitted> got;
-  capture(got);
+  auto got = capture();
 
   auto item = find_by(obj(root_ + "_connections.vbox.table"), "label", "Remove...");
   ASSERT_TRUE(item);
@@ -534,8 +555,7 @@ TEST_F(SqRmiTest, AddConnectionEmitsFormFieldsAndClearsPassword) {
   (*loc)["value"_key] = std::string{"postgres://u@h/db"};
   (*pw)["value"_key] = std::string{"pw"};
 
-  std::vector<emitted> got;
-  capture(got);
+  auto got = capture();
   fire_at(root_ + "_connections", element_id(obj(root_ + "_connections.vbox.new_row2.btn_add")), "clicked"_key);
   wait_events(got, 1);
   ASSERT_EQ(got.size(), 1u);
@@ -546,8 +566,7 @@ TEST_F(SqRmiTest, AddConnectionEmitsFormFieldsAndClearsPassword) {
 }
 
 TEST_F(SqRmiTest, AddWithoutLocationDoesNotEmit) {
-  std::vector<emitted> got;
-  capture(got);
+  auto got = capture();
   fire_at(root_ + "_connections", element_id(obj(root_ + "_connections.vbox.new_row2.btn_add")), "clicked"_key);
   std::this_thread::sleep_for(std::chrono::milliseconds(100)); // events are async
   EXPECT_TRUE(got.empty());
@@ -583,8 +602,7 @@ TEST_F(SqRmiTest, ViewDataButtonPutsQuotedSelectInEditorAndEmitsQuery) {
   auto button = find_by(album, "label", "View data");
   ASSERT_TRUE(button);
 
-  std::vector<emitted> got;
-  capture(got);
+  auto got = capture();
   fire_at(root_ + "_navigator", element_id(button), "clicked"_key);
   wait_events(got, 1);
   ASSERT_EQ(got.size(), 1u);
@@ -619,8 +637,7 @@ TEST_F(SqRmiTest, NewSchemaResetsTheStructureWindow) {
 TEST_F(SqRmiTest, RunEmitsTheEditorTextAndRowLimit) {
   set_sql("select 1");
   (*obj(root_ + ".vbox.toolbar.rows"))["value"_key] = int32_t{2};
-  std::vector<emitted> got;
-  capture(got);
+  auto got = capture();
   fire_at(root_, element_id(obj(root_ + ".vbox.toolbar.btn_run")), "clicked"_key);
   wait_events(got, 1);
   ASSERT_EQ(got.size(), 1u);
@@ -649,8 +666,7 @@ TEST_F(SqRmiTest, ViewDataReplacesTheEditorFileSoTheWidgetReloads) {
 }
 
 TEST_F(SqRmiTest, RunWithBlankEditorDoesNotEmit) {
-  std::vector<emitted> got;
-  capture(got);
+  auto got = capture();
   fire_at(root_, element_id(obj(root_ + ".vbox.toolbar.btn_run")), "clicked"_key);
   std::this_thread::sleep_for(std::chrono::milliseconds(100)); // events are async
   EXPECT_TRUE(got.empty());
@@ -698,8 +714,7 @@ TEST_F(SqRmiTest, FailedResultShowsTheErrorAndClearsTheGrid) {
 TEST_F(SqRmiTest, ExportEmitsPathAndOverwriteFlag) {
   (*obj(root_ + "_results.vbox.export.path"))["value"_key] = std::string{"out.csv"};
   (*obj(root_ + "_results.vbox.export.overwrite"))["value"_key] = true;
-  std::vector<emitted> got;
-  capture(got);
+  auto got = capture();
   fire_at(root_, element_id(obj(root_ + "_results.vbox.export.btn_export")), "clicked"_key);
   wait_events(got, 1);
   ASSERT_EQ(got.size(), 1u);
@@ -709,8 +724,7 @@ TEST_F(SqRmiTest, ExportEmitsPathAndOverwriteFlag) {
 }
 
 TEST_F(SqRmiTest, ExportRejectsPathsOutsideTheSandboxOrExistingFiles) {
-  std::vector<emitted> got;
-  capture(got);
+  auto got = capture();
   auto click = [&](const std::string& path, bool overwrite) {
     (*obj(root_ + "_results.vbox.export.path"))["value"_key] = path;
     (*obj(root_ + "_results.vbox.export.overwrite"))["value"_key] = overwrite;
@@ -770,18 +784,9 @@ TEST_F(SqRmiTest, ShowUnavailableSetsBannersAndOpensADialog) {
 }
 
 TEST_F(SqRmiTest, ClosingAnyWindowEmitsClosedAndTearsDownEveryRoot) {
-  bool closed = false;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "closed"_key)
-      closed = true;
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
   fire_at(root_ + "_results", element_id(obj(root_ + "_results")), "closed"_key);
-  for (int i = 0; i < 400 && !closed; ++i)
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
-  EXPECT_TRUE(closed);
+  EXPECT_TRUE(srv_->events->wait_for("closed"_key, since));
   for (const char* suffix : {"_connections", "_navigator", "_structure", "_results", "_console", "_chart"})
     EXPECT_FALSE(obj(root_ + suffix)) << suffix;
 }

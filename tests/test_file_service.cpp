@@ -1,6 +1,8 @@
 // MIT License © 2025 Binary Dice Games
 #include <gtest/gtest.h>
 
+#include "src/rmi/shared/ids.hpp"
+
 #include <context/file_service.hpp>
 #include <net/http_client.hpp>
 
@@ -114,7 +116,10 @@ class FileServiceTest : public ::testing::Test {
  protected:
   void SetUp() override {
     bdg::wish::register_file_service(); // idempotent: registers bison class
-    sess_ = std::make_unique<context>("fs_test"_key);
+    // A fresh id per test: resource_dir is /tmp/wish_<id> and ~context()
+    // deletes it, so a fixed id made parallel ctest processes share -- and
+    // delete -- one another's sandbox.
+    sess_ = std::make_unique<context>(bdg::bison::rmi::shared::generate_id());
     sess_->file_service =
         std::make_shared<file_service>(dynamic::instantiate("wish"_key, "__WishFileSystem"_key), sess_->resource_dir);
   }

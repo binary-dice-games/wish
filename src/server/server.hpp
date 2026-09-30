@@ -77,6 +77,9 @@ class server : public bison::rmi::server {
    *                     `tls_socket_server_transport` (see
    *                     `docs/tls.md` in bison). Empty (default) for
    *                     transports that need no extra parameters.
+   * @throws std::runtime_error (from the transport) if listening fails, e.g.
+   *         the port is already in use. The render loop started beforehand
+   *         is stopped again first, so the server is left stopped.
    */
   void start(bison::rmi::auth_module_ptr auth_module = nullptr, bison::dynamic listen_params = bison::dynamic{});
 

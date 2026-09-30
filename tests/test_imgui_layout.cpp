@@ -9,6 +9,7 @@
 
 #include "src/bison/bison_common.hpp"
 #include "src/bison/bison_object.hpp"
+#include "src/rmi/shared/ids.hpp"
 
 #include <imgui.h>
 
@@ -38,7 +39,10 @@ class ImguiLayoutTest : public ::testing::Test {
     io.Fonts->GetTexDataAsRGBA32(&pixels, &fw, &fh);
     io.Fonts->SetTexID(ImTextureID{1});
     io.MousePos = ImVec2(10.0f, 10.0f);
-    sess_ = std::make_unique<context>("imgui_layout_test"_key);
+    // A fresh id per test: resource_dir is /tmp/wish_<id> and ~context()
+    // deletes it, so a fixed id made parallel ctest processes share -- and
+    // delete -- one another's sandbox.
+    sess_ = std::make_unique<context>(bdg::bison::rmi::shared::generate_id());
     renderer_ = std::make_unique<imgui_renderer>();
   }
 

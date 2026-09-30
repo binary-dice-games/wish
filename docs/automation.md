@@ -187,6 +187,16 @@ gotcha you hit and didn't record is one the next agent will hit again.
   after opening it (`click()` the `Combo` itself first) rather than
   guessing.
 
+- **Right after a raw dock-tab click, the first screenshot can show the
+  *new* tab highlighted over the *old* window's content** (`docker` Logs
+  vs Inspect, 2026-09) -- and the switch may not have stuck at all:
+  `get_widget()` on a child of the newly selected window still reported
+  `visible: False`, `rect: None`, and later screenshots showed the old tab
+  in front again. Don't trust the screenshot here; loop "click the tab,
+  wait ~1.5 s, `get_widget()` a child of the target window" until it has a
+  rect, then take the shot. (A `TextEditor` with an empty `file_path`
+  renders nothing, so its rect has zero height until content is loaded --
+  check a toolbar child or wait for height > 0.)
 - **`type_text()` appends; Ctrl+A/Delete does not clear a multiline
   `InputText`** (`sq` module, 2026-09). Driving a second, different query
   into the same box through `page.keyboard.press("Control+A")` +

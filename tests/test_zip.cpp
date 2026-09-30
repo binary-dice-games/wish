@@ -1,6 +1,8 @@
 // MIT License © 2025 Binary Dice Games
 #include <gtest/gtest.h>
 
+#include "session_event_recorder.hpp"
+
 #include <server/registry.hpp>
 #include <server/server.hpp>
 #include <context/context.hpp>
@@ -120,10 +122,13 @@ class SessionCapturingServer : public wish::server {
       : wish::server(t, std::move(r)) {}
 
   wish::context* last_session{nullptr};
+  /// Every event the session emits (see session_event_recorder.hpp).
+  std::shared_ptr<session_event_recorder> events = std::make_shared<session_event_recorder>();
 
  protected:
   void on_session_created(wish::context& s) override {
     last_session = &s;
+    session_event_recorder::attach(events, s);
   }
 };
 
@@ -353,14 +358,6 @@ class ZipEventTest : public ::testing::Test {
     handler_->on_event(widget_id(".main.file_table"), "row_selected"_key, sel);
   }
 
-  // form::emit() defers delivery to the render loop's next frame, so spin
-  // briefly for it, same idiom as test_mc.cpp.
-  void wait_for(bool& flag) const {
-    auto t0 = std::chrono::steady_clock::now();
-    while (!flag && std::chrono::steady_clock::now() - t0 < std::chrono::seconds(2))
-      std::this_thread::sleep_for(std::chrono::milliseconds(5));
-  }
-
   memory_server_transport transport_;
   std::unique_ptr<SessionCapturingServer> srv_;
   std::unique_ptr<bdg::bison::rmi::client> client_;
@@ -372,21 +369,16 @@ class ZipEventTest : public ::testing::Test {
 TEST_F(ZipEventTest, PathBarChangedEmitsOnNavigateWithTypePath) {
   bool got = false;
   dynamic captured;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "on_navigate"_key) {
-      got = true;
-      captured = std::move(payload);
-    }
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
 
   dynamic payload;
   payload["value"_key] = std::string{"/some/local/dir"};
   handler_->on_event(widget_id(".main.path_input"), "changed"_key, payload);
 
-  wait_for(got);
+  if (auto ev = srv_->events->wait_for("on_navigate"_key, since)) {
+    got = true;
+    captured = std::move(*ev);
+  }
   ASSERT_TRUE(got);
   EXPECT_EQ(captured.as<std::string>("name"_key), "/some/local/dir");
   EXPECT_EQ(captured.as<std::string>("type"_key), "path");
@@ -397,21 +389,16 @@ TEST_F(ZipEventTest, RowActivatedOnDirEmitsOnNavigateWithTypeDir) {
 
   bool got = false;
   dynamic captured;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "on_navigate"_key) {
-      got = true;
-      captured = std::move(payload);
-    }
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
 
   dynamic payload;
   payload["index"_key] = int32_t{0};
   handler_->on_event(widget_id(".main.file_table"), "row_activated"_key, payload);
 
-  wait_for(got);
+  if (auto ev = srv_->events->wait_for("on_navigate"_key, since)) {
+    got = true;
+    captured = std::move(*ev);
+  }
   ASSERT_TRUE(got);
   EXPECT_EQ(captured.as<std::string>("name"_key), "sub");
   EXPECT_EQ(captured.as<std::string>("type"_key), "dir");
@@ -422,21 +409,16 @@ TEST_F(ZipEventTest, RowActivatedOnZipFileEmitsOnViewContentsRequested) {
 
   bool got = false;
   dynamic captured;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "on_view_contents_requested"_key) {
-      got = true;
-      captured = std::move(payload);
-    }
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
 
   dynamic payload;
   payload["index"_key] = int32_t{0};
   handler_->on_event(widget_id(".main.file_table"), "row_activated"_key, payload);
 
-  wait_for(got);
+  if (auto ev = srv_->events->wait_for("on_view_contents_requested"_key, since)) {
+    got = true;
+    captured = std::move(*ev);
+  }
   ASSERT_TRUE(got);
   EXPECT_EQ(captured.as<std::string>("path"_key), "/home");
   EXPECT_EQ(captured.as<std::string>("name"_key), "photos.zip");
@@ -446,19 +428,13 @@ TEST_F(ZipEventTest, RowActivatedOnNonArchiveFileSetsStatusInsteadOfEmitting) {
   update_listing("/home", {{"notes.txt", "file", "1 KB", ""}});
 
   bool got = false;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "on_view_contents_requested"_key)
-      got = true;
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
 
   dynamic payload;
   payload["index"_key] = int32_t{0};
   handler_->on_event(widget_id(".main.file_table"), "row_activated"_key, payload);
 
-  wait_for(got);
+  got = srv_->events->wait_for("on_view_contents_requested"_key, since).has_value();
   EXPECT_FALSE(got);
   EXPECT_EQ(
       srv_->last_session->ui_objects.at(root_ + ".main.status")->as<std::string>("text"_key),
@@ -500,19 +476,14 @@ TEST_F(ZipEventTest, ConfirmingCompressPromptEmitsOnCompressRequested) {
 
   bool got = false;
   dynamic captured;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "on_compress_requested"_key) {
-      got = true;
-      captured = std::move(payload);
-    }
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
 
   handler_->on_event(ok_id, "clicked"_key, dynamic{});
 
-  wait_for(got);
+  if (auto ev = srv_->events->wait_for("on_compress_requested"_key, since)) {
+    got = true;
+    captured = std::move(*ev);
+  }
   ASSERT_TRUE(got);
   EXPECT_EQ(captured.as<std::string>("path"_key), "/home");
   auto* names_f = captured.findField<dynamic_ptr>("source_names"_key);
@@ -540,17 +511,11 @@ TEST_F(ZipEventTest, CompressNameCollidingWithExistingEntryShowsOverwriteConfirm
   handler_->on_event(widget_id_at(prompt_root + ".name_input"), "changed"_key, changed);
 
   bool got = false;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "on_compress_requested"_key)
-      got = true;
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
 
   handler_->on_event(widget_id_at(prompt_root + ".buttons.btn_ok"), "clicked"_key, dynamic{});
 
-  wait_for(got);
+  got = srv_->events->wait_for("on_compress_requested"_key, since).has_value();
   EXPECT_FALSE(got) << "compress should be held back pending overwrite confirmation";
 
   // Overwrite-confirm is a privately-instantiated MessageBox (see
@@ -582,15 +547,7 @@ TEST_F(ZipEventTest, ConfirmOverwriteYesEmitsOnCompressRequested) {
 
   bool got = false;
   dynamic captured;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "on_compress_requested"_key) {
-      got = true;
-      captured = std::move(payload);
-    }
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
 
   // The Yes button belongs to the confirm MessageBox's own internal tree,
   // handled by ITS OWN on_event() (top_level_handlers[confirm_root]) -- not
@@ -600,7 +557,10 @@ TEST_F(ZipEventTest, ConfirmOverwriteYesEmitsOnCompressRequested) {
   ASSERT_NE(confirm_handler, nullptr);
   confirm_handler->on_event(yes_id, "clicked"_key, dynamic{});
 
-  wait_for(got);
+  if (auto ev = srv_->events->wait_for("on_compress_requested"_key, since)) {
+    got = true;
+    captured = std::move(*ev);
+  }
   ASSERT_TRUE(got);
   EXPECT_EQ(captured.as<std::string>("archive_name"_key), "archive.zip");
 }
@@ -622,13 +582,7 @@ TEST_F(ZipEventTest, ConfirmOverwriteNoCancelsWithoutEmitting) {
   auto no_id = widget_id_at(confirm_root + ".buttons.btn1");
 
   bool got = false;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "on_compress_requested"_key)
-      got = true;
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
 
   // See ConfirmOverwriteYesEmitsOnCompressRequested above for why this goes
   // through the confirm MessageBox's own handler, not handler_.
@@ -636,7 +590,7 @@ TEST_F(ZipEventTest, ConfirmOverwriteNoCancelsWithoutEmitting) {
   ASSERT_NE(confirm_handler, nullptr);
   confirm_handler->on_event(no_id, "clicked"_key, dynamic{});
 
-  wait_for(got);
+  got = srv_->events->wait_for("on_compress_requested"_key, since).has_value();
   EXPECT_FALSE(got);
   EXPECT_EQ(
       srv_->last_session->ui_objects.at(root_ + ".main.status")->as<std::string>("text"_key), "Compress cancelled.");
@@ -693,19 +647,14 @@ TEST_F(ZipEventTest, ConfirmingExtractPromptEmitsOnExtractRequested) {
 
   bool got = false;
   dynamic captured;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "on_extract_requested"_key) {
-      got = true;
-      captured = std::move(payload);
-    }
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
 
   handler_->on_event(widget_id_at(prompt_root + ".buttons.btn_ok"), "clicked"_key, dynamic{});
 
-  wait_for(got);
+  if (auto ev = srv_->events->wait_for("on_extract_requested"_key, since)) {
+    got = true;
+    captured = std::move(*ev);
+  }
   ASSERT_TRUE(got);
   EXPECT_EQ(captured.as<std::string>("path"_key), "/home");
   EXPECT_EQ(captured.as<std::string>("zip_name"_key), "archive.zip");
@@ -748,19 +697,14 @@ TEST_F(ZipEventTest, ViewContentsClickedEmitsOnViewContentsRequested) {
 
   bool got = false;
   dynamic captured;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "on_view_contents_requested"_key) {
-      got = true;
-      captured = std::move(payload);
-    }
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
 
   handler_->on_event(widget_id(".main.btn_row.btn_view"), "clicked"_key, dynamic{});
 
-  wait_for(got);
+  if (auto ev = srv_->events->wait_for("on_view_contents_requested"_key, since)) {
+    got = true;
+    captured = std::move(*ev);
+  }
   ASSERT_TRUE(got);
   EXPECT_EQ(captured.as<std::string>("path"_key), "/home");
   EXPECT_EQ(captured.as<std::string>("name"_key), "archive.zip");
@@ -771,19 +715,14 @@ TEST_F(ZipEventTest, RefreshClickedEmitsOnNavigateWithCurrentPath) {
 
   bool got = false;
   dynamic captured;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "on_navigate"_key) {
-      got = true;
-      captured = std::move(payload);
-    }
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
 
   handler_->on_event(widget_id(".main.btn_row.btn_refresh"), "clicked"_key, dynamic{});
 
-  wait_for(got);
+  if (auto ev = srv_->events->wait_for("on_navigate"_key, since)) {
+    got = true;
+    captured = std::move(*ev);
+  }
   ASSERT_TRUE(got);
   EXPECT_EQ(captured.as<std::string>("name"_key), "/home/user");
   EXPECT_EQ(captured.as<std::string>("type"_key), "path");
@@ -844,17 +783,11 @@ TEST_F(ZipEventTest, ContentsCloseButtonRequestsClose) {
 
 TEST_F(ZipEventTest, WindowClosedEmitsClosedAndCleansUp) {
   bool got_closed = false;
-  auto prev = std::move(srv_->last_session->emit_event);
-  srv_->last_session->emit_event = [&](bison::key_t id, bison::key_t event, dynamic payload) {
-    if (event == "closed"_key)
-      got_closed = true;
-    if (prev)
-      prev(id, event, std::move(payload));
-  };
+  size_t since = srv_->events->mark();
 
   handler_->on_event(widget_id(""), "closed"_key, dynamic{});
 
-  wait_for(got_closed);
+  got_closed = srv_->events->wait_for("closed"_key, since).has_value();
   EXPECT_TRUE(got_closed);
   EXPECT_EQ(srv_->last_session->ui_objects.count(root_), 0u);
 }

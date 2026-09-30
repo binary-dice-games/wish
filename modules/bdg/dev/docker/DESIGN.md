@@ -136,17 +136,11 @@ dispatch keys on a `{scope, key, action}` `row_action`, so one
   Driver, Scope, Network ID). Row menu: Inspect / Remove — the three
   built-in networks (`bridge`/`host`/`none`) get Inspect only.
 - **Logs** (`internal_root_key_ + "_logs"`): toolbar (a container `Label`, a Follow
-  `Checkbox`, a Lines `InputInt`, Refresh), a read-only text viewer
-  showing `docker logs` output.
+  `Checkbox`, a Lines `InputInt`, Refresh), a read-only `TextEditor`
+  (`language: "log"`, `auto_scroll: true`) showing `docker logs` output.
 - **Inspect** (`internal_root_key_ + "_inspect"`): toolbar (a target
-  `Label`, Refresh), a read-only text viewer showing `docker inspect`
-  output.
-
-  The text-viewer widget for both is decided in implementation (see §6):
-  either a multiline read-only `InputText` (no sandbox file, simplest) or a
-  `TextEditor` fed a client-uploaded sandbox file (`language: "none"` /
-  `"json"`, gives selection + syntax highlighting at the cost of an
-  upload round trip per refresh).
+  `Label`, Refresh), a read-only `TextEditor` (`language: "json"`) showing
+  `docker inspect` output. See §6 for how the text reaches the editor.
 - **Console** (`internal_root_key_ + "_console"`): a FIFO-capped `Table`
   (# / Command / Exit / Output, `kMaxConsoleRows = 500`) tracing every
   one-shot `docker` invocation, green/red by exit status. Each row's
@@ -465,17 +459,29 @@ use only the methods/events above).
   windows would still dock, but all stacked as tabs in one node (ImGui has
   no split geometry on a fresh `imgui.ini`).
 
-- **The Logs / Inspect body is a text viewer, not a live-updating tree.**
-  Two workable widgets: (a) a multiline read-only `InputText` — renders
-  immediately, no session-sandbox file, no round trip, but no syntax
-  highlighting; (b) a `TextEditor` — the client uploads the `docker logs`
-  / `docker inspect` text to the session sandbox and points the editor's
-  `file_path` at it (the `nano` / `editor` upload pattern), giving
-  selection, scroll-position retention, and JSON highlighting for Inspect,
-  at the cost of one `upload_file` per refresh. Starting with (a) for v1
-  simplicity; (b) is a clean upgrade if the plain field proves
-  insufficient. Either way the server form only renders — the text is
-  always produced client-side.
+- **The Logs / Inspect body is a read-only `TextEditor`, fed by the
+  server form.** Earlier versions used a single-column `Table` of `Label`
+  lines (no selection, no highlighting). A `TextEditor` displays a *file*,
+  so `set_editor_text()` writes the `text` of each `update_logs` /
+  `update_inspect` call into the session sandbox and points the editor's
+  `file_path` at it. The form writes the file itself rather than having the
+  client `upload_file` it (curl's pattern), which keeps the RMI contract
+  unchanged (`text` in the call) and saves a round trip per refresh. Three
+  details matter:
+  - **A fresh file name per update** (`private/<root>_<stem>_<n>.txt`): the
+    renderer reloads a `TextEditor` only when `file_path` changes, so
+    rewriting one fixed file would leave the pane stale (the bug curl hit).
+    The file it replaces is deleted, and both current files are deleted on
+    close, so at most one file per pane exists -- this matters with a
+    persistent `--sandbox_root`, which is not wiped on disconnect.
+  - **Under `private/`**: `docker inspect` output can carry secrets (env
+    vars), and `private/` is excluded from the browser resource cache.
+  - **`resource_dir_` is captured in `on_init()`**: the close path runs in
+    `on_event()`, outside RMI dispatch, where `sess()` throws.
+
+  Logs uses the `"log"` highlighting language (severity words, timestamps,
+  quoted strings) with `auto_scroll` so each reload lands on the newest
+  line; Inspect uses `"json"`. The text is always produced client-side.
 
 - **`run_docker()` gates on `docker version` before instantiating the
   form.** Mirrors `git`'s `rev-parse --is-inside-work-tree` fast-fail: if

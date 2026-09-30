@@ -2153,6 +2153,9 @@ class ui_text_editor : public cloneable_ui_element<ui_text_editor> {
   bool wish_ui_schema(bool def = false) const {
     return cached_field_or<bool>(wish_ui_schema_field_, bison::key_t{"wish_ui_schema"}, def);
   }
+  bool auto_scroll(bool def = false) const {
+    return cached_field_or<bool>(auto_scroll_field_, bison::key_t{"auto_scroll"}, def);
+  }
   const std::vector<int32_t>* breakpoint_lines() const {
     return cached_vector_field<int32_t>(breakpoint_lines_field_, bison::key_t{"breakpoint_lines"});
   }
@@ -2165,6 +2168,7 @@ class ui_text_editor : public cloneable_ui_element<ui_text_editor> {
   mutable bison::field* language_field_ = nullptr;
   mutable bison::field* read_only_field_ = nullptr;
   mutable bison::field* wish_ui_schema_field_ = nullptr;
+  mutable bison::field* auto_scroll_field_ = nullptr;
   mutable bison::field* breakpoint_lines_field_ = nullptr;
   mutable bison::field* current_line_field_ = nullptr;
 };

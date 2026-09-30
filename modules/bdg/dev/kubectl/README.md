@@ -55,9 +55,11 @@ All eight windows are implemented and unit-tested over `memory_transport`
   schedulable node, Uncordon on a cordoned one), the Pods name / namespace
   text filters + phase Combo, and the same name / namespace filters on
   Deployments and Services.
-- **Logs** — `kubectl logs --tail N --timestamps` in a scrolling pane; the
-  "Follow" checkbox starts a 2 s client-side re-poll.
-- **Describe** — `kubectl describe <kind>` output shown verbatim.
+- **Logs** — `kubectl logs --tail N --timestamps` in a read-only, syntax-highlighted
+  text editor that stays scrolled to the newest line; the "Follow" checkbox
+  starts a 2 s client-side re-poll.
+- **Describe** — `kubectl describe <kind>` output in a read-only text
+  editor with YAML-style syntax highlighting.
 - **Console** — a scrolling, FIFO-capped table tracing every `kubectl`
   command the module ran (`#` / Command / Exit / Output), green on
   success, red on failure; right-click a row for "Copy Entry" or "Clear

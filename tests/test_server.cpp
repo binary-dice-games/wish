@@ -6,7 +6,9 @@
 #include <server/server.hpp>
 #include <ui/ui_descriptor.hpp>
 
+#include "free_port_server.hpp"
 #include "src/rmi/rmi.hpp"
+#include "src/rmi/transport/socket_transport.hpp"
 #include "src/rmi/transport/tls_socket_transport.hpp"
 #include "tests/tls_test_certs.hpp"
 
@@ -435,12 +437,12 @@ TEST(ServerTest, TraceLevelIncludesDecodedPayloads) {
 // app/wish_cli/server/wish_server_app.cpp).
 
 TEST(ServerTest, TlsTransportRoundTrip) {
-  constexpr uint16_t kPort = 17073;
-  tls_socket_server_transport transport{"127.0.0.1", kPort};
-
-  wish::server srv{transport, std::make_unique<wish::null_renderer>()};
-  srv.start(nullptr, rmi::transport::test::tls_server_params(
-                          rmi::transport::test::kTestServerCert, rmi::transport::test::kTestServerKey));
+  auto srv = start_on_free_port<tls_socket_server_transport>(
+      0,
+      rmi::auth_module_ptr{},
+      rmi::transport::test::tls_server_params(
+          rmi::transport::test::kTestServerCert, rmi::transport::test::kTestServerKey));
+  const uint16_t kPort = srv.port;
 
   {
     client c{std::make_unique<tls_socket_client_transport>("127.0.0.1", kPort)};
@@ -449,16 +451,16 @@ TEST(ServerTest, TlsTransportRoundTrip) {
     c.disconnect();
   }
 
-  srv.stop();
+  srv.server->stop();
 }
 
 TEST(ServerTest, TlsTransportRejectsUntrustedCa) {
-  constexpr uint16_t kPort = 17074;
-  tls_socket_server_transport transport{"127.0.0.1", kPort};
-
-  wish::server srv{transport, std::make_unique<wish::null_renderer>()};
-  srv.start(nullptr, rmi::transport::test::tls_server_params(
-                          rmi::transport::test::kTestServerCert, rmi::transport::test::kTestServerKey));
+  auto srv = start_on_free_port<tls_socket_server_transport>(
+      0,
+      rmi::auth_module_ptr{},
+      rmi::transport::test::tls_server_params(
+          rmi::transport::test::kTestServerCert, rmi::transport::test::kTestServerKey));
+  const uint16_t kPort = srv.port;
 
   {
     // No ca_pem supplied and insecure_skip_verify left false -- the client
@@ -468,5 +470,33 @@ TEST(ServerTest, TlsTransportRejectsUntrustedCa) {
     EXPECT_THROW(c.connect(), std::runtime_error);
   }
 
-  srv.stop();
+  srv.server->stop();
+}
+
+// ── Bind failures ────────────────────────────────────────────────────────────
+
+// A failed listen (here: port already in use) must throw and leave the
+// server stopped, not with a render loop still running behind it.
+TEST(ServerTest, StartOnPortInUseThrowsAndLeavesServerStopped) {
+  auto first = start_on_free_port<socket_server_transport>(0);
+
+  socket_server_transport transport{"127.0.0.1", first.port};
+  wish::server srv{transport, std::make_unique<wish::null_renderer>()};
+  EXPECT_THROW(srv.start(), std::runtime_error);
+  EXPECT_TRUE(srv.should_quit());
+
+  first.server->stop();
+}
+
+TEST(ServerTest, StartOnFreePortSkipsAPortAlreadyInUse) {
+  auto first = start_on_free_port<socket_server_transport>(0);
+  auto second = start_on_free_port<socket_server_transport>(first.port);
+  EXPECT_NE(second.port, first.port);
+
+  client c{std::make_unique<socket_client_transport>("127.0.0.1", second.port)};
+  EXPECT_NO_THROW(c.connect());
+  c.disconnect();
+
+  second.server->stop();
+  first.server->stop();
 }

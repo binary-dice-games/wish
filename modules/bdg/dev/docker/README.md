@@ -56,9 +56,11 @@ daemon:
   built-in networks), the Containers name/image text filter +
   All/Running/Stopped state filter, inline pull-image / create-volume
   fields.
-- **Logs** — `docker logs --tail N --timestamps` in a scrolling pane; the
-  "Follow" checkbox starts a 2 s client-side re-poll.
-- **Inspect** — `docker <kind> inspect` output shown verbatim.
+- **Logs** — `docker logs --tail N --timestamps` in a read-only, syntax-highlighted
+  text editor that stays scrolled to the newest line; the "Follow" checkbox
+  starts a 2 s client-side re-poll.
+- **Inspect** — `docker <kind> inspect` output in a read-only text editor
+  with JSON syntax highlighting.
 - **Console** — a scrolling, FIFO-capped table tracing every `docker`
   command the module ran (`#` / Command / Exit / Output), green on
   success, red on failure; right-click a row for "Copy Entry" or "Clear

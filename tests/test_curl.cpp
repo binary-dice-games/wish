@@ -1,6 +1,8 @@
 // MIT License © 2026 Binary Dice Games
 #include <gtest/gtest.h>
 
+#include "session_event_recorder.hpp"
+
 #include <server/registry.hpp>
 #include <server/server.hpp>
 #include <context/context.hpp>
@@ -78,10 +80,13 @@ class SessionCapturingServer : public wish::server {
   SessionCapturingServer(server_transport_iface& t, std::unique_ptr<wish::renderer> r)
       : wish::server(t, std::move(r)) {}
   wish::context* last_session{nullptr};
+  /// Every event the session emits (see session_event_recorder.hpp).
+  std::shared_ptr<session_event_recorder> events = std::make_shared<session_event_recorder>();
 
  protected:
   void on_session_created(wish::context& s) override {
     last_session = &s;
+    session_event_recorder::attach(events, s);
   }
 };
 
@@ -224,30 +229,26 @@ class CurlRmiTest : public ::testing::Test {
     h->second->on_event(id, event, std::move(payload));
   }
 
-  static void wait_for(const bool& flag) {
-    auto t0 = std::chrono::steady_clock::now();
-    while (!flag && std::chrono::steady_clock::now() - t0 < std::chrono::seconds(2))
-      std::this_thread::sleep_for(std::chrono::milliseconds(5));
-  }
-
-  // Listens for the next occurrence of @p event_name on this session and
-  // returns the captured payload via @p out once @p got is true.
+  // A wait for the next @p name event emitted after capture_event() was
+  // called; wait_for() fills got/payload from the session's thread-safe
+  // recorder (session_event_recorder.hpp).
   struct capture {
+    bison::key_t name;
+    size_t since{0};
     bool got{false};
     dynamic payload;
   };
   std::shared_ptr<capture> capture_event(bison::key_t event_name) {
     auto c = std::make_shared<capture>();
-    auto prev = std::move(srv_->last_session->emit_event);
-    srv_->last_session->emit_event = [this, c, event_name, prev](bison::key_t id, bison::key_t event, dynamic payload) {
-      if (event == event_name) {
-        c->got = true;
-        c->payload = payload.clone();
-      }
-      if (prev)
-        prev(id, event, std::move(payload));
-    };
+    c->name = event_name;
+    c->since = srv_->events->mark();
     return c;
+  }
+  void wait_for(capture& c) const {
+    if (auto ev = srv_->events->wait_for(c.name, c.since)) {
+      c.got = true;
+      c.payload = std::move(*ev);
+    }
   }
 
   memory_server_transport transport_;
@@ -309,7 +310,7 @@ TEST_F(CurlRmiTest, SendEmitsSendRequestedWithCurrentBuilderState) {
 
   auto c = capture_event("send_requested"_key);
   fire(id_at("vbox.toolbar.btn_send"), "clicked"_key);
-  wait_for(c->got);
+  wait_for(*c);
   ASSERT_TRUE(c->got);
   EXPECT_EQ(c->payload.as<std::string>("method"_key), "POST");
   EXPECT_EQ(c->payload.as<std::string>("url"_key), "https://api.example.com/users");
@@ -328,7 +329,7 @@ TEST_F(CurlRmiTest, SendEmitsSendRequestedWithCurrentBuilderState) {
 TEST_F(CurlRmiTest, SaveWithBlankNameDoesNotEmit) {
   auto c = capture_event("save_request_requested"_key);
   fire(id_at("vbox.save_bar.btn_save"), "clicked"_key);
-  wait_for(c->got);
+  wait_for(*c);
   EXPECT_FALSE(c->got);
 }
 
@@ -338,7 +339,7 @@ TEST_F(CurlRmiTest, SaveEmitsSaveRequestedWithNameAndCollection) {
 
   auto c = capture_event("save_request_requested"_key);
   fire(id_at("vbox.save_bar.btn_save"), "clicked"_key);
-  wait_for(c->got);
+  wait_for(*c);
   ASSERT_TRUE(c->got);
   EXPECT_EQ(c->payload.as<std::string>("name"_key), "Get Users");
   EXPECT_EQ(c->payload.as<std::string>("collection"_key), "Users API");
@@ -449,7 +450,7 @@ TEST_F(CurlRmiTest, UpdateHistoryPopulatesTableAndLoadEmits) {
 
   auto c = capture_event("load_history_requested"_key);
   fire_at(history_root, load_id, "clicked"_key);
-  wait_for(c->got);
+  wait_for(*c);
   ASSERT_TRUE(c->got);
   EXPECT_EQ(c->payload.as<std::string>("id"_key), "h1");
 }
@@ -480,7 +481,7 @@ TEST_F(CurlRmiTest, CollectionsDeleteGoesThroughConfirm) {
 
   auto c = capture_event("delete_request_requested"_key);
   fire_at(confirm_root, yes_id, "clicked"_key);
-  wait_for(c->got);
+  wait_for(*c);
   ASSERT_TRUE(c->got);
   EXPECT_EQ(c->payload.as<std::string>("id"_key), "r1");
 }
@@ -508,7 +509,7 @@ TEST_F(CurlRmiTest, EnvironmentsEditEmitsSelectEnvironmentRequested) {
 
   auto c = capture_event("select_environment_requested"_key);
   fire_at(environments_root, edit_id, "clicked"_key);
-  wait_for(c->got);
+  wait_for(*c);
   ASSERT_TRUE(c->got);
   EXPECT_EQ(c->payload.as<std::string>("id"_key), "e1");
 }
@@ -536,7 +537,7 @@ TEST_F(CurlRmiTest, ClosingWindowEmitsClosedAndTearsDownAllRoots) {
   auto window_id = srv_->last_session->ui_objects.at(root_)->as<bison::key_t>("__wish_id"_key);
   auto c = capture_event("closed"_key);
   fire(window_id, "closed"_key);
-  wait_for(c->got);
+  wait_for(*c);
   ASSERT_TRUE(c->got);
   EXPECT_FALSE(srv_->last_session->ui_objects.count(response_root));
 }
