@@ -218,6 +218,27 @@ gotcha you hit and didn't record is one the next agent will hit again.
   in front (e.g. Results) has to be built last among its group's members.
   Widgets inside a background tab raise "never rendered (no rect)" on
   `click()`.
+- **A per-row `MenuButton` (`...`) popup: `click()` the button, then poll
+  `get_widget(item_path)` until the `MenuItem` has a `rect`, then `click()`
+  the item** (`helm` module, 2026-10). The items have no rect until the
+  popup is open. `wait_for("... getWidget(item)?.rect != null")` returned
+  before the rect existed and the following `click()` raised "never
+  rendered"; a plain Python loop over `get_widget()` (retrying the button
+  click after ~3 s) was reliable.
+- **A widget scrolled out of a `ScrollX` table still has a `rect`, but with
+  `visible: False` and coordinates outside the table's own rect** -- and
+  `click()` on it does not raise: the click lands on whatever window is at
+  those coordinates. Seen with a trailing `...` action column pushed past
+  the table's right edge by too-wide fixed columns. Compare the widget's
+  `rect` against its table's before clicking; if it is outside, that is
+  also a real layout problem for users (the fixed column widths plus cell
+  padding must fit the window, only a `WidthStretch` column gets clipped).
+- **To exercise a module that shells out to a CLI which isn't installed**
+  (`helm` here), put a stub script with that name first on `PATH` (set
+  `os.environ["PATH"]` before `AutomationClient.launch(server_cmd=...)`; the
+  server subprocess inherits it). Have the stub append its argv to a file:
+  asserting on that call log proves the click reached the real command
+  line, not just that the UI changed.
 
 ## Prerequisites
 

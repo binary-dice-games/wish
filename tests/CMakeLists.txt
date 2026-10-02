@@ -202,6 +202,21 @@ if(TARGET test_kubectl_process)
     target_link_libraries(test_kubectl_process PRIVATE uv_a)
   endif()
 endif()
+wish_add_optional_test(WISH_MODULE_BDG_DEV_HELM                 test_helm              test_helm.cpp)
+# Exercises run_helm_cli() (helm_process.cpp) against stub binaries
+# (printf/false -- never `helm`) plus the pure-string table parser, so it
+# needs no helm install. Client-side, no bison/RMI dependency; needs uv_a
+# directly since helm_process.cpp calls uv_spawn() -- same rationale as
+# test_kubectl_process above.
+wish_add_optional_test(WISH_MODULE_BDG_DEV_HELM                 test_helm_process      test_helm_process.cpp
+    ${CMAKE_SOURCE_DIR}/modules/bdg/dev/helm/client/helm_process.cpp
+    ${CMAKE_SOURCE_DIR}/modules/bdg/dev/helm/client/helm_table_parser.cpp)
+if(TARGET test_helm_process)
+  target_include_directories(test_helm_process PRIVATE ${CMAKE_SOURCE_DIR})
+  if(TARGET uv_a)
+    target_link_libraries(test_helm_process PRIVATE uv_a)
+  endif()
+endif()
 wish_add_optional_test(WISH_MODULE_BDG_DEV_CURL                 test_curl              test_curl.cpp)
 # Exercises run_curl_cli() (curl_process.cpp) against stub binaries
 # (printf/false -- never `curl`), so it needs no network access. Client-side,

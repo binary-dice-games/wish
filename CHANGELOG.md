@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `helm` module (`WISH_MODULE_BDG_DEV_HELM`, off by default): a GUI frontend for the local `helm` CLI, run with `wish client --run=helm`. Ships six dockable windows — Releases, Repositories, Charts, History, Details, and a Console that traces every `helm` command — with per-row status/values/manifest/notes/history, rollback, uninstall, and repository add/update/remove, plus an Install / Upgrade dialog (chart, version, release, namespace, custom YAML values).
 - `TextEditor` gains an `auto_scroll` field (scroll to the last line whenever the file is reloaded) and a `"log"` highlighting language for plain-text log output.
 - `sq` Results and Chart windows have an "Open folder" button that opens the session sandbox folder (where Export CSV / Save PNG write) in the server machine's file manager.
 - `wish server --sandbox_root PATH` keeps session sandboxes across connections (one `PATH/<username>` directory per client, `default` if none), and `wish client --username NAME` selects which one. `wish standalone` accepts the same `--sandbox_root`/`--username` pair. Trusts the client-supplied name; local/single-user use only.
