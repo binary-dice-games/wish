@@ -147,7 +147,7 @@ static constexpr const char* kPackagesLayout = R"json({
     "sep": { "type": "Separator" },
     "table": {
       "type": "Table", "id": "##pip_packages_table", "columns": 5,
-      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "headers": true,
+      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": -1, "outer_height": -1, "auto_scroll": false,
       "children": {
         "col_name":     { "type": "TableColumn", "label": "Name",              "flags": "WidthFixed", "init_width": 220, "column_id": 0 },
@@ -173,7 +173,7 @@ static constexpr const char* kVersionsLayout = R"json({
     "sep": { "type": "Separator" },
     "table": {
       "type": "Table", "id": "##pip_versions_table", "columns": 3,
-      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "headers": true,
+      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": -1, "outer_height": -1, "auto_scroll": false,
       "children": {
         "col_version": { "type": "TableColumn", "label": "Version", "flags": "WidthFixed", "init_width": 150, "column_id": 0 },
@@ -213,7 +213,7 @@ static constexpr const char* kConsoleLayout = R"json({
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "table": {
       "type": "Table", "id": "##pip_console_table", "columns": 4,
-      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "headers": true,
+      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": -1, "outer_height": -1, "auto_scroll": true,
       "children": {
         "col_seq":     { "type": "TableColumn", "label": "#",       "flags": "WidthFixed", "init_width": 44,  "column_id": 0 },

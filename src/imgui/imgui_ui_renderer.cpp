@@ -12,6 +12,7 @@
 
 #include <context/style_service.hpp>
 #include <imgui/imgui_layout.hpp>
+#include <imgui/imgui_table_fit.hpp>
 #include <server/renderer.hpp>
 #include <ui/ui_elements/window.hpp>
 
@@ -1768,6 +1769,15 @@ void render_table(imgui_renderer& r, const ui_element& node0, const context& s) 
   if (table_id.id && !ImGui::IsMouseDown(ImGuiMouseButton_Left))
     table_drag_select_cache()[table_id.id] = -1;
 
+  // "resize_pushes" (see the field's description in table.cpp) needs both
+  // flags: without Resizable there is nothing to drag, and without ScrollX
+  // the columns have nowhere to be pushed to.
+  const bool resize_pushes = node.resize_pushes(false) && (flags & ImGuiTableFlags_Resizable) &&
+      (flags & ImGuiTableFlags_ScrollX);
+  const bool cell_tooltips = node.cell_tooltips(false);
+  std::vector<table_fill_column> fill_columns;
+  int setup_index = 0;
+
   // Column setup must precede any row; iterate TableColumn children first.
   // column_id is passed through as ImGui's per-column user_data so a click
   // on this column's header can be mapped back to it by ColumnUserID rather
@@ -1780,8 +1790,19 @@ void render_table(imgui_renderer& r, const ui_element& node0, const context& s) 
     int32_t col_fl = child.flags(0);
     float col_w = child.init_width(0.0f);
     int32_t col_id = child.column_id(0);
+    if (resize_pushes && (col_fl & ImGuiTableColumnFlags_WidthStretch)) {
+      // Declared fixed so a resize pushes its neighbours; sized to the spare
+      // width by table_fit_fill_columns() below. For a stretch column
+      // init_width is a weight, not pixels.
+      fill_columns.push_back({setup_index, col_w > 0.0f ? col_w : 1.0f});
+      col_fl = (col_fl & ~ImGuiTableColumnFlags_WidthStretch) | ImGuiTableColumnFlags_WidthFixed;
+      col_w = 100.0f;
+    }
     ImGui::TableSetupColumn(label.c_str(), ImGuiTableColumnFlags(col_fl), col_w, ImGuiID(col_id));
+    ++setup_index;
   });
+  if (resize_pushes)
+    table_fit_fill_columns(table_id.id, fill_columns);
 
   // Pin the header row to the top of the scroll region instead of letting it
   // scroll away with the body -- ImGui requires TableSetupScrollFreeze() to
@@ -1863,6 +1884,10 @@ void render_table(imgui_renderer& r, const ui_element& node0, const context& s) 
         // address a row directly (and so it's included among a click's
         // eligible targets for browser-driven automation).
         r.capture_hit_test_for_last_item(child);
+        // For "cell_tooltips": the mouse is on this row (a cell's Label draws
+        // over the Selectable without taking the hover from it).
+        const bool row_hovered =
+            cell_tooltips && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenOverlappedByItem);
         const bool dbl = sel && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
         if (dbl)
           sel = false; // promote to double-click only
@@ -1937,6 +1962,15 @@ void render_table(imgui_renderer& r, const ui_element& node0, const context& s) 
           s.suppress_layout_wrap_self = true;
           r.render_node(cell, s);
           s.suppress_layout_wrap_self = false;
+          // "cell_tooltips": the whole cell, not just the (possibly clipped)
+          // text, shows the Label's full value. A Label with a tooltip of its
+          // own already showed that one in render_node().
+          if (row_hovered && cell.class_key() == "Label"_key &&
+              (ImGui::TableGetColumnFlags(col) & ImGuiTableColumnFlags_IsHovered) && cell.tooltip_ref().empty()) {
+            const std::string& text = static_cast<const ui_label&>(cell).text_ref();
+            if (!text.empty())
+              ImGui::SetTooltip("%s", text.c_str());
+          }
           ++col;
         });
 

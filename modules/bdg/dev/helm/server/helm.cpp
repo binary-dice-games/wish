@@ -114,7 +114,7 @@ static constexpr const char* kReleasesLayout = R"json({
     "sep": { "type": "Separator" },
     "table": {
       "type": "Table", "id": "##helm_releases_table", "columns": 8,
-      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "headers": true,
+      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": -1, "outer_height": -1, "auto_scroll": false,
       "children": {
         "col_ns":      { "type": "TableColumn", "label": "Namespace",   "flags": "WidthFixed", "init_width": 90,  "column_id": 0 },
@@ -148,7 +148,7 @@ static constexpr const char* kReposLayout = R"json({
     "sep": { "type": "Separator" },
     "table": {
       "type": "Table", "id": "##helm_repos_table", "columns": 3,
-      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "headers": true,
+      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": -1, "outer_height": -1, "auto_scroll": false,
       "children": {
         "col_name":    { "type": "TableColumn", "label": "Name", "flags": "WidthFixed", "init_width": 200, "column_id": 0 },
@@ -173,7 +173,7 @@ static constexpr const char* kChartsLayout = R"json({
     "sep": { "type": "Separator" },
     "table": {
       "type": "Table", "id": "##helm_charts_table", "columns": 5,
-      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "headers": true,
+      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": -1, "outer_height": -1, "auto_scroll": false,
       "children": {
         "col_name":    { "type": "TableColumn", "label": "Name",          "flags": "WidthFixed", "init_width": 230, "column_id": 0 },
@@ -199,7 +199,7 @@ static constexpr const char* kHistoryLayout = R"json({
     "sep": { "type": "Separator" },
     "table": {
       "type": "Table", "id": "##helm_history_table", "columns": 6,
-      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "headers": true,
+      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": -1, "outer_height": -1, "auto_scroll": false,
       "children": {
         "col_rev":     { "type": "TableColumn", "label": "Revision",    "flags": "WidthFixed", "init_width": 50,  "column_id": 0 },
@@ -283,7 +283,7 @@ static constexpr const char* kConsoleLayout = R"json({
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "table": {
       "type": "Table", "id": "##helm_console_table", "columns": 4,
-      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "headers": true,
+      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": -1, "outer_height": -1, "auto_scroll": true,
       "children": {
         "col_seq":     { "type": "TableColumn", "label": "#",       "flags": "WidthFixed", "init_width": 44,  "column_id": 0 },

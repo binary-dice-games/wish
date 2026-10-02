@@ -110,7 +110,7 @@ static constexpr const char* kResultsLayout = R"json({
     "sep": { "type": "Separator" },
     "table": {
       "type": "Table", "id": "##sq_results_0", "columns": 1,
-      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "headers": true,
+      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": -1, "outer_height": -1, "auto_scroll": false, "children": {}
     }
   } } }
@@ -135,7 +135,7 @@ static constexpr const char* kConnectionsLayout = R"json({
     "sep": { "type": "Separator" },
     "table": {
       "type": "Table", "id": "##sq_connections_table", "columns": 5,
-      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "headers": true,
+      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": -1, "outer_height": -1, "auto_scroll": false,
       "children": {
         "col_state":  { "type": "TableColumn", "label": "State",    "flags": "WidthFixed", "init_width": 60,  "column_id": 0 },
@@ -164,7 +164,7 @@ static constexpr const char* kStructureLayout = R"json({
     "sep": { "type": "Separator" },
     "table": {
       "type": "Table", "id": "##sq_structure_table", "columns": 6,
-      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "headers": true,
+      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": -1, "outer_height": -1, "auto_scroll": false,
       "children": {
         "col_pos":  { "type": "TableColumn", "label": "#",          "flags": "WidthFixed", "init_width": 36,  "column_id": 0 },
@@ -184,7 +184,7 @@ static constexpr const char* kConsoleLayout = R"json({
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "table": {
       "type": "Table", "id": "##sq_console_table", "columns": 4,
-      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "headers": true,
+      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": -1, "outer_height": -1, "auto_scroll": true,
       "children": {
         "col_seq":     { "type": "TableColumn", "label": "#",       "flags": "WidthFixed", "init_width": 44,  "column_id": 0 },

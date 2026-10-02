@@ -1315,6 +1315,67 @@ TEST_F(ImguiRendererTest, TableWithHeadersAndRowsDoesNotThrow) {
   });
 }
 
+// Records where each cell of a row starts, so a test can read the column
+// positions a Table actually laid out (see ExtraRenderFns* below for the
+// extra_render_fns mechanism).
+namespace {
+std::vector<float> g_cell_probe_x;
+
+void render_cell_probe(bdg::wish::imgui_renderer&, const ui_element&, const context&) {
+  g_cell_probe_x.push_back(ImGui::GetCursorScreenPos().x);
+  ImGui::Dummy(ImVec2(10.0f, 10.0f));
+}
+} // namespace
+
+TEST_F(ImguiRendererTest, ResizePushesTableFillsItsWidthWithTheStretchColumn) {
+  // "resize_pushes" declares every column fixed to ImGui (so a border drag
+  // pushes the following columns) but still gives the WidthStretch column
+  // the spare width while the user has not resized anything.
+  constexpr auto desc = R"({
+    "type": "Table", "id": "t_push", "columns": 3, "outer_width": 600, "outer_height": 200,
+    "flags": "Resizable|Borders|ScrollX|ScrollY", "headers": true, "resize_pushes": true,
+    "children": {
+      "ca": { "type": "TableColumn", "label": "A", "flags": "WidthFixed", "init_width": 100, "column_id": 0 },
+      "cb": { "type": "TableColumn", "label": "B", "flags": "WidthStretch", "column_id": 1 },
+      "cc": { "type": "TableColumn", "label": "C", "flags": "WidthFixed", "init_width": 80, "column_id": 2 },
+      "r0": { "type": "TableRow", "children": {
+        "c0": { "type": "Label", "text": "" },
+        "c1": { "type": "Label", "text": "" },
+        "c2": { "type": "Label", "text": "" }
+      }}
+    }
+  })";
+  auto map = bdg::wish::import_json(desc);
+  for (const char* cell : {"r0.c0", "r0.c1", "r0.c2"})
+    (*map[cell])[dynamic::CLASS] = "CellProbe"_key;
+
+  imgui_renderer r({{"CellProbe"_key.id, render_cell_probe}});
+  auto columns = [&] {
+    for (int i = 0; i < 4; ++i) { // a few frames for the widths to settle
+      g_cell_probe_x.clear();
+      r.begin_frame();
+      in_window([&] { r.render_node(*map[""], *sess_); });
+      r.end_frame();
+    }
+    return g_cell_probe_x;
+  };
+
+  auto x = columns();
+  ASSERT_EQ(x.size(), 3u);
+  const float table_left = x[0];
+  EXPECT_NEAR(x[1] - x[0], 100.0f, 20.0f) << "A keeps its fixed width";
+  EXPECT_GT(x[2] - x[1], 300.0f) << "B takes the spare width";
+  EXPECT_LE(x[2] + 80.0f, table_left + 600.0f) << "C still fits: no horizontal overflow";
+  EXPECT_GT(x[2] + 80.0f, table_left + 560.0f) << "...and the columns reach the table's right edge";
+
+  // Until the user resizes a column, the fill column follows the table's width.
+  const float c_before = x[2];
+  (*map[""])["outer_width"_key] = 500.0f;
+  x = columns();
+  ASSERT_EQ(x.size(), 3u);
+  EXPECT_NEAR(c_before - x[2], 100.0f, 2.0f);
+}
+
 TEST_F(ImguiRendererTest, TableCellsRenderWithoutThrowIncludingButton) {
   // Verify that a Table containing TableColumn, TableRow, and a Button in a
   // cell renders across multiple frames without crashing.  Button click events

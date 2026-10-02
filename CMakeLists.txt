@@ -402,6 +402,8 @@ if(WISH_ENABLE_IMGUI)
     src/imgui/imgui_renderer.cpp
     src/imgui/imgui_dock_layout.hpp
     src/imgui/imgui_dock_layout.cpp
+    src/imgui/imgui_table_fit.hpp
+    src/imgui/imgui_table_fit.cpp
     src/imgui/imgui_layout.hpp
     src/imgui/imgui_layout.cpp
     src/imgui/imgui_ui_renderer.hpp

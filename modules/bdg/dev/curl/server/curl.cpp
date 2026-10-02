@@ -133,7 +133,7 @@ static constexpr const char* kRequestLayout = R"json({
         "p_toolbar": { "type": "HorizontalLayout", "children": { "btn_add": { "type": "Button", "label": "+ Add Param" } } },
         "p_table": {
           "type": "Table", "id": "##params_table", "columns": 4,
-          "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "headers": true,
+          "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
           "height": 260, "outer_height": 260,
           "children": {
             "col_enabled": { "type": "TableColumn", "label": "",      "flags": "WidthFixed",   "init_width": 30, "column_id": 0 },
@@ -147,7 +147,7 @@ static constexpr const char* kRequestLayout = R"json({
         "h_toolbar": { "type": "HorizontalLayout", "children": { "btn_add": { "type": "Button", "label": "+ Add Header" } } },
         "h_table": {
           "type": "Table", "id": "##headers_table", "columns": 4,
-          "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "headers": true,
+          "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
           "height": 260, "outer_height": 260,
           "children": {
             "col_enabled": { "type": "TableColumn", "label": "",      "flags": "WidthFixed",   "init_width": 30, "column_id": 0 },
@@ -166,7 +166,7 @@ static constexpr const char* kRequestLayout = R"json({
           "f_toolbar": { "type": "HorizontalLayout", "children": { "btn_add": { "type": "Button", "label": "+ Add Field" } } },
           "f_table": {
             "type": "Table", "id": "##body_form_table", "columns": 4,
-            "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "headers": true,
+            "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
             "height": 220, "outer_height": 220,
             "children": {
               "col_enabled": { "type": "TableColumn", "label": "",      "flags": "WidthFixed",   "init_width": 30, "column_id": 0 },
@@ -204,7 +204,7 @@ static constexpr const char* kResponseLayout = R"json({
       "headers_tab": { "type": "TabItem", "label": "Headers", "children": {
         "h_table": {
           "type": "Table", "id": "##response_headers_table", "columns": 2,
-          "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "headers": true,
+          "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
           "height": -1, "outer_height": -1,
           "children": {
             "col_name":  { "type": "TableColumn", "label": "Name",  "flags": "WidthFixed",   "init_width": 220, "column_id": 0 },
@@ -227,7 +227,7 @@ static constexpr const char* kHistoryLayout = R"json({
     "sep": { "type": "Separator" },
     "table": {
       "type": "Table", "id": "##history_table", "columns": 6,
-      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "headers": true,
+      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": -1, "outer_height": -1,
       "children": {
         "col_method": { "type": "TableColumn", "label": "Method", "flags": "WidthFixed",   "init_width": 70,  "column_id": 0 },
@@ -249,7 +249,7 @@ static constexpr const char* kCollectionsLayout = R"json({
     "sep": { "type": "Separator" },
     "table": {
       "type": "Table", "id": "##collections_table", "columns": 5,
-      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "headers": true,
+      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": -1, "outer_height": -1,
       "children": {
         "col_collection": { "type": "TableColumn", "label": "Collection", "flags": "WidthFixed",   "init_width": 140, "column_id": 0 },
@@ -272,7 +272,7 @@ static constexpr const char* kEnvironmentsLayout = R"json({
     } },
     "table": {
       "type": "Table", "id": "##environments_table", "columns": 3,
-      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "headers": true,
+      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": 180, "outer_height": 180,
       "children": {
         "col_name":   { "type": "TableColumn", "label": "Name",      "flags": "WidthStretch",                   "column_id": 0 },
@@ -288,7 +288,7 @@ static constexpr const char* kEnvironmentsLayout = R"json({
     } },
     "vars_table": {
       "type": "Table", "id": "##env_vars_table", "columns": 3,
-      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "headers": true,
+      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": -1, "outer_height": -1,
       "children": {
         "col_key":    { "type": "TableColumn", "label": "Key",   "flags": "WidthStretch",                 "column_id": 0 },
@@ -305,7 +305,7 @@ static constexpr const char* kConsoleLayout = R"json({
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "table": {
       "type": "Table", "id": "##curl_console_table", "columns": 4,
-      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "headers": true,
+      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": -1, "outer_height": -1, "auto_scroll": true,
       "children": {
         "col_seq":     { "type": "TableColumn", "label": "#",       "flags": "WidthFixed",   "init_width": 44,  "column_id": 0 },

@@ -260,7 +260,7 @@ static constexpr const char* kMainLayout = R"({
                 "current_branch_label": { "type": "Label", "text": "" },
                 "graph_table": {
                   "type": "Table", "id": "##graph_table", "columns": 5, "height": -1,
-                  "flags": "Resizable|RowBg|Borders|ScrollY", "headers": true, "outer_height": -1,
+                  "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true, "outer_height": -1,
                   "auto_scroll": false,
                   "children": {
                     "col_graph":  { "type": "TableColumn", "label": "Graph",       "flags": "WidthFixed", "init_width": 80,  "column_id": 0 },
@@ -288,7 +288,7 @@ static constexpr const char* kFilesLayout = R"({
         "title_label": { "type": "Label", "text": "Uncommitted changes" },
         "files_table": {
           "type": "Table", "id": "##files_table", "columns": 2, "height": -1,
-          "flags": "Resizable|RowBg|Borders|ScrollY", "outer_height": -1,
+          "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "outer_height": -1,
           "children": {
             "col_check": { "type": "TableColumn", "flags": "WidthFixed", "init_width": 28, "column_id": 0 },
             "col_path":  { "type": "TableColumn", "flags": "WidthStretch",                    "column_id": 1 }
@@ -334,7 +334,7 @@ static constexpr const char* kLogLayout = R"({
       "children": {
         "log_table": {
           "type": "Table", "id": "##git_log_table", "columns": 4, "height": -1,
-          "flags": "Resizable|RowBg|Borders|ScrollY", "headers": true, "outer_height": -1,
+          "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true, "outer_height": -1,
           "children": {
             "col_seq":     { "type": "TableColumn", "label": "#",       "flags": "WidthFixed", "init_width": 40,  "column_id": 0 },
             "col_command": { "type": "TableColumn", "label": "Command", "flags": "WidthFixed", "init_width": 340, "column_id": 1 },

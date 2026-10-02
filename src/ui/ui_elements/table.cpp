@@ -117,6 +117,27 @@ void register_table() {
                               "false to leave the scroll position alone as rows are appended, e.g. "
                               "to let the user browse older rows without being pulled to the bottom."),
             attr<Category>("Behavior")});
+    proto->addField(
+        "resize_pushes"_rkey,
+        field{
+            bool{false},
+            attr<DisplayName>("Resize Pushes"),
+            attr<Description>("When true (and flags includes Resizable and ScrollX), dragging a column "
+                              "border changes only that column and pushes the following columns "
+                              "sideways -- the table scrolls horizontally if they no longer fit -- "
+                              "instead of taking the width from a neighbouring column. WidthStretch "
+                              "columns still fill the table's spare width until the user first "
+                              "resizes a column, then keep their width like any other."),
+            attr<Category>("Behavior")});
+    proto->addField(
+        "cell_tooltips"_rkey,
+        field{
+            bool{false},
+            attr<DisplayName>("Cell Tooltips"),
+            attr<Description>("When true, hovering a TableRow cell that holds a Label shows the "
+                              "Label's full text as a tooltip -- useful when columns are narrower "
+                              "than their content. A Label's own non-empty tooltip takes precedence."),
+            attr<Category>("Behavior")});
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Table"));
     (*proto)[dynamic::CLASS].addAttribute(
         attr<Description>("A multi-column table. Direct children of type TableColumn define "

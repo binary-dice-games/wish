@@ -599,6 +599,8 @@ other children (typically `TableRow`) provide data rows.
 | `inner_width` | `float` | `0.0` | Width allocated to contents; `0` uses outer width. |
 | `headers` | `bool` | `false` | Render a header row from `TableColumn` labels. When `flags` also includes `ScrollY`, the header row is pinned to the top of the scroll region instead of scrolling away with the body. |
 | `auto_scroll` | `bool` | `true` | When `flags` includes `ScrollY` and this is true, automatically scroll to the newest row whenever the row count grows (e.g. a live log table following its latest entry). Set `false` to leave the scroll position alone as rows are appended. |
+| `resize_pushes` | `bool` | `false` | With `Resizable` and `ScrollX` both in `flags`: dragging a column border changes only that column and pushes the following columns sideways (the table scrolls horizontally if they no longer fit), instead of taking the width from a neighbouring column. `WidthStretch` columns still fill the table's spare width until the user first resizes a column, then keep their width like any other. |
+| `cell_tooltips` | `bool` | `false` | Hovering a `TableRow` cell that holds a `Label` shows the Label's full text as a tooltip -- for tables whose columns can be narrower than their content. A Label's own non-empty `tooltip` takes precedence. |
 
 **Events:**
 - `sorted` — fired when `flags` includes `Sortable` (`8`) and the sort spec

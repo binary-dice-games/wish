@@ -147,7 +147,7 @@ static constexpr const char* kPodsLayout = R"json({
     "sep": { "type": "Separator" },
     "table": {
       "type": "Table", "id": "##pods_table", "columns": 7,
-      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "headers": true,
+      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": -1, "outer_height": -1, "auto_scroll": false,
       "children": {
         "col_ns":       { "type": "TableColumn", "label": "Namespace", "flags": "WidthFixed", "init_width": 130, "column_id": 0 },
@@ -175,7 +175,7 @@ static constexpr const char* kDeploymentsLayout = R"json({
     "sep": { "type": "Separator" },
     "table": {
       "type": "Table", "id": "##deployments_table", "columns": 7,
-      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "headers": true,
+      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": -1, "outer_height": -1, "auto_scroll": false,
       "children": {
         "col_ns":        { "type": "TableColumn", "label": "Namespace",   "flags": "WidthFixed", "init_width": 130, "column_id": 0 },
@@ -203,7 +203,7 @@ static constexpr const char* kServicesLayout = R"json({
     "sep": { "type": "Separator" },
     "table": {
       "type": "Table", "id": "##services_table", "columns": 7,
-      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "headers": true,
+      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": -1, "outer_height": -1, "auto_scroll": false,
       "children": {
         "col_ns":     { "type": "TableColumn", "label": "Namespace",  "flags": "WidthFixed", "init_width": 130, "column_id": 0 },
@@ -230,7 +230,7 @@ static constexpr const char* kNodesLayout = R"json({
     "sep": { "type": "Separator" },
     "table": {
       "type": "Table", "id": "##nodes_table", "columns": 5,
-      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "headers": true,
+      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": -1, "outer_height": -1, "auto_scroll": false,
       "children": {
         "col_name":   { "type": "TableColumn", "label": "Name",    "flags": "WidthStretch",                    "column_id": 0 },
@@ -294,7 +294,7 @@ static constexpr const char* kConsoleLayout = R"json({
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "table": {
       "type": "Table", "id": "##kubectl_console_table", "columns": 4,
-      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "headers": true,
+      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": -1, "outer_height": -1, "auto_scroll": true,
       "children": {
         "col_seq":     { "type": "TableColumn", "label": "#",       "flags": "WidthFixed", "init_width": 44,  "column_id": 0 },
@@ -324,7 +324,7 @@ static constexpr const char* kTopLayout = R"json({
     "sep": { "type": "Separator" },
     "pods_table": {
       "type": "Table", "id": "##k8s_top_pods", "columns": 4,
-      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "headers": true,
+      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": 200, "outer_height": 200, "auto_scroll": false,
       "children": {
         "col_ns":   { "type": "TableColumn", "label": "Namespace", "flags": "WidthFixed", "init_width": 150, "column_id": 0 },
@@ -335,7 +335,7 @@ static constexpr const char* kTopLayout = R"json({
     },
     "nodes_table": {
       "type": "Table", "id": "##k8s_top_nodes", "columns": 5,
-      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "headers": true,
+      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": 170, "outer_height": 170, "auto_scroll": false,
       "children": {
         "col_name": { "type": "TableColumn", "label": "Node",     "flags": "WidthStretch",                   "column_id": 0 },

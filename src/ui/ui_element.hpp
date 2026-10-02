@@ -1504,6 +1504,12 @@ class ui_table : public cloneable_ui_element<ui_table> {
   bool auto_scroll(bool def = true) const {
     return cached_field_or<bool>(auto_scroll_field_, bison::key_t{"auto_scroll"}, def);
   }
+  bool resize_pushes(bool def = false) const {
+    return cached_field_or<bool>(resize_pushes_field_, bison::key_t{"resize_pushes"}, def);
+  }
+  bool cell_tooltips(bool def = false) const {
+    return cached_field_or<bool>(cell_tooltips_field_, bison::key_t{"cell_tooltips"}, def);
+  }
 
  private:
   mutable bison::field* id_field_ = nullptr;
@@ -1514,6 +1520,8 @@ class ui_table : public cloneable_ui_element<ui_table> {
   mutable bison::field* inner_width_field_ = nullptr;
   mutable bison::field* headers_field_ = nullptr;
   mutable bison::field* auto_scroll_field_ = nullptr;
+  mutable bison::field* resize_pushes_field_ = nullptr;
+  mutable bison::field* cell_tooltips_field_ = nullptr;
 };
 
 class ui_table_row : public cloneable_ui_element<ui_table_row> {
