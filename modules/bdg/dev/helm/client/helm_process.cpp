@@ -148,8 +148,13 @@ process_result run_helm_cli(
     result.stderr_text = uv_strerror(spawn_rc);
     uv_close(reinterpret_cast<uv_handle_t*>(out_pipe), close_cb);
     uv_close(reinterpret_cast<uv_handle_t*>(err_pipe), close_cb);
-    delete child_req;
-    uv_run(&loop, UV_RUN_DEFAULT); // drain the two close callbacks above.
+    // A handle uv_spawn() failed on is still registered with the loop and
+    // must be uv_close()d, not just freed: otherwise uv_loop_close() below
+    // refuses (EBUSY) and leaves the loop's SIGCHLD watcher in libuv's
+    // process-wide signal tree, pointing into this dead stack frame -- the
+    // next spawn in the process then crashes walking that tree.
+    uv_close(reinterpret_cast<uv_handle_t*>(child_req), close_cb);
+    uv_run(&loop, UV_RUN_DEFAULT); // drain the close callbacks above.
     uv_loop_close(&loop);
     return result;
   }

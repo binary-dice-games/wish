@@ -1,10 +1,11 @@
 // MIT License © 2026 Binary Dice Games
-/// @file sq_process.cpp
-/// @brief libuv-based implementation of run_sq_cli().
+/// @file pkg_process.cpp
+/// @brief libuv-based implementation of run_pkg_cli().
 ///
-/// Structurally identical to
-/// `modules/bdg/dev/docker/client/docker_process.cpp`, plus optional stdin.
-#include "sq_process.hpp"
+/// Structurally identical to `modules/bdg/dev/pip/client/pip_process.cpp`,
+/// except that the whole command is one argv (the program differs per
+/// package manager and may be wrapped in `sudo` / `pkexec`).
+#include "pkg_process.hpp"
 
 #include <uv.h>
 
@@ -12,7 +13,7 @@
 #include <cstdlib>
 #include <cstring>
 
-namespace bdg::wish::sq {
+namespace bdg::wish::pkg {
 
 namespace {
 
@@ -63,7 +64,7 @@ void exit_cb(uv_process_t* req, int64_t exit_status, int term_signal) {
     state->timer = nullptr;
   }
   // A stopped tool may leave a helper process behind (git's remote helper,
-  // a pip build) that still holds the output pipes open: stop reading now
+  // a package build) that still holds the output pipes open: stop reading now
   // rather than wait for it, or the run call would not return.
   if (state->killed) {
     for (pipe_state* ps : state->pipes) {
@@ -90,26 +91,14 @@ void tick_cb(uv_timer_t* timer) {
   }
 }
 
-struct write_state {
-  uv_write_t req;
-  std::string data;
-};
-
-// Closing the pipe after the single write delivers EOF to the child.
-void write_cb(uv_write_t* req, int /*status*/) {
-  auto* w = reinterpret_cast<write_state*>(req);
-  uv_close(reinterpret_cast<uv_handle_t*>(req->handle), close_cb);
-  delete w;
-}
-
 } // namespace
 
-process_result run_sq_cli(
-    const std::vector<std::string>& args, const std::string& binary, const std::string& stdin_text,
-    const dev::run_hooks* hooks) {
+process_result run_pkg_cli(const std::vector<std::string>& command, const dev::run_hooks* hooks) {
   process_result result;
-  if (binary.empty())
+  if (command.empty() || command[0].empty()) {
+    result.stderr_text = "no program to run";
     return result;
+  }
 
   uv_loop_t loop;
   if (uv_loop_init(&loop) != 0)
@@ -118,11 +107,7 @@ process_result run_sq_cli(
   // argv[0] is conventionally the program name itself (execve() convention);
   // uv_spawn() PATH-searches a bare name (no path separator) the same way
   // execvp()/CreateProcess() would.
-  std::vector<std::string> owned_args;
-  owned_args.reserve(args.size() + 1);
-  owned_args.push_back(binary);
-  for (auto& a : args)
-    owned_args.push_back(a);
+  std::vector<std::string> owned_args = command;
   std::vector<char*> argv;
   argv.reserve(owned_args.size() + 1);
   for (auto& a : owned_args)
@@ -138,22 +123,8 @@ process_result run_sq_cli(
   out_pipe->data = &out_state;
   err_pipe->data = &err_state;
 
-  // A child that exits without reading stdin (e.g. `sq add` rejecting a bad
-  // location) would otherwise turn our write into a fatal SIGPIPE.
-#ifndef _WIN32
-  if (!stdin_text.empty())
-    std::signal(SIGPIPE, SIG_IGN);
-#endif
-  uv_pipe_t* in_pipe = nullptr;
   uv_stdio_container_t stdio[3];
-  if (stdin_text.empty()) {
-    stdio[0].flags = UV_IGNORE;
-  } else {
-    in_pipe = new uv_pipe_t;
-    uv_pipe_init(&loop, in_pipe, 0);
-    stdio[0].flags = static_cast<uv_stdio_flags>(UV_CREATE_PIPE | UV_READABLE_PIPE);
-    stdio[0].data.stream = reinterpret_cast<uv_stream_t*>(in_pipe);
-  }
+  stdio[0].flags = UV_IGNORE;
   stdio[1].flags = static_cast<uv_stdio_flags>(UV_CREATE_PIPE | UV_WRITABLE_PIPE);
   stdio[1].data.stream = reinterpret_cast<uv_stream_t*>(out_pipe);
   stdio[2].flags = static_cast<uv_stdio_flags>(UV_CREATE_PIPE | UV_WRITABLE_PIPE);
@@ -165,7 +136,7 @@ process_result run_sq_cli(
 
   uv_process_options_t options{};
   options.exit_cb = exit_cb;
-  options.file = binary.c_str();
+  options.file = owned_args[0].c_str();
   options.args = argv.data();
   options.stdio_count = 3;
   options.stdio = stdio;
@@ -175,8 +146,6 @@ process_result run_sq_cli(
     result.stderr_text = uv_strerror(spawn_rc);
     uv_close(reinterpret_cast<uv_handle_t*>(out_pipe), close_cb);
     uv_close(reinterpret_cast<uv_handle_t*>(err_pipe), close_cb);
-    if (in_pipe)
-      uv_close(reinterpret_cast<uv_handle_t*>(in_pipe), close_cb);
     // A handle uv_spawn() failed on is still registered with the loop and
     // must be uv_close()d, not just freed: otherwise uv_loop_close() below
     // refuses (EBUSY) and leaves the loop's SIGCHLD watcher in libuv's
@@ -188,15 +157,6 @@ process_result run_sq_cli(
     return result;
   }
 
-  if (in_pipe) {
-    auto* w = new write_state;
-    w->data = stdin_text;
-    uv_buf_t buf = uv_buf_init(w->data.data(), static_cast<unsigned int>(w->data.size()));
-    if (uv_write(&w->req, reinterpret_cast<uv_stream_t*>(in_pipe), &buf, 1, write_cb) != 0) {
-      uv_close(reinterpret_cast<uv_handle_t*>(in_pipe), close_cb);
-      delete w;
-    }
-  }
   out_state.handle = out_pipe;
   err_state.handle = err_pipe;
   exit_st.pipes[0] = &out_state;
@@ -219,4 +179,4 @@ process_result run_sq_cli(
   return result;
 }
 
-} // namespace bdg::wish::sq
+} // namespace bdg::wish::pkg

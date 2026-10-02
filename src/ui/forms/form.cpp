@@ -22,6 +22,12 @@ void form::remove_internal_objects() {
   for (const auto& root : extra_internal_roots_)
     remove_objects_at(root);
   extra_internal_roots_.clear();
+  // The key is no longer this form's: next_available_key() hands a freed key
+  // to the next form that asks. Without forgetting it here, a second removal
+  // -- ~form(), when an owner replaces a finished child dialog with a new
+  // one -- would erase that *other* form's tree (the new dialog recycles
+  // exactly this key), and the new dialog would never appear.
+  internal_root_key_.clear();
 }
 
 void form::set_default_dock_layout(ui_element_ptr layout_root) {

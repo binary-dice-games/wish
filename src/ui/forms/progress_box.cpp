@@ -42,7 +42,7 @@ static constexpr const char* kLayout = R"json({
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 6, "children": {
     "command": { "type": "Label", "text": "" },
     "bar":     { "type": "ProgressBar", "value": -0.001, "label": "", "width": -1 },
-    "result":  { "type": "Label", "text": "", "visible": false },
+    "result":  { "type": "Label", "text": "", "wrap": true, "visible": false },
     "table": {
       "type": "Table", "id": "##progress_box_log", "columns": 1,
       "flags": "RowBg|Borders|ScrollX|ScrollY", "headers": false,

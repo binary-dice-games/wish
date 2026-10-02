@@ -134,6 +134,10 @@ bool pip_source::run_and_refresh(const std::string& label, const std::vector<std
   // count, which would otherwise overwrite this command's outcome.
   refresh_all();
   report(label, "packages", r.ok(), error_text(r));
+  // Something the user asked for: show its failure in the dialog even when
+  // it failed at once (an externally-managed environment, typically).
+  if (!r.ok())
+    worker_->fail(label + " failed: " + error_text(r), /*always_show=*/true);
   return r.ok();
 }
 

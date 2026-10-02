@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `pkg` module (`WISH_MODULE_BDG_DEV_PKG`, off by default): one GUI over the system package managers apt, dnf, pacman and brew, run with `wish client --run=pkg [-- <manager> [sudo|pkexec|none]]`. Lists installed packages (filter, update check), searches the index, installs / upgrades / reinstalls / removes, and upgrades everything; prints a descriptive console error when the chosen manager is not installed.
 - `Table` gains `resize_pushes` (dragging a column border pushes the following columns instead of taking width from a neighbour) and `cell_tooltips` (hovering a cell shows its Label's full text).
 - `ProgressBox` built-in form: a modal progress dialog (indeterminate bar, live output log, Cancel) for long-running client-side operations, driven with `update` / `finish`.
 - `pip` module (`WISH_MODULE_BDG_DEV_PIP`, off by default): a GUI frontend for the local `pip` CLI, run with `wish client --run=pip [-- <python-or-venv>]`. Lists installed packages (name filter, outdated check), installs requirements or a requirements file, upgrades / reinstalls / uninstalls per row, lists the versions the package index offers, and shows `pip show` / `freeze` / `check` output, with a Console tracing every `pip` command. Long commands run in the background behind a modal dialog with a progress bar, pip's live output and a Cancel button.
@@ -38,6 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A second confirmation dialog in the same session never appeared: a form that replaced a finished child dialog (`MessageBox`, ...) with a new one erased the new dialog along with the old. Affected every module that asks for confirmation more than once (`docker`, `kubectl`, `helm`, `git`, `curl`, `sq`, `pip`, `top`, `zip`).
+- `docker`, `kubectl`, `helm`, `curl`, `sq`, `git`, and `pip` clients could crash on the command following one whose program failed to start.
 - Buttons in the `curl`, `sq`, `docker` and `kubectl` modules size to their label instead of using a fixed width, so labels are no longer cropped.
 
 - A scrolling `VerticalLayout` (`"scroll": true`) no longer draws its children under the vertical scrollbar, which cut off the right edge of the `kubectl` Top window's graphs and tables.
@@ -50,6 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `pip` module: an install / upgrade / uninstall that fails immediately (an externally managed environment, for instance) now shows its error in the progress dialog instead of only in the one-line status.
 - Tables in the `docker`, `kubectl`, `helm`, `pip`, `curl`, `sq`, and `git` modules: resizing a column now pushes the columns to its right (the table scrolls horizontally) instead of shrinking the next one, and hovering a cell shows its full value in a tooltip.
 - `docker`, `kubectl`, `helm`, `curl`, `sq`, and `git` modules: commands now run in the background instead of freezing the UI. One that takes more than a moment opens a modal progress dialog with the command, a progress bar, its live output and a Cancel button; it closes on success and stays open on failure to show the error.
 - `git` module moved from the `bdg/desktop` collection to `bdg/dev` (now `modules/bdg/dev/git`): its option is renamed `WISH_MODULE_BDG_DESKTOP_GIT` → `WISH_MODULE_BDG_DEV_GIT` and it is now off by default (enable with `-DWISH_MODULE_BDG_DEV_GIT=ON` or `-DWISH_COLLECTION_BDG_DEV=ON`); `--list` shows it as `bdg/dev/git`.

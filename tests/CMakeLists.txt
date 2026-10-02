@@ -233,6 +233,21 @@ if(TARGET test_pip_process)
     target_link_libraries(test_pip_process PRIVATE uv_a)
   endif()
 endif()
+wish_add_optional_test(WISH_MODULE_BDG_DEV_PKG                  test_pkg               test_pkg.cpp)
+# The per-manager commands and output parsers (apt / dnf / pacman / brew),
+# checked against captured sample output since only one manager is installed
+# on any machine, plus run_pkg_cli() against stub programs. Client-side, no
+# bison/RMI dependency; needs uv_a directly since pkg_process.cpp calls
+# uv_spawn() -- same rationale as test_pip_process above.
+wish_add_optional_test(WISH_MODULE_BDG_DEV_PKG                  test_pkg_backend       test_pkg_backend.cpp
+    ${CMAKE_SOURCE_DIR}/modules/bdg/dev/pkg/client/pkg_process.cpp
+    ${CMAKE_SOURCE_DIR}/modules/bdg/dev/pkg/client/pkg_backend.cpp)
+if(TARGET test_pkg_backend)
+  target_include_directories(test_pkg_backend PRIVATE ${CMAKE_SOURCE_DIR})
+  if(TARGET uv_a)
+    target_link_libraries(test_pkg_backend PRIVATE uv_a)
+  endif()
+endif()
 wish_add_optional_test(WISH_MODULE_BDG_DEV_CURL                 test_curl              test_curl.cpp)
 # Exercises run_curl_cli() (curl_process.cpp) against stub binaries
 # (printf/false -- never `curl`), so it needs no network access. Client-side,

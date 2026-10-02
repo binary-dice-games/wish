@@ -105,10 +105,18 @@ class command_worker : public std::enable_shared_from_this<command_worker> {
 
   /// @brief Records that the current job failed, with the message to show.
   /// If the progress dialog is open when the worker goes idle it stays open
-  /// displaying @p message; otherwise this has no visible effect (the
-  /// module's own status line already reported it). Safe from any thread.
-  void fail(const std::string& message) {
-    *failure_.wlock() = message;
+  /// displaying @p message. Safe from any thread.
+  ///
+  /// @param always_show  Open the dialog for this failure even if the command
+  ///                     was too quick to have opened it. For the outcome of
+  ///                     something the user explicitly asked for (an install),
+  ///                     whose error is often longer than a status line; not
+  ///                     for a background refresh, which would keep popping
+  ///                     a modal while a service is unreachable.
+  void fail(const std::string& message, bool always_show = false) {
+    auto f = failure_.wlock();
+    f->message = message;
+    f->always_show = f->always_show || always_show;
   }
 
   /// @brief Runs one command with progress reporting. Worker thread only.
@@ -203,10 +211,15 @@ class command_worker : public std::enable_shared_from_this<command_worker> {
         // A job that throws (the form is gone mid-call) must not end the app.
       }
       if (queue_.rlock()->jobs.empty()) {
+        const failure failed = *failure_.rlock();
+        if (!shown_ && failed.always_show && !failed.message.empty()) {
+          push({}, 0.0f, {}); // open it just to show the error.
+          shown_ = true;
+        }
         if (shown_)
-          finish(*failure_.rlock());
+          finish(failed.message);
         shown_ = false;
-        failure_.wlock()->clear();
+        *failure_.wlock() = failure{};
       }
     }
   }
@@ -261,7 +274,11 @@ class command_worker : public std::enable_shared_from_this<command_worker> {
   std::string title_;
   bison::synchronized<work_queue> queue_;
   std::atomic<bool> cancel_{false}; // the running command should be stopped
-  bison::synchronized<std::string> failure_;
+  struct failure {
+    std::string message;
+    bool always_show{false};
+  };
+  bison::synchronized<failure> failure_;
 
   // Worker thread only.
   std::shared_ptr<bison::rmi::proxy::dynamic> box_; // the ProgressBox, once needed
