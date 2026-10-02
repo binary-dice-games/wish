@@ -217,6 +217,21 @@ if(TARGET test_helm_process)
     target_link_libraries(test_helm_process PRIVATE uv_a)
   endif()
 endif()
+wish_add_optional_test(WISH_MODULE_BDG_DEV_PIP                  test_pip               test_pip.cpp)
+# Exercises run_pip_cli() (pip_process.cpp) against stub launchers
+# (printf/false -- never `python -m pip`) plus the pure-string output
+# parsers, so it needs no Python install. Client-side, no bison/RMI
+# dependency; needs uv_a directly since pip_process.cpp calls uv_spawn() --
+# same rationale as test_helm_process above.
+wish_add_optional_test(WISH_MODULE_BDG_DEV_PIP                  test_pip_process       test_pip_process.cpp
+    ${CMAKE_SOURCE_DIR}/modules/bdg/dev/pip/client/pip_process.cpp
+    ${CMAKE_SOURCE_DIR}/modules/bdg/dev/pip/client/pip_parsers.cpp)
+if(TARGET test_pip_process)
+  target_include_directories(test_pip_process PRIVATE ${CMAKE_SOURCE_DIR})
+  if(TARGET uv_a)
+    target_link_libraries(test_pip_process PRIVATE uv_a)
+  endif()
+endif()
 wish_add_optional_test(WISH_MODULE_BDG_DEV_CURL                 test_curl              test_curl.cpp)
 # Exercises run_curl_cli() (curl_process.cpp) against stub binaries
 # (printf/false -- never `curl`), so it needs no network access. Client-side,

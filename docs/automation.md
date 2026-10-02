@@ -239,6 +239,13 @@ gotcha you hit and didn't record is one the next agent will hit again.
   server subprocess inherits it). Have the stub append its argv to a file:
   asserting on that call log proves the click reached the real command
   line, not just that the UI changed.
+- **A `server_cmd` that passes app arguments after `--` must name its own
+  `--web_port` before the `--`** (`pip` module, 2026-10).
+  `AutomationClient.launch()` appends `--web_port <free port>` to the end of
+  the argv, where it lands after the `--` and becomes an app argument: the
+  server listens on its default port (8080) and `launch()` fails with
+  "server never opened 127.0.0.1:<port>". Use e.g.
+  `[..., "--run", "pip", "--renderer", "web", "--web_port", "8131", "--", venv]`.
 
 ## Prerequisites
 
