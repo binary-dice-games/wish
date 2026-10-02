@@ -48,13 +48,17 @@ dynamic_ptr string_array(const std::vector<std::string>& items) {
 
 } // namespace
 
-git_repo_source::git_repo_source(std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::string repo_path)
-    : proxy_(std::move(proxy)), repo_path_(std::move(repo_path)) {}
+git_repo_source::git_repo_source(
+    std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::string repo_path,
+    std::shared_ptr<dev::command_worker> worker)
+    : proxy_(std::move(proxy)), worker_(std::move(worker)), repo_path_(std::move(repo_path)) {}
 
 // ── command log (debugging/tracing) ─────────────────────────────────────────
 
 process_result git_repo_source::run_logged(const std::vector<std::string>& args) {
-  auto r = run_git(repo_path_, args);
+  auto r = worker_->run(dev::command_text("git", args), [&](const dev::run_hooks* hooks) {
+    return run_git(repo_path_, args, hooks);
+  });
   push_command_log(args, r);
   return r;
 }
@@ -406,7 +410,10 @@ void git_repo_source::run_and_refresh(const std::string& command_label, const st
   dynamic report;
   report["command"_key] = command_label;
   report["ok"_key] = r.ok();
-  report["output"_key] = r.ok() ? std::string{} : (r.stderr_text.empty() ? r.stdout_text : r.stderr_text);
+  const std::string error = r.ok() ? std::string{} : (r.stderr_text.empty() ? r.stdout_text : r.stderr_text);
+  report["output"_key] = error;
+  if (!r.ok())
+    worker_->fail(command_label + " failed: " + error);
   try {
     proxy_->call("command_result"_key, std::move(report)).get();
   } catch (const std::exception&) {
@@ -451,6 +458,8 @@ void git_repo_source::on_checkout(const std::string& ref) {
   report["command"_key] = std::string{"checkout"};
   report["ok"_key] = r.ok();
   report["output"_key] = r.ok() ? std::string{} : r.stderr_text;
+  if (!r.ok())
+    worker_->fail("checkout failed: " + r.stderr_text);
   try {
     proxy_->call("command_result"_key, std::move(report)).get();
   } catch (const std::exception&) {
@@ -490,6 +499,8 @@ void git_repo_source::on_merge(const std::string& ref) {
   report["command"_key] = std::string{"merge"};
   report["ok"_key] = r.ok();
   report["output"_key] = r.ok() ? std::string{} : r.stderr_text;
+  if (!r.ok())
+    worker_->fail("merge failed: " + r.stderr_text);
   try {
     proxy_->call("command_result"_key, std::move(report)).get();
   } catch (const std::exception&) {

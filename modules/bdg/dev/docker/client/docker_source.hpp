@@ -17,6 +17,7 @@
 
 #include "docker_process.hpp"
 #include "src/bison/bison.hpp"
+#include "modules/bdg/dev/common/command_worker.hpp"
 #include "src/rmi/client/proxy.hpp"
 
 #include <atomic>
@@ -28,7 +29,7 @@ namespace bdg::wish::docker {
 
 class docker_source {
  public:
-  explicit docker_source(std::shared_ptr<bison::rmi::proxy::dynamic> proxy);
+  docker_source(std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::shared_ptr<dev::command_worker> worker);
   ~docker_source();
 
   /// @brief Pushes the containers / images / volumes / networks snapshots,
@@ -95,6 +96,10 @@ class docker_source {
   void stop_follow();
 
   std::shared_ptr<bison::rmi::proxy::dynamic> proxy_;
+  // Runs every command off the UI thread, behind a modal progress dialog
+  // when it takes long (see common/command_worker.hpp). Every method that
+  // runs a command must be called from one of its jobs.
+  std::shared_ptr<dev::command_worker> worker_;
 
   // Logs "Follow" background thread (top's sampling-thread pattern).
   std::shared_ptr<std::atomic<bool>> follow_stop_;

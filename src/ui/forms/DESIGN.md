@@ -299,6 +299,42 @@ This mechanism is source-level only, by the same constraint as everything else i
 
 ## Built-in Forms
 
+### `ProgressBox`
+
+**Bison class name:** `"ProgressBox"` in the `"wish"` namespace
+(`src/ui/forms/progress_box.hpp`).
+
+A modal dialog for an operation the *client* is running and the server knows
+nothing about (a command-line tool, typically): a caption, an indeterminate
+`ProgressBar`, a FIFO-capped output log and a Cancel button. The client drives
+it with `update({command, phase, lines})` and `finish({error})` and listens
+for `cancel_requested` / `closed`; see the class doc comment for the contract.
+
+Design decisions:
+
+- **A form of its own, driven by the client, rather than a helper inside each
+  tool's form.** Every `bdg/dev` module needs the same dialog, and their
+  server-side forms only render snapshots -- they have no idea a command is
+  running. A client-instantiated form needs no change to any of them.
+- **Indeterminate bar.** The tools report no overall percentage. A negative
+  `ProgressBar.value` draws ImGui's indeterminate animation, whose position
+  follows the value, so the client sends the elapsed seconds as `phase`.
+- **A failed `finish` keeps the dialog open; a successful one closes it.** The
+  error and the output that led to it are the one thing the user must see;
+  success needs no acknowledgement. A cancelled operation closes regardless.
+- **One instance is reusable.** Closing a modal is asynchronous (the
+  `__request_close__` handshake `MessageBox` uses), so the form tracks
+  closed / open / closing; an `update` that arrives while closing is honoured
+  by rebuilding as soon as the renderer confirms the close. The object
+  survives its own `closed` event, so a client keeps one for its lifetime.
+- **Fixed size**, unlike `MessageBox`'s auto-resize: appended output must not
+  resize a dialog the user is looking at.
+
+Client side, `modules/bdg/dev/common/command_worker.hpp` is the shared driver:
+one worker thread per app runs the tool commands in order, opens the dialog
+only for a command that has run for 0.4 s (so a refresh never flashes a
+modal), feeds it the tool's output, and turns its Cancel into a SIGTERM.
+
 ### `FileDialog`
 
 **Bison class name:** `"FileDialog"` in the `"wish"` namespace.

@@ -225,31 +225,6 @@ static constexpr const char* kConsoleLayout = R"json({
   } } }
 })json";
 
-// The progress dialog: a true modal ("modal": true), built on demand. It has
-// a fixed size rather than MessageBox's AlwaysAutoResize so appended output
-// never resizes it. No child carries an explicit "width" inside a
-// HorizontalLayout -- see message_box.cpp on why that breaks hit-testing in
-// a modal.
-
-static constexpr const char* kProgressLayout = R"json({
-  "type": "Window", "title": "Running pip", "modal": true, "width": 720, "height": 420,
-  "flags": "NoResize|NoCollapse",
-  "children": { "vbox": { "type": "VerticalLayout", "spacing": 6, "children": {
-    "command": { "type": "Label", "text": "" },
-    "bar":     { "type": "ProgressBar", "value": -0.001, "label": "", "width": -1 },
-    "result":  { "type": "Label", "text": "", "visible": false },
-    "table": {
-      "type": "Table", "id": "##pip_progress_table", "columns": 1,
-      "flags": "RowBg|Borders|ScrollX|ScrollY", "headers": false,
-      "height": -1, "outer_height": -1, "auto_scroll": true,
-      "children": {
-        "col_line": { "type": "TableColumn", "label": "Output", "flags": "WidthStretch", "column_id": 0 }
-      }
-    },
-    "btn_cancel": { "type": "Button", "label": "Cancel" }
-  } } }
-})json";
-
 std::string plural(size_t n, const char* noun) {
   return std::to_string(n) + " " + noun + (n == 1 ? "" : "s");
 }
@@ -362,8 +337,6 @@ void pip_frontend::on_init() {
       click_handlers_[wish_id_of(e)] = [this] { emit_details_request(); };
     });
   });
-
-  progress_root_key_ = internal_root_key_ + "_progress";
 
   console_root_key_ = internal_root_key_ + "_console";
   build_text_window(console_root_key_, kConsoleLayout, console_window_id_, [&](ui_tree& tree) {
@@ -770,177 +743,7 @@ dynamic pip_frontend::do_command_result(const dynamic& args) {
   if (ok) {
     set_status(lw, command + ": OK", true);
   } else {
-    const std::string text = command + " failed: " + (output.empty() ? "unknown error" : output);
-    set_status(lw, text, false);
-    if (progress_.state == progress_dialog::phase::open)
-      progress_.failure = text;
-  }
-  return dynamic{};
-}
-
-// ── Progress dialog ────────────────────────────────────────────────────────
-
-void pip_frontend::with_context(const std::function<void()>& fn) {
-  // The idiom instantiate_child_form() uses: on_event() runs outside RMI
-  // dispatch, while building / erasing top-level objects needs sess().
-  if (detail::current_context) {
-    fn();
-    return;
-  }
-  auto sess = context_wlock{*sync_ctx_};
-  detail::current_context = &*sess;
-  fn();
-  detail::current_context = nullptr;
-}
-
-void pip_frontend::open_progress_dialog() {
-  progress_ = progress_dialog{};
-  build_text_window(progress_root_key_, kProgressLayout, progress_.window_id, [&](ui_tree& tree) {
-    for (auto& [key, elem] : tree)
-      progress_.object_ids.push_back(wish_id_of(elem));
-    progress_.window = tree[""];
-    tree.with("vbox.command", [&](const auto& e) { progress_.command_label = e; });
-    tree.with("vbox.bar", [&](const auto& e) { progress_.bar = e; });
-    tree.with("vbox.result", [&](const auto& e) { progress_.result_label = e; });
-    tree.with("vbox.table", [&](const auto& e) { progress_.table = e; });
-    tree.with("vbox.btn_cancel", [&](const auto& e) {
-      progress_.button = e;
-      click_handlers_[wish_id_of(e)] = [this] {
-        if (progress_.finished) {
-          request_progress_close();
-          return;
-        }
-        if (progress_.cancelling)
-          return;
-        progress_.cancelling = true;
-        if (progress_.command_label)
-          progress_.command_label["text"_key] = std::string{"Cancelling ..."};
-        emit("cancel_requested"_key);
-      };
-    });
-  });
-  progress_.state = progress_dialog::phase::open;
-}
-
-void pip_frontend::request_progress_close() {
-  if (progress_.state != progress_dialog::phase::open)
-    return;
-  progress_.state = progress_dialog::phase::closing;
-  if (progress_.window)
-    progress_.window["__request_close__"_key] = true;
-}
-
-void pip_frontend::destroy_progress_dialog() {
-  if (progress_.state == progress_dialog::phase::closed)
-    return;
-  for (auto id : progress_.object_ids) {
-    ctx().objects.erase(id.id);
-    click_handlers_.erase(id);
-  }
-  for (auto& row : progress_.rows) {
-    for (auto id : row.object_ids)
-      ctx().objects.erase(id.id);
-  }
-  remove_objects_at(progress_root_key_);
-  progress_ = progress_dialog{};
-}
-
-void pip_frontend::append_progress_line(const std::string& text, bool is_command) {
-  if (!progress_.table)
-    return;
-  auto* children_p = progress_.table->findField<dynamic_ptr>("children"_key);
-  if (!children_p || !*children_p)
-    return;
-  auto& children = *children_p;
-
-  ui_element_ptr row = ui_element_ptr::create("wish"_key, "TableRow"_key);
-  assign_id(row);
-  ui_element_ptr cell = is_command ? make_label("$ " + text, kOkLight, kOkDark) : make_label(text);
-  set_children_list(row, {cell});
-
-  console_row_entry entry;
-  entry.child_key = progress_.next_child_key++;
-  entry.object_ids = {wish_id_of(row), wish_id_of(cell)};
-  (*children)[entry.child_key] = dynamic_ptr{row};
-  progress_.rows.push_back(std::move(entry));
-
-  if (progress_.rows.size() > kMaxProgressRows) {
-    for (auto id : progress_.rows.front().object_ids)
-      ctx().objects.erase(id.id);
-    children->erase(progress_.rows.front().child_key);
-    progress_.rows.pop_front();
-  }
-}
-
-dynamic pip_frontend::do_set_progress(const dynamic& args) {
-  using phase = progress_dialog::phase;
-
-  if (!flag_of(args, "active"_key)) {
-    progress_.reopen = false;
-    if (progress_.state != phase::open)
-      return dynamic{};
-    if (progress_.failure.empty() || progress_.cancelling) {
-      request_progress_close();
-      return dynamic{};
-    }
-    // Keep a failure on screen, with the output that led to it.
-    progress_.finished = true;
-    if (progress_.command_label)
-      progress_.command_label["text"_key] = std::string{"pip finished with an error"};
-    if (progress_.bar)
-      progress_.bar["visible"_key] = false;
-    if (progress_.result_label) {
-      progress_.result_label["text"_key] = progress_.failure;
-      progress_.result_label["text_color_light"_key] = std::string{kBadLight};
-      progress_.result_label["text_color_dark"_key] = std::string{kBadDark};
-      progress_.result_label["visible"_key] = true;
-    }
-    if (progress_.button)
-      progress_.button["label"_key] = std::string{"Close"};
-    return dynamic{};
-  }
-
-  if (progress_.state == phase::closing) {
-    progress_.reopen = true; // rebuilt once the renderer confirms the close.
-    return dynamic{};
-  }
-  if (progress_.state == phase::closed)
-    open_progress_dialog();
-
-  if (progress_.finished) { // a queued command started behind a failure.
-    progress_.finished = false;
-    progress_.failure.clear();
-    if (progress_.bar)
-      progress_.bar["visible"_key] = true;
-    if (progress_.result_label)
-      progress_.result_label["visible"_key] = false;
-    if (progress_.button)
-      progress_.button["label"_key] = std::string{"Cancel"};
-  }
-
-  const std::string command = str_of(args, "command"_key);
-  if (command != progress_.command) {
-    progress_.command = command;
-    append_progress_line(command, /*is_command=*/true);
-  }
-  if (progress_.command_label && !progress_.cancelling)
-    progress_.command_label["text"_key] = command;
-
-  const auto* lines = args.findField<dynamic_ptr>("lines"_key);
-  if (lines && *lines) {
-    (*lines)->forEach([&](key_t, const field& f) {
-      if (f.is<std::string>())
-        append_progress_line(f.as<std::string>(), /*is_command=*/false);
-    });
-  }
-  if (progress_.table)
-    progress_.table->refresh_children_order();
-
-  // A negative ProgressBar value draws ImGui's indeterminate animation,
-  // whose position follows the value -- hence the ever-growing phase.
-  if (progress_.bar) {
-    const auto* seconds = args.findField<float>("phase"_key);
-    progress_.bar["value"_key] = -0.001f - (seconds ? *seconds : 0.0f) * 0.5f;
+    set_status(lw, command + " failed: " + (output.empty() ? "unknown error" : output), false);
   }
   return dynamic{};
 }
@@ -1085,22 +888,10 @@ void pip_frontend::run_row_action(const row_action& target) {
 }
 
 void pip_frontend::on_event(key_t id, key_t event, const dynamic& payload) {
-  // The renderer confirmed the progress modal closed (request_progress_close()).
-  if (progress_.state != progress_dialog::phase::closed && event == "closed"_key && id == progress_.window_id) {
-    const bool reopen = progress_.reopen;
-    with_context([&] {
-      destroy_progress_dialog();
-      if (reopen)
-        open_progress_dialog();
-    });
-    return;
-  }
-
   // Any window's X button -> tear everything down.
   if (event == "closed"_key && (id == packages_.window_id || id == versions_window_.window_id ||
                                 id == details_window_id_ || id == console_window_id_)) {
     remove_details_file();
-    destroy_progress_dialog();
     emit("closed"_key);
     remove_objects_at(versions_window_.root_key);
     remove_objects_at(details_root_key_);
@@ -1161,7 +952,6 @@ void register_pip() {
   add_method("command_result"_key, &pip_frontend::do_command_result);
   add_method("append_command_log"_key, &pip_frontend::do_append_command_log);
   add_method("set_environment"_key, &pip_frontend::do_set_environment);
-  add_method("set_progress"_key, &pip_frontend::do_set_progress);
 
   (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("PipFrontend"));
   (*proto)[dynamic::CLASS].addAttribute(attr<Description>(

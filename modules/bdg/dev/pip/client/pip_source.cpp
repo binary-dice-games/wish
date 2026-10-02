@@ -5,9 +5,7 @@
 
 #include "pip_parsers.hpp"
 
-#include <chrono>
 #include <filesystem>
-#include <thread>
 
 namespace bdg::wish::pip {
 
@@ -51,8 +49,10 @@ std::string resolve_interpreter(const std::string& arg) {
   return {};
 }
 
-pip_source::pip_source(std::shared_ptr<bison::rmi::proxy::dynamic> proxy, const std::string& interpreter)
-    : proxy_(std::move(proxy)), interpreter_(interpreter),
+pip_source::pip_source(
+    std::shared_ptr<bison::rmi::proxy::dynamic> proxy, const std::string& interpreter,
+    std::shared_ptr<dev::command_worker> worker)
+    : proxy_(std::move(proxy)), worker_(std::move(worker)), interpreter_(interpreter),
       // --no-input: stdin is closed, so never wait on a prompt. The version
       // check would add an unrelated "new release of pip" notice to stderr.
       launcher_({interpreter, "-m", "pip", "--disable-pip-version-check", "--no-input", "--no-color"}) {}
@@ -76,76 +76,6 @@ void pip_source::push_environment(const std::string& version_text) {
   }
 }
 
-// ── worker thread ──────────────────────────────────────────────────────────
-
-void pip_source::start() {
-  // Detached, holding a reference to this object: shutdown() is called from
-  // an event handler, which must not block joining a thread that may itself
-  // be waiting on an RMI reply.
-  std::thread([self = shared_from_this()] { self->work(); }).detach();
-}
-
-void pip_source::post(std::function<void()> job) {
-  queue_.wlock()->jobs.push_back(std::move(job));
-  queue_.notify_one();
-}
-
-void pip_source::cancel() {
-  cancel_ = true;
-  queue_.wlock()->jobs.clear();
-}
-
-void pip_source::shutdown() {
-  cancel_ = true;
-  {
-    auto q = queue_.wlock();
-    q->jobs.clear();
-    q->stop = true;
-  }
-  queue_.notify_one();
-}
-
-void pip_source::work() {
-  while (true) {
-    std::function<void()> job;
-    queue_.wait([&](work_queue& q) {
-      if (q.stop)
-        return true;
-      if (q.jobs.empty())
-        return false;
-      job = std::move(q.jobs.front());
-      q.jobs.pop_front();
-      return true;
-    });
-    if (!job)
-      return; // stopped.
-    cancel_ = false;
-    job();
-    if (progress_shown_ && queue_.rlock()->jobs.empty()) {
-      push_progress(false, {}, 0.0f, {});
-      progress_shown_ = false;
-    }
-  }
-}
-
-void pip_source::push_progress(
-    bool active, const std::string& command, float phase, const std::vector<std::string>& lines) {
-  dynamic arr;
-  size_t i = 0;
-  for (auto& line : lines)
-    arr[i++] = line;
-
-  dynamic args;
-  args["active"_key] = active;
-  args["command"_key] = command;
-  args["phase"_key] = phase;
-  args["lines"_key] = dynamic_ptr{std::make_shared<dynamic>(std::move(arr))};
-  try {
-    proxy_->call("set_progress"_key, std::move(args)).get();
-  } catch (const std::exception&) {
-  }
-}
-
 void pip_source::refresh_all() {
   push_packages();
 }
@@ -153,53 +83,8 @@ void pip_source::refresh_all() {
 // ── helpers ────────────────────────────────────────────────────────────────
 
 process_result pip_source::run_logged(const std::vector<std::string>& args) {
-  std::string command = "pip";
-  for (auto& a : args)
-    command += ' ' + a;
-
-  // Progress dialog: opened once this command has run for kProgressDelay
-  // (or at once when an earlier command of this busy period opened it),
-  // then fed pip's output lines ("Collecting ...", "Downloading ...") on
-  // every tick. The bar is indeterminate, animated by the elapsed time.
-  constexpr float kProgressDelay = 0.4f; // seconds
-  const auto started = std::chrono::steady_clock::now();
-  std::string pending;            // output not yet terminated by a newline
-  std::vector<std::string> lines; // complete lines not yet pushed
-  auto flush = [&] {
-    const std::chrono::duration<float> elapsed = std::chrono::steady_clock::now() - started;
-    if (!progress_shown_ && elapsed.count() < kProgressDelay)
-      return;
-    progress_shown_ = true;
-    push_progress(true, command, elapsed.count(), lines);
-    lines.clear();
-  };
-  flush();
-
-  run_hooks hooks;
-  hooks.on_output = [&](const std::string& chunk) {
-    pending += chunk;
-    size_t eol;
-    while ((eol = pending.find('\n')) != std::string::npos) {
-      std::string line = trim_eol(pending.substr(0, eol));
-      pending.erase(0, eol + 1);
-      const size_t text = line.find_first_not_of(" \t");
-      // JSON snapshots (pip list) are data, not progress.
-      if (text != std::string::npos && line[text] != '[' && line[text] != '{')
-        lines.push_back(std::move(line));
-    }
-  };
-  hooks.on_tick = [&] {
-    flush();
-    return !cancel_.load();
-  };
-
-  auto r = run_pip_cli(args, launcher_, &hooks);
-  if (progress_shown_)
-    flush(); // the lines since the last tick.
-  // Consume the request: the rest of the job (the refresh after a cancelled
-  // install, say) must still run.
-  if (cancel_.exchange(false) && !r.ok())
-    r.stderr_text = "cancelled";
+  const std::string command = dev::command_text("pip", args);
+  auto r = worker_->run(command, [&](const dev::run_hooks* hooks) { return run_pip_cli(args, launcher_, hooks); });
 
   // Single-line preview: collapse every whitespace run to one space.
   std::string output;
@@ -233,6 +118,8 @@ bool pip_source::report(const std::string& label, const std::string& scope, bool
   args["scope"_key] = scope;
   args["ok"_key] = ok;
   args["output"_key] = ok ? std::string{} : output;
+  if (!ok)
+    worker_->fail(label + " failed: " + output);
   try {
     proxy_->call("command_result"_key, std::move(args)).get();
   } catch (const std::exception&) {

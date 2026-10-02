@@ -15,6 +15,7 @@
 
 #include "sq_process.hpp"
 #include "src/bison/bison.hpp"
+#include "modules/bdg/dev/common/command_worker.hpp"
 #include "src/rmi/client/proxy.hpp"
 
 #include <functional>
@@ -26,7 +27,7 @@ namespace bdg::wish::sq {
 
 class sq_source {
  public:
-  explicit sq_source(std::shared_ptr<bison::rmi::proxy::dynamic> proxy);
+  sq_source(std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::shared_ptr<dev::command_worker> worker);
 
   /// @brief Pushes the driver list (once), the connections, and the active
   /// database's schema. Called on startup and by "refresh_requested".
@@ -61,6 +62,10 @@ class sq_source {
   process_result run_logged(const std::vector<std::string>& args, const std::string& stdin_text = {});
 
   std::shared_ptr<bison::rmi::proxy::dynamic> proxy_;
+  // Runs every command off the UI thread, behind a modal progress dialog
+  // when it takes long (see common/command_worker.hpp). Every method that
+  // runs a command must be called from one of its jobs.
+  std::shared_ptr<dev::command_worker> worker_;
   bool drivers_pushed_{false};
   std::string active_;      ///< active handle ("" = none)
   std::string last_sql_;    ///< last successfully run query, for export

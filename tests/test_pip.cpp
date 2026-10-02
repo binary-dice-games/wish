@@ -309,112 +309,15 @@ TEST_F(PipRmiTest, SetEnvironmentShowsInterpreterAndPipVersion) {
   EXPECT_EQ(PIP_TEXT_AT(root_ + ".vbox.env"), "/venv/bin/python: pip 25.1.1 from /venv/lib/pip (python 3.14)");
 }
 
-// ── Progress dialog ─────────────────────────────────────────────────────────
-
-namespace {
-
-dynamic progress(bool active, const std::string& command = {}, float phase = 0.0f,
-                 const std::vector<std::string>& lines = {}) {
-  dynamic arr;
-  size_t i = 0;
-  for (auto& line : lines)
-    arr[i++] = line;
-  dynamic a;
-  a["active"_key] = active;
-  a["command"_key] = command;
-  a["phase"_key] = phase;
-  a["lines"_key] = dynamic_ptr{std::make_shared<dynamic>(std::move(arr))};
-  return a;
-}
-
-} // namespace
-
-TEST_F(PipRmiTest, ProgressDialogIsAModalThatCollectsOutputAndClosesWhenIdle) {
-  auto& objects = srv_->last_session->ui_objects;
-  const std::string dlg = root_ + "_progress";
-  EXPECT_FALSE(objects.count(dlg)) << "built on demand";
-  EXPECT_FALSE(objects.count(root_ + ".vbox.progress")) << "nothing inline in the Packages window";
-
-  call("set_progress"_key, progress(true, "pip install requests", 1.0f, {"Collecting requests"}));
-  ASSERT_TRUE(objects.count(dlg));
-  EXPECT_TRUE(objects.at(dlg)->as<bool>("modal"_key));
-  EXPECT_EQ(PIP_TEXT_AT(dlg + ".vbox.command"), "pip install requests");
-  EXPECT_EQ(row_count(dlg + ".vbox.table"), 2u) << "the command line + one output line";
-  const float first = objects.at(dlg + ".vbox.bar")->as<float>("value"_key);
-  EXPECT_LT(first, 0.0f) << "negative = indeterminate";
-
-  call("set_progress"_key, progress(true, "pip install requests", 2.0f, {"Downloading requests", "Installing"}));
-  EXPECT_EQ(row_count(dlg + ".vbox.table"), 4u) << "same command: no second header row";
-  EXPECT_LT(objects.at(dlg + ".vbox.bar")->as<float>("value"_key), first) << "the phase animates the bar";
-  call("set_progress"_key, progress(true, "pip list --format=json", 0.1f));
-  EXPECT_EQ(row_count(dlg + ".vbox.table"), 5u) << "a new command adds its header row";
-
-  // Idle: the modal is asked to close, and torn down once the renderer says so.
-  call("set_progress"_key, progress(false));
-  ASSERT_TRUE(objects.count(dlg));
-  EXPECT_TRUE(objects.at(dlg)->as<bool>("__request_close__"_key));
-  fire_at(dlg, id_at(dlg), "closed"_key);
-  EXPECT_FALSE(objects.count(dlg));
-  EXPECT_TRUE(objects.count(root_ + ".vbox.table")) << "only the dialog went away";
-}
-
-TEST_F(PipRmiTest, ProgressDialogStaysOpenOnFailureUntilClosed) {
-  auto& objects = srv_->last_session->ui_objects;
-  const std::string dlg = root_ + "_progress";
-  call("set_progress"_key, progress(true, "pip install nope", 1.0f));
-
+TEST_F(PipRmiTest, StatusLineStaysOneLine) {
   dynamic failed;
   failed["command"_key] = std::string{"install nope"};
   failed["ok"_key] = false;
-  failed["output"_key] = std::string{"ERROR: Could not find a version\nERROR: No matching distribution found for nope"};
+  failed["output"_key] = std::string{"ERROR: Could not find a version\nERROR: No matching distribution found"};
   call("command_result"_key, std::move(failed));
-  call("set_progress"_key, progress(false));
-  EXPECT_EQ(PIP_TEXT_AT(root_ + ".vbox.status").find('\n'), std::string::npos) << "the status line stays one line";
-
-  ASSERT_TRUE(objects.count(dlg));
-  EXPECT_FALSE(objects.at(dlg)->findField<bool>("__request_close__"_key)) << "left open to show the error";
-  EXPECT_NE(PIP_TEXT_AT(dlg + ".vbox.result").find("No matching distribution"), std::string::npos);
-  EXPECT_TRUE(objects.at(dlg + ".vbox.result")->as<bool>("visible"_key));
-  EXPECT_FALSE(objects.at(dlg + ".vbox.bar")->as<bool>("visible"_key));
-  EXPECT_EQ(objects.at(dlg + ".vbox.btn_cancel")->as<std::string>("label"_key), "Close");
-
-  size_t since = srv_->events->mark();
-  fire_at(dlg, id_at(dlg + ".vbox.btn_cancel"), "clicked"_key);
-  EXPECT_TRUE(objects.at(dlg)->as<bool>("__request_close__"_key));
-  EXPECT_FALSE(srv_->events->wait_for("cancel_requested"_key, since, nullptr, std::chrono::milliseconds{100}))
-      << "Close is not Cancel";
-}
-
-TEST_F(PipRmiTest, ProgressDialogCancelEmitsOnceAndClosesEvenThoughTheCommandFailed) {
-  auto& objects = srv_->last_session->ui_objects;
-  const std::string dlg = root_ + "_progress";
-  call("set_progress"_key, progress(true, "pip install torch", 1.0f));
-
-  size_t since = srv_->events->mark();
-  fire_at(dlg, id_at(dlg + ".vbox.btn_cancel"), "clicked"_key);
-  EXPECT_TRUE(srv_->events->wait_for("cancel_requested"_key, since));
-  EXPECT_EQ(PIP_TEXT_AT(dlg + ".vbox.command"), "Cancelling ...");
-
-  dynamic failed;
-  failed["command"_key] = std::string{"install torch"};
-  failed["ok"_key] = false;
-  failed["output"_key] = std::string{"cancelled"};
-  call("command_result"_key, std::move(failed));
-  call("set_progress"_key, progress(false));
-  EXPECT_TRUE(objects.at(dlg)->as<bool>("__request_close__"_key));
-}
-
-TEST_F(PipRmiTest, ProgressDialogReopensWhenACommandStartsWhileItIsClosing) {
-  auto& objects = srv_->last_session->ui_objects;
-  const std::string dlg = root_ + "_progress";
-  call("set_progress"_key, progress(true, "pip install a", 1.0f));
-  call("set_progress"_key, progress(false));
-  call("set_progress"_key, progress(true, "pip install b", 0.5f)); // before the renderer closed it
-  fire_at(dlg, id_at(dlg), "closed"_key);
-  ASSERT_TRUE(objects.count(dlg)) << "rebuilt for the new command";
-  EXPECT_FALSE(objects.at(dlg)->findField<bool>("__request_close__"_key));
-  call("set_progress"_key, progress(true, "pip install b", 0.7f));
-  EXPECT_EQ(PIP_TEXT_AT(dlg + ".vbox.command"), "pip install b");
+  const auto status = PIP_TEXT_AT(root_ + ".vbox.status");
+  EXPECT_NE(status.find("Could not find a version"), std::string::npos);
+  EXPECT_EQ(status.find('\n'), std::string::npos) << "a second line would shift the table below";
 }
 
 TEST_F(PipRmiTest, LookUpClearsAStaleValidationMessage) {

@@ -16,6 +16,7 @@
 
 #include "helm_process.hpp"
 #include "src/bison/bison.hpp"
+#include "modules/bdg/dev/common/command_worker.hpp"
 #include "src/rmi/client/proxy.hpp"
 
 #include <memory>
@@ -26,7 +27,7 @@ namespace bdg::wish::helm {
 
 class helm_source {
  public:
-  explicit helm_source(std::shared_ptr<bison::rmi::proxy::dynamic> proxy);
+  helm_source(std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::shared_ptr<dev::command_worker> worker);
 
   /// @brief Pushes the releases and repositories snapshots, in that order.
   /// Called once on startup, on "refresh_requested", and after every
@@ -116,6 +117,10 @@ class helm_source {
   bool check_args(const std::string& label, const std::string& scope, const std::vector<std::string>& values);
 
   std::shared_ptr<bison::rmi::proxy::dynamic> proxy_;
+  // Runs every command off the UI thread, behind a modal progress dialog
+  // when it takes long (see common/command_worker.hpp). Every method that
+  // runs a command must be called from one of its jobs.
+  std::shared_ptr<dev::command_worker> worker_;
 
   std::string last_query_; // the Charts window's current search
 };

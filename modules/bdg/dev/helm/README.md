@@ -89,8 +89,9 @@ Build: off by default. `cmake -S . -B build -DWISH_MODULE_BDG_DEV_HELM=ON`
   context / namespace switcher. Releases are always listed across all
   namespaces and filtered client-side; `helm list` returns at most 256
   releases (its own default `--max`).
-- **Commands block until `helm` exits.** There is no progress display or
-  cancel for a slow `repo update` or an install with "Wait until ready".
+- **Progress is indeterminate.** helm reports no percentage, so the progress
+  dialog's bar only animates; its log shows helm's output. Cancel stops helm
+  the way Ctrl-C would -- a half-finished install is not rolled back.
 - **`helm` must be on `PATH`.** The startup gate only checks that the binary
   runs; if the cluster is unreachable, the Releases window's status line
   shows helm's error while Repositories and Charts keep working.

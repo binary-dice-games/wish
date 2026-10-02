@@ -11,6 +11,7 @@
 
 #include "ui/forms/file_dialog.hpp"
 #include "ui/forms/message_box.hpp"
+#include "ui/forms/progress_box.hpp"
 #include "ui/forms/properties_dialog.hpp"
 #include "ui/ui_elements/object_inspector.hpp"
 #include "ui/plot3d_elements/plot3d_elements.hpp"
@@ -74,6 +75,7 @@ void register_all() {
   // Built-in forms.
   register_file_dialog();
   register_message_box();
+  register_progress_box();
   // ObjectInspector: a real ui_element (unlike the elements above, it needs
   // its own C++ class -- see object_inspector.hpp), so registered here
   // alongside the forms rather than in the plain per-file register_*()

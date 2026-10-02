@@ -574,8 +574,10 @@ bool has_header(const std::vector<kv_entry>& headers, const std::string& name) {
 
 // ── curl_source ───────────────────────────────────────────────────────
 
-curl_source::curl_source(std::shared_ptr<bison::rmi::proxy::dynamic> proxy, wish_app_host& host)
-    : proxy_(std::move(proxy)), host_(host) {}
+curl_source::curl_source(
+    std::shared_ptr<bison::rmi::proxy::dynamic> proxy, wish_app_host& host,
+    std::shared_ptr<dev::command_worker> worker)
+    : proxy_(std::move(proxy)), host_(host), worker_(std::move(worker)) {}
 
 std::string curl_source::new_id(const char* prefix) {
   auto now = std::chrono::steady_clock::now().time_since_epoch().count();
@@ -944,7 +946,12 @@ void curl_source::send_request(const request_state& raw) {
   argv.push_back("\n__WISH_CURL_META__\t%{http_code}\t%{time_total}\t%{size_download}\n");
   argv.push_back(build_url(s.url, s.params));
 
-  process_result r = run_curl_cli(argv);
+  // The dialog is captioned with the method and URL only (the argv carries
+  // credentials and headers), and shows no output: curl's stdout is the
+  // response itself, which belongs in the Response window.
+  process_result r = worker_->run(
+      "curl " + method + " " + argv.back(),
+      [&](const dev::run_hooks* hooks) { return run_curl_cli(argv, "curl", hooks); }, /*show_output=*/false);
   push_command_log(argv, r);
 
   history_entry he;

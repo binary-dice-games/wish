@@ -18,6 +18,7 @@
 
 #include "git_process.hpp"
 #include "src/bison/bison.hpp"
+#include "modules/bdg/dev/common/command_worker.hpp"
 #include "src/rmi/client/proxy.hpp"
 
 #include <cstdint>
@@ -29,7 +30,9 @@ namespace bdg::wish::git {
 
 class git_repo_source {
  public:
-  git_repo_source(std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::string repo_path);
+  git_repo_source(
+      std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::string repo_path,
+      std::shared_ptr<dev::command_worker> worker);
 
   /// @brief Pushes refs, the commit graph, and working-directory status, in
   /// that order. Called once on startup (in response to "refresh_requested")
@@ -75,6 +78,10 @@ class git_repo_source {
   void push_command_log(const std::vector<std::string>& args, const process_result& r);
 
   std::shared_ptr<bison::rmi::proxy::dynamic> proxy_;
+  // Runs every command off the UI thread, behind a modal progress dialog
+  // when it takes long (see common/command_worker.hpp). Every method that
+  // runs a command must be called from one of its jobs.
+  std::shared_ptr<dev::command_worker> worker_;
   std::string repo_path_;
 };
 

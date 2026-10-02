@@ -14,6 +14,8 @@
 /// (`cmake/WishModules.cmake`), so this file needs no CMake change.
 #pragma once
 
+#include "modules/bdg/dev/common/process_hooks.hpp"
+
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -46,6 +48,10 @@ struct process_result {
 ///                `git_process::run_git()` (which hard-codes `"git"`),
 ///                justified because a throwaway `git init` repo is trivial to
 ///                create in a test but a running Docker daemon is not.
-process_result run_docker_cli(const std::vector<std::string>& args, const std::string& binary = "docker");
+/// @param hooks  Optional live-output / tick callbacks (see
+///               common/process_hooks.hpp); a tick returning false stops the
+///               process. Null for none.
+process_result run_docker_cli(
+    const std::vector<std::string>& args, const std::string& binary = "docker", const dev::run_hooks* hooks = nullptr);
 
 } // namespace bdg::wish::docker

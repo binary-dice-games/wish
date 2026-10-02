@@ -49,45 +49,53 @@ void run_git(wish_app_host& s) {
   const std::string repo_path = git::resolve_repo_root(repo_path_arg);
 
   auto proxy = std::make_shared<rmi::proxy::dynamic>(s.instantiate("wish"_key, "GitRepo"_key).get());
-  auto source = std::make_shared<git::git_repo_source>(proxy, repo_path);
+  // Every handler below runs as a job on this worker's thread: running the
+  // tool inside an event handler would block the whole UI until it exits.
+  // Long commands get a modal progress dialog (common/command_worker.hpp).
+  auto worker = std::make_shared<dev::command_worker>(s, "Running git");
+  worker->start();
+  auto source = std::make_shared<git::git_repo_source>(proxy, repo_path, worker);
 
-  proxy->onEvent("refresh_requested"_key, [source](dynamic) { source->refresh_all(); });
+  worker->on(*proxy, "refresh_requested"_key, [source](dynamic) { source->refresh_all(); });
 
-  proxy->onEvent("stage_requested"_key, [source](dynamic payload) { source->on_stage(payload.as<std::string>("path"_key)); });
-  proxy->onEvent(
-      "unstage_requested"_key, [source](dynamic payload) { source->on_unstage(payload.as<std::string>("path"_key)); });
-  proxy->onEvent(
-      "commit_requested"_key, [source](dynamic payload) { source->on_commit(payload.as<std::string>("message"_key)); });
-  proxy->onEvent(
-      "checkout_requested"_key, [source](dynamic payload) { source->on_checkout(payload.as<std::string>("ref"_key)); });
-  proxy->onEvent("create_branch_requested"_key, [source](dynamic payload) {
+  worker->on(*proxy, "stage_requested"_key, [source](dynamic payload) { source->on_stage(payload.as<std::string>("path"_key)); });
+  worker->on(
+      *proxy, "unstage_requested"_key, [source](dynamic payload) { source->on_unstage(payload.as<std::string>("path"_key)); });
+  worker->on(
+      *proxy, "commit_requested"_key, [source](dynamic payload) { source->on_commit(payload.as<std::string>("message"_key)); });
+  worker->on(
+      *proxy, "checkout_requested"_key, [source](dynamic payload) { source->on_checkout(payload.as<std::string>("ref"_key)); });
+  worker->on(*proxy, "create_branch_requested"_key, [source](dynamic payload) {
     source->on_create_branch(payload.as<std::string>("name"_key), payload.as<std::string>("start_point"_key));
   });
-  proxy->onEvent("delete_branch_requested"_key, [source](dynamic payload) {
+  worker->on(*proxy, "delete_branch_requested"_key, [source](dynamic payload) {
     source->on_delete_branch(payload.as<std::string>("name"_key), payload.as<bool>("force"_key));
   });
-  proxy->onEvent("fetch_requested"_key, [source](dynamic) { source->on_fetch(); });
-  proxy->onEvent("pull_requested"_key, [source](dynamic) { source->on_pull(); });
-  proxy->onEvent("push_requested"_key, [source](dynamic) { source->on_push(); });
-  proxy->onEvent(
-      "merge_requested"_key, [source](dynamic payload) { source->on_merge(payload.as<std::string>("ref"_key)); });
-  proxy->onEvent("stash_push_requested"_key, [source](dynamic) { source->on_stash_push(); });
-  proxy->onEvent(
-      "stash_pop_requested"_key, [source](dynamic payload) { source->on_stash_pop(payload.as<int32_t>("index"_key)); });
-  proxy->onEvent("stash_apply_requested"_key, [source](dynamic payload) {
+  worker->on(*proxy, "fetch_requested"_key, [source](dynamic) { source->on_fetch(); });
+  worker->on(*proxy, "pull_requested"_key, [source](dynamic) { source->on_pull(); });
+  worker->on(*proxy, "push_requested"_key, [source](dynamic) { source->on_push(); });
+  worker->on(
+      *proxy, "merge_requested"_key, [source](dynamic payload) { source->on_merge(payload.as<std::string>("ref"_key)); });
+  worker->on(*proxy, "stash_push_requested"_key, [source](dynamic) { source->on_stash_push(); });
+  worker->on(
+      *proxy, "stash_pop_requested"_key, [source](dynamic payload) { source->on_stash_pop(payload.as<int32_t>("index"_key)); });
+  worker->on(*proxy, "stash_apply_requested"_key, [source](dynamic payload) {
     source->on_stash_apply(payload.as<int32_t>("index"_key));
   });
-  proxy->onEvent(
-      "stash_drop_requested"_key, [source](dynamic payload) { source->on_stash_drop(payload.as<int32_t>("index"_key)); });
-  proxy->onEvent("commit_files_requested"_key, [source](dynamic payload) {
+  worker->on(
+      *proxy, "stash_drop_requested"_key, [source](dynamic payload) { source->on_stash_drop(payload.as<int32_t>("index"_key)); });
+  worker->on(*proxy, "commit_files_requested"_key, [source](dynamic payload) {
     source->on_commit_files_requested(payload.as<std::string>("hash"_key));
   });
-  proxy->onEvent("diff_requested"_key, [source](dynamic payload) {
+  worker->on(*proxy, "diff_requested"_key, [source](dynamic payload) {
     source->on_diff_requested(
         payload.as<std::string>("hash"_key), payload.as<std::string>("path"_key), payload.as<bool>("staged"_key));
   });
 
-  proxy->onEvent("closed"_key, [&s](dynamic) { s.signal_done(); });
+  proxy->onEvent("closed"_key, [&s, worker](dynamic) {
+    worker->shutdown();
+    s.signal_done();
+  });
 
   // Initial population. GitRepo::on_init() (server) used to emit its own
   // one-time "refresh_requested" for this, but that event fires as part of
@@ -100,7 +108,7 @@ void run_git(wish_app_host& s) {
   // silently papered over the missing initial load. Calling refresh_all()
   // directly here, now that every handler above is registered, has no such
   // race.
-  source->refresh_all();
+  worker->post([source] { source->refresh_all(); });
 }
 
 namespace {

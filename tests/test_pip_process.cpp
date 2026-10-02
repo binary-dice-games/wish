@@ -1,6 +1,8 @@
 // MIT License © 2026 Binary Dice Games
 #include <gtest/gtest.h>
 
+#include <chrono>
+
 #include "modules/bdg/dev/pip/client/pip_parsers.hpp"
 #include "modules/bdg/dev/pip/client/pip_process.hpp"
 
@@ -63,6 +65,18 @@ TEST(PipProcessTest, TickReturningFalseStopsTheProcess) {
   EXPECT_FALSE(r.ok());
   EXPECT_NE(r.exit_code, -1) << "it was spawned, then stopped";
   EXPECT_EQ(ticks, 2) << "no ticks after the stop request";
+}
+
+TEST(PipProcessTest, StoppedProcessReturnsEvenIfAChildKeepsThePipesOpen) {
+  // The shell dies on SIGTERM; its background `sleep` inherits stdout /
+  // stderr and outlives it (git's remote helper, a pip build step).
+  bdg::wish::pip::run_hooks hooks;
+  hooks.tick_ms = 20;
+  hooks.on_tick = [] { return false; };
+  const auto started = std::chrono::steady_clock::now();
+  auto r = run_pip_cli({"sleep 30 & wait"}, {"sh", "-c"}, &hooks);
+  EXPECT_FALSE(r.ok());
+  EXPECT_LT(std::chrono::steady_clock::now() - started, std::chrono::seconds{10});
 }
 
 // ── `pip list --format=json` parsing ────────────────────────────────────────

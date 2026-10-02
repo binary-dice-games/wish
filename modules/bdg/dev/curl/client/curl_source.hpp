@@ -23,6 +23,7 @@
 #include "curl_process.hpp"
 #include "curl_response_parser.hpp" // for kv_entry
 #include "src/bison/bison.hpp"
+#include "modules/bdg/dev/common/command_worker.hpp"
 #include "src/rmi/client/proxy.hpp"
 
 #include <cstdint>
@@ -80,7 +81,9 @@ struct history_entry {
 
 class curl_source {
  public:
-  curl_source(std::shared_ptr<bison::rmi::proxy::dynamic> proxy, wish_app_host& host);
+  curl_source(
+      std::shared_ptr<bison::rmi::proxy::dynamic> proxy, wish_app_host& host,
+      std::shared_ptr<dev::command_worker> worker);
 
   /// @brief Loads the local store (if present) and pushes the initial
   /// Collections / Environments / History snapshots. Called once on
@@ -137,6 +140,10 @@ class curl_source {
 
   std::shared_ptr<bison::rmi::proxy::dynamic> proxy_;
   wish_app_host& host_;
+  // Runs every request off the UI thread, behind a modal progress dialog
+  // when it takes long (see common/command_worker.hpp). Every method here
+  // must be called from one of its jobs.
+  std::shared_ptr<dev::command_worker> worker_;
 
   std::vector<saved_request> collections_;
   std::vector<environment> environments_;

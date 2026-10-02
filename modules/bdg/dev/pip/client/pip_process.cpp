@@ -20,6 +20,7 @@ namespace {
 struct pipe_state {
   std::string* out{nullptr};
   bool closed{false};
+  uv_pipe_t* handle{nullptr}; // valid while !closed
   const run_hooks* hooks{nullptr};
 };
 
@@ -49,6 +50,8 @@ void read_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf) {
 struct exit_state {
   int64_t exit_status{-1};
   uv_timer_t* timer{nullptr}; // the on_tick timer, closed when the child exits
+  bool killed{false};         // on_tick asked for a stop
+  struct pipe_state* pipes[2]{nullptr, nullptr}; // the child's stdout / stderr
 };
 
 void exit_cb(uv_process_t* req, int64_t exit_status, int term_signal) {
@@ -60,19 +63,30 @@ void exit_cb(uv_process_t* req, int64_t exit_status, int term_signal) {
     uv_close(reinterpret_cast<uv_handle_t*>(state->timer), close_cb);
     state->timer = nullptr;
   }
+  // A stopped tool may leave a helper process behind (git's remote helper,
+  // a pip build) that still holds the output pipes open: stop reading now
+  // rather than wait for it, or the run call would not return.
+  if (state->killed) {
+    for (pipe_state* ps : state->pipes) {
+      if (ps && !ps->closed) {
+        ps->closed = true;
+        uv_close(reinterpret_cast<uv_handle_t*>(ps->handle), close_cb);
+      }
+    }
+  }
   uv_close(reinterpret_cast<uv_handle_t*>(req), close_cb);
 }
 
 struct tick_state {
   const run_hooks* hooks{nullptr};
   uv_process_t* child{nullptr};
-  bool killed{false};
+  exit_state* exit{nullptr};
 };
 
 void tick_cb(uv_timer_t* timer) {
   auto* state = static_cast<tick_state*>(timer->data);
-  if (!state->killed && !state->hooks->on_tick()) {
-    state->killed = true; // exit_cb closes the timer once the child is gone.
+  if (!state->exit->killed && !state->hooks->on_tick()) {
+    state->exit->killed = true; // exit_cb closes the timer once the child is gone.
     uv_process_kill(state->child, SIGTERM);
   }
 }
@@ -106,8 +120,8 @@ process_result run_pip_cli(
   auto* err_pipe = new uv_pipe_t;
   uv_pipe_init(&loop, out_pipe, 0);
   uv_pipe_init(&loop, err_pipe, 0);
-  pipe_state out_state{&result.stdout_text, false, hooks};
-  pipe_state err_state{&result.stderr_text, false, hooks};
+  pipe_state out_state{&result.stdout_text, false, nullptr, hooks};
+  pipe_state err_state{&result.stderr_text, false, nullptr, hooks};
   out_pipe->data = &out_state;
   err_pipe->data = &err_state;
 
@@ -140,7 +154,11 @@ process_result run_pip_cli(
     return result;
   }
 
-  tick_state tick_st{hooks, child_req, false};
+  out_state.handle = out_pipe;
+  err_state.handle = err_pipe;
+  exit_st.pipes[0] = &out_state;
+  exit_st.pipes[1] = &err_state;
+  tick_state tick_st{hooks, child_req, &exit_st};
   if (hooks && hooks->on_tick) {
     exit_st.timer = new uv_timer_t;
     uv_timer_init(&loop, exit_st.timer);

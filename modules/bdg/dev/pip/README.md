@@ -16,13 +16,11 @@ one. pip is always run as `<interpreter> -m pip`, so the packages shown are
 exactly that interpreter's. The Packages window's first status line names the
 interpreter and pip version in use.
 
-`pip` runs on a client-side worker thread, one command at a time, so the UI
-never freezes. A command that takes more than a moment (about 0.4 s) opens a
-modal **Running pip** dialog with a progress bar, pip's output as it arrives
-(`Collecting ...`, `Downloading ...`) and a **Cancel** button; being modal,
-it blocks other actions until pip is done. It closes by itself on success and
-stays open on failure, showing the error and the output until **Close** is
-pressed. Quick commands (a refresh) never open it.
+`pip` runs on a background worker thread behind the collection's shared
+modal progress dialog (see the [bdg/dev README](../README.md)): a command
+that takes more than a moment shows a progress bar, pip's output as it
+arrives (`Collecting ...`, `Downloading ...`) and **Cancel**; it closes by
+itself on success and stays open, showing the error, on failure.
 
 Refresh is **manual**: a Refresh button plus an automatic refresh after every
 mutating action — no background polling. **Uninstall** and **Reinstall** are
@@ -30,7 +28,7 @@ gated behind a `MessageBox` confirm; installs and upgrades fire directly.
 
 - **server/**: `PipFrontend` form (`register_pip()`) — renders whatever
   snapshot it was last given via `update_packages` / `update_versions` /
-  `update_details` / `set_environment` / `set_progress` / `append_command_log`, and emits
+  `update_details` / `set_environment` / `append_command_log`, and emits
   `*_requested` events (see `server/pip.hpp`'s class doc comment for the full
   contract) for the client to react to by running the corresponding `pip`
   command.

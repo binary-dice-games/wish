@@ -14,11 +14,10 @@
 /// MessageBox form (form::instantiate_child_form(), "yes_no" preset) -- see
 /// show_confirm() below. Installs and upgrades fire directly.
 ///
-/// The client runs `pip` on a worker thread and reports through set_progress.
-/// While a command takes more than a moment, a modal "Running pip" dialog
-/// (built on demand, see progress_dialog below) shows an indeterminate
-/// progress bar, pip's output as it arrives and a Cancel button; being
-/// modal, it also keeps the user from starting another action meanwhile.
+/// The client runs `pip` on a worker thread; progress, live output and
+/// Cancel for a long command are shown by the shared modal `ProgressBox`
+/// form, which the client drives itself (common/command_worker.hpp) -- this
+/// form has no part in it.
 ///
 /// Owns four independently dockable Windows -- Packages (the main root),
 /// Versions, Details, and Console (a FIFO-capped trace of every `pip` command
@@ -58,8 +57,6 @@ class message_box;
 ///     `upgrade`, `reinstall` or `uninstall`.
 ///   - `"versions_requested"` -- `{ name, pre (bool) }`: list the versions
 ///     the package index offers. Answer with update_versions.
-///   - `"cancel_requested"` -- no payload; the progress dialog's Cancel button
-///     (stop the running `pip` command and drop the queued ones).
 ///   - `"details_requested"` -- `{ kind, name }` where `kind` is `show` /
 ///     `files` (package `name`) or `freeze` / `check` (`name == ""`). Answer
 ///     with update_details.
@@ -98,18 +95,6 @@ class pip_frontend : public form {
   /// (string, a single-line preview). Color-coded green/red by `ok`; the
   /// table is FIFO-capped at kMaxConsoleRows.
   bison::dynamic do_append_command_log(const bison::dynamic& args);
-
-  /// @brief RMI method: drive the modal progress dialog. @p args holds
-  /// `active` (bool), and while active: `command` (string, the `pip` command
-  /// running now), `phase` (float, seconds it has been running -- animates
-  /// the indeterminate bar) and `lines` (a dynamic array of strings: output
-  /// lines since the previous call, appended to the dialog's log).
-  ///
-  /// The first active call opens the dialog. `active == false` (the client
-  /// is idle again) closes it -- unless a command_result reported a failure
-  /// while it was open, in which case it stays, showing the error and the
-  /// output, until the user presses Close.
-  bison::dynamic do_set_progress(const bison::dynamic& args);
 
   /// @brief RMI method: set the Packages window's environment line.
   /// @p args holds `text` (`pip --version` output) and `interpreter` (the
@@ -300,49 +285,6 @@ class pip_frontend : public form {
   /// entries); reset the sequence counter. From any row's "Clear Console".
   void clear_console_rows();
   void erase_console_row_objects(const console_row_entry& entry);
-
-  // ── Progress dialog ─────────────────────────────────────────────────
-  //
-  // A modal Window built on demand by open_progress_dialog(). Closing a
-  // modal is asynchronous (see message_box::request_close()): the form sets
-  // the window's `__request_close__` field, the renderer closes the popup
-  // and emits the window's "closed" event, and only then is the tree torn
-  // down (destroy_progress_dialog()).
-  struct progress_dialog {
-    enum class phase { closed, open, closing };
-    phase state{phase::closed};
-    bool finished{false};       // open, idle, showing a failure + Close
-    bool cancelling{false};     // the user pressed Cancel
-    bool reopen{false};         // a command started while closing
-    std::string failure;        // last failed command_result while open
-    std::string command;        // command whose output is being appended
-    bison::key_t window_id;
-    ui_element_ptr window;
-    ui_element_ptr command_label;
-    ui_element_ptr bar;
-    ui_element_ptr result_label;
-    ui_element_ptr table;
-    ui_element_ptr button;
-    std::vector<bison::key_t> object_ids;        // layout elements
-    std::deque<console_row_entry> rows;          // output rows, oldest first
-    size_t next_child_key{0};
-  };
-  progress_dialog progress_;
-  std::string progress_root_key_;
-
-  static constexpr size_t kMaxProgressRows = 300;
-
-  /// @brief Build the dialog. Needs the dispatch context -- callers outside
-  /// dispatch go through with_context().
-  void open_progress_dialog();
-  /// @brief Ask the renderer to close the modal (see progress_dialog).
-  void request_progress_close();
-  /// @brief Erase the dialog's objects; runs on its window's "closed" event.
-  void destroy_progress_dialog();
-  void append_progress_line(const std::string& text, bool is_command);
-  /// @brief Run @p fn with the session installed as the dispatch context
-  /// (it already is inside an RMI method; on_event() runs outside one).
-  void with_context(const std::function<void()>& fn);
 
   std::unordered_map<bison::key_t, std::function<void()>, bison::key_t, bison::key_t> click_handlers_;
   std::unordered_map<bison::key_t, row_action, bison::key_t, bison::key_t> menu_action_targets_;

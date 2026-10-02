@@ -15,8 +15,9 @@
 /// single binary name.
 #pragma once
 
+#include "modules/bdg/dev/common/process_hooks.hpp"
+
 #include <cstdint>
-#include <functional>
 #include <string>
 #include <vector>
 
@@ -33,17 +34,8 @@ struct process_result {
   }
 };
 
-/// @brief Optional callbacks for a long-running command. Both run on the
-/// calling thread, from inside run_pip_cli().
-struct run_hooks {
-  /// Called with each chunk of stdout / stderr as it arrives (chunks are not
-  /// line-aligned).
-  std::function<void(const std::string& chunk)> on_output;
-  /// Called every `tick_ms` while the process runs. Returning false asks the
-  /// process to stop (SIGTERM); run_pip_cli() still waits for it to exit.
-  std::function<bool()> on_tick;
-  uint64_t tick_ms{150};
-};
+/// @brief Live-output / tick callbacks -- shared with the other dev modules.
+using run_hooks = dev::run_hooks;
 
 /// @brief Runs `<launcher...> <args...>` (no shell involved -- both are real
 /// argv arrays, so package specs / paths with spaces or shell metacharacters

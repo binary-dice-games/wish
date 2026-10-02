@@ -969,6 +969,26 @@ A modal file picker (Open or Save As, via `confirm_label`).
 - Events: `on_open` `{path}`, `on_navigate` `{name, type: "dir"|"file"|"path"}`,
   `on_cancel` (no payload).
 
+#### `ProgressBox`
+A modal progress dialog for a long-running operation the client performs
+(typically a command-line tool it shells out to): the operation's caption,
+an indeterminate progress bar, a scrolling output log and a Cancel button.
+Open as soon as it is instantiated.
+
+- Field: `title` (default `"Working"`), settable at `instantiate()` time.
+- Methods: `update({command, phase, lines})` — caption, seconds elapsed
+  (animates the bar) and new output lines to append; reopens the dialog if an
+  earlier `finish` closed it. `finish({error})` — an empty `error` closes the
+  dialog; a non-empty one keeps it open, showing the error and the log, until
+  the user presses Close.
+- Events: `cancel_requested` (the Cancel button; the dialog stays up until
+  `finish`), `closed` (the dialog left the screen; the object stays usable).
+
+Call `update` from a worker thread, never from an event handler that is
+itself running the operation — a blocked handler freezes the whole UI. The
+`bdg/dev` modules share a ready-made driver,
+`modules/bdg/dev/common/command_worker.hpp`.
+
 #### `Nano`
 A multi-file, syntax-highlighted text editor (module, off by default —
 `WISH_MODULE_BDG_DESKTOP_NANO`). One closable `TabItem` per open file; a

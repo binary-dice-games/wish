@@ -380,6 +380,7 @@ add_library(wish_server STATIC
   src/ui/forms/file_browser_utils.cpp
   src/ui/forms/file_dialog.cpp
   src/ui/forms/message_box.cpp
+  src/ui/forms/progress_box.cpp
   src/ui/forms/properties_dialog.cpp
 )
 

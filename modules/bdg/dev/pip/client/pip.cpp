@@ -36,7 +36,7 @@ void run_pip(wish_app_host& s) {
   // Fast-fail if pip can't be run rather than opening empty windows. The
   // source has no proxy yet: probe_version() doesn't need one.
   std::string error;
-  const std::string version = pip::pip_source{nullptr, interpreter}.probe_version(error);
+  const std::string version = pip::pip_source{nullptr, interpreter, nullptr}.probe_version(error);
   if (version.empty()) {
     std::cerr << "pip: cannot run `" << interpreter << " -m pip`" << (error.empty() ? std::string{} : (": " + error))
               << "\n";
@@ -45,7 +45,12 @@ void run_pip(wish_app_host& s) {
   }
 
   auto proxy = std::make_shared<rmi::proxy::dynamic>(s.instantiate("wish"_key, "PipFrontend"_key).get());
-  auto source = std::make_shared<pip::pip_source>(proxy, interpreter);
+  // Every handler below runs as a job on this worker's thread: running pip
+  // inside an event handler would block the whole UI until it exits. Long
+  // commands get a modal progress dialog (common/command_worker.hpp).
+  auto worker = std::make_shared<dev::command_worker>(s, "Running pip");
+  worker->start();
+  auto source = std::make_shared<pip::pip_source>(proxy, interpreter, worker);
 
   // Optional payload string (absent -> "").
   auto str = [](const dynamic& payload, bison::key_t key) {
@@ -64,52 +69,35 @@ void run_pip(wish_app_host& s) {
     return opts;
   };
 
-  // Every handler only queues work for the source's worker thread: running
-  // pip here would block the UI for as long as the command takes. `src` is
-  // safe to capture raw -- the worker thread keeps the source alive.
-  source->start();
-  auto* src = source.get();
+  worker->on(*proxy, "refresh_requested"_key, [source](dynamic) { source->refresh_all(); });
+  worker->on(*proxy, "outdated_requested"_key, [source](dynamic) { source->on_outdated_requested(); });
 
-  proxy->onEvent("refresh_requested"_key, [src](dynamic) { src->post([src] { src->refresh_all(); }); });
-  proxy->onEvent("outdated_requested"_key, [src](dynamic) { src->post([src] { src->on_outdated_requested(); }); });
+  worker->on(*proxy, "install_requested"_key, [source, str, options](dynamic payload) {
+    source->on_install_requested(str(payload, "spec"_key), options(payload));
+  });
+  worker->on(*proxy, "requirements_requested"_key, [source, str, options](dynamic payload) {
+    source->on_requirements_requested(str(payload, "path"_key), options(payload));
+  });
+  worker->on(*proxy, "package_action_requested"_key, [source, str](dynamic payload) {
+    source->on_package_action(str(payload, "name"_key), str(payload, "action"_key));
+  });
+  worker->on(*proxy, "versions_requested"_key, [source, str, flag](dynamic payload) {
+    source->on_versions_requested(str(payload, "name"_key), flag(payload, "pre"_key));
+  });
+  worker->on(*proxy, "details_requested"_key, [source, str](dynamic payload) {
+    source->on_details_requested(str(payload, "kind"_key), str(payload, "name"_key));
+  });
 
-  proxy->onEvent("install_requested"_key, [src, str, options](dynamic payload) {
-    src->post([src, spec = str(payload, "spec"_key), opts = options(payload)] {
-      src->on_install_requested(spec, opts);
-    });
-  });
-  proxy->onEvent("requirements_requested"_key, [src, str, options](dynamic payload) {
-    src->post([src, path = str(payload, "path"_key), opts = options(payload)] {
-      src->on_requirements_requested(path, opts);
-    });
-  });
-  proxy->onEvent("package_action_requested"_key, [src, str](dynamic payload) {
-    src->post([src, name = str(payload, "name"_key), action = str(payload, "action"_key)] {
-      src->on_package_action(name, action);
-    });
-  });
-  proxy->onEvent("versions_requested"_key, [src, str, flag](dynamic payload) {
-    src->post([src, name = str(payload, "name"_key), pre = flag(payload, "pre"_key)] {
-      src->on_versions_requested(name, pre);
-    });
-  });
-  proxy->onEvent("details_requested"_key, [src, str](dynamic payload) {
-    src->post([src, kind = str(payload, "kind"_key), name = str(payload, "name"_key)] {
-      src->on_details_requested(kind, name);
-    });
-  });
-  proxy->onEvent("cancel_requested"_key, [src](dynamic) { src->cancel(); });
-
-  proxy->onEvent("closed"_key, [&s, src](dynamic) {
-    src->shutdown();
+  proxy->onEvent("closed"_key, [&s, worker](dynamic) {
+    worker->shutdown();
     s.signal_done();
   });
 
-  // Initial population -- queued here, now that every onEvent() handler is
-  // registered, rather than via a form-emitted event that would race ahead
-  // of this wiring (the docker / git / kubectl initial-load-race fix).
+  // Initial population -- queued here, now that every handler is registered,
+  // rather than via a form-emitted event that would race ahead of this
+  // wiring (the docker / git / kubectl initial-load-race fix).
   source->push_environment(version);
-  src->post([src] { src->refresh_all(); });
+  worker->post([source] { source->refresh_all(); });
 }
 
 namespace {

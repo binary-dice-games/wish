@@ -79,10 +79,12 @@ void push_command_log(
 // @p push once per output line with the split fields (padded to @p ncols),
 // then calls @p rmi_method with the collected array under @p array_key.
 void push_list(
-    const std::shared_ptr<bison::rmi::proxy::dynamic>& proxy, const std::vector<std::string>& argv, size_t ncols,
+    dev::command_worker& worker, const std::shared_ptr<bison::rmi::proxy::dynamic>& proxy, const std::vector<std::string>& argv, size_t ncols,
     key_t array_key, key_t rmi_method,
     const std::function<void(dynamic&, const std::vector<std::string>&)>& fill) {
-  auto r = run_docker_cli(argv);
+  auto r = worker.run(dev::command_text("docker", argv), [&](const dev::run_hooks* hooks) {
+    return run_docker_cli(argv, "docker", hooks);
+  });
   push_command_log(proxy, argv, r);
 
   dynamic arr;
@@ -112,7 +114,9 @@ void push_list(
 
 } // namespace
 
-docker_source::docker_source(std::shared_ptr<bison::rmi::proxy::dynamic> proxy) : proxy_(std::move(proxy)) {}
+docker_source::docker_source(
+    std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::shared_ptr<dev::command_worker> worker)
+    : proxy_(std::move(proxy)), worker_(std::move(worker)) {}
 
 docker_source::~docker_source() {
   stop_follow();
@@ -196,7 +200,7 @@ void docker_source::refresh_all() {
 
 void docker_source::push_containers() {
   push_list(
-      proxy_,
+      *worker_, proxy_,
       {"ps", "-a", "--no-trunc", "--format",
        "{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.State}}\t{{.Status}}\t{{.Ports}}\t{{.RunningFor}}"},
       7, "containers"_key, "update_containers"_key, [](dynamic& e, const std::vector<std::string>& c) {
@@ -212,7 +216,7 @@ void docker_source::push_containers() {
 
 void docker_source::push_images() {
   push_list(
-      proxy_,
+      *worker_, proxy_,
       {"images", "--format", "{{.ID}}\t{{.Repository}}\t{{.Tag}}\t{{.CreatedSince}}\t{{.Size}}"},
       5, "images"_key, "update_images"_key, [](dynamic& e, const std::vector<std::string>& c) {
         e["id"_key] = c[0];
@@ -225,7 +229,7 @@ void docker_source::push_images() {
 
 void docker_source::push_volumes() {
   push_list(
-      proxy_, {"volume", "ls", "--format", "{{.Name}}\t{{.Driver}}\t{{.Mountpoint}}"}, 3, "volumes"_key,
+      *worker_, proxy_, {"volume", "ls", "--format", "{{.Name}}\t{{.Driver}}\t{{.Mountpoint}}"}, 3, "volumes"_key,
       "update_volumes"_key, [](dynamic& e, const std::vector<std::string>& c) {
         e["name"_key] = c[0];
         e["driver"_key] = c[1];
@@ -235,7 +239,7 @@ void docker_source::push_volumes() {
 
 void docker_source::push_networks() {
   push_list(
-      proxy_, {"network", "ls", "--format", "{{.ID}}\t{{.Name}}\t{{.Driver}}\t{{.Scope}}"}, 4,
+      *worker_, proxy_, {"network", "ls", "--format", "{{.ID}}\t{{.Name}}\t{{.Driver}}\t{{.Scope}}"}, 4,
       "networks"_key, "update_networks"_key, [](dynamic& e, const std::vector<std::string>& c) {
         e["id"_key] = c[0];
         e["name"_key] = c[1];
@@ -247,7 +251,9 @@ void docker_source::push_networks() {
 // ── mutating actions ───────────────────────────────────────────────────────
 
 process_result docker_source::run_logged(const std::vector<std::string>& args) {
-  auto r = run_docker_cli(args);
+  auto r = worker_->run(dev::command_text("docker", args), [&](const dev::run_hooks* hooks) {
+    return run_docker_cli(args, "docker", hooks);
+  });
   push_command_log(proxy_, args, r);
   return r;
 }
@@ -260,7 +266,10 @@ void docker_source::run_and_refresh(
   report["command"_key] = label;
   report["scope"_key] = scope;
   report["ok"_key] = r.ok();
-  report["output"_key] = r.ok() ? std::string{} : (r.stderr_text.empty() ? r.stdout_text : r.stderr_text);
+  const std::string error = r.ok() ? std::string{} : (r.stderr_text.empty() ? r.stdout_text : r.stderr_text);
+  report["output"_key] = error;
+  if (!r.ok())
+    worker_->fail(label + " failed: " + error);
   try {
     proxy_->call("command_result"_key, std::move(report)).get();
   } catch (const std::exception&) {

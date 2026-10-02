@@ -8,6 +8,15 @@ collection with `-DWISH_COLLECTION_BDG_DEV=ON`, or individual modules with
 their own `WISH_MODULE_BDG_DEV_<NAME>` option (see
 [docs/building.md](../../../docs/building.md)).
 
+Every tool here that shells out to a CLI runs it on a background worker
+thread, one command at a time, so the UI never freezes. A command that takes
+more than a moment (about 0.4 s) opens a modal progress dialog -- the command,
+a progress bar, the tool's output as it arrives and a **Cancel** button. It
+closes by itself on success and stays open on failure, showing the error,
+until **Close** is pressed. The shared implementation is
+[common/command_worker.hpp](common/command_worker.hpp) plus the built-in
+`ProgressBox` form.
+
 | Module | Description |
 |--------|-------------|
 | [editor](editor/README.md) | Live JSON/YAML UI mock editor: a syntax-highlighted source panel next to a continuously re-parsed preview, plus an event log and schema-aware autocomplete. The tool the `wish-module` / `wish-ui` skills use to preview a UI. |

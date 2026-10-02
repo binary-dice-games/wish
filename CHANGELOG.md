@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `ProgressBox` built-in form: a modal progress dialog (indeterminate bar, live output log, Cancel) for long-running client-side operations, driven with `update` / `finish`.
 - `pip` module (`WISH_MODULE_BDG_DEV_PIP`, off by default): a GUI frontend for the local `pip` CLI, run with `wish client --run=pip [-- <python-or-venv>]`. Lists installed packages (name filter, outdated check), installs requirements or a requirements file, upgrades / reinstalls / uninstalls per row, lists the versions the package index offers, and shows `pip show` / `freeze` / `check` output, with a Console tracing every `pip` command. Long commands run in the background behind a modal dialog with a progress bar, pip's live output and a Cancel button.
 - `helm` module (`WISH_MODULE_BDG_DEV_HELM`, off by default): a GUI frontend for the local `helm` CLI, run with `wish client --run=helm`. Ships six dockable windows — Releases, Repositories, Charts, History, Details, and a Console that traces every `helm` command — with per-row status/values/manifest/notes/history, rollback, uninstall, and repository add/update/remove, plus an Install / Upgrade dialog (chart, version, release, namespace, custom YAML values).
 - `TextEditor` gains an `auto_scroll` field (scroll to the last line whenever the file is reloaded) and a `"log"` highlighting language for plain-text log output.
@@ -48,6 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `docker`, `kubectl`, `helm`, `curl`, `sq`, and `git` modules: commands now run in the background instead of freezing the UI. One that takes more than a moment opens a modal progress dialog with the command, a progress bar, its live output and a Cancel button; it closes on success and stays open on failure to show the error.
 - `git` module moved from the `bdg/desktop` collection to `bdg/dev` (now `modules/bdg/dev/git`): its option is renamed `WISH_MODULE_BDG_DESKTOP_GIT` → `WISH_MODULE_BDG_DEV_GIT` and it is now off by default (enable with `-DWISH_MODULE_BDG_DEV_GIT=ON` or `-DWISH_COLLECTION_BDG_DEV=ON`); `--list` shows it as `bdg/dev/git`.
 - `docker` Logs/Inspect and `kubectl` Logs/Describe windows now show their output in a read-only, syntax-highlighted `TextEditor` (logs: `log`, auto-scrolled to the newest line; Inspect: JSON; Describe: YAML) instead of a plain line table.
 - `docker`, `kubectl`, and `git` modules: the windows open pre-arranged into a docked layout on the first run instead of as floating windows — `docker`/`kubectl` show a tabbed list column over a Console strip on the left with Logs + Inspect/Describe tabbed on the right; `git` fills the left with the commit graph over a Log strip and stacks Files over Diff on the right. Rearranging and restarting keeps your own arrangement.

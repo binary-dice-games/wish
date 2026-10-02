@@ -230,9 +230,11 @@ void push_command_log(
 // @p rmi_method with the collected array under @p array_key. Mirrors
 // docker_source's push_list().
 void push_list(
-    const std::shared_ptr<bison::rmi::proxy::dynamic>& proxy, const std::vector<std::string>& argv, size_t ncols,
+    dev::command_worker& worker, const std::shared_ptr<bison::rmi::proxy::dynamic>& proxy, const std::vector<std::string>& argv, size_t ncols,
     key_t array_key, key_t rmi_method, const std::function<void(dynamic&, const std::vector<std::string>&)>& fill) {
-  auto r = run_kubectl_cli(argv);
+  auto r = worker.run(dev::command_text("kubectl", argv), [&](const dev::run_hooks* hooks) {
+    return run_kubectl_cli(argv, "kubectl", hooks);
+  });
   push_command_log(proxy, argv, r);
 
   dynamic arr;
@@ -262,7 +264,9 @@ void push_list(
 
 } // namespace
 
-kubectl_source::kubectl_source(std::shared_ptr<bison::rmi::proxy::dynamic> proxy) : proxy_(std::move(proxy)) {}
+kubectl_source::kubectl_source(
+    std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::shared_ptr<dev::command_worker> worker)
+    : proxy_(std::move(proxy)), worker_(std::move(worker)) {}
 
 kubectl_source::~kubectl_source() {
   stop_follow();
@@ -372,7 +376,7 @@ void kubectl_source::refresh_all() {
 
 void kubectl_source::push_pods() {
   push_list(
-      proxy_,
+      *worker_, proxy_,
       {"get", "pods", "-A", "-o",
        "jsonpath={range .items[*]}"
        "{.metadata.namespace}{\"\\t\"}{.metadata.name}{\"\\t\"}{.status.phase}{\"\\t\"}"
@@ -391,7 +395,7 @@ void kubectl_source::push_pods() {
 
 void kubectl_source::push_deployments() {
   push_list(
-      proxy_,
+      *worker_, proxy_,
       {"get", "deployments", "-A", "-o",
        "jsonpath={range .items[*]}"
        "{.metadata.namespace}{\"\\t\"}{.metadata.name}{\"\\t\"}{.status.readyReplicas}{\"\\t\"}{.spec.replicas}{\"\\t\"}"
@@ -408,7 +412,7 @@ void kubectl_source::push_deployments() {
 
 void kubectl_source::push_services() {
   push_list(
-      proxy_,
+      *worker_, proxy_,
       {"get", "services", "-A", "-o",
        "jsonpath={range .items[*]}"
        "{.metadata.namespace}{\"\\t\"}{.metadata.name}{\"\\t\"}{.spec.type}{\"\\t\"}{.spec.clusterIP}{\"\\t\"}"
@@ -425,7 +429,7 @@ void kubectl_source::push_services() {
 
 void kubectl_source::push_nodes() {
   push_list(
-      proxy_,
+      *worker_, proxy_,
       {"get", "nodes", "-o",
        "jsonpath={range .items[*]}"
        "{.metadata.name}{\"\\t\"}{.status.conditions[?(@.type==\"Ready\")].status}{\"\\t\"}{.spec.unschedulable}{\"\\t\"}"
@@ -446,7 +450,9 @@ void kubectl_source::push_nodes() {
 // ── mutating actions ───────────────────────────────────────────────────────
 
 process_result kubectl_source::run_logged(const std::vector<std::string>& args) {
-  auto r = run_kubectl_cli(args);
+  auto r = worker_->run(dev::command_text("kubectl", args), [&](const dev::run_hooks* hooks) {
+    return run_kubectl_cli(args, "kubectl", hooks);
+  });
   push_command_log(proxy_, args, r);
   return r;
 }
@@ -459,7 +465,10 @@ void kubectl_source::run_and_refresh(
   report["command"_key] = label;
   report["scope"_key] = scope;
   report["ok"_key] = r.ok();
-  report["output"_key] = r.ok() ? std::string{} : (r.stderr_text.empty() ? r.stdout_text : r.stderr_text);
+  const std::string error = r.ok() ? std::string{} : (r.stderr_text.empty() ? r.stdout_text : r.stderr_text);
+  report["output"_key] = error;
+  if (!r.ok())
+    worker_->fail(label + " failed: " + error);
   try {
     proxy_->call("command_result"_key, std::move(report)).get();
   } catch (const std::exception&) {

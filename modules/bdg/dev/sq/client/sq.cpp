@@ -31,7 +31,15 @@ constexpr const char* kSqRepoUrl = "https://github.com/neilotoole/sq";
 
 void run_sq(wish_app_host& s) {
   auto proxy = std::make_shared<rmi::proxy::dynamic>(s.instantiate("wish"_key, "SqFrontend"_key).get());
-  proxy->onEvent("closed"_key, [&s](dynamic) { s.signal_done(); });
+  // Every handler below runs as a job on this worker's thread: running sq
+  // inside an event handler would block the whole UI until it exits. Long
+  // commands get a modal progress dialog (common/command_worker.hpp).
+  auto worker = std::make_shared<dev::command_worker>(s, "Running sq");
+  worker->start();
+  proxy->onEvent("closed"_key, [&s, worker](dynamic) {
+    worker->shutdown();
+    s.signal_done();
+  });
 
   auto check = sq::run_sq_cli({"version"});
   if (!check.ok()) {
@@ -47,25 +55,25 @@ void run_sq(wish_app_host& s) {
     return;
   }
 
-  auto source = std::make_shared<sq::sq_source>(proxy);
+  auto source = std::make_shared<sq::sq_source>(proxy, worker);
 
-  proxy->onEvent("refresh_requested"_key, [source](dynamic) { source->refresh_all(); });
-  proxy->onEvent("activate_requested"_key, [source](dynamic p) {
+  worker->on(*proxy, "refresh_requested"_key, [source](dynamic) { source->refresh_all(); });
+  worker->on(*proxy, "activate_requested"_key, [source](dynamic p) {
     source->on_activate(p.as<std::string>("handle"_key));
   });
-  proxy->onEvent("ping_requested"_key, [source](dynamic p) { source->on_ping(p.as<std::string>("handle"_key)); });
-  proxy->onEvent("remove_connection_requested"_key, [source](dynamic p) {
+  worker->on(*proxy, "ping_requested"_key, [source](dynamic p) { source->on_ping(p.as<std::string>("handle"_key)); });
+  worker->on(*proxy, "remove_connection_requested"_key, [source](dynamic p) {
     source->on_remove(p.as<std::string>("handle"_key));
   });
-  proxy->onEvent("add_connection_requested"_key, [source](dynamic p) {
+  worker->on(*proxy, "add_connection_requested"_key, [source](dynamic p) {
     source->on_add(
         p.as<std::string>("handle"_key), p.as<std::string>("location"_key), p.as<std::string>("driver"_key),
         p.as<std::string>("password"_key));
   });
-  proxy->onEvent("query_requested"_key, [source](dynamic p) {
+  worker->on(*proxy, "query_requested"_key, [source](dynamic p) {
     source->on_query(p.as<std::string>("sql"_key), p.as<int32_t>("max_rows"_key));
   });
-  proxy->onEvent("export_requested"_key, [&s, source](dynamic p) {
+  worker->on(*proxy, "export_requested"_key, [&s, source](dynamic p) {
     // Runs on the RMI event thread; the chunked upload (progress callback
     // set) never blocks it for a whole-file round trip.
     source->on_export(p.as<std::string>("path"_key), [&s](const std::string& name, const std::string& data) {
@@ -75,7 +83,7 @@ void run_sq(wish_app_host& s) {
 
   // Initial population, called directly now that every handler is wired
   // (never via a form-emitted event that would race ahead of the wiring).
-  source->refresh_all();
+  worker->post([source] { source->refresh_all(); });
 }
 
 namespace {

@@ -19,6 +19,8 @@
 /// capability over `docker_process`/`kubectl_process`.
 #pragma once
 
+#include "modules/bdg/dev/common/process_hooks.hpp"
+
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -47,6 +49,10 @@ struct process_result {
 ///                `tests/test_curl_process.cpp` can exercise the argv / pipe
 ///                / exit-code plumbing with a guaranteed-present stub
 ///                (`printf`, `false`) without making a real network call.
-process_result run_curl_cli(const std::vector<std::string>& args, const std::string& binary = "curl");
+/// @param hooks  Optional live-output / tick callbacks (see
+///               common/process_hooks.hpp); a tick returning false stops the
+///               process. Null for none.
+process_result run_curl_cli(
+    const std::vector<std::string>& args, const std::string& binary = "curl", const dev::run_hooks* hooks = nullptr);
 
 } // namespace bdg::wish::curl

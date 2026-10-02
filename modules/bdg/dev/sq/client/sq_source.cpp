@@ -104,16 +104,24 @@ dynamic_ptr as_array(dynamic&& arr) {
 
 } // namespace
 
-sq_source::sq_source(std::shared_ptr<bison::rmi::proxy::dynamic> proxy) : proxy_(std::move(proxy)) {}
+sq_source::sq_source(
+    std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::shared_ptr<dev::command_worker> worker)
+    : proxy_(std::move(proxy)), worker_(std::move(worker)) {}
 
 process_result sq_source::run_logged(const std::vector<std::string>& args, const std::string& stdin_text) {
-  auto r = run_sq_cli(args, "sq", stdin_text);
-
+  // Built first: it also captions the progress dialog, and a connection
+  // location (which may embed a password) must be masked there too.
   std::string command = "sq";
   for (auto& a : args)
     command += ' ' + mask_location(a);
   if (command.size() > 300)
     command = command.substr(0, 300) + "...";
+
+  // Result rows / schema JSON are data, not progress: keep them out of the
+  // dialog's log.
+  auto r = worker_->run(
+      command, [&](const dev::run_hooks* hooks) { return run_sq_cli(args, "sq", stdin_text, hooks); },
+      /*show_output=*/false);
   std::string output = trim_eol(r.ok() ? std::string{} : error_text(r));
   std::replace(output.begin(), output.end(), '\n', ' ');
   std::replace(output.begin(), output.end(), '\t', ' ');
@@ -134,6 +142,8 @@ void sq_source::report(const std::string& scope, bool ok, const std::string& mes
   p["scope"_key] = scope;
   p["ok"_key] = ok;
   p["message"_key] = message;
+  if (!ok)
+    worker_->fail(message);
   call(proxy_, "command_result"_key, std::move(p));
 }
 

@@ -12,21 +12,17 @@
 /// on their own machine, reachable only from the client -- the server never
 /// touches `pip` directly.
 ///
-/// Unlike helm_source, no command runs on the caller's thread: a `pip
-/// install` can take minutes, and an event handler that blocks freezes the
-/// whole UI. Event handlers post() a job; one worker thread runs the jobs in
-/// order (pip commands must not overlap) and reports live progress to the
-/// form's set_progress RMI method.
+/// No command runs on the caller's thread: a `pip install` can take minutes,
+/// and an event handler that blocks freezes the whole UI. Every method that
+/// runs `pip` is called from a job of the shared dev::command_worker, which
+/// also shows the modal progress dialog (common/command_worker.hpp).
 #pragma once
 
 #include "pip_process.hpp"
+#include "modules/bdg/dev/common/command_worker.hpp"
 #include "src/bison/bison.hpp"
-#include "src/bison/bison_sync.hpp"
 #include "src/rmi/client/proxy.hpp"
 
-#include <atomic>
-#include <deque>
-#include <functional>
 #include <map>
 #include <memory>
 #include <string>
@@ -46,11 +42,15 @@ namespace bdg::wish::pip {
 ///         interpreter.
 std::string resolve_interpreter(const std::string& arg);
 
-class pip_source : public std::enable_shared_from_this<pip_source> {
+class pip_source {
  public:
   /// @param interpreter  Python interpreter to run pip with (see
   ///                     resolve_interpreter()).
-  pip_source(std::shared_ptr<bison::rmi::proxy::dynamic> proxy, const std::string& interpreter);
+  /// @param worker       Runs the jobs; may be null for a source that is only
+  ///                     used for probe_version().
+  pip_source(
+      std::shared_ptr<bison::rmi::proxy::dynamic> proxy, const std::string& interpreter,
+      std::shared_ptr<dev::command_worker> worker);
 
   /// @brief Runs `pip --version`. @return its output (`pip X from <path>
   /// (python Y)`), or `""` -- with @p error set -- when pip cannot be run.
@@ -60,24 +60,6 @@ class pip_source : public std::enable_shared_from_this<pip_source> {
   /// @brief Pushes @p version_text (plus the interpreter) to the form's
   /// environment line via set_environment.
   void push_environment(const std::string& version_text);
-
-  // ── worker thread ───────────────────────────────────────────────────────
-
-  /// @brief Starts the worker thread. It keeps this object alive until
-  /// shutdown(), so the instance must be owned by a `std::shared_ptr`.
-  void start();
-
-  /// @brief Queues @p job for the worker thread; jobs run one at a time, in
-  /// order. Safe from any thread. Every method below that runs `pip` must be
-  /// called from a job, never directly from an event handler.
-  void post(std::function<void()> job);
-
-  /// @brief Stops the command that is running (if any) and drops the queued
-  /// jobs. Safe from any thread; returns immediately.
-  void cancel();
-
-  /// @brief cancel() + ends the worker thread. Call when the form closes.
-  void shutdown();
 
   /// @brief Pushes the installed-packages snapshot. Called once on startup,
   /// on "refresh_requested", and after every mutating action below.
@@ -142,32 +124,12 @@ class pip_source : public std::enable_shared_from_this<pip_source> {
   /// @brief `pip install` + @p opts' flags.
   static std::vector<std::string> install_argv(const install_options& opts);
 
-  /// @brief Drives the form's modal progress dialog (set_progress RMI
-  /// method): @p active opens / closes it, @p command is the command running
-  /// now, @p phase animates the bar and @p lines are the output lines since
-  /// the previous call.
-  void push_progress(bool active, const std::string& command, float phase, const std::vector<std::string>& lines);
-
-  void work(); // worker thread body
-
-  struct work_queue {
-    std::deque<std::function<void()>> jobs;
-    bool stop{false};
-  };
-  bison::synchronized<work_queue> queue_;
-  std::atomic<bool> cancel_{false}; // the running command should be stopped
-
-  // Whether the progress dialog is up. It only opens once a command has run
-  // for kProgressDelay, so quick ones (a refresh) do not flash a modal; from
-  // then on it stays until the queue is empty. Worker thread only.
-  bool progress_shown_{false};
-
   std::shared_ptr<bison::rmi::proxy::dynamic> proxy_;
+  std::shared_ptr<dev::command_worker> worker_;
   std::string interpreter_;
   std::vector<std::string> launcher_; // interpreter + `-m pip` + global options
 
   // Latest versions from the last on_outdated_requested(), by package name.
-  // Worker thread only.
   std::map<std::string, std::string> latest_;
   bool outdated_checked_{false};
 };

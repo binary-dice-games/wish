@@ -39,7 +39,12 @@ void run_helm(wish_app_host& s) {
   }
 
   auto proxy = std::make_shared<rmi::proxy::dynamic>(s.instantiate("wish"_key, "HelmFrontend"_key).get());
-  auto source = std::make_shared<helm::helm_source>(proxy);
+  // Every handler below runs as a job on this worker's thread: running the
+  // tool inside an event handler would block the whole UI until it exits.
+  // Long commands get a modal progress dialog (common/command_worker.hpp).
+  auto worker = std::make_shared<dev::command_worker>(s, "Running helm");
+  worker->start();
+  auto source = std::make_shared<helm::helm_source>(proxy, worker);
 
   // Optional payload string (absent -> "").
   auto str = [](const dynamic& payload, bison::key_t key) {
@@ -47,23 +52,23 @@ void run_helm(wish_app_host& s) {
     return f ? *f : std::string{};
   };
 
-  proxy->onEvent("refresh_requested"_key, [source](dynamic) { source->refresh_all(); });
+  worker->on(*proxy, "refresh_requested"_key, [source](dynamic) { source->refresh_all(); });
 
-  proxy->onEvent("release_action_requested"_key, [source, str](dynamic payload) {
+  worker->on(*proxy, "release_action_requested"_key, [source, str](dynamic payload) {
     source->on_release_action(
         str(payload, "name"_key), str(payload, "namespace"_key), str(payload, "action"_key),
         str(payload, "revision"_key));
   });
-  proxy->onEvent("repo_action_requested"_key, [source, str](dynamic payload) {
+  worker->on(*proxy, "repo_action_requested"_key, [source, str](dynamic payload) {
     source->on_repo_action(str(payload, "name"_key), str(payload, "action"_key));
   });
-  proxy->onEvent("repo_add_requested"_key, [source, str](dynamic payload) {
+  worker->on(*proxy, "repo_add_requested"_key, [source, str](dynamic payload) {
     source->on_repo_add(str(payload, "name"_key), str(payload, "url"_key));
   });
-  proxy->onEvent("search_requested"_key, [source, str](dynamic payload) {
+  worker->on(*proxy, "search_requested"_key, [source, str](dynamic payload) {
     source->on_search_requested(str(payload, "query"_key));
   });
-  proxy->onEvent("install_requested"_key, [source, str](dynamic payload) {
+  worker->on(*proxy, "install_requested"_key, [source, str](dynamic payload) {
     auto flag = [&](bison::key_t key) {
       auto* f = payload.findField<bool>(key);
       return f && *f;
@@ -79,31 +84,34 @@ void run_helm(wish_app_host& s) {
     req.wait = flag("wait"_key);
     source->on_install_requested(req);
   });
-  proxy->onEvent("install_values_requested"_key, [source, str](dynamic payload) {
+  worker->on(*proxy, "install_values_requested"_key, [source, str](dynamic payload) {
     auto* token = payload.findField<int32_t>("token"_key);
     source->on_install_values_requested(
         token ? *token : 0, str(payload, "source"_key), str(payload, "chart"_key), str(payload, "version"_key),
         str(payload, "name"_key), str(payload, "namespace"_key));
   });
-  proxy->onEvent("history_requested"_key, [source, str](dynamic payload) {
+  worker->on(*proxy, "history_requested"_key, [source, str](dynamic payload) {
     source->on_history_requested(str(payload, "name"_key), str(payload, "namespace"_key));
   });
-  proxy->onEvent("details_requested"_key, [source, str](dynamic payload) {
+  worker->on(*proxy, "details_requested"_key, [source, str](dynamic payload) {
     source->on_details_requested(
         str(payload, "kind"_key), str(payload, "name"_key), str(payload, "namespace"_key),
         str(payload, "version"_key));
   });
 
-  proxy->onEvent("closed"_key, [&s](dynamic) { s.signal_done(); });
+  proxy->onEvent("closed"_key, [&s, worker](dynamic) {
+    worker->shutdown();
+    s.signal_done();
+  });
 
   // Initial population -- called directly here, now that every onEvent()
   // handler is registered, rather than via a form-emitted event that would
   // race ahead of this wiring (the docker / git / kubectl initial-load-race
   // fix).
-  source->refresh_all();
+  worker->post([source] { source->refresh_all(); });
   // ... and list every chart of the configured repositories, so the Charts
   // window is usable before the first search.
-  source->on_search_requested({});
+  worker->post([source] { source->on_search_requested({}); });
 }
 
 namespace {

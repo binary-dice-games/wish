@@ -11,6 +11,8 @@
 /// appears in the argv (visible to every local user via `ps`).
 #pragma once
 
+#include "modules/bdg/dev/common/process_hooks.hpp"
+
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -41,7 +43,11 @@ struct process_result {
 ///                    `sq` installed.
 /// @param stdin_text  When non-empty, written to the child's stdin, which is
 ///                    then closed. When empty, stdin is not connected.
+/// @param hooks  Optional live-output / tick callbacks (see
+///               common/process_hooks.hpp); a tick returning false stops the
+///               process. Null for none.
 process_result run_sq_cli(
-    const std::vector<std::string>& args, const std::string& binary = "sq", const std::string& stdin_text = {});
+    const std::vector<std::string>& args, const std::string& binary = "sq", const std::string& stdin_text = {},
+    const dev::run_hooks* hooks = nullptr);
 
 } // namespace bdg::wish::sq

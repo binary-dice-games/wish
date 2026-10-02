@@ -47,7 +47,9 @@ dynamic_ptr table_to_array(
 
 } // namespace
 
-helm_source::helm_source(std::shared_ptr<bison::rmi::proxy::dynamic> proxy) : proxy_(std::move(proxy)) {}
+helm_source::helm_source(
+    std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::shared_ptr<dev::command_worker> worker)
+    : proxy_(std::move(proxy)), worker_(std::move(worker)) {}
 
 void helm_source::refresh_all() {
   push_releases();
@@ -57,11 +59,8 @@ void helm_source::refresh_all() {
 // ── helpers ────────────────────────────────────────────────────────────────
 
 process_result helm_source::run_logged(const std::vector<std::string>& args) {
-  auto r = run_helm_cli(args);
-
-  std::string command = "helm";
-  for (auto& a : args)
-    command += ' ' + a;
+  const std::string command = dev::command_text("helm", args);
+  auto r = worker_->run(command, [&](const dev::run_hooks* hooks) { return run_helm_cli(args, "helm", hooks); });
 
   // Single-line preview: helm's tables are TAB-separated and space-padded,
   // so collapse every whitespace run to one space.
@@ -96,6 +95,8 @@ bool helm_source::report(const std::string& label, const std::string& scope, boo
   args["scope"_key] = scope;
   args["ok"_key] = ok;
   args["output"_key] = ok ? std::string{} : output;
+  if (!ok)
+    worker_->fail(label + " failed: " + output);
   try {
     proxy_->call("command_result"_key, std::move(args)).get();
   } catch (const std::exception&) {
