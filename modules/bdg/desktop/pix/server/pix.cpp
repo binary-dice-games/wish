@@ -8,11 +8,13 @@
 #include "ui/forms/file_browser_utils.hpp"
 
 #include <context/file_service.hpp>
+#include <ui/dock_layout_spec.hpp>
 #include <ui/ui_importer.hpp>
 
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
+#include <functional>
 #include <iomanip>
 #include <sstream>
 
@@ -23,7 +25,7 @@ namespace fs = std::filesystem;
 
 namespace {
 
-// Thumbnail grid: kGridColumns cells per row (see kPixLayout's grid_table,
+// Thumbnail grid: kGridColumns cells per row (see kImagesLayout's grid_table,
 // which must declare exactly that many TableColumn children); each thumbnail
 // is kThumbPx square.
 constexpr int32_t kGridColumns = 3;
@@ -51,25 +53,6 @@ void fit_dims(int32_t src_w, int32_t src_h, float max_w, float max_h, int32_t& o
   out_h = std::max(1, static_cast<int32_t>(src_h * scale));
 }
 
-// kPixLayout's grid_table's "flags": "RowBg|Borders|ScrollY|NoPadInnerX"
-// ("Borders" is the BordersH|BordersV composite -- see table.cpp's flags
-// map -- so both cell grid lines render, not just the horizontal ones;
-// "NoPadInnerX" drops the gap ImGui otherwise reserves between adjacent
-// columns' content, so thumbnails sit close together like a real file
-// browser's icon grid instead of visibly separated).
-// preview_table adds "ScrollX" on top: "RowBg|Borders|ScrollX|ScrollY" --
-// see pix.hpp's class comment for why the preview panel is a scrollable
-// Table rather than a plain Image: its native scrollbars are the pan
-// control once "zoom" grows the Image past the viewport (see grid_table/
-// preview_table's own "width"/"height": -1 fields, just below, for how that
-// viewport now tracks its enclosing pane's size instead of a fixed pixel
-// box). Every TableColumn's own "flags": "WidthFixed" is required for
-// init_width to take effect at all (ImGui errors "can only specify
-// width/weight if sizing policy is set explicitly" otherwise); mirrors
-// file_dialog.cpp's col_name/col_type columns.
-// kPixLayout's path_input "flags": "EnterReturnsTrue" (fire "changed" only
-// on Enter, not per keystroke).
-//
 // wish_id_of() is declared in file_browser_utils.hpp (included above) --
 // not redeclared here, to avoid an ambiguous redefinition in this
 // translation unit.
@@ -86,38 +69,52 @@ int64_t file_time_to_unix_seconds(const fs::file_time_type& ftime) {
 
 } // namespace
 
-// ── Hardcoded UI layout ───────────────────────────────────────────────────────
+// ── UI layouts ────────────────────────────────────────────────────────────────
 //
-// "body" is a plain HorizontalLayout: left_panel's own "width": 320 is a
-// fixed pixel size (not a resizable Splitter pane -- the grid's column
-// count is itself fixed at kGridColumns, so a user-resizable left_panel
-// would just grow/shrink dead margin around the same 3 columns rather than
-// showing more of them; see rebuild_grid()'s own comment on why the column
-// count doesn't adapt to available width), sized to comfortably fit those
-// 3 fixed-width columns plus borders/scrollbar. right_panel's "width": -1
-// makes it the sole stretch column, so it takes all remaining horizontal
-// space. Both panels (and "body" itself) carry "height": -1 so they
-// stretch-fill whatever vertical space toolbar/status_label don't use --
-// unlike a Splitter, a plain HorizontalLayout only gives a child the full
-// cross-axis extent when that child's own "height" hint asks for it (see
-// Layout.height's doc comment in docs/ui-elements.md), hence setting it on
-// both. grid_table/preview_table each carry "width"/"height": -1 in turn
-// so they fill their own panel rather than sitting at a fixed pixel size --
-// still independently scrollable regardless of the enclosing panel's own
-// auto-sizing, same as a fixed size would give, just now responsive to
-// window resizing. See pix.hpp's class comment for why a Table (not a
+// The viewer is split into three dockable panels -- Images, Preview and
+// Info -- seeded into a first-run arrangement by on_init()'s
+// set_default_dock_layout() call, the same multi-window pattern top and the
+// dev modules (git, curl, docker) use. The user can re-dock, tab or float
+// any of them; imgui.ini owns the arrangement after the first run. Each
+// Window keeps a width/height: the size a panel restores to when dragged
+// out of the dock.
+//
+// Images (the form's main root, internal_root_key_): the folder toolbar,
+// status label, and the thumbnail grid. The grid's column count is fixed at
+// kGridColumns (see rebuild_grid()), so the panel's default width is sized
+// to comfortably fit those 3 fixed-width columns plus borders/scrollbar.
+// grid_table carries "width"/"height": -1 (mc.cpp's left_table/right_table
+// technique): "vbox" hands toolbar/status_label their natural height first,
+// then gives grid_table whatever's left, so only the thumbnails scroll.
+//
+// Preview: the zoom bar over preview_table, which also carries
+// "width"/"height": -1 so the pannable viewport fills whatever space the
+// panel is docked into. See pix.hpp's class comment for why a Table (not a
 // bespoke scroll widget) is used for both the thumbnail grid and the
 // pannable preview viewport.
-// R"json(...)json" (not the plain R"(...)" delimiter) because the pan hint
-// label's text ends in a literal ")" -- "pan)" immediately followed by the
-// JSON string's closing '"' would otherwise spell out the plain delimiter's
-// own ')"' terminator early and silently truncate/corrupt the rest of this
-// translation unit (see modules/bdg/dev/editor's kEditorLayout for the same
-// gotcha).
-static constexpr const char* kPixLayout = R"json({
+//
+// Info: the metadata labels for the selected image.
+//
+// grid_table's "flags": "RowBg|BordersOuter|ScrollY"; preview_table's
+// "RowBg|ScrollX|ScrollY" -- its native scrollbars are the pan control once
+// "zoom" grows the Image past the viewport. Every TableColumn's own
+// "flags": "WidthFixed" is required for init_width to take effect at all
+// (ImGui errors "can only specify width/weight if sizing policy is set
+// explicitly" otherwise); mirrors file_dialog.cpp's col_name/col_type
+// columns. path_input's "flags": "EnterReturnsTrue" (fire "changed" only on
+// Enter, not per keystroke).
+//
+// kPreviewLayout uses R"json(...)json" (not the plain R"(...)" delimiter)
+// because the pan hint label's text ends in a literal ")" -- "pan)"
+// immediately followed by the JSON string's closing '"' would otherwise
+// spell out the plain delimiter's own ')"' terminator early and silently
+// truncate/corrupt the rest of this translation unit (see
+// modules/bdg/dev/editor's kEditorLayout for the same gotcha).
+
+static constexpr const char* kImagesLayout = R"json({
   "type": "Window",
-  "title": "Image Viewer",
-  "width": 1000, "height": 700,
+  "title": "Images",
+  "width": 360, "height": 700,
   "closable": true,
   "children": {
     "vbox": {
@@ -130,84 +127,66 @@ static constexpr const char* kPixLayout = R"json({
           "children": {
             "path_input": {
               "type": "InputText", "value": "", "hint": "Folder path...",
-              "max_length": 4096, "flags": "EnterReturnsTrue", "width": 520.0
+              "max_length": 4096, "flags": "EnterReturnsTrue", "width": -1
             },
-            "btn_browse": { "type": "Button", "label": "Browse...", "width": 100 },
-            "btn_open_explorer": { "type": "Button", "label": "Open Sandbox in Explorer", "width": 220 }
+            "btn_browse": { "type": "Button", "label": "Browse...", "width": 80 },
+            "btn_open_explorer": { "type": "Button", "label": "Open Sandbox", "width": 110 }
           }
         },
         "status_label": { "type": "Label", "text": "" },
-        "body": {
-          "type": "HorizontalLayout",
-          "spacing": 8.0,
+        "grid_table": {
+          "type": "Table",
+          "columns": 3,
+          "flags": "RowBg|BordersOuter|ScrollY",
+          "width": -1,
           "height": -1,
+          "headers": false,
           "children": {
-            "left_panel": {
-              "type": "VerticalLayout",
-              "width": 320,
-              "height": -1,
+            "col0": { "type": "TableColumn", "flags": "WidthFixed", "init_width": 100 },
+            "col1": { "type": "TableColumn", "flags": "WidthFixed", "init_width": 100 },
+            "col2": { "type": "TableColumn", "flags": "WidthFixed", "init_width": 100 }
+          }
+        }
+      }
+    }
+  }
+})json";
+
+static constexpr const char* kPreviewLayout = R"json({
+  "type": "Window",
+  "title": "Preview",
+  "width": 640, "height": 540,
+  "closable": true,
+  "children": {
+    "vbox": {
+      "type": "VerticalLayout",
+      "spacing": 4.0,
+      "children": {
+        "zoom_bar": {
+          "type": "HorizontalLayout",
+          "spacing": 6.0,
+          "children": {
+            "btn_zoom_out": { "type": "Button", "label": "-", "width": 32 },
+            "zoom_label": { "type": "Label", "text": "--" },
+            "btn_zoom_in": { "type": "Button", "label": "+", "width": 32 },
+            "btn_zoom_fit": { "type": "Button", "label": "Fit", "width": 56 },
+            "btn_zoom_100": { "type": "Button", "label": "100%", "width": 56 },
+            "pan_hint": { "type": "Label", "text": "(scroll the preview to pan)" }
+          }
+        },
+        "preview_table": {
+          "type": "Table",
+          "columns": 1,
+          "flags": "RowBg|ScrollX|ScrollY",
+          "width": -1,
+          "height": -1,
+          "headers": false,
+          "children": {
+            "pcol0": { "type": "TableColumn", "flags": "WidthFixed", "init_width": 600 },
+            "prow0": {
+              "type": "TableRow",
               "children": {
-                "grid_table": {
-                  "type": "Table",
-                  "columns": 3,
-                  "flags": "RowBg|BordersOuter|ScrollY",
-                  "width": -1,
-                  "height": -1,
-                  "headers": false,
-                  "children": {
-                    "col0": { "type": "TableColumn", "flags": "WidthFixed", "init_width": 100 },
-                    "col1": { "type": "TableColumn", "flags": "WidthFixed", "init_width": 100 },
-                    "col2": { "type": "TableColumn", "flags": "WidthFixed", "init_width": 100 }
-                  }
-                }
-              }
-            },
-            "right_panel": {
-              "type": "VerticalLayout",
-              "width": -1,
-              "height": -1,
-              "spacing": 4.0,
-              "children": {
-                "zoom_bar": {
-                  "type": "HorizontalLayout",
-                  "spacing": 6.0,
-                  "children": {
-                    "btn_zoom_out": { "type": "Button", "label": "-", "width": 32 },
-                    "zoom_label": { "type": "Label", "text": "--" },
-                    "btn_zoom_in": { "type": "Button", "label": "+", "width": 32 },
-                    "btn_zoom_fit": { "type": "Button", "label": "Fit", "width": 56 },
-                    "btn_zoom_100": { "type": "Button", "label": "100%", "width": 56 },
-                    "pan_hint": { "type": "Label", "text": "(scroll the preview to pan)" }
-                  }
-                },
-                "preview_table": {
-                  "type": "Table",
-                  "columns": 1,
-                  "flags": "RowBg|ScrollX|ScrollY",
-                  "width": -1,
-                  "height": -1,
-                  "headers": false,
-                  "children": {
-                    "pcol0": { "type": "TableColumn", "flags": "WidthFixed", "init_width": 600 },
-                    "prow0": {
-                      "type": "TableRow",
-                      "children": {
-                        "preview_image": { "type": "Image", "src": "", "width": 0, "height": 0 }
-                      }
-                    }
-                  }
-                },
-                "info_panel": {
-                  "type": "VerticalLayout",
-                  "spacing": 2.0,
-                  "children": {
-                    "info_filename": { "type": "Label", "text": "" },
-                    "info_resolution": { "type": "Label", "text": "" },
-                    "info_format": { "type": "Label", "text": "" },
-                    "info_size": { "type": "Label", "text": "" },
-                    "info_modified": { "type": "Label", "text": "" }
-                  }
-                }
+                "preview_image": { "type": "Image", "src": "", "width": 0, "height": 0 }
               }
             }
           }
@@ -217,15 +196,38 @@ static constexpr const char* kPixLayout = R"json({
   }
 })json";
 
+static constexpr const char* kInfoLayout = R"json({
+  "type": "Window",
+  "title": "Info",
+  "width": 640, "height": 160,
+  "closable": true,
+  "children": {
+    "vbox": {
+      "type": "VerticalLayout",
+      "spacing": 2.0,
+      "children": {
+        "info_filename": { "type": "Label", "text": "" },
+        "info_resolution": { "type": "Label", "text": "" },
+        "info_format": { "type": "Label", "text": "" },
+        "info_size": { "type": "Label", "text": "" },
+        "info_modified": { "type": "Label", "text": "" }
+      }
+    }
+  }
+})json";
+
 // ── pix_viewer ────────────────────────────────────────────────────────────────
 
 pix_viewer::pix_viewer(dynamic&& base) : form(std::move(base)) {}
 
-void pix_viewer::on_init() {
-  // See internal_root_key_'s doc comment: ordinally-assigned, not pointer-derived.
-  internal_root_key_ = next_available_key("__pix_");
+pix_viewer::~pix_viewer() {
+  remove_panel_objects();
+}
 
-  auto tree = import_json(kPixLayout);
+void pix_viewer::build_window(
+    const char* layout_json, const std::string& root_key, key_t& window_id_out,
+    const std::function<void(ui_tree&)>& wire) {
+  auto tree = import_json(layout_json);
 
   // Assign each imported element a bison RMI ID so the renderer can emit
   // events with the correct object ID -- same pattern as every other form.
@@ -235,32 +237,84 @@ void pix_viewer::on_init() {
     c.put_object(id, elem);
     elem["__wish_id"_key] = id;
   }
+  window_id_out = (*tree[""])["__wish_id"_key].as<key_t>();
+  wire(tree);
 
-  window_id_ = (*tree[""])["__wish_id"_key].as<key_t>();
+  ui_element_ptr root_ptr = tree[""];
+  sess().ui_objects.merge(std::move(tree), root_key);
+  // The main root's top-level registration and "__path__" are handled by
+  // form::init() once on_init() returns; secondary panels register here.
+  if (root_key != internal_root_key_) {
+    sess().top_level_objects[key_t{root_key}] = root_ptr;
+    sess().top_level_handlers[key_t{root_key}] = this;
+    (*root_ptr)["__path__"_key] = root_key;
+  }
+}
 
-  tree.with("vbox.toolbar.path_input", [&](const auto& e) {
-    path_input_ptr_ = e;
-    path_input_id_ = wish_id_of(e);
+void pix_viewer::on_init() {
+  // See internal_root_key_'s doc comment: ordinally-assigned, not pointer-derived.
+  internal_root_key_ = next_available_key("__pix_");
+  preview_root_key_ = internal_root_key_ + "_preview";
+  info_root_key_ = internal_root_key_ + "_info";
+
+  auto* title_f = findField<std::string>("title"_key);
+  const std::string title = title_f ? *title_f : std::string{"Image Viewer"};
+
+  build_window(kImagesLayout, internal_root_key_, window_id_, [&](ui_tree& tree) {
+    tree.with("vbox.toolbar.path_input", [&](const auto& e) {
+      path_input_ptr_ = e;
+      path_input_id_ = wish_id_of(e);
+    });
+    tree.with("vbox.toolbar.btn_browse", [&](const auto& e) { btn_browse_id_ = wish_id_of(e); });
+    tree.with("vbox.toolbar.btn_open_explorer", [&](const auto& e) { btn_open_explorer_id_ = wish_id_of(e); });
+    tree.with("vbox.status_label", [&](const auto& e) { status_label_ptr_ = e; });
+    tree.with("vbox.grid_table", [&](const auto& e) { grid_table_ptr_ = e; });
   });
-  tree.with("vbox.toolbar.btn_browse", [&](const auto& e) { btn_browse_id_ = wish_id_of(e); });
-  tree.with("vbox.toolbar.btn_open_explorer", [&](const auto& e) { btn_open_explorer_id_ = wish_id_of(e); });
-  tree.with("vbox.status_label", [&](const auto& e) { status_label_ptr_ = e; });
-  tree.with("vbox.body.left_panel.grid_table", [&](const auto& e) { grid_table_ptr_ = e; });
-  tree.with("vbox.body.right_panel.zoom_bar.zoom_label", [&](const auto& e) { zoom_label_ptr_ = e; });
-  tree.with("vbox.body.right_panel.zoom_bar.btn_zoom_out", [&](const auto& e) { btn_zoom_out_id_ = wish_id_of(e); });
-  tree.with("vbox.body.right_panel.zoom_bar.btn_zoom_in", [&](const auto& e) { btn_zoom_in_id_ = wish_id_of(e); });
-  tree.with("vbox.body.right_panel.zoom_bar.btn_zoom_fit", [&](const auto& e) { btn_zoom_fit_id_ = wish_id_of(e); });
-  tree.with("vbox.body.right_panel.zoom_bar.btn_zoom_100", [&](const auto& e) { btn_zoom_100_id_ = wish_id_of(e); });
-  tree.with(
-      "vbox.body.right_panel.preview_table.prow0.preview_image", [&](const auto& e) { preview_image_ptr_ = e; });
-  tree.with("vbox.body.right_panel.preview_table.pcol0", [&](const auto& e) { preview_col_ptr_ = e; });
-  tree.with("vbox.body.right_panel.info_panel.info_filename", [&](const auto& e) { info_filename_ptr_ = e; });
-  tree.with("vbox.body.right_panel.info_panel.info_resolution", [&](const auto& e) { info_resolution_ptr_ = e; });
-  tree.with("vbox.body.right_panel.info_panel.info_format", [&](const auto& e) { info_format_ptr_ = e; });
-  tree.with("vbox.body.right_panel.info_panel.info_size", [&](const auto& e) { info_size_ptr_ = e; });
-  tree.with("vbox.body.right_panel.info_panel.info_modified", [&](const auto& e) { info_modified_ptr_ = e; });
 
-  sess().ui_objects.merge(std::move(tree), internal_root_key_);
+  build_window(kPreviewLayout, preview_root_key_, preview_window_id_, [&](ui_tree& tree) {
+    tree.with("vbox.zoom_bar.zoom_label", [&](const auto& e) { zoom_label_ptr_ = e; });
+    tree.with("vbox.zoom_bar.btn_zoom_out", [&](const auto& e) { btn_zoom_out_id_ = wish_id_of(e); });
+    tree.with("vbox.zoom_bar.btn_zoom_in", [&](const auto& e) { btn_zoom_in_id_ = wish_id_of(e); });
+    tree.with("vbox.zoom_bar.btn_zoom_fit", [&](const auto& e) { btn_zoom_fit_id_ = wish_id_of(e); });
+    tree.with("vbox.zoom_bar.btn_zoom_100", [&](const auto& e) { btn_zoom_100_id_ = wish_id_of(e); });
+    tree.with("vbox.preview_table.prow0.preview_image", [&](const auto& e) { preview_image_ptr_ = e; });
+    tree.with("vbox.preview_table.pcol0", [&](const auto& e) { preview_col_ptr_ = e; });
+  });
+
+  build_window(kInfoLayout, info_root_key_, info_window_id_, [&](ui_tree& tree) {
+    tree.with("vbox.info_filename", [&](const auto& e) { info_filename_ptr_ = e; });
+    tree.with("vbox.info_resolution", [&](const auto& e) { info_resolution_ptr_ = e; });
+    tree.with("vbox.info_format", [&](const auto& e) { info_format_ptr_ = e; });
+    tree.with("vbox.info_size", [&](const auto& e) { info_size_ptr_ = e; });
+    tree.with("vbox.info_modified", [&](const auto& e) { info_modified_ptr_ = e; });
+  });
+
+  // Seed the first-run arrangement inside the viewer's own nested dockspace
+  // (titled with the form's "title" field): the Images column along the
+  // left ~34%, and to its right the Preview over an Info strip along the
+  // bottom ~22%. Owned by imgui.ini after the first run (see
+  // docs/dock-layout.md); bump the version arg to layout() if it changes.
+  {
+    using namespace dock;
+    set_default_dock_layout(viewport(
+        "pix_dock", title,
+        layout(
+            split(
+                dir::left, 0.34f, area({internal_root_key_}),
+                split(dir::down, 0.22f, area({info_root_key_}), area({preview_root_key_}))),
+            /*version=*/1, /*target=*/"pix_dock")));
+  }
+}
+
+void pix_viewer::remove_panel_objects() {
+  // Keys are forgotten once removed: next_available_key() may hand this
+  // form's freed internal_root_key_ to a new viewer instance, whose panels
+  // would then reuse these exact secondary keys (see the same reasoning in
+  // form::remove_objects_at()).
+  for (std::string* key : {&preview_root_key_, &info_root_key_}) {
+    remove_objects_at(*key);
+    key->clear();
+  }
 }
 
 // ── grid rebuilding ──────────────────────────────────────────────────────────
@@ -546,8 +600,10 @@ dynamic pix_viewer::on_set(const dynamic& patch) {
 // ── Event routing ─────────────────────────────────────────────────────────────
 
 void pix_viewer::on_event(key_t id, key_t event, const dynamic& payload) {
-  if (id == window_id_ && event == "closed"_key) {
+  // Any panel's X button -> tear the whole viewer down (top/docker's rule).
+  if (event == "closed"_key && (id == window_id_ || id == preview_window_id_ || id == info_window_id_)) {
     emit("closed"_key);
+    remove_panel_objects();
     remove_internal_objects();
     return;
   }

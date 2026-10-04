@@ -2,8 +2,12 @@
 
 <img src="pix.png" alt="pix" height="200"/>
 
-Local image folder viewer: a thumbnail grid on the left, a zoomable/
-pannable full preview + metadata panel on the right. Demonstrates a form
+Local image folder viewer laid out as three dockable panels inside its own
+nested "Image Viewer" dockspace (see [docs/dock-layout.md](../../../../docs/dock-layout.md)):
+**Images** (folder toolbar + thumbnail grid), **Preview** (zoomable/pannable
+full image) and **Info** (metadata). The first run seeds Images on the left
+with Preview over Info on the right; rearrange freely afterwards (Shift+drag
+to re-dock). Closing any panel closes the tool. Demonstrates a form
 that's almost entirely client-driven — the server only owns UI structure
 and the sandbox-local "Open in Explorer" action; all local directory
 enumeration, image decoding, thumbnail/preview generation (via
@@ -11,7 +15,7 @@ enumeration, image decoding, thumbnail/preview generation (via
 happen client-side.
 
 - **server/**: `PixViewer` form (`register_pix()`), a `bdg::wish::form`
-  subclass owning the window/toolbar/thumbnail-grid/preview/info-panel and
+  subclass owning the three panels (toolbar/thumbnail grid, preview, info) and
   routing button/selection events. The thumbnail grid and the preview
   viewport are both a `Table` (see `pix.hpp`'s class comment) so each
   scrolls independently — the preview Table's own native scrollbars are

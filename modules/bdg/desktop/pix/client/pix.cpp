@@ -66,7 +66,7 @@ namespace fs = std::filesystem;
 // scaled to fit -- the two constants don't need to match exactly.
 constexpr int kThumbMax = 96;
 // Preview viewport PixViewer's preview_table clips/scrolls within (must
-// match server/pix.cpp's kPixLayout preview_table outer_width/outer_height).
+// match server/pix.cpp's kPreviewLayout preview_table outer_width/outer_height).
 constexpr float kPreviewViewportW = 600.0f;
 constexpr float kPreviewViewportH = 440.0f;
 constexpr float kMinZoomPercent = 5.0f;

@@ -5,8 +5,10 @@
 
 #include <ui/forms/form.hpp>
 #include <ui/ui_element.hpp>
+#include <ui/ui_importer.hpp>
 
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -14,8 +16,16 @@
 namespace bdg::wish {
 
 /// @brief Image viewer form: a folder-of-images browser with a thumbnail
-/// grid on the left and a zoomable/pannable full preview + metadata panel
-/// on the right.
+/// grid, a zoomable/pannable full preview, and a metadata panel.
+///
+/// Laid out as three dockable panels inside the viewer's own nested
+/// dockspace (`dock::viewport()`, see docs/dock-layout.md), like top and the
+/// dev modules: **Images** (the form's main root: folder toolbar, status
+/// label, and thumbnail grid), **Preview** (zoom bar over the pannable
+/// preview), and **Info** (the selected image's metadata). A first-run
+/// arrangement is seeded by `on_init()` (Images on the left, Preview over
+/// Info on the right); the user can re-dock, tab, or float any panel
+/// afterwards. Closing any panel closes the whole viewer.
 ///
 /// PixViewer has no direct access to the client's local machine, so (like
 /// mc's left panel and nano's open/save flow) it only owns the
@@ -32,7 +42,7 @@ namespace bdg::wish {
 ///
 /// Thumbnails are laid out as a `Table` (fixed column count, `outer_height`
 /// clipped/scrollable) so a folder with many images scrolls independently
-/// of the rest of the window. Each cell is a single `Selectable` (the click
+/// of the rest of its panel. Each cell is a single `Selectable` (the click
 /// target, with its own `__wish_id` for precise per-cell click routing) that
 /// wraps an `Image` (thumbnail) and a filename `Label` as overlay children
 /// (see `render_selectable()`'s children-overlay support in
@@ -50,6 +60,9 @@ namespace bdg::wish {
 class pix_viewer : public form {
  public:
   explicit pix_viewer(bison::dynamic&& base);
+  /// @brief Removes the secondary Preview/Info panels; ~form() removes the
+  /// main Images panel and the dock layout.
+  ~pix_viewer() override;
 
   /// @brief RMI method: replace the thumbnail grid. @p args holds `images`
   /// (array of `{name}`). Every cell starts out showing the generic
@@ -111,6 +124,9 @@ class pix_viewer : public form {
 
  protected:
   void on_init() override;
+  /// @brief Reacts to: `"closed"` (any panel's X button -- emits `"closed"`
+  /// and removes every panel); toolbar/zoom button clicks; path_input's
+  /// `"changed"`; and a thumbnail Selectable's `"changed"`.
   void on_event(bison::key_t widget_id, bison::key_t event_name, const bison::dynamic& payload) override;
 
  private:
@@ -122,6 +138,18 @@ class pix_viewer : public form {
     bison::key_t selectable_id;
   };
 
+  /// @brief Import @p layout_json, assign every element an RMI id, run
+  /// @p wire to capture element pointers, and merge the tree under
+  /// @p root_key -- registering it as its own top-level object (with
+  /// `__path__`, so it can be named in the dock layout) unless it is the
+  /// main `internal_root_key_`, which form::init() registers itself.
+  void build_window(
+      const char* layout_json, const std::string& root_key, bison::key_t& window_id_out,
+      const std::function<void(ui_tree&)>& wire);
+  /// @brief Remove the Preview/Info panels and forget their keys. Safe to
+  /// call more than once.
+  void remove_panel_objects();
+
   /// @brief Rebuild grid_table_ptr_'s TableRow children from images_,
   /// kGridColumns per row (padding the last row with empty cells).
   void rebuild_grid();
@@ -132,7 +160,13 @@ class pix_viewer : public form {
 
   static constexpr size_t kNoSelection = static_cast<size_t>(-1);
 
-  bison::key_t window_id_;
+  /// Secondary panel roots: internal_root_key_ + "_preview"/"_info".
+  std::string preview_root_key_;
+  std::string info_root_key_;
+
+  bison::key_t window_id_; ///< Images panel (main root).
+  bison::key_t preview_window_id_;
+  bison::key_t info_window_id_;
   bison::key_t path_input_id_;
   bison::key_t btn_browse_id_;
   bison::key_t btn_open_explorer_id_;
