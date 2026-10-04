@@ -113,9 +113,11 @@ TEST_F(CommandWorkerTest, QuickTaskOpensNoDialog) {
 // fraction and detail, captioned by the step.
 TEST_F(CommandWorkerTest, SlowTaskShowsDeterminateProgress) {
   std::promise<void> reported, checked;
-  auto checked_fut = checked.get_future();
-  worker_->post([&] {
-    worker_->run_task("Uploading a.bin", [&](wish::common::task_progress& p) {
+  // Captured by value: the step may still be inside wait() when the test
+  // body returns.
+  std::shared_future<void> checked_fut = checked.get_future().share();
+  worker_->post([&, checked_fut] {
+    worker_->run_task("Uploading a.bin", [&, checked_fut](wish::common::task_progress& p) {
       std::this_thread::sleep_for(std::chrono::milliseconds(500));
       p.report(1, 4, "1 B / 4 B");
       reported.set_value();
