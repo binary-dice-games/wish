@@ -12,6 +12,7 @@
 #include <ui/ui_importer.hpp>
 
 #include <algorithm>
+#include <cctype>
 #include <functional>
 #include <iomanip>
 #include <sstream>
@@ -68,6 +69,11 @@ constexpr priority_level_def kPriorityLevels[] = {
 };
 constexpr size_t kPriorityLevelCount = std::size(kPriorityLevels);
 
+std::string to_lower(std::string text) {
+  std::transform(text.begin(), text.end(), text.begin(), [](unsigned char ch) { return std::tolower(ch); });
+  return text;
+}
+
 template <typename Element>
 key_t wish_id_of(const Element& element) {
   return element->template as<key_t>("__wish_id"_key);
@@ -94,8 +100,16 @@ key_t wish_id_of(const Element& element) {
 // sort_ascending_'s own defaults below. Rows are added, updated, and
 // removed at runtime by update_snapshot(), same as nano's tabs.
 //
+// "toolbar" holds a case-insensitive name filter (docker.cpp's container
+// filter pattern): each "changed" event re-runs apply_process_filter(),
+// which toggles every row's "visible" field, as does every snapshot (so
+// newly-appeared processes respect the current filter). "filter_count"
+// has a fixed "width": a Label is measured from its last rendered size, so
+// one that starts empty is sized 0 and stays clipped by the row's child
+// window once text arrives.
+//
 // "proc_table" carries "height": -1 (mc.cpp's left_table/right_table
-// technique): "vbox" hands "status_label" its natural height first, then
+// technique): "vbox" hands "toolbar"/"status_label" their natural height first, then
 // gives "proc_table" whatever's left, so only the process list scrolls
 // ("ScrollY") and the status label stays pinned to the panel's bottom.
 //
@@ -119,6 +133,13 @@ static constexpr const char* kProcessesLayout = R"({
     "vbox": {
       "type": "VerticalLayout",
       "children": {
+        "toolbar": {
+          "type": "HorizontalLayout", "spacing": 8,
+          "children": {
+            "filter": { "type": "InputText", "hint": "Filter by name", "width": 240 },
+            "filter_count": { "type": "Label", "text": "", "width": 220 }
+          }
+        },
         "proc_table": {
           "type": "Table", "id": "##proc_table", "columns": 6,
           "profiler_marker": "Process Table",
@@ -270,6 +291,8 @@ void top::on_init() {
       proc_table_id_ = wish_id_of(e);
     });
     tree.with("vbox.status_label", [&](const auto& e) { status_label_ = e; });
+    tree.with("vbox.toolbar.filter", [&](const auto& e) { filter_input_id_ = wish_id_of(e); });
+    tree.with("vbox.toolbar.filter_count", [&](const auto& e) { filter_count_label_ = e; });
   });
 
   build_window(kCpuLayout, cpu_root_key_, cpu_window_id_, [&](ui_tree& tree) {
@@ -891,6 +914,23 @@ void top::update_process_table(const dynamic& args) {
   }
 
   resort_rows();
+  apply_process_filter();
+}
+
+void top::apply_process_filter() {
+  std::string needle = to_lower(filter_text_);
+  size_t shown = 0;
+  for (auto& [pid, entry] : pid_to_row_) {
+    bool show = needle.empty() || to_lower(entry.name).find(needle) != std::string::npos;
+    entry.row["visible"_key] = show;
+    if (show)
+      ++shown;
+  }
+  if (filter_count_label_) {
+    filter_count_label_["text"_key] = needle.empty()
+        ? std::string{}
+        : std::to_string(shown) + " of " + std::to_string(pid_to_row_.size()) + " processes";
+  }
 }
 
 void top::resort_rows() {
@@ -941,6 +981,12 @@ void top::on_event(key_t id, key_t event, const dynamic& payload) {
     emit("closed"_key);
     remove_panel_objects();
     remove_internal_objects();
+    return;
+  }
+
+  if (id == filter_input_id_ && event == "changed"_key) {
+    filter_text_ = payload.as<std::string>("value"_key);
+    apply_process_filter();
     return;
   }
 

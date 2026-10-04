@@ -217,6 +217,14 @@ gotcha you hit and didn't record is one the next agent will hit again.
   rect, then take the shot. (A `TextEditor` with an empty `file_path`
   renders nothing, so its rect has zero height until content is loaded --
   check a toolbar child or wait for height > 0.)
+- **A `Label` inside a `HorizontalLayout` that starts with empty text can
+  stay invisible after its text is set** (`top` module's filter count,
+  2026-10): `get_widget()` reports the new `text` and a real `rect`, but
+  `visible: False`, and the screenshot shows nothing. A Label is measured
+  from its last rendered size, so the row's child window is sized while
+  the label is empty and keeps clipping it. Give such a label a fixed
+  `"width"` (or non-empty initial text). Spot it by comparing the label's
+  `rect` against its parent row's `rect`.
 - **`type_text()` appends; Ctrl+A/Delete does not clear a multiline
   `InputText`** (`sq` module, 2026-09). Driving a second, different query
   into the same box through `page.keyboard.press("Control+A")` +

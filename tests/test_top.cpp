@@ -668,6 +668,81 @@ TEST_F(TopSnapshotTest, SortCriterionPersistsAcrossSubsequentSnapshots) {
   EXPECT_EQ(row_pids_in_order(), (std::vector<int>{1, 2}));
 }
 
+// ── Name filter ───────────────────────────────────────────────────────────────
+
+class TopFilterTest : public TopSnapshotTest {
+ protected:
+  void set_filter(const std::string& text) {
+    auto filter_id =
+        srv_->last_session->ui_objects.at(root_ + ".vbox.toolbar.filter")->as<bison::key_t>("__wish_id"_key);
+    dynamic payload;
+    payload["value"_key] = text;
+    fire(filter_id, "changed"_key, std::move(payload));
+  }
+
+  bool row_visible(int pid) const {
+    auto row = find_row(pid);
+    EXPECT_TRUE(row) << "no row for pid " << pid;
+    return row && row->as<bool>("visible"_key);
+  }
+
+  void snapshot_three() {
+    update_snapshot(
+        5.0, {}, 1000.0, 100.0,
+        {{1, "init", "[init]", "S", 1.0, 0.0}, {2, "Firefox", "/usr/bin/firefox", "S", 2.0, 0.0},
+         {3, "bash", "/bin/bash", "S", 3.0, 0.0}});
+  }
+};
+
+TEST_F(TopFilterTest, AllRowsVisibleWithoutFilter) {
+  snapshot_three();
+  EXPECT_TRUE(row_visible(1));
+  EXPECT_TRUE(row_visible(2));
+  EXPECT_TRUE(row_visible(3));
+  EXPECT_EQ(label_text(root_ + ".vbox.toolbar.filter_count"), "");
+}
+
+TEST_F(TopFilterTest, FilterIsCaseInsensitiveSubstringOnName) {
+  snapshot_three();
+  set_filter("FIRE");
+  EXPECT_FALSE(row_visible(1));
+  EXPECT_TRUE(row_visible(2));
+  EXPECT_FALSE(row_visible(3));
+  EXPECT_EQ(label_text(root_ + ".vbox.toolbar.filter_count"), "1 of 3 processes");
+}
+
+// Only the name is matched, not the command line.
+TEST_F(TopFilterTest, FilterDoesNotMatchCommand) {
+  snapshot_three();
+  set_filter("/usr/bin");
+  EXPECT_FALSE(row_visible(2));
+}
+
+TEST_F(TopFilterTest, ClearingFilterShowsAllRows) {
+  snapshot_three();
+  set_filter("bash");
+  ASSERT_FALSE(row_visible(1));
+  set_filter("");
+  EXPECT_TRUE(row_visible(1));
+  EXPECT_TRUE(row_visible(2));
+  EXPECT_TRUE(row_visible(3));
+  EXPECT_EQ(label_text(root_ + ".vbox.toolbar.filter_count"), "");
+}
+
+// A process appearing in a later snapshot respects the active filter.
+TEST_F(TopFilterTest, FilterAppliesToRowsAddedByLaterSnapshots) {
+  snapshot_three();
+  set_filter("bash");
+  update_snapshot(
+      5.0, {}, 1000.0, 100.0,
+      {{1, "init", "[init]", "S", 1.0, 0.0}, {2, "Firefox", "/usr/bin/firefox", "S", 2.0, 0.0},
+       {3, "bash", "/bin/bash", "S", 3.0, 0.0}, {4, "sshd", "/usr/sbin/sshd", "S", 0.5, 0.0},
+       {5, "bash", "/bin/bash --login", "S", 0.1, 0.0}});
+  EXPECT_FALSE(row_visible(4));
+  EXPECT_TRUE(row_visible(5));
+  EXPECT_EQ(label_text(root_ + ".vbox.toolbar.filter_count"), "2 of 5 processes");
+}
+
 // ── Event routing ─────────────────────────────────────────────────────────────
 
 TEST_F(TopSnapshotTest, WindowClosedEmitsClosedAndCleansUp) {

@@ -4,7 +4,7 @@
 
 top/htop-style system monitor laid out as four dockable panels inside its
 own nested "Top" dockspace (see [docs/dock-layout.md](../../../../docs/dock-layout.md)):
-**Processes** (sortable table, right-click a row for kill/pause/priority/
+**Processes** (sortable table with a name filter, right-click a row for kill/pause/priority/
 affinity/properties), **CPU** and **Memory** (history graphs), and **Cores**
 (one meter per logical core). The first run seeds the graphs above the
 process table with the core meters along the right; rearrange freely

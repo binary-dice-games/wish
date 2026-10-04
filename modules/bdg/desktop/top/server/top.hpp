@@ -25,7 +25,8 @@ class properties_dialog;
 /// (`dock::viewport()`, see docs/dock-layout.md), like the dev modules:
 /// **Processes** (the form's main root: a process table the user can sort
 /// by clicking any column header -- PID, Name, State, CPU %, Memory, or
-/// Command; defaults to CPU % descending -- plus a status label), **CPU**
+/// Command; defaults to CPU % descending -- a case-insensitive name filter,
+/// and a status label), **CPU**
 /// and **Memory** (a summary label over a history graph each), and
 /// **Cores** (one meter per logical CPU core). A first-run arrangement is
 /// seeded by `on_init()`; the user can re-dock, tab, or float any panel
@@ -104,7 +105,8 @@ class top : public form {
 
  protected:
   void on_init() override;
-  /// @brief Reacts to: `"closed"` (any panel's X button); `"sorted"` (a
+  /// @brief Reacts to: `"closed"` (any panel's X button); the name filter
+  /// InputText's `"changed"`; `"sorted"` (a
   /// `proc_table_` column header was clicked -- see `Table`'s docs in
   /// `src/ui/ui_elements/table.cpp`); a row context-menu item's `"clicked"`
   /// (looked up via `action_item_targets_`); and the set-affinity dialog's
@@ -173,6 +175,10 @@ class top : public form {
   /// refresh each row's `order` field -- no new data needed, so this can run
   /// directly from `on_event` for instant feedback on a header click.
   void resort_rows();
+  /// @brief Show only rows whose process name contains `filter_text_`
+  /// (case-insensitive substring; empty shows all) by toggling each row's
+  /// `visible` field, and refresh the "N of M processes" count label.
+  void apply_process_filter();
 
   /// @brief Builds the row's ContextMenu element (Properties/Pause-Resume/
   /// Kill/Priority submenu/Set CPU Affinity), registering every item's
@@ -214,6 +220,10 @@ class top : public form {
   bison::key_t mem_window_id_;
   bison::key_t cores_window_id_;
   bison::key_t proc_table_id_;
+  bison::key_t filter_input_id_;
+  /// Current name filter, as last reported by the filter InputText's
+  /// "changed" event.
+  std::string filter_text_;
 
   /// `column_id` (see `TableColumn.column_id`) of the column rows are
   /// currently sorted by; defaults to the CPU % column, matching the
@@ -229,6 +239,7 @@ class top : public form {
   ui_element_ptr mem_plot_series_;
   ui_element_ptr proc_table_;
   ui_element_ptr status_label_;
+  ui_element_ptr filter_count_label_;
 
   std::vector<float> cpu_history_;
   std::vector<float> mem_history_;
