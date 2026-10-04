@@ -10,7 +10,7 @@
 #include "curl.hpp"
 #include "curl_source.hpp"
 
-#include "modules/bdg/dev/common/frontend.hpp"
+#include "modules/bdg/common/frontend.hpp"
 
 #include "src/client/app_registry.hpp"
 #include "src/client/wish_app_host.hpp"
@@ -27,17 +27,17 @@ void run_curl(wish_app_host& s) {
   // Fast-fail if there is no `curl` binary on PATH at all, rather than
   // opening an empty window -- mirrors docker's `docker version` gate,
   // adapted: curl has no daemon to reach, just a binary to find.
-  auto check = dev::run_process({"curl", "--version"});
+  auto check = common::run_process({"curl", "--version"});
   if (!check.ok()) {
-    dev::fail_startup(s, "curl: `curl` binary not found on PATH", check.stderr_text);
+    common::fail_startup(s, "curl: `curl` binary not found on PATH", check.stderr_text);
     return;
   }
 
   // Every handler below runs as a job on the frontend's worker thread:
   // running the tool inside an event handler would block the whole UI until
   // it exits. Long commands get a modal progress dialog
-  // (common/command_worker.hpp).
-  const auto frontend = dev::open_frontend(s, "CurlFrontend"_key, "Sending request");
+  // (modules/bdg/common/command_worker.hpp).
+  const auto frontend = common::open_frontend(s, "CurlFrontend"_key, "Sending request");
   const auto& proxy = frontend.proxy;
   const auto& worker = frontend.worker;
   auto source = std::make_shared<curl::curl_source>(proxy, s, worker);

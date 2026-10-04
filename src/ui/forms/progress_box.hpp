@@ -29,7 +29,10 @@ namespace bdg::wish {
 ///     starts a new `$ command` section in the log), @c phase is the number
 ///     of seconds the operation has been running (it animates the bar) and
 ///     @c lines are appended to the log. Reopens the dialog if it was closed
-///     by an earlier `finish`.
+///     by an earlier `finish`. Optional @c fraction (float, 0..1) switches
+///     the bar to a determinate fill with optional @c detail (string)
+///     overlaid -- e.g. bytes transferred; omitted or negative keeps the
+///     indeterminate animation.
 ///   - `finish` -- `{ error (string) }`: the operation is over. An empty
 ///     @c error closes the dialog. A non-empty one keeps it open, showing the
 ///     error and the log, with the button relabelled Close -- unless the user

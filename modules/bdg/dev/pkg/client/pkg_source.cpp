@@ -30,7 +30,7 @@ dynamic_ptr to_array(const std::vector<package>& packages, const std::map<std::s
 
 pkg_source::pkg_source(
     std::shared_ptr<bison::rmi::proxy::dynamic> proxy, manager m, elevation how,
-    std::shared_ptr<dev::command_worker> worker)
+    std::shared_ptr<common::command_worker> worker)
     // No launcher: every command is a whole argv (the program differs per
     // manager, and a privileged command is wrapped in sudo / pkexec).
     : tool_source(std::move(proxy), std::move(worker), {}, {}), manager_(m), elevation_(how) {}
@@ -50,7 +50,7 @@ void pkg_source::refresh_all() {
 // ── helpers ────────────────────────────────────────────────────────────────
 
 std::string pkg_source::error_text(const process_result& r) const {
-  return error_summary(elevation_, dev::error_output(r));
+  return error_summary(elevation_, common::error_output(r));
 }
 
 process_result pkg_source::run_logged(const command& cmd) {
@@ -113,7 +113,7 @@ void pkg_source::on_upgrade_all_requested() {
 
 void pkg_source::on_install_requested(const std::string& text) {
   const auto names = split_names(text);
-  const std::string label = "install " + dev::one_line(text, 80);
+  const std::string label = "install " + common::one_line(text, 80);
   if (names.empty()) {
     report("install", "packages", false, "nothing to install");
     return;

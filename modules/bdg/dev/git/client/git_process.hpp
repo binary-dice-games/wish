@@ -1,17 +1,17 @@
 // MIT License © 2025 Binary Dice Games
 /// @file git_process.hpp
-/// @brief Runs `git` for the git module: the shared dev::run_process()
+/// @brief Runs `git` for the git module: the shared common::run_process()
 ///        (see common/process.hpp) plus git's own non-interactive setup.
 #pragma once
 
-#include "modules/bdg/dev/common/process.hpp"
+#include "modules/bdg/common/process.hpp"
 
 #include <string>
 #include <vector>
 
 namespace bdg::wish::git {
 
-using dev::process_result;
+using common::process_result;
 
 /// @brief Runs `git <args>` (no shell involved -- `args` is a real argv
 /// array, so paths/messages with spaces or shell metacharacters need no
@@ -28,10 +28,10 @@ using dev::process_result;
 /// @param cwd  Repository working directory. Must not be empty.
 /// @param args Arguments after "git" itself, e.g. `{"status", "--porcelain=v2"}`.
 /// @param hooks  Optional live-output / tick callbacks (see
-///               common/process_hooks.hpp); a tick returning false stops the
+///               modules/bdg/common/process_hooks.hpp); a tick returning false stops the
 ///               process. Null for none.
 process_result run_git(
-    const std::string& cwd, const std::vector<std::string>& args, const dev::run_hooks* hooks = nullptr);
+    const std::string& cwd, const std::vector<std::string>& args, const common::run_hooks* hooks = nullptr);
 
 /// @brief Resolves @p path (anywhere inside a git working tree -- may be
 /// relative to the calling process's own cwd, or absolute) to that

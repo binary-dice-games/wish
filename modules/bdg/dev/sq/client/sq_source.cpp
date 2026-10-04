@@ -83,12 +83,12 @@ dynamic_ptr as_array(dynamic&& arr) {
 } // namespace
 
 sq_source::sq_source(
-    std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::shared_ptr<dev::command_worker> worker)
+    std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::shared_ptr<common::command_worker> worker)
     : tool_source(std::move(proxy), std::move(worker), "sq") {}
 
 // The first line of sq's stderr ("sq: <what failed>") is the useful one.
 std::string sq_source::error_text(const process_result& r) const {
-  std::string text = dev::trim_eol(dev::error_output(r));
+  std::string text = common::trim_eol(common::error_output(r));
   if (r.exit_code == -1 && text.empty())
     return "could not run `sq`";
   return text;
@@ -105,7 +105,7 @@ process_result sq_source::run_logged(const std::vector<std::string>& args, const
   std::vector<std::string> masked;
   for (auto& a : args)
     masked.push_back(mask_location(a));
-  dev::run_options options;
+  common::run_options options;
   options.caption = caption(masked);
   options.stdin_text = stdin_text;
   // Result rows / schema JSON are data, not progress: keep them out of the

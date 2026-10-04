@@ -330,10 +330,13 @@ Design decisions:
 - **Fixed size**, unlike `MessageBox`'s auto-resize: appended output must not
   resize a dialog the user is looking at.
 
-Client side, `modules/bdg/dev/common/command_worker.hpp` is the shared driver:
+Client side, `modules/bdg/common/command_worker.hpp` is the shared driver:
 one worker thread per app runs the tool commands in order, opens the dialog
 only for a command that has run for 0.4 s (so a refresh never flashes a
 modal), feeds it the tool's output, and turns its Cancel into a SIGTERM.
+Its `run_task()` drives work that is not a child process the same way (mc's
+file transfers): the step reports a fraction through a `task_progress`, so
+the bar is determinate, and polls `cancelled()` to stop early.
 
 ### `FileDialog`
 

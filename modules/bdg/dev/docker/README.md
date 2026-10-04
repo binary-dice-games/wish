@@ -29,7 +29,7 @@ else (Start, Restart, Pause, Unpause, Pull, Run, …) fires directly.
   running the corresponding `docker` command.
 - **client/**: `run_docker(wish_app_host&)`, self-registered as the
   `"docker"` embedded app — owns all `docker` invocation.
-  Commands run through the shared [common/](../common) helpers
+  Commands run through the shared [common/](../../common) helpers
   (`process.hpp`, `tool_source.hpp`). `client/docker_source.hpp`/`.cpp` runs every actual
   `docker` command (tab-delimited `--format` templates, split on `\t`),
   parses the output, and pushes snapshots / reacts to `*_requested`

@@ -14,7 +14,7 @@
 /// tests/test_helm_parsers.cpp.
 #pragma once
 
-#include "modules/bdg/dev/common/text.hpp"
+#include "modules/bdg/common/text.hpp"
 
 #include <string>
 #include <vector>
@@ -44,7 +44,7 @@ std::string short_timestamp(const std::string& updated);
 /// arrives in an event payload. There is no shell to inject into, but a value
 /// such as `--post-renderer=/some/binary` would still be parsed by helm as a
 /// flag, so anything flag-shaped is rejected before the command is built.
-using dev::is_safe_arg;
+using common::is_safe_arg;
 
 /// @brief Reduces a failed command's stderr to the part worth showing: from
 /// helm's own `Error:` line to the end when there is one (dropping the

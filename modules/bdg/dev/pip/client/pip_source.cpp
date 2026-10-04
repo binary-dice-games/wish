@@ -24,7 +24,7 @@ std::string resolve_interpreter(const std::string& arg) {
   if (arg.empty()) {
     // `python3` is the unambiguous name on Linux / MSYS2; python.org's
     // Windows installer only provides `python`.
-    return dev::run_process({"python3", "--version"}).ok() ? "python3" : "python";
+    return common::run_process({"python3", "--version"}).ok() ? "python3" : "python";
   }
   std::error_code ec;
   const std::filesystem::path p{arg};
@@ -39,7 +39,7 @@ std::string resolve_interpreter(const std::string& arg) {
 
 pip_source::pip_source(
     std::shared_ptr<bison::rmi::proxy::dynamic> proxy, const std::string& interpreter,
-    std::shared_ptr<dev::command_worker> worker)
+    std::shared_ptr<common::command_worker> worker)
     : tool_source(
           std::move(proxy), std::move(worker), "pip",
           // --no-input: stdin is closed, so never wait on a prompt. The
@@ -54,7 +54,7 @@ std::string pip_source::probe_version(std::string& error) const {
     error = error_text(r);
     return {};
   }
-  return dev::trim_eol(r.stdout_text);
+  return common::trim_eol(r.stdout_text);
 }
 
 void pip_source::push_environment(const std::string& version_text) {
@@ -71,7 +71,7 @@ void pip_source::refresh_all() {
 // ── helpers ────────────────────────────────────────────────────────────────
 
 std::string pip_source::error_text(const process_result& r) const {
-  return error_summary(dev::error_output(r));
+  return error_summary(common::error_output(r));
 }
 
 bool pip_source::run_and_refresh(const std::string& label, const std::vector<std::string>& args) {

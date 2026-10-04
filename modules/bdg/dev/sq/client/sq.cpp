@@ -12,7 +12,7 @@
 #include "sq.hpp"
 #include "sq_source.hpp"
 
-#include "modules/bdg/dev/common/frontend.hpp"
+#include "modules/bdg/common/frontend.hpp"
 
 #include "src/client/app_registry.hpp"
 #include "src/client/wish_app_host.hpp"
@@ -34,12 +34,12 @@ void run_sq(wish_app_host& s) {
   // Every handler below runs as a job on the frontend's worker thread:
   // running sq inside an event handler would block the whole UI until it
   // exits. Long commands get a modal progress dialog
-  // (common/command_worker.hpp).
-  const auto frontend = dev::open_frontend(s, "SqFrontend"_key, "Running sq");
+  // (modules/bdg/common/command_worker.hpp).
+  const auto frontend = common::open_frontend(s, "SqFrontend"_key, "Running sq");
   const auto& proxy = frontend.proxy;
   const auto& worker = frontend.worker;
 
-  auto check = dev::run_process({"sq", "version"});
+  auto check = common::run_process({"sq", "version"});
   if (!check.ok()) {
     const std::string message = std::string{"The `sq` command line tool was not found on your PATH.\n"
                                             "Install it (see the Install section of the README), then restart "

@@ -246,6 +246,15 @@ gotcha you hit and didn't record is one the next agent will hit again.
   before the rect existed and the following `click()` raised "never
   rendered"; a plain Python loop over `get_widget()` (retrying the button
   click after ~3 s) was reliable.
+- **Don't read a docked panel's on-screen state from its `Window` root or
+  a `Table`'s `rect`.** Verifying `mc`'s dockable panels (2026-10), every
+  front-most, fully drawn docked `Window` root reported `visible: False`
+  (its rect was correct), and each `Table`'s `rect` ended near its first
+  column's right edge (x1=381) even though the screenshot showed the table
+  filling its 627px-wide panel. To check that panels docked where expected,
+  compare the `Window` roots' rects. To check that a table really fills its
+  panel, look at a screenshot or at the widgets laid out after it (the
+  summary labels, the panel's other children).
 - **A widget scrolled out of a `ScrollX` table still has a `rect`, but with
   `visible: False` and coordinates outside the table's own rect** -- and
   `click()` on it does not raise: the click lands on whatever window is at
@@ -670,6 +679,14 @@ def test_saving_shows_confirmation(wish_ui):
   real, queryable rects and *can* be targeted directly by `click(path)`/
   `get_widget(path)` — check whether the table's own row-building code
   calls `assign_id()` on the row before assuming pixel math is required.
+  **Shortcut for mc (and any table whose rows carry a `ContextMenu`):**
+  the row's `ContextMenu` child *does* get an id, and its `rect` is the
+  whole row's, so `get_widget("<table_path>.<row_idx>.<menu_idx>")["rect"]`
+  (mc: `__mc_0.vbox.left_table.1.3`) gives the row's exact y without any
+  header/row-height math. Seen 2026-10: a plain `click()` on that path did
+  not select the row; a raw `mouse.move()`, ~300 ms pause, then
+  `mouse.click(x, y, delay=60)` at that rect's center did, confirmed by
+  polling the panel's "Selected: ..." label.
 - **A plain, undelayed `click(path)` on a `git`-module `TableRow` (the
   invisible row-spanning `Selectable` in `render_table()`'s row loop, not
   a real `Selectable`/`Button` widget) frequently fails to register at

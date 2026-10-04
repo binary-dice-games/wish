@@ -10,8 +10,8 @@
 /// event payload. Header-only.
 #pragma once
 
-#include "modules/bdg/dev/common/command_worker.hpp"
-#include "modules/bdg/dev/common/process.hpp"
+#include "modules/bdg/common/command_worker.hpp"
+#include "modules/bdg/common/process.hpp"
 
 #include "src/client/wish_app_host.hpp"
 
@@ -23,7 +23,7 @@
 #include <memory>
 #include <string>
 
-namespace bdg::wish::dev {
+namespace bdg::wish::common {
 
 /// @brief A dev module's open form and the worker that runs its commands.
 struct frontend {
@@ -78,4 +78,4 @@ inline int32_t payload_int(const bison::dynamic& payload, bison::key_t key, int3
   return f ? *f : fallback;
 }
 
-} // namespace bdg::wish::dev
+} // namespace bdg::wish::common

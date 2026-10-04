@@ -3,20 +3,20 @@
 /// @brief Client-side package-manager orchestration for the pkg module.
 ///
 /// Runs every command of the chosen package manager (see pkg_backend.hpp for
-/// what each operation runs) through dev::tool_source (see
+/// what each operation runs) through common::tool_source (see
 /// common/tool_source.hpp), parses
 /// the output, and pushes structured snapshots to the server-side PkgFrontend
 /// form via its update_* RMI methods. Mirrors pip_source: the packages are
 /// the ones on the user's own machine, reachable only from the client.
 ///
 /// Every method that runs a command is called from a job of the shared
-/// dev::command_worker, which keeps the UI responsive and shows the modal
-/// progress dialog (common/command_worker.hpp).
+/// common::command_worker, which keeps the UI responsive and shows the modal
+/// progress dialog (modules/bdg/common/command_worker.hpp).
 #pragma once
 
 #include "pkg_backend.hpp"
 
-#include "modules/bdg/dev/common/tool_source.hpp"
+#include "modules/bdg/common/tool_source.hpp"
 
 #include "src/bison/bison.hpp"
 #include "src/rmi/client/proxy.hpp"
@@ -28,14 +28,14 @@
 
 namespace bdg::wish::pkg {
 
-using dev::process_result;
+using common::process_result;
 
-class pkg_source : public dev::tool_source {
+class pkg_source : public common::tool_source {
  public:
   /// @param how  How commands that need root get it (see elevation).
   pkg_source(
       std::shared_ptr<bison::rmi::proxy::dynamic> proxy, manager m, elevation how,
-      std::shared_ptr<dev::command_worker> worker);
+      std::shared_ptr<common::command_worker> worker);
 
   /// @brief Pushes the manager name, @p version_text (the probe command's
   /// first output line) and the elevation mode to the form's environment line.

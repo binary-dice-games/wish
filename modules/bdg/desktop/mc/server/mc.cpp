@@ -9,12 +9,14 @@
 #include "ui/forms/properties_dialog.hpp"
 
 #include <context/file_service.hpp>
+#include <ui/dock_layout_spec.hpp>
 #include <ui/ui_importer.hpp>
 
 #include <algorithm>
 #include <chrono>
 #include <ctime>
 #include <filesystem>
+#include <functional>
 #include <iomanip>
 #include <set>
 #include <sstream>
@@ -62,156 +64,143 @@ std::string format_modified(const fs::file_time_type& ftime) {
 
 } // namespace
 
-// ── UI layout ─────────────────────────────────────────────────────────────────
+// ── UI layouts ────────────────────────────────────────────────────────────────
 //
-// Mirrors examples/mc_sample_ui.json (the JSON mock validated
-// interactively in the editor) with the example rows removed -- rows are
-// built at runtime by fill_table(). left_table/right_table's "flags" names
-// the same full-border set git.cpp/tail.cpp use for their own grid-style
-// tables, plus Sortable. Unlike FileDialog's borderless picker list
-// (Resizable|RowBg|BordersH|Sortable|ScrollY -- no BordersV), mc's two
-// side-by-side panels have no other visual cue marking where each table
-// ends: without the outer vertical border, RowBg's alternating shading
-// reads as flush against the panel edge with no margin at all, cropped
-// rather than framed. Left/right borders fix that. col_name/col_size/
-// col_modified's "column_id" (0/1/2) is echoed back in each Table's
-// "sorted" event payload -- see on_table_sorted()'s doc comment. InputText
-// EnterReturnsTrue so path bars only fire "changed" on Enter, not per
-// keystroke.
+// The browser is split into two dockable panels -- Local and Sandbox --
+// seeded into a first-run arrangement by on_init()'s
+// set_default_dock_layout() call, the same multi-window pattern top, pix and
+// the dev modules (git, curl, docker) use. The user can re-dock, tab or
+// float any of them; imgui.ini owns the arrangement after the first run.
+// Each Window keeps a width/height: the size a panel restores to when
+// dragged out of the dock.
 //
-// "left"/"right" each carry both "width": -1 and "height": -1: the former
-// makes render_horizontal_layout() give each a real, computed pixel-width
-// column (see that function's width pre-scan); the latter opts the same
-// column into a real, computed pixel-height child window (that function's
-// height pre-scan) instead of the default ImGuiChildFlags_AutoResizeY
-// (auto height, sized to content) applied to columns that leave "height"
-// unset. Without "height": -1, each column would size to its own content
-// regardless of the "panels" row's actual allocated height (itself
-// stretch-filled by render_vertical_layout() via "panels"'s own
-// "height": -1) -- leaving a gap between the panels and the status bar
-// when content is shorter than the row, or an unwanted extra scrollbar on
-// the row when content is taller. left_table/right_table mirror this with
-// their own "height": -1 (rather than a fixed pixel value) so each Table
-// fills exactly the remaining space inside its column, letting ImGui's
-// own ScrollY engage per-panel only when a listing doesn't fit -- no
-// "outer_height" override needed, since 0 (the default) already means
-// "fill the remaining space in the parent", and the parent here is now a
-// real fixed-size child window rather than an auto-sizing one.
+// Local (the form's main root, internal_root_key_) and Sandbox share one
+// shape: a path bar, an action row (the button that sends the selected files
+// to the *other* panel -- Upload in Local, Download in Sandbox -- next to the
+// "Selected: ..." label), the file table, a two-line summary strip and a
+// status line. Rows are built at runtime by fill_table().
+// left_table/right_table's "flags" names the same full-border set
+// git.cpp/tail.cpp use for their own grid-style tables, plus Sortable.
+// Unlike FileDialog's borderless picker list (Resizable|RowBg|BordersH|
+// Sortable|ScrollY -- no BordersV), the outer vertical border frames each
+// table against its panel edge, so RowBg's alternating shading doesn't read
+// as cropped. col_name/col_size/col_modified's "column_id" (0/1/2) is echoed
+// back in each Table's "sorted" event payload -- see on_table_sorted()'s doc
+// comment. InputText EnterReturnsTrue so path bars only fire "changed" on
+// Enter, not per keystroke.
 //
-// "middle" (the upload/download button column) carries "height": -1 for the
-// same reason as "left"/"right" -- a real fixed-height child window, not one
-// auto-sized to its two buttons -- but for a different purpose: it gives the
-// Spring elements flanking "upload"/"download" somewhere to actually expand
-// into. Two Springs around one child centers it (see docs/ui-elements.md's
-// Spring section); here they flank the *pair*, so the buttons stay adjacent
-// (spacing: 10 between them) while sliding as a group to the vertical center
-// of the column, rather than sitting pinned at the top like every other
-// auto-height column would.
+// left_table/right_table carry "height": -1: "vbox" hands every other child
+// its natural height first, then gives the table whatever's left, so only
+// the listing scrolls (ScrollY engages per-panel only when a listing doesn't
+// fit). "left_stats"/"left_disk" (and their "right_" twins) are auto-height
+// Labels added *after* the table, so they read as a small summary strip
+// pinned to the bottom of each panel. "_stats" holds "<N> files, <size>" for
+// the currently-listed directory (non-recursive); "_disk" holds the
+// used/free/total space of the filesystem that directory lives on. Both
+// start blank and are filled in by do_update_local_listing()
+// (client-reported, since only the client can see the local machine's disk)
+// and navigate_sandbox() (computed directly via std::filesystem, since the
+// sandbox lives on this machine). "_status" shows the latest message about
+// that panel (see set_status()).
 //
-// "left_stats"/"left_disk" (and their "right_" twins) are auto-height Labels
-// added *after* left_table/right_table -- render_vertical_layout()'s measure
-// pass sizes them to their own natural single-line height first, and only
-// hands left_table/right_table's height:-1 stretch share whatever's left, so
-// they read as a small summary strip pinned to the bottom of each panel
-// without stealing a fixed chunk of the table's own scrollable area. "_stats"
-// holds "<N> files, <size>" for the currently-listed directory
-// (non-recursive: just the files in view, not their subdirectories'
-// contents); "_disk" holds the used/free/total space of the filesystem that
-// directory lives on. Both start blank and are filled in by
-// do_update_local_listing() (client-reported, since only the client can see
-// the local machine's disk) and navigate_sandbox() (computed directly via
-// std::filesystem, since the sandbox lives on this machine).
-
+// Transfers show their progress in the shared ProgressBox dialog the
+// client's command_worker drives (modules/bdg/common/command_worker.hpp), like
+// every long-running action in the dev modules -- no progress bar here.
+//
 // Tagged delimiter (R"json(...)json") rather than the untagged R"(...)"
 // convention used elsewhere: "Sandbox (Server)" ends in a ")" immediately
 // followed by the JSON string's closing quote, which is exactly the byte
 // sequence R"(...)" treats as its own terminator -- an untagged literal
 // would truncate here.
-static constexpr const char* kLayout = R"json({
+
+static constexpr const char* kLocalLayout = R"json({
   "type": "Window",
-  "width": 920, "height": 540,
+  "title": "Local Machine",
+  "width": 460, "height": 480,
   "closable": true,
   "children": {
-    "main": {
+    "vbox": {
       "type": "VerticalLayout",
+      "spacing": 4,
       "children": {
-        "panels": {
+        "left_path": {
+          "type": "InputText", "hint": "Local path...", "value": "",
+          "flags": "EnterReturnsTrue", "width": -1
+        },
+        "left_actions": {
           "type": "HorizontalLayout",
-          "height": -1,
-          "spacing": 10,
+          "spacing": 8,
           "children": {
-            "left": {
-              "type": "VerticalLayout",
-              "spacing": 4,
-              "width": -1, "height": -1,
-              "children": {
-                "left_label": { "type": "Label", "text": "Local Machine" },
-                "left_path": {
-                  "type": "InputText", "hint": "Local path...", "value": "",
-                  "flags": "EnterReturnsTrue", "width": -1
-                },
-                "left_selected": { "type": "Label", "text": "Selected: (none)" },
-                "left_table": {
-                  "type": "Table", "id": "##local_table", "columns": 3, "headers": true,
-                  "flags": "Resizable|RowBg|Borders|Sortable|ScrollY",
-                  "outer_width": 0, "height": -1,
-                  "children": {
-                    "col_name":     { "type": "TableColumn", "label": "Name", "column_id": 0 },
-                    "col_size":     { "type": "TableColumn", "label": "Size", "flags": "WidthFixed", "init_width": 90, "column_id": 1 },
-                    "col_modified": { "type": "TableColumn", "label": "Modified", "flags": "WidthFixed", "init_width": 130, "column_id": 2 }
-                  }
-                },
-                "left_stats": { "type": "Label", "text": "" },
-                "left_disk":  { "type": "Label", "text": "" }
-              }
+            "upload": {
+              "type": "Button", "label": "Upload >>",
+              "tooltip": "Copy the selected files to the sandbox folder shown in the Sandbox panel"
             },
-            "middle": {
-              "type": "VerticalLayout",
-              "spacing": 10,
-              "width": 80, "height": -1,
-              "children": {
-                "middle_spring_top":    { "type": "Spring" },
-                "upload":   { "type": "Button", "label": ">>", "width": 60, "height": 36 },
-                "download": { "type": "Button", "label": "<<", "width": 60, "height": 36 },
-                "middle_spring_bottom": { "type": "Spring" }
-              }
-            },
-            "right": {
-              "type": "VerticalLayout",
-              "spacing": 4,
-              "width": -1, "height": -1,
-              "children": {
-                "right_header": {
-                  "type": "HorizontalLayout",
-                  "spacing": 8,
-                  "children": {
-                    "right_label": { "type": "Label", "text": "Sandbox (Server)" },
-                    "open_explorer": { "type": "Button", "label": "Open in Explorer" }
-                  }
-                },
-                "right_path": {
-                  "type": "InputText", "hint": "Sandbox path...", "value": "/",
-                  "flags": "EnterReturnsTrue", "width": -1
-                },
-                "right_selected": { "type": "Label", "text": "Selected: (none)" },
-                "right_table": {
-                  "type": "Table", "id": "##sandbox_table", "columns": 3, "headers": true,
-                  "flags": "Resizable|RowBg|Borders|Sortable|ScrollY",
-                  "outer_width": 0, "height": -1,
-                  "children": {
-                    "col_name":     { "type": "TableColumn", "label": "Name", "column_id": 0 },
-                    "col_size":     { "type": "TableColumn", "label": "Size", "flags": "WidthFixed", "init_width": 90, "column_id": 1 },
-                    "col_modified": { "type": "TableColumn", "label": "Modified", "flags": "WidthFixed", "init_width": 130, "column_id": 2 }
-                  }
-                },
-                "right_stats": { "type": "Label", "text": "" },
-                "right_disk":  { "type": "Label", "text": "" }
-              }
-            }
+            "left_selected": { "type": "Label", "text": "Selected: (none)" }
           }
         },
-        "status": { "type": "Label", "text": "Ready." },
-        "transfer_progress": { "type": "ProgressBar", "value": 0.0, "label": "", "width": -1 }
+        "left_table": {
+          "type": "Table", "id": "##local_table", "columns": 3, "headers": true,
+          "flags": "Resizable|RowBg|Borders|Sortable|ScrollY",
+          "outer_width": 0, "height": -1,
+          "children": {
+            "col_name":     { "type": "TableColumn", "label": "Name", "column_id": 0 },
+            "col_size":     { "type": "TableColumn", "label": "Size", "flags": "WidthFixed", "init_width": 90, "column_id": 1 },
+            "col_modified": { "type": "TableColumn", "label": "Modified", "flags": "WidthFixed", "init_width": 130, "column_id": 2 }
+          }
+        },
+        "left_stats": { "type": "Label", "text": "" },
+        "left_disk":  { "type": "Label", "text": "" },
+        "left_status": { "type": "Label", "text": "" }
+      }
+    }
+  }
+})json";
+
+static constexpr const char* kSandboxLayout = R"json({
+  "type": "Window",
+  "title": "Sandbox (Server)",
+  "width": 460, "height": 480,
+  "closable": true,
+  "children": {
+    "vbox": {
+      "type": "VerticalLayout",
+      "spacing": 4,
+      "children": {
+        "right_toolbar": {
+          "type": "HorizontalLayout",
+          "spacing": 6,
+          "children": {
+            "right_path": {
+              "type": "InputText", "hint": "Sandbox path...", "value": "/",
+              "flags": "EnterReturnsTrue", "width": -1
+            },
+            "open_explorer": { "type": "Button", "label": "Open in Explorer" }
+          }
+        },
+        "right_actions": {
+          "type": "HorizontalLayout",
+          "spacing": 8,
+          "children": {
+            "download": {
+              "type": "Button", "label": "<< Download",
+              "tooltip": "Copy the selected files to the local folder shown in the Local Machine panel"
+            },
+            "right_selected": { "type": "Label", "text": "Selected: (none)" }
+          }
+        },
+        "right_table": {
+          "type": "Table", "id": "##sandbox_table", "columns": 3, "headers": true,
+          "flags": "Resizable|RowBg|Borders|Sortable|ScrollY",
+          "outer_width": 0, "height": -1,
+          "children": {
+            "col_name":     { "type": "TableColumn", "label": "Name", "column_id": 0 },
+            "col_size":     { "type": "TableColumn", "label": "Size", "flags": "WidthFixed", "init_width": 90, "column_id": 1 },
+            "col_modified": { "type": "TableColumn", "label": "Modified", "flags": "WidthFixed", "init_width": 130, "column_id": 2 }
+          }
+        },
+        "right_stats": { "type": "Label", "text": "" },
+        "right_disk":  { "type": "Label", "text": "" },
+        "right_status": { "type": "Label", "text": "Ready." }
       }
     }
   }
@@ -267,57 +256,101 @@ static constexpr const char* kRenameLayout = R"json({
 
 mc::mc(dynamic&& base) : form(std::move(base)) {}
 
-void mc::on_init() {
-  internal_root_key_ = next_available_key("__mc_");
+mc::~mc() {
+  remove_panel_objects();
+}
 
-  auto ui_tree = import_json(kLayout);
-
-  auto* title_f = findField<std::string>("title"_key);
-  (*ui_tree[""])["title"_key] = title_f ? *title_f : std::string{"File Explorer"};
+void mc::build_window(
+    const char* layout_json, const std::string& root_key, key_t& window_id_out,
+    const std::function<void(ui_tree&)>& wire) {
+  auto tree = import_json(layout_json);
 
   auto& c = ctx();
-  for (auto& [key, elem] : ui_tree) {
+  for (auto& [key, elem] : tree) {
     key_t id = rmi::shared::generate_id();
     c.put_object(id, elem);
     elem["__wish_id"_key] = id;
   }
+  window_id_out = (*tree[""])["__wish_id"_key].as<key_t>();
+  wire(tree);
 
-  window_id_ = (*ui_tree[""])["__wish_id"_key].as<key_t>();
-  ui_tree.with("main.panels.left.left_path", [&](const auto& e) {
-    left_path_ptr_ = e;
-    left_path_id_ = wish_id_of(e);
-  });
-  ui_tree.with("main.panels.left.left_table", [&](const auto& e) {
-    left_table_ptr_ = e;
-    left_table_id_ = wish_id_of(e);
-  });
-  ui_tree.with("main.panels.left.left_selected", [&](const auto& e) { left_selected_ptr_ = e; });
-  ui_tree.with("main.panels.left.left_stats", [&](const auto& e) { left_stats_ptr_ = e; });
-  ui_tree.with("main.panels.left.left_disk", [&](const auto& e) { left_disk_ptr_ = e; });
-  ui_tree.with("main.panels.right.right_path", [&](const auto& e) {
-    right_path_ptr_ = e;
-    right_path_id_ = wish_id_of(e);
-  });
-  ui_tree.with("main.panels.right.right_table", [&](const auto& e) {
-    right_table_ptr_ = e;
-    right_table_id_ = wish_id_of(e);
-  });
-  ui_tree.with("main.panels.right.right_selected", [&](const auto& e) { right_selected_ptr_ = e; });
-  ui_tree.with("main.panels.right.right_stats", [&](const auto& e) { right_stats_ptr_ = e; });
-  ui_tree.with("main.panels.right.right_disk", [&](const auto& e) { right_disk_ptr_ = e; });
-  ui_tree.with(
-      "main.panels.right.right_header.open_explorer", [&](const auto& e) { open_explorer_id_ = wish_id_of(e); });
-  ui_tree.with("main.panels.middle.upload", [&](const auto& e) { upload_id_ = wish_id_of(e); });
-  ui_tree.with("main.panels.middle.download", [&](const auto& e) { download_id_ = wish_id_of(e); });
-  ui_tree.with("main.status", [&](const auto& e) { status_label_ptr_ = e; });
-  ui_tree.with("main.transfer_progress", [&](const auto& e) { transfer_progress_ptr_ = e; });
+  ui_element_ptr root_ptr = tree[""];
+  sess().ui_objects.merge(std::move(tree), root_key);
+  // The main root's top-level registration and "__path__" are handled by
+  // form::init() once on_init() returns; secondary panels register here.
+  if (root_key != internal_root_key_) {
+    sess().top_level_objects[key_t{root_key}] = root_ptr;
+    sess().top_level_handlers[key_t{root_key}] = this;
+    (*root_ptr)["__path__"_key] = root_key;
+  }
+}
 
-  sess().ui_objects.merge(std::move(ui_tree), internal_root_key_);
+void mc::on_init() {
+  internal_root_key_ = next_available_key("__mc_");
+  sandbox_root_key_ = internal_root_key_ + "_sandbox";
+
+  auto* title_f = findField<std::string>("title"_key);
+  const std::string title = title_f ? *title_f : std::string{"File Explorer"};
+
+  build_window(kLocalLayout, internal_root_key_, window_id_, [&](ui_tree& tree) {
+    tree.with("vbox.left_path", [&](const auto& e) {
+      left_path_ptr_ = e;
+      left_path_id_ = wish_id_of(e);
+    });
+    tree.with("vbox.left_table", [&](const auto& e) {
+      left_table_ptr_ = e;
+      left_table_id_ = wish_id_of(e);
+    });
+    tree.with("vbox.left_actions.upload", [&](const auto& e) { upload_id_ = wish_id_of(e); });
+    tree.with("vbox.left_actions.left_selected", [&](const auto& e) { left_selected_ptr_ = e; });
+    tree.with("vbox.left_stats", [&](const auto& e) { left_stats_ptr_ = e; });
+    tree.with("vbox.left_disk", [&](const auto& e) { left_disk_ptr_ = e; });
+    tree.with("vbox.left_status", [&](const auto& e) { left_status_ptr_ = e; });
+  });
+
+  build_window(kSandboxLayout, sandbox_root_key_, sandbox_window_id_, [&](ui_tree& tree) {
+    tree.with("vbox.right_toolbar.right_path", [&](const auto& e) {
+      right_path_ptr_ = e;
+      right_path_id_ = wish_id_of(e);
+    });
+    tree.with("vbox.right_toolbar.open_explorer", [&](const auto& e) { open_explorer_id_ = wish_id_of(e); });
+    tree.with("vbox.right_table", [&](const auto& e) {
+      right_table_ptr_ = e;
+      right_table_id_ = wish_id_of(e);
+    });
+    tree.with("vbox.right_actions.download", [&](const auto& e) { download_id_ = wish_id_of(e); });
+    tree.with("vbox.right_actions.right_selected", [&](const auto& e) { right_selected_ptr_ = e; });
+    tree.with("vbox.right_stats", [&](const auto& e) { right_stats_ptr_ = e; });
+    tree.with("vbox.right_disk", [&](const auto& e) { right_disk_ptr_ = e; });
+    tree.with("vbox.right_status", [&](const auto& e) { right_status_ptr_ = e; });
+  });
+
+  // Seed the first-run arrangement inside the browser's own nested
+  // dockspace (titled with the form's "title" field): Local and Sandbox side
+  // by side. Owned by imgui.ini after the first run (see
+  // docs/dock-layout.md); bump the version arg to layout() if it changes.
+  {
+    using namespace dock;
+    set_default_dock_layout(viewport(
+        "mc_dock", title,
+        layout(
+            split(dir::left, 0.50f, area({internal_root_key_}), area({sandbox_root_key_})),
+            /*version=*/1, /*target=*/"mc_dock")));
+  }
 
   // Populate the sandbox panel immediately -- unlike the local panel, this
   // form has direct filesystem access to it, so no client round trip is
-  // needed before the right table shows something.
+  // needed before the sandbox table shows something.
   navigate_sandbox("", sess().resource_dir, sess().allow_absolute_paths);
+}
+
+void mc::remove_panel_objects() {
+  // The key is forgotten once removed: next_available_key() may hand this
+  // form's freed internal_root_key_ to a new Mc instance, whose Sandbox panel
+  // would then reuse this exact secondary key (see the same reasoning in
+  // form::remove_objects_at()).
+  remove_objects_at(sandbox_root_key_);
+  sandbox_root_key_.clear();
 }
 
 // ── Table population ─────────────────────────────────────────────────────────
@@ -515,10 +548,11 @@ dynamic mc::make_names_payload(const std::vector<std::string>& names) {
   return payload;
 }
 
-void mc::set_status(const std::string& message) {
+void mc::set_status(const std::string& message, bool is_sandbox) {
   (*this)["status"_key] = message;
-  if (status_label_ptr_)
-    status_label_ptr_["text"_key] = message;
+  const ui_element_ptr& label = is_sandbox ? right_status_ptr_ : left_status_ptr_;
+  if (label)
+    label["text"_key] = message;
 }
 
 bool mc::sandbox_has_file(const std::string& name) const {
@@ -554,14 +588,14 @@ void mc::navigate_sandbox(
   } else {
     full = file_service::resolve_path(relative_path, resource_dir, allow_absolute_paths);
     if (full.empty()) {
-      set_status("Invalid or out-of-sandbox path.");
+      set_status("Invalid or out-of-sandbox path.", true);
       return;
     }
   }
 
   std::error_code ec;
   if (!fs::is_directory(full, ec)) {
-    set_status("Not a directory: " + relative_path);
+    set_status("Not a directory: " + relative_path, true);
     return;
   }
 
@@ -615,7 +649,7 @@ void mc::navigate_sandbox(
   if (right_path_ptr_)
     right_path_ptr_["value"_key] = display;
   (*this)["sandbox_path"_key] = relative_path;
-  set_status("Ready.");
+  set_status("Ready.", true);
 
   if (right_selected_ptr_)
     right_selected_ptr_["text"_key] = describe_selection(selected_sandbox_names_);
@@ -688,7 +722,7 @@ void mc::apply_rename() {
   std::string new_name = rename_input_ptr_->as<std::string>("value"_key);
   if (new_name.empty() || new_name == "." || new_name == ".." || new_name.find('/') != std::string::npos ||
       new_name.find('\\') != std::string::npos) {
-    set_status("Invalid name.");
+    set_status("Invalid name.", rename_is_sandbox_);
     request_close_rename();
     return;
   }
@@ -709,16 +743,16 @@ void mc::apply_rename() {
     fs::path new_full = file_service::resolve_path(new_rel.string(), s->resource_dir, s->allow_absolute_paths);
     std::error_code ec;
     if (old_full.empty() || new_full.empty()) {
-      set_status("Invalid or out-of-sandbox path.");
+      set_status("Invalid or out-of-sandbox path.", true);
     } else if (fs::exists(new_full, ec)) {
-      set_status("\"" + new_name + "\" already exists.");
+      set_status("\"" + new_name + "\" already exists.", true);
     } else {
       fs::rename(old_full, new_full, ec);
       if (ec) {
-        set_status("Rename failed: " + ec.message());
+        set_status("Rename failed: " + ec.message(), true);
       } else {
         navigate_sandbox(sandbox_path_, s->resource_dir, s->allow_absolute_paths);
-        set_status("Renamed.");
+        set_status("Renamed.", true);
       }
     }
   } else {
@@ -729,7 +763,7 @@ void mc::apply_rename() {
     req["old_name"_key] = rename_old_name_;
     req["new_name"_key] = new_name;
     emit("on_local_rename_requested"_key, std::move(req));
-    set_status("Renaming...");
+    set_status("Renaming...", false);
   }
 
   request_close_rename();
@@ -824,21 +858,37 @@ dynamic mc::do_refresh_sandbox(const dynamic& /*args*/) {
   return dynamic{};
 }
 
+dynamic mc::do_discard_upload(const dynamic& args) {
+  const auto* name = args.findField<std::string>("name"_key);
+  if (!name || name->empty())
+    return dynamic{};
+  // file_service::resolve_path() rejects anything that escapes the sandbox.
+  // Only the staging file goes: a chunked upload never touches the target
+  // name until its last chunk, so a file it was about to overwrite is intact.
+  fs::path full = file_service::resolve_path(*name, sess().resource_dir, sess().allow_absolute_paths);
+  if (full.empty())
+    return dynamic{};
+  full += file_service::kStagingSuffix;
+  std::error_code ec;
+  if (fs::is_regular_file(full, ec))
+    fs::remove(full, ec);
+  return dynamic{};
+}
+
 dynamic mc::on_set(const dynamic& patch) {
-  if (auto* v = patch.findField<std::string>("status"_key); v && status_label_ptr_)
-    status_label_ptr_["text"_key] = *v;
-  if (auto* v = patch.findField<float>("transfer_progress"_key); v && transfer_progress_ptr_)
-    transfer_progress_ptr_["value"_key] = *v;
-  if (auto* v = patch.findField<std::string>("transfer_label"_key); v && transfer_progress_ptr_)
-    transfer_progress_ptr_["label"_key] = *v;
+  // Only the client sets "status", and it only knows about the local side.
+  if (auto* v = patch.findField<std::string>("status"_key); v && left_status_ptr_)
+    left_status_ptr_["text"_key] = *v;
   return patch;
 }
 
 // ── Event routing ─────────────────────────────────────────────────────────────
 
 void mc::on_event(key_t id, key_t event, const dynamic& payload) {
-  if (id == window_id_ && event == "closed"_key) {
+  // Any panel's X button -> tear the whole browser down (top/pix's rule).
+  if (event == "closed"_key && (id == window_id_ || id == sandbox_window_id_)) {
     emit("closed"_key);
+    remove_panel_objects();
     remove_internal_objects();
     return;
   }
@@ -957,16 +1007,16 @@ void mc::on_event(key_t id, key_t event, const dynamic& payload) {
                                     : file_service::resolve_path(sandbox_path_, s->resource_dir, s->allow_absolute_paths);
     }
     if (full.empty() || !open_in_host_explorer(full))
-      set_status("Could not open host file explorer.");
+      set_status("Could not open host file explorer.", true);
     else
-      set_status("Opened in host file explorer.");
+      set_status("Opened in host file explorer.", true);
     return;
   }
 
   if (id == upload_id_ && event == "clicked"_key) {
     auto files = selected_file_names(selected_local_names_, local_entries_);
     if (files.empty()) {
-      set_status("Select a local file to upload.");
+      set_status("Select a local file to upload.", false);
       return;
     }
     // Split the selection into targets that can upload immediately and
@@ -995,7 +1045,7 @@ void mc::on_event(key_t id, key_t event, const dynamic& payload) {
   if (id == download_id_ && event == "clicked"_key) {
     auto files = selected_file_names(selected_sandbox_names_, sandbox_entries_);
     if (files.empty()) {
-      set_status("Select a sandbox file to download.");
+      set_status("Select a sandbox file to download.", true);
       return;
     }
     std::vector<std::string> ready, conflicts;
@@ -1039,7 +1089,7 @@ void mc::on_event(key_t id, key_t event, const dynamic& payload) {
             show_rename_dialog(target.is_sandbox, target.name);
           return;
         case row_menu_action::copy_path:
-          set_status("Copied path for \"" + target.name + "\" to clipboard.");
+          set_status("Copied path for \"" + target.name + "\" to clipboard.", target.is_sandbox);
           return;
       }
     }
@@ -1115,7 +1165,7 @@ void register_mc() {
       field{
           std::string{""},
           attr<DisplayName>("Local Path"),
-          attr<Description>("Client-owned local directory currently shown in the left panel. "
+          attr<Description>("Client-owned local directory currently shown in the Local panel. "
                             "Updated via update_local_listing(); read-only from the client's "
                             "perspective otherwise."),
           attr<Category>("Data")});
@@ -1125,7 +1175,7 @@ void register_mc() {
       field{
           std::string{""},
           attr<DisplayName>("Sandbox Path"),
-          attr<Description>("Server-owned sandbox directory currently shown in the right panel, "
+          attr<Description>("Server-owned sandbox directory currently shown in the Sandbox panel, "
                             "relative to the session sandbox root (\"\" == root)."),
           attr<Category>("Data")});
 
@@ -1134,24 +1184,8 @@ void register_mc() {
       field{
           std::string{"Ready."},
           attr<DisplayName>("Status"),
-          attr<Description>("Text shown in the status bar at the bottom of the window."),
-          attr<Category>("Data")});
-
-  proto->addField(
-      "transfer_progress"_key,
-      field{
-          0.0f,
-          attr<DisplayName>("Transfer Progress"),
-          attr<Description>("Fill fraction (0..1) of the transfer progress bar. The client drives "
-                            "this while an upload/download is in flight."),
-          attr<Category>("Data")});
-
-  proto->addField(
-      "transfer_label"_key,
-      field{
-          std::string{""},
-          attr<DisplayName>("Transfer Label"),
-          attr<Description>("Text overlaid on the transfer progress bar."),
+          attr<Description>("Latest status message. Set by the client, it is shown in the Local Machine "
+                            "panel's status line (the client only reports on the local side)."),
           attr<Category>("Data")});
 
   proto->addMethod(
@@ -1162,14 +1196,19 @@ void register_mc() {
       "refresh_sandbox"_key, bison::method{[](dynamic& self, const dynamic& args) -> dynamic {
         return static_cast<mc&>(self).do_refresh_sandbox(args);
       }});
+  proto->addMethod(
+      "discard_upload"_key, bison::method{[](dynamic& self, const dynamic& args) -> dynamic {
+        return static_cast<mc&>(self).do_discard_upload(args);
+      }});
   proto->addMethod("__setter"_key, bison::method{[](dynamic& s, const dynamic& p) -> dynamic {
                      return static_cast<mc&>(s).on_set(p);
                    }});
 
   (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Mc"));
   (*proto)[dynamic::CLASS].addAttribute(
-      attr<Description>("Two-panel file browser: local machine (left, client-driven) vs. session "
-                        "sandbox (right, server-driven), with upload/download transfer buttons and "
+      attr<Description>("Two-panel file browser: local machine (client-driven) vs. session sandbox "
+                        "(server-driven) as two dockable panels, each with a button sending its "
+                        "selected files to the other, and "
                         "an \"Open in Explorer\" shortcut for the sandbox side. Listen for "
                         "on_local_navigate/on_upload_requested/on_download_requested to drive the "
                         "client half of the handshake, and 'closed' to detect when the user is done."));

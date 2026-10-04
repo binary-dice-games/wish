@@ -12,7 +12,7 @@
 #include "pip.hpp"
 #include "pip_source.hpp"
 
-#include "modules/bdg/dev/common/frontend.hpp"
+#include "modules/bdg/common/frontend.hpp"
 
 #include "src/client/app_registry.hpp"
 #include "src/client/wish_app_host.hpp"
@@ -29,7 +29,7 @@ void run_pip(wish_app_host& s) {
   const std::string arg = s.app_args().empty() ? std::string{} : s.app_args()[0];
   const std::string interpreter = pip::resolve_interpreter(arg);
   if (interpreter.empty()) {
-    dev::fail_startup(s, "pip: no Python interpreter found in '" + arg + "' (expected a virtualenv directory)");
+    common::fail_startup(s, "pip: no Python interpreter found in '" + arg + "' (expected a virtualenv directory)");
     return;
   }
 
@@ -38,21 +38,21 @@ void run_pip(wish_app_host& s) {
   std::string error;
   const std::string version = pip::pip_source{nullptr, interpreter, nullptr}.probe_version(error);
   if (version.empty()) {
-    dev::fail_startup(s, "pip: cannot run `" + interpreter + " -m pip`", error);
+    common::fail_startup(s, "pip: cannot run `" + interpreter + " -m pip`", error);
     return;
   }
 
   // Every handler below runs as a job on the frontend's worker thread:
   // running pip inside an event handler would block the whole UI until it
   // exits. Long commands get a modal progress dialog
-  // (common/command_worker.hpp).
-  const auto frontend = dev::open_frontend(s, "PipFrontend"_key, "Running pip");
+  // (modules/bdg/common/command_worker.hpp).
+  const auto frontend = common::open_frontend(s, "PipFrontend"_key, "Running pip");
   const auto& proxy = frontend.proxy;
   const auto& worker = frontend.worker;
   auto source = std::make_shared<pip::pip_source>(proxy, interpreter, worker);
 
-  auto str = dev::payload_string;  // optional payload string (absent -> "")
-  auto flag = dev::payload_flag;   // optional payload flag (absent -> false)
+  auto str = common::payload_string;  // optional payload string (absent -> "")
+  auto flag = common::payload_flag;   // optional payload flag (absent -> false)
   auto options = [flag](const dynamic& payload) {
     pip::pip_source::install_options opts;
     opts.upgrade = flag(payload, "upgrade"_key);

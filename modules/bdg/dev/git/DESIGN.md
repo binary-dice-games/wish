@@ -105,15 +105,15 @@ was removed rather than kept.
 ### `git_process::run_git()` (client)
 
 Runs `git <args>` in the repository through the shared, non-interactive
-`argv -> {exit_code, stdout, stderr}` helper `dev::run_process()`
-(`modules/bdg/dev/common/process.hpp`, built on libuv `uv_spawn`, **not**
+`argv -> {exit_code, stdout, stderr}` helper `common::run_process()`
+(`modules/bdg/common/process.hpp`, built on libuv `uv_spawn`, **not**
 `bdg::bison::term::terminal` — see that header and §6 below for why), after
 setting `GIT_TERMINAL_PROMPT=0` once for the process.
 
 ### `git_repo_source::run_logged()` (client)
 
-`git_repo_source` derives from `dev::tool_source`
-(`modules/bdg/dev/common/tool_source.hpp`, shared by every bdg/dev client)
+`git_repo_source` derives from `common::tool_source`
+(`modules/bdg/common/tool_source.hpp`, shared by every bdg/dev client)
 and overrides its `run()` with `run_git(repo_path_, ...)`. Every `git`
 invocation it makes goes through the inherited `run_logged()` rather than
 calling `run_git()` directly: it runs the command exactly as `run_git()`
@@ -213,7 +213,7 @@ the leftmost cell of the commit `Table`'s each `TableRow`. This means:
 ## 6. Design Decisions
 
 - **`git_process::run_git()` is built on libuv (`uv_spawn`, through the
-  shared `dev::run_process()`), not `bdg::bison::term::terminal`.** `terminal` (`extern/bison/src/term/`)
+  shared `common::run_process()`), not `bdg::bison::term::terminal`.** `terminal` (`extern/bison/src/term/`)
   exists purely for the interactive `--transport term` session: it spawns
   the child attached to a real pseudo-terminal (`forkpty()`/ConPTY), takes
   a single shell command *string* (not an argv array), and for its
@@ -640,7 +640,7 @@ Depends on:
   this module's development added; see `docs/ui-elements.md`.
 - `Label.text_color` (existing field, added by the `editor` module) — diff
   line and file-status coloring; no new `Label` fields needed.
-- `uv_a` (libuv, vendored by bison) — the shared `dev::run_process()`
+- `uv_a` (libuv, vendored by bison) — the shared `common::run_process()`
   subprocess helper;
   linked into module-client targets by `wish_finalize_app_modules()`
   (`cmake/WishModules.cmake`).

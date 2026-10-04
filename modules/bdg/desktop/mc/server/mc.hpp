@@ -5,8 +5,10 @@
 
 #include <ui/forms/form.hpp>
 #include <ui/ui_element.hpp>
+#include <ui/ui_importer.hpp>
 
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <set>
 #include <string>
@@ -17,15 +19,27 @@ namespace bdg::wish {
 
 class properties_dialog;
 
-/// @brief Two-panel file browser: local machine (left) vs. session sandbox
-/// (right), with upload/download transfer buttons and a progress bar.
+/// @brief Two-panel file browser: local machine vs. session sandbox, with
+/// upload/download buttons that send the selected files across.
 ///
-/// The right panel is entirely server-owned: the session sandbox
+/// Laid out as two dockable panels inside the browser's own nested dockspace
+/// (`dock::viewport()`, see docs/dock-layout.md), like top, pix and the dev
+/// modules: **Local Machine** (the form's main root) and **Sandbox
+/// (Server)** (plus "Open in Explorer"). Each has a path bar, the button that
+/// sends its selected files to the other panel (Upload in Local, Download in
+/// Sandbox) next to a selection label, the file table, a disk-usage strip and
+/// a status line. A first-run arrangement is seeded by `on_init()` (the two
+/// side by side); the user can re-dock, tab, or float either panel
+/// afterwards. Closing either panel closes the whole browser. Transfer
+/// progress is not shown here: the client reports it through the shared
+/// ProgressBox dialog (modules/bdg/common/command_worker.hpp).
+///
+/// The Sandbox panel is entirely server-owned: the session sandbox
 /// (`context::resource_dir`) lives on the same machine as this form, so
 /// navigation, listing, and the "Open in Explorer" button are all handled
 /// here directly via `std::filesystem` + `file_service::resolve_path()`.
 ///
-/// The left panel shows the *client's* local machine, which this form has
+/// The Local panel shows the *client's* local machine, which this form has
 /// no direct access to. It follows the same handshake as nano's
 /// `on_request_open`: the form emits `on_local_navigate` when the user wants
 /// to browse a different local directory, and the client responds by
@@ -45,7 +59,7 @@ class properties_dialog;
 /// directories, and the ".." pseudo-row, are silently skipped).
 ///
 /// Emitted events:
-///   - `"closed"` — window X button; internal UI removed.
+///   - `"closed"` — any panel's X button; all panels are removed.
 ///   - `"on_local_navigate"` (`{name, type}`, `type` is `"dir"` or `"path"`)
 ///     — client should re-list the target local directory and call
 ///     `update_local_listing()`.
@@ -60,7 +74,7 @@ class properties_dialog;
 ///     `sandbox_path` is empty, i.e. sandbox root) for each `names` entry,
 ///     write it under the current local path, then call
 ///     `update_local_listing()` once after the whole batch to refresh the
-///     left panel.
+///     Local panel.
 ///   - `"on_upload_conflict"` (`{names, local_path, sandbox_path}`) — every
 ///     name in `names` already exists in the sandbox. The client should confirm
 ///     once with the user (e.g. via an instantiated `MessageBox`,
@@ -88,8 +102,11 @@ class properties_dialog;
 class mc : public form {
  public:
   explicit mc(bison::dynamic&& base);
+  /// @brief Removes the secondary Sandbox panel; ~form() removes the main
+  /// Local panel and the dock layout.
+  ~mc() override;
 
-  /// @brief RMI method: replace the left panel's displayed directory.
+  /// @brief RMI method: replace the Local panel's displayed directory.
   /// @p args holds `path` (string) and `files` (dynamic array of entries,
   /// each `{name, type ("file"/"dir"), size, modified}` — `size`/`modified`
   /// are already client-formatted display strings).
@@ -100,13 +117,24 @@ class mc : public form {
   /// without requiring the user to navigate away and back.
   bison::dynamic do_refresh_sandbox(const bison::dynamic& args);
 
+  /// @brief RMI method: delete the staging file (`<name>` +
+  /// `file_service::kStagingSuffix`) a cancelled chunked upload left in the
+  /// sandbox. @p args holds `name`, the sandbox-relative path the upload was
+  /// writing (the same `"<sandbox_path>/<name>"` it was sent to). The file at
+  /// `name` itself is never touched (an upload only replaces it on its last
+  /// chunk). Names that escape the sandbox are ignored.
+  bison::dynamic do_discard_upload(const bison::dynamic& args);
+
   /// @brief Called from the `__setter` prototype method for every set() call.
-  /// Intercepts `local_path`, `sandbox_path`, `status`, `transfer_progress`,
-  /// and `transfer_label` to mirror them into the internal widgets.
+  /// Intercepts `status` to mirror it into the Local panel's status line.
   bison::dynamic on_set(const bison::dynamic& patch);
 
  protected:
   void on_init() override;
+  /// @brief Reacts to: `"closed"` (any panel's X button -- emits `"closed"`
+  /// and removes every panel); path bar `"changed"`; table row selection,
+  /// sorting and row context-menu clicks; transfer/explorer button clicks;
+  /// and the Rename dialog's buttons.
   void on_event(bison::key_t widget_id, bison::key_t event_name, const bison::dynamic& payload) override;
 
  private:
@@ -145,7 +173,21 @@ class mc : public form {
       const ui_element_ptr& table, const std::vector<file_row>& entries, bool is_sandbox,
       std::unordered_map<bison::key_t, row_menu_target, bison::key_t, bison::key_t>& menu_targets,
       const std::set<std::string>& selected_names = {});
-  void set_status(const std::string& message);
+  /// @brief Shows @p message in the Sandbox (@p is_sandbox) or Local panel's
+  /// status line and stores it in the `status` field.
+  void set_status(const std::string& message, bool is_sandbox);
+
+  /// @brief Import @p layout_json, assign every element an RMI id, run
+  /// @p wire to capture element pointers, and merge the tree under
+  /// @p root_key -- registering it as its own top-level object (with
+  /// `__path__`, so it can be named in the dock layout) unless it is the
+  /// main `internal_root_key_`, which form::init() registers itself.
+  void build_window(
+      const char* layout_json, const std::string& root_key, bison::key_t& window_id_out,
+      const std::function<void(ui_tree&)>& wire);
+  /// @brief Remove the Sandbox panel and forget its key. Safe to call more
+  /// than once.
+  void remove_panel_objects();
 
   /// @brief Applies one row click's multi-selection semantics to @p
   /// selected/@p anchor, given @p entries' current order and the clicked
@@ -189,7 +231,7 @@ class mc : public form {
       std::unordered_map<bison::key_t, row_menu_target, bison::key_t, bison::key_t>& menu_targets);
 
   /// @brief Sorts @p entries in place by the given file_table column
-  /// (0=Name, 1=Size, 2=Modified -- see kLayout's col_name/col_size/
+  /// (0=Name, 1=Size, 2=Modified -- see kLocalLayout's col_name/col_size/
   /// col_modified `column_id`), leaving a leading ".." entry (see
   /// navigate_sandbox()) pinned first regardless of column/direction, the
   /// way Explorer keeps the parent-directory shortcut from moving under
@@ -253,7 +295,11 @@ class mc : public form {
   /// instance -- see form::instantiate_child_form().
   void show_properties_dialog(bool is_sandbox, const file_row& entry);
 
-  bison::key_t window_id_;
+  /// Secondary panel root: internal_root_key_ + "_sandbox".
+  std::string sandbox_root_key_;
+
+  bison::key_t window_id_; ///< Local panel (main root).
+  bison::key_t sandbox_window_id_;
   bison::key_t left_path_id_;
   bison::key_t left_table_id_;
   bison::key_t right_path_id_;
@@ -267,13 +313,13 @@ class mc : public form {
   ui_element_ptr left_selected_ptr_;
   ui_element_ptr left_stats_ptr_;
   ui_element_ptr left_disk_ptr_;
+  ui_element_ptr left_status_ptr_;
   ui_element_ptr right_path_ptr_;
   ui_element_ptr right_table_ptr_;
   ui_element_ptr right_selected_ptr_;
   ui_element_ptr right_stats_ptr_;
   ui_element_ptr right_disk_ptr_;
-  ui_element_ptr status_label_ptr_;
-  ui_element_ptr transfer_progress_ptr_;
+  ui_element_ptr right_status_ptr_;
 
   std::string local_path_;
   std::string sandbox_path_; ///< Relative to sandbox root; "" == root.
@@ -302,7 +348,7 @@ class mc : public form {
 
   // Current per-panel sort state, applied by sort_entries() whenever
   // local_entries_/sandbox_entries_ is (re)built. Defaults to ascending by
-  // Name (column_id 0), matching col_name's position in kLayout.
+  // Name (column_id 0), matching col_name's position in kLocalLayout.
   int32_t local_sort_column_id_{0};
   bool local_sort_ascending_{true};
   int32_t sandbox_sort_column_id_{0};

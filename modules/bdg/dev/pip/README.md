@@ -34,7 +34,7 @@ gated behind a `MessageBox` confirm; installs and upgrades fire directly.
   command.
 - **client/**: `run_pip(wish_app_host&)`, self-registered as the `"pip"`
   embedded app — owns all `pip` invocation. Commands run through
-  the shared [common/](../common) helpers (`process.hpp`, `tool_source.hpp`)
+  the shared [common/](../../common) helpers (`process.hpp`, `tool_source.hpp`)
   with `<python> -m pip` as the launcher. `client/pip_parsers.hpp`/`.cpp` parses `pip list --format=json`
   and `pip index versions` output and rejects flag-shaped values before they
   reach an argv. `client/pip_source.hpp`/`.cpp` runs every actual `pip`

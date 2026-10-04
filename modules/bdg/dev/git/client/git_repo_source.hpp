@@ -3,7 +3,7 @@
 /// @brief Client-side git command orchestration for the git module.
 ///
 /// Owns the local repository path, runs every `git` plumbing command through
-/// dev::tool_source (see common/tool_source.hpp) and run_git(), parses the output, and pushes structured
+/// common::tool_source (see common/tool_source.hpp) and run_git(), parses the output, and pushes structured
 /// snapshots to the server-side GitRepo form via its update_refs/update_log/
 /// update_status/update_commit_files/update_diff RMI methods. Also reacts to
 /// the form's `*_requested` events (see git.hpp's class doc comment) by
@@ -18,7 +18,7 @@
 
 #include "git_process.hpp"
 
-#include "modules/bdg/dev/common/tool_source.hpp"
+#include "modules/bdg/common/tool_source.hpp"
 
 #include "src/bison/bison.hpp"
 #include "src/rmi/client/proxy.hpp"
@@ -30,11 +30,11 @@
 
 namespace bdg::wish::git {
 
-class git_repo_source : public dev::tool_source {
+class git_repo_source : public common::tool_source {
  public:
   git_repo_source(
       std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::string repo_path,
-      std::shared_ptr<dev::command_worker> worker);
+      std::shared_ptr<common::command_worker> worker);
 
   /// @brief Pushes refs, the commit graph, and working-directory status, in
   /// that order. Called once on startup (in response to "refresh_requested")
@@ -42,7 +42,7 @@ class git_repo_source : public dev::tool_source {
   void refresh_all();
 
   /// @brief `git <args>` in the repository, via run_git().
-  process_result run(const std::vector<std::string>& args, dev::process_options options = {}) const override;
+  process_result run(const std::vector<std::string>& args, common::process_options options = {}) const override;
 
   // ── *_requested event reactions ─────────────────────────────────────────
   void on_stage(const std::string& path);

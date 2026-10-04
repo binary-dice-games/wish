@@ -14,7 +14,7 @@
 /// of these managers is installed on any given machine.
 #pragma once
 
-#include "modules/bdg/dev/common/text.hpp"
+#include "modules/bdg/common/text.hpp"
 
 #include <optional>
 #include <string>
@@ -133,7 +133,7 @@ bool is_valid_package_name(const std::string& name);
 
 /// @brief Whether @p value may be passed as a search query: non-empty and
 /// not starting with `-`.
-using dev::is_safe_arg;
+using common::is_safe_arg;
 
 /// @brief Splits an install box's text into package names on whitespace.
 std::vector<std::string> split_names(const std::string& text);

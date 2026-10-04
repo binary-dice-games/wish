@@ -11,7 +11,7 @@
 #include "git_process.hpp"
 #include "git_repo_source.hpp"
 
-#include "modules/bdg/dev/common/frontend.hpp"
+#include "modules/bdg/common/frontend.hpp"
 
 #include "src/client/app_registry.hpp"
 #include "src/client/wish_app_host.hpp"
@@ -26,7 +26,7 @@ using namespace bison;
 
 void run_git(wish_app_host& s) {
   if (s.app_args().empty()) {
-    dev::fail_startup(s, "git: a repository path is required, e.g. `wish client --run=git -- /path/to/repo`");
+    common::fail_startup(s, "git: a repository path is required, e.g. `wish client --run=git -- /path/to/repo`");
     return;
   }
   const std::string repo_path_arg = s.app_args()[0];
@@ -34,7 +34,7 @@ void run_git(wish_app_host& s) {
   {
     auto check = git::run_git(repo_path_arg, {"rev-parse", "--is-inside-work-tree"});
     if (!check.ok()) {
-      dev::fail_startup(s, "git: '" + repo_path_arg + "' is not a git repository (or git is not on PATH)");
+      common::fail_startup(s, "git: '" + repo_path_arg + "' is not a git repository (or git is not on PATH)");
       return;
     }
   }
@@ -50,8 +50,8 @@ void run_git(wish_app_host& s) {
   // Every handler below runs as a job on the frontend's worker thread:
   // running the tool inside an event handler would block the whole UI until
   // it exits. Long commands get a modal progress dialog
-  // (common/command_worker.hpp).
-  const auto frontend = dev::open_frontend(s, "GitRepo"_key, "Running git");
+  // (modules/bdg/common/command_worker.hpp).
+  const auto frontend = common::open_frontend(s, "GitRepo"_key, "Running git");
   const auto& proxy = frontend.proxy;
   const auto& worker = frontend.worker;
   auto source = std::make_shared<git::git_repo_source>(proxy, repo_path, worker);

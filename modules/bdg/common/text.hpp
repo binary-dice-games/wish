@@ -14,7 +14,7 @@
 #include <string>
 #include <vector>
 
-namespace bdg::wish::dev {
+namespace bdg::wish::common {
 
 /// @brief @p s without leading / trailing spaces, tabs and line breaks.
 inline std::string trim(const std::string& s) {
@@ -106,4 +106,4 @@ inline bool is_safe_arg(const std::string& value) {
   return !value.empty() && value[0] != '-';
 }
 
-} // namespace bdg::wish::dev
+} // namespace bdg::wish::common

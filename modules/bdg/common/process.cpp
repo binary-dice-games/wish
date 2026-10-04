@@ -1,7 +1,7 @@
 // MIT License © 2026 Binary Dice Games
 /// @file process.cpp
 /// @brief libuv-based implementation of run_process().
-#include "modules/bdg/dev/common/process.hpp"
+#include "modules/bdg/common/process.hpp"
 
 #include <uv.h>
 
@@ -9,7 +9,7 @@
 #include <cstdint>
 #include <cstdlib>
 
-namespace bdg::wish::dev {
+namespace bdg::wish::common {
 
 // ── libuv plumbing ───────────────────────────────────────────────────────────
 
@@ -215,4 +215,4 @@ process_result run_process(const std::vector<std::string>& argv, const process_o
   return result;
 }
 
-} // namespace bdg::wish::dev
+} // namespace bdg::wish::common

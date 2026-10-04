@@ -19,16 +19,16 @@
 /// links it into every module-client target. The implementation
 /// (process.cpp) is the only file that includes `<uv.h>`, which on native
 /// Windows drags in `<windows.h>` and its macros. `wish_add_module()`
-/// compiles this directory's sources into the client of every bdg/dev
-/// module that is enabled (a collection's `common/` directory).
+/// compiles this directory's sources into the client of every enabled bdg
+/// module (an organization's `common/` directory).
 #pragma once
 
-#include "modules/bdg/dev/common/process_hooks.hpp"
+#include "modules/bdg/common/process_hooks.hpp"
 
 #include <string>
 #include <vector>
 
-namespace bdg::wish::dev {
+namespace bdg::wish::common {
 
 /// @brief Result of one run_process() invocation.
 struct process_result {
@@ -83,4 +83,4 @@ inline std::vector<std::string> concat_args(std::vector<std::string> head, const
 ///         (128 + signal when it was stopped by a signal).
 process_result run_process(const std::vector<std::string>& argv, const process_options& options = {});
 
-} // namespace bdg::wish::dev
+} // namespace bdg::wish::common

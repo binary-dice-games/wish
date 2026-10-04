@@ -2,7 +2,7 @@
 /// @file helm_source.hpp
 /// @brief Client-side `helm` command orchestration for the helm module.
 ///
-/// Runs every `helm` command through dev::tool_source (see
+/// Runs every `helm` command through common::tool_source (see
 /// common/tool_source.hpp), parses the tab-separated table output (see
 /// helm_table_parser.hpp), and pushes structured snapshots to the server-side
 /// HelmFrontend form via its update_* RMI methods. Also reacts to the form's
@@ -14,7 +14,7 @@
 /// from the client -- the server never touches `helm` directly.
 #pragma once
 
-#include "modules/bdg/dev/common/tool_source.hpp"
+#include "modules/bdg/common/tool_source.hpp"
 
 #include "src/bison/bison.hpp"
 #include "src/rmi/client/proxy.hpp"
@@ -25,11 +25,11 @@
 
 namespace bdg::wish::helm {
 
-using dev::process_result;
+using common::process_result;
 
-class helm_source : public dev::tool_source {
+class helm_source : public common::tool_source {
  public:
-  helm_source(std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::shared_ptr<dev::command_worker> worker);
+  helm_source(std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::shared_ptr<common::command_worker> worker);
 
   /// @brief Pushes the releases and repositories snapshots, in that order.
   /// Called once on startup, on "refresh_requested", and after every

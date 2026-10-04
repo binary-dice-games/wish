@@ -23,9 +23,9 @@
 /// output}`. Header-only.
 #pragma once
 
-#include "modules/bdg/dev/common/command_worker.hpp"
-#include "modules/bdg/dev/common/process.hpp"
-#include "modules/bdg/dev/common/text.hpp"
+#include "modules/bdg/common/command_worker.hpp"
+#include "modules/bdg/common/process.hpp"
+#include "modules/bdg/common/text.hpp"
 
 #include "src/bison/bison.hpp"
 #include "src/rmi/client/proxy.hpp"
@@ -37,7 +37,7 @@
 #include <utility>
 #include <vector>
 
-namespace bdg::wish::dev {
+namespace bdg::wish::common {
 
 /// @brief Optional settings for tool_source::run_logged().
 struct run_options {
@@ -221,4 +221,4 @@ class tool_source {
   std::vector<std::string> launcher_;
 };
 
-} // namespace bdg::wish::dev
+} // namespace bdg::wish::common

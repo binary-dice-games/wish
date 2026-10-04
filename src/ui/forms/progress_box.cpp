@@ -8,6 +8,8 @@
 
 #include <ui/ui_importer.hpp>
 
+#include <algorithm>
+
 namespace bdg::wish {
 
 using namespace bison;
@@ -237,11 +239,20 @@ dynamic progress_box::do_update(const dynamic& args) {
   if (table_)
     table_->refresh_children_order();
 
-  // A negative ProgressBar value draws ImGui's indeterminate animation,
-  // whose position follows the value -- hence the ever-growing phase.
+  // A known fraction draws a determinate bar with the caller's detail
+  // overlaid (empty: ImGui's percentage). Otherwise a negative ProgressBar
+  // value draws ImGui's indeterminate animation, whose position follows the
+  // value -- hence the ever-growing phase.
   if (bar_) {
-    const auto* seconds = args.findField<float>("phase"_key);
-    bar_["value"_key] = -0.001f - (seconds ? *seconds : 0.0f) * 0.5f;
+    const auto* fraction = args.findField<float>("fraction"_key);
+    if (fraction && *fraction >= 0.0f) {
+      bar_["value"_key] = std::min(*fraction, 1.0f);
+      bar_["label"_key] = str_of(args, "detail"_key);
+    } else {
+      const auto* seconds = args.findField<float>("phase"_key);
+      bar_["value"_key] = -0.001f - (seconds ? *seconds : 0.0f) * 0.5f;
+      bar_["label"_key] = std::string{};
+    }
   }
   return dynamic{};
 }
@@ -330,8 +341,9 @@ void register_progress_box() {
 
   (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("ProgressBox"));
   (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
-      "Modal progress dialog for a long-running client-side operation: an indeterminate progress bar, a "
-      "scrolling output log and a Cancel button. Call update({command, phase, lines}) while the operation "
+      "Modal progress dialog for a long-running client-side operation: a progress bar (indeterminate, or "
+      "determinate when update() passes a fraction), a scrolling output log and a Cancel button. Call "
+      "update({command, phase, lines, fraction, detail}) while the operation "
       "runs and finish({error}) when it ends (a non-empty error keeps the dialog open until the user closes "
       "it). Listen for the cancel_requested and closed events."));
 

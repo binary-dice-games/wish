@@ -576,7 +576,7 @@ bool has_header(const std::vector<kv_entry>& headers, const std::string& name) {
 
 curl_source::curl_source(
     std::shared_ptr<bison::rmi::proxy::dynamic> proxy, wish_app_host& host,
-    std::shared_ptr<dev::command_worker> worker)
+    std::shared_ptr<common::command_worker> worker)
     : tool_source(std::move(proxy), std::move(worker), "curl"), host_(host) {}
 
 std::string curl_source::new_id(const char* prefix) {
@@ -917,8 +917,8 @@ void curl_source::send_request(const request_state& raw) {
   // response itself, which belongs in the Response window.
   process_result r = worker_->run(
       "curl " + method + " " + argv.back(),
-      [&](const dev::run_hooks* hooks) {
-        dev::process_options options;
+      [&](const common::run_hooks* hooks) {
+        common::process_options options;
         options.hooks = hooks;
         return run(argv, std::move(options));
       },

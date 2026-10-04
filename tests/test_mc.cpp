@@ -13,9 +13,11 @@
 #include "src/bison/bison_object.hpp"
 #include "src/rmi/rmi.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -180,11 +182,15 @@ class SessionCapturingServer : public wish::server {
   }
 };
 
-// Helper: find the root key for the internal form mc (starts with
-// "__mc_", no dot -- i.e. it is the top-level entry not a child path).
+// Helper: find the root key for the internal form tree -- "__mc_<N>"
+// exactly (the Local panel), not a child path ("__mc_0.vbox...") nor a
+// secondary panel root ("__mc_0_sandbox") nor the
+// Rename dialog ("__mc_rename_0").
 static std::string find_form_root(const wish::name_map& objects) {
+  static const std::string prefix = "__mc_";
   for (const auto& [k, _] : objects) {
-    if (k.rfind("__mc_", 0) == 0 && k.find('.') == std::string::npos)
+    if (k.size() > prefix.size() && k.rfind(prefix, 0) == 0 &&
+        std::all_of(k.begin() + prefix.size(), k.end(), [](char ch) { return ch >= '0' && ch <= '9'; }))
       return k;
   }
   return {};
@@ -234,25 +240,76 @@ TEST_F(McWindowTest, FormRootIsWindow) {
 TEST_F(McWindowTest, McContainsBothPanels) {
   std::string root = instantiate_and_get_root();
   ASSERT_FALSE(root.empty());
-  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".main.panels.left.left_path"));
-  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".main.panels.left.left_table"));
-  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".main.panels.right.right_path"));
-  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".main.panels.right.right_table"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".vbox.left_path"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".vbox.left_table"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + "_sandbox.vbox.right_toolbar.right_path"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + "_sandbox.vbox.right_table"));
 }
 
 TEST_F(McWindowTest, McContainsTransferControls) {
   std::string root = instantiate_and_get_root();
   ASSERT_FALSE(root.empty());
-  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".main.panels.middle.upload"));
-  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".main.panels.middle.download"));
-  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".main.panels.right.right_header.open_explorer"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".vbox.left_actions.upload"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + "_sandbox.vbox.right_actions.download"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + "_sandbox.vbox.right_toolbar.open_explorer"));
 }
 
-TEST_F(McWindowTest, McContainsStatusAndProgress) {
+// Each panel has its own status line; transfer progress lives in the shared
+// ProgressBox dialog, not in the form.
+TEST_F(McWindowTest, McContainsPerPanelStatusLines) {
   std::string root = instantiate_and_get_root();
   ASSERT_FALSE(root.empty());
-  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".main.status"));
-  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".main.transfer_progress"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".vbox.left_status"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + "_sandbox.vbox.right_status"));
+  EXPECT_FALSE(srv_->last_session->top_level_objects.count(bison::key_t{root + "_transfer"}));
+}
+
+// Each panel is its own top-level Window, addressable by "__path__" so the
+// dock layout can name it.
+TEST_F(McWindowTest, EachPanelIsATopLevelWindow) {
+  std::string root = instantiate_and_get_root();
+  ASSERT_FALSE(root.empty());
+  auto& s = *srv_->last_session;
+  for (const std::string key : {root, root + "_sandbox"}) {
+    auto it = s.top_level_objects.find(bison::key_t{key});
+    ASSERT_NE(it, s.top_level_objects.end()) << key;
+    EXPECT_EQ(it->second->as<bison::key_t>(dynamic::CLASS), "Window"_key) << key;
+    EXPECT_EQ(it->second->as<std::string>("__path__"_key), key) << key;
+  }
+  EXPECT_EQ(s.ui_objects.at(root)->as<std::string>("title"_key), "Local Machine");
+  EXPECT_EQ(s.ui_objects.at(root + "_sandbox")->as<std::string>("title"_key), "Sandbox (Server)");
+}
+
+// The panels are seeded into a nested DockSpaceViewport ("mc_dock"), titled
+// with the form's "title", whose DockLayout names every panel's path.
+TEST_F(McWindowTest, RegistersDefaultDockLayoutNamingEveryPanel) {
+  std::string root = instantiate_and_get_root();
+  ASSERT_FALSE(root.empty());
+
+  wish::ui_element_ptr viewport;
+  for (const auto& [k, obj] : srv_->last_session->top_level_objects)
+    if (obj->as<bison::key_t>(dynamic::CLASS) == "DockSpaceViewport"_key)
+      viewport = obj;
+  ASSERT_TRUE(viewport);
+  EXPECT_EQ(viewport->as<std::string>("id"_key), "mc_dock");
+  EXPECT_EQ(viewport->as<std::string>("title"_key), "File Explorer");
+
+  // Collect every DockArea's newline-separated "windows" list.
+  std::vector<std::string> windows;
+  std::function<void(const dynamic&)> walk = [&](const dynamic& node) {
+    if (node.as<bison::key_t>(dynamic::CLASS) == "DockArea"_key)
+      windows.push_back(node.as<std::string>("windows"_key));
+    if (auto* cf = node.findField<dynamic_ptr>("children"_key); cf && *cf)
+      (*cf)->forEach([&](bison::key_t, const field& f) {
+        if (f.is<dynamic_ptr>() && f.as<dynamic_ptr>())
+          walk(*f.as<dynamic_ptr>());
+      });
+  };
+  walk(*viewport);
+  std::sort(windows.begin(), windows.end());
+  std::vector<std::string> expected{root, root + "_sandbox"};
+  std::sort(expected.begin(), expected.end());
+  EXPECT_EQ(windows, expected);
 }
 
 TEST_F(McWindowTest, SandboxAutoPopulatesOnInitWithoutHanging) {
@@ -268,16 +325,17 @@ TEST_F(McWindowTest, SandboxAutoPopulatesOnInitWithoutHanging) {
   // populate_resource_dir() seeds the fresh temp dir with embedded assets,
   // so the table isn't necessarily empty -- just confirm it built without
   // hanging or throwing.
-  auto it = srv_->last_session->ui_objects.find(root + ".main.panels.right.right_table");
+  auto it = srv_->last_session->ui_objects.find(root + "_sandbox.vbox.right_table");
   ASSERT_NE(it, srv_->last_session->ui_objects.end());
   auto* cf = it->second->findField<dynamic_ptr>("children"_key);
   ASSERT_NE(cf, nullptr);
   ASSERT_TRUE(*cf);
 
   EXPECT_EQ(
-      srv_->last_session->ui_objects.at(root + ".main.status")->as<std::string>("text"_key), "Ready.");
+      srv_->last_session->ui_objects.at(root + "_sandbox.vbox.right_status")->as<std::string>("text"_key), "Ready.");
   EXPECT_EQ(
-      srv_->last_session->ui_objects.at(root + ".main.panels.right.right_path")->as<std::string>("value"_key), "/");
+      srv_->last_session->ui_objects.at(root + "_sandbox.vbox.right_toolbar.right_path")->as<std::string>("value"_key),
+      "/");
 }
 
 // ── RMI methods + on_set() ─────────────────────────────────────────────────────
@@ -336,18 +394,18 @@ TEST_F(McRmiTest, UpdateLocalListingPopulatesLeftTable) {
       "/home/user",
       {{"docs", "dir", "", "2026-01-01 00:00"}, {"notes.txt", "file", "1.2 KB", "2026-01-02 00:00"}});
 
-  EXPECT_EQ(table_row_count(root_ + ".main.panels.left.left_table"), 2u);
+  EXPECT_EQ(table_row_count(root_ + ".vbox.left_table"), 2u);
   EXPECT_EQ(
-      srv_->last_session->ui_objects.at(root_ + ".main.panels.left.left_path")->as<std::string>("value"_key),
+      srv_->last_session->ui_objects.at(root_ + ".vbox.left_path")->as<std::string>("value"_key),
       "/home/user");
 }
 
 TEST_F(McRmiTest, UpdateLocalListingReplacesPreviousEntries) {
   update_local_listing("/a", {{"one.txt", "file", "1 B", ""}});
-  ASSERT_EQ(table_row_count(root_ + ".main.panels.left.left_table"), 1u);
+  ASSERT_EQ(table_row_count(root_ + ".vbox.left_table"), 1u);
 
   update_local_listing("/b", {{"two.txt", "file", "2 B", ""}, {"three.txt", "file", "3 B", ""}});
-  EXPECT_EQ(table_row_count(root_ + ".main.panels.left.left_table"), 2u);
+  EXPECT_EQ(table_row_count(root_ + ".vbox.left_table"), 2u);
 }
 
 TEST_F(McRmiTest, UpdateLocalListingShowsTypeIconInNameCell) {
@@ -361,7 +419,7 @@ TEST_F(McRmiTest, UpdateLocalListingShowsTypeIconInNameCell) {
       {{"docs", "dir", "", ""}, {"photo.png", "file", "1 KB", ""}, {"unknown.xyz", "file", "1 B", ""}});
 
   auto name_cell_icon_src = [&](size_t row_idx) -> std::string {
-    auto it = srv_->last_session->ui_objects.find(root_ + ".main.panels.left.left_table");
+    auto it = srv_->last_session->ui_objects.find(root_ + ".vbox.left_table");
     if (it == srv_->last_session->ui_objects.end())
       return {};
     auto* cf = it->second->findField<dynamic_ptr>("children"_key);
@@ -389,7 +447,7 @@ TEST_F(McRmiTest, RefreshSandboxRepopulatesRightTable) {
   // do_refresh_sandbox() dispatch call path specifically.
   refresh_sandbox();
   EXPECT_EQ(
-      srv_->last_session->ui_objects.at(root_ + ".main.status")->as<std::string>("text"_key), "Ready.");
+      srv_->last_session->ui_objects.at(root_ + "_sandbox.vbox.right_status")->as<std::string>("text"_key), "Ready.");
 }
 
 TEST_F(McRmiTest, SetStatusMirrorsToStatusLabel) {
@@ -398,26 +456,37 @@ TEST_F(McRmiTest, SetStatusMirrorsToStatusLabel) {
   proxy_->set(std::move(patch)).get();
 
   EXPECT_EQ(
-      srv_->last_session->ui_objects.at(root_ + ".main.status")->as<std::string>("text"_key), "Uploading...");
+      srv_->last_session->ui_objects.at(root_ + ".vbox.left_status")->as<std::string>("text"_key), "Uploading...");
 }
 
-TEST_F(McRmiTest, SetTransferProgressMirrorsToProgressBar) {
-  dynamic patch;
-  patch["transfer_progress"_key] = 0.5f;
-  proxy_->set(std::move(patch)).get();
+// discard_upload removes the staging file a cancelled chunked upload left
+// behind, keeps the file it was going to overwrite, and never reaches
+// outside the sandbox.
+TEST_F(McRmiTest, DiscardUploadRemovesOnlyTheStagingFile) {
+  const auto& resource_dir = srv_->last_session->resource_dir;
+  { std::ofstream out(resource_dir / "data.bin"); out << "original"; }
+  { std::ofstream out(resource_dir / "data.bin.wishpart"); out << "half"; }
 
-  EXPECT_FLOAT_EQ(
-      srv_->last_session->ui_objects.at(root_ + ".main.transfer_progress")->as<float>("value"_key), 0.5f);
+  dynamic args;
+  args["name"_key] = std::string{"data.bin"};
+  proxy_->call("discard_upload"_key, std::move(args)).get();
+
+  EXPECT_FALSE(std::filesystem::exists(resource_dir / "data.bin.wishpart"));
+  EXPECT_TRUE(std::filesystem::exists(resource_dir / "data.bin"));
 }
 
-TEST_F(McRmiTest, SetTransferLabelMirrorsToProgressBarLabel) {
-  dynamic patch;
-  patch["transfer_label"_key] = std::string{"3 of 5"};
-  proxy_->set(std::move(patch)).get();
+TEST_F(McRmiTest, DiscardUploadIgnoresPathsOutsideSandbox) {
+  const auto& resource_dir = srv_->last_session->resource_dir;
+  const auto outside = resource_dir.parent_path() /
+      (std::string{"mc_outside_"} + ::testing::UnitTest::GetInstance()->current_test_info()->name() + ".txt");
+  { std::ofstream out(outside.string() + ".wishpart"); out << "keep"; }
 
-  EXPECT_EQ(
-      srv_->last_session->ui_objects.at(root_ + ".main.transfer_progress")->as<std::string>("label"_key),
-      "3 of 5");
+  dynamic args;
+  args["name"_key] = "../" + outside.filename().string();
+  proxy_->call("discard_upload"_key, std::move(args)).get();
+
+  EXPECT_TRUE(std::filesystem::exists(outside.string() + ".wishpart"));
+  std::filesystem::remove(outside.string() + ".wishpart");
 }
 
 // ── Disk-usage summary strip ───────────────────────────────────────────────────
@@ -432,10 +501,10 @@ TEST_F(McRmiTest, UpdateLocalListingWithDiskStatsPopulatesSummaryLabels) {
   proxy_->call("update_local_listing"_key, std::move(args)).get();
 
   EXPECT_EQ(
-      srv_->last_session->ui_objects.at(root_ + ".main.panels.left.left_stats")->as<std::string>("text"_key),
+      srv_->last_session->ui_objects.at(root_ + ".vbox.left_stats")->as<std::string>("text"_key),
       "3 files, 12.0 MB");
   EXPECT_EQ(
-      srv_->last_session->ui_objects.at(root_ + ".main.panels.left.left_disk")->as<std::string>("text"_key),
+      srv_->last_session->ui_objects.at(root_ + ".vbox.left_disk")->as<std::string>("text"_key),
       "Disk: 1.0 GB used, 9.0 GB free of 10.0 GB");
 }
 
@@ -446,9 +515,9 @@ TEST_F(McRmiTest, UpdateLocalListingWithoutDiskStatsLeavesSummaryBlank) {
   update_local_listing("/home/user", {{"a.txt", "file", "1 KB", ""}});
 
   EXPECT_EQ(
-      srv_->last_session->ui_objects.at(root_ + ".main.panels.left.left_stats")->as<std::string>("text"_key), "");
+      srv_->last_session->ui_objects.at(root_ + ".vbox.left_stats")->as<std::string>("text"_key), "");
   EXPECT_EQ(
-      srv_->last_session->ui_objects.at(root_ + ".main.panels.left.left_disk")->as<std::string>("text"_key), "");
+      srv_->last_session->ui_objects.at(root_ + ".vbox.left_disk")->as<std::string>("text"_key), "");
 }
 
 TEST_F(McRmiTest, SandboxStatsShowsFileCountAndTotalSizeExcludingDirectories) {
@@ -461,10 +530,10 @@ TEST_F(McRmiTest, SandboxStatsShowsFileCountAndTotalSizeExcludingDirectories) {
   refresh_sandbox();
 
   EXPECT_EQ(
-      srv_->last_session->ui_objects.at(root_ + ".main.panels.right.right_stats")->as<std::string>("text"_key),
+      srv_->last_session->ui_objects.at(root_ + "_sandbox.vbox.right_stats")->as<std::string>("text"_key),
       "2 files, 2.9 KB");
 
-  auto disk_text = srv_->last_session->ui_objects.at(root_ + ".main.panels.right.right_disk")->as<std::string>("text"_key);
+  auto disk_text = srv_->last_session->ui_objects.at(root_ + "_sandbox.vbox.right_disk")->as<std::string>("text"_key);
   EXPECT_EQ(disk_text.rfind("Disk: ", 0), 0u) << "got: " << disk_text;
 }
 
@@ -478,7 +547,7 @@ TEST_F(McRmiTest, SandboxRowContextMenuHasExpectedItemsWithSandboxRelativeCopyPa
   refresh_sandbox();
 
   auto* cf =
-      srv_->last_session->ui_objects.at(root_ + ".main.panels.right.right_table")->findField<dynamic_ptr>("children"_key);
+      srv_->last_session->ui_objects.at(root_ + "_sandbox.vbox.right_table")->findField<dynamic_ptr>("children"_key);
   ASSERT_NE(cf, nullptr);
   ASSERT_TRUE(*cf);
   auto row0 = (**cf)[size_t{0}].as<dynamic_ptr>();
@@ -498,7 +567,7 @@ TEST_F(McRmiTest, LocalRowContextMenuCopyPathUsesLocalPath) {
   update_local_listing("/home/user", {{"notes.txt", "file", "1 KB", ""}});
 
   auto* cf =
-      srv_->last_session->ui_objects.at(root_ + ".main.panels.left.left_table")->findField<dynamic_ptr>("children"_key);
+      srv_->last_session->ui_objects.at(root_ + ".vbox.left_table")->findField<dynamic_ptr>("children"_key);
   ASSERT_NE(cf, nullptr);
   ASSERT_TRUE(*cf);
   auto row0 = (**cf)[size_t{0}].as<dynamic_ptr>();
@@ -596,7 +665,7 @@ class McEventTest : public ::testing::Test {
   }
 
   // Reads the Name column's Label text for row_idx in the Table at
-  // `table_path` (e.g. ".main.panels.left.left_table"). Column 0 is a
+  // `table_path` (e.g. ".vbox.left_table"). Column 0 is a
   // make_name_cell() wrapper -- a HorizontalLayout holding a type icon at
   // children[0] and the name Label at children[1] (see
   // file_browser_utils.hpp's doc comment).
@@ -662,7 +731,7 @@ TEST_F(McEventTest, LocalPathBarChangedEmitsOnLocalNavigate) {
 
   dynamic payload;
   payload["value"_key] = std::string{"/some/local/dir"};
-  handler_->on_event(widget_id(".main.panels.left.left_path"), "changed"_key, payload);
+  handler_->on_event(widget_id(".vbox.left_path"), "changed"_key, payload);
 
   if (auto ev = srv_->events->wait_for("on_local_navigate"_key, since)) {
     got = true;
@@ -682,7 +751,7 @@ TEST_F(McEventTest, LocalRowActivatedOnDirEmitsOnLocalNavigate) {
 
   dynamic payload;
   payload["index"_key] = int32_t{0};
-  handler_->on_event(widget_id(".main.panels.left.left_table"), "row_activated"_key, payload);
+  handler_->on_event(widget_id(".vbox.left_table"), "row_activated"_key, payload);
 
   if (auto ev = srv_->events->wait_for("on_local_navigate"_key, since)) {
     got = true;
@@ -697,12 +766,12 @@ TEST_F(McEventTest, UploadClickedWithNoSelectionSetsStatusInsteadOfEmitting) {
   bool got = false;
   size_t since = srv_->events->mark();
 
-  handler_->on_event(widget_id(".main.panels.middle.upload"), "clicked"_key, dynamic{});
+  handler_->on_event(widget_id(".vbox.left_actions.upload"), "clicked"_key, dynamic{});
 
   got = srv_->events->wait_for("on_upload_requested"_key, since).has_value();
   EXPECT_FALSE(got);
   EXPECT_EQ(
-      srv_->last_session->ui_objects.at(root_ + ".main.status")->as<std::string>("text"_key),
+      srv_->last_session->ui_objects.at(root_ + ".vbox.left_status")->as<std::string>("text"_key),
       "Select a local file to upload.");
 }
 
@@ -711,13 +780,13 @@ TEST_F(McEventTest, UploadClickedWithSelectionEmitsOnUploadRequested) {
 
   dynamic sel;
   sel["index"_key] = int32_t{0};
-  handler_->on_event(widget_id(".main.panels.left.left_table"), "row_selected"_key, sel);
+  handler_->on_event(widget_id(".vbox.left_table"), "row_selected"_key, sel);
 
   bool got = false;
   dynamic captured;
   size_t since = srv_->events->mark();
 
-  handler_->on_event(widget_id(".main.panels.middle.upload"), "clicked"_key, dynamic{});
+  handler_->on_event(widget_id(".vbox.left_actions.upload"), "clicked"_key, dynamic{});
 
   if (auto ev = srv_->events->wait_for("on_upload_requested"_key, since)) {
     got = true;
@@ -733,10 +802,10 @@ TEST_F(McEventTest, LocalRowSelectedUpdatesSelectedLabel) {
 
   dynamic sel;
   sel["index"_key] = int32_t{0};
-  handler_->on_event(widget_id(".main.panels.left.left_table"), "row_selected"_key, sel);
+  handler_->on_event(widget_id(".vbox.left_table"), "row_selected"_key, sel);
 
   EXPECT_EQ(
-      srv_->last_session->ui_objects.at(root_ + ".main.panels.left.left_selected")->as<std::string>("text"_key),
+      srv_->last_session->ui_objects.at(root_ + ".vbox.left_actions.left_selected")->as<std::string>("text"_key),
       "Selected: a.txt");
 }
 
@@ -744,12 +813,12 @@ TEST_F(McEventTest, LocalSelectionLabelResetsOnListingRefresh) {
   proxy_->call("update_local_listing"_key, make_local_listing_args("/home", {{"a.txt", "file", "1 B", ""}})).get();
   dynamic sel;
   sel["index"_key] = int32_t{0};
-  handler_->on_event(widget_id(".main.panels.left.left_table"), "row_selected"_key, sel);
+  handler_->on_event(widget_id(".vbox.left_table"), "row_selected"_key, sel);
 
   proxy_->call("update_local_listing"_key, make_local_listing_args("/other", {{"b.txt", "file", "1 B", ""}})).get();
 
   EXPECT_EQ(
-      srv_->last_session->ui_objects.at(root_ + ".main.panels.left.left_selected")->as<std::string>("text"_key),
+      srv_->last_session->ui_objects.at(root_ + ".vbox.left_actions.left_selected")->as<std::string>("text"_key),
       "Selected: (none)");
 }
 
@@ -764,10 +833,10 @@ TEST_F(McEventTest, SandboxRowSelectedUpdatesSelectedLabel) {
 
   dynamic sel;
   sel["index"_key] = int32_t{0};
-  handler_->on_event(widget_id(".main.panels.right.right_table"), "row_selected"_key, sel);
+  handler_->on_event(widget_id("_sandbox.vbox.right_table"), "row_selected"_key, sel);
 
   EXPECT_EQ(
-      srv_->last_session->ui_objects.at(root_ + ".main.panels.right.right_selected")->as<std::string>("text"_key),
+      srv_->last_session->ui_objects.at(root_ + "_sandbox.vbox.right_actions.right_selected")->as<std::string>("text"_key),
       "Selected: s.txt");
 }
 
@@ -778,12 +847,12 @@ TEST_F(McEventTest, LocalTableSortedEventSortsRowsDescendingByName) {
           "/home", {{"zebra.txt", "file", "1 B", ""}, {"apple.txt", "file", "1 B", ""}}))
       .get();
   // Default order is ascending by Name.
-  ASSERT_EQ(table_name_cell_text(".main.panels.left.left_table", 0), "apple.txt");
+  ASSERT_EQ(table_name_cell_text(".vbox.left_table", 0), "apple.txt");
 
-  simulate_sorted(".main.panels.left.left_table", /*column_id=*/0, /*ascending=*/false);
+  simulate_sorted(".vbox.left_table", /*column_id=*/0, /*ascending=*/false);
 
-  EXPECT_EQ(table_name_cell_text(".main.panels.left.left_table", 0), "zebra.txt");
-  EXPECT_EQ(table_name_cell_text(".main.panels.left.left_table", 1), "apple.txt");
+  EXPECT_EQ(table_name_cell_text(".vbox.left_table", 0), "zebra.txt");
+  EXPECT_EQ(table_name_cell_text(".vbox.left_table", 1), "apple.txt");
 }
 
 TEST_F(McEventTest, SandboxTableSortedBySizeOrdersNumericallyNotLexicographically) {
@@ -798,10 +867,10 @@ TEST_F(McEventTest, SandboxTableSortedBySizeOrdersNumericallyNotLexicographicall
   { std::ofstream out(resource_dir / "small.txt"); out << "hi"; }
   proxy_->call("refresh_sandbox"_key, dynamic{}).get();
 
-  simulate_sorted(".main.panels.right.right_table", /*column_id=*/1, /*ascending=*/true);
+  simulate_sorted("_sandbox.vbox.right_table", /*column_id=*/1, /*ascending=*/true);
 
-  EXPECT_EQ(table_name_cell_text(".main.panels.right.right_table", 0), "small.txt");
-  EXPECT_EQ(table_name_cell_text(".main.panels.right.right_table", 1), "big.txt");
+  EXPECT_EQ(table_name_cell_text("_sandbox.vbox.right_table", 0), "small.txt");
+  EXPECT_EQ(table_name_cell_text("_sandbox.vbox.right_table", 1), "big.txt");
 }
 
 TEST_F(McEventTest, SandboxSortKeepsDotDotPinnedFirst) {
@@ -815,26 +884,26 @@ TEST_F(McEventTest, SandboxSortKeepsDotDotPinnedFirst) {
   // sandbox_path_ non-empty so it injects the ".." row.
   dynamic changed;
   changed["value"_key] = std::string{"/sub"};
-  handler_->on_event(widget_id(".main.panels.right.right_path"), "changed"_key, changed);
+  handler_->on_event(widget_id("_sandbox.vbox.right_toolbar.right_path"), "changed"_key, changed);
 
-  simulate_sorted(".main.panels.right.right_table", /*column_id=*/0, /*ascending=*/false);
+  simulate_sorted("_sandbox.vbox.right_table", /*column_id=*/0, /*ascending=*/false);
 
   // Descending by name would normally put "zzz.txt" first, but ".." must
   // stay pinned at row 0 regardless of sort column/direction.
-  EXPECT_EQ(table_name_cell_text(".main.panels.right.right_table", 0), "..");
-  EXPECT_EQ(table_name_cell_text(".main.panels.right.right_table", 1), "zzz.txt");
+  EXPECT_EQ(table_name_cell_text("_sandbox.vbox.right_table", 0), "..");
+  EXPECT_EQ(table_name_cell_text("_sandbox.vbox.right_table", 1), "zzz.txt");
 }
 
 TEST_F(McEventTest, DownloadClickedWithNoSelectionSetsStatusInsteadOfEmitting) {
   bool got = false;
   size_t since = srv_->events->mark();
 
-  handler_->on_event(widget_id(".main.panels.middle.download"), "clicked"_key, dynamic{});
+  handler_->on_event(widget_id("_sandbox.vbox.right_actions.download"), "clicked"_key, dynamic{});
 
   got = srv_->events->wait_for("on_download_requested"_key, since).has_value();
   EXPECT_FALSE(got);
   EXPECT_EQ(
-      srv_->last_session->ui_objects.at(root_ + ".main.status")->as<std::string>("text"_key),
+      srv_->last_session->ui_objects.at(root_ + "_sandbox.vbox.right_status")->as<std::string>("text"_key),
       "Select a sandbox file to download.");
 }
 
@@ -846,10 +915,10 @@ TEST_F(McEventTest, LocalRowSelectedHighlightsSelectedRowOnly) {
 
   dynamic sel;
   sel["index"_key] = int32_t{1};
-  handler_->on_event(widget_id(".main.panels.left.left_table"), "row_selected"_key, sel);
+  handler_->on_event(widget_id(".vbox.left_table"), "row_selected"_key, sel);
 
   auto* children_f =
-      srv_->last_session->ui_objects.at(root_ + ".main.panels.left.left_table")->findField<dynamic_ptr>("children"_key);
+      srv_->last_session->ui_objects.at(root_ + ".vbox.left_table")->findField<dynamic_ptr>("children"_key);
   ASSERT_NE(children_f, nullptr);
   ASSERT_TRUE(*children_f);
   auto row0 = (**children_f)[size_t{0}].as<dynamic_ptr>();
@@ -868,14 +937,14 @@ TEST_F(McEventTest, CtrlClickAddsRowWithoutClearingPreviousSelection) {
       make_local_listing_args(
           "/home", {{"a.txt", "file", "1 B", ""}, {"b.txt", "file", "1 B", ""}, {"c.txt", "file", "1 B", ""}}))
       .get();
-  auto table_id = widget_id(".main.panels.left.left_table");
+  auto table_id = widget_id(".vbox.left_table");
 
   click_row(handler_, table_id, 0);
   click_row(handler_, table_id, 2, /*ctrl=*/true);
 
-  EXPECT_EQ(row_selected_flags(".main.panels.left.left_table"), (std::vector<bool>{true, false, true}));
+  EXPECT_EQ(row_selected_flags(".vbox.left_table"), (std::vector<bool>{true, false, true}));
   EXPECT_EQ(
-      srv_->last_session->ui_objects.at(root_ + ".main.panels.left.left_selected")->as<std::string>("text"_key),
+      srv_->last_session->ui_objects.at(root_ + ".vbox.left_actions.left_selected")->as<std::string>("text"_key),
       "Selected: 2 items");
 }
 
@@ -884,15 +953,15 @@ TEST_F(McEventTest, CtrlClickOnAlreadySelectedRowTogglesItOff) {
       "update_local_listing"_key,
       make_local_listing_args("/home", {{"a.txt", "file", "1 B", ""}, {"b.txt", "file", "1 B", ""}}))
       .get();
-  auto table_id = widget_id(".main.panels.left.left_table");
+  auto table_id = widget_id(".vbox.left_table");
 
   click_row(handler_, table_id, 0);
   click_row(handler_, table_id, 1, /*ctrl=*/true);
   click_row(handler_, table_id, 1, /*ctrl=*/true); // toggle b.txt back off
 
-  EXPECT_EQ(row_selected_flags(".main.panels.left.left_table"), (std::vector<bool>{true, false}));
+  EXPECT_EQ(row_selected_flags(".vbox.left_table"), (std::vector<bool>{true, false}));
   EXPECT_EQ(
-      srv_->last_session->ui_objects.at(root_ + ".main.panels.left.left_selected")->as<std::string>("text"_key),
+      srv_->last_session->ui_objects.at(root_ + ".vbox.left_actions.left_selected")->as<std::string>("text"_key),
       "Selected: a.txt");
 }
 
@@ -904,14 +973,14 @@ TEST_F(McEventTest, ShiftClickSelectsContiguousRangeFromAnchor) {
           {{"a.txt", "file", "1 B", ""}, {"b.txt", "file", "1 B", ""}, {"c.txt", "file", "1 B", ""},
            {"d.txt", "file", "1 B", ""}}))
       .get();
-  auto table_id = widget_id(".main.panels.left.left_table");
+  auto table_id = widget_id(".vbox.left_table");
 
   click_row(handler_, table_id, 0); // anchor
   click_row(handler_, table_id, 2, /*ctrl=*/false, /*shift=*/true);
 
-  EXPECT_EQ(row_selected_flags(".main.panels.left.left_table"), (std::vector<bool>{true, true, true, false}));
+  EXPECT_EQ(row_selected_flags(".vbox.left_table"), (std::vector<bool>{true, true, true, false}));
   EXPECT_EQ(
-      srv_->last_session->ui_objects.at(root_ + ".main.panels.left.left_selected")->as<std::string>("text"_key),
+      srv_->last_session->ui_objects.at(root_ + ".vbox.left_actions.left_selected")->as<std::string>("text"_key),
       "Selected: 3 items");
 }
 
@@ -927,13 +996,13 @@ TEST_F(McEventTest, RepeatedShiftClickRedefinesRangeFromSameAnchor) {
           {{"a.txt", "file", "1 B", ""}, {"b.txt", "file", "1 B", ""}, {"c.txt", "file", "1 B", ""},
            {"d.txt", "file", "1 B", ""}}))
       .get();
-  auto table_id = widget_id(".main.panels.left.left_table");
+  auto table_id = widget_id(".vbox.left_table");
 
   click_row(handler_, table_id, 0); // anchor
   click_row(handler_, table_id, 1, /*ctrl=*/false, /*shift=*/true);
   click_row(handler_, table_id, 3, /*ctrl=*/false, /*shift=*/true); // sweep extends further
 
-  EXPECT_EQ(row_selected_flags(".main.panels.left.left_table"), (std::vector<bool>{true, true, true, true}));
+  EXPECT_EQ(row_selected_flags(".vbox.left_table"), (std::vector<bool>{true, true, true, true}));
 }
 
 TEST_F(McEventTest, ShiftClickWithNoPriorAnchorActsAsPlainClick) {
@@ -941,11 +1010,11 @@ TEST_F(McEventTest, ShiftClickWithNoPriorAnchorActsAsPlainClick) {
       "update_local_listing"_key,
       make_local_listing_args("/home", {{"a.txt", "file", "1 B", ""}, {"b.txt", "file", "1 B", ""}}))
       .get();
-  auto table_id = widget_id(".main.panels.left.left_table");
+  auto table_id = widget_id(".vbox.left_table");
 
   click_row(handler_, table_id, 1, /*ctrl=*/false, /*shift=*/true);
 
-  EXPECT_EQ(row_selected_flags(".main.panels.left.left_table"), (std::vector<bool>{false, true}));
+  EXPECT_EQ(row_selected_flags(".vbox.left_table"), (std::vector<bool>{false, true}));
 }
 
 TEST_F(McEventTest, PlainClickAfterMultiSelectReplacesSelectionWithOneRow) {
@@ -953,13 +1022,13 @@ TEST_F(McEventTest, PlainClickAfterMultiSelectReplacesSelectionWithOneRow) {
       "update_local_listing"_key,
       make_local_listing_args("/home", {{"a.txt", "file", "1 B", ""}, {"b.txt", "file", "1 B", ""}}))
       .get();
-  auto table_id = widget_id(".main.panels.left.left_table");
+  auto table_id = widget_id(".vbox.left_table");
 
   click_row(handler_, table_id, 0);
   click_row(handler_, table_id, 1, /*ctrl=*/true);
   click_row(handler_, table_id, 1); // plain click clears the multi-selection
 
-  EXPECT_EQ(row_selected_flags(".main.panels.left.left_table"), (std::vector<bool>{false, true}));
+  EXPECT_EQ(row_selected_flags(".vbox.left_table"), (std::vector<bool>{false, true}));
 }
 
 TEST_F(McEventTest, SelectionSurvivesSortByName) {
@@ -967,18 +1036,18 @@ TEST_F(McEventTest, SelectionSurvivesSortByName) {
       "update_local_listing"_key,
       make_local_listing_args("/home", {{"zebra.txt", "file", "1 B", ""}, {"apple.txt", "file", "1 B", ""}}))
       .get();
-  auto table_id = widget_id(".main.panels.left.left_table");
+  auto table_id = widget_id(".vbox.left_table");
   // Default order is ascending by Name: apple.txt(0), zebra.txt(1).
   click_row(handler_, table_id, 1); // select zebra.txt
 
-  simulate_sorted(".main.panels.left.left_table", /*column_id=*/0, /*ascending=*/false);
+  simulate_sorted(".vbox.left_table", /*column_id=*/0, /*ascending=*/false);
 
   // Descending order flips to zebra.txt(0), apple.txt(1) -- the selection
   // is name-keyed, so it follows zebra.txt to its new row.
-  ASSERT_EQ(table_name_cell_text(".main.panels.left.left_table", 0), "zebra.txt");
-  EXPECT_EQ(row_selected_flags(".main.panels.left.left_table"), (std::vector<bool>{true, false}));
+  ASSERT_EQ(table_name_cell_text(".vbox.left_table", 0), "zebra.txt");
+  EXPECT_EQ(row_selected_flags(".vbox.left_table"), (std::vector<bool>{true, false}));
   EXPECT_EQ(
-      srv_->last_session->ui_objects.at(root_ + ".main.panels.left.left_selected")->as<std::string>("text"_key),
+      srv_->last_session->ui_objects.at(root_ + ".vbox.left_actions.left_selected")->as<std::string>("text"_key),
       "Selected: zebra.txt");
 }
 
@@ -988,7 +1057,7 @@ TEST_F(McEventTest, UploadClickedWithMultipleSelectedFilesEmitsAllNames) {
       make_local_listing_args(
           "/home", {{"a.txt", "file", "1 B", ""}, {"b.txt", "file", "1 B", ""}, {"c.txt", "file", "1 B", ""}}))
       .get();
-  auto table_id = widget_id(".main.panels.left.left_table");
+  auto table_id = widget_id(".vbox.left_table");
   click_row(handler_, table_id, 0);
   click_row(handler_, table_id, 2, /*ctrl=*/true);
 
@@ -996,7 +1065,7 @@ TEST_F(McEventTest, UploadClickedWithMultipleSelectedFilesEmitsAllNames) {
   dynamic captured;
   size_t since = srv_->events->mark();
 
-  handler_->on_event(widget_id(".main.panels.middle.upload"), "clicked"_key, dynamic{});
+  handler_->on_event(widget_id(".vbox.left_actions.upload"), "clicked"_key, dynamic{});
 
   if (auto ev = srv_->events->wait_for("on_upload_requested"_key, since)) {
     got = true;
@@ -1012,7 +1081,7 @@ TEST_F(McEventTest, UploadClickedWithSelectedDirectoryAndFileSkipsTheDirectory) 
       "update_local_listing"_key,
       make_local_listing_args("/home", {{"docs", "dir", "", ""}, {"a.txt", "file", "1 B", ""}}))
       .get();
-  auto table_id = widget_id(".main.panels.left.left_table");
+  auto table_id = widget_id(".vbox.left_table");
   click_row(handler_, table_id, 0); // "docs" (a directory)
   click_row(handler_, table_id, 1, /*ctrl=*/true); // + "a.txt"
 
@@ -1020,7 +1089,7 @@ TEST_F(McEventTest, UploadClickedWithSelectedDirectoryAndFileSkipsTheDirectory) 
   dynamic captured;
   size_t since = srv_->events->mark();
 
-  handler_->on_event(widget_id(".main.panels.middle.upload"), "clicked"_key, dynamic{});
+  handler_->on_event(widget_id(".vbox.left_actions.upload"), "clicked"_key, dynamic{});
 
   if (auto ev = srv_->events->wait_for("on_upload_requested"_key, since)) {
     got = true;
@@ -1042,10 +1111,10 @@ TEST_F(McEventTest, DotDotRowHasNoContextMenu) {
   // leading ".." row.
   dynamic changed;
   changed["value"_key] = std::string{"/sub"};
-  handler_->on_event(widget_id(".main.panels.right.right_path"), "changed"_key, changed);
+  handler_->on_event(widget_id("_sandbox.vbox.right_toolbar.right_path"), "changed"_key, changed);
 
   auto* cf =
-      srv_->last_session->ui_objects.at(root_ + ".main.panels.right.right_table")->findField<dynamic_ptr>("children"_key);
+      srv_->last_session->ui_objects.at(root_ + "_sandbox.vbox.right_table")->findField<dynamic_ptr>("children"_key);
   ASSERT_NE(cf, nullptr);
   ASSERT_TRUE(*cf);
   auto row0 = (**cf)[size_t{0}].as<dynamic_ptr>();
@@ -1063,7 +1132,7 @@ TEST_F(McEventTest, SandboxPropertiesMenuItemClickOpensDialogWithCorrectInfo) {
   proxy_->call("refresh_sandbox"_key, dynamic{}).get();
 
   auto* cf =
-      srv_->last_session->ui_objects.at(root_ + ".main.panels.right.right_table")->findField<dynamic_ptr>("children"_key);
+      srv_->last_session->ui_objects.at(root_ + "_sandbox.vbox.right_table")->findField<dynamic_ptr>("children"_key);
   auto row0 = (**cf)[size_t{0}].as<dynamic_ptr>();
   auto menu = find_row_context_menu(*row0);
   ASSERT_TRUE(menu);
@@ -1109,7 +1178,7 @@ TEST_F(McEventTest, SandboxRenameMenuItemClickOpensDialogPrefilledWithCurrentNam
   proxy_->call("refresh_sandbox"_key, dynamic{}).get();
 
   auto* cf =
-      srv_->last_session->ui_objects.at(root_ + ".main.panels.right.right_table")->findField<dynamic_ptr>("children"_key);
+      srv_->last_session->ui_objects.at(root_ + "_sandbox.vbox.right_table")->findField<dynamic_ptr>("children"_key);
   auto row0 = (**cf)[size_t{0}].as<dynamic_ptr>();
   auto menu = find_row_context_menu(*row0);
   auto rename = find_menu_item(*menu, "Rename...");
@@ -1130,7 +1199,7 @@ TEST_F(McEventTest, SandboxRenameApplyViaOkButtonRenamesFileAndRefreshesListing)
   proxy_->call("refresh_sandbox"_key, dynamic{}).get();
 
   auto* cf =
-      srv_->last_session->ui_objects.at(root_ + ".main.panels.right.right_table")->findField<dynamic_ptr>("children"_key);
+      srv_->last_session->ui_objects.at(root_ + "_sandbox.vbox.right_table")->findField<dynamic_ptr>("children"_key);
   auto row0 = (**cf)[size_t{0}].as<dynamic_ptr>();
   auto rename = find_menu_item(*find_row_context_menu(*row0), "Rename...");
   handler_->on_event(rename->as<bison::key_t>("__wish_id"_key), "clicked"_key, dynamic{});
@@ -1142,8 +1211,8 @@ TEST_F(McEventTest, SandboxRenameApplyViaOkButtonRenamesFileAndRefreshesListing)
 
   EXPECT_FALSE(std::filesystem::exists(resource_dir / "old.txt"));
   EXPECT_TRUE(std::filesystem::exists(resource_dir / "new.txt"));
-  EXPECT_EQ(objs.at(root_ + ".main.status")->as<std::string>("text"_key), "Renamed.");
-  EXPECT_EQ(table_name_cell_text(".main.panels.right.right_table", 0), "new.txt");
+  EXPECT_EQ(objs.at(root_ + "_sandbox.vbox.right_status")->as<std::string>("text"_key), "Renamed.");
+  EXPECT_EQ(table_name_cell_text("_sandbox.vbox.right_table", 0), "new.txt");
 
   // request_close_at() only sets a flag; confirm the dialog is still present
   // until the Window's own "closed" event actually removes it.
@@ -1161,7 +1230,7 @@ TEST_F(McEventTest, SandboxRenameViaEnterOnInputAppliesRenameSameAsOkButton) {
   proxy_->call("refresh_sandbox"_key, dynamic{}).get();
 
   auto* cf =
-      srv_->last_session->ui_objects.at(root_ + ".main.panels.right.right_table")->findField<dynamic_ptr>("children"_key);
+      srv_->last_session->ui_objects.at(root_ + "_sandbox.vbox.right_table")->findField<dynamic_ptr>("children"_key);
   auto row0 = (**cf)[size_t{0}].as<dynamic_ptr>();
   auto rename = find_menu_item(*find_row_context_menu(*row0), "Rename...");
   handler_->on_event(rename->as<bison::key_t>("__wish_id"_key), "clicked"_key, dynamic{});
@@ -1184,7 +1253,7 @@ TEST_F(McEventTest, SandboxRenameCancelDoesNotRenameAndCleansUpOnClose) {
   proxy_->call("refresh_sandbox"_key, dynamic{}).get();
 
   auto* cf =
-      srv_->last_session->ui_objects.at(root_ + ".main.panels.right.right_table")->findField<dynamic_ptr>("children"_key);
+      srv_->last_session->ui_objects.at(root_ + "_sandbox.vbox.right_table")->findField<dynamic_ptr>("children"_key);
   auto row0 = (**cf)[size_t{0}].as<dynamic_ptr>();
   auto rename = find_menu_item(*find_row_context_menu(*row0), "Rename...");
   handler_->on_event(rename->as<bison::key_t>("__wish_id"_key), "clicked"_key, dynamic{});
@@ -1209,7 +1278,7 @@ TEST_F(McEventTest, SandboxRenameRejectsNameWithPathSeparator) {
   proxy_->call("refresh_sandbox"_key, dynamic{}).get();
 
   auto* cf =
-      srv_->last_session->ui_objects.at(root_ + ".main.panels.right.right_table")->findField<dynamic_ptr>("children"_key);
+      srv_->last_session->ui_objects.at(root_ + "_sandbox.vbox.right_table")->findField<dynamic_ptr>("children"_key);
   auto row0 = (**cf)[size_t{0}].as<dynamic_ptr>();
   auto rename = find_menu_item(*find_row_context_menu(*row0), "Rename...");
   handler_->on_event(rename->as<bison::key_t>("__wish_id"_key), "clicked"_key, dynamic{});
@@ -1220,14 +1289,14 @@ TEST_F(McEventTest, SandboxRenameRejectsNameWithPathSeparator) {
   handler_->on_event(ok_id, "clicked"_key, dynamic{});
 
   EXPECT_TRUE(std::filesystem::exists(resource_dir / "old.txt")) << "invalid rename must not touch the filesystem";
-  EXPECT_EQ(objs.at(root_ + ".main.status")->as<std::string>("text"_key), "Invalid name.");
+  EXPECT_EQ(objs.at(root_ + "_sandbox.vbox.right_status")->as<std::string>("text"_key), "Invalid name.");
 }
 
 TEST_F(McEventTest, LocalRenameApplyEmitsOnLocalRenameRequested) {
   proxy_->call("update_local_listing"_key, make_local_listing_args("/home", {{"old.txt", "file", "1 B", ""}})).get();
 
   auto* cf =
-      srv_->last_session->ui_objects.at(root_ + ".main.panels.left.left_table")->findField<dynamic_ptr>("children"_key);
+      srv_->last_session->ui_objects.at(root_ + ".vbox.left_table")->findField<dynamic_ptr>("children"_key);
   auto row0 = (**cf)[size_t{0}].as<dynamic_ptr>();
   auto rename = find_menu_item(*find_row_context_menu(*row0), "Rename...");
   ASSERT_TRUE(rename);
@@ -1262,7 +1331,7 @@ TEST_F(McEventTest, SandboxCopyPathMenuItemClickSetsStatusMessage) {
   proxy_->call("refresh_sandbox"_key, dynamic{}).get();
 
   auto* cf =
-      srv_->last_session->ui_objects.at(root_ + ".main.panels.right.right_table")->findField<dynamic_ptr>("children"_key);
+      srv_->last_session->ui_objects.at(root_ + "_sandbox.vbox.right_table")->findField<dynamic_ptr>("children"_key);
   auto row0 = (**cf)[size_t{0}].as<dynamic_ptr>();
   auto copy_item = find_menu_item(*find_row_context_menu(*row0), "Copy Path");
   ASSERT_TRUE(copy_item);
@@ -1270,7 +1339,7 @@ TEST_F(McEventTest, SandboxCopyPathMenuItemClickSetsStatusMessage) {
   handler_->on_event(copy_item->as<bison::key_t>("__wish_id"_key), "clicked"_key, dynamic{});
 
   EXPECT_EQ(
-      srv_->last_session->ui_objects.at(root_ + ".main.status")->as<std::string>("text"_key),
+      srv_->last_session->ui_objects.at(root_ + "_sandbox.vbox.right_status")->as<std::string>("text"_key),
       "Copied path for \"note.txt\" to clipboard.");
 }
 
@@ -1295,10 +1364,10 @@ TEST_F(McEventTest, UploadClickedWithExistingSandboxFileEmitsConflictInsteadOfRe
   proxy_->call("update_local_listing"_key, make_local_listing_args("/home", {{"a.txt", "file", "1 B", ""}})).get();
   dynamic sel;
   sel["index"_key] = int32_t{0};
-  handler_->on_event(widget_id(".main.panels.left.left_table"), "row_selected"_key, sel);
+  handler_->on_event(widget_id(".vbox.left_table"), "row_selected"_key, sel);
 
   size_t since = srv_->events->mark();
-  handler_->on_event(widget_id(".main.panels.middle.upload"), "clicked"_key, dynamic{});
+  handler_->on_event(widget_id(".vbox.left_actions.upload"), "clicked"_key, dynamic{});
 
   auto captured = srv_->events->wait_for("on_upload_conflict"_key, since);
   EXPECT_FALSE(srv_->events->saw("on_upload_requested"_key, since))
@@ -1318,10 +1387,10 @@ TEST_F(McEventTest, DownloadClickedWithExistingLocalFileEmitsConflictInsteadOfRe
   proxy_->call("update_local_listing"_key, make_local_listing_args("/home", {{"a.txt", "file", "1 B", ""}})).get();
   dynamic sel;
   sel["index"_key] = int32_t{0};
-  handler_->on_event(widget_id(".main.panels.right.right_table"), "row_selected"_key, sel);
+  handler_->on_event(widget_id("_sandbox.vbox.right_table"), "row_selected"_key, sel);
 
   size_t since = srv_->events->mark();
-  handler_->on_event(widget_id(".main.panels.middle.download"), "clicked"_key, dynamic{});
+  handler_->on_event(widget_id("_sandbox.vbox.right_actions.download"), "clicked"_key, dynamic{});
 
   auto captured = srv_->events->wait_for("on_download_conflict"_key, since);
   EXPECT_FALSE(srv_->events->saw("on_download_requested"_key, since))
@@ -1338,7 +1407,20 @@ TEST_F(McEventTest, WindowClosedEmitsClosedAndCleansUp) {
 
   got_closed = srv_->events->wait_for("closed"_key, since).has_value();
   EXPECT_TRUE(got_closed);
-  EXPECT_EQ(srv_->last_session->ui_objects.count(root_), 0u);
+  for (const std::string key : {root_, root_ + "_sandbox"})
+    EXPECT_EQ(srv_->last_session->ui_objects.count(key), 0u) << key;
+}
+
+// Closing the secondary Sandbox panel tears down the whole browser too.
+TEST_F(McEventTest, SecondaryPanelClosedEmitsClosedAndRemovesEveryPanel) {
+  size_t since = srv_->events->mark();
+
+  handler_->on_event(widget_id("_sandbox"), "closed"_key, dynamic{});
+
+  EXPECT_TRUE(srv_->events->wait_for("closed"_key, since).has_value());
+  for (const std::string key : {root_, root_ + "_sandbox"})
+    EXPECT_EQ(srv_->last_session->ui_objects.count(key), 0u) << key;
+  EXPECT_EQ(srv_->last_session->top_level_objects.count(bison::key_t{root_ + "_sandbox"}), 0u);
 }
 
 // ── Standalone dispatch: repeated RMI calls must not hang ─────────────────────
@@ -1395,11 +1477,11 @@ TEST(McStandaloneTest, RepeatedRefreshSandboxCallsDoNotHangOrFailUnderWebRendere
 }
 
 TEST(McStandaloneTest, SetThenCallSequenceDoesNotCorruptNamespace) {
-  // Mirrors the exact client-side call sequence around one upload:
-  // update_local_listing() once, then a set() patch (progress report),
-  // another set() patch (clear progress), then a call() the object has
-  // never serviced before (refresh_sandbox) -- reproducing "Method not
-  // found" outside of any web/browser/automation involvement.
+  // Mirrors the client-side call sequence around one transfer:
+  // update_local_listing() once, then two set() patches (status reports),
+  // then a call() the object has never serviced before (refresh_sandbox) --
+  // reproducing "Method not found" outside of any web/browser/automation
+  // involvement.
   wish::standalone sa{std::make_unique<wish::null_renderer>()};
   sa.start();
 
@@ -1413,14 +1495,12 @@ TEST(McStandaloneTest, SetThenCallSequenceDoesNotCorruptNamespace) {
 
   for (int round = 0; round < 5; ++round) {
     dynamic progress_patch;
-    progress_patch["transfer_progress"_key] = 0.5f;
-    progress_patch["transfer_label"_key] = std::string{"5 / 10"};
-    ASSERT_NO_THROW(explorer.set(std::move(progress_patch)).get()) << "round " << round << " progress set";
+    progress_patch["status"_key] = std::string{"Uploading..."};
+    ASSERT_NO_THROW(explorer.set(std::move(progress_patch)).get()) << "round " << round << " first set";
 
     dynamic clear_patch;
-    clear_patch["transfer_progress"_key] = 0.0f;
-    clear_patch["transfer_label"_key] = std::string{""};
-    ASSERT_NO_THROW(explorer.set(std::move(clear_patch)).get()) << "round " << round << " clear set";
+    clear_patch["status"_key] = std::string{"Ready."};
+    ASSERT_NO_THROW(explorer.set(std::move(clear_patch)).get()) << "round " << round << " second set";
 
     auto fut = explorer.call("refresh_sandbox"_key, dynamic{});
     auto status = fut.wait_for(std::chrono::seconds(3));

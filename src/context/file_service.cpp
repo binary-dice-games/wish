@@ -267,7 +267,7 @@ void file_service::upload_chunk(const std::string& name, const std::string& data
   // never leaves a corrupt file at the user-visible name -- only an orphaned
   // ".wishpart" file.
   std::filesystem::path staging = path;
-  staging += ".wishpart";
+  staging += kStagingSuffix;
   {
     std::ofstream out(staging, std::ios::binary | (first ? std::ios::trunc : std::ios::app));
     if (!out) {

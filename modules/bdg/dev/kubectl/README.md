@@ -29,7 +29,7 @@ else (rollout restart, cordon, uncordon, logs, describe) fires directly.
   client to react to by running the corresponding `kubectl` command.
 - **client/**: `run_kubectl(wish_app_host&)`, self-registered as the
   `"kubectl"` embedded app — owns all `kubectl` invocation.
-  Commands run through the shared [common/](../common) helpers
+  Commands run through the shared [common/](../../common) helpers
   (`process.hpp`, `tool_source.hpp`). `client/kubectl_source.hpp`/`.cpp` runs every actual `kubectl` command
   (tab-delimited `-o jsonpath` templates, split on `\t`), parses the output,
   and pushes snapshots / reacts to `*_requested` events. `run_kubectl()`

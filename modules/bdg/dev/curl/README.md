@@ -23,7 +23,7 @@ Response, History, Collections, Environments, Console.
   live user input, read directly off the widgets at Send/Save time.
 - **client/**: `run_curl(wish_app_host&)`, self-registered as the
   `"curl"` embedded app. Commands run through the shared
-  [common/](../common) helpers (`process.hpp`, `tool_source.hpp`).
+  [common/](../../common) helpers (`process.hpp`, `tool_source.hpp`).
   `client/curl_source.hpp`/`.cpp` builds and runs every actual `curl`
   invocation, parses the response (`-i` for headers + a `-w` sentinel
   trailer for status/timing/size — no temp files, no JSON library),

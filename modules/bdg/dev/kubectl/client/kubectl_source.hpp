@@ -2,7 +2,7 @@
 /// @file kubectl_source.hpp
 /// @brief Client-side `kubectl` command orchestration for the kubectl module.
 ///
-/// Runs every `kubectl` command through dev::tool_source (see
+/// Runs every `kubectl` command through common::tool_source (see
 /// common/tool_source.hpp), parses the tab-delimited `-o jsonpath`
 /// output, and pushes structured snapshots to the server-side
 /// KubectlFrontend form via its update_* RMI methods. Also reacts to the
@@ -15,7 +15,7 @@
 /// the server never touches `kubectl` directly.
 #pragma once
 
-#include "modules/bdg/dev/common/tool_source.hpp"
+#include "modules/bdg/common/tool_source.hpp"
 
 #include "src/bison/bison.hpp"
 #include "src/rmi/client/proxy.hpp"
@@ -27,11 +27,11 @@
 
 namespace bdg::wish::kubectl {
 
-using dev::process_result;
+using common::process_result;
 
-class kubectl_source : public dev::tool_source {
+class kubectl_source : public common::tool_source {
  public:
-  kubectl_source(std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::shared_ptr<dev::command_worker> worker);
+  kubectl_source(std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::shared_ptr<common::command_worker> worker);
   ~kubectl_source() override;
 
   /// @brief Pushes the pods / deployments / services / nodes snapshots, in

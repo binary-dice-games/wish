@@ -15,8 +15,8 @@ static constexpr const char* kNullDevice = "/dev/null";
 namespace bdg::wish::git {
 
 using namespace bdg::bison;
-using dev::split;
-using dev::trim_eol;
+using common::split;
+using common::trim_eol;
 
 namespace {
 
@@ -36,10 +36,10 @@ dynamic_ptr string_array(const std::vector<std::string>& items) {
 
 git_repo_source::git_repo_source(
     std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::string repo_path,
-    std::shared_ptr<dev::command_worker> worker)
+    std::shared_ptr<common::command_worker> worker)
     : tool_source(std::move(proxy), std::move(worker), "git"), repo_path_(std::move(repo_path)) {}
 
-process_result git_repo_source::run(const std::vector<std::string>& args, dev::process_options options) const {
+process_result git_repo_source::run(const std::vector<std::string>& args, common::process_options options) const {
   return run_git(repo_path_, args, options.hooks);
 }
 
@@ -338,7 +338,7 @@ void git_repo_source::on_diff_requested(const std::string& hash, const std::stri
 
 void git_repo_source::run_and_refresh(const std::string& command_label, const std::vector<std::string>& args) {
   auto r = run_logged(args);
-  if (report(command_label, {}, r.ok(), dev::error_output(r)))
+  if (report(command_label, {}, r.ok(), common::error_output(r)))
     refresh_all();
 }
 

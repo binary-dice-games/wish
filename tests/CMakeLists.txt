@@ -29,6 +29,10 @@ wish_add_test(test_form_base         test_form_base.cpp)
 wish_add_test(test_file_dialog  test_file_dialog.cpp)
 wish_add_test(test_message_box  test_message_box.cpp)
 wish_add_test(test_progress_box test_progress_box.cpp)
+# modules/bdg/common/command_worker.hpp (header-only, shared by module clients)
+# driving a real ProgressBox through a minimal wish_app_host.
+wish_add_test(test_command_worker test_command_worker.cpp)
+target_include_directories(test_command_worker PRIVATE ${CMAKE_SOURCE_DIR})
 wish_add_test(test_properties_dialog test_properties_dialog.cpp)
 wish_add_test(test_registry       test_registry.cpp)
 wish_add_test(test_object_inspector test_object_inspector.cpp)
@@ -152,7 +156,7 @@ endmacro()
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_TAIL               test_tail              test_tail.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_NANO               test_nano              test_nano.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_TOP                test_top               test_top.cpp)
-# The helpers shared by the bdg/dev modules' clients (modules/bdg/dev/common):
+# The helpers shared by the bdg/dev modules' clients (modules/bdg/common):
 # run_process() against stub programs (printf/cat/sh -- never a real dev
 # tool), the text helpers, and tool_source against a stub form over an
 # in-memory RMI connection. Built whenever any module that uses them is.
@@ -164,7 +168,7 @@ if(WISH_MODULE_BDG_DEV_CURL OR WISH_MODULE_BDG_DEV_DOCKER OR WISH_MODULE_BDG_DEV
    WISH_MODULE_BDG_DEV_HELM OR WISH_MODULE_BDG_DEV_KUBECTL OR WISH_MODULE_BDG_DEV_PIP OR
    WISH_MODULE_BDG_DEV_PKG OR WISH_MODULE_BDG_DEV_SQ)
   wish_add_test(test_dev_common test_dev_common.cpp
-      ${CMAKE_SOURCE_DIR}/modules/bdg/dev/common/process.cpp)
+      ${CMAKE_SOURCE_DIR}/modules/bdg/common/process.cpp)
   target_include_directories(test_dev_common PRIVATE ${CMAKE_SOURCE_DIR})
   if(TARGET uv_a)
     target_link_libraries(test_dev_common PRIVATE uv_a)
@@ -244,7 +248,7 @@ endif()
 # uv_a linking for module client targets (cmake/WishModules.cmake).
 wish_add_optional_test(WISH_MODULE_BDG_DEV_GIT                test_git_process       test_git_process.cpp
     ${CMAKE_SOURCE_DIR}/modules/bdg/dev/git/client/git_process.cpp
-    ${CMAKE_SOURCE_DIR}/modules/bdg/dev/common/process.cpp)
+    ${CMAKE_SOURCE_DIR}/modules/bdg/common/process.cpp)
 if(TARGET test_git_process)
   target_include_directories(test_git_process PRIVATE ${CMAKE_SOURCE_DIR})
   if(TARGET uv_a)
