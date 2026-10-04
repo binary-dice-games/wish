@@ -23,7 +23,7 @@
 /// module that is enabled (a collection's `common/` directory).
 #pragma once
 
-#include "modules/bdg/dev/common/process_hooks.hpp"
+#include "modules/common/process_hooks.hpp"
 
 #include <string>
 #include <vector>
@@ -51,7 +51,7 @@ struct process_options {
   std::string stdin_text;
   /// Live-output / tick callbacks (see process_hooks.hpp); a tick returning
   /// false stops the process. Null for none.
-  const run_hooks* hooks{nullptr};
+  const common::run_hooks* hooks{nullptr};
 };
 
 /// @brief What a failed command had to say: its stderr, or its stdout when

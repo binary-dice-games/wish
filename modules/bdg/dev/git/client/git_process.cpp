@@ -31,7 +31,7 @@ void ensure_git_terminal_prompt_disabled() {
 
 } // namespace
 
-process_result run_git(const std::string& cwd, const std::vector<std::string>& args, const dev::run_hooks* hooks) {
+process_result run_git(const std::string& cwd, const std::vector<std::string>& args, const common::run_hooks* hooks) {
   ensure_git_terminal_prompt_disabled();
   if (cwd.empty())
     return {};

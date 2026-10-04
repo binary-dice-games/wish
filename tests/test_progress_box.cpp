@@ -238,6 +238,27 @@ TEST_F(ProgressBoxRmiTest, OpensAsAModalAndCollectsOutput) {
   EXPECT_EQ(row_count(root_ + ".vbox.table"), 5u) << "a new command adds its header row";
 }
 
+// A reported fraction switches the bar to a determinate fill with the
+// detail overlaid; an update without one goes back to the animation.
+TEST_F(ProgressBoxRmiTest, FractionDrawsADeterminateBarWithDetail) {
+  auto& objects = srv_->last_session->ui_objects;
+  dynamic args = update_args("Uploading a.bin", 1.0f);
+  args["fraction"_key] = 0.25f;
+  args["detail"_key] = std::string{"1.0 KB / 4.0 KB"};
+  call("update"_key, std::move(args));
+  EXPECT_FLOAT_EQ(objects.at(root_ + ".vbox.bar")->as<float>("value"_key), 0.25f);
+  EXPECT_EQ(objects.at(root_ + ".vbox.bar")->as<std::string>("label"_key), "1.0 KB / 4.0 KB");
+
+  dynamic over = update_args("Uploading a.bin", 1.5f);
+  over["fraction"_key] = 3.0f;
+  call("update"_key, std::move(over));
+  EXPECT_FLOAT_EQ(objects.at(root_ + ".vbox.bar")->as<float>("value"_key), 1.0f) << "clamped";
+
+  call("update"_key, update_args("pip list", 2.0f));
+  EXPECT_LT(objects.at(root_ + ".vbox.bar")->as<float>("value"_key), 0.0f) << "indeterminate again";
+  EXPECT_EQ(objects.at(root_ + ".vbox.bar")->as<std::string>("label"_key), "");
+}
+
 TEST_F(ProgressBoxRmiTest, TitleCanBeSetAtInstantiation) {
   dynamic params;
   params["title"_key] = std::string{"Running helm"};

@@ -28,10 +28,10 @@ using dev::process_result;
 /// @param cwd  Repository working directory. Must not be empty.
 /// @param args Arguments after "git" itself, e.g. `{"status", "--porcelain=v2"}`.
 /// @param hooks  Optional live-output / tick callbacks (see
-///               common/process_hooks.hpp); a tick returning false stops the
+///               modules/common/process_hooks.hpp); a tick returning false stops the
 ///               process. Null for none.
 process_result run_git(
-    const std::string& cwd, const std::vector<std::string>& args, const dev::run_hooks* hooks = nullptr);
+    const std::string& cwd, const std::vector<std::string>& args, const common::run_hooks* hooks = nullptr);
 
 /// @brief Resolves @p path (anywhere inside a git working tree -- may be
 /// relative to the calling process's own cwd, or absolute) to that

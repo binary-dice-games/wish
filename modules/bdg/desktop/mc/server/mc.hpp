@@ -20,17 +20,19 @@ namespace bdg::wish {
 class properties_dialog;
 
 /// @brief Two-panel file browser: local machine vs. session sandbox, with
-/// upload/download transfer buttons and a progress bar.
+/// upload/download buttons that send the selected files across.
 ///
-/// Laid out as three dockable panels inside the browser's own nested
-/// dockspace (`dock::viewport()`, see docs/dock-layout.md), like top, pix and
-/// the dev modules: **Local Machine** (the form's main root: path bar,
-/// selection label, file table and disk-usage strip), **Sandbox (Server)**
-/// (the same, plus "Open in Explorer"), and **Transfer** (upload/download
-/// buttons, status line and progress bar). A first-run arrangement is seeded
-/// by `on_init()` (Local and Sandbox side by side over a Transfer strip); the
-/// user can re-dock, tab, or float any panel afterwards. Closing any panel
-/// closes the whole browser.
+/// Laid out as two dockable panels inside the browser's own nested dockspace
+/// (`dock::viewport()`, see docs/dock-layout.md), like top, pix and the dev
+/// modules: **Local Machine** (the form's main root) and **Sandbox
+/// (Server)** (plus "Open in Explorer"). Each has a path bar, the button that
+/// sends its selected files to the other panel (Upload in Local, Download in
+/// Sandbox) next to a selection label, the file table, a disk-usage strip and
+/// a status line. A first-run arrangement is seeded by `on_init()` (the two
+/// side by side); the user can re-dock, tab, or float either panel
+/// afterwards. Closing either panel closes the whole browser. Transfer
+/// progress is not shown here: the client reports it through the shared
+/// ProgressBox dialog (modules/common/command_worker.hpp).
 ///
 /// The Sandbox panel is entirely server-owned: the session sandbox
 /// (`context::resource_dir`) lives on the same machine as this form, so
@@ -100,8 +102,8 @@ class properties_dialog;
 class mc : public form {
  public:
   explicit mc(bison::dynamic&& base);
-  /// @brief Removes the secondary Sandbox/Transfer panels; ~form() removes
-  /// the main Local panel and the dock layout.
+  /// @brief Removes the secondary Sandbox panel; ~form() removes the main
+  /// Local panel and the dock layout.
   ~mc() override;
 
   /// @brief RMI method: replace the Local panel's displayed directory.
@@ -115,9 +117,16 @@ class mc : public form {
   /// without requiring the user to navigate away and back.
   bison::dynamic do_refresh_sandbox(const bison::dynamic& args);
 
+  /// @brief RMI method: delete the staging file (`<name>` +
+  /// `file_service::kStagingSuffix`) a cancelled chunked upload left in the
+  /// sandbox. @p args holds `name`, the sandbox-relative path the upload was
+  /// writing (the same `"<sandbox_path>/<name>"` it was sent to). The file at
+  /// `name` itself is never touched (an upload only replaces it on its last
+  /// chunk). Names that escape the sandbox are ignored.
+  bison::dynamic do_discard_upload(const bison::dynamic& args);
+
   /// @brief Called from the `__setter` prototype method for every set() call.
-  /// Intercepts `local_path`, `sandbox_path`, `status`, `transfer_progress`,
-  /// and `transfer_label` to mirror them into the internal widgets.
+  /// Intercepts `status` to mirror it into the Local panel's status line.
   bison::dynamic on_set(const bison::dynamic& patch);
 
  protected:
@@ -164,7 +173,9 @@ class mc : public form {
       const ui_element_ptr& table, const std::vector<file_row>& entries, bool is_sandbox,
       std::unordered_map<bison::key_t, row_menu_target, bison::key_t, bison::key_t>& menu_targets,
       const std::set<std::string>& selected_names = {});
-  void set_status(const std::string& message);
+  /// @brief Shows @p message in the Sandbox (@p is_sandbox) or Local panel's
+  /// status line and stores it in the `status` field.
+  void set_status(const std::string& message, bool is_sandbox);
 
   /// @brief Import @p layout_json, assign every element an RMI id, run
   /// @p wire to capture element pointers, and merge the tree under
@@ -174,8 +185,8 @@ class mc : public form {
   void build_window(
       const char* layout_json, const std::string& root_key, bison::key_t& window_id_out,
       const std::function<void(ui_tree&)>& wire);
-  /// @brief Remove the Sandbox/Transfer panels and forget their keys. Safe
-  /// to call more than once.
+  /// @brief Remove the Sandbox panel and forget its key. Safe to call more
+  /// than once.
   void remove_panel_objects();
 
   /// @brief Applies one row click's multi-selection semantics to @p
@@ -284,13 +295,11 @@ class mc : public form {
   /// instance -- see form::instantiate_child_form().
   void show_properties_dialog(bool is_sandbox, const file_row& entry);
 
-  /// Secondary panel roots: internal_root_key_ + "_sandbox"/"_transfer".
+  /// Secondary panel root: internal_root_key_ + "_sandbox".
   std::string sandbox_root_key_;
-  std::string transfer_root_key_;
 
   bison::key_t window_id_; ///< Local panel (main root).
   bison::key_t sandbox_window_id_;
-  bison::key_t transfer_window_id_;
   bison::key_t left_path_id_;
   bison::key_t left_table_id_;
   bison::key_t right_path_id_;
@@ -304,13 +313,13 @@ class mc : public form {
   ui_element_ptr left_selected_ptr_;
   ui_element_ptr left_stats_ptr_;
   ui_element_ptr left_disk_ptr_;
+  ui_element_ptr left_status_ptr_;
   ui_element_ptr right_path_ptr_;
   ui_element_ptr right_table_ptr_;
   ui_element_ptr right_selected_ptr_;
   ui_element_ptr right_stats_ptr_;
   ui_element_ptr right_disk_ptr_;
-  ui_element_ptr status_label_ptr_;
-  ui_element_ptr transfer_progress_ptr_;
+  ui_element_ptr right_status_ptr_;
 
   std::string local_path_;
   std::string sandbox_path_; ///< Relative to sandbox root; "" == root.

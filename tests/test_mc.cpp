@@ -184,7 +184,7 @@ class SessionCapturingServer : public wish::server {
 
 // Helper: find the root key for the internal form tree -- "__mc_<N>"
 // exactly (the Local panel), not a child path ("__mc_0.vbox...") nor a
-// secondary panel root ("__mc_0_sandbox", "__mc_0_transfer") nor the
+// secondary panel root ("__mc_0_sandbox") nor the
 // Rename dialog ("__mc_rename_0").
 static std::string find_form_root(const wish::name_map& objects) {
   static const std::string prefix = "__mc_";
@@ -249,16 +249,19 @@ TEST_F(McWindowTest, McContainsBothPanels) {
 TEST_F(McWindowTest, McContainsTransferControls) {
   std::string root = instantiate_and_get_root();
   ASSERT_FALSE(root.empty());
-  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + "_transfer.vbox.buttons.upload"));
-  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + "_transfer.vbox.buttons.download"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".vbox.left_actions.upload"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + "_sandbox.vbox.right_actions.download"));
   EXPECT_TRUE(srv_->last_session->ui_objects.count(root + "_sandbox.vbox.right_toolbar.open_explorer"));
 }
 
-TEST_F(McWindowTest, McContainsStatusAndProgress) {
+// Each panel has its own status line; transfer progress lives in the shared
+// ProgressBox dialog, not in the form.
+TEST_F(McWindowTest, McContainsPerPanelStatusLines) {
   std::string root = instantiate_and_get_root();
   ASSERT_FALSE(root.empty());
-  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + "_transfer.vbox.status"));
-  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + "_transfer.vbox.transfer_progress"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".vbox.left_status"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + "_sandbox.vbox.right_status"));
+  EXPECT_FALSE(srv_->last_session->top_level_objects.count(bison::key_t{root + "_transfer"}));
 }
 
 // Each panel is its own top-level Window, addressable by "__path__" so the
@@ -267,7 +270,7 @@ TEST_F(McWindowTest, EachPanelIsATopLevelWindow) {
   std::string root = instantiate_and_get_root();
   ASSERT_FALSE(root.empty());
   auto& s = *srv_->last_session;
-  for (const std::string key : {root, root + "_sandbox", root + "_transfer"}) {
+  for (const std::string key : {root, root + "_sandbox"}) {
     auto it = s.top_level_objects.find(bison::key_t{key});
     ASSERT_NE(it, s.top_level_objects.end()) << key;
     EXPECT_EQ(it->second->as<bison::key_t>(dynamic::CLASS), "Window"_key) << key;
@@ -275,7 +278,6 @@ TEST_F(McWindowTest, EachPanelIsATopLevelWindow) {
   }
   EXPECT_EQ(s.ui_objects.at(root)->as<std::string>("title"_key), "Local Machine");
   EXPECT_EQ(s.ui_objects.at(root + "_sandbox")->as<std::string>("title"_key), "Sandbox (Server)");
-  EXPECT_EQ(s.ui_objects.at(root + "_transfer")->as<std::string>("title"_key), "Transfer");
 }
 
 // The panels are seeded into a nested DockSpaceViewport ("mc_dock"), titled
@@ -305,7 +307,7 @@ TEST_F(McWindowTest, RegistersDefaultDockLayoutNamingEveryPanel) {
   };
   walk(*viewport);
   std::sort(windows.begin(), windows.end());
-  std::vector<std::string> expected{root, root + "_sandbox", root + "_transfer"};
+  std::vector<std::string> expected{root, root + "_sandbox"};
   std::sort(expected.begin(), expected.end());
   EXPECT_EQ(windows, expected);
 }
@@ -330,7 +332,7 @@ TEST_F(McWindowTest, SandboxAutoPopulatesOnInitWithoutHanging) {
   ASSERT_TRUE(*cf);
 
   EXPECT_EQ(
-      srv_->last_session->ui_objects.at(root + "_transfer.vbox.status")->as<std::string>("text"_key), "Ready.");
+      srv_->last_session->ui_objects.at(root + "_sandbox.vbox.right_status")->as<std::string>("text"_key), "Ready.");
   EXPECT_EQ(
       srv_->last_session->ui_objects.at(root + "_sandbox.vbox.right_toolbar.right_path")->as<std::string>("value"_key),
       "/");
@@ -445,7 +447,7 @@ TEST_F(McRmiTest, RefreshSandboxRepopulatesRightTable) {
   // do_refresh_sandbox() dispatch call path specifically.
   refresh_sandbox();
   EXPECT_EQ(
-      srv_->last_session->ui_objects.at(root_ + "_transfer.vbox.status")->as<std::string>("text"_key), "Ready.");
+      srv_->last_session->ui_objects.at(root_ + "_sandbox.vbox.right_status")->as<std::string>("text"_key), "Ready.");
 }
 
 TEST_F(McRmiTest, SetStatusMirrorsToStatusLabel) {
@@ -454,26 +456,37 @@ TEST_F(McRmiTest, SetStatusMirrorsToStatusLabel) {
   proxy_->set(std::move(patch)).get();
 
   EXPECT_EQ(
-      srv_->last_session->ui_objects.at(root_ + "_transfer.vbox.status")->as<std::string>("text"_key), "Uploading...");
+      srv_->last_session->ui_objects.at(root_ + ".vbox.left_status")->as<std::string>("text"_key), "Uploading...");
 }
 
-TEST_F(McRmiTest, SetTransferProgressMirrorsToProgressBar) {
-  dynamic patch;
-  patch["transfer_progress"_key] = 0.5f;
-  proxy_->set(std::move(patch)).get();
+// discard_upload removes the staging file a cancelled chunked upload left
+// behind, keeps the file it was going to overwrite, and never reaches
+// outside the sandbox.
+TEST_F(McRmiTest, DiscardUploadRemovesOnlyTheStagingFile) {
+  const auto& resource_dir = srv_->last_session->resource_dir;
+  { std::ofstream out(resource_dir / "data.bin"); out << "original"; }
+  { std::ofstream out(resource_dir / "data.bin.wishpart"); out << "half"; }
 
-  EXPECT_FLOAT_EQ(
-      srv_->last_session->ui_objects.at(root_ + "_transfer.vbox.transfer_progress")->as<float>("value"_key), 0.5f);
+  dynamic args;
+  args["name"_key] = std::string{"data.bin"};
+  proxy_->call("discard_upload"_key, std::move(args)).get();
+
+  EXPECT_FALSE(std::filesystem::exists(resource_dir / "data.bin.wishpart"));
+  EXPECT_TRUE(std::filesystem::exists(resource_dir / "data.bin"));
 }
 
-TEST_F(McRmiTest, SetTransferLabelMirrorsToProgressBarLabel) {
-  dynamic patch;
-  patch["transfer_label"_key] = std::string{"3 of 5"};
-  proxy_->set(std::move(patch)).get();
+TEST_F(McRmiTest, DiscardUploadIgnoresPathsOutsideSandbox) {
+  const auto& resource_dir = srv_->last_session->resource_dir;
+  const auto outside = resource_dir.parent_path() /
+      (std::string{"mc_outside_"} + ::testing::UnitTest::GetInstance()->current_test_info()->name() + ".txt");
+  { std::ofstream out(outside.string() + ".wishpart"); out << "keep"; }
 
-  EXPECT_EQ(
-      srv_->last_session->ui_objects.at(root_ + "_transfer.vbox.transfer_progress")->as<std::string>("label"_key),
-      "3 of 5");
+  dynamic args;
+  args["name"_key] = "../" + outside.filename().string();
+  proxy_->call("discard_upload"_key, std::move(args)).get();
+
+  EXPECT_TRUE(std::filesystem::exists(outside.string() + ".wishpart"));
+  std::filesystem::remove(outside.string() + ".wishpart");
 }
 
 // ── Disk-usage summary strip ───────────────────────────────────────────────────
@@ -753,12 +766,12 @@ TEST_F(McEventTest, UploadClickedWithNoSelectionSetsStatusInsteadOfEmitting) {
   bool got = false;
   size_t since = srv_->events->mark();
 
-  handler_->on_event(widget_id("_transfer.vbox.buttons.upload"), "clicked"_key, dynamic{});
+  handler_->on_event(widget_id(".vbox.left_actions.upload"), "clicked"_key, dynamic{});
 
   got = srv_->events->wait_for("on_upload_requested"_key, since).has_value();
   EXPECT_FALSE(got);
   EXPECT_EQ(
-      srv_->last_session->ui_objects.at(root_ + "_transfer.vbox.status")->as<std::string>("text"_key),
+      srv_->last_session->ui_objects.at(root_ + ".vbox.left_status")->as<std::string>("text"_key),
       "Select a local file to upload.");
 }
 
@@ -773,7 +786,7 @@ TEST_F(McEventTest, UploadClickedWithSelectionEmitsOnUploadRequested) {
   dynamic captured;
   size_t since = srv_->events->mark();
 
-  handler_->on_event(widget_id("_transfer.vbox.buttons.upload"), "clicked"_key, dynamic{});
+  handler_->on_event(widget_id(".vbox.left_actions.upload"), "clicked"_key, dynamic{});
 
   if (auto ev = srv_->events->wait_for("on_upload_requested"_key, since)) {
     got = true;
@@ -792,7 +805,7 @@ TEST_F(McEventTest, LocalRowSelectedUpdatesSelectedLabel) {
   handler_->on_event(widget_id(".vbox.left_table"), "row_selected"_key, sel);
 
   EXPECT_EQ(
-      srv_->last_session->ui_objects.at(root_ + ".vbox.left_selected")->as<std::string>("text"_key),
+      srv_->last_session->ui_objects.at(root_ + ".vbox.left_actions.left_selected")->as<std::string>("text"_key),
       "Selected: a.txt");
 }
 
@@ -805,7 +818,7 @@ TEST_F(McEventTest, LocalSelectionLabelResetsOnListingRefresh) {
   proxy_->call("update_local_listing"_key, make_local_listing_args("/other", {{"b.txt", "file", "1 B", ""}})).get();
 
   EXPECT_EQ(
-      srv_->last_session->ui_objects.at(root_ + ".vbox.left_selected")->as<std::string>("text"_key),
+      srv_->last_session->ui_objects.at(root_ + ".vbox.left_actions.left_selected")->as<std::string>("text"_key),
       "Selected: (none)");
 }
 
@@ -823,7 +836,7 @@ TEST_F(McEventTest, SandboxRowSelectedUpdatesSelectedLabel) {
   handler_->on_event(widget_id("_sandbox.vbox.right_table"), "row_selected"_key, sel);
 
   EXPECT_EQ(
-      srv_->last_session->ui_objects.at(root_ + "_sandbox.vbox.right_selected")->as<std::string>("text"_key),
+      srv_->last_session->ui_objects.at(root_ + "_sandbox.vbox.right_actions.right_selected")->as<std::string>("text"_key),
       "Selected: s.txt");
 }
 
@@ -885,12 +898,12 @@ TEST_F(McEventTest, DownloadClickedWithNoSelectionSetsStatusInsteadOfEmitting) {
   bool got = false;
   size_t since = srv_->events->mark();
 
-  handler_->on_event(widget_id("_transfer.vbox.buttons.download"), "clicked"_key, dynamic{});
+  handler_->on_event(widget_id("_sandbox.vbox.right_actions.download"), "clicked"_key, dynamic{});
 
   got = srv_->events->wait_for("on_download_requested"_key, since).has_value();
   EXPECT_FALSE(got);
   EXPECT_EQ(
-      srv_->last_session->ui_objects.at(root_ + "_transfer.vbox.status")->as<std::string>("text"_key),
+      srv_->last_session->ui_objects.at(root_ + "_sandbox.vbox.right_status")->as<std::string>("text"_key),
       "Select a sandbox file to download.");
 }
 
@@ -931,7 +944,7 @@ TEST_F(McEventTest, CtrlClickAddsRowWithoutClearingPreviousSelection) {
 
   EXPECT_EQ(row_selected_flags(".vbox.left_table"), (std::vector<bool>{true, false, true}));
   EXPECT_EQ(
-      srv_->last_session->ui_objects.at(root_ + ".vbox.left_selected")->as<std::string>("text"_key),
+      srv_->last_session->ui_objects.at(root_ + ".vbox.left_actions.left_selected")->as<std::string>("text"_key),
       "Selected: 2 items");
 }
 
@@ -948,7 +961,7 @@ TEST_F(McEventTest, CtrlClickOnAlreadySelectedRowTogglesItOff) {
 
   EXPECT_EQ(row_selected_flags(".vbox.left_table"), (std::vector<bool>{true, false}));
   EXPECT_EQ(
-      srv_->last_session->ui_objects.at(root_ + ".vbox.left_selected")->as<std::string>("text"_key),
+      srv_->last_session->ui_objects.at(root_ + ".vbox.left_actions.left_selected")->as<std::string>("text"_key),
       "Selected: a.txt");
 }
 
@@ -967,7 +980,7 @@ TEST_F(McEventTest, ShiftClickSelectsContiguousRangeFromAnchor) {
 
   EXPECT_EQ(row_selected_flags(".vbox.left_table"), (std::vector<bool>{true, true, true, false}));
   EXPECT_EQ(
-      srv_->last_session->ui_objects.at(root_ + ".vbox.left_selected")->as<std::string>("text"_key),
+      srv_->last_session->ui_objects.at(root_ + ".vbox.left_actions.left_selected")->as<std::string>("text"_key),
       "Selected: 3 items");
 }
 
@@ -1034,7 +1047,7 @@ TEST_F(McEventTest, SelectionSurvivesSortByName) {
   ASSERT_EQ(table_name_cell_text(".vbox.left_table", 0), "zebra.txt");
   EXPECT_EQ(row_selected_flags(".vbox.left_table"), (std::vector<bool>{true, false}));
   EXPECT_EQ(
-      srv_->last_session->ui_objects.at(root_ + ".vbox.left_selected")->as<std::string>("text"_key),
+      srv_->last_session->ui_objects.at(root_ + ".vbox.left_actions.left_selected")->as<std::string>("text"_key),
       "Selected: zebra.txt");
 }
 
@@ -1052,7 +1065,7 @@ TEST_F(McEventTest, UploadClickedWithMultipleSelectedFilesEmitsAllNames) {
   dynamic captured;
   size_t since = srv_->events->mark();
 
-  handler_->on_event(widget_id("_transfer.vbox.buttons.upload"), "clicked"_key, dynamic{});
+  handler_->on_event(widget_id(".vbox.left_actions.upload"), "clicked"_key, dynamic{});
 
   if (auto ev = srv_->events->wait_for("on_upload_requested"_key, since)) {
     got = true;
@@ -1076,7 +1089,7 @@ TEST_F(McEventTest, UploadClickedWithSelectedDirectoryAndFileSkipsTheDirectory) 
   dynamic captured;
   size_t since = srv_->events->mark();
 
-  handler_->on_event(widget_id("_transfer.vbox.buttons.upload"), "clicked"_key, dynamic{});
+  handler_->on_event(widget_id(".vbox.left_actions.upload"), "clicked"_key, dynamic{});
 
   if (auto ev = srv_->events->wait_for("on_upload_requested"_key, since)) {
     got = true;
@@ -1198,7 +1211,7 @@ TEST_F(McEventTest, SandboxRenameApplyViaOkButtonRenamesFileAndRefreshesListing)
 
   EXPECT_FALSE(std::filesystem::exists(resource_dir / "old.txt"));
   EXPECT_TRUE(std::filesystem::exists(resource_dir / "new.txt"));
-  EXPECT_EQ(objs.at(root_ + "_transfer.vbox.status")->as<std::string>("text"_key), "Renamed.");
+  EXPECT_EQ(objs.at(root_ + "_sandbox.vbox.right_status")->as<std::string>("text"_key), "Renamed.");
   EXPECT_EQ(table_name_cell_text("_sandbox.vbox.right_table", 0), "new.txt");
 
   // request_close_at() only sets a flag; confirm the dialog is still present
@@ -1276,7 +1289,7 @@ TEST_F(McEventTest, SandboxRenameRejectsNameWithPathSeparator) {
   handler_->on_event(ok_id, "clicked"_key, dynamic{});
 
   EXPECT_TRUE(std::filesystem::exists(resource_dir / "old.txt")) << "invalid rename must not touch the filesystem";
-  EXPECT_EQ(objs.at(root_ + "_transfer.vbox.status")->as<std::string>("text"_key), "Invalid name.");
+  EXPECT_EQ(objs.at(root_ + "_sandbox.vbox.right_status")->as<std::string>("text"_key), "Invalid name.");
 }
 
 TEST_F(McEventTest, LocalRenameApplyEmitsOnLocalRenameRequested) {
@@ -1326,7 +1339,7 @@ TEST_F(McEventTest, SandboxCopyPathMenuItemClickSetsStatusMessage) {
   handler_->on_event(copy_item->as<bison::key_t>("__wish_id"_key), "clicked"_key, dynamic{});
 
   EXPECT_EQ(
-      srv_->last_session->ui_objects.at(root_ + "_transfer.vbox.status")->as<std::string>("text"_key),
+      srv_->last_session->ui_objects.at(root_ + "_sandbox.vbox.right_status")->as<std::string>("text"_key),
       "Copied path for \"note.txt\" to clipboard.");
 }
 
@@ -1354,7 +1367,7 @@ TEST_F(McEventTest, UploadClickedWithExistingSandboxFileEmitsConflictInsteadOfRe
   handler_->on_event(widget_id(".vbox.left_table"), "row_selected"_key, sel);
 
   size_t since = srv_->events->mark();
-  handler_->on_event(widget_id("_transfer.vbox.buttons.upload"), "clicked"_key, dynamic{});
+  handler_->on_event(widget_id(".vbox.left_actions.upload"), "clicked"_key, dynamic{});
 
   auto captured = srv_->events->wait_for("on_upload_conflict"_key, since);
   EXPECT_FALSE(srv_->events->saw("on_upload_requested"_key, since))
@@ -1377,7 +1390,7 @@ TEST_F(McEventTest, DownloadClickedWithExistingLocalFileEmitsConflictInsteadOfRe
   handler_->on_event(widget_id("_sandbox.vbox.right_table"), "row_selected"_key, sel);
 
   size_t since = srv_->events->mark();
-  handler_->on_event(widget_id("_transfer.vbox.buttons.download"), "clicked"_key, dynamic{});
+  handler_->on_event(widget_id("_sandbox.vbox.right_actions.download"), "clicked"_key, dynamic{});
 
   auto captured = srv_->events->wait_for("on_download_conflict"_key, since);
   EXPECT_FALSE(srv_->events->saw("on_download_requested"_key, since))
@@ -1394,21 +1407,20 @@ TEST_F(McEventTest, WindowClosedEmitsClosedAndCleansUp) {
 
   got_closed = srv_->events->wait_for("closed"_key, since).has_value();
   EXPECT_TRUE(got_closed);
-  for (const std::string key : {root_, root_ + "_sandbox", root_ + "_transfer"})
+  for (const std::string key : {root_, root_ + "_sandbox"})
     EXPECT_EQ(srv_->last_session->ui_objects.count(key), 0u) << key;
 }
 
-// Closing a secondary panel (here: Transfer) tears down the whole browser too.
+// Closing the secondary Sandbox panel tears down the whole browser too.
 TEST_F(McEventTest, SecondaryPanelClosedEmitsClosedAndRemovesEveryPanel) {
   size_t since = srv_->events->mark();
 
-  handler_->on_event(widget_id("_transfer"), "closed"_key, dynamic{});
+  handler_->on_event(widget_id("_sandbox"), "closed"_key, dynamic{});
 
   EXPECT_TRUE(srv_->events->wait_for("closed"_key, since).has_value());
-  for (const std::string key : {root_, root_ + "_sandbox", root_ + "_transfer"})
+  for (const std::string key : {root_, root_ + "_sandbox"})
     EXPECT_EQ(srv_->last_session->ui_objects.count(key), 0u) << key;
-  for (const std::string key : {root_ + "_sandbox", root_ + "_transfer"})
-    EXPECT_EQ(srv_->last_session->top_level_objects.count(bison::key_t{key}), 0u) << key;
+  EXPECT_EQ(srv_->last_session->top_level_objects.count(bison::key_t{root_ + "_sandbox"}), 0u);
 }
 
 // ── Standalone dispatch: repeated RMI calls must not hang ─────────────────────
@@ -1465,11 +1477,11 @@ TEST(McStandaloneTest, RepeatedRefreshSandboxCallsDoNotHangOrFailUnderWebRendere
 }
 
 TEST(McStandaloneTest, SetThenCallSequenceDoesNotCorruptNamespace) {
-  // Mirrors the exact client-side call sequence around one upload:
-  // update_local_listing() once, then a set() patch (progress report),
-  // another set() patch (clear progress), then a call() the object has
-  // never serviced before (refresh_sandbox) -- reproducing "Method not
-  // found" outside of any web/browser/automation involvement.
+  // Mirrors the client-side call sequence around one transfer:
+  // update_local_listing() once, then two set() patches (status reports),
+  // then a call() the object has never serviced before (refresh_sandbox) --
+  // reproducing "Method not found" outside of any web/browser/automation
+  // involvement.
   wish::standalone sa{std::make_unique<wish::null_renderer>()};
   sa.start();
 
@@ -1483,14 +1495,12 @@ TEST(McStandaloneTest, SetThenCallSequenceDoesNotCorruptNamespace) {
 
   for (int round = 0; round < 5; ++round) {
     dynamic progress_patch;
-    progress_patch["transfer_progress"_key] = 0.5f;
-    progress_patch["transfer_label"_key] = std::string{"5 / 10"};
-    ASSERT_NO_THROW(explorer.set(std::move(progress_patch)).get()) << "round " << round << " progress set";
+    progress_patch["status"_key] = std::string{"Uploading..."};
+    ASSERT_NO_THROW(explorer.set(std::move(progress_patch)).get()) << "round " << round << " first set";
 
     dynamic clear_patch;
-    clear_patch["transfer_progress"_key] = 0.0f;
-    clear_patch["transfer_label"_key] = std::string{""};
-    ASSERT_NO_THROW(explorer.set(std::move(clear_patch)).get()) << "round " << round << " clear set";
+    clear_patch["status"_key] = std::string{"Ready."};
+    ASSERT_NO_THROW(explorer.set(std::move(clear_patch)).get()) << "round " << round << " second set";
 
     auto fut = explorer.call("refresh_sandbox"_key, dynamic{});
     auto status = fut.wait_for(std::chrono::seconds(3));

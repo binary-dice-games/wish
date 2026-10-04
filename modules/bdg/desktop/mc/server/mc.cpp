@@ -66,8 +66,8 @@ std::string format_modified(const fs::file_time_type& ftime) {
 
 // ── UI layouts ────────────────────────────────────────────────────────────────
 //
-// The browser is split into three dockable panels -- Local, Sandbox and
-// Transfer -- seeded into a first-run arrangement by on_init()'s
+// The browser is split into two dockable panels -- Local and Sandbox --
+// seeded into a first-run arrangement by on_init()'s
 // set_default_dock_layout() call, the same multi-window pattern top, pix and
 // the dev modules (git, curl, docker) use. The user can re-dock, tab or
 // float any of them; imgui.ini owns the arrangement after the first run.
@@ -75,8 +75,10 @@ std::string format_modified(const fs::file_time_type& ftime) {
 // dragged out of the dock.
 //
 // Local (the form's main root, internal_root_key_) and Sandbox share one
-// shape: a path bar, a "Selected: ..." label, the file table, and a
-// two-line summary strip. Rows are built at runtime by fill_table().
+// shape: a path bar, an action row (the button that sends the selected files
+// to the *other* panel -- Upload in Local, Download in Sandbox -- next to the
+// "Selected: ..." label), the file table, a two-line summary strip and a
+// status line. Rows are built at runtime by fill_table().
 // left_table/right_table's "flags" names the same full-border set
 // git.cpp/tail.cpp use for their own grid-style tables, plus Sortable.
 // Unlike FileDialog's borderless picker list (Resizable|RowBg|BordersH|
@@ -98,12 +100,12 @@ std::string format_modified(const fs::file_time_type& ftime) {
 // start blank and are filled in by do_update_local_listing()
 // (client-reported, since only the client can see the local machine's disk)
 // and navigate_sandbox() (computed directly via std::filesystem, since the
-// sandbox lives on this machine).
+// sandbox lives on this machine). "_status" shows the latest message about
+// that panel (see set_status()).
 //
-// Transfer: the upload/download buttons, the status line and the shared
-// progress bar. The buttons spell out their direction ("Upload >>" /
-// "<< Download") since the panels can be rearranged and a bare ">>" would
-// no longer point from one panel to the other.
+// Transfers show their progress in the shared ProgressBox dialog the
+// client's command_worker drives (modules/common/command_worker.hpp), like
+// every long-running action in the dev modules -- no progress bar here.
 //
 // Tagged delimiter (R"json(...)json") rather than the untagged R"(...)"
 // convention used elsewhere: "Sandbox (Server)" ends in a ")" immediately
@@ -125,7 +127,17 @@ static constexpr const char* kLocalLayout = R"json({
           "type": "InputText", "hint": "Local path...", "value": "",
           "flags": "EnterReturnsTrue", "width": -1
         },
-        "left_selected": { "type": "Label", "text": "Selected: (none)" },
+        "left_actions": {
+          "type": "HorizontalLayout",
+          "spacing": 8,
+          "children": {
+            "upload": {
+              "type": "Button", "label": "Upload >>",
+              "tooltip": "Copy the selected files to the sandbox folder shown in the Sandbox panel"
+            },
+            "left_selected": { "type": "Label", "text": "Selected: (none)" }
+          }
+        },
         "left_table": {
           "type": "Table", "id": "##local_table", "columns": 3, "headers": true,
           "flags": "Resizable|RowBg|Borders|Sortable|ScrollY",
@@ -137,7 +149,8 @@ static constexpr const char* kLocalLayout = R"json({
           }
         },
         "left_stats": { "type": "Label", "text": "" },
-        "left_disk":  { "type": "Label", "text": "" }
+        "left_disk":  { "type": "Label", "text": "" },
+        "left_status": { "type": "Label", "text": "" }
       }
     }
   }
@@ -164,7 +177,17 @@ static constexpr const char* kSandboxLayout = R"json({
             "open_explorer": { "type": "Button", "label": "Open in Explorer" }
           }
         },
-        "right_selected": { "type": "Label", "text": "Selected: (none)" },
+        "right_actions": {
+          "type": "HorizontalLayout",
+          "spacing": 8,
+          "children": {
+            "download": {
+              "type": "Button", "label": "<< Download",
+              "tooltip": "Copy the selected files to the local folder shown in the Local Machine panel"
+            },
+            "right_selected": { "type": "Label", "text": "Selected: (none)" }
+          }
+        },
         "right_table": {
           "type": "Table", "id": "##sandbox_table", "columns": 3, "headers": true,
           "flags": "Resizable|RowBg|Borders|Sortable|ScrollY",
@@ -176,32 +199,8 @@ static constexpr const char* kSandboxLayout = R"json({
           }
         },
         "right_stats": { "type": "Label", "text": "" },
-        "right_disk":  { "type": "Label", "text": "" }
-      }
-    }
-  }
-})json";
-
-static constexpr const char* kTransferLayout = R"json({
-  "type": "Window",
-  "title": "Transfer",
-  "width": 920, "height": 120,
-  "closable": true,
-  "children": {
-    "vbox": {
-      "type": "VerticalLayout",
-      "spacing": 4,
-      "children": {
-        "buttons": {
-          "type": "HorizontalLayout",
-          "spacing": 10,
-          "children": {
-            "upload":   { "type": "Button", "label": "Upload >>", "width": 120 },
-            "download": { "type": "Button", "label": "<< Download", "width": 120 }
-          }
-        },
-        "status": { "type": "Label", "text": "Ready." },
-        "transfer_progress": { "type": "ProgressBar", "value": 0.0, "label": "", "width": -1 }
+        "right_disk":  { "type": "Label", "text": "" },
+        "right_status": { "type": "Label", "text": "Ready." }
       }
     }
   }
@@ -289,7 +288,6 @@ void mc::build_window(
 void mc::on_init() {
   internal_root_key_ = next_available_key("__mc_");
   sandbox_root_key_ = internal_root_key_ + "_sandbox";
-  transfer_root_key_ = internal_root_key_ + "_transfer";
 
   auto* title_f = findField<std::string>("title"_key);
   const std::string title = title_f ? *title_f : std::string{"File Explorer"};
@@ -303,9 +301,11 @@ void mc::on_init() {
       left_table_ptr_ = e;
       left_table_id_ = wish_id_of(e);
     });
-    tree.with("vbox.left_selected", [&](const auto& e) { left_selected_ptr_ = e; });
+    tree.with("vbox.left_actions.upload", [&](const auto& e) { upload_id_ = wish_id_of(e); });
+    tree.with("vbox.left_actions.left_selected", [&](const auto& e) { left_selected_ptr_ = e; });
     tree.with("vbox.left_stats", [&](const auto& e) { left_stats_ptr_ = e; });
     tree.with("vbox.left_disk", [&](const auto& e) { left_disk_ptr_ = e; });
+    tree.with("vbox.left_status", [&](const auto& e) { left_status_ptr_ = e; });
   });
 
   build_window(kSandboxLayout, sandbox_root_key_, sandbox_window_id_, [&](ui_tree& tree) {
@@ -318,31 +318,23 @@ void mc::on_init() {
       right_table_ptr_ = e;
       right_table_id_ = wish_id_of(e);
     });
-    tree.with("vbox.right_selected", [&](const auto& e) { right_selected_ptr_ = e; });
+    tree.with("vbox.right_actions.download", [&](const auto& e) { download_id_ = wish_id_of(e); });
+    tree.with("vbox.right_actions.right_selected", [&](const auto& e) { right_selected_ptr_ = e; });
     tree.with("vbox.right_stats", [&](const auto& e) { right_stats_ptr_ = e; });
     tree.with("vbox.right_disk", [&](const auto& e) { right_disk_ptr_ = e; });
-  });
-
-  build_window(kTransferLayout, transfer_root_key_, transfer_window_id_, [&](ui_tree& tree) {
-    tree.with("vbox.buttons.upload", [&](const auto& e) { upload_id_ = wish_id_of(e); });
-    tree.with("vbox.buttons.download", [&](const auto& e) { download_id_ = wish_id_of(e); });
-    tree.with("vbox.status", [&](const auto& e) { status_label_ptr_ = e; });
-    tree.with("vbox.transfer_progress", [&](const auto& e) { transfer_progress_ptr_ = e; });
+    tree.with("vbox.right_status", [&](const auto& e) { right_status_ptr_ = e; });
   });
 
   // Seed the first-run arrangement inside the browser's own nested
   // dockspace (titled with the form's "title" field): Local and Sandbox side
-  // by side, over a Transfer strip along the bottom ~20%. Owned by imgui.ini
-  // after the first run (see docs/dock-layout.md); bump the version arg to
-  // layout() if it changes.
+  // by side. Owned by imgui.ini after the first run (see
+  // docs/dock-layout.md); bump the version arg to layout() if it changes.
   {
     using namespace dock;
     set_default_dock_layout(viewport(
         "mc_dock", title,
         layout(
-            split(
-                dir::down, 0.20f, area({transfer_root_key_}),
-                split(dir::left, 0.50f, area({internal_root_key_}), area({sandbox_root_key_}))),
+            split(dir::left, 0.50f, area({internal_root_key_}), area({sandbox_root_key_})),
             /*version=*/1, /*target=*/"mc_dock")));
   }
 
@@ -353,14 +345,12 @@ void mc::on_init() {
 }
 
 void mc::remove_panel_objects() {
-  // Keys are forgotten once removed: next_available_key() may hand this
-  // form's freed internal_root_key_ to a new Mc instance, whose panels would
-  // then reuse these exact secondary keys (see the same reasoning in
+  // The key is forgotten once removed: next_available_key() may hand this
+  // form's freed internal_root_key_ to a new Mc instance, whose Sandbox panel
+  // would then reuse this exact secondary key (see the same reasoning in
   // form::remove_objects_at()).
-  for (std::string* key : {&sandbox_root_key_, &transfer_root_key_}) {
-    remove_objects_at(*key);
-    key->clear();
-  }
+  remove_objects_at(sandbox_root_key_);
+  sandbox_root_key_.clear();
 }
 
 // ── Table population ─────────────────────────────────────────────────────────
@@ -558,10 +548,11 @@ dynamic mc::make_names_payload(const std::vector<std::string>& names) {
   return payload;
 }
 
-void mc::set_status(const std::string& message) {
+void mc::set_status(const std::string& message, bool is_sandbox) {
   (*this)["status"_key] = message;
-  if (status_label_ptr_)
-    status_label_ptr_["text"_key] = message;
+  const ui_element_ptr& label = is_sandbox ? right_status_ptr_ : left_status_ptr_;
+  if (label)
+    label["text"_key] = message;
 }
 
 bool mc::sandbox_has_file(const std::string& name) const {
@@ -597,14 +588,14 @@ void mc::navigate_sandbox(
   } else {
     full = file_service::resolve_path(relative_path, resource_dir, allow_absolute_paths);
     if (full.empty()) {
-      set_status("Invalid or out-of-sandbox path.");
+      set_status("Invalid or out-of-sandbox path.", true);
       return;
     }
   }
 
   std::error_code ec;
   if (!fs::is_directory(full, ec)) {
-    set_status("Not a directory: " + relative_path);
+    set_status("Not a directory: " + relative_path, true);
     return;
   }
 
@@ -658,7 +649,7 @@ void mc::navigate_sandbox(
   if (right_path_ptr_)
     right_path_ptr_["value"_key] = display;
   (*this)["sandbox_path"_key] = relative_path;
-  set_status("Ready.");
+  set_status("Ready.", true);
 
   if (right_selected_ptr_)
     right_selected_ptr_["text"_key] = describe_selection(selected_sandbox_names_);
@@ -731,7 +722,7 @@ void mc::apply_rename() {
   std::string new_name = rename_input_ptr_->as<std::string>("value"_key);
   if (new_name.empty() || new_name == "." || new_name == ".." || new_name.find('/') != std::string::npos ||
       new_name.find('\\') != std::string::npos) {
-    set_status("Invalid name.");
+    set_status("Invalid name.", rename_is_sandbox_);
     request_close_rename();
     return;
   }
@@ -752,16 +743,16 @@ void mc::apply_rename() {
     fs::path new_full = file_service::resolve_path(new_rel.string(), s->resource_dir, s->allow_absolute_paths);
     std::error_code ec;
     if (old_full.empty() || new_full.empty()) {
-      set_status("Invalid or out-of-sandbox path.");
+      set_status("Invalid or out-of-sandbox path.", true);
     } else if (fs::exists(new_full, ec)) {
-      set_status("\"" + new_name + "\" already exists.");
+      set_status("\"" + new_name + "\" already exists.", true);
     } else {
       fs::rename(old_full, new_full, ec);
       if (ec) {
-        set_status("Rename failed: " + ec.message());
+        set_status("Rename failed: " + ec.message(), true);
       } else {
         navigate_sandbox(sandbox_path_, s->resource_dir, s->allow_absolute_paths);
-        set_status("Renamed.");
+        set_status("Renamed.", true);
       }
     }
   } else {
@@ -772,7 +763,7 @@ void mc::apply_rename() {
     req["old_name"_key] = rename_old_name_;
     req["new_name"_key] = new_name;
     emit("on_local_rename_requested"_key, std::move(req));
-    set_status("Renaming...");
+    set_status("Renaming...", false);
   }
 
   request_close_rename();
@@ -867,13 +858,27 @@ dynamic mc::do_refresh_sandbox(const dynamic& /*args*/) {
   return dynamic{};
 }
 
+dynamic mc::do_discard_upload(const dynamic& args) {
+  const auto* name = args.findField<std::string>("name"_key);
+  if (!name || name->empty())
+    return dynamic{};
+  // file_service::resolve_path() rejects anything that escapes the sandbox.
+  // Only the staging file goes: a chunked upload never touches the target
+  // name until its last chunk, so a file it was about to overwrite is intact.
+  fs::path full = file_service::resolve_path(*name, sess().resource_dir, sess().allow_absolute_paths);
+  if (full.empty())
+    return dynamic{};
+  full += file_service::kStagingSuffix;
+  std::error_code ec;
+  if (fs::is_regular_file(full, ec))
+    fs::remove(full, ec);
+  return dynamic{};
+}
+
 dynamic mc::on_set(const dynamic& patch) {
-  if (auto* v = patch.findField<std::string>("status"_key); v && status_label_ptr_)
-    status_label_ptr_["text"_key] = *v;
-  if (auto* v = patch.findField<float>("transfer_progress"_key); v && transfer_progress_ptr_)
-    transfer_progress_ptr_["value"_key] = *v;
-  if (auto* v = patch.findField<std::string>("transfer_label"_key); v && transfer_progress_ptr_)
-    transfer_progress_ptr_["label"_key] = *v;
+  // Only the client sets "status", and it only knows about the local side.
+  if (auto* v = patch.findField<std::string>("status"_key); v && left_status_ptr_)
+    left_status_ptr_["text"_key] = *v;
   return patch;
 }
 
@@ -881,7 +886,7 @@ dynamic mc::on_set(const dynamic& patch) {
 
 void mc::on_event(key_t id, key_t event, const dynamic& payload) {
   // Any panel's X button -> tear the whole browser down (top/pix's rule).
-  if (event == "closed"_key && (id == window_id_ || id == sandbox_window_id_ || id == transfer_window_id_)) {
+  if (event == "closed"_key && (id == window_id_ || id == sandbox_window_id_)) {
     emit("closed"_key);
     remove_panel_objects();
     remove_internal_objects();
@@ -1002,16 +1007,16 @@ void mc::on_event(key_t id, key_t event, const dynamic& payload) {
                                     : file_service::resolve_path(sandbox_path_, s->resource_dir, s->allow_absolute_paths);
     }
     if (full.empty() || !open_in_host_explorer(full))
-      set_status("Could not open host file explorer.");
+      set_status("Could not open host file explorer.", true);
     else
-      set_status("Opened in host file explorer.");
+      set_status("Opened in host file explorer.", true);
     return;
   }
 
   if (id == upload_id_ && event == "clicked"_key) {
     auto files = selected_file_names(selected_local_names_, local_entries_);
     if (files.empty()) {
-      set_status("Select a local file to upload.");
+      set_status("Select a local file to upload.", false);
       return;
     }
     // Split the selection into targets that can upload immediately and
@@ -1040,7 +1045,7 @@ void mc::on_event(key_t id, key_t event, const dynamic& payload) {
   if (id == download_id_ && event == "clicked"_key) {
     auto files = selected_file_names(selected_sandbox_names_, sandbox_entries_);
     if (files.empty()) {
-      set_status("Select a sandbox file to download.");
+      set_status("Select a sandbox file to download.", true);
       return;
     }
     std::vector<std::string> ready, conflicts;
@@ -1084,7 +1089,7 @@ void mc::on_event(key_t id, key_t event, const dynamic& payload) {
             show_rename_dialog(target.is_sandbox, target.name);
           return;
         case row_menu_action::copy_path:
-          set_status("Copied path for \"" + target.name + "\" to clipboard.");
+          set_status("Copied path for \"" + target.name + "\" to clipboard.", target.is_sandbox);
           return;
       }
     }
@@ -1179,24 +1184,8 @@ void register_mc() {
       field{
           std::string{"Ready."},
           attr<DisplayName>("Status"),
-          attr<Description>("Text shown in the status bar at the bottom of the window."),
-          attr<Category>("Data")});
-
-  proto->addField(
-      "transfer_progress"_key,
-      field{
-          0.0f,
-          attr<DisplayName>("Transfer Progress"),
-          attr<Description>("Fill fraction (0..1) of the transfer progress bar. The client drives "
-                            "this while an upload/download is in flight."),
-          attr<Category>("Data")});
-
-  proto->addField(
-      "transfer_label"_key,
-      field{
-          std::string{""},
-          attr<DisplayName>("Transfer Label"),
-          attr<Description>("Text overlaid on the transfer progress bar."),
+          attr<Description>("Latest status message. Set by the client, it is shown in the Local Machine "
+                            "panel's status line (the client only reports on the local side)."),
           attr<Category>("Data")});
 
   proto->addMethod(
@@ -1207,14 +1196,19 @@ void register_mc() {
       "refresh_sandbox"_key, bison::method{[](dynamic& self, const dynamic& args) -> dynamic {
         return static_cast<mc&>(self).do_refresh_sandbox(args);
       }});
+  proto->addMethod(
+      "discard_upload"_key, bison::method{[](dynamic& self, const dynamic& args) -> dynamic {
+        return static_cast<mc&>(self).do_discard_upload(args);
+      }});
   proto->addMethod("__setter"_key, bison::method{[](dynamic& s, const dynamic& p) -> dynamic {
                      return static_cast<mc&>(s).on_set(p);
                    }});
 
   (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Mc"));
   (*proto)[dynamic::CLASS].addAttribute(
-      attr<Description>("Two-panel file browser: local machine (left, client-driven) vs. session "
-                        "sandbox (right, server-driven), with upload/download transfer buttons and "
+      attr<Description>("Two-panel file browser: local machine (client-driven) vs. session sandbox "
+                        "(server-driven) as two dockable panels, each with a button sending its "
+                        "selected files to the other, and "
                         "an \"Open in Explorer\" shortcut for the sandbox side. Listen for "
                         "on_local_navigate/on_upload_requested/on_download_requested to drive the "
                         "client half of the handshake, and 'closed' to detect when the user is done."));

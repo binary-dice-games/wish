@@ -34,7 +34,7 @@ class git_repo_source : public dev::tool_source {
  public:
   git_repo_source(
       std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::string repo_path,
-      std::shared_ptr<dev::command_worker> worker);
+      std::shared_ptr<common::command_worker> worker);
 
   /// @brief Pushes refs, the commit graph, and working-directory status, in
   /// that order. Called once on startup (in response to "refresh_requested")

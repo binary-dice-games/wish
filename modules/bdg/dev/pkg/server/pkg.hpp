@@ -18,7 +18,7 @@
 /// preset) -- see show_confirm() below. Installs and single upgrades fire
 /// directly. Progress, live output and Cancel for a long command are shown by
 /// the shared modal `ProgressBox` form, which the client drives itself
-/// (common/command_worker.hpp).
+/// (modules/common/command_worker.hpp).
 ///
 /// Owns four independently dockable Windows -- Packages (the main root),
 /// Search, Details, and Console (a FIFO-capped trace of every command the

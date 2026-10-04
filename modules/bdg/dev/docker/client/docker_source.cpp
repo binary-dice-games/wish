@@ -28,7 +28,7 @@ float parse_percent(const std::string& s) {
 } // namespace
 
 docker_source::docker_source(
-    std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::shared_ptr<dev::command_worker> worker)
+    std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::shared_ptr<common::command_worker> worker)
     : tool_source(std::move(proxy), std::move(worker), "docker") {}
 
 docker_source::~docker_source() {

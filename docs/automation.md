@@ -679,6 +679,14 @@ def test_saving_shows_confirmation(wish_ui):
   real, queryable rects and *can* be targeted directly by `click(path)`/
   `get_widget(path)` — check whether the table's own row-building code
   calls `assign_id()` on the row before assuming pixel math is required.
+  **Shortcut for mc (and any table whose rows carry a `ContextMenu`):**
+  the row's `ContextMenu` child *does* get an id, and its `rect` is the
+  whole row's, so `get_widget("<table_path>.<row_idx>.<menu_idx>")["rect"]`
+  (mc: `__mc_0.vbox.left_table.1.3`) gives the row's exact y without any
+  header/row-height math. Seen 2026-10: a plain `click()` on that path did
+  not select the row; a raw `mouse.move()`, ~300 ms pause, then
+  `mouse.click(x, y, delay=60)` at that rect's center did, confirmed by
+  polling the panel's "Selected: ..." label.
 - **A plain, undelayed `click(path)` on a `git`-module `TableRow` (the
   invisible row-spanning `Selectable` in `render_table()`'s row loop, not
   a real `Selectable`/`Button` widget) frequently fails to register at

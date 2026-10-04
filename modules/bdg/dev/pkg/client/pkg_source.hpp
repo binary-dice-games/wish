@@ -10,8 +10,8 @@
 /// the ones on the user's own machine, reachable only from the client.
 ///
 /// Every method that runs a command is called from a job of the shared
-/// dev::command_worker, which keeps the UI responsive and shows the modal
-/// progress dialog (common/command_worker.hpp).
+/// common::command_worker, which keeps the UI responsive and shows the modal
+/// progress dialog (modules/common/command_worker.hpp).
 #pragma once
 
 #include "pkg_backend.hpp"
@@ -35,7 +35,7 @@ class pkg_source : public dev::tool_source {
   /// @param how  How commands that need root get it (see elevation).
   pkg_source(
       std::shared_ptr<bison::rmi::proxy::dynamic> proxy, manager m, elevation how,
-      std::shared_ptr<dev::command_worker> worker);
+      std::shared_ptr<common::command_worker> worker);
 
   /// @brief Pushes the manager name, @p version_text (the probe command's
   /// first output line) and the elevation mode to the form's environment line.

@@ -8,7 +8,15 @@
 /// a local directory and reporting it back via `update_local_listing()`,
 /// and to `on_upload_requested`/`on_download_requested` by moving bytes
 /// between the local filesystem and the session sandbox.
+///
+/// Every one of those runs as a job on one `common::command_worker`
+/// (modules/common/command_worker.hpp), never inside the event handler, so
+/// the UI never freezes; a job that takes more than a moment opens the same
+/// modal progress dialog the dev modules (docker, kubectl, ...) use -- for a
+/// transfer, a determinate bar with bytes moved and a Cancel button.
 #include "modules/bdg/desktop/mc/client/mc.hpp"
+
+#include "modules/common/command_worker.hpp"
 
 #include "src/client/app_registry.hpp"
 #include "src/client/wish_app_host.hpp"
@@ -24,6 +32,7 @@
 #include <functional>
 #include <iomanip>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -51,9 +60,19 @@ std::vector<std::string> read_names(const dynamic& payload) {
   return names;
 }
 
+// Reads the whole file in one sized read() -- a char-by-char
+// istreambuf_iterator copy takes many seconds for a large file, all before
+// the transfer reports any progress. Throws when the file can't be read, so
+// the batch reports it instead of uploading an empty file.
 std::string read_local_file(const fs::path& path) {
-  std::ifstream in(path, std::ios::binary);
-  return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>{}};
+  std::ifstream in(path, std::ios::binary | std::ios::ate);
+  if (!in)
+    throw std::runtime_error("cannot open " + path.string());
+  std::string data(static_cast<size_t>(in.tellg()), '\0');
+  in.seekg(0);
+  if (!in.read(data.data(), static_cast<std::streamsize>(data.size())))
+    throw std::runtime_error("cannot read " + path.string());
+  return data;
 }
 
 void write_local_file(const fs::path& path, const std::string& data) {
@@ -170,29 +189,40 @@ void report_local_listing(
   call_with_retry(explorer, "update_local_listing"_key, std::move(args));
 }
 
-// Patches `transfer_progress`/`transfer_label` on the Mc form,
-// throttled to whole-percent steps so a fast local transfer doesn't flood
-// the dispatch queue with near-identical patches.
-void report_transfer_progress(
-    const std::shared_ptr<rmi::proxy::dynamic>& explorer, int& last_percent, std::uint64_t transferred,
-    std::uint64_t total) {
-  int percent = total == 0 ? 100 : static_cast<int>((transferred * 100) / total);
-  if (percent == last_percent)
-    return;
-  last_percent = percent;
+// Thrown from a transfer's progress callback once the user has pressed the
+// progress dialog's Cancel, to abandon the chunked transfer mid-way.
+struct transfer_cancelled : std::runtime_error {
+  transfer_cancelled() : std::runtime_error("cancelled") {}
+};
 
-  dynamic patch;
-  patch["transfer_progress"_key] = total == 0 ? 0.0f : static_cast<float>(transferred) / static_cast<float>(total);
-  patch["transfer_label"_key] = format_bytes(transferred) + " / " + format_bytes(total);
-  explorer->set(std::move(patch)).get();
+// "Uploading notes.txt" / "Downloading notes.txt (2 of 5)" -- the progress
+// dialog's caption for one file of a batch.
+std::string transfer_caption(const char* verb, const std::string& name, size_t index, size_t count) {
+  std::string caption = std::string{verb} + " " + name;
+  if (count > 1)
+    caption += " (" + std::to_string(index + 1) + " of " + std::to_string(count) + ")";
+  return caption;
 }
 
-// Clears the progress bar/label back to their idle state.
-void clear_transfer_progress(const std::shared_ptr<rmi::proxy::dynamic>& explorer) {
-  dynamic patch;
-  patch["transfer_progress"_key] = 0.0f;
-  patch["transfer_label"_key] = std::string{};
-  explorer->set(std::move(patch)).get();
+// The progress callback shared by uploads and downloads: reports the bytes
+// moved so far to the dialog, or abandons the transfer once cancelled. It
+// runs on the transfer's own thread while the worker thread is blocked on
+// that transfer's future, so the two never touch @p progress at once.
+transfer_progress_callback transfer_reporter(common::task_progress& progress) {
+  return [&progress](std::uint64_t transferred, std::uint64_t total) {
+    if (progress.cancelled())
+      throw transfer_cancelled{};
+    progress.report(transferred, total, format_bytes(transferred) + " / " + format_bytes(total));
+  };
+}
+
+// Builds the error a failed batch leaves in the progress dialog: one line per
+// file that failed.
+std::string batch_error(const char* verb, const std::vector<std::string>& failures) {
+  std::string error = std::string{verb} + " failed:";
+  for (auto& f : failures)
+    error += "\n" + f;
+  return error;
 }
 
 // Instantiates the built-in MessageBox form (see src/ui/forms/message_box.hpp)
@@ -222,9 +252,15 @@ void run_mc(wish_app_host& s) {
   auto explorer = std::make_shared<rmi::proxy::dynamic>(s.instantiate("wish"_key, "Mc"_key).get());
   auto cur_dir = std::make_shared<fs::path>(fs::current_path());
 
+  // Every handler below that touches the filesystem or moves bytes runs as a
+  // job on this worker's thread, one at a time; long ones get the shared
+  // modal progress dialog (modules/common/command_worker.hpp).
+  auto worker = std::make_shared<common::command_worker>(s, "File Explorer");
+  worker->start();
+
   // Server asks to browse a different local directory (row activated in the
   // Local panel, or the local path bar's value was changed).
-  explorer->onEvent("on_local_navigate"_key, [&s, explorer, cur_dir](dynamic payload) {
+  worker->on(*explorer, "on_local_navigate"_key, [explorer, cur_dir](const dynamic& payload) {
     auto name = payload.as<std::string>("name"_key);
     auto type = payload.as<std::string>("type"_key);
     fs::path target = type == "path" ? fs::path(name) : (name == ".." ? cur_dir->parent_path() : (*cur_dir / name));
@@ -237,10 +273,8 @@ void run_mc(wish_app_host& s) {
 
   // User confirmed the local panel's Rename dialog (server-side, since only
   // the client can touch its own filesystem -- see mc.hpp's class doc
-  // comment). Fast/local, so this runs inline rather than on a background
-  // thread the way do_upload/do_download do for their own (potentially
-  // slow, network-bound) transfers.
-  explorer->onEvent("on_local_rename_requested"_key, [explorer, cur_dir](dynamic payload) {
+  // comment).
+  worker->on(*explorer, "on_local_rename_requested"_key, [explorer, cur_dir](const dynamic& payload) {
     auto old_name = payload.as<std::string>("old_name"_key);
     auto new_name = payload.as<std::string>("new_name"_key);
     std::error_code ec;
@@ -252,77 +286,70 @@ void run_mc(wish_app_host& s) {
   });
 
   // Uploads every entry of `names` from `local_path_str`, then asks the
-  // server to re-list the sandbox panel once the whole batch is done.
+  // server to re-list the Sandbox panel once the whole batch is done.
   // Shared by the no-conflict ("on_upload_requested") and
   // confirmed-overwrite ("on_upload_conflict" + MessageBox "Yes") paths
-  // below.
-  //
-  // The whole batch runs sequentially on one detached background thread
-  // rather than inline in the caller, and rather than one thread per file:
-  // in standalone mode the handler itself runs on the RMI dispatch thread
-  // while holding the session's write lock (see
-  // bdg::bison::rmi::standalone's "do not block the worker from within an
-  // event handler" contract), and that same lock is needed by the render
-  // loop every frame, so blocking here would freeze the entire UI, not just
-  // the progress bar; running the batch sequentially (rather than one
-  // thread per file, all racing) keeps the shared transfer_progress bar
-  // showing one coherent file's progress at a time instead of flickering
-  // between concurrent transfers. A failure on one file is reported but
-  // doesn't abort the rest of the batch.
-  auto do_upload = [&s](const std::shared_ptr<rmi::proxy::dynamic>& explorer, std::vector<std::string> names,
-                        std::string local_path_str, std::string sandbox_path_str) {
-    std::thread([&s, explorer, names = std::move(names), local_path_str, sandbox_path_str]() {
-      for (auto& name : names) {
-        try {
-          auto data = read_local_file(fs::path(local_path_str) / name);
-          std::string remote_name =
-              sandbox_path_str.empty() ? name : sandbox_path_str + "/" + name;
-          int last_percent = -1;
-          s.upload_file(
-               remote_name, data,
-               [explorer, &last_percent](std::uint64_t transferred, std::uint64_t total) {
-                 report_transfer_progress(explorer, last_percent, transferred, total);
-               })
-              .get();
-        } catch (const std::exception& e) {
-          dynamic patch;
-          patch["status"_key] = std::string{"Upload failed (\""} + name + "\"): " + e.what();
-          explorer->set(std::move(patch)).get();
+  // below. Runs as one worker job (never inside the event handler: in
+  // standalone mode that runs on the RMI dispatch thread holding the
+  // session's write lock, which the render loop needs every frame), one file
+  // at a time so the progress dialog shows one coherent transfer. A failure
+  // on one file is collected but doesn't abort the rest of the batch; Cancel
+  // abandons the file in flight (its partial copy is discarded) and skips
+  // the rest.
+  auto do_upload = [&s, worker](const std::shared_ptr<rmi::proxy::dynamic>& explorer, std::vector<std::string> names,
+                                std::string local_path_str, std::string sandbox_path_str) {
+    worker->post([&s, worker, explorer, names = std::move(names), local_path_str, sandbox_path_str] {
+      std::vector<std::string> failures;
+      worker->run_task("Uploading", [&](common::task_progress& progress) {
+        for (size_t i = 0; i < names.size() && !progress.cancelled(); ++i) {
+          const std::string& name = names[i];
+          const std::string remote_name = sandbox_path_str.empty() ? name : sandbox_path_str + "/" + name;
+          progress.set_caption(transfer_caption("Uploading", name, i, names.size()));
+          try {
+            auto data = read_local_file(fs::path(local_path_str) / name);
+            s.upload_file(remote_name, data, transfer_reporter(progress)).get();
+          } catch (const transfer_cancelled&) {
+            dynamic args;
+            args["name"_key] = remote_name;
+            call_with_retry(explorer, "discard_upload"_key, std::move(args));
+          } catch (const std::exception& e) {
+            failures.push_back(name + ": " + e.what());
+          }
         }
-      }
-      clear_transfer_progress(explorer);
+      });
+      if (!failures.empty())
+        worker->fail(batch_error("Upload", failures), /*always_show=*/true);
       call_with_retry(explorer, "refresh_sandbox"_key, dynamic{});
-    }).detach();
+    });
   };
 
   // Pulls every entry of `names` from the sandbox and writes it into the
   // currently-shown local directory, then re-lists the Local panel once.
-  // Shared the same way as do_upload above.
-  auto do_download = [&s](const std::shared_ptr<rmi::proxy::dynamic>& explorer,
-                          const std::shared_ptr<fs::path>& cur_dir, std::vector<std::string> names,
-                          std::string sandbox_path_str) {
-    std::thread([&s, explorer, cur_dir, names = std::move(names), sandbox_path_str]() {
-      for (auto& name : names) {
-        try {
-          std::string remote_name =
-              sandbox_path_str.empty() ? name : sandbox_path_str + "/" + name;
-          int last_percent = -1;
-          auto data = s.download_file(
-                           remote_name,
-                           [explorer, &last_percent](std::uint64_t transferred, std::uint64_t total) {
-                             report_transfer_progress(explorer, last_percent, transferred, total);
-                           })
-                          .get();
-          write_local_file(*cur_dir / name, data);
-        } catch (const std::exception& e) {
-          dynamic patch;
-          patch["status"_key] = std::string{"Download failed (\""} + name + "\"): " + e.what();
-          explorer->set(std::move(patch)).get();
+  // Shared the same way as do_upload above; a cancelled download never
+  // writes its file.
+  auto do_download = [&s, worker](const std::shared_ptr<rmi::proxy::dynamic>& explorer,
+                                  const std::shared_ptr<fs::path>& cur_dir, std::vector<std::string> names,
+                                  std::string sandbox_path_str) {
+    worker->post([&s, worker, explorer, cur_dir, names = std::move(names), sandbox_path_str] {
+      std::vector<std::string> failures;
+      worker->run_task("Downloading", [&](common::task_progress& progress) {
+        for (size_t i = 0; i < names.size() && !progress.cancelled(); ++i) {
+          const std::string& name = names[i];
+          const std::string remote_name = sandbox_path_str.empty() ? name : sandbox_path_str + "/" + name;
+          progress.set_caption(transfer_caption("Downloading", name, i, names.size()));
+          try {
+            auto data = s.download_file(remote_name, transfer_reporter(progress)).get();
+            write_local_file(*cur_dir / name, data);
+          } catch (const transfer_cancelled&) {
+          } catch (const std::exception& e) {
+            failures.push_back(name + ": " + e.what());
+          }
         }
-      }
-      clear_transfer_progress(explorer);
+      });
+      if (!failures.empty())
+        worker->fail(batch_error("Download", failures), /*always_show=*/true);
       report_local_listing(explorer, cur_dir);
-    }).detach();
+    });
   };
 
   // Upload button clicked with one or more local files selected and no name
@@ -366,11 +393,14 @@ void run_mc(wish_app_host& s) {
     });
   });
 
-  explorer->onEvent("closed"_key, [&s](dynamic) { s.signal_done(); });
+  explorer->onEvent("closed"_key, [&s, worker](dynamic) {
+    worker->shutdown();
+    s.signal_done();
+  });
 
   // Show the client's current working directory in the Local panel at
   // startup, mirroring the sandbox panel's own root-on-open behavior.
-  report_local_listing(explorer, cur_dir);
+  worker->post([explorer, cur_dir] { report_local_listing(explorer, cur_dir); });
 
   // on_session() blocks until signal_done() is called.
 }

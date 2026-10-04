@@ -30,7 +30,7 @@ dynamic_ptr to_array(const std::vector<package>& packages, const std::map<std::s
 
 pkg_source::pkg_source(
     std::shared_ptr<bison::rmi::proxy::dynamic> proxy, manager m, elevation how,
-    std::shared_ptr<dev::command_worker> worker)
+    std::shared_ptr<common::command_worker> worker)
     // No launcher: every command is a whole argv (the program differs per
     // manager, and a privileged command is wrapped in sudo / pkexec).
     : tool_source(std::move(proxy), std::move(worker), {}, {}), manager_(m), elevation_(how) {}

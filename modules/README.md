@@ -17,6 +17,11 @@ modules/<organization>/<collection>/<module>/
   README.md
 ```
 
+Code shared by several modules' clients without being a module itself lives
+in `modules/common/` (outside every `<org>/<collection>` tree, so no
+collection picks it up) -- e.g. `command_worker.hpp`, the background job
+runner with a modal progress dialog that the `bdg/dev` tools and `mc` use.
+
 A module needs none, some, or all three of `server/`, `client/`,
 `resources/embedded/` — there's no assumption that any particular
 subdirectory exists. A server-only module registers a class the client

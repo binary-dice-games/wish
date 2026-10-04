@@ -86,7 +86,7 @@ class curl_source : public dev::tool_source {
  public:
   curl_source(
       std::shared_ptr<bison::rmi::proxy::dynamic> proxy, wish_app_host& host,
-      std::shared_ptr<dev::command_worker> worker);
+      std::shared_ptr<common::command_worker> worker);
 
   /// @brief Loads the local store (if present) and pushes the initial
   /// Collections / Environments / History snapshots. Called once on

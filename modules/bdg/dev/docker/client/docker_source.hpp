@@ -31,7 +31,7 @@ using dev::process_result;
 
 class docker_source : public dev::tool_source {
  public:
-  docker_source(std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::shared_ptr<dev::command_worker> worker);
+  docker_source(std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::shared_ptr<common::command_worker> worker);
   ~docker_source() override;
 
   /// @brief Pushes the containers / images / volumes / networks snapshots,

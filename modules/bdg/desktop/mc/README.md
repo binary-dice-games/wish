@@ -2,13 +2,19 @@
 
 <img src="mc.png" alt="mc" height="200"/>
 
-Two-panel file browser laid out as three dockable panels inside its own
+Two-panel file browser laid out as two dockable panels inside its own
 nested "File Explorer" dockspace (see [docs/dock-layout.md](../../../../docs/dock-layout.md)):
-**Local Machine** (client-driven), **Sandbox (Server)** (server-driven, with
-an "Open in Explorer" shortcut) and **Transfer** (upload/download buttons,
-status and progress bar). The first run seeds Local and Sandbox side by side
-over a Transfer strip; rearrange freely afterwards (Shift+drag to re-dock).
-Closing any panel closes the tool. Each file panel
+**Local Machine** (client-driven) and **Sandbox (Server)** (server-driven,
+with an "Open in Explorer" shortcut). Each panel has the button that sends
+its selected files to the other one (**Upload >>** in Local, **<< Download**
+in Sandbox). The first run seeds them side by side; rearrange freely
+afterwards (Shift+drag to re-dock). Closing either panel closes the tool.
+
+Transfers run in the background, one file at a time. One that takes more
+than a moment opens the same modal progress dialog the dev tools (docker,
+kubectl, ...) use, here with a bar showing the bytes moved and a **Cancel**
+button (a cancelled upload leaves the sandbox as it was); failures stay in
+the dialog until **Close** is pressed. Each panel
 shows a small disk-usage summary strip (file count/total size of the
 listed directory, plus used/free/total space for its filesystem) below its
 table, and each row offers a right-click context menu (Properties, Rename,
@@ -21,7 +27,7 @@ upload/download buttons act on every selected file at once (selected
 directories are silently skipped).
 
 - **server/**: `Mc` form (`register_mc()`), a
-  `bdg::wish::form` subclass owning the three panels/tables and all
+  `bdg::wish::form` subclass owning the two panels/tables and all
   sandbox navigation/listing (`std::filesystem` + `file_service::resolve_path()`
   against `context::resource_dir`), including the sandbox panel's own
   disk-usage strip, its rows' Rename/Properties (both handled directly,
@@ -40,8 +46,10 @@ directories are silently skipped).
   renames a local file/directory in response to
   `on_local_rename_requested`, and moves bytes between the local machine and
   the sandbox in response to `on_upload_requested`/`on_download_requested`,
-  transferring a multi-file batch sequentially on one background thread so
-  the shared progress bar shows one coherent transfer at a time. A conflict
+  all as jobs on one `common::command_worker`
+  ([modules/common/command_worker.hpp](../../../common/command_worker.hpp)),
+  which shows the progress dialog for long ones (a multi-file batch is one
+  job, transferred sequentially). A conflict
   event instead instantiates the built-in `MessageBox` form ("yes_no"
   preset) to confirm once with the user before overwriting the whole batch.
 - **resources/**: none.

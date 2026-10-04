@@ -29,7 +29,7 @@ using dev::process_result;
 
 class sq_source : public dev::tool_source {
  public:
-  sq_source(std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::shared_ptr<dev::command_worker> worker);
+  sq_source(std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::shared_ptr<common::command_worker> worker);
 
   /// @brief Pushes the driver list (once), the connections, and the active
   /// database's schema. Called on startup and by "refresh_requested".

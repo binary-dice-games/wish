@@ -14,8 +14,8 @@
 ///
 /// No command runs on the caller's thread: a `pip install` can take minutes,
 /// and an event handler that blocks freezes the whole UI. Every method that
-/// runs `pip` is called from a job of the shared dev::command_worker, which
-/// also shows the modal progress dialog (common/command_worker.hpp).
+/// runs `pip` is called from a job of the shared common::command_worker, which
+/// also shows the modal progress dialog (modules/common/command_worker.hpp).
 #pragma once
 
 #include "modules/bdg/dev/common/tool_source.hpp"
@@ -52,7 +52,7 @@ class pip_source : public dev::tool_source {
   ///                     used for probe_version().
   pip_source(
       std::shared_ptr<bison::rmi::proxy::dynamic> proxy, const std::string& interpreter,
-      std::shared_ptr<dev::command_worker> worker);
+      std::shared_ptr<common::command_worker> worker);
 
   /// @brief Runs `pip --version`. @return its output (`pip X from <path>
   /// (python Y)`), or `""` -- with @p error set -- when pip cannot be run.

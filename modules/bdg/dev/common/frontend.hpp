@@ -10,7 +10,7 @@
 /// event payload. Header-only.
 #pragma once
 
-#include "modules/bdg/dev/common/command_worker.hpp"
+#include "modules/common/command_worker.hpp"
 #include "modules/bdg/dev/common/process.hpp"
 
 #include "src/client/wish_app_host.hpp"
@@ -28,7 +28,7 @@ namespace bdg::wish::dev {
 /// @brief A dev module's open form and the worker that runs its commands.
 struct frontend {
   std::shared_ptr<bison::rmi::proxy::dynamic> proxy;
-  std::shared_ptr<command_worker> worker;
+  std::shared_ptr<common::command_worker> worker;
 };
 
 /// @brief Instantiates the `wish` form class @p form, starts a
@@ -42,7 +42,7 @@ struct frontend {
 inline frontend open_frontend(wish_app_host& host, bison::key_t form, const std::string& progress_title) {
   frontend f;
   f.proxy = std::make_shared<bison::rmi::proxy::dynamic>(host.instantiate(bison::key_t{"wish"}, form).get());
-  f.worker = std::make_shared<command_worker>(host, progress_title);
+  f.worker = std::make_shared<common::command_worker>(host, progress_title);
   f.worker->start();
   f.proxy->onEvent(bison::key_t{"closed"}, [&host, worker = f.worker](bison::dynamic) {
     worker->shutdown();

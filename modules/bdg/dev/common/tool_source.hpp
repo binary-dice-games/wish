@@ -23,7 +23,7 @@
 /// output}`. Header-only.
 #pragma once
 
-#include "modules/bdg/dev/common/command_worker.hpp"
+#include "modules/common/command_worker.hpp"
 #include "modules/bdg/dev/common/process.hpp"
 #include "modules/bdg/dev/common/text.hpp"
 
@@ -74,13 +74,13 @@ class tool_source {
   ///                  with, e.g. `{"python3", "-m", "pip"}`. Empty when every
   ///                  argv names its own program.
   tool_source(
-      std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::shared_ptr<command_worker> worker, std::string tool,
+      std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::shared_ptr<common::command_worker> worker, std::string tool,
       std::vector<std::string> launcher)
       : proxy_(std::move(proxy)), worker_(std::move(worker)), tool_(std::move(tool)), launcher_(std::move(launcher)) {}
 
   /// @brief Same, with @p tool itself as the launcher.
   tool_source(
-      std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::shared_ptr<command_worker> worker, std::string tool)
+      std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::shared_ptr<common::command_worker> worker, std::string tool)
       : tool_source(std::move(proxy), std::move(worker), tool, std::vector<std::string>{tool}) {}
 
   /// @brief Runs `<launcher> <args>` on the worker (behind the progress
@@ -91,7 +91,7 @@ class tool_source {
     const std::string command = options.caption.empty() ? caption(args) : options.caption;
     auto r = worker_->run(
         command,
-        [&](const run_hooks* hooks) {
+        [&](const common::run_hooks* hooks) {
           process_options po;
           po.stdin_text = options.stdin_text;
           po.hooks = hooks;
@@ -214,7 +214,7 @@ class tool_source {
   // Runs every logged command off the UI thread, behind a modal progress
   // dialog when it takes long (see command_worker.hpp). Every method that
   // calls run_logged() must be called from one of its jobs.
-  std::shared_ptr<command_worker> worker_;
+  std::shared_ptr<common::command_worker> worker_;
 
  private:
   std::string tool_;

@@ -29,7 +29,7 @@ using dev::process_result;
 
 class helm_source : public dev::tool_source {
  public:
-  helm_source(std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::shared_ptr<dev::command_worker> worker);
+  helm_source(std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::shared_ptr<common::command_worker> worker);
 
   /// @brief Pushes the releases and repositories snapshots, in that order.
   /// Called once on startup, on "refresh_requested", and after every

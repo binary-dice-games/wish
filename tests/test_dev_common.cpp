@@ -30,6 +30,7 @@
 using namespace bdg::bison;
 namespace bison = bdg::bison;
 namespace dev = bdg::wish::dev;
+namespace common = bdg::wish::common;
 namespace wish = bdg::wish;
 using namespace bdg::bison::rmi::transport;
 
@@ -112,7 +113,7 @@ TEST(DevProcessTest, ChildThatIgnoresStdinDoesNotCrashUs) {
 }
 
 TEST(DevProcessTest, HooksDeliverOutputAsItArrives) {
-  dev::run_hooks hooks;
+  common::run_hooks hooks;
   std::string seen;
   hooks.on_output = [&](const std::string& chunk) { seen += chunk; };
   dev::process_options options;
@@ -124,7 +125,7 @@ TEST(DevProcessTest, HooksDeliverOutputAsItArrives) {
 }
 
 TEST(DevProcessTest, TickReturningFalseStopsTheProcess) {
-  dev::run_hooks hooks;
+  common::run_hooks hooks;
   hooks.tick_ms = 20;
   int ticks = 0;
   hooks.on_tick = [&] { return ++ticks < 2; };
@@ -139,7 +140,7 @@ TEST(DevProcessTest, TickReturningFalseStopsTheProcess) {
 TEST(DevProcessTest, StoppedProcessReturnsEvenIfAChildKeepsThePipesOpen) {
   // The shell dies on SIGTERM; its background `sleep` inherits stdout /
   // stderr and outlives it (git's remote helper, a pip build step).
-  dev::run_hooks hooks;
+  common::run_hooks hooks;
   hooks.tick_ms = 20;
   hooks.on_tick = [] { return false; };
   dev::process_options options;
@@ -273,7 +274,7 @@ class client_app_host : public wish::wish_app_host {
 class test_source : public dev::tool_source {
  public:
   test_source(
-      std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::shared_ptr<dev::command_worker> worker, std::string tool,
+      std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::shared_ptr<common::command_worker> worker, std::string tool,
       std::vector<std::string> launcher)
       : tool_source(std::move(proxy), std::move(worker), std::move(tool), std::move(launcher)) {}
 
@@ -300,7 +301,7 @@ class ToolSourceTest : public ::testing::Test {
     // Not start()ed: the tests call run_logged() on their own thread, which
     // then is the worker thread. The stub commands finish long before the
     // progress dialog's delay, so no dialog is ever opened.
-    worker_ = std::make_shared<dev::command_worker>(*host_, "Running test");
+    worker_ = std::make_shared<common::command_worker>(*host_, "Running test");
   }
 
   void TearDown() override {
@@ -330,7 +331,7 @@ class ToolSourceTest : public ::testing::Test {
   std::unique_ptr<bison::rmi::client> client_;
   std::shared_ptr<bison::rmi::proxy::dynamic> proxy_;
   std::unique_ptr<client_app_host> host_;
-  std::shared_ptr<dev::command_worker> worker_;
+  std::shared_ptr<common::command_worker> worker_;
 };
 
 TEST_F(ToolSourceTest, RunLoggedTracesTheCommandToTheConsole) {

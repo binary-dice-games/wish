@@ -39,7 +39,7 @@ std::string resolve_interpreter(const std::string& arg) {
 
 pip_source::pip_source(
     std::shared_ptr<bison::rmi::proxy::dynamic> proxy, const std::string& interpreter,
-    std::shared_ptr<dev::command_worker> worker)
+    std::shared_ptr<common::command_worker> worker)
     : tool_source(
           std::move(proxy), std::move(worker), "pip",
           // --no-input: stdin is closed, so never wait on a prompt. The

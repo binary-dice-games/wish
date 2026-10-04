@@ -36,7 +36,7 @@ dynamic_ptr string_array(const std::vector<std::string>& items) {
 
 git_repo_source::git_repo_source(
     std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::string repo_path,
-    std::shared_ptr<dev::command_worker> worker)
+    std::shared_ptr<common::command_worker> worker)
     : tool_source(std::move(proxy), std::move(worker), "git"), repo_path_(std::move(repo_path)) {}
 
 process_result git_repo_source::run(const std::vector<std::string>& args, dev::process_options options) const {

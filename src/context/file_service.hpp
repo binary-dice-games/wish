@@ -27,6 +27,11 @@ namespace bdg::wish {
  */
 class file_service : public bison::dynamic {
  public:
+  /// @brief Suffix of the staging file a chunked upload writes to (see
+  /// upload_chunk()) until its last chunk renames it onto the target name.
+  /// An interrupted transfer leaves only `<name>` + this suffix behind.
+  static constexpr const char* kStagingSuffix = ".wishpart";
+
   /**
    * @brief Instatitates a new file service instance.
    * @param resource_dir  Sandboxed directory for this session's files.

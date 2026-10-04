@@ -31,7 +31,7 @@ using dev::process_result;
 
 class kubectl_source : public dev::tool_source {
  public:
-  kubectl_source(std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::shared_ptr<dev::command_worker> worker);
+  kubectl_source(std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::shared_ptr<common::command_worker> worker);
   ~kubectl_source() override;
 
   /// @brief Pushes the pods / deployments / services / nodes snapshots, in

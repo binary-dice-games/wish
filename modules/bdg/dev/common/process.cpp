@@ -19,7 +19,7 @@ struct pipe_state {
   std::string* out{nullptr};
   bool closed{false};
   uv_pipe_t* handle{nullptr}; // valid while !closed
-  const run_hooks* hooks{nullptr};
+  const common::run_hooks* hooks{nullptr};
 };
 
 void alloc_cb(uv_handle_t*, size_t suggested_size, uv_buf_t* buf) {
@@ -76,7 +76,7 @@ void exit_cb(uv_process_t* req, int64_t exit_status, int term_signal) {
 }
 
 struct tick_state {
-  const run_hooks* hooks{nullptr};
+  const common::run_hooks* hooks{nullptr};
   uv_process_t* child{nullptr};
   exit_state* exit{nullptr};
 };

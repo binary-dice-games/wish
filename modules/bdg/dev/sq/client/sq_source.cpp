@@ -83,7 +83,7 @@ dynamic_ptr as_array(dynamic&& arr) {
 } // namespace
 
 sq_source::sq_source(
-    std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::shared_ptr<dev::command_worker> worker)
+    std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::shared_ptr<common::command_worker> worker)
     : tool_source(std::move(proxy), std::move(worker), "sq") {}
 
 // The first line of sq's stderr ("sq: <what failed>") is the useful one.

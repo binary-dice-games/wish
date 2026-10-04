@@ -12,7 +12,7 @@
 #include <functional>
 #include <string>
 
-namespace bdg::wish::dev {
+namespace bdg::wish::common {
 
 /// @brief Optional callbacks for a long-running command. Both run on the
 /// calling thread, from inside the run_process() call.
@@ -26,4 +26,4 @@ struct run_hooks {
   uint64_t tick_ms{150};
 };
 
-} // namespace bdg::wish::dev
+} // namespace bdg::wish::common
