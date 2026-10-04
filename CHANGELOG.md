@@ -43,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A second confirmation dialog in the same session never appeared: a form that replaced a finished child dialog (`MessageBox`, ...) with a new one erased the new dialog along with the old. Affected every module that asks for confirmation more than once (`docker`, `kubectl`, `helm`, `git`, `curl`, `sq`, `pip`, `top`, `zip`).
 - `docker`, `kubectl`, `helm`, `curl`, `sq`, `git`, and `pip` clients could crash on the command following one whose program failed to start.
 - Buttons in the `curl`, `sq`, `docker` and `kubectl` modules size to their label instead of using a fixed width, so labels are no longer cropped.
+- Buttons in the `pix` module size to their label instead of using a fixed width, so labels are no longer cropped.
 
 - A scrolling `VerticalLayout` (`"scroll": true`) no longer draws its children under the vertical scrollbar, which cut off the right edge of the `kubectl` Top window's graphs and tables.
 - wish server: fixed an intermittent crash when a client disconnected while the server was delivering it a widget event.

@@ -129,8 +129,8 @@ static constexpr const char* kImagesLayout = R"json({
               "type": "InputText", "value": "", "hint": "Folder path...",
               "max_length": 4096, "flags": "EnterReturnsTrue", "width": -1
             },
-            "btn_browse": { "type": "Button", "label": "Browse...", "width": 80 },
-            "btn_open_explorer": { "type": "Button", "label": "Open Sandbox", "width": 110 }
+            "btn_browse": { "type": "Button", "label": "Browse..." },
+            "btn_open_explorer": { "type": "Button", "label": "Open Sandbox" }
           }
         },
         "status_label": { "type": "Label", "text": "" },
@@ -166,11 +166,11 @@ static constexpr const char* kPreviewLayout = R"json({
           "type": "HorizontalLayout",
           "spacing": 6.0,
           "children": {
-            "btn_zoom_out": { "type": "Button", "label": "-", "width": 32 },
+            "btn_zoom_out": { "type": "Button", "label": "-" },
             "zoom_label": { "type": "Label", "text": "--" },
-            "btn_zoom_in": { "type": "Button", "label": "+", "width": 32 },
-            "btn_zoom_fit": { "type": "Button", "label": "Fit", "width": 56 },
-            "btn_zoom_100": { "type": "Button", "label": "100%", "width": 56 },
+            "btn_zoom_in": { "type": "Button", "label": "+" },
+            "btn_zoom_fit": { "type": "Button", "label": "Fit" },
+            "btn_zoom_100": { "type": "Button", "label": "100%" },
             "pan_hint": { "type": "Label", "text": "(scroll the preview to pan)" }
           }
         },
