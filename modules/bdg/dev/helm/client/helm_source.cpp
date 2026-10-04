@@ -16,18 +16,6 @@ using namespace bdg::bison;
 
 namespace {
 
-std::string trim_eol(std::string s) {
-  while (!s.empty() && (s.back() == '\n' || s.back() == '\r'))
-    s.pop_back();
-  return s;
-}
-
-// What a failed command had to say: helm's `Error:` message from stderr, or
-// stdout when stderr is empty.
-std::string error_text(const process_result& r) {
-  return error_summary(r.stderr_text.empty() ? r.stdout_text : r.stderr_text);
-}
-
 // Parses @p r's table output (empty when the command failed) and builds the
 // dynamic array every update_* method expects, calling @p fill once per row.
 dynamic_ptr table_to_array(
@@ -49,7 +37,7 @@ dynamic_ptr table_to_array(
 
 helm_source::helm_source(
     std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::shared_ptr<dev::command_worker> worker)
-    : proxy_(std::move(proxy)), worker_(std::move(worker)) {}
+    : tool_source(std::move(proxy), std::move(worker), "helm") {}
 
 void helm_source::refresh_all() {
   push_releases();
@@ -58,51 +46,8 @@ void helm_source::refresh_all() {
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
-process_result helm_source::run_logged(const std::vector<std::string>& args) {
-  const std::string command = dev::command_text("helm", args);
-  auto r = worker_->run(command, [&](const dev::run_hooks* hooks) { return run_helm_cli(args, "helm", hooks); });
-
-  // Single-line preview: helm's tables are TAB-separated and space-padded,
-  // so collapse every whitespace run to one space.
-  std::string output;
-  for (char ch : r.ok() ? trim_eol(r.stdout_text) : error_text(r)) {
-    const bool space = ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r';
-    if (!space)
-      output += ch;
-    else if (!output.empty() && output.back() != ' ')
-      output += ' ';
-  }
-  constexpr size_t kMaxOutputPreview = 200;
-  if (output.size() > kMaxOutputPreview)
-    output = output.substr(0, kMaxOutputPreview) + "...";
-
-  dynamic log;
-  log["command"_key] = command;
-  log["exit_code"_key] = r.exit_code;
-  log["ok"_key] = r.ok();
-  log["output"_key] = std::move(output);
-  try {
-    proxy_->call("append_command_log"_key, std::move(log)).get();
-  } catch (const std::exception&) {
-    // Best-effort: a torn-down form just swallows the trace row.
-  }
-  return r;
-}
-
-bool helm_source::report(const std::string& label, const std::string& scope, bool ok, const std::string& output) {
-  dynamic args;
-  args["command"_key] = label;
-  args["scope"_key] = scope;
-  args["ok"_key] = ok;
-  args["output"_key] = ok ? std::string{} : output;
-  if (!ok)
-    worker_->fail(label + " failed: " + output);
-  try {
-    proxy_->call("command_result"_key, std::move(args)).get();
-  } catch (const std::exception&) {
-    return false; // form gone.
-  }
-  return true;
+std::string helm_source::error_text(const process_result& r) const {
+  return error_summary(dev::error_output(r));
 }
 
 bool helm_source::run_and_refresh(
@@ -147,11 +92,8 @@ void helm_source::push_releases() {
         e["chart"_key] = c[5];
         e["app_version"_key] = c[6];
       });
-  try {
-    proxy_->call("update_releases"_key, std::move(args)).get();
-  } catch (const std::exception&) {
+  if (!call("update_releases"_key, std::move(args)))
     return;
-  }
   if (!r.ok())
     report("list", "releases", false, error_text(r));
 }
@@ -164,11 +106,8 @@ void helm_source::push_repos() {
     e["name"_key] = c[0];
     e["url"_key] = c[1];
   });
-  try {
-    proxy_->call("update_repos"_key, std::move(args)).get();
-  } catch (const std::exception&) {
+  if (!call("update_repos"_key, std::move(args)))
     return;
-  }
   // `helm repo list` exits non-zero with "no repositories to show" when none
   // are configured -- an empty table, not a failure worth reporting.
   if (!r.ok() && error_text(r).find("no repositories") == std::string::npos)
@@ -310,15 +249,12 @@ void helm_source::on_install_values_requested(
     } else {
       // A release installed without custom values prints a bare "null".
       std::string text = r.stdout_text;
-      if (trim_eol(text) == "null")
+      if (dev::trim_eol(text) == "null")
         text.clear();
       args["text"_key] = std::move(text);
     }
   }
-  try {
-    proxy_->call("set_install_values"_key, std::move(args)).get();
-  } catch (const std::exception&) {
-  }
+  call("set_install_values"_key, std::move(args));
 }
 
 // ── read-only queries ──────────────────────────────────────────────────────
@@ -342,11 +278,8 @@ void helm_source::on_search_requested(const std::string& query) {
     e["app_version"_key] = c[2];
     e["description"_key] = c[3];
   });
-  try {
-    proxy_->call("update_charts"_key, std::move(args)).get();
-  } catch (const std::exception&) {
+  if (!call("update_charts"_key, std::move(args)))
     return;
-  }
   // With no repository configured helm fails with "no repositories
   // configured" -- an empty result (the form explains it), not an error.
   if (!r.ok() && error_text(r).find("no repositories") == std::string::npos)
@@ -368,11 +301,8 @@ void helm_source::on_history_requested(const std::string& name, const std::strin
     e["chart"_key] = c[3];
     e["description"_key] = c[5]; // c[4], APP VERSION, is not shown.
   });
-  try {
-    proxy_->call("update_history"_key, std::move(args)).get();
-  } catch (const std::exception&) {
+  if (!call("update_history"_key, std::move(args)))
     return;
-  }
   if (!r.ok())
     report("history " + name, "history", false, error_text(r));
 }
@@ -417,10 +347,7 @@ void helm_source::on_details_requested(
   args["namespace"_key] = ns;
   args["title"_key] = title;
   args["text"_key] = std::move(text);
-  try {
-    proxy_->call("update_details"_key, std::move(args)).get();
-  } catch (const std::exception&) {
-  }
+  call("update_details"_key, std::move(args));
 }
 
 } // namespace bdg::wish::helm

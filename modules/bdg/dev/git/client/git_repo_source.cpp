@@ -4,7 +4,6 @@
 #include "git_repo_source.hpp"
 #include "git_process.hpp"
 
-#include <algorithm>
 #include <sstream>
 
 #if defined(_WIN32)
@@ -16,23 +15,10 @@ static constexpr const char* kNullDevice = "/dev/null";
 namespace bdg::wish::git {
 
 using namespace bdg::bison;
+using dev::split;
+using dev::trim_eol;
 
 namespace {
-
-std::vector<std::string> split(const std::string& s, char sep) {
-  std::vector<std::string> out;
-  size_t start = 0;
-  while (start <= s.size()) {
-    size_t pos = s.find(sep, start);
-    if (pos == std::string::npos) {
-      out.push_back(s.substr(start));
-      break;
-    }
-    out.push_back(s.substr(start, pos - start));
-    start = pos + 1;
-  }
-  return out;
-}
 
 // Builds a dynamic array of plain-string entries (e.g. a commit's parent
 // hash list) -- numeric-keyed string fields, not nested dynamic_ptr objects
@@ -51,41 +37,10 @@ dynamic_ptr string_array(const std::vector<std::string>& items) {
 git_repo_source::git_repo_source(
     std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::string repo_path,
     std::shared_ptr<dev::command_worker> worker)
-    : proxy_(std::move(proxy)), worker_(std::move(worker)), repo_path_(std::move(repo_path)) {}
+    : tool_source(std::move(proxy), std::move(worker), "git"), repo_path_(std::move(repo_path)) {}
 
-// ── command log (debugging/tracing) ─────────────────────────────────────────
-
-process_result git_repo_source::run_logged(const std::vector<std::string>& args) {
-  auto r = worker_->run(dev::command_text("git", args), [&](const dev::run_hooks* hooks) {
-    return run_git(repo_path_, args, hooks);
-  });
-  push_command_log(args, r);
-  return r;
-}
-
-void git_repo_source::push_command_log(const std::vector<std::string>& args, const process_result& r) {
-  std::string command = "git";
-  for (auto& a : args)
-    command += " " + a;
-
-  std::string output = r.ok() ? r.stdout_text : (r.stderr_text.empty() ? r.stdout_text : r.stderr_text);
-  while (!output.empty() && (output.back() == '\n' || output.back() == '\r'))
-    output.pop_back();
-  std::replace(output.begin(), output.end(), '\n', ' ');
-  constexpr size_t kMaxOutputPreview = 200;
-  if (output.size() > kMaxOutputPreview)
-    output = output.substr(0, kMaxOutputPreview) + "...";
-
-  dynamic args_out;
-  args_out["command"_key] = command;
-  args_out["exit_code"_key] = r.exit_code;
-  args_out["ok"_key] = r.ok();
-  args_out["output"_key] = output;
-
-  try {
-    proxy_->call("append_command_log"_key, std::move(args_out)).get();
-  } catch (const std::exception&) {
-  }
+process_result git_repo_source::run(const std::vector<std::string>& args, dev::process_options options) const {
+  return run_git(repo_path_, args, options.hooks);
 }
 
 void git_repo_source::refresh_all() {
@@ -100,15 +55,10 @@ void git_repo_source::push_refs() {
   dynamic args;
 
   auto head = run_logged({"rev-parse", "--abbrev-ref", "HEAD"});
-  std::string current_branch = head.ok() ? head.stdout_text : std::string{};
-  while (!current_branch.empty() && (current_branch.back() == '\n' || current_branch.back() == '\r'))
-    current_branch.pop_back();
+  std::string current_branch = head.ok() ? trim_eol(head.stdout_text) : std::string{};
   if (current_branch.empty() || current_branch == "HEAD") {
     auto sha = run_logged({"rev-parse", "--short", "HEAD"});
-    std::string s = sha.ok() ? sha.stdout_text : std::string{};
-    while (!s.empty() && (s.back() == '\n' || s.back() == '\r'))
-      s.pop_back();
-    current_branch = "detached at " + s;
+    current_branch = "detached at " + (sha.ok() ? trim_eol(sha.stdout_text) : std::string{});
   }
   args["current_branch"_key] = current_branch;
 
@@ -202,10 +152,7 @@ void git_repo_source::push_refs() {
   }
   args["stashes"_key] = dynamic_ptr{std::make_shared<dynamic>(std::move(stashes))};
 
-  try {
-    proxy_->call("update_refs"_key, std::move(args)).get();
-  } catch (const std::exception&) {
-  }
+  call("update_refs"_key, std::move(args));
 }
 
 // ── log / graph ────────────────────────────────────────────────────────────
@@ -220,10 +167,7 @@ void git_repo_source::push_log() {
   args["working_dirty"_key] = working_tree_dirty();
 
   auto head_sha = run_logged({"rev-parse", "HEAD"});
-  std::string head_hash = head_sha.ok() ? head_sha.stdout_text : std::string{};
-  while (!head_hash.empty() && (head_hash.back() == '\n' || head_hash.back() == '\r'))
-    head_hash.pop_back();
-  args["head_hash"_key] = head_hash;
+  args["head_hash"_key] = head_sha.ok() ? trim_eol(head_sha.stdout_text) : std::string{};
 
   // \x1f (unit separator) between fields, \x1e (record separator) between
   // commits -- avoids any collision with real commit-message content,
@@ -262,10 +206,7 @@ void git_repo_source::push_log() {
   }
   args["commits"_key] = dynamic_ptr{std::make_shared<dynamic>(std::move(commits))};
 
-  try {
-    proxy_->call("update_log"_key, std::move(args)).get();
-  } catch (const std::exception&) {
-  }
+  call("update_log"_key, std::move(args));
 }
 
 // ── status ───────────────────────────────────────────────────────────────────
@@ -306,10 +247,7 @@ void git_repo_source::push_status() {
   args["staged"_key] = dynamic_ptr{std::make_shared<dynamic>(std::move(staged))};
   args["unstaged"_key] = dynamic_ptr{std::make_shared<dynamic>(std::move(unstaged))};
 
-  try {
-    proxy_->call("update_status"_key, std::move(args)).get();
-  } catch (const std::exception&) {
-  }
+  call("update_status"_key, std::move(args));
 }
 
 // ── commit files / diff ───────────────────────────────────────────────────────
@@ -340,10 +278,7 @@ void git_repo_source::on_commit_files_requested(const std::string& hash) {
   }
   args["files"_key] = dynamic_ptr{std::make_shared<dynamic>(std::move(files))};
 
-  try {
-    proxy_->call("update_commit_files"_key, std::move(args)).get();
-  } catch (const std::exception&) {
-  }
+  call("update_commit_files"_key, std::move(args));
 }
 
 void git_repo_source::on_diff_requested(const std::string& hash, const std::string& path, bool staged) {
@@ -396,31 +331,15 @@ void git_repo_source::on_diff_requested(const std::string& hash, const std::stri
   }
   args["lines"_key] = dynamic_ptr{std::make_shared<dynamic>(std::move(lines))};
 
-  try {
-    proxy_->call("update_diff"_key, std::move(args)).get();
-  } catch (const std::exception&) {
-  }
+  call("update_diff"_key, std::move(args));
 }
 
 // ── mutating actions ─────────────────────────────────────────────────────────
 
 void git_repo_source::run_and_refresh(const std::string& command_label, const std::vector<std::string>& args) {
   auto r = run_logged(args);
-
-  dynamic report;
-  report["command"_key] = command_label;
-  report["ok"_key] = r.ok();
-  const std::string error = r.ok() ? std::string{} : (r.stderr_text.empty() ? r.stdout_text : r.stderr_text);
-  report["output"_key] = error;
-  if (!r.ok())
-    worker_->fail(command_label + " failed: " + error);
-  try {
-    proxy_->call("command_result"_key, std::move(report)).get();
-  } catch (const std::exception&) {
-    return; // form already torn down.
-  }
-
-  refresh_all();
+  if (report(command_label, {}, r.ok(), dev::error_output(r)))
+    refresh_all();
 }
 
 void git_repo_source::on_stage(const std::string& path) {
@@ -454,18 +373,8 @@ void git_repo_source::on_checkout(const std::string& ref) {
     if (!r.ok())
       r = run_logged({"switch", "--track", "-c", local, ref});
   }
-  dynamic report;
-  report["command"_key] = std::string{"checkout"};
-  report["ok"_key] = r.ok();
-  report["output"_key] = r.ok() ? std::string{} : r.stderr_text;
-  if (!r.ok())
-    worker_->fail("checkout failed: " + r.stderr_text);
-  try {
-    proxy_->call("command_result"_key, std::move(report)).get();
-  } catch (const std::exception&) {
-    return;
-  }
-  refresh_all();
+  if (report("checkout", {}, r.ok(), r.stderr_text))
+    refresh_all();
 }
 
 void git_repo_source::on_create_branch(const std::string& name, const std::string& start_point) {
@@ -495,18 +404,8 @@ void git_repo_source::on_merge(const std::string& ref) {
   auto r = run_logged({"merge", "--ff-only", ref});
   if (!r.ok())
     r = run_logged({"merge", ref});
-  dynamic report;
-  report["command"_key] = std::string{"merge"};
-  report["ok"_key] = r.ok();
-  report["output"_key] = r.ok() ? std::string{} : r.stderr_text;
-  if (!r.ok())
-    worker_->fail("merge failed: " + r.stderr_text);
-  try {
-    proxy_->call("command_result"_key, std::move(report)).get();
-  } catch (const std::exception&) {
-    return;
-  }
-  refresh_all();
+  if (report("merge", {}, r.ok(), r.stderr_text))
+    refresh_all();
 }
 
 void git_repo_source::on_stash_push() {

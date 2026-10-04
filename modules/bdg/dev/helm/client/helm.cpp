@@ -9,15 +9,15 @@
 /// + parsing) and wires the HelmFrontend form's `*_requested` events to it --
 /// see server/helm.hpp for the full event contract.
 #include "helm.hpp"
-#include "helm_process.hpp"
 #include "helm_source.hpp"
+
+#include "modules/bdg/dev/common/frontend.hpp"
 
 #include "src/client/app_registry.hpp"
 #include "src/client/wish_app_host.hpp"
 
 #include "src/bison/bison.hpp"
 
-#include <iostream>
 #include <memory>
 
 namespace bdg::wish {
@@ -30,27 +30,21 @@ void run_helm(wish_app_host& s) {
   // has no server component): the Repositories and Charts windows are useful
   // without one, and an unreachable cluster is reported in the Releases
   // window's status line instead.
-  auto check = helm::run_helm_cli({"version", "--short"});
+  auto check = dev::run_process({"helm", "version", "--short"});
   if (!check.ok()) {
-    std::cerr << "helm: cannot run the `helm` CLI"
-              << (check.stderr_text.empty() ? std::string{} : (": " + check.stderr_text)) << "\n";
-    s.signal_done();
+    dev::fail_startup(s, "helm: cannot run the `helm` CLI", check.stderr_text);
     return;
   }
 
-  auto proxy = std::make_shared<rmi::proxy::dynamic>(s.instantiate("wish"_key, "HelmFrontend"_key).get());
-  // Every handler below runs as a job on this worker's thread: running the
-  // tool inside an event handler would block the whole UI until it exits.
-  // Long commands get a modal progress dialog (common/command_worker.hpp).
-  auto worker = std::make_shared<dev::command_worker>(s, "Running helm");
-  worker->start();
+  // Every handler below runs as a job on the frontend's worker thread:
+  // running the tool inside an event handler would block the whole UI until
+  // it exits. Long commands get a modal progress dialog
+  // (common/command_worker.hpp).
+  const auto frontend = dev::open_frontend(s, "HelmFrontend"_key, "Running helm");
+  const auto& proxy = frontend.proxy;
+  const auto& worker = frontend.worker;
   auto source = std::make_shared<helm::helm_source>(proxy, worker);
-
-  // Optional payload string (absent -> "").
-  auto str = [](const dynamic& payload, bison::key_t key) {
-    auto* f = payload.findField<std::string>(key);
-    return f ? *f : std::string{};
-  };
+  auto str = dev::payload_string; // optional payload string (absent -> "")
 
   worker->on(*proxy, "refresh_requested"_key, [source](dynamic) { source->refresh_all(); });
 
@@ -69,10 +63,6 @@ void run_helm(wish_app_host& s) {
     source->on_search_requested(str(payload, "query"_key));
   });
   worker->on(*proxy, "install_requested"_key, [source, str](dynamic payload) {
-    auto flag = [&](bison::key_t key) {
-      auto* f = payload.findField<bool>(key);
-      return f && *f;
-    };
     helm::helm_source::install_request req;
     req.upgrade = str(payload, "mode"_key) == "upgrade";
     req.chart = str(payload, "chart"_key);
@@ -80,15 +70,14 @@ void run_helm(wish_app_host& s) {
     req.release = str(payload, "release"_key);
     req.ns = str(payload, "namespace"_key);
     req.values = str(payload, "values"_key);
-    req.create_namespace = flag("create_namespace"_key);
-    req.wait = flag("wait"_key);
+    req.create_namespace = dev::payload_flag(payload, "create_namespace"_key);
+    req.wait = dev::payload_flag(payload, "wait"_key);
     source->on_install_requested(req);
   });
   worker->on(*proxy, "install_values_requested"_key, [source, str](dynamic payload) {
-    auto* token = payload.findField<int32_t>("token"_key);
     source->on_install_values_requested(
-        token ? *token : 0, str(payload, "source"_key), str(payload, "chart"_key), str(payload, "version"_key),
-        str(payload, "name"_key), str(payload, "namespace"_key));
+        dev::payload_int(payload, "token"_key), str(payload, "source"_key), str(payload, "chart"_key),
+        str(payload, "version"_key), str(payload, "name"_key), str(payload, "namespace"_key));
   });
   worker->on(*proxy, "history_requested"_key, [source, str](dynamic payload) {
     source->on_history_requested(str(payload, "name"_key), str(payload, "namespace"_key));
@@ -97,11 +86,6 @@ void run_helm(wish_app_host& s) {
     source->on_details_requested(
         str(payload, "kind"_key), str(payload, "name"_key), str(payload, "namespace"_key),
         str(payload, "version"_key));
-  });
-
-  proxy->onEvent("closed"_key, [&s, worker](dynamic) {
-    worker->shutdown();
-    s.signal_done();
   });
 
   // Initial population -- called directly here, now that every onEvent()

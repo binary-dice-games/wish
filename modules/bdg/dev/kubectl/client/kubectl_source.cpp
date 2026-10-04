@@ -3,53 +3,20 @@
 /// @brief Implementation of kubectl_source.
 #include "kubectl_source.hpp"
 
-#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
-#include <functional>
 #include <sstream>
 #include <thread>
 
 namespace bdg::wish::kubectl {
 
 using namespace bdg::bison;
+using dev::split;
+using dev::trim_eol;
 
 namespace {
-
-// Split `s` on `sep`, keeping empty fields.
-std::vector<std::string> split(const std::string& s, char sep) {
-  std::vector<std::string> out;
-  size_t start = 0;
-  while (true) {
-    size_t pos = s.find(sep, start);
-    if (pos == std::string::npos) {
-      out.push_back(s.substr(start));
-      break;
-    }
-    out.push_back(s.substr(start, pos - start));
-    start = pos + 1;
-  }
-  return out;
-}
-
-std::string trim_eol(std::string s) {
-  while (!s.empty() && (s.back() == '\n' || s.back() == '\r'))
-    s.pop_back();
-  return s;
-}
-
-// Whitespace-run split, dropping empty fields -- `kubectl top ... --no-headers`
-// columns are separated by variable-width padding, not tabs.
-std::vector<std::string> ws_split(const std::string& s) {
-  std::vector<std::string> out;
-  std::istringstream iss(s);
-  std::string t;
-  while (iss >> t)
-    out.push_back(t);
-  return out;
-}
 
 // `kubectl top` CPU column -> millicores. "5m" -> 5 ; "1" -> 1000 (whole
 // cores) ; "1500000n" -> 1.5 ; "250000u" -> 0.25.
@@ -197,76 +164,11 @@ std::string humanize_age(const std::string& ts) {
   return std::to_string(d / (86400L * 365)) + "y";
 }
 
-// Pushes one Console-window trace row for a finished `kubectl <argv>` run.
-// Best-effort: a torn-down form just swallows the call. Mirrors
-// docker_source's push_command_log().
-void push_command_log(
-    const std::shared_ptr<bison::rmi::proxy::dynamic>& proxy, const std::vector<std::string>& argv,
-    const process_result& r) {
-  std::string command = "kubectl";
-  for (auto& a : argv)
-    command += ' ' + a;
-
-  std::string output =
-      trim_eol(r.ok() ? r.stdout_text : (r.stderr_text.empty() ? r.stdout_text : r.stderr_text));
-  std::replace(output.begin(), output.end(), '\n', ' ');
-  constexpr size_t kMaxOutputPreview = 200;
-  if (output.size() > kMaxOutputPreview)
-    output = output.substr(0, kMaxOutputPreview) + "...";
-
-  dynamic args;
-  args["command"_key] = command;
-  args["exit_code"_key] = r.exit_code;
-  args["ok"_key] = r.ok();
-  args["output"_key] = std::move(output);
-  try {
-    proxy->call("append_command_log"_key, std::move(args)).get();
-  } catch (const std::exception&) {
-  }
-}
-
-// Runs one `kubectl get <kind> -A -o jsonpath=<tmpl>`, calls @p fill once per
-// output line with the tab-split fields (padded to @p ncols), then calls
-// @p rmi_method with the collected array under @p array_key. Mirrors
-// docker_source's push_list().
-void push_list(
-    dev::command_worker& worker, const std::shared_ptr<bison::rmi::proxy::dynamic>& proxy, const std::vector<std::string>& argv, size_t ncols,
-    key_t array_key, key_t rmi_method, const std::function<void(dynamic&, const std::vector<std::string>&)>& fill) {
-  auto r = worker.run(dev::command_text("kubectl", argv), [&](const dev::run_hooks* hooks) {
-    return run_kubectl_cli(argv, "kubectl", hooks);
-  });
-  push_command_log(proxy, argv, r);
-
-  dynamic arr;
-  size_t i = 0;
-  if (r.ok()) {
-    std::istringstream iss(r.stdout_text);
-    std::string line;
-    while (std::getline(iss, line)) {
-      line = trim_eol(line);
-      if (line.empty())
-        continue;
-      auto cols = split(line, '\t');
-      cols.resize(ncols);
-      auto e = std::make_shared<dynamic>();
-      fill(*e, cols);
-      arr[i++] = dynamic_ptr{e};
-    }
-  }
-
-  dynamic args;
-  args[array_key] = dynamic_ptr{std::make_shared<dynamic>(std::move(arr))};
-  try {
-    proxy->call(rmi_method, std::move(args)).get();
-  } catch (const std::exception&) {
-  }
-}
-
 } // namespace
 
 kubectl_source::kubectl_source(
     std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::shared_ptr<dev::command_worker> worker)
-    : proxy_(std::move(proxy)), worker_(std::move(worker)) {}
+    : tool_source(std::move(proxy), std::move(worker), "kubectl") {}
 
 kubectl_source::~kubectl_source() {
   stop_follow();
@@ -295,10 +197,10 @@ void kubectl_source::start_stats_polling() {
   std::thread([proxy, stop] {
     using namespace std::chrono_literals;
     while (!stop->load(std::memory_order_relaxed)) {
-      // run_kubectl_cli() directly, NOT run_logged() -- a ~10 s re-poll of
+      // run_process() directly, NOT run_logged() -- a ~10 s re-poll of
       // two commands would flood the Console window (git's Log-window lesson).
-      auto pods_r = run_kubectl_cli({"top", "pods", "-A", "--no-headers"});
-      auto nodes_r = run_kubectl_cli({"top", "nodes", "--no-headers"});
+      auto pods_r = dev::run_process({"kubectl", "top", "pods", "-A", "--no-headers"});
+      auto nodes_r = dev::run_process({"kubectl", "top", "nodes", "--no-headers"});
 
       dynamic args;
       dynamic pods_arr;
@@ -311,7 +213,7 @@ void kubectl_source::start_stats_polling() {
         std::istringstream iss(pods_r.stdout_text);
         std::string line;
         while (std::getline(iss, line)) {
-          auto c = ws_split(line);
+          auto c = dev::words(line);
           if (c.size() < 4)
             continue;
           auto e = std::make_shared<dynamic>();
@@ -324,14 +226,14 @@ void kubectl_source::start_stats_polling() {
           pods_arr[pi++] = dynamic_ptr{e};
         }
       } else {
-        error = trim_eol(pods_r.stderr_text.empty() ? pods_r.stdout_text : pods_r.stderr_text);
+        error = trim_eol(dev::error_output(pods_r));
       }
 
       if (nodes_r.ok()) {
         std::istringstream iss(nodes_r.stdout_text);
         std::string line;
         while (std::getline(iss, line)) {
-          auto c = ws_split(line);
+          auto c = dev::words(line);
           if (c.size() < 5)
             continue;
           auto e = std::make_shared<dynamic>();
@@ -345,7 +247,7 @@ void kubectl_source::start_stats_polling() {
           nodes_arr[ni++] = dynamic_ptr{e};
         }
       } else if (error.empty()) {
-        error = trim_eol(nodes_r.stderr_text.empty() ? nodes_r.stdout_text : nodes_r.stderr_text);
+        error = trim_eol(dev::error_output(nodes_r));
       }
 
       args["pods"_key] = dynamic_ptr{std::make_shared<dynamic>(std::move(pods_arr))};
@@ -375,8 +277,7 @@ void kubectl_source::refresh_all() {
 // ── snapshots (tab-delimited `-o jsonpath` templates, docker_source shape) ──
 
 void kubectl_source::push_pods() {
-  push_list(
-      *worker_, proxy_,
+  push_rows(
       {"get", "pods", "-A", "-o",
        "jsonpath={range .items[*]}"
        "{.metadata.namespace}{\"\\t\"}{.metadata.name}{\"\\t\"}{.status.phase}{\"\\t\"}"
@@ -394,8 +295,7 @@ void kubectl_source::push_pods() {
 }
 
 void kubectl_source::push_deployments() {
-  push_list(
-      *worker_, proxy_,
+  push_rows(
       {"get", "deployments", "-A", "-o",
        "jsonpath={range .items[*]}"
        "{.metadata.namespace}{\"\\t\"}{.metadata.name}{\"\\t\"}{.status.readyReplicas}{\"\\t\"}{.spec.replicas}{\"\\t\"}"
@@ -411,8 +311,7 @@ void kubectl_source::push_deployments() {
 }
 
 void kubectl_source::push_services() {
-  push_list(
-      *worker_, proxy_,
+  push_rows(
       {"get", "services", "-A", "-o",
        "jsonpath={range .items[*]}"
        "{.metadata.namespace}{\"\\t\"}{.metadata.name}{\"\\t\"}{.spec.type}{\"\\t\"}{.spec.clusterIP}{\"\\t\"}"
@@ -428,8 +327,7 @@ void kubectl_source::push_services() {
 }
 
 void kubectl_source::push_nodes() {
-  push_list(
-      *worker_, proxy_,
+  push_rows(
       {"get", "nodes", "-o",
        "jsonpath={range .items[*]}"
        "{.metadata.name}{\"\\t\"}{.status.conditions[?(@.type==\"Ready\")].status}{\"\\t\"}{.spec.unschedulable}{\"\\t\"}"
@@ -449,32 +347,11 @@ void kubectl_source::push_nodes() {
 
 // ── mutating actions ───────────────────────────────────────────────────────
 
-process_result kubectl_source::run_logged(const std::vector<std::string>& args) {
-  auto r = worker_->run(dev::command_text("kubectl", args), [&](const dev::run_hooks* hooks) {
-    return run_kubectl_cli(args, "kubectl", hooks);
-  });
-  push_command_log(proxy_, args, r);
-  return r;
-}
-
 void kubectl_source::run_and_refresh(
     const std::string& label, const std::string& scope, const std::vector<std::string>& args) {
   auto r = run_logged(args);
-
-  dynamic report;
-  report["command"_key] = label;
-  report["scope"_key] = scope;
-  report["ok"_key] = r.ok();
-  const std::string error = r.ok() ? std::string{} : (r.stderr_text.empty() ? r.stdout_text : r.stderr_text);
-  report["output"_key] = error;
-  if (!r.ok())
-    worker_->fail(label + " failed: " + error);
-  try {
-    proxy_->call("command_result"_key, std::move(report)).get();
-  } catch (const std::exception&) {
-    return; // form gone.
-  }
-  refresh_all();
+  if (report(label, scope, r.ok(), dev::error_output(r)))
+    refresh_all();
 }
 
 void kubectl_source::on_pod_action(const std::string& name, const std::string& ns, const std::string& action) {
@@ -513,17 +390,14 @@ void kubectl_source::push_logs_snapshot(
     const std::string& name, const std::string& ns, int32_t lines, bool following) {
   const std::string tail = std::to_string(lines > 0 ? lines : 500);
   auto r = run_logged({"logs", name, "-n", ns, "--tail", tail, "--timestamps"});
-  std::string text = r.ok() ? r.stdout_text : (r.stderr_text.empty() ? r.stdout_text : r.stderr_text);
+  std::string text = r.ok() ? r.stdout_text : dev::error_output(r);
 
   dynamic args;
   args["name"_key] = name;
   args["namespace"_key] = ns;
   args["title"_key] = "logs: " + ns + "/" + name + (following ? "  (following)" : "");
   args["text"_key] = std::move(text);
-  try {
-    proxy_->call("update_logs"_key, std::move(args)).get();
-  } catch (const std::exception&) {
-  }
+  call("update_logs"_key, std::move(args));
 }
 
 void kubectl_source::on_logs_requested(
@@ -547,15 +421,15 @@ void kubectl_source::on_logs_requested(
         std::this_thread::sleep_for(100ms);
       if (stop->load(std::memory_order_relaxed))
         break;
-      // Deliberately run_kubectl_cli(), not run_logged() -- a ~2 s re-poll
+      // Deliberately run_process(), not run_logged() -- a ~2 s re-poll
       // would flood the Console window (git's Log-window lesson).
-      auto r = run_kubectl_cli(
-          {"logs", name, "-n", ns, "--tail", std::to_string(lines > 0 ? lines : 500), "--timestamps"});
+      auto r = dev::run_process(
+          {"kubectl", "logs", name, "-n", ns, "--tail", std::to_string(lines > 0 ? lines : 500), "--timestamps"});
       dynamic args;
       args["name"_key] = name;
       args["namespace"_key] = ns;
       args["title"_key] = "logs: " + ns + "/" + name + "  (following)";
-      args["text"_key] = r.ok() ? r.stdout_text : (r.stderr_text.empty() ? r.stdout_text : r.stderr_text);
+      args["text"_key] = r.ok() ? r.stdout_text : dev::error_output(r);
       try {
         proxy->call("update_logs"_key, std::move(args)).get();
       } catch (const std::exception&) {
@@ -582,11 +456,8 @@ void kubectl_source::on_describe_requested(
   args["name"_key] = name;
   args["namespace"_key] = ns;
   args["title"_key] = kind + ": " + (ns.empty() ? name : ns + "/" + name);
-  args["text"_key] = r.ok() ? r.stdout_text : (r.stderr_text.empty() ? r.stdout_text : r.stderr_text);
-  try {
-    proxy_->call("update_describe"_key, std::move(args)).get();
-  } catch (const std::exception&) {
-  }
+  args["text"_key] = r.ok() ? r.stdout_text : dev::error_output(r);
+  call("update_describe"_key, std::move(args));
 }
 
 } // namespace bdg::wish::kubectl

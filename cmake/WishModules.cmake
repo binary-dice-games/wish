@@ -10,8 +10,9 @@
 #     module registry (see wish_generate_module_registry() below). <name> is
 #     the leaf (last path segment) -- so the header/function name never
 #     includes the org/collection.
-#   - adds <module_dir>/client/*.{hpp,cpp} (if present) to the
-#     WISH_APP_MODULE_SOURCES / WISH_APP_MODULE_DEFS global properties,
+#   - adds <module_dir>/client/*.{hpp,cpp} (if present), plus the
+#     collection's shared <module_dir>/../common/*.{hpp,cpp} (if present),
+#     to the WISH_APP_MODULE_SOURCES / WISH_APP_MODULE_DEFS global properties,
 #     consumed by app/CMakeLists.txt's embedded-app executables and
 #     wish_client_dll. Client apps self-register into app_registry (see
 #     modules/bdg/desktop/bc/client/bc.cpp for the pattern),
@@ -210,6 +211,16 @@ function(wish_add_module name)
   if(EXISTS "${client_dir}")
     file(GLOB_RECURSE client_sources CONFIGURE_DEPENDS
         "${client_dir}/*.hpp" "${client_dir}/*.cpp")
+    # Client code shared by a collection's modules lives in a common/
+    # directory next to them (e.g. modules/bdg/dev/common/) and is compiled
+    # along with any of them; wish_finalize_app_modules() drops the
+    # duplicates when several are enabled.
+    get_filename_component(collection_dir "${module_dir}" DIRECTORY)
+    if(EXISTS "${collection_dir}/common")
+      file(GLOB common_sources CONFIGURE_DEPENDS
+          "${collection_dir}/common/*.hpp" "${collection_dir}/common/*.cpp")
+      list(APPEND client_sources ${common_sources})
+    endif()
     wish_filter_platform_sources(client_sources client_sources_filtered)
     if(client_sources_filtered)
       set_property(GLOBAL APPEND PROPERTY WISH_APP_MODULE_SOURCES ${client_sources_filtered})
@@ -291,6 +302,8 @@ endfunction()
 function(wish_finalize_app_modules)
   get_property(sources GLOBAL PROPERTY WISH_APP_MODULE_SOURCES)
   get_property(defs GLOBAL PROPERTY WISH_APP_MODULE_DEFS)
+  # A collection's common/ sources are listed once per enabled module.
+  list(REMOVE_DUPLICATES sources)
   foreach(tgt wish-cli wish-standalone wish-client wish_client_dll)
     if(TARGET ${tgt})
       target_sources(${tgt} PRIVATE ${sources})
@@ -300,11 +313,12 @@ function(wish_finalize_app_modules)
       # but only linked PRIVATE into the `bison` target, so it isn't
       # reachable from module client code without this. Linking it here
       # costs nothing extra when no module happens to use it directly; it
-      # only exposes symbols/headers already being built. See the `git`
-      # module's client/git_process.hpp for the consumer (a non-interactive
-      # uv_spawn-based subprocess helper -- bison's own bdg::bison::term::
-      # terminal is pty-only and unsuitable for repeated one-shot command
-      # capture, see that file's doc comment for why).
+      # only exposes symbols/headers already being built. See
+      # modules/bdg/dev/common/process.hpp for the consumer (a non-interactive
+      # uv_spawn-based subprocess helper shared by the bdg/dev modules --
+      # bison's own bdg::bison::term::terminal is pty-only and unsuitable for
+      # repeated one-shot command capture, see that file's doc comment for
+      # why).
       if(TARGET uv_a)
         target_link_libraries(${tgt} PRIVATE uv_a)
       endif()

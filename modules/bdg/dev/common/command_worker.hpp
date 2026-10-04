@@ -19,9 +19,9 @@
 ///     closes when the queue is empty -- unless fail() recorded an error,
 ///     which it then shows until the user closes it.
 ///
-/// Header-only (module client sources are compiled into several targets; see
-/// cmake/WishModules.cmake), and not a module itself: this directory has no
-/// server/ or client/ subdirectory.
+/// Header-only. This directory is not a module itself (it has no server/ or
+/// client/ subdirectory); its sources are compiled into the client of each
+/// enabled bdg/dev module (see cmake/WishModules.cmake).
 #pragma once
 
 #include "modules/bdg/dev/common/process_hooks.hpp"
@@ -123,7 +123,8 @@ class command_worker : public std::enable_shared_from_this<command_worker> {
   ///
   /// @param command  Caption, e.g. command_text("helm", args).
   /// @param run_fn   `process_result(const run_hooks*)` -- must pass the
-  ///                 hooks on to the module's `run_<tool>_cli()`.
+  ///                 hooks on to run_process() (see process.hpp;
+  ///                 tool_source::run_logged() does this).
   /// @param show_output  False when the command's output is data rather
   ///                 than progress (an HTTP response body, say): the dialog
   ///                 then shows only the command and the bar.

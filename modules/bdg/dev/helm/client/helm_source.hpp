@@ -2,8 +2,8 @@
 /// @file helm_source.hpp
 /// @brief Client-side `helm` command orchestration for the helm module.
 ///
-/// Owns the proxy, runs every `helm` command via
-/// helm_process::run_helm_cli(), parses the tab-separated table output (see
+/// Runs every `helm` command through dev::tool_source (see
+/// common/tool_source.hpp), parses the tab-separated table output (see
 /// helm_table_parser.hpp), and pushes structured snapshots to the server-side
 /// HelmFrontend form via its update_* RMI methods. Also reacts to the form's
 /// `*_requested` events (see server/helm.hpp) by running the corresponding
@@ -14,9 +14,9 @@
 /// from the client -- the server never touches `helm` directly.
 #pragma once
 
-#include "helm_process.hpp"
+#include "modules/bdg/dev/common/tool_source.hpp"
+
 #include "src/bison/bison.hpp"
-#include "modules/bdg/dev/common/command_worker.hpp"
 #include "src/rmi/client/proxy.hpp"
 
 #include <memory>
@@ -25,7 +25,9 @@
 
 namespace bdg::wish::helm {
 
-class helm_source {
+using dev::process_result;
+
+class helm_source : public dev::tool_source {
  public:
   helm_source(std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::shared_ptr<dev::command_worker> worker);
 
@@ -97,16 +99,9 @@ class helm_source {
   void push_releases();
   void push_repos();
 
-  /// @brief Runs `helm <args>` via run_helm_cli() and pushes a trace row to
-  /// the Console window (HelmFrontend's append_command_log RMI method). Every
-  /// `helm` invocation goes through here so the Console window is a complete
-  /// trace. Mirrors kubectl_source::run_logged().
-  process_result run_logged(const std::vector<std::string>& args);
-
-  /// @brief Reports a command outcome via HelmFrontend's command_result RMI
-  /// method (tagged with @p scope so the right window's status label is
-  /// written). @return false when the form is gone.
-  bool report(const std::string& label, const std::string& scope, bool ok, const std::string& output);
+  /// @brief helm's `Error:` message from stderr (see error_summary()), or
+  /// stdout when stderr is empty.
+  std::string error_text(const process_result& r) const override;
 
   /// @brief Runs a mutating `helm` command, reports its result and calls
   /// refresh_all(). @return whether the command succeeded.
@@ -115,12 +110,6 @@ class helm_source {
   /// @brief Whether every value in @p values passes is_safe_arg(); reports a
   /// failure to @p scope's status label otherwise.
   bool check_args(const std::string& label, const std::string& scope, const std::vector<std::string>& values);
-
-  std::shared_ptr<bison::rmi::proxy::dynamic> proxy_;
-  // Runs every command off the UI thread, behind a modal progress dialog
-  // when it takes long (see common/command_worker.hpp). Every method that
-  // runs a command must be called from one of its jobs.
-  std::shared_ptr<dev::command_worker> worker_;
 
   std::string last_query_; // the Charts window's current search
 };

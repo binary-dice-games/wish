@@ -2,8 +2,8 @@
 /// @file git_repo_source.hpp
 /// @brief Client-side git command orchestration for the git module.
 ///
-/// Owns the local repository path, runs every `git` plumbing command via
-/// git_process::run_git(), parses the output, and pushes structured
+/// Owns the local repository path, runs every `git` plumbing command through
+/// dev::tool_source (see common/tool_source.hpp) and run_git(), parses the output, and pushes structured
 /// snapshots to the server-side GitRepo form via its update_refs/update_log/
 /// update_status/update_commit_files/update_diff RMI methods. Also reacts to
 /// the form's `*_requested` events (see git.hpp's class doc comment) by
@@ -17,8 +17,10 @@
 #pragma once
 
 #include "git_process.hpp"
+
+#include "modules/bdg/dev/common/tool_source.hpp"
+
 #include "src/bison/bison.hpp"
-#include "modules/bdg/dev/common/command_worker.hpp"
 #include "src/rmi/client/proxy.hpp"
 
 #include <cstdint>
@@ -28,7 +30,7 @@
 
 namespace bdg::wish::git {
 
-class git_repo_source {
+class git_repo_source : public dev::tool_source {
  public:
   git_repo_source(
       std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::string repo_path,
@@ -38,6 +40,9 @@ class git_repo_source {
   /// that order. Called once on startup (in response to "refresh_requested")
   /// and after every mutating action below.
   void refresh_all();
+
+  /// @brief `git <args>` in the repository, via run_git().
+  process_result run(const std::vector<std::string>& args, dev::process_options options = {}) const override;
 
   // ── *_requested event reactions ─────────────────────────────────────────
   void on_stage(const std::string& path);
@@ -66,22 +71,13 @@ class git_repo_source {
   /// command_result RMI method, and (on success) calls refresh_all().
   void run_and_refresh(const std::string& command_label, const std::vector<std::string>& args);
 
-  /// @brief Runs `git <args>` (via run_git()) and pushes a trace row --
-  /// argv, exit code, and a trimmed stdout/stderr preview -- to GitRepo's
-  /// Log window via its append_command_log RMI method. Every git invocation
-  /// this class makes goes through this wrapper rather than calling
-  /// run_git() directly, so the Log window is a complete trace of every
-  /// `git` process actually run, not just the subset already user-facing
-  /// via command_result (which only reports the one mutating command behind
-  /// each *_requested event, not the read-only refresh calls around it).
-  process_result run_logged(const std::vector<std::string>& args);
-  void push_command_log(const std::vector<std::string>& args, const process_result& r);
+  // Every git invocation this class makes goes through run_logged() rather
+  // than run_git() directly, so GitRepo's Log window is a complete trace of
+  // every `git` process actually run, not just the subset already
+  // user-facing via command_result (which only reports the one mutating
+  // command behind each *_requested event, not the read-only refresh calls
+  // around it).
 
-  std::shared_ptr<bison::rmi::proxy::dynamic> proxy_;
-  // Runs every command off the UI thread, behind a modal progress dialog
-  // when it takes long (see common/command_worker.hpp). Every method that
-  // runs a command must be called from one of its jobs.
-  std::shared_ptr<dev::command_worker> worker_;
   std::string repo_path_;
 };
 

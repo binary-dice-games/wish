@@ -11,8 +11,10 @@
 /// cell exactly, even the ones containing spaces (UPDATED, DESCRIPTION).
 ///
 /// No framework / bison / libuv dependency -- unit-tested directly by
-/// tests/test_helm_process.cpp.
+/// tests/test_helm_parsers.cpp.
 #pragma once
+
+#include "modules/bdg/dev/common/text.hpp"
 
 #include <string>
 #include <vector>
@@ -42,7 +44,7 @@ std::string short_timestamp(const std::string& updated);
 /// arrives in an event payload. There is no shell to inject into, but a value
 /// such as `--post-renderer=/some/binary` would still be parsed by helm as a
 /// flag, so anything flag-shaped is rejected before the command is built.
-bool is_safe_arg(const std::string& value);
+using dev::is_safe_arg;
 
 /// @brief Reduces a failed command's stderr to the part worth showing: from
 /// helm's own `Error:` line to the end when there is one (dropping the

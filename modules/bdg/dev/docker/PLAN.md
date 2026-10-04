@@ -101,11 +101,12 @@ for destructive actions, and the six-window layout.
 ## Verification
 
 - **Unit tests** (no Docker daemon needed):
-  `cmake --build build --target test_docker test_docker_process` with
+  `cmake --build build --target test_docker test_dev_common` with
   `-DWISH_MODULE_BDG_DEV_DOCKER=ON`, then run both binaries. `test_docker`
   drives `DockerFrontend` over `memory_transport` with synthetic `update_*`
-  snapshots; `test_docker_process` drives `run_docker_cli()` with stub
-  binaries (`printf` / `false`). 18/18 passing as of Step 3.
+  snapshots; `test_dev_common` drives the shared `dev::run_process()` /
+  `dev::tool_source` (which replaced `docker_process`'s
+  `run_docker_cli()`) with stub binaries (`printf` / `false`).
 
 - **End-to-end** (performed, not just described — needs the invoking user
   in the `docker` group): built with

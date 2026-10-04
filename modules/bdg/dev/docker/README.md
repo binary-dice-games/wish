@@ -29,10 +29,8 @@ else (Start, Restart, Pause, Unpause, Pull, Run, …) fires directly.
   running the corresponding `docker` command.
 - **client/**: `run_docker(wish_app_host&)`, self-registered as the
   `"docker"` embedded app — owns all `docker` invocation.
-  `client/docker_process.hpp`/`.cpp` is a small, non-interactive,
-  libuv-based (`uv_spawn`) "run this argv array, capture
-  stdout/stderr/exit code" helper (a near-copy of the `git` module's
-  `git_process`). `client/docker_source.hpp`/`.cpp` runs every actual
+  Commands run through the shared [common/](../common) helpers
+  (`process.hpp`, `tool_source.hpp`). `client/docker_source.hpp`/`.cpp` runs every actual
   `docker` command (tab-delimited `--format` templates, split on `\t`),
   parses the output, and pushes snapshots / reacts to `*_requested`
   events. `run_docker()` gates on `docker version` and prints a clear

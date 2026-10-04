@@ -22,9 +22,9 @@ section); restart the tool once it is installed.
   `append_command_log` / `show_unavailable`, and emits `*_requested`
   events (see `server/sq.hpp`'s class doc comment for the contract).
 - **client/**: `run_sq(wish_app_host&)`, self-registered as the `"sq"`
-  embedded app. `sq_process` is a small libuv (`uv_spawn`) "run this argv,
-  capture stdout/stderr/exit code" helper (a copy of `docker_process` plus
-  stdin, used to pass `sq add -p` the password). `sq_source` runs every
+  embedded app. Commands run through the shared [common/](../common)
+  helpers (`process.hpp`, `tool_source.hpp`), whose optional stdin text
+  passes `sq add -p` the password. `sq_source` runs every
   `sq` invocation and pushes the parsed result. `sq_result_parser` parses
   `--jsonl` output and masks passwords in locations; `sq_query_guard`
   rejects non-read-only SQL.

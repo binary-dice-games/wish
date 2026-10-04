@@ -14,16 +14,15 @@
 /// for the full event contract.
 #include "pkg.hpp"
 #include "pkg_backend.hpp"
-#include "pkg_process.hpp"
 #include "pkg_source.hpp"
 
-#include "modules/bdg/dev/common/command_worker.hpp"
+#include "modules/bdg/dev/common/frontend.hpp"
+
 #include "src/client/app_registry.hpp"
 #include "src/client/wish_app_host.hpp"
 
 #include "src/bison/bison.hpp"
 
-#include <iostream>
 #include <memory>
 #include <optional>
 
@@ -42,10 +41,10 @@ std::string first_line(const std::string& text) {
 // `auto`: root needs nothing; otherwise prefer pkexec, which can ask for the
 // password in a dialog of its own -- this tool has no terminal to ask on.
 pkg::elevation detect_elevation() {
-  auto id = pkg::run_pkg_cli({"id", "-u"});
+  auto id = dev::run_process({"id", "-u"});
   if (id.ok() && first_line(id.stdout_text) == "0")
     return pkg::elevation::none;
-  if (pkg::run_pkg_cli({"pkexec", "--version"}).ok())
+  if (dev::run_process({"pkexec", "--version"}).ok())
     return pkg::elevation::pkexec;
   return pkg::elevation::sudo;
 }
@@ -54,10 +53,7 @@ pkg::elevation detect_elevation() {
 
 void run_pkg(wish_app_host& s) {
   const auto& args = s.app_args();
-  auto fail = [&s](const std::string& message) {
-    std::cerr << "pkg: " << message << "\n";
-    s.signal_done();
-  };
+  auto fail = [&s](const std::string& message) { dev::fail_startup(s, "pkg: " + message); };
 
   // ── Which package manager ──
   std::optional<pkg::manager> chosen;
@@ -70,7 +66,7 @@ void run_pkg(wish_app_host& s) {
       return;
     }
     const auto probe = pkg::probe_command(*chosen);
-    auto r = pkg::run_pkg_cli(probe.argv);
+    auto r = dev::run_process(probe.argv);
     if (!r.ok()) {
       // exit_code -1: the program could not even be started.
       const std::string why = r.exit_code == -1
@@ -78,7 +74,7 @@ void run_pkg(wish_app_host& s) {
           : "`" + probe.argv[0] + " " + probe.argv[1] + "` failed: " + first_line(r.stderr_text);
       std::string others;
       for (pkg::manager m : pkg::all_managers()) {
-        if (m != *chosen && pkg::run_pkg_cli(pkg::probe_command(m).argv).ok())
+        if (m != *chosen && dev::run_process(pkg::probe_command(m).argv).ok())
           others += (others.empty() ? "" : ", ") + std::string{pkg::manager_name(m)};
       }
       fail("the '" + args[0] + "' package manager is not available on this machine (" + why + ").\n     " +
@@ -90,7 +86,7 @@ void run_pkg(wish_app_host& s) {
     version = first_line(r.stdout_text);
   } else {
     for (pkg::manager m : pkg::all_managers()) {
-      auto r = pkg::run_pkg_cli(pkg::probe_command(m).argv);
+      auto r = dev::run_process(pkg::probe_command(m).argv);
       if (r.ok()) {
         chosen = m;
         version = first_line(r.stdout_text);
@@ -122,22 +118,17 @@ void run_pkg(wish_app_host& s) {
     return;
   }
 
-  auto proxy = std::make_shared<rmi::proxy::dynamic>(s.instantiate("wish"_key, "PkgFrontend"_key).get());
-
-  // Every handler below runs as a job on this worker's thread: running the
-  // package manager inside an event handler would block the whole UI until
-  // it exits. Long commands get a modal progress dialog
+  // Every handler below runs as a job on the frontend's worker thread:
+  // running the package manager inside an event handler would block the
+  // whole UI until it exits. Long commands get a modal progress dialog
   // (common/command_worker.hpp).
-  auto worker =
-      std::make_shared<dev::command_worker>(s, std::string{"Running "} + pkg::manager_name(*chosen));
-  worker->start();
+  const auto frontend =
+      dev::open_frontend(s, "PkgFrontend"_key, std::string{"Running "} + pkg::manager_name(*chosen));
+  const auto& proxy = frontend.proxy;
+  const auto& worker = frontend.worker;
   auto source = std::make_shared<pkg::pkg_source>(proxy, *chosen, how, worker);
 
-  // Optional payload string (absent -> "").
-  auto str = [](const dynamic& payload, bison::key_t key) {
-    auto* f = payload.findField<std::string>(key);
-    return f ? *f : std::string{};
-  };
+  auto str = dev::payload_string; // optional payload string (absent -> "")
 
   worker->on(*proxy, "refresh_requested"_key, [source](dynamic) { source->refresh_all(); });
   worker->on(*proxy, "outdated_requested"_key, [source](dynamic) { source->on_outdated_requested(); });
@@ -154,11 +145,6 @@ void run_pkg(wish_app_host& s) {
   });
   worker->on(*proxy, "details_requested"_key, [source, str](dynamic payload) {
     source->on_details_requested(str(payload, "kind"_key), str(payload, "name"_key));
-  });
-
-  proxy->onEvent("closed"_key, [&s, worker](dynamic) {
-    worker->shutdown();
-    s.signal_done();
   });
 
   // Initial population -- queued here, now that every handler is registered,

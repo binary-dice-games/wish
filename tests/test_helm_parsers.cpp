@@ -1,47 +1,15 @@
 // MIT License © 2026 Binary Dice Games
 #include <gtest/gtest.h>
 
-#include "modules/bdg/dev/helm/client/helm_process.hpp"
 #include "modules/bdg/dev/helm/client/helm_table_parser.hpp"
 
 using bdg::wish::helm::error_summary;
 using bdg::wish::helm::is_safe_arg;
 using bdg::wish::helm::is_valid_release_name;
 using bdg::wish::helm::parse_table;
-using bdg::wish::helm::run_helm_cli;
 using bdg::wish::helm::short_timestamp;
 
 namespace {
-
-// ── run_helm_cli() ──────────────────────────────────────────────────────────
-//
-// Exercised with stub binaries (never `helm`) so these pass on any machine,
-// with or without helm installed -- see the `binary` parameter's doc comment
-// in helm_process.hpp.
-
-TEST(HelmProcessTest, CapturesStdoutFromAStubBinary) {
-  auto r = run_helm_cli({"web \tprod"}, "printf");
-  EXPECT_TRUE(r.ok());
-  EXPECT_EQ(r.exit_code, 0);
-  EXPECT_EQ(r.stdout_text, "web \tprod");
-}
-
-TEST(HelmProcessTest, ReportsNonZeroExitCode) {
-  auto r = run_helm_cli({}, "false");
-  EXPECT_FALSE(r.ok());
-  EXPECT_EQ(r.exit_code, 1);
-}
-
-TEST(HelmProcessTest, MissingBinaryReportsSpawnFailure) {
-  auto r = run_helm_cli({"version"}, "definitely-not-a-real-binary-xyzzy");
-  EXPECT_EQ(r.exit_code, -1);
-  EXPECT_FALSE(r.stderr_text.empty());
-}
-
-TEST(HelmProcessTest, EmptyBinaryIsRejected) {
-  auto r = run_helm_cli({"version"}, "");
-  EXPECT_EQ(r.exit_code, -1);
-}
 
 // ── helm table output parsing ───────────────────────────────────────────────
 

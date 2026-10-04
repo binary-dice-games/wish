@@ -2,8 +2,8 @@
 /// @file pip_source.hpp
 /// @brief Client-side `pip` command orchestration for the pip module.
 ///
-/// Owns the proxy, runs every `pip` command via pip_process::run_pip_cli(),
-/// parses its output (see pip_parsers.hpp), and pushes structured snapshots
+/// Runs every `pip` command through dev::tool_source (see
+/// common/tool_source.hpp), parses its output (see pip_parsers.hpp), and pushes structured snapshots
 /// to the server-side PipFrontend form via its update_* RMI methods. Also
 /// reacts to the form's `*_requested` events (see server/pip.hpp) by running
 /// the corresponding `pip` command and refreshing.
@@ -18,8 +18,8 @@
 /// also shows the modal progress dialog (common/command_worker.hpp).
 #pragma once
 
-#include "pip_process.hpp"
-#include "modules/bdg/dev/common/command_worker.hpp"
+#include "modules/bdg/dev/common/tool_source.hpp"
+
 #include "src/bison/bison.hpp"
 #include "src/rmi/client/proxy.hpp"
 
@@ -42,7 +42,9 @@ namespace bdg::wish::pip {
 ///         interpreter.
 std::string resolve_interpreter(const std::string& arg);
 
-class pip_source {
+using dev::process_result;
+
+class pip_source : public dev::tool_source {
  public:
   /// @param interpreter  Python interpreter to run pip with (see
   ///                     resolve_interpreter()).
@@ -106,16 +108,9 @@ class pip_source {
  private:
   void push_packages();
 
-  /// @brief Runs `pip <args>` via run_pip_cli() and pushes a trace row to the
-  /// Console window (PipFrontend's append_command_log RMI method). Every
-  /// `pip` invocation after startup goes through here so the Console window
-  /// is a complete trace. Mirrors helm_source::run_logged().
-  process_result run_logged(const std::vector<std::string>& args);
-
-  /// @brief Reports a command outcome via PipFrontend's command_result RMI
-  /// method (tagged with @p scope so the right window's status label is
-  /// written). @return false when the form is gone.
-  bool report(const std::string& label, const std::string& scope, bool ok, const std::string& output);
+  /// @brief pip's `ERROR:` message from stderr (see error_summary()), or
+  /// stdout when stderr is empty.
+  std::string error_text(const process_result& r) const override;
 
   /// @brief Runs a mutating `pip` command, reports its result and calls
   /// refresh_all(). @return whether the command succeeded.
@@ -124,10 +119,7 @@ class pip_source {
   /// @brief `pip install` + @p opts' flags.
   static std::vector<std::string> install_argv(const install_options& opts);
 
-  std::shared_ptr<bison::rmi::proxy::dynamic> proxy_;
-  std::shared_ptr<dev::command_worker> worker_;
   std::string interpreter_;
-  std::vector<std::string> launcher_; // interpreter + `-m pip` + global options
 
   // Latest versions from the last on_outdated_requested(), by package name.
   std::map<std::string, std::string> latest_;

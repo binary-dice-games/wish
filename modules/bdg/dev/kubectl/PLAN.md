@@ -77,11 +77,12 @@ the `MessageBox` confirm for destructive actions, and the six-window layout.
 ## Verification
 
 - **Unit tests** (no cluster needed):
-  `cmake --build build --target test_kubectl test_kubectl_process` with
+  `cmake --build build --target test_kubectl test_dev_common` with
   `-DWISH_MODULE_BDG_DEV_KUBECTL=ON`, then run both binaries. `test_kubectl`
   drives `KubectlFrontend` over `memory_transport` with synthetic `update_*`
-  snapshots; `test_kubectl_process` drives `run_kubectl_cli()` with stub
-  binaries (`printf` / `false`). 25/25 passing (incl. the `*Top*` cases).
+  snapshots; `test_dev_common` drives the shared `dev::run_process()` /
+  `dev::tool_source` (which replaced `kubectl_process`'s
+  `run_kubectl_cli()`) with stub binaries (`printf` / `false`). 25/25 passing (incl. the `*Top*` cases).
 
 - **End-to-end**: see Step 4 — pending a cluster. The Top window's error
   path is exercisable against any reachable cluster without metrics-server

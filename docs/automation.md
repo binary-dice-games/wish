@@ -435,6 +435,35 @@ def test_saving_shows_confirmation(wish_ui):
 
 ## Gotchas
 
+- **A freshly `pip install`ed `playwright` may expect a newer Chromium
+  build than the one preinstalled under `PLAYWRIGHT_BROWSERS_PATH`**:
+  `AutomationClient.launch()` then fails with `Executable doesn't exist at
+  /opt/pw-browsers/chromium_headless_shell-<N>/...` even though a working
+  Chromium is right there. `AutomationClient.launch()` has no
+  executable-path parameter, so point Playwright at the preinstalled
+  binary before launching (in Claude Code's cloud container it is
+  `/opt/pw-browsers/chromium`):
+
+  ```python
+  from playwright.sync_api._generated import BrowserType
+  _launch = BrowserType.launch
+  BrowserType.launch = lambda self, *a, **kw: _launch(
+      self, *a, **{"executable_path": "/opt/pw-browsers/chromium", **kw})
+  ```
+
+  Don't `playwright install` instead -- the download is not needed and may
+  be blocked.
+- **Driving a module client (`wish client --run=<module>`) end to end**:
+  start `wish server --renderer web --transport tcp --port P --web_port W`,
+  then `wish client --transport tcp --port P --run=<module> [-- args]`, then
+  `AutomationClient.launch(url="http://127.0.0.1:W")`. The dev modules'
+  Console windows are the quickest proof their commands ran: wait for a
+  widget whose `text` starts with `"<tool> "`. Stop stray
+  processes by exact executable path (e.g. `ps -eo pid,args | awk
+  '$2=="/path/to/build/app/wish" {print $1}' | xargs -r kill`), not
+  `pkill -f "wish client"` -- that pattern also matches (and kills) the
+  shell running the `pkill` command itself.
+
 - **A blank/empty-space UI bug (a `Table` or other content region rendering
   as nothing) is often a starved-layout bug, not a data bug — check `rect`
   sizes via `get_tree()` before suspecting the row-building code.** A wide,

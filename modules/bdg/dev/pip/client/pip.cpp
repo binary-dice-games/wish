@@ -12,12 +12,13 @@
 #include "pip.hpp"
 #include "pip_source.hpp"
 
+#include "modules/bdg/dev/common/frontend.hpp"
+
 #include "src/client/app_registry.hpp"
 #include "src/client/wish_app_host.hpp"
 
 #include "src/bison/bison.hpp"
 
-#include <iostream>
 #include <memory>
 
 namespace bdg::wish {
@@ -28,8 +29,7 @@ void run_pip(wish_app_host& s) {
   const std::string arg = s.app_args().empty() ? std::string{} : s.app_args()[0];
   const std::string interpreter = pip::resolve_interpreter(arg);
   if (interpreter.empty()) {
-    std::cerr << "pip: no Python interpreter found in '" << arg << "' (expected a virtualenv directory)\n";
-    s.signal_done();
+    dev::fail_startup(s, "pip: no Python interpreter found in '" + arg + "' (expected a virtualenv directory)");
     return;
   }
 
@@ -38,29 +38,21 @@ void run_pip(wish_app_host& s) {
   std::string error;
   const std::string version = pip::pip_source{nullptr, interpreter, nullptr}.probe_version(error);
   if (version.empty()) {
-    std::cerr << "pip: cannot run `" << interpreter << " -m pip`" << (error.empty() ? std::string{} : (": " + error))
-              << "\n";
-    s.signal_done();
+    dev::fail_startup(s, "pip: cannot run `" + interpreter + " -m pip`", error);
     return;
   }
 
-  auto proxy = std::make_shared<rmi::proxy::dynamic>(s.instantiate("wish"_key, "PipFrontend"_key).get());
-  // Every handler below runs as a job on this worker's thread: running pip
-  // inside an event handler would block the whole UI until it exits. Long
-  // commands get a modal progress dialog (common/command_worker.hpp).
-  auto worker = std::make_shared<dev::command_worker>(s, "Running pip");
-  worker->start();
+  // Every handler below runs as a job on the frontend's worker thread:
+  // running pip inside an event handler would block the whole UI until it
+  // exits. Long commands get a modal progress dialog
+  // (common/command_worker.hpp).
+  const auto frontend = dev::open_frontend(s, "PipFrontend"_key, "Running pip");
+  const auto& proxy = frontend.proxy;
+  const auto& worker = frontend.worker;
   auto source = std::make_shared<pip::pip_source>(proxy, interpreter, worker);
 
-  // Optional payload string (absent -> "").
-  auto str = [](const dynamic& payload, bison::key_t key) {
-    auto* f = payload.findField<std::string>(key);
-    return f ? *f : std::string{};
-  };
-  auto flag = [](const dynamic& payload, bison::key_t key) {
-    auto* f = payload.findField<bool>(key);
-    return f && *f;
-  };
+  auto str = dev::payload_string;  // optional payload string (absent -> "")
+  auto flag = dev::payload_flag;   // optional payload flag (absent -> false)
   auto options = [flag](const dynamic& payload) {
     pip::pip_source::install_options opts;
     opts.upgrade = flag(payload, "upgrade"_key);
@@ -86,11 +78,6 @@ void run_pip(wish_app_host& s) {
   });
   worker->on(*proxy, "details_requested"_key, [source, str](dynamic payload) {
     source->on_details_requested(str(payload, "kind"_key), str(payload, "name"_key));
-  });
-
-  proxy->onEvent("closed"_key, [&s, worker](dynamic) {
-    worker->shutdown();
-    s.signal_done();
   });
 
   // Initial population -- queued here, now that every handler is registered,

@@ -1,83 +1,16 @@
 // MIT License © 2026 Binary Dice Games
 #include <gtest/gtest.h>
 
-#include <chrono>
-
 #include "modules/bdg/dev/pip/client/pip_parsers.hpp"
-#include "modules/bdg/dev/pip/client/pip_process.hpp"
 
 using bdg::wish::pip::error_summary;
 using bdg::wish::pip::is_safe_arg;
 using bdg::wish::pip::is_valid_package_name;
 using bdg::wish::pip::parse_index_versions;
 using bdg::wish::pip::parse_json_objects;
-using bdg::wish::pip::run_pip_cli;
 using bdg::wish::pip::split_requirements;
 
 namespace {
-
-// ── run_pip_cli() ───────────────────────────────────────────────────────────
-//
-// Exercised with stub launchers (never `python -m pip`) so these pass on any
-// machine, with or without Python installed -- see the `launcher` parameter's
-// doc comment in pip_process.hpp.
-
-TEST(PipProcessTest, CapturesStdoutFromAStubLauncher) {
-  auto r = run_pip_cli({"b c"}, {"printf", "%s|%s", "a"});
-  EXPECT_TRUE(r.ok());
-  EXPECT_EQ(r.exit_code, 0);
-  EXPECT_EQ(r.stdout_text, "a|b c") << "launcher arguments come first; an argument with a space stays one";
-}
-
-TEST(PipProcessTest, ReportsNonZeroExitCode) {
-  auto r = run_pip_cli({}, {"false"});
-  EXPECT_FALSE(r.ok());
-  EXPECT_EQ(r.exit_code, 1);
-}
-
-TEST(PipProcessTest, MissingProgramReportsSpawnFailure) {
-  auto r = run_pip_cli({"--version"}, {"definitely-not-a-real-binary-xyzzy"});
-  EXPECT_EQ(r.exit_code, -1);
-  EXPECT_FALSE(r.stderr_text.empty());
-}
-
-TEST(PipProcessTest, EmptyLauncherIsRejected) {
-  EXPECT_EQ(run_pip_cli({"--version"}, {}).exit_code, -1);
-  EXPECT_EQ(run_pip_cli({"--version"}, {""}).exit_code, -1);
-}
-
-TEST(PipProcessTest, HooksDeliverOutputAsItArrives) {
-  bdg::wish::pip::run_hooks hooks;
-  std::string seen;
-  hooks.on_output = [&](const std::string& chunk) { seen += chunk; };
-  auto r = run_pip_cli({"hello"}, {"printf", "%s"}, &hooks);
-  EXPECT_TRUE(r.ok());
-  EXPECT_EQ(seen, "hello");
-  EXPECT_EQ(r.stdout_text, "hello") << "the result still carries the whole output";
-}
-
-TEST(PipProcessTest, TickReturningFalseStopsTheProcess) {
-  bdg::wish::pip::run_hooks hooks;
-  hooks.tick_ms = 20;
-  int ticks = 0;
-  hooks.on_tick = [&] { return ++ticks < 2; };
-  auto r = run_pip_cli({"60"}, {"sleep"}, &hooks); // returns long before 60 s
-  EXPECT_FALSE(r.ok());
-  EXPECT_NE(r.exit_code, -1) << "it was spawned, then stopped";
-  EXPECT_EQ(ticks, 2) << "no ticks after the stop request";
-}
-
-TEST(PipProcessTest, StoppedProcessReturnsEvenIfAChildKeepsThePipesOpen) {
-  // The shell dies on SIGTERM; its background `sleep` inherits stdout /
-  // stderr and outlives it (git's remote helper, a pip build step).
-  bdg::wish::pip::run_hooks hooks;
-  hooks.tick_ms = 20;
-  hooks.on_tick = [] { return false; };
-  const auto started = std::chrono::steady_clock::now();
-  auto r = run_pip_cli({"sleep 30 & wait"}, {"sh", "-c"}, &hooks);
-  EXPECT_FALSE(r.ok());
-  EXPECT_LT(std::chrono::steady_clock::now() - started, std::chrono::seconds{10});
-}
 
 // ── `pip list --format=json` parsing ────────────────────────────────────────
 

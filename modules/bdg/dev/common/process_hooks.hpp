@@ -1,13 +1,11 @@
 // MIT License © 2026 Binary Dice Games
 /// @file process_hooks.hpp
-/// @brief Optional live-output / tick callbacks shared by every bdg/dev
-///        module's `run_<tool>_cli()` process helper.
+/// @brief Optional live-output / tick callbacks for the shared
+///        run_process() helper (see process.hpp).
 ///
-/// Each dev module keeps its own small libuv-based "run this argv, capture
-/// its output" helper (see kubectl_process.hpp for why). They all accept
-/// the same optional hooks, defined once here, so one command_worker (see
-/// command_worker.hpp) can drive any of them. Header-only, standard library
-/// only -- usable from the modules' process helpers and their unit tests.
+/// Separate from process.hpp so that command_worker.hpp, which drives a
+/// command through these hooks, needs no libuv include. Header-only,
+/// standard library only.
 #pragma once
 
 #include <cstdint>
@@ -17,7 +15,7 @@
 namespace bdg::wish::dev {
 
 /// @brief Optional callbacks for a long-running command. Both run on the
-/// calling thread, from inside the `run_<tool>_cli()` call.
+/// calling thread, from inside the run_process() call.
 struct run_hooks {
   /// Called with each chunk of stdout / stderr as it arrives (chunks are not
   /// line-aligned).

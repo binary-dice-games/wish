@@ -33,10 +33,9 @@ gated behind a `MessageBox` confirm; installs and upgrades fire directly.
   contract) for the client to react to by running the corresponding `pip`
   command.
 - **client/**: `run_pip(wish_app_host&)`, self-registered as the `"pip"`
-  embedded app — owns all `pip` invocation. `client/pip_process.hpp`/`.cpp` is
-  a small, non-interactive, libuv-based (`uv_spawn`) "run this argv array,
-  capture stdout/stderr/exit code" helper (a near-copy of the `helm`
-  module's). `client/pip_parsers.hpp`/`.cpp` parses `pip list --format=json`
+  embedded app — owns all `pip` invocation. Commands run through
+  the shared [common/](../common) helpers (`process.hpp`, `tool_source.hpp`)
+  with `<python> -m pip` as the launcher. `client/pip_parsers.hpp`/`.cpp` parses `pip list --format=json`
   and `pip index versions` output and rejects flag-shaped values before they
   reach an argv. `client/pip_source.hpp`/`.cpp` runs every actual `pip`
   command on its worker thread and pushes snapshots / progress. `run_pip()`

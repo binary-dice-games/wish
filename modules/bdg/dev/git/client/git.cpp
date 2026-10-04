@@ -11,12 +11,13 @@
 #include "git_process.hpp"
 #include "git_repo_source.hpp"
 
+#include "modules/bdg/dev/common/frontend.hpp"
+
 #include "src/client/app_registry.hpp"
 #include "src/client/wish_app_host.hpp"
 
 #include "src/bison/bison.hpp"
 
-#include <iostream>
 #include <memory>
 
 namespace bdg::wish {
@@ -25,8 +26,7 @@ using namespace bison;
 
 void run_git(wish_app_host& s) {
   if (s.app_args().empty()) {
-    std::cerr << "git: a repository path is required, e.g. `wish client --run=git -- /path/to/repo`\n";
-    s.signal_done();
+    dev::fail_startup(s, "git: a repository path is required, e.g. `wish client --run=git -- /path/to/repo`");
     return;
   }
   const std::string repo_path_arg = s.app_args()[0];
@@ -34,8 +34,7 @@ void run_git(wish_app_host& s) {
   {
     auto check = git::run_git(repo_path_arg, {"rev-parse", "--is-inside-work-tree"});
     if (!check.ok()) {
-      std::cerr << "git: '" << repo_path_arg << "' is not a git repository (or git is not on PATH)\n";
-      s.signal_done();
+      dev::fail_startup(s, "git: '" + repo_path_arg + "' is not a git repository (or git is not on PATH)");
       return;
     }
   }
@@ -48,12 +47,13 @@ void run_git(wish_app_host& s) {
   // merely theoretical -- see DESIGN.md's "Design Decisions" entry).
   const std::string repo_path = git::resolve_repo_root(repo_path_arg);
 
-  auto proxy = std::make_shared<rmi::proxy::dynamic>(s.instantiate("wish"_key, "GitRepo"_key).get());
-  // Every handler below runs as a job on this worker's thread: running the
-  // tool inside an event handler would block the whole UI until it exits.
-  // Long commands get a modal progress dialog (common/command_worker.hpp).
-  auto worker = std::make_shared<dev::command_worker>(s, "Running git");
-  worker->start();
+  // Every handler below runs as a job on the frontend's worker thread:
+  // running the tool inside an event handler would block the whole UI until
+  // it exits. Long commands get a modal progress dialog
+  // (common/command_worker.hpp).
+  const auto frontend = dev::open_frontend(s, "GitRepo"_key, "Running git");
+  const auto& proxy = frontend.proxy;
+  const auto& worker = frontend.worker;
   auto source = std::make_shared<git::git_repo_source>(proxy, repo_path, worker);
 
   worker->on(*proxy, "refresh_requested"_key, [source](dynamic) { source->refresh_all(); });
@@ -90,11 +90,6 @@ void run_git(wish_app_host& s) {
   worker->on(*proxy, "diff_requested"_key, [source](dynamic payload) {
     source->on_diff_requested(
         payload.as<std::string>("hash"_key), payload.as<std::string>("path"_key), payload.as<bool>("staged"_key));
-  });
-
-  proxy->onEvent("closed"_key, [&s, worker](dynamic) {
-    worker->shutdown();
-    s.signal_done();
   });
 
   // Initial population. GitRepo::on_init() (server) used to emit its own
