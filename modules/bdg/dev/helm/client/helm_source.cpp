@@ -47,7 +47,7 @@ void helm_source::refresh_all() {
 // ── helpers ────────────────────────────────────────────────────────────────
 
 std::string helm_source::error_text(const process_result& r) const {
-  return error_summary(dev::error_output(r));
+  return error_summary(common::error_output(r));
 }
 
 bool helm_source::run_and_refresh(
@@ -249,7 +249,7 @@ void helm_source::on_install_values_requested(
     } else {
       // A release installed without custom values prints a bare "null".
       std::string text = r.stdout_text;
-      if (dev::trim_eol(text) == "null")
+      if (common::trim_eol(text) == "null")
         text.clear();
       args["text"_key] = std::move(text);
     }

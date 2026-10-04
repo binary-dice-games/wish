@@ -9,7 +9,7 @@
 
 namespace bdg::wish::pip {
 
-using dev::trim;
+using common::trim;
 
 namespace {
 
@@ -209,7 +209,7 @@ bool is_valid_package_name(const std::string& name) {
 }
 
 std::vector<std::string> split_requirements(const std::string& text) {
-  return dev::words(text);
+  return common::words(text);
 }
 
 std::string error_summary(const std::string& stderr_text) {
@@ -219,7 +219,7 @@ std::string error_summary(const std::string& stderr_text) {
     return "this Python is managed by the operating system (externally-managed-environment), so pip will not "
            "change it. Create a virtualenv (python3 -m venv ~/.venvs/work) and restart with it: "
            "wish client --run=pip -- ~/.venvs/work";
-  return dev::trim_eol(dev::from_marker_line(stderr_text, {"ERROR:"}));
+  return common::trim_eol(common::from_marker_line(stderr_text, {"ERROR:"}));
 }
 
 } // namespace bdg::wish::pip

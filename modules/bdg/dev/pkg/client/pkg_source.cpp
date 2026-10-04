@@ -50,7 +50,7 @@ void pkg_source::refresh_all() {
 // ── helpers ────────────────────────────────────────────────────────────────
 
 std::string pkg_source::error_text(const process_result& r) const {
-  return error_summary(elevation_, dev::error_output(r));
+  return error_summary(elevation_, common::error_output(r));
 }
 
 process_result pkg_source::run_logged(const command& cmd) {
@@ -113,7 +113,7 @@ void pkg_source::on_upgrade_all_requested() {
 
 void pkg_source::on_install_requested(const std::string& text) {
   const auto names = split_names(text);
-  const std::string label = "install " + dev::one_line(text, 80);
+  const std::string label = "install " + common::one_line(text, 80);
   if (names.empty()) {
     report("install", "packages", false, "nothing to install");
     return;

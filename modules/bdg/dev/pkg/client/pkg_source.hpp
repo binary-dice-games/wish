@@ -3,7 +3,7 @@
 /// @brief Client-side package-manager orchestration for the pkg module.
 ///
 /// Runs every command of the chosen package manager (see pkg_backend.hpp for
-/// what each operation runs) through dev::tool_source (see
+/// what each operation runs) through common::tool_source (see
 /// common/tool_source.hpp), parses
 /// the output, and pushes structured snapshots to the server-side PkgFrontend
 /// form via its update_* RMI methods. Mirrors pip_source: the packages are
@@ -16,7 +16,7 @@
 
 #include "pkg_backend.hpp"
 
-#include "modules/bdg/dev/common/tool_source.hpp"
+#include "modules/bdg/common/tool_source.hpp"
 
 #include "src/bison/bison.hpp"
 #include "src/rmi/client/proxy.hpp"
@@ -28,9 +28,9 @@
 
 namespace bdg::wish::pkg {
 
-using dev::process_result;
+using common::process_result;
 
-class pkg_source : public dev::tool_source {
+class pkg_source : public common::tool_source {
  public:
   /// @param how  How commands that need root get it (see elevation).
   pkg_source(

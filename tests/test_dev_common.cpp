@@ -1,13 +1,13 @@
 // MIT License © 2026 Binary Dice Games
 /// @file test_dev_common.cpp
 /// @brief Tests for the helpers shared by the bdg/dev modules' clients
-///        (modules/bdg/dev/common): run_process(), the text helpers, and
+///        (modules/bdg/common): run_process(), the text helpers, and
 ///        tool_source's Console-trace / command_result plumbing.
 #include <gtest/gtest.h>
 
-#include "modules/bdg/dev/common/process.hpp"
-#include "modules/bdg/dev/common/text.hpp"
-#include "modules/bdg/dev/common/tool_source.hpp"
+#include "modules/bdg/common/process.hpp"
+#include "modules/bdg/common/text.hpp"
+#include "modules/bdg/common/tool_source.hpp"
 
 #include <context/context.hpp>
 #include <server/registry.hpp>
@@ -29,7 +29,6 @@
 
 using namespace bdg::bison;
 namespace bison = bdg::bison;
-namespace dev = bdg::wish::dev;
 namespace common = bdg::wish::common;
 namespace wish = bdg::wish;
 using namespace bdg::bison::rmi::transport;
@@ -42,7 +41,7 @@ namespace {
 // dev tool) so these pass on any machine.
 
 TEST(DevProcessTest, CapturesStdout) {
-  auto r = dev::run_process({"printf", "%s|%s", "a", "b c"});
+  auto r = common::run_process({"printf", "%s|%s", "a", "b c"});
   EXPECT_TRUE(r.ok());
   EXPECT_EQ(r.exit_code, 0);
   EXPECT_EQ(r.stdout_text, "a|b c") << "an argument with a space stays one argv entry";
@@ -51,74 +50,74 @@ TEST(DevProcessTest, CapturesStdout) {
 TEST(DevProcessTest, ShellMetacharactersNeedNoEscaping) {
   // No shell in the pipeline: braces, quotes and spaces pass through verbatim.
   const std::string arg = "{range .items[*]}{.metadata.name}{\"\\n\"}{end} 'x y' $HOME";
-  auto r = dev::run_process({"printf", "%s", arg});
+  auto r = common::run_process({"printf", "%s", arg});
   EXPECT_EQ(r.stdout_text, arg);
 }
 
 TEST(DevProcessTest, CapturesStderrAndNonZeroExitCode) {
-  auto r = dev::run_process({"sh", "-c", "echo oops >&2; exit 3"});
+  auto r = common::run_process({"sh", "-c", "echo oops >&2; exit 3"});
   EXPECT_FALSE(r.ok());
   EXPECT_EQ(r.exit_code, 3);
   EXPECT_EQ(r.stderr_text, "oops\n");
-  EXPECT_EQ(dev::error_output(r), "oops\n");
+  EXPECT_EQ(common::error_output(r), "oops\n");
 }
 
 TEST(DevProcessTest, ErrorOutputFallsBackToStdout) {
-  auto r = dev::run_process({"sh", "-c", "echo said-on-stdout; exit 1"});
-  EXPECT_EQ(dev::error_output(r), "said-on-stdout\n");
+  auto r = common::run_process({"sh", "-c", "echo said-on-stdout; exit 1"});
+  EXPECT_EQ(common::error_output(r), "said-on-stdout\n");
 }
 
 TEST(DevProcessTest, MissingProgramIsExitCodeMinusOne) {
-  auto r = dev::run_process({"definitely-not-a-real-binary-xyzzy", "--version"});
+  auto r = common::run_process({"definitely-not-a-real-binary-xyzzy", "--version"});
   EXPECT_EQ(r.exit_code, -1);
   EXPECT_FALSE(r.stderr_text.empty());
 }
 
 TEST(DevProcessTest, EmptyArgvIsRejected) {
-  EXPECT_EQ(dev::run_process({}).exit_code, -1);
-  EXPECT_EQ(dev::run_process({""}).exit_code, -1);
+  EXPECT_EQ(common::run_process({}).exit_code, -1);
+  EXPECT_EQ(common::run_process({""}).exit_code, -1);
 }
 
 TEST(DevProcessTest, AFailedSpawnDoesNotBreakTheNextOne) {
   // Modules probe for programs that are usually absent (pkexec, the other
   // package managers) and then carry on in the same process.
   for (int i = 0; i < 3; ++i)
-    EXPECT_EQ(dev::run_process({"definitely-not-a-real-binary-xyzzy"}).exit_code, -1);
-  auto r = dev::run_process({"printf", "still works"});
+    EXPECT_EQ(common::run_process({"definitely-not-a-real-binary-xyzzy"}).exit_code, -1);
+  auto r = common::run_process({"printf", "still works"});
   EXPECT_TRUE(r.ok());
   EXPECT_EQ(r.stdout_text, "still works");
 }
 
 TEST(DevProcessTest, RunsInTheGivenWorkingDirectory) {
-  dev::process_options options;
+  common::process_options options;
   options.cwd = "/";
-  auto r = dev::run_process({"pwd"}, options);
+  auto r = common::run_process({"pwd"}, options);
   EXPECT_TRUE(r.ok());
-  EXPECT_EQ(dev::trim_eol(r.stdout_text), "/");
+  EXPECT_EQ(common::trim_eol(r.stdout_text), "/");
 }
 
 TEST(DevProcessTest, StdinTextIsDeliveredToTheChild) {
-  dev::process_options options;
+  common::process_options options;
   options.stdin_text = "s3cret\n";
-  auto r = dev::run_process({"cat"}, options);
+  auto r = common::run_process({"cat"}, options);
   EXPECT_TRUE(r.ok());
   EXPECT_EQ(r.stdout_text, "s3cret\n");
 }
 
 TEST(DevProcessTest, ChildThatIgnoresStdinDoesNotCrashUs) {
   // `true` exits without reading; the write must not raise SIGPIPE.
-  dev::process_options options;
+  common::process_options options;
   options.stdin_text = std::string(1 << 20, 'x');
-  EXPECT_TRUE(dev::run_process({"true"}, options).ok());
+  EXPECT_TRUE(common::run_process({"true"}, options).ok());
 }
 
 TEST(DevProcessTest, HooksDeliverOutputAsItArrives) {
   common::run_hooks hooks;
   std::string seen;
   hooks.on_output = [&](const std::string& chunk) { seen += chunk; };
-  dev::process_options options;
+  common::process_options options;
   options.hooks = &hooks;
-  auto r = dev::run_process({"printf", "%s", "hello"}, options);
+  auto r = common::run_process({"printf", "%s", "hello"}, options);
   EXPECT_TRUE(r.ok());
   EXPECT_EQ(seen, "hello");
   EXPECT_EQ(r.stdout_text, "hello") << "the result still carries the whole output";
@@ -129,9 +128,9 @@ TEST(DevProcessTest, TickReturningFalseStopsTheProcess) {
   hooks.tick_ms = 20;
   int ticks = 0;
   hooks.on_tick = [&] { return ++ticks < 2; };
-  dev::process_options options;
+  common::process_options options;
   options.hooks = &hooks;
-  auto r = dev::run_process({"sleep", "60"}, options); // returns long before 60 s
+  auto r = common::run_process({"sleep", "60"}, options); // returns long before 60 s
   EXPECT_FALSE(r.ok());
   EXPECT_NE(r.exit_code, -1) << "it was spawned, then stopped";
   EXPECT_EQ(ticks, 2) << "no ticks after the stop request";
@@ -143,60 +142,60 @@ TEST(DevProcessTest, StoppedProcessReturnsEvenIfAChildKeepsThePipesOpen) {
   common::run_hooks hooks;
   hooks.tick_ms = 20;
   hooks.on_tick = [] { return false; };
-  dev::process_options options;
+  common::process_options options;
   options.hooks = &hooks;
   const auto started = std::chrono::steady_clock::now();
-  auto r = dev::run_process({"sh", "-c", "sleep 30 & wait"}, options);
+  auto r = common::run_process({"sh", "-c", "sleep 30 & wait"}, options);
   EXPECT_FALSE(r.ok());
   EXPECT_LT(std::chrono::steady_clock::now() - started, std::chrono::seconds{10});
 }
 
 TEST(DevProcessTest, ConcatArgsPrependsALauncher) {
   EXPECT_EQ(
-      dev::concat_args({"python3", "-m", "pip"}, {"list"}),
+      common::concat_args({"python3", "-m", "pip"}, {"list"}),
       (std::vector<std::string>{"python3", "-m", "pip", "list"}));
-  EXPECT_EQ(dev::concat_args({}, {"a"}), (std::vector<std::string>{"a"}));
+  EXPECT_EQ(common::concat_args({}, {"a"}), (std::vector<std::string>{"a"}));
 }
 
 // ── text helpers ────────────────────────────────────────────────────────────
 
 TEST(DevTextTest, TrimAndTrimEol) {
-  EXPECT_EQ(dev::trim(" \t a b \r\n"), "a b");
-  EXPECT_EQ(dev::trim(" \n"), "");
-  EXPECT_EQ(dev::trim_eol(" a \r\n\n"), " a ");
+  EXPECT_EQ(common::trim(" \t a b \r\n"), "a b");
+  EXPECT_EQ(common::trim(" \n"), "");
+  EXPECT_EQ(common::trim_eol(" a \r\n\n"), " a ");
 }
 
 TEST(DevTextTest, SplitKeepsEmptyFields) {
-  EXPECT_EQ(dev::split("a\t\tb", '\t'), (std::vector<std::string>{"a", "", "b"}));
-  EXPECT_EQ(dev::split("a,", ','), (std::vector<std::string>{"a", ""}));
-  EXPECT_EQ(dev::split("", ','), (std::vector<std::string>{""}));
+  EXPECT_EQ(common::split("a\t\tb", '\t'), (std::vector<std::string>{"a", "", "b"}));
+  EXPECT_EQ(common::split("a,", ','), (std::vector<std::string>{"a", ""}));
+  EXPECT_EQ(common::split("", ','), (std::vector<std::string>{""}));
 }
 
 TEST(DevTextTest, WordsDropsWhitespaceRuns) {
-  EXPECT_EQ(dev::words("  numpy \t pandas==2.2\n"), (std::vector<std::string>{"numpy", "pandas==2.2"}));
-  EXPECT_TRUE(dev::words(" \n").empty());
+  EXPECT_EQ(common::words("  numpy \t pandas==2.2\n"), (std::vector<std::string>{"numpy", "pandas==2.2"}));
+  EXPECT_TRUE(common::words(" \n").empty());
 }
 
 TEST(DevTextTest, OneLineCollapsesWhitespaceAndCuts) {
-  EXPECT_EQ(dev::one_line("a\t\tb\r\n c \n", 100), "a b c");
-  EXPECT_EQ(dev::one_line("abcdef", 3), "abc...");
-  EXPECT_EQ(dev::one_line("", 3), "");
+  EXPECT_EQ(common::one_line("a\t\tb\r\n c \n", 100), "a b c");
+  EXPECT_EQ(common::one_line("abcdef", 3), "abc...");
+  EXPECT_EQ(common::one_line("", 3), "");
 }
 
 TEST(DevTextTest, FromMarkerLineDropsChatterBeforeTheFirstMarker) {
-  EXPECT_EQ(dev::from_marker_line("warn 1\nwarn 2\nError: boom\nmore\n", {"Error:"}), "Error: boom\nmore\n");
-  EXPECT_EQ(dev::from_marker_line("Error: first\nError: second", {"Error:"}), "Error: first\nError: second");
-  EXPECT_EQ(dev::from_marker_line("no marker here\n", {"Error:"}), "no marker here\n");
+  EXPECT_EQ(common::from_marker_line("warn 1\nwarn 2\nError: boom\nmore\n", {"Error:"}), "Error: boom\nmore\n");
+  EXPECT_EQ(common::from_marker_line("Error: first\nError: second", {"Error:"}), "Error: first\nError: second");
+  EXPECT_EQ(common::from_marker_line("no marker here\n", {"Error:"}), "no marker here\n");
   // The earliest line matching any marker wins.
-  EXPECT_EQ(dev::from_marker_line("x\nerror: b\nE: a\n", {"E: ", "error: "}), "error: b\nE: a\n");
+  EXPECT_EQ(common::from_marker_line("x\nerror: b\nE: a\n", {"E: ", "error: "}), "error: b\nE: a\n");
 }
 
 TEST(DevTextTest, FlagShapedOrEmptyValuesAreNotSafeArgs) {
-  EXPECT_TRUE(dev::is_safe_arg("web"));
-  EXPECT_TRUE(dev::is_safe_arg("bitnami/nginx"));
-  EXPECT_FALSE(dev::is_safe_arg(""));
-  EXPECT_FALSE(dev::is_safe_arg("-n"));
-  EXPECT_FALSE(dev::is_safe_arg("--post-renderer=/tmp/x"));
+  EXPECT_TRUE(common::is_safe_arg("web"));
+  EXPECT_TRUE(common::is_safe_arg("bitnami/nginx"));
+  EXPECT_FALSE(common::is_safe_arg(""));
+  EXPECT_FALSE(common::is_safe_arg("-n"));
+  EXPECT_FALSE(common::is_safe_arg("--post-renderer=/tmp/x"));
 }
 
 // ── tool_source ─────────────────────────────────────────────────────────────
@@ -271,7 +270,7 @@ class client_app_host : public wish::wish_app_host {
 };
 
 /// Exposes tool_source's protected API to the tests.
-class test_source : public dev::tool_source {
+class test_source : public common::tool_source {
  public:
   test_source(
       std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::shared_ptr<common::command_worker> worker, std::string tool,
@@ -362,7 +361,7 @@ TEST_F(ToolSourceTest, AFailedCommandIsTracedWithItsErrorText) {
 
 TEST_F(ToolSourceTest, CaptionAndStdinCanBeOverridden) {
   auto source = make_source("cat", {"cat"});
-  dev::run_options options;
+  common::run_options options;
   options.caption = "cat <masked>";
   options.stdin_text = "secret";
   auto r = source.run_logged({}, options);

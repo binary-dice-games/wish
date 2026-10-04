@@ -178,15 +178,15 @@ outcome via `command_result` and then calls `refresh_all()`). `on_logs_requested
 / `update_describe` directly. Structurally identical to
 `docker_source` / `git_repo_source`.
 
-`kubectl_source` derives from `dev::tool_source`
-(`modules/bdg/dev/common/tool_source.hpp`) with `"kubectl"` as its tool and
+`kubectl_source` derives from `common::tool_source`
+(`modules/bdg/common/tool_source.hpp`) with `"kubectl"` as its tool and
 launcher. Every one-shot `kubectl` invocation goes through
-`tool_source::run_logged()` (over the shared libuv `dev::run_process()`),
+`tool_source::run_logged()` (over the shared libuv `common::run_process()`),
 which — after running the command — pushes one `append_command_log` trace
 row (command, exit code, `ok`, 200-char output preview) to the **Console**
 window; `tool_source::push_rows()` (the list snapshots) goes through it too.
 The exceptions are the Logs "Follow" 2 s re-poll thread and the Top poll,
-which call `dev::run_process()` directly so they do not flood the Console
+which call `common::run_process()` directly so they do not flood the Console
 (`git`'s Log-window lesson). Same as `docker_source`.
 
 ## 4. Data Flow / Architecture
@@ -336,7 +336,7 @@ one always-on `Plot`-feeding background poll thread that uses
   one always-on poll.** `kubectl_source::start_stats_polling()` (called
   once from `run_kubectl()` after wiring) runs `kubectl top pods -A
   --no-headers` + `kubectl top nodes --no-headers` and calls `update_stats`.
-  `dev::run_process()` directly, **never `run_logged()`** — a 10 s two-command
+  `common::run_process()` directly, **never `run_logged()`** — a 10 s two-command
   re-poll would flood the Console (`git`'s Log-window lesson). Stops on
   `~kubectl_source` / RMI throw. metrics-server itself only updates every
   ~15 s, so 10 s is comfortably fast enough.
@@ -387,8 +387,8 @@ Depended on by: nothing else in wish; a leaf module.
   the aggregate, a later call with fewer entities drops the stale
   lines/rows, and an `error` field lands in the status label. No cluster
   required.
-- **`tests/test_dev_common.cpp`** — the shared `dev::run_process()` /
-  `dev::tool_source` plumbing: stdout capture, non-zero exits, a missing
+- **`tests/test_dev_common.cpp`** — the shared `common::run_process()` /
+  `common::tool_source` plumbing: stdout capture, non-zero exits, a missing
   binary reporting `exit_code == -1`, a brace/quote-heavy jsonpath arg
   surviving verbatim, the Console trace row and tab-separated list pushes.
   Stub programs only, no cluster required.

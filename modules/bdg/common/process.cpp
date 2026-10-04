@@ -1,7 +1,7 @@
 // MIT License © 2026 Binary Dice Games
 /// @file process.cpp
 /// @brief libuv-based implementation of run_process().
-#include "modules/bdg/dev/common/process.hpp"
+#include "modules/bdg/common/process.hpp"
 
 #include <uv.h>
 
@@ -9,7 +9,7 @@
 #include <cstdint>
 #include <cstdlib>
 
-namespace bdg::wish::dev {
+namespace bdg::wish::common {
 
 // ── libuv plumbing ───────────────────────────────────────────────────────────
 
@@ -19,7 +19,7 @@ struct pipe_state {
   std::string* out{nullptr};
   bool closed{false};
   uv_pipe_t* handle{nullptr}; // valid while !closed
-  const common::run_hooks* hooks{nullptr};
+  const run_hooks* hooks{nullptr};
 };
 
 void alloc_cb(uv_handle_t*, size_t suggested_size, uv_buf_t* buf) {
@@ -76,7 +76,7 @@ void exit_cb(uv_process_t* req, int64_t exit_status, int term_signal) {
 }
 
 struct tick_state {
-  const common::run_hooks* hooks{nullptr};
+  const run_hooks* hooks{nullptr};
   uv_process_t* child{nullptr};
   exit_state* exit{nullptr};
 };
@@ -215,4 +215,4 @@ process_result run_process(const std::vector<std::string>& argv, const process_o
   return result;
 }
 
-} // namespace bdg::wish::dev
+} // namespace bdg::wish::common

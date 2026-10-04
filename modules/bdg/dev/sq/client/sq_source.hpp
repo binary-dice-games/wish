@@ -2,7 +2,7 @@
 /// @file sq_source.hpp
 /// @brief Client-side `sq` command orchestration for the sq module.
 ///
-/// Runs every `sq` command through dev::tool_source (see
+/// Runs every `sq` command through common::tool_source (see
 /// common/tool_source.hpp), parses the output, and pushes structured snapshots to the server-side
 /// SqFrontend form via its update_* RMI methods. Reacts to the form's
 /// `*_requested` events (see server/sq.hpp) by running the matching `sq`
@@ -13,7 +13,7 @@
 /// active source of the user's `sq` configuration.
 #pragma once
 
-#include "modules/bdg/dev/common/tool_source.hpp"
+#include "modules/bdg/common/tool_source.hpp"
 
 #include "src/bison/bison.hpp"
 #include "src/rmi/client/proxy.hpp"
@@ -25,9 +25,9 @@
 
 namespace bdg::wish::sq {
 
-using dev::process_result;
+using common::process_result;
 
-class sq_source : public dev::tool_source {
+class sq_source : public common::tool_source {
  public:
   sq_source(std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::shared_ptr<common::command_worker> worker);
 

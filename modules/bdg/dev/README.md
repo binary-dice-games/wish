@@ -18,8 +18,9 @@ until **Close** is pressed. The shared implementation is
 `ProgressBox` form.
 
 The plumbing every tool frontend's client needs lives once in
-[common/](common). It is not a module itself: `wish_add_module()` compiles a
-collection's `common/` directory into the client of each enabled module.
+[modules/bdg/common/](../common), shared with the `desktop` modules. It is
+not a module itself: `wish_add_module()` compiles an organization's `common/`
+directory into the client of each enabled module.
 
 | Header | Provides |
 |--------|----------|

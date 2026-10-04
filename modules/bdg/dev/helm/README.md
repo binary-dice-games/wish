@@ -32,7 +32,7 @@ inspect / upgrade / roll back / uninstall the release.
   to react to by running the corresponding `helm` command.
 - **client/**: `run_helm(wish_app_host&)`, self-registered as the `"helm"`
   embedded app — owns all `helm` invocation.
-  Commands run through the shared [common/](../common) helpers
+  Commands run through the shared [common/](../../common) helpers
   (`process.hpp`, `tool_source.hpp`). `client/helm_table_parser.hpp`/
   `.cpp` parses helm's table output (columns are TAB-separated and
   space-padded) and rejects flag-shaped values before they reach an argv.

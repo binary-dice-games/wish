@@ -1,17 +1,17 @@
 // MIT License © 2025 Binary Dice Games
 /// @file git_process.hpp
-/// @brief Runs `git` for the git module: the shared dev::run_process()
+/// @brief Runs `git` for the git module: the shared common::run_process()
 ///        (see common/process.hpp) plus git's own non-interactive setup.
 #pragma once
 
-#include "modules/bdg/dev/common/process.hpp"
+#include "modules/bdg/common/process.hpp"
 
 #include <string>
 #include <vector>
 
 namespace bdg::wish::git {
 
-using dev::process_result;
+using common::process_result;
 
 /// @brief Runs `git <args>` (no shell involved -- `args` is a real argv
 /// array, so paths/messages with spaces or shell metacharacters need no

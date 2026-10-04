@@ -11,7 +11,7 @@
 #include "helm.hpp"
 #include "helm_source.hpp"
 
-#include "modules/bdg/dev/common/frontend.hpp"
+#include "modules/bdg/common/frontend.hpp"
 
 #include "src/client/app_registry.hpp"
 #include "src/client/wish_app_host.hpp"
@@ -30,9 +30,9 @@ void run_helm(wish_app_host& s) {
   // has no server component): the Repositories and Charts windows are useful
   // without one, and an unreachable cluster is reported in the Releases
   // window's status line instead.
-  auto check = dev::run_process({"helm", "version", "--short"});
+  auto check = common::run_process({"helm", "version", "--short"});
   if (!check.ok()) {
-    dev::fail_startup(s, "helm: cannot run the `helm` CLI", check.stderr_text);
+    common::fail_startup(s, "helm: cannot run the `helm` CLI", check.stderr_text);
     return;
   }
 
@@ -40,11 +40,11 @@ void run_helm(wish_app_host& s) {
   // running the tool inside an event handler would block the whole UI until
   // it exits. Long commands get a modal progress dialog
   // (modules/bdg/common/command_worker.hpp).
-  const auto frontend = dev::open_frontend(s, "HelmFrontend"_key, "Running helm");
+  const auto frontend = common::open_frontend(s, "HelmFrontend"_key, "Running helm");
   const auto& proxy = frontend.proxy;
   const auto& worker = frontend.worker;
   auto source = std::make_shared<helm::helm_source>(proxy, worker);
-  auto str = dev::payload_string; // optional payload string (absent -> "")
+  auto str = common::payload_string; // optional payload string (absent -> "")
 
   worker->on(*proxy, "refresh_requested"_key, [source](dynamic) { source->refresh_all(); });
 
@@ -70,13 +70,13 @@ void run_helm(wish_app_host& s) {
     req.release = str(payload, "release"_key);
     req.ns = str(payload, "namespace"_key);
     req.values = str(payload, "values"_key);
-    req.create_namespace = dev::payload_flag(payload, "create_namespace"_key);
-    req.wait = dev::payload_flag(payload, "wait"_key);
+    req.create_namespace = common::payload_flag(payload, "create_namespace"_key);
+    req.wait = common::payload_flag(payload, "wait"_key);
     source->on_install_requested(req);
   });
   worker->on(*proxy, "install_values_requested"_key, [source, str](dynamic payload) {
     source->on_install_values_requested(
-        dev::payload_int(payload, "token"_key), str(payload, "source"_key), str(payload, "chart"_key),
+        common::payload_int(payload, "token"_key), str(payload, "source"_key), str(payload, "chart"_key),
         str(payload, "version"_key), str(payload, "name"_key), str(payload, "namespace"_key));
   });
   worker->on(*proxy, "history_requested"_key, [source, str](dynamic payload) {

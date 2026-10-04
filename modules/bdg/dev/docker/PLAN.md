@@ -104,8 +104,8 @@ for destructive actions, and the six-window layout.
   `cmake --build build --target test_docker test_dev_common` with
   `-DWISH_MODULE_BDG_DEV_DOCKER=ON`, then run both binaries. `test_docker`
   drives `DockerFrontend` over `memory_transport` with synthetic `update_*`
-  snapshots; `test_dev_common` drives the shared `dev::run_process()` /
-  `dev::tool_source` (which replaced `docker_process`'s
+  snapshots; `test_dev_common` drives the shared `common::run_process()` /
+  `common::tool_source` (which replaced `docker_process`'s
   `run_docker_cli()`) with stub binaries (`printf` / `false`).
 
 - **End-to-end** (performed, not just described — needs the invoking user

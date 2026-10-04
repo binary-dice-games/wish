@@ -11,7 +11,7 @@
 #include "kubectl.hpp"
 #include "kubectl_source.hpp"
 
-#include "modules/bdg/dev/common/frontend.hpp"
+#include "modules/bdg/common/frontend.hpp"
 
 #include "src/client/app_registry.hpp"
 #include "src/client/wish_app_host.hpp"
@@ -30,9 +30,9 @@ void run_kubectl(wish_app_host& s) {
   // docker's `docker version` gate. `version -o json` contacts the API
   // server for the server version, so a non-zero exit here means the
   // cluster, not just the client binary, is unavailable.
-  auto check = dev::run_process({"kubectl", "version", "-o", "json"});
+  auto check = common::run_process({"kubectl", "version", "-o", "json"});
   if (!check.ok()) {
-    dev::fail_startup(s, "kubectl: cannot reach the cluster", check.stderr_text);
+    common::fail_startup(s, "kubectl: cannot reach the cluster", check.stderr_text);
     return;
   }
 
@@ -40,7 +40,7 @@ void run_kubectl(wish_app_host& s) {
   // running the tool inside an event handler would block the whole UI until
   // it exits. Long commands get a modal progress dialog
   // (modules/bdg/common/command_worker.hpp).
-  const auto frontend = dev::open_frontend(s, "KubectlFrontend"_key, "Running kubectl");
+  const auto frontend = common::open_frontend(s, "KubectlFrontend"_key, "Running kubectl");
   const auto& proxy = frontend.proxy;
   const auto& worker = frontend.worker;
   auto source = std::make_shared<kubectl::kubectl_source>(proxy, worker);

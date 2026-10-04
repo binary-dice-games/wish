@@ -918,7 +918,7 @@ void curl_source::send_request(const request_state& raw) {
   process_result r = worker_->run(
       "curl " + method + " " + argv.back(),
       [&](const common::run_hooks* hooks) {
-        dev::process_options options;
+        common::process_options options;
         options.hooks = hooks;
         return run(argv, std::move(options));
       },

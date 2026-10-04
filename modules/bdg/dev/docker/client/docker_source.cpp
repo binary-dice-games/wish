@@ -10,8 +10,8 @@
 namespace bdg::wish::docker {
 
 using namespace bdg::bison;
-using dev::split;
-using dev::trim_eol;
+using common::split;
+using common::trim_eol;
 
 namespace {
 
@@ -62,7 +62,7 @@ void docker_source::start_stats_polling() {
       // tab-delimited Go template mirrors push_rows()'s parsing shape.
       // run_process() directly, NOT run_logged() -- a ~3 s re-poll would
       // flood the Console window (git's Log-window lesson).
-      auto r = dev::run_process(
+      auto r = common::run_process(
           {"docker", "stats", "--no-stream", "--no-trunc", "--format",
            "{{.ID}}\t{{.Name}}\t{{.CPUPerc}}\t{{.MemPerc}}\t{{.MemUsage}}"});
 
@@ -87,7 +87,7 @@ void docker_source::start_stats_polling() {
           arr[n++] = dynamic_ptr{e};
         }
       } else {
-        args["error"_key] = trim_eol(dev::error_output(r));
+        args["error"_key] = trim_eol(common::error_output(r));
       }
       args["entries"_key] = dynamic_ptr{std::make_shared<dynamic>(std::move(arr))};
       try {
@@ -164,7 +164,7 @@ void docker_source::push_networks() {
 void docker_source::run_and_refresh(
     const std::string& label, const std::string& scope, const std::vector<std::string>& args) {
   auto r = run_logged(args);
-  if (report(label, scope, r.ok(), dev::error_output(r)))
+  if (report(label, scope, r.ok(), common::error_output(r)))
     refresh_all();
 }
 
@@ -217,7 +217,7 @@ void docker_source::push_logs_snapshot(const std::string& id, int32_t lines) {
   const std::string tail = std::to_string(lines > 0 ? lines : 500);
   auto r = run_logged({"logs", "--tail", tail, "--timestamps", id});
   std::string text = r.ok() ? r.stdout_text + r.stderr_text // docker logs writes app stderr too
-                            : dev::error_output(r);
+                            : common::error_output(r);
 
   dynamic args;
   args["container_id"_key] = id;
@@ -248,12 +248,12 @@ void docker_source::on_logs_requested(const std::string& id, bool follow, int32_
         break;
       // Deliberately run_process(), not run_logged() -- a ~2 s re-poll
       // would flood the Console window (git's Log-window lesson).
-      auto r = dev::run_process({"docker", "logs", "--tail", std::to_string(lines > 0 ? lines : 500), "--timestamps", id});
+      auto r = common::run_process({"docker", "logs", "--tail", std::to_string(lines > 0 ? lines : 500), "--timestamps", id});
       dynamic args;
       args["container_id"_key] = id;
       args["title"_key] = "logs: " + id.substr(0, 12) + "  (following)";
       args["text"_key] = r.ok() ? r.stdout_text + r.stderr_text
-                                : dev::error_output(r);
+                                : common::error_output(r);
       try {
         proxy->call("update_logs"_key, std::move(args)).get();
       } catch (const std::exception&) {
@@ -280,7 +280,7 @@ void docker_source::on_inspect_requested(const std::string& kind, const std::str
   args["target_id"_key] = id;
   args["kind"_key] = kind;
   args["title"_key] = kind + ": " + id.substr(0, 19);
-  args["text"_key] = r.ok() ? r.stdout_text : dev::error_output(r);
+  args["text"_key] = r.ok() ? r.stdout_text : common::error_output(r);
   call("update_inspect"_key, std::move(args));
 }
 

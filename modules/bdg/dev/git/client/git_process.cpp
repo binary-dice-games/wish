@@ -1,10 +1,10 @@
 // MIT License © 2025 Binary Dice Games
 /// @file git_process.cpp
 /// @brief Implementation of run_git() / resolve_repo_root() on top of the
-///        shared dev::run_process().
+///        shared common::run_process().
 #include "git_process.hpp"
 
-#include "modules/bdg/dev/common/text.hpp"
+#include "modules/bdg/common/text.hpp"
 
 #include <cstdlib>
 
@@ -36,17 +36,17 @@ process_result run_git(const std::string& cwd, const std::vector<std::string>& a
   if (cwd.empty())
     return {};
 
-  dev::process_options options;
+  common::process_options options;
   options.cwd = cwd;
   options.hooks = hooks;
-  return dev::run_process(dev::concat_args({"git"}, args), options);
+  return common::run_process(common::concat_args({"git"}, args), options);
 }
 
 std::string resolve_repo_root(const std::string& path) {
   auto r = run_git(path, {"rev-parse", "--show-toplevel"});
   if (!r.ok() || r.stdout_text.empty())
     return path;
-  return dev::trim_eol(r.stdout_text);
+  return common::trim_eol(r.stdout_text);
 }
 
 } // namespace bdg::wish::git

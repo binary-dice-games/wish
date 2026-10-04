@@ -20,9 +20,12 @@ modules/<organization>/<collection>/<module>/
 Code an organization's modules share without being a module itself lives
 in `modules/<org>/common/` -- e.g. `modules/bdg/common/command_worker.hpp`,
 the background job runner with a modal progress dialog that the `bdg/dev`
-tools and `mc` use. It is never registered with `wish_add_collection()` and
-has no `server/`/`client/`/`resources/embedded/` subdirectory, so the build
-never treats it as a collection or a module; modules just `#include` it.
+tools and `mc` use, and `process.hpp`, which runs a command and captures its
+output. It is never registered with `wish_add_collection()` and has no
+`server/`/`client/`/`resources/embedded/` subdirectory, so the build never
+treats it as a collection or a module; `wish_add_module()` compiles its
+sources into the client of each enabled module of that organization, and
+modules just `#include` it.
 
 A module needs none, some, or all three of `server/`, `client/`,
 `resources/embedded/` — there's no assumption that any particular

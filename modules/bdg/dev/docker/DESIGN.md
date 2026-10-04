@@ -83,7 +83,7 @@ This directory owns:
    client-side data"), the same split `git` and `top` use.
 
 3. **No shell in any `docker` invocation.** Every `docker` call goes
-   through a real argv array via `uv_spawn` (`dev::run_process()`,
+   through a real argv array via `uv_spawn` (`common::run_process()`,
    §3), never a shell command string — container names, image refs, and
    volume names need no escaping and carry no injection surface.
 
@@ -183,10 +183,10 @@ read-only command and call `update_logs` / `update_inspect` directly.
 
 ### Running `docker` (client)
 
-`docker_source` derives from `dev::tool_source`
-(`modules/bdg/dev/common/tool_source.hpp`), constructed with `"docker"` as
+`docker_source` derives from `common::tool_source`
+(`modules/bdg/common/tool_source.hpp`), constructed with `"docker"` as
 its tool name and launcher, so every command is `docker <args>` run through
-the shared `dev::run_process()` (`common/process.hpp`): `uv_spawn` with a
+the shared `common::run_process()` (`common/process.hpp`): `uv_spawn` with a
 real argv array, stdout/stderr pipes, blocking until exit. No shell, no PTY
 (bison's `bdg::bison::term::terminal` is unsuitable for the reasons
 documented in `process.hpp`). That shared runner is tested once, with stub
@@ -200,7 +200,7 @@ Cancel), then pushes one `append_command_log` trace row (command string,
 exit code, `ok`, single-line output preview capped at 200 chars) to the
 **Console** window. `tool_source::push_rows()` (the four `… ls` snapshots)
 goes through it too. The exceptions are the Logs "Follow" 2 s re-poll
-thread and the Stats poll, which call `dev::run_process()` directly — a
+thread and the Stats poll, which call `common::run_process()` directly — a
 re-poll every few seconds would flood the Console (`git`'s Log-window
 lesson).
 
@@ -297,9 +297,9 @@ use only the methods/events above).
 
 ## 6. Design Decisions
 
-- **Commands run through the shared `dev::run_process()` (libuv
+- **Commands run through the shared `common::run_process()` (libuv
   `uv_spawn`), not `bdg::bison::term::terminal`** — see
-  `modules/bdg/dev/common/process.hpp`: `terminal` is PTY-attached, takes
+  `modules/bdg/common/process.hpp`: `terminal` is PTY-attached, takes
   a shell *string*, and redirects the calling process's own stdio for its
   lifetime — none of which is safe for many quick argv-array
   `docker <args>` calls from inside a long-running `wish_client`. Every
@@ -325,7 +325,7 @@ use only the methods/events above).
   background thread.** `docker_source::start_stats_polling()` (called once
   from `run_docker()` after wiring) spawns a detached thread that runs
   `docker stats --no-stream --format '<tab template>'` every ~3 s and calls
-  `update_stats`. It uses `dev::run_process()` **directly, never
+  `update_stats`. It uses `common::run_process()` **directly, never
   `run_logged()`** — a 3 s re-poll would flood the Console, the exact
   `git` Log-window lesson that already keeps the Follow thread out of it.
   The thread stops on `~docker_source` (a stop `atomic<bool>`) or when the
@@ -509,7 +509,7 @@ Depends on:
   `MenuItem`, `Combo`, `InputText`, `InputInt`, `Checkbox`,
   `HorizontalLayout` / `VerticalLayout` — all existing wish elements, no
   new widget needed.
-- `uv_a` (libuv, vendored by bison) — the shared `dev::run_process()`
+- `uv_a` (libuv, vendored by bison) — the shared `common::run_process()`
   subprocess helper; already linked into module-client targets by
   `wish_finalize_app_modules()`.
 - No JSON library — the list views use a tab-delimited `--format`
@@ -535,8 +535,8 @@ Depended on by: nothing else in wish; this is a leaf module.
   field lands in the status label. Mirrors `tests/test_git.cpp`'s
   `DeleteBranchClickShowsConfirmDialog…` / `StaleDiffResponseIgnored…`
   tests. No Docker daemon required.
-- **`tests/test_dev_common.cpp`** — the shared `dev::run_process()` and
-  `dev::tool_source` plumbing (stdout capture, non-zero exits, a missing
+- **`tests/test_dev_common.cpp`** — the shared `common::run_process()` and
+  `common::tool_source` plumbing (stdout capture, non-zero exits, a missing
   binary reporting `exit_code == -1`, the Console trace row, tab-separated
   list pushes), driven with stub programs. No Docker daemon required.
 - **End-to-end**: automation module against `wish client --run=docker`

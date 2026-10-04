@@ -22,10 +22,10 @@
 ///     closes when the queue is empty -- unless fail() recorded an error,
 ///     which it then shows until the user closes it.
 ///
-/// Header-only (module client sources are compiled into several targets; see
-/// cmake/WishModules.cmake), and not a module itself: `modules/bdg/common`
-/// is not a registered collection and has no server/ or client/
-/// subdirectory, so the build never picks it up as one.
+/// Header-only. `modules/bdg/common` is not a module itself (it is not a
+/// registered collection and has no server/ or client/ subdirectory); its
+/// sources are compiled into the client of each enabled bdg module (see
+/// cmake/WishModules.cmake).
 #pragma once
 
 #include "modules/bdg/common/process_hooks.hpp"

@@ -2,7 +2,7 @@
 /// @file pip_source.hpp
 /// @brief Client-side `pip` command orchestration for the pip module.
 ///
-/// Runs every `pip` command through dev::tool_source (see
+/// Runs every `pip` command through common::tool_source (see
 /// common/tool_source.hpp), parses its output (see pip_parsers.hpp), and pushes structured snapshots
 /// to the server-side PipFrontend form via its update_* RMI methods. Also
 /// reacts to the form's `*_requested` events (see server/pip.hpp) by running
@@ -18,7 +18,7 @@
 /// also shows the modal progress dialog (modules/bdg/common/command_worker.hpp).
 #pragma once
 
-#include "modules/bdg/dev/common/tool_source.hpp"
+#include "modules/bdg/common/tool_source.hpp"
 
 #include "src/bison/bison.hpp"
 #include "src/rmi/client/proxy.hpp"
@@ -42,9 +42,9 @@ namespace bdg::wish::pip {
 ///         interpreter.
 std::string resolve_interpreter(const std::string& arg);
 
-using dev::process_result;
+using common::process_result;
 
-class pip_source : public dev::tool_source {
+class pip_source : public common::tool_source {
  public:
   /// @param interpreter  Python interpreter to run pip with (see
   ///                     resolve_interpreter()).

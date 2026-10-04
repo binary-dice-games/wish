@@ -2,7 +2,7 @@
 /// @file docker_source.hpp
 /// @brief Client-side `docker` command orchestration for the docker module.
 ///
-/// Runs every `docker` command through dev::tool_source (see
+/// Runs every `docker` command through common::tool_source (see
 /// common/tool_source.hpp), parses the tab-delimited `--format`
 /// output, and pushes structured snapshots to the server-side
 /// DockerFrontend form via its update_* RMI methods. Also reacts to the
@@ -15,7 +15,7 @@
 /// talks to" here -- the server never touches `docker` directly.
 #pragma once
 
-#include "modules/bdg/dev/common/tool_source.hpp"
+#include "modules/bdg/common/tool_source.hpp"
 
 #include "src/bison/bison.hpp"
 #include "src/rmi/client/proxy.hpp"
@@ -27,9 +27,9 @@
 
 namespace bdg::wish::docker {
 
-using dev::process_result;
+using common::process_result;
 
-class docker_source : public dev::tool_source {
+class docker_source : public common::tool_source {
  public:
   docker_source(std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::shared_ptr<common::command_worker> worker);
   ~docker_source() override;

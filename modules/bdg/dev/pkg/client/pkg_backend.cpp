@@ -8,10 +8,10 @@
 
 namespace bdg::wish::pkg {
 
-using dev::split;
-using dev::starts_with;
-using dev::trim;
-using dev::words;
+using common::split;
+using common::starts_with;
+using common::trim;
+using common::words;
 
 namespace {
 
@@ -495,7 +495,7 @@ std::string error_summary(elevation how, const std::string& stderr_text) {
 
   // From the manager's own first error line, dropping the progress chatter
   // before it; otherwise the whole text.
-  return trim(dev::from_marker_line(stderr_text, {"E: ", "Error: ", "error: "}));
+  return trim(common::from_marker_line(stderr_text, {"E: ", "Error: ", "error: "}));
 }
 
 } // namespace bdg::wish::pkg

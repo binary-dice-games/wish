@@ -7,7 +7,7 @@
 
 namespace bdg::wish::helm {
 
-using dev::trim;
+using common::trim;
 
 std::vector<std::vector<std::string>> parse_table(const std::string& text, const std::string& header, size_t ncols) {
   std::vector<std::vector<std::string>> rows;
@@ -18,7 +18,7 @@ std::vector<std::vector<std::string>> parse_table(const std::string& text, const
     if (line.find('\t') == std::string::npos)
       continue; // blank line or a plain message, not a table row.
 
-    std::vector<std::string> cells = dev::split(line, '\t');
+    std::vector<std::string> cells = common::split(line, '\t');
     for (auto& cell : cells)
       cell = trim(cell);
 
@@ -40,7 +40,7 @@ std::string short_timestamp(const std::string& updated) {
 }
 
 std::string error_summary(const std::string& stderr_text) {
-  return dev::trim_eol(dev::from_marker_line(stderr_text, {"Error:"}));
+  return common::trim_eol(common::from_marker_line(stderr_text, {"Error:"}));
 }
 
 bool is_valid_release_name(const std::string& name) {

@@ -19,8 +19,8 @@
 /// links it into every module-client target. The implementation
 /// (process.cpp) is the only file that includes `<uv.h>`, which on native
 /// Windows drags in `<windows.h>` and its macros. `wish_add_module()`
-/// compiles this directory's sources into the client of every bdg/dev
-/// module that is enabled (a collection's `common/` directory).
+/// compiles this directory's sources into the client of every enabled bdg
+/// module (an organization's `common/` directory).
 #pragma once
 
 #include "modules/bdg/common/process_hooks.hpp"
@@ -28,7 +28,7 @@
 #include <string>
 #include <vector>
 
-namespace bdg::wish::dev {
+namespace bdg::wish::common {
 
 /// @brief Result of one run_process() invocation.
 struct process_result {
@@ -51,7 +51,7 @@ struct process_options {
   std::string stdin_text;
   /// Live-output / tick callbacks (see process_hooks.hpp); a tick returning
   /// false stops the process. Null for none.
-  const common::run_hooks* hooks{nullptr};
+  const run_hooks* hooks{nullptr};
 };
 
 /// @brief What a failed command had to say: its stderr, or its stdout when
@@ -83,4 +83,4 @@ inline std::vector<std::string> concat_args(std::vector<std::string> head, const
 ///         (128 + signal when it was stopped by a signal).
 process_result run_process(const std::vector<std::string>& argv, const process_options& options = {});
 
-} // namespace bdg::wish::dev
+} // namespace bdg::wish::common

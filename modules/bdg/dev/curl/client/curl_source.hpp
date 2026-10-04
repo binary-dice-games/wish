@@ -2,7 +2,7 @@
 /// @file curl_source.hpp
 /// @brief Client-side `curl` command orchestration for the curl module.
 ///
-/// Runs every `curl` invocation through dev::tool_source (see
+/// Runs every `curl` invocation through common::tool_source (see
 /// common/tool_source.hpp), parses the response, applies
 /// environment-variable substitution, and pushes structured snapshots to
 /// the server-side CurlFrontend form via its update_* RMI methods. Also
@@ -22,7 +22,7 @@
 
 #include "curl_response_parser.hpp" // for kv_entry
 
-#include "modules/bdg/dev/common/tool_source.hpp"
+#include "modules/bdg/common/tool_source.hpp"
 
 #include "src/bison/bison.hpp"
 #include "src/rmi/client/proxy.hpp"
@@ -80,9 +80,9 @@ struct history_entry {
   request_state state; ///< the full builder state, so "Load" restores everything.
 };
 
-using dev::process_result;
+using common::process_result;
 
-class curl_source : public dev::tool_source {
+class curl_source : public common::tool_source {
  public:
   curl_source(
       std::shared_ptr<bison::rmi::proxy::dynamic> proxy, wish_app_host& host,

@@ -13,8 +13,8 @@
 namespace bdg::wish::kubectl {
 
 using namespace bdg::bison;
-using dev::split;
-using dev::trim_eol;
+using common::split;
+using common::trim_eol;
 
 namespace {
 
@@ -199,8 +199,8 @@ void kubectl_source::start_stats_polling() {
     while (!stop->load(std::memory_order_relaxed)) {
       // run_process() directly, NOT run_logged() -- a ~10 s re-poll of
       // two commands would flood the Console window (git's Log-window lesson).
-      auto pods_r = dev::run_process({"kubectl", "top", "pods", "-A", "--no-headers"});
-      auto nodes_r = dev::run_process({"kubectl", "top", "nodes", "--no-headers"});
+      auto pods_r = common::run_process({"kubectl", "top", "pods", "-A", "--no-headers"});
+      auto nodes_r = common::run_process({"kubectl", "top", "nodes", "--no-headers"});
 
       dynamic args;
       dynamic pods_arr;
@@ -213,7 +213,7 @@ void kubectl_source::start_stats_polling() {
         std::istringstream iss(pods_r.stdout_text);
         std::string line;
         while (std::getline(iss, line)) {
-          auto c = dev::words(line);
+          auto c = common::words(line);
           if (c.size() < 4)
             continue;
           auto e = std::make_shared<dynamic>();
@@ -226,14 +226,14 @@ void kubectl_source::start_stats_polling() {
           pods_arr[pi++] = dynamic_ptr{e};
         }
       } else {
-        error = trim_eol(dev::error_output(pods_r));
+        error = trim_eol(common::error_output(pods_r));
       }
 
       if (nodes_r.ok()) {
         std::istringstream iss(nodes_r.stdout_text);
         std::string line;
         while (std::getline(iss, line)) {
-          auto c = dev::words(line);
+          auto c = common::words(line);
           if (c.size() < 5)
             continue;
           auto e = std::make_shared<dynamic>();
@@ -247,7 +247,7 @@ void kubectl_source::start_stats_polling() {
           nodes_arr[ni++] = dynamic_ptr{e};
         }
       } else if (error.empty()) {
-        error = trim_eol(dev::error_output(nodes_r));
+        error = trim_eol(common::error_output(nodes_r));
       }
 
       args["pods"_key] = dynamic_ptr{std::make_shared<dynamic>(std::move(pods_arr))};
@@ -350,7 +350,7 @@ void kubectl_source::push_nodes() {
 void kubectl_source::run_and_refresh(
     const std::string& label, const std::string& scope, const std::vector<std::string>& args) {
   auto r = run_logged(args);
-  if (report(label, scope, r.ok(), dev::error_output(r)))
+  if (report(label, scope, r.ok(), common::error_output(r)))
     refresh_all();
 }
 
@@ -390,7 +390,7 @@ void kubectl_source::push_logs_snapshot(
     const std::string& name, const std::string& ns, int32_t lines, bool following) {
   const std::string tail = std::to_string(lines > 0 ? lines : 500);
   auto r = run_logged({"logs", name, "-n", ns, "--tail", tail, "--timestamps"});
-  std::string text = r.ok() ? r.stdout_text : dev::error_output(r);
+  std::string text = r.ok() ? r.stdout_text : common::error_output(r);
 
   dynamic args;
   args["name"_key] = name;
@@ -423,13 +423,13 @@ void kubectl_source::on_logs_requested(
         break;
       // Deliberately run_process(), not run_logged() -- a ~2 s re-poll
       // would flood the Console window (git's Log-window lesson).
-      auto r = dev::run_process(
+      auto r = common::run_process(
           {"kubectl", "logs", name, "-n", ns, "--tail", std::to_string(lines > 0 ? lines : 500), "--timestamps"});
       dynamic args;
       args["name"_key] = name;
       args["namespace"_key] = ns;
       args["title"_key] = "logs: " + ns + "/" + name + "  (following)";
-      args["text"_key] = r.ok() ? r.stdout_text : dev::error_output(r);
+      args["text"_key] = r.ok() ? r.stdout_text : common::error_output(r);
       try {
         proxy->call("update_logs"_key, std::move(args)).get();
       } catch (const std::exception&) {
@@ -456,7 +456,7 @@ void kubectl_source::on_describe_requested(
   args["name"_key] = name;
   args["namespace"_key] = ns;
   args["title"_key] = kind + ": " + (ns.empty() ? name : ns + "/" + name);
-  args["text"_key] = r.ok() ? r.stdout_text : dev::error_output(r);
+  args["text"_key] = r.ok() ? r.stdout_text : common::error_output(r);
   call("update_describe"_key, std::move(args));
 }
 

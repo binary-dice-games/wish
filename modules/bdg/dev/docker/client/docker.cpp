@@ -11,7 +11,7 @@
 #include "docker.hpp"
 #include "docker_source.hpp"
 
-#include "modules/bdg/dev/common/frontend.hpp"
+#include "modules/bdg/common/frontend.hpp"
 
 #include "src/client/app_registry.hpp"
 #include "src/client/wish_app_host.hpp"
@@ -30,9 +30,9 @@ void run_docker(wish_app_host& s) {
   // git's `rev-parse --is-inside-work-tree` gate. `--format
   // '{{.Server.Version}}'` also confirms the *daemon* answered, not just
   // that the client binary exists.
-  auto check = dev::run_process({"docker", "version", "--format", "{{.Server.Version}}"});
+  auto check = common::run_process({"docker", "version", "--format", "{{.Server.Version}}"});
   if (!check.ok()) {
-    dev::fail_startup(s, "docker: cannot reach the Docker daemon", check.stderr_text);
+    common::fail_startup(s, "docker: cannot reach the Docker daemon", check.stderr_text);
     return;
   }
 
@@ -40,7 +40,7 @@ void run_docker(wish_app_host& s) {
   // running the tool inside an event handler would block the whole UI until
   // it exits. Long commands get a modal progress dialog
   // (modules/bdg/common/command_worker.hpp).
-  const auto frontend = dev::open_frontend(s, "DockerFrontend"_key, "Running docker");
+  const auto frontend = common::open_frontend(s, "DockerFrontend"_key, "Running docker");
   const auto& proxy = frontend.proxy;
   const auto& worker = frontend.worker;
   auto source = std::make_shared<docker::docker_source>(proxy, worker);

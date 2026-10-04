@@ -197,8 +197,8 @@ builder" push, shared by History-Load and Collections-Load.
 
 ### Running `curl` (client)
 
-`curl_source` derives from `dev::tool_source` with `"curl"` as its tool and
-launcher, so `curl` runs through the shared `dev::run_process()` — see
+`curl_source` derives from `common::tool_source` with `"curl"` as its tool and
+launcher, so `curl` runs through the shared `common::run_process()` — see
 [../docker/DESIGN.md §3](../docker/DESIGN.md). No subprocess capability
 beyond it is needed: everything module-specific (headers-in-stdout, the
 `-w` sentinel trailer) lives in argv construction and output parsing in
@@ -481,7 +481,7 @@ Depends on:
 - `wish_app_host::upload_file()` — writes the response body into the
   session sandbox for the Response Body `TextEditor` (the nano/editor
   upload pattern).
-- `uv_a` (libuv) — the shared `dev::run_process()` subprocess helper; already linked
+- `uv_a` (libuv) — the shared `common::run_process()` subprocess helper; already linked
   into module-client targets by `wish_finalize_app_modules()`.
 - No JSON library — a hand-rolled parser/writer scoped to this module's
   own store schema (§6); `curl`'s response body is shown verbatim
@@ -508,8 +508,8 @@ Depended on by: nothing else in wish; this is a leaf module.
   mirroring `test_docker.cpp`'s `ConfirmRemoveYesEmits...` pattern);
   closing any window emits `"closed"` and tears down every root. No
   network access required.
-- **`tests/test_dev_common.cpp`** — the shared `dev::run_process()` /
-  `dev::tool_source` plumbing (stdout capture, non-zero exits, a missing
+- **`tests/test_dev_common.cpp`** — the shared `common::run_process()` /
+  `common::tool_source` plumbing (stdout capture, non-zero exits, a missing
   binary reporting `exit_code == -1`, args with spaces staying one argv
   entry, the Console trace row). No network access required.
 - **`tests/test_curl_response_parser.cpp`** — pure `parse_curl_output()`
