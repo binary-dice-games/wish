@@ -311,7 +311,7 @@ void extract(
 }
 
 // Reads `zip_full`'s central directory without extracting anything, for the
-// View Contents dialog. Throws std::runtime_error if the archive can't be
+// Contents panel. Throws std::runtime_error if the archive can't be
 // opened.
 dynamic list_contents(const fs::path& zip_full) {
   mz_zip_archive zip{};

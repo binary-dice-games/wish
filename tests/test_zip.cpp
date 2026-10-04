@@ -13,7 +13,9 @@
 #include "src/bison/bison_object.hpp"
 #include "src/rmi/rmi.hpp"
 
+#include <algorithm>
 #include <chrono>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -132,17 +134,15 @@ class SessionCapturingServer : public wish::server {
   }
 };
 
-// Helper: find the root key for the internal form tree (starts with
-// "__zip_", no dot -- i.e. it is the top-level entry not a child path).
-// Excludes the prompt/contents sub-dialog roots, which use their own
-// "__zip_prompt_"/"__zip_contents_" prefixes. (The overwrite-confirm dialog
-// is a privately-instantiated MessageBox -- see form::instantiate_child_form()
-// -- so it uses that form class's own "__message_box_" prefix instead, and
-// never needed excluding here.)
+// Helper: find the root key for the internal form tree -- "__zip_<N>"
+// exactly (the Files panel), not a child path ("__zip_0.main..."), a
+// secondary panel root ("__zip_0_contents", "__zip_0_actions") nor the
+// prompt dialog root ("__zip_prompt_<N>").
 static std::string find_form_root(const wish::name_map& objects) {
+  static const std::string prefix = "__zip_";
   for (const auto& [k, _] : objects) {
-    if (k.rfind("__zip_", 0) == 0 && k.find('.') == std::string::npos && k.find("_prompt_") == std::string::npos &&
-        k.find("_contents_") == std::string::npos)
+    if (k.size() > prefix.size() && k.rfind(prefix, 0) == 0 &&
+        std::all_of(k.begin() + prefix.size(), k.end(), [](char ch) { return ch >= '0' && ch <= '9'; }))
       return k;
   }
   return {};
@@ -202,11 +202,62 @@ TEST_F(ZipWindowTest, TreeContainsBrowserAndButtons) {
   ASSERT_FALSE(root.empty());
   EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".main.path_input"));
   EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".main.file_table"));
-  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".main.btn_row.btn_compress"));
-  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".main.btn_row.btn_extract"));
-  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".main.btn_row.btn_view"));
-  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".main.btn_row.btn_refresh"));
-  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".main.status"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + "_actions.vbox.btn_row.btn_compress"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + "_actions.vbox.btn_row.btn_extract"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + "_actions.vbox.btn_row.btn_view"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + "_actions.vbox.btn_row.btn_refresh"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + "_actions.vbox.status"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + "_actions.vbox.progress_bar"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + "_contents.vbox.contents_table"));
+}
+
+// Each panel is its own top-level Window, addressable by "__path__" so the
+// dock layout can name it.
+TEST_F(ZipWindowTest, EachPanelIsATopLevelWindow) {
+  std::string root = instantiate_and_get_root();
+  ASSERT_FALSE(root.empty());
+  auto& s = *srv_->last_session;
+  for (const std::string key : {root, root + "_contents", root + "_actions"}) {
+    auto it = s.top_level_objects.find(bison::key_t{key});
+    ASSERT_NE(it, s.top_level_objects.end()) << key;
+    EXPECT_EQ(it->second->as<bison::key_t>(dynamic::CLASS), "Window"_key) << key;
+    EXPECT_EQ(it->second->as<std::string>("__path__"_key), key) << key;
+  }
+  EXPECT_EQ(s.ui_objects.at(root)->as<std::string>("title"_key), "Files");
+  EXPECT_EQ(s.ui_objects.at(root + "_contents")->as<std::string>("title"_key), "Contents");
+  EXPECT_EQ(s.ui_objects.at(root + "_actions")->as<std::string>("title"_key), "Actions");
+}
+
+// The panels are seeded into a nested DockSpaceViewport ("zip_dock") whose
+// DockLayout names every panel's path.
+TEST_F(ZipWindowTest, RegistersDefaultDockLayoutNamingEveryPanel) {
+  std::string root = instantiate_and_get_root();
+  ASSERT_FALSE(root.empty());
+
+  wish::ui_element_ptr viewport;
+  for (const auto& [k, obj] : srv_->last_session->top_level_objects)
+    if (obj->as<bison::key_t>(dynamic::CLASS) == "DockSpaceViewport"_key)
+      viewport = obj;
+  ASSERT_TRUE(viewport);
+  EXPECT_EQ(viewport->as<std::string>("id"_key), "zip_dock");
+  EXPECT_EQ(viewport->as<std::string>("title"_key), "Zip");
+
+  // Collect every DockArea's newline-separated "windows" list.
+  std::vector<std::string> windows;
+  std::function<void(const dynamic&)> walk = [&](const dynamic& node) {
+    if (node.as<bison::key_t>(dynamic::CLASS) == "DockArea"_key)
+      windows.push_back(node.as<std::string>("windows"_key));
+    if (auto* cf = node.findField<dynamic_ptr>("children"_key); cf && *cf)
+      (*cf)->forEach([&](bison::key_t, const field& f) {
+        if (f.is<dynamic_ptr>() && f.as<dynamic_ptr>())
+          walk(*f.as<dynamic_ptr>());
+      });
+  };
+  walk(*viewport);
+  std::sort(windows.begin(), windows.end());
+  std::vector<std::string> expected{root, root + "_actions", root + "_contents"};
+  std::sort(expected.begin(), expected.end());
+  EXPECT_EQ(windows, expected);
 }
 
 TEST_F(ZipWindowTest, TableStartsEmptyUntilClientReportsAListing) {
@@ -276,7 +327,7 @@ TEST_F(ZipRmiTest, UpdateListingPopulatesTable) {
   EXPECT_EQ(table_row_count(root_ + ".main.file_table"), 2u);
   EXPECT_EQ(
       srv_->last_session->ui_objects.at(root_ + ".main.path_input")->as<std::string>("value"_key), "/home/user");
-  EXPECT_EQ(srv_->last_session->ui_objects.at(root_ + ".main.status")->as<std::string>("text"_key), "Ready.");
+  EXPECT_EQ(srv_->last_session->ui_objects.at(root_ + "_actions.vbox.status")->as<std::string>("text"_key), "Ready.");
 }
 
 TEST_F(ZipRmiTest, UpdateListingReplacesPreviousEntries) {
@@ -293,10 +344,10 @@ TEST_F(ZipRmiTest, SetStatusMirrorsToStatusLabel) {
   proxy_->set(std::move(patch)).get();
 
   EXPECT_EQ(
-      srv_->last_session->ui_objects.at(root_ + ".main.status")->as<std::string>("text"_key), "Compressing...");
+      srv_->last_session->ui_objects.at(root_ + "_actions.vbox.status")->as<std::string>("text"_key), "Compressing...");
 }
 
-TEST_F(ZipRmiTest, ShowContentsBuildsContentsDialogWithRows) {
+TEST_F(ZipRmiTest, ShowContentsFillsContentsPanel) {
   auto result = proxy_->call(
                          "show_contents"_key,
                          make_contents_args(
@@ -307,12 +358,21 @@ TEST_F(ZipRmiTest, ShowContentsBuildsContentsDialogWithRows) {
                     .get();
   (void)result;
 
-  std::string contents_root = find_root_with_prefix(srv_->last_session->ui_objects, "__zip_contents_");
-  ASSERT_FALSE(contents_root.empty());
-  EXPECT_TRUE(srv_->last_session->top_level_objects.count(bison::key_t{contents_root}));
+  const std::string contents_root = root_ + "_contents";
   EXPECT_EQ(table_row_count(contents_root + ".vbox.contents_table"), 3u);
   EXPECT_EQ(
-      srv_->last_session->ui_objects.at(contents_root)->as<std::string>("title"_key), "Contents: photos.zip");
+      srv_->last_session->ui_objects.at(contents_root + ".vbox.summary")->as<std::string>("text"_key),
+      "photos.zip: 3 entries, 2.4 KB uncompressed / 1.5 KB compressed");
+  // No separate dialog is opened: the panel is filled in place.
+  EXPECT_TRUE(find_root_with_prefix(srv_->last_session->ui_objects, "__zip_contents_").empty());
+}
+
+TEST_F(ZipRmiTest, ShowContentsReplacesPreviousArchiveRows) {
+  proxy_->call("show_contents"_key, make_contents_args("a.zip", {{"x", "file", 1, 1}, {"y", "file", 1, 1}})).get();
+  proxy_->call("show_contents"_key, make_contents_args("b.zip", {{"z", "file", 1, 1}})).get();
+  EXPECT_EQ(table_row_count(root_ + "_contents.vbox.contents_table"), 1u);
+  // The named TableColumn children survive the row replacement.
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root_ + "_contents.vbox.contents_table.col_ratio"));
 }
 
 // ── Event routing ─────────────────────────────────────────────────────────────
@@ -437,15 +497,15 @@ TEST_F(ZipEventTest, RowActivatedOnNonArchiveFileSetsStatusInsteadOfEmitting) {
   got = srv_->events->wait_for("on_view_contents_requested"_key, since).has_value();
   EXPECT_FALSE(got);
   EXPECT_EQ(
-      srv_->last_session->ui_objects.at(root_ + ".main.status")->as<std::string>("text"_key),
+      srv_->last_session->ui_objects.at(root_ + "_actions.vbox.status")->as<std::string>("text"_key),
       "Not an archive: notes.txt");
 }
 
 TEST_F(ZipEventTest, CompressClickedWithNoSelectionSetsStatus) {
-  handler_->on_event(widget_id(".main.btn_row.btn_compress"), "clicked"_key, dynamic{});
+  handler_->on_event(widget_id("_actions.vbox.btn_row.btn_compress"), "clicked"_key, dynamic{});
 
   EXPECT_EQ(
-      srv_->last_session->ui_objects.at(root_ + ".main.status")->as<std::string>("text"_key),
+      srv_->last_session->ui_objects.at(root_ + "_actions.vbox.status")->as<std::string>("text"_key),
       "Select one or more files/folders to compress.");
   EXPECT_TRUE(find_root_with_prefix(srv_->last_session->ui_objects, "__zip_prompt_").empty());
 }
@@ -454,7 +514,7 @@ TEST_F(ZipEventTest, CompressClickedWithSelectionShowsPromptWithDefaultArchiveNa
   update_listing("/home", {{"notes.txt", "file", "1 KB", ""}});
   select_row(0);
 
-  handler_->on_event(widget_id(".main.btn_row.btn_compress"), "clicked"_key, dynamic{});
+  handler_->on_event(widget_id("_actions.vbox.btn_row.btn_compress"), "clicked"_key, dynamic{});
 
   std::string prompt_root = find_root_with_prefix(srv_->last_session->ui_objects, "__zip_prompt_");
   ASSERT_FALSE(prompt_root.empty());
@@ -468,7 +528,7 @@ TEST_F(ZipEventTest, CompressClickedWithSelectionShowsPromptWithDefaultArchiveNa
 TEST_F(ZipEventTest, ConfirmingCompressPromptEmitsOnCompressRequested) {
   update_listing("/home", {{"notes.txt", "file", "1 KB", ""}});
   select_row(0);
-  handler_->on_event(widget_id(".main.btn_row.btn_compress"), "clicked"_key, dynamic{});
+  handler_->on_event(widget_id("_actions.vbox.btn_row.btn_compress"), "clicked"_key, dynamic{});
 
   std::string prompt_root = find_root_with_prefix(srv_->last_session->ui_objects, "__zip_prompt_");
   ASSERT_FALSE(prompt_root.empty());
@@ -492,7 +552,7 @@ TEST_F(ZipEventTest, ConfirmingCompressPromptEmitsOnCompressRequested) {
   ASSERT_EQ((*names_f)->size(), 1u);
   EXPECT_EQ((*names_f)->at(size_t{0}).as<std::string>(), "notes.txt");
   EXPECT_EQ(captured.as<std::string>("archive_name"_key), "notes.txt.zip");
-  EXPECT_EQ(srv_->last_session->ui_objects.at(root_ + ".main.status")->as<std::string>("text"_key), "Compressing...");
+  EXPECT_EQ(srv_->last_session->ui_objects.at(root_ + "_actions.vbox.status")->as<std::string>("text"_key), "Compressing...");
 }
 
 TEST_F(ZipEventTest, CompressNameCollidingWithExistingEntryShowsOverwriteConfirmInsteadOfEmitting) {
@@ -501,7 +561,7 @@ TEST_F(ZipEventTest, CompressNameCollidingWithExistingEntryShowsOverwriteConfirm
   // "notes.txt" (the file being compressed) at index 1.
   update_listing("/home", {{"notes.txt", "file", "1 KB", ""}, {"archive.zip", "file", "1 KB", ""}});
   select_row(1);
-  handler_->on_event(widget_id(".main.btn_row.btn_compress"), "clicked"_key, dynamic{});
+  handler_->on_event(widget_id("_actions.vbox.btn_row.btn_compress"), "clicked"_key, dynamic{});
 
   std::string prompt_root = find_root_with_prefix(srv_->last_session->ui_objects, "__zip_prompt_");
   ASSERT_FALSE(prompt_root.empty());
@@ -531,7 +591,7 @@ TEST_F(ZipEventTest, ConfirmOverwriteYesEmitsOnCompressRequested) {
   // at index 0 and "notes.txt" (the file being compressed) at index 1.
   update_listing("/home", {{"notes.txt", "file", "1 KB", ""}, {"archive.zip", "file", "1 KB", ""}});
   select_row(1);
-  handler_->on_event(widget_id(".main.btn_row.btn_compress"), "clicked"_key, dynamic{});
+  handler_->on_event(widget_id("_actions.vbox.btn_row.btn_compress"), "clicked"_key, dynamic{});
   std::string prompt_root = find_root_with_prefix(srv_->last_session->ui_objects, "__zip_prompt_");
   dynamic changed;
   changed["value"_key] = std::string{"archive.zip"};
@@ -570,7 +630,7 @@ TEST_F(ZipEventTest, ConfirmOverwriteNoCancelsWithoutEmitting) {
   // at index 0 and "notes.txt" (the file being compressed) at index 1.
   update_listing("/home", {{"notes.txt", "file", "1 KB", ""}, {"archive.zip", "file", "1 KB", ""}});
   select_row(1);
-  handler_->on_event(widget_id(".main.btn_row.btn_compress"), "clicked"_key, dynamic{});
+  handler_->on_event(widget_id("_actions.vbox.btn_row.btn_compress"), "clicked"_key, dynamic{});
   std::string prompt_root = find_root_with_prefix(srv_->last_session->ui_objects, "__zip_prompt_");
   dynamic changed;
   changed["value"_key] = std::string{"archive.zip"};
@@ -593,13 +653,13 @@ TEST_F(ZipEventTest, ConfirmOverwriteNoCancelsWithoutEmitting) {
   got = srv_->events->wait_for("on_compress_requested"_key, since).has_value();
   EXPECT_FALSE(got);
   EXPECT_EQ(
-      srv_->last_session->ui_objects.at(root_ + ".main.status")->as<std::string>("text"_key), "Compress cancelled.");
+      srv_->last_session->ui_objects.at(root_ + "_actions.vbox.status")->as<std::string>("text"_key), "Compress cancelled.");
 }
 
 TEST_F(ZipEventTest, CompressPromptRejectsNameEqualToSource) {
   update_listing("/home", {{"notes.txt", "file", "1 KB", ""}});
   select_row(0);
-  handler_->on_event(widget_id(".main.btn_row.btn_compress"), "clicked"_key, dynamic{});
+  handler_->on_event(widget_id("_actions.vbox.btn_row.btn_compress"), "clicked"_key, dynamic{});
   std::string prompt_root = find_root_with_prefix(srv_->last_session->ui_objects, "__zip_prompt_");
 
   dynamic changed;
@@ -608,7 +668,7 @@ TEST_F(ZipEventTest, CompressPromptRejectsNameEqualToSource) {
   handler_->on_event(widget_id_at(prompt_root + ".buttons.btn_ok"), "clicked"_key, dynamic{});
 
   EXPECT_EQ(
-      srv_->last_session->ui_objects.at(root_ + ".main.status")->as<std::string>("text"_key),
+      srv_->last_session->ui_objects.at(root_ + "_actions.vbox.status")->as<std::string>("text"_key),
       "Archive name must differ from the source.");
   // The prompt should remain open so the user can fix the name.
   EXPECT_TRUE(srv_->last_session->ui_objects.count(prompt_root));
@@ -618,10 +678,10 @@ TEST_F(ZipEventTest, ExtractClickedRequiresAZipFileSelection) {
   update_listing("/home", {{"notes.txt", "file", "1 KB", ""}});
   select_row(0);
 
-  handler_->on_event(widget_id(".main.btn_row.btn_extract"), "clicked"_key, dynamic{});
+  handler_->on_event(widget_id("_actions.vbox.btn_row.btn_extract"), "clicked"_key, dynamic{});
 
   EXPECT_EQ(
-      srv_->last_session->ui_objects.at(root_ + ".main.status")->as<std::string>("text"_key),
+      srv_->last_session->ui_objects.at(root_ + "_actions.vbox.status")->as<std::string>("text"_key),
       "Select a .zip file to extract.");
 }
 
@@ -629,7 +689,7 @@ TEST_F(ZipEventTest, ExtractClickedWithZipSelectionShowsPromptWithStrippedDestNa
   update_listing("/home", {{"Photos.ZIP", "file", "1 KB", ""}});
   select_row(0);
 
-  handler_->on_event(widget_id(".main.btn_row.btn_extract"), "clicked"_key, dynamic{});
+  handler_->on_event(widget_id("_actions.vbox.btn_row.btn_extract"), "clicked"_key, dynamic{});
 
   std::string prompt_root = find_root_with_prefix(srv_->last_session->ui_objects, "__zip_prompt_");
   ASSERT_FALSE(prompt_root.empty());
@@ -641,7 +701,7 @@ TEST_F(ZipEventTest, ExtractClickedWithZipSelectionShowsPromptWithStrippedDestNa
 TEST_F(ZipEventTest, ConfirmingExtractPromptEmitsOnExtractRequested) {
   update_listing("/home", {{"archive.zip", "file", "1 KB", ""}});
   select_row(0);
-  handler_->on_event(widget_id(".main.btn_row.btn_extract"), "clicked"_key, dynamic{});
+  handler_->on_event(widget_id("_actions.vbox.btn_row.btn_extract"), "clicked"_key, dynamic{});
   std::string prompt_root = find_root_with_prefix(srv_->last_session->ui_objects, "__zip_prompt_");
   ASSERT_FALSE(prompt_root.empty());
 
@@ -666,7 +726,7 @@ TEST_F(ZipEventTest, ExtractDestCollidingWithExistingFileIsRejected) {
   // into that, unlike the directory-collision case which asks to overwrite.
   update_listing("/home", {{"archive.zip", "file", "1 KB", ""}, {"out", "file", "1 KB", ""}});
   select_row(0);
-  handler_->on_event(widget_id(".main.btn_row.btn_extract"), "clicked"_key, dynamic{});
+  handler_->on_event(widget_id("_actions.vbox.btn_row.btn_extract"), "clicked"_key, dynamic{});
   std::string prompt_root = find_root_with_prefix(srv_->last_session->ui_objects, "__zip_prompt_");
 
   dynamic changed;
@@ -675,7 +735,7 @@ TEST_F(ZipEventTest, ExtractDestCollidingWithExistingFileIsRejected) {
   handler_->on_event(widget_id_at(prompt_root + ".buttons.btn_ok"), "clicked"_key, dynamic{});
 
   EXPECT_EQ(
-      srv_->last_session->ui_objects.at(root_ + ".main.status")->as<std::string>("text"_key),
+      srv_->last_session->ui_objects.at(root_ + "_actions.vbox.status")->as<std::string>("text"_key),
       "A file with that name already exists.");
   EXPECT_TRUE(find_root_with_prefix(srv_->last_session->ui_objects, "__message_box_").empty());
 }
@@ -684,10 +744,10 @@ TEST_F(ZipEventTest, ViewContentsClickedRequiresAZipFileSelection) {
   update_listing("/home", {{"notes.txt", "file", "1 KB", ""}});
   select_row(0);
 
-  handler_->on_event(widget_id(".main.btn_row.btn_view"), "clicked"_key, dynamic{});
+  handler_->on_event(widget_id("_actions.vbox.btn_row.btn_view"), "clicked"_key, dynamic{});
 
   EXPECT_EQ(
-      srv_->last_session->ui_objects.at(root_ + ".main.status")->as<std::string>("text"_key),
+      srv_->last_session->ui_objects.at(root_ + "_actions.vbox.status")->as<std::string>("text"_key),
       "Select a .zip file to view its contents.");
 }
 
@@ -699,7 +759,7 @@ TEST_F(ZipEventTest, ViewContentsClickedEmitsOnViewContentsRequested) {
   dynamic captured;
   size_t since = srv_->events->mark();
 
-  handler_->on_event(widget_id(".main.btn_row.btn_view"), "clicked"_key, dynamic{});
+  handler_->on_event(widget_id("_actions.vbox.btn_row.btn_view"), "clicked"_key, dynamic{});
 
   if (auto ev = srv_->events->wait_for("on_view_contents_requested"_key, since)) {
     got = true;
@@ -717,7 +777,7 @@ TEST_F(ZipEventTest, RefreshClickedEmitsOnNavigateWithCurrentPath) {
   dynamic captured;
   size_t since = srv_->events->mark();
 
-  handler_->on_event(widget_id(".main.btn_row.btn_refresh"), "clicked"_key, dynamic{});
+  handler_->on_event(widget_id("_actions.vbox.btn_row.btn_refresh"), "clicked"_key, dynamic{});
 
   if (auto ev = srv_->events->wait_for("on_navigate"_key, since)) {
     got = true;
@@ -762,25 +822,6 @@ TEST_F(ZipEventTest, TableSortedEventSortsRowsDescendingByName) {
   EXPECT_EQ(name_cell_text(1), "apple.txt");
 }
 
-TEST_F(ZipEventTest, ContentsCloseButtonRequestsClose) {
-  proxy_->call(
-           "show_contents"_key, make_contents_args("archive.zip", {{"a.txt", "file", 10, 5}}))
-      .get();
-  std::string contents_root = find_root_with_prefix(srv_->last_session->ui_objects, "__zip_contents_");
-  ASSERT_FALSE(contents_root.empty());
-  auto close_id = widget_id_at(contents_root + ".vbox.btn_row.btn_close");
-
-  // Clicking Close only requests the ImGui popup close; the actual removal
-  // is driven by the Window's own "closed" event once the render loop
-  // confirms it -- see form::request_close_at()'s doc comment. Simulate
-  // that confirmation directly here, mirroring test_file_dialog.cpp's idiom.
-  handler_->on_event(close_id, "clicked"_key, dynamic{});
-  auto window_id = widget_id_at(contents_root);
-  handler_->on_event(window_id, "closed"_key, dynamic{});
-
-  EXPECT_EQ(srv_->last_session->ui_objects.count(contents_root), 0u);
-}
-
 TEST_F(ZipEventTest, WindowClosedEmitsClosedAndCleansUp) {
   bool got_closed = false;
   size_t since = srv_->events->mark();
@@ -789,7 +830,21 @@ TEST_F(ZipEventTest, WindowClosedEmitsClosedAndCleansUp) {
 
   got_closed = srv_->events->wait_for("closed"_key, since).has_value();
   EXPECT_TRUE(got_closed);
-  EXPECT_EQ(srv_->last_session->ui_objects.count(root_), 0u);
+  for (const std::string key : {root_, root_ + "_contents", root_ + "_actions"})
+    EXPECT_EQ(srv_->last_session->ui_objects.count(key), 0u) << key;
+}
+
+// Closing a secondary panel (here: Actions) tears down the whole tool too.
+TEST_F(ZipEventTest, SecondaryPanelClosedEmitsClosedAndRemovesEveryPanel) {
+  size_t since = srv_->events->mark();
+  const std::string actions_root = root_ + "_actions";
+  auto h = srv_->last_session->top_level_handlers.find(bison::key_t{actions_root});
+  ASSERT_NE(h, srv_->last_session->top_level_handlers.end());
+  h->second->on_event(widget_id_at(actions_root), "closed"_key, dynamic{});
+
+  EXPECT_TRUE(srv_->events->wait_for("closed"_key, since).has_value());
+  for (const std::string key : {root_, root_ + "_contents", actions_root})
+    EXPECT_EQ(srv_->last_session->ui_objects.count(key), 0u) << key;
 }
 
 // ── Standalone dispatch: repeated RMI calls must not hang ─────────────────────

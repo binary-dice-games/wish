@@ -14,10 +14,12 @@
 #include "ui/forms/file_browser_utils.hpp"
 #include "ui/forms/message_box.hpp"
 
+#include <ui/dock_layout_spec.hpp>
 #include <ui/ui_importer.hpp>
 
 #include <algorithm>
 #include <cctype>
+#include <functional>
 #include <iomanip>
 #include <sstream>
 
@@ -27,7 +29,7 @@ using namespace bison;
 
 namespace {
 
-// Space-saved percentage for the View Contents table's Ratio column, e.g.
+// Space-saved percentage for the Contents panel table's Ratio column, e.g.
 // compressed to 25% of the original size shows as "75%". "-" for a
 // zero-byte (or directory) entry, where a ratio is meaningless.
 std::string format_ratio(std::uint64_t uncompressed, std::uint64_t compressed) {
@@ -73,24 +75,37 @@ std::string strip_zip_suffix(const std::string& name) {
 
 } // namespace
 
-// ── UI layout ─────────────────────────────────────────────────────────────────
+// ── UI layouts ────────────────────────────────────────────────────────────────
 //
-// Single-panel client-machine browser -- mirrors tree.cpp's local
-// (left) panel. file_table's "flags": "Resizable|Sortable|RowBg|BordersH|
-// ScrollY" -- unlike mc's tables, no BordersV (this is a single, full-width
-// panel with no sibling table to visually separate from). InputText
-// EnterReturnsTrue so the path bar only fires "changed" on Enter.
+// The tool is split into three dockable panels -- Files, Contents and
+// Actions -- seeded into a first-run arrangement by on_init()'s
+// set_default_dock_layout() call, the same multi-window pattern top, pix
+// and the dev modules use. The user can re-dock, tab or float any of them;
+// imgui.ini owns the arrangement after the first run. Each Window keeps a
+// width/height: the size a panel restores to when dragged out of the dock.
 //
-// file_table carries "height": -1 rather than a fixed "outer_height", the
-// same mc.cpp left_table_/right_table_ technique its own kLayout comment
-// explains: "main" (this Window's sole direct child) hands path_input/
-// selected_label/btn_sep/btn_row/status_sep/status/progress_bar their own
+// Files (the form's main root, internal_root_key_): a single client-machine
+// browser -- mirrors tree.cpp's local (left) panel. file_table's "flags":
+// "Resizable|Sortable|RowBg|Borders|ScrollY". InputText EnterReturnsTrue so
+// the path bar only fires "changed" on Enter. file_table carries
+// "height": -1 rather than a fixed "outer_height" (mc.cpp's left_table_/
+// right_table_ technique): "main" hands path_input/selected_label their
 // natural size first, then gives file_table whatever's left, so the table
-// fills the window and only btn_row/status/progress_bar stay pinned to the
-// bottom regardless of how tall the window is resized.
-static constexpr const char* kLayout = R"json({
+// fills the panel.
+//
+// Contents: the read-only listing of the archive last viewed (via View
+// Contents or double-clicking a .zip), filled by do_show_contents(). Its
+// flags are the file table's minus Sortable -- this table has no
+// click-to-sort handler, same omission tree.cpp's own comment calls out for
+// FileDialog's table. contents_table's "height": -1 fills the panel below
+// the summary label.
+//
+// Actions: the compress/extract/view/refresh buttons, the status label and
+// the progress bar.
+static constexpr const char* kFilesLayout = R"json({
   "type": "Window",
-  "width": 640, "height": 520,
+  "title": "Files",
+  "width": 520, "height": 440,
   "closable": true,
   "children": {
     "main": {
@@ -106,8 +121,46 @@ static constexpr const char* kLayout = R"json({
             "col_size":     { "type": "TableColumn", "label": "Size", "flags": "WidthFixed", "init_width": 90, "column_id": 1 },
             "col_modified": { "type": "TableColumn", "label": "Modified", "flags": "WidthFixed", "init_width": 130, "column_id": 2 }
           }
-        },
-        "btn_sep": { "type": "Separator" },
+        }
+      }
+    }
+  }
+})json";
+
+static constexpr const char* kContentsLayout = R"json({
+  "type": "Window",
+  "title": "Contents",
+  "width": 480, "height": 440,
+  "closable": true,
+  "children": {
+    "vbox": {
+      "type": "VerticalLayout",
+      "children": {
+        "summary": { "type": "Label", "text": "No archive open. Double-click a .zip or use View Contents." },
+        "contents_table": {
+          "type": "Table", "columns": 4, "headers": true,
+          "flags": "Resizable|RowBg|BordersH|ScrollY", "outer_width": 0, "height": -1,
+          "children": {
+            "col_name":       { "type": "TableColumn", "label": "Name" },
+            "col_size":       { "type": "TableColumn", "label": "Size", "flags": "WidthFixed", "init_width": 80 },
+            "col_compressed": { "type": "TableColumn", "label": "Compressed", "flags": "WidthFixed", "init_width": 90 },
+            "col_ratio":      { "type": "TableColumn", "label": "Ratio", "flags": "WidthFixed", "init_width": 70 }
+          }
+        }
+      }
+    }
+  }
+})json";
+
+static constexpr const char* kActionsLayout = R"json({
+  "type": "Window",
+  "title": "Actions",
+  "width": 1000, "height": 120,
+  "closable": true,
+  "children": {
+    "vbox": {
+      "type": "VerticalLayout",
+      "children": {
         "btn_row": {
           "type": "HorizontalLayout",
           "spacing": 8,
@@ -118,7 +171,6 @@ static constexpr const char* kLayout = R"json({
             "btn_refresh":  { "type": "Button", "label": "Refresh", "width": 90, "height": 32 }
           }
         },
-        "status_sep": { "type": "Separator" },
         "status": { "type": "Label", "text": "Ready." },
         "progress_bar": { "type": "ProgressBar", "value": 0.0, "label": "", "width": -1 }
       }
@@ -150,57 +202,18 @@ static constexpr const char* kPromptLayout = R"({
 // a raw element tree owned directly by this form -- see
 // show_overwrite_confirm() below.
 
-// Read-only archive listing. flags "Resizable|RowBg|BordersH|ScrollY" is
-// the main table's flags minus Sortable -- this table has no click-to-sort
-// handler, same omission tree.cpp's own comment calls out for FileDialog's
-// table.
-//
-// Resizable (no "NoResize"), with contents_table's "height": -1 absorbing
-// any extra height the user resizes into -- the same resizable-window /
-// stretch-content-pinning-the-footer pattern as properties_dialog.cpp's
-// kLayout (src/ui/forms/properties_dialog.cpp): "vbox" (this Window's sole
-// direct child) hands "summary"/"sep"/"btn_row" their own natural size
-// first, then gives contents_table whatever's left, so a long archive
-// listing scrolls inside its own table instead of pushing "btn_row" off the
-// bottom of the window.
-static constexpr const char* kContentsLayout = R"json({
-  "type": "Window", "title": "", "modal": true, "flags": "NoCollapse",
-  "width": 480, "height": 420,
-  "children": {
-    "vbox": {
-      "type": "VerticalLayout",
-      "children": {
-        "summary": { "type": "Label", "text": "" },
-        "contents_table": {
-          "type": "Table", "columns": 4, "headers": true,
-          "flags": "Resizable|RowBg|BordersH|ScrollY", "outer_width": 0, "height": -1,
-          "children": {
-            "col_name":       { "type": "TableColumn", "label": "Name" },
-            "col_size":       { "type": "TableColumn", "label": "Size", "flags": "WidthFixed", "init_width": 80 },
-            "col_compressed": { "type": "TableColumn", "label": "Compressed", "flags": "WidthFixed", "init_width": 90 },
-            "col_ratio":      { "type": "TableColumn", "label": "Ratio", "flags": "WidthFixed", "init_width": 70 }
-          }
-        },
-        "sep": { "type": "Separator" },
-        "btn_row": { "type": "HorizontalLayout", "spacing": 8, "align": "right", "children": {
-          "btn_close": { "type": "Button", "label": "Close", "width": 100, "height": 32 }
-        } }
-      }
-    }
-  }
-})json";
-
 // ── zip ──────────────────────────────────────────────────────────────────
 
 zip::zip(dynamic&& base) : form(std::move(base)) {}
 
-void zip::on_init() {
-  internal_root_key_ = next_available_key("__zip_");
+zip::~zip() {
+  remove_panel_objects();
+}
 
-  auto tree = import_json(kLayout);
-
-  auto* title_f = findField<std::string>("title"_key);
-  (*tree[""])["title"_key] = title_f ? *title_f : std::string{"Zip"};
+void zip::build_window(
+    const char* layout_json, const std::string& root_key, key_t& window_id_out,
+    const std::function<void(ui_tree&)>& wire) {
+  auto tree = import_json(layout_json);
 
   auto& c = ctx();
   for (auto& [key, elem] : tree) {
@@ -208,29 +221,84 @@ void zip::on_init() {
     c.put_object(id, elem);
     elem["__wish_id"_key] = id;
   }
+  window_id_out = (*tree[""])["__wish_id"_key].as<key_t>();
+  wire(tree);
 
-  window_id_ = (*tree[""])["__wish_id"_key].as<key_t>();
-  tree.with("main.path_input", [&](const auto& e) {
-    path_input_ptr_ = e;
-    path_input_id_ = wish_id_of(e);
-  });
-  tree.with("main.selected_label", [&](const auto& e) { selected_label_ptr_ = e; });
-  tree.with("main.file_table", [&](const auto& e) {
-    file_table_ptr_ = e;
-    file_table_id_ = wish_id_of(e);
-  });
-  tree.with("main.btn_row.btn_compress", [&](const auto& e) { btn_compress_id_ = wish_id_of(e); });
-  tree.with("main.btn_row.btn_extract", [&](const auto& e) { btn_extract_id_ = wish_id_of(e); });
-  tree.with("main.btn_row.btn_view", [&](const auto& e) { btn_view_id_ = wish_id_of(e); });
-  tree.with("main.btn_row.btn_refresh", [&](const auto& e) { btn_refresh_id_ = wish_id_of(e); });
-  tree.with("main.status", [&](const auto& e) { status_label_ptr_ = e; });
-  tree.with("main.progress_bar", [&](const auto& e) { progress_ptr_ = e; });
+  ui_element_ptr root_ptr = tree[""];
+  sess().ui_objects.merge(std::move(tree), root_key);
+  // The main root's top-level registration and "__path__" are handled by
+  // form::init() once on_init() returns; secondary panels register here.
+  if (root_key != internal_root_key_) {
+    sess().top_level_objects[key_t{root_key}] = root_ptr;
+    sess().top_level_handlers[key_t{root_key}] = this;
+    (*root_ptr)["__path__"_key] = root_key;
+  }
+}
 
-  sess().ui_objects.merge(std::move(tree), internal_root_key_);
+void zip::on_init() {
+  internal_root_key_ = next_available_key("__zip_");
+  contents_root_key_ = internal_root_key_ + "_contents";
+  actions_root_key_ = internal_root_key_ + "_actions";
+
+  auto* title_f = findField<std::string>("title"_key);
+  const std::string title = title_f ? *title_f : std::string{"Zip"};
+
+  build_window(kFilesLayout, internal_root_key_, window_id_, [&](ui_tree& tree) {
+    tree.with("main.path_input", [&](const auto& e) {
+      path_input_ptr_ = e;
+      path_input_id_ = wish_id_of(e);
+    });
+    tree.with("main.selected_label", [&](const auto& e) { selected_label_ptr_ = e; });
+    tree.with("main.file_table", [&](const auto& e) {
+      file_table_ptr_ = e;
+      file_table_id_ = wish_id_of(e);
+    });
+  });
+
+  build_window(kContentsLayout, contents_root_key_, contents_window_id_, [&](ui_tree& tree) {
+    tree.with("vbox.summary", [&](const auto& e) { contents_summary_ptr_ = e; });
+    tree.with("vbox.contents_table", [&](const auto& e) { contents_table_ptr_ = e; });
+  });
+
+  build_window(kActionsLayout, actions_root_key_, actions_window_id_, [&](ui_tree& tree) {
+    tree.with("vbox.btn_row.btn_compress", [&](const auto& e) { btn_compress_id_ = wish_id_of(e); });
+    tree.with("vbox.btn_row.btn_extract", [&](const auto& e) { btn_extract_id_ = wish_id_of(e); });
+    tree.with("vbox.btn_row.btn_view", [&](const auto& e) { btn_view_id_ = wish_id_of(e); });
+    tree.with("vbox.btn_row.btn_refresh", [&](const auto& e) { btn_refresh_id_ = wish_id_of(e); });
+    tree.with("vbox.status", [&](const auto& e) { status_label_ptr_ = e; });
+    tree.with("vbox.progress_bar", [&](const auto& e) { progress_ptr_ = e; });
+  });
 
   // Unlike mc's sandbox panel, this form has no filesystem of its
   // own to populate the table from -- it starts empty until the client's
   // initial update_listing() call arrives.
+
+  // Seed the first-run arrangement inside the tool's own nested dockspace
+  // (titled with the form's "title" field): an Actions strip along the
+  // bottom ~19%, and above it Files on the left beside Contents on the
+  // right. Owned by imgui.ini after the first run (see docs/dock-layout.md);
+  // bump the version arg to layout() if it changes.
+  {
+    using namespace dock;
+    set_default_dock_layout(viewport(
+        "zip_dock", title,
+        layout(
+            split(
+                dir::down, 0.19f, area({actions_root_key_}),
+                split(dir::left, 0.55f, area({internal_root_key_}), area({contents_root_key_}))),
+            /*version=*/1, /*target=*/"zip_dock")));
+  }
+}
+
+void zip::remove_panel_objects() {
+  // Keys are forgotten once removed: next_available_key() may hand this
+  // form's freed internal_root_key_ to a new Zip instance, whose panels
+  // would then reuse these exact secondary keys (see the same reasoning in
+  // form::remove_objects_at()).
+  for (std::string* key : {&contents_root_key_, &actions_root_key_}) {
+    remove_objects_at(*key);
+    key->clear();
+  }
 }
 
 // ── Table population and sorting ─────────────────────────────────────────────
@@ -278,6 +346,9 @@ void zip::fill_contents_table(const ui_element_ptr& table, const std::vector<arc
   if (!children_p || !*children_p)
     return;
   auto& children = *children_p;
+  // Drop the previous archive's rows (indexed); the named TableColumn
+  // children remain.
+  children->clear();
 
   int32_t idx = 0;
   for (auto& entry : entries) {
@@ -475,7 +546,7 @@ dynamic zip::do_show_contents(const dynamic& args) {
     });
   }
 
-  show_contents_dialog(name, archive_entries);
+  show_contents_panel(name, archive_entries);
   return dynamic{};
 }
 
@@ -654,12 +725,9 @@ void zip::show_overwrite_confirm(
       });
 }
 
-// ── View Contents dialog ──────────────────────────────────────────────────────
+// ── Contents panel ────────────────────────────────────────────────────────────
 
-void zip::show_contents_dialog(const std::string& zip_name, const std::vector<archive_entry>& entries) {
-  auto tree = import_json(kContentsLayout);
-  (*tree[""])["title"_key] = "Contents: " + zip_name;
-
+void zip::show_contents_panel(const std::string& zip_name, const std::vector<archive_entry>& entries) {
   std::uint64_t total_uncompressed = 0, total_compressed = 0;
   for (auto& e : entries) {
     if (!e.is_dir) {
@@ -669,62 +737,22 @@ void zip::show_contents_dialog(const std::string& zip_name, const std::vector<ar
   }
 
   std::ostringstream summary;
-  summary << entries.size() << (entries.size() == 1 ? " entry, " : " entries, ") << format_bytes(total_uncompressed)
-          << " uncompressed / " << format_bytes(total_compressed) << " compressed";
-  tree.with("vbox.summary", [&](const auto& e) { e["text"_key] = summary.str(); });
+  summary << zip_name << ": " << entries.size() << (entries.size() == 1 ? " entry, " : " entries, ")
+          << format_bytes(total_uncompressed) << " uncompressed / " << format_bytes(total_compressed)
+          << " compressed";
+  if (contents_summary_ptr_)
+    contents_summary_ptr_["text"_key] = summary.str();
 
-  auto& c = ctx();
-  for (auto& [key, elem] : tree) {
-    key_t id = rmi::shared::generate_id();
-    c.put_object(id, elem);
-    elem["__wish_id"_key] = id;
-  }
-
-  contents_window_id_ = (*tree[""])["__wish_id"_key].as<key_t>();
-  ui_element_ptr contents_table_ptr;
-  tree.with("vbox.contents_table", [&](const auto& e) { contents_table_ptr = e; });
-  tree.with("vbox.btn_row.btn_close", [&](const auto& e) { contents_close_id_ = wish_id_of(e); });
-
-  // Unlike show_prompt()/show_overwrite_confirm() (only ever called from
-  // on_event(), outside dispatch), this is only ever reached from
-  // do_show_contents() -- an RMI method, which runs *inside* dispatch with
-  // the session wlock already held. Acquiring context_wlock here too would
-  // self-deadlock (std::shared_mutex is non-recursive) -- use sess()
-  // instead, same as on_init()'s own sess().ui_objects.merge() call.
-  context& s = sess();
-  for (int i = 0;; ++i) {
-    std::string candidate = "__zip_contents_" + std::to_string(i);
-    if (s.top_level_objects.find(key_t{candidate}) == s.top_level_objects.end()) {
-      contents_root_key_ = candidate;
-      break;
-    }
-  }
-
-  s.ui_objects.merge(std::move(tree), contents_root_key_);
-  auto it = s.ui_objects.find(contents_root_key_);
-  if (it != s.ui_objects.end()) {
-    s.top_level_objects[key_t{contents_root_key_}] = it->second;
-    (*it->second)["__path__"_key] = contents_root_key_;
-    s.top_level_handlers[key_t{contents_root_key_}] = this;
-  }
-
-  fill_contents_table(contents_table_ptr, entries);
-}
-
-void zip::request_close_contents() {
-  request_close_at(contents_root_key_);
-}
-
-void zip::remove_contents_objects() {
-  remove_objects_at(contents_root_key_);
-  contents_root_key_.clear();
+  fill_contents_table(contents_table_ptr_, entries);
 }
 
 // ── Event routing ─────────────────────────────────────────────────────────────
 
 void zip::on_event(key_t id, key_t event, const dynamic& payload) {
-  if (id == window_id_ && event == "closed"_key) {
+  // Any panel's X button -> tear the whole tool down (top/pix's rule).
+  if (event == "closed"_key && (id == window_id_ || id == contents_window_id_ || id == actions_window_id_)) {
     emit("closed"_key);
+    remove_panel_objects();
     remove_internal_objects();
     return;
   }
@@ -854,17 +882,6 @@ void zip::on_event(key_t id, key_t event, const dynamic& payload) {
       return;
     }
   }
-
-  if (!contents_root_key_.empty()) {
-    if (id == contents_window_id_ && event == "closed"_key) {
-      remove_contents_objects();
-      return;
-    }
-    if (id == contents_close_id_ && event == "clicked"_key) {
-      request_close_contents();
-      return;
-    }
-  }
 }
 
 // ── Registration ──────────────────────────────────────────────────────────────
@@ -895,7 +912,7 @@ void register_zip() {
       field{
           std::string{"Ready."},
           attr<DisplayName>("Status"),
-          attr<Description>("Text shown in the status bar at the bottom of the window."),
+          attr<Description>("Text shown in the Actions panel's status line."),
           attr<Category>("Data")});
 
   proto->addField(

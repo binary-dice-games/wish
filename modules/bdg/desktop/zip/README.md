@@ -3,14 +3,20 @@
 A zip/unzip tool for the client's local filesystem: browse a directory,
 compress one or more selected files/folders into a `.zip`, extract a
 selected `.zip` into a folder, and view an archive's contents (name, size,
-compressed size, ratio) without extracting it. The file table fills the
-window (mc/top-style stretch layout) and supports mc-style multi-row
-selection (plain click, Ctrl+click, Shift+click/drag); a progress bar at
-the bottom of the window tracks the current compress/extract operation
-while the status label names the file currently being processed.
+compressed size, ratio) without extracting it. Laid out as three dockable
+panels inside its own nested "Zip" dockspace (see
+[docs/dock-layout.md](../../../../docs/dock-layout.md)): **Files** (path
+bar and file table, with mc-style multi-row selection: plain click,
+Ctrl+click, Shift+click/drag), **Contents** (the archive last viewed via
+View Contents or a double-click), and **Actions** (Compress, Extract, View
+Contents, Refresh, the status line, and a progress bar tracking the current
+compress/extract while the status names the file being processed). The
+first run seeds Files beside Contents with Actions along the bottom;
+rearrange freely afterwards (Shift+drag to re-dock). Closing any panel
+closes the tool.
 
 - **server/**: `Zip` form (`register_zip()`), a `bdg::wish::form`
-  subclass owning the window/browser/table and all selection and
+  subclass owning the three panels and all selection and
   compress/extract/view-contents *UI* logic. It has no filesystem access of
   its own — every file it browses lives on the client's machine — so it
   emits `on_navigate`, `on_compress_requested`, `on_extract_requested`, and
