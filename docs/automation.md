@@ -95,6 +95,17 @@ gotcha you hit and didn't record is one the next agent will hit again.
   `sys.path.insert(0, "<repo>/bindings/python")` (or `WISH_LIB=...` if the
   shared library isn't under the default `<repo>/build/`) before `import
   wish`.
+- **Python `playwright` may not be pre-installed either** (seen 2026-10 in a
+  Claude Code cloud container: `ModuleNotFoundError: No module named
+  'playwright'`, although Chromium was present under
+  `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`). Install it into a scratch
+  venv (`python3 -m venv venv && venv/bin/pip install playwright`), but
+  **pin the release whose bundled Chromium revision matches the directory
+  in `/opt/pw-browsers`** (e.g. `chromium-1194` → `playwright==1.56.0`);
+  the latest release looks for a newer revision and fails with
+  "Executable doesn't exist ... run playwright install". The revision a
+  release expects is in
+  `site-packages/playwright/driver/package/browsers.json`.
 - **`pytest` is not pre-installed**, and `pip install pytest` fails under
   this environment's PEP 668 "externally managed environment" protection
   (`pip install --break-system-packages` works but modifies the shared
