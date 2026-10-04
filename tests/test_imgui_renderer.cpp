@@ -4056,3 +4056,143 @@ TEST_F(ImguiRendererTest, TooltipNotShownWhenElementNotHovered) {
       });
   EXPECT_EQ(tw, nullptr);
 }
+
+// ── Window.dock_target / focus_request / "focused", TextEditor go-to ─────────
+
+namespace {
+
+// An embedded "nested" viewport like dock::viewport(): a Toolbar strip along
+// the top and, below it, an *empty* DockArea -- the dockspace's central
+// node, which a Window with "dock_target" docks into on first use.
+bdg::wish::ui_element_ptr make_shell_with_empty_central(const std::string& id, const std::string& toolbar_path) {
+  using namespace bdg::wish::dock;
+  return viewport(id, "Shell",
+      layout(split(dir::up, 0.2f, area({toolbar_path}), area({})), /*version=*/1, /*target=*/id));
+}
+
+bdg::wish::ui_element_ptr make_target_window(const char* title, const char* path, const std::string& target) {
+  auto win = make_docked_window(title, path);
+  (*win)["dock_target"_key] = target;
+  return win;
+}
+
+} // namespace
+
+TEST_F(ImguiRendererTest, DockTargetWindowDocksIntoEmptyCentralNodeOfNamedViewport) {
+  ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+  ImGuiID outer = ImHashStr("DockTarget_Outer1");
+
+  auto shell = make_shell_with_empty_central("dt1_dock", "dt1_toolbar");
+  auto toolbar = make_docked_window("Toolbar", "dt1_toolbar");
+  auto doc = make_target_window("Doc", "dt1_doc", "dt1_dock");
+  drive_embedded_frames(*renderer_, *sess_, outer, {shell, toolbar, doc}, 20);
+
+  auto* shell_w = ImGui::FindWindowByName("Shell###dt1_dock");
+  auto* tb = ImGui::FindWindowByName("Toolbar###dt1_toolbar");
+  auto* d = ImGui::FindWindowByName("Doc###dt1_doc");
+  ASSERT_NE(shell_w, nullptr);
+  ASSERT_NE(tb, nullptr);
+  ASSERT_NE(d, nullptr);
+  ASSERT_TRUE(d->DockIsActive);
+
+  ImGuiID nested = ImHashStr("dt1_dock", 0, shell_w->ID);
+  ImGuiDockNode* central = ImGui::DockBuilderGetCentralNode(nested);
+  ASSERT_NE(central, nullptr);
+  EXPECT_EQ(d->DockId, central->ID);   // the empty DockArea's node...
+  EXPECT_NE(d->DockId, tb->DockId);    // ...not the toolbar's
+}
+
+TEST_F(ImguiRendererTest, DockTargetWithoutThatViewportFallsBackToAmbient) {
+  ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+  ImGuiID outer = ImHashStr("DockTarget_Outer2");
+
+  auto doc = make_target_window("Doc", "dt2_doc", "no_such_dock");
+  drive_embedded_frames(*renderer_, *sess_, outer, {doc}, 8);
+
+  auto* d = ImGui::FindWindowByName("Doc###dt2_doc");
+  ASSERT_NE(d, nullptr);
+  ASSERT_NE(d->DockNode, nullptr);
+  EXPECT_EQ(ImGui::DockNodeGetRootNode(d->DockNode)->ID, outer);
+}
+
+TEST_F(ImguiRendererTest, FocusRequestSelectsThatDockedTab) {
+  ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+  ImGuiID outer = ImHashStr("DockTarget_Outer3");
+
+  auto shell = make_shell_with_empty_central("dt3_dock", "dt3_toolbar");
+  auto toolbar = make_docked_window("Toolbar", "dt3_toolbar");
+  auto a = make_target_window("A", "dt3_a", "dt3_dock");
+  auto b = make_target_window("B", "dt3_b", "dt3_dock");
+  drive_embedded_frames(*renderer_, *sess_, outer, {shell, toolbar, a, b}, 20);
+
+  auto* wa = ImGui::FindWindowByName("A###dt3_a");
+  auto* wb = ImGui::FindWindowByName("B###dt3_b");
+  ASSERT_NE(wa, nullptr);
+  ASSERT_NE(wb, nullptr);
+  ASSERT_EQ(wa->DockNode, wb->DockNode); // tabbed together in the central node
+  ImGuiDockNode* node = wa->DockNode;
+
+  // Whichever tab is showing, request the other one.
+  bool a_visible = node->VisibleWindow == wa;
+  auto& hidden = a_visible ? b : a;
+  ImGuiWindow* hidden_w = a_visible ? wb : wa;
+  (*hidden)["focus_request"_key] = int32_t{1};
+  drive_embedded_frames(*renderer_, *sess_, outer, {shell, toolbar, a, b}, 4);
+  EXPECT_EQ(node->VisibleWindow, hidden_w);
+}
+
+TEST_F(ImguiRendererTest, WindowEmitsFocusedWhenItGainsFocus) {
+  std::vector<bdg::bison::key_t> events;
+  sess_->emit_event = [&](bdg::bison::key_t, bdg::bison::key_t ev, dynamic) { events.push_back(ev); };
+  auto win = make_docked_window("Focus", "fw_win");
+  auto other = make_docked_window("Other", "fw_other");
+
+  auto frame = [&](const char* focus) {
+    renderer_->begin_frame();
+    if (focus)
+      ImGui::SetWindowFocus(focus);
+    renderer_->render_node(*win, *sess_);
+    renderer_->render_node(*other, *sess_);
+    renderer_->end_frame();
+    for (auto& ev : sess_->pending_events)
+      sess_->emit_event(ev.id, ev.event_name, ev.payload);
+    sess_->pending_events.clear();
+  };
+  frame(nullptr);
+  frame("Other###fw_other");
+  events.clear();
+  frame("Focus###fw_win");
+  frame(nullptr); // staying focused does not fire again
+  EXPECT_EQ(std::count(events.begin(), events.end(), "focused"_key), 1);
+}
+
+TEST_F(ImguiRendererTest, TextEditorGotoRequestScrollsToTheRequestedLine) {
+  std::string contents;
+  for (int i = 0; i < 200; ++i)
+    contents += "line " + std::to_string(i) + "\n";
+  auto map = make_text_editor_map(sess_->resource_dir, "goto.txt", contents, "");
+  (*map[""])["__wish_id"_key] = bdg::bison::key_t{"goto.txt"};
+
+  auto scroll_after = [&](int frames) {
+    float y = -1.0f;
+    for (int frame = 0; frame < frames; ++frame) {
+      renderer_->begin_frame();
+      in_window([&] {
+        renderer_->render_node(*map[""], *sess_);
+        auto& children = ImGui::GetCurrentWindow()->DC.ChildWindows;
+        if (!children.empty())
+          y = children.back()->Scroll.y;
+      });
+      renderer_->end_frame();
+    }
+    return y;
+  };
+
+  EXPECT_EQ(scroll_after(3), 0.0f); // no request yet: stays at the top
+
+  (*map[""])["goto_line"_key] = int32_t{150};
+  (*map[""])["goto_column"_key] = int32_t{0};
+  (*map[""])["goto_length"_key] = int32_t{4};
+  (*map[""])["goto_request"_key] = int32_t{1};
+  EXPECT_GT(scroll_after(3), 0.0f);
+}

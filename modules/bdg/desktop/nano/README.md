@@ -2,17 +2,40 @@
 
 <img src="nano.png" alt="nano" height="200"/>
 
-Multi-file, syntax-highlighted text editor. The server-side form never
-touches the client's local filesystem — it only edits files already
-uploaded into its session sandbox; the client-side runner bridges the two
-via `upload_file`/`download_file`.
+Multi-file, syntax-highlighted text editor laid out as dockable panels
+inside its own nested "Nano" dockspace (see
+[docs/dock-layout.md](../../../../docs/dock-layout.md)):
 
-- **server/**: `Nano` form (`register_nano()`) — owns tabs and the
-  text editor UI; files live in the session's sandboxed resource directory.
+- **Toolbar** — Open, New, Save (the current file) and Find, plus the name of
+  the current file. Its X closes the editor (asking first about unsaved
+  files).
+- **One window per open file** — a language combo above the editor, titled
+  with the file name (`" *"` while unsaved). Files open as tabs in the middle
+  "documents" area; drag a tab out to put two files side by side, split them,
+  or float one (Shift+drag to re-dock). A file window's X closes that file.
+- **Search** — modeled on Notepad++'s Find dialog and Search results panel:
+  *Find what*, *Match whole word only*, *Match case*, *Search Mode* (Normal /
+  Extended `\n \r \t \0 \xHH` / Regular expression), and *Find All in
+  Current Document*, *Find All in All Opened Documents*, *Count*, *Clear
+  Results*. Results list one row per matching line (File, Line, Text) under a
+  `Search "x" (N hits in M files of K searched)` summary; click a row to jump
+  to that match in its file. Its X hides the panel; Find brings it back.
+
+The **current file** (what Save, Count and *Find All in Current Document*
+act on) is the file window you last focused, or the one opened last.
+
+The server-side form never touches the client's local filesystem — it only
+edits files already uploaded into its session sandbox; the client-side
+runner bridges the two via `upload_file`/`download_file`.
+
+- **server/**: `Nano` form (`register_nano()`) — owns the panels; files live
+  in the session's sandboxed resource directory, and the editors write every
+  edit through to it, which is also what Search reads. `find(...)` runs a
+  search programmatically.
 - **client/**: `run_nano(wish_app_host&)`, self-registered as the
   `"nano"` embedded app — reacts to the form's high-level events
   (open/new/save/confirm-close) by moving bytes into and out of the
   sandbox, showing a `MessageBox` to confirm saving unsaved files before
-  closing. Accepts an optional startup file path via `app_args()`
-  (`wish client --run=nano -- path/to/file`).
+  closing. Opens any files given on the command line, each in its own window
+  (`wish client --run=nano -- a.cpp b.md`).
 - **resources/**: none.

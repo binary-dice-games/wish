@@ -321,6 +321,7 @@ void imgui_renderer::begin_frame() {
   // first: an opt-in server-frame host wrapper (`dockspace_renderer`,
   // `host_renderer`) or a `DockSpaceViewport` element in a session's tree.
   ambient_dockspace_id_ = 0;
+  named_dockspaces_.clear();
   // Register the [WishDockLayout] settings handler before the first
   // NewFrame() so it participates in the initial imgui.ini load (idempotent).
   install_dock_layout_settings_handler();

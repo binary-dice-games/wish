@@ -8,6 +8,8 @@
 /// matching the render_fn typedef in imgui_renderer.cpp.
 #include "imgui_ui_renderer.hpp"
 
+#include "imgui_dock_layout.hpp"
+
 #ifdef WISH_IMGUI_ENABLED
 
 #include <context/style_service.hpp>
@@ -307,10 +309,36 @@ void render_window(imgui_renderer& r, const ui_element& node0, const context& s)
   // choice is remembered by imgui.ini. An explicit pos_x/pos_y or a
   // NoDocking flag opts out; so does the absence of any dockspace this frame
   // (ambient_dockspace_id() == 0), leaving placement to ImGui.
-  if (!has_explicit_pos && !(fl & ImGuiWindowFlags_NoDocking) && r.ambient_dockspace_id() != 0)
-    ImGui::SetNextWindowDockID(r.ambient_dockspace_id(), ImGuiCond_FirstUseEver);
+  //
+  // A "dock_target" naming a DockSpaceViewport rendered this frame (see
+  // imgui_renderer::named_dockspace_id()) takes precedence: the window docks
+  // into that dockspace's central node -- the leaf every DockLayout split
+  // leaves on its far side, which ImGui keeps even while empty -- so a
+  // window an app creates at runtime (nano's one-per-file documents) lands
+  // in the app's own nested dockspace rather than the outer host one.
+  if (!has_explicit_pos && !(fl & ImGuiWindowFlags_NoDocking)) {
+    ImGuiID dock_id = r.ambient_dockspace_id();
+    if (const std::string& target = node.dock_target_ref(); !target.empty()) {
+      if (ImGuiID named = r.named_dockspace_id(target); named != 0)
+        dock_id = dock_central_node_id(named);
+    }
+    if (dock_id != 0)
+      ImGui::SetNextWindowDockID(dock_id, ImGuiCond_FirstUseEver);
+  }
+
+  // "focus_request" changed since the last frame: bring the window to the
+  // front (selecting its tab when docked). Must precede Begin(): a window
+  // that is a hidden dock tab is not submitted far enough for anything
+  // inside it to run.
+  if (node.take_focus_request(node.focus_request(0)))
+    ImGui::SetNextWindowFocus();
 
   bool window_open = ImGui::Begin(iml.c_str(), p_open, ImGuiWindowFlags(fl));
+  // "focused": it (or one of its child windows, e.g. a TextEditor) just
+  // gained focus -- lets an app track which of several document windows
+  // is the current one.
+  if (node.just_focused(ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)))
+    enqueue_event(s, node.wish_id(), "focused"_key, dynamic{});
   // Begin()/BeginChild() are the only ImGui calls where a matching End() is
   // required regardless of the return value -- a collapsed/clipped window
   // still has a valid position/size to report, so this runs unconditionally
@@ -1631,6 +1659,10 @@ void render_dockspace_viewport(imgui_renderer& r, const ui_element& node0, const
   ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), dock_flags);
   // Un-positioned Window children dock here by default (see render_window).
   r.set_ambient_dockspace_id(dockspace_id);
+  // Lets a Window elsewhere in the tree target this dockspace by name (see
+  // Window.dock_target).
+  if (!id_stored.empty())
+    r.set_named_dockspace_id(id_stored, dockspace_id);
 
   // Non-Window children (e.g. MenuBar, or a DockLayout targeting this same
   // id -- see DockLayout.target's doc comment) are rendered inside the host

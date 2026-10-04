@@ -8,8 +8,8 @@
 /// events by driving the client's own local files through `upload_file` /
 /// `download_file`.
 ///
-/// A file to open at startup may be passed after `--` on the command line,
-/// e.g. `wish client --run=nano -- path/to/file` (see
+/// Files to open at startup may be passed after `--` on the command line,
+/// e.g. `wish client --run=nano -- a.cpp b.md` (see
 /// `wish_app_host::app_args()`).
 #include "modules/bdg/desktop/nano/client/nano.hpp"
 
@@ -233,10 +233,10 @@ void run_nano(wish_app_host& s) {
   // lambdas above (registered as this session's event handlers), which is
   // enough to keep the proxy usable for the whole session.
 
-  // `wish client --run=nano -- path/to/file`: open a file at startup.
-  // Only the first positional argument is used; extras are ignored.
-  if (const auto& app_args = s.app_args(); !app_args.empty()) {
-    fs::path local_path = fs::absolute(app_args[0]);
+  // `wish client --run=nano -- file [file...]`: open each file at startup,
+  // each in its own window.
+  for (const auto& arg : s.app_args()) {
+    fs::path local_path = fs::absolute(arg);
     if (fs::exists(local_path))
       upload_and_open(s, nano, files, local_path);
     else
@@ -254,7 +254,7 @@ struct nano_app_registrar {
         .organization = WISH_MODULE_BDG_DESKTOP_NANO_ORGANIZATION,
         .collection = WISH_MODULE_BDG_DESKTOP_NANO_COLLECTION,
         .description = "Multi-file, syntax-highlighted text editor",
-        .params = {{"file", "Path to a file to open at startup (optional)"}},
+        .params = {{"file...", "Paths of files to open at startup (optional)"}},
         .run = run_nano,
     });
   }

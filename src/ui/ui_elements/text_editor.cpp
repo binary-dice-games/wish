@@ -95,6 +95,39 @@ void register_text_editor() {
           attr<Description>("1-based source line marked with a current-execution arrow in the gutter. "
                             "0 means no current line."),
           attr<Category>("Debugging")});
+  proto->addField(
+      "goto_line"_rkey,
+      field{
+          int32_t{0},
+          attr<DisplayName>("Go-to Line"),
+          attr<Description>("1-based line a go-to request (see goto_request) moves the caret to."),
+          attr<Category>("Navigation")});
+  proto->addField(
+      "goto_column"_rkey,
+      field{
+          int32_t{0},
+          attr<DisplayName>("Go-to Column"),
+          attr<Description>("0-based character (not byte) offset within goto_line where the "
+                            "go-to selection starts."),
+          attr<Category>("Navigation")});
+  proto->addField(
+      "goto_length"_rkey,
+      field{
+          int32_t{0},
+          attr<DisplayName>("Go-to Length"),
+          attr<Description>("Characters to select from goto_column on goto_line; 0 just places "
+                            "the caret there."),
+          attr<Category>("Navigation")});
+  proto->addField(
+      "goto_request"_rkey,
+      field{
+          int32_t{0},
+          attr<DisplayName>("Go-to Request"),
+          attr<Description>("Change this value (e.g. increment it) after setting goto_line/"
+                            "goto_column/goto_length: the editor then selects that range, scrolls "
+                            "it to the middle of the view and takes keyboard focus. Applied once "
+                            "per change, the next time the editor renders."),
+          attr<Category>("Navigation")});
   (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Text Editor"));
   (*proto)[dynamic::CLASS].addAttribute(
       attr<Description>("A full-featured code/text editor backed by ImGuiColorTextEdit. "
