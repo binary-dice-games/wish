@@ -9,15 +9,15 @@
 /// form's `*_requested` events to it -- see server/docker.hpp for the full
 /// event contract.
 #include "docker.hpp"
-#include "docker_process.hpp"
 #include "docker_source.hpp"
+
+#include "modules/bdg/dev/common/frontend.hpp"
 
 #include "src/client/app_registry.hpp"
 #include "src/client/wish_app_host.hpp"
 
 #include "src/bison/bison.hpp"
 
-#include <iostream>
 #include <memory>
 
 namespace bdg::wish {
@@ -30,20 +30,19 @@ void run_docker(wish_app_host& s) {
   // git's `rev-parse --is-inside-work-tree` gate. `--format
   // '{{.Server.Version}}'` also confirms the *daemon* answered, not just
   // that the client binary exists.
-  auto check = docker::run_docker_cli({"version", "--format", "{{.Server.Version}}"});
+  auto check = dev::run_process({"docker", "version", "--format", "{{.Server.Version}}"});
   if (!check.ok()) {
-    std::cerr << "docker: cannot reach the Docker daemon"
-              << (check.stderr_text.empty() ? std::string{} : (": " + check.stderr_text)) << "\n";
-    s.signal_done();
+    dev::fail_startup(s, "docker: cannot reach the Docker daemon", check.stderr_text);
     return;
   }
 
-  auto proxy = std::make_shared<rmi::proxy::dynamic>(s.instantiate("wish"_key, "DockerFrontend"_key).get());
-  // Every handler below runs as a job on this worker's thread: running the
-  // tool inside an event handler would block the whole UI until it exits.
-  // Long commands get a modal progress dialog (common/command_worker.hpp).
-  auto worker = std::make_shared<dev::command_worker>(s, "Running docker");
-  worker->start();
+  // Every handler below runs as a job on the frontend's worker thread:
+  // running the tool inside an event handler would block the whole UI until
+  // it exits. Long commands get a modal progress dialog
+  // (common/command_worker.hpp).
+  const auto frontend = dev::open_frontend(s, "DockerFrontend"_key, "Running docker");
+  const auto& proxy = frontend.proxy;
+  const auto& worker = frontend.worker;
   auto source = std::make_shared<docker::docker_source>(proxy, worker);
 
   worker->on(*proxy, "refresh_requested"_key, [source](dynamic) { source->refresh_all(); });
@@ -73,11 +72,6 @@ void run_docker(wish_app_host& s) {
   });
   worker->on(*proxy, "inspect_requested"_key, [source](dynamic payload) {
     source->on_inspect_requested(payload.as<std::string>("kind"_key), payload.as<std::string>("id"_key));
-  });
-
-  proxy->onEvent("closed"_key, [&s, worker](dynamic) {
-    worker->shutdown();
-    s.signal_done();
   });
 
   // Initial population -- called directly here, now that every onEvent()

@@ -80,9 +80,9 @@ This directory owns:
   method, the `*_requested` events, the editable `kv_table` plumbing).
 - `client/curl.hpp`/`.cpp` — the client runner (`run_curl`, event wiring,
   app registration).
-- `client/curl_process.hpp`/`.cpp` — a non-interactive libuv-based "run
-  `curl <args>`, capture output" helper (unmodified copy of
-  `docker_process`'s shape).
+- `../common/` — the helpers every bdg/dev client shares (`process.hpp`'s
+  libuv `run_process()`, `tool_source.hpp` — `curl_source`'s base class
+  —, `frontend.hpp`, `text.hpp`).
 - `client/curl_source.hpp`/`.cpp` — every actual `curl` invocation,
   environment-variable substitution, and the local persistent store
   (Collections/Environments/History).
@@ -195,13 +195,17 @@ the three snapshot RMI calls (`update_collections`/`update_environments`/
 is the core path (§6). `push_request_builder()` is the "load into the
 builder" push, shared by History-Load and Collections-Load.
 
-### `curl_process::run_curl_cli()` (client)
+### Running `curl` (client)
 
-Byte-for-byte the same shape as `docker_process::run_docker_cli()` — see
-that module's DESIGN.md §3. No new subprocess capability was needed for
-this module: everything module-specific (headers-in-stdout, the `-w`
-sentinel trailer) lives in argv construction and output parsing in
-`curl_source`, not in the process helper.
+`curl_source` derives from `dev::tool_source` with `"curl"` as its tool and
+launcher, so `curl` runs through the shared `dev::run_process()` — see
+[../docker/DESIGN.md §3](../docker/DESIGN.md). No subprocess capability
+beyond it is needed: everything module-specific (headers-in-stdout, the
+`-w` sentinel trailer) lives in argv construction and output parsing in
+`curl_source`. A request runs on the `command_worker` captioned with just
+the method and URL (the argv carries credentials and headers) and with no
+output shown (stdout is the response itself); the Console row still
+records the whole one-line command.
 
 ## 4. Data Flow / Architecture
 
@@ -230,8 +234,8 @@ send_requested (client):
               -H "Authorization: Bearer <token>"] [--data-raw <body>]
               -w '\n__WISH_CURL_META__\t%{http_code}\t%{time_total}\t%{size_download}\n'
               <url with percent-encoded query params appended>
-  run_curl_cli(argv) -> process_result
-  push_command_log(argv, result)               -- Console trace
+  run(argv) on the command_worker -> process_result
+  log_command(caption(argv), result)            -- Console trace
   parse_curl_output(stdout)                     -- see §6
     -> update_response { ok, status_code, status_text, time_ms,
          size_bytes, headers, body_file, body_is_json }
@@ -333,8 +337,8 @@ The internal `ui_element` tree of every window is private.
   an actual HTTP response instead of a `docker ps` table. Considered and
   rejected: a two-temp-file approach (`-D <headers-file>`, `-o
   <body-file>`) — unnecessary complexity once `-i` already interleaves
-  headers and body deterministically on one stream, and `curl_process`
-  would have needed a new capability (temp-file plumbing) that this
+  headers and body deterministically on one stream, and the shared process
+  helper would have needed a new capability (temp-file plumbing) that this
   design avoids entirely.
 
 - **Query params are percent-encoded and appended into the URL by
@@ -446,8 +450,8 @@ The internal `ui_element` tree of every window is private.
 ## 7. Constraints and Invariants
 
 - The server form never touches `curl`, the filesystem, a socket, a
-  subprocess, or the local persistent store; `curl_process`/`curl_source`
-  (client-only) own all of that entirely.
+  subprocess, or the local persistent store; `curl_source` (client-only,
+  on the shared `common/` helpers) owns all of that entirely.
 - Every `curl` invocation is a real argv array through `uv_spawn` — no
   shell string is ever constructed.
 - `kv_table_add_row()`/`kv_table_remove_row()` never touch any row other
@@ -455,8 +459,6 @@ The internal `ui_element` tree of every window is private.
   clear a `kv_table`.
 - Every `update_*` handler that overwrites a `Combo` driving Body/Auth
   visibility must call the matching `apply_*_visibility()` afterward.
-- `run_curl_cli()`'s `binary` argument is never passed anything but the
-  default in production code — only tests supply it.
 - The local store is written synchronously (`save_store()`) after every
   mutation (send, save/delete/duplicate a request, new/delete an
   environment, save variables, clear history) — never batched or
@@ -479,7 +481,7 @@ Depends on:
 - `wish_app_host::upload_file()` — writes the response body into the
   session sandbox for the Response Body `TextEditor` (the nano/editor
   upload pattern).
-- `uv_a` (libuv) — `curl_process`'s subprocess helper; already linked
+- `uv_a` (libuv) — the shared `dev::run_process()` subprocess helper; already linked
   into module-client targets by `wish_finalize_app_modules()`.
 - No JSON library — a hand-rolled parser/writer scoped to this module's
   own store schema (§6); `curl`'s response body is shown verbatim
@@ -506,11 +508,10 @@ Depended on by: nothing else in wish; this is a leaf module.
   mirroring `test_docker.cpp`'s `ConfirmRemoveYesEmits...` pattern);
   closing any window emits `"closed"` and tears down every root. No
   network access required.
-- **`tests/test_curl_process.cpp`** — `run_curl_cli({"hello"}, "printf")`
-  captures stdout; `run_curl_cli({...}, "false")` reports a non-zero exit;
-  a missing binary reports `exit_code == -1`. Compiles
-  `client/curl_process.cpp` directly and links `uv_a`, exactly like
-  `tests/test_docker_process.cpp`. No network access required.
+- **`tests/test_dev_common.cpp`** — the shared `dev::run_process()` /
+  `dev::tool_source` plumbing (stdout capture, non-zero exits, a missing
+  binary reporting `exit_code == -1`, args with spaces staying one argv
+  entry, the Console trace row). No network access required.
 - **`tests/test_curl_response_parser.cpp`** — pure `parse_curl_output()`
   string-parsing cases, zero framework dependency: a body ending in its
   own trailing newline is preserved (the httpbin.org regression, see §6/
@@ -539,9 +540,9 @@ Depended on by: nothing else in wish; this is a leaf module.
 
 **Implemented and live-verified.** `server/curl.{hpp,cpp}`,
 `client/curl*.{hpp,cpp}`, `client/curl_response_parser.{hpp,cpp}`,
-`tests/test_curl*.cpp` are in place; all three test binaries (`test_curl`,
-`test_curl_process`, `test_curl_response_parser`) require neither network
-access nor a running server and all 29 cases pass. Two automation-module
+`tests/test_curl*.cpp` are in place; the test binaries (`test_curl`,
+`test_curl_response_parser`, plus the shared `test_dev_common`) require
+neither network access nor a running server. Two automation-module
 verification passes against real endpoints (see §9's "End-to-end" bullet)
 found and fixed four real bugs, all now covered by regression tests or
 documented fixes:

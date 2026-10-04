@@ -61,9 +61,9 @@ This directory owns:
   method, the `*_requested` events).
 - `client/kubectl.hpp`/`.cpp` — the client runner (`run_kubectl`, event
   wiring, app registration).
-- `client/kubectl_process.hpp`/`.cpp` — a non-interactive libuv-based "run
-  `kubectl <args>`, capture output" helper (near-verbatim copy of
-  `docker_process`).
+- `../common/` — the helpers every bdg/dev client shares (`process.hpp`'s
+  libuv `run_process()`, `tool_source.hpp` — `kubectl_source`'s base
+  class —, `frontend.hpp`, `text.hpp`); see [../docker/DESIGN.md §3](../docker/DESIGN.md).
 - `client/kubectl_source.hpp`/`.cpp` — every actual `kubectl` invocation,
   the tab-delimited `-o jsonpath` output parsing plus the small amount of
   client-side humanization `kubectl` doesn't do in that mode (§6), and the
@@ -178,23 +178,16 @@ outcome via `command_result` and then calls `refresh_all()`). `on_logs_requested
 / `update_describe` directly. Structurally identical to
 `docker_source` / `git_repo_source`.
 
-Every one-shot `kubectl` invocation goes through `run_logged()` (over
-`run_kubectl_cli()`), which — after running the command — pushes one
-`append_command_log` trace row (command, exit code, `ok`, 200-char output
-preview) to the **Console** window; `push_list()` calls the same
-`push_command_log()` helper inline. The one exception is the Logs "Follow"
-2 s re-poll thread, which calls `run_kubectl_cli()` directly so it does not
-flood the Console (`git`'s Log-window lesson). Mirrors
-`docker_source::run_logged()`.
-
-### `kubectl_process::run_kubectl_cli()` (client)
-
-Byte-for-byte the `docker_process::run_docker_cli()` design: `uv_loop_init`
-→ prepend `binary` (default `"kubectl"`) as argv[0] → stdout/stderr pipes →
-`uv_spawn` → `uv_run` (blocking) → collect exit code. The `binary` parameter
-exists only so `test_kubectl_process` can drive it with `printf` / `false`
-on a machine with no cluster. `uv_a` is already linked into every
-module-client target — no CMake change.
+`kubectl_source` derives from `dev::tool_source`
+(`modules/bdg/dev/common/tool_source.hpp`) with `"kubectl"` as its tool and
+launcher. Every one-shot `kubectl` invocation goes through
+`tool_source::run_logged()` (over the shared libuv `dev::run_process()`),
+which — after running the command — pushes one `append_command_log` trace
+row (command, exit code, `ok`, 200-char output preview) to the **Console**
+window; `tool_source::push_rows()` (the list snapshots) goes through it too.
+The exceptions are the Logs "Follow" 2 s re-poll thread and the Top poll,
+which call `dev::run_process()` directly so they do not flood the Console
+(`git`'s Log-window lesson). Same as `docker_source`.
 
 ## 4. Data Flow / Architecture
 
@@ -272,7 +265,7 @@ The internal `ui_element` tree of every window is private.
 ## 6. Design Decisions
 
 Everything in [../docker/DESIGN.md §6](../docker/DESIGN.md) applies verbatim
-(libuv over `terminal`, the `binary` test parameter, no background polling
+(the shared libuv runner over `terminal`, no background polling
 of the list windows, full clear-and-rebuild, per-rebuild-local row-key
 counter, `MessageBox` for destructive actions, inline toolbar fields,
 client-side "Follow" re-poll, the logs/describe staleness guard,
@@ -343,7 +336,7 @@ one always-on `Plot`-feeding background poll thread that uses
   one always-on poll.** `kubectl_source::start_stats_polling()` (called
   once from `run_kubectl()` after wiring) runs `kubectl top pods -A
   --no-headers` + `kubectl top nodes --no-headers` and calls `update_stats`.
-  `run_kubectl_cli()` directly, **never `run_logged()`** — a 10 s two-command
+  `dev::run_process()` directly, **never `run_logged()`** — a 10 s two-command
   re-poll would flood the Console (`git`'s Log-window lesson). Stops on
   `~kubectl_source` / RMI throw. metrics-server itself only updates every
   ~15 s, so 10 s is comfortably fast enough.
@@ -394,12 +387,11 @@ Depended on by: nothing else in wish; a leaf module.
   the aggregate, a later call with fewer entities drops the stale
   lines/rows, and an `error` field lands in the status label. No cluster
   required.
-- **`tests/test_kubectl_process.cpp`** — `run_kubectl_cli({"hello"},
-  "printf")` captures stdout; `{...}, "false"` reports a non-zero exit; a
-  missing binary reports `exit_code == -1`; a brace/quote-heavy jsonpath arg
-  survives verbatim. Compiles `client/kubectl_process.cpp` directly and
-  links `uv_a`, exactly like `test_docker_process`. 5 tests, no cluster
-  required.
+- **`tests/test_dev_common.cpp`** — the shared `dev::run_process()` /
+  `dev::tool_source` plumbing: stdout capture, non-zero exits, a missing
+  binary reporting `exit_code == -1`, a brace/quote-heavy jsonpath arg
+  surviving verbatim, the Console trace row and tab-separated list pushes.
+  Stub programs only, no cluster required.
 - **End-to-end (not yet done)**: the automation module against `wish client
   --run=kubectl` with a `kind` / `minikube` cluster and a fixture
   Deployment — see [PLAN.md](PLAN.md)'s Verification section.
@@ -408,8 +400,8 @@ Depended on by: nothing else in wish; a leaf module.
 
 **Implemented and unit-tested; live cluster verification pending.**
 `server/kubectl.{hpp,cpp}`, `client/kubectl*.{hpp,cpp}`,
-`tests/test_kubectl*.cpp` are in place; `test_kubectl` and
-`test_kubectl_process` pass.
+`tests/test_kubectl.cpp` are in place; `test_kubectl` and
+`test_dev_common` pass.
 
 - Pods / Deployments / Services / Nodes: four dockable list windows on the
   shared `list_window` / `build_list_window()` / `add_list_row()` path, each
@@ -421,8 +413,7 @@ Depended on by: nothing else in wish; a leaf module.
   `kubectl describe <kind>` (verbatim). Both carry a `name`/`namespace`
   staleness guard.
 - Console: a dockable FIFO-capped `Table` trace of every one-shot `kubectl`
-  invocation (`append_command_log`, fed by `kubectl_source::run_logged()` /
-  `push_command_log()`), green/red by exit status, "Copy Entry" / "Clear
+  invocation (`append_command_log`, fed by `tool_source::run_logged()`), green/red by exit status, "Copy Entry" / "Clear
   Console" per-row context menu. Neither the Follow re-poll thread nor the
   Top `kubectl top` poll is traced.
 - Top: a scrolling window with four `Plot`s (pod CPU millicores, pod memory

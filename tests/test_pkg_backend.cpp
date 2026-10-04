@@ -2,42 +2,12 @@
 #include <gtest/gtest.h>
 
 #include "modules/bdg/dev/pkg/client/pkg_backend.hpp"
-#include "modules/bdg/dev/pkg/client/pkg_process.hpp"
 
 using namespace bdg::wish::pkg;
 
 namespace {
 
 using argv_t = std::vector<std::string>;
-
-// ── run_pkg_cli() ───────────────────────────────────────────────────────────
-//
-// Exercised with stub programs (never a package manager) so these pass on
-// any machine.
-
-TEST(PkgProcessTest, RunsAWholeArgvAndReportsExitCodes) {
-  auto r = run_pkg_cli({"printf", "%s|%s", "a", "b c"});
-  EXPECT_TRUE(r.ok());
-  EXPECT_EQ(r.stdout_text, "a|b c");
-  EXPECT_EQ(run_pkg_cli({"false"}).exit_code, 1);
-}
-
-TEST(PkgProcessTest, MissingProgramIsExitCodeMinusOne) {
-  auto r = run_pkg_cli({"definitely-not-a-package-manager-xyzzy", "--version"});
-  EXPECT_EQ(r.exit_code, -1) << "run_pkg() tells 'not installed' apart from 'failed' by this";
-  EXPECT_FALSE(r.stderr_text.empty());
-  EXPECT_EQ(run_pkg_cli({}).exit_code, -1);
-}
-
-TEST(PkgProcessTest, AFailedSpawnDoesNotBreakTheNextOne) {
-  // run_pkg() probes for programs that are usually absent (pkexec, the other
-  // package managers) and then carries on in the same process.
-  for (int i = 0; i < 3; ++i)
-    EXPECT_EQ(run_pkg_cli({"definitely-not-a-package-manager-xyzzy"}).exit_code, -1);
-  auto r = run_pkg_cli({"printf", "still works"});
-  EXPECT_TRUE(r.ok());
-  EXPECT_EQ(r.stdout_text, "still works");
-}
 
 // ── managers / elevation ────────────────────────────────────────────────────
 

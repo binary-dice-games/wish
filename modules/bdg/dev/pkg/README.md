@@ -47,8 +47,8 @@ modal progress dialog (see the [bdg/dev README](../README.md)).
   parser per listing, the elevation wrapper and name validation — pure
   functions of a `manager` value, so adding a manager means adding an
   enumerator and a case to each. `client/pkg_source.hpp`/`.cpp` runs the
-  commands and pushes snapshots. `client/pkg_process.hpp`/`.cpp` is the usual
-  libuv "run this argv, capture output" helper.
+  commands and pushes snapshots through the shared [common/](../common)
+  helpers (`process.hpp`, `tool_source.hpp`).
 - **resources/**: none.
 
 Build: off by default. `cmake -S . -B build -DWISH_MODULE_BDG_DEV_PKG=ON`

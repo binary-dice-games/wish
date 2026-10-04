@@ -2,8 +2,8 @@
 /// @file sq_source.hpp
 /// @brief Client-side `sq` command orchestration for the sq module.
 ///
-/// Owns the proxy, runs every `sq` command via sq_process::run_sq_cli(),
-/// parses the output, and pushes structured snapshots to the server-side
+/// Runs every `sq` command through dev::tool_source (see
+/// common/tool_source.hpp), parses the output, and pushes structured snapshots to the server-side
 /// SqFrontend form via its update_* RMI methods. Reacts to the form's
 /// `*_requested` events (see server/sq.hpp) by running the matching `sq`
 /// command and pushing the outcome.
@@ -13,9 +13,9 @@
 /// active source of the user's `sq` configuration.
 #pragma once
 
-#include "sq_process.hpp"
+#include "modules/bdg/dev/common/tool_source.hpp"
+
 #include "src/bison/bison.hpp"
-#include "modules/bdg/dev/common/command_worker.hpp"
 #include "src/rmi/client/proxy.hpp"
 
 #include <functional>
@@ -25,7 +25,9 @@
 
 namespace bdg::wish::sq {
 
-class sq_source {
+using dev::process_result;
+
+class sq_source : public dev::tool_source {
  public:
   sq_source(std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::shared_ptr<dev::command_worker> worker);
 
@@ -56,16 +58,18 @@ class sq_source {
   void push_connections();
   void push_schema();
   void push_result_error(const std::string& message);
+  /// @brief SqFrontend's own command_result contract: `{scope, ok,
+  /// message}` (replaces tool_source::report()).
   void report(const std::string& scope, bool ok, const std::string& message);
 
-  /// @brief Runs `sq <args>` and pushes a Console trace row.
+  /// @brief Runs `sq <args>` (feeding @p stdin_text, when non-empty) via
+  /// tool_source::run_logged(), with connection locations masked in the
+  /// caption and the output kept out of the progress dialog.
   process_result run_logged(const std::vector<std::string>& args, const std::string& stdin_text = {});
 
-  std::shared_ptr<bison::rmi::proxy::dynamic> proxy_;
-  // Runs every command off the UI thread, behind a modal progress dialog
-  // when it takes long (see common/command_worker.hpp). Every method that
-  // runs a command must be called from one of its jobs.
-  std::shared_ptr<dev::command_worker> worker_;
+  std::string error_text(const process_result& r) const override;
+  std::string log_output(const process_result& r) const override;
+
   bool drivers_pushed_{false};
   std::string active_;      ///< active handle ("" = none)
   std::string last_sql_;    ///< last successfully run query, for export

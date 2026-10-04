@@ -2,8 +2,8 @@
 /// @file curl_source.hpp
 /// @brief Client-side `curl` command orchestration for the curl module.
 ///
-/// Owns the proxy, runs every `curl` invocation via
-/// curl_process::run_curl_cli(), parses the response, applies
+/// Runs every `curl` invocation through dev::tool_source (see
+/// common/tool_source.hpp), parses the response, applies
 /// environment-variable substitution, and pushes structured snapshots to
 /// the server-side CurlFrontend form via its update_* RMI methods. Also
 /// reacts to the form's `*_requested` events (see server/curl.hpp).
@@ -20,10 +20,11 @@
 /// file path.
 #pragma once
 
-#include "curl_process.hpp"
 #include "curl_response_parser.hpp" // for kv_entry
+
+#include "modules/bdg/dev/common/tool_source.hpp"
+
 #include "src/bison/bison.hpp"
-#include "modules/bdg/dev/common/command_worker.hpp"
 #include "src/rmi/client/proxy.hpp"
 
 #include <cstdint>
@@ -79,7 +80,9 @@ struct history_entry {
   request_state state; ///< the full builder state, so "Load" restores everything.
 };
 
-class curl_source {
+using dev::process_result;
+
+class curl_source : public dev::tool_source {
  public:
   curl_source(
       std::shared_ptr<bison::rmi::proxy::dynamic> proxy, wish_app_host& host,
@@ -134,16 +137,7 @@ class curl_source {
   bison::dynamic_ptr encode_kv(const std::vector<kv_entry>& entries) const;
   std::vector<kv_entry> decode_kv(const bison::dynamic& args, bison::key_t field_key, bool has_enabled) const;
 
-  /// @brief Pushes one `append_command_log` trace row. Every `curl`
-  /// invocation goes through here -- mirrors docker_source::run_logged().
-  void push_command_log(const std::vector<std::string>& argv, const process_result& r) const;
-
-  std::shared_ptr<bison::rmi::proxy::dynamic> proxy_;
   wish_app_host& host_;
-  // Runs every request off the UI thread, behind a modal progress dialog
-  // when it takes long (see common/command_worker.hpp). Every method here
-  // must be called from one of its jobs.
-  std::shared_ptr<dev::command_worker> worker_;
 
   std::vector<saved_request> collections_;
   std::vector<environment> environments_;

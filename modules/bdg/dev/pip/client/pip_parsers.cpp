@@ -9,16 +9,9 @@
 
 namespace bdg::wish::pip {
 
-namespace {
+using dev::trim;
 
-std::string trim(const std::string& s) {
-  const char* ws = " \t\r\n";
-  auto b = s.find_first_not_of(ws);
-  if (b == std::string::npos)
-    return {};
-  auto e = s.find_last_not_of(ws);
-  return s.substr(b, e - b + 1);
-}
+namespace {
 
 void skip_ws(const std::string& s, size_t& i) {
   while (i < s.size() && std::isspace(static_cast<unsigned char>(s[i])))
@@ -204,10 +197,6 @@ index_versions parse_index_versions(const std::string& text) {
   return out;
 }
 
-bool is_safe_arg(const std::string& value) {
-  return !value.empty() && value[0] != '-';
-}
-
 bool is_valid_package_name(const std::string& name) {
   auto alnum = [](char ch) { return std::isalnum(static_cast<unsigned char>(ch)) != 0; };
   if (name.empty() || !alnum(name.front()) || !alnum(name.back()))
@@ -220,12 +209,7 @@ bool is_valid_package_name(const std::string& name) {
 }
 
 std::vector<std::string> split_requirements(const std::string& text) {
-  std::vector<std::string> out;
-  std::istringstream iss(text);
-  std::string word;
-  while (iss >> word)
-    out.push_back(word);
-  return out;
+  return dev::words(text);
 }
 
 std::string error_summary(const std::string& stderr_text) {
@@ -235,13 +219,7 @@ std::string error_summary(const std::string& stderr_text) {
     return "this Python is managed by the operating system (externally-managed-environment), so pip will not "
            "change it. Create a virtualenv (python3 -m venv ~/.venvs/work) and restart with it: "
            "wish client --run=pip -- ~/.venvs/work";
-  std::string text = stderr_text;
-  size_t pos = text.rfind("ERROR:", 0) == 0 ? 0 : text.find("\nERROR:");
-  if (pos != std::string::npos && pos != 0)
-    text = text.substr(pos + 1);
-  while (!text.empty() && (text.back() == '\n' || text.back() == '\r'))
-    text.pop_back();
-  return text;
+  return dev::trim_eol(dev::from_marker_line(stderr_text, {"ERROR:"}));
 }
 
 } // namespace bdg::wish::pip

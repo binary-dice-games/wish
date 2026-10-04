@@ -29,10 +29,8 @@ else (rollout restart, cordon, uncordon, logs, describe) fires directly.
   client to react to by running the corresponding `kubectl` command.
 - **client/**: `run_kubectl(wish_app_host&)`, self-registered as the
   `"kubectl"` embedded app — owns all `kubectl` invocation.
-  `client/kubectl_process.hpp`/`.cpp` is a small, non-interactive,
-  libuv-based (`uv_spawn`) "run this argv array, capture stdout/stderr/exit
-  code" helper (a near-copy of the `docker` module's `docker_process`).
-  `client/kubectl_source.hpp`/`.cpp` runs every actual `kubectl` command
+  Commands run through the shared [common/](../common) helpers
+  (`process.hpp`, `tool_source.hpp`). `client/kubectl_source.hpp`/`.cpp` runs every actual `kubectl` command
   (tab-delimited `-o jsonpath` templates, split on `\t`), parses the output,
   and pushes snapshots / reacts to `*_requested` events. `run_kubectl()`
   gates on `kubectl version -o json` and prints a clear error if the cluster
@@ -48,7 +46,7 @@ for what's implemented vs. deferred.
 ## Implementation status
 
 All eight windows are implemented and unit-tested over `memory_transport`
-(`tests/test_kubectl.cpp`, `tests/test_kubectl_process.cpp`):
+(`tests/test_kubectl.cpp`, `tests/test_dev_common.cpp`):
 
 - **Pods / Deployments / Services / Nodes** — each a toolbar + `Table` with
   a `...` per-row action menu (state-aware for nodes: Cordon on a

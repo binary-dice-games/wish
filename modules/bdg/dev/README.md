@@ -17,6 +17,18 @@ until **Close** is pressed. The shared implementation is
 [common/command_worker.hpp](common/command_worker.hpp) plus the built-in
 `ProgressBox` form.
 
+The plumbing every tool frontend's client needs lives once in
+[common/](common). It is not a module itself: `wish_add_module()` compiles a
+collection's `common/` directory into the client of each enabled module.
+
+| Header | Provides |
+|--------|----------|
+| `process.hpp` | `run_process()` -- run an argv (no shell) with libuv, capturing stdout/stderr/exit code; optional working directory, stdin text and live-output / cancel hooks |
+| `tool_source.hpp` | `tool_source`, the base of every `<tool>_source`: `run_logged()` (worker + Console trace row), `report()` (`command_result`), best-effort `call()`, `push_rows()` for tab-separated listings |
+| `frontend.hpp` | `open_frontend()` (form + worker + `closed` wiring), `fail_startup()`, `payload_*()` event-payload getters |
+| `command_worker.hpp` | the background worker and progress dialog described above |
+| `text.hpp` | `trim`, `split`, `words`, `one_line`, `from_marker_line`, `is_safe_arg` |
+
 | Module | Description |
 |--------|-------------|
 | [editor](editor/README.md) | Live JSON/YAML UI mock editor: a syntax-highlighted source panel next to a continuously re-parsed preview, plus an event log and schema-aware autocomplete. The tool the `wish-module` / `wish-ui` skills use to preview a UI. |

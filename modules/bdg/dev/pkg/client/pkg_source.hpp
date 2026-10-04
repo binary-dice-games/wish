@@ -2,8 +2,9 @@
 /// @file pkg_source.hpp
 /// @brief Client-side package-manager orchestration for the pkg module.
 ///
-/// Owns the proxy, runs every command of the chosen package manager (see
-/// pkg_backend.hpp for what each operation runs) via run_pkg_cli(), parses
+/// Runs every command of the chosen package manager (see pkg_backend.hpp for
+/// what each operation runs) through dev::tool_source (see
+/// common/tool_source.hpp), parses
 /// the output, and pushes structured snapshots to the server-side PkgFrontend
 /// form via its update_* RMI methods. Mirrors pip_source: the packages are
 /// the ones on the user's own machine, reachable only from the client.
@@ -14,9 +15,9 @@
 #pragma once
 
 #include "pkg_backend.hpp"
-#include "pkg_process.hpp"
 
-#include "modules/bdg/dev/common/command_worker.hpp"
+#include "modules/bdg/dev/common/tool_source.hpp"
+
 #include "src/bison/bison.hpp"
 #include "src/rmi/client/proxy.hpp"
 
@@ -27,7 +28,9 @@
 
 namespace bdg::wish::pkg {
 
-class pkg_source {
+using dev::process_result;
+
+class pkg_source : public dev::tool_source {
  public:
   /// @param how  How commands that need root get it (see elevation).
   pkg_source(
@@ -73,27 +76,16 @@ class pkg_source {
  private:
   void push_packages();
 
-  /// @brief Runs @p cmd (elevated when it needs root) and pushes a trace row
-  /// to the Console window. Every command goes through here so the Console
-  /// is a complete trace.
+  /// @brief Runs @p cmd (elevated when it needs root) via
+  /// tool_source::run_logged(), so the Console is a complete trace.
   process_result run_logged(const command& cmd);
-
-  /// @brief Reports a command outcome via the form's command_result RMI
-  /// method (tagged with @p scope so the right window's status label is
-  /// written) and, on failure, to the progress dialog -- which @p always_show
-  /// opens even for a command too quick to have opened it.
-  void report(
-      const std::string& label, const std::string& scope, bool ok, const std::string& output,
-      bool always_show = false);
 
   /// @brief Runs a mutating command, refreshes, then reports its result.
   void run_and_refresh(const std::string& label, const command& cmd);
 
   /// @brief What a failed @p r had to say (see error_summary()).
-  std::string error_text(const process_result& r) const;
+  std::string error_text(const process_result& r) const override;
 
-  std::shared_ptr<bison::rmi::proxy::dynamic> proxy_;
-  std::shared_ptr<dev::command_worker> worker_;
   manager manager_;
   elevation elevation_;
 

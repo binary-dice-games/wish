@@ -7,18 +7,7 @@
 
 namespace bdg::wish::helm {
 
-namespace {
-
-std::string trim(const std::string& s) {
-  const char* ws = " \t\r\n";
-  auto b = s.find_first_not_of(ws);
-  if (b == std::string::npos)
-    return {};
-  auto e = s.find_last_not_of(ws);
-  return s.substr(b, e - b + 1);
-}
-
-} // namespace
+using dev::trim;
 
 std::vector<std::vector<std::string>> parse_table(const std::string& text, const std::string& header, size_t ncols) {
   std::vector<std::vector<std::string>> rows;
@@ -29,17 +18,9 @@ std::vector<std::vector<std::string>> parse_table(const std::string& text, const
     if (line.find('\t') == std::string::npos)
       continue; // blank line or a plain message, not a table row.
 
-    std::vector<std::string> cells;
-    size_t start = 0;
-    while (true) {
-      size_t pos = line.find('\t', start);
-      if (pos == std::string::npos) {
-        cells.push_back(trim(line.substr(start)));
-        break;
-      }
-      cells.push_back(trim(line.substr(start, pos - start)));
-      start = pos + 1;
-    }
+    std::vector<std::string> cells = dev::split(line, '\t');
+    for (auto& cell : cells)
+      cell = trim(cell);
 
     const bool is_header = first && cells[0] == header;
     first = false;
@@ -58,19 +39,8 @@ std::string short_timestamp(const std::string& updated) {
   return updated;
 }
 
-bool is_safe_arg(const std::string& value) {
-  return !value.empty() && value[0] != '-';
-}
-
 std::string error_summary(const std::string& stderr_text) {
-  std::string text = stderr_text;
-  // An "Error:" at the very start or at the start of a later line.
-  size_t pos = text.rfind("Error:", 0) == 0 ? 0 : text.find("\nError:");
-  if (pos != std::string::npos && pos != 0)
-    text = text.substr(pos + 1);
-  while (!text.empty() && (text.back() == '\n' || text.back() == '\r'))
-    text.pop_back();
-  return text;
+  return dev::trim_eol(dev::from_marker_line(stderr_text, {"Error:"}));
 }
 
 bool is_valid_release_name(const std::string& name) {

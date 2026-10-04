@@ -32,9 +32,8 @@ inspect / upgrade / roll back / uninstall the release.
   to react to by running the corresponding `helm` command.
 - **client/**: `run_helm(wish_app_host&)`, self-registered as the `"helm"`
   embedded app — owns all `helm` invocation.
-  `client/helm_process.hpp`/`.cpp` is a small, non-interactive, libuv-based
-  (`uv_spawn`) "run this argv array, capture stdout/stderr/exit code" helper
-  (a near-copy of the `kubectl` module's). `client/helm_table_parser.hpp`/
+  Commands run through the shared [common/](../common) helpers
+  (`process.hpp`, `tool_source.hpp`). `client/helm_table_parser.hpp`/
   `.cpp` parses helm's table output (columns are TAB-separated and
   space-padded) and rejects flag-shaped values before they reach an argv.
   `client/helm_source.hpp`/`.cpp` runs every actual `helm` command and pushes
@@ -99,4 +98,4 @@ Build: off by default. `cmake -S . -B build -DWISH_MODULE_BDG_DEV_HELM=ON`
   live cluster.** Listing, repository add, chart search and `show values`
   were exercised against helm 4.3 through the automation module; the
   mutating release commands only against a script emulating `helm`, plus the
-  unit tests (`tests/test_helm.cpp`, `tests/test_helm_process.cpp`).
+  unit tests (`tests/test_helm.cpp`, `tests/test_helm_parsers.cpp`).

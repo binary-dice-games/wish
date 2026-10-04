@@ -10,8 +10,10 @@
 /// location) may contain spaces.
 ///
 /// No framework / bison / libuv dependency -- unit-tested directly by
-/// tests/test_pip_process.cpp.
+/// tests/test_pip_parsers.cpp.
 #pragma once
+
+#include "modules/bdg/dev/common/text.hpp"
 
 #include <map>
 #include <string>
@@ -53,7 +55,7 @@ index_versions parse_index_versions(const std::string& text);
 /// event payload. There is no shell to inject into, but a value such as
 /// `--index-url=http://attacker.example` would still be parsed by pip as an
 /// option, so anything flag-shaped is rejected before the command is built.
-bool is_safe_arg(const std::string& value);
+using dev::is_safe_arg;
 
 /// @brief Whether @p name is a valid distribution name (PEP 508): letters,
 /// digits, `.`, `_` and `-`, starting and ending with a letter or digit.

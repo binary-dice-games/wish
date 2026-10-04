@@ -104,17 +104,21 @@ was removed rather than kept.
 
 ### `git_process::run_git()` (client)
 
-Non-interactive `argv -> {exit_code, stdout, stderr}` helper built directly
-on libuv (`uv_spawn`), **not** `bdg::bison::term::terminal`. See
-`client/git_process.hpp`'s header comment and §6 below for why.
+Runs `git <args>` in the repository through the shared, non-interactive
+`argv -> {exit_code, stdout, stderr}` helper `dev::run_process()`
+(`modules/bdg/dev/common/process.hpp`, built on libuv `uv_spawn`, **not**
+`bdg::bison::term::terminal` — see that header and §6 below for why), after
+setting `GIT_TERMINAL_PROMPT=0` once for the process.
 
 ### `git_repo_source::run_logged()` (client)
 
-Every `git` invocation `git_repo_source` makes goes through this thin
-wrapper over `run_git()` rather than calling it directly: it runs the
-command exactly as `run_git()` would, then also pushes a trace row (argv,
-exit code, trimmed output preview) to `GitRepo`'s Log window via
-`append_command_log`. This makes the Log window a complete trace of every
+`git_repo_source` derives from `dev::tool_source`
+(`modules/bdg/dev/common/tool_source.hpp`, shared by every bdg/dev client)
+and overrides its `run()` with `run_git(repo_path_, ...)`. Every `git`
+invocation it makes goes through the inherited `run_logged()` rather than
+calling `run_git()` directly: it runs the command exactly as `run_git()`
+would, then also pushes a trace row (argv, exit code, one-line output
+preview) to `GitRepo`'s Log window via `append_command_log`. This makes the Log window a complete trace of every
 `git` process actually run — including the read-only ones inside
 `refresh_all()` — not just the subset already user-facing via
 `command_result` (which only reports the one mutating command behind each
@@ -208,8 +212,8 @@ the leftmost cell of the commit `Table`'s each `TableRow`. This means:
 
 ## 6. Design Decisions
 
-- **`git_process::run_git()` is built on libuv (`uv_spawn`), not
-  `bdg::bison::term::terminal`.** `terminal` (`extern/bison/src/term/`)
+- **`git_process::run_git()` is built on libuv (`uv_spawn`, through the
+  shared `dev::run_process()`), not `bdg::bison::term::terminal`.** `terminal` (`extern/bison/src/term/`)
   exists purely for the interactive `--transport term` session: it spawns
   the child attached to a real pseudo-terminal (`forkpty()`/ConPTY), takes
   a single shell command *string* (not an argv array), and for its
@@ -221,8 +225,8 @@ the leftmost cell of the commit `Table`'s each `TableRow`. This means:
   transports but only links it `PRIVATE` into the `bison` target;
   `cmake/WishModules.cmake`'s `wish_finalize_app_modules()` now also links
   `uv_a` into the module-client targets (a small, wish-side-only CMake
-  addition — see that function's comment) so `git_process.cpp` can use it
-  directly, with **no bison submodule changes**. libuv already abstracts
+  addition — see that function's comment) so module client code (now the
+  shared `common/process.hpp`) can use it directly, with **no bison submodule changes**. libuv already abstracts
   POSIX vs. Windows process creation, so (unlike `top`'s
   `process_info_linux.cpp`/`process_info_win.cpp` split) no `_posix`/`_win`
   file split was needed for this file.
@@ -636,7 +640,8 @@ Depends on:
   this module's development added; see `docs/ui-elements.md`.
 - `Label.text_color` (existing field, added by the `editor` module) — diff
   line and file-status coloring; no new `Label` fields needed.
-- `uv_a` (libuv, vendored by bison) — `git_process`'s subprocess helper;
+- `uv_a` (libuv, vendored by bison) — the shared `dev::run_process()`
+  subprocess helper;
   linked into module-client targets by `wish_finalize_app_modules()`
   (`cmake/WishModules.cmake`).
 - The system `git` binary (must be on `PATH`) and the user's own git

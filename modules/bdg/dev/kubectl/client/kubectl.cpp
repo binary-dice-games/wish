@@ -9,15 +9,15 @@
 /// KubectlFrontend form's `*_requested` events to it -- see
 /// server/kubectl.hpp for the full event contract.
 #include "kubectl.hpp"
-#include "kubectl_process.hpp"
 #include "kubectl_source.hpp"
+
+#include "modules/bdg/dev/common/frontend.hpp"
 
 #include "src/client/app_registry.hpp"
 #include "src/client/wish_app_host.hpp"
 
 #include "src/bison/bison.hpp"
 
-#include <iostream>
 #include <memory>
 
 namespace bdg::wish {
@@ -30,20 +30,19 @@ void run_kubectl(wish_app_host& s) {
   // docker's `docker version` gate. `version -o json` contacts the API
   // server for the server version, so a non-zero exit here means the
   // cluster, not just the client binary, is unavailable.
-  auto check = kubectl::run_kubectl_cli({"version", "-o", "json"});
+  auto check = dev::run_process({"kubectl", "version", "-o", "json"});
   if (!check.ok()) {
-    std::cerr << "kubectl: cannot reach the cluster"
-              << (check.stderr_text.empty() ? std::string{} : (": " + check.stderr_text)) << "\n";
-    s.signal_done();
+    dev::fail_startup(s, "kubectl: cannot reach the cluster", check.stderr_text);
     return;
   }
 
-  auto proxy = std::make_shared<rmi::proxy::dynamic>(s.instantiate("wish"_key, "KubectlFrontend"_key).get());
-  // Every handler below runs as a job on this worker's thread: running the
-  // tool inside an event handler would block the whole UI until it exits.
-  // Long commands get a modal progress dialog (common/command_worker.hpp).
-  auto worker = std::make_shared<dev::command_worker>(s, "Running kubectl");
-  worker->start();
+  // Every handler below runs as a job on the frontend's worker thread:
+  // running the tool inside an event handler would block the whole UI until
+  // it exits. Long commands get a modal progress dialog
+  // (common/command_worker.hpp).
+  const auto frontend = dev::open_frontend(s, "KubectlFrontend"_key, "Running kubectl");
+  const auto& proxy = frontend.proxy;
+  const auto& worker = frontend.worker;
   auto source = std::make_shared<kubectl::kubectl_source>(proxy, worker);
 
   worker->on(*proxy, "refresh_requested"_key, [source](dynamic) { source->refresh_all(); });
@@ -75,11 +74,6 @@ void run_kubectl(wish_app_host& s) {
     source->on_describe_requested(
         payload.as<std::string>("kind"_key), payload.as<std::string>("name"_key),
         payload.as<std::string>("namespace"_key));
-  });
-
-  proxy->onEvent("closed"_key, [&s, worker](dynamic) {
-    worker->shutdown();
-    s.signal_done();
   });
 
   // Initial population -- called directly here, now that every onEvent()

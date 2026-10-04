@@ -18,20 +18,6 @@ using namespace bdg::bison;
 
 namespace {
 
-std::string trim_eol(std::string s) {
-  while (!s.empty() && (s.back() == '\n' || s.back() == '\r'))
-    s.pop_back();
-  return s;
-}
-
-// The first line of sq's stderr ("sq: <what failed>") is the useful one.
-std::string error_text(const process_result& r) {
-  std::string text = trim_eol(r.stderr_text.empty() ? r.stdout_text : r.stderr_text);
-  if (r.exit_code == -1 && text.empty())
-    return "could not run `sq`";
-  return text;
-}
-
 template <typename Fn>
 void for_each_entry(const dynamic& parent, key_t field_key, Fn&& fn) {
   const auto* arr_f = parent.findField<dynamic_ptr>(field_key);
@@ -90,14 +76,6 @@ dynamic_ptr parse_json(const std::string& text, bool wrap_array) {
   return extensions::from_json(wrap_array ? "{\"items\":" + text + "}" : text);
 }
 
-void call(const std::shared_ptr<bison::rmi::proxy::dynamic>& proxy, key_t method, dynamic args) {
-  try {
-    proxy->call(method, std::move(args)).get();
-  } catch (const std::exception&) {
-    // Best effort: a torn-down form just swallows the call.
-  }
-}
-
 dynamic_ptr as_array(dynamic&& arr) {
   return dynamic_ptr{std::make_shared<dynamic>(std::move(arr))};
 }
@@ -106,35 +84,34 @@ dynamic_ptr as_array(dynamic&& arr) {
 
 sq_source::sq_source(
     std::shared_ptr<bison::rmi::proxy::dynamic> proxy, std::shared_ptr<dev::command_worker> worker)
-    : proxy_(std::move(proxy)), worker_(std::move(worker)) {}
+    : tool_source(std::move(proxy), std::move(worker), "sq") {}
+
+// The first line of sq's stderr ("sq: <what failed>") is the useful one.
+std::string sq_source::error_text(const process_result& r) const {
+  std::string text = dev::trim_eol(dev::error_output(r));
+  if (r.exit_code == -1 && text.empty())
+    return "could not run `sq`";
+  return text;
+}
+
+std::string sq_source::log_output(const process_result& r) const {
+  // Result rows / schema JSON are data: only a failure is worth previewing.
+  return r.ok() ? std::string{} : error_text(r);
+}
 
 process_result sq_source::run_logged(const std::vector<std::string>& args, const std::string& stdin_text) {
-  // Built first: it also captions the progress dialog, and a connection
-  // location (which may embed a password) must be masked there too.
-  std::string command = "sq";
+  // A connection location may embed a password: mask it in the progress
+  // dialog's caption and the Console row alike.
+  std::vector<std::string> masked;
   for (auto& a : args)
-    command += ' ' + mask_location(a);
-  if (command.size() > 300)
-    command = command.substr(0, 300) + "...";
-
+    masked.push_back(mask_location(a));
+  dev::run_options options;
+  options.caption = caption(masked);
+  options.stdin_text = stdin_text;
   // Result rows / schema JSON are data, not progress: keep them out of the
   // dialog's log.
-  auto r = worker_->run(
-      command, [&](const dev::run_hooks* hooks) { return run_sq_cli(args, "sq", stdin_text, hooks); },
-      /*show_output=*/false);
-  std::string output = trim_eol(r.ok() ? std::string{} : error_text(r));
-  std::replace(output.begin(), output.end(), '\n', ' ');
-  std::replace(output.begin(), output.end(), '\t', ' ');
-  if (output.size() > 200)
-    output = output.substr(0, 200) + "...";
-
-  dynamic log;
-  log["command"_key] = command;
-  log["exit_code"_key] = static_cast<int32_t>(r.exit_code);
-  log["ok"_key] = r.ok();
-  log["output"_key] = output;
-  call(proxy_, "append_command_log"_key, std::move(log));
-  return r;
+  options.show_output = false;
+  return tool_source::run_logged(args, options);
 }
 
 void sq_source::report(const std::string& scope, bool ok, const std::string& message) {
@@ -144,7 +121,7 @@ void sq_source::report(const std::string& scope, bool ok, const std::string& mes
   p["message"_key] = message;
   if (!ok)
     worker_->fail(message);
-  call(proxy_, "command_result"_key, std::move(p));
+  call("command_result"_key, std::move(p));
 }
 
 // ── Snapshots ──────────────────────────────────────────────────────────────
@@ -169,7 +146,7 @@ void sq_source::push_drivers() {
   }
   dynamic args;
   args["drivers"_key] = as_array(std::move(arr));
-  call(proxy_, "update_drivers"_key, std::move(args));
+  call("update_drivers"_key, std::move(args));
   drivers_pushed_ = true;
 }
 
@@ -209,14 +186,14 @@ void sq_source::push_connections() {
   dynamic args;
   args["active"_key] = active_;
   args["entries"_key] = as_array(std::move(arr));
-  call(proxy_, "update_connections"_key, std::move(args));
+  call("update_connections"_key, std::move(args));
 }
 
 void sq_source::push_schema() {
   dynamic args;
   if (active_.empty()) {
     args["handle"_key] = std::string{};
-    call(proxy_, "update_schema"_key, std::move(args));
+    call("update_schema"_key, std::move(args));
     return;
   }
 
@@ -270,7 +247,7 @@ void sq_source::push_schema() {
     }
   }
   args["tables"_key] = as_array(std::move(tables));
-  call(proxy_, "update_schema"_key, std::move(args));
+  call("update_schema"_key, std::move(args));
 }
 
 void sq_source::refresh_all() {
@@ -350,7 +327,7 @@ void sq_source::push_result_error(const std::string& message) {
   dynamic args;
   args["ok"_key] = false;
   args["error"_key] = message;
-  call(proxy_, "update_result"_key, std::move(args));
+  call("update_result"_key, std::move(args));
 }
 
 void sq_source::on_query(const std::string& sql, int32_t max_rows) {
@@ -398,7 +375,7 @@ void sq_source::on_query(const std::string& sql, int32_t max_rows) {
   args["truncated"_key] = result.truncated;
   args["columns"_key] = as_array(std::move(cols));
   args["rows"_key] = as_array(std::move(rows));
-  call(proxy_, "update_result"_key, std::move(args));
+  call("update_result"_key, std::move(args));
 }
 
 void sq_source::on_export(const std::string& path, const upload_fn& upload) {

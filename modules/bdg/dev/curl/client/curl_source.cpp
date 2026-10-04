@@ -577,7 +577,7 @@ bool has_header(const std::vector<kv_entry>& headers, const std::string& name) {
 curl_source::curl_source(
     std::shared_ptr<bison::rmi::proxy::dynamic> proxy, wish_app_host& host,
     std::shared_ptr<dev::command_worker> worker)
-    : proxy_(std::move(proxy)), host_(host), worker_(std::move(worker)) {}
+    : tool_source(std::move(proxy), std::move(worker), "curl"), host_(host) {}
 
 std::string curl_source::new_id(const char* prefix) {
   auto now = std::chrono::steady_clock::now().time_since_epoch().count();
@@ -796,10 +796,7 @@ void curl_source::push_collections() {
   }
   dynamic args;
   args["entries"_key] = dynamic_ptr{std::make_shared<dynamic>(std::move(arr))};
-  try {
-    proxy_->call("update_collections"_key, std::move(args)).get();
-  } catch (const std::exception&) {
-  }
+  call("update_collections"_key, std::move(args));
 }
 
 void curl_source::push_environments() {
@@ -814,10 +811,7 @@ void curl_source::push_environments() {
   }
   dynamic args;
   args["entries"_key] = dynamic_ptr{std::make_shared<dynamic>(std::move(arr))};
-  try {
-    proxy_->call("update_environments"_key, std::move(args)).get();
-  } catch (const std::exception&) {
-  }
+  call("update_environments"_key, std::move(args));
 }
 
 void curl_source::push_history() {
@@ -836,10 +830,7 @@ void curl_source::push_history() {
   }
   dynamic args;
   args["entries"_key] = dynamic_ptr{std::make_shared<dynamic>(std::move(arr))};
-  try {
-    proxy_->call("update_history"_key, std::move(args)).get();
-  } catch (const std::exception&) {
-  }
+  call("update_history"_key, std::move(args));
 }
 
 void curl_source::push_request_builder(const request_state& s) {
@@ -855,32 +846,7 @@ void curl_source::push_request_builder(const request_state& s) {
   args["auth_username"_key] = s.auth_username;
   args["auth_password"_key] = s.auth_password;
   args["auth_token"_key] = s.auth_token;
-  try {
-    proxy_->call("update_request_builder"_key, std::move(args)).get();
-  } catch (const std::exception&) {
-  }
-}
-
-void curl_source::push_command_log(const std::vector<std::string>& argv, const process_result& r) const {
-  std::string command = "curl";
-  for (auto& a : argv)
-    command += ' ' + a;
-
-  std::string output = r.ok() ? r.stdout_text : (r.stderr_text.empty() ? r.stdout_text : r.stderr_text);
-  std::replace(output.begin(), output.end(), '\n', ' ');
-  constexpr size_t kMaxOutputPreview = 200;
-  if (output.size() > kMaxOutputPreview)
-    output = output.substr(0, kMaxOutputPreview) + "...";
-
-  dynamic args;
-  args["command"_key] = command;
-  args["exit_code"_key] = r.exit_code;
-  args["ok"_key] = r.ok();
-  args["output"_key] = std::move(output);
-  try {
-    proxy_->call("append_command_log"_key, std::move(args)).get();
-  } catch (const std::exception&) {
-  }
+  call("update_request_builder"_key, std::move(args));
 }
 
 // ── Sending a request ────────────────────────────────────────────────
@@ -951,8 +917,13 @@ void curl_source::send_request(const request_state& raw) {
   // response itself, which belongs in the Response window.
   process_result r = worker_->run(
       "curl " + method + " " + argv.back(),
-      [&](const dev::run_hooks* hooks) { return run_curl_cli(argv, "curl", hooks); }, /*show_output=*/false);
-  push_command_log(argv, r);
+      [&](const dev::run_hooks* hooks) {
+        dev::process_options options;
+        options.hooks = hooks;
+        return run(argv, std::move(options));
+      },
+      /*show_output=*/false);
+  log_command(caption(argv), r);
 
   history_entry he;
   he.id = new_id("h");
@@ -1034,10 +1005,7 @@ void curl_source::send_request(const request_state& raw) {
     he.time_ms = pr.time_ms;
   }
 
-  try {
-    proxy_->call("update_response"_key, std::move(resp_args)).get();
-  } catch (const std::exception&) {
-  }
+  call("update_response"_key, std::move(resp_args));
 
   history_.push_back(std::move(he));
   while (history_.size() > kMaxHistory)
@@ -1136,10 +1104,7 @@ void curl_source::on_delete_environment_requested(const std::string& id) {
   args["environment_id"_key] = std::string{};
   args["name"_key] = std::string{};
   args["vars"_key] = dynamic_ptr{std::make_shared<dynamic>()};
-  try {
-    proxy_->call("update_environment_vars"_key, std::move(args)).get();
-  } catch (const std::exception&) {
-  }
+  call("update_environment_vars"_key, std::move(args));
 }
 
 void curl_source::on_select_environment_requested(const std::string& id) {
@@ -1149,10 +1114,7 @@ void curl_source::on_select_environment_requested(const std::string& id) {
       args["environment_id"_key] = e.id;
       args["name"_key] = e.name;
       args["vars"_key] = encode_kv(e.vars);
-      try {
-        proxy_->call("update_environment_vars"_key, std::move(args)).get();
-      } catch (const std::exception&) {
-      }
+      call("update_environment_vars"_key, std::move(args));
       return;
     }
   }

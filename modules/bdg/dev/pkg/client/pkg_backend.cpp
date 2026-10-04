@@ -3,22 +3,17 @@
 /// @brief Per-manager commands and output parsers for the pkg module.
 #include "pkg_backend.hpp"
 
-#include <algorithm>
 #include <cctype>
 #include <sstream>
 
 namespace bdg::wish::pkg {
 
-namespace {
+using dev::split;
+using dev::starts_with;
+using dev::trim;
+using dev::words;
 
-std::string trim(const std::string& s) {
-  const char* ws = " \t\r\n";
-  auto b = s.find_first_not_of(ws);
-  if (b == std::string::npos)
-    return {};
-  auto e = s.find_last_not_of(ws);
-  return s.substr(b, e - b + 1);
-}
+namespace {
 
 std::vector<std::string> lines_of(const std::string& text) {
   std::vector<std::string> out;
@@ -30,33 +25,6 @@ std::vector<std::string> lines_of(const std::string& text) {
     out.push_back(line);
   }
   return out;
-}
-
-std::vector<std::string> split(const std::string& s, char sep) {
-  std::vector<std::string> out;
-  size_t start = 0;
-  while (true) {
-    size_t pos = s.find(sep, start);
-    if (pos == std::string::npos) {
-      out.push_back(s.substr(start));
-      return out;
-    }
-    out.push_back(s.substr(start, pos - start));
-    start = pos + 1;
-  }
-}
-
-std::vector<std::string> words(const std::string& s) {
-  std::vector<std::string> out;
-  std::istringstream iss(s);
-  std::string w;
-  while (iss >> w)
-    out.push_back(w);
-  return out;
-}
-
-bool starts_with(const std::string& s, const char* prefix) {
-  return s.rfind(prefix, 0) == 0;
 }
 
 // dnf names packages "name.arch": "python3.12.x86_64" -> "python3.12".
@@ -504,10 +472,6 @@ bool is_valid_package_name(const std::string& name) {
   return true;
 }
 
-bool is_safe_arg(const std::string& value) {
-  return !value.empty() && value[0] != '-';
-}
-
 std::vector<std::string> split_names(const std::string& text) {
   return words(text);
 }
@@ -531,20 +495,7 @@ std::string error_summary(elevation how, const std::string& stderr_text) {
 
   // From the manager's own first error line, dropping the progress chatter
   // before it; otherwise the whole text.
-  std::string text = stderr_text;
-  size_t pos = std::string::npos;
-  for (const char* marker : {"E: ", "Error: ", "error: "}) {
-    if (starts_with(text, marker)) {
-      pos = 0;
-      break;
-    }
-    const size_t at = text.find(std::string{"\n"} + marker);
-    if (at != std::string::npos)
-      pos = std::min(pos, at + 1);
-  }
-  if (pos != std::string::npos && pos != 0)
-    text = text.substr(pos);
-  return trim(text);
+  return trim(dev::from_marker_line(stderr_text, {"E: ", "Error: ", "error: "}));
 }
 
 } // namespace bdg::wish::pkg

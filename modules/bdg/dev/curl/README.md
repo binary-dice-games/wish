@@ -22,9 +22,8 @@ Response, History, Collections, Environments, Console.
   (`kv_table`) — unlike docker/kubectl's read-only tables, these hold
   live user input, read directly off the widgets at Send/Save time.
 - **client/**: `run_curl(wish_app_host&)`, self-registered as the
-  `"curl"` embedded app. `client/curl_process.hpp`/`.cpp` is a small,
-  non-interactive, libuv-based (`uv_spawn`) "run this argv array, capture
-  stdout/stderr/exit code" helper (a near-copy of `docker_process`).
+  `"curl"` embedded app. Commands run through the shared
+  [common/](../common) helpers (`process.hpp`, `tool_source.hpp`).
   `client/curl_source.hpp`/`.cpp` builds and runs every actual `curl`
   invocation, parses the response (`-i` for headers + a `-w` sentinel
   trailer for status/timing/size — no temp files, no JSON library),

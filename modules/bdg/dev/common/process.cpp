@@ -1,18 +1,17 @@
 // MIT License © 2026 Binary Dice Games
-/// @file sq_process.cpp
-/// @brief libuv-based implementation of run_sq_cli().
-///
-/// Structurally identical to
-/// `modules/bdg/dev/docker/client/docker_process.cpp`, plus optional stdin.
-#include "sq_process.hpp"
+/// @file process.cpp
+/// @brief libuv-based implementation of run_process().
+#include "modules/bdg/dev/common/process.hpp"
 
 #include <uv.h>
 
 #include <csignal>
+#include <cstdint>
 #include <cstdlib>
-#include <cstring>
 
-namespace bdg::wish::sq {
+namespace bdg::wish::dev {
+
+// ── libuv plumbing ───────────────────────────────────────────────────────────
 
 namespace {
 
@@ -20,7 +19,7 @@ struct pipe_state {
   std::string* out{nullptr};
   bool closed{false};
   uv_pipe_t* handle{nullptr}; // valid while !closed
-  const dev::run_hooks* hooks{nullptr};
+  const run_hooks* hooks{nullptr};
 };
 
 void alloc_cb(uv_handle_t*, size_t suggested_size, uv_buf_t* buf) {
@@ -48,9 +47,9 @@ void read_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf) {
 
 struct exit_state {
   int64_t exit_status{-1};
-  uv_timer_t* timer{nullptr}; // the on_tick timer, closed when the child exits
-  bool killed{false};         // on_tick asked for a stop
-  struct pipe_state* pipes[2]{nullptr, nullptr}; // the child's stdout / stderr
+  uv_timer_t* timer{nullptr};           // the on_tick timer, closed when the child exits
+  bool killed{false};                   // on_tick asked for a stop
+  pipe_state* pipes[2]{nullptr, nullptr}; // the child's stdout / stderr
 };
 
 void exit_cb(uv_process_t* req, int64_t exit_status, int term_signal) {
@@ -77,7 +76,7 @@ void exit_cb(uv_process_t* req, int64_t exit_status, int term_signal) {
 }
 
 struct tick_state {
-  const dev::run_hooks* hooks{nullptr};
+  const run_hooks* hooks{nullptr};
   uv_process_t* child{nullptr};
   exit_state* exit{nullptr};
 };
@@ -104,40 +103,36 @@ void write_cb(uv_write_t* req, int /*status*/) {
 
 } // namespace
 
-process_result run_sq_cli(
-    const std::vector<std::string>& args, const std::string& binary, const std::string& stdin_text,
-    const dev::run_hooks* hooks) {
+process_result run_process(const std::vector<std::string>& argv, const process_options& options) {
   process_result result;
-  if (binary.empty())
+  if (argv.empty() || argv[0].empty()) {
+    result.stderr_text = "no program to run";
     return result;
+  }
 
   uv_loop_t loop;
-  if (uv_loop_init(&loop) != 0)
+  if (uv_loop_init(&loop) != 0) {
+    result.stderr_text = "cannot initialize the event loop";
     return result;
+  }
 
-  // argv[0] is conventionally the program name itself (execve() convention);
-  // uv_spawn() PATH-searches a bare name (no path separator) the same way
-  // execvp()/CreateProcess() would.
-  std::vector<std::string> owned_args;
-  owned_args.reserve(args.size() + 1);
-  owned_args.push_back(binary);
-  for (auto& a : args)
-    owned_args.push_back(a);
-  std::vector<char*> argv;
-  argv.reserve(owned_args.size() + 1);
+  std::vector<std::string> owned_args = argv;
+  std::vector<char*> c_argv;
+  c_argv.reserve(owned_args.size() + 1);
   for (auto& a : owned_args)
-    argv.push_back(a.data());
-  argv.push_back(nullptr);
+    c_argv.push_back(a.data());
+  c_argv.push_back(nullptr);
 
   auto* out_pipe = new uv_pipe_t;
   auto* err_pipe = new uv_pipe_t;
   uv_pipe_init(&loop, out_pipe, 0);
   uv_pipe_init(&loop, err_pipe, 0);
-  pipe_state out_state{&result.stdout_text, false, nullptr, hooks};
-  pipe_state err_state{&result.stderr_text, false, nullptr, hooks};
+  pipe_state out_state{&result.stdout_text, false, nullptr, options.hooks};
+  pipe_state err_state{&result.stderr_text, false, nullptr, options.hooks};
   out_pipe->data = &out_state;
   err_pipe->data = &err_state;
 
+  const std::string& stdin_text = options.stdin_text;
   // A child that exits without reading stdin (e.g. `sq add` rejecting a bad
   // location) would otherwise turn our write into a fatal SIGPIPE.
 #ifndef _WIN32
@@ -163,14 +158,15 @@ process_result run_sq_cli(
   exit_state exit_st;
   child_req->data = &exit_st;
 
-  uv_process_options_t options{};
-  options.exit_cb = exit_cb;
-  options.file = binary.c_str();
-  options.args = argv.data();
-  options.stdio_count = 3;
-  options.stdio = stdio;
+  uv_process_options_t uv_options{};
+  uv_options.exit_cb = exit_cb;
+  uv_options.file = owned_args[0].c_str();
+  uv_options.args = c_argv.data();
+  uv_options.cwd = options.cwd.empty() ? nullptr : options.cwd.c_str();
+  uv_options.stdio_count = 3;
+  uv_options.stdio = stdio;
 
-  const int spawn_rc = uv_spawn(&loop, child_req, &options);
+  const int spawn_rc = uv_spawn(&loop, child_req, &uv_options);
   if (spawn_rc != 0) {
     result.stderr_text = uv_strerror(spawn_rc);
     uv_close(reinterpret_cast<uv_handle_t*>(out_pipe), close_cb);
@@ -188,6 +184,18 @@ process_result run_sq_cli(
     return result;
   }
 
+  out_state.handle = out_pipe;
+  err_state.handle = err_pipe;
+  exit_st.pipes[0] = &out_state;
+  exit_st.pipes[1] = &err_state;
+  tick_state tick_st{options.hooks, child_req, &exit_st};
+  if (options.hooks && options.hooks->on_tick) {
+    exit_st.timer = new uv_timer_t;
+    uv_timer_init(&loop, exit_st.timer);
+    exit_st.timer->data = &tick_st;
+    uv_timer_start(exit_st.timer, tick_cb, options.hooks->tick_ms, options.hooks->tick_ms);
+  }
+
   if (in_pipe) {
     auto* w = new write_state;
     w->data = stdin_text;
@@ -197,18 +205,6 @@ process_result run_sq_cli(
       delete w;
     }
   }
-  out_state.handle = out_pipe;
-  err_state.handle = err_pipe;
-  exit_st.pipes[0] = &out_state;
-  exit_st.pipes[1] = &err_state;
-  tick_state tick_st{hooks, child_req, &exit_st};
-  if (hooks && hooks->on_tick) {
-    exit_st.timer = new uv_timer_t;
-    uv_timer_init(&loop, exit_st.timer);
-    exit_st.timer->data = &tick_st;
-    uv_timer_start(exit_st.timer, tick_cb, hooks->tick_ms, hooks->tick_ms);
-  }
-
   uv_read_start(reinterpret_cast<uv_stream_t*>(out_pipe), alloc_cb, read_cb);
   uv_read_start(reinterpret_cast<uv_stream_t*>(err_pipe), alloc_cb, read_cb);
 
@@ -219,4 +215,4 @@ process_result run_sq_cli(
   return result;
 }
 
-} // namespace bdg::wish::sq
+} // namespace bdg::wish::dev

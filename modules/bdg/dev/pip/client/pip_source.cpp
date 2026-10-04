@@ -13,18 +13,6 @@ using namespace bdg::bison;
 
 namespace {
 
-std::string trim_eol(std::string s) {
-  while (!s.empty() && (s.back() == '\n' || s.back() == '\r'))
-    s.pop_back();
-  return s;
-}
-
-// What a failed command had to say: pip's `ERROR:` message from stderr, or
-// stdout when stderr is empty.
-std::string error_text(const process_result& r) {
-  return error_summary(r.stderr_text.empty() ? r.stdout_text : r.stderr_text);
-}
-
 std::string field_of(const json_object& obj, const char* key) {
   auto it = obj.find(key);
   return it == obj.end() ? std::string{} : it->second;
@@ -36,7 +24,7 @@ std::string resolve_interpreter(const std::string& arg) {
   if (arg.empty()) {
     // `python3` is the unambiguous name on Linux / MSYS2; python.org's
     // Windows installer only provides `python`.
-    return run_pip_cli({"--version"}, {"python3"}).ok() ? "python3" : "python";
+    return dev::run_process({"python3", "--version"}).ok() ? "python3" : "python";
   }
   std::error_code ec;
   const std::filesystem::path p{arg};
@@ -52,28 +40,28 @@ std::string resolve_interpreter(const std::string& arg) {
 pip_source::pip_source(
     std::shared_ptr<bison::rmi::proxy::dynamic> proxy, const std::string& interpreter,
     std::shared_ptr<dev::command_worker> worker)
-    : proxy_(std::move(proxy)), worker_(std::move(worker)), interpreter_(interpreter),
-      // --no-input: stdin is closed, so never wait on a prompt. The version
-      // check would add an unrelated "new release of pip" notice to stderr.
-      launcher_({interpreter, "-m", "pip", "--disable-pip-version-check", "--no-input", "--no-color"}) {}
+    : tool_source(
+          std::move(proxy), std::move(worker), "pip",
+          // --no-input: stdin is closed, so never wait on a prompt. The
+          // version check would add an unrelated "new release of pip" notice
+          // to stderr.
+          {interpreter, "-m", "pip", "--disable-pip-version-check", "--no-input", "--no-color"}),
+      interpreter_(interpreter) {}
 
 std::string pip_source::probe_version(std::string& error) const {
-  auto r = run_pip_cli({"--version"}, launcher_);
+  auto r = run({"--version"});
   if (!r.ok()) {
     error = error_text(r);
     return {};
   }
-  return trim_eol(r.stdout_text);
+  return dev::trim_eol(r.stdout_text);
 }
 
 void pip_source::push_environment(const std::string& version_text) {
   dynamic args;
   args["text"_key] = version_text;
   args["interpreter"_key] = interpreter_;
-  try {
-    proxy_->call("set_environment"_key, std::move(args)).get();
-  } catch (const std::exception&) {
-  }
+  call("set_environment"_key, std::move(args));
 }
 
 void pip_source::refresh_all() {
@@ -82,50 +70,8 @@ void pip_source::refresh_all() {
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
-process_result pip_source::run_logged(const std::vector<std::string>& args) {
-  const std::string command = dev::command_text("pip", args);
-  auto r = worker_->run(command, [&](const dev::run_hooks* hooks) { return run_pip_cli(args, launcher_, hooks); });
-
-  // Single-line preview: collapse every whitespace run to one space.
-  std::string output;
-  for (char ch : r.ok() ? trim_eol(r.stdout_text) : error_text(r)) {
-    const bool space = ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r';
-    if (!space)
-      output += ch;
-    else if (!output.empty() && output.back() != ' ')
-      output += ' ';
-  }
-  constexpr size_t kMaxOutputPreview = 200;
-  if (output.size() > kMaxOutputPreview)
-    output = output.substr(0, kMaxOutputPreview) + "...";
-
-  dynamic log;
-  log["command"_key] = command;
-  log["exit_code"_key] = r.exit_code;
-  log["ok"_key] = r.ok();
-  log["output"_key] = std::move(output);
-  try {
-    proxy_->call("append_command_log"_key, std::move(log)).get();
-  } catch (const std::exception&) {
-    // Best-effort: a torn-down form just swallows the trace row.
-  }
-  return r;
-}
-
-bool pip_source::report(const std::string& label, const std::string& scope, bool ok, const std::string& output) {
-  dynamic args;
-  args["command"_key] = label;
-  args["scope"_key] = scope;
-  args["ok"_key] = ok;
-  args["output"_key] = ok ? std::string{} : output;
-  if (!ok)
-    worker_->fail(label + " failed: " + output);
-  try {
-    proxy_->call("command_result"_key, std::move(args)).get();
-  } catch (const std::exception&) {
-    return false; // form gone.
-  }
-  return true;
+std::string pip_source::error_text(const process_result& r) const {
+  return error_summary(dev::error_output(r));
 }
 
 bool pip_source::run_and_refresh(const std::string& label, const std::vector<std::string>& args) {
@@ -133,11 +79,9 @@ bool pip_source::run_and_refresh(const std::string& label, const std::vector<std
   // Refresh first: update_packages rewrites the status label with a package
   // count, which would otherwise overwrite this command's outcome.
   refresh_all();
-  report(label, "packages", r.ok(), error_text(r));
   // Something the user asked for: show its failure in the dialog even when
   // it failed at once (an externally-managed environment, typically).
-  if (!r.ok())
-    worker_->fail(label + " failed: " + error_text(r), /*always_show=*/true);
+  report(label, "packages", r.ok(), error_text(r), /*always_show=*/true);
   return r.ok();
 }
 
@@ -176,11 +120,8 @@ void pip_source::push_packages() {
   dynamic args;
   args["packages"_key] = dynamic_ptr{std::make_shared<dynamic>(std::move(arr))};
   args["outdated_checked"_key] = outdated_checked_;
-  try {
-    proxy_->call("update_packages"_key, std::move(args)).get();
-  } catch (const std::exception&) {
+  if (!call("update_packages"_key, std::move(args)))
     return;
-  }
   if (!r.ok())
     report("list", "packages", false, error_text(r));
 }
@@ -274,11 +215,8 @@ void pip_source::on_versions_requested(const std::string& name, bool pre) {
   args["latest"_key] =
       !parsed.latest.empty() || parsed.versions.empty() ? parsed.latest : parsed.versions.front();
   args["versions"_key] = dynamic_ptr{std::make_shared<dynamic>(std::move(arr))};
-  try {
-    proxy_->call("update_versions"_key, std::move(args)).get();
-  } catch (const std::exception&) {
+  if (!call("update_versions"_key, std::move(args)))
     return;
-  }
   if (!r.ok())
     report(label, "versions", false, error_text(r));
 }
@@ -315,10 +253,7 @@ void pip_source::on_details_requested(const std::string& kind, const std::string
   args["name"_key] = name;
   args["title"_key] = title;
   args["text"_key] = std::move(text);
-  try {
-    proxy_->call("update_details"_key, std::move(args)).get();
-  } catch (const std::exception&) {
-  }
+  call("update_details"_key, std::move(args));
 }
 
 } // namespace bdg::wish::pip

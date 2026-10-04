@@ -152,23 +152,29 @@ endmacro()
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_TAIL               test_tail              test_tail.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_NANO               test_nano              test_nano.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_TOP                test_top               test_top.cpp)
+# The helpers shared by the bdg/dev modules' clients (modules/bdg/dev/common):
+# run_process() against stub programs (printf/cat/sh -- never a real dev
+# tool), the text helpers, and tool_source against a stub form over an
+# in-memory RMI connection. Built whenever any module that uses them is.
+# Needs uv_a directly since process.cpp calls uv_spawn(); wish links it
+# PRIVATE, so it doesn't propagate to this target automatically -- same
+# rationale as wish_finalize_app_modules()'s own uv_a linking
+# (cmake/WishModules.cmake).
+if(WISH_MODULE_BDG_DEV_CURL OR WISH_MODULE_BDG_DEV_DOCKER OR WISH_MODULE_BDG_DEV_GIT OR
+   WISH_MODULE_BDG_DEV_HELM OR WISH_MODULE_BDG_DEV_KUBECTL OR WISH_MODULE_BDG_DEV_PIP OR
+   WISH_MODULE_BDG_DEV_PKG OR WISH_MODULE_BDG_DEV_SQ)
+  wish_add_test(test_dev_common test_dev_common.cpp
+      ${CMAKE_SOURCE_DIR}/modules/bdg/dev/common/process.cpp)
+  target_include_directories(test_dev_common PRIVATE ${CMAKE_SOURCE_DIR})
+  if(TARGET uv_a)
+    target_link_libraries(test_dev_common PRIVATE uv_a)
+  endif()
+endif()
 wish_add_optional_test(WISH_MODULE_BDG_DEV_EDITOR                test_editor            test_editor.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DEV_DOCKER               test_docker            test_docker.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DEV_SQ                   test_sq                test_sq.cpp)
 if(TARGET test_sq)
   target_include_directories(test_sq PRIVATE ${CMAKE_SOURCE_DIR})
-endif()
-# Exercises run_sq_cli() (sq_process.cpp) against stub binaries (printf/cat/
-# false -- never `sq`), so it needs no sq install. Client-side, no bison/RMI
-# dependency; needs uv_a directly since sq_process.cpp calls uv_spawn() --
-# same rationale as test_docker_process above.
-wish_add_optional_test(WISH_MODULE_BDG_DEV_SQ                   test_sq_process        test_sq_process.cpp
-    ${CMAKE_SOURCE_DIR}/modules/bdg/dev/sq/client/sq_process.cpp)
-if(TARGET test_sq_process)
-  target_include_directories(test_sq_process PRIVATE ${CMAKE_SOURCE_DIR})
-  if(TARGET uv_a)
-    target_link_libraries(test_sq_process PRIVATE uv_a)
-  endif()
 endif()
 # Pure string handling (JSONL result parser, connection-location masking,
 # read-only SQL guard) -- no framework/bison/RMI/libuv dependency.
@@ -178,89 +184,33 @@ wish_add_optional_test(WISH_MODULE_BDG_DEV_SQ                   test_sq_parsers 
 if(TARGET test_sq_parsers)
   target_include_directories(test_sq_parsers PRIVATE ${CMAKE_SOURCE_DIR})
 endif()
-# Exercises run_docker_cli() (docker_process.cpp) against stub binaries
-# (printf/false -- never `docker`), so it needs no Docker daemon. Client-side,
-# no bison/RMI dependency; needs uv_a directly since docker_process.cpp calls
-# uv_spawn() -- same rationale as test_git_process below.
-wish_add_optional_test(WISH_MODULE_BDG_DEV_DOCKER               test_docker_process    test_docker_process.cpp
-    ${CMAKE_SOURCE_DIR}/modules/bdg/dev/docker/client/docker_process.cpp)
-if(TARGET test_docker_process)
-  target_include_directories(test_docker_process PRIVATE ${CMAKE_SOURCE_DIR})
-  if(TARGET uv_a)
-    target_link_libraries(test_docker_process PRIVATE uv_a)
-  endif()
-endif()
 wish_add_optional_test(WISH_MODULE_BDG_DEV_KUBECTL              test_kubectl           test_kubectl.cpp)
-# Exercises run_kubectl_cli() (kubectl_process.cpp) against stub binaries
-# (printf/false -- never `kubectl`), so it needs no cluster. Client-side, no
-# bison/RMI dependency; needs uv_a directly since kubectl_process.cpp calls
-# uv_spawn() -- same rationale as test_docker_process above.
-wish_add_optional_test(WISH_MODULE_BDG_DEV_KUBECTL              test_kubectl_process   test_kubectl_process.cpp
-    ${CMAKE_SOURCE_DIR}/modules/bdg/dev/kubectl/client/kubectl_process.cpp)
-if(TARGET test_kubectl_process)
-  target_include_directories(test_kubectl_process PRIVATE ${CMAKE_SOURCE_DIR})
-  if(TARGET uv_a)
-    target_link_libraries(test_kubectl_process PRIVATE uv_a)
-  endif()
-endif()
 wish_add_optional_test(WISH_MODULE_BDG_DEV_HELM                 test_helm              test_helm.cpp)
-# Exercises run_helm_cli() (helm_process.cpp) against stub binaries
-# (printf/false -- never `helm`) plus the pure-string table parser, so it
-# needs no helm install. Client-side, no bison/RMI dependency; needs uv_a
-# directly since helm_process.cpp calls uv_spawn() -- same rationale as
-# test_kubectl_process above.
-wish_add_optional_test(WISH_MODULE_BDG_DEV_HELM                 test_helm_process      test_helm_process.cpp
-    ${CMAKE_SOURCE_DIR}/modules/bdg/dev/helm/client/helm_process.cpp
+# The pure-string table parser and argument checks, so it needs no helm
+# install. Client-side, no bison/RMI/libuv dependency.
+wish_add_optional_test(WISH_MODULE_BDG_DEV_HELM                 test_helm_parsers      test_helm_parsers.cpp
     ${CMAKE_SOURCE_DIR}/modules/bdg/dev/helm/client/helm_table_parser.cpp)
-if(TARGET test_helm_process)
-  target_include_directories(test_helm_process PRIVATE ${CMAKE_SOURCE_DIR})
-  if(TARGET uv_a)
-    target_link_libraries(test_helm_process PRIVATE uv_a)
-  endif()
+if(TARGET test_helm_parsers)
+  target_include_directories(test_helm_parsers PRIVATE ${CMAKE_SOURCE_DIR})
 endif()
 wish_add_optional_test(WISH_MODULE_BDG_DEV_PIP                  test_pip               test_pip.cpp)
-# Exercises run_pip_cli() (pip_process.cpp) against stub launchers
-# (printf/false -- never `python -m pip`) plus the pure-string output
-# parsers, so it needs no Python install. Client-side, no bison/RMI
-# dependency; needs uv_a directly since pip_process.cpp calls uv_spawn() --
-# same rationale as test_helm_process above.
-wish_add_optional_test(WISH_MODULE_BDG_DEV_PIP                  test_pip_process       test_pip_process.cpp
-    ${CMAKE_SOURCE_DIR}/modules/bdg/dev/pip/client/pip_process.cpp
+# The pure-string output parsers and argument checks, so it needs no Python
+# install. Client-side, no bison/RMI/libuv dependency.
+wish_add_optional_test(WISH_MODULE_BDG_DEV_PIP                  test_pip_parsers       test_pip_parsers.cpp
     ${CMAKE_SOURCE_DIR}/modules/bdg/dev/pip/client/pip_parsers.cpp)
-if(TARGET test_pip_process)
-  target_include_directories(test_pip_process PRIVATE ${CMAKE_SOURCE_DIR})
-  if(TARGET uv_a)
-    target_link_libraries(test_pip_process PRIVATE uv_a)
-  endif()
+if(TARGET test_pip_parsers)
+  target_include_directories(test_pip_parsers PRIVATE ${CMAKE_SOURCE_DIR})
 endif()
 wish_add_optional_test(WISH_MODULE_BDG_DEV_PKG                  test_pkg               test_pkg.cpp)
 # The per-manager commands and output parsers (apt / dnf / pacman / brew),
 # checked against captured sample output since only one manager is installed
-# on any machine, plus run_pkg_cli() against stub programs. Client-side, no
-# bison/RMI dependency; needs uv_a directly since pkg_process.cpp calls
-# uv_spawn() -- same rationale as test_pip_process above.
+# on any machine. Client-side, no bison/RMI/libuv dependency.
 wish_add_optional_test(WISH_MODULE_BDG_DEV_PKG                  test_pkg_backend       test_pkg_backend.cpp
-    ${CMAKE_SOURCE_DIR}/modules/bdg/dev/pkg/client/pkg_process.cpp
     ${CMAKE_SOURCE_DIR}/modules/bdg/dev/pkg/client/pkg_backend.cpp)
 if(TARGET test_pkg_backend)
   target_include_directories(test_pkg_backend PRIVATE ${CMAKE_SOURCE_DIR})
-  if(TARGET uv_a)
-    target_link_libraries(test_pkg_backend PRIVATE uv_a)
-  endif()
 endif()
 wish_add_optional_test(WISH_MODULE_BDG_DEV_CURL                 test_curl              test_curl.cpp)
-# Exercises run_curl_cli() (curl_process.cpp) against stub binaries
-# (printf/false -- never `curl`), so it needs no network access. Client-side,
-# no bison/RMI dependency; needs uv_a directly since curl_process.cpp calls
-# uv_spawn() -- same rationale as test_docker_process above.
-wish_add_optional_test(WISH_MODULE_BDG_DEV_CURL                 test_curl_process      test_curl_process.cpp
-    ${CMAKE_SOURCE_DIR}/modules/bdg/dev/curl/client/curl_process.cpp)
-if(TARGET test_curl_process)
-  target_include_directories(test_curl_process PRIVATE ${CMAKE_SOURCE_DIR})
-  if(TARGET uv_a)
-    target_link_libraries(test_curl_process PRIVATE uv_a)
-  endif()
-endif()
 # Pure string parsing (parse_curl_output(), curl_response_parser.cpp) --
 # zero framework/bison/RMI/libuv dependency, so this compiles and links
 # faster than every other curl test. See its own file comment: this split
@@ -288,12 +238,13 @@ endif()
 
 # Exercises resolve_repo_root() (git_process.cpp) against a real, throwaway
 # `git init`'d repo -- client-side, no bison/RMI dependency, same pattern as
-# test_git_graph_layout above. Needs uv_a (libuv) directly since git_process.cpp
-# calls uv_spawn(); wish links it PRIVATE, so it doesn't propagate to this
-# target automatically -- same rationale as wish_finalize_app_modules()'s own
+# test_git_graph_layout above. Needs uv_a (libuv) directly since
+# common/process.cpp (which run_git() runs on) calls uv_spawn(); wish links it
+# PRIVATE, so it doesn't propagate to this target automatically -- same rationale as wish_finalize_app_modules()'s own
 # uv_a linking for module client targets (cmake/WishModules.cmake).
 wish_add_optional_test(WISH_MODULE_BDG_DEV_GIT                test_git_process       test_git_process.cpp
-    ${CMAKE_SOURCE_DIR}/modules/bdg/dev/git/client/git_process.cpp)
+    ${CMAKE_SOURCE_DIR}/modules/bdg/dev/git/client/git_process.cpp
+    ${CMAKE_SOURCE_DIR}/modules/bdg/dev/common/process.cpp)
 if(TARGET test_git_process)
   target_include_directories(test_git_process PRIVATE ${CMAKE_SOURCE_DIR})
   if(TARGET uv_a)

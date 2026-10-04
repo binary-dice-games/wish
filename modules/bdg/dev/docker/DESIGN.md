@@ -53,11 +53,14 @@ This directory owns:
   method, the `*_requested` events).
 - `client/docker.hpp`/`.cpp` — the client runner (`run_docker`, event
   wiring, app registration).
-- `client/docker_process.hpp`/`.cpp` — a non-interactive libuv-based
-  "run `docker <args>`, capture output" helper.
 - `client/docker_source.hpp`/`.cpp` — every actual `docker` invocation,
   the tab-delimited `--format` output parsing, and the snapshot push /
   event reactions.
+- `../common/` — the helpers every bdg/dev client shares:
+  `process.hpp` (`run_process()`, the libuv "run this argv, capture
+  output" helper), `tool_source.hpp` (`docker_source`'s base class: the
+  Console trace, `command_result` reporting, tab-separated list pushes),
+  `frontend.hpp` (form + worker startup wiring), `text.hpp`.
 - `README.md` — user-facing usage.
 - `docker_mock.json` — the UI mockup validated in the `editor` tool before
   implementation (kept for reference, mirrored by `server/docker.cpp`'s
@@ -80,7 +83,7 @@ This directory owns:
    client-side data"), the same split `git` and `top` use.
 
 3. **No shell in any `docker` invocation.** Every `docker` call goes
-   through a real argv array via `uv_spawn` (`docker_process::run_docker_cli`,
+   through a real argv array via `uv_spawn` (`dev::run_process()`,
    §3), never a shell command string — container names, image refs, and
    volume names need no escaping and carry no injection surface.
 
@@ -178,32 +181,28 @@ method. One method per `*_requested` event, each running a mutating
 `git_repo_source`. `on_logs_requested` / `on_inspect_requested` run their
 read-only command and call `update_logs` / `update_inspect` directly.
 
-### `docker_process::run_docker_cli()` (client)
+### Running `docker` (client)
 
-`run_docker_cli(const std::vector<std::string>& args, std::string binary =
-"docker")` → `{int exit_code; std::string stdout_text, stderr_text; bool
-ok();}`. A near-verbatim copy of `git_process::run_git()`: `uv_loop_init` →
-prepend `binary` as argv[0] → stdout/stderr pipes → `uv_spawn` → `uv_run`
-(blocking) → collect exit code. No shell, no PTY (bison's
-`bdg::bison::term::terminal` is unsuitable for the same reasons documented
-in `git_process.hpp`). The `binary` parameter defaults to `"docker"` and
-exists only so `test_docker_process` can drive the helper with `printf` /
-`false` on a machine without Docker installed.
+`docker_source` derives from `dev::tool_source`
+(`modules/bdg/dev/common/tool_source.hpp`), constructed with `"docker"` as
+its tool name and launcher, so every command is `docker <args>` run through
+the shared `dev::run_process()` (`common/process.hpp`): `uv_spawn` with a
+real argv array, stdout/stderr pipes, blocking until exit. No shell, no PTY
+(bison's `bdg::bison::term::terminal` is unsuitable for the reasons
+documented in `process.hpp`). That shared runner is tested once, with stub
+programs, by `tests/test_dev_common.cpp`.
 
-`uv_a` (libuv) is **already** linked into every module-client target by
-`wish_finalize_app_modules()` (`cmake/WishModules.cmake`) — unlike `git`,
-which had to add that link, this module needs no CMake change.
+### `run_logged()` (client)
 
-### `docker_source::run_logged()` (client)
-
-Every one-shot `docker` invocation goes through this thin wrapper over
-`run_docker_cli()` (`git_repo_source::run_logged`'s shape): it runs the
-command, then pushes one `append_command_log` trace row (command string,
+Every one-shot `docker` invocation goes through `tool_source::run_logged()`:
+it runs the command on the module's `command_worker` (progress dialog,
+Cancel), then pushes one `append_command_log` trace row (command string,
 exit code, `ok`, single-line output preview capped at 200 chars) to the
-**Console** window. `push_list()` (the four `… ls` snapshots) calls the
-same `push_command_log()` helper inline. The **one** exception is the Logs
-"Follow" 2 s re-poll thread, which calls `run_docker_cli()` directly — a
-re-poll every 2 s would flood the Console (`git`'s Log-window lesson).
+**Console** window. `tool_source::push_rows()` (the four `… ls` snapshots)
+goes through it too. The exceptions are the Logs "Follow" 2 s re-poll
+thread and the Stats poll, which call `dev::run_process()` directly — a
+re-poll every few seconds would flood the Console (`git`'s Log-window
+lesson).
 
 ## 4. Data Flow / Architecture
 
@@ -254,7 +253,7 @@ logs_requested (client):
     -> update_logs({container_id:id, title:"<name> logs", text:<output>})
     if follow: start a background thread re-running the above every ~2s until
       the Follow checkbox is unchecked (top's sampling-thread pattern; no
-      streaming subprocess -- run_docker_cli stays blocking-only)
+      streaming subprocess -- run_process stays blocking-only)
 
 inspect_requested (client):
   `docker <kind> inspect <id>`  (pretty JSON)
@@ -298,25 +297,15 @@ use only the methods/events above).
 
 ## 6. Design Decisions
 
-- **`docker_process::run_docker_cli()` is built on libuv (`uv_spawn`), not
-  `bdg::bison::term::terminal`** — verbatim the rationale in
-  `modules/bdg/dev/git/client/git_process.hpp`: `terminal` is
-  PTY-attached, takes a shell *string*, and redirects the calling
-  process's own stdio for its lifetime — none of which is safe for many
-  quick argv-array `docker <args>` calls from inside a long-running
-  `wish_client`. libuv is already vendored by bison and, as of the `git`
-  module, already linked into every module-client target, so this file
-  needs no CMake change.
-
-- **The `binary` parameter on `run_docker_cli()` (default `"docker"`)
-  exists purely for testability.** `test_docker_process` runs on CI and
-  dev machines that have no Docker installed; passing `"printf"` /
-  `"false"` / `"sh"` lets it exercise the argv-building, pipe-reading, and
-  exit-code paths against a guaranteed-present binary. Production code
-  never passes the second argument. This is the one deviation from a
-  straight copy of `git_process` (which hard-codes `"git"`), justified
-  because a throwaway `git init` repo is trivial to create in a test but a
-  running Docker daemon is not.
+- **Commands run through the shared `dev::run_process()` (libuv
+  `uv_spawn`), not `bdg::bison::term::terminal`** — see
+  `modules/bdg/dev/common/process.hpp`: `terminal` is PTY-attached, takes
+  a shell *string*, and redirects the calling process's own stdio for its
+  lifetime — none of which is safe for many quick argv-array
+  `docker <args>` calls from inside a long-running `wish_client`. Every
+  bdg/dev module once carried its own copy of this helper; they now share
+  the one in `common/`, which is tested with stub programs (`printf`,
+  `false`, `sh`) so no Docker install is needed.
 
 - **No background polling of the list windows — every refresh is
   user-initiated.** `git` removed a ~2 s background `refresh_all()` poll
@@ -336,7 +325,7 @@ use only the methods/events above).
   background thread.** `docker_source::start_stats_polling()` (called once
   from `run_docker()` after wiring) spawns a detached thread that runs
   `docker stats --no-stream --format '<tab template>'` every ~3 s and calls
-  `update_stats`. It uses `run_docker_cli()` **directly, never
+  `update_stats`. It uses `dev::run_process()` **directly, never
   `run_logged()`** — a 3 s re-poll would flood the Console, the exact
   `git` Log-window lesson that already keeps the Follow thread out of it.
   The thread stops on `~docker_source` (a stop `atomic<bool>`) or when the
@@ -393,7 +382,7 @@ use only the methods/events above).
 - **The Logs "Follow" toggle is a client-side re-poll, not `docker logs
   -f` streaming.** True `-f` needs a non-blocking / streaming subprocess
   helper (a `read_cb` that forwards partial lines and a `uv_async` stop
-  signal) — real work that would complicate `run_docker_cli`'s otherwise
+  signal) — real work that would complicate `run_process()`'s otherwise
   exact reuse of `git_process`. Instead, checking Follow starts a
   background thread (the `top` client's sampling-thread pattern) that
   re-runs `docker logs --tail <lines> --timestamps <id>` every ~2 s and
@@ -493,14 +482,13 @@ use only the methods/events above).
 ## 7. Constraints and Invariants
 
 - The server form never touches `docker`, the filesystem, a socket, or a
-  subprocess; `docker_process` / `docker_source` (client-only) own that
+  subprocess; `docker_source` (client-only, on the shared `common/`
+  helpers) owns that
   entirely.
 - Every `update_*` RMI handler fully clears its owned table before
   repopulating — never appends (§6).
 - Every `docker` invocation is a real argv array through `uv_spawn` — no
   shell string is ever constructed (§2 Goal 3).
-- `run_docker_cli()`'s `binary` argument is never passed anything but the
-  default in production code — only tests supply it.
 - Logs/Inspect `update_*` calls that fail their staleness guard are
   dropped silently, never applied "because it's the only data we have".
 - The Logs "Follow" background thread must stop on both checkbox-off and
@@ -521,8 +509,8 @@ Depends on:
   `MenuItem`, `Combo`, `InputText`, `InputInt`, `Checkbox`,
   `HorizontalLayout` / `VerticalLayout` — all existing wish elements, no
   new widget needed.
-- `uv_a` (libuv, vendored by bison) — `docker_process`'s subprocess
-  helper; already linked into module-client targets by
+- `uv_a` (libuv, vendored by bison) — the shared `dev::run_process()`
+  subprocess helper; already linked into module-client targets by
   `wish_finalize_app_modules()`.
 - No JSON library — the list views use a tab-delimited `--format`
   template split on `\t` (see §6); `docker inspect` output is shown
@@ -547,11 +535,10 @@ Depended on by: nothing else in wish; this is a leaf module.
   field lands in the status label. Mirrors `tests/test_git.cpp`'s
   `DeleteBranchClickShowsConfirmDialog…` / `StaleDiffResponseIgnored…`
   tests. No Docker daemon required.
-- **`tests/test_docker_process.cpp`** — `run_docker_cli({"hello"},
-  "printf")` captures stdout; `run_docker_cli({...}, "false")` reports a
-  non-zero exit; a missing binary reports `exit_code == -1`. Compiles
-  `client/docker_process.cpp` directly and links `uv_a`, exactly like
-  `tests/test_git_process.cpp`. No Docker daemon required.
+- **`tests/test_dev_common.cpp`** — the shared `dev::run_process()` and
+  `dev::tool_source` plumbing (stdout capture, non-zero exits, a missing
+  binary reporting `exit_code == -1`, the Console trace row, tab-separated
+  list pushes), driven with stub programs. No Docker daemon required.
 - **End-to-end**: automation module against `wish client --run=docker`
   with a real fixture container — see [PLAN.md](PLAN.md)'s Verification
   section. Requires the invoking user to be in the `docker` group (or a
@@ -561,7 +548,7 @@ Depended on by: nothing else in wish; this is a leaf module.
 
 **Implemented and live-verified** (see [PLAN.md](PLAN.md)).
 `server/docker.{hpp,cpp}`, `client/docker*.{hpp,cpp}`,
-`tests/test_docker*.cpp` are in place.
+`tests/test_docker.cpp` are in place.
 
 - Containers / Images / Volumes / Networks: four dockable list windows on
   one shared `list_window` / `build_list_window()` / `add_list_row()`
@@ -576,8 +563,7 @@ Depended on by: nothing else in wish; this is a leaf module.
   `update_logs`/`update_inspect` carry a `container_id`/`target_id`
   staleness guard.
 - Console: a dockable FIFO-capped `Table` trace of every one-shot `docker`
-  invocation (`append_command_log`, fed by `docker_source::run_logged()` /
-  `push_command_log()`), green/red by exit status, "Copy Entry" / "Clear
+  invocation (`append_command_log`, fed by `tool_source::run_logged()`), green/red by exit status, "Copy Entry" / "Clear
   Console" per-row context menu. Neither the Follow re-poll thread nor the
   Stats `docker stats` poll is traced.
 - Stats: a dockable window with a CPU % and a Memory % `Plot` (one
@@ -587,7 +573,7 @@ Depended on by: nothing else in wish; this is a leaf module.
 - `docker version` startup gate; `MessageBox` confirm for stop/kill/remove
   and every prune; no background polling of the list windows.
 
-`test_docker` and `test_docker_process` pass. End-to-end verified against a
+`test_docker` and `test_dev_common` pass. End-to-end verified against a
 real Docker daemon: container stop with confirm, image remove with confirm,
 volume create, four-window grid, `docker logs` / `docker inspect` panes.
 
