@@ -7,10 +7,12 @@
 #include "src/rmi/shared/ids.hpp"
 
 #include <context/file_service.hpp>
+#include <ui/dock_layout_spec.hpp>
 #include <ui/ui_importer.hpp>
 
 #include <cctype>
 #include <fstream>
+#include <functional>
 #include <sstream>
 
 namespace bdg::wish {
@@ -39,7 +41,22 @@ constexpr size_t kMaxBufferedRows = 2000;
 
 } // namespace
 
-// ── UI layout ─────────────────────────────────────────────────────────────────
+// ── UI layouts ────────────────────────────────────────────────────────────────
+//
+// The viewer is split into two dockable panels -- Log and Controls -- seeded
+// into a first-run arrangement by on_init()'s set_default_dock_layout()
+// call, the same multi-window pattern top, pix and the dev modules use. The
+// user can re-dock, tab or float either; imgui.ini owns the arrangement
+// after the first run. Each Window keeps a width/height: the size a panel
+// restores to when dragged out of the dock.
+//
+// Log (the form's main root, internal_root_key_): the "All" + per-tag tab
+// bar. Tag tabs stay TabItems inside this panel rather than becoming their
+// own windows: a window created at runtime is never named in the seeded
+// DockLayout, so it would land in the outer host dockspace instead of this
+// tool's nested one (see docs/dock-layout.md's "Limitation").
+//
+// Controls: the toolbar and the status label.
 //
 // The filter box has no Apply/Clear buttons: it fires "changed" on every
 // keystroke (plain InputText, no EnterReturnsTrue flag), and on_event()
@@ -86,26 +103,15 @@ constexpr size_t kMaxBufferedRows = 2000;
 // makes its size a deterministic share of vbox's own real avail instead,
 // breaking the cycle -- see imgui_ui_renderer.cpp's render_vertical_layout()
 // for how a nonzero height hint gets a real bounding BeginChild() wrap.
-static constexpr const char* kLayout = R"json({
+static constexpr const char* kLogLayout = R"json({
   "type": "Window",
-  "title": "Tail",
-  "width": 960, "height": 620,
+  "title": "Log",
+  "width": 960, "height": 540,
   "closable": true,
   "children": {
     "vbox": {
       "type": "VerticalLayout",
       "children": {
-        "toolbar": {
-          "type": "HorizontalLayout",
-          "spacing": 8,
-          "children": {
-            "filter_input": { "type": "InputText", "label": "Filter (regex)", "hint": "e.g. error|timeout", "width": 320 },
-            "lines_input": { "type": "InputInt", "label": "Lines", "value": 10, "step": 0, "step_fast": 0, "width": 80, "flags": "EnterReturnsTrue" },
-            "chk_follow": { "type": "Checkbox", "label": "Follow", "value": true },
-            "btn_clear": { "type": "Button", "label": "Clear All" }
-          }
-        },
-        "status_label": { "type": "Label", "text": "0 lines" },
         "tab_bar": {
           "type": "TabBar", "id": "##tail_tabs", "height": -1,
           "children": {
@@ -132,18 +138,43 @@ static constexpr const char* kLayout = R"json({
   }
 })json";
 
+static constexpr const char* kControlsLayout = R"json({
+  "type": "Window",
+  "title": "Controls",
+  "width": 960, "height": 90,
+  "closable": true,
+  "children": {
+    "vbox": {
+      "type": "VerticalLayout",
+      "children": {
+        "toolbar": {
+          "type": "HorizontalLayout",
+          "spacing": 8,
+          "children": {
+            "filter_input": { "type": "InputText", "label": "Filter (regex)", "hint": "e.g. error|timeout", "width": 320 },
+            "lines_input": { "type": "InputInt", "label": "Lines", "value": 10, "step": 0, "step_fast": 0, "width": 80, "flags": "EnterReturnsTrue" },
+            "chk_follow": { "type": "Checkbox", "label": "Follow", "value": true },
+            "btn_clear": { "type": "Button", "label": "Clear All" }
+          }
+        },
+        "status_label": { "type": "Label", "text": "0 lines" }
+      }
+    }
+  }
+})json";
+
 // ── tail ─────────────────────────────────────────────────────────────────
 
 tail::tail(dynamic&& base) : form(std::move(base)) {}
 
-void tail::on_init() {
-  // See form::internal_root_key_'s doc comment: ordinally-assigned, not pointer-derived.
-  internal_root_key_ = next_available_key("__tail_");
+tail::~tail() {
+  remove_panel_objects();
+}
 
-  auto tree = import_json(kLayout);
-
-  auto* title_f = findField<std::string>("title"_key);
-  (*tree[""])["title"_key] = title_f ? *title_f : std::string{"Tail"};
+void tail::build_window(
+    const char* layout_json, const std::string& root_key, key_t& window_id_out,
+    const std::function<void(ui_tree&)>& wire) {
+  auto tree = import_json(layout_json);
 
   // put_object() files each element under the current request's group (see
   // rmi::context::current_group) so they're cleaned up together with the
@@ -154,23 +185,60 @@ void tail::on_init() {
     c.put_object(id, elem);
     elem["__wish_id"_key] = id;
   }
+  window_id_out = (*tree[""])["__wish_id"_key].as<key_t>();
+  wire(tree);
 
-  window_id_ = (*tree[""])["__wish_id"_key].as<key_t>();
-  tree.with("vbox.toolbar.filter_input", [&](const auto& e) {
-    filter_input_ptr_ = e;
-    filter_input_id_ = wish_id_of(e);
-  });
-  tree.with("vbox.toolbar.lines_input", [&](const auto& e) {
-    lines_input_ptr_ = e;
-    lines_input_id_ = wish_id_of(e);
-  });
-  tree.with("vbox.toolbar.chk_follow", [&](const auto& e) { follow_checkbox_id_ = wish_id_of(e); });
-  tree.with("vbox.toolbar.btn_clear", [&](const auto& e) { btn_clear_id_ = wish_id_of(e); });
-  tree.with("vbox.status_label", [&](const auto& e) { status_label_ptr_ = e; });
-  tree.with("vbox.tab_bar", [&](const auto& e) { tab_bar_ptr_ = e; });
-  tree.with("vbox.tab_bar.tab_all.table_all", [&](const auto& e) { all_table_.table_ptr = e; });
+  ui_element_ptr root_ptr = tree[""];
+  sess().ui_objects.merge(std::move(tree), root_key);
+  // The main root's top-level registration and "__path__" are handled by
+  // form::init() once on_init() returns; secondary panels register here.
+  if (root_key != internal_root_key_) {
+    sess().top_level_objects[key_t{root_key}] = root_ptr;
+    sess().top_level_handlers[key_t{root_key}] = this;
+    (*root_ptr)["__path__"_key] = root_key;
+  }
+}
 
-  sess().ui_objects.merge(std::move(tree), internal_root_key_);
+void tail::on_init() {
+  // See form::internal_root_key_'s doc comment: ordinally-assigned, not pointer-derived.
+  internal_root_key_ = next_available_key("__tail_");
+  controls_root_key_ = internal_root_key_ + "_controls";
+
+  auto* title_f = findField<std::string>("title"_key);
+  const std::string title = title_f ? *title_f : std::string{"Tail"};
+
+  build_window(kLogLayout, internal_root_key_, window_id_, [&](ui_tree& tree) {
+    tree.with("vbox.tab_bar", [&](const auto& e) { tab_bar_ptr_ = e; });
+    tree.with("vbox.tab_bar.tab_all.table_all", [&](const auto& e) { all_table_.table_ptr = e; });
+  });
+
+  build_window(kControlsLayout, controls_root_key_, controls_window_id_, [&](ui_tree& tree) {
+    tree.with("vbox.toolbar.filter_input", [&](const auto& e) {
+      filter_input_ptr_ = e;
+      filter_input_id_ = wish_id_of(e);
+    });
+    tree.with("vbox.toolbar.lines_input", [&](const auto& e) {
+      lines_input_ptr_ = e;
+      lines_input_id_ = wish_id_of(e);
+    });
+    tree.with("vbox.toolbar.chk_follow", [&](const auto& e) { follow_checkbox_id_ = wish_id_of(e); });
+    tree.with("vbox.toolbar.btn_clear", [&](const auto& e) { btn_clear_id_ = wish_id_of(e); });
+    tree.with("vbox.status_label", [&](const auto& e) { status_label_ptr_ = e; });
+  });
+
+  // Seed the first-run arrangement inside the viewer's own nested dockspace
+  // (titled with the form's "title" field): a Controls strip along the top
+  // ~11%, the Log filling the rest. Owned by imgui.ini after the first run
+  // (see docs/dock-layout.md); bump the version arg to layout() if it
+  // changes.
+  {
+    using namespace dock;
+    set_default_dock_layout(viewport(
+        "tail_dock", title,
+        layout(
+            split(dir::up, 0.11f, area({controls_root_key_}), area({internal_root_key_})),
+            /*version=*/1, /*target=*/"tail_dock")));
+  }
 
   next_table_seq_ = 1; // 0 is implicitly "reserved" for the "All" tab's static table.
 
@@ -191,6 +259,15 @@ void tail::on_init() {
 
   apply_follow_state();
   update_status();
+}
+
+void tail::remove_panel_objects() {
+  // Keys are forgotten once removed: next_available_key() may hand this
+  // form's freed internal_root_key_ to a new Tail instance, whose Controls
+  // panel would then reuse this exact secondary key (see the same reasoning
+  // in form::remove_objects_at()).
+  remove_objects_at(controls_root_key_);
+  controls_root_key_.clear();
 }
 
 // ── push_lines / set_filter ───────────────────────────────────────────────────
@@ -396,7 +473,7 @@ ui_element_ptr tail::build_log_table(log_table_state& state) {
   table["columns"_key] = int32_t{5};
   table["headers"_key] = true;
   table["outer_height"_key] = -1.0f;
-  table["flags"_key] = int32_t{33556417}; // Resizable|RowBg|Borders|ScrollY -- see kLayout's comment.
+  table["flags"_key] = int32_t{33556417}; // Resizable|RowBg|Borders|ScrollY -- see kLogLayout's comment.
   table["auto_scroll"_key] = follow_enabled_;
 
   auto make_col = [&](const char* label, int32_t col_id, int32_t flags, float w, int32_t order) {
@@ -420,7 +497,7 @@ ui_element_ptr tail::build_log_table(log_table_state& state) {
   // operator[](key_t) share the same underlying field map, see
   // bison_object.hpp), silently overwriting each TableColumn with a
   // TableRow and losing both the header labels and the column widths.
-  // Mirrors kLayout's own JSON child names (col_time, col_level, ...),
+  // Mirrors kLogLayout's own JSON child names (col_time, col_level, ...),
   // whose hashed string keys are subject to the same rule but never
   // collide with a small numeric row index in practice.
   auto children = dynamic_ptr{key_t{0U}, {}};
@@ -449,7 +526,7 @@ tail::tag_tab_state& tail::ensure_tag_tab(const std::string& tag) {
 
   ui_element_ptr tab = ui_element_ptr::create("wish"_key, "TabItem"_key);
   tab["label"_key] = "[" + tag + "]";
-  // Not closable, matching the "All" tab (see kLayout's own "closable":
+  // Not closable, matching the "All" tab (see kLogLayout's own "closable":
   // false) -- a tag's tab is a permanent part of the session's tab bar
   // once created, the same way "All" is; the user cannot remove either.
   tab["closable"_key] = false;
@@ -560,8 +637,10 @@ void tail::update_status() {
 // ── Event routing ─────────────────────────────────────────────────────────────
 
 void tail::on_event(key_t id, key_t event, const dynamic& payload) {
-  if (id == window_id_ && event == "closed"_key) {
+  // Either panel's X button -> tear the whole viewer down (top/pix's rule).
+  if (event == "closed"_key && (id == window_id_ || id == controls_window_id_)) {
     emit("closed"_key);
+    remove_panel_objects();
     remove_internal_objects();
     return;
   }

@@ -11,8 +11,10 @@
 #include "src/bison/bison_object.hpp"
 #include "src/rmi/rmi.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <deque>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -66,9 +68,14 @@ class SessionCapturingServer : public wish::server {
   }
 };
 
+// Helper: find the root key for the internal form tree -- "__tail_<N>"
+// exactly (the Log panel), not a child path ("__tail_0.vbox...") nor the
+// secondary Controls panel root ("__tail_0_controls").
 static std::string find_form_root(const wish::name_map& objects) {
+  static const std::string prefix = "__tail_";
   for (const auto& [k, _] : objects) {
-    if (k.rfind("__tail_", 0) == 0 && k.find('.') == std::string::npos)
+    if (k.size() > prefix.size() && k.rfind(prefix, 0) == 0 &&
+        std::all_of(k.begin() + prefix.size(), k.end(), [](char ch) { return ch >= '0' && ch <= '9'; }))
       return k;
   }
   return {};
@@ -300,7 +307,7 @@ class TailTest : public ::testing::Test {
   }
 
   dynamic_ptr status_label() const {
-    auto it = srv_->last_session->ui_objects.find(root_ + ".vbox.status_label");
+    auto it = srv_->last_session->ui_objects.find(root_ + "_controls.vbox.status_label");
     return it != srv_->last_session->ui_objects.end() ? dynamic_ptr{it->second} : dynamic_ptr{nullptr};
   }
 
@@ -323,10 +330,10 @@ class TailTest : public ::testing::Test {
 
   void simulate_btn_click(const std::string& btn_key) {
     auto& objs = srv_->last_session->ui_objects;
-    auto it = objs.find(root_ + ".vbox.toolbar." + btn_key);
+    auto it = objs.find(root_ + "_controls.vbox.toolbar." + btn_key);
     ASSERT_NE(it, objs.end()) << "button not found: " << btn_key;
     auto btn_id = (*it->second)["__wish_id"_key].as<bison::key_t>();
-    auto h = srv_->last_session->top_level_handlers.find(root_);
+    auto h = srv_->last_session->top_level_handlers.find(root_ + "_controls");
     ASSERT_NE(h, srv_->last_session->top_level_handlers.end());
     h->second->on_event(btn_id, "clicked"_key, dynamic{});
   }
@@ -337,11 +344,11 @@ class TailTest : public ::testing::Test {
   // relying on the handler to do it.
   void simulate_filter_input_changed(const std::string& text) {
     auto& objs = srv_->last_session->ui_objects;
-    auto it = objs.find(root_ + ".vbox.toolbar.filter_input");
+    auto it = objs.find(root_ + "_controls.vbox.toolbar.filter_input");
     ASSERT_NE(it, objs.end());
     (*it->second)["value"_key] = text;
     auto input_id = (*it->second)["__wish_id"_key].as<bison::key_t>();
-    auto h = srv_->last_session->top_level_handlers.find(root_);
+    auto h = srv_->last_session->top_level_handlers.find(root_ + "_controls");
     ASSERT_NE(h, srv_->last_session->top_level_handlers.end());
     dynamic payload;
     payload["value"_key] = text;
@@ -351,11 +358,11 @@ class TailTest : public ::testing::Test {
   // Mirrors render_checkbox()'s own "changed" event shape.
   void simulate_follow_checkbox_changed(bool value) {
     auto& objs = srv_->last_session->ui_objects;
-    auto it = objs.find(root_ + ".vbox.toolbar.chk_follow");
+    auto it = objs.find(root_ + "_controls.vbox.toolbar.chk_follow");
     ASSERT_NE(it, objs.end());
     (*it->second)["value"_key] = value;
     auto chk_id = (*it->second)["__wish_id"_key].as<bison::key_t>();
-    auto h = srv_->last_session->top_level_handlers.find(root_);
+    auto h = srv_->last_session->top_level_handlers.find(root_ + "_controls");
     ASSERT_NE(h, srv_->last_session->top_level_handlers.end());
     dynamic payload;
     payload["value"_key] = value;
@@ -371,20 +378,23 @@ class TailTest : public ::testing::Test {
   // Mirrors render_input_int()'s own "changed" event shape.
   void simulate_lines_input_changed(int32_t value) {
     auto& objs = srv_->last_session->ui_objects;
-    auto it = objs.find(root_ + ".vbox.toolbar.lines_input");
+    auto it = objs.find(root_ + "_controls.vbox.toolbar.lines_input");
     ASSERT_NE(it, objs.end());
     (*it->second)["value"_key] = value;
     auto input_id = (*it->second)["__wish_id"_key].as<bison::key_t>();
-    auto h = srv_->last_session->top_level_handlers.find(root_);
+    auto h = srv_->last_session->top_level_handlers.find(root_ + "_controls");
     ASSERT_NE(h, srv_->last_session->top_level_handlers.end());
     dynamic payload;
     payload["value"_key] = value;
     h->second->on_event(input_id, "changed"_key, payload);
   }
 
-  void simulate_window_closed() {
-    auto win_id = srv_->last_session->ui_objects.at(root_)->as<bison::key_t>("__wish_id"_key);
-    auto h = srv_->last_session->top_level_handlers.find(root_);
+  // Fires "closed" on the panel rooted at root_ + @p panel_suffix ("" for
+  // the Log panel, "_controls" for Controls).
+  void simulate_window_closed(const std::string& panel_suffix = "") {
+    const std::string panel_root = root_ + panel_suffix;
+    auto win_id = srv_->last_session->ui_objects.at(panel_root)->as<bison::key_t>("__wish_id"_key);
+    auto h = srv_->last_session->top_level_handlers.find(panel_root);
     ASSERT_NE(h, srv_->last_session->top_level_handlers.end());
     h->second->on_event(win_id, "closed"_key, dynamic{});
   }
@@ -435,7 +445,7 @@ class TailTest : public ::testing::Test {
 // ── Internal tree ──────────────────────────────────────────────────────────────
 
 TEST_F(TailTest, TreeContainsFilterInput) {
-  EXPECT_TRUE(srv_->last_session->ui_objects.count(root_ + ".vbox.toolbar.filter_input"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root_ + "_controls.vbox.toolbar.filter_input"));
 }
 
 TEST_F(TailTest, TreeContainsAllTab) {
@@ -677,7 +687,7 @@ TEST_F(TailTest, TagTabCreatedWhileFollowDisabledStartsWithAutoScrollOff) {
 
 TEST_F(TailTest, LinesInputDefaultsToTen) {
   auto& objs = srv_->last_session->ui_objects;
-  auto it = objs.find(root_ + ".vbox.toolbar.lines_input");
+  auto it = objs.find(root_ + "_controls.vbox.toolbar.lines_input");
   ASSERT_NE(it, objs.end());
   EXPECT_EQ(it->second->as<int32_t>("value"_key), 10);
 }
@@ -704,7 +714,7 @@ TEST_F(TailTest, PushingMoreLinesThanCapDropsOldestKeepsNewest) {
 TEST_F(TailTest, SetLineCountUpdatesDisplay) {
   set_line_count(25);
   auto& objs = srv_->last_session->ui_objects;
-  auto it = objs.find(root_ + ".vbox.toolbar.lines_input");
+  auto it = objs.find(root_ + "_controls.vbox.toolbar.lines_input");
   ASSERT_NE(it, objs.end());
   EXPECT_EQ(it->second->as<int32_t>("value"_key), 25);
 }
@@ -712,7 +722,7 @@ TEST_F(TailTest, SetLineCountUpdatesDisplay) {
 TEST_F(TailTest, SetLineCountClampsBelowOneToOne) {
   set_line_count(0);
   auto& objs = srv_->last_session->ui_objects;
-  auto it = objs.find(root_ + ".vbox.toolbar.lines_input");
+  auto it = objs.find(root_ + "_controls.vbox.toolbar.lines_input");
   ASSERT_NE(it, objs.end());
   EXPECT_EQ(it->second->as<int32_t>("value"_key), 1);
 }
@@ -722,7 +732,7 @@ TEST_F(TailTest, SetLineCountClampsAboveCeilingTo2000) {
   // header, so duplicated here; keep in sync if that constant changes.
   set_line_count(1'000'000);
   auto& objs = srv_->last_session->ui_objects;
-  auto it = objs.find(root_ + ".vbox.toolbar.lines_input");
+  auto it = objs.find(root_ + "_controls.vbox.toolbar.lines_input");
   ASSERT_NE(it, objs.end());
   EXPECT_EQ(it->second->as<int32_t>("value"_key), 2000);
 }
@@ -785,7 +795,7 @@ TEST_F(TailTest, EditingLinesInputBelowOneClampsToOneInEventAndDisplay) {
   simulate_lines_input_changed(-5);
 
   auto& objs = srv_->last_session->ui_objects;
-  auto it = objs.find(root_ + ".vbox.toolbar.lines_input");
+  auto it = objs.find(root_ + "_controls.vbox.toolbar.lines_input");
   ASSERT_NE(it, objs.end());
   EXPECT_EQ(it->second->as<int32_t>("value"_key), 1);
 
@@ -833,4 +843,59 @@ TEST_F(TailTest, ClearAllButtonEmptiesAllTable) {
 TEST_F(TailTest, WindowClosedEmitsClosed) {
   simulate_window_closed();
   EXPECT_TRUE(wait_for_event("closed"_key));
+  EXPECT_FALSE(srv_->last_session->ui_objects.count(root_));
+  EXPECT_FALSE(srv_->last_session->ui_objects.count(root_ + "_controls"));
+}
+
+// Closing the secondary Controls panel tears down the whole viewer too.
+TEST_F(TailTest, ControlsPanelClosedEmitsClosedAndRemovesEveryPanel) {
+  simulate_window_closed("_controls");
+  EXPECT_TRUE(wait_for_event("closed"_key));
+  for (const std::string key : {root_, root_ + "_controls"})
+    EXPECT_FALSE(srv_->last_session->ui_objects.count(key)) << key;
+}
+
+// ── Dockable panels ────────────────────────────────────────────────────────────
+
+// Each panel is its own top-level Window, addressable by "__path__" so the
+// dock layout can name it.
+TEST_F(TailTest, EachPanelIsATopLevelWindow) {
+  auto& s = *srv_->last_session;
+  for (const std::string key : {root_, root_ + "_controls"}) {
+    auto it = s.top_level_objects.find(bison::key_t{key});
+    ASSERT_NE(it, s.top_level_objects.end()) << key;
+    EXPECT_EQ(it->second->as<bison::key_t>(dynamic::CLASS), "Window"_key) << key;
+    EXPECT_EQ(it->second->as<std::string>("__path__"_key), key) << key;
+  }
+  EXPECT_EQ(s.ui_objects.at(root_)->as<std::string>("title"_key), "Log");
+  EXPECT_EQ(s.ui_objects.at(root_ + "_controls")->as<std::string>("title"_key), "Controls");
+}
+
+// The panels are seeded into a nested DockSpaceViewport ("tail_dock") whose
+// DockLayout names both panels' paths.
+TEST_F(TailTest, RegistersDefaultDockLayoutNamingEveryPanel) {
+  wish::ui_element_ptr viewport;
+  for (const auto& [k, obj] : srv_->last_session->top_level_objects)
+    if (obj->as<bison::key_t>(dynamic::CLASS) == "DockSpaceViewport"_key)
+      viewport = obj;
+  ASSERT_TRUE(viewport);
+  EXPECT_EQ(viewport->as<std::string>("id"_key), "tail_dock");
+  EXPECT_EQ(viewport->as<std::string>("title"_key), "Tail");
+
+  // Collect every DockArea's newline-separated "windows" list.
+  std::vector<std::string> windows;
+  std::function<void(const dynamic&)> walk = [&](const dynamic& node) {
+    if (node.as<bison::key_t>(dynamic::CLASS) == "DockArea"_key)
+      windows.push_back(node.as<std::string>("windows"_key));
+    if (auto* cf = node.findField<dynamic_ptr>("children"_key); cf && *cf)
+      (*cf)->forEach([&](bison::key_t, const field& f) {
+        if (f.is<dynamic_ptr>() && f.as<dynamic_ptr>())
+          walk(*f.as<dynamic_ptr>());
+      });
+  };
+  walk(*viewport);
+  std::sort(windows.begin(), windows.end());
+  std::vector<std::string> expected{root_, root_ + "_controls"};
+  std::sort(expected.begin(), expected.end());
+  EXPECT_EQ(windows, expected);
 }

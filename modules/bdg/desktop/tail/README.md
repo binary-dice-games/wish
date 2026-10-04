@@ -3,13 +3,18 @@
 `tail`-like log viewer, with a command-line surface modeled on the Linux
 `tail` tool (`-f`, `-n`). Raw lines are colorized by severity and filterable
 by a live regex; any line carrying a `[Tag]` token (e.g. `[Renderer]`) is
-also mirrored into its own dedicated tab.
+also mirrored into its own dedicated tab. Laid out as two dockable panels
+inside its own nested "Tail" dockspace (see [docs/dock-layout.md](../../../../docs/dock-layout.md)):
+**Log** (the All tab plus one tab per tag) and **Controls** (the toolbar --
+filter, Lines, Follow, Clear All -- and the status line). The first run
+seeds Controls as a strip above the Log; rearrange freely afterwards
+(Shift+drag to re-dock). Closing either panel closes the tool.
 
 - **server/**: `Tail` form (`register_tail()`) -- parses/classifies
   raw lines (via `log_line_parser`, configured from `patterns.json` below)
-  and renders them into a scrolling table per tab. The toolbar's Follow
-  checkbox (on by default) controls whether each table auto-scrolls to the
-  newest row as lines arrive; unchecking it lets you browse older rows
+  and renders them into a scrolling table per tab in the Log panel. The
+  Controls panel's Follow checkbox (on by default) controls whether each
+  table auto-scrolls to the newest row as lines arrive; unchecking it lets you browse older rows
   without being pulled back to the bottom. The server never touches the
   filesystem; it only renders whatever `push_lines` gives it.
 - **client/**: `run_tail(wish_app_host&)`, self-registered as the
