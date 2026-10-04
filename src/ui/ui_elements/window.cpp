@@ -79,6 +79,27 @@ void register_window() {
                             "a title-bar X that also emits 'closed'."),
           attr<Category>("Behavior")});
   proto->addField(
+      "dock_target"_rkey,
+      field{
+          std::string{""},
+          attr<DisplayName>("Dock Target"),
+          attr<Description>("Id of a named DockSpaceViewport (its 'id' field). On first use an "
+                            "unpositioned window docks into that dockspace's central node -- the "
+                            "node left over after every DockLayout split, which stays even when "
+                            "empty -- instead of the ambient dockspace. For windows an app creates "
+                            "at runtime (e.g. one per opened document) that a DockLayout cannot "
+                            "name ahead of time. Ignored when that dockspace is not rendered."),
+          attr<Category>("Layout")});
+  proto->addField(
+      "focus_request"_rkey,
+      field{
+          int32_t{0},
+          attr<DisplayName>("Focus Request"),
+          attr<Description>("Change this value (e.g. increment it) to bring the window to the "
+                            "front and focus it on the next frame; when docked, its tab becomes "
+                            "the selected one."),
+          attr<Category>("Behavior")});
+  proto->addField(
       "flags"_rkey,
       field{
           int32_t{0},
@@ -114,7 +135,9 @@ void register_window() {
           })});
   // Attach class-level attrs manually (no combined attrs+factory overload exists).
   (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Window"));
-  (*proto)[dynamic::CLASS].addAttribute(attr<Description>("A top-level window container."));
+  (*proto)[dynamic::CLASS].addAttribute(attr<Description>("A top-level window container. Emits 'closed' (title-bar X, when "
+                                                    "closable) and 'focused' (it or one of its child windows gains "
+                                                    "focus, e.g. its dock tab is clicked)."));
   dynamic::addClass(
       "wish"_key, std::move(proto), "Element"_key, dynamic::make_factory<window>("wish"_key, "Window"_key));
 }

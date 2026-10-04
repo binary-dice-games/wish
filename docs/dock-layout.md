@@ -137,20 +137,38 @@ only what follows `"###"`, so `ImGui::GetID("Docker###docker_dock")` and
 `ImGui::GetID("docker_dock")` land on the identical id. Change `title`
 freely; `id` (and therefore `layout()`'s `target`) must stay untouched.
 
-**Limitation:** only windows *listed in the wrapped layout's `DockArea`
-nodes* are guaranteed to land inside the nested dockspace — `DockLayout`
-assigns them explicitly (`DockBuilderDockWindow(path, target_id)`),
-independent of render order. A window created dynamically at runtime and
-never added to any `DockArea` (e.g. docker's per-container Logs window)
-still falls back to the **outer/host** ambient dockspace on its first
-appearance, landing as its own tile next to the app's shell rather than
-inside it — the app's nested dockspace id is only ambient while the
-`DockSpaceViewport` element itself is rendering, and is restored to the
-outer id immediately afterward. Solving this in general needs either
-per-window explicit dock targets or making such windows real tree
-children of the shell; until then, list every window you can predict
-ahead of time in the `DockArea` tree, and treat windows outside it as
-independently placed.
+**Windows created at runtime.** Only windows *listed in the wrapped
+layout's `DockArea` nodes* are placed by `DockLayout` itself
+(`DockBuilderDockWindow(path, target_id)`). A window an app creates later
+(one per opened document, docker's per-container Logs window) would by
+default fall back to the **outer/host** ambient dockspace on its first
+appearance — the nested dockspace id is only ambient while the
+`DockSpaceViewport` element itself renders. To keep such windows inside
+the app's own dockspace:
+
+1. Leave an **empty `DockArea`** (`dock::area({})`) on the *far* side of
+   your splits. That node is the dockspace's **central node**: ImGui hands
+   the central-node flag to the far (second) child of every split and keeps
+   that node alive even while it holds no windows, so it reserves a
+   "documents" area.
+2. Give each runtime window `"dock_target": "<viewport id>"` (the same id
+   string as `dock::viewport()`'s `id`). On first use it docks into that
+   dockspace's central node, tabbed with any other window already there.
+
+```cpp
+// nano: a Toolbar strip on top, Search along the bottom, documents between.
+set_default_dock_layout(viewport("nano_dock", "Nano",
+    layout(split(dir::up, 0.09f, area({toolbar_key}),
+               split(dir::down, 0.36f, area({search_key}), area({}))),
+           /*version=*/1, /*target=*/"nano_dock")));
+// ...later, per opened file:
+(*file_window)["dock_target"_key] = std::string{"nano_dock"};
+```
+
+The nano module (`modules/bdg/desktop/nano/server/nano.cpp`) is the worked
+example. Without `dock_target`, list every window you can predict ahead of
+time in the `DockArea` tree, and treat windows outside it as independently
+placed.
 
 ---
 
@@ -208,7 +226,7 @@ DockArea     := { windows, focused? }
 | `version` | `DockLayout` | Revision; see [Versioning](#versioning-and-re-applying). |
 | `dir` | `DockSplit` | `left` / `right` / `up` / `down`. First child goes here, second opposite. |
 | `ratio` | `DockSplit` | 0..1 — the first child's share of the parent. |
-| `windows` | `DockArea` | **Newline-separated** `Window` paths, in tab order. |
+| `windows` | `DockArea` | **Newline-separated** `Window` paths, in tab order. Empty leaves the node empty — on the far side of a split, that is the central node `Window.dock_target` docks into (see above). |
 | `focused` | `DockArea` | Which of `windows` is the active tab (default: the first). |
 
 `windows` is a newline-delimited string, **not** a JSON array — the client

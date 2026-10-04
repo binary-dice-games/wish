@@ -74,6 +74,13 @@ bool should_apply_dock_layout(const ui_element& layout_root, ImGuiID target_id, 
 ///        layout, not "already applied".
 void note_dock_layout_applied(const ui_element& layout_root, ImGuiID target_id, int32_t version);
 
+/// @brief The node a window targeting dockspace @p dockspace_id should
+///        dock into: that dockspace's central node (the leaf left on the far
+///        side of every split, kept by ImGui even while empty), or
+///        @p dockspace_id itself when it has no node tree yet. See
+///        `Window.dock_target`.
+ImGuiID dock_central_node_id(ImGuiID dockspace_id);
+
 /// @brief Install the `[WishDockLayout]` `ImGuiSettingsHandler` on the
 ///        current ImGui context if not already present. Must be called
 ///        before the first `ImGui::NewFrame()` so the handler participates

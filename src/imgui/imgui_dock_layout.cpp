@@ -74,11 +74,11 @@ bool realize_node(const ui_element& node, ImGuiID node_id, logger* log) {
 
   if (cls == "DockArea"_key) {
     const auto& area = static_cast<const ui_dock_area&>(node);
+    // An empty DockArea leaves its node empty on purpose: the far side of
+    // a split keeps ImGui's central-node flag and survives with no windows,
+    // reserving a documents area that windows created later dock into via
+    // Window.dock_target (see dock_central_node_id()).
     const std::vector<std::string> windows = split_lines(area.windows_ref());
-    if (windows.empty()) {
-      log_warn(log, "wish DockLayout: DockArea has no windows");
-      return false;
-    }
     const std::string& focused = area.focused_ref();
     for (const auto& w : windows) {
       if (w == focused)
@@ -230,6 +230,11 @@ void dl_ClearAll(ImGuiContext*, ImGuiSettingsHandler*) {
 }
 
 } // namespace
+
+ImGuiID dock_central_node_id(ImGuiID dockspace_id) {
+  ImGuiDockNode* central = ImGui::DockBuilderGetCentralNode(dockspace_id);
+  return central ? central->ID : dockspace_id;
+}
 
 bool build_dock_layout(const ui_element& layout_root, ImGuiID target_id, ImVec2 node_size, logger* log) {
   const ui_element* root_child = nullptr;

@@ -183,6 +183,17 @@ class imgui_renderer : public renderer {
   void set_ambient_dockspace_id(ImGuiID id) { ambient_dockspace_id_ = id; }
   ImGuiID ambient_dockspace_id() const { return ambient_dockspace_id_; }
 
+  /// @brief Records that the `DockSpaceViewport` whose `id` field is
+  ///        @p name published dockspace @p id this frame, so a `Window`
+  ///        rendered later in the frame can target it by name (see
+  ///        `Window.dock_target`). Cleared by `begin_frame()`.
+  void set_named_dockspace_id(const std::string& name, ImGuiID id) { named_dockspaces_[name] = id; }
+  /// @brief The dockspace id recorded under @p name this frame, or 0.
+  ImGuiID named_dockspace_id(const std::string& name) const {
+    auto it = named_dockspaces_.find(name);
+    return it == named_dockspaces_.end() ? 0 : it->second;
+  }
+
   /// @brief Dispatches the element to its ImGui widget(s) and recurses into
   ///        children where required.
   void render_node(const ui_element& node, const context& s) override;
@@ -336,6 +347,9 @@ class imgui_renderer : public renderer {
 
   /// See `ambient_dockspace_id()`. Reset every `begin_frame()`.
   ImGuiID ambient_dockspace_id_ = 0;
+
+  /// See `named_dockspace_id()`. Reset every `begin_frame()`.
+  std::unordered_map<std::string, ImGuiID> named_dockspaces_;
 
  private:
   /// This instance's full class-id -> render function dispatch table: wish's

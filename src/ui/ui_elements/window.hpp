@@ -55,6 +55,37 @@ class window : public cloneable_ui_element<window, ui_root> {
     return cached_field_or<int32_t>(pos_y_field_, bison::key_t{"pos_y"}, def);
   }
 
+  /// @brief Zero-copy `dock_target` (empty fallback): the id of a named
+  /// dockspace (a `DockSpaceViewport`'s `id`) this window docks into the
+  /// central node of on first use, instead of the ambient dockspace.
+  const std::string& dock_target_ref() const {
+    return cached_field_str(dock_target_field_, bison::key_t{"dock_target"});
+  }
+
+  /// @brief Cached `get_as<int32_t>("focus_request"_key, def)`.
+  int32_t focus_request(int32_t def = 0) const {
+    return cached_field_or<int32_t>(focus_request_field_, bison::key_t{"focus_request"}, def);
+  }
+
+  /// @brief True when @p request differs from the value seen on the
+  /// previous call -- the frame render_window() should bring the window to
+  /// the front. The first call only records @p request (a window is
+  /// focused on appearing anyway), so it never triggers.
+  bool take_focus_request(int32_t request) const {
+    bool changed = seen_focus_request_.has_value() && *seen_focus_request_ != request;
+    seen_focus_request_ = request;
+    return changed;
+  }
+
+  /// @brief True exactly on the frame @p is_focused transitions from false
+  /// to true -- the frame render_window() emits `"focused"`. Always updates
+  /// the recorded focus state to @p is_focused.
+  bool just_focused(bool is_focused) const {
+    bool was = was_focused_;
+    was_focused_ = is_focused;
+    return !was && is_focused;
+  }
+
   /// @brief One-shot modal-open latch: true once `ImGui::OpenPopup()` has
   /// already been called for this popup, false once it has fully closed.
   /// Replaces the old `"__modal_opened__"` hidden field -- this state is
@@ -101,12 +132,16 @@ class window : public cloneable_ui_element<window, ui_root> {
   mutable bison::field* modal_field_ = nullptr;
   mutable bison::field* pos_x_field_ = nullptr;
   mutable bison::field* pos_y_field_ = nullptr;
+  mutable bison::field* dock_target_field_ = nullptr;
+  mutable bison::field* focus_request_field_ = nullptr;
 
   mutable bool modal_opened_ = false;
   mutable std::optional<bool> was_collapsed_;
   mutable std::optional<bool> was_docked_;
   mutable int32_t float_width_ = 0;
   mutable int32_t float_height_ = 0;
+  mutable std::optional<int32_t> seen_focus_request_;
+  mutable bool was_focused_ = false;
 };
 
 } // namespace bdg::wish

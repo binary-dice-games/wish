@@ -39,6 +39,7 @@ struct TextEditorState {
   std::vector<int32_t> breakpoint_lines; // 1-based, refreshed from the field every frame
   int32_t current_line{0}; // 1-based, 0 = none; refreshed from the field every frame
   int32_t last_scrolled_line{0}; // current_line already scrolled to, 0 = none yet
+  int32_t applied_goto_request{0}; // goto_request value last acted on
 };
 
 std::unordered_map<uint32_t, TextEditorState>& editor_cache() {
@@ -436,6 +437,25 @@ void render_text_editor(imgui_renderer&, const ui_element& node_base, const cont
   if (st.current_line != 0 && st.current_line != st.last_scrolled_line) {
     st.last_scrolled_line = st.current_line;
     st.editor.ScrollToLine(static_cast<size_t>(st.current_line - 1), TextEditor::Scroll::alignMiddle);
+  }
+
+  // Go-to request (e.g. nano's search results): select the requested range
+  // and center it, once per change of goto_request. After the reload above,
+  // since SetText() resets the cursor and scrolling.
+  if (int32_t request = node.goto_request(); request != st.applied_goto_request) {
+    st.applied_goto_request = request;
+    int32_t line = node.goto_line();
+    if (line > 0 && st.editor.GetLineCount() > 0) {
+      size_t l = std::min(static_cast<size_t>(line - 1), st.editor.GetLineCount() - 1);
+      size_t col = static_cast<size_t>(std::max(0, node.goto_column()));
+      size_t len = static_cast<size_t>(std::max(0, node.goto_length()));
+      if (len > 0)
+        st.editor.SelectRegion(TextEditor::DocPos(l, col), TextEditor::DocPos(l, col + len));
+      else
+        st.editor.SetCursor(TextEditor::DocPos(l, col));
+      st.editor.ScrollToLine(l, TextEditor::Scroll::alignMiddle);
+      st.editor.SetFocus();
+    }
   }
 
   // Gutter decorator: a filled dot for each breakpoint line, or (taking

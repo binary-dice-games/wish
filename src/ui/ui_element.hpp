@@ -2170,6 +2170,14 @@ class ui_text_editor : public cloneable_ui_element<ui_text_editor> {
   int32_t current_line(int32_t def = 0) const {
     return cached_field_or<int32_t>(current_line_field_, bison::key_t{"current_line"}, def);
   }
+  /// @brief Go-to request: a change of `goto_request` selects
+  /// `goto_length` characters at 1-based `goto_line`, 0-based character
+  /// `goto_column`, and scrolls it into view (see TextEditor's field docs).
+  /// Read only when the request changes, so not pointer-cached.
+  int32_t goto_request(int32_t def = 0) const { return get_as<int32_t>(bison::key_t{"goto_request"}, def); }
+  int32_t goto_line(int32_t def = 0) const { return get_as<int32_t>(bison::key_t{"goto_line"}, def); }
+  int32_t goto_column(int32_t def = 0) const { return get_as<int32_t>(bison::key_t{"goto_column"}, def); }
+  int32_t goto_length(int32_t def = 0) const { return get_as<int32_t>(bison::key_t{"goto_length"}, def); }
 
  private:
   mutable bison::field* file_path_field_ = nullptr;

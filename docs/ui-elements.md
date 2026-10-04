@@ -112,11 +112,18 @@ one (directly or via nested layouts).
 | `pos_x` | `int32` | `-1` | Horizontal position in pixels. `-1` (with `pos_y`) leaves the window unpositioned: a modal centers on the viewport, a normal dockable window docks into the ambient dockspace (the server's fullscreen host window, or a `DockSpaceViewport`'s), and either falls back to ImGui's own placement when neither applies. A user drag is remembered by `imgui.ini` regardless. |
 | `pos_y` | `int32` | `-1` | Vertical position in pixels. See `pos_x` for the `-1` (unpositioned) behavior. |
 | `closable` | `bool` | `false` | Show a close button (X) on the title bar; clicking it emits `closed`. |
+| `dock_target` | `string` | `""` | The `id` of a `DockSpaceViewport` (e.g. one built with `dock::viewport()`). On first use, an unpositioned window docks into that dockspace's **central node** — the node an empty `DockArea` on the far side of a `DockLayout` split reserves — instead of the ambient dockspace. For windows an app creates at runtime, e.g. one per opened document. Ignored when that viewport is not rendered. See [docs/dock-layout.md](dock-layout.md). |
+| `focus_request` | `int32` | `0` | Change the value (e.g. increment it) to bring the window to the front and focus it; a docked window's tab becomes the selected one. |
 | `flags` | `int32` (flags) | `0` | Bitmask, combine names with `\|`: `NoTitleBar`, `NoResize`, `NoMove`, `NoScrollbar`, `NoScrollWithMouse`, `NoCollapse`, `AlwaysAutoResize`, `NoBackground`, `NoSavedSettings`, `NoMouseInputs`, `MenuBar`, `HorizontalScrollbar`, `NoFocusOnAppearing`, `NoBringToFrontOnFocus`, `AlwaysVerticalScrollbar`, `AlwaysHorizontalScrollbar`, `NoNavInputs`, `NoNavFocus`, `UnsavedDocument`, `NoDocking`, and composites `NoNav`, `NoDecoration`, `NoInputs`. |
 
-**Events:** `closed` — fired when the user clicks the close button (requires
-`closable: true`); no payload. The client is expected to tear down the
-window's objects (or hide it) in response.
+**Events:**
+- `closed` — fired when the user clicks the close button (requires
+  `closable: true`); no payload. The client is expected to tear down the
+  window's objects (or hide it) in response.
+- `focused` — fired when the window, or one of its child windows (e.g. a
+  `TextEditor`), gains keyboard focus — including when its dock tab is
+  clicked. No payload. Lets an app track which of several document windows
+  is the current one.
 
 ### `Layout`, `VerticalLayout`, `HorizontalLayout`
 
@@ -775,7 +782,7 @@ A leaf of a `DockLayout` tree: one dock node holding one or more tabbed
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `windows` | `string` | `""` | **Newline-separated** list of `Window` paths, in tab order. (A string, not a JSON array — the template descriptor importer drops array-valued fields.) |
+| `windows` | `string` | `""` | **Newline-separated** list of `Window` paths, in tab order. (A string, not a JSON array — the template descriptor importer drops array-valued fields.) Empty leaves the node empty: on the far side of a split it is the dockspace's central node, which survives empty and is where a `Window` with `dock_target` docks. |
 | `focused` | `string` | `""` | Which of `windows` starts as the active tab. Empty ⇒ the first. |
 
 Descriptor example (a client template):
@@ -816,6 +823,10 @@ sandboxed file path.
 | `auto_scroll` | `bool` | `false` | When `true`, scrolls to the last line each time the file is (re)loaded, i.e. whenever `file_path` changes. For append-style views such as logs; point `file_path` at a new file to show new content, since rewriting the same file does not trigger a reload. |
 | `width` | `int32` | `0` | Width in pixels (0–8192); `0` fills available width. |
 | `height` | `int32` | `400` | Height in pixels (0–8192); `0` fills available height. |
+| `goto_line` | `int32` | `0` | 1-based line a go-to request moves to (see `goto_request`). |
+| `goto_column` | `int32` | `0` | 0-based character (not byte) offset in `goto_line` where the go-to selection starts. |
+| `goto_length` | `int32` | `0` | Characters to select from `goto_column`; `0` only places the caret. |
+| `goto_request` | `int32` | `0` | Change it (e.g. increment) after setting the three fields above: the editor selects that range, scrolls it to the middle of the view and takes keyboard focus — once per change, the next time it renders. Used by nano's search results. |
 | `wish_ui_schema` | `bool` | `false` | When `true` and `language` is `"json"` or `"yaml"`, enables cursor tracking (`cursor_moved` events) and autocomplete for wish UI element type names, field names, and enum values, sourced from the live class registry (see `src/ui/ui_schema_help.hpp`). Used by the `editor` module's source panel; off by default so unrelated `TextEditor` uses (e.g. nano) are unaffected. |
 
 **Events:**
