@@ -5,7 +5,9 @@
 
 #include <ui/forms/form.hpp>
 #include <ui/ui_element.hpp>
+#include <ui/ui_importer.hpp>
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -19,10 +21,16 @@ class properties_dialog;
 /// @brief Top/htop-style system monitor form, with a per-row right-click
 /// menu for managing individual processes.
 ///
-/// Shows CPU and memory history graphs (via `plot_elements`), one meter per
-/// logical CPU core, and a process table the user can sort by clicking any
-/// column header (PID, Name, State, CPU %, Memory, or Command; defaults to
-/// CPU % descending). All process/CPU/memory *sampling* happens client-side
+/// Laid out as four dockable panels inside the tool's own nested dockspace
+/// (`dock::viewport()`, see docs/dock-layout.md), like the dev modules:
+/// **Processes** (the form's main root: a process table the user can sort
+/// by clicking any column header -- PID, Name, State, CPU %, Memory, or
+/// Command; defaults to CPU % descending -- a case-insensitive name filter,
+/// and a status label), **CPU**
+/// and **Memory** (a summary label over a history graph each), and
+/// **Cores** (one meter per logical CPU core). A first-run arrangement is
+/// seeded by `on_init()`; the user can re-dock, tab, or float any panel
+/// afterwards. Closing any panel closes the whole tool. All process/CPU/memory *sampling* happens client-side
 /// (gathering this information is inherently OS-specific, and the machine a
 /// user actually wants visibility into is their own, not necessarily the
 /// wish server's host) -- the client periodically calls `update_snapshot`
@@ -44,7 +52,7 @@ class properties_dialog;
 /// `on_upload_requested`/`on_download_requested` pattern.
 ///
 /// Emitted events:
-///   - `"closed"` — user clicked the window X button; internal UI is removed.
+///   - `"closed"` — user clicked any panel's X button; all panels are removed.
 ///   - `"on_process_action_requested"` — a context-menu action was
 ///     confirmed; `{ pid: int32, action: string }` where `action` is one of
 ///     `"kill"`, `"pause"`, `"resume"`, `"set_priority"` (adds `nice: int32`,
@@ -57,6 +65,9 @@ class properties_dialog;
 class top : public form {
  public:
   explicit top(bison::dynamic&& base);
+  /// @brief Removes the secondary CPU/Memory/Cores panels; ~form() removes
+  /// the main Processes panel and the dock layout.
+  ~top() override;
 
   /// @brief RMI method: replace the currently-displayed system/process
   /// snapshot. @p args holds:
@@ -94,7 +105,8 @@ class top : public form {
 
  protected:
   void on_init() override;
-  /// @brief Reacts to: `"closed"` (window X button); `"sorted"` (a
+  /// @brief Reacts to: `"closed"` (any panel's X button); the name filter
+  /// InputText's `"changed"`; `"sorted"` (a
   /// `proc_table_` column header was clicked -- see `Table`'s docs in
   /// `src/ui/ui_elements/table.cpp`); a row context-menu item's `"clicked"`
   /// (looked up via `action_item_targets_`); and the set-affinity dialog's
@@ -143,6 +155,18 @@ class top : public form {
     std::vector<int32_t> affinity_cores;
   };
 
+  /// @brief Import @p layout_json, assign every element an RMI id, run
+  /// @p wire to capture element pointers, and merge the tree under
+  /// @p root_key -- registering it as its own top-level object (with
+  /// `__path__`, so it can be named in the dock layout) unless it is the
+  /// main `internal_root_key_`, which form::init() registers itself.
+  void build_window(
+      const char* layout_json, const std::string& root_key, bison::key_t& window_id_out,
+      const std::function<void(ui_tree&)>& wire);
+  /// @brief Remove the CPU/Memory/Cores panels and forget their keys.
+  /// Safe to call more than once.
+  void remove_panel_objects();
+
   void ensure_core_meters(size_t core_count);
   void update_process_table(const bison::dynamic& args);
   static void push_history(std::vector<float>& history, float value);
@@ -151,6 +175,10 @@ class top : public form {
   /// refresh each row's `order` field -- no new data needed, so this can run
   /// directly from `on_event` for instant feedback on a header click.
   void resort_rows();
+  /// @brief Show only rows whose process name contains `filter_text_`
+  /// (case-insensitive substring; empty shows all) by toggling each row's
+  /// `visible` field, and refresh the "N of M processes" count label.
+  void apply_process_filter();
 
   /// @brief Builds the row's ContextMenu element (Properties/Pause-Resume/
   /// Kill/Priority submenu/Set CPU Affinity), registering every item's
@@ -182,8 +210,20 @@ class top : public form {
       const std::string& exe_path, const std::string& cwd, const std::string& cmdline, int32_t nice,
       const std::vector<int32_t>& affinity_cores);
 
-  bison::key_t window_id_;
+  /// Secondary panel roots: internal_root_key_ + "_cpu"/"_mem"/"_cores".
+  std::string cpu_root_key_;
+  std::string mem_root_key_;
+  std::string cores_root_key_;
+
+  bison::key_t window_id_; ///< Processes panel (main root).
+  bison::key_t cpu_window_id_;
+  bison::key_t mem_window_id_;
+  bison::key_t cores_window_id_;
   bison::key_t proc_table_id_;
+  bison::key_t filter_input_id_;
+  /// Current name filter, as last reported by the filter InputText's
+  /// "changed" event.
+  std::string filter_text_;
 
   /// `column_id` (see `TableColumn.column_id`) of the column rows are
   /// currently sorted by; defaults to the CPU % column, matching the
@@ -199,6 +239,7 @@ class top : public form {
   ui_element_ptr mem_plot_series_;
   ui_element_ptr proc_table_;
   ui_element_ptr status_label_;
+  ui_element_ptr filter_count_label_;
 
   std::vector<float> cpu_history_;
   std::vector<float> mem_history_;

@@ -12,6 +12,7 @@
 #include "src/rmi/rmi.hpp"
 
 #include <algorithm>
+#include <functional>
 #include <chrono>
 #include <memory>
 #include <optional>
@@ -118,11 +119,14 @@ class SessionCapturingServer : public wish::server {
   }
 };
 
-// Helper: find the root key for the internal form tree (starts with
-// "__top_", no dot -- i.e. it is the top-level entry not a child path).
+// Helper: find the root key for the internal form tree -- "__top_<N>"
+// exactly (the Processes panel), not a child path ("__top_0.vbox...") nor
+// a secondary panel ("__top_0_cpu") or dialog ("__top_affinity_0") root.
 static std::string find_form_root(const wish::name_map& objects) {
+  static const std::string prefix = "__top_";
   for (const auto& [k, _] : objects) {
-    if (k.rfind("__top_", 0) == 0 && k.find('.') == std::string::npos)
+    if (k.size() > prefix.size() && k.rfind(prefix, 0) == 0 &&
+        std::all_of(k.begin() + prefix.size(), k.end(), [](char ch) { return ch >= '0' && ch <= '9'; }))
       return k;
   }
   return {};
@@ -172,15 +176,65 @@ TEST_F(TopWindowTest, FormRootIsWindow) {
 TEST_F(TopWindowTest, TreeContainsSummaryLabels) {
   std::string root = instantiate_and_get_root();
   ASSERT_FALSE(root.empty());
-  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".vbox.summary.cpu_label"));
-  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".vbox.summary.mem_label"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + "_cpu.vbox.cpu_label"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + "_mem.vbox.mem_label"));
 }
 
 TEST_F(TopWindowTest, TreeContainsPlots) {
   std::string root = instantiate_and_get_root();
   ASSERT_FALSE(root.empty());
-  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".vbox.cpu_plot.cpu_series"));
-  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + ".vbox.mem_plot.mem_series"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + "_cpu.vbox.cpu_plot.cpu_series"));
+  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + "_mem.vbox.mem_plot.mem_series"));
+}
+
+// Each panel is its own top-level Window, addressable by "__path__" so the
+// dock layout can name it.
+TEST_F(TopWindowTest, EachPanelIsATopLevelWindow) {
+  std::string root = instantiate_and_get_root();
+  ASSERT_FALSE(root.empty());
+  auto& s = *srv_->last_session;
+  for (const std::string key : {root, root + "_cpu", root + "_mem", root + "_cores"}) {
+    auto it = s.top_level_objects.find(bison::key_t{key});
+    ASSERT_NE(it, s.top_level_objects.end()) << key;
+    EXPECT_EQ(it->second->as<bison::key_t>(dynamic::CLASS), "Window"_key) << key;
+    EXPECT_EQ(it->second->as<std::string>("__path__"_key), key) << key;
+  }
+  EXPECT_EQ(s.ui_objects.at(root)->as<std::string>("title"_key), "Processes");
+  EXPECT_EQ(s.ui_objects.at(root + "_cpu")->as<std::string>("title"_key), "CPU");
+  EXPECT_EQ(s.ui_objects.at(root + "_mem")->as<std::string>("title"_key), "Memory");
+  EXPECT_EQ(s.ui_objects.at(root + "_cores")->as<std::string>("title"_key), "Cores");
+}
+
+// The panels are seeded into a nested DockSpaceViewport ("top_dock") whose
+// DockLayout names every panel's path.
+TEST_F(TopWindowTest, RegistersDefaultDockLayoutNamingEveryPanel) {
+  std::string root = instantiate_and_get_root();
+  ASSERT_FALSE(root.empty());
+
+  wish::ui_element_ptr viewport;
+  for (const auto& [k, obj] : srv_->last_session->top_level_objects)
+    if (obj->as<bison::key_t>(dynamic::CLASS) == "DockSpaceViewport"_key)
+      viewport = obj;
+  ASSERT_TRUE(viewport);
+  EXPECT_EQ(viewport->as<std::string>("id"_key), "top_dock");
+  EXPECT_EQ(viewport->as<std::string>("title"_key), "Top");
+
+  // Collect every DockArea's newline-separated "windows" list.
+  std::vector<std::string> windows;
+  std::function<void(const dynamic&)> walk = [&](const dynamic& node) {
+    if (node.as<bison::key_t>(dynamic::CLASS) == "DockArea"_key)
+      windows.push_back(node.as<std::string>("windows"_key));
+    if (auto* cf = node.findField<dynamic_ptr>("children"_key); cf && *cf)
+      (*cf)->forEach([&](bison::key_t, const field& f) {
+        if (f.is<dynamic_ptr>() && f.as<dynamic_ptr>())
+          walk(*f.as<dynamic_ptr>());
+      });
+  };
+  walk(*viewport);
+  std::sort(windows.begin(), windows.end());
+  std::vector<std::string> expected{root, root + "_cores", root + "_cpu", root + "_mem"};
+  std::sort(expected.begin(), expected.end());
+  EXPECT_EQ(windows, expected);
 }
 
 TEST_F(TopWindowTest, TreeContainsEmptyProcessTableBeforeAnySnapshot) {
@@ -493,8 +547,8 @@ class TopSnapshotTest : public ::testing::Test {
 TEST_F(TopSnapshotTest, UpdatesSummaryLabels) {
   update_snapshot(37.5, {}, 1000.0, 400.0, {});
 
-  EXPECT_EQ(label_text(root_ + ".vbox.summary.cpu_label"), "CPU: 37.5%");
-  EXPECT_NE(label_text(root_ + ".vbox.summary.mem_label").find("40.0%"), std::string::npos);
+  EXPECT_EQ(label_text(root_ + "_cpu.vbox.cpu_label"), "CPU: 37.5%");
+  EXPECT_NE(label_text(root_ + "_mem.vbox.mem_label").find("40.0%"), std::string::npos);
 }
 
 // Regression test: the ImPlot renderer plots min(xs.size(), ys.size())
@@ -504,15 +558,15 @@ TEST_F(TopSnapshotTest, PlotSeriesGetMatchingXsAndYs) {
   update_snapshot(10.0, {}, 1000.0, 100.0, {});
   update_snapshot(20.0, {}, 1000.0, 200.0, {});
 
-  auto cpu_xs = plot_field(root_ + ".vbox.cpu_plot.cpu_series", "xs"_key);
-  auto cpu_ys = plot_field(root_ + ".vbox.cpu_plot.cpu_series", "ys"_key);
+  auto cpu_xs = plot_field(root_ + "_cpu.vbox.cpu_plot.cpu_series", "xs"_key);
+  auto cpu_ys = plot_field(root_ + "_cpu.vbox.cpu_plot.cpu_series", "ys"_key);
   ASSERT_EQ(cpu_xs.size(), cpu_ys.size());
   ASSERT_EQ(cpu_xs.size(), 2u);
   EXPECT_FLOAT_EQ(cpu_ys[0], 10.0f);
   EXPECT_FLOAT_EQ(cpu_ys[1], 20.0f);
 
-  auto mem_xs = plot_field(root_ + ".vbox.mem_plot.mem_series", "xs"_key);
-  auto mem_ys = plot_field(root_ + ".vbox.mem_plot.mem_series", "ys"_key);
+  auto mem_xs = plot_field(root_ + "_mem.vbox.mem_plot.mem_series", "xs"_key);
+  auto mem_ys = plot_field(root_ + "_mem.vbox.mem_plot.mem_series", "ys"_key);
   ASSERT_EQ(mem_xs.size(), mem_ys.size());
   ASSERT_EQ(mem_xs.size(), 2u);
 }
@@ -520,7 +574,7 @@ TEST_F(TopSnapshotTest, PlotSeriesGetMatchingXsAndYs) {
 TEST_F(TopSnapshotTest, FirstCallSizesCoreMeters) {
   update_snapshot(10.0, {20.0f, 30.0f, 40.0f, 50.0f}, 1000.0, 100.0, {});
 
-  auto it = srv_->last_session->ui_objects.find(root_ + ".vbox.cores");
+  auto it = srv_->last_session->ui_objects.find(root_ + "_cores.vbox.cores");
   ASSERT_NE(it, srv_->last_session->ui_objects.end());
   auto* cf = it->second->findField<dynamic_ptr>("children"_key);
   ASSERT_NE(cf, nullptr);
@@ -614,6 +668,81 @@ TEST_F(TopSnapshotTest, SortCriterionPersistsAcrossSubsequentSnapshots) {
   EXPECT_EQ(row_pids_in_order(), (std::vector<int>{1, 2}));
 }
 
+// ── Name filter ───────────────────────────────────────────────────────────────
+
+class TopFilterTest : public TopSnapshotTest {
+ protected:
+  void set_filter(const std::string& text) {
+    auto filter_id =
+        srv_->last_session->ui_objects.at(root_ + ".vbox.toolbar.filter")->as<bison::key_t>("__wish_id"_key);
+    dynamic payload;
+    payload["value"_key] = text;
+    fire(filter_id, "changed"_key, std::move(payload));
+  }
+
+  bool row_visible(int pid) const {
+    auto row = find_row(pid);
+    EXPECT_TRUE(row) << "no row for pid " << pid;
+    return row && row->as<bool>("visible"_key);
+  }
+
+  void snapshot_three() {
+    update_snapshot(
+        5.0, {}, 1000.0, 100.0,
+        {{1, "init", "[init]", "S", 1.0, 0.0}, {2, "Firefox", "/usr/bin/firefox", "S", 2.0, 0.0},
+         {3, "bash", "/bin/bash", "S", 3.0, 0.0}});
+  }
+};
+
+TEST_F(TopFilterTest, AllRowsVisibleWithoutFilter) {
+  snapshot_three();
+  EXPECT_TRUE(row_visible(1));
+  EXPECT_TRUE(row_visible(2));
+  EXPECT_TRUE(row_visible(3));
+  EXPECT_EQ(label_text(root_ + ".vbox.toolbar.filter_count"), "");
+}
+
+TEST_F(TopFilterTest, FilterIsCaseInsensitiveSubstringOnName) {
+  snapshot_three();
+  set_filter("FIRE");
+  EXPECT_FALSE(row_visible(1));
+  EXPECT_TRUE(row_visible(2));
+  EXPECT_FALSE(row_visible(3));
+  EXPECT_EQ(label_text(root_ + ".vbox.toolbar.filter_count"), "1 of 3 processes");
+}
+
+// Only the name is matched, not the command line.
+TEST_F(TopFilterTest, FilterDoesNotMatchCommand) {
+  snapshot_three();
+  set_filter("/usr/bin");
+  EXPECT_FALSE(row_visible(2));
+}
+
+TEST_F(TopFilterTest, ClearingFilterShowsAllRows) {
+  snapshot_three();
+  set_filter("bash");
+  ASSERT_FALSE(row_visible(1));
+  set_filter("");
+  EXPECT_TRUE(row_visible(1));
+  EXPECT_TRUE(row_visible(2));
+  EXPECT_TRUE(row_visible(3));
+  EXPECT_EQ(label_text(root_ + ".vbox.toolbar.filter_count"), "");
+}
+
+// A process appearing in a later snapshot respects the active filter.
+TEST_F(TopFilterTest, FilterAppliesToRowsAddedByLaterSnapshots) {
+  snapshot_three();
+  set_filter("bash");
+  update_snapshot(
+      5.0, {}, 1000.0, 100.0,
+      {{1, "init", "[init]", "S", 1.0, 0.0}, {2, "Firefox", "/usr/bin/firefox", "S", 2.0, 0.0},
+       {3, "bash", "/bin/bash", "S", 3.0, 0.0}, {4, "sshd", "/usr/sbin/sshd", "S", 0.5, 0.0},
+       {5, "bash", "/bin/bash --login", "S", 0.1, 0.0}});
+  EXPECT_FALSE(row_visible(4));
+  EXPECT_TRUE(row_visible(5));
+  EXPECT_EQ(label_text(root_ + ".vbox.toolbar.filter_count"), "2 of 5 processes");
+}
+
 // ── Event routing ─────────────────────────────────────────────────────────────
 
 TEST_F(TopSnapshotTest, WindowClosedEmitsClosedAndCleansUp) {
@@ -628,6 +757,22 @@ TEST_F(TopSnapshotTest, WindowClosedEmitsClosedAndCleansUp) {
   // session.hpp's contract on emit_event), so wait for it.
   EXPECT_TRUE(srv_->events->wait_for("closed"_key, since));
   EXPECT_EQ(srv_->last_session->ui_objects.count(root_), 0u);
+  EXPECT_EQ(srv_->last_session->ui_objects.count(root_ + "_cpu"), 0u);
+  EXPECT_EQ(srv_->last_session->ui_objects.count(root_ + "_mem"), 0u);
+  EXPECT_EQ(srv_->last_session->ui_objects.count(root_ + "_cores"), 0u);
+}
+
+// Closing a secondary panel (here: CPU) tears down the whole tool too.
+TEST_F(TopSnapshotTest, SecondaryPanelClosedEmitsClosedAndCleansUpEverything) {
+  size_t since = srv_->events->mark();
+
+  const std::string cpu_root = root_ + "_cpu";
+  auto win_id = srv_->last_session->ui_objects.at(cpu_root)->as<bison::key_t>("__wish_id"_key);
+  fire_at(cpu_root, win_id, "closed"_key);
+
+  EXPECT_TRUE(srv_->events->wait_for("closed"_key, since));
+  for (const std::string key : {root_, cpu_root, root_ + "_mem", root_ + "_cores"})
+    EXPECT_EQ(srv_->last_session->ui_objects.count(key), 0u) << key;
 }
 
 // ── Row context menu: shape ───────────────────────────────────────────────────

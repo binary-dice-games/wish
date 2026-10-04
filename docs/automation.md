@@ -95,6 +95,17 @@ gotcha you hit and didn't record is one the next agent will hit again.
   `sys.path.insert(0, "<repo>/bindings/python")` (or `WISH_LIB=...` if the
   shared library isn't under the default `<repo>/build/`) before `import
   wish`.
+- **Python `playwright` may not be pre-installed either** (seen 2026-10 in a
+  Claude Code cloud container: `ModuleNotFoundError: No module named
+  'playwright'`, although Chromium was present under
+  `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`). Install it into a scratch
+  venv (`python3 -m venv venv && venv/bin/pip install playwright`), but
+  **pin the release whose bundled Chromium revision matches the directory
+  in `/opt/pw-browsers`** (e.g. `chromium-1194` → `playwright==1.56.0`);
+  the latest release looks for a newer revision and fails with
+  "Executable doesn't exist ... run playwright install". The revision a
+  release expects is in
+  `site-packages/playwright/driver/package/browsers.json`.
 - **`pytest` is not pre-installed**, and `pip install pytest` fails under
   this environment's PEP 668 "externally managed environment" protection
   (`pip install --break-system-packages` works but modifies the shared
@@ -206,6 +217,13 @@ gotcha you hit and didn't record is one the next agent will hit again.
   rect, then take the shot. (A `TextEditor` with an empty `file_path`
   renders nothing, so its rect has zero height until content is loaded --
   check a toolbar child or wait for height > 0.)
+- **A widget whose `rect` lies outside its parent row's `rect`, with
+  `visible: False` while `get_widget()` shows the right text, is a layout
+  sizing bug, not a timing issue** (`top` module's filter count, 2026-10:
+  an initially-empty `Label` in a `HorizontalLayout` never grew once text
+  arrived). Comparing the child's `rect` against its parent's pinpointed
+  it; the cause was `render_node()` refusing to update a clipped item's
+  `last_rendered_size()` (fixed in `src/imgui/imgui_renderer.cpp`).
 - **`type_text()` appends; Ctrl+A/Delete does not clear a multiline
   `InputText`** (`sq` module, 2026-09). Driving a second, different query
   into the same box through `page.keyboard.press("Control+A")` +
