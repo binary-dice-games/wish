@@ -103,10 +103,7 @@ key_t wish_id_of(const Element& element) {
 // "toolbar" holds a case-insensitive name filter (docker.cpp's container
 // filter pattern): each "changed" event re-runs apply_process_filter(),
 // which toggles every row's "visible" field, as does every snapshot (so
-// newly-appeared processes respect the current filter). "filter_count"
-// has a fixed "width": a Label is measured from its last rendered size, so
-// one that starts empty is sized 0 and stays clipped by the row's child
-// window once text arrives.
+// newly-appeared processes respect the current filter).
 //
 // "proc_table" carries "height": -1 (mc.cpp's left_table/right_table
 // technique): "vbox" hands "toolbar"/"status_label" their natural height first, then
@@ -137,7 +134,7 @@ static constexpr const char* kProcessesLayout = R"({
           "type": "HorizontalLayout", "spacing": 8,
           "children": {
             "filter": { "type": "InputText", "hint": "Filter by name", "width": 240 },
-            "filter_count": { "type": "Label", "text": "", "width": 220 }
+            "filter_count": { "type": "Label", "text": "" }
           }
         },
         "proc_table": {

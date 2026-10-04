@@ -13,6 +13,7 @@
 #include "src/rmi/shared/profiling.hpp"
 
 #include <imgui.h>
+#include <imgui_internal.h>
 
 #include <imgui/imgui_dock_layout.hpp>
 #include <imgui/imgui_graph_renderer.hpp>
@@ -529,6 +530,14 @@ void imgui_renderer::render_node(const ui_element& node, const context& s) {
   // last_rendered_size() update further down -- see that call site's doc
   // comment for why a clipped/invisible item must not overwrite it.
   bool item_visible = true;
+  // Whether the window this node is submitted into is skipping items this
+  // frame (collapsed, or a child window entirely clipped by its parent).
+  // Widgets return early without computing a rect in that case, so the
+  // post-dispatch item rect would be stale -- unlike an item that is merely
+  // clipped, whose rect ImGui still computes for real. Captured before
+  // dispatch: the node's own items land in this window, whatever child
+  // windows its render function opens and closes along the way.
+  const bool window_skips_items = ImGui::GetCurrentWindowRead()->SkipItems;
 
   if (needs_group_wrap)
     ImGui::BeginGroup();
@@ -599,10 +608,11 @@ void imgui_renderer::render_node(const ui_element& node, const context& s) {
   //
   // Gated on item_visible -- EXCEPT when this node has no prior confirmed-
   // good value to protect (last_rendered_size() still reads the bootstrap
-  // default {0,0}, meaning it has never captured a real size before), in
-  // which case this frame's computed size is trusted even if currently
-  // reported invisible. Both halves of this rule are load-bearing, each
-  // fixing a distinct real bug:
+  // default {0,0}, meaning it has never captured a real size before), or
+  // when its window was actually laying out items (window_skips_items
+  // false), in which case this frame's computed size is trusted even if
+  // currently reported invisible. Every part of this rule is load-bearing,
+  // each fixing a distinct real bug:
   //
   // - Protecting an EXISTING good value (the original rule) matters
   //   because a node whose real ImGui item was entirely clipped this frame
@@ -641,8 +651,21 @@ void imgui_renderer::render_node(const ui_element& node, const context& s) {
   //   source, e.g. TextEx() calls CalcTextSize() and ItemSize() ahead of
   //   ItemAdd()) measurement is strictly better than leaving it at {0,0}
   //   forever.
+  //
+  // - Trusting a merely-CLIPPED item's rect (window_skips_items false)
+  //   fixes a third deadlock of the same shape as the second: a Label
+  //   that starts with empty text renders a real {0, line height} size --
+  //   a "confirmed" value, so the rule above no longer applies -- and its
+  //   HorizontalLayout row sizes its child window without it. Once text
+  //   arrives, the label draws past that child window's edge
+  //   (IsItemVisible() false), so its new width was never picked up, the
+  //   row never grew, and the label stayed clipped forever (top module's
+  //   filter count). Its rect is real geometry, computed by the widget
+  //   before ImGui's clip test. Only a window that skips items leaves the
+  //   stale, unrelated rect the first half of this rule protects against
+  //   (the scrolled-out row above sits in a fully clipped child window).
   bool had_prior_confirmed_size = node.last_rendered_size().x != 0.0f || node.last_rendered_size().y != 0.0f;
-  if (item_visible || self_reports_rect || !had_prior_confirmed_size) {
+  if (item_visible || self_reports_rect || !had_prior_confirmed_size || !window_skips_items) {
     vec2f new_last_rendered_size{
         last_resolved_rect_max_.x - last_resolved_rect_min_.x, last_resolved_rect_max_.y - last_resolved_rect_min_.y};
     if (std::ofstream* log = render_debug_log()) {

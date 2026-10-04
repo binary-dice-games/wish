@@ -2979,6 +2979,49 @@ TEST_F(ImguiRendererTest, AutoResizeWindowGrowsToFitFreshWideLabelInsteadOfDeadl
   EXPECT_GT(body.arranged_size().x, 100.0f);
 }
 
+TEST_F(ImguiRendererTest, HorizontalLayoutGrowsWhenEmptyLabelGetsText) {
+  // Regression test for a real bug (top module's "N of M processes" filter
+  // count): a Label that starts with empty text still renders a real
+  // {0, line height} size, which counts as a confirmed last_rendered_size.
+  // Its HorizontalLayout row then sizes its child window without it. Once
+  // text arrives, the label draws past that child window's right edge
+  // (IsItemVisible() false), and the old "only update while visible" rule
+  // refused to pick up the new width -- so the row never grew and the
+  // label stayed clipped forever. The label's rect is real geometry
+  // (its window is not SkipItems), so it must be trusted.
+  constexpr auto desc = R"({
+    "type": "Window", "title": "F", "width": 600, "height": 200,
+    "pos_x": 0, "pos_y": 0,
+    "children": { "vb": { "type": "VerticalLayout", "children": {
+      "row": { "type": "HorizontalLayout", "spacing": 8, "children": {
+        "filter": { "type": "InputText", "hint": "Filter", "width": 240 },
+        "count": { "type": "Label", "text": "" }
+      }}
+    }}}
+  })";
+  auto map = bdg::wish::import_json(desc);
+  auto& count = *map["vb.row.count"];
+  auto& row = *map["vb.row"];
+
+  auto render_frames = [&](int n) {
+    for (int i = 0; i < n; ++i) {
+      renderer_->begin_frame();
+      renderer_->render_node(*map[""], *sess_);
+      renderer_->end_frame();
+    }
+  };
+
+  render_frames(4);
+  ASSERT_LT(count.last_rendered_size().x, 1.0f);
+  const float empty_row_width = row.content_extent().x;
+
+  count["text"_key] = std::string{"2 of 91 processes"};
+  render_frames(4);
+
+  EXPECT_GT(count.last_rendered_size().x, 50.0f);
+  EXPECT_GT(row.content_extent().x, empty_row_width + 50.0f);
+}
+
 // ── Offscreen render target (base class) ─────────────────────────────────────
 
 // The base imgui_renderer has no GPU backend attached, so begin_render_target()

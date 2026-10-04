@@ -217,14 +217,13 @@ gotcha you hit and didn't record is one the next agent will hit again.
   rect, then take the shot. (A `TextEditor` with an empty `file_path`
   renders nothing, so its rect has zero height until content is loaded --
   check a toolbar child or wait for height > 0.)
-- **A `Label` inside a `HorizontalLayout` that starts with empty text can
-  stay invisible after its text is set** (`top` module's filter count,
-  2026-10): `get_widget()` reports the new `text` and a real `rect`, but
-  `visible: False`, and the screenshot shows nothing. A Label is measured
-  from its last rendered size, so the row's child window is sized while
-  the label is empty and keeps clipping it. Give such a label a fixed
-  `"width"` (or non-empty initial text). Spot it by comparing the label's
-  `rect` against its parent row's `rect`.
+- **A widget whose `rect` lies outside its parent row's `rect`, with
+  `visible: False` while `get_widget()` shows the right text, is a layout
+  sizing bug, not a timing issue** (`top` module's filter count, 2026-10:
+  an initially-empty `Label` in a `HorizontalLayout` never grew once text
+  arrived). Comparing the child's `rect` against its parent's pinpointed
+  it; the cause was `render_node()` refusing to update a clipped item's
+  `last_rendered_size()` (fixed in `src/imgui/imgui_renderer.cpp`).
 - **`type_text()` appends; Ctrl+A/Delete does not clear a multiline
   `InputText`** (`sq` module, 2026-09). Driving a second, different query
   into the same box through `page.keyboard.press("Control+A")` +
