@@ -1,7 +1,7 @@
 // MIT License © 2026 Binary Dice Games
 #include <gtest/gtest.h>
 
-#include "modules/common/command_worker.hpp"
+#include "modules/bdg/common/command_worker.hpp"
 
 #include <context/context.hpp>
 #include <server/server.hpp>

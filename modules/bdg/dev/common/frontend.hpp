@@ -10,7 +10,7 @@
 /// event payload. Header-only.
 #pragma once
 
-#include "modules/common/command_worker.hpp"
+#include "modules/bdg/common/command_worker.hpp"
 #include "modules/bdg/dev/common/process.hpp"
 
 #include "src/client/wish_app_host.hpp"

@@ -47,7 +47,7 @@ directories are silently skipped).
   `on_local_rename_requested`, and moves bytes between the local machine and
   the sandbox in response to `on_upload_requested`/`on_download_requested`,
   all as jobs on one `common::command_worker`
-  ([modules/common/command_worker.hpp](../../../common/command_worker.hpp)),
+  ([modules/bdg/common/command_worker.hpp](../../common/command_worker.hpp)),
   which shows the progress dialog for long ones (a multi-file batch is one
   job, transferred sequentially). A conflict
   event instead instantiates the built-in `MessageBox` form ("yes_no"

@@ -23,7 +23,7 @@
 /// module that is enabled (a collection's `common/` directory).
 #pragma once
 
-#include "modules/common/process_hooks.hpp"
+#include "modules/bdg/common/process_hooks.hpp"
 
 #include <string>
 #include <vector>

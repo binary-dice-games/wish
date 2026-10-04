@@ -32,7 +32,7 @@ class properties_dialog;
 /// side by side); the user can re-dock, tab, or float either panel
 /// afterwards. Closing either panel closes the whole browser. Transfer
 /// progress is not shown here: the client reports it through the shared
-/// ProgressBox dialog (modules/common/command_worker.hpp).
+/// ProgressBox dialog (modules/bdg/common/command_worker.hpp).
 ///
 /// The Sandbox panel is entirely server-owned: the session sandbox
 /// (`context::resource_dir`) lives on the same machine as this form, so

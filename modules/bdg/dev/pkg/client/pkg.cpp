@@ -121,7 +121,7 @@ void run_pkg(wish_app_host& s) {
   // Every handler below runs as a job on the frontend's worker thread:
   // running the package manager inside an event handler would block the
   // whole UI until it exits. Long commands get a modal progress dialog
-  // (modules/common/command_worker.hpp).
+  // (modules/bdg/common/command_worker.hpp).
   const auto frontend =
       dev::open_frontend(s, "PkgFrontend"_key, std::string{"Running "} + pkg::manager_name(*chosen));
   const auto& proxy = frontend.proxy;

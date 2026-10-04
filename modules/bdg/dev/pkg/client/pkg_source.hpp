@@ -11,7 +11,7 @@
 ///
 /// Every method that runs a command is called from a job of the shared
 /// common::command_worker, which keeps the UI responsive and shows the modal
-/// progress dialog (modules/common/command_worker.hpp).
+/// progress dialog (modules/bdg/common/command_worker.hpp).
 #pragma once
 
 #include "pkg_backend.hpp"

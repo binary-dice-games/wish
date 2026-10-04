@@ -39,7 +39,7 @@ void run_docker(wish_app_host& s) {
   // Every handler below runs as a job on the frontend's worker thread:
   // running the tool inside an event handler would block the whole UI until
   // it exits. Long commands get a modal progress dialog
-  // (modules/common/command_worker.hpp).
+  // (modules/bdg/common/command_worker.hpp).
   const auto frontend = dev::open_frontend(s, "DockerFrontend"_key, "Running docker");
   const auto& proxy = frontend.proxy;
   const auto& worker = frontend.worker;

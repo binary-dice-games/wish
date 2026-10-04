@@ -104,7 +104,7 @@ std::string format_modified(const fs::file_time_type& ftime) {
 // that panel (see set_status()).
 //
 // Transfers show their progress in the shared ProgressBox dialog the
-// client's command_worker drives (modules/common/command_worker.hpp), like
+// client's command_worker drives (modules/bdg/common/command_worker.hpp), like
 // every long-running action in the dev modules -- no progress bar here.
 //
 // Tagged delimiter (R"json(...)json") rather than the untagged R"(...)"

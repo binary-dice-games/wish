@@ -23,7 +23,7 @@
 /// output}`. Header-only.
 #pragma once
 
-#include "modules/common/command_worker.hpp"
+#include "modules/bdg/common/command_worker.hpp"
 #include "modules/bdg/dev/common/process.hpp"
 #include "modules/bdg/dev/common/text.hpp"
 

@@ -16,7 +16,7 @@
 ///
 /// The client runs `pip` on a worker thread; progress, live output and
 /// Cancel for a long command are shown by the shared modal `ProgressBox`
-/// form, which the client drives itself (modules/common/command_worker.hpp) -- this
+/// form, which the client drives itself (modules/bdg/common/command_worker.hpp) -- this
 /// form has no part in it.
 ///
 /// Owns four independently dockable Windows -- Packages (the main root),

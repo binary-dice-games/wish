@@ -990,7 +990,7 @@ Open as soon as it is instantiated.
 Call `update` from a worker thread, never from an event handler that is
 itself running the operation — a blocked handler freezes the whole UI. The
 `bdg/dev` modules and `mc` share a ready-made driver,
-`modules/common/command_worker.hpp`.
+`modules/bdg/common/command_worker.hpp`.
 
 #### `Nano`
 A multi-file, syntax-highlighted text editor (module, off by default —

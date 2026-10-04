@@ -330,7 +330,7 @@ Design decisions:
 - **Fixed size**, unlike `MessageBox`'s auto-resize: appended output must not
   resize a dialog the user is looking at.
 
-Client side, `modules/common/command_worker.hpp` is the shared driver:
+Client side, `modules/bdg/common/command_worker.hpp` is the shared driver:
 one worker thread per app runs the tool commands in order, opens the dialog
 only for a command that has run for 0.4 s (so a refresh never flashes a
 modal), feeds it the tool's output, and turns its Cancel into a SIGTERM.

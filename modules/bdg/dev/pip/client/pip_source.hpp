@@ -15,7 +15,7 @@
 /// No command runs on the caller's thread: a `pip install` can take minutes,
 /// and an event handler that blocks freezes the whole UI. Every method that
 /// runs `pip` is called from a job of the shared common::command_worker, which
-/// also shows the modal progress dialog (modules/common/command_worker.hpp).
+/// also shows the modal progress dialog (modules/bdg/common/command_worker.hpp).
 #pragma once
 
 #include "modules/bdg/dev/common/tool_source.hpp"

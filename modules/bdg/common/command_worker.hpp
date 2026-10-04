@@ -23,12 +23,12 @@
 ///     which it then shows until the user closes it.
 ///
 /// Header-only (module client sources are compiled into several targets; see
-/// cmake/WishModules.cmake), and not a module itself: this directory sits
-/// outside every `modules/<org>/<collection>/` tree, so no collection picks
-/// it up.
+/// cmake/WishModules.cmake), and not a module itself: `modules/bdg/common`
+/// is not a registered collection and has no server/ or client/
+/// subdirectory, so the build never picks it up as one.
 #pragma once
 
-#include "modules/common/process_hooks.hpp"
+#include "modules/bdg/common/process_hooks.hpp"
 
 #include "src/client/wish_app_host.hpp"
 

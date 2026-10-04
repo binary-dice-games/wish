@@ -10,13 +10,13 @@
 /// between the local filesystem and the session sandbox.
 ///
 /// Every one of those runs as a job on one `common::command_worker`
-/// (modules/common/command_worker.hpp), never inside the event handler, so
+/// (modules/bdg/common/command_worker.hpp), never inside the event handler, so
 /// the UI never freezes; a job that takes more than a moment opens the same
 /// modal progress dialog the dev modules (docker, kubectl, ...) use -- for a
 /// transfer, a determinate bar with bytes moved and a Cancel button.
 #include "modules/bdg/desktop/mc/client/mc.hpp"
 
-#include "modules/common/command_worker.hpp"
+#include "modules/bdg/common/command_worker.hpp"
 
 #include "src/client/app_registry.hpp"
 #include "src/client/wish_app_host.hpp"
@@ -254,7 +254,7 @@ void run_mc(wish_app_host& s) {
 
   // Every handler below that touches the filesystem or moves bytes runs as a
   // job on this worker's thread, one at a time; long ones get the shared
-  // modal progress dialog (modules/common/command_worker.hpp).
+  // modal progress dialog (modules/bdg/common/command_worker.hpp).
   auto worker = std::make_shared<common::command_worker>(s, "File Explorer");
   worker->start();
 

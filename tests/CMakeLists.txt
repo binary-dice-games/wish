@@ -29,7 +29,7 @@ wish_add_test(test_form_base         test_form_base.cpp)
 wish_add_test(test_file_dialog  test_file_dialog.cpp)
 wish_add_test(test_message_box  test_message_box.cpp)
 wish_add_test(test_progress_box test_progress_box.cpp)
-# modules/common/command_worker.hpp (header-only, shared by module clients)
+# modules/bdg/common/command_worker.hpp (header-only, shared by module clients)
 # driving a real ProgressBox through a minimal wish_app_host.
 wish_add_test(test_command_worker test_command_worker.cpp)
 target_include_directories(test_command_worker PRIVATE ${CMAKE_SOURCE_DIR})

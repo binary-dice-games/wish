@@ -14,7 +14,7 @@ more than a moment (about 0.4 s) opens a modal progress dialog -- the command,
 a progress bar, the tool's output as it arrives and a **Cancel** button. It
 closes by itself on success and stays open on failure, showing the error,
 until **Close** is pressed. The shared implementation is
-[modules/common/command_worker.hpp](../../common/command_worker.hpp) plus the built-in
+[modules/bdg/common/command_worker.hpp](../common/command_worker.hpp) plus the built-in
 `ProgressBox` form.
 
 The plumbing every tool frontend's client needs lives once in

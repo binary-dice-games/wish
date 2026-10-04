@@ -17,10 +17,12 @@ modules/<organization>/<collection>/<module>/
   README.md
 ```
 
-Code shared by several modules' clients without being a module itself lives
-in `modules/common/` (outside every `<org>/<collection>` tree, so no
-collection picks it up) -- e.g. `command_worker.hpp`, the background job
-runner with a modal progress dialog that the `bdg/dev` tools and `mc` use.
+Code an organization's modules share without being a module itself lives
+in `modules/<org>/common/` -- e.g. `modules/bdg/common/command_worker.hpp`,
+the background job runner with a modal progress dialog that the `bdg/dev`
+tools and `mc` use. It is never registered with `wish_add_collection()` and
+has no `server/`/`client/`/`resources/embedded/` subdirectory, so the build
+never treats it as a collection or a module; modules just `#include` it.
 
 A module needs none, some, or all three of `server/`, `client/`,
 `resources/embedded/` — there's no assumption that any particular
