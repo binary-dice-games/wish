@@ -223,7 +223,7 @@ void run_mc(wish_app_host& s) {
   auto cur_dir = std::make_shared<fs::path>(fs::current_path());
 
   // Server asks to browse a different local directory (row activated in the
-  // left panel, or the local path bar's value was changed).
+  // Local panel, or the local path bar's value was changed).
   explorer->onEvent("on_local_navigate"_key, [&s, explorer, cur_dir](dynamic payload) {
     auto name = payload.as<std::string>("name"_key);
     auto type = payload.as<std::string>("type"_key);
@@ -296,7 +296,7 @@ void run_mc(wish_app_host& s) {
   };
 
   // Pulls every entry of `names` from the sandbox and writes it into the
-  // currently-shown local directory, then re-lists the left panel once.
+  // currently-shown local directory, then re-lists the Local panel once.
   // Shared the same way as do_upload above.
   auto do_download = [&s](const std::shared_ptr<rmi::proxy::dynamic>& explorer,
                           const std::shared_ptr<fs::path>& cur_dir, std::vector<std::string> names,
@@ -368,7 +368,7 @@ void run_mc(wish_app_host& s) {
 
   explorer->onEvent("closed"_key, [&s](dynamic) { s.signal_done(); });
 
-  // Show the client's current working directory in the left panel at
+  // Show the client's current working directory in the Local panel at
   // startup, mirroring the sandbox panel's own root-on-open behavior.
   report_local_listing(explorer, cur_dir);
 

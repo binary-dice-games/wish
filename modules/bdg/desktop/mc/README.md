@@ -2,9 +2,13 @@
 
 <img src="mc.png" alt="mc" height="200"/>
 
-Two-panel file browser: the local machine (left, client-driven) next to the
-session sandbox (right, server-driven), with upload/download transfer
-buttons and an "Open in Explorer" shortcut for the sandbox side. Each panel
+Two-panel file browser laid out as three dockable panels inside its own
+nested "File Explorer" dockspace (see [docs/dock-layout.md](../../../../docs/dock-layout.md)):
+**Local Machine** (client-driven), **Sandbox (Server)** (server-driven, with
+an "Open in Explorer" shortcut) and **Transfer** (upload/download buttons,
+status and progress bar). The first run seeds Local and Sandbox side by side
+over a Transfer strip; rearrange freely afterwards (Shift+drag to re-dock).
+Closing any panel closes the tool. Each file panel
 shows a small disk-usage summary strip (file count/total size of the
 listed directory, plus used/free/total space for its filesystem) below its
 table, and each row offers a right-click context menu (Properties, Rename,
@@ -17,7 +21,7 @@ upload/download buttons act on every selected file at once (selected
 directories are silently skipped).
 
 - **server/**: `Mc` form (`register_mc()`), a
-  `bdg::wish::form` subclass owning the window/panels/tables and all
+  `bdg::wish::form` subclass owning the three panels/tables and all
   sandbox navigation/listing (`std::filesystem` + `file_service::resolve_path()`
   against `context::resource_dir`), including the sandbox panel's own
   disk-usage strip, its rows' Rename/Properties (both handled directly,

@@ -246,6 +246,15 @@ gotcha you hit and didn't record is one the next agent will hit again.
   before the rect existed and the following `click()` raised "never
   rendered"; a plain Python loop over `get_widget()` (retrying the button
   click after ~3 s) was reliable.
+- **Don't read a docked panel's on-screen state from its `Window` root or
+  a `Table`'s `rect`.** Verifying `mc`'s dockable panels (2026-10), every
+  front-most, fully drawn docked `Window` root reported `visible: False`
+  (its rect was correct), and each `Table`'s `rect` ended near its first
+  column's right edge (x1=381) even though the screenshot showed the table
+  filling its 627px-wide panel. To check that panels docked where expected,
+  compare the `Window` roots' rects. To check that a table really fills its
+  panel, look at a screenshot or at the widgets laid out after it (the
+  summary labels, the panel's other children).
 - **A widget scrolled out of a `ScrollX` table still has a `rect`, but with
   `visible: False` and coordinates outside the table's own rect** -- and
   `click()` on it does not raise: the click lands on whatever window is at
