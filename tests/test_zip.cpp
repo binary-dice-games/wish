@@ -207,7 +207,8 @@ TEST_F(ZipWindowTest, TreeContainsBrowserAndButtons) {
   EXPECT_TRUE(srv_->last_session->ui_objects.count(root + "_actions.vbox.btn_row.btn_view"));
   EXPECT_TRUE(srv_->last_session->ui_objects.count(root + "_actions.vbox.btn_row.btn_refresh"));
   EXPECT_TRUE(srv_->last_session->ui_objects.count(root + "_actions.vbox.status"));
-  EXPECT_TRUE(srv_->last_session->ui_objects.count(root + "_actions.vbox.progress_bar"));
+  // Progress lives in the client's shared ProgressBox, not in this form.
+  EXPECT_FALSE(srv_->last_session->ui_objects.count(root + "_actions.vbox.progress_bar"));
   EXPECT_TRUE(srv_->last_session->ui_objects.count(root + "_contents.vbox.contents_table"));
 }
 
@@ -258,6 +259,38 @@ TEST_F(ZipWindowTest, RegistersDefaultDockLayoutNamingEveryPanel) {
   std::vector<std::string> expected{root, root + "_actions", root + "_contents"};
   std::sort(expected.begin(), expected.end());
   EXPECT_EQ(windows, expected);
+}
+
+// The Actions strip is seeded along the top: it is the first child of an
+// "up" DockSplit.
+TEST_F(ZipWindowTest, DefaultDockLayoutPutsActionsAtTheTop) {
+  std::string root = instantiate_and_get_root();
+  ASSERT_FALSE(root.empty());
+
+  wish::ui_element_ptr viewport;
+  for (const auto& [k, obj] : srv_->last_session->top_level_objects)
+    if (obj->as<bison::key_t>(dynamic::CLASS) == "DockSpaceViewport"_key)
+      viewport = obj;
+  ASSERT_TRUE(viewport);
+
+  std::string actions_dir;
+  std::function<void(const dynamic&)> walk = [&](const dynamic& node) {
+    const bool is_split = node.as<bison::key_t>(dynamic::CLASS) == "DockSplit"_key;
+    bool first = true;
+    if (auto* cf = node.findField<dynamic_ptr>("children"_key); cf && *cf)
+      (*cf)->forEach([&](bison::key_t, const field& f) {
+        if (!f.is<dynamic_ptr>() || !f.as<dynamic_ptr>())
+          return;
+        const dynamic& child = *f.as<dynamic_ptr>();
+        if (is_split && first && child.as<bison::key_t>(dynamic::CLASS) == "DockArea"_key &&
+            child.as<std::string>("windows"_key) == root + "_actions")
+          actions_dir = node.as<std::string>("dir"_key);
+        first = false;
+        walk(child);
+      });
+  };
+  walk(*viewport);
+  EXPECT_EQ(actions_dir, "up");
 }
 
 TEST_F(ZipWindowTest, TableStartsEmptyUntilClientReportsAListing) {

@@ -25,9 +25,9 @@ class message_box;
 /// and the dev modules: **Files** (the form's main root: path bar,
 /// selection label, and file table), **Contents** (the listing of the
 /// archive last viewed), and **Actions** (Compress/Extract/View
-/// Contents/Refresh buttons, status line, and progress bar). A first-run
-/// arrangement is seeded by `on_init()` (Files beside Contents, Actions as
-/// a strip along the bottom); the user can re-dock, tab, or float any panel
+/// Contents/Refresh buttons and the status line). A first-run arrangement
+/// is seeded by `on_init()` (Actions as a strip along the top, Files beside
+/// Contents below it); the user can re-dock, tab, or float any panel
 /// afterwards. Closing any panel closes the whole tool.
 ///
 /// Unlike mc's sandbox (right) panel or Zip's own first draft,
@@ -56,12 +56,10 @@ class message_box;
 /// listing last reported via `update_listing()`, not a filesystem probe --
 /// this form never touches disk, so it has nothing else to check against.
 ///
-/// While a compress/extract is in flight, the client streams per-file
-/// progress back via `set({"progress": ..., "progress_label": ...,
-/// "status": ...})` -- `progress` (0..1) and `progress_label` drive the
-/// progress bar in the Actions panel, while `status` names the file
-/// currently being processed, mirroring mc's `transfer_progress`/
-/// `transfer_label` fields for its own upload/download transfers.
+/// Compress/extract progress is not shown here: the client reports it
+/// through the shared ProgressBox dialog
+/// (modules/bdg/common/command_worker.hpp), like mc's transfers, and sets
+/// `status` to the outcome once the operation is over.
 ///
 /// Emitted events:
 ///   - `"closed"` — any panel's X button; every panel removed.
@@ -71,12 +69,11 @@ class message_box;
 ///   - `"on_compress_requested"` (`{path, source_names, archive_name}`,
 ///     `source_names` a plain-string array) — client should create
 ///     `path/archive_name` containing every `path/<name>` in `source_names`
-///     (recursively, for a directory), reporting per-file progress as
-///     described above, then report the outcome via `set({"status": ...})`
-///     and refresh via `update_listing()`.
+///     (recursively, for a directory), then refresh via `update_listing()`
+///     and report the outcome via `set({"status": ...})`.
 ///   - `"on_extract_requested"` (`{path, zip_name, dest_name}`) — client
-///     should extract `path/zip_name` into `path/dest_name`, reporting
-///     per-file progress the same way, then report the outcome the same way.
+///     should extract `path/zip_name` into `path/dest_name`, then refresh
+///     and report the outcome the same way.
 ///   - `"on_view_contents_requested"` (`{path, name}`) — client should read
 ///     `path/name`'s central directory (without extracting) and call
 ///     `show_contents(name, entries)`, which fills the Contents panel.
@@ -103,9 +100,7 @@ class zip : public form {
   bison::dynamic do_show_contents(const bison::dynamic& args);
 
   /// @brief Called from the `__setter` prototype method for every set() call.
-  /// Intercepts `status` to mirror it into the internal status label, and
-  /// `progress`/`progress_label` to mirror them into the internal progress
-  /// bar.
+  /// Intercepts `status` to mirror it into the internal status label.
   bison::dynamic on_set(const bison::dynamic& patch);
 
  protected:
@@ -236,7 +231,6 @@ class zip : public form {
   ui_element_ptr file_table_ptr_;
   ui_element_ptr selected_label_ptr_;
   ui_element_ptr status_label_ptr_;
-  ui_element_ptr progress_ptr_;
   ui_element_ptr contents_summary_ptr_;
   ui_element_ptr contents_table_ptr_;
 

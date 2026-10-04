@@ -349,6 +349,11 @@ Gotchas this recipe already handles:
   `chromium.launch()` with `executable_path` set to the newest
   `$PLAYWRIGHT_BROWSERS_PATH/chromium-*/chrome-linux/chrome`.
 - **`rect` keys are `x0`/`y0`/`x1`/`y1`**, not `x`/`y`/`w`/`h`.
+- **A module that opens on the client's working directory (`zip`, `mc`)
+  needs no path typing**: start `wish client` with `cwd=` set to the fixture
+  directory. To catch its progress dialog in a screenshot the job must
+  outlast the 0.4 s open delay — ~240 MB of random files kept a `zip`
+  compress going for several seconds (2026-10).
 - **Cells built at runtime (e.g. pix's thumbnail `Selectable`s) appear in
   `get_tree()`** with index paths (`__pix_0.vbox.grid_table.0.1`), even
   though they are not dot-path entries in `session.ui_objects`.

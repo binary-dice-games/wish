@@ -100,8 +100,10 @@ std::string strip_zip_suffix(const std::string& name) {
 // FileDialog's table. contents_table's "height": -1 fills the panel below
 // the summary label.
 //
-// Actions: the compress/extract/view/refresh buttons, the status label and
-// the progress bar.
+// Actions: the compress/extract/view/refresh buttons and the status label,
+// as a strip along the top. Compress/extract progress is not shown here: the
+// client reports it through the shared ProgressBox dialog
+// (modules/bdg/common/command_worker.hpp), like mc and the dev modules.
 static constexpr const char* kFilesLayout = R"json({
   "type": "Window",
   "title": "Files",
@@ -155,7 +157,7 @@ static constexpr const char* kContentsLayout = R"json({
 static constexpr const char* kActionsLayout = R"json({
   "type": "Window",
   "title": "Actions",
-  "width": 1000, "height": 120,
+  "width": 1000, "height": 90,
   "closable": true,
   "children": {
     "vbox": {
@@ -171,8 +173,7 @@ static constexpr const char* kActionsLayout = R"json({
             "btn_refresh":  { "type": "Button", "label": "Refresh", "width": 90, "height": 32 }
           }
         },
-        "status": { "type": "Label", "text": "Ready." },
-        "progress_bar": { "type": "ProgressBar", "value": 0.0, "label": "", "width": -1 }
+        "status": { "type": "Label", "text": "Ready." }
       }
     }
   }
@@ -266,7 +267,6 @@ void zip::on_init() {
     tree.with("vbox.btn_row.btn_view", [&](const auto& e) { btn_view_id_ = wish_id_of(e); });
     tree.with("vbox.btn_row.btn_refresh", [&](const auto& e) { btn_refresh_id_ = wish_id_of(e); });
     tree.with("vbox.status", [&](const auto& e) { status_label_ptr_ = e; });
-    tree.with("vbox.progress_bar", [&](const auto& e) { progress_ptr_ = e; });
   });
 
   // Unlike mc's sandbox panel, this form has no filesystem of its
@@ -275,7 +275,7 @@ void zip::on_init() {
 
   // Seed the first-run arrangement inside the tool's own nested dockspace
   // (titled with the form's "title" field): an Actions strip along the
-  // bottom ~19%, and above it Files on the left beside Contents on the
+  // top ~14%, and below it Files on the left beside Contents on the
   // right. Owned by imgui.ini after the first run (see docs/dock-layout.md);
   // bump the version arg to layout() if it changes.
   {
@@ -284,9 +284,9 @@ void zip::on_init() {
         "zip_dock", title,
         layout(
             split(
-                dir::down, 0.19f, area({actions_root_key_}),
+                dir::up, 0.14f, area({actions_root_key_}),
                 split(dir::left, 0.55f, area({internal_root_key_}), area({contents_root_key_}))),
-            /*version=*/1, /*target=*/"zip_dock")));
+            /*version=*/2, /*target=*/"zip_dock")));
   }
 }
 
@@ -555,10 +555,6 @@ dynamic zip::do_show_contents(const dynamic& args) {
 dynamic zip::on_set(const dynamic& patch) {
   if (auto* v = patch.findField<std::string>("status"_key); v && status_label_ptr_)
     status_label_ptr_["text"_key] = *v;
-  if (auto* v = patch.findField<float>("progress"_key); v && progress_ptr_)
-    progress_ptr_["value"_key] = *v;
-  if (auto* v = patch.findField<std::string>("progress_label"_key); v && progress_ptr_)
-    progress_ptr_["label"_key] = *v;
   return patch;
 }
 
@@ -913,23 +909,6 @@ void register_zip() {
           std::string{"Ready."},
           attr<DisplayName>("Status"),
           attr<Description>("Text shown in the Actions panel's status line."),
-          attr<Category>("Data")});
-
-  proto->addField(
-      "progress"_key,
-      field{
-          0.0f,
-          attr<DisplayName>("Progress"),
-          attr<Description>("Fill fraction (0..1) of the compress/extract progress bar. The client "
-                            "drives this while an operation is in flight."),
-          attr<Category>("Data")});
-
-  proto->addField(
-      "progress_label"_key,
-      field{
-          std::string{""},
-          attr<DisplayName>("Progress Label"),
-          attr<Description>("Text overlaid on the progress bar (e.g. \"3 / 20 items\")."),
           attr<Category>("Data")});
 
   proto->addMethod(

@@ -9,11 +9,12 @@ panels inside its own nested "Zip" dockspace (see
 bar and file table, with mc-style multi-row selection: plain click,
 Ctrl+click, Shift+click/drag), **Contents** (the archive last viewed via
 View Contents or a double-click), and **Actions** (Compress, Extract, View
-Contents, Refresh, the status line, and a progress bar tracking the current
-compress/extract while the status names the file being processed). The
-first run seeds Files beside Contents with Actions along the bottom;
-rearrange freely afterwards (Shift+drag to re-dock). Closing any panel
-closes the tool.
+Contents, Refresh and the status line). The first run seeds Actions along
+the top with Files beside Contents below it; rearrange freely afterwards
+(Shift+drag to re-dock). Closing any panel closes the tool. A compress or
+extract that takes more than a moment opens the same modal progress dialog
+mc and the dev tools use, with a bar of the entries processed and a Cancel
+button; a failure stays in the dialog until closed.
 
 - **server/**: `Zip` form (`register_zip()`), a `bdg::wish::form`
   subclass owning the three panels and all selection and
@@ -29,7 +30,9 @@ closes the tool.
   filesystem in response to `on_navigate`, and does the actual zip I/O
   (via miniz, the same library wish_server uses to unpack its own embedded
   resources) in response to `on_compress_requested`/`on_extract_requested`/
-  `on_view_contents_requested`.
+  `on_view_contents_requested`. Each of those runs as a job on a
+  `common::command_worker` (`modules/bdg/common/command_worker.hpp`),
+  which shows the progress dialog for long ones.
 - **resources/**: none.
 
 Mirrors `tree`'s client/server split for its local (left) panel:
