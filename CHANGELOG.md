@@ -53,6 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `top` module: the single window is now four dockable panels — Processes, CPU, Memory and Cores — inside its own nested "Top" dockspace, with a default arrangement (graphs above the process table, per-core meters along the right). Graphs and the process table fill their panels; closing any panel closes the tool.
 - `pip` module: an install / upgrade / uninstall that fails immediately (an externally managed environment, for instance) now shows its error in the progress dialog instead of only in the one-line status.
 - Tables in the `docker`, `kubectl`, `helm`, `pip`, `curl`, `sq`, and `git` modules: resizing a column now pushes the columns to its right (the table scrolls horizontally) instead of shrinking the next one, and hovering a cell shows its full value in a tooltip.
 - `docker`, `kubectl`, `helm`, `curl`, `sq`, and `git` modules: commands now run in the background instead of freezing the UI. One that takes more than a moment opens a modal progress dialog with the command, a progress bar, its live output and a Cancel button; it closes on success and stays open on failure to show the error.

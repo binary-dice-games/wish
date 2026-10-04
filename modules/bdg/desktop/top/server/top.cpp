@@ -6,11 +6,13 @@
 #include "src/bison/bison_object.hpp"
 #include "src/rmi/shared/ids.hpp"
 
+#include <ui/dock_layout_spec.hpp>
 #include <ui/forms/message_box.hpp>
 #include <ui/forms/properties_dialog.hpp>
 #include <ui/ui_importer.hpp>
 
 #include <algorithm>
+#include <functional>
 #include <iomanip>
 #include <sstream>
 
@@ -73,69 +75,50 @@ key_t wish_id_of(const Element& element) {
 
 } // namespace
 
-// ── UI layout ─────────────────────────────────────────────────────────────────
+// ── UI layouts ────────────────────────────────────────────────────────────────
 //
+// The tool is split into four dockable panels -- Processes, CPU, Memory and
+// Cores -- seeded into a first-run arrangement by on_init()'s
+// set_default_dock_layout() call, the same multi-window pattern the dev
+// modules (git, curl, docker) use. The user can re-dock, tab or float any of
+// them; imgui.ini owns the arrangement after the first run. Each Window keeps
+// a width/height: the size a panel restores to when dragged out of the dock.
+//
+// Processes (the form's main root, internal_root_key_):
 // "proc_table"'s "flags": "Resizable|RowBg|Borders|Sortable|ScrollY" (the
 // first three match the "tbl_catalog" example in examples/demo/main.cpp;
 // Sortable makes column headers clickable -- see the "sorted" event handling
 // in on_event()/resort_rows()). Each TableColumn's "flags" is "WidthFixed",
 // except "col_cpu" which also ORs in "DefaultSort|PreferSortDescending" so
 // the column-header UI's initial sort indicator matches sort_column_id_/
-// sort_ascending_'s own defaults below.
-// "cores" is given an explicit empty "children" object -- even though empty
-// -- so the importer allocates a private children map for this instance
-// instead of sharing the Element base prototype's default (see nano.cpp's
-// tab_bar for the same technique). Rows in "proc_table" are added, updated,
-// and removed at runtime by update_snapshot(), same as nano's tabs.
+// sort_ascending_'s own defaults below. Rows are added, updated, and
+// removed at runtime by update_snapshot(), same as nano's tabs.
 //
-// "proc_table" also carries "height": -1 (mc.cpp's left_table/right_table
-// technique): "vbox" (a VerticalLayout, and the Window's sole direct child
-// so it already fills the whole window body) hands every *other* child --
-// "summary", "cores", the two fixed-height Plots, and "status_label" -- its
-// own natural/fixed size first, then gives "proc_table" whatever's left,
-// wrapped in a real child window (see render_vertical_layout()'s
-// height_hint handling in imgui_ui_renderer.cpp). "ScrollY" then engages
-// the Table's own internal scroll region against that fixed allocation, so
-// only the process list scrolls -- the CPU/memory summary, graphs, and the
-// status label at the bottom stay pinned on screen regardless of how many
-// rows are in view. Without "height": -1 here, "proc_table" would auto-size
-// to its full (unclipped) row count and push "status_label" off the bottom
-// of the window, forcing the *whole window* to scroll instead.
+// "proc_table" carries "height": -1 (mc.cpp's left_table/right_table
+// technique): "vbox" hands "status_label" its natural height first, then
+// gives "proc_table" whatever's left, so only the process list scrolls
+// ("ScrollY") and the status label stays pinned to the panel's bottom.
+//
+// CPU / Memory: a summary label over a Plot with "height": -1 (sq.cpp's
+// chart technique), so the graph fills whatever space the panel is docked
+// into instead of a fixed 160px strip.
+//
+// Cores: one ProgressBar per logical core, stacked vertically (default
+// width -1 = full panel width) and added on the first snapshot by
+// ensure_core_meters(). "cores" is given an explicit empty "children"
+// object -- even though empty -- so the importer allocates a private
+// children map for this instance instead of sharing the Element base
+// prototype's default (see nano.cpp's tab_bar for the same technique).
 
-static constexpr const char* kLayout = R"({
+static constexpr const char* kProcessesLayout = R"({
   "type": "Window",
-  "title": "Top",
-  "width": 900, "height": 700,
+  "title": "Processes",
+  "width": 900, "height": 460,
   "closable": true,
   "children": {
     "vbox": {
       "type": "VerticalLayout",
       "children": {
-        "summary": {
-          "type": "HorizontalLayout",
-          "spacing": 16,
-          "children": {
-            "cpu_label": { "type": "Label", "text": "CPU: --" },
-            "mem_label": { "type": "Label", "text": "Mem: --" }
-          }
-        },
-        "cores": { "type": "HorizontalLayout", "spacing": 6, "children": {} },
-        "cpu_plot": {
-          "type": "Plot", "title": "CPU % History", "height": 160,
-          "profiler_marker": "CPU Plot",
-          "y_label": "%",
-          "children": {
-            "cpu_series": { "type": "PlotShaded", "label": "CPU %" }
-          }
-        },
-        "mem_plot": {
-          "type": "Plot", "title": "Memory % History", "height": 160,
-          "profiler_marker": "Memory Plot",
-          "y_label": "%",
-          "children": {
-            "mem_series": { "type": "PlotLine", "label": "Memory %" }
-          }
-        },
         "proc_table": {
           "type": "Table", "id": "##proc_table", "columns": 6,
           "profiler_marker": "Process Table",
@@ -156,6 +139,67 @@ static constexpr const char* kLayout = R"({
   }
 })";
 
+static constexpr const char* kCpuLayout = R"({
+  "type": "Window",
+  "title": "CPU",
+  "width": 450, "height": 240,
+  "closable": true,
+  "children": {
+    "vbox": {
+      "type": "VerticalLayout",
+      "children": {
+        "cpu_label": { "type": "Label", "text": "CPU: --" },
+        "cpu_plot": {
+          "type": "Plot", "title": "CPU % History", "height": -1,
+          "profiler_marker": "CPU Plot",
+          "y_label": "%",
+          "children": {
+            "cpu_series": { "type": "PlotShaded", "label": "CPU %" }
+          }
+        }
+      }
+    }
+  }
+})";
+
+static constexpr const char* kMemoryLayout = R"({
+  "type": "Window",
+  "title": "Memory",
+  "width": 450, "height": 240,
+  "closable": true,
+  "children": {
+    "vbox": {
+      "type": "VerticalLayout",
+      "children": {
+        "mem_label": { "type": "Label", "text": "Mem: --" },
+        "mem_plot": {
+          "type": "Plot", "title": "Memory % History", "height": -1,
+          "profiler_marker": "Memory Plot",
+          "y_label": "%",
+          "children": {
+            "mem_series": { "type": "PlotLine", "label": "Memory %" }
+          }
+        }
+      }
+    }
+  }
+})";
+
+static constexpr const char* kCoresLayout = R"({
+  "type": "Window",
+  "title": "Cores",
+  "width": 240, "height": 700,
+  "closable": true,
+  "children": {
+    "vbox": {
+      "type": "VerticalLayout",
+      "children": {
+        "cores": { "type": "VerticalLayout", "spacing": 4, "children": {} }
+      }
+    }
+  }
+})";
+
 // Confirm-kill and Process Properties are both privately-instantiated
 // built-in forms (MessageBox / PropertiesDialog, see form::instantiate_child_form())
 // rather than raw element trees owned directly by this form -- see
@@ -165,14 +209,14 @@ static constexpr const char* kLayout = R"({
 
 top::top(dynamic&& base) : form(std::move(base)) {}
 
-void top::on_init() {
-  // See form::internal_root_key_'s doc comment: ordinally-assigned, not pointer-derived.
-  internal_root_key_ = next_available_key("__top_");
+top::~top() {
+  remove_panel_objects();
+}
 
-  auto tree = import_json(kLayout);
-
-  auto* title_f = findField<std::string>("title"_key);
-  (*tree[""])["title"_key] = title_f ? *title_f : std::string{"Top"};
+void top::build_window(
+    const char* layout_json, const std::string& root_key, key_t& window_id_out,
+    const std::function<void(ui_tree&)>& wire) {
+  auto tree = import_json(layout_json);
 
   // put_object() files each element under the current request's group (see
   // rmi::context::current_group) so they're cleaned up together with the
@@ -183,18 +227,29 @@ void top::on_init() {
     c.put_object(id, elem);
     elem["__wish_id"_key] = id;
   }
+  window_id_out = (*tree[""])["__wish_id"_key].as<key_t>();
+  wire(tree);
 
-  window_id_ = (*tree[""])["__wish_id"_key].as<key_t>();
-  tree.with("vbox.summary.cpu_label", [&](const auto& e) { cpu_summary_label_ = e; });
-  tree.with("vbox.summary.mem_label", [&](const auto& e) { mem_summary_label_ = e; });
-  tree.with("vbox.cores", [&](const auto& e) { cores_container_ = e; });
-  tree.with("vbox.cpu_plot.cpu_series", [&](const auto& e) { cpu_plot_series_ = e; });
-  tree.with("vbox.mem_plot.mem_series", [&](const auto& e) { mem_plot_series_ = e; });
-  tree.with("vbox.proc_table", [&](const auto& e) {
-    proc_table_ = e;
-    proc_table_id_ = e->template as<key_t>("__wish_id"_key);
-  });
-  tree.with("vbox.status_label", [&](const auto& e) { status_label_ = e; });
+  ui_element_ptr root_ptr = tree[""];
+  sess().ui_objects.merge(std::move(tree), root_key);
+  // The main root's top-level registration and "__path__" are handled by
+  // form::init() once on_init() returns; secondary panels register here.
+  if (root_key != internal_root_key_) {
+    sess().top_level_objects[key_t{root_key}] = root_ptr;
+    sess().top_level_handlers[key_t{root_key}] = this;
+    (*root_ptr)["__path__"_key] = root_key;
+  }
+}
+
+void top::on_init() {
+  // See form::internal_root_key_'s doc comment: ordinally-assigned, not pointer-derived.
+  internal_root_key_ = next_available_key("__top_");
+  cpu_root_key_ = internal_root_key_ + "_cpu";
+  mem_root_key_ = internal_root_key_ + "_mem";
+  cores_root_key_ = internal_root_key_ + "_cores";
+
+  auto* title_f = findField<std::string>("title"_key);
+  const std::string title = title_f ? *title_f : std::string{"Top"};
 
   // Fix both axes so the graphs read as stable percentage gauges instead of
   // auto-fitting (which otherwise locks onto whatever tiny range existed on
@@ -208,10 +263,59 @@ void top::on_init() {
     e["y_max"_key] = 100.0f;
     e["x_flags"_key] = kHideXTickLabels;
   };
-  tree.with("vbox.cpu_plot", fix_axes);
-  tree.with("vbox.mem_plot", fix_axes);
 
-  sess().ui_objects.merge(std::move(tree), internal_root_key_);
+  build_window(kProcessesLayout, internal_root_key_, window_id_, [&](ui_tree& tree) {
+    tree.with("vbox.proc_table", [&](const auto& e) {
+      proc_table_ = e;
+      proc_table_id_ = wish_id_of(e);
+    });
+    tree.with("vbox.status_label", [&](const auto& e) { status_label_ = e; });
+  });
+
+  build_window(kCpuLayout, cpu_root_key_, cpu_window_id_, [&](ui_tree& tree) {
+    tree.with("vbox.cpu_label", [&](const auto& e) { cpu_summary_label_ = e; });
+    tree.with("vbox.cpu_plot.cpu_series", [&](const auto& e) { cpu_plot_series_ = e; });
+    tree.with("vbox.cpu_plot", fix_axes);
+  });
+
+  build_window(kMemoryLayout, mem_root_key_, mem_window_id_, [&](ui_tree& tree) {
+    tree.with("vbox.mem_label", [&](const auto& e) { mem_summary_label_ = e; });
+    tree.with("vbox.mem_plot.mem_series", [&](const auto& e) { mem_plot_series_ = e; });
+    tree.with("vbox.mem_plot", fix_axes);
+  });
+
+  build_window(kCoresLayout, cores_root_key_, cores_window_id_, [&](ui_tree& tree) {
+    tree.with("vbox.cores", [&](const auto& e) { cores_container_ = e; });
+  });
+
+  // Seed the first-run arrangement inside the tool's own nested dockspace
+  // (titled with the form's "title" field): a Cores column along the right
+  // ~20%, and to its left CPU/Memory graphs side by side over the process
+  // table. Owned by imgui.ini after the first run (see docs/dock-layout.md);
+  // bump the version arg to layout() if it changes.
+  {
+    using namespace dock;
+    set_default_dock_layout(viewport(
+        "top_dock", title,
+        layout(
+            split(
+                dir::right, 0.20f, area({cores_root_key_}),
+                split(
+                    dir::up, 0.35f, split(dir::left, 0.50f, area({cpu_root_key_}), area({mem_root_key_})),
+                    area({internal_root_key_}))),
+            /*version=*/1, /*target=*/"top_dock")));
+  }
+}
+
+void top::remove_panel_objects() {
+  // Keys are forgotten once removed: next_available_key() may hand this
+  // form's freed internal_root_key_ to a new Top instance, whose panels
+  // would then reuse these exact secondary keys (see the same reasoning in
+  // form::remove_objects_at()).
+  for (std::string* key : {&cpu_root_key_, &mem_root_key_, &cores_root_key_}) {
+    remove_objects_at(*key);
+    key->clear();
+  }
 }
 
 // ── update_snapshot ───────────────────────────────────────────────────────────
@@ -364,8 +468,8 @@ void top::ensure_core_meters(size_t core_count) {
 
   for (size_t i = 0; i < core_count; ++i) {
     ui_element_ptr bar = ui_element_ptr::create("wish"_key, "ProgressBar"_key);
+    // No explicit width: ProgressBar's default (-1) spans the Cores panel.
     bar["label"_key] = "Core " + std::to_string(i) + ": --";
-    bar["width"_key] = 90.0f;
     bar["order"_key] = static_cast<int32_t>(i);
 
     key_t id = rmi::shared::generate_id();
@@ -799,7 +903,7 @@ void top::resort_rows() {
     rows.push_back({pid, &entry});
 
   // Comparator always expressed in ascending terms; descending just swaps
-  // the operand order, matching column_id assignments in kLayout above
+  // the operand order, matching column_id assignments in kProcessesLayout above
   // (0=PID, 1=Name, 2=State, 3=CPU %, 4=Memory, 5=Command).
   auto ascending_less = [&](const std::pair<int, row_entry*>& a, const std::pair<int, row_entry*>& b) {
     switch (sort_column_id_) {
@@ -831,8 +935,11 @@ void top::resort_rows() {
 // ── Event routing ─────────────────────────────────────────────────────────────
 
 void top::on_event(key_t id, key_t event, const dynamic& payload) {
-  if (id == window_id_ && event == "closed"_key) {
+  // Any panel's X button -> tear the whole tool down (docker/curl's rule).
+  if (event == "closed"_key &&
+      (id == window_id_ || id == cpu_window_id_ || id == mem_window_id_ || id == cores_window_id_)) {
     emit("closed"_key);
+    remove_panel_objects();
     remove_internal_objects();
     return;
   }
