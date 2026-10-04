@@ -11,7 +11,15 @@
 /// local filesystem with miniz -- the same library wish_server itself uses
 /// to unpack embedded resources (see src/context/file_service.cpp), here
 /// linked into the client instead.
+///
+/// Every one of those runs as a job on one `common::command_worker`
+/// (modules/bdg/common/command_worker.hpp), never inside the event handler, so
+/// the UI keeps rendering; a compress/extract that takes more than a moment
+/// shows the same modal progress dialog mc and the dev modules use, with a
+/// bar of the entries processed and a Cancel button.
 #include "modules/bdg/desktop/zip/client/zip.hpp"
+
+#include "modules/bdg/common/command_worker.hpp"
 
 #include "src/client/app_registry.hpp"
 #include "src/client/wish_app_host.hpp"
@@ -31,7 +39,6 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
-#include <thread>
 #include <vector>
 
 namespace bdg::wish {
@@ -57,31 +64,27 @@ std::vector<std::string> read_names(const dynamic& payload, key_t field_name) {
   return names;
 }
 
-/// @brief Reports progress on one file within a compress/extract batch:
-/// `progress` (0..1), `progress_label` ("N / M"), and `status` (naming the
-/// file currently being processed) in a single set() call. Unlike mc.cpp's
-/// report_transfer_progress() (which throttles to whole-percent steps for a
-/// single file's byte-level progress), this is called once per *file* in
-/// the batch -- already coarse-grained enough to skip throttling.
+/// @brief Called once before each entry of a compress/extract is processed,
+/// with the entry's name and its position in the batch. May throw to abandon
+/// the operation (see operation_cancelled).
 using progress_fn = std::function<void(const std::string& name, size_t index, size_t total)>;
 
-void report_item_progress(
-    const std::shared_ptr<rmi::proxy::dynamic>& tool, const std::string& verb, const std::string& name, size_t index,
-    size_t total) {
-  dynamic patch;
-  patch["progress"_key] = total == 0 ? 0.0f : static_cast<float>(index) / static_cast<float>(total);
-  patch["progress_label"_key] = std::to_string(index + 1) + " / " + std::to_string(total);
-  patch["status"_key] = verb + " \"" + name + "\"...";
-  tool->set(std::move(patch)).get();
-}
+// Thrown from a progress_fn once the user has pressed the progress dialog's
+// Cancel, to abandon the compress/extract mid-way.
+struct operation_cancelled : std::runtime_error {
+  operation_cancelled() : std::runtime_error("cancelled") {}
+};
 
-// Clears the progress bar/label back to their idle state, mirroring
-// mc.cpp's clear_transfer_progress().
-void clear_progress(const std::shared_ptr<rmi::proxy::dynamic>& tool) {
-  dynamic patch;
-  patch["progress"_key] = 0.0f;
-  patch["progress_label"_key] = std::string{};
-  tool->set(std::move(patch)).get();
+// The progress_fn shared by compress and extract: reports the entries
+// processed so far to the dialog ("3 / 20: docs/readme.md" over the bar), or
+// abandons the operation once cancelled. Called once per entry; report()
+// throttles its own pushes.
+progress_fn item_reporter(common::task_progress& progress) {
+  return [&progress](const std::string& name, size_t index, size_t total) {
+    if (progress.cancelled())
+      throw operation_cancelled{};
+    progress.report(index, total, std::to_string(index + 1) + " / " + std::to_string(total) + ": " + name);
+  };
 }
 
 std::string format_bytes(uintmax_t bytes) {
@@ -268,39 +271,38 @@ void extract(
   fs::create_directories(dest_full, ec);
 
   mz_uint count = mz_zip_reader_get_num_files(&zip);
-  for (mz_uint i = 0; i < count; ++i) {
-    mz_zip_archive_file_stat st{};
-    if (!mz_zip_reader_file_stat(&zip, i, &st)) {
-      mz_zip_reader_end(&zip);
-      throw std::runtime_error("corrupt archive entry in: " + zip_name);
-    }
+  try {
+    for (mz_uint i = 0; i < count; ++i) {
+      mz_zip_archive_file_stat st{};
+      if (!mz_zip_reader_file_stat(&zip, i, &st))
+        throw std::runtime_error("corrupt archive entry in: " + zip_name);
 
-    if (progress)
-      progress(std::string{st.m_filename}, i, count);
+      if (progress)
+        progress(std::string{st.m_filename}, i, count);
 
-    // The local disk isn't a wish session sandbox, but a zip-slip guard is
-    // still worth applying here: this archive may have come from anywhere
-    // (downloaded, emailed, ...), and its entries are exactly as untrusted
-    // as any other zip a desktop unarchiver might be pointed at. Mirrors
-    // file_service::unpack()'s own lexical escape check, rooted at
-    // dest_full instead of a session resource_dir.
-    fs::path target = (dest_full / st.m_filename).lexically_normal();
-    auto rel = target.lexically_relative(dest_full);
-    if (rel.empty() || *rel.begin() == fs::path("..")) {
-      mz_zip_reader_end(&zip);
-      throw std::runtime_error("archive entry escapes destination: " + std::string{st.m_filename});
-    }
+      // The local disk isn't a wish session sandbox, but a zip-slip guard
+      // is still worth applying here: this archive may have come from
+      // anywhere (downloaded, emailed, ...), and its entries are exactly as
+      // untrusted as any other zip a desktop unarchiver might be pointed at.
+      // Mirrors file_service::unpack()'s own lexical escape check, rooted at
+      // dest_full instead of a session resource_dir.
+      fs::path target = (dest_full / st.m_filename).lexically_normal();
+      auto rel = target.lexically_relative(dest_full);
+      if (rel.empty() || *rel.begin() == fs::path(".."))
+        throw std::runtime_error("archive entry escapes destination: " + std::string{st.m_filename});
 
-    if (mz_zip_reader_is_file_a_directory(&zip, i)) {
-      fs::create_directories(target, ec);
-      continue;
-    }
+      if (mz_zip_reader_is_file_a_directory(&zip, i)) {
+        fs::create_directories(target, ec);
+        continue;
+      }
 
-    fs::create_directories(target.parent_path(), ec);
-    if (!mz_zip_reader_extract_to_file(&zip, i, target.string().c_str(), 0)) {
-      mz_zip_reader_end(&zip);
-      throw std::runtime_error("failed to extract: " + std::string{st.m_filename});
+      fs::create_directories(target.parent_path(), ec);
+      if (!mz_zip_reader_extract_to_file(&zip, i, target.string().c_str(), 0))
+        throw std::runtime_error("failed to extract: " + std::string{st.m_filename});
     }
+  } catch (...) {
+    mz_zip_reader_end(&zip);
+    throw;
   }
 
   mz_zip_reader_end(&zip);
@@ -311,7 +313,7 @@ void extract(
 }
 
 // Reads `zip_full`'s central directory without extracting anything, for the
-// View Contents dialog. Throws std::runtime_error if the archive can't be
+// Contents panel. Throws std::runtime_error if the archive can't be
 // opened.
 dynamic list_contents(const fs::path& zip_full) {
   mz_zip_archive zip{};
@@ -346,9 +348,18 @@ void run_zip(wish_app_host& s) {
   auto tool = std::make_shared<rmi::proxy::dynamic>(s.instantiate("wish"_key, "Zip"_key).get());
   auto cur_dir = std::make_shared<fs::path>(fs::current_path());
 
+  // Every handler below runs as a job on this worker's thread, one at a
+  // time, never inside the event handler: in standalone mode that runs on
+  // the RMI dispatch thread holding the session's write lock, which the
+  // render loop needs every frame, and a large folder could take a while to
+  // compress. Long jobs get the shared modal progress dialog
+  // (modules/bdg/common/command_worker.hpp).
+  auto worker = std::make_shared<common::command_worker>(s, "Zip");
+  worker->start();
+
   // Server asks to browse a different directory (row activated, or the path
   // bar's value was changed) -- mirrors mc's on_local_navigate.
-  tool->onEvent("on_navigate"_key, [tool, cur_dir](dynamic payload) {
+  worker->on(*tool, "on_navigate"_key, [tool, cur_dir](const dynamic& payload) {
     auto name = payload.as<std::string>("name"_key);
     auto type = payload.as<std::string>("type"_key);
     fs::path target = type == "path" ? fs::path(name) : (name == ".." ? cur_dir->parent_path() : (*cur_dir / name));
@@ -359,96 +370,90 @@ void run_zip(wish_app_host& s) {
     report_listing(tool, cur_dir);
   });
 
-  // "Compress" confirmed server-side: create the archive, then report the
-  // outcome and refresh the listing so the new file appears.
-  //
-  // Runs on a detached background thread rather than inline in this
-  // handler: in standalone mode the handler runs on the RMI dispatch thread
-  // while holding the session's write lock (see
-  // bdg::bison::rmi::standalone's "do not block the worker from within an
-  // event handler" contract), and a large folder could take a while to
-  // compress. Blocking here would freeze the entire UI.
-  tool->onEvent("on_compress_requested"_key, [tool, cur_dir](dynamic payload) {
+  // "Compress" confirmed server-side: create the archive, then refresh the
+  // listing so the new file appears and report the outcome. A failure stays
+  // in the progress dialog until closed; Cancel discards the partial archive.
+  worker->on(*tool, "on_compress_requested"_key, [worker, tool, cur_dir](const dynamic& payload) {
     auto path = payload.as<std::string>("path"_key);
     auto source_names = read_names(payload, "source_names"_key);
     auto archive_name = payload.as<std::string>("archive_name"_key);
 
-    std::thread([tool, cur_dir, path, source_names, archive_name]() {
-      std::string message;
+    std::string message;
+    worker->run_task("Compressing into \"" + archive_name + "\"", [&](common::task_progress& progress) {
       try {
-        compress(
-            fs::path(path), source_names, archive_name,
-            [tool](const std::string& name, size_t index, size_t total) {
-              report_item_progress(tool, "Compressing", name, index, total);
-            });
+        compress(fs::path(path), source_names, archive_name, item_reporter(progress));
         message = "Created \"" + archive_name + "\".";
+      } catch (const operation_cancelled&) {
+        std::error_code ec;
+        fs::remove(fs::path(path) / archive_name, ec);
+        message = "Compress cancelled.";
       } catch (const std::exception& e) {
         message = std::string{"Compress failed: "} + e.what();
+        worker->fail(message, /*always_show=*/true);
       }
-      clear_progress(tool);
-      // Refresh regardless of outcome -- even a failed attempt may have
-      // left a partial archive file behind. update_listing()'s handler
-      // unconditionally resets the status label to "Ready.", so the
-      // outcome message must be reported *after* the refresh, not before,
-      // or it would be immediately overwritten and never seen.
-      if (*cur_dir == fs::path(path))
-        report_listing(tool, cur_dir);
-      report_status(tool, message);
-    }).detach();
+    });
+    // Refresh regardless of outcome -- even a failed attempt may have left
+    // a partial archive file behind. update_listing()'s handler
+    // unconditionally resets the status label to "Ready.", so the outcome
+    // message must be reported *after* the refresh, not before, or it would
+    // be immediately overwritten and never seen.
+    if (*cur_dir == fs::path(path))
+      report_listing(tool, cur_dir);
+    report_status(tool, message);
   });
 
-  // "Extract" confirmed server-side: same threading rationale as compress.
-  tool->onEvent("on_extract_requested"_key, [tool, cur_dir](dynamic payload) {
+  // "Extract" confirmed server-side: same shape as compress. Cancel stops
+  // before the next entry; the entries already extracted stay on disk.
+  worker->on(*tool, "on_extract_requested"_key, [worker, tool, cur_dir](const dynamic& payload) {
     auto path = payload.as<std::string>("path"_key);
     auto zip_name = payload.as<std::string>("zip_name"_key);
     auto dest_name = payload.as<std::string>("dest_name"_key);
 
-    std::thread([tool, cur_dir, path, zip_name, dest_name]() {
-      std::string message;
+    std::string message;
+    worker->run_task("Extracting \"" + zip_name + "\"", [&](common::task_progress& progress) {
       try {
-        extract(
-            fs::path(path), zip_name, dest_name, [tool](const std::string& name, size_t index, size_t total) {
-              report_item_progress(tool, "Extracting", name, index, total);
-            });
+        extract(fs::path(path), zip_name, dest_name, item_reporter(progress));
         message = "Extracted to \"" + dest_name + "/\".";
+      } catch (const operation_cancelled&) {
+        message = "Extract cancelled.";
       } catch (const std::exception& e) {
         message = std::string{"Extract failed: "} + e.what();
+        worker->fail(message, /*always_show=*/true);
       }
-      clear_progress(tool);
-      // See the compress handler's comment above: report the outcome after
-      // the refresh, not before, so update_listing()'s "Ready." reset
-      // doesn't clobber it.
-      if (*cur_dir == fs::path(path))
-        report_listing(tool, cur_dir);
-      report_status(tool, message);
-    }).detach();
+    });
+    // See the compress handler's comment above: report the outcome after
+    // the refresh, not before, so update_listing()'s "Ready." reset doesn't
+    // clobber it.
+    if (*cur_dir == fs::path(path))
+      report_listing(tool, cur_dir);
+    report_status(tool, message);
   });
 
   // "View Contents" clicked (button, or double-clicking a .zip row): read
   // the archive's central directory without extracting, then hand the
   // listing to the server to render.
-  tool->onEvent("on_view_contents_requested"_key, [tool](dynamic payload) {
+  worker->on(*tool, "on_view_contents_requested"_key, [tool](const dynamic& payload) {
     auto path = payload.as<std::string>("path"_key);
     auto name = payload.as<std::string>("name"_key);
-
-    std::thread([tool, path, name]() {
-      try {
-        dynamic entries = list_contents(fs::path(path) / name);
-        dynamic args;
-        args["name"_key] = name;
-        args["entries"_key] = dynamic_ptr{std::make_shared<dynamic>(std::move(entries))};
-        tool->call("show_contents"_key, std::move(args)).get();
-      } catch (const std::exception& e) {
-        report_status(tool, std::string{"Could not open archive: "} + e.what());
-      }
-    }).detach();
+    try {
+      dynamic entries = list_contents(fs::path(path) / name);
+      dynamic args;
+      args["name"_key] = name;
+      args["entries"_key] = dynamic_ptr{std::make_shared<dynamic>(std::move(entries))};
+      tool->call("show_contents"_key, std::move(args)).get();
+    } catch (const std::exception& e) {
+      report_status(tool, std::string{"Could not open archive: "} + e.what());
+    }
   });
 
-  tool->onEvent("closed"_key, [&s](dynamic) { s.signal_done(); });
+  tool->onEvent("closed"_key, [&s, worker](dynamic) {
+    worker->shutdown();
+    s.signal_done();
+  });
 
   // Show the client's current working directory at startup, mirroring
   // mc's own root-on-open behavior for its local panel.
-  report_listing(tool, cur_dir);
+  worker->post([tool, cur_dir] { report_listing(tool, cur_dir); });
 
   // on_session() blocks until signal_done() is called.
 }

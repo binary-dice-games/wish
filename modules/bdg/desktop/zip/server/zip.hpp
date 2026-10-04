@@ -5,8 +5,10 @@
 
 #include <ui/forms/form.hpp>
 #include <ui/ui_element.hpp>
+#include <ui/ui_importer.hpp>
 
 #include <cstdint>
+#include <functional>
 #include <set>
 #include <string>
 #include <vector>
@@ -17,6 +19,16 @@ class message_box;
 
 /// @brief Client-machine file browser with compress/extract/view-contents
 /// actions for zip archives.
+///
+/// Laid out as three dockable panels inside the tool's own nested
+/// dockspace (`dock::viewport()`, see docs/dock-layout.md), like top, pix
+/// and the dev modules: **Files** (the form's main root: path bar,
+/// selection label, and file table), **Contents** (the listing of the
+/// archive last viewed), and **Actions** (Compress/Extract/View
+/// Contents/Refresh buttons and the status line). A first-run arrangement
+/// is seeded by `on_init()` (Actions as a strip along the top, Files beside
+/// Contents below it); the user can re-dock, tab, or float any panel
+/// afterwards. Closing any panel closes the whole tool.
 ///
 /// Unlike mc's sandbox (right) panel or Zip's own first draft,
 /// this form has **no filesystem access at all** -- the files it browses
@@ -44,33 +56,33 @@ class message_box;
 /// listing last reported via `update_listing()`, not a filesystem probe --
 /// this form never touches disk, so it has nothing else to check against.
 ///
-/// While a compress/extract is in flight, the client streams per-file
-/// progress back via `set({"progress": ..., "progress_label": ...,
-/// "status": ...})` -- `progress` (0..1) and `progress_label` drive the
-/// progress bar at the bottom of the window, while `status` names the file
-/// currently being processed, mirroring mc's `transfer_progress`/
-/// `transfer_label` fields for its own upload/download transfers.
+/// Compress/extract progress is not shown here: the client reports it
+/// through the shared ProgressBox dialog
+/// (modules/bdg/common/command_worker.hpp), like mc's transfers, and sets
+/// `status` to the outcome once the operation is over.
 ///
 /// Emitted events:
-///   - `"closed"` — window X button; internal UI removed.
+///   - `"closed"` — any panel's X button; every panel removed.
 ///   - `"on_navigate"` (`{name, type}`, `type` is `"dir"` or `"path"`) —
 ///     client should re-list the target directory and call
 ///     `update_listing()`.
 ///   - `"on_compress_requested"` (`{path, source_names, archive_name}`,
 ///     `source_names` a plain-string array) — client should create
 ///     `path/archive_name` containing every `path/<name>` in `source_names`
-///     (recursively, for a directory), reporting per-file progress as
-///     described above, then report the outcome via `set({"status": ...})`
-///     and refresh via `update_listing()`.
+///     (recursively, for a directory), then refresh via `update_listing()`
+///     and report the outcome via `set({"status": ...})`.
 ///   - `"on_extract_requested"` (`{path, zip_name, dest_name}`) — client
-///     should extract `path/zip_name` into `path/dest_name`, reporting
-///     per-file progress the same way, then report the outcome the same way.
+///     should extract `path/zip_name` into `path/dest_name`, then refresh
+///     and report the outcome the same way.
 ///   - `"on_view_contents_requested"` (`{path, name}`) — client should read
 ///     `path/name`'s central directory (without extracting) and call
-///     `show_contents(name, entries)`.
+///     `show_contents(name, entries)`, which fills the Contents panel.
 class zip : public form {
  public:
   explicit zip(bison::dynamic&& base);
+  /// @brief Removes the secondary Contents/Actions panels; ~form() removes
+  /// the main Files panel and the dock layout.
+  ~zip() override;
 
   /// @brief RMI method: replace the browser's displayed directory listing.
   /// @p args holds `path` (string) and `files` (dynamic array of entries,
@@ -79,21 +91,24 @@ class zip : public form {
   /// mc's `update_local_listing()`).
   bison::dynamic do_update_listing(const bison::dynamic& args);
 
-  /// @brief RMI method: open the "View Contents" dialog for the archive
-  /// named @p args's `name`, populated from @p args's `entries` (dynamic
-  /// array, each `{name, type ("file"/"dir"), uncompressed_size,
-  /// compressed_size}`, as read by the client from the archive's central
-  /// directory).
+  /// @brief RMI method: show the archive named @p args's `name` in the
+  /// Contents panel, replacing whatever archive it showed before. Its table
+  /// is populated from @p args's `entries` (dynamic array, each `{name,
+  /// type ("file"/"dir"), uncompressed_size, compressed_size}`, as read by
+  /// the client from the archive's central directory) and its summary
+  /// label names the archive with its entry count and total sizes.
   bison::dynamic do_show_contents(const bison::dynamic& args);
 
   /// @brief Called from the `__setter` prototype method for every set() call.
-  /// Intercepts `status` to mirror it into the internal status label, and
-  /// `progress`/`progress_label` to mirror them into the internal progress
-  /// bar.
+  /// Intercepts `status` to mirror it into the internal status label.
   bison::dynamic on_set(const bison::dynamic& patch);
 
  protected:
   void on_init() override;
+  /// @brief Reacts to: `"closed"` (any panel's X button -- emits `"closed"`
+  /// and removes every panel); the file table's row selection/activation and
+  /// sort events; path_input's `"changed"`; the Actions panel's button
+  /// clicks; and the name prompt's events.
   void on_event(bison::key_t widget_id, bison::key_t event_name, const bison::dynamic& payload) override;
 
  private:
@@ -105,7 +120,7 @@ class zip : public form {
   };
 
   /// @brief One entry from an archive's central directory, as reported by
-  /// the client for the "View Contents" table.
+  /// the client for the Contents panel's table.
   struct archive_entry {
     std::string name;
     bool is_dir{false};
@@ -116,6 +131,18 @@ class zip : public form {
   /// @brief What the name/destination prompt dialog, once confirmed, should
   /// do -- mirrors tree.cpp's `pending_transfer`.
   enum class pending_action { none, compress, extract };
+
+  /// @brief Import @p layout_json, assign every element an RMI id, run
+  /// @p wire to capture element pointers, and merge the tree under
+  /// @p root_key -- registering it as its own top-level object (with
+  /// `__path__`, so it can be named in the dock layout) unless it is the
+  /// main `internal_root_key_`, which form::init() registers itself.
+  void build_window(
+      const char* layout_json, const std::string& root_key, bison::key_t& window_id_out,
+      const std::function<void(ui_tree&)>& wire);
+  /// @brief Remove the Contents/Actions panels and forget their keys. Safe
+  /// to call more than once.
+  void remove_panel_objects();
 
   void fill_table(const std::vector<file_row>& entries, const std::set<std::string>& selected_names = {});
   void fill_contents_table(const ui_element_ptr& table, const std::vector<archive_entry>& entries) const;
@@ -181,12 +208,18 @@ class zip : public form {
   void emit_action_request(
       pending_action action, const std::vector<std::string>& source_names, const std::string& target_name);
 
-  // ── View Contents dialog ──────────────────────────────────────────────────
-  void show_contents_dialog(const std::string& zip_name, const std::vector<archive_entry>& entries);
-  void request_close_contents();
-  void remove_contents_objects();
+  // ── Contents panel ────────────────────────────────────────────────────────
+  /// @brief Replace the Contents panel's summary and rows with @p zip_name's
+  /// @p entries.
+  void show_contents_panel(const std::string& zip_name, const std::vector<archive_entry>& entries);
 
-  bison::key_t window_id_;
+  /// Secondary panel roots: internal_root_key_ + "_contents"/"_actions".
+  std::string contents_root_key_;
+  std::string actions_root_key_;
+
+  bison::key_t window_id_; ///< Files panel (main root).
+  bison::key_t contents_window_id_;
+  bison::key_t actions_window_id_;
   bison::key_t path_input_id_;
   bison::key_t file_table_id_;
   bison::key_t btn_compress_id_;
@@ -198,7 +231,8 @@ class zip : public form {
   ui_element_ptr file_table_ptr_;
   ui_element_ptr selected_label_ptr_;
   ui_element_ptr status_label_ptr_;
-  ui_element_ptr progress_ptr_;
+  ui_element_ptr contents_summary_ptr_;
+  ui_element_ptr contents_table_ptr_;
 
   std::string path_; ///< Last directory path reported by the client via update_listing().
   std::vector<file_row> entries_;
@@ -232,11 +266,6 @@ class zip : public form {
   /// instance's destructor tears down its own internal objects, same effect
   /// the old direct remove_objects_at() call had.
   std::shared_ptr<message_box> confirm_dialog_;
-
-  // View Contents dialog state.
-  std::string contents_root_key_; ///< Empty when no contents dialog is open.
-  bison::key_t contents_window_id_;
-  bison::key_t contents_close_id_;
 };
 
 /// @brief Register Zip in the "wish" bison namespace.

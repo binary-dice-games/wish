@@ -349,6 +349,11 @@ Gotchas this recipe already handles:
   `chromium.launch()` with `executable_path` set to the newest
   `$PLAYWRIGHT_BROWSERS_PATH/chromium-*/chrome-linux/chrome`.
 - **`rect` keys are `x0`/`y0`/`x1`/`y1`**, not `x`/`y`/`w`/`h`.
+- **A module that opens on the client's working directory (`zip`, `mc`)
+  needs no path typing**: start `wish client` with `cwd=` set to the fixture
+  directory. To catch its progress dialog in a screenshot the job must
+  outlast the 0.4 s open delay — ~240 MB of random files kept a `zip`
+  compress going for several seconds (2026-10).
 - **Cells built at runtime (e.g. pix's thumbnail `Selectable`s) appear in
   `get_tree()`** with index paths (`__pix_0.vbox.grid_table.0.1`), even
   though they are not dot-path entries in `session.ui_objects`.
@@ -668,10 +673,12 @@ def test_saving_shows_confirmation(wish_ui):
   row_h * row_idx + row_h / 2`, with `header_h`/`row_h` both
   `ImGui::GetTextLineHeightWithSpacing()` at the default font (24px at this
   repo's default `--font_size`) — then `ui._page.mouse.click(x, y)`
-  directly rather than going through `click(path)`. This is consistently
-  reliable for a plain click and for the first couple of rows below the
-  header; see the next bullet for why a click deep in a long table can
-  still occasionally miss. **This does not apply to every table** — the
+  directly rather than going through `click(path)`. Even then, a single
+  `mouse.click(x, y, delay=60)` with no prior hover did *not* select a
+  `zip` file row (2026-10); hover first and split the press, as the next
+  bullet describes (`mouse.move` → ~300ms → `down` → ~100ms → `up`), and it
+  selected on the first try. See the next bullet for why a click deep in a
+  long table can still occasionally miss. **This does not apply to every table** — the
   `git` module (`modules/bdg/dev/git/server/git.cpp`) calls
   `assign_id()` (which does `ctx().put_object()` + sets `__wish_id`) on
   every `TableRow` and cell it builds (`add_row()`/`add_file_row()`,
