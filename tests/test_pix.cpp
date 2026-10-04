@@ -11,10 +11,12 @@
 #include "src/bison/bison_object.hpp"
 #include "src/rmi/rmi.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <deque>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <optional>
 #include <string>
 #include <thread>
@@ -67,11 +69,14 @@ class SessionCapturingServer : public wish::server {
   }
 };
 
-// Helper: find the root key for the internal form tree (starts with "__pix_",
-// no dot -- i.e. it is the top-level entry not a child path).
+// Helper: find the root key for the internal form tree -- "__pix_<N>"
+// exactly (the Images panel), not a child path ("__pix_0.vbox...") nor a
+// secondary panel root ("__pix_0_preview", "__pix_0_info").
 static std::string find_form_root(const wish::name_map& objects) {
+  static const std::string prefix = "__pix_";
   for (const auto& [k, _] : objects) {
-    if (k.rfind("__pix_", 0) == 0 && k.find('.') == std::string::npos)
+    if (k.size() > prefix.size() && k.rfind(prefix, 0) == 0 &&
+        std::all_of(k.begin() + prefix.size(), k.end(), [](char ch) { return ch >= '0' && ch <= '9'; }))
       return k;
   }
   return {};
@@ -131,30 +136,79 @@ TEST_F(PixWindowTest, TreeContainsGridAndPreviewTables) {
   std::string root = instantiate_and_get_root();
   ASSERT_FALSE(root.empty());
   auto& objs = srv_->last_session->ui_objects;
-  EXPECT_TRUE(objs.count(root + ".vbox.body.left_panel.grid_table"));
-  EXPECT_TRUE(objs.count(root + ".vbox.body.right_panel.preview_table"));
+  EXPECT_TRUE(objs.count(root + ".vbox.grid_table"));
+  EXPECT_TRUE(objs.count(root + "_preview.vbox.preview_table"));
 }
 
 TEST_F(PixWindowTest, TreeContainsInfoPanelLabels) {
   std::string root = instantiate_and_get_root();
   ASSERT_FALSE(root.empty());
   auto& objs = srv_->last_session->ui_objects;
-  EXPECT_TRUE(objs.count(root + ".vbox.body.right_panel.info_panel.info_filename"));
-  EXPECT_TRUE(objs.count(root + ".vbox.body.right_panel.info_panel.info_resolution"));
-  EXPECT_TRUE(objs.count(root + ".vbox.body.right_panel.info_panel.info_format"));
-  EXPECT_TRUE(objs.count(root + ".vbox.body.right_panel.info_panel.info_size"));
-  EXPECT_TRUE(objs.count(root + ".vbox.body.right_panel.info_panel.info_modified"));
+  EXPECT_TRUE(objs.count(root + "_info.vbox.info_filename"));
+  EXPECT_TRUE(objs.count(root + "_info.vbox.info_resolution"));
+  EXPECT_TRUE(objs.count(root + "_info.vbox.info_format"));
+  EXPECT_TRUE(objs.count(root + "_info.vbox.info_size"));
+  EXPECT_TRUE(objs.count(root + "_info.vbox.info_modified"));
 }
 
 TEST_F(PixWindowTest, TreeContainsZoomControls) {
   std::string root = instantiate_and_get_root();
   ASSERT_FALSE(root.empty());
   auto& objs = srv_->last_session->ui_objects;
-  EXPECT_TRUE(objs.count(root + ".vbox.body.right_panel.zoom_bar.btn_zoom_out"));
-  EXPECT_TRUE(objs.count(root + ".vbox.body.right_panel.zoom_bar.btn_zoom_in"));
-  EXPECT_TRUE(objs.count(root + ".vbox.body.right_panel.zoom_bar.btn_zoom_fit"));
-  EXPECT_TRUE(objs.count(root + ".vbox.body.right_panel.zoom_bar.btn_zoom_100"));
-  EXPECT_TRUE(objs.count(root + ".vbox.body.right_panel.zoom_bar.zoom_label"));
+  EXPECT_TRUE(objs.count(root + "_preview.vbox.zoom_bar.btn_zoom_out"));
+  EXPECT_TRUE(objs.count(root + "_preview.vbox.zoom_bar.btn_zoom_in"));
+  EXPECT_TRUE(objs.count(root + "_preview.vbox.zoom_bar.btn_zoom_fit"));
+  EXPECT_TRUE(objs.count(root + "_preview.vbox.zoom_bar.btn_zoom_100"));
+  EXPECT_TRUE(objs.count(root + "_preview.vbox.zoom_bar.zoom_label"));
+}
+
+// Each panel is its own top-level Window, addressable by "__path__" so the
+// dock layout can name it.
+TEST_F(PixWindowTest, EachPanelIsATopLevelWindow) {
+  std::string root = instantiate_and_get_root();
+  ASSERT_FALSE(root.empty());
+  auto& s = *srv_->last_session;
+  for (const std::string key : {root, root + "_preview", root + "_info"}) {
+    auto it = s.top_level_objects.find(bison::key_t{key});
+    ASSERT_NE(it, s.top_level_objects.end()) << key;
+    EXPECT_EQ(it->second->as<bison::key_t>(dynamic::CLASS), "Window"_key) << key;
+    EXPECT_EQ(it->second->as<std::string>("__path__"_key), key) << key;
+  }
+  EXPECT_EQ(s.ui_objects.at(root)->as<std::string>("title"_key), "Images");
+  EXPECT_EQ(s.ui_objects.at(root + "_preview")->as<std::string>("title"_key), "Preview");
+  EXPECT_EQ(s.ui_objects.at(root + "_info")->as<std::string>("title"_key), "Info");
+}
+
+// The panels are seeded into a nested DockSpaceViewport ("pix_dock") whose
+// DockLayout names every panel's path.
+TEST_F(PixWindowTest, RegistersDefaultDockLayoutNamingEveryPanel) {
+  std::string root = instantiate_and_get_root();
+  ASSERT_FALSE(root.empty());
+
+  wish::ui_element_ptr viewport;
+  for (const auto& [k, obj] : srv_->last_session->top_level_objects)
+    if (obj->as<bison::key_t>(dynamic::CLASS) == "DockSpaceViewport"_key)
+      viewport = obj;
+  ASSERT_TRUE(viewport);
+  EXPECT_EQ(viewport->as<std::string>("id"_key), "pix_dock");
+  EXPECT_EQ(viewport->as<std::string>("title"_key), "Image Viewer");
+
+  // Collect every DockArea's newline-separated "windows" list.
+  std::vector<std::string> windows;
+  std::function<void(const dynamic&)> walk = [&](const dynamic& node) {
+    if (node.as<bison::key_t>(dynamic::CLASS) == "DockArea"_key)
+      windows.push_back(node.as<std::string>("windows"_key));
+    if (auto* cf = node.findField<dynamic_ptr>("children"_key); cf && *cf)
+      (*cf)->forEach([&](bison::key_t, const field& f) {
+        if (f.is<dynamic_ptr>() && f.as<dynamic_ptr>())
+          walk(*f.as<dynamic_ptr>());
+      });
+  };
+  walk(*viewport);
+  std::sort(windows.begin(), windows.end());
+  std::vector<std::string> expected{root, root + "_info", root + "_preview"};
+  std::sort(expected.begin(), expected.end());
+  EXPECT_EQ(windows, expected);
 }
 
 // ── Functional behavior (methods, events) ──────────────────────────────────────
@@ -268,7 +322,7 @@ class PixFunctionalTest : public ::testing::Test {
   // out of range or padding.
   dynamic_ptr grid_cell(size_t row, size_t col) const {
     auto& objs = srv_->last_session->ui_objects;
-    auto it = objs.find(root_ + ".vbox.body.left_panel.grid_table");
+    auto it = objs.find(root_ + ".vbox.grid_table");
     if (it == objs.end())
       return {};
     return child_at(child_at(it->second, row), col);
@@ -370,11 +424,11 @@ TEST_F(PixFunctionalTest, SetInfoPopulatesLabelsWithPrefixes) {
   args["modified"_key] = std::string{"2026-01-01 00:00"};
   proxy_->call("set_info"_key, std::move(args)).get();
 
-  EXPECT_EQ(text_at(root_ + ".vbox.body.right_panel.info_panel.info_filename"), "photo.png");
-  EXPECT_EQ(text_at(root_ + ".vbox.body.right_panel.info_panel.info_resolution"), "Resolution: 800 x 600");
-  EXPECT_EQ(text_at(root_ + ".vbox.body.right_panel.info_panel.info_format"), "Format: PNG");
-  EXPECT_EQ(text_at(root_ + ".vbox.body.right_panel.info_panel.info_size"), "Size: 3.3 KB");
-  EXPECT_EQ(text_at(root_ + ".vbox.body.right_panel.info_panel.info_modified"), "Modified: 2026-01-01 00:00");
+  EXPECT_EQ(text_at(root_ + "_info.vbox.info_filename"), "photo.png");
+  EXPECT_EQ(text_at(root_ + "_info.vbox.info_resolution"), "Resolution: 800 x 600");
+  EXPECT_EQ(text_at(root_ + "_info.vbox.info_format"), "Format: PNG");
+  EXPECT_EQ(text_at(root_ + "_info.vbox.info_size"), "Size: 3.3 KB");
+  EXPECT_EQ(text_at(root_ + "_info.vbox.info_modified"), "Modified: 2026-01-01 00:00");
 }
 
 TEST_F(PixFunctionalTest, SetPreviewUpdatesImageAndZoomLabel) {
@@ -387,11 +441,11 @@ TEST_F(PixFunctionalTest, SetPreviewUpdatesImageAndZoomLabel) {
   proxy_->call("set_preview"_key, std::move(args)).get();
 
   auto& objs = srv_->last_session->ui_objects;
-  auto& img = objs.at(root_ + ".vbox.body.right_panel.preview_table.prow0.preview_image");
+  auto& img = objs.at(root_ + "_preview.vbox.preview_table.prow0.preview_image");
   EXPECT_EQ(*img->findField<std::string>("src"_key), "pix_cache/x/full/photo.png");
   EXPECT_EQ(*img->findField<int32_t>("width"_key), 400);
   EXPECT_EQ(*img->findField<int32_t>("height"_key), 300);
-  EXPECT_EQ(text_at(root_ + ".vbox.body.right_panel.zoom_bar.zoom_label"), "50%");
+  EXPECT_EQ(text_at(root_ + "_preview.vbox.zoom_bar.zoom_label"), "50%");
 }
 
 TEST_F(PixFunctionalTest, SetPreviewWidensColumnToMatchZoomedImageWidth) {
@@ -408,7 +462,7 @@ TEST_F(PixFunctionalTest, SetPreviewWidensColumnToMatchZoomedImageWidth) {
   proxy_->call("set_preview"_key, std::move(args)).get();
 
   auto& objs = srv_->last_session->ui_objects;
-  auto& col = objs.at(root_ + ".vbox.body.right_panel.preview_table.pcol0");
+  auto& col = objs.at(root_ + "_preview.vbox.preview_table.pcol0");
   EXPECT_EQ(*col->findField<float>("init_width"_key), 1500.0f);
 }
 
@@ -416,7 +470,7 @@ TEST_F(PixFunctionalTest, SetPreviewLoadingShowsLoadingLabel) {
   dynamic args;
   args["loading"_key] = true;
   proxy_->call("set_preview"_key, std::move(args)).get();
-  EXPECT_EQ(text_at(root_ + ".vbox.body.right_panel.zoom_bar.zoom_label"), "Loading...");
+  EXPECT_EQ(text_at(root_ + "_preview.vbox.zoom_bar.zoom_label"), "Loading...");
 }
 
 TEST_F(PixFunctionalTest, StatFilesReportsMissingAndExistingFiles) {
@@ -495,7 +549,7 @@ TEST_F(PixFunctionalTest, PathInputChangedEmitsSubmittedAndUpdatesField) {
 }
 
 TEST_F(PixFunctionalTest, ZoomButtonsEmitViewControlWithCorrectAction) {
-  fire_event(root_ + ".vbox.body.right_panel.zoom_bar.btn_zoom_in", "clicked"_key);
+  fire_event(root_ + "_preview.vbox.zoom_bar.btn_zoom_in", "clicked"_key);
   ASSERT_TRUE(wait_for_event("on_view_control"_key));
   auto p = payload_of("on_view_control"_key);
   ASSERT_TRUE(p.has_value());
@@ -533,4 +587,20 @@ TEST_F(PixFunctionalTest, WindowClosedEmitsClosedAndRemovesTree) {
 
   EXPECT_TRUE(wait_for_event("closed"_key));
   EXPECT_FALSE(srv_->last_session->ui_objects.count(root_));
+  EXPECT_FALSE(srv_->last_session->ui_objects.count(root_ + "_preview"));
+  EXPECT_FALSE(srv_->last_session->ui_objects.count(root_ + "_info"));
+}
+
+// Closing a secondary panel (here: Preview) tears down the whole viewer too.
+TEST_F(PixFunctionalTest, SecondaryPanelClosedEmitsClosedAndRemovesEveryPanel) {
+  const std::string preview_root = root_ + "_preview";
+  auto win_id = wish_id_at(preview_root);
+  ASSERT_TRUE(win_id.id);
+  auto h = srv_->last_session->top_level_handlers.find(bison::key_t{preview_root});
+  ASSERT_NE(h, srv_->last_session->top_level_handlers.end());
+  h->second->on_event(win_id, "closed"_key, dynamic{});
+
+  EXPECT_TRUE(wait_for_event("closed"_key));
+  for (const std::string key : {root_, preview_root, root_ + "_info"})
+    EXPECT_FALSE(srv_->last_session->ui_objects.count(key)) << key;
 }

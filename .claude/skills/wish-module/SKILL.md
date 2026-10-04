@@ -144,6 +144,10 @@ the user a real screenshot rather than asking them to approve JSON:
    build/app/wish standalone --run=<name> --renderer=web --web_port=8080
    ```
    (`wish standalone --list` confirms the name resolved correctly first.)
+   `standalone` requires SDL3. In a build without SDL3 (typical in a cloud
+   container), use `scripts/screenshot_module.py --run <name>` instead: it
+   runs server and client over TCP. See docs/automation.md, "Recipe:
+   screenshot a module".
 3. Drive it:
    ```python
    from wish.automation import AutomationClient

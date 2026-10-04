@@ -109,8 +109,11 @@ gotcha you hit and didn't record is one the next agent will hit again.
 - **`pytest` is not pre-installed**, and `pip install pytest` fails under
   this environment's PEP 668 "externally managed environment" protection
   (`pip install --break-system-packages` works but modifies the shared
-  system Python — avoid it for a one-off check). `playwright` **is**
-  pre-installed (see Prerequisites below), just not `pytest`. To run an
+  system Python — avoid it for a one-off check). `playwright` was
+  pre-installed in some sessions but **not** in others (a 2026-10 cloud
+  container had only the Chromium binaries under `/opt/pw-browsers`, no
+  Python package) -- see "Recipe: screenshot a module" below for the venv
+  setup. To run an
   existing `*.py` test file that uses `unittest.TestCase` under the hood
   (true of every test under `bindings/python/tests/` at the time of
   writing) without installing anything, run it directly with
@@ -296,6 +299,60 @@ via `PLAYWRIGHT_BROWSERS_PATH`, true in Claude Code's own environment) —
 but if `AutomationClient.launch()` fails with a `libnspr4.so`/similar
 shared-library error even though the browser binary exists, that
 environment is missing the OS deps and needs `install-deps` regardless.
+
+## Recipe: screenshot a module
+
+The quickest way to show what an embedded app (`wish client --run=<name>`)
+looks like. Verified in a Claude Code cloud container (2026-10, `pix`):
+
+```sh
+# 1. Build with web + automation (SDL3 not needed).
+cmake -S . -B build -G Ninja -DWISH_ENABLE_SDL3=OFF -DWISH_ENABLE_WEB=ON -DWISH_ENABLE_AUTOMATION=ON
+cmake --build build --target wish-cli
+
+# 2. Playwright in a throwaway venv (system pip is PEP 668-locked).
+python3 -m venv /tmp/pwvenv && /tmp/pwvenv/bin/pip install -q playwright
+
+# 3. Launch, drive, screenshot.
+/tmp/pwvenv/bin/python scripts/screenshot_module.py --run pix --out /tmp/pix.png \
+    --type .vbox.toolbar.path_input=/path/to/images --click-class Selectable
+```
+
+Run step 3 with the Bash tool's `run_in_background: true` (see above), then
+open the PNG with the `Read` tool.
+`scripts/screenshot_module.py` starts `wish server --transport tcp
+--renderer web` under `AutomationClient`, connects `wish client --run
+<name>` to it, applies `--type SUFFIX=TEXT` (types the text, then Enter),
+`--click SUFFIX` and `--click-class CLASS` in that order, waits
+`--before-shot` seconds, and writes the PNG. Widgets are matched by dot-path
+*suffix* because the form root is instance-numbered (`__pix_0`).
+`--dump-tree` prints the top-level paths to find suffixes.
+
+Gotchas this recipe already handles:
+
+- **`wish standalone` needs SDL3.** A `-DWISH_ENABLE_SDL3=OFF` build exits
+  with "standalone mode requires the SDL3 renderer", so
+  `AutomationClient.launch()` times out waiting for the web port. Run a
+  separate server and client over TCP instead.
+- **pip's playwright may not match the preinstalled Chromium.** The container
+  ships `/opt/pw-browsers/chromium-1194`. A newer pip `playwright` expects a
+  different build and should not download one. The script retries
+  `chromium.launch()` with `executable_path` set to the newest
+  `$PLAYWRIGHT_BROWSERS_PATH/chromium-*/chrome-linux/chrome`.
+- **`rect` keys are `x0`/`y0`/`x1`/`y1`**, not `x`/`y`/`w`/`h`.
+- **Cells built at runtime (e.g. pix's thumbnail `Selectable`s) appear in
+  `get_tree()`** with index paths (`__pix_0.vbox.grid_table.0.1`), even
+  though they are not dot-path entries in `session.ui_objects`.
+- **A raw `page.keyboard.press("Enter")` is dropped intermittently**, the
+  same way an instant mouse click is. The keydown and keyup land in one
+  render frame, so an `EnterReturnsTrue` `InputText` never fires `changed`.
+  The text is typed but nothing happens. Use `press("Enter", delay=60)`.
+- **When a step finds nothing, the script saves `<out>.fail.png`** with the
+  screen at that moment. Read that file before guessing at a cause.
+- **Client-side async work needs settle time.** pix uploads a preview on a
+  background thread after a click. A screenshot taken 3 s after the click
+  showed an empty Preview panel. Raise `--before-shot` if a panel looks
+  empty.
 
 ## Python client
 

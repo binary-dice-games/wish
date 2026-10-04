@@ -133,6 +133,10 @@ with AutomationClient.launch(server_cmd=[<argv that renders the UI under test>, 
     tree = ui.get_tree()
 ```
 
+For an embedded app, `scripts/screenshot_module.py --run <name> --out
+x.png` wraps all of this (docs/automation.md, "Recipe: screenshot a
+module").
+
 Use `ui.screenshot()` output (read it back with the `Read` tool, which
 renders images) as a **mockup for the user to look at and approve** before
 writing the "real" logic behind a UI — this works just as well for a
