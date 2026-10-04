@@ -131,7 +131,12 @@ std::pair<std::shared_ptr<ui_element>, std::shared_ptr<ui_element>> make_source_
 
 TEST_F(DragDropTest, ElementsWithNoDragOrDropFieldsSetNeverEmitDropped) {
   bool event_fired = false;
-  sess_->emit_event = [&](bdg::bison::key_t, bdg::bison::key_t, dynamic) { event_fired = true; };
+  // Only "dropped" matters here: the Window itself emits "focused" when it
+  // appears and takes focus.
+  sess_->emit_event = [&](bdg::bison::key_t, bdg::bison::key_t ev, dynamic) {
+    if (ev == "dropped"_key)
+      event_fired = true;
+  };
 
   auto map = bdg::wish::import_json(R"({"type":"Window","title":"W",
       "children":{"a":{"type":"Button","label":"A"},"b":{"type":"Button","label":"B"}}})");
