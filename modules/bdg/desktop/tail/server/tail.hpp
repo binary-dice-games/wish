@@ -7,8 +7,10 @@
 
 #include <ui/forms/form.hpp>
 #include <ui/ui_element.hpp>
+#include <ui/ui_importer.hpp>
 
 #include <deque>
+#include <functional>
 #include <optional>
 #include <regex>
 #include <string>
@@ -22,6 +24,15 @@ namespace bdg::wish {
 /// embedded resource), with an optional live regex filter, a toggleable
 /// "Follow" auto-scroll, and one extra tab per distinct `[Tag]` token seen
 /// in the stream.
+///
+/// Laid out as two dockable panels inside the viewer's own nested
+/// dockspace (`dock::viewport()`, see docs/dock-layout.md), like top, pix
+/// and the dev modules: **Log** (the form's main root: the "All" tab plus
+/// one tab per tag) and **Controls** (the toolbar -- filter, Lines, Follow,
+/// Clear All -- and the status label). A first-run arrangement is seeded by
+/// `on_init()` (Controls as a strip above the Log); the user can re-dock,
+/// tab, or float either panel afterwards. Closing either panel closes the
+/// whole viewer.
 ///
 /// The client owns reading (and, with `-f`, following) local log files --
 /// this form never touches the filesystem itself. It only receives
@@ -56,6 +67,9 @@ namespace bdg::wish {
 class tail : public form {
  public:
   explicit tail(bison::dynamic&& base);
+  /// @brief Removes the secondary Controls panel; ~form() removes the main
+  /// Log panel and the dock layout.
+  ~tail() override;
 
   /// @brief RMI method: parse and render a batch of raw lines. @p args
   /// holds `lines` (dynamic array), each entry a dynamic with `text`
@@ -88,6 +102,10 @@ class tail : public form {
 
  protected:
   void on_init() override;
+  /// @brief Reacts to: `"closed"` (either panel's X button -- emits
+  /// `"closed"` and removes both panels); the filter box's and Lines
+  /// field's `"changed"`; the Follow checkbox's `"changed"`; and Clear All's
+  /// `"clicked"`.
   void on_event(bison::key_t widget_id, bison::key_t event_name, const bison::dynamic& payload) override;
 
  private:
@@ -115,6 +133,18 @@ class tail : public form {
     ui_element_ptr tab_ptr;
     log_table_state table;
   };
+
+  /// @brief Import @p layout_json, assign every element an RMI id, run
+  /// @p wire to capture element pointers, and merge the tree under
+  /// @p root_key -- registering it as its own top-level object (with
+  /// `__path__`, so it can be named in the dock layout) unless it is the
+  /// main `internal_root_key_`, which form::init() registers itself.
+  void build_window(
+      const char* layout_json, const std::string& root_key, bison::key_t& window_id_out,
+      const std::function<void(ui_tree&)>& wire);
+  /// @brief Remove the Controls panel and forget its key. Safe to call
+  /// more than once.
+  void remove_panel_objects();
 
   /// @brief Parse @p raw (see log_line_parser::parse) and unconditionally
   /// append a row to the "All" table and, if the line carries a `[Tag]`, to
@@ -178,7 +208,11 @@ class tail : public form {
 
   log_line_parser parser_;
 
-  bison::key_t window_id_;
+  /// Secondary panel root: internal_root_key_ + "_controls".
+  std::string controls_root_key_;
+
+  bison::key_t window_id_; ///< Log panel (main root).
+  bison::key_t controls_window_id_;
   ui_element_ptr filter_input_ptr_;
   bison::key_t filter_input_id_;
   ui_element_ptr lines_input_ptr_;
@@ -203,7 +237,7 @@ class tail : public form {
   bool follow_enabled_{true};
 
   /// Mirrors the toolbar's Lines field (default matches its own "value" in
-  /// kLayout): the live per-table row cap enforced by append_row()/
+  /// kControlsLayout): the live per-table row cap enforced by append_row()/
   /// evict_to_cap(), clamped to `[1, kMaxBufferedRows]` by do_set_line_count().
   size_t max_rows_{10};
 };
