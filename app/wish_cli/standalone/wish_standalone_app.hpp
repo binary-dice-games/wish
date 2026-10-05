@@ -13,6 +13,7 @@
 
 #include <standalone/standalone.hpp>
 
+#include <atomic>
 #include <future>
 #include <string>
 #include <vector>
@@ -39,6 +40,14 @@ class wish_standalone_session : public standalone, public wish_app_host {
 
   /// @brief Unblock wait_until_done() — call from a "closed" event handler.
   void signal_done() override;
+
+  /// @brief Exit code `wish standalone` returns once the app is done (default 0).
+  void set_exit_code(int code) override {
+    exit_code_.store(code);
+  }
+  int exit_code() const {
+    return exit_code_.load();
+  }
 
   /// @brief Positional arguments given after `--` on the command line.
   const std::vector<std::string>& app_args() const override {
@@ -72,6 +81,7 @@ class wish_standalone_session : public standalone, public wish_app_host {
   std::vector<std::string> app_args_;
   std::promise<void> done_;
   std::future<void> done_future_{done_.get_future()};
+  std::atomic<int> exit_code_{0}; // set by the app (possibly from an event thread)
   std::vector<bison::rmi::proxy::dynamic> live_proxies_;
 };
 

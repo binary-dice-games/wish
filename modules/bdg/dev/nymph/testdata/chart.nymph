@@ -1,0 +1,60 @@
+Website traffic for the first half of 2026: total and returning visits per month, and the signup conversion rate against its 8% target.
+--
+image:
+  width: 900
+  height: 620
+  scale: 2
+root:
+  type: VerticalLayout
+  spacing: 8
+  children:
+    - type: Label
+      text: Website traffic, January to June 2026
+    - type: Plot
+      title: Visits
+      height: 300
+      y_label: thousands
+      x_min: 0.5
+      x_max: 6.5
+      y_min: 0
+      y_max: 70
+      children:
+        - type: PlotBars
+          label: all visits
+          xs: $month
+          ys: $visits
+          bar_size: 0.6
+        - type: PlotLine
+          label: returning
+          xs: $month
+          ys: $returning
+        - type: PlotScatter
+          label: returning (points)
+          xs: $month
+          ys: $returning
+    - type: Plot
+      title: Conversion rate
+      height: 260
+      x_label: month
+      y_label: "%"
+      x_min: 0.5
+      x_max: 6.5
+      y_min: 0
+      y_max: 12
+      children:
+        - type: PlotShaded
+          label: conversion
+          xs: $month
+          ys: $conversion
+        - type: PlotLine
+          label: target
+          xs: [0.5, 6.5]
+          ys: [8, 8]
+--
+month, visits, returning, conversion
+1, 42.0, 15.1, 6.9
+2, 45.5, 17.8, 7.3
+3, 51.2, 22.4, 7.8
+4, 49.8, 24.0, 8.6
+5, 58.1, 29.5, 9.3
+6, 63.4, 35.2, 10.3

@@ -41,9 +41,13 @@ static void set_field_from_json(dynamic& obj, key_t field_key, const json& value
   else if (value.is_array() &&
            std::all_of(value.begin(), value.end(), [](const json& e) { return e.is_number_integer(); })) {
     obj[field_key] = value.get<std::vector<int32_t>>();
+  } else if (value.is_array() &&
+             std::all_of(value.begin(), value.end(), [](const json& e) { return e.is_number(); })) {
+    // At least one non-integer element: a float array (e.g. plot data).
+    obj[field_key] = value.get<std::vector<float>>();
   }
   // Other JSON value kinds (null, nested object as a scalar field, or an
-  // array with non-integer elements) are silently ignored — only "type" and
+  // array with non-numeric elements) are silently ignored — only "type" and
   // "children" nodes are ever objects.
 }
 

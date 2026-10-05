@@ -402,7 +402,7 @@ with AutomationClient.launch(server_cmd=["build/app/wish", "server", "--renderer
 | `type_text(path, text)` | Focus-click, then type — for `InputText`/`InputInt`/`InputFloat` etc. |
 | `drag(from_path, to_path)` | Real press/move/release drag between two widgets' centers — for an element with a `drag_type` field dropped onto one with a matching `drop_type` (see `docs/ui-elements.md`'s "Drag and drop" section). Raises if either path doesn't exist or was never rendered. |
 | `screenshot()` | Pixel-perfect PNG bytes of exactly what's on screen right now — attach to a bug report, or eyeball visually with the `Read` tool after writing to a file. |
-| `wait_for(js_predicate)` | Block until a JS predicate is true — e.g. wait for an async operation's result to land, a dialog to close, or a new log entry to appear, before asserting. `async` predicates that call `getTree()`/`getWidget()` work directly (Playwright awaits the returned Promise on every poll). |
+| `wait_for(js_predicate)` | Block until a JS predicate is true — e.g. wait for an async operation's result to land, a dialog to close, or a new log entry to appear, before asserting. `async` predicates that call `getTree()`/`getWidget()` are meant to work directly (Playwright awaiting the returned Promise on every poll), but see the `wait_for` gotcha below: with Playwright 1.62 they return at once. |
 
 ## Workflow: driving a form end-to-end (not just observing)
 
@@ -886,3 +886,46 @@ def test_saving_shows_confirmation(wish_ui):
   down/up) twice, with a real `time.sleep()` of 100-200ms between the two
   calls — comfortably under ImGui's ~300ms double-click window but long
   enough to land in separate frames.
+- **`wait_for()` with an `async` predicate can return immediately instead
+  of waiting** (seen with Python Playwright 1.62.0, 2026-10, while
+  verifying `nymph`). `ui.wait_for("async () => false", timeout=3)` came
+  back in 0.0 s with no error, while the sync `"() => false"` correctly
+  raised `TimeoutError` after 3 s — the returned Promise is treated as a
+  truthy value rather than awaited. Every `getWidget()`/`getTree()`-based
+  predicate is async, so a script built on them silently stops waiting:
+  the lines after it run against the old state and read as "the action did
+  nothing". Until `wait_for()` is fixed, poll from Python instead:
+
+  ```python
+  def until(fn, timeout=10):
+      end = time.time() + timeout
+      while time.time() < end:
+          if fn():
+              return True
+          time.sleep(0.2)
+      return False
+
+  assert until(lambda: ui.get_widget(path)["text"] == "Saved")
+  ```
+- **`wish standalone --run=<app> --renderer web --web_port N -- <args>` is
+  the shortest way to drive a module** in an SDL3-enabled build: one
+  process, no separate server and client. Start it yourself in the
+  background (keep its PID in a file and `kill` that, see the `pkill`
+  note above), then `AutomationClient.launch(url="http://127.0.0.1:N")`.
+  Delete the `imgui.ini` in its working directory between runs when the
+  window arrangement changed.
+- **Typing into a `TextEditor` is not literal.** The editor auto-indents
+  after Enter and auto-closes brackets, so `keyboard.type("  key: [\n")`
+  leaves different text than the string typed, and a counted run of
+  Backspace does not undo it. Press `Control+End` first to put the caret
+  at the end of the buffer, and use `Control+z` (repeated until the state
+  you want is back) rather than Backspace to revert.
+- **A docked `Window`'s close button** has no widget of its own in
+  `get_tree()`. Click it by position from the window's `rect`:
+  `page.mouse.click(r["x1"] - 18, r["y0"] + 13, delay=60)`.
+- **A `Table` inside a `VerticalLayout` that renders only its sibling
+  `Label`** (rows present in `get_tree()` with `rect: None`) needs the
+  layout hint `"height": -1` on the `Table` itself, in addition to
+  `outer_height: -1` — the same starved-layout cause as above. A `TabBar`
+  holding a fill-sized `TextEditor` needs `"height": -1` for the same
+  reason; without it the editor is a few pixels tall.

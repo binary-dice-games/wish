@@ -62,6 +62,14 @@ using theme_fn = void (*)(ImGuiStyle*);
 ///                   pattern that replaced doing that).
 void register_theme(const std::string& name, theme_fn fn, bool is_light);
 
+/// @brief Look up a theme registered with `register_theme()`.
+/// @param name  Preset name (`"light"`, `"dark"`, `"classic"`, `"wish"`, or
+///              one a project registered itself).
+/// @return The theme's style function, or null if @p name is not registered.
+///         For code that styles an ImGui context of its own (e.g. an
+///         offscreen image render) rather than a session's.
+theme_fn find_theme(const std::string& name);
+
 /// @brief Renders one `ui_element` node's ImGui widget(s); the uniform
 ///        signature every `render_*` function in imgui_ui_renderer.hpp uses.
 using render_fn = void (*)(imgui_renderer&, const ui_element&, const context&);

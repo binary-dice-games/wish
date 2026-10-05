@@ -73,6 +73,16 @@ class wish_app_host {
   /// @brief Unblock the app's runner — call from a "closed" event handler.
   virtual void signal_done() = 0;
 
+  /// @brief Set the process exit code the host reports once the app is done.
+  ///
+  /// For apps that are also command line tools (e.g. nymph's `render`), so a
+  /// failure is visible to a calling script or agent, not only on stderr.
+  /// Call before `signal_done()`. The default is 0. Hosts with no process
+  /// exit code to set (the C ABI's `wish_run_app()`) ignore it.
+  ///
+  /// @param code  0 for success; non-zero for failure.
+  virtual void set_exit_code(int /*code*/) {}
+
   /// @brief Positional arguments given after `--` on the command line.
   virtual const std::vector<std::string>& app_args() const = 0;
 

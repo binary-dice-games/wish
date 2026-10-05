@@ -176,6 +176,37 @@ if(WISH_MODULE_BDG_DEV_CURL OR WISH_MODULE_BDG_DEV_DOCKER OR WISH_MODULE_BDG_DEV
 endif()
 wish_add_optional_test(WISH_MODULE_BDG_DEV_EDITOR                test_editor            test_editor.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DEV_DOCKER               test_docker            test_docker.cpp)
+# nymph's pure text handling (source splitter, CSV) and PNG metadata.
+wish_add_optional_test(WISH_MODULE_BDG_DEV_NYMPH                test_nymph_document    test_nymph_document.cpp)
+wish_add_optional_test(WISH_MODULE_BDG_DEV_NYMPH                test_nymph_png_meta    test_nymph_png_meta.cpp)
+wish_add_optional_test(WISH_MODULE_BDG_DEV_NYMPH                test_nymph_bind        test_nymph_bind.cpp)
+if(TARGET test_nymph_document)
+  target_include_directories(test_nymph_document PRIVATE ${CMAKE_SOURCE_DIR})
+  target_include_directories(test_nymph_png_meta PRIVATE ${CMAKE_SOURCE_DIR})
+  target_include_directories(test_nymph_bind PRIVATE ${CMAKE_SOURCE_DIR})
+  # stb_image.h decodes the PNG back, to check ordinary readers still can.
+  target_link_libraries(test_nymph_png_meta PRIVATE stb_image)
+endif()
+# nymph's offscreen rasterizer (a wish plot tree to RGBA pixels, no window).
+# Needs the SDL3 software renderer, so it only exists in an SDL3 build.
+if(WISH_ENABLE_IMGUI AND WISH_ENABLE_SDL3)
+  wish_add_optional_test(WISH_MODULE_BDG_DEV_NYMPH              test_nymph_render      test_nymph_render.cpp)
+  # The Nymph form end to end over an in-memory connection (renders PNGs).
+  wish_add_optional_test(WISH_MODULE_BDG_DEV_NYMPH              test_nymph             test_nymph.cpp)
+  if(TARGET test_nymph_render)
+    target_include_directories(test_nymph_render PRIVATE ${CMAKE_SOURCE_DIR})
+    target_include_directories(test_nymph PRIVATE ${CMAKE_SOURCE_DIR})
+    # Runs the real `wish` binary (`standalone --renderer none --run=nymph`).
+    # app/ is added after tests/, so wish-cli is named by generator
+    # expression; SKBUILD builds have no app/ at all.
+    if(NOT SKBUILD)
+      wish_add_test(test_nymph_cli test_nymph_cli.cpp)
+      target_include_directories(test_nymph_cli PRIVATE ${CMAKE_SOURCE_DIR})
+      target_compile_definitions(test_nymph_cli PRIVATE WISH_CLI_PATH="$<TARGET_FILE:wish-cli>")
+      add_dependencies(test_nymph_cli wish-cli)
+    endif()
+  endif()
+endif()
 wish_add_optional_test(WISH_MODULE_BDG_DEV_SQ                   test_sq                test_sq.cpp)
 if(TARGET test_sq)
   target_include_directories(test_sq PRIVATE ${CMAKE_SOURCE_DIR})

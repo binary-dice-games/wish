@@ -1,0 +1,93 @@
+# UI mock of nymph's edit mode (PLAN.md step 6). Preview it with
+#   wish standalone --run=editor -- modules/bdg/dev/nymph/nymph_mock.yaml
+#
+# The real form builds these as three separate dockable windows (Source,
+# Preview, Data); the mock nests them in one window so the editor tool can
+# show them together. Keep it in step with server/nymph.cpp's layouts.
+type: Window
+title: Nymph (mock)
+width: 1180
+height: 700
+children:
+  columns:
+    type: HorizontalLayout
+    spacing: 8
+    height: -1
+    children:
+      source:
+        type: VerticalLayout
+        width: 440
+        children:
+          toolbar:
+            type: HorizontalLayout
+            spacing: 8
+            children:
+              save: { type: Button, label: Save }
+              path_label: { type: Label, text: "chart.png [MODIFIED]" }
+          banner:
+            type: Label
+            wrap: true
+            text_color: "#D03030FF"
+            text: "Format, line 11: unknown column 'revenu' (columns: month, revenue, cost)"
+          tabs:
+            type: TabBar
+            id: "##nymph_parts"
+            height: -1
+            children:
+              format_tab:
+                type: TabItem
+                label: Format
+                children:
+                  format: { type: TextEditor, language: yaml, wish_ui_schema: true, width: 0, height: 0 }
+              data_tab:
+                type: TabItem
+                label: Data
+                children:
+                  data: { type: TextEditor, language: text, width: 0, height: 0 }
+              description_tab:
+                type: TabItem
+                label: Description
+                children:
+                  description: { type: TextEditor, language: text, width: 0, height: 0 }
+      right:
+        type: VerticalLayout
+        width: -1
+        spacing: 8
+        children:
+          preview:
+            type: Plot
+            title: Revenue vs cost
+            x_label: month
+            y_label: kUSD
+            height: 380
+            children:
+              - { type: PlotLine, label: revenue, xs: [1, 2, 3, 4, 5, 6], ys: [12, 15, 11, 18, 21, 19] }
+              - { type: PlotBars, label: cost, xs: [1, 2, 3, 4, 5, 6], ys: [9, 9.5, 10, 10.5, 11, 12] }
+          status: { type: Label, text: "Showing 3 of 3 rows" }
+          table:
+            type: Table
+            id: "##nymph_data"
+            columns: 3
+            headers: true
+            height: -1
+            outer_height: -1
+            flags: "ScrollY|RowBg|BordersV|Resizable"
+            children:
+              - { type: TableColumn, label: month }
+              - { type: TableColumn, label: revenue }
+              - { type: TableColumn, label: cost }
+              - type: TableRow
+                children:
+                  - { type: Label, text: "1" }
+                  - { type: Label, text: "12" }
+                  - { type: Label, text: "9" }
+              - type: TableRow
+                children:
+                  - { type: Label, text: "2" }
+                  - { type: Label, text: "15" }
+                  - { type: Label, text: "9.5" }
+              - type: TableRow
+                children:
+                  - { type: Label, text: "3" }
+                  - { type: Label, text: "11" }
+                  - { type: Label, text: "10" }

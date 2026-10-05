@@ -167,6 +167,12 @@ static bool register_built_in_themes() {
 }
 static const bool built_in_themes_registered_ = register_built_in_themes();
 
+theme_fn find_theme(const std::string& name) {
+  const auto& registry = theme_registry();
+  auto it = registry.find(name);
+  return it == registry.end() ? nullptr : it->second.fn;
+}
+
 // ── Per-session style helpers ─────────────────────────────────────────────────
 
 // Parse "#RRGGBBAA" or "#RRGGBB" hex color string into an ImVec4. Declared in

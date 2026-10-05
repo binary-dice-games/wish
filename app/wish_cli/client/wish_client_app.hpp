@@ -13,6 +13,7 @@
 #include "src/client/client.hpp"
 #include "src/rmi/client/profiler_client.hpp"
 
+#include <atomic>
 #include <future>
 #include <memory>
 #include <string>
@@ -75,6 +76,11 @@ class wish_client_app : public bison::app::client_app, public wish_app_host {
   /// @brief Unblock on_session() — call from a "closed" event handler.
   void signal_done() override;
 
+  /// @brief Exit code `run()` returns once the app is done (default 0).
+  void set_exit_code(int code) override {
+    exit_code_.store(code);
+  }
+
   /// @brief Positional arguments given after `--` on the command line.
   const std::vector<std::string>& app_args() const override {
     return app_args_;
@@ -110,6 +116,7 @@ class wish_client_app : public bison::app::client_app, public wish_app_host {
   std::vector<std::string> app_args_;
   std::promise<void> done_;
   std::future<void> done_future_{done_.get_future()};
+  std::atomic<int> exit_code_{0}; // set by the app (possibly from an event thread), returned by on_session()
   std::vector<bison::rmi::proxy::dynamic> live_proxies_;
   wish::client* wish_client_ = nullptr;
   std::shared_ptr<bison::rmi::client_recorder> profiler_recorder_;
