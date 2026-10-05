@@ -113,7 +113,7 @@ cmake -S . -B build
 | `WISH_MODULE_BDG_DESKTOP_TOP` | `ON`¹ | Include the top form (server; a top/htop-style system monitor) and its self-registering reference client runner. |
 | `WISH_MODULE_BDG_DESKTOP_MC` | `ON`¹ | Include the mc form (server; a two-panel local-filesystem-vs-sandbox file browser) and its self-registering reference client runner. |
 | `WISH_MODULE_BDG_DESKTOP_ZIP` | `ON`¹ | Include the zip form (server) and its self-registering reference client runner (client-side compress/extract/list-contents via miniz). |
-| `WISH_COLLECTION_BDG_DEV` | `OFF` | Include every module in `modules/bdg/dev/` (editor, docker, kubectl, helm, pip, pkg, curl, sq, git) — see below. |
+| `WISH_COLLECTION_BDG_DEV` | `OFF` | Include every module in `modules/bdg/dev/` (editor, docker, kubectl, helm, pip, pkg, curl, sq, nymph, git) — see below. |
 | `WISH_MODULE_BDG_DEV_EDITOR` | `OFF` | Include the Editor form (server) and its self-registering reference client runner — a live JSON UI mock editor (`wish client --run=editor -- path/to/ui.json`). |
 | `WISH_MODULE_BDG_DEV_DOCKER` | `OFF` | Include the DockerFrontend form (server) and its self-registering reference client runner — a Docker Desktop-style GUI that shells out to the local `docker` binary (`wish client --run=docker`). |
 | `WISH_MODULE_BDG_DEV_KUBECTL` | `OFF` | Include the KubectlFrontend form (server) and its self-registering reference client runner — a Kubernetes-dashboard-style GUI that shells out to the local `kubectl` binary (`wish client --run=kubectl`). |
@@ -122,6 +122,7 @@ cmake -S . -B build
 | `WISH_MODULE_BDG_DEV_PKG` | `OFF` | Include the PkgFrontend form (server) and its self-registering reference client runner — one GUI over the system package managers apt, dnf, pacman and brew (`wish client --run=pkg [-- <manager> [sudo\|pkexec\|none]]`). |
 | `WISH_MODULE_BDG_DEV_CURL` | `OFF` | Include the CurlFrontend form (server) and its self-registering reference client runner — a Postman-style REST API client GUI that shells out to the local `curl` binary (`wish client --run=curl`). |
 | `WISH_MODULE_BDG_DEV_SQ` | `OFF` | Include the SqFrontend form (server) and its self-registering reference client runner — a DBeaver-style, query-only database GUI that shells out to the local `sq` binary (`wish client --run=sq`). |
+| `WISH_MODULE_BDG_DEV_NYMPH` | `OFF` | Include the Nymph form (server) and its self-registering reference client runner — charts from text: renders a source file to a PNG that embeds its own source (`wish standalone --renderer none --run=nymph -- render chart.nymph`), or edits one with a live preview (`-- edit chart.png`). Rendering needs `WISH_ENABLE_SDL3=ON`. |
 | `WISH_MODULE_BDG_DEV_GIT` | `OFF` | Include the GitRepo form (server) and its self-registering reference client runner — a SourceTree-style git GUI frontend that shells out to the local `git` binary (`wish client --run=git -- /path/to/repo`). |
 
 ¹ Each `WISH_MODULE_BDG_DESKTOP_*` option inherits its collection's default

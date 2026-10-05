@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `nymph` module (`WISH_MODULE_BDG_DEV_NYMPH`, off by default): charts from text. A source file (description, format YAML built from wish's `Plot` / `Plot3D` elements, data CSV) is rendered to a PNG that carries the source as metadata, so the image can be given back to the tool. `wish standalone --renderer none --run=nymph -- render chart.nymph -o chart.png` needs no window or display and exits non-zero with a `file:line:column: message` error; `edit` opens the source with a live plot preview and a data table; `extract` prints the source embedded in a PNG.
+- `wish standalone --renderer none`: runs an app with no window and no web server, for apps used as command line tools. The log then goes to the system temp directory instead of `./wish_logs`.
+- `wish_app_host::set_exit_code()`: an embedded app can set the exit code `wish client` / `wish standalone` return.
+- `find_theme()` (`src/imgui/imgui_renderer.hpp`): look up a registered theme's style function by name.
+
 - `ProgressBox`: `update` accepts an optional `fraction` (0..1) and `detail` text for a determinate bar, e.g. bytes transferred.
 - `Window.dock_target`: a window created at runtime docks into a named `DockSpaceViewport`'s central node (left empty by an empty `DockArea`) instead of the outer dockspace.
 - `Window.focus_request` (change it to bring the window or its dock tab to the front) and a `focused` event when a window gains focus.
@@ -44,6 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- JSON/YAML UI descriptors now accept arrays of non-integer numbers (e.g. `"xs": [0.5, 1.5]`), and integer arrays are widened for `float[]` fields; previously plot data given in a template was silently dropped.
 - A widget that grows after its first render (e.g. a `Label` whose text starts empty) inside a `HorizontalLayout` row is no longer clipped forever; the row now grows to fit it.
 - A second confirmation dialog in the same session never appeared: a form that replaced a finished child dialog (`MessageBox`, ...) with a new one erased the new dialog along with the old. Affected every module that asks for confirmation more than once (`docker`, `kubectl`, `helm`, `git`, `curl`, `sq`, `pip`, `top`, `zip`).
 - `docker`, `kubectl`, `helm`, `curl`, `sq`, `git`, and `pip` clients could crash on the command following one whose program failed to start.

@@ -168,6 +168,32 @@ TEST_F(UiImporterTest, JsonIntegerCoercedToFloatForSpacing) {
   EXPECT_FLOAT_EQ(result[""]->findField("spacing"_key)->as<float>(), 8.0f);
 }
 
+// ── Float arrays (plot data) ─────────────────────────────────────────────────
+
+TEST_F(UiImporterTest, JsonFloatArrayReachesAFloatArrayField) {
+  constexpr auto desc = R"({ "type": "PlotLine", "xs": [0.5, 1.5, 2], "ys": [1, 2, 3] })";
+
+  auto result = bdg::wish::import_json(desc);
+  ASSERT_TRUE(result.count(""));
+  const auto& xs = result[""]->findField("xs"_key)->as<std::vector<float>>();
+  ASSERT_EQ(xs.size(), 3u);
+  EXPECT_FLOAT_EQ(xs[0], 0.5f);
+  EXPECT_FLOAT_EQ(xs[2], 2.0f);
+  // An all-integer literal array is widened to the field's float[] type.
+  const auto& ys = result[""]->findField("ys"_key)->as<std::vector<float>>();
+  ASSERT_EQ(ys.size(), 3u);
+  EXPECT_FLOAT_EQ(ys[1], 2.0f);
+}
+
+TEST_F(UiImporterTest, YamlFloatArrayReachesAFloatArrayField) {
+  auto result = bdg::wish::import_yaml("type: PlotLine\nxs: [0.25, 1]\nys: [3, 4]\n");
+  ASSERT_TRUE(result.count(""));
+  const auto& xs = result[""]->findField("xs"_key)->as<std::vector<float>>();
+  ASSERT_EQ(xs.size(), 2u);
+  EXPECT_FLOAT_EQ(xs[0], 0.25f);
+  EXPECT_EQ(result[""]->findField("ys"_key)->as<std::vector<float>>().size(), 2u);
+}
+
 // ── Error cases ───────────────────────────────────────────────────────────────
 
 TEST_F(UiImporterTest, JsonUnknownTypeThrows) {

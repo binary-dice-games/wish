@@ -156,7 +156,7 @@ unlike `server`, which can run in a web-only build
 (`-DWISH_ENABLE_SDL3=OFF -DWISH_ENABLE_WEB=ON`), `standalone` isn't
 available at runtime in that configuration even though, once built with
 SDL3, it still supports `--renderer sdl3|web` at runtime exactly like
-`server`.
+`server`, plus `--renderer none`.
 
 | Flag | Default | Description |
 |------|---------|-------------|
@@ -166,7 +166,7 @@ SDL3, it still supports `--renderer sdl3|web` at runtime exactly like
 | `--title TITLE` | `wish` | Window title (`--renderer sdl3` only) |
 | `--width N` | `1280` | Initial window width in pixels (`--renderer sdl3` only) |
 | `--height N` | `720` | Initial window height in pixels (`--renderer sdl3` only) |
-| `--renderer NAME` | `web` | Rendering backend: `sdl3` or `web` |
+| `--renderer NAME` | `web` | Rendering backend: `sdl3`, `web`, or `none` (no window and no web server — for apps run as command line tools, see below) |
 | `--web_port PORT` / `--web_bind ADDR` | `8080` / `127.0.0.1` | Same as `server` (`--renderer web` only) |
 | `--sandbox_root PATH` / `--username NAME` | *(empty)* / `default` | Persist the session sandbox in `PATH/<username>` across runs instead of a temp directory deleted on exit |
 
@@ -178,6 +178,18 @@ there is no transport to configure.
 wish standalone --list
 wish standalone --run=bc --renderer sdl3
 ```
+
+`--renderer none` is for an app that does a job and exits rather than
+showing a UI, e.g. [nymph](../modules/bdg/dev/nymph/README.md)'s `render`:
+
+```sh
+wish standalone --renderer none --run=nymph -- render chart.nymph -o chart.png
+```
+
+Nothing is drawn, the log goes to the system temp directory instead of
+`./wish_logs`, and the process exit code is whatever the app set with
+`wish_app_host::set_exit_code()` (0 unless the app reports a failure; the
+same holds for `wish client --run`).
 
 ## `wish desktop`
 

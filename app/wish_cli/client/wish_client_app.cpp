@@ -190,7 +190,7 @@ int wish_client_app::on_session(bison::rmi::client& c) {
     wish_client_->set_style_preset(FLAGS_theme).get();
   resolved_app_->run(*this); // set up proxies and event handlers
   done_future_.wait(); // block until signal_done() fires
-  return 0;
+  return exit_code_.load();
 }
 
 std::unique_ptr<bison::rmi::client> wish_client_app::make_client(

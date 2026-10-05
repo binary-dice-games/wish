@@ -532,6 +532,15 @@ include(cmake/WishModules.cmake)
 wish_add_collection(bdg/desktop DEFAULT ON)
 wish_add_collection(bdg/dev)
 
+# nymph parses its format YAML with libyaml directly, not through
+# ui_descriptor.cpp: it needs each node's line and column for its error
+# messages, which the generic bison::dynamic tree cannot carry.
+if(WISH_MODULE_BDG_DEV_NYMPH)
+  target_include_directories(wish_server PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/extern/bison/extern/yaml/include)
+  target_link_libraries(wish_server PRIVATE yaml)
+endif()
+
 # wish_generate_module_registry()/wish_generate_embedded_resources() are
 # safe to call now (wish_server already exists) and only touch
 # CMAKE_BINARY_DIR/target_sources(wish_server ...), both of which are

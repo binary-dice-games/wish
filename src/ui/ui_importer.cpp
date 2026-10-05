@@ -9,6 +9,7 @@
 #include "src/bison/bison_object.hpp"
 
 #include <stdexcept>
+#include <vector>
 
 namespace bdg::wish {
 
@@ -31,6 +32,10 @@ static void set_field_from_dynamic(dynamic& obj, key_t field_key, const field& v
       dst = value.as<float>();
     else if (value.is<std::string>())
       dst = value.as<std::string>();
+    else if (value.is<std::vector<int32_t>>())
+      dst = value.as<std::vector<int32_t>>();
+    else if (value.is<std::vector<float>>())
+      dst = value.as<std::vector<float>>();
   } else if (dst.is<bool>() && value.is<bool>()) {
     dst = value.as<bool>();
   } else if (dst.is<int32_t>()) {
@@ -55,6 +60,15 @@ static void set_field_from_dynamic(dynamic& obj, key_t field_key, const field& v
     dst = value.as<std::string>();
   } else if (dst.is<std::vector<int32_t>>() && value.is<std::vector<int32_t>>()) {
     dst = value.as<std::vector<int32_t>>();
+  } else if (dst.is<std::vector<float>>()) {
+    // Plot data and the like. An all-integer literal array arrives as
+    // int32[] (see ui_descriptor.cpp), so widen it.
+    if (value.is<std::vector<float>>()) {
+      dst = value.as<std::vector<float>>();
+    } else if (value.is<std::vector<int32_t>>()) {
+      const auto& ints = value.as<std::vector<int32_t>>();
+      dst = std::vector<float>(ints.begin(), ints.end());
+    }
   }
   // Type mismatches for unknown fields are silently ignored.
 }

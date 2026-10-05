@@ -7,6 +7,7 @@
 
 #include <context/logger.hpp>
 #include <server/registry.hpp>
+#include <server/renderer.hpp>
 #include <sdl/sdl3_renderer.hpp>
 #include <web/web_renderer.hpp>
 
@@ -43,7 +44,7 @@ DECLARE_string(sandbox_root);
 DECLARE_string(username);
 #else
 DEFINE_int32(font_size, 16, "Font size in pixels");
-DEFINE_string(renderer, "web", "Rendering backend: sdl3 or web");
+DEFINE_string(renderer, "web", "Rendering backend: sdl3, web, or none (no UI)");
 DEFINE_int32(web_port, 8080, "HTTP/WebSocket port for --renderer web");
 DEFINE_string(web_bind, "127.0.0.1", "Bind address for --renderer web (localhost-only by default)");
 DEFINE_string(profiling_dir, "", "Directory for Perfetto trace output; empty disables profiling");
@@ -116,7 +117,12 @@ std::unique_ptr<renderer> make_renderer() {
     throw std::runtime_error("--renderer=web requested but this binary was built with WISH_ENABLE_WEB=OFF");
 #endif
   }
-  throw std::runtime_error("unknown --renderer value '" + FLAGS_renderer + "' (expected sdl3 or web)");
+  // No window and no web server: for apps run as command line tools (e.g.
+  // `--run=nymph -- render ...`). The render loop still runs, so forms keep
+  // receiving their events; nothing is drawn.
+  if (FLAGS_renderer == "none")
+    return std::make_unique<null_renderer>();
+  throw std::runtime_error("unknown --renderer value '" + FLAGS_renderer + "' (expected sdl3, web or none)");
 }
 
 // Parse --verbose into a log_level, or abort with a clear message.
@@ -128,10 +134,20 @@ static log_level verbose_flag_level() {
 }
 
 std::shared_ptr<logger> make_standalone_logger() {
+  // --renderer none is for apps run as command line tools, often from a
+  // script or an agent in someone's project directory: keep the log out of
+  // the working directory there.
+  std::filesystem::path log_dir{"wish_logs"};
+  if (FLAGS_renderer == "none") {
+    std::error_code ec;
+    auto temp = std::filesystem::temp_directory_path(ec);
+    if (!ec)
+      log_dir = temp / "wish_logs";
+  }
   return std::make_shared<logger>(
       bison::dynamic::instantiate(bison::key_t{"wish"}, bison::key_t{"__WishLogger"}),
       verbose_flag_level(),
-      std::filesystem::path{"wish_logs"} / "standalone.log");
+      log_dir / "standalone.log");
 }
 
 /// @brief Reject flags that only make sense with a real transport — standalone
@@ -275,7 +291,7 @@ int wish_standalone_app::on_session(bison::rmi::standalone& sa) {
   session.set_style_preset(FLAGS_theme).get();
   resolved_app_->run(session); // set up proxies and event handlers
   session.wait_until_done();
-  return 0;
+  return session.exit_code();
 }
 
 void wish_standalone_app::on_error(const std::string& msg) const {
