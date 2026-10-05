@@ -54,7 +54,10 @@ form that needs nothing else running.
 
 ## For AI agents
 
-To put a chart in a markdown file or a reply:
+[AGENT_GUIDE.md](AGENT_GUIDE.md) is a self-contained instruction file to
+load into an agent: the command, the whole format, every element and field,
+recipes and common errors, with no other wish knowledge assumed. In short,
+to put a chart in a markdown file or a reply:
 
 1. Write the source to a file (format below).
 2. Run `wish standalone --renderer none --run=nymph -- render FILE -o OUT.png`.
