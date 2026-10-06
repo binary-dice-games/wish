@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `nymph`: a `view` command (`wish standalone --run=nymph -- view chart.png`) shows a chart's interactive preview and its data table read-only, with no source editor and no Save.
 - Plot series (`PlotLine`, `PlotBars`, ... and the `Plot3D*` series) gain styling fields: `color` and `fill_color` (`"#RRGGBB"` / `"#RRGGBBAA"`), `line_weight`, `fill_alpha`, `marker` (`Circle`, `Square`, `Diamond`, ...) and `marker_size`. `Plot` and `Plot3D` gain `colormap` (`Deep`, `Dark`, `Viridis`, `Jet`, ...). All default to automatic.
 - `nymph` module (`WISH_MODULE_BDG_DEV_NYMPH`, off by default): charts from text. A source file (description, format YAML built from wish's `Plot` / `Plot3D` elements, data CSV) is rendered to a PNG that carries the source as metadata, so the image can be given back to the tool. `wish standalone --renderer none --run=nymph -- render chart.nymph -o chart.png` needs no window or display and exits non-zero with a `file:line:column: message` error; `edit` opens the source with a live plot preview and a data table; `extract` prints the source embedded in a PNG.
 - `wish standalone --renderer none`: runs an app with no window and no web server, for apps used as command line tools. The log then goes to the system temp directory instead of `./wish_logs`.

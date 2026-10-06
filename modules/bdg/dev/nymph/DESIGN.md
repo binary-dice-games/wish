@@ -11,11 +11,14 @@ wish's own `Plot` / `Plot3D` widgets — what mermaid does for diagrams, for
 plots. The text that produced an image is stored inside the PNG as
 metadata, so any nymph image can be given back to the tool as its input.
 
-It has two modes, sharing one parser and one rasterizer:
+It has three modes, sharing one parser and one rasterizer:
 
 - **Silent** (`render`): source in, PNG (or an error message and a
   non-zero exit code) out. No window, no display needed. This is the mode
   AI agents use to put a chart in a markdown file or a chat reply.
+- **View** (`view`): the interactive preview and the data table of edit
+  mode, and nothing else. No source editor, no Save; nothing can change the
+  chart. For looking at a nymph image with zoom, pan and series toggles.
 - **Edit** (`edit`): a wish UI in the shape of the [editor](../editor/DESIGN.md)
   module — the source text, a live interactive preview built from real plot
   widgets, and a table of the input data. Saving writes the PNG with the
@@ -294,6 +297,19 @@ directly. Every render in both modes thus happens in `nymph::on_event()`.
 5. Close with unsaved changes: a `MessageBox` (yes / no / cancel), exactly
    the editor module's flow.
 
+**View** (`wish standalone --run=nymph -- view chart.png`):
+
+1. As silent step 1 with `{view: true}`. `load` parses and binds exactly as
+   silent mode does and throws on any error, so a bad source ends the run
+   with a message instead of an empty window.
+2. On success the form builds the Preview and Data windows with the same
+   code edit mode uses (`rebuild_preview()`, `rebuild_data()`), under their
+   own default dock layout (`nymph_view_dock`: plot over data). The Preview
+   window is closable here, since there is no Source window to close.
+3. Nothing in the form reacts to these windows except the Preview's
+   `"closed"`, which tears both down and emits `"closed"`. There is no
+   dirty state, so there is no confirmation dialog.
+
 ## 6. Public API Contract
 
 ### Command line
@@ -305,6 +321,7 @@ directly. Every render in both modes thus happens in `nymph::on_event()`.
 |---|---|
 | `render <in> [-o <out.png>]` | Silent mode. `<in>` is a source text or a nymph PNG; `-` reads the source from console input. Default output: `<in>` with the extension replaced by `.png` (a PNG input is rewritten in place). `-` as input requires `-o`. |
 | `edit <in> [-o <out.png>]` | Edit mode, same input and output rules. A missing `<in>` starts from a small template. |
+| `view <in>` | View mode. Writes nothing; `-o` is an error. A source that does not bind exits 1 like `render`. |
 | `extract <in.png> [-o <out>]` | Write the embedded source to `<out>`, or to stdout. |
 
 Exit code 0 on success; 1 with `nymph: <file>:<line>:<column>: <message>`
@@ -317,7 +334,7 @@ client writes through a temporary file and a rename.
 
 | Symbol | Contract |
 |---|---|
-| constructor `{silent: bool}` | `silent: true` builds no visible UI. Default `false`. |
+| constructor `{silent: bool, view: bool}` | `silent: true` builds no visible UI. `view: true` builds the read-only Preview and Data windows on `load`. Both default `false` (edit mode). |
 | `load({path, display_path?, validate?})` | `path` sandbox-relative, text or PNG. Replaces the current document. Silent: throws on any error; `validate: false` skips parsing and binding (for `extract`, so a source that no longer renders can still be read back). Edit: throws only for an unusable `path` — a bad source is shown in the banner. Clears the dirty flag. |
 | `render({})` | Queues a render of the current document. Returns at once; the result is the `"rendered"` / `"render_failed"` event. Throws if nothing is loaded. |
 | `source({})` | Returns `{path}` of a sandbox file holding the current composed source (used by `extract`). |

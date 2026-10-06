@@ -163,6 +163,20 @@ TEST_F(NymphCliTest, ExtractFromAPlainPngFails) {
   EXPECT_NE(read("stderr.txt").find("not a nymph image"), std::string::npos) << read("stderr.txt");
 }
 
+// view opens a window, so only its failures can be checked from here: a bad
+// source ends the process at once instead of showing an empty window.
+TEST_F(NymphCliTest, ViewOfABadSourceFailsWithoutOpeningAnything) {
+  std::string bad = kExample;
+  bad.replace(bad.find("$revenue"), 8, "$revenu");
+  write("bad.nymph", bad);
+  EXPECT_EQ(nymph_cli("view bad.nymph"), 1);
+  EXPECT_EQ(read("stderr.txt").rfind("nymph: bad.nymph:13:11: unknown column 'revenu'", 0), 0u) << read("stderr.txt");
+  EXPECT_EQ(nymph_cli("view nope.nymph"), 1);
+  write("ex.nymph", kExample);
+  EXPECT_EQ(nymph_cli("view ex.nymph -o out.png"), 1); // view writes nothing
+  EXPECT_FALSE(exists("out.png"));
+}
+
 TEST_F(NymphCliTest, UsageErrorFails) {
   EXPECT_EQ(nymph_cli("frobnicate x"), 1);
   EXPECT_NE(read("stderr.txt").find("usage: nymph render"), std::string::npos);

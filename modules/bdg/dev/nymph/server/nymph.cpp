@@ -156,6 +156,8 @@ void nymph_form::on_init() {
 void nymph_form::on_construct(const dynamic& params) {
   if (auto* silent = params.findField<bool>("silent"_key))
     silent_ = *silent;
+  if (auto* view = params.findField<bool>("view"_key))
+    view_ = *view;
 }
 
 void nymph_form::with_session(const std::function<void(context&)>& fn) {
@@ -217,16 +219,22 @@ dynamic nymph_form::do_load(const dynamic& args) {
     text = std::move(bytes);
   }
 
-  if (silent_) {
+  if (text_backed()) {
     if (!load_error.empty())
       throw std::runtime_error(load_error);
+    // View mode has nothing to show for a source that does not bind, so it
+    // always validates, and fails the same way silent mode does.
+    if (validate || view_) {
+      nymph::document doc = nymph::parse_document(text);
+      figure_ = nymph::bind(doc);
+      document_ = std::move(doc);
+    } else {
+      figure_.reset();
+    }
     loaded_ = true;
     source_text_ = std::move(text);
-    figure_.reset();
-    if (validate) {
-      document_ = nymph::parse_document(source_text_);
-      figure_ = nymph::bind(document_);
-    }
+    if (view_)
+      show_view();
     return dynamic{};
   }
 
@@ -255,7 +263,7 @@ dynamic nymph_form::do_load(const dynamic& args) {
 }
 
 nymph::document nymph_form::current_document() {
-  if (silent_)
+  if (text_backed())
     return document_;
   nymph::document doc = nymph::make_document(
       read_sandbox_file(description_file_), read_sandbox_file(format_file_), read_sandbox_file(data_file_));
@@ -267,7 +275,7 @@ nymph::document nymph_form::current_document() {
 }
 
 std::string nymph_form::current_source() {
-  return silent_ ? source_text_ : nymph::compose_document(current_document());
+  return text_backed() ? source_text_ : nymph::compose_document(current_document());
 }
 
 dynamic nymph_form::do_source(const dynamic& /*args*/) {
@@ -299,7 +307,7 @@ bool nymph_form::render_to_sandbox(key_t done_event) {
     std::string description;
     nymph::figure rebound;
     const nymph::figure* fig = nullptr;
-    if (silent_) {
+    if (text_backed()) {
       if (!figure_)
         throw std::runtime_error("the loaded source was not validated");
       source = source_text_;
@@ -488,9 +496,32 @@ void nymph_form::replace_window(const std::string& root_key, key_t& window_id, c
   });
 }
 
+void nymph_form::show_view() {
+  // The figure kept for render() stays whole; the preview gets its own
+  // bound copy, since rebuild_preview() moves the descriptor into the window.
+  nymph::figure shown = nymph::bind(document_);
+  rebuild_preview(shown);
+  rebuild_data(shown.data);
+  if (view_built_)
+    return;
+
+  // First-run arrangement: the plot over its data. Its own dock id, so the
+  // arrangement saved for view mode never fights edit mode's.
+  using namespace dock;
+  set_default_dock_layout(viewport(
+      "nymph_view_dock", "Nymph",
+      layout(
+          split(dir::down, 0.28f, area({data_root_key_}), area({preview_root_key_})),
+          /*version=*/1, /*target=*/"nymph_view_dock")));
+  view_built_ = true;
+}
+
 void nymph_form::rebuild_preview(nymph::figure& fig) {
   dynamic window = node("Window");
   window["title"_key] = std::string{"Preview"};
+  // View mode has no Source window; its Preview is the one to close.
+  if (view_)
+    window["closable"_key] = true;
   // Sized so the plot appears at about the size it will have in the image.
   window["width"_key] = fig.options.width + 2 * fig.options.padding + 16;
   window["height"_key] = fig.options.height + 2 * fig.options.padding + 40;
@@ -603,10 +634,11 @@ void nymph_form::show_close_confirm() {
 }
 
 void nymph_form::request_close() {
-  if (ui_built_) {
+  if (ui_built_ || view_built_) {
     clear_window(preview_root_key_);
     clear_window(data_root_key_);
   }
+  view_built_ = false;
   emit("closed"_key);
   remove_internal_objects();
   if (ui_built_)
@@ -620,6 +652,10 @@ void nymph_form::on_event(key_t id, key_t event, const dynamic& /*payload*/) {
   if (id == holder_id_) {
     if (event == "render_requested"_key)
       render_to_sandbox("rendered"_key);
+    return;
+  }
+  if (view_built_ && id == preview_window_id_ && event == "closed"_key) {
+    request_close(); // nothing can be unsaved in view mode
     return;
   }
   if (!ui_built_)
@@ -675,7 +711,8 @@ void register_nymph() {
   (*proto)[dynamic::CLASS].addAttribute(
       attr<Description>("Chart-from-text tool: renders a nymph source (description, format YAML, data CSV) "
                         "to a PNG with wish's Plot/Plot3D widgets and embeds the source in the image. "
-                        "Construct with {silent: true} for no UI. Upload the source text or a nymph PNG, "
+                        "Construct with {silent: true} for no UI, or {view: true} for a read-only "
+                        "preview and data table. Upload the source text or a nymph PNG, "
                         "call load({path, display_path}), then render() and wait for 'rendered' {path} "
                         "(or 'render_failed' {message}) and download that file. In edit mode, listen for "
                         "'on_image_saved' {path}: download it, store it locally and call mark_saved(). "

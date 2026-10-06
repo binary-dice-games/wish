@@ -7,10 +7,13 @@
 /// the input (a source text, or a nymph PNG carrying one) into the session
 /// sandbox, and downloads the PNG the form writes there.
 ///
-/// Two modes, chosen at construction (`{silent: bool}`):
+/// Three modes, chosen at construction (`{silent: bool, view: bool}`):
 /// - **silent**: no visible UI. `load` validates the input (throwing on any
 ///   error); `render` queues a render whose result arrives as the
 ///   `"rendered"` / `"render_failed"` event.
+/// - **view**: the Preview and Data windows only, read-only. There is no
+///   source editor and no Save; `load` throws for a bad source as in silent
+///   mode. Closing the Preview window emits `"closed"`.
 /// - **edit** (default): three dockable windows -- Source (Save button, file
 ///   name, error banner, and one TextEditor per part), Preview (the bound
 ///   plot as live widgets) and Data (a Table of the CSV). Save and Ctrl+S
@@ -44,11 +47,11 @@ class nymph_form : public form {
  public:
   explicit nymph_form(bison::dynamic&& base);
 
-  /// @brief `__construct`: reads `{silent: bool}`.
+  /// @brief `__construct`: reads `{silent: bool, view: bool}`.
   void on_construct(const bison::dynamic& params);
   /// @brief `load`: replace the current document with a sandbox file.
-  /// @throws std::runtime_error in silent mode for any problem with the
-  ///         input; in edit mode only for an unusable `path`.
+  /// @throws std::runtime_error in silent and view mode for any problem
+  ///         with the input; in edit mode only for an unusable `path`.
   bison::dynamic do_load(const bison::dynamic& args);
   /// @brief `render`: queue a render of the current document.
   /// @throws std::runtime_error if nothing is loaded.
@@ -82,6 +85,14 @@ class nymph_form : public form {
   /// @return false if nothing was written.
   bool render_to_sandbox(bison::key_t done_event);
 
+  /// Silent and view mode keep the loaded text and its bound figure; edit
+  /// mode reads its three editors instead.
+  bool text_backed() const { return silent_ || view_; }
+
+  // ── view mode ──
+  /// Builds (or, on a reload, rebuilds) the read-only Preview and Data windows.
+  void show_view();
+
   // ── edit mode ──
   void build_edit_ui();
   /// Points the three editors at fresh sandbox files holding @p doc.
@@ -100,6 +111,8 @@ class nymph_form : public form {
   void request_close();
 
   bool silent_{false};
+  bool view_{false};
+  bool view_built_{false};                ///< View mode: its two windows exist.
   bool loaded_{false};
   nymph::document document_;              ///< As loaded; edit mode keeps only its separators current.
   std::string source_text_;               ///< Silent mode: the loaded source, verbatim.

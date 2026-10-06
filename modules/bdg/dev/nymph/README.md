@@ -11,6 +11,9 @@ wish standalone --renderer none --run=nymph -- render chart.nymph -o chart.png
 
 # open it again later, edit with a live preview, save
 wish standalone --run=nymph -- edit chart.png
+
+# or just look at it: the interactive plot and its data, nothing to edit
+wish standalone --run=nymph -- view chart.png
 ```
 
 - **server/**: the `Nymph` form (`register_nymph()`) and its parts — source
@@ -33,6 +36,7 @@ The arguments after `--`:
 |---|---|
 | `render <in> [-o <out.png>]` | Source text (or a nymph PNG) to PNG. No UI. `<in>` may be `-` to read the source from standard input (then `-o` is required). |
 | `edit <in> [-o <out.png>]` | Open the editing UI. A missing `<in>` starts from a small example. |
+| `view <in>` | Show the chart and its data, read-only. Writes nothing; `-o` is not accepted. |
 | `extract <in.png> [-o <out>]` | Write the source a nymph PNG carries to `<out>`, or to standard output. |
 
 Without `-o`, the output is the input with its extension replaced by
@@ -240,6 +244,16 @@ hour, temp, hum
 12, 23.2, 47
 18, 21.0, 52
 ```
+
+## View mode
+
+`view` opens the same **Preview** and **Data** windows as edit mode and
+nothing else: no source editor and no Save. The plot is live, so zoom, pan,
+legend toggles and (for `Plot3D`) rotation work, but nothing can change the
+chart or the file. Close the Preview window to quit.
+
+A source that does not render is not shown half-built: `view` prints the
+same one-line error as `render` and exits 1.
 
 ## Edit mode
 

@@ -12,6 +12,7 @@ namespace bdg::wish {
 /// - `render <in> [-o <out.png>]` -- no UI: turn a source text (or a nymph
 ///   PNG) into a PNG. `<in>` may be `-` to read the source from the console.
 /// - `edit <in> [-o <out.png>]` -- open the source in the editing UI.
+/// - `view <in>` -- show the chart and its data, read-only.
 /// - `extract <in.png> [-o <out>]` -- write out the source a PNG carries.
 ///
 /// A failure prints `nymph: ...` to stderr and sets the host's exit code to 1.

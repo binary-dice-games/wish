@@ -81,9 +81,10 @@ class NymphTest : public ::testing::Test {
   }
 
   /// Instantiates a Nymph form; `root_` becomes its root key.
-  void open(bool silent) {
+  void open(bool silent, bool view = false) {
     dynamic params;
     params["silent"_key] = silent;
+    params["view"_key] = view;
     proxy_.emplace(client_->instantiate("wish"_key, "Nymph"_key, std::move(params)).get());
     ASSERT_TRUE(proxy_->valid());
     ASSERT_NE(srv_->last_session, nullptr);
@@ -577,4 +578,98 @@ TEST_F(NymphTest, ClosingModifiedYesSavesThenClosesOnMarkSaved) {
   proxy_->call("mark_saved"_key, dynamic{}).get();
   EXPECT_TRUE(srv_->events->wait_for("closed"_key, since).has_value());
   EXPECT_FALSE(window_registered("_source"));
+}
+
+// ── View mode ────────────────────────────────────────────────────────────────
+
+TEST_F(NymphTest, ViewModeShowsOnlyPreviewAndData) {
+  open(/*silent=*/false, /*view=*/true);
+  seed("in.nymph", kExample);
+  load("in.nymph");
+
+  EXPECT_TRUE(window_registered("_preview"));
+  EXPECT_TRUE(window_registered("_data"));
+  EXPECT_FALSE(window_registered("_source")); // no editors, no Save
+  for (const auto& [key, _] : objects())
+    EXPECT_EQ(key.find("TextEditor"), std::string::npos);
+  EXPECT_FALSE(element(root_ + "_source.vbox.toolbar.save"));
+
+  // The same bound plot and table edit mode shows.
+  auto figure = element(root_ + "_preview.figure");
+  ASSERT_TRUE(figure);
+  EXPECT_EQ(figure->findField(dynamic::CLASS)->as<bison::key_t>(), "Plot"_key);
+  auto series = indexed_children(figure);
+  ASSERT_EQ(series.size(), 2u);
+  EXPECT_EQ(series[0]->findField("ys"_key)->as<std::vector<float>>().size(), 3u);
+  EXPECT_EQ(text_of(root_ + "_data.vbox.status"), "Showing 3 of 3 rows");
+  // The Preview window is the one the user closes.
+  EXPECT_TRUE(element(root_ + "_preview")->get_as<bool>("closable"_key, false));
+}
+
+TEST_F(NymphTest, ViewModeOpensANymphPng) {
+  open(true);
+  seed("in.nymph", kExample);
+  load("in.nymph");
+  std::string png = slurp(render());
+
+  open(false, true);
+  seed("chart.png", png);
+  load("chart.png");
+  ASSERT_TRUE(window_registered("_preview"));
+  EXPECT_EQ(element(root_ + "_preview.figure")->as<std::string>("title"_key), "Revenue vs cost");
+}
+
+TEST_F(NymphTest, ViewModeRejectsABadSource) {
+  open(false, true);
+  std::string bad = kExample;
+  bad.replace(bad.find("$revenue"), 8, "$revenu");
+  seed("bad.nymph", bad);
+  EXPECT_NE(load_error("bad.nymph").find("13:11: unknown column 'revenu'"), std::string::npos);
+  EXPECT_FALSE(window_registered("_preview")); // nothing half-built
+  EXPECT_FALSE(window_registered("_data"));
+  seed("plain.txt", "no separators\n");
+  EXPECT_FALSE(load_error("plain.txt").empty());
+}
+
+TEST_F(NymphTest, ViewModeIgnoresEventsThatWouldEditOrSave) {
+  open(false, true);
+  seed("in.nymph", kExample);
+  load("in.nymph");
+  auto before = element(root_ + "_preview.figure");
+  size_t since = srv_->events->mark();
+  // Whatever arrives on the preview root, nothing is saved or rebuilt.
+  auto h = srv_->last_session->top_level_handlers.find(bison::key_t{root_ + "_preview"});
+  ASSERT_NE(h, srv_->last_session->top_level_handlers.end());
+  h->second->on_event(id_of(root_ + "_preview.figure"), "changed"_key, dynamic{});
+  h->second->on_event(id_of(root_ + "_preview.figure"), "saved"_key, dynamic{});
+  h->second->on_event(id_of(root_ + "_preview.figure"), "clicked"_key, dynamic{});
+  EXPECT_EQ(element(root_ + "_preview.figure"), before);
+  EXPECT_FALSE(srv_->events->saw("on_image_saved"_key, since));
+  EXPECT_EQ(slurp("nymph_out_0.png"), ""); // no image was written
+}
+
+TEST_F(NymphTest, ViewModeReloadKeepsTheWindows) {
+  open(false, true);
+  seed("in.nymph", kExample);
+  load("in.nymph");
+  auto preview_id = id_of(root_ + "_preview");
+  std::string other = kExample;
+  other.replace(other.find("Revenue vs cost"), 15, "Another chart!!");
+  seed("other.nymph", other);
+  load("other.nymph");
+  EXPECT_EQ(id_of(root_ + "_preview"), preview_id);
+  EXPECT_EQ(element(root_ + "_preview.figure")->as<std::string>("title"_key), "Another chart!!");
+}
+
+TEST_F(NymphTest, ClosingTheViewEndsIt) {
+  open(false, true);
+  seed("in.nymph", kExample);
+  load("in.nymph");
+  size_t since = srv_->events->mark();
+  fire("_preview", "", "closed"_key);
+  EXPECT_TRUE(srv_->events->wait_for("closed"_key, since).has_value());
+  EXPECT_FALSE(window_registered("_preview"));
+  EXPECT_FALSE(window_registered("_data"));
+  EXPECT_FALSE(element(root_));
+  EXPECT_TRUE(close_dialog_root().empty()); // never asks: nothing can be unsaved
 }

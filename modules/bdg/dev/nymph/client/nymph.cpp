@@ -40,6 +40,7 @@ namespace fs = std::filesystem;
 
 constexpr const char* kUsage = "usage: nymph render  <in> [-o <out.png>]   source text (or nymph PNG) -> PNG, no UI\n"
                                "       nymph edit    <in> [-o <out.png>]   open the editing UI\n"
+                               "       nymph view    <in>                  show the chart and its data, read-only\n"
                                "       nymph extract <in.png> [-o <out>]   print the source a PNG carries\n"
                                "  <in> may be '-' for render: the source is read from the console (needs -o).\n";
 
@@ -91,7 +92,7 @@ arguments parse_arguments(const std::vector<std::string>& args) {
     throw std::invalid_argument("expected a command and one input file");
   out.command = positional[0];
   out.input = positional[1];
-  if (out.command != "render" && out.command != "edit" && out.command != "extract")
+  if (out.command != "render" && out.command != "edit" && out.command != "extract" && out.command != "view")
     throw std::invalid_argument("unknown command '" + out.command + "'");
   if (out.input == "-" && out.command != "render")
     throw std::invalid_argument("'-' (console input) is only supported by render");
@@ -159,9 +160,10 @@ void fail(wish_app_host& s, const std::string& text) {
 
 using form_ptr = std::shared_ptr<rmi::proxy::dynamic>;
 
-form_ptr open_form(wish_app_host& s, bool silent) {
+form_ptr open_form(wish_app_host& s, bool silent, bool view = false) {
   dynamic params;
   params["silent"_key] = silent;
+  params["view"_key] = view;
   return std::make_shared<rmi::proxy::dynamic>(s.instantiate("wish"_key, "Nymph"_key, std::move(params)).get());
 }
 
@@ -229,6 +231,20 @@ void run_extract(wish_app_host& s, const arguments& args) {
   s.signal_done();
 }
 
+// ── view ─────────────────────────────────────────────────────────────────────
+
+void run_view(wish_app_host& s, const arguments& args) {
+  if (!args.output.empty())
+    throw std::runtime_error("view writes nothing; -o is not accepted");
+  s.upload_file("nymph_input", read_local_file(args.input)).get();
+  auto form = open_form(s, /*silent=*/false, /*view=*/true);
+  // Capturing `form` keeps the proxy alive after this function returns; the
+  // host blocks until signal_done().
+  form->onEvent("closed"_key, [&s, form](dynamic) { s.signal_done(); });
+  // Throws for a source that does not render: there would be nothing to show.
+  load(form, "nymph_input", args.input);
+}
+
 // ── edit ─────────────────────────────────────────────────────────────────────
 
 void run_edit(wish_app_host& s, const arguments& args) {
@@ -273,6 +289,8 @@ void run_nymph(wish_app_host& s) {
       run_render(s, args);
     else if (args.command == "extract")
       run_extract(s, args);
+    else if (args.command == "view")
+      run_view(s, args);
     else
       run_edit(s, args);
   } catch (const std::exception& e) {
@@ -289,7 +307,7 @@ struct nymph_app_registrar {
         .collection = WISH_MODULE_BDG_DEV_NYMPH_COLLECTION,
         .description = "Chart from text: render a source (description, format YAML, data CSV) to a PNG "
                        "that carries its own source, or edit one with a live preview",
-        .params = {{"command", "render (no UI), edit, or extract"},
+        .params = {{"command", "render (no UI), edit, view (read-only), or extract"},
                    {"input", "A nymph source text or a nymph PNG ('-' with render: read the console)"},
                    {"-o file", "Output file (default: the input with a .png extension)"}},
         .run = run_nymph,

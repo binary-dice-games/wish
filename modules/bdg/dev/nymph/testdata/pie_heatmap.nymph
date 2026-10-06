@@ -1,0 +1,62 @@
+Support tickets last week: tickets handled by each team (pie), and tickets per team and weekday (heatmap).
+--
+image:
+  width: 1040
+  height: 540
+  scale: 2
+root:
+  type: VerticalLayout
+  spacing: 6
+  children:
+    - type: Label
+      text: Support tickets, week 40
+    - type: HorizontalLayout
+      spacing: 10
+      children:
+        - type: Plot
+          title: Tickets by team
+          width: 520
+          height: 440
+          flags: Equal
+          x_flags: NoDecorations
+          y_flags: NoDecorations
+          x_min: 0
+          x_max: 1
+          y_min: 0
+          y_max: 1
+          colormap: Pastel
+          legend_location: East
+          legend_flags: Outside
+          children:
+            - type: PlotPieChart
+              labels: $team
+              values: $total
+              radius: 0.36
+              normalize: true
+              label_fmt: "%.0f"
+        - type: Plot
+          title: Tickets per team and weekday
+          width: -1
+          height: 440
+          flags: NoLegend
+          x_flags: NoDecorations
+          y_flags: NoDecorations
+          colormap: Viridis
+          children:
+            - type: PlotHeatmap
+              label: tickets
+              rows: 5
+              cols: 5
+              values: [$mon, $tue, $wed, $thu, $fri]
+              scale_min: 0
+              scale_max: 40
+              format: "%.0f"
+    - type: Label
+      text: "Heatmap columns: Monday to Friday. Rows, top to bottom: the teams in the legend's order."
+--
+team, mon, tue, wed, thu, fri, total
+Billing, 31, 24, 19, 17, 22, 113
+Accounts, 12, 15, 11, 9, 14, 61
+Shipping, 38, 29, 33, 26, 21, 147
+Returns, 8, 6, 9, 12, 7, 42
+Technical, 20, 27, 35, 30, 18, 130

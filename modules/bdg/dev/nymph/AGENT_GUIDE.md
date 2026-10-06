@@ -32,6 +32,12 @@ and without a display, and takes well under a second.
 | `render - -o OUT.png` | Read the source from standard input. |
 | `extract IN.png` | Print the source stored in a nymph PNG. Add `-o FILE` to write it to a file. |
 
+There are also two commands that open a window for a person, `view IN`
+(look at the chart and its data, read-only) and `edit IN` (change it with a
+live preview). They need `--renderer sdl3` or `--renderer web` in place of
+`--renderer none`, and they block until the window is closed, so do not run
+them unless the user asks to see or edit a chart interactively.
+
 **Exit code 0** means the PNG was written. **Exit code 1** means it was
 not: one line on standard error says why, and no file is created or
 changed. Always check the exit code.
@@ -373,7 +379,10 @@ ms
 ### Pie chart
 
 The fixed ranges, `Equal` and `NoDecorations` are needed for a round pie
-without axes. Keep the image square.
+without axes. Keep the image square. The number printed on each slice is
+the value as given in the data, not a computed share: give percentages (as
+here) with the default label format, or give counts and set
+`label_fmt: "%.0f"`.
 
 ```
 Share of traffic by browser.
