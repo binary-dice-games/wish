@@ -10,6 +10,7 @@
 
 #ifdef WISH_IMGUI_ENABLED
 
+#include <imgui/imgui_plot_style.hpp>
 #include <server/renderer.hpp>
 
 #include <implot.h>
@@ -30,6 +31,14 @@ using namespace bdg::bison;
 // series calls all consult the current ID stack, so that push is enough to
 // disambiguate same-labeled plots/series without touching their labels.
 
+/// The ImPlotSpec for series element @p node: ImPlot's defaults plus
+/// whatever styling fields the element sets (see imgui_plot_style.hpp).
+static ImPlotSpec item_spec(const ui_element& node) {
+  ImPlotSpec spec;
+  apply_plot_item_style(spec, node);
+  return spec;
+}
+
 // ── Plot container ─────────────────────────────────────────────────────────────
 
 void render_plot(imgui_renderer& r, const ui_element& node_base, const context& s) {
@@ -46,6 +55,12 @@ void render_plot(imgui_renderer& r, const ui_element& node_base, const context& 
   float x_max = node.x_max();
   float y_min = node.y_min();
   float y_max = node.y_max();
+
+  // Pushed around the whole plot: it decides the colours series take in
+  // turn when they set none, and the scale of heatmaps drawn inside.
+  const int32_t colormap = plot_colormap_of(node);
+  if (colormap != kPlotColormapDefault)
+    ImPlot::PushColormap(ImPlotColormap(colormap));
 
   if (ImPlot::BeginPlot(title.c_str(), ImVec2(w, h), ImPlotFlags(flags))) {
     if (!x_label.empty() || !y_label.empty() || xf != 0 || yf != 0) {
@@ -75,6 +90,8 @@ void render_plot(imgui_renderer& r, const ui_element& node_base, const context& 
     render_children(r, node, s);
     ImPlot::EndPlot();
   }
+  if (colormap != kPlotColormapDefault)
+    ImPlot::PopColormap();
 }
 
 // ── Line / scatter / stair / stem / shaded / digital ─────────────────────────
@@ -88,7 +105,7 @@ void render_plot_line(imgui_renderer&, const ui_element& node_base, const contex
     return;
   int count = int(std::min(xs->size(), ys->size()));
   if (count > 0)
-    ImPlot::PlotLine(label.c_str(), xs->data(), ys->data(), count);
+    ImPlot::PlotLine(label.c_str(), xs->data(), ys->data(), count, item_spec(node));
 }
 
 void render_plot_scatter(imgui_renderer&, const ui_element& node_base, const context&) {
@@ -100,7 +117,7 @@ void render_plot_scatter(imgui_renderer&, const ui_element& node_base, const con
     return;
   int count = int(std::min(xs->size(), ys->size()));
   if (count > 0)
-    ImPlot::PlotScatter(label.c_str(), xs->data(), ys->data(), count);
+    ImPlot::PlotScatter(label.c_str(), xs->data(), ys->data(), count, item_spec(node));
 }
 
 void render_plot_stairs(imgui_renderer&, const ui_element& node_base, const context&) {
@@ -112,7 +129,7 @@ void render_plot_stairs(imgui_renderer&, const ui_element& node_base, const cont
     return;
   int count = int(std::min(xs->size(), ys->size()));
   if (count > 0)
-    ImPlot::PlotStairs(label.c_str(), xs->data(), ys->data(), count);
+    ImPlot::PlotStairs(label.c_str(), xs->data(), ys->data(), count, item_spec(node));
 }
 
 void render_plot_stems(imgui_renderer&, const ui_element& node_base, const context&) {
@@ -125,7 +142,7 @@ void render_plot_stems(imgui_renderer&, const ui_element& node_base, const conte
     return;
   int count = int(std::min(xs->size(), ys->size()));
   if (count > 0)
-    ImPlot::PlotStems(label.c_str(), xs->data(), ys->data(), count, double(ref));
+    ImPlot::PlotStems(label.c_str(), xs->data(), ys->data(), count, double(ref), item_spec(node));
 }
 
 void render_plot_shaded(imgui_renderer&, const ui_element& node_base, const context&) {
@@ -142,12 +159,12 @@ void render_plot_shaded(imgui_renderer&, const ui_element& node_base, const cont
     // Band between ys and ys2.
     int count = int(std::min({xs->size(), ys->size(), ys2->size()}));
     if (count > 0)
-      ImPlot::PlotShaded(label.c_str(), xs->data(), ys->data(), ys2->data(), count);
+      ImPlot::PlotShaded(label.c_str(), xs->data(), ys->data(), ys2->data(), count, item_spec(node));
   } else {
     // Shade between ys and the ref baseline.
     int count = int(std::min(xs->size(), ys->size()));
     if (count > 0)
-      ImPlot::PlotShaded(label.c_str(), xs->data(), ys->data(), count, double(ref));
+      ImPlot::PlotShaded(label.c_str(), xs->data(), ys->data(), count, double(ref), item_spec(node));
   }
 }
 
@@ -160,7 +177,7 @@ void render_plot_digital(imgui_renderer&, const ui_element& node_base, const con
     return;
   int count = int(std::min(xs->size(), ys->size()));
   if (count > 0)
-    ImPlot::PlotDigital(label.c_str(), xs->data(), ys->data(), count);
+    ImPlot::PlotDigital(label.c_str(), xs->data(), ys->data(), count, item_spec(node));
 }
 
 // ── Bar charts ────────────────────────────────────────────────────────────────
@@ -174,9 +191,9 @@ void render_plot_bars(imgui_renderer&, const ui_element& node_base, const contex
 
   if (xs && !xs->empty() && ys && !ys->empty()) {
     int count = int(std::min(xs->size(), ys->size()));
-    ImPlot::PlotBars(label.c_str(), xs->data(), ys->data(), count, double(bar_size));
+    ImPlot::PlotBars(label.c_str(), xs->data(), ys->data(), count, double(bar_size), item_spec(node));
   } else if (ys && !ys->empty()) {
-    ImPlot::PlotBars(label.c_str(), ys->data(), int(ys->size()), double(bar_size));
+    ImPlot::PlotBars(label.c_str(), ys->data(), int(ys->size()), double(bar_size), 0.0, item_spec(node));
   }
 }
 
@@ -187,7 +204,7 @@ void render_plot_bars_h(imgui_renderer&, const ui_element& node_base, const cont
   const auto* xs = node.xs();
   const auto* ys = node.ys();
 
-  ImPlotSpec hspec;
+  ImPlotSpec hspec = item_spec(node);
   hspec.Flags = ImPlotBarsFlags_Horizontal;
   if (xs && !xs->empty() && ys && !ys->empty()) {
     int count = int(std::min(xs->size(), ys->size()));
@@ -222,7 +239,7 @@ void render_plot_histogram(imgui_renderer&, const ui_element& node_base, const c
   if (rng_min != rng_max)
     range = ImPlotRange(double(rng_min), double(rng_max));
 
-  ImPlotSpec hspec;
+  ImPlotSpec hspec = item_spec(node);
   hspec.Flags = hflags;
   ImPlot::PlotHistogram(label.c_str(), vals->data(), int(vals->size()), bins, 1.0, range, hspec);
 }
@@ -344,7 +361,7 @@ void render_plot_inf_lines(imgui_renderer&, const ui_element& node_base, const c
   if (!vals || vals->empty())
     return;
 
-  ImPlotSpec ispec;
+  ImPlotSpec ispec = item_spec(node);
   ispec.Flags = horiz ? ImPlotInfLinesFlags_Horizontal : 0;
   ImPlot::PlotInfLines(label.c_str(), vals->data(), int(vals->size()), ispec);
 }

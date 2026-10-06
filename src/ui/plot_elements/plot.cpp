@@ -4,6 +4,7 @@
 #include "src/bison/bison_object.hpp"
 
 #include "plot_elements.hpp"
+#include "plot_style_fields.hpp"
 
 namespace bdg::wish {
 
@@ -88,7 +89,8 @@ EnumFlags::table plot_legend_flags_table() {
 
 void register_plot() {
   // PlotItem — hidden base class for all series drawn inside a Plot element.
-  // Carries only the legend label; concrete series types add their data arrays.
+  // Carries the legend label and the styling fields every series shares;
+  // concrete series types add their data arrays.
   {
     auto proto = dynamic_ptr{"PlotItem"_rkey, {}};
     proto->addField(
@@ -98,6 +100,7 @@ void register_plot() {
             attr<DisplayName>("Label"),
             attr<Description>("Series name shown in the plot legend."),
             attr<Category>("Content")});
+    add_plot_item_style_fields(proto);
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("PlotItem"));
     (*proto)[dynamic::CLASS].addAttribute(
         attr<Description>("Abstract base class for all plot series. "
@@ -226,6 +229,7 @@ void register_plot() {
                               "NoButtons / NoMenus / Sort / Reverse."),
             attr<Category>("Legend"),
             attr<EnumFlags>(plot_legend_flags_table())});
+    proto->addField("colormap"_rkey, plot_colormap_field());
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Plot"));
     (*proto)[dynamic::CLASS].addAttribute(
         attr<Description>("An ImPlot plot window.  "

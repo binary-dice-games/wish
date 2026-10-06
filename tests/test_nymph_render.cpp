@@ -105,6 +105,80 @@ TEST_F(NymphRenderTest, DataChangesThePixels) {
   EXPECT_GT(distinct_colors(with_data), distinct_colors(without));
 }
 
+// ── Series styling (wish plot fields, checked in real pixels) ────────────────
+
+namespace {
+
+size_t count_color(const nymph::image& img, uint8_t r, uint8_t g, uint8_t b) {
+  size_t n = 0;
+  for (size_t i = 0; i + 3 < img.rgba.size(); i += 4)
+    if (img.rgba[i] == r && img.rgba[i + 1] == g && img.rgba[i + 2] == b)
+      ++n;
+  return n;
+}
+
+std::string bars(const std::string& extra) {
+  return "type: Plot\ntitle: Bars\nheight: 284\nchildren:\n  - type: PlotBars\n    label: b\n"
+         "    ys: [3, 5, 4]\n" + extra;
+}
+
+std::string line(const std::string& extra) {
+  return "type: Plot\ntitle: Line\nheight: 284\nchildren:\n  - type: PlotLine\n    label: l\n"
+         "    xs: [0, 1, 2, 3]\n    ys: [1, 3, 2, 4]\n" + extra;
+}
+
+} // namespace
+
+TEST_F(NymphRenderTest, SeriesColorIsUsed) {
+  auto plain = render(bars("").c_str());
+  auto red = render(bars("    color: \"#FF0000\"\n").c_str());
+  EXPECT_EQ(count_color(plain, 255, 0, 0), 0u);
+  EXPECT_GT(count_color(red, 255, 0, 0), 1000u); // the bar faces
+}
+
+TEST_F(NymphRenderTest, FillColorOverridesColorForFills) {
+  auto img = render(bars("    color: \"#FF0000\"\n    fill_color: \"#00FF00\"\n").c_str());
+  EXPECT_GT(count_color(img, 0, 255, 0), 1000u);
+  EXPECT_LT(count_color(img, 255, 0, 0), count_color(img, 0, 255, 0)); // red only on the bar edges
+}
+
+TEST_F(NymphRenderTest, FillAlphaLightensTheFill) {
+  auto solid = render(bars("    color: \"#FF0000\"\n").c_str());
+  auto faint = render(bars("    color: \"#FF0000\"\n    fill_alpha: 0.3\n").c_str());
+  EXPECT_LT(count_color(faint, 255, 0, 0), count_color(solid, 255, 0, 0) / 4);
+}
+
+TEST_F(NymphRenderTest, LineWeightThickensTheLine) {
+  auto thin = render(line("    color: \"#FF0000\"\n").c_str());
+  auto thick = render(line("    color: \"#FF0000\"\n    line_weight: 4\n").c_str());
+  // A one-pixel anti-aliased line has almost no fully saturated pixels; a
+  // four-pixel one has a solid core.
+  EXPECT_GT(count_color(thick, 255, 0, 0), count_color(thin, 255, 0, 0) + 300);
+}
+
+TEST_F(NymphRenderTest, MarkerDrawsPoints) {
+  auto bare = render(line("    color: \"#FF0000\"\n").c_str());
+  auto marked = render(line("    color: \"#FF0000\"\n    marker: Square\n    marker_size: 6\n").c_str());
+  EXPECT_GT(count_color(marked, 255, 0, 0), count_color(bare, 255, 0, 0) + 100);
+}
+
+TEST_F(NymphRenderTest, ColormapChangesAutomaticColors) {
+  auto deep = render(bars("").c_str());
+  auto dark = render(("colormap: Dark\n" + bars("")).c_str());
+  auto named_default = render(("colormap: Deep\n" + bars("")).c_str());
+  EXPECT_NE(deep.rgba, dark.rgba);
+  EXPECT_EQ(deep.rgba, named_default.rgba); // Deep is the colormap already in use
+}
+
+TEST_F(NymphRenderTest, StyleFieldsWorkIn3D) {
+  const std::string head = "type: Plot3D\ntitle: P\nheight: 284\nchildren:\n  - type: Plot3DLine\n    label: l\n"
+                           "    xs: [0, 1, 2, 3]\n    ys: [0, 1, 0, 1]\n    zs: [0, 1, 2, 3]\n";
+  auto plain = render(head.c_str());
+  auto styled = render((head + "    color: \"#FF0000\"\n    line_weight: 4\n").c_str());
+  EXPECT_EQ(count_color(plain, 255, 0, 0), 0u);
+  EXPECT_GT(count_color(styled, 255, 0, 0), 100u);
+}
+
 TEST_F(NymphRenderTest, CornerIsLightThemeBackground) {
   auto img = render(kLinePlot);
   ImGuiStyle light;

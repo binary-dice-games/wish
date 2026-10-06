@@ -150,7 +150,8 @@ a text with a real dollar sign, write `$$` (`title: $$5 per unit`).
 
 ## Element reference
 
-Every series has a `label` field: its name in the legend.
+Every series has a `label` field: its name in the legend. Every series
+also takes the style fields in "Colours and style" below.
 
 ### `Plot` (2D chart container)
 
@@ -166,6 +167,7 @@ Every series has a `label` field: its name in the legend.
 | `x_flags`, `y_flags` | none | Per axis: `NoLabel`, `NoGridLines`, `NoTickMarks`, `NoTickLabels`, `NoDecorations` (all four), `Invert`, `Opposite` (axis on the other side), `AutoFit`. |
 | `legend_location` | top left | `Center`, `North`, `South`, `West`, `East`, `NorthWest`, `NorthEast`, `SouthWest`, `SouthEast`. |
 | `legend_flags` | none | `Outside` (legend outside the plot area), `Horizontal`, `Sort`, `Reverse`. |
+| `colormap` | `Deep` | The set of colours series take in turn, and the scale of heatmaps. See "Colours and style". |
 
 Several flags are joined with `|`: `flags: NoLegend|NoTitle`.
 
@@ -194,7 +196,7 @@ values are ignored.
 ### `Plot3D` and 3D series
 
 `Plot3D` has `title`, `x_label`, `y_label`, `z_label`, `width`, `height`,
-`flags` (`NoTitle`, `NoLegend`, `NoClip`, `Equal`, `CanvasOnly`) and
+`colormap`, `flags` (`NoTitle`, `NoLegend`, `NoClip`, `Equal`, `CanvasOnly`) and
 `x_flags`, `y_flags`, `z_flags` (`NoLabel`, `NoGridLines`, `NoTickMarks`,
 `NoTickLabels`, `NoDecorations`, `Invert`, `AutoFit`).
 
@@ -207,6 +209,47 @@ values are ignored.
 | `Plot3DQuad` | `xs`, `ys`, `zs` | Filled quads; every 4 points make one. |
 | `Plot3DMesh` | `xs`, `ys`, `zs`, `indices` | A triangle mesh; `indices` lists 3 point numbers (from 0) per triangle. |
 | `Plot3DText` | `text`, `x`, `y`, `z`, `angle`, `offset_x`, `offset_y` | A text label at a 3D coordinate. |
+
+### Colours and style
+
+Without any of these, series are coloured automatically in this order:
+blue, orange, green, red, purple, brown, pink, grey, yellow, cyan.
+
+Fields on every series, 2D and 3D:
+
+| Field | Default | Meaning |
+|---|---|---|
+| `color` | automatic | The series colour, for its lines, fills and markers. |
+| `fill_color` | same as `color` | A different colour for filled areas (bar faces, shaded regions). |
+| `line_weight` | `1` | Line thickness in pixels. |
+| `fill_alpha` | automatic | Opacity of fills, from 0 (transparent) to 1 (solid). |
+| `marker` | none on lines, circles on scatters | A point marker: `None`, `Circle`, `Square`, `Diamond`, `Up`, `Down`, `Left`, `Right`, `Cross`, `Plus`, `Asterisk`. |
+| `marker_size` | automatic | Marker radius in pixels. |
+
+**Colours are written `"#RRGGBB"` or `"#RRGGBBAA"`, always in quotes.**
+Without quotes, YAML reads `#` as the start of a comment and nymph reports
+an error. Colour names such as `red` are not accepted.
+
+```yaml
+- type: PlotLine
+  label: target
+  xs: [0.5, 6.5]
+  ys: [8, 8]
+  color: "#C0392B"
+  line_weight: 2
+```
+
+`PlotHeatmap`, `PlotHistogram2D`, `PlotPieChart`, `PlotText` and
+`Plot3DText` ignore these fields. Heatmap cells, pie slices and surfaces
+are coloured by the plot's `colormap` instead:
+
+| `colormap` | Kind |
+|---|---|
+| `Deep` (default), `Dark`, `Pastel`, `Paired` | Distinct colours, for separate series and pie slices. |
+| `Viridis`, `Plasma`, `Hot`, `Cool`, `Pink`, `Jet`, `Greys` | A smooth scale from low to high, for heatmaps and surfaces. |
+| `RdBu`, `BrBG`, `PiYG`, `Spectral`, `Twilight` | A scale with a distinct middle, for values around a centre such as zero. |
+
+`colormap` is set on the `Plot` or `Plot3D`, not on the series.
 
 ### Layout elements
 
@@ -243,10 +286,15 @@ root:
       label: cpu
       xs: $minute
       ys: $cpu
+      color: "#C0392B"
+      line_weight: 2
+      marker: Circle
     - type: PlotLine
       label: memory
       xs: $minute
       ys: $mem
+      color: "#2471A3"
+      line_weight: 2
 --
 minute, cpu, mem
 0, 12, 40
@@ -361,6 +409,9 @@ Other, 6
 
 One CSV column per grid column, one CSV row per grid row. `rows` and `cols`
 must match the data, and `scale_min` / `scale_max` should cover its range.
+Set a smooth `colormap` such as `Viridis`; the default one is meant for
+separate series and makes neighbouring values look unrelated. `NoLegend`
+keeps the legend box from covering the first cell.
 
 ```
 Activity by weekday and time of day.
@@ -371,6 +422,8 @@ image:
 root:
   type: Plot
   title: Activity
+  colormap: Viridis
+  flags: NoLegend
   x_flags: NoDecorations
   y_flags: NoDecorations
   children:
@@ -520,17 +573,19 @@ x, y, z
   in `x_label` or the description. Axis ticks are always numeric.
 - Set `y_min: 0` (with a `y_max`) for bar charts, so bar lengths are honest.
 - Keep to about five series per plot. Split into several plots beyond that.
+- Use `line_weight: 2` for the lines that matter; one-pixel lines are faint
+  in a document.
+- Set colours when they carry meaning (red for a limit, the same colour for
+  the same thing across charts). Otherwise leave them automatic.
 - Use `scale: 2` when the image will be viewed large.
 
 ## Limits
 
-- Colours are chosen automatically, in order: blue, orange, green, red,
-  purple, and so on. There is no way to set a series colour, a line width
-  or a colormap.
-- A thin line that is exactly horizontal or vertical (such as a flat
-  reference line drawn with `PlotLine` or `PlotInfLines`) comes out pale
-  grey rather than in its series colour. Say in the title or description
-  what the line means instead of relying on its colour.
+- A one-pixel line that is exactly horizontal or vertical (a flat reference
+  line drawn with `PlotLine` or `PlotInfLines`) comes out pale grey. Give
+  such a line `line_weight: 2`.
+- Pie slices, heatmap cells and surfaces cannot be given individual
+  colours; choose a `colormap` for the plot instead.
 - Axis ticks are numbers only: no date or category axes.
 - The source stays in the PNG only while the file is copied unchanged.
   Services that re-encode images remove it. Keep the `.nymph` file when the
@@ -547,6 +602,7 @@ x, y, z
 | `a Plot can only contain 2D series` / `must be a child of a Plot` | A series is at the wrong level. Put it under a `Plot`'s `children`. |
 | `Plot has no field 'x'` | The field name is misspelled or belongs to another type. |
 | `unknown value 'X' (one of: ...)` | A flag name is wrong. The message lists the valid ones. |
+| `is not a colour` / `is empty; an unquoted '#' starts a YAML comment` | Write the colour as `"#RRGGBB"`, in quotes. |
 | `must be a list of numbers or a $column reference` | A list field was given a single number or plain text. |
 | `mixes numbers and $column references` | Use only numbers or only references in one list. |
 | `'abc' is not a number` | A referenced column has a non-numeric value on the reported line. |

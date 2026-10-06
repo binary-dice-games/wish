@@ -24,14 +24,15 @@ root:
           xs: $month
           ys: $visits
           bar_size: 0.6
+          color: "#9DB8D9"
         - type: PlotLine
           label: returning
           xs: $month
           ys: $returning
-        - type: PlotScatter
-          label: returning (points)
-          xs: $month
-          ys: $returning
+          color: "#1F4E8C"
+          line_weight: 2.5
+          marker: Circle
+          marker_size: 4
     - type: Plot
       title: Conversion rate
       height: 260
@@ -46,10 +47,20 @@ root:
           label: conversion
           xs: $month
           ys: $conversion
+          color: "#2E8B57"
+          fill_alpha: 0.35
+        - type: PlotLine
+          label: conversion (line)
+          xs: $month
+          ys: $conversion
+          color: "#2E8B57"
+          line_weight: 2
         - type: PlotLine
           label: target
           xs: [0.5, 6.5]
           ys: [8, 8]
+          color: "#C0392B"
+          line_weight: 2
 --
 month, visits, returning, conversion
 1, 42.0, 15.1, 6.9

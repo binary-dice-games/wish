@@ -264,12 +264,14 @@ not saved. Closing with unsaved changes asks first.
 - **Metadata survives only exact copies.** Tools and services that
   re-encode images (many chat apps and image hosts) drop the embedded
   source. Keep the source text too when the image will go through one.
-- **Colors and colormaps follow the theme.** The plot elements have no
-  per-series color field yet.
+- **Colours:** every series takes `color`, `fill_color`, `line_weight`,
+  `fill_alpha`, `marker` and `marker_size`, and `Plot` / `Plot3D` take
+  `colormap`. Write colours in quotes (`color: "#C0392B"`): an unquoted `#`
+  starts a YAML comment, which nymph reports as an error.
 - The saved image is drawn by SDL's software renderer, so its anti-aliasing
   differs from the on-screen preview. Layout and content are the same. One
-  visible effect: a thin line that is exactly horizontal or vertical (a
-  flat reference line) comes out pale, nearly grey, instead of in its
-  series colour.
+  visible effect: a one-pixel line that is exactly horizontal or vertical (a
+  flat reference line) comes out pale, nearly grey. Give such a line
+  `line_weight: 2` and it keeps its colour.
 - There is no cursor-tracked field help window yet (the `editor` module has
   one); completion in the Format tab covers the same schema.

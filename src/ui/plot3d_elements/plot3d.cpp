@@ -4,6 +4,7 @@
 #include "src/bison/bison_object.hpp"
 
 #include "plot3d_elements.hpp"
+#include <ui/plot_elements/plot_style_fields.hpp>
 
 namespace bdg::wish {
 
@@ -62,6 +63,7 @@ void register_plot3d() {
             attr<DisplayName>("Label"),
             attr<Description>("Series name shown in the plot legend."),
             attr<Category>("Content")});
+    add_plot_item_style_fields(proto);
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Plot3DItem"));
     (*proto)[dynamic::CLASS].addAttribute(
         attr<Description>("Abstract base class for all 3-D plot series. "
@@ -149,6 +151,7 @@ void register_plot3d() {
             attr<Description>("ImPlot3DAxisFlags for the Z axis (combine names with '|')."),
             attr<Category>("Axes"),
             attr<EnumFlags>(plot3d_axis_flags_table())});
+    proto->addField("colormap"_rkey, plot_colormap_field());
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Plot3D"));
     (*proto)[dynamic::CLASS].addAttribute(
         attr<Description>("An ImPlot3D plot window. "

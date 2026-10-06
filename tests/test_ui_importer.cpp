@@ -194,6 +194,47 @@ TEST_F(UiImporterTest, YamlFloatArrayReachesAFloatArrayField) {
   EXPECT_EQ(result[""]->findField("ys"_key)->as<std::vector<float>>().size(), 2u);
 }
 
+// ── Plot styling fields ──────────────────────────────────────────────────────
+
+TEST_F(UiImporterTest, PlotSeriesStyleFieldsHaveAutomaticDefaults) {
+  auto result = bdg::wish::import_json(R"({ "type": "PlotLine" })");
+  auto& line = result[""];
+  EXPECT_EQ(line->findField("color"_key)->as<std::string>(), "");
+  EXPECT_EQ(line->findField("fill_color"_key)->as<std::string>(), "");
+  EXPECT_FLOAT_EQ(line->findField("line_weight"_key)->as<float>(), 1.0f);
+  EXPECT_FLOAT_EQ(line->findField("fill_alpha"_key)->as<float>(), -1.0f);
+  EXPECT_EQ(line->findField("marker"_key)->as<int32_t>(), -3); // "Default"
+  EXPECT_FLOAT_EQ(line->findField("marker_size"_key)->as<float>(), 0.0f);
+  EXPECT_EQ(bdg::wish::import_json(R"({ "type": "Plot" })")[""]->findField("colormap"_key)->as<int32_t>(), -1);
+}
+
+TEST_F(UiImporterTest, PlotStyleFieldsAcceptNamesAndValues) {
+  constexpr auto desc = R"({
+    "type": "Plot", "colormap": "Viridis",
+    "children": [
+      { "type": "PlotBars", "color": "#C0392B", "fill_alpha": 0.5, "line_weight": 2, "marker": "Circle" }
+    ]
+  })";
+  auto result = bdg::wish::import_json(desc);
+  EXPECT_EQ(result[""]->findField("colormap"_key)->as<int32_t>(), 4);
+  auto bars = result[""]->findField("children"_key)->as<dynamic_ptr>()->at(0).as<dynamic_ptr>();
+  EXPECT_EQ(bars->findField("color"_key)->as<std::string>(), "#C0392B");
+  EXPECT_FLOAT_EQ(bars->findField("fill_alpha"_key)->as<float>(), 0.5f);
+  EXPECT_FLOAT_EQ(bars->findField("line_weight"_key)->as<float>(), 2.0f);
+  EXPECT_EQ(bars->findField("marker"_key)->as<int32_t>(), 0);
+
+  // Every series class inherits them, 3D included.
+  for (const char* type : {"PlotScatter", "PlotShaded", "PlotHistogram", "PlotInfLines", "Plot3DLine",
+           "Plot3DSurface", "Plot3DMesh"}) {
+    auto one = bdg::wish::import_json(std::string(R"({ "type": ")") + type + R"(", "color": "#112233" })");
+    EXPECT_EQ(one[""]->findField("color"_key)->as<std::string>(), "#112233") << type;
+  }
+  EXPECT_EQ(bdg::wish::import_json(R"({ "type": "Plot3D", "colormap": "Jet" })")[""]
+                ->findField("colormap"_key)
+                ->as<int32_t>(),
+      9);
+}
+
 // ── Error cases ───────────────────────────────────────────────────────────────
 
 TEST_F(UiImporterTest, JsonUnknownTypeThrows) {

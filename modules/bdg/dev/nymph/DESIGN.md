@@ -529,10 +529,13 @@ identical output from silent mode and edit mode's Save, and from
    `src/ui/`, which was left out to keep this change from rewriting a
    working module. Schema completion in the Format tab (type names, field
    names, flag values) is on and covers the same registry.
-2. **Per-series color and other styling.** The plot elements expose no
-   color or colormap field, so nymph cannot express one. It needs new
-   fields on the plot elements, after which nymph picks them up with no
-   change here.
+2. *(Done since.)* Per-series colour and styling: the plot elements gained
+   `color`, `fill_color`, `line_weight`, `fill_alpha`, `marker`,
+   `marker_size` and `colormap` (`src/ui/plot_elements/plot_style_fields.hpp`),
+   and nymph picked them up with one addition of its own: `bind()` checks
+   that a colour field holds `#RRGGBB[AA]`, and reports an empty unquoted
+   one (`color: #C0392B` is a YAML comment) instead of treating it as
+   automatic.
 3. **Writing preview interaction back to the source** (see "7. Design
    Decisions").
 
@@ -540,10 +543,9 @@ identical output from silent mode and edit mode's Save, and from
 renderer's, different from the on-screen preview. A one-pixel series line
 that runs exactly along a pixel row (a horizontal reference line) has no
 solid core after anti-aliasing and comes out pale, close to grey, at any
-`scale`; sloped lines keep their colour. Turning line anti-aliasing off is
-worse (the software renderer then drops axis-aligned one-pixel lines,
-gridlines included). The plot elements have no line-weight field to make
-such a line thicker; adding one, or the hand-written rasterizer named in
-section 7, would fix it; text uses ImGui's default font at 16 px,
+`scale`; sloped lines keep their colour. `line_weight: 2` on the series
+fixes it. Turning line anti-aliasing off is worse (the software renderer
+then drops axis-aligned one-pixel lines, gridlines included);
+text uses ImGui's default font at 16 px,
 the same default the live renderers use; duplicate keys in the format YAML
 are not reported (the last one wins).

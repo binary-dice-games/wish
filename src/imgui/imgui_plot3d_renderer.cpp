@@ -10,6 +10,7 @@
 
 #ifdef WISH_IMGUI_ENABLED
 
+#include <imgui/imgui_plot_style.hpp>
 #include <server/renderer.hpp>
 
 #include <implot3d.h>
@@ -31,6 +32,14 @@ using namespace bdg::bison;
 
 // ── Plot3D container ──────────────────────────────────────────────────────────
 
+/// The ImPlot3DSpec for series element @p node: ImPlot3D's defaults plus
+/// whatever styling fields the element sets (see imgui_plot_style.hpp).
+static ImPlot3DSpec item_spec(const ui_element& node) {
+  ImPlot3DSpec spec;
+  apply_plot_item_style(spec, node);
+  return spec;
+}
+
 void render_plot3d(imgui_renderer& r, const ui_element& node_base, const context& s) {
   const auto& node = static_cast<const ui_plot3d&>(node_base);
   const std::string& title = node.title_ref();
@@ -43,6 +52,12 @@ void render_plot3d(imgui_renderer& r, const ui_element& node_base, const context
   int32_t xf = node.x_flags();
   int32_t yf = node.y_flags();
   int32_t zf = node.z_flags();
+
+  // Pushed around the whole plot: it decides the colours series take in
+  // turn when they set none, and the scale of surfaces drawn inside.
+  const int32_t colormap = plot_colormap_of(node);
+  if (colormap != kPlotColormapDefault)
+    ImPlot3D::PushColormap(ImPlot3DColormap(colormap));
 
   if (ImPlot3D::BeginPlot(title.c_str(), ImVec2(w, h), ImPlot3DFlags(flags))) {
     if (!x_label.empty() || !y_label.empty() || !z_label.empty() || xf != 0 || yf != 0 || zf != 0) {
@@ -57,6 +72,8 @@ void render_plot3d(imgui_renderer& r, const ui_element& node_base, const context
     render_children(r, node, s);
     ImPlot3D::EndPlot();
   }
+  if (colormap != kPlotColormapDefault)
+    ImPlot3D::PopColormap();
 }
 
 // ── Line / Scatter ────────────────────────────────────────────────────────────
@@ -71,7 +88,7 @@ void render_plot3d_line(imgui_renderer&, const ui_element& node_base, const cont
     return;
   int count = int(std::min({xs->size(), ys->size(), zs->size()}));
   if (count > 0)
-    ImPlot3D::PlotLine(label.c_str(), xs->data(), ys->data(), zs->data(), count);
+    ImPlot3D::PlotLine(label.c_str(), xs->data(), ys->data(), zs->data(), count, item_spec(node));
 }
 
 void render_plot3d_scatter(imgui_renderer&, const ui_element& node_base, const context&) {
@@ -84,7 +101,7 @@ void render_plot3d_scatter(imgui_renderer&, const ui_element& node_base, const c
     return;
   int count = int(std::min({xs->size(), ys->size(), zs->size()}));
   if (count > 0)
-    ImPlot3D::PlotScatter(label.c_str(), xs->data(), ys->data(), zs->data(), count);
+    ImPlot3D::PlotScatter(label.c_str(), xs->data(), ys->data(), zs->data(), count, item_spec(node));
 }
 
 // ── Surface ───────────────────────────────────────────────────────────────────
@@ -108,7 +125,15 @@ void render_plot3d_surface(imgui_renderer&, const ui_element& node_base, const c
     return;
 
   ImPlot3D::PlotSurface(
-      label.c_str(), xs->data(), ys->data(), zs->data(), x_count, y_count, double(scale_min), double(scale_max));
+      label.c_str(),
+      xs->data(),
+      ys->data(),
+      zs->data(),
+      x_count,
+      y_count,
+      double(scale_min),
+      double(scale_max),
+      item_spec(node));
 }
 
 // ── Triangle / Quad / Mesh ────────────────────────────────────────────────────
@@ -125,7 +150,7 @@ void render_plot3d_triangle(imgui_renderer&, const ui_element& node_base, const 
   // Must be a multiple of 3.
   count -= count % 3;
   if (count > 0)
-    ImPlot3D::PlotTriangle(label.c_str(), xs->data(), ys->data(), zs->data(), count);
+    ImPlot3D::PlotTriangle(label.c_str(), xs->data(), ys->data(), zs->data(), count, item_spec(node));
 }
 
 void render_plot3d_quad(imgui_renderer&, const ui_element& node_base, const context&) {
@@ -140,7 +165,7 @@ void render_plot3d_quad(imgui_renderer&, const ui_element& node_base, const cont
   // Must be a multiple of 4.
   count -= count % 4;
   if (count > 0)
-    ImPlot3D::PlotQuad(label.c_str(), xs->data(), ys->data(), zs->data(), count);
+    ImPlot3D::PlotQuad(label.c_str(), xs->data(), ys->data(), zs->data(), count, item_spec(node));
 }
 
 void render_plot3d_mesh(imgui_renderer&, const ui_element& node_base, const context&) {
@@ -169,7 +194,7 @@ void render_plot3d_mesh(imgui_renderer&, const ui_element& node_base, const cont
   const float* pxs = xs->data();
   const float* pys = ys->data();
   const float* pzs = zs->data();
-  ImPlot3D::PlotMesh(label.c_str(), pxs, pys, pzs, uids.data(), vtx_count, idx_count);
+  ImPlot3D::PlotMesh(label.c_str(), pxs, pys, pzs, uids.data(), vtx_count, idx_count, item_spec(node));
 }
 
 // ── Text annotation ───────────────────────────────────────────────────────────

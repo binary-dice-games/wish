@@ -846,6 +846,21 @@ sandboxed file path.
 `PlotItem` base, in addition to what's listed. None of the plotting
 elements emit events.
 
+The `PlotItem` base also carries the styling fields below (ImPlot's
+per-item `ImPlotSpec`). Every default means "automatic", so a series that
+sets none looks as ImPlot draws it by default. `PlotHeatmap`,
+`PlotHistogram2D`, `PlotPieChart` and `PlotText` take their colours from
+the plot's `colormap` or the theme and ignore them.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `color` | `string` | `""` | Series colour, `"#RRGGBB"` or `"#RRGGBBAA"`, for its lines, fills and markers. Empty takes the next colour of the plot's colormap. |
+| `fill_color` | `string` | `""` | Colour of filled areas (bar faces, shaded regions, surfaces). Empty uses `color`. |
+| `line_weight` | `float` | `1.0` | Line thickness in pixels: lines, bar edges, marker edges (0–32). |
+| `fill_alpha` | `float` | `-1.0` | Fill opacity 0–1. `-1` keeps the series type's own default. |
+| `marker` | `int32` (enum) | `Default` | `None`, `Auto`, `Circle`, `Square`, `Diamond`, `Up`, `Down`, `Left`, `Right`, `Cross`, `Plus`, `Asterisk`. `Default` keeps the series type's own choice (markers on a scatter, none on a line). |
+| `marker_size` | `float` | `0.0` | Marker radius in pixels. `0` keeps the automatic size (0–64). |
+
 #### `Plot`
 | Field | Type | Default | Description |
 |---|---|---|---|
@@ -859,6 +874,7 @@ elements emit events.
 | `y_min` / `y_max` | `float` | `0.0` | Fixed Y-axis limits, same auto-fit-when-equal rule. |
 | `legend_location` | `int32` (flags) | `-1` | Legend placement (`ImPlotLocation`: `North`/`South`/`West`/`East`, the corners, or `Center`). `-1` keeps ImPlot's default (top-left, inside). |
 | `legend_flags` | `int32` (flags) | `0` | `ImPlotLegendFlags` bitmask: `Outside` moves the legend out of the plot frame, `Horizontal` rows the entries, plus `NoButtons` / `NoMenus` / `Sort` / `Reverse`. |
+| `colormap` | `int32` (enum) | `Default` | Colormap for this plot: the colours series take in turn when they set no `color`, and the scale of heatmaps / surfaces. `Deep`, `Dark`, `Pastel`, `Paired`, `Viridis`, `Plasma`, `Hot`, `Cool`, `Pink`, `Jet`, `Twilight`, `RdBu`, `BrBG`, `PiYG`, `Spectral`, `Greys`. `Default` leaves the current one (normally `Deep`). |
 
 #### `PlotLine`, `PlotScatter`, `PlotStairs`, `PlotDigital`
 Share `xs`, `ys` (`float[]`, one entry per data point) — a connected line,
@@ -928,7 +944,10 @@ or horizontal at each Y value when `horizontal: true`.
 ## 6. 3D plotting (`src/ui/plot3d_elements/`)
 
 `Plot3D` is the container; series/mesh/annotation classes must be direct
-children. They share a `label` field via `Plot3DItem`. No events.
+children. They share a `label` field via `Plot3DItem`, plus the same
+styling fields as 2D series (`color`, `fill_color`, `line_weight`,
+`fill_alpha`, `marker`, `marker_size` — see section 5; `Plot3DText` ignores
+them). No events.
 
 #### `Plot3D`
 | Field | Type | Default | Description |
@@ -939,6 +958,7 @@ children. They share a `label` field via `Plot3DItem`. No events.
 | `height` | `float` | `400.0` | Plot height (16–8192). |
 | `flags` | `int32` (flags) | `0` | ImPlot3DFlags bitmask. |
 | `x_flags`/`y_flags`/`z_flags` | `int32` (flags) | `0` | ImPlot3DAxisFlags per axis. |
+| `colormap` | `int32` (enum) | `Default` | Same names and meaning as `Plot.colormap`. |
 
 #### `Plot3DLine` / `Plot3DScatter`
 `xs`, `ys`, `zs` (`float[]`, one entry per point) — a connected line or

@@ -209,6 +209,45 @@ TEST_F(NymphBindTest, NamedFlagValuesResolveThroughTheField) {
   EXPECT_EQ(error_line(source("root:\n  type: Plot\n  flags: NotAFlag\n")), 5);
 }
 
+TEST_F(NymphBindTest, SeriesStyleFields) {
+  auto fig = bind_text(source("root:\n  type: Plot\n  colormap: Viridis\n  children:\n    - type: PlotLine\n"
+                              "      ys: $a\n      color: \"#C0392B\"\n      fill_color: \"#11223344\"\n"
+                              "      line_weight: 2.5\n      fill_alpha: 0.4\n      marker: Square\n"
+                              "      marker_size: 5\n"));
+  EXPECT_EQ(fig.root.findField("colormap"_key)->as<int32_t>(), 4);
+  const dynamic& line = child(fig.root, 0);
+  EXPECT_EQ(line.findField("color"_key)->as<std::string>(), "#C0392B");
+  EXPECT_EQ(line.findField("fill_color"_key)->as<std::string>(), "#11223344");
+  EXPECT_FLOAT_EQ(line.findField("line_weight"_key)->as<float>(), 2.5f);
+  EXPECT_FLOAT_EQ(line.findField("fill_alpha"_key)->as<float>(), 0.4f);
+  EXPECT_EQ(line.findField("marker"_key)->as<int32_t>(), 1);
+  EXPECT_FLOAT_EQ(line.findField("marker_size"_key)->as<float>(), 5.0f);
+
+  // 3D series and plots take the same fields.
+  auto fig3d = bind_text(source("root:\n  type: Plot3D\n  colormap: Jet\n  children:\n    - type: Plot3DLine\n"
+                                "      xs: $a\n      ys: $a\n      zs: $b\n      color: \"#00AA00\"\n"
+                                "      marker: Diamond\n"));
+  EXPECT_EQ(fig3d.root.findField("colormap"_key)->as<int32_t>(), 9);
+  EXPECT_EQ(child(fig3d.root, 0).findField("marker"_key)->as<int32_t>(), 2);
+}
+
+TEST_F(NymphBindTest, BadColoursAndStyleNamesAreErrors) {
+  const std::string head = "root:\n  type: Plot\n  children:\n    - type: PlotLine\n      ys: $a\n";
+  EXPECT_EQ(error_line(source(head + "      color: red\n")), 8);          // not a hex colour
+  EXPECT_EQ(error_line(source(head + "      color: \"#12345\"\n")), 8);   // wrong length
+  EXPECT_EQ(error_line(source(head + "      fill_color: \"#GGGGGG\"\n")), 8);
+  EXPECT_EQ(error_line(source(head + "      color: \"#1f4e8c\"\n")), 0);  // lower case is fine
+  EXPECT_EQ(error_line(source(head + "      marker: Star\n")), 8);
+  EXPECT_EQ(error_line(source(head + "      line_weight: thick\n")), 8);
+  EXPECT_EQ(error_line(source("root:\n  type: Plot\n  colormap: Rainbow\n")), 5);
+  // Unquoted, "#..." is a YAML comment and the value is empty. Reported,
+  // not taken as "automatic": the colour would otherwise vanish silently.
+  std::string message;
+  EXPECT_EQ(error_line(source(head + "      color: #C0392B\n"), &message), 8);
+  EXPECT_NE(message.find("quotes"), std::string::npos) << message;
+  EXPECT_EQ(error_line(source(head + "      color: \"\"\n")), 0); // an explicit empty text is "automatic"
+}
+
 TEST_F(NymphBindTest, ImageOptions) {
   auto fig = bind_text(source("image: {width: 320, height: 200, scale: 2, theme: dark, padding: 0}\nroot:\n  type: Plot\n"));
   EXPECT_EQ(fig.options.width, 320);

@@ -11,6 +11,7 @@
 #include <yaml.h>
 
 #include <algorithm>
+#include <cctype>
 #include <charconv>
 #include <cmath>
 #include <cstdint>
@@ -48,6 +49,19 @@ bool is_layout_class(std::string_view type) {
 
 bool is_container(std::string_view type) {
   return type == "Plot" || type == "Plot3D" || type == "VerticalLayout" || type == "HorizontalLayout";
+}
+
+/// True for "Type.color" and "Type.<something>_color": wish's convention for
+/// fields holding a "#RRGGBB[AA]" colour.
+bool is_color_field(std::string_view what) {
+  std::string_view name = what.substr(what.find('.') + 1);
+  return name == "color" || (name.size() > 6 && name.substr(name.size() - 6) == "_color");
+}
+
+bool is_hex_color(std::string_view text) {
+  if ((text.size() != 7 && text.size() != 9) || text[0] != '#')
+    return false;
+  return std::all_of(text.begin() + 1, text.end(), [](unsigned char c) { return std::isxdigit(c) != 0; });
 }
 
 /// A parsed YAML document plus the source line its first line sits on.
@@ -277,6 +291,13 @@ struct binder {
       sv = scalar_value{};
     }
     if (proto.is<std::string>()) {
+      // wish colour fields are text ("#RRGGBB"); a malformed one would
+      // silently render white, so it is checked here.
+      if (is_color_field(what) && text.empty() && is_plain(v))
+        throw yaml.at(v, what + " is empty; an unquoted '#' starts a YAML comment, so write the colour in "
+                                "quotes: \"#RRGGBB\"");
+      if (is_color_field(what) && !text.empty() && !is_hex_color(text))
+        throw yaml.at(v, what + ": '" + text + "' is not a colour; write \"#RRGGBB\" or \"#RRGGBBAA\" in quotes");
       obj[key] = text; // `title: 2025` means the text "2025"
     } else if (proto.is<bool>()) {
       if (sv.kind != scalar_kind::boolean)
