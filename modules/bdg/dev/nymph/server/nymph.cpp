@@ -158,6 +158,14 @@ void nymph_form::on_construct(const dynamic& params) {
     silent_ = *silent;
   if (auto* view = params.findField<bool>("view"_key))
     view_ = *view;
+  // View mode's windows get names of their own. ImGui saves each window's
+  // dock position in imgui.ini under its name; with the names edit mode
+  // uses, the position saved by one mode was restored in the other, and
+  // after a view the Preview and Data windows covered edit mode's Source.
+  if (view_) {
+    preview_root_key_ = internal_root_key_ + "_view_preview";
+    data_root_key_ = internal_root_key_ + "_view_data";
+  }
 }
 
 void nymph_form::with_session(const std::function<void(context&)>& fn) {
@@ -395,7 +403,9 @@ void nymph_form::build_edit_ui() {
                 dir::left, 0.38f,
                 area({source_root_key_}),
                 split(dir::down, 0.30f, area({data_root_key_}), area({preview_root_key_}))),
-            /*version=*/1, /*target=*/"nymph_dock")));
+            // 2: re-applied once over layouts saved while view mode still
+            // shared edit mode's window names (see on_construct()).
+            /*version=*/2, /*target=*/"nymph_dock")));
   }
   ui_built_ = true;
 }
