@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `du` module (`WISH_MODULE_BDG_DESKTOP_DU`): a disk usage analyzer, run with `wish client --run=du [-- <folder>]`. Scans a folder on the client's machine and shows what takes the space as a size-sorted table (share of the folder, size, item count) and a treemap colored by file type; double-click a folder or its rectangle to open it.
+- `DockSplit.size` (`dock::split_px()`): give the first pane of a dock split a size in pixels instead of a ratio, e.g. a fixed-width side panel.
+- `Treemap` element: a squarified treemap of weighted nodes given as flat `parents` / `sizes` / `colors` arrays and newline-separated `labels`, with hover tooltips, a `selected` outline and `clicked` / `activated` events.
 - `mc`: a folder tree panel next to each file panel (**Local Folders**, **Sandbox Folders**). Each node shows a folder icon. Clicking a folder navigates that side's file panel; navigating the file panel (path bar, opening a folder) expands the tree to that folder and selects it. Trees are filled one level at a time, as nodes are expanded. Custom `Mc` clients should handle the new `on_local_tree_expand` event and call `update_local_tree`.
 - `TreeNode`: `selected` (highlight), `icon` (image before the label), `open_on_arrow` (only the arrow toggles) and a `clicked` event; changing `open` after creation now expands/collapses the node, and a user toggle is written back to the field.
 - `nymph`: a `view` command (`wish standalone --run=nymph -- view chart.png`) shows a chart's interactive preview and its data table read-only, with no source editor and no Save.

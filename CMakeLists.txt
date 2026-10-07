@@ -362,6 +362,8 @@ add_library(wish_server STATIC
   src/ui/ui_elements/table.cpp
   src/ui/ui_elements/text_editor.cpp
   src/ui/ui_elements/graph_node.cpp
+  src/ui/ui_elements/treemap.cpp
+  src/ui/treemap_layout.cpp
   src/ui/ui_elements/color_edit.cpp
   src/ui/ui_elements/object_inspector.cpp
   src/ui/plot_elements/plot.cpp
@@ -415,6 +417,8 @@ if(WISH_ENABLE_IMGUI)
     src/imgui/imgui_text_editor_renderer.cpp
     src/imgui/imgui_graph_renderer.hpp
     src/imgui/imgui_graph_renderer.cpp
+    src/imgui/imgui_treemap_renderer.hpp
+    src/imgui/imgui_treemap_renderer.cpp
     src/imgui/themes/themes.hpp
     src/imgui/themes/theme_dark.cpp
     src/imgui/themes/theme_light.cpp

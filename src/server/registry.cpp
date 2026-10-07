@@ -49,6 +49,7 @@ void register_all() {
   register_table();
   register_text_editor();
   register_graph_node();
+  register_treemap();
   register_color_edit();
   // Plot elements — must come after Element is registered.
   register_plot(); // PlotItem, Plot

@@ -287,6 +287,19 @@ static natural_size measure_table(imgui_renderer&, const ui_element& node0, cons
     sz.y = 0.0f;
   return sz;
 }
+
+// Treemap shares Table's hazard on any axis it fills: render_treemap()
+// (imgui_treemap_renderer.cpp) turns a width/height <= 0 into "the space
+// that is left", which is not a content-derived size, so that axis reports
+// 0 here and must be given a negative Layout hint (stretch) by its owner.
+static natural_size measure_treemap(imgui_renderer&, const ui_element& node, const context&) {
+  natural_size sz = node.last_rendered_size();
+  if (node.width(0.0f) <= 0.0f)
+    sz.x = 0.0f;
+  if (node.height(0.0f) <= 0.0f)
+    sz.y = 0.0f;
+  return sz;
+}
 //
 // Exactly six entries, in two distinct categories:
 // - VerticalLayout/HorizontalLayout/Splitter need their own natural size
@@ -347,6 +360,7 @@ static const measure_fn_map& measure_dispatch_fns() {
       {"TextEditor"_key.id, measure_text_editor},
       {"Combo"_key.id, measure_combo},
       {"Table"_key.id, measure_table},
+      {"Treemap"_key.id, measure_treemap},
       {"VerticalLayout"_key.id, measure_vertical_layout},
       {"HorizontalLayout"_key.id, measure_horizontal_layout},
       {"Splitter"_key.id, measure_splitter},

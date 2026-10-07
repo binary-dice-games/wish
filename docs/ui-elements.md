@@ -723,6 +723,47 @@ two lanes. The element auto-sizes its reserved width to whichever lane
 branch-out/merge-in diagonal that fans wider than the row's own dot isn't
 clipped. No events.
 
+### Treemap
+
+#### `Treemap`
+A squarified treemap: a tree of weighted nodes drawn as nested rectangles
+whose areas are proportional to their sizes — disk usage, memory, budgets,
+anything where "what takes the space" is the question. Each node's children
+tile its rectangle, kept as close to square as possible; a node with
+children is drawn as a frame (titled with its label when `headers` is on and
+it is large enough), a leaf as a filled tile.
+
+The tree is given as flat parallel arrays rather than child elements, so a
+few thousand nodes cost one field update instead of one object each. Node 0
+is the root, and every other node must come after its parent:
+
+```json
+{ "type": "Treemap",
+  "parents": [-1, 0, 0, 1, 1],
+  "sizes":   [0, 60, 40, 45, 15],
+  "labels":  "disk\nmedia\ndocs\nfilm.mkv\nsong.mp3" }
+```
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `parents` | `int32[]` | `[]` | One entry per node: the index of its parent. Node 0's entry is ignored. A node whose parent does not precede it is not drawn, nor is its subtree. |
+| `sizes` | `float[]` | `[]` | Parallel: each node's weight. Only the ratio between siblings matters — a parent's own size is not compared with the sum of its children. A node with size `0` is not drawn. |
+| `colors` | `int32[]` | `[]` | Parallel: packed `0xRRGGBBAA` fill color of each leaf (same convention as `GraphNode`; alpha is ignored). A missing entry or `0` picks a color from a built-in palette, one per top-level branch. |
+| `labels` | `string` | `""` | Newline-separated node names, parallel with `parents`. Drawn inside each rectangle large enough to hold it, and in the hover tooltip. |
+| `details` | `string` | `""` | Newline-separated, parallel: extra text for each node's hover tooltip (e.g. a formatted size). |
+| `selected` | `int32` | `-1` | Index of the node drawn with a highlight outline. Application-owned: set it from a `clicked` handler. |
+| `width` / `height` | `float` | `-1` | Size in pixels; `0` or negative fills the available space. Inside a `Layout`, give a filling axis a negative `width`/`height` there too, as for `TextEditor`. |
+| `padding` | `float` | `2.0` | Gap in pixels between a node's edge and its children (0–16). |
+| `headers` | `bool` | `true` | Reserve a title strip at the top of every node that has children. |
+
+Hovering a node outlines it and shows a tooltip with its path below the
+root (its ancestors' labels joined by `/`) and its `details` line.
+
+**Events** (both name the deepest node under the mouse):
+- `clicked` — `{ index: int32 }`.
+- `activated` — double click; `{ index: int32 }`. At most one of the two
+  fires per frame.
+
 ### Docking
 
 #### `DockSpaceViewport`

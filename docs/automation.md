@@ -336,6 +336,15 @@ open the PNG with the `Read` tool.
 `--before-shot` seconds, and writes the PNG. Widgets are matched by dot-path
 *suffix* because the form root is instance-numbered (`__pix_0`).
 `--dump-tree` prints the top-level paths to find suffixes.
+`--arg ARG` (repeatable) passes positional arguments to the app after `--`,
+e.g. `--run du --arg /usr/share` for `wish client --run=du -- /usr/share`.
+
+A custom-drawn widget whose parts are not widgets of their own (a `Treemap`'s
+cells, a `Plot`'s points) has one rect in `get_tree()` for the whole element.
+To hover or click a part, compute a point inside that rect and use
+`ui._page.mouse.move()/click(x, y, delay=60)/dblclick(x, y, delay=60)`
+directly; then assert on what the app did with it (a status `Label`'s text,
+a `selected` field) rather than on pixels.
 
 Gotchas this recipe already handles:
 

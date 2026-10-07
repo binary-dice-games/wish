@@ -1506,10 +1506,14 @@ class ui_dock_split : public cloneable_ui_element<ui_dock_split> {
   float ratio(float def = 0.5f) const {
     return cached_field_or<float>(ratio_field_, bison::key_t{"ratio"}, def);
   }
+  /// @brief Pixels handed to the first child along the split axis; 0 means
+  ///        "use `ratio()`".
+  float size(float def = 0.0f) const { return cached_field_or<float>(size_field_, bison::key_t{"size"}, def); }
 
  private:
   mutable bison::field* dir_field_ = nullptr;
   mutable bison::field* ratio_field_ = nullptr;
+  mutable bison::field* size_field_ = nullptr;
 };
 
 /// @brief Typed C++ class for the `DockArea` element -- a leaf of a
@@ -1674,6 +1678,40 @@ class ui_graph_node : public cloneable_ui_element<ui_graph_node> {
   mutable bison::field* bottom_from_field_ = nullptr;
   mutable bison::field* bottom_to_field_ = nullptr;
   mutable bison::field* bottom_color_field_ = nullptr;
+};
+
+// ── Treemap ──────────────────────────────────────────────────────────────────
+
+class ui_treemap : public cloneable_ui_element<ui_treemap> {
+ public:
+  using cloneable_ui_element::cloneable_ui_element;
+
+  const std::vector<int32_t>* parents() const {
+    return cached_vector_field<int32_t>(parents_field_, bison::key_t{"parents"});
+  }
+  const std::vector<float>* sizes() const { return cached_vector_field<float>(sizes_field_, bison::key_t{"sizes"}); }
+  const std::vector<int32_t>* colors() const {
+    return cached_vector_field<int32_t>(colors_field_, bison::key_t{"colors"});
+  }
+  const std::string& labels_ref() const { return cached_field_str(labels_field_, bison::key_t{"labels"}); }
+  const std::string& details_ref() const { return cached_field_str(details_field_, bison::key_t{"details"}); }
+  int32_t selected(int32_t def = -1) const {
+    return cached_field_or<int32_t>(selected_field_, bison::key_t{"selected"}, def);
+  }
+  float padding(float def = 2.0f) const {
+    return cached_field_or<float>(padding_field_, bison::key_t{"padding"}, def);
+  }
+  bool headers(bool def = true) const { return cached_field_or<bool>(headers_field_, bison::key_t{"headers"}, def); }
+
+ private:
+  mutable bison::field* parents_field_ = nullptr;
+  mutable bison::field* sizes_field_ = nullptr;
+  mutable bison::field* colors_field_ = nullptr;
+  mutable bison::field* labels_field_ = nullptr;
+  mutable bison::field* details_field_ = nullptr;
+  mutable bison::field* selected_field_ = nullptr;
+  mutable bison::field* padding_field_ = nullptr;
+  mutable bison::field* headers_field_ = nullptr;
 };
 
 // ── Plot (ImPlot) ────────────────────────────────────────────────────────────

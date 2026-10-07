@@ -104,6 +104,8 @@ def main():
                     help="click the widget whose path ends with SUFFIX")
     ap.add_argument("--click-class", action="append", default=[], metavar="CLASS",
                     help="click the first rendered widget of this class (e.g. Selectable)")
+    ap.add_argument("--arg", action="append", default=[], metavar="ARG",
+                    help="positional argument passed to the app after `--` (repeatable)")
     ap.add_argument("--settle", type=float, default=3.0, help="seconds to wait after each action")
     ap.add_argument("--before-shot", type=float, default=3.0,
                     help="extra seconds before the screenshot, for async client work (uploads, previews)")
@@ -118,7 +120,8 @@ def main():
     with AutomationClient.launch(server_cmd=server) as ui:
         ui._page.set_viewport_size({"width": args.width, "height": args.height})
         client = subprocess.Popen([args.wish, "client", "--transport", "tcp", "--host", "127.0.0.1",
-                                   "--port", str(rmi_port), "--run", args.run])
+                                   "--port", str(rmi_port), "--run", args.run]
+                                  + (["--"] + args.arg if args.arg else []))
         try:
             # Wait until the app has rendered at least one Window.
             ui.wait_for("async () => (await window.wish.getTree()).widgets"

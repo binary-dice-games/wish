@@ -186,6 +186,15 @@ void register_docking() {
             attr<Category>("Layout"),
             attr<Range>(0.05, 0.95),
             attr<Step>(0.05)});
+    proto->addField(
+        "size"_rkey,
+        field{
+            0.0f,
+            attr<DisplayName>("Size"),
+            attr<Description>("Pixels given to the first child along the split axis, instead of "
+                              "\"ratio\": the other child takes the rest. 0 uses \"ratio\". Clamped to "
+                              "5%..95% of the parent."),
+            attr<Category>("Layout")});
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("DockSplit"));
     (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
         "One binary split in a DockLayout tree. Exactly two ordered children, each a DockSplit or "

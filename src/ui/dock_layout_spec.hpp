@@ -91,6 +91,17 @@ inline ui_element_ptr split(dir d, float ratio, ui_element_ptr first, ui_element
   return e;
 }
 
+/// @brief A binary split whose @p first pane (on the @p d side) starts
+///        @p size pixels wide (`left`/`right`) or tall (`up`/`down`);
+///        @p second fills the rest. For a side panel that should not grow
+///        with the screen.
+/// @param size  Pixels given to @p first; clamped to 5%..95% of the parent.
+inline ui_element_ptr split_px(dir d, float size, ui_element_ptr first, ui_element_ptr second) {
+  auto e = split(d, 0.5f, std::move(first), std::move(second));
+  (*e)[bison::key_t{"size"}] = size;
+  return e;
+}
+
 /// @brief Wrap a `DockSplit`/`DockArea` tree into a `DockLayout` root.
 /// @param root     The split/area tree.
 /// @param version  Layout revision; bump to re-apply after changing the tree.

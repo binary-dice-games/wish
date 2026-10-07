@@ -216,7 +216,7 @@ ambient dockspace.
 ```
 DockLayout   := { target?, version?, children: [ Node ] }     // exactly one child
 Node         := DockSplit | DockArea
-DockSplit    := { dir, ratio, children: [ Node, Node ] }       // exactly two, ordered
+DockSplit    := { dir, ratio | size, children: [ Node, Node ] } // exactly two, ordered
 DockArea     := { windows, focused? }
 ```
 
@@ -226,6 +226,7 @@ DockArea     := { windows, focused? }
 | `version` | `DockLayout` | Revision; see [Versioning](#versioning-and-re-applying). |
 | `dir` | `DockSplit` | `left` / `right` / `up` / `down`. First child goes here, second opposite. |
 | `ratio` | `DockSplit` | 0..1 — the first child's share of the parent. |
+| `size` | `DockSplit` | Pixels for the first child along the split axis, instead of `ratio` (`dock::split_px()` in C++) — the second child takes the rest. For a fixed-width side panel next to a pane that should get the remaining screen. `0` (default) uses `ratio`; clamped to 5%..95% of the parent. |
 | `windows` | `DockArea` | **Newline-separated** `Window` paths, in tab order. Empty leaves the node empty — on the far side of a split, that is the central node `Window.dock_target` docks into (see above). |
 | `focused` | `DockArea` | Which of `windows` is the active tab (default: the first). |
 

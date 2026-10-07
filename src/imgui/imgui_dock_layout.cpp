@@ -13,6 +13,7 @@
 #include <imgui.h>
 #include <imgui_internal.h>
 
+#include <algorithm>
 #include <cctype>
 #include <cstdio>
 #include <cstring>
@@ -101,6 +102,15 @@ bool realize_node(const ui_element& node, ImGuiID node_id, logger* log) {
     float ratio = split.ratio(0.5f);
     if (!(ratio > 0.0f && ratio < 1.0f))
       ratio = 0.5f;
+    // A pixel "size" wins over "ratio" when the parent's extent is known
+    // (it is not for a dockspace that has never been laid out).
+    if (const float size = split.size(0.0f); size > 0.0f) {
+      const ImGuiDockNode* parent = ImGui::DockBuilderGetNode(node_id);
+      const float extent = !parent ? 0.0f : (dir == ImGuiDir_Left || dir == ImGuiDir_Right) ? parent->Size.x
+                                                                                             : parent->Size.y;
+      if (extent > 0.0f)
+        ratio = std::clamp(size / extent, 0.05f, 0.95f);
+    }
 
     std::vector<const ui_element*> kids;
     node.for_each_child_ordered([&](key_t, ui_element& c) { kids.push_back(&c); });

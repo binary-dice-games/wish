@@ -3523,6 +3523,38 @@ TEST_F(ImguiRendererTest, DockLayoutBuildsSplitTreeIntoAmbientDockspace) {
   EXPECT_LT(na->Pos.x, nb->Pos.x);
 }
 
+// "size" gives the first pane a width in pixels; the second takes the rest.
+TEST_F(ImguiRendererTest, DockSplitSizeGivesFirstPaneAPixelWidth) {
+  ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+
+  auto wa = make_docked_window("A", "wAsz");
+  auto wb = make_docked_window("B", "wBsz");
+  auto lay = bdg::wish::import_json(R"({
+    "type": "DockLayout",
+    "children": [ { "type": "DockSplit", "dir": "left", "size": 200, "children": [
+      { "type": "DockArea", "windows": "wAsz" },
+      { "type": "DockArea", "windows": "wBsz" } ] } ]
+  })")[""];
+
+  ImGuiID dock_id = ImHashStr("DL_SplitSizeTest");
+  drive_dock_frames(*renderer_, *sess_, dock_id, *lay, {wa, wb}, 12);
+
+  auto* a = ImGui::FindWindowByName("A###wAsz");
+  auto* b = ImGui::FindWindowByName("B###wBsz");
+  ASSERT_NE(a, nullptr);
+  ASSERT_NE(b, nullptr);
+  ImGuiDockNode* root = ImGui::DockBuilderGetNode(dock_id);
+  ImGuiDockNode* na = ImGui::DockBuilderGetNode(a->DockId);
+  ImGuiDockNode* nb = ImGui::DockBuilderGetNode(b->DockId);
+  ASSERT_NE(root, nullptr);
+  ASSERT_NE(na, nullptr);
+  ASSERT_NE(nb, nullptr);
+  ASSERT_GT(root->Size.x, 500.0f) << "fixture dockspace too narrow for this test";
+  EXPECT_LT(na->Pos.x, nb->Pos.x);
+  EXPECT_NEAR(na->Size.x, 200.0f, 6.0f); // the splitter takes a few pixels
+  EXPECT_GT(nb->Size.x, na->Size.x);
+}
+
 TEST_F(ImguiRendererTest, DockLayoutDoesNotReapplyOnceNodeExists) {
   ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 

@@ -41,6 +41,7 @@ wish_add_test(test_examples_ui    test_examples_ui.cpp)
 target_compile_definitions(test_examples_ui PRIVATE
     WISH_EXAMPLES_UI_DIR="${CMAKE_SOURCE_DIR}/examples/ui")
 wish_add_test(test_ui_element     test_ui_element.cpp)
+wish_add_test(test_treemap_layout test_treemap_layout.cpp)
 wish_add_test(test_ui_schema_help test_ui_schema_help.cpp)
 wish_add_test(test_children_order test_children_order.cpp)
 wish_add_test(test_context        test_context.cpp)
@@ -260,6 +261,14 @@ if(TARGET test_curl_response_parser)
 endif()
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_MC                 test_mc                test_mc.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_ZIP                test_zip               test_zip.cpp)
+wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_DU                 test_du                test_du.cpp)
+# The scanner has no bison/RMI dependency (see du_scan.hpp); compiled
+# straight into the test rather than reached through wish_server.
+wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_DU                 test_du_scan           test_du_scan.cpp
+    ${CMAKE_SOURCE_DIR}/modules/bdg/desktop/du/client/du_scan.cpp)
+if(TARGET test_du_scan)
+  target_include_directories(test_du_scan PRIVATE ${CMAKE_SOURCE_DIR})
+endif()
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_PIX                test_pix               test_pix.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DEV_GIT                test_git               test_git.cpp)
 # Pure algorithm, no bison/RMI dependency -- still gated on the module
