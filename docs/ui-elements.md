@@ -575,10 +575,18 @@ A collapsible node with an expand arrow.
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `label` | `string` | `""` | Text next to the arrow. |
-| `open` | `bool` | `false` | Initial open/closed state (applied once; ImGui manages it afterward). |
+| `open` | `bool` | `false` | Open/closed state. The initial value is applied once and ImGui manages it afterward; a user toggle is written back to the field, and changing the field later expands/collapses the node (no `toggled` event). |
 | `leaf` | `bool` | `false` | When `true`, renders without an arrow and hides children. |
+| `selected` | `bool` | `false` | Draws the node highlighted. Application-owned (set it from a `clicked` handler); a node that becomes selected is scrolled into view. |
+| `icon` | `string` | `""` | Image drawn between the arrow and the label, at text height and tinted to the text color (e.g. `"res/icons/folder.png"`). Sandboxed like `Image.src`: relative to the session resource directory. |
+| `open_on_arrow` | `bool` | `false` | Only the arrow (or a double click) toggles the node, so a click on the label just emits `clicked`; the node also spans the available width. Use it for trees whose nodes are selectable (e.g. a folder tree). |
 
-**Events:** `toggled` — `{ open: bool }`.
+**Events:**
+- `toggled` — `{ open: bool }`, when the user expands or collapses the node.
+- `clicked` — the node was clicked without toggling it; no payload.
+
+To fill a large tree lazily, create a node without children and add them in
+its `toggled` handler (set `leaf` once a node turns out to have none).
 
 #### `CollapsingHeader`
 A bold section header toggling visibility of its children.

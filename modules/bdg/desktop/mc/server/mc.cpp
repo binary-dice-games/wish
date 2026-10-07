@@ -20,6 +20,8 @@
 #include <iomanip>
 #include <set>
 #include <sstream>
+#include <string_view>
+#include <utility>
 
 namespace bdg::wish {
 
@@ -62,11 +64,62 @@ std::string format_modified(const fs::file_time_type& ftime) {
   return oss.str();
 }
 
+bool is_separator(char c) {
+  return c == '/' || c == '\\';
+}
+
+std::string_view strip_trailing_separators(std::string_view path) {
+  while (!path.empty() && is_separator(path.back()))
+    path.remove_suffix(1);
+  return path;
+}
+
+enum class path_relation { unrelated, same, ancestor };
+
+// How tree node path @p node relates to @p target, comparing as text with
+// '/' and '\\' interchangeable and trailing separators ignored. The local
+// tree holds paths of the *client's* machine, which may not share this
+// machine's path syntax, so std::filesystem is deliberately not used.
+// @p node_is_sandbox_root marks the sandbox's "" root, an ancestor of every
+// relative path.
+path_relation relate_paths(std::string_view node, std::string_view target, bool node_is_sandbox_root) {
+  node = strip_trailing_separators(node);
+  target = strip_trailing_separators(target);
+  if (target.size() < node.size())
+    return path_relation::unrelated;
+  for (size_t i = 0; i < node.size(); ++i)
+    if (node[i] != target[i] && !(is_separator(node[i]) && is_separator(target[i])))
+      return path_relation::unrelated;
+  if (target.size() == node.size())
+    return path_relation::same;
+  return node_is_sandbox_root || is_separator(target[node.size()]) ? path_relation::ancestor
+                                                                    : path_relation::unrelated;
+}
+
+// Path of directory @p name inside local directory @p parent, using the
+// separator @p parent itself uses.
+std::string join_local_path(const std::string& parent, const std::string& name) {
+  if (is_separator(parent.back()))
+    return parent + name;
+  bool backslash = parent.find('\\') != std::string::npos && parent.find('/') == std::string::npos;
+  return parent + (backslash ? '\\' : '/') + name;
+}
+
+void set_children_list(const ui_element_ptr& parent, const std::vector<ui_element_ptr>& kids) {
+  auto list = dynamic_ptr{key_t{0U}, {}};
+  size_t k = 0;
+  for (auto& kid : kids)
+    (*list)[k++] = dynamic_ptr{kid};
+  (*parent)["children"_key] = list;
+  parent->refresh_children_order();
+}
+
 } // namespace
 
 // ── UI layouts ────────────────────────────────────────────────────────────────
 //
-// The browser is split into two dockable panels -- Local and Sandbox --
+// The browser is split into four dockable panels -- Local and Sandbox, each
+// with its folder tree (kLocalTreeLayout/kSandboxTreeLayout) --
 // seeded into a first-run arrangement by on_init()'s
 // set_default_dock_layout() call, the same multi-window pattern top, pix and
 // the dev modules (git, curl, docker) use. The user can re-dock, tab or
@@ -86,7 +139,13 @@ std::string format_modified(const fs::file_time_type& ftime) {
 // table against its panel edge, so RowBg's alternating shading doesn't read
 // as cropped. col_name/col_size/col_modified's "column_id" (0/1/2) is echoed
 // back in each Table's "sorted" event payload -- see on_table_sorted()'s doc
-// comment. InputText EnterReturnsTrue so path bars only fire "changed" on
+// comment. col_modified is wide enough for the whole "YYYY-MM-DD HH:MM" stamp
+// at the default font; narrower, it is cut off right where the table's
+// scrollbar starts, which reads as the scrollbar covering the column. (Column
+// widths are saved in imgui.ini per table "id", so changing a default width
+// only reaches existing users if the id changes too.)
+// "auto_scroll" is off: a listing is read from the top, not followed like a
+// log. InputText EnterReturnsTrue so path bars only fire "changed" on
 // Enter, not per keystroke.
 //
 // left_table/right_table carry "height": -1: "vbox" hands every other child
@@ -139,13 +198,13 @@ static constexpr const char* kLocalLayout = R"json({
           }
         },
         "left_table": {
-          "type": "Table", "id": "##local_table", "columns": 3, "headers": true,
+          "type": "Table", "id": "##local_files", "columns": 3, "headers": true,
           "flags": "Resizable|RowBg|Borders|Sortable|ScrollY",
-          "outer_width": 0, "height": -1,
+          "outer_width": 0, "height": -1, "auto_scroll": false,
           "children": {
             "col_name":     { "type": "TableColumn", "label": "Name", "column_id": 0 },
             "col_size":     { "type": "TableColumn", "label": "Size", "flags": "WidthFixed", "init_width": 90, "column_id": 1 },
-            "col_modified": { "type": "TableColumn", "label": "Modified", "flags": "WidthFixed", "init_width": 130, "column_id": 2 }
+            "col_modified": { "type": "TableColumn", "label": "Modified", "flags": "WidthFixed", "init_width": 160, "column_id": 2 }
           }
         },
         "left_stats": { "type": "Label", "text": "" },
@@ -189,13 +248,13 @@ static constexpr const char* kSandboxLayout = R"json({
           }
         },
         "right_table": {
-          "type": "Table", "id": "##sandbox_table", "columns": 3, "headers": true,
+          "type": "Table", "id": "##sandbox_files", "columns": 3, "headers": true,
           "flags": "Resizable|RowBg|Borders|Sortable|ScrollY",
-          "outer_width": 0, "height": -1,
+          "outer_width": 0, "height": -1, "auto_scroll": false,
           "children": {
             "col_name":     { "type": "TableColumn", "label": "Name", "column_id": 0 },
             "col_size":     { "type": "TableColumn", "label": "Size", "flags": "WidthFixed", "init_width": 90, "column_id": 1 },
-            "col_modified": { "type": "TableColumn", "label": "Modified", "flags": "WidthFixed", "init_width": 130, "column_id": 2 }
+            "col_modified": { "type": "TableColumn", "label": "Modified", "flags": "WidthFixed", "init_width": 160, "column_id": 2 }
           }
         },
         "right_stats": { "type": "Label", "text": "" },
@@ -203,6 +262,32 @@ static constexpr const char* kSandboxLayout = R"json({
         "right_status": { "type": "Label", "text": "Ready." }
       }
     }
+  }
+})json";
+
+// Folder trees -- one Window each, so the user can resize, re-dock or float
+// them like the file panels. "tree" starts empty: its TreeNodes are created at
+// runtime, one level at a time (see set_tree_children()). It is the scroll
+// region itself ("scroll"), not the Window: a TreeNode scrolls the region it
+// is drawn in when it becomes selected, which is how a revealed folder comes
+// into view.
+static constexpr const char* kLocalTreeLayout = R"json({
+  "type": "Window",
+  "title": "Local Folders",
+  "width": 240, "height": 480,
+  "closable": true,
+  "children": {
+    "tree": { "type": "VerticalLayout", "spacing": 0, "scroll": true, "children": {} }
+  }
+})json";
+
+static constexpr const char* kSandboxTreeLayout = R"json({
+  "type": "Window",
+  "title": "Sandbox Folders",
+  "width": 240, "height": 480,
+  "closable": true,
+  "children": {
+    "tree": { "type": "VerticalLayout", "spacing": 0, "scroll": true, "children": {} }
   }
 })json";
 
@@ -288,6 +373,8 @@ void mc::build_window(
 void mc::on_init() {
   internal_root_key_ = next_available_key("__mc_");
   sandbox_root_key_ = internal_root_key_ + "_sandbox";
+  local_tree_root_key_ = internal_root_key_ + "_local_tree";
+  sandbox_tree_root_key_ = internal_root_key_ + "_sandbox_tree";
 
   auto* title_f = findField<std::string>("title"_key);
   const std::string title = title_f ? *title_f : std::string{"File Explorer"};
@@ -325,17 +412,38 @@ void mc::on_init() {
     tree.with("vbox.right_status", [&](const auto& e) { right_status_ptr_ = e; });
   });
 
+  sandbox_tree_.is_sandbox = true;
+  build_window(kLocalTreeLayout, local_tree_root_key_, local_tree_window_id_, [&](ui_tree& tree) {
+    tree.with("tree", [&](const auto& e) { local_tree_.box = e; });
+  });
+  build_window(kSandboxTreeLayout, sandbox_tree_root_key_, sandbox_tree_window_id_, [&](ui_tree& tree) {
+    tree.with("tree", [&](const auto& e) { sandbox_tree_.box = e; });
+  });
+
   // Seed the first-run arrangement inside the browser's own nested
   // dockspace (titled with the form's "title" field): Local and Sandbox side
-  // by side. Owned by imgui.ini after the first run (see
-  // docs/dock-layout.md); bump the version arg to layout() if it changes.
+  // by side, each with its folder tree on its left. Owned by imgui.ini after
+  // the first run (see docs/dock-layout.md); bump the version arg to layout()
+  // if it changes.
   {
     using namespace dock;
     set_default_dock_layout(viewport(
         "mc_dock", title,
         layout(
-            split(dir::left, 0.50f, area({internal_root_key_}), area({sandbox_root_key_})),
-            /*version=*/1, /*target=*/"mc_dock")));
+            split(
+                dir::left, 0.50f,
+                split(dir::left, 0.30f, area({local_tree_root_key_}), area({internal_root_key_})),
+                split(dir::left, 0.30f, area({sandbox_tree_root_key_}), area({sandbox_root_key_}))),
+            /*version=*/2, /*target=*/"mc_dock")));
+  }
+
+  // The sandbox tree starts as its root with the first level under it; the
+  // local tree's top level comes from the client (update_local_tree()).
+  if (sandbox_tree_.box) {
+    set_tree_children(sandbox_tree_, sandbox_tree_.root, {"/"});
+    tree_node& sandbox_root = *sandbox_tree_.root.children.front();
+    load_sandbox_tree_node(sandbox_root, sess().resource_dir, sess().allow_absolute_paths);
+    sandbox_root.elem["open"_key] = true;
   }
 
   // Populate the sandbox panel immediately -- unlike the local panel, this
@@ -351,6 +459,184 @@ void mc::remove_panel_objects() {
   // form::remove_objects_at()).
   remove_objects_at(sandbox_root_key_);
   sandbox_root_key_.clear();
+  remove_objects_at(local_tree_root_key_);
+  local_tree_root_key_.clear();
+  remove_objects_at(sandbox_tree_root_key_);
+  sandbox_tree_root_key_.clear();
+}
+
+// ── Folder trees ─────────────────────────────────────────────────────────────
+
+void mc::set_tree_children(folder_tree& tree, tree_node& parent, std::vector<std::string> names) {
+  std::sort(names.begin(), names.end(), ascii_ci_less);
+  names.erase(std::unique(names.begin(), names.end()), names.end());
+
+  const bool top_level = &parent == &tree.root;
+  std::vector<std::unique_ptr<tree_node>> next;
+  std::vector<ui_element_ptr> elems;
+  for (auto& name : names) {
+    auto old = std::find_if(parent.children.begin(), parent.children.end(), [&](const auto& c) {
+      return c && c->name == name;
+    });
+    if (old != parent.children.end()) {
+      next.push_back(std::move(*old));
+    } else {
+      auto node = std::make_unique<tree_node>();
+      node->name = name;
+      if (tree.is_sandbox)
+        node->path = top_level ? std::string{} : (parent.path.empty() ? name : parent.path + "/" + name);
+      else
+        node->path = top_level ? name : join_local_path(parent.path, name);
+
+      // open_on_arrow: a click on the name navigates, only the arrow expands.
+      node->elem = ui_element_ptr::create("wish"_key, "TreeNode"_key);
+      node->elem["label"_key] = name;
+      node->elem["open_on_arrow"_key] = true;
+      // Same folder icon the file tables show (see make_name_cell()).
+      node->elem["icon"_key] = std::string{"res/icons/folder.png"};
+      key_t id = rmi::shared::generate_id();
+      ctx().put_object(id, node->elem);
+      node->elem["__wish_id"_key] = id;
+      tree.by_id[id] = node.get();
+      next.push_back(std::move(node));
+    }
+    elems.push_back(next.back()->elem);
+  }
+
+  for (auto& gone : parent.children)
+    if (gone)
+      forget_tree_node(tree, *gone);
+  parent.children = std::move(next);
+  parent.loaded = true;
+  parent.requested = false;
+
+  if (const ui_element_ptr& host = top_level ? tree.box : parent.elem)
+    set_children_list(host, elems);
+  if (parent.elem)
+    parent.elem["leaf"_key] = parent.children.empty();
+}
+
+void mc::forget_tree_node(folder_tree& tree, tree_node& node) {
+  for (auto& child : node.children)
+    forget_tree_node(tree, *child);
+  if (tree.selected == &node)
+    tree.selected = nullptr;
+  key_t id = wish_id_of(node.elem);
+  tree.by_id.erase(id);
+  ctx().objects.erase(id.id);
+}
+
+mc::tree_node* mc::find_tree_node(folder_tree& tree, const std::string& path) {
+  tree_node* node = &tree.root;
+  for (;;) {
+    tree_node* next = nullptr;
+    for (auto& child : node->children) {
+      auto relation = relate_paths(child->path, path, tree.is_sandbox && child->path.empty());
+      if (relation == path_relation::same)
+        return child.get();
+      if (relation == path_relation::ancestor)
+        next = child.get();
+    }
+    if (!next)
+      return nullptr;
+    node = next;
+  }
+}
+
+void mc::select_tree_node(folder_tree& tree, tree_node* node) {
+  if (tree.selected == node)
+    return;
+  if (tree.selected)
+    tree.selected->elem["selected"_key] = false;
+  tree.selected = node;
+  if (node)
+    node->elem["selected"_key] = true;
+}
+
+void mc::load_sandbox_tree_node(tree_node& node, const fs::path& resource_dir, bool allow_absolute_paths) {
+  fs::path full = node.path.empty() ? resource_dir
+                                    : file_service::resolve_path(node.path, resource_dir, allow_absolute_paths);
+  std::vector<std::string> names;
+  std::error_code ec;
+  if (!full.empty())
+    for (auto& dirent : fs::directory_iterator{full, ec})
+      if (dirent.is_directory(ec))
+        names.push_back(dirent.path().filename().string());
+  set_tree_children(sandbox_tree_, node, std::move(names));
+}
+
+void mc::request_local_tree_node(tree_node& node) {
+  if (node.requested)
+    return;
+  node.requested = true;
+  dynamic req;
+  req["path"_key] = node.path;
+  emit("on_local_tree_expand"_key, std::move(req));
+}
+
+void mc::reveal_in_tree(
+    folder_tree& tree, const std::string& path, const fs::path* resource_dir, bool allow_absolute_paths) {
+  tree.reveal_target = path;
+  tree.revealing = true;
+  continue_reveal(tree, resource_dir, allow_absolute_paths);
+}
+
+void mc::continue_reveal(folder_tree& tree, const fs::path* resource_dir, bool allow_absolute_paths) {
+  if (!tree.revealing)
+    return;
+  // The local tree's top level has not arrived yet: it resumes this.
+  if (!tree.root.loaded)
+    return;
+
+  tree_node* node = &tree.root;
+  for (;;) {
+    tree_node* next = nullptr;
+    auto relation = path_relation::unrelated;
+    for (auto& child : node->children) {
+      relation = relate_paths(child->path, tree.reveal_target, tree.is_sandbox && child->path.empty());
+      if (relation != path_relation::unrelated) {
+        next = child.get();
+        break;
+      }
+    }
+    if (!next || relation == path_relation::same) {
+      tree.revealing = false;
+      select_tree_node(tree, next);
+      return;
+    }
+
+    node = next;
+    node->elem["open"_key] = true;
+    if (!node->loaded) {
+      if (!resource_dir) {
+        request_local_tree_node(*node);
+        return;
+      }
+      load_sandbox_tree_node(*node, *resource_dir, allow_absolute_paths);
+    }
+  }
+}
+
+void mc::sync_tree_with_listing(
+    folder_tree& tree, const std::string& path, std::vector<std::string> dir_names, bool reveal,
+    const fs::path* resource_dir, bool allow_absolute_paths) {
+  if (!tree.box)
+    return;
+  if (tree_node* node = find_tree_node(tree, path); node && node->loaded)
+    set_tree_children(tree, *node, std::move(dir_names));
+  if (reveal) {
+    reveal_in_tree(tree, path, resource_dir, allow_absolute_paths);
+  } else if (!tree.revealing) {
+    select_tree_node(tree, find_tree_node(tree, path));
+  }
+}
+
+void mc::navigate_local(const std::string& name, const char* type) {
+  local_reveal_pending_ = true;
+  dynamic nav;
+  nav["name"_key] = name;
+  nav["type"_key] = std::string{type};
+  emit("on_local_navigate"_key, std::move(nav));
 }
 
 // ── Table population ─────────────────────────────────────────────────────────
@@ -572,7 +858,7 @@ bool mc::local_has_file(const std::string& name) const {
 // ── Sandbox navigation (server-owned) ────────────────────────────────────────
 
 void mc::navigate_sandbox(
-    std::string relative_path, const fs::path& resource_dir, bool allow_absolute_paths) {
+    std::string relative_path, const fs::path& resource_dir, bool allow_absolute_paths, bool reveal) {
   // navigate_sandbox() is called both from on_init()/RMI methods (inside
   // dispatch, where sync_ctx_'s wlock is already held) and from on_event()
   // handlers (outside dispatch). sync_ctx_ is the very lock the dispatch
@@ -605,11 +891,14 @@ void mc::navigate_sandbox(
 
   uintmax_t file_count = 0;
   uintmax_t total_bytes = 0;
+  std::vector<std::string> dir_names;
   for (auto& dirent : fs::directory_iterator{full, ec}) {
     file_row row;
     row.name = dirent.path().filename().string();
     bool is_dir = dirent.is_directory(ec);
     row.type = is_dir ? "dir" : "file";
+    if (is_dir)
+      dir_names.push_back(row.name);
     if (!is_dir) {
       uintmax_t bytes = dirent.file_size(ec);
       if (!ec) {
@@ -653,6 +942,9 @@ void mc::navigate_sandbox(
 
   if (right_selected_ptr_)
     right_selected_ptr_["text"_key] = describe_selection(selected_sandbox_names_);
+
+  sync_tree_with_listing(
+      sandbox_tree_, sandbox_path_, std::move(dir_names), reveal, &resource_dir, allow_absolute_paths);
 }
 
 // ── Rename dialog ─────────────────────────────────────────────────────────────
@@ -850,6 +1142,41 @@ dynamic mc::do_update_local_listing(const dynamic& args) {
 
   if (left_selected_ptr_)
     left_selected_ptr_["text"_key] = describe_selection(selected_local_names_);
+
+  std::vector<std::string> dir_names;
+  for (auto& e : local_entries_)
+    if (e.type == "dir" && e.name != "..")
+      dir_names.push_back(e.name);
+  bool reveal = std::exchange(local_reveal_pending_, false);
+  sync_tree_with_listing(local_tree_, local_path_, std::move(dir_names), reveal, nullptr, false);
+  return dynamic{};
+}
+
+dynamic mc::do_update_local_tree(const dynamic& args) {
+  const auto* path = args.findField<std::string>("path"_key);
+  if (!path || !local_tree_.box)
+    return dynamic{};
+  tree_node* node = path->empty() ? &local_tree_.root : find_tree_node(local_tree_, *path);
+  if (!node)
+    return dynamic{};
+
+  std::vector<std::string> names;
+  if (auto* dirs_f = args.findField<dynamic_ptr>("dirs"_key); dirs_f && *dirs_f) {
+    (*dirs_f)->forEach([&](key_t, const field& f) {
+      if (f.is<std::string>() && !f.as<std::string>().empty())
+        names.push_back(f.as<std::string>());
+    });
+  }
+  set_tree_children(local_tree_, *node, std::move(names));
+
+  // A lone root ("/" on POSIX) would leave the tree showing a single
+  // collapsed node: open it, so the first level is the root's contents.
+  if (node == &local_tree_.root && node->children.size() == 1 && !node->children.front()->loaded) {
+    tree_node& only = *node->children.front();
+    only.elem["open"_key] = true;
+    request_local_tree_node(only);
+  }
+  continue_reveal(local_tree_, nullptr, false);
   return dynamic{};
 }
 
@@ -886,11 +1213,48 @@ dynamic mc::on_set(const dynamic& patch) {
 
 void mc::on_event(key_t id, key_t event, const dynamic& payload) {
   // Any panel's X button -> tear the whole browser down (top/pix's rule).
-  if (event == "closed"_key && (id == window_id_ || id == sandbox_window_id_)) {
+  if (event == "closed"_key && (id == window_id_ || id == sandbox_window_id_ || id == local_tree_window_id_ ||
+                                id == sandbox_tree_window_id_)) {
     emit("closed"_key);
     remove_panel_objects();
     remove_internal_objects();
     return;
+  }
+
+  // Folder tree nodes: the arrow loads a node's children the first time it
+  // is expanded; a click on the name navigates that side's file panel.
+  if (event == "toggled"_key || event == "clicked"_key) {
+    folder_tree* tree = &local_tree_;
+    auto node_it = tree->by_id.find(id);
+    if (node_it == tree->by_id.end()) {
+      tree = &sandbox_tree_;
+      node_it = tree->by_id.find(id);
+    }
+    if (node_it != tree->by_id.end()) {
+      tree_node& node = *node_it->second;
+      if (event == "clicked"_key) {
+        select_tree_node(*tree, &node);
+        if (tree->is_sandbox) {
+          // Copy: navigating may refresh the tree and free `node`.
+          std::string target = node.path;
+          auto s = context_rlock{*sync_ctx_};
+          navigate_sandbox(target, s->resource_dir, s->allow_absolute_paths, /*reveal=*/true);
+        } else {
+          navigate_local(node.path, "path");
+        }
+      } else if (!node.loaded) {
+        auto* open_f = payload.findField<bool>("open"_key);
+        if (!open_f || !*open_f)
+          return;
+        if (tree->is_sandbox) {
+          auto s = context_rlock{*sync_ctx_};
+          load_sandbox_tree_node(node, s->resource_dir, s->allow_absolute_paths);
+        } else {
+          request_local_tree_node(node);
+        }
+      }
+      return;
+    }
   }
 
   if (id == left_table_id_) {
@@ -916,10 +1280,7 @@ void mc::on_event(key_t id, key_t event, const dynamic& payload) {
       const auto& entry = local_entries_[static_cast<size_t>(idx)];
       if (entry.type != "dir")
         return;
-      dynamic nav;
-      nav["name"_key] = entry.name;
-      nav["type"_key] = std::string{"dir"};
-      emit("on_local_navigate"_key, std::move(nav));
+      navigate_local(entry.name, "dir");
       return;
     }
     if (event == "sorted"_key) {
@@ -938,12 +1299,8 @@ void mc::on_event(key_t id, key_t event, const dynamic& payload) {
   }
 
   if (id == left_path_id_ && event == "changed"_key) {
-    if (auto* v = payload.findField<std::string>("value"_key)) {
-      dynamic nav;
-      nav["name"_key] = *v;
-      nav["type"_key] = std::string{"path"};
-      emit("on_local_navigate"_key, std::move(nav));
-    }
+    if (auto* v = payload.findField<std::string>("value"_key))
+      navigate_local(*v, "path");
     return;
   }
 
@@ -974,7 +1331,7 @@ void mc::on_event(key_t id, key_t event, const dynamic& payload) {
                                                 : (sandbox_path_.empty() ? entry.name
                                                                           : (fs::path(sandbox_path_) / entry.name).string());
       auto s = context_rlock{*sync_ctx_};
-      navigate_sandbox(target, s->resource_dir, s->allow_absolute_paths);
+      navigate_sandbox(target, s->resource_dir, s->allow_absolute_paths, /*reveal=*/true);
       return;
     }
     if (event == "sorted"_key) {
@@ -994,7 +1351,7 @@ void mc::on_event(key_t id, key_t event, const dynamic& payload) {
       if (!p.empty() && (p.front() == '/' || p.front() == '\\'))
         p.erase(0, 1);
       auto s = context_rlock{*sync_ctx_};
-      navigate_sandbox(p, s->resource_dir, s->allow_absolute_paths);
+      navigate_sandbox(p, s->resource_dir, s->allow_absolute_paths, /*reveal=*/true);
     }
     return;
   }
@@ -1193,6 +1550,10 @@ void register_mc() {
         return static_cast<mc&>(self).do_update_local_listing(args);
       }});
   proto->addMethod(
+      "update_local_tree"_key, bison::method{[](dynamic& self, const dynamic& args) -> dynamic {
+        return static_cast<mc&>(self).do_update_local_tree(args);
+      }});
+  proto->addMethod(
       "refresh_sandbox"_key, bison::method{[](dynamic& self, const dynamic& args) -> dynamic {
         return static_cast<mc&>(self).do_refresh_sandbox(args);
       }});
@@ -1207,10 +1568,10 @@ void register_mc() {
   (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Mc"));
   (*proto)[dynamic::CLASS].addAttribute(
       attr<Description>("Two-panel file browser: local machine (client-driven) vs. session sandbox "
-                        "(server-driven) as two dockable panels, each with a button sending its "
-                        "selected files to the other, and "
+                        "(server-driven) as dockable panels, each with a lazily-filled folder tree and "
+                        "a button sending its selected files to the other, and "
                         "an \"Open in Explorer\" shortcut for the sandbox side. Listen for "
-                        "on_local_navigate/on_upload_requested/on_download_requested to drive the "
+                        "on_local_navigate/on_local_tree_expand/on_upload_requested/on_download_requested to drive the "
                         "client half of the handshake, and 'closed' to detect when the user is done."));
 
   dynamic::addClass(

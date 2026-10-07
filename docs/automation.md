@@ -524,6 +524,19 @@ def test_saving_shows_confirmation(wish_ui):
 
 ## Gotchas
 
+- **An open `TreeNode`'s `rect` covers its children too** (2026-10, `mc`'s
+  folder trees). `click(path)` aims at the rect's center, which then lands
+  on a child row or in the gap between rows. Click the node's own row
+  instead: `page.mouse.click(rect.x0 + 60, rect.y0 + 8, delay=60)` for the
+  label, `rect.x0 + 8` for the arrow. Nodes created at runtime have index
+  paths (`__mc_0_local_tree.tree.0.4`); match them by `class` + `label`.
+- **`type_text()` appends to an `InputText` that already has a value.** To
+  replace it, click the field, `page.keyboard.press("Control+a", delay=60)`,
+  then `page.keyboard.type(text)` and `press("Enter", delay=60)`.
+- **`SetScrollHereY()`-style scrolling targets the innermost child region.**
+  A `VerticalLayout` is a non-scrolling `BeginChild`, so a widget inside it
+  cannot scroll the enclosing `Window`; give the layout `"scroll": true` if
+  its content must scroll to a widget.
 - **A freshly `pip install`ed `playwright` may expect a newer Chromium
   build than the one preinstalled under `PLAYWRIGHT_BROWSERS_PATH`**:
   `AutomationClient.launch()` then fails with `Executable doesn't exist at

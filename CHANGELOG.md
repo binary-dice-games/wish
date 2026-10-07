@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `mc`: a folder tree panel next to each file panel (**Local Folders**, **Sandbox Folders**). Each node shows a folder icon. Clicking a folder navigates that side's file panel; navigating the file panel (path bar, opening a folder) expands the tree to that folder and selects it. Trees are filled one level at a time, as nodes are expanded. Custom `Mc` clients should handle the new `on_local_tree_expand` event and call `update_local_tree`.
+- `TreeNode`: `selected` (highlight), `icon` (image before the label), `open_on_arrow` (only the arrow toggles) and a `clicked` event; changing `open` after creation now expands/collapses the node, and a user toggle is written back to the field.
 - `nymph`: a `view` command (`wish standalone --run=nymph -- view chart.png`) shows a chart's interactive preview and its data table read-only, with no source editor and no Save.
 - Plot series (`PlotLine`, `PlotBars`, ... and the `Plot3D*` series) gain styling fields: `color` and `fill_color` (`"#RRGGBB"` / `"#RRGGBBAA"`), `line_weight`, `fill_alpha`, `marker` (`Circle`, `Square`, `Diamond`, ...) and `marker_size`. `Plot` and `Plot3D` gain `colormap` (`Deep`, `Dark`, `Viridis`, `Jet`, ...). All default to automatic.
 - `nymph` module (`WISH_MODULE_BDG_DEV_NYMPH`, off by default): charts from text. A source file (description, format YAML built from wish's `Plot` / `Plot3D` elements, data CSV) is rendered to a PNG that carries the source as metadata, so the image can be given back to the tool. `wish standalone --renderer none --run=nymph -- render chart.nymph -o chart.png` needs no window or display and exits non-zero with a `file:line:column: message` error; `edit` opens the source with a live plot preview and a data table; `extract` prints the source embedded in a PNG.
@@ -51,6 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `mc`: the file tables' "Modified" column was too narrow for the full date and time, which looked like the scrollbar covering it; a listing now also opens scrolled to the top instead of the bottom.
 - JSON/YAML UI descriptors now accept arrays of non-integer numbers (e.g. `"xs": [0.5, 1.5]`), and integer arrays are widened for `float[]` fields; previously plot data given in a template was silently dropped.
 - A widget that grows after its first render (e.g. a `Label` whose text starts empty) inside a `HorizontalLayout` row is no longer clipped forever; the row now grows to fit it.
 - A second confirmation dialog in the same session never appeared: a form that replaced a finished child dialog (`MessageBox`, ...) with a new one erased the new dialog along with the old. Affected every module that asks for confirmation more than once (`docker`, `kubectl`, `helm`, `git`, `curl`, `sq`, `pip`, `top`, `zip`).

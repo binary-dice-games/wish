@@ -2429,6 +2429,87 @@ class labeled_rect_capturing_renderer : public imgui_renderer {
   }
 };
 
+// ── TreeNode: "open" field changes, selection ────────────────────────────────
+
+TEST_F(ImguiRendererTest, TreeNodeOpenFieldChangeExpandsNodeWithoutToggledEvent) {
+  auto map = bdg::wish::import_json(
+      R"({"type":"TreeNode","label":"Node","open":false,"selected":true,"open_on_arrow":true,"children":{
+            "c":{"type":"Button","label":"Inside"}
+          }})");
+
+  labeled_rect_capturing_renderer r1;
+  r1.begin_frame();
+  in_window([&] { r1.render_node(*map[""], *sess_); });
+  r1.end_frame();
+  EXPECT_EQ(r1.by_label.count("Inside"), 0u);
+
+  // The application expands the node after it was first rendered.
+  (*map[""])["open"_key] = true;
+  labeled_rect_capturing_renderer r2;
+  r2.begin_frame();
+  in_window([&] { r2.render_node(*map[""], *sess_); });
+  r2.end_frame();
+  EXPECT_EQ(r2.by_label.count("Inside"), 1u);
+
+  for (auto& ev : sess_->pending_events)
+    EXPECT_NE(ev.event_name, "toggled"_key);
+}
+
+TEST_F(ImguiRendererTest, TreeNodeWithUnusableIconFallsBackToPlainLabel) {
+  // An icon escaping the sandbox, or one that does not exist, draws no icon;
+  // the node still renders, children included.
+  for (const char* icon : {"../../etc/passwd.png", "res/icons/no_such_icon.png"}) {
+    auto map = bdg::wish::import_json(
+        R"({"type":"TreeNode","label":"Node","open":true,"children":{
+              "c":{"type":"Button","label":"Inside"}
+            }})");
+    (*map[""])["icon"_key] = std::string{icon};
+
+    labeled_rect_capturing_renderer r;
+    EXPECT_NO_THROW({
+      r.begin_frame();
+      in_window([&] { r.render_node(*map[""], *sess_); });
+      r.end_frame();
+    }) << icon;
+    EXPECT_EQ(r.by_label.count("Inside"), 1u) << icon;
+  }
+}
+
+TEST_F(ImguiRendererTest, TreeNodeUserToggleIsWrittenBackToOpenField) {
+  auto map = bdg::wish::import_json(
+      R"({"type":"TreeNode","label":"Node","open":true,"children":{
+            "c":{"type":"Button","label":"Inside"}
+          }})");
+
+  // Same nav-driven toggle as the CollapsingHeader test below.
+  ImGuiID node_id{0};
+  renderer_->begin_frame();
+  in_window([&] {
+    ImGui::PushID(bdg::wish::stable_id(*map[""]).c_str());
+    node_id = ImGui::GetID("Node");
+    ImGui::PopID();
+    renderer_->render_node(*map[""], *sess_);
+  });
+  renderer_->end_frame();
+  ASSERT_NE(node_id, 0u);
+
+  ImGui::GetIO().DeltaTime = 1.0f / 60.0f;
+  ImGui::NewFrame();
+  {
+    ImGuiContext& g = *GImGui;
+    g.NavId = node_id;
+    g.NavMoveDir = ImGuiDir_Left;
+  }
+  in_window([&] { renderer_->render_node(*map[""], *sess_); });
+  ImGui::EndFrame();
+
+  bool toggled = false;
+  for (auto& ev : sess_->pending_events)
+    toggled = toggled || ev.event_name == "toggled"_key;
+  EXPECT_TRUE(toggled);
+  EXPECT_FALSE(map[""]->get_as<bool>("open"_key, true));
+}
+
 // ── CollapsingHeader: server-authoritative "open" state ──────────────────────
 
 TEST_F(ImguiRendererTest, CollapsingHeaderHidesChildrenWhenServerOpenIsFalse) {

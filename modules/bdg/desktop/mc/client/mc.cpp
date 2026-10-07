@@ -6,6 +6,8 @@
 /// no direct access to the client's local machine. This runner is the
 /// bridge: it reacts to the form's `on_local_navigate` event by enumerating
 /// a local directory and reporting it back via `update_local_listing()`,
+/// to `on_local_tree_expand` by sending one more level of the folder tree
+/// (`update_local_tree()`),
 /// and to `on_upload_requested`/`on_download_requested` by moving bytes
 /// between the local filesystem and the session sandbox.
 ///
@@ -189,6 +191,47 @@ void report_local_listing(
   call_with_retry(explorer, "update_local_listing"_key, std::move(args));
 }
 
+// Top level of the Local Folders tree: the filesystem roots -- "/" on POSIX,
+// every present drive ("C:\\", ...) on Windows.
+std::vector<std::string> local_tree_roots() {
+#if defined(_WIN32)
+  std::vector<std::string> roots;
+  for (char letter = 'A'; letter <= 'Z'; ++letter) {
+    std::string root = std::string{letter} + ":\\";
+    std::error_code ec;
+    if (fs::is_directory(root, ec))
+      roots.push_back(std::move(root));
+  }
+  return roots;
+#else
+  return {"/"};
+#endif
+}
+
+// Sends one level of the Local Folders tree: the names of the directories
+// directly under `path` (the roots themselves for an empty `path`), the shape
+// Mc::do_update_local_tree() expects. An unreadable directory reports none.
+void report_local_tree_level(const std::shared_ptr<rmi::proxy::dynamic>& explorer, const std::string& path) {
+  std::vector<std::string> names;
+  if (path.empty()) {
+    names = local_tree_roots();
+  } else {
+    std::error_code ec;
+    for (auto& dirent : fs::directory_iterator{fs::path(path), ec})
+      if (dirent.is_directory(ec))
+        names.push_back(dirent.path().filename().string());
+  }
+
+  dynamic dirs;
+  size_t i = 0;
+  for (auto& name : names)
+    dirs[i++] = name;
+  dynamic args;
+  args["path"_key] = path;
+  args["dirs"_key] = dynamic_ptr{std::make_shared<dynamic>(std::move(dirs))};
+  call_with_retry(explorer, "update_local_tree"_key, std::move(args));
+}
+
 // Thrown from a transfer's progress callback once the user has pressed the
 // progress dialog's Cancel, to abandon the chunked transfer mid-way.
 struct transfer_cancelled : std::runtime_error {
@@ -269,6 +312,12 @@ void run_mc(wish_app_host& s) {
       return;
     *cur_dir = target;
     report_local_listing(explorer, cur_dir);
+  });
+
+  // A Local Folders tree node was expanded (or is on the way to the
+  // directory just navigated to) and its subdirectories are not known yet.
+  worker->on(*explorer, "on_local_tree_expand"_key, [explorer](const dynamic& payload) {
+    report_local_tree_level(explorer, payload.as<std::string>("path"_key));
   });
 
   // User confirmed the local panel's Rename dialog (server-side, since only
@@ -400,7 +449,12 @@ void run_mc(wish_app_host& s) {
 
   // Show the client's current working directory in the Local panel at
   // startup, mirroring the sandbox panel's own root-on-open behavior.
-  worker->post([explorer, cur_dir] { report_local_listing(explorer, cur_dir); });
+  // The folder tree gets only its top level; deeper levels are sent as their
+  // nodes are expanded (on_local_tree_expand).
+  worker->post([explorer, cur_dir] {
+    report_local_tree_level(explorer, {});
+    report_local_listing(explorer, cur_dir);
+  });
 
   // on_session() blocks until signal_done() is called.
 }

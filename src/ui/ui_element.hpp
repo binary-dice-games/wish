@@ -1306,6 +1306,14 @@ class ui_tree_node : public cloneable_ui_element<ui_tree_node> {
   const std::string& label_ref() const { return cached_field_str(label_field_, bison::key_t{"label"}); }
   bool open(bool def = false) const { return cached_field_or<bool>(open_field_, bison::key_t{"open"}, def); }
   bool leaf(bool def = false) const { return cached_field_or<bool>(leaf_field_, bison::key_t{"leaf"}, def); }
+  bool selected(bool def = false) const {
+    return cached_field_or<bool>(selected_field_, bison::key_t{"selected"}, def);
+  }
+  bool open_on_arrow(bool def = false) const {
+    return cached_field_or<bool>(open_on_arrow_field_, bison::key_t{"open_on_arrow"}, def);
+  }
+  /// @brief Zero-copy `icon` (empty fallback) -- see `cached_field_str()`.
+  const std::string& icon_ref() const { return cached_field_str(icon_field_, bison::key_t{"icon"}); }
 
   /// @brief True iff @p is_open differs from the open state recorded on the
   /// previous call (or this is the first call); always updates the
@@ -1316,11 +1324,54 @@ class ui_tree_node : public cloneable_ui_element<ui_tree_node> {
     return was != is_open;
   }
 
+  /// @brief True iff the `open` field's value @p want_open differs from the
+  /// one seen on the previous call, i.e. the application changed it and the
+  /// renderer must force it into ImGui. False on the first call (the initial
+  /// value is applied once, ImGui owns the state afterwards). A forced
+  /// change is also recorded as the last rendered state, so it does not
+  /// read back as a user toggle.
+  bool consume_open_change(bool want_open) const {
+    bool changed = seen_open_.has_value() && *seen_open_ != want_open;
+    seen_open_ = want_open;
+    if (changed)
+      was_open_ = want_open;
+    return changed;
+  }
+  /// @brief Records that the renderer itself wrote @p is_open back into the
+  /// `open` field (a user toggle), so consume_open_change() does not take it
+  /// for an application change.
+  void note_open_written(bool is_open) const { seen_open_ = is_open; }
+
+  /// @brief True on the first call after `selected` went from false to true
+  /// (including a node first rendered while selected).
+  bool became_selected(bool is_selected) const {
+    bool was = was_selected_;
+    was_selected_ = is_selected;
+    return is_selected && !was;
+  }
+
+  /// @brief Asks for the node to be scrolled into view over the next
+  /// @p frames rendered frames (see consume_scroll_frame()).
+  void request_scroll_into_view(int frames) const { scroll_frames_ = frames; }
+  /// @brief True while a scroll-into-view request has frames left; uses one.
+  bool consume_scroll_frame() const {
+    if (scroll_frames_ <= 0)
+      return false;
+    --scroll_frames_;
+    return true;
+  }
+
  private:
   mutable bison::field* label_field_ = nullptr;
   mutable bison::field* open_field_ = nullptr;
   mutable bison::field* leaf_field_ = nullptr;
+  mutable bison::field* selected_field_ = nullptr;
+  mutable bison::field* open_on_arrow_field_ = nullptr;
+  mutable bison::field* icon_field_ = nullptr;
   mutable std::optional<bool> was_open_;
+  mutable std::optional<bool> seen_open_;
+  mutable bool was_selected_ = false;
+  mutable int scroll_frames_ = 0;
 };
 
 class ui_collapsing_header : public cloneable_ui_element<ui_collapsing_header> {

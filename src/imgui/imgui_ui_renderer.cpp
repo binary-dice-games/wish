@@ -578,6 +578,17 @@ void render_color_edit(imgui_renderer&, const ui_element& node0, const context& 
   }
 }
 
+/// @brief Texture for image path @p src, or a null id when it is rejected by
+/// the session sandbox (file_service::resolve_or_fetch()) or fails to load.
+static ImTextureID load_image_texture(imgui_renderer& r, const context& s, const std::string& src) {
+  static const std::vector<std::string> kImageExtensions{"png", "jpg", "jpeg", "bmp", "gif", "webp", "tga"};
+  auto full_path = file_service::resolve_or_fetch(
+      src, s.resource_dir, s.allow_absolute_paths, s.allow_url_fetch, kImageExtensions);
+  if (full_path.empty())
+    return ImTextureID{};
+  return r.get_or_load_texture(full_path.string(), s.resource_dir, &s.embedded_crc32s);
+}
+
 void render_image(imgui_renderer& r, const ui_element& node0, const context& s) {
   const auto& node = static_cast<const ui_image&>(node0);
   const std::string& src = node.src_ref();
@@ -627,14 +638,7 @@ void render_image(imgui_renderer& r, const ui_element& node0, const context& s) 
     reserve();
     return;
   }
-  static const std::vector<std::string> kImageExtensions{"png", "jpg", "jpeg", "bmp", "gif", "webp", "tga"};
-  auto full_path = file_service::resolve_or_fetch(
-      src, s.resource_dir, s.allow_absolute_paths, s.allow_url_fetch, kImageExtensions);
-  if (full_path.empty()) {
-    reserve();
-    return;
-  }
-  ImTextureID tex = r.get_or_load_texture(full_path.string(), s.resource_dir, &s.embedded_crc32s);
+  ImTextureID tex = load_image_texture(r, s, src);
   if (!tex) {
     reserve();
     return;
@@ -1332,19 +1336,64 @@ void render_tab_item(imgui_renderer& r, const ui_element& node0, const context& 
 void render_tree_node(imgui_renderer& r, const ui_element& node0, const context& s) {
   const auto& node = static_cast<const ui_tree_node&>(node0);
   const std::string& label = node.label_ref();
-  bool init_open = node.open(false);
+  bool want_open = node.open(false);
   bool leaf = node.leaf(false);
+  bool selected = node.selected(false);
 
-  ImGui::SetNextItemOpen(init_open, ImGuiCond_Once);
+  // ImGui owns the open state, seeded once from the field; a later change to
+  // the field (the application expanding/collapsing the node) is forced in.
+  ImGui::SetNextItemOpen(want_open, node.consume_open_change(want_open) ? ImGuiCond_Always : ImGuiCond_Once);
 
   ImGuiTreeNodeFlags flags =
       leaf ? (ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen) : ImGuiTreeNodeFlags_None;
-  bool is_open = ImGui::TreeNodeEx(label.c_str(), flags);
+  if (selected)
+    flags |= ImGuiTreeNodeFlags_Selected;
+  if (node.open_on_arrow(false))
+    flags |= ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick | ImGuiTreeNodeFlags_SpanAvailWidth;
 
-  if (node.toggled_since_last_frame(is_open)) {
+  // With an icon the node itself is drawn label-less (the icon and the text
+  // follow on the same line, below), so it spans the row to keep the whole
+  // line clickable.
+  const std::string& icon = node.icon_ref();
+  ImTextureID icon_tex = icon.empty() ? ImTextureID{} : load_image_texture(r, s, icon);
+  if (icon_tex)
+    flags |= ImGuiTreeNodeFlags_SpanAvailWidth;
+  bool is_open = ImGui::TreeNodeEx(icon_tex ? "##node" : label.c_str(), flags);
+
+  if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen())
+    enqueue_event(s, node.wish_id(), "clicked"_key, dynamic{});
+  // A node selected by the application (e.g. revealed deep in a tree that
+  // was just expanded) is scrolled into view. One frame is not enough: the
+  // window's scroll range still reflects last frame's shorter content, so
+  // the request is repeated while the layout settles.
+  if (node.became_selected(selected)) {
+    node.request_scroll_into_view(kDirtySettleFrames);
+    s.dirty.store(kDirtySettleFrames, std::memory_order_release);
+  }
+  if (node.consume_scroll_frame() && !ImGui::IsItemVisible())
+    ImGui::SetScrollHereY(0.5f);
+
+  // A leaf always reports open; it has no state to toggle.
+  if (!leaf && node.toggled_since_last_frame(is_open)) {
+    // Keep the field in step with the user's toggle (same write-back as
+    // render_collapsing_header()), so the application can read it and a later
+    // write of the opposite value is seen as a change.
+    const_cast<ui_element&>(node0)["open"_key] = is_open;
+    node.note_open_written(is_open);
     dynamic payload;
     payload["open"_key] = is_open;
     enqueue_event(s, node.wish_id(), "toggled"_key, std::move(payload));
+  }
+
+  // After every query on the node item above: these become the last item.
+  if (icon_tex) {
+    float line = ImGui::GetTextLineHeight();
+    ImGui::SameLine(0.0f, 0.0f);
+    ImGui::ImageWithBg(
+        icon_tex, ImVec2(line, line), ImVec2(0, 0), ImVec2(1, 1), ImVec4(0, 0, 0, 0),
+        ImGui::GetStyleColorVec4(ImGuiCol_Text));
+    ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
+    ImGui::TextUnformatted(label.c_str());
   }
 
   if (is_open && !leaf) {

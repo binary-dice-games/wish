@@ -22,15 +22,17 @@ class properties_dialog;
 /// @brief Two-panel file browser: local machine vs. session sandbox, with
 /// upload/download buttons that send the selected files across.
 ///
-/// Laid out as two dockable panels inside the browser's own nested dockspace
+/// Laid out as four dockable panels inside the browser's own nested dockspace
 /// (`dock::viewport()`, see docs/dock-layout.md), like top, pix and the dev
 /// modules: **Local Machine** (the form's main root) and **Sandbox
-/// (Server)** (plus "Open in Explorer"). Each has a path bar, the button that
-/// sends its selected files to the other panel (Upload in Local, Download in
-/// Sandbox) next to a selection label, the file table, a disk-usage strip and
-/// a status line. A first-run arrangement is seeded by `on_init()` (the two
-/// side by side); the user can re-dock, tab, or float either panel
-/// afterwards. Closing either panel closes the whole browser. Transfer
+/// (Server)** (plus "Open in Explorer"), each with a folder tree to its left
+/// (**Local Folders**, **Sandbox Folders**). A file panel has a path bar, the
+/// button that sends its selected files to the other panel (Upload in Local,
+/// Download in Sandbox) next to a selection label, the file table, a
+/// disk-usage strip and a status line. A first-run arrangement is seeded by
+/// `on_init()` (tree + files for Local on the left, the same for Sandbox on
+/// the right); the user can re-dock, tab, or float any panel afterwards.
+/// Closing any panel closes the whole browser. Transfer
 /// progress is not shown here: the client reports it through the shared
 /// ProgressBox dialog (modules/bdg/common/command_worker.hpp).
 ///
@@ -47,6 +49,15 @@ class properties_dialog;
 /// Selecting a row only tracks state; the actual transfer only happens once
 /// the user clicks the upload/download button, which emits
 /// `on_upload_requested`/`on_download_requested` for the client to act on.
+///
+/// Each folder tree lists directories only and is filled one level at a
+/// time: a node's children are fetched the first time it is expanded (or when
+/// the panel navigates below it), never the whole tree up front. The sandbox
+/// tree is enumerated here; the local one asks the client with
+/// `on_local_tree_expand` and gets the answer through `update_local_tree()`.
+/// Clicking a node navigates that side's file panel to it, and navigating the
+/// file panel (path bar, row activation, "..") expands the tree down to the
+/// new directory and selects its node.
 ///
 /// Both panels support multi-row selection (see left_table_/right_table_'s
 /// row_selected handling in on_event()): a plain click replaces the
@@ -87,6 +98,10 @@ class properties_dialog;
 ///     `old_name` to `new_name` inside the currently-shown local directory
 ///     and then re-report the listing (`update_local_listing()`), mirroring
 ///     `on_local_navigate`'s handshake.
+///   - `"on_local_tree_expand"` (`{path}`) — the Local Folders tree needs the
+///     subdirectories of local directory `path`. The client should answer
+///     with `update_local_tree({path, dirs})` (an empty `dirs` if it cannot
+///     be read).
 ///
 /// Both panels also offer a per-row right-click `ContextMenu` (Properties /
 /// Rename / Copy Path). The sandbox panel handles Rename and Properties
@@ -112,6 +127,14 @@ class mc : public form {
   /// are already client-formatted display strings).
   bison::dynamic do_update_local_listing(const bison::dynamic& args);
 
+  /// @brief RMI method: set the children of one Local Folders tree node.
+  /// @p args holds `path` (string) and `dirs` (plain-string array of
+  /// directory names directly under `path`). An empty `path` sets the tree's
+  /// top level, where each `dirs` entry is itself a full root path (`"/"`,
+  /// `"C:\\"`); a lone root is expanded straight away. A `path` the tree
+  /// does not show is ignored.
+  bison::dynamic do_update_local_tree(const bison::dynamic& args);
+
   /// @brief RMI method: re-enumerate the current sandbox directory. Called
   /// by the client after an upload completes, so the new file appears
   /// without requiring the user to navigate away and back.
@@ -133,8 +156,9 @@ class mc : public form {
   void on_init() override;
   /// @brief Reacts to: `"closed"` (any panel's X button -- emits `"closed"`
   /// and removes every panel); path bar `"changed"`; table row selection,
-  /// sorting and row context-menu clicks; transfer/explorer button clicks;
-  /// and the Rename dialog's buttons.
+  /// sorting and row context-menu clicks; folder tree node `"toggled"`/
+  /// `"clicked"`; transfer/explorer button clicks; and the Rename dialog's
+  /// buttons.
   void on_event(bison::key_t widget_id, bison::key_t event_name, const bison::dynamic& payload) override;
 
  private:
@@ -173,6 +197,74 @@ class mc : public form {
       const ui_element_ptr& table, const std::vector<file_row>& entries, bool is_sandbox,
       std::unordered_map<bison::key_t, row_menu_target, bison::key_t, bison::key_t>& menu_targets,
       const std::set<std::string>& selected_names = {});
+  // ── Folder trees ────────────────────────────────────────────────────────
+
+  /// One directory shown in a folder tree.
+  struct tree_node {
+    std::string name;      ///< Label.
+    std::string path;      ///< What clicking it navigates the file panel to.
+    bool loaded{false};    ///< `children` is known (possibly empty).
+    bool requested{false}; ///< Local tree: on_local_tree_expand is pending.
+    ui_element_ptr elem;   ///< Its TreeNode.
+    std::vector<std::unique_ptr<tree_node>> children;
+  };
+
+  /// One side's folder tree: the model behind the TreeNode elements, which
+  /// are only created for directories whose parent has been expanded.
+  struct folder_tree {
+    bool is_sandbox{false};
+    ui_element_ptr box; ///< VerticalLayout holding the top-level nodes.
+    tree_node root;     ///< Invisible parent of the top-level nodes.
+    /// TreeNode `__wish_id` -> node, for routing toggled/clicked.
+    std::unordered_map<bison::key_t, tree_node*, bison::key_t, bison::key_t> by_id;
+    tree_node* selected{nullptr};
+    /// Directory the tree is being expanded down to; a local tree gets there
+    /// one client round trip per level (see continue_reveal()).
+    std::string reveal_target;
+    bool revealing{false};
+  };
+
+  /// @brief Replaces @p parent's children with @p names (directory names;
+  /// full root paths when @p parent is `tree.root`), keeping the nodes --
+  /// and so the expanded state -- of names that were already there, and
+  /// marks @p parent loaded. A node left without children becomes a leaf.
+  void set_tree_children(folder_tree& tree, tree_node& parent, std::vector<std::string> names);
+  /// @brief Drops @p node's subtree from @p tree's id map and the RMI object
+  /// table, clearing the selection if it was inside.
+  void forget_tree_node(folder_tree& tree, tree_node& node);
+  /// @brief The node showing @p path, or null when it is not in the tree
+  /// (yet). Never loads anything.
+  tree_node* find_tree_node(folder_tree& tree, const std::string& path);
+  /// @brief Moves @p tree's selection highlight to @p node (null clears it).
+  void select_tree_node(folder_tree& tree, tree_node* node);
+  /// @brief Enumerates the sandbox directory @p node stands for and sets its
+  /// children. @p resource_dir / @p allow_absolute_paths follow
+  /// navigate_sandbox()'s rule.
+  void load_sandbox_tree_node(tree_node& node, const std::filesystem::path& resource_dir, bool allow_absolute_paths);
+  /// @brief Asks the client for local @p node's subdirectories
+  /// (`on_local_tree_expand`), unless already asked.
+  void request_local_tree_node(tree_node& node);
+  /// @brief Expands @p tree down to @p path and selects its node, loading
+  /// the levels on the way that are not known yet. @p resource_dir is null
+  /// for the local tree, whose missing levels arrive asynchronously through
+  /// do_update_local_tree(). A @p path the tree cannot reach just clears the
+  /// selection.
+  void reveal_in_tree(
+      folder_tree& tree, const std::string& path, const std::filesystem::path* resource_dir,
+      bool allow_absolute_paths);
+  /// @brief One pass of reveal_in_tree(): walks as far as the loaded levels
+  /// allow, then either finishes or waits for the next local level.
+  void continue_reveal(folder_tree& tree, const std::filesystem::path* resource_dir, bool allow_absolute_paths);
+  /// @brief After a file panel (re)listed @p path with subdirectories
+  /// @p dir_names: refreshes that node's children if the tree shows them,
+  /// then selects the node -- expanding down to it when @p reveal.
+  void sync_tree_with_listing(
+      folder_tree& tree, const std::string& path, std::vector<std::string> dir_names, bool reveal,
+      const std::filesystem::path* resource_dir, bool allow_absolute_paths);
+  /// @brief Emits `on_local_navigate` for @p name / @p type; the listing it
+  /// produces then reveals the new directory in the Local Folders tree.
+  void navigate_local(const std::string& name, const char* type);
+
   /// @brief Shows @p message in the Sandbox (@p is_sandbox) or Local panel's
   /// status line and stores it in the `status` field.
   void set_status(const std::string& message, bool is_sandbox);
@@ -185,8 +277,8 @@ class mc : public form {
   void build_window(
       const char* layout_json, const std::string& root_key, bison::key_t& window_id_out,
       const std::function<void(ui_tree&)>& wire);
-  /// @brief Remove the Sandbox panel and forget its key. Safe to call more
-  /// than once.
+  /// @brief Remove the Sandbox panel and both folder trees, and forget
+  /// their keys. Safe to call more than once.
   void remove_panel_objects();
 
   /// @brief Applies one row click's multi-selection semantics to @p
@@ -258,11 +350,15 @@ class mc : public form {
   /// @brief Navigate the sandbox panel to @p relative_path ("" = sandbox
   /// root) and re-list it. Rejects paths that escape the sandbox or are not
   /// directories, leaving the current listing untouched and setting status.
+  /// @p reveal expands the Sandbox Folders tree down to the directory (a user
+  /// navigation); otherwise its node is only selected if already shown.
   ///
   /// @p resource_dir / @p allow_absolute_paths must be resolved by the
   /// caller (via sess() inside dispatch, via context_rlock outside it) --
   /// this function does not touch sync_ctx_ itself. See the .cpp for why.
-  void navigate_sandbox(std::string relative_path, const std::filesystem::path& resource_dir, bool allow_absolute_paths);
+  void navigate_sandbox(
+      std::string relative_path, const std::filesystem::path& resource_dir, bool allow_absolute_paths,
+      bool reveal = false);
 
   // ── Row context-menu actions ────────────────────────────────────────────
   //
@@ -295,11 +391,23 @@ class mc : public form {
   /// instance -- see form::instantiate_child_form().
   void show_properties_dialog(bool is_sandbox, const file_row& entry);
 
-  /// Secondary panel root: internal_root_key_ + "_sandbox".
+  /// Secondary panel roots: internal_root_key_ + "_sandbox" / "_local_tree"
+  /// / "_sandbox_tree".
   std::string sandbox_root_key_;
+  std::string local_tree_root_key_;
+  std::string sandbox_tree_root_key_;
 
   bison::key_t window_id_; ///< Local panel (main root).
   bison::key_t sandbox_window_id_;
+  bison::key_t local_tree_window_id_;
+  bison::key_t sandbox_tree_window_id_;
+
+  folder_tree local_tree_;
+  folder_tree sandbox_tree_;
+  /// Set when on_local_navigate is emitted, consumed by the listing that
+  /// answers it: only a user navigation expands the tree, not the initial
+  /// listing or a refresh.
+  bool local_reveal_pending_{false};
   bison::key_t left_path_id_;
   bison::key_t left_table_id_;
   bison::key_t right_path_id_;

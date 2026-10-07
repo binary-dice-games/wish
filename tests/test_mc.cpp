@@ -270,7 +270,7 @@ TEST_F(McWindowTest, EachPanelIsATopLevelWindow) {
   std::string root = instantiate_and_get_root();
   ASSERT_FALSE(root.empty());
   auto& s = *srv_->last_session;
-  for (const std::string key : {root, root + "_sandbox"}) {
+  for (const std::string key : {root, root + "_sandbox", root + "_local_tree", root + "_sandbox_tree"}) {
     auto it = s.top_level_objects.find(bison::key_t{key});
     ASSERT_NE(it, s.top_level_objects.end()) << key;
     EXPECT_EQ(it->second->as<bison::key_t>(dynamic::CLASS), "Window"_key) << key;
@@ -278,6 +278,8 @@ TEST_F(McWindowTest, EachPanelIsATopLevelWindow) {
   }
   EXPECT_EQ(s.ui_objects.at(root)->as<std::string>("title"_key), "Local Machine");
   EXPECT_EQ(s.ui_objects.at(root + "_sandbox")->as<std::string>("title"_key), "Sandbox (Server)");
+  EXPECT_EQ(s.ui_objects.at(root + "_local_tree")->as<std::string>("title"_key), "Local Folders");
+  EXPECT_EQ(s.ui_objects.at(root + "_sandbox_tree")->as<std::string>("title"_key), "Sandbox Folders");
 }
 
 // The panels are seeded into a nested DockSpaceViewport ("mc_dock"), titled
@@ -307,7 +309,7 @@ TEST_F(McWindowTest, RegistersDefaultDockLayoutNamingEveryPanel) {
   };
   walk(*viewport);
   std::sort(windows.begin(), windows.end());
-  std::vector<std::string> expected{root, root + "_sandbox"};
+  std::vector<std::string> expected{root, root + "_sandbox", root + "_local_tree", root + "_sandbox_tree"};
   std::sort(expected.begin(), expected.end());
   EXPECT_EQ(windows, expected);
 }
@@ -1407,7 +1409,7 @@ TEST_F(McEventTest, WindowClosedEmitsClosedAndCleansUp) {
 
   got_closed = srv_->events->wait_for("closed"_key, since).has_value();
   EXPECT_TRUE(got_closed);
-  for (const std::string key : {root_, root_ + "_sandbox"})
+  for (const std::string key : {root_, root_ + "_sandbox", root_ + "_local_tree", root_ + "_sandbox_tree"})
     EXPECT_EQ(srv_->last_session->ui_objects.count(key), 0u) << key;
 }
 
@@ -1418,9 +1420,253 @@ TEST_F(McEventTest, SecondaryPanelClosedEmitsClosedAndRemovesEveryPanel) {
   handler_->on_event(widget_id("_sandbox"), "closed"_key, dynamic{});
 
   EXPECT_TRUE(srv_->events->wait_for("closed"_key, since).has_value());
-  for (const std::string key : {root_, root_ + "_sandbox"})
+  for (const std::string key : {root_, root_ + "_sandbox", root_ + "_local_tree", root_ + "_sandbox_tree"})
     EXPECT_EQ(srv_->last_session->ui_objects.count(key), 0u) << key;
   EXPECT_EQ(srv_->last_session->top_level_objects.count(bison::key_t{root_ + "_sandbox"}), 0u);
+}
+
+// ── Folder trees ──────────────────────────────────────────────────────────────
+
+class McTreeTest : public McEventTest {
+ protected:
+  // The TreeNode children of `parent` (a tree's "tree" box or a TreeNode),
+  // in display order.
+  static std::vector<dynamic_ptr> tree_children(const dynamic& parent) {
+    std::vector<dynamic_ptr> nodes;
+    if (auto* cf = parent.findField<dynamic_ptr>("children"_key); cf && *cf)
+      for (size_t i = 0; i < (*cf)->size(); ++i)
+        nodes.push_back((*cf)->at(i).as<dynamic_ptr>());
+    return nodes;
+  }
+
+  static std::vector<std::string> labels_of(const std::vector<dynamic_ptr>& nodes) {
+    std::vector<std::string> labels;
+    for (auto& n : nodes)
+      labels.push_back(n->as<std::string>("label"_key));
+    return labels;
+  }
+
+  // Walks `labels` down from the tree window `tree_suffix` ("_local_tree" /
+  // "_sandbox_tree"); null when a level has no node with that label.
+  dynamic_ptr tree_node(const std::string& tree_suffix, std::initializer_list<std::string> labels) const {
+    dynamic_ptr node = srv_->last_session->ui_objects.at(root_ + tree_suffix + ".tree");
+    for (auto& label : labels) {
+      dynamic_ptr next{nullptr};
+      for (auto& child : tree_children(*node))
+        if (child->as<std::string>("label"_key) == label)
+          next = child;
+      if (!next)
+        return next;
+      node = next;
+    }
+    return node;
+  }
+
+  void tree_event(const dynamic_ptr& node, bison::key_t event, dynamic payload = {}) {
+    handler_->on_event(node->as<bison::key_t>("__wish_id"_key), event, payload);
+  }
+
+  void expand(const dynamic_ptr& node) {
+    dynamic payload;
+    payload["open"_key] = true;
+    tree_event(node, "toggled"_key, std::move(payload));
+  }
+
+  // update_local_tree({path, dirs}), as the reference client sends it.
+  void send_local_tree(const std::string& path, const std::vector<std::string>& dirs) {
+    dynamic arr;
+    size_t i = 0;
+    for (auto& d : dirs)
+      arr[i++] = d;
+    dynamic args;
+    args["path"_key] = path;
+    args["dirs"_key] = dynamic_ptr{std::make_shared<dynamic>(std::move(arr))};
+    proxy_->call("update_local_tree"_key, std::move(args)).get();
+  }
+
+  // Waits for on_local_tree_expand for `path` emitted after `since`.
+  bool expand_requested(const std::string& path, size_t since) {
+    return srv_->events
+        ->wait_for("on_local_tree_expand"_key, since, [&](const dynamic& p) {
+          return p.as<std::string>("path"_key) == path;
+        })
+        .has_value();
+  }
+
+  // Creates sandbox directories and has the form re-list the sandbox root.
+  void make_sandbox_dirs(std::initializer_list<const char*> dirs) {
+    for (auto* d : dirs)
+      std::filesystem::create_directories(srv_->last_session->resource_dir / d);
+    proxy_->call("refresh_sandbox"_key, dynamic{}).get();
+  }
+};
+
+TEST_F(McTreeTest, SandboxTreeStartsWithOpenSelectedRootAndOnlyItsFirstLevel) {
+  make_sandbox_dirs({"alpha/beta", "gamma"});
+
+  auto top = tree_children(*tree_node("_sandbox_tree", {}));
+  ASSERT_EQ(labels_of(top), std::vector<std::string>{"/"});
+  EXPECT_TRUE(top[0]->as<bool>("open"_key));
+  EXPECT_TRUE(top[0]->as<bool>("selected"_key));
+  EXPECT_EQ(top[0]->as<std::string>("icon"_key), "res/icons/folder.png");
+
+  auto alpha = tree_node("_sandbox_tree", {"/", "alpha"});
+  ASSERT_TRUE(alpha);
+  ASSERT_TRUE(tree_node("_sandbox_tree", {"/", "gamma"}));
+  // The second level is not sent until "alpha" is expanded.
+  EXPECT_FALSE(alpha->as<bool>("open"_key));
+  EXPECT_TRUE(tree_children(*alpha).empty());
+  EXPECT_FALSE(alpha->as<bool>("leaf"_key));
+}
+
+TEST_F(McTreeTest, ExpandingSandboxNodeLoadsItsSubdirectories) {
+  make_sandbox_dirs({"alpha/beta", "alpha/delta", "gamma"});
+  std::ofstream(srv_->last_session->resource_dir / "alpha" / "file.txt") << "x";
+
+  expand(tree_node("_sandbox_tree", {"/", "alpha"}));
+  EXPECT_EQ(
+      labels_of(tree_children(*tree_node("_sandbox_tree", {"/", "alpha"}))),
+      (std::vector<std::string>{"beta", "delta"}));
+
+  // A directory without subdirectories turns into a leaf once expanded.
+  expand(tree_node("_sandbox_tree", {"/", "gamma"}));
+  EXPECT_TRUE(tree_node("_sandbox_tree", {"/", "gamma"})->as<bool>("leaf"_key));
+}
+
+TEST_F(McTreeTest, ClickingSandboxNodeNavigatesTheSandboxPanel) {
+  make_sandbox_dirs({"alpha/beta"});
+
+  auto alpha = tree_node("_sandbox_tree", {"/", "alpha"});
+  tree_event(alpha, "clicked"_key);
+
+  EXPECT_EQ(srv_->last_session->ui_objects.at(root_ + "_sandbox.vbox.right_toolbar.right_path")->as<std::string>("value"_key), "/alpha");
+  EXPECT_TRUE(alpha->as<bool>("selected"_key));
+  EXPECT_FALSE(tree_node("_sandbox_tree", {"/"})->as<bool>("selected"_key));
+}
+
+TEST_F(McTreeTest, SandboxPathBarExpandsTreeDownToTheDirectoryAndSelectsIt) {
+  make_sandbox_dirs({"alpha/beta/deep", "gamma"});
+
+  dynamic payload;
+  payload["value"_key] = std::string{"/alpha/beta/"};
+  handler_->on_event(widget_id("_sandbox.vbox.right_toolbar.right_path"), "changed"_key, payload);
+
+  EXPECT_TRUE(tree_node("_sandbox_tree", {"/", "alpha"})->as<bool>("open"_key));
+  auto beta = tree_node("_sandbox_tree", {"/", "alpha", "beta"});
+  ASSERT_TRUE(beta);
+  EXPECT_TRUE(beta->as<bool>("selected"_key));
+  EXPECT_FALSE(tree_node("_sandbox_tree", {"/"})->as<bool>("selected"_key));
+  // Only the levels on the way were loaded.
+  EXPECT_TRUE(tree_children(*beta).empty());
+  EXPECT_TRUE(tree_children(*tree_node("_sandbox_tree", {"/", "gamma"})).empty());
+}
+
+TEST_F(McTreeTest, SandboxRefreshKeepsExpandedNodesAndAddsNewDirectories) {
+  make_sandbox_dirs({"alpha/beta"});
+  expand(tree_node("_sandbox_tree", {"/", "alpha"}));
+  auto alpha = tree_node("_sandbox_tree", {"/", "alpha"});
+
+  make_sandbox_dirs({"zeta"});
+
+  EXPECT_EQ(tree_node("_sandbox_tree", {"/", "alpha"}).get(), alpha.get());
+  EXPECT_TRUE(tree_node("_sandbox_tree", {"/", "alpha", "beta"}));
+  EXPECT_TRUE(tree_node("_sandbox_tree", {"/", "zeta"}));
+}
+
+TEST_F(McTreeTest, LoneLocalRootIsOpenedAndItsFirstLevelRequested) {
+  size_t since = srv_->events->mark();
+  send_local_tree("", {"/"});
+
+  auto root = tree_node("_local_tree", {"/"});
+  ASSERT_TRUE(root);
+  EXPECT_TRUE(root->as<bool>("open"_key));
+  ASSERT_TRUE(expand_requested("/", since));
+
+  send_local_tree("/", {"home", "etc"});
+  EXPECT_EQ(labels_of(tree_children(*root)), (std::vector<std::string>{"etc", "home"}));
+  EXPECT_FALSE(tree_node("_local_tree", {"/", "home"})->as<bool>("open"_key));
+  EXPECT_TRUE(tree_children(*tree_node("_local_tree", {"/", "home"})).empty());
+}
+
+TEST_F(McTreeTest, SeveralLocalRootsStartCollapsed) {
+  send_local_tree("", {"C:\\", "D:\\"});
+  auto top = tree_children(*tree_node("_local_tree", {}));
+  ASSERT_EQ(labels_of(top), (std::vector<std::string>{"C:\\", "D:\\"}));
+  EXPECT_FALSE(top[0]->as<bool>("open"_key));
+  EXPECT_TRUE(tree_children(*top[0]).empty());
+}
+
+TEST_F(McTreeTest, ExpandingLocalNodeAsksTheClientOnceAndShowsTheAnswer) {
+  send_local_tree("", {"/"});
+  send_local_tree("/", {"home"});
+
+  size_t since = srv_->events->mark();
+  auto home = tree_node("_local_tree", {"/", "home"});
+  expand(home);
+  ASSERT_TRUE(expand_requested("/home", since));
+
+  send_local_tree("/home", {"carlos"});
+  EXPECT_EQ(labels_of(tree_children(*home)), std::vector<std::string>{"carlos"});
+}
+
+TEST_F(McTreeTest, ClickingLocalNodeEmitsOnLocalNavigateWithItsFullPath) {
+  send_local_tree("", {"C:\\", "D:\\"});
+  send_local_tree("C:\\", {"Users"});
+
+  size_t since = srv_->events->mark();
+  tree_event(tree_node("_local_tree", {"C:\\", "Users"}), "clicked"_key);
+
+  auto ev = srv_->events->wait_for("on_local_navigate"_key, since);
+  ASSERT_TRUE(ev.has_value());
+  EXPECT_EQ(ev->as<std::string>("name"_key), "C:\\Users");
+  EXPECT_EQ(ev->as<std::string>("type"_key), "path");
+}
+
+TEST_F(McTreeTest, InitialLocalListingDoesNotExpandTheTree) {
+  send_local_tree("", {"/"});
+  send_local_tree("/", {"home"});
+
+  proxy_->call("update_local_listing"_key, make_local_listing_args("/home/carlos", {})).get();
+
+  EXPECT_FALSE(tree_node("_local_tree", {"/", "home"})->as<bool>("open"_key));
+  EXPECT_TRUE(tree_children(*tree_node("_local_tree", {"/", "home"})).empty());
+}
+
+TEST_F(McTreeTest, LocalPathBarNavigationExpandsTreeLevelByLevelAndSelectsTheNode) {
+  send_local_tree("", {"/"});
+  send_local_tree("/", {"home", "etc"});
+
+  dynamic payload;
+  payload["value"_key] = std::string{"/home/carlos/src"};
+  size_t since = srv_->events->mark();
+  handler_->on_event(widget_id(".vbox.left_path"), "changed"_key, payload);
+  ASSERT_TRUE(srv_->events->wait_for("on_local_navigate"_key, since).has_value());
+
+  // The client answers the navigation with the new listing; the tree then
+  // asks for each missing level on the way down.
+  proxy_->call("update_local_listing"_key, make_local_listing_args("/home/carlos/src", {{"sub", "dir", "", ""}})).get();
+  ASSERT_TRUE(expand_requested("/home", since));
+  send_local_tree("/home", {"carlos", "other"});
+  ASSERT_TRUE(expand_requested("/home/carlos", since));
+  send_local_tree("/home/carlos", {"src"});
+
+  EXPECT_TRUE(tree_node("_local_tree", {"/", "home"})->as<bool>("open"_key));
+  EXPECT_TRUE(tree_node("_local_tree", {"/", "home", "carlos"})->as<bool>("open"_key));
+  auto src = tree_node("_local_tree", {"/", "home", "carlos", "src"});
+  ASSERT_TRUE(src);
+  EXPECT_TRUE(src->as<bool>("selected"_key));
+  // The target itself and unrelated siblings stay unloaded.
+  EXPECT_TRUE(tree_children(*src).empty());
+  EXPECT_TRUE(tree_children(*tree_node("_local_tree", {"/", "home", "other"})).empty());
+}
+
+TEST_F(McTreeTest, ClosingATreePanelClosesTheWholeBrowser) {
+  size_t since = srv_->events->mark();
+  handler_->on_event(widget_id("_local_tree"), "closed"_key, dynamic{});
+
+  EXPECT_TRUE(srv_->events->wait_for("closed"_key, since).has_value());
+  for (const std::string key : {root_, root_ + "_sandbox", root_ + "_local_tree", root_ + "_sandbox_tree"})
+    EXPECT_EQ(srv_->last_session->ui_objects.count(key), 0u) << key;
 }
 
 // ── Standalone dispatch: repeated RMI calls must not hang ─────────────────────
