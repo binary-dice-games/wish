@@ -139,6 +139,11 @@ bison::dynamic ui_template::do_instantiate(const bison::dynamic& params) {
   return instantiate_prototype(*ctx_, s, it->second);
 }
 
+bison::dynamic ui_template::do_set_language(const bison::dynamic& params) {
+  sess().set_language(params.as<std::string>("lang"_key));
+  return dynamic{};
+}
+
 void register_ui_template() {
   auto proto = bison::dynamic_ptr{"__WishTemplate"_key, {}};
 
@@ -165,6 +170,16 @@ void register_ui_template() {
           dynamic_ptr{inst_in},
           dynamic_ptr{inst_out},
           attr<DisplayName>("instantiate")});
+
+  auto lang_in = std::make_shared<dynamic>();
+  lang_in->addField("lang"_key, field{std::string{}, attr<DisplayName>("lang")});
+  proto->addMethod(
+      "set_language"_key,
+      bison::method{
+          [](dynamic& s, const dynamic& p) -> dynamic { return static_cast<ui_template&>(s).do_set_language(p); },
+          dynamic_ptr{lang_in},
+          nullptr,
+          attr<DisplayName>("set_language")});
   bison::dynamic::addClass(
       "wish"_key,
       std::move(proto),

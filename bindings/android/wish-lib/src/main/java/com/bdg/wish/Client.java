@@ -109,6 +109,28 @@ public final class Client implements AutoCloseable {
     check(nativeSetStylePreset(handle, preset));
   }
 
+  // ─── Internationalization ────────────────────────────────────────────────
+
+  /**
+   * Sets the translations applied by {@link #registerTemplate}: template string values
+   * {@code "$$KEY"} become KEY's translation. Both texts use the translation file format
+   * ({@code KEY = value} per line); {@code fallback} may be null. A key found in neither shows
+   * as the bare KEY.
+   */
+  public void setTranslations(String text, String fallback) {
+    check(nativeSetTranslations(handle, text, fallback));
+  }
+
+  /** Translates {@code "$$KEY"}; any other string is returned unchanged. */
+  public String translate(String text) {
+    return nativeTranslate(handle, text);
+  }
+
+  /** Sets this session's UI language on the server (e.g. "es"), used by server-side tools. */
+  public void setLanguage(String lang) {
+    check(nativeSetLanguage(handle, lang));
+  }
+
   // ─── Template management ─────────────────────────────────────────────────
 
   /** Registers a named UI template (JSON or YAML descriptor string). */
@@ -259,6 +281,12 @@ public final class Client implements AutoCloseable {
   private static native String nativeLastError(long handle);
 
   private static native int nativeSetStylePreset(long handle, String preset);
+
+  private static native int nativeSetTranslations(long handle, String text, String fallback);
+
+  private static native String nativeTranslate(long handle, String text);
+
+  private static native int nativeSetLanguage(long handle, String lang);
 
   private static native int nativeRegisterTemplate(long handle, String name, String descriptor);
   private static native long nativeInstantiateTemplate(long handle, String name, String prefix);

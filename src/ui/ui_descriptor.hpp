@@ -13,6 +13,7 @@
 /// `wish::build_ui_node`, src/ui/ui_importer.hpp).
 #pragma once
 
+#include <i18n/translations.hpp>
 #include "src/bison/bison_object.hpp"
 
 #include <string>
@@ -30,18 +31,26 @@ namespace bdg::wish {
 /// - all other scalar fields, copied by their natural JSON type (no
 ///   prototype-based coercion — that happens server-side).
 ///
+/// String fields whose whole value starts with `$$` are translation keys:
+/// when @p tr is given they are replaced with `translate_text(value, *tr)`
+/// (see src/i18n/translations.hpp). Translation happens after parsing, so a
+/// translated value may contain any character without breaking the syntax.
+///
 /// @param json_text  UTF-8 JSON text representing a wish UI hierarchy.
+/// @param tr         Optional translations; null leaves strings untouched.
 /// @throws std::runtime_error on JSON parse error or a node missing "type".
-bison::dynamic import_descriptor_json(const std::string& json_text);
+bison::dynamic import_descriptor_json(const std::string& json_text, const translation_map* tr = nullptr);
 
 /// @brief Parse a YAML descriptor into a generic `bison::dynamic` tree.
 /// @param yaml_text  UTF-8 YAML text representing a wish UI hierarchy.
+/// @param tr         Optional translations; null leaves strings untouched.
 /// @throws std::runtime_error on YAML parse error or a node missing "type".
-/// @see import_descriptor_json for the resulting tree shape.
-bison::dynamic import_descriptor_yaml(const std::string& yaml_text);
+/// @see import_descriptor_json for the resulting tree shape and translation.
+bison::dynamic import_descriptor_yaml(const std::string& yaml_text, const translation_map* tr = nullptr);
 
 /// @brief Sniff leading `{`/`[` vs. YAML and dispatch to the matching parser.
 /// @param text  UTF-8 JSON or YAML text representing a wish UI hierarchy.
-bison::dynamic import_descriptor_text(const std::string& text);
+/// @param tr    Optional translations; null leaves strings untouched.
+bison::dynamic import_descriptor_text(const std::string& text, const translation_map* tr = nullptr);
 
 } // namespace bdg::wish

@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Internationalization (see [docs/i18n.md](docs/i18n.md)): template string values `"$$KEY"` are replaced from `<lang>.lang` translation files, falling back to English, then to the bare key.
+  - Client side: `client::set_translations()` / `translate()` (applied by `register_template_from_json`/`_yaml`), `wish_set_translations()` / `wish_translate()` (applied by `wish_register_template`), and the same in the C++ header, Python, C#, Rust, Go and Android bindings.
+  - Server side: session language via `--lang` (client, server, standalone), `client::set_language()`, `wish_set_language()`, `server::set_default_language()` and `wish_app_host::language()`. Tools load `res/<org>/<collection>/<name>/i18n/<lang>.lang` (`context::translations_for()`, `tool_form::tr()`).
+  - `tail` and the `MessageBox` buttons ship English and Spanish translations.
 - Per-tool private directories in the session sandbox (`private/apps/<org>.<collection>.<name>/`) and session-owned temp dirs inside them, removed at session end: `file_service::app_private_dir()` / `create_temp_dir()`, `client::create_temp_dir()`, `standalone::create_temp_dir()` and `wish_app_host::create_temp_dir()` / `create_app_temp_dir()` / `running_app()`.
 
 - `icon` field on `Button`, `MenuButton` and `MenuItem` (plus `Button.icon_color`): an image drawn left of the label, tinted to the text color; an empty label gives a square icon-only button.

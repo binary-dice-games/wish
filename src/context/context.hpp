@@ -3,6 +3,7 @@
 /// @brief Per-client state container for an active wish session.
 #pragma once
 
+#include <i18n/translations.hpp>
 #include <ui/ui_importer.hpp>
 
 #include "src/bison/bison_common.hpp"
@@ -18,6 +19,7 @@
 #include <ostream>
 #include <shared_mutex>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -302,10 +304,50 @@ struct context : public bison::rmi::context {
   ///        `standalone::on_session_created()`.
   void adopt_persistent_resource_dir(const std::filesystem::path& dir);
 
+  // ── Internationalization ──────────────────────────────────────────────
+
+  /// @brief This session's UI language code (e.g. `"es"`); empty means `en`.
+  const std::string& language() const {
+    return language_;
+  }
+
+  /// @brief Set the UI language and drop every cached translation map.
+  ///
+  /// Set by the client's `set_language` RPC (see `ui_template`), or by
+  /// `server::set_default_language()` when the session is created. Affects
+  /// templates and forms built afterwards; existing widgets keep their text.
+  ///
+  /// @param lang  Language code: letters, digits, `-` and `_` only (or empty).
+  /// @throws std::invalid_argument for any other character, so a code can
+  ///         never form a path outside the `i18n/` folder.
+  void set_language(std::string lang);
+
+  /// @brief Translations for one module, in this session's language.
+  ///
+  /// Loads `res/<module_prefix>/i18n/<language>.lang` with
+  /// `res/<module_prefix>/i18n/en.lang` as its fallback (both through
+  /// `file_service::resolve_path()`, so they are sandboxed to
+  /// `resource_dir`), and caches the result per prefix. An empty prefix
+  /// selects the top-level `res/i18n/` used by the built-in forms. Missing
+  /// files yield an empty map (keys then show up as their bare name).
+  ///
+  /// Call during dispatch (session wlock held). The returned map is
+  /// immutable, so a form may keep it and translate from outside dispatch
+  /// (e.g. in `on_event()`).
+  ///
+  /// @param module_prefix  `"<org>/<collection>/<name>"`, or empty.
+  /// @return Never null. A later `set_language()` loads new maps but does
+  ///         not change one already returned.
+  std::shared_ptr<const translation_map> translations_for(std::string_view module_prefix);
+
   context(const context&) = delete;
   context& operator=(const context&) = delete;
   context(context&& other) = delete;
   context& operator=(context&& other) = delete;
+
+ private:
+  std::string language_;
+  std::unordered_map<std::string, std::shared_ptr<const translation_map>> translations_cache_;
 };
 
 // ── Synchronized context wrapper ─────────────────────────────────────────────

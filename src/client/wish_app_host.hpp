@@ -162,6 +162,15 @@ class wish_app_host {
   /// @brief Positional arguments given after `--` on the command line.
   virtual const std::vector<std::string>& app_args() const = 0;
 
+  /// @brief The UI language this session was started with (e.g. `"es"`, from
+  ///        `--lang`); empty means the default (`en`).
+  ///
+  /// The host has already sent it to the server, so server-side forms are
+  /// translated; client-side code can use it to pick its own strings.
+  virtual std::string language() const {
+    return {};
+  }
+
   /// @brief Read one line of console (operator) input, blocking until a
   ///        line is available.
   ///

@@ -167,9 +167,41 @@ class client {
     return future(f);
   }
 
+  // ── Internationalization ─────────────────────────────────────────────
+
+  /**
+   * @brief Sets the translations applied by `register_template()`: template
+   *        string values `"$$KEY"` become KEY's translation.
+   * @param text      Translation file text (`KEY = value` per line).
+   * @param fallback  Optional fallback text (e.g. the `en.lang` contents).
+   */
+  void set_translations(const std::string& text, const std::optional<std::string>& fallback = std::nullopt) {
+    detail::throw_if_wish_error(
+        wish_set_translations(h_, text.c_str(), fallback ? fallback->c_str() : nullptr),
+        "client::set_translations",
+        h_);
+  }
+
+  /** @brief Translates `"$$KEY"`; any other string is returned unchanged. */
+  std::string translate(const std::string& text) {
+    char* out = nullptr;
+    detail::throw_if_wish_error(wish_translate(h_, text.c_str(), &out), "client::translate", h_);
+    std::string result = out ? out : "";
+    bison_free_string(out);
+    return result;
+  }
+
+  /** @brief Sets this session's UI language on the server (e.g. `"es"`). */
+  void set_language(const std::string& lang) {
+    detail::throw_if_wish_error(wish_set_language(h_, lang.c_str()), "client::set_language", h_);
+  }
+
   // ── Template management ──────────────────────────────────────────────
 
-  /** @brief Registers a named UI template (JSON or YAML descriptor text). */
+  /**
+   * @brief Registers a named UI template (JSON or YAML descriptor text).
+   *        `"$$KEY"` strings are translated (see `set_translations()`).
+   */
   void register_template(const std::string& name, const std::string& descriptor) {
     detail::throw_if_wish_error(
         wish_register_template(h_, name.c_str(), descriptor.c_str()), "client::register_template(" + name + ")", h_);

@@ -146,6 +146,21 @@ TEST_F(WishCppClientTest, RegisterInstantiateAndSetGetRoundTrip) {
   });
 }
 
+TEST_F(WishCppClientTest, RegisterTemplateAppliesTranslations) {
+  auto client = wish::client::tcp("127.0.0.1", port_);
+  client.run([](wish::client& c) {
+    c.set_translations("GREETING = Hola", std::string{"GREETING = Hello\nTITLE = Main"});
+    c.set_language("es");
+    c.register_template(
+        "i18n", R"({"type":"Window","title":"$$TITLE","children":{"label":{"type":"Label","text":"$$GREETING"}}})");
+    auto root = c.instantiate_template("i18n", "i18n");
+    EXPECT_EQ(*root.get().get_string("title"_key), "Main");
+    EXPECT_EQ(*c.proxy_get("i18n.label").get().get_string("text"_key), "Hola");
+    EXPECT_EQ(c.translate("$$GREETING"), "Hola");
+    EXPECT_THROW(c.set_language("../x"), wish::error);
+  });
+}
+
 TEST_F(WishCppClientTest, ProxyGetForUnknownPathThrows) {
   auto client = wish::client::tcp("127.0.0.1", port_);
   client.run([](wish::client& c) { EXPECT_THROW(c.proxy_get("no.such.path"), wish::error); });

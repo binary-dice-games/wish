@@ -106,6 +106,7 @@ New to wish? [docs/tutorial.md](docs/tutorial.md) walks through building, runnin
 | **Remote properties** | `proxy.set(fields)` / `proxy.get()` synchronize typed fields. Property sets are one-way (no round-trip) for low-latency visual updates. |
 | **Events** | Server-side interactions emit named events (`clicked`, `changed`, ...) to the client via `proxy.onEvent`. |
 | **File service** | Clients upload/download files via `client::upload_file` / `download_file` (whole-file or streamed/chunked overloads), plus `upload_package` to upload and unpack a zip archive. Files are stored in a sandboxed per-session folder, deleted on disconnect. |
+| **Internationalization** | Template strings of the form `"$$KEY"` are replaced from `<lang>.lang` translation files (`KEY = value`), falling back to English. Pick the language with `--lang=es` or `set_language`. See [docs/i18n.md](docs/i18n.md). |
 | **Persistent stores** | Named bison objects kept across sessions and restarts in `~/.wish`: a per-identity **user store** reachable from every client API (`user_store_get`/`set`/`erase`/`keys`; identified sessions only, e.g. `--username`), and a **server store** for server-side code only. See [docs/persistent-store.md](docs/persistent-store.md). |
 | **Multi-client** | Each connected client has an isolated session: independent object tree, template registry, and resource folder. |
 | **Renderer backends** | `wish::renderer` is an abstract interface. The SDL3 (windowed) and web (browser, via `--renderer web`) backends both build on it — see [docs/building.md](docs/building.md) for the `WISH_ENABLE_WEB` option and [src/web/DESIGN.md](src/web/DESIGN.md) for the browser renderer's architecture. New backends (Qt, terminal/TUI, ...) implement the same interface. |
@@ -145,6 +146,7 @@ dirs under their own `private/apps/<tool>/` directory
 | [docs/ai-assisted-development.md](docs/ai-assisted-development.md) | Building wish apps/UI via natural language with the `wish-module`/`wish-ui` AI-agent skills |
 | [docs/automation.md](docs/automation.md) | Driving a running wish UI programmatically (widget tree queries, screenshots, input injection) for debugging and e2e tests |
 | [docs/object-inspector.md](docs/object-inspector.md) | `ObjectInspector`: reflection-driven property table + description panel, its field → widget dispatch table, and the new `Hidden`/`Order`/`ColorField`/`Multiline`/`DropTarget` bison attributes |
+| [docs/i18n.md](docs/i18n.md) | Translating templates and tools: `$$KEY` strings, `.lang` files, `--lang`, per-language API |
 | [docs/persistent-store.md](docs/persistent-store.md) | Server store and per-user store: persisting tool data across sessions, identities, security model, per-language API |
 | [docs/profiling.md](docs/profiling.md) | Capturing a Perfetto trace of the server render loop/layout engine via bison's profiler, and viewing it at ui.perfetto.dev |
 | [DESIGN.md](DESIGN.md) | Architecture, key abstractions, object model, and design decisions |

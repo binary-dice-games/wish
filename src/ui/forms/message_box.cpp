@@ -104,7 +104,7 @@ static constexpr const char* kLayoutOk = R"({
     } },
     "sep": { "type": "Separator" },
     "buttons": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn0": { "type": "Button", "label": "OK", "height": 32 }
+      "btn0": { "type": "Button", "label": "$$MSGBOX_OK", "height": 32 }
     } }
   }
 })";
@@ -118,8 +118,8 @@ static constexpr const char* kLayoutOkCancel = R"({
     } },
     "sep": { "type": "Separator" },
     "buttons": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn0": { "type": "Button", "label": "OK", "height": 32 },
-      "btn1": { "type": "Button", "label": "Cancel", "height": 32 }
+      "btn0": { "type": "Button", "label": "$$MSGBOX_OK", "height": 32 },
+      "btn1": { "type": "Button", "label": "$$MSGBOX_CANCEL", "height": 32 }
     } }
   }
 })";
@@ -133,8 +133,8 @@ static constexpr const char* kLayoutYesNo = R"({
     } },
     "sep": { "type": "Separator" },
     "buttons": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn0": { "type": "Button", "label": "Yes", "height": 32 },
-      "btn1": { "type": "Button", "label": "No", "height": 32 }
+      "btn0": { "type": "Button", "label": "$$MSGBOX_YES", "height": 32 },
+      "btn1": { "type": "Button", "label": "$$MSGBOX_NO", "height": 32 }
     } }
   }
 })";
@@ -148,9 +148,9 @@ static constexpr const char* kLayoutYesNoCancel = R"({
     } },
     "sep": { "type": "Separator" },
     "buttons": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn0": { "type": "Button", "label": "Yes", "height": 32 },
-      "btn1": { "type": "Button", "label": "No", "height": 32 },
-      "btn2": { "type": "Button", "label": "Cancel", "height": 32 }
+      "btn0": { "type": "Button", "label": "$$MSGBOX_YES", "height": 32 },
+      "btn1": { "type": "Button", "label": "$$MSGBOX_NO", "height": 32 },
+      "btn2": { "type": "Button", "label": "$$MSGBOX_CANCEL", "height": 32 }
     } }
   }
 })";
@@ -164,8 +164,8 @@ static constexpr const char* kLayoutRetryCancel = R"({
     } },
     "sep": { "type": "Separator" },
     "buttons": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn0": { "type": "Button", "label": "Retry", "height": 32 },
-      "btn1": { "type": "Button", "label": "Cancel", "height": 32 }
+      "btn0": { "type": "Button", "label": "$$MSGBOX_RETRY", "height": 32 },
+      "btn1": { "type": "Button", "label": "$$MSGBOX_CANCEL", "height": 32 }
     } }
   }
 })";
@@ -179,9 +179,9 @@ static constexpr const char* kLayoutAbortRetryIgnore = R"({
     } },
     "sep": { "type": "Separator" },
     "buttons": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn0": { "type": "Button", "label": "Abort", "height": 32 },
-      "btn1": { "type": "Button", "label": "Retry", "height": 32 },
-      "btn2": { "type": "Button", "label": "Ignore", "height": 32 }
+      "btn0": { "type": "Button", "label": "$$MSGBOX_ABORT", "height": 32 },
+      "btn1": { "type": "Button", "label": "$$MSGBOX_RETRY", "height": 32 },
+      "btn2": { "type": "Button", "label": "$$MSGBOX_IGNORE", "height": 32 }
     } }
   }
 })";
@@ -251,7 +251,9 @@ void message_box::rebuild() {
   // See form::internal_root_key_'s doc comment: ordinally-assigned, not pointer-derived.
   internal_root_key_ = next_available_key("__message_box_");
 
-  auto tree = import_json(p.layout);
+  // Button labels are "$$MSGBOX_*" keys, translated from the built-in
+  // res/i18n/<lang>.lang files (resources/embedded/i18n/).
+  auto tree = import_json(p.layout, sess().translations_for("").get());
 
   // Stamp form-field values onto the imported tree (same idiom as
   // file_dialog.cpp's title/confirm_label stamping).

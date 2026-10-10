@@ -234,6 +234,20 @@ extern "C" {
         out_future: *mut rmi_future_handle,
     ) -> wish_error;
 
+    // ── wish_client_c.h: internationalization ────────────────────────────────
+
+    pub fn wish_set_translations(
+        client: wish_client_handle,
+        text: *const c_char,
+        fallback_text: *const c_char,
+    ) -> wish_error;
+    pub fn wish_translate(
+        client: wish_client_handle,
+        text: *const c_char,
+        out_text: *mut *mut c_char,
+    ) -> wish_error;
+    pub fn wish_set_language(client: wish_client_handle, lang: *const c_char) -> wish_error;
+
     // ── wish_client_c.h: template management ─────────────────────────────────
 
     pub fn wish_register_template(

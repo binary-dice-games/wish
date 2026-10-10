@@ -27,6 +27,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -63,8 +64,21 @@ class tool_form : public form {
   /// `ctx().objects` and stamped into its `__wish_id`).
   void assign_ids(ui_tree& tree);
 
+  /// @brief Translate @p text (`"$$KEY"`) with this tool's translations
+  /// (`res/<i18n_prefix_>/i18n/<lang>.lang`, see context::translations_for());
+  /// any other string is returned unchanged. The map is fetched on first use
+  /// (which must be during dispatch, e.g. on_init()) and kept, so later calls
+  /// also work from on_event().
+  std::string tr(std::string_view text);
+
+  /// @brief `"<org>/<collection>/<name>"` of the module whose translation
+  /// files tr() and build_window() use. Set it in the constructor; empty
+  /// (the default) leaves layouts untranslated.
+  std::string i18n_prefix_;
+
   /// @brief Imports @p layout_json, assigns ids, calls @p wire with the tree
   /// (to cache widgets and bind handlers) and merges it under @p root_key.
+  /// `"$$KEY"` strings in the layout are translated (see tr()).
   /// A root other than `internal_root_key_` (which form::init() registers
   /// itself) is registered as a top-level object of its own, so it docks
   /// independently.
@@ -118,6 +132,8 @@ class tool_form : public form {
   std::unordered_map<bison::key_t, click_handler, bison::key_t, bison::key_t> click_handlers_;
 
  private:
+  std::shared_ptr<const translation_map> translations_;
+
   friend class console_panel;
   friend class text_viewer_panel;
   friend class rolling_plot;

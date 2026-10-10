@@ -146,15 +146,15 @@ ui_element_ptr build_ui_node(const dynamic& node, const std::string& path, bool 
 
 // ── Public JSON/YAML text entry points ────────────────────────────────────────
 
-ui_tree import_json(const std::string& json_str) {
-  dynamic generic = import_descriptor_json(json_str);
+ui_tree import_json(const std::string& json_str, const translation_map* tr) {
+  dynamic generic = import_descriptor_json(json_str, tr);
   ui_tree result;
   build_ui_node(generic, "", true, result);
   return result;
 }
 
-ui_tree import_yaml(const std::string& yaml_str) {
-  dynamic generic = import_descriptor_yaml(yaml_str);
+ui_tree import_yaml(const std::string& yaml_str, const translation_map* tr) {
+  dynamic generic = import_descriptor_yaml(yaml_str, tr);
   ui_tree result;
   build_ui_node(generic, "", true, result);
   return result;

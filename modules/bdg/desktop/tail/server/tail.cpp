@@ -101,7 +101,7 @@ constexpr size_t kMaxBufferedRows = 2000;
 // for how a nonzero height hint gets a real bounding BeginChild() wrap.
 static constexpr const char* kLogLayout = R"json({
   "type": "Window",
-  "title": "Log",
+  "title": "$$TAIL_LOG",
   "width": 960, "height": 540,
   "closable": true,
   "children": {
@@ -112,17 +112,17 @@ static constexpr const char* kLogLayout = R"json({
           "type": "TabBar", "id": "##tail_tabs", "height": -1,
           "children": {
             "tab_all": {
-              "type": "TabItem", "label": "All", "closable": false,
+              "type": "TabItem", "label": "$$TAIL_ALL", "closable": false,
               "children": {
                 "table_all": {
                   "type": "Table", "id": "##tail_all", "columns": 5, "headers": true,
                   "outer_height": -1, "flags": "Resizable|RowBg|Borders|ScrollY", "auto_scroll": true,
                   "children": {
-                    "col_time":    { "type": "TableColumn", "label": "Time",    "column_id": 0, "flags": "WidthFixed", "init_width": 90 },
-                    "col_level":   { "type": "TableColumn", "label": "Level",   "column_id": 1, "flags": "WidthFixed", "init_width": 70 },
-                    "col_tag":     { "type": "TableColumn", "label": "Tag",     "column_id": 2, "flags": "WidthFixed", "init_width": 100 },
-                    "col_source":  { "type": "TableColumn", "label": "Source",  "column_id": 3, "flags": "WidthFixed", "init_width": 120 },
-                    "col_message": { "type": "TableColumn", "label": "Message", "column_id": 4, "flags": "WidthStretch" }
+                    "col_time":    { "type": "TableColumn", "label": "$$TAIL_COL_TIME",    "column_id": 0, "flags": "WidthFixed", "init_width": 90 },
+                    "col_level":   { "type": "TableColumn", "label": "$$TAIL_COL_LEVEL",   "column_id": 1, "flags": "WidthFixed", "init_width": 70 },
+                    "col_tag":     { "type": "TableColumn", "label": "$$TAIL_COL_TAG",     "column_id": 2, "flags": "WidthFixed", "init_width": 100 },
+                    "col_source":  { "type": "TableColumn", "label": "$$TAIL_COL_SOURCE",  "column_id": 3, "flags": "WidthFixed", "init_width": 120 },
+                    "col_message": { "type": "TableColumn", "label": "$$TAIL_COL_MESSAGE", "column_id": 4, "flags": "WidthStretch" }
                   }
                 }
               }
@@ -136,7 +136,7 @@ static constexpr const char* kLogLayout = R"json({
 
 static constexpr const char* kControlsLayout = R"json({
   "type": "Window",
-  "title": "Controls",
+  "title": "$$TAIL_CONTROLS",
   "width": 960, "height": 90,
   "closable": true,
   "children": {
@@ -147,13 +147,13 @@ static constexpr const char* kControlsLayout = R"json({
           "type": "HorizontalLayout",
           "spacing": 8,
           "children": {
-            "filter_input": { "type": "InputText", "label": "Filter (regex)", "hint": "e.g. error|timeout", "width": 320 },
-            "lines_input": { "type": "InputInt", "label": "Lines", "value": 10, "step": 0, "step_fast": 0, "width": 80, "flags": "EnterReturnsTrue" },
-            "chk_follow": { "type": "Checkbox", "label": "Follow", "value": true },
-            "btn_clear": { "type": "Button", "label": "Clear All", "icon": "res/icons/delete.png" }
+            "filter_input": { "type": "InputText", "label": "$$TAIL_FILTER", "hint": "$$TAIL_FILTER_HINT", "width": 320 },
+            "lines_input": { "type": "InputInt", "label": "$$TAIL_LINES", "value": 10, "step": 0, "step_fast": 0, "width": 80, "flags": "EnterReturnsTrue" },
+            "chk_follow": { "type": "Checkbox", "label": "$$TAIL_FOLLOW", "value": true },
+            "btn_clear": { "type": "Button", "label": "$$TAIL_CLEAR_ALL", "icon": "res/icons/delete.png" }
           }
         },
-        "status_label": { "type": "Label", "text": "0 lines" }
+        "status_label": { "type": "Label", "text": "$$TAIL_NO_LINES" }
       }
     }
   }
@@ -161,7 +161,10 @@ static constexpr const char* kControlsLayout = R"json({
 
 // ── tail ─────────────────────────────────────────────────────────────────
 
-tail::tail(dynamic&& base) : tool_form(std::move(base)) {}
+tail::tail(dynamic&& base) : tool_form(std::move(base)) {
+  // Translation files: resources/embedded/i18n/<lang>.lang.
+  i18n_prefix_ = "bdg/desktop/tail";
+}
 
 tail::~tail() {
   remove_panel_objects();
@@ -282,7 +285,7 @@ dynamic tail::do_set_filter(const dynamic& args) {
       filter_pattern_ = pattern;
     } catch (const std::regex_error& e) {
       if (status_label_ptr_)
-        status_label_ptr_["text"_key] = std::string{"Invalid filter regex: "} + e.what();
+        status_label_ptr_["text"_key] = tr("$$TAIL_INVALID_REGEX") + " " + e.what();
       return dynamic{};
     }
   }
@@ -446,7 +449,7 @@ ui_element_ptr tail::build_log_table(log_table_state& state) {
 
   auto make_col = [&](const char* label, int32_t col_id, int32_t flags, float w, int32_t order) {
     ui_element_ptr col = ui_element_ptr::create("wish"_key, "TableColumn"_key);
-    col["label"_key] = std::string{label};
+    col["label"_key] = tr(label);
     col["column_id"_key] = col_id;
     col["flags"_key] = flags;
     col["init_width"_key] = w;
@@ -469,11 +472,11 @@ ui_element_ptr tail::build_log_table(log_table_state& state) {
   // whose hashed string keys are subject to the same rule but never
   // collide with a small numeric row index in practice.
   auto children = dynamic_ptr{key_t{0U}, {}};
-  (*children)["col_time"_key] = dynamic_ptr{make_col("Time", 0, 16, 90.0f, 0)};
-  (*children)["col_level"_key] = dynamic_ptr{make_col("Level", 1, 16, 70.0f, 1)};
-  (*children)["col_tag"_key] = dynamic_ptr{make_col("Tag", 2, 16, 100.0f, 2)};
-  (*children)["col_source"_key] = dynamic_ptr{make_col("Source", 3, 16, 120.0f, 3)};
-  (*children)["col_message"_key] = dynamic_ptr{make_col("Message", 4, 8, 0.0f, 4)};
+  (*children)["col_time"_key] = dynamic_ptr{make_col("$$TAIL_COL_TIME", 0, 16, 90.0f, 0)};
+  (*children)["col_level"_key] = dynamic_ptr{make_col("$$TAIL_COL_LEVEL", 1, 16, 70.0f, 1)};
+  (*children)["col_tag"_key] = dynamic_ptr{make_col("$$TAIL_COL_TAG", 2, 16, 100.0f, 2)};
+  (*children)["col_source"_key] = dynamic_ptr{make_col("$$TAIL_COL_SOURCE", 3, 16, 120.0f, 3)};
+  (*children)["col_message"_key] = dynamic_ptr{make_col("$$TAIL_COL_MESSAGE", 4, 8, 0.0f, 4)};
   table["children"_key] = children;
   table->refresh_children_order();
 
@@ -596,9 +599,9 @@ void tail::update_status() {
   if (!status_label_ptr_)
     return;
   std::ostringstream oss;
-  oss << total_lines_received_ << (total_lines_received_ == 1 ? " line" : " lines");
+  oss << total_lines_received_ << ' ' << tr(total_lines_received_ == 1 ? "$$TAIL_LINE" : "$$TAIL_LINES_COUNT");
   if (!filter_pattern_.empty())
-    oss << "  --  filter: /" << filter_pattern_ << "/";
+    oss << "  --  " << tr("$$TAIL_FILTER_STATUS") << " /" << filter_pattern_ << "/";
   status_label_ptr_["text"_key] = oss.str();
 }
 

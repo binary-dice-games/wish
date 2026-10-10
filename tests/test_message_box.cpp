@@ -220,6 +220,47 @@ TEST_F(MessageBoxConstructTest, ConstructParamsBuildYesNoCancelButtonRow) {
   EXPECT_EQ(objs.at(root + ".buttons.btn2")->findField("label"_key)->as<std::string>(), "Cancel");
 }
 
+// ── Translation (i18n) ───────────────────────────────────────────────────────
+
+TEST_F(MessageBoxConstructTest, ButtonLabelsFollowSessionLanguage) {
+  // Ask the server for Spanish through the wish client's set_language RPC.
+  // The template handler is instantiated directly to keep this fixture's
+  // plain bison client.
+  auto tpl = client_->instantiate("wish"_key, "__WishTemplate"_key).get();
+  dynamic lang;
+  lang["lang"_key] = std::string{"es"};
+  tpl.call("set_language"_key, std::move(lang)).get();
+
+  dynamic params;
+  params["buttons"_key] = std::string{"yes_no_cancel"};
+  client_->instantiate("wish"_key, "MessageBox"_key, std::move(params)).get();
+
+  std::string root = find_form_root(srv_->last_session->ui_objects);
+  ASSERT_FALSE(root.empty());
+  auto& objs = srv_->last_session->ui_objects;
+  EXPECT_EQ(objs.at(root + ".buttons.btn0")->findField("label"_key)->as<std::string>(), "S\xc3\xad");
+  EXPECT_EQ(objs.at(root + ".buttons.btn1")->findField("label"_key)->as<std::string>(), "No");
+  EXPECT_EQ(objs.at(root + ".buttons.btn2")->findField("label"_key)->as<std::string>(), "Cancelar");
+}
+
+TEST(MessageBoxDefaultLanguageTest, ServerDefaultLanguageAppliesToNewSessions) {
+  memory_server_transport transport;
+  SessionCapturingServer srv{transport, std::make_unique<wish::null_renderer>()};
+  srv.set_default_language("es");
+  srv.start();
+  bdg::bison::rmi::client client{transport.connect()};
+  client.connect();
+
+  client.instantiate("wish"_key, "MessageBox"_key).get();
+  std::string root = find_form_root(srv.last_session->ui_objects);
+  ASSERT_FALSE(root.empty());
+  EXPECT_EQ(
+      srv.last_session->ui_objects.at(root + ".buttons.btn0")->findField("label"_key)->as<std::string>(), "Aceptar");
+
+  client.disconnect();
+  srv.stop();
+}
+
 TEST_F(MessageBoxConstructTest, ConstructParamsSetIconSrcAndMessage) {
   dynamic params;
   params["icon"_key] = std::string{"warning"};

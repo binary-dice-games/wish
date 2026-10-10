@@ -29,20 +29,22 @@ using json = nlohmann::ordered_json;
 
 // ── Field copy (no prototype to coerce against — that happens server-side) ──
 
-static void set_field_from_json(dynamic& obj, key_t field_key, const json& value) {
+static void set_field_from_json(dynamic& obj, key_t field_key, const json& value, const translation_map* tr) {
   if (value.is_boolean())
     obj[field_key] = value.get<bool>();
   else if (value.is_number_integer())
     obj[field_key] = value.get<int32_t>();
   else if (value.is_number_float())
     obj[field_key] = value.get<float>();
-  else if (value.is_string())
-    obj[field_key] = value.get<std::string>();
-  else if (value.is_array() &&
-           std::all_of(value.begin(), value.end(), [](const json& e) { return e.is_number_integer(); })) {
+  else if (value.is_string()) {
+    const auto& text = value.get_ref<const std::string&>();
+    // Whole-value "$$KEY" strings are translation keys (see translations.hpp).
+    obj[field_key] = (tr && is_translatable(text)) ? translate_text(text, *tr) : text;
+  } else if (value.is_array() && std::all_of(value.begin(), value.end(), [](const json& e) {
+               return e.is_number_integer();
+             })) {
     obj[field_key] = value.get<std::vector<int32_t>>();
-  } else if (value.is_array() &&
-             std::all_of(value.begin(), value.end(), [](const json& e) { return e.is_number(); })) {
+  } else if (value.is_array() && std::all_of(value.begin(), value.end(), [](const json& e) { return e.is_number(); })) {
     // At least one non-integer element: a float array (e.g. plot data).
     obj[field_key] = value.get<std::vector<float>>();
   }
@@ -53,14 +55,14 @@ static void set_field_from_json(dynamic& obj, key_t field_key, const json& value
 
 // ── JSON → generic dynamic tree ───────────────────────────────────────────────
 
-static dynamic import_json_node(const json& descriptor);
+static dynamic import_json_node(const json& descriptor, const translation_map* tr);
 
-static dynamic_ptr build_children(const json& children_json) {
+static dynamic_ptr build_children(const json& children_json, const translation_map* tr) {
   auto children_dyn = dynamic_ptr{key_t{0U}, {}};
   int32_t order_counter = 0;
 
   auto process_named = [&](const std::string& name, const json& child_json) {
-    dynamic child = import_json_node(child_json);
+    dynamic child = import_json_node(child_json, tr);
     child["__name__"_key] = name;
     if (!child_json.contains("order"))
       child["order"_key] = order_counter;
@@ -69,7 +71,7 @@ static dynamic_ptr build_children(const json& children_json) {
   };
 
   auto process_indexed = [&](size_t idx, const json& child_json) {
-    dynamic child = import_json_node(child_json);
+    dynamic child = import_json_node(child_json, tr);
     if (!child_json.contains("order"))
       child["order"_key] = order_counter;
     ++order_counter;
@@ -95,7 +97,7 @@ static dynamic_ptr build_children(const json& children_json) {
   return children_dyn;
 }
 
-static dynamic import_json_node(const json& descriptor) {
+static dynamic import_json_node(const json& descriptor, const translation_map* tr) {
   if (!descriptor.is_object()) {
     throw std::runtime_error("wish::import_descriptor_json: descriptor node must be a JSON object");
   }
@@ -115,25 +117,25 @@ static dynamic import_json_node(const json& descriptor) {
     // descriptor authored by hand (they're stamped by this importer).
     if (key_str.size() >= 2 && key_str[0] == '_' && key_str[1] == '_')
       continue;
-    set_field_from_json(obj, key_t{key_str}, value);
+    set_field_from_json(obj, key_t{key_str}, value, tr);
   }
 
   auto children_it = descriptor.find("children");
   if (children_it != descriptor.end()) {
-    obj["children"_key] = build_children(*children_it);
+    obj["children"_key] = build_children(*children_it, tr);
   }
 
   return obj;
 }
 
-dynamic import_descriptor_json(const std::string& json_text) {
+dynamic import_descriptor_json(const std::string& json_text, const translation_map* tr) {
   json parsed;
   try {
     parsed = json::parse(json_text);
   } catch (const json::exception& e) {
     throw std::runtime_error(std::string{"wish::import_descriptor_json: "} + e.what());
   }
-  return import_json_node(parsed);
+  return import_json_node(parsed, tr);
 }
 
 // ── YAML → JSON ───────────────────────────────────────────────────────────────
@@ -249,7 +251,7 @@ static json parse_yaml_sequence(yaml_parser_t* p) {
   return arr;
 }
 
-dynamic import_descriptor_yaml(const std::string& yaml_text) {
+dynamic import_descriptor_yaml(const std::string& yaml_text, const translation_map* tr) {
   // Normalise CRLF → LF so that raw string literals compiled on Windows
   // (which have \r\n endings) don't produce \r-suffixed scalar values.
   std::string normalized;
@@ -300,15 +302,15 @@ dynamic import_descriptor_yaml(const std::string& yaml_text) {
 
   yaml_parser_delete(&parser);
 
-  return import_json_node(parsed);
+  return import_json_node(parsed, tr);
 }
 
 // ── Text sniffing ─────────────────────────────────────────────────────────────
 
-dynamic import_descriptor_text(const std::string& text) {
+dynamic import_descriptor_text(const std::string& text, const translation_map* tr) {
   auto it = std::find_if_not(text.cbegin(), text.cend(), [](unsigned char c) { return std::isspace(c); });
   bool is_json = (it != text.cend() && (*it == '{' || *it == '['));
-  return is_json ? import_descriptor_json(text) : import_descriptor_yaml(text);
+  return is_json ? import_descriptor_json(text, tr) : import_descriptor_yaml(text, tr);
 }
 
 } // namespace bdg::wish

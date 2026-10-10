@@ -101,6 +101,10 @@ protocol these build on.
 
 `has_user_store()` and `user_store_get` / `user_store_set` / `user_store_erase` / `user_store_keys` read and write the session's persistent, per-identity store of named objects. The session must connect with a `username` connect param; anonymous sessions get `WISH_ERR_UNAVAILABLE`. The API is the same shape in every binding: see the table in [docs/persistent-store.md](persistent-store.md#client-api).
 
+### Translations
+
+`set_translations(text, fallback)` sets the `KEY = value` translations that `register_template` applies to `"$$KEY"` strings. `translate("$$KEY")` translates one string, and `set_language("es")` selects the language server-side tools use. Every binding has the same three calls (`SetTranslations` / `Translate` / `SetLanguage` in C# and Go, `setTranslations` / `translate` / `setLanguage` on Android); Python and C# add `load_translations(path, fallback_path)` / `LoadTranslations`. See [docs/i18n.md](i18n.md).
+
 ### TLS
 
 `wish::binding::client::tls(host, port)` is the TLS counterpart of `tcp()` --
@@ -305,6 +309,10 @@ protocol these build on.
 ### User store
 
 `has_user_store()` and `user_store_get` / `user_store_set` / `user_store_erase` / `user_store_keys` read and write the session's persistent, per-identity store of named objects. The session must connect with a `username` connect param; anonymous sessions get `WISH_ERR_UNAVAILABLE`. The API is the same shape in every binding: see the table in [docs/persistent-store.md](persistent-store.md#client-api).
+
+### Translations
+
+`c.load_translations("i18n/es.lang", "i18n/en.lang")` (or `set_translations(text, fallback)`) sets the translations that `register_template` applies to `"$$KEY"` strings. `c.translate("$$KEY")` translates one string, and `c.set_language("es")` selects the language server-side tools use. See [docs/i18n.md](i18n.md).
 
 ### TLS
 

@@ -184,6 +184,34 @@ JNIEXPORT jint JNICALL Java_com_bdg_wish_Client_nativeSetStylePreset(
   return static_cast<jint>(wish_set_style_preset(from_jlong<wish_client_handle>(handle), p.c_str()));
 }
 
+// ─── Internationalization ───────────────────────────────────────────────
+
+JNIEXPORT jint JNICALL
+Java_com_bdg_wish_Client_nativeSetTranslations(JNIEnv* env, jclass, jlong handle, jstring text, jstring fallback) {
+  jstring_view t(env, text);
+  jstring_view f(env, fallback);
+  return static_cast<jint>(
+      wish_set_translations(from_jlong<wish_client_handle>(handle), t.c_str(), fallback ? f.c_str() : nullptr));
+}
+
+JNIEXPORT jstring JNICALL Java_com_bdg_wish_Client_nativeTranslate(JNIEnv* env, jclass, jlong handle, jstring text) {
+  jstring_view t(env, text);
+  char* out = nullptr;
+  wish_error err = wish_translate(from_jlong<wish_client_handle>(handle), t.c_str(), &out);
+  if (err != WISH_OK) {
+    throw_wish_exception(env, err, "translate");
+    return nullptr;
+  }
+  jstring result = to_jstring(env, out);
+  bison_free_string(out);
+  return result;
+}
+
+JNIEXPORT jint JNICALL Java_com_bdg_wish_Client_nativeSetLanguage(JNIEnv* env, jclass, jlong handle, jstring lang) {
+  jstring_view l(env, lang);
+  return static_cast<jint>(wish_set_language(from_jlong<wish_client_handle>(handle), l.c_str()));
+}
+
 // ─── Template management ────────────────────────────────────────────────
 
 JNIEXPORT jint JNICALL Java_com_bdg_wish_Client_nativeRegisterTemplate(

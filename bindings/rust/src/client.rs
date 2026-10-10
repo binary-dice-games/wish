@@ -315,6 +315,52 @@ impl Client {
         Ok(Future::from_raw(f))
     }
 
+    // ── Internationalization ─────────────────────────────────────────────
+
+    /// Sets the translations applied by `register_template`: template string
+    /// values `"$$KEY"` become KEY's translation. Both texts use the
+    /// translation file format (`KEY = value` per line); a key found in
+    /// neither shows as the bare KEY.
+    pub fn set_translations(&self, text: &str, fallback: Option<&str>) -> Result<(), WishError> {
+        let fallback_c = fallback.map(cstr);
+        check(
+            unsafe {
+                sys::wish_set_translations(
+                    self.handle,
+                    cstr(text).as_ptr(),
+                    fallback_c.as_ref().map_or(ptr::null(), |c| c.as_ptr()),
+                )
+            },
+            "client.set_translations",
+            self.handle,
+        )
+    }
+
+    /// Translates `"$$KEY"`; any other string is returned unchanged.
+    pub fn translate(&self, text: &str) -> Result<String, WishError> {
+        let mut out: *mut c_char = ptr::null_mut();
+        check(
+            unsafe { sys::wish_translate(self.handle, cstr(text).as_ptr(), &mut out) },
+            "client.translate",
+            self.handle,
+        )?;
+        let result = unsafe { CStr::from_ptr(out) }
+            .to_string_lossy()
+            .into_owned();
+        unsafe { sys::bison_free_string(out) };
+        Ok(result)
+    }
+
+    /// Sets this session's UI language on the server (e.g. `"es"`), used by
+    /// server-side tools.
+    pub fn set_language(&self, lang: &str) -> Result<(), WishError> {
+        check(
+            unsafe { sys::wish_set_language(self.handle, cstr(lang).as_ptr()) },
+            "client.set_language",
+            self.handle,
+        )
+    }
+
     // ── Template management ──────────────────────────────────────────────
 
     /// Registers a named UI template (JSON or YAML descriptor text).

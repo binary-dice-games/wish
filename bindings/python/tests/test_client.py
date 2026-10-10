@@ -66,6 +66,33 @@ class TestErrorMapping(unittest.TestCase):
         self.assertEqual(err.code, _n.WISH_ERR_NOT_FOUND)
 
 
+class TestTranslations(unittest.TestCase):
+    """Translations are applied client-side, so no live server is needed."""
+
+    def setUp(self):
+        self.client = Client.tcp("127.0.0.1", 7070)
+
+    def tearDown(self):
+        self.client.destroy()
+
+    def test_translate_uses_map_and_fallback(self):
+        self.client.set_translations("HELLO = Hola\n", "HELLO = Hello\nBYE = Bye\n")
+        self.assertEqual(self.client.translate("$$HELLO"), "Hola")
+        self.assertEqual(self.client.translate("$$BYE"), "Bye")
+        self.assertEqual(self.client.translate("$$MISSING"), "MISSING")
+        self.assertEqual(self.client.translate("plain $$HELLO"), "plain $$HELLO")
+
+    def test_load_translations_reads_utf8_files(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "es.lang")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("YES = S\u00ed\n")
+            self.client.load_translations(path)
+        self.assertEqual(self.client.translate("$$YES"), "S\u00ed")
+
+
 class TestRunWithConnectParams(unittest.TestCase):
     """Exercises Client.run(session_fn, params=...) -> wish_client_run_with_params
     plumbing (see src/auth/DESIGN.md). No live server is spun up here (the

@@ -1,0 +1,8 @@
+# Built-in forms -- English (fallback for every other language).
+MSGBOX_OK = OK
+MSGBOX_CANCEL = Cancel
+MSGBOX_YES = Yes
+MSGBOX_NO = No
+MSGBOX_RETRY = Retry
+MSGBOX_ABORT = Abort
+MSGBOX_IGNORE = Ignore

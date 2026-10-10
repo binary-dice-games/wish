@@ -28,6 +28,7 @@ target_link_libraries(test_resource_store PRIVATE miniz)
 wish_add_test(test_form_base         test_form_base.cpp)
 wish_add_test(test_file_dialog  test_file_dialog.cpp)
 wish_add_test(test_message_box  test_message_box.cpp)
+wish_add_test(test_i18n         test_i18n.cpp)
 wish_add_test(test_progress_box test_progress_box.cpp)
 # modules/bdg/common/command_worker.hpp (header-only, shared by module clients)
 # driving a real ProgressBox through a minimal wish_app_host.

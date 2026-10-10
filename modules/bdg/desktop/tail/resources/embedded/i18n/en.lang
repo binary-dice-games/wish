@@ -1,0 +1,19 @@
+# tail -- English (fallback for every other language).
+TAIL_LOG = Log
+TAIL_ALL = All
+TAIL_COL_TIME = Time
+TAIL_COL_LEVEL = Level
+TAIL_COL_TAG = Tag
+TAIL_COL_SOURCE = Source
+TAIL_COL_MESSAGE = Message
+TAIL_CONTROLS = Controls
+TAIL_FILTER = Filter (regex)
+TAIL_FILTER_HINT = e.g. error|timeout
+TAIL_LINES = Lines
+TAIL_FOLLOW = Follow
+TAIL_CLEAR_ALL = Clear All
+TAIL_NO_LINES = 0 lines
+TAIL_LINE = line
+TAIL_LINES_COUNT = lines
+TAIL_FILTER_STATUS = filter:
+TAIL_INVALID_REGEX = Invalid filter regex:

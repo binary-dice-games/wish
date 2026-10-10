@@ -123,6 +123,7 @@ void context::populate_resource_dir() {
   // imgui_ui_renderer.cpp's render_image / web_renderer::get_or_load_texture).
   for (auto& [rel, crc] : raw_crc32)
     embedded_crc32s["res/" + rel] = crc;
+  translations_cache_.clear();
 }
 
 void context::adopt_persistent_resource_dir(const std::filesystem::path& dir) {
@@ -133,6 +134,42 @@ void context::adopt_persistent_resource_dir(const std::filesystem::path& dir) {
   resource_dir = dir;
   resource_dir_persistent = true;
   populate_resource_dir();
+}
+
+// ── Internationalization ──────────────────────────────────────────────────────
+
+void context::set_language(std::string lang) {
+  if (!is_valid_language_code(lang))
+    throw std::invalid_argument("wish: invalid language code '" + lang + "'");
+  language_ = std::move(lang);
+  translations_cache_.clear();
+}
+
+std::shared_ptr<const translation_map> context::translations_for(std::string_view module_prefix) {
+  std::string prefix{module_prefix};
+  auto it = translations_cache_.find(prefix);
+  if (it != translations_cache_.end())
+    return it->second;
+
+  std::string dir = prefix.empty() ? std::string{"res/i18n/"} : "res/" + prefix + "/i18n/";
+  auto load = [&](const std::string& lang) -> std::shared_ptr<translation_map> {
+    auto path = file_service::resolve_path(dir + lang + ".lang", resource_dir, false);
+    if (path.empty())
+      return nullptr;
+    auto map = load_translations_file(path);
+    return map ? std::make_shared<translation_map>(std::move(*map)) : nullptr;
+  };
+
+  std::shared_ptr<translation_map> fallback = load("en");
+  std::shared_ptr<translation_map> map;
+  if (!language_.empty() && language_ != "en")
+    map = load(language_);
+  if (map)
+    map->set_fallback(fallback);
+  else
+    map = fallback ? fallback : std::make_shared<translation_map>();
+
+  return translations_cache_.emplace(std::move(prefix), std::move(map)).first->second;
 }
 
 // ── Debug dump ────────────────────────────────────────────────────────────────

@@ -9,17 +9,19 @@
 #include <context/context.hpp>
 #include <context/logger.hpp>
 #include <context/persistent_store.hpp>
+#include <i18n/translations.hpp>
 #include <server/renderer.hpp>
 #include "src/rmi/standalone/standalone.hpp"
 
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <filesystem>
 #include <future>
 #include <memory>
 #include <optional>
-#include <filesystem>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -157,6 +159,21 @@ class standalone : public bison::rmi::standalone {
 
   /// @copydoc bdg::wish::client::register_template_from_yaml
   std::future<void> register_template_from_yaml(bison::key_t name, const std::string& yaml);
+
+  /// @copydoc bdg::wish::client::set_translations
+  void set_translations(translation_map map);
+
+  /// @copydoc bdg::wish::client::translations
+  std::shared_ptr<const translation_map> translations() const;
+
+  /// @copydoc bdg::wish::client::translate
+  std::string translate(std::string_view text) const;
+
+  /// @copydoc bdg::wish::client::set_language
+  std::future<void> set_language(const std::string& lang);
+
+  /// @copydoc bdg::wish::client::language
+  std::string language() const;
 
   /// @copydoc bdg::wish::client::upload_file
   std::future<void> upload_file(
@@ -331,6 +348,10 @@ class standalone : public bison::rmi::standalone {
 
   // Populated by on_session_created(context&); mirrors wish::client::on_connect().
   std::optional<bison::rmi::proxy::dynamic> template_proxy_;
+  // Applied by register_template_from_json/yaml; see set_translations().
+  bison::synchronized<std::shared_ptr<const translation_map>> translations_{std::make_shared<translation_map>()};
+  // Last code sent by set_language().
+  bison::synchronized<std::string> language_;
   std::optional<bison::rmi::proxy::dynamic> fs_proxy_;
   std::optional<bison::rmi::proxy::dynamic> style_proxy_;
   std::optional<bison::rmi::proxy::dynamic> log_proxy_;

@@ -192,6 +192,15 @@ def _setup_wish_signatures(lib: ctypes.CDLL) -> None:
     lib.wish_set_style_preset_async.restype = Error
     lib.wish_set_style_preset_async.argtypes = [ClientHandle, ctypes.c_char_p, P(FutureHandle)]
 
+    lib.wish_set_translations.restype = Error
+    lib.wish_set_translations.argtypes = [ClientHandle, ctypes.c_char_p, ctypes.c_char_p]
+
+    lib.wish_translate.restype = Error
+    lib.wish_translate.argtypes = [ClientHandle, ctypes.c_char_p, P(ctypes.c_char_p)]
+
+    lib.wish_set_language.restype = Error
+    lib.wish_set_language.argtypes = [ClientHandle, ctypes.c_char_p]
+
     # ── Template management ─────────────────────────────────────────────────
     lib.wish_register_template.restype = Error
     lib.wish_register_template.argtypes = [ClientHandle, ctypes.c_char_p, ctypes.c_char_p]

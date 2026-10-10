@@ -17,6 +17,7 @@ DEFINE_string(name, "", "Not supported in standalone mode");
 DEFINE_string(verbose, "none", "Log verbosity: none|fatal|error|warning|info|trace");
 DEFINE_bool(debugger, false, "Wait for debugger attachment before starting");
 DEFINE_string(theme, "wish", "UI theme preset, e.g. dark, light, classic, or wish.");
+DEFINE_string(lang, "", "UI language code, e.g. es (default: en). See docs/i18n.md.");
 
 DEFINE_string(title, "wish", "Window title");
 DEFINE_int32(width, 1280, "Window width in pixels");

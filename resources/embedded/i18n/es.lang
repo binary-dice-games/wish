@@ -1,0 +1,8 @@
+# Built-in forms -- Spanish.
+MSGBOX_OK = Aceptar
+MSGBOX_CANCEL = Cancelar
+MSGBOX_YES = Sí
+MSGBOX_NO = No
+MSGBOX_RETRY = Reintentar
+MSGBOX_ABORT = Anular
+MSGBOX_IGNORE = Omitir

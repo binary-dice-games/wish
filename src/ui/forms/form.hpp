@@ -13,6 +13,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <vector>
 
@@ -110,6 +111,13 @@ class form : public ui_root {
           "wish::form::sess() called outside RMI dispatch — "
           "use context_rlock/context_wlock over sync_ctx_ instead");
     return *detail::current_context;
+  }
+
+  /// @brief Translate @p text (`"$$KEY"`) with the session's translations for
+  ///        @p module_prefix (see `context::translations_for()`); any other
+  ///        string is returned unchanged. Dispatch only, like `sess()`.
+  std::string tr(std::string_view text, std::string_view module_prefix = {}) {
+    return translate_text(text, *sess().translations_for(module_prefix));
   }
 
   /// @brief Key under which the internal Window root is stored in session.objects.

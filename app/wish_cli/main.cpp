@@ -49,6 +49,10 @@ DEFINE_bool(debugger, false, "Wait for debugger attachment before starting");
 // unrecognized name falls back to the renderer's default theme with a
 // logged warning; see style_service.hpp's "Supported preset names".
 DEFINE_string(theme, "wish", "UI theme preset, e.g. dark, light, classic, or wish.");
+// Server: the default UI language for every session. Client/standalone:
+// this session's language (sent with set_language before the app runs).
+// Selects res/<module>/i18n/<lang>.lang; see docs/i18n.md.
+DEFINE_string(lang, "", "UI language code, e.g. es (default: en). See docs/i18n.md.");
 
 // ── Server-only flags — consumed by bison::app::server_app ───────────────────
 DEFINE_string(cmd, "", "Command to spawn (transport=term)");

@@ -452,6 +452,38 @@ TEST_F(TailTest, TreeContainsAllTab) {
   EXPECT_NE(all_table(), nullptr);
 }
 
+TEST_F(TailTest, LabelsAreEnglishByDefault) {
+  EXPECT_NE(find_tab_item(tab_bar(), "All"), nullptr);
+  EXPECT_EQ(status_label()->as<std::string>("text"_key), "0 lines");
+  auto follow = srv_->last_session->ui_objects.at(root_ + "_controls.vbox.toolbar.chk_follow");
+  EXPECT_EQ(follow->as<std::string>("label"_key), "Follow");
+}
+
+TEST(TailLanguageTest, LabelsFollowSessionLanguage) {
+  memory_server_transport transport;
+  SessionCapturingServer srv{transport, std::make_unique<wish::null_renderer>()};
+  srv.set_default_language("es");
+  srv.start();
+  bdg::bison::rmi::client client{transport.connect()};
+  client.connect();
+
+  {
+    auto proxy = client.instantiate("wish"_key, "Tail"_key).get();
+    auto& objs = srv.last_session->ui_objects;
+    std::string root = find_form_root(objs);
+    ASSERT_FALSE(root.empty());
+    EXPECT_NE(find_tab_item(dynamic_ptr{objs.at(root + ".vbox.tab_bar")}, "Todo"), nullptr);
+    EXPECT_EQ(objs.at(root + "_controls.vbox.toolbar.chk_follow")->as<std::string>("label"_key), "Seguir");
+    EXPECT_EQ(objs.at(root + "_controls.vbox.status_label")->as<std::string>("text"_key), "0 l\xc3\xadneas");
+    // A string missing from es.lang would fall back to en.lang; the column
+    // headers come from es.lang.
+    EXPECT_EQ(objs.at(root + ".vbox.tab_bar.tab_all.table_all.col_message")->as<std::string>("label"_key), "Mensaje");
+  }
+
+  client.disconnect();
+  srv.stop();
+}
+
 // ── push_lines / classification ───────────────────────────────────────────────
 
 TEST_F(TailTest, PlainLineAddsRowToAllTable) {

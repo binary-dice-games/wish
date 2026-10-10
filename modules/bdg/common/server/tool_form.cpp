@@ -28,12 +28,22 @@ void tool_form::assign_ids(ui_tree& tree) {
   }
 }
 
+std::string tool_form::tr(std::string_view text) {
+  if (!is_translatable(text))
+    return std::string{text};
+  if (!translations_)
+    translations_ = sess().translations_for(i18n_prefix_);
+  return translate_text(text, *translations_);
+}
+
 void tool_form::build_window(
     const std::string& root_key,
     const char* layout_json,
     key_t& window_id_out,
     const std::function<void(ui_tree&)>& wire) {
-  auto tree = import_json(layout_json);
+  if (!translations_ && !i18n_prefix_.empty())
+    translations_ = sess().translations_for(i18n_prefix_);
+  auto tree = import_json(layout_json, i18n_prefix_.empty() ? nullptr : translations_.get());
   assign_ids(tree);
   window_id_out = wish_id_of(tree[""]);
   if (wire)

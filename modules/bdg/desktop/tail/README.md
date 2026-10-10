@@ -49,6 +49,11 @@ seeds Controls as a strip above the Log; rearrange freely afterwards
   timestamp + severity word, and a couple of bare `LEVEL: message` shapes,
   falling back to an unparsed catch-all so any line is still shown.
 
+  `i18n/en.lang` and `i18n/es.lang` hold the UI text (`TAIL_*` keys).
+  `wish client --lang=es --run=tail -- FILE` shows the Spanish labels; a
+  language without a file falls back to English. See
+  [docs/i18n.md](../../../../docs/i18n.md).
+
 A filter set via the toolbar (or `-e`) controls row *visibility*, not
 admission: every line is always added as a row, and changing the pattern
 immediately shows/hides already-received rows to match -- so you can edit
