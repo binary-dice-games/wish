@@ -180,8 +180,16 @@ void render_window(imgui_renderer& r, const ui_element& node0, const context& s)
   bool has_explicit_pos = px >= 0 && py >= 0;
   if (has_explicit_pos)
     ImGui::SetNextWindowPos(ImVec2(float(px), float(py)), ImGuiCond_FirstUseEver);
-  if (w > 0 && h > 0)
-    ImGui::SetNextWindowSize(ImVec2(float(w), float(h)), ImGuiCond_FirstUseEver);
+  // Changing width/height after creation resizes the window (e.g. a
+  // calculator switching to a larger keypad); see take_size_change(). A
+  // NoResize window's size belongs to the app alone, so a size imgui.ini
+  // remembered from an earlier run never overrides it.
+  if (w > 0 && h > 0) {
+    bool resized = node.take_size_change(w, h);
+    bool app_sized = (fl & ImGuiWindowFlags_NoResize) && !(fl & ImGuiWindowFlags_AlwaysAutoResize);
+    ImGui::SetNextWindowSize(
+        ImVec2(float(w), float(h)), resized || app_sized ? ImGuiCond_Always : ImGuiCond_FirstUseEver);
+  }
 
   bool open = true;
   bool* p_open = closable ? &open : nullptr;

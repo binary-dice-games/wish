@@ -8,6 +8,7 @@
 
 #include <ui/ui_importer.hpp>
 
+#include <algorithm>
 #include <sstream>
 
 namespace bdg::wish {
@@ -28,7 +29,7 @@ constexpr const char* kSquared = "\xC2\xB2";
 constexpr const char* kCubed = "\xC2\xB3";
 constexpr const char* kPlusMinus = "\xC2\xB1";
 constexpr const char* kBackspace = "\xE2\x86\x90";
-constexpr const char* kOn = "\xE2\x97\x8F "; // "on" marker of toggle keys
+constexpr const char* kOn = "\xE2\x80\xA2 "; // "on" marker of toggle keys
 
 constexpr double kPi = 3.14159265358979323846;
 constexpr double kE = 2.71828182845904523536;
@@ -38,6 +39,18 @@ constexpr const char* kKeypadIds[] = {"std", "sci", "prog"};
 constexpr int kRadixes[] = {16, 10, 8, 2};
 constexpr const char* kRadixNames[] = {"HEX", "DEC", "OCT", "BIN"};
 constexpr const char* kRadixIds[] = {"hex", "dec", "oct", "bin"};
+
+// Layout metrics shared by make_layout() and fit_window().
+constexpr int kKeySpacing = 4;
+constexpr int kTabWidth = 104;
+constexpr int kRadixWidth = 7 * 72 + 6 * kKeySpacing; // the programmer keypad's width
+constexpr int kRadixRowHeight = 22;
+constexpr int kRadixSpacing = 2;
+constexpr int kRadixHeight = 4 * kRadixRowHeight + 3 * kRadixSpacing;
+constexpr int kHistoryGap = 12;
+constexpr int kHistoryWidth = 240;
+// Title + 10 entries of 40 px + Clear button, with spacing.
+constexpr int kHistoryHeight = 24 + 18 + 10 * 44 + 30;
 
 // Dimmed secondary text (expression line, status line), per theme.
 constexpr const char* kDimLight = "#656D76FF";
@@ -243,7 +256,7 @@ std::vector<bc::keypad_def> bc::make_keypads() {
 
   keypad_def programmer{
       "prog",
-      64,
+      72,
       42,
       {
           {bin("and", "AND", binary_op::bit_and),
@@ -292,10 +305,10 @@ std::vector<bc::keypad_def> bc::make_keypads() {
 // Generated rather than a JSON literal: three keypads of up to 9 x 6 keys.
 // Every child gets an explicit "order" so it renders in declaration order.
 //
-// Flags: NoResize + AlwaysAutoResize let the window fit whichever keypad is
-// visible (hidden keypads measure as zero). NoDocking is deliberate: docking
-// would stretch the fixed key grid to fill a dock node, so the calculator
-// stays a floating window even inside a desktop shell.
+// Flags: NoResize, since fit_window() sizes the window to whichever keypad is
+// visible. NoDocking is deliberate: docking would stretch the fixed key grid
+// to fill a dock node, so the calculator stays a floating window even inside
+// a desktop shell.
 
 namespace {
 
@@ -336,6 +349,8 @@ layout_node right_aligned(const std::string& id, layout_node label) {
   layout_node row = node("HorizontalLayout");
   row.add("sp", node("Spring"));
   row.add(id, std::move(label));
+  // A collapsed (weight 0) Spring: keeps one spacing of margin on the right.
+  row.add("margin", node("Spring", "\"weight\":0"));
   return row;
 }
 
@@ -357,9 +372,22 @@ std::string to_json(const layout_node& n, int order = -1) {
 
 } // namespace
 
+// Layouts get explicit "height" hints: a never-rendered widget (a keypad
+// that starts hidden) has no natural size yet, so without them a keypad's
+// first frames would be laid out from zero-height rows. The keypads and the
+// radix panel get theirs only while visible (set_mode()): a hint reserves
+// its height even on a hidden child.
+static std::string spacing_and_height(int spacing, int height) {
+  return "\"spacing\":" + std::to_string(spacing) + ",\"height\":" + std::to_string(height);
+}
+
+int bc::keypad_height(const keypad_def& pad) {
+  int rows = static_cast<int>(pad.rows.size());
+  return rows * pad.key_height + (rows - 1) * kKeySpacing;
+}
+
 std::string bc::make_layout(const std::vector<keypad_def>& pads) const {
-  layout_node window =
-      node("Window", "\"title\":\"Calculator\",\"flags\":\"NoResize|NoDocking|AlwaysAutoResize\",\"closable\":true");
+  layout_node window = node("Window", "\"title\":\"Calculator\",\"flags\":\"NoResize|NoDocking\",\"closable\":true");
 
   // ── Menu bar ──
   layout_node& menu = window.add("menu", node("MenuBar"));
@@ -378,33 +406,42 @@ std::string bc::make_layout(const std::vector<keypad_def>& pads) const {
   edit.add("clear_history", node("MenuItem", labelled("Clear history")));
 
   // ── Calculator column ──
-  layout_node& body = window.add("body", node("HorizontalLayout", "\"spacing\":12"));
+  layout_node& body = window.add("body", node("HorizontalLayout", "\"spacing\":" + std::to_string(kHistoryGap)));
   layout_node& main = body.add("main", node("VerticalLayout", "\"spacing\":4"));
 
-  layout_node& tabs = main.add("tabs", node("HorizontalLayout", "\"spacing\":4"));
+  layout_node& tabs = main.add("tabs", node("HorizontalLayout", "\"spacing\":4,\"height\":24"));
   for (int m = 0; m < 3; ++m)
-    tabs.add(kKeypadIds[m], node("Selectable", labelled(kModeNames[m], size_fields(104, 24, 16))));
+    tabs.add(kKeypadIds[m], node("Selectable", labelled(kModeNames[m], size_fields(kTabWidth, 24, 16))));
 
   main.add("expr_row", right_aligned("expr", dim_label(" ", 16)));
   main.add("display_row", right_aligned("display", node("Label", "\"text\":\"0\",\"font_size\":36")));
   main.add("status", dim_label(" ", 14));
 
-  layout_node& radix = main.add("radix", node("VerticalLayout", "\"visible\":false"));
+  layout_node& radix =
+      main.add("radix", node("VerticalLayout", "\"spacing\":" + std::to_string(kRadixSpacing) + ",\"visible\":false"));
   for (int r = 0; r < 4; ++r)
     radix.add(
-        kRadixIds[r], node("Selectable", labelled(kRadixNames[r], "\"width\":448,\"height\":22,\"font_size\":16")));
+        kRadixIds[r],
+        node(
+            "Selectable",
+            labelled(
+                kRadixNames[r],
+                "\"width\":" + std::to_string(kRadixWidth) + ",\"height\":" + std::to_string(kRadixRowHeight) +
+                    ",\"font_size\":16")));
 
-  layout_node& mem = main.add("mem", node("HorizontalLayout", "\"spacing\":4"));
+  layout_node& mem = main.add("mem", node("HorizontalLayout", "\"spacing\":4,\"height\":26"));
   const char* mem_ids[] = {"mc", "mr", "mplus", "mminus", "ms"};
   const std::string mem_labels[] = {"MC", "MR", "M+", str("M", kMinus), "MS"};
   for (int i = 0; i < 5; ++i)
     mem.add(mem_ids[i], node("Button", labelled(mem_labels[i], size_fields(56, 26, 15))));
 
   for (const auto& pad : pads) {
-    layout_node& keypad = main.add(pad.id, node("VerticalLayout", "\"spacing\":4,\"visible\":false"));
+    layout_node& keypad =
+        main.add(pad.id, node("VerticalLayout", "\"spacing\":" + std::to_string(kKeySpacing) + ",\"visible\":false"));
     int font = pad.key_height >= 48 ? 22 : 17;
     for (std::size_t r = 0; r < pad.rows.size(); ++r) {
-      layout_node& row = keypad.add("r" + std::to_string(r), node("HorizontalLayout", "\"spacing\":4"));
+      layout_node& row = keypad.add(
+          "r" + std::to_string(r), node("HorizontalLayout", spacing_and_height(kKeySpacing, pad.key_height)));
       for (const auto& k : pad.rows[r])
         row.add(k.id, node("Button", labelled(k.label, size_fields(pad.key_width, pad.key_height, font))));
     }
@@ -416,8 +453,17 @@ std::string bc::make_layout(const std::vector<keypad_def>& pads) const {
   history.add("empty", dim_label("There's no history yet", 14));
   for (std::size_t i = 0; i < kHistorySlots; ++i)
     history.add(
-        "h" + std::to_string(i), node("Selectable", labelled("", "\"width\":240,\"height\":40,\"visible\":false")));
-  history.add("clear", node("Button", labelled("Clear history", "\"width\":240,\"height\":26")));
+        "h" + std::to_string(i),
+        node(
+            "Selectable",
+            labelled(
+                "",
+                "\"width\":" + std::to_string(kHistoryWidth) + ",\"height\":40,\"font_size\":15,\"visible\":false")));
+  history.add(
+      "clear",
+      node(
+          "Button",
+          labelled("Clear history", "\"width\":" + std::to_string(kHistoryWidth) + ",\"height\":26,\"font_size\":15")));
 
   return to_json(window);
 }
@@ -428,6 +474,14 @@ void bc::on_init() {
 
   auto pads = make_keypads();
   std::string layout = make_layout(pads);
+  for (std::size_t m = 0; m < pads.size() && m < keypad_sizes_.size(); ++m) {
+    const auto& pad = pads[m];
+    std::size_t columns = 0;
+    for (const auto& row : pad.rows)
+      columns = std::max(columns, row.size());
+    int cols = static_cast<int>(columns);
+    keypad_sizes_[m] = {cols * pad.key_width + (cols - 1) * kKeySpacing, keypad_height(pad)};
+  }
 
   build_window(internal_root_key_, layout.c_str(), window_id_, [&](ui_tree& tree) {
     auto find = [&](const std::string& path) {
@@ -442,6 +496,7 @@ void bc::on_init() {
       return el;
     };
 
+    window_ = find("");
     const std::string main = "body.main.";
     display_ = find(main + "display_row.display");
     expression_ = find(main + "expr_row.expr");
@@ -464,7 +519,10 @@ void bc::on_init() {
       auto unit = units[u];
       angle_items_[u] = bind(str("menu.view.", unit_ids[u]), [this, unit] { engine_.set_angle_unit(unit); });
     }
-    history_item_ = bind("menu.view.history", [this] { show_history_ = !show_history_; });
+    history_item_ = bind("menu.view.history", [this] {
+      show_history_ = !show_history_;
+      fit_window();
+    });
     grouping_item_ = bind("menu.view.grouping", [this] { engine_.set_digit_grouping(!engine_.digit_grouping()); });
     bind("menu.edit.clear_history", [this] { engine_.clear_history(); });
     bind("body.history.clear", [this] { engine_.clear_history(); });
@@ -525,11 +583,45 @@ void bc::set_mode(calc::mode m) {
   second_ = false;
   hyp_ = false;
   for (int i = 0; i < 3; ++i) {
-    if (keypads_[i])
-      (*keypads_[i])["visible"_key] = i == static_cast<int>(m);
+    if (!keypads_[i])
+      continue;
+    bool active = i == static_cast<int>(m);
+    (*keypads_[i])["visible"_key] = active;
+    (*keypads_[i])["height"_key] = active ? static_cast<float>(keypad_sizes_[i].second) : 0.0f;
   }
-  if (radix_panel_)
-    (*radix_panel_)["visible"_key] = m == calc::mode::programmer;
+  if (radix_panel_) {
+    bool programmer = m == calc::mode::programmer;
+    (*radix_panel_)["visible"_key] = programmer;
+    (*radix_panel_)["height"_key] = programmer ? static_cast<float>(kRadixHeight) : 0.0f;
+  }
+  fit_window();
+}
+
+void bc::fit_window() {
+  if (!window_)
+    return;
+  // Fixed parts of the layout, in pixels: window chrome above the tabs
+  // (title bar, menu bar, padding), the rows between the tabs and the keypad
+  // (tabs, expression, display, status, memory keys, spacing), the bottom
+  // padding, and the programmer radix rows.
+  constexpr int kChromeTop = 62;
+  constexpr int kAboveKeypad = 138;
+  constexpr int kBottom = 20;
+  constexpr int kRadixRows = kRadixHeight + 4;
+  constexpr int kSidePadding = 24;
+  constexpr int kMinContentWidth = 3 * kTabWidth + 2 * kKeySpacing;
+
+  auto m = static_cast<std::size_t>(engine_.get_mode());
+  auto [pad_w, pad_h] = keypad_sizes_[m];
+  bool programmer = engine_.get_mode() == calc::mode::programmer;
+  int content_w = std::max({pad_w, kMinContentWidth, programmer ? kRadixWidth : 0});
+  if (show_history_)
+    content_w += kHistoryGap + kHistoryWidth;
+  int height = kChromeTop + kAboveKeypad + pad_h + (programmer ? kRadixRows : 0) + kBottom;
+  if (show_history_)
+    height = std::max(height, kChromeTop + kHistoryHeight + kBottom);
+  (*window_)["width"_key] = int32_t{content_w + kSidePadding};
+  (*window_)["height"_key] = int32_t{height};
 }
 
 void bc::refresh() {

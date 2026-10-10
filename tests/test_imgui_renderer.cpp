@@ -4309,3 +4309,32 @@ TEST_F(ImguiRendererTest, TextEditorGotoRequestScrollsToTheRequestedLine) {
   (*map[""])["goto_request"_key] = int32_t{1};
   EXPECT_GT(scroll_after(3), 0.0f);
 }
+
+// ── Window: runtime size changes ─────────────────────────────────────────────
+
+TEST_F(ImguiRendererTest, WindowTakeSizeChangeReportsOnlyLaterChanges) {
+  auto map = bdg::wish::import_json(R"({"type":"Window","title":"resize","width":200,"height":100})");
+  const auto& win = static_cast<const bdg::wish::window&>(*map[""]);
+  EXPECT_FALSE(win.take_size_change(200, 100));  // first sight: initial size only
+  EXPECT_FALSE(win.take_size_change(200, 100));
+  EXPECT_TRUE(win.take_size_change(300, 100));
+  EXPECT_FALSE(win.take_size_change(300, 100));
+  EXPECT_TRUE(win.take_size_change(300, 150));
+}
+
+TEST_F(ImguiRendererTest, WindowFollowsAWidthChangeMadeAfterCreation) {
+  auto map = bdg::wish::import_json(R"({"type":"Window","title":"resize_test","width":200,"height":120})");
+  auto frame = [&] {
+    renderer_->begin_frame();
+    renderer_->render_node(*map[""], *sess_);
+    renderer_->end_frame();
+  };
+  frame();
+  frame();
+  EXPECT_FLOAT_EQ(map[""]->last_rendered_size().x, 200.0f);
+
+  (*map[""])["width"_key] = int32_t{320};
+  frame();
+  frame();
+  EXPECT_FLOAT_EQ(map[""]->last_rendered_size().x, 320.0f);
+}

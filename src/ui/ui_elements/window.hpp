@@ -6,6 +6,7 @@
 #include <ui/ui_root.hpp>
 
 #include <optional>
+#include <utility>
 
 namespace bdg::wish {
 
@@ -77,6 +78,17 @@ class window : public cloneable_ui_element<window, ui_root> {
     return changed;
   }
 
+  /// @brief True when the requested size (@p w, @p h) differs from the one
+  /// seen on the previous call -- the frame render_window() should force the
+  /// window to it. The first call only records the size, which is applied
+  /// as the initial (ImGuiCond_FirstUseEver) size instead, so a size the
+  /// user picked and imgui.ini remembered is kept until the app changes it.
+  bool take_size_change(int32_t w, int32_t h) const {
+    bool changed = seen_size_.has_value() && *seen_size_ != std::pair{w, h};
+    seen_size_ = std::pair{w, h};
+    return changed;
+  }
+
   /// @brief True exactly on the frame @p is_focused transitions from false
   /// to true -- the frame render_window() emits `"focused"`. Always updates
   /// the recorded focus state to @p is_focused.
@@ -141,6 +153,7 @@ class window : public cloneable_ui_element<window, ui_root> {
   mutable int32_t float_width_ = 0;
   mutable int32_t float_height_ = 0;
   mutable std::optional<int32_t> seen_focus_request_;
+  mutable std::optional<std::pair<int32_t, int32_t>> seen_size_;
   mutable bool was_focused_ = false;
 };
 

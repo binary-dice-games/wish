@@ -64,10 +64,13 @@ class bc : public common::tool_form {
     std::vector<key_row> rows;
   };
 
+  static int keypad_height(const keypad_def& pad);
   std::vector<keypad_def> make_keypads();
   std::string make_layout(const std::vector<keypad_def>& pads) const;
   void set_mode(calc::mode m);
   void refresh();
+  /// Sizes the window to the active keypad (plus the history panel).
+  void fit_window();
 
   calc::engine engine_;
   bool second_{false}; ///< "2nd": inverse functions in scientific mode
@@ -77,6 +80,8 @@ class bc : public common::tool_form {
   // ── Widgets ───────────────────────────────────────────────────────────────
 
   bison::key_t window_id_;
+  ui_element_ptr window_;
+  std::array<std::pair<int, int>, 3> keypad_sizes_{}; ///< width, height per mode
   ui_element_ptr display_;
   ui_element_ptr expression_;
   ui_element_ptr status_;

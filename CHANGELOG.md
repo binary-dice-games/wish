@@ -80,6 +80,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `Window`: changing `width` / `height` after creation now resizes the window, and a `NoResize` window always takes its `width` / `height` instead of a size remembered in `imgui.ini`.
 - `bc` is now a full calculator with switchable **Standard**, **Scientific** and **Programmer** layouts (mode tabs or the View menu): operator precedence and parentheses, trigonometric (DEG/RAD/GRAD, inverse, hyperbolic), power/root/log functions, n!, mod, Exp entry and F-E notation; HEX/DEC/OCT/BIN with BYTE to QWORD word sizes, bitwise and shift/rotate operators; memory keys, a clickable history panel, digit grouping and Copy.
 - `wish server` and `wish_server_start()` always trust a client's `--username` / `"username"` connect field as its identity, so it gets a user store; clients without one stay anonymous.
 - `mc`: the default layout is now a 2x2 grid -- folder trees on top, file panels below, Local on the left and Sandbox on the right.

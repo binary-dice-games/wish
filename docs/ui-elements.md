@@ -107,8 +107,8 @@ one (directly or via nested layouts).
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `title` | `string` | `""` | Window title bar text. |
-| `width` | `int32` | `0` | Window width in pixels (0–16384). |
-| `height` | `int32` | `0` | Window height in pixels (0–16384). |
+| `width` | `int32` | `0` | Window width in pixels (0–16384). The initial size, unless `imgui.ini` remembers one the user picked; changing `width`/`height` later resizes the window. A `NoResize` window (without `AlwaysAutoResize`) always takes this size. |
+| `height` | `int32` | `0` | Window height in pixels (0–16384). See `width`. |
 | `pos_x` | `int32` | `-1` | Horizontal position in pixels. `-1` (with `pos_y`) leaves the window unpositioned: a modal centers on the viewport, a normal dockable window docks into the ambient dockspace (the server's fullscreen host window, or a `DockSpaceViewport`'s), and either falls back to ImGui's own placement when neither applies. A user drag is remembered by `imgui.ini` regardless. |
 | `pos_y` | `int32` | `-1` | Vertical position in pixels. See `pos_x` for the `-1` (unpositioned) behavior. |
 | `closable` | `bool` | `false` | Show a close button (X) on the title bar; clicking it emits `closed`. |
