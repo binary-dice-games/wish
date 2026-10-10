@@ -170,7 +170,7 @@ Environment variables — four uses of one shape (`curl.hpp`'s `kv_table`/
 "enabled" concept). Three operations, deliberately **not** a
 docker-style full rebuild:
 
-- `kv_table_add_row()` appends one row (an "+ Add ..." button per table).
+- `kv_table_add_row()` appends one row (an "Add ..." button per table).
 - `kv_table_remove_row()` erases exactly the row whose "x" button was
   clicked (each "x" button's click handler, registered through
   `tool_form::on_click()`, names its own `kv_table` and row) — every other

@@ -1,5 +1,7 @@
 # zip
 
+<img src="zip.png" alt="zip" height="300"/>
+
 A zip/unzip tool for the client's local filesystem: browse a directory,
 compress one or more selected files/folders into a `.zip`, extract a
 selected `.zip` into a folder, and view an archive's contents (name, size,

@@ -70,24 +70,24 @@ static constexpr const char* kPackagesLayout = R"json({
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_refresh":  { "type": "Button", "label": "Refresh" },
-      "btn_outdated": { "type": "Button", "label": "Check for updates" },
+      "btn_refresh":  { "type": "Button", "label": "Refresh", "icon": "res/icons/refresh.png" },
+      "btn_outdated": { "type": "Button", "label": "Check for updates", "icon": "res/icons/arrow_up.png" },
       "filter":       { "type": "InputText", "hint": "Filter by name", "width": 180 },
       "state":        { "type": "Combo", "items": "All\nOutdated\nEditable", "value": 0, "width": 110 },
       "spring":       { "type": "Spring" },
-      "btn_freeze":   { "type": "Button", "label": "Freeze" },
-      "btn_check":    { "type": "Button", "label": "Check" }
+      "btn_freeze":   { "type": "Button", "label": "Freeze", "icon": "res/icons/document.png" },
+      "btn_check":    { "type": "Button", "label": "Check", "icon": "res/icons/check.png" }
     } },
     "install_bar": { "type": "HorizontalLayout", "spacing": 6, "children": {
       "caption":      { "type": "Label", "text": "Install new package:" },
       "spec":         { "type": "InputText", "hint": "exact name, e.g. requests or requests==2.31.0", "width": 330 },
-      "btn_versions": { "type": "Button", "label": "Look up" },
-      "btn_install":  { "type": "Button", "label": "Install" }
+      "btn_versions": { "type": "Button", "label": "Look up", "icon": "res/icons/search.png" },
+      "btn_install":  { "type": "Button", "label": "Install", "icon": "res/icons/download.png" }
     } },
     "req_bar": { "type": "HorizontalLayout", "spacing": 6, "children": {
       "caption":          { "type": "Label", "text": "Or a requirements file:" },
       "req_path":         { "type": "InputText", "hint": "path on the client machine", "width": 250 },
-      "btn_requirements": { "type": "Button", "label": "Install requirements" }
+      "btn_requirements": { "type": "Button", "label": "Install requirements", "icon": "res/icons/download.png" }
     } },
     "opts_bar": { "type": "HorizontalLayout", "spacing": 6, "children": {
       "caption": { "type": "Label", "text": "Install options:" },
@@ -120,7 +120,7 @@ static constexpr const char* kVersionsLayout = R"json({
     "toolbar": { "type": "HorizontalLayout", "spacing": 8, "children": {
       "target":      { "type": "Label", "text": "(no package selected)" },
       "spring":      { "type": "Spring" },
-      "btn_refresh": { "type": "Button", "label": "Refresh" }
+      "btn_refresh": { "type": "Button", "label": "Refresh", "icon": "res/icons/refresh.png" }
     } },
     "status": { "type": "Label", "text": "Type a name in Packages and press Look up." },
     "sep": { "type": "Separator" },

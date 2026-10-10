@@ -354,6 +354,28 @@ gotcha, an environment quirk, a better/worse way to drive some interaction)
 before you finish, even if the user didn't ask for a documentation update —
 a gotcha you hit and didn't record is one the next agent will hit again.
 
+## Tool READMEs and screenshots
+
+Every tool under `modules/<org>/<collection>/<name>/` has a `README.md` with
+a screenshot, `<name>.png`, in the same directory, shown right below the
+title (`<img src="<name>.png" alt="<name>" height="300"/>`).
+
+**Whenever you change a tool, keep both current before you finish:**
+
+- Update its `README.md` for any change in behavior, controls, command-line
+  arguments or layout.
+- Regenerate `<name>.png` when the change is visible (layout, widgets,
+  icons, labels, colors). Take it with `scripts/screenshot_module.py --run
+  <name>` (see [docs/automation.md](docs/automation.md), "Recipe: screenshot
+  a module"). Use `--width 1440 --height 900`, show real-looking data
+  (`--arg`, `--type`, a fake CLI on `PATH` for a tool whose CLI is missing),
+  and open a menu (`--click-class MenuButton`) when the change is in one.
+- Before committing a screenshot, look at it: it must not show
+  machine-specific or private details (the machine's process list, a real
+  user's home directory or user name, installed packages, session ids).
+  Filter or use sample data instead.
+- A new tool gets its README and screenshot in the same change.
+
 ## Security Considerations for AI Code Assist
 
 When generating or modifying wish server-side code, AI agents must follow these rules:

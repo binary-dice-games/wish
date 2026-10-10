@@ -1,5 +1,7 @@
 # pip
 
+<img src="pip.png" alt="pip" height="300"/>
+
 A GUI frontend for the local `pip` command line: a dockable window listing the
 installed Python packages with per-row actions and an install bar, plus the
 versions the package index offers for a package and a text pane for `pip

@@ -101,7 +101,7 @@ are `internal_root_key_ + "_deployments" / "_services" / "_nodes"`),
 over a Console strip on the left, Logs + Describe tabbed on the right) via
 `form::set_default_dock_layout()` — same as `docker`, see
 [../docker/DESIGN.md](../docker/DESIGN.md) and
-[docs/dock-layout.md](../../../../docs/dock-layout.md). The `...` menu dispatch keys on a `{scope, name,
+[docs/dock-layout.md](../../../../docs/dock-layout.md). The row actions-menu dispatch keys on a `{scope, name,
 ns, action}` `row_action`, so one `on_event()` clause routes every window's
 actions.
 
@@ -407,7 +407,7 @@ Depended on by: nothing else in wish; a leaf module.
 
 - Pods / Deployments / Services / Nodes: four dockable `common::list_panel`
   windows, each
-  with a `...` action menu (state-aware for nodes); Pods name / namespace /
+  with a row actions menu (state-aware for nodes); Pods name / namespace /
   phase filters; Deployments and Services name / namespace filters.
 - Logs / Describe: two dockable `common::text_viewer_panel` windows.
   `logs_requested` runs `kubectl logs --tail N --timestamps` with a 2 s

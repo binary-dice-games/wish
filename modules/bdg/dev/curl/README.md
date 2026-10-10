@@ -1,5 +1,7 @@
 # curl
 
+<img src="curl.png" alt="curl" height="300"/>
+
 A Postman-style GUI frontend for the local `curl` command line: a request
 builder (method, URL, query params, headers, body, a Basic/Bearer auth
 helper), a response viewer (status/timing/size, headers, a JSON-aware

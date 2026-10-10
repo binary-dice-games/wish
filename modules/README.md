@@ -33,9 +33,14 @@ module, and modules just `#include` it:
   bdg form (window building, click dispatch, confirm / message dialogs),
   and the panels the tools share: `console_panel` (the command-trace
   Console window), `list_panel` (toolbar + status + table with per-row
-  `...` menus), `text_viewer_panel` (read-only Logs / Details text) and
-  `rolling_plot` (live per-series graphs). A new tool should build on
-  these rather than copy another module's version.
+  actions menus -- an icon-only "more" button whose items get
+  `common::action_icon()` icons), `text_viewer_panel` (read-only Logs /
+  Details text) and `rolling_plot` (live per-series graphs). A new tool
+  should build on these rather than copy another module's version. Give
+  toolbar buttons and menu items a built-in icon (`"icon":
+  "res/icons/<name>.png"`, or `common::icon_path()` / `set_icon()` from
+  `ui_helpers.hpp`); the available icons are listed in
+  [resources/README.md](../resources/README.md).
 
 A module needs none, some, or all three of `server/`, `client/`,
 `resources/embedded/` — there's no assumption that any particular

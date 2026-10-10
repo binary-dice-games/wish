@@ -228,10 +228,10 @@ static constexpr const char* kToolbarLayout = R"({
       "type": "HorizontalLayout",
       "spacing": 8.0,
       "children": {
-        "btn_open": { "type": "Button", "label": "Open", "width": 90 },
-        "btn_new":  { "type": "Button", "label": "New",  "width": 90 },
-        "btn_save": { "type": "Button", "label": "Save", "width": 90 },
-        "btn_find": { "type": "Button", "label": "Find", "width": 90 },
+        "btn_open": { "type": "Button", "label": "Open", "icon": "res/icons/folder_open.png" },
+        "btn_new":  { "type": "Button", "label": "New", "icon": "res/icons/add.png" },
+        "btn_save": { "type": "Button", "label": "Save", "icon": "res/icons/save.png" },
+        "btn_find": { "type": "Button", "label": "Find", "icon": "res/icons/search.png" },
         "current_label": { "type": "Label", "text": "No file open" }
       }
     }
@@ -327,8 +327,8 @@ static constexpr const char* kSearchLayout = R"json({
                   "type": "HorizontalLayout",
                   "spacing": 4.0,
                   "children": {
-                    "btn_count": { "type": "Button", "label": "Count", "width": -1 },
-                    "btn_clear": { "type": "Button", "label": "Clear Results", "width": -1 }
+                    "btn_count": { "type": "Button", "label": "Count", "icon": "res/icons/info.png", "width": -1 },
+                    "btn_clear": { "type": "Button", "label": "Clear Results", "icon": "res/icons/delete.png", "width": -1 }
                   }
                 }
               }

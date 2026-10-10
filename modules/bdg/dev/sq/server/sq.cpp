@@ -58,10 +58,10 @@ static constexpr const char* kEditorLayout = R"json({
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_run":  { "type": "Button", "label": "Run" },
+      "btn_run":  { "type": "Button", "label": "Run", "icon": "res/icons/play.png" },
       "conn":     { "type": "Combo", "items": "(no connection)", "value": 0, "width": 220 },
       "rows":     { "type": "Combo", "items": "100 rows\n500 rows\n1000 rows\n5000 rows", "value": 1, "width": 110 },
-      "btn_refresh": { "type": "Button", "label": "Refresh" }
+      "btn_refresh": { "type": "Button", "label": "Refresh", "icon": "res/icons/refresh.png" }
     } },
     "status": { "type": "Label", "text": "Read-only queries only: SELECT / WITH / VALUES / SHOW / DESCRIBE / EXPLAIN." },
     "sql": { "type": "TextEditor", "language": "sql", "file_path": "", "width": -1, "height": -1 }
@@ -73,10 +73,10 @@ static constexpr const char* kResultsLayout = R"json({
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "export": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_export": { "type": "Button", "label": "Export CSV" },
+      "btn_export": { "type": "Button", "label": "Export CSV", "icon": "res/icons/download.png" },
       "path":      { "type": "InputText", "hint": "CSV file in the session folder, e.g. result.csv", "width": 380 },
       "overwrite": { "type": "Checkbox", "label": "Overwrite", "value": false },
-      "btn_open":  { "type": "Button", "label": "Open folder" }
+      "btn_open":  { "type": "Button", "label": "Open folder", "icon": "res/icons/folder_open.png" }
     } },
     "status": { "type": "Label", "text": "Run a query to see its results." },
     "sep": { "type": "Separator" },
@@ -101,7 +101,7 @@ static constexpr const char* kConnectionsLayout = R"json({
     } },
     "new_row2": { "type": "HorizontalLayout", "spacing": 6, "children": {
       "password": { "type": "InputText", "hint": "password (optional)", "flags": "Password", "width": 170 },
-      "btn_add":  { "type": "Button", "label": "Add connection" }
+      "btn_add":  { "type": "Button", "label": "Add connection", "icon": "res/icons/add.png" }
     } },
     "status": { "type": "Label", "text": "" },
     "sep": { "type": "Separator" },
@@ -161,10 +161,10 @@ static constexpr const char* kChartLayout = R"json({
     } },
     "ycols": { "type": "TreeNode", "label": "Y columns", "open": true, "children": {} },
     "save": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_save":  { "type": "Button", "label": "Save PNG" },
+      "btn_save":  { "type": "Button", "label": "Save PNG", "icon": "res/icons/save.png" },
       "path":      { "type": "InputText", "hint": "PNG file in the session folder, e.g. chart.png", "width": 380 },
       "overwrite": { "type": "Checkbox", "label": "Overwrite", "value": false },
-      "btn_open":  { "type": "Button", "label": "Open folder" }
+      "btn_open":  { "type": "Button", "label": "Open folder", "icon": "res/icons/folder_open.png" }
     } },
     "status": { "type": "Label", "text": "Run a query to chart its results." },
     "plot": { "type": "Plot", "title": "##sq_chart_0", "height": -1, "children": {} }
@@ -239,13 +239,17 @@ ui_element_ptr sq_frontend::make_row(
 
   if (!menu.empty()) {
     ui_element_ptr button = ui_element_ptr::create("wish"_key, "MenuButton"_key);
-    button["label"_key] = std::string{"..."};
+    button["label"_key] = std::string{};
+    common::set_icon(button, "more");
+    button["tooltip"_key] = std::string{"Actions"};
     assign_id(button);
     ids.push_back(wish_id_of(button));
     std::vector<ui_element_ptr> items;
     for (auto& [label, fn] : menu) {
       ui_element_ptr mi = ui_element_ptr::create("wish"_key, "MenuItem"_key);
       mi["label"_key] = label;
+      if (std::string icon = common::action_icon(label); !icon.empty())
+        common::set_icon(mi, icon);
       assign_id(mi);
       ids.push_back(wish_id_of(mi));
       click_handlers_[wish_id_of(mi)] = fn;
@@ -545,11 +549,13 @@ void sq_frontend::rebuild_navigator(const std::string& heading) {
     nav_ids_.push_back(wish_id_of(el));
     return el;
   };
-  auto node = [&](const std::string& label, bool open, bool leaf) {
+  auto node = [&](const std::string& label, bool open, bool leaf, const char* icon = nullptr) {
     ui_element_ptr n = ui_element_ptr::create("wish"_key, "TreeNode"_key);
     n["label"_key] = label;
     n["open"_key] = open;
     n["leaf"_key] = leaf;
+    if (icon)
+      common::set_icon(n, icon);
     return track(n);
   };
 
@@ -567,7 +573,7 @@ void sq_frontend::rebuild_navigator(const std::string& heading) {
   if (!schema_product_.empty())
     root_label += " - " + schema_product_;
   root_label += ")";
-  ui_element_ptr root = node(root_label, true, false);
+  ui_element_ptr root = node(root_label, true, false, "database");
 
   auto section = [&](const char* title, const char* type) {
     std::vector<ui_element_ptr> table_nodes;
@@ -578,13 +584,14 @@ void sq_frontend::rebuild_navigator(const std::string& heading) {
       std::string label = t.name;
       if (t.rows >= 0)
         label += "  [" + std::to_string(t.rows) + " rows]";
-      ui_element_ptr tn = node(label, false, false);
+      ui_element_ptr tn = node(label, false, false, "table");
 
       ui_element_ptr actions = ui_element_ptr::create("wish"_key, "HorizontalLayout"_key);
       actions["spacing"_key] = 4.0f;
       track(actions);
       ui_element_ptr b_data = ui_element_ptr::create("wish"_key, "Button"_key);
       b_data["label"_key] = std::string{"View data"};
+      common::set_icon(b_data, "visibility");
       track(b_data);
       click_handlers_[wish_id_of(b_data)] = [this, ti] {
         const std::string sql = "SELECT * FROM " + quote_identifier(active_driver_, tables_[ti].name);
@@ -593,6 +600,7 @@ void sq_frontend::rebuild_navigator(const std::string& heading) {
       };
       ui_element_ptr b_struct = ui_element_ptr::create("wish"_key, "Button"_key);
       b_struct["label"_key] = std::string{"Structure"};
+      common::set_icon(b_struct, "tree");
       track(b_struct);
       click_handlers_[wish_id_of(b_struct)] = [this, ti] { show_structure(ti); };
       set_children_list(actions, {b_data, b_struct});
@@ -604,12 +612,14 @@ void sq_frontend::rebuild_navigator(const std::string& heading) {
           cl += "  [PK]";
         if (!c.fk.empty())
           cl += "  -> " + c.fk;
-        kids.push_back(node(cl, false, true));
+        // Key columns get an icon: primary key, or a foreign-key link.
+        kids.push_back(node(cl, false, true, c.pk ? "key" : !c.fk.empty() ? "link" : nullptr));
       }
       set_children_list(tn, kids);
       table_nodes.push_back(tn);
     }
-    ui_element_ptr sn = node(std::string{title} + " (" + std::to_string(table_nodes.size()) + ")", true, false);
+    ui_element_ptr sn =
+        node(std::string{title} + " (" + std::to_string(table_nodes.size()) + ")", true, false, "folder");
     set_children_list(sn, table_nodes);
     return sn;
   };

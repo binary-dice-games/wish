@@ -1,5 +1,7 @@
 # nymph
 
+<img src="nymph.png" alt="nymph" height="300"/>
+
 Charts from text. `nymph` turns a short text description of a chart into a
 PNG drawn with wish's own `Plot` / `Plot3D` widgets, the way mermaid turns
 text into diagrams. The text is stored inside the PNG, so the image is its

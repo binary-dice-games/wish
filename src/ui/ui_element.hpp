@@ -751,9 +751,19 @@ class ui_button : public cloneable_ui_element<ui_button> {
   /// @brief Zero-copy form of `label()` (empty-string fallback) -- see
   ///        `cached_field_str()`. `render_button()` reads this every frame.
   const std::string& label_ref() const { return cached_field_str(label_field_, bison::key_t{"label"}); }
+  /// @brief Zero-copy `icon` (empty fallback) -- see `cached_field_str()`.
+  const std::string& icon_ref() const {
+    return cached_field_str(icon_field_, bison::key_t{"icon"});
+  }
+  /// @brief Zero-copy `icon_color` (empty fallback) -- see `cached_field_str()`.
+  const std::string& icon_color_ref() const {
+    return cached_field_str(icon_color_field_, bison::key_t{"icon_color"});
+  }
 
  private:
   mutable bison::field* label_field_ = nullptr;
+  mutable bison::field* icon_field_ = nullptr;
+  mutable bison::field* icon_color_field_ = nullptr;
 };
 
 class ui_label : public cloneable_ui_element<ui_label> {
@@ -1185,8 +1195,13 @@ class ui_menu_item : public cloneable_ui_element<ui_menu_item> {
   const std::string& label_ref() const { return cached_field_str(label_field_, bison::key_t{"label"}); }
   const std::string& shortcut_ref() const { return cached_field_str(shortcut_field_, bison::key_t{"shortcut"}); }
   const std::string& copy_text_ref() const { return cached_field_str(copy_text_field_, bison::key_t{"copy_text"}); }
+  /// @brief Zero-copy `icon` (empty fallback) -- see `cached_field_str()`.
+  const std::string& icon_ref() const {
+    return cached_field_str(icon_field_, bison::key_t{"icon"});
+  }
 
  private:
+  mutable bison::field* icon_field_ = nullptr;
   mutable bison::field* label_field_ = nullptr;
   mutable bison::field* enabled_field_ = nullptr;
   mutable bison::field* shortcut_field_ = nullptr;
@@ -1203,9 +1218,14 @@ class ui_menu_button : public cloneable_ui_element<ui_menu_button> {
   }
   /// @brief Zero-copy form of `label()` (empty fallback) -- see `cached_field_str()`.
   const std::string& label_ref() const { return cached_field_str(label_field_, bison::key_t{"label"}); }
+  /// @brief Zero-copy `icon` (empty fallback) -- see `cached_field_str()`.
+  const std::string& icon_ref() const {
+    return cached_field_str(icon_field_, bison::key_t{"icon"});
+  }
 
  private:
   mutable bison::field* label_field_ = nullptr;
+  mutable bison::field* icon_field_ = nullptr;
 };
 
 // ── Tabs ─────────────────────────────────────────────────────────────────────

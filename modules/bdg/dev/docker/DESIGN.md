@@ -113,7 +113,7 @@ Bison class `"DockerFrontend"` in the `"wish"` namespace, a
 `Window`s** (`form::init()` auto-registers only the main root; the others
 register themselves through `tool_form::build_window()`). The four list
 windows (Containers / Images / Volumes / Networks) are
-`common::list_panel<entity>`s; each row's `...` menu items carry a callback
+`common::list_panel<entity>`s; each row's actions-menu items carry a callback
 into `run_row_action(entity, action)`, so one function routes every
 window's actions. Root keys are
 `internal_root_key_` and `internal_root_key_ + "_images" / "_volumes" /
@@ -124,7 +124,7 @@ window's actions. Root keys are
   and the containers `Table` (Name, Image, Status, Ports, Created). The
   Status cell is colour-coded by `.State` (green running, gray
   exited/created, amber paused/restarting, red dead). Each row's last cell
-  is a `MenuButton` (`"..."`) whose `MenuItem`s are state-aware: Start on a
+  is an icon-only `MenuButton` (`res/icons/more.png`) whose `MenuItem`s are state-aware: Start on a
   stopped container; Stop / Restart / Pause / Kill on a running one;
   Unpause on a paused one — plus Logs / Inspect / Remove for all.
 - **Images**: toolbar (Refresh, a pull-ref `InputText` + Pull button,
@@ -550,7 +550,7 @@ Depended on by: nothing else in wish; this is a leaf module.
 `tests/test_docker.cpp` are in place.
 
 - Containers / Images / Volumes / Networks: four dockable
-  `common::list_panel` windows, each with a state-aware `...` action menu; Containers text + state
+  `common::list_panel` windows, each with a state-aware row actions menu; Containers text + state
   filters; inline pull-image / create-volume fields; built-in networks get
   an Inspect-only menu.
 - Logs / Inspect: two dockable `common::text_viewer_panel` windows

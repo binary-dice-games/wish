@@ -166,10 +166,10 @@ static constexpr const char* kActionsLayout = R"json({
           "type": "HorizontalLayout",
           "spacing": 8,
           "children": {
-            "btn_compress": { "type": "Button", "label": "Compress...", "width": 120, "height": 32 },
-            "btn_extract":  { "type": "Button", "label": "Extract", "width": 100, "height": 32 },
-            "btn_view":     { "type": "Button", "label": "View Contents", "width": 130, "height": 32 },
-            "btn_refresh":  { "type": "Button", "label": "Refresh", "width": 90, "height": 32 }
+            "btn_compress": { "type": "Button", "label": "Compress...", "icon": "res/icons/zip.png", "height": 32 },
+            "btn_extract":  { "type": "Button", "label": "Extract", "icon": "res/icons/folder_open.png", "height": 32 },
+            "btn_view":     { "type": "Button", "label": "View Contents", "icon": "res/icons/visibility.png", "height": 32 },
+            "btn_refresh":  { "type": "Button", "label": "Refresh", "icon": "res/icons/refresh.png", "height": 32 }
           }
         },
         "status": { "type": "Label", "text": "Ready." }

@@ -332,6 +332,10 @@ std::string labelled(const std::string& label, const std::string& extra = "") {
   return "\"label\":" + json_string(label) + (extra.empty() ? "" : "," + extra);
 }
 
+std::string icon_field(const std::string& name) {
+  return "\"icon\":" + json_string(common::icon_path(name));
+}
+
 std::string size_fields(int width, int height, int font_size) {
   return "\"width\":" + std::to_string(width) + ",\"height\":" + std::to_string(height) +
       ",\"font_size\":" + std::to_string(font_size);
@@ -399,11 +403,11 @@ std::string bc::make_layout(const std::vector<keypad_def>& pads) const {
   view.add("rad", node("MenuItem", labelled("Radians")));
   view.add("grad", node("MenuItem", labelled("Gradians")));
   view.add("sep2", node("Separator"));
-  view.add("history", node("MenuItem", labelled("History")));
+  view.add("history", node("MenuItem", labelled("History", icon_field("history"))));
   view.add("grouping", node("MenuItem", labelled("Digit grouping")));
   layout_node& edit = menu.add("edit", node("Menu", labelled("Edit")));
-  edit.add("copy", node("MenuItem", labelled("Copy")));
-  edit.add("clear_history", node("MenuItem", labelled("Clear history")));
+  edit.add("copy", node("MenuItem", labelled("Copy", icon_field("copy"))));
+  edit.add("clear_history", node("MenuItem", labelled("Clear history", icon_field("delete"))));
 
   // ── Calculator column ──
   layout_node& body = window.add("body", node("HorizontalLayout", "\"spacing\":" + std::to_string(kHistoryGap)));

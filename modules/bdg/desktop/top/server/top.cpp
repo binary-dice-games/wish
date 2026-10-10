@@ -503,6 +503,7 @@ ui_element_ptr top::build_row_context_menu(row_entry& entry, int pid, const std:
 
   ui_element_ptr properties = ui_element_ptr::create("wish"_key, "MenuItem"_key);
   properties["label"_key] = std::string{"Properties..."};
+  common::set_icon(properties, "info");
   key_t properties_id = assign_id(properties);
   entry.properties_id = properties_id;
   action_item_targets_[properties_id] = row_action_target{pid, row_action_kind::properties, 0};
@@ -512,12 +513,14 @@ ui_element_ptr top::build_row_context_menu(row_entry& entry, int pid, const std:
 
   ui_element_ptr pause_resume = ui_element_ptr::create("wish"_key, "MenuItem"_key);
   pause_resume["label"_key] = std::string{state == "T" ? "Resume" : "Pause"};
+  common::set_icon(pause_resume, state == "T" ? "play" : "pause");
   key_t pause_resume_id = assign_id(pause_resume);
   action_item_targets_[pause_resume_id] = row_action_target{pid, row_action_kind::pause_or_resume, 0};
   entry.pause_resume_item = pause_resume;
 
   ui_element_ptr kill = ui_element_ptr::create("wish"_key, "MenuItem"_key);
   kill["label"_key] = std::string{"Kill Process"};
+  common::set_icon(kill, "close");
   key_t kill_id = assign_id(kill);
   entry.kill_id = kill_id;
   action_item_targets_[kill_id] = row_action_target{pid, row_action_kind::kill, 0};
@@ -547,6 +550,7 @@ ui_element_ptr top::build_row_context_menu(row_entry& entry, int pid, const std:
 
   ui_element_ptr affinity = ui_element_ptr::create("wish"_key, "MenuItem"_key);
   affinity["label"_key] = std::string{"Set CPU Affinity..."};
+  common::set_icon(affinity, "memory");
   key_t affinity_id = assign_id(affinity);
   entry.affinity_id = affinity_id;
   action_item_targets_[affinity_id] = row_action_target{pid, row_action_kind::affinity_dialog, 0};
@@ -567,8 +571,10 @@ ui_element_ptr top::build_row_context_menu(row_entry& entry, int pid, const std:
 }
 
 void top::update_row_context_menu(row_entry& entry, const std::string& state, int32_t nice) {
-  if (entry.pause_resume_item)
+  if (entry.pause_resume_item) {
     entry.pause_resume_item["label"_key] = std::string{state == "T" ? "Resume" : "Pause"};
+    common::set_icon(entry.pause_resume_item, state == "T" ? "play" : "pause");
+  }
   for (size_t i = 0; i < entry.priority_items.size() && i < kPriorityLevelCount; ++i)
     if (entry.priority_items[i])
       entry.priority_items[i]["checked"_key] = nice == kPriorityLevels[i].nice;

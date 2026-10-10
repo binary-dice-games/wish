@@ -88,7 +88,7 @@ static constexpr const char* kPodsLayout = R"json({
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_refresh": { "type": "Button", "label": "Refresh" },
+      "btn_refresh": { "type": "Button", "label": "Refresh", "icon": "res/icons/refresh.png" },
       "filter":      { "type": "InputText", "hint": "Filter by name", "width": 200 },
       "ns":          { "type": "InputText", "hint": "Namespace", "width": 150 },
       "state":       { "type": "Combo", "items": "All\nRunning\nPending\nSucceeded\nFailed", "value": 0, "width": 120 }
@@ -117,7 +117,7 @@ static constexpr const char* kDeploymentsLayout = R"json({
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_refresh": { "type": "Button", "label": "Refresh" },
+      "btn_refresh": { "type": "Button", "label": "Refresh", "icon": "res/icons/refresh.png" },
       "filter":      { "type": "InputText", "hint": "Filter by name", "width": 200 },
       "ns":          { "type": "InputText", "hint": "Namespace", "width": 150 }
     } },
@@ -145,7 +145,7 @@ static constexpr const char* kServicesLayout = R"json({
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_refresh": { "type": "Button", "label": "Refresh" },
+      "btn_refresh": { "type": "Button", "label": "Refresh", "icon": "res/icons/refresh.png" },
       "filter":      { "type": "InputText", "hint": "Filter by name", "width": 200 },
       "ns":          { "type": "InputText", "hint": "Namespace", "width": 150 }
     } },
@@ -173,7 +173,7 @@ static constexpr const char* kNodesLayout = R"json({
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_refresh": { "type": "Button", "label": "Refresh" },
+      "btn_refresh": { "type": "Button", "label": "Refresh", "icon": "res/icons/refresh.png" },
       "filter":      { "type": "InputText", "hint": "Filter by name", "width": 200 }
     } },
     "status": { "type": "Label", "text": "" },
@@ -207,7 +207,7 @@ static constexpr const char* kLogsLayout = R"json({
       "spring":     { "type": "Spring" },
       "follow":     { "type": "Checkbox", "label": "Follow", "value": false },
       "lines":      { "type": "InputInt", "label": "Lines", "value": 500, "step": 100, "width": 130 },
-      "btn_refresh":{ "type": "Button", "label": "Refresh" }
+      "btn_refresh":{ "type": "Button", "label": "Refresh", "icon": "res/icons/refresh.png" }
     } },
     "sep": { "type": "Separator" },
     "editor": {

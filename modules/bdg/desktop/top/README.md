@@ -1,6 +1,6 @@
 # top
 
-<img src="top.png" alt="top" height="200"/>
+<img src="top.png" alt="top" height="300"/>
 
 top/htop-style system monitor laid out as four dockable panels inside its
 own nested "Top" dockspace (see [docs/dock-layout.md](../../../../docs/dock-layout.md)):

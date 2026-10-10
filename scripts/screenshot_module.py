@@ -110,6 +110,8 @@ def main():
     ap.add_argument("--before-shot", type=float, default=3.0,
                     help="extra seconds before the screenshot, for async client work (uploads, previews)")
     ap.add_argument("--dump-tree", action="store_true", help="print top-level widget paths")
+    ap.add_argument("--username", default="",
+                    help="identity the client sends (gives it a persistent user store, e.g. for curl)")
     args = ap.parse_args()
 
     _pin_chromium()
@@ -121,6 +123,7 @@ def main():
         ui._page.set_viewport_size({"width": args.width, "height": args.height})
         client = subprocess.Popen([args.wish, "client", "--transport", "tcp", "--host", "127.0.0.1",
                                    "--port", str(rmi_port), "--run", args.run]
+                                  + (["--username", args.username] if args.username else [])
                                   + (["--"] + args.arg if args.arg else []))
         try:
             # Wait until the app has rendered at least one Window.

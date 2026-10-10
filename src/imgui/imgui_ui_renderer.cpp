@@ -9,6 +9,7 @@
 #include "imgui_ui_renderer.hpp"
 
 #include "imgui_dock_layout.hpp"
+#include "imgui_icon_widgets.hpp"
 
 #ifdef WISH_IMGUI_ENABLED
 
@@ -461,12 +462,25 @@ void render_label(imgui_renderer&, const ui_element& node0, const context& s) {
     ImGui::PopStyleColor();
 }
 
-void render_button(imgui_renderer&, const ui_element& node0, const context& s) {
+/// @brief Texture for an element's `icon` field, or null when unset or it
+/// fails to load (load_image_texture(), defined below).
+static ImTextureID load_icon_texture(imgui_renderer& r, const context& s, const std::string& icon);
+
+void render_button(imgui_renderer& r, const ui_element& node0, const context& s) {
   const auto& node = static_cast<const ui_button&>(node0);
   const std::string& label = node.label_ref();
   int32_t w = node.width_i(0);
   int32_t h = node.height_i(0);
-  if (ImGui::Button(label.c_str(), ImVec2(float(w), float(h))))
+  ImVec2 size{float(w), float(h)};
+  bool clicked = false;
+  if (ImTextureID icon = load_icon_texture(r, s, node.icon_ref())) {
+    const std::string& color = node.icon_color_ref();
+    clicked = icon_button(
+        label.c_str(), icon, color.empty() ? ImGui::GetStyleColorVec4(ImGuiCol_Text) : parse_hex_color(color), size);
+  } else {
+    clicked = ImGui::Button(label.c_str(), size);
+  }
+  if (clicked)
     enqueue_event(s, node.wish_id(), "clicked"_key, dynamic{});
 }
 
@@ -595,6 +609,10 @@ static ImTextureID load_image_texture(imgui_renderer& r, const context& s, const
   if (full_path.empty())
     return ImTextureID{};
   return r.get_or_load_texture(full_path.string(), s.resource_dir, &s.embedded_crc32s);
+}
+
+static ImTextureID load_icon_texture(imgui_renderer& r, const context& s, const std::string& icon) {
+  return icon.empty() ? ImTextureID{} : load_image_texture(r, s, icon);
 }
 
 void render_image(imgui_renderer& r, const ui_element& node0, const context& s) {
@@ -1203,7 +1221,7 @@ void render_menu(imgui_renderer& r, const ui_element& node0, const context& s) {
   }
 }
 
-void render_menu_item(imgui_renderer&, const ui_element& node0, const context& s) {
+void render_menu_item(imgui_renderer& r, const ui_element& node0, const context& s) {
   const auto& node = static_cast<const ui_menu_item&>(node0);
   const std::string& label = node.label_ref();
   const std::string& shortcut = node.shortcut_ref();
@@ -1218,7 +1236,7 @@ void render_menu_item(imgui_renderer&, const ui_element& node0, const context& s
   // leaves the field entirely under the form's own control (e.g. a
   // radio-style priority submenu that recomputes "checked" from server
   // state on every update, as top.cpp's row context menu does).
-  if (ImGui::MenuItem(label.c_str(), sc, checked, enabled)) {
+  if (icon_menu_item(label.c_str(), sc, checked, enabled, load_icon_texture(r, s, node.icon_ref()))) {
     // Clipboard access needs an active ImGui context, so this must happen
     // here on the render thread -- not in some later on_event() handler
     // over on the dispatch thread, which has no ImGui context of its own.
@@ -1241,7 +1259,10 @@ void render_menu_button(imgui_renderer& r, const ui_element& node0, const contex
   // ImGui::OpenPopup()'s popup-id namespace don't collide even when given
   // the identical string.
   auto iml = with_id(label, node);
-  if (ImGui::Button(iml.c_str())) {
+  ImTextureID icon = load_icon_texture(r, s, node.icon_ref());
+  bool clicked =
+      icon ? icon_button(iml.c_str(), icon, ImGui::GetStyleColorVec4(ImGuiCol_Text)) : ImGui::Button(iml.c_str());
+  if (clicked) {
     ImGui::OpenPopup(iml.c_str());
     // Same settle-frames need as render_combo() above: opening the popup
     // enqueues no wish event, so nothing else forces the couple of
@@ -1363,7 +1384,7 @@ void render_tree_node(imgui_renderer& r, const ui_element& node0, const context&
   // follow on the same line, below), so it spans the row to keep the whole
   // line clickable.
   const std::string& icon = node.icon_ref();
-  ImTextureID icon_tex = icon.empty() ? ImTextureID{} : load_image_texture(r, s, icon);
+  ImTextureID icon_tex = load_icon_texture(r, s, icon);
   if (icon_tex)
     flags |= ImGuiTreeNodeFlags_SpanAvailWidth;
   bool is_open = ImGui::TreeNodeEx(icon_tex ? "##node" : label.c_str(), flags);

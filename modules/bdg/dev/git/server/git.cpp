@@ -159,14 +159,14 @@ static constexpr const char* kMainLayout = R"({
         "toolbar": {
           "type": "HorizontalLayout", "spacing": 6,
           "children": {
-            "btn_commit":  { "type": "Button", "label": "Commit",  "width": 90 },
-            "btn_push":    { "type": "Button", "label": "Push",    "width": 90 },
-            "btn_pull":    { "type": "Button", "label": "Pull",    "width": 90 },
-            "btn_fetch":   { "type": "Button", "label": "Fetch",   "width": 90 },
-            "btn_branch":  { "type": "Button", "label": "Branch",  "width": 90 },
-            "btn_merge":   { "type": "Button", "label": "Merge",   "width": 90 },
-            "btn_stash":   { "type": "Button", "label": "Stash",   "width": 90 },
-            "btn_refresh": { "type": "Button", "label": "Refresh", "width": 90 }
+            "btn_commit":  { "type": "Button", "label": "Commit",  "icon": "res/icons/commit.png" },
+            "btn_push":    { "type": "Button", "label": "Push",    "icon": "res/icons/upload.png" },
+            "btn_pull":    { "type": "Button", "label": "Pull",    "icon": "res/icons/download.png" },
+            "btn_fetch":   { "type": "Button", "label": "Fetch",   "icon": "res/icons/sync.png" },
+            "btn_branch":  { "type": "Button", "label": "Branch",  "icon": "res/icons/tree.png" },
+            "btn_merge":   { "type": "Button", "label": "Merge",   "icon": "res/icons/merge.png" },
+            "btn_stash":   { "type": "Button", "label": "Stash",   "icon": "res/icons/package.png" },
+            "btn_refresh": { "type": "Button", "label": "Refresh", "icon": "res/icons/refresh.png" }
           }
         },
         "status_label": { "type": "Label", "text": "" },
@@ -180,19 +180,19 @@ static constexpr const char* kMainLayout = R"({
                 "new_branch_row": {
                   "type": "HorizontalLayout", "spacing": 4,
                   "children": {
-                    "new_branch_input": { "type": "InputText", "hint": "New branch name", "width": 150 },
-                    "btn_create_branch": { "type": "Button", "label": "Create", "width": 64 }
+                    "new_branch_input": { "type": "InputText", "hint": "New branch name", "width": -1 },
+                    "btn_create_branch": { "type": "Button", "label": "Create", "icon": "res/icons/add.png" }
                   }
                 },
                 "sep_sidebar": { "type": "Separator" },
                 "branches_header": { "type": "Label", "text": "BRANCHES" },
-                "branches": { "type": "TreeNode", "label": "Local", "open": true, "children": {} },
+                "branches": { "type": "TreeNode", "label": "Local", "icon": "res/icons/tree.png", "open": true, "children": {} },
                 "remotes_header": { "type": "Label", "text": "REMOTES" },
-                "remotes": { "type": "TreeNode", "label": "Remote-tracking", "open": false, "children": {} },
+                "remotes": { "type": "TreeNode", "label": "Remote-tracking", "icon": "res/icons/cloud.png", "open": false, "children": {} },
                 "tags_header": { "type": "Label", "text": "TAGS" },
-                "tags": { "type": "TreeNode", "label": "Tags", "open": false, "children": {} },
+                "tags": { "type": "TreeNode", "label": "Tags", "icon": "res/icons/tag.png", "open": false, "children": {} },
                 "stashes_header": { "type": "Label", "text": "STASHES" },
-                "stashes": { "type": "TreeNode", "label": "Stashes", "open": false, "children": {} }
+                "stashes": { "type": "TreeNode", "label": "Stashes", "icon": "res/icons/package.png", "open": false, "children": {} }
               }
             },
             "graph_panel": {
@@ -239,7 +239,7 @@ static constexpr const char* kFilesLayout = R"({
           "type": "HorizontalLayout", "spacing": 6,
           "children": {
             "commit_message": { "type": "InputText", "hint": "Commit message", "width": -1 },
-            "commit_button":  { "type": "Button", "label": "Commit", "width": 90 }
+            "commit_button":  { "type": "Button", "label": "Commit", "icon": "res/icons/commit.png" }
           }
         }
       }
@@ -390,6 +390,8 @@ void git_repo::build_diff_window() {
 ui_element_ptr git_repo::make_menu_item(const std::string& label, std::function<void()> on_click) {
   ui_element_ptr item = ui_element_ptr::create("wish"_key, "MenuItem"_key);
   item["label"_key] = label;
+  if (std::string icon = common::action_icon(label); !icon.empty())
+    common::set_icon(item, icon);
   assign_id(item);
   click_handlers_[wish_id_of(item)] = std::move(on_click);
   return item;
@@ -410,7 +412,9 @@ ui_element_ptr git_repo::make_sidebar_row(
   selectable_handlers_[wish_id_of(sel)] = std::move(on_click);
 
   ui_element_ptr menu = ui_element_ptr::create("wish"_key, "MenuButton"_key);
-  menu["label"_key] = "...";
+  menu["label"_key] = std::string{};
+  common::set_icon(menu, "more");
+  menu["tooltip"_key] = std::string{"Actions"};
   assign_id(menu);
   std::vector<ui_element_ptr> items;
   items.reserve(menu_items.size());

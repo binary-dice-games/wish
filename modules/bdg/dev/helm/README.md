@@ -1,5 +1,7 @@
 # helm
 
+<img src="helm.png" alt="helm" height="300"/>
+
 A GUI frontend for the local `helm` command line: dockable windows listing
 releases, chart repositories, and chart search results, each with per-row
 actions, plus a release revision history and a text pane for `helm status` /

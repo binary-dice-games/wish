@@ -1,5 +1,7 @@
 # sq
 
+<img src="sq.png" alt="sq" height="300"/>
+
 A DBeaver-style, **query-only** GUI frontend for the local
 [`sq`](https://github.com/neilotoole/sq) command line tool: connect to
 different kinds of databases (PostgreSQL, MySQL, SQL Server, SQLite,
