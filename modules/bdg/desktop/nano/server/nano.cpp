@@ -228,10 +228,10 @@ static constexpr const char* kToolbarLayout = R"({
       "type": "HorizontalLayout",
       "spacing": 8.0,
       "children": {
-        "btn_open": { "type": "Button", "label": "Open", "icon": "res/icons/folder_open.png", "width": 90 },
-        "btn_new":  { "type": "Button", "label": "New", "icon": "res/icons/add.png",  "width": 90 },
-        "btn_save": { "type": "Button", "label": "Save", "icon": "res/icons/save.png", "width": 90 },
-        "btn_find": { "type": "Button", "label": "Find", "icon": "res/icons/search.png", "width": 90 },
+        "btn_open": { "type": "Button", "label": "Open", "icon": "res/icons/folder_open.png" },
+        "btn_new":  { "type": "Button", "label": "New", "icon": "res/icons/add.png" },
+        "btn_save": { "type": "Button", "label": "Save", "icon": "res/icons/save.png" },
+        "btn_find": { "type": "Button", "label": "Find", "icon": "res/icons/search.png" },
         "current_label": { "type": "Label", "text": "No file open" }
       }
     }

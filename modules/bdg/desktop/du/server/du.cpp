@@ -107,8 +107,8 @@ static constexpr const char* kFilesLayout = R"json({
           "type": "HorizontalLayout",
           "spacing": 6,
           "children": {
-            "btn_scan": { "type": "Button", "label": "Rescan", "icon": "res/icons/refresh.png", "width": 96 },
-            "btn_up": { "type": "Button", "label": "Up", "icon": "res/icons/arrow_up.png", "width": 50 },
+            "btn_scan": { "type": "Button", "label": "Rescan", "icon": "res/icons/refresh.png" },
+            "btn_up": { "type": "Button", "label": "Up", "icon": "res/icons/arrow_up.png" },
             "path_input": { "type": "InputText", "hint": "Folder to analyze (Enter to scan)...", "value": "", "flags": "EnterReturnsTrue", "width": -1 }
           }
         },

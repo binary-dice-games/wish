@@ -159,14 +159,14 @@ static constexpr const char* kMainLayout = R"({
         "toolbar": {
           "type": "HorizontalLayout", "spacing": 6,
           "children": {
-            "btn_commit":  { "type": "Button", "label": "Commit",  "icon": "res/icons/commit.png",   "width": 104 },
-            "btn_push":    { "type": "Button", "label": "Push",    "icon": "res/icons/upload.png",   "width": 104 },
-            "btn_pull":    { "type": "Button", "label": "Pull",    "icon": "res/icons/download.png", "width": 104 },
-            "btn_fetch":   { "type": "Button", "label": "Fetch",   "icon": "res/icons/refresh.png",  "width": 104 },
-            "btn_branch":  { "type": "Button", "label": "Branch",  "icon": "res/icons/tree.png",     "width": 104 },
-            "btn_merge":   { "type": "Button", "label": "Merge",   "icon": "res/icons/merge.png",    "width": 104 },
-            "btn_stash":   { "type": "Button", "label": "Stash",   "icon": "res/icons/package.png",  "width": 104 },
-            "btn_refresh": { "type": "Button", "label": "Refresh", "icon": "res/icons/refresh.png",  "width": 104 }
+            "btn_commit":  { "type": "Button", "label": "Commit",  "icon": "res/icons/commit.png" },
+            "btn_push":    { "type": "Button", "label": "Push",    "icon": "res/icons/upload.png" },
+            "btn_pull":    { "type": "Button", "label": "Pull",    "icon": "res/icons/download.png" },
+            "btn_fetch":   { "type": "Button", "label": "Fetch",   "icon": "res/icons/refresh.png" },
+            "btn_branch":  { "type": "Button", "label": "Branch",  "icon": "res/icons/tree.png" },
+            "btn_merge":   { "type": "Button", "label": "Merge",   "icon": "res/icons/merge.png" },
+            "btn_stash":   { "type": "Button", "label": "Stash",   "icon": "res/icons/package.png" },
+            "btn_refresh": { "type": "Button", "label": "Refresh", "icon": "res/icons/refresh.png" }
           }
         },
         "status_label": { "type": "Label", "text": "" },
@@ -180,8 +180,8 @@ static constexpr const char* kMainLayout = R"({
                 "new_branch_row": {
                   "type": "HorizontalLayout", "spacing": 4,
                   "children": {
-                    "new_branch_input": { "type": "InputText", "hint": "New branch name", "width": 140 },
-                    "btn_create_branch": { "type": "Button", "label": "Create", "icon": "res/icons/add.png", "width": 92 }
+                    "new_branch_input": { "type": "InputText", "hint": "New branch name", "width": -1 },
+                    "btn_create_branch": { "type": "Button", "label": "Create", "icon": "res/icons/add.png" }
                   }
                 },
                 "sep_sidebar": { "type": "Separator" },
@@ -239,7 +239,7 @@ static constexpr const char* kFilesLayout = R"({
           "type": "HorizontalLayout", "spacing": 6,
           "children": {
             "commit_message": { "type": "InputText", "hint": "Commit message", "width": -1 },
-            "commit_button":  { "type": "Button", "label": "Commit", "icon": "res/icons/commit.png", "width": 90 }
+            "commit_button":  { "type": "Button", "label": "Commit", "icon": "res/icons/commit.png" }
           }
         }
       }

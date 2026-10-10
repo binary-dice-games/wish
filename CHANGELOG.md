@@ -65,6 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `git`, `nano`, `zip` and `du` toolbar buttons size to their label and icon instead of a fixed width, so their text is no longer cropped.
 - `git`: clearing the Log window, or a long session pushing old rows out of it, no longer leaks each row's right-click menu objects.
 - `mc`: the file tables' "Modified" column was too narrow for the full date and time, which looked like the scrollbar covering it; a listing now also opens scrolled to the top instead of the bottom.
 - JSON/YAML UI descriptors now accept arrays of non-integer numbers (e.g. `"xs": [0.5, 1.5]`), and integer arrays are widened for `float[]` fields; previously plot data given in a template was silently dropped.
