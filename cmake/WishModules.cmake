@@ -10,6 +10,8 @@
 #     module registry (see wish_generate_module_registry() below). <name> is
 #     the leaf (last path segment) -- so the header/function name never
 #     includes the org/collection.
+#   - adds the organization's shared <module_dir>/../../common/server/*.{hpp,cpp}
+#     (if present) to wish_server, once per organization.
 #   - adds <module_dir>/client/*.{hpp,cpp} (if present), plus the
 #     organization's shared <module_dir>/../../common/*.{hpp,cpp} (if present),
 #     to the WISH_APP_MODULE_SOURCES / WISH_APP_MODULE_DEFS global properties,
@@ -195,6 +197,24 @@ function(wish_add_module name)
   if(EXISTS "${server_dir}/${leaf}.hpp")
     file(GLOB_RECURSE server_sources CONFIGURE_DEPENDS
         "${server_dir}/*.hpp" "${server_dir}/*.cpp")
+    # Server code shared by an organization's modules lives in
+    # <org>/common/server/ (e.g. modules/bdg/common/server/, the panels the
+    # bdg forms derive from) and is compiled into wish_server once, however
+    # many of the organization's modules are enabled.
+    get_filename_component(server_collection_dir "${module_dir}" DIRECTORY)
+    get_filename_component(server_org_dir "${server_collection_dir}" DIRECTORY)
+    # Normalised (module_dir may be ".../cmake/../modules/..."), so the
+    # recorded directory compares equal to ${CMAKE_SOURCE_DIR}/modules/<org>.
+    get_filename_component(server_org_dir "${server_org_dir}" ABSOLUTE)
+    if(EXISTS "${server_org_dir}/common/server")
+      get_property(added_common_dirs GLOBAL PROPERTY WISH_MODULE_COMMON_SERVER_DIRS)
+      if(NOT "${server_org_dir}" IN_LIST added_common_dirs)
+        set_property(GLOBAL APPEND PROPERTY WISH_MODULE_COMMON_SERVER_DIRS "${server_org_dir}")
+        file(GLOB common_server_sources CONFIGURE_DEPENDS
+            "${server_org_dir}/common/server/*.hpp" "${server_org_dir}/common/server/*.cpp")
+        list(APPEND server_sources ${common_server_sources})
+      endif()
+    endif()
     wish_filter_platform_sources(server_sources server_sources_filtered)
     if(server_sources_filtered)
       target_sources(wish_server PRIVATE ${server_sources_filtered})
@@ -213,7 +233,8 @@ function(wish_add_module name)
         "${client_dir}/*.hpp" "${client_dir}/*.cpp")
     # Client code shared by an organization's modules lives in a common/
     # directory next to its collections (e.g. modules/bdg/common/) and is
-    # compiled along with any of them; wish_finalize_app_modules() drops the
+    # compiled along with any of them (non-recursively: common/server/ is
+    # server-only, see above); wish_finalize_app_modules() drops the
     # duplicates when several are enabled.
     get_filename_component(collection_dir "${module_dir}" DIRECTORY)
     get_filename_component(org_dir "${collection_dir}" DIRECTORY)

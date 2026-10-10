@@ -13,34 +13,31 @@
 /// client/server split (modules/bdg/dev/docker/server/docker.hpp), which in
 /// turn mirrors `git`.
 ///
-/// Destructive actions (delete / drain) are gated behind the built-in
-/// MessageBox form (form::instantiate_child_form(), "yes_no" preset) -- see
-/// show_confirm() below, a direct port of docker_frontend::show_confirm().
-///
-/// Owns seven independently dockable Windows -- Pods (the main root),
-/// Deployments, Services, Nodes, Logs, Describe, and Console (a FIFO-capped
-/// trace of every `kubectl` command the client ran, fed by
-/// append_command_log -- git's "Log" window) -- registered by hand in
-/// on_init() exactly as docker.cpp's build_list_window() / build_text_window()
-/// do.
+/// Built on the panels shared by the bdg tool forms
+/// (modules/bdg/common/server): destructive actions (delete / drain) are
+/// gated behind tool_form::show_confirm(); the Pods / Deployments /
+/// Services / Nodes windows are common::list_panel; Logs / Describe are
+/// common::text_viewer_panel; Console (a trace of every `kubectl` command
+/// the client ran) is common::console_panel; the Top window's graphs are
+/// common::rolling_plot. Pods is the main root; every other window docks
+/// independently.
 #pragma once
 
-#include <ui/forms/form.hpp>
+#include "modules/bdg/common/server/console_panel.hpp"
+#include "modules/bdg/common/server/list_panel.hpp"
+#include "modules/bdg/common/server/rolling_plot.hpp"
+#include "modules/bdg/common/server/text_viewer_panel.hpp"
+#include "modules/bdg/common/server/tool_form.hpp"
+
 #include <ui/ui_element.hpp>
 #include <ui/ui_importer.hpp>
 
-#include <deque>
-#include <filesystem>
+#include <cstdint>
 #include <functional>
-#include <map>
-#include <memory>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 namespace bdg::wish {
-
-class message_box;
 
 /// @brief Kubernetes-dashboard-style GUI form for the local `kubectl` CLI.
 ///
@@ -58,7 +55,7 @@ class message_box;
 ///   - `"logs_requested"` -- `{ name, namespace, follow, lines }`.
 ///   - `"describe_requested"` -- `{ kind, name, namespace }` where `kind` is
 ///     `pod`, `deployment`, `service` or `node`.
-class kubectl_frontend : public form {
+class kubectl_frontend : public common::tool_form {
  public:
   explicit kubectl_frontend(bison::dynamic&& base);
 
@@ -103,8 +100,7 @@ class kubectl_frontend : public form {
   /// @brief RMI method: append one row to the Console window's `kubectl`
   /// subprocess trace. @p args holds `command` (string, e.g. `"kubectl get
   /// pods -A"`), `exit_code` (int32), `ok` (bool) and `output` (string, a
-  /// single-line preview). Color-coded green/red by `ok`; the table is
-  /// FIFO-capped at kMaxConsoleRows. Mirrors git_repo::do_append_command_log.
+  /// single-line preview). See common::console_panel.
   bison::dynamic do_append_command_log(const bison::dynamic& args);
 
   /// @brief RMI method: push one live `kubectl top` sample to the Top
@@ -124,107 +120,48 @@ class kubectl_frontend : public form {
   void on_event(bison::key_t widget_id, bison::key_t event_name, const bison::dynamic& payload) override;
 
  private:
-  // ── Generic list-window plumbing ──────────────────────────────────────
-  //
-  // Pods / Deployments / Services / Nodes are four near-identical toolbar +
-  // Table windows. One `list_window` bundles the per-window widgets; one
-  // `list_row` type + one dispatch map (`menu_action_targets_`) serve all
-  // four.
+  // ── List windows ─────────────────────────────────────────────────────
 
-  struct list_window {
-    std::string root_key;
-    bison::key_t window_id;
-    ui_element_ptr status_label;
-    ui_element_ptr table;
+  /// One resource row: what the filters and row actions work on.
+  struct resource {
     std::string scope; // "pod" / "deployment" / "service" / "node"
+    std::string name;
+    std::string ns; // "" for cluster-scoped nodes
+    std::string state; // pods: phase (the state Combo filters on)
+  };
 
-    // Toolbar filter widgets (not every window wires every one).
-    ui_element_ptr name_filter_input;
+  /// A list window plus its toolbar filters (not every window has every
+  /// filter; an unset id never matches an event).
+  struct list_window {
+    common::list_panel<resource> panel;
     bison::key_t name_filter_id;
-    ui_element_ptr ns_filter_input;
     bison::key_t ns_filter_id;
     bison::key_t phase_combo_id; // Pods only.
-
     std::string name_filter;
     std::string ns_filter;
     int32_t phase_filter{0}; // 0 All, 1 Running, 2 Pending, 3 Succeeded, 4 Failed.
   };
 
-  struct list_row {
-    ui_element_ptr row;
-    std::string scope;
-    std::string name;  // resource name (menu action key + filter + confirm)
-    std::string ns;    // namespace ("" for cluster-scoped nodes)
-    std::string state; // pods: phase (the state Combo filters on)
-    size_t child_key{0};
-    std::vector<bison::key_t> object_ids; // erased together on rebuild
-  };
+  /// @brief Builds @p lw from @p layout_json at @p root_key and binds its
+  /// Refresh button and filter widgets.
+  void build_list_window(list_window& lw, const char* layout_json, const std::string& root_key);
 
-  struct row_action {
-    std::string scope;
-    std::string name;
-    std::string ns;
-    std::string action;
-  };
-
-  struct menu_spec {
-    std::string label;
-    std::string action;
-    bool confirm{false};
-  };
-
-  /// @brief Import @p layout_json, register every node, cache the status /
-  /// table widgets, and register the tree as its own dockable top-level root
-  /// at @p root_key (docker.cpp's build_list_window() pattern). @p
-  /// wire_toolbar binds that window's own toolbar buttons / inline fields.
-  void build_list_window(
-      list_window& lw, const char* layout_json, const std::string& root_key, const std::string& scope,
-      const std::function<void(ui_tree&)>& wire_toolbar);
-
-  void clear_list_rows(list_window& lw, std::vector<list_row>& rows, size_t& next_key);
-
-  void add_list_row(
-      list_window& lw, std::vector<list_row>& rows, size_t& next_key, list_row&& meta,
-      const std::vector<ui_element_ptr>& cells, const std::vector<menu_spec>& items);
-
-  void set_status(list_window& lw, const std::string& text, bool ok);
-
-  // ── Per-window rebuild ───────────────────────────────────────────────
   void rebuild_pods(const bison::dynamic& args);
   void rebuild_deployments(const bison::dynamic& args);
   void rebuild_services(const bison::dynamic& args);
   void rebuild_nodes(const bison::dynamic& args);
 
-  // ── Logs / Describe text panes ──────────────────────────────────────
-  /// @brief Build a toolbar + body window (Logs, Describe, Console) from
-  /// @p layout_json and register it as a top-level object under @p root_key.
-  /// @p wire binds that window's own toolbar controls and body widget.
-  void build_text_window(
-      const std::string& root_key,
-      const char* layout_json,
-      bison::key_t& window_id_out,
-      const std::function<void(ui_tree&)>& wire);
-  /// @brief Show @p text in a Logs/Describe `TextEditor`: write it to a new
-  /// file `private/<root>_<stem>_<n>.txt` in the session sandbox, point
-  /// @p editor's `file_path` at it and delete the file it replaced (tracked
-  /// in @p file). A write failure leaves the editor unchanged.
-  void set_editor_text(const ui_element_ptr& editor, std::string& file, const char* stem, const std::string& text);
-  /// @brief Delete the sandbox file named by @p file (if any) and clear it.
-  void remove_editor_file(std::string& file);
+  /// @brief Re-applies @p lw's name / namespace / phase filters.
+  void apply_list_filter(list_window& lw);
+
+  /// @brief A row-menu item running @p action on @p r (see run_row_action()).
+  common::menu_item action_item(const std::string& label, const resource& r, const std::string& action, bool confirm);
+  /// @brief Opens Logs / Describe for @p r, or emits
+  /// `<scope>_action_requested` -- after a confirmation for delete / drain.
+  void run_row_action(const resource& r, const std::string& action);
+
   void emit_logs_request();
   void emit_describe_request();
-
-  /// @brief Re-apply a list window's name / namespace / phase filters to
-  /// each row's `visible` field (docker's retroactive-filter pattern).
-  void apply_list_filter(list_window& lw, std::vector<list_row>& rows);
-
-  // ── Confirmation modal (docker_frontend::show_confirm() port) ────────
-  void show_confirm(const std::string& message, std::function<void()> on_confirm);
-
-  // ── Small builders ──────────────────────────────────────────────────
-  void assign_id(const ui_element_ptr& el);
-  void set_children_list(const ui_element_ptr& parent, const std::vector<ui_element_ptr>& kids);
-  ui_element_ptr make_label(const std::string& text, const char* light = nullptr, const char* dark = nullptr);
 
   // ── State ──────────────────────────────────────────────────────────
   std::string title_;
@@ -234,23 +171,7 @@ class kubectl_frontend : public form {
   list_window services_;
   list_window nodes_;
 
-  std::vector<list_row> pod_rows_;
-  std::vector<list_row> deployment_rows_;
-  std::vector<list_row> service_rows_;
-  std::vector<list_row> node_rows_;
-  size_t next_pod_key_{0};
-  size_t next_deployment_key_{0};
-  size_t next_service_key_{0};
-  size_t next_node_key_{0};
-
-  std::shared_ptr<message_box> confirm_dialog_;
-
-  // Logs window.
-  std::string logs_root_key_;
-  bison::key_t logs_window_id_;
-  ui_element_ptr logs_editor_;
-  std::string logs_file_; // sandbox-relative file logs_editor_ shows
-  ui_element_ptr logs_target_label_;
+  common::text_viewer_panel logs_;
   bison::key_t logs_follow_id_;
   bison::key_t logs_lines_id_;
   std::string open_logs_name_;
@@ -258,100 +179,37 @@ class kubectl_frontend : public form {
   bool logs_follow_{false};
   int32_t logs_lines_{500};
 
-  // Describe window.
-  std::string describe_root_key_;
-  bison::key_t describe_window_id_;
-  ui_element_ptr describe_editor_;
-  std::string describe_file_; // sandbox-relative file describe_editor_ shows
-  ui_element_ptr describe_target_label_;
+  common::text_viewer_panel describe_;
   std::string open_describe_name_;
   std::string open_describe_ns_;
   std::string open_describe_kind_;
 
-  std::filesystem::path resource_dir_; // session sandbox root (set in on_init())
-  size_t next_editor_file_seq_{0}; // makes each set_editor_text() file name unique
-
-  // ── Console window (client `kubectl` subprocess trace) ──────────────
-  //
-  // git's "Log" window, renamed to avoid clashing with the pod Logs window
-  // above. A FIFO-capped `Table` (# / Command / Exit / Output) so a long
-  // session stays bounded rather than growing without limit.
-  std::string console_root_key_;
-  bison::key_t console_window_id_;
-  ui_element_ptr console_table_;
-
-  static constexpr size_t kMaxConsoleRows = 500;
-
-  struct console_row_entry {
-    size_t child_key;
-    std::vector<bison::key_t> object_ids;
-  };
-  size_t console_seq_{0};
-  size_t next_console_child_key_{0};
-  std::deque<console_row_entry> console_rows_; // oldest first
-
-  /// @brief Append one trace row (sequence #, command, exit code, output
-  /// preview), green/red by @p ok; evict the oldest first past kMaxConsoleRows.
-  void append_console_row(const std::string& command, int32_t exit_code, bool ok, const std::string& output);
-  /// @brief Erase every Console row (+ their ctx().objects / click_handlers_
-  /// entries); reset the sequence counter. From any row's "Clear Console".
-  void clear_console_rows();
-  void erase_console_row_objects(const console_row_entry& entry);
+  common::console_panel console_;
 
   // ── Top window (live `kubectl top` CPU/memory graphs) ───────────────
   //
-  // docker.cpp's Stats-window pattern: rolling per-series Plot histories fed
-  // one sample per update_stats call. Four plots -- pod CPU (millicores),
-  // pod memory (MiB), node CPU %, node memory % -- each with a per-entity
-  // line per pod/node (capped at kMaxStatsSeries by current value) plus an
-  // aggregate line ("Total" for the additive pod plots, "Cluster avg" for
-  // the node % plots), and two current-values tables.
-  static constexpr size_t kMaxStatsHistory = 120;
-  static constexpr size_t kMaxStatsSeries = 15;
-
-  struct stats_series {
-    ui_element_ptr el;
-    std::vector<float> hist;
-    bison::key_t id;
-    size_t child_key{0};
-  };
-
-  struct stats_plot {
-    ui_element_ptr plot;
-    stats_series aggregate;  // child_key 0, never removed
-    bool average{false};     // aggregate = mean instead of sum
-    std::map<std::string, stats_series> series;
-    size_t next_child_key{0};
-  };
-
+  // Four rolling plots -- pod CPU (millicores), pod memory (MiB), node
+  // CPU %, node memory % -- with an aggregate line ("Total" for the
+  // additive pod plots, "Cluster avg" for the node % plots), and two
+  // current-values tables.
   std::string top_root_key_;
   bison::key_t top_window_id_;
   ui_element_ptr top_status_label_;
-  ui_element_ptr top_pods_table_;
-  ui_element_ptr top_nodes_table_;
-  stats_plot pods_cpu_plot_;
-  stats_plot pods_mem_plot_;
-  stats_plot nodes_cpu_plot_;
-  stats_plot nodes_mem_plot_;
-  std::vector<float> stats_xs_;
-  std::vector<bison::key_t> top_pods_row_ids_;
-  std::vector<bison::key_t> top_nodes_row_ids_;
-  size_t next_top_pods_key_{0};
-  size_t next_top_nodes_key_{0};
+  common::table_rows<> top_pods_;
+  common::table_rows<> top_nodes_;
+  common::rolling_plot pods_cpu_plot_;
+  common::rolling_plot pods_mem_plot_;
+  common::rolling_plot nodes_cpu_plot_;
+  common::rolling_plot nodes_mem_plot_;
 
   void build_top_window();
-  void init_stats_plot(
-      stats_plot& sp, const ui_element_ptr& plot_el, const std::string& aggregate_label, bool average);
-  void update_stats_plot(stats_plot& sp, const std::map<std::string, float>& values);
+  /// @brief Replaces every row of @p rows with one per entry of
+  /// @p args.<array_key>, built by @p make_cells.
   void rebuild_top_table(
-      const ui_element_ptr& table, std::vector<bison::key_t>& row_ids, size_t& next_key,
-      const bison::dynamic& args, bison::key_t array_key,
+      common::table_rows<>& rows,
+      const bison::dynamic& args,
+      bison::key_t array_key,
       const std::function<std::vector<ui_element_ptr>(const bison::dynamic&)>& make_cells);
-  static void push_stats_history(std::vector<float>& history, float value);
-  void update_stats_xs(size_t count);
-
-  std::unordered_map<bison::key_t, std::function<void()>, bison::key_t, bison::key_t> click_handlers_;
-  std::unordered_map<bison::key_t, row_action, bison::key_t, bison::key_t> menu_action_targets_;
 };
 
 /// @brief Register KubectlFrontend in the "wish" bison namespace.
