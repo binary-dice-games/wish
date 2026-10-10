@@ -1,5 +1,7 @@
 # tail
 
+<img src="tail.png" alt="tail" height="300"/>
+
 `tail`-like log viewer, with a command-line surface modeled on the Linux
 `tail` tool (`-f`, `-n`). Raw lines are colorized by severity and filterable
 by a live regex; any line carrying a `[Tag]` token (e.g. `[Renderer]`) is

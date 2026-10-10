@@ -1,6 +1,6 @@
 # bc
 
-<img src="bc.png" alt="bc" height="200"/>
+<img src="bc.png" alt="bc" height="300"/>
 
 Calculator with three switchable layouts, modeled on the Windows, GNOME and
 macOS calculators. Switch with the mode tabs under the menu bar or

@@ -96,7 +96,9 @@ Create `modules/<org>/<collection>/<name>/`:
   `res/<org>/<collection>/<name>/...` at runtime, no code changes needed
   beyond creating the directory.
 - `README.md` — one short paragraph plus a `server:`/`client:`/`resources:`
-  bullet list, matching the style of `modules/bdg/desktop/bc/README.md`.
+  bullet list, matching the style of `modules/bdg/desktop/bc/README.md`,
+  with the tool's screenshot `<name>.png` (same directory) right below the
+  title. See the root `CLAUDE.md`'s "Tool READMEs and screenshots".
 
 Follow the coding-style rules in the root `CLAUDE.md` (license header,
 `@file`/`@brief`, 2-space indent, trailing-underscore private members,
@@ -201,7 +203,9 @@ render timing.
 
 ## 7. Update docs
 
-- Add/update the module's own `README.md` (step 3).
+- Add/update the module's own `README.md` (step 3) and its screenshot
+  `<name>.png`, taken from the real tool with
+  `scripts/screenshot_module.py` once it works (not the mockup).
 - If the module is significant enough to be user-facing (not just an
   internal demo), consider whether `README.md` (root) or
   `docs/examples.md` should mention it — only if asked, or if it changes a

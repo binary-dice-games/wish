@@ -1,5 +1,7 @@
 # docker
 
+<img src="docker.png" alt="docker" height="300"/>
+
 A Docker Desktop-style GUI frontend for the local `docker` command line:
 dockable windows listing containers, images, volumes, and networks, each
 with per-row lifecycle actions, plus a container log viewer and a formatted

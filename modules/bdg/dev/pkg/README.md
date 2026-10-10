@@ -1,5 +1,7 @@
 # pkg
 
+<img src="pkg.png" alt="pkg" height="300"/>
+
 One GUI over the system package managers — **apt**, **dnf**, **pacman** and
 **brew** — with the same windows and actions whichever one is in use: the
 installed packages with per-row actions, a search of the package index to find

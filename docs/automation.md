@@ -352,6 +352,12 @@ open the PNG with the `Read` tool.
 `--dump-tree` prints the top-level paths to find suffixes.
 `--arg ARG` (repeatable) passes positional arguments to the app after `--`,
 e.g. `--run du --arg /usr/share` for `wish client --run=du -- /usr/share`.
+`--username NAME` connects the client with that identity, which gives it a
+persistent user store (curl needs one for Collections / Environments,
+otherwise its Console shows a red "user store" error).
+
+This recipe also produces the `<name>.png` screenshot every tool keeps next
+to its `README.md` (see `CLAUDE.md`, "Tool READMEs and screenshots").
 
 A custom-drawn widget whose parts are not widgets of their own (a `Treemap`'s
 cells, a `Plot`'s points) has one rect in `get_tree()` for the whole element.

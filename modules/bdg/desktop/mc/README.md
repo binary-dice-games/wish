@@ -1,6 +1,6 @@
 # mc
 
-<img src="mc.png" alt="mc" height="200"/>
+<img src="mc.png" alt="mc" height="300"/>
 
 Two-panel file browser laid out as dockable panels inside its own
 nested "File Explorer" dockspace (see [docs/dock-layout.md](../../../../docs/dock-layout.md)):

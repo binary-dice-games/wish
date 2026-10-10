@@ -1,6 +1,6 @@
 # pix
 
-<img src="pix.png" alt="pix" height="200"/>
+<img src="pix.png" alt="pix" height="300"/>
 
 Local image folder viewer laid out as three dockable panels inside its own
 nested "Image Viewer" dockspace (see [docs/dock-layout.md](../../../../docs/dock-layout.md)):

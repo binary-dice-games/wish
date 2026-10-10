@@ -1,6 +1,6 @@
 # nano
 
-<img src="nano.png" alt="nano" height="200"/>
+<img src="nano.png" alt="nano" height="300"/>
 
 Multi-file, syntax-highlighted text editor laid out as dockable panels
 inside its own nested "Nano" dockspace (see

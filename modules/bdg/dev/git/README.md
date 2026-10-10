@@ -1,5 +1,7 @@
 # git
 
+<img src="git.png" alt="git" height="300"/>
+
 A SourceTree-style git GUI for a local repository: commit graph with branch/
 merge lines, a sidebar of branches/tags/stashes/remote-tracking branches,
 working-directory staging and commit, a diff viewer, and branch/remote

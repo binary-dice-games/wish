@@ -1,5 +1,7 @@
 # kubectl
 
+<img src="kubectl.png" alt="kubectl" height="300"/>
+
 A Kubernetes-dashboard-style GUI frontend for the local `kubectl` command
 line: dockable windows listing pods, deployments, services, and nodes, each
 with per-row lifecycle actions, plus a pod log viewer and a formatted

@@ -1,5 +1,7 @@
 # editor
 
+<img src="editor.png" alt="editor" height="300"/>
+
 Live JSON/YAML UI mock editor: open a wish UI file, see it re-parsed and
 live-instantiated as you (or an agent) type, with a log of every event the
 instantiated preview fires. Meant for iterating on a UI's design and for the
