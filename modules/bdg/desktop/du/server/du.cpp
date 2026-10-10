@@ -9,7 +9,6 @@
 #include "du.hpp"
 
 #include "src/bison/bison_object.hpp"
-#include "src/rmi/shared/ids.hpp"
 #include "ui/forms/file_browser_utils.hpp"
 
 #include <ui/dock_layout_spec.hpp>
@@ -143,35 +142,10 @@ static constexpr const char* kTreemapLayout = R"json({
 
 // ── du ───────────────────────────────────────────────────────────────────────
 
-du::du(dynamic&& base) : form(std::move(base)) {}
+du::du(dynamic&& base) : tool_form(std::move(base)) {}
 
 du::~du() {
   remove_panel_objects();
-}
-
-void du::build_window(
-    const char* layout_json, const std::string& root_key, key_t& window_id_out,
-    const std::function<void(ui_tree&)>& wire) {
-  auto tree = import_json(layout_json);
-
-  auto& c = ctx();
-  for (auto& [key, elem] : tree) {
-    key_t id = rmi::shared::generate_id();
-    c.put_object(id, elem);
-    elem["__wish_id"_key] = id;
-  }
-  window_id_out = (*tree[""])["__wish_id"_key].as<key_t>();
-  wire(tree);
-
-  ui_element_ptr root_ptr = tree[""];
-  sess().ui_objects.merge(std::move(tree), root_key);
-  // The main root's top-level registration and "__path__" are handled by
-  // form::init() once on_init() returns; the secondary panel registers here.
-  if (root_key != internal_root_key_) {
-    sess().top_level_objects[key_t{root_key}] = root_ptr;
-    sess().top_level_handlers[key_t{root_key}] = this;
-    (*root_ptr)["__path__"_key] = root_key;
-  }
 }
 
 void du::on_init() {
@@ -181,7 +155,7 @@ void du::on_init() {
   auto* title_f = findField<std::string>("title"_key);
   const std::string title = title_f ? *title_f : std::string{"Disk Usage"};
 
-  build_window(kFilesLayout, internal_root_key_, window_id_, [&](ui_tree& tree) {
+  build_window(internal_root_key_, kFilesLayout, window_id_, [&](ui_tree& tree) {
     tree.with("main.toolbar.btn_scan", [&](const auto& e) {
       btn_scan_ptr_ = e;
       btn_scan_id_ = wish_id_of(e);
@@ -199,7 +173,7 @@ void du::on_init() {
     tree.with("main.status", [&](const auto& e) { status_label_ptr_ = e; });
   });
 
-  build_window(kTreemapLayout, treemap_root_key_, treemap_window_id_, [&](ui_tree& tree) {
+  build_window(treemap_root_key_, kTreemapLayout, treemap_window_id_, [&](ui_tree& tree) {
     tree.with("map", [&](const auto& e) {
       treemap_ptr_ = e;
       treemap_id_ = wish_id_of(e);

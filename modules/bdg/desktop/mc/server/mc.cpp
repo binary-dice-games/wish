@@ -26,6 +26,7 @@
 namespace bdg::wish {
 
 using namespace bison;
+using common::set_children_list;
 namespace fs = std::filesystem;
 
 // open_in_host_explorer() lives in file_browser_utils.hpp/.cpp -- shared
@@ -103,15 +104,6 @@ std::string join_local_path(const std::string& parent, const std::string& name) 
     return parent + name;
   bool backslash = parent.find('\\') != std::string::npos && parent.find('/') == std::string::npos;
   return parent + (backslash ? '\\' : '/') + name;
-}
-
-void set_children_list(const ui_element_ptr& parent, const std::vector<ui_element_ptr>& kids) {
-  auto list = dynamic_ptr{key_t{0U}, {}};
-  size_t k = 0;
-  for (auto& kid : kids)
-    (*list)[k++] = dynamic_ptr{kid};
-  (*parent)["children"_key] = list;
-  parent->refresh_children_order();
 }
 
 } // namespace
@@ -339,35 +331,10 @@ static constexpr const char* kRenameLayout = R"json({
 
 // ── mc ─────────────────────────────────────────────────────────────
 
-mc::mc(dynamic&& base) : form(std::move(base)) {}
+mc::mc(dynamic&& base) : tool_form(std::move(base)) {}
 
 mc::~mc() {
   remove_panel_objects();
-}
-
-void mc::build_window(
-    const char* layout_json, const std::string& root_key, key_t& window_id_out,
-    const std::function<void(ui_tree&)>& wire) {
-  auto tree = import_json(layout_json);
-
-  auto& c = ctx();
-  for (auto& [key, elem] : tree) {
-    key_t id = rmi::shared::generate_id();
-    c.put_object(id, elem);
-    elem["__wish_id"_key] = id;
-  }
-  window_id_out = (*tree[""])["__wish_id"_key].as<key_t>();
-  wire(tree);
-
-  ui_element_ptr root_ptr = tree[""];
-  sess().ui_objects.merge(std::move(tree), root_key);
-  // The main root's top-level registration and "__path__" are handled by
-  // form::init() once on_init() returns; secondary panels register here.
-  if (root_key != internal_root_key_) {
-    sess().top_level_objects[key_t{root_key}] = root_ptr;
-    sess().top_level_handlers[key_t{root_key}] = this;
-    (*root_ptr)["__path__"_key] = root_key;
-  }
 }
 
 void mc::on_init() {
@@ -379,7 +346,7 @@ void mc::on_init() {
   auto* title_f = findField<std::string>("title"_key);
   const std::string title = title_f ? *title_f : std::string{"File Explorer"};
 
-  build_window(kLocalLayout, internal_root_key_, window_id_, [&](ui_tree& tree) {
+  build_window(internal_root_key_, kLocalLayout, window_id_, [&](ui_tree& tree) {
     tree.with("vbox.left_path", [&](const auto& e) {
       left_path_ptr_ = e;
       left_path_id_ = wish_id_of(e);
@@ -395,7 +362,7 @@ void mc::on_init() {
     tree.with("vbox.left_status", [&](const auto& e) { left_status_ptr_ = e; });
   });
 
-  build_window(kSandboxLayout, sandbox_root_key_, sandbox_window_id_, [&](ui_tree& tree) {
+  build_window(sandbox_root_key_, kSandboxLayout, sandbox_window_id_, [&](ui_tree& tree) {
     tree.with("vbox.right_toolbar.right_path", [&](const auto& e) {
       right_path_ptr_ = e;
       right_path_id_ = wish_id_of(e);
@@ -413,10 +380,10 @@ void mc::on_init() {
   });
 
   sandbox_tree_.is_sandbox = true;
-  build_window(kLocalTreeLayout, local_tree_root_key_, local_tree_window_id_, [&](ui_tree& tree) {
+  build_window(local_tree_root_key_, kLocalTreeLayout, local_tree_window_id_, [&](ui_tree& tree) {
     tree.with("tree", [&](const auto& e) { local_tree_.box = e; });
   });
-  build_window(kSandboxTreeLayout, sandbox_tree_root_key_, sandbox_tree_window_id_, [&](ui_tree& tree) {
+  build_window(sandbox_tree_root_key_, kSandboxTreeLayout, sandbox_tree_window_id_, [&](ui_tree& tree) {
     tree.with("tree", [&](const auto& e) { sandbox_tree_.box = e; });
   });
 

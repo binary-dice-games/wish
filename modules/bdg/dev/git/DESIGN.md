@@ -67,11 +67,12 @@ one top-level root, so the extra three are registered by hand in
   rendered as one `TableRow` per line — a gutter `Label` (`+`/`-`/blank)
   and a content `Label`, both colored via `Label.text_color` (the hex-string
   field the `editor` module added) rather than a new widget.
-- **Log** (`log_root_key_`): a trace of every `git` subprocess invocation
-  the client makes (`do_append_command_log`), one `TableRow` per call —
-  sequence #, full command, exit code, and a trimmed output preview,
-  green/red-colored by success — for debugging/tracing the tool itself, not
-  git repository state. FIFO-capped at `kMaxLogRows` (see §6).
+- **Log** (`internal_root_key_ + "_log"`, `common::console_panel`): a trace
+  of every `git` subprocess invocation the client makes
+  (`do_append_command_log`), one `TableRow` per call — sequence #, full
+  command, exit code, and a trimmed output preview, green/red-colored by
+  success — for debugging/tracing the tool itself, not git repository
+  state. FIFO-capped at 500 rows (see §6).
 
 The windows carry no `pos_x`/`pos_y`; `on_init()` seeds a default split —
 Main filling the left ~70% with a Log strip along its bottom, Files over
@@ -281,26 +282,17 @@ the leftmost cell of the commit `Table`'s each `TableRow`. This means:
 
 - **Destructive actions (delete branch, stash drop) are gated behind a
   confirm dialog**, not fired directly from the `MenuItem` click.
-  `show_confirm()` privately instantiates the built-in `MessageBox` form
-  (`form::instantiate_child_form()`, `src/ui/forms/message_box.hpp`) with a
+  `tool_form::show_confirm()` (shared by the bdg tool forms,
+  `modules/bdg/common/server/tool_form.hpp`) privately instantiates the
+  built-in `MessageBox` form (`form::instantiate_child_form()`) with a
   `"yes_no"` preset: the child builds and owns its own internal Window/
-  buttons exactly as it would for a real client (its own `on_init()`,
-  `on_event()`, closing itself on Close/window-X), and its `"on_result"`
+  buttons exactly as it would for a real client, and its `"on_result"`
   event (`{button: "yes"|"no"}`) is wired straight to an in-process
-  `on_result` callback via `set_local_result_sink()` — no real client-side
-  RMI round trip needed, and no second RMI object for the client to
-  mediate. `confirm_dialog_` (a `std::shared_ptr<message_box>`) is the only
-  state `GitRepo` keeps for it; `GitRepo::on_event()` no longer needs any
-  confirm-specific branch, since the MessageBox handles its own Yes/No/
-  close routing internally. Only one confirm dialog may be open at a time —
-  a new `show_confirm()` call just overwrites `confirm_dialog_`, tearing
-  down the stale instance. `confirm_label` (the caller's custom button
-  caption, e.g. "Delete"/"Drop") no longer has anywhere to go, since
-  `MessageBox`'s `"yes_no"` preset has fixed Yes/No labels — an accepted
-  trade-off, since every caller's message text already says what's
-  happening. "Apply"/"Pop" (reversible-ish) and "Merge into current"/
-  "Checkout" stay un-confirmed, matching SourceTree's own convention of
-  only gating truly destructive, hard-to-reverse actions.
+  callback via `set_local_result_sink()` — no client-side RMI round trip.
+  `GitRepo::on_event()` needs no confirm-specific branch. Only one confirm
+  dialog is open at a time; a new one replaces the stale instance. The
+  `"yes_no"` preset has fixed Yes/No labels, so the message text says what
+  is being confirmed.
 
 - **A file's Selectable, not `Table`'s row-level `row_selected`, drives
   diff selection in the Files table.** The Files table's first column is
@@ -330,20 +322,11 @@ the leftmost cell of the commit `Table`'s each `TableRow`. This means:
   only changed which `{from,to}` pair a segment reports, not whether one
   exists).
 
-- **The Log window's row cap and eviction (`kMaxLogRows`, `log_row_entry`,
-  `log_rows_`) exactly mirror the `editor` module's own event-log Table**
-  (`editor.hpp`/`.cpp`'s `kMaxLogRows`/`log_row_entry`/`log_rows_`/
-  `append_log_row()`) — a `std::deque` of "enough ids to fully erase this
-  row" (its slot in the table's `children` map, plus every `ctx().objects`
-  id `put_object()` assigned it), so a long-running session's trace stays
-  bounded (500 rows) instead of leaking `ctx().objects` entries or growing
-  the table without limit. Each `refresh_all()` call (an explicit Refresh
-  click or the click behind any mutating action — see the "no background
-  polling" entry below) makes several `run_logged()` calls at once
-  (`push_refs` alone runs `for-each-ref`, `tag --list`, `stash list`,
-  `rev-parse`, and one `rev-list` per local branch), so even purely
-  user-driven usage can add up over a long session; the cap stays for that
-  reason, not because of any longer-running background source of calls.
+- **The Log window is the shared `common::console_panel`** (titled "Log",
+  not closable, table `##git_log_table`), the same command-trace window
+  every bdg/dev tool uses: a FIFO-capped table (500 rows) whose eviction
+  and "Clear Log" erase every object a row registered (including its
+  context menu), so a long session's trace stays bounded.
 
 - **`selected_hash_ == ""` doubles as both "the synthetic working-tree row
   is selected" and "nothing selected yet" (the member's default).** A
@@ -521,8 +504,8 @@ the leftmost cell of the commit `Table`'s each `TableRow`. This means:
 
 - **`graph_table`'s `auto_scroll` is `false`, opposite of `Table`'s own
   default.** `Table`'s built-in auto-scroll assumes a log-like table where
-  the newest row is the *last* one (see `log_table`, which correctly keeps
-  the default `true`). The commit graph is the reverse — newest commit (or
+  the newest row is the *last* one (see the Log window's table, which
+  correctly keeps `true`). The commit graph is the reverse — newest commit (or
   the synthetic "Uncommitted changes" row) is always row 0 — so the default
   behavior scrolled to the *oldest* commit on every load, reported as
   needing a manual scroll-up to see anything current. With `auto_scroll`
@@ -544,18 +527,12 @@ the leftmost cell of the commit `Table`'s each `TableRow`. This means:
   label rather than an implicit side effect of selection.
 
 - **The Log window's `TableRow`s each carry a `ContextMenu` child** ("Copy
-  Entry" / "Clear Log"), built alongside the row's four cells in
-  `append_log_row()` since "Copy Entry" needs that specific row's own
-  command/exit-code/output text. "Copy Entry" uses `MenuItem.copy_text`
-  (the same renderer-side, no-round-trip clipboard mechanism `mc.cpp`'s
-  "Copy Path" already uses) rather than a server round trip. "Clear Log" is
-  offered from *every* row's menu (not just a dedicated toolbar button) for
-  discoverability, and calls the new `clear_log_rows()` — which mirrors
-  `append_log_row()`'s own `kMaxLogRows` eviction exactly (erasing each
-  row's `ctx().objects` entries, not just hiding it from the table),
-  refactored into a shared `erase_log_row_objects()` helper so the two
-  paths can't drift apart. Resets `log_seq_` back to 0, so a cleared log
-  starts a fresh sequence rather than resuming a running count.
+  Entry" / "Clear Log"), built by `common::console_panel`. "Copy Entry"
+  uses `MenuItem.copy_text` (the renderer-side, no-round-trip clipboard
+  mechanism `mc.cpp`'s "Copy Path" also uses) and reports "Copied log entry
+  to clipboard." through the panel's `on_copied` hook; "Clear Log" is
+  offered from *every* row's menu for discoverability, restarts the
+  sequence at 1 and reports "Log cleared." through `on_cleared`.
 
 - **New-branch creation gained an adjacent "Create" button; the field does
   *not* use `EnterReturnsTrue`, unlike this codebase's other "type a name,
@@ -666,7 +643,7 @@ untracked-file fallback, and per-commit diffs, live-verified with colored
 fallback)/create/delete; fetch/pull/push; fast-forward-first merge; stash
 push/pop/apply/drop; user-initiated refresh only, no background polling
 (§6); a MessageBox confirm dialog
-(`show_confirm()`, §6) gating delete-branch and stash-drop; a Log window
+(`tool_form::show_confirm()`, §6) gating delete-branch and stash-drop; a Log window
 tracing every `git` subprocess invocation (`run_logged()`/
 `append_command_log`/`do_append_command_log`, live-verified showing
 sequence #, command, exit code, and colored output preview for a real

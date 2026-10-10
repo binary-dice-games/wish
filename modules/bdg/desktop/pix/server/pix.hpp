@@ -3,7 +3,8 @@
 /// @brief Server-side PixViewer form: a two-panel local image browser.
 #pragma once
 
-#include <ui/forms/form.hpp>
+#include "modules/bdg/common/server/tool_form.hpp"
+
 #include <ui/ui_element.hpp>
 #include <ui/ui_importer.hpp>
 
@@ -57,7 +58,7 @@ namespace bdg::wish {
 /// preview `Image`, so the Table's own native scrollbars/mouse-wheel are
 /// the pan control -- zoom (`+`/`-`/Fit/100%) only ever changes the
 /// Image's `width`/`height` fields, never re-uploads anything.
-class pix_viewer : public form {
+class pix_viewer : public common::tool_form {
  public:
   explicit pix_viewer(bison::dynamic&& base);
   /// @brief Removes the secondary Preview/Info panels; ~form() removes the
@@ -138,14 +139,6 @@ class pix_viewer : public form {
     bison::key_t selectable_id;
   };
 
-  /// @brief Import @p layout_json, assign every element an RMI id, run
-  /// @p wire to capture element pointers, and merge the tree under
-  /// @p root_key -- registering it as its own top-level object (with
-  /// `__path__`, so it can be named in the dock layout) unless it is the
-  /// main `internal_root_key_`, which form::init() registers itself.
-  void build_window(
-      const char* layout_json, const std::string& root_key, bison::key_t& window_id_out,
-      const std::function<void(ui_tree&)>& wire);
   /// @brief Remove the Preview/Info panels and forget their keys. Safe to
   /// call more than once.
   void remove_panel_objects();

@@ -18,23 +18,22 @@
 /// sidebar's Branches header, and a "last selected branch" tracked from
 /// sidebar clicks) instead of a dialog -- documented as a deliberate V1
 /// simplification in this module's DESIGN.md, not an oversight. Destructive
-/// actions (delete branch, stash drop) do use a real modal: a
-/// privately-instantiated MessageBox (see form::instantiate_child_form())
-/// with a "yes_no" preset -- see show_confirm() below.
+/// actions (delete branch, stash drop) do use a real modal:
+/// tool_form::show_confirm(). The Log window (a trace of every git command
+/// the client ran) is the shared common::console_panel, titled "Log".
 #pragma once
 
-#include <ui/forms/form.hpp>
+#include "modules/bdg/common/server/console_panel.hpp"
+#include "modules/bdg/common/server/tool_form.hpp"
+
 #include <ui/ui_element.hpp>
 
-#include <deque>
 #include <functional>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
 namespace bdg::wish {
-
-class message_box;
 
 /// @brief SourceTree-style git GUI form.
 ///
@@ -65,7 +64,7 @@ class message_box;
 ///     call update_commit_files() with that commit's changed files.
 ///   - `"diff_requested"` — `{ hash: string (empty = working tree), path: string, staged: bool }`;
 ///     the client should call update_diff() with that file's diff.
-class git_repo : public form {
+class git_repo : public common::tool_form {
  public:
   explicit git_repo(bison::dynamic&& base);
 
@@ -147,20 +146,6 @@ class git_repo : public form {
   void build_main_window();
   void build_files_window();
   void build_diff_window();
-  void build_log_window();
-
-  // ── Confirmation modal ──────────────────────────────────────────────────
-  // A privately-instantiated MessageBox (see form::instantiate_child_form())
-  // with a "yes_no" preset, gating destructive actions (delete branch,
-  // stash drop) -- see DESIGN.md §6.
-
-  /// @brief Shows a "yes_no" MessageBox confirm dialog with @p message;
-  /// @p on_confirm runs if the user clicks Yes. @p confirm_label is
-  /// unused: MessageBox's "yes_no" preset has fixed Yes/No button labels,
-  /// so callers' custom captions ("Delete", "Drop") no longer have anywhere
-  /// to go -- kept in the signature since every caller still passes one and
-  /// the message text alone already says what's happening.
-  void show_confirm(const std::string& message, const std::string& confirm_label, std::function<void()> on_confirm);
 
   // ── Sidebar ──────────────────────────────────────────────────────────────
   struct sidebar_row {
@@ -183,7 +168,6 @@ class git_repo : public form {
       std::function<void()> on_click,
       const std::vector<std::pair<std::string, std::function<void()>>>& menu_items);
   ui_element_ptr make_menu_item(const std::string& label, std::function<void()> on_click);
-  void assign_id(const ui_element_ptr& el);
 
   /// @brief Sets status_label_'s text and theme-aware (green/red)
   /// text_color_light/text_color_dark, a no-op if status_label_ is null.
@@ -227,38 +211,8 @@ class git_repo : public form {
   // ── Diff ─────────────────────────────────────────────────────────────────
   void clear_diff_rows();
 
-  // ── Log (git-command trace) ─────────────────────────────────────────────
-  // Mirrors the `editor` module's own event-log Table (editor.cpp's
-  // append_log_row()/kMaxLogRows/log_row_entry): a FIFO-capped Table so a
-  // long-running session's Log window stays bounded instead of growing
-  // without limit.
-
-  /// @brief Appends one row (sequence #, command, exit code, output
-  /// preview) to the Log window's table, color-coded green/red by @p ok.
-  /// Evicts the oldest row first once the table already holds kMaxLogRows.
-  /// Each row's own right-click ContextMenu ("Copy Entry"/"Clear Log") is
-  /// built here too, since it needs this row's own command/exit_code/output
-  /// to fill in "Copy Entry"'s clipboard text.
-  void append_log_row(const std::string& command, int32_t exit_code, bool ok, const std::string& output);
-
-  /// @brief Erases every Log window row, including their `ctx().objects`
-  /// entries (see log_row_entry's doc comment) -- called from any row's
-  /// "Clear Log" context-menu action. Resets log_seq_ back to 0 so the next
-  /// appended row starts a fresh sequence, matching a "clear" that should
-  /// feel like starting over rather than resuming a running count.
-  void clear_log_rows();
-
   std::string files_root_key_;
   std::string diff_root_key_;
-  std::string log_root_key_;
-
-  /// Confirm dialog: a privately-instantiated MessageBox (see
-  /// form::instantiate_child_form()) with a "yes_no" preset, gating delete
-  /// branch/stash drop. Only one may be open at a time; a new confirm
-  /// request just overwrites this member -- the stale instance's destructor
-  /// tears down its own internal objects, same effect the old direct
-  /// remove_objects_at() call had.
-  std::shared_ptr<message_box> confirm_dialog_;
 
   // Main window
   bison::key_t window_id_;
@@ -302,43 +256,10 @@ class git_repo : public form {
   std::string selected_path_;
   bool selected_staged_{false};
 
-  // Log window
-  bison::key_t log_window_id_;
-  ui_element_ptr log_table_;
-
-  static constexpr size_t kMaxLogRows = 500;
-
-  // Bookkeeping for one live Log-window row, enough to fully evict it: its
-  // slot in the log table's "children" map plus every RMI id put_object()
-  // assigned it (the row itself and its four cells) -- mirrors editor.hpp's
-  // own log_row_entry, see that type's doc comment for why this is needed
-  // (an eviction that only hid the row from the table, without also erasing
-  // its ctx().objects entries, would leak them over a long session).
-  struct log_row_entry {
-    size_t child_key;
-    bison::key_t row_id;
-    bison::key_t cell_seq_id;
-    bison::key_t cell_command_id;
-    bison::key_t cell_exit_id;
-    bison::key_t cell_output_id;
-  };
-
-  size_t log_seq_{0};
-  size_t next_log_child_key_{0};
-  std::deque<log_row_entry> log_rows_; // oldest first
-
-  /// @brief Erases one Log row's `ctx().objects` entries (row + all cells).
-  /// Shared by clear_log_rows() and append_log_row()'s own kMaxLogRows
-  /// eviction so the two don't duplicate the same five erase() calls.
-  /// Declared here (not up near append_log_row()/clear_log_rows() above)
-  /// because it needs log_row_entry, a nested type defined just above --
-  /// unlike a function body, a member function's own parameter list is not
-  /// a complete-class context, so it cannot forward-reference a nested type
-  /// declared later in the class.
-  void erase_log_row_objects(const log_row_entry& entry);
+  // Log window: the trace of every git command the client ran.
+  common::console_panel log_;
 
   // Dispatch tables, populated in on_init()/rebuild_* -- keyed by widget id.
-  std::unordered_map<bison::key_t, std::function<void()>, bison::key_t, bison::key_t> click_handlers_;
   std::unordered_map<bison::key_t, std::function<void(bool)>, bison::key_t, bison::key_t> checkbox_handlers_;
   std::unordered_map<bison::key_t, std::function<void()>, bison::key_t, bison::key_t> selectable_handlers_;
 

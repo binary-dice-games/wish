@@ -4,7 +4,6 @@
 #include "bc.hpp"
 
 #include "src/bison/bison_object.hpp"
-#include "src/rmi/shared/ids.hpp"
 
 #include <ui/ui_importer.hpp>
 
@@ -14,13 +13,7 @@
 namespace bdg::wish {
 
 using namespace bison;
-
-namespace {
-template <typename Element>
-key_t wish_id_of(const Element& element) {
-  return element->template as<key_t>("__wish_id"_key);
-}
-} // namespace
+using common::wish_id_of;
 
 // ── UI layout ─────────────────────────────────────────────────────────────────
 //
@@ -97,68 +90,50 @@ static constexpr const char* kLayout = R"({
 
 // ── bc ────────────────────────────────────────────────────────────────
 
-bc::bc(dynamic&& base) : form(std::move(base)) {}
+bc::bc(dynamic&& base) : tool_form(std::move(base)) {}
 
 void bc::on_init() {
   // See form::internal_root_key_'s doc comment: ordinally-assigned, not pointer-derived.
   internal_root_key_ = next_available_key("__calc_");
 
-  auto tree = import_json(kLayout);
+  build_window(internal_root_key_, kLayout, window_id_, [&](ui_tree& tree) {
+    tree.with("display", [&](const auto& e) {
+      display_id_ = wish_id_of(e);
+      display_ptr_ = e;
+    });
 
-  // Assign every element a bison RMI ID. put_object() (rather than
-  // ctx().objects[id.id] = elem) files each one under whatever group the
-  // current request is tagged with -- see rmi::context::current_group --
-  // so a whole form's worth of internal elements, created here as a side
-  // effect of one "instantiate" call, still get cleaned up together e.g.
-  // when relayed through rmi::bridge and the owning session disconnects.
-  auto& c = ctx();
-  for (auto& [key, elem] : tree) {
-    key_t id = rmi::shared::generate_id();
-    c.put_object(id, elem);
-    elem["__wish_id"_key] = id;
-  }
+    // Look up a button by its dot-path, cache its ID in id_out, and register
+    // its click handler.
+    auto bind_button = [&](const std::string& path, key_t& id_out, std::function<void()> handler) {
+      tree.with(path, [&](const auto& e) { id_out = wish_id_of(e); });
+      on_click(id_out, std::move(handler));
+    };
 
-  // Cache IDs for interactive widgets.
-  window_id_ = (*tree[""])["__wish_id"_key].as<key_t>();
+    bind_button("row0.c", btn_c_, [this] { handle_clear(); });
+    bind_button("row0.div", btn_div_, [this] { handle_operator('/'); });
+    bind_button("row0.mul", btn_mul_, [this] { handle_operator('*'); });
+    bind_button("row0.bsp", btn_bsp_, [this] { handle_backspace(); });
 
-  tree.with("display", [&](const auto& e) {
-    display_id_ = wish_id_of(e);
-    display_ptr_ = e;
+    bind_button("row1.n7", btn_n7_, [this] { handle_digit("7"); });
+    bind_button("row1.n8", btn_n8_, [this] { handle_digit("8"); });
+    bind_button("row1.n9", btn_n9_, [this] { handle_digit("9"); });
+    bind_button("row1.sub", btn_sub_, [this] { handle_operator('-'); });
+
+    bind_button("row2.n4", btn_n4_, [this] { handle_digit("4"); });
+    bind_button("row2.n5", btn_n5_, [this] { handle_digit("5"); });
+    bind_button("row2.n6", btn_n6_, [this] { handle_digit("6"); });
+    bind_button("row2.add", btn_add_, [this] { handle_operator('+'); });
+
+    bind_button("row3.n1", btn_n1_, [this] { handle_digit("1"); });
+    bind_button("row3.n2", btn_n2_, [this] { handle_digit("2"); });
+    bind_button("row3.n3", btn_n3_, [this] { handle_digit("3"); });
+    bind_button("row3.eq", btn_eq_, [this] { handle_equals(); });
+
+    bind_button("row4.n0", btn_n0_, [this] { handle_digit("0"); });
+    bind_button("row4.dot", btn_dot_, [this] { handle_dot(); });
+    bind_button("row4.pm", btn_pm_, [this] { handle_negate(); });
+    bind_button("row4.pct", btn_pct_, [this] { handle_percent(); });
   });
-
-  // Look up a button by its dot-path, cache its ID in id_out, and register
-  // its click handler in button_handlers_.
-  auto bind_button = [&](const std::string& path, key_t& id_out, std::function<void()> handler) {
-    tree.with(path, [&](const auto& e) { id_out = wish_id_of(e); });
-    button_handlers_[id_out] = std::move(handler);
-  };
-
-  bind_button("row0.c", btn_c_, [this] { handle_clear(); });
-  bind_button("row0.div", btn_div_, [this] { handle_operator('/'); });
-  bind_button("row0.mul", btn_mul_, [this] { handle_operator('*'); });
-  bind_button("row0.bsp", btn_bsp_, [this] { handle_backspace(); });
-
-  bind_button("row1.n7", btn_n7_, [this] { handle_digit("7"); });
-  bind_button("row1.n8", btn_n8_, [this] { handle_digit("8"); });
-  bind_button("row1.n9", btn_n9_, [this] { handle_digit("9"); });
-  bind_button("row1.sub", btn_sub_, [this] { handle_operator('-'); });
-
-  bind_button("row2.n4", btn_n4_, [this] { handle_digit("4"); });
-  bind_button("row2.n5", btn_n5_, [this] { handle_digit("5"); });
-  bind_button("row2.n6", btn_n6_, [this] { handle_digit("6"); });
-  bind_button("row2.add", btn_add_, [this] { handle_operator('+'); });
-
-  bind_button("row3.n1", btn_n1_, [this] { handle_digit("1"); });
-  bind_button("row3.n2", btn_n2_, [this] { handle_digit("2"); });
-  bind_button("row3.n3", btn_n3_, [this] { handle_digit("3"); });
-  bind_button("row3.eq", btn_eq_, [this] { handle_equals(); });
-
-  bind_button("row4.n0", btn_n0_, [this] { handle_digit("0"); });
-  bind_button("row4.dot", btn_dot_, [this] { handle_dot(); });
-  bind_button("row4.pm", btn_pm_, [this] { handle_negate(); });
-  bind_button("row4.pct", btn_pct_, [this] { handle_percent(); });
-
-  sess().ui_objects.merge(std::move(tree), internal_root_key_);
 }
 
 // ── Event routing ─────────────────────────────────────────────────────────────
@@ -171,12 +146,8 @@ void bc::on_event(key_t id, key_t event, const dynamic& /*payload*/) {
     return;
   }
 
-  if (event != "clicked"_key)
-    return;
-
-  auto it = button_handlers_.find(id);
-  if (it != button_handlers_.end())
-    it->second();
+  if (event == "clicked"_key)
+    dispatch_click(id);
 }
 
 // ── Calculator logic ──────────────────────────────────────────────────────────

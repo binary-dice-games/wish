@@ -56,6 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `git`: clearing the Log window, or a long session pushing old rows out of it, no longer leaks each row's right-click menu objects.
 - `mc`: the file tables' "Modified" column was too narrow for the full date and time, which looked like the scrollbar covering it; a listing now also opens scrolled to the top instead of the bottom.
 - JSON/YAML UI descriptors now accept arrays of non-integer numbers (e.g. `"xs": [0.5, 1.5]`), and integer arrays are widened for `float[]` fields; previously plot data given in a template was silently dropped.
 - A widget that grows after its first render (e.g. a `Label` whose text starts empty) inside a `HorizontalLayout` row is no longer clipped forever; the row now grows to fit it.
@@ -74,6 +75,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The bdg tool frontends (`kubectl`, `docker`, `helm`, `pip`, `pkg`, `curl`, `sq`, `git` and the desktop tools) now share one set of server-side panels (`modules/bdg/common/server/`): the Console window, list windows with `...` row menus, read-only text viewers, live stats graphs and confirm dialogs look and behave the same in every tool.
+- `sq`: Console rows gain the right-click **Copy Entry** / **Clear Console** menu the other tools have.
+- `git`: the Log window follows the newest row.
 - `docker`, `kubectl`, `git` and `curl` Console windows show each command and its output preview on a single line (whitespace runs collapsed), the same as `helm`, `pip` and `pkg`.
 - `top` module: the single window is now four dockable panels — Processes, CPU, Memory and Cores — inside its own nested "Top" dockspace, with a default arrangement (graphs above the process table, per-core meters along the right). Graphs and the process table fill their panels; closing any panel closes the tool.
 - `top` module: the process table has a "Filter by name" box (case-insensitive) with an "N of M processes" count.

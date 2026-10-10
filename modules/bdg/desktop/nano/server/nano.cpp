@@ -4,7 +4,6 @@
 #include "nano.hpp"
 
 #include "src/bison/bison_object.hpp"
-#include "src/rmi/shared/ids.hpp"
 
 #include <context/file_service.hpp>
 #include <ui/dock_layout_spec.hpp>
@@ -21,13 +20,9 @@
 namespace bdg::wish {
 
 using namespace bison;
+using common::wish_id_of;
 
 namespace {
-
-template <typename Element>
-key_t wish_id_of(const Element& element) {
-  return element->template as<key_t>("__wish_id"_key);
-}
 
 // Map a sandbox file's extension to one of TextEditor's supported "language"
 // values (see src/ui/ui_elements/text_editor.cpp). Unknown extensions fall back
@@ -357,38 +352,10 @@ static constexpr const char* kSearchLayout = R"json({
 
 // ── nano ───────────────────────────────────────────────────────────────────
 
-nano::nano(dynamic&& base) : form(std::move(base)) {}
+nano::nano(dynamic&& base) : tool_form(std::move(base)) {}
 
 nano::~nano() {
   remove_panel_objects();
-}
-
-void nano::build_window(
-    const char* layout_json, const std::string& root_key, key_t& window_id_out,
-    const std::function<void(ui_tree&)>& wire) {
-  auto tree = import_json(layout_json);
-
-  // put_object() files each element under the current request's group (see
-  // rmi::context::current_group) so they're cleaned up together with the
-  // rest of this form when relayed through rmi::bridge.
-  auto& c = ctx();
-  for (auto& [key, elem] : tree) {
-    key_t id = rmi::shared::generate_id();
-    c.put_object(id, elem);
-    elem["__wish_id"_key] = id;
-  }
-  window_id_out = (*tree[""])["__wish_id"_key].as<key_t>();
-  wire(tree);
-
-  ui_element_ptr root_ptr = tree[""];
-  sess().ui_objects.merge(std::move(tree), root_key);
-  // The main root's top-level registration and "__path__" are handled by
-  // form::init() once on_init() returns; secondary panels register here.
-  if (root_key != internal_root_key_) {
-    sess().top_level_objects[key_t{root_key}] = root_ptr;
-    sess().top_level_handlers[key_t{root_key}] = this;
-    (*root_ptr)["__path__"_key] = root_key;
-  }
 }
 
 void nano::on_init() {
@@ -399,7 +366,7 @@ void nano::on_init() {
   auto* title_f = findField<std::string>("title"_key);
   const std::string title = title_f ? *title_f : std::string{"Nano"};
 
-  build_window(kToolbarLayout, internal_root_key_, window_id_, [&](ui_tree& tree) {
+  build_window(internal_root_key_, kToolbarLayout, window_id_, [&](ui_tree& tree) {
     tree.with("toolbar.btn_open", [&](const auto& e) { btn_open_id_ = wish_id_of(e); });
     tree.with("toolbar.btn_new", [&](const auto& e) { btn_new_id_ = wish_id_of(e); });
     tree.with("toolbar.btn_save", [&](const auto& e) { btn_save_id_ = wish_id_of(e); });
@@ -407,7 +374,7 @@ void nano::on_init() {
     tree.with("toolbar.current_label", [&](const auto& e) { current_label_ptr_ = e; });
   });
 
-  build_window(kSearchLayout, search_root_key_, search_window_id_, [&](ui_tree& tree) {
+  build_window(search_root_key_, kSearchLayout, search_window_id_, [&](ui_tree& tree) {
     search_window_ptr_ = tree[""];
     tree.with("vbox.top.options.find_row.find_input", [&](const auto& e) {
       find_input_ptr_ = e;
@@ -505,7 +472,7 @@ dynamic nano::do_open_file(const dynamic& args) {
   entry.title = title;
   entry.root_key = internal_root_key_ + "_doc_" + std::to_string(next_doc_seq_++);
 
-  build_window(kDocumentLayout, entry.root_key, entry.window_id, [&](ui_tree& tree) {
+  build_window(entry.root_key, kDocumentLayout, entry.window_id, [&](ui_tree& tree) {
     entry.window_ptr = tree[""];
     (*entry.window_ptr)["title"_key] = title;
     (*entry.window_ptr)["dock_target"_key] = std::string{kDockId};

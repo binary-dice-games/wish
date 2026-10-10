@@ -2,78 +2,31 @@
 /// @file pip.cpp
 /// @brief Implementation of the PipFrontend form.
 ///
-/// A close port of modules/bdg/dev/helm/server/helm.cpp: inline JSON window
-/// layouts + import_json(), C++-built table rows, a per-row `...` MenuButton,
-/// show_confirm() via a privately-instantiated MessageBox, and an id ->
-/// handler dispatch map rebuilt on every update_*. The two list windows
-/// (Packages / Versions) share one build_list_window() / clear_list_rows() /
-/// add_list_row() path.
+/// Inline JSON window layouts + C++-built table rows on the panels shared
+/// by the bdg tool forms (modules/bdg/common/server). The two list windows
+/// (Packages / Versions) share one package_row type and run_row_action()
+/// path.
 #include "pip.hpp"
 
 #include "src/bison/bison_object.hpp"
-#include "src/rmi/shared/ids.hpp"
 
-#include <context/file_service.hpp>
 #include <ui/dock_layout_spec.hpp>
-#include <ui/forms/message_box.hpp>
-
-#include <algorithm>
-#include <filesystem>
-#include <fstream>
 
 namespace bdg::wish {
 
 using namespace bison;
+using common::flag_of;
+using common::for_each_entry;
+using common::kIdle;
+using common::kOk;
+using common::kWarn;
+using common::lower;
+using common::make_payload;
+using common::plural;
+using common::str_of;
+using common::wish_id_of;
 
 namespace {
-
-template <typename Element>
-key_t wish_id_of(const Element& element) {
-  return element->template as<key_t>("__wish_id"_key);
-}
-
-template <typename Fn>
-void for_each_entry(const dynamic& parent, key_t field_key, Fn&& fn) {
-  const auto* arr_f = parent.findField<dynamic_ptr>(field_key);
-  if (!arr_f || !*arr_f)
-    return;
-  (*arr_f)->forEach([&](key_t, const field& f) {
-    if (!f.is<dynamic_ptr>())
-      return;
-    auto entry_ptr = f.as<dynamic_ptr>();
-    if (entry_ptr)
-      fn(*entry_ptr);
-  });
-}
-
-// Optional string field (absent -> "").
-std::string str_of(const dynamic& d, key_t key) {
-  const auto* f = d.findField<std::string>(key);
-  return f ? *f : std::string{};
-}
-
-// Optional bool field (absent -> false).
-bool flag_of(const dynamic& d, key_t key) {
-  const auto* f = d.findField<bool>(key);
-  return f && *f;
-}
-
-// "#RRGGBBAA" light/dark pairs -- GitHub Primer tokens, the helm.cpp /
-// kubectl.cpp pattern. A single text_color tuned for one theme reads poorly
-// on the other.
-constexpr const char* kOkLight = "#1A7F37FF";
-constexpr const char* kOkDark = "#3FB950FF";
-constexpr const char* kIdleLight = "#656D76FF";
-constexpr const char* kIdleDark = "#8B949EFF";
-constexpr const char* kWarnLight = "#9A6700FF";
-constexpr const char* kWarnDark = "#D29922FF";
-constexpr const char* kBadLight = "#CF222EFF";
-constexpr const char* kBadDark = "#F85149FF";
-
-std::string lower(std::string s) {
-  std::transform(s.begin(), s.end(), s.begin(), [](unsigned char ch) { return std::tolower(ch); });
-  return s;
-}
 
 // PEP 503 name normalization: lowercase, runs of `-` `_` `.` become one `-`,
 // so "Typing_Extensions" and "typing-extensions" compare equal.
@@ -184,92 +137,21 @@ static constexpr const char* kVersionsLayout = R"json({
   } } }
 })json";
 
-// Details is a toolbar + a read-only TextEditor. A TextEditor displays a
-// file, so set_details_text() writes each update into the session sandbox.
-
-static constexpr const char* kDetailsLayout = R"json({
-  "type": "Window", "title": "Details", "width": 460, "height": 420,
-  "closable": true,
-  "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
-    "toolbar": { "type": "HorizontalLayout", "spacing": 8, "children": {
-      "target":      { "type": "Label", "text": "(nothing selected)" },
-      "spring":      { "type": "Spring" },
-      "btn_refresh": { "type": "Button", "label": "Refresh" }
-    } },
-    "sep": { "type": "Separator" },
-    "editor": {
-      "type": "TextEditor", "file_path": "", "language": "none", "read_only": true,
-      "width": -1, "height": -1
-    }
-  } } }
-})json";
-
-// The Console window: a FIFO-capped `Table` tracing every `pip` command the
-// client ran. "auto_scroll": true so it follows the newest row.
-
-static constexpr const char* kConsoleLayout = R"json({
-  "type": "Window", "title": "Console", "width": 900, "height": 240,
-  "closable": true,
-  "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
-    "table": {
-      "type": "Table", "id": "##pip_console_table", "columns": 4,
-      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
-      "height": -1, "outer_height": -1, "auto_scroll": true,
-      "children": {
-        "col_seq":     { "type": "TableColumn", "label": "#",       "flags": "WidthFixed", "init_width": 44,  "column_id": 0 },
-        "col_command": { "type": "TableColumn", "label": "Command", "flags": "WidthFixed", "init_width": 320, "column_id": 1 },
-        "col_exit":    { "type": "TableColumn", "label": "Exit",    "flags": "WidthFixed", "init_width": 50,  "column_id": 2 },
-        "col_output":  { "type": "TableColumn", "label": "Output",  "flags": "WidthStretch",                     "column_id": 3 }
-      }
-    }
-  } } }
-})json";
-
-std::string plural(size_t n, const char* noun) {
-  return std::to_string(n) + " " + noun + (n == 1 ? "" : "s");
-}
-
 } // namespace
 
 // ── pip_frontend ───────────────────────────────────────────────────────────
 
-pip_frontend::pip_frontend(dynamic&& base) : form(std::move(base)) {}
-
-void pip_frontend::assign_id(const ui_element_ptr& el) {
-  key_t id = rmi::shared::generate_id();
-  ctx().put_object(id, el);
-  el["__wish_id"_key] = id;
-}
-
-void pip_frontend::set_children_list(const ui_element_ptr& parent, const std::vector<ui_element_ptr>& kids) {
-  auto row_children = dynamic_ptr{key_t{0U}, {}};
-  size_t k = 0;
-  for (auto& kid : kids)
-    (*row_children)[k++] = dynamic_ptr{kid};
-  (*parent)["children"_key] = row_children;
-  parent->refresh_children_order();
-}
-
-ui_element_ptr pip_frontend::make_label(const std::string& text, const char* light, const char* dark) {
-  ui_element_ptr l = ui_element_ptr::create("wish"_key, "Label"_key);
-  l["text"_key] = text;
-  if (light)
-    l["text_color_light"_key] = std::string{light};
-  if (dark)
-    l["text_color_dark"_key] = std::string{dark};
-  assign_id(l);
-  return l;
-}
+pip_frontend::pip_frontend(dynamic&& base) : tool_form(std::move(base)) {}
 
 void pip_frontend::on_init() {
   internal_root_key_ = next_available_key("__pip_");
 
   // Packages is the main root -- form::init() registers internal_root_key_
-  // as this form's top-level object automatically. The other windows are
-  // registered by hand inside build_list_window() / build_text_window().
-  build_list_window(packages_, kPackagesLayout, internal_root_key_, [&](ui_tree& tree) {
-    auto click = [&](const char* path, std::function<void()> handler) {
-      tree.with(path, [&](const auto& e) { click_handlers_[wish_id_of(e)] = std::move(handler); });
+  // as this form's top-level object automatically; the other windows
+  // register themselves (tool_form::build_window()).
+  packages_.build(*this, internal_root_key_, kPackagesLayout, [&](ui_tree& tree) {
+    auto click = [&](const char* path, click_handler handler) {
+      tree.with(path, [&](const auto& e) { on_click(wish_id_of(e), std::move(handler)); });
     };
     tree.with("vbox.toolbar.filter", [&](const auto& e) { name_filter_id_ = wish_id_of(e); });
     tree.with("vbox.toolbar.state", [&](const auto& e) { state_combo_id_ = wish_id_of(e); });
@@ -318,30 +200,19 @@ void pip_frontend::on_init() {
     tree.with("vbox.env", [&](const auto& e) { env_label_ = e; });
   });
 
-  build_list_window(versions_window_, kVersionsLayout, internal_root_key_ + "_versions", [&](ui_tree& tree) {
+  versions_window_.build(*this, internal_root_key_ + "_versions", kVersionsLayout, [&](ui_tree& tree) {
     tree.with("vbox.toolbar.target", [&](const auto& e) { versions_target_label_ = e; });
     tree.with("vbox.toolbar.btn_refresh", [&](const auto& e) {
-      click_handlers_[wish_id_of(e)] = [this] { emit_versions_request(); };
+      on_click(wish_id_of(e), [this] { emit_versions_request(); });
     });
   });
 
-  // Captured once: on_event() (the close path) runs outside dispatch, where
-  // sess() is unavailable, and resource_dir is fixed for the session.
-  resource_dir_ = sess().resource_dir;
+  details_.build(*this, internal_root_key_ + "_details", {.title = "Details", .width = 460, .on_refresh = [this] {
+                                                            emit_details_request();
+                                                          }});
 
-  details_root_key_ = internal_root_key_ + "_details";
-  build_text_window(details_root_key_, kDetailsLayout, details_window_id_, [&](ui_tree& tree) {
-    tree.with("vbox.editor", [&](const auto& e) { details_editor_ = e; });
-    tree.with("vbox.toolbar.target", [&](const auto& e) { details_target_label_ = e; });
-    tree.with("vbox.toolbar.btn_refresh", [&](const auto& e) {
-      click_handlers_[wish_id_of(e)] = [this] { emit_details_request(); };
-    });
-  });
-
-  console_root_key_ = internal_root_key_ + "_console";
-  build_text_window(console_root_key_, kConsoleLayout, console_window_id_, [&](ui_tree& tree) {
-    tree.with("vbox.table", [&](const auto& e) { console_table_ = e; });
-  });
+  console_.build(
+      *this, internal_root_key_ + "_console", {.table_id = "##pip_console_table", .width = 900, .command_width = 320});
 
   // Seed the first-run arrangement (mirrors helm / kubectl): a wide left
   // column with Packages over a Console strip, and a narrower right column
@@ -350,13 +221,16 @@ void pip_frontend::on_init() {
   {
     using namespace dock;
     set_default_dock_layout(viewport(
-        "pip_dock", "Pip",
+        "pip_dock",
+        "Pip",
         layout(
             split(
-                dir::left, 0.6f,
-                split(dir::down, 0.24f, area({console_root_key_}), area({internal_root_key_})),
-                split(dir::down, 0.4f, area({versions_window_.root_key}), area({details_root_key_}))),
-            /*version=*/1, /*target=*/"pip_dock")));
+                dir::left,
+                0.6f,
+                split(dir::down, 0.24f, area({console_.root_key()}), area({internal_root_key_})),
+                split(dir::down, 0.4f, area({versions_window_.root_key()}), area({details_.root_key()}))),
+            /*version=*/1,
+            /*target=*/"pip_dock")));
   }
 
   // Initial population is triggered client-side (run_pip() calls
@@ -364,114 +238,25 @@ void pip_frontend::on_init() {
   // on_init()-emitted event, which would race ahead of that wiring.
 }
 
-void pip_frontend::build_text_window(
-    const std::string& root_key, const char* layout_json, key_t& window_id_out,
-    const std::function<void(ui_tree&)>& wire) {
-  auto tree = import_json(layout_json);
-  auto& c = ctx();
-  for (auto& [key, elem] : tree) {
-    key_t id = rmi::shared::generate_id();
-    c.put_object(id, elem);
-    elem["__wish_id"_key] = id;
-  }
-  window_id_out = (*tree[""])["__wish_id"_key].as<key_t>();
-  wire(tree);
-
-  ui_element_ptr root_ptr = tree[""];
-  sess().ui_objects.merge(std::move(tree), root_key);
-  sess().top_level_objects[key_t{root_key}] = root_ptr;
-  sess().top_level_handlers[key_t{root_key}] = this;
-  (*root_ptr)["__path__"_key] = root_key;
-}
-
-void pip_frontend::build_list_window(
-    list_window& lw, const char* layout_json, const std::string& root_key,
-    const std::function<void(ui_tree&)>& wire) {
-  lw.root_key = root_key;
-  auto tree = import_json(layout_json);
-
-  auto& c = ctx();
-  for (auto& [key, elem] : tree) {
-    key_t id = rmi::shared::generate_id();
-    c.put_object(id, elem);
-    elem["__wish_id"_key] = id;
-  }
-
-  lw.window_id = (*tree[""])["__wish_id"_key].as<key_t>();
-  tree.with("vbox.status", [&](const auto& e) { lw.status_label = e; });
-  tree.with("vbox.table", [&](const auto& e) { lw.table = e; });
-
-  wire(tree);
-
-  const bool is_main = root_key == internal_root_key_;
-  ui_element_ptr root_ptr = tree[""];
-  sess().ui_objects.merge(std::move(tree), root_key);
-  if (!is_main) {
-    sess().top_level_objects[key_t{root_key}] = root_ptr;
-    sess().top_level_handlers[key_t{root_key}] = this;
-    (*root_ptr)["__path__"_key] = root_key;
-  }
-}
-
-// ── Details text pane ──────────────────────────────────────────────────────
-
-void pip_frontend::set_details_text(const std::string& text) {
-  if (!details_editor_)
-    return;
-  // A fresh name every call: the TextEditor renderer only reloads when
-  // file_path changes, so rewriting one fixed file would leave the pane
-  // showing stale content. Under "private/" because `pip freeze` can list
-  // private index / VCS URLs -- see context.hpp's resource_dir doc comment.
-  std::string rel =
-      "private/" + internal_root_key_ + "_details_" + std::to_string(next_details_file_seq_++) + ".txt";
-  auto path = file_service::resolve_path(rel, resource_dir_, /*allow_absolute=*/false);
-  if (path.empty())
-    return;
-  std::error_code ec;
-  std::filesystem::create_directories(path.parent_path(), ec);
-  {
-    std::ofstream out(path, std::ios::binary);
-    if (!out)
-      return;
-    out.write(text.data(), static_cast<std::streamsize>(text.size()));
-  }
-  remove_details_file();
-  details_file_ = rel;
-  details_editor_["file_path"_key] = rel;
-}
-
-void pip_frontend::remove_details_file() {
-  if (details_file_.empty())
-    return;
-  std::error_code ec;
-  std::filesystem::remove(resource_dir_ / details_file_, ec);
-  details_file_.clear();
-}
-
 void pip_frontend::open_details(const std::string& kind, const std::string& name) {
   open_details_kind_ = kind;
   open_details_name_ = name;
-  if (details_target_label_)
-    details_target_label_["text"_key] = name.empty() ? "pip " + kind : kind + ": " + name;
+  details_.set_title(name.empty() ? "pip " + kind : kind + ": " + name);
   emit_details_request();
 }
 
 void pip_frontend::emit_details_request() {
   if (open_details_kind_.empty())
     return;
-  dynamic p;
-  p["kind"_key] = open_details_kind_;
-  p["name"_key] = open_details_name_;
-  emit("details_requested"_key, std::move(p));
+  emit("details_requested"_key, make_payload("kind"_key, open_details_kind_, "name"_key, open_details_name_));
 }
 
 void pip_frontend::open_versions(const std::string& name) {
   open_versions_name_ = name;
   versions_.clear();
   versions_latest_.clear();
-  clear_list_rows(versions_window_, version_rows_, next_version_key_);
-  if (versions_window_.table)
-    versions_window_.table->refresh_children_order();
+  versions_window_.clear();
+  versions_window_.refresh();
   if (versions_target_label_)
     versions_target_label_["text"_key] = "versions: " + name;
   set_status(versions_window_, "Asking the package index ...", true);
@@ -481,10 +266,7 @@ void pip_frontend::open_versions(const std::string& name) {
 void pip_frontend::emit_versions_request() {
   if (open_versions_name_.empty())
     return;
-  dynamic p;
-  p["name"_key] = open_versions_name_;
-  p["pre"_key] = opt_pre_;
-  emit("versions_requested"_key, std::move(p));
+  emit("versions_requested"_key, make_payload("name"_key, open_versions_name_, "pre"_key, opt_pre_));
 }
 
 void pip_frontend::emit_install(key_t event, key_t field, const std::string& value) {
@@ -497,155 +279,59 @@ void pip_frontend::emit_install(key_t event, key_t field, const std::string& val
   emit(event, std::move(p));
 }
 
-// ── Confirmation modal (helm_frontend::show_confirm() port) ────────────────
-
-void pip_frontend::show_confirm(const std::string& message, std::function<void()> on_confirm) {
-  dynamic params;
-  params["title"_key] = std::string{"Confirm"};
-  params["message"_key] = message;
-  params["icon"_key] = std::string{"warning"};
-  params["buttons"_key] = std::string{"yes_no"};
-
-  confirm_dialog_ = instantiate_child_form<message_box>(
-      "MessageBox"_key, std::move(params),
-      [on_confirm = std::move(on_confirm)](key_t /*event_name*/, const dynamic& payload) {
-        if (payload.as<std::string>("button"_key) == "yes")
-          on_confirm();
-      });
-}
-
-// ── Generic row plumbing ───────────────────────────────────────────────────
-
-void pip_frontend::clear_list_rows(list_window& lw, std::vector<list_row>& rows, size_t& next_key) {
-  if (!lw.table)
-    return;
-  auto* children_p = lw.table->findField<dynamic_ptr>("children"_key);
-  if (!children_p || !*children_p)
-    return;
-  auto& children = *children_p;
-
-  for (auto& r : rows) {
-    children->erase(r.child_key);
-    for (auto id : r.object_ids) {
-      ctx().objects.erase(id.id);
-      menu_action_targets_.erase(id);
-    }
-  }
-  rows.clear();
-  next_key = 0;
-}
-
-void pip_frontend::add_list_row(
-    list_window& lw, std::vector<list_row>& rows, size_t& next_key, list_row&& meta,
-    const std::vector<ui_element_ptr>& cells, const std::vector<menu_spec>& items) {
-  if (!lw.table)
-    return;
-  auto* children_p = lw.table->findField<dynamic_ptr>("children"_key);
-  if (!children_p || !*children_p)
-    return;
-  auto& children = *children_p;
-
-  std::vector<key_t> obj_ids;
-  for (auto& cell : cells)
-    obj_ids.push_back(wish_id_of(cell)); // make_label() already assign_id()'d these
-
-  ui_element_ptr row = ui_element_ptr::create("wish"_key, "TableRow"_key);
-  assign_id(row);
-  obj_ids.push_back(wish_id_of(row));
-
-  ui_element_ptr menu = ui_element_ptr::create("wish"_key, "MenuButton"_key);
-  menu["label"_key] = std::string{"..."};
-  assign_id(menu);
-  obj_ids.push_back(wish_id_of(menu));
-
-  std::vector<ui_element_ptr> menu_kids;
-  for (auto& it : items) {
-    if (it.label.empty()) {
-      ui_element_ptr s = ui_element_ptr::create("wish"_key, "Separator"_key);
-      assign_id(s);
-      obj_ids.push_back(wish_id_of(s));
-      menu_kids.push_back(s);
-      continue;
-    }
-    ui_element_ptr mi = ui_element_ptr::create("wish"_key, "MenuItem"_key);
-    mi["label"_key] = it.confirm ? it.label + "..." : it.label;
-    assign_id(mi);
-    obj_ids.push_back(wish_id_of(mi));
-    menu_action_targets_[wish_id_of(mi)] = row_action{meta.scope, meta.name, meta.version, it.action};
-    menu_kids.push_back(mi);
-  }
-  set_children_list(menu, menu_kids);
-
-  std::vector<ui_element_ptr> row_cells = cells;
-  row_cells.push_back(menu);
-  set_children_list(row, row_cells);
-
-  meta.row = row;
-  meta.child_key = next_key++;
-  meta.object_ids = std::move(obj_ids);
-  (*children)[meta.child_key] = dynamic_ptr{row};
-  rows.push_back(std::move(meta));
-}
-
-void pip_frontend::set_status(list_window& lw, const std::string& text, bool ok) {
-  if (!lw.status_label)
-    return;
-  // One line only: a multi-line pip error would grow the label and shift the
-  // table below it. The whole message is in the progress dialog and Console.
-  lw.status_label["text"_key] = text.substr(0, text.find('\n'));
-  lw.status_label["text_color_light"_key] = std::string{ok ? kIdleLight : kBadLight};
-  lw.status_label["text_color_dark"_key] = std::string{ok ? kIdleDark : kBadDark};
+common::menu_item
+pip_frontend::action_item(const std::string& label, const package_row& r, const std::string& action, bool confirm) {
+  return {label, [this, r, action] { run_row_action(r, action); }, confirm};
 }
 
 void pip_frontend::apply_package_filter() {
   const std::string needle = lower(name_filter_);
-  for (auto& r : package_rows_) {
-    if (!r.row)
-      continue;
-    bool show = true;
-    if (state_filter_ == 1)
-      show = r.outdated;
-    else if (state_filter_ == 2)
-      show = r.editable;
-    if (show && !needle.empty())
-      show = lower(r.name).find(needle) != std::string::npos;
-    r.row["visible"_key] = show;
-  }
+  packages_.apply_filter([&](const package_row& r) {
+    if (state_filter_ == 1 && !r.outdated)
+      return false;
+    if (state_filter_ == 2 && !r.editable)
+      return false;
+    return needle.empty() || lower(r.name).find(needle) != std::string::npos;
+  });
 }
 
 // ── Per-window rebuild ─────────────────────────────────────────────────────
 
 void pip_frontend::rebuild_packages(const dynamic& args) {
-  clear_list_rows(packages_, package_rows_, next_package_key_);
+  packages_.clear();
 
   size_t outdated = 0, total = 0;
   for_each_entry(args, "packages"_key, [&](const dynamic& e) {
-    list_row meta;
-    meta.scope = "package";
-    meta.name = str_of(e, "name"_key);
-    meta.version = str_of(e, "version"_key);
+    package_row r;
+    r.scope = "package";
+    r.name = str_of(e, "name"_key);
+    r.version = str_of(e, "version"_key);
     const std::string latest = str_of(e, "latest"_key);
     const std::string location = str_of(e, "location"_key);
-    meta.outdated = !latest.empty() && latest != meta.version;
-    meta.editable = !location.empty();
+    r.outdated = !latest.empty() && latest != r.version;
+    r.editable = !location.empty();
 
     std::vector<ui_element_ptr> cells = {
-        make_label(meta.name),
-        make_label(meta.version),
-        make_label(meta.outdated ? latest : std::string{}, kWarnLight, kWarnDark),
-        make_label(location, kIdleLight, kIdleDark),
+        make_label(r.name),
+        make_label(r.version),
+        make_label(r.outdated ? latest : std::string{}, kWarn),
+        make_label(location, kIdle),
     };
-    std::vector<menu_spec> items = {
-        {"Details", "show", false},      {"Files", "files", false},          {"Versions", "versions", false}, {},
-        {"Upgrade", "upgrade", false},   {"Reinstall", "reinstall", true},   {"Uninstall", "uninstall", true}};
-    if (meta.outdated)
+    std::vector<common::menu_item> items = {
+        action_item("Details", r, "show", false),
+        action_item("Files", r, "files", false),
+        action_item("Versions", r, "versions", false),
+        {},
+        action_item("Upgrade", r, "upgrade", false),
+        action_item("Reinstall", r, "reinstall", true),
+        action_item("Uninstall", r, "uninstall", true)};
+    if (r.outdated)
       ++outdated;
     ++total;
-    add_list_row(packages_, package_rows_, next_package_key_, std::move(meta), cells, items);
+    packages_.add(std::move(r), cells, items);
   });
 
-  if (packages_.table)
-    packages_.table->refresh_children_order();
+  packages_.refresh();
   apply_package_filter();
 
   std::string status = total == 0 ? std::string{"No packages installed."} : plural(total, "package");
@@ -661,25 +347,25 @@ void pip_frontend::rebuild_packages(const dynamic& args) {
 
 std::string pip_frontend::installed_version(const std::string& name) const {
   const std::string wanted = normalized_name(name);
-  for (auto& r : package_rows_) {
-    if (normalized_name(r.name) == wanted)
-      return r.version;
+  for (auto& r : packages_.rows()) {
+    if (normalized_name(r.meta.name) == wanted)
+      return r.meta.version;
   }
   return {};
 }
 
 void pip_frontend::rebuild_versions() {
-  clear_list_rows(versions_window_, version_rows_, next_version_key_);
+  versions_window_.clear();
 
   const std::string installed = installed_version(open_versions_name_);
   size_t total = 0;
   for (auto& version : versions_) {
     if (total++ >= kMaxVersionRows)
       continue;
-    list_row meta;
-    meta.scope = "version";
-    meta.name = open_versions_name_;
-    meta.version = version;
+    package_row r;
+    r.scope = "version";
+    r.name = open_versions_name_;
+    r.version = version;
 
     const bool is_installed = version == installed;
     std::string note = is_installed ? "installed" : "";
@@ -688,15 +374,13 @@ void pip_frontend::rebuild_versions() {
 
     std::vector<ui_element_ptr> cells = {
         make_label(version),
-        make_label(note, is_installed ? kOkLight : kIdleLight, is_installed ? kOkDark : kIdleDark),
+        make_label(note, is_installed ? kOk : kIdle),
     };
-    add_list_row(
-        versions_window_, version_rows_, next_version_key_, std::move(meta), cells,
-        {{"Install this version", "install", false}});
+    std::vector<common::menu_item> items = {action_item("Install this version", r, "install", false)};
+    versions_window_.add(std::move(r), cells, items);
   }
 
-  if (versions_window_.table)
-    versions_window_.table->refresh_children_order();
+  versions_window_.refresh();
   std::string status = plural(total, "version") + (installed.empty() ? ", not installed" : ", installed: " + installed);
   if (total > kMaxVersionRows)
     status += " (showing the newest " + std::to_string(kMaxVersionRows) + ")";
@@ -729,22 +413,16 @@ dynamic pip_frontend::do_update_versions(const dynamic& args) {
 dynamic pip_frontend::do_update_details(const dynamic& args) {
   if (str_of(args, "kind"_key) != open_details_kind_ || str_of(args, "name"_key) != open_details_name_)
     return dynamic{};
-  if (details_target_label_)
-    details_target_label_["text"_key] = str_of(args, "title"_key);
-  set_details_text(str_of(args, "text"_key));
+  details_.set_title(str_of(args, "title"_key));
+  details_.set_text(str_of(args, "text"_key));
   return dynamic{};
 }
 
 dynamic pip_frontend::do_command_result(const dynamic& args) {
-  const std::string command = str_of(args, "command"_key);
-  const bool ok = args.as<bool>("ok"_key);
-  const std::string output = str_of(args, "output"_key);
   list_window& lw = str_of(args, "scope"_key) == "versions" ? versions_window_ : packages_;
-  if (ok) {
-    set_status(lw, command + ": OK", true);
-  } else {
-    set_status(lw, command + " failed: " + (output.empty() ? "unknown error" : output), false);
-  }
+  bool ok = false;
+  const std::string text = common::command_result_text(args, ok);
+  set_status(lw, text, ok);
   return dynamic{};
 }
 
@@ -752,136 +430,46 @@ dynamic pip_frontend::do_set_environment(const dynamic& args) {
   if (!env_label_)
     return dynamic{};
   const std::string interpreter = str_of(args, "interpreter"_key);
-  env_label_["text"_key] = (interpreter.empty() ? std::string{} : interpreter + ": ") + str_of(args, "text"_key);
-  env_label_["text_color_light"_key] = std::string{kIdleLight};
-  env_label_["text_color_dark"_key] = std::string{kIdleDark};
+  common::set_status_text(
+      env_label_, (interpreter.empty() ? std::string{} : interpreter + ": ") + str_of(args, "text"_key), true);
   return dynamic{};
 }
 
-// ── Console window (client `pip` subprocess trace) ─────────────────────────
-
-void pip_frontend::append_console_row(
-    const std::string& command, int32_t exit_code, bool ok, const std::string& output) {
-  if (!console_table_)
-    return;
-  auto* children_p = console_table_->findField<dynamic_ptr>("children"_key);
-  if (!children_p || !*children_p)
-    return;
-  auto& children = *children_p;
-
-  const char* cl = ok ? kOkLight : kBadLight;
-  const char* cd = ok ? kOkDark : kBadDark;
-
-  ui_element_ptr row = ui_element_ptr::create("wish"_key, "TableRow"_key);
-  assign_id(row);
-
-  ui_element_ptr cell_seq = make_label(std::to_string(++console_seq_), kIdleLight, kIdleDark);
-  ui_element_ptr cell_command = make_label(command, cl, cd);
-  ui_element_ptr cell_exit = make_label(std::to_string(exit_code), cl, cd);
-  ui_element_ptr cell_output = make_label(output, cl, cd);
-
-  // Right-click any row for "Copy Entry" (this row's command/exit/output,
-  // via MenuItem.copy_text) and "Clear Console" (every row).
-  ui_element_ptr context_menu = ui_element_ptr::create("wish"_key, "ContextMenu"_key);
-  assign_id(context_menu);
-
-  ui_element_ptr copy_item = ui_element_ptr::create("wish"_key, "MenuItem"_key);
-  copy_item["label"_key] = std::string{"Copy Entry"};
-  copy_item["copy_text"_key] = command + "\nexit: " + std::to_string(exit_code) + "\n" + output;
-  assign_id(copy_item);
-
-  ui_element_ptr clear_item = ui_element_ptr::create("wish"_key, "MenuItem"_key);
-  clear_item["label"_key] = std::string{"Clear Console"};
-  assign_id(clear_item);
-  click_handlers_[wish_id_of(clear_item)] = [this] { clear_console_rows(); };
-
-  set_children_list(context_menu, {copy_item, clear_item});
-  set_children_list(row, {cell_seq, cell_command, cell_exit, cell_output, context_menu});
-
-  console_row_entry entry;
-  entry.child_key = next_console_child_key_++;
-  entry.object_ids = {
-      wish_id_of(row),         wish_id_of(cell_seq),     wish_id_of(cell_command), wish_id_of(cell_exit),
-      wish_id_of(cell_output), wish_id_of(context_menu), wish_id_of(copy_item),    wish_id_of(clear_item)};
-  (*children)[entry.child_key] = dynamic_ptr{row};
-  console_rows_.push_back(std::move(entry));
-
-  if (console_rows_.size() > kMaxConsoleRows) {
-    erase_console_row_objects(console_rows_.front());
-    children->erase(console_rows_.front().child_key);
-    console_rows_.pop_front();
-  }
-  console_table_->refresh_children_order();
-}
-
-void pip_frontend::erase_console_row_objects(const console_row_entry& entry) {
-  for (auto id : entry.object_ids) {
-    ctx().objects.erase(id.id);
-    click_handlers_.erase(id);
-  }
-}
-
-void pip_frontend::clear_console_rows() {
-  if (!console_table_)
-    return;
-  auto* children_p = console_table_->findField<dynamic_ptr>("children"_key);
-  if (!children_p || !*children_p)
-    return;
-  auto& children = *children_p;
-
-  for (auto& entry : console_rows_) {
-    erase_console_row_objects(entry);
-    children->erase(entry.child_key);
-  }
-  console_rows_.clear();
-  console_seq_ = 0;
-  next_console_child_key_ = 0; // every numeric child key was just erased.
-  console_table_->refresh_children_order();
-}
-
 dynamic pip_frontend::do_append_command_log(const dynamic& args) {
-  append_console_row(
-      str_of(args, "command"_key), args.as<int32_t>("exit_code"_key), args.as<bool>("ok"_key),
-      str_of(args, "output"_key));
+  console_.append_from(args);
   return dynamic{};
 }
 
 // ── Event routing ──────────────────────────────────────────────────────────
 
-void pip_frontend::run_row_action(const row_action& target) {
-  if (target.scope == "version") {
+void pip_frontend::run_row_action(const package_row& r, const std::string& action) {
+  if (r.scope == "version") {
     // Pin exactly this version; the Upgrade checkbox is irrelevant to it.
-    const std::string spec = target.name + "==" + target.version;
+    const std::string spec = r.name + "==" + r.version;
     set_status(packages_, "Running pip install " + spec + " ...", true);
-    dynamic p;
-    p["spec"_key] = spec;
-    p["upgrade"_key] = false;
-    p["user"_key] = opt_user_;
-    p["pre"_key] = false;
-    emit("install_requested"_key, std::move(p));
+    emit(
+        "install_requested"_key,
+        make_payload("spec"_key, spec, "upgrade"_key, false, "user"_key, opt_user_, "pre"_key, false));
     return;
   }
 
-  if (target.action == "show" || target.action == "files") {
-    open_details(target.action, target.name);
+  if (action == "show" || action == "files") {
+    open_details(action, r.name);
     return;
   }
-  if (target.action == "versions") {
-    open_versions(target.name);
+  if (action == "versions") {
+    open_versions(r.name);
     return;
   }
 
-  auto fire = [this, target] {
-    set_status(packages_, "Running pip " + target.action + " " + target.name + " ...", true);
-    dynamic p;
-    p["name"_key] = target.name;
-    p["action"_key] = target.action;
-    emit("package_action_requested"_key, std::move(p));
+  auto fire = [this, name = r.name, action] {
+    set_status(packages_, "Running pip " + action + " " + name + " ...", true);
+    emit("package_action_requested"_key, make_payload("name"_key, name, "action"_key, action));
   };
-  const std::string what = "'" + target.name + "' " + target.version;
-  if (target.action == "uninstall")
+  const std::string what = "'" + r.name + "' " + r.version;
+  if (action == "uninstall")
     show_confirm("Uninstall " + what + "? Packages that depend on it will stop working.", fire);
-  else if (target.action == "reinstall")
+  else if (action == "reinstall")
     show_confirm("Reinstall " + what + "? Its files are replaced; its dependencies are left as they are.", fire);
   else
     fire();
@@ -889,13 +477,14 @@ void pip_frontend::run_row_action(const row_action& target) {
 
 void pip_frontend::on_event(key_t id, key_t event, const dynamic& payload) {
   // Any window's X button -> tear everything down.
-  if (event == "closed"_key && (id == packages_.window_id || id == versions_window_.window_id ||
-                                id == details_window_id_ || id == console_window_id_)) {
-    remove_details_file();
+  if (event == "closed"_key &&
+      (id == packages_.window_id() || id == versions_window_.window_id() || id == details_.window_id() ||
+       id == console_.window_id())) {
+    details_.remove_file();
     emit("closed"_key);
-    remove_objects_at(versions_window_.root_key);
-    remove_objects_at(details_root_key_);
-    remove_objects_at(console_root_key_);
+    remove_objects_at(versions_window_.root_key());
+    remove_objects_at(details_.root_key());
+    remove_objects_at(console_.root_key());
     remove_internal_objects();
     return;
   }
@@ -921,19 +510,8 @@ void pip_frontend::on_event(key_t id, key_t event, const dynamic& payload) {
     return;
   }
 
-  if (event != "clicked"_key)
-    return;
-
-  if (auto ch = click_handlers_.find(id); ch != click_handlers_.end()) {
-    const auto handler = ch->second; // copy: a handler may erase itself.
-    handler();
-    return;
-  }
-
-  if (auto mi = menu_action_targets_.find(id); mi != menu_action_targets_.end()) {
-    const row_action target = mi->second; // copy: the action may rebuild the table.
-    run_row_action(target);
-  }
+  if (event == "clicked"_key)
+    dispatch_click(id);
 }
 
 // ── Registration ───────────────────────────────────────────────────────────

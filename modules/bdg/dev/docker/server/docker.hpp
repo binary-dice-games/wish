@@ -11,34 +11,30 @@
 /// corresponding `docker` command and pushing a fresh snapshot. Mirrors the
 /// `git` module's client/server split (server/git.hpp).
 ///
-/// Destructive actions (stop / kill / remove / prune) are gated behind the
-/// built-in MessageBox form (form::instantiate_child_form(), "yes_no"
-/// preset) -- see show_confirm() below, a direct port of
-/// git_repo::show_confirm().
-///
-/// Owns seven independently dockable Windows -- Containers (the main root),
-/// Images, Volumes, Networks, Logs, Inspect, and Console (a FIFO-capped
-/// trace of every `docker` command the client ran, fed by
-/// append_command_log -- git's "Log" window) -- registered by hand in
-/// on_init() exactly as git.cpp's build_*_window() does.
+/// Built on the panels shared by the bdg tool forms
+/// (modules/bdg/common/server): destructive actions (stop / kill / remove /
+/// prune) are gated behind tool_form::show_confirm(); Containers (the main
+/// root), Images, Volumes and Networks are common::list_panel; Logs and
+/// Inspect are common::text_viewer_panel; Console (a trace of every
+/// `docker` command the client ran) is common::console_panel; the Stats
+/// window's graphs are common::rolling_plot. Every window docks
+/// independently.
 #pragma once
 
-#include <ui/forms/form.hpp>
+#include "modules/bdg/common/server/console_panel.hpp"
+#include "modules/bdg/common/server/list_panel.hpp"
+#include "modules/bdg/common/server/rolling_plot.hpp"
+#include "modules/bdg/common/server/text_viewer_panel.hpp"
+#include "modules/bdg/common/server/tool_form.hpp"
+
 #include <ui/ui_element.hpp>
 #include <ui/ui_importer.hpp>
 
-#include <deque>
-#include <filesystem>
+#include <cstdint>
 #include <functional>
-#include <map>
-#include <memory>
 #include <string>
-#include <unordered_map>
-#include <vector>
 
 namespace bdg::wish {
-
-class message_box;
 
 /// @brief Docker Desktop-style GUI form for the local `docker` CLI.
 ///
@@ -57,7 +53,7 @@ class message_box;
 ///   - `"create_volume_requested"` -- `{ name }`.
 ///   - `"logs_requested"` -- `{ id, follow, lines }`.
 ///   - `"inspect_requested"` -- `{ kind, id }`.
-class docker_frontend : public form {
+class docker_frontend : public common::tool_form {
  public:
   explicit docker_frontend(bison::dynamic&& base);
 
@@ -100,8 +96,7 @@ class docker_frontend : public form {
   /// @brief RMI method: append one row to the Console window's `docker`
   /// subprocess trace. @p args holds `command` (string, e.g. `"docker ps
   /// -a"`), `exit_code` (int32), `ok` (bool) and `output` (string, a
-  /// single-line preview). Color-coded green/red by `ok`; the table is
-  /// FIFO-capped at kMaxConsoleRows. Mirrors git_repo::do_append_command_log.
+  /// single-line preview). See common::console_panel.
   bison::dynamic do_append_command_log(const bison::dynamic& args);
 
   /// @brief RMI method: push one live `docker stats` sample to the Stats
@@ -121,102 +116,45 @@ class docker_frontend : public form {
   void on_event(bison::key_t widget_id, bison::key_t event_name, const bison::dynamic& payload) override;
 
  private:
-  // ── Generic list-window plumbing ──────────────────────────────────────
-  //
-  // Containers / Images / Volumes / Networks are four near-identical
-  // toolbar + Table windows. One `list_window` bundles the per-window
-  // widgets; one `list_row` type + one dispatch map (`menu_action_targets_`
-  // keyed by scope) serve all four.
-
-  struct list_window {
-    std::string root_key;
-    bison::key_t window_id;
-    ui_element_ptr status_label;
-    ui_element_ptr table;
-  };
-
-  struct list_row {
-    ui_element_ptr row;
+  /// One row of a list window: what the filter and row actions work on.
+  struct entity {
     std::string scope; // "container" / "image" / "volume" / "network"
     std::string key;   // container/image/network id, or volume name
     std::string name;  // display name (filter + confirm message)
     std::string extra; // container: image ref (for the text filter)
     std::string state; // container only
-    size_t child_key{0};
-    std::vector<bison::key_t> object_ids; // erased together on rebuild
   };
+  using list_window = common::list_panel<entity>;
 
-  struct row_action {
-    std::string scope;
-    std::string key;
-    std::string action;
-  };
-
-  /// @brief Import @p layout_json, register every node, cache the toolbar /
-  /// status / table widgets, and register the tree as its own dockable
-  /// top-level root at @p lw.root_key (git.cpp's build_*_window() pattern).
-  /// @p wire_toolbar is called with the imported `ui_tree` to bind that
-  /// window's own toolbar buttons / inline fields.
+  /// @brief Builds @p lw from @p layout_json at @p root_key, binding its
+  /// Refresh button and a Prune button confirming @p prune_message and
+  /// emitting `prune_requested {scope: prune_scope}`. @p wire binds any
+  /// other toolbar controls.
   void build_list_window(
-      list_window& lw, const char* layout_json, const std::string& root_key,
-      const std::function<void(ui_tree&)>& wire_toolbar);
+      list_window& lw,
+      const char* layout_json,
+      const std::string& root_key,
+      const std::string& prune_scope,
+      const std::string& prune_message,
+      const std::function<void(ui_tree&)>& wire = {});
 
-  /// @brief Clear every dynamically-added TableRow from @p lw.table (and its
-  /// cells' ctx().objects entries), plus the matching entries in
-  /// @p rows / menu_action_targets_.
-  void clear_list_rows(list_window& lw, std::vector<list_row>& rows, size_t& next_key);
-
-  /// @brief Append one row: @p cells (already-built Label cells, left to
-  /// right) + a `...` MenuButton built from @p items ({label, action,
-  /// confirm} triples; an empty label inserts a Separator). Records the row
-  /// in @p rows and wires each MenuItem into menu_action_targets_.
-  struct menu_spec {
-    std::string label;
-    std::string action;
-    bool confirm{false};
-  };
-  void add_list_row(
-      list_window& lw, std::vector<list_row>& rows, size_t& next_key, list_row&& meta,
-      const std::vector<ui_element_ptr>& cells, const std::vector<menu_spec>& items);
-
-  void set_status(list_window& lw, const std::string& text, bool ok);
-
-  // ── Per-window rebuild ───────────────────────────────────────────────
   void rebuild_containers(const bison::dynamic& args);
   void rebuild_images(const bison::dynamic& args);
   void rebuild_volumes(const bison::dynamic& args);
   void rebuild_networks(const bison::dynamic& args);
 
-  // ── Logs / Inspect text panes ────────────────────────────────────────
-  /// @brief Build a toolbar + body window (Logs, Inspect, Console) from
-  /// @p layout_json and register it as a top-level object under @p root_key.
-  /// @p wire binds that window's own toolbar controls and body widget.
-  void build_text_window(
-      const std::string& root_key,
-      const char* layout_json,
-      bison::key_t& window_id_out,
-      const std::function<void(ui_tree&)>& wire);
-  /// @brief Show @p text in a Logs/Inspect `TextEditor`: write it to a new
-  /// file `private/<root>_<stem>_<n>.txt` in the session sandbox, point
-  /// @p editor's `file_path` at it and delete the file it replaced (tracked
-  /// in @p file). A write failure leaves the editor unchanged.
-  void set_editor_text(const ui_element_ptr& editor, std::string& file, const char* stem, const std::string& text);
-  /// @brief Delete the sandbox file named by @p file (if any) and clear it.
-  void remove_editor_file(std::string& file);
-  void emit_logs_request();
-  void emit_inspect_request();
-
-  /// @brief Re-apply the Containers text filter + state Combo to each
-  /// container row's `visible` field (git's retroactive-filter pattern).
+  /// @brief Re-applies the Containers text filter + state Combo.
   void apply_container_filter();
 
-  // ── Confirmation modal (git_repo::show_confirm() port) ────────────────
-  void show_confirm(const std::string& message, std::function<void()> on_confirm);
+  /// @brief A row-menu item running @p action on @p e (see run_row_action()).
+  common::menu_item action_item(const std::string& label, const entity& e, const std::string& action, bool confirm);
+  /// @brief Opens Logs / Inspect for @p e, or emits
+  /// `<scope>_action_requested` -- after a confirmation for stop / kill /
+  /// remove.
+  void run_row_action(const entity& e, const std::string& action);
 
-  // ── Small builders ───────────────────────────────────────────────────
-  void assign_id(const ui_element_ptr& el);
-  void set_children_list(const ui_element_ptr& parent, const std::vector<ui_element_ptr>& kids);
-  ui_element_ptr make_label(const std::string& text, const char* light = nullptr, const char* dark = nullptr);
+  void emit_logs_request();
+  void emit_inspect_request();
 
   // ── State ────────────────────────────────────────────────────────────
   std::string title_;
@@ -226,17 +164,7 @@ class docker_frontend : public form {
   list_window volumes_;
   list_window networks_;
 
-  std::vector<list_row> container_rows_;
-  std::vector<list_row> image_rows_;
-  std::vector<list_row> volume_rows_;
-  std::vector<list_row> network_rows_;
-  size_t next_container_key_{0};
-  size_t next_image_key_{0};
-  size_t next_volume_key_{0};
-  size_t next_network_key_{0};
-
   // Containers-window filter state.
-  ui_element_ptr filter_input_;
   bison::key_t filter_input_id_;
   bison::key_t state_combo_id_;
   std::string filter_text_;
@@ -250,120 +178,34 @@ class docker_frontend : public form {
   bison::key_t volume_name_input_id_;
   std::string volume_name_text_;
 
-  std::shared_ptr<message_box> confirm_dialog_;
-
-  // Logs window.
-  std::string logs_root_key_;
-  bison::key_t logs_window_id_;
-  ui_element_ptr logs_editor_;
-  std::string logs_file_; // sandbox-relative file logs_editor_ shows
-  ui_element_ptr logs_target_label_;
+  common::text_viewer_panel logs_;
   bison::key_t logs_follow_id_;
   bison::key_t logs_lines_id_;
-  std::string open_logs_id_;   // container id whose logs the window shows
-  std::string open_logs_name_; // its display name (for the target label)
+  std::string open_logs_id_; // container id whose logs the window shows
   bool logs_follow_{false};
   int32_t logs_lines_{500};
 
-  // Inspect window.
-  std::string inspect_root_key_;
-  bison::key_t inspect_window_id_;
-  ui_element_ptr inspect_editor_;
-  std::string inspect_file_; // sandbox-relative file inspect_editor_ shows
-  ui_element_ptr inspect_target_label_;
+  common::text_viewer_panel inspect_;
   std::string open_inspect_id_;
   std::string open_inspect_kind_;
-  std::string open_inspect_name_;
 
-  std::filesystem::path resource_dir_; // session sandbox root (set in on_init())
-  size_t next_editor_file_seq_{0}; // makes each set_editor_text() file name unique
-
-  // ── Console window (client `docker` subprocess trace) ────────────────
-  //
-  // git's "Log" window, renamed to avoid clashing with the container Logs
-  // window above. A FIFO-capped `Table` (# / Command / Exit / Output) so a
-  // long session stays bounded rather than growing without limit.
-  std::string console_root_key_;
-  bison::key_t console_window_id_;
-  ui_element_ptr console_table_;
-
-  static constexpr size_t kMaxConsoleRows = 500;
-
-  // Enough bookkeeping to fully evict one Console row: its slot in the
-  // table's `children` map plus every ctx().objects id assigned to it (row,
-  // cells, its right-click ContextMenu + MenuItems).
-  struct console_row_entry {
-    size_t child_key;
-    std::vector<bison::key_t> object_ids;
-  };
-  size_t console_seq_{0};
-  size_t next_console_child_key_{0};
-  std::deque<console_row_entry> console_rows_; // oldest first
-
-  /// @brief Append one trace row (sequence #, command, exit code, output
-  /// preview), green/red by @p ok; evict the oldest first past kMaxConsoleRows.
-  void append_console_row(const std::string& command, int32_t exit_code, bool ok, const std::string& output);
-  /// @brief Erase every Console row (+ their ctx().objects / click_handlers_
-  /// entries); reset the sequence counter. From any row's "Clear Console".
-  void clear_console_rows();
-  void erase_console_row_objects(const console_row_entry& entry);
+  common::console_panel console_;
 
   // ── Stats window (live `docker stats` CPU/memory graphs) ─────────────
   //
-  // The `top` module's Plot pattern: a rolling per-series history fed one
-  // sample per RMI call, a locked rolling-index X axis, and a fixed set of
-  // Y limits. Unlike `top` (one CPU line, one memory line), each running
-  // container gets its own PlotLine in both plots, capped at
-  // kMaxStatsSeries by current value, plus an always-present aggregate
-  // "Total" line. Series are added/removed as containers appear/disappear.
-  static constexpr size_t kMaxStatsHistory = 120; // samples kept per line
-  static constexpr size_t kMaxStatsSeries = 15;   // per-container lines per plot
-
-  struct stats_series {
-    ui_element_ptr el;
-    std::vector<float> hist;
-    bison::key_t id;
-    size_t child_key{0};
-  };
-
-  struct stats_plot {
-    ui_element_ptr plot;
-    stats_series aggregate;            // the "Total" line (child_key 0, never removed)
-    std::map<std::string, stats_series> series; // per-container, key = display name
-    size_t next_child_key{0};
-  };
-
+  // One line per running container in both plots, plus an aggregate
+  // "Total" line, and a current-values table.
   std::string stats_root_key_;
   bison::key_t stats_window_id_;
   ui_element_ptr stats_status_label_;
-  ui_element_ptr stats_table_;
-  stats_plot stats_cpu_;
-  stats_plot stats_mem_;
-  std::vector<float> stats_xs_; ///< shared rolling-index X axis for both plots
-  std::vector<bison::key_t> stats_table_row_ids_;
-  size_t next_stats_table_key_{0};
+  common::table_rows<> stats_table_;
+  common::rolling_plot stats_cpu_;
+  common::rolling_plot stats_mem_;
 
-  /// @brief Import kStatsLayout, register it as its own dockable root, cache
-  /// the status label / table / two plots, and create each plot's aggregate
-  /// "Total" line.
   void build_stats_window();
-  /// @brief Create the aggregate line for @p sp as child 0 of @p plot_el.
-  void init_stats_plot(stats_plot& sp, const ui_element_ptr& plot_el, const std::string& aggregate_label);
-  /// @brief Append one sample to every line of @p sp: aggregate = sum of all
-  /// @p values; each named entry extends (or creates) its own line; lines
-  /// outside the top kMaxStatsSeries (or absent this tick) are removed.
-  void update_stats_plot(stats_plot& sp, const std::map<std::string, float>& values);
-  /// @brief Fully rebuild the current-values table (Name / CPU % / Mem % /
-  /// Mem Usage), one row per @p entries element.
+  /// @brief Fully rebuilds the current-values table (Name / CPU % / Mem % /
+  /// Mem Usage), one row per @p args.entries element.
   void rebuild_stats_table(const bison::dynamic& args);
-  /// @brief Append @p value to @p history, dropping the oldest past
-  /// kMaxStatsHistory (top::push_history's shape).
-  static void push_stats_history(std::vector<float>& history, float value);
-  /// @brief Resize stats_xs_ to `0, 1, ... count-1` if it isn't already.
-  void update_stats_xs(size_t count);
-
-  std::unordered_map<bison::key_t, std::function<void()>, bison::key_t, bison::key_t> click_handlers_;
-  std::unordered_map<bison::key_t, row_action, bison::key_t, bison::key_t> menu_action_targets_;
 };
 
 /// @brief Register DockerFrontend in the "wish" bison namespace.

@@ -22,6 +22,7 @@
 namespace bdg::wish {
 
 using namespace bison;
+using common::wish_id_of;
 
 namespace {
 
@@ -91,11 +92,6 @@ constexpr const char* kSourceLayout = R"json({
   }
 })json";
 
-template <typename Element>
-key_t wish_id_of(const Element& element) {
-  return element->template as<key_t>("__wish_id"_key);
-}
-
 dynamic node(const char* type) {
   dynamic out;
   out["__type__"_key] = key_t{type};
@@ -138,7 +134,7 @@ std::string locate(const nymph::error& e, const nymph::document& doc) {
 
 // ── construction ─────────────────────────────────────────────────────────────
 
-nymph_form::nymph_form(dynamic&& base) : form(std::move(base)) {}
+nymph_form::nymph_form(dynamic&& base) : tool_form(std::move(base)) {}
 
 void nymph_form::on_init() {
   internal_root_key_ = next_available_key("__nymph_");
@@ -358,39 +354,26 @@ bool nymph_form::render_to_sandbox(key_t done_event) {
 // ── edit mode: windows ───────────────────────────────────────────────────────
 
 void nymph_form::build_edit_ui() {
-  auto tree = import_json(kSourceLayout);
-  auto& c = ctx();
-  for (auto& [key, elem] : tree) {
-    key_t id = rmi::shared::generate_id();
-    c.put_object(id, elem);
-    elem["__wish_id"_key] = id;
-  }
-  source_window_id_ = wish_id_of(tree[""]);
-  tree.with("vbox.toolbar.save", [&](const auto& e) { save_button_id_ = wish_id_of(e); });
-  tree.with("vbox.toolbar.path_label", [&](const auto& e) { path_label_ = e; });
-  tree.with("vbox.banner", [&](const auto& e) { banner_ = e; });
-  tree.with("vbox.tabs.format_tab.format", [&](const auto& e) {
-    format_editor_ = e;
-    format_editor_id_ = wish_id_of(e);
+  // A second top-level root next to the invisible holder.
+  run_in_dispatch([&] {
+    build_window(source_root_key_, kSourceLayout, source_window_id_, [&](ui_tree& tree) {
+      tree.with("vbox.toolbar.save", [&](const auto& e) { save_button_id_ = wish_id_of(e); });
+      tree.with("vbox.toolbar.path_label", [&](const auto& e) { path_label_ = e; });
+      tree.with("vbox.banner", [&](const auto& e) { banner_ = e; });
+      tree.with("vbox.tabs.format_tab.format", [&](const auto& e) {
+        format_editor_ = e;
+        format_editor_id_ = wish_id_of(e);
+      });
+      tree.with("vbox.tabs.data_tab.data", [&](const auto& e) {
+        data_editor_ = e;
+        data_editor_id_ = wish_id_of(e);
+      });
+      tree.with("vbox.tabs.description_tab.description", [&](const auto& e) {
+        description_editor_ = e;
+        description_editor_id_ = wish_id_of(e);
+      });
+    });
   });
-  tree.with("vbox.tabs.data_tab.data", [&](const auto& e) {
-    data_editor_ = e;
-    data_editor_id_ = wish_id_of(e);
-  });
-  tree.with("vbox.tabs.description_tab.description", [&](const auto& e) {
-    description_editor_ = e;
-    description_editor_id_ = wish_id_of(e);
-  });
-
-  // A second top-level root next to the invisible holder; registered by
-  // hand, the way the editor module registers its Help window.
-  ui_element_ptr root = tree[""];
-  with_session([&](context& s) {
-    s.ui_objects.merge(std::move(tree), source_root_key_);
-    s.top_level_objects[key_t{source_root_key_}] = root;
-    s.top_level_handlers[key_t{source_root_key_}] = this;
-  });
-  (*root)["__path__"_key] = source_root_key_;
 
   // First-run arrangement (owned by imgui.ini afterwards): the source on the
   // left, the preview over the data table on the right.

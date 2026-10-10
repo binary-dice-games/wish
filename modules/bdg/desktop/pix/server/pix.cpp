@@ -218,37 +218,10 @@ static constexpr const char* kInfoLayout = R"json({
 
 // ── pix_viewer ────────────────────────────────────────────────────────────────
 
-pix_viewer::pix_viewer(dynamic&& base) : form(std::move(base)) {}
+pix_viewer::pix_viewer(dynamic&& base) : tool_form(std::move(base)) {}
 
 pix_viewer::~pix_viewer() {
   remove_panel_objects();
-}
-
-void pix_viewer::build_window(
-    const char* layout_json, const std::string& root_key, key_t& window_id_out,
-    const std::function<void(ui_tree&)>& wire) {
-  auto tree = import_json(layout_json);
-
-  // Assign each imported element a bison RMI ID so the renderer can emit
-  // events with the correct object ID -- same pattern as every other form.
-  auto& c = ctx();
-  for (auto& [key, elem] : tree) {
-    key_t id = rmi::shared::generate_id();
-    c.put_object(id, elem);
-    elem["__wish_id"_key] = id;
-  }
-  window_id_out = (*tree[""])["__wish_id"_key].as<key_t>();
-  wire(tree);
-
-  ui_element_ptr root_ptr = tree[""];
-  sess().ui_objects.merge(std::move(tree), root_key);
-  // The main root's top-level registration and "__path__" are handled by
-  // form::init() once on_init() returns; secondary panels register here.
-  if (root_key != internal_root_key_) {
-    sess().top_level_objects[key_t{root_key}] = root_ptr;
-    sess().top_level_handlers[key_t{root_key}] = this;
-    (*root_ptr)["__path__"_key] = root_key;
-  }
 }
 
 void pix_viewer::on_init() {
@@ -260,7 +233,7 @@ void pix_viewer::on_init() {
   auto* title_f = findField<std::string>("title"_key);
   const std::string title = title_f ? *title_f : std::string{"Image Viewer"};
 
-  build_window(kImagesLayout, internal_root_key_, window_id_, [&](ui_tree& tree) {
+  build_window(internal_root_key_, kImagesLayout, window_id_, [&](ui_tree& tree) {
     tree.with("vbox.toolbar.path_input", [&](const auto& e) {
       path_input_ptr_ = e;
       path_input_id_ = wish_id_of(e);
@@ -271,7 +244,7 @@ void pix_viewer::on_init() {
     tree.with("vbox.grid_table", [&](const auto& e) { grid_table_ptr_ = e; });
   });
 
-  build_window(kPreviewLayout, preview_root_key_, preview_window_id_, [&](ui_tree& tree) {
+  build_window(preview_root_key_, kPreviewLayout, preview_window_id_, [&](ui_tree& tree) {
     tree.with("vbox.zoom_bar.zoom_label", [&](const auto& e) { zoom_label_ptr_ = e; });
     tree.with("vbox.zoom_bar.btn_zoom_out", [&](const auto& e) { btn_zoom_out_id_ = wish_id_of(e); });
     tree.with("vbox.zoom_bar.btn_zoom_in", [&](const auto& e) { btn_zoom_in_id_ = wish_id_of(e); });
@@ -281,7 +254,7 @@ void pix_viewer::on_init() {
     tree.with("vbox.preview_table.pcol0", [&](const auto& e) { preview_col_ptr_ = e; });
   });
 
-  build_window(kInfoLayout, info_root_key_, info_window_id_, [&](ui_tree& tree) {
+  build_window(info_root_key_, kInfoLayout, info_window_id_, [&](ui_tree& tree) {
     tree.with("vbox.info_filename", [&](const auto& e) { info_filename_ptr_ = e; });
     tree.with("vbox.info_resolution", [&](const auto& e) { info_resolution_ptr_ = e; });
     tree.with("vbox.info_format", [&](const auto& e) { info_format_ptr_ = e; });

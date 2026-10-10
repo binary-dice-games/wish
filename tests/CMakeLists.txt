@@ -154,6 +154,7 @@ macro(wish_add_optional_test OPTION_NAME TESTNAME)
     endif()
 endmacro()
 
+wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_BC                 test_bc                test_bc.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_TAIL               test_tail              test_tail.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_NANO               test_nano              test_nano.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_TOP                test_top               test_top.cpp)
@@ -174,6 +175,15 @@ if(WISH_MODULE_BDG_DEV_CURL OR WISH_MODULE_BDG_DEV_DOCKER OR WISH_MODULE_BDG_DEV
   if(TARGET uv_a)
     target_link_libraries(test_dev_common PRIVATE uv_a)
   endif()
+endif()
+# The server-side code shared by the bdg modules' forms
+# (modules/bdg/common/server: tool_form and the shared panels), through a
+# small test form. Built whenever a bdg module with a server/ is enabled --
+# that is what compiles modules/bdg/common/server into wish_server.
+get_property(wish_common_server_dirs GLOBAL PROPERTY WISH_MODULE_COMMON_SERVER_DIRS)
+if("${CMAKE_SOURCE_DIR}/modules/bdg" IN_LIST wish_common_server_dirs)
+  wish_add_test(test_bdg_server_common test_bdg_server_common.cpp)
+  target_include_directories(test_bdg_server_common PRIVATE ${CMAKE_SOURCE_DIR})
 endif()
 wish_add_optional_test(WISH_MODULE_BDG_DEV_EDITOR                test_editor            test_editor.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DEV_DOCKER               test_docker            test_docker.cpp)

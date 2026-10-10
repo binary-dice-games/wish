@@ -3,7 +3,8 @@
 /// @brief Server-side form for bc (a four-function calculator).
 #pragma once
 
-#include <ui/forms/form.hpp>
+#include "modules/bdg/common/server/tool_form.hpp"
+
 #include <ui/ui_element.hpp>
 
 #include <functional>
@@ -19,7 +20,7 @@ namespace bdg::wish {
 ///
 /// Emitted events:
 ///   - `"closed"` — user clicked the window X button; internal UI is removed.
-class bc : public form {
+class bc : public common::tool_form {
  public:
   explicit bc(bison::dynamic&& base);
 
@@ -57,10 +58,6 @@ class bc : public form {
   bison::key_t btn_n0_, btn_dot_, btn_pm_, btn_pct_;
 
   ui_element_ptr display_ptr_;
-
-  // Dispatch table from button widget ID to its click handler, populated
-  // once the IDs are known in on_init().
-  std::unordered_map<bison::key_t, std::function<void()>, bison::key_t, bison::key_t> button_handlers_;
 };
 
 /// @brief Register bc (RMI class "Bc") in the "wish" bison namespace.

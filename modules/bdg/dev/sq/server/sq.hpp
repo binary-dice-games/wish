@@ -24,11 +24,12 @@
 
 #include "sq_chart_render.hpp"
 
-#include <ui/forms/form.hpp>
+#include "modules/bdg/common/server/console_panel.hpp"
+#include "modules/bdg/common/server/tool_form.hpp"
+
 #include <ui/ui_element.hpp>
 #include <ui/ui_importer.hpp>
 
-#include <deque>
 #include <filesystem>
 #include <functional>
 #include <memory>
@@ -37,8 +38,6 @@
 #include <vector>
 
 namespace bdg::wish {
-
-class message_box;
 
 /// @brief DBeaver-style query GUI form for the local `sq` CLI.
 ///
@@ -63,7 +62,7 @@ class message_box;
 ///
 /// The Chart window's "Save PNG" is handled entirely by the form: it writes
 /// the image to the same server-side sandbox folder (no event).
-class sq_frontend : public form {
+class sq_frontend : public common::tool_form {
  public:
   explicit sq_frontend(bison::dynamic&& base);
 
@@ -132,19 +131,8 @@ class sq_frontend : public form {
   };
 
   // ── Construction helpers ─────────────────────────────────────────────
-  /// @brief Import @p layout_json, assign ids, register it as its own
-  /// dockable top-level root at @p root_key (the main root is registered by
-  /// form::init() itself); @p wire looks widgets up in the imported tree.
-  void build_window(
-      const char* layout_json, const std::string& root_key, bison::key_t& window_id_out,
-      const std::function<void(ui_tree&)>& wire);
-  void assign_id(const ui_element_ptr& el);
-  void set_children_list(const ui_element_ptr& parent, const std::vector<ui_element_ptr>& kids);
-  ui_element_ptr make_label(const std::string& text, const char* light = nullptr, const char* dark = nullptr);
-  void show_confirm(const std::string& message, std::function<void()> on_confirm);
-  void set_status(const ui_element_ptr& label, const std::string& text, bool ok);
-
-  /// @brief Forget @p ids in ctx().objects / click_handlers_ and clear them.
+  /// @brief Forget @p ids in ctx().objects / click_handlers_ /
+  /// change_handlers_ and clear them.
   void release_ids(std::vector<bison::key_t>& ids);
   /// @brief Replace @p table's dynamic TableRow children with @p rows,
   /// keeping its JSON-declared TableColumn children. @p ids are released.
@@ -158,7 +146,6 @@ class sq_frontend : public form {
   void rebuild_connections(const bison::dynamic& args);
   void rebuild_navigator(const std::string& heading);
   void show_structure(size_t table_index);
-  void append_console_row(const std::string& command, int32_t exit_code, bool ok, const std::string& output);
   void emit_query(const std::string& sql);
 
   // ── Chart ────────────────────────────────────────────────────────────
@@ -191,13 +178,11 @@ class sq_frontend : public form {
   bison::key_t navigator_window_id_;
   bison::key_t structure_window_id_;
   bison::key_t results_window_id_;
-  bison::key_t console_window_id_;
   bison::key_t chart_window_id_;
   std::string connections_root_key_;
   std::string navigator_root_key_;
   std::string structure_root_key_;
   std::string results_root_key_;
-  std::string console_root_key_;
   std::string chart_root_key_;
 
   // Editor.
@@ -260,20 +245,9 @@ class sq_frontend : public form {
   std::vector<std::string> chart_y_selected_; ///< remembered Y choices, by column name
   std::string chart_x_selected_;              ///< remembered X choice ("" = row #)
 
-  // Console.
-  ui_element_ptr console_table_;
-  static constexpr size_t kMaxConsoleRows = 500;
-  struct console_row_entry {
-    size_t child_key;
-    std::vector<bison::key_t> object_ids;
-  };
-  size_t console_seq_{0};
-  size_t next_console_child_key_{0};
-  std::deque<console_row_entry> console_rows_;
+  common::console_panel console_;
 
-  std::shared_ptr<message_box> dialog_;
-
-  std::unordered_map<bison::key_t, std::function<void()>, bison::key_t, bison::key_t> click_handlers_;
+  /// id -> handler run when that widget reports "changed".
   std::unordered_map<bison::key_t, std::function<void()>, bison::key_t, bison::key_t> change_handlers_;
 };
 

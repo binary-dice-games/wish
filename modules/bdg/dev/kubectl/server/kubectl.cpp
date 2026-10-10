@@ -2,119 +2,69 @@
 /// @file kubectl.cpp
 /// @brief Implementation of the KubectlFrontend form.
 ///
-/// A close port of modules/bdg/dev/docker/server/docker.cpp: inline JSON
-/// window layouts + import_json(), C++-built table rows, a per-row `...`
-/// MenuButton, show_confirm() via a privately-instantiated MessageBox, and
-/// an id -> handler dispatch map rebuilt on every update_*. The four list
-/// windows (Pods / Deployments / Services / Nodes) share one
-/// build_list_window() / clear_list_rows() / add_list_row() path.
+/// Inline JSON window layouts + C++-built table rows on the panels shared
+/// by the bdg tool forms (modules/bdg/common/server). The four list windows
+/// (Pods / Deployments / Services / Nodes) share one build_list_window() /
+/// apply_list_filter() / run_row_action() path.
 #include "kubectl.hpp"
 
 #include "src/bison/bison_object.hpp"
-#include "src/rmi/shared/ids.hpp"
 
-#include <context/file_service.hpp>
 #include <ui/dock_layout_spec.hpp>
-#include <ui/forms/message_box.hpp>
 
-#include <algorithm>
-#include <cmath>
-#include <filesystem>
-#include <fstream>
 #include <iomanip>
-#include <limits>
-#include <set>
+#include <map>
 #include <sstream>
 
 namespace bdg::wish {
 
 using namespace bison;
+using common::for_each_entry;
+using common::kBad;
+using common::kIdle;
+using common::kOk;
+using common::kWarn;
+using common::theme_color;
+using common::wish_id_of;
 
 namespace {
-
-template <typename Element>
-key_t wish_id_of(const Element& element) {
-  return element->template as<key_t>("__wish_id"_key);
-}
-
-// bison::dynamic has no initializer-list constructor -- event payloads are
-// built field-by-field (docker.cpp's payload1/payload2).
-template <typename T>
-dynamic payload1(key_t k, T v) {
-  dynamic d;
-  d[k] = std::move(v);
-  return d;
-}
-template <typename T1, typename T2>
-dynamic payload2(key_t k1, T1 v1, key_t k2, T2 v2) {
-  dynamic d;
-  d[k1] = std::move(v1);
-  d[k2] = std::move(v2);
-  return d;
-}
-
-template <typename Fn>
-void for_each_entry(const dynamic& parent, key_t field_key, Fn&& fn) {
-  const auto* arr_f = parent.findField<dynamic_ptr>(field_key);
-  if (!arr_f || !*arr_f)
-    return;
-  (*arr_f)->forEach([&](key_t, const field& f) {
-    if (!f.is<dynamic_ptr>())
-      return;
-    auto entry_ptr = f.as<dynamic_ptr>();
-    if (entry_ptr)
-      fn(*entry_ptr);
-  });
-}
-
-// "#RRGGBBAA" light/dark pairs -- GitHub Primer tokens, the docker.cpp
-// theme_hex pattern. A single text_color tuned for one theme reads poorly on
-// the other.
-constexpr const char* kOkLight = "#1A7F37FF";
-constexpr const char* kOkDark = "#3FB950FF";
-constexpr const char* kIdleLight = "#656D76FF";
-constexpr const char* kIdleDark = "#8B949EFF";
-constexpr const char* kWarnLight = "#9A6700FF";
-constexpr const char* kWarnDark = "#D29922FF";
-constexpr const char* kBadLight = "#CF222EFF";
-constexpr const char* kBadDark = "#F85149FF";
 
 bool contains(const std::string& hay, const char* needle) {
   return hay.find(needle) != std::string::npos;
 }
 
-// Pod .status.phase (+ container waiting reason) -> (light, dark) colour.
-std::pair<const char*, const char*> pod_status_colour(const std::string& effective, const std::string& phase) {
+// Pod .status.phase (+ container waiting reason) -> colour.
+theme_color pod_status_colour(const std::string& effective, const std::string& phase) {
   if (contains(effective, "BackOff") || contains(effective, "Err") || contains(effective, "Crash") ||
       contains(effective, "Invalid") || contains(effective, "Failed") || phase == "Failed")
-    return {kBadLight, kBadDark};
+    return kBad;
   if (phase == "Running")
-    return {kOkLight, kOkDark};
+    return kOk;
   if (phase == "Pending" || contains(effective, "Creating") || contains(effective, "Init") ||
       contains(effective, "Waiting"))
-    return {kWarnLight, kWarnDark};
-  return {kIdleLight, kIdleDark}; // Succeeded, Completed, Unknown, ...
+    return kWarn;
+  return kIdle; // Succeeded, Completed, Unknown, ...
 }
 
-// Node "Ready"/"NotReady"[,SchedulingDisabled] -> (light, dark) colour.
-std::pair<const char*, const char*> node_status_colour(const std::string& status) {
+// Node "Ready"/"NotReady"[,SchedulingDisabled] -> colour.
+theme_color node_status_colour(const std::string& status) {
   if (contains(status, "NotReady"))
-    return {kBadLight, kBadDark};
+    return kBad;
   if (contains(status, "SchedulingDisabled"))
-    return {kWarnLight, kWarnDark};
-  return {kOkLight, kOkDark};
+    return kWarn;
+  return kOk;
 }
 
 // "a/b" -> ok when a == b and a != "0"; warn otherwise.
-std::pair<const char*, const char*> ready_colour(const std::string& ready) {
+theme_color ready_colour(const std::string& ready) {
   auto slash = ready.find('/');
   if (slash != std::string::npos) {
     std::string have = ready.substr(0, slash);
     std::string want = ready.substr(slash + 1);
     if (have == want && have != "0" && !have.empty())
-      return {kOkLight, kOkDark};
+      return kOk;
   }
-  return {kWarnLight, kWarnDark};
+  return kWarn;
 }
 
 // ── Window layouts ─────────────────────────────────────────────────────────
@@ -243,10 +193,10 @@ static constexpr const char* kNodesLayout = R"json({
   } } }
 })json";
 
-// Logs / Describe are a toolbar + a read-only, syntax-highlighted TextEditor
-// ("log" / "yaml"). A TextEditor displays a file, so set_editor_text()
-// writes each update into the session sandbox. "auto_scroll": true on the
-// Logs editor so it follows the newest line as `kubectl logs` output arrives.
+// Logs is common::text_viewer_panel's toolbar + read-only TextEditor with
+// Follow / Lines controls added ("auto_scroll": true so it follows the
+// newest line as `kubectl logs` output arrives). Describe uses the panel's
+// default layout.
 
 static constexpr const char* kLogsLayout = R"json({
   "type": "Window", "title": "Logs", "width": 900, "height": 420,
@@ -263,45 +213,6 @@ static constexpr const char* kLogsLayout = R"json({
     "editor": {
       "type": "TextEditor", "file_path": "", "language": "log", "read_only": true,
       "auto_scroll": true, "width": -1, "height": -1
-    }
-  } } }
-})json";
-
-static constexpr const char* kDescribeLayout = R"json({
-  "type": "Window", "title": "Describe", "width": 820, "height": 420,
-  "closable": true,
-  "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
-    "toolbar": { "type": "HorizontalLayout", "spacing": 8, "children": {
-      "target":     { "type": "Label", "text": "(nothing selected)" },
-      "spring":     { "type": "Spring" },
-      "btn_refresh":{ "type": "Button", "label": "Refresh" }
-    } },
-    "sep": { "type": "Separator" },
-    "editor": {
-      "type": "TextEditor", "file_path": "", "language": "yaml", "read_only": true,
-      "width": -1, "height": -1
-    }
-  } } }
-})json";
-
-// The Console window: a FIFO-capped `Table` tracing every `kubectl` command
-// the client ran (git's "Log" window, renamed to avoid clashing with the
-// pod Logs window). "auto_scroll": true so it follows the newest row.
-
-static constexpr const char* kConsoleLayout = R"json({
-  "type": "Window", "title": "Console", "width": 960, "height": 240,
-  "closable": true,
-  "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
-    "table": {
-      "type": "Table", "id": "##kubectl_console_table", "columns": 4,
-      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
-      "height": -1, "outer_height": -1, "auto_scroll": true,
-      "children": {
-        "col_seq":     { "type": "TableColumn", "label": "#",       "flags": "WidthFixed", "init_width": 44,  "column_id": 0 },
-        "col_command": { "type": "TableColumn", "label": "Command", "flags": "WidthFixed", "init_width": 380, "column_id": 1 },
-        "col_exit":    { "type": "TableColumn", "label": "Exit",    "flags": "WidthFixed", "init_width": 50,  "column_id": 2 },
-        "col_output":  { "type": "TableColumn", "label": "Output",  "flags": "WidthStretch",                     "column_id": 3 }
-      }
     }
   } } }
 })json";
@@ -368,33 +279,7 @@ const char* noun_for(const std::string& scope) {
 
 // ── kubectl_frontend ───────────────────────────────────────────────────────
 
-kubectl_frontend::kubectl_frontend(dynamic&& base) : form(std::move(base)) {}
-
-void kubectl_frontend::assign_id(const ui_element_ptr& el) {
-  key_t id = rmi::shared::generate_id();
-  ctx().put_object(id, el);
-  el["__wish_id"_key] = id;
-}
-
-void kubectl_frontend::set_children_list(const ui_element_ptr& parent, const std::vector<ui_element_ptr>& kids) {
-  auto row_children = dynamic_ptr{key_t{0U}, {}};
-  size_t k = 0;
-  for (auto& kid : kids)
-    (*row_children)[k++] = dynamic_ptr{kid};
-  (*parent)["children"_key] = row_children;
-  parent->refresh_children_order();
-}
-
-ui_element_ptr kubectl_frontend::make_label(const std::string& text, const char* light, const char* dark) {
-  ui_element_ptr l = ui_element_ptr::create("wish"_key, "Label"_key);
-  l["text"_key] = text;
-  if (light)
-    l["text_color_light"_key] = std::string{light};
-  if (dark)
-    l["text_color_dark"_key] = std::string{dark};
-  assign_id(l);
-  return l;
-}
+kubectl_frontend::kubectl_frontend(dynamic&& base) : tool_form(std::move(base)) {}
 
 void kubectl_frontend::on_init() {
   internal_root_key_ = next_available_key("__kubectl_");
@@ -403,91 +288,33 @@ void kubectl_frontend::on_init() {
   title_ = title_f ? *title_f : std::string{"Kubernetes"};
 
   // Pods is the main root -- form::init() registers internal_root_key_ as
-  // this form's top-level object automatically. The other windows are
-  // registered by hand inside build_list_window() / build_text_window()
-  // (docker.cpp's build_*_window() pattern).
-  build_list_window(pods_, kPodsLayout, internal_root_key_, "pod", [&](ui_tree& tree) {
-    tree.with("vbox.toolbar.filter", [&](const auto& e) {
-      pods_.name_filter_input = e;
-      pods_.name_filter_id = wish_id_of(e);
-    });
-    tree.with("vbox.toolbar.ns", [&](const auto& e) {
-      pods_.ns_filter_input = e;
-      pods_.ns_filter_id = wish_id_of(e);
-    });
-    tree.with("vbox.toolbar.state", [&](const auto& e) { pods_.phase_combo_id = wish_id_of(e); });
-    tree.with("vbox.toolbar.btn_refresh", [&](const auto& e) {
-      click_handlers_[wish_id_of(e)] = [this] { emit("refresh_requested"_key); };
-    });
-  });
+  // this form's top-level object automatically; the other windows register
+  // themselves (tool_form::build_window()).
+  build_list_window(pods_, kPodsLayout, internal_root_key_);
+  build_list_window(deployments_, kDeploymentsLayout, internal_root_key_ + "_deployments");
+  build_list_window(services_, kServicesLayout, internal_root_key_ + "_services");
+  build_list_window(nodes_, kNodesLayout, internal_root_key_ + "_nodes");
 
-  build_list_window(
-      deployments_, kDeploymentsLayout, internal_root_key_ + "_deployments", "deployment", [&](ui_tree& tree) {
-        tree.with("vbox.toolbar.filter", [&](const auto& e) {
-          deployments_.name_filter_input = e;
-          deployments_.name_filter_id = wish_id_of(e);
-        });
-        tree.with("vbox.toolbar.ns", [&](const auto& e) {
-          deployments_.ns_filter_input = e;
-          deployments_.ns_filter_id = wish_id_of(e);
-        });
-        tree.with("vbox.toolbar.btn_refresh", [&](const auto& e) {
-          click_handlers_[wish_id_of(e)] = [this] { emit("refresh_requested"_key); };
-        });
-      });
-
-  build_list_window(services_, kServicesLayout, internal_root_key_ + "_services", "service", [&](ui_tree& tree) {
-    tree.with("vbox.toolbar.filter", [&](const auto& e) {
-      services_.name_filter_input = e;
-      services_.name_filter_id = wish_id_of(e);
-    });
-    tree.with("vbox.toolbar.ns", [&](const auto& e) {
-      services_.ns_filter_input = e;
-      services_.ns_filter_id = wish_id_of(e);
-    });
-    tree.with("vbox.toolbar.btn_refresh", [&](const auto& e) {
-      click_handlers_[wish_id_of(e)] = [this] { emit("refresh_requested"_key); };
-    });
-  });
-
-  build_list_window(nodes_, kNodesLayout, internal_root_key_ + "_nodes", "node", [&](ui_tree& tree) {
-    tree.with("vbox.toolbar.filter", [&](const auto& e) {
-      nodes_.name_filter_input = e;
-      nodes_.name_filter_id = wish_id_of(e);
-    });
-    tree.with("vbox.toolbar.btn_refresh", [&](const auto& e) {
-      click_handlers_[wish_id_of(e)] = [this] { emit("refresh_requested"_key); };
-    });
-  });
-
-  // Captured once: on_event() (the close path) runs outside dispatch, where
-  // sess() is unavailable, and resource_dir is fixed for the session.
-  resource_dir_ = sess().resource_dir;
-
-  logs_root_key_ = internal_root_key_ + "_logs";
-  build_text_window(logs_root_key_, kLogsLayout, logs_window_id_, [&](ui_tree& tree) {
-    tree.with("vbox.editor", [&](const auto& e) { logs_editor_ = e; });
-    tree.with("vbox.toolbar.target", [&](const auto& e) { logs_target_label_ = e; });
+  common::text_viewer_options logs_options;
+  logs_options.layout_json = kLogsLayout;
+  logs_options.file_stem = "logs";
+  logs_options.on_refresh = [this] { emit_logs_request(); };
+  logs_.build(*this, internal_root_key_ + "_logs", std::move(logs_options), [&](ui_tree& tree) {
     tree.with("vbox.toolbar.follow", [&](const auto& e) { logs_follow_id_ = wish_id_of(e); });
     tree.with("vbox.toolbar.lines", [&](const auto& e) { logs_lines_id_ = wish_id_of(e); });
-    tree.with("vbox.toolbar.btn_refresh", [&](const auto& e) {
-      click_handlers_[wish_id_of(e)] = [this] { emit_logs_request(); };
-    });
   });
 
-  describe_root_key_ = internal_root_key_ + "_describe";
-  build_text_window(describe_root_key_, kDescribeLayout, describe_window_id_, [&](ui_tree& tree) {
-    tree.with("vbox.editor", [&](const auto& e) { describe_editor_ = e; });
-    tree.with("vbox.toolbar.target", [&](const auto& e) { describe_target_label_ = e; });
-    tree.with("vbox.toolbar.btn_refresh", [&](const auto& e) {
-      click_handlers_[wish_id_of(e)] = [this] { emit_describe_request(); };
-    });
-  });
+  describe_.build(
+      *this,
+      internal_root_key_ + "_describe",
+      {.title = "Describe", .language = "yaml", .file_stem = "describe", .on_refresh = [this] {
+         emit_describe_request();
+       }});
 
-  console_root_key_ = internal_root_key_ + "_console";
-  build_text_window(console_root_key_, kConsoleLayout, console_window_id_, [&](ui_tree& tree) {
-    tree.with("vbox.table", [&](const auto& e) { console_table_ = e; });
-  });
+  console_.build(
+      *this,
+      internal_root_key_ + "_console",
+      {.table_id = "##kubectl_console_table", .width = 960, .command_width = 380});
 
   top_root_key_ = internal_root_key_ + "_top";
   build_top_window();
@@ -498,20 +325,25 @@ void kubectl_frontend::on_init() {
   // bump the version arg to layout() if this arrangement changes.
   {
     using namespace dock;
-    const std::string deployments = internal_root_key_ + "_deployments";
-    const std::string services = internal_root_key_ + "_services";
-    const std::string nodes = internal_root_key_ + "_nodes";
     set_default_dock_layout(viewport(
         "kubectl_dock", "Kubectl",
         layout(
             split(
                 dir::left, 0.62f,
                 split(
-                    dir::down, 0.24f,
-                    area({console_root_key_}),
-                    area({internal_root_key_, deployments, services, nodes, top_root_key_}, internal_root_key_)),
-                area({logs_root_key_, describe_root_key_}, logs_root_key_)),
-            /*version=*/1, /*target=*/"kubectl_dock")));
+                    dir::down,
+                    0.24f,
+                    area({console_.root_key()}),
+                    area(
+                        {internal_root_key_,
+                         deployments_.panel.root_key(),
+                         services_.panel.root_key(),
+                         nodes_.panel.root_key(),
+                         top_root_key_},
+                        internal_root_key_)),
+                area({logs_.root_key(), describe_.root_key()}, logs_.root_key())),
+            /*version=*/1,
+            /*target=*/"kubectl_dock")));
   }
 
   // Initial population is triggered client-side (run_kubectl() calls
@@ -520,64 +352,15 @@ void kubectl_frontend::on_init() {
   // fix).
 }
 
-void kubectl_frontend::build_text_window(
-    const std::string& root_key,
-    const char* layout_json,
-    key_t& window_id_out,
-    const std::function<void(ui_tree&)>& wire) {
-  auto tree = import_json(layout_json);
-  auto& c = ctx();
-  for (auto& [key, elem] : tree) {
-    key_t id = rmi::shared::generate_id();
-    c.put_object(id, elem);
-    elem["__wish_id"_key] = id;
-  }
-  window_id_out = (*tree[""])["__wish_id"_key].as<key_t>();
-  wire(tree);
-
-  ui_element_ptr root_ptr = tree[""];
-  sess().ui_objects.merge(std::move(tree), root_key);
-  sess().top_level_objects[key_t{root_key}] = root_ptr;
-  sess().top_level_handlers[key_t{root_key}] = this;
-  (*root_ptr)["__path__"_key] = root_key;
-}
-
-void kubectl_frontend::set_editor_text(
-    const ui_element_ptr& editor,
-    std::string& file,
-    const char* stem,
-    const std::string& text) {
-  if (!editor)
-    return;
-  // A fresh name every call: the TextEditor renderer only reloads when
-  // file_path changes, so rewriting one fixed file would leave the pane
-  // showing stale content (see curl_source.cpp's body_file comment).
-  // Under "private/" because kubectl output can carry secrets (env vars,
-  // tokens) -- see context.hpp's resource_dir doc comment.
-  std::string rel =
-      "private/" + internal_root_key_ + "_" + stem + "_" + std::to_string(next_editor_file_seq_++) + ".txt";
-  auto path = file_service::resolve_path(rel, resource_dir_, /*allow_absolute=*/false);
-  if (path.empty())
-    return;
-  std::error_code ec;
-  std::filesystem::create_directories(path.parent_path(), ec);
-  {
-    std::ofstream out(path, std::ios::binary);
-    if (!out)
-      return;
-    out.write(text.data(), static_cast<std::streamsize>(text.size()));
-  }
-  remove_editor_file(file);
-  file = rel;
-  editor["file_path"_key] = rel;
-}
-
-void kubectl_frontend::remove_editor_file(std::string& file) {
-  if (file.empty())
-    return;
-  std::error_code ec;
-  std::filesystem::remove(resource_dir_ / file, ec);
-  file.clear();
+void kubectl_frontend::build_list_window(list_window& lw, const char* layout_json, const std::string& root_key) {
+  lw.panel.build(*this, root_key, layout_json, [&](ui_tree& tree) {
+    tree.with("vbox.toolbar.filter", [&](const auto& e) { lw.name_filter_id = wish_id_of(e); });
+    tree.with("vbox.toolbar.ns", [&](const auto& e) { lw.ns_filter_id = wish_id_of(e); });
+    tree.with("vbox.toolbar.state", [&](const auto& e) { lw.phase_combo_id = wish_id_of(e); });
+    tree.with("vbox.toolbar.btn_refresh", [&](const auto& e) {
+      on_click(wish_id_of(e), [this] { emit("refresh_requested"_key); });
+    });
+  });
 }
 
 void kubectl_frontend::emit_logs_request() {
@@ -601,138 +384,15 @@ void kubectl_frontend::emit_describe_request() {
   emit("describe_requested"_key, std::move(p));
 }
 
-void kubectl_frontend::build_list_window(
-    list_window& lw, const char* layout_json, const std::string& root_key, const std::string& scope,
-    const std::function<void(ui_tree&)>& wire_toolbar) {
-  lw.root_key = root_key;
-  lw.scope = scope;
-  auto tree = import_json(layout_json);
-
-  auto& c = ctx();
-  for (auto& [key, elem] : tree) {
-    key_t id = rmi::shared::generate_id();
-    c.put_object(id, elem);
-    elem["__wish_id"_key] = id;
-  }
-
-  lw.window_id = (*tree[""])["__wish_id"_key].as<key_t>();
-  tree.with("vbox.status", [&](const auto& e) { lw.status_label = e; });
-  tree.with("vbox.table", [&](const auto& e) { lw.table = e; });
-
-  wire_toolbar(tree);
-
-  const bool is_main = root_key == internal_root_key_;
-  ui_element_ptr root_ptr = tree[""];
-  sess().ui_objects.merge(std::move(tree), root_key);
-  if (!is_main) {
-    sess().top_level_objects[key_t{root_key}] = root_ptr;
-    sess().top_level_handlers[key_t{root_key}] = this;
-    (*root_ptr)["__path__"_key] = root_key;
-  }
-}
-
-// ── Confirmation modal (docker_frontend::show_confirm() port) ───────────────
-
-void kubectl_frontend::show_confirm(const std::string& message, std::function<void()> on_confirm) {
-  dynamic params;
-  params["title"_key] = std::string{"Confirm"};
-  params["message"_key] = message;
-  params["icon"_key] = std::string{"warning"};
-  params["buttons"_key] = std::string{"yes_no"};
-
-  confirm_dialog_ = instantiate_child_form<message_box>(
-      "MessageBox"_key, std::move(params),
-      [on_confirm = std::move(on_confirm)](key_t /*event_name*/, const dynamic& payload) {
-        if (payload.as<std::string>("button"_key) == "yes")
-          on_confirm();
-      });
-}
-
-// ── Generic row plumbing ───────────────────────────────────────────────────
-
-void kubectl_frontend::clear_list_rows(list_window& lw, std::vector<list_row>& rows, size_t& next_key) {
-  if (!lw.table)
-    return;
-  auto* children_p = lw.table->findField<dynamic_ptr>("children"_key);
-  if (!children_p || !*children_p)
-    return;
-  auto& children = *children_p;
-
-  for (auto& r : rows) {
-    children->erase(r.child_key);
-    for (auto id : r.object_ids) {
-      ctx().objects.erase(id.id);
-      menu_action_targets_.erase(id);
-    }
-  }
-  rows.clear();
-  next_key = 0;
-}
-
-void kubectl_frontend::add_list_row(
-    list_window& lw, std::vector<list_row>& rows, size_t& next_key, list_row&& meta,
-    const std::vector<ui_element_ptr>& cells, const std::vector<menu_spec>& items) {
-  if (!lw.table)
-    return;
-  auto* children_p = lw.table->findField<dynamic_ptr>("children"_key);
-  if (!children_p || !*children_p)
-    return;
-  auto& children = *children_p;
-
-  std::vector<key_t> obj_ids;
-  for (auto& cell : cells)
-    obj_ids.push_back(wish_id_of(cell)); // make_label() already assign_id()'d these
-
-  ui_element_ptr row = ui_element_ptr::create("wish"_key, "TableRow"_key);
-  assign_id(row);
-  obj_ids.push_back(wish_id_of(row));
-
-  ui_element_ptr menu = ui_element_ptr::create("wish"_key, "MenuButton"_key);
-  menu["label"_key] = std::string{"..."};
-  assign_id(menu);
-  obj_ids.push_back(wish_id_of(menu));
-
-  std::vector<ui_element_ptr> menu_kids;
-  for (auto& it : items) {
-    if (it.label.empty()) {
-      ui_element_ptr s = ui_element_ptr::create("wish"_key, "Separator"_key);
-      assign_id(s);
-      obj_ids.push_back(wish_id_of(s));
-      menu_kids.push_back(s);
-      continue;
-    }
-    ui_element_ptr mi = ui_element_ptr::create("wish"_key, "MenuItem"_key);
-    mi["label"_key] = it.confirm ? it.label + "..." : it.label;
-    assign_id(mi);
-    obj_ids.push_back(wish_id_of(mi));
-    menu_action_targets_[wish_id_of(mi)] = row_action{meta.scope, meta.name, meta.ns, it.action};
-    menu_kids.push_back(mi);
-  }
-  set_children_list(menu, menu_kids);
-
-  std::vector<ui_element_ptr> row_cells = cells;
-  row_cells.push_back(menu);
-  set_children_list(row, row_cells);
-
-  meta.row = row;
-  meta.child_key = next_key++;
-  meta.object_ids = std::move(obj_ids);
-  (*children)[meta.child_key] = dynamic_ptr{row};
-  rows.push_back(std::move(meta));
-}
-
-void kubectl_frontend::set_status(list_window& lw, const std::string& text, bool ok) {
-  if (!lw.status_label)
-    return;
-  lw.status_label["text"_key] = text;
-  lw.status_label["text_color_light"_key] = std::string{ok ? kIdleLight : kBadLight};
-  lw.status_label["text_color_dark"_key] = std::string{ok ? kIdleDark : kBadDark};
+common::menu_item
+kubectl_frontend::action_item(const std::string& label, const resource& r, const std::string& action, bool confirm) {
+  return {label, [this, r, action] { run_row_action(r, action); }, confirm};
 }
 
 // ── Per-window rebuild ─────────────────────────────────────────────────────
 
 void kubectl_frontend::rebuild_pods(const dynamic& args) {
-  clear_list_rows(pods_, pod_rows_, next_pod_key_);
+  pods_.panel.clear();
 
   int running = 0, total = 0;
   for_each_entry(args, "pods"_key, [&](const dynamic& e) {
@@ -741,166 +401,134 @@ void kubectl_frontend::rebuild_pods(const dynamic& args) {
     const std::string ready = e.as<std::string>("ready"_key);
     const std::string restarts = e.as<std::string>("restarts"_key);
     const std::string effective = reason.empty() ? phase : reason;
-    auto [cl, cd] = pod_status_colour(effective, phase);
 
-    list_row meta;
-    meta.scope = "pod";
-    meta.name = e.as<std::string>("name"_key);
-    meta.ns = e.as<std::string>("namespace"_key);
-    meta.state = phase;
-
-    auto [rl, rd] = ready_colour(ready);
+    resource r{"pod", e.as<std::string>("name"_key), e.as<std::string>("namespace"_key), phase};
     const bool restarted = !restarts.empty() && restarts != "0";
     std::vector<ui_element_ptr> cells = {
-        make_label(meta.ns, kIdleLight, kIdleDark),
-        make_label(meta.name),
-        make_label(ready, rl, rd),
-        make_label(effective, cl, cd),
-        make_label(restarts, restarted ? kWarnLight : nullptr, restarted ? kWarnDark : nullptr),
-        make_label(e.as<std::string>("age"_key), kIdleLight, kIdleDark),
+        make_label(r.ns, kIdle),
+        make_label(r.name),
+        make_label(ready, ready_colour(ready)),
+        make_label(effective, pod_status_colour(effective, phase)),
+        restarted ? make_label(restarts, kWarn) : make_label(restarts),
+        make_label(e.as<std::string>("age"_key), kIdle),
     };
-
-    std::vector<menu_spec> items = {
-        {"Logs", "logs", false}, {"Describe", "describe", false}, {}, {"Delete", "delete", true}};
-    add_list_row(pods_, pod_rows_, next_pod_key_, std::move(meta), cells, items);
+    std::vector<common::menu_item> items = {
+        action_item("Logs", r, "logs", false),
+        action_item("Describe", r, "describe", false),
+        {},
+        action_item("Delete", r, "delete", true)};
+    pods_.panel.add(std::move(r), cells, items);
     ++total;
     if (phase == "Running")
       ++running;
   });
 
-  if (pods_.table)
-    pods_.table->refresh_children_order();
-  apply_list_filter(pods_, pod_rows_);
-
-  set_status(
-      pods_, std::to_string(total) + (total == 1 ? " pod (" : " pods (") + std::to_string(running) + " running)", true);
+  pods_.panel.refresh();
+  apply_list_filter(pods_);
+  pods_.panel.set_status(
+      std::to_string(total) + (total == 1 ? " pod (" : " pods (") + std::to_string(running) + " running)", true);
 }
 
 void kubectl_frontend::rebuild_deployments(const dynamic& args) {
-  clear_list_rows(deployments_, deployment_rows_, next_deployment_key_);
+  deployments_.panel.clear();
 
   int total = 0;
   for_each_entry(args, "deployments"_key, [&](const dynamic& e) {
-    list_row meta;
-    meta.scope = "deployment";
-    meta.name = e.as<std::string>("name"_key);
-    meta.ns = e.as<std::string>("namespace"_key);
-
+    resource r{"deployment", e.as<std::string>("name"_key), e.as<std::string>("namespace"_key), {}};
     const std::string ready = e.as<std::string>("ready"_key);
-    auto [rl, rd] = ready_colour(ready);
     std::vector<ui_element_ptr> cells = {
-        make_label(meta.ns, kIdleLight, kIdleDark),
-        make_label(meta.name),
-        make_label(ready, rl, rd),
+        make_label(r.ns, kIdle),
+        make_label(r.name),
+        make_label(ready, ready_colour(ready)),
         make_label(e.as<std::string>("uptodate"_key)),
         make_label(e.as<std::string>("available"_key)),
-        make_label(e.as<std::string>("age"_key), kIdleLight, kIdleDark),
+        make_label(e.as<std::string>("age"_key), kIdle),
     };
-    std::vector<menu_spec> items = {
-        {"Restart", "restart", false}, {"Describe", "describe", false}, {}, {"Delete", "delete", true}};
-    add_list_row(deployments_, deployment_rows_, next_deployment_key_, std::move(meta), cells, items);
+    std::vector<common::menu_item> items = {
+        action_item("Restart", r, "restart", false),
+        action_item("Describe", r, "describe", false),
+        {},
+        action_item("Delete", r, "delete", true)};
+    deployments_.panel.add(std::move(r), cells, items);
     ++total;
   });
 
-  if (deployments_.table)
-    deployments_.table->refresh_children_order();
-  apply_list_filter(deployments_, deployment_rows_);
-  set_status(deployments_, std::to_string(total) + (total == 1 ? " deployment" : " deployments"), true);
+  deployments_.panel.refresh();
+  apply_list_filter(deployments_);
+  deployments_.panel.set_status(std::to_string(total) + (total == 1 ? " deployment" : " deployments"), true);
 }
 
 void kubectl_frontend::rebuild_services(const dynamic& args) {
-  clear_list_rows(services_, service_rows_, next_service_key_);
+  services_.panel.clear();
 
   int total = 0;
   for_each_entry(args, "services"_key, [&](const dynamic& e) {
-    list_row meta;
-    meta.scope = "service";
-    meta.name = e.as<std::string>("name"_key);
-    meta.ns = e.as<std::string>("namespace"_key);
-
+    resource r{"service", e.as<std::string>("name"_key), e.as<std::string>("namespace"_key), {}};
     std::vector<ui_element_ptr> cells = {
-        make_label(meta.ns, kIdleLight, kIdleDark),
-        make_label(meta.name),
+        make_label(r.ns, kIdle),
+        make_label(r.name),
         make_label(e.as<std::string>("type"_key)),
-        make_label(e.as<std::string>("cluster_ip"_key), kIdleLight, kIdleDark),
+        make_label(e.as<std::string>("cluster_ip"_key), kIdle),
         make_label(e.as<std::string>("ports"_key)),
-        make_label(e.as<std::string>("age"_key), kIdleLight, kIdleDark),
+        make_label(e.as<std::string>("age"_key), kIdle),
     };
-    std::vector<menu_spec> items = {{"Describe", "describe", false}, {}, {"Delete", "delete", true}};
-    add_list_row(services_, service_rows_, next_service_key_, std::move(meta), cells, items);
+    std::vector<common::menu_item> items = {
+        action_item("Describe", r, "describe", false), {}, action_item("Delete", r, "delete", true)};
+    services_.panel.add(std::move(r), cells, items);
     ++total;
   });
 
-  if (services_.table)
-    services_.table->refresh_children_order();
-  apply_list_filter(services_, service_rows_);
-  set_status(services_, std::to_string(total) + (total == 1 ? " service" : " services"), true);
+  services_.panel.refresh();
+  apply_list_filter(services_);
+  services_.panel.set_status(std::to_string(total) + (total == 1 ? " service" : " services"), true);
 }
 
 void kubectl_frontend::rebuild_nodes(const dynamic& args) {
-  clear_list_rows(nodes_, node_rows_, next_node_key_);
+  nodes_.panel.clear();
 
   int ready = 0, total = 0;
   for_each_entry(args, "nodes"_key, [&](const dynamic& e) {
     const std::string status = e.as<std::string>("status"_key);
     const bool schedulable = e.as<std::string>("schedulable"_key) == "true";
-    auto [cl, cd] = node_status_colour(status);
 
-    list_row meta;
-    meta.scope = "node";
-    meta.name = e.as<std::string>("name"_key);
-    meta.state = status;
-
+    resource r{"node", e.as<std::string>("name"_key), {}, status};
     std::vector<ui_element_ptr> cells = {
-        make_label(meta.name),
-        make_label(status, cl, cd),
-        make_label(e.as<std::string>("version"_key), kIdleLight, kIdleDark),
-        make_label(e.as<std::string>("age"_key), kIdleLight, kIdleDark),
+        make_label(r.name),
+        make_label(status, node_status_colour(status)),
+        make_label(e.as<std::string>("version"_key), kIdle),
+        make_label(e.as<std::string>("age"_key), kIdle),
     };
     // Cordon on a schedulable node; Uncordon on a cordoned one.
-    std::vector<menu_spec> items;
-    if (schedulable)
-      items.push_back({"Cordon", "cordon", false});
-    else
-      items.push_back({"Uncordon", "uncordon", false});
-    items.push_back({"Drain", "drain", true});
-    items.push_back({});
-    items.push_back({"Describe", "describe", false});
-    add_list_row(nodes_, node_rows_, next_node_key_, std::move(meta), cells, items);
+    std::vector<common::menu_item> items = {
+        schedulable ? action_item("Cordon", r, "cordon", false) : action_item("Uncordon", r, "uncordon", false),
+        action_item("Drain", r, "drain", true),
+        {},
+        action_item("Describe", r, "describe", false)};
+    nodes_.panel.add(std::move(r), cells, items);
     ++total;
     if (contains(status, "Ready") && !contains(status, "NotReady"))
       ++ready;
   });
 
-  if (nodes_.table)
-    nodes_.table->refresh_children_order();
-  apply_list_filter(nodes_, node_rows_);
-  set_status(
-      nodes_, std::to_string(total) + (total == 1 ? " node (" : " nodes (") + std::to_string(ready) + " ready)", true);
+  nodes_.panel.refresh();
+  apply_list_filter(nodes_);
+  nodes_.panel.set_status(
+      std::to_string(total) + (total == 1 ? " node (" : " nodes (") + std::to_string(ready) + " ready)", true);
 }
 
-void kubectl_frontend::apply_list_filter(list_window& lw, std::vector<list_row>& rows) {
-  auto lc = [](std::string s) {
-    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char ch) { return std::tolower(ch); });
-    return s;
-  };
-  const std::string name_needle = lc(lw.name_filter);
-  const std::string ns_needle = lc(lw.ns_filter);
-
+void kubectl_frontend::apply_list_filter(list_window& lw) {
+  const std::string name_needle = common::lower(lw.name_filter);
+  const std::string ns_needle = common::lower(lw.ns_filter);
   static const char* kPhaseNames[] = {"", "Running", "Pending", "Succeeded", "Failed"};
+  const bool by_phase = lw.phase_combo_id.id && lw.phase_filter > 0 && lw.phase_filter < 5;
 
-  for (auto& r : rows) {
-    if (!r.row)
-      continue;
-    bool show = true;
-    if (lw.phase_combo_id.id && lw.phase_filter > 0 && lw.phase_filter < 5)
-      show = r.state == kPhaseNames[lw.phase_filter];
-    if (show && !ns_needle.empty())
-      show = lc(r.ns).find(ns_needle) != std::string::npos;
-    if (show && !name_needle.empty())
-      show = lc(r.name).find(name_needle) != std::string::npos;
-    r.row["visible"_key] = show;
-  }
+  lw.panel.apply_filter([&](const resource& r) {
+    if (by_phase && r.state != kPhaseNames[lw.phase_filter])
+      return false;
+    if (!ns_needle.empty() && common::lower(r.ns).find(ns_needle) == std::string::npos)
+      return false;
+    return name_needle.empty() || common::lower(r.name).find(name_needle) != std::string::npos;
+  });
 }
 
 // ── RMI methods ────────────────────────────────────────────────────────────
@@ -926,9 +554,8 @@ dynamic kubectl_frontend::do_update_logs(const dynamic& args) {
   if (args.as<std::string>("name"_key) != open_logs_name_ ||
       args.as<std::string>("namespace"_key) != open_logs_ns_)
     return dynamic{}; // stale response for a pod the user navigated away from.
-  if (logs_target_label_)
-    logs_target_label_["text"_key] = args.as<std::string>("title"_key);
-  set_editor_text(logs_editor_, logs_file_, "logs", args.as<std::string>("text"_key));
+  logs_.set_title(args.as<std::string>("title"_key));
+  logs_.set_text(args.as<std::string>("text"_key));
   return dynamic{};
 }
 
@@ -937,308 +564,66 @@ dynamic kubectl_frontend::do_update_describe(const dynamic& args) {
       args.as<std::string>("namespace"_key) != open_describe_ns_ ||
       args.as<std::string>("kind"_key) != open_describe_kind_)
     return dynamic{};
-  if (describe_target_label_)
-    describe_target_label_["text"_key] = args.as<std::string>("title"_key);
-  set_editor_text(describe_editor_, describe_file_, "describe", args.as<std::string>("text"_key));
+  describe_.set_title(args.as<std::string>("title"_key));
+  describe_.set_text(args.as<std::string>("text"_key));
   return dynamic{};
 }
 
 dynamic kubectl_frontend::do_command_result(const dynamic& args) {
-  const std::string command = args.as<std::string>("command"_key);
-  const bool ok = args.as<bool>("ok"_key);
-  const std::string output = args.as<std::string>("output"_key);
-  const std::string scope =
-      args.findField<std::string>("scope"_key) ? args.as<std::string>("scope"_key) : std::string{"pods"};
-  list_window* lw = scope == "deployments" ? &deployments_
-      : scope == "services"                ? &services_
-      : scope == "nodes"                   ? &nodes_
-                                           : &pods_;
-  if (ok)
-    set_status(*lw, command + ": OK", true);
-  else
-    set_status(*lw, command + " failed: " + (output.empty() ? "unknown error" : output), false);
+  const std::string scope = common::str_of(args, "scope"_key);
+  list_window& lw = scope == "deployments" ? deployments_
+      : scope == "services"                ? services_
+      : scope == "nodes"                   ? nodes_
+                                           : pods_;
+  bool ok = false;
+  const std::string text = common::command_result_text(args, ok);
+  lw.panel.set_status(text, ok);
   return dynamic{};
 }
 
-// ── Console window (client `kubectl` subprocess trace) ─────────────────────
-
-void kubectl_frontend::append_console_row(
-    const std::string& command, int32_t exit_code, bool ok, const std::string& output) {
-  if (!console_table_)
-    return;
-  auto* children_p = console_table_->findField<dynamic_ptr>("children"_key);
-  if (!children_p || !*children_p)
-    return;
-  auto& children = *children_p;
-
-  const char* cl = ok ? kOkLight : kBadLight;
-  const char* cd = ok ? kOkDark : kBadDark;
-
-  ui_element_ptr row = ui_element_ptr::create("wish"_key, "TableRow"_key);
-  assign_id(row);
-
-  ui_element_ptr cell_seq = make_label(std::to_string(++console_seq_), kIdleLight, kIdleDark);
-  ui_element_ptr cell_command = make_label(command, cl, cd);
-  ui_element_ptr cell_exit = make_label(std::to_string(exit_code), cl, cd);
-  ui_element_ptr cell_output = make_label(output, cl, cd);
-
-  // Right-click any row for "Copy Entry" (this row's command/exit/output,
-  // via MenuItem.copy_text) and "Clear Console" (every row). git's Log window.
-  ui_element_ptr context_menu = ui_element_ptr::create("wish"_key, "ContextMenu"_key);
-  assign_id(context_menu);
-
-  ui_element_ptr copy_item = ui_element_ptr::create("wish"_key, "MenuItem"_key);
-  copy_item["label"_key] = std::string{"Copy Entry"};
-  copy_item["copy_text"_key] = command + "\nexit: " + std::to_string(exit_code) + "\n" + output;
-  assign_id(copy_item);
-
-  ui_element_ptr clear_item = ui_element_ptr::create("wish"_key, "MenuItem"_key);
-  clear_item["label"_key] = std::string{"Clear Console"};
-  assign_id(clear_item);
-  click_handlers_[wish_id_of(clear_item)] = [this] { clear_console_rows(); };
-
-  set_children_list(context_menu, {copy_item, clear_item});
-  set_children_list(row, {cell_seq, cell_command, cell_exit, cell_output, context_menu});
-
-  console_row_entry entry;
-  entry.child_key = next_console_child_key_++;
-  entry.object_ids = {
-      wish_id_of(row),       wish_id_of(cell_seq),      wish_id_of(cell_command), wish_id_of(cell_exit),
-      wish_id_of(cell_output), wish_id_of(context_menu), wish_id_of(copy_item),   wish_id_of(clear_item)};
-  (*children)[entry.child_key] = dynamic_ptr{row};
-  console_rows_.push_back(std::move(entry));
-
-  if (console_rows_.size() > kMaxConsoleRows) {
-    erase_console_row_objects(console_rows_.front());
-    children->erase(console_rows_.front().child_key);
-    console_rows_.pop_front();
-  }
-  console_table_->refresh_children_order();
-}
-
-void kubectl_frontend::erase_console_row_objects(const console_row_entry& entry) {
-  for (auto id : entry.object_ids) {
-    ctx().objects.erase(id.id);
-    click_handlers_.erase(id);
-  }
-}
-
-void kubectl_frontend::clear_console_rows() {
-  if (!console_table_)
-    return;
-  auto* children_p = console_table_->findField<dynamic_ptr>("children"_key);
-  if (!children_p || !*children_p)
-    return;
-  auto& children = *children_p;
-
-  for (auto& entry : console_rows_) {
-    erase_console_row_objects(entry);
-    children->erase(entry.child_key);
-  }
-  console_rows_.clear();
-  console_seq_ = 0;
-  next_console_child_key_ = 0; // every numeric child key was just erased.
-  console_table_->refresh_children_order();
-}
-
 dynamic kubectl_frontend::do_append_command_log(const dynamic& args) {
-  append_console_row(
-      args.as<std::string>("command"_key), args.as<int32_t>("exit_code"_key), args.as<bool>("ok"_key),
-      args.as<std::string>("output"_key));
+  console_.append_from(args);
   return dynamic{};
 }
 
 // ── Top window (live `kubectl top` graphs) ─────────────────────────────────
 
 void kubectl_frontend::build_top_window() {
-  auto tree = import_json(kTopLayout);
-  auto& c = ctx();
-  for (auto& [key, elem] : tree) {
-    key_t id = rmi::shared::generate_id();
-    c.put_object(id, elem);
-    elem["__wish_id"_key] = id;
-  }
-  top_window_id_ = (*tree[""])["__wish_id"_key].as<key_t>();
-  tree.with("vbox.status", [&](const auto& e) { top_status_label_ = e; });
-  tree.with("vbox.pods_table", [&](const auto& e) { top_pods_table_ = e; });
-  tree.with("vbox.nodes_table", [&](const auto& e) { top_nodes_table_ = e; });
-  tree.with("vbox.pods_cpu_plot", [&](const auto& e) { init_stats_plot(pods_cpu_plot_, e, "Total", false); });
-  tree.with("vbox.pods_mem_plot", [&](const auto& e) { init_stats_plot(pods_mem_plot_, e, "Total", false); });
-  tree.with("vbox.nodes_cpu_plot", [&](const auto& e) { init_stats_plot(nodes_cpu_plot_, e, "Cluster avg", true); });
-  tree.with("vbox.nodes_mem_plot", [&](const auto& e) { init_stats_plot(nodes_mem_plot_, e, "Cluster avg", true); });
-
-  // X is a rolling sample index: hide its numeric labels
-  // (ImPlotAxisFlags_NoTickLabels = 1 << 3) and keep it continuously
-  // auto-fitted to the collected history (ImPlotAxisFlags_AutoFit = 1 << 11)
-  // so the trace always fills the frame from the first sample. The node %
-  // plots are true 0..100 gauges; the pod millicore / MiB plots auto-fit Y.
-  constexpr int32_t kNoTickLabels = 1 << 3;
-  constexpr int32_t kAutoFit = 1 << 11;
-  constexpr int32_t kLegendSouth = 1 << 1;   // ImPlotLocation_South
-  constexpr int32_t kLegendOutside = 1 << 4; // ImPlotLegendFlags_Outside
-  // A busy cluster puts a dozen-plus pod lines on the plot. Keep the legend
-  // below the frame as a single vertical column: ImPlot shrinks the trace
-  // area to fit the *whole* column (no clipping), so every pod/node line
-  // stays labelled. A horizontal legend would be clamped to the plot width
-  // and crop the tail entries. The Top window is a scrolling VerticalLayout,
-  // so the extra height is absorbed by the scroll region.
-  auto legend_below = [&](const auto& e) {
-    e["legend_location"_key] = kLegendSouth;
-    e["legend_flags"_key] = kLegendOutside;
-  };
-  auto fit_xy = [&](const auto& e) {
-    e["x_flags"_key] = kNoTickLabels | kAutoFit;
-    e["y_flags"_key] = kAutoFit;
-    legend_below(e);
-  };
-  auto fit_x_pct_y = [&](const auto& e) {
-    e["x_flags"_key] = kNoTickLabels | kAutoFit;
-    e["y_min"_key] = 0.0f;
-    e["y_max"_key] = 100.0f;
-    legend_below(e);
-  };
-  tree.with("vbox.pods_cpu_plot", fit_xy);
-  tree.with("vbox.pods_mem_plot", fit_xy);
-  tree.with("vbox.nodes_cpu_plot", fit_x_pct_y);
-  tree.with("vbox.nodes_mem_plot", fit_x_pct_y);
-
-  ui_element_ptr root_ptr = tree[""];
-  sess().ui_objects.merge(std::move(tree), top_root_key_);
-  sess().top_level_objects[key_t{top_root_key_}] = root_ptr;
-  sess().top_level_handlers[key_t{top_root_key_}] = this;
-  (*root_ptr)["__path__"_key] = top_root_key_;
-}
-
-void kubectl_frontend::init_stats_plot(
-    stats_plot& sp, const ui_element_ptr& plot_el, const std::string& aggregate_label, bool average) {
-  sp.plot = plot_el;
-  sp.average = average;
-  auto* children_p = plot_el->findField<dynamic_ptr>("children"_key);
-  if (!children_p || !*children_p)
-    return;
-  ui_element_ptr line = ui_element_ptr::create("wish"_key, "PlotLine"_key);
-  line["label"_key] = aggregate_label;
-  line["order"_key] = static_cast<int32_t>(0);
-  assign_id(line);
-  sp.aggregate.el = line;
-  sp.aggregate.id = wish_id_of(line);
-  sp.aggregate.child_key = 0;
-  sp.next_child_key = 0;
-  (**children_p)[static_cast<size_t>(0)] = dynamic_ptr{line};
-  plot_el->refresh_children_order();
-}
-
-void kubectl_frontend::push_stats_history(std::vector<float>& history, float value) {
-  history.push_back(value);
-  if (history.size() > kMaxStatsHistory)
-    history.erase(history.begin());
-}
-
-void kubectl_frontend::update_stats_xs(size_t count) {
-  if (stats_xs_.size() == count)
-    return;
-  stats_xs_.resize(count);
-  for (size_t i = 0; i < count; ++i)
-    stats_xs_[i] = static_cast<float>(i);
-}
-
-void kubectl_frontend::update_stats_plot(stats_plot& sp, const std::map<std::string, float>& values) {
-  if (!sp.plot)
-    return;
-  auto* children_p = sp.plot->findField<dynamic_ptr>("children"_key);
-  if (!children_p || !*children_p)
-    return;
-  auto& children = *children_p;
-
-  float agg = 0.0f;
-  for (const auto& [name, v] : values)
-    agg += v;
-  if (sp.average && !values.empty())
-    agg /= static_cast<float>(values.size());
-  push_stats_history(sp.aggregate.hist, agg);
-
-  std::vector<std::pair<std::string, float>> ranked(values.begin(), values.end());
-  std::stable_sort(
-      ranked.begin(), ranked.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
-  std::set<std::string> keep;
-  for (size_t i = 0; i < ranked.size() && i < kMaxStatsSeries; ++i)
-    keep.insert(ranked[i].first);
-
-  for (auto it = sp.series.begin(); it != sp.series.end();) {
-    if (keep.count(it->first)) {
-      ++it;
-      continue;
-    }
-    children->erase(it->second.child_key);
-    ctx().objects.erase(it->second.id.id);
-    it = sp.series.erase(it);
-  }
-
-  const float nan = std::numeric_limits<float>::quiet_NaN();
-  for (const auto& name : keep) {
-    if (sp.series.count(name))
-      continue;
-    ui_element_ptr line = ui_element_ptr::create("wish"_key, "PlotLine"_key);
-    line["label"_key] = name;
-    line["order"_key] = static_cast<int32_t>(1);
-    assign_id(line);
-    stats_series s;
-    s.el = line;
-    s.id = wish_id_of(line);
-    s.child_key = ++sp.next_child_key;
-    s.hist.assign(sp.aggregate.hist.empty() ? 0 : sp.aggregate.hist.size() - 1, nan);
-    (*children)[s.child_key] = dynamic_ptr{line};
-    sp.series.emplace(name, std::move(s));
-  }
-
-  for (const auto& name : keep)
-    push_stats_history(sp.series.at(name).hist, values.at(name));
-
-  update_stats_xs(sp.aggregate.hist.size());
-
-  sp.aggregate.el["xs"_key] = stats_xs_;
-  sp.aggregate.el["ys"_key] = sp.aggregate.hist;
-  for (auto& [name, s] : sp.series) {
-    s.el["xs"_key] = stats_xs_;
-    s.el["ys"_key] = s.hist;
-  }
-  sp.plot->refresh_children_order();
+  build_window(top_root_key_, kTopLayout, top_window_id_, [&](ui_tree& tree) {
+    using y_axis = common::rolling_plot::y_axis;
+    tree.with("vbox.status", [&](const auto& e) { top_status_label_ = e; });
+    tree.with("vbox.pods_table", [&](const auto& e) { top_pods_.attach(*this, e); });
+    tree.with("vbox.nodes_table", [&](const auto& e) { top_nodes_.attach(*this, e); });
+    // The node % plots are true 0..100 gauges; the pod millicore / MiB
+    // plots auto-fit Y. The Top window is a scrolling VerticalLayout, so the
+    // legend column below each plot is absorbed by the scroll region.
+    tree.with("vbox.pods_cpu_plot", [&](const auto& e) {
+      common::rolling_plot::configure_axes(e, y_axis::auto_fit);
+      pods_cpu_plot_.init(*this, e, "Total");
+    });
+    tree.with("vbox.pods_mem_plot", [&](const auto& e) {
+      common::rolling_plot::configure_axes(e, y_axis::auto_fit);
+      pods_mem_plot_.init(*this, e, "Total");
+    });
+    tree.with("vbox.nodes_cpu_plot", [&](const auto& e) {
+      common::rolling_plot::configure_axes(e, y_axis::percent);
+      nodes_cpu_plot_.init(*this, e, "Cluster avg", /*average=*/true);
+    });
+    tree.with("vbox.nodes_mem_plot", [&](const auto& e) {
+      common::rolling_plot::configure_axes(e, y_axis::percent);
+      nodes_mem_plot_.init(*this, e, "Cluster avg", /*average=*/true);
+    });
+  });
 }
 
 void kubectl_frontend::rebuild_top_table(
-    const ui_element_ptr& table, std::vector<key_t>& row_ids, size_t& next_key, const dynamic& args,
-    key_t array_key, const std::function<std::vector<ui_element_ptr>(const dynamic&)>& make_cells) {
-  if (!table)
-    return;
-  auto* children_p = table->findField<dynamic_ptr>("children"_key);
-  if (!children_p || !*children_p)
-    return;
-  auto& children = *children_p;
-
-  std::vector<key_t> to_erase;
-  children->forEach([&](key_t k, const field& f) {
-    if (f.is<dynamic_ptr>() && f.as<dynamic_ptr>() &&
-        f.as<dynamic_ptr>()->as<key_t>(dynamic::CLASS) == "TableRow"_key)
-      to_erase.push_back(k);
-  });
-  for (auto k : to_erase)
-    children->erase(k.id);
-  for (auto id : row_ids)
-    ctx().objects.erase(id.id);
-  row_ids.clear();
-  next_key = 0;
-
-  for_each_entry(args, array_key, [&](const dynamic& e) {
-    std::vector<ui_element_ptr> cells = make_cells(e);
-    ui_element_ptr row = ui_element_ptr::create("wish"_key, "TableRow"_key);
-    assign_id(row);
-    for (auto& cell : cells)
-      row_ids.push_back(wish_id_of(cell));
-    row_ids.push_back(wish_id_of(row));
-    set_children_list(row, cells);
-    (*children)[next_key++] = dynamic_ptr{row};
-  });
-  table->refresh_children_order();
+    common::table_rows<>& rows,
+    const dynamic& args,
+    key_t array_key,
+    const std::function<std::vector<ui_element_ptr>(const dynamic&)>& make_cells) {
+  rows.clear();
+  for_each_entry(args, array_key, [&](const dynamic& e) { rows.add({}, make_cells(e)); });
+  rows.refresh();
 }
 
 dynamic kubectl_frontend::do_update_stats(const dynamic& args) {
@@ -1266,46 +651,35 @@ dynamic kubectl_frontend::do_update_stats(const dynamic& args) {
     ++node_count;
   });
 
-  update_stats_plot(pods_cpu_plot_, pod_cpu);
-  update_stats_plot(pods_mem_plot_, pod_mem);
-  update_stats_plot(nodes_cpu_plot_, node_cpu);
-  update_stats_plot(nodes_mem_plot_, node_mem);
+  pods_cpu_plot_.push(pod_cpu);
+  pods_mem_plot_.push(pod_mem);
+  nodes_cpu_plot_.push(node_cpu);
+  nodes_mem_plot_.push(node_mem);
 
-  rebuild_top_table(
-      top_pods_table_, top_pods_row_ids_, next_top_pods_key_, args, "pods"_key, [&](const dynamic& e) {
-        return std::vector<ui_element_ptr>{
-            make_label(e.as<std::string>("namespace"_key)),
-            make_label(e.as<std::string>("name"_key)),
-            make_label(e.as<std::string>("cpu"_key)),
-            make_label(e.as<std::string>("mem"_key)),
-        };
-      });
-  rebuild_top_table(
-      top_nodes_table_, top_nodes_row_ids_, next_top_nodes_key_, args, "nodes"_key, [&](const dynamic& e) {
-        return std::vector<ui_element_ptr>{
-            make_label(e.as<std::string>("name"_key)),
-            make_label(e.as<std::string>("cpu"_key)),
-            make_label(format_pct(e.as<float>("cpu_pct"_key))),
-            make_label(e.as<std::string>("mem"_key)),
-            make_label(format_pct(e.as<float>("mem_pct"_key))),
-        };
-      });
+  rebuild_top_table(top_pods_, args, "pods"_key, [&](const dynamic& e) {
+    return std::vector<ui_element_ptr>{
+        make_label(e.as<std::string>("namespace"_key)),
+        make_label(e.as<std::string>("name"_key)),
+        make_label(e.as<std::string>("cpu"_key)),
+        make_label(e.as<std::string>("mem"_key)),
+    };
+  });
+  rebuild_top_table(top_nodes_, args, "nodes"_key, [&](const dynamic& e) {
+    return std::vector<ui_element_ptr>{
+        make_label(e.as<std::string>("name"_key)),
+        make_label(e.as<std::string>("cpu"_key)),
+        make_label(format_pct(e.as<float>("cpu_pct"_key))),
+        make_label(e.as<std::string>("mem"_key)),
+        make_label(format_pct(e.as<float>("mem_pct"_key))),
+    };
+  });
 
-  if (top_status_label_) {
-    std::string error;
-    if (const auto* ef = args.findField<std::string>("error"_key))
-      error = *ef;
-    if (!error.empty()) {
-      top_status_label_["text"_key] = "kubectl top unavailable: " + error;
-      top_status_label_["text_color_light"_key] = std::string{kBadLight};
-      top_status_label_["text_color_dark"_key] = std::string{kBadDark};
-    } else {
-      top_status_label_["text"_key] =
-          std::to_string(pod_count) + " pods, " + std::to_string(node_count) + " nodes";
-      top_status_label_["text_color_light"_key] = std::string{kIdleLight};
-      top_status_label_["text_color_dark"_key] = std::string{kIdleDark};
-    }
-  }
+  const std::string error = common::str_of(args, "error"_key);
+  if (!error.empty())
+    common::set_status_text(top_status_label_, "kubectl top unavailable: " + error, false);
+  else
+    common::set_status_text(
+        top_status_label_, std::to_string(pod_count) + " pods, " + std::to_string(node_count) + " nodes", true);
   return dynamic{};
 }
 
@@ -1314,18 +688,18 @@ dynamic kubectl_frontend::do_update_stats(const dynamic& args) {
 void kubectl_frontend::on_event(key_t id, key_t event, const dynamic& payload) {
   // Any window's X button -> tear everything down.
   if (event == "closed"_key &&
-      (id == pods_.window_id || id == deployments_.window_id || id == services_.window_id ||
-       id == nodes_.window_id || id == logs_window_id_ || id == describe_window_id_ ||
-       id == console_window_id_ || id == top_window_id_)) {
-    remove_editor_file(logs_file_);
-    remove_editor_file(describe_file_);
+      (id == pods_.panel.window_id() || id == deployments_.panel.window_id() || id == services_.panel.window_id() ||
+       id == nodes_.panel.window_id() || id == logs_.window_id() || id == describe_.window_id() ||
+       id == console_.window_id() || id == top_window_id_)) {
+    logs_.remove_file();
+    describe_.remove_file();
     emit("closed"_key);
-    remove_objects_at(deployments_.root_key);
-    remove_objects_at(services_.root_key);
-    remove_objects_at(nodes_.root_key);
-    remove_objects_at(logs_root_key_);
-    remove_objects_at(describe_root_key_);
-    remove_objects_at(console_root_key_);
+    remove_objects_at(deployments_.panel.root_key());
+    remove_objects_at(services_.panel.root_key());
+    remove_objects_at(nodes_.panel.root_key());
+    remove_objects_at(logs_.root_key());
+    remove_objects_at(describe_.root_key());
+    remove_objects_at(console_.root_key());
     remove_objects_at(top_root_key_);
     remove_internal_objects();
     return;
@@ -1333,23 +707,19 @@ void kubectl_frontend::on_event(key_t id, key_t event, const dynamic& payload) {
 
   if (event == "changed"_key) {
     for (auto* lw : {&pods_, &deployments_, &services_, &nodes_}) {
-      auto& rows = lw == &pods_ ? pod_rows_
-          : lw == &deployments_ ? deployment_rows_
-          : lw == &services_    ? service_rows_
-                                : node_rows_;
-      if (id == lw->name_filter_id) {
+      if (lw->name_filter_id.id && id == lw->name_filter_id) {
         lw->name_filter = payload.as<std::string>("value"_key);
-        apply_list_filter(*lw, rows);
+        apply_list_filter(*lw);
         return;
       }
       if (lw->ns_filter_id.id && id == lw->ns_filter_id) {
         lw->ns_filter = payload.as<std::string>("value"_key);
-        apply_list_filter(*lw, rows);
+        apply_list_filter(*lw);
         return;
       }
       if (lw->phase_combo_id.id && id == lw->phase_combo_id) {
         lw->phase_filter = payload.as<int32_t>("value"_key);
-        apply_list_filter(*lw, rows);
+        apply_list_filter(*lw);
         return;
       }
     }
@@ -1362,64 +732,54 @@ void kubectl_frontend::on_event(key_t id, key_t event, const dynamic& payload) {
     return;
   }
 
-  if (event != "clicked"_key)
-    return;
+  if (event == "clicked"_key)
+    dispatch_click(id);
+}
 
-  if (auto ch = click_handlers_.find(id); ch != click_handlers_.end()) {
-    ch->second();
-    return;
-  }
+void kubectl_frontend::run_row_action(const resource& r, const std::string& action) {
+  const std::string qualified = r.ns.empty() ? r.name : r.ns + "/" + r.name;
 
-  auto mi = menu_action_targets_.find(id);
-  if (mi == menu_action_targets_.end())
-    return;
-  const row_action target = mi->second;
-
-  const std::string qualified = target.ns.empty() ? target.name : target.ns + "/" + target.name;
-
-  if (target.action == "logs") {
-    open_logs_name_ = target.name;
-    open_logs_ns_ = target.ns;
-    if (logs_target_label_)
-      logs_target_label_["text"_key] = qualified;
+  if (action == "logs") {
+    open_logs_name_ = r.name;
+    open_logs_ns_ = r.ns;
+    logs_.set_title(qualified);
     emit_logs_request();
     return;
   }
-  if (target.action == "describe") {
-    open_describe_name_ = target.name;
-    open_describe_ns_ = target.ns;
-    open_describe_kind_ = target.scope;
-    if (describe_target_label_)
-      describe_target_label_["text"_key] = target.scope + ": " + qualified;
+  if (action == "describe") {
+    open_describe_name_ = r.name;
+    open_describe_ns_ = r.ns;
+    open_describe_kind_ = r.scope;
+    describe_.set_title(r.scope + ": " + qualified);
     emit_describe_request();
     return;
   }
 
-  const key_t event_name = target.scope == "pod" ? "pod_action_requested"_key
-      : target.scope == "deployment"             ? "deployment_action_requested"_key
-      : target.scope == "service"                ? "service_action_requested"_key
-                                                 : "node_action_requested"_key;
-  auto fire = [this, event_name, target] {
+  const key_t event_name = r.scope == "pod" ? "pod_action_requested"_key
+      : r.scope == "deployment"             ? "deployment_action_requested"_key
+      : r.scope == "service"                ? "service_action_requested"_key
+                                            : "node_action_requested"_key;
+  auto fire = [this, event_name, r, action] {
     dynamic p;
-    p["name"_key] = target.name;
-    if (!target.ns.empty())
-      p["namespace"_key] = target.ns;
-    p["action"_key] = target.action;
+    p["name"_key] = r.name;
+    if (!r.ns.empty())
+      p["namespace"_key] = r.ns;
+    p["action"_key] = action;
     emit(event_name, std::move(p));
   };
 
-  const bool destructive = target.action == "delete" || target.action == "drain";
+  const bool destructive = action == "delete" || action == "drain";
   if (!destructive) {
     fire();
     return;
   }
 
   std::string message;
-  if (target.action == "drain")
-    message = "Drain node '" + target.name + "'? Its running pods will be evicted.";
+  if (action == "drain")
+    message = "Drain node '" + r.name + "'? Its running pods will be evicted.";
   else
-    message = std::string{"Delete "} + noun_for(target.scope) + " '" + target.name + "'" +
-        (target.ns.empty() ? std::string{} : " in namespace '" + target.ns + "'") + "?";
+    message = std::string{"Delete "} + noun_for(r.scope) + " '" + r.name + "'" +
+        (r.ns.empty() ? std::string{} : " in namespace '" + r.ns + "'") + "?";
   show_confirm(message, fire);
 }
 

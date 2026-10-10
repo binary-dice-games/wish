@@ -7,7 +7,6 @@
 #include "src/rmi/shared/ids.hpp"
 
 #include <ui/dock_layout_spec.hpp>
-#include <ui/forms/message_box.hpp>
 #include <ui/forms/properties_dialog.hpp>
 #include <ui/ui_importer.hpp>
 
@@ -20,6 +19,7 @@
 namespace bdg::wish {
 
 using namespace bison;
+using common::wish_id_of;
 
 namespace {
 
@@ -72,11 +72,6 @@ constexpr size_t kPriorityLevelCount = std::size(kPriorityLevels);
 std::string to_lower(std::string text) {
   std::transform(text.begin(), text.end(), text.begin(), [](unsigned char ch) { return std::tolower(ch); });
   return text;
-}
-
-template <typename Element>
-key_t wish_id_of(const Element& element) {
-  return element->template as<key_t>("__wish_id"_key);
 }
 
 } // namespace
@@ -225,38 +220,10 @@ static constexpr const char* kCoresLayout = R"({
 
 // ── top ─────────────────────────────────────────────────────────
 
-top::top(dynamic&& base) : form(std::move(base)) {}
+top::top(dynamic&& base) : tool_form(std::move(base)) {}
 
 top::~top() {
   remove_panel_objects();
-}
-
-void top::build_window(
-    const char* layout_json, const std::string& root_key, key_t& window_id_out,
-    const std::function<void(ui_tree&)>& wire) {
-  auto tree = import_json(layout_json);
-
-  // put_object() files each element under the current request's group (see
-  // rmi::context::current_group) so they're cleaned up together with the
-  // rest of this form when relayed through rmi::bridge.
-  auto& c = ctx();
-  for (auto& [key, elem] : tree) {
-    key_t id = rmi::shared::generate_id();
-    c.put_object(id, elem);
-    elem["__wish_id"_key] = id;
-  }
-  window_id_out = (*tree[""])["__wish_id"_key].as<key_t>();
-  wire(tree);
-
-  ui_element_ptr root_ptr = tree[""];
-  sess().ui_objects.merge(std::move(tree), root_key);
-  // The main root's top-level registration and "__path__" are handled by
-  // form::init() once on_init() returns; secondary panels register here.
-  if (root_key != internal_root_key_) {
-    sess().top_level_objects[key_t{root_key}] = root_ptr;
-    sess().top_level_handlers[key_t{root_key}] = this;
-    (*root_ptr)["__path__"_key] = root_key;
-  }
 }
 
 void top::on_init() {
@@ -282,7 +249,7 @@ void top::on_init() {
     e["x_flags"_key] = kHideXTickLabels;
   };
 
-  build_window(kProcessesLayout, internal_root_key_, window_id_, [&](ui_tree& tree) {
+  build_window(internal_root_key_, kProcessesLayout, window_id_, [&](ui_tree& tree) {
     tree.with("vbox.proc_table", [&](const auto& e) {
       proc_table_ = e;
       proc_table_id_ = wish_id_of(e);
@@ -292,19 +259,19 @@ void top::on_init() {
     tree.with("vbox.toolbar.filter_count", [&](const auto& e) { filter_count_label_ = e; });
   });
 
-  build_window(kCpuLayout, cpu_root_key_, cpu_window_id_, [&](ui_tree& tree) {
+  build_window(cpu_root_key_, kCpuLayout, cpu_window_id_, [&](ui_tree& tree) {
     tree.with("vbox.cpu_label", [&](const auto& e) { cpu_summary_label_ = e; });
     tree.with("vbox.cpu_plot.cpu_series", [&](const auto& e) { cpu_plot_series_ = e; });
     tree.with("vbox.cpu_plot", fix_axes);
   });
 
-  build_window(kMemoryLayout, mem_root_key_, mem_window_id_, [&](ui_tree& tree) {
+  build_window(mem_root_key_, kMemoryLayout, mem_window_id_, [&](ui_tree& tree) {
     tree.with("vbox.mem_label", [&](const auto& e) { mem_summary_label_ = e; });
     tree.with("vbox.mem_plot.mem_series", [&](const auto& e) { mem_plot_series_ = e; });
     tree.with("vbox.mem_plot", fix_axes);
   });
 
-  build_window(kCoresLayout, cores_root_key_, cores_window_id_, [&](ui_tree& tree) {
+  build_window(cores_root_key_, kCoresLayout, cores_window_id_, [&](ui_tree& tree) {
     tree.with("vbox.cores", [&](const auto& e) { cores_container_ = e; });
   });
 
@@ -615,24 +582,14 @@ void top::show_confirm_kill(int pid) {
   std::string message = "Kill process " + std::to_string(pid) + (name.empty() ? std::string{} : " (" + name + ")") +
       "? This cannot be undone.";
 
-  dynamic params;
-  params["title"_key] = std::string{"Confirm Kill"};
-  params["message"_key] = message;
-  params["icon"_key] = std::string{"warning"};
-  params["buttons"_key] = std::string{"yes_no"};
-
-  // Overwriting confirm_dialog_ (rather than requiring it be empty first)
-  // is safe even if a confirm dialog is already open for a different pid --
-  // see confirm_dialog_'s doc comment.
-  confirm_dialog_ = instantiate_child_form<message_box>(
-      "MessageBox"_key, std::move(params), [this, pid](key_t /*event_name*/, const dynamic& payload) {
-        if (payload.as<std::string>("button"_key) != "yes")
-          return;
-        dynamic req;
-        req["pid"_key] = static_cast<int32_t>(pid);
-        req["action"_key] = std::string{"kill"};
-        emit("on_process_action_requested"_key, std::move(req));
-      });
+  show_confirm(
+      message,
+      [this, pid] {
+        emit(
+            "on_process_action_requested"_key,
+            common::make_payload("pid"_key, static_cast<int32_t>(pid), "action"_key, std::string{"kill"}));
+      },
+      {.title = "Confirm Kill"});
 }
 
 // ── Set CPU Affinity dialog ───────────────────────────────────────────────────

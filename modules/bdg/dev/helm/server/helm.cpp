@@ -2,82 +2,48 @@
 /// @file helm.cpp
 /// @brief Implementation of the HelmFrontend form.
 ///
-/// A close port of modules/bdg/dev/kubectl/server/kubectl.cpp: inline JSON
-/// window layouts + import_json(), C++-built table rows, a per-row `...`
-/// MenuButton, show_confirm() via a privately-instantiated MessageBox, and
-/// an id -> handler dispatch map rebuilt on every update_*. The four list
-/// windows (Releases / Repositories / Charts / History) share one
-/// build_list_window() / clear_list_rows() / add_list_row() path.
+/// Inline JSON window layouts + C++-built table rows on the panels shared
+/// by the bdg tool forms (modules/bdg/common/server). The four list windows
+/// (Releases / Repositories / Charts / History) share one
+/// build_list_window() / run_row_action() path.
 #include "helm.hpp"
 
 #include "src/bison/bison_object.hpp"
-#include "src/rmi/shared/ids.hpp"
 
-#include <context/file_service.hpp>
 #include <ui/dock_layout_spec.hpp>
-#include <ui/forms/message_box.hpp>
 
 #include <algorithm>
-#include <filesystem>
-#include <fstream>
 
 namespace bdg::wish {
 
 using namespace bison;
+using common::for_each_entry;
+using common::kBad;
+using common::kIdle;
+using common::kOk;
+using common::kWarn;
+using common::make_payload;
+using common::plural;
+using common::str_of;
+using common::theme_color;
+using common::wish_id_of;
 
 namespace {
-
-template <typename Element>
-key_t wish_id_of(const Element& element) {
-  return element->template as<key_t>("__wish_id"_key);
-}
-
-template <typename Fn>
-void for_each_entry(const dynamic& parent, key_t field_key, Fn&& fn) {
-  const auto* arr_f = parent.findField<dynamic_ptr>(field_key);
-  if (!arr_f || !*arr_f)
-    return;
-  (*arr_f)->forEach([&](key_t, const field& f) {
-    if (!f.is<dynamic_ptr>())
-      return;
-    auto entry_ptr = f.as<dynamic_ptr>();
-    if (entry_ptr)
-      fn(*entry_ptr);
-  });
-}
-
-// Optional string field (absent -> "").
-std::string str_of(const dynamic& d, key_t key) {
-  const auto* f = d.findField<std::string>(key);
-  return f ? *f : std::string{};
-}
-
-// "#RRGGBBAA" light/dark pairs -- GitHub Primer tokens, the kubectl.cpp /
-// docker.cpp pattern. A single text_color tuned for one theme reads poorly
-// on the other.
-constexpr const char* kOkLight = "#1A7F37FF";
-constexpr const char* kOkDark = "#3FB950FF";
-constexpr const char* kIdleLight = "#656D76FF";
-constexpr const char* kIdleDark = "#8B949EFF";
-constexpr const char* kWarnLight = "#9A6700FF";
-constexpr const char* kWarnDark = "#D29922FF";
-constexpr const char* kBadLight = "#CF222EFF";
-constexpr const char* kBadDark = "#F85149FF";
 
 bool starts_with(const std::string& s, const char* prefix) {
   return s.rfind(prefix, 0) == 0;
 }
 
 // Release status ("deployed", "failed", "pending-install", "uninstalling",
-// "superseded", "uninstalled", "unknown") -> (light, dark) colour.
-std::pair<const char*, const char*> release_status_colour(const std::string& status) {
+// "superseded", "uninstalled", "unknown") -> colour.
+theme_color release_status_colour(const std::string& status) {
   if (status == "deployed")
-    return {kOkLight, kOkDark};
+    return kOk;
   if (status == "failed")
-    return {kBadLight, kBadDark};
+    return kBad;
   if (starts_with(status, "pending") || status == "uninstalling")
-    return {kWarnLight, kWarnDark};
-  return {kIdleLight, kIdleDark};
+    return kWarn;
+  return kIdle;
 }
 
 // ── Window layouts ─────────────────────────────────────────────────────────
@@ -253,48 +219,6 @@ static constexpr const char* kInstallLayout = R"json({
   } } }
 })json";
 
-// Details is a toolbar + a read-only TextEditor. A TextEditor displays a
-// file, so set_details_text() writes each update into the session sandbox;
-// open_details() picks the highlighting language per kind.
-
-static constexpr const char* kDetailsLayout = R"json({
-  "type": "Window", "title": "Details", "width": 820, "height": 420,
-  "closable": true,
-  "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
-    "toolbar": { "type": "HorizontalLayout", "spacing": 8, "children": {
-      "target":      { "type": "Label", "text": "(nothing selected)" },
-      "spring":      { "type": "Spring" },
-      "btn_refresh": { "type": "Button", "label": "Refresh" }
-    } },
-    "sep": { "type": "Separator" },
-    "editor": {
-      "type": "TextEditor", "file_path": "", "language": "yaml", "read_only": true,
-      "width": -1, "height": -1
-    }
-  } } }
-})json";
-
-// The Console window: a FIFO-capped `Table` tracing every `helm` command the
-// client ran. "auto_scroll": true so it follows the newest row.
-
-static constexpr const char* kConsoleLayout = R"json({
-  "type": "Window", "title": "Console", "width": 960, "height": 240,
-  "closable": true,
-  "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
-    "table": {
-      "type": "Table", "id": "##helm_console_table", "columns": 4,
-      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
-      "height": -1, "outer_height": -1, "auto_scroll": true,
-      "children": {
-        "col_seq":     { "type": "TableColumn", "label": "#",       "flags": "WidthFixed", "init_width": 44,  "column_id": 0 },
-        "col_command": { "type": "TableColumn", "label": "Command", "flags": "WidthFixed", "init_width": 380, "column_id": 1 },
-        "col_exit":    { "type": "TableColumn", "label": "Exit",    "flags": "WidthFixed", "init_width": 50,  "column_id": 2 },
-        "col_output":  { "type": "TableColumn", "label": "Output",  "flags": "WidthStretch",                     "column_id": 3 }
-      }
-    }
-  } } }
-})json";
-
 // Details `kind` -> TextEditor highlighting language. Values and manifests
 // are YAML and `helm status` is `KEY: value` lines; notes are free text.
 const char* details_language(const std::string& kind) {
@@ -305,71 +229,32 @@ const char* details_language(const std::string& kind) {
   return "yaml";
 }
 
-std::string plural(size_t n, const char* noun) {
-  return std::to_string(n) + " " + noun + (n == 1 ? "" : "s");
-}
-
 } // namespace
 
 // ── helm_frontend ──────────────────────────────────────────────────────────
 
-helm_frontend::helm_frontend(dynamic&& base) : form(std::move(base)) {}
-
-void helm_frontend::assign_id(const ui_element_ptr& el) {
-  key_t id = rmi::shared::generate_id();
-  ctx().put_object(id, el);
-  el["__wish_id"_key] = id;
-}
-
-void helm_frontend::set_children_list(const ui_element_ptr& parent, const std::vector<ui_element_ptr>& kids) {
-  auto row_children = dynamic_ptr{key_t{0U}, {}};
-  size_t k = 0;
-  for (auto& kid : kids)
-    (*row_children)[k++] = dynamic_ptr{kid};
-  (*parent)["children"_key] = row_children;
-  parent->refresh_children_order();
-}
-
-ui_element_ptr helm_frontend::make_label(const std::string& text, const char* light, const char* dark) {
-  ui_element_ptr l = ui_element_ptr::create("wish"_key, "Label"_key);
-  l["text"_key] = text;
-  if (light)
-    l["text_color_light"_key] = std::string{light};
-  if (dark)
-    l["text_color_dark"_key] = std::string{dark};
-  assign_id(l);
-  return l;
-}
+helm_frontend::helm_frontend(dynamic&& base) : tool_form(std::move(base)) {}
 
 void helm_frontend::on_init() {
   internal_root_key_ = next_available_key("__helm_");
 
   auto refresh_button = [this](ui_tree& tree) {
     tree.with("vbox.toolbar.btn_refresh", [&](const auto& e) {
-      click_handlers_[wish_id_of(e)] = [this] { emit("refresh_requested"_key); };
+      on_click(wish_id_of(e), [this] { emit("refresh_requested"_key); });
     });
   };
 
   // Releases is the main root -- form::init() registers internal_root_key_
-  // as this form's top-level object automatically. The other windows are
-  // registered by hand inside build_list_window() / build_text_window().
-  build_list_window(releases_, kReleasesLayout, internal_root_key_, [&](ui_tree& tree) {
-    tree.with("vbox.toolbar.filter", [&](const auto& e) { releases_.name_filter_id = wish_id_of(e); });
-    tree.with("vbox.toolbar.ns", [&](const auto& e) { releases_.ns_filter_id = wish_id_of(e); });
-    tree.with("vbox.toolbar.state", [&](const auto& e) { releases_.status_combo_id = wish_id_of(e); });
-    refresh_button(tree);
-  });
+  // as this form's top-level object automatically; the other windows
+  // register themselves (tool_form::build_window()).
+  build_list_window(releases_, kReleasesLayout, internal_root_key_, refresh_button);
 
   build_list_window(repos_, kReposLayout, internal_root_key_ + "_repos", [&](ui_tree& tree) {
-    tree.with("vbox.toolbar.filter", [&](const auto& e) { repos_.name_filter_id = wish_id_of(e); });
     refresh_button(tree);
     tree.with("vbox.toolbar.btn_update_all", [&](const auto& e) {
-      click_handlers_[wish_id_of(e)] = [this] {
-        dynamic p;
-        p["name"_key] = std::string{};
-        p["action"_key] = std::string{"update"};
-        emit("repo_action_requested"_key, std::move(p));
-      };
+      on_click(wish_id_of(e), [this] {
+        emit("repo_action_requested"_key, make_payload("name"_key, std::string{}, "action"_key, std::string{"update"}));
+      });
     });
     tree.with("vbox.add_bar.repo_name", [&](const auto& e) {
       repo_name_input_ = e;
@@ -380,65 +265,48 @@ void helm_frontend::on_init() {
       repo_url_input_id_ = wish_id_of(e);
     });
     tree.with("vbox.add_bar.btn_add", [&](const auto& e) {
-      click_handlers_[wish_id_of(e)] = [this] {
+      on_click(wish_id_of(e), [this] {
         if (repo_name_text_.empty() || repo_url_text_.empty()) {
-          set_status(repos_, "Enter a repository name and URL to add", false);
+          repos_.panel.set_status("Enter a repository name and URL to add", false);
           return;
         }
-        dynamic p;
-        p["name"_key] = repo_name_text_;
-        p["url"_key] = repo_url_text_;
-        emit("repo_add_requested"_key, std::move(p));
+        emit("repo_add_requested"_key, make_payload("name"_key, repo_name_text_, "url"_key, repo_url_text_));
         repo_name_text_.clear();
         repo_url_text_.clear();
         if (repo_name_input_)
           repo_name_input_["value"_key] = std::string{};
         if (repo_url_input_)
           repo_url_input_["value"_key] = std::string{};
-      };
+      });
     });
   });
 
   build_list_window(charts_, kChartsLayout, internal_root_key_ + "_charts", [&](ui_tree& tree) {
     tree.with("vbox.toolbar.query", [&](const auto& e) { chart_query_id_ = wish_id_of(e); });
     tree.with("vbox.toolbar.btn_install", [&](const auto& e) {
-      click_handlers_[wish_id_of(e)] = [this] { open_install_dialog(false, {}, {}, {}, {}); };
+      on_click(wish_id_of(e), [this] { open_install_dialog(false, {}, {}, {}, {}); });
     });
     tree.with("vbox.toolbar.btn_search", [&](const auto& e) {
-      click_handlers_[wish_id_of(e)] = [this] {
-        dynamic p;
-        p["query"_key] = chart_query_text_;
-        emit("search_requested"_key, std::move(p));
-      };
+      on_click(wish_id_of(e), [this] { emit("search_requested"_key, make_payload("query"_key, chart_query_text_)); });
     });
   });
 
   build_list_window(history_, kHistoryLayout, internal_root_key_ + "_history", [&](ui_tree& tree) {
     tree.with("vbox.toolbar.target", [&](const auto& e) { history_target_label_ = e; });
     tree.with("vbox.toolbar.btn_refresh", [&](const auto& e) {
-      click_handlers_[wish_id_of(e)] = [this] { emit_history_request(); };
+      on_click(wish_id_of(e), [this] { emit_history_request(); });
     });
   });
 
-  // Captured once: on_event() (the close path) runs outside dispatch, where
-  // sess() is unavailable, and resource_dir is fixed for the session.
-  resource_dir_ = sess().resource_dir;
-
-  details_root_key_ = internal_root_key_ + "_details";
-  build_text_window(details_root_key_, kDetailsLayout, details_window_id_, [&](ui_tree& tree) {
-    tree.with("vbox.editor", [&](const auto& e) { details_editor_ = e; });
-    tree.with("vbox.toolbar.target", [&](const auto& e) { details_target_label_ = e; });
-    tree.with("vbox.toolbar.btn_refresh", [&](const auto& e) {
-      click_handlers_[wish_id_of(e)] = [this] { emit_details_request(); };
-    });
-  });
+  // open_details() picks the highlighting language per kind.
+  details_.build(*this, internal_root_key_ + "_details", {.title = "Details", .language = "yaml", .on_refresh = [this] {
+                                                            emit_details_request();
+                                                          }});
 
   install_root_key_ = internal_root_key_ + "_install";
 
-  console_root_key_ = internal_root_key_ + "_console";
-  build_text_window(console_root_key_, kConsoleLayout, console_window_id_, [&](ui_tree& tree) {
-    tree.with("vbox.table", [&](const auto& e) { console_table_ = e; });
-  });
+  console_.build(
+      *this, internal_root_key_ + "_console", {.table_id = "##helm_console_table", .width = 960, .command_width = 380});
 
   // Seed the first-run arrangement (mirrors kubectl / docker): a wide left
   // column of tabbed list windows over a Console strip, and a narrower right
@@ -454,11 +322,13 @@ void helm_frontend::on_init() {
             split(
                 dir::left, 0.6f,
                 split(
-                    dir::down, 0.24f,
-                    area({console_root_key_}),
-                    area({internal_root_key_, repos_.root_key, charts_.root_key}, internal_root_key_)),
-                split(dir::down, 0.4f, area({history_.root_key}), area({details_root_key_}))),
-            /*version=*/1, /*target=*/"helm_dock")));
+                    dir::down,
+                    0.24f,
+                    area({console_.root_key()}),
+                    area({internal_root_key_, repos_.panel.root_key(), charts_.panel.root_key()}, internal_root_key_)),
+                split(dir::down, 0.4f, area({history_.panel.root_key()}), area({details_.root_key()}))),
+            /*version=*/1,
+            /*target=*/"helm_dock")));
   }
 
   // Initial population is triggered client-side (run_helm() calls
@@ -466,89 +336,15 @@ void helm_frontend::on_init() {
   // on_init()-emitted event, which would race ahead of that wiring.
 }
 
-void helm_frontend::build_text_window(
-    const std::string& root_key, const char* layout_json, key_t& window_id_out,
-    const std::function<void(ui_tree&)>& wire) {
-  auto tree = import_json(layout_json);
-  auto& c = ctx();
-  for (auto& [key, elem] : tree) {
-    key_t id = rmi::shared::generate_id();
-    c.put_object(id, elem);
-    elem["__wish_id"_key] = id;
-  }
-  window_id_out = (*tree[""])["__wish_id"_key].as<key_t>();
-  wire(tree);
-
-  ui_element_ptr root_ptr = tree[""];
-  sess().ui_objects.merge(std::move(tree), root_key);
-  sess().top_level_objects[key_t{root_key}] = root_ptr;
-  sess().top_level_handlers[key_t{root_key}] = this;
-  (*root_ptr)["__path__"_key] = root_key;
-}
-
 void helm_frontend::build_list_window(
     list_window& lw, const char* layout_json, const std::string& root_key,
     const std::function<void(ui_tree&)>& wire) {
-  lw.root_key = root_key;
-  auto tree = import_json(layout_json);
-
-  auto& c = ctx();
-  for (auto& [key, elem] : tree) {
-    key_t id = rmi::shared::generate_id();
-    c.put_object(id, elem);
-    elem["__wish_id"_key] = id;
-  }
-
-  lw.window_id = (*tree[""])["__wish_id"_key].as<key_t>();
-  tree.with("vbox.status", [&](const auto& e) { lw.status_label = e; });
-  tree.with("vbox.table", [&](const auto& e) { lw.table = e; });
-
-  wire(tree);
-
-  const bool is_main = root_key == internal_root_key_;
-  ui_element_ptr root_ptr = tree[""];
-  sess().ui_objects.merge(std::move(tree), root_key);
-  if (!is_main) {
-    sess().top_level_objects[key_t{root_key}] = root_ptr;
-    sess().top_level_handlers[key_t{root_key}] = this;
-    (*root_ptr)["__path__"_key] = root_key;
-  }
-}
-
-// ── Details text pane ──────────────────────────────────────────────────────
-
-void helm_frontend::set_details_text(const std::string& text) {
-  if (!details_editor_)
-    return;
-  // A fresh name every call: the TextEditor renderer only reloads when
-  // file_path changes, so rewriting one fixed file would leave the pane
-  // showing stale content. Under "private/" because release values and
-  // manifests can carry secrets -- see context.hpp's resource_dir doc
-  // comment.
-  std::string rel =
-      "private/" + internal_root_key_ + "_details_" + std::to_string(next_details_file_seq_++) + ".txt";
-  auto path = file_service::resolve_path(rel, resource_dir_, /*allow_absolute=*/false);
-  if (path.empty())
-    return;
-  std::error_code ec;
-  std::filesystem::create_directories(path.parent_path(), ec);
-  {
-    std::ofstream out(path, std::ios::binary);
-    if (!out)
-      return;
-    out.write(text.data(), static_cast<std::streamsize>(text.size()));
-  }
-  remove_details_file();
-  details_file_ = rel;
-  details_editor_["file_path"_key] = rel;
-}
-
-void helm_frontend::remove_details_file() {
-  if (details_file_.empty())
-    return;
-  std::error_code ec;
-  std::filesystem::remove(resource_dir_ / details_file_, ec);
-  details_file_.clear();
+  lw.panel.build(*this, root_key, layout_json, [&](ui_tree& tree) {
+    tree.with("vbox.toolbar.filter", [&](const auto& e) { lw.name_filter_id = wish_id_of(e); });
+    tree.with("vbox.toolbar.ns", [&](const auto& e) { lw.ns_filter_id = wish_id_of(e); });
+    tree.with("vbox.toolbar.state", [&](const auto& e) { lw.status_combo_id = wish_id_of(e); });
+    wire(tree);
+  });
 }
 
 void helm_frontend::open_details(
@@ -557,292 +353,177 @@ void helm_frontend::open_details(
   open_details_name_ = name;
   open_details_ns_ = ns;
   open_details_version_ = version;
-  if (details_target_label_)
-    details_target_label_["text"_key] = kind + ": " + (ns.empty() ? name : ns + "/" + name);
-  if (details_editor_)
-    details_editor_["language"_key] = std::string{details_language(kind)};
+  details_.set_title(kind + ": " + (ns.empty() ? name : ns + "/" + name));
+  if (details_.editor())
+    details_.editor()["language"_key] = std::string{details_language(kind)};
   emit_details_request();
 }
 
 void helm_frontend::emit_details_request() {
   if (open_details_name_.empty())
     return;
-  dynamic p;
-  p["kind"_key] = open_details_kind_;
-  p["name"_key] = open_details_name_;
-  p["namespace"_key] = open_details_ns_;
-  p["version"_key] = open_details_version_;
-  emit("details_requested"_key, std::move(p));
+  emit(
+      "details_requested"_key,
+      make_payload(
+          "kind"_key,
+          open_details_kind_,
+          "name"_key,
+          open_details_name_,
+          "namespace"_key,
+          open_details_ns_,
+          "version"_key,
+          open_details_version_));
 }
 
 void helm_frontend::emit_history_request() {
   if (open_history_name_.empty())
     return;
-  dynamic p;
-  p["name"_key] = open_history_name_;
-  p["namespace"_key] = open_history_ns_;
-  emit("history_requested"_key, std::move(p));
+  emit("history_requested"_key, make_payload("name"_key, open_history_name_, "namespace"_key, open_history_ns_));
 }
 
-// ── Confirmation modal (kubectl_frontend::show_confirm() port) ─────────────
-
-void helm_frontend::show_confirm(const std::string& message, std::function<void()> on_confirm) {
-  dynamic params;
-  params["title"_key] = std::string{"Confirm"};
-  params["message"_key] = message;
-  params["icon"_key] = std::string{"warning"};
-  params["buttons"_key] = std::string{"yes_no"};
-
-  confirm_dialog_ = instantiate_child_form<message_box>(
-      "MessageBox"_key, std::move(params),
-      [on_confirm = std::move(on_confirm)](key_t /*event_name*/, const dynamic& payload) {
-        if (payload.as<std::string>("button"_key) == "yes")
-          on_confirm();
-      });
+common::menu_item
+helm_frontend::action_item(const std::string& label, const entry& e, const std::string& action, bool confirm) {
+  return {label, [this, e, action] { run_row_action(e, action); }, confirm};
 }
 
-// ── Generic row plumbing ───────────────────────────────────────────────────
+void helm_frontend::apply_list_filter(list_window& lw) {
+  const std::string name_needle = common::lower(lw.name_filter);
+  const std::string ns_needle = common::lower(lw.ns_filter);
 
-void helm_frontend::clear_list_rows(list_window& lw, std::vector<list_row>& rows, size_t& next_key) {
-  if (!lw.table)
-    return;
-  auto* children_p = lw.table->findField<dynamic_ptr>("children"_key);
-  if (!children_p || !*children_p)
-    return;
-  auto& children = *children_p;
-
-  for (auto& r : rows) {
-    children->erase(r.child_key);
-    for (auto id : r.object_ids) {
-      ctx().objects.erase(id.id);
-      menu_action_targets_.erase(id);
-    }
-  }
-  rows.clear();
-  next_key = 0;
-}
-
-void helm_frontend::add_list_row(
-    list_window& lw, std::vector<list_row>& rows, size_t& next_key, list_row&& meta,
-    const std::vector<ui_element_ptr>& cells, const std::vector<menu_spec>& items) {
-  if (!lw.table)
-    return;
-  auto* children_p = lw.table->findField<dynamic_ptr>("children"_key);
-  if (!children_p || !*children_p)
-    return;
-  auto& children = *children_p;
-
-  std::vector<key_t> obj_ids;
-  for (auto& cell : cells)
-    obj_ids.push_back(wish_id_of(cell)); // make_label() already assign_id()'d these
-
-  ui_element_ptr row = ui_element_ptr::create("wish"_key, "TableRow"_key);
-  assign_id(row);
-  obj_ids.push_back(wish_id_of(row));
-
-  ui_element_ptr menu = ui_element_ptr::create("wish"_key, "MenuButton"_key);
-  menu["label"_key] = std::string{"..."};
-  assign_id(menu);
-  obj_ids.push_back(wish_id_of(menu));
-
-  std::vector<ui_element_ptr> menu_kids;
-  for (auto& it : items) {
-    if (it.label.empty()) {
-      ui_element_ptr s = ui_element_ptr::create("wish"_key, "Separator"_key);
-      assign_id(s);
-      obj_ids.push_back(wish_id_of(s));
-      menu_kids.push_back(s);
-      continue;
-    }
-    ui_element_ptr mi = ui_element_ptr::create("wish"_key, "MenuItem"_key);
-    mi["label"_key] = it.confirm ? it.label + "..." : it.label;
-    assign_id(mi);
-    obj_ids.push_back(wish_id_of(mi));
-    menu_action_targets_[wish_id_of(mi)] = row_action{meta.scope, meta.name, meta.ns, meta.extra, it.action};
-    menu_kids.push_back(mi);
-  }
-  set_children_list(menu, menu_kids);
-
-  std::vector<ui_element_ptr> row_cells = cells;
-  row_cells.push_back(menu);
-  set_children_list(row, row_cells);
-
-  meta.row = row;
-  meta.child_key = next_key++;
-  meta.object_ids = std::move(obj_ids);
-  (*children)[meta.child_key] = dynamic_ptr{row};
-  rows.push_back(std::move(meta));
-}
-
-void helm_frontend::set_status(list_window& lw, const std::string& text, bool ok) {
-  if (!lw.status_label)
-    return;
-  lw.status_label["text"_key] = text;
-  lw.status_label["text_color_light"_key] = std::string{ok ? kIdleLight : kBadLight};
-  lw.status_label["text_color_dark"_key] = std::string{ok ? kIdleDark : kBadDark};
-}
-
-void helm_frontend::apply_list_filter(list_window& lw, std::vector<list_row>& rows) {
-  auto lc = [](std::string s) {
-    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char ch) { return std::tolower(ch); });
-    return s;
-  };
-  const std::string name_needle = lc(lw.name_filter);
-  const std::string ns_needle = lc(lw.ns_filter);
-
-  for (auto& r : rows) {
-    if (!r.row)
-      continue;
-    bool show = true;
+  lw.panel.apply_filter([&](const entry& e) {
     // "Pending" covers pending-install / pending-upgrade / pending-rollback.
-    if (lw.status_filter == 1)
-      show = r.state == "deployed";
-    else if (lw.status_filter == 2)
-      show = r.state == "failed";
-    else if (lw.status_filter == 3)
-      show = starts_with(r.state, "pending");
-    if (show && !ns_needle.empty())
-      show = lc(r.ns).find(ns_needle) != std::string::npos;
-    if (show && !name_needle.empty())
-      show = lc(r.name).find(name_needle) != std::string::npos;
-    r.row["visible"_key] = show;
-  }
+    if (lw.status_filter == 1 && e.state != "deployed")
+      return false;
+    if (lw.status_filter == 2 && e.state != "failed")
+      return false;
+    if (lw.status_filter == 3 && !starts_with(e.state, "pending"))
+      return false;
+    if (!ns_needle.empty() && common::lower(e.ns).find(ns_needle) == std::string::npos)
+      return false;
+    return name_needle.empty() || common::lower(e.name).find(name_needle) != std::string::npos;
+  });
 }
 
 // ── Per-window rebuild ─────────────────────────────────────────────────────
 
 void helm_frontend::rebuild_releases(const dynamic& args) {
-  clear_list_rows(releases_, release_rows_, next_release_key_);
+  releases_.panel.clear();
 
   size_t deployed = 0, total = 0;
   for_each_entry(args, "releases"_key, [&](const dynamic& e) {
-    list_row meta;
-    meta.scope = "release";
-    meta.name = str_of(e, "name"_key);
-    meta.ns = str_of(e, "namespace"_key);
-    meta.state = str_of(e, "status"_key);
-    auto [cl, cd] = release_status_colour(meta.state);
+    entry r{"release", str_of(e, "name"_key), str_of(e, "namespace"_key), str_of(e, "status"_key), {}};
 
     std::vector<ui_element_ptr> cells = {
-        make_label(meta.ns, kIdleLight, kIdleDark),
-        make_label(meta.name),
+        make_label(r.ns, kIdle),
+        make_label(r.name),
         make_label(str_of(e, "revision"_key)),
-        make_label(meta.state, cl, cd),
+        make_label(r.state, release_status_colour(r.state)),
         make_label(str_of(e, "chart"_key)),
-        make_label(str_of(e, "app_version"_key), kIdleLight, kIdleDark),
-        make_label(str_of(e, "updated"_key), kIdleLight, kIdleDark),
+        make_label(str_of(e, "app_version"_key), kIdle),
+        make_label(str_of(e, "updated"_key), kIdle),
     };
-    std::vector<menu_spec> items = {
-        {"Status", "status", false},   {"Values", "values", false},   {"Manifest", "manifest", false},
-        {"Notes", "notes", false},     {"History", "history", false}, {},
-        {"Upgrade", "upgrade", true},  {"Rollback", "rollback", true}, {"Uninstall", "uninstall", true}};
-    if (meta.state == "deployed")
+    std::vector<common::menu_item> items = {
+        action_item("Status", r, "status", false),
+        action_item("Values", r, "values", false),
+        action_item("Manifest", r, "manifest", false),
+        action_item("Notes", r, "notes", false),
+        action_item("History", r, "history", false),
+        {},
+        action_item("Upgrade", r, "upgrade", true),
+        action_item("Rollback", r, "rollback", true),
+        action_item("Uninstall", r, "uninstall", true)};
+    if (r.state == "deployed")
       ++deployed;
     ++total;
-    add_list_row(releases_, release_rows_, next_release_key_, std::move(meta), cells, items);
+    releases_.panel.add(std::move(r), cells, items);
   });
 
-  if (releases_.table)
-    releases_.table->refresh_children_order();
-  apply_list_filter(releases_, release_rows_);
-  set_status(
-      releases_,
+  releases_.panel.refresh();
+  apply_list_filter(releases_);
+  releases_.panel.set_status(
       total == 0 ? std::string{"No releases. Install a chart from the Charts window."}
                  : plural(total, "release") + " (" + std::to_string(deployed) + " deployed)",
       true);
 }
 
 void helm_frontend::rebuild_repos(const dynamic& args) {
-  clear_list_rows(repos_, repo_rows_, next_repo_key_);
+  repos_.panel.clear();
 
   size_t total = 0;
   for_each_entry(args, "repos"_key, [&](const dynamic& e) {
-    list_row meta;
-    meta.scope = "repo";
-    meta.name = str_of(e, "name"_key);
-
+    entry r{"repo", str_of(e, "name"_key), {}, {}, {}};
     std::vector<ui_element_ptr> cells = {
-        make_label(meta.name),
-        make_label(str_of(e, "url"_key), kIdleLight, kIdleDark),
+        make_label(r.name),
+        make_label(str_of(e, "url"_key), kIdle),
     };
-    std::vector<menu_spec> items = {{"Update", "update", false}, {}, {"Remove", "remove", true}};
-    add_list_row(repos_, repo_rows_, next_repo_key_, std::move(meta), cells, items);
+    std::vector<common::menu_item> items = {
+        action_item("Update", r, "update", false), {}, action_item("Remove", r, "remove", true)};
+    repos_.panel.add(std::move(r), cells, items);
     ++total;
   });
 
-  if (repos_.table)
-    repos_.table->refresh_children_order();
-  apply_list_filter(repos_, repo_rows_);
-  set_status(
-      repos_,
-      total == 0   ? std::string{"No repositories. Add one with the name and URL boxes above."}
-      : total == 1 ? std::string{"1 repository"}
-                   : std::to_string(total) + " repositories",
+  repos_.panel.refresh();
+  apply_list_filter(repos_);
+  repos_.panel.set_status(
+      total == 0       ? std::string{"No repositories. Add one with the name and URL boxes above."}
+          : total == 1 ? std::string{"1 repository"}
+                       : std::to_string(total) + " repositories",
       true);
 }
 
 void helm_frontend::rebuild_charts(const dynamic& args) {
-  clear_list_rows(charts_, chart_rows_, next_chart_key_);
+  charts_.panel.clear();
 
   size_t total = 0;
   for_each_entry(args, "charts"_key, [&](const dynamic& e) {
     if (total++ >= kMaxChartRows)
       return;
-    list_row meta;
-    meta.scope = "chart";
-    meta.name = str_of(e, "name"_key);
-    meta.extra = str_of(e, "version"_key);
-
+    entry c{"chart", str_of(e, "name"_key), {}, {}, str_of(e, "version"_key)};
     std::vector<ui_element_ptr> cells = {
-        make_label(meta.name),
-        make_label(meta.extra),
-        make_label(str_of(e, "app_version"_key), kIdleLight, kIdleDark),
-        make_label(str_of(e, "description"_key), kIdleLight, kIdleDark),
+        make_label(c.name),
+        make_label(c.extra),
+        make_label(str_of(e, "app_version"_key), kIdle),
+        make_label(str_of(e, "description"_key), kIdle),
     };
-    std::vector<menu_spec> items = {
-        {"Values", "chart_values", false}, {"Readme", "chart_readme", false}, {}, {"Install", "install", true}};
-    add_list_row(charts_, chart_rows_, next_chart_key_, std::move(meta), cells, items);
+    std::vector<common::menu_item> items = {
+        action_item("Values", c, "chart_values", false),
+        action_item("Readme", c, "chart_readme", false),
+        {},
+        action_item("Install", c, "install", true)};
+    charts_.panel.add(std::move(c), cells, items);
   });
 
-  if (charts_.table)
-    charts_.table->refresh_children_order();
+  charts_.panel.refresh();
   const std::string query = str_of(args, "query"_key);
   std::string status = plural(total, "chart") + (query.empty() ? std::string{} : " matching '" + query + "'");
   if (total == 0 && query.empty())
     status = "No charts. Add a repository in the Repositories window, then Search.";
   else if (total > kMaxChartRows)
     status += " (showing the first " + std::to_string(kMaxChartRows) + "; refine the search)";
-  set_status(charts_, status, true);
+  charts_.panel.set_status(status, true);
 }
 
 void helm_frontend::rebuild_history(const dynamic& args) {
-  clear_list_rows(history_, history_rows_, next_history_key_);
+  history_.panel.clear();
 
   size_t total = 0;
   for_each_entry(args, "revisions"_key, [&](const dynamic& e) {
-    list_row meta;
-    meta.scope = "revision";
-    meta.name = open_history_name_;
-    meta.ns = open_history_ns_;
-    meta.extra = str_of(e, "revision"_key);
+    entry rev{"revision", open_history_name_, open_history_ns_, {}, str_of(e, "revision"_key)};
     const std::string status = str_of(e, "status"_key);
-    auto [cl, cd] = release_status_colour(status);
-
     std::vector<ui_element_ptr> cells = {
-        make_label(meta.extra),
-        make_label(str_of(e, "updated"_key), kIdleLight, kIdleDark),
-        make_label(status, cl, cd),
+        make_label(rev.extra),
+        make_label(str_of(e, "updated"_key), kIdle),
+        make_label(status, release_status_colour(status)),
         make_label(str_of(e, "chart"_key)),
         make_label(str_of(e, "description"_key)),
     };
-    std::vector<menu_spec> items = {{"Rollback to this revision", "rollback", true}};
-    add_list_row(history_, history_rows_, next_history_key_, std::move(meta), cells, items);
+    std::vector<common::menu_item> items = {action_item("Rollback to this revision", rev, "rollback", true)};
+    history_.panel.add(std::move(rev), cells, items);
     ++total;
   });
 
-  if (history_.table)
-    history_.table->refresh_children_order();
-  set_status(history_, plural(total, "revision"), true);
+  history_.panel.refresh();
+  history_.panel.set_status(plural(total, "revision"), true);
 }
 
 // ── RMI methods ────────────────────────────────────────────────────────────
@@ -873,123 +554,32 @@ dynamic helm_frontend::do_update_details(const dynamic& args) {
   if (str_of(args, "kind"_key) != open_details_kind_ || str_of(args, "name"_key) != open_details_name_ ||
       str_of(args, "namespace"_key) != open_details_ns_)
     return dynamic{};
-  if (details_target_label_)
-    details_target_label_["text"_key] = str_of(args, "title"_key);
-  set_details_text(str_of(args, "text"_key));
+  details_.set_title(str_of(args, "title"_key));
+  details_.set_text(str_of(args, "text"_key));
   return dynamic{};
 }
 
 dynamic helm_frontend::do_command_result(const dynamic& args) {
-  const std::string command = str_of(args, "command"_key);
-  const bool ok = args.as<bool>("ok"_key);
-  const std::string output = str_of(args, "output"_key);
+  bool ok = false;
+  const std::string text = common::command_result_text(args, ok);
   const std::string scope = str_of(args, "scope"_key);
   if (scope == "install") {
     install_.busy = false;
     if (install_.open && !ok) {
       // Keep the dialog (and the values typed into it) for a retry.
-      set_install_status(command + " failed: " + (output.empty() ? "unknown error" : output), false);
+      set_install_status(text, false);
       return dynamic{};
     }
     if (ok)
       close_install_dialog();
   }
-  list_window* lw = scope == "repos" ? &repos_
-      : scope == "charts"            ? &charts_
-      : scope == "history"           ? &history_
-                                     : &releases_;
-  if (ok)
-    set_status(*lw, command + ": OK", true);
-  else
-    set_status(*lw, command + " failed: " + (output.empty() ? "unknown error" : output), false);
+  list_window& lw = scope == "repos" ? repos_ : scope == "charts" ? charts_ : scope == "history" ? history_ : releases_;
+  lw.panel.set_status(text, ok);
   return dynamic{};
 }
 
-// ── Console window (client `helm` subprocess trace) ────────────────────────
-
-void helm_frontend::append_console_row(
-    const std::string& command, int32_t exit_code, bool ok, const std::string& output) {
-  if (!console_table_)
-    return;
-  auto* children_p = console_table_->findField<dynamic_ptr>("children"_key);
-  if (!children_p || !*children_p)
-    return;
-  auto& children = *children_p;
-
-  const char* cl = ok ? kOkLight : kBadLight;
-  const char* cd = ok ? kOkDark : kBadDark;
-
-  ui_element_ptr row = ui_element_ptr::create("wish"_key, "TableRow"_key);
-  assign_id(row);
-
-  ui_element_ptr cell_seq = make_label(std::to_string(++console_seq_), kIdleLight, kIdleDark);
-  ui_element_ptr cell_command = make_label(command, cl, cd);
-  ui_element_ptr cell_exit = make_label(std::to_string(exit_code), cl, cd);
-  ui_element_ptr cell_output = make_label(output, cl, cd);
-
-  // Right-click any row for "Copy Entry" (this row's command/exit/output,
-  // via MenuItem.copy_text) and "Clear Console" (every row).
-  ui_element_ptr context_menu = ui_element_ptr::create("wish"_key, "ContextMenu"_key);
-  assign_id(context_menu);
-
-  ui_element_ptr copy_item = ui_element_ptr::create("wish"_key, "MenuItem"_key);
-  copy_item["label"_key] = std::string{"Copy Entry"};
-  copy_item["copy_text"_key] = command + "\nexit: " + std::to_string(exit_code) + "\n" + output;
-  assign_id(copy_item);
-
-  ui_element_ptr clear_item = ui_element_ptr::create("wish"_key, "MenuItem"_key);
-  clear_item["label"_key] = std::string{"Clear Console"};
-  assign_id(clear_item);
-  click_handlers_[wish_id_of(clear_item)] = [this] { clear_console_rows(); };
-
-  set_children_list(context_menu, {copy_item, clear_item});
-  set_children_list(row, {cell_seq, cell_command, cell_exit, cell_output, context_menu});
-
-  console_row_entry entry;
-  entry.child_key = next_console_child_key_++;
-  entry.object_ids = {
-      wish_id_of(row),         wish_id_of(cell_seq),     wish_id_of(cell_command), wish_id_of(cell_exit),
-      wish_id_of(cell_output), wish_id_of(context_menu), wish_id_of(copy_item),    wish_id_of(clear_item)};
-  (*children)[entry.child_key] = dynamic_ptr{row};
-  console_rows_.push_back(std::move(entry));
-
-  if (console_rows_.size() > kMaxConsoleRows) {
-    erase_console_row_objects(console_rows_.front());
-    children->erase(console_rows_.front().child_key);
-    console_rows_.pop_front();
-  }
-  console_table_->refresh_children_order();
-}
-
-void helm_frontend::erase_console_row_objects(const console_row_entry& entry) {
-  for (auto id : entry.object_ids) {
-    ctx().objects.erase(id.id);
-    click_handlers_.erase(id);
-  }
-}
-
-void helm_frontend::clear_console_rows() {
-  if (!console_table_)
-    return;
-  auto* children_p = console_table_->findField<dynamic_ptr>("children"_key);
-  if (!children_p || !*children_p)
-    return;
-  auto& children = *children_p;
-
-  for (auto& entry : console_rows_) {
-    erase_console_row_objects(entry);
-    children->erase(entry.child_key);
-  }
-  console_rows_.clear();
-  console_seq_ = 0;
-  next_console_child_key_ = 0; // every numeric child key was just erased.
-  console_table_->refresh_children_order();
-}
-
 dynamic helm_frontend::do_append_command_log(const dynamic& args) {
-  append_console_row(
-      str_of(args, "command"_key), args.as<int32_t>("exit_code"_key), args.as<bool>("ok"_key),
-      str_of(args, "output"_key));
+  console_.append_from(args);
   return dynamic{};
 }
 
@@ -1010,7 +600,7 @@ void helm_frontend::open_install_dialog(
 
   constexpr int32_t kReadOnly = 1 << 9; // InputText "flags": ReadOnly
   auto build = [&] {
-    build_text_window(install_root_key_, kInstallLayout, install_.window_id, [&](ui_tree& tree) {
+    build_window(install_root_key_, kInstallLayout, install_.window_id, [&](ui_tree& tree) {
       for (auto& [key, elem] : tree)
         install_.object_ids.push_back(wish_id_of(elem));
 
@@ -1039,14 +629,14 @@ void helm_frontend::open_install_dialog(
       });
       tree.with("vbox.status", [&](const auto& e) { install_.status_label = e; });
       tree.with("vbox.values_bar.btn_defaults", [&](const auto& e) {
-        click_handlers_[wish_id_of(e)] = [this] { request_install_values("chart"); };
+        on_click(wish_id_of(e), [this] { request_install_values("chart"); });
       });
       tree.with("vbox.buttons.btn_submit", [&](const auto& e) {
         e["label"_key] = std::string{upgrade ? "Upgrade" : "Install"};
-        click_handlers_[wish_id_of(e)] = [this] { submit_install(); };
+        on_click(wish_id_of(e), [this] { submit_install(); });
       });
       tree.with("vbox.buttons.btn_cancel", [&](const auto& e) {
-        click_handlers_[wish_id_of(e)] = [this] { close_install_dialog(); };
+        on_click(wish_id_of(e), [this] { close_install_dialog(); });
       });
       if (upgrade)
         (*tree[""])["title"_key] = "Upgrade release " + ns + "/" + release;
@@ -1054,37 +644,21 @@ void helm_frontend::open_install_dialog(
   };
 
   // Menu items / buttons reach here from on_event(), outside RMI dispatch,
-  // while build_text_window() needs sess(): install the session as the
-  // dispatch context for the duration, the idiom instantiate_child_form()
-  // uses for the same reason.
-  if (detail::current_context) {
-    build();
-  } else {
-    auto sess = context_wlock{*sync_ctx_};
-    detail::current_context = &*sess;
-    build();
-    detail::current_context = nullptr;
-  }
+  // while build_window() needs sess().
+  run_in_dispatch(build);
   install_.open = true;
 }
 
 void helm_frontend::close_install_dialog() {
   if (!install_.open)
     return;
-  for (auto id : install_.object_ids) {
-    ctx().objects.erase(id.id);
-    click_handlers_.erase(id);
-  }
+  erase_objects(install_.object_ids);
   remove_objects_at(install_root_key_);
   install_ = install_dialog{};
 }
 
 void helm_frontend::set_install_status(const std::string& text, bool ok) {
-  if (!install_.status_label)
-    return;
-  install_.status_label["text"_key] = text;
-  install_.status_label["text_color_light"_key] = std::string{ok ? kIdleLight : kBadLight};
-  install_.status_label["text_color_dark"_key] = std::string{ok ? kIdleDark : kBadDark};
+  common::set_status_text(install_.status_label, text, ok);
 }
 
 void helm_frontend::submit_install() {
@@ -1156,45 +730,45 @@ dynamic helm_frontend::do_set_install_values(const dynamic& args) {
 
 // ── Event routing ──────────────────────────────────────────────────────────
 
-void helm_frontend::run_row_action(const row_action& target) {
-  const std::string qualified = target.ns.empty() ? target.name : target.ns + "/" + target.name;
+void helm_frontend::run_row_action(const entry& e, const std::string& action) {
+  const std::string qualified = e.ns.empty() ? e.name : e.ns + "/" + e.name;
 
-  if (target.scope == "release") {
-    if (target.action == "history") {
-      open_history_name_ = target.name;
-      open_history_ns_ = target.ns;
+  if (e.scope == "release") {
+    if (action == "history") {
+      open_history_name_ = e.name;
+      open_history_ns_ = e.ns;
       if (history_target_label_)
         history_target_label_["text"_key] = "history: " + qualified;
       emit_history_request();
       return;
     }
-    if (target.action == "upgrade") {
+    if (action == "upgrade") {
       // The Chart column is "<name>-<version>", not an installable
       // reference, so the chart box starts empty; the Values box is filled
       // with what the release currently uses.
-      open_install_dialog(true, {}, {}, target.name, target.ns);
+      open_install_dialog(true, {}, {}, e.name, e.ns);
       request_install_values("release");
       return;
     }
-    if (target.action != "rollback" && target.action != "uninstall") {
-      open_details(target.action, target.name, target.ns, {});
+    if (action != "rollback" && action != "uninstall") {
+      open_details(action, e.name, e.ns, {});
       return;
     }
   }
 
-  if (target.scope == "release" || target.scope == "revision") {
+  if (e.scope == "release" || e.scope == "revision") {
     // "revision" rows only offer a rollback to their own revision.
-    const bool uninstall = target.action == "uninstall";
-    const std::string revision = target.scope == "revision" ? target.extra : std::string{};
-    auto fire = [this, target, revision] {
+    const bool uninstall = action == "uninstall";
+    const std::string revision = e.scope == "revision" ? e.extra : std::string{};
+    auto fire = [this, e, action, revision] {
       dynamic p;
-      p["name"_key] = target.name;
-      p["namespace"_key] = target.ns;
-      p["action"_key] = target.action;
+      p["name"_key] = e.name;
+      p["namespace"_key] = e.ns;
+      p["action"_key] = action;
       p["revision"_key] = revision;
       emit("release_action_requested"_key, std::move(p));
     };
-    const std::string where = "'" + target.name + "' in namespace '" + target.ns + "'";
+    const std::string where = "'" + e.name + "' in namespace '" + e.ns + "'";
     show_confirm(
         uninstall ? "Uninstall release " + where + "? Its resources will be deleted."
                   : "Roll back release " + where + " to " +
@@ -1203,25 +777,25 @@ void helm_frontend::run_row_action(const row_action& target) {
     return;
   }
 
-  if (target.scope == "repo") {
-    auto fire = [this, target] {
+  if (e.scope == "repo") {
+    auto fire = [this, e, action] {
       dynamic p;
-      p["name"_key] = target.name;
-      p["action"_key] = target.action;
+      p["name"_key] = e.name;
+      p["action"_key] = action;
       emit("repo_action_requested"_key, std::move(p));
     };
-    if (target.action == "remove")
-      show_confirm("Remove repository '" + target.name + "'?", fire);
+    if (action == "remove")
+      show_confirm("Remove repository '" + e.name + "'?", fire);
     else
       fire();
     return;
   }
 
   // Charts.
-  if (target.action == "install")
-    open_install_dialog(false, target.name, target.extra, {}, {});
+  if (action == "install")
+    open_install_dialog(false, e.name, e.extra, {}, {});
   else
-    open_details(target.action, target.name, {}, target.extra);
+    open_details(action, e.name, {}, e.extra);
 }
 
 void helm_frontend::on_event(key_t id, key_t event, const dynamic& payload) {
@@ -1232,23 +806,23 @@ void helm_frontend::on_event(key_t id, key_t event, const dynamic& payload) {
 
   // Any window's X button -> tear everything down.
   if (event == "closed"_key &&
-      (id == releases_.window_id || id == repos_.window_id || id == charts_.window_id ||
-       id == history_.window_id || id == details_window_id_ || id == console_window_id_)) {
-    remove_details_file();
+      (id == releases_.panel.window_id() || id == repos_.panel.window_id() || id == charts_.panel.window_id() ||
+       id == history_.panel.window_id() || id == details_.window_id() || id == console_.window_id())) {
+    details_.remove_file();
     close_install_dialog();
     emit("closed"_key);
-    remove_objects_at(repos_.root_key);
-    remove_objects_at(charts_.root_key);
-    remove_objects_at(history_.root_key);
-    remove_objects_at(details_root_key_);
-    remove_objects_at(console_root_key_);
+    remove_objects_at(repos_.panel.root_key());
+    remove_objects_at(charts_.panel.root_key());
+    remove_objects_at(history_.panel.root_key());
+    remove_objects_at(details_.root_key());
+    remove_objects_at(console_.root_key());
     remove_internal_objects();
     return;
   }
 
   if (event == "changed"_key) {
-    for (auto [lw, rows] : {std::pair{&releases_, &release_rows_}, std::pair{&repos_, &repo_rows_}}) {
-      if (id == lw->name_filter_id)
+    for (auto* lw : {&releases_, &repos_}) {
+      if (lw->name_filter_id.id && id == lw->name_filter_id)
         lw->name_filter = payload.as<std::string>("value"_key);
       else if (lw->ns_filter_id.id && id == lw->ns_filter_id)
         lw->ns_filter = payload.as<std::string>("value"_key);
@@ -1256,7 +830,7 @@ void helm_frontend::on_event(key_t id, key_t event, const dynamic& payload) {
         lw->status_filter = payload.as<int32_t>("value"_key);
       else
         continue;
-      apply_list_filter(*lw, *rows);
+      apply_list_filter(*lw);
       return;
     }
     // Inline toolbar fields: remember the text for the button / menu item
@@ -1287,19 +861,8 @@ void helm_frontend::on_event(key_t id, key_t event, const dynamic& payload) {
     return;
   }
 
-  if (event != "clicked"_key)
-    return;
-
-  if (auto ch = click_handlers_.find(id); ch != click_handlers_.end()) {
-    const auto handler = ch->second; // copy: a dialog's handler may erase itself.
-    handler();
-    return;
-  }
-
-  if (auto mi = menu_action_targets_.find(id); mi != menu_action_targets_.end()) {
-    const row_action target = mi->second; // copy: the action may rebuild the table.
-    run_row_action(target);
-  }
+  if (event == "clicked"_key)
+    dispatch_click(id);
 }
 
 // ── Registration ───────────────────────────────────────────────────────────

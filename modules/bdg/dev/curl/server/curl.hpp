@@ -19,27 +19,27 @@
 /// refresh (see DESIGN.md "Editable key-value tables").
 ///
 /// Owns six independently dockable Windows -- Request (the main root),
-/// Response, History, Collections, Environments, and Console (a
-/// FIFO-capped trace of every `curl` invocation the client ran, fed by
-/// append_command_log -- the docker/kubectl "Console" window) --
-/// registered by hand in on_init() exactly as docker.cpp's
-/// build_list_window() / build_text_window() do.
+/// Response, History, Collections, Environments, and Console -- built on
+/// the panels shared by the bdg tool forms (modules/bdg/common/server):
+/// History / Collections / Environments are common::list_panel, Console
+/// (a trace of every `curl` invocation the client ran) is
+/// common::console_panel, and deletions are confirmed with
+/// tool_form::show_confirm().
 #pragma once
 
-#include <ui/forms/form.hpp>
+#include "modules/bdg/common/server/console_panel.hpp"
+#include "modules/bdg/common/server/list_panel.hpp"
+#include "modules/bdg/common/server/tool_form.hpp"
+
 #include <ui/ui_element.hpp>
 #include <ui/ui_importer.hpp>
 
+#include <cstddef>
 #include <cstdint>
-#include <deque>
-#include <functional>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 namespace bdg::wish {
-
-class message_box;
 
 /// @brief Postman-style GUI form for the local `curl` binary.
 ///
@@ -57,7 +57,7 @@ class message_box;
 ///   - `"delete_environment_requested"` -- `{ id }`.
 ///   - `"select_environment_requested"` -- `{ id }` (empty id = deselect).
 ///   - `"save_environment_vars_requested"` -- `{ id, vars: [{key,value}] }`.
-class curl_frontend : public form {
+class curl_frontend : public common::tool_form {
  public:
   explicit curl_frontend(bison::dynamic&& base);
 
@@ -102,7 +102,7 @@ class curl_frontend : public form {
   /// @brief RMI method: append one row to the Console window's `curl`
   /// subprocess trace. @p args holds `command` (string), `exit_code`
   /// (int32), `ok` (bool) and `output` (string, single-line preview).
-  /// Mirrors docker_frontend::do_append_command_log.
+  /// See common::console_panel.
   bison::dynamic do_append_command_log(const bison::dynamic& args);
 
  protected:
@@ -112,7 +112,7 @@ class curl_frontend : public form {
  private:
   // ── Editable key/value row lists (Params, Headers, Form body, Env vars) ──
   //
-  // Unlike docker/kubectl's read-only list_window/list_row, these rows hold
+  // Unlike the read-only common::list_panel rows, these rows hold
   // live-editable InputText/Checkbox widgets. Reading the current entries
   // means reading each row's widgets' own "value" field directly -- never
   // a separate C++-side mirror -- so a background refresh (there is none
@@ -157,64 +157,10 @@ class curl_frontend : public form {
   /// variant has no bare-`dynamic` alternative -- see `bison_object.hpp`).
   bison::dynamic_ptr kv_table_read(const kv_table& kv) const;
 
-  // ── Generic read-only list-window plumbing (History / Collections) ──────
-  // A slimmed-down version of docker's list_window/list_row: one row menu
-  // action, no per-scope colour coding.
-
-  struct list_window {
-    std::string root_key;
-    bison::key_t window_id;
-    ui_element_ptr status_label;
-    ui_element_ptr table;
-  };
-
-  struct list_row {
-    ui_element_ptr row;
-    std::string id; // opaque id the client assigned this entry
-    size_t child_key{0};
-    std::vector<bison::key_t> object_ids;
-  };
-
-  struct row_action {
-    std::string scope; // "history" / "collections"
-    std::string id;
-    std::string action;
-  };
-
-  void build_list_window(
-      list_window& lw, const char* layout_json, const std::string& root_key,
-      const std::function<void(ui_tree&)>& wire_toolbar);
-  void clear_list_rows(list_window& lw, std::vector<list_row>& rows, size_t& next_key);
-  struct menu_spec {
-    std::string label;
-    std::string action;
-  };
-  void add_list_row(
-      list_window& lw, std::vector<list_row>& rows, size_t& next_key, list_row&& meta,
-      const std::vector<ui_element_ptr>& cells, const std::vector<menu_spec>& items, const std::string& scope);
-  void set_status(list_window& lw, const std::string& text, bool ok);
-
-  /// @brief Import @p layout_json, assign every node a wish RMI id, call
-  /// @p wire (before the tree is moved away) to cache widget pointers /
-  /// bind handlers, then register the tree as its own dockable top-level
-  /// root at @p root_key. docker.cpp's build_text_window()/
-  /// build_stats_window() pattern, generalized for any layout -- used for
-  /// every window except the main Request window (registered by hand in
-  /// on_init(), since form::init() already registers internal_root_key_).
-  void build_window(
-      const char* layout_json, const std::string& root_key, bison::key_t& window_id_out,
-      const std::function<void(ui_tree&)>& wire);
-
-  // ── Small builders (docker.cpp's shape) ──────────────────────────────
-  void assign_id(const ui_element_ptr& el);
-  void set_children_list(const ui_element_ptr& parent, const std::vector<ui_element_ptr>& kids);
-  ui_element_ptr make_label(const std::string& text, const char* light = nullptr, const char* dark = nullptr);
-
-  void show_confirm(const std::string& message, std::function<void()> on_confirm);
-
   // ── Request builder: collecting current state into an event payload ────
   bison::dynamic collect_request_state() const;
-  void set_status_line(const std::string& text, const char* light, const char* dark);
+  /// @brief Writes the Request and Response windows' status lines.
+  void set_status_line(const std::string& text, const common::theme_color& color);
   /// @brief Show the Raw/JSON text box or the Form key-value editor
   /// depending on @p idx (the Body mode Combo's index: 0 none / 1 raw /
   /// 2 json / 3 form). Takes the index explicitly rather than re-reading
@@ -274,56 +220,21 @@ class curl_frontend : public form {
   std::string response_root_key_;
   bison::key_t response_window_id_;
   ui_element_ptr response_status_label_;
-  ui_element_ptr response_headers_table_;
+  common::table_rows<> response_headers_;
   ui_element_ptr response_body_editor_; // TextEditor, file_path set per response
-  std::vector<bison::key_t> response_header_row_ids_;
-  size_t next_response_header_key_{0};
 
-  // History window.
-  std::string history_root_key_;
-  list_window history_;
-  std::vector<list_row> history_rows_;
-  size_t next_history_key_{0};
-
-  // Collections window.
-  std::string collections_root_key_;
-  list_window collections_;
-  std::vector<list_row> collection_rows_;
-  size_t next_collection_key_{0};
+  common::list_panel<> history_;
+  common::list_panel<> collections_;
 
   // Environments window.
-  std::string environments_root_key_;
-  list_window environments_;
-  std::vector<list_row> environment_rows_;
-  size_t next_environment_key_{0};
+  common::list_panel<> environments_;
   ui_element_ptr env_new_name_input_;
   std::string env_new_name_text_;
   ui_element_ptr env_editor_label_;
   kv_table env_vars_;
   std::string open_environment_id_;
 
-  // Console window (client `curl` subprocess trace) -- docker's shape.
-  std::string console_root_key_;
-  bison::key_t console_window_id_;
-  ui_element_ptr console_table_;
-  static constexpr size_t kMaxConsoleRows = 500;
-  struct console_row_entry {
-    size_t child_key;
-    std::vector<bison::key_t> object_ids;
-  };
-  size_t console_seq_{0};
-  size_t next_console_child_key_{0};
-  std::deque<console_row_entry> console_rows_;
-  void append_console_row(const std::string& command, int32_t exit_code, bool ok, const std::string& output);
-  void clear_console_rows();
-  void erase_console_row_objects(const console_row_entry& entry);
-
-  std::shared_ptr<message_box> confirm_dialog_;
-
-  std::unordered_map<bison::key_t, std::function<void()>, bison::key_t, bison::key_t> click_handlers_;
-  std::unordered_map<bison::key_t, row_action, bison::key_t, bison::key_t> menu_action_targets_;
-  // Remove-row-button widget id -> which kv_table it belongs to.
-  std::unordered_map<bison::key_t, kv_table*, bison::key_t, bison::key_t> kv_remove_targets_;
+  common::console_panel console_;
 };
 
 /// @brief Register CurlFrontend in the "wish" bison namespace.

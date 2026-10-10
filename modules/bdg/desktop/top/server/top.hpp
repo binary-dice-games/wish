@@ -3,7 +3,8 @@
 /// @brief Server-side form for top (a top/htop-style system monitor).
 #pragma once
 
-#include <ui/forms/form.hpp>
+#include "modules/bdg/common/server/tool_form.hpp"
+
 #include <ui/ui_element.hpp>
 #include <ui/ui_importer.hpp>
 
@@ -15,7 +16,6 @@
 
 namespace bdg::wish {
 
-class message_box;
 class properties_dialog;
 
 /// @brief Top/htop-style system monitor form, with a per-row right-click
@@ -62,7 +62,7 @@ class properties_dialog;
 ///   - `"on_process_details_requested"` — the "Properties..." item was
 ///     clicked; `{ pid: int32 }`. The client is expected to call
 ///     `report_process_details` with the result.
-class top : public form {
+class top : public common::tool_form {
  public:
   explicit top(bison::dynamic&& base);
   /// @brief Removes the secondary CPU/Memory/Cores panels; ~form() removes
@@ -155,14 +155,6 @@ class top : public form {
     std::vector<int32_t> affinity_cores;
   };
 
-  /// @brief Import @p layout_json, assign every element an RMI id, run
-  /// @p wire to capture element pointers, and merge the tree under
-  /// @p root_key -- registering it as its own top-level object (with
-  /// `__path__`, so it can be named in the dock layout) unless it is the
-  /// main `internal_root_key_`, which form::init() registers itself.
-  void build_window(
-      const char* layout_json, const std::string& root_key, bison::key_t& window_id_out,
-      const std::function<void(ui_tree&)>& wire);
   /// @brief Remove the CPU/Memory/Cores panels and forget their keys.
   /// Safe to call more than once.
   void remove_panel_objects();
@@ -251,13 +243,6 @@ class top : public form {
   /// Maps a row context-menu item's `__wish_id` to the (pid, action) it
   /// represents; erased alongside the row when its process vanishes.
   std::unordered_map<bison::key_t, row_action_target, bison::key_t, bison::key_t> action_item_targets_;
-
-  /// Confirm-kill dialog: a privately-instantiated MessageBox (see
-  /// form::instantiate_child_form()) with a "yes_no" preset. Only one may
-  /// be open at a time; a new kill request just overwrites this member --
-  /// the stale instance's destructor tears down its own internal objects,
-  /// same effect the old direct remove_objects_at() call had.
-  std::shared_ptr<message_box> confirm_dialog_;
 
   /// Set CPU Affinity dialog: one Checkbox per logical core (built at
   /// show-time from the current core count and the row's current

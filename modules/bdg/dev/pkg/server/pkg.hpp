@@ -13,33 +13,34 @@
 /// the `pip` module's client/server split
 /// (modules/bdg/dev/pip/server/pip.hpp).
 ///
-/// Destructive actions (remove / reinstall / upgrade all) are gated behind
-/// the built-in MessageBox form (form::instantiate_child_form(), "yes_no"
-/// preset) -- see show_confirm() below. Installs and single upgrades fire
-/// directly. Progress, live output and Cancel for a long command are shown by
-/// the shared modal `ProgressBox` form, which the client drives itself
-/// (modules/bdg/common/command_worker.hpp).
+/// Built on the panels shared by the bdg tool forms
+/// (modules/bdg/common/server): destructive actions (remove / reinstall /
+/// upgrade all) are gated behind tool_form::show_confirm() -- installs and
+/// single upgrades fire directly; Packages and Search are
+/// common::list_panel; Details is common::text_viewer_panel; Console is
+/// common::console_panel. Progress, live output and Cancel for a long
+/// command are shown by the shared modal `ProgressBox` form, which the
+/// client drives itself (modules/bdg/common/command_worker.hpp).
 ///
 /// Owns four independently dockable Windows -- Packages (the main root),
 /// Search, Details, and Console (a FIFO-capped trace of every command the
 /// client ran, fed by append_command_log).
 #pragma once
 
-#include <ui/forms/form.hpp>
+#include "modules/bdg/common/server/console_panel.hpp"
+#include "modules/bdg/common/server/list_panel.hpp"
+#include "modules/bdg/common/server/text_viewer_panel.hpp"
+#include "modules/bdg/common/server/tool_form.hpp"
+
 #include <ui/ui_element.hpp>
 #include <ui/ui_importer.hpp>
 
-#include <deque>
-#include <filesystem>
-#include <functional>
-#include <memory>
+#include <cstddef>
+#include <cstdint>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 namespace bdg::wish {
-
-class message_box;
 
 /// @brief GUI form for a system package manager.
 ///
@@ -60,7 +61,7 @@ class message_box;
 ///   - `"details_requested"` -- `{ kind, name }` where `kind` is `show` (the
 ///     package's description) or `files` (the files it installed). Answer
 ///     with update_details.
-class pkg_frontend : public form {
+class pkg_frontend : public common::tool_form {
  public:
   explicit pkg_frontend(bison::dynamic&& base);
 
@@ -105,38 +106,14 @@ class pkg_frontend : public form {
   void on_event(bison::key_t widget_id, bison::key_t event_name, const bison::dynamic& payload) override;
 
  private:
-  // ── Generic list-window plumbing ──────────────────────────────────────
-  //
-  // Packages / Search are two near-identical toolbar + Table windows. One
-  // `list_window` bundles the per-window widgets; one `list_row` type + one
-  // dispatch map (`menu_action_targets_`) serve both (pip.hpp's pattern).
+  // ── List windows ─────────────────────────────────────────────────────
 
-  struct list_window {
-    std::string root_key;
-    bison::key_t window_id;
-    ui_element_ptr status_label;
-    ui_element_ptr table;
-  };
-
-  struct list_row {
-    ui_element_ptr row;
+  /// One row of Packages / Search: what the row actions work on.
+  struct package_row {
     std::string scope; // "package" / "result"
-    std::string name;  // package name
-    size_t child_key{0};
-    std::vector<bison::key_t> object_ids; // erased together on rebuild
+    std::string name; // package name
   };
-
-  struct row_action {
-    std::string scope;
-    std::string name;
-    std::string action;
-  };
-
-  struct menu_spec {
-    std::string label; // empty -> a Separator
-    std::string action;
-    bool confirm{false}; // adds a "..." suffix; run_row_action() opens the MessageBox
-  };
+  using list_window = common::list_panel<package_row>;
 
   /// @brief One package of a snapshot (see do_update_packages / _search).
   struct entry {
@@ -146,22 +123,13 @@ class pkg_frontend : public form {
     std::string description;
   };
 
-  /// @brief Import @p layout_json, register every node, cache the status /
-  /// table widgets, and register the tree as its own dockable top-level root
-  /// at @p root_key. @p wire binds that window's own toolbar widgets.
-  void build_list_window(
-      list_window& lw, const char* layout_json, const std::string& root_key,
-      const std::function<void(ui_tree&)>& wire);
+  /// @brief Writes @p lw's status label, one line only: a multi-line error
+  /// would grow the label and shift the table below it. The whole message is
+  /// in the progress dialog and Console.
+  static void set_status(list_window& lw, const std::string& text, bool ok) {
+    lw.set_status(text, ok, /*first_line_only=*/true);
+  }
 
-  void clear_list_rows(list_window& lw, std::vector<list_row>& rows, size_t& next_key);
-
-  void add_list_row(
-      list_window& lw, std::vector<list_row>& rows, size_t& next_key, list_row&& meta,
-      const std::vector<ui_element_ptr>& cells, const std::vector<menu_spec>& items);
-
-  void set_status(list_window& lw, const std::string& text, bool ok);
-
-  // ── Per-window rebuild ───────────────────────────────────────────────
   /// @brief Rebuild the Packages table from installed_: the entries passing
   /// the name filter and the All / Upgradable Combo, up to kMaxRows.
   void rebuild_package_rows();
@@ -172,20 +140,6 @@ class pkg_frontend : public form {
   /// not installed). Compared without dpkg's `:arch` qualifier.
   std::string installed_version(const std::string& name) const;
 
-  // ── Details / Console windows ───────────────────────────────────────
-  /// @brief Build a toolbar + body window (Details, Console) from
-  /// @p layout_json and register it as a top-level object under @p root_key.
-  void build_text_window(
-      const std::string& root_key, const char* layout_json, bison::key_t& window_id_out,
-      const std::function<void(ui_tree&)>& wire);
-  /// @brief Show @p text in the Details `TextEditor`: write it to a new file
-  /// `private/<root>_details_<n>.txt` in the session sandbox, point the
-  /// editor's `file_path` at it and delete the file it replaced. A write
-  /// failure leaves the editor unchanged.
-  void set_details_text(const std::string& text);
-  /// @brief Delete the sandbox file the Details editor shows (if any).
-  void remove_details_file();
-
   /// @brief Point the Details window at a new target and emit
   /// `details_requested` for it.
   void open_details(const std::string& kind, const std::string& name);
@@ -195,16 +149,11 @@ class pkg_frontend : public form {
   void emit_search_request();
   /// @brief Emit `install_requested` for @p names.
   void emit_install(const std::string& names);
-  /// @brief Menu-action dispatch for one row (see on_event()).
-  void run_row_action(const row_action& target);
-
-  // ── Confirmation modal ──────────────────────────────────────────────
-  void show_confirm(const std::string& message, std::function<void()> on_confirm);
-
-  // ── Small builders ──────────────────────────────────────────────────
-  void assign_id(const ui_element_ptr& el);
-  void set_children_list(const ui_element_ptr& parent, const std::vector<ui_element_ptr>& kids);
-  ui_element_ptr make_label(const std::string& text, const char* light = nullptr, const char* dark = nullptr);
+  /// @brief A row-menu item running @p action on @p r (see run_row_action()).
+  common::menu_item
+  action_item(const std::string& label, const package_row& r, const std::string& action, bool confirm);
+  /// @brief Menu-action dispatch for one row.
+  void run_row_action(const package_row& r, const std::string& action);
 
   // ── State ──────────────────────────────────────────────────────────
   list_window packages_;
@@ -218,13 +167,6 @@ class pkg_frontend : public form {
   std::vector<entry> results_;
   bool outdated_checked_{false};
   static constexpr size_t kMaxRows = 300;
-
-  std::vector<list_row> package_rows_;
-  std::vector<list_row> search_rows_;
-  size_t next_package_key_{0};
-  size_t next_search_key_{0};
-
-  std::shared_ptr<message_box> confirm_dialog_;
 
   // Packages toolbar.
   ui_element_ptr env_label_;
@@ -240,46 +182,11 @@ class pkg_frontend : public form {
   ui_element_ptr search_target_label_;
   std::string open_search_query_;
 
-  // Details window.
-  std::string details_root_key_;
-  bison::key_t details_window_id_;
-  ui_element_ptr details_editor_;
-  ui_element_ptr details_target_label_;
-  std::string details_file_; // sandbox-relative file details_editor_ shows
+  common::text_viewer_panel details_;
   std::string open_details_kind_;
   std::string open_details_name_;
 
-  std::filesystem::path resource_dir_; // session sandbox root (set in on_init())
-  size_t next_details_file_seq_{0};    // makes each set_details_text() file name unique
-
-  // ── Console window (client subprocess trace) ────────────────────────
-  //
-  // A FIFO-capped `Table` (# / Command / Exit / Output) so a long session
-  // stays bounded rather than growing without limit.
-  std::string console_root_key_;
-  bison::key_t console_window_id_;
-  ui_element_ptr console_table_;
-
-  static constexpr size_t kMaxConsoleRows = 500;
-
-  struct console_row_entry {
-    size_t child_key;
-    std::vector<bison::key_t> object_ids;
-  };
-  size_t console_seq_{0};
-  size_t next_console_child_key_{0};
-  std::deque<console_row_entry> console_rows_; // oldest first
-
-  /// @brief Append one trace row (sequence #, command, exit code, output
-  /// preview), green/red by @p ok; evict the oldest first past kMaxConsoleRows.
-  void append_console_row(const std::string& command, int32_t exit_code, bool ok, const std::string& output);
-  /// @brief Erase every Console row (+ their ctx().objects / click_handlers_
-  /// entries); reset the sequence counter. From any row's "Clear Console".
-  void clear_console_rows();
-  void erase_console_row_objects(const console_row_entry& entry);
-
-  std::unordered_map<bison::key_t, std::function<void()>, bison::key_t, bison::key_t> click_handlers_;
-  std::unordered_map<bison::key_t, row_action, bison::key_t, bison::key_t> menu_action_targets_;
+  common::console_panel console_;
 };
 
 /// @brief Register PkgFrontend in the "wish" bison namespace.
