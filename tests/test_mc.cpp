@@ -314,6 +314,62 @@ TEST_F(McWindowTest, RegistersDefaultDockLayoutNamingEveryPanel) {
   EXPECT_EQ(windows, expected);
 }
 
+// The first-run arrangement is a 2x2 grid: folder trees on top, file panels
+// below, Local on the left and Sandbox on the right.
+TEST_F(McWindowTest, DefaultDockLayoutIsTreesOverTablesGrid) {
+  std::string root = instantiate_and_get_root();
+  ASSERT_FALSE(root.empty());
+
+  wish::ui_element_ptr viewport;
+  for (const auto& [k, obj] : srv_->last_session->top_level_objects)
+    if (obj->as<bison::key_t>(dynamic::CLASS) == "DockSpaceViewport"_key)
+      viewport = obj;
+  ASSERT_TRUE(viewport);
+
+  // Ordered children of a dock node (DockSplit: first, second).
+  auto kids = [](const dynamic& node) {
+    std::vector<dynamic_ptr> out;
+    if (auto* cf = node.findField<dynamic_ptr>("children"_key); cf && *cf)
+      (*cf)->forEach([&](bison::key_t, const field& f) {
+        if (f.is<dynamic_ptr>() && f.as<dynamic_ptr>())
+          out.push_back(f.as<dynamic_ptr>());
+      });
+    return out;
+  };
+  auto find_class = [&](const dynamic& node, bison::key_t cls) {
+    std::function<dynamic_ptr(const dynamic&)> rec = [&](const dynamic& n) -> dynamic_ptr {
+      for (const auto& c : kids(n)) {
+        if (c->as<bison::key_t>(dynamic::CLASS) == cls)
+          return c;
+        if (auto r = rec(*c))
+          return r;
+      }
+      return nullptr;
+    };
+    return rec(node);
+  };
+
+  dynamic_ptr layout = find_class(*viewport, "DockLayout"_key);
+  ASSERT_TRUE(layout);
+  auto top = kids(*layout);
+  ASSERT_EQ(top.size(), 1u);
+  const dynamic& rows = *top[0];
+  ASSERT_EQ(rows.as<bison::key_t>(dynamic::CLASS), "DockSplit"_key);
+  EXPECT_EQ(rows.as<std::string>("dir"_key), "up");
+
+  auto row_windows = [&](const dynamic& row) {
+    std::vector<std::string> out;
+    EXPECT_EQ(row.as<std::string>("dir"_key), "left");
+    for (const auto& a : kids(row))
+      out.push_back(a->as<std::string>("windows"_key));
+    return out;
+  };
+  auto halves = kids(rows);
+  ASSERT_EQ(halves.size(), 2u);
+  EXPECT_EQ(row_windows(*halves[0]), (std::vector<std::string>{root + "_local_tree", root + "_sandbox_tree"}));
+  EXPECT_EQ(row_windows(*halves[1]), (std::vector<std::string>{root, root + "_sandbox"}));
+}
+
 TEST_F(McWindowTest, SandboxAutoPopulatesOnInitWithoutHanging) {
   // Regression test for the navigate_sandbox() self-deadlock: on_init()
   // calls navigate_sandbox("", sess().resource_dir, ...) from inside RMI
