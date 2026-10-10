@@ -2,10 +2,8 @@
 /// @file curl.cpp
 /// @brief Implementation of the CurlFrontend form.
 ///
-/// A close sibling of modules/bdg/dev/docker/server/docker.cpp: inline
-/// JSON window layouts + import_json(), C++-built table rows, a per-row
-/// `...` MenuButton, show_confirm() via a privately-instantiated
-/// MessageBox, and an id -> handler dispatch map. Diverges from
+/// Inline JSON window layouts + C++-built table rows on the panels shared
+/// by the bdg tool forms (modules/bdg/common/server). Diverges from
 /// docker/kubectl in one place: the `kv_table` plumbing (Params/Headers/
 /// Form-body/Environment-variables) builds *editable* rows whose current
 /// values are read directly off the live widgets rather than mirrored in
@@ -15,10 +13,8 @@
 #include "curl.hpp"
 
 #include "src/bison/bison_object.hpp"
-#include "src/rmi/shared/ids.hpp"
 
 #include <ui/dock_layout_spec.hpp>
-#include <ui/forms/message_box.hpp>
 
 #include <cstdio>
 #include <sstream>
@@ -26,45 +22,17 @@
 namespace bdg::wish {
 
 using namespace bison;
+using common::for_each_entry;
+using common::kBad;
+using common::kIdle;
+using common::kOk;
+using common::kWarn;
+using common::make_payload;
+using common::set_children_list;
+using common::theme_color;
+using common::wish_id_of;
 
 namespace {
-
-template <typename Element>
-key_t wish_id_of(const Element& element) {
-  return element->template as<key_t>("__wish_id"_key);
-}
-
-template <typename T>
-dynamic payload1(key_t k, T v) {
-  dynamic d;
-  d[k] = std::move(v);
-  return d;
-}
-
-template <typename Fn>
-void for_each_entry(const dynamic& parent, key_t field_key, Fn&& fn) {
-  const auto* arr_f = parent.findField<dynamic_ptr>(field_key);
-  if (!arr_f || !*arr_f)
-    return;
-  (*arr_f)->forEach([&](key_t, const field& f) {
-    if (!f.is<dynamic_ptr>())
-      return;
-    auto entry_ptr = f.as<dynamic_ptr>();
-    if (entry_ptr)
-      fn(*entry_ptr);
-  });
-}
-
-// "#RRGGBBAA" light/dark pairs -- GitHub Primer tokens, docker.cpp's
-// theme_hex pattern.
-constexpr const char* kOkLight = "#1A7F37FF";
-constexpr const char* kOkDark = "#3FB950FF";
-constexpr const char* kIdleLight = "#656D76FF";
-constexpr const char* kIdleDark = "#8B949EFF";
-constexpr const char* kWarnLight = "#9A6700FF";
-constexpr const char* kWarnDark = "#D29922FF";
-constexpr const char* kBadLight = "#CF222EFF";
-constexpr const char* kBadDark = "#F85149FF";
 
 constexpr const char* kMethods[] = {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"};
 constexpr size_t kNumMethods = 7;
@@ -299,86 +267,11 @@ static constexpr const char* kEnvironmentsLayout = R"json({
   } } }
 })json";
 
-static constexpr const char* kConsoleLayout = R"json({
-  "type": "Window", "title": "Console", "width": 900, "height": 240,
-  "closable": true,
-  "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
-    "table": {
-      "type": "Table", "id": "##curl_console_table", "columns": 4,
-      "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
-      "height": -1, "outer_height": -1, "auto_scroll": true,
-      "children": {
-        "col_seq":     { "type": "TableColumn", "label": "#",       "flags": "WidthFixed",   "init_width": 44,  "column_id": 0 },
-        "col_command": { "type": "TableColumn", "label": "Command", "flags": "WidthFixed",   "init_width": 400, "column_id": 1 },
-        "col_exit":    { "type": "TableColumn", "label": "Exit",    "flags": "WidthFixed",   "init_width": 50,  "column_id": 2 },
-        "col_output":  { "type": "TableColumn", "label": "Output",  "flags": "WidthStretch",                     "column_id": 3 }
-      }
-    }
-  } } }
-})json";
-
 } // namespace
 
 // ── curl_frontend ──────────────────────────────────────────────────────
 
-curl_frontend::curl_frontend(dynamic&& base) : form(std::move(base)) {}
-
-void curl_frontend::assign_id(const ui_element_ptr& el) {
-  key_t id = rmi::shared::generate_id();
-  ctx().put_object(id, el);
-  el["__wish_id"_key] = id;
-}
-
-void curl_frontend::set_children_list(const ui_element_ptr& parent, const std::vector<ui_element_ptr>& kids) {
-  auto row_children = dynamic_ptr{key_t{0U}, {}};
-  size_t k = 0;
-  for (auto& kid : kids)
-    (*row_children)[k++] = dynamic_ptr{kid};
-  (*parent)["children"_key] = row_children;
-  parent->refresh_children_order();
-}
-
-ui_element_ptr curl_frontend::make_label(const std::string& text, const char* light, const char* dark) {
-  ui_element_ptr l = ui_element_ptr::create("wish"_key, "Label"_key);
-  l["text"_key] = text;
-  if (light)
-    l["text_color_light"_key] = std::string{light};
-  if (dark)
-    l["text_color_dark"_key] = std::string{dark};
-  assign_id(l);
-  return l;
-}
-
-void curl_frontend::build_window(
-    const char* layout_json, const std::string& root_key, key_t& window_id_out,
-    const std::function<void(ui_tree&)>& wire) {
-  auto tree = import_json(layout_json);
-  auto& c = ctx();
-  for (auto& [key, elem] : tree) {
-    key_t id = rmi::shared::generate_id();
-    c.put_object(id, elem);
-    elem["__wish_id"_key] = id;
-  }
-  window_id_out = (*tree[""])["__wish_id"_key].as<key_t>();
-  wire(tree);
-
-  ui_element_ptr root_ptr = tree[""];
-  sess().ui_objects.merge(std::move(tree), root_key);
-  sess().top_level_objects[key_t{root_key}] = root_ptr;
-  sess().top_level_handlers[key_t{root_key}] = this;
-  (*root_ptr)["__path__"_key] = root_key;
-}
-
-void curl_frontend::build_list_window(
-    list_window& lw, const char* layout_json, const std::string& root_key,
-    const std::function<void(ui_tree&)>& wire_toolbar) {
-  lw.root_key = root_key;
-  build_window(layout_json, root_key, lw.window_id, [&](ui_tree& tree) {
-    tree.with("vbox.status", [&](const auto& e) { lw.status_label = e; });
-    tree.with("vbox.table", [&](const auto& e) { lw.table = e; });
-    wire_toolbar(tree);
-  });
-}
+curl_frontend::curl_frontend(dynamic&& base) : tool_form(std::move(base)) {}
 
 void curl_frontend::on_init() {
   internal_root_key_ = next_available_key("__curl_");
@@ -387,16 +280,7 @@ void curl_frontend::on_init() {
   title_ = title_f ? *title_f : std::string{"Curl"};
 
   // ── Request window (main root) ────────────────────────────────────────
-  {
-    auto tree = import_json(kRequestLayout);
-    auto& c = ctx();
-    for (auto& [key, elem] : tree) {
-      key_t id = rmi::shared::generate_id();
-      c.put_object(id, elem);
-      elem["__wish_id"_key] = id;
-    }
-    request_window_id_ = (*tree[""])["__wish_id"_key].as<key_t>();
-
+  build_window(internal_root_key_, kRequestLayout, request_window_id_, [&](ui_tree& tree) {
     tree.with("vbox.toolbar.method", [&](const auto& e) {
       method_combo_ = e;
       method_combo_id_ = wish_id_of(e);
@@ -411,13 +295,13 @@ void curl_frontend::on_init() {
     });
     tree.with("vbox.toolbar.follow", [&](const auto& e) { follow_redirects_id_ = wish_id_of(e); });
     tree.with("vbox.toolbar.btn_send", [&](const auto& e) {
-      click_handlers_[wish_id_of(e)] = [this] { emit("send_requested"_key, collect_request_state()); };
+      on_click(wish_id_of(e), [this] { emit("send_requested"_key, collect_request_state()); });
     });
 
     tree.with("vbox.save_bar.save_name", [&](const auto& e) { save_name_input_ = e; });
     tree.with("vbox.save_bar.save_collection", [&](const auto& e) { save_collection_input_ = e; });
     tree.with("vbox.save_bar.btn_save", [&](const auto& e) {
-      click_handlers_[wish_id_of(e)] = [this] {
+      on_click(wish_id_of(e), [this] {
         std::string name = save_name_input_ ? save_name_input_->as<std::string>("value"_key) : std::string{};
         if (name.empty())
           return;
@@ -427,13 +311,13 @@ void curl_frontend::on_init() {
         p["name"_key] = name;
         p["collection"_key] = collection.empty() ? std::string{"Default"} : collection;
         emit("save_request_requested"_key, std::move(p));
-      };
+      });
     });
 
     tree.with("vbox.status", [&](const auto& e) { status_line_label_ = e; });
 
     tree.with("vbox.tabs.params_tab.p_toolbar.btn_add", [&](const auto& e) {
-      click_handlers_[wish_id_of(e)] = [this] { kv_table_add_row(params_); };
+      on_click(wish_id_of(e), [this] { kv_table_add_row(params_); });
     });
     tree.with("vbox.tabs.params_tab.p_table", [&](const auto& e) {
       params_.table = e;
@@ -441,7 +325,7 @@ void curl_frontend::on_init() {
     });
 
     tree.with("vbox.tabs.headers_tab.h_toolbar.btn_add", [&](const auto& e) {
-      click_handlers_[wish_id_of(e)] = [this] { kv_table_add_row(headers_); };
+      on_click(wish_id_of(e), [this] { kv_table_add_row(headers_); });
     });
     tree.with("vbox.tabs.headers_tab.h_table", [&](const auto& e) {
       headers_.table = e;
@@ -456,7 +340,7 @@ void curl_frontend::on_init() {
     tree.with("vbox.tabs.body_tab.raw_box.text", [&](const auto& e) { body_text_input_ = e; });
     tree.with("vbox.tabs.body_tab.form_box", [&](const auto& e) { body_form_box_ = e; });
     tree.with("vbox.tabs.body_tab.form_box.f_toolbar.btn_add", [&](const auto& e) {
-      click_handlers_[wish_id_of(e)] = [this] { kv_table_add_row(body_form_); };
+      on_click(wish_id_of(e), [this] { kv_table_add_row(body_form_); });
     });
     tree.with("vbox.tabs.body_tab.form_box.f_table", [&](const auto& e) {
       body_form_.table = e;
@@ -472,61 +356,56 @@ void curl_frontend::on_init() {
     tree.with("vbox.tabs.auth_tab.basic_box.password", [&](const auto& e) { auth_password_input_ = e; });
     tree.with("vbox.tabs.auth_tab.bearer_box", [&](const auto& e) { auth_bearer_box_ = e; });
     tree.with("vbox.tabs.auth_tab.bearer_box.token", [&](const auto& e) { auth_token_input_ = e; });
-
-    sess().ui_objects.merge(std::move(tree), internal_root_key_);
-  }
+  });
 
   // ── Response window ──────────────────────────────────────────────────
   response_root_key_ = internal_root_key_ + "_response";
-  build_window(kResponseLayout, response_root_key_, response_window_id_, [&](ui_tree& tree) {
+  build_window(response_root_key_, kResponseLayout, response_window_id_, [&](ui_tree& tree) {
     tree.with("vbox.status", [&](const auto& e) { response_status_label_ = e; });
     tree.with("vbox.tabs.body_tab.editor", [&](const auto& e) { response_body_editor_ = e; });
-    tree.with("vbox.tabs.headers_tab.h_table", [&](const auto& e) { response_headers_table_ = e; });
+    tree.with("vbox.tabs.headers_tab.h_table", [&](const auto& e) { response_headers_.attach(*this, e); });
   });
 
   // ── History window ───────────────────────────────────────────────────
-  history_root_key_ = internal_root_key_ + "_history";
-  build_list_window(history_, kHistoryLayout, history_root_key_, [&](ui_tree& tree) {
+  history_.build(*this, internal_root_key_ + "_history", kHistoryLayout, [&](ui_tree& tree) {
     tree.with("vbox.toolbar.btn_clear", [&](const auto& e) {
-      click_handlers_[wish_id_of(e)] = [this] { emit("clear_history_requested"_key); };
+      on_click(wish_id_of(e), [this] { emit("clear_history_requested"_key); });
     });
   });
 
   // ── Collections window ───────────────────────────────────────────────
-  collections_root_key_ = internal_root_key_ + "_collections";
-  build_list_window(collections_, kCollectionsLayout, collections_root_key_, [](ui_tree&) {});
+  collections_.build(*this, internal_root_key_ + "_collections", kCollectionsLayout);
 
   // ── Environments window ──────────────────────────────────────────────
-  environments_root_key_ = internal_root_key_ + "_environments";
-  build_list_window(environments_, kEnvironmentsLayout, environments_root_key_, [&](ui_tree& tree) {
+  environments_.build(*this, internal_root_key_ + "_environments", kEnvironmentsLayout, [&](ui_tree& tree) {
     tree.with("vbox.toolbar.new_name", [&](const auto& e) { env_new_name_input_ = e; });
     tree.with("vbox.toolbar.btn_new", [&](const auto& e) {
-      click_handlers_[wish_id_of(e)] = [this] {
+      on_click(wish_id_of(e), [this] {
         std::string name = env_new_name_input_ ? env_new_name_input_->as<std::string>("value"_key) : std::string{};
         if (name.empty())
           return;
-        emit("new_environment_requested"_key, payload1("name"_key, name));
+        emit("new_environment_requested"_key, make_payload("name"_key, name));
         if (env_new_name_input_)
           env_new_name_input_["value"_key] = std::string{};
-      };
+      });
     });
     tree.with("vbox.editor_label", [&](const auto& e) { env_editor_label_ = e; });
     tree.with("vbox.var_toolbar.btn_add_var", [&](const auto& e) {
-      click_handlers_[wish_id_of(e)] = [this] {
+      on_click(wish_id_of(e), [this] {
         if (open_environment_id_.empty())
           return;
         kv_table_add_row(env_vars_);
-      };
+      });
     });
     tree.with("vbox.var_toolbar.btn_save_vars", [&](const auto& e) {
-      click_handlers_[wish_id_of(e)] = [this] {
+      on_click(wish_id_of(e), [this] {
         if (open_environment_id_.empty())
           return;
         dynamic p;
         p["id"_key] = open_environment_id_;
         p["vars"_key] = kv_table_read(env_vars_);
         emit("save_environment_vars_requested"_key, std::move(p));
-      };
+      });
     });
     tree.with("vbox.vars_table", [&](const auto& e) {
       env_vars_.table = e;
@@ -535,10 +414,8 @@ void curl_frontend::on_init() {
   });
 
   // ── Console window ───────────────────────────────────────────────────
-  console_root_key_ = internal_root_key_ + "_console";
-  build_window(kConsoleLayout, console_root_key_, console_window_id_, [&](ui_tree& tree) {
-    tree.with("vbox.table", [&](const auto& e) { console_table_ = e; });
-  });
+  console_.build(
+      *this, internal_root_key_ + "_console", {.table_id = "##curl_console_table", .width = 900, .command_width = 400});
 
   // Seed the first-run arrangement: Request over a Console strip on the
   // left, Response/History/Collections/Environments tabbed together on
@@ -546,16 +423,18 @@ void curl_frontend::on_init() {
   {
     using namespace dock;
     set_default_dock_layout(viewport(
-        "curl_dock", "Curl",
+        "curl_dock",
+        "Curl",
         layout(
             split(
-                dir::left, 0.55f,
-                split(
-                    dir::down, 0.22f, area({console_root_key_}), area({internal_root_key_}, internal_root_key_)),
+                dir::left,
+                0.55f,
+                split(dir::down, 0.22f, area({console_.root_key()}), area({internal_root_key_}, internal_root_key_)),
                 area(
-                    {response_root_key_, history_root_key_, collections_root_key_, environments_root_key_},
+                    {response_root_key_, history_.root_key(), collections_.root_key(), environments_.root_key()},
                     response_root_key_)),
-            /*version=*/1, /*target=*/"curl_dock")));
+            /*version=*/1,
+            /*target=*/"curl_dock")));
   }
 
   // Initial population (History / Collections / Environments) is
@@ -609,7 +488,7 @@ void curl_frontend::kv_table_add_row(kv_table& kv, const std::string& key, const
   remove_btn["label"_key] = std::string{"x"};
   assign_id(remove_btn);
   r.remove_button_id = wish_id_of(remove_btn);
-  kv_remove_targets_[r.remove_button_id] = &kv;
+  on_click(r.remove_button_id, [this, &kv, id = r.remove_button_id] { kv_table_remove_row(kv, id); });
   cells.push_back(remove_btn);
 
   std::vector<key_t> obj_ids;
@@ -638,9 +517,7 @@ void curl_frontend::kv_table_remove_row(kv_table& kv, key_t remove_button_id) {
     if (it->remove_button_id != remove_button_id)
       continue;
     children->erase(it->child_key);
-    for (auto id : it->object_ids)
-      ctx().objects.erase(id.id);
-    kv_remove_targets_.erase(remove_button_id);
+    erase_objects(it->object_ids); // includes the remove button's click handler
     kv.rows.erase(it);
     break;
   }
@@ -657,9 +534,7 @@ void curl_frontend::kv_table_clear(kv_table& kv) {
 
   for (auto& r : kv.rows) {
     children->erase(r.child_key);
-    for (auto id : r.object_ids)
-      ctx().objects.erase(id.id);
-    kv_remove_targets_.erase(r.remove_button_id);
+    erase_objects(r.object_ids);
   }
   kv.rows.clear();
   kv.next_key = 0;
@@ -693,97 +568,6 @@ dynamic_ptr curl_frontend::kv_table_read(const kv_table& kv) const {
     (*arr)[i++] = dynamic_ptr{e};
   }
   return dynamic_ptr{arr};
-}
-
-// ── Generic read-only list-window plumbing (History / Collections / Environments) ──
-
-void curl_frontend::clear_list_rows(list_window& lw, std::vector<list_row>& rows, size_t& next_key) {
-  if (!lw.table)
-    return;
-  auto* children_p = lw.table->findField<dynamic_ptr>("children"_key);
-  if (!children_p || !*children_p)
-    return;
-  auto& children = *children_p;
-
-  for (auto& r : rows) {
-    children->erase(r.child_key);
-    for (auto id : r.object_ids) {
-      ctx().objects.erase(id.id);
-      menu_action_targets_.erase(id);
-    }
-  }
-  rows.clear();
-  next_key = 0;
-}
-
-void curl_frontend::add_list_row(
-    list_window& lw, std::vector<list_row>& rows, size_t& next_key, list_row&& meta,
-    const std::vector<ui_element_ptr>& cells, const std::vector<menu_spec>& items, const std::string& scope) {
-  if (!lw.table)
-    return;
-  auto* children_p = lw.table->findField<dynamic_ptr>("children"_key);
-  if (!children_p || !*children_p)
-    return;
-  auto& children = *children_p;
-
-  std::vector<key_t> obj_ids;
-  for (auto& cell : cells)
-    obj_ids.push_back(wish_id_of(cell));
-
-  ui_element_ptr row = ui_element_ptr::create("wish"_key, "TableRow"_key);
-  assign_id(row);
-  obj_ids.push_back(wish_id_of(row));
-
-  ui_element_ptr menu = ui_element_ptr::create("wish"_key, "MenuButton"_key);
-  menu["label"_key] = std::string{"..."};
-  assign_id(menu);
-  obj_ids.push_back(wish_id_of(menu));
-
-  std::vector<ui_element_ptr> menu_kids;
-  for (auto& it : items) {
-    ui_element_ptr mi = ui_element_ptr::create("wish"_key, "MenuItem"_key);
-    mi["label"_key] = it.label;
-    assign_id(mi);
-    obj_ids.push_back(wish_id_of(mi));
-    menu_action_targets_[wish_id_of(mi)] = row_action{scope, meta.id, it.action};
-    menu_kids.push_back(mi);
-  }
-  set_children_list(menu, menu_kids);
-
-  std::vector<ui_element_ptr> row_cells = cells;
-  row_cells.push_back(menu);
-  set_children_list(row, row_cells);
-
-  meta.row = row;
-  meta.child_key = next_key++;
-  meta.object_ids = std::move(obj_ids);
-  (*children)[meta.child_key] = dynamic_ptr{row};
-  rows.push_back(std::move(meta));
-}
-
-void curl_frontend::set_status(list_window& lw, const std::string& text, bool ok) {
-  if (!lw.status_label)
-    return;
-  lw.status_label["text"_key] = text;
-  lw.status_label["text_color_light"_key] = std::string{ok ? kIdleLight : kBadLight};
-  lw.status_label["text_color_dark"_key] = std::string{ok ? kIdleDark : kBadDark};
-}
-
-// ── Confirmation modal (docker_frontend::show_confirm() port) ───────────
-
-void curl_frontend::show_confirm(const std::string& message, std::function<void()> on_confirm) {
-  dynamic params;
-  params["title"_key] = std::string{"Confirm"};
-  params["message"_key] = message;
-  params["icon"_key] = std::string{"warning"};
-  params["buttons"_key] = std::string{"yes_no"};
-
-  confirm_dialog_ = instantiate_child_form<message_box>(
-      "MessageBox"_key, std::move(params),
-      [on_confirm = std::move(on_confirm)](key_t /*event_name*/, const dynamic& payload) {
-        if (payload.as<std::string>("button"_key) == "yes")
-          on_confirm();
-      });
 }
 
 // ── Request builder state ────────────────────────────────────────────────
@@ -824,16 +608,12 @@ dynamic curl_frontend::collect_request_state() const {
   return d;
 }
 
-void curl_frontend::set_status_line(const std::string& text, const char* light, const char* dark) {
-  if (status_line_label_) {
-    status_line_label_["text"_key] = text;
-    status_line_label_["text_color_light"_key] = std::string{light};
-    status_line_label_["text_color_dark"_key] = std::string{dark};
-  }
-  if (response_status_label_) {
-    response_status_label_["text"_key] = text;
-    response_status_label_["text_color_light"_key] = std::string{light};
-    response_status_label_["text_color_dark"_key] = std::string{dark};
+void curl_frontend::set_status_line(const std::string& text, const theme_color& color) {
+  for (auto& label : {status_line_label_, response_status_label_}) {
+    if (!label)
+      continue;
+    label["text"_key] = text;
+    common::set_text_color(label, color);
   }
 }
 
@@ -854,37 +634,11 @@ void curl_frontend::apply_auth_mode_visibility(int32_t idx) {
 }
 
 void curl_frontend::rebuild_response_headers(const dynamic& args) {
-  if (!response_headers_table_)
-    return;
-  auto* children_p = response_headers_table_->findField<dynamic_ptr>("children"_key);
-  if (!children_p || !*children_p)
-    return;
-  auto& children = *children_p;
-
-  for (auto id : response_header_row_ids_)
-    ctx().objects.erase(id.id);
-  std::vector<key_t> to_erase;
-  children->forEach([&](key_t k, const field& f) {
-    if (f.is<dynamic_ptr>() && f.as<dynamic_ptr>() && f.as<dynamic_ptr>()->as<key_t>(dynamic::CLASS) == "TableRow"_key)
-      to_erase.push_back(k);
-  });
-  for (auto k : to_erase)
-    children->erase(k.id);
-  response_header_row_ids_.clear();
-  next_response_header_key_ = 0;
-
+  response_headers_.clear();
   for_each_entry(args, "headers"_key, [&](const dynamic& e) {
-    std::vector<ui_element_ptr> cells = {
-        make_label(e.as<std::string>("key"_key)), make_label(e.as<std::string>("value"_key))};
-    ui_element_ptr row = ui_element_ptr::create("wish"_key, "TableRow"_key);
-    assign_id(row);
-    for (auto& c : cells)
-      response_header_row_ids_.push_back(wish_id_of(c));
-    response_header_row_ids_.push_back(wish_id_of(row));
-    set_children_list(row, cells);
-    (*children)[next_response_header_key_++] = dynamic_ptr{row};
+    response_headers_.add({}, {make_label(e.as<std::string>("key"_key)), make_label(e.as<std::string>("value"_key))});
   });
-  response_headers_table_->refresh_children_order();
+  response_headers_.refresh();
 }
 
 // ── RMI methods ────────────────────────────────────────────────────────
@@ -894,7 +648,7 @@ dynamic curl_frontend::do_update_response(const dynamic& args) {
   const std::string error = args.findField<std::string>("error"_key) ? args.as<std::string>("error"_key) : std::string{};
 
   if (!ok && !error.empty()) {
-    set_status_line("Request failed: " + error, kBadLight, kBadDark);
+    set_status_line("Request failed: " + error, kBad);
     rebuild_response_headers(dynamic{});
     if (response_body_editor_)
       response_body_editor_["file_path"_key] = std::string{};
@@ -906,22 +660,14 @@ dynamic curl_frontend::do_update_response(const dynamic& args) {
   const float time_ms = args.as<float>("time_ms"_key);
   const float size_bytes = args.as<float>("size_bytes"_key);
 
-  const char* cl = kIdleLight;
-  const char* cd = kIdleDark;
-  if (code >= 200 && code < 300) {
-    cl = kOkLight;
-    cd = kOkDark;
-  } else if (code >= 300 && code < 400) {
-    cl = kWarnLight;
-    cd = kWarnDark;
-  } else if (code >= 400) {
-    cl = kBadLight;
-    cd = kBadDark;
-  }
+  const theme_color& color = code >= 200 && code < 300 ? kOk
+      : code >= 300 && code < 400                      ? kWarn
+      : code >= 400                                    ? kBad
+                                                       : kIdle;
 
   std::ostringstream oss;
   oss << code << " " << status_text << "    " << format_ms(time_ms) << "    " << format_bytes(size_bytes);
-  set_status_line(oss.str(), cl, cd);
+  set_status_line(oss.str(), color);
 
   rebuild_response_headers(args);
 
@@ -966,66 +712,61 @@ dynamic curl_frontend::do_update_request_builder(const dynamic& args) {
 }
 
 dynamic curl_frontend::do_update_history(const dynamic& args) {
-  clear_list_rows(history_, history_rows_, next_history_key_);
+  history_.clear();
 
   int total = 0;
   for_each_entry(args, "entries"_key, [&](const dynamic& e) {
     const std::string id = e.as<std::string>("id"_key);
-    const std::string method = e.as<std::string>("method"_key);
-    const std::string url = e.as<std::string>("url"_key);
     const int32_t code = e.as<int32_t>("status_code"_key);
     const bool ok = e.as<bool>("ok"_key);
-    const float time_ms = e.as<float>("time_ms"_key);
-    const std::string when = e.as<std::string>("timestamp"_key);
-    const char* cl = ok ? kOkLight : kBadLight;
-    const char* cd = ok ? kOkDark : kBadDark;
-
-    list_row meta;
-    meta.id = id;
     std::vector<ui_element_ptr> cells = {
-        make_label(method),
-        make_label(url),
-        make_label(code > 0 ? std::to_string(code) : std::string{"--"}, cl, cd),
-        make_label(format_ms(time_ms)),
-        make_label(when, kIdleLight, kIdleDark),
+        make_label(e.as<std::string>("method"_key)),
+        make_label(e.as<std::string>("url"_key)),
+        make_label(code > 0 ? std::to_string(code) : std::string{"--"}, ok ? kOk : kBad),
+        make_label(format_ms(e.as<float>("time_ms"_key))),
+        make_label(e.as<std::string>("timestamp"_key), kIdle),
     };
-    add_list_row(history_, history_rows_, next_history_key_, std::move(meta), cells, {{"Load", "load"}}, "history");
+    history_.add({}, cells, {{"Load", [this, id] { emit("load_history_requested"_key, make_payload("id"_key, id)); }}});
     ++total;
   });
 
-  if (history_.table)
-    history_.table->refresh_children_order();
-  set_status(history_, std::to_string(total) + (total == 1 ? " request" : " requests"), true);
+  history_.refresh();
+  history_.set_status(std::to_string(total) + (total == 1 ? " request" : " requests"), true);
   return dynamic{};
 }
 
 dynamic curl_frontend::do_update_collections(const dynamic& args) {
-  clear_list_rows(collections_, collection_rows_, next_collection_key_);
+  collections_.clear();
 
   int total = 0;
   for_each_entry(args, "entries"_key, [&](const dynamic& e) {
-    list_row meta;
-    meta.id = e.as<std::string>("id"_key);
+    const std::string id = e.as<std::string>("id"_key);
     std::vector<ui_element_ptr> cells = {
         make_label(e.as<std::string>("collection"_key)),
         make_label(e.as<std::string>("name"_key)),
         make_label(e.as<std::string>("method"_key)),
         make_label(e.as<std::string>("url"_key)),
     };
-    add_list_row(
-        collections_, collection_rows_, next_collection_key_, std::move(meta), cells,
-        {{"Load", "load"}, {"Duplicate", "duplicate"}, {"Delete", "delete"}}, "collections");
+    collections_.add(
+        {},
+        cells,
+        {{"Load", [this, id] { emit("load_request_requested"_key, make_payload("id"_key, id)); }},
+         {"Duplicate", [this, id] { emit("duplicate_request_requested"_key, make_payload("id"_key, id)); }},
+         {"Delete", [this, id] {
+            show_confirm("Delete this saved request?", [this, id] {
+              emit("delete_request_requested"_key, make_payload("id"_key, id));
+            });
+          }}});
     ++total;
   });
 
-  if (collections_.table)
-    collections_.table->refresh_children_order();
-  set_status(collections_, std::to_string(total) + (total == 1 ? " saved request" : " saved requests"), true);
+  collections_.refresh();
+  collections_.set_status(std::to_string(total) + (total == 1 ? " saved request" : " saved requests"), true);
   return dynamic{};
 }
 
 dynamic curl_frontend::do_update_environments(const dynamic& args) {
-  clear_list_rows(environments_, environment_rows_, next_environment_key_);
+  environments_.clear();
   environment_ids_.clear();
   std::string items = "No Environment";
 
@@ -1037,18 +778,21 @@ dynamic curl_frontend::do_update_environments(const dynamic& args) {
     environment_ids_.push_back(id);
     items += "\n" + name;
 
-    list_row meta;
-    meta.id = id;
     std::vector<ui_element_ptr> cells = {make_label(name), make_label(std::to_string(count))};
-    add_list_row(
-        environments_, environment_rows_, next_environment_key_, std::move(meta), cells,
-        {{"Edit", "edit"}, {"Delete", "delete"}}, "environments");
+    environments_.add(
+        {},
+        cells,
+        {{"Edit", [this, id] { emit("select_environment_requested"_key, make_payload("id"_key, id)); }},
+         {"Delete", [this, id] {
+            show_confirm("Delete this environment?", [this, id] {
+              emit("delete_environment_requested"_key, make_payload("id"_key, id));
+            });
+          }}});
     ++total;
   });
 
-  if (environments_.table)
-    environments_.table->refresh_children_order();
-  set_status(environments_, std::to_string(total) + (total == 1 ? " environment" : " environments"), true);
+  environments_.refresh();
+  environments_.set_status(std::to_string(total) + (total == 1 ? " environment" : " environments"), true);
 
   if (env_combo_) {
     int32_t cur = env_combo_->as<int32_t>("value"_key);
@@ -1071,89 +815,8 @@ dynamic curl_frontend::do_update_environment_vars(const dynamic& args) {
   return dynamic{};
 }
 
-// ── Console window (client `curl` subprocess trace) ──────────────────────
-
-void curl_frontend::append_console_row(
-    const std::string& command, int32_t exit_code, bool ok, const std::string& output) {
-  if (!console_table_)
-    return;
-  auto* children_p = console_table_->findField<dynamic_ptr>("children"_key);
-  if (!children_p || !*children_p)
-    return;
-  auto& children = *children_p;
-
-  const char* cl = ok ? kOkLight : kBadLight;
-  const char* cd = ok ? kOkDark : kBadDark;
-
-  ui_element_ptr row = ui_element_ptr::create("wish"_key, "TableRow"_key);
-  assign_id(row);
-
-  ui_element_ptr cell_seq = make_label(std::to_string(++console_seq_), kIdleLight, kIdleDark);
-  ui_element_ptr cell_command = make_label(command, cl, cd);
-  ui_element_ptr cell_exit = make_label(std::to_string(exit_code), cl, cd);
-  ui_element_ptr cell_output = make_label(output, cl, cd);
-
-  ui_element_ptr context_menu = ui_element_ptr::create("wish"_key, "ContextMenu"_key);
-  assign_id(context_menu);
-
-  ui_element_ptr copy_item = ui_element_ptr::create("wish"_key, "MenuItem"_key);
-  copy_item["label"_key] = std::string{"Copy Entry"};
-  copy_item["copy_text"_key] = command + "\nexit: " + std::to_string(exit_code) + "\n" + output;
-  assign_id(copy_item);
-
-  ui_element_ptr clear_item = ui_element_ptr::create("wish"_key, "MenuItem"_key);
-  clear_item["label"_key] = std::string{"Clear Console"};
-  assign_id(clear_item);
-  click_handlers_[wish_id_of(clear_item)] = [this] { clear_console_rows(); };
-
-  set_children_list(context_menu, {copy_item, clear_item});
-  set_children_list(row, {cell_seq, cell_command, cell_exit, cell_output, context_menu});
-
-  console_row_entry entry;
-  entry.child_key = next_console_child_key_++;
-  entry.object_ids = {
-      wish_id_of(row),        wish_id_of(cell_seq),      wish_id_of(cell_command), wish_id_of(cell_exit),
-      wish_id_of(cell_output), wish_id_of(context_menu), wish_id_of(copy_item),    wish_id_of(clear_item)};
-  (*children)[entry.child_key] = dynamic_ptr{row};
-  console_rows_.push_back(std::move(entry));
-
-  if (console_rows_.size() > kMaxConsoleRows) {
-    erase_console_row_objects(console_rows_.front());
-    children->erase(console_rows_.front().child_key);
-    console_rows_.pop_front();
-  }
-  console_table_->refresh_children_order();
-}
-
-void curl_frontend::erase_console_row_objects(const console_row_entry& entry) {
-  for (auto id : entry.object_ids) {
-    ctx().objects.erase(id.id);
-    click_handlers_.erase(id);
-  }
-}
-
-void curl_frontend::clear_console_rows() {
-  if (!console_table_)
-    return;
-  auto* children_p = console_table_->findField<dynamic_ptr>("children"_key);
-  if (!children_p || !*children_p)
-    return;
-  auto& children = *children_p;
-
-  for (auto& entry : console_rows_) {
-    erase_console_row_objects(entry);
-    children->erase(entry.child_key);
-  }
-  console_rows_.clear();
-  console_seq_ = 0;
-  next_console_child_key_ = 0;
-  console_table_->refresh_children_order();
-}
-
 dynamic curl_frontend::do_append_command_log(const dynamic& args) {
-  append_console_row(
-      args.as<std::string>("command"_key), args.as<int32_t>("exit_code"_key), args.as<bool>("ok"_key),
-      args.as<std::string>("output"_key));
+  console_.append_from(args);
   return dynamic{};
 }
 
@@ -1161,14 +824,14 @@ dynamic curl_frontend::do_append_command_log(const dynamic& args) {
 
 void curl_frontend::on_event(key_t id, key_t event, const dynamic& payload) {
   if (event == "closed"_key &&
-      (id == request_window_id_ || id == response_window_id_ || id == history_.window_id ||
-       id == collections_.window_id || id == environments_.window_id || id == console_window_id_)) {
+      (id == request_window_id_ || id == response_window_id_ || id == history_.window_id() ||
+       id == collections_.window_id() || id == environments_.window_id() || id == console_.window_id())) {
     emit("closed"_key);
     remove_objects_at(response_root_key_);
-    remove_objects_at(history_root_key_);
-    remove_objects_at(collections_root_key_);
-    remove_objects_at(environments_root_key_);
-    remove_objects_at(console_root_key_);
+    remove_objects_at(history_.root_key());
+    remove_objects_at(collections_.root_key());
+    remove_objects_at(environments_.root_key());
+    remove_objects_at(console_.root_key());
     remove_internal_objects();
     return;
   }
@@ -1184,52 +847,8 @@ void curl_frontend::on_event(key_t id, key_t event, const dynamic& payload) {
     return;
   }
 
-  if (event != "clicked"_key)
-    return;
-
-  if (auto ch = click_handlers_.find(id); ch != click_handlers_.end()) {
-    ch->second();
-    return;
-  }
-
-  if (auto kv_it = kv_remove_targets_.find(id); kv_it != kv_remove_targets_.end()) {
-    kv_table_remove_row(*kv_it->second, id);
-    return;
-  }
-
-  auto mi = menu_action_targets_.find(id);
-  if (mi == menu_action_targets_.end())
-    return;
-  const row_action target = mi->second;
-
-  if (target.scope == "history") {
-    if (target.action == "load")
-      emit("load_history_requested"_key, payload1("id"_key, target.id));
-    return;
-  }
-
-  if (target.scope == "collections") {
-    if (target.action == "load") {
-      emit("load_request_requested"_key, payload1("id"_key, target.id));
-    } else if (target.action == "duplicate") {
-      emit("duplicate_request_requested"_key, payload1("id"_key, target.id));
-    } else if (target.action == "delete") {
-      show_confirm(
-          "Delete this saved request?", [this, id = target.id] { emit("delete_request_requested"_key, payload1("id"_key, id)); });
-    }
-    return;
-  }
-
-  if (target.scope == "environments") {
-    if (target.action == "edit") {
-      emit("select_environment_requested"_key, payload1("id"_key, target.id));
-    } else if (target.action == "delete") {
-      show_confirm("Delete this environment?", [this, id = target.id] {
-        emit("delete_environment_requested"_key, payload1("id"_key, id));
-      });
-    }
-    return;
-  }
+  if (event == "clicked"_key)
+    dispatch_click(id);
 }
 
 // ── Registration ─────────────────────────────────────────────────────
