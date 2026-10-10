@@ -106,7 +106,7 @@ cmake -S . -B build
 | `WISH_BUILD_SHARED` | `ON` | Build `wish_client` as a shared library with a C ABI (`wish_client.dll` on MSYS2/native Windows / `libwish_client.so` on Linux). |
 | `WISH_BUILD_TESTS` | `ON` | Build and register the GoogleTest suite. |
 | `WISH_COLLECTION_BDG_DESKTOP` | `ON` | Include every module in `modules/bdg/desktop/` (bc, tail, nano, pix, top, mc, zip, du) — see below. **Linux and native Windows only**: `top`'s process-control/process-info backends are `*_linux.cpp` / `*_win.cpp`, so a macOS build must set this `OFF`. |
-| `WISH_MODULE_BDG_DESKTOP_BC` | `ON`¹ | Include the bc form (server; a four-function calculator) and its self-registering reference client runner. |
+| `WISH_MODULE_BDG_DESKTOP_BC` | `ON`¹ | Include the bc form (server; a calculator with standard, scientific and programmer layouts) and its self-registering reference client runner. |
 | `WISH_MODULE_BDG_DESKTOP_TAIL` | `ON`¹ | Include the tail form (server) and its self-registering reference client runner — a `tail`-like log viewer (`wish client --run=tail -- [-f] [-n N] FILE...`). |
 | `WISH_MODULE_BDG_DESKTOP_NANO` | `ON`¹ | Include the nano form (server; a multi-file text editor) and its self-registering reference client runner. |
 | `WISH_MODULE_BDG_DESKTOP_PIX` | `ON`¹ | Include the Pix form (server) and its self-registering reference client runner — a local image folder viewer (`wish client --run=pix`); the client runner needs `stb_image`/`stb_image_resize2`/`stb_image_write` (`extern/stb`, fetched on demand). |

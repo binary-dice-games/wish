@@ -80,6 +80,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `bc` is now a full calculator with switchable **Standard**, **Scientific** and **Programmer** layouts (mode tabs or the View menu): operator precedence and parentheses, trigonometric (DEG/RAD/GRAD, inverse, hyperbolic), power/root/log functions, n!, mod, Exp entry and F-E notation; HEX/DEC/OCT/BIN with BYTE to QWORD word sizes, bitwise and shift/rotate operators; memory keys, a clickable history panel, digit grouping and Copy.
 - `wish server` and `wish_server_start()` always trust a client's `--username` / `"username"` connect field as its identity, so it gets a user store; clients without one stay anonymous.
 - `mc`: the default layout is now a 2x2 grid -- folder trees on top, file panels below, Local on the left and Sandbox on the right.
 - The bdg tool frontends (`kubectl`, `docker`, `helm`, `pip`, `pkg`, `curl`, `sq`, `git` and the desktop tools) now share one set of server-side panels (`modules/bdg/common/server/`): the Console window, list windows with `...` row menus, read-only text viewers, live stats graphs and confirm dialogs look and behave the same in every tool.

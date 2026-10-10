@@ -566,7 +566,7 @@ The same rules that govern low-level wish elements apply to forms without except
 | Form | Module | Description |
 |------|--------|-------------|
 | `FileDialog` | built-in | File picker / Save As dialog (described above) |
-| `Bc` | optional (`WISH_MODULE_BDG_DESKTOP_BC`) | Four-function calculator; demonstrates self-contained form logic |
+| `Bc` | optional (`WISH_MODULE_BDG_DESKTOP_BC`) | Calculator with standard, scientific and programmer layouts; demonstrates self-contained form logic |
 | `Nano` | optional (`WISH_MODULE_BDG_DESKTOP_NANO`) | Multi-file, syntax-highlighted text editor bridged to the client via upload_file/download_file (described above) |
 | `Top` | optional (`WISH_MODULE_BDG_DESKTOP_TOP`) | top/htop-style system monitor; server only renders, client owns all sampling (described above) |
 
