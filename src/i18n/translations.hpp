@@ -22,6 +22,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <vector>
 
 namespace bdg::wish {
 
@@ -58,6 +59,12 @@ class translation_map {
     return entries_.empty() && (!fallback_ || fallback_->empty());
   }
 
+  /// @brief Copy @p other's own entries (not its fallbacks) into this map;
+  ///        entries already here win.
+  void merge(const translation_map& other) {
+    entries_.insert(other.entries_.begin(), other.entries_.end());
+  }
+
   /// @brief Number of entries in this map (fallbacks not counted).
   size_t size() const {
     return entries_.size();
@@ -91,9 +98,33 @@ inline bool is_translatable(std::string_view text) {
   return text.substr(0, translation_prefix.size()) == translation_prefix;
 }
 
+/// @brief Separates a message's key from its arguments (ASCII unit
+///        separator); see make_message().
+inline constexpr char message_arg_separator = '\x1f';
+
 /// @brief Translate one string.
+///
+/// A message built by make_message() (`"$$key\x1farg0\x1farg1..."`) is
+/// translated as `format_text(map.lookup(key), {arg0, arg1, ...})`.
+///
 /// @return `map.lookup(key)` when @p text is `"$$key"`; @p text unchanged
 ///         otherwise.
 std::string translate_text(std::string_view text, const translation_map& map);
+
+/// @brief Encode a translation key and its `{0}`, `{1}`, ... arguments as
+///        one string, translated wherever translate_text() runs.
+///
+/// Lets code that has no translations of its own -- e.g. a client-side
+/// module reporting progress to its server-side form -- send a message the
+/// receiving side translates: `make_message("$$DU_SCANNED", {"5", "3 MB"})`.
+/// Arguments must not contain `message_arg_separator`.
+std::string make_message(std::string_view key, const std::vector<std::string>& args);
+
+/// @brief Replace `{0}`, `{1}`, ... in @p pattern with @p args.
+///
+/// For translated messages with values in them, so each language can put
+/// the values where its grammar needs them (`"{0} lines"` / `"{0} líneas"`).
+/// Placeholders without a matching argument are left as they are.
+std::string format_text(std::string_view pattern, const std::vector<std::string>& args);
 
 } // namespace bdg::wish

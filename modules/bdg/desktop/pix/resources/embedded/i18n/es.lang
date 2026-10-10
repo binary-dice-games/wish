@@ -1,0 +1,24 @@
+# pix -- Spanish.
+PIX_IMAGE_VIEWER = Visor de imágenes
+PIX_IMAGES = Imágenes
+PIX_FOLDER_PATH = Ruta de la carpeta...
+PIX_BROWSE = Examinar...
+PIX_OPEN_SANDBOX = Abrir sandbox
+PIX_PREVIEW = Vista previa
+PIX_ZOOM_OUT = Alejar
+PIX_ZOOM_IN = Acercar
+PIX_FIT_TO_WINDOW = Ajustar a la ventana
+PIX_SCROLL_THE_PREVIEW_TO_PAN = (desplaza la vista previa para moverte)
+PIX_INFO = Información
+PIX_LOADING = Cargando...
+PIX_RESOLUTION = Resolución: {0}
+PIX_FORMAT = Formato: {0}
+PIX_SIZE = Tamaño: {0}
+PIX_MODIFIED = Modificado: {0}
+PIX_UNKNOWN = Desconocido
+PIX_OPENED_SANDBOX = Sandbox abierto en el explorador de archivos del equipo.
+PIX_COULD_NOT_OPEN_EXPLORER = No se pudo abrir el explorador de archivos del equipo.
+PIX_NOT_A_DIRECTORY = No es una carpeta: {0}
+PIX_N_IMAGES = {0} imagen(es).
+PIX_SELECT_IMAGE_FOLDER = Seleccionar carpeta de imágenes
+PIX_SELECT_FOLDER = Seleccionar carpeta

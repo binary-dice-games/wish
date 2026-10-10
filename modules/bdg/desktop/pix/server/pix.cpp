@@ -113,7 +113,7 @@ int64_t file_time_to_unix_seconds(const fs::file_time_type& ftime) {
 
 static constexpr const char* kImagesLayout = R"json({
   "type": "Window",
-  "title": "Images",
+  "title": "$$PIX_IMAGES",
   "width": 360, "height": 700,
   "closable": true,
   "children": {
@@ -126,11 +126,11 @@ static constexpr const char* kImagesLayout = R"json({
           "spacing": 8.0,
           "children": {
             "path_input": {
-              "type": "InputText", "value": "", "hint": "Folder path...",
+              "type": "InputText", "value": "", "hint": "$$PIX_FOLDER_PATH",
               "max_length": 4096, "flags": "EnterReturnsTrue", "width": -1
             },
-            "btn_browse": { "type": "Button", "label": "Browse...", "icon": "res/icons/folder_open.png" },
-            "btn_open_explorer": { "type": "Button", "label": "Open Sandbox", "icon": "res/icons/open_in_new.png" }
+            "btn_browse": { "type": "Button", "label": "$$PIX_BROWSE", "icon": "res/icons/folder_open.png" },
+            "btn_open_explorer": { "type": "Button", "label": "$$PIX_OPEN_SANDBOX", "icon": "res/icons/open_in_new.png" }
           }
         },
         "status_label": { "type": "Label", "text": "" },
@@ -154,7 +154,7 @@ static constexpr const char* kImagesLayout = R"json({
 
 static constexpr const char* kPreviewLayout = R"json({
   "type": "Window",
-  "title": "Preview",
+  "title": "$$PIX_PREVIEW",
   "width": 640, "height": 540,
   "closable": true,
   "children": {
@@ -166,12 +166,12 @@ static constexpr const char* kPreviewLayout = R"json({
           "type": "HorizontalLayout",
           "spacing": 6.0,
           "children": {
-            "btn_zoom_out": { "type": "Button", "label": "", "icon": "res/icons/zoom_out.png", "tooltip": "Zoom out" },
+            "btn_zoom_out": { "type": "Button", "label": "", "icon": "res/icons/zoom_out.png", "tooltip": "$$PIX_ZOOM_OUT" },
             "zoom_label": { "type": "Label", "text": "--" },
-            "btn_zoom_in": { "type": "Button", "label": "", "icon": "res/icons/zoom_in.png", "tooltip": "Zoom in" },
-            "btn_zoom_fit": { "type": "Button", "label": "", "icon": "res/icons/fit_screen.png", "tooltip": "Fit to window" },
+            "btn_zoom_in": { "type": "Button", "label": "", "icon": "res/icons/zoom_in.png", "tooltip": "$$PIX_ZOOM_IN" },
+            "btn_zoom_fit": { "type": "Button", "label": "", "icon": "res/icons/fit_screen.png", "tooltip": "$$PIX_FIT_TO_WINDOW" },
             "btn_zoom_100": { "type": "Button", "label": "100%" },
-            "pan_hint": { "type": "Label", "text": "(scroll the preview to pan)" }
+            "pan_hint": { "type": "Label", "text": "$$PIX_SCROLL_THE_PREVIEW_TO_PAN" }
           }
         },
         "preview_table": {
@@ -198,7 +198,7 @@ static constexpr const char* kPreviewLayout = R"json({
 
 static constexpr const char* kInfoLayout = R"json({
   "type": "Window",
-  "title": "Info",
+  "title": "$$PIX_INFO",
   "width": 640, "height": 160,
   "closable": true,
   "children": {
@@ -218,7 +218,9 @@ static constexpr const char* kInfoLayout = R"json({
 
 // ── pix_viewer ────────────────────────────────────────────────────────────────
 
-pix_viewer::pix_viewer(dynamic&& base) : tool_form(std::move(base)) {}
+pix_viewer::pix_viewer(dynamic&& base) : tool_form(std::move(base)) {
+  i18n_prefix_ = "bdg/desktop/pix";
+}
 
 pix_viewer::~pix_viewer() {
   remove_panel_objects();
@@ -231,7 +233,7 @@ void pix_viewer::on_init() {
   info_root_key_ = internal_root_key_ + "_info";
 
   auto* title_f = findField<std::string>("title"_key);
-  const std::string title = title_f ? *title_f : std::string{"Image Viewer"};
+  const std::string title = tr(title_f ? *title_f : std::string{"$$PIX_IMAGE_VIEWER"});
 
   build_window(internal_root_key_, kImagesLayout, window_id_, [&](ui_tree& tree) {
     tree.with("vbox.toolbar.path_input", [&](const auto& e) {
@@ -458,7 +460,7 @@ dynamic pix_viewer::do_set_preview(const dynamic& args) {
 
   if (loading) {
     if (zoom_label_ptr_)
-      (*zoom_label_ptr_)["text"_key] = std::string{"Loading..."};
+      (*zoom_label_ptr_)["text"_key] = tr("$$PIX_LOADING");
     return dynamic{};
   }
 
@@ -490,25 +492,26 @@ dynamic pix_viewer::do_set_preview(const dynamic& args) {
 }
 
 dynamic pix_viewer::do_set_info(const dynamic& args) {
-  auto set_row = [&](const ui_element_ptr& ptr, key_t field_key, const char* prefix) {
+  // @p key: a "... {0}" translation key, or empty for the bare value.
+  auto set_row = [&](const ui_element_ptr& ptr, key_t field_key, const char* key) {
     if (!ptr)
       return;
     std::string value;
     if (auto* f = args.findField<std::string>(field_key); f && !f->empty())
-      value = std::string{prefix} + *f;
+      value = *key ? trf(key, {tr(*f)}) : *f;
     (*ptr)["text"_key] = value;
   };
   set_row(info_filename_ptr_, "filename"_key, "");
-  set_row(info_resolution_ptr_, "resolution"_key, "Resolution: ");
-  set_row(info_format_ptr_, "format"_key, "Format: ");
-  set_row(info_size_ptr_, "size"_key, "Size: ");
-  set_row(info_modified_ptr_, "modified"_key, "Modified: ");
+  set_row(info_resolution_ptr_, "resolution"_key, "$$PIX_RESOLUTION");
+  set_row(info_format_ptr_, "format"_key, "$$PIX_FORMAT");
+  set_row(info_size_ptr_, "size"_key, "$$PIX_SIZE");
+  set_row(info_modified_ptr_, "modified"_key, "$$PIX_MODIFIED");
   return dynamic{};
 }
 
 dynamic pix_viewer::do_set_status(const dynamic& args) {
   if (status_label_ptr_)
-    (*status_label_ptr_)["text"_key] = args.as<std::string>("message"_key);
+    (*status_label_ptr_)["text"_key] = tr(args.as<std::string>("message"_key));
   return dynamic{};
 }
 
@@ -604,8 +607,8 @@ void pix_viewer::on_event(key_t id, key_t event, const dynamic& payload) {
     }
     dynamic status_args;
     status_args["message"_key] = open_in_host_explorer(resource_dir)
-        ? std::string{"Opened sandbox in host file explorer."}
-        : std::string{"Could not open host file explorer."};
+        ? std::string{"$$PIX_OPENED_SANDBOX"}
+        : std::string{"$$PIX_COULD_NOT_OPEN_EXPLORER"};
     do_set_status(status_args);
     return;
   }

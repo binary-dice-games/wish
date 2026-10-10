@@ -13,6 +13,7 @@
 
 #include "src/client/app_registry.hpp"
 #include "src/client/wish_app_host.hpp"
+#include "src/i18n/translations.hpp"
 
 #include "src/bison/bison.hpp"
 
@@ -101,7 +102,7 @@ std::string format_name(const std::string& ext_lower) {
         c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
       return up;
     }();
-  return "Unknown";
+  return "$$PIX_UNKNOWN";
 }
 
 std::string format_bytes(uintmax_t bytes) {
@@ -516,7 +517,7 @@ void browse_to(wish_app_host& s, const std::shared_ptr<pix_state>& state, const 
   std::error_code ec;
   if (!fs::is_directory(dir, ec)) {
     dynamic status;
-    status["message"_key] = std::string{"Not a directory: "} + dir.string();
+    status["message"_key] = make_message("$$PIX_NOT_A_DIRECTORY", {dir.string()});
     call_with_retry(state->pix, "set_status"_key, std::move(status));
     return;
   }
@@ -545,9 +546,7 @@ void browse_to(wish_app_host& s, const std::shared_ptr<pix_state>& state, const 
   call_with_retry(state->pix, "set_images"_key, std::move(images_arg));
 
   dynamic status;
-  std::ostringstream msg;
-  msg << state->images.size() << " image(s).";
-  status["message"_key] = msg.str();
+  status["message"_key] = make_message("$$PIX_N_IMAGES", {std::to_string(state->images.size())});
   call_with_retry(state->pix, "set_status"_key, std::move(status));
 
   // Batch-stat every thumbnail path in one round trip (see
@@ -607,8 +606,8 @@ void browse_for_folder(wish_app_host& s, const std::shared_ptr<pix_state>& state
   auto dlg = std::make_shared<rmi::proxy::dynamic>(s.instantiate("wish"_key, "FileDialog"_key).get());
 
   dynamic init;
-  init["title"_key] = std::string{"Select Image Folder"};
-  init["confirm_label"_key] = std::string{"Select Folder"};
+  init["title"_key] = std::string{"$$PIX_SELECT_IMAGE_FOLDER"};
+  init["confirm_label"_key] = std::string{"$$PIX_SELECT_FOLDER"};
   init["path"_key] = cur_dir->string();
   init["files"_key] = dynamic_ptr{std::make_shared<dynamic>(list_directory_for_dialog(*cur_dir))};
   dlg->set(std::move(init)).get();

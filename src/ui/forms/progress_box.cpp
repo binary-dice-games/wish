@@ -50,10 +50,10 @@ static constexpr const char* kLayout = R"json({
       "flags": "RowBg|Borders|ScrollX|ScrollY", "headers": false,
       "height": -1, "outer_height": -1, "auto_scroll": true,
       "children": {
-        "col_line": { "type": "TableColumn", "label": "Output", "flags": "WidthStretch", "column_id": 0 }
+        "col_line": { "type": "TableColumn", "label": "$$PROGRESS_OUTPUT", "flags": "WidthStretch", "column_id": 0 }
       }
     },
-    "btn_cancel": { "type": "Button", "label": "Cancel" }
+    "btn_cancel": { "type": "Button", "label": "$$MSGBOX_CANCEL" }
   } } }
 })json";
 
@@ -71,7 +71,7 @@ void progress_box::on_construct(const dynamic& params) {
     return;
   (*this)["title"_key] = *title;
   if (window_)
-    window_["title"_key] = *title;
+    window_["title"_key] = tr(*title);
 }
 
 void progress_box::with_context(const std::function<void()>& fn) {
@@ -91,9 +91,9 @@ void progress_box::build() {
   // See form::internal_root_key_'s doc comment: ordinally-assigned, not pointer-derived.
   internal_root_key_ = next_available_key("__progress_box_");
 
-  auto tree = import_json(kLayout);
+  auto tree = import_json(kLayout, translations());
   const auto* title = findField<std::string>("title"_key);
-  (*tree[""])["title"_key] = title ? *title : std::string{"Working"};
+  (*tree[""])["title"_key] = tr(title ? *title : std::string{"$$PROGRESS_WORKING"});
 
   auto& c = ctx();
   object_ids_.clear();
@@ -174,7 +174,8 @@ void progress_box::append_line(const std::string& text, bool is_command) {
   };
 
   ui_element_ptr cell = ui_element_ptr::create("wish"_key, "Label"_key);
-  cell["text"_key] = is_command ? "$ " + text : text;
+  // Commands may be translatable captions (a "$$KEY" or make_message()).
+  cell["text"_key] = is_command ? "$ " + tr(text) : text;
   if (is_command) {
     cell["text_color_light"_key] = std::string{kOkLight};
     cell["text_color_dark"_key] = std::string{kOkDark};
@@ -217,7 +218,7 @@ dynamic progress_box::do_update(const dynamic& args) {
     if (result_label_)
       result_label_["visible"_key] = false;
     if (button_)
-      button_["label"_key] = std::string{"Cancel"};
+      button_["label"_key] = tr("$$MSGBOX_CANCEL");
   }
 
   const std::string command = str_of(args, "command"_key);
@@ -227,7 +228,7 @@ dynamic progress_box::do_update(const dynamic& args) {
       append_line(command, /*is_command=*/true);
   }
   if (command_label_ && !cancelling_)
-    command_label_["text"_key] = command;
+    command_label_["text"_key] = tr(command);
 
   const auto* lines = args.findField<dynamic_ptr>("lines"_key);
   if (lines && *lines) {
@@ -271,17 +272,17 @@ dynamic progress_box::do_finish(const dynamic& args) {
   // Keep a failure on screen, with the output that led to it.
   finished_ = true;
   if (command_label_)
-    command_label_["text"_key] = std::string{"Finished with an error"};
+    command_label_["text"_key] = tr("$$PROGRESS_FINISHED_WITH_ERROR");
   if (bar_)
     bar_["visible"_key] = false;
   if (result_label_) {
-    result_label_["text"_key] = error;
+    result_label_["text"_key] = tr(error);
     result_label_["text_color_light"_key] = std::string{kBadLight};
     result_label_["text_color_dark"_key] = std::string{kBadDark};
     result_label_["visible"_key] = true;
   }
   if (button_)
-    button_["label"_key] = std::string{"Close"};
+    button_["label"_key] = tr("$$PROPS_CLOSE");
   return dynamic{};
 }
 
@@ -311,7 +312,7 @@ void progress_box::on_event(key_t id, key_t event, const dynamic& /*payload*/) {
     return;
   cancelling_ = true;
   if (command_label_)
-    command_label_["text"_key] = std::string{"Cancelling ..."};
+    command_label_["text"_key] = tr("$$PROGRESS_CANCELLING");
   emit("cancel_requested"_key);
 }
 
@@ -323,9 +324,9 @@ void register_progress_box() {
   proto->addField(
       "title"_key,
       field{
-          std::string{"Working"},
+          std::string{"$$PROGRESS_WORKING"},
           attr<DisplayName>("Title"),
-          attr<Description>("Dialog window title."),
+          attr<Description>("Dialog window title; a \"$$KEY\" is translated (see docs/i18n.md)."),
           attr<Category>("Appearance")});
 
   proto->addMethod("__construct"_key, bison::method{[](dynamic& s, const dynamic& p) -> dynamic {

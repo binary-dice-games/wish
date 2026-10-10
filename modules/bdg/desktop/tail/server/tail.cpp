@@ -176,7 +176,7 @@ void tail::on_init() {
   controls_root_key_ = internal_root_key_ + "_controls";
 
   auto* title_f = findField<std::string>("title"_key);
-  const std::string title = title_f ? *title_f : std::string{"Tail"};
+  const std::string title = tr(title_f ? *title_f : std::string{"$$TAIL_TAIL"});
 
   build_window(internal_root_key_, kLogLayout, window_id_, [&](ui_tree& tree) {
     tree.with("vbox.tab_bar", [&](const auto& e) { tab_bar_ptr_ = e; });
@@ -285,7 +285,7 @@ dynamic tail::do_set_filter(const dynamic& args) {
       filter_pattern_ = pattern;
     } catch (const std::regex_error& e) {
       if (status_label_ptr_)
-        status_label_ptr_["text"_key] = tr("$$TAIL_INVALID_REGEX") + " " + e.what();
+        status_label_ptr_["text"_key] = trf("$$TAIL_INVALID_REGEX", {e.what()});
       return dynamic{};
     }
   }
@@ -599,9 +599,9 @@ void tail::update_status() {
   if (!status_label_ptr_)
     return;
   std::ostringstream oss;
-  oss << total_lines_received_ << ' ' << tr(total_lines_received_ == 1 ? "$$TAIL_LINE" : "$$TAIL_LINES_COUNT");
+  oss << trf(total_lines_received_ == 1 ? "$$TAIL_LINE" : "$$TAIL_LINES_COUNT", {std::to_string(total_lines_received_)});
   if (!filter_pattern_.empty())
-    oss << "  --  " << tr("$$TAIL_FILTER_STATUS") << " /" << filter_pattern_ << "/";
+    oss << "  --  " << trf("$$TAIL_FILTER_STATUS", {filter_pattern_});
   status_label_ptr_["text"_key] = oss.str();
 }
 
@@ -662,7 +662,7 @@ void register_tail() {
   proto->addField(
       "title"_key,
       field{
-          std::string{"Tail"},
+          std::string{"$$TAIL_TAIL"},
           attr<DisplayName>("Title"),
           attr<Description>("Window title."),
           attr<Category>("Appearance")});

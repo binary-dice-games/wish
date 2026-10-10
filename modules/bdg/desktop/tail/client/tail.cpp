@@ -41,6 +41,7 @@
 
 #include "src/client/app_registry.hpp"
 #include "src/client/wish_app_host.hpp"
+#include "src/i18n/translations.hpp"
 
 #include "src/bison/bison.hpp"
 
@@ -289,14 +290,14 @@ void run_tail(wish_app_host& s) {
   if (opt.files.empty()) {
     std::cerr << "[tail] usage: wish client --run=tail -- [-f] [-n N|+N] [-e REGEX] FILE...\n";
   } else {
-    std::string title = "Tail - ";
+    std::string names;
     for (size_t i = 0; i < opt.files.size(); ++i) {
       if (i)
-        title += ", ";
-      title += fs::path(opt.files[i]).filename().string();
+        names += ", ";
+      names += fs::path(opt.files[i]).filename().string();
     }
     dynamic title_args;
-    title_args["title"_key] = title;
+    title_args["title"_key] = make_message("$$TAIL_TITLE_FILES", {names});
     proxy->set(std::move(title_args));
   }
 

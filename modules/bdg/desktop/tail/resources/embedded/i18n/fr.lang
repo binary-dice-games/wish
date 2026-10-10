@@ -1,0 +1,21 @@
+# tail -- French.
+TAIL_TAIL = Tail
+TAIL_TITLE_FILES = Tail - {0}
+TAIL_LOG = Journal
+TAIL_ALL = Tout
+TAIL_COL_TIME = Heure
+TAIL_COL_LEVEL = Niveau
+TAIL_COL_TAG = Étiquette
+TAIL_COL_SOURCE = Source
+TAIL_COL_MESSAGE = Message
+TAIL_CONTROLS = Contrôles
+TAIL_FILTER = Filtre (regex)
+TAIL_FILTER_HINT = ex. error|timeout
+TAIL_LINES = Lignes
+TAIL_FOLLOW = Suivre
+TAIL_CLEAR_ALL = Tout effacer
+TAIL_NO_LINES = 0 ligne
+TAIL_LINE = {0} ligne
+TAIL_LINES_COUNT = {0} lignes
+TAIL_FILTER_STATUS = filtre : /{0}/
+TAIL_INVALID_REGEX = Expression de filtre non valide : {0}

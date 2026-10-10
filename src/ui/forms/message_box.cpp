@@ -235,8 +235,8 @@ void message_box::rebuild() {
   auto* icon_f = findField<int32_t>("icon"_key);
   auto* buttons_f = findField<int32_t>("buttons"_key);
 
-  std::string title = title_f ? *title_f : std::string{"Message"};
-  std::string message = message_f ? *message_f : std::string{};
+  std::string title = tr(title_f ? *title_f : std::string{"$$MSGBOX_MESSAGE"});
+  std::string message = tr(message_f ? *message_f : std::string{});
   int32_t icon_val = icon_f ? *icon_f : 1; // "info" -- see the icon field's default.
   int32_t buttons_val = buttons_f ? *buttons_f : 0;
 
@@ -253,7 +253,7 @@ void message_box::rebuild() {
 
   // Button labels are "$$MSGBOX_*" keys, translated from the built-in
   // res/i18n/<lang>.lang files (resources/embedded/i18n/).
-  auto tree = import_json(p.layout, sess().translations_for("").get());
+  auto tree = import_json(p.layout, translations());
 
   // Stamp form-field values onto the imported tree (same idiom as
   // file_dialog.cpp's title/confirm_label stamping).
@@ -394,7 +394,7 @@ void register_message_box() {
   proto->addField(
       "title"_key,
       field{
-          std::string{"Message"},
+          std::string{"$$MSGBOX_MESSAGE"},
           attr<DisplayName>("Title"),
           attr<Description>("Dialog window title."),
           attr<Category>("Appearance")});

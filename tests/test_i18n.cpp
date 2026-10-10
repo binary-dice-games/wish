@@ -47,6 +47,14 @@ TEST(TranslationParse, LoadFileReturnsNulloptForMissingFile) {
   EXPECT_FALSE(load_translations_file("/nonexistent/dir/xx.lang").has_value());
 }
 
+// ── format_text ───────────────────────────────────────────────────────────────
+
+TEST(TranslationFormat, ReplacesNumberedPlaceholders) {
+  EXPECT_EQ(format_text("{0} of {1}", {"3", "7"}), "3 of 7");
+  EXPECT_EQ(format_text("{1} before {0}", {"a", "b"}), "b before a");
+  EXPECT_EQ(format_text("{2} {x} {} {0}", {"a"}), "{2} {x} {} a");
+}
+
 // ── Lookup / translate_text ───────────────────────────────────────────────────
 
 TEST(TranslationLookup, OnlyWholeValueDollarPrefixIsTranslated) {
@@ -55,6 +63,13 @@ TEST(TranslationLookup, OnlyWholeValueDollarPrefixIsTranslated) {
   EXPECT_EQ(translate_text("HELLO", map), "HELLO");
   EXPECT_EQ(translate_text("say $$HELLO", map), "say $$HELLO");
   EXPECT_EQ(translate_text("", map), "");
+}
+
+TEST(TranslationLookup, MessageArgumentsAreFormatted) {
+  auto map = parse_translations("SCANNED = {0} elementos ({1})");
+  EXPECT_EQ(translate_text(make_message("$$SCANNED", {"5", "3 MB"}), map), "5 elementos (3 MB)");
+  EXPECT_EQ(translate_text(make_message("$$SCANNED", {""}), map), " elementos ({1})");
+  EXPECT_EQ(translate_text(make_message("$$MISSING", {"x"}), map), "MISSING");
 }
 
 TEST(TranslationLookup, MissingKeyShowsBareKey) {
@@ -183,10 +198,18 @@ TEST_F(ContextTranslationsTest, MissingLanguageFileUsesEnglish) {
   EXPECT_EQ(ctx_->translations_for("test/i18n/mod")->lookup("A"), "A-en");
 }
 
-TEST_F(ContextTranslationsTest, MissingModuleYieldsEmptyMap) {
+TEST_F(ContextTranslationsTest, MissingModuleFallsBackToBuiltIn) {
   auto map = ctx_->translations_for("no/such/module");
   ASSERT_NE(map, nullptr);
-  EXPECT_TRUE(map->empty());
+  EXPECT_EQ(map->lookup("UNKNOWN_KEY"), "UNKNOWN_KEY");
+  EXPECT_EQ(map->lookup("COMMON_REFRESH"), "Refresh");
+}
+
+TEST_F(ContextTranslationsTest, ModuleChainEndsInBuiltInTranslations) {
+  ctx_->set_language("fr");
+  auto map = ctx_->translations_for("test/i18n/mod");
+  EXPECT_EQ(map->lookup("A"), "A-en");  // no fr file for the module
+  EXPECT_EQ(map->lookup("COMMON_REFRESH"), "Actualiser");
 }
 
 TEST_F(ContextTranslationsTest, InvalidLanguageCodeIsRejected) {

@@ -98,12 +98,59 @@ bool is_valid_language_code(std::string_view lang) {
   return true;
 }
 
+std::string format_text(std::string_view pattern, const std::vector<std::string>& args) {
+  std::string out;
+  out.reserve(pattern.size());
+  for (size_t i = 0; i < pattern.size(); ++i) {
+    if (pattern[i] == '{') {
+      size_t close = pattern.find('}', i + 1);
+      if (close != std::string_view::npos && close > i + 1 && close - i <= 3) {
+        bool digits = true;
+        size_t index = 0;
+        for (size_t j = i + 1; j < close; ++j) {
+          digits = digits && std::isdigit(static_cast<unsigned char>(pattern[j]));
+          index = index * 10 + static_cast<size_t>(pattern[j] - '0');
+        }
+        if (digits && index < args.size()) {
+          out += args[index];
+          i = close;
+          continue;
+        }
+      }
+    }
+    out += pattern[i];
+  }
+  return out;
+}
+
 // ── Lookup ──────────────────────────────────────────────────────────────────
 
 std::string translate_text(std::string_view text, const translation_map& map) {
   if (!is_translatable(text))
     return std::string{text};
-  return map.lookup(text.substr(translation_prefix.size()));
+  text.remove_prefix(translation_prefix.size());
+  size_t sep = text.find(message_arg_separator);
+  if (sep == std::string_view::npos)
+    return map.lookup(text);
+
+  std::vector<std::string> args;
+  for (size_t start = sep + 1;;) {
+    size_t next = text.find(message_arg_separator, start);
+    args.emplace_back(text.substr(start, next == std::string_view::npos ? std::string_view::npos : next - start));
+    if (next == std::string_view::npos)
+      break;
+    start = next + 1;
+  }
+  return format_text(map.lookup(text.substr(0, sep)), args);
+}
+
+std::string make_message(std::string_view key, const std::vector<std::string>& args) {
+  std::string out{key};
+  for (const auto& arg : args) {
+    out += message_arg_separator;
+    out += arg;
+  }
+  return out;
 }
 
 } // namespace bdg::wish

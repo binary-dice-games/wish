@@ -98,7 +98,7 @@ TEST_F(TopLocalTest, DefaultTitle) {
   auto* f = obj.findField("title"_key);
   ASSERT_NE(f, nullptr);
   EXPECT_TRUE(f->is<std::string>());
-  EXPECT_EQ(f->as<std::string>(), "Top");
+  EXPECT_EQ(f->as<std::string>(), "$$TOP_TOP");
 }
 
 // ── Session-capturing server for internal-tree tests ──────────────────────────

@@ -168,7 +168,7 @@ class zip : public common::tool_form {
 
   /// @brief Formats the "Selected: ..." label text for the current
   /// multi-selection: "(none)", the single name, or "N items".
-  static std::string describe_selection(const std::set<std::string>& selected);
+  std::string describe_selection(const std::set<std::string>& selected);
 
   /// @brief Names in @p selected present in @p entries, excluding the ".."
   /// pseudo-row -- what the Compress button acts on (unlike mc's

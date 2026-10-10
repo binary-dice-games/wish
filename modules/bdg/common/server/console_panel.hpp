@@ -30,7 +30,7 @@ class tool_form;
 /// @brief Settings for console_panel::build().
 struct console_options {
   /// Window title; the context menu's clear item reads "Clear <title>".
-  std::string title{"Console"};
+  std::string title{"$$COMMON_CONSOLE"};
   /// ImGui id of the table, e.g. `"##helm_console_table"`.
   std::string table_id{"##console_table"};
   int32_t width{940};

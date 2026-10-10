@@ -1,0 +1,18 @@
+# bc -- French.
+BC_CALCULATOR = Calculatrice
+BC_STANDARD = Standard
+BC_SCIENTIFIC = Scientifique
+BC_PROGRAMMER = Programmeur
+BC_VIEW = Affichage
+BC_DEGREES = Degrés
+BC_RADIANS = Radians
+BC_GRADIANS = Grades
+BC_HISTORY = Historique
+BC_DIGIT_GROUPING = Groupement des chiffres
+BC_EDIT = Édition
+BC_COPY = Copier
+BC_CLEAR_HISTORY = Effacer l'historique
+BC_NO_HISTORY = Pas encore d'historique
+BC_CANNOT_DIVIDE_BY_ZERO = Division par zéro impossible
+BC_RESULT_IS_UNDEFINED = Résultat indéfini
+BC_INVALID_INPUT = Entrée non valide

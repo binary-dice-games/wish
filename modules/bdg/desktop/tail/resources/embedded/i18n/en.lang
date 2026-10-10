@@ -1,4 +1,6 @@
 # tail -- English (fallback for every other language).
+TAIL_TAIL = Tail
+TAIL_TITLE_FILES = Tail - {0}
 TAIL_LOG = Log
 TAIL_ALL = All
 TAIL_COL_TIME = Time
@@ -13,7 +15,7 @@ TAIL_LINES = Lines
 TAIL_FOLLOW = Follow
 TAIL_CLEAR_ALL = Clear All
 TAIL_NO_LINES = 0 lines
-TAIL_LINE = line
-TAIL_LINES_COUNT = lines
-TAIL_FILTER_STATUS = filter:
-TAIL_INVALID_REGEX = Invalid filter regex:
+TAIL_LINE = {0} line
+TAIL_LINES_COUNT = {0} lines
+TAIL_FILTER_STATUS = filter: /{0}/
+TAIL_INVALID_REGEX = Invalid filter regex: {0}

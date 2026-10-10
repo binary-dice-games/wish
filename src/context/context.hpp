@@ -328,8 +328,11 @@ struct context : public bison::rmi::context {
   /// `res/<module_prefix>/i18n/en.lang` as its fallback (both through
   /// `file_service::resolve_path()`, so they are sandboxed to
   /// `resource_dir`), and caches the result per prefix. An empty prefix
-  /// selects the top-level `res/i18n/` used by the built-in forms. Missing
-  /// files yield an empty map (keys then show up as their bare name).
+  /// selects the top-level `res/i18n/` used by the built-in forms; a
+  /// module's chain falls back to it last, so shared `COMMON_*` keys work in
+  /// every tool, and it falls back to every module's keys, so a built-in
+  /// form can show a module's key. Missing files are skipped (keys found nowhere show up as
+  /// their bare name).
   ///
   /// Call during dispatch (session wlock held). The returned map is
   /// immutable, so a form may keep it and translate from outside dispatch
@@ -346,6 +349,9 @@ struct context : public bison::rmi::context {
   context& operator=(context&& other) = delete;
 
  private:
+  /// Every module's translations merged, for the end of the built-in chain.
+  std::shared_ptr<const translation_map> all_module_translations();
+
   std::string language_;
   std::unordered_map<std::string, std::shared_ptr<const translation_map>> translations_cache_;
 };

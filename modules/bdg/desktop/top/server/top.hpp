@@ -197,7 +197,8 @@ class top : public common::tool_form {
   /// fields do_report_process_details() receives -- pid alone (everything
   /// else at its type default) for the placeholder shown immediately by
   /// show_properties_dialog(), or the full set once the client responds.
-  static bison::dynamic_ptr make_process_details(
+  /// Its placeholder texts are translated (tr()).
+  bison::dynamic_ptr make_process_details(
       int32_t pid, int32_t ppid, const std::string& user, int32_t thread_count, const std::string& start_time,
       const std::string& exe_path, const std::string& cwd, const std::string& cmdline, int32_t nice,
       const std::vector<int32_t>& affinity_cores);

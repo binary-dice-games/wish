@@ -38,10 +38,11 @@ TEST_F(MessageBoxLocalTest, CanBeInstantiated) {
 }
 
 TEST_F(MessageBoxLocalTest, DefaultTitleIsMessage) {
+  // The default is a translation key; the window shows its translation.
   auto obj = dynamic::instantiate("wish"_key, "MessageBox"_key);
   auto* f = obj.findField("title"_key);
   ASSERT_NE(f, nullptr);
-  EXPECT_EQ(f->as<std::string>(), "Message");
+  EXPECT_EQ(f->as<std::string>(), "$$MSGBOX_MESSAGE");
 }
 
 TEST_F(MessageBoxLocalTest, DefaultMessageIsEmpty) {

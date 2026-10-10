@@ -47,7 +47,7 @@ TEST_F(TailLocalTest, DefaultTitleIsTail) {
   auto* f = obj.findField("title"_key);
   ASSERT_NE(f, nullptr);
   EXPECT_TRUE(f->is<std::string>());
-  EXPECT_EQ(f->as<std::string>(), "Tail");
+  EXPECT_EQ(f->as<std::string>(), "$$TAIL_TAIL");
 }
 
 // ── Session-capturing server, mirroring test_nano.cpp's fixture ────────────

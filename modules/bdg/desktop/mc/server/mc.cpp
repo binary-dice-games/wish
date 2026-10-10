@@ -166,7 +166,7 @@ std::string join_local_path(const std::string& parent, const std::string& name) 
 
 static constexpr const char* kLocalLayout = R"json({
   "type": "Window",
-  "title": "Local Machine",
+  "title": "$$MC_LOCAL_MACHINE",
   "width": 460, "height": 480,
   "closable": true,
   "children": {
@@ -175,7 +175,7 @@ static constexpr const char* kLocalLayout = R"json({
       "spacing": 4,
       "children": {
         "left_path": {
-          "type": "InputText", "hint": "Local path...", "value": "",
+          "type": "InputText", "hint": "$$MC_LOCAL_PATH", "value": "",
           "flags": "EnterReturnsTrue", "width": -1
         },
         "left_actions": {
@@ -183,10 +183,10 @@ static constexpr const char* kLocalLayout = R"json({
           "spacing": 8,
           "children": {
             "upload": {
-              "type": "Button", "label": "Upload", "icon": "res/icons/upload.png",
-              "tooltip": "Copy the selected files to the sandbox folder shown in the Sandbox panel"
+              "type": "Button", "label": "$$MC_UPLOAD", "icon": "res/icons/upload.png",
+              "tooltip": "$$MC_UPLOAD_TOOLTIP"
             },
-            "left_selected": { "type": "Label", "text": "Selected: (none)" }
+            "left_selected": { "type": "Label", "text": "$$MC_SELECTED_NONE" }
           }
         },
         "left_table": {
@@ -194,9 +194,9 @@ static constexpr const char* kLocalLayout = R"json({
           "flags": "Resizable|RowBg|Borders|Sortable|ScrollY",
           "outer_width": 0, "height": -1, "auto_scroll": false,
           "children": {
-            "col_name":     { "type": "TableColumn", "label": "Name", "column_id": 0 },
-            "col_size":     { "type": "TableColumn", "label": "Size", "flags": "WidthFixed", "init_width": 90, "column_id": 1 },
-            "col_modified": { "type": "TableColumn", "label": "Modified", "flags": "WidthFixed", "init_width": 160, "column_id": 2 }
+            "col_name":     { "type": "TableColumn", "label": "$$MC_NAME", "column_id": 0 },
+            "col_size":     { "type": "TableColumn", "label": "$$MC_SIZE", "flags": "WidthFixed", "init_width": 90, "column_id": 1 },
+            "col_modified": { "type": "TableColumn", "label": "$$MC_MODIFIED", "flags": "WidthFixed", "init_width": 160, "column_id": 2 }
           }
         },
         "left_stats": { "type": "Label", "text": "" },
@@ -209,7 +209,7 @@ static constexpr const char* kLocalLayout = R"json({
 
 static constexpr const char* kSandboxLayout = R"json({
   "type": "Window",
-  "title": "Sandbox (Server)",
+  "title": "$$MC_SANDBOX_SERVER",
   "width": 460, "height": 480,
   "closable": true,
   "children": {
@@ -222,10 +222,10 @@ static constexpr const char* kSandboxLayout = R"json({
           "spacing": 6,
           "children": {
             "right_path": {
-              "type": "InputText", "hint": "Sandbox path...", "value": "/",
+              "type": "InputText", "hint": "$$MC_SANDBOX_PATH", "value": "/",
               "flags": "EnterReturnsTrue", "width": -1
             },
-            "open_explorer": { "type": "Button", "label": "Open in Explorer", "icon": "res/icons/open_in_new.png" }
+            "open_explorer": { "type": "Button", "label": "$$MC_OPEN_IN_EXPLORER", "icon": "res/icons/open_in_new.png" }
           }
         },
         "right_actions": {
@@ -233,10 +233,10 @@ static constexpr const char* kSandboxLayout = R"json({
           "spacing": 8,
           "children": {
             "download": {
-              "type": "Button", "label": "Download", "icon": "res/icons/download.png",
-              "tooltip": "Copy the selected files to the local folder shown in the Local Machine panel"
+              "type": "Button", "label": "$$MC_DOWNLOAD", "icon": "res/icons/download.png",
+              "tooltip": "$$MC_DOWNLOAD_TOOLTIP"
             },
-            "right_selected": { "type": "Label", "text": "Selected: (none)" }
+            "right_selected": { "type": "Label", "text": "$$MC_SELECTED_NONE" }
           }
         },
         "right_table": {
@@ -244,14 +244,14 @@ static constexpr const char* kSandboxLayout = R"json({
           "flags": "Resizable|RowBg|Borders|Sortable|ScrollY",
           "outer_width": 0, "height": -1, "auto_scroll": false,
           "children": {
-            "col_name":     { "type": "TableColumn", "label": "Name", "column_id": 0 },
-            "col_size":     { "type": "TableColumn", "label": "Size", "flags": "WidthFixed", "init_width": 90, "column_id": 1 },
-            "col_modified": { "type": "TableColumn", "label": "Modified", "flags": "WidthFixed", "init_width": 160, "column_id": 2 }
+            "col_name":     { "type": "TableColumn", "label": "$$MC_NAME", "column_id": 0 },
+            "col_size":     { "type": "TableColumn", "label": "$$MC_SIZE", "flags": "WidthFixed", "init_width": 90, "column_id": 1 },
+            "col_modified": { "type": "TableColumn", "label": "$$MC_MODIFIED", "flags": "WidthFixed", "init_width": 160, "column_id": 2 }
           }
         },
         "right_stats": { "type": "Label", "text": "" },
         "right_disk":  { "type": "Label", "text": "" },
-        "right_status": { "type": "Label", "text": "Ready." }
+        "right_status": { "type": "Label", "text": "$$MC_READY" }
       }
     }
   }
@@ -265,7 +265,7 @@ static constexpr const char* kSandboxLayout = R"json({
 // into view.
 static constexpr const char* kLocalTreeLayout = R"json({
   "type": "Window",
-  "title": "Local Folders",
+  "title": "$$MC_LOCAL_FOLDERS",
   "width": 240, "height": 480,
   "closable": true,
   "children": {
@@ -275,7 +275,7 @@ static constexpr const char* kLocalTreeLayout = R"json({
 
 static constexpr const char* kSandboxTreeLayout = R"json({
   "type": "Window",
-  "title": "Sandbox Folders",
+  "title": "$$MC_SANDBOX_FOLDERS",
   "width": 240, "height": 480,
   "closable": true,
   "children": {
@@ -296,7 +296,7 @@ static constexpr const char* kSandboxTreeLayout = R"json({
 // wraps message/new_name with "height": -1 so it -- not sep/buttons --
 // absorbs any extra height the user resizes the window to.
 static constexpr const char* kRenameLayout = R"json({
-  "type": "Window", "title": "Rename", "modal": true,
+  "type": "Window", "title": "$$MC_RENAME", "modal": true,
   "flags": "NoCollapse",
   "width": 400, "height": 160,
   "children": {
@@ -313,8 +313,8 @@ static constexpr const char* kRenameLayout = R"json({
         },
         "sep": { "type": "Separator" },
         "buttons": { "type": "HorizontalLayout", "spacing": 6, "children": {
-          "btn_ok": { "type": "Button", "label": "Rename", "height": 32 },
-          "btn_cancel": { "type": "Button", "label": "Cancel", "height": 32 }
+          "btn_ok": { "type": "Button", "label": "$$MC_RENAME", "height": 32 },
+          "btn_cancel": { "type": "Button", "label": "$$MC_CANCEL", "height": 32 }
         } }
       }
     }
@@ -331,7 +331,9 @@ static constexpr const char* kRenameLayout = R"json({
 
 // ── mc ─────────────────────────────────────────────────────────────
 
-mc::mc(dynamic&& base) : tool_form(std::move(base)) {}
+mc::mc(dynamic&& base) : tool_form(std::move(base)) {
+  i18n_prefix_ = "bdg/desktop/mc";
+}
 
 mc::~mc() {
   remove_panel_objects();
@@ -344,7 +346,7 @@ void mc::on_init() {
   sandbox_tree_root_key_ = internal_root_key_ + "_sandbox_tree";
 
   auto* title_f = findField<std::string>("title"_key);
-  const std::string title = title_f ? *title_f : std::string{"File Explorer"};
+  const std::string title = tr(title_f ? *title_f : std::string{"$$MC_FILE_EXPLORER"});
 
   build_window(internal_root_key_, kLocalLayout, window_id_, [&](ui_tree& tree) {
     tree.with("vbox.left_path", [&](const auto& e) {
@@ -676,12 +678,12 @@ ui_element_ptr mc::build_row_context_menu(
   assign_id(menu);
 
   ui_element_ptr properties = ui_element_ptr::create("wish"_key, "MenuItem"_key);
-  properties["label"_key] = std::string{"Properties"};
+  properties["label"_key] = tr("$$MC_PROPERTIES");
   common::set_icon(properties, "info");
   menu_targets[assign_id(properties)] = row_menu_target{row_menu_action::properties, is_sandbox, entry.name};
 
   ui_element_ptr rename = ui_element_ptr::create("wish"_key, "MenuItem"_key);
-  rename["label"_key] = std::string{"Rename..."};
+  rename["label"_key] = tr("$$MC_RENAME") + "...";
   common::set_icon(rename, "edit");
   menu_targets[assign_id(rename)] = row_menu_target{row_menu_action::rename, is_sandbox, entry.name};
 
@@ -689,7 +691,7 @@ ui_element_ptr mc::build_row_context_menu(
   assign_id(sep);
 
   ui_element_ptr copy_path = ui_element_ptr::create("wish"_key, "MenuItem"_key);
-  copy_path["label"_key] = std::string{"Copy Path"};
+  copy_path["label"_key] = tr("$$MC_COPY_PATH");
   common::set_icon(copy_path, "copy");
   // No round trip needed: the renderer copies this to the OS clipboard
   // directly on click (see MenuItem.copy_text's field comment in
@@ -779,10 +781,10 @@ void mc::apply_row_click(
 
 std::string mc::describe_selection(const std::set<std::string>& selected) {
   if (selected.empty())
-    return "Selected: (none)";
+    return tr("$$MC_SELECTED_NONE");
   if (selected.size() == 1)
-    return "Selected: " + *selected.begin();
-  return "Selected: " + std::to_string(selected.size()) + " items";
+    return trf("$$MC_SELECTED_ONE", {*selected.begin()});
+  return trf("$$MC_SELECTED_N_ITEMS", {std::to_string(selected.size())});
 }
 
 std::vector<std::string> mc::selected_file_names(
@@ -808,7 +810,7 @@ void mc::set_status(const std::string& message, bool is_sandbox) {
   (*this)["status"_key] = message;
   const ui_element_ptr& label = is_sandbox ? right_status_ptr_ : left_status_ptr_;
   if (label)
-    label["text"_key] = message;
+    label["text"_key] = tr(message);
 }
 
 bool mc::sandbox_has_file(const std::string& name) const {
@@ -844,14 +846,14 @@ void mc::navigate_sandbox(
   } else {
     full = file_service::resolve_path(relative_path, resource_dir, allow_absolute_paths);
     if (full.empty()) {
-      set_status("Invalid or out-of-sandbox path.", true);
+      set_status("$$MC_INVALID_PATH", true);
       return;
     }
   }
 
   std::error_code ec;
   if (!fs::is_directory(full, ec)) {
-    set_status("Not a directory: " + relative_path, true);
+    set_status(make_message("$$MC_NOT_A_DIRECTORY", {relative_path}), true);
     return;
   }
 
@@ -896,19 +898,20 @@ void mc::navigate_sandbox(
 
   if (right_stats_ptr_)
     right_stats_ptr_["text"_key] =
-        std::to_string(file_count) + (file_count == 1 ? " file, " : " files, ") + format_bytes(total_bytes);
+        trf(file_count == 1 ? "$$MC_N_FILE_SIZE" : "$$MC_N_FILES_SIZE", {std::to_string(file_count), format_bytes(total_bytes)});
   if (right_disk_ptr_) {
     auto space_info = fs::space(full, ec);
     right_disk_ptr_["text"_key] = ec ? std::string{}
-                                      : "Disk: " + format_bytes(space_info.capacity - space_info.free) + " used, " +
-            format_bytes(space_info.free) + " free of " + format_bytes(space_info.capacity);
+                                      : trf("$$MC_DISK_USAGE",
+                                            {format_bytes(space_info.capacity - space_info.free),
+                                             format_bytes(space_info.free), format_bytes(space_info.capacity)});
   }
 
   std::string display = "/" + relative_path;
   if (right_path_ptr_)
     right_path_ptr_["value"_key] = display;
   (*this)["sandbox_path"_key] = relative_path;
-  set_status("Ready.", true);
+  set_status("$$MC_READY", true);
 
   if (right_selected_ptr_)
     right_selected_ptr_["text"_key] = describe_selection(selected_sandbox_names_);
@@ -926,8 +929,8 @@ void mc::show_rename_dialog(bool is_sandbox, const std::string& name) {
   rename_is_sandbox_ = is_sandbox;
   rename_old_name_ = name;
 
-  auto tree = import_json(kRenameLayout);
-  tree.with("vbox.content.message", [&](const auto& e) { e["text"_key] = "Rename \"" + name + "\" to:"; });
+  auto tree = import_json(kRenameLayout, translations());
+  tree.with("vbox.content.message", [&](const auto& e) { e["text"_key] = trf("$$MC_RENAME_TO", {name}); });
 
   auto& c = ctx();
   for (auto& [key, elem] : tree) {
@@ -984,7 +987,7 @@ void mc::apply_rename() {
   std::string new_name = rename_input_ptr_->as<std::string>("value"_key);
   if (new_name.empty() || new_name == "." || new_name == ".." || new_name.find('/') != std::string::npos ||
       new_name.find('\\') != std::string::npos) {
-    set_status("Invalid name.", rename_is_sandbox_);
+    set_status("$$MC_INVALID_NAME", rename_is_sandbox_);
     request_close_rename();
     return;
   }
@@ -1005,16 +1008,16 @@ void mc::apply_rename() {
     fs::path new_full = file_service::resolve_path(new_rel.string(), s->resource_dir, s->allow_absolute_paths);
     std::error_code ec;
     if (old_full.empty() || new_full.empty()) {
-      set_status("Invalid or out-of-sandbox path.", true);
+      set_status("$$MC_INVALID_PATH", true);
     } else if (fs::exists(new_full, ec)) {
       set_status("\"" + new_name + "\" already exists.", true);
     } else {
       fs::rename(old_full, new_full, ec);
       if (ec) {
-        set_status("Rename failed: " + ec.message(), true);
+        set_status(make_message("$$MC_RENAME_FAILED", {ec.message()}), true);
       } else {
         navigate_sandbox(sandbox_path_, s->resource_dir, s->allow_absolute_paths);
-        set_status("Renamed.", true);
+        set_status("$$MC_RENAMED", true);
       }
     }
   } else {
@@ -1025,7 +1028,7 @@ void mc::apply_rename() {
     req["old_name"_key] = rename_old_name_;
     req["new_name"_key] = new_name;
     emit("on_local_rename_requested"_key, std::move(req));
-    set_status("Renaming...", false);
+    set_status("$$MC_RENAMING", false);
   }
 
   request_close_rename();
@@ -1043,13 +1046,13 @@ void mc::show_properties_dialog(bool is_sandbox, const file_row& entry) {
 
   dynamic_ptr details{dynamic::instantiate("wish"_key, "FileProperties"_key)};
   details["name"_key] = entry.name;
-  details["type"_key] = entry.type == "dir" ? std::string{"Folder"} : std::string{"File"};
+  details["type"_key] = tr(entry.type == "dir" ? "$$MC_FOLDER" : "$$MC_FILE");
   details["size"_key] = entry.type == "dir" ? std::string{"--"} : entry.size;
-  details["modified"_key] = entry.modified.empty() ? std::string{"(unknown)"} : entry.modified;
+  details["modified"_key] = entry.modified.empty() ? tr("$$MC_UNKNOWN") : entry.modified;
   details["path"_key] = path_display;
 
   dynamic params;
-  params["title"_key] = "Properties - " + entry.name;
+  params["title"_key] = trf("$$MC_PROPERTIES_OF", {entry.name});
   params["target"_key] = details;
 
   // Overwriting properties_dialog_ (rather than requiring it be empty
@@ -1099,7 +1102,7 @@ dynamic mc::do_update_local_listing(const dynamic& args) {
     auto* count_f = args.findField<int32_t>("file_count"_key);
     auto* size_f = args.findField<std::string>("total_size"_key);
     left_stats_ptr_["text"_key] = count_f && size_f
-        ? std::to_string(*count_f) + (*count_f == 1 ? " file, " : " files, ") + *size_f
+        ? trf(*count_f == 1 ? "$$MC_N_FILE_SIZE" : "$$MC_N_FILES_SIZE", {std::to_string(*count_f), *size_f})
         : std::string{};
   }
   if (left_disk_ptr_) {
@@ -1107,7 +1110,7 @@ dynamic mc::do_update_local_listing(const dynamic& args) {
     auto* free_f = args.findField<std::string>("disk_free"_key);
     auto* total_f = args.findField<std::string>("disk_total"_key);
     left_disk_ptr_["text"_key] =
-        used_f && free_f && total_f ? "Disk: " + *used_f + " used, " + *free_f + " free of " + *total_f : std::string{};
+        used_f && free_f && total_f ? trf("$$MC_DISK_USAGE", {*used_f, *free_f, *total_f}) : std::string{};
   }
 
   if (left_selected_ptr_)
@@ -1175,7 +1178,7 @@ dynamic mc::do_discard_upload(const dynamic& args) {
 dynamic mc::on_set(const dynamic& patch) {
   // Only the client sets "status", and it only knows about the local side.
   if (auto* v = patch.findField<std::string>("status"_key); v && left_status_ptr_)
-    left_status_ptr_["text"_key] = *v;
+    left_status_ptr_["text"_key] = tr(*v);
   return patch;
 }
 
@@ -1334,16 +1337,16 @@ void mc::on_event(key_t id, key_t event, const dynamic& payload) {
                                     : file_service::resolve_path(sandbox_path_, s->resource_dir, s->allow_absolute_paths);
     }
     if (full.empty() || !open_in_host_explorer(full))
-      set_status("Could not open host file explorer.", true);
+      set_status("$$MC_COULD_NOT_OPEN_EXPLORER", true);
     else
-      set_status("Opened in host file explorer.", true);
+      set_status("$$MC_OPENED_IN_EXPLORER", true);
     return;
   }
 
   if (id == upload_id_ && event == "clicked"_key) {
     auto files = selected_file_names(selected_local_names_, local_entries_);
     if (files.empty()) {
-      set_status("Select a local file to upload.", false);
+      set_status("$$MC_SELECT_LOCAL_FILE", false);
       return;
     }
     // Split the selection into targets that can upload immediately and
@@ -1372,7 +1375,7 @@ void mc::on_event(key_t id, key_t event, const dynamic& payload) {
   if (id == download_id_ && event == "clicked"_key) {
     auto files = selected_file_names(selected_sandbox_names_, sandbox_entries_);
     if (files.empty()) {
-      set_status("Select a sandbox file to download.", true);
+      set_status("$$MC_SELECT_SANDBOX_FILE", true);
       return;
     }
     std::vector<std::string> ready, conflicts;
@@ -1416,7 +1419,7 @@ void mc::on_event(key_t id, key_t event, const dynamic& payload) {
             show_rename_dialog(target.is_sandbox, target.name);
           return;
         case row_menu_action::copy_path:
-          set_status("Copied path for \"" + target.name + "\" to clipboard.", target.is_sandbox);
+          set_status(make_message("$$MC_COPIED_PATH", {target.name}), target.is_sandbox);
           return;
       }
     }
@@ -1482,7 +1485,7 @@ void register_mc() {
   proto->addField(
       "title"_key,
       field{
-          std::string{"File Explorer"},
+          std::string{"$$MC_FILE_EXPLORER"},
           attr<DisplayName>("Title"),
           attr<Description>("Window title."),
           attr<Category>("Appearance")});
@@ -1509,7 +1512,7 @@ void register_mc() {
   proto->addField(
       "status"_key,
       field{
-          std::string{"Ready."},
+          std::string{"$$MC_READY"},
           attr<DisplayName>("Status"),
           attr<Description>("Latest status message. Set by the client, it is shown in the Local Machine "
                             "panel's status line (the client only reports on the local side)."),

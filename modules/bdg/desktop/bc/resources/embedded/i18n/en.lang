@@ -1,0 +1,18 @@
+# bc -- English (fallback for every other language).
+BC_CALCULATOR = Calculator
+BC_STANDARD = Standard
+BC_SCIENTIFIC = Scientific
+BC_PROGRAMMER = Programmer
+BC_VIEW = View
+BC_DEGREES = Degrees
+BC_RADIANS = Radians
+BC_GRADIANS = Gradians
+BC_HISTORY = History
+BC_DIGIT_GROUPING = Digit grouping
+BC_EDIT = Edit
+BC_COPY = Copy
+BC_CLEAR_HISTORY = Clear history
+BC_NO_HISTORY = There's no history yet
+BC_CANNOT_DIVIDE_BY_ZERO = Cannot divide by zero
+BC_RESULT_IS_UNDEFINED = Result is undefined
+BC_INVALID_INPUT = Invalid input

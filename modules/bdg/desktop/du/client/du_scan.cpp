@@ -3,6 +3,8 @@
 /// @brief Directory scanning and treemap flattening for the du embedded app.
 #include "modules/bdg/desktop/du/client/du_scan.hpp"
 
+#include "src/i18n/translations.hpp"
+
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
@@ -147,7 +149,7 @@ struct flattener {
         if (count == 1 && !child.is_dir)
           add(index, child.name, child.size, node_kind::file, color_for(child.name));
         else
-          add(index, "(" + format_count(count) + " smaller items)", rest, node_kind::rest, kRestColor);
+          add(index, make_message("$$DU_N_SMALLER_ITEMS", {format_count(count)}), rest, node_kind::rest, kRestColor);
         return;
       }
       if (child.is_dir) {

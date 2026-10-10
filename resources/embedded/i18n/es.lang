@@ -1,4 +1,7 @@
-# Built-in forms -- Spanish.
+# Built-in forms and shared tool panels -- Spanish.
+
+# MessageBox
+MSGBOX_MESSAGE = Mensaje
 MSGBOX_OK = Aceptar
 MSGBOX_CANCEL = Cancelar
 MSGBOX_YES = Sí
@@ -6,3 +9,34 @@ MSGBOX_NO = No
 MSGBOX_RETRY = Reintentar
 MSGBOX_ABORT = Anular
 MSGBOX_IGNORE = Omitir
+
+# FileDialog
+FILEDLG_OPEN_FILE = Abrir archivo
+FILEDLG_OPEN = Abrir
+FILEDLG_PATH = ruta
+FILEDLG_NAME = Nombre
+FILEDLG_TYPE = Tipo
+FILEDLG_FILENAME = nombre de archivo
+
+# ProgressBox
+PROGRESS_WORKING = Procesando
+PROGRESS_OUTPUT = Salida
+PROGRESS_FINISHED_WITH_ERROR = Terminado con un error
+PROGRESS_CANCELLING = Cancelando ...
+
+# PropertiesDialog
+PROPS_PROPERTIES = Propiedades
+PROPS_CLOSE = Cerrar
+
+# Shared tool panels (modules/bdg/common)
+COMMON_ACTIONS = Acciones
+COMMON_CONFIRM = Confirmar
+COMMON_CONSOLE = Consola
+COMMON_COMMAND = Comando
+COMMON_EXIT = Código
+COMMON_OUTPUT = Resultado
+COMMON_COPY_ENTRY = Copiar entrada
+COMMON_CLEAR_TITLE = Borrar {0}
+COMMON_DETAILS = Detalles
+COMMON_NOTHING_SELECTED = (nada seleccionado)
+COMMON_REFRESH = Actualizar

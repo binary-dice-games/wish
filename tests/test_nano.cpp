@@ -48,7 +48,7 @@ TEST_F(NanoLocalTest, DefaultTitleIsNano) {
   auto* f = obj.findField("title"_key);
   ASSERT_NE(f, nullptr);
   EXPECT_TRUE(f->is<std::string>());
-  EXPECT_EQ(f->as<std::string>(), "Nano");
+  EXPECT_EQ(f->as<std::string>(), "$$NANO_NANO");
 }
 
 // ── Session-capturing server for internal-tree tests ──────────────────────────

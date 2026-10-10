@@ -17,6 +17,7 @@
 #include <cctype>
 #include <cstddef>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -67,11 +68,21 @@ inline std::string icon_path(const std::string& name) {
 /// "Remove", "Logs", ...), or `""` when none fits. Matches the label's first
 /// word, case-insensitively, ignoring a trailing "..." -- so "Rollback to
 /// this revision" and "Prune stopped..." match too. Used by table_rows for
-/// row menu items, so every tool's row actions get the same icons.
+/// row menu items, so every tool's row actions get the same icons. A
+/// `"$$<MODULE>_<VERB>..."` translation key matches on its `<VERB>` word.
 inline std::string action_icon(const std::string& label) {
   std::string verb;
-  for (char c : label) {
-    if (c == ' ' || c == '.')
+  // A "$$<MODULE>_<VERB>_..." translation key: its second word is the
+  // English verb (keys are named after the English text).
+  std::string_view text = label;
+  bool key = text.substr(0, 2) == "$$";
+  if (key) {
+    text.remove_prefix(2);
+    size_t sep = text.find('_');
+    text = sep == std::string_view::npos ? std::string_view{} : text.substr(sep + 1);
+  }
+  for (char c : text) {
+    if (c == ' ' || c == '.' || (key && c == '_'))
       break;
     verb += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
   }

@@ -21,13 +21,13 @@ namespace {
 constexpr const char* kTextViewerApp = "bdg/common/text_viewer";
 
 constexpr const char* kTextViewerLayout = R"json({
-  "type": "Window", "title": "Details", "width": 820, "height": 420,
+  "type": "Window", "title": "$$COMMON_DETAILS", "width": 820, "height": 420,
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 8, "children": {
-      "target":      { "type": "Label", "text": "(nothing selected)" },
+      "target":      { "type": "Label", "text": "$$COMMON_NOTHING_SELECTED" },
       "spring":      { "type": "Spring" },
-      "btn_refresh": { "type": "Button", "label": "Refresh", "icon": "res/icons/refresh.png" }
+      "btn_refresh": { "type": "Button", "label": "$$COMMON_REFRESH", "icon": "res/icons/refresh.png" }
     } },
     "sep": { "type": "Separator" },
     "editor": {
@@ -56,6 +56,7 @@ void text_viewer_panel::build(
   // is unavailable; resource_dir is fixed for the session.
   resource_dir_ = sess.resource_dir;
 
+  owner_ = &owner;
   const bool custom_layout = options.layout_json != nullptr;
   owner.build_window(
       root_key_, custom_layout ? options.layout_json : kTextViewerLayout, window_id_, [&](ui_tree& tree) {
@@ -67,12 +68,12 @@ void text_viewer_panel::build(
         });
         if (!custom_layout) {
           tree.with("", [&](const auto& e) {
-            e["title"_key] = options.title;
+            e["title"_key] = owner.tr(options.title);
             e["width"_key] = options.width;
             e["height"_key] = options.height;
           });
           if (target_label_)
-            target_label_["text"_key] = options.placeholder;
+            target_label_["text"_key] = owner.tr(options.placeholder);
           if (editor_) {
             editor_["language"_key] = options.language;
             editor_["auto_scroll"_key] = options.auto_scroll;
@@ -85,7 +86,7 @@ void text_viewer_panel::build(
 
 void text_viewer_panel::set_title(const std::string& title) {
   if (target_label_)
-    target_label_["text"_key] = title;
+    target_label_["text"_key] = owner_ ? owner_->tr(title) : title;
 }
 
 void text_viewer_panel::set_text(const std::string& text) {

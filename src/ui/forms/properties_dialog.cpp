@@ -74,7 +74,7 @@ static constexpr const char* kLayout = R"({
       "children": {
         "sep": { "type": "Separator" },
         "close_row": { "type": "HorizontalLayout", "children": {
-          "btn_close": { "type": "Button", "label": "Close", "height": 32 }
+          "btn_close": { "type": "Button", "label": "$$PROPS_CLOSE", "height": 32 }
         } }
       }
     }
@@ -118,12 +118,12 @@ void properties_dialog::rebuild() {
   release_inspector();
 
   auto* title_f = findField<std::string>("title"_key);
-  std::string title = title_f ? *title_f : std::string{"Properties"};
+  std::string title = tr(title_f ? *title_f : std::string{"$$PROPS_PROPERTIES"});
 
   // See form::internal_root_key_'s doc comment: ordinally-assigned, not pointer-derived.
   internal_root_key_ = next_available_key("__properties_dialog_");
 
-  auto tree = import_json(kLayout);
+  auto tree = import_json(kLayout, translations());
   (*tree[""])["title"_key] = title;
 
   auto& c = ctx();
@@ -272,9 +272,9 @@ void register_properties_dialog() {
   proto->addField(
       "title"_key,
       field{
-          std::string{"Properties"},
+          std::string{"$$PROPS_PROPERTIES"},
           attr<DisplayName>("Title"),
-          attr<Description>("Dialog window title."),
+          attr<Description>("Dialog window title; a \"$$KEY\" is translated (see docs/i18n.md)."),
           attr<Category>("Appearance")});
 
   proto->addField(

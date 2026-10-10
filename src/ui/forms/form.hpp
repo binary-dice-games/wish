@@ -62,6 +62,24 @@ class form : public ui_root {
     local_result_sink_ = std::move(sink);
   }
 
+  /// @brief Translate @p text (`"$$KEY"`) with this form's translations
+  ///        (`res/<i18n_prefix_>/i18n/<lang>.lang`, see
+  ///        `context::translations_for()`); any other string is returned
+  ///        unchanged.
+  ///
+  /// The map is fetched on the first call that needs it -- which must be
+  /// during dispatch, e.g. in on_init() -- and kept, so later calls also
+  /// work from on_event().
+  std::string tr(std::string_view text);
+
+  /// @brief tr(@p key) with `{0}`, `{1}`, ... replaced by @p args (see
+  ///        `format_text()`), e.g. `trf("$$X_N_ITEMS", {std::to_string(n)})`.
+  std::string trf(std::string_view key, const std::vector<std::string>& args);
+
+  /// @brief This form's translation map, for `import_json(layout, ...)`.
+  ///        Same fetch-once rule as tr().
+  const translation_map* translations();
+
  protected:
   /// @brief Build the internal ui_element tree and register event handlers.
   ///
@@ -113,12 +131,12 @@ class form : public ui_root {
     return *detail::current_context;
   }
 
-  /// @brief Translate @p text (`"$$KEY"`) with the session's translations for
-  ///        @p module_prefix (see `context::translations_for()`); any other
-  ///        string is returned unchanged. Dispatch only, like `sess()`.
-  std::string tr(std::string_view text, std::string_view module_prefix = {}) {
-    return translate_text(text, *sess().translations_for(module_prefix));
-  }
+
+  /// @brief `"<org>/<collection>/<name>"` of the module whose translation
+  /// files tr() uses. Set it in the constructor; empty (the default) uses
+  /// the built-in `res/i18n/` files, which every module's chain also falls
+  /// back to.
+  std::string i18n_prefix_;
 
   /// @brief Key under which the internal Window root is stored in session.objects.
   ///
@@ -298,6 +316,7 @@ class form : public ui_root {
   sync_context_ptr sync_ctx_;
 
  private:
+  std::shared_ptr<const translation_map> translations_;
   bison::rmi::context* ctx_{nullptr};
   /// Extra internal top-level roots (beyond `internal_root_key_`) this form
   /// registered -- currently just the `set_default_dock_layout()` object.

@@ -15,6 +15,7 @@
 
 #include "src/client/app_registry.hpp"
 #include "src/client/wish_app_host.hpp"
+#include "src/i18n/translations.hpp"
 
 #include "src/bison/bison.hpp"
 
@@ -168,12 +169,12 @@ void run_nano(wish_app_host& s) {
   // "Open" clicked: the server has no view of the client's local files, so
   // it asks us to present our own picker.
   nano->onEvent("on_request_open"_key, [&s, nano, files](dynamic) {
-    browse_and_open(s, nano, files, "Open File", "Open", /*create_if_missing=*/false);
+    browse_and_open(s, nano, files, "$$FILEDLG_OPEN_FILE", "$$FILEDLG_OPEN", /*create_if_missing=*/false);
   });
 
   // "New" clicked: same handshake, but the chosen path need not exist yet.
   nano->onEvent("on_request_new"_key, [&s, nano, files](dynamic) {
-    browse_and_open(s, nano, files, "New File", "New", /*create_if_missing=*/true);
+    browse_and_open(s, nano, files, "$$NANO_NEW_FILE", "$$NANO_NEW", /*create_if_missing=*/true);
   });
 
   // A tab (or the whole window) closed: download this file one last time
@@ -212,11 +213,11 @@ void run_nano(wish_app_host& s) {
     if (auto* paths_f = payload.findField<dynamic_ptr>("paths"_key); paths_f && *paths_f)
       (*paths_f)->forEach([&](key_t, const field&) { ++count; });
 
-    std::string message = count == 1 ? "1 file has unsaved changes. Save it before closing?"
-                                      : std::to_string(count) + " files have unsaved changes. Save them before closing?";
+    std::string message = count == 1 ? std::string{"$$NANO_ONE_UNSAVED"}
+                                      : make_message("$$NANO_N_UNSAVED", {std::to_string(count)});
 
     dynamic params;
-    params["title"_key] = std::string{"Unsaved Changes"};
+    params["title"_key] = std::string{"$$NANO_UNSAVED_CHANGES"};
     params["message"_key] = message;
     params["icon"_key] = std::string{"question"};
     params["buttons"_key] = std::string{"yes_no_cancel"};

@@ -142,7 +142,7 @@ void nymph_form::on_init() {
   preview_root_key_ = internal_root_key_ + "_preview";
   data_root_key_ = internal_root_key_ + "_data";
 
-  auto tree = import_json(kHolderLayout);
+  auto tree = import_json(kHolderLayout, translations());
   holder_id_ = rmi::shared::generate_id();
   ctx().put_object(holder_id_, tree[""]);
   (*tree[""])["__wish_id"_key] = holder_id_;

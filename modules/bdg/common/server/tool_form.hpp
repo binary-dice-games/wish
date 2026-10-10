@@ -47,7 +47,7 @@ class list_panel;
 
 /// @brief Optional settings for tool_form::show_confirm().
 struct confirm_options {
-  std::string title{"Confirm"};
+  std::string title{"$$COMMON_CONFIRM"};
   /// Called when the user answers anything but "Yes" (No, or closes it).
   std::function<void()> on_no;
 };
@@ -64,21 +64,9 @@ class tool_form : public form {
   /// `ctx().objects` and stamped into its `__wish_id`).
   void assign_ids(ui_tree& tree);
 
-  /// @brief Translate @p text (`"$$KEY"`) with this tool's translations
-  /// (`res/<i18n_prefix_>/i18n/<lang>.lang`, see context::translations_for());
-  /// any other string is returned unchanged. The map is fetched on first use
-  /// (which must be during dispatch, e.g. on_init()) and kept, so later calls
-  /// also work from on_event().
-  std::string tr(std::string_view text);
-
-  /// @brief `"<org>/<collection>/<name>"` of the module whose translation
-  /// files tr() and build_window() use. Set it in the constructor; empty
-  /// (the default) leaves layouts untranslated.
-  std::string i18n_prefix_;
-
   /// @brief Imports @p layout_json, assigns ids, calls @p wire with the tree
   /// (to cache widgets and bind handlers) and merges it under @p root_key.
-  /// `"$$KEY"` strings in the layout are translated (see tr()).
+  /// `"$$KEY"` strings in the layout are translated (see form::tr()).
   /// A root other than `internal_root_key_` (which form::init() registers
   /// itself) is registered as a top-level object of its own, so it docks
   /// independently.
@@ -92,7 +80,8 @@ class tool_form : public form {
   /// @brief Registers a C++-created element under a fresh RMI id.
   void assign_id(const ui_element_ptr& el);
 
-  /// @brief A registered `Label` showing @p text, optionally coloured.
+  /// @brief A registered `Label` showing @p text (translated when it is a
+  /// `"$$KEY"`), optionally coloured.
   ui_element_ptr make_label(const std::string& text, const char* light = nullptr, const char* dark = nullptr);
   ui_element_ptr make_label(const std::string& text, const theme_color& color) {
     return make_label(text, color.light, color.dark);
@@ -113,7 +102,8 @@ class tool_form : public form {
   /// runs, so it may replace or erase its own entry.
   bool dispatch_click(bison::key_t id);
 
-  /// @brief Opens a modal yes/no MessageBox (warning icon) and calls
+  /// @brief Opens a modal yes/no MessageBox (warning icon; `"$$KEY"` title
+  /// and message are translated) and calls
   /// @p on_yes when the user answers "Yes". Replacing a still-open confirm
   /// dialog with a new one is safe (see form::instantiate_child_form()).
   void show_confirm(const std::string& message, std::function<void()> on_yes, confirm_options options = {});
@@ -132,8 +122,6 @@ class tool_form : public form {
   std::unordered_map<bison::key_t, click_handler, bison::key_t, bison::key_t> click_handlers_;
 
  private:
-  std::shared_ptr<const translation_map> translations_;
-
   friend class console_panel;
   friend class text_viewer_panel;
   friend class rolling_plot;
