@@ -41,6 +41,7 @@ DECLARE_string(profiling_dir);
 DECLARE_bool(profiling_autostart);
 DECLARE_bool(allow_absolute_paths);
 DECLARE_string(sandbox_root);
+DECLARE_string(store_dir);
 DECLARE_string(username);
 #else
 DEFINE_int32(font_size, 16, "Font size in pixels");
@@ -57,7 +58,12 @@ DEFINE_string(sandbox_root, "",
               "Directory under which the session sandbox persists across runs: the session uses "
               "<sandbox_root>/<username> (--username, or 'default') instead of a temp directory "
               "deleted on exit.");
-DEFINE_string(username, "", "Selects the persistent sandbox directory under --sandbox_root (empty: 'default')");
+DEFINE_string(store_dir, "",
+              "Directory holding the persistent server store and user stores (see "
+              "docs/persistent-store.md); empty: ~/.wish.");
+DEFINE_string(username, "",
+              "Identity selecting the user store and the persistent sandbox directory under "
+              "--sandbox_root (empty: 'default')");
 #endif
 
 DECLARE_bool(list);
@@ -253,8 +259,14 @@ std::unique_ptr<bison::rmi::standalone> wish_standalone_app::make_standalone() {
   auto session = std::make_unique<wish_standalone_session>(make_renderer(), app_args_);
   session->set_logger(make_standalone_logger()); // must be called before start()
   session->set_allow_absolute_paths(FLAGS_allow_absolute_paths); // must be called before start()
+  const std::string identity = FLAGS_username.empty() ? "default" : FLAGS_username;
   if (!FLAGS_sandbox_root.empty()) // must be called before start()
-    session->set_persistent_sandbox(FLAGS_sandbox_root, FLAGS_username.empty() ? "default" : FLAGS_username);
+    session->set_persistent_sandbox(FLAGS_sandbox_root, identity);
+  // Standalone is single-user and local: always give the session a user
+  // store, under --username or 'default'.
+  session->set_user_identity(identity); // must be called before start()
+  if (!FLAGS_store_dir.empty())
+    session->set_store_dir(FLAGS_store_dir); // must be called before start()
   return session;
 #endif
 }

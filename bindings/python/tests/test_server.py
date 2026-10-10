@@ -16,7 +16,9 @@ Build both DLLs first, then run from the repository root::
 """
 
 import os
+import shutil
 import socket
+import tempfile
 import sys
 import threading
 import time
@@ -145,6 +147,90 @@ class TestServerClientRoundTrip(unittest.TestCase):
         self.assertEqual(result["title"], "Hi")
         self.assertEqual(result["label_text"], "hello")
         self.assertEqual(result["label_text_after_set"], "updated")
+
+
+class TestUserStore(unittest.TestCase):
+    """Client.user_store_* against a real wish_server_dll server."""
+
+    def setUp(self):
+        self.store_dir = tempfile.mkdtemp(prefix="wish_py_store_")
+        self.port = _free_port()
+        self.server = Server.tcp("127.0.0.1", self.port)
+        self.server.start(renderer="console", store_dir=self.store_dir)
+        time.sleep(0.1)
+
+    def tearDown(self):
+        self.server.stop()
+        self.server.release()
+        shutil.rmtree(self.store_dir, ignore_errors=True)
+
+    def _run(self, session, username=None):
+        result = {}
+        done = threading.Event()
+
+        def wrapped(client):
+            try:
+                session(client, result)
+            except Exception as e:  # surfaced by the asserting test body
+                result["error"] = e
+            finally:
+                done.set()
+
+        client = Client.tcp("127.0.0.1", self.port)
+        params = {"username": username} if username else None
+        t = threading.Thread(target=lambda: client.run(wrapped, params=params), daemon=True)
+        t.start()
+        self.assertTrue(done.wait(timeout=10))
+        t.join(timeout=5)
+        if "error" in result:
+            raise result["error"]
+        return result
+
+    def test_identified_client_round_trips_and_persists(self):
+        def write(c, r):
+            r["has"] = c.has_user_store()
+            c.user_store_set("bdg.test", {"filter": "error|warn", "lines": 50})
+            r["missing"] = c.user_store_get("nope")
+            r["keys"] = c.user_store_keys()
+
+        r = self._run(write, username="alice")
+        self.assertTrue(r["has"])
+        self.assertIsNone(r["missing"])
+        self.assertEqual(r["keys"], ["bdg.test"])
+
+        def read(c, r):
+            v = c.user_store_get("bdg.test")
+            r["filter"] = v["filter"]
+            r["lines"] = v["lines"]
+            v.release()
+            r["erased"] = c.user_store_erase("bdg.test")
+            r["erased_again"] = c.user_store_erase("bdg.test")
+
+        r = self._run(read, username="alice")
+        self.assertEqual(r["filter"], "error|warn")
+        self.assertEqual(r["lines"], 50)
+        self.assertTrue(r["erased"])
+        self.assertFalse(r["erased_again"])
+
+    def test_other_user_cannot_see_entries(self):
+        self._run(lambda c, r: c.user_store_set("secret", {"v": 1}), username="alice")
+        r = self._run(lambda c, r: r.update(keys=c.user_store_keys()), username="bob")
+        self.assertEqual(r["keys"], [])
+
+    def test_anonymous_client_has_no_user_store(self):
+        from wish import WishError
+        from wish import _native as _n
+
+        def session(c, r):
+            r["has"] = c.has_user_store()
+            try:
+                c.user_store_keys()
+            except WishError as e:
+                r["code"] = e.code
+
+        r = self._run(session)
+        self.assertFalse(r["has"])
+        self.assertEqual(r["code"], _n.WISH_ERR_UNAVAILABLE)
 
 
 if __name__ == "__main__":

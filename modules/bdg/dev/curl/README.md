@@ -27,11 +27,11 @@ Response, History, Collections, Environments, Console.
   `client/curl_source.hpp`/`.cpp` builds and runs every actual `curl`
   invocation, parses the response (`-i` for headers + a `-w` sentinel
   trailer for status/timing/size — no temp files, no JSON library),
-  applies `{{name}}` environment substitution, and owns a small local
-  JSON store for Collections/Environments/History (a per-user config
-  file, e.g. `~/.config/wish/curl/store.json` on Linux/MSYS2 —
-  independent of the session sandbox, since this is the client's own
-  local app state).
+  applies `{{name}}` environment substitution, and persists
+  Collections/Environments/History in the session's user store (see
+  [docs/persistent-store.md](../../../../docs/persistent-store.md)), which
+  requires connecting with `--username`. Anonymous sessions keep them in
+  memory only, and the Console says so.
 - **resources/**: none.
 
 Build: off by default. `cmake -S . -B build -DWISH_MODULE_BDG_DEV_CURL=ON`
@@ -61,7 +61,7 @@ re-exercised in a live browser session — see PLAN.md:
   read-only `TextEditor` body view (JSON syntax highlighting when the
   response looks like JSON; a one-line placeholder for binary bodies).
 - **History** — every sent request, newest first, capped at 200 and
-  persisted locally; "Load" restores the entire builder state.
+  persisted in the user store; "Load" restores the entire builder state.
 - **Collections** — named/saved requests grouped by a collection name;
   Load / Duplicate / Delete (Delete gated behind a confirm dialog).
 - **Environments** — named variable sets with their own key-value editor;

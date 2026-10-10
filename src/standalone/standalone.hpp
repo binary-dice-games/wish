@@ -8,6 +8,7 @@
 #include <client/wish_app_host.hpp>
 #include <context/context.hpp>
 #include <context/logger.hpp>
+#include <context/persistent_store.hpp>
 #include <server/renderer.hpp>
 #include "src/rmi/standalone/standalone.hpp"
 
@@ -111,6 +112,35 @@ class standalone : public bison::rmi::standalone {
     persistent_identity_ = std::move(identity);
   }
 
+  /**
+   * @brief Identity whose user store the session gets (see
+   *        `docs/persistent-store.md`) -- the in-process equivalent of a
+   *        client authenticating to `wish::server` with that identity.
+   *
+   * Empty (default) falls back to the `set_persistent_sandbox()` identity,
+   * if any; with neither, the session is anonymous and has no user store.
+   * Ignored if not a single safe path segment (see
+   * `is_safe_sandbox_identity()`). Must be called before `start()`.
+   */
+  void set_user_identity(std::string identity) {
+    user_identity_ = std::move(identity);
+  }
+
+  /// @copydoc bdg::wish::server::set_store_dir
+  void set_store_dir(std::filesystem::path dir) {
+    stores_ = std::make_shared<store_registry>(std::move(dir));
+  }
+
+  /// @copydoc bdg::wish::server::store_dir
+  const std::filesystem::path& store_dir() const noexcept {
+    return stores_->dir();
+  }
+
+  /// @copydoc bdg::wish::server::server_store
+  persistent_store& server_store() {
+    return *stores_->server_store();
+  }
+
   // ── wish-level convenience helpers (mirror wish::client) ─────────────────
   //
   // instantiate_template() is intentionally not mirrored here: it needs a
@@ -143,6 +173,23 @@ class standalone : public bison::rmi::standalone {
 
   /// @copydoc bdg::wish::client::get_style
   std::future<bison::dynamic> get_style();
+
+  /// @copydoc bdg::wish::client::has_user_store
+  bool has_user_store() const noexcept {
+    return user_store_proxy_.has_value();
+  }
+
+  /// @copydoc bdg::wish::client::user_store_get
+  std::future<std::optional<bison::dynamic>> user_store_get(const std::string& name);
+
+  /// @copydoc bdg::wish::client::user_store_set
+  std::future<void> user_store_set(const std::string& name, bison::dynamic value);
+
+  /// @copydoc bdg::wish::client::user_store_erase
+  std::future<bool> user_store_erase(const std::string& name);
+
+  /// @copydoc bdg::wish::client::user_store_keys
+  std::future<std::vector<std::string>> user_store_keys();
 
   /// @copydoc bdg::wish::client::log
   std::future<void> log(const std::string& level, const std::string& msg);
@@ -275,6 +322,9 @@ class standalone : public bison::rmi::standalone {
   bool allow_absolute_paths_{false};
   std::filesystem::path persistent_sandbox_root_;
   std::string persistent_identity_;
+  std::string user_identity_;
+  // Owns the server store and user stores; see set_store_dir().
+  store_registry_ptr stores_{std::make_shared<store_registry>(default_store_dir())};
 
   // Populated by on_session_created(context&); mirrors wish::client::on_connect().
   std::optional<bison::rmi::proxy::dynamic> template_proxy_;
@@ -284,6 +334,8 @@ class standalone : public bison::rmi::standalone {
   // Resolved non-fatally in on_session_created() -- mirrors
   // wish::client::automation_proxy_'s doc comment.
   std::optional<bison::rmi::proxy::dynamic> automation_proxy_;
+  // Unset for an anonymous session -- see set_user_identity().
+  std::optional<bison::rmi::proxy::dynamic> user_store_proxy_;
 };
 
 } // namespace bdg::wish

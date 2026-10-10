@@ -31,6 +31,7 @@
 #include <cstdint>
 #include <exception>
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -285,6 +286,60 @@ class client {
     detail::throw_if_wish_error(
         wish_upload_package_from_path(h_, dest_path.c_str(), local_zip_path.c_str()),
         "client::upload_package(" + dest_path + ")", h_);
+  }
+
+  // ── User store ───────────────────────────────────────────────────────
+  //
+  // A persistent store of named objects private to this session's identity
+  // (connect with a "username" param); see docs/persistent-store.md. Every
+  // call below except has_user_store() throws `error` with
+  // `WISH_ERR_UNAVAILABLE` for an anonymous session.
+
+  /** @brief True if this session has a user store (it is not anonymous). */
+  bool has_user_store() const {
+    int avail = 0;
+    detail::throw_if_wish_error(wish_user_store_available(h_, &avail), "client::has_user_store", h_);
+    return avail != 0;
+  }
+
+  /** @brief Reads the entry named @p name; `std::nullopt` if it doesn't exist. */
+  std::optional<value> user_store_get(const std::string& name) {
+    bison_handle out = nullptr;
+    const wish_error rc = wish_user_store_get(h_, name.c_str(), &out);
+    if (rc == WISH_ERR_NOT_FOUND) return std::nullopt;
+    detail::throw_if_wish_error(rc, "client::user_store_get(" + name + ")", h_);
+    return value::adopt(out);
+  }
+
+  /** @brief Creates or replaces the entry named @p name; persisted before returning. */
+  void user_store_set(const std::string& name, const value& v) {
+    detail::throw_if_wish_error(
+        wish_user_store_set(h_, name.c_str(), v.handle()), "client::user_store_set(" + name + ")", h_);
+  }
+
+  /** @brief Removes the entry named @p name; returns `true` if it existed. */
+  bool user_store_erase(const std::string& name) {
+    int erased = 0;
+    detail::throw_if_wish_error(
+        wish_user_store_erase(h_, name.c_str(), &erased), "client::user_store_erase(" + name + ")", h_);
+    return erased != 0;
+  }
+
+  /** @brief Names of every entry in the user store, sorted. */
+  std::vector<std::string> user_store_keys() {
+    char* out = nullptr;
+    detail::throw_if_wish_error(wish_user_store_keys(h_, &out), "client::user_store_keys", h_);
+    const std::string json = out ? out : "[]";
+    bison_free_string(out);
+    // bison_from_json() needs an object root; a nested array parses into
+    // an index-keyed object.
+    const auto arr = value::parse_json("{\"keys\":" + json + "}").get_object("keys"_key);
+    std::vector<std::string> names;
+    if (!arr) return names;
+    for (size_t i = 0; i < arr->size(); ++i) {
+      if (auto s = arr->get_string_at(i)) names.push_back(std::move(*s));
+    }
+    return names;
   }
 
   // ── Logging ──────────────────────────────────────────────────────────

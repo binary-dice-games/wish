@@ -30,6 +30,37 @@ struct free_port_server {
 };
 
 /**
+ * @brief Like `start_on_free_port()`, but calls @p configure on each freshly
+ *        constructed server before `start()` -- for setters that must run
+ *        before start (e.g. `set_store_dir()`).
+ *
+ * @param configure Callable taking `bdg::wish::server&`.
+ */
+template <typename Transport, typename Configure, typename... StartArgs>
+free_port_server<Transport>
+start_on_free_port_configured(uint16_t first_port, const Configure& configure, const StartArgs&... start_args) {
+  static std::atomic<uint16_t> next_port{[] {
+    std::random_device rd;
+    return static_cast<uint16_t>(20000 + rd() % 40000);
+  }()};
+  uint16_t port = first_port != 0 ? first_port : next_port.fetch_add(64);
+  for (int attempt = 0; attempt < 64; ++attempt, ++port) {
+    free_port_server<Transport> s;
+    s.transport = std::make_unique<Transport>("127.0.0.1", port);
+    s.server = std::make_unique<bdg::wish::server>(*s.transport, std::make_unique<bdg::wish::null_renderer>());
+    configure(*s.server);
+    try {
+      s.server->start(start_args...);
+    } catch (const std::runtime_error&) {
+      continue; // most likely "address already in use" -- try the next port
+    }
+    s.port = port;
+    return s;
+  }
+  throw std::runtime_error("start_on_free_port: no free port found");
+}
+
+/**
  * @brief Construct `Transport("127.0.0.1", port)` + a `wish::server` with a
  *        `null_renderer`, and `start(start_args...)` it on the first port
  *        that binds.
@@ -41,22 +72,5 @@ struct free_port_server {
  */
 template <typename Transport, typename... StartArgs>
 free_port_server<Transport> start_on_free_port(uint16_t first_port, const StartArgs&... start_args) {
-  static std::atomic<uint16_t> next_port{[] {
-    std::random_device rd;
-    return static_cast<uint16_t>(20000 + rd() % 40000);
-  }()};
-  uint16_t port = first_port != 0 ? first_port : next_port.fetch_add(64);
-  for (int attempt = 0; attempt < 64; ++attempt, ++port) {
-    free_port_server<Transport> s;
-    s.transport = std::make_unique<Transport>("127.0.0.1", port);
-    s.server = std::make_unique<bdg::wish::server>(*s.transport, std::make_unique<bdg::wish::null_renderer>());
-    try {
-      s.server->start(start_args...);
-    } catch (const std::runtime_error&) {
-      continue; // most likely "address already in use" -- try the next port
-    }
-    s.port = port;
-    return s;
-  }
-  throw std::runtime_error("start_on_free_port: no free port found");
+  return start_on_free_port_configured<Transport>(first_port, [](bdg::wish::server&) {}, start_args...);
 }

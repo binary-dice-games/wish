@@ -5,7 +5,10 @@
 
 package com.bdg.wish;
 
+import java.util.ArrayList;
 import java.util.List;
+import org.json.JSONArray;
+import org.json.JSONException;
 
 /**
  * RAII-style wrapper around {@code wish_client_handle} (see {@code
@@ -187,6 +190,50 @@ public final class Client implements AutoCloseable {
     return nativeDownloadFile(handle, name);
   }
 
+  // ─── User store ───────────────────────────────────────────────────────────
+  //
+  // A persistent store of named objects private to this session's identity
+  // (connect with a "username" param); see docs/persistent-store.md. Every
+  // method below except hasUserStore() throws WishException (code
+  // WISH_ERR_UNAVAILABLE = -6) for an anonymous session.
+
+  /** {@code wish_error} code for a feature unavailable to this session (e.g. an anonymous user store). */
+  public static final int WISH_ERR_UNAVAILABLE = -6;
+
+  /** True if this session has a user store (it is not anonymous). */
+  public boolean hasUserStore() {
+    return nativeUserStoreAvailable(handle);
+  }
+
+  /** Returns a copy of the entry named {@code name}, or {@code null} if it doesn't exist. Close it when done. */
+  public Dynamic userStoreGet(String name) {
+    long h = nativeUserStoreGet(handle, name);
+    return h == 0 ? null : Dynamic.wrapOwned(h);
+  }
+
+  /** Creates or replaces the entry named {@code name}; persisted before returning. */
+  public void userStoreSet(String name, Dynamic value) {
+    nativeUserStoreSet(handle, name, value.handle());
+  }
+
+  /** Removes the entry named {@code name}; returns true if it existed. */
+  public boolean userStoreErase(String name) {
+    return nativeUserStoreErase(handle, name);
+  }
+
+  /** Names of every entry in the user store, sorted. */
+  public List<String> userStoreKeys() {
+    String json = nativeUserStoreKeys(handle);
+    List<String> names = new ArrayList<>();
+    try {
+      JSONArray arr = new JSONArray(json);
+      for (int i = 0; i < arr.length(); i++) names.add(arr.getString(i));
+    } catch (JSONException e) {
+      throw new WishException(-4 /* WISH_ERR_EXCEPTION */, "user_store_keys: " + e.getMessage());
+    }
+    return names;
+  }
+
   // ─── Logging ────────────────────────────────────────────────────────────
 
   /** Sends a structured log message; {@code level} is "debug"/"info"/"warn"/"error". */
@@ -225,6 +272,12 @@ public final class Client implements AutoCloseable {
 
   private static native int nativeUploadFile(long handle, String name, byte[] data);
   private static native byte[] nativeDownloadFile(long handle, String name);
+
+  private static native boolean nativeUserStoreAvailable(long handle);
+  private static native long nativeUserStoreGet(long handle, String name);
+  private static native void nativeUserStoreSet(long handle, String name, long valueHandle);
+  private static native boolean nativeUserStoreErase(long handle, String name);
+  private static native String nativeUserStoreKeys(long handle);
 
   private static native int nativeLog(long handle, String level, String msg);
 }

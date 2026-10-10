@@ -94,6 +94,22 @@ class c_abi_app_host : public wish::wish_app_host {
   download_file(const std::string& name, wish::transfer_progress_callback on_progress) override {
     return client_.download_file(name, std::move(on_progress));
   }
+
+  bool has_user_store() const override {
+    return client_.has_user_store();
+  }
+  std::future<std::optional<dynamic>> user_store_get(const std::string& name) override {
+    return client_.user_store_get(name);
+  }
+  std::future<void> user_store_set(const std::string& name, dynamic value) override {
+    return client_.user_store_set(name, std::move(value));
+  }
+  std::future<bool> user_store_erase(const std::string& name) override {
+    return client_.user_store_erase(name);
+  }
+  std::future<std::vector<std::string>> user_store_keys() override {
+    return client_.user_store_keys();
+  }
   void keep_alive(proxy::dynamic&& p) override {
     live_proxies_.push_back(std::move(p));
   }
@@ -642,6 +658,79 @@ wish_upload_package_from_path(wish_client_handle c, const char* dest_path, const
       return WISH_ERR_EXCEPTION;
     }
     c->client_->upload_package(std::string{dest_path}, in).get();
+    return WISH_OK;
+  } catch (const std::exception& e) {
+    c->last_error_ = e.what();
+    return WISH_ERR_EXCEPTION;
+  }
+}
+
+// ── User store ────────────────────────────────────────────────────────────────
+
+extern "C" wish_error wish_user_store_available(wish_client_handle c, int* out_avail) {
+  if (!c || !out_avail)
+    return WISH_ERR_NULL;
+  *out_avail = c->client_->has_user_store() ? 1 : 0;
+  return WISH_OK;
+}
+
+extern "C" wish_error wish_user_store_get(wish_client_handle c, const char* name, bison_handle* out_value) {
+  if (!c || !name || !out_value)
+    return WISH_ERR_NULL;
+  if (!c->client_->has_user_store())
+    return WISH_ERR_UNAVAILABLE;
+  try {
+    auto value = c->client_->user_store_get(std::string{name}).get();
+    if (!value)
+      return WISH_ERR_NOT_FOUND;
+    *out_value = dynamic_to_bison_handle(std::move(*value));
+    return WISH_OK;
+  } catch (const std::exception& e) {
+    c->last_error_ = e.what();
+    return WISH_ERR_EXCEPTION;
+  }
+}
+
+extern "C" wish_error wish_user_store_set(wish_client_handle c, const char* name, bison_handle value) {
+  if (!c || !name || !value)
+    return WISH_ERR_NULL;
+  if (!c->client_->has_user_store())
+    return WISH_ERR_UNAVAILABLE;
+  try {
+    c->client_->user_store_set(std::string{name}, bison_handle_to_dynamic(value)).get();
+    return WISH_OK;
+  } catch (const std::exception& e) {
+    c->last_error_ = e.what();
+    return WISH_ERR_EXCEPTION;
+  }
+}
+
+extern "C" wish_error wish_user_store_erase(wish_client_handle c, const char* name, int* out_erased) {
+  if (!c || !name)
+    return WISH_ERR_NULL;
+  if (!c->client_->has_user_store())
+    return WISH_ERR_UNAVAILABLE;
+  try {
+    const bool erased = c->client_->user_store_erase(std::string{name}).get();
+    if (out_erased)
+      *out_erased = erased ? 1 : 0;
+    return WISH_OK;
+  } catch (const std::exception& e) {
+    c->last_error_ = e.what();
+    return WISH_ERR_EXCEPTION;
+  }
+}
+
+extern "C" wish_error wish_user_store_keys(wish_client_handle c, char** out_json) {
+  if (!c || !out_json)
+    return WISH_ERR_NULL;
+  if (!c->client_->has_user_store())
+    return WISH_ERR_UNAVAILABLE;
+  try {
+    const std::string json_str = nlohmann::json(c->client_->user_store_keys().get()).dump();
+    char* buf = new char[json_str.size() + 1];
+    std::memcpy(buf, json_str.c_str(), json_str.size() + 1);
+    *out_json = buf;
     return WISH_OK;
   } catch (const std::exception& e) {
     c->last_error_ = e.what();

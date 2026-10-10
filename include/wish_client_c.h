@@ -91,6 +91,7 @@ typedef int wish_error;
 #define WISH_ERR_TRANSPORT -3 /**< Transport connection failed.            */
 #define WISH_ERR_EXCEPTION -4 /**< An internal C++ exception was thrown.   */
 #define WISH_ERR_AMBIGUOUS -5 /**< A short app name matches more than one registered app; see wish_last_error(). */
+#define WISH_ERR_UNAVAILABLE -6 /**< The feature isn't available for this session (e.g. the user store of an anonymous session). */
 
 /* ── Callbacks ────────────────────────────────────────────────────────────── */
 
@@ -540,6 +541,77 @@ WISH_API wish_error wish_download_file_to_path(wish_client_handle client, const 
  */
 WISH_API wish_error
 wish_upload_package_from_path(wish_client_handle client, const char* dest_path, const char* local_zip_path);
+
+/* ── User store ───────────────────────────────────────────────────────────── */
+
+/*
+ * A persistent store of named bison objects private to the session's
+ * authenticated identity, kept by the server across sessions and restarts
+ * (see docs/persistent-store.md). Only identified sessions have one: connect
+ * with a "username" field in wish_client_run_with_params()'s connect params
+ * (or whatever identity the server's auth module expects). Anonymous
+ * sessions get WISH_ERR_UNAVAILABLE from every call below. Entry names are
+ * 1-256 printable ASCII characters; prefix them with your tool's qualified
+ * name (e.g. "bdg.desktop.tail") to avoid clashes.
+ */
+
+/**
+ * @brief Report whether this session has a user store.
+ *
+ * @param client     Active session handle.
+ * @param out_avail  Set to 1 if the session has a user store, 0 if it is
+ *                   anonymous.
+ * @return WISH_OK or WISH_ERR_NULL.
+ */
+WISH_API wish_error wish_user_store_available(wish_client_handle client, int* out_avail);
+
+/**
+ * @brief Read a user store entry.
+ *
+ * @param client     Active session handle.
+ * @param name       Entry name.
+ * @param out_value  Output: a new bison object holding a copy of the entry.
+ *                   Release with bison_release().
+ * @return WISH_OK; WISH_ERR_NOT_FOUND if no entry has that name;
+ *         WISH_ERR_UNAVAILABLE for an anonymous session; WISH_ERR_NULL or
+ *         WISH_ERR_EXCEPTION (e.g. an invalid name; see wish_last_error()).
+ */
+WISH_API wish_error wish_user_store_get(wish_client_handle client, const char* name, bison_handle* out_value);
+
+/**
+ * @brief Create or replace a user store entry. The server persists the store
+ *        before this returns.
+ *
+ * @param client  Active session handle.
+ * @param name    Entry name.
+ * @param value   Object to store (copied; the caller keeps ownership).
+ * @return WISH_OK; WISH_ERR_UNAVAILABLE for an anonymous session;
+ *         WISH_ERR_NULL or WISH_ERR_EXCEPTION (see wish_last_error()).
+ */
+WISH_API wish_error wish_user_store_set(wish_client_handle client, const char* name, bison_handle value);
+
+/**
+ * @brief Remove a user store entry.
+ *
+ * @param client      Active session handle.
+ * @param name        Entry name.
+ * @param out_erased  Optional (may be NULL): set to 1 if the entry existed,
+ *                    0 otherwise.
+ * @return WISH_OK; WISH_ERR_UNAVAILABLE for an anonymous session;
+ *         WISH_ERR_NULL or WISH_ERR_EXCEPTION (see wish_last_error()).
+ */
+WISH_API wish_error wish_user_store_erase(wish_client_handle client, const char* name, int* out_erased);
+
+/**
+ * @brief List the names of every user store entry.
+ *
+ * @param client    Active session handle.
+ * @param out_json  Output: a JSON array of entry names, sorted (e.g.
+ *                  `["bdg.desktop.tail"]`). Release with bison_free_string().
+ * @return WISH_OK; WISH_ERR_UNAVAILABLE for an anonymous session;
+ *         WISH_ERR_NULL or WISH_ERR_EXCEPTION (see wish_last_error()).
+ */
+WISH_API wish_error wish_user_store_keys(wish_client_handle client, char** out_json);
 
 /* ── Logging ──────────────────────────────────────────────────────────────── */
 

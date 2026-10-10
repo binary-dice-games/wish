@@ -284,6 +284,7 @@ add_library(wish_client STATIC
   src/client/app_registry.hpp
   src/client/app_registry.cpp
   src/client/wish_app_host.hpp
+  src/client/user_store_rpc.hpp
   src/ui/ui_descriptor.hpp
   src/ui/ui_descriptor.cpp
 )
@@ -316,6 +317,8 @@ add_library(wish_server STATIC
   src/context/file_service.hpp
   src/context/logger.hpp
   src/context/style_service.hpp
+  src/context/persistent_store.hpp
+  src/context/user_store_service.hpp
   src/server/server.hpp
   src/auth/local_auth_module.hpp
   src/standalone/standalone.hpp
@@ -333,6 +336,8 @@ add_library(wish_server STATIC
   src/context/file_service.cpp
   src/context/logger.cpp
   src/context/style_service.cpp
+  src/context/persistent_store.cpp
+  src/context/user_store_service.cpp
   src/server/server.cpp
   src/auth/local_auth_module.cpp
   src/standalone/standalone.cpp

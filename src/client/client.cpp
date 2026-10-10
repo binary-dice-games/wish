@@ -2,6 +2,7 @@
 /// @file client.cpp
 /// @brief Implementation of wish::client.
 #include <client/client.hpp>
+#include <client/user_store_rpc.hpp>
 
 #include <ui/ui_descriptor.hpp>
 
@@ -46,6 +47,13 @@ void client::on_connect() {
   } catch (...) {
     automation_proxy_.reset();
   }
+  // Non-fatal for the same reason: an anonymous session has no user store,
+  // and find_singleton_service() throws for "__WishUserStore" in that case.
+  try {
+    user_store_proxy_ = instantiate("wish"_key, "__WishUserStore"_key).get();
+  } catch (...) {
+    user_store_proxy_.reset();
+  }
 }
 
 void client::on_disconnect() {
@@ -54,6 +62,7 @@ void client::on_disconnect() {
   style_proxy_.reset();
   log_proxy_.reset();
   automation_proxy_.reset();
+  user_store_proxy_.reset();
   if (on_disconnected_)
     on_disconnected_();
 }
@@ -319,6 +328,36 @@ std::future<void> client::log_warn(const std::string& msg) {
 }
 std::future<void> client::log_error(const std::string& msg) {
   return log("error", msg);
+}
+
+// ── User store ──────────────────────────────────────────────────────────────
+
+std::future<std::optional<dynamic>> client::user_store_get(const std::string& name) {
+  return std::async(std::launch::async, [this, name]() -> std::optional<dynamic> {
+    detail::require_user_store(user_store_proxy_);
+    return detail::user_store_get_sync(*user_store_proxy_, name);
+  });
+}
+
+std::future<void> client::user_store_set(const std::string& name, dynamic value) {
+  return std::async(std::launch::async, [this, name, value = std::move(value)]() mutable {
+    detail::require_user_store(user_store_proxy_);
+    detail::user_store_set_sync(*user_store_proxy_, name, std::move(value));
+  });
+}
+
+std::future<bool> client::user_store_erase(const std::string& name) {
+  return std::async(std::launch::async, [this, name]() -> bool {
+    detail::require_user_store(user_store_proxy_);
+    return detail::user_store_erase_sync(*user_store_proxy_, name);
+  });
+}
+
+std::future<std::vector<std::string>> client::user_store_keys() {
+  return std::async(std::launch::async, [this]() -> std::vector<std::string> {
+    detail::require_user_store(user_store_proxy_);
+    return detail::user_store_keys_sync(*user_store_proxy_);
+  });
 }
 
 // ── Automation helpers ──────────────────────────────────────────────────────

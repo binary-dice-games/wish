@@ -311,6 +311,63 @@ class client : public bison::rmi::client {
   /// @brief Convenience wrapper for `log("error", msg)`.
   std::future<void> log_error(const std::string& msg);
 
+  // ── User store ────────────────────────────────────────────────────────────
+  //
+  // A persistent store of named bison objects private to this session's
+  // authenticated identity, kept by the server across sessions and restarts
+  // (see docs/persistent-store.md). Only identified sessions have one: the
+  // server must run an auth module (`wish server` always does) and the
+  // client must connect with an identity (e.g. a "username" connect param,
+  // `wish client --username`). The server-wide store is never reachable
+  // from a client.
+
+  /// @brief True once `on_connect()` has resolved this session's user store;
+  ///        false for an anonymous session.
+  bool has_user_store() const noexcept {
+    return user_store_proxy_.has_value();
+  }
+
+  /**
+   * @brief Read the user store entry named @p name.
+   * @param name  Entry name: 1-256 printable ASCII characters. Prefix it
+   *              with your tool's qualified name (e.g. `"bdg.desktop.tail"`)
+   *              to avoid clashes with other tools.
+   * @return Future resolved with a copy of the entry, or `std::nullopt` if
+   *         it doesn't exist.
+   * @throws std::logic_error (via the resolved future) if `has_user_store()`
+   *         is false; RMI errors for an invalid @p name.
+   */
+  std::future<std::optional<bison::dynamic>> user_store_get(const std::string& name);
+
+  /**
+   * @brief Create or replace the user store entry named @p name.
+   *
+   * The server persists the store before the future resolves.
+   *
+   * @param name   Entry name (see `user_store_get()`).
+   * @param value  Object to store; nested objects are stored by value.
+   * @throws std::logic_error (via the resolved future) if `has_user_store()`
+   *         is false; RMI errors for an invalid @p name or a server-side
+   *         write failure.
+   */
+  std::future<void> user_store_set(const std::string& name, bison::dynamic value);
+
+  /**
+   * @brief Remove the user store entry named @p name.
+   * @return Future resolved with `true` if the entry existed.
+   * @throws std::logic_error (via the resolved future) if `has_user_store()`
+   *         is false.
+   */
+  std::future<bool> user_store_erase(const std::string& name);
+
+  /**
+   * @brief List the names of every entry in the user store.
+   * @return Future resolved with the entry names, sorted.
+   * @throws std::logic_error (via the resolved future) if `has_user_store()`
+   *         is false.
+   */
+  std::future<std::vector<std::string>> user_store_keys();
+
   // ── Automation helpers ────────────────────────────────────────────────────
   //
   // Native (ABI-driven) automation: drive/introspect the session's UI over
@@ -430,6 +487,9 @@ class client : public bison::rmi::client {
   // throwing and breaking the whole connection) when the server's active
   // renderer doesn't support automation. See automation_supported().
   std::optional<bison::rmi::proxy::dynamic> automation_proxy_;
+  // Resolved non-fatally in on_connect() -- unset for an anonymous session,
+  // which has no user store. See has_user_store().
+  std::optional<bison::rmi::proxy::dynamic> user_store_proxy_;
 
   // Set via set_on_disconnected(); invoked from on_disconnect().
   std::function<void()> on_disconnected_;

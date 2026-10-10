@@ -7,6 +7,7 @@
 
 #include <context/context.hpp>
 #include <context/logger.hpp>
+#include <context/persistent_store.hpp>
 #include <server/renderer.hpp>
 #include "src/rmi/server/server.hpp"
 
@@ -175,6 +176,34 @@ class server : public bison::rmi::server {
     persistent_sandbox_root_ = std::move(root);
   }
 
+  /**
+   * @brief Set the directory holding the persistent stores (see
+   *        `docs/persistent-store.md`).
+   *
+   * Defaults to `default_store_dir()` (`~/.wish`). The server store lives at
+   * `dir/server_store.bison` and each identity's user store at
+   * `dir/users/<identity>.bison`. Files are created on first write only.
+   *
+   * Must be called before `start()`.
+   */
+  void set_store_dir(std::filesystem::path dir) {
+    stores_ = std::make_shared<store_registry>(std::move(dir));
+  }
+
+  /// @brief Directory holding the persistent stores.
+  const std::filesystem::path& store_dir() const noexcept {
+    return stores_->dir();
+  }
+
+  /**
+   * @brief The server store, shared by every session of this server and
+   *        reachable only from server-side code (also available per session
+   *        as `context::server_store`). Opened on first use.
+   */
+  persistent_store& server_store() {
+    return *stores_->server_store();
+  }
+
   /** @brief Stop the accept loop, render loop, and join all threads. */
   void stop();
 
@@ -208,12 +237,12 @@ class server : public bison::rmi::server {
   void on_session_created(bison::rmi::context& ctx) override final;
   void on_session_destroyed(bison::rmi::context& ctx) override final;
 
-  // Switches a newly-authenticated session's resource_dir to a persistent,
+  // Attaches the identity's user store (see docs/persistent-store.md) and
+  // switches a newly-authenticated session's resource_dir to a persistent,
   // identity-keyed directory under persistent_sandbox_root_ -- see
-  // src/auth/DESIGN.md. No-op if persistent_sandbox_root_ or identity is
-  // empty, so a client that supplies no identity (or a deployment with no
-  // persistent root configured) sees no behavior change from the default
-  // temp directory on_session_created already set up.
+  // src/auth/DESIGN.md. No-op if identity is empty (the session stays
+  // anonymous: no user store, temp sandbox); the sandbox switch is also
+  // skipped when no persistent_sandbox_root_ is configured.
   void on_authenticated(bison::rmi::context& ctx, const std::string& identity) override final;
 
   // Receive formatted trace lines from the base class and forward to logger_.
@@ -264,6 +293,9 @@ class server : public bison::rmi::server {
   // Empty (default) disables persistent sandbox directories entirely; see
   // set_persistent_sandbox_root().
   std::filesystem::path persistent_sandbox_root_;
+  // Owns the server store and the per-identity user stores; see
+  // set_store_dir(). Replaced only before start().
+  store_registry_ptr stores_{std::make_shared<store_registry>(default_store_dir())};
 };
 
 } // namespace bdg::wish

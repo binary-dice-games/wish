@@ -62,6 +62,7 @@ pub const WISH_ERR_NOT_FOUND: wish_error = -2;
 pub const WISH_ERR_TRANSPORT: wish_error = -3;
 pub const WISH_ERR_EXCEPTION: wish_error = -4;
 pub const WISH_ERR_AMBIGUOUS: wish_error = -5;
+pub const WISH_ERR_UNAVAILABLE: wish_error = -6;
 
 // ─── Callback types ─────────────────────────────────────────────────────────
 
@@ -307,6 +308,32 @@ extern "C" {
         client: wish_client_handle,
         dest_path: *const c_char,
         local_zip_path: *const c_char,
+    ) -> wish_error;
+
+    // ── wish_client_c.h: user store ───────────────────────────────────────────
+
+    pub fn wish_user_store_available(
+        client: wish_client_handle,
+        out_avail: *mut c_int,
+    ) -> wish_error;
+    pub fn wish_user_store_get(
+        client: wish_client_handle,
+        name: *const c_char,
+        out_value: *mut bison_handle,
+    ) -> wish_error;
+    pub fn wish_user_store_set(
+        client: wish_client_handle,
+        name: *const c_char,
+        value: bison_handle,
+    ) -> wish_error;
+    pub fn wish_user_store_erase(
+        client: wish_client_handle,
+        name: *const c_char,
+        out_erased: *mut c_int,
+    ) -> wish_error;
+    pub fn wish_user_store_keys(
+        client: wish_client_handle,
+        out_json: *mut *mut c_char,
     ) -> wish_error;
 
     // ── wish_client_c.h: logging ──────────────────────────────────────────────

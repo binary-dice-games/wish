@@ -40,6 +40,8 @@ inline const char* wish_error_message(wish_error rc) {
       return "internal C++ exception";
     case WISH_ERR_AMBIGUOUS:
       return "app name matches more than one registered app; use the fully-qualified name";
+    case WISH_ERR_UNAVAILABLE:
+      return "not available for this session (e.g. the user store of an anonymous session)";
     default:
       return "unknown error";
   }

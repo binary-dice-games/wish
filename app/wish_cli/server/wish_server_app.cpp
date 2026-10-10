@@ -57,6 +57,10 @@ DEFINE_string(sandbox_root, "",
               "<sandbox_root>/<username> (its --username, or 'default') instead of a temp directory "
               "deleted on disconnect. Trusts the client-supplied username -- local/single-user "
               "deployments only; see wish::server::set_persistent_sandbox_root().");
+DEFINE_string(store_dir, "",
+              "Directory holding the persistent server store and per-user stores (see "
+              "docs/persistent-store.md); empty: ~/.wish. Clients get a user store only when they "
+              "connect with --username.");
 
 namespace bdg::wish {
 
@@ -172,11 +176,20 @@ int wish_server_app::run_with_transport(bison::rmi::transport::server_transport_
   on_listen_params(listen_params);
   if (!FLAGS_profiling_dir.empty())
     srv.enable_profiling(FLAGS_profiling_dir);
+  if (!FLAGS_store_dir.empty())
+    srv.set_store_dir(FLAGS_store_dir);
+  server_log_->info("persistent stores under " + srv.store_dir().string());
+  // Always trust the client-supplied --username as the session identity, so
+  // identified clients get a user store; a client without one stays
+  // anonymous -- unless --sandbox_root is set, which keeps its 'default'
+  // fallback identity so every client gets a persistent sandbox.
   bison::rmi::auth_module_ptr auth;
   if (!FLAGS_sandbox_root.empty()) {
     srv.set_persistent_sandbox_root(FLAGS_sandbox_root);
     auth = std::make_shared<local_auth_module>("default");
     server_log_->info("persistent sandboxes under " + FLAGS_sandbox_root);
+  } else {
+    auth = std::make_shared<local_auth_module>();
   }
   srv.start(auth, std::move(listen_params));
   if (FLAGS_profiling_autostart) {

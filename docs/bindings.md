@@ -97,6 +97,10 @@ has the server unpack it into `dest_path` inside the sandbox. See
 [DESIGN.md](../DESIGN.md#bdgwishfile_service) for the chunked-transfer
 protocol these build on.
 
+### User store
+
+`has_user_store()` and `user_store_get` / `user_store_set` / `user_store_erase` / `user_store_keys` read and write the session's persistent, per-identity store of named objects. The session must connect with a `username` connect param; anonymous sessions get `WISH_ERR_UNAVAILABLE`. The API is the same shape in every binding: see the table in [docs/persistent-store.md](persistent-store.md#client-api).
+
 ### TLS
 
 `wish::binding::client::tls(host, port)` is the TLS counterpart of `tcp()` --
@@ -297,6 +301,10 @@ no `istream`/`ostream`, so these take a path and open it internally).
 archive and has the server unpack it into `dest_path` inside the sandbox.
 See [DESIGN.md](../DESIGN.md#bdgwishfile_service) for the chunked-transfer
 protocol these build on.
+
+### User store
+
+`has_user_store()` and `user_store_get` / `user_store_set` / `user_store_erase` / `user_store_keys` read and write the session's persistent, per-identity store of named objects. The session must connect with a `username` connect param; anonymous sessions get `WISH_ERR_UNAVAILABLE`. The API is the same shape in every binding: see the table in [docs/persistent-store.md](persistent-store.md#client-api).
 
 ### TLS
 

@@ -9,12 +9,12 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
-#include <cstdio>
-#include <cstdlib>
+#include <cstdint>
 #include <ctime>
-#include <filesystem>
-#include <fstream>
-#include <sstream>
+#include <exception>
+#include <memory>
+#include <string>
+#include <vector>
 
 namespace bdg::wish::curl {
 
@@ -22,460 +22,108 @@ using namespace bdg::bison;
 
 namespace {
 
-// ── Minimal hand-rolled JSON (docker's "no JSON library" decision --
-// nlohmann::json's include path isn't available to module-client sources).
-// Just enough to round-trip this module's own flat store schema; not a
-// general-purpose parser. ─────────────────────────────────────────────────
+// ── User store encoding ─────────────────────────────────────────────────
+//
+// Collections, Environments and History persist in the session's user
+// store (docs/persistent-store.md) as one entry each, so sending a request
+// only rewrites the History entry. Each entry is
+// {"version": 1, "items": [<item>, ...]}; items use the same field names as
+// the request_state / saved_request / environment / history_entry members.
 
-struct json_value {
-  enum class kind { null_, bool_, num_, str_, arr_, obj_ } k{kind::null_};
-  bool b{false};
-  double n{0};
-  std::string s;
-  std::vector<json_value> arr;
-  std::vector<std::pair<std::string, json_value>> obj;
+constexpr const char* kCollectionsEntry = "bdg.dev.curl.collections";
+constexpr const char* kEnvironmentsEntry = "bdg.dev.curl.environments";
+constexpr const char* kHistoryEntry = "bdg.dev.curl.history";
+constexpr int32_t kStoreVersion = 1;
 
-  static json_value make_str(std::string v) {
-    json_value j;
-    j.k = kind::str_;
-    j.s = std::move(v);
-    return j;
+dynamic_ptr kv_array_to_store(const std::vector<kv_entry>& entries) {
+  auto arr = std::make_shared<dynamic>();
+  size_t i = 0;
+  for (auto& e : entries) {
+    auto o = std::make_shared<dynamic>();
+    (*o)["key"_key] = e.key;
+    (*o)["value"_key] = e.value;
+    (*o)["enabled"_key] = e.enabled;
+    (*arr)[i++] = dynamic_ptr{o};
   }
-  static json_value make_bool(bool v) {
-    json_value j;
-    j.k = kind::bool_;
-    j.b = v;
-    return j;
-  }
-  static json_value make_num(double v) {
-    json_value j;
-    j.k = kind::num_;
-    j.n = v;
-    return j;
-  }
-  static json_value make_arr() {
-    json_value j;
-    j.k = kind::arr_;
-    return j;
-  }
-  static json_value make_obj() {
-    json_value j;
-    j.k = kind::obj_;
-    return j;
-  }
-
-  void set(const std::string& key, json_value v) {
-    obj.emplace_back(key, std::move(v));
-  }
-  const json_value* find(const std::string& key) const {
-    for (auto& [k2, v] : obj)
-      if (k2 == key)
-        return &v;
-    return nullptr;
-  }
-  std::string str(const std::string& def = "") const {
-    return k == kind::str_ ? s : def;
-  }
-  bool boolean(bool def = false) const {
-    return k == kind::bool_ ? b : def;
-  }
-  double num(double def = 0) const {
-    return k == kind::num_ ? n : def;
-  }
-};
-
-void write_json_string(std::string& out, const std::string& s) {
-  out += '"';
-  for (unsigned char c : s) {
-    switch (c) {
-      case '"':
-        out += "\\\"";
-        break;
-      case '\\':
-        out += "\\\\";
-        break;
-      case '\n':
-        out += "\\n";
-        break;
-      case '\r':
-        out += "\\r";
-        break;
-      case '\t':
-        out += "\\t";
-        break;
-      default:
-        if (c < 0x20) {
-          char buf[8];
-          std::snprintf(buf, sizeof(buf), "\\u%04x", c);
-          out += buf;
-        } else {
-          out += static_cast<char>(c);
-        }
-    }
-  }
-  out += '"';
+  return dynamic_ptr{arr};
 }
 
-void write_json(std::string& out, const json_value& v) {
-  switch (v.k) {
-    case json_value::kind::null_:
-      out += "null";
-      break;
-    case json_value::kind::bool_:
-      out += v.b ? "true" : "false";
-      break;
-    case json_value::kind::num_: {
-      std::ostringstream oss;
-      oss << v.n;
-      out += oss.str();
-      break;
-    }
-    case json_value::kind::str_:
-      write_json_string(out, v.s);
-      break;
-    case json_value::kind::arr_: {
-      out += '[';
-      for (size_t i = 0; i < v.arr.size(); ++i) {
-        if (i)
-          out += ',';
-        write_json(out, v.arr[i]);
-      }
-      out += ']';
-      break;
-    }
-    case json_value::kind::obj_: {
-      out += '{';
-      for (size_t i = 0; i < v.obj.size(); ++i) {
-        if (i)
-          out += ',';
-        write_json_string(out, v.obj[i].first);
-        out += ':';
-        write_json(out, v.obj[i].second);
-      }
-      out += '}';
-      break;
-    }
-  }
-}
-
-class json_parser {
- public:
-  explicit json_parser(const std::string& text) : s_(text) {}
-  bool parse(json_value& out) {
-    skip_ws();
-    return parse_value(out);
-  }
-
- private:
-  const std::string& s_;
-  size_t i_{0};
-
-  void skip_ws() {
-    while (i_ < s_.size() && (s_[i_] == ' ' || s_[i_] == '\t' || s_[i_] == '\n' || s_[i_] == '\r'))
-      ++i_;
-  }
-  bool peek(char c) {
-    return i_ < s_.size() && s_[i_] == c;
-  }
-  bool consume(char c) {
-    if (peek(c)) {
-      ++i_;
-      return true;
-    }
-    return false;
-  }
-
-  bool parse_value(json_value& out) {
-    skip_ws();
-    if (i_ >= s_.size())
-      return false;
-    char c = s_[i_];
-    if (c == '{')
-      return parse_object(out);
-    if (c == '[')
-      return parse_array(out);
-    if (c == '"') {
-      std::string str;
-      if (!parse_string(str))
-        return false;
-      out = json_value::make_str(std::move(str));
-      return true;
-    }
-    if (c == 't') {
-      if (s_.compare(i_, 4, "true") == 0) {
-        i_ += 4;
-        out = json_value::make_bool(true);
-        return true;
-      }
-      return false;
-    }
-    if (c == 'f') {
-      if (s_.compare(i_, 5, "false") == 0) {
-        i_ += 5;
-        out = json_value::make_bool(false);
-        return true;
-      }
-      return false;
-    }
-    if (c == 'n') {
-      if (s_.compare(i_, 4, "null") == 0) {
-        i_ += 4;
-        out = json_value{};
-        return true;
-      }
-      return false;
-    }
-    size_t start = i_;
-    if (c == '-')
-      ++i_;
-    while (i_ < s_.size() &&
-           (std::isdigit(static_cast<unsigned char>(s_[i_])) || s_[i_] == '.' || s_[i_] == 'e' || s_[i_] == 'E' ||
-            s_[i_] == '+' || s_[i_] == '-'))
-      ++i_;
-    if (i_ == start)
-      return false;
-    try {
-      out = json_value::make_num(std::stod(s_.substr(start, i_ - start)));
-    } catch (const std::exception&) {
-      return false;
-    }
-    return true;
-  }
-
-  bool parse_string(std::string& out) {
-    if (!consume('"'))
-      return false;
-    out.clear();
-    while (i_ < s_.size() && s_[i_] != '"') {
-      char c = s_[i_++];
-      if (c == '\\' && i_ < s_.size()) {
-        char e = s_[i_++];
-        switch (e) {
-          case '"':
-            out += '"';
-            break;
-          case '\\':
-            out += '\\';
-            break;
-          case '/':
-            out += '/';
-            break;
-          case 'n':
-            out += '\n';
-            break;
-          case 'r':
-            out += '\r';
-            break;
-          case 't':
-            out += '\t';
-            break;
-          case 'b':
-            out += '\b';
-            break;
-          case 'f':
-            out += '\f';
-            break;
-          case 'u': {
-            if (i_ + 4 <= s_.size()) {
-              unsigned int cp = 0;
-              for (int k = 0; k < 4; ++k) {
-                cp <<= 4;
-                char h = s_[i_ + static_cast<size_t>(k)];
-                if (h >= '0' && h <= '9')
-                  cp |= static_cast<unsigned int>(h - '0');
-                else if (h >= 'a' && h <= 'f')
-                  cp |= static_cast<unsigned int>(h - 'a' + 10);
-                else if (h >= 'A' && h <= 'F')
-                  cp |= static_cast<unsigned int>(h - 'A' + 10);
-              }
-              i_ += 4;
-              // Minimal UTF-8 encode (BMP only, no surrogate pairs -- our
-              // own writer never emits \u, so this only matters for a
-              // hand-edited store file; an acceptable v1 limitation).
-              if (cp < 0x80) {
-                out += static_cast<char>(cp);
-              } else if (cp < 0x800) {
-                out += static_cast<char>(0xC0 | (cp >> 6));
-                out += static_cast<char>(0x80 | (cp & 0x3F));
-              } else {
-                out += static_cast<char>(0xE0 | (cp >> 12));
-                out += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
-                out += static_cast<char>(0x80 | (cp & 0x3F));
-              }
-            }
-            break;
-          }
-          default:
-            out += e;
-        }
-      } else {
-        out += c;
-      }
-    }
-    return consume('"');
-  }
-
-  bool parse_array(json_value& out) {
-    if (!consume('['))
-      return false;
-    out = json_value::make_arr();
-    skip_ws();
-    if (consume(']'))
-      return true;
-    while (true) {
-      json_value elem;
-      if (!parse_value(elem))
-        return false;
-      out.arr.push_back(std::move(elem));
-      skip_ws();
-      if (consume(','))
-        continue;
-      if (consume(']'))
-        break;
-      return false;
-    }
-    return true;
-  }
-
-  bool parse_object(json_value& out) {
-    if (!consume('{'))
-      return false;
-    out = json_value::make_obj();
-    skip_ws();
-    if (consume('}'))
-      return true;
-    while (true) {
-      skip_ws();
-      std::string key;
-      if (!parse_string(key))
-        return false;
-      skip_ws();
-      if (!consume(':'))
-        return false;
-      json_value val;
-      if (!parse_value(val))
-        return false;
-      out.obj.emplace_back(std::move(key), std::move(val));
-      skip_ws();
-      if (consume(','))
-        continue;
-      if (consume('}'))
-        break;
-      return false;
-    }
-    return true;
-  }
-};
-
-// ── Store <-> json_value conversion ─────────────────────────────────────
-
-json_value kv_to_json(const kv_entry& e, bool has_enabled) {
-  json_value o = json_value::make_obj();
-  o.set("key", json_value::make_str(e.key));
-  o.set("value", json_value::make_str(e.value));
-  if (has_enabled)
-    o.set("enabled", json_value::make_bool(e.enabled));
-  return o;
-}
-kv_entry kv_from_json(const json_value& v) {
-  kv_entry e;
-  if (auto* f = v.find("key"))
-    e.key = f->str();
-  if (auto* f = v.find("value"))
-    e.value = f->str();
-  e.enabled = v.find("enabled") ? v.find("enabled")->boolean(true) : true;
-  return e;
-}
-json_value kv_array_to_json(const std::vector<kv_entry>& v, bool has_enabled) {
-  json_value a = json_value::make_arr();
-  for (auto& e : v)
-    a.arr.push_back(kv_to_json(e, has_enabled));
-  return a;
-}
-std::vector<kv_entry> kv_array_from_json(const json_value* v) {
+std::vector<kv_entry> kv_array_from_store(const dynamic& o, key_t field_key) {
   std::vector<kv_entry> out;
-  if (!v || v->k != json_value::kind::arr_)
+  const auto* arr = o.findField<dynamic_ptr>(field_key);
+  if (!arr || !*arr)
     return out;
-  for (auto& e : v->arr)
-    out.push_back(kv_from_json(e));
+  (*arr)->forEach([&](key_t, const field& f) {
+    if (!f.is<dynamic_ptr>() || !f.as<dynamic_ptr>())
+      return;
+    const auto& e = *f.as<dynamic_ptr>();
+    kv_entry kv;
+    kv.key = e.get_as<std::string>("key"_key, std::string{});
+    kv.value = e.get_as<std::string>("value"_key, std::string{});
+    kv.enabled = e.get_as<bool>("enabled"_key, true);
+    out.push_back(std::move(kv));
+  });
   return out;
 }
 
-json_value state_to_json(const request_state& s) {
-  json_value o = json_value::make_obj();
-  o.set("method", json_value::make_str(s.method));
-  o.set("url", json_value::make_str(s.url));
-  o.set("params", kv_array_to_json(s.params, true));
-  o.set("headers", kv_array_to_json(s.headers, true));
-  o.set("body_mode", json_value::make_str(s.body_mode));
-  o.set("body_text", json_value::make_str(s.body_text));
-  o.set("form_fields", kv_array_to_json(s.form_fields, true));
-  o.set("auth_mode", json_value::make_str(s.auth_mode));
-  o.set("auth_username", json_value::make_str(s.auth_username));
-  o.set("auth_password", json_value::make_str(s.auth_password));
-  o.set("auth_token", json_value::make_str(s.auth_token));
-  o.set("follow_redirects", json_value::make_bool(s.follow_redirects));
-  o.set("environment", json_value::make_str(s.environment));
-  return o;
+/// @brief Writes @p s's fields into @p o (alongside an item's own id/name/...).
+void state_to_store(const request_state& s, dynamic& o) {
+  o["method"_key] = s.method;
+  o["url"_key] = s.url;
+  o["params"_key] = kv_array_to_store(s.params);
+  o["headers"_key] = kv_array_to_store(s.headers);
+  o["body_mode"_key] = s.body_mode;
+  o["body_text"_key] = s.body_text;
+  o["form_fields"_key] = kv_array_to_store(s.form_fields);
+  o["auth_mode"_key] = s.auth_mode;
+  o["auth_username"_key] = s.auth_username;
+  o["auth_password"_key] = s.auth_password;
+  o["auth_token"_key] = s.auth_token;
+  o["follow_redirects"_key] = s.follow_redirects;
+  o["environment"_key] = s.environment;
 }
-request_state state_from_json(const json_value& o) {
+
+request_state state_from_store(const dynamic& o) {
+  auto gs = [&](key_t k, const char* dflt = "") { return o.get_as<std::string>(k, std::string{dflt}); };
   request_state s;
-  auto gs = [&](const char* k) { auto* f = o.find(k); return f ? f->str() : std::string{}; };
-  s.method = gs("method");
-  if (s.method.empty())
-    s.method = "GET";
-  s.url = gs("url");
-  s.params = kv_array_from_json(o.find("params"));
-  s.headers = kv_array_from_json(o.find("headers"));
-  s.body_mode = gs("body_mode");
-  if (s.body_mode.empty())
-    s.body_mode = "none";
-  s.body_text = gs("body_text");
-  s.form_fields = kv_array_from_json(o.find("form_fields"));
-  s.auth_mode = gs("auth_mode");
-  if (s.auth_mode.empty())
-    s.auth_mode = "none";
-  s.auth_username = gs("auth_username");
-  s.auth_password = gs("auth_password");
-  s.auth_token = gs("auth_token");
-  s.follow_redirects = o.find("follow_redirects") ? o.find("follow_redirects")->boolean(true) : true;
-  s.environment = gs("environment");
+  s.method = gs("method"_key, "GET");
+  s.url = gs("url"_key);
+  s.params = kv_array_from_store(o, "params"_key);
+  s.headers = kv_array_from_store(o, "headers"_key);
+  s.body_mode = gs("body_mode"_key, "none");
+  s.body_text = gs("body_text"_key);
+  s.form_fields = kv_array_from_store(o, "form_fields"_key);
+  s.auth_mode = gs("auth_mode"_key, "none");
+  s.auth_username = gs("auth_username"_key);
+  s.auth_password = gs("auth_password"_key);
+  s.auth_token = gs("auth_token"_key);
+  s.follow_redirects = o.get_as<bool>("follow_redirects"_key, true);
+  s.environment = gs("environment"_key);
   return s;
 }
 
-// ── Store file location ─────────────────────────────────────────────────
-//
-// A per-user config directory on the machine running the client -- not the
-// wish session sandbox (session::resource_dir): this is the client's own
-// local app state, the same trust boundary as imgui.ini. See DESIGN.md
-// "Persistence". Platform difference kept as a narrow #if guard in this
-// shared file per CLAUDE.md's platform-support rule, rather than a
-// separate _win/_posix file.
-
-std::string store_dir_path() {
-#if defined(_WIN32)
-  const char* appdata = std::getenv("APPDATA");
-  std::string base = (appdata && *appdata) ? appdata : ".";
-  return base + "\\wish\\curl";
-#else
-  const char* xdg = std::getenv("XDG_CONFIG_HOME");
-  std::string base;
-  if (xdg && *xdg) {
-    base = xdg;
-  } else {
-    const char* home = std::getenv("HOME");
-    base = (home && *home) ? std::string(home) + "/.config" : std::string(".config");
-  }
-  return base + "/wish/curl";
-#endif
+/// @brief Wraps @p items as a store entry value.
+dynamic make_entry(const std::vector<dynamic_ptr>& items) {
+  auto arr = std::make_shared<dynamic>();
+  size_t i = 0;
+  for (auto& item : items)
+    (*arr)[i++] = item;
+  dynamic entry;
+  entry["version"_key] = kStoreVersion;
+  entry["items"_key] = dynamic_ptr{arr};
+  return entry;
 }
 
-std::string store_file_path() {
-#if defined(_WIN32)
-  return store_dir_path() + "\\store.json";
-#else
-  return store_dir_path() + "/store.json";
-#endif
+/// @brief Calls @p fn for every item object of the store entry @p entry.
+template <typename F>
+void for_each_item(const dynamic& entry, F&& fn) {
+  const auto* arr = entry.findField<dynamic_ptr>("items"_key);
+  if (!arr || !*arr)
+    return;
+  (*arr)->forEach([&](key_t, const field& f) {
+    if (f.is<dynamic_ptr>() && f.as<dynamic_ptr>())
+      fn(*f.as<dynamic_ptr>());
+  });
 }
 
 // ── Small string helpers ────────────────────────────────────────────────
@@ -591,122 +239,119 @@ void curl_source::load_store() {
   environments_.clear();
   history_.clear();
 
-  std::ifstream in(store_file_path(), std::ios::binary);
-  if (!in)
+  if (!host_.has_user_store()) {
+    log_persistence(
+        false,
+        "Collections, Environments and History are not saved: anonymous session "
+        "(reconnect with --username to keep them)");
     return;
-  std::ostringstream buf;
-  buf << in.rdbuf();
-  const std::string text = buf.str();
-  if (text.empty())
-    return;
-
-  json_value root;
-  json_parser parser(text);
-  if (!parser.parse(root) || root.k != json_value::kind::obj_)
-    return;
-
-  if (auto* c = root.find("collections")) {
-    for (auto& item : c->arr) {
-      saved_request r;
-      if (auto* f = item.find("id"))
-        r.id = f->str();
-      r.collection = item.find("collection") ? item.find("collection")->str() : std::string{"Default"};
-      if (auto* f = item.find("name"))
-        r.name = f->str();
-      r.state = state_from_json(item);
-      if (!r.id.empty())
-        collections_.push_back(std::move(r));
-    }
   }
-  if (auto* e = root.find("environments")) {
-    for (auto& item : e->arr) {
-      environment env;
-      if (auto* f = item.find("id"))
-        env.id = f->str();
-      if (auto* f = item.find("name"))
-        env.name = f->str();
-      env.vars = kv_array_from_json(item.find("vars"));
-      if (!env.id.empty())
-        environments_.push_back(std::move(env));
+
+  try {
+    if (auto entry = host_.user_store_get(kCollectionsEntry).get()) {
+      for_each_item(*entry, [&](const dynamic& item) {
+        saved_request r;
+        r.id = item.get_as<std::string>("id"_key, std::string{});
+        r.collection = item.get_as<std::string>("collection"_key, std::string{"Default"});
+        r.name = item.get_as<std::string>("name"_key, std::string{});
+        r.state = state_from_store(item);
+        if (!r.id.empty())
+          collections_.push_back(std::move(r));
+      });
     }
-  }
-  if (auto* h = root.find("history")) {
-    for (auto& item : h->arr) {
-      history_entry he;
-      if (auto* f = item.find("id"))
-        he.id = f->str();
-      he.status_code = item.find("status_code") ? static_cast<int32_t>(item.find("status_code")->num()) : 0;
-      he.ok = item.find("ok") ? item.find("ok")->boolean() : false;
-      he.time_ms = item.find("time_ms") ? static_cast<float>(item.find("time_ms")->num()) : 0.0f;
-      if (auto* f = item.find("timestamp"))
-        he.timestamp = f->str();
-      he.state = state_from_json(item);
-      if (!he.id.empty())
-        history_.push_back(std::move(he));
+    if (auto entry = host_.user_store_get(kEnvironmentsEntry).get()) {
+      for_each_item(*entry, [&](const dynamic& item) {
+        environment env;
+        env.id = item.get_as<std::string>("id"_key, std::string{});
+        env.name = item.get_as<std::string>("name"_key, std::string{});
+        env.vars = kv_array_from_store(item, "vars"_key);
+        if (!env.id.empty())
+          environments_.push_back(std::move(env));
+      });
     }
+    if (auto entry = host_.user_store_get(kHistoryEntry).get()) {
+      for_each_item(*entry, [&](const dynamic& item) {
+        history_entry he;
+        he.id = item.get_as<std::string>("id"_key, std::string{});
+        he.status_code = item.get_as<int32_t>("status_code"_key, 0);
+        he.ok = item.get_as<bool>("ok"_key, false);
+        he.time_ms = item.get_as<float>("time_ms"_key, 0.0f);
+        he.timestamp = item.get_as<std::string>("timestamp"_key, std::string{});
+        he.state = state_from_store(item);
+        if (!he.id.empty())
+          history_.push_back(std::move(he));
+      });
+    }
+  } catch (const std::exception& e) {
+    log_persistence(false, std::string{"Could not load saved data: "} + e.what());
   }
   while (history_.size() > kMaxHistory)
     history_.pop_front();
 }
 
-void curl_source::save_store() const {
-  json_value root = json_value::make_obj();
-
-  json_value c_arr = json_value::make_arr();
+void curl_source::save_collections() const {
+  std::vector<dynamic_ptr> items;
   for (auto& r : collections_) {
-    json_value o = state_to_json(r.state);
-    o.set("id", json_value::make_str(r.id));
-    o.set("collection", json_value::make_str(r.collection));
-    o.set("name", json_value::make_str(r.name));
-    c_arr.arr.push_back(std::move(o));
+    auto o = std::make_shared<dynamic>();
+    state_to_store(r.state, *o);
+    (*o)["id"_key] = r.id;
+    (*o)["collection"_key] = r.collection;
+    (*o)["name"_key] = r.name;
+    items.push_back(dynamic_ptr{o});
   }
-  root.set("collections", std::move(c_arr));
+  write_entry(kCollectionsEntry, make_entry(items));
+}
 
-  json_value e_arr = json_value::make_arr();
+void curl_source::save_environments() const {
+  std::vector<dynamic_ptr> items;
   for (auto& e : environments_) {
-    json_value o = json_value::make_obj();
-    o.set("id", json_value::make_str(e.id));
-    o.set("name", json_value::make_str(e.name));
-    o.set("vars", kv_array_to_json(e.vars, false));
-    e_arr.arr.push_back(std::move(o));
+    auto o = std::make_shared<dynamic>();
+    (*o)["id"_key] = e.id;
+    (*o)["name"_key] = e.name;
+    (*o)["vars"_key] = kv_array_to_store(e.vars);
+    items.push_back(dynamic_ptr{o});
   }
-  root.set("environments", std::move(e_arr));
+  write_entry(kEnvironmentsEntry, make_entry(items));
+}
 
-  json_value h_arr = json_value::make_arr();
+void curl_source::save_history() const {
+  std::vector<dynamic_ptr> items;
   for (auto& h : history_) {
-    json_value o = state_to_json(h.state);
-    o.set("id", json_value::make_str(h.id));
-    o.set("status_code", json_value::make_num(h.status_code));
-    o.set("ok", json_value::make_bool(h.ok));
-    o.set("time_ms", json_value::make_num(h.time_ms));
-    o.set("timestamp", json_value::make_str(h.timestamp));
-    h_arr.arr.push_back(std::move(o));
+    auto o = std::make_shared<dynamic>();
+    state_to_store(h.state, *o);
+    (*o)["id"_key] = h.id;
+    (*o)["status_code"_key] = h.status_code;
+    (*o)["ok"_key] = h.ok;
+    (*o)["time_ms"_key] = h.time_ms;
+    (*o)["timestamp"_key] = h.timestamp;
+    items.push_back(dynamic_ptr{o});
   }
-  root.set("history", std::move(h_arr));
+  write_entry(kHistoryEntry, make_entry(items));
+}
 
-  std::string text;
-  write_json(text, root);
+void curl_source::write_entry(const char* name, dynamic value) const {
+  if (!host_.has_user_store())
+    return; // anonymous session: already reported once by load_store()
+  try {
+    host_.user_store_set(name, std::move(value)).get();
+  } catch (const std::exception& e) {
+    log_persistence(false, std::string{"Could not save "} + name + ": " + e.what());
+  }
+}
 
-  std::error_code ec;
-  std::filesystem::create_directories(store_dir_path(), ec);
-  std::ofstream out(store_file_path(), std::ios::binary | std::ios::trunc);
-  if (out)
-    out << text;
+void curl_source::log_persistence(bool ok, const std::string& message) const {
+  dynamic log;
+  log["command"_key] = std::string{"user store"};
+  log["exit_code"_key] = int32_t{ok ? 0 : 1};
+  log["ok"_key] = ok;
+  log["output"_key] = message;
+  call("append_command_log"_key, std::move(log));
 }
 
 // ── Pushing snapshots ────────────────────────────────────────────────
 
 dynamic_ptr curl_source::encode_kv(const std::vector<kv_entry>& entries) const {
-  auto arr = std::make_shared<dynamic>();
-  size_t i = 0;
-  for (auto& e : entries) {
-    auto o = std::make_shared<dynamic>();
-    (*o)["key"_key] = e.key;
-    (*o)["value"_key] = e.value;
-    (*o)["enabled"_key] = e.enabled;
-    (*arr)[i++] = dynamic_ptr{o};
-  }
-  return dynamic_ptr{arr};
+  return kv_array_to_store(entries);
 }
 
 std::vector<kv_entry> curl_source::decode_kv(const dynamic& args, key_t field_key, bool has_enabled) const {
@@ -1010,7 +655,7 @@ void curl_source::send_request(const request_state& raw) {
   history_.push_back(std::move(he));
   while (history_.size() > kMaxHistory)
     history_.pop_front();
-  save_store();
+  save_history();
   push_history();
 }
 
@@ -1034,7 +679,7 @@ void curl_source::on_save_request_requested(const dynamic& payload) {
   r.name = payload.as<std::string>("name"_key);
   r.state = decode_request_state(payload);
   collections_.push_back(std::move(r));
-  save_store();
+  save_collections();
   push_collections();
 }
 
@@ -1051,7 +696,7 @@ void curl_source::on_delete_request_requested(const std::string& id) {
   collections_.erase(
       std::remove_if(collections_.begin(), collections_.end(), [&](const saved_request& r) { return r.id == id; }),
       collections_.end());
-  save_store();
+  save_collections();
   push_collections();
 }
 
@@ -1065,7 +710,7 @@ void curl_source::on_duplicate_request_requested(const std::string& id) {
       break;
     }
   }
-  save_store();
+  save_collections();
   push_collections();
 }
 
@@ -1080,7 +725,7 @@ void curl_source::on_load_history_requested(const std::string& id) {
 
 void curl_source::on_clear_history_requested() {
   history_.clear();
-  save_store();
+  save_history();
   push_history();
 }
 
@@ -1089,7 +734,7 @@ void curl_source::on_new_environment_requested(const std::string& name) {
   env.id = new_id("e");
   env.name = name;
   environments_.push_back(std::move(env));
-  save_store();
+  save_environments();
   push_environments();
 }
 
@@ -1097,7 +742,7 @@ void curl_source::on_delete_environment_requested(const std::string& id) {
   environments_.erase(
       std::remove_if(environments_.begin(), environments_.end(), [&](const environment& e) { return e.id == id; }),
       environments_.end());
-  save_store();
+  save_environments();
   push_environments();
 
   dynamic args;
@@ -1126,7 +771,7 @@ void curl_source::on_save_environment_vars_requested(const dynamic& payload) {
     if (e.id != id)
       continue;
     e.vars = decode_kv(payload, "vars"_key, false);
-    save_store();
+    save_environments();
     push_environments();
     on_select_environment_requested(id); // re-push so var_count / editor stay in sync
     return;

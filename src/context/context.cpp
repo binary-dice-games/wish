@@ -17,6 +17,7 @@
 #include <context/logger.hpp>
 #include <resource_store.hpp>
 #include <context/style_service.hpp>
+#include <context/user_store_service.hpp>
 
 #ifdef WISH_AUTOMATION_ENABLED
 #include <automation/automation_service.hpp>
@@ -40,6 +41,15 @@ bison::dynamic_ptr find_singleton_service(const context& s, bison::key_t klass) 
     return dynamic_ptr{std::static_pointer_cast<dynamic>(s.style_service)};
   if (klass == "__WishLogger"_key && s.logger_service)
     return dynamic_ptr{std::static_pointer_cast<dynamic>(s.logger_service)};
+  if (klass == "__WishUserStore"_key) {
+    // Same reasoning as __WishAutomation below: an anonymous session has no
+    // user store, and that must surface as a clear error at instantiate()
+    // time (wish::client::on_connect() catches it and reports
+    // has_user_store() == false), not as a method-less dummy object.
+    if (s.user_store_service)
+      return dynamic_ptr{std::static_pointer_cast<dynamic>(s.user_store_service)};
+    throw std::runtime_error("wish: user store unavailable: anonymous session");
+  }
 #ifdef WISH_AUTOMATION_ENABLED
   if (klass == "__WishAutomation"_key) {
     // Unlike the singletons above, this one is conditionally present: only

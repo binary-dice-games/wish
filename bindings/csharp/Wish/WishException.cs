@@ -17,6 +17,7 @@ public sealed class WishException : Exception
         [WishErrorCode.Transport] = "Transport connection failed",
         [WishErrorCode.Exception] = "Internal C++ exception",
         [WishErrorCode.Ambiguous] = "App name matches more than one registered app; use the fully-qualified name (see LastError())",
+        [WishErrorCode.Unavailable] = "Not available for this session (e.g. the user store of an anonymous session)",
     };
 
     public WishErrorCode Code { get; }

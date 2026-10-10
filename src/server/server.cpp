@@ -7,6 +7,7 @@
 #include <server/registry.hpp>
 #include <server/server.hpp>
 #include <context/style_service.hpp>
+#include <context/user_store_service.hpp>
 #include "src/rmi/shared/profiling.hpp"
 #include <ui/ui_root.hpp>
 
@@ -90,6 +91,7 @@ void server::on_session_created(bison::rmi::context& ctx) {
   s.style_service->set_preset(default_theme_);
   // All sessions share the same global logger instance (set via set_logger()).
   s.logger_service = logger_;
+  s.server_store = stores_->server_store();
 #ifdef WISH_AUTOMATION_ENABLED
   if (renderer_) {
     if (auto* backend = renderer_->as_automation_backend())
@@ -120,14 +122,19 @@ void server::on_session_destroyed(bison::rmi::context& ctx) {
 void server::on_authenticated(bison::rmi::context& ctx, const std::string& identity) {
   // The base class holds this context's wlock for the duration of this
   // call, as it does for the whole OP_CONNECT dispatch that triggers it.
-  if (persistent_sandbox_root_.empty() || identity.empty())
-    return; // no persistence configured, or module extracted no identity
+  if (identity.empty())
+    return; // anonymous session: no user store, default temp sandbox
   if (!is_safe_sandbox_identity(identity)) {
-    on_print(ctx.session_id, "[rmi] rejected unsafe identity for persistent sandbox: " + identity);
+    on_print(ctx.session_id, "[rmi] rejected unsafe identity: " + identity);
     return;
   }
 
   auto& s = static_cast<context&>(ctx);
+  s.user_store = stores_->user_store(identity);
+  s.user_store_service = user_store_service::instantiate(s.user_store);
+
+  if (persistent_sandbox_root_.empty())
+    return; // no persistent sandboxes configured
   s.adopt_persistent_resource_dir(persistent_sandbox_root_ / identity);
   // Re-instantiate so the singleton __WishFileSystem object handed out by
   // find_singleton_service()/on_create_object() points at the persistent

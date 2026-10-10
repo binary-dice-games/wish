@@ -4,6 +4,7 @@
 #include <context/logger.hpp>
 #include <server/registry.hpp>
 #include <context/style_service.hpp>
+#include <context/user_store_service.hpp>
 
 #ifdef WISH_AUTOMATION_ENABLED
 #include <automation/automation_service.hpp>
@@ -69,6 +70,7 @@ void register_all() {
   register_ui_template();
   register_file_service();
   register_style_service();
+  register_user_store_service();
   register_logger();
 #ifdef WISH_AUTOMATION_ENABLED
   register_automation_service();

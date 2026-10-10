@@ -53,6 +53,7 @@ WISH_ERR_NOT_FOUND = -2
 WISH_ERR_TRANSPORT = -3
 WISH_ERR_EXCEPTION = -4
 WISH_ERR_AMBIGUOUS = -5
+WISH_ERR_UNAVAILABLE = -6
 
 WISH_ERROR_MESSAGES = {
     WISH_ERR_NULL: "Null handle or pointer",
@@ -60,6 +61,7 @@ WISH_ERROR_MESSAGES = {
     WISH_ERR_TRANSPORT: "Transport connection failed",
     WISH_ERR_EXCEPTION: "Internal C++ exception",
     WISH_ERR_AMBIGUOUS: "App name matches more than one registered app; use the fully-qualified name (see last_error())",
+    WISH_ERR_UNAVAILABLE: "Not available for this session (e.g. the user store of an anonymous session)",
 }
 
 # ─── Callback types ─────────────────────────────────────────────────────────
@@ -237,6 +239,22 @@ def _setup_wish_signatures(lib: ctypes.CDLL) -> None:
     lib.wish_upload_package_from_path.argtypes = [ClientHandle, ctypes.c_char_p, ctypes.c_char_p]
 
     # ── Logging ──────────────────────────────────────────────────────────────
+    # ── User store ───────────────────────────────────────────────────────────
+    lib.wish_user_store_available.restype = Error
+    lib.wish_user_store_available.argtypes = [ClientHandle, P(ctypes.c_int)]
+
+    lib.wish_user_store_get.restype = Error
+    lib.wish_user_store_get.argtypes = [ClientHandle, ctypes.c_char_p, P(_bison_native.Handle)]
+
+    lib.wish_user_store_set.restype = Error
+    lib.wish_user_store_set.argtypes = [ClientHandle, ctypes.c_char_p, _bison_native.Handle]
+
+    lib.wish_user_store_erase.restype = Error
+    lib.wish_user_store_erase.argtypes = [ClientHandle, ctypes.c_char_p, P(ctypes.c_int)]
+
+    lib.wish_user_store_keys.restype = Error
+    lib.wish_user_store_keys.argtypes = [ClientHandle, P(ctypes.c_char_p)]
+
     lib.wish_log.restype = Error
     lib.wish_log.argtypes = [ClientHandle, ctypes.c_char_p, ctypes.c_char_p]
 
