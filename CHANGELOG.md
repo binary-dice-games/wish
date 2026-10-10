@@ -75,6 +75,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `mc`: the default layout is now a 2x2 grid -- folder trees on top, file panels below, Local on the left and Sandbox on the right.
 - The bdg tool frontends (`kubectl`, `docker`, `helm`, `pip`, `pkg`, `curl`, `sq`, `git` and the desktop tools) now share one set of server-side panels (`modules/bdg/common/server/`): the Console window, list windows with `...` row menus, read-only text viewers, live stats graphs and confirm dialogs look and behave the same in every tool.
 - `sq`: Console rows gain the right-click **Copy Entry** / **Clear Console** menu the other tools have.
 - `git`: the Log window follows the newest row.

@@ -5,11 +5,12 @@
 Two-panel file browser laid out as dockable panels inside its own
 nested "File Explorer" dockspace (see [docs/dock-layout.md](../../../../docs/dock-layout.md)):
 **Local Machine** (client-driven) and **Sandbox (Server)** (server-driven,
-with an "Open in Explorer" shortcut), each with a folder tree to its left
+with an "Open in Explorer" shortcut), each with a folder tree above it
 (**Local Folders**, **Sandbox Folders**). Each file panel has the button
 that sends its selected files to the other one (**Upload >>** in Local,
-**<< Download** in Sandbox). The first run seeds them side by side;
-rearrange freely afterwards (Shift+drag to re-dock). Closing any panel
+**<< Download** in Sandbox). The first run seeds them as a 2x2 grid --
+folder trees on top, file panels below, Local on the left and Sandbox on
+the right; rearrange freely afterwards (Shift+drag to re-dock). Closing any panel
 closes the tool.
 
 The folder trees list directories only, Explorer-style: click a folder to

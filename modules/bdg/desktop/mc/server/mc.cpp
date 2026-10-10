@@ -111,7 +111,7 @@ std::string join_local_path(const std::string& parent, const std::string& name) 
 // ── UI layouts ────────────────────────────────────────────────────────────────
 //
 // The browser is split into four dockable panels -- Local and Sandbox, each
-// with its folder tree (kLocalTreeLayout/kSandboxTreeLayout) --
+// with its folder tree (kLocalTreeLayout/kSandboxTreeLayout) above it --
 // seeded into a first-run arrangement by on_init()'s
 // set_default_dock_layout() call, the same multi-window pattern top, pix and
 // the dev modules (git, curl, docker) use. The user can re-dock, tab or
@@ -388,20 +388,20 @@ void mc::on_init() {
   });
 
   // Seed the first-run arrangement inside the browser's own nested
-  // dockspace (titled with the form's "title" field): Local and Sandbox side
-  // by side, each with its folder tree on its left. Owned by imgui.ini after
-  // the first run (see docs/dock-layout.md); bump the version arg to layout()
-  // if it changes.
+  // dockspace (titled with the form's "title" field): a 2x2 grid with the
+  // folder trees on top and the file panels below, Local on the left and
+  // Sandbox on the right. Owned by imgui.ini after the first run (see
+  // docs/dock-layout.md); bump the version arg to layout() if it changes.
   {
     using namespace dock;
     set_default_dock_layout(viewport(
         "mc_dock", title,
         layout(
             split(
-                dir::left, 0.50f,
-                split(dir::left, 0.30f, area({local_tree_root_key_}), area({internal_root_key_})),
-                split(dir::left, 0.30f, area({sandbox_tree_root_key_}), area({sandbox_root_key_}))),
-            /*version=*/2, /*target=*/"mc_dock")));
+                dir::up, 0.35f,
+                split(dir::left, 0.50f, area({local_tree_root_key_}), area({sandbox_tree_root_key_})),
+                split(dir::left, 0.50f, area({internal_root_key_}), area({sandbox_root_key_}))),
+            /*version=*/3, /*target=*/"mc_dock")));
   }
 
   // The sandbox tree starts as its root with the first level under it; the
