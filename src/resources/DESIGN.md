@@ -201,4 +201,4 @@ Only binary assets that are needed by the server's built-in UI at runtime belong
 | `icons/msgbox_warning.png` | Warning severity icon for `MessageBox` |
 | `icons/msgbox_error.png` | Error severity icon for `MessageBox` |
 | `icons/msgbox_question.png` | Question severity icon for `MessageBox` |
-| `icons/<name>.png` | 50 general-purpose UI icons (settings, search, save, play, ...) for toolbars and buttons; full list in `resources/README.md` |
+| `icons/<name>.png` | General-purpose UI icons (settings, search, save, play, ...) for toolbars and buttons; full list in `resources/README.md` |

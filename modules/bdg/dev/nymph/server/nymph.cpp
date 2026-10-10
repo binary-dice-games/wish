@@ -54,7 +54,7 @@ constexpr const char* kSourceLayout = R"json({
           "type": "HorizontalLayout",
           "spacing": 8,
           "children": {
-            "save": { "type": "Button", "label": "Save" },
+            "save": { "type": "Button", "label": "Save", "icon": "res/icons/save.png" },
             "path_label": { "type": "Label", "text": "(no file)" }
           }
         },

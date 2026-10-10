@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `icon` field on `Button`, `MenuButton` and `MenuItem` (plus `Button.icon_color`): an image drawn left of the label, tinted to the text color; an empty label gives a square icon-only button.
+- Icons on the toolbar buttons and row/context menus of every `bdg` module (docker, kubectl, helm, pip, pkg, curl, sq, git, nymph, bc, du, mc, nano, pix, tail, top, zip); table row action menus are now an icon-only "more" button.
+- Built-in icons `send`, `merge`, `commit`, `fit_screen` and `table`.
 - 50 built-in Material Symbols UI icons under `res/icons/` (e.g. `settings.png`, `search.png`, `save.png`, `play.png`, `terminal.png`), listed in `resources/README.md`.
 - Persistent stores of bison objects kept across sessions and server restarts (see [docs/persistent-store.md](docs/persistent-store.md)):
   - A **user store** per authenticated identity (`~/.wish/users/<identity>.bison`), readable and writable by that identity's clients via `has_user_store()` / `user_store_get` / `user_store_set` / `user_store_erase` / `user_store_keys`.

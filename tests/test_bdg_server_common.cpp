@@ -392,6 +392,17 @@ TEST(BdgServerCommonHelpers, PayloadReadersAndText) {
   EXPECT_EQ(common::lower("MiXeD"), "mixed");
 }
 
+TEST(BdgServerCommonHelpers, ActionIconsMatchFirstWordCaseInsensitively) {
+  EXPECT_EQ(common::icon_path("settings"), "res/icons/settings.png");
+  EXPECT_EQ(common::action_icon("Refresh"), "refresh");
+  EXPECT_EQ(common::action_icon("remove"), "delete");
+  EXPECT_EQ(common::action_icon("Prune stopped..."), "delete");
+  EXPECT_EQ(common::action_icon("Rollback to this revision"), "undo");
+  EXPECT_EQ(common::action_icon("Logs"), "document");
+  EXPECT_EQ(common::action_icon("Frobnicate"), "");
+  EXPECT_EQ(common::action_icon(""), "");
+}
+
 // ── console_panel ───────────────────────────────────────────────────────────
 
 TEST_F(BdgServerCommonTest, ConsoleUsesOptionsAndAppendsColouredRows) {
@@ -461,9 +472,14 @@ TEST_F(BdgServerCommonTest, ListRowsCarryMenuAndRebuildReplacesThem) {
   EXPECT_EQ(rows(root_ + ".vbox.table").size(), 2u);
   EXPECT_EQ(text_of(at(root_ + ".vbox.status")), "2 items");
   EXPECT_NE(item_id(root_ + ".vbox.table", 0, "Delete...").id, 0u); // confirm adds "..."
-  auto menu = children(children(rows(root_ + ".vbox.table")[0]).back());
+  auto button = children(rows(root_ + ".vbox.table")[0]).back();
+  EXPECT_EQ(button->as<std::string>("label"_key), "");
+  EXPECT_EQ(button->as<std::string>("icon"_key), "res/icons/more.png");
+  auto menu = children(button);
   ASSERT_EQ(menu.size(), 3u);
+  EXPECT_EQ(menu[0]->as<std::string>("icon"_key), "res/icons/folder_open.png"); // "Open"
   EXPECT_EQ(menu[1]->as<bison::key_t>(dynamic::CLASS), "Separator"_key);
+  EXPECT_EQ(menu[2]->as<std::string>("icon"_key), "res/icons/delete.png"); // "Delete..."
 
   call("set_rows"_key, one("names"_key, "gamma"));
   EXPECT_EQ(rows(root_ + ".vbox.table").size(), 1u);

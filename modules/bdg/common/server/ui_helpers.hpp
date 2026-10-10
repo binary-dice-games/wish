@@ -54,6 +54,57 @@ inline void set_status_text(const ui_element_ptr& label, const std::string& text
   set_text_color(label, ok ? kIdle : kBad);
 }
 
+// ── Icons ─────────────────────────────────────────────────────────────────
+
+/// @brief Session path of built-in icon @p name (`resources/embedded/icons/
+/// <name>.png`, extracted into every session): `"res/icons/<name>.png"`.
+/// Use it for a Button / MenuButton / MenuItem / TreeNode `icon` field.
+inline std::string icon_path(const std::string& name) {
+  return "res/icons/" + name + ".png";
+}
+
+/// @brief Built-in icon name for a common action label ("Refresh",
+/// "Remove", "Logs", ...), or `""` when none fits. Matches the label's first
+/// word, case-insensitively, ignoring a trailing "..." -- so "Rollback to
+/// this revision" and "Prune stopped..." match too. Used by table_rows for
+/// row menu items, so every tool's row actions get the same icons.
+inline std::string action_icon(const std::string& label) {
+  std::string verb;
+  for (char c : label) {
+    if (c == ' ' || c == '.')
+      break;
+    verb += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  }
+  static const std::pair<const char*, const char*> kIcons[] = {
+      {"refresh", "refresh"},   {"rescan", "refresh"},    {"reload", "refresh"},    {"restart", "refresh"},
+      {"reinstall", "refresh"}, {"remove", "delete"},     {"delete", "delete"},     {"uninstall", "delete"},
+      {"prune", "delete"},      {"kill", "close"},        {"inspect", "info"},      {"describe", "info"},
+      {"details", "info"},      {"status", "info"},       {"properties", "info"},   {"logs", "document"},
+      {"notes", "document"},    {"readme", "document"},   {"values", "document"},   {"manifest", "code"},
+      {"files", "folder_open"}, {"start", "play"},        {"run", "play"},          {"unpause", "play"},
+      {"resume", "play"},       {"stop", "stop"},         {"pause", "pause"},       {"install", "download"},
+      {"pull", "download"},     {"download", "download"}, {"upgrade", "arrow_up"},  {"update", "arrow_up"},
+      {"push", "upload"},       {"upload", "upload"},     {"rollback", "undo"},     {"history", "history"},
+      {"versions", "history"},  {"open", "folder_open"},  {"save", "save"},         {"new", "add"},
+      {"create", "add"},        {"add", "add"},           {"edit", "edit"},         {"rename", "edit"},
+      {"copy", "copy"},         {"paste", "paste"},       {"cut", "cut"},           {"search", "search"},
+      {"find", "search"},       {"filter", "filter"},     {"clear", "delete"},      {"cordon", "lock"},
+      {"uncordon", "lock"},     {"drain", "download"},    {"settings", "settings"}, {"help", "help"},
+      {"checkout", "check"},    {"apply", "check"},       {"pop", "arrow_up"},      {"drop", "delete"},
+      {"connect", "link"},      {"ping", "server"},       {"merge", "merge"},       {"commit", "commit"},
+  };
+  for (const auto& [word, icon] : kIcons)
+    if (verb == word)
+      return icon;
+  return {};
+}
+
+/// @brief Sets @p el's `icon` to built-in icon @p name (see icon_path()).
+template <typename Element>
+void set_icon(const Element& el, const std::string& name) {
+  el["icon"_key] = icon_path(name);
+}
+
 // ── Element helpers ───────────────────────────────────────────────────────
 
 /// @brief The `__wish_id` an element was registered under.

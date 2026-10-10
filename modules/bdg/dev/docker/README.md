@@ -49,7 +49,7 @@ All eight windows are implemented and live-verified against a real Docker
 daemon:
 
 - **Containers / Images / Volumes / Networks** — each a toolbar + `Table`
-  with a `...` per-row action menu (state-aware for containers: Start on a
+  with a per-row actions menu (the "more" icon button) (state-aware for containers: Start on a
   stopped one, Stop/Restart/Pause/Kill on a running one; Inspect-only for
   built-in networks), the Containers name/image text filter +
   All/Running/Stopped state filter, inline pull-image / create-volume

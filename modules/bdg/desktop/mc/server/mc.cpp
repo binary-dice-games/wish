@@ -183,7 +183,7 @@ static constexpr const char* kLocalLayout = R"json({
           "spacing": 8,
           "children": {
             "upload": {
-              "type": "Button", "label": "Upload >>",
+              "type": "Button", "label": "Upload", "icon": "res/icons/upload.png",
               "tooltip": "Copy the selected files to the sandbox folder shown in the Sandbox panel"
             },
             "left_selected": { "type": "Label", "text": "Selected: (none)" }
@@ -225,7 +225,7 @@ static constexpr const char* kSandboxLayout = R"json({
               "type": "InputText", "hint": "Sandbox path...", "value": "/",
               "flags": "EnterReturnsTrue", "width": -1
             },
-            "open_explorer": { "type": "Button", "label": "Open in Explorer" }
+            "open_explorer": { "type": "Button", "label": "Open in Explorer", "icon": "res/icons/open_in_new.png" }
           }
         },
         "right_actions": {
@@ -233,7 +233,7 @@ static constexpr const char* kSandboxLayout = R"json({
           "spacing": 8,
           "children": {
             "download": {
-              "type": "Button", "label": "<< Download",
+              "type": "Button", "label": "Download", "icon": "res/icons/download.png",
               "tooltip": "Copy the selected files to the local folder shown in the Local Machine panel"
             },
             "right_selected": { "type": "Label", "text": "Selected: (none)" }
@@ -677,10 +677,12 @@ ui_element_ptr mc::build_row_context_menu(
 
   ui_element_ptr properties = ui_element_ptr::create("wish"_key, "MenuItem"_key);
   properties["label"_key] = std::string{"Properties"};
+  common::set_icon(properties, "info");
   menu_targets[assign_id(properties)] = row_menu_target{row_menu_action::properties, is_sandbox, entry.name};
 
   ui_element_ptr rename = ui_element_ptr::create("wish"_key, "MenuItem"_key);
   rename["label"_key] = std::string{"Rename..."};
+  common::set_icon(rename, "edit");
   menu_targets[assign_id(rename)] = row_menu_target{row_menu_action::rename, is_sandbox, entry.name};
 
   ui_element_ptr sep = ui_element_ptr::create("wish"_key, "Separator"_key);
@@ -688,6 +690,7 @@ ui_element_ptr mc::build_row_context_menu(
 
   ui_element_ptr copy_path = ui_element_ptr::create("wish"_key, "MenuItem"_key);
   copy_path["label"_key] = std::string{"Copy Path"};
+  common::set_icon(copy_path, "copy");
   // No round trip needed: the renderer copies this to the OS clipboard
   // directly on click (see MenuItem.copy_text's field comment in
   // src/ui/ui_elements/menu.cpp). Still routed through menu_targets so

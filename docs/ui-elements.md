@@ -294,6 +294,8 @@ A clickable button.
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `label` | `string` | `""` | Button caption text. |
+| `icon` | `string` | `""` | Image drawn left of the label, at text height and tinted to the text color (e.g. `"res/icons/settings.png"`, one of the built-in icons listed in [resources/README.md](../resources/README.md)). With an empty `label` the button is a square icon-only button — give it a `tooltip`. Sandboxed like `Image.src`. |
+| `icon_color` | `string` | `""` | Optional `"#RRGGBBAA"`/`"#RRGGBB"` tint for `icon`; empty uses the theme's text color. |
 
 **Events:** `clicked` — button pressed; no payload.
 
@@ -504,6 +506,7 @@ A selectable leaf inside a `Menu`.
 | `checked` | `bool` | `false` | Shows a check mark. Purely display -- the renderer never modifies it; the form sets it explicitly (e.g. a radio-style submenu recomputing it from server state). |
 | `enabled` | `bool` | `true` | When `false`, grayed out and cannot be clicked. |
 | `copy_text` | `string` | `""` | When non-empty, clicking the item also copies this text to the OS clipboard (`ImGui::SetClipboardText`, on the render thread) -- a "Copy ..." action with no client round trip. |
+| `icon` | `string` | `""` | Image drawn in the popup's icon column, left of the label, at text height and tinted to the text color (e.g. `"res/icons/copy.png"`). Labels of all items in a popup stay aligned whether or not each has an icon. Ignored for an item placed directly in a `MenuBar`. Sandboxed like `Image.src`. |
 
 **Events:** `clicked` — `{ checked: bool }` (the field's current value,
 unchanged by the click).
@@ -521,6 +524,7 @@ same as they would inside a `Menu`.
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `label` | `string` | `""` | Button caption text. |
+| `icon` | `string` | `""` | Same as `Button.icon`; an empty `label` gives a square icon-only button (e.g. a table row's `res/icons/more.png` actions menu). |
 
 #### `MenuBarExtension`
 Extends the server's own chrome menu bar with app-supplied content —

@@ -71,7 +71,7 @@ static constexpr const char* kReleasesLayout = R"json({
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_refresh": { "type": "Button", "label": "Refresh" },
+      "btn_refresh": { "type": "Button", "label": "Refresh", "icon": "res/icons/refresh.png" },
       "filter":      { "type": "InputText", "hint": "Filter by name", "width": 200 },
       "ns":          { "type": "InputText", "hint": "Namespace", "width": 150 },
       "state":       { "type": "Combo", "items": "All\nDeployed\nFailed\nPending", "value": 0, "width": 120 }
@@ -101,14 +101,14 @@ static constexpr const char* kReposLayout = R"json({
   "closable": true, "flags": "NoFocusOnAppearing",
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_refresh":    { "type": "Button", "label": "Refresh" },
-      "btn_update_all": { "type": "Button", "label": "Update all" },
+      "btn_refresh":    { "type": "Button", "label": "Refresh", "icon": "res/icons/refresh.png" },
+      "btn_update_all": { "type": "Button", "label": "Update all", "icon": "res/icons/download.png" },
       "filter":         { "type": "InputText", "hint": "Filter by name", "width": 200 }
     } },
     "add_bar": { "type": "HorizontalLayout", "spacing": 6, "children": {
       "repo_name": { "type": "InputText", "hint": "new repository name", "width": 200 },
       "repo_url":  { "type": "InputText", "hint": "https://charts.example.com", "width": 320 },
-      "btn_add":   { "type": "Button", "label": "Add" }
+      "btn_add":   { "type": "Button", "label": "Add", "icon": "res/icons/add.png" }
     } },
     "status": { "type": "Label", "text": "" },
     "sep": { "type": "Separator" },
@@ -131,9 +131,9 @@ static constexpr const char* kChartsLayout = R"json({
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
       "query":      { "type": "InputText", "hint": "Search repositories (empty = all charts)", "width": 320 },
-      "btn_search": { "type": "Button", "label": "Search" },
+      "btn_search": { "type": "Button", "label": "Search", "icon": "res/icons/search.png" },
       "spring":      { "type": "Spring" },
-      "btn_install": { "type": "Button", "label": "Install chart..." }
+      "btn_install": { "type": "Button", "label": "Install chart...", "icon": "res/icons/download.png" }
     } },
     "status": { "type": "Label", "text": "" },
     "sep": { "type": "Separator" },
@@ -159,7 +159,7 @@ static constexpr const char* kHistoryLayout = R"json({
     "toolbar": { "type": "HorizontalLayout", "spacing": 8, "children": {
       "target":      { "type": "Label", "text": "(no release selected)" },
       "spring":      { "type": "Spring" },
-      "btn_refresh": { "type": "Button", "label": "Refresh" }
+      "btn_refresh": { "type": "Button", "label": "Refresh", "icon": "res/icons/refresh.png" }
     } },
     "status": { "type": "Label", "text": "" },
     "sep": { "type": "Separator" },
@@ -204,7 +204,7 @@ static constexpr const char* kInstallLayout = R"json({
     "values_bar": { "type": "HorizontalLayout", "spacing": 6, "children": {
       "caption":      { "type": "Label", "text": "Values (YAML, optional)" },
       "spring":       { "type": "Spring" },
-      "btn_defaults": { "type": "Button", "label": "Load chart defaults" }
+      "btn_defaults": { "type": "Button", "label": "Load chart defaults", "icon": "res/icons/document.png" }
     } },
     "values": {
       "type": "InputText", "multiline": true, "flags": "AllowTabInput",

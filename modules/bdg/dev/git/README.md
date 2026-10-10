@@ -62,7 +62,7 @@ for what's implemented vs. deferred to future work.
   sidebar's BRANCHES header instead (also reachable via the toolbar's
   "Branch" button, which submits the same field); the merge target is the
   last-clicked sidebar branch, and switching branches is a deliberate
-  "Checkout" action in each branch row's "..." menu rather than a plain
+  "Checkout" action in each branch row's actions ("more" icon) menu rather than a plain
   click — see `server/git.hpp`'s top-of-file comment. Destructive actions
   (delete branch, stash drop) *do* use a real modal — an inline confirm `Window`
   built into `GitRepo`'s own tree, mirroring `tree`'s

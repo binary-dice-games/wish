@@ -302,6 +302,126 @@ TEST_F(ImguiRendererTest, ButtonEmitsClickedEvent) {
   EXPECT_EQ(last_event, "clicked"_key);
 }
 
+// ── Icons on Button / MenuButton / MenuItem ─────────────────────────────────
+
+/// Resolves every texture request to one fake id, so an `icon` field draws
+/// without a GPU backend; counts draw commands that reference it.
+class icon_texture_renderer : public imgui_renderer {
+ public:
+  static constexpr ImTextureID kIconTex = ImTextureID{42};
+
+  ImTextureID get_or_load_texture(
+      const std::string&,
+      const std::filesystem::path&,
+      const std::unordered_map<std::string, uint32_t>*) override {
+    return kIconTex;
+  }
+
+  /// Draw commands using kIconTex in every window drawn this frame.
+  static int icon_draw_count() {
+    int n = 0;
+    for (ImGuiWindow* w : GImGui->Windows)
+      if (w->WasActive || w->Active)
+        for (const ImDrawCmd& cmd : w->DrawList->CmdBuffer)
+          if (cmd.ElemCount > 0 && cmd.TexRef.GetTexID() == kIconTex)
+            ++n;
+    return n;
+  }
+};
+
+TEST_F(ImguiRendererTest, ButtonWithIconDrawsIconAndStillEmitsClicked) {
+  bdg::bison::key_t last_event{hash_t{0}};
+  sess_->emit_event = [&](bdg::bison::key_t, bdg::bison::key_t ev, dynamic) { last_event = ev; };
+  auto map = bdg::wish::import_json(R"({"type":"Button","label":"Settings","icon":"res/icons/settings.png"})");
+  auto plain = bdg::wish::import_json(R"({"type":"Button","label":"Settings"})");
+  icon_texture_renderer r;
+
+  r.begin_frame();
+  ImGuiID btn_id{0};
+  float icon_w = 0.0f, plain_w = 0.0f;
+  int icons = 0;
+  in_window([&] {
+    r.render_node(*plain[""], *sess_);
+    plain_w = ImGui::GetItemRectSize().x;
+    r.render_node(*map[""], *sess_);
+    btn_id = ImGui::GetItemID();
+    icon_w = ImGui::GetItemRectSize().x;
+    icons = icon_texture_renderer::icon_draw_count();
+  });
+  r.end_frame();
+  EXPECT_EQ(icons, 1);
+  // The icon (text height + inner spacing) widens the auto-sized button.
+  EXPECT_GT(icon_w, plain_w + ImGui::GetTextLineHeight() * 0.5f);
+
+  ImGui::GetIO().DeltaTime = 1.0f / 60.0f;
+  ImGui::NewFrame();
+  fake_click(btn_id);
+  in_window([&] { r.render_node(*map[""], *sess_); });
+  ImGui::EndFrame();
+  for (auto& ev : sess_->pending_events)
+    sess_->emit_event(ev.id, ev.event_name, ev.payload);
+  sess_->pending_events.clear();
+  EXPECT_EQ(last_event, "clicked"_key);
+}
+
+TEST_F(ImguiRendererTest, IconOnlyButtonIsSquare) {
+  auto map = bdg::wish::import_json(R"({"type":"Button","label":"","icon":"res/icons/add.png"})");
+  icon_texture_renderer r;
+  ImVec2 size;
+  r.begin_frame();
+  in_window([&] {
+    r.render_node(*map[""], *sess_);
+    size = ImGui::GetItemRectSize();
+  });
+  r.end_frame();
+  EXPECT_FLOAT_EQ(size.x, ImGui::GetFrameHeight());
+  EXPECT_FLOAT_EQ(size.y, ImGui::GetFrameHeight());
+}
+
+TEST_F(ImguiRendererTest, ButtonWithoutLoadableIconFallsBackToPlainButton) {
+  // The default renderer has no texture backend, so no icon is drawn and
+  // the button keeps its plain size.
+  auto map = bdg::wish::import_json(R"({"type":"Button","label":"OK","icon":"res/icons/check.png"})");
+  auto plain = bdg::wish::import_json(R"({"type":"Button","label":"OK"})");
+  float w_icon = 0.0f, w_plain = 0.0f;
+  renderer_->begin_frame();
+  in_window([&] {
+    renderer_->render_node(*map[""], *sess_);
+    w_icon = ImGui::GetItemRectSize().x;
+    renderer_->render_node(*plain[""], *sess_);
+    w_plain = ImGui::GetItemRectSize().x;
+  });
+  renderer_->end_frame();
+  EXPECT_FLOAT_EQ(w_icon, w_plain);
+}
+
+TEST_F(ImguiRendererTest, MenuButtonAndMenuItemIconsAreDrawnWhenPopupOpens) {
+  auto map = bdg::wish::import_json(R"({"type":"MenuButton","label":"","icon":"res/icons/more.png","children":{)"
+                                    R"("a":{"type":"MenuItem","label":"Copy","icon":"res/icons/copy.png"},)"
+                                    R"("b":{"type":"MenuItem","label":"No icon"}}})");
+  icon_texture_renderer r;
+
+  r.begin_frame();
+  ImGuiID btn_id{0};
+  int closed_icons = 0;
+  in_window([&] {
+    r.render_node(*map[""], *sess_);
+    btn_id = ImGui::GetItemID();
+    closed_icons = icon_texture_renderer::icon_draw_count();
+  });
+  r.end_frame();
+  EXPECT_EQ(closed_icons, 1); // the trigger button only
+
+  ImGui::GetIO().DeltaTime = 1.0f / 60.0f;
+  ImGui::NewFrame();
+  fake_click(btn_id);
+  int open_icons = 0;
+  in_window([&] { r.render_node(*map[""], *sess_); });
+  open_icons = icon_texture_renderer::icon_draw_count();
+  ImGui::EndFrame();
+  EXPECT_EQ(open_icons, 2); // trigger button + the one MenuItem with an icon
+}
+
 // ── Checkbox: emits "changed" with correct boolean payload ───────────────────
 
 TEST_F(ImguiRendererTest, CheckboxEmitsChangedWithCorrectPayload) {

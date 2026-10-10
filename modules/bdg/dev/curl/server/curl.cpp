@@ -86,19 +86,19 @@ static constexpr const char* kRequestLayout = R"json({
       "url":    { "type": "InputText", "hint": "https://api.example.com/v1/users", "width": -1, "max_length": 4096 },
       "env":    { "type": "Combo", "items": "No Environment", "value": 0, "width": 160 },
       "follow": { "type": "Checkbox", "label": "Follow redirects", "value": true },
-      "btn_send": { "type": "Button", "label": "Send" }
+      "btn_send": { "type": "Button", "label": "Send", "icon": "res/icons/send.png" }
     } },
     "save_bar": { "type": "HorizontalLayout", "spacing": 6, "children": {
       "save_label": { "type": "Label", "text": "Save as:" },
       "save_name":  { "type": "InputText", "hint": "request name", "width": 200 },
       "save_collection": { "type": "InputText", "hint": "collection (default: Default)", "width": 220 },
-      "btn_save":   { "type": "Button", "label": "Save" }
+      "btn_save":   { "type": "Button", "label": "Save", "icon": "res/icons/save.png" }
     } },
     "status": { "type": "Label", "text": "" },
     "sep": { "type": "Separator" },
     "tabs": { "type": "TabBar", "id": "##curl_request_tabs", "height": -1, "children": {
       "params_tab": { "type": "TabItem", "label": "Params", "children": {
-        "p_toolbar": { "type": "HorizontalLayout", "children": { "btn_add": { "type": "Button", "label": "+ Add Param" } } },
+        "p_toolbar": { "type": "HorizontalLayout", "children": { "btn_add": { "type": "Button", "label": "Add Param", "icon": "res/icons/add.png" } } },
         "p_table": {
           "type": "Table", "id": "##params_table", "columns": 4,
           "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
@@ -112,7 +112,7 @@ static constexpr const char* kRequestLayout = R"json({
         }
       } },
       "headers_tab": { "type": "TabItem", "label": "Headers", "children": {
-        "h_toolbar": { "type": "HorizontalLayout", "children": { "btn_add": { "type": "Button", "label": "+ Add Header" } } },
+        "h_toolbar": { "type": "HorizontalLayout", "children": { "btn_add": { "type": "Button", "label": "Add Header", "icon": "res/icons/add.png" } } },
         "h_table": {
           "type": "Table", "id": "##headers_table", "columns": 4,
           "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
@@ -131,7 +131,7 @@ static constexpr const char* kRequestLayout = R"json({
           "text": { "type": "InputText", "multiline": true, "height": 260, "width": -1, "max_length": 65536, "hint": "request body" }
         } },
         "form_box": { "type": "VerticalLayout", "visible": false, "children": {
-          "f_toolbar": { "type": "HorizontalLayout", "children": { "btn_add": { "type": "Button", "label": "+ Add Field" } } },
+          "f_toolbar": { "type": "HorizontalLayout", "children": { "btn_add": { "type": "Button", "label": "Add Field", "icon": "res/icons/add.png" } } },
           "f_table": {
             "type": "Table", "id": "##body_form_table", "columns": 4,
             "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
@@ -189,7 +189,7 @@ static constexpr const char* kHistoryLayout = R"json({
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_clear": { "type": "Button", "label": "Clear History" }
+      "btn_clear": { "type": "Button", "label": "Clear History", "icon": "res/icons/delete.png" }
     } },
     "status": { "type": "Label", "text": "" },
     "sep": { "type": "Separator" },
@@ -236,7 +236,7 @@ static constexpr const char* kEnvironmentsLayout = R"json({
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
       "new_name": { "type": "InputText", "hint": "new environment name", "width": 220 },
-      "btn_new":  { "type": "Button", "label": "New Environment" }
+      "btn_new":  { "type": "Button", "label": "New Environment", "icon": "res/icons/add.png" }
     } },
     "table": {
       "type": "Table", "id": "##environments_table", "columns": 3,
@@ -251,8 +251,8 @@ static constexpr const char* kEnvironmentsLayout = R"json({
     "sep": { "type": "Separator" },
     "editor_label": { "type": "Label", "text": "(select an environment to edit its variables)" },
     "var_toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_add_var":  { "type": "Button", "label": "+ Add Variable" },
-      "btn_save_vars":{ "type": "Button", "label": "Save Variables" }
+      "btn_add_var":  { "type": "Button", "label": "Add Variable", "icon": "res/icons/add.png" },
+      "btn_save_vars":{ "type": "Button", "label": "Save Variables", "icon": "res/icons/save.png" }
     } },
     "vars_table": {
       "type": "Table", "id": "##env_vars_table", "columns": 3,
@@ -485,7 +485,9 @@ void curl_frontend::kv_table_add_row(kv_table& kv, const std::string& key, const
   assign_id(row);
 
   ui_element_ptr remove_btn = ui_element_ptr::create("wish"_key, "Button"_key);
-  remove_btn["label"_key] = std::string{"x"};
+  remove_btn["label"_key] = std::string{};
+  remove_btn["icon"_key] = common::icon_path("close");
+  remove_btn["tooltip"_key] = std::string{"Remove"};
   assign_id(remove_btn);
   r.remove_button_id = wish_id_of(remove_btn);
   on_click(r.remove_button_id, [this, &kv, id = r.remove_button_id] { kv_table_remove_row(kv, id); });

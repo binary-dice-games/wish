@@ -49,7 +49,7 @@ All eight windows are implemented and unit-tested over `memory_transport`
 (`tests/test_kubectl.cpp`, `tests/test_dev_common.cpp`):
 
 - **Pods / Deployments / Services / Nodes** — each a toolbar + `Table` with
-  a `...` per-row action menu (state-aware for nodes: Cordon on a
+  a per-row actions menu (the "more" icon button) (state-aware for nodes: Cordon on a
   schedulable node, Uncordon on a cordoned one), the Pods name / namespace
   text filters + phase Combo, and the same name / namespace filters on
   Deployments and Services.

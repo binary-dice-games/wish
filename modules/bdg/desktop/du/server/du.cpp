@@ -107,8 +107,8 @@ static constexpr const char* kFilesLayout = R"json({
           "type": "HorizontalLayout",
           "spacing": 6,
           "children": {
-            "btn_scan": { "type": "Button", "label": "Rescan", "width": 80 },
-            "btn_up": { "type": "Button", "label": "Up", "width": 50 },
+            "btn_scan": { "type": "Button", "label": "Rescan", "icon": "res/icons/refresh.png", "width": 96 },
+            "btn_up": { "type": "Button", "label": "Up", "icon": "res/icons/arrow_up.png", "width": 50 },
             "path_input": { "type": "InputText", "hint": "Folder to analyze (Enter to scan)...", "value": "", "flags": "EnterReturnsTrue", "width": -1 }
           }
         },
@@ -412,8 +412,10 @@ dynamic du::on_set(const dynamic& patch) {
     status_label_ptr_["text"_key] = *v;
   if (auto* v = patch.findField<bool>("scanning"_key)) {
     scanning_ = *v;
-    if (btn_scan_ptr_)
+    if (btn_scan_ptr_) {
       btn_scan_ptr_["label"_key] = std::string{scanning_ ? "Stop" : "Rescan"};
+      common::set_icon(btn_scan_ptr_, scanning_ ? "stop" : "refresh");
+    }
   }
   return patch;
 }

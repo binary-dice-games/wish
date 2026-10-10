@@ -91,6 +91,20 @@ void register_menu() {
                               "before 'clicked' is enqueued) -- a quick way to offer a "
                               "\"Copy ...\" context-menu action without a client round trip."),
             attr<Category>("Behavior")});
+    proto->addField(
+        "icon"_rkey,
+        field{
+            std::string{},
+            attr<DisplayName>("Icon"),
+            attr<Description>("Image drawn in the menu's icon column, left of the label, at text "
+                              "height and tinted to the text color (e.g. \"res/icons/copy.png\"). "
+                              "Labels of a popup's items stay aligned whether or not each has an "
+                              "icon. Ignored for an item placed directly in a MenuBar. "
+                              "Same security contract as Image.src: a path relative to the session "
+                              "resource directory; absolute paths are rejected unless the server has "
+                              "enabled allow_absolute_paths, and a path escaping the sandbox draws no "
+                              "icon."),
+            attr<Category>("Content")});
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("MenuItem"));
     (*proto)[dynamic::CLASS].addAttribute(
         attr<Description>("A selectable item inside a Menu. "
@@ -115,6 +129,14 @@ void register_menu() {
             std::string{},
             attr<DisplayName>("Label"),
             attr<Description>("Button caption text."),
+            attr<Category>("Content")});
+    proto->addField(
+        "icon"_rkey,
+        field{
+            std::string{},
+            attr<DisplayName>("Icon"),
+            attr<Description>("Image drawn left of the label, same as Button.icon (an empty label "
+                              "gives a square icon-only button)."),
             attr<Category>("Content")});
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("MenuButton"));
     (*proto)[dynamic::CLASS].addAttribute(

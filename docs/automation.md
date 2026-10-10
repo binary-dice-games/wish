@@ -396,6 +396,29 @@ Gotchas this recipe already handles:
   background thread after a click. A screenshot taken 3 s after the click
   showed an empty Preview panel. Raise `--before-shot` if a panel looks
   empty.
+- **A dev tool whose CLI is missing (or whose daemon is down) exits at
+  startup** (`docker`, `kubectl`, `helm`, `sq` all gate on a `version`
+  call). To screenshot one with sample rows anyway, put a small fake CLI
+  script first on `PATH` (the client inherits the script's environment)
+  that answers the exact argv the tool's `client/*_source.cpp` runs --
+  tab-separated `--format` / `jsonpath` rows for docker / kubectl, padded
+  tab tables with a header line for helm, `-j` JSON for sq. Exit 0 for
+  everything else. Verified 2026-10 for all four.
+- **`--click-class MenuButton` opens the first table row's actions menu**
+  (the icon-only "more" button), so its `MenuItem`s, with their icons, show
+  in the screenshot. `--click .menu.edit` opens a `MenuBar` menu the same
+  way. A `ContextMenu` needs a right-click, which the script cannot do.
+- **Waiting on the script from the Bash tool: don't poll with `pgrep -f
+  "screenshot_module.py ..."`** inside an `until` loop -- the loop's own
+  command line contains that string, so it matches itself and never exits.
+  Run the script with `run_in_background: true` and wait for its
+  completion notification, or poll its output file for `wrote`.
+- **Enabling a whole collection may not enable its modules in an existing
+  build dir.** After `-DWISH_COLLECTION_BDG_DEV=ON` on a build directory
+  configured earlier without it, `wish client --list` still showed no
+  `bdg/dev/*` apps (2026-10). The per-module `WISH_MODULE_BDG_DEV_*` cache
+  entries still read `OFF`. Pass those options explicitly, and check
+  `--list` before blaming the tool.
 
 ## Python client
 

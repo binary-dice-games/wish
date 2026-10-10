@@ -18,7 +18,10 @@ To add more icons in the same style, rasterize
 `https://fonts.gstatic.com/s/i/short-term/release/materialsymbolsoutlined/<name>/default/48px.svg`
 with a white fill at 64x64.
 
-General-purpose UI icons (toolbars, buttons, menus):
+General-purpose UI icons (toolbars, buttons, menus). Set them on a
+`Button` / `MenuButton` / `MenuItem` / `TreeNode` `icon` field; server-side
+module code can use `common::icon_path()` / `common::action_icon()` from
+`modules/bdg/common/server/ui_helpers.hpp`.
 
 | File | Material Symbols name | File | Material Symbols name |
 |------|-----------------------|------|-----------------------|
@@ -47,3 +50,6 @@ General-purpose UI icons (toolbars, buttons, menus):
 | `menu.png` | menu | `zip.png` | folder_zip |
 | `more.png` | more_vert | `zoom_in.png` | zoom_in |
 | `new_folder.png` | create_new_folder | `zoom_out.png` | zoom_out |
+| `commit.png` | commit | `send.png` | send |
+| `fit_screen.png` | fit_screen | `table.png` | table |
+| `merge.png` | merge | | |

@@ -55,19 +55,19 @@ static constexpr const char* kPackagesLayout = R"json({
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_refresh":     { "type": "Button", "label": "Refresh" },
-      "btn_outdated":    { "type": "Button", "label": "Check updates" },
+      "btn_refresh":     { "type": "Button", "label": "Refresh", "icon": "res/icons/refresh.png" },
+      "btn_outdated":    { "type": "Button", "label": "Check updates", "icon": "res/icons/arrow_up.png" },
       "filter":          { "type": "InputText", "hint": "Filter", "width": 110 },
       "state":           { "type": "Combo", "items": "All\nUpgradable", "value": 0, "width": 110 },
       "spring":          { "type": "Spring" },
-      "btn_index":       { "type": "Button", "label": "Update index" },
-      "btn_upgrade_all": { "type": "Button", "label": "Upgrade all" }
+      "btn_index":       { "type": "Button", "label": "Update index", "icon": "res/icons/download.png" },
+      "btn_upgrade_all": { "type": "Button", "label": "Upgrade all", "icon": "res/icons/arrow_up.png" }
     } },
     "find_bar": { "type": "HorizontalLayout", "spacing": 6, "children": {
       "caption":     { "type": "Label", "text": "Find new packages:" },
       "query":       { "type": "InputText", "hint": "name or keyword, e.g. htop", "width": 300 },
-      "btn_search":  { "type": "Button", "label": "Search" },
-      "btn_install": { "type": "Button", "label": "Install" }
+      "btn_search":  { "type": "Button", "label": "Search", "icon": "res/icons/search.png" },
+      "btn_install": { "type": "Button", "label": "Install", "icon": "res/icons/download.png" }
     } },
     "env": { "type": "Label", "text": "" },
     "status": { "type": "Label", "text": "" },
@@ -94,7 +94,7 @@ static constexpr const char* kSearchLayout = R"json({
     "toolbar": { "type": "HorizontalLayout", "spacing": 8, "children": {
       "target":      { "type": "Label", "text": "(no search yet)" },
       "spring":      { "type": "Spring" },
-      "btn_refresh": { "type": "Button", "label": "Refresh" }
+      "btn_refresh": { "type": "Button", "label": "Refresh", "icon": "res/icons/refresh.png" }
     } },
     "status": { "type": "Label", "text": "Type a name or keyword in Packages and press Search." },
     "sep": { "type": "Separator" },

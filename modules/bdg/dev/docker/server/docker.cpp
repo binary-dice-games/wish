@@ -70,8 +70,8 @@ static constexpr const char* kContainersLayout = R"json({
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_refresh": { "type": "Button", "label": "Refresh" },
-      "btn_prune":   { "type": "Button", "label": "Prune stopped..." },
+      "btn_refresh": { "type": "Button", "label": "Refresh", "icon": "res/icons/refresh.png" },
+      "btn_prune":   { "type": "Button", "label": "Prune stopped...", "icon": "res/icons/delete.png" },
       "filter":      { "type": "InputText", "hint": "Filter by name / image", "width": 240 },
       "state":       { "type": "Combo", "items": "All\nRunning\nStopped", "value": 0, "width": 110 }
     } },
@@ -98,10 +98,10 @@ static constexpr const char* kImagesLayout = R"json({
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_refresh": { "type": "Button", "label": "Refresh" },
+      "btn_refresh": { "type": "Button", "label": "Refresh", "icon": "res/icons/refresh.png" },
       "pull_ref":    { "type": "InputText", "hint": "repo:tag to pull", "width": 220 },
-      "btn_pull":    { "type": "Button", "label": "Pull" },
-      "btn_prune":   { "type": "Button", "label": "Prune dangling..." }
+      "btn_pull":    { "type": "Button", "label": "Pull", "icon": "res/icons/download.png" },
+      "btn_prune":   { "type": "Button", "label": "Prune dangling...", "icon": "res/icons/delete.png" }
     } },
     "status": { "type": "Label", "text": "" },
     "sep": { "type": "Separator" },
@@ -126,10 +126,10 @@ static constexpr const char* kVolumesLayout = R"json({
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_refresh": { "type": "Button", "label": "Refresh" },
+      "btn_refresh": { "type": "Button", "label": "Refresh", "icon": "res/icons/refresh.png" },
       "vol_name":    { "type": "InputText", "hint": "new volume name", "width": 200 },
-      "btn_create":  { "type": "Button", "label": "Create" },
-      "btn_prune":   { "type": "Button", "label": "Prune..." }
+      "btn_create":  { "type": "Button", "label": "Create", "icon": "res/icons/add.png" },
+      "btn_prune":   { "type": "Button", "label": "Prune...", "icon": "res/icons/delete.png" }
     } },
     "status": { "type": "Label", "text": "" },
     "sep": { "type": "Separator" },
@@ -152,8 +152,8 @@ static constexpr const char* kNetworksLayout = R"json({
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_refresh": { "type": "Button", "label": "Refresh" },
-      "btn_prune":   { "type": "Button", "label": "Prune..." }
+      "btn_refresh": { "type": "Button", "label": "Refresh", "icon": "res/icons/refresh.png" },
+      "btn_prune":   { "type": "Button", "label": "Prune...", "icon": "res/icons/delete.png" }
     } },
     "status": { "type": "Label", "text": "" },
     "sep": { "type": "Separator" },
@@ -186,7 +186,7 @@ static constexpr const char* kLogsLayout = R"json({
       "spring":     { "type": "Spring" },
       "follow":     { "type": "Checkbox", "label": "Follow", "value": false },
       "lines":      { "type": "InputInt", "label": "Lines", "value": 500, "step": 100, "width": 130 },
-      "btn_refresh":{ "type": "Button", "label": "Refresh" }
+      "btn_refresh":{ "type": "Button", "label": "Refresh", "icon": "res/icons/refresh.png" }
     } },
     "sep": { "type": "Separator" },
     "editor": {

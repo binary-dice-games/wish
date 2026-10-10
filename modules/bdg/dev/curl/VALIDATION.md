@@ -149,7 +149,7 @@ Params/Headers/Body tabs should reappear verbatim in the response.
 
 - [ ] **Query parameter round-trip**
   1. Method: `GET`, URL: `https://httpbin.org/get`
-  2. On the `Params` tab, click `+ Add Param`
+  2. On the `Params` tab, click `Add Param`
   3. Key: `search`, Value: `curl module`
   4. Click `Send`
   - Expect: `200` · body's `"args"` shows `{"search": "curl module"}`
@@ -159,7 +159,7 @@ Params/Headers/Body tabs should reappear verbatim in the response.
 
 - [ ] **Custom header round-trip**
   1. Method: `GET`, URL: `https://httpbin.org/headers`
-  2. On the `Headers` tab, click `+ Add Header`
+  2. On the `Headers` tab, click `Add Header`
   3. Key: `X-Wish-Test`, Value: `hello`
   4. Click `Send`
   - Expect: `200` · body's `"headers"` includes `"X-Wish-Test": "hello"`

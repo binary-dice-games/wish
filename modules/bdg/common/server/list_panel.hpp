@@ -39,6 +39,8 @@ struct menu_item {
   std::function<void()> on_click;
   /// The action asks for confirmation: the label gets a trailing "...".
   bool confirm{false};
+  /// Built-in icon name (see icon_path()); empty picks action_icon(label).
+  std::string icon{};
 };
 
 template <typename Meta = std::monostate>
@@ -74,7 +76,9 @@ class table_rows {
 
   /// @brief Appends a row of @p cells -- elements already registered with
   /// the owner (tool_form::make_label() does that) -- plus, when @p menu is
-  /// not empty, a `...` MenuButton cell. Call refresh() after the last row.
+  /// not empty, an icon-only `more` MenuButton cell whose items get
+  /// action_icon() icons (or menu_item::icon). Call refresh() after the
+  /// last row.
   /// @return The new row (valid until the next add() or clear()), or null
   ///         when the table is gone.
   row* add(Meta meta, const std::vector<ui_element_ptr>& cells, const std::vector<menu_item>& menu = {}) {
@@ -94,7 +98,9 @@ class table_rows {
     std::vector<ui_element_ptr> row_cells = cells;
     if (!menu.empty()) {
       ui_element_ptr button = ui_element_ptr::create("wish"_key, "MenuButton"_key);
-      button["label"_key] = std::string{"..."};
+      button["label"_key] = std::string{};
+      set_icon(button, "more");
+      button["tooltip"_key] = std::string{"Actions"};
       owner.assign_id(button);
       ids.push_back(wish_id_of(button));
 
@@ -107,6 +113,8 @@ class table_rows {
         } else {
           item = ui_element_ptr::create("wish"_key, "MenuItem"_key);
           item["label"_key] = it.confirm ? it.label + "..." : it.label;
+          if (std::string icon = it.icon.empty() ? action_icon(it.label) : it.icon; !icon.empty())
+            set_icon(item, icon);
           owner.assign_id(item);
           if (it.on_click)
             owner.on_click(wish_id_of(item), it.on_click);
