@@ -82,6 +82,8 @@ void console_panel::append(const std::string& command, int32_t exit_code, bool o
   copy_item["label"_key] = std::string{"Copy Entry"};
   copy_item["copy_text"_key] = command + "\nexit: " + std::to_string(exit_code) + "\n" + output;
   owner.assign_id(copy_item);
+  if (options_.on_copied)
+    owner.on_click(wish_id_of(copy_item), options_.on_copied);
 
   ui_element_ptr clear_item = ui_element_ptr::create("wish"_key, "MenuItem"_key);
   clear_item["label"_key] = "Clear " + options_.title;

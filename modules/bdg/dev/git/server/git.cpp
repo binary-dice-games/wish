@@ -5,10 +5,8 @@
 #include "git_graph_layout.hpp"
 
 #include "src/bison/bison_object.hpp"
-#include "src/rmi/shared/ids.hpp"
 
 #include <ui/dock_layout_spec.hpp>
-#include <ui/forms/message_box.hpp>
 #include <ui/ui_importer.hpp>
 
 #include <algorithm>
@@ -17,42 +15,12 @@
 namespace bdg::wish {
 
 using namespace bison;
+using common::for_each_entry;
+using common::make_payload;
+using common::set_children_list;
+using common::wish_id_of;
 
 namespace {
-
-template <typename Element>
-key_t wish_id_of(const Element& element) {
-  return element->template as<key_t>("__wish_id"_key);
-}
-
-// Sets `parent`'s children map to exactly `kids`, in order.
-void set_children_list(const ui_element_ptr& parent, const std::vector<ui_element_ptr>& kids) {
-  auto row_children = dynamic_ptr{key_t{0U}, {}};
-  size_t k = 0;
-  for (auto& kid : kids)
-    (*row_children)[k++] = dynamic_ptr{kid};
-  (*parent)["children"_key] = row_children;
-  parent->refresh_children_order();
-}
-
-// Invokes fn(dynamic&) for each nested-dynamic_ptr entry of the array field
-// `field_key` on `parent` -- the shape every *_args array (commits, branches,
-// staged, ...) uses. Mirrors top::update_process_table()'s
-// "processes" array walk.
-template <typename Fn>
-void for_each_entry(const dynamic& parent, key_t field_key, Fn&& fn) {
-  const auto* arr_f = parent.findField<dynamic_ptr>(field_key);
-  if (!arr_f || !*arr_f)
-    return;
-  (*arr_f)->forEach([&](key_t, const field& f) {
-    if (!f.is<dynamic_ptr>())
-      return;
-    auto entry_ptr = f.as<dynamic_ptr>();
-    if (!entry_ptr)
-      return;
-    fn(*entry_ptr);
-  });
-}
 
 // Reads an array-of-plain-strings field (e.g. a commit's "parents") into a
 // std::vector<std::string>. bison::field has no vector<string> alternative
@@ -69,33 +37,6 @@ std::vector<std::string> read_string_array(const dynamic& parent, key_t field_ke
       out.push_back(f.as<std::string>());
   });
   return out;
-}
-
-// Small event-payload builders -- bison::dynamic has no initializer-list
-// constructor (see bison_object.hpp), so payloads are built field-by-field,
-// same as every other form in this codebase (see nano.cpp's
-// do_open_file()); these just save repeating that boilerplate at each
-// emit() call site below.
-template <typename T>
-dynamic payload1(key_t k, T v) {
-  dynamic d;
-  d[k] = std::move(v);
-  return d;
-}
-template <typename T1, typename T2>
-dynamic payload2(key_t k1, T1 v1, key_t k2, T2 v2) {
-  dynamic d;
-  d[k1] = std::move(v1);
-  d[k2] = std::move(v2);
-  return d;
-}
-template <typename T1, typename T2, typename T3>
-dynamic payload3(key_t k1, T1 v1, key_t k2, T2 v2, key_t k3, T3 v3) {
-  dynamic d;
-  d[k1] = std::move(v1);
-  d[k2] = std::move(v2);
-  d[k3] = std::move(v3);
-  return d;
 }
 
 // A "#RRGGBBAA" pair for Label.text_color_light/text_color_dark (see
@@ -326,51 +267,31 @@ static constexpr const char* kDiffLayout = R"({
   }
 })";
 
-static constexpr const char* kLogLayout = R"({
-  "type": "Window", "title": "Log", "width": 900, "height": 260,
-  "children": {
-    "vbox": {
-      "type": "VerticalLayout",
-      "children": {
-        "log_table": {
-          "type": "Table", "id": "##git_log_table", "columns": 4, "height": -1,
-          "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true, "outer_height": -1,
-          "children": {
-            "col_seq":     { "type": "TableColumn", "label": "#",       "flags": "WidthFixed", "init_width": 40,  "column_id": 0 },
-            "col_command": { "type": "TableColumn", "label": "Command", "flags": "WidthFixed", "init_width": 340, "column_id": 1 },
-            "col_exit":    { "type": "TableColumn", "label": "Exit",    "flags": "WidthFixed", "init_width": 50,  "column_id": 2 },
-            "col_output":  { "type": "TableColumn", "label": "Output",  "flags": "WidthStretch",                     "column_id": 3 }
-          }
-        }
-      }
-    }
-  }
-})";
-
-// The confirm dialog (show_confirm() below) is now a privately-instantiated
-// MessageBox (see form::instantiate_child_form()) -- no inline layout needed.
-
 // ── git_repo ─────────────────────────────────────────────────────────────────
 
-git_repo::git_repo(dynamic&& base) : form(std::move(base)) {}
-
-void git_repo::assign_id(const ui_element_ptr& el) {
-  key_t id = rmi::shared::generate_id();
-  ctx().put_object(id, el);
-  el["__wish_id"_key] = id;
-}
+git_repo::git_repo(dynamic&& base) : tool_form(std::move(base)) {}
 
 void git_repo::on_init() {
   // See form::internal_root_key_'s doc comment: ordinally-assigned, not pointer-derived.
   internal_root_key_ = next_available_key("__git_");
   files_root_key_ = internal_root_key_ + "_files";
   diff_root_key_ = internal_root_key_ + "_diff";
-  log_root_key_ = internal_root_key_ + "_log";
 
   build_main_window();
   build_files_window();
   build_diff_window();
-  build_log_window();
+  // Not closable, unlike the other tools' Console: closing it would end the
+  // whole session (see on_event()).
+  log_.build(
+      *this,
+      internal_root_key_ + "_log",
+      {.title = "Log",
+       .table_id = "##git_log_table",
+       .width = 900,
+       .command_width = 340,
+       .closable = false,
+       .on_cleared = [this] { set_status("Log cleared.", true); },
+       .on_copied = [this] { set_status("Copied log entry to clipboard.", true); }});
 
   // Seed the first-run arrangement: the commit graph / detail Git window
   // filling the left ~70% with a Log strip along its bottom, and a
@@ -380,13 +301,16 @@ void git_repo::on_init() {
   {
     using namespace dock;
     set_default_dock_layout(viewport(
-        "git_dock", "Git",
+        "git_dock",
+        "Git",
         layout(
             split(
-                dir::left, 0.70f,
-                split(dir::down, 0.27f, area({log_root_key_}), area({internal_root_key_})),
+                dir::left,
+                0.70f,
+                split(dir::down, 0.27f, area({log_.root_key()}), area({internal_root_key_})),
                 split(dir::down, 0.50f, area({diff_root_key_}), area({files_root_key_}))),
-            /*version=*/1, /*target=*/"git_dock")));
+            /*version=*/1,
+            /*target=*/"git_dock")));
   }
 
   // Initial population is triggered client-side instead of by emitting
@@ -397,144 +321,68 @@ void git_repo::on_init() {
 }
 
 void git_repo::build_main_window() {
-  auto tree = import_json(kMainLayout);
+  build_window(internal_root_key_, kMainLayout, window_id_, [&](ui_tree& tree) {
+    tree.with("vbox.status_label", [&](const auto& e) { status_label_ = e; });
+    tree.with("vbox.body.sidebar.new_branch_row.new_branch_input", [&](const auto& e) {
+      new_branch_input_ = e;
+      new_branch_input_id_ = wish_id_of(e);
+    });
+    tree.with("vbox.body.sidebar.branches", [&](const auto& e) { sidebar_branches_section_ = e; });
+    tree.with("vbox.body.sidebar.remotes", [&](const auto& e) { sidebar_remotes_section_ = e; });
+    tree.with("vbox.body.sidebar.tags", [&](const auto& e) { sidebar_tags_section_ = e; });
+    tree.with("vbox.body.sidebar.stashes", [&](const auto& e) { sidebar_stashes_section_ = e; });
+    tree.with("vbox.body.graph_panel.current_branch_label", [&](const auto& e) { current_branch_label_ = e; });
+    tree.with("vbox.body.graph_panel.graph_table", [&](const auto& e) {
+      graph_table_ = e;
+      graph_table_id_ = wish_id_of(e);
+    });
 
-  auto& c = ctx();
-  for (auto& [key, elem] : tree) {
-    key_t id = rmi::shared::generate_id();
-    c.put_object(id, elem);
-    elem["__wish_id"_key] = id;
-  }
-
-  window_id_ = (*tree[""])["__wish_id"_key].as<key_t>();
-  tree.with("vbox.status_label", [&](const auto& e) { status_label_ = e; });
-  tree.with("vbox.body.sidebar.new_branch_row.new_branch_input", [&](const auto& e) {
-    new_branch_input_ = e;
-    new_branch_input_id_ = wish_id_of(e);
+    // Toolbar buttons.
+    auto bind_click = [&](const std::string& path, std::function<void()> handler) {
+      tree.with(path, [&](const auto& e) { click_handlers_[wish_id_of(e)] = std::move(handler); });
+    };
+    bind_click("vbox.toolbar.btn_commit", [this] {
+      if (!commit_message_text_.empty())
+        emit("commit_requested"_key, make_payload("message"_key, commit_message_text_));
+    });
+    bind_click("vbox.toolbar.btn_push", [this] { emit("push_requested"_key); });
+    bind_click("vbox.toolbar.btn_pull", [this] { emit("pull_requested"_key); });
+    bind_click("vbox.toolbar.btn_fetch", [this] { emit("fetch_requested"_key); });
+    bind_click("vbox.toolbar.btn_branch", [this] { submit_new_branch(); });
+    bind_click("vbox.body.sidebar.new_branch_row.btn_create_branch", [this] { submit_new_branch(); });
+    bind_click("vbox.toolbar.btn_merge", [this] {
+      if (!selected_branch_.empty())
+        emit("merge_requested"_key, make_payload("ref"_key, selected_branch_));
+    });
+    bind_click("vbox.toolbar.btn_stash", [this] { emit("stash_push_requested"_key); });
+    bind_click("vbox.toolbar.btn_refresh", [this] { emit("refresh_requested"_key); });
   });
-  tree.with("vbox.body.sidebar.branches", [&](const auto& e) { sidebar_branches_section_ = e; });
-  tree.with("vbox.body.sidebar.remotes", [&](const auto& e) { sidebar_remotes_section_ = e; });
-  tree.with("vbox.body.sidebar.tags", [&](const auto& e) { sidebar_tags_section_ = e; });
-  tree.with("vbox.body.sidebar.stashes", [&](const auto& e) { sidebar_stashes_section_ = e; });
-  tree.with("vbox.body.graph_panel.current_branch_label", [&](const auto& e) { current_branch_label_ = e; });
-  tree.with("vbox.body.graph_panel.graph_table", [&](const auto& e) {
-    graph_table_ = e;
-    graph_table_id_ = wish_id_of(e);
-  });
-
-  // Toolbar buttons.
-  auto bind_click = [&](const std::string& path, std::function<void()> handler) {
-    tree.with(path, [&](const auto& e) { click_handlers_[wish_id_of(e)] = std::move(handler); });
-  };
-  bind_click("vbox.toolbar.btn_commit", [this] {
-    if (!commit_message_text_.empty())
-      emit("commit_requested"_key, payload1("message"_key, commit_message_text_));
-  });
-  bind_click("vbox.toolbar.btn_push", [this] { emit("push_requested"_key); });
-  bind_click("vbox.toolbar.btn_pull", [this] { emit("pull_requested"_key); });
-  bind_click("vbox.toolbar.btn_fetch", [this] { emit("fetch_requested"_key); });
-  bind_click("vbox.toolbar.btn_branch", [this] { submit_new_branch(); });
-  bind_click("vbox.body.sidebar.new_branch_row.btn_create_branch", [this] { submit_new_branch(); });
-  bind_click("vbox.toolbar.btn_merge", [this] {
-    if (!selected_branch_.empty())
-      emit("merge_requested"_key, payload1("ref"_key, selected_branch_));
-  });
-  bind_click("vbox.toolbar.btn_stash", [this] { emit("stash_push_requested"_key); });
-  bind_click("vbox.toolbar.btn_refresh", [this] { emit("refresh_requested"_key); });
-
-  sess().ui_objects.merge(std::move(tree), internal_root_key_);
 }
 
 void git_repo::build_files_window() {
-  auto tree = import_json(kFilesLayout);
-  auto& c = ctx();
-  for (auto& [key, elem] : tree) {
-    key_t id = rmi::shared::generate_id();
-    c.put_object(id, elem);
-    elem["__wish_id"_key] = id;
-  }
-
-  files_window_id_ = (*tree[""])["__wish_id"_key].as<key_t>();
-  tree.with("vbox.title_label", [&](const auto& e) { files_title_label_ = e; });
-  tree.with("vbox.files_table", [&](const auto& e) { files_table_ = e; });
-  tree.with("vbox.commit_row.commit_message", [&](const auto& e) {
-    commit_message_input_ = e;
-    commit_message_input_id_ = wish_id_of(e);
+  build_window(files_root_key_, kFilesLayout, files_window_id_, [&](ui_tree& tree) {
+    tree.with("vbox.title_label", [&](const auto& e) { files_title_label_ = e; });
+    tree.with("vbox.files_table", [&](const auto& e) { files_table_ = e; });
+    tree.with("vbox.commit_row.commit_message", [&](const auto& e) {
+      commit_message_input_ = e;
+      commit_message_input_id_ = wish_id_of(e);
+    });
+    tree.with("vbox.commit_row.commit_button", [&](const auto& e) {
+      commit_button_ = e;
+      commit_button_id_ = wish_id_of(e);
+      click_handlers_[commit_button_id_] = [this] {
+        if (!commit_message_text_.empty())
+          emit("commit_requested"_key, make_payload("message"_key, commit_message_text_));
+      };
+    });
   });
-  tree.with("vbox.commit_row.commit_button", [&](const auto& e) {
-    commit_button_ = e;
-    commit_button_id_ = wish_id_of(e);
-    click_handlers_[commit_button_id_] = [this] {
-      if (!commit_message_text_.empty())
-        emit("commit_requested"_key, payload1("message"_key, commit_message_text_));
-    };
-  });
-
-  ui_element_ptr root_ptr = tree[""];
-  sess().ui_objects.merge(std::move(tree), files_root_key_);
-  sess().top_level_objects[key_t{files_root_key_}] = root_ptr;
-  sess().top_level_handlers[key_t{files_root_key_}] = this;
-  (*root_ptr)["__path__"_key] = files_root_key_;
 }
 
 void git_repo::build_diff_window() {
-  auto tree = import_json(kDiffLayout);
-  auto& c = ctx();
-  for (auto& [key, elem] : tree) {
-    key_t id = rmi::shared::generate_id();
-    c.put_object(id, elem);
-    elem["__wish_id"_key] = id;
-  }
-
-  diff_window_id_ = (*tree[""])["__wish_id"_key].as<key_t>();
-  tree.with("vbox.title_label", [&](const auto& e) { diff_title_label_ = e; });
-  tree.with("vbox.diff_table", [&](const auto& e) { diff_table_ = e; });
-
-  ui_element_ptr root_ptr = tree[""];
-  sess().ui_objects.merge(std::move(tree), diff_root_key_);
-  sess().top_level_objects[key_t{diff_root_key_}] = root_ptr;
-  sess().top_level_handlers[key_t{diff_root_key_}] = this;
-  (*root_ptr)["__path__"_key] = diff_root_key_;
-}
-
-void git_repo::build_log_window() {
-  auto tree = import_json(kLogLayout);
-  auto& c = ctx();
-  for (auto& [key, elem] : tree) {
-    key_t id = rmi::shared::generate_id();
-    c.put_object(id, elem);
-    elem["__wish_id"_key] = id;
-  }
-
-  log_window_id_ = (*tree[""])["__wish_id"_key].as<key_t>();
-  tree.with("vbox.log_table", [&](const auto& e) { log_table_ = e; });
-
-  ui_element_ptr root_ptr = tree[""];
-  sess().ui_objects.merge(std::move(tree), log_root_key_);
-  sess().top_level_objects[key_t{log_root_key_}] = root_ptr;
-  sess().top_level_handlers[key_t{log_root_key_}] = this;
-  (*root_ptr)["__path__"_key] = log_root_key_;
-}
-
-// ── Confirmation modal ───────────────────────────────────────────────────────
-
-void git_repo::show_confirm(
-    const std::string& message, const std::string& /*confirm_label*/, std::function<void()> on_confirm) {
-  dynamic params;
-  params["title"_key] = std::string{"Confirm"};
-  params["message"_key] = message;
-  params["icon"_key] = std::string{"warning"};
-  params["buttons"_key] = std::string{"yes_no"};
-
-  // Overwriting confirm_dialog_ (rather than requiring it be empty first)
-  // is safe even if a confirm dialog is already open -- see confirm_dialog_'s
-  // doc comment.
-  confirm_dialog_ = instantiate_child_form<message_box>(
-      "MessageBox"_key, std::move(params),
-      [on_confirm = std::move(on_confirm)](key_t /*event_name*/, const dynamic& payload) {
-        if (payload.as<std::string>("button"_key) == "yes")
-          on_confirm();
-      });
+  build_window(diff_root_key_, kDiffLayout, diff_window_id_, [&](ui_tree& tree) {
+    tree.with("vbox.title_label", [&](const auto& e) { diff_title_label_ = e; });
+    tree.with("vbox.diff_table", [&](const auto& e) { diff_table_ = e; });
+  });
 }
 
 // ── Sidebar ──────────────────────────────────────────────────────────────────
@@ -611,7 +459,8 @@ void git_repo::rebuild_section(
 void git_repo::submit_new_branch() {
   if (new_branch_name_text_.empty())
     return;
-  emit("create_branch_requested"_key, payload2("name"_key, new_branch_name_text_, "start_point"_key, std::string{}));
+  emit(
+      "create_branch_requested"_key, make_payload("name"_key, new_branch_name_text_, "start_point"_key, std::string{}));
   new_branch_name_text_.clear();
   if (new_branch_input_)
     new_branch_input_["value"_key] = std::string{};
@@ -657,13 +506,21 @@ dynamic git_repo::do_update_refs(const dynamic& args) {
     // "Checkout" menu action (below), the same way tags already work, not
     // behind an easy-to-trigger-by-accident single click.
     return make_sidebar_row(
-        label, [this, ref] { selected_branch_ = ref; },
-        {{"Checkout", [this, ref] { selected_branch_ = ref; emit("checkout_requested"_key, payload1("ref"_key, ref)); }},
-         {"Merge into current", [this, ref] { selected_branch_ = ref; emit("merge_requested"_key, payload1("ref"_key, ref)); }},
-         {"Delete",
+        label,
+        [this, ref] { selected_branch_ = ref; },
+        {{"Checkout",
           [this, ref] {
-            show_confirm("Delete branch '" + ref + "'?", "Delete", [this, ref] {
-              emit("delete_branch_requested"_key, payload2("name"_key, ref, "force"_key, false));
+            selected_branch_ = ref;
+            emit("checkout_requested"_key, make_payload("ref"_key, ref));
+          }},
+         {"Merge into current",
+          [this, ref] {
+            selected_branch_ = ref;
+            emit("merge_requested"_key, make_payload("ref"_key, ref));
+          }},
+         {"Delete", [this, ref] {
+            show_confirm("Delete branch '" + ref + "'?", [this, ref] {
+              emit("delete_branch_requested"_key, make_payload("name"_key, ref, "force"_key, false));
             });
           }}});
   });
@@ -672,9 +529,17 @@ dynamic git_repo::do_update_refs(const dynamic& args) {
     const auto& b = remote[i];
     std::string ref = b.name;
     return make_sidebar_row(
-        ref, [this, ref] { selected_branch_ = ref; },
-        {{"Checkout", [this, ref] { selected_branch_ = ref; emit("checkout_requested"_key, payload1("ref"_key, ref)); }},
-         {"Merge into current", [this, ref] { selected_branch_ = ref; emit("merge_requested"_key, payload1("ref"_key, ref)); }}});
+        ref,
+        [this, ref] { selected_branch_ = ref; },
+        {{"Checkout",
+          [this, ref] {
+            selected_branch_ = ref;
+            emit("checkout_requested"_key, make_payload("ref"_key, ref));
+          }},
+         {"Merge into current", [this, ref] {
+            selected_branch_ = ref;
+            emit("merge_requested"_key, make_payload("ref"_key, ref));
+          }}});
   });
 
   std::vector<std::string> tags;
@@ -682,7 +547,9 @@ dynamic git_repo::do_update_refs(const dynamic& args) {
   rebuild_section(sidebar_tags_section_, tag_rows_, tags.size(), [&](size_t i) {
     std::string ref = tags[i];
     return make_sidebar_row(
-        ref, [this, ref] { selected_branch_ = ref; }, {{"Checkout", [this, ref] { emit("checkout_requested"_key, payload1("ref"_key, ref)); }}});
+        ref,
+        [this, ref] { selected_branch_ = ref; },
+        {{"Checkout", [this, ref] { emit("checkout_requested"_key, make_payload("ref"_key, ref)); }}});
   });
 
   struct stash_info {
@@ -701,14 +568,12 @@ dynamic git_repo::do_update_refs(const dynamic& args) {
     return make_sidebar_row(
         "stash@{" + std::to_string(idx) + "}: " + stashes[i].message,
         [] {},
-        {{"Apply", [this, idx] { emit("stash_apply_requested"_key, payload1("index"_key, idx)); }},
-         {"Pop", [this, idx] { emit("stash_pop_requested"_key, payload1("index"_key, idx)); }},
-         {"Drop",
-          [this, idx] {
-            show_confirm(
-                "Drop stash@{" + std::to_string(idx) + "}? This cannot be undone.", "Drop", [this, idx] {
-                  emit("stash_drop_requested"_key, payload1("index"_key, idx));
-                });
+        {{"Apply", [this, idx] { emit("stash_apply_requested"_key, make_payload("index"_key, idx)); }},
+         {"Pop", [this, idx] { emit("stash_pop_requested"_key, make_payload("index"_key, idx)); }},
+         {"Drop", [this, idx] {
+            show_confirm("Drop stash@{" + std::to_string(idx) + "}? This cannot be undone.", [this, idx] {
+              emit("stash_drop_requested"_key, make_payload("index"_key, idx));
+            });
           }}});
   });
 
@@ -888,7 +753,7 @@ void git_repo::select_row(int32_t index) {
     status_mode_working_ = false;
     if (files_title_label_)
       files_title_label_["text"_key] = "Commit " + selected_hash_.substr(0, 8);
-    emit("commit_files_requested"_key, payload1("hash"_key, selected_hash_));
+    emit("commit_files_requested"_key, make_payload("hash"_key, selected_hash_));
   }
 }
 
@@ -929,7 +794,7 @@ void git_repo::add_file_row(const std::string& path, const std::string& status, 
     marker["value"_key] = staged;
     assign_id(marker);
     checkbox_handlers_[wish_id_of(marker)] = [this, path](bool checked) {
-      emit(checked ? "stage_requested"_key : "unstage_requested"_key, payload1("path"_key, path));
+      emit(checked ? "stage_requested"_key : "unstage_requested"_key, make_payload("path"_key, path));
     };
   } else {
     marker = ui_element_ptr::create("wish"_key, "Label"_key);
@@ -967,7 +832,7 @@ void git_repo::request_diff_for_selected() {
     return;
   emit(
       "diff_requested"_key,
-      payload3("hash"_key, selected_hash_, "path"_key, selected_path_, "staged"_key, selected_staged_));
+      make_payload("hash"_key, selected_hash_, "path"_key, selected_path_, "staged"_key, selected_staged_));
 }
 
 dynamic git_repo::do_update_status(const dynamic& args) {
@@ -1099,106 +964,8 @@ dynamic git_repo::do_command_result(const dynamic& args) {
 
 // ── Log (git-command trace) ─────────────────────────────────────────────────
 
-void git_repo::append_log_row(const std::string& command, int32_t exit_code, bool ok, const std::string& output) {
-  if (!log_table_)
-    return;
-  auto* children_p = log_table_->findField<dynamic_ptr>("children"_key);
-  if (!children_p || !*children_p)
-    return;
-  auto& children = *children_p;
-
-  theme_hex color = ok ? theme_hex{kGreenLight, kGreenDark} : theme_hex{kRedLight, kRedDark};
-
-  ui_element_ptr row = ui_element_ptr::create("wish"_key, "TableRow"_key);
-  assign_id(row);
-
-  ui_element_ptr cell_seq = ui_element_ptr::create("wish"_key, "Label"_key);
-  cell_seq["text"_key] = std::to_string(++log_seq_);
-  assign_id(cell_seq);
-
-  ui_element_ptr cell_command = ui_element_ptr::create("wish"_key, "Label"_key);
-  cell_command["text"_key] = command;
-  set_theme_text_color(cell_command, color);
-  assign_id(cell_command);
-
-  ui_element_ptr cell_exit = ui_element_ptr::create("wish"_key, "Label"_key);
-  cell_exit["text"_key] = std::to_string(exit_code);
-  set_theme_text_color(cell_exit, color);
-  assign_id(cell_exit);
-
-  ui_element_ptr cell_output = ui_element_ptr::create("wish"_key, "Label"_key);
-  cell_output["text"_key] = output;
-  set_theme_text_color(cell_output, color);
-  assign_id(cell_output);
-
-  // Right-click any row for "Copy Entry" (this row's command/exit code/
-  // output, via MenuItem.copy_text -- the renderer copies it to the OS
-  // clipboard directly on click, no round trip needed) and "Clear Log"
-  // (every row, not just this one -- offered from every row's menu purely
-  // for discoverability, same as a real log viewer's right-click menu).
-  ui_element_ptr context_menu = ui_element_ptr::create("wish"_key, "ContextMenu"_key);
-  assign_id(context_menu);
-
-  ui_element_ptr copy_item = ui_element_ptr::create("wish"_key, "MenuItem"_key);
-  copy_item["label"_key] = std::string{"Copy Entry"};
-  copy_item["copy_text"_key] = command + "\nexit: " + std::to_string(exit_code) + "\n" + output;
-  assign_id(copy_item);
-  click_handlers_[wish_id_of(copy_item)] = [this] { set_status("Copied log entry to clipboard.", true); };
-
-  ui_element_ptr clear_item = ui_element_ptr::create("wish"_key, "MenuItem"_key);
-  clear_item["label"_key] = std::string{"Clear Log"};
-  assign_id(clear_item);
-  click_handlers_[wish_id_of(clear_item)] = [this] { clear_log_rows(); };
-
-  set_children_list(context_menu, {copy_item, clear_item});
-  set_children_list(row, {cell_seq, cell_command, cell_exit, cell_output, context_menu});
-
-  size_t child_key = next_log_child_key_++;
-  (*children)[child_key] = dynamic_ptr{row};
-  log_rows_.push_back(
-      {child_key, wish_id_of(row), wish_id_of(cell_seq), wish_id_of(cell_command), wish_id_of(cell_exit),
-       wish_id_of(cell_output)});
-
-  if (log_rows_.size() > kMaxLogRows) {
-    erase_log_row_objects(log_rows_.front());
-    children->erase(log_rows_.front().child_key);
-    log_rows_.pop_front();
-  }
-
-  log_table_->refresh_children_order();
-}
-
-void git_repo::erase_log_row_objects(const log_row_entry& entry) {
-  ctx().objects.erase(entry.row_id.id);
-  ctx().objects.erase(entry.cell_seq_id.id);
-  ctx().objects.erase(entry.cell_command_id.id);
-  ctx().objects.erase(entry.cell_exit_id.id);
-  ctx().objects.erase(entry.cell_output_id.id);
-}
-
-void git_repo::clear_log_rows() {
-  if (!log_table_)
-    return;
-  auto* children_p = log_table_->findField<dynamic_ptr>("children"_key);
-  if (!children_p || !*children_p)
-    return;
-  auto& children = *children_p;
-
-  for (auto& entry : log_rows_) {
-    erase_log_row_objects(entry);
-    children->erase(entry.child_key);
-  }
-  log_rows_.clear();
-  log_seq_ = 0;
-  log_table_->refresh_children_order();
-
-  set_status("Log cleared.", true);
-}
-
 dynamic git_repo::do_append_command_log(const dynamic& args) {
-  append_log_row(
-      args.as<std::string>("command"_key), args.as<int32_t>("exit_code"_key), args.as<bool>("ok"_key),
-      args.as<std::string>("output"_key));
+  log_.append_from(args);
   return dynamic{};
 }
 
@@ -1209,15 +976,13 @@ void git_repo::on_event(key_t id, key_t event, const dynamic& payload) {
     emit("closed"_key);
     remove_objects_at(files_root_key_);
     remove_objects_at(diff_root_key_);
-    remove_objects_at(log_root_key_);
+    remove_objects_at(log_.root_key());
     remove_internal_objects();
     return;
   }
 
   if (event == "clicked"_key) {
-    auto it = click_handlers_.find(id);
-    if (it != click_handlers_.end())
-      it->second();
+    dispatch_click(id);
     return;
   }
 

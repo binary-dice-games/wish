@@ -524,11 +524,11 @@ TEST_F(GitRepoRmiTest, AppendCommandLogAddsRowsToLogTable) {
     return args;
   };
 
-  EXPECT_EQ(child_array_count(root_ + "_log.vbox.log_table"), 0u);
+  EXPECT_EQ(child_array_count(root_ + "_log.vbox.table"), 0u);
   call("append_command_log"_key, make_log_call_args("git status --porcelain=v1", 0, true, ""));
-  EXPECT_EQ(child_array_count(root_ + "_log.vbox.log_table"), 1u);
+  EXPECT_EQ(child_array_count(root_ + "_log.vbox.table"), 1u);
   call("append_command_log"_key, make_log_call_args("git push", 1, false, "rejected"));
-  EXPECT_EQ(child_array_count(root_ + "_log.vbox.log_table"), 2u);
+  EXPECT_EQ(child_array_count(root_ + "_log.vbox.table"), 2u);
 }
 
 // ── Delete branch: confirmation dialog ────────────────────────────────────────

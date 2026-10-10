@@ -39,6 +39,9 @@ struct console_options {
   bool closable{true};
   /// Called after the user cleared the console from the context menu.
   std::function<void()> on_cleared;
+  /// Called after the user copied a row with "Copy Entry" (the copy itself
+  /// happens client-side, via the item's `copy_text`).
+  std::function<void()> on_copied;
 };
 
 class console_panel {
