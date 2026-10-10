@@ -88,6 +88,15 @@ public class ErrorMappingTests
         Assert.Contains("fully-qualified name", ex.Message);
         Assert.Equal(WishErrorCode.Ambiguous, ex.Code);
     }
+
+    [Fact]
+    public void UnavailableMessage()
+    {
+        Assert.Equal(-6, (int)WishErrorCode.Unavailable);
+        var ex = new WishException(WishErrorCode.Unavailable, "user_store_keys");
+        Assert.Contains("anonymous session", ex.Message);
+        Assert.Equal(WishErrorCode.Unavailable, ex.Code);
+    }
 }
 
 /// <summary>

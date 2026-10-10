@@ -380,6 +380,68 @@ public sealed class Client : IDisposable
             $"upload_package_from_path({destPath})", LastError);
     }
 
+    // ── User store ────────────────────────────────────────────────────────────
+    //
+    // A persistent store of named objects private to this session's identity
+    // (connect with a "username" parameter); see docs/persistent-store.md.
+    // Every member below except HasUserStore throws WishException with
+    // WishErrorCode.Unavailable for an anonymous session.
+
+    /// <summary>True if this session has a user store (it is not anonymous).</summary>
+    public bool HasUserStore
+    {
+        get
+        {
+            WishException.Check(Native.wish_user_store_available(_handle, out var avail), "user_store_available", LastError);
+            return avail != 0;
+        }
+    }
+
+    /// <summary>Returns a copy of the entry named <paramref name="name"/>, or <c>null</c> if it doesn't exist.</summary>
+    public Dynamic? UserStoreGet(string name)
+    {
+        var rc = Native.wish_user_store_get(_handle, name, out var outValue);
+        if (rc == (int)WishErrorCode.NotFound)
+        {
+            return null;
+        }
+        WishException.Check(rc, $"user_store_get({name})", LastError);
+        return new Dynamic(outValue);
+    }
+
+    /// <summary>
+    /// Creates or replaces the entry named <paramref name="name"/>;
+    /// <paramref name="value"/> is a <see cref="Dynamic"/> or an
+    /// <c>IDictionary&lt;string, object?&gt;</c>. Persisted before this returns.
+    /// </summary>
+    public void UserStoreSet(string name, object value)
+    {
+        using var scope = ParamsMarshal.From(value);
+        WishException.Check(Native.wish_user_store_set(_handle, name, scope.Handle), $"user_store_set({name})", LastError);
+    }
+
+    /// <summary>Removes the entry named <paramref name="name"/>; returns <c>true</c> if it existed.</summary>
+    public bool UserStoreErase(string name)
+    {
+        WishException.Check(Native.wish_user_store_erase(_handle, name, out var erased), $"user_store_erase({name})", LastError);
+        return erased != 0;
+    }
+
+    /// <summary>Names of every entry in the user store, sorted.</summary>
+    public List<string> UserStoreKeys()
+    {
+        WishException.Check(Native.wish_user_store_keys(_handle, out var outJson), "user_store_keys", LastError);
+        try
+        {
+            var json = Marshal.PtrToStringUTF8(outJson) ?? "[]";
+            return System.Text.Json.JsonSerializer.Deserialize<List<string>>(json) ?? [];
+        }
+        finally
+        {
+            WishInterop.FreeString(outJson);
+        }
+    }
+
     // ── Logging ───────────────────────────────────────────────────────────────
 
     /// <summary>Sends a structured log message: <paramref name="level"/> is "debug"/"info"/"warn"/"error".</summary>

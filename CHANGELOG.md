@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Persistent stores of bison objects kept across sessions and server restarts (see [docs/persistent-store.md](docs/persistent-store.md)):
+  - A **user store** per authenticated identity (`~/.wish/users/<identity>.bison`), readable and writable by that identity's clients via `has_user_store()` / `user_store_get` / `user_store_set` / `user_store_erase` / `user_store_keys`.
+  - A **server store** (`~/.wish/server_store.bison`) for server-side code only (`server::server_store()`, `context::server_store`).
+  - The user store API is in `wish::client`, `wish_app_host`, `wish::standalone`, the C ABI (`wish_user_store_*`, new `WISH_ERR_UNAVAILABLE`) and the C++ header, Python, C#, Rust, Go and Android bindings.
+- `wish server` / `wish standalone` `--store_dir`, `server::set_store_dir()` / `standalone::set_store_dir()`, `standalone::set_user_identity()`, and a `store_dir` param for `wish_server_start()`.
 - `du` module (`WISH_MODULE_BDG_DESKTOP_DU`): a disk usage analyzer, run with `wish client --run=du [-- <folder>]`. Scans a folder on the client's machine and shows what takes the space as a size-sorted table (share of the folder, size, item count) and a treemap colored by file type; double-click a folder or its rectangle to open it.
 - `DockSplit.size` (`dock::split_px()`): give the first pane of a dock split a size in pixels instead of a ratio, e.g. a fixed-width side panel.
 - `Treemap` element: a squarified treemap of weighted nodes given as flat `parents` / `sizes` / `colors` arrays and newline-separated `labels`, with hover tooltips, a `selected` outline and `clicked` / `activated` events.
@@ -75,6 +80,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `wish server` and `wish_server_start()` always trust a client's `--username` / `"username"` connect field as its identity, so it gets a user store; clients without one stay anonymous.
 - `mc`: the default layout is now a 2x2 grid -- folder trees on top, file panels below, Local on the left and Sandbox on the right.
 - The bdg tool frontends (`kubectl`, `docker`, `helm`, `pip`, `pkg`, `curl`, `sq`, `git` and the desktop tools) now share one set of server-side panels (`modules/bdg/common/server/`): the Console window, list windows with `...` row menus, read-only text viewers, live stats graphs and confirm dialogs look and behave the same in every tool.
 - `sq`: Console rows gain the right-click **Copy Entry** / **Clear Console** menu the other tools have.

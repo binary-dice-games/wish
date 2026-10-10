@@ -114,7 +114,11 @@ class Server:
             only. Matches the ``wish server`` CLI's own flags/defaults. Also
             forwarded unchanged to the transport's own listen params -- e.g.
             ``cert_file``/``key_file``/etc. for a server created with
-            :meth:`tls`; ignored by every other transport.
+            :meth:`tls`; ignored by every other transport. ``store_dir``
+            sets the directory holding the persistent server store and
+            per-user stores (default ``~/.wish``; see
+            docs/persistent-store.md). Clients connecting with a
+            ``username`` param get a user store; the rest are anonymous.
         """
         ph = _n.build_params(self._lib, params) if params else None
         try:

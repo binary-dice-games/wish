@@ -3,9 +3,11 @@
 /// @brief Implementation of wish::standalone.
 #include <standalone/standalone.hpp>
 
+#include <client/user_store_rpc.hpp>
 #include <context/file_service.hpp>
 #include <server/registry.hpp>
 #include <context/style_service.hpp>
+#include <context/user_store_service.hpp>
 #include <ui/ui_descriptor.hpp>
 #include <ui/ui_root.hpp>
 
@@ -83,6 +85,12 @@ void standalone::on_session_created(bison::rmi::context& ctx) {
     sess->file_service = file_service::instantiate(sess->resource_dir);
     sess->style_service = style_service::instantiate();
     sess->logger_service = logger_;
+    sess->server_store = stores_->server_store();
+    const std::string& identity = !user_identity_.empty() ? user_identity_ : persistent_identity_;
+    if (auto store = stores_->user_store(identity)) {
+      sess->user_store = store;
+      sess->user_store_service = user_store_service::instantiate(std::move(store));
+    }
 #ifdef WISH_AUTOMATION_ENABLED
     if (renderer_) {
       if (auto* backend = renderer_->as_automation_backend())
@@ -102,6 +110,13 @@ void standalone::on_session_created(bison::rmi::context& ctx) {
     automation_proxy_ = instantiate("wish"_key, "__WishAutomation"_key).get();
   } catch (...) {
     automation_proxy_.reset();
+  }
+  // Non-fatal: anonymous sessions have no user store (mirrors
+  // wish::client::on_connect()).
+  try {
+    user_store_proxy_ = instantiate("wish"_key, "__WishUserStore"_key).get();
+  } catch (...) {
+    user_store_proxy_.reset();
   }
 }
 
@@ -409,6 +424,34 @@ std::future<void> standalone::set_style(bison::dynamic params) {
 
 std::future<bison::dynamic> standalone::get_style() {
   return std::async(std::launch::async, [this]() -> dynamic { return style_proxy_->call("get"_key, dynamic{}).get(); });
+}
+
+std::future<std::optional<dynamic>> standalone::user_store_get(const std::string& name) {
+  return std::async(std::launch::async, [this, name]() -> std::optional<dynamic> {
+    detail::require_user_store(user_store_proxy_);
+    return detail::user_store_get_sync(*user_store_proxy_, name);
+  });
+}
+
+std::future<void> standalone::user_store_set(const std::string& name, dynamic value) {
+  return std::async(std::launch::async, [this, name, value = std::move(value)]() mutable {
+    detail::require_user_store(user_store_proxy_);
+    detail::user_store_set_sync(*user_store_proxy_, name, std::move(value));
+  });
+}
+
+std::future<bool> standalone::user_store_erase(const std::string& name) {
+  return std::async(std::launch::async, [this, name]() -> bool {
+    detail::require_user_store(user_store_proxy_);
+    return detail::user_store_erase_sync(*user_store_proxy_, name);
+  });
+}
+
+std::future<std::vector<std::string>> standalone::user_store_keys() {
+  return std::async(std::launch::async, [this]() -> std::vector<std::string> {
+    detail::require_user_store(user_store_proxy_);
+    return detail::user_store_keys_sync(*user_store_proxy_);
+  });
 }
 
 std::future<void> standalone::log(const std::string& level, const std::string& msg) {

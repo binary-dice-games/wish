@@ -304,6 +304,31 @@ this design's hook fully supports without further bison/wish changes.
 
 ---
 
+### Identity also selects the user store
+
+An authenticated identity now has a second use besides the persistent sandbox:
+
+- `on_authenticated()` attaches that identity's **user store**
+  (`<store_dir>/users/<identity>.bison`, see
+  [docs/persistent-store.md](../../docs/persistent-store.md)) and its
+  `__WishUserStore` RMI service.
+- This happens whenever the identity is non-empty and passes
+  `is_safe_sandbox_identity()`, independently of
+  `persistent_sandbox_root_`. The early return described above now guards
+  only the sandbox switch.
+- An empty or unsafe identity still means an anonymous session: no user
+  store, temp sandbox.
+
+So that identified clients get a user store by default, `wish server` and
+`wish_server_start()` (C ABI) now **always** install `local_auth_module`:
+
+- Without `--sandbox_root`, it has no default identity, so clients without
+  `--username` stay anonymous.
+- With `--sandbox_root`, the existing `default` fallback is unchanged.
+
+An embedder calling `wish::server::start()` directly still chooses its own
+module, or none.
+
 ## Public API Contract
 
 | Symbol | Layer | Contract |

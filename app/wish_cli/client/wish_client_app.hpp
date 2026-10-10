@@ -99,6 +99,12 @@ class wish_client_app : public bison::app::client_app, public wish_app_host {
   std::future<std::string>
   download_file(const std::string& name, bdg::wish::transfer_progress_callback on_progress) override;
 
+  bool has_user_store() const override;
+  std::future<std::optional<bison::dynamic>> user_store_get(const std::string& name) override;
+  std::future<void> user_store_set(const std::string& name, bison::dynamic value) override;
+  std::future<bool> user_store_erase(const std::string& name) override;
+  std::future<std::vector<std::string>> user_store_keys() override;
+
  protected:
   void on_connect_params(bison::dynamic& params) const override;
 

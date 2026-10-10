@@ -69,6 +69,22 @@ class wish_standalone_session : public standalone, public wish_app_host {
     return standalone::download_file(name, std::move(on_progress));
   }
 
+  bool has_user_store() const override {
+    return standalone::has_user_store();
+  }
+  std::future<std::optional<bison::dynamic>> user_store_get(const std::string& name) override {
+    return standalone::user_store_get(name);
+  }
+  std::future<void> user_store_set(const std::string& name, bison::dynamic value) override {
+    return standalone::user_store_set(name, std::move(value));
+  }
+  std::future<bool> user_store_erase(const std::string& name) override {
+    return standalone::user_store_erase(name);
+  }
+  std::future<std::vector<std::string>> user_store_keys() override {
+    return standalone::user_store_keys();
+  }
+
   /// @brief Standalone mode has no transport contending for stdin, so this
   ///        is just a direct `std::cin` read.
   bool read_console_line(std::string& line) override;

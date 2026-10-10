@@ -207,6 +207,9 @@ struct session {
   std::atomic<bool>                                  dirty{false};  // application-managed flag
   file_service_ptr                                   file_service;  // per-session file sandbox
   style_service_ptr                                  style_service; // per-session visual theme
+  persistent_store_ptr                               server_store;  // shared by all sessions; server-side only
+  persistent_store_ptr                               user_store;    // per identity; null when anonymous
+  user_store_service_ptr                             user_store_service; // RMI view of user_store
 };
 ```
 
@@ -326,6 +329,19 @@ An `Image` element's `src` field is resolved relative to `session.resource_dir` 
 - `unpack` extracts a zip previously written into the sandbox (typically via `upload_chunk`) into a destination directory, using the same `resolve_path()` sandboxing for both `zip_name` and `dest`. Because the archive's *entries* are client-supplied content (unlike the build-controlled embedded resource archive `resource_store` unpacks), every entry's target path is independently re-validated against `dest` to block zip-slip (`../`-escaping entries). Extraction merges into `dest`; the staging archive is deleted on success.
 
 `bdg::wish::client` exposes this as overloaded `upload_file`/`download_file` (a `std::string` overload for the simple case, and `std::istream&`/`std::ostream&` overloads that drive the chunked protocol under the hood) plus `upload_package(dest_path, istream&)`, which uploads a zip via the chunked path and calls `unpack` — e.g. `upload_package("my_folder/my_package", zip_stream)` extracts into `my_folder/my_package/` in the sandbox.
+
+### Persistent stores (`persistent_store`, `__WishUserStore`)
+
+`bdg::wish::persistent_store` is a thread-safe, file-backed map of entry name → `bison::dynamic`. Every mutation rewrites the file atomically. A `store_registry` (one per `wish::server`/`wish::standalone`, rooted at `set_store_dir()`, default `~/.wish`) owns the **server store** (`server_store.bison`) and one **user store** per authenticated identity (`users/<identity>.bison`). It hands out shared instances, so concurrent sessions of one identity never overwrite each other's in-memory copy.
+
+`server::on_session_created` gives every session `server_store`. `server::on_authenticated` gives an identified session its `user_store` plus a `user_store_service`, registered as `"__WishUserStore"` in the `"wish"` namespace, with methods `get`/`set`/`erase`/`keys`. Anonymous sessions get neither, and `find_singleton_service` throws for `__WishUserStore`, so `client::has_user_store()` reports `false`.
+
+The security boundary is structural:
+
+- The RMI service wraps exactly one store, so a client can't name another user's store.
+- No RMI class wraps the server store at all.
+
+See [docs/persistent-store.md](docs/persistent-store.md).
 
 ### `bdg::wish::style_service`
 

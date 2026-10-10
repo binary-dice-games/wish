@@ -15,6 +15,7 @@
 package wish
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -226,6 +227,26 @@ func TestRunAgainstUnreachablePortFailsCleanly(t *testing.T) {
 	}
 	if ranSession {
 		t.Fatal("session callback must not run for a failed connection")
+	}
+}
+
+func TestUserStoreUnavailableWithoutSession(t *testing.T) {
+	// A client that never connected has no identity, so it behaves like an
+	// anonymous session: no user store, every call reports Unavailable.
+	c, err := NewTCPClient("127.0.0.1", 1)
+	must(t, err)
+	defer c.Destroy()
+	has, err := c.HasUserStore()
+	if err != nil || has {
+		t.Fatalf("HasUserStore() = %v, %v; want false, nil", has, err)
+	}
+	_, err = c.UserStoreKeys()
+	var we *WishError
+	if !errors.As(err, &we) || we.Code != WishErrUnavailable {
+		t.Fatalf("UserStoreKeys() error = %v; want WishErrUnavailable", err)
+	}
+	if _, err := c.UserStoreGet("bdg.test"); !errors.As(err, &we) || we.Code != WishErrUnavailable {
+		t.Fatalf("UserStoreGet() error = %v; want WishErrUnavailable", err)
 	}
 }
 

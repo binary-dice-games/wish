@@ -6,6 +6,7 @@
 /// server` CLI uses -- see app/wish_cli/server/wish_server_app.cpp, whose
 /// renderer-construction logic this mirrors) in a plain-C interface, so any
 /// language with a C FFI can host and render a wish session.
+#include <auth/local_auth_module.hpp>
 #include <context/logger.hpp>
 #include <include/wish_server_c.h>
 #include <server/console_renderer.hpp>
@@ -236,10 +237,16 @@ wish_server_start(wish_server_handle s, const char* renderer_kind, bison_handle 
           std::filesystem::path{});
       s->server_->set_logger(s->logger_);
     }
+    if (const auto* dir = dyn_params.findField("store_dir"_key); dir && dir->is<std::string>() &&
+        !dir->as<std::string>().empty())
+      s->server_->set_store_dir(dir->as<std::string>());
+    // Same policy as the `wish server` CLI: trust a client-supplied
+    // "username" connect field as the session identity, so identified
+    // clients get a user store and the rest stay anonymous.
     // Forwarded unchanged as listen params -- e.g. cert_file/key_file/etc.
     // for a wish_server_tls_create() transport; ignored by every other
     // transport's start().
-    s->server_->start(nullptr, dyn_params);
+    s->server_->start(std::make_shared<wish::local_auth_module>(), dyn_params);
     return WISH_SERVER_OK;
   } catch (const bad_renderer_error& e) {
     s->last_error_ = e.what();

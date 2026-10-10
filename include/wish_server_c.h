@@ -150,6 +150,12 @@ WISH_SERVER_API wish_server_handle wish_server_term_create(const char* cmd);
  *                      (int, default 16) for "sdl3"/"web"; "web_bind"
  *                      (string, default "127.0.0.1") and "web_port" (int,
  *                      default 8080) for "web" only. Ignored for "console".
+ *                      "store_dir" (string, default "~/.wish"): directory
+ *                      holding the persistent server store and per-user
+ *                      stores (see docs/persistent-store.md). The server
+ *                      trusts a client's "username" connect field as its
+ *                      identity (like `wish server`): identified clients
+ *                      get a user store, the rest are anonymous.
  *                      Also forwarded unchanged to the transport's own
  *                      `start()` as listen params -- e.g. `cert_file`/
  *                      `key_file`/etc. for a server created with

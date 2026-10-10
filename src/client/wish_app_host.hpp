@@ -12,6 +12,8 @@
 #include <cstdint>
 #include <functional>
 #include <future>
+#include <optional>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -67,6 +69,41 @@ class wish_app_host {
   virtual std::future<std::string>
   download_file(const std::string& name, transfer_progress_callback on_progress = nullptr) = 0;
 
+  // ── User store ──────────────────────────────────────────────────────────
+  //
+  // The session's persistent, per-identity store of named bison objects
+  // (see docs/persistent-store.md). Not pure: a host without one (e.g. a
+  // test double) inherits these defaults, which report it as unavailable.
+
+  /// @copydoc bdg::wish::client::has_user_store
+  virtual bool has_user_store() const {
+    return false;
+  }
+
+  /// @copydoc bdg::wish::client::user_store_get
+  virtual std::future<std::optional<bison::dynamic>> user_store_get(const std::string& name) {
+    (void)name;
+    return unavailable_user_store<std::optional<bison::dynamic>>();
+  }
+
+  /// @copydoc bdg::wish::client::user_store_set
+  virtual std::future<void> user_store_set(const std::string& name, bison::dynamic value) {
+    (void)name;
+    (void)value;
+    return unavailable_user_store<void>();
+  }
+
+  /// @copydoc bdg::wish::client::user_store_erase
+  virtual std::future<bool> user_store_erase(const std::string& name) {
+    (void)name;
+    return unavailable_user_store<bool>();
+  }
+
+  /// @copydoc bdg::wish::client::user_store_keys
+  virtual std::future<std::vector<std::string>> user_store_keys() {
+    return unavailable_user_store<std::vector<std::string>>();
+  }
+
   /// @brief Store a proxy to keep the remote/local object alive for the session.
   virtual void keep_alive(bison::rmi::proxy::dynamic&& proxy) = 0;
 
@@ -98,6 +135,14 @@ class wish_app_host {
   /// @param line Output line, without the trailing newline.
   /// @return `false` once no more input is available (EOF).
   virtual bool read_console_line(std::string& line) = 0;
+
+ private:
+  template <typename T>
+  static std::future<T> unavailable_user_store() {
+    std::promise<T> p;
+    p.set_exception(std::make_exception_ptr(std::logic_error("wish: user store not supported by this app host")));
+    return p.get_future();
+  }
 };
 
 } // namespace bdg::wish

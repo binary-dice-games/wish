@@ -12,6 +12,7 @@
 
 #include <bison_c.h>
 #include <gtest/gtest.h>
+#include <auth/local_auth_module.hpp>
 #include <server/registry.hpp>
 #include <server/server.hpp>
 
@@ -21,6 +22,7 @@
 #include "tests/tls_test_certs.hpp"
 
 #include <chrono>
+#include <filesystem>
 #include <thread>
 
 namespace wish = bdg::wish::binding;
@@ -147,6 +149,83 @@ TEST_F(WishCppClientTest, RegisterInstantiateAndSetGetRoundTrip) {
 TEST_F(WishCppClientTest, ProxyGetForUnknownPathThrows) {
   auto client = wish::client::tcp("127.0.0.1", port_);
   client.run([](wish::client& c) { EXPECT_THROW(c.proxy_get("no.such.path"), wish::error); });
+}
+
+// ── User store ───────────────────────────────────────────────────────────
+
+namespace {
+
+class WishCppUserStoreTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    const auto* info = ::testing::UnitTest::GetInstance()->current_test_info();
+    dir_ = std::filesystem::temp_directory_path() / (std::string{"wish_cpp_store_"} + info->name());
+    std::filesystem::remove_all(dir_);
+    auto s = start_on_free_port_configured<bdg::bison::rmi::transport::socket_server_transport>(
+        0, [this](bdg::wish::server& srv) { srv.set_store_dir(dir_); },
+        std::make_shared<bdg::wish::local_auth_module>());
+    transport_ = std::move(s.transport);
+    server_ = std::move(s.server);
+    port_ = s.port;
+  }
+
+  void TearDown() override {
+    server_->stop();
+    std::error_code ec;
+    std::filesystem::remove_all(dir_, ec);
+  }
+
+  static wish::value as_user(const std::string& username) {
+    wish::value p;
+    if (!username.empty()) p["username"_key] = username;
+    return p;
+  }
+
+  std::filesystem::path dir_;
+  std::unique_ptr<bdg::bison::rmi::transport::socket_server_transport> transport_;
+  std::unique_ptr<bdg::wish::server> server_;
+  uint16_t port_{0};
+};
+
+}  // namespace
+
+TEST_F(WishCppUserStoreTest, IdentifiedClientRoundTripsAndPersists) {
+  {
+    auto client = wish::client::tcp("127.0.0.1", port_);
+    client.run(
+        [](wish::client& c) {
+          ASSERT_TRUE(c.has_user_store());
+          wish::value v;
+          v["filter"_key] = std::string{"error"};
+          c.user_store_set("bdg.test", v);
+          EXPECT_FALSE(c.user_store_get("missing").has_value());
+          EXPECT_EQ(c.user_store_keys(), (std::vector<std::string>{"bdg.test"}));
+        },
+        as_user("alice"));
+  }
+  auto client = wish::client::tcp("127.0.0.1", port_);
+  client.run(
+      [](wish::client& c) {
+        auto v = c.user_store_get("bdg.test");
+        ASSERT_TRUE(v.has_value());
+        EXPECT_EQ(*v->get_string("filter"_key), "error");
+        EXPECT_TRUE(c.user_store_erase("bdg.test"));
+        EXPECT_FALSE(c.user_store_erase("bdg.test"));
+      },
+      as_user("alice"));
+}
+
+TEST_F(WishCppUserStoreTest, AnonymousClientGetsUnavailable) {
+  auto client = wish::client::tcp("127.0.0.1", port_);
+  client.run([](wish::client& c) {
+    EXPECT_FALSE(c.has_user_store());
+    try {
+      c.user_store_keys();
+      FAIL() << "expected wish::error";
+    } catch (const wish::error& e) {
+      EXPECT_EQ(e.code(), WISH_ERR_UNAVAILABLE);
+    }
+  });
 }
 
 // Firing a real "clicked" event needs a live renderer frame loop (see

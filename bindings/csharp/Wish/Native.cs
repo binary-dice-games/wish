@@ -29,6 +29,7 @@ public enum WishErrorCode
     Transport = -3,
     Exception = -4,
     Ambiguous = -5,
+    Unavailable = -6,
 }
 
 /// <summary><c>wish_session_fn</c>: void(*)(wish_client_handle client, void* userdata).</summary>
@@ -208,6 +209,23 @@ internal static partial class Native
 
     [LibraryImport(LibName, StringMarshalling = StringMarshalling.Utf8)]
     public static partial int wish_upload_package_from_path(nint client, string destPath, string localZipPath);
+
+    // ── User store ────────────────────────────────────────────────────────────
+
+    [LibraryImport(LibName)]
+    public static partial int wish_user_store_available(nint client, out int outAvail);
+
+    [LibraryImport(LibName, StringMarshalling = StringMarshalling.Utf8)]
+    public static partial int wish_user_store_get(nint client, string name, out nint outValue);
+
+    [LibraryImport(LibName, StringMarshalling = StringMarshalling.Utf8)]
+    public static partial int wish_user_store_set(nint client, string name, nint value);
+
+    [LibraryImport(LibName, StringMarshalling = StringMarshalling.Utf8)]
+    public static partial int wish_user_store_erase(nint client, string name, out int outErased);
+
+    [LibraryImport(LibName)]
+    public static partial int wish_user_store_keys(nint client, out nint outJson);
 
     // ── Logging ───────────────────────────────────────────────────────────────
 

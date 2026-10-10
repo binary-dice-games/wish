@@ -58,6 +58,9 @@ fn error_message(code: i32) -> &'static str {
         sys::WISH_ERR_AMBIGUOUS => {
             "app name matches more than one registered app; use the fully-qualified name"
         }
+        sys::WISH_ERR_UNAVAILABLE => {
+            "not available for this session (e.g. the user store of an anonymous session)"
+        }
         _ => "unknown error",
     }
 }
@@ -535,6 +538,87 @@ impl Client {
             &format!("client.upload_package({dest_path:?})"),
             self.handle,
         )
+    }
+
+    // ── User store ───────────────────────────────────────────────────────
+    //
+    // A persistent store of named objects private to this session's
+    // identity (connect with a "username" param); see
+    // docs/persistent-store.md. Every method below except
+    // `has_user_store()` fails with `WISH_ERR_UNAVAILABLE` for an anonymous
+    // session.
+
+    /// True if this session has a user store (it is not anonymous).
+    pub fn has_user_store(&self) -> Result<bool, WishError> {
+        let mut avail: std::os::raw::c_int = 0;
+        check(
+            unsafe { sys::wish_user_store_available(self.handle, &mut avail) },
+            "client.has_user_store",
+            self.handle,
+        )?;
+        Ok(avail != 0)
+    }
+
+    /// Returns a copy of the entry named `name`, or `None` if it doesn't exist.
+    pub fn user_store_get(&self, name: &str) -> Result<Option<Value>, WishError> {
+        let mut out: sys::bison_handle = ptr::null_mut();
+        let rc = unsafe { sys::wish_user_store_get(self.handle, cstr(name).as_ptr(), &mut out) };
+        if rc == sys::WISH_ERR_NOT_FOUND {
+            return Ok(None);
+        }
+        check(rc, &format!("client.user_store_get({name:?})"), self.handle)?;
+        Ok(Some(Value::adopt(out)))
+    }
+
+    /// Creates or replaces the entry named `name`; persisted before returning.
+    pub fn user_store_set(&self, name: &str, value: &Value) -> Result<(), WishError> {
+        check(
+            unsafe {
+                sys::wish_user_store_set(self.handle, cstr(name).as_ptr(), value.raw_handle())
+            },
+            &format!("client.user_store_set({name:?})"),
+            self.handle,
+        )
+    }
+
+    /// Removes the entry named `name`; returns `true` if it existed.
+    pub fn user_store_erase(&self, name: &str) -> Result<bool, WishError> {
+        let mut erased: std::os::raw::c_int = 0;
+        check(
+            unsafe { sys::wish_user_store_erase(self.handle, cstr(name).as_ptr(), &mut erased) },
+            &format!("client.user_store_erase({name:?})"),
+            self.handle,
+        )?;
+        Ok(erased != 0)
+    }
+
+    /// Names of every entry in the user store, sorted.
+    pub fn user_store_keys(&self) -> Result<Vec<String>, WishError> {
+        let mut out: *mut c_char = ptr::null_mut();
+        check(
+            unsafe { sys::wish_user_store_keys(self.handle, &mut out) },
+            "client.user_store_keys",
+            self.handle,
+        )?;
+        let json = unsafe { CStr::from_ptr(out) }
+            .to_string_lossy()
+            .into_owned();
+        unsafe { sys::bison_free_string(out) };
+        // bison_from_json() needs an object root; a nested array parses
+        // into an index-keyed object.
+        let root = Value::parse_json(&format!("{{\"keys\":{json}}}")).map_err(|_| {
+            WishError::new(
+                sys::WISH_ERR_EXCEPTION,
+                "client.user_store_keys",
+                self.handle,
+            )
+        })?;
+        let Some(arr) = root.get_object("keys") else {
+            return Ok(Vec::new());
+        };
+        Ok((0..arr.size())
+            .filter_map(|i| arr.get_string_at(i))
+            .collect())
     }
 
     // ── Logging ──────────────────────────────────────────────────────────

@@ -286,6 +286,74 @@ JNIEXPORT jbyteArray JNICALL Java_com_bdg_wish_Client_nativeDownloadFile(
   return out;
 }
 
+// ─── User store ─────────────────────────────────────────────────────────
+//
+// Errors (WISH_ERR_UNAVAILABLE for an anonymous session, invalid names, ...)
+// are thrown as WishException with the wish_last_error() detail.
+
+namespace {
+void throw_user_store_error(JNIEnv* env, jlong handle, wish_error err, const char* context) {
+  std::string detail = context;
+  const char* last = wish_last_error(from_jlong<wish_client_handle>(handle));
+  if (last && *last) detail += std::string{": "} + last;
+  throw_wish_exception(env, err, detail.c_str());
+}
+}  // namespace
+
+JNIEXPORT jboolean JNICALL Java_com_bdg_wish_Client_nativeUserStoreAvailable(JNIEnv* env, jclass, jlong handle) {
+  int avail = 0;
+  wish_error err = wish_user_store_available(from_jlong<wish_client_handle>(handle), &avail);
+  if (err != WISH_OK) {
+    throw_user_store_error(env, handle, err, "user_store_available");
+    return JNI_FALSE;
+  }
+  return avail ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jlong JNICALL Java_com_bdg_wish_Client_nativeUserStoreGet(JNIEnv* env, jclass, jlong handle, jstring name) {
+  jstring_view n(env, name);
+  bison_handle out = nullptr;
+  wish_error err = wish_user_store_get(from_jlong<wish_client_handle>(handle), n.c_str(), &out);
+  if (err == WISH_ERR_NOT_FOUND) return 0;
+  if (err != WISH_OK) {
+    throw_user_store_error(env, handle, err, "user_store_get");
+    return 0;
+  }
+  return to_jlong(out);
+}
+
+JNIEXPORT void JNICALL Java_com_bdg_wish_Client_nativeUserStoreSet(
+    JNIEnv* env, jclass, jlong handle, jstring name, jlong value_handle) {
+  jstring_view n(env, name);
+  wish_error err = wish_user_store_set(
+      from_jlong<wish_client_handle>(handle), n.c_str(), from_jlong<bison_handle>(value_handle));
+  if (err != WISH_OK) throw_user_store_error(env, handle, err, "user_store_set");
+}
+
+JNIEXPORT jboolean JNICALL Java_com_bdg_wish_Client_nativeUserStoreErase(
+    JNIEnv* env, jclass, jlong handle, jstring name) {
+  jstring_view n(env, name);
+  int erased = 0;
+  wish_error err = wish_user_store_erase(from_jlong<wish_client_handle>(handle), n.c_str(), &erased);
+  if (err != WISH_OK) {
+    throw_user_store_error(env, handle, err, "user_store_erase");
+    return JNI_FALSE;
+  }
+  return erased ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jstring JNICALL Java_com_bdg_wish_Client_nativeUserStoreKeys(JNIEnv* env, jclass, jlong handle) {
+  char* out = nullptr;
+  wish_error err = wish_user_store_keys(from_jlong<wish_client_handle>(handle), &out);
+  if (err != WISH_OK) {
+    throw_user_store_error(env, handle, err, "user_store_keys");
+    return nullptr;
+  }
+  jstring result = to_jstring(env, out);
+  bison_free_string(out);
+  return result;
+}
+
 // ─── Logging ────────────────────────────────────────────────────────────
 
 JNIEXPORT jint JNICALL Java_com_bdg_wish_Client_nativeLog(

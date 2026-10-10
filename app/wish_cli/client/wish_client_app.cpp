@@ -25,8 +25,9 @@ DEFINE_string(run, "", "Name of the embedded application to run");
 DEFINE_string(describe, "", "Print name, description, and parameters for a specific embedded application and exit");
 DEFINE_int32(timeout, 30000, "Connection timeout in milliseconds");
 DEFINE_string(username, "",
-              "Identity sent to the server on connect; with a server started with --sandbox_root it "
-              "selects which persistent sandbox directory this client gets (empty: the server's default)");
+              "Identity sent to the server on connect: selects this client's persistent user store "
+              "(empty: anonymous, no user store) and, with a server started with --sandbox_root, its "
+              "persistent sandbox directory (empty: the server's default)");
 
 namespace bdg::wish {
 
@@ -150,6 +151,34 @@ wish_client_app::download_file(const std::string& name, bdg::wish::transfer_prog
   if (!wish_client_)
     throw std::runtime_error("client not connected");
   return wish_client_->download_file(name, std::move(on_progress));
+}
+
+bool wish_client_app::has_user_store() const {
+  return wish_client_ && wish_client_->has_user_store();
+}
+
+std::future<std::optional<bison::dynamic>> wish_client_app::user_store_get(const std::string& name) {
+  if (!wish_client_)
+    throw std::runtime_error("client not connected");
+  return wish_client_->user_store_get(name);
+}
+
+std::future<void> wish_client_app::user_store_set(const std::string& name, bison::dynamic value) {
+  if (!wish_client_)
+    throw std::runtime_error("client not connected");
+  return wish_client_->user_store_set(name, std::move(value));
+}
+
+std::future<bool> wish_client_app::user_store_erase(const std::string& name) {
+  if (!wish_client_)
+    throw std::runtime_error("client not connected");
+  return wish_client_->user_store_erase(name);
+}
+
+std::future<std::vector<std::string>> wish_client_app::user_store_keys() {
+  if (!wish_client_)
+    throw std::runtime_error("client not connected");
+  return wish_client_->user_store_keys();
 }
 
 void wish_client_app::on_connect_params(bison::dynamic& params) const {

@@ -57,6 +57,8 @@ target_link_libraries(test_file_service PRIVATE miniz)
 # already, but not its include path (same pattern as miniz above).
 target_link_libraries(test_file_service PRIVATE civetweb-c-library)
 wish_add_test(test_logger         test_logger.cpp)
+wish_add_test(test_persistent_store test_persistent_store.cpp)
+wish_add_test(test_user_store     test_user_store.cpp)
 wish_add_test(test_server         test_server.cpp)
 wish_add_test(test_standalone     test_standalone.cpp)
 wish_add_test(test_client         test_client.cpp)

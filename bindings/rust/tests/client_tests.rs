@@ -136,6 +136,24 @@ fn run_against_unreachable_port_fails_cleanly() {
 }
 
 #[test]
+fn user_store_is_unavailable_without_a_session() {
+    // A client that never connected has no identity, so it behaves like an
+    // anonymous session: no user store, and every call reports Unavailable.
+    let client = Client::tcp("127.0.0.1", 1);
+    assert_eq!(client.has_user_store().unwrap(), false);
+    let err = client.user_store_keys().unwrap_err();
+    assert_eq!(err.code, wish::sys::WISH_ERR_UNAVAILABLE);
+    let err = client.user_store_get("bdg.test").unwrap_err();
+    assert_eq!(err.code, wish::sys::WISH_ERR_UNAVAILABLE);
+    let err = client
+        .user_store_set("bdg.test", &Value::new())
+        .unwrap_err();
+    assert_eq!(err.code, wish::sys::WISH_ERR_UNAVAILABLE);
+    let err = client.user_store_erase("bdg.test").unwrap_err();
+    assert_eq!(err.code, wish::sys::WISH_ERR_UNAVAILABLE);
+}
+
+#[test]
 fn run_with_params_against_unreachable_port_fails_cleanly() {
     let client = Client::tcp("127.0.0.1", 1);
     let mut params = Value::new();

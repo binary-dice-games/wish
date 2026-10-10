@@ -22,6 +22,7 @@ extern void goSessionTrampoline(wish_client_handle client, void* userdata);
 import "C"
 
 import (
+	"encoding/json"
 	"fmt"
 	"runtime"
 	"runtime/cgo"
@@ -38,14 +39,18 @@ const (
 	WishErrTransport int32 = -3
 	WishErrException int32 = -4
 	WishErrAmbiguous int32 = -5
+	// WishErrUnavailable: the feature isn't available for this session
+	// (e.g. the user store of an anonymous session).
+	WishErrUnavailable int32 = -6
 )
 
 var wishErrorMessages = map[int32]string{
-	WishErrNull:      "null handle or pointer",
-	WishErrNotFound:  "named proxy or resource not found",
-	WishErrTransport: "transport connection failed",
-	WishErrException: "internal C++ exception",
-	WishErrAmbiguous: "app name matches more than one registered app; use the fully-qualified name",
+	WishErrNull:        "null handle or pointer",
+	WishErrNotFound:    "named proxy or resource not found",
+	WishErrTransport:   "transport connection failed",
+	WishErrException:   "internal C++ exception",
+	WishErrAmbiguous:   "app name matches more than one registered app; use the fully-qualified name",
+	WishErrUnavailable: "not available for this session (e.g. the user store of an anonymous session)",
 }
 
 func wishErrorMessage(code int32) string {
@@ -462,6 +467,81 @@ func (c *Client) UploadPackage(destPath, localZipPath string) error {
 	defer C.free(unsafe.Pointer(cZip))
 	rc := C.wish_upload_package_from_path(c.handle, cDest, cZip)
 	return checkWish(rc, fmt.Sprintf("client.upload_package(%q)", destPath), c.handle)
+}
+
+// ── User store ───────────────────────────────────────────────────────────
+//
+// A persistent store of named objects private to this session's identity
+// (connect with a "username" param); see docs/persistent-store.md. Every
+// method below except HasUserStore fails with WishErrUnavailable for an
+// anonymous session.
+
+// HasUserStore reports whether this session has a user store (it is not
+// anonymous).
+func (c *Client) HasUserStore() (bool, error) {
+	var avail C.int
+	rc := C.wish_user_store_available(c.handle, &avail)
+	if err := checkWish(rc, "client.has_user_store", c.handle); err != nil {
+		return false, err
+	}
+	return avail != 0, nil
+}
+
+// UserStoreGet returns a copy of the entry named name, or nil (and no
+// error) if it doesn't exist.
+func (c *Client) UserStoreGet(name string) (*Value, error) {
+	cName := C.CString(name)
+	defer C.free(unsafe.Pointer(cName))
+	var out C.bison_handle
+	rc := C.wish_user_store_get(c.handle, cName, &out)
+	if int32(rc) == WishErrNotFound {
+		return nil, nil
+	}
+	if err := checkWish(rc, fmt.Sprintf("client.user_store_get(%q)", name), c.handle); err != nil {
+		return nil, err
+	}
+	return newValueOwned(out), nil
+}
+
+// UserStoreSet creates or replaces the entry named name; persisted before
+// returning.
+func (c *Client) UserStoreSet(name string, value *Value) error {
+	cName := C.CString(name)
+	defer C.free(unsafe.Pointer(cName))
+	var h C.bison_handle
+	if value != nil {
+		h = value.handle
+	}
+	rc := C.wish_user_store_set(c.handle, cName, h)
+	runtime.KeepAlive(value)
+	return checkWish(rc, fmt.Sprintf("client.user_store_set(%q)", name), c.handle)
+}
+
+// UserStoreErase removes the entry named name; returns true if it existed.
+func (c *Client) UserStoreErase(name string) (bool, error) {
+	cName := C.CString(name)
+	defer C.free(unsafe.Pointer(cName))
+	var erased C.int
+	rc := C.wish_user_store_erase(c.handle, cName, &erased)
+	if err := checkWish(rc, fmt.Sprintf("client.user_store_erase(%q)", name), c.handle); err != nil {
+		return false, err
+	}
+	return erased != 0, nil
+}
+
+// UserStoreKeys returns the names of every entry in the user store, sorted.
+func (c *Client) UserStoreKeys() ([]string, error) {
+	var out *C.char
+	rc := C.wish_user_store_keys(c.handle, &out)
+	if err := checkWish(rc, "client.user_store_keys", c.handle); err != nil {
+		return nil, err
+	}
+	defer C.bison_free_string(out)
+	var names []string
+	if err := json.Unmarshal([]byte(C.GoString(out)), &names); err != nil {
+		return nil, fmt.Errorf("wish: user_store_keys: %w", err)
+	}
+	return names, nil
 }
 
 // ── Logging ──────────────────────────────────────────────────────────────

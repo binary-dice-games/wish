@@ -361,6 +361,74 @@ class Client:
             self.last_error,
         )
 
+    # ── User store ───────────────────────────────────────────────────────────
+    #
+    # A persistent store of named objects private to this session's identity
+    # (connect with ``params={"username": ...}``); see
+    # docs/persistent-store.md. Every method below except has_user_store()
+    # raises WishError (code WISH_ERR_UNAVAILABLE) for an anonymous session.
+
+    def has_user_store(self) -> bool:
+        """True if this session has a user store (it is not anonymous)."""
+        out = ctypes.c_int(0)
+        _check(self._lib.wish_user_store_available(self._handle, ctypes.byref(out)), "has_user_store", self.last_error)
+        return bool(out.value)
+
+    def user_store_get(self, name: str) -> Optional["Dynamic"]:
+        """Return a copy of the entry named ``name`` as a ``bison.Dynamic``,
+        or ``None`` if it doesn't exist. Release the result with
+        ``Dynamic.release()`` (or let it be garbage-collected)."""
+        from bison import Dynamic
+
+        out = _n._bison_native.Handle(0)
+        rc = self._lib.wish_user_store_get(self._handle, name.encode(), ctypes.byref(out))
+        if rc == _n.WISH_ERR_NOT_FOUND:
+            return None
+        _check(rc, f"user_store_get({name!r})", self.last_error)
+        return Dynamic(_handle=out.value)
+
+    def user_store_set(self, name: str, value: Any) -> None:
+        """Create or replace the entry named ``name``; ``value`` is a
+        ``bison.Dynamic`` or a ``dict`` of field values. Persisted before
+        this returns."""
+        from bison import Dynamic
+
+        owned: Optional[Dynamic] = None
+        if isinstance(value, Dynamic):
+            dyn = value
+        else:
+            owned = dyn = Dynamic()
+            for k, v in dict(value).items():
+                dyn[k] = v
+        try:
+            _check(
+                self._lib.wish_user_store_set(self._handle, name.encode(), dyn._handle),
+                f"user_store_set({name!r})",
+                self.last_error,
+            )
+        finally:
+            if owned is not None:
+                owned.release()
+
+    def user_store_erase(self, name: str) -> bool:
+        """Remove the entry named ``name``; returns True if it existed."""
+        out = ctypes.c_int(0)
+        _check(
+            self._lib.wish_user_store_erase(self._handle, name.encode(), ctypes.byref(out)),
+            f"user_store_erase({name!r})",
+            self.last_error,
+        )
+        return bool(out.value)
+
+    def user_store_keys(self) -> List[str]:
+        """Names of every entry in the user store, sorted."""
+        out = ctypes.c_char_p()
+        _check(self._lib.wish_user_store_keys(self._handle, ctypes.byref(out)), "user_store_keys", self.last_error)
+        try:
+            return json.loads(out.value.decode("utf-8"))
+        finally:
+            self._lib.bison_free_string(out)
+
     # ── Logging ──────────────────────────────────────────────────────────────
 
     def log(self, level: str, msg: str) -> None:

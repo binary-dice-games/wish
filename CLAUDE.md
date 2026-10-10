@@ -412,6 +412,25 @@ and style service are all isolated.  Do not share mutable session state across
 sessions or cache per-session resources in process-global structures keyed by
 anything other than the session ID.
 
+## Persisting tool data
+
+To keep data across sessions (settings, history, last-used values), use the
+persistent stores in `src/context/persistent_store.hpp`, not ad-hoc config
+files or the session sandbox. See
+[docs/persistent-store.md](docs/persistent-store.md).
+
+- **Per-user data:** use the user store.
+  - From client code: `wish_app_host::user_store_get`/`set`.
+  - From a server form: `sess().user_store`.
+  - Always check `has_user_store()` or for a null `user_store` first:
+    anonymous sessions have none.
+- **Server-wide data:** use `sess().server_store`. It is server-side only
+  and never reachable over RMI.
+- **Entry names:** prefix them with the tool's qualified module name (e.g.
+  `bdg.desktop.tail`).
+- Never add an RMI path to the server store or to another identity's user
+  store.
+
 ## Claude Code Assist Behavioral Rules for This Repo
 
 - Do not introduce broad stylistic rewrites.

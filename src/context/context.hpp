@@ -42,6 +42,12 @@ using style_service_ptr = std::shared_ptr<style_service>;
 class logger;
 using logger_ptr = std::shared_ptr<logger>;
 
+class persistent_store;
+using persistent_store_ptr = std::shared_ptr<persistent_store>;
+
+class user_store_service;
+using user_store_service_ptr = std::shared_ptr<user_store_service>;
+
 #ifdef WISH_AUTOMATION_ENABLED
 class automation_service;
 using automation_service_ptr = std::shared_ptr<automation_service>;
@@ -167,6 +173,25 @@ struct context : public bison::rmi::context {
 
   /// Logger service instance; forwards client log calls to stdout / log file.
   logger_ptr logger_service;
+
+  /// The server store: persistent bison objects shared by every session of
+  /// this server (see `src/context/persistent_store.hpp` and
+  /// `docs/persistent-store.md`). For server-side code only -- no RMI class
+  /// exposes it, so clients can never read or write it. Thread-safe on its
+  /// own; no session lock is needed to use it.
+  persistent_store_ptr server_store;
+
+  /// This session's user store: persistent bison objects private to the
+  /// session's authenticated identity, shared with any other concurrent
+  /// session of that same identity. Null for anonymous sessions (no auth
+  /// module, or the client supplied no identity). Set by
+  /// `server::on_authenticated()` / `standalone::on_session_created()`.
+  /// Thread-safe on its own, like `server_store`.
+  persistent_store_ptr user_store;
+
+  /// The `__WishUserStore` RMI service wrapping `user_store`; null whenever
+  /// `user_store` is.
+  user_store_service_ptr user_store_service;
 
 #ifdef WISH_AUTOMATION_ENABLED
   /// Automation service instance; only set (by `server::on_session_created`/
@@ -347,7 +372,8 @@ extern thread_local context* current_context;
 bool is_read_only_op(bison::key_t op);
 
 /// @brief Return the per-session singleton instance for a `__Wish*` protocol
-///        class (`__WishFileSystem`, `__WishStyle`, `__WishLogger`).
+///        class (`__WishFileSystem`, `__WishStyle`, `__WishLogger`,
+///        `__WishUserStore`, `__WishAutomation`).
 ///
 /// These classes are session-scoped singletons rather than per-instantiate
 /// objects, so `on_create_object` must return the existing service instance
@@ -358,6 +384,8 @@ bool is_read_only_op(bison::key_t op);
 /// @return The singleton's `dynamic_ptr`, or an empty `dynamic_ptr` if
 ///         @p klass is not one of the singleton protocol classes (or the
 ///         session has no such service attached).
+/// @throws std::runtime_error for `__WishUserStore` on an anonymous session,
+///         and for `__WishAutomation` when the renderer doesn't support it.
 bison::dynamic_ptr find_singleton_service(const context& s, bison::key_t klass);
 
 /// @brief Inject session context into a freshly created form/ui_template.
