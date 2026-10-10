@@ -358,6 +358,12 @@ Gotchas this recipe already handles:
   `chromium.launch()` with `executable_path` set to the newest
   `$PLAYWRIGHT_BROWSERS_PATH/chromium-*/chrome-linux/chrome`.
 - **`rect` keys are `x0`/`y0`/`x1`/`y1`**, not `x`/`y`/`w`/`h`.
+- **`git` does not open its working directory**: it exits at once with
+  "a repository path is required" unless given one, so pass `--arg
+  /path/to/repo`. Its trace window is `__git_0_log` (title "Log", table
+  `.vbox.table`); the other dev tools' is `__<tool>_0_console`. A docked
+  window in a background tab reports `visible: False` in `get_tree()` while
+  its rows are still listed (2026-10).
 - **A module that opens on the client's working directory (`zip`, `mc`)
   needs no path typing**: start `wish client` with `cwd=` set to the fixture
   directory. To catch its progress dialog in a screenshot the job must
