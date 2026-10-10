@@ -89,8 +89,8 @@ modules for the shared client/server-split pattern this module follows.
         line renders in red for both, body correctly empty.
       - Adding/removing a Params row affects only that row; the "Save
         as" flow writes a correctly-shaped entry (id, collection, name,
-        and the full request state) into the local persistent store
-        file.
+        and the full request state) into the persistent store (now the
+        wish user store; see DESIGN.md §6 "Persistence").
 - [ ] **Not re-exercised live in this pass** (implemented and covered by
       `test_curl.cpp`'s server-side unit tests — row rebuild,
       `MessageBox` confirm → `delete_*_requested`,

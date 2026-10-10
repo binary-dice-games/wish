@@ -24,10 +24,10 @@ different shape of problem than a dashboard over live external resources:
   *read-only* display tables from `update_*` snapshots. Params/Headers/
   Form-body/Environment-variables are user-typed input lists — see
   §3 "`kv_table`".
-- **Local persistence.** docker/kubectl reflect purely external, live
-  state (the Docker daemon, a Kubernetes cluster) with nothing to persist.
-  Collections, Environments, and History are the client's own durable app
-  state — see §6 "Persistence".
+- **Persistence.** docker/kubectl reflect purely external, live state
+  (the Docker daemon, a Kubernetes cluster) with nothing to persist.
+  Collections, Environments, and History are the user's own durable app
+  state, kept in wish's per-user store — see §6 "Persistence".
 - **Response parsing without a JSON library.** Same "no JSON library"
   constraint as docker/kubectl's tab-delimited `--format` trick, applied to
   an actual HTTP response: `curl -i` plus a `-w` sentinel trailer, parsed
@@ -58,7 +58,7 @@ Scope for this pass:
   highlighted when the response looks like JSON, plain text otherwise, a
   one-line placeholder for binary bodies).
 - **History**: every sent request, newest first, reloadable into the
-  builder. Persisted locally, capped at 200 entries.
+  builder. Persisted in the user store, capped at 200 entries.
 - **Collections**: named/saved requests grouped by collection name,
   reloadable/duplicable/deletable.
 - **Environments**: named variable sets; the active one (picked in the
@@ -84,8 +84,8 @@ This directory owns:
   libuv `run_process()`, `tool_source.hpp` — `curl_source`'s base class
   —, `frontend.hpp`, `text.hpp`).
 - `client/curl_source.hpp`/`.cpp` — every actual `curl` invocation,
-  environment-variable substitution, and the local persistent store
-  (Collections/Environments/History).
+  environment-variable substitution, and persisting
+  Collections/Environments/History in the user store.
 - `client/curl_response_parser.hpp`/`.cpp` — `parse_curl_output()`: the
   `-i`/`-w`-sentinel response parse, split out into its own
   dependency-free file specifically so it's unit-testable on its own
@@ -140,7 +140,7 @@ History, Collections, Environments, and Console. Root keys are
   `language:"json"` when the response looks like JSON) and **Headers**
   (a plain 2-column `Table`, fully rebuilt per response).
 - **History**: a FIFO-style table (Method/URL/Status/Time/When), newest
-  first, capped at 200 locally-persisted entries; each row's "Load" menu
+  first, capped at 200 persisted entries; each row's "Load" menu
   action restores the *entire* builder state (not just method/URL) via
   `update_request_builder`.
 - **Collections**: a flat table (Collection/Name/Method/URL, no nested
@@ -189,7 +189,7 @@ already hold the live truth.
 ### `curl_source` (client)
 
 Owns the proxy, every actual `curl` invocation, environment substitution,
-and the local persistent store. `refresh_all()` loads the store and pushes
+and persistence through the user store. `refresh_all()` loads the store and pushes
 the three snapshot RMI calls (`update_collections`/`update_environments`/
 `update_history`). One `on_*` method per `*_requested` event; `send_request()`
 is the core path (§6). `push_request_builder()` is the "load into the
@@ -216,7 +216,7 @@ Startup:
       fail -> print "curl: `curl` binary not found on PATH ..." + signal_done()
     instantiate CurlFrontend -> proxy
     wire proxy.onEvent(...) for every *_requested / closed event
-    source->refresh_all()   -- loads the local store, pushes Collections/
+    source->refresh_all()   -- loads the user store, pushes Collections/
                                 Environments/History (docker's initial-
                                 load-race fix: never an on_init()-emitted
                                 event)
@@ -243,7 +243,7 @@ send_requested (client):
         binary, then left empty -> Response window shows no body pane)
   append one History entry (full un-substituted request_state, so a later
     "Load" restores {{name}} literally, not its resolved value)
-  save_store(); push_history()
+  save_history(); push_history()
 
 CurlFrontend.update_response (server):
   colour-codes the status line by status_code (2xx green / 3xx amber /
@@ -400,26 +400,38 @@ The internal `ui_element` tree of every window is private.
   ".txt"`, so `file_path` genuinely changes on every response and the
   editor always reloads.
 
-- **Local persistence lives outside the session sandbox, in a small
-  hand-rolled JSON store.** See DESIGN.md-level rationale in
-  `curl_source.hpp`'s file comment: Collections/Environments/History are
-  the *client's own* durable app state (same trust boundary as
-  `imgui.ini`), not a server-directed, per-session widget file path — so
-  `session::resource_dir` sandboxing (CLAUDE.md's file-access rules) does
-  not apply here; those rules govern paths the *server* hands the
-  client, not files the client's own reference app manages for itself.
-  The store is one JSON file at a per-user config location
-  (`$XDG_CONFIG_HOME/wish/curl/store.json`, falling back to
-  `~/.config/wish/curl/store.json`; `%APPDATA%\wish\curl\store.json` on
-  Windows/MSYS2 — a narrow `#if defined(_WIN32)` guard in
-  `curl_source.cpp`, not a separate `_win`-suffixed file, per this repo's
-  platform-support rule). No JSON library dependency: a ~250-line
-  hand-rolled reader/writer in `curl_source.cpp`'s anonymous namespace,
-  scoped to this module's own flat schema (never exposed as a
-  general-purpose parser) — the same constraint that shaped docker's
-  tab-delimited list parsing (`nlohmann::json`'s include path is
-  `PRIVATE` to a handful of core wish targets, not module-client
-  sources).
+- **Persistence lives in wish's user store, not a config file of its
+  own.** Collections, Environments and History are stored as bison objects
+  in the session's user store (see
+  [docs/persistent-store.md](../../../../docs/persistent-store.md)) through
+  `wish_app_host::user_store_get()`/`user_store_set()`. There is one entry
+  per list:
+  - `bdg.dev.curl.collections`
+  - `bdg.dev.curl.environments`
+  - `bdg.dev.curl.history`
+
+  Each entry is `{"version": 1, "items": [...]}`, and items use the
+  `request_state`/`saved_request`/`environment`/`history_entry` field
+  names. Splitting by list means a request send rewrites only the History
+  entry. Each mutation rewrites its whole list. That is fine at this scale
+  (History is capped at 200).
+
+  This replaced an earlier hand-written JSON file under
+  `~/.config/wish/curl/` (`%APPDATA%` on Windows). That file was the
+  client's own app state, with its own JSON reader/writer and per-platform
+  path code. The user store gives the same per-user persistence:
+  - no parser and no platform code;
+  - it lives on the server machine, keyed by the authenticated identity,
+    so it follows the user across client machines;
+  - it is private to that identity by construction.
+
+  The old file is not migrated.
+
+  Trade-off: an anonymous session (no `--username`) has no user store, so
+  the lists then live in memory only. `load_store()` says so with one
+  Console row ("user store", red) instead of failing. A store read or
+  write error is likewise reported as a Console row and never thrown,
+  because losing persistence must not break sending requests.
 
 - **History stores the full, un-substituted builder state per entry, not
   just a method/URL/status summary.** A History row's "Load" action is
@@ -450,7 +462,7 @@ The internal `ui_element` tree of every window is private.
 ## 7. Constraints and Invariants
 
 - The server form never touches `curl`, the filesystem, a socket, a
-  subprocess, or the local persistent store; `curl_source` (client-only,
+  subprocess, or the user store; `curl_source` (client-only,
   on the shared `common/` helpers) owns all of that entirely.
 - Every `curl` invocation is a real argv array through `uv_spawn` — no
   shell string is ever constructed.
@@ -483,11 +495,10 @@ Depends on:
   upload pattern).
 - `uv_a` (libuv) — the shared `common::run_process()` subprocess helper; already linked
   into module-client targets by `wish_finalize_app_modules()`.
-- No JSON library — a hand-rolled parser/writer scoped to this module's
-  own store schema (§6); `curl`'s response body is shown verbatim
-  (pretty-printing is `TextEditor`'s own JSON-aware rendering, not
-  something this module parses).
-- `std::filesystem` — creating the local store's config directory.
+- `wish_app_host::user_store_get()`/`user_store_set()` — persistence of
+  Collections/Environments/History (§6). No JSON library: `curl`'s
+  response body is shown verbatim (pretty-printing is `TextEditor`'s own
+  JSON-aware rendering, not something this module parses).
 - The system `curl` binary (must be on `PATH`).
 
 Depended on by: nothing else in wish; this is a leaf module.

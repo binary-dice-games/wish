@@ -259,6 +259,21 @@ if(TARGET test_pkg_backend)
   target_include_directories(test_pkg_backend PRIVATE ${CMAKE_SOURCE_DIR})
 endif()
 wish_add_optional_test(WISH_MODULE_BDG_DEV_CURL                 test_curl              test_curl.cpp)
+# curl_source's user-store persistence, against a stub form over a real
+# wish::server/wish::client pair. Module client sources are only compiled
+# into the app executables, so this test compiles curl_source and the
+# shared client helpers it needs directly (same approach as test_dev_common,
+# including linking uv_a for process.cpp).
+wish_add_optional_test(WISH_MODULE_BDG_DEV_CURL                 test_curl_store        test_curl_store.cpp
+    ${CMAKE_SOURCE_DIR}/modules/bdg/dev/curl/client/curl_source.cpp
+    ${CMAKE_SOURCE_DIR}/modules/bdg/dev/curl/client/curl_response_parser.cpp
+    ${CMAKE_SOURCE_DIR}/modules/bdg/common/process.cpp)
+if(TARGET test_curl_store)
+  target_include_directories(test_curl_store PRIVATE ${CMAKE_SOURCE_DIR})
+  if(TARGET uv_a)
+    target_link_libraries(test_curl_store PRIVATE uv_a)
+  endif()
+endif()
 # Pure string parsing (parse_curl_output(), curl_response_parser.cpp) --
 # zero framework/bison/RMI/libuv dependency, so this compiles and links
 # faster than every other curl test. See its own file comment: this split

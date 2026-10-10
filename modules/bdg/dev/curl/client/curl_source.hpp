@@ -8,16 +8,11 @@
 /// the server-side CurlFrontend form via its update_* RMI methods. Also
 /// reacts to the form's `*_requested` events (see server/curl.hpp).
 ///
-/// Also owns the module's local persistent store (Collections,
-/// Environments, History) -- see DESIGN.md "Persistence". This has no
-/// docker/kubectl precedent: both of those reflect purely external, live
-/// state with nothing to persist. The store is a small hand-rolled JSON
-/// file (never `nlohmann::json` -- its include path isn't available to
-/// module-client sources, docker's DESIGN.md "no JSON library" decision)
-/// at a per-user config location on the machine running the client,
-/// entirely separate from the session sandbox (`session::resource_dir`):
-/// this is the client's own local app state, not a server-directed widget
-/// file path.
+/// Also persists Collections, Environments and History in the session's
+/// user store (see docs/persistent-store.md and DESIGN.md "Persistence"),
+/// one entry each (`bdg.dev.curl.collections` / `.environments` /
+/// `.history`). An anonymous session has no user store: the data then
+/// lives in memory only, and a Console row says so.
 #pragma once
 
 #include "curl_response_parser.hpp" // for kv_entry
@@ -108,9 +103,18 @@ class curl_source : public common::tool_source {
   void on_save_environment_vars_requested(const bison::dynamic& payload);
 
  private:
-  // ── Persistence ──────────────────────────────────────────────────────
+  // ── Persistence (user store) ─────────────────────────────────────────
+  /// @brief Reloads collections_/environments_/history_ from the user
+  /// store; leaves them empty (and logs why) for an anonymous session.
   void load_store();
-  void save_store() const;
+  void save_collections() const;
+  void save_environments() const;
+  void save_history() const;
+  /// @brief Writes one store entry; a no-op for an anonymous session. A
+  /// failure is logged to the Console, never thrown.
+  void write_entry(const char* name, bison::dynamic value) const;
+  /// @brief Pushes a "user store" row to the Console window.
+  void log_persistence(bool ok, const std::string& message) const;
 
   // ── Pushing snapshots to the form ───────────────────────────────────
   void push_collections();
