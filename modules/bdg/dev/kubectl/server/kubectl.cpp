@@ -326,12 +326,10 @@ void kubectl_frontend::on_init() {
   {
     using namespace dock;
     set_default_dock_layout(viewport(
-        "kubectl_dock",
-        "Kubectl",
+        "kubectl_dock", "Kubectl",
         layout(
             split(
-                dir::left,
-                0.62f,
+                dir::left, 0.62f,
                 split(
                     dir::down,
                     0.24f,
@@ -553,7 +551,8 @@ dynamic kubectl_frontend::do_update_nodes(const dynamic& args) {
 }
 
 dynamic kubectl_frontend::do_update_logs(const dynamic& args) {
-  if (args.as<std::string>("name"_key) != open_logs_name_ || args.as<std::string>("namespace"_key) != open_logs_ns_)
+  if (args.as<std::string>("name"_key) != open_logs_name_ ||
+      args.as<std::string>("namespace"_key) != open_logs_ns_)
     return dynamic{}; // stale response for a pod the user navigated away from.
   logs_.set_title(args.as<std::string>("title"_key));
   logs_.set_text(args.as<std::string>("text"_key));
@@ -814,9 +813,7 @@ void register_kubectl() {
       "actions -- see kubectl.hpp's class doc comment for the full contract."));
 
   dynamic::addClass(
-      "wish"_key,
-      std::move(proto),
-      key_t{0U},
+      "wish"_key, std::move(proto), key_t{0U},
       dynamic::make_factory<kubectl_frontend>("wish"_key, "KubectlFrontend"_key));
 }
 

@@ -119,8 +119,8 @@ class docker_frontend : public common::tool_form {
   /// One row of a list window: what the filter and row actions work on.
   struct entity {
     std::string scope; // "container" / "image" / "volume" / "network"
-    std::string key; // container/image/network id, or volume name
-    std::string name; // display name (filter + confirm message)
+    std::string key;   // container/image/network id, or volume name
+    std::string name;  // display name (filter + confirm message)
     std::string extra; // container: image ref (for the text filter)
     std::string state; // container only
   };

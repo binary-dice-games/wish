@@ -342,12 +342,10 @@ void docker_frontend::on_init() {
     // tabbed list/stats windows filling the rest -- and leave the right 38%
     // for Logs + Inspect.
     set_default_dock_layout(viewport(
-        "docker_dock",
-        "Docker",
+        "docker_dock", "Docker",
         layout(
             split(
-                dir::left,
-                0.62f,
+                dir::left, 0.62f,
                 split(
                     dir::down,
                     0.24f,
@@ -787,10 +785,7 @@ void register_docker() {
       "see docker.hpp's class doc comment for the full contract."));
 
   dynamic::addClass(
-      "wish"_key,
-      std::move(proto),
-      key_t{0U},
-      dynamic::make_factory<docker_frontend>("wish"_key, "DockerFrontend"_key));
+      "wish"_key, std::move(proto), key_t{0U}, dynamic::make_factory<docker_frontend>("wish"_key, "DockerFrontend"_key));
 }
 
 } // namespace bdg::wish
