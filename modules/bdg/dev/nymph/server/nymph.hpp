@@ -31,7 +31,8 @@
 #include "nymph_bind.hpp"
 #include "nymph_document.hpp"
 
-#include <ui/forms/form.hpp>
+#include "modules/bdg/common/server/tool_form.hpp"
+
 #include <ui/forms/message_box.hpp>
 #include <ui/ui_element.hpp>
 
@@ -43,7 +44,7 @@
 namespace bdg::wish {
 
 /// @brief The `Nymph` form. See the file comment for its contract.
-class nymph_form : public form {
+class nymph_form : public common::tool_form {
  public:
   explicit nymph_form(bison::dynamic&& base);
 

@@ -21,12 +21,9 @@ namespace bdg::wish {
 
 using namespace bison;
 
-namespace {
+using common::wish_id_of;
 
-template <typename Element>
-key_t wish_id_of(const Element& element) {
-  return element->template as<key_t>("__wish_id"_key);
-}
+namespace {
 
 // True when @p path names a YAML source file (case-insensitive `.yaml` /
 // `.yml` extension). Anything else -- including no extension -- is treated
@@ -247,7 +244,7 @@ static constexpr const char* kHelpFieldNameColor = "#7EC8FFFF";
 
 // ── editor ───────────────────────────────────────────────────────────────────
 
-editor::editor(dynamic&& base) : form(std::move(base)) {}
+editor::editor(dynamic&& base) : tool_form(std::move(base)) {}
 
 void editor::on_init() {
   // See form::internal_root_key_'s doc comment: ordinally-assigned, not pointer-derived.
@@ -256,63 +253,28 @@ void editor::on_init() {
   help_root_key_ = internal_root_key_ + "_help";
   log_root_key_ = internal_root_key_ + "_log";
 
-  auto tree = import_json(kEditorLayout);
-
-  // Assign every chrome element a bison RMI ID, mirroring bc/nano.
-  auto& c = ctx();
-  for (auto& [key, elem] : tree) {
-    key_t id = rmi::shared::generate_id();
-    c.put_object(id, elem);
-    elem["__wish_id"_key] = id;
-  }
-
-  window_id_ = (*tree[""])["__wish_id"_key].as<key_t>();
-  tree.with("vbox.editor_row.source", [&](const auto& e) {
-    source_editor_id_ = wish_id_of(e);
-    source_editor_ptr_ = e;
+  build_window(internal_root_key_, kEditorLayout, window_id_, [&](ui_tree& tree) {
+    tree.with("vbox.editor_row.source", [&](const auto& e) {
+      source_editor_id_ = wish_id_of(e);
+      source_editor_ptr_ = e;
+    });
+    tree.with("vbox.banner", [&](const auto& e) { banner_ptr_ = e; });
+    tree.with("vbox.path_label", [&](const auto& e) { path_label_ptr_ = e; });
   });
-  tree.with("vbox.banner", [&](const auto& e) { banner_ptr_ = e; });
-  tree.with("vbox.path_label", [&](const auto& e) { path_label_ptr_ = e; });
 
-  sess().ui_objects.merge(std::move(tree), internal_root_key_);
+  // Help and event-log windows: independent top-level Windows (see
+  // tool_form::build_window()), like try_reparse()'s preview mock_root_key_.
+  key_t help_window_id;
+  build_window(help_root_key_, kHelpWindowLayout, help_window_id, [&](ui_tree& tree) {
+    tree.with("vbox.class_name", [&](const auto& e) { help_class_name_ptr_ = e; });
+    tree.with("vbox.class_desc", [&](const auto& e) { help_class_desc_ptr_ = e; });
+    tree.with("vbox.fields", [&](const auto& e) { help_table_ptr_ = e; });
+  });
 
-  // Help window: a second, independent top-level Window -- form::init()
-  // (called right after on_init() returns) only auto-registers a single
-  // top_level_objects entry keyed on internal_root_key_, so this is
-  // registered by hand here, the same way try_reparse() does for the
-  // preview's mock_root_key_ and mc's confirm dialog does for
-  // its own secondary root (see remove_objects_at()'s doc comment).
-  auto help_tree = import_json(kHelpWindowLayout);
-  for (auto& [key, elem] : help_tree) {
-    key_t id = rmi::shared::generate_id();
-    c.put_object(id, elem);
-    elem["__wish_id"_key] = id;
-  }
-  help_tree.with("vbox.class_name", [&](const auto& e) { help_class_name_ptr_ = e; });
-  help_tree.with("vbox.class_desc", [&](const auto& e) { help_class_desc_ptr_ = e; });
-  help_tree.with("vbox.fields", [&](const auto& e) { help_table_ptr_ = e; });
-
-  ui_element_ptr help_root_ptr = help_tree[""];
-  sess().ui_objects.merge(std::move(help_tree), help_root_key_);
-  sess().top_level_objects[key_t{help_root_key_}] = help_root_ptr;
-  sess().top_level_handlers[key_t{help_root_key_}] = this;
-  (*help_root_ptr)["__path__"_key] = help_root_key_;
-
-  // Event log window: a third, independent top-level Window, registered
-  // the same manual way as the Help window above.
-  auto log_tree = import_json(kLogWindowLayout);
-  for (auto& [key, elem] : log_tree) {
-    key_t id = rmi::shared::generate_id();
-    c.put_object(id, elem);
-    elem["__wish_id"_key] = id;
-  }
-  log_tree.with("log", [&](const auto& e) { log_table_ptr_ = e; });
-
-  ui_element_ptr log_root_ptr = log_tree[""];
-  sess().ui_objects.merge(std::move(log_tree), log_root_key_);
-  sess().top_level_objects[key_t{log_root_key_}] = log_root_ptr;
-  sess().top_level_handlers[key_t{log_root_key_}] = this;
-  (*log_root_ptr)["__path__"_key] = log_root_key_;
+  key_t log_window_id;
+  build_window(log_root_key_, kLogWindowLayout, log_window_id, [&](ui_tree& tree) {
+    tree.with("log", [&](const auto& e) { log_table_ptr_ = e; });
+  });
 }
 
 // ── set_source / reparse ─────────────────────────────────────────────────────

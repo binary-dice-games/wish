@@ -3,7 +3,8 @@
 /// @brief Server-side Editor form.
 #pragma once
 
-#include <ui/forms/form.hpp>
+#include "modules/bdg/common/server/tool_form.hpp"
+
 #include <ui/ui_element.hpp>
 
 #include <cstdint>
@@ -70,7 +71,7 @@ class message_box;
 ///     inside the source editor; the client should download the sandbox
 ///     file, persist it to the original local path, and call `mark_saved`
 ///     (mirrors nano's `on_file_saved`).
-class editor : public form {
+class editor : public common::tool_form {
  public:
   explicit editor(bison::dynamic&& base);
 
