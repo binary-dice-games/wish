@@ -35,7 +35,8 @@ runner bridges the two via `upload_file`/`download_file`.
 - **client/**: `run_nano(wish_app_host&)`, self-registered as the
   `"nano"` embedded app — reacts to the form's high-level events
   (open/new/save/confirm-close) by moving bytes into and out of the
-  sandbox, showing a `MessageBox` to confirm saving unsaved files before
+  sandbox (into a temp dir private to nano and the session, removed when
+  the session ends, never the shared sandbox root), showing a `MessageBox` to confirm saving unsaved files before
   closing. Opens any files given on the command line, each in its own window
   (`wish client --run=nano -- a.cpp b.md`).
 - **resources/**: none.

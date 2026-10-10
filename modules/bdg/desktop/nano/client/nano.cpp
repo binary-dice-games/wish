@@ -65,21 +65,25 @@ dynamic list_directory(const fs::path& dir) {
 }
 
 /// Tracks the sandbox name <-> local path mapping for files this client has
-/// uploaded, and picks a sandbox name that does not collide with one
-/// already in use (e.g. two different directories each containing a
-/// "notes.txt"). Re-opening the exact same local path twice is not
-/// deduplicated here -- the server already no-ops a duplicate open_file
-/// call for a given sandbox path, so at worst this produces two
-/// independently-edited tabs backed by two sandbox copies of one file.
+/// uploaded. Copies go in a temp directory private to nano and to this
+/// session (see `wish_app_host::create_app_temp_dir()`), never at the shared
+/// sandbox root, so they cannot collide with other tools' files, earlier
+/// runs, or other sessions sharing a persistent sandbox. The server removes
+/// that directory when the session ends. Each file gets its own numbered
+/// subdirectory, so two local files with the same name (e.g. two
+/// "notes.txt") keep their real name, and its extension, in the sandbox.
+/// Re-opening the exact same local path twice is not deduplicated here --
+/// at worst this produces two independently-edited tabs backed by two
+/// sandbox copies of one file.
 struct sandbox_files {
   std::map<std::string, std::string> local_path_by_sandbox_name;
+  std::string temp_dir; // created on first use
+  size_t next_id = 0;
 
-  std::string reserve_name(const fs::path& local_path) {
-    auto candidate = local_path.filename().string();
-    int suffix = 1;
-    while (local_path_by_sandbox_name.count(candidate))
-      candidate = local_path.stem().string() + "_" + std::to_string(suffix++) + local_path.extension().string();
-    return candidate;
+  std::string reserve_name(wish_app_host& s, const fs::path& local_path) {
+    if (temp_dir.empty())
+      temp_dir = s.create_app_temp_dir().get();
+    return temp_dir + "/" + std::to_string(next_id++) + "/" + local_path.filename().string();
   }
 };
 
@@ -92,7 +96,7 @@ void upload_and_open(
     const std::shared_ptr<sandbox_files>& files,
     const fs::path& local_path) {
   auto data = read_local_file(local_path);
-  auto sandbox_name = files->reserve_name(local_path);
+  auto sandbox_name = files->reserve_name(s, local_path);
   s.upload_file(sandbox_name, data).get();
   files->local_path_by_sandbox_name[sandbox_name] = local_path.string();
 

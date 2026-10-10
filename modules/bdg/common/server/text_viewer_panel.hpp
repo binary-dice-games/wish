@@ -6,10 +6,12 @@
 /// The window is a toolbar -- a `target` Label naming what is shown, a
 /// Spring and a Refresh button -- over a read-only `TextEditor`. A
 /// TextEditor displays a file, so set_text() writes each update into the
-/// session sandbox as `private/<form root>_<stem>_<n>.txt` (resolved via
-/// file_service::resolve_path(); "private/" because tool output can carry
-/// secrets) and deletes the file it replaces. A fresh name every call: the
-/// renderer only reloads when `file_path` changes.
+/// session sandbox as `<temp dir>/<form root>_<stem>_<n>.txt` (resolved via
+/// file_service::resolve_path()) and deletes the file it replaces. The temp
+/// dir comes from file_service::create_temp_dir(): owned by this session
+/// and removed at its end, and under "private/" because tool output can
+/// carry secrets. A fresh name every call: the renderer only reloads when
+/// `file_path` changes.
 ///
 /// The module keeps the identity of what the window shows (a pod, a
 /// release, ...) and drops responses for anything else -- the staleness
@@ -93,7 +95,7 @@ class text_viewer_panel {
 
  private:
   std::string root_key_;
-  std::string file_prefix_; // "private/<form root>_<stem>_"
+  std::string file_prefix_; // "<session temp dir>/<form root>_<stem>_"
   bison::key_t window_id_;
   ui_element_ptr target_label_;
   ui_element_ptr editor_;

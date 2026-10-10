@@ -165,6 +165,9 @@ class standalone : public bison::rmi::standalone {
   /// @copydoc bdg::wish::client::download_file
   std::future<std::string> download_file(const std::string& name, transfer_progress_callback on_progress = nullptr);
 
+  /// @copydoc bdg::wish::client::create_temp_dir
+  std::future<std::string> create_temp_dir(const std::string& qualified_app);
+
   /// @copydoc bdg::wish::client::set_style_preset
   std::future<void> set_style_preset(const std::string& name);
 

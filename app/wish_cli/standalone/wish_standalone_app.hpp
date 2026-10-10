@@ -69,6 +69,10 @@ class wish_standalone_session : public standalone, public wish_app_host {
     return standalone::download_file(name, std::move(on_progress));
   }
 
+  std::future<std::string> create_temp_dir(const std::string& qualified_app) override {
+    return standalone::create_temp_dir(qualified_app);
+  }
+
   bool has_user_store() const override {
     return standalone::has_user_store();
   }

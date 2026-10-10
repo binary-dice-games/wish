@@ -6,6 +6,8 @@
  */
 #pragma once
 
+#include <client/app_registry.hpp>
+
 #include "src/bison/bison.hpp"
 #include "src/rmi/client/proxy.hpp"
 
@@ -68,6 +70,43 @@ class wish_app_host {
   ///                    progress reporting.
   virtual std::future<std::string>
   download_file(const std::string& name, transfer_progress_callback on_progress = nullptr) = 0;
+
+  // ── Private tool directory ──────────────────────────────────────────────
+  //
+  // Scratch files go in a temp directory inside the tool's private
+  // directory, never at the sandbox root shared with other tools (see
+  // file_service::app_private_dir()).
+
+  /// @copydoc bdg::wish::client::create_temp_dir
+  ///
+  /// Not pure: a host without a file service (e.g. a test double) inherits
+  /// this default, whose future throws `std::logic_error`.
+  virtual std::future<std::string> create_temp_dir(const std::string& qualified_app) {
+    (void)qualified_app;
+    std::promise<std::string> p;
+    p.set_exception(std::make_exception_ptr(std::logic_error("wish: temp dirs not supported by this app host")));
+    return p.get_future();
+  }
+
+  /// @brief Registration info of the app this host is running, or `nullptr`
+  ///        if it was not started from the app registry.
+  const app_info* running_app() const {
+    return running_app_;
+  }
+
+  /// @brief Records the app this host runs. Hosts call this before
+  ///        `app_info::run`.
+  void set_running_app(const app_info* info) {
+    running_app_ = info;
+  }
+
+  /// @brief `create_temp_dir()` for the running app (see `running_app()`).
+  /// @throws std::logic_error if no running app is set.
+  std::future<std::string> create_app_temp_dir() {
+    if (!running_app_)
+      throw std::logic_error("wish: create_app_temp_dir() needs a running app");
+    return create_temp_dir(qualified_app_name(*running_app_));
+  }
 
   // ── User store ──────────────────────────────────────────────────────────
   //
@@ -137,6 +176,8 @@ class wish_app_host {
   virtual bool read_console_line(std::string& line) = 0;
 
  private:
+  const app_info* running_app_ = nullptr;
+
   template <typename T>
   static std::future<T> unavailable_user_store() {
     std::promise<T> p;

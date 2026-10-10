@@ -15,6 +15,7 @@
 #include <cstdio>
 #include <fstream>
 #include <functional>
+#include <random>
 #include <stdexcept>
 #include <system_error>
 #include <thread>
@@ -107,6 +108,11 @@ file_service::file_service(dynamic&& base, std::filesystem::path resource_dir)
   addMethod("erase"_key, bison::method{[this](dynamic& /*self*/, const dynamic& p) -> dynamic {
               erase(p.as<std::string>("name"_key));
               return dynamic{};
+            }});
+  addMethod("create_temp_dir"_key, bison::method{[this](dynamic& /*self*/, const dynamic& p) -> dynamic {
+              dynamic result;
+              result["result"_key] = create_temp_dir(p.as<std::string>("app"_key));
+              return result;
             }});
   addMethod("upload_chunk"_key, bison::method{[this](dynamic& /*self*/, const dynamic& p) -> dynamic {
               upload_chunk(
@@ -379,6 +385,63 @@ void file_service::erase(const std::string& name) {
   std::error_code ec;
   if (!std::filesystem::remove(path, ec)) {
     throw std::runtime_error("wish::file_service: cannot delete: " + name);
+  }
+}
+
+// ── Per-tool private directories ────────────────────────────────────────────
+
+std::string file_service::app_private_dir(const std::string& qualified_app) {
+  constexpr std::size_t kMaxSegment = 64;
+  std::string dir_name;
+  std::size_t start = 0;
+  for (;;) {
+    auto end = qualified_app.find('/', start);
+    auto segment = qualified_app.substr(start, end == std::string::npos ? std::string::npos : end - start);
+    if (segment.empty() || segment.size() > kMaxSegment)
+      return {};
+    for (unsigned char c : segment) {
+      if (!std::isalnum(c) && c != '_' && c != '-')
+        return {};
+    }
+    if (!dir_name.empty())
+      dir_name += '.';
+    dir_name += segment;
+    if (end == std::string::npos)
+      break;
+    start = end + 1;
+  }
+  return "private/apps/" + dir_name;
+}
+
+std::string file_service::create_temp_dir(const std::string& qualified_app) {
+  auto private_dir = app_private_dir(qualified_app);
+  if (private_dir.empty())
+    throw std::runtime_error("wish::file_service: invalid app name: " + qualified_app);
+
+  static thread_local std::mt19937_64 rng{std::random_device{}()};
+  for (int attempt = 0; attempt < 8; ++attempt) {
+    char hex[17];
+    std::snprintf(hex, sizeof(hex), "%016llx", static_cast<unsigned long long>(rng()));
+    auto rel = private_dir + "/tmp/" + hex;
+    auto path = resolve_path(rel);
+    std::error_code ec;
+    std::filesystem::create_directories(path.parent_path(), ec);
+    // create_directory() returns false for an existing directory: retry
+    // with a new name rather than share another session's directory.
+    if (!ec && std::filesystem::create_directory(path, ec) && !ec) {
+      temp_dirs_.push_back(path);
+      return rel;
+    }
+    if (ec)
+      throw std::runtime_error("wish::file_service: cannot create temp directory: " + ec.message());
+  }
+  throw std::runtime_error("wish::file_service: cannot create a unique temp directory");
+}
+
+file_service::~file_service() {
+  for (const auto& dir : temp_dirs_) {
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
   }
 }
 

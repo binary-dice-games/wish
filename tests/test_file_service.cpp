@@ -287,6 +287,47 @@ TEST_F(FileServiceTest, DotDotAloneThrows) {
   EXPECT_THROW(fs().upload("..", "x"), std::runtime_error);
 }
 
+// ── per-tool private directories ──────────────────────────────────────────────
+
+TEST(FileServiceAppPrivateDir, FormatsQualifiedAndBareNames) {
+  EXPECT_EQ(file_service::app_private_dir("bdg/desktop/nano"), "private/apps/bdg.desktop.nano");
+  EXPECT_EQ(file_service::app_private_dir("my_tool-2"), "private/apps/my_tool-2");
+}
+
+TEST(FileServiceAppPrivateDir, RejectsMalformedNames) {
+  for (const char* bad : {"", "/", "bdg//nano", "bdg/", "../nano", "bdg/../nano", "a.b/c", "a b", "a\\b"})
+    EXPECT_EQ(file_service::app_private_dir(bad), "") << bad;
+  EXPECT_EQ(file_service::app_private_dir(std::string(65, 'x')), "");
+}
+
+TEST_F(FileServiceTest, CreateTempDirMakesFreshDirsInsideTheAppPrivateDir) {
+  auto a = fs().create_temp_dir("bdg/desktop/nano");
+  auto b = fs().create_temp_dir("bdg/desktop/nano");
+  EXPECT_NE(a, b);
+  for (const auto& dir : {a, b}) {
+    EXPECT_EQ(dir.rfind("private/apps/bdg.desktop.nano/tmp/", 0), 0u) << dir;
+    EXPECT_TRUE(std::filesystem::is_directory(sess().resource_dir / dir)) << dir;
+  }
+  // Usable through the normal sandboxed file API.
+  fs().upload(a + "/notes.txt", "scratch");
+  EXPECT_EQ(fs().download(a + "/notes.txt"), "scratch");
+}
+
+TEST_F(FileServiceTest, CreateTempDirRejectsMalformedAppName) {
+  EXPECT_THROW(fs().create_temp_dir("../escape"), std::runtime_error);
+}
+
+TEST_F(FileServiceTest, TempDirsAreRemovedWhenTheServiceIsDestroyed) {
+  auto other = file_service::instantiate(sess().resource_dir);
+  auto dir = other->create_temp_dir("bdg/desktop/nano");
+  other->upload(dir + "/notes.txt", "scratch");
+  fs().upload("shared.txt", "shared");
+  other.reset();
+  EXPECT_FALSE(std::filesystem::exists(sess().resource_dir / dir));
+  EXPECT_TRUE(std::filesystem::exists(sess().resource_dir / "private/apps/bdg.desktop.nano"));
+  EXPECT_EQ(fs().download("shared.txt"), "shared");
+}
+
 // ── resource_dir gone ────────────────────────────────────────────────────────
 
 TEST_F(FileServiceTest, UploadToDeletedResourceDirThrows) {

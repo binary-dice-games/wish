@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Per-tool private directories in the session sandbox (`private/apps/<org>.<collection>.<name>/`) and session-owned temp dirs inside them, removed at session end: `file_service::app_private_dir()` / `create_temp_dir()`, `client::create_temp_dir()`, `standalone::create_temp_dir()` and `wish_app_host::create_temp_dir()` / `create_app_temp_dir()` / `running_app()`.
+
 - `icon` field on `Button`, `MenuButton` and `MenuItem` (plus `Button.icon_color`): an image drawn left of the label, tinted to the text color; an empty label gives a square icon-only button.
 - Icons on the toolbar buttons and row/context menus of every `bdg` module (docker, kubectl, helm, pip, pkg, curl, sq, git, nymph, bc, du, mc, nano, pix, tail, top, zip); table row action menus are now an icon-only "more" button.
 - Built-in icons `send`, `merge`, `commit`, `fit_screen` and `table`.
@@ -67,6 +69,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `nano` no longer writes its working copies at the sandbox root, where they collided with other tools' files and earlier runs in a persistent sandbox; they go in a temp dir private to nano and the session.
+- The Details windows of the `bdg` tools (docker, kubectl, helm, pip, pkg) no longer overwrite each other's files when two sessions share a persistent sandbox.
 - `git`, `nano`, `zip` and `du` toolbar buttons size to their label and icon instead of a fixed width, so their text is no longer cropped.
 - `git`: clearing the Log window, or a long session pushing old rows out of it, no longer leaks each row's right-click menu objects.
 - `mc`: the file tables' "Modified" column was too narrow for the full date and time, which looked like the scrollbar covering it; a listing now also opens scrolled to the top instead of the bottom.

@@ -579,7 +579,9 @@ TEST_F(BdgServerCommonTest, TextViewerWritesSandboxFilesAndDeletesTheOldOne) {
   a["text"_key] = std::string{"key: 1\n"};
   call("set_text"_key, a.clone());
   const std::string first = editor->as<std::string>("file_path"_key);
-  EXPECT_EQ(first.rfind("private/" + root_ + "_details_", 0), 0u) << first;
+  // In a session-owned temp dir under the panel's private directory.
+  EXPECT_EQ(first.rfind("private/apps/bdg.common.text_viewer/tmp/", 0), 0u) << first;
+  EXPECT_NE(first.find("/" + root_ + "_details_"), std::string::npos) << first;
   EXPECT_EQ(read(first), "key: 1\n");
   EXPECT_EQ(text_of(at(root_ + "_details.vbox.toolbar.target")), "release: web");
 

@@ -16,7 +16,7 @@ The motivation is consistency: an open-file dialog built on top of raw wish elem
 2. **Hidden internals.** The client cannot directly access or modify a form's internal `ui_element` tree. Only the form's declared fields, methods, and events are part of its public contract.
 3. **Composable with low-level elements.** A form's Window is a first-class node in the session's object tree. It can coexist with client-managed elements in the same session.
 4. **Extensible via compile-time modules.** Each optional tool (bc, nano, top, ...) is compiled in via its own CMake option, not loaded as a DLL plugin, for reasons detailed in [Module System](#module-system).
-5. **Sandbox-safe.** Any form that reads or writes files must go through the same `file_service::resolve_path()` / `resolve_widget_path()` path as all other wish components.
+5. **Sandbox-safe.** Any form that reads or writes files must go through the same `file_service::resolve_path()` path as all other wish components.
 
 ---
 
@@ -422,7 +422,7 @@ dlg["dlg"].onEvent("on_open"_key, [&](bison::dynamic payload) {
 
 Files edited by a form live in the session's sandboxed `resource_dir`, but a text editor's files conceptually belong to the *client* (its local disk). `Nano` bridges the two by treating "open" and "close" as an explicit handshake with the client rather than doing any file listing itself:
 
-- **Open** — the client must call `client::upload_file` to place the file's bytes in the sandbox *before* calling the `open_file` method with the resulting sandbox-relative path. `Nano` cannot offer a client-side directory listing itself, so its own "Open" button emits `on_request_open`, asking the connected client to present its own picker (typically by driving a client-owned `FileDialog` instance populated from a local `directory_iterator` — see `modules/bdg/desktop/nano/client/nano.cpp` for the reference client).
+- **Open** — the client must call `client::upload_file` to place the file's bytes in the sandbox *before* calling the `open_file` method with the resulting sandbox-relative path. The reference client uploads into a temp dir from `create_app_temp_dir()` (`private/apps/bdg.desktop.nano/tmp/<random>/<n>/<file name>`), never the shared sandbox root, so copies cannot collide with other tools' files or other sessions'; the server removes that directory at session end. `Nano` cannot offer a client-side directory listing itself, so its own "Open" button emits `on_request_open`, asking the connected client to present its own picker (typically by driving a client-owned `FileDialog` instance populated from a local `directory_iterator` — see `modules/bdg/desktop/nano/client/nano.cpp` for the reference client).
 - **New** — the "New" button emits `on_request_new`, the same handshake as "Open" but for a file that may not exist locally yet. The reference client shows a `FileDialog` (confirm label `"New"`) letting the user pick or type a target path, creates it locally if missing, then uploads and calls `open_file` exactly like the Open flow.
 - **Close** — closing a tab emits `on_file_closed`; the client is expected to call `client::download_file` for that path and persist it locally before discarding its own bookkeeping.
 - **Save** — the "Save" toolbar button emits `on_file_saved` for the *active* tab's file only, asking the client to download and overwrite just that one local copy without closing anything. Ctrl+S inside a tab's editor does the same for that tab, regardless of which one is active.

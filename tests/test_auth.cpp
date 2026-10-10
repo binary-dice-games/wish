@@ -12,9 +12,12 @@
 
 #include "src/rmi/rmi.hpp"
 
+#include <chrono>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <string>
+#include <thread>
 
 using namespace bdg::bison;
 using namespace bdg::bison::rmi::transport;
@@ -38,6 +41,9 @@ class auth_test_client : public wish::client {
   std::string downloaded;
   std::string download_error;
 
+  /// Runs at the end of on_session(), while still connected.
+  std::function<void(auth_test_client&)> while_connected;
+
  protected:
   void on_session() override {
     if (!upload_name.empty())
@@ -50,6 +56,8 @@ class auth_test_client : public wish::client {
         download_error = e.what();
       }
     }
+    if (while_connected)
+      while_connected(*this);
   }
 };
 
@@ -234,5 +242,67 @@ TEST_F(AuthTest, NoAuthModuleBehavesUnchanged) {
     EXPECT_FALSE(c.download_ok) << "persistence must stay off without an auth module";
   }
 
+  srv.stop();
+}
+
+// ── Per-tool temp dirs in a persistent sandbox ──────────────────────────────
+
+TEST_F(AuthTest, ToolTempDirIsPrivatePerSessionAndRemovedAtSessionEnd) {
+  memory_server_transport transport;
+  wish::server srv{transport, std::make_unique<wish::null_renderer>()};
+  srv.set_persistent_sandbox_root(root_);
+  srv.start(std::make_shared<wish::local_auth_module>());
+  const auto sandbox = root_ / "alice";
+
+  std::string first_dir;
+  {
+    auth_test_client c{transport.connect()};
+    c.upload_name = "shared.txt"; // a file at the shared root
+    c.upload_data = "shared";
+    c.while_connected = [&](auth_test_client& self) {
+      first_dir = self.create_temp_dir("bdg/desktop/nano").get();
+      self.upload_file(first_dir + "/0/notes.txt", "scratch").get();
+      // A second session of the same identity, connected at the same time,
+      // gets its own directory.
+      auth_test_client other{transport.connect()};
+      std::string other_dir;
+      other.while_connected = [&](auth_test_client& o) { other_dir = o.create_temp_dir("bdg/desktop/nano").get(); };
+      other.run(params_with_username("alice"));
+      EXPECT_NE(other_dir, first_dir);
+      EXPECT_EQ(other_dir.rfind("private/apps/bdg.desktop.nano/tmp/", 0), 0u) << other_dir;
+      // The other session ending does not remove this session's directory.
+      EXPECT_TRUE(std::filesystem::exists(sandbox / first_dir / "0" / "notes.txt"));
+    };
+    c.run(params_with_username("alice"));
+  }
+  EXPECT_EQ(first_dir.rfind("private/apps/bdg.desktop.nano/tmp/", 0), 0u) << first_dir;
+
+  // Session teardown runs on the server after the client disconnects.
+  auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+  while (std::filesystem::exists(sandbox / first_dir) && std::chrono::steady_clock::now() < deadline)
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  EXPECT_FALSE(std::filesystem::exists(sandbox / first_dir));
+  EXPECT_TRUE(std::filesystem::exists(sandbox / "shared.txt"));
+  srv.stop();
+}
+
+TEST_F(AuthTest, CreateTempDirRejectsMalformedAppName) {
+  memory_server_transport transport;
+  wish::server srv{transport, std::make_unique<wish::null_renderer>()};
+  srv.start();
+
+  bool threw = false;
+  {
+    auth_test_client c{transport.connect()};
+    c.while_connected = [&](auth_test_client& self) {
+      try {
+        self.create_temp_dir("../escape").get();
+      } catch (const std::exception&) {
+        threw = true;
+      }
+    };
+    c.run(dynamic{});
+  }
+  EXPECT_TRUE(threw);
   srv.stop();
 }

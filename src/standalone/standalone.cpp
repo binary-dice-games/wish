@@ -405,6 +405,14 @@ std::future<std::string> standalone::download_file(const std::string& name, tran
   });
 }
 
+std::future<std::string> standalone::create_temp_dir(const std::string& qualified_app) {
+  return std::async(std::launch::async, [this, qualified_app]() -> std::string {
+    dynamic args;
+    args["app"_key] = qualified_app;
+    return fs_proxy_->call("create_temp_dir"_key, std::move(args)).get().as<std::string>("result"_key);
+  });
+}
+
 std::future<void> standalone::set_style_preset(const std::string& name) {
   return std::async(std::launch::async, [this, name]() {
     dynamic args;

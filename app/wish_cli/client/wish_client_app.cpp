@@ -153,6 +153,12 @@ wish_client_app::download_file(const std::string& name, bdg::wish::transfer_prog
   return wish_client_->download_file(name, std::move(on_progress));
 }
 
+std::future<std::string> wish_client_app::create_temp_dir(const std::string& qualified_app) {
+  if (!wish_client_)
+    throw std::runtime_error("client not connected");
+  return wish_client_->create_temp_dir(qualified_app);
+}
+
 bool wish_client_app::has_user_store() const {
   return wish_client_ && wish_client_->has_user_store();
 }
@@ -217,6 +223,7 @@ int wish_client_app::on_session(bison::rmi::client& c) {
   gflags::GetCommandLineFlagInfo("theme", &theme_info);
   if (!theme_info.is_default)
     wish_client_->set_style_preset(FLAGS_theme).get();
+  set_running_app(resolved_app_);
   resolved_app_->run(*this); // set up proxies and event handlers
   done_future_.wait(); // block until signal_done() fires
   return exit_code_.load();

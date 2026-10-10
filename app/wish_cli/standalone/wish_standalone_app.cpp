@@ -301,6 +301,7 @@ int wish_standalone_app::on_session(bison::rmi::standalone& sa) {
   }
 
   session.set_style_preset(FLAGS_theme).get();
+  session.set_running_app(resolved_app_);
   resolved_app_->run(session); // set up proxies and event handlers
   session.wait_until_done();
   return session.exit_code();

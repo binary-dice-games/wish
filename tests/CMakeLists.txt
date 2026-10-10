@@ -163,6 +163,16 @@ if(TARGET test_bc)
 endif()
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_TAIL               test_tail              test_tail.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_NANO               test_nano              test_nano.cpp)
+# nano's client runner, compiled straight into the test (client module code
+# is otherwise only linked into the app targets).
+wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_NANO               test_nano_client       test_nano_client.cpp
+    ${CMAKE_SOURCE_DIR}/modules/bdg/desktop/nano/client/nano.cpp)
+if(TARGET test_nano_client)
+  target_include_directories(test_nano_client PRIVATE ${CMAKE_SOURCE_DIR})
+  target_compile_definitions(test_nano_client PRIVATE
+      WISH_MODULE_BDG_DESKTOP_NANO_ORGANIZATION="bdg"
+      WISH_MODULE_BDG_DESKTOP_NANO_COLLECTION="desktop")
+endif()
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_TOP                test_top               test_top.cpp)
 # The helpers shared by the bdg/dev modules' clients (modules/bdg/common):
 # run_process() against stub programs (printf/cat/sh -- never a real dev
