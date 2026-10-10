@@ -162,7 +162,7 @@ static constexpr const char* kMainLayout = R"({
             "btn_commit":  { "type": "Button", "label": "Commit",  "icon": "res/icons/commit.png" },
             "btn_push":    { "type": "Button", "label": "Push",    "icon": "res/icons/upload.png" },
             "btn_pull":    { "type": "Button", "label": "Pull",    "icon": "res/icons/download.png" },
-            "btn_fetch":   { "type": "Button", "label": "Fetch",   "icon": "res/icons/refresh.png" },
+            "btn_fetch":   { "type": "Button", "label": "Fetch",   "icon": "res/icons/sync.png" },
             "btn_branch":  { "type": "Button", "label": "Branch",  "icon": "res/icons/tree.png" },
             "btn_merge":   { "type": "Button", "label": "Merge",   "icon": "res/icons/merge.png" },
             "btn_stash":   { "type": "Button", "label": "Stash",   "icon": "res/icons/package.png" },
@@ -186,13 +186,13 @@ static constexpr const char* kMainLayout = R"({
                 },
                 "sep_sidebar": { "type": "Separator" },
                 "branches_header": { "type": "Label", "text": "BRANCHES" },
-                "branches": { "type": "TreeNode", "label": "Local", "open": true, "children": {} },
+                "branches": { "type": "TreeNode", "label": "Local", "icon": "res/icons/tree.png", "open": true, "children": {} },
                 "remotes_header": { "type": "Label", "text": "REMOTES" },
-                "remotes": { "type": "TreeNode", "label": "Remote-tracking", "open": false, "children": {} },
+                "remotes": { "type": "TreeNode", "label": "Remote-tracking", "icon": "res/icons/cloud.png", "open": false, "children": {} },
                 "tags_header": { "type": "Label", "text": "TAGS" },
-                "tags": { "type": "TreeNode", "label": "Tags", "open": false, "children": {} },
+                "tags": { "type": "TreeNode", "label": "Tags", "icon": "res/icons/tag.png", "open": false, "children": {} },
                 "stashes_header": { "type": "Label", "text": "STASHES" },
-                "stashes": { "type": "TreeNode", "label": "Stashes", "open": false, "children": {} }
+                "stashes": { "type": "TreeNode", "label": "Stashes", "icon": "res/icons/package.png", "open": false, "children": {} }
               }
             },
             "graph_panel": {

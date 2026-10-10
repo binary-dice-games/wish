@@ -399,6 +399,10 @@ TEST(BdgServerCommonHelpers, ActionIconsMatchFirstWordCaseInsensitively) {
   EXPECT_EQ(common::action_icon("Prune stopped..."), "delete");
   EXPECT_EQ(common::action_icon("Rollback to this revision"), "undo");
   EXPECT_EQ(common::action_icon("Logs"), "document");
+  EXPECT_EQ(common::action_icon("Update"), "sync");
+  EXPECT_EQ(common::action_icon("Uncordon"), "lock_open");
+  EXPECT_EQ(common::action_icon("Duplicate"), "copy");
+  EXPECT_EQ(common::action_icon("Versions"), "tag");
   EXPECT_EQ(common::action_icon("Frobnicate"), "");
   EXPECT_EQ(common::action_icon(""), "");
 }

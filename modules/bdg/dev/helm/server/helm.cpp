@@ -102,7 +102,7 @@ static constexpr const char* kReposLayout = R"json({
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
       "btn_refresh":    { "type": "Button", "label": "Refresh", "icon": "res/icons/refresh.png" },
-      "btn_update_all": { "type": "Button", "label": "Update all", "icon": "res/icons/download.png" },
+      "btn_update_all": { "type": "Button", "label": "Update all", "icon": "res/icons/sync.png" },
       "filter":         { "type": "InputText", "hint": "Filter by name", "width": 200 }
     } },
     "add_bar": { "type": "HorizontalLayout", "spacing": 6, "children": {

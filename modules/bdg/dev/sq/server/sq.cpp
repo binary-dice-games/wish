@@ -612,7 +612,8 @@ void sq_frontend::rebuild_navigator(const std::string& heading) {
           cl += "  [PK]";
         if (!c.fk.empty())
           cl += "  -> " + c.fk;
-        kids.push_back(node(cl, false, true));
+        // Key columns get an icon: primary key, or a foreign-key link.
+        kids.push_back(node(cl, false, true, c.pk ? "key" : !c.fk.empty() ? "link" : nullptr));
       }
       set_children_list(tn, kids);
       table_nodes.push_back(tn);

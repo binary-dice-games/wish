@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Icons on the toolbar buttons and row/context menus of every `bdg` module (docker, kubectl, helm, pip, pkg, curl, sq, git, nymph, bc, du, mc, nano, pix, tail, top, zip); table row action menus are now an icon-only "more" button.
 - Built-in icons `send`, `merge`, `commit`, `fit_screen` and `table`.
 - 25 more built-in icons, e.g. `visibility_off`, `lock_open`, `fullscreen`, `dark_mode` / `light_mode`, `login` / `logout`, `key`, `sync`, `chart`, `calendar` and `tag` (full list in `resources/README.md`).
+- The bdg tools use some of them: `sync` for git Fetch, helm "Update all", pkg "Update index" and row "Update" actions; icons on git's Local / Remote-tracking / Tags / Stashes sections; `key` / `link` on sq primary- and foreign-key columns; `bookmark` on curl's Save; `tag` for pip "Versions"; `lock_open` for kubectl Uncordon. Row actions such as Load, Duplicate, Show / Hide, Share or Print now get icons automatically too.
 - 50 built-in Material Symbols UI icons under `res/icons/` (e.g. `settings.png`, `search.png`, `save.png`, `play.png`, `terminal.png`), listed in `resources/README.md`.
 - Persistent stores of bison objects kept across sessions and server restarts (see [docs/persistent-store.md](docs/persistent-store.md)):
   - A **user store** per authenticated identity (`~/.wish/users/<identity>.bison`), readable and writable by that identity's clients via `has_user_store()` / `user_store_get` / `user_store_set` / `user_store_erase` / `user_store_keys`.

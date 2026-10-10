@@ -60,7 +60,7 @@ static constexpr const char* kPackagesLayout = R"json({
       "filter":          { "type": "InputText", "hint": "Filter", "width": 110 },
       "state":           { "type": "Combo", "items": "All\nUpgradable", "value": 0, "width": 110 },
       "spring":          { "type": "Spring" },
-      "btn_index":       { "type": "Button", "label": "Update index", "icon": "res/icons/download.png" },
+      "btn_index":       { "type": "Button", "label": "Update index", "icon": "res/icons/sync.png" },
       "btn_upgrade_all": { "type": "Button", "label": "Upgrade all", "icon": "res/icons/arrow_up.png" }
     } },
     "find_bar": { "type": "HorizontalLayout", "spacing": 6, "children": {

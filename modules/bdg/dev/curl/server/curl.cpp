@@ -92,7 +92,7 @@ static constexpr const char* kRequestLayout = R"json({
       "save_label": { "type": "Label", "text": "Save as:" },
       "save_name":  { "type": "InputText", "hint": "request name", "width": 200 },
       "save_collection": { "type": "InputText", "hint": "collection (default: Default)", "width": 220 },
-      "btn_save":   { "type": "Button", "label": "Save", "icon": "res/icons/save.png" }
+      "btn_save":   { "type": "Button", "label": "Save", "icon": "res/icons/bookmark.png" }
     } },
     "status": { "type": "Label", "text": "" },
     "sep": { "type": "Separator" },
