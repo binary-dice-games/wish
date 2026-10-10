@@ -3,7 +3,8 @@
 /// @brief Server-side form for du (UI only, no local file access).
 #pragma once
 
-#include <ui/forms/form.hpp>
+#include "modules/bdg/common/server/tool_form.hpp"
+
 #include <ui/ui_element.hpp>
 #include <ui/ui_importer.hpp>
 
@@ -44,7 +45,7 @@ namespace bdg::wish {
 /// Selecting a table row outlines its rectangle in the treemap; clicking a
 /// rectangle selects the row of the top-level entry it belongs to and shows
 /// the clicked item's full path and size in the status line.
-class du : public form {
+class du : public common::tool_form {
  public:
   explicit du(bison::dynamic&& base);
   /// @brief Removes the Treemap panel; ~form() removes the Files panel and
@@ -90,13 +91,6 @@ class du : public form {
     std::int32_t items{0}; ///< Files and folders below a directory.
   };
 
-  /// @brief Import @p layout_json, assign every element an RMI id, run
-  /// @p wire to capture element pointers, and merge the tree under
-  /// @p root_key (registering it as its own top-level object unless it is
-  /// the main `internal_root_key_`, which form::init() registers itself).
-  void build_window(
-      const char* layout_json, const std::string& root_key, bison::key_t& window_id_out,
-      const std::function<void(ui_tree&)>& wire);
   /// @brief Remove the Treemap panel and forget its key. Safe to call twice.
   void remove_panel_objects();
 

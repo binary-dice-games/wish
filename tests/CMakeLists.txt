@@ -154,6 +154,7 @@ macro(wish_add_optional_test OPTION_NAME TESTNAME)
     endif()
 endmacro()
 
+wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_BC                 test_bc                test_bc.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_TAIL               test_tail              test_tail.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_NANO               test_nano              test_nano.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_TOP                test_top               test_top.cpp)

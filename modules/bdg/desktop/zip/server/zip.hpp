@@ -3,7 +3,8 @@
 /// @brief Server-side form for zip (UI only, no local file access).
 #pragma once
 
-#include <ui/forms/form.hpp>
+#include "modules/bdg/common/server/tool_form.hpp"
+
 #include <ui/ui_element.hpp>
 #include <ui/ui_importer.hpp>
 
@@ -14,8 +15,6 @@
 #include <vector>
 
 namespace bdg::wish {
-
-class message_box;
 
 /// @brief Client-machine file browser with compress/extract/view-contents
 /// actions for zip archives.
@@ -77,7 +76,7 @@ class message_box;
 ///   - `"on_view_contents_requested"` (`{path, name}`) — client should read
 ///     `path/name`'s central directory (without extracting) and call
 ///     `show_contents(name, entries)`, which fills the Contents panel.
-class zip : public form {
+class zip : public common::tool_form {
  public:
   explicit zip(bison::dynamic&& base);
   /// @brief Removes the secondary Contents/Actions panels; ~form() removes
@@ -132,14 +131,6 @@ class zip : public form {
   /// do -- mirrors tree.cpp's `pending_transfer`.
   enum class pending_action { none, compress, extract };
 
-  /// @brief Import @p layout_json, assign every element an RMI id, run
-  /// @p wire to capture element pointers, and merge the tree under
-  /// @p root_key -- registering it as its own top-level object (with
-  /// `__path__`, so it can be named in the dock layout) unless it is the
-  /// main `internal_root_key_`, which form::init() registers itself.
-  void build_window(
-      const char* layout_json, const std::string& root_key, bison::key_t& window_id_out,
-      const std::function<void(ui_tree&)>& wire);
   /// @brief Remove the Contents/Actions panels and forget their keys. Safe
   /// to call more than once.
   void remove_panel_objects();
@@ -257,15 +248,7 @@ class zip : public form {
   bison::key_t prompt_cancel_id_;
   pending_action prompt_action_{pending_action::none};
   std::vector<std::string> prompt_source_names_; ///< Entries the pending action acts on.
-  std::string prompt_value_;                     ///< Live-tracked InputText value.
-
-  /// Overwrite-confirmation dialog (Compress/Extract, second step): a
-  /// privately-instantiated MessageBox (see form::instantiate_child_form())
-  /// with a "yes_no" preset. Only one may be open at a time; a new
-  /// confirmation request just overwrites this member -- the stale
-  /// instance's destructor tears down its own internal objects, same effect
-  /// the old direct remove_objects_at() call had.
-  std::shared_ptr<message_box> confirm_dialog_;
+  std::string prompt_value_; ///< Live-tracked InputText value.
 };
 
 /// @brief Register Zip in the "wish" bison namespace.

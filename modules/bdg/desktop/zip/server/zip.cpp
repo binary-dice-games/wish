@@ -12,7 +12,6 @@
 #include "src/bison/bison_object.hpp"
 #include "src/rmi/shared/ids.hpp"
 #include "ui/forms/file_browser_utils.hpp"
-#include "ui/forms/message_box.hpp"
 
 #include <ui/dock_layout_spec.hpp>
 #include <ui/ui_importer.hpp>
@@ -205,35 +204,10 @@ static constexpr const char* kPromptLayout = R"({
 
 // ── zip ──────────────────────────────────────────────────────────────────
 
-zip::zip(dynamic&& base) : form(std::move(base)) {}
+zip::zip(dynamic&& base) : tool_form(std::move(base)) {}
 
 zip::~zip() {
   remove_panel_objects();
-}
-
-void zip::build_window(
-    const char* layout_json, const std::string& root_key, key_t& window_id_out,
-    const std::function<void(ui_tree&)>& wire) {
-  auto tree = import_json(layout_json);
-
-  auto& c = ctx();
-  for (auto& [key, elem] : tree) {
-    key_t id = rmi::shared::generate_id();
-    c.put_object(id, elem);
-    elem["__wish_id"_key] = id;
-  }
-  window_id_out = (*tree[""])["__wish_id"_key].as<key_t>();
-  wire(tree);
-
-  ui_element_ptr root_ptr = tree[""];
-  sess().ui_objects.merge(std::move(tree), root_key);
-  // The main root's top-level registration and "__path__" are handled by
-  // form::init() once on_init() returns; secondary panels register here.
-  if (root_key != internal_root_key_) {
-    sess().top_level_objects[key_t{root_key}] = root_ptr;
-    sess().top_level_handlers[key_t{root_key}] = this;
-    (*root_ptr)["__path__"_key] = root_key;
-  }
 }
 
 void zip::on_init() {
@@ -244,7 +218,7 @@ void zip::on_init() {
   auto* title_f = findField<std::string>("title"_key);
   const std::string title = title_f ? *title_f : std::string{"Zip"};
 
-  build_window(kFilesLayout, internal_root_key_, window_id_, [&](ui_tree& tree) {
+  build_window(internal_root_key_, kFilesLayout, window_id_, [&](ui_tree& tree) {
     tree.with("main.path_input", [&](const auto& e) {
       path_input_ptr_ = e;
       path_input_id_ = wish_id_of(e);
@@ -256,12 +230,12 @@ void zip::on_init() {
     });
   });
 
-  build_window(kContentsLayout, contents_root_key_, contents_window_id_, [&](ui_tree& tree) {
+  build_window(contents_root_key_, kContentsLayout, contents_window_id_, [&](ui_tree& tree) {
     tree.with("vbox.summary", [&](const auto& e) { contents_summary_ptr_ = e; });
     tree.with("vbox.contents_table", [&](const auto& e) { contents_table_ptr_ = e; });
   });
 
-  build_window(kActionsLayout, actions_root_key_, actions_window_id_, [&](ui_tree& tree) {
+  build_window(actions_root_key_, kActionsLayout, actions_window_id_, [&](ui_tree& tree) {
     tree.with("vbox.btn_row.btn_compress", [&](const auto& e) { btn_compress_id_ = wish_id_of(e); });
     tree.with("vbox.btn_row.btn_extract", [&](const auto& e) { btn_extract_id_ = wish_id_of(e); });
     tree.with("vbox.btn_row.btn_view", [&](const auto& e) { btn_view_id_ = wish_id_of(e); });
@@ -697,28 +671,18 @@ void zip::on_prompt_confirmed() {
 void zip::show_overwrite_confirm(
     pending_action action, const std::vector<std::string>& source_names, const std::string& target_name,
     const std::string& message) {
-  dynamic params;
-  params["title"_key] = std::string{"Confirm Overwrite"};
-  params["message"_key] = message;
-  params["icon"_key] = std::string{"warning"};
-  params["buttons"_key] = std::string{"yes_no"};
-
-  // Overwriting confirm_dialog_ (rather than requiring it be empty first) is
-  // safe even if a confirm dialog is already open for a different action --
-  // see confirm_dialog_'s doc comment. action/source_names/target_name are
-  // captured by value below rather than stashed in member fields (the old
-  // confirm_action_/confirm_source_name_/confirm_target_name_), since the
-  // lambda is the only place that still needs them.
-  confirm_dialog_ = instantiate_child_form<message_box>(
-      "MessageBox"_key, std::move(params),
-      [this, action, source_names, target_name](key_t /*event_name*/, const dynamic& payload) {
-        if (payload.as<std::string>("button"_key) == "yes") {
-          emit_action_request(action, source_names, target_name);
-          set_status(action == pending_action::compress ? "Compressing..." : "Extracting...");
-        } else {
-          set_status(action == pending_action::compress ? "Compress cancelled." : "Extract cancelled.");
-        }
-      });
+  // action/source_names/target_name are captured by value rather than
+  // stashed in member fields: the callbacks are the only place that needs
+  // them.
+  const bool compress = action == pending_action::compress;
+  show_confirm(
+      message,
+      [this, action, source_names, target_name, compress] {
+        emit_action_request(action, source_names, target_name);
+        set_status(compress ? "Compressing..." : "Extracting...");
+      },
+      {.title = "Confirm Overwrite",
+       .on_no = [this, compress] { set_status(compress ? "Compress cancelled." : "Extract cancelled."); }});
 }
 
 // ── Contents panel ────────────────────────────────────────────────────────────

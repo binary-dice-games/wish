@@ -3,7 +3,8 @@
 /// @brief Server-side form for mc (a two-panel file browser + transfer UI).
 #pragma once
 
-#include <ui/forms/form.hpp>
+#include "modules/bdg/common/server/tool_form.hpp"
+
 #include <ui/ui_element.hpp>
 #include <ui/ui_importer.hpp>
 
@@ -114,7 +115,7 @@ class properties_dialog;
 /// renderer copies to the OS clipboard directly on click. Rename/Properties
 /// act on the single row that was right-clicked, independent of the current
 /// multi-selection.
-class mc : public form {
+class mc : public common::tool_form {
  public:
   explicit mc(bison::dynamic&& base);
   /// @brief Removes the secondary Sandbox panel; ~form() removes the main
@@ -269,14 +270,6 @@ class mc : public form {
   /// status line and stores it in the `status` field.
   void set_status(const std::string& message, bool is_sandbox);
 
-  /// @brief Import @p layout_json, assign every element an RMI id, run
-  /// @p wire to capture element pointers, and merge the tree under
-  /// @p root_key -- registering it as its own top-level object (with
-  /// `__path__`, so it can be named in the dock layout) unless it is the
-  /// main `internal_root_key_`, which form::init() registers itself.
-  void build_window(
-      const char* layout_json, const std::string& root_key, bison::key_t& window_id_out,
-      const std::function<void(ui_tree&)>& wire);
   /// @brief Remove the Sandbox panel and both folder trees, and forget
   /// their keys. Safe to call more than once.
   void remove_panel_objects();

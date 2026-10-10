@@ -3,7 +3,8 @@
 /// @brief Server-side form for nano (a multi-file text editor).
 #pragma once
 
-#include <ui/forms/form.hpp>
+#include "modules/bdg/common/server/tool_form.hpp"
+
 #include <ui/ui_element.hpp>
 #include <ui/ui_importer.hpp>
 
@@ -66,7 +67,7 @@ namespace bdg::wish {
 /// finishes the close: `save: true` flushes every open file; `save: false`
 /// flushes only the already-saved ones. A canceled close simply never calls
 /// `confirm_close`, leaving every panel open as it was.
-class nano : public form {
+class nano : public common::tool_form {
  public:
   explicit nano(bison::dynamic&& base);
   /// @brief Removes the Search panel and every file window; ~form() removes
@@ -127,16 +128,6 @@ class nano : public form {
     int32_t column{0};    ///< 0-based, in characters (UTF-8 code points)
     int32_t length{0};    ///< match length in characters, clamped to the line
   };
-
-  /// @brief Import @p layout_json, assign every element an RMI id, run
-  /// @p wire to capture element pointers, and merge the tree under
-  /// @p root_key -- registering it as its own top-level object (with
-  /// `__path__`, so the dock layout can name it) unless it is the main
-  /// `internal_root_key_`, which form::init() registers itself. Dispatch
-  /// only (uses sess()).
-  void build_window(
-      const char* layout_json, const std::string& root_key, bison::key_t& window_id_out,
-      const std::function<void(ui_tree&)>& wire);
 
   /// @brief Remove the Search panel and every file window. Safe to call
   /// more than once.

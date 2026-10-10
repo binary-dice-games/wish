@@ -5,7 +5,8 @@
 
 #include "log_line_parser.hpp"
 
-#include <ui/forms/form.hpp>
+#include "modules/bdg/common/server/tool_form.hpp"
+
 #include <ui/ui_element.hpp>
 #include <ui/ui_importer.hpp>
 
@@ -64,7 +65,7 @@ namespace bdg::wish {
 /// `modules/bdg/desktop/tail/client/tail.cpp`'s own handler) -- so raising
 /// the count really does surface more history, not just relax future
 /// eviction.
-class tail : public form {
+class tail : public common::tool_form {
  public:
   explicit tail(bison::dynamic&& base);
   /// @brief Removes the secondary Controls panel; ~form() removes the main
@@ -134,14 +135,6 @@ class tail : public form {
     log_table_state table;
   };
 
-  /// @brief Import @p layout_json, assign every element an RMI id, run
-  /// @p wire to capture element pointers, and merge the tree under
-  /// @p root_key -- registering it as its own top-level object (with
-  /// `__path__`, so it can be named in the dock layout) unless it is the
-  /// main `internal_root_key_`, which form::init() registers itself.
-  void build_window(
-      const char* layout_json, const std::string& root_key, bison::key_t& window_id_out,
-      const std::function<void(ui_tree&)>& wire);
   /// @brief Remove the Controls panel and forget its key. Safe to call
   /// more than once.
   void remove_panel_objects();
