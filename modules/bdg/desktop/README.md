@@ -9,7 +9,7 @@ or individual modules with their own `WISH_MODULE_BDG_DESKTOP_<NAME>` option
 
 | Module | Description |
 |--------|-------------|
-| [bc](bc/README.md) | Four-function calculator; demonstrates self-contained server-side form logic. |
+| [bc](bc/README.md) | Calculator with standard, scientific and programmer layouts, memory and history; demonstrates self-contained server-side form logic. |
 | [tail](tail/README.md) | `tail`-like log viewer: colorized by severity, filterable by regex, with a dedicated tab per `[Tag]` token seen in the stream. |
 | [nano](nano/README.md) | Multi-file, syntax-highlighted text editor. |
 | [pix](pix/README.md) | Local image folder viewer: thumbnail grid + zoomable/pannable full preview, client-driven decode/resize/upload. |

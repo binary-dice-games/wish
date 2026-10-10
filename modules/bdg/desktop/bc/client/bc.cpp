@@ -32,7 +32,7 @@ struct bc_app_registrar {
         .name = "bc",
         .organization = WISH_MODULE_BDG_DESKTOP_BC_ORGANIZATION,
         .collection = WISH_MODULE_BDG_DESKTOP_BC_COLLECTION,
-        .description = "Four-function calculator; demonstrates self-contained form logic",
+        .description = "Calculator with standard, scientific and programmer layouts",
         .params = {},
         .run = run_bc,
     });

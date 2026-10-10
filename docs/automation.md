@@ -156,6 +156,20 @@ gotcha you hit and didn't record is one the next agent will hit again.
   whether the widget in question has children being added/removed outside
   the normal form-template/`order`-field path, and confirm
   `refresh_children_order()` is called after each such mutation.
+- **A widget that starts hidden (`"visible": false`) and is shown later can
+  render with rows missing** -- the `get_tree()` rect of its container is
+  shorter than its content and the last children have no rect at all.
+  `Button`, `Label` and most leaf classes have no measure formula: layouts
+  size them from their *last rendered* size, which is 0 for a widget that
+  has never rendered, and children laid out past the container's (too
+  small) rect are culled before they ever get a real size. Seen 2026-10 on
+  `bc`'s keypads (one per mode, toggled with `visible`). Fix: give the rows
+  and the container explicit `"height"` hints (a `VerticalLayout` honors a
+  child's `height`), and set a hidden sibling's hint to 0 while it is
+  hidden -- a hint reserves its height even on an invisible child.
+  `AlwaysAutoResize` does not help here (the window shrank instead of
+  growing); size the window explicitly via `width`/`height`, which take
+  effect when changed at runtime.
 - **A docked window that is behind another tab is a real widget with a
   real `path` and rect, but `visible: false` until its dock tab is
   brought to front** — `click()`/`type_text()` on any of its children

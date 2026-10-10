@@ -157,6 +157,10 @@ macro(wish_add_optional_test OPTION_NAME TESTNAME)
 endmacro()
 
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_BC                 test_bc                test_bc.cpp)
+if(TARGET test_bc)
+  # test_bc unit-tests bc's calc_engine directly (modules/bdg/desktop/bc/server/).
+  target_include_directories(test_bc PRIVATE ${CMAKE_SOURCE_DIR})
+endif()
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_TAIL               test_tail              test_tail.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_NANO               test_nano              test_nano.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_TOP                test_top               test_top.cpp)
