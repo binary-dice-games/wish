@@ -59,9 +59,22 @@ const char* kExpectedFiles[] = {
 // A sample of the general-purpose Material Symbols UI icons (see
 // resources/README.md for the full list).
 const char* kExpectedUiIcons[] = {
-    "icons/settings.png", "icons/search.png",   "icons/add.png",  "icons/save.png",
-    "icons/refresh.png",  "icons/copy.png",     "icons/play.png", "icons/stop.png",
-    "icons/terminal.png", "icons/database.png", "icons/zip.png",  "icons/tree.png",
+    "icons/settings.png",
+    "icons/search.png",
+    "icons/add.png",
+    "icons/save.png",
+    "icons/refresh.png",
+    "icons/copy.png",
+    "icons/play.png",
+    "icons/stop.png",
+    "icons/terminal.png",
+    "icons/database.png",
+    "icons/zip.png",
+    "icons/tree.png",
+    "icons/sync.png",
+    "icons/dark_mode.png",
+    "icons/key.png",
+    "icons/tag.png",
 };
 
 } // namespace
