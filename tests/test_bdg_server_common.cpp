@@ -164,7 +164,8 @@ class common_test_form : public common::tool_form {
          .width = 700,
          .command_width = 300,
          .closable = false,
-         .on_cleared = [this] { emit("log_cleared"_key); }});
+         .on_cleared = [this] { emit("log_cleared"_key); },
+         .on_copied = [this] { emit("log_copied"_key); }});
     viewer_.build(
         *this,
         internal_root_key_ + "_details",
@@ -429,7 +430,7 @@ TEST_F(BdgServerCommonTest, ConsoleEvictsOldestRowAndItsObjectsPastTheCap) {
     EXPECT_NE(row->as<bison::key_t>("__wish_id"_key), first_row_id);
 }
 
-TEST_F(BdgServerCommonTest, ConsoleClearEmptiesRowsRestartsSequenceAndNotifies) {
+TEST_F(BdgServerCommonTest, ConsoleCopyAndClearNotifyAndClearRestartsSequence) {
   call("append_log"_key, log_args("a", 0, true, ""));
   call("append_log"_key, log_args("b", 0, true, ""));
   auto copy = item_id(root_ + "_console.vbox.table", 1, "Copy Entry");
@@ -437,6 +438,10 @@ TEST_F(BdgServerCommonTest, ConsoleClearEmptiesRowsRestartsSequenceAndNotifies) 
   auto copy_rows = rows(root_ + "_console.vbox.table");
   auto ctx_menu = children(children(copy_rows[1]).back());
   EXPECT_EQ(ctx_menu[0]->as<std::string>("copy_text"_key), "b\nexit: 0\n");
+
+  size_t copied_since = srv_->events->mark();
+  fire_at(root_ + "_console", copy, "clicked"_key);
+  EXPECT_TRUE(srv_->events->wait_for("log_copied"_key, copied_since));
 
   auto clear = item_id(root_ + "_console.vbox.table", 0, "Clear Log");
   ASSERT_NE(clear.id, 0u);

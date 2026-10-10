@@ -87,14 +87,16 @@ destructive-only confirmation) — see
 
 ## 3. Key Abstractions
 
-### `KubectlFrontend` (server, `form`)
+### `KubectlFrontend` (server, `common::tool_form`)
 
 Bison class `"KubectlFrontend"` in the `"wish"` namespace. Owns **eight
-independently dockable `Window`s**, built exactly as `docker.cpp` builds
-its: `build_list_window()` for the four `list_window`s (Pods is
-`internal_root_key_`, the rest are `internal_root_key_ + "_deployments" /
-"_services" / "_nodes"`), `build_text_window()` for Logs / Describe /
-Console (`_logs` / `_describe` / `_console` / `_top`). The windows carry no
+independently dockable `Window`s**, built from the panels shared by the
+bdg tool forms (`modules/bdg/common/server/`), as docker's are: four
+`common::list_panel` list windows (Pods is `internal_root_key_`, the rest
+are `internal_root_key_ + "_deployments" / "_services" / "_nodes"`),
+`common::text_viewer_panel` for Logs / Describe (`_logs` / `_describe`),
+`common::console_panel` for Console (`_console`) and the Top window
+(`_top`) with `common::rolling_plot` graphs. The windows carry no
 `pos_x`/`pos_y`; `on_init()` seeds a default split (tabbed list/top column
 over a Console strip on the left, Logs + Describe tabbed on the right) via
 `form::set_default_dock_layout()` — same as `docker`, see
@@ -136,7 +138,7 @@ Per-window specifics:
   writes each update to a sandbox file exactly as docker's Logs/Inspect do
   (see [../docker/DESIGN.md §6](../docker/DESIGN.md)).
 - **Console** (`_console`): a FIFO-capped `Table` (# / Command / Exit /
-  Output, `kMaxConsoleRows = 500`) tracing every one-shot `kubectl`
+  Output, 500 rows) tracing every one-shot `kubectl`
   invocation, green/red by exit status. Each row's right-click
   `ContextMenu` offers "Copy Entry" and "Clear Console". `git`'s "Log"
   window, renamed to avoid clashing with **Logs**. Fed only by
@@ -148,9 +150,9 @@ Per-window specifics:
   holds one `PlotLine` per pod/node (child key 0 is the aggregate — "Total"
   for the additive pod plots, "Cluster avg" for the node % plots;
   per-entity lines added/removed at runtime, capped at
-  `kMaxStatsSeries = 15`) over a `kMaxStatsHistory = 120` rolling sample
+  `rolling_plot::kMaxSeries = 15`) over a `rolling_plot::kMaxHistory = 120` rolling sample
   history. Fed only by the `update_stats` RMI method, which
-  `kubectl_source`'s poll thread calls every ~10 s (§6). `stats_plot`
+  `kubectl_source`'s poll thread calls every ~10 s (§6). `common::rolling_plot`
   tracks each line's `child_key` explicitly (`dynamic::size()` goes sparse
   once lines are removed — `top`'s per-row-key note). Each `Plot`'s legend
   is placed below the frame as a single vertical column (`legend_location:
@@ -403,11 +405,11 @@ Depended on by: nothing else in wish; a leaf module.
 `tests/test_kubectl.cpp` are in place; `test_kubectl` and
 `test_dev_common` pass.
 
-- Pods / Deployments / Services / Nodes: four dockable list windows on the
-  shared `list_window` / `build_list_window()` / `add_list_row()` path, each
+- Pods / Deployments / Services / Nodes: four dockable `common::list_panel`
+  windows, each
   with a `...` action menu (state-aware for nodes); Pods name / namespace /
   phase filters; Deployments and Services name / namespace filters.
-- Logs / Describe: two dockable text windows (`build_text_window()`).
+- Logs / Describe: two dockable `common::text_viewer_panel` windows.
   `logs_requested` runs `kubectl logs --tail N --timestamps` with a 2 s
   re-poll thread while "Follow" is checked; `describe_requested` runs
   `kubectl describe <kind>` (verbatim). Both carry a `name`/`namespace`

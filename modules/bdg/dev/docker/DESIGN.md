@@ -107,17 +107,15 @@ This directory owns:
 
 ### `DockerFrontend` (server, `form`)
 
-Bison class `"DockerFrontend"` in the `"wish"` namespace. Owns **eight
-independently dockable `Window`s** (`form::init()` auto-registers only one
-top-level root; the others are registered by hand in `on_init()` exactly
-as `git.cpp`'s `build_*_window()` and `editor.cpp`'s Help/Log windows do —
-`sess().ui_objects.merge(tree, root_key)` +
-`sess().top_level_objects[root_key]` + `sess().top_level_handlers[root_key]
-= this` + `(*root)["__path__"] = root_key`). The four list windows
-(Containers / Images / Volumes / Networks) share one `build_list_window()`
-/ `list_window` / `list_row` / `add_list_row()` path; the `...` menu
-dispatch keys on a `{scope, key, action}` `row_action`, so one
-`on_event()` clause routes every window's actions. Root keys are
+Bison class `"DockerFrontend"` in the `"wish"` namespace, a
+`common::tool_form` built on the panels shared by the bdg tool forms
+(`modules/bdg/common/server/`). Owns **eight independently dockable
+`Window`s** (`form::init()` auto-registers only the main root; the others
+register themselves through `tool_form::build_window()`). The four list
+windows (Containers / Images / Volumes / Networks) are
+`common::list_panel<entity>`s; each row's `...` menu items carry a callback
+into `run_row_action(entity, action)`, so one function routes every
+window's actions. Root keys are
 `internal_root_key_` and `internal_root_key_ + "_images" / "_volumes" /
 "_networks" / "_logs" / "_inspect" / "_console" / "_stats"`.
 
@@ -144,8 +142,8 @@ dispatch keys on a `{scope, key, action}` `row_action`, so one
 - **Inspect** (`internal_root_key_ + "_inspect"`): toolbar (a target
   `Label`, Refresh), a read-only `TextEditor` (`language: "json"`) showing
   `docker inspect` output. See §6 for how the text reaches the editor.
-- **Console** (`internal_root_key_ + "_console"`): a FIFO-capped `Table`
-  (# / Command / Exit / Output, `kMaxConsoleRows = 500`) tracing every
+- **Console** (`internal_root_key_ + "_console"`, `common::console_panel`):
+  a FIFO-capped `Table` (# / Command / Exit / Output, 500 rows) tracing every
   one-shot `docker` invocation, green/red by exit status. Each row's
   right-click `ContextMenu` offers "Copy Entry" (clipboard, no round trip)
   and "Clear Console". `git`'s "Log" window, renamed to avoid clashing
@@ -154,11 +152,13 @@ dispatch keys on a `{scope, key, action}` `row_action`, so one
   `Plot`s (CPU % and Memory %) and a current-values `Table` (Name / CPU % /
   Mem % / Mem Usage). Each `Plot` holds one `PlotLine` per running
   container (child key 0 is the aggregate "Total" line; per-container lines
-  are added/removed at runtime, capped at `kMaxStatsSeries = 15` by current
-  value) with a `kMaxStatsHistory = 120` rolling sample history. Fed only
+  are added/removed at runtime, capped at `rolling_plot::kMaxSeries = 15`
+  by current value) with a `rolling_plot::kMaxHistory = 120` rolling
+  sample history. Fed only
   by the `update_stats` RMI method, which `docker_source`'s poll thread
-  calls every ~3 s (§6). `dynamic::size()` is unusable on the `Plot`
-  children map once lines have been removed (sparse keys) — `stats_plot`
+  calls every ~3 s (§6). Both plots are `common::rolling_plot`s (shared
+  with kubectl's Top window). `dynamic::size()` is unusable on the `Plot`
+  children map once lines have been removed (sparse keys) — `rolling_plot`
   tracks each line's `child_key` explicitly, `top`'s per-row-key note.
   Each `Plot`'s legend is placed below the frame as a single vertical
   column (`legend_location: South` + `legend_flags: Outside`): ImPlot
@@ -229,14 +229,14 @@ refresh_all() (client):  -- each command uses a TAB-delimited Go --format templa
                        -> update_networks({networks:[...]})
 
 DockerFrontend.update_containers (server):
-  clear existing TableRow children (walk + erase by class)
-  one add_container_row() per entry, each building TableRow{Label state-dot,
-    Label x5, MenuButton + MenuItem x N}, wiring each MenuItem's __wish_id
-    into menu_action_targets_[{scope:container, key:id, action}]
-  local 0-based row-key counter (dynamic::size() gotcha, §6)
+  containers_.clear() (list_panel: erases every row it added + its objects)
+  one containers_.add(entity, cells, menu) per entry: TableRow{Label x5,
+    MenuButton + MenuItem x N}, each MenuItem's click handler calling
+    run_row_action(entity, action)
+  (list_panel keeps its own 0-based row keys -- dynamic::size() gotcha, §6)
 
-Row action (MenuItem "clicked" -> DockerFrontend.on_event):
-  menu_action_targets_[id] -> {scope, key, action}
+Row action (MenuItem "clicked" -> DockerFrontend.on_event -> dispatch_click):
+  run_row_action(entity, action)
     destructive (stop/kill/remove/prune) : show_confirm(msg, [emit <scope>_action_requested{...}])
     reversible  (start/restart/pause/...) : emit <scope>_action_requested{key, action} directly
     logs    : emit logs_requested{id, follow:false, lines:<Lines field>}
@@ -355,14 +355,13 @@ use only the methods/events above).
   `rebuild_graph_table()` use.
 
 - **Destructive actions go through the built-in `MessageBox` form, not a
-  hand-rolled dialog.** `show_confirm(message, on_confirm)` is a direct
-  port of `git_repo::show_confirm()`:
+  hand-rolled dialog.** `tool_form::show_confirm(message, on_yes)` (shared
+  by every bdg tool form) runs
   `form::instantiate_child_form<message_box>("MessageBox", {title,
-  message, icon:"warning", buttons:"yes_no"}, on_result)`, with the
-  `on_result` callback running `on_confirm()` only when `payload.button ==
-  "yes"`. One `std::shared_ptr<message_box> confirm_dialog_` member holds
-  it; a second destructive click just overwrites that member (the stale
-  instance's destructor tears itself down). `MessageBox` is a genuine
+  message, icon:"warning", buttons:"yes_no"}, on_result)`, calling
+  `on_yes()` only when `payload.button == "yes"`. A second destructive
+  click just replaces the open dialog (the stale instance's destructor
+  tears itself down). `MessageBox` is a genuine
   `Window.modal = true` blocking overlay that owns and closes its own
   tree; `DockerFrontend::on_event()` needs no confirm-specific branch. The
   gated set is: container `stop` / `kill` / `remove`, image / volume /
@@ -451,7 +450,7 @@ use only the methods/events above).
 - **The Logs / Inspect body is a read-only `TextEditor`, fed by the
   server form.** Earlier versions used a single-column `Table` of `Label`
   lines (no selection, no highlighting). A `TextEditor` displays a *file*,
-  so `set_editor_text()` writes the `text` of each `update_logs` /
+  so `common::text_viewer_panel::set_text()` writes the `text` of each `update_logs` /
   `update_inspect` call into the session sandbox and points the editor's
   `file_path` at it. The form writes the file itself rather than having the
   client `upload_file` it (curl's pattern), which keeps the RMI contract
@@ -550,13 +549,12 @@ Depended on by: nothing else in wish; this is a leaf module.
 `server/docker.{hpp,cpp}`, `client/docker*.{hpp,cpp}`,
 `tests/test_docker.cpp` are in place.
 
-- Containers / Images / Volumes / Networks: four dockable list windows on
-  one shared `list_window` / `build_list_window()` / `add_list_row()`
-  path, each with a state-aware `...` action menu; Containers text + state
+- Containers / Images / Volumes / Networks: four dockable
+  `common::list_panel` windows, each with a state-aware `...` action menu; Containers text + state
   filters; inline pull-image / create-volume fields; built-in networks get
   an Inspect-only menu.
-- Logs / Inspect: two dockable text windows (`build_text_window()` —
-  toolbar + single-column scrolling `Table` of `Label` lines).
+- Logs / Inspect: two dockable `common::text_viewer_panel` windows
+  (toolbar + read-only `TextEditor`).
   `logs_requested` runs `docker logs --tail N --timestamps` with a
   `top`-style 2 s re-poll thread while "Follow" is checked;
   `inspect_requested` runs `docker <kind> inspect` (JSON shown verbatim).

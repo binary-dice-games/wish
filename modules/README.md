@@ -18,14 +18,24 @@ modules/<organization>/<collection>/<module>/
 ```
 
 Code an organization's modules share without being a module itself lives
-in `modules/<org>/common/` -- e.g. `modules/bdg/common/command_worker.hpp`,
-the background job runner with a modal progress dialog that the `bdg/dev`
-tools and `mc` use, and `process.hpp`, which runs a command and captures its
-output. It is never registered with `wish_add_collection()` and has no
-`server/`/`client/`/`resources/embedded/` subdirectory, so the build never
-treats it as a collection or a module; `wish_add_module()` compiles its
-sources into the client of each enabled module of that organization, and
-modules just `#include` it.
+in `modules/<org>/common/`. It is never registered with
+`wish_add_collection()`, so the build never treats it as a collection or a
+module, and modules just `#include` it:
+
+- `common/*.{hpp,cpp}` is client code, compiled into the client of each
+  enabled module of that organization -- e.g.
+  `modules/bdg/common/command_worker.hpp`, the background job runner with a
+  modal progress dialog that the `bdg/dev` tools and `mc` use, and
+  `process.hpp`, which runs a command and captures its output.
+- `common/server/*.{hpp,cpp}` is server code, compiled into `wish_server`
+  once when any module of that organization with a `server/` is enabled --
+  e.g. `modules/bdg/common/server/tool_form.hpp`, the base class of every
+  bdg form (window building, click dispatch, confirm / message dialogs),
+  and the panels the tools share: `console_panel` (the command-trace
+  Console window), `list_panel` (toolbar + status + table with per-row
+  `...` menus), `text_viewer_panel` (read-only Logs / Details text) and
+  `rolling_plot` (live per-series graphs). A new tool should build on
+  these rather than copy another module's version.
 
 A module needs none, some, or all three of `server/`, `client/`,
 `resources/embedded/` — there's no assumption that any particular

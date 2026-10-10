@@ -172,9 +172,9 @@ docker-style full rebuild:
 
 - `kv_table_add_row()` appends one row (an "+ Add ..." button per table).
 - `kv_table_remove_row()` erases exactly the row whose "x" button was
-  clicked (`kv_remove_targets_`, a widget-id → `kv_table*` map, same shape
-  as docker's `menu_action_targets_`) — every other row's live-typed text
-  is untouched.
+  clicked (each "x" button's click handler, registered through
+  `tool_form::on_click()`, names its own `kv_table` and row) — every other
+  row's live-typed text is untouched.
 - `kv_table_load()` is the one place that *does* fully clear-and-rebuild a
   `kv_table` — used only when deliberately overwriting the builder from
   stored data (`update_request_builder`, `update_environment_vars`).
