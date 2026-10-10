@@ -56,6 +56,14 @@ const char* kExpectedFiles[] = {
     "icons/document.png", "icons/code.png",   "fonts/default.ttf", "fonts/mono.ttf",
 };
 
+// A sample of the general-purpose Material Symbols UI icons (see
+// resources/README.md for the full list).
+const char* kExpectedUiIcons[] = {
+    "icons/settings.png", "icons/search.png",   "icons/add.png",  "icons/save.png",
+    "icons/refresh.png",  "icons/copy.png",     "icons/play.png", "icons/stop.png",
+    "icons/terminal.png", "icons/database.png", "icons/zip.png",  "icons/tree.png",
+};
+
 } // namespace
 
 // ── extract_to — happy path ───────────────────────────────────────────────────
@@ -65,6 +73,19 @@ TEST(ResourceStore, ExtractToCreatesExpectedFiles) {
   ASSERT_TRUE(extract_to(dir));
 
   for (const char* rel : kExpectedFiles) {
+    auto path = dir / rel;
+    EXPECT_TRUE(std::filesystem::exists(path)) << "missing: " << rel;
+    EXPECT_GT(std::filesystem::file_size(path), 0U) << "zero-size: " << rel;
+  }
+
+  std::filesystem::remove_all(dir);
+}
+
+TEST(ResourceStore, ExtractToIncludesUiIcons) {
+  auto dir = make_temp_dir("ui_icons");
+  ASSERT_TRUE(extract_to(dir));
+
+  for (const char* rel : kExpectedUiIcons) {
     auto path = dir / rel;
     EXPECT_TRUE(std::filesystem::exists(path)) << "missing: " << rel;
     EXPECT_GT(std::filesystem::file_size(path), 0U) << "zero-size: " << rel;

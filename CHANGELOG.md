@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- 50 built-in Material Symbols UI icons under `res/icons/` (e.g. `settings.png`, `search.png`, `save.png`, `play.png`, `terminal.png`), listed in `resources/README.md`.
 - Persistent stores of bison objects kept across sessions and server restarts (see [docs/persistent-store.md](docs/persistent-store.md)):
   - A **user store** per authenticated identity (`~/.wish/users/<identity>.bison`), readable and writable by that identity's clients via `has_user_store()` / `user_store_get` / `user_store_set` / `user_store_erase` / `user_store_keys`.
   - A **server store** (`~/.wish/server_store.bison`) for server-side code only (`server::server_store()`, `context::server_store`).
