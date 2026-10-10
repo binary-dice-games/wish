@@ -95,6 +95,10 @@ class c_abi_app_host : public wish::wish_app_host {
     return client_.download_file(name, std::move(on_progress));
   }
 
+  std::future<std::string> create_temp_dir(const std::string& qualified_app) override {
+    return client_.create_temp_dir(qualified_app);
+  }
+
   bool has_user_store() const override {
     return client_.has_user_store();
   }
@@ -186,6 +190,7 @@ struct wish_client_handle_ {
 void c_abi_client::on_session() {
   if (state_->pending_app_info_) {
     c_abi_app_host host(*this, state_->pending_app_args_);
+    host.set_running_app(state_->pending_app_info_);
     state_->active_host_ = &host;
     try {
       state_->pending_app_info_->run(host);

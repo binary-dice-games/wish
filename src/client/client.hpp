@@ -261,6 +261,23 @@ class client : public bison::rmi::client {
   std::future<std::vector<std::string>> list_files(const std::string& path = "");
 
   /**
+   * @brief Create a new temporary directory, owned by this session, in the
+   *        private directory of the tool @p qualified_app.
+   *
+   * Use it for a tool's scratch copies instead of the shared sandbox root,
+   * so they never collide with other tools' files or other sessions. The
+   * server removes the directory when the session ends.
+   *
+   * @param qualified_app  The tool's `qualified_app_name()`, e.g.
+   *                       `"bdg/desktop/nano"`.
+   * @return Future resolved with the directory's sandbox-relative path,
+   *         e.g. `"private/apps/bdg.desktop.nano/tmp/<hex>"`.
+   * @throws std::runtime_error (via the resolved future) if @p qualified_app
+   *         is malformed.
+   */
+  std::future<std::string> create_temp_dir(const std::string& qualified_app);
+
+  /**
    * @brief Apply a named built-in style preset for this session.
    * @param name  `"dark"`, `"light"`, or `"classic"`.
    *

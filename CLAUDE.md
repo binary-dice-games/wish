@@ -386,15 +386,16 @@ Every client session has an isolated temporary directory (`session::resource_dir
 Widget fields that accept file paths (e.g. `Image::src`, `TextEditor::file_path`)
 **must** be validated against this sandbox before any file I/O:
 
-- **Relative paths** are resolved with `resolve_widget_path()` (defined in
-  `src/imgui/imgui_ui_renderer.hpp`), which uses purely lexical normalization to
-  verify the resolved path stays inside `resource_dir`. Never skip this check.
+- **Relative paths** are resolved with `file_service::resolve_path()` (or
+  `file_service::resolve_or_fetch()` for fields that also accept URLs), which
+  uses purely lexical normalization to verify the resolved path stays inside
+  `resource_dir`. Never skip this check.
 - **Absolute paths** are rejected by default. They are permitted only when the
   server has been explicitly configured with
   `wish::server::set_allow_absolute_paths(true)` — which is intended exclusively
   for same-process (`memory_transport`) deployments.
 - **Never** construct file paths from untrusted client input without going through
-  `resolve_widget_path()` or `file_service::resolve_path()`.  A path like
+  `file_service::resolve_path()`.  A path like
   `../../etc/passwd` must be rejected, not silently truncated or accessed.
 
 ### Adding new file-accessing widgets
@@ -402,8 +403,8 @@ Widget fields that accept file paths (e.g. `Image::src`, `TextEditor::file_path`
 Any new widget whose render function reads or writes a file must:
 
 1. Accept only a **relative** path field by default.
-2. Call `resolve_widget_path(path, s.resource_dir, s.allow_absolute_paths)` and
-   return early if the result is empty.
+2. Call `file_service::resolve_path(path, s.resource_dir, s.allow_absolute_paths)`
+   and return early if the result is empty.
 3. Document the field's security contract in the registration attributes
    (see `src/ui/ui_elements/text_editor.cpp` as a reference).
 
@@ -420,6 +421,18 @@ is a ready-to-use, trust-the-client module for local/single-user deployments;
 untrusted or remote deployments must supply their own `auth_module_iface`
 that verifies the client's claimed identity. See `src/auth/DESIGN.md` for
 the full design and the sandbox-escape guard applied to the identity string.
+
+### Tool scratch files: never at the sandbox root
+
+The sandbox root is shared by every tool and, with a persistent sandbox, by
+every session of the same identity. A tool's scratch copies and temporary
+files go in a session-owned temp dir inside its private directory
+(`private/apps/<org>.<collection>.<name>/tmp/<random>/`):
+`wish_app_host::create_app_temp_dir()` from client code,
+`sess().file_service->create_temp_dir("<org>/<collection>/<name>")` from a
+server form. The server deletes it at session end. Never derive a shared
+file name from a form root key or counter: they are only unique within one
+session. See `src/auth/DESIGN.md`.
 
 ### Uploads and downloads
 

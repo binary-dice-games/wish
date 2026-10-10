@@ -17,6 +17,9 @@ using namespace bison;
 
 namespace {
 
+// Owner of the panel's private directory (see file_service::app_private_dir()).
+constexpr const char* kTextViewerApp = "bdg/common/text_viewer";
+
 constexpr const char* kTextViewerLayout = R"json({
   "type": "Window", "title": "Details", "width": 820, "height": 420,
   "closable": true,
@@ -42,10 +45,16 @@ void text_viewer_panel::build(
     text_viewer_options options,
     const std::function<void(ui_tree&)>& wire) {
   root_key_ = root_key;
-  file_prefix_ = "private/" + owner.internal_root_key_ + "_" + options.file_stem + "_";
+  // Form root keys are unique only within one session, so the files go in a
+  // temp directory owned by this session: sessions sharing a persistent
+  // sandbox cannot overwrite each other's, and the server removes it at
+  // session end. The "private/" prefix keeps them out of the browser cache.
+  auto& sess = owner.sess();
+  std::string dir = sess.file_service ? sess.file_service->create_temp_dir(kTextViewerApp) : std::string{"private"};
+  file_prefix_ = dir + "/" + owner.internal_root_key_ + "_" + options.file_stem + "_";
   // Captured now: remove_file() runs on close, outside dispatch, where sess()
   // is unavailable; resource_dir is fixed for the session.
-  resource_dir_ = owner.sess().resource_dir;
+  resource_dir_ = sess.resource_dir;
 
   const bool custom_layout = options.layout_json != nullptr;
   owner.build_window(

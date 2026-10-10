@@ -413,6 +413,43 @@ module, or none.
   directory that already has previously-uploaded files at its top level
   cannot clobber them.
 
+### Sandbox layout: shared root, per-tool private directories
+
+A persistent directory is shared by every tool the identity runs and by
+all of its concurrent sessions, so tools must not drop scratch files at its
+top level: names collide (two nano sessions each uploading `notes.txt`),
+and anything a crashed or careless tool leaves behind confronts every
+later tool. The layout is therefore:
+
+```
+<root>/<identity>/
+  ...                                  shared: the user's files, browsed by mc/pix/FileDialog
+  res/                                 embedded assets (populate_resource_dir())
+  private/apps/<org>.<collection>.<name>/
+    tmp/<random hex>/                  one per file_service::create_temp_dir() call
+```
+
+- `file_service::app_private_dir(qualified_app)` maps a tool's
+  `qualified_app_name()` to its private directory. It validates each
+  `/`-separated segment (`[A-Za-z0-9_-]`, 1-64 chars), so a tool name can
+  never escape or alias another tool's directory (`.` is the joiner, never
+  part of a segment).
+- `file_service::create_temp_dir(qualified_app)` (RMI `create_temp_dir`,
+  `client::create_temp_dir`, `wish_app_host::create_app_temp_dir()`) makes
+  a fresh directory with a random name each call. It is owned by the
+  session: the `file_service` records it and deletes it in its destructor,
+  i.e. at session end. Random names, not form root keys or counters,
+  because those are only unique within one session.
+- The root stays shared on purpose. Rebasing `resource_dir` to the tool's
+  private directory at connect time was rejected: desktop mode multiplexes
+  many tools into one upstream session, and tools such as mc and pix exist
+  to work on the user's shared files.
+- Under `private/` so tool scratch output (which can carry secrets) is
+  never offered to the browser cache (`src/web/DESIGN.md`).
+- A tool that keeps state across sessions should use the user store
+  (`docs/persistent-store.md`), or files directly in its private directory
+  outside `tmp/`.
+
 ---
 
 ## Tests

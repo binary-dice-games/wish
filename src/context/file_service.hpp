@@ -143,6 +143,47 @@ class file_service : public bison::dynamic {
    */
   void erase(const std::string& name);
 
+  // ── Per-tool private directories ─────────────────────────────────────────
+  //
+  // The sandbox root is shared by every tool a user runs and, with a
+  // persistent sandbox, by every session of that user. Each tool keeps its
+  // own scratch files and state apart from it, under
+  // `private/apps/<org>.<collection>.<name>/` (see app_private_dir()).
+
+  /**
+   * @brief Sandbox-relative private directory of the tool @p qualified_app.
+   *
+   * Pure: validates and formats only, with no filesystem access.
+   *
+   * @param qualified_app  `qualified_app_name()` of the tool, e.g.
+   *                       `"bdg/desktop/nano"`, or a bare name (`"nano"`).
+   *                       Each `/`-separated segment must be 1-64 characters
+   *                       from `[A-Za-z0-9_-]`.
+   * @return For example `"private/apps/bdg.desktop.nano"`, or an empty string if
+   *         @p qualified_app is malformed.
+   */
+  static std::string app_private_dir(const std::string& qualified_app);
+
+  /**
+   * @brief Create a new, empty temporary directory owned by this session,
+   *        inside the private directory of the tool @p qualified_app.
+   *
+   * Every call returns a different directory,
+   * `<app_private_dir()>/tmp/<random hex>`, so tools and sessions never
+   * collide, even when several sessions share one persistent sandbox. The
+   * directory and everything in it are removed when this file service is
+   * destroyed (at session end).
+   *
+   * @param qualified_app  The tool's qualified name; see app_private_dir().
+   * @return The directory's path, relative to the resource directory.
+   * @throws std::runtime_error if @p qualified_app is malformed or the
+   *         directory cannot be created.
+   */
+  std::string create_temp_dir(const std::string& qualified_app);
+
+  /// @brief Removes the directories create_temp_dir() made in this session.
+  ~file_service() override;
+
   /**
    * @brief Validate and resolve @p name against @p resource_dir.
    *
@@ -206,6 +247,10 @@ class file_service : public bison::dynamic {
 
  private:
   std::filesystem::path resource_dir_;
+
+  /// Directories made by create_temp_dir(), removed by the destructor. Only
+  /// touched during RMI dispatch, which already holds the session wlock.
+  std::vector<std::filesystem::path> temp_dirs_;
 
   /// @brief Resolve @p name relative to `resource_dir_`, throwing if the
   ///        result would escape the sandbox.

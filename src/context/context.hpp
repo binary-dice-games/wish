@@ -105,6 +105,12 @@ struct context : public bison::rmi::context {
   /// resource cache (see `web_renderer`'s texture-check handshake in
   /// `src/web/DESIGN.md`), even though it is still cached server-side like
   /// any other resource.
+  ///
+  /// Tools keep their own scratch files under
+  /// `private/apps/<org>.<collection>.<name>/` (see
+  /// `file_service::app_private_dir()` / `create_temp_dir()`), not at the
+  /// root, which is shared by every tool and, when persistent, by every
+  /// session of the same identity.
   std::filesystem::path resource_dir;
 
   /// When `true`, the destructor does not delete `resource_dir` -- it is a

@@ -63,6 +63,11 @@ Keep one entry per logical setting group rather than one huge entry: each
 write rewrites the whole store file, and keeping entries small also keeps
 concurrent tools from overwriting each other's data.
 
+The same rule applies to files: a tool keeps its own files in its private
+sandbox directory, `private/apps/<org>.<collection>.<name>/`, and scratch
+copies in a session-owned temp dir from `create_temp_dir()`, never at the
+shared sandbox root (see `src/auth/DESIGN.md`).
+
 ## Durability and concurrency
 
 - Each store file is loaded once, when it is first used, and rewritten after

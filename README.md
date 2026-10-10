@@ -119,9 +119,11 @@ New to wish? [docs/tutorial.md](docs/tutorial.md) walks through building, runnin
 Every client session gets an isolated, sandboxed temporary directory
 (`session::resource_dir`) for uploaded/served files; absolute paths are
 rejected by default and file paths are never trusted without going through
-`resolve_widget_path()` / `file_service::resolve_path()`. A server can opt
-into a persistent, identity-keyed directory per client via an
-`auth_module_iface` instead of the default throwaway temp dir. See
+`file_service::resolve_path()`. A server can opt into a persistent,
+identity-keyed directory per client via an `auth_module_iface` instead of the
+default throwaway temp dir. Tools keep scratch files in session-owned temp
+dirs under their own `private/apps/<tool>/` directory
+(`create_temp_dir()`), not at the shared root. See
 `CLAUDE.md`'s "Security Considerations for AI Code Assist" section and
 [src/auth/DESIGN.md](src/auth/DESIGN.md) for the full design.
 
