@@ -14,6 +14,9 @@
  *
  * `--save_defaults` writes the flags given on the command line into the
  * entry, and `--clear_defaults` erases it. See docs/cli.md.
+ *
+ * Every registered flag can be saved except the ones a mode excludes (see
+ * `config_flag_names()`), so a new flag needs no registration here.
  */
 #pragma once
 
@@ -30,15 +33,26 @@ inline constexpr const char* kServerConfigEntry = "wish.cli.server";
 inline constexpr const char* kStandaloneConfigEntry = "wish.cli.standalone";
 
 /**
+ * @brief Names of the registered flags that can be saved: every flag known
+ *        to gflags except
+ *        - @p excluded_flags (the mode's own exclusions);
+ *        - `--save_defaults`, `--clear_defaults` and `--store_dir`;
+ *        - gflags' built-in flags (`--help`, `--flagfile`, ...);
+ *        - secrets: flags named `*password` or `*_pem`.
+ * @return Names in gflags' order (by defining file, then name).
+ */
+std::vector<std::string> config_flag_names(const std::vector<std::string>& excluded_flags);
+
+/**
  * @brief Applies the flag values saved in @p store entry @p entry_name as
- *        the defaults of the flags in @p flag_names.
+ *        the defaults of the flags in `config_flag_names(excluded_flags)`.
  *
  * A saved value is applied only to a flag that was neither given on the
  * command line nor set through its `WISH_<FLAG>` environment variable. It
  * is applied with `gflags::SET_FLAGS_DEFAULT`, so the flag still counts as
  * "not given explicitly". A saved value gflags can't parse (e.g. `abc` for
- * an int flag) is skipped with a warning on stderr. Unregistered flag names
- * are ignored.
+ * an int flag) is skipped with a warning on stderr. Saved fields of excluded
+ * or no longer registered flags are ignored.
  *
  * @note Call after `gflags::ParseCommandLineFlags()`.
  * @return Names of the flags whose value now comes from the store.
@@ -46,16 +60,16 @@ inline constexpr const char* kStandaloneConfigEntry = "wish.cli.standalone";
 std::vector<std::string> apply_config_store_defaults(
     const persistent_store& store,
     const std::string& entry_name,
-    const std::vector<std::string>& flag_names);
+    const std::vector<std::string>& excluded_flags);
 
 /**
- * @brief Saves every flag in @p flag_names that was given on the command
- *        line into @p store entry @p entry_name.
+ * @brief Saves every flag in `config_flag_names(excluded_flags)` that was
+ *        given on the command line into @p store entry @p entry_name.
  *
  * Values are merged over the entry's existing ones, so flags not given this
  * time keep their saved value. `bool` and `int32` flags are stored as
  * `bool`/`int32_t` fields, all others as `std::string`; each field is named
- * after its flag. Nothing is written when no listed flag was given.
+ * after its flag. Nothing is written when no saveable flag was given.
  *
  * @note Call after `gflags::ParseCommandLineFlags()`.
  * @return Names of the saved flags.
@@ -64,7 +78,7 @@ std::vector<std::string> apply_config_store_defaults(
 std::vector<std::string> save_config_store_defaults(
     persistent_store& store,
     const std::string& entry_name,
-    const std::vector<std::string>& flag_names);
+    const std::vector<std::string>& excluded_flags);
 
 /**
  * @brief CLI helper: opens the server store under @p store_dir, handles
@@ -77,13 +91,13 @@ std::vector<std::string> save_config_store_defaults(
  *
  * @param store_dir    `--store_dir`; empty selects `default_store_dir()`.
  * @param entry_name   `kServerConfigEntry` or `kStandaloneConfigEntry`.
- * @param flag_names   Flags that may be saved and loaded.
+ * @param excluded_flags  The mode's flags that are never saved or loaded.
  * @param log_prefix   Message prefix, e.g. `"[wish server]"`.
  */
 void load_cli_config(
     const std::string& store_dir,
     const std::string& entry_name,
-    const std::vector<std::string>& flag_names,
+    const std::vector<std::string>& excluded_flags,
     const std::string& log_prefix);
 
 } // namespace bdg::wish

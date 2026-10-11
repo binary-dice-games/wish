@@ -71,13 +71,14 @@ namespace {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-// Flags --save_defaults may persist. Left out: --store_dir (it locates the
-// store), secrets and inline PEMs, and the debug/security switches
-// (--debugger, --profiling_*, --allow_absolute_paths).
-const std::vector<std::string> kServerConfigFlags = {
-    "transport", "host",         "port",      "name",     "cmd",       "verbose",     "theme",
-    "lang",      "title",        "width",     "height",   "font_size", "renderer",    "web_port",
-    "web_bind",  "sandbox_root", "cert_file", "key_file", "ca_file",   "client_auth",
+// Flags --save_defaults never saves, on top of the ones config_flag_names()
+// always leaves out (--store_dir, secrets, gflags' own): the debug and
+// security switches. Every other flag can be saved.
+const std::vector<std::string> kServerExcludedFlags = {
+    "debugger",
+    "profiling_dir",
+    "profiling_autostart",
+    "allow_absolute_paths",
 };
 
 static std::unique_ptr<renderer> make_renderer() {
@@ -128,7 +129,7 @@ int wish_server_app::run(int argc, char** argv) {
   // Command line > WISH_<FLAG> env var > saved default > built-in default.
   apply_env_flag_defaults();
   gflags::ParseCommandLineFlags(&parse_argc, &parse_argv, true);
-  load_cli_config(FLAGS_store_dir, kServerConfigEntry, kServerConfigFlags, "[wish server]");
+  load_cli_config(FLAGS_store_dir, kServerConfigEntry, kServerExcludedFlags, "[wish server]");
   return bison::app::server_app::run(argc, argv);
 }
 

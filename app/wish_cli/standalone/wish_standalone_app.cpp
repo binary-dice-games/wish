@@ -162,23 +162,22 @@ std::shared_ptr<logger> make_standalone_logger() {
       log_dir / "standalone.log");
 }
 
-// Flags --save_defaults may persist. Left out: --store_dir (it locates the
-// store), the app selection (--run/--list/--describe), the rejected
-// transport flags, and the debug/security switches (--debugger,
-// --profiling_*, --allow_absolute_paths).
-const std::vector<std::string> kStandaloneConfigFlags = {
-    "verbose",
-    "theme",
-    "lang",
-    "title",
-    "width",
-    "height",
-    "font_size",
-    "renderer",
-    "web_port",
-    "web_bind",
-    "sandbox_root",
-    "username",
+// Flags --save_defaults never saves, on top of the ones config_flag_names()
+// always leaves out (--store_dir, secrets, gflags' own): the app selection,
+// the rejected transport flags, and the debug and security switches. Every
+// other flag can be saved.
+const std::vector<std::string> kStandaloneExcludedFlags = {
+    "run",
+    "list",
+    "describe",
+    "transport",
+    "host",
+    "port",
+    "name",
+    "debugger",
+    "profiling_dir",
+    "profiling_autostart",
+    "allow_absolute_paths",
 };
 
 /// @brief Reject flags that only make sense with a real transport — standalone
@@ -244,7 +243,7 @@ int wish_standalone_app::run(int argc, char** argv) {
     }
   }
 
-  load_cli_config(FLAGS_store_dir, kStandaloneConfigEntry, kStandaloneConfigFlags, "[wish standalone]");
+  load_cli_config(FLAGS_store_dir, kStandaloneConfigEntry, kStandaloneExcludedFlags, "[wish standalone]");
   // `--save_defaults`/`--clear_defaults` alone only update the saved defaults.
   if (FLAGS_run.empty() && (FLAGS_save_defaults || FLAGS_clear_defaults))
     return 0;

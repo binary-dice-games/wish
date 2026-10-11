@@ -75,8 +75,14 @@ store is read after the command line is parsed, since `--store_dir` locates
 it, and before `server_app::run()` builds the transport. `load_cli_config()`
 closes its store instance before the server opens its own. `server_app::run()`
 parses argv again, so `wish_server_app::run()` parses a copy first (gflags
-strips argv in place). Each mode lists the flags it may save; secrets and
-debug/security switches are left out.
+strips argv in place). The saveable flags come from `gflags::GetAllFlags()`
+minus an exclusion list, so a new flag is saveable with no extra
+registration: `config_flag_names()` always leaves out the store's own flags,
+gflags' built-ins and secrets (`*password`, `*_pem`), and each mode adds its
+own exclusions (debug/security switches; for standalone also the app
+selection and transport flags). An exclusion list was preferred to an
+allow list because forgetting to add a new flag to an allow list fails
+silently.
 
 ---
 

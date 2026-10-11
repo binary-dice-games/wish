@@ -11,6 +11,7 @@
 #include <gflags/gflags.h>
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <filesystem>
 #include <string>
@@ -22,7 +23,9 @@ DEFINE_string(test_cfg_store, "hard_store", "config_flags test flag");
 DEFINE_string(test_cfg_none, "hard_none", "config_flags test flag");
 DEFINE_int32(test_cfg_int, 5, "config_flags test flag");
 DEFINE_bool(test_cfg_bool, false, "config_flags test flag");
-DEFINE_string(test_cfg_unlisted, "hard_unlisted", "config_flags test flag, not in the saveable list");
+DEFINE_string(test_cfg_unlisted, "hard_unlisted", "config_flags test flag, excluded from saving");
+DEFINE_string(test_cfg_key_password, "", "config_flags test flag, a secret");
+DEFINE_string(test_cfg_cert_pem, "", "config_flags test flag, a secret");
 
 DECLARE_bool(save_defaults);
 DECLARE_bool(clear_defaults);
@@ -32,14 +35,10 @@ namespace wish = bdg::wish;
 
 namespace {
 
-const std::vector<std::string> kFlags = {
-    "test_cfg_cli",
-    "test_cfg_env",
-    "test_cfg_store",
-    "test_cfg_none",
-    "test_cfg_int",
-    "test_cfg_bool",
-};
+// The test flags that set environment variables (cleared in TearDown).
+const std::vector<std::string> kEnvFlags = {"test_cfg_cli", "test_cfg_env", "test_cfg_store"};
+// The mode's own exclusions: everything else registered can be saved.
+const std::vector<std::string> kExcluded = {"test_cfg_unlisted"};
 const std::string kEntry = "wish.cli.test";
 
 // MSVC lacks the POSIX setenv/unsetenv names; _putenv_s is the equivalent,
@@ -69,7 +68,7 @@ class ConfigFlagsTest : public ::testing::Test {
   }
 
   void TearDown() override {
-    for (const auto& name : kFlags)
+    for (const auto& name : kEnvFlags)
       unset_env(wish::env_flag_var_name(name).c_str());
     std::error_code ec;
     std::filesystem::remove_all(dir_, ec);
@@ -97,6 +96,32 @@ class ConfigFlagsTest : public ::testing::Test {
 
 } // namespace
 
+// ── Saveable flags ───────────────────────────────────────────────────────────
+
+TEST_F(ConfigFlagsTest, EveryRegisteredFlagIsSaveableExceptExclusions) {
+  const auto names = wish::config_flag_names(kExcluded);
+  auto has = [&](const char* name) { return std::find(names.begin(), names.end(), name) != names.end(); };
+
+  // Registered flags need no listing to be saveable.
+  EXPECT_TRUE(has("test_cfg_cli"));
+  EXPECT_TRUE(has("test_cfg_int"));
+  EXPECT_TRUE(has("test_cfg_bool"));
+  // The mode's exclusions, the store's own flags, secrets and gflags' built-ins are not.
+  EXPECT_FALSE(has("test_cfg_unlisted"));
+  EXPECT_FALSE(has("save_defaults"));
+  EXPECT_FALSE(has("clear_defaults"));
+  EXPECT_FALSE(has("test_cfg_key_password"));
+  EXPECT_FALSE(has("test_cfg_cert_pem"));
+  EXPECT_FALSE(has("help"));
+  EXPECT_FALSE(has("flagfile"));
+}
+
+TEST_F(ConfigFlagsTest, SecretsAreNeverSaved) {
+  parse({"--test_cfg_key_password=hunter2", "--test_cfg_cert_pem=PEM", "--test_cfg_cli=cli"});
+  wish::persistent_store store{store_file()};
+  EXPECT_EQ(wish::save_config_store_defaults(store, kEntry, {}), std::vector<std::string>{"test_cfg_cli"});
+}
+
 // ── Precedence ───────────────────────────────────────────────────────────────
 
 TEST_F(ConfigFlagsTest, CommandLineThenEnvThenStoreThenHardcoded) {
@@ -113,7 +138,7 @@ TEST_F(ConfigFlagsTest, CommandLineThenEnvThenStoreThenHardcoded) {
   parse({"--test_cfg_cli=cli_cli"});
 
   wish::persistent_store store{store_file()};
-  auto applied = wish::apply_config_store_defaults(store, kEntry, kFlags);
+  auto applied = wish::apply_config_store_defaults(store, kEntry, kExcluded);
 
   EXPECT_EQ(FLAGS_test_cfg_cli, "cli_cli");
   EXPECT_EQ(FLAGS_test_cfg_env, "env_env");
@@ -132,7 +157,7 @@ TEST_F(ConfigFlagsTest, StoreValueKeepsFlagAtDefaultAndCoercesTypes) {
   }
   parse({});
   wish::persistent_store store{store_file()};
-  wish::apply_config_store_defaults(store, kEntry, kFlags);
+  wish::apply_config_store_defaults(store, kEntry, kExcluded);
 
   EXPECT_EQ(FLAGS_test_cfg_int, 42);
   EXPECT_TRUE(FLAGS_test_cfg_bool);
@@ -151,7 +176,7 @@ TEST_F(ConfigFlagsTest, InvalidOrUnlistedStoreValuesAreIgnored) {
   }
   parse({});
   wish::persistent_store store{store_file()};
-  EXPECT_TRUE(wish::apply_config_store_defaults(store, kEntry, kFlags).empty());
+  EXPECT_TRUE(wish::apply_config_store_defaults(store, kEntry, kExcluded).empty());
 
   EXPECT_EQ(FLAGS_test_cfg_int, 5);
   EXPECT_EQ(FLAGS_test_cfg_unlisted, "hard_unlisted");
@@ -160,19 +185,20 @@ TEST_F(ConfigFlagsTest, InvalidOrUnlistedStoreValuesAreIgnored) {
 TEST_F(ConfigFlagsTest, MissingEntryChangesNothing) {
   parse({});
   wish::persistent_store store{store_file()};
-  EXPECT_TRUE(wish::apply_config_store_defaults(store, kEntry, kFlags).empty());
+  EXPECT_TRUE(wish::apply_config_store_defaults(store, kEntry, kExcluded).empty());
   EXPECT_EQ(FLAGS_test_cfg_store, "hard_store");
 }
 
 // ── Saving ───────────────────────────────────────────────────────────────────
 
-TEST_F(ConfigFlagsTest, SaveStoresOnlyListedCommandLineFlagsTyped) {
+TEST_F(ConfigFlagsTest, SaveStoresOnlySaveableCommandLineFlagsTyped) {
   set_env("WISH_TEST_CFG_ENV", "env_env");
   parse({"--test_cfg_cli=cli", "--test_cfg_int=7", "--test_cfg_bool", "--test_cfg_unlisted=x"});
 
   wish::persistent_store store{store_file()};
-  auto saved = wish::save_config_store_defaults(store, kEntry, kFlags);
-  EXPECT_EQ(saved, (std::vector<std::string>{"test_cfg_cli", "test_cfg_int", "test_cfg_bool"}));
+  auto saved = wish::save_config_store_defaults(store, kEntry, kExcluded);
+  std::sort(saved.begin(), saved.end());
+  EXPECT_EQ(saved, (std::vector<std::string>{"test_cfg_bool", "test_cfg_cli", "test_cfg_int"}));
 
   auto entry = store.get(kEntry);
   ASSERT_TRUE(entry.has_value());
@@ -200,7 +226,7 @@ TEST_F(ConfigFlagsTest, SaveMergesWithExistingEntry) {
   }
   parse({"--test_cfg_cli=new"});
   wish::persistent_store store{store_file()};
-  wish::save_config_store_defaults(store, kEntry, kFlags);
+  wish::save_config_store_defaults(store, kEntry, kExcluded);
 
   auto entry = store.get(kEntry);
   ASSERT_TRUE(entry.has_value());
@@ -211,7 +237,7 @@ TEST_F(ConfigFlagsTest, SaveMergesWithExistingEntry) {
 TEST_F(ConfigFlagsTest, SaveWithNoFlagsWritesNothing) {
   parse({});
   wish::persistent_store store{store_file()};
-  EXPECT_TRUE(wish::save_config_store_defaults(store, kEntry, kFlags).empty());
+  EXPECT_TRUE(wish::save_config_store_defaults(store, kEntry, kExcluded).empty());
   EXPECT_FALSE(std::filesystem::exists(store_file()));
 }
 
@@ -221,7 +247,7 @@ TEST_F(ConfigFlagsTest, LoadCliConfigSavesThenLaterRunUsesSavedDefaults) {
   {
     gflags::FlagSaver first_run;
     parse({"--test_cfg_store=saved", "--test_cfg_int=9", "--save_defaults"});
-    wish::load_cli_config(dir_.string(), kEntry, kFlags, "[test]");
+    wish::load_cli_config(dir_.string(), kEntry, kExcluded, "[test]");
   }
   ASSERT_TRUE(std::filesystem::exists(store_file()));
   EXPECT_EQ(FLAGS_test_cfg_store, "hard_store");
@@ -230,14 +256,14 @@ TEST_F(ConfigFlagsTest, LoadCliConfigSavesThenLaterRunUsesSavedDefaults) {
   {
     gflags::FlagSaver second_run;
     parse({});
-    wish::load_cli_config(dir_.string(), kEntry, kFlags, "[test]");
+    wish::load_cli_config(dir_.string(), kEntry, kExcluded, "[test]");
     EXPECT_EQ(FLAGS_test_cfg_store, "saved");
     EXPECT_EQ(FLAGS_test_cfg_int, 9);
   }
   // ...and the env var and command line still win over them.
   set_env("WISH_TEST_CFG_STORE", "env");
   parse({"--test_cfg_int=1"});
-  wish::load_cli_config(dir_.string(), kEntry, kFlags, "[test]");
+  wish::load_cli_config(dir_.string(), kEntry, kExcluded, "[test]");
   EXPECT_EQ(FLAGS_test_cfg_store, "env");
   EXPECT_EQ(FLAGS_test_cfg_int, 1);
 }
@@ -250,7 +276,7 @@ TEST_F(ConfigFlagsTest, LoadCliConfigClearDefaultsErasesEntry) {
     store.set(kEntry, saved);
   }
   parse({"--clear_defaults"});
-  wish::load_cli_config(dir_.string(), kEntry, kFlags, "[test]");
+  wish::load_cli_config(dir_.string(), kEntry, kExcluded, "[test]");
 
   EXPECT_EQ(FLAGS_test_cfg_store, "hard_store");
   wish::persistent_store store{store_file()};

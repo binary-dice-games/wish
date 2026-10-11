@@ -14,6 +14,7 @@
 #include <exception>
 #include <filesystem>
 #include <iostream>
+#include <set>
 #include <string>
 
 DEFINE_bool(
@@ -38,20 +39,52 @@ bool given_in_env(const std::string& flag_name) {
   return std::getenv(env_flag_var_name(flag_name).c_str()) != nullptr;
 }
 
+/// True for gflags' own flags (--help, --flagfile, --fromenv, ...), defined
+/// in gflags.cc, gflags_reporting.cc and gflags_completions.cc.
+bool is_gflags_builtin(const gflags::CommandLineFlagInfo& info) {
+  return std::filesystem::path{info.filename}.filename().string().rfind("gflags", 0) == 0;
+}
+
+/// True for flags holding a secret: `*password` and inline `*_pem` flags.
+bool is_secret(const std::string& name) {
+  auto ends_with = [&](const std::string& suffix) {
+    return name.size() >= suffix.size() && name.compare(name.size() - suffix.size(), suffix.size(), suffix) == 0;
+  };
+  return ends_with("password") || ends_with("_pem");
+}
+
 } // namespace
+
+std::vector<std::string> config_flag_names(const std::vector<std::string>& excluded_flags) {
+  // Never saved in any mode: the flags that drive the saved defaults.
+  static const std::set<std::string> kAlwaysExcluded = {"save_defaults", "clear_defaults", "store_dir"};
+
+  std::vector<gflags::CommandLineFlagInfo> flags;
+  gflags::GetAllFlags(&flags);
+  const std::set<std::string> excluded(excluded_flags.begin(), excluded_flags.end());
+
+  std::vector<std::string> names;
+  for (const auto& info : flags) {
+    if (is_gflags_builtin(info) || is_secret(info.name) || kAlwaysExcluded.count(info.name) != 0 ||
+        excluded.count(info.name) != 0)
+      continue;
+    names.push_back(info.name);
+  }
+  return names;
+}
 
 // ── Apply / save ─────────────────────────────────────────────────────────────
 
 std::vector<std::string> apply_config_store_defaults(
     const persistent_store& store,
     const std::string& entry_name,
-    const std::vector<std::string>& flag_names) {
+    const std::vector<std::string>& excluded_flags) {
   std::vector<std::string> applied;
   auto entry = store.get(entry_name);
   if (!entry)
     return applied;
 
-  for (const auto& name : flag_names) {
+  for (const auto& name : config_flag_names(excluded_flags)) {
     gflags::CommandLineFlagInfo info;
     if (!gflags::GetCommandLineFlagInfo(name.c_str(), &info))
       continue;
@@ -80,11 +113,11 @@ std::vector<std::string> apply_config_store_defaults(
 std::vector<std::string> save_config_store_defaults(
     persistent_store& store,
     const std::string& entry_name,
-    const std::vector<std::string>& flag_names) {
+    const std::vector<std::string>& excluded_flags) {
   std::vector<std::string> saved;
   bison::dynamic entry = store.get(entry_name).value_or(bison::dynamic{});
 
-  for (const auto& name : flag_names) {
+  for (const auto& name : config_flag_names(excluded_flags)) {
     gflags::CommandLineFlagInfo info;
     if (!gflags::GetCommandLineFlagInfo(name.c_str(), &info) || !given_on_command_line(info))
       continue;
@@ -109,7 +142,7 @@ std::vector<std::string> save_config_store_defaults(
 void load_cli_config(
     const std::string& store_dir,
     const std::string& entry_name,
-    const std::vector<std::string>& flag_names,
+    const std::vector<std::string>& excluded_flags,
     const std::string& log_prefix) {
   store_registry stores{store_dir.empty() ? default_store_dir() : std::filesystem::path{store_dir}};
   auto store = stores.server_store();
@@ -119,7 +152,7 @@ void load_cli_config(
       std::cout << log_prefix << " cleared saved defaults in " << store->file().string() << std::endl;
 
     if (FLAGS_save_defaults) {
-      auto saved = save_config_store_defaults(*store, entry_name, flag_names);
+      auto saved = save_config_store_defaults(*store, entry_name, excluded_flags);
       if (saved.empty()) {
         std::cout << log_prefix << " --save_defaults: no saveable flag given on the command line" << std::endl;
       } else {
@@ -133,7 +166,7 @@ void load_cli_config(
     std::cerr << log_prefix << " warning: could not update saved defaults: " << ex.what() << "\n";
   }
 
-  apply_config_store_defaults(*store, entry_name, flag_names);
+  apply_config_store_defaults(*store, entry_name, excluded_flags);
 }
 
 } // namespace bdg::wish

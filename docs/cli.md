@@ -279,16 +279,25 @@ wish server --clear_defaults     # back to the built-in defaults
 wish standalone --theme light --save_defaults   # saves and exits (no --run)
 ```
 
-| Mode | Store entry | Flags that can be saved |
-|------|-------------|-------------------------|
-| `server` | `wish.cli.server` | `transport`, `host`, `port`, `name`, `cmd`, `verbose`, `theme`, `lang`, `title`, `width`, `height`, `font_size`, `renderer`, `web_port`, `web_bind`, `sandbox_root`, `cert_file`, `key_file`, `ca_file`, `client_auth` |
-| `standalone` | `wish.cli.standalone` | `verbose`, `theme`, `lang`, `title`, `width`, `height`, `font_size`, `renderer`, `web_port`, `web_bind`, `sandbox_root`, `username` |
+Every flag of the mode can be saved, except:
 
-Other flags are never saved: `--store_dir` (it locates the store), private
-keys and inline PEMs, and the debug and security switches (`--debugger`,
-`--profiling_*`, `--allow_absolute_paths`). The defaults live under
-`--store_dir`, so pass the same `--store_dir` when saving and when running.
-A saved value that is no longer valid for its flag is skipped with a warning.
+- in every mode: `--save_defaults`, `--clear_defaults`, `--store_dir` (it
+  locates the store), secrets (flags named `*password` or `*_pem`, e.g.
+  `--key_password`, `--cert_pem`) and gflags' own flags (`--help`,
+  `--flagfile`, ...);
+- the debug and security switches: `--debugger`, `--profiling_dir`,
+  `--profiling_autostart`, `--allow_absolute_paths`;
+- in `standalone` only: `--run`, `--list`, `--describe`, and the rejected
+  transport flags.
+
+| Mode | Store entry |
+|------|-------------|
+| `server` | `wish.cli.server` |
+| `standalone` | `wish.cli.standalone` |
+
+The defaults live under `--store_dir`, so pass the same `--store_dir` when
+saving and when running. A saved value that is no longer valid for its flag
+is skipped with a warning.
 
 ## See also
 
