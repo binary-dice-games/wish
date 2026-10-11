@@ -189,8 +189,21 @@ class imgui_renderer : public renderer {
   /// dockspace this frame" (the common case for an app that draws through a
   /// bare `imgui_renderer` backend), in which case `render_window` leaves
   /// placement to ImGui/imgui.ini.
-  void set_ambient_dockspace_id(ImGuiID id) { ambient_dockspace_id_ = id; }
+  ///
+  /// @p class_id is the ImGui window class (`ImGuiWindowClass::ClassId`)
+  /// of that dockspace: 0 for a root dockspace (the host chrome, a
+  /// fullscreen `DockSpaceViewport`), which accepts any unclassed window;
+  /// non-zero for an embedded/desktop `DockSpaceViewport`'s nested
+  /// dockspace, which only accepts windows of that same class. A `Window`
+  /// rendered while it is ambient takes that class, so a panel can only be
+  /// docked into its own app's dockspace (see `render_window`).
+  void set_ambient_dockspace_id(ImGuiID id, ImGuiID class_id = 0) {
+    ambient_dockspace_id_ = id;
+    ambient_dock_class_id_ = class_id;
+  }
   ImGuiID ambient_dockspace_id() const { return ambient_dockspace_id_; }
+  /// @brief The window class of `ambient_dockspace_id()` (0 = unclassed).
+  ImGuiID ambient_dock_class_id() const { return ambient_dock_class_id_; }
 
   /**
    * @brief Turns on desktop-style window placement for this frame: an
@@ -261,6 +274,36 @@ class imgui_renderer : public renderer {
   ImGuiID named_dockspace_id(const std::string& name) const {
     auto it = named_dockspaces_.find(name);
     return it == named_dockspaces_.end() ? 0 : it->second;
+  }
+
+  /// @brief Records the window class (see `set_ambient_dockspace_id()`) of
+  ///        the `DockSpaceViewport` named @p name this frame, so a `Window`
+  ///        whose `dock_target` -- or whose `DockLayout` target -- names it
+  ///        is restricted to it. Cleared by `begin_frame()`.
+  void set_named_dock_class_id(const std::string& name, ImGuiID class_id) { named_dock_classes_[name] = class_id; }
+  /// @brief The window class recorded under @p name this frame, if any.
+  std::optional<ImGuiID> named_dock_class_id(const std::string& name) const {
+    auto it = named_dock_classes_.find(name);
+    if (it == named_dock_classes_.end())
+      return std::nullopt;
+    return it->second;
+  }
+
+  /// @brief Records that a `DockLayout` rendered this frame places the
+  ///        `Window` whose `__path__` is @p window_path into a dockspace
+  ///        of window class @p class_id, so that window -- usually a
+  ///        top-level object of its own, not a child of the
+  ///        `DockSpaceViewport` -- is restricted to that dockspace too.
+  ///        Cleared by `begin_frame()`.
+  void set_window_dock_class_id(const std::string& window_path, ImGuiID class_id) {
+    window_dock_classes_[window_path] = class_id;
+  }
+  /// @brief The class recorded for @p window_path this frame, if any.
+  std::optional<ImGuiID> window_dock_class_id(const std::string& window_path) const {
+    auto it = window_dock_classes_.find(window_path);
+    if (it == window_dock_classes_.end())
+      return std::nullopt;
+    return it->second;
   }
 
   /// @brief Dispatches the element to its ImGui widget(s) and recurses into
@@ -425,8 +468,17 @@ class imgui_renderer : public renderer {
   /// See `ambient_dockspace_id()`. Reset every `begin_frame()`.
   ImGuiID ambient_dockspace_id_ = 0;
 
+  /// See `ambient_dock_class_id()`. Reset every `begin_frame()`.
+  ImGuiID ambient_dock_class_id_ = 0;
+
   /// See `named_dockspace_id()`. Reset every `begin_frame()`.
   std::unordered_map<std::string, ImGuiID> named_dockspaces_;
+
+  /// See `named_dock_class_id()`. Reset every `begin_frame()`.
+  std::unordered_map<std::string, ImGuiID> named_dock_classes_;
+
+  /// See `window_dock_class_id()`. Reset every `begin_frame()`.
+  std::unordered_map<std::string, ImGuiID> window_dock_classes_;
 
   /// See `set_desktop_cascade_area()`. `cascade_active_` is reset every
   /// `begin_frame()`; `cascade_index_` persists across frames.
