@@ -460,6 +460,15 @@ desk = subprocess.Popen([wish, "desktop", "--upstream_transport", "tcp", "--upst
   screenshot, `keyboard.up("Control")`).
 - **Theme and pins persist between runs** in `--store_dir`: delete it for a
   clean first run (nano, mc and top pinned, light theme).
+- **Pass `--config <scratch>/desktop.yaml`** so the desktop doesn't write
+  `~/.wish/desktop/desktop.yaml`. Rewriting that file while the desktop runs
+  rebuilds the Start menu within about a second, which is the quickest way
+  to try a menu layout. A broken file shows its error in red at the top of
+  the Start menu, which is easy to miss if the menu is closed in the
+  screenshot.
+- **`__WishDesktop` results come back with hashed keys** in Python
+  (`{"#3073927904": ...}` when dumped); index them by name
+  (`result["ok"]`) instead of reading the dump.
 - **Client-ABI scripts** (e.g. `bindings/python/examples/desktop/*.py`): start
   them with `WISH_TRANSPORT=tcp WISH_PORT=<downstream port>` and
   `WISH_LIB=<build>/libwish_client.so`; their widgets show in `get_tree()`

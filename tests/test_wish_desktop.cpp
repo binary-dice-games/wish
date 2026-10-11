@@ -17,7 +17,9 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <iterator>
+#include <sstream>
 #include <thread>
 
 // wish_desktop_app.cpp DECLAREs these (DEFINEd in main.cpp / standalone_main.cpp
@@ -103,6 +105,7 @@ dynamic upstream_params() {
 class WishDesktopTest : public ::testing::Test {
  protected:
   std::filesystem::path store_dir_ = test_store_dir();
+  std::filesystem::path config_file_ = store_dir_ / "desktop" / "desktop.yaml";
   memory_server_transport upstream_transport_;
   tracking_upstream_server upstream_srv_{upstream_transport_, std::make_unique<wish::null_renderer>()};
 
@@ -120,6 +123,8 @@ class WishDesktopTest : public ::testing::Test {
     desktop_.set_launcher(&launcher_);
     desktop_.set_client_command({"wish", "client"});
     desktop_.set_launch_env({{"WISH_HOST", "127.0.0.1"}});
+    desktop_.set_config_file(config_file_);
+    desktop_.set_config_poll_interval(std::chrono::milliseconds{20});
     desktop_.start();
   }
 
@@ -157,6 +162,47 @@ class WishDesktopTest : public ::testing::Test {
     return sh ? sh->get_as<bdg::bison::key_t>("__wish_id"_key, bdg::bison::key_t{}) : bdg::bison::key_t{};
   }
 
+  /// Writes the desktop configuration file.
+  void write_config(const std::string& text) {
+    std::filesystem::create_directories(config_file_.parent_path());
+    std::ofstream(config_file_, std::ios::binary | std::ios::trunc) << text;
+  }
+
+  /// The node of the current shell's tree with id @p id (a DesktopApp entry
+  /// or DesktopMenu folder), or nullptr.
+  wish::ui_element_ptr entry(const std::string& id) {
+    auto sh = shell();
+    if (!sh)
+      return nullptr;
+    wish::ui_element_ptr found;
+    std::function<void(const wish::ui_element&)> walk = [&](const wish::ui_element& parent) {
+      const field* children = parent.findField("children"_key);
+      if (!children || !children->is<dynamic_ptr>() || !children->as<dynamic_ptr>())
+        return;
+      children->as<dynamic_ptr>()->forEach([&](bdg::bison::key_t, const field& f) {
+        if (found || !f.is<dynamic_ptr>() || !f.as<dynamic_ptr>())
+          return;
+        auto child = std::dynamic_pointer_cast<wish::ui_element>(std::shared_ptr<dynamic>(f.as<dynamic_ptr>()));
+        if (!child)
+          return;
+        if (child->get_as<std::string>("id"_key, std::string{}) == id)
+          found = child;
+        else
+          walk(*child);
+      });
+    };
+    walk(*sh);
+    return found;
+  }
+
+  size_t shell_count() {
+    size_t n = 0;
+    for (const auto& [key, root] : session().top_level_objects)
+      if (root && root->class_key() == bdg::bison::key_t{"DesktopShell"})
+        ++n;
+    return n;
+  }
+
   /// Delivers a shell event the way the render loop does after a frame.
   void emit(const char* event, dynamic payload = {}) {
     wish::context& sess = session();
@@ -181,108 +227,250 @@ class WishDesktopTest : public ::testing::Test {
 
 } // namespace
 
+// A configuration exercising every kind of entry.
+const char* kCustomConfig = R"(
+start_menu:
+  pinned: [ed]
+  desktop: [ed, test/apps/calc]
+  items:
+    - label: Tools
+      id: tools
+      icon: res/icons/code.png
+      tooltip: Some tools
+      items:
+        - label: Editor
+          id: ed
+          icon: res/icons/edit.png
+          tooltip: Edits things
+          run: [editor, --flag, "{config_file}"]
+          app: ext/editor
+          env: {EDITOR_MODE: dark}
+          cwd: /tmp
+    - apps: all
+    - separator: true
+    - label: Dark
+      id: dark
+      action: set_theme
+      args: {preset: dark}
+  power:
+    - label: Quit desktop
+      id: bye
+      action: quit
+)";
+
 // ── Shell construction ───────────────────────────────────────────────────────
 
-TEST_F(WishDesktopTest, BuildChromeCreatesDesktopShellWithOneAppPerRegisteredApp) {
+TEST_F(WishDesktopTest, MissingConfigGetsTheDefaultWrittenAndUsed) {
   desktop_.build_chrome();
 
-  wish::context& sess = session();
-  ASSERT_EQ(sess.top_level_objects.size(), size_t{1});
-  EXPECT_EQ(sess.top_level_objects.begin()->second->class_key(), bdg::bison::key_t{"DesktopShell"});
-  EXPECT_EQ(shell()->get_as<std::string>("user"_key, std::string{}), std::string{});
+  std::ifstream in(config_file_);
+  std::stringstream ss;
+  ss << in.rdbuf();
+  EXPECT_EQ(ss.str(), wish::desktop::default_config_text());
 
-  auto calc = element("app0");
-  auto nano = element("app1");
+  EXPECT_EQ(shell_count(), size_t{1});
+  // `apps: all`: a folder per collection with the registered apps.
+  auto folder = entry("apps");
+  ASSERT_TRUE(folder);
+  EXPECT_EQ(folder->class_key(), bdg::bison::key_t{"DesktopMenu"});
+  auto calc = entry("test/apps/calc");
   ASSERT_TRUE(calc);
-  ASSERT_TRUE(nano);
   EXPECT_EQ(calc->class_key(), bdg::bison::key_t{"DesktopApp"});
   EXPECT_EQ(calc->get_as<std::string>("app"_key, std::string{}), "test/apps/calc");
-  EXPECT_EQ(calc->get_as<std::string>("label"_key, std::string{}), "calc");
   EXPECT_EQ(calc->get_as<std::string>("icon"_key, std::string{}), "res/icons/calculate.png");
-  EXPECT_EQ(nano->get_as<std::string>("app"_key, std::string{}), "test/apps/nano");
-  EXPECT_EQ(nano->get_as<std::string>("description"_key, std::string{}), "Fake editor");
+  EXPECT_EQ(calc->get_as<std::string>("tooltip"_key, std::string{}), "Fake calculator");
+  // The default power menu.
+  auto power = entry("power");
+  ASSERT_TRUE(power);
+  EXPECT_EQ(power->get_as<std::string>("role"_key, std::string{}), "power");
+  EXPECT_TRUE(entry("power/quit-desktop"));
+  EXPECT_TRUE(desktop_.config_error().empty());
 }
 
 TEST_F(WishDesktopTest, BuildChromeIsIdempotent) {
   desktop_.build_chrome();
   desktop_.build_chrome();
   desktop_.build_chrome();
-
-  // A second top-level object would appear if it ran twice.
-  EXPECT_EQ(session().top_level_objects.size(), size_t{1});
+  EXPECT_EQ(shell_count(), size_t{1});
 }
 
-TEST_F(WishDesktopTest, DefaultPinsApplyWithoutSavedSettings) {
+TEST_F(WishDesktopTest, CustomConfigBuildsTheTree) {
+  write_config(kCustomConfig);
   desktop_.build_chrome();
 
-  // "nano" is a default pin and desktop icon; "calc" is neither.
-  EXPECT_TRUE(element("app1")->get_as<bool>("pinned"_key, false));
-  EXPECT_TRUE(element("app1")->get_as<bool>("on_desktop"_key, false));
-  EXPECT_FALSE(element("app0")->get_as<bool>("pinned"_key, true));
-  EXPECT_FALSE(element("app0")->get_as<bool>("on_desktop"_key, true));
-  EXPECT_EQ(desktop_.settings().pinned, std::vector<std::string>{"test/apps/nano"});
+  auto tools = entry("tools");
+  ASSERT_TRUE(tools);
+  EXPECT_EQ(tools->get_as<std::string>("label"_key, std::string{}), "Tools");
+  EXPECT_EQ(tools->get_as<std::string>("tooltip"_key, std::string{}), "Some tools");
+  auto ed = entry("ed");
+  ASSERT_TRUE(ed);
+  EXPECT_EQ(ed->get_as<std::string>("app"_key, std::string{}), "ext/editor");
+  EXPECT_EQ(ed->get_as<std::string>("tooltip"_key, std::string{}), "Edits things");
+  EXPECT_TRUE(ed->get_as<bool>("pinned"_key, false));
+  EXPECT_TRUE(ed->get_as<bool>("on_desktop"_key, false));
+  EXPECT_TRUE(entry("test/apps/calc")->get_as<bool>("on_desktop"_key, false));
+  EXPECT_FALSE(entry("test/apps/nano")->get_as<bool>("pinned"_key, true));
+  auto dark = entry("dark");
+  ASSERT_TRUE(dark);
+  EXPECT_EQ(dark->get_as<std::string>("app"_key, std::string{"x"}), "");
+  EXPECT_TRUE(entry("bye"));
 }
 
-// ── Shell events ─────────────────────────────────────────────────────────────
-
-TEST_F(WishDesktopTest, QuitEventInvokesRequestQuit) {
+TEST_F(WishDesktopTest, InvalidConfigAtStartUsesTheDefaultAndReportsIt) {
+  write_config("start_menu:\n  items:\n    - {label: A}\n");
   desktop_.build_chrome();
-  emit("quit");
-  // wait_for_quit() blocks until request_quit() fires; a hang here means the
-  // "quit" handler didn't call it.
-  desktop_.wait_for_quit();
+  EXPECT_NE(
+      shell()->get_as<std::string>("menu_error"_key, std::string{}).find("start_menu.items[0]"), std::string::npos);
+  EXPECT_TRUE(entry("test/apps/calc")); // the default menu
 }
 
-TEST_F(WishDesktopTest, LaunchEventRunsTheClientCommandForTheApp) {
+// ── Reloading ────────────────────────────────────────────────────────────────
+
+TEST_F(WishDesktopTest, EditingTheFileRebuildsTheShell) {
+  desktop_.build_chrome();
+  ASSERT_TRUE(entry("test/apps/calc"));
+  // A different size, so the change is seen even within one timestamp tick.
+  write_config("start_menu:\n  items:\n    - {label: Only, id: only.entry, action: quit}\n");
+  ASSERT_TRUE(eventually([&] { return entry("only.entry") != nullptr; }));
+  EXPECT_FALSE(entry("test/apps/calc"));
+  EXPECT_EQ(shell_count(), size_t{1}); // the old shell is gone
+}
+
+TEST_F(WishDesktopTest, InvalidEditKeepsTheMenuAndShowsTheError) {
+  write_config(kCustomConfig);
+  desktop_.build_chrome();
+  write_config("start_menu:\n  items:\n    - {label: Broken, run: {oops: 1}}\n");
+  ASSERT_TRUE(eventually([&] {
+    auto sh = shell();
+    return sh && !sh->get_as<std::string>("menu_error"_key, std::string{}).empty();
+  }));
+  EXPECT_NE(desktop_.config_error().find("start_menu.items[0].run"), std::string::npos);
+  EXPECT_TRUE(entry("ed")); // still the previous menu
+
+  // Fixing the file clears the error.
+  write_config(kCustomConfig);
+  ASSERT_TRUE(eventually([&] {
+    auto sh = shell();
+    return sh && sh->get_as<std::string>("menu_error"_key, std::string{"x"}).empty();
+  }));
+}
+
+// ── Entries and actions ──────────────────────────────────────────────────────
+
+TEST_F(WishDesktopTest, ActivatingARunEntryStartsItsCommand) {
+  write_config(kCustomConfig);
   desktop_.build_chrome();
   dynamic p;
-  p["app"_key] = std::string{"test/apps/calc"};
-  emit("launch", std::move(p));
+  p["id"_key] = std::string{"ed"};
+  emit("activate", std::move(p));
 
   ASSERT_TRUE(eventually([&] { return !launcher_.requests.empty(); }));
   const auto& req = launcher_.requests.front();
-  EXPECT_EQ(req.argv, (std::vector<std::string>{"wish", "client", "--run=test/apps/calc"}));
-  EXPECT_EQ(req.env, (std::vector<std::pair<std::string, std::string>>{{"WISH_HOST", "127.0.0.1"}}));
+  EXPECT_EQ(req.argv, (std::vector<std::string>{"editor", "--flag", config_file_.string()}));
+  EXPECT_EQ(
+      req.env, (std::vector<std::pair<std::string, std::string>>{{"WISH_HOST", "127.0.0.1"}, {"EDITOR_MODE", "dark"}}));
+  EXPECT_EQ(req.cwd, "/tmp");
 }
 
-TEST_F(WishDesktopTest, LaunchWithoutLauncherFails) {
-  desktop_.set_launcher(nullptr);
-  EXPECT_FALSE(desktop_.launch_app("test/apps/calc"));
+TEST_F(WishDesktopTest, RegisteredAppsRunAsWishClients) {
+  desktop_.build_chrome();
+  EXPECT_TRUE(desktop_.launch_entry("test/apps/calc"));
+  ASSERT_EQ(launcher_.requests.size(), size_t{1});
+  EXPECT_EQ(launcher_.requests[0].argv, (std::vector<std::string>{"wish", "client", "--run=test/apps/calc"}));
 }
 
-TEST_F(WishDesktopTest, PinEventUpdatesTheAppAndPersists) {
+TEST_F(WishDesktopTest, ActivatingAnActionEntryRunsTheAction) {
+  write_config(kCustomConfig);
   desktop_.build_chrome();
   dynamic p;
-  p["app"_key] = std::string{"test/apps/calc"};
+  p["id"_key] = std::string{"bye"};
+  emit("activate", std::move(p));
+  // wait_for_quit() blocks until request_quit() fires.
+  desktop_.wait_for_quit();
+}
+
+TEST_F(WishDesktopTest, SetThemeActionAppliesAndPersists) {
+  write_config(kCustomConfig);
+  desktop_.build_chrome();
+  ASSERT_TRUE(desktop_.launch_entry("dark"));
+  EXPECT_EQ(desktop_.settings().theme, "dark");
+  auto saved = session().user_store->get("wish.desktop");
+  ASSERT_TRUE(saved);
+  EXPECT_EQ(saved->get_as<std::string>("theme"_key, std::string{}), "dark");
+}
+
+TEST_F(WishDesktopTest, ShutdownServerActionFlagsTheShell) {
+  desktop_.build_chrome();
+  desktop_.run_action("shutdown_server", dynamic{});
+  EXPECT_TRUE(shell()->get_as<bool>("shutdown"_key, false));
+}
+
+TEST_F(WishDesktopTest, LaunchingUnknownOrNonRunnableEntriesFails) {
+  write_config(kCustomConfig);
+  desktop_.build_chrome();
+  EXPECT_FALSE(desktop_.launch_entry("no.such.entry"));
+  EXPECT_FALSE(desktop_.launch_entry("tools")); // a folder
+  desktop_.set_launcher(nullptr);
+  EXPECT_FALSE(desktop_.launch_entry("ed"));
+  EXPECT_THROW(desktop_.run_action("explode", dynamic{}), std::runtime_error);
+}
+
+// ── Pins, desktop icons, theme ───────────────────────────────────────────────
+
+TEST_F(WishDesktopTest, PinEventUpdatesTheEntryAndPersists) {
+  write_config(kCustomConfig);
+  desktop_.build_chrome();
+  dynamic p;
+  p["id"_key] = std::string{"test/apps/nano"};
   p["pinned"_key] = true;
   emit("pin", std::move(p));
 
-  ASSERT_TRUE(eventually([&] { return element("app0")->get_as<bool>("pinned"_key, false); }));
+  ASSERT_TRUE(eventually([&] { return entry("test/apps/nano")->get_as<bool>("pinned"_key, false); }));
+  // The file's pins are the starting point of the user's own.
   auto pinned = desktop_.settings().pinned;
-  EXPECT_NE(std::find(pinned.begin(), pinned.end(), "test/apps/calc"), pinned.end());
+  EXPECT_EQ(pinned, (std::vector<std::string>{"ed", "test/apps/nano"}));
 
-  ASSERT_TRUE(session().user_store);
   auto saved = session().user_store->get("wish.desktop");
   ASSERT_TRUE(saved.has_value());
   const field* list = saved->findField("pinned"_key);
   ASSERT_TRUE(list && list->is<dynamic_ptr>());
-  bool found = false;
+  std::vector<std::string> stored;
   list->as<dynamic_ptr>()->forEach([&](bdg::bison::key_t, const field& v) {
-    if (v.is<std::string>() && v.as<std::string>() == "test/apps/calc")
-      found = true;
+    if (v.is<std::string>())
+      stored.push_back(v.as<std::string>());
   });
-  EXPECT_TRUE(found);
+  EXPECT_EQ(stored, pinned);
 }
 
-TEST_F(WishDesktopTest, DesktopIconEventUpdatesTheApp) {
+TEST_F(WishDesktopTest, DesktopIconEventUpdatesTheEntry) {
+  write_config(kCustomConfig);
   desktop_.build_chrome();
   dynamic p;
-  p["app"_key] = std::string{"test/apps/nano"};
+  p["id"_key] = std::string{"ed"};
   p["on_desktop"_key] = false;
   emit("desktop_icon", std::move(p));
 
-  ASSERT_TRUE(eventually([&] { return !element("app1")->get_as<bool>("on_desktop"_key, true); }));
-  EXPECT_TRUE(desktop_.settings().on_desktop.empty());
+  ASSERT_TRUE(eventually([&] { return !entry("ed")->get_as<bool>("on_desktop"_key, true); }));
+  EXPECT_EQ(desktop_.settings().on_desktop, std::vector<std::string>{"test/apps/calc"});
+}
+
+TEST_F(WishDesktopTest, SavedPinsWinOverTheFile) {
+  dynamic saved;
+  auto pinned = std::make_shared<dynamic>();
+  (*pinned)[bdg::bison::key_t{0u}] = std::string{"test/apps/calc"};
+  saved["pinned"_key] = dynamic_ptr{pinned};
+  saved["desktop"_key] = dynamic_ptr{std::make_shared<dynamic>()};
+  saved["theme"_key] = std::string{"light"};
+  // The session exists once the bridge connected upstream (start()).
+  session().user_store->set("wish.desktop", saved);
+  write_config(kCustomConfig);
+
+  desktop_.build_chrome();
+
+  EXPECT_TRUE(entry("test/apps/calc")->get_as<bool>("pinned"_key, false));
+  EXPECT_FALSE(entry("ed")->get_as<bool>("pinned"_key, true));
+  EXPECT_FALSE(entry("ed")->get_as<bool>("on_desktop"_key, true));
+  EXPECT_EQ(desktop_.settings().theme, "light");
 }
 
 TEST_F(WishDesktopTest, ThemeEventAppliesAndPersistsThePreset) {
@@ -298,44 +486,80 @@ TEST_F(WishDesktopTest, ThemeEventAppliesAndPersistsThePreset) {
   }));
 }
 
-TEST_F(WishDesktopTest, SavedSettingsAreRestored) {
-  dynamic entry;
-  auto pinned = std::make_shared<dynamic>();
-  (*pinned)[bdg::bison::key_t{0u}] = std::string{"test/apps/calc"};
-  entry["pinned"_key] = dynamic_ptr{pinned};
-  entry["desktop"_key] = dynamic_ptr{std::make_shared<dynamic>()};
-  entry["theme"_key] = std::string{"light"};
-  // The session exists once the bridge connected upstream (start()).
-  session().user_store->set("wish.desktop", entry);
-
-  desktop_.build_chrome();
-
-  EXPECT_TRUE(element("app0")->get_as<bool>("pinned"_key, false));
-  EXPECT_FALSE(element("app1")->get_as<bool>("pinned"_key, true));
-  EXPECT_FALSE(element("app1")->get_as<bool>("on_desktop"_key, true));
-  EXPECT_EQ(desktop_.settings().theme, "light");
-}
-
 // ── Running apps ─────────────────────────────────────────────────────────────
 
-TEST_F(WishDesktopTest, ConnectedClientIsPublishedOnItsApp) {
+TEST_F(WishDesktopTest, ConnectedClientIsPublishedOnItsEntry) {
+  write_config(kCustomConfig);
   desktop_.build_chrome();
 
   client app_client(std::make_unique<memory_client_transport>(downstream_transport_.connect()));
   dynamic params;
-  params["app"_key] = std::string{"test/apps/nano"};
+  params["app"_key] = std::string{"ext/editor"};
   app_client.connect(std::move(params));
 
-  auto sessions_of_nano = [&] {
-    const field* f = element("app1")->findField("sessions"_key);
+  auto sessions_of_ed = [&] {
+    auto e = entry("ed");
+    const field* f = e ? e->findField("sessions"_key) : nullptr;
     return f && f->is<std::vector<int32_t>>() ? f->as<std::vector<int32_t>>() : std::vector<int32_t>{};
   };
-  ASSERT_TRUE(eventually([&] { return sessions_of_nano().size() == 1; }));
+  ASSERT_TRUE(eventually([&] { return sessions_of_ed().size() == 1; }));
   EXPECT_EQ(shell()->get_as<int32_t>("clients"_key, 0), 1);
 
   app_client.disconnect();
-  ASSERT_TRUE(eventually([&] { return sessions_of_nano().empty(); }));
+  ASSERT_TRUE(eventually([&] { return sessions_of_ed().empty(); }));
   EXPECT_EQ(shell()->get_as<int32_t>("clients"_key, -1), 0);
+}
+
+TEST_F(WishDesktopTest, ShortRunNameMatchesTheRegisteredEntry) {
+  desktop_.build_chrome();
+  client app_client(std::make_unique<memory_client_transport>(downstream_transport_.connect()));
+  dynamic params;
+  params["app"_key] = std::string{"nano"};
+  app_client.connect(std::move(params));
+  ASSERT_TRUE(eventually([&] {
+    auto e = entry("test/apps/nano");
+    const field* f = e ? e->findField("sessions"_key) : nullptr;
+    return f && f->is<std::vector<int32_t>>() && f->as<std::vector<int32_t>>().size() == 1;
+  }));
+  app_client.disconnect();
+}
+
+// ── __WishDesktop, served to downstream clients ──────────────────────────────
+
+TEST_F(WishDesktopTest, WishDesktopObjectIsAnsweredByTheBridge) {
+  write_config(kCustomConfig);
+  desktop_.build_chrome();
+
+  client app_client(std::make_unique<memory_client_transport>(downstream_transport_.connect()));
+  app_client.connect();
+  auto desk = app_client.instantiate("wish"_key, "__WishDesktop"_key).get();
+
+  dynamic launch;
+  launch["id"_key] = std::string{"ed"};
+  auto ok = desk.call("launch"_key, std::move(launch)).get();
+  EXPECT_TRUE(ok.get_as<bool>("ok"_key, false));
+  ASSERT_EQ(launcher_.requests.size(), size_t{1});
+  EXPECT_EQ(launcher_.requests[0].argv.front(), "editor");
+
+  dynamic unknown;
+  unknown["id"_key] = std::string{"no.such"};
+  EXPECT_FALSE(desk.call("launch"_key, std::move(unknown)).get().get_as<bool>("ok"_key, true));
+
+  auto items = desk.call("items"_key, dynamic{}).get();
+  const field* list = items.findField("items"_key);
+  ASSERT_TRUE(list && list->is<dynamic_ptr>());
+  std::vector<std::string> ids;
+  list->as<dynamic_ptr>()->forEach([&](bdg::bison::key_t, const field& v) {
+    if (v.is<dynamic_ptr>() && v.as<dynamic_ptr>())
+      ids.push_back(v.as<dynamic_ptr>()->get_as<std::string>("id"_key, std::string{}));
+  });
+  EXPECT_NE(std::find(ids.begin(), ids.end(), "ed"), ids.end());
+  EXPECT_NE(std::find(ids.begin(), ids.end(), "bye"), ids.end());
+
+  // Nothing about it reached the upstream server.
+  for (const auto& [key, root] : session().top_level_objects)
+    EXPECT_NE(root->class_key(), bdg::bison::key_t{"__WishDesktop"});
+  app_client.disconnect();
 }
 
 TEST_F(WishDesktopTest, UnknownAppGetsAnUnlistedEntryOfItsOwn) {

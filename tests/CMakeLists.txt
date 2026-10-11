@@ -82,6 +82,7 @@ add_executable(test_wish_desktop
     test_wish_desktop.cpp
     ${CMAKE_SOURCE_DIR}/app/wish_cli/desktop/wish_desktop_app.cpp
     ${CMAKE_SOURCE_DIR}/app/wish_cli/desktop/process_launcher.cpp
+    ${CMAKE_SOURCE_DIR}/app/wish_cli/desktop/desktop_config.cpp
     ${CMAKE_SOURCE_DIR}/app/wish_cli/env_flags.cpp)
 target_include_directories(test_wish_desktop PRIVATE
     ${CMAKE_SOURCE_DIR}
@@ -91,6 +92,18 @@ target_link_libraries(test_wish_desktop PRIVATE wish gflags gtest gmock gtest_ma
 target_compile_definitions(test_wish_desktop PRIVATE CMAKE_COMMAND_PATH="${CMAKE_COMMAND}")
 gtest_discover_tests(test_wish_desktop)
 set_target_properties(test_wish_desktop PROPERTIES FOLDER tests)
+
+# The `wish desktop` configuration file parser (app/ source, like
+# test_wish_desktop above).
+add_executable(test_desktop_config
+    test_desktop_config.cpp
+    ${CMAKE_SOURCE_DIR}/app/wish_cli/desktop/desktop_config.cpp)
+target_include_directories(test_desktop_config PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/extern/bison/extern/json/single_include)
+target_link_libraries(test_desktop_config PRIVATE wish_client gtest gmock gtest_main)
+gtest_discover_tests(test_desktop_config)
+set_target_properties(test_desktop_config PROPERTIES FOLDER tests)
 
 # Links ONLY wish_client (not the combined `wish` target) to prove the
 # lightweight client / heavy server CMake split actually works for a real

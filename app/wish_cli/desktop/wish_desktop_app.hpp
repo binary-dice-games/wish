@@ -6,6 +6,7 @@
  */
 #pragma once
 
+#include "app/wish_cli/desktop/desktop_config.hpp"
 #include "app/wish_cli/desktop/process_launcher.hpp"
 #include "src/app/bridge/bridge_app.hpp"
 #include "src/bison/bison_sync.hpp"
@@ -33,33 +34,43 @@ namespace bdg::wish {
 /// @brief What the desktop remembers between runs (user store entry
 ///        `wish.desktop`).
 struct desktop_settings {
-  std::vector<std::string> pinned; ///< Qualified app names on the taskbar.
-  std::vector<std::string> on_desktop; ///< Qualified app names with a desktop icon.
+  /// Whether the user changed the pins/desktop icons; until then they come
+  /// from the configuration file.
+  bool saved_pins{false};
+  std::vector<std::string> pinned; ///< Entry ids on the taskbar.
+  std::vector<std::string> on_desktop; ///< Entry ids with a desktop icon.
   std::string theme; ///< Style preset ("dark"/"light"), or empty.
 };
 
 /**
  * @brief Extends rmi::bridge with a Windows/macOS-like desktop shell
  *        rendered on the upstream session: wallpaper, desktop icons and a
- *        taskbar with a Start menu listing every registered app (see the
- *        `DesktopShell` class and `render_desktop_shell()` on the server).
+ *        taskbar with a Start menu (see the `DesktopShell` class and
+ *        `render_desktop_shell()` on the server).
  *
- * The shell is built once, unconditionally, as soon as the upstream
- * connection is up (`build_chrome()`, called by `wish_desktop_app` right
- * after the bridge starts listening) -- it does not wait for a downstream
- * client to connect.
+ * The Start menu comes from the desktop configuration file (see
+ * desktop_config.hpp and docs/desktop-config.md): a tree of entries, each
+ * running a command or a desktop action. The file is watched; when it
+ * changes, the shell is rebuilt from it. It is built once, unconditionally,
+ * as soon as the upstream connection is up (`build_chrome()`, called by
+ * `wish_desktop_app` right after the bridge starts listening).
  *
- * Launching an app (Start menu, pinned taskbar button, desktop icon) runs
- * `<client command> --run=<app>` through the configured
- * `process_launcher_iface`; the child connects back to this bridge's
- * downstream side. Each downstream connection reports the app it runs in
- * its connect params (`"app"`, plus optional `"app_label"`/`"app_icon"`),
- * which the desktop records against the connection's session id -- the
- * object group its upstream objects are filed under -- and publishes on
- * the app's `DesktopApp.sessions`, so the server can tell which windows
- * belong to which app. An app the registry doesn't know (e.g. a script
- * using the client C ABI) gets an unlisted `DesktopApp` of its own, so it
- * shows on the taskbar with its own name and icon like a built-in tool.
+ * Starting a `run` entry runs its command through the configured
+ * `process_launcher_iface`, with the downstream side's WISH_* variables, so
+ * a wish client (embedded module or client-ABI app) connects back to this
+ * bridge. Each downstream connection reports the app it runs in its connect
+ * params (`"app"`, plus optional `"app_label"`/`"app_icon"`), which the
+ * desktop records against the connection's session id -- the object group
+ * its upstream objects are filed under -- and publishes on the matching
+ * entries' `DesktopApp.sessions`, so the server can tell which windows
+ * belong to which entry. An app no entry names gets an unlisted
+ * `DesktopApp` of its own, so it still shows on the taskbar with its name
+ * and icon.
+ *
+ * The desktop's actions (quit, launch, set_theme, ...) are also served to
+ * downstream clients as a `wish/__WishDesktop` object, answered by the
+ * bridge itself rather than relayed upstream; clients can start menu
+ * entries by id, never arbitrary commands.
  *
  * Shell event handlers run on the upstream client's event thread, which
  * must never block on an upstream round trip; their work is handed to a
@@ -75,28 +86,27 @@ class wish_desktop : public bison::rmi::bridge {
    * @brief Build the desktop shell on the upstream session.
    *
    * Idempotent: only the first call has an effect. Loads the saved
-   * settings from the upstream user store (when the session has one),
-   * uploads the wallpaper (if set), applies the saved theme, then registers
-   * and instantiates the `DesktopShell` template via the upstream
-   * `__WishTemplate` protocol object and wires its events.
+   * settings from the upstream user store (when the session has one), the
+   * configuration file (writing the default one if it is missing), uploads
+   * the wallpaper (if set), applies the saved theme, builds the shell and
+   * starts watching the configuration file.
    */
   void build_chrome();
 
   /// @brief Program and leading arguments that run a wish client, e.g.
-  ///        `{"/usr/bin/wish", "client"}`; `--run=<app>` is appended.
-  ///        Must be set before an app is launched.
+  ///        `{"/usr/bin/wish", "client"}` (the config's `{wish_client}`).
   void set_client_command(std::vector<std::string> command);
 
-  /// @brief Environment variables given to every launched app (typically
-  ///        WISH_TRANSPORT/WISH_HOST/WISH_PORT/WISH_NAME of the downstream
-  ///        side) on top of this process's own.
+  /// @brief Environment variables given to every started command
+  ///        (typically WISH_TRANSPORT/WISH_HOST/WISH_PORT/WISH_NAME of the
+  ///        downstream side) on top of this process's own.
   void set_launch_env(std::vector<std::pair<std::string, std::string>> env);
 
-  /// @brief Directory receiving each launched app's stdout/stderr log.
+  /// @brief Directory receiving each started command's stdout/stderr log.
   void set_log_dir(std::filesystem::path dir);
 
-  /// @brief Non-owning; must outlive this object. Without one, launching
-  ///        an app only logs an error.
+  /// @brief Non-owning; must outlive this object. Without one, starting a
+  ///        `run` entry only logs an error.
   void set_launcher(process_launcher_iface* launcher);
 
   /// @brief Local image file uploaded as the wallpaper by build_chrome().
@@ -105,12 +115,16 @@ class wish_desktop : public bison::rmi::bridge {
   /// @brief User name shown in the Start menu.
   void set_user(std::string user);
 
-  /// @brief Request an orderly shutdown. Safe from any thread.
-  ///
-  /// Called by the shell's "quit" event (Start -> Power -> Quit desktop).
-  /// Wakes `wait_for_quit()`, causing the identical orderly
-  /// `bridge_app::run()` unwind (`br->stop()`, then RAII release of terminal
-  /// state) that pressing Enter at the console uses.
+  /// @brief The desktop configuration file; must be set before
+  ///        build_chrome(). Created with the default content if missing.
+  void set_config_file(std::filesystem::path file);
+
+  /// @brief How often build_chrome()'s watcher checks the configuration
+  ///        file for changes (default 500 ms). For tests.
+  void set_config_poll_interval(std::chrono::milliseconds interval);
+
+  /// @brief Request an orderly shutdown. Safe from any thread. The "quit"
+  ///        action; wakes `wait_for_quit()`.
   void request_quit();
 
   /** @brief Block until `request_quit()` is called. */
@@ -118,7 +132,6 @@ class wish_desktop : public bison::rmi::bridge {
 
   /**
    * @brief Block until `request_quit()` is called, or `timeout` elapses.
-   *
    * @return `true` if `request_quit()` was called before `timeout`
    *         elapsed; `false` on timeout.
    */
@@ -127,16 +140,39 @@ class wish_desktop : public bison::rmi::bridge {
   /// @brief Current settings (pins, desktop icons, theme).
   desktop_settings settings() const;
 
+  /// @brief The Start menu in use.
+  desktop::start_menu start_menu() const;
+
+  /// @brief The configuration file's current error, or empty.
+  std::string config_error() const;
+
   /// @brief Blocks until every shell event handled so far has been fully
   ///        applied (its upstream updates sent). For tests.
   void flush();
 
-  /// @brief Starts @p app (a qualified name) as a downstream client.
-  /// @return false (with a logged error) if it could not be started.
-  bool launch_app(const std::string& app);
+  /**
+   * @brief Starts the Start menu entry @p id: runs its command, or its
+   *        action.
+   * @return false (with a logged error) for an unknown id, a folder or
+   *         separator, or a command that could not be started.
+   */
+  bool launch_entry(const std::string& id);
+
+  /**
+   * @brief Runs a desktop action -- the ones `action:` entries and the
+   *        `__WishDesktop` RMI object expose (see `desktop::known_actions()`).
+   * @return The action's result (`items`: the entries; `launch`: `{ok}`).
+   * @throws std::runtime_error for an unknown action or bad arguments.
+   */
+  bison::dynamic run_action(const std::string& action, const bison::dynamic& args);
+
+  /// @brief Re-reads the configuration file and rebuilds the shell from it;
+  ///        an invalid file keeps the current menu and shows the error.
+  void reload_config();
 
  protected:
-  /// Records the `"app"` connect param of each downstream connection.
+  /// Records the `"app"` connect param of each downstream connection, and
+  /// answers requests for the bridge's own `__WishDesktop` objects locally.
   bool try_handle_request(
       bison::rmi::context& ctx,
       const bison::rmi::shared::envelope& env,
@@ -144,33 +180,41 @@ class wish_desktop : public bison::rmi::bridge {
 
   void on_client_disconnected(bison::rmi::context& ctx) override;
 
+  /// `wish/__WishDesktop` is served here, not by the class registry.
+  bool on_check_class(bison::rmi::context& ctx, bison::key_t ns, bison::key_t klass) override;
+  bison::dynamic_ptr on_create_object(bison::rmi::context& ctx, bison::key_t ns, bison::key_t klass) override;
+
  private:
   struct shared_state {
     desktop_settings settings;
-    /// Downstream session id -> qualified app name it runs.
+    desktop::start_menu menu;
+    std::string menu_error;
+    /// Downstream session id -> app name it runs.
     std::map<bison::hash_t, std::string> session_apps;
     /// Downstream sessions currently connected.
     std::set<bison::hash_t> sessions;
-    /// Qualified app name -> its DesktopApp node's upstream object id.
-    std::map<std::string, bison::key_t> app_nodes;
-    /// App name -> {label, icon} from connect params, for apps that have
-    /// no DesktopApp yet.
+    /// Entry id -> its DesktopApp node in the current shell.
+    std::map<std::string, bison::key_t> entry_nodes;
+    /// App name -> its unlisted, top-level DesktopApp (apps no entry names).
+    std::map<std::string, bison::key_t> extra_nodes;
+    /// App name -> {label, icon} from connect params.
     std::map<std::string, std::pair<std::string, std::string>> app_meta;
-    /// Number of DesktopApp nodes created for connected unknown apps.
-    int extra_apps{0};
     bison::key_t shell_id{0u};
-    bool loaded_settings{false};
+    int templates{0}; ///< Templates registered so far (unique names).
   };
 
   /// Runs @p task on the worker thread (never on the event thread).
   void post(std::function<void()> task);
   void worker_loop();
   void stop_worker();
+  void stop_watcher();
 
+  /// Worker thread: (re)builds the shell from the current menu, replacing
+  /// the previous one.
+  void build_shell();
+  desktop::placeholders placeholders() const;
   void on_shell_event(bison::key_t event, const bison::dynamic& payload);
   void push_running_state();
-  /// Worker thread: creates an unlisted DesktopApp for each connected app
-  /// the shell doesn't list yet.
   void add_unknown_apps();
   void save_settings();
   void apply_theme(const std::string& preset);
@@ -190,7 +234,12 @@ class wish_desktop : public bison::rmi::bridge {
   std::filesystem::path log_dir_;
   process_launcher_iface* launcher_{nullptr};
   std::filesystem::path wallpaper_;
+  std::string wallpaper_src_; ///< Its path in the upstream sandbox, once uploaded.
   std::string user_;
+  std::filesystem::path config_file_;
+  std::chrono::milliseconds config_poll_{500};
+  /// The config file's modification time and size when it was loaded.
+  std::optional<std::pair<std::filesystem::file_time_type, std::uintmax_t>> config_stamp_;
   std::atomic<int> launch_count_{0};
 
   struct worker_state {
@@ -200,6 +249,9 @@ class wish_desktop : public bison::rmi::bridge {
   };
   bison::synchronized<worker_state> worker_;
   std::thread worker_thread_;
+
+  bison::synchronized<bool> watcher_stop_{false};
+  std::thread watcher_thread_;
 
   std::mutex quit_mtx_;
   std::condition_variable quit_cv_;

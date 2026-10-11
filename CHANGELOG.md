@@ -9,10 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `wish desktop` is now a Windows/macOS-like desktop (see [docs/cli.md](docs/cli.md#wish-desktop)): wallpaper (built-in gradient or `--wallpaper FILE`), desktop icons, and a bottom taskbar with a Start menu (every built-in app, searchable, with a power menu), pinned apps, a button per open app/window (minimize/restore/close), connected-app count, light/dark theme toggle, clock with a calendar and a show-desktop strip; Ctrl+Tab / Ctrl+\` window switcher.
+- `wish desktop` is now a Windows/macOS-like desktop (see [docs/cli.md](docs/cli.md#wish-desktop)): wallpaper (built-in gradient or `--wallpaper FILE`), desktop icons, and a bottom taskbar with a Start menu (searchable, with a power menu), pinned apps, a button per open app/window (minimize/restore/close), connected-app count, light/dark theme toggle, clock with a calendar and a show-desktop strip; Ctrl+Tab / Ctrl+\` window switcher.
+  - The Start menu, initial pins and desktop icons come from a per-user config file, `~/.wish/desktop/desktop.yaml` (YAML or JSON; new `--config` flag), written with a default menu if missing and reloaded live when edited (see [docs/desktop-config.md](docs/desktop-config.md)). Entries are folders, separators, `apps:` (the built-in apps), `run` commands (built-in modules or any client-ABI app, with `env`/`cwd`) and desktop `action`s, each with a label, icon and tooltip; errors are shown in the Start menu.
+  - Desktop actions (`quit`, `shutdown_server`, `set_theme`, `toggle_theme`, `reload_config`, `launch`, `items`), callable from menu entries and by connected apps through a `__WishDesktop` object.
   - Apps started from the desktop run as `wish client --run=<app>` subprocesses connected back to it, logging to `wish_logs/desktop/`, and are closed when the desktop quits.
   - Pinned apps, desktop icons and the theme persist in the upstream user store (entry `wish.desktop`); new `--upstream_username` flag (default: the OS user name).
-- `DesktopShell` and `DesktopApp` UI classes, the server-side desktop chrome behind `wish desktop`.
+- `DesktopShell`, `DesktopMenu` and `DesktopApp` UI classes, the server-side desktop chrome behind `wish desktop`.
+- `yaml_to_json()` (`src/ui/yaml_json.hpp`): parse YAML or JSON text into ordered JSON; YAML syntax errors now report their line and column.
 - `app_info::icon`: an optional icon per embedded app; every `bdg` app has one.
 - Built-in icons `apps`, `desktop`, `push_pin`, `power`, `calculate`, `monitoring`, `pie_chart`, `log`, `helm` and `container`.
 - `wish client --run` sends the app's qualified name in its connect params (`app`).

@@ -1,0 +1,133 @@
+# Desktop configuration file
+
+`wish desktop` reads its configuration from a per-user YAML (or JSON) file,
+`~/.wish/desktop/desktop.yaml` by default (`--config PATH` to use another
+one). If the file doesn't exist, the desktop writes the default configuration
+there and uses it. The desktop watches the file: save it in any editor and the
+running desktop reloads it. The default Start menu has an **Edit desktop
+settings** entry that opens the file in nano.
+
+The file is a map of sections, each configuring one part of the desktop.
+Only `start_menu` is defined so far; unknown sections are ignored, so files
+stay valid as new sections are added.
+
+```yaml
+version: 1
+start_menu:
+  ...
+```
+
+## `start_menu`
+
+```yaml
+start_menu:
+  pinned: [bdg/desktop/nano, py.todo]   # taskbar pins, by entry id
+  desktop: [bdg/desktop/nano]           # desktop icons, by entry id
+  items:                                # the Start menu tree
+    - apps: all                         # every built-in app, a folder per collection
+    - label: Python apps                # a folder
+      icon: res/icons/code.png
+      items:
+        - label: To-do
+          id: py.todo
+          icon: res/icons/check.png
+          tooltip: A to-do list
+          run: [python3, "{home}/scripts/todo.py"]
+          app: examples/python/todo
+          env: {WISH_LIB: /opt/wish/lib/libwish_client.so}
+    - separator: true
+    - label: Dark theme
+      icon: res/icons/dark_mode.png
+      action: set_theme
+      args: {preset: dark}
+  power:                                # the power button's popup
+    - label: Quit desktop
+      icon: res/icons/logout.png
+      action: quit
+```
+
+`pinned` and `desktop` set the initial taskbar pins and desktop icons; ids
+that match no entry are ignored. Once you pin, unpin or move an icon from the
+desktop itself, your choices are saved in the upstream server's
+[user store](persistent-store.md) (entry `wish.desktop`) and win over these
+lists from then on. `power` lists the entries of the power button at the
+bottom of the Start menu; without it the button is hidden.
+
+### Entries
+
+Each entry is one of:
+
+| Key | Entry |
+|-----|-------|
+| `run` | Starts a process: a list of arguments, or one string split on spaces (`'…'` and `"…"` quote). |
+| `action` (+ `args`) | Calls a desktop action (see [Actions](#actions)), e.g. `action: set_theme` with `args: {preset: dark}`. |
+| `items` | A folder holding more entries. |
+| `separator: true` | A separator line. |
+| `apps: all` / `apps: <collection>` | Expands to the apps built into wish (all of them, a folder per collection, or one collection's apps). Each gets `id` = `app` = its qualified name (e.g. `bdg/desktop/nano`) and runs `{wish_client} --run=<name>`. |
+
+Optional keys:
+
+| Key | Meaning |
+|-----|---------|
+| `label` | Name in the Start menu, on the taskbar and under the desktop icon. |
+| `id` | Unique id used by `pinned`, `desktop` and the `launch` action. Default: derived from the folder and entry labels (`python-apps/to-do`). |
+| `icon` | Image relative to the session's resource folder, e.g. `res/icons/edit.png`. |
+| `tooltip` | Tooltip text; also matched by the Start menu search. |
+| `app` | (`run`) The `"app"` connect param of the client it starts. It ties the client's windows to this entry, for the taskbar icon and the running mark. Default: the `--run=` value of the command. |
+| `env` | (`run`) Environment variables, set on top of the `WISH_TRANSPORT`/`WISH_HOST`/`WISH_PORT`/`WISH_NAME` that point the process at the desktop. |
+| `cwd` | (`run`) Working directory. |
+| `pinned`, `desktop` | `true` to pin the entry or add its desktop icon, like the section's lists. |
+
+`run`, `cwd` and `env` values expand these placeholders:
+
+| Placeholder | Expands to |
+|-------------|------------|
+| `{wish_client}` | The command that runs a wish client: `wish client`, or the `wish-client` beside a standalone `wish-desktop` binary. As a whole `run` token it expands to all of its arguments. |
+| `{config_file}` | This file's path. |
+| `{home}` | Your home directory. |
+
+### Installing a client-ABI app
+
+Any program built on the wish client ABI (`wish_client_c.h` and the bindings)
+can be added as a `run` entry, so it can be started, pinned and put on the
+desktop like a built-in tool. Give it the `app` it connects as, so its
+windows are tied to the entry; the `py.todo` entry above installs
+`bindings/python/examples/desktop/todo.py`.
+
+### Errors
+
+Errors name the offending path, e.g.
+`start_menu.items[2].run: expected a list or a string`. If the file is invalid
+when the desktop starts, the desktop uses the default menu and shows the error
+in red at the top of the Start menu, without overwriting your file. If it
+becomes invalid while running, the current menu stays and the error is shown
+until a valid file is saved.
+
+## Actions
+
+Actions are what `action:` entries call. Connected apps can call them too,
+through a `__WishDesktop` object that the desktop serves itself (it is never
+relayed to the upstream server):
+
+| Action | Arguments | Effect |
+|--------|-----------|--------|
+| `quit` | — | Quits the desktop (and closes the apps it started). |
+| `shutdown_server` | — | Asks the upstream server to shut down. |
+| `set_theme` | `preset` (`dark`, `light`, ...) | Applies and saves a theme preset. |
+| `toggle_theme` | — | Switches between light and dark. |
+| `reload_config` | — | Re-reads the configuration file. |
+| `launch` | `id` | Starts a Start menu entry; returns `{ok}`. |
+| `items` | — | (RMI only) Returns `{items: [{id, label, app}, ...]}` for the `run`/`action` entries. |
+
+Apps can start only menu entries, by id; they can't run arbitrary commands.
+
+```python
+from wish import Client
+
+def session(client):
+    desktop = client.instantiate("__WishDesktop", "wish")
+    if not desktop.call("launch", {"id": "py.todo"})["ok"]:
+        print("no such entry")
+
+Client.from_env().run(session)
+```

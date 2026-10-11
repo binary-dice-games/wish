@@ -287,6 +287,9 @@ add_library(wish_client STATIC
   src/client/user_store_rpc.hpp
   src/ui/ui_descriptor.hpp
   src/ui/ui_descriptor.cpp
+  src/ui/yaml_json.hpp
+  src/context/store_dir.hpp
+  src/context/store_dir.cpp
   src/i18n/translations.hpp
   src/i18n/translations.cpp
 )

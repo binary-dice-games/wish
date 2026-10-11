@@ -4,6 +4,7 @@
 ///        registry that owns the server store and the per-user stores.
 #pragma once
 
+#include <context/store_dir.hpp>
 #include "src/bison/bison_object.hpp"
 #include "src/bison/bison_sync.hpp"
 
@@ -115,14 +116,6 @@ class persistent_store {
   std::filesystem::path file_;
   bison::synchronized<entry_map> entries_;
 };
-
-/**
- * @brief Default directory for persistent stores: `~/.wish`.
- *
- * `~` is `$HOME` (`%USERPROFILE%` on native Windows); falls back to `.wish`
- * relative to the working directory if neither is set.
- */
-std::filesystem::path default_store_dir();
 
 /**
  * @brief Owns the persistent stores of one wish server (or standalone host).

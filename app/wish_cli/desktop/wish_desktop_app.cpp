@@ -9,6 +9,7 @@
 #include "src/bison/bison.hpp"
 #include "src/client/app_registry.hpp"
 #include "src/client/user_store_rpc.hpp"
+#include "src/context/store_dir.hpp"
 #include "src/rmi/shared/constants.hpp"
 #include "src/term/terminal.hpp"
 #include "src/ui/ui_descriptor.hpp"
@@ -75,6 +76,11 @@ DEFINE_string(
 
 // ── Desktop shell flags ──────────────────────────────────────────────────────
 DEFINE_string(wallpaper, "", "Image file shown as the desktop background (default: built-in gradient)");
+DEFINE_string(
+    config,
+    "",
+    "Desktop configuration file (YAML or JSON): the Start menu and other desktop settings; "
+    "created with the defaults if missing (default: ~/.wish/desktop/desktop.yaml)");
 
 namespace bdg::wish {
 
@@ -107,10 +113,6 @@ constexpr const char* kSettingsEntry = "wish.desktop";
 // Where an uploaded wallpaper lives in the upstream sandbox (the desktop's
 // private app directory, see src/auth/DESIGN.md).
 constexpr const char* kWallpaperDir = "private/apps/wish.desktop";
-
-// Apps pinned to the taskbar and shown on the desktop until the user
-// changes them -- the first of these that are installed.
-const std::vector<std::string> kDefaultPinned{"nano", "mc", "top"};
 
 std::string os_user_name() {
   for (const char* var : {"USER", "USERNAME", "LOGNAME"}) {
@@ -148,10 +150,58 @@ dynamic_ptr string_list_value(const std::vector<std::string>& v) {
   return dynamic_ptr{d};
 }
 
-/// Whether @p wanted names @p info, by short or qualified name (default pins
-/// are short names).
-bool name_matches(const app_info& info, const std::string& wanted) {
-  return info.name == wanted || qualified_app_name(info) == wanted;
+/// The home directory, for the config's `{home}`.
+std::string home_dir() {
+#if defined(_WIN32)
+  const char* home = std::getenv("USERPROFILE");
+#else
+  const char* home = std::getenv("HOME");
+#endif
+  return home ? home : "";
+}
+
+/// A config `args:` map (JSON) as a bison object of scalars.
+dynamic json_to_dynamic(const nlohmann::ordered_json& j) {
+  dynamic d;
+  if (!j.is_object())
+    return d;
+  for (const auto& [k, v] : j.items()) {
+    key_t key{k.c_str()};
+    if (v.is_string())
+      d[key] = v.get<std::string>();
+    else if (v.is_boolean())
+      d[key] = v.get<bool>();
+    else if (v.is_number_integer())
+      d[key] = static_cast<int32_t>(v.get<long long>());
+    else if (v.is_number())
+      d[key] = v.get<float>();
+  }
+  return d;
+}
+
+/// Whether a client that connected as @p app runs @p entry_app: the same
+/// name, or the short name of it (a client run as "--run=nano").
+bool app_matches(const std::string& entry_app, const std::string& app) {
+  if (entry_app.empty() || app.empty())
+    return false;
+  if (entry_app == app)
+    return true;
+  auto slash = entry_app.rfind('/');
+  return slash != std::string::npos && app.find('/') == std::string::npos && entry_app.substr(slash + 1) == app;
+}
+
+/// The file's modification time and size, to notice edits; nullopt when it
+/// doesn't exist (an editor saving through a rename removes it briefly).
+std::optional<std::pair<std::filesystem::file_time_type, std::uintmax_t>> file_stamp(
+    const std::filesystem::path& file) {
+  std::error_code ec;
+  auto t = std::filesystem::last_write_time(file, ec);
+  if (ec)
+    return std::nullopt;
+  auto size = std::filesystem::file_size(file, ec);
+  if (ec)
+    return std::nullopt;
+  return std::make_pair(t, size);
 }
 
 } // namespace
@@ -159,6 +209,7 @@ bool name_matches(const app_info& info, const std::string& wanted) {
 // ── wish_desktop — desktop shell ────────────────────────────────────────────
 
 wish_desktop::~wish_desktop() {
+  stop_watcher();
   stop_worker();
 }
 
@@ -186,11 +237,31 @@ void wish_desktop::set_user(std::string user) {
   user_ = std::move(user);
 }
 
+void wish_desktop::set_config_file(std::filesystem::path file) {
+  config_file_ = std::move(file);
+}
+
+void wish_desktop::set_config_poll_interval(std::chrono::milliseconds interval) {
+  config_poll_ = interval;
+}
+
 desktop_settings wish_desktop::settings() const {
   return state_.rlock()->settings;
 }
 
-// ── Worker thread ──
+desktop::start_menu wish_desktop::start_menu() const {
+  return state_.rlock()->menu;
+}
+
+std::string wish_desktop::config_error() const {
+  return state_.rlock()->menu_error;
+}
+
+desktop::placeholders wish_desktop::placeholders() const {
+  return {client_command_, config_file_.string(), home_dir()};
+}
+
+// ── Worker and watcher threads ──
 
 void wish_desktop::post(std::function<void()> task) {
   {
@@ -237,6 +308,13 @@ void wish_desktop::stop_worker() {
     worker_thread_.join();
 }
 
+void wish_desktop::stop_watcher() {
+  *watcher_stop_.wlock() = true;
+  watcher_stop_.notify_all();
+  if (watcher_thread_.joinable())
+    watcher_thread_.join();
+}
+
 void wish_desktop::flush() {
   worker_.wait([](const worker_state& ws) { return ws.stop || (ws.tasks.empty() && ws.busy == 0); });
 }
@@ -255,39 +333,34 @@ void wish_desktop::build_chrome() {
       user_store_proxy_.reset();
     }
     desktop_settings saved;
-    bool have_saved = false;
     if (user_store_proxy_) {
       try {
         if (auto entry = detail::user_store_get_sync(*user_store_proxy_, kSettingsEntry)) {
+          saved.saved_pins = entry->findField("pinned"_key) != nullptr;
           saved.pinned = string_list(*entry, "pinned"_key);
           saved.on_desktop = string_list(*entry, "desktop"_key);
           saved.theme = entry->get_as<std::string>("theme"_key, std::string{});
-          have_saved = true;
         }
       } catch (const std::exception& ex) {
         std::cerr << "[desktop] cannot read saved settings: " << ex.what() << '\n';
       }
     }
 
-    // The registered apps, sorted by collection then name.
-    std::vector<const app_info*> apps;
-    for (const auto& [name, info] : registered_apps())
-      apps.push_back(&info);
-    std::stable_sort(apps.begin(), apps.end(), [](const app_info* a, const app_info* b) {
-      return std::tie(a->collection, a->name) < std::tie(b->collection, b->name);
-    });
-    if (!have_saved) {
-      for (const auto& wanted : kDefaultPinned) {
-        for (const app_info* a : apps) {
-          if (name_matches(*a, wanted)) {
-            saved.pinned.push_back(qualified_app_name(*a));
-            saved.on_desktop.push_back(qualified_app_name(*a));
-            break;
-          }
-        }
-      }
+    // The configuration file (written with the default content if missing).
+    // Its stamp is taken first: an edit made from here on is seen by the
+    // watcher below.
+    config_stamp_ = file_stamp(config_file_);
+    auto loaded = desktop::load_config(config_file_, placeholders());
+    if (loaded.wrote_default)
+      config_stamp_ = file_stamp(config_file_);
+    if (!loaded.error.empty())
+      std::cerr << "[desktop] " << loaded.error << '\n';
+    {
+      auto st = state_.wlock();
+      st->settings = saved;
+      st->menu = std::move(loaded.menu);
+      st->menu_error = loaded.error;
     }
-    state_.wlock()->settings = saved;
 
     // Theme.
     try {
@@ -299,7 +372,6 @@ void wish_desktop::build_chrome() {
       apply_theme(saved.theme);
 
     // Wallpaper: uploaded into the upstream sandbox, then referenced by path.
-    std::string wallpaper_src;
     if (!wallpaper_.empty()) {
       std::ifstream in(wallpaper_, std::ios::binary);
       if (!in) {
@@ -308,122 +380,252 @@ void wish_desktop::build_chrome() {
         std::string bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
         std::string ext = wallpaper_.extension().string();
         std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return char(std::tolower(c)); });
-        wallpaper_src = std::string(kWallpaperDir) + "/wallpaper" + ext;
+        std::string src = std::string(kWallpaperDir) + "/wallpaper" + ext;
         try {
           auto fs = upstream().instantiate("wish"_key, "__WishFileSystem"_key).get();
           dynamic args;
-          args["name"_key] = wallpaper_src;
+          args["name"_key] = src;
           args["data"_key] = std::move(bytes);
           args["first"_key] = true;
           args["eof"_key] = true;
           fs.call("upload_chunk"_key, std::move(args)).get();
+          wallpaper_src_ = src;
         } catch (const std::exception& ex) {
           std::cerr << "[desktop] wallpaper upload failed: " << ex.what() << '\n';
-          wallpaper_src.clear();
         }
       }
     }
 
-    // The DesktopShell descriptor, one DesktopApp child per registered app.
-    auto contains = [](const std::vector<std::string>& v, const std::string& x) {
-      return std::find(v.begin(), v.end(), x) != v.end();
-    };
-    nlohmann::ordered_json root;
-    root["type"] = "DesktopShell";
-    root["user"] = user_;
-    root["wallpaper"] = wallpaper_src;
-    nlohmann::ordered_json children = nlohmann::ordered_json::object();
-    std::map<std::string, std::string> path_to_app;
-    for (size_t i = 0; i < apps.size(); ++i) {
-      const app_info& a = *apps[i];
-      std::string qualified = qualified_app_name(a);
-      std::string child = "app" + std::to_string(i);
-      path_to_app[child] = qualified;
-      nlohmann::ordered_json c;
-      c["type"] = "DesktopApp";
-      c["app"] = qualified;
-      c["label"] = a.name;
-      c["description"] = a.description;
-      c["collection"] = a.collection;
-      c["icon"] = a.icon;
-      c["pinned"] = contains(saved.pinned, qualified);
-      c["on_desktop"] = contains(saved.on_desktop, qualified);
-      children[child] = std::move(c);
-    }
-    root["children"] = std::move(children);
-
     template_proxy_ = upstream().instantiate("wish"_key, "__WishTemplate"_key).get();
-    auto& tmpl = *template_proxy_;
-
-    dynamic reg_args;
-    reg_args["name"_key] = key_t{kChromeTemplateName};
-    reg_args["descriptor"_key] = dynamic_ptr{import_descriptor_json(root.dump())};
-    tmpl.call("register"_key, std::move(reg_args)).get();
-
-    dynamic inst_args;
-    inst_args["name"_key] = key_t{kChromeTemplateName};
-    auto result = tmpl.call("instantiate"_key, std::move(inst_args)).get();
-
-    key_t shell_id{0u};
-    std::map<std::string, key_t> app_nodes;
-    result.forEach([&](key_t, const field& v) {
-      if (!v.is<dynamic_ptr>())
-        return;
-      const auto& entry = v.as<dynamic_ptr>();
-      if (!entry)
-        return;
-      const auto* name_field = entry->findField("name"_key);
-      const auto* id_field = entry->findField("id"_key);
-      if (!name_field || !id_field || !name_field->is<std::string>() || !id_field->is<key_t>())
-        return;
-      const std::string& path = name_field->as<std::string>();
-      if (path.empty())
-        shell_id = id_field->as<key_t>();
-      else if (auto it = path_to_app.find(path); it != path_to_app.end())
-        app_nodes[it->second] = id_field->as<key_t>();
-    });
-
-    {
-      auto st = state_.wlock();
-      st->shell_id = shell_id;
-      st->app_nodes = std::move(app_nodes);
-    }
-
-    if (shell_id.id != 0u) {
-      shell_proxy_ = upstream().make_proxy(shell_id);
-      for (const char* ev : {"launch", "pin", "desktop_icon", "theme", "quit"}) {
-        key_t name{ev};
-        shell_proxy_->onEvent(name, [this, name](dynamic payload) { on_shell_event(name, payload); });
-      }
-    }
+    build_shell();
     // Clients that connected while the shell was being built.
     post([this] { push_running_state(); });
   } catch (const std::exception& ex) {
     std::cerr << "[desktop] chrome build error: " << ex.what() << '\n';
   }
+
+  // Watch the configuration file: an edit rebuilds the shell.
+  if (!config_file_.empty()) {
+    watcher_thread_ = std::thread([this, last = config_stamp_]() mutable {
+      for (;;) {
+        bool stop = watcher_stop_.wait_for(config_poll_, [](const bool& s) { return s; });
+        if (stop)
+          return;
+        auto now = file_stamp(config_file_);
+        if (now && now != last) {
+          last = now;
+          post([this] { reload_config(); });
+        }
+      }
+    });
+  }
 }
 
-// ── Shell events ──
+namespace {
+
+/// Appends @p entries to @p children as DesktopApp / DesktopMenu / Separator
+/// descriptors, recording each DesktopApp's dot-path -> entry id.
+void describe_entries(
+    const std::vector<desktop::menu_entry>& entries,
+    nlohmann::ordered_json& children,
+    const std::string& prefix,
+    const desktop_settings& settings,
+    std::map<std::string, std::string>& path_to_id) {
+  auto contains = [](const std::vector<std::string>& v, const std::string& x) {
+    return std::find(v.begin(), v.end(), x) != v.end();
+  };
+  for (size_t i = 0; i < entries.size(); ++i) {
+    const auto& e = entries[i];
+    std::string name = "e" + std::to_string(i);
+    std::string path = prefix.empty() ? name : prefix + "." + name;
+    nlohmann::ordered_json c;
+    switch (e.kind) {
+      case desktop::entry_kind::separator:
+        c["type"] = "Separator";
+        break;
+      case desktop::entry_kind::folder: {
+        c["type"] = "DesktopMenu";
+        c["id"] = e.id;
+        c["label"] = e.label;
+        c["icon"] = e.icon;
+        c["tooltip"] = e.tooltip;
+        nlohmann::ordered_json sub = nlohmann::ordered_json::object();
+        describe_entries(e.children, sub, path, settings, path_to_id);
+        c["children"] = std::move(sub);
+        break;
+      }
+      case desktop::entry_kind::run:
+      case desktop::entry_kind::action:
+        c["type"] = "DesktopApp";
+        c["id"] = e.id;
+        c["app"] = e.app;
+        c["label"] = e.label;
+        c["tooltip"] = e.tooltip;
+        c["icon"] = e.icon;
+        // The user's own pins win over the file's once they changed any.
+        c["pinned"] = settings.saved_pins ? contains(settings.pinned, e.id) : e.pinned;
+        c["on_desktop"] = settings.saved_pins ? contains(settings.on_desktop, e.id) : e.on_desktop;
+        path_to_id[path] = e.id;
+        break;
+    }
+    children[name] = std::move(c);
+  }
+}
+
+} // namespace
+
+void wish_desktop::build_shell() {
+  if (!template_proxy_)
+    return;
+  desktop::start_menu menu;
+  desktop_settings settings;
+  std::string error;
+  std::string name;
+  {
+    auto st = state_.wlock();
+    menu = st->menu;
+    settings = st->settings;
+    error = st->menu_error;
+    name = std::string(kChromeTemplateName) + "_" + std::to_string(st->templates++);
+  }
+
+  nlohmann::ordered_json root;
+  root["type"] = "DesktopShell";
+  root["user"] = user_;
+  root["wallpaper"] = wallpaper_src_;
+  root["menu_error"] = error;
+  nlohmann::ordered_json children = nlohmann::ordered_json::object();
+  std::map<std::string, std::string> path_to_id;
+  describe_entries(menu.items, children, "", settings, path_to_id);
+  if (!menu.power.empty()) {
+    nlohmann::ordered_json power;
+    power["type"] = "DesktopMenu";
+    power["id"] = "power";
+    power["role"] = "power";
+    power["label"] = "Power";
+    nlohmann::ordered_json sub = nlohmann::ordered_json::object();
+    describe_entries(menu.power, sub, "power", settings, path_to_id);
+    power["children"] = std::move(sub);
+    children["power"] = std::move(power);
+  }
+  root["children"] = std::move(children);
+
+  dynamic reg_args;
+  reg_args["name"_key] = key_t{name.c_str()};
+  reg_args["descriptor"_key] = dynamic_ptr{import_descriptor_json(root.dump())};
+  template_proxy_->call("register"_key, std::move(reg_args)).get();
+
+  dynamic inst_args;
+  inst_args["name"_key] = key_t{name.c_str()};
+  auto result = template_proxy_->call("instantiate"_key, std::move(inst_args)).get();
+
+  key_t shell_id{0u};
+  std::map<std::string, key_t> entry_nodes;
+  result.forEach([&](key_t, const field& v) {
+    if (!v.is<dynamic_ptr>() || !v.as<dynamic_ptr>())
+      return;
+    const auto& entry = v.as<dynamic_ptr>();
+    const auto* name_field = entry->findField("name"_key);
+    const auto* id_field = entry->findField("id"_key);
+    if (!name_field || !id_field || !name_field->is<std::string>() || !id_field->is<key_t>())
+      return;
+    const std::string& path = name_field->as<std::string>();
+    if (path.empty())
+      shell_id = id_field->as<key_t>();
+    else if (auto it = path_to_id.find(path); it != path_to_id.end())
+      entry_nodes[it->second] = id_field->as<key_t>();
+  });
+  if (shell_id.id == 0u)
+    throw std::runtime_error("the desktop shell template has no root");
+
+  // Swap in the new shell, then remove the old one (destroying a template
+  // root takes it off the screen).
+  std::optional<rmi::proxy::dynamic> old = std::move(shell_proxy_);
+  shell_proxy_ = upstream().make_proxy(shell_id);
+  for (const char* ev : {"activate", "pin", "desktop_icon", "theme"}) {
+    key_t event{ev};
+    shell_proxy_->onEvent(event, [this, event](dynamic payload) { on_shell_event(event, payload); });
+  }
+  {
+    auto st = state_.wlock();
+    st->shell_id = shell_id;
+    st->entry_nodes = std::move(entry_nodes);
+  }
+  if (old) {
+    try {
+      old->destroy();
+    } catch (const std::exception& ex) {
+      std::cerr << "[desktop] cannot remove the previous shell: " << ex.what() << '\n';
+    }
+  }
+  push_running_state();
+}
+
+void wish_desktop::reload_config() {
+  std::string text;
+  {
+    std::ifstream in(config_file_, std::ios::binary);
+    if (!in)
+      return; // being replaced by an editor; the next change reloads
+    text.assign((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  }
+  try {
+    auto menu = desktop::parse_config_text(text, placeholders());
+    auto st = state_.wlock();
+    st->menu = std::move(menu);
+    st->menu_error.clear();
+  } catch (const std::exception& ex) {
+    // Keep the menu in use; show what's wrong at the top of the Start menu.
+    std::string error = config_file_.filename().string() + ": " + ex.what();
+    std::cerr << "[desktop] " << error << '\n';
+    key_t shell{0u};
+    {
+      auto st = state_.wlock();
+      st->menu_error = error;
+      shell = st->shell_id;
+    }
+    if (shell.id != 0u) {
+      dynamic fields;
+      fields["menu_error"_key] = error;
+      upstream().make_proxy(shell).set(std::move(fields)).get();
+    }
+    return;
+  }
+  build_shell();
+}
+
+// ── Shell events and actions ──
 
 void wish_desktop::on_shell_event(key_t event, const dynamic& payload) {
-  const std::string app = payload.get_as<std::string>("app"_key, std::string{});
+  const std::string id = payload.get_as<std::string>("id"_key, std::string{});
 
-  if (event == key_t{"quit"}) {
-    request_quit();
-  } else if (event == key_t{"launch"}) {
-    post([this, app] { launch_app(app); });
+  if (event == key_t{"activate"}) {
+    post([this, id] { launch_entry(id); });
   } else if (event == key_t{"pin"} || event == key_t{"desktop_icon"}) {
     const bool pin = event == key_t{"pin"};
     const bool value = payload.get_as<bool>(pin ? "pinned"_key : "on_desktop"_key, false);
-    post([this, app, pin, value] {
+    post([this, id, pin, value] {
       key_t node{0u};
       {
         auto st = state_.wlock();
-        auto& list = pin ? st->settings.pinned : st->settings.on_desktop;
-        list.erase(std::remove(list.begin(), list.end(), app), list.end());
+        auto& s = st->settings;
+        if (!s.saved_pins) {
+          // First change: start from the configuration file's pins.
+          s.saved_pins = true;
+          s.pinned.clear();
+          s.on_desktop.clear();
+          for (const desktop::menu_entry* e : st->menu.all()) {
+            if (e->pinned)
+              s.pinned.push_back(e->id);
+            if (e->on_desktop)
+              s.on_desktop.push_back(e->id);
+          }
+        }
+        auto& list = pin ? s.pinned : s.on_desktop;
+        list.erase(std::remove(list.begin(), list.end(), id), list.end());
         if (value)
-          list.push_back(app);
-        if (auto it = st->app_nodes.find(app); it != st->app_nodes.end())
+          list.push_back(id);
+        if (auto it = st->entry_nodes.find(id); it != st->entry_nodes.end())
           node = it->second;
       }
       if (node.id != 0u) {
@@ -436,11 +638,54 @@ void wish_desktop::on_shell_event(key_t event, const dynamic& payload) {
   } else if (event == key_t{"theme"}) {
     const std::string preset = payload.get_as<std::string>("preset"_key, std::string{});
     post([this, preset] {
-      state_.wlock()->settings.theme = preset;
-      apply_theme(preset);
-      save_settings();
+      dynamic args;
+      args["preset"_key] = preset;
+      run_action("set_theme", args);
     });
   }
+}
+
+dynamic wish_desktop::run_action(const std::string& action, const dynamic& args) {
+  dynamic result;
+  if (action == "quit") {
+    request_quit();
+  } else if (action == "shutdown_server") {
+    key_t shell = state_.rlock()->shell_id;
+    if (shell.id != 0u) {
+      dynamic fields;
+      fields["shutdown"_key] = true;
+      upstream().make_proxy(shell).set(std::move(fields)).get();
+    }
+  } else if (action == "set_theme" || action == "toggle_theme") {
+    std::string preset = args.get_as<std::string>("preset"_key, std::string{});
+    if (action == "toggle_theme")
+      preset = state_.rlock()->settings.theme == "dark" ? "light" : "dark";
+    if (preset.empty())
+      throw std::runtime_error("set_theme: missing \"preset\"");
+    state_.wlock()->settings.theme = preset;
+    apply_theme(preset);
+    save_settings();
+  } else if (action == "reload_config") {
+    reload_config();
+  } else if (action == "launch") {
+    result["ok"_key] = launch_entry(args.get_as<std::string>("id"_key, std::string{}));
+  } else if (action == "items") {
+    auto list = std::make_shared<dynamic>();
+    uint32_t i = 0;
+    for (const desktop::menu_entry* e : state_.rlock()->menu.all()) {
+      if (e->kind != desktop::entry_kind::run && e->kind != desktop::entry_kind::action)
+        continue;
+      auto item = std::make_shared<dynamic>();
+      (*item)["id"_key] = e->id;
+      (*item)["label"_key] = e->label;
+      (*item)["app"_key] = e->app;
+      (*list)[key_t{i++}] = dynamic_ptr{item};
+    }
+    result["items"_key] = dynamic_ptr{list};
+  } else {
+    throw std::runtime_error("unknown desktop action '" + action + "'");
+  }
+  return result;
 }
 
 void wish_desktop::apply_theme(const std::string& preset) {
@@ -456,32 +701,79 @@ void wish_desktop::save_settings() {
     return;
   desktop_settings s = settings();
   dynamic entry;
-  entry["pinned"_key] = string_list_value(s.pinned);
-  entry["desktop"_key] = string_list_value(s.on_desktop);
+  if (s.saved_pins) {
+    entry["pinned"_key] = string_list_value(s.pinned);
+    entry["desktop"_key] = string_list_value(s.on_desktop);
+  }
   entry["theme"_key] = s.theme;
   detail::user_store_set_sync(*user_store_proxy_, kSettingsEntry, std::move(entry));
 }
 
-bool wish_desktop::launch_app(const std::string& app) {
-  if (!launcher_ || client_command_.empty()) {
-    std::cerr << "[desktop] cannot launch " << app << ": no launcher configured\n";
+bool wish_desktop::launch_entry(const std::string& id) {
+  std::optional<desktop::menu_entry> entry;
+  {
+    auto st = state_.rlock();
+    if (const desktop::menu_entry* e = st->menu.find(id))
+      entry = *e;
+  }
+  if (!entry) {
+    std::cerr << "[desktop] no Start menu entry '" << id << "'\n";
+    return false;
+  }
+  if (entry->kind == desktop::entry_kind::action) {
+    try {
+      run_action(entry->action, json_to_dynamic(entry->args));
+      return true;
+    } catch (const std::exception& ex) {
+      std::cerr << "[desktop] " << entry->label << ": " << ex.what() << '\n';
+      return false;
+    }
+  }
+  if (entry->kind != desktop::entry_kind::run)
+    return false;
+  if (!launcher_) {
+    std::cerr << "[desktop] cannot start " << entry->label << ": no launcher configured\n";
     return false;
   }
   launch_request req;
-  req.argv = client_command_;
-  req.argv.push_back("--run=" + app);
+  req.argv = entry->argv;
   req.env = launch_env_;
+  req.env.insert(req.env.end(), entry->env.begin(), entry->env.end());
+  req.cwd = entry->cwd;
   if (!log_dir_.empty()) {
-    std::string file = app;
-    std::replace(file.begin(), file.end(), '/', '.');
+    std::string file = entry->id;
+    std::replace_if(file.begin(), file.end(), [](char c) { return c == '/' || c == '\\' || c == ':'; }, '.');
     req.log_path = log_dir_ / (file + "_" + std::to_string(++launch_count_) + ".log");
   }
   std::string error;
   if (!launcher_->launch(req, error)) {
-    std::cerr << "[desktop] cannot launch " << app << ": " << error << '\n';
+    std::cerr << "[desktop] cannot start " << entry->label << ": " << error << '\n';
     return false;
   }
   return true;
+}
+
+// ── __WishDesktop, served to downstream clients ──
+
+bool wish_desktop::on_check_class(rmi::context& ctx, key_t ns, key_t klass) {
+  if (ns == "wish"_key && klass == "__WishDesktop"_key)
+    return true;
+  return bridge::on_check_class(ctx, ns, klass);
+}
+
+dynamic_ptr wish_desktop::on_create_object(rmi::context& ctx, key_t ns, key_t klass) {
+  if (!(ns == "wish"_key && klass == "__WishDesktop"_key))
+    return bridge::on_create_object(ctx, ns, klass);
+  auto obj = dynamic_ptr{"__WishDesktop"_rkey, {}};
+  // One method per action; each runs it with the call's params.
+  for (const std::string& action : desktop::known_actions()) {
+    obj->addMethod(key_t{action.c_str()}, method{[this, action](dynamic&, const dynamic& params) -> dynamic {
+                     return run_action(action, params);
+                   }});
+  }
+  obj->addMethod(
+      "items"_key, method{[this](dynamic&, const dynamic& params) -> dynamic { return run_action("items", params); }});
+  return obj;
 }
 
 // ── Downstream clients ──
@@ -490,7 +782,8 @@ bool wish_desktop::try_handle_request(
     rmi::context& ctx,
     const rmi::shared::envelope& env,
     rmi::transport::server_connection_iface& conn) {
-  if (env.op == rmi::shared::constants::OP_CONNECT) {
+  using namespace rmi::shared::constants;
+  if (env.op == OP_CONNECT) {
     std::string app = env.payload.get_as<std::string>("app"_key, std::string{});
     {
       auto st = state_.wlock();
@@ -504,6 +797,16 @@ bool wish_desktop::try_handle_request(
     }
     post([this] { push_running_state(); });
   }
+  // The bridge's own objects are answered here by the base server: a new
+  // __WishDesktop, and anything sent to an object of this session's own
+  // (relayed objects live upstream, never in the downstream context).
+  if (env.op == OP_INSTANTIATE) {
+    const field* klass = env.payload.findField(FIELD_KLASS);
+    if (klass && klass->is<key_t>() && klass->as<key_t>() == "__WishDesktop"_key)
+      return false;
+  } else if (env.object_id.id != 0u && ctx.objects.count(env.object_id.id) != 0) {
+    return false;
+  }
   return bridge::try_handle_request(ctx, env, conn);
 }
 
@@ -516,55 +819,40 @@ void wish_desktop::on_client_disconnected(rmi::context& ctx) {
   post([this] { push_running_state(); });
 }
 
-namespace {
-
-/// The `app_nodes` entry @p app runs as: its exact name, or a registered
-/// app whose short name it is (e.g. a client run as "--run=nano").
-template <typename Map>
-auto find_app_node(Map& nodes, const std::string& app) {
-  auto it = nodes.find(app);
-  if (it != nodes.end())
-    return it;
-  return std::find_if(nodes.begin(), nodes.end(), [&](const auto& e) {
-    auto slash = e.first.rfind('/');
-    return slash != std::string::npos && e.first.substr(slash + 1) == app;
-  });
-}
-
-} // namespace
-
 void wish_desktop::add_unknown_apps() {
   if (!template_proxy_)
     return;
   std::vector<std::pair<std::string, std::pair<std::string, std::string>>> unknown;
   {
     auto st = state_.rlock();
+    std::vector<const desktop::menu_entry*> entries = st->menu.all();
     for (const auto& [session, app] : st->session_apps) {
-      if (find_app_node(st->app_nodes, app) != st->app_nodes.end())
+      bool known = st->extra_nodes.count(app) != 0 ||
+          std::any_of(entries.begin(), entries.end(), [&](const auto* e) { return app_matches(e->app, app); });
+      if (known)
         continue;
+      if (std::any_of(unknown.begin(), unknown.end(), [&](const auto& u) { return u.first == app; }))
+        continue; // two sessions of the same new app
       auto meta = st->app_meta.find(app);
       unknown.emplace_back(app, meta != st->app_meta.end() ? meta->second : std::pair<std::string, std::string>{});
     }
   }
   for (const auto& [app, meta] : unknown) {
-    {
-      auto st = state_.rlock();
-      if (find_app_node(st->app_nodes, app) != st->app_nodes.end())
-        continue; // two sessions of the same new app
-    }
     std::string label = meta.first;
     if (label.empty())
       label = app.substr(app.rfind('/') == std::string::npos ? 0 : app.rfind('/') + 1);
     nlohmann::ordered_json d;
     d["type"] = "DesktopApp";
+    d["id"] = app;
     d["app"] = app;
     d["label"] = label;
     d["icon"] = meta.second;
     d["listed"] = false;
     // A one-off template per app: instantiating it adds a top-level
-    // DesktopApp next to the shell, which the server lists with the shell's
-    // own children (see render_desktop_shell()).
-    std::string name = std::string(kChromeTemplateName) + "_app" + std::to_string(state_.wlock()->extra_apps++);
+    // DesktopApp next to the shell, which the server lists after the
+    // shell's own entries (see render_desktop_shell()). It survives shell
+    // rebuilds.
+    std::string name = std::string(kChromeTemplateName) + "_" + std::to_string(state_.wlock()->templates++);
     dynamic reg_args;
     reg_args["name"_key] = key_t{name.c_str()};
     reg_args["descriptor"_key] = dynamic_ptr{import_descriptor_json(d.dump())};
@@ -584,7 +872,7 @@ void wish_desktop::add_unknown_apps() {
         node = id_field->as<key_t>();
     });
     if (node.id != 0u)
-      state_.wlock()->app_nodes[app] = node;
+      state_.wlock()->extra_nodes[app] = node;
   }
 }
 
@@ -597,12 +885,21 @@ void wish_desktop::push_running_state() {
     auto st = state_.rlock();
     shell_id = st->shell_id;
     clients = static_cast<int32_t>(st->sessions.size());
-    for (const auto& [app, node] : st->app_nodes)
-      by_node[node]; // every app, so one that stopped is cleared too
-    for (const auto& [session, app] : st->session_apps) {
-      auto it = find_app_node(st->app_nodes, app);
-      if (it != st->app_nodes.end())
-        by_node[it->second].push_back(static_cast<int32_t>(session));
+    // Every entry node, so one whose app stopped is cleared too.
+    for (const auto& [id, node] : st->entry_nodes) {
+      auto& sessions = by_node[node];
+      const desktop::menu_entry* e = st->menu.find(id);
+      if (!e)
+        continue;
+      for (const auto& [session, app] : st->session_apps)
+        if (app_matches(e->app, app))
+          sessions.push_back(static_cast<int32_t>(session));
+    }
+    for (const auto& [app, node] : st->extra_nodes) {
+      auto& sessions = by_node[node];
+      for (const auto& [session, session_app] : st->session_apps)
+        if (session_app == app)
+          sessions.push_back(static_cast<int32_t>(session));
     }
   }
   if (shell_id.id == 0u)
@@ -663,13 +960,14 @@ std::unique_ptr<bison::rmi::bridge> wish_desktop_app::make_bridge(
   auto br =
       std::make_unique<wish_desktop>(downstream_transport, std::move(upstream_transport), std::move(upstream_params));
 
+  // {wish_client} in the configuration, also when nothing can be started.
+  br->set_client_command(client_command_);
   if (FLAGS_downstream_transport == "term") {
     std::cerr << "[desktop] --downstream_transport=term: apps cannot be launched from the Start menu\n";
   } else {
     if (!launcher_)
       launcher_ = std::make_unique<process_launcher>();
     br->set_launcher(launcher_.get());
-    br->set_client_command(client_command_);
     br->set_launch_env({
         {"WISH_TRANSPORT", FLAGS_downstream_transport},
         {"WISH_HOST", connectable_host(FLAGS_downstream_host)},
@@ -680,6 +978,8 @@ std::unique_ptr<bison::rmi::bridge> wish_desktop_app::make_bridge(
   }
   if (!FLAGS_wallpaper.empty())
     br->set_wallpaper(FLAGS_wallpaper);
+  br->set_config_file(
+      FLAGS_config.empty() ? default_store_dir() / "desktop" / "desktop.yaml" : std::filesystem::path(FLAGS_config));
   br->set_user(FLAGS_upstream_username.empty() ? os_user_name() : FLAGS_upstream_username);
 
   desktop_ = br.get();

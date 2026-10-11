@@ -13,25 +13,48 @@
 #include <cstdint>
 #include <ctime>
 #include <functional>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
 namespace bdg::wish {
 
-/// @brief One launchable app of a DesktopShell, copied out of its
-///        `DesktopApp` child (see desktop_shell.cpp for the fields).
+/// @brief One Start menu entry of a DesktopShell (an app to start or an
+///        action), copied out of its `DesktopApp` node (see
+///        desktop_shell.cpp for the fields).
 struct desktop_app_info {
   bison::key_t node_id{0u}; ///< The DesktopApp node's `__wish_id`.
-  std::string app;
+  std::string id; ///< Entry id, sent back in events.
+  std::string app; ///< The "app" its clients connect as; may be empty.
   std::string label;
-  std::string description;
-  std::string collection;
+  std::string tooltip;
   std::string icon;
+  std::string path; ///< Labels of its folders, e.g. "Python apps".
+  bool power{false}; ///< Lives in the power button's menu.
   bool pinned{false};
   bool on_desktop{false};
   bool listed{true}; ///< False: taskbar-only (no Start menu entry, pin or icon).
   std::vector<int32_t> sessions; ///< Object groups of its running instances.
+};
+
+/// @brief One node of the Start menu tree.
+struct desktop_menu_node {
+  enum class kind { entry, folder, separator };
+  kind type{kind::entry};
+  int app_index{-1}; ///< entry: index into the shell's apps.
+  std::string id; ///< folder: keeps its expanded state.
+  std::string label;
+  std::string icon;
+  std::string tooltip;
+  std::vector<desktop_menu_node> children; ///< folder
+};
+
+/// @brief The Start menu, copied out of a DesktopShell's children.
+struct desktop_menu {
+  std::vector<desktop_app_info> apps; ///< Every entry, flat (tree + power).
+  std::vector<desktop_menu_node> items; ///< The Start menu list.
+  std::vector<desktop_menu_node> power; ///< The power button's entries.
 };
 
 /// @brief One taskbar entry: a top-level Window, or an app's main frame (a
@@ -67,6 +90,9 @@ struct desktop_shell_state {
   /// Windows minimized by "show desktop", restored by its second click.
   std::vector<std::pair<const sync_context*, bison::key_t>> shown_desktop;
   std::string selected_icon;
+  bool shutdown_requested{false}; ///< The shell's `shutdown` was acted on.
+  /// Ids of the Start menu folders the user expanded.
+  std::set<std::string> expanded_folders;
   int calendar_year{0};
   int calendar_month{0}; ///< 0-11
   /// Sandbox-resolved absolute path per image src, so the per-frame icon
@@ -98,7 +124,8 @@ struct desktop_shell_state {
  * @param r                The renderer drawing the frame.
  * @param sessions         Snapshot of the connected sessions.
  * @param state            Cross-frame UI state, owned by the caller.
- * @param shutdown_server  Run by the Start menu's "Shut down server" item.
+ * @param shutdown_server  Run when the shell's `shutdown` field is set (the
+ *                         desktop's "shutdown_server" action).
  * @return true when a DesktopShell was found and drawn.
  */
 bool render_desktop_shell(
@@ -119,11 +146,11 @@ std::string desktop_format_time(const std::string& format, std::time_t t);
 
 /// @brief How well @p app matches the Start menu search @p query: 0 = its
 ///        label starts with it (or the query is empty), 1 = label contains
-///        it, 2 = description contains it, -1 = no match (case-insensitive).
+///        it, 2 = tooltip contains it, -1 = no match (case-insensitive).
 int desktop_app_match_rank(const desktop_app_info& app, const std::string& query);
 
 /// @brief Whether @p app matches the Start menu search @p query
-///        (case-insensitive substring of its label or description; an
+///        (case-insensitive substring of its label or tooltip; an
 ///        empty query matches everything).
 bool desktop_app_matches(const desktop_app_info& app, const std::string& query);
 
@@ -141,7 +168,12 @@ desktop_collect_windows(const context& s, const sync_context* session, const std
 /// @brief Copies one DesktopApp node.
 desktop_app_info desktop_collect_app(const ui_element& app);
 
-/// @brief Copies a DesktopShell node's DesktopApp children, in order.
+/// @brief Copies a DesktopShell node's Start menu: its DesktopApp,
+///        DesktopMenu and Separator children, recursively (a DesktopMenu
+///        with role "power" becomes the power menu).
+desktop_menu desktop_collect_menu(const ui_element& shell);
+
+/// @brief Every DesktopApp entry of a DesktopShell's tree, depth-first.
 std::vector<desktop_app_info> desktop_collect_apps(const ui_element& shell);
 
 /// @brief Number of days in @p month (0-11) of @p year.

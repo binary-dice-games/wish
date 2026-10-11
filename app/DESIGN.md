@@ -204,9 +204,11 @@ and returns. The session blocks in `on_session()` until `signal_done()` fires.
 
 **Classes**: `wish_desktop` (extends `bison::rmi::bridge`, desktop shell),
 `wish_desktop_app` (extends `bison::app::bridge_app`, CLI scaffold) and
-`process_launcher` (starts the apps launched from the desktop)
+`process_launcher` (starts the apps launched from the desktop); the
+`desktop::` config parser (`load_config()`, `parse_start_menu()`)
 **Sources**: `app/wish_cli/desktop/wish_desktop_app.hpp/.cpp`,
-`app/wish_cli/desktop/process_launcher.hpp/.cpp`; the chrome itself is drawn
+`app/wish_cli/desktop/process_launcher.hpp/.cpp`,
+`app/wish_cli/desktop/desktop_config.hpp/.cpp`; the chrome itself is drawn
 by the server: `src/ui/ui_elements/desktop_shell.cpp` (classes) and
 `src/imgui/imgui_desktop_shell.hpp/.cpp` (rendering)
 
@@ -223,10 +225,11 @@ for the user-facing behavior.
 wish desktop (bridge process)                 wish server (upstream)
 ──────────────────────────────                ─────────────────────────────────
 wish_desktop::build_chrome()                  DesktopShell top-level object
-  registered_apps() ──► DesktopApp children     │ render_server_frame():
+  desktop.yaml ──► DesktopMenu/DesktopApp tree  │ render_server_frame():
   user store "wish.desktop" (pins, theme)       │  host_renderer → render_desktop_shell()
-  shell events ◄──────────────────────────────── │  launch / pin / desktop_icon / theme / quit
-  launch_app() ─► process_launcher (libuv)      │
+  shell events ◄──────────────────────────────── │  activate / pin / desktop_icon / theme
+  launch_entry() ─► process_launcher (libuv)    │
+  run_action() ◄── __WishDesktop (downstream)   │
         │                                       │
         └─► wish client --run=<app> ──► downstream ──► relayed upstream (group = session id)
 ```
@@ -238,15 +241,68 @@ The split follows where the information lives:
   minimize/raise are server-side (`render_desktop_shell()`, called from
   `host_renderer::render_server_frame()` before the sessions render). The
   `DesktopShell` element carries only data (`wallpaper`, `user`, `clients`,
-  clock formats) and `DesktopApp` children (`app`, `label`, `icon`,
-  `pinned`, `on_desktop`, `sessions`); user actions come back as events.
-- **The bridge owns policy and processes.** It knows the app registry (it
-  is linked with the modules), the user's settings, and can spawn
-  processes, so it builds the `DesktopShell` from `registered_apps()`,
-  answers its events, and starts apps.
+  clock formats, `menu_error`, `shutdown`) and the Start menu tree as
+  children: `DesktopMenu` folders (one with `role: "power"` fills the power
+  button), `Separator`s and `DesktopApp` entries (`id`, `app`, `label`,
+  `icon`, `tooltip`, `pinned`, `on_desktop`, `sessions`). User actions come
+  back as events naming the entry `id`; the server never knows what an
+  entry does.
+- **The bridge owns policy and processes.** It reads the config file, knows
+  the app registry (it is linked with the modules, for `apps: all`), the
+  user's settings, and can spawn processes, so it builds the `DesktopShell`
+  from the config, answers its events, runs entries and starts apps.
 - **The server never changes `pinned`/`on_desktop` itself**: it emits the
   event and the bridge sets the field, so the bridge's saved settings and
   what is shown can't diverge.
+
+### The config file and the Start menu
+
+The Start menu is a section (`start_menu`) of a per-user file,
+`~/.wish/desktop/desktop.yaml` (`--config`; format in
+[docs/desktop-config.md](../docs/desktop-config.md)). It is a plain file next
+to the persistent stores (`default_store_dir()`, in `wish_client` so the
+client-only `wish-desktop` can use it), not a store entry, so users can edit
+it with any editor, and the server store stays unreachable over RMI. The
+top level is a map of sections so later desktop settings (wallpaper,
+taskbar, ...) can be added without a format change; unknown sections are
+ignored.
+
+- **Parsing** (`desktop_config.cpp`) is pure: YAML/JSON → `ordered_json`
+  (`yaml_to_json()`, shared with the UI descriptor importer) →
+  `start_menu{items, power}` of `menu_entry`s with placeholders expanded,
+  `apps:` expanded from the registry, and unique ids. Errors are
+  `config_error`s naming the offending path. A missing file gets the default
+  written; an unusable one yields the default menu plus an error, and is
+  never overwritten.
+- **Rebuilds.** `build_shell()` turns the menu into a descriptor, registers
+  it as a fresh `__wish_desktop_chrome_<n>` template, instantiates it, maps
+  the instantiated node ids to entry ids, then destroys the previous shell
+  root (its `HOOK_DESTRUCT` removes the top-level object). Rebuilding the
+  whole shell is simpler than diffing trees and costs one round trip per
+  config save.
+- **Live reload.** A watcher thread polls the file's mtime and size
+  (`--config` may point anywhere, and polling needs no platform-specific
+  notification API) and posts `reload_config()` to the worker. The initial
+  stamp is taken before the first load, so an edit racing the start is
+  still seen. A reload that fails keeps the current menu and sets
+  `DesktopShell.menu_error`.
+- **Pins and icons** are entry ids. The file supplies the initial set; once
+  the user pins, unpins or adds/removes a desktop icon, the saved lists in
+  `wish.desktop` (`saved_pins`) win. Unknown ids are ignored.
+
+### Actions and `__WishDesktop`
+
+`run_action()` is the desktop's action table (`quit`, `shutdown_server`,
+`set_theme`, `toggle_theme`, `reload_config`, `launch`, plus `items` for
+RMI). `action:` menu entries call it, and so can connected apps: the
+desktop serves a `__WishDesktop` object on its **downstream** side, through
+`on_check_class()`/`on_create_object()`, and `try_handle_request()` keeps
+the `OP_INSTANTIATE` of that class and every op on a downstream-local object
+id out of the upstream relay. `shutdown_server` can't be done by the bridge
+directly (the server is another process), so it sets
+`DesktopShell.shutdown` and the host renderer calls its quit callback once.
+Clients start entries **by id only**, never an arbitrary command, since the
+downstream port may listen on all interfaces.
 
 ### Which window belongs to which app
 
@@ -260,11 +316,13 @@ indirectly by templates). Two pieces close the loop:
   params. `wish_desktop` overrides `try_handle_request()` to read it on
   `OP_CONNECT` (then lets the bridge handle the connect as usual) and
   `on_client_disconnected()` to forget it.
-- It publishes each app's live session ids on `DesktopApp.sessions`. The
+- It publishes each app's live session ids on the `DesktopApp.sessions` of
+  every entry with that `app` (an exact match, or a short `--run=nano`
+  matching `bdg/desktop/nano`). The
   renderer maps a window's `__wish_id` to its group, and the group to an
   app, for the taskbar icon and the running indicator under pinned apps.
 
-Apps the registry doesn't know -- a script on the client C ABI that sends
+Apps no menu entry names -- a script on the client C ABI that sends
 `"app"` (plus optional `"app_label"`/`"app_icon"`) -- get an entry too:
 `add_unknown_apps()` instantiates a one-off template holding a single
 unlisted `DesktopApp` (`listed = false`: taskbar only, no Start menu entry,
@@ -331,10 +389,10 @@ for each child, `exit_cb` to reap it, `uv_process_kill` to terminate it,
 code. Each child gets this process's environment plus
 `WISH_TRANSPORT/HOST/PORT/NAME` for the downstream side (a wildcard bind
 host becomes loopback) and writes stdout/stderr to
-`wish_logs/desktop/<app>_<n>.log`, never to the desktop's terminal. The
-command is set by the entry point: `<wish> client --run=<app>` in the
-combined `wish` binary, the sibling `wish-client --run=<app>` for the
-standalone `wish-desktop`. `wish_desktop_app::wait_for_shutdown()`
+`wish_logs/desktop/<entry id>_<n>.log`, never to the desktop's terminal.
+The entry's `env` goes on top and its `cwd` is applied. The entry point sets
+what `{wish_client}` expands to: `<wish> client` in the combined `wish`
+binary, the sibling `wish-client` for the standalone `wish-desktop`. `wish_desktop_app::wait_for_shutdown()`
 terminates the children when the desktop exits. With
 `--downstream_transport=term` nothing can dial in, so launching is
 disabled.
@@ -344,9 +402,9 @@ disabled.
 Saved in the upstream user store entry `wish.desktop`
 (`{pinned: [...], desktop: [...], theme}`); the bridge connects upstream as
 `--upstream_username` (default: the OS user name) so the session has a
-store. Without a store (anonymous upstream), settings last for the run. The
-first run pins nano, mc and top (those that are installed) and puts them on
-the desktop. `--wallpaper FILE` is uploaded into the upstream sandbox at
+store. Without a store (anonymous upstream), settings last for the run.
+`pinned`/`desktop` are written only once the user has changed them; until
+then the config file's lists apply (the default pins nano, mc and top). `--wallpaper FILE` is uploaded into the upstream sandbox at
 `private/apps/wish.desktop/wallpaper.<ext>` and drawn "cover"-fit
 (`imgui_renderer::texture_size()`).
 
@@ -357,9 +415,11 @@ wish_desktop_app::run()
   parse flags; export WISH_TRANSPORT/HOST/PORT/NAME for the anchor terminal
   bridge_app::run()
     make_bridge()     → wish_desktop, configured with launcher, client command,
-                        launch environment, log dir, wallpaper, user
+                        launch environment, log dir, wallpaper, user,
+                        config file
     bridge::start()   → connects upstream (with username); listens downstream
-    on_listening()    → desktop_->build_chrome()
+    on_listening()    → desktop_->build_chrome() (loads the config, starts
+                        the file watcher)
     wait_for_shutdown() → until "Quit desktop" or the anchor terminal exits;
                           then terminates launched apps
     bridge::stop()
@@ -391,6 +451,8 @@ app/
       wish_desktop_app.cpp
       process_launcher.hpp             ← starts apps launched from the desktop (libuv)
       process_launcher.cpp
+      desktop_config.hpp               ← desktop.yaml: sections, start_menu parser
+      desktop_config.cpp
 
 src/
   forms/

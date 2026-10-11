@@ -97,10 +97,16 @@ class DesktopShellTest : public ::testing::Test {
 };
 
 const char* DesktopShellTest::kShell = R"({"type":"DesktopShell","user":"tester","children":{
-  "app0":{"type":"DesktopApp","app":"test/apps/editor","label":"editor","description":"Edits text",
-          "collection":"apps","pinned":true,"on_desktop":true},
-  "app1":{"type":"DesktopApp","app":"test/apps/calc","label":"calc","description":"Adds numbers",
-          "collection":"apps"}}})";
+  "e0":{"type":"DesktopApp","id":"ed","app":"test/apps/editor","label":"editor","tooltip":"Edits text",
+        "pinned":true,"on_desktop":true},
+  "e1":{"type":"DesktopMenu","id":"tools","label":"Tools","children":{
+    "e0":{"type":"DesktopApp","id":"calc","app":"test/apps/calc","label":"calc","tooltip":"Adds numbers"},
+    "e1":{"type":"Separator"},
+    "e2":{"type":"DesktopMenu","id":"tools/more","label":"More","children":{
+      "e0":{"type":"DesktopApp","id":"dark","label":"Dark theme"}}}}},
+  "e2":{"type":"Separator"},
+  "power":{"type":"DesktopMenu","id":"power","role":"power","children":{
+    "e0":{"type":"DesktopApp","id":"bye","label":"Quit desktop"}}}}})";
 
 } // namespace
 
@@ -114,8 +120,8 @@ TEST(DesktopShellHelpers, DisplayTitleDropsTheIdSuffix) {
 }
 
 TEST(DesktopShellHelpers, SearchRanksNamePrefixFirst) {
-  wish::desktop_app_info nano{.label = "nano", .description = "Text editor"};
-  wish::desktop_app_info du{.label = "du", .description = "Disk usage analyzer"};
+  wish::desktop_app_info nano{.label = "nano", .tooltip = "Text editor"};
+  wish::desktop_app_info du{.label = "du", .tooltip = "Disk usage analyzer"};
   EXPECT_EQ(wish::detail::desktop_app_match_rank(nano, "na"), 0);
   EXPECT_EQ(wish::detail::desktop_app_match_rank(du, "na"), 2); // "analyzer"
   EXPECT_EQ(wish::detail::desktop_app_match_rank(nano, "AN"), 1);
@@ -141,15 +147,64 @@ TEST(DesktopShellHelpers, FormatTime) {
 
 // ── Collecting apps and windows ──────────────────────────────────────────────
 
-TEST_F(DesktopShellTest, CollectsAppsInOrder) {
+TEST_F(DesktopShellTest, CollectsTheMenuTree) {
+  auto shell = add_top(kShell, 1u);
+  auto menu = wish::detail::desktop_collect_menu(*shell);
+
+  // Every entry, flat: the tree's, then the power menu's.
+  ASSERT_EQ(menu.apps.size(), size_t{4});
+  EXPECT_EQ(menu.apps[0].id, "ed");
+  EXPECT_EQ(menu.apps[0].tooltip, "Edits text");
+  EXPECT_TRUE(menu.apps[0].pinned);
+  EXPECT_TRUE(menu.apps[0].on_desktop);
+  EXPECT_EQ(menu.apps[1].id, "calc");
+  EXPECT_EQ(menu.apps[1].path, "Tools");
+  EXPECT_EQ(menu.apps[2].id, "dark");
+  EXPECT_EQ(menu.apps[2].path, "Tools / More");
+  EXPECT_FALSE(menu.apps[2].power);
+  EXPECT_EQ(menu.apps[3].id, "bye");
+  EXPECT_TRUE(menu.apps[3].power);
+
+  // The tree: entry, folder (entry, separator, folder), separator.
+  using kind = wish::desktop_menu_node::kind;
+  ASSERT_EQ(menu.items.size(), size_t{3});
+  EXPECT_EQ(menu.items[0].type, kind::entry);
+  EXPECT_EQ(menu.items[0].app_index, 0);
+  EXPECT_EQ(menu.items[1].type, kind::folder);
+  EXPECT_EQ(menu.items[1].id, "tools");
+  ASSERT_EQ(menu.items[1].children.size(), size_t{3});
+  EXPECT_EQ(menu.items[1].children[1].type, kind::separator);
+  EXPECT_EQ(menu.items[1].children[2].children[0].app_index, 2);
+  EXPECT_EQ(menu.items[2].type, kind::separator);
+
+  // The power role is not a folder of the list.
+  ASSERT_EQ(menu.power.size(), size_t{1});
+  EXPECT_EQ(menu.power[0].app_index, 3);
+}
+
+TEST_F(DesktopShellTest, CollectAppsFlattensTheTree) {
   auto shell = add_top(kShell, 1u);
   auto apps = wish::detail::desktop_collect_apps(*shell);
-  ASSERT_EQ(apps.size(), size_t{2});
-  EXPECT_EQ(apps[0].app, "test/apps/editor");
-  EXPECT_TRUE(apps[0].pinned);
-  EXPECT_TRUE(apps[0].on_desktop);
+  ASSERT_EQ(apps.size(), size_t{4});
   EXPECT_EQ(apps[1].label, "calc");
   EXPECT_FALSE(apps[1].pinned);
+}
+
+TEST_F(DesktopShellTest, ShutdownFieldRunsTheCallbackOnce) {
+  auto shell = add_top(kShell, 1u);
+  int calls = 0;
+  auto frame_with = [&] {
+    renderer_->begin_frame();
+    std::vector<wish::sync_context_ptr> sessions{session_};
+    wish::render_desktop_shell(*renderer_, sessions, state_, [&] { ++calls; });
+    renderer_->end_frame();
+  };
+  frame_with();
+  EXPECT_EQ(calls, 0);
+  (*shell)["shutdown"_key] = true;
+  frame_with();
+  frame_with();
+  EXPECT_EQ(calls, 1);
 }
 
 TEST_F(DesktopShellTest, CollectsVisibleNonModalWindowsWithTheirApp) {

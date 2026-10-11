@@ -66,7 +66,7 @@ int desktop_app_match_rank(const desktop_app_info& app, const std::string& query
     return 0;
   if (at != std::string::npos)
     return 1;
-  if (to_lower(app.description).find(q) != std::string::npos)
+  if (to_lower(app.tooltip).find(q) != std::string::npos)
     return 2;
   return -1;
 }
@@ -78,28 +78,95 @@ bool desktop_app_matches(const desktop_app_info& app, const std::string& query) 
 desktop_app_info desktop_collect_app(const ui_element& child) {
   desktop_app_info a;
   a.node_id = child.wish_id();
+  a.id = child.get_as<std::string>("id"_key, std::string{});
   a.app = child.get_as<std::string>("app"_key, std::string{});
   a.label = child.get_as<std::string>("label"_key, std::string{});
-  a.description = child.get_as<std::string>("description"_key, std::string{});
-  a.collection = child.get_as<std::string>("collection"_key, std::string{});
+  a.tooltip = child.get_as<std::string>("tooltip"_key, std::string{});
   a.icon = child.get_as<std::string>("icon"_key, std::string{});
   a.pinned = child.get_as<bool>("pinned"_key, false);
   a.on_desktop = child.get_as<bool>("on_desktop"_key, false);
   a.listed = child.get_as<bool>("listed"_key, true);
   if (const field* f = child.findField("sessions"_key); f && f->is<std::vector<int32_t>>())
     a.sessions = f->as<std::vector<int32_t>>();
+  if (a.id.empty())
+    a.id = a.app;
   if (a.label.empty())
     a.label = a.app;
   return a;
 }
 
-std::vector<desktop_app_info> desktop_collect_apps(const ui_element& shell) {
-  std::vector<desktop_app_info> apps;
+namespace {
+
+void collect_menu_nodes(
+    const ui_element& parent,
+    std::vector<desktop_menu_node>& out,
+    std::vector<desktop_app_info>& apps,
+    const std::string& path,
+    bool power);
+
+/// Copies one DesktopApp / DesktopMenu / Separator node into @p out (other
+/// classes are skipped), appending each entry to @p apps.
+void collect_menu_node(
+    const ui_element& child,
+    std::vector<desktop_menu_node>& out,
+    std::vector<desktop_app_info>& apps,
+    const std::string& path,
+    bool power) {
+  const key_t cls = child.class_key();
+  desktop_menu_node n;
+  if (cls == key_t{"DesktopApp"}) {
+    desktop_app_info a = desktop_collect_app(child);
+    a.path = path;
+    a.power = power;
+    n.type = desktop_menu_node::kind::entry;
+    n.app_index = int(apps.size());
+    n.id = a.id;
+    n.label = a.label;
+    n.icon = a.icon;
+    n.tooltip = a.tooltip;
+    apps.push_back(std::move(a));
+  } else if (cls == key_t{"DesktopMenu"}) {
+    n.type = desktop_menu_node::kind::folder;
+    n.id = child.get_as<std::string>("id"_key, std::string{});
+    n.label = child.get_as<std::string>("label"_key, std::string{});
+    n.icon = child.get_as<std::string>("icon"_key, std::string{});
+    n.tooltip = child.get_as<std::string>("tooltip"_key, std::string{});
+    if (n.id.empty())
+      n.id = path + "/" + n.label;
+    collect_menu_nodes(child, n.children, apps, path.empty() ? n.label : path + " / " + n.label, power);
+  } else if (cls == key_t{"Separator"}) {
+    n.type = desktop_menu_node::kind::separator;
+  } else {
+    return;
+  }
+  out.push_back(std::move(n));
+}
+
+void collect_menu_nodes(
+    const ui_element& parent,
+    std::vector<desktop_menu_node>& out,
+    std::vector<desktop_app_info>& apps,
+    const std::string& path,
+    bool power) {
+  parent.for_each_child_ordered(
+      [&](key_t, const ui_element& child) { collect_menu_node(child, out, apps, path, power); });
+}
+
+} // namespace
+
+desktop_menu desktop_collect_menu(const ui_element& shell) {
+  desktop_menu m;
   shell.for_each_child_ordered([&](key_t, const ui_element& child) {
-    if (child.class_key() == key_t{"DesktopApp"})
-      apps.push_back(desktop_collect_app(child));
+    if (child.class_key() == key_t{"DesktopMenu"} && child.get_as<std::string>("role"_key, std::string{}) == "power")
+      collect_menu_nodes(child, m.power, m.apps, "", true);
+    else
+      collect_menu_node(child, m.items, m.apps, "", false);
   });
-  return apps;
+  return m;
+}
+
+std::vector<desktop_app_info> desktop_collect_apps(const ui_element& shell) {
+  return desktop_collect_menu(shell).apps;
 }
 
 std::vector<desktop_window_info>
@@ -231,7 +298,11 @@ struct shell_frame {
   int32_t clients{0};
   std::optional<ImGuiStyle> style;
   bool light{false};
-  std::vector<desktop_app_info> apps;
+  std::string menu_error;
+  bool shutdown{false};
+  std::vector<desktop_app_info> apps; ///< Menu entries, then unlisted apps.
+  std::vector<desktop_menu_node> menu; ///< The Start menu tree.
+  std::vector<desktop_menu_node> power; ///< The power button's entries.
   std::vector<desktop_window_info> windows;
 };
 
@@ -277,7 +348,14 @@ std::optional<shell_frame> snapshot(imgui_renderer& r, const std::vector<sync_co
       if (const ImGuiStyle* st = r.session_style(*sess))
         f.style = *st;
       f.light = sess->style_service && sess->style_service->is_light_theme();
-      f.apps = detail::desktop_collect_apps(*shell);
+      f.menu_error = shell->get_as<std::string>("menu_error"_key, std::string{});
+      f.shutdown = shell->get_as<bool>("shutdown"_key, false);
+      {
+        desktop_menu m = detail::desktop_collect_menu(*shell);
+        f.apps = std::move(m.apps);
+        f.menu = std::move(m.items);
+        f.power = std::move(m.power);
+      }
       // Apps added after the shell was built (e.g. a client-ABI app that
       // connected on its own) are top-level DesktopApp objects of the same
       // session, in creation order.
@@ -416,22 +494,23 @@ class shell_painter {
     });
   }
 
+  /// Runs an entry: the owner starts its app or runs its action.
   void launch(const desktop_app_info& app) {
     dynamic p;
-    p["app"_key] = app.app;
-    emit("launch", std::move(p));
+    p["id"_key] = app.id;
+    emit("activate", std::move(p));
   }
 
   void set_pinned(const desktop_app_info& app, bool pinned) {
     dynamic p;
-    p["app"_key] = app.app;
+    p["id"_key] = app.id;
     p["pinned"_key] = pinned;
     emit("pin", std::move(p));
   }
 
   void set_on_desktop(const desktop_app_info& app, bool on_desktop) {
     dynamic p;
-    p["app"_key] = app.app;
+    p["id"_key] = app.id;
     p["on_desktop"_key] = on_desktop;
     emit("desktop_icon", std::move(p));
   }
@@ -495,6 +574,9 @@ class shell_painter {
   void draw_host(const ImRect& work);
   void draw_taskbar(float height);
   void draw_start_menu(const ImRect& anchor);
+  void draw_menu_nodes(const std::vector<desktop_menu_node>& nodes, float indent, float icon);
+  void draw_entry_row(const desktop_app_info& app, float indent, float icon, bool with_path);
+  void draw_power_items(const std::vector<desktop_menu_node>& nodes);
   void draw_pinned(float button);
   void draw_window_buttons(float button, float width);
   void draw_tray(float height);
@@ -540,6 +622,12 @@ void shell_painter::update_window_order() {
 
 void shell_painter::draw() {
   update_window_order();
+  // The desktop's "shutdown_server" action: shut the hosting server down,
+  // once.
+  if (f_.shutdown && !st_.shutdown_requested && shutdown_server_) {
+    st_.shutdown_requested = true;
+    shutdown_server_();
+  }
   {
     const ImGuiWindow* nav = GImGui->NavWindow;
     const char* nav_name = nav && nav->RootWindow ? nav->RootWindow->Name : "";
@@ -660,16 +748,16 @@ void shell_painter::draw_desktop_icons(const ImRect& work) {
       ImVec2 cell_min(origin.x + float(index / rows) * cell_w, origin.y + float(index % rows) * cell_h);
       ++index;
       ImGui::SetCursorScreenPos(cell_min);
-      ImGui::PushID(app.app.c_str());
+      ImGui::PushID(app.id.c_str());
       ImGui::InvisibleButton("##icon", ImVec2(cell_w - 4.0f, cell_h - 4.0f));
       bool hovered = ImGui::IsItemHovered();
-      bool selected = st_.selected_icon == app.app;
+      bool selected = st_.selected_icon == app.id;
       if (ImGui::IsItemClicked(ImGuiMouseButton_Left))
-        st_.selected_icon = app.app;
+        st_.selected_icon = app.id;
       if (hovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
         launch(app);
-      if (hovered && !app.description.empty())
-        ImGui::SetItemTooltip("%s", app.description.c_str());
+      if (hovered && !app.tooltip.empty())
+        ImGui::SetItemTooltip("%s", app.tooltip.c_str());
       if (ImGui::BeginPopupContextItem("##icon_ctx")) {
         if (ImGui::MenuItem("Open"))
           launch(app);
@@ -817,89 +905,44 @@ void shell_painter::draw_start_menu(const ImRect& anchor) {
   }
   ImGui::SetNextItemWidth(-FLT_MIN);
   bool enter = ImGui::InputTextWithHint(
-      "##wish_start_search",
-      "Type to search apps",
-      st_.search,
-      sizeof(st_.search),
-      ImGuiInputTextFlags_EnterReturnsTrue);
+      "##wish_start_search", "Type to search", st_.search, sizeof(st_.search), ImGuiInputTextFlags_EnterReturnsTrue);
   ImGui::Spacing();
 
   const float footer_h = ImGui::GetFrameHeightWithSpacing() + 12.0f;
   ImGui::BeginChild("##wish_start_list", ImVec2(0.0f, -footer_h), ImGuiChildFlags_None);
+  if (!f_.menu_error.empty()) {
+    // The config file has an error: say so, above the menu still in use.
+    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(220, 60, 60, 255));
+    ImGui::TextWrapped("%s", f_.menu_error.c_str());
+    ImGui::PopStyleColor();
+    ImGui::Separator();
+  }
   const std::string query = st_.search;
   const desktop_app_info* first_match = nullptr;
-  std::string current_collection;
-  bool any = false;
-  // Without a search, apps are grouped by collection, in their given order;
-  // with one, best matches (name prefix, then name, then description) come
-  // first, in one flat list, and Enter opens the top one.
-  std::vector<const desktop_app_info*> sorted;
-  for (const auto& app : f_.apps)
-    if (app.listed && detail::desktop_app_matches(app, query))
-      sorted.push_back(&app);
+  const float icon = ImGui::GetTextLineHeight() * 1.6f;
   if (query.empty()) {
-    std::stable_sort(sorted.begin(), sorted.end(), [](const desktop_app_info* a, const desktop_app_info* b) {
-      return a->collection < b->collection;
-    });
+    // The menu tree, folders collapsed until opened.
+    if (f_.menu.empty())
+      ImGui::TextDisabled("The Start menu is empty");
+    draw_menu_nodes(f_.menu, 0.0f, icon);
   } else {
+    // Searching: every entry in one flat list, best matches (name prefix,
+    // then name, then tooltip) first; Enter opens the top one.
+    std::vector<const desktop_app_info*> sorted;
+    for (const auto& app : f_.apps)
+      if (app.listed && !app.power && detail::desktop_app_matches(app, query))
+        sorted.push_back(&app);
     std::stable_sort(sorted.begin(), sorted.end(), [&](const desktop_app_info* a, const desktop_app_info* b) {
       return detail::desktop_app_match_rank(*a, query) < detail::desktop_app_match_rank(*b, query);
     });
+    for (const desktop_app_info* app : sorted) {
+      if (!first_match)
+        first_match = app;
+      draw_entry_row(*app, 0.0f, icon, true);
+    }
+    if (sorted.empty())
+      ImGui::TextDisabled("Nothing matches your search");
   }
-  const float icon = ImGui::GetTextLineHeight() * 1.6f;
-  for (const desktop_app_info* app : sorted) {
-    if (!first_match)
-      first_match = app;
-    any = true;
-    if (query.empty() && app->collection != current_collection) {
-      current_collection = app->collection;
-      if (!current_collection.empty())
-        ImGui::SeparatorText(current_collection.c_str());
-    }
-    ImGui::PushID(app->app.c_str());
-    ImVec2 row_min = ImGui::GetCursorScreenPos();
-    bool clicked = ImGui::Selectable("##row", false, ImGuiSelectableFlags_None, ImVec2(0.0f, icon + 4.0f));
-    if (!app->description.empty())
-      ImGui::SetItemTooltip("%s", app->description.c_str());
-    if (ImGui::BeginPopupContextItem("##app_ctx")) {
-      if (ImGui::MenuItem("Open"))
-        launch(*app);
-      app_context_items(*app);
-      ImGui::EndPopup();
-    }
-    ImDrawList* dl = ImGui::GetWindowDrawList();
-    if (ImTextureID tex = app->icon.empty() ? texture(kDefaultAppIcon) : texture(app->icon))
-      dl->AddImage(
-          ImTextureRef(tex),
-          ImVec2(row_min.x + 4.0f, row_min.y + 2.0f),
-          ImVec2(row_min.x + 4.0f + icon, row_min.y + 2.0f + icon),
-          ImVec2(0, 0),
-          ImVec2(1, 1),
-          ImGui::GetColorU32(ImGuiCol_CheckMark));
-    float text_y = row_min.y + (icon + 4.0f - ImGui::GetTextLineHeight()) * 0.5f;
-    dl->AddText(ImVec2(row_min.x + icon + 14.0f, text_y), ImGui::GetColorU32(ImGuiCol_Text), app->label.c_str());
-    if (app->pinned) {
-      if (ImTextureID pin = texture(kPinIcon)) {
-        float px = row_min.x + ImGui::GetContentRegionAvail().x - ImGui::GetTextLineHeight() - 4.0f;
-        float ph = ImGui::GetTextLineHeight();
-        dl->AddImage(
-            ImTextureRef(pin),
-            ImVec2(px, text_y),
-            ImVec2(px + ph, text_y + ph),
-            ImVec2(0, 0),
-            ImVec2(1, 1),
-            ImGui::GetColorU32(ImGuiCol_TextDisabled));
-      }
-    }
-    ImGui::PopID();
-    if (clicked) {
-      launch(*app);
-      st_.search[0] = '\0';
-      ImGui::CloseCurrentPopup();
-    }
-  }
-  if (!any)
-    ImGui::TextDisabled("%s", query.empty() ? "No apps installed" : "No apps match your search");
   ImGui::EndChild();
 
   if (enter && first_match) {
@@ -908,7 +951,8 @@ void shell_painter::draw_start_menu(const ImRect& anchor) {
     ImGui::CloseCurrentPopup();
   }
 
-  // Footer: user on the left, power menu on the right.
+  // Footer: user on the left, the power button (if the menu has power
+  // entries) on the right.
   ImGui::Separator();
   ImGui::Spacing();
   float h = ImGui::GetFrameHeight();
@@ -918,33 +962,157 @@ void shell_painter::draw_start_menu(const ImRect& anchor) {
   }
   ImGui::AlignTextToFramePadding();
   ImGui::TextUnformatted(f_.user.empty() ? "wish" : f_.user.c_str());
-  ImGui::SameLine(ImGui::GetContentRegionMax().x - h);
-  ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 0, 0, 0));
-  bool power = false;
-  if (ImTextureID tex = texture(kPowerIcon))
-    power = icon_button("##wish_power", tex, text_color(), ImVec2(h, h));
-  else
-    power = ImGui::Button("Power");
-  ImGui::PopStyleColor();
-  ImGui::SetItemTooltip("Power");
-  ImRect power_rect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
-  if (power)
-    ImGui::OpenPopup("##wish_power_menu");
-  // Opens upward, like the Start menu itself.
-  ImGui::SetNextWindowPos(ImVec2(power_rect.Max.x, power_rect.Min.y - 4.0f), ImGuiCond_Always, ImVec2(1.0f, 1.0f));
-  if (ImGui::BeginPopup("##wish_power_menu")) {
-    if (ImGui::MenuItem("Quit desktop")) {
-      emit("quit");
-      ImGui::CloseCurrentPopup();
+  if (!f_.power.empty()) {
+    ImGui::SameLine(ImGui::GetContentRegionMax().x - h);
+    ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 0, 0, 0));
+    bool power = false;
+    if (ImTextureID tex = texture(kPowerIcon))
+      power = icon_button("##wish_power", tex, text_color(), ImVec2(h, h));
+    else
+      power = ImGui::Button("Power");
+    ImGui::PopStyleColor();
+    ImGui::SetItemTooltip("Power");
+    ImRect power_rect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
+    if (power)
+      ImGui::OpenPopup("##wish_power_menu");
+    // Opens upward, like the Start menu itself.
+    ImGui::SetNextWindowPos(ImVec2(power_rect.Max.x, power_rect.Min.y - 4.0f), ImGuiCond_Always, ImVec2(1.0f, 1.0f));
+    if (ImGui::BeginPopup("##wish_power_menu")) {
+      draw_power_items(f_.power);
+      ImGui::EndPopup();
     }
-    if (ImGui::MenuItem("Shut down server") && shutdown_server_)
-      shutdown_server_();
-    ImGui::EndPopup();
   }
 
   if (ImGui::IsKeyPressed(ImGuiKey_Escape, false))
     ImGui::CloseCurrentPopup();
   ImGui::EndPopup();
+}
+
+void shell_painter::draw_entry_row(const desktop_app_info& app, float indent, float icon, bool with_path) {
+  ImGui::PushID(app.id.c_str());
+  ImGui::SetCursorPosX(ImGui::GetCursorPosX() + indent);
+  ImVec2 row_min = ImGui::GetCursorScreenPos();
+  bool clicked = ImGui::Selectable("##row", false, ImGuiSelectableFlags_None, ImVec2(0.0f, icon + 4.0f));
+  if (!app.tooltip.empty())
+    ImGui::SetItemTooltip("%s", app.tooltip.c_str());
+  if (ImGui::BeginPopupContextItem("##app_ctx")) {
+    if (ImGui::MenuItem("Open"))
+      launch(app);
+    app_context_items(app);
+    ImGui::EndPopup();
+  }
+  ImDrawList* dl = ImGui::GetWindowDrawList();
+  if (ImTextureID tex = app.icon.empty() ? texture(kDefaultAppIcon) : texture(app.icon))
+    dl->AddImage(
+        ImTextureRef(tex),
+        ImVec2(row_min.x + 4.0f, row_min.y + 2.0f),
+        ImVec2(row_min.x + 4.0f + icon, row_min.y + 2.0f + icon),
+        ImVec2(0, 0),
+        ImVec2(1, 1),
+        ImGui::GetColorU32(ImGuiCol_CheckMark));
+  float text_y = row_min.y + (icon + 4.0f - ImGui::GetTextLineHeight()) * 0.5f;
+  float text_x = row_min.x + icon + 14.0f;
+  dl->AddText(ImVec2(text_x, text_y), ImGui::GetColorU32(ImGuiCol_Text), app.label.c_str());
+  if (with_path && !app.path.empty()) {
+    // Where it lives in the menu, dimmed, after the name.
+    float x = text_x + ImGui::CalcTextSize(app.label.c_str()).x + 10.0f;
+    dl->AddText(ImVec2(x, text_y), ImGui::GetColorU32(ImGuiCol_TextDisabled), app.path.c_str());
+  }
+  if (app.pinned) {
+    if (ImTextureID pin = texture(kPinIcon)) {
+      float ph = ImGui::GetTextLineHeight();
+      float px = ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x - ph - 4.0f;
+      dl->AddImage(
+          ImTextureRef(pin),
+          ImVec2(px, text_y),
+          ImVec2(px + ph, text_y + ph),
+          ImVec2(0, 0),
+          ImVec2(1, 1),
+          ImGui::GetColorU32(ImGuiCol_TextDisabled));
+    }
+  }
+  ImGui::PopID();
+  if (clicked) {
+    launch(app);
+    st_.search[0] = '\0';
+    ImGui::CloseCurrentPopup();
+  }
+}
+
+void shell_painter::draw_menu_nodes(const std::vector<desktop_menu_node>& nodes, float indent, float icon) {
+  for (const auto& n : nodes) {
+    switch (n.type) {
+      case desktop_menu_node::kind::separator:
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + indent);
+        ImGui::Separator();
+        break;
+      case desktop_menu_node::kind::entry:
+        if (n.app_index >= 0 && size_t(n.app_index) < f_.apps.size())
+          draw_entry_row(f_.apps[size_t(n.app_index)], indent, icon, false);
+        break;
+      case desktop_menu_node::kind::folder: {
+        ImGui::PushID(n.id.c_str());
+        bool open = st_.expanded_folders.count(n.id) != 0;
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + indent);
+        ImVec2 row_min = ImGui::GetCursorScreenPos();
+        if (ImGui::Selectable("##folder", false, ImGuiSelectableFlags_None, ImVec2(0.0f, icon + 4.0f))) {
+          if (open)
+            st_.expanded_folders.erase(n.id);
+          else
+            st_.expanded_folders.insert(n.id);
+          open = !open;
+        }
+        if (!n.tooltip.empty())
+          ImGui::SetItemTooltip("%s", n.tooltip.c_str());
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        if (ImTextureID tex = texture(n.icon.empty() ? std::string{"res/icons/folder.png"} : n.icon))
+          dl->AddImage(
+              ImTextureRef(tex),
+              ImVec2(row_min.x + 4.0f, row_min.y + 2.0f),
+              ImVec2(row_min.x + 4.0f + icon, row_min.y + 2.0f + icon),
+              ImVec2(0, 0),
+              ImVec2(1, 1),
+              ImGui::GetColorU32(ImGuiCol_Text));
+        float text_y = row_min.y + (icon + 4.0f - ImGui::GetTextLineHeight()) * 0.5f;
+        dl->AddText(ImVec2(row_min.x + icon + 14.0f, text_y), ImGui::GetColorU32(ImGuiCol_Text), n.label.c_str());
+        // Chevron at the right edge: down when open.
+        float cx = ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x - 12.0f;
+        float cy = row_min.y + (icon + 4.0f) * 0.5f;
+        float r = ImGui::GetTextLineHeight() * 0.25f;
+        ImU32 col = ImGui::GetColorU32(ImGuiCol_TextDisabled);
+        if (open)
+          dl->AddTriangleFilled(
+              ImVec2(cx - r, cy - r * 0.5f), ImVec2(cx + r, cy - r * 0.5f), ImVec2(cx, cy + r * 0.7f), col);
+        else
+          dl->AddTriangleFilled(
+              ImVec2(cx - r * 0.5f, cy - r), ImVec2(cx - r * 0.5f, cy + r), ImVec2(cx + r * 0.7f, cy), col);
+        ImGui::PopID();
+        if (open)
+          draw_menu_nodes(n.children, indent + 18.0f, icon);
+        break;
+      }
+    }
+  }
+}
+
+void shell_painter::draw_power_items(const std::vector<desktop_menu_node>& nodes) {
+  for (const auto& n : nodes) {
+    if (n.type == desktop_menu_node::kind::separator) {
+      ImGui::Separator();
+    } else if (n.type == desktop_menu_node::kind::folder) {
+      if (ImGui::BeginMenu(n.label.c_str())) {
+        draw_power_items(n.children);
+        ImGui::EndMenu();
+      }
+    } else if (n.app_index >= 0 && size_t(n.app_index) < f_.apps.size()) {
+      const auto& app = f_.apps[size_t(n.app_index)];
+      ImTextureID tex = app.icon.empty() ? ImTextureID{} : texture(app.icon);
+      if (icon_menu_item(app.label.c_str(), nullptr, false, true, tex))
+        launch(app);
+      if (!app.tooltip.empty())
+        ImGui::SetItemTooltip("%s", app.tooltip.c_str());
+    }
+  }
 }
 
 void shell_painter::draw_pinned(float button) {
@@ -955,12 +1123,12 @@ void shell_painter::draw_pinned(float button) {
     if (!app.pinned || !app.listed)
       continue;
     any = true;
-    ImGui::PushID(app.app.c_str());
+    ImGui::PushID(app.id.c_str());
     ImTextureID tex = app_icon(int(i));
     bool clicked = bar_button("##pinned", tex, button, icon_px_, ImGui::GetColorU32(ImGuiCol_Text), app.label.c_str());
     ImGui::SetItemTooltip("%s", app.label.c_str());
     ImRect rect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
-    bool running = !app.sessions.empty();
+    bool running = !app.app.empty() && !app.sessions.empty();
     if (running) {
       // Running indicator: a short accent line under the icon.
       float cx = (rect.Min.x + rect.Max.x) * 0.5f;

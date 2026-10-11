@@ -537,9 +537,10 @@ Turns the server's host window into a desktop (used by `wish desktop`, see
 [cli.md](cli.md#wish-desktop)): wallpaper, desktop icons, and a bottom
 taskbar with a Start menu (search, pin, power menu), pinned apps, open
 windows, a tray (connected apps, light/dark toggle, clock with a calendar)
-and a show-desktop strip. Register as a top-level object; children are
-`DesktopApp` (more `DesktopApp`s registered as top-level objects of the
-same session count too, after the children). While one is registered, un-positioned windows open floating
+and a show-desktop strip. Register as a top-level object; children are the
+Start menu tree: `DesktopApp` entries, `DesktopMenu` folders and
+`Separator`s (more `DesktopApp`s registered as top-level objects of the same
+session count too, as unlisted entries). While one is registered, un-positioned windows open floating
 and cascaded instead of docked, a `DockSpaceViewport` becomes a floating app
 frame, and Ctrl+Tab (or Ctrl+\`) switches windows. Removed automatically on
 session disconnect.
@@ -550,23 +551,37 @@ session disconnect.
 | `user` | `string` | `""` | User name shown at the bottom of the Start menu. |
 | `show_icons` | `bool` | `true` | Draws the apps whose `on_desktop` is true as icons on the wallpaper. |
 | `clients` | `int` | `0` | Number of connected apps, shown in the tray. |
+| `menu_error` | `string` | `""` | Shown in red at the top of the Start menu (e.g. a menu configuration error). |
+| `shutdown` | `bool` | `false` | Set to `true` to make the server hosting the shell shut down. |
 | `time_format` / `date_format` | `string` | `"%H:%M"` / `"%d/%m/%Y"` | `strftime()` formats of the tray clock's two lines. |
 
-**Events:** `launch` — `{ app }` (Start menu entry, pinned button of an app
-that isn't running, desktop icon double-click); `pin` — `{ app, pinned }`;
-`desktop_icon` — `{ app, on_desktop }`; `theme` — `{ preset }` (`"dark"` /
-`"light"`); `quit` (Start → Power → Quit desktop). The shell never changes
+**Events:** `activate` — `{ id }` (a Start menu or power entry, the pinned
+button of an entry that isn't running, a desktop icon double-click);
+`pin` — `{ id, pinned }`; `desktop_icon` — `{ id, on_desktop }`; `theme` —
+`{ preset }` (`"dark"` / `"light"`). The shell never changes
 `pinned`/`on_desktop` itself: the owner sets the field in response.
 
-#### `DesktopApp`
-One app listed by a `DesktopShell`.
+#### `DesktopMenu`
+A folder of a `DesktopShell`'s Start menu, drawn as a collapsible row.
+Children are `DesktopApp`, nested `DesktopMenu` and `Separator` elements.
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `app` | `string` | `""` | Identifier sent back in the shell's events (e.g. `"bdg/desktop/nano"`). |
+| `id` | `string` | `""` | Unique id; keeps the folder's expanded state across rebuilds. |
+| `label` | `string` | `""` | Folder name. |
+| `icon` | `string` | `""` | Icon image, tinted. |
+| `tooltip` | `string` | `""` | Tooltip text. |
+| `role` | `string` | `""` | `"power"`: its entries fill the Start menu's power button instead (hidden when there is none). |
+
+#### `DesktopApp`
+One Start menu entry of a `DesktopShell`: an app to start, or an action.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `id` | `string` | `""` | Unique entry id, sent back in the shell's events. |
+| `app` | `string` | `""` | The `"app"` its clients connect as (e.g. `"bdg/desktop/nano"`); ties their windows to the entry through `sessions`. Empty for an action. |
 | `label` | `string` | `""` | Name shown in the Start menu, on the taskbar and under the desktop icon. |
-| `description` | `string` | `""` | Tooltip; also matched by the Start menu search. |
-| `collection` | `string` | `""` | Start menu group heading. |
+| `tooltip` | `string` | `""` | Tooltip; also matched by the Start menu search. |
 | `icon` | `string` | `""` | Icon image (e.g. `"res/icons/edit.png"`), tinted; empty uses a generic app icon. |
 | `pinned` | `bool` | `false` | Shown on the taskbar while not running. |
 | `on_desktop` | `bool` | `false` | Shown as a desktop icon. |

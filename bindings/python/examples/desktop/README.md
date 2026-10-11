@@ -36,6 +36,26 @@ python3 bindings/python/examples/desktop/stopwatch.py &
 python3 bindings/python/examples/desktop/live_chart.py &
 ```
 
+To start them from the Start menu, pin them, or put them on the desktop,
+add them to the [desktop configuration file](../../../../docs/desktop-config.md)
+(`~/.wish/desktop/desktop.yaml`):
+
+```yaml
+start_menu:
+  pinned: [py.todo]
+  items:
+    - label: Python apps
+      icon: res/icons/code.png
+      items:
+        - label: To-do
+          id: py.todo
+          icon: res/icons/check.png
+          run: [python3, "{home}/wish/bindings/python/examples/desktop/todo.py"]
+          app: examples/python/todo            # matches its connect params
+          env: {WISH_LIB: "{home}/wish/build/libwish_client.so"}
+    - apps: all
+```
+
 From any other shell, point them at the desktop yourself:
 `WISH_PORT=7071 python3 bindings/python/examples/desktop/todo.py`.
 Close a window (or press Ctrl+C) to end its script.

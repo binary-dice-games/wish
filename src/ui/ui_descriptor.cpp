@@ -12,6 +12,7 @@
 /// on ui_element.hpp/registry.hpp and can be linked into a client-only
 /// binary (see CMakeLists.txt: added to both wish_client and wish_server).
 #include <ui/ui_descriptor.hpp>
+#include <ui/yaml_json.hpp>
 
 #include <nlohmann/json.hpp>
 #include <yaml.h>
@@ -145,7 +146,12 @@ struct YamlEvent {
   yaml_event_t ev{};
   explicit YamlEvent(yaml_parser_t* p) {
     if (!yaml_parser_parse(p, &ev)) {
-      throw std::runtime_error("wish::import_descriptor_yaml: YAML parse error");
+      std::string msg = "YAML parse error";
+      if (p->problem) {
+        msg += std::string(": ") + p->problem + " at line " + std::to_string(p->problem_mark.line + 1) + ", column " +
+            std::to_string(p->problem_mark.column + 1);
+      }
+      throw std::runtime_error("wish::import_descriptor_yaml: " + msg);
     }
   }
   ~YamlEvent() {
@@ -251,7 +257,7 @@ static json parse_yaml_sequence(yaml_parser_t* p) {
   return arr;
 }
 
-dynamic import_descriptor_yaml(const std::string& yaml_text, const translation_map* tr) {
+static json parse_yaml_text(const std::string& yaml_text) {
   // Normalise CRLF → LF so that raw string literals compiled on Windows
   // (which have \r\n endings) don't produce \r-suffixed scalar values.
   std::string normalized;
@@ -301,8 +307,23 @@ dynamic import_descriptor_yaml(const std::string& yaml_text, const translation_m
   }
 
   yaml_parser_delete(&parser);
+  return parsed;
+}
 
-  return import_json_node(parsed, tr);
+dynamic import_descriptor_yaml(const std::string& yaml_text, const translation_map* tr) {
+  return import_json_node(parse_yaml_text(yaml_text), tr);
+}
+
+json yaml_to_json(const std::string& text) {
+  auto it = std::find_if_not(text.cbegin(), text.cend(), [](unsigned char c) { return std::isspace(c); });
+  if (it != text.cend() && (*it == '{' || *it == '[')) {
+    try {
+      return json::parse(text);
+    } catch (const json::parse_error& e) {
+      throw std::runtime_error(std::string("JSON parse error: ") + e.what());
+    }
+  }
+  return parse_yaml_text(text);
 }
 
 // ── Text sniffing ─────────────────────────────────────────────────────────────

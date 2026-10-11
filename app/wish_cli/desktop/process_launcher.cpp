@@ -165,6 +165,7 @@ struct process_launcher::impl {
     options.file = args[0].c_str();
     options.args = c_args.data();
     options.env = c_env.data();
+    options.cwd = req.cwd.empty() ? nullptr : req.cwd.c_str();
     options.stdio_count = 3;
     options.stdio = stdio;
     options.flags = UV_PROCESS_WINDOWS_HIDE;

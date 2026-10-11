@@ -210,11 +210,12 @@ that server's window into a desktop:
 - **Wallpaper**: a built-in gradient that follows the theme, or your own
   image (`--wallpaper`).
 - **Taskbar** along the bottom, always visible; windows open above it:
-  - **Start** button: a menu listing every app built into wish, grouped by
-    collection, with a search box (type and press Enter to open the best
-    match). Right-click an app to pin it to the taskbar or add it to the
-    desktop. The **power** button at the bottom quits the desktop or shuts
-    down the server.
+  - **Start** button: a menu of apps and actions in folders, read from the
+    [desktop configuration file](desktop-config.md) (by default every app
+    built into wish, a folder per collection). Type to search, and press
+    Enter to open the best match. Right-click an entry to pin it to the
+    taskbar or add it to the desktop. The **power** button at the bottom
+    quits the desktop or shuts down the server.
   - **Pinned apps**: click to start one. A line under the icon means it is
     running; clicking it then brings it to the front (or minimizes it when
     it already is), and its right-click menu has "New window" and "Unpin".
@@ -232,14 +233,20 @@ that server's window into a desktop:
   the open windows while Ctrl is held. In a browser, which keeps Ctrl+Tab for
   itself (`--renderer web`), use Ctrl+\` instead.
 
-Starting an app runs `wish client --run=<app>` as a separate process that
-connects back to the desktop (the `wish-client` beside a standalone
+The Start menu, the initial pins and desktop icons, and the power button
+come from `~/.wish/desktop/desktop.yaml` (`--config`), written with the
+default configuration on first run; edit it and the desktop reloads it live.
+Each entry either runs a command or calls a desktop action, so external apps
+can be installed there too. See [desktop-config.md](desktop-config.md).
+
+Starting a built-in app runs `wish client --run=<app>` as a separate process
+that connects back to the desktop (the `wish-client` beside a standalone
 `wish-desktop` binary). Its output goes to
-`wish_logs/desktop/<app>_<n>.log`. Apps started from the desktop are closed
-when the desktop quits. Pinned apps, desktop icons and the theme are saved in
-the upstream server's [user store](persistent-store.md) (entry
-`wish.desktop`). The desktop connects as `--upstream_username`, which defaults
-to your OS user name. The first run pins nano, mc and top.
+`wish_logs/desktop/<entry id>_<n>.log`. Apps started from the desktop are
+closed when the desktop quits. Pins and desktop icons you change, and the
+theme, are saved in the upstream server's [user store](persistent-store.md)
+(entry `wish.desktop`). The desktop connects as `--upstream_username`, which
+defaults to your OS user name.
 
 Downstream and upstream each get their own flag set, since both transports
 are active at once:
@@ -258,6 +265,7 @@ are active at once:
 | `--upstream_username NAME` | OS user | Identity the desktop connects upstream as; its user store keeps the desktop settings |
 | `--cmd C` | *(empty)* | Command to spawn (`upstream_transport=term` only) |
 | `--upstream_ca_file`/`--upstream_ca_pem`, `--upstream_server_name`, `--upstream_insecure_skip_verify`, `--upstream_cert_file`/`--upstream_cert_pem`, `--upstream_key_file`/`--upstream_key_pem`, `--upstream_key_password` | — | Upstream TLS client flags, same meaning as `--ca_file`/etc. above (`upstream_transport=tls` only) |
+| `--config PATH` | `~/.wish/desktop/desktop.yaml` | [Desktop configuration file](desktop-config.md); written with the default if missing, reloaded when it changes |
 | `--wallpaper FILE` | *(built-in gradient)* | Image (png, jpg, ...) shown as the desktop background, scaled to cover the screen |
 | `--timeout MS` | `30000` | Upstream connection timeout in milliseconds |
 
@@ -273,8 +281,11 @@ theme the same way. To show on the taskbar with their own name and icon --
 and be counted, and grouped, like a built-in tool -- they add three optional
 fields to their connect params: `app` (an identifier), `app_label` (the
 name shown) and `app_icon` (e.g. `res/icons/check.png`). Without them, a
-window shows under its title with a generic icon. Such an app has no Start
-menu entry and can't be pinned, since the desktop can't start it. Python's
+window shows under its title with a generic icon. Add a `run` entry for it
+to the [configuration file](desktop-config.md#installing-a-client-abi-app)
+to start it from the Start menu and pin it; without one it only shows on the
+taskbar while running. Apps can also call the desktop's actions (start a
+menu entry, switch the theme, quit) through its `__WishDesktop` object. Python's
 `Client.from_env()` connects wherever the `WISH_*` variables point; see
 `bindings/python/examples/desktop/` for three examples.
 

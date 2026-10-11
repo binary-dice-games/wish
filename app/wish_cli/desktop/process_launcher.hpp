@@ -24,6 +24,8 @@ struct launch_request {
   /// File receiving the child's stdout and stderr (truncated). Empty
   /// discards them.
   std::filesystem::path log_path;
+  /// Working directory of the child; empty keeps this process's.
+  std::string cwd;
 };
 
 /// @brief What `wish_desktop` needs from a process launcher; a seam for
