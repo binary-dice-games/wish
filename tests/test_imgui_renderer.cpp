@@ -4258,6 +4258,131 @@ TEST_F(ImguiRendererTest, DockerAndGitInSeparateShellsDoNotDisturbEachOther) {
   EXPECT_NE(ImGui::DockNodeGetRootNode(pd1->DockNode)->ID, ImGui::DockNodeGetRootNode(pg1->DockNode)->ID);
 }
 
+// ── Docking scope: panels dock only into their own parent docker ────────────
+
+TEST_F(ImguiRendererTest, EmbeddedAppPanelsAreScopedToTheirOwnDockspace) {
+  // curl's panels must only dock into curl's own nested dockspace, never
+  // kubectl's, and the app windows themselves only into the outer host
+  // dockspace. ImGui enforces it through window classes: a classed
+  // dockspace refuses windows of any other class (and unclassed ones).
+  ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+  ImGuiID outer = ImHashStr("Scope_Outer1");
+
+  using namespace bdg::wish::dock;
+  auto curl_shell = viewport("curl_dock", "Curl", layout(area({"c1"}), 1, "curl_dock"));
+  auto c1 = make_docked_window("C1", "c1");
+  auto kube_shell = viewport("kube_dock", "Kubectl", layout(area({"k1"}), 1, "kube_dock"));
+  auto k1 = make_docked_window("K1", "k1");
+  drive_embedded_frames(*renderer_, *sess_, outer, {curl_shell, c1, kube_shell, k1}, 10, "curl_dock");
+  drive_embedded_frames(*renderer_, *sess_, outer, {curl_shell, c1, kube_shell, k1}, 10, "kube_dock");
+
+  auto* curl_w = ImGui::FindWindowByName("Curl###curl_dock");
+  auto* kube_w = ImGui::FindWindowByName("Kubectl###kube_dock");
+  auto* pc1 = ImGui::FindWindowByName("C1###c1");
+  auto* pk1 = ImGui::FindWindowByName("K1###k1");
+  ASSERT_NE(curl_w, nullptr);
+  ASSERT_NE(kube_w, nullptr);
+  ASSERT_NE(pc1, nullptr);
+  ASSERT_NE(pk1, nullptr);
+
+  ImGuiDockNode* curl_node = ImGui::DockBuilderGetNode(ImHashStr("curl_dock", 0, curl_w->ID));
+  ImGuiDockNode* kube_node = ImGui::DockBuilderGetNode(ImHashStr("kube_dock", 0, kube_w->ID));
+  ASSERT_NE(curl_node, nullptr);
+  ASSERT_NE(kube_node, nullptr);
+
+  // Each nested dockspace has its own class and refuses unclassed windows.
+  EXPECT_NE(curl_node->WindowClass.ClassId, 0u);
+  EXPECT_NE(kube_node->WindowClass.ClassId, 0u);
+  EXPECT_NE(curl_node->WindowClass.ClassId, kube_node->WindowClass.ClassId);
+  EXPECT_FALSE(curl_node->WindowClass.DockingAllowUnclassed);
+  EXPECT_FALSE(kube_node->WindowClass.DockingAllowUnclassed);
+
+  // Each panel carries its own app's class only, and refuses unclassed
+  // hosts -- including the outer host dockspace.
+  EXPECT_EQ(pc1->WindowClass.ClassId, curl_node->WindowClass.ClassId);
+  EXPECT_EQ(pk1->WindowClass.ClassId, kube_node->WindowClass.ClassId);
+  EXPECT_FALSE(pc1->WindowClass.DockingAllowUnclassed);
+  EXPECT_FALSE(pk1->WindowClass.DockingAllowUnclassed);
+
+  // The app windows are unclassed: they dock into the outer (unclassed)
+  // host dockspace, and are refused by every nested app dockspace.
+  EXPECT_EQ(curl_w->WindowClass.ClassId, 0u);
+  EXPECT_EQ(kube_w->WindowClass.ClassId, 0u);
+  ImGuiDockNode* outer_node = ImGui::DockBuilderGetNode(outer);
+  ASSERT_NE(outer_node, nullptr);
+  EXPECT_EQ(outer_node->WindowClass.ClassId, 0u);
+}
+
+TEST_F(ImguiRendererTest, DockTargetWindowIsScopedToTargetDockspace) {
+  // A window an app creates at runtime (nano's documents) belongs to the
+  // dockspace its dock_target names, even as a separate top-level object.
+  ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+  ImGuiID outer = ImHashStr("Scope_Outer2");
+
+  auto shell = make_app_shell("nano_scope", "nano_toolbar");
+  auto doc = make_docked_window("Doc", "nano_doc");
+  (*doc)["dock_target"_key] = std::string{"nano_scope"};
+  auto loose = make_docked_window("Loose", "loose_win");
+  drive_embedded_frames(*renderer_, *sess_, outer, {shell, doc, loose}, 10);
+
+  auto* shell_w = ImGui::FindWindowByName("nano_scope");
+  auto* pdoc = ImGui::FindWindowByName("Doc###nano_doc");
+  auto* ploose = ImGui::FindWindowByName("Loose###loose_win");
+  ASSERT_NE(shell_w, nullptr);
+  ASSERT_NE(pdoc, nullptr);
+  ASSERT_NE(ploose, nullptr);
+  ImGuiDockNode* nested = ImGui::DockBuilderGetNode(ImHashStr("nano_scope", 0, shell_w->ID));
+  ASSERT_NE(nested, nullptr);
+  EXPECT_NE(pdoc->WindowClass.ClassId, 0u);
+  EXPECT_EQ(pdoc->WindowClass.ClassId, nested->WindowClass.ClassId);
+  // A window with no tie to the app stays unclassed (host dockspace only).
+  EXPECT_EQ(ploose->WindowClass.ClassId, 0u);
+}
+
+TEST_F(ImguiRendererTest, WindowChildOfEmbeddedViewportIsScopedToIt) {
+  ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+  ImGuiID outer = ImHashStr("Scope_Outer3");
+
+  auto shell = bdg::wish::import_json(R"({
+    "type": "DockSpaceViewport", "id": "child_scope", "embedded": true,
+    "children": { "panel": { "type": "Window", "title": "Panel" } }
+  })")[""];
+  drive_embedded_frames(*renderer_, *sess_, outer, {shell}, 6);
+
+  auto* shell_w = ImGui::FindWindowByName("child_scope");
+  ASSERT_NE(shell_w, nullptr);
+  ImGuiDockNode* nested = ImGui::DockBuilderGetNode(ImHashStr("child_scope", 0, shell_w->ID));
+  ASSERT_NE(nested, nullptr);
+  ImGuiWindow* panel = nullptr;
+  for (ImGuiWindow* w : GImGui->Windows)
+    if (std::string(w->Name).rfind("Panel###", 0) == 0)
+      panel = w;
+  ASSERT_NE(panel, nullptr);
+  EXPECT_NE(panel->WindowClass.ClassId, 0u);
+  EXPECT_EQ(panel->WindowClass.ClassId, nested->WindowClass.ClassId);
+}
+
+TEST_F(ImguiRendererTest, FullscreenDockSpaceViewportStaysUnclassed) {
+  // A fullscreen (non-embedded) viewport is a root docker like the host
+  // chrome: any unclassed window may still dock into it.
+  ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+  auto root = bdg::wish::import_json(R"({
+    "type": "DockSpaceViewport", "id": "root_scope",
+    "children": { "panel": { "type": "Window", "title": "RootPanel" } }
+  })")[""];
+  for (int i = 0; i < 4; ++i) {
+    renderer_->begin_frame();
+    renderer_->render_node(*root, *sess_);
+    renderer_->end_frame();
+  }
+  auto* host = ImGui::FindWindowByName("root_scope");
+  ASSERT_NE(host, nullptr);
+  ImGuiDockNode* node = ImGui::DockBuilderGetNode(ImHashStr("root_scope", 0, host->ID));
+  ASSERT_NE(node, nullptr);
+  EXPECT_EQ(node->WindowClass.ClassId, 0u);
+  EXPECT_EQ(renderer_->ambient_dock_class_id(), 0u);
+}
+
 // ── Per-element tooltip ("tooltip" field -> ImGui::SetTooltip) ──────────────
 
 namespace {
