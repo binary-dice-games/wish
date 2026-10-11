@@ -57,6 +57,33 @@ Shared transport flags (`--host`, `--port`, `--pipe`, `--verbose`) are
 defined in `main.cpp` so that `bison::app::server_app` can DECLARE them as usual.
 Mode-specific flags are defined in each mode's `.cpp` file.
 
+### Flag resolution order
+
+Every flag resolves as command line > `WISH_<FLAG>` env var > saved default
+> `DEFINE_*` default. `apply_env_flag_defaults()` (`env_flags.hpp`) and
+`load_cli_config()` (`config_flags.hpp`, `server` and `standalone` only)
+both write with `gflags::SET_FLAGS_DEFAULT`, so `is_default` keeps meaning
+"not given on the command line". That is what lets the saved defaults skip
+flags given on the command line or in the environment, lets
+`--save_defaults` save only command-line flags, and keeps standalone's
+transport-flag rejection working.
+
+The saved defaults live in the server store (`<store_dir>/server_store.bison`,
+entries `wish.cli.server` / `wish.cli.standalone`) rather than a config file,
+so server-side code can read them like any other server-store entry. The
+store is read after the command line is parsed, since `--store_dir` locates
+it, and before `server_app::run()` builds the transport. `load_cli_config()`
+closes its store instance before the server opens its own. `server_app::run()`
+parses argv again, so `wish_server_app::run()` parses a copy first (gflags
+strips argv in place). The saveable flags come from `gflags::GetAllFlags()`
+minus an exclusion list, so a new flag is saveable with no extra
+registration: `config_flag_names()` always leaves out the store's own flags,
+gflags' built-ins and secrets (`*password`, `*_pem`), and each mode adds its
+own exclusions (debug/security switches; for standalone also the app
+selection and transport flags). An exclusion list was preferred to an
+allow list because forgetting to add a new flag to an allow list fails
+silently.
+
 ---
 
 ## server mode
@@ -271,6 +298,8 @@ app/
   CMakeLists.txt                         ← updated
   wish_cli/
     main.cpp                             ← subcommand dispatcher + shared flag DEFINE
+    env_flags.cpp                        ← WISH_<FLAG> env var defaults
+    config_flags.cpp                     ← --save_defaults / saved defaults in the server store
     server/
       wish_server_app.hpp                ← renamed from wish_server/wish_server.hpp
       wish_server_app.cpp

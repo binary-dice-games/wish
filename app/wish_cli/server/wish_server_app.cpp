@@ -5,6 +5,7 @@
  */
 #include "app/wish_cli/server/wish_server_app.hpp"
 
+#include "app/wish_cli/config_flags.hpp"
 #include "app/wish_cli/env_flags.hpp"
 #include "app/wish_cli/host_renderer.hpp"
 
@@ -25,6 +26,7 @@
 #include <iostream>
 #include <memory>
 #include <stdexcept>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -69,6 +71,15 @@ namespace {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+// Flags --save_defaults never saves, on top of the ones config_flag_names()
+// always leaves out (--store_dir, secrets, gflags' own): the debug and
+// security switches. Every other flag can be saved.
+const std::vector<std::string> kServerExcludedFlags = {
+    "debugger",
+    "profiling_dir",
+    "profiling_autostart",
+    "allow_absolute_paths",
+};
 
 static std::unique_ptr<renderer> make_renderer() {
   if (FLAGS_renderer == "sdl3") {
@@ -109,7 +120,16 @@ static std::shared_ptr<logger> make_server_logger() {
 // ── server_app overrides ──────────────────────────────────────────────────────
 
 int wish_server_app::run(int argc, char** argv) {
+  // Parse a copy first: server_app::run() parses argv again, and gflags
+  // strips recognized flags in place (see wish_client_app::run()).
+  std::vector<char*> parse_argv_storage(argv, argv + argc);
+  int parse_argc = argc;
+  char** parse_argv = parse_argv_storage.data();
+
+  // Command line > WISH_<FLAG> env var > saved default > built-in default.
   apply_env_flag_defaults();
+  gflags::ParseCommandLineFlags(&parse_argc, &parse_argv, true);
+  load_cli_config(FLAGS_store_dir, kServerConfigEntry, kServerExcludedFlags, "[wish server]");
   return bison::app::server_app::run(argc, argv);
 }
 

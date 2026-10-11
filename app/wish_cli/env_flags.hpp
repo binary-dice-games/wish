@@ -5,7 +5,15 @@
  */
 #pragma once
 
+#include <string>
+
 namespace bdg::wish {
+
+/**
+ * @brief Name of the environment variable that sets @p flag_name's default:
+ *        `WISH_<FLAG_NAME_UPPERCASED>` (e.g. `font_size` -> `WISH_FONT_SIZE`).
+ */
+std::string env_flag_var_name(const std::string& flag_name);
 
 /**
  * @brief Applies an environment-variable default for every gflags flag

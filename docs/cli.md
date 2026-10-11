@@ -99,6 +99,8 @@ launch.
 | `--sandbox_root PATH` | *(empty)* | Keep session sandboxes across connections: each client gets `PATH/<username>` (its `--username`, else `default`) instead of a temp directory deleted on disconnect. Trusts the client-supplied name (`local_auth_module`) — local/single-user use only; see [src/auth/DESIGN.md](../src/auth/DESIGN.md) |
 | `--store_dir PATH` | `~/.wish` | Directory holding the persistent server store and per-user stores. The server always trusts a client's `--username` as its identity: identified clients get a user store, clients without one are anonymous. See [docs/persistent-store.md](persistent-store.md) |
 | `--lang CODE` | *(empty: `en`)* | Default UI language of every session (e.g. `es`); a client's own `--lang` overrides it. See [docs/i18n.md](i18n.md) |
+| `--save_defaults` | `false` | Save the flags given on this command line as the defaults of later runs, then start as usual. See [Saved flag defaults](#saved-flag-defaults) |
+| `--clear_defaults` | `false` | Erase the saved defaults |
 
 ```sh
 # TCP, windowed:
@@ -175,6 +177,7 @@ SDL3, it still supports `--renderer sdl3|web` at runtime exactly like
 | `--sandbox_root PATH` / `--username NAME` | *(empty)* / `default` | Persist the session sandbox in `PATH/<username>` across runs instead of a temp directory deleted on exit. `--username` (or `default`) also selects the session's user store |
 | `--store_dir PATH` | `~/.wish` | Directory holding the persistent server store and user stores (see [docs/persistent-store.md](persistent-store.md)) |
 | `--lang CODE` | *(empty: `en`)* | UI language (e.g. `es`); see [docs/i18n.md](i18n.md) |
+| `--save_defaults` / `--clear_defaults` | `false` | Save the flags given on this command line as the defaults of later runs, or erase them. Without `--run`, only updates the saved defaults and exits. See [Saved flag defaults](#saved-flag-defaults) |
 
 `standalone` has no `--transport`/`--host`/`--port`/`--name`/`--theme`
 flags — passing a transport flag is rejected with an explicit error, since
@@ -250,6 +253,51 @@ variable when not given on the command line (e.g. `WISH_TRANSPORT`,
 `WISH_WEB_BIND`, ...) — an explicit command-line flag always wins. This is
 the mechanism `wish desktop` uses to make its spawned terminal's `wish
 client`/`wish server` connect with no flags, shown above.
+
+## Saved flag defaults
+
+`wish server` and `wish standalone` can keep their own defaults in the
+[server store](persistent-store.md) (`<store_dir>/server_store.bison`). Each
+flag resolves in this order:
+
+1. the command line;
+2. its `WISH_<FLAG>` environment variable;
+3. the saved default;
+4. the built-in default listed in the tables above.
+
+`--save_defaults` saves the flags given on the command line (not those from
+environment variables), merged over the ones saved before. `--clear_defaults`
+erases them all:
+
+```sh
+wish server --renderer sdl3 --font_size 20 --lang es --save_defaults
+wish server                      # sdl3, font size 20, Spanish
+WISH_LANG=fr wish server         # the env var still wins: French
+wish server --lang en            # and so does the command line
+wish server --clear_defaults     # back to the built-in defaults
+
+wish standalone --theme light --save_defaults   # saves and exits (no --run)
+```
+
+Every flag of the mode can be saved, except:
+
+- in every mode: `--save_defaults`, `--clear_defaults`, `--store_dir` (it
+  locates the store), secrets (flags named `*password` or `*_pem`, e.g.
+  `--key_password`, `--cert_pem`) and gflags' own flags (`--help`,
+  `--flagfile`, ...);
+- the debug and security switches: `--debugger`, `--profiling_dir`,
+  `--profiling_autostart`, `--allow_absolute_paths`;
+- in `standalone` only: `--run`, `--list`, `--describe`, and the rejected
+  transport flags.
+
+| Mode | Store entry |
+|------|-------------|
+| `server` | `wish.cli.server` |
+| `standalone` | `wish.cli.standalone` |
+
+The defaults live under `--store_dir`, so pass the same `--store_dir` when
+saving and when running. A saved value that is no longer valid for its flag
+is skipped with a warning.
 
 ## See also
 
