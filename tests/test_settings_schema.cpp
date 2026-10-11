@@ -412,3 +412,22 @@ TEST(SettingsAppHost, ReadAndWriteSettings) {
   EXPECT_TRUE(host.read_bool_setting(on)); // the default
   EXPECT_NE(host.write_setting(on, false), "");
 }
+
+TEST(SettingsSchema, StoredOrDefaultAndValueJson) {
+  st::setting_info size;
+  size.name = "bdg.desktop.example.size";
+  size.type = st::setting_type::real;
+  size.max = 2.0f;
+  size.default_value = int32_t{1};
+  // No entry: the default, coerced to the setting's type.
+  auto v = st::stored_or_default(nullptr, size);
+  ASSERT_TRUE(std::holds_alternative<float>(v));
+  EXPECT_EQ(st::value_to_json(v), "1.0");
+  dynamic entry;
+  entry["size"_key] = 1.5f;
+  EXPECT_EQ(st::value_to_json(st::stored_or_default(&entry, size)), "1.5");
+  entry["size"_key] = 9.0f; // out of range
+  EXPECT_EQ(st::value_to_json(st::stored_or_default(&entry, size)), "1.0");
+  EXPECT_EQ(st::value_to_json(st::stored_or_default(nullptr, color_setting())), "\"#FF0000\"");
+  EXPECT_EQ(st::value_to_json(st::setting_value{}), "null");
+}

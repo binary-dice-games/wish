@@ -640,6 +640,33 @@ func (c *Client) DescribeSetting(info SettingInfo) error {
 	return checkWish(rc, "client.describe_setting("+info.Name+")", c.handle)
 }
 
+// ReadSetting returns the current value of info in the user store: the
+// stored value when it suits the setting, else info.Default (also for an
+// anonymous session). The value is a bool, a float64 (int and float
+// settings), a string, or nil when there is no default.
+func (c *Client) ReadSetting(info SettingInfo) (any, error) {
+	if info.Type == "" {
+		info.Type = "string"
+	}
+	data, err := json.Marshal(info)
+	if err != nil {
+		return nil, fmt.Errorf("wish: read_setting: %w", err)
+	}
+	cJSON := C.CString(string(data))
+	defer C.free(unsafe.Pointer(cJSON))
+	var out *C.char
+	rc := C.wish_settings_read(c.handle, cJSON, &out)
+	if err := checkWish(rc, "client.read_setting("+info.Name+")", c.handle); err != nil {
+		return nil, err
+	}
+	defer C.bison_free_string(out)
+	var v any
+	if err := json.Unmarshal([]byte(C.GoString(out)), &v); err != nil {
+		return nil, fmt.Errorf("wish: read_setting: %w", err)
+	}
+	return v, nil
+}
+
 // DescribeSettingsCategory describes a sidebar category settings refer to by id.
 func (c *Client) DescribeSettingsCategory(category SettingsCategory) error {
 	data, err := json.Marshal(category)

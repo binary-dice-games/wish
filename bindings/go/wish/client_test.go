@@ -266,6 +266,21 @@ func TestDescribeSettingUnavailableWithoutSession(t *testing.T) {
 	}
 }
 
+func TestReadSettingWithoutSessionReturnsTheDefault(t *testing.T) {
+	c, err := NewTCPClient("127.0.0.1", 1)
+	must(t, err)
+	defer c.Destroy()
+	max := 2.0
+	v, err := c.ReadSetting(SettingInfo{Name: "bdg.desktop.example.size", Type: "float", Default: 1, Max: &max})
+	must(t, err)
+	if v != 1.0 {
+		t.Fatalf("ReadSetting() = %v; want 1.0", v)
+	}
+	if _, err := c.ReadSetting(SettingInfo{Name: "nodot", Type: "bool"}); err == nil {
+		t.Fatal("ReadSetting() of an invalid name succeeded")
+	}
+}
+
 func TestSettingInfoJSON(t *testing.T) {
 	max := 10.0
 	data, err := json.Marshal(SettingInfo{

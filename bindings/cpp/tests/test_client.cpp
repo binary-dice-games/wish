@@ -259,6 +259,49 @@ TEST_F(WishCppUserStoreTest, DescribesSettingsInTheUserStore) {
       as_user("alice"));
 }
 
+TEST_F(WishCppUserStoreTest, ReadsSettingsOrTheirDefaults) {
+  auto client = wish::client::tcp("127.0.0.1", port_);
+  client.run(
+      [](wish::client& c) {
+        wish::setting_info size;
+        size.name = "bdg.desktop.example.size";
+        size.type = "float";
+        size.min = 0.5;
+        size.max = 2.0;
+        size.default_value = 1; // an int default reads as the float 1.0
+        EXPECT_EQ(std::get<double>(c.read_setting(size)), 1.0);
+        wish::setting_info on;
+        on.name = "bdg.desktop.example.on";
+        on.type = "bool";
+        on.default_value = true;
+        wish::setting_info mode;
+        mode.name = "bdg.desktop.example.mode";
+        mode.type = "enum";
+        mode.options = {{"a", ""}, {"b", ""}};
+        mode.default_value = std::string{"a"};
+
+        wish::value v;
+        v.set_float("size"_key, 1.5f).set_bool("on"_key, false).set_string("mode"_key, "zzz");
+        c.user_store_set("bdg.desktop.example", v);
+        EXPECT_EQ(std::get<double>(c.read_setting(size)), 1.5);
+        EXPECT_FALSE(std::get<bool>(c.read_setting(on)));
+        EXPECT_EQ(std::get<std::string>(c.read_setting(mode)), "a"); // not an option
+        wish::setting_info bad;
+        bad.name = "nodot";
+        EXPECT_THROW(c.read_setting(bad), wish::error);
+      },
+      as_user("alice"));
+  // Anonymous: the default, not an error.
+  auto anon = wish::client::tcp("127.0.0.1", port_);
+  anon.run([](wish::client& c) {
+    wish::setting_info on;
+    on.name = "bdg.desktop.example.on";
+    on.type = "bool";
+    on.default_value = true;
+    EXPECT_TRUE(std::get<bool>(c.read_setting(on)));
+  });
+}
+
 TEST_F(WishCppUserStoreTest, AnonymousClientGetsUnavailable) {
   auto client = wish::client::tcp("127.0.0.1", port_);
   client.run([](wish::client& c) {

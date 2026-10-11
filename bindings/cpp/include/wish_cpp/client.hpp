@@ -395,6 +395,38 @@ class client {
         h_);
   }
 
+  /**
+   * @brief The current value of @p info in the user store: the stored value
+   *        when it suits the setting, else its default (also for an
+   *        anonymous session). Ints read as int32_t, floats as double.
+   * @throws wish::error for invalid metadata or a store error.
+   */
+  setting_value read_setting(const setting_info& info) {
+    char* out = nullptr;
+    detail::throw_if_wish_error(
+        wish_settings_read(h_, to_json(info).c_str(), &out), "client::read_setting(" + info.name + ")", h_);
+    const std::string json = out ? out : "null";
+    bison_free_string(out);
+    // bison's JSON reader needs an object root.
+    auto v = value::parse_json("{\"v\":" + json + "}");
+    constexpr auto k = "v"_key;
+    if (info.type == "bool") {
+      if (auto b = v.get_bool(k))
+        return *b;
+    } else if (info.type == "int") {
+      if (auto i = v.get_int(k))
+        return *i;
+    } else if (info.type == "float") {
+      if (auto f = v.get_float(k))
+        return double(*f);
+      if (auto i = v.get_int(k))
+        return double(*i);
+    } else if (auto str = v.get_string(k)) {
+      return *str;
+    }
+    return std::monostate{};
+  }
+
   // ── Logging ──────────────────────────────────────────────────────────
 
   void log(const std::string& level, const std::string& msg) {

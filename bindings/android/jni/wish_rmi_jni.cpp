@@ -400,6 +400,19 @@ Java_com_bdg_wish_Client_nativeSettingsDescribeCategory(JNIEnv* env, jclass, jlo
     throw_user_store_error(env, handle, err, "settings_describe_category");
 }
 
+JNIEXPORT jstring JNICALL Java_com_bdg_wish_Client_nativeSettingsRead(JNIEnv* env, jclass, jlong handle, jstring json) {
+  jstring_view j(env, json);
+  char* out = nullptr;
+  wish_error err = wish_settings_read(from_jlong<wish_client_handle>(handle), j.c_str(), &out);
+  if (err != WISH_OK) {
+    throw_user_store_error(env, handle, err, "settings_read");
+    return nullptr;
+  }
+  jstring result = to_jstring(env, out);
+  bison_free_string(out);
+  return result;
+}
+
 // ─── Logging ────────────────────────────────────────────────────────────
 
 JNIEXPORT jint JNICALL Java_com_bdg_wish_Client_nativeLog(

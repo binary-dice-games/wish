@@ -32,6 +32,28 @@ DESC = {
 }
 
 
+# Every setting's metadata, keyed by field. describe_setting() records it for
+# the Settings tool; read_setting() takes the same keywords, so it can check
+# the stored value against them and fall back to the default.
+SETTINGS = {
+    "enabled": dict(type="bool", label="Show the banner", section="Banner", default=True, order=0),
+    "message": dict(
+        type="string", label="Message", description="Text of the banner.", section="Banner",
+        default="Hello from Python", order=1,
+    ),
+    "color": dict(type="color", label="Color", section="Banner", default="#2F7BF5", order=2),
+    "size": dict(type="int", label="Text size", section="Banner", min=10, max=40, default=18, order=3),
+    "mood": dict(
+        type="enum", label="Mood", description="Picks the emoji shown next to the message.", section="Behavior",
+        options=[("happy", "Happy"), ("calm", "Calm"), ("busy", "Busy")], default="happy",
+    ),
+    "speed": dict(
+        type="float", label="Refresh interval", description="Seconds between reads of the settings.",
+        section="Behavior", min=0.5, max=3.0, default=1.0,
+    ),
+}
+
+
 def describe(client):
     """Declares the "Example" category and its settings (safe to repeat)."""
     client.describe_settings_category(
@@ -42,75 +64,13 @@ def describe(client):
         color="#AF52DE",
         order=10,
     )
-    common = {"category": "example"}
-    client.describe_setting(
-        f"{ENTRY}.enabled", type="bool", label="Show the banner", section="Banner", default=True, order=0, **common
-    )
-    client.describe_setting(
-        f"{ENTRY}.message",
-        type="string",
-        label="Message",
-        description="Text of the banner.",
-        section="Banner",
-        default="Hello from Python",
-        order=1,
-        **common,
-    )
-    client.describe_setting(
-        f"{ENTRY}.color", type="color", label="Color", section="Banner", default="#2F7BF5", order=2, **common
-    )
-    client.describe_setting(
-        f"{ENTRY}.size",
-        type="int",
-        label="Text size",
-        section="Banner",
-        min=10,
-        max=40,
-        default=18,
-        order=3,
-        **common,
-    )
-    client.describe_setting(
-        f"{ENTRY}.mood",
-        type="enum",
-        label="Mood",
-        description="Picks the emoji shown next to the message.",
-        section="Behavior",
-        options=[("happy", "Happy"), ("calm", "Calm"), ("busy", "Busy")],
-        default="happy",
-        **common,
-    )
-    client.describe_setting(
-        f"{ENTRY}.speed",
-        type="float",
-        label="Refresh interval",
-        description="Seconds between reads of the settings.",
-        section="Behavior",
-        min=0.5,
-        max=3.0,
-        default=1.0,
-        **common,
-    )
+    for field, meta in SETTINGS.items():
+        client.describe_setting(f"{ENTRY}.{field}", category="example", **meta)
 
 
 def read(client):
-    """Current values, with the defaults for the ones never set.
-
-    The entry is read as JSON: field names are stored as hashes ("#<key>"),
-    and JSON keeps each value's type (indexing a Dynamic would read a
-    missing field, or false, as 0)."""
-    from bison import key
-
-    values = {"enabled": True, "message": "Hello from Python", "color": "#2F7BF5", "size": 18, "mood": "happy", "speed": 1.0}
-    entry = client.user_store_get(ENTRY)
-    if entry is not None:
-        stored = json.loads(entry.to_json())
-        entry.release()
-        for name, default in values.items():
-            value = stored.get(f"#{key(name)}")
-            if value is not None and isinstance(value, (int, float)) == isinstance(default, (int, float)):
-                values[name] = value
-    return values
+    """Current values: the stored ones when valid, else the defaults."""
+    return {field: client.read_setting(f"{ENTRY}.{field}", **meta) for field, meta in SETTINGS.items()}
 
 
 MOODS = {"happy": ":-)", "calm": ":-|", "busy": ":-O"}

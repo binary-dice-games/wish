@@ -24,9 +24,9 @@ entry `<entry>#schema`. Categories go in `wish.category.<id>#schema`. So:
 
 - Settings tools can show and edit the settings of apps that aren't running.
 - A client can only describe settings in its own user store.
-- Describing a setting doesn't change its value. Apps read their values as
-  usual (`user_store_get("bdg.desktop.example")`, then the field), using the
-  default when the field is missing.
+- Describing a setting doesn't change its value. Apps read it with
+  **read setting** (below), or as usual (`user_store_get("bdg.desktop.example")`,
+  then the field).
 
 ## Metadata
 
@@ -107,6 +107,35 @@ client.describe_setting("bdg.desktop.example.mood", type="enum", label="Mood", c
 | Rust | `SettingInfo`, `SettingsCategory` | `describe_setting()`, `describe_settings_category()` |
 | Go | `SettingInfo`, `SettingsCategory` | `DescribeSetting()`, `DescribeSettingsCategory()` |
 | Java (Android) | `SettingInfo`, `SettingsCategory` (builders) | `describeSetting()`, `describeSettingsCategory()` |
+
+## Reading settings
+
+**Read setting** takes the same metadata and returns the current value: the
+stored one when it suits the setting (type, range, option, color format;
+an int is fine for a float setting), else the default. An anonymous
+session, a missing entry or an invalid stored value all give the default,
+so an app can read its settings unconditionally. Only invalid metadata is
+an error.
+
+| API | Call | Returns |
+|-----|------|---------|
+| C ABI | `wish_settings_read(client, setting_json, &out_json)` | JSON text (`true`, `42`, `0.5`, `"#2F7BF5"`, `null`); free with `bison_free_string()` |
+| C++ binding | `client::read_setting(info)` | `setting_value` (ints as `int32_t`, floats as `double`) |
+| Python | `client.read_setting(name, type=..., default=..., ...)` (same keywords as `describe_setting`) | `bool` / `int` / `float` / `str` |
+| C# | `Client.ReadSetting(info)` | `object?`: `bool`, `int`, `double` or `string` |
+| Rust | `client.read_setting(&info)` | `SettingValue` |
+| Go | `client.ReadSetting(info)` | `any`: `bool`, `float64` or `string` |
+| Java (Android) | `client.readSetting(info)` | `Boolean`, `Integer`, `Double` or `String` |
+| C++ (`wish_app_host`) | `read_setting(info)`, `read_bool_setting()` ... | `settings::setting_value` |
+
+A setting's metadata can live in one place and serve both calls (see the
+demo's `SETTINGS` table):
+
+```python
+SIZE = dict(type="int", label="Text size", min=10, max=40, default=18)
+client.describe_setting("bdg.desktop.example.size", **SIZE)
+size = client.read_setting("bdg.desktop.example.size", **SIZE)
+```
 
 `bindings/python/examples/desktop/settings_demo.py` is a complete example.
 It declares an "Example" category with one setting of each type, and shows a

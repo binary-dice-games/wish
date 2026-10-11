@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <map>
+#include <optional>
 #include <set>
 
 namespace bdg::wish::settings {
@@ -100,18 +101,10 @@ std::string write_setting(persistent_store& store, const setting_info& info, con
 }
 
 setting_value value_of(const persistent_store* store, const setting_info& info) {
-  if (store) {
-    const setting_location loc = parse_name(info.name);
-    if (auto entry = store->get(loc.entry)) {
-      setting_value v = read_value(*entry, loc.field, info.type);
-      if (!std::holds_alternative<std::monostate>(v)) {
-        auto checked = validate(info, v);
-        if (auto* ok = std::get_if<setting_value>(&checked))
-          return *ok;
-      }
-    }
-  }
-  return info.default_value;
+  std::optional<bison::dynamic> entry;
+  if (store)
+    entry = store->get(parse_name(info.name).entry);
+  return stored_or_default(entry ? &*entry : nullptr, info);
 }
 
 bool bool_of(const persistent_store* store, const setting_info& info) {

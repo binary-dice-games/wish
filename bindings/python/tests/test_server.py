@@ -236,6 +236,22 @@ class TestUserStore(unittest.TestCase):
         self.assertEqual(r["keys"], ["bdg.desktop.example#schema", "wish.category.example#schema"])
         self.assertIn("default", r["bad"])
 
+    def test_read_setting_returns_the_stored_value_or_the_default(self):
+        size = dict(type="float", min=0.5, max=2.0, default=1)
+
+        def session(c, r):
+            r["default"] = c.read_setting("bdg.desktop.example.size", **size)
+            c.user_store_set("bdg.desktop.example", {"size": 1.5, "mode": "zzz"})
+            r["stored"] = c.read_setting("bdg.desktop.example.size", **size)
+            r["mode"] = c.read_setting("bdg.desktop.example.mode", type="enum", options=["a", "b"], default="b")
+
+        r = self._run(session, username="alice")
+        self.assertEqual(r["default"], 1.0)
+        self.assertEqual(r["stored"], 1.5)
+        self.assertEqual(r["mode"], "b")  # "zzz" isn't an option
+        anon = self._run(lambda c, r: r.update(v=c.read_setting("a.b.on", type="bool", default=True)))
+        self.assertIs(anon["v"], True)
+
     def test_describe_settings_needs_an_identity(self):
         from wish import WishError
         from wish import _native as _n

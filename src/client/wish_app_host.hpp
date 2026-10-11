@@ -181,18 +181,11 @@ class wish_app_host {
     if (!has_user_store())
       return info.default_value;
     try {
-      const settings::setting_location loc = settings::parse_name(info.name);
-      if (auto entry = user_store_get(loc.entry).get()) {
-        settings::setting_value v = settings::read_value(*entry, loc.field, info.type);
-        if (!std::holds_alternative<std::monostate>(v)) {
-          auto checked = settings::validate(info, v);
-          if (auto* ok = std::get_if<settings::setting_value>(&checked))
-            return *ok;
-        }
-      }
+      auto entry = user_store_get(settings::parse_name(info.name).entry).get();
+      return settings::stored_or_default(entry ? &*entry : nullptr, info);
     } catch (const std::exception&) {
+      return info.default_value;
     }
-    return info.default_value;
   }
 
   /// @brief read_setting() as a bool / int / float / string.

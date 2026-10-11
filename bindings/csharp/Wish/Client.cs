@@ -500,6 +500,36 @@ public sealed class Client : IDisposable
             $"describe_settings_category({category.Id})",
             LastError);
 
+    /// <summary>
+    /// The current value of <paramref name="info"/> in the user store: the
+    /// stored value when it suits the setting, else its default (also for
+    /// an anonymous session). A <c>bool</c>, <c>int</c> (int settings),
+    /// <c>double</c> (float settings), <c>string</c>, or <c>null</c> when
+    /// there is no default. Throws <see cref="WishException"/> for invalid
+    /// metadata.
+    /// </summary>
+    public object? ReadSetting(SettingInfo info)
+    {
+        WishException.Check(Native.wish_settings_read(_handle, info.ToJson(), out var outJson), $"read_setting({info.Name})", LastError);
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(Marshal.PtrToStringUTF8(outJson) ?? "null");
+            var v = doc.RootElement;
+            return v.ValueKind switch
+            {
+                System.Text.Json.JsonValueKind.True => true,
+                System.Text.Json.JsonValueKind.False => false,
+                System.Text.Json.JsonValueKind.String => v.GetString(),
+                System.Text.Json.JsonValueKind.Number => info.Type == "int" ? v.GetInt32() : v.GetDouble(),
+                _ => null,
+            };
+        }
+        finally
+        {
+            WishInterop.FreeString(outJson);
+        }
+    }
+
     // ── Logging ───────────────────────────────────────────────────────────────
 
     /// <summary>Sends a structured log message: <paramref name="level"/> is "debug"/"info"/"warn"/"error".</summary>

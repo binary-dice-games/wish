@@ -823,6 +823,27 @@ extern "C" wish_error wish_settings_describe_category(wish_client_handle c, cons
   }
 }
 
+extern "C" wish_error wish_settings_read(wish_client_handle c, const char* setting_json, char** out_json) {
+  if (!c || !setting_json || !out_json)
+    return WISH_ERR_NULL;
+  *out_json = nullptr;
+  try {
+    const auto info = wish::settings::setting_from_json(setting_json);
+    std::optional<bdg::bison::dynamic> entry;
+    if (c->client_->has_user_store())
+      entry = c->client_->user_store_get(wish::settings::parse_name(info.name).entry).get();
+    const std::string json_str =
+        wish::settings::value_to_json(wish::settings::stored_or_default(entry ? &*entry : nullptr, info));
+    char* buf = new char[json_str.size() + 1];
+    std::memcpy(buf, json_str.c_str(), json_str.size() + 1);
+    *out_json = buf;
+    return WISH_OK;
+  } catch (const std::exception& e) {
+    c->last_error_ = e.what();
+    return WISH_ERR_EXCEPTION;
+  }
+}
+
 extern "C" wish_error wish_log(wish_client_handle c, const char* level, const char* msg) {
   if (!c || !level || !msg)
     return WISH_ERR_NULL;
