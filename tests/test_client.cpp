@@ -231,6 +231,73 @@ TEST(ClientTest, InstantiateNamedChildrenAppearInMap) {
   srv.stop();
 }
 
+TEST(ClientTest, RegisterTemplateFromJsonAppliesTranslations) {
+  memory_server_transport transport;
+  wish::server srv{transport, std::make_unique<wish::null_renderer>()};
+  srv.start();
+
+  class test_client : public wish::client {
+   public:
+    using wish::client::client;
+    std::string title;
+    std::string text;
+    std::string translated;
+
+   protected:
+    void on_session() override {
+      auto map = wish::parse_translations("TITLE = Ventana\nHELLO = Hola, \"mundo\"");
+      map.set_fallback(std::make_shared<wish::translation_map>(wish::parse_translations("ONLY_EN = English")));
+      set_translations(std::move(map));
+      register_template_from_json(
+          "tpl"_key, R"({"type":"Window","title":"$$TITLE","children":{"lbl":{"type":"Label","text":"$$HELLO"}}})")
+          .get();
+      auto result = instantiate_template("tpl"_key).get();
+      title = result.at("").get().get().as<std::string>("title"_key);
+      text = result.at("lbl").get().get().as<std::string>("text"_key);
+      translated = translate("$$ONLY_EN");
+    }
+  };
+
+  test_client c{transport.connect()};
+  c.run();
+
+  EXPECT_EQ(c.title, "Ventana");
+  EXPECT_EQ(c.text, "Hola, \"mundo\"");
+  EXPECT_EQ(c.translated, "English");
+  srv.stop();
+}
+
+TEST(ClientTest, SetLanguageRejectsInvalidCode) {
+  memory_server_transport transport;
+  wish::server srv{transport, std::make_unique<wish::null_renderer>()};
+  srv.start();
+
+  class test_client : public wish::client {
+   public:
+    using wish::client::client;
+    bool threw = false;
+    std::string language;
+
+   protected:
+    void on_session() override {
+      set_language("es").get();
+      try {
+        set_language("../x");
+      } catch (const std::invalid_argument&) {
+        threw = true;
+      }
+      language = this->wish::client::language();
+    }
+  };
+
+  test_client c{transport.connect()};
+  c.run();
+
+  EXPECT_TRUE(c.threw);
+  EXPECT_EQ(c.language, "es");
+  srv.stop();
+}
+
 TEST(ClientTest, InstantiateInvalidDescriptorThrows) {
   memory_server_transport transport;
   wish::server srv{transport, std::make_unique<wish::null_renderer>()};

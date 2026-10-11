@@ -29,6 +29,7 @@ DEFINE_string(ca_pem, "", "Trust anchor PEM for verifying client certificates (t
 DEFINE_string(theme, "wish",
     "Default UI theme preset for connecting clients that don't request their own via "
     "--theme, e.g. dark, light, classic, or wish.");
+DEFINE_string(lang, "", "Default UI language code for every session, e.g. es (default: en). See docs/i18n.md.");
 
 int main(int argc, char** argv) {
   gflags::SetUsageMessage("wish-server - wish GUI render server");

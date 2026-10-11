@@ -24,6 +24,9 @@ namespace bdg::wish {
  * - `"instantiate"_key(name)` — deep-clones the stored prototype
  *   (`ui_element::clone_ptr()`), assigns every node a fresh RMI id, and
  *   registers the resulting objects in the session.
+ * - `"set_language"_key(lang)` — sets the session's UI language
+ *   (`context::set_language()`), which selects the translation files that
+ *   server-side forms load (`context::translations_for()`).
  *
  * `wish::server::on_create_object` calls `init()` once per instance to
  * supply the per-session context before the object is accessible via RMI.
@@ -48,6 +51,7 @@ class ui_template : public bison::dynamic {
 
   bison::dynamic do_register(const bison::dynamic& params);
   bison::dynamic do_instantiate(const bison::dynamic& params);
+  bison::dynamic do_set_language(const bison::dynamic& params);
 
   /// @throws std::logic_error if called outside RMI dispatch.
   context& sess() {

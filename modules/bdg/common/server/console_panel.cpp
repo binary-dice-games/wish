@@ -15,7 +15,7 @@ namespace {
 // "auto_scroll": true so the table follows the newest row. Title, width,
 // table id and the Command column's width are set per tool in build().
 constexpr const char* kConsoleLayout = R"json({
-  "type": "Window", "title": "Console", "width": 940, "height": 240,
+  "type": "Window", "title": "$$COMMON_CONSOLE", "width": 940, "height": 240,
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "table": {
@@ -24,9 +24,9 @@ constexpr const char* kConsoleLayout = R"json({
       "height": -1, "outer_height": -1, "auto_scroll": true,
       "children": {
         "col_seq":     { "type": "TableColumn", "label": "#",       "flags": "WidthFixed", "init_width": 44,  "column_id": 0 },
-        "col_command": { "type": "TableColumn", "label": "Command", "flags": "WidthFixed", "init_width": 360, "column_id": 1 },
-        "col_exit":    { "type": "TableColumn", "label": "Exit",    "flags": "WidthFixed", "init_width": 50,  "column_id": 2 },
-        "col_output":  { "type": "TableColumn", "label": "Output",  "flags": "WidthStretch",                     "column_id": 3 }
+        "col_command": { "type": "TableColumn", "label": "$$COMMON_COMMAND", "flags": "WidthFixed", "init_width": 360, "column_id": 1 },
+        "col_exit":    { "type": "TableColumn", "label": "$$COMMON_EXIT", "flags": "WidthFixed", "init_width": 50,  "column_id": 2 },
+        "col_output":  { "type": "TableColumn", "label": "$$COMMON_OUTPUT", "flags": "WidthStretch",                     "column_id": 3 }
       }
     }
   } } }
@@ -40,7 +40,7 @@ void console_panel::build(tool_form& owner, const std::string& root_key, console
   root_key_ = root_key;
   owner.build_window(root_key_, kConsoleLayout, window_id_, [&](ui_tree& tree) {
     tree.with("", [&](const auto& e) {
-      e["title"_key] = options_.title;
+      e["title"_key] = owner.tr(options_.title);
       e["width"_key] = options_.width;
       e["closable"_key] = options_.closable;
     });
@@ -79,7 +79,7 @@ void console_panel::append(const std::string& command, int32_t exit_code, bool o
   owner.assign_id(context_menu);
 
   ui_element_ptr copy_item = ui_element_ptr::create("wish"_key, "MenuItem"_key);
-  copy_item["label"_key] = std::string{"Copy Entry"};
+  copy_item["label"_key] = owner.tr("$$COMMON_COPY_ENTRY");
   set_icon(copy_item, "copy");
   copy_item["copy_text"_key] = command + "\nexit: " + std::to_string(exit_code) + "\n" + output;
   owner.assign_id(copy_item);
@@ -87,7 +87,7 @@ void console_panel::append(const std::string& command, int32_t exit_code, bool o
     owner.on_click(wish_id_of(copy_item), options_.on_copied);
 
   ui_element_ptr clear_item = ui_element_ptr::create("wish"_key, "MenuItem"_key);
-  clear_item["label"_key] = "Clear " + options_.title;
+  clear_item["label"_key] = owner.trf("$$COMMON_CLEAR_TITLE", {owner.tr(options_.title)});
   set_icon(clear_item, "delete");
   owner.assign_id(clear_item);
   owner.on_click(wish_id_of(clear_item), [this] {

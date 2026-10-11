@@ -334,7 +334,8 @@ TEST_F(CurlStoreTest, AnonymousSessionKeepsDataInMemoryAndSaysSo) {
   auto log = last_call("append_command_log");
   ASSERT_TRUE(log.has_value());
   EXPECT_FALSE(log->as<bool>("ok"_key));
-  EXPECT_NE(log->as<std::string>("output"_key).find("anonymous"), std::string::npos);
+  // The client sends a translation key; the server's Console shows its text.
+  EXPECT_EQ(log->as<std::string>("output"_key), "$$CURL_NOT_SAVED_ANONYMOUS");
 
   s.source->on_save_request_requested(make_request_payload("Temp", "https://example.test"));
   EXPECT_EQ(entries_of(*last_call("update_collections")).size(), 1u);

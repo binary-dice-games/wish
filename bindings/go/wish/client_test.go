@@ -278,3 +278,21 @@ func TestListAppsJSONReturnsAJSONArray(t *testing.T) {
 		t.Fatalf("expected a JSON array, got %q", json)
 	}
 }
+
+// ═════════════════════════════════════════════════════════════════════════
+// Translations (client-side, no connection needed)
+// ═════════════════════════════════════════════════════════════════════════
+
+func TestTranslationsApplyWithoutConnection(t *testing.T) {
+	c, err := NewTCPClient("127.0.0.1", 1)
+	must(t, err)
+	defer c.Destroy()
+	must(t, c.SetTranslations("HELLO = Hola\n", "HELLO = Hello\nBYE = Bye\n"))
+	for in, want := range map[string]string{"$$HELLO": "Hola", "$$BYE": "Bye", "$$MISSING": "MISSING", "plain": "plain"} {
+		got, err := c.Translate(in)
+		must(t, err)
+		if got != want {
+			t.Errorf("Translate(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

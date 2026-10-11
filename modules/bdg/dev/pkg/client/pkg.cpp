@@ -20,6 +20,7 @@
 
 #include "src/client/app_registry.hpp"
 #include "src/client/wish_app_host.hpp"
+#include "src/i18n/translations.hpp"
 
 #include "src/bison/bison.hpp"
 
@@ -123,7 +124,7 @@ void run_pkg(wish_app_host& s) {
   // whole UI until it exits. Long commands get a modal progress dialog
   // (modules/bdg/common/command_worker.hpp).
   const auto frontend =
-      common::open_frontend(s, "PkgFrontend"_key, std::string{"Running "} + pkg::manager_name(*chosen));
+      common::open_frontend(s, "PkgFrontend"_key, make_message("$$COMMON_RUNNING_TOOL", {pkg::manager_name(*chosen)}));
   const auto& proxy = frontend.proxy;
   const auto& worker = frontend.worker;
   auto source = std::make_shared<pkg::pkg_source>(proxy, *chosen, how, worker);

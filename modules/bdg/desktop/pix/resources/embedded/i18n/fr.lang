@@ -1,0 +1,24 @@
+# pix -- French.
+PIX_IMAGE_VIEWER = Visionneuse d'images
+PIX_IMAGES = Images
+PIX_FOLDER_PATH = Chemin du dossier...
+PIX_BROWSE = Parcourir...
+PIX_OPEN_SANDBOX = Ouvrir le bac à sable
+PIX_PREVIEW = Aperçu
+PIX_ZOOM_OUT = Zoom arrière
+PIX_ZOOM_IN = Zoom avant
+PIX_FIT_TO_WINDOW = Ajuster à la fenêtre
+PIX_SCROLL_THE_PREVIEW_TO_PAN = (faites défiler l'aperçu pour vous déplacer)
+PIX_INFO = Infos
+PIX_LOADING = Chargement...
+PIX_RESOLUTION = Résolution : {0}
+PIX_FORMAT = Format : {0}
+PIX_SIZE = Taille : {0}
+PIX_MODIFIED = Modifié : {0}
+PIX_UNKNOWN = Inconnu
+PIX_OPENED_SANDBOX = Bac à sable ouvert dans l'explorateur de fichiers de l'hôte.
+PIX_COULD_NOT_OPEN_EXPLORER = Impossible d'ouvrir l'explorateur de fichiers de l'hôte.
+PIX_NOT_A_DIRECTORY = Pas un dossier : {0}
+PIX_N_IMAGES = {0} image(s).
+PIX_SELECT_IMAGE_FOLDER = Sélectionner le dossier d'images
+PIX_SELECT_FOLDER = Sélectionner le dossier

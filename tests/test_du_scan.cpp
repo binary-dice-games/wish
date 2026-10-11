@@ -1,6 +1,8 @@
 // MIT License © 2026 Binary Dice Games
 #include <gtest/gtest.h>
 
+#include "src/i18n/translations.hpp"
+
 #include "modules/bdg/desktop/du/client/du_scan.hpp"
 
 #include <filesystem>
@@ -157,7 +159,7 @@ TEST_F(DuScanTest, TreemapMergesSmallItems) {
   // file keeps its own name).
   ASSERT_EQ(map.labels.size(), 6u);
   EXPECT_EQ(map.labels[3], "a.txt");
-  EXPECT_EQ(map.labels[4], "(2 smaller items)");
+  EXPECT_EQ(map.labels[4], bdg::wish::make_message("$$DU_N_SMALLER_ITEMS", {"2"}));
   EXPECT_EQ(map.kinds[4], static_cast<int32_t>(du_scan::node_kind::rest));
   EXPECT_EQ(map.bytes[4], 300u); // b.txt + deep/
   EXPECT_EQ(map.labels[5], "small.log");

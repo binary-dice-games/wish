@@ -323,11 +323,41 @@ std::future<void> standalone::register_template(bison::key_t name, bison::dynami
 }
 
 std::future<void> standalone::register_template_from_json(bison::key_t name, const std::string& json) {
-  return register_template(name, import_descriptor_json(json));
+  auto tr = translations();
+  return register_template(name, import_descriptor_json(json, tr.get()));
 }
 
 std::future<void> standalone::register_template_from_yaml(bison::key_t name, const std::string& yaml) {
-  return register_template(name, import_descriptor_yaml(yaml));
+  auto tr = translations();
+  return register_template(name, import_descriptor_yaml(yaml, tr.get()));
+}
+
+void standalone::set_translations(translation_map map) {
+  *translations_.wlock() = std::make_shared<const translation_map>(std::move(map));
+}
+
+std::shared_ptr<const translation_map> standalone::translations() const {
+  return *translations_.rlock();
+}
+
+std::string standalone::language() const {
+  return *language_.rlock();
+}
+
+std::string standalone::translate(std::string_view text) const {
+  return translate_text(text, *translations());
+}
+
+std::future<void> standalone::set_language(const std::string& lang) {
+  if (!is_valid_language_code(lang))
+    throw std::invalid_argument("wish: invalid language code '" + lang + "'");
+  *language_.wlock() = lang;
+  return std::async(std::launch::async, [this, lang]() {
+    dynamic args;
+    args["lang"_key] = lang;
+    // oneway=true: same reasoning as set_style_preset below.
+    template_proxy_->call("set_language"_key, std::move(args), true).get();
+  });
 }
 
 namespace {

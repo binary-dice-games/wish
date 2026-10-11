@@ -26,6 +26,7 @@ DEFINE_string(key_password, "", "Passphrase for an encrypted client private key 
 // default theme with a logged warning; see style_service.hpp's "Supported
 // preset names".
 DEFINE_string(theme, "wish", "UI theme preset, e.g. dark, light, classic, or wish.");
+DEFINE_string(lang, "", "UI language code, e.g. es (default: en). See docs/i18n.md.");
 
 int main(int argc, char** argv) {
   gflags::SetUsageMessage("wish-client - wish GUI remote client");

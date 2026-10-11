@@ -106,14 +106,14 @@ TEST_F(ZipLocalTest, DefaultTitle) {
   auto obj = dynamic::instantiate("wish"_key, "Zip"_key);
   auto* f = obj.findField("title"_key);
   ASSERT_NE(f, nullptr);
-  EXPECT_EQ(f->as<std::string>(), "Zip");
+  EXPECT_EQ(f->as<std::string>(), "$$ZIP_ZIP");
 }
 
 TEST_F(ZipLocalTest, DefaultStatus) {
   auto obj = dynamic::instantiate("wish"_key, "Zip"_key);
   auto* f = obj.findField("status"_key);
   ASSERT_NE(f, nullptr);
-  EXPECT_EQ(f->as<std::string>(), "Ready.");
+  EXPECT_EQ(f->as<std::string>(), "$$ZIP_READY");
 }
 
 // ── Session-capturing server for internal-tree tests ──────────────────────────

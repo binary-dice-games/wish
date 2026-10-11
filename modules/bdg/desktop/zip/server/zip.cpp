@@ -105,22 +105,22 @@ std::string strip_zip_suffix(const std::string& name) {
 // (modules/bdg/common/command_worker.hpp), like mc and the dev modules.
 static constexpr const char* kFilesLayout = R"json({
   "type": "Window",
-  "title": "Files",
+  "title": "$$ZIP_FILES",
   "width": 520, "height": 440,
   "closable": true,
   "children": {
     "main": {
       "type": "VerticalLayout",
       "children": {
-        "path_input": { "type": "InputText", "hint": "Local path...", "value": "", "flags": "EnterReturnsTrue", "width": -1 },
-        "selected_label": { "type": "Label", "text": "Selected: (none)" },
+        "path_input": { "type": "InputText", "hint": "$$ZIP_LOCAL_PATH", "value": "", "flags": "EnterReturnsTrue", "width": -1 },
+        "selected_label": { "type": "Label", "text": "$$ZIP_SELECTED_NONE" },
         "file_table": {
           "type": "Table", "columns": 3, "headers": true,
           "flags": "Resizable|Sortable|RowBg|Borders|ScrollY", "outer_width": 0, "height": -1,
           "children": {
-            "col_name":     { "type": "TableColumn", "label": "Name", "column_id": 0 },
-            "col_size":     { "type": "TableColumn", "label": "Size", "flags": "WidthFixed", "init_width": 90, "column_id": 1 },
-            "col_modified": { "type": "TableColumn", "label": "Modified", "flags": "WidthFixed", "init_width": 130, "column_id": 2 }
+            "col_name":     { "type": "TableColumn", "label": "$$ZIP_NAME", "column_id": 0 },
+            "col_size":     { "type": "TableColumn", "label": "$$ZIP_SIZE", "flags": "WidthFixed", "init_width": 90, "column_id": 1 },
+            "col_modified": { "type": "TableColumn", "label": "$$ZIP_MODIFIED", "flags": "WidthFixed", "init_width": 130, "column_id": 2 }
           }
         }
       }
@@ -130,22 +130,22 @@ static constexpr const char* kFilesLayout = R"json({
 
 static constexpr const char* kContentsLayout = R"json({
   "type": "Window",
-  "title": "Contents",
+  "title": "$$ZIP_CONTENTS",
   "width": 480, "height": 440,
   "closable": true,
   "children": {
     "vbox": {
       "type": "VerticalLayout",
       "children": {
-        "summary": { "type": "Label", "text": "No archive open. Double-click a .zip or use View Contents." },
+        "summary": { "type": "Label", "text": "$$ZIP_NO_ARCHIVE_OPEN" },
         "contents_table": {
           "type": "Table", "columns": 4, "headers": true,
           "flags": "Resizable|RowBg|BordersH|ScrollY", "outer_width": 0, "height": -1,
           "children": {
-            "col_name":       { "type": "TableColumn", "label": "Name" },
-            "col_size":       { "type": "TableColumn", "label": "Size", "flags": "WidthFixed", "init_width": 80 },
-            "col_compressed": { "type": "TableColumn", "label": "Compressed", "flags": "WidthFixed", "init_width": 90 },
-            "col_ratio":      { "type": "TableColumn", "label": "Ratio", "flags": "WidthFixed", "init_width": 70 }
+            "col_name":       { "type": "TableColumn", "label": "$$ZIP_NAME" },
+            "col_size":       { "type": "TableColumn", "label": "$$ZIP_SIZE", "flags": "WidthFixed", "init_width": 80 },
+            "col_compressed": { "type": "TableColumn", "label": "$$ZIP_COMPRESSED", "flags": "WidthFixed", "init_width": 90 },
+            "col_ratio":      { "type": "TableColumn", "label": "$$ZIP_RATIO", "flags": "WidthFixed", "init_width": 70 }
           }
         }
       }
@@ -155,7 +155,7 @@ static constexpr const char* kContentsLayout = R"json({
 
 static constexpr const char* kActionsLayout = R"json({
   "type": "Window",
-  "title": "Actions",
+  "title": "$$ZIP_ACTIONS",
   "width": 1000, "height": 90,
   "closable": true,
   "children": {
@@ -166,13 +166,13 @@ static constexpr const char* kActionsLayout = R"json({
           "type": "HorizontalLayout",
           "spacing": 8,
           "children": {
-            "btn_compress": { "type": "Button", "label": "Compress...", "icon": "res/icons/zip.png", "height": 32 },
-            "btn_extract":  { "type": "Button", "label": "Extract", "icon": "res/icons/folder_open.png", "height": 32 },
-            "btn_view":     { "type": "Button", "label": "View Contents", "icon": "res/icons/visibility.png", "height": 32 },
-            "btn_refresh":  { "type": "Button", "label": "Refresh", "icon": "res/icons/refresh.png", "height": 32 }
+            "btn_compress": { "type": "Button", "label": "$$ZIP_COMPRESS", "icon": "res/icons/zip.png", "height": 32 },
+            "btn_extract":  { "type": "Button", "label": "$$ZIP_EXTRACT", "icon": "res/icons/folder_open.png", "height": 32 },
+            "btn_view":     { "type": "Button", "label": "$$ZIP_VIEW_CONTENTS", "icon": "res/icons/visibility.png", "height": 32 },
+            "btn_refresh":  { "type": "Button", "label": "$$ZIP_REFRESH", "icon": "res/icons/refresh.png", "height": 32 }
           }
         },
-        "status": { "type": "Label", "text": "Ready." }
+        "status": { "type": "Label", "text": "$$ZIP_READY" }
       }
     }
   }
@@ -191,7 +191,7 @@ static constexpr const char* kPromptLayout = R"({
     "sep": { "type": "Separator" },
     "buttons": { "type": "HorizontalLayout", "spacing": 6, "children": {
       "btn_ok": { "type": "Button", "label": "", "height": 32 },
-      "btn_cancel": { "type": "Button", "label": "Cancel", "height": 32 }
+      "btn_cancel": { "type": "Button", "label": "$$ZIP_CANCEL", "height": 32 }
     } }
   }
 })";
@@ -204,7 +204,9 @@ static constexpr const char* kPromptLayout = R"({
 
 // ── zip ──────────────────────────────────────────────────────────────────
 
-zip::zip(dynamic&& base) : tool_form(std::move(base)) {}
+zip::zip(dynamic&& base) : tool_form(std::move(base)) {
+  i18n_prefix_ = "bdg/desktop/zip";
+}
 
 zip::~zip() {
   remove_panel_objects();
@@ -216,7 +218,7 @@ void zip::on_init() {
   actions_root_key_ = internal_root_key_ + "_actions";
 
   auto* title_f = findField<std::string>("title"_key);
-  const std::string title = title_f ? *title_f : std::string{"Zip"};
+  const std::string title = tr(title_f ? *title_f : std::string{"$$ZIP_ZIP"});
 
   build_window(internal_root_key_, kFilesLayout, window_id_, [&](ui_tree& tree) {
     tree.with("main.path_input", [&](const auto& e) {
@@ -394,7 +396,7 @@ void zip::on_table_sorted(const dynamic& payload) {
 void zip::set_status(const std::string& message) {
   (*this)["status"_key] = message;
   if (status_label_ptr_)
-    status_label_ptr_["text"_key] = message;
+    status_label_ptr_["text"_key] = tr(message);
 }
 
 // ── Multi-selection ───────────────────────────────────────────────────────────
@@ -422,10 +424,10 @@ void zip::apply_row_click(
 
 std::string zip::describe_selection(const std::set<std::string>& selected) {
   if (selected.empty())
-    return "Selected: (none)";
+    return tr("$$ZIP_SELECTED_NONE");
   if (selected.size() == 1)
-    return "Selected: " + *selected.begin();
-  return "Selected: " + std::to_string(selected.size()) + " items";
+    return trf("$$ZIP_SELECTED_ONE", {*selected.begin()});
+  return trf("$$ZIP_SELECTED_N_ITEMS", {std::to_string(selected.size())});
 }
 
 std::vector<std::string> zip::selected_target_names(
@@ -494,7 +496,7 @@ dynamic zip::do_update_listing(const dynamic& args) {
   if (path_input_ptr_)
     path_input_ptr_["value"_key] = path_;
   (*this)["path"_key] = path_;
-  set_status("Ready.");
+  set_status("$$ZIP_READY");
 
   if (selected_label_ptr_)
     selected_label_ptr_["text"_key] = describe_selection(selected_names_);
@@ -528,7 +530,7 @@ dynamic zip::do_show_contents(const dynamic& args) {
 
 dynamic zip::on_set(const dynamic& patch) {
   if (auto* v = patch.findField<std::string>("status"_key); v && status_label_ptr_)
-    status_label_ptr_["text"_key] = *v;
+    status_label_ptr_["text"_key] = tr(*v);
   return patch;
 }
 
@@ -543,13 +545,13 @@ void zip::show_prompt(
   prompt_source_names_ = source_names;
   prompt_value_ = default_value;
 
-  auto tree = import_json(kPromptLayout);
-  std::string title = action == pending_action::compress ? "Compress" : "Extract";
-  std::string source_desc = source_names.size() == 1 ? ("\"" + source_names[0] + "\"")
-                                                       : (std::to_string(source_names.size()) + " items");
-  std::string message = action == pending_action::compress ? ("Create archive from " + source_desc + ":")
-                                                             : ("Extract " + source_desc + " to folder:");
-  std::string ok_label = action == pending_action::compress ? "Create" : "Extract";
+  auto tree = import_json(kPromptLayout, translations());
+  const bool compress = action == pending_action::compress;
+  std::string title = tr(compress ? "$$ZIP_COMPRESS_TITLE" : "$$ZIP_EXTRACT");
+  std::string message = source_names.size() == 1
+      ? trf(compress ? "$$ZIP_CREATE_FROM_ONE" : "$$ZIP_EXTRACT_ONE_TO", {source_names[0]})
+      : trf(compress ? "$$ZIP_CREATE_FROM_N" : "$$ZIP_EXTRACT_N_TO", {std::to_string(source_names.size())});
+  std::string ok_label = tr(compress ? "$$ZIP_CREATE" : "$$ZIP_EXTRACT");
 
   (*tree[""])["title"_key] = title;
   tree.with("message", [&](const auto& e) { e["text"_key] = message; });
@@ -624,19 +626,19 @@ void zip::on_prompt_confirmed() {
 
   if (value.empty() || value.find('/') != std::string::npos || value.find('\\') != std::string::npos ||
       value == "." || value == "..") {
-    set_status("Invalid name.");
+    set_status("$$ZIP_INVALID_NAME");
     return;
   }
 
   if (prompt_action_ == pending_action::compress &&
       std::find(prompt_source_names_.begin(), prompt_source_names_.end(), value) != prompt_source_names_.end()) {
-    set_status("Archive name must differ from the source.");
+    set_status("$$ZIP_NAME_MUST_DIFFER");
     return;
   }
 
   std::string existing_type = cached_entry_type(value);
   if (prompt_action_ == pending_action::compress && existing_type == "dir") {
-    set_status("Cannot overwrite a folder.");
+    set_status("$$ZIP_CANNOT_OVERWRITE_FOLDER");
     return;
   }
   if (prompt_action_ == pending_action::extract && existing_type == "file") {
@@ -663,7 +665,7 @@ void zip::on_prompt_confirmed() {
   std::vector<std::string> source_names = prompt_source_names_;
   request_close_prompt();
   emit_action_request(action, source_names, value);
-  set_status(action == pending_action::compress ? "Compressing..." : "Extracting...");
+  set_status(action == pending_action::compress ? "$$ZIP_COMPRESSING" : "$$ZIP_EXTRACTING");
 }
 
 // ── Overwrite confirmation dialog ────────────────────────────────────────────
@@ -679,10 +681,10 @@ void zip::show_overwrite_confirm(
       message,
       [this, action, source_names, target_name, compress] {
         emit_action_request(action, source_names, target_name);
-        set_status(compress ? "Compressing..." : "Extracting...");
+        set_status(compress ? "$$ZIP_COMPRESSING" : "$$ZIP_EXTRACTING");
       },
-      {.title = "Confirm Overwrite",
-       .on_no = [this, compress] { set_status(compress ? "Compress cancelled." : "Extract cancelled."); }});
+      {.title = "$$ZIP_CONFIRM_OVERWRITE",
+       .on_no = [this, compress] { set_status(compress ? "$$ZIP_COMPRESS_CANCELLED" : "$$ZIP_EXTRACT_CANCELLED"); }});
 }
 
 // ── Contents panel ────────────────────────────────────────────────────────────
@@ -696,12 +698,10 @@ void zip::show_contents_panel(const std::string& zip_name, const std::vector<arc
     }
   }
 
-  std::ostringstream summary;
-  summary << zip_name << ": " << entries.size() << (entries.size() == 1 ? " entry, " : " entries, ")
-          << format_bytes(total_uncompressed) << " uncompressed / " << format_bytes(total_compressed)
-          << " compressed";
   if (contents_summary_ptr_)
-    contents_summary_ptr_["text"_key] = summary.str();
+    contents_summary_ptr_["text"_key] = trf(
+        entries.size() == 1 ? "$$ZIP_CONTENTS_SUMMARY_ONE" : "$$ZIP_CONTENTS_SUMMARY",
+        {zip_name, std::to_string(entries.size()), format_bytes(total_uncompressed), format_bytes(total_compressed)});
 
   fill_contents_table(contents_table_ptr_, entries);
 }
@@ -749,7 +749,7 @@ void zip::on_event(key_t id, key_t event, const dynamic& payload) {
         req["name"_key] = entry.name;
         emit("on_view_contents_requested"_key, std::move(req));
       } else {
-        set_status("Not an archive: " + entry.name);
+        set_status(make_message("$$ZIP_NOT_AN_ARCHIVE", {entry.name}));
       }
       return;
     }
@@ -782,7 +782,7 @@ void zip::on_event(key_t id, key_t event, const dynamic& payload) {
   if (id == btn_compress_id_ && event == "clicked"_key) {
     auto names = selected_target_names(selected_names_, entries_);
     if (names.empty()) {
-      set_status("Select one or more files/folders to compress.");
+      set_status("$$ZIP_SELECT_TO_COMPRESS");
       return;
     }
     std::string default_value = names.size() == 1 ? (names[0] + ".zip") : std::string{"Archive.zip"};
@@ -792,12 +792,12 @@ void zip::on_event(key_t id, key_t event, const dynamic& payload) {
 
   if (id == btn_extract_id_ && event == "clicked"_key) {
     if (selected_names_.size() != 1) {
-      set_status("Select a single .zip file to extract.");
+      set_status("$$ZIP_SELECT_SINGLE_TO_EXTRACT");
       return;
     }
     const std::string& name = *selected_names_.begin();
     if (cached_entry_type(name) != "file" || !is_zip_name(name)) {
-      set_status("Select a .zip file to extract.");
+      set_status("$$ZIP_SELECT_TO_EXTRACT");
       return;
     }
     show_prompt(pending_action::extract, {name}, strip_zip_suffix(name));
@@ -806,12 +806,12 @@ void zip::on_event(key_t id, key_t event, const dynamic& payload) {
 
   if (id == btn_view_id_ && event == "clicked"_key) {
     if (selected_names_.size() != 1) {
-      set_status("Select a single .zip file to view its contents.");
+      set_status("$$ZIP_SELECT_SINGLE_TO_VIEW");
       return;
     }
     const std::string& name = *selected_names_.begin();
     if (cached_entry_type(name) != "file" || !is_zip_name(name)) {
-      set_status("Select a .zip file to view its contents.");
+      set_status("$$ZIP_SELECT_TO_VIEW");
       return;
     }
     dynamic req;
@@ -837,7 +837,7 @@ void zip::on_event(key_t id, key_t event, const dynamic& payload) {
       return;
     }
     if (id == prompt_cancel_id_ && event == "clicked"_key) {
-      set_status(prompt_action_ == pending_action::compress ? "Compress cancelled." : "Extract cancelled.");
+      set_status(prompt_action_ == pending_action::compress ? "$$ZIP_COMPRESS_CANCELLED" : "$$ZIP_EXTRACT_CANCELLED");
       request_close_prompt();
       return;
     }
@@ -852,7 +852,7 @@ void register_zip() {
   proto->addField(
       "title"_key,
       field{
-          std::string{"Zip"},
+          std::string{"$$ZIP_ZIP"},
           attr<DisplayName>("Title"),
           attr<Description>("Window title."),
           attr<Category>("Appearance")});
@@ -870,7 +870,7 @@ void register_zip() {
   proto->addField(
       "status"_key,
       field{
-          std::string{"Ready."},
+          std::string{"$$ZIP_READY"},
           attr<DisplayName>("Status"),
           attr<Description>("Text shown in the Actions panel's status line."),
           attr<Category>("Data")});

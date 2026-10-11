@@ -18,6 +18,7 @@ DECLARE_string(host);
 DECLARE_int32(port);
 DECLARE_string(name);
 DECLARE_string(theme);
+DECLARE_string(lang);
 
 // ── Client-mode flags ─────────────────────────────────────────────────────────
 DEFINE_bool(list, false, "List available embedded applications and exit");
@@ -223,6 +224,9 @@ int wish_client_app::on_session(bison::rmi::client& c) {
   gflags::GetCommandLineFlagInfo("theme", &theme_info);
   if (!theme_info.is_default)
     wish_client_->set_style_preset(FLAGS_theme).get();
+  // Likewise, only override the server's default language when --lang is set.
+  if (!FLAGS_lang.empty())
+    wish_client_->set_language(FLAGS_lang).get();
   set_running_app(resolved_app_);
   resolved_app_->run(*this); // set up proxies and event handlers
   done_future_.wait(); // block until signal_done() fires

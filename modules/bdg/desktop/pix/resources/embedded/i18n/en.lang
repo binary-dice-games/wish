@@ -1,0 +1,24 @@
+# pix -- English (fallback for every other language).
+PIX_IMAGE_VIEWER = Image Viewer
+PIX_IMAGES = Images
+PIX_FOLDER_PATH = Folder path...
+PIX_BROWSE = Browse...
+PIX_OPEN_SANDBOX = Open Sandbox
+PIX_PREVIEW = Preview
+PIX_ZOOM_OUT = Zoom out
+PIX_ZOOM_IN = Zoom in
+PIX_FIT_TO_WINDOW = Fit to window
+PIX_SCROLL_THE_PREVIEW_TO_PAN = (scroll the preview to pan)
+PIX_INFO = Info
+PIX_LOADING = Loading...
+PIX_RESOLUTION = Resolution: {0}
+PIX_FORMAT = Format: {0}
+PIX_SIZE = Size: {0}
+PIX_MODIFIED = Modified: {0}
+PIX_UNKNOWN = Unknown
+PIX_OPENED_SANDBOX = Opened sandbox in host file explorer.
+PIX_COULD_NOT_OPEN_EXPLORER = Could not open host file explorer.
+PIX_NOT_A_DIRECTORY = Not a directory: {0}
+PIX_N_IMAGES = {0} image(s).
+PIX_SELECT_IMAGE_FOLDER = Select Image Folder
+PIX_SELECT_FOLDER = Select Folder

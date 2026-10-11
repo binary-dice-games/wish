@@ -40,7 +40,11 @@ module, and modules just `#include` it:
   toolbar buttons and menu items a built-in icon (`"icon":
   "res/icons/<name>.png"`, or `common::icon_path()` / `set_icon()` from
   `ui_helpers.hpp`); the available icons are listed in
-  [resources/README.md](../resources/README.md).
+  [resources/README.md](../resources/README.md). To translate a tool's UI
+  text, use `"$$<MODULE>_<NAME>"` keys in its layouts, ship
+  `resources/embedded/i18n/en.lang` (plus one `<lang>.lang` per language)
+  and set `i18n_prefix_` in the `tool_form` constructor -- see
+  [docs/i18n.md](../docs/i18n.md).
 
 A module needs none, some, or all three of `server/`, `client/`,
 `resources/embedded/` — there's no assumption that any particular

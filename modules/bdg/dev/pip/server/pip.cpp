@@ -22,7 +22,6 @@ using common::kOk;
 using common::kWarn;
 using common::lower;
 using common::make_payload;
-using common::plural;
 using common::str_of;
 using common::wish_id_of;
 
@@ -66,34 +65,34 @@ std::string requirement_name(const std::string& spec) {
 // arrangement on a 1280px-wide viewport (see helm.cpp).
 
 static constexpr const char* kPackagesLayout = R"json({
-  "type": "Window", "title": "Packages", "width": 900, "height": 520,
+  "type": "Window", "title": "$$PIP_PACKAGES", "width": 900, "height": 520,
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_refresh":  { "type": "Button", "label": "Refresh", "icon": "res/icons/refresh.png" },
-      "btn_outdated": { "type": "Button", "label": "Check for updates", "icon": "res/icons/arrow_up.png" },
-      "filter":       { "type": "InputText", "hint": "Filter by name", "width": 180 },
-      "state":        { "type": "Combo", "items": "All\nOutdated\nEditable", "value": 0, "width": 110 },
+      "btn_refresh":  { "type": "Button", "label": "$$PIP_REFRESH", "icon": "res/icons/refresh.png" },
+      "btn_outdated": { "type": "Button", "label": "$$PIP_CHECK_FOR_UPDATES", "icon": "res/icons/arrow_up.png" },
+      "filter":       { "type": "InputText", "hint": "$$PIP_FILTER_BY_NAME", "width": 180 },
+      "state":        { "type": "Combo", "items": "$$PIP_STATE_ITEMS", "value": 0, "width": 110 },
       "spring":       { "type": "Spring" },
-      "btn_freeze":   { "type": "Button", "label": "Freeze", "icon": "res/icons/document.png" },
-      "btn_check":    { "type": "Button", "label": "Check", "icon": "res/icons/check.png" }
+      "btn_freeze":   { "type": "Button", "label": "$$PIP_FREEZE", "icon": "res/icons/document.png" },
+      "btn_check":    { "type": "Button", "label": "$$PIP_CHECK", "icon": "res/icons/check.png" }
     } },
     "install_bar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "caption":      { "type": "Label", "text": "Install new package:" },
-      "spec":         { "type": "InputText", "hint": "exact name, e.g. requests or requests==2.31.0", "width": 330 },
-      "btn_versions": { "type": "Button", "label": "Look up", "icon": "res/icons/search.png" },
-      "btn_install":  { "type": "Button", "label": "Install", "icon": "res/icons/download.png" }
+      "caption":      { "type": "Label", "text": "$$PIP_INSTALL_NEW_PACKAGE" },
+      "spec":         { "type": "InputText", "hint": "$$PIP_PACKAGE_HINT", "width": 330 },
+      "btn_versions": { "type": "Button", "label": "$$PIP_LOOK_UP", "icon": "res/icons/search.png" },
+      "btn_install":  { "type": "Button", "label": "$$PIP_INSTALL", "icon": "res/icons/download.png" }
     } },
     "req_bar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "caption":          { "type": "Label", "text": "Or a requirements file:" },
-      "req_path":         { "type": "InputText", "hint": "path on the client machine", "width": 250 },
-      "btn_requirements": { "type": "Button", "label": "Install requirements", "icon": "res/icons/download.png" }
+      "caption":          { "type": "Label", "text": "$$PIP_OR_A_REQUIREMENTS_FILE" },
+      "req_path":         { "type": "InputText", "hint": "$$PIP_REQUIREMENTS_HINT", "width": 250 },
+      "btn_requirements": { "type": "Button", "label": "$$PIP_INSTALL_REQUIREMENTS", "icon": "res/icons/download.png" }
     } },
     "opts_bar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "caption": { "type": "Label", "text": "Install options:" },
-      "upgrade": { "type": "Checkbox", "label": "Upgrade", "value": false },
-      "user":    { "type": "Checkbox", "label": "User", "value": false },
-      "pre":     { "type": "Checkbox", "label": "Pre-releases", "value": false }
+      "caption": { "type": "Label", "text": "$$PIP_INSTALL_OPTIONS" },
+      "upgrade": { "type": "Checkbox", "label": "$$PIP_UPGRADE", "value": false },
+      "user":    { "type": "Checkbox", "label": "$$PIP_USER", "value": false },
+      "pre":     { "type": "Checkbox", "label": "$$PIP_PRE_RELEASES", "value": false }
     } },
     "env": { "type": "Label", "text": "" },
     "status": { "type": "Label", "text": "" },
@@ -103,10 +102,10 @@ static constexpr const char* kPackagesLayout = R"json({
       "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": -1, "outer_height": -1, "auto_scroll": false,
       "children": {
-        "col_name":     { "type": "TableColumn", "label": "Name",              "flags": "WidthFixed", "init_width": 220, "column_id": 0 },
-        "col_version":  { "type": "TableColumn", "label": "Version",           "flags": "WidthFixed", "init_width": 110, "column_id": 1 },
-        "col_latest":   { "type": "TableColumn", "label": "Latest",            "flags": "WidthFixed", "init_width": 110, "column_id": 2 },
-        "col_location": { "type": "TableColumn", "label": "Editable location", "flags": "WidthStretch",                   "column_id": 3 },
+        "col_name":     { "type": "TableColumn", "label": "$$PIP_NAME",              "flags": "WidthFixed", "init_width": 220, "column_id": 0 },
+        "col_version":  { "type": "TableColumn", "label": "$$PIP_VERSION",           "flags": "WidthFixed", "init_width": 110, "column_id": 1 },
+        "col_latest":   { "type": "TableColumn", "label": "$$PIP_LATEST",            "flags": "WidthFixed", "init_width": 110, "column_id": 2 },
+        "col_location": { "type": "TableColumn", "label": "$$PIP_EDITABLE_LOCATION", "flags": "WidthStretch",                   "column_id": 3 },
         "col_actions":  { "type": "TableColumn", "label": "",                  "flags": "WidthFixed", "init_width": 40,  "column_id": 4 }
       }
     }
@@ -114,22 +113,22 @@ static constexpr const char* kPackagesLayout = R"json({
 })json";
 
 static constexpr const char* kVersionsLayout = R"json({
-  "type": "Window", "title": "Versions", "width": 460, "height": 420,
+  "type": "Window", "title": "$$PIP_VERSIONS", "width": 460, "height": 420,
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 8, "children": {
-      "target":      { "type": "Label", "text": "(no package selected)" },
+      "target":      { "type": "Label", "text": "$$PIP_NO_PACKAGE_SELECTED" },
       "spring":      { "type": "Spring" },
-      "btn_refresh": { "type": "Button", "label": "Refresh", "icon": "res/icons/refresh.png" }
+      "btn_refresh": { "type": "Button", "label": "$$PIP_REFRESH", "icon": "res/icons/refresh.png" }
     } },
-    "status": { "type": "Label", "text": "Type a name in Packages and press Look up." },
+    "status": { "type": "Label", "text": "$$PIP_VERSIONS_PLACEHOLDER" },
     "sep": { "type": "Separator" },
     "table": {
       "type": "Table", "id": "##pip_versions_table", "columns": 3,
       "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": -1, "outer_height": -1, "auto_scroll": false,
       "children": {
-        "col_version": { "type": "TableColumn", "label": "Version", "flags": "WidthFixed", "init_width": 150, "column_id": 0 },
+        "col_version": { "type": "TableColumn", "label": "$$PIP_VERSION", "flags": "WidthFixed", "init_width": 150, "column_id": 0 },
         "col_note":    { "type": "TableColumn", "label": "",        "flags": "WidthStretch",                   "column_id": 1 },
         "col_actions": { "type": "TableColumn", "label": "",        "flags": "WidthFixed", "init_width": 40,  "column_id": 2 }
       }
@@ -141,7 +140,9 @@ static constexpr const char* kVersionsLayout = R"json({
 
 // ── pip_frontend ───────────────────────────────────────────────────────────
 
-pip_frontend::pip_frontend(dynamic&& base) : tool_form(std::move(base)) {}
+pip_frontend::pip_frontend(dynamic&& base) : tool_form(std::move(base)) {
+  i18n_prefix_ = "bdg/dev/pip";
+}
 
 void pip_frontend::on_init() {
   internal_root_key_ = next_available_key("__pip_");
@@ -157,7 +158,7 @@ void pip_frontend::on_init() {
     tree.with("vbox.toolbar.state", [&](const auto& e) { state_combo_id_ = wish_id_of(e); });
     click("vbox.toolbar.btn_refresh", [this] { emit("refresh_requested"_key); });
     click("vbox.toolbar.btn_outdated", [this] {
-      set_status(packages_, "Checking the package index for updates ...", true);
+      set_status(packages_, "$$PIP_CHECKING_FOR_UPDATES", true);
       emit("outdated_requested"_key);
     });
     click("vbox.toolbar.btn_freeze", [this] { open_details("freeze", {}); });
@@ -172,7 +173,7 @@ void pip_frontend::on_init() {
     tree.with("vbox.opts_bar.pre", [&](const auto& e) { pre_id_ = wish_id_of(e); });
     click("vbox.install_bar.btn_install", [this] {
       if (spec_text_.find_first_not_of(" \t") == std::string::npos) {
-        set_status(packages_, "Enter a package to install (for example requests or requests==2.31.0)", false);
+        set_status(packages_, "$$PIP_ENTER_PACKAGE_TO_INSTALL", false);
         return;
       }
       emit_install("install_requested"_key, "spec"_key, spec_text_);
@@ -183,7 +184,7 @@ void pip_frontend::on_init() {
     click("vbox.install_bar.btn_versions", [this] {
       const std::string name = requirement_name(spec_text_);
       if (name.empty())
-        set_status(packages_, "Enter a package name to look it up on the package index", false);
+        set_status(packages_, "$$PIP_ENTER_PACKAGE_TO_LOOK_UP", false);
       else {
         set_status(packages_, packages_summary_, true); // drop a stale validation message
         open_versions(name);
@@ -193,7 +194,7 @@ void pip_frontend::on_init() {
     tree.with("vbox.req_bar.req_path", [&](const auto& e) { req_input_id_ = wish_id_of(e); });
     click("vbox.req_bar.btn_requirements", [this] {
       if (req_text_.empty())
-        set_status(packages_, "Enter the path of a requirements file", false);
+        set_status(packages_, "$$PIP_ENTER_REQUIREMENTS_PATH", false);
       else
         emit_install("requirements_requested"_key, "path"_key, req_text_);
     });
@@ -207,9 +208,10 @@ void pip_frontend::on_init() {
     });
   });
 
-  details_.build(*this, internal_root_key_ + "_details", {.title = "Details", .width = 460, .on_refresh = [this] {
-                                                            emit_details_request();
-                                                          }});
+  details_.build(
+      *this, internal_root_key_ + "_details", {.title = "$$COMMON_DETAILS", .width = 460, .on_refresh = [this] {
+                                                 emit_details_request();
+                                               }});
 
   console_.build(
       *this, internal_root_key_ + "_console", {.table_id = "##pip_console_table", .width = 900, .command_width = 320});
@@ -222,7 +224,7 @@ void pip_frontend::on_init() {
     using namespace dock;
     set_default_dock_layout(viewport(
         "pip_dock",
-        "Pip",
+        tr("$$PIP_PIP"),
         layout(
             split(
                 dir::left,
@@ -259,7 +261,7 @@ void pip_frontend::open_versions(const std::string& name) {
   versions_window_.refresh();
   if (versions_target_label_)
     versions_target_label_["text"_key] = "versions: " + name;
-  set_status(versions_window_, "Asking the package index ...", true);
+  set_status(versions_window_, "$$PIP_ASKING_INDEX", true);
   emit_versions_request();
 }
 
@@ -270,7 +272,7 @@ void pip_frontend::emit_versions_request() {
 }
 
 void pip_frontend::emit_install(key_t event, key_t field, const std::string& value) {
-  set_status(packages_, "Running pip install " + value + " ...", true);
+  set_status(packages_, trf("$$PIP_RUNNING_INSTALL", {value}), true);
   dynamic p;
   p[field] = value;
   p["upgrade"_key] = opt_upgrade_;
@@ -318,13 +320,13 @@ void pip_frontend::rebuild_packages(const dynamic& args) {
         make_label(location, kIdle),
     };
     std::vector<common::menu_item> items = {
-        action_item("Details", r, "show", false),
-        action_item("Files", r, "files", false),
-        action_item("Versions", r, "versions", false),
+        action_item("$$PIP_DETAILS", r, "show", false),
+        action_item("$$PIP_FILES", r, "files", false),
+        action_item("$$PIP_VERSIONS", r, "versions", false),
         {},
-        action_item("Upgrade", r, "upgrade", false),
-        action_item("Reinstall", r, "reinstall", true),
-        action_item("Uninstall", r, "uninstall", true)};
+        action_item("$$PIP_UPGRADE", r, "upgrade", false),
+        action_item("$$PIP_REINSTALL", r, "reinstall", true),
+        action_item("$$PIP_UNINSTALL", r, "uninstall", true)};
     if (r.outdated)
       ++outdated;
     ++total;
@@ -334,9 +336,11 @@ void pip_frontend::rebuild_packages(const dynamic& args) {
   packages_.refresh();
   apply_package_filter();
 
-  std::string status = total == 0 ? std::string{"No packages installed."} : plural(total, "package");
-  if (total != 0 && flag_of(args, "outdated_checked"_key))
-    status += " (" + std::to_string(outdated) + " outdated)";
+  std::string status = total == 0 ? tr("$$PIP_NO_PACKAGES")
+      : flag_of(args, "outdated_checked"_key)
+      ? trf(total == 1 ? "$$PIP_N_PACKAGE_OUTDATED" : "$$PIP_N_PACKAGES_OUTDATED",
+            {std::to_string(total), std::to_string(outdated)})
+      : trf(total == 1 ? "$$PIP_N_PACKAGE" : "$$PIP_N_PACKAGES", {std::to_string(total)});
   packages_summary_ = status;
   set_status(packages_, status, true);
 
@@ -368,22 +372,25 @@ void pip_frontend::rebuild_versions() {
     r.version = version;
 
     const bool is_installed = version == installed;
-    std::string note = is_installed ? "installed" : "";
+    std::string note = is_installed ? tr("$$PIP_INSTALLED") : "";
     if (version == versions_latest_)
-      note += note.empty() ? "latest" : ", latest";
+      note += (note.empty() ? "" : ", ") + tr("$$PIP_LATEST_NOTE");
 
     std::vector<ui_element_ptr> cells = {
         make_label(version),
         make_label(note, is_installed ? kOk : kIdle),
     };
-    std::vector<common::menu_item> items = {action_item("Install this version", r, "install", false)};
+    std::vector<common::menu_item> items = {action_item("$$PIP_INSTALL_THIS_VERSION", r, "install", false)};
     versions_window_.add(std::move(r), cells, items);
   }
 
   versions_window_.refresh();
-  std::string status = plural(total, "version") + (installed.empty() ? ", not installed" : ", installed: " + installed);
+  const std::string count = std::to_string(total);
+  std::string status = installed.empty()
+      ? trf(total == 1 ? "$$PIP_N_VERSION_NOT_INSTALLED" : "$$PIP_N_VERSIONS_NOT_INSTALLED", {count})
+      : trf(total == 1 ? "$$PIP_N_VERSION_INSTALLED" : "$$PIP_N_VERSIONS_INSTALLED", {count, installed});
   if (total > kMaxVersionRows)
-    status += " (showing the newest " + std::to_string(kMaxVersionRows) + ")";
+    status += " " + trf("$$PIP_SHOWING_NEWEST", {std::to_string(kMaxVersionRows)});
   set_status(versions_window_, status, true);
 }
 
@@ -421,7 +428,7 @@ dynamic pip_frontend::do_update_details(const dynamic& args) {
 dynamic pip_frontend::do_command_result(const dynamic& args) {
   list_window& lw = str_of(args, "scope"_key) == "versions" ? versions_window_ : packages_;
   bool ok = false;
-  const std::string text = common::command_result_text(args, ok);
+  const std::string text = common::command_result_text(*this, args, ok);
   set_status(lw, text, ok);
   return dynamic{};
 }
@@ -446,7 +453,7 @@ void pip_frontend::run_row_action(const package_row& r, const std::string& actio
   if (r.scope == "version") {
     // Pin exactly this version; the Upgrade checkbox is irrelevant to it.
     const std::string spec = r.name + "==" + r.version;
-    set_status(packages_, "Running pip install " + spec + " ...", true);
+    set_status(packages_, trf("$$PIP_RUNNING_INSTALL", {spec}), true);
     emit(
         "install_requested"_key,
         make_payload("spec"_key, spec, "upgrade"_key, false, "user"_key, opt_user_, "pre"_key, false));
@@ -463,14 +470,13 @@ void pip_frontend::run_row_action(const package_row& r, const std::string& actio
   }
 
   auto fire = [this, name = r.name, action] {
-    set_status(packages_, "Running pip " + action + " " + name + " ...", true);
+    set_status(packages_, trf("$$PIP_RUNNING_ACTION", {action, name}), true);
     emit("package_action_requested"_key, make_payload("name"_key, name, "action"_key, action));
   };
-  const std::string what = "'" + r.name + "' " + r.version;
   if (action == "uninstall")
-    show_confirm("Uninstall " + what + "? Packages that depend on it will stop working.", fire);
+    show_confirm(trf("$$PIP_UNINSTALL_CONFIRM", {r.name, r.version}), fire);
   else if (action == "reinstall")
-    show_confirm("Reinstall " + what + "? Its files are replaced; its dependencies are left as they are.", fire);
+    show_confirm(trf("$$PIP_REINSTALL_CONFIRM", {r.name, r.version}), fire);
   else
     fire();
 }

@@ -33,7 +33,7 @@ void tool_form::build_window(
     const char* layout_json,
     key_t& window_id_out,
     const std::function<void(ui_tree&)>& wire) {
-  auto tree = import_json(layout_json);
+  auto tree = import_json(layout_json, translations());
   assign_ids(tree);
   window_id_out = wish_id_of(tree[""]);
   if (wire)
@@ -58,7 +58,7 @@ void tool_form::assign_id(const ui_element_ptr& el) {
 
 ui_element_ptr tool_form::make_label(const std::string& text, const char* light, const char* dark) {
   ui_element_ptr l = ui_element_ptr::create("wish"_key, "Label"_key);
-  l["text"_key] = text;
+  l["text"_key] = tr(text);
   if (light)
     l["text_color_light"_key] = std::string{light};
   if (dark)
@@ -96,8 +96,8 @@ void tool_form::run_in_dispatch(const std::function<void()>& fn) {
 
 void tool_form::show_confirm(const std::string& message, std::function<void()> on_yes, confirm_options options) {
   dynamic params;
-  params["title"_key] = options.title;
-  params["message"_key] = message;
+  params["title"_key] = tr(options.title);
+  params["message"_key] = tr(message);
   params["icon"_key] = std::string{"warning"};
   params["buttons"_key] = std::string{"yes_no"};
 
@@ -116,8 +116,8 @@ void tool_form::show_confirm(const std::string& message, std::function<void()> o
 
 void tool_form::show_message(const std::string& title, const std::string& message, const std::string& icon) {
   dynamic params;
-  params["title"_key] = title;
-  params["message"_key] = message;
+  params["title"_key] = tr(title);
+  params["message"_key] = tr(message);
   params["icon"_key] = icon;
   params["buttons"_key] = std::string{"ok"};
   message_dialog_ =

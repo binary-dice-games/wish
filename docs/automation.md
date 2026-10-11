@@ -352,6 +352,10 @@ open the PNG with the `Read` tool.
 `--dump-tree` prints the top-level paths to find suffixes.
 `--arg ARG` (repeatable) passes positional arguments to the app after `--`,
 e.g. `--run du --arg /usr/share` for `wish client --run=du -- /usr/share`.
+`--lang CODE` connects the client with `--lang CODE`, to check a translated
+tool (verified 2026-10: `--run tail --lang es` shows "Controles", "Seguir",
+"3 líneas"; see [docs/i18n.md](i18n.md)). A translated label is also
+the widget's ImGui id, so match widgets by path, not by label.
 `--username NAME` connects the client with that identity, which gives it a
 persistent user store (curl needs one for Collections / Environments,
 otherwise its Console shows a red "user store" error).

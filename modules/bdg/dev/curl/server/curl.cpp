@@ -78,81 +78,81 @@ std::string format_bytes(float bytes) {
 // before implementation.
 
 static constexpr const char* kRequestLayout = R"json({
-  "type": "Window", "title": "Request", "width": 900, "height": 700,
+  "type": "Window", "title": "$$CURL_REQUEST", "width": 900, "height": 700,
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
       "method": { "type": "Combo", "items": "GET\nPOST\nPUT\nPATCH\nDELETE\nHEAD\nOPTIONS", "value": 0, "width": 100 },
       "url":    { "type": "InputText", "hint": "https://api.example.com/v1/users", "width": -1, "max_length": 4096 },
-      "env":    { "type": "Combo", "items": "No Environment", "value": 0, "width": 160 },
-      "follow": { "type": "Checkbox", "label": "Follow redirects", "value": true },
-      "btn_send": { "type": "Button", "label": "Send", "icon": "res/icons/send.png" }
+      "env":    { "type": "Combo", "items": "$$CURL_NO_ENVIRONMENT", "value": 0, "width": 160 },
+      "follow": { "type": "Checkbox", "label": "$$CURL_FOLLOW_REDIRECTS", "value": true },
+      "btn_send": { "type": "Button", "label": "$$CURL_SEND", "icon": "res/icons/send.png" }
     } },
     "save_bar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "save_label": { "type": "Label", "text": "Save as:" },
-      "save_name":  { "type": "InputText", "hint": "request name", "width": 200 },
-      "save_collection": { "type": "InputText", "hint": "collection (default: Default)", "width": 220 },
-      "btn_save":   { "type": "Button", "label": "Save", "icon": "res/icons/bookmark.png" }
+      "save_label": { "type": "Label", "text": "$$CURL_SAVE_AS" },
+      "save_name":  { "type": "InputText", "hint": "$$CURL_REQUEST_NAME", "width": 200 },
+      "save_collection": { "type": "InputText", "hint": "$$CURL_COLLECTION_HINT", "width": 220 },
+      "btn_save":   { "type": "Button", "label": "$$CURL_SAVE", "icon": "res/icons/bookmark.png" }
     } },
     "status": { "type": "Label", "text": "" },
     "sep": { "type": "Separator" },
     "tabs": { "type": "TabBar", "id": "##curl_request_tabs", "height": -1, "children": {
-      "params_tab": { "type": "TabItem", "label": "Params", "children": {
-        "p_toolbar": { "type": "HorizontalLayout", "children": { "btn_add": { "type": "Button", "label": "Add Param", "icon": "res/icons/add.png" } } },
+      "params_tab": { "type": "TabItem", "label": "$$CURL_PARAMS", "children": {
+        "p_toolbar": { "type": "HorizontalLayout", "children": { "btn_add": { "type": "Button", "label": "$$CURL_ADD_PARAM", "icon": "res/icons/add.png" } } },
         "p_table": {
           "type": "Table", "id": "##params_table", "columns": 4,
           "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
           "height": 260, "outer_height": 260,
           "children": {
             "col_enabled": { "type": "TableColumn", "label": "",      "flags": "WidthFixed",   "init_width": 30, "column_id": 0 },
-            "col_key":     { "type": "TableColumn", "label": "Key",   "flags": "WidthStretch",                    "column_id": 1 },
-            "col_value":   { "type": "TableColumn", "label": "Value", "flags": "WidthStretch",                    "column_id": 2 },
+            "col_key":     { "type": "TableColumn", "label": "$$CURL_KEY",   "flags": "WidthStretch",                    "column_id": 1 },
+            "col_value":   { "type": "TableColumn", "label": "$$CURL_VALUE", "flags": "WidthStretch",                    "column_id": 2 },
             "col_remove":  { "type": "TableColumn", "label": "",      "flags": "WidthFixed",   "init_width": 34, "column_id": 3 }
           }
         }
       } },
-      "headers_tab": { "type": "TabItem", "label": "Headers", "children": {
-        "h_toolbar": { "type": "HorizontalLayout", "children": { "btn_add": { "type": "Button", "label": "Add Header", "icon": "res/icons/add.png" } } },
+      "headers_tab": { "type": "TabItem", "label": "$$CURL_HEADERS", "children": {
+        "h_toolbar": { "type": "HorizontalLayout", "children": { "btn_add": { "type": "Button", "label": "$$CURL_ADD_HEADER", "icon": "res/icons/add.png" } } },
         "h_table": {
           "type": "Table", "id": "##headers_table", "columns": 4,
           "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
           "height": 260, "outer_height": 260,
           "children": {
             "col_enabled": { "type": "TableColumn", "label": "",      "flags": "WidthFixed",   "init_width": 30, "column_id": 0 },
-            "col_key":     { "type": "TableColumn", "label": "Key",   "flags": "WidthStretch",                    "column_id": 1 },
-            "col_value":   { "type": "TableColumn", "label": "Value", "flags": "WidthStretch",                    "column_id": 2 },
+            "col_key":     { "type": "TableColumn", "label": "$$CURL_KEY",   "flags": "WidthStretch",                    "column_id": 1 },
+            "col_value":   { "type": "TableColumn", "label": "$$CURL_VALUE", "flags": "WidthStretch",                    "column_id": 2 },
             "col_remove":  { "type": "TableColumn", "label": "",      "flags": "WidthFixed",   "init_width": 34, "column_id": 3 }
           }
         }
       } },
-      "body_tab": { "type": "TabItem", "label": "Body", "children": {
-        "mode": { "type": "Combo", "items": "None\nRaw\nJSON\nForm URL-Encoded", "value": 0, "width": 200 },
+      "body_tab": { "type": "TabItem", "label": "$$CURL_BODY", "children": {
+        "mode": { "type": "Combo", "items": "$$CURL_BODY_MODE_ITEMS", "value": 0, "width": 200 },
         "raw_box": { "type": "VerticalLayout", "visible": false, "children": {
-          "text": { "type": "InputText", "multiline": true, "height": 260, "width": -1, "max_length": 65536, "hint": "request body" }
+          "text": { "type": "InputText", "multiline": true, "height": 260, "width": -1, "max_length": 65536, "hint": "$$CURL_REQUEST_BODY" }
         } },
         "form_box": { "type": "VerticalLayout", "visible": false, "children": {
-          "f_toolbar": { "type": "HorizontalLayout", "children": { "btn_add": { "type": "Button", "label": "Add Field", "icon": "res/icons/add.png" } } },
+          "f_toolbar": { "type": "HorizontalLayout", "children": { "btn_add": { "type": "Button", "label": "$$CURL_ADD_FIELD", "icon": "res/icons/add.png" } } },
           "f_table": {
             "type": "Table", "id": "##body_form_table", "columns": 4,
             "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
             "height": 220, "outer_height": 220,
             "children": {
               "col_enabled": { "type": "TableColumn", "label": "",      "flags": "WidthFixed",   "init_width": 30, "column_id": 0 },
-              "col_key":     { "type": "TableColumn", "label": "Key",   "flags": "WidthStretch",                    "column_id": 1 },
-              "col_value":   { "type": "TableColumn", "label": "Value", "flags": "WidthStretch",                    "column_id": 2 },
+              "col_key":     { "type": "TableColumn", "label": "$$CURL_KEY",   "flags": "WidthStretch",                    "column_id": 1 },
+              "col_value":   { "type": "TableColumn", "label": "$$CURL_VALUE", "flags": "WidthStretch",                    "column_id": 2 },
               "col_remove":  { "type": "TableColumn", "label": "",      "flags": "WidthFixed",   "init_width": 34, "column_id": 3 }
             }
           }
         } }
       } },
-      "auth_tab": { "type": "TabItem", "label": "Auth", "children": {
-        "mode": { "type": "Combo", "items": "None\nBasic Auth\nBearer Token", "value": 0, "width": 200 },
+      "auth_tab": { "type": "TabItem", "label": "$$CURL_AUTH", "children": {
+        "mode": { "type": "Combo", "items": "$$CURL_AUTH_MODE_ITEMS", "value": 0, "width": 200 },
         "basic_box": { "type": "VerticalLayout", "visible": false, "children": {
-          "username": { "type": "InputText", "label": "Username", "width": 300 },
-          "password": { "type": "InputText", "label": "Password", "width": 300, "flags": "Password" }
+          "username": { "type": "InputText", "label": "$$CURL_USERNAME", "width": 300 },
+          "password": { "type": "InputText", "label": "$$CURL_PASSWORD", "width": 300, "flags": "Password" }
         } },
         "bearer_box": { "type": "VerticalLayout", "visible": false, "children": {
-          "token": { "type": "InputText", "label": "Token", "width": 400, "max_length": 8192 }
+          "token": { "type": "InputText", "label": "$$CURL_TOKEN", "width": 400, "max_length": 8192 }
         } }
       } }
     } }
@@ -160,23 +160,23 @@ static constexpr const char* kRequestLayout = R"json({
 })json";
 
 static constexpr const char* kResponseLayout = R"json({
-  "type": "Window", "title": "Response", "width": 900, "height": 620,
+  "type": "Window", "title": "$$CURL_RESPONSE", "width": 900, "height": 620,
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
-    "status": { "type": "Label", "text": "(no request sent yet)" },
+    "status": { "type": "Label", "text": "$$CURL_NO_REQUEST_SENT_YET" },
     "sep": { "type": "Separator" },
     "tabs": { "type": "TabBar", "id": "##curl_response_tabs", "height": -1, "children": {
-      "body_tab": { "type": "TabItem", "label": "Body", "children": {
+      "body_tab": { "type": "TabItem", "label": "$$CURL_BODY", "children": {
         "editor": { "type": "TextEditor", "file_path": "", "language": "none", "read_only": true, "height": 0, "width": 0 }
       } },
-      "headers_tab": { "type": "TabItem", "label": "Headers", "children": {
+      "headers_tab": { "type": "TabItem", "label": "$$CURL_HEADERS", "children": {
         "h_table": {
           "type": "Table", "id": "##response_headers_table", "columns": 2,
           "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
           "height": -1, "outer_height": -1,
           "children": {
-            "col_name":  { "type": "TableColumn", "label": "Name",  "flags": "WidthFixed",   "init_width": 220, "column_id": 0 },
-            "col_value": { "type": "TableColumn", "label": "Value", "flags": "WidthStretch",                     "column_id": 1 }
+            "col_name":  { "type": "TableColumn", "label": "$$CURL_NAME",  "flags": "WidthFixed",   "init_width": 220, "column_id": 0 },
+            "col_value": { "type": "TableColumn", "label": "$$CURL_VALUE", "flags": "WidthStretch",                     "column_id": 1 }
           }
         }
       } }
@@ -185,11 +185,11 @@ static constexpr const char* kResponseLayout = R"json({
 })json";
 
 static constexpr const char* kHistoryLayout = R"json({
-  "type": "Window", "title": "History", "width": 860, "height": 420,
+  "type": "Window", "title": "$$CURL_HISTORY", "width": 860, "height": 420,
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_clear": { "type": "Button", "label": "Clear History", "icon": "res/icons/delete.png" }
+      "btn_clear": { "type": "Button", "label": "$$CURL_CLEAR_HISTORY", "icon": "res/icons/delete.png" }
     } },
     "status": { "type": "Label", "text": "" },
     "sep": { "type": "Separator" },
@@ -198,11 +198,11 @@ static constexpr const char* kHistoryLayout = R"json({
       "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": -1, "outer_height": -1,
       "children": {
-        "col_method": { "type": "TableColumn", "label": "Method", "flags": "WidthFixed",   "init_width": 70,  "column_id": 0 },
-        "col_url":    { "type": "TableColumn", "label": "URL",    "flags": "WidthStretch",                     "column_id": 1 },
-        "col_status": { "type": "TableColumn", "label": "Status", "flags": "WidthFixed",   "init_width": 70,  "column_id": 2 },
-        "col_time":   { "type": "TableColumn", "label": "Time",   "flags": "WidthFixed",   "init_width": 80,  "column_id": 3 },
-        "col_when":   { "type": "TableColumn", "label": "When",   "flags": "WidthFixed",   "init_width": 140, "column_id": 4 },
+        "col_method": { "type": "TableColumn", "label": "$$CURL_METHOD", "flags": "WidthFixed",   "init_width": 70,  "column_id": 0 },
+        "col_url":    { "type": "TableColumn", "label": "$$CURL_URL",    "flags": "WidthStretch",                     "column_id": 1 },
+        "col_status": { "type": "TableColumn", "label": "$$CURL_STATUS", "flags": "WidthFixed",   "init_width": 70,  "column_id": 2 },
+        "col_time":   { "type": "TableColumn", "label": "$$CURL_TIME",   "flags": "WidthFixed",   "init_width": 80,  "column_id": 3 },
+        "col_when":   { "type": "TableColumn", "label": "$$CURL_WHEN",   "flags": "WidthFixed",   "init_width": 140, "column_id": 4 },
         "col_actions":{ "type": "TableColumn", "label": "",       "flags": "WidthFixed",   "init_width": 40,  "column_id": 5 }
       }
     }
@@ -210,7 +210,7 @@ static constexpr const char* kHistoryLayout = R"json({
 })json";
 
 static constexpr const char* kCollectionsLayout = R"json({
-  "type": "Window", "title": "Collections", "width": 860, "height": 420,
+  "type": "Window", "title": "$$CURL_COLLECTIONS", "width": 860, "height": 420,
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "status": { "type": "Label", "text": "" },
@@ -220,10 +220,10 @@ static constexpr const char* kCollectionsLayout = R"json({
       "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": -1, "outer_height": -1,
       "children": {
-        "col_collection": { "type": "TableColumn", "label": "Collection", "flags": "WidthFixed",   "init_width": 140, "column_id": 0 },
-        "col_name":       { "type": "TableColumn", "label": "Name",       "flags": "WidthFixed",   "init_width": 160, "column_id": 1 },
-        "col_method":     { "type": "TableColumn", "label": "Method",     "flags": "WidthFixed",   "init_width": 70,  "column_id": 2 },
-        "col_url":        { "type": "TableColumn", "label": "URL",        "flags": "WidthStretch",                     "column_id": 3 },
+        "col_collection": { "type": "TableColumn", "label": "$$CURL_COLLECTION", "flags": "WidthFixed",   "init_width": 140, "column_id": 0 },
+        "col_name":       { "type": "TableColumn", "label": "$$CURL_NAME",       "flags": "WidthFixed",   "init_width": 160, "column_id": 1 },
+        "col_method":     { "type": "TableColumn", "label": "$$CURL_METHOD",     "flags": "WidthFixed",   "init_width": 70,  "column_id": 2 },
+        "col_url":        { "type": "TableColumn", "label": "$$CURL_URL",        "flags": "WidthStretch",                     "column_id": 3 },
         "col_actions":    { "type": "TableColumn", "label": "",           "flags": "WidthFixed",   "init_width": 40,  "column_id": 4 }
       }
     }
@@ -231,36 +231,36 @@ static constexpr const char* kCollectionsLayout = R"json({
 })json";
 
 static constexpr const char* kEnvironmentsLayout = R"json({
-  "type": "Window", "title": "Environments", "width": 780, "height": 620,
+  "type": "Window", "title": "$$CURL_ENVIRONMENTS", "width": 780, "height": 620,
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "new_name": { "type": "InputText", "hint": "new environment name", "width": 220 },
-      "btn_new":  { "type": "Button", "label": "New Environment", "icon": "res/icons/add.png" }
+      "new_name": { "type": "InputText", "hint": "$$CURL_NEW_ENVIRONMENT_NAME", "width": 220 },
+      "btn_new":  { "type": "Button", "label": "$$CURL_NEW_ENVIRONMENT", "icon": "res/icons/add.png" }
     } },
     "table": {
       "type": "Table", "id": "##environments_table", "columns": 3,
       "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": 180, "outer_height": 180,
       "children": {
-        "col_name":   { "type": "TableColumn", "label": "Name",      "flags": "WidthStretch",                   "column_id": 0 },
-        "col_count":  { "type": "TableColumn", "label": "Variables", "flags": "WidthFixed",   "init_width": 90, "column_id": 1 },
+        "col_name":   { "type": "TableColumn", "label": "$$CURL_NAME",      "flags": "WidthStretch",                   "column_id": 0 },
+        "col_count":  { "type": "TableColumn", "label": "$$CURL_VARIABLES", "flags": "WidthFixed",   "init_width": 90, "column_id": 1 },
         "col_actions":{ "type": "TableColumn", "label": "",          "flags": "WidthFixed",   "init_width": 40, "column_id": 2 }
       }
     },
     "sep": { "type": "Separator" },
-    "editor_label": { "type": "Label", "text": "(select an environment to edit its variables)" },
+    "editor_label": { "type": "Label", "text": "$$CURL_SELECT_ENVIRONMENT_HINT" },
     "var_toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_add_var":  { "type": "Button", "label": "Add Variable", "icon": "res/icons/add.png" },
-      "btn_save_vars":{ "type": "Button", "label": "Save Variables", "icon": "res/icons/save.png" }
+      "btn_add_var":  { "type": "Button", "label": "$$CURL_ADD_VARIABLE", "icon": "res/icons/add.png" },
+      "btn_save_vars":{ "type": "Button", "label": "$$CURL_SAVE_VARIABLES", "icon": "res/icons/save.png" }
     } },
     "vars_table": {
       "type": "Table", "id": "##env_vars_table", "columns": 3,
       "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": -1, "outer_height": -1,
       "children": {
-        "col_key":    { "type": "TableColumn", "label": "Key",   "flags": "WidthStretch",                 "column_id": 0 },
-        "col_value":  { "type": "TableColumn", "label": "Value", "flags": "WidthStretch",                 "column_id": 1 },
+        "col_key":    { "type": "TableColumn", "label": "$$CURL_KEY",   "flags": "WidthStretch",                 "column_id": 0 },
+        "col_value":  { "type": "TableColumn", "label": "$$CURL_VALUE", "flags": "WidthStretch",                 "column_id": 1 },
         "col_remove": { "type": "TableColumn", "label": "",      "flags": "WidthFixed",   "init_width": 34, "column_id": 2 }
       }
     }
@@ -271,13 +271,15 @@ static constexpr const char* kEnvironmentsLayout = R"json({
 
 // ── curl_frontend ──────────────────────────────────────────────────────
 
-curl_frontend::curl_frontend(dynamic&& base) : tool_form(std::move(base)) {}
+curl_frontend::curl_frontend(dynamic&& base) : tool_form(std::move(base)) {
+  i18n_prefix_ = "bdg/dev/curl";
+}
 
 void curl_frontend::on_init() {
   internal_root_key_ = next_available_key("__curl_");
 
   auto* title_f = findField<std::string>("title"_key);
-  title_ = title_f ? *title_f : std::string{"Curl"};
+  title_ = tr(title_f ? *title_f : std::string{"$$CURL_CURL"});
 
   // ── Request window (main root) ────────────────────────────────────────
   build_window(internal_root_key_, kRequestLayout, request_window_id_, [&](ui_tree& tree) {
@@ -424,7 +426,7 @@ void curl_frontend::on_init() {
     using namespace dock;
     set_default_dock_layout(viewport(
         "curl_dock",
-        "Curl",
+        title_,
         layout(
             split(
                 dir::left,
@@ -487,7 +489,7 @@ void curl_frontend::kv_table_add_row(kv_table& kv, const std::string& key, const
   ui_element_ptr remove_btn = ui_element_ptr::create("wish"_key, "Button"_key);
   remove_btn["label"_key] = std::string{};
   remove_btn["icon"_key] = common::icon_path("close");
-  remove_btn["tooltip"_key] = std::string{"Remove"};
+  remove_btn["tooltip"_key] = tr("$$CURL_REMOVE");
   assign_id(remove_btn);
   r.remove_button_id = wish_id_of(remove_btn);
   on_click(r.remove_button_id, [this, &kv, id = r.remove_button_id] { kv_table_remove_row(kv, id); });
@@ -650,7 +652,7 @@ dynamic curl_frontend::do_update_response(const dynamic& args) {
   const std::string error = args.findField<std::string>("error"_key) ? args.as<std::string>("error"_key) : std::string{};
 
   if (!ok && !error.empty()) {
-    set_status_line("Request failed: " + error, kBad);
+    set_status_line(trf("$$CURL_REQUEST_FAILED", {tr(error)}), kBad);
     rebuild_response_headers(dynamic{});
     if (response_body_editor_)
       response_body_editor_["file_path"_key] = std::string{};
@@ -728,12 +730,13 @@ dynamic curl_frontend::do_update_history(const dynamic& args) {
         make_label(format_ms(e.as<float>("time_ms"_key))),
         make_label(e.as<std::string>("timestamp"_key), kIdle),
     };
-    history_.add({}, cells, {{"Load", [this, id] { emit("load_history_requested"_key, make_payload("id"_key, id)); }}});
+    history_.add(
+        {}, cells, {{"$$CURL_LOAD", [this, id] { emit("load_history_requested"_key, make_payload("id"_key, id)); }}});
     ++total;
   });
 
   history_.refresh();
-  history_.set_status(std::to_string(total) + (total == 1 ? " request" : " requests"), true);
+  history_.set_status(trf(total == 1 ? "$$CURL_N_REQUEST" : "$$CURL_N_REQUESTS", {std::to_string(total)}), true);
   return dynamic{};
 }
 
@@ -752,10 +755,10 @@ dynamic curl_frontend::do_update_collections(const dynamic& args) {
     collections_.add(
         {},
         cells,
-        {{"Load", [this, id] { emit("load_request_requested"_key, make_payload("id"_key, id)); }},
-         {"Duplicate", [this, id] { emit("duplicate_request_requested"_key, make_payload("id"_key, id)); }},
-         {"Delete", [this, id] {
-            show_confirm("Delete this saved request?", [this, id] {
+        {{"$$CURL_LOAD", [this, id] { emit("load_request_requested"_key, make_payload("id"_key, id)); }},
+         {"$$CURL_DUPLICATE", [this, id] { emit("duplicate_request_requested"_key, make_payload("id"_key, id)); }},
+         {"$$CURL_DELETE", [this, id] {
+            show_confirm("$$CURL_DELETE_REQUEST_CONFIRM", [this, id] {
               emit("delete_request_requested"_key, make_payload("id"_key, id));
             });
           }}});
@@ -763,14 +766,15 @@ dynamic curl_frontend::do_update_collections(const dynamic& args) {
   });
 
   collections_.refresh();
-  collections_.set_status(std::to_string(total) + (total == 1 ? " saved request" : " saved requests"), true);
+  collections_.set_status(
+      trf(total == 1 ? "$$CURL_N_SAVED_REQUEST" : "$$CURL_N_SAVED_REQUESTS", {std::to_string(total)}), true);
   return dynamic{};
 }
 
 dynamic curl_frontend::do_update_environments(const dynamic& args) {
   environments_.clear();
   environment_ids_.clear();
-  std::string items = "No Environment";
+  std::string items = tr("$$CURL_NO_ENVIRONMENT");
 
   int total = 0;
   for_each_entry(args, "entries"_key, [&](const dynamic& e) {
@@ -784,9 +788,9 @@ dynamic curl_frontend::do_update_environments(const dynamic& args) {
     environments_.add(
         {},
         cells,
-        {{"Edit", [this, id] { emit("select_environment_requested"_key, make_payload("id"_key, id)); }},
-         {"Delete", [this, id] {
-            show_confirm("Delete this environment?", [this, id] {
+        {{"$$CURL_EDIT", [this, id] { emit("select_environment_requested"_key, make_payload("id"_key, id)); }},
+         {"$$CURL_DELETE", [this, id] {
+            show_confirm("$$CURL_DELETE_ENVIRONMENT_CONFIRM", [this, id] {
               emit("delete_environment_requested"_key, make_payload("id"_key, id));
             });
           }}});
@@ -794,7 +798,8 @@ dynamic curl_frontend::do_update_environments(const dynamic& args) {
   });
 
   environments_.refresh();
-  environments_.set_status(std::to_string(total) + (total == 1 ? " environment" : " environments"), true);
+  environments_.set_status(
+      trf(total == 1 ? "$$CURL_N_ENVIRONMENT" : "$$CURL_N_ENVIRONMENTS", {std::to_string(total)}), true);
 
   if (env_combo_) {
     int32_t cur = env_combo_->as<int32_t>("value"_key);
@@ -810,8 +815,8 @@ dynamic curl_frontend::do_update_environment_vars(const dynamic& args) {
   open_environment_id_ = args.as<std::string>("environment_id"_key);
   if (env_editor_label_) {
     env_editor_label_["text"_key] = open_environment_id_.empty()
-        ? std::string{"(select an environment to edit its variables)"}
-        : "Variables for: " + args.as<std::string>("name"_key);
+        ? tr("$$CURL_SELECT_ENVIRONMENT_HINT")
+        : trf("$$CURL_VARIABLES_FOR", {args.as<std::string>("name"_key)});
   }
   kv_table_load(env_vars_, args, "vars"_key);
   return dynamic{};
@@ -858,7 +863,7 @@ void curl_frontend::on_event(key_t id, key_t event, const dynamic& payload) {
 void register_curl() {
   auto proto = dynamic_ptr{"CurlFrontend"_key, {}};
 
-  proto->addField("title"_key, field{std::string{"Curl"}});
+  proto->addField("title"_key, field{std::string{"$$CURL_CURL"}});
 
   auto add_method = [&](key_t name, dynamic (curl_frontend::*fn)(const dynamic&)) {
     proto->addMethod(name, bison::method{[fn](dynamic& self, const dynamic& args) -> dynamic {

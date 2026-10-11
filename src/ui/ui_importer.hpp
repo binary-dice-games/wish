@@ -14,6 +14,7 @@
 /// and is only compiled into `wish_server`.
 #pragma once
 
+#include <i18n/translations.hpp>
 #include <ui/ui_element.hpp>
 
 #include "src/bison/bison_object.hpp"
@@ -79,14 +80,18 @@ ui_element_ptr build_ui_node(const bison::dynamic& node, const std::string& path
 
 /// @brief Parse a JSON descriptor and return a wish object tree.
 /// @param json  UTF-8 JSON text representing a wish UI hierarchy.
+/// @param tr    Optional translations for `"$$KEY"` string values (see
+///              `import_descriptor_json`); null leaves strings untouched.
 /// @return ui_tree with root at `""` and all named descendants by dot-path.
 /// @throws std::runtime_error on JSON parse error or unknown element type.
-ui_tree import_json(const std::string& json);
+ui_tree import_json(const std::string& json, const translation_map* tr = nullptr);
 
 /// @brief Parse a YAML descriptor and return a wish object tree.
 /// @param yaml  UTF-8 YAML text representing a wish UI hierarchy.
+/// @param tr    Optional translations for `"$$KEY"` string values; null
+///              leaves strings untouched.
 /// @return ui_tree with root at `""` and all named descendants by dot-path.
 /// @throws std::runtime_error on YAML parse error or unknown element type.
-ui_tree import_yaml(const std::string& yaml);
+ui_tree import_yaml(const std::string& yaml, const translation_map* tr = nullptr);
 
 } // namespace bdg::wish

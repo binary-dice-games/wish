@@ -98,11 +98,43 @@ std::future<void> client::register_template(bison::key_t name, bison::dynamic de
 }
 
 std::future<void> client::register_template_from_json(bison::key_t name, const std::string& json) {
-  return register_template(name, import_descriptor_json(json));
+  auto tr = translations();
+  return register_template(name, import_descriptor_json(json, tr.get()));
 }
 
 std::future<void> client::register_template_from_yaml(bison::key_t name, const std::string& yaml) {
-  return register_template(name, import_descriptor_yaml(yaml));
+  auto tr = translations();
+  return register_template(name, import_descriptor_yaml(yaml, tr.get()));
+}
+
+void client::set_translations(translation_map map) {
+  *translations_.wlock() = std::make_shared<const translation_map>(std::move(map));
+}
+
+std::shared_ptr<const translation_map> client::translations() const {
+  return *translations_.rlock();
+}
+
+std::string client::language() const {
+  return *language_.rlock();
+}
+
+std::string client::translate(std::string_view text) const {
+  return translate_text(text, *translations());
+}
+
+std::future<void> client::set_language(const std::string& lang) {
+  if (!is_valid_language_code(lang))
+    throw std::invalid_argument("wish: invalid language code '" + lang + "'");
+  *language_.wlock() = lang;
+  return std::async(std::launch::async, [this, lang]() {
+    dynamic args;
+    args["lang"_key] = lang;
+    // oneway=true: same reasoning as set_style_preset -- safe to call from
+    // event callbacks. Messages stay ordered, so UI built after this call
+    // already sees the new language.
+    template_proxy_->call("set_language"_key, std::move(args), true).get();
+  });
 }
 
 std::future<proxy_map> client::instantiate_template(bison::key_t name) {

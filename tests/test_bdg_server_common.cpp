@@ -116,7 +116,7 @@ class common_test_form : public common::tool_form {
 
   dynamic do_command_result(const dynamic& args) {
     bool ok = false;
-    const std::string text = common::command_result_text(args, ok);
+    const std::string text = common::command_result_text(*this, args, ok);
     list_.set_status(text, ok, /*first_line_only=*/true);
     return {};
   }
@@ -364,18 +364,42 @@ class BdgServerCommonTest : public ::testing::Test {
 
 // ── ui_helpers ──────────────────────────────────────────────────────────────
 
+namespace {
+
+// Stands in for a form: command_result_text() only needs tr()/trf().
+struct stub_translator {
+  wish::translation_map map = wish::parse_translations(
+      "COMMON_COMMAND_OK = {0}: OK\n"
+      "COMMON_COMMAND_FAILED = {0} failed: {1}\n"
+      "COMMON_UNKNOWN_ERROR = unknown error\n"
+      "NOTHING = nothing to do\n");
+  std::string tr(std::string_view text) {
+    return wish::translate_text(text, map);
+  }
+  std::string trf(std::string_view key, const std::vector<std::string>& args) {
+    return wish::format_text(tr(key), args);
+  }
+};
+
+} // namespace
+
 TEST(BdgServerCommonHelpers, CommandResultText) {
+  stub_translator t;
   dynamic ok_args = log_args("helm list", 0, true, "ignored");
   bool ok = false;
-  EXPECT_EQ(common::command_result_text(ok_args, ok), "helm list: OK");
+  EXPECT_EQ(common::command_result_text(t, ok_args, ok), "helm list: OK");
   EXPECT_TRUE(ok);
 
   dynamic failed = log_args("helm list", 1, false, "boom");
-  EXPECT_EQ(common::command_result_text(failed, ok), "helm list failed: boom");
+  EXPECT_EQ(common::command_result_text(t, failed, ok), "helm list failed: boom");
   EXPECT_FALSE(ok);
 
   dynamic silent = log_args("helm list", 1, false, "");
-  EXPECT_EQ(common::command_result_text(silent, ok), "helm list failed: unknown error");
+  EXPECT_EQ(common::command_result_text(t, silent, ok), "helm list failed: unknown error");
+
+  // A translatable output (e.g. a client-side validation message) is translated.
+  dynamic keyed = log_args("install", 1, false, "$$NOTHING");
+  EXPECT_EQ(common::command_result_text(t, keyed, ok), "install failed: nothing to do");
 }
 
 TEST(BdgServerCommonHelpers, PayloadReadersAndText) {

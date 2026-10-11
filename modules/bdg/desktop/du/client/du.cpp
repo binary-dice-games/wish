@@ -26,6 +26,7 @@
 
 #include "src/client/app_registry.hpp"
 #include "src/client/wish_app_host.hpp"
+#include "src/i18n/translations.hpp"
 
 #include "src/bison/bison.hpp"
 
@@ -111,7 +112,7 @@ void show_directory(const std::shared_ptr<rmi::proxy::dynamic>& tool, const du_s
     for (size_t k = shown; k < dir->children.size(); ++k)
       rest += dir->children[k].size;
     const std::uint64_t count = dir->children.size() - shown;
-    add_entry("(" + du_scan::format_count(count) + " smaller items)", "rest", rest, count);
+    add_entry(make_message("$$DU_N_SMALLER_ITEMS", {du_scan::format_count(count)}), "rest", rest, count);
   }
 
   const du_scan::treemap map = du_scan::build_treemap(*dir);
@@ -152,7 +153,7 @@ void scan_and_show(
     root = root.parent_path();
 
   *cancel = false;
-  report(tool, "Scanning " + root.string() + " ...", true);
+  report(tool, make_message("$$DU_SCANNING_FOLDER", {root.string()}), true);
 
   const auto started = clock::now();
   auto last_push = started;
@@ -170,19 +171,20 @@ void scan_and_show(
             last_push = now;
             report(
                 tool,
-                "Scanning: " + du_scan::format_count(p.items) + " items, " + du_scan::format_bytes(p.bytes) +
-                    "  -  " + p.current,
+                make_message(
+                    "$$DU_SCANNING_PROGRESS",
+                    {du_scan::format_count(p.items), du_scan::format_bytes(p.bytes), p.current}),
                 true);
           }
           return true;
         },
         &totals);
   } catch (const std::exception& e) {
-    report(tool, std::string{"Scan failed: "} + e.what(), false);
+    report(tool, make_message("$$DU_SCAN_FAILED", {e.what()}), false);
     return;
   }
   if (!completed) {
-    report(tool, "Scan cancelled.", false);
+    report(tool, "$$DU_SCAN_CANCELLED", false);
     return;
   }
 
@@ -194,10 +196,14 @@ void scan_and_show(
   const std::chrono::duration<double> elapsed = clock::now() - started;
   char seconds[32];
   std::snprintf(seconds, sizeof(seconds), "%.1f s", elapsed.count());
-  std::string message = "Scanned " + du_scan::format_count(totals.items) + " items (" +
-      du_scan::format_bytes(totals.bytes) + ") in " + seconds + ".";
-  if (totals.errors > 0)
-    message += " " + du_scan::format_count(totals.errors) + " folders could not be read.";
+  std::string message = totals.errors > 0
+      ? make_message(
+            "$$DU_SCANNED_WITH_ERRORS",
+            {du_scan::format_count(totals.items), du_scan::format_bytes(totals.bytes), seconds,
+             du_scan::format_count(totals.errors)})
+      : make_message(
+            "$$DU_SCANNED",
+            {du_scan::format_count(totals.items), du_scan::format_bytes(totals.bytes), seconds});
   report(tool, message, false);
 }
 
@@ -208,7 +214,7 @@ void run_du(wish_app_host& s) {
   auto state = std::make_shared<du_state>();
   auto cancel = std::make_shared<std::atomic<bool>>(false);
 
-  auto worker = std::make_shared<common::command_worker>(s, "Disk Usage");
+  auto worker = std::make_shared<common::command_worker>(s, "$$DU_DISK_USAGE");
   worker->start();
 
   worker->on(*tool, "on_scan_requested"_key, [tool, state, cancel](const dynamic& payload) {

@@ -86,6 +86,10 @@ class wish_client_app : public bison::app::client_app, public wish_app_host {
     return app_args_;
   }
 
+  std::string language() const override {
+    return wish_client_ ? wish_client_->language() : std::string{};
+  }
+
   /// @brief Forwards to the inherited (protected) `client_app::read_console_line()`.
   bool read_console_line(std::string& line) override;
 

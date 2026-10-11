@@ -69,10 +69,6 @@ std::vector<std::string> split_lines(const std::string& text) {
   }
 }
 
-std::string plural(std::uint64_t n, const char* one, const char* many) {
-  return format_count(n) + " " + (n == 1 ? one : many);
-}
-
 } // namespace
 
 /// Initial width in pixels of the Files panel; the Treemap gets the rest.
@@ -96,7 +92,7 @@ static constexpr float kFilesPanelWidth = 520.0f;
 // to -1). "padding": 1 keeps deeply nested folders from eating the area.
 static constexpr const char* kFilesLayout = R"json({
   "type": "Window",
-  "title": "Files",
+  "title": "$$DU_FILES",
   "width": 520, "height": 600,
   "closable": true,
   "children": {
@@ -107,24 +103,24 @@ static constexpr const char* kFilesLayout = R"json({
           "type": "HorizontalLayout",
           "spacing": 6,
           "children": {
-            "btn_scan": { "type": "Button", "label": "Rescan", "icon": "res/icons/refresh.png" },
-            "btn_up": { "type": "Button", "label": "Up", "icon": "res/icons/arrow_up.png" },
-            "path_input": { "type": "InputText", "hint": "Folder to analyze (Enter to scan)...", "value": "", "flags": "EnterReturnsTrue", "width": -1 }
+            "btn_scan": { "type": "Button", "label": "$$DU_RESCAN", "icon": "res/icons/refresh.png" },
+            "btn_up": { "type": "Button", "label": "$$DU_UP", "icon": "res/icons/arrow_up.png" },
+            "path_input": { "type": "InputText", "hint": "$$DU_FOLDER_TO_ANALYZE_ENTER_TO_SCAN", "value": "", "flags": "EnterReturnsTrue", "width": -1 }
           }
         },
-        "summary": { "type": "Label", "text": "No folder scanned yet." },
+        "summary": { "type": "Label", "text": "$$DU_NO_FOLDER_SCANNED_YET" },
         "table": {
           "type": "Table", "columns": 4, "headers": true,
           "flags": "Resizable|Sortable|RowBg|Borders|ScrollY", "outer_width": 0, "height": -1,
           "auto_scroll": false,
           "children": {
-            "col_name":    { "type": "TableColumn", "label": "Name", "column_id": 0 },
-            "col_percent": { "type": "TableColumn", "label": "% of Folder", "flags": "WidthFixed", "init_width": 120, "column_id": 1 },
-            "col_size":    { "type": "TableColumn", "label": "Size", "flags": "WidthFixed|DefaultSort|PreferSortDescending", "init_width": 90, "column_id": 2 },
-            "col_items":   { "type": "TableColumn", "label": "Items", "flags": "WidthFixed", "init_width": 80, "column_id": 3 }
+            "col_name":    { "type": "TableColumn", "label": "$$DU_NAME", "column_id": 0 },
+            "col_percent": { "type": "TableColumn", "label": "$$DU_OF_FOLDER", "flags": "WidthFixed", "init_width": 120, "column_id": 1 },
+            "col_size":    { "type": "TableColumn", "label": "$$DU_SIZE", "flags": "WidthFixed|DefaultSort|PreferSortDescending", "init_width": 90, "column_id": 2 },
+            "col_items":   { "type": "TableColumn", "label": "$$DU_ITEMS", "flags": "WidthFixed", "init_width": 80, "column_id": 3 }
           }
         },
-        "status": { "type": "Label", "text": "Ready." }
+        "status": { "type": "Label", "text": "$$DU_READY" }
       }
     }
   }
@@ -132,7 +128,7 @@ static constexpr const char* kFilesLayout = R"json({
 
 static constexpr const char* kTreemapLayout = R"json({
   "type": "Window",
-  "title": "Treemap",
+  "title": "$$DU_TREEMAP",
   "width": 900, "height": 420,
   "closable": true,
   "children": {
@@ -142,7 +138,9 @@ static constexpr const char* kTreemapLayout = R"json({
 
 // ── du ───────────────────────────────────────────────────────────────────────
 
-du::du(dynamic&& base) : tool_form(std::move(base)) {}
+du::du(dynamic&& base) : tool_form(std::move(base)) {
+  i18n_prefix_ = "bdg/desktop/du";
+}
 
 du::~du() {
   remove_panel_objects();
@@ -153,7 +151,7 @@ void du::on_init() {
   treemap_root_key_ = internal_root_key_ + "_treemap";
 
   auto* title_f = findField<std::string>("title"_key);
-  const std::string title = title_f ? *title_f : std::string{"Disk Usage"};
+  const std::string title = tr(title_f ? *title_f : std::string{"$$DU_DISK_USAGE"});
 
   build_window(internal_root_key_, kFilesLayout, window_id_, [&](ui_tree& tree) {
     tree.with("main.toolbar.btn_scan", [&](const auto& e) {
@@ -253,7 +251,7 @@ void du::fill_table() {
 
     // A "rest" row is shown as a plain file: it has no icon of its own.
     add_row(
-        make_name_cell(r.name, r.type == "dir" ? "dir" : "file", r.name), bar, format_bytes(r.size),
+        make_name_cell(tr(r.name), r.type == "dir" ? "dir" : "file", r.name), bar, format_bytes(r.size),
         r.type == "file" ? std::string{} : format_count(static_cast<std::uint64_t>(r.items)),
         r.name == selected_name_);
   }
@@ -282,7 +280,7 @@ void du::sort_rows() {
 void du::set_status(const std::string& message) {
   (*this)["status"_key] = message;
   if (status_label_ptr_)
-    status_label_ptr_["text"_key] = message;
+    status_label_ptr_["text"_key] = tr(message);
 }
 
 std::int32_t du::top_level_node(std::int32_t index) const {
@@ -385,7 +383,12 @@ dynamic du::do_show_directory(const dynamic& args) {
     treemap_ptr_["parents"_key] = node_parents_;
     treemap_ptr_["sizes"_key] = std::move(sizes);
     treemap_ptr_["colors"_key] = std::move(colors);
-    treemap_ptr_["labels"_key] = std::move(labels);
+    // Client-made labels such as the "(N smaller items)" node may be
+    // translatable messages.
+    std::string shown_labels;
+    for (const auto& label : node_labels_)
+      shown_labels += (shown_labels.empty() ? "" : "\n") + tr(label);
+    treemap_ptr_["labels"_key] = std::move(shown_labels);
     treemap_ptr_["details"_key] = std::move(details);
   }
 
@@ -399,9 +402,11 @@ dynamic du::do_show_directory(const dynamic& args) {
   if (summary_label_ptr_)
     // The path itself is in the path bar just above; repeating it here
     // would not fit the panel's width.
-    summary_label_ptr_["text"_key] = format_bytes(dir_size_) + " in " +
-        plural(static_cast<std::uint64_t>(files), "file", "files") + ", " +
-        plural(static_cast<std::uint64_t>(dirs), "folder", "folders");
+    summary_label_ptr_["text"_key] = trf(
+        "$$DU_SUMMARY",
+        {format_bytes(dir_size_),
+         trf(files == 1 ? "$$DU_N_FILE" : "$$DU_N_FILES", {format_count(static_cast<std::uint64_t>(files))}),
+         trf(dirs == 1 ? "$$DU_N_FOLDER" : "$$DU_N_FOLDERS", {format_count(static_cast<std::uint64_t>(dirs))})});
   return dynamic{};
 }
 
@@ -409,11 +414,11 @@ dynamic du::do_show_directory(const dynamic& args) {
 
 dynamic du::on_set(const dynamic& patch) {
   if (auto* v = patch.findField<std::string>("status"_key); v && status_label_ptr_)
-    status_label_ptr_["text"_key] = *v;
+    status_label_ptr_["text"_key] = tr(*v);
   if (auto* v = patch.findField<bool>("scanning"_key)) {
     scanning_ = *v;
     if (btn_scan_ptr_) {
-      btn_scan_ptr_["label"_key] = std::string{scanning_ ? "Stop" : "Rescan"};
+      btn_scan_ptr_["label"_key] = tr(scanning_ ? "$$DU_STOP" : "$$DU_RESCAN");
       common::set_icon(btn_scan_ptr_, scanning_ ? "stop" : "refresh");
     }
   }
@@ -433,7 +438,7 @@ void du::on_event(key_t id, key_t event, const dynamic& payload) {
 
   auto request_scan = [&](const std::string& path) {
     if (path.empty()) {
-      set_status("Enter a folder to analyze.");
+      set_status("$$DU_ENTER_A_FOLDER");
       return;
     }
     dynamic req;
@@ -459,7 +464,7 @@ void du::on_event(key_t id, key_t event, const dynamic& payload) {
     if (has_parent())
       open_entry("..");
     else
-      set_status("Already at the scanned folder. Enter a path to analyze a different one.");
+      set_status("$$DU_ALREADY_AT_ROOT");
     return;
   }
 
@@ -492,7 +497,7 @@ void du::on_event(key_t id, key_t event, const dynamic& payload) {
         return;
       }
       select(r.name);
-      set_status(display_path() + "/" + r.name + "  -  " + format_bytes(r.size));
+      set_status(display_path() + "/" + tr(r.name) + "  -  " + format_bytes(r.size));
     }
     return;
   }
@@ -537,9 +542,9 @@ void register_du() {
   proto->addField(
       "title"_key,
       field{
-          std::string{"Disk Usage"},
+          std::string{"$$DU_DISK_USAGE"},
           attr<DisplayName>("Title"),
-          attr<Description>("Window title."),
+          attr<Description>("Window title; a \"$$KEY\" is translated (see docs/i18n.md)."),
           attr<Category>("Appearance")});
 
   proto->addField(
@@ -554,9 +559,10 @@ void register_du() {
   proto->addField(
       "status"_key,
       field{
-          std::string{"Ready."},
+          std::string{"$$DU_READY"},
           attr<DisplayName>("Status"),
-          attr<Description>("Text shown in the status line, e.g. the progress of a scan."),
+          attr<Description>("Text shown in the status line, e.g. the progress of a scan; a \"$$KEY\" "
+                            "or make_message() is translated (see docs/i18n.md)."),
           attr<Category>("Data")});
 
   proto->addField(

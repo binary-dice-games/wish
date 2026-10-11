@@ -1,0 +1,48 @@
+# Built-in forms and shared tool panels -- English (fallback for every
+# other language, and for every module's own files).
+
+# MessageBox
+MSGBOX_MESSAGE = Message
+MSGBOX_OK = OK
+MSGBOX_CANCEL = Cancel
+MSGBOX_YES = Yes
+MSGBOX_NO = No
+MSGBOX_RETRY = Retry
+MSGBOX_ABORT = Abort
+MSGBOX_IGNORE = Ignore
+
+# FileDialog
+FILEDLG_OPEN_FILE = Open File
+FILEDLG_OPEN = Open
+FILEDLG_PATH = path
+FILEDLG_NAME = Name
+FILEDLG_TYPE = Type
+FILEDLG_FILENAME = filename
+
+# ProgressBox
+PROGRESS_WORKING = Working
+PROGRESS_OUTPUT = Output
+PROGRESS_FINISHED_WITH_ERROR = Finished with an error
+PROGRESS_CANCELLING = Cancelling ...
+
+# PropertiesDialog
+PROPS_PROPERTIES = Properties
+PROPS_CLOSE = Close
+
+# Shared tool panels (modules/bdg/common)
+COMMON_ACTIONS = Actions
+COMMON_CONFIRM = Confirm
+COMMON_CONSOLE = Console
+COMMON_COMMAND = Command
+COMMON_EXIT = Exit
+COMMON_OUTPUT = Output
+COMMON_COPY_ENTRY = Copy Entry
+COMMON_CLEAR_TITLE = Clear {0}
+COMMON_DETAILS = Details
+COMMON_NOTHING_SELECTED = (nothing selected)
+COMMON_REFRESH = Refresh
+COMMON_COMMAND_OK = {0}: OK
+COMMON_COMMAND_FAILED = {0} failed: {1}
+COMMON_UNKNOWN_ERROR = unknown error
+COMMON_RUNNING_TOOL = Running {0}
+COMMON_TOTAL = Total

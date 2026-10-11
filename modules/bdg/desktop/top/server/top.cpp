@@ -60,12 +60,12 @@ struct priority_level_def {
   int32_t nice;
 };
 constexpr priority_level_def kPriorityLevels[] = {
-    {"Low", 19},
-    {"Below Normal", 10},
-    {"Normal", 0},
-    {"Above Normal", -5},
-    {"High", -10},
-    {"Realtime", -20},
+    {"$$TOP_LOW", 19},
+    {"$$TOP_BELOW_NORMAL", 10},
+    {"$$TOP_NORMAL", 0},
+    {"$$TOP_ABOVE_NORMAL", -5},
+    {"$$TOP_HIGH", -10},
+    {"$$TOP_REALTIME", -20},
 };
 constexpr size_t kPriorityLevelCount = std::size(kPriorityLevels);
 
@@ -118,7 +118,7 @@ std::string to_lower(std::string text) {
 
 static constexpr const char* kProcessesLayout = R"({
   "type": "Window",
-  "title": "Processes",
+  "title": "$$TOP_PROCESSES",
   "width": 900, "height": 460,
   "closable": true,
   "children": {
@@ -128,7 +128,7 @@ static constexpr const char* kProcessesLayout = R"({
         "toolbar": {
           "type": "HorizontalLayout", "spacing": 8,
           "children": {
-            "filter": { "type": "InputText", "hint": "Filter by name", "width": 240 },
+            "filter": { "type": "InputText", "hint": "$$TOP_FILTER_BY_NAME", "width": 240 },
             "filter_count": { "type": "Label", "text": "" }
           }
         },
@@ -138,12 +138,12 @@ static constexpr const char* kProcessesLayout = R"({
           "flags": "Resizable|RowBg|Borders|Sortable|ScrollY", "headers": true,
           "outer_width": 0, "height": -1, "auto_scroll": false,
           "children": {
-            "col_pid":   { "type": "TableColumn", "label": "PID",     "flags": "WidthFixed", "init_width": 70,  "column_id": 0 },
-            "col_name":  { "type": "TableColumn", "label": "Name",    "flags": "WidthFixed", "init_width": 140, "column_id": 1 },
-            "col_state": { "type": "TableColumn", "label": "State",   "flags": "WidthFixed", "init_width": 60,  "column_id": 2 },
-            "col_cpu":   { "type": "TableColumn", "label": "CPU %",   "flags": "WidthFixed|DefaultSort|PreferSortDescending", "init_width": 100, "column_id": 3 },
-            "col_mem":   { "type": "TableColumn", "label": "Memory",  "flags": "WidthFixed", "init_width": 100, "column_id": 4 },
-            "col_cmd":   { "type": "TableColumn", "label": "Command", "column_id": 5 }
+            "col_pid":   { "type": "TableColumn", "label": "$$TOP_PID",     "flags": "WidthFixed", "init_width": 70,  "column_id": 0 },
+            "col_name":  { "type": "TableColumn", "label": "$$TOP_NAME",    "flags": "WidthFixed", "init_width": 140, "column_id": 1 },
+            "col_state": { "type": "TableColumn", "label": "$$TOP_STATE",   "flags": "WidthFixed", "init_width": 60,  "column_id": 2 },
+            "col_cpu":   { "type": "TableColumn", "label": "$$TOP_CPU",   "flags": "WidthFixed|DefaultSort|PreferSortDescending", "init_width": 100, "column_id": 3 },
+            "col_mem":   { "type": "TableColumn", "label": "$$TOP_MEMORY",  "flags": "WidthFixed", "init_width": 100, "column_id": 4 },
+            "col_cmd":   { "type": "TableColumn", "label": "$$TOP_COMMAND", "column_id": 5 }
           }
         },
         "status_label": { "type": "Label", "text": "" }
@@ -154,20 +154,20 @@ static constexpr const char* kProcessesLayout = R"({
 
 static constexpr const char* kCpuLayout = R"({
   "type": "Window",
-  "title": "CPU",
+  "title": "$$TOP_CPU_SHORT",
   "width": 450, "height": 240,
   "closable": true,
   "children": {
     "vbox": {
       "type": "VerticalLayout",
       "children": {
-        "cpu_label": { "type": "Label", "text": "CPU: --" },
+        "cpu_label": { "type": "Label", "text": "$$TOP_CPU_NONE" },
         "cpu_plot": {
-          "type": "Plot", "title": "CPU % History", "height": -1,
+          "type": "Plot", "title": "$$TOP_CPU_HISTORY", "height": -1,
           "profiler_marker": "CPU Plot",
           "y_label": "%",
           "children": {
-            "cpu_series": { "type": "PlotShaded", "label": "CPU %" }
+            "cpu_series": { "type": "PlotShaded", "label": "$$TOP_CPU" }
           }
         }
       }
@@ -177,20 +177,20 @@ static constexpr const char* kCpuLayout = R"({
 
 static constexpr const char* kMemoryLayout = R"({
   "type": "Window",
-  "title": "Memory",
+  "title": "$$TOP_MEMORY",
   "width": 450, "height": 240,
   "closable": true,
   "children": {
     "vbox": {
       "type": "VerticalLayout",
       "children": {
-        "mem_label": { "type": "Label", "text": "Mem: --" },
+        "mem_label": { "type": "Label", "text": "$$TOP_MEM_NONE" },
         "mem_plot": {
-          "type": "Plot", "title": "Memory % History", "height": -1,
+          "type": "Plot", "title": "$$TOP_MEMORY_HISTORY", "height": -1,
           "profiler_marker": "Memory Plot",
           "y_label": "%",
           "children": {
-            "mem_series": { "type": "PlotLine", "label": "Memory %" }
+            "mem_series": { "type": "PlotLine", "label": "$$TOP_MEMORY_PERCENT" }
           }
         }
       }
@@ -200,7 +200,7 @@ static constexpr const char* kMemoryLayout = R"({
 
 static constexpr const char* kCoresLayout = R"({
   "type": "Window",
-  "title": "Cores",
+  "title": "$$TOP_CORES",
   "width": 240, "height": 700,
   "closable": true,
   "children": {
@@ -234,7 +234,7 @@ void top::on_init() {
   cores_root_key_ = internal_root_key_ + "_cores";
 
   auto* title_f = findField<std::string>("title"_key);
-  const std::string title = title_f ? *title_f : std::string{"Top"};
+  const std::string title = tr(title_f ? *title_f : std::string{"$$TOP_TOP"});
 
   // Fix both axes so the graphs read as stable percentage gauges instead of
   // auto-fitting (which otherwise locks onto whatever tiny range existed on
@@ -310,7 +310,7 @@ void top::remove_panel_objects() {
 dynamic top::do_update_snapshot(const dynamic& args) {
   float cpu_pct = args.as<float>("cpu_percent"_key);
   if (cpu_summary_label_)
-    cpu_summary_label_["text"_key] = "CPU: " + format_percent(cpu_pct);
+    cpu_summary_label_["text"_key] = trf("$$TOP_CPU_SUMMARY", {format_percent(cpu_pct)});
   push_history(cpu_history_, cpu_pct);
 
   float mem_total = args.as<float>("mem_total_bytes"_key);
@@ -318,7 +318,7 @@ dynamic top::do_update_snapshot(const dynamic& args) {
   float mem_pct = mem_total > 0 ? 100.0f * mem_used / mem_total : 0.0f;
   if (mem_summary_label_) {
     mem_summary_label_["text"_key] =
-        "Mem: " + format_percent(mem_pct) + " (" + format_bytes(mem_used) + " / " + format_bytes(mem_total) + ")";
+        trf("$$TOP_MEM_SUMMARY", {format_percent(mem_pct), format_bytes(mem_used), format_bytes(mem_total)});
   }
   push_history(mem_history_, mem_pct);
 
@@ -339,7 +339,7 @@ dynamic top::do_update_snapshot(const dynamic& args) {
     for (size_t i = 0; i < core_bars_.size() && i < per_core->size(); ++i) {
       float pct = (*per_core)[i];
       core_bars_[i]["value"_key] = pct / 100.0f;
-      core_bars_[i]["label"_key] = "Core " + std::to_string(i) + ": " + format_percent(pct);
+      core_bars_[i]["label"_key] = trf("$$TOP_CORE_PERCENT", {std::to_string(i), format_percent(pct)});
     }
   }
 
@@ -353,17 +353,23 @@ dynamic top::do_report_action_result(const dynamic& args) {
   bool success = args.as<bool>("success"_key);
   std::string error = args.as<std::string>("error"_key);
 
-  std::string verb = action == "kill"            ? "Kill"
-      : action == "pause"                        ? "Pause"
-      : action == "resume"                        ? "Resume"
-      : action == "set_priority"                  ? "Set priority for"
-      : action == "set_affinity"                  ? "Set CPU affinity for"
-                                                    : action;
-
-  if (success)
-    set_status(verb + " process " + std::to_string(pid) + " succeeded.");
+  // One full sentence per action and outcome, so every language can phrase it.
+  static const std::unordered_map<std::string, std::pair<const char*, const char*>> kMessages = {
+      {"kill", {"$$TOP_KILL_SUCCEEDED", "$$TOP_KILL_FAILED"}},
+      {"pause", {"$$TOP_PAUSE_SUCCEEDED", "$$TOP_PAUSE_FAILED"}},
+      {"resume", {"$$TOP_RESUME_SUCCEEDED", "$$TOP_RESUME_FAILED"}},
+      {"set_priority", {"$$TOP_SET_PRIORITY_SUCCEEDED", "$$TOP_SET_PRIORITY_FAILED"}},
+      {"set_affinity", {"$$TOP_SET_AFFINITY_SUCCEEDED", "$$TOP_SET_AFFINITY_FAILED"}},
+  };
+  const std::string pid_text = std::to_string(pid);
+  const std::string reason = error.empty() ? tr("$$TOP_UNKNOWN_ERROR") : error;
+  auto it = kMessages.find(action);
+  if (it == kMessages.end())
+    set_status(success ? action + " " + pid_text : action + " " + pid_text + ": " + reason);
+  else if (success)
+    set_status(trf(it->second.first, {pid_text}));
   else
-    set_status(verb + " process " + std::to_string(pid) + " failed: " + (error.empty() ? "unknown error" : error));
+    set_status(trf(it->second.second, {pid_text, reason}));
 
   return dynamic{};
 }
@@ -375,19 +381,20 @@ dynamic_ptr top::make_process_details(
   dynamic_ptr details{dynamic::instantiate("wish"_key, "ProcessDetails"_key)};
   details["pid"_key] = pid;
   details["ppid"_key] = ppid;
-  details["user"_key] = user.empty() ? std::string{"(unknown)"} : user;
+  const std::string unknown = tr("$$TOP_UNKNOWN");
+  details["user"_key] = user.empty() ? unknown : user;
   details["thread_count"_key] = thread_count;
-  details["start_time"_key] = start_time.empty() ? std::string{"(unknown)"} : start_time;
+  details["start_time"_key] = start_time.empty() ? unknown : start_time;
 
-  std::string level_label = "Custom";
+  std::string level_label = tr("$$TOP_CUSTOM");
   for (auto& level : kPriorityLevels)
     if (level.nice == nice)
-      level_label = level.label;
-  details["priority"_key] = level_label + " (nice " + std::to_string(nice) + ")";
+      level_label = tr(level.label);
+  details["priority"_key] = trf("$$TOP_PRIORITY_NICE", {level_label, std::to_string(nice)});
 
   std::ostringstream affinity_oss;
   if (affinity_cores.empty()) {
-    affinity_oss << "(unknown)";
+    affinity_oss << unknown;
   } else {
     for (size_t i = 0; i < affinity_cores.size(); ++i) {
       if (i > 0)
@@ -397,8 +404,8 @@ dynamic_ptr top::make_process_details(
   }
   details["affinity"_key] = affinity_oss.str();
 
-  details["exe_path"_key] = exe_path.empty() ? std::string{"(unknown)"} : exe_path;
-  details["cwd"_key] = cwd.empty() ? std::string{"(unavailable)"} : cwd;
+  details["exe_path"_key] = exe_path.empty() ? unknown : exe_path;
+  details["cwd"_key] = cwd.empty() ? tr("$$TOP_UNAVAILABLE") : cwd;
   details["cmdline"_key] = cmdline;
   return details;
 }
@@ -413,7 +420,7 @@ dynamic top::do_report_process_details(const dynamic& args) {
   bool found = args.as<bool>("found"_key);
   if (!found) {
     std::string error = args.as<std::string>("error"_key);
-    std::string message = error.empty() ? std::string{"Process no longer exists."} : error;
+    std::string message = error.empty() ? tr("$$TOP_PROCESS_GONE") : error;
     dynamic_ptr details{dynamic::instantiate("wish"_key, "ProcessDetails"_key)};
     details["pid"_key] = pid;
     details["user"_key] = message;
@@ -456,7 +463,7 @@ void top::ensure_core_meters(size_t core_count) {
   for (size_t i = 0; i < core_count; ++i) {
     ui_element_ptr bar = ui_element_ptr::create("wish"_key, "ProgressBar"_key);
     // No explicit width: ProgressBar's default (-1) spans the Cores panel.
-    bar["label"_key] = "Core " + std::to_string(i) + ": --";
+    bar["label"_key] = trf("$$TOP_CORE_PERCENT", {std::to_string(i), "--"});
     bar["order"_key] = static_cast<int32_t>(i);
 
     key_t id = rmi::shared::generate_id();
@@ -502,7 +509,7 @@ ui_element_ptr top::build_row_context_menu(row_entry& entry, int pid, const std:
   assign_id(menu);
 
   ui_element_ptr properties = ui_element_ptr::create("wish"_key, "MenuItem"_key);
-  properties["label"_key] = std::string{"Properties..."};
+  properties["label"_key] = tr("$$TOP_PROPERTIES") + "...";
   common::set_icon(properties, "info");
   key_t properties_id = assign_id(properties);
   entry.properties_id = properties_id;
@@ -512,14 +519,14 @@ ui_element_ptr top::build_row_context_menu(row_entry& entry, int pid, const std:
   assign_id(sep1);
 
   ui_element_ptr pause_resume = ui_element_ptr::create("wish"_key, "MenuItem"_key);
-  pause_resume["label"_key] = std::string{state == "T" ? "Resume" : "Pause"};
+  pause_resume["label"_key] = tr(state == "T" ? "$$TOP_RESUME" : "$$TOP_PAUSE");
   common::set_icon(pause_resume, state == "T" ? "play" : "pause");
   key_t pause_resume_id = assign_id(pause_resume);
   action_item_targets_[pause_resume_id] = row_action_target{pid, row_action_kind::pause_or_resume, 0};
   entry.pause_resume_item = pause_resume;
 
   ui_element_ptr kill = ui_element_ptr::create("wish"_key, "MenuItem"_key);
-  kill["label"_key] = std::string{"Kill Process"};
+  kill["label"_key] = tr("$$TOP_KILL_PROCESS");
   common::set_icon(kill, "close");
   key_t kill_id = assign_id(kill);
   entry.kill_id = kill_id;
@@ -529,7 +536,7 @@ ui_element_ptr top::build_row_context_menu(row_entry& entry, int pid, const std:
   assign_id(sep2);
 
   ui_element_ptr priority_menu = ui_element_ptr::create("wish"_key, "Menu"_key);
-  priority_menu["label"_key] = std::string{"Priority"};
+  priority_menu["label"_key] = tr("$$TOP_PRIORITY");
   assign_id(priority_menu);
 
   entry.priority_items.clear();
@@ -538,7 +545,7 @@ ui_element_ptr top::build_row_context_menu(row_entry& entry, int pid, const std:
   size_t pk = 0;
   for (auto& level : kPriorityLevels) {
     ui_element_ptr item = ui_element_ptr::create("wish"_key, "MenuItem"_key);
-    item["label"_key] = std::string{level.label};
+    item["label"_key] = tr(level.label);
     item["checked"_key] = nice == level.nice;
     key_t item_id = assign_id(item);
     action_item_targets_[item_id] = row_action_target{pid, row_action_kind::priority, level.nice};
@@ -549,7 +556,7 @@ ui_element_ptr top::build_row_context_menu(row_entry& entry, int pid, const std:
   priority_menu->refresh_children_order();
 
   ui_element_ptr affinity = ui_element_ptr::create("wish"_key, "MenuItem"_key);
-  affinity["label"_key] = std::string{"Set CPU Affinity..."};
+  affinity["label"_key] = tr("$$TOP_SET_CPU_AFFINITY") + "...";
   common::set_icon(affinity, "memory");
   key_t affinity_id = assign_id(affinity);
   entry.affinity_id = affinity_id;
@@ -572,7 +579,7 @@ ui_element_ptr top::build_row_context_menu(row_entry& entry, int pid, const std:
 
 void top::update_row_context_menu(row_entry& entry, const std::string& state, int32_t nice) {
   if (entry.pause_resume_item) {
-    entry.pause_resume_item["label"_key] = std::string{state == "T" ? "Resume" : "Pause"};
+    entry.pause_resume_item["label"_key] = tr(state == "T" ? "$$TOP_RESUME" : "$$TOP_PAUSE");
     common::set_icon(entry.pause_resume_item, state == "T" ? "play" : "pause");
   }
   for (size_t i = 0; i < entry.priority_items.size() && i < kPriorityLevelCount; ++i)
@@ -585,8 +592,8 @@ void top::update_row_context_menu(row_entry& entry, const std::string& state, in
 void top::show_confirm_kill(int pid) {
   auto row_it = pid_to_row_.find(pid);
   std::string name = row_it != pid_to_row_.end() ? row_it->second.name : std::string{};
-  std::string message = "Kill process " + std::to_string(pid) + (name.empty() ? std::string{} : " (" + name + ")") +
-      "? This cannot be undone.";
+  std::string message = name.empty() ? trf("$$TOP_CONFIRM_KILL_PID", {std::to_string(pid)})
+                                     : trf("$$TOP_CONFIRM_KILL_PID_NAME", {std::to_string(pid), name});
 
   show_confirm(
       message,
@@ -595,7 +602,7 @@ void top::show_confirm_kill(int pid) {
             "on_process_action_requested"_key,
             common::make_payload("pid"_key, static_cast<int32_t>(pid), "action"_key, std::string{"kill"}));
       },
-      {.title = "Confirm Kill"});
+      {.title = "$$TOP_CONFIRM_KILL"});
 }
 
 // ── Set CPU Affinity dialog ───────────────────────────────────────────────────
@@ -624,7 +631,9 @@ void top::show_affinity_dialog(int pid) {
   for (size_t i = 0; i < core_count; ++i) {
     if (i > 0)
       checkboxes_json << ",";
-    checkboxes_json << "\"core" << i << "\": { \"type\": \"Checkbox\", \"label\": \"Core " << i
+    // "\u001f" is make_message()'s separator: the label is translated as a
+    // message once the JSON is parsed.
+    checkboxes_json << "\"core" << i << "\": { \"type\": \"Checkbox\", \"label\": \"$$TOP_CORE_N\\u001f" << i
                      << "\", \"value\": " << (is_set(static_cast<int32_t>(i)) ? "true" : "false") << " }";
   }
 
@@ -635,7 +644,7 @@ void top::show_affinity_dialog(int pid) {
   // being pushed off-window by a long one.
   std::ostringstream layout;
   layout << R"({
-    "type": "Window", "title": "Set CPU Affinity - PID )" << pid << R"(", "modal": true,
+    "type": "Window", "title": "$$TOP_AFFINITY_TITLE\u001f)" << pid << R"(", "modal": true,
     "flags": "NoCollapse",
     "width": 480, "height": 320,
     "children": {
@@ -646,15 +655,15 @@ void top::show_affinity_dialog(int pid) {
          << checkboxes_json.str() << R"( } },
           "sep": { "type": "Separator" },
           "buttons": { "type": "HorizontalLayout", "spacing": 6, "children": {
-            "btn_apply": { "type": "Button", "label": "Apply", "height": 32 },
-            "btn_cancel": { "type": "Button", "label": "Cancel", "height": 32 }
+            "btn_apply": { "type": "Button", "label": "$$TOP_APPLY", "height": 32 },
+            "btn_cancel": { "type": "Button", "label": "$$TOP_CANCEL", "height": 32 }
           } }
         }
       }
     }
   })";
 
-  auto tree = import_json(layout.str());
+  auto tree = import_json(layout.str(), translations());
   auto& c = ctx();
   for (auto& [key, elem] : tree) {
     key_t id = rmi::shared::generate_id();
@@ -1008,7 +1017,7 @@ void top::on_event(key_t id, key_t event, const dynamic& payload) {
         if (checkbox && checkbox->as<bool>("value"_key))
           cores.push_back(core);
       if (cores.empty()) {
-        set_status("Set CPU affinity failed: at least one core must stay checked.");
+        set_status(tr("$$TOP_AFFINITY_NEEDS_A_CORE"));
       } else {
         dynamic req;
         req["pid"_key] = static_cast<int32_t>(affinity_dialog_pid_);
@@ -1066,7 +1075,7 @@ void register_top() {
   proto->addField(
       "title"_key,
       field{
-          std::string{"Top"},
+          std::string{"$$TOP_TOP"},
           attr<DisplayName>("Title"),
           attr<Description>("Window title."),
           attr<Category>("Appearance")});

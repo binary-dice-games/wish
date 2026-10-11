@@ -63,6 +63,12 @@ void server::start(bison::rmi::auth_module_ptr auth_module, bison::dynamic liste
   }
 }
 
+void server::set_default_language(std::string lang) {
+  if (!is_valid_language_code(lang))
+    throw std::invalid_argument("wish: invalid language code '" + lang + "'");
+  default_language_ = std::move(lang);
+}
+
 void server::stop() {
   running_.store(false, std::memory_order_release);
   bison::rmi::server::stop();
@@ -89,6 +95,7 @@ void server::on_session_created(bison::rmi::context& ctx) {
   s.file_service = file_service::instantiate(s.resource_dir);
   s.style_service = style_service::instantiate();
   s.style_service->set_preset(default_theme_);
+  s.set_language(default_language_);
   // All sessions share the same global logger instance (set via set_logger()).
   s.logger_service = logger_;
   s.server_store = stores_->server_store();

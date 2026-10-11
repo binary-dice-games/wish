@@ -127,6 +127,9 @@ class c_abi_app_host : public wish::wish_app_host {
   const std::vector<std::string>& app_args() const override {
     return args_;
   }
+  std::string language() const override {
+    return client_.language();
+  }
   bool read_console_line(std::string&) override {
     return false;
   }
@@ -395,13 +398,59 @@ wish_set_style_preset_async(wish_client_handle c, const char* preset, rmi_future
   }
 }
 
+// ── Internationalization ──────────────────────────────────────────────────────
+
+extern "C" wish_error wish_set_translations(wish_client_handle c, const char* text, const char* fallback_text) {
+  if (!c || !text)
+    return WISH_ERR_NULL;
+  try {
+    bdg::wish::translation_map map = bdg::wish::parse_translations(text);
+    if (fallback_text)
+      map.set_fallback(std::make_shared<bdg::wish::translation_map>(bdg::wish::parse_translations(fallback_text)));
+    c->client_->set_translations(std::move(map));
+    return WISH_OK;
+  } catch (const std::exception& e) {
+    c->last_error_ = e.what();
+    return WISH_ERR_EXCEPTION;
+  }
+}
+
+extern "C" wish_error wish_translate(wish_client_handle c, const char* text, char** out_text) {
+  if (!c || !text || !out_text)
+    return WISH_ERR_NULL;
+  try {
+    const std::string result = c->client_->translate(text);
+    char* buf = new char[result.size() + 1];
+    std::memcpy(buf, result.c_str(), result.size() + 1);
+    *out_text = buf;
+    return WISH_OK;
+  } catch (const std::exception& e) {
+    c->last_error_ = e.what();
+    return WISH_ERR_EXCEPTION;
+  }
+}
+
+extern "C" wish_error wish_set_language(wish_client_handle c, const char* lang) {
+  if (!c || !lang)
+    return WISH_ERR_NULL;
+  try {
+    c->client_->set_language(std::string{lang}).get();
+    return WISH_OK;
+  } catch (const std::exception& e) {
+    c->last_error_ = e.what();
+    return WISH_ERR_EXCEPTION;
+  }
+}
+
 // ── Templates ─────────────────────────────────────────────────────────────────
 
 extern "C" wish_error wish_register_template(wish_client_handle c, const char* name, const char* descriptor) {
   if (!c || !name || !descriptor)
     return WISH_ERR_NULL;
   try {
-    c->client_->register_template(bdg::bison::key_t{name}, bdg::wish::import_descriptor_text(descriptor)).get();
+    auto tr = c->client_->translations();
+    c->client_->register_template(bdg::bison::key_t{name}, bdg::wish::import_descriptor_text(descriptor, tr.get()))
+        .get();
     return WISH_OK;
   } catch (const std::exception& e) {
     c->last_error_ = e.what();
@@ -415,7 +464,8 @@ extern "C" wish_error wish_register_template_async(
     return WISH_ERR_NULL;
   try {
     bdg::bison::key_t key{name};
-    bdg::bison::dynamic desc = bdg::wish::import_descriptor_text(descriptor);
+    auto tr = c->client_->translations();
+    bdg::bison::dynamic desc = bdg::wish::import_descriptor_text(descriptor, tr.get());
     std::future<bool> fut = std::async(std::launch::async, [c, key, d = std::move(desc)]() mutable -> bool {
       c->client_->register_template(key, std::move(d)).get();
       return true;

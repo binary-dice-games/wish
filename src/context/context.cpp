@@ -123,6 +123,7 @@ void context::populate_resource_dir() {
   // imgui_ui_renderer.cpp's render_image / web_renderer::get_or_load_texture).
   for (auto& [rel, crc] : raw_crc32)
     embedded_crc32s["res/" + rel] = crc;
+  translations_cache_.clear();
 }
 
 void context::adopt_persistent_resource_dir(const std::filesystem::path& dir) {
@@ -133,6 +134,82 @@ void context::adopt_persistent_resource_dir(const std::filesystem::path& dir) {
   resource_dir = dir;
   resource_dir_persistent = true;
   populate_resource_dir();
+}
+
+// ── Internationalization ──────────────────────────────────────────────────────
+
+void context::set_language(std::string lang) {
+  if (!is_valid_language_code(lang))
+    throw std::invalid_argument("wish: invalid language code '" + lang + "'");
+  language_ = std::move(lang);
+  translations_cache_.clear();
+}
+
+std::shared_ptr<const translation_map> context::all_module_translations() {
+  // res/<org>/<collection>/<name>/i18n/<lang>.lang for every module.
+  auto merged = [&](const std::string& lang) {
+    auto map = std::make_shared<translation_map>();
+    std::error_code ec;
+    const auto res = resource_dir / "res";
+    try {
+      for (const auto& org : std::filesystem::directory_iterator(res, ec)) {
+        for (const auto& coll : std::filesystem::directory_iterator(org.path(), ec)) {
+          for (const auto& mod : std::filesystem::directory_iterator(coll.path(), ec)) {
+            if (auto m = load_translations_file(mod.path() / "i18n" / (lang + ".lang")))
+              map->merge(*m);
+          }
+        }
+      }
+    } catch (const std::filesystem::filesystem_error&) {
+      // Best-effort: a missing or unreadable folder only loses translations.
+    }
+    return map;
+  };
+  auto en = merged("en");
+  if (language_.empty() || language_ == "en")
+    return en;
+  auto map = merged(language_);
+  map->set_fallback(en);
+  return map;
+}
+
+std::shared_ptr<const translation_map> context::translations_for(std::string_view module_prefix) {
+  std::string prefix{module_prefix};
+  auto it = translations_cache_.find(prefix);
+  if (it != translations_cache_.end())
+    return it->second;
+
+  std::string dir = prefix.empty() ? std::string{"res/i18n/"} : "res/" + prefix + "/i18n/";
+  auto load = [&](const std::string& lang) -> std::shared_ptr<translation_map> {
+    auto path = file_service::resolve_path(dir + lang + ".lang", resource_dir, false);
+    if (path.empty())
+      return nullptr;
+    auto map = load_translations_file(path);
+    return map ? std::make_shared<translation_map>(std::move(*map)) : nullptr;
+  };
+
+  // A module's chain ends in the built-in one, so shared COMMON_* keys
+  // (panels, dialogs) resolve from res/i18n/ for every tool. The built-in
+  // chain in turn ends in every module's keys merged (keys carry a module
+  // prefix, so they don't collide): a built-in form such as ProgressBox or
+  // MessageBox can then show a title a module's client code sent as a key.
+  std::shared_ptr<const translation_map> base = prefix.empty() ? all_module_translations() : translations_for("");
+  std::shared_ptr<translation_map> fallback = load("en");
+  std::shared_ptr<translation_map> map;
+  if (!language_.empty() && language_ != "en")
+    map = load(language_);
+  if (fallback)
+    fallback->set_fallback(base);
+  std::shared_ptr<const translation_map> result;
+  if (map) {
+    map->set_fallback(fallback ? std::shared_ptr<const translation_map>{fallback} : base);
+    result = map;
+  } else if (fallback) {
+    result = fallback;
+  } else {
+    result = base ? base : std::make_shared<const translation_map>();
+  }
+  return translations_cache_.emplace(std::move(prefix), std::move(result)).first->second;
 }
 
 // ── Debug dump ────────────────────────────────────────────────────────────────

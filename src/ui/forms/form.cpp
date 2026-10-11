@@ -160,4 +160,22 @@ void form::emit(bison::key_t event_name, bison::dynamic payload) {
   }
 }
 
+// ── Translation ───────────────────────────────────────────────────────────────
+
+const translation_map* form::translations() {
+  if (!translations_)
+    translations_ = sess().translations_for(i18n_prefix_);
+  return translations_.get();
+}
+
+std::string form::tr(std::string_view text) {
+  if (!is_translatable(text))
+    return std::string{text};
+  return translate_text(text, *translations());
+}
+
+std::string form::trf(std::string_view key, const std::vector<std::string>& args) {
+  return format_text(tr(key), args);
+}
+
 } // namespace bdg::wish

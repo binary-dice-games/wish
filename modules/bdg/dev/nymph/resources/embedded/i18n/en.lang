@@ -1,0 +1,19 @@
+# nymph -- English (fallback for every other language).
+NYMPH_NYMPH = nymph
+NYMPH_SOURCE = Source
+NYMPH_SAVE = Save
+NYMPH_NO_FILE = (no file)
+NYMPH_MODIFIED = [MODIFIED]
+NYMPH_FORMAT = Format
+NYMPH_DATA = Data
+NYMPH_DESCRIPTION = Description
+NYMPH_PREVIEW = Preview
+NYMPH_NO_DATA = No data.
+NYMPH_SHOWING_ROWS = Showing {0} of {1} rows
+NYMPH_DATA_LINE = Data, line {0}: {1}
+NYMPH_FORMAT_LINE = Format, line {0}: {1}
+NYMPH_NOT_A_NYMPH_IMAGE = not a nymph image (the PNG has no embedded nymph source)
+NYMPH_NOT_SAVED = Not saved: {0}
+NYMPH_UNSAVED_CHANGES = Unsaved changes
+NYMPH_SAVE_THIS_IMAGE = Save changes to this image before closing?
+NYMPH_SAVE_FILE = Save changes to {0} before closing?

@@ -16,6 +16,7 @@
 
 #include "src/client/app_registry.hpp"
 #include "src/client/wish_app_host.hpp"
+#include "src/i18n/translations.hpp"
 
 #include "src/bison/bison.hpp"
 
@@ -35,7 +36,7 @@ void run_sq(wish_app_host& s) {
   // running sq inside an event handler would block the whole UI until it
   // exits. Long commands get a modal progress dialog
   // (modules/bdg/common/command_worker.hpp).
-  const auto frontend = common::open_frontend(s, "SqFrontend"_key, "Running sq");
+  const auto frontend = common::open_frontend(s, "SqFrontend"_key, make_message("$$COMMON_RUNNING_TOOL", {"sq"}));
   const auto& proxy = frontend.proxy;
   const auto& worker = frontend.worker;
 
@@ -47,7 +48,7 @@ void run_sq(wish_app_host& s) {
         kSqRepoUrl;
     std::cerr << "sq: " << message << "\n";
     dynamic args;
-    args["message"_key] = message;
+    args["message"_key] = make_message("$$SQ_NOT_FOUND_ON_PATH", {kSqRepoUrl});
     args["url"_key] = std::string{kSqRepoUrl};
     proxy->call("show_unavailable"_key, std::move(args)).get();
     return;

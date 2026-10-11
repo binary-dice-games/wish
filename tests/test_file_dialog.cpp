@@ -43,7 +43,7 @@ TEST_F(FileDialogLocalTest, DefaultTitleIsOpenFile) {
   auto* f = obj.findField("title"_key);
   ASSERT_NE(f, nullptr);
   EXPECT_TRUE(f->is<std::string>());
-  EXPECT_EQ(f->as<std::string>(), "Open File");
+  EXPECT_EQ(f->as<std::string>(), "$$FILEDLG_OPEN_FILE");
 }
 
 TEST_F(FileDialogLocalTest, FilesFieldIsDynamicPtr) {
@@ -73,7 +73,7 @@ TEST_F(FileDialogLocalTest, DefaultConfirmLabelIsOpen) {
   auto* f = obj.findField("confirm_label"_key);
   ASSERT_NE(f, nullptr);
   EXPECT_TRUE(f->is<std::string>());
-  EXPECT_EQ(f->as<std::string>(), "Open");
+  EXPECT_EQ(f->as<std::string>(), "$$FILEDLG_OPEN");
 }
 
 // ── Session-capturing server for internal-tree tests ──────────────────────────

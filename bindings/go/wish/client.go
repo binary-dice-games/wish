@@ -288,6 +288,46 @@ func (c *Client) SetStylePresetAsync(preset string) (*Future, error) {
 	return newFuture(f), nil
 }
 
+// ── Internationalization ─────────────────────────────────────────────────
+
+// SetTranslations sets the translations applied by RegisterTemplate:
+// template string values "$$KEY" become KEY's translation. Both texts use the
+// translation file format ("KEY = value" per line); pass an empty fallback
+// for none. A key found in neither shows as the bare KEY.
+func (c *Client) SetTranslations(text, fallback string) error {
+	cText := C.CString(text)
+	defer C.free(unsafe.Pointer(cText))
+	var cFallback *C.char
+	if fallback != "" {
+		cFallback = C.CString(fallback)
+		defer C.free(unsafe.Pointer(cFallback))
+	}
+	rc := C.wish_set_translations(c.handle, cText, cFallback)
+	return checkWish(rc, "client.set_translations", c.handle)
+}
+
+// Translate translates "$$KEY"; any other string is returned unchanged.
+func (c *Client) Translate(text string) (string, error) {
+	cText := C.CString(text)
+	defer C.free(unsafe.Pointer(cText))
+	var out *C.char
+	rc := C.wish_translate(c.handle, cText, &out)
+	if err := checkWish(rc, "client.translate", c.handle); err != nil {
+		return "", err
+	}
+	defer C.bison_free_string(out)
+	return C.GoString(out), nil
+}
+
+// SetLanguage sets this session's UI language on the server (e.g. "es"),
+// used by server-side tools.
+func (c *Client) SetLanguage(lang string) error {
+	cLang := C.CString(lang)
+	defer C.free(unsafe.Pointer(cLang))
+	rc := C.wish_set_language(c.handle, cLang)
+	return checkWish(rc, "client.set_language", c.handle)
+}
+
 // ── Template management ──────────────────────────────────────────────────
 
 // RegisterTemplate registers a named UI template (JSON or YAML descriptor

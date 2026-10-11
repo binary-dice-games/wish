@@ -23,7 +23,6 @@ using common::kIdle;
 using common::kOk;
 using common::kWarn;
 using common::make_payload;
-using common::plural;
 using common::str_of;
 using common::theme_color;
 using common::wish_id_of;
@@ -67,14 +66,14 @@ theme_color release_status_colour(const std::string& status) {
 // named in the DockArea below.
 
 static constexpr const char* kReleasesLayout = R"json({
-  "type": "Window", "title": "Releases", "width": 980, "height": 500,
+  "type": "Window", "title": "$$HELM_RELEASES", "width": 980, "height": 500,
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_refresh": { "type": "Button", "label": "Refresh", "icon": "res/icons/refresh.png" },
-      "filter":      { "type": "InputText", "hint": "Filter by name", "width": 200 },
-      "ns":          { "type": "InputText", "hint": "Namespace", "width": 150 },
-      "state":       { "type": "Combo", "items": "All\nDeployed\nFailed\nPending", "value": 0, "width": 120 }
+      "btn_refresh": { "type": "Button", "label": "$$HELM_REFRESH", "icon": "res/icons/refresh.png" },
+      "filter":      { "type": "InputText", "hint": "$$HELM_FILTER_BY_NAME", "width": 200 },
+      "ns":          { "type": "InputText", "hint": "$$HELM_NAMESPACE", "width": 150 },
+      "state":       { "type": "Combo", "items": "$$HELM_STATE_ITEMS", "value": 0, "width": 120 }
     } },
     "status": { "type": "Label", "text": "" },
     "sep": { "type": "Separator" },
@@ -83,13 +82,13 @@ static constexpr const char* kReleasesLayout = R"json({
       "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": -1, "outer_height": -1, "auto_scroll": false,
       "children": {
-        "col_ns":      { "type": "TableColumn", "label": "Namespace",   "flags": "WidthFixed", "init_width": 90,  "column_id": 0 },
-        "col_name":    { "type": "TableColumn", "label": "Name",        "flags": "WidthStretch",                    "column_id": 1 },
-        "col_rev":     { "type": "TableColumn", "label": "Revision",    "flags": "WidthFixed", "init_width": 56,  "column_id": 2 },
-        "col_status":  { "type": "TableColumn", "label": "Status",      "flags": "WidthFixed", "init_width": 86,  "column_id": 3 },
-        "col_chart":   { "type": "TableColumn", "label": "Chart",       "flags": "WidthFixed", "init_width": 130, "column_id": 4 },
-        "col_app":     { "type": "TableColumn", "label": "App Version", "flags": "WidthFixed", "init_width": 64,  "column_id": 5 },
-        "col_updated": { "type": "TableColumn", "label": "Updated",     "flags": "WidthFixed", "init_width": 140, "column_id": 6 },
+        "col_ns":      { "type": "TableColumn", "label": "$$HELM_NAMESPACE",   "flags": "WidthFixed", "init_width": 90,  "column_id": 0 },
+        "col_name":    { "type": "TableColumn", "label": "$$HELM_NAME",        "flags": "WidthStretch",                    "column_id": 1 },
+        "col_rev":     { "type": "TableColumn", "label": "$$HELM_REVISION",    "flags": "WidthFixed", "init_width": 56,  "column_id": 2 },
+        "col_status":  { "type": "TableColumn", "label": "$$HELM_STATUS",      "flags": "WidthFixed", "init_width": 86,  "column_id": 3 },
+        "col_chart":   { "type": "TableColumn", "label": "$$HELM_CHART",       "flags": "WidthFixed", "init_width": 130, "column_id": 4 },
+        "col_app":     { "type": "TableColumn", "label": "$$HELM_APP_VERSION", "flags": "WidthFixed", "init_width": 64,  "column_id": 5 },
+        "col_updated": { "type": "TableColumn", "label": "$$HELM_UPDATED",     "flags": "WidthFixed", "init_width": 140, "column_id": 6 },
         "col_actions": { "type": "TableColumn", "label": "",            "flags": "WidthFixed", "init_width": 40,  "column_id": 7 }
       }
     }
@@ -97,18 +96,18 @@ static constexpr const char* kReleasesLayout = R"json({
 })json";
 
 static constexpr const char* kReposLayout = R"json({
-  "type": "Window", "title": "Repositories", "width": 820, "height": 360,
+  "type": "Window", "title": "$$HELM_REPOSITORIES", "width": 820, "height": 360,
   "closable": true, "flags": "NoFocusOnAppearing",
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_refresh":    { "type": "Button", "label": "Refresh", "icon": "res/icons/refresh.png" },
-      "btn_update_all": { "type": "Button", "label": "Update all", "icon": "res/icons/sync.png" },
-      "filter":         { "type": "InputText", "hint": "Filter by name", "width": 200 }
+      "btn_refresh":    { "type": "Button", "label": "$$HELM_REFRESH", "icon": "res/icons/refresh.png" },
+      "btn_update_all": { "type": "Button", "label": "$$HELM_UPDATE_ALL", "icon": "res/icons/sync.png" },
+      "filter":         { "type": "InputText", "hint": "$$HELM_FILTER_BY_NAME", "width": 200 }
     } },
     "add_bar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "repo_name": { "type": "InputText", "hint": "new repository name", "width": 200 },
+      "repo_name": { "type": "InputText", "hint": "$$HELM_NEW_REPOSITORY_NAME", "width": 200 },
       "repo_url":  { "type": "InputText", "hint": "https://charts.example.com", "width": 320 },
-      "btn_add":   { "type": "Button", "label": "Add", "icon": "res/icons/add.png" }
+      "btn_add":   { "type": "Button", "label": "$$HELM_ADD", "icon": "res/icons/add.png" }
     } },
     "status": { "type": "Label", "text": "" },
     "sep": { "type": "Separator" },
@@ -117,8 +116,8 @@ static constexpr const char* kReposLayout = R"json({
       "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": -1, "outer_height": -1, "auto_scroll": false,
       "children": {
-        "col_name":    { "type": "TableColumn", "label": "Name", "flags": "WidthFixed", "init_width": 200, "column_id": 0 },
-        "col_url":     { "type": "TableColumn", "label": "URL",  "flags": "WidthStretch",                   "column_id": 1 },
+        "col_name":    { "type": "TableColumn", "label": "$$HELM_NAME", "flags": "WidthFixed", "init_width": 200, "column_id": 0 },
+        "col_url":     { "type": "TableColumn", "label": "$$HELM_URL",  "flags": "WidthStretch",                   "column_id": 1 },
         "col_actions": { "type": "TableColumn", "label": "",     "flags": "WidthFixed", "init_width": 40,  "column_id": 2 }
       }
     }
@@ -126,14 +125,14 @@ static constexpr const char* kReposLayout = R"json({
 })json";
 
 static constexpr const char* kChartsLayout = R"json({
-  "type": "Window", "title": "Charts", "width": 900, "height": 420,
+  "type": "Window", "title": "$$HELM_CHARTS", "width": 900, "height": 420,
   "closable": true, "flags": "NoFocusOnAppearing",
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "query":      { "type": "InputText", "hint": "Search repositories (empty = all charts)", "width": 320 },
-      "btn_search": { "type": "Button", "label": "Search", "icon": "res/icons/search.png" },
+      "query":      { "type": "InputText", "hint": "$$HELM_SEARCH_HINT", "width": 320 },
+      "btn_search": { "type": "Button", "label": "$$HELM_SEARCH", "icon": "res/icons/search.png" },
       "spring":      { "type": "Spring" },
-      "btn_install": { "type": "Button", "label": "Install chart...", "icon": "res/icons/download.png" }
+      "btn_install": { "type": "Button", "label": "$$HELM_INSTALL_CHART", "icon": "res/icons/download.png" }
     } },
     "status": { "type": "Label", "text": "" },
     "sep": { "type": "Separator" },
@@ -142,10 +141,10 @@ static constexpr const char* kChartsLayout = R"json({
       "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": -1, "outer_height": -1, "auto_scroll": false,
       "children": {
-        "col_name":    { "type": "TableColumn", "label": "Name",          "flags": "WidthFixed", "init_width": 230, "column_id": 0 },
-        "col_ver":     { "type": "TableColumn", "label": "Chart Version", "flags": "WidthFixed", "init_width": 100, "column_id": 1 },
-        "col_app":     { "type": "TableColumn", "label": "App Version",   "flags": "WidthFixed", "init_width": 90,  "column_id": 2 },
-        "col_desc":    { "type": "TableColumn", "label": "Description",   "flags": "WidthStretch",                    "column_id": 3 },
+        "col_name":    { "type": "TableColumn", "label": "$$HELM_NAME",          "flags": "WidthFixed", "init_width": 230, "column_id": 0 },
+        "col_ver":     { "type": "TableColumn", "label": "$$HELM_CHART_VERSION", "flags": "WidthFixed", "init_width": 100, "column_id": 1 },
+        "col_app":     { "type": "TableColumn", "label": "$$HELM_APP_VERSION",   "flags": "WidthFixed", "init_width": 90,  "column_id": 2 },
+        "col_desc":    { "type": "TableColumn", "label": "$$HELM_DESCRIPTION",   "flags": "WidthStretch",                    "column_id": 3 },
         "col_actions": { "type": "TableColumn", "label": "",              "flags": "WidthFixed", "init_width": 40,  "column_id": 4 }
       }
     }
@@ -153,13 +152,13 @@ static constexpr const char* kChartsLayout = R"json({
 })json";
 
 static constexpr const char* kHistoryLayout = R"json({
-  "type": "Window", "title": "History", "width": 820, "height": 420,
+  "type": "Window", "title": "$$HELM_HISTORY", "width": 820, "height": 420,
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 8, "children": {
-      "target":      { "type": "Label", "text": "(no release selected)" },
+      "target":      { "type": "Label", "text": "$$HELM_NO_RELEASE_SELECTED" },
       "spring":      { "type": "Spring" },
-      "btn_refresh": { "type": "Button", "label": "Refresh", "icon": "res/icons/refresh.png" }
+      "btn_refresh": { "type": "Button", "label": "$$HELM_REFRESH", "icon": "res/icons/refresh.png" }
     } },
     "status": { "type": "Label", "text": "" },
     "sep": { "type": "Separator" },
@@ -168,11 +167,11 @@ static constexpr const char* kHistoryLayout = R"json({
       "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": -1, "outer_height": -1, "auto_scroll": false,
       "children": {
-        "col_rev":     { "type": "TableColumn", "label": "Revision",    "flags": "WidthFixed", "init_width": 50,  "column_id": 0 },
-        "col_updated": { "type": "TableColumn", "label": "Updated",     "flags": "WidthFixed", "init_width": 150, "column_id": 1 },
-        "col_status":  { "type": "TableColumn", "label": "Status",      "flags": "WidthFixed", "init_width": 86,  "column_id": 2 },
-        "col_chart":   { "type": "TableColumn", "label": "Chart",       "flags": "WidthFixed", "init_width": 100, "column_id": 3 },
-        "col_desc":    { "type": "TableColumn", "label": "Description", "flags": "WidthStretch",                    "column_id": 4 },
+        "col_rev":     { "type": "TableColumn", "label": "$$HELM_REVISION",    "flags": "WidthFixed", "init_width": 50,  "column_id": 0 },
+        "col_updated": { "type": "TableColumn", "label": "$$HELM_UPDATED",     "flags": "WidthFixed", "init_width": 150, "column_id": 1 },
+        "col_status":  { "type": "TableColumn", "label": "$$HELM_STATUS",      "flags": "WidthFixed", "init_width": 86,  "column_id": 2 },
+        "col_chart":   { "type": "TableColumn", "label": "$$HELM_CHART",       "flags": "WidthFixed", "init_width": 100, "column_id": 3 },
+        "col_desc":    { "type": "TableColumn", "label": "$$HELM_DESCRIPTION", "flags": "WidthStretch",                    "column_id": 4 },
         "col_actions": { "type": "TableColumn", "label": "",            "flags": "WidthFixed", "init_width": 40,  "column_id": 5 }
       }
     }
@@ -186,25 +185,25 @@ static constexpr const char* kHistoryLayout = R"json({
 // the client machine -- so a chart needn't come from the Charts table.
 
 static constexpr const char* kInstallLayout = R"json({
-  "type": "Window", "title": "Install chart", "width": 660, "height": 540,
+  "type": "Window", "title": "$$HELM_INSTALL_CHART_TITLE", "width": 660, "height": 540,
   "pos_x": 200, "pos_y": 80, "closable": true, "flags": "NoDocking|NoCollapse",
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 6, "children": {
     "chart_row": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "chart":   { "type": "InputText", "hint": "chart: repo/name, oci://..., URL or path", "width": 420 },
-      "version": { "type": "InputText", "hint": "version (latest)", "width": 200 }
+      "chart":   { "type": "InputText", "hint": "$$HELM_CHART_HINT", "width": 420 },
+      "version": { "type": "InputText", "hint": "$$HELM_VERSION_LATEST", "width": 200 }
     } },
     "release_row": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "release": { "type": "InputText", "hint": "release name", "width": 420 },
-      "ns":      { "type": "InputText", "hint": "namespace (default)", "width": 200 }
+      "release": { "type": "InputText", "hint": "$$HELM_RELEASE_NAME", "width": 420 },
+      "ns":      { "type": "InputText", "hint": "$$HELM_NAMESPACE_DEFAULT", "width": 200 }
     } },
     "opts": { "type": "HorizontalLayout", "spacing": 12, "children": {
-      "create_ns": { "type": "Checkbox", "label": "Create namespace", "value": true },
-      "wait":      { "type": "Checkbox", "label": "Wait until ready", "value": false }
+      "create_ns": { "type": "Checkbox", "label": "$$HELM_CREATE_NAMESPACE", "value": true },
+      "wait":      { "type": "Checkbox", "label": "$$HELM_WAIT_UNTIL_READY", "value": false }
     } },
     "values_bar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "caption":      { "type": "Label", "text": "Values (YAML, optional)" },
+      "caption":      { "type": "Label", "text": "$$HELM_VALUES_YAML_OPTIONAL" },
       "spring":       { "type": "Spring" },
-      "btn_defaults": { "type": "Button", "label": "Load chart defaults", "icon": "res/icons/document.png" }
+      "btn_defaults": { "type": "Button", "label": "$$HELM_LOAD_CHART_DEFAULTS", "icon": "res/icons/document.png" }
     } },
     "values": {
       "type": "InputText", "multiline": true, "flags": "AllowTabInput",
@@ -213,8 +212,8 @@ static constexpr const char* kInstallLayout = R"json({
     "status": { "type": "Label", "text": "" },
     "buttons": { "type": "HorizontalLayout", "spacing": 6, "children": {
       "spring":     { "type": "Spring" },
-      "btn_submit": { "type": "Button", "label": "Install" },
-      "btn_cancel": { "type": "Button", "label": "Cancel" }
+      "btn_submit": { "type": "Button", "label": "$$HELM_INSTALL" },
+      "btn_cancel": { "type": "Button", "label": "$$HELM_CANCEL" }
     } }
   } } }
 })json";
@@ -233,7 +232,9 @@ const char* details_language(const std::string& kind) {
 
 // ── helm_frontend ──────────────────────────────────────────────────────────
 
-helm_frontend::helm_frontend(dynamic&& base) : tool_form(std::move(base)) {}
+helm_frontend::helm_frontend(dynamic&& base) : tool_form(std::move(base)) {
+  i18n_prefix_ = "bdg/dev/helm";
+}
 
 void helm_frontend::on_init() {
   internal_root_key_ = next_available_key("__helm_");
@@ -267,7 +268,7 @@ void helm_frontend::on_init() {
     tree.with("vbox.add_bar.btn_add", [&](const auto& e) {
       on_click(wish_id_of(e), [this] {
         if (repo_name_text_.empty() || repo_url_text_.empty()) {
-          repos_.panel.set_status("Enter a repository name and URL to add", false);
+          repos_.panel.set_status("$$HELM_ENTER_REPO_NAME_URL", false);
           return;
         }
         emit("repo_add_requested"_key, make_payload("name"_key, repo_name_text_, "url"_key, repo_url_text_));
@@ -299,9 +300,10 @@ void helm_frontend::on_init() {
   });
 
   // open_details() picks the highlighting language per kind.
-  details_.build(*this, internal_root_key_ + "_details", {.title = "Details", .language = "yaml", .on_refresh = [this] {
-                                                            emit_details_request();
-                                                          }});
+  details_.build(
+      *this, internal_root_key_ + "_details", {.title = "$$COMMON_DETAILS", .language = "yaml", .on_refresh = [this] {
+                                                 emit_details_request();
+                                               }});
 
   install_root_key_ = internal_root_key_ + "_install";
 
@@ -317,10 +319,12 @@ void helm_frontend::on_init() {
   {
     using namespace dock;
     set_default_dock_layout(viewport(
-        "helm_dock", "Helm",
+        "helm_dock",
+        tr("$$HELM_HELM"),
         layout(
             split(
-                dir::left, 0.6f,
+                dir::left,
+                0.6f,
                 split(
                     dir::down,
                     0.24f,
@@ -423,15 +427,15 @@ void helm_frontend::rebuild_releases(const dynamic& args) {
         make_label(str_of(e, "updated"_key), kIdle),
     };
     std::vector<common::menu_item> items = {
-        action_item("Status", r, "status", false),
-        action_item("Values", r, "values", false),
-        action_item("Manifest", r, "manifest", false),
-        action_item("Notes", r, "notes", false),
-        action_item("History", r, "history", false),
+        action_item("$$HELM_STATUS", r, "status", false),
+        action_item("$$HELM_VALUES", r, "values", false),
+        action_item("$$HELM_MANIFEST", r, "manifest", false),
+        action_item("$$HELM_NOTES", r, "notes", false),
+        action_item("$$HELM_HISTORY", r, "history", false),
         {},
-        action_item("Upgrade", r, "upgrade", true),
-        action_item("Rollback", r, "rollback", true),
-        action_item("Uninstall", r, "uninstall", true)};
+        action_item("$$HELM_UPGRADE", r, "upgrade", true),
+        action_item("$$HELM_ROLLBACK", r, "rollback", true),
+        action_item("$$HELM_UNINSTALL", r, "uninstall", true)};
     if (r.state == "deployed")
       ++deployed;
     ++total;
@@ -441,8 +445,9 @@ void helm_frontend::rebuild_releases(const dynamic& args) {
   releases_.panel.refresh();
   apply_list_filter(releases_);
   releases_.panel.set_status(
-      total == 0 ? std::string{"No releases. Install a chart from the Charts window."}
-                 : plural(total, "release") + " (" + std::to_string(deployed) + " deployed)",
+      total == 0 ? tr("$$HELM_NO_RELEASES")
+                 : trf(total == 1 ? "$$HELM_N_RELEASE_DEPLOYED" : "$$HELM_N_RELEASES_DEPLOYED",
+                       {std::to_string(total), std::to_string(deployed)}),
       true);
 }
 
@@ -457,7 +462,7 @@ void helm_frontend::rebuild_repos(const dynamic& args) {
         make_label(str_of(e, "url"_key), kIdle),
     };
     std::vector<common::menu_item> items = {
-        action_item("Update", r, "update", false), {}, action_item("Remove", r, "remove", true)};
+        action_item("$$HELM_UPDATE", r, "update", false), {}, action_item("$$HELM_REMOVE", r, "remove", true)};
     repos_.panel.add(std::move(r), cells, items);
     ++total;
   });
@@ -465,9 +470,8 @@ void helm_frontend::rebuild_repos(const dynamic& args) {
   repos_.panel.refresh();
   apply_list_filter(repos_);
   repos_.panel.set_status(
-      total == 0       ? std::string{"No repositories. Add one with the name and URL boxes above."}
-          : total == 1 ? std::string{"1 repository"}
-                       : std::to_string(total) + " repositories",
+      total == 0 ? tr("$$HELM_NO_REPOSITORIES")
+                 : trf(total == 1 ? "$$HELM_N_REPOSITORY" : "$$HELM_N_REPOSITORIES", {std::to_string(total)}),
       true);
 }
 
@@ -486,20 +490,23 @@ void helm_frontend::rebuild_charts(const dynamic& args) {
         make_label(str_of(e, "description"_key), kIdle),
     };
     std::vector<common::menu_item> items = {
-        action_item("Values", c, "chart_values", false),
-        action_item("Readme", c, "chart_readme", false),
+        action_item("$$HELM_VALUES", c, "chart_values", false),
+        action_item("$$HELM_README", c, "chart_readme", false),
         {},
-        action_item("Install", c, "install", true)};
+        action_item("$$HELM_INSTALL", c, "install", true)};
     charts_.panel.add(std::move(c), cells, items);
   });
 
   charts_.panel.refresh();
   const std::string query = str_of(args, "query"_key);
-  std::string status = plural(total, "chart") + (query.empty() ? std::string{} : " matching '" + query + "'");
+  const std::string count = std::to_string(total);
+  std::string status = query.empty()
+      ? trf(total == 1 ? "$$HELM_N_CHART" : "$$HELM_N_CHARTS", {count})
+      : trf(total == 1 ? "$$HELM_N_CHART_MATCHING" : "$$HELM_N_CHARTS_MATCHING", {count, query});
   if (total == 0 && query.empty())
-    status = "No charts. Add a repository in the Repositories window, then Search.";
+    status = tr("$$HELM_NO_CHARTS");
   else if (total > kMaxChartRows)
-    status += " (showing the first " + std::to_string(kMaxChartRows) + "; refine the search)";
+    status += " " + trf("$$HELM_SHOWING_FIRST", {std::to_string(kMaxChartRows)});
   charts_.panel.set_status(status, true);
 }
 
@@ -517,13 +524,14 @@ void helm_frontend::rebuild_history(const dynamic& args) {
         make_label(str_of(e, "chart"_key)),
         make_label(str_of(e, "description"_key)),
     };
-    std::vector<common::menu_item> items = {action_item("Rollback to this revision", rev, "rollback", true)};
+    std::vector<common::menu_item> items = {action_item("$$HELM_ROLLBACK_TO_THIS_REVISION", rev, "rollback", true)};
     history_.panel.add(std::move(rev), cells, items);
     ++total;
   });
 
   history_.panel.refresh();
-  history_.panel.set_status(plural(total, "revision"), true);
+  history_.panel.set_status(
+      trf(total == 1 ? "$$HELM_N_REVISION" : "$$HELM_N_REVISIONS", {std::to_string(total)}), true);
 }
 
 // ── RMI methods ────────────────────────────────────────────────────────────
@@ -561,7 +569,7 @@ dynamic helm_frontend::do_update_details(const dynamic& args) {
 
 dynamic helm_frontend::do_command_result(const dynamic& args) {
   bool ok = false;
-  const std::string text = common::command_result_text(args, ok);
+  const std::string text = common::command_result_text(*this, args, ok);
   const std::string scope = str_of(args, "scope"_key);
   if (scope == "install") {
     install_.busy = false;
@@ -632,14 +640,14 @@ void helm_frontend::open_install_dialog(
         on_click(wish_id_of(e), [this] { request_install_values("chart"); });
       });
       tree.with("vbox.buttons.btn_submit", [&](const auto& e) {
-        e["label"_key] = std::string{upgrade ? "Upgrade" : "Install"};
+        e["label"_key] = tr(upgrade ? "$$HELM_UPGRADE" : "$$HELM_INSTALL");
         on_click(wish_id_of(e), [this] { submit_install(); });
       });
       tree.with("vbox.buttons.btn_cancel", [&](const auto& e) {
         on_click(wish_id_of(e), [this] { close_install_dialog(); });
       });
       if (upgrade)
-        (*tree[""])["title"_key] = "Upgrade release " + ns + "/" + release;
+        (*tree[""])["title"_key] = trf("$$HELM_UPGRADE_RELEASE_TITLE", {ns, release});
     });
   };
 
@@ -658,15 +666,14 @@ void helm_frontend::close_install_dialog() {
 }
 
 void helm_frontend::set_install_status(const std::string& text, bool ok) {
-  common::set_status_text(install_.status_label, text, ok);
+  common::set_status_text(install_.status_label, tr(text), ok);
 }
 
 void helm_frontend::submit_install() {
   if (install_.busy)
     return;
   if (install_.chart.empty() || install_.release.empty()) {
-    set_install_status(
-        install_.chart.empty() ? "Enter the chart to install (for example repo/name)" : "Enter a release name", false);
+    set_install_status(install_.chart.empty() ? "$$HELM_ENTER_CHART_TO_INSTALL" : "$$HELM_ENTER_RELEASE_NAME", false);
     return;
   }
   // helm accepts dots in a release name, but charts put it into Service /
@@ -678,13 +685,12 @@ void helm_frontend::submit_install() {
   if (!install_.upgrade &&
       (name.size() > 53 || name.front() == '-' || name.back() == '-' ||
        !std::all_of(name.begin(), name.end(), label_char))) {
-    set_install_status(
-        "Release names may only contain lowercase letters, digits and '-' (for example my-app)", false);
+    set_install_status("$$HELM_INVALID_RELEASE_NAME", false);
     return;
   }
   install_.busy = true;
   const char* verb = install_.upgrade ? "upgrade" : "install";
-  set_install_status(std::string{"Running helm "} + verb + " ...", true);
+  set_install_status(install_.upgrade ? "$$HELM_RUNNING_UPGRADE" : "$$HELM_RUNNING_INSTALL", true);
 
   dynamic p;
   p["mode"_key] = std::string{verb};
@@ -700,7 +706,7 @@ void helm_frontend::submit_install() {
 
 void helm_frontend::request_install_values(const std::string& source) {
   if (source == "chart" && install_.chart.empty()) {
-    set_install_status("Enter the chart first", false);
+    set_install_status("$$HELM_ENTER_CHART_FIRST", false);
     return;
   }
   dynamic p;
@@ -768,11 +774,10 @@ void helm_frontend::run_row_action(const entry& e, const std::string& action) {
       p["revision"_key] = revision;
       emit("release_action_requested"_key, std::move(p));
     };
-    const std::string where = "'" + e.name + "' in namespace '" + e.ns + "'";
     show_confirm(
-        uninstall ? "Uninstall release " + where + "? Its resources will be deleted."
-                  : "Roll back release " + where + " to " +
-                        (revision.empty() ? std::string{"the previous revision"} : "revision " + revision) + "?",
+        uninstall              ? trf("$$HELM_UNINSTALL_CONFIRM", {e.name, e.ns})
+            : revision.empty() ? trf("$$HELM_ROLLBACK_PREVIOUS_CONFIRM", {e.name, e.ns})
+                               : trf("$$HELM_ROLLBACK_REVISION_CONFIRM", {e.name, e.ns, revision}),
         fire);
     return;
   }
@@ -785,7 +790,7 @@ void helm_frontend::run_row_action(const entry& e, const std::string& action) {
       emit("repo_action_requested"_key, std::move(p));
     };
     if (action == "remove")
-      show_confirm("Remove repository '" + e.name + "'?", fire);
+      show_confirm(trf("$$HELM_REMOVE_REPO_CONFIRM", {e.name}), fire);
     else
       fire();
     return;

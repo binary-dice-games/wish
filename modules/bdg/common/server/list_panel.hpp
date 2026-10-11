@@ -35,6 +35,7 @@ namespace bdg::wish::common {
 /// @brief One item of a row's `...` menu. An empty @p label inserts a
 /// Separator.
 struct menu_item {
+  /// Shown text; a `"$$KEY"` is translated with the owner's tr().
   std::string label;
   std::function<void()> on_click;
   /// The action asks for confirmation: the label gets a trailing "...".
@@ -100,7 +101,7 @@ class table_rows {
       ui_element_ptr button = ui_element_ptr::create("wish"_key, "MenuButton"_key);
       button["label"_key] = std::string{};
       set_icon(button, "more");
-      button["tooltip"_key] = std::string{"Actions"};
+      button["tooltip"_key] = owner.tr("$$COMMON_ACTIONS");
       owner.assign_id(button);
       ids.push_back(wish_id_of(button));
 
@@ -112,7 +113,8 @@ class table_rows {
           owner.assign_id(item);
         } else {
           item = ui_element_ptr::create("wish"_key, "MenuItem"_key);
-          item["label"_key] = it.confirm ? it.label + "..." : it.label;
+          std::string label = owner.tr(it.label);
+          item["label"_key] = it.confirm ? label + "..." : label;
           if (std::string icon = it.icon.empty() ? action_icon(it.label) : it.icon; !icon.empty())
             set_icon(item, icon);
           owner.assign_id(item);
@@ -189,6 +191,7 @@ class list_panel {
       const char* layout_json,
       const std::function<void(ui_tree&)>& wire = {}) {
     root_key_ = root_key;
+    owner_ = &owner;
     ui_element_ptr table;
     owner.build_window(root_key_, layout_json, window_id_, [&](ui_tree& tree) {
       tree.with("vbox.status", [&](const auto& e) { status_label_ = e; });
@@ -220,7 +223,8 @@ class list_panel {
   /// @brief Writes the window's status label (idle grey, or red when not
   /// @p ok). @p first_line_only cuts @p text at its first line break.
   void set_status(const std::string& text, bool ok, bool first_line_only = false) {
-    set_status_text(status_label_, first_line_only ? text.substr(0, text.find('\n')) : text, ok);
+    std::string shown = owner_ ? owner_->tr(text) : text;
+    set_status_text(status_label_, first_line_only ? shown.substr(0, shown.find('\n')) : shown, ok);
   }
 
   std::vector<row>& rows() {
@@ -243,6 +247,7 @@ class list_panel {
   }
 
  private:
+  tool_form* owner_{nullptr};
   std::string root_key_;
   bison::key_t window_id_;
   ui_element_ptr status_label_;

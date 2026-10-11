@@ -282,6 +282,8 @@ The format mirrors the bison object model:
 
 Named children (`"header"`, `"submit"`) use hashed string keys in the bison dynamic map. Numeric children (`"0"`, `"1"`) use numeric indices.
 
+**Translation.** `import_descriptor_*`/`import_json`/`import_yaml` take an optional `translation_map*` (src/i18n/translations.hpp). With one, every string field whose whole value starts with `$$` is replaced by the translation of the rest of the string. This happens while the parsed JSON is turned into `dynamic` fields, never on the raw text, so a translation cannot break the syntax, and detection is a prefix check, not a scan. Client templates use the client's map (`client::set_translations`). Server forms use the session's (`context::translations_for(module_prefix)`), which loads `res/<module>/i18n/<lang>.lang` from the embedded resources with `en.lang` as fallback, for the language set by `set_language` (an RPC on `__WishTemplate`) or `server::set_default_language`. See [docs/i18n.md](docs/i18n.md).
+
 ### `bdg::wish::object_inspector`
 
 `ObjectInspector` (`src/ui/ui_elements/object_inspector.{hpp,cpp}`) is a Unity/Visual-Studio-style property inspector: given a `"target"` object, it reflects over `target`'s registered class (walking the full `PARENT` chain, via bison's attribute system — `DisplayName`, `Description`, `Range`, `Enum`, and five new attributes added alongside it: `Hidden`, `Order`, `ColorField`, `Multiline`, `DropTarget`) to build a `Table` of field rows (name + a type-appropriate editor) plus a description panel below. Full field → widget dispatch table and usage: [docs/object-inspector.md](docs/object-inspector.md).

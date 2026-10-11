@@ -54,6 +54,11 @@ class wish_standalone_session : public standalone, public wish_app_host {
     return app_args_;
   }
 
+  /// @brief The `--lang` code sent to the session (empty means `en`).
+  std::string language() const override {
+    return standalone::language();
+  }
+
   std::future<bison::rmi::proxy::dynamic>
   instantiate(bison::key_t ns, bison::key_t klass, bison::dynamic params = bison::dynamic{}) override {
     return standalone::instantiate(ns, klass, std::move(params));

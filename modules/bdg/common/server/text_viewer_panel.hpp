@@ -35,12 +35,12 @@ class tool_form;
 
 /// @brief Settings for text_viewer_panel::build().
 struct text_viewer_options {
-  std::string title{"Details"};
+  std::string title{"$$COMMON_DETAILS"};
   /// TextEditor highlighting language (`"yaml"`, `"json"`, `"log"`,
   /// `"none"`, ...).
   std::string language{"none"};
   /// The target label's text before anything is shown.
-  std::string placeholder{"(nothing selected)"};
+  std::string placeholder{"$$COMMON_NOTHING_SELECTED"};
   int32_t width{820};
   int32_t height{420};
   /// Keep the editor scrolled to the last line (a log being followed).
@@ -68,7 +68,7 @@ class text_viewer_panel {
       text_viewer_options options = {},
       const std::function<void(ui_tree&)>& wire = {});
 
-  /// @brief Sets the target label's text.
+  /// @brief Sets the target label's text (a `"$$KEY"` is translated).
   void set_title(const std::string& title);
 
   /// @brief Shows @p text in the editor (see the file comment). A write
@@ -94,6 +94,7 @@ class text_viewer_panel {
   }
 
  private:
+  tool_form* owner_{nullptr};
   std::string root_key_;
   std::string file_prefix_; // "<session temp dir>/<form root>_<stem>_"
   bison::key_t window_id_;

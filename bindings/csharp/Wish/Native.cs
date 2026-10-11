@@ -160,6 +160,17 @@ internal static partial class Native
     [LibraryImport(LibName, StringMarshalling = StringMarshalling.Utf8)]
     public static partial int wish_set_style_preset_async(nint client, string preset, out nint outFuture);
 
+    // ── Internationalization ──────────────────────────────────────────────────
+
+    [LibraryImport(LibName, StringMarshalling = StringMarshalling.Utf8)]
+    public static partial int wish_set_translations(nint client, string text, string? fallbackText);
+
+    [LibraryImport(LibName, StringMarshalling = StringMarshalling.Utf8)]
+    public static partial int wish_translate(nint client, string text, out nint outText);
+
+    [LibraryImport(LibName, StringMarshalling = StringMarshalling.Utf8)]
+    public static partial int wish_set_language(nint client, string lang);
+
     // ── Template management ───────────────────────────────────────────────────
 
     [LibraryImport(LibName, StringMarshalling = StringMarshalling.Utf8)]

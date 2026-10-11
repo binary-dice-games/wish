@@ -2,7 +2,9 @@
 /// @file git_repo_source.cpp
 /// @brief Implementation of git_repo_source.
 #include "git_repo_source.hpp"
+
 #include "git_process.hpp"
+#include "src/i18n/translations.hpp"
 
 #include <sstream>
 
@@ -58,7 +60,7 @@ void git_repo_source::push_refs() {
   std::string current_branch = head.ok() ? trim_eol(head.stdout_text) : std::string{};
   if (current_branch.empty() || current_branch == "HEAD") {
     auto sha = run_logged({"rev-parse", "--short", "HEAD"});
-    current_branch = "detached at " + (sha.ok() ? trim_eol(sha.stdout_text) : std::string{});
+    current_branch = make_message("$$GIT_DETACHED_AT", {sha.ok() ? trim_eol(sha.stdout_text) : std::string{}});
   }
   args["current_branch"_key] = current_branch;
 

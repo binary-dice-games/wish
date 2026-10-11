@@ -45,7 +45,7 @@ static constexpr const char* kDialogLayout = R"({
       "type": "VerticalLayout",
       "children": {
         "path_input": {
-          "type": "InputText", "value": "", "hint": "path",
+          "type": "InputText", "value": "", "hint": "$$FILEDLG_PATH",
           "max_length": 1024, "flags": "EnterReturnsTrue", "width": -1.0
         },
         "file_table": {
@@ -56,14 +56,14 @@ static constexpr const char* kDialogLayout = R"({
           "height": -1,
           "headers": true,
           "children": {
-            "col_name": { "type": "TableColumn", "label": "Name",
+            "col_name": { "type": "TableColumn", "label": "$$FILEDLG_NAME",
                           "flags": "WidthFixed", "init_width": 340, "column_id": 0 },
-            "col_type": { "type": "TableColumn", "label": "Type",
+            "col_type": { "type": "TableColumn", "label": "$$FILEDLG_TYPE",
                           "flags": "WidthFixed", "init_width": 80, "column_id": 1 }
           }
         },
         "filename_input": {
-          "type": "InputText", "value": "", "hint": "filename",
+          "type": "InputText", "value": "", "hint": "$$FILEDLG_FILENAME",
           "max_length": 1024, "width": -1.0
         },
         "filter_row": {
@@ -78,8 +78,8 @@ static constexpr const char* kDialogLayout = R"({
           "spacing": 8.0,
           "children": {
             "btn_row_spring": { "type": "Spring" },
-            "btn_open":   { "type": "Button", "label": "Open" },
-            "btn_cancel": { "type": "Button", "label": "Cancel" }
+            "btn_open":   { "type": "Button", "label": "$$FILEDLG_OPEN" },
+            "btn_cancel": { "type": "Button", "label": "$$MSGBOX_CANCEL" }
           }
         }
       }
@@ -97,15 +97,15 @@ void file_dialog::on_init() {
   // See internal_root_key_'s doc comment: ordinally-assigned, not pointer-derived.
   internal_root_key_ = next_available_key("__form_file_dialog_");
 
-  auto tree = import_json(kDialogLayout);
+  auto tree = import_json(kDialogLayout, translations());
 
   // Stamp form-field values onto the imported tree.
   auto* title_f = findField<std::string>("title"_key);
-  (*tree[""])["title"_key] = title_f ? *title_f : std::string{"Open File"};
+  (*tree[""])["title"_key] = tr(title_f ? *title_f : std::string{"$$FILEDLG_OPEN_FILE"});
 
   auto* confirm_f = findField<std::string>("confirm_label"_key);
   tree.with(
-      "vbox.btn_row.btn_open", [&](const auto& e) { e["label"_key] = confirm_f ? *confirm_f : std::string{"Open"}; });
+      "vbox.btn_row.btn_open", [&](const auto& e) { e["label"_key] = tr(confirm_f ? *confirm_f : std::string{"$$FILEDLG_OPEN"}); });
 
   // Assign each imported element a bison RMI ID so the renderer can emit
   // events with the correct object ID. Mirrors the ui_template pattern.
@@ -211,7 +211,7 @@ bison::dynamic file_dialog::on_set(const bison::dynamic& patch) {
     rebuild_file_rows(*cached_files_);
   }
   if (auto* v = patch.findField<std::string>("confirm_label"_key); v && btn_open_ptr_)
-    btn_open_ptr_["label"_key] = *v;
+    btn_open_ptr_["label"_key] = tr(*v);
   return patch;
 }
 
@@ -486,9 +486,9 @@ void register_file_dialog() {
   proto->addField(
       "title"_key,
       field{
-          std::string{"Open File"},
+          std::string{"$$FILEDLG_OPEN_FILE"},
           attr<DisplayName>("Title"),
-          attr<Description>("Dialog window title."),
+          attr<Description>("Dialog window title; a \"$$KEY\" is translated (see docs/i18n.md)."),
           attr<Category>("Appearance")});
 
   proto->addField(
@@ -522,9 +522,9 @@ void register_file_dialog() {
   proto->addField(
       "confirm_label"_key,
       field{
-          std::string{"Open"},
+          std::string{"$$FILEDLG_OPEN"},
           attr<DisplayName>("Confirm Label"),
-          attr<Description>("Label on the confirm button (e.g. \"Open\" or \"Save\")."),
+          attr<Description>("Label on the confirm button (e.g. \"Open\" or \"Save\"); a \"$$KEY\" is translated."),
           attr<Category>("Appearance")});
 
   proto->addField(

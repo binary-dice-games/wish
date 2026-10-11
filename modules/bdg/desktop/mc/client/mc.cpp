@@ -22,6 +22,7 @@
 
 #include "src/client/app_registry.hpp"
 #include "src/client/wish_app_host.hpp"
+#include "src/i18n/translations.hpp"
 
 #include "src/bison/bison.hpp"
 
@@ -240,11 +241,13 @@ struct transfer_cancelled : std::runtime_error {
 
 // "Uploading notes.txt" / "Downloading notes.txt (2 of 5)" -- the progress
 // dialog's caption for one file of a batch.
-std::string transfer_caption(const char* verb, const std::string& name, size_t index, size_t count) {
-  std::string caption = std::string{verb} + " " + name;
+// @p one_key / @p many_key: "Uploading {0}" / "Uploading {0} ({1} of {2})"
+// keys; the progress dialog translates the message (see make_message()).
+std::string transfer_caption(
+    const char* one_key, const char* many_key, const std::string& name, size_t index, size_t count) {
   if (count > 1)
-    caption += " (" + std::to_string(index + 1) + " of " + std::to_string(count) + ")";
-  return caption;
+    return make_message(many_key, {name, std::to_string(index + 1), std::to_string(count)});
+  return make_message(one_key, {name});
 }
 
 // The progress callback shared by uploads and downloads: reports the bytes
@@ -261,11 +264,11 @@ transfer_progress_callback transfer_reporter(common::task_progress& progress) {
 
 // Builds the error a failed batch leaves in the progress dialog: one line per
 // file that failed.
-std::string batch_error(const char* verb, const std::vector<std::string>& failures) {
-  std::string error = std::string{verb} + " failed:";
+std::string batch_error(const char* failed_key, const std::vector<std::string>& failures) {
+  std::string list;
   for (auto& f : failures)
-    error += "\n" + f;
-  return error;
+    list += "\n" + f;
+  return make_message(failed_key, {list});
 }
 
 // Instantiates the built-in MessageBox form (see src/ui/forms/message_box.hpp)
@@ -277,7 +280,7 @@ std::string batch_error(const char* verb, const std::vector<std::string>& failur
 // taking the not-yet-answered dialog down with it.
 void confirm_overwrite(wish_app_host& s, const std::string& message, std::function<void()> on_yes) {
   dynamic params;
-  params["title"_key] = std::string{"Confirm Overwrite"};
+  params["title"_key] = std::string{"$$MC_CONFIRM_OVERWRITE"};
   params["message"_key] = message;
   params["icon"_key] = std::string{"question"};
   params["buttons"_key] = std::string{"yes_no"};
@@ -298,7 +301,7 @@ void run_mc(wish_app_host& s) {
   // Every handler below that touches the filesystem or moves bytes runs as a
   // job on this worker's thread, one at a time; long ones get the shared
   // modal progress dialog (modules/bdg/common/command_worker.hpp).
-  auto worker = std::make_shared<common::command_worker>(s, "File Explorer");
+  auto worker = std::make_shared<common::command_worker>(s, "$$MC_FILE_EXPLORER");
   worker->start();
 
   // Server asks to browse a different local directory (row activated in the
@@ -329,7 +332,7 @@ void run_mc(wish_app_host& s) {
     std::error_code ec;
     fs::rename(*cur_dir / old_name, *cur_dir / new_name, ec);
     dynamic patch;
-    patch["status"_key] = ec ? std::string{"Rename failed: "} + ec.message() : std::string{"Renamed."};
+    patch["status"_key] = ec ? make_message("$$MC_RENAME_FAILED", {ec.message()}) : std::string{"$$MC_RENAMED"};
     explorer->set(std::move(patch)).get();
     report_local_listing(explorer, cur_dir);
   });
@@ -349,11 +352,11 @@ void run_mc(wish_app_host& s) {
                                 std::string local_path_str, std::string sandbox_path_str) {
     worker->post([&s, worker, explorer, names = std::move(names), local_path_str, sandbox_path_str] {
       std::vector<std::string> failures;
-      worker->run_task("Uploading", [&](common::task_progress& progress) {
+      worker->run_task("$$MC_UPLOADING", [&](common::task_progress& progress) {
         for (size_t i = 0; i < names.size() && !progress.cancelled(); ++i) {
           const std::string& name = names[i];
           const std::string remote_name = sandbox_path_str.empty() ? name : sandbox_path_str + "/" + name;
-          progress.set_caption(transfer_caption("Uploading", name, i, names.size()));
+          progress.set_caption(transfer_caption("$$MC_UPLOADING_FILE", "$$MC_UPLOADING_FILE_N_OF", name, i, names.size()));
           try {
             auto data = read_local_file(fs::path(local_path_str) / name);
             s.upload_file(remote_name, data, transfer_reporter(progress)).get();
@@ -367,7 +370,7 @@ void run_mc(wish_app_host& s) {
         }
       });
       if (!failures.empty())
-        worker->fail(batch_error("Upload", failures), /*always_show=*/true);
+        worker->fail(batch_error("$$MC_UPLOAD_FAILED", failures), /*always_show=*/true);
       call_with_retry(explorer, "refresh_sandbox"_key, dynamic{});
     });
   };
@@ -381,11 +384,11 @@ void run_mc(wish_app_host& s) {
                                   std::string sandbox_path_str) {
     worker->post([&s, worker, explorer, cur_dir, names = std::move(names), sandbox_path_str] {
       std::vector<std::string> failures;
-      worker->run_task("Downloading", [&](common::task_progress& progress) {
+      worker->run_task("$$MC_DOWNLOADING", [&](common::task_progress& progress) {
         for (size_t i = 0; i < names.size() && !progress.cancelled(); ++i) {
           const std::string& name = names[i];
           const std::string remote_name = sandbox_path_str.empty() ? name : sandbox_path_str + "/" + name;
-          progress.set_caption(transfer_caption("Downloading", name, i, names.size()));
+          progress.set_caption(transfer_caption("$$MC_DOWNLOADING_FILE", "$$MC_DOWNLOADING_FILE_N_OF", name, i, names.size()));
           try {
             auto data = s.download_file(remote_name, transfer_reporter(progress)).get();
             write_local_file(*cur_dir / name, data);
@@ -396,7 +399,7 @@ void run_mc(wish_app_host& s) {
         }
       });
       if (!failures.empty())
-        worker->fail(batch_error("Download", failures), /*always_show=*/true);
+        worker->fail(batch_error("$$MC_DOWNLOAD_FAILED", failures), /*always_show=*/true);
       report_local_listing(explorer, cur_dir);
     });
   };
@@ -416,8 +419,8 @@ void run_mc(wish_app_host& s) {
     auto local_path_str = payload.as<std::string>("local_path"_key);
     auto sandbox_path_str = payload.as<std::string>("sandbox_path"_key);
     std::string message = names.size() == 1
-        ? "\"" + names[0] + "\" already exists in the sandbox. Overwrite it?"
-        : std::to_string(names.size()) + " files already exist in the sandbox. Overwrite them?";
+        ? make_message("$$MC_EXISTS_IN_SANDBOX", {names[0]})
+        : make_message("$$MC_N_EXIST_IN_SANDBOX", {std::to_string(names.size())});
     confirm_overwrite(s, message, [explorer, do_upload, names, local_path_str, sandbox_path_str]() {
       do_upload(explorer, names, local_path_str, sandbox_path_str);
     });
@@ -435,8 +438,8 @@ void run_mc(wish_app_host& s) {
     auto names = read_names(payload);
     auto sandbox_path_str = payload.as<std::string>("sandbox_path"_key);
     std::string message = names.size() == 1
-        ? "\"" + names[0] + "\" already exists locally. Overwrite it?"
-        : std::to_string(names.size()) + " files already exist locally. Overwrite them?";
+        ? make_message("$$MC_EXISTS_LOCALLY", {names[0]})
+        : make_message("$$MC_N_EXIST_LOCALLY", {std::to_string(names.size())});
     confirm_overwrite(s, message, [explorer, cur_dir, do_download, names, sandbox_path_str]() {
       do_download(explorer, cur_dir, names, sandbox_path_str);
     });

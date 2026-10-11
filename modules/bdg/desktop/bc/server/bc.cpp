@@ -34,7 +34,7 @@ constexpr const char* kOn = "\xE2\x80\xA2 "; // "on" marker of toggle keys
 constexpr double kPi = 3.14159265358979323846;
 constexpr double kE = 2.71828182845904523536;
 
-constexpr const char* kModeNames[] = {"Standard", "Scientific", "Programmer"};
+constexpr const char* kModeNames[] = {"$$BC_STANDARD", "$$BC_SCIENTIFIC", "$$BC_PROGRAMMER"};
 constexpr const char* kKeypadIds[] = {"std", "sci", "prog"};
 constexpr int kRadixes[] = {16, 10, 8, 2};
 constexpr const char* kRadixNames[] = {"HEX", "DEC", "OCT", "BIN"};
@@ -100,7 +100,9 @@ const char* word_name(calc::word_size w) {
 
 // ── bc ────────────────────────────────────────────────────────────────────────
 
-bc::bc(dynamic&& base) : tool_form(std::move(base)) {}
+bc::bc(dynamic&& base) : tool_form(std::move(base)) {
+  i18n_prefix_ = "bdg/desktop/bc";
+}
 
 std::vector<bc::keypad_def> bc::make_keypads() {
   using calc::binary_op;
@@ -391,23 +393,23 @@ int bc::keypad_height(const keypad_def& pad) {
 }
 
 std::string bc::make_layout(const std::vector<keypad_def>& pads) const {
-  layout_node window = node("Window", "\"title\":\"Calculator\",\"flags\":\"NoResize|NoDocking\",\"closable\":true");
+  layout_node window = node("Window", "\"title\":\"$$BC_CALCULATOR\",\"flags\":\"NoResize|NoDocking\",\"closable\":true");
 
   // ── Menu bar ──
   layout_node& menu = window.add("menu", node("MenuBar"));
-  layout_node& view = menu.add("view", node("Menu", labelled("View")));
+  layout_node& view = menu.add("view", node("Menu", labelled("$$BC_VIEW")));
   for (int m = 0; m < 3; ++m)
     view.add(kKeypadIds[m], node("MenuItem", labelled(kModeNames[m])));
   view.add("sep1", node("Separator"));
-  view.add("deg", node("MenuItem", labelled("Degrees")));
-  view.add("rad", node("MenuItem", labelled("Radians")));
-  view.add("grad", node("MenuItem", labelled("Gradians")));
+  view.add("deg", node("MenuItem", labelled("$$BC_DEGREES")));
+  view.add("rad", node("MenuItem", labelled("$$BC_RADIANS")));
+  view.add("grad", node("MenuItem", labelled("$$BC_GRADIANS")));
   view.add("sep2", node("Separator"));
-  view.add("history", node("MenuItem", labelled("History", icon_field("history"))));
-  view.add("grouping", node("MenuItem", labelled("Digit grouping")));
-  layout_node& edit = menu.add("edit", node("Menu", labelled("Edit")));
-  edit.add("copy", node("MenuItem", labelled("Copy", icon_field("copy"))));
-  edit.add("clear_history", node("MenuItem", labelled("Clear history", icon_field("delete"))));
+  view.add("history", node("MenuItem", labelled("$$BC_HISTORY", icon_field("history"))));
+  view.add("grouping", node("MenuItem", labelled("$$BC_DIGIT_GROUPING")));
+  layout_node& edit = menu.add("edit", node("Menu", labelled("$$BC_EDIT")));
+  edit.add("copy", node("MenuItem", labelled("$$BC_COPY", icon_field("copy"))));
+  edit.add("clear_history", node("MenuItem", labelled("$$BC_CLEAR_HISTORY", icon_field("delete"))));
 
   // ── Calculator column ──
   layout_node& body = window.add("body", node("HorizontalLayout", "\"spacing\":" + std::to_string(kHistoryGap)));
@@ -453,8 +455,8 @@ std::string bc::make_layout(const std::vector<keypad_def>& pads) const {
 
   // ── History column ──
   layout_node& history = body.add("history", node("VerticalLayout", "\"spacing\":4,\"visible\":false"));
-  history.add("title", node("Label", "\"text\":\"History\",\"font_size\":18"));
-  history.add("empty", dim_label("There's no history yet", 14));
+  history.add("title", node("Label", "\"text\":\"$$BC_HISTORY\",\"font_size\":18"));
+  history.add("empty", dim_label("$$BC_NO_HISTORY", 14));
   for (std::size_t i = 0; i < kHistorySlots; ++i)
     history.add(
         "h" + std::to_string(i),
@@ -467,7 +469,7 @@ std::string bc::make_layout(const std::vector<keypad_def>& pads) const {
       "clear",
       node(
           "Button",
-          labelled("Clear history", "\"width\":" + std::to_string(kHistoryWidth) + ",\"height\":26,\"font_size\":15")));
+          labelled("$$BC_CLEAR_HISTORY", "\"width\":" + std::to_string(kHistoryWidth) + ",\"height\":26,\"font_size\":15")));
 
   return to_json(window);
 }
@@ -628,12 +630,26 @@ void bc::fit_window() {
   (*window_)["height"_key] = int32_t{height};
 }
 
+std::string bc::translate_error(const std::string& display) {
+  // calc_engine reports its errors as English display text.
+  static const std::pair<const char*, const char*> kErrors[] = {
+      {"Cannot divide by zero", "$$BC_CANNOT_DIVIDE_BY_ZERO"},
+      {"Result is undefined", "$$BC_RESULT_IS_UNDEFINED"},
+      {"Invalid input", "$$BC_INVALID_INPUT"},
+  };
+  for (const auto& [text, key] : kErrors) {
+    if (display == text)
+      return tr(key);
+  }
+  return display;
+}
+
 void bc::refresh() {
   const auto mode = engine_.get_mode();
   const bool programmer = mode == calc::mode::programmer;
 
   if (display_)
-    (*display_)["text"_key] = engine_.display();
+    (*display_)["text"_key] = translate_error(engine_.display());
   if (expression_) {
     std::string expr = engine_.expression();
     (*expression_)["text"_key] = expr.empty() ? std::string{" "} : expr;

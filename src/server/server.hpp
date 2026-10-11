@@ -154,6 +154,18 @@ class server : public bison::rmi::server {
   }
 
   /**
+   * @brief Set the UI language every new session starts with (e.g. `"es"`).
+   *
+   * Server-side forms load their `res/<module>/i18n/<lang>.lang` translation
+   * files for this language until the client calls `set_language`. Empty
+   * (the default) selects `en`. Must be called before `start()`.
+   *
+   * @param lang Language code: letters, digits, `-` and `_` only.
+   * @throws std::invalid_argument for any other character.
+   */
+  void set_default_language(std::string lang);
+
+  /**
    * @brief Enable persistent, identity-keyed session sandbox directories.
    *
    * When set, and a connection both supplies a non-empty identity (via
@@ -290,6 +302,7 @@ class server : public bison::rmi::server {
   bool allow_absolute_paths_{false};
   bool allow_url_fetch_{false};
   std::string default_theme_{"wish"};
+  std::string default_language_;
   // Empty (default) disables persistent sandbox directories entirely; see
   // set_persistent_sandbox_root().
   std::filesystem::path persistent_sandbox_root_;

@@ -201,6 +201,47 @@ class Client:
         )
         return Future(out.value)
 
+    # ── Internationalization ─────────────────────────────────────────────────
+
+    def set_translations(self, text: str, fallback: Optional[str] = None) -> None:
+        """Set the translations applied by register_template().
+
+        Template string values of the form "$$KEY" (the whole value) are
+        replaced by KEY's translation. ``text`` and ``fallback`` use the
+        translation file format: one ``KEY = value`` per line, ``#`` comments.
+        A key found in neither shows as the bare KEY.
+        """
+        _check(
+            self._lib.wish_set_translations(
+                self._handle, text.encode("utf-8"), fallback.encode("utf-8") if fallback is not None else None
+            ),
+            "set_translations",
+            self.last_error,
+        )
+
+    def load_translations(self, path: str, fallback_path: Optional[str] = None) -> None:
+        """Read translation files (e.g. ``es.lang`` and ``en.lang``) and call set_translations()."""
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+        fallback = None
+        if fallback_path is not None:
+            with open(fallback_path, encoding="utf-8") as f:
+                fallback = f.read()
+        self.set_translations(text, fallback)
+
+    def translate(self, text: str) -> str:
+        """Translate "$$KEY" with the current translations; other strings are returned unchanged."""
+        out = ctypes.c_char_p()
+        _check(self._lib.wish_translate(self._handle, text.encode("utf-8"), ctypes.byref(out)), "translate", self.last_error)
+        try:
+            return out.value.decode("utf-8")
+        finally:
+            self._lib.bison_free_string(out)
+
+    def set_language(self, lang: str) -> None:
+        """Set this session's UI language on the server (e.g. "es"), used by server-side tools."""
+        _check(self._lib.wish_set_language(self._handle, lang.encode()), "set_language", self.last_error)
+
     # ── Template management ──────────────────────────────────────────────────
 
     def register_template(self, name: str, descriptor: str) -> None:

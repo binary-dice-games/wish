@@ -1,0 +1,21 @@
+# tail -- Spanish.
+TAIL_TAIL = Tail
+TAIL_TITLE_FILES = Tail - {0}
+TAIL_LOG = Registro
+TAIL_ALL = Todo
+TAIL_COL_TIME = Hora
+TAIL_COL_LEVEL = Nivel
+TAIL_COL_TAG = Etiqueta
+TAIL_COL_SOURCE = Origen
+TAIL_COL_MESSAGE = Mensaje
+TAIL_CONTROLS = Controles
+TAIL_FILTER = Filtro (regex)
+TAIL_FILTER_HINT = p. ej. error|timeout
+TAIL_LINES = Líneas
+TAIL_FOLLOW = Seguir
+TAIL_CLEAR_ALL = Borrar todo
+TAIL_NO_LINES = 0 líneas
+TAIL_LINE = {0} línea
+TAIL_LINES_COUNT = {0} líneas
+TAIL_FILTER_STATUS = filtro: /{0}/
+TAIL_INVALID_REGEX = Expresión de filtro no válida: {0}

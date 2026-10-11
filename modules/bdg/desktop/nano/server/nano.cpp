@@ -220,7 +220,7 @@ std::string read_file(const std::string& full_path) {
 
 static constexpr const char* kToolbarLayout = R"({
   "type": "Window",
-  "title": "Toolbar",
+  "title": "$$NANO_TOOLBAR",
   "width": 720, "height": 60,
   "closable": true,
   "children": {
@@ -228,11 +228,11 @@ static constexpr const char* kToolbarLayout = R"({
       "type": "HorizontalLayout",
       "spacing": 8.0,
       "children": {
-        "btn_open": { "type": "Button", "label": "Open", "icon": "res/icons/folder_open.png" },
-        "btn_new":  { "type": "Button", "label": "New", "icon": "res/icons/add.png" },
-        "btn_save": { "type": "Button", "label": "Save", "icon": "res/icons/save.png" },
-        "btn_find": { "type": "Button", "label": "Find", "icon": "res/icons/search.png" },
-        "current_label": { "type": "Label", "text": "No file open" }
+        "btn_open": { "type": "Button", "label": "$$NANO_OPEN", "icon": "res/icons/folder_open.png" },
+        "btn_new":  { "type": "Button", "label": "$$NANO_NEW", "icon": "res/icons/add.png" },
+        "btn_save": { "type": "Button", "label": "$$NANO_SAVE", "icon": "res/icons/save.png" },
+        "btn_find": { "type": "Button", "label": "$$NANO_FIND", "icon": "res/icons/search.png" },
+        "current_label": { "type": "Label", "text": "$$NANO_NO_FILE_OPEN" }
       }
     }
   }
@@ -253,7 +253,7 @@ static constexpr const char* kDocumentLayout = R"({
     "vbox": {
       "type": "VerticalLayout",
       "children": {
-        "lang": { "type": "Combo", "label": "Language", "width": 150 },
+        "lang": { "type": "Combo", "label": "$$NANO_LANGUAGE", "width": 150 },
         "editor": { "type": "TextEditor", "width": 0, "height": -1 }
       }
     }
@@ -271,7 +271,7 @@ static constexpr const char* kDocumentLayout = R"({
 // header and summary pinned.
 static constexpr const char* kSearchLayout = R"json({
   "type": "Window",
-  "title": "Search",
+  "title": "$$NANO_SEARCH",
   "width": 720, "height": 300,
   "closable": true,
   "children": {
@@ -292,26 +292,26 @@ static constexpr const char* kSearchLayout = R"json({
                   "type": "HorizontalLayout",
                   "spacing": 6.0,
                   "children": {
-                    "find_label": { "type": "Label", "text": "Find what:" },
-                    "find_input": { "type": "InputText", "value": "", "hint": "text or regular expression", "width": -1 }
+                    "find_label": { "type": "Label", "text": "$$NANO_FIND_WHAT" },
+                    "find_input": { "type": "InputText", "value": "", "hint": "$$NANO_TEXT_OR_REGULAR_EXPRESSION", "width": -1 }
                   }
                 },
                 "checks": {
                   "type": "HorizontalLayout",
                   "spacing": 16.0,
                   "children": {
-                    "chk_whole_word": { "type": "Checkbox", "label": "Match whole word only", "value": false },
-                    "chk_match_case": { "type": "Checkbox", "label": "Match case", "value": false }
+                    "chk_whole_word": { "type": "Checkbox", "label": "$$NANO_MATCH_WHOLE_WORD_ONLY", "value": false },
+                    "chk_match_case": { "type": "Checkbox", "label": "$$NANO_MATCH_CASE", "value": false }
                   }
                 },
                 "mode_row": {
                   "type": "HorizontalLayout",
                   "spacing": 10.0,
                   "children": {
-                    "mode_label": { "type": "Label", "text": "Search Mode:" },
-                    "radio_normal": { "type": "RadioButton", "label": "Normal", "active": true },
-                    "radio_extended": { "type": "RadioButton", "label": "Extended (\\n, \\r, \\t, \\0, \\x...)", "active": false },
-                    "radio_regex": { "type": "RadioButton", "label": "Regular expression", "active": false }
+                    "mode_label": { "type": "Label", "text": "$$NANO_SEARCH_MODE" },
+                    "radio_normal": { "type": "RadioButton", "label": "$$NANO_NORMAL", "active": true },
+                    "radio_extended": { "type": "RadioButton", "label": "$$NANO_EXTENDED_MODE", "active": false },
+                    "radio_regex": { "type": "RadioButton", "label": "$$NANO_REGULAR_EXPRESSION", "active": false }
                   }
                 }
               }
@@ -321,14 +321,14 @@ static constexpr const char* kSearchLayout = R"json({
               "width": 300,
               "spacing": 4.0,
               "children": {
-                "btn_find_current": { "type": "Button", "label": "Find All in Current Document", "width": -1 },
-                "btn_find_all": { "type": "Button", "label": "Find All in All Opened Documents", "width": -1 },
+                "btn_find_current": { "type": "Button", "label": "$$NANO_FIND_ALL_IN_CURRENT_DOCUMENT", "width": -1 },
+                "btn_find_all": { "type": "Button", "label": "$$NANO_FIND_ALL_IN_ALL_OPENED_DOCUMENTS", "width": -1 },
                 "count_row": {
                   "type": "HorizontalLayout",
                   "spacing": 4.0,
                   "children": {
-                    "btn_count": { "type": "Button", "label": "Count", "icon": "res/icons/info.png", "width": -1 },
-                    "btn_clear": { "type": "Button", "label": "Clear Results", "icon": "res/icons/delete.png", "width": -1 }
+                    "btn_count": { "type": "Button", "label": "$$NANO_COUNT", "icon": "res/icons/info.png", "width": -1 },
+                    "btn_clear": { "type": "Button", "label": "$$NANO_CLEAR_RESULTS", "icon": "res/icons/delete.png", "width": -1 }
                   }
                 }
               }
@@ -340,9 +340,9 @@ static constexpr const char* kSearchLayout = R"json({
           "type": "Table", "id": "##nano_results", "columns": 3, "headers": true,
           "flags": "Resizable|RowBg|Borders|ScrollY", "height": -1,
           "children": {
-            "col_file": { "type": "TableColumn", "label": "File", "flags": "WidthFixed", "init_width": 160 },
-            "col_line": { "type": "TableColumn", "label": "Line", "flags": "WidthFixed", "init_width": 60 },
-            "col_text": { "type": "TableColumn", "label": "Text", "flags": "WidthStretch" }
+            "col_file": { "type": "TableColumn", "label": "$$NANO_FILE", "flags": "WidthFixed", "init_width": 160 },
+            "col_line": { "type": "TableColumn", "label": "$$NANO_LINE", "flags": "WidthFixed", "init_width": 60 },
+            "col_text": { "type": "TableColumn", "label": "$$NANO_TEXT", "flags": "WidthStretch" }
           }
         }
       }
@@ -352,7 +352,9 @@ static constexpr const char* kSearchLayout = R"json({
 
 // ── nano ───────────────────────────────────────────────────────────────────
 
-nano::nano(dynamic&& base) : tool_form(std::move(base)) {}
+nano::nano(dynamic&& base) : tool_form(std::move(base)) {
+  i18n_prefix_ = "bdg/desktop/nano";
+}
 
 nano::~nano() {
   remove_panel_objects();
@@ -364,7 +366,7 @@ void nano::on_init() {
   search_root_key_ = internal_root_key_ + "_search";
 
   auto* title_f = findField<std::string>("title"_key);
-  const std::string title = title_f ? *title_f : std::string{"Nano"};
+  const std::string title = tr(title_f ? *title_f : std::string{"$$NANO_NANO"});
 
   build_window(internal_root_key_, kToolbarLayout, window_id_, [&](ui_tree& tree) {
     tree.with("toolbar.btn_open", [&](const auto& e) { btn_open_id_ = wish_id_of(e); });
@@ -529,7 +531,7 @@ void nano::set_current(int index) {
   current_index_ = index >= 0 && static_cast<size_t>(index) < open_files_.size() ? index : -1;
   if (current_label_ptr_)
     current_label_ptr_["text"_key] =
-        current_index_ < 0 ? std::string{"No file open"} : "Current: " + open_files_[current_index_].title;
+        current_index_ < 0 ? tr("$$NANO_NO_FILE_OPEN") : trf("$$NANO_CURRENT", {open_files_[current_index_].title});
 }
 
 void nano::focus_file(size_t index) {
@@ -598,15 +600,15 @@ int nano::run_search(bool all_files, bool count_only) {
       mode_ != search_mode::regex && chk_whole_word_ptr_ && chk_whole_word_ptr_->get_as<bool>("value"_key, false);
 
   if (typed.empty()) {
-    set_summary("Type something to find.");
+    set_summary(tr("$$NANO_TYPE_SOMETHING"));
     return 0;
   }
   if (open_files_.empty()) {
-    set_summary("No file open.");
+    set_summary(tr("$$NANO_NO_FILE_OPEN_DOT"));
     return 0;
   }
   if (!all_files && current_index_ < 0) {
-    set_summary("No current document.");
+    set_summary(tr("$$NANO_NO_CURRENT_DOCUMENT"));
     return 0;
   }
 
@@ -619,7 +621,7 @@ int nano::run_search(bool all_files, bool count_only) {
         flags |= std::regex::icase;
       re.emplace(typed, flags);
     } catch (const std::regex_error& e) {
-      set_summary(std::string{"Invalid regular expression: "} + e.what());
+      set_summary(trf("$$NANO_INVALID_REGEX", {e.what()}));
       return 0;
     }
   } else if (mode_ == search_mode::extended) {
@@ -675,23 +677,25 @@ int nano::run_search(bool all_files, bool count_only) {
     }
   }
 
-  std::ostringstream summary;
   if (count_only) {
-    summary << "Count: " << total_hits << (total_hits == 1 ? " match" : " matches") << " in \""
-            << open_files_[static_cast<size_t>(current_index_)].title << "\"";
-    set_summary(summary.str());
+    set_summary(trf(
+        total_hits == 1 ? "$$NANO_COUNT_ONE_MATCH" : "$$NANO_COUNT_N_MATCHES",
+        {std::to_string(total_hits), open_files_[static_cast<size_t>(current_index_)].title}));
     return total_hits;
   }
 
   search_hits_ = std::move(hits);
   if (search_hits_.size() > kMaxResultRows)
     search_hits_.resize(kMaxResultRows);
-  summary << "Search \"" << typed << "\" (" << total_hits << (total_hits == 1 ? " hit" : " hits") << " in "
-          << files_with_hits << (files_with_hits == 1 ? " file" : " files") << " of " << targets.size()
-          << " searched)";
+  std::string summary = trf(
+      "$$NANO_SEARCH_SUMMARY",
+      {typed,
+       trf(total_hits == 1 ? "$$NANO_N_HIT" : "$$NANO_N_HITS", {std::to_string(total_hits)}),
+       trf(files_with_hits == 1 ? "$$NANO_N_FILE" : "$$NANO_N_FILES", {std::to_string(files_with_hits)}),
+       std::to_string(targets.size())});
   if (search_hits_.size() == kMaxResultRows)
-    summary << " -- showing the first " << kMaxResultRows << " lines";
-  set_summary(summary.str());
+    summary += " " + trf("$$NANO_SHOWING_FIRST_LINES", {std::to_string(kMaxResultRows)});
+  set_summary(summary);
   fill_results_table();
   return total_hits;
 }
@@ -943,7 +947,7 @@ void register_nano() {
   proto->addField(
       "title"_key,
       field{
-          std::string{"Nano"},
+          std::string{"$$NANO_NANO"},
           attr<DisplayName>("Title"),
           attr<Description>("Title of the editor's dockable tile (its nested dockspace)."),
           attr<Category>("Appearance")});

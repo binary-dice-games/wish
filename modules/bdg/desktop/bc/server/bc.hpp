@@ -69,6 +69,8 @@ class bc : public common::tool_form {
   std::string make_layout(const std::vector<keypad_def>& pads) const;
   void set_mode(calc::mode m);
   void refresh();
+  /// calc_engine error text -> its translation; other text unchanged.
+  std::string translate_error(const std::string& display);
   /// Sizes the window to the active keypad (plus the history panel).
   void fit_window();
 

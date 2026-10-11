@@ -287,6 +287,8 @@ add_library(wish_client STATIC
   src/client/user_store_rpc.hpp
   src/ui/ui_descriptor.hpp
   src/ui/ui_descriptor.cpp
+  src/i18n/translations.hpp
+  src/i18n/translations.cpp
 )
 set_target_properties(wish_client PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(wish_client

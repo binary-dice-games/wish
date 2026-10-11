@@ -6,9 +6,12 @@
 #pragma once
 
 #include <client/wish_app_host.hpp>
+#include <i18n/translations.hpp>
 
 #include "src/rmi/client/client.hpp"
 #include "src/rmi/client/proxy.hpp"
+
+#include "src/bison/bison_sync.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -19,6 +22,7 @@
 #include <optional>
 #include <ostream>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -113,6 +117,9 @@ class client : public bison::rmi::client {
    * `register_template(name, ...)`, for callers who don't need to build or
    * inspect the intermediate `bison::dynamic` tree themselves.
    *
+   * String values of the form `"$$KEY"` are replaced from the map set with
+   * `set_translations()` (see src/i18n/translations.hpp).
+   *
    * @param name Template name key.
    * @param json UTF-8 JSON text representing a wish UI hierarchy.
    * @throws std::runtime_error on JSON parse error.
@@ -131,6 +138,45 @@ class client : public bison::rmi::client {
    * @see register_template_from_json
    */
   std::future<void> register_template_from_yaml(bison::key_t name, const std::string& yaml);
+
+  /**
+   * @brief Set the translations applied by `register_template_from_json`/
+   *        `register_template_from_yaml` and `translate()`.
+   *
+   * Thread-safe. Templates registered earlier keep their text.
+   *
+   * @param map  Key -> text map, usually `parse_translations()` of a
+   *             `<lang>.lang` file chained to an `en.lang` fallback.
+   */
+  void set_translations(translation_map map);
+
+  /// @brief The current translations (never null; empty by default).
+  std::shared_ptr<const translation_map> translations() const;
+
+  /**
+   * @brief Translate one string with the current translations.
+   * @return The translation when @p text is `"$$KEY"`; @p text otherwise.
+   */
+  std::string translate(std::string_view text) const;
+
+  /**
+   * @brief Set this session's UI language on the server (e.g. `"es"`).
+   *
+   * Server-side forms and tools then load their translation files for that
+   * language (`res/<module>/i18n/<lang>.lang`). Affects UI built after the
+   * call. Client-side templates are translated with `set_translations()`.
+   *
+   * One-way call (like `set_style_preset`), so it is safe from event
+   * callbacks.
+   *
+   * @param lang  Language code, e.g. `"es"`; empty selects `en`.
+   * @throws std::invalid_argument (immediately, not from the future) if
+   *         @p lang has characters other than letters, digits, `-` and `_`.
+   */
+  std::future<void> set_language(const std::string& lang);
+
+  /// @brief The code last passed to `set_language()` (empty if never set).
+  std::string language() const;
 
   /**
    * @brief Instantiate a previously registered template.
@@ -510,6 +556,11 @@ class client : public bison::rmi::client {
 
   // Set via set_on_disconnected(); invoked from on_disconnect().
   std::function<void()> on_disconnected_;
+
+  // Applied by register_template_from_json/yaml; see set_translations().
+  bison::synchronized<std::shared_ptr<const translation_map>> translations_{std::make_shared<translation_map>()};
+  // Last code sent by set_language().
+  bison::synchronized<std::string> language_;
 };
 
 } // namespace bdg::wish

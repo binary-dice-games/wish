@@ -293,7 +293,7 @@ class mc : public common::tool_form {
 
   /// @brief Formats the "Selected: ..." label text for a panel's current
   /// multi-selection: "(none)", the single name, or "N items".
-  static std::string describe_selection(const std::set<std::string>& selected);
+  std::string describe_selection(const std::set<std::string>& selected);
 
   /// @brief Names in @p selected whose entry in @p entries is a file (not a
   /// directory or the ".." pseudo-row), in @p entries' display order --

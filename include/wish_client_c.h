@@ -272,6 +272,52 @@ WISH_API wish_error wish_set_style_preset(wish_client_handle client, const char*
 WISH_API wish_error
 wish_set_style_preset_async(wish_client_handle client, const char* preset, rmi_future_handle* out_future);
 
+/* ── Internationalization ─────────────────────────────────────────────────── */
+
+/**
+ * @brief Set the translations applied by wish_register_template().
+ *
+ * Template string values of the form "$$KEY" (the whole value) are replaced
+ * by KEY's translation; a key found in neither map shows as the bare KEY.
+ * Both texts use the translation file format: one `KEY = value` per line,
+ * `#`/`;` comments, `\n`/`\t`/`\\` escapes. Templates registered earlier
+ * keep their text.
+ *
+ * @param client         Active session handle.
+ * @param text           Translations for the selected language (e.g. the
+ *                       contents of es.lang). Pass "" to clear.
+ * @param fallback_text  Optional fallback translations (e.g. en.lang); may
+ *                       be NULL.
+ * @return WISH_OK or WISH_ERR_*.
+ */
+WISH_API wish_error wish_set_translations(wish_client_handle client, const char* text, const char* fallback_text);
+
+/**
+ * @brief Translate one string with the translations set by
+ *        wish_set_translations().
+ *
+ * @param client    Active session handle.
+ * @param text      "$$KEY" to translate; any other string is copied unchanged.
+ * @param out_text  Receives a newly allocated, NUL-terminated string on
+ *                  success. Release with bison_free_string().
+ * @return WISH_OK or WISH_ERR_*.
+ */
+WISH_API wish_error wish_translate(wish_client_handle client, const char* text, char** out_text);
+
+/**
+ * @brief Set this session's UI language on the server (e.g. "es").
+ *
+ * Server-side forms and tools then use their translation files for that
+ * language (res/<module>/i18n/<lang>.lang), falling back to English. Affects
+ * UI built after the call.
+ *
+ * @param client  Active session handle.
+ * @param lang    Language code: letters, digits, '-' and '_' only; "" for
+ *                the default (en).
+ * @return WISH_OK, or WISH_ERR_EXCEPTION for an invalid code.
+ */
+WISH_API wish_error wish_set_language(wish_client_handle client, const char* lang);
+
 /* ── Template management ──────────────────────────────────────────────────── */
 
 /**
@@ -279,7 +325,8 @@ wish_set_style_preset_async(wish_client_handle client, const char* preset, rmi_f
  *
  * @param client      Active session handle.
  * @param name        Template name (ASCII, no spaces).
- * @param descriptor  JSON or YAML descriptor string.
+ * @param descriptor  JSON or YAML descriptor string. "$$KEY" string values
+ *                    are translated (see wish_set_translations()).
  * @return WISH_OK or WISH_ERR_*.
  */
 WISH_API wish_error wish_register_template(wish_client_handle client, const char* name, const char* descriptor);

@@ -23,6 +23,7 @@
 
 #include "src/client/app_registry.hpp"
 #include "src/client/wish_app_host.hpp"
+#include "src/i18n/translations.hpp"
 
 #include "src/bison/bison.hpp"
 
@@ -354,7 +355,7 @@ void run_zip(wish_app_host& s) {
   // render loop needs every frame, and a large folder could take a while to
   // compress. Long jobs get the shared modal progress dialog
   // (modules/bdg/common/command_worker.hpp).
-  auto worker = std::make_shared<common::command_worker>(s, "Zip");
+  auto worker = std::make_shared<common::command_worker>(s, "$$ZIP_ZIP");
   worker->start();
 
   // Server asks to browse a different directory (row activated, or the path
@@ -379,16 +380,16 @@ void run_zip(wish_app_host& s) {
     auto archive_name = payload.as<std::string>("archive_name"_key);
 
     std::string message;
-    worker->run_task("Compressing into \"" + archive_name + "\"", [&](common::task_progress& progress) {
+    worker->run_task(make_message("$$ZIP_COMPRESSING_INTO", {archive_name}), [&](common::task_progress& progress) {
       try {
         compress(fs::path(path), source_names, archive_name, item_reporter(progress));
-        message = "Created \"" + archive_name + "\".";
+        message = make_message("$$ZIP_CREATED", {archive_name});
       } catch (const operation_cancelled&) {
         std::error_code ec;
         fs::remove(fs::path(path) / archive_name, ec);
-        message = "Compress cancelled.";
+        message = "$$ZIP_COMPRESS_CANCELLED";
       } catch (const std::exception& e) {
-        message = std::string{"Compress failed: "} + e.what();
+        message = make_message("$$ZIP_COMPRESS_FAILED", {e.what()});
         worker->fail(message, /*always_show=*/true);
       }
     });
@@ -410,14 +411,14 @@ void run_zip(wish_app_host& s) {
     auto dest_name = payload.as<std::string>("dest_name"_key);
 
     std::string message;
-    worker->run_task("Extracting \"" + zip_name + "\"", [&](common::task_progress& progress) {
+    worker->run_task(make_message("$$ZIP_EXTRACTING_FILE", {zip_name}), [&](common::task_progress& progress) {
       try {
         extract(fs::path(path), zip_name, dest_name, item_reporter(progress));
-        message = "Extracted to \"" + dest_name + "/\".";
+        message = make_message("$$ZIP_EXTRACTED_TO", {dest_name});
       } catch (const operation_cancelled&) {
-        message = "Extract cancelled.";
+        message = "$$ZIP_EXTRACT_CANCELLED";
       } catch (const std::exception& e) {
-        message = std::string{"Extract failed: "} + e.what();
+        message = make_message("$$ZIP_EXTRACT_FAILED", {e.what()});
         worker->fail(message, /*always_show=*/true);
       }
     });
@@ -442,7 +443,7 @@ void run_zip(wish_app_host& s) {
       args["entries"_key] = dynamic_ptr{std::make_shared<dynamic>(std::move(entries))};
       tool->call("show_contents"_key, std::move(args)).get();
     } catch (const std::exception& e) {
-      report_status(tool, std::string{"Could not open archive: "} + e.what());
+      report_status(tool, make_message("$$ZIP_COULD_NOT_OPEN_ARCHIVE", {e.what()}));
     }
   });
 

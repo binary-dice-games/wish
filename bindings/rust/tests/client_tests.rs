@@ -172,3 +172,15 @@ fn list_apps_json_returns_a_json_array() {
     let json = wish::list_apps_json().unwrap();
     assert!(json.trim_start().starts_with('['));
 }
+
+#[test]
+fn translations_apply_without_a_connection() {
+    let client = Client::tcp("127.0.0.1", 1);
+    client
+        .set_translations("HELLO = Hola\n", Some("HELLO = Hello\nBYE = Bye\n"))
+        .unwrap();
+    assert_eq!(client.translate("$$HELLO").unwrap(), "Hola");
+    assert_eq!(client.translate("$$BYE").unwrap(), "Bye");
+    assert_eq!(client.translate("$$MISSING").unwrap(), "MISSING");
+    assert_eq!(client.translate("plain").unwrap(), "plain");
+}

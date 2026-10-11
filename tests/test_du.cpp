@@ -125,9 +125,9 @@ TEST(DuLocalTest, PrototypeDefaults) {
   EXPECT_EQ(obj.findField(dynamic::CLASS)->as<bison::key_t>(), "Du"_key);
   // The untyped findField() also resolves prototype defaults.
   ASSERT_NE(obj.findField("title"_key), nullptr);
-  EXPECT_EQ(obj.findField("title"_key)->as<std::string>(), "Disk Usage");
+  EXPECT_EQ(obj.findField("title"_key)->as<std::string>(), "$$DU_DISK_USAGE");
   ASSERT_NE(obj.findField("status"_key), nullptr);
-  EXPECT_EQ(obj.findField("status"_key)->as<std::string>(), "Ready.");
+  EXPECT_EQ(obj.findField("status"_key)->as<std::string>(), "$$DU_READY");
   ASSERT_NE(obj.findField("scanning"_key), nullptr);
   EXPECT_FALSE(obj.findField("scanning"_key)->as<bool>());
 }

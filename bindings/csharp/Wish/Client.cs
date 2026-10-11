@@ -205,6 +205,44 @@ public sealed class Client : IDisposable
         return WishInterop.WrapFuture(outFuture);
     }
 
+    // ── Internationalization ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// Sets the translations applied by <see cref="RegisterTemplate"/>: template string values
+    /// <c>"$$KEY"</c> become KEY's translation. Both texts use the translation file format
+    /// (<c>KEY = value</c> per line); a key found in neither shows as the bare KEY.
+    /// </summary>
+    public void SetTranslations(string text, string? fallback = null)
+    {
+        WishException.Check(Native.wish_set_translations(_handle, text, fallback), "set_translations", LastError);
+    }
+
+    /// <summary>Reads translation files (e.g. es.lang and en.lang) and calls <see cref="SetTranslations"/>.</summary>
+    public void LoadTranslations(string path, string? fallbackPath = null)
+    {
+        SetTranslations(System.IO.File.ReadAllText(path), fallbackPath is null ? null : System.IO.File.ReadAllText(fallbackPath));
+    }
+
+    /// <summary>Translates <c>"$$KEY"</c>; any other string is returned unchanged.</summary>
+    public string Translate(string text)
+    {
+        WishException.Check(Native.wish_translate(_handle, text, out var outText), "translate", LastError);
+        try
+        {
+            return Marshal.PtrToStringUTF8(outText) ?? "";
+        }
+        finally
+        {
+            WishInterop.FreeString(outText);
+        }
+    }
+
+    /// <summary>Sets this session's UI language on the server (e.g. "es"), used by server-side tools.</summary>
+    public void SetLanguage(string lang)
+    {
+        WishException.Check(Native.wish_set_language(_handle, lang), "set_language", LastError);
+    }
+
     // ── Template management ───────────────────────────────────────────────────
 
     /// <summary>Registers a named UI template (JSON or YAML descriptor string).</summary>

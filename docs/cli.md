@@ -98,6 +98,7 @@ launch.
 | `--web_bind ADDR` | `127.0.0.1` | Bind address (`--renderer web` only; localhost-only by default) |
 | `--sandbox_root PATH` | *(empty)* | Keep session sandboxes across connections: each client gets `PATH/<username>` (its `--username`, else `default`) instead of a temp directory deleted on disconnect. Trusts the client-supplied name (`local_auth_module`) — local/single-user use only; see [src/auth/DESIGN.md](../src/auth/DESIGN.md) |
 | `--store_dir PATH` | `~/.wish` | Directory holding the persistent server store and per-user stores. The server always trusts a client's `--username` as its identity: identified clients get a user store, clients without one are anonymous. See [docs/persistent-store.md](persistent-store.md) |
+| `--lang CODE` | *(empty: `en`)* | Default UI language of every session (e.g. `es`); a client's own `--lang` overrides it. See [docs/i18n.md](i18n.md) |
 
 ```sh
 # TCP, windowed:
@@ -129,11 +130,13 @@ build has none registered).
 | `--timeout MS` | `30000` | Connection timeout in milliseconds |
 | `--username NAME` | *(empty)* | Identity sent on connect: selects this client's persistent user store (empty: anonymous, no user store; see [docs/persistent-store.md](persistent-store.md)) and, on a server started with `--sandbox_root`, its persistent sandbox directory (empty: the server's `default`) |
 | `--theme NAME` | `wish` | UI theme preset. Built in: `dark`, `light`, `classic`, `wish` (a more modern theme built on `dark`, the default). Any name is accepted; one the renderer doesn't recognize falls back to `wish` with a logged warning. |
+| `--lang CODE` | *(empty)* | UI language for this session (e.g. `es`): tools load their `i18n/<CODE>.lang` translations, falling back to English. Empty keeps the server's `--lang`. See [docs/i18n.md](i18n.md) |
 
 ```sh
 wish client --list
 wish client --describe=nano
 wish client --transport tcp --port 7070 --run=nano -- path/to/file.txt
+wish client --run=tail --lang=es -- /var/log/syslog
 ```
 
 ### The `wish <app>` alias
@@ -171,6 +174,7 @@ SDL3, it still supports `--renderer sdl3|web` at runtime exactly like
 | `--web_port PORT` / `--web_bind ADDR` | `8080` / `127.0.0.1` | Same as `server` (`--renderer web` only) |
 | `--sandbox_root PATH` / `--username NAME` | *(empty)* / `default` | Persist the session sandbox in `PATH/<username>` across runs instead of a temp directory deleted on exit. `--username` (or `default`) also selects the session's user store |
 | `--store_dir PATH` | `~/.wish` | Directory holding the persistent server store and user stores (see [docs/persistent-store.md](persistent-store.md)) |
+| `--lang CODE` | *(empty: `en`)* | UI language (e.g. `es`); see [docs/i18n.md](i18n.md) |
 
 `standalone` has no `--transport`/`--host`/`--port`/`--name`/`--theme`
 flags — passing a transport flag is rejected with an explicit error, since

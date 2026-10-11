@@ -154,14 +154,14 @@ TEST_F(McLocalTest, DefaultTitle) {
   auto* f = obj.findField("title"_key);
   ASSERT_NE(f, nullptr);
   EXPECT_TRUE(f->is<std::string>());
-  EXPECT_EQ(f->as<std::string>(), "File Explorer");
+  EXPECT_EQ(f->as<std::string>(), "$$MC_FILE_EXPLORER");
 }
 
 TEST_F(McLocalTest, DefaultStatus) {
   auto obj = dynamic::instantiate("wish"_key, "Mc"_key);
   auto* f = obj.findField("status"_key);
   ASSERT_NE(f, nullptr);
-  EXPECT_EQ(f->as<std::string>(), "Ready.");
+  EXPECT_EQ(f->as<std::string>(), "$$MC_READY");
 }
 
 // ── Session-capturing server for internal-mc tests ──────────────────────────
