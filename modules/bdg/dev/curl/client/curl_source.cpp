@@ -2,6 +2,7 @@
 /// @file curl_source.cpp
 /// @brief Implementation of curl_source.
 #include "curl_source.hpp"
+#include "modules/bdg/dev/curl/curl_settings.hpp"
 
 #include "curl_response_parser.hpp"
 #include "src/client/wish_app_host.hpp"
@@ -236,6 +237,7 @@ std::string curl_source::new_id(const char* prefix) {
 // ── Persistence ──────────────────────────────────────────────────────
 
 void curl_source::load_store() {
+  max_history_ = size_t(host_.read_int_setting(curl_settings::history_size()));
   collections_.clear();
   environments_.clear();
   history_.clear();
@@ -283,7 +285,7 @@ void curl_source::load_store() {
   } catch (const std::exception& e) {
     log_persistence(false, make_message("$$CURL_COULD_NOT_LOAD", {e.what()}));
   }
-  while (history_.size() > kMaxHistory)
+  while (history_.size() > max_history_)
     history_.pop_front();
 }
 
@@ -500,6 +502,10 @@ void curl_source::send_request(const request_state& raw) {
   std::vector<std::string> argv = {"-sS", "-i"};
   if (s.follow_redirects)
     argv.push_back("-L");
+  if (int32_t timeout = host_.read_int_setting(curl_settings::timeout()); timeout > 0) {
+    argv.push_back("--max-time");
+    argv.push_back(std::to_string(timeout));
+  }
   const std::string method = s.method.empty() ? std::string{"GET"} : s.method;
   // A HEAD request has no response body, but plain `-X HEAD` doesn't tell
   // curl that -- it still expects Content-Length bytes of body and, when
@@ -651,7 +657,7 @@ void curl_source::send_request(const request_state& raw) {
   call("update_response"_key, std::move(resp_args));
 
   history_.push_back(std::move(he));
-  while (history_.size() > kMaxHistory)
+  while (history_.size() > max_history_)
     history_.pop_front();
   save_history();
   push_history();

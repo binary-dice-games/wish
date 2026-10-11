@@ -45,6 +45,12 @@ Build: off by default. `cmake -S . -B build -DWISH_MODULE_BDG_DEV_GIT=ON`
 See [DESIGN.md](DESIGN.md) for the full architecture and [PLAN.md](PLAN.md)
 for what's implemented vs. deferred to future work.
 
+## Settings
+
+In Settings (`bdg/desktop/conf`), under the tool's own category:
+
+- **Commits in history** -- commits loaded into the graph (default 300).
+
 ## Known limitations (V1)
 
 - **No in-app credential prompt.** `fetch`/`pull`/`push` rely entirely on

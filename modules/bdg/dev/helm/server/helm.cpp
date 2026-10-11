@@ -7,6 +7,7 @@
 /// (Releases / Repositories / Charts / History) share one
 /// build_list_window() / run_row_action() path.
 #include "helm.hpp"
+#include "modules/bdg/dev/helm/helm_settings.hpp"
 
 #include "src/bison/bison_object.hpp"
 
@@ -604,6 +605,8 @@ void helm_frontend::open_install_dialog(
   install_.version = version;
   install_.release = release;
   install_.ns = ns;
+  install_.create_ns = setting_bool(helm_settings::create_namespace());
+  install_.wait = setting_bool(helm_settings::wait());
   ++install_token_;
 
   constexpr int32_t kReadOnly = 1 << 9; // InputText "flags": ReadOnly
@@ -629,8 +632,12 @@ void helm_frontend::open_install_dialog(
       tree.with("vbox.opts.create_ns", [&](const auto& e) {
         install_.create_ns_id = wish_id_of(e);
         e["visible"_key] = !upgrade;
+        e["value"_key] = install_.create_ns;
       });
-      tree.with("vbox.opts.wait", [&](const auto& e) { install_.wait_id = wish_id_of(e); });
+      tree.with("vbox.opts.wait", [&](const auto& e) {
+        install_.wait_id = wish_id_of(e);
+        e["value"_key] = install_.wait;
+      });
       tree.with("vbox.values", [&](const auto& e) {
         install_.values_input = e;
         install_.values_id = wish_id_of(e);
@@ -859,10 +866,13 @@ void helm_frontend::on_event(key_t id, key_t event, const dynamic& payload) {
         return;
       }
     }
-    if (id == install_.create_ns_id)
+    if (id == install_.create_ns_id) {
       install_.create_ns = payload.as<bool>("value"_key);
-    else if (id == install_.wait_id)
+      save_setting(helm_settings::create_namespace(), install_.create_ns);
+    } else if (id == install_.wait_id) {
       install_.wait = payload.as<bool>("value"_key);
+      save_setting(helm_settings::wait(), install_.wait);
+    }
     return;
   }
 
@@ -873,6 +883,7 @@ void helm_frontend::on_event(key_t id, key_t event, const dynamic& payload) {
 // ── Registration ───────────────────────────────────────────────────────────
 
 void register_helm() {
+  common::register_tool_settings(helm_settings::all());
   auto proto = dynamic_ptr{"HelmFrontend"_key, {}};
 
   auto add_method = [&](key_t name, dynamic (helm_frontend::*fn)(const dynamic&)) {

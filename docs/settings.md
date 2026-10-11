@@ -112,6 +112,55 @@ client.describe_setting("bdg.desktop.example.mood", type="enum", label="Mood", c
 It declares an "Example" category with one setting of each type, and shows a
 banner that follows them live.
 
+## Settings of server-side modules
+
+Modules built into the server (`modules/<org>/<collection>/<name>`) don't
+describe their settings in each store. They **register** them once, at
+startup, so Settings lists them for every identity, even before the tool
+ever ran:
+
+- `settings::register_setting(info)` and `register_category(info)`
+  (`src/context/settings_store.hpp`) keep a process-wide list.
+- `settings::collect(user_store, true)` adds them to what the user store
+  describes. A registered description wins over a stored one with the same
+  name.
+
+The bdg modules follow one pattern:
+
+- **Definitions.** A header-only `<name>_settings.hpp` defines the settings
+  with the builders in `modules/bdg/common/tool_settings.hpp`. The server
+  form and the client runner both include it.
+- **Registration.** The module's `register_<name>()` calls
+  `common::register_tool_settings(<name>_settings::all())`. Each module has
+  its own category: its id is the module name (`bdg.desktop.top`) and its
+  label is the tool name.
+- **Reading in the server form.** `tool_form::setting_bool()`,
+  `setting_int()` and `setting_text()` return the stored value, else the
+  default.
+- **Remembering a toggle.** `tool_form::save_setting()` stores the new
+  value when the user changes a toggle the tool remembers, such as a
+  Follow checkbox or a search option.
+- **Reading in the client runner.** `wish_app_host::read_bool_setting()`,
+  `read_int_setting()` and the like, plus `write_setting()` to store a
+  value.
+
+All of these give the default for an anonymous session.
+
+| Module | Settings |
+|--------|----------|
+| bc | mode, angle unit, digit grouping, show history |
+| top | refresh interval, graph history |
+| tail | initial lines, scroll to new lines, check interval |
+| nano | match case, whole word, search mode |
+| mc | show hidden files, keep folders on top |
+| zip | compression level |
+| docker, kubectl | follow logs, log lines, stats interval |
+| curl | follow redirects, request timeout, history size |
+| git | commits in history |
+| sq | row limit |
+| pip | upgrade, user install, pre-releases |
+| helm | create namespace, wait |
+
 ## Server settings and admins
 
 The server store can't be reached over RMI. The Settings tool is a server

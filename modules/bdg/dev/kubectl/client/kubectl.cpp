@@ -10,6 +10,7 @@
 /// server/kubectl.hpp for the full event contract.
 #include "kubectl.hpp"
 #include "kubectl_source.hpp"
+#include "modules/bdg/dev/kubectl/kubectl_settings.hpp"
 
 #include "modules/bdg/common/frontend.hpp"
 
@@ -85,8 +86,8 @@ void run_kubectl(wish_app_host& s) {
   worker->post([source] { source->refresh_all(); });
 
   // Live `kubectl top` graphs in the Top window: a background poll thread
-  // (10 s cadence) that never touches the Console window.
-  source->start_stats_polling();
+  // (the stats_interval setting's cadence) that never touches the Console window.
+  source->start_stats_polling(s.read_int_setting(kubectl_settings::stats_interval()));
 }
 
 namespace {

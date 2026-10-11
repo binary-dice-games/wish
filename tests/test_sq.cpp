@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 
 #include "session_event_recorder.hpp"
+#include "store_session.hpp"
 
 #include <server/registry.hpp>
 #include <server/server.hpp>
@@ -792,3 +793,20 @@ TEST_F(SqRmiTest, ClosingAnyWindowEmitsClosedAndTearsDownEveryRoot) {
 }
 
 } // namespace
+
+// ── Settings ─────────────────────────────────────────────────────────────────
+
+TEST(SqSettings, RowLimitIsSavedAndRestored) {
+  wish_test::store_session s;
+  s.open("SqFrontend"_key);
+  EXPECT_EQ(s.element("toolbar.rows")->as<int32_t>("value"_key), 1); // 500 rows
+  dynamic last;
+  last["value"_key] = int32_t{3};
+  s.fire("toolbar.rows", "changed"_key, last);
+  auto entry = s.entry("bdg.dev.sq");
+  ASSERT_TRUE(entry.has_value());
+  EXPECT_EQ(entry->get_as<std::string>("row_limit"_key, std::string{}), "5000");
+
+  s.open("SqFrontend"_key);
+  EXPECT_EQ(s.element("toolbar.rows")->as<int32_t>("value"_key), 3);
+}

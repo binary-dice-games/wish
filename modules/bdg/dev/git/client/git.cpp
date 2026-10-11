@@ -10,6 +10,7 @@
 #include "git.hpp"
 #include "git_process.hpp"
 #include "git_repo_source.hpp"
+#include "modules/bdg/dev/git/git_settings.hpp"
 
 #include "modules/bdg/common/frontend.hpp"
 
@@ -56,6 +57,7 @@ void run_git(wish_app_host& s) {
   const auto& proxy = frontend.proxy;
   const auto& worker = frontend.worker;
   auto source = std::make_shared<git::git_repo_source>(proxy, repo_path, worker);
+  source->set_max_commits(s.read_int_setting(git_settings::max_commits()));
 
   worker->on(*proxy, "refresh_requested"_key, [source](dynamic) { source->refresh_all(); });
 

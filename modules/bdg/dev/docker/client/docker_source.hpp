@@ -60,12 +60,13 @@ class docker_source : public common::tool_source {
   void on_inspect_requested(const std::string& kind, const std::string& id);
 
   /// @brief Starts a background thread that runs `docker stats --no-stream`
-  /// every ~3 s and pushes each sample to the form's update_stats RMI method
+  /// every @p interval_s seconds (~3 by default; the stats_interval setting)
+  /// and pushes each sample to the form's update_stats RMI method
   /// until destruction. The `top` client's sampling-thread pattern; runs
   /// `run_process()` directly (never run_logged()) so these frequent
   /// polls never reach the Console window. Idempotent -- a second call is a
   /// no-op while a thread is already running.
-  void start_stats_polling();
+  void start_stats_polling(int32_t interval_s);
   /// @brief Signals the stats poll thread to stop and forgets it.
   void stop_stats_polling();
 

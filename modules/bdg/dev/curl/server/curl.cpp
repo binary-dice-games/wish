@@ -11,6 +11,7 @@
 /// of being fully rebuilt on every change -- see curl.hpp's class comment
 /// and DESIGN.md "Editable key-value tables".
 #include "curl.hpp"
+#include "modules/bdg/dev/curl/curl_settings.hpp"
 
 #include "src/bison/bison_object.hpp"
 
@@ -295,7 +296,11 @@ void curl_frontend::on_init() {
       env_combo_ = e;
       env_combo_id_ = wish_id_of(e);
     });
-    tree.with("vbox.toolbar.follow", [&](const auto& e) { follow_redirects_id_ = wish_id_of(e); });
+    tree.with("vbox.toolbar.follow", [&](const auto& e) {
+      follow_redirects_id_ = wish_id_of(e);
+      follow_redirects_ = setting_bool(curl_settings::follow_redirects());
+      e["value"_key] = follow_redirects_;
+    });
     tree.with("vbox.toolbar.btn_send", [&](const auto& e) {
       on_click(wish_id_of(e), [this] { emit("send_requested"_key, collect_request_state()); });
     });
@@ -850,6 +855,7 @@ void curl_frontend::on_event(key_t id, key_t event, const dynamic& payload) {
       apply_auth_mode_visibility(payload.as<int32_t>("value"_key));
     } else if (id == follow_redirects_id_) {
       follow_redirects_ = payload.as<bool>("value"_key);
+      save_setting(curl_settings::follow_redirects(), follow_redirects_);
     }
     return;
   }
@@ -861,6 +867,7 @@ void curl_frontend::on_event(key_t id, key_t event, const dynamic& payload) {
 // ── Registration ─────────────────────────────────────────────────────
 
 void register_curl() {
+  common::register_tool_settings(curl_settings::all());
   auto proto = dynamic_ptr{"CurlFrontend"_key, {}};
 
   proto->addField("title"_key, field{std::string{"$$CURL_CURL"}});

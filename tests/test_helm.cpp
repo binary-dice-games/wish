@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 
 #include "session_event_recorder.hpp"
+#include "store_session.hpp"
 
 #include <server/registry.hpp>
 #include <server/server.hpp>
@@ -761,4 +762,24 @@ TEST_F(HelmRmiTest, AppendCommandLogAddsRowsAndClearConsoleEmptiesThem) {
   ASSERT_NE(clear.id, 0u);
   fire_at(root_ + "_console", clear, "clicked"_key);
   EXPECT_EQ(row_count(table), 0u);
+}
+
+// ── Settings ─────────────────────────────────────────────────────────────────
+
+TEST(HelmSettings, InstallOptionsAreSavedAndRestored) {
+  wish_test::store_session s;
+  s.open("HelmFrontend"_key);
+  s.fire("toolbar.btn_install", "clicked"_key); // opens the Install dialog
+  EXPECT_FALSE(s.element("opts.wait")->as<bool>("value"_key));
+  dynamic on;
+  on["value"_key] = true;
+  s.fire("opts.wait", "changed"_key, on);
+  auto entry = s.entry("bdg.dev.helm");
+  ASSERT_TRUE(entry.has_value());
+  EXPECT_TRUE(entry->get_as<bool>("wait"_key, false));
+
+  s.open("HelmFrontend"_key);
+  s.fire("toolbar.btn_install", "clicked"_key);
+  EXPECT_TRUE(s.element("opts.wait")->as<bool>("value"_key));
+  EXPECT_TRUE(s.element("opts.create_ns")->as<bool>("value"_key));
 }

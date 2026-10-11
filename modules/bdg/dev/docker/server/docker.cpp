@@ -7,6 +7,7 @@
 /// (Containers / Images / Volumes / Networks) share one build_list_window()
 /// / run_row_action() path.
 #include "docker.hpp"
+#include "modules/bdg/dev/docker/docker_settings.hpp"
 
 #include "src/bison/bison_object.hpp"
 
@@ -312,8 +313,16 @@ void docker_frontend::on_init() {
   logs_options.file_stem = "logs";
   logs_options.on_refresh = [this] { emit_logs_request(); };
   logs_.build(*this, internal_root_key_ + "_logs", std::move(logs_options), [&](ui_tree& tree) {
-    tree.with("vbox.toolbar.follow", [&](const auto& e) { logs_follow_id_ = wish_id_of(e); });
-    tree.with("vbox.toolbar.lines", [&](const auto& e) { logs_lines_id_ = wish_id_of(e); });
+    tree.with("vbox.toolbar.follow", [&](const auto& e) {
+      logs_follow_id_ = wish_id_of(e);
+      logs_follow_ = setting_bool(docker_settings::logs_follow());
+      e["value"_key] = logs_follow_;
+    });
+    tree.with("vbox.toolbar.lines", [&](const auto& e) {
+      logs_lines_id_ = wish_id_of(e);
+      logs_lines_ = setting_int(docker_settings::logs_lines());
+      e["value"_key] = logs_lines_;
+    });
   });
 
   inspect_.build(
@@ -713,9 +722,11 @@ void docker_frontend::on_event(key_t id, key_t event, const dynamic& payload) {
       volume_name_text_ = payload.as<std::string>("value"_key);
     } else if (id == logs_follow_id_) {
       logs_follow_ = payload.as<bool>("value"_key);
+      save_setting(docker_settings::logs_follow(), logs_follow_);
       emit_logs_request();
     } else if (id == logs_lines_id_) {
       logs_lines_ = payload.as<int32_t>("value"_key);
+      save_setting(docker_settings::logs_lines(), logs_lines_);
     }
     return;
   }
@@ -769,6 +780,7 @@ void docker_frontend::run_row_action(const entity& e, const std::string& action)
 // ── Registration ───────────────────────────────────────────────────────────
 
 void register_docker() {
+  common::register_tool_settings(docker_settings::all());
   auto proto = dynamic_ptr{"DockerFrontend"_key, {}};
 
   proto->addField("title"_key, field{std::string{"$$DOCKER_DOCKER"}});

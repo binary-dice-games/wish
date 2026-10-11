@@ -74,6 +74,12 @@ Build: off by default. `cmake -S . -B build -DWISH_MODULE_BDG_DEV_PIP=ON`
   the module ran (`#` / Command / Exit / Output), green on success, red on
   failure; right-click a row for "Copy Entry" or "Clear Console".
 
+## Settings
+
+In Settings (`bdg/desktop/conf`), under the tool's own category:
+
+- **Upgrade**, **User install**, **Pre-releases** -- the install bar's options, saved when changed.
+
 ## Known limitations
 
 - **Externally managed environments**: on a distribution Python marked

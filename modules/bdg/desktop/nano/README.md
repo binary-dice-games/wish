@@ -40,3 +40,9 @@ runner bridges the two via `upload_file`/`download_file`.
   closing. Opens any files given on the command line, each in its own window
   (`wish client --run=nano -- a.cpp b.md`).
 - **resources/**: none.
+
+## Settings
+
+In Settings (`bdg/desktop/conf`), under the tool's own category:
+
+- **Match case**, **Match whole word only**, **Search mode** -- the Search panel's options, saved when changed.

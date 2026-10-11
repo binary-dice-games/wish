@@ -125,8 +125,8 @@ class tool_form : public form {
   //
   // Values of the module's settings in the session's user store: the stored
   // value when valid, else the default (always the default for an
-  // anonymous session). The first call must come from dispatch (e.g.
-  // on_init()), which keeps the store for later calls from on_event().
+  // anonymous session). Callable from dispatch (on_init(), RMI methods) and
+  // from on_event().
 
   settings::setting_value setting(const settings::setting_info& info);
   bool setting_bool(const settings::setting_info& info);

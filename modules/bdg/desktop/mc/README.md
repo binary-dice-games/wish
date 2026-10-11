@@ -68,3 +68,10 @@ directories are silently skipped).
   event instead instantiates the built-in `MessageBox` form ("yes_no"
   preset) to confirm once with the user before overwriting the whole batch.
 - **resources/**: none.
+
+## Settings
+
+In Settings (`bdg/desktop/conf`), under the tool's own category:
+
+- **Show hidden files** -- list names starting with a dot (default on).
+- **Keep folders on top** -- folders before files, whatever the sort column.

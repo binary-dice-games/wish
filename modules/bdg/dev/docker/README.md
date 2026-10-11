@@ -73,6 +73,13 @@ daemon:
 Plus a `docker version` startup gate and a `MessageBox` confirm for
 Stop/Kill/Remove and every Prune.
 
+## Settings
+
+In Settings (`bdg/desktop/conf`), under the tool's own category:
+
+- **Follow logs**, **Log lines** -- the Logs window's Follow and Lines controls, saved when changed.
+- **Stats interval** -- seconds between `docker stats` samples (default 3).
+
 ## Known limitations (v1)
 
 - **No `docker compose`, `docker build`, or `exec`/interactive terminal.**

@@ -193,6 +193,7 @@ class sq_frontend : public common::tool_form {
   ui_element_ptr conn_combo_;
   bison::key_t conn_combo_id_;
   ui_element_ptr rows_combo_;
+  bison::key_t rows_combo_id_;
   ui_element_ptr export_path_input_;
   ui_element_ptr overwrite_checkbox_;
   ui_element_ptr editor_status_;

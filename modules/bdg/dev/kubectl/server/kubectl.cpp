@@ -7,6 +7,7 @@
 /// (Pods / Deployments / Services / Nodes) share one build_list_window() /
 /// apply_list_filter() / run_row_action() path.
 #include "kubectl.hpp"
+#include "modules/bdg/dev/kubectl/kubectl_settings.hpp"
 
 #include "src/bison/bison_object.hpp"
 
@@ -292,8 +293,16 @@ void kubectl_frontend::on_init() {
   logs_options.file_stem = "logs";
   logs_options.on_refresh = [this] { emit_logs_request(); };
   logs_.build(*this, internal_root_key_ + "_logs", std::move(logs_options), [&](ui_tree& tree) {
-    tree.with("vbox.toolbar.follow", [&](const auto& e) { logs_follow_id_ = wish_id_of(e); });
-    tree.with("vbox.toolbar.lines", [&](const auto& e) { logs_lines_id_ = wish_id_of(e); });
+    tree.with("vbox.toolbar.follow", [&](const auto& e) {
+      logs_follow_id_ = wish_id_of(e);
+      logs_follow_ = setting_bool(kubectl_settings::logs_follow());
+      e["value"_key] = logs_follow_;
+    });
+    tree.with("vbox.toolbar.lines", [&](const auto& e) {
+      logs_lines_id_ = wish_id_of(e);
+      logs_lines_ = setting_int(kubectl_settings::logs_lines());
+      e["value"_key] = logs_lines_;
+    });
   });
 
   describe_.build(
@@ -728,9 +737,11 @@ void kubectl_frontend::on_event(key_t id, key_t event, const dynamic& payload) {
     }
     if (id == logs_follow_id_) {
       logs_follow_ = payload.as<bool>("value"_key);
+      save_setting(kubectl_settings::logs_follow(), logs_follow_);
       emit_logs_request();
     } else if (id == logs_lines_id_) {
       logs_lines_ = payload.as<int32_t>("value"_key);
+      save_setting(kubectl_settings::logs_lines(), logs_lines_);
     }
     return;
   }
@@ -795,6 +806,7 @@ void kubectl_frontend::run_row_action(const resource& r, const std::string& acti
 // ── Registration ───────────────────────────────────────────────────────────
 
 void register_kubectl() {
+  common::register_tool_settings(kubectl_settings::all());
   auto proto = dynamic_ptr{"KubectlFrontend"_key, {}};
 
   proto->addField("title"_key, field{std::string{"$$KUBECTL_KUBERNETES"}});

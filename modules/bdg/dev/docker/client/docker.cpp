@@ -10,6 +10,7 @@
 /// event contract.
 #include "docker.hpp"
 #include "docker_source.hpp"
+#include "modules/bdg/dev/docker/docker_settings.hpp"
 
 #include "modules/bdg/common/frontend.hpp"
 
@@ -82,8 +83,8 @@ void run_docker(wish_app_host& s) {
   worker->post([source] { source->refresh_all(); });
 
   // Live `docker stats` graphs in the Stats window: a background poll thread
-  // (3 s cadence) that never touches the Console window.
-  source->start_stats_polling();
+  // (the stats_interval setting's cadence) that never touches the Console window.
+  source->start_stats_polling(s.read_int_setting(docker_settings::stats_interval()));
 }
 
 namespace {

@@ -324,8 +324,9 @@ use only the methods/events above).
 - **The Stats window's `docker stats` poll is the module's one always-on
   background thread.** `docker_source::start_stats_polling()` (called once
   from `run_docker()` after wiring) spawns a detached thread that runs
-  `docker stats --no-stream --format '<tab template>'` every ~3 s and calls
-  `update_stats`. It uses `common::run_process()` **directly, never
+  `docker stats --no-stream --format '<tab template>'` every ~3 s (the
+  `bdg.dev.docker.stats_interval` setting, read once by `run_docker()` and
+  passed as `start_stats_polling(interval_s)`) and calls `update_stats`. It uses `common::run_process()` **directly, never
   `run_logged()`** — a 3 s re-poll would flood the Console, the exact
   `git` Log-window lesson that already keeps the Follow thread out of it.
   The thread stops on `~docker_source` (a stop `atomic<bool>`) or when the
