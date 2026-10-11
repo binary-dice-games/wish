@@ -159,9 +159,37 @@ fn describe_setting_is_unavailable_without_a_session() {
     let info = wish::SettingInfo::new("bdg.desktop.example.color", "color");
     let err = client.describe_setting(&info).unwrap_err();
     assert_eq!(err.code, wish::sys::WISH_ERR_UNAVAILABLE);
-    let category = wish::SettingsCategory { id: "example".into(), ..Default::default() };
+    let category = wish::SettingsCategory {
+        id: "example".into(),
+        ..Default::default()
+    };
     let err = client.describe_settings_category(&category).unwrap_err();
     assert_eq!(err.code, wish::sys::WISH_ERR_UNAVAILABLE);
+}
+
+#[test]
+fn read_setting_without_a_session_returns_the_default() {
+    let client = Client::tcp("127.0.0.1", 1);
+    let size = wish::SettingInfo {
+        min: Some(0.5),
+        max: Some(2.0),
+        default: wish::SettingValue::Int(1),
+        ..wish::SettingInfo::new("bdg.desktop.example.size", "float")
+    };
+    assert_eq!(
+        client.read_setting(&size).unwrap(),
+        wish::SettingValue::Float(1.0)
+    );
+    let mode = wish::SettingInfo {
+        default: wish::SettingValue::Text("b".into()),
+        ..wish::SettingInfo::new("bdg.desktop.example.mode", "string")
+    };
+    assert_eq!(
+        client.read_setting(&mode).unwrap(),
+        wish::SettingValue::Text("b".into())
+    );
+    let bad = wish::SettingInfo::new("nodot", "bool");
+    assert!(client.read_setting(&bad).is_err());
 }
 
 #[test]

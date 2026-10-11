@@ -3,6 +3,7 @@
 /// @brief Implementation of the bc form: builds the multi-mode calculator UI
 ///        and routes key presses to calc::engine.
 #include "bc.hpp"
+#include "modules/bdg/desktop/bc/bc_settings.hpp"
 
 #include "src/bison/bison_object.hpp"
 
@@ -69,6 +70,10 @@ std::string json_string(const std::string& s) {
 std::string str(const std::string& a, const std::string& b) {
   return a + b;
 }
+
+// Stored values of the mode and angle_unit settings, by enum value.
+constexpr const char* kModeValues[] = {"standard", "scientific", "programmer"};
+constexpr const char* kAngleValues[] = {"degrees", "radians", "gradians"};
 
 const char* angle_name(calc::angle_unit u) {
   switch (u) {
@@ -515,21 +520,28 @@ void bc::on_init() {
     // Mode tabs and View menu entries.
     for (int m = 0; m < 3; ++m) {
       auto mode = static_cast<calc::mode>(m);
-      mode_tabs_[m] = bind(main + "tabs." + kKeypadIds[m], [this, mode] { set_mode(mode); });
-      mode_items_[m] = bind(str("menu.view.", kKeypadIds[m]), [this, mode] { set_mode(mode); });
+      mode_tabs_[m] = bind(main + "tabs." + kKeypadIds[m], [this, mode] { choose_mode(mode); });
+      mode_items_[m] = bind(str("menu.view.", kKeypadIds[m]), [this, mode] { choose_mode(mode); });
       keypads_[m] = find(main + kKeypadIds[m]);
     }
     const calc::angle_unit units[] = {calc::angle_unit::degrees, calc::angle_unit::radians, calc::angle_unit::gradians};
     const char* unit_ids[] = {"deg", "rad", "grad"};
     for (int u = 0; u < 3; ++u) {
       auto unit = units[u];
-      angle_items_[u] = bind(str("menu.view.", unit_ids[u]), [this, unit] { engine_.set_angle_unit(unit); });
+      angle_items_[u] = bind(str("menu.view.", unit_ids[u]), [this, unit] {
+        engine_.set_angle_unit(unit);
+        save_setting(bc_settings::angle_unit(), std::string{kAngleValues[static_cast<int>(unit)]});
+      });
     }
     history_item_ = bind("menu.view.history", [this] {
       show_history_ = !show_history_;
+      save_setting(bc_settings::show_history(), show_history_);
       fit_window();
     });
-    grouping_item_ = bind("menu.view.grouping", [this] { engine_.set_digit_grouping(!engine_.digit_grouping()); });
+    grouping_item_ = bind("menu.view.grouping", [this] {
+      engine_.set_digit_grouping(!engine_.digit_grouping());
+      save_setting(bc_settings::digit_grouping(), engine_.digit_grouping());
+    });
     bind("menu.edit.clear_history", [this] { engine_.clear_history(); });
     bind("body.history.clear", [this] { engine_.clear_history(); });
 
@@ -562,7 +574,19 @@ void bc::on_init() {
     }
   });
 
-  set_mode(calc::mode::standard);
+  // Start as the user's settings say.
+  const std::string angle = setting_text(bc_settings::angle_unit());
+  for (int u = 0; u < 3; ++u)
+    if (angle == kAngleValues[u])
+      engine_.set_angle_unit(static_cast<calc::angle_unit>(u));
+  engine_.set_digit_grouping(setting_bool(bc_settings::digit_grouping()));
+  show_history_ = setting_bool(bc_settings::show_history());
+  const std::string mode = setting_text(bc_settings::mode());
+  calc::mode start = calc::mode::standard;
+  for (int m = 0; m < 3; ++m)
+    if (mode == kModeValues[m])
+      start = static_cast<calc::mode>(m);
+  set_mode(start);
   refresh();
 }
 
@@ -583,6 +607,11 @@ void bc::on_event(key_t id, key_t event, const dynamic& /*payload*/) {
 }
 
 // ── State -> widgets ──────────────────────────────────────────────────────────
+
+void bc::choose_mode(calc::mode m) {
+  set_mode(m);
+  save_setting(bc_settings::mode(), std::string{kModeValues[static_cast<int>(m)]});
+}
 
 void bc::set_mode(calc::mode m) {
   engine_.set_mode(m);
@@ -729,6 +758,7 @@ void bc::refresh() {
 // ── Registration ──────────────────────────────────────────────────────────────
 
 void register_bc() {
+  common::register_tool_settings(bc_settings::all());
   auto proto = dynamic_ptr{"Bc"_key, {}};
 
   (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Bc"));

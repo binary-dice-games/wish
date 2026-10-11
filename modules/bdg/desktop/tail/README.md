@@ -68,3 +68,11 @@ touches the filesystem, raising the field from the UI additionally clears
 the table and asks the client to re-read each tailed file's last N lines,
 so raising it really does surface more history, not just relax future
 eviction.
+
+## Settings
+
+In Settings (`bdg/desktop/conf`), under the tool's own category:
+
+- **Initial lines** -- lines shown when run without `-n`; the Lines field saves it.
+- **Scroll to new lines** -- the Follow checkbox.
+- **Check interval** -- milliseconds between checks of each file (default 300).

@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 import org.json.JSONArray;
 import org.json.JSONException;
+import org.json.JSONObject;
 
 /**
  * RAII-style wrapper around {@code wish_client_handle} (see {@code
@@ -266,6 +267,28 @@ public final class Client implements AutoCloseable {
     nativeSettingsDescribe(handle, info.toJson());
   }
 
+  /**
+   * The current value of {@code info} in the user store: the stored value when
+   * it suits the setting, else its default (also for an anonymous session). A
+   * Boolean, Integer (int settings), Double (float settings), String, or null
+   * when there is no default. Throws WishException for invalid metadata.
+   */
+  public Object readSetting(SettingInfo info) {
+    String json = nativeSettingsRead(handle, info.toJson());
+    try {
+      // org.json only parses containers: wrap the scalar.
+      Object v = new JSONArray("[" + json + "]").get(0);
+      if (v == JSONObject.NULL) return null;
+      if (v instanceof Number) {
+        Number n = (Number) v;
+        return "int".equals(info.type()) ? (Object) n.intValue() : (Object) n.doubleValue();
+      }
+      return v;
+    } catch (JSONException e) {
+      throw new WishException(-4 /* WISH_ERR_EXCEPTION */, "read_setting: " + e.getMessage());
+    }
+  }
+
   /** Describes a sidebar category settings refer to by id. */
   public void describeSettingsCategory(SettingsCategory category) {
     nativeSettingsDescribeCategory(handle, category.toJson());
@@ -324,6 +347,7 @@ public final class Client implements AutoCloseable {
 
   private static native void nativeSettingsDescribe(long handle, String json);
   private static native void nativeSettingsDescribeCategory(long handle, String json);
+  private static native String nativeSettingsRead(long handle, String json);
 
   private static native int nativeLog(long handle, String level, String msg);
 }

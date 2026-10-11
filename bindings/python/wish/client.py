@@ -513,6 +513,44 @@ class Client:
     # setting is one field of a user store entry: "bdg.desktop.example.color"
     # is the field "color" of the entry "bdg.desktop.example".
 
+    @staticmethod
+    def _setting_meta(
+        name: str,
+        type: str,
+        label: str,
+        description: str,
+        category: str,
+        section: str,
+        default: Any,
+        min: Optional[float],
+        max: Optional[float],
+        step: Optional[float],
+        options: Optional[List[Any]],
+        icon: str,
+        order: int,
+        restart: bool,
+    ) -> dict:
+        meta: dict = {
+            "name": name,
+            "type": type,
+            "label": label,
+            "description": description,
+            "category": category,
+            "section": section,
+            "default": default,
+            "icon": icon,
+            "order": order,
+            "restart": restart,
+        }
+        for key, value in (("min", min), ("max", max), ("step", step)):
+            if value is not None:
+                meta[key] = value
+        if options is not None:
+            meta["options"] = [
+                {"value": o[0], "label": o[1]} if isinstance(o, (tuple, list)) else o for o in options
+            ]
+        return meta
+
     def describe_setting(
         self,
         name: str,
@@ -535,30 +573,41 @@ class Client:
         float, string, enum, color or path. ``options`` (enum) holds values,
         or ``(value, label)`` pairs, or ``{"value", "label"}`` dicts.
         Replaces an earlier description; doesn't change the value."""
-        meta: dict = {
-            "name": name,
-            "type": type,
-            "label": label,
-            "description": description,
-            "category": category,
-            "section": section,
-            "default": default,
-            "icon": icon,
-            "order": order,
-            "restart": restart,
-        }
-        for key, value in (("min", min), ("max", max), ("step", step)):
-            if value is not None:
-                meta[key] = value
-        if options is not None:
-            meta["options"] = [
-                {"value": o[0], "label": o[1]} if isinstance(o, (tuple, list)) else o for o in options
-            ]
+        meta = self._setting_meta(
+            name, type, label, description, category, section, default, min, max, step, options, icon, order, restart
+        )
         _check(
             self._lib.wish_settings_describe(self._handle, json.dumps(meta).encode()),
             f"describe_setting({name!r})",
             self.last_error,
         )
+
+    def read_setting(
+        self,
+        name: str,
+        *,
+        type: str = "string",
+        default: Any = None,
+        min: Optional[float] = None,
+        max: Optional[float] = None,
+        options: Optional[List[Any]] = None,
+        **_ignored: Any,
+    ) -> Any:
+        """Current value of the setting ``name``: the stored value when it
+        suits ``type`` (and ``min``/``max``/``options``), else ``default``
+        (also for an anonymous session). Takes the same keywords as
+        :meth:`describe_setting`, so one dict of metadata serves both."""
+        meta = self._setting_meta(name, type, "", "", "", "", default, min, max, None, options, "", 0, False)
+        out = ctypes.c_char_p()
+        _check(
+            self._lib.wish_settings_read(self._handle, json.dumps(meta).encode(), ctypes.byref(out)),
+            f"read_setting({name!r})",
+            self.last_error,
+        )
+        try:
+            return json.loads(out.value.decode("utf-8"))
+        finally:
+            self._lib.bison_free_string(out)
 
     def describe_settings_category(
         self, id: str, *, label: str = "", description: str = "", icon: str = "", color: str = "", order: int = 0

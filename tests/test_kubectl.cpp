@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 
 #include "session_event_recorder.hpp"
+#include "store_session.hpp"
 
 #include <server/registry.hpp>
 #include <server/server.hpp>
@@ -730,4 +731,25 @@ TEST_F(KubectlRmiTest, UpdateStatsErrorShownInStatusLabel) {
   call("update_stats"_key, make_top_args({}, {}, "metrics not available (metrics-server not installed)"));
   auto status = srv_->last_session->ui_objects.at(root_ + "_top.vbox.status")->as<std::string>("text"_key);
   EXPECT_NE(status.find("metrics-server not installed"), std::string::npos);
+}
+
+// ── Settings ─────────────────────────────────────────────────────────────────
+
+TEST(KubectlSettings, LogOptionsAreSavedAndRestored) {
+  wish_test::store_session s;
+  s.open("KubectlFrontend"_key);
+  dynamic on;
+  on["value"_key] = true;
+  s.fire("vbox.toolbar.follow", "changed"_key, on);
+  dynamic lines;
+  lines["value"_key] = int32_t{1000};
+  s.fire("vbox.toolbar.lines", "changed"_key, lines);
+  auto entry = s.entry("bdg.dev.kubectl");
+  ASSERT_TRUE(entry.has_value());
+  EXPECT_TRUE(entry->get_as<bool>("logs_follow"_key, false));
+  EXPECT_EQ(entry->get_as<int32_t>("logs_lines"_key, 0), 1000);
+
+  s.open("KubectlFrontend"_key);
+  EXPECT_TRUE(s.element("vbox.toolbar.follow")->as<bool>("value"_key));
+  EXPECT_EQ(s.element("vbox.toolbar.lines")->as<int32_t>("value"_key), 1000);
 }

@@ -3,6 +3,7 @@
 /// @brief Implementation of the GitRepo form.
 #include "git.hpp"
 #include "git_graph_layout.hpp"
+#include "modules/bdg/dev/git/git_settings.hpp"
 
 #include "src/bison/bison_object.hpp"
 
@@ -1033,6 +1034,7 @@ void git_repo::on_event(key_t id, key_t event, const dynamic& payload) {
 // ── Registration ──────────────────────────────────────────────────────────────
 
 void register_git() {
+  common::register_tool_settings(git_settings::all());
   auto proto = dynamic_ptr{"GitRepo"_key, {}};
 
   proto->addMethod(

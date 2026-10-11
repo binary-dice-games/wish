@@ -405,6 +405,29 @@ std::string to_text(const setting_value& value) {
       value);
 }
 
+std::string value_to_json(const setting_value& value) {
+  return to_json_value(value).dump();
+}
+
+setting_value stored_or_default(const dynamic* entry, const setting_info& info) {
+  if (entry) {
+    setting_value v = read_value(*entry, parse_name(info.name).field, info.type);
+    if (!std::holds_alternative<std::monostate>(v)) {
+      auto checked = validate(info, v);
+      if (auto* ok = std::get_if<setting_value>(&checked))
+        return *ok;
+    }
+  }
+  // The default coerced to the setting's type too (e.g. `"default": 1` of a
+  // float setting reads as 1.0f).
+  if (!std::holds_alternative<std::monostate>(info.default_value)) {
+    auto checked = validate(info, info.default_value);
+    if (auto* ok = std::get_if<setting_value>(&checked))
+      return *ok;
+  }
+  return info.default_value;
+}
+
 // ── Schema records ───────────────────────────────────────────────────────────
 
 void merge_setting(dynamic& schema, const setting_info& info) {

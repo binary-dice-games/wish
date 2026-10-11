@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 
 #include "session_event_recorder.hpp"
+#include "store_session.hpp"
 
 #include <server/registry.hpp>
 #include <server/server.hpp>
@@ -930,4 +931,25 @@ TEST_F(TailTest, RegistersDefaultDockLayoutNamingEveryPanel) {
   std::vector<std::string> expected{root_, root_ + "_controls"};
   std::sort(expected.begin(), expected.end());
   EXPECT_EQ(windows, expected);
+}
+
+// ── Settings ─────────────────────────────────────────────────────────────────
+
+TEST(TailSettings, FollowAndLinesAreSavedAndRestored) {
+  wish_test::store_session s;
+  s.open("Tail"_key);
+  EXPECT_TRUE(s.element("toolbar.chk_follow")->as<bool>("value"_key)); // the default
+  dynamic off;
+  off["value"_key] = false;
+  s.fire("toolbar.chk_follow", "changed"_key, off);
+  dynamic lines;
+  lines["value"_key] = int32_t{250};
+  s.fire("toolbar.lines_input", "changed"_key, lines);
+  auto entry = s.entry("bdg.desktop.tail");
+  ASSERT_TRUE(entry.has_value());
+  EXPECT_FALSE(entry->get_as<bool>("follow"_key, true));
+  EXPECT_EQ(entry->get_as<int32_t>("lines"_key, 0), 250);
+
+  s.open("Tail"_key);
+  EXPECT_FALSE(s.element("toolbar.chk_follow")->as<bool>("value"_key));
 }

@@ -690,11 +690,50 @@ impl Client {
     ) -> Result<(), WishError> {
         check(
             unsafe {
-                sys::wish_settings_describe_category(self.handle, cstr(&category.to_json()).as_ptr())
+                sys::wish_settings_describe_category(
+                    self.handle,
+                    cstr(&category.to_json()).as_ptr(),
+                )
             },
             &format!("client.describe_settings_category({:?})", category.id),
             self.handle,
         )
+    }
+
+    /// The current value of `info` in the user store: the stored value
+    /// when it suits the setting, else its default (also for an anonymous
+    /// session).
+    pub fn read_setting(
+        &self,
+        info: &crate::settings::SettingInfo,
+    ) -> Result<crate::settings::SettingValue, WishError> {
+        use crate::settings::SettingValue;
+        let what = format!("client.read_setting({:?})", info.name);
+        let mut out: *mut c_char = ptr::null_mut();
+        check(
+            unsafe {
+                sys::wish_settings_read(self.handle, cstr(&info.to_json()).as_ptr(), &mut out)
+            },
+            &what,
+            self.handle,
+        )?;
+        let json = unsafe { CStr::from_ptr(out) }
+            .to_string_lossy()
+            .into_owned();
+        unsafe { sys::bison_free_string(out) };
+        // bison_from_json() needs an object root.
+        let root = Value::parse_json(&format!("{{\"v\":{json}}}"))
+            .map_err(|_| WishError::new(sys::WISH_ERR_EXCEPTION, &what, self.handle))?;
+        Ok(match info.kind.as_str() {
+            "bool" => root.get_bool("v").map(SettingValue::Bool),
+            "int" => root.get_int("v").map(SettingValue::Int),
+            "float" => root
+                .get_float("v")
+                .map(|f| SettingValue::Float(f as f64))
+                .or_else(|| root.get_int("v").map(|i| SettingValue::Float(i as f64))),
+            _ => root.get_string("v").map(SettingValue::Text),
+        }
+        .unwrap_or(SettingValue::None))
     }
 
     // ── Logging ──────────────────────────────────────────────────────────

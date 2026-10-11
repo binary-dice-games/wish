@@ -325,6 +325,11 @@ class mc : public common::tool_form {
   /// ever a human-formatted string (e.g. "12.3 KB" would otherwise sort
   /// before "2 KB").
   void sort_entries(std::vector<file_row>& entries, int32_t sort_column_id, bool ascending) const;
+  /// @brief Applies the view settings (mc_settings.hpp) to a fresh listing:
+  /// drops hidden entries unless shown, and refreshes folders_first_.
+  void apply_view_settings(std::vector<file_row>& entries);
+  /// The folders_first setting, as of the last listing.
+  bool folders_first_{false};
 
   /// @brief Handle the left/right file_table's "sorted" event (see
   /// table.cpp's Table.flags doc comment): store the new sort state and

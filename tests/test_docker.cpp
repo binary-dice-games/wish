@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 
 #include "session_event_recorder.hpp"
+#include "store_session.hpp"
 
 #include <server/registry.hpp>
 #include <server/server.hpp>
@@ -925,4 +926,25 @@ TEST_F(DockerRmiTest, UpdateStatsErrorShownInStatusLabel) {
   call("update_stats"_key, make_stats_args({}, "Cannot connect to the Docker daemon"));
   auto status = srv_->last_session->ui_objects.at(root_ + "_stats.vbox.status")->as<std::string>("text"_key);
   EXPECT_NE(status.find("Cannot connect"), std::string::npos);
+}
+
+// ── Settings ─────────────────────────────────────────────────────────────────
+
+TEST(DockerSettings, LogOptionsAreSavedAndRestored) {
+  wish_test::store_session s;
+  s.open("DockerFrontend"_key);
+  dynamic on;
+  on["value"_key] = true;
+  s.fire("vbox.toolbar.follow", "changed"_key, on);
+  dynamic lines;
+  lines["value"_key] = int32_t{1000};
+  s.fire("vbox.toolbar.lines", "changed"_key, lines);
+  auto entry = s.entry("bdg.dev.docker");
+  ASSERT_TRUE(entry.has_value());
+  EXPECT_TRUE(entry->get_as<bool>("logs_follow"_key, false));
+  EXPECT_EQ(entry->get_as<int32_t>("logs_lines"_key, 0), 1000);
+
+  s.open("DockerFrontend"_key);
+  EXPECT_TRUE(s.element("vbox.toolbar.follow")->as<bool>("value"_key));
+  EXPECT_EQ(s.element("vbox.toolbar.lines")->as<int32_t>("value"_key), 1000);
 }

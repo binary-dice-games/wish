@@ -18,6 +18,7 @@
 /// shows the same modal progress dialog mc and the dev modules use, with a
 /// bar of the entries processed and a Cancel button.
 #include "modules/bdg/desktop/zip/client/zip.hpp"
+#include "modules/bdg/desktop/zip/zip_settings.hpp"
 
 #include "modules/bdg/common/command_worker.hpp"
 
@@ -30,6 +31,7 @@
 #include <miniz.h>
 #include <miniz_zip.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
@@ -193,23 +195,25 @@ void plan_zip_entries(const fs::path& source, const std::string& entry_name, std
   }
 }
 
-void write_planned_entry(mz_zip_archive& zip, const zip_entry_plan& e) {
+void write_planned_entry(mz_zip_archive& zip, const zip_entry_plan& e, mz_uint level) {
   if (e.is_dir) {
-    if (!mz_zip_writer_add_mem(&zip, e.entry_name.c_str(), nullptr, 0, MZ_DEFAULT_COMPRESSION))
+    if (!mz_zip_writer_add_mem(&zip, e.entry_name.c_str(), nullptr, 0, level))
       throw std::runtime_error("failed to add folder: " + e.entry_name);
-  } else if (!mz_zip_writer_add_file(
-                 &zip, e.entry_name.c_str(), e.full_path.string().c_str(), nullptr, 0, MZ_DEFAULT_COMPRESSION)) {
+  } else if (!mz_zip_writer_add_file(&zip, e.entry_name.c_str(), e.full_path.string().c_str(), nullptr, 0, level)) {
     throw std::runtime_error("failed to add: " + e.entry_name);
   }
 }
 
 // Creates `dir/archive_name` containing every `dir/<name>` in
 // `source_names` (recursively, for a directory), invoking `progress` (if
-// set) once before each entry is written. Throws std::runtime_error on
-// failure.
+// set) once before each entry is written, at deflate @p level (0-9).
+// Throws std::runtime_error on failure.
 void compress(
-    const fs::path& dir, const std::vector<std::string>& source_names, const std::string& archive_name,
-    const progress_fn& progress) {
+    const fs::path& dir,
+    const std::vector<std::string>& source_names,
+    const std::string& archive_name,
+    const progress_fn& progress,
+    int32_t level) {
   fs::path archive_full = dir / archive_name;
 
   std::error_code ec;
@@ -238,7 +242,7 @@ void compress(
     for (size_t i = 0; i < entries.size(); ++i) {
       if (progress)
         progress(entries[i].entry_name, i, entries.size());
-      write_planned_entry(zip, entries[i]);
+      write_planned_entry(zip, entries[i], static_cast<mz_uint>(std::clamp(level, 0, 9)));
     }
   } catch (...) {
     mz_zip_writer_end(&zip);
@@ -374,7 +378,7 @@ void run_zip(wish_app_host& s) {
   // "Compress" confirmed server-side: create the archive, then refresh the
   // listing so the new file appears and report the outcome. A failure stays
   // in the progress dialog until closed; Cancel discards the partial archive.
-  worker->on(*tool, "on_compress_requested"_key, [worker, tool, cur_dir](const dynamic& payload) {
+  worker->on(*tool, "on_compress_requested"_key, [&s, worker, tool, cur_dir](const dynamic& payload) {
     auto path = payload.as<std::string>("path"_key);
     auto source_names = read_names(payload, "source_names"_key);
     auto archive_name = payload.as<std::string>("archive_name"_key);
@@ -382,7 +386,12 @@ void run_zip(wish_app_host& s) {
     std::string message;
     worker->run_task(make_message("$$ZIP_COMPRESSING_INTO", {archive_name}), [&](common::task_progress& progress) {
       try {
-        compress(fs::path(path), source_names, archive_name, item_reporter(progress));
+        compress(
+            fs::path(path),
+            source_names,
+            archive_name,
+            item_reporter(progress),
+            s.read_int_setting(zip_settings::compression_level()));
         message = make_message("$$ZIP_CREATED", {archive_name});
       } catch (const operation_cancelled&) {
         std::error_code ec;

@@ -3,6 +3,7 @@
 /// @brief Implementation of kubectl_source.
 #include "kubectl_source.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -187,14 +188,15 @@ void kubectl_source::stop_stats_polling() {
   stats_stop_.reset();
 }
 
-void kubectl_source::start_stats_polling() {
+void kubectl_source::start_stats_polling(int32_t interval_s) {
   if (stats_stop_)
     return; // already polling
 
   auto stop = std::make_shared<std::atomic<bool>>(false);
   stats_stop_ = stop;
   auto proxy = proxy_;
-  std::thread([proxy, stop] {
+  const int ticks = std::max(1, interval_s) * 10;
+  std::thread([proxy, stop, ticks] {
     using namespace std::chrono_literals;
     while (!stop->load(std::memory_order_relaxed)) {
       // run_process() directly, NOT run_logged() -- a ~10 s re-poll of
@@ -261,7 +263,7 @@ void kubectl_source::start_stats_polling() {
         break; // form torn down.
       }
 
-      for (int k = 0; k < 100 && !stop->load(std::memory_order_relaxed); ++k)
+      for (int k = 0; k < ticks && !stop->load(std::memory_order_relaxed); ++k)
         std::this_thread::sleep_for(100ms);
     }
   }).detach();

@@ -41,6 +41,11 @@ class git_repo_source : public common::tool_source {
   /// and after every mutating action below.
   void refresh_all();
 
+  /// @brief Commits refresh_all() loads into the graph (default 300).
+  void set_max_commits(int32_t n) {
+    max_commits_ = n;
+  }
+
   /// @brief `git <args>` in the repository, via run_git().
   process_result run(const std::vector<std::string>& args, common::process_options options = {}) const override;
 
@@ -63,6 +68,7 @@ class git_repo_source : public common::tool_source {
   void on_diff_requested(const std::string& hash, const std::string& path, bool staged);
 
  private:
+  int32_t max_commits_{300};
   void push_refs();
   void push_log();
   void push_status();

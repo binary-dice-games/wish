@@ -107,6 +107,12 @@ CSV-hostile text), tables whose names need quoting (`order details`,
 - Table names in *View data* are quoted for the driver (`"x"`, `` `x` ``
   for MySQL, `[x]` for SQL Server).
 
+## Settings
+
+In Settings (`bdg/desktop/conf`), under the tool's own category:
+
+- **Row limit** -- the SQL editor's row limit, saved when changed.
+
 ## Known limitations (v1)
 
 - SQL only — sq's own SLQ query language is not exposed.

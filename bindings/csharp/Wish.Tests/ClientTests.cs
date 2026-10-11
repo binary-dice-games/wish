@@ -126,6 +126,15 @@ public class SettingsMetadataTests
         ex = Assert.Throws<WishException>(() => client.DescribeSettingsCategory(new SettingsCategory { Id = "example" }));
         Assert.Equal(WishErrorCode.Unavailable, ex.Code);
     }
+
+    [Fact]
+    public void ReadSettingWithoutSessionReturnsTheDefault()
+    {
+        using var client = Client.Tcp("127.0.0.1", 1);
+        Assert.Equal(1.0, client.ReadSetting(new SettingInfo { Name = "bdg.desktop.example.size", Type = "float", Default = 1 }));
+        Assert.Equal(true, client.ReadSetting(new SettingInfo { Name = "bdg.desktop.example.on", Type = "bool", Default = true }));
+        Assert.Throws<WishException>(() => client.ReadSetting(new SettingInfo { Name = "nodot", Type = "bool" }));
+    }
 }
 
 /// <summary>

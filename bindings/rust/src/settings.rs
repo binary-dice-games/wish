@@ -92,7 +92,13 @@ impl SettingInfo {
             let options: Vec<String> = self
                 .options
                 .iter()
-                .map(|o| format!("{{\"value\":{},\"label\":{}}}", json_string(&o.value), json_string(&o.label)))
+                .map(|o| {
+                    format!(
+                        "{{\"value\":{},\"label\":{}}}",
+                        json_string(&o.value),
+                        json_string(&o.label)
+                    )
+                })
                 .collect();
             j.push_str(&format!(",\"options\":[{}]", options.join(",")));
         }
@@ -172,13 +178,18 @@ mod tests {
     fn setting_json_has_every_field() {
         let info = SettingInfo {
             label: "Mode \"x\"".into(),
-            options: vec![SettingOption { value: "a".into(), label: "Alpha".into() }],
+            options: vec![SettingOption {
+                value: "a".into(),
+                label: "Alpha".into(),
+            }],
             default: SettingValue::Text("a".into()),
             min: Some(1.5),
             ..SettingInfo::new("bdg.desktop.example.mode", "enum")
         };
         let j = info.to_json();
-        assert!(j.starts_with("{\"name\":\"bdg.desktop.example.mode\",\"type\":\"enum\",\"label\":\"Mode \\\"x\\\"\""));
+        assert!(j.starts_with(
+            "{\"name\":\"bdg.desktop.example.mode\",\"type\":\"enum\",\"label\":\"Mode \\\"x\\\"\""
+        ));
         assert!(j.contains("\"default\":\"a\""));
         assert!(j.contains("\"min\":1.5"));
         assert!(j.contains("\"options\":[{\"value\":\"a\",\"label\":\"Alpha\"}]"));
@@ -187,7 +198,12 @@ mod tests {
 
     #[test]
     fn category_json() {
-        let c = SettingsCategory { id: "example".into(), color: "#AF52DE".into(), order: 3, ..Default::default() };
+        let c = SettingsCategory {
+            id: "example".into(),
+            color: "#AF52DE".into(),
+            order: 3,
+            ..Default::default()
+        };
         assert_eq!(
             c.to_json(),
             "{\"id\":\"example\",\"label\":\"\",\"description\":\"\",\"icon\":\"\",\"color\":\"#AF52DE\",\"order\":3}"

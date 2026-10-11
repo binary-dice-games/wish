@@ -38,6 +38,7 @@
 /// last N lines from scratch, the same "last N lines" semantics
 /// regardless of whether this run started with `-n N` or `-n +N`.
 #include "modules/bdg/desktop/tail/client/tail.hpp"
+#include "modules/bdg/desktop/tail/tail_settings.hpp"
 
 #include "src/client/app_registry.hpp"
 #include "src/client/wish_app_host.hpp"
@@ -71,6 +72,7 @@ struct tail_options {
   bool lines_from_start = false; // true for "-n +N"; false for "-n N" (last N lines)
   std::string filter;
   std::vector<std::string> files;
+  int32_t poll_ms = 300; // the bdg.desktop.tail.poll_ms setting
 };
 
 void parse_n_value(const std::string& v, tail_options& opt) {
@@ -88,8 +90,9 @@ void parse_n_value(const std::string& v, tail_options& opt) {
   }
 }
 
-tail_options parse_args(const std::vector<std::string>& args) {
+tail_options parse_args(const std::vector<std::string>& args, int32_t default_lines) {
   tail_options opt;
+  opt.line_count = default_lines;
   for (size_t i = 0; i < args.size(); ++i) {
     const std::string& a = args[i];
     if (a == "-f" || a == "--follow") {
@@ -270,7 +273,7 @@ void tail_file(std::shared_ptr<rmi::proxy::dynamic> proxy, std::shared_ptr<std::
       }
     }
 
-    std::this_thread::sleep_for(300ms);
+    std::this_thread::sleep_for(std::chrono::milliseconds(opt.poll_ms));
   }
 }
 
@@ -285,7 +288,8 @@ void run_tail(wish_app_host& s) {
     s.signal_done();
   });
 
-  auto opt = parse_args(s.app_args());
+  auto opt = parse_args(s.app_args(), s.read_int_setting(tail_settings::lines()));
+  opt.poll_ms = s.read_int_setting(tail_settings::poll_ms());
 
   if (opt.files.empty()) {
     std::cerr << "[tail] usage: wish client --run=tail -- [-f] [-n N|+N] [-e REGEX] FILE...\n";

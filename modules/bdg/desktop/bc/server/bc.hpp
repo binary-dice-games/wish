@@ -68,6 +68,8 @@ class bc : public common::tool_form {
   std::vector<keypad_def> make_keypads();
   std::string make_layout(const std::vector<keypad_def>& pads) const;
   void set_mode(calc::mode m);
+  /// set_mode() from the user (tabs, View menu): also saves the setting.
+  void choose_mode(calc::mode m);
   void refresh();
   /// calc_engine error text -> its translation; other text unchanged.
   std::string translate_error(const std::string& display);

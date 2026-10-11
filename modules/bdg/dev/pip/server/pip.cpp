@@ -7,6 +7,7 @@
 /// (Packages / Versions) share one package_row type and run_row_action()
 /// path.
 #include "pip.hpp"
+#include "modules/bdg/dev/pip/pip_settings.hpp"
 
 #include "src/bison/bison_object.hpp"
 
@@ -168,9 +169,21 @@ void pip_frontend::on_init() {
       spec_input_ = e;
       spec_input_id_ = wish_id_of(e);
     });
-    tree.with("vbox.opts_bar.upgrade", [&](const auto& e) { upgrade_id_ = wish_id_of(e); });
-    tree.with("vbox.opts_bar.user", [&](const auto& e) { user_id_ = wish_id_of(e); });
-    tree.with("vbox.opts_bar.pre", [&](const auto& e) { pre_id_ = wish_id_of(e); });
+    tree.with("vbox.opts_bar.upgrade", [&](const auto& e) {
+      upgrade_id_ = wish_id_of(e);
+      opt_upgrade_ = setting_bool(pip_settings::upgrade());
+      e["value"_key] = opt_upgrade_;
+    });
+    tree.with("vbox.opts_bar.user", [&](const auto& e) {
+      user_id_ = wish_id_of(e);
+      opt_user_ = setting_bool(pip_settings::user());
+      e["value"_key] = opt_user_;
+    });
+    tree.with("vbox.opts_bar.pre", [&](const auto& e) {
+      pre_id_ = wish_id_of(e);
+      opt_pre_ = setting_bool(pip_settings::pre());
+      e["value"_key] = opt_pre_;
+    });
     click("vbox.install_bar.btn_install", [this] {
       if (spec_text_.find_first_not_of(" \t") == std::string::npos) {
         set_status(packages_, "$$PIP_ENTER_PACKAGE_TO_INSTALL", false);
@@ -508,10 +521,13 @@ void pip_frontend::on_event(key_t id, key_t event, const dynamic& payload) {
       req_text_ = payload.as<std::string>("value"_key);
     } else if (id == upgrade_id_) {
       opt_upgrade_ = payload.as<bool>("value"_key);
+      save_setting(pip_settings::upgrade(), opt_upgrade_);
     } else if (id == user_id_) {
       opt_user_ = payload.as<bool>("value"_key);
+      save_setting(pip_settings::user(), opt_user_);
     } else if (id == pre_id_) {
       opt_pre_ = payload.as<bool>("value"_key);
+      save_setting(pip_settings::pre(), opt_pre_);
     }
     return;
   }
@@ -523,6 +539,7 @@ void pip_frontend::on_event(key_t id, key_t event, const dynamic& payload) {
 // ── Registration ───────────────────────────────────────────────────────────
 
 void register_pip() {
+  common::register_tool_settings(pip_settings::all());
   auto proto = dynamic_ptr{"PipFrontend"_key, {}};
 
   auto add_method = [&](key_t name, dynamic (pip_frontend::*fn)(const dynamic&)) {

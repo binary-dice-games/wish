@@ -22,3 +22,10 @@ last given.
   (platform-specific: `process_info_linux.cpp`/`process_info_win.cpp`) and
   periodically pushes a fresh snapshot to the form.
 - **resources/**: none.
+
+## Settings
+
+In Settings (`bdg/desktop/conf`), under the tool's own category:
+
+- **Refresh interval** -- milliseconds between samples (default 1000).
+- **Graph history** -- samples in the CPU and memory graphs (default 60).

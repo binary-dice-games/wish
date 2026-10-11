@@ -6,6 +6,7 @@
 /// the bdg tool forms (modules/bdg/common/server), for a query tool: the Results table's columns are built at
 /// runtime per result, and the Navigator is a TreeNode hierarchy.
 #include "sq.hpp"
+#include "modules/bdg/dev/sq/sq_settings.hpp"
 
 #include "sq_chart_render.hpp"
 #include "src/bison/bison_object.hpp"
@@ -303,7 +304,14 @@ void sq_frontend::on_init() {
       conn_combo_ = e;
       conn_combo_id_ = wish_id_of(e);
     });
-    tree.with("vbox.toolbar.rows", [&](const auto& e) { rows_combo_ = e; });
+    tree.with("vbox.toolbar.rows", [&](const auto& e) {
+      rows_combo_ = e;
+      rows_combo_id_ = wish_id_of(e);
+      const std::string limit = setting_text(sq_settings::row_limit());
+      for (size_t i = 0; i < std::size(kRowLimits); ++i)
+        if (limit == std::to_string(kRowLimits[i]))
+          e["value"_key] = static_cast<int32_t>(i);
+    });
     tree.with("vbox.status", [&](const auto& e) { editor_status_ = e; });
     tree.with("vbox.toolbar.btn_run", [&](const auto& e) {
       click_handlers_[wish_id_of(e)] = [this] {
@@ -1158,6 +1166,11 @@ void sq_frontend::on_event(key_t id, key_t event, const dynamic& payload) {
       if (idx >= 0 && static_cast<size_t>(idx) < handles_.size() && handles_[idx] != active_handle_)
         emit("activate_requested"_key, make_payload("handle"_key, handles_[idx]));
     }
+    if (id == rows_combo_id_) {
+      const int32_t idx = payload.get_as<int32_t>("value"_key, -1);
+      if (idx >= 0 && static_cast<size_t>(idx) < std::size(kRowLimits))
+        save_setting(sq_settings::row_limit(), std::to_string(kRowLimits[idx]));
+    }
     if (auto ch = change_handlers_.find(id); ch != change_handlers_.end())
       ch->second();
     return;
@@ -1170,6 +1183,7 @@ void sq_frontend::on_event(key_t id, key_t event, const dynamic& payload) {
 // ── Registration ───────────────────────────────────────────────────────────
 
 void register_sq() {
+  common::register_tool_settings(sq_settings::all());
   auto proto = dynamic_ptr{"SqFrontend"_key, {}};
 
   auto add_method = [&](key_t name, dynamic (sq_frontend::*fn)(const dynamic&)) {

@@ -8,6 +8,7 @@
 /// modules/bdg/desktop/zip/client/zip.cpp instead. See
 /// zip.hpp's class doc comment for the full client/server handshake.
 #include "zip.hpp"
+#include "modules/bdg/desktop/zip/zip_settings.hpp"
 
 #include "src/bison/bison_object.hpp"
 #include "src/rmi/shared/ids.hpp"
@@ -847,6 +848,7 @@ void zip::on_event(key_t id, key_t event, const dynamic& payload) {
 // ── Registration ──────────────────────────────────────────────────────────────
 
 void register_zip() {
+  common::register_tool_settings(zip_settings::all());
   auto proto = dynamic_ptr{"Zip"_key, {}};
 
   proto->addField(

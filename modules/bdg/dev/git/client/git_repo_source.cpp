@@ -181,7 +181,7 @@ void git_repo_source::push_log() {
        "--topo-order",
        "--date-order",
        "-n",
-       "300",
+       std::to_string(max_commits_),
        "--pretty=format:%H%x1f%P%x1f%an%x1f%ad%x1f%s%x1e",
        "--date=format:%Y-%m-%d %H:%M"});
 

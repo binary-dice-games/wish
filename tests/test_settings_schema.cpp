@@ -1,13 +1,16 @@
 // MIT License © 2026 Binary Dice Games
 // Tests for src/context/settings_schema.hpp and settings_store.hpp -- the
 // settings metadata model behind the conf tool.
+#include "client/wish_app_host.hpp"
 #include "context/settings_schema.hpp"
 #include "context/settings_store.hpp"
 #include "src/rmi/shared/ids.hpp"
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <filesystem>
+#include <map>
 
 using namespace bdg::bison;
 namespace st = bdg::wish::settings;
@@ -266,4 +269,165 @@ TEST(SettingsStore, RecordsFiledUnderAnotherEntryAreIgnored) {
   store.set("other.app#schema", schema); // ... but filed under other.app
   EXPECT_TRUE(st::collect(store).settings.empty());
   std::filesystem::remove(file);
+}
+
+// ── Values and the registry ──────────────────────────────────────────────────
+
+TEST(SettingsStore, ValueOfFallsBackToTheDefault) {
+  auto file = temp_store_file();
+  bdg::wish::persistent_store store(file);
+  st::setting_info count;
+  count.name = "bdg.desktop.example.count";
+  count.type = st::setting_type::integer;
+  count.min = 1;
+  count.max = 10;
+  count.default_value = int32_t{5};
+  EXPECT_EQ(st::int_of(nullptr, count), 5); // anonymous session
+  EXPECT_EQ(st::int_of(&store, count), 5); // unset
+  dynamic entry;
+  entry["count"_key] = int32_t{7};
+  store.set("bdg.desktop.example", entry);
+  EXPECT_EQ(st::int_of(&store, count), 7);
+  EXPECT_FLOAT_EQ(st::float_of(&store, count), 7.0f);
+  entry["count"_key] = int32_t{70}; // out of range
+  store.set("bdg.desktop.example", entry);
+  EXPECT_EQ(st::int_of(&store, count), 5);
+  EXPECT_EQ(st::text_of(&store, color_setting()), "#FF0000");
+  std::filesystem::remove(file);
+}
+
+TEST(SettingsStore, RegisteredSettingsAreCollectedWithTheirValues) {
+  st::setting_info lines;
+  lines.name = "test.registry.app.lines";
+  lines.category = "test.registry.app";
+  lines.type = st::setting_type::integer;
+  lines.default_value = int32_t{100};
+  st::register_setting(lines);
+  lines.label = "Lines";
+  st::register_setting(lines); // replaces
+  st::register_category({"test.registry.app", "App", "", "", "#FF9500", 0});
+  st::setting_info bad;
+  bad.name = "no-dot";
+  EXPECT_THROW(st::register_setting(bad), st::schema_error);
+
+  auto registered = st::registered_settings();
+  auto n = std::count_if(registered.begin(), registered.end(), [](const st::setting_info& s) {
+    return s.name == "test.registry.app.lines";
+  });
+  EXPECT_EQ(n, 1);
+
+  auto file = temp_store_file();
+  bdg::wish::persistent_store store(file);
+  dynamic entry;
+  entry["lines"_key] = int32_t{42};
+  store.set("test.registry.app", entry);
+  // A stale description in the store loses to the registered one.
+  st::setting_info stale = lines;
+  stale.label = "Old";
+  st::describe(store, stale);
+
+  auto c = st::collect(store, true);
+  auto it = std::find_if(c.settings.begin(), c.settings.end(), [](const st::described_setting& d) {
+    return d.info.name == "test.registry.app.lines";
+  });
+  ASSERT_NE(it, c.settings.end());
+  EXPECT_EQ(it->info.label, "Lines");
+  EXPECT_EQ(std::get<int32_t>(it->value), 42);
+  EXPECT_EQ(
+      std::count_if(
+          c.settings.begin(),
+          c.settings.end(),
+          [](const st::described_setting& d) { return d.info.name == "test.registry.app.lines"; }),
+      1);
+  EXPECT_TRUE(std::any_of(c.categories.begin(), c.categories.end(), [](const st::category_info& ci) {
+    return ci.id == "test.registry.app" && ci.color == "#FF9500";
+  }));
+  std::filesystem::remove(file);
+}
+
+namespace {
+
+/// wish_app_host over an in-memory user store.
+class store_host : public bdg::wish::wish_app_host {
+ public:
+  bool anonymous = false;
+  std::map<std::string, dynamic> entries;
+
+  std::future<rmi::proxy::dynamic> instantiate(bdg::bison::key_t, bdg::bison::key_t, dynamic) override {
+    throw std::logic_error("unused");
+  }
+  std::future<void> upload_file(const std::string&, const std::string&, bdg::wish::transfer_progress_callback)
+      override {
+    throw std::logic_error("unused");
+  }
+  std::future<std::string> download_file(const std::string&, bdg::wish::transfer_progress_callback) override {
+    throw std::logic_error("unused");
+  }
+  bool has_user_store() const override {
+    return !anonymous;
+  }
+  std::future<std::optional<dynamic>> user_store_get(const std::string& name) override {
+    std::promise<std::optional<dynamic>> p;
+    auto it = entries.find(name);
+    p.set_value(it == entries.end() ? std::nullopt : std::optional<dynamic>{it->second});
+    return p.get_future();
+  }
+  std::future<void> user_store_set(const std::string& name, dynamic value) override {
+    entries[name] = std::move(value);
+    std::promise<void> p;
+    p.set_value();
+    return p.get_future();
+  }
+  void keep_alive(rmi::proxy::dynamic&&) override {}
+  void signal_done() override {}
+  const std::vector<std::string>& app_args() const override {
+    return args_;
+  }
+  bool read_console_line(std::string&) override {
+    return false;
+  }
+
+ private:
+  std::vector<std::string> args_;
+};
+
+} // namespace
+
+TEST(SettingsAppHost, ReadAndWriteSettings) {
+  store_host host;
+  st::setting_info on;
+  on.name = "bdg.desktop.example.enabled";
+  on.type = st::setting_type::boolean;
+  on.default_value = true;
+  EXPECT_TRUE(host.read_bool_setting(on));
+  EXPECT_EQ(host.write_setting(on, false), "");
+  EXPECT_FALSE(host.read_bool_setting(on));
+  EXPECT_EQ(host.write_setting(color_setting(), std::string{"#00ff00"}), "");
+  EXPECT_NE(host.write_setting(color_setting(), std::string{"green"}), "");
+  EXPECT_EQ(host.read_text_setting(color_setting()), "#00FF00");
+  // Both fields share the entry.
+  EXPECT_FALSE(host.entries["bdg.desktop.example"].get_as<bool>("enabled"_key, true));
+
+  host.anonymous = true;
+  EXPECT_TRUE(host.read_bool_setting(on)); // the default
+  EXPECT_NE(host.write_setting(on, false), "");
+}
+
+TEST(SettingsSchema, StoredOrDefaultAndValueJson) {
+  st::setting_info size;
+  size.name = "bdg.desktop.example.size";
+  size.type = st::setting_type::real;
+  size.max = 2.0f;
+  size.default_value = int32_t{1};
+  // No entry: the default, coerced to the setting's type.
+  auto v = st::stored_or_default(nullptr, size);
+  ASSERT_TRUE(std::holds_alternative<float>(v));
+  EXPECT_EQ(st::value_to_json(v), "1.0");
+  dynamic entry;
+  entry["size"_key] = 1.5f;
+  EXPECT_EQ(st::value_to_json(st::stored_or_default(&entry, size)), "1.5");
+  entry["size"_key] = 9.0f; // out of range
+  EXPECT_EQ(st::value_to_json(st::stored_or_default(&entry, size)), "1.0");
+  EXPECT_EQ(st::value_to_json(st::stored_or_default(nullptr, color_setting())), "\"#FF0000\"");
+  EXPECT_EQ(st::value_to_json(st::setting_value{}), "null");
 }

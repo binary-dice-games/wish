@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 
 #include "session_event_recorder.hpp"
+#include "store_session.hpp"
 
 #include <server/registry.hpp>
 #include <server/server.hpp>
@@ -540,4 +541,21 @@ TEST_F(CurlRmiTest, ClosingWindowEmitsClosedAndTearsDownAllRoots) {
   wait_for(*c);
   ASSERT_TRUE(c->got);
   EXPECT_FALSE(srv_->last_session->ui_objects.count(response_root));
+}
+
+// ── Settings ─────────────────────────────────────────────────────────────────
+
+TEST(CurlSettings, FollowRedirectsIsSavedAndRestored) {
+  wish_test::store_session s;
+  s.open("CurlFrontend"_key);
+  EXPECT_TRUE(s.element("toolbar.follow")->as<bool>("value"_key));
+  dynamic off;
+  off["value"_key] = false;
+  s.fire("toolbar.follow", "changed"_key, off);
+  auto entry = s.entry("bdg.dev.curl");
+  ASSERT_TRUE(entry.has_value());
+  EXPECT_FALSE(entry->get_as<bool>("follow_redirects"_key, true));
+
+  s.open("CurlFrontend"_key);
+  EXPECT_FALSE(s.element("toolbar.follow")->as<bool>("value"_key));
 }

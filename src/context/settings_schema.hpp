@@ -188,4 +188,15 @@ void write_value(bison::dynamic& entry, const std::string& field, const setting_
 /// @brief The value as display text ("true", "12", "#FF0000", ...).
 std::string to_text(const setting_value& value);
 
+/// @brief The value as JSON text: `true`, `12`, `0.5`, `"#FF0000"`, or
+///        `null` for monostate.
+std::string value_to_json(const setting_value& value);
+
+/**
+ * @brief The value of @p info in @p entry (the setting's store entry): the
+ *        stored field when it suits the setting (validate(), coerced), else
+ *        the default. @p entry may be null (no entry, or no store).
+ */
+setting_value stored_or_default(const bison::dynamic* entry, const setting_info& info);
+
 } // namespace bdg::wish::settings

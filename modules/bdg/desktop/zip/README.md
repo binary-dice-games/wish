@@ -39,3 +39,9 @@ button; a failure stays in the dialog until closed.
 
 Mirrors `tree`'s client/server split for its local (left) panel:
 the server owns and renders the UI, the client owns the local filesystem.
+
+## Settings
+
+In Settings (`bdg/desktop/conf`), under the tool's own category:
+
+- **Compression level** -- 0 (store) to 9 (smallest), default 6.

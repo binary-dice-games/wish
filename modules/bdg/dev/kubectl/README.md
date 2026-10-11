@@ -74,6 +74,13 @@ All eight windows are implemented and unit-tested over `memory_transport`
 Plus a `kubectl version` startup gate and a `MessageBox` confirm for Delete
 and Drain.
 
+## Settings
+
+In Settings (`bdg/desktop/conf`), under the tool's own category:
+
+- **Follow logs**, **Log lines** -- the Logs window's Follow and Lines controls, saved when changed.
+- **Stats interval** -- seconds between `kubectl top` samples (default 10).
+
 ## Known limitations (v1)
 
 - **No `kubectl apply` / edit / scale-to-N, no `exec` / `port-forward`, no

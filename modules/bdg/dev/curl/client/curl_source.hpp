@@ -146,7 +146,8 @@ class curl_source : public common::tool_source {
   std::vector<saved_request> collections_;
   std::vector<environment> environments_;
   std::deque<history_entry> history_;
-  static constexpr size_t kMaxHistory = 200;
+  /// Requests kept in history_: the history_size setting, read by load_store().
+  size_t max_history_{200};
 
   size_t next_id_{0}; ///< monotonically-increasing local id source.
   std::string new_id(const char* prefix);

@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 
 #include "session_event_recorder.hpp"
+#include "store_session.hpp"
 
 #include <server/registry.hpp>
 #include <server/server.hpp>
@@ -631,4 +632,23 @@ TEST_F(PipRmiTest, AppendCommandLogAddsRowsAndClearConsoleEmptiesThem) {
   ASSERT_NE(clear.id, 0u);
   fire_at(root_ + "_console", clear, "clicked"_key);
   EXPECT_EQ(row_count(table), 0u);
+}
+
+// ── Settings ─────────────────────────────────────────────────────────────────
+
+TEST(PipSettings, InstallOptionsAreSavedAndRestored) {
+  wish_test::store_session s;
+  s.open("PipFrontend"_key);
+  dynamic on;
+  on["value"_key] = true;
+  s.fire("opts_bar.user", "changed"_key, on);
+  s.fire("opts_bar.pre", "changed"_key, on);
+  auto entry = s.entry("bdg.dev.pip");
+  ASSERT_TRUE(entry.has_value());
+  EXPECT_TRUE(entry->get_as<bool>("user"_key, false));
+
+  s.open("PipFrontend"_key);
+  EXPECT_TRUE(s.element("opts_bar.user")->as<bool>("value"_key));
+  EXPECT_TRUE(s.element("opts_bar.pre")->as<bool>("value"_key));
+  EXPECT_FALSE(s.element("opts_bar.upgrade")->as<bool>("value"_key));
 }

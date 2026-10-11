@@ -246,6 +246,9 @@ internal static partial class Native
     [LibraryImport(LibName, StringMarshalling = StringMarshalling.Utf8)]
     public static partial int wish_settings_describe_category(nint client, string categoryJson);
 
+    [LibraryImport(LibName, StringMarshalling = StringMarshalling.Utf8)]
+    public static partial int wish_settings_read(nint client, string settingJson, out nint outJson);
+
     // ── Logging ───────────────────────────────────────────────────────────────
 
     [LibraryImport(LibName, StringMarshalling = StringMarshalling.Utf8)]

@@ -94,6 +94,48 @@ void tool_form::run_in_dispatch(const std::function<void()>& fn) {
   detail::current_context = nullptr;
 }
 
+persistent_store* tool_form::settings_store() {
+  if (!settings_store_known_) {
+    if (detail::current_context) {
+      settings_store_ = sess().user_store;
+    } else if (sync_ctx_) {
+      // From on_event(), which runs outside the session lock (see
+      // run_in_dispatch()).
+      settings_store_ = context_rlock {
+        *sync_ctx_
+      } -> user_store;
+    }
+    settings_store_known_ = detail::current_context || sync_ctx_;
+  }
+  return settings_store_.get();
+}
+
+settings::setting_value tool_form::setting(const settings::setting_info& info) {
+  return settings::value_of(settings_store(), info);
+}
+
+bool tool_form::setting_bool(const settings::setting_info& info) {
+  return settings::bool_of(settings_store(), info);
+}
+
+int32_t tool_form::setting_int(const settings::setting_info& info) {
+  return settings::int_of(settings_store(), info);
+}
+
+std::string tool_form::setting_text(const settings::setting_info& info) {
+  return settings::text_of(settings_store(), info);
+}
+
+void tool_form::save_setting(const settings::setting_info& info, const settings::setting_value& value) {
+  if (auto* store = settings_store()) {
+    try {
+      settings::write_setting(*store, info, value);
+    } catch (const std::exception&) {
+      // The store couldn't be written: the tool still works, unsaved.
+    }
+  }
+}
+
 void tool_form::show_confirm(const std::string& message, std::function<void()> on_yes, confirm_options options) {
   dynamic params;
   params["title"_key] = tr(options.title);

@@ -79,6 +79,12 @@ Build: off by default. `cmake -S . -B build -DWISH_MODULE_BDG_DEV_HELM=ON`
   the module ran (`#` / Command / Exit / Output), green on success, red on
   failure; right-click a row for "Copy Entry" or "Clear Console".
 
+## Settings
+
+In Settings (`bdg/desktop/conf`), under the tool's own category:
+
+- **Create namespace**, **Wait** -- the Install dialog's options, saved when changed.
+
 ## Known limitations
 
 - **An upgrade needs the chart typed in**: `helm list` reports a release's

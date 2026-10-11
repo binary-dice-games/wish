@@ -2,6 +2,7 @@
 /// @file top.cpp
 /// @brief Implementation of the Top form.
 #include "top.hpp"
+#include "modules/bdg/desktop/top/top_settings.hpp"
 
 #include "src/bison/bison_object.hpp"
 #include "src/rmi/shared/ids.hpp"
@@ -22,10 +23,6 @@ using namespace bison;
 using common::wish_id_of;
 
 namespace {
-
-// Number of samples kept in the rolling CPU%/memory% history; also doubles
-// as the fixed X-axis width for both plots (see on_init()).
-constexpr size_t kMaxHistory = 60;
 
 // ImPlotAxisFlags_NoTickLabels: the X axis is a rolling sample index, not a
 // meaningful timestamp, so its numeric labels would just be noise.
@@ -229,6 +226,7 @@ top::~top() {
 void top::on_init() {
   // See form::internal_root_key_'s doc comment: ordinally-assigned, not pointer-derived.
   internal_root_key_ = next_available_key("__top_");
+  max_history_ = size_t(setting_int(top_settings::history()));
   cpu_root_key_ = internal_root_key_ + "_cpu";
   mem_root_key_ = internal_root_key_ + "_mem";
   cores_root_key_ = internal_root_key_ + "_cores";
@@ -241,9 +239,9 @@ void top::on_init() {
   // the very first render, before any real data arrived) -- Y is always
   // 0..100%; X is a rolling sample-index window with its numeric labels
   // hidden, since "sample 37" isn't meaningful to a user.
-  auto fix_axes = [](const auto& e) {
+  auto fix_axes = [this](const auto& e) {
     e["x_min"_key] = 0.0f;
-    e["x_max"_key] = static_cast<float>(kMaxHistory - 1);
+    e["x_max"_key] = static_cast<float>(max_history_ - 1);
     e["y_min"_key] = 0.0f;
     e["y_max"_key] = 100.0f;
     e["x_flags"_key] = kHideXTickLabels;
@@ -478,7 +476,7 @@ void top::ensure_core_meters(size_t core_count) {
 
 void top::push_history(std::vector<float>& history, float value) {
   history.push_back(value);
-  if (history.size() > kMaxHistory)
+  if (history.size() > max_history_)
     history.erase(history.begin());
 }
 
@@ -1069,6 +1067,7 @@ void register_process_details_class() {
 
 void register_top() {
   register_process_details_class();
+  common::register_tool_settings(top_settings::all());
 
   auto proto = dynamic_ptr{"Top"_key, {}};
 

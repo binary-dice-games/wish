@@ -357,6 +357,11 @@ extern "C" {
         client: wish_client_handle,
         category_json: *const c_char,
     ) -> wish_error;
+    pub fn wish_settings_read(
+        client: wish_client_handle,
+        setting_json: *const c_char,
+        out_json: *mut *mut c_char,
+    ) -> wish_error;
 
     // ── wish_client_c.h: logging ──────────────────────────────────────────────
 

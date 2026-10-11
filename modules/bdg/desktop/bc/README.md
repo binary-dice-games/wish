@@ -29,3 +29,10 @@ errors, overflow) show a message until the next digit or `C`.
   embedded app — instantiates the form, keeps it alive until the window
   closes.
 - **resources/**: none.
+
+## Settings
+
+In Settings (`bdg/desktop/conf`), under the tool's own category:
+
+- **Mode** -- the keypad bc opens with; the mode tabs save it.
+- **Angle unit**, **Digit grouping**, **Show history** -- saved from the View menu.

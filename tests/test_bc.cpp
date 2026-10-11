@@ -12,6 +12,7 @@
 #include "modules/bdg/desktop/bc/server/calc_engine.hpp"
 #include "src/bison/bison_object.hpp"
 #include "src/rmi/rmi.hpp"
+#include "store_session.hpp"
 
 #include <memory>
 #include <optional>
@@ -579,4 +580,28 @@ TEST_F(BcTest, MemoryKeysAndCopyText) {
   fire("body.main.mem.mr");
   EXPECT_EQ(display(), "5");
   EXPECT_EQ(text("menu.edit.copy", "copy_text"_key), "5");
+}
+
+// ── Settings ─────────────────────────────────────────────────────────────────
+
+TEST(BcSettings, ModeAndViewOptionsAreSavedAndRestored) {
+  wish_test::store_session s;
+  s.open("Bc"_key);
+  s.fire("body.main.tabs.sci", "changed"_key);
+  s.fire("menu.view.rad", "clicked"_key);
+  s.fire("menu.view.history", "clicked"_key);
+  s.fire("menu.view.grouping", "clicked"_key);
+  auto entry = s.entry("bdg.desktop.bc");
+  ASSERT_TRUE(entry.has_value());
+  EXPECT_EQ(entry->get_as<std::string>("mode"_key, std::string{}), "scientific");
+  EXPECT_EQ(entry->get_as<std::string>("angle_unit"_key, std::string{}), "radians");
+  EXPECT_TRUE(entry->get_as<bool>("show_history"_key, false));
+  EXPECT_FALSE(entry->get_as<bool>("digit_grouping"_key, true));
+
+  s.open("Bc"_key); // a new session as the same user
+  EXPECT_TRUE(s.element("body.main.sci")->as<bool>("visible"_key));
+  EXPECT_FALSE(s.element("body.main.std")->as<bool>("visible"_key));
+  EXPECT_TRUE(s.element("body.history")->as<bool>("visible"_key));
+  EXPECT_TRUE(s.element("menu.view.rad")->as<bool>("checked"_key));
+  EXPECT_FALSE(s.element("menu.view.grouping")->as<bool>("checked"_key));
 }

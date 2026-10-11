@@ -337,7 +337,9 @@ one always-on `Plot`-feeding background poll thread that uses
 - **`kubectl top` runs on a background poll thread (~10 s), the module's
   one always-on poll.** `kubectl_source::start_stats_polling()` (called
   once from `run_kubectl()` after wiring) runs `kubectl top pods -A
-  --no-headers` + `kubectl top nodes --no-headers` and calls `update_stats`.
+  --no-headers` + `kubectl top nodes --no-headers` and calls `update_stats`,
+  every `bdg.dev.kubectl.stats_interval` seconds (default 10; read once by
+  `run_kubectl()` and passed as `start_stats_polling(interval_s)`).
   `common::run_process()` directly, **never `run_logged()`** — a 10 s two-command
   re-poll would flood the Console (`git`'s Log-window lesson). Stops on
   `~kubectl_source` / RMI throw. metrics-server itself only updates every

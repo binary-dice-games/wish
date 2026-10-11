@@ -161,7 +161,7 @@ class top : public common::tool_form {
 
   void ensure_core_meters(size_t core_count);
   void update_process_table(const bison::dynamic& args);
-  static void push_history(std::vector<float>& history, float value);
+  void push_history(std::vector<float>& history, float value);
   void update_history_xs(size_t count);
   /// @brief Re-sort `pid_to_row_` by `sort_column_id_`/`sort_ascending_` and
   /// refresh each row's `order` field -- no new data needed, so this can run
@@ -237,6 +237,9 @@ class top : public common::tool_form {
   std::vector<float> cpu_history_;
   std::vector<float> mem_history_;
   std::vector<float> history_xs_; ///< Shared index axis (0, 1, 2, ...) for both plots.
+  /// Samples kept in each history; also the plots' fixed X-axis width.
+  /// The `bdg.desktop.top.history` setting, read in on_init().
+  size_t max_history_{60};
 
   std::unordered_map<int, row_entry> pid_to_row_;
   size_t next_child_key_{0};

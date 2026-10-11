@@ -698,6 +698,27 @@ WISH_API wish_error wish_settings_describe(wish_client_handle client, const char
  */
 WISH_API wish_error wish_settings_describe_category(wish_client_handle client, const char* category_json);
 
+/**
+ * @brief Read a setting's current value from the user store.
+ *
+ * Returns the stored value when it suits the setting (right type, in range,
+ * one of the options, a valid color; ints are accepted for float settings),
+ * else the setting's "default". An anonymous session, a missing entry or
+ * field, or an invalid stored value all give the default, so apps can read
+ * their settings unconditionally.
+ *
+ * @param client        Active session handle.
+ * @param setting_json  The setting's metadata, as for wish_settings_describe()
+ *                      (at least "name"; "type" and "default" matter; the
+ *                      range and options are used for validation).
+ * @param out_json      Output: the value as JSON text -- `true`, `42`, `0.5`,
+ *                      `"#2F7BF5"`, or `null` when there is no default.
+ *                      Release with bison_free_string().
+ * @return WISH_OK; WISH_ERR_NULL or WISH_ERR_EXCEPTION (invalid metadata or
+ *         a store error; see wish_last_error()).
+ */
+WISH_API wish_error wish_settings_read(wish_client_handle client, const char* setting_json, char** out_json);
+
 /* ── Logging ──────────────────────────────────────────────────────────────── */
 
 /**

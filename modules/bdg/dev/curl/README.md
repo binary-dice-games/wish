@@ -74,6 +74,14 @@ re-exercised in a live browser session — see PLAN.md:
   invocation the module ran (`#` / Command / Exit / Output), green on
   success, red on failure — the docker/kubectl Console pattern.
 
+## Settings
+
+In Settings (`bdg/desktop/conf`), under the tool's own category:
+
+- **Follow redirects** -- the toolbar checkbox's starting value; saved when toggled.
+- **Request timeout** -- curl `--max-time` in seconds; 0 waits forever.
+- **History size** -- requests kept in History (default 200).
+
 ## Known limitations (v1)
 
 - **No multipart/file-upload request bodies, no cookie jar.**

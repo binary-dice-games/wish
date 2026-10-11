@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 
 #include "session_event_recorder.hpp"
+#include "store_session.hpp"
 
 #include <server/registry.hpp>
 #include <server/server.hpp>
@@ -1811,4 +1812,37 @@ TEST(McStandaloneTest, SetThenCallSequenceDoesNotCorruptNamespace) {
   }
 
   sa.stop();
+}
+
+// ── Settings ─────────────────────────────────────────────────────────────────
+
+TEST(McSettings, HiddenFilesAndFoldersFirstFollowTheSettings) {
+  wish_test::store_session s;
+  s.open("Mc"_key);
+  dynamic prefs;
+  prefs["show_hidden"_key] = false;
+  prefs["folders_first"_key] = true;
+  s.session().user_store->set("bdg.desktop.mc", prefs);
+  // Read at every listing: no need to reopen.
+  s.proxy()
+      .call(
+          "update_local_listing"_key,
+          make_local_listing_args(
+              "/home",
+              {{"a.txt", "file", "1 B", ""},
+               {".cache", "dir", "", ""},
+               {"zdir", "dir", "", ""},
+               {".profile", "file", "1 B", ""}}))
+      .get();
+  auto table = s.element("vbox.left_table");
+  ASSERT_TRUE(table);
+  auto& rows = *table->as<dynamic_ptr>("children"_key);
+  ASSERT_EQ(rows.size(), size_t{2}); // no dot files
+  auto icon = [&](size_t i) {
+    auto& row = *rows.at(i).as<dynamic_ptr>();
+    auto& name_cell = *row.as<dynamic_ptr>("children"_key)->at(size_t{0}).as<dynamic_ptr>();
+    return name_cell.as<dynamic_ptr>("children"_key)->at(size_t{0}).as<dynamic_ptr>()->as<std::string>("src"_key);
+  };
+  EXPECT_EQ(icon(0), "res/icons/folder.png"); // zdir before a.txt
+  EXPECT_NE(icon(1), "res/icons/folder.png");
 }

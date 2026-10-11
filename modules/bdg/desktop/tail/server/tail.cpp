@@ -2,6 +2,7 @@
 /// @file tail.cpp
 /// @brief Implementation of the Tail form.
 #include "tail.hpp"
+#include "modules/bdg/desktop/tail/tail_settings.hpp"
 
 #include "src/bison/bison_object.hpp"
 #include "src/rmi/shared/ids.hpp"
@@ -192,7 +193,11 @@ void tail::on_init() {
       lines_input_ptr_ = e;
       lines_input_id_ = wish_id_of(e);
     });
-    tree.with("vbox.toolbar.chk_follow", [&](const auto& e) { follow_checkbox_id_ = wish_id_of(e); });
+    tree.with("vbox.toolbar.chk_follow", [&](const auto& e) {
+      follow_checkbox_id_ = wish_id_of(e);
+      follow_enabled_ = setting_bool(tail_settings::follow());
+      e["value"_key] = follow_enabled_;
+    });
     tree.with("vbox.toolbar.btn_clear", [&](const auto& e) { btn_clear_id_ = wish_id_of(e); });
     tree.with("vbox.status_label", [&](const auto& e) { status_label_ptr_ = e; });
   });
@@ -626,6 +631,7 @@ void tail::on_event(key_t id, key_t event, const dynamic& payload) {
     if (auto* v = payload.findField<int32_t>("value"_key))
       args["count"_key] = *v;
     int32_t count = do_set_line_count(args).as<int32_t>("count"_key);
+    save_setting(tail_settings::lines(), count); // the next run starts with it
 
     // do_set_line_count()'s own evict_to_cap() only ever trims -- it has no
     // way to pull in *more* history when the user raises the count, since
@@ -644,6 +650,7 @@ void tail::on_event(key_t id, key_t event, const dynamic& payload) {
   if (id == follow_checkbox_id_ && event == "changed"_key) {
     if (auto* v = payload.findField<bool>("value"_key))
       follow_enabled_ = *v;
+    save_setting(tail_settings::follow(), follow_enabled_);
     apply_follow_state();
     return;
   }
@@ -657,6 +664,7 @@ void tail::on_event(key_t id, key_t event, const dynamic& payload) {
 // ── Registration ──────────────────────────────────────────────────────────────
 
 void register_tail() {
+  common::register_tool_settings(tail_settings::all());
   auto proto = dynamic_ptr{"Tail"_key, {}};
 
   proto->addField(

@@ -47,6 +47,7 @@ public final class SettingInfo {
   }
 
   public String name() { return name; }
+  public String type() { return type; }
 
   public SettingInfo label(String v) { label = v; return this; }
   public SettingInfo description(String v) { description = v; return this; }

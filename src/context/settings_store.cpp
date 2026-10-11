@@ -5,8 +5,11 @@
  */
 #include "context/settings_store.hpp"
 
+#include "src/bison/bison_sync.hpp"
+
 #include <algorithm>
 #include <map>
+#include <optional>
 #include <set>
 
 namespace bdg::wish::settings {
@@ -29,10 +32,27 @@ void describe_category(persistent_store& store, const category_info& info) {
   store.set(name, schema);
 }
 
-catalog collect(const persistent_store& store) {
+catalog collect(const persistent_store& store, bool with_registered) {
   catalog out;
   std::set<std::string> category_ids;
   std::set<std::string> setting_names;
+  if (with_registered) {
+    // Registered metadata comes from the running server's code, so it wins
+    // over a description stored by some earlier version.
+    for (auto& c : registered_categories())
+      if (category_ids.insert(c.id).second)
+        out.categories.push_back(std::move(c));
+    for (auto& s : registered_settings()) {
+      if (!setting_names.insert(s.name).second)
+        continue;
+      const setting_location loc = parse_name(s.name);
+      described_setting d;
+      if (auto entry = store.get(loc.entry))
+        d.value = read_value(*entry, loc.field, s.type);
+      d.info = std::move(s);
+      out.settings.push_back(std::move(d));
+    }
+  }
   for (const std::string& key : store.keys()) {
     std::string entry_name;
     if (!is_schema_entry(key, &entry_name))
@@ -78,6 +98,89 @@ std::string write_setting(persistent_store& store, const setting_info& info, con
     return ex.what();
   }
   return {};
+}
+
+setting_value value_of(const persistent_store* store, const setting_info& info) {
+  std::optional<bison::dynamic> entry;
+  if (store)
+    entry = store->get(parse_name(info.name).entry);
+  return stored_or_default(entry ? &*entry : nullptr, info);
+}
+
+bool bool_of(const persistent_store* store, const setting_info& info) {
+  auto v = value_of(store, info);
+  auto* b = std::get_if<bool>(&v);
+  return b ? *b : false;
+}
+
+int32_t int_of(const persistent_store* store, const setting_info& info) {
+  auto v = value_of(store, info);
+  if (auto* i = std::get_if<int32_t>(&v))
+    return *i;
+  if (auto* f = std::get_if<float>(&v))
+    return static_cast<int32_t>(*f);
+  return 0;
+}
+
+float float_of(const persistent_store* store, const setting_info& info) {
+  auto v = value_of(store, info);
+  if (auto* f = std::get_if<float>(&v))
+    return *f;
+  if (auto* i = std::get_if<int32_t>(&v))
+    return static_cast<float>(*i);
+  return 0.0f;
+}
+
+std::string text_of(const persistent_store* store, const setting_info& info) {
+  auto v = value_of(store, info);
+  auto* s = std::get_if<std::string>(&v);
+  return s ? *s : std::string{};
+}
+
+// ── Registry ─────────────────────────────────────────────────────────────────
+
+namespace {
+
+struct registry_state {
+  std::vector<setting_info> settings;
+  std::vector<category_info> categories;
+};
+
+bison::synchronized<registry_state>& registry() {
+  static bison::synchronized<registry_state> r;
+  return r;
+}
+
+} // namespace
+
+void register_setting(const setting_info& info) {
+  check(info);
+  auto r = registry().wlock();
+  auto it =
+      std::find_if(r->settings.begin(), r->settings.end(), [&](const setting_info& s) { return s.name == info.name; });
+  if (it != r->settings.end())
+    *it = info;
+  else
+    r->settings.push_back(info);
+}
+
+void register_category(const category_info& info) {
+  check(info);
+  auto r = registry().wlock();
+  auto it =
+      std::find_if(r->categories.begin(), r->categories.end(), [&](const category_info& c) { return c.id == info.id; });
+  if (it != r->categories.end())
+    *it = info;
+  else
+    r->categories.push_back(info);
+}
+
+std::vector<setting_info> registered_settings() {
+  return registry().rlock()->settings;
+}
+
+std::vector<category_info> registered_categories() {
+  return registry().rlock()->categories;
 }
 
 void reset_setting(persistent_store& store, const setting_info& info) {
