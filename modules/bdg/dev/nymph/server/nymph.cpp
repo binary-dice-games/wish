@@ -34,7 +34,7 @@ constexpr size_t kMaxDataRows = 1000;
 // what lets render() reach on_event() on the render thread.
 constexpr const char* kHolderLayout = R"json({
   "type": "Window",
-  "title": "nymph",
+  "title": "$$NYMPH_NYMPH",
   "visible": false
 })json";
 
@@ -42,7 +42,7 @@ constexpr const char* kHolderLayout = R"json({
 // source; "format" gets YAML highlighting and wish's schema autocomplete.
 constexpr const char* kSourceLayout = R"json({
   "type": "Window",
-  "title": "Source",
+  "title": "$$NYMPH_SOURCE",
   "width": 560,
   "height": 720,
   "closable": true,
@@ -54,8 +54,8 @@ constexpr const char* kSourceLayout = R"json({
           "type": "HorizontalLayout",
           "spacing": 8,
           "children": {
-            "save": { "type": "Button", "label": "Save", "icon": "res/icons/save.png" },
-            "path_label": { "type": "Label", "text": "(no file)" }
+            "save": { "type": "Button", "label": "$$NYMPH_SAVE", "icon": "res/icons/save.png" },
+            "path_label": { "type": "Label", "text": "$$NYMPH_NO_FILE" }
           }
         },
         "banner": { "type": "Label", "text": "", "wrap": true, "text_color": "#D03030FF" },
@@ -66,21 +66,21 @@ constexpr const char* kSourceLayout = R"json({
           "children": {
             "format_tab": {
               "type": "TabItem",
-              "label": "Format",
+              "label": "$$NYMPH_FORMAT",
               "children": {
                 "format": { "type": "TextEditor", "language": "yaml", "wish_ui_schema": true, "width": 0, "height": 0 }
               }
             },
             "data_tab": {
               "type": "TabItem",
-              "label": "Data",
+              "label": "$$NYMPH_DATA",
               "children": {
                 "data": { "type": "TextEditor", "language": "text", "width": 0, "height": 0 }
               }
             },
             "description_tab": {
               "type": "TabItem",
-              "label": "Description",
+              "label": "$$NYMPH_DESCRIPTION",
               "children": {
                 "description": { "type": "TextEditor", "language": "text", "width": 0, "height": 0 }
               }
@@ -122,11 +122,12 @@ std::string without_trailing_newlines(std::string text) {
 
 /// An error message for edit mode, where each part has its own editor: the
 /// line is given within the part the error is in, not within the whole source.
+/// A translatable message (see make_message()).
 std::string locate(const nymph::error& e, const nymph::document& doc) {
   if (e.line() >= doc.data_line)
-    return "Data, line " + std::to_string(e.line() - doc.data_line + 1) + ": " + e.message();
+    return make_message("$$NYMPH_DATA_LINE", {std::to_string(e.line() - doc.data_line + 1), e.message()});
   if (e.line() >= doc.format_line)
-    return "Format, line " + std::to_string(e.line() - doc.format_line + 1) + ": " + e.message();
+    return make_message("$$NYMPH_FORMAT_LINE", {std::to_string(e.line() - doc.format_line + 1), e.message()});
   return e.message();
 }
 
@@ -134,7 +135,9 @@ std::string locate(const nymph::error& e, const nymph::document& doc) {
 
 // ── construction ─────────────────────────────────────────────────────────────
 
-nymph_form::nymph_form(dynamic&& base) : tool_form(std::move(base)) {}
+nymph_form::nymph_form(dynamic&& base) : tool_form(std::move(base)) {
+  i18n_prefix_ = "bdg/dev/nymph";
+}
 
 void nymph_form::on_init() {
   internal_root_key_ = next_available_key("__nymph_");
@@ -218,7 +221,7 @@ dynamic nymph_form::do_load(const dynamic& args) {
     if (auto embedded = nymph::read_source(bytes))
       text = std::move(*embedded);
     else
-      load_error = "not a nymph image (the PNG has no embedded nymph source)";
+      load_error = tr("$$NYMPH_NOT_A_NYMPH_IMAGE");
   } else {
     text = std::move(bytes);
   }
@@ -322,7 +325,7 @@ bool nymph_form::render_to_sandbox(key_t done_event) {
       try {
         rebound = nymph::bind(doc);
       } catch (const nymph::error& e) {
-        throw std::runtime_error(locate(e, doc));
+        throw std::runtime_error(tr(locate(e, doc)));
       }
       source = nymph::compose_document(doc);
       description = doc.description;
@@ -344,7 +347,7 @@ bool nymph_form::render_to_sandbox(key_t done_event) {
     failure = e.what();
   }
   if (!silent_)
-    set_banner("Not saved: " + failure);
+    set_banner(trf("$$NYMPH_NOT_SAVED", {failure}));
   dynamic payload;
   payload["message"_key] = failure;
   emit("render_failed"_key, std::move(payload));
@@ -380,15 +383,18 @@ void nymph_form::build_edit_ui() {
   {
     using namespace dock;
     set_default_dock_layout(viewport(
-        "nymph_dock", "Nymph",
+        "nymph_dock",
+        tr("$$NYMPH_NYMPH"),
         layout(
             split(
-                dir::left, 0.38f,
+                dir::left,
+                0.38f,
                 area({source_root_key_}),
                 split(dir::down, 0.30f, area({data_root_key_}), area({preview_root_key_}))),
             // 2: re-applied once over layouts saved while view mode still
             // shared edit mode's window names (see on_construct()).
-            /*version=*/2, /*target=*/"nymph_dock")));
+            /*version=*/2,
+            /*target=*/"nymph_dock")));
   }
   ui_built_ = true;
 }
@@ -502,16 +508,18 @@ void nymph_form::show_view() {
   // arrangement saved for view mode never fights edit mode's.
   using namespace dock;
   set_default_dock_layout(viewport(
-      "nymph_view_dock", "Nymph",
+      "nymph_view_dock",
+      tr("$$NYMPH_NYMPH"),
       layout(
           split(dir::down, 0.28f, area({data_root_key_}), area({preview_root_key_})),
-          /*version=*/1, /*target=*/"nymph_view_dock")));
+          /*version=*/1,
+          /*target=*/"nymph_view_dock")));
   view_built_ = true;
 }
 
 void nymph_form::rebuild_preview(nymph::figure& fig) {
   dynamic window = node("Window");
-  window["title"_key] = std::string{"Preview"};
+  window["title"_key] = tr("$$NYMPH_PREVIEW");
   // View mode has no Source window; its Preview is the one to close.
   if (view_)
     window["closable"_key] = true;
@@ -529,8 +537,8 @@ void nymph_form::rebuild_data(const nymph::table& data) {
 
   dynamic status = node("Label");
   status["text"_key] = data.headers.empty()
-                           ? std::string{"No data."}
-                           : "Showing " + std::to_string(shown) + " of " + std::to_string(data.row_count()) + " rows";
+      ? tr("$$NYMPH_NO_DATA")
+      : trf("$$NYMPH_SHOWING_ROWS", {std::to_string(shown), std::to_string(data.row_count())});
 
   dynamic table = node("Table");
   table["id"_key] = std::string{"##nymph_data"};
@@ -567,7 +575,7 @@ void nymph_form::rebuild_data(const nymph::table& data) {
   vbox["children"_key] = vbox_children;
 
   dynamic window = node("Window");
-  window["title"_key] = std::string{"Data"};
+  window["title"_key] = tr("$$NYMPH_DATA");
   window["width"_key] = 640;
   window["height"_key] = 300;
   auto window_children = new_children();
@@ -578,15 +586,15 @@ void nymph_form::rebuild_data(const nymph::table& data) {
 
 void nymph_form::set_banner(const std::string& text) {
   if (banner_)
-    (*banner_)["text"_key] = text;
+    (*banner_)["text"_key] = tr(text);
 }
 
 void nymph_form::update_path_label() {
   if (!path_label_)
     return;
-  std::string text = display_path_.empty() ? std::string{"(no file)"} : display_path_;
+  std::string text = display_path_.empty() ? tr("$$NYMPH_NO_FILE") : display_path_;
   if (dirty_)
-    text += " [MODIFIED]";
+    text += " " + tr("$$NYMPH_MODIFIED");
   (*path_label_)["text"_key] = text;
 }
 
@@ -604,9 +612,9 @@ dynamic nymph_form::do_mark_saved(const dynamic& /*args*/) {
 
 void nymph_form::show_close_confirm() {
   dynamic params;
-  params["title"_key] = std::string{"Unsaved changes"};
+  params["title"_key] = tr("$$NYMPH_UNSAVED_CHANGES");
   params["message"_key] =
-      "Save changes to " + (display_path_.empty() ? std::string{"this image"} : display_path_) + " before closing?";
+      display_path_.empty() ? tr("$$NYMPH_SAVE_THIS_IMAGE") : trf("$$NYMPH_SAVE_FILE", {display_path_});
   params["icon"_key] = std::string{"warning"};
   params["buttons"_key] = std::string{"yes_no_cancel"};
 

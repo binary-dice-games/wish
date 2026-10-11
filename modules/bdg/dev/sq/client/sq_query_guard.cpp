@@ -3,6 +3,8 @@
 /// @brief Implementation of check_read_only_sql().
 #include "sq_query_guard.hpp"
 
+#include "src/i18n/translations.hpp"
+
 #include <algorithm>
 #include <cctype>
 #include <set>
@@ -105,17 +107,17 @@ std::optional<std::string> check_read_only_sql(const std::string& sql) {
   while (!clean.empty() && (clean.back() == ';' || std::isspace(static_cast<unsigned char>(clean.back()))))
     clean.pop_back();
   if (clean.find_first_not_of(" \t\r\n") == std::string::npos)
-    return std::string{"The query is empty."};
+    return std::string{"$$SQ_QUERY_EMPTY"};
   if (clean.find(';') != std::string::npos)
-    return std::string{"Only a single statement can be run."};
+    return std::string{"$$SQ_SINGLE_STATEMENT"};
 
   const auto tokens = tokenize(clean);
   if (tokens.empty())
-    return std::string{"The query is empty."};
+    return std::string{"$$SQ_QUERY_EMPTY"};
 
   static const std::set<std::string> kAllowedFirst = {"select", "with", "values", "show", "describe", "desc", "explain"};
   if (!kAllowedFirst.count(tokens.front().word))
-    return "Only read-only queries are allowed (a statement starting with '" + tokens.front().word + "' was rejected).";
+    return make_message("$$SQ_READ_ONLY_STATEMENT_REJECTED", {tokens.front().word});
 
   // Words that are also common scalar functions (REPLACE(), INSERT(),
   // TRUNCATE()) are only rejected when not used as a call.
@@ -129,7 +131,7 @@ std::optional<std::string> check_read_only_sql(const std::string& sql) {
       continue;
     if (t.call && kFunctionLike.count(t.word))
       continue;
-    return "Only read-only queries are allowed ('" + t.word + "' was rejected).";
+    return make_message("$$SQ_READ_ONLY_WORD_REJECTED", {t.word});
   }
   return std::nullopt;
 }

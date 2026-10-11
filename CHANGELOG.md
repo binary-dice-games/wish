@@ -11,8 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Internationalization (see [docs/i18n.md](docs/i18n.md)): template string values `"$$KEY"` are replaced from `<lang>.lang` translation files, falling back to English, then to the bare key.
   - Client side: `client::set_translations()` / `translate()` (applied by `register_template_from_json`/`_yaml`), `wish_set_translations()` / `wish_translate()` (applied by `wish_register_template`), and the same in the C++ header, Python, C#, Rust, Go and Android bindings.
-  - Server side: session language via `--lang` (client, server, standalone), `client::set_language()`, `wish_set_language()`, `server::set_default_language()` and `wish_app_host::language()`. Tools load `res/<org>/<collection>/<name>/i18n/<lang>.lang` (`context::translations_for()`, `tool_form::tr()`).
-  - `tail` and the `MessageBox` buttons ship English and Spanish translations.
+  - Server side: session language via `--lang` (client, server, standalone), `client::set_language()`, `wish_set_language()`, `server::set_default_language()` and `wish_app_host::language()`. Tools load `res/<org>/<collection>/<name>/i18n/<lang>.lang` (`context::translations_for()`, `form::tr()` / `trf()`).
+  - English, Spanish and French translations for the built-in forms (MessageBox, FileDialog, ProgressBox, PropertiesDialog), the shared tool panels and every `bdg` module (desktop and dev).
+  - `format_text()` / `make_message()`: `{0}` placeholders, and messages that client code sends for the server to translate. Shared `COMMON_*` keys apply to every tool.
 - Per-tool private directories in the session sandbox (`private/apps/<org>.<collection>.<name>/`) and session-owned temp dirs inside them, removed at session end: `file_service::app_private_dir()` / `create_temp_dir()`, `client::create_temp_dir()`, `standalone::create_temp_dir()` and `wish_app_host::create_temp_dir()` / `create_app_temp_dir()` / `running_app()`.
 
 - `icon` field on `Button`, `MenuButton` and `MenuItem` (plus `Button.icon_color`): an image drawn left of the label, tinted to the text color; an empty label gives a square icon-only button.
@@ -94,6 +95,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `DockLayout`: a session's windows could still all end up crammed into one shared tabbed node instead of the intended split, even on a completely fresh run with no `imgui.ini` (e.g. `docker` standalone). `session::top_level_objects` iterates in arbitrary, unordered-map order, so a session's own windows could render (and resolve their first-ever dock placement) before that session's `DockLayout`/`DockSpaceViewport` got a chance to run `DockBuilderDockWindow()` in the same frame; ImGui then pruned the freshly-built, still-unhosted split nodes at end of frame, permanently collapsing the layout. Both the standalone and server render loops now always render a session's `DockLayout`/`DockSpaceViewport` top-levels before its other top-levels each frame, regardless of iteration order. See [docs/dock-layout.md](docs/dock-layout.md).
 
 ### Changed
+
+- The default `title` / `status` / `confirm_label` values of the built-in forms and bdg tools are now translation keys (e.g. `"$$MSGBOX_MESSAGE"`); the windows show their translation.
 
 - `Window`: changing `width` / `height` after creation now resizes the window, and a `NoResize` window always takes its `width` / `height` instead of a size remembered in `imgui.ini`.
 - `bc` is now a full calculator with switchable **Standard**, **Scientific** and **Programmer** layouts (mode tabs or the View menu): operator precedence and parentheses, trigonometric (DEG/RAD/GRAD, inverse, hyperbolic), power/root/log functions, n!, mod, Exp entry and F-E notation; HEX/DEC/OCT/BIN with BYTE to QWORD word sizes, bitwise and shift/rotate operators; memory keys, a clickable history panel, digit grouping and Copy.

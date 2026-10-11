@@ -5,6 +5,7 @@
 
 #include "sq_query_guard.hpp"
 #include "sq_result_parser.hpp"
+#include "src/i18n/translations.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -90,7 +91,7 @@ sq_source::sq_source(
 std::string sq_source::error_text(const process_result& r) const {
   std::string text = common::trim_eol(common::error_output(r));
   if (r.exit_code == -1 && text.empty())
-    return "could not run `sq`";
+    return "$$SQ_COULD_NOT_RUN_SQ";
   return text;
 }
 
@@ -167,7 +168,7 @@ void sq_source::push_connections() {
         arr[i++] = dynamic_ptr{e};
       });
     } catch (const std::exception& ex) {
-      report("connections", false, std::string{"Could not parse `sq ls` output: "} + ex.what());
+      report("connections", false, make_message("$$SQ_COULD_NOT_PARSE_LS", {ex.what()}));
     }
   } else {
     report("connections", false, error_text(r));
@@ -201,7 +202,7 @@ void sq_source::push_schema() {
   auto r = run_logged({"inspect", active_, "-j"});
   dynamic tables;
   if (!r.ok()) {
-    args["error"_key] = "Could not inspect " + active_ + ": " + error_text(r);
+    args["error"_key] = make_message("$$SQ_COULD_NOT_INSPECT", {active_, error_text(r)});
   } else {
     try {
       auto root = parse_json(r.stdout_text, false);
@@ -243,7 +244,7 @@ void sq_source::push_schema() {
         tables[ti++] = dynamic_ptr{te};
       });
     } catch (const std::exception& ex) {
-      args["error"_key] = std::string{"Could not parse `sq inspect` output: "} + ex.what();
+      args["error"_key] = make_message("$$SQ_COULD_NOT_PARSE_INSPECT", {ex.what()});
     }
   }
   args["tables"_key] = as_array(std::move(tables));
@@ -269,7 +270,7 @@ void sq_source::on_activate(const std::string& handle) {
 
 void sq_source::on_ping(const std::string& handle) {
   auto r = run_logged({"ping", handle});
-  report("connections", r.ok(), r.ok() ? handle + " is reachable." : error_text(r));
+  report("connections", r.ok(), r.ok() ? make_message("$$SQ_IS_REACHABLE", {handle}) : error_text(r));
 }
 
 void sq_source::on_remove(const std::string& handle) {
@@ -285,13 +286,13 @@ void sq_source::on_remove(const std::string& handle) {
   }
   push_connections();
   push_schema();
-  report("connections", true, "Removed " + handle + ".");
+  report("connections", true, make_message("$$SQ_REMOVED", {handle}));
 }
 
 void sq_source::on_add(
     const std::string& handle, const std::string& location, const std::string& driver, const std::string& password) {
   if (location.empty() || location[0] == '-') {
-    report("connections", false, "Enter a location (a connection string or a file path).");
+    report("connections", false, "$$SQ_ENTER_LOCATION");
     return;
   }
   std::vector<std::string> args = {"add"};
@@ -318,7 +319,7 @@ void sq_source::on_add(
   last_handle_.clear();
   push_connections();
   push_schema();
-  report("connections", true, "Connection added.");
+  report("connections", true, "$$SQ_CONNECTION_ADDED");
 }
 
 // ── Queries ────────────────────────────────────────────────────────────────
@@ -332,7 +333,7 @@ void sq_source::push_result_error(const std::string& message) {
 
 void sq_source::on_query(const std::string& sql, int32_t max_rows) {
   if (active_.empty()) {
-    push_result_error("No active database. Add or select a connection first.");
+    push_result_error("$$SQ_NO_ACTIVE_DATABASE_ADD");
     return;
   }
   if (auto why = check_read_only_sql(sql)) {
@@ -380,11 +381,11 @@ void sq_source::on_query(const std::string& sql, int32_t max_rows) {
 
 void sq_source::on_export(const std::string& path, const upload_fn& upload) {
   if (last_sql_.empty()) {
-    report("results", false, "Run a query first; Export CSV writes the last result.");
+    report("results", false, "$$SQ_RUN_QUERY_FIRST");
     return;
   }
   if (path.empty()) {
-    report("results", false, "Enter the CSV file to write.");
+    report("results", false, "$$SQ_ENTER_CSV_FILE");
     return;
   }
 
@@ -402,9 +403,9 @@ void sq_source::on_export(const std::string& path, const upload_fn& upload) {
     std::ifstream in(tmp, std::ios::binary);
     const std::string data{std::istreambuf_iterator<char>(in), {}};
     upload(path, data);
-    report("results", true, "Exported the full result to " + path + " (in the session folder on the server)");
+    report("results", true, make_message("$$SQ_EXPORTED", {path}));
   } catch (const std::exception& e) {
-    report("results", false, std::string{"Could not store the CSV on the server: "} + e.what());
+    report("results", false, make_message("$$SQ_COULD_NOT_STORE_CSV", {e.what()}));
   }
   fs::remove(tmp, ec);
 }

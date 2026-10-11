@@ -10,7 +10,11 @@
 
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <memory>
+#include <regex>
+#include <set>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 
@@ -70,6 +74,8 @@ TEST(TranslationLookup, MessageArgumentsAreFormatted) {
   EXPECT_EQ(translate_text(make_message("$$SCANNED", {"5", "3 MB"}), map), "5 elementos (3 MB)");
   EXPECT_EQ(translate_text(make_message("$$SCANNED", {""}), map), " elementos ({1})");
   EXPECT_EQ(translate_text(make_message("$$MISSING", {"x"}), map), "MISSING");
+  auto nested = parse_translations("FAILED = {0} falló\nPULL = descarga");
+  EXPECT_EQ(translate_text(make_message("$$FAILED", {"$$PULL"}), nested), "descarga falló");
 }
 
 TEST(TranslationLookup, MissingKeyShowsBareKey) {
@@ -222,4 +228,146 @@ TEST_F(ContextTranslationsTest, BuiltInFormTranslationsAreEmbedded) {
   ctx_->set_language("es");
   auto map = ctx_->translations_for("");
   EXPECT_EQ(map->lookup("MSGBOX_CANCEL"), "Cancelar");
+}
+
+// ── Shipped translation files ─────────────────────────────────────────────────
+//
+// Every translation directory (built-in res/i18n and each module's) must ship
+// the same keys in every language, with the same {N} placeholders, and every
+// "$$KEY" a module's code uses must be defined -- so a missing translation
+// fails here instead of showing a bare key in the UI.
+
+namespace {
+
+namespace fs = std::filesystem;
+
+const char* const kShippedLanguages[] = {"en", "es", "fr"};
+
+std::set<std::string> placeholders(const std::string& text) {
+  std::set<std::string> out;
+  static const std::regex re{R"(\{[0-9]\})"};
+  for (auto it = std::sregex_iterator(text.begin(), text.end(), re); it != std::sregex_iterator(); ++it)
+    out.insert(it->str());
+  return out;
+}
+
+std::map<std::string, std::string> read_lang(const fs::path& path) {
+  std::map<std::string, std::string> out;
+  std::ifstream in(path);
+  std::string line;
+  while (std::getline(in, line)) {
+    if (!line.empty() && line.back() == '\r')
+      line.pop_back();
+    const size_t first = line.find_first_not_of(" \t");
+    if (first == std::string::npos || line[first] == '#' || line[first] == ';')
+      continue;
+    const size_t eq = line.find('=');
+    if (eq == std::string::npos)
+      continue;
+    auto trim = [](std::string s) {
+      s.erase(0, s.find_first_not_of(" \t"));
+      s.erase(s.find_last_not_of(" \t") + 1);
+      return s;
+    };
+    out[trim(line.substr(0, eq))] = trim(line.substr(eq + 1));
+  }
+  return out;
+}
+
+std::vector<fs::path> translation_dirs() {
+  const fs::path root{WISH_SOURCE_DIR};
+  std::vector<fs::path> dirs{root / "resources" / "embedded" / "i18n"};
+  for (const auto& entry : fs::recursive_directory_iterator(root / "modules")) {
+    if (entry.is_directory() && entry.path().filename() == "i18n" &&
+        entry.path().parent_path().filename() == "embedded")
+      dirs.push_back(entry.path());
+  }
+  return dirs;
+}
+
+std::set<std::string> keys_used_in(const fs::path& dir) {
+  std::set<std::string> keys;
+  // Not preceded by a backslash: a \"$$KEY\" inside a string literal is a
+  // documentation example (e.g. a field's Description attribute).
+  static const std::regex re{R"re((?:^|[^\\])"\$\$([A-Z][A-Z0-9_]*))re"};
+  for (const auto& entry : fs::recursive_directory_iterator(dir)) {
+    const auto ext = entry.path().extension();
+    if (!entry.is_regular_file() || (ext != ".cpp" && ext != ".hpp"))
+      continue;
+    std::ifstream in(entry.path());
+    std::stringstream ss;
+    ss << in.rdbuf();
+    const std::string text = ss.str();
+    for (auto it = std::sregex_iterator(text.begin(), text.end(), re); it != std::sregex_iterator(); ++it)
+      keys.insert((*it)[1].str());
+  }
+  return keys;
+}
+
+} // namespace
+
+TEST(ShippedTranslations, EveryLanguageHasTheSameKeysAndPlaceholders) {
+  const auto dirs = translation_dirs();
+  ASSERT_GT(dirs.size(), 10u);
+  for (const auto& dir : dirs) {
+    const auto en = read_lang(dir / "en.lang");
+    ASSERT_FALSE(en.empty()) << dir;
+    for (const char* lang : kShippedLanguages) {
+      const auto other = read_lang(dir / (std::string{lang} + ".lang"));
+      for (const auto& [key, text] : en) {
+        auto it = other.find(key);
+        if (it == other.end()) {
+          ADD_FAILURE() << dir << ": " << lang << ".lang is missing " << key;
+          continue;
+        }
+        EXPECT_EQ(placeholders(it->second), placeholders(text)) << dir << ": " << lang << " " << key;
+      }
+      for (const auto& [key, text] : other)
+        EXPECT_TRUE(en.count(key)) << dir << ": " << lang << ".lang has extra key " << key;
+    }
+  }
+}
+
+TEST(ShippedTranslations, EveryKeyAModuleUsesIsDefined) {
+  const fs::path root{WISH_SOURCE_DIR};
+  const auto builtin = read_lang(root / "resources" / "embedded" / "i18n" / "en.lang");
+  for (const auto& dir : translation_dirs()) {
+    if (dir.parent_path().filename() != "embedded" || dir.parent_path().parent_path().filename() != "resources")
+      continue;
+    const fs::path module = dir.parent_path().parent_path().parent_path();
+    if (module == root)
+      continue;
+    const auto own = read_lang(dir / "en.lang");
+    for (const auto& key : keys_used_in(module))
+      EXPECT_TRUE(own.count(key) || builtin.count(key)) << module << " uses undefined key " << key;
+  }
+}
+
+TEST(ShippedTranslations, EmbeddedModuleTranslationsResolveInEveryLanguage) {
+  // Built modules ship their i18n files in the embedded resources; each
+  // session resolves every key to that language's text.
+  const fs::path root{WISH_SOURCE_DIR};
+  size_t checked = 0;
+  for (const char* lang : kShippedLanguages) {
+    context ctx{rmi::shared::generate_id()};
+    ctx.set_language(lang);
+    for (const auto& dir : translation_dirs()) {
+      const fs::path module = dir.parent_path().parent_path().parent_path();
+      const std::string prefix =
+          module == root ? std::string{} : fs::relative(module, root / "modules").generic_string();
+      const fs::path embedded = ctx.resource_dir / "res" / (prefix.empty() ? fs::path{} : fs::path{prefix}) / "i18n" /
+          (std::string{lang} + ".lang");
+      if (!fs::exists(embedded))
+        continue; // module not built into this binary
+      const auto expected = read_lang(dir / (std::string{lang} + ".lang"));
+      const auto map = ctx.translations_for(prefix);
+      for (const auto& [key, text] : expected) {
+        // The map unescapes \n and friends; compare those values unescaped too.
+        EXPECT_EQ(map->lookup(key), parse_translations(key + " = " + text).lookup(key))
+            << prefix << " " << lang << " " << key;
+      }
+      ++checked;
+    }
+  }
+  EXPECT_GT(checked, 3u);
 }

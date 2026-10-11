@@ -1,0 +1,15 @@
+# editor -- English (fallback for every other language).
+EDITOR_EDITOR = Editor
+EDITOR_FILENAME_NONE = Filename: (none)
+EDITOR_FILENAME = Filename: {0}
+EDITOR_MODIFIED = [MODIFIED]
+EDITOR_EVENT_LOG = Event Log
+EDITOR_EVENT = Event
+EDITOR_HELP = Help
+EDITOR_FIELD = Field
+EDITOR_CATEGORY = Category
+EDITOR_DESCRIPTION = Description
+EDITOR_UNSAFE_SOURCE_PATH = invalid or unsafe source path: {0}
+EDITOR_UNSAVED_CHANGES = Unsaved changes
+EDITOR_SAVE_THIS_FILE = Save changes to this file before closing?
+EDITOR_SAVE_FILE = Save changes to {0} before closing?

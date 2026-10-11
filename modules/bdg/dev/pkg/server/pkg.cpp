@@ -25,7 +25,6 @@ using common::kOk;
 using common::kWarn;
 using common::lower;
 using common::make_payload;
-using common::plural;
 using common::str_of;
 using common::wish_id_of;
 
@@ -51,23 +50,23 @@ std::string base_name(const std::string& name) {
 // arrangement on a 1280px-wide viewport (see helm.cpp).
 
 static constexpr const char* kPackagesLayout = R"json({
-  "type": "Window", "title": "Packages", "width": 900, "height": 520,
+  "type": "Window", "title": "$$PKG_PACKAGES", "width": 900, "height": 520,
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_refresh":     { "type": "Button", "label": "Refresh", "icon": "res/icons/refresh.png" },
-      "btn_outdated":    { "type": "Button", "label": "Check updates", "icon": "res/icons/arrow_up.png" },
-      "filter":          { "type": "InputText", "hint": "Filter", "width": 110 },
-      "state":           { "type": "Combo", "items": "All\nUpgradable", "value": 0, "width": 110 },
+      "btn_refresh":     { "type": "Button", "label": "$$PKG_REFRESH", "icon": "res/icons/refresh.png" },
+      "btn_outdated":    { "type": "Button", "label": "$$PKG_CHECK_UPDATES", "icon": "res/icons/arrow_up.png" },
+      "filter":          { "type": "InputText", "hint": "$$PKG_FILTER", "width": 110 },
+      "state":           { "type": "Combo", "items": "$$PKG_STATE_ITEMS", "value": 0, "width": 110 },
       "spring":          { "type": "Spring" },
-      "btn_index":       { "type": "Button", "label": "Update index", "icon": "res/icons/sync.png" },
-      "btn_upgrade_all": { "type": "Button", "label": "Upgrade all", "icon": "res/icons/arrow_up.png" }
+      "btn_index":       { "type": "Button", "label": "$$PKG_UPDATE_INDEX", "icon": "res/icons/sync.png" },
+      "btn_upgrade_all": { "type": "Button", "label": "$$PKG_UPGRADE_ALL", "icon": "res/icons/arrow_up.png" }
     } },
     "find_bar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "caption":     { "type": "Label", "text": "Find new packages:" },
-      "query":       { "type": "InputText", "hint": "name or keyword, e.g. htop", "width": 300 },
-      "btn_search":  { "type": "Button", "label": "Search", "icon": "res/icons/search.png" },
-      "btn_install": { "type": "Button", "label": "Install", "icon": "res/icons/download.png" }
+      "caption":     { "type": "Label", "text": "$$PKG_FIND_NEW_PACKAGES" },
+      "query":       { "type": "InputText", "hint": "$$PKG_SEARCH_HINT", "width": 300 },
+      "btn_search":  { "type": "Button", "label": "$$PKG_SEARCH", "icon": "res/icons/search.png" },
+      "btn_install": { "type": "Button", "label": "$$PKG_INSTALL", "icon": "res/icons/download.png" }
     } },
     "env": { "type": "Label", "text": "" },
     "status": { "type": "Label", "text": "" },
@@ -77,10 +76,10 @@ static constexpr const char* kPackagesLayout = R"json({
       "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": -1, "outer_height": -1, "auto_scroll": false,
       "children": {
-        "col_name":    { "type": "TableColumn", "label": "Name",        "flags": "WidthFixed", "init_width": 200, "column_id": 0 },
-        "col_version": { "type": "TableColumn", "label": "Version",     "flags": "WidthFixed", "init_width": 150, "column_id": 1 },
-        "col_latest":  { "type": "TableColumn", "label": "Latest",      "flags": "WidthFixed", "init_width": 150, "column_id": 2 },
-        "col_desc":    { "type": "TableColumn", "label": "Description", "flags": "WidthStretch",                   "column_id": 3 },
+        "col_name":    { "type": "TableColumn", "label": "$$PKG_NAME",        "flags": "WidthFixed", "init_width": 200, "column_id": 0 },
+        "col_version": { "type": "TableColumn", "label": "$$PKG_VERSION",     "flags": "WidthFixed", "init_width": 150, "column_id": 1 },
+        "col_latest":  { "type": "TableColumn", "label": "$$PKG_LATEST",      "flags": "WidthFixed", "init_width": 150, "column_id": 2 },
+        "col_desc":    { "type": "TableColumn", "label": "$$PKG_DESCRIPTION", "flags": "WidthStretch",                   "column_id": 3 },
         "col_actions": { "type": "TableColumn", "label": "",            "flags": "WidthFixed", "init_width": 40,  "column_id": 4 }
       }
     }
@@ -88,24 +87,24 @@ static constexpr const char* kPackagesLayout = R"json({
 })json";
 
 static constexpr const char* kSearchLayout = R"json({
-  "type": "Window", "title": "Search", "width": 460, "height": 420,
+  "type": "Window", "title": "$$PKG_SEARCH", "width": 460, "height": 420,
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 8, "children": {
-      "target":      { "type": "Label", "text": "(no search yet)" },
+      "target":      { "type": "Label", "text": "$$PKG_NO_SEARCH_YET" },
       "spring":      { "type": "Spring" },
-      "btn_refresh": { "type": "Button", "label": "Refresh", "icon": "res/icons/refresh.png" }
+      "btn_refresh": { "type": "Button", "label": "$$PKG_REFRESH", "icon": "res/icons/refresh.png" }
     } },
-    "status": { "type": "Label", "text": "Type a name or keyword in Packages and press Search." },
+    "status": { "type": "Label", "text": "$$PKG_SEARCH_PLACEHOLDER" },
     "sep": { "type": "Separator" },
     "table": {
       "type": "Table", "id": "##pkg_search_table", "columns": 4,
       "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": -1, "outer_height": -1, "auto_scroll": false,
       "children": {
-        "col_name":      { "type": "TableColumn", "label": "Name",        "flags": "WidthFixed", "init_width": 150, "column_id": 0 },
-        "col_installed": { "type": "TableColumn", "label": "Installed",   "flags": "WidthFixed", "init_width": 90,  "column_id": 1 },
-        "col_desc":      { "type": "TableColumn", "label": "Description", "flags": "WidthStretch",                   "column_id": 2 },
+        "col_name":      { "type": "TableColumn", "label": "$$PKG_NAME",        "flags": "WidthFixed", "init_width": 150, "column_id": 0 },
+        "col_installed": { "type": "TableColumn", "label": "$$PKG_INSTALLED",   "flags": "WidthFixed", "init_width": 90,  "column_id": 1 },
+        "col_desc":      { "type": "TableColumn", "label": "$$PKG_DESCRIPTION", "flags": "WidthStretch",                   "column_id": 2 },
         "col_actions":   { "type": "TableColumn", "label": "",            "flags": "WidthFixed", "init_width": 40,  "column_id": 3 }
       }
     }
@@ -116,7 +115,9 @@ static constexpr const char* kSearchLayout = R"json({
 
 // ── pkg_frontend ───────────────────────────────────────────────────────────
 
-pkg_frontend::pkg_frontend(dynamic&& base) : tool_form(std::move(base)) {}
+pkg_frontend::pkg_frontend(dynamic&& base) : tool_form(std::move(base)) {
+  i18n_prefix_ = "bdg/dev/pkg";
+}
 
 void pkg_frontend::on_init() {
   internal_root_key_ = next_available_key("__pkg_");
@@ -132,16 +133,16 @@ void pkg_frontend::on_init() {
     tree.with("vbox.toolbar.state", [&](const auto& e) { state_combo_id_ = wish_id_of(e); });
     click("vbox.toolbar.btn_refresh", [this] { emit("refresh_requested"_key); });
     click("vbox.toolbar.btn_outdated", [this] {
-      set_status(packages_, "Checking for updates ...", true);
+      set_status(packages_, "$$PKG_CHECKING_FOR_UPDATES", true);
       emit("outdated_requested"_key);
     });
     click("vbox.toolbar.btn_index", [this] {
-      set_status(packages_, "Updating the package index ...", true);
+      set_status(packages_, "$$PKG_UPDATING_INDEX", true);
       emit("index_requested"_key);
     });
     click("vbox.toolbar.btn_upgrade_all", [this] {
-      show_confirm("Upgrade every package that has a newer version?", [this] {
-        set_status(packages_, "Upgrading all packages ...", true);
+      show_confirm("$$PKG_UPGRADE_ALL_CONFIRM", [this] {
+        set_status(packages_, "$$PKG_UPGRADING_ALL", true);
         emit("upgrade_all_requested"_key);
       });
     });
@@ -149,7 +150,7 @@ void pkg_frontend::on_init() {
     tree.with("vbox.find_bar.query", [&](const auto& e) { query_input_id_ = wish_id_of(e); });
     click("vbox.find_bar.btn_search", [this] {
       if (query_text_.find_first_not_of(" \t") == std::string::npos) {
-        set_status(packages_, "Enter a package name or keyword to search for", false);
+        set_status(packages_, "$$PKG_ENTER_SEARCH", false);
         return;
       }
       set_status(packages_, packages_summary_, true); // drop a stale validation message
@@ -157,7 +158,7 @@ void pkg_frontend::on_init() {
     });
     click("vbox.find_bar.btn_install", [this] {
       if (query_text_.find_first_not_of(" \t") == std::string::npos)
-        set_status(packages_, "Enter the exact name of the package to install", false);
+        set_status(packages_, "$$PKG_ENTER_INSTALL_NAME", false);
       else
         emit_install(query_text_);
     });
@@ -170,9 +171,10 @@ void pkg_frontend::on_init() {
         "vbox.toolbar.btn_refresh", [&](const auto& e) { on_click(wish_id_of(e), [this] { emit_search_request(); }); });
   });
 
-  details_.build(*this, internal_root_key_ + "_details", {.title = "Details", .width = 460, .on_refresh = [this] {
-                                                            emit_details_request();
-                                                          }});
+  details_.build(
+      *this, internal_root_key_ + "_details", {.title = "$$COMMON_DETAILS", .width = 460, .on_refresh = [this] {
+                                                 emit_details_request();
+                                               }});
 
   console_.build(
       *this, internal_root_key_ + "_console", {.table_id = "##pkg_console_table", .width = 900, .command_width = 320});
@@ -185,7 +187,7 @@ void pkg_frontend::on_init() {
     using namespace dock;
     set_default_dock_layout(viewport(
         "pkg_dock",
-        "Packages",
+        tr("$$PKG_PACKAGES"),
         layout(
             split(
                 dir::left,
@@ -221,7 +223,7 @@ void pkg_frontend::open_search(const std::string& query) {
   search_.refresh();
   if (search_target_label_)
     search_target_label_["text"_key] = "search: " + query;
-  set_status(search_, "Searching the package index ...", true);
+  set_status(search_, "$$PKG_SEARCHING", true);
   emit_search_request();
 }
 
@@ -232,7 +234,7 @@ void pkg_frontend::emit_search_request() {
 }
 
 void pkg_frontend::emit_install(const std::string& names) {
-  set_status(packages_, "Installing " + names + " ...", true);
+  set_status(packages_, trf("$$PKG_INSTALLING", {names}), true);
   emit("install_requested"_key, make_payload("names"_key, names));
 }
 
@@ -267,24 +269,25 @@ void pkg_frontend::rebuild_package_rows() {
         make_label(p.description, kIdle),
     };
     std::vector<common::menu_item> items = {
-        action_item("Details", r, "show", false),
-        action_item("Files", r, "files", false),
+        action_item("$$PKG_DETAILS", r, "show", false),
+        action_item("$$PKG_FILES", r, "files", false),
         {},
-        action_item("Upgrade", r, "upgrade", false),
-        action_item("Reinstall", r, "reinstall", true),
-        action_item("Remove", r, "remove", true)};
+        action_item("$$PKG_UPGRADE", r, "upgrade", false),
+        action_item("$$PKG_REINSTALL", r, "reinstall", true),
+        action_item("$$PKG_REMOVE", r, "remove", true)};
     packages_.add(std::move(r), cells, items);
   }
   packages_.refresh();
 
   const size_t total = installed_.size();
-  std::string status = total == 0 ? std::string{"No packages installed."} : plural(total, "package");
-  if (total != 0 && outdated_checked_)
-    status += " (" + std::to_string(outdated) + " upgradable)";
+  std::string status = total == 0 ? tr("$$PKG_NO_PACKAGES")
+      : outdated_checked_         ? trf(total == 1 ? "$$PKG_N_PACKAGE_UPGRADABLE" : "$$PKG_N_PACKAGES_UPGRADABLE",
+                                {std::to_string(total), std::to_string(outdated)})
+                          : trf(total == 1 ? "$$PKG_N_PACKAGE" : "$$PKG_N_PACKAGES", {std::to_string(total)});
   if (matching != total && total != 0)
-    status += ", " + std::to_string(matching) + " matching";
+    status += ", " + trf("$$PKG_N_MATCHING", {std::to_string(matching)});
   if (matching > kMaxRows)
-    status += " (showing the first " + std::to_string(kMaxRows) + "; type in the filter to narrow)";
+    status += " " + trf("$$PKG_SHOWING_FIRST_FILTER", {std::to_string(kMaxRows)});
   packages_summary_ = status;
   set_status(packages_, status, true);
 }
@@ -314,17 +317,15 @@ void pkg_frontend::rebuild_search_rows() {
         make_label(p.version.empty() ? p.description : p.version + "  " + p.description, kIdle),
     };
     std::vector<common::menu_item> items = {
-        action_item("Details", r, "show", false), {}, action_item("Install", r, "install", false)};
+        action_item("$$PKG_DETAILS", r, "show", false), {}, action_item("$$PKG_INSTALL", r, "install", false)};
     search_.add(std::move(r), cells, items);
   }
   search_.refresh();
 
-  std::string status =
-      total == 0   ? "No package matches '" + open_search_query_ + "'."
-      : total == 1 ? std::string{"1 match"}
-                   : std::to_string(total) + " matches";
+  std::string status = total == 0 ? trf("$$PKG_NO_MATCH", {open_search_query_})
+                                  : trf(total == 1 ? "$$PKG_N_MATCH" : "$$PKG_N_MATCHES", {std::to_string(total)});
   if (total > kMaxRows)
-    status += " (showing the first " + std::to_string(kMaxRows) + "; refine the search)";
+    status += " " + trf("$$PKG_SHOWING_FIRST_SEARCH", {std::to_string(kMaxRows)});
   set_status(search_, status, true);
 }
 
@@ -366,7 +367,7 @@ dynamic pkg_frontend::do_update_details(const dynamic& args) {
 dynamic pkg_frontend::do_command_result(const dynamic& args) {
   list_window& lw = str_of(args, "scope"_key) == "search" ? search_ : packages_;
   bool ok = false;
-  const std::string text = common::command_result_text(args, ok);
+  const std::string text = common::command_result_text(*this, args, ok);
   set_status(lw, text, ok);
   return dynamic{};
 }
@@ -377,7 +378,7 @@ dynamic pkg_frontend::do_set_environment(const dynamic& args) {
   const std::string elevation = str_of(args, "elevation"_key);
   std::string text = str_of(args, "manager"_key) + ": " + str_of(args, "text"_key);
   if (!elevation.empty() && elevation != "none")
-    text += "  (changes run through " + elevation + ")";
+    text += "  " + trf("$$PKG_CHANGES_RUN_THROUGH", {elevation});
   common::set_status_text(env_label_, text, true);
   return dynamic{};
 }
@@ -400,13 +401,13 @@ void pkg_frontend::run_row_action(const package_row& r, const std::string& actio
   }
 
   auto fire = [this, name = r.name, action] {
-    set_status(packages_, "Running " + action + " " + name + " ...", true);
+    set_status(packages_, trf("$$PKG_RUNNING_ACTION", {action, name}), true);
     emit("package_action_requested"_key, make_payload("name"_key, name, "action"_key, action));
   };
   if (action == "remove")
-    show_confirm("Remove '" + r.name + "'? Packages that depend on it may be removed with it.", fire);
+    show_confirm(trf("$$PKG_REMOVE_CONFIRM", {r.name}), fire);
   else if (action == "reinstall")
-    show_confirm("Reinstall '" + r.name + "'? Its files are replaced.", fire);
+    show_confirm(trf("$$PKG_REINSTALL_CONFIRM", {r.name}), fire);
   else
     fire();
 }

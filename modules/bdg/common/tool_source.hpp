@@ -27,6 +27,8 @@
 #include "modules/bdg/common/process.hpp"
 #include "modules/bdg/common/text.hpp"
 
+#include "src/i18n/translations.hpp"
+
 #include "src/bison/bison.hpp"
 #include "src/rmi/client/proxy.hpp"
 
@@ -154,7 +156,7 @@ class tool_source {
     args[bison::key_t{"ok"}] = ok;
     args[bison::key_t{"output"}] = ok ? std::string{} : output;
     if (!ok)
-      worker_->fail(label + " failed: " + output, always_show);
+      worker_->fail(make_message("$$COMMON_COMMAND_FAILED", {label, output}), always_show);
     return call(bison::key_t{"command_result"}, std::move(args));
   }
 

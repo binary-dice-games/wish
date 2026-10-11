@@ -54,31 +54,31 @@ constexpr int32_t kRowLimits[] = {100, 500, 1000, 5000};
 // load-bearing "height": -1 + "outer_height": -1 pair.
 
 static constexpr const char* kEditorLayout = R"json({
-  "type": "Window", "title": "SQL Editor", "width": 900, "height": 300,
+  "type": "Window", "title": "$$SQ_SQL_EDITOR", "width": 900, "height": 300,
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_run":  { "type": "Button", "label": "Run", "icon": "res/icons/play.png" },
-      "conn":     { "type": "Combo", "items": "(no connection)", "value": 0, "width": 220 },
-      "rows":     { "type": "Combo", "items": "100 rows\n500 rows\n1000 rows\n5000 rows", "value": 1, "width": 110 },
-      "btn_refresh": { "type": "Button", "label": "Refresh", "icon": "res/icons/refresh.png" }
+      "btn_run":  { "type": "Button", "label": "$$SQ_RUN", "icon": "res/icons/play.png" },
+      "conn":     { "type": "Combo", "items": "$$SQ_NO_CONNECTION", "value": 0, "width": 220 },
+      "rows":     { "type": "Combo", "items": "$$SQ_ROW_LIMIT_ITEMS", "value": 1, "width": 110 },
+      "btn_refresh": { "type": "Button", "label": "$$SQ_REFRESH", "icon": "res/icons/refresh.png" }
     } },
-    "status": { "type": "Label", "text": "Read-only queries only: SELECT / WITH / VALUES / SHOW / DESCRIBE / EXPLAIN." },
+    "status": { "type": "Label", "text": "$$SQ_READ_ONLY_NOTE" },
     "sql": { "type": "TextEditor", "language": "sql", "file_path": "", "width": -1, "height": -1 }
   } } }
 })json";
 
 static constexpr const char* kResultsLayout = R"json({
-  "type": "Window", "title": "Results", "width": 900, "height": 360,
+  "type": "Window", "title": "$$SQ_RESULTS", "width": 900, "height": 360,
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "export": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_export": { "type": "Button", "label": "Export CSV", "icon": "res/icons/download.png" },
-      "path":      { "type": "InputText", "hint": "CSV file in the session folder, e.g. result.csv", "width": 380 },
-      "overwrite": { "type": "Checkbox", "label": "Overwrite", "value": false },
-      "btn_open":  { "type": "Button", "label": "Open folder", "icon": "res/icons/folder_open.png" }
+      "btn_export": { "type": "Button", "label": "$$SQ_EXPORT_CSV", "icon": "res/icons/download.png" },
+      "path":      { "type": "InputText", "hint": "$$SQ_CSV_HINT", "width": 380 },
+      "overwrite": { "type": "Checkbox", "label": "$$SQ_OVERWRITE", "value": false },
+      "btn_open":  { "type": "Button", "label": "$$SQ_OPEN_FOLDER", "icon": "res/icons/folder_open.png" }
     } },
-    "status": { "type": "Label", "text": "Run a query to see its results." },
+    "status": { "type": "Label", "text": "$$SQ_RESULTS_PLACEHOLDER" },
     "sep": { "type": "Separator" },
     "table": {
       "type": "Table", "id": "##sq_results_0", "columns": 1,
@@ -89,19 +89,19 @@ static constexpr const char* kResultsLayout = R"json({
 })json";
 
 static constexpr const char* kConnectionsLayout = R"json({
-  "type": "Window", "title": "Connections", "width": 760, "height": 340,
+  "type": "Window", "title": "$$SQ_CONNECTIONS", "width": 760, "height": 340,
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "new_row1": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "driver": { "type": "Combo", "items": "(auto-detect)", "value": 0, "width": 150 },
-      "handle": { "type": "InputText", "hint": "@handle (optional)", "width": 150 }
+      "driver": { "type": "Combo", "items": "$$SQ_AUTO_DETECT", "value": 0, "width": 150 },
+      "handle": { "type": "InputText", "hint": "$$SQ_HANDLE_OPTIONAL", "width": 150 }
     } },
     "new_row_loc": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "location": { "type": "InputText", "hint": "postgres://user@host/db  or  /path/file.db", "width": -1 }
+      "location": { "type": "InputText", "hint": "$$SQ_LOCATION_HINT", "width": -1 }
     } },
     "new_row2": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "password": { "type": "InputText", "hint": "password (optional)", "flags": "Password", "width": 170 },
-      "btn_add":  { "type": "Button", "label": "Add connection", "icon": "res/icons/add.png" }
+      "password": { "type": "InputText", "hint": "$$SQ_PASSWORD_OPTIONAL", "flags": "Password", "width": 170 },
+      "btn_add":  { "type": "Button", "label": "$$SQ_ADD_CONNECTION", "icon": "res/icons/add.png" }
     } },
     "status": { "type": "Label", "text": "" },
     "sep": { "type": "Separator" },
@@ -110,10 +110,10 @@ static constexpr const char* kConnectionsLayout = R"json({
       "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": -1, "outer_height": -1, "auto_scroll": false,
       "children": {
-        "col_state":  { "type": "TableColumn", "label": "State",    "flags": "WidthFixed", "init_width": 60,  "column_id": 0 },
-        "col_handle": { "type": "TableColumn", "label": "Handle",   "flags": "WidthFixed", "init_width": 150, "column_id": 1 },
-        "col_driver": { "type": "TableColumn", "label": "Driver",   "flags": "WidthFixed", "init_width": 90,  "column_id": 2 },
-        "col_loc":    { "type": "TableColumn", "label": "Location", "flags": "WidthStretch",                   "column_id": 3 },
+        "col_state":  { "type": "TableColumn", "label": "$$SQ_STATE",    "flags": "WidthFixed", "init_width": 60,  "column_id": 0 },
+        "col_handle": { "type": "TableColumn", "label": "$$SQ_HANDLE",   "flags": "WidthFixed", "init_width": 150, "column_id": 1 },
+        "col_driver": { "type": "TableColumn", "label": "$$SQ_DRIVER",   "flags": "WidthFixed", "init_width": 90,  "column_id": 2 },
+        "col_loc":    { "type": "TableColumn", "label": "$$SQ_LOCATION", "flags": "WidthStretch",                   "column_id": 3 },
         "col_act":    { "type": "TableColumn", "label": "",         "flags": "WidthFixed", "init_width": 40,  "column_id": 4 }
       }
     }
@@ -121,7 +121,7 @@ static constexpr const char* kConnectionsLayout = R"json({
 })json";
 
 static constexpr const char* kNavigatorLayout = R"json({
-  "type": "Window", "title": "Navigator", "width": 360, "height": 520,
+  "type": "Window", "title": "$$SQ_NAVIGATOR", "width": 360, "height": 520,
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "tree": { "type": "VerticalLayout", "children": {} }
@@ -129,10 +129,10 @@ static constexpr const char* kNavigatorLayout = R"json({
 })json";
 
 static constexpr const char* kStructureLayout = R"json({
-  "type": "Window", "title": "Structure", "width": 700, "height": 320,
+  "type": "Window", "title": "$$SQ_STRUCTURE", "width": 700, "height": 320,
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
-    "title": { "type": "Label", "text": "(select a table in the Navigator and click Structure)" },
+    "title": { "type": "Label", "text": "$$SQ_STRUCTURE_PLACEHOLDER" },
     "sep": { "type": "Separator" },
     "table": {
       "type": "Table", "id": "##sq_structure_table", "columns": 6,
@@ -140,33 +140,33 @@ static constexpr const char* kStructureLayout = R"json({
       "height": -1, "outer_height": -1, "auto_scroll": false,
       "children": {
         "col_pos":  { "type": "TableColumn", "label": "#",          "flags": "WidthFixed", "init_width": 36,  "column_id": 0 },
-        "col_name": { "type": "TableColumn", "label": "Column",     "flags": "WidthFixed", "init_width": 180, "column_id": 1 },
-        "col_type": { "type": "TableColumn", "label": "Type",       "flags": "WidthFixed", "init_width": 130, "column_id": 2 },
-        "col_pk":   { "type": "TableColumn", "label": "Key",        "flags": "WidthFixed", "init_width": 46,  "column_id": 3 },
-        "col_null": { "type": "TableColumn", "label": "Nullable",   "flags": "WidthFixed", "init_width": 70,  "column_id": 4 },
-        "col_ref":  { "type": "TableColumn", "label": "References", "flags": "WidthStretch",                   "column_id": 5 }
+        "col_name": { "type": "TableColumn", "label": "$$SQ_COLUMN",     "flags": "WidthFixed", "init_width": 180, "column_id": 1 },
+        "col_type": { "type": "TableColumn", "label": "$$SQ_TYPE",       "flags": "WidthFixed", "init_width": 130, "column_id": 2 },
+        "col_pk":   { "type": "TableColumn", "label": "$$SQ_KEY",        "flags": "WidthFixed", "init_width": 46,  "column_id": 3 },
+        "col_null": { "type": "TableColumn", "label": "$$SQ_NULLABLE",   "flags": "WidthFixed", "init_width": 70,  "column_id": 4 },
+        "col_ref":  { "type": "TableColumn", "label": "$$SQ_REFERENCES", "flags": "WidthStretch",                   "column_id": 5 }
       }
     }
   } } }
 })json";
 
 static constexpr const char* kChartLayout = R"json({
-  "type": "Window", "title": "Chart", "width": 900, "height": 420,
+  "type": "Window", "title": "$$SQ_CHART", "width": 900, "height": 420,
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "type": { "type": "Combo", "items": "Line\nScatter\nStairs\nStems\nArea\nBars\nHorizontal bars\nHistogram\nPie", "value": 0, "width": 140 },
-      "x":    { "type": "Combo", "items": "(row #)", "value": 0, "width": 200 },
-      "bins": { "type": "Combo", "items": "Auto (Sturges)\nScott\nRice\nSquare root\n10 bins\n20 bins\n50 bins\n100 bins", "value": 0, "width": 140 }
+      "type": { "type": "Combo", "items": "$$SQ_CHART_TYPE_ITEMS", "value": 0, "width": 140 },
+      "x":    { "type": "Combo", "items": "$$SQ_ROW_NUMBER", "value": 0, "width": 200 },
+      "bins": { "type": "Combo", "items": "$$SQ_BINS_ITEMS", "value": 0, "width": 140 }
     } },
-    "ycols": { "type": "TreeNode", "label": "Y columns", "open": true, "children": {} },
+    "ycols": { "type": "TreeNode", "label": "$$SQ_Y_COLUMNS", "open": true, "children": {} },
     "save": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_save":  { "type": "Button", "label": "Save PNG", "icon": "res/icons/save.png" },
-      "path":      { "type": "InputText", "hint": "PNG file in the session folder, e.g. chart.png", "width": 380 },
-      "overwrite": { "type": "Checkbox", "label": "Overwrite", "value": false },
-      "btn_open":  { "type": "Button", "label": "Open folder", "icon": "res/icons/folder_open.png" }
+      "btn_save":  { "type": "Button", "label": "$$SQ_SAVE_PNG", "icon": "res/icons/save.png" },
+      "path":      { "type": "InputText", "hint": "$$SQ_PNG_HINT", "width": 380 },
+      "overwrite": { "type": "Checkbox", "label": "$$SQ_OVERWRITE", "value": false },
+      "btn_open":  { "type": "Button", "label": "$$SQ_OPEN_FOLDER", "icon": "res/icons/folder_open.png" }
     } },
-    "status": { "type": "Label", "text": "Run a query to chart its results." },
+    "status": { "type": "Label", "text": "$$SQ_CHART_PLACEHOLDER" },
     "plot": { "type": "Plot", "title": "##sq_chart_0", "height": -1, "children": {} }
   } } }
 })json";
@@ -199,7 +199,9 @@ std::string join_lines(const std::vector<std::string>& items) {
 
 // ── sq_frontend ────────────────────────────────────────────────────────────
 
-sq_frontend::sq_frontend(dynamic&& base) : tool_form(std::move(base)) {}
+sq_frontend::sq_frontend(dynamic&& base) : tool_form(std::move(base)) {
+  i18n_prefix_ = "bdg/dev/sq";
+}
 
 std::string sq_frontend::quote_identifier(const std::string& driver, const std::string& name) {
   char open = '"', close = '"';
@@ -241,13 +243,13 @@ ui_element_ptr sq_frontend::make_row(
     ui_element_ptr button = ui_element_ptr::create("wish"_key, "MenuButton"_key);
     button["label"_key] = std::string{};
     common::set_icon(button, "more");
-    button["tooltip"_key] = std::string{"Actions"};
+    button["tooltip"_key] = tr("$$COMMON_ACTIONS");
     assign_id(button);
     ids.push_back(wish_id_of(button));
     std::vector<ui_element_ptr> items;
     for (auto& [label, fn] : menu) {
       ui_element_ptr mi = ui_element_ptr::create("wish"_key, "MenuItem"_key);
-      mi["label"_key] = label;
+      mi["label"_key] = tr(label);
       if (std::string icon = common::action_icon(label); !icon.empty())
         common::set_icon(mi, icon);
       assign_id(mi);
@@ -327,7 +329,7 @@ void sq_frontend::on_init() {
       click_handlers_[wish_id_of(e)] = [this] {
         const std::string location = text_of(location_input_);
         if (location.empty()) {
-          common::set_status_text(connections_status_, "Enter a location (connection string or file path).", false);
+          common::set_status_text(connections_status_, tr("$$SQ_ENTER_LOCATION"), false);
           return;
         }
         const int32_t di = driver_combo_->as<int32_t>("value"_key);
@@ -408,7 +410,7 @@ void sq_frontend::on_init() {
     });
   });
 
-  rebuild_navigator("No active database.");
+  rebuild_navigator({});
 
   // First-run arrangement (owned by imgui.ini afterwards): a DBeaver-like
   // left column -- Connections over Navigator/Structure tabs -- and on the
@@ -417,7 +419,7 @@ void sq_frontend::on_init() {
     using namespace dock;
     set_default_dock_layout(viewport(
         "sq_dock",
-        "SQ",
+        tr("$$SQ_SQ"),
         layout(
             split(
                 dir::left,
@@ -445,7 +447,7 @@ void sq_frontend::on_init() {
 
 dynamic sq_frontend::do_update_drivers(const dynamic& args) {
   driver_types_.assign(1, std::string{});
-  std::vector<std::string> labels = {"(auto-detect)"};
+  std::vector<std::string> labels = {tr("$$SQ_AUTO_DETECT")};
   for_each_entry(args, "drivers"_key, [&](const dynamic& e) {
     driver_types_.push_back(str_of(e, "type"_key));
     labels.push_back(str_of(e, "type"_key) + "  -  " + str_of(e, "description"_key));
@@ -472,7 +474,7 @@ dynamic sq_frontend::do_update_connections(const dynamic& args) {
       active_driver_ = driver;
 
     std::vector<ui_element_ptr> cells = {
-        active ? make_label("active", kOk) : make_label("", kIdle),
+        active ? make_label("$$SQ_ACTIVE", kOk) : make_label("", kIdle),
         make_label(handle),
         make_label(driver),
         make_label(str_of(e, "location"_key), kIdle),
@@ -480,14 +482,13 @@ dynamic sq_frontend::do_update_connections(const dynamic& args) {
     std::vector<std::pair<std::string, std::function<void()>>> menu;
     if (!active)
       menu.push_back(
-          {"Connect", [this, handle] { emit("activate_requested"_key, make_payload("handle"_key, handle)); }});
-    menu.push_back({"Ping", [this, handle] { emit("ping_requested"_key, make_payload("handle"_key, handle)); }});
-    menu.push_back(
-        {"Remove...", [this, handle] {
-           show_confirm(
-               "Remove connection " + handle + " from sq? The database itself is not touched.",
-               [this, handle] { emit("remove_connection_requested"_key, make_payload("handle"_key, handle)); });
-         }});
+          {"$$SQ_CONNECT", [this, handle] { emit("activate_requested"_key, make_payload("handle"_key, handle)); }});
+    menu.push_back({"$$SQ_PING", [this, handle] { emit("ping_requested"_key, make_payload("handle"_key, handle)); }});
+    menu.push_back({"$$SQ_REMOVE_ELLIPSIS", [this, handle] {
+                      show_confirm(trf("$$SQ_REMOVE_CONNECTION_CONFIRM", {handle}), [this, handle] {
+                        emit("remove_connection_requested"_key, make_payload("handle"_key, handle));
+                      });
+                    }});
     rows.push_back(make_row(ids, cells, menu));
   });
   replace_rows(connections_table_, connection_ids_, rows); // releases the old rows' ids
@@ -499,7 +500,7 @@ dynamic sq_frontend::do_update_connections(const dynamic& args) {
     for (size_t i = 0; i < handles_.size(); ++i)
       if (handles_[i] == active_handle_)
         sel = static_cast<int32_t>(i);
-    conn_combo_["items"_key] = handles_.empty() ? std::string{"(no connection)"} : join_lines(handles_);
+    conn_combo_["items"_key] = handles_.empty() ? tr("$$SQ_NO_CONNECTION") : join_lines(handles_);
     conn_combo_["value"_key] = sel;
   }
   return dynamic{};
@@ -534,7 +535,7 @@ dynamic sq_frontend::do_update_schema(const dynamic& args) {
 
   // Reset the Structure window; it refers to the previous database's table.
   if (structure_title_)
-    structure_title_["text"_key] = std::string{"(select a table in the Navigator and click Structure)"};
+    structure_title_["text"_key] = tr("$$SQ_STRUCTURE_PLACEHOLDER");
   replace_rows(structure_table_, structure_ids_, {});
   return dynamic{};
 }
@@ -561,7 +562,7 @@ void sq_frontend::rebuild_navigator(const std::string& heading) {
 
   if (schema_handle_.empty() || !heading.empty()) {
     ui_element_ptr l = ui_element_ptr::create("wish"_key, "Label"_key);
-    l["text"_key] = heading.empty() ? std::string{"No active database."} : heading;
+    l["text"_key] = heading.empty() ? tr("$$SQ_NO_ACTIVE_DATABASE") : tr(heading);
     if (!heading.empty())
       common::set_text_color(l, kBad);
     track(l);
@@ -583,14 +584,14 @@ void sq_frontend::rebuild_navigator(const std::string& heading) {
         continue;
       std::string label = t.name;
       if (t.rows >= 0)
-        label += "  [" + std::to_string(t.rows) + " rows]";
+        label += "  [" + trf(t.rows == 1 ? "$$SQ_N_ROW" : "$$SQ_N_ROWS", {std::to_string(t.rows)}) + "]";
       ui_element_ptr tn = node(label, false, false, "table");
 
       ui_element_ptr actions = ui_element_ptr::create("wish"_key, "HorizontalLayout"_key);
       actions["spacing"_key] = 4.0f;
       track(actions);
       ui_element_ptr b_data = ui_element_ptr::create("wish"_key, "Button"_key);
-      b_data["label"_key] = std::string{"View data"};
+      b_data["label"_key] = tr("$$SQ_VIEW_DATA");
       common::set_icon(b_data, "visibility");
       track(b_data);
       click_handlers_[wish_id_of(b_data)] = [this, ti] {
@@ -599,7 +600,7 @@ void sq_frontend::rebuild_navigator(const std::string& heading) {
         emit_query(sql);
       };
       ui_element_ptr b_struct = ui_element_ptr::create("wish"_key, "Button"_key);
-      b_struct["label"_key] = std::string{"Structure"};
+      b_struct["label"_key] = tr("$$SQ_STRUCTURE");
       common::set_icon(b_struct, "tree");
       track(b_struct);
       click_handlers_[wish_id_of(b_struct)] = [this, ti] { show_structure(ti); };
@@ -618,13 +619,12 @@ void sq_frontend::rebuild_navigator(const std::string& heading) {
       set_children_list(tn, kids);
       table_nodes.push_back(tn);
     }
-    ui_element_ptr sn =
-        node(std::string{title} + " (" + std::to_string(table_nodes.size()) + ")", true, false, "folder");
+    ui_element_ptr sn = node(tr(title) + " (" + std::to_string(table_nodes.size()) + ")", true, false, "folder");
     set_children_list(sn, table_nodes);
     return sn;
   };
 
-  set_children_list(root, {section("Tables", "table"), section("Views", "view")});
+  set_children_list(root, {section("$$SQ_TABLES", "table"), section("$$SQ_VIEWS", "view")});
   set_children_list(nav_box_, {root});
 }
 
@@ -635,7 +635,7 @@ void sq_frontend::show_structure(size_t table_index) {
   if (structure_title_) {
     std::string title = t.name + "  (" + t.type;
     if (t.rows >= 0)
-      title += ", " + std::to_string(t.rows) + " rows";
+      title += ", " + trf(t.rows == 1 ? "$$SQ_N_ROW" : "$$SQ_N_ROWS", {std::to_string(t.rows)});
     title += ")";
     structure_title_["text"_key] = title;
   }
@@ -695,12 +695,12 @@ void sq_frontend::set_sql_text(const std::string& sql) {
 
 void sq_frontend::emit_query(const std::string& sql) {
   if (sql.find_first_not_of(" \t\r\n") == std::string::npos) {
-    common::set_status_text(editor_status_, "Type a query first.", false);
+    common::set_status_text(editor_status_, tr("$$SQ_TYPE_A_QUERY"), false);
     return;
   }
   int32_t idx = rows_combo_ ? rows_combo_->as<int32_t>("value"_key) : 1;
   idx = std::clamp(idx, int32_t{0}, static_cast<int32_t>(std::size(kRowLimits)) - 1);
-  common::set_status_text(editor_status_, "Running...", true);
+  common::set_status_text(editor_status_, tr("$$SQ_RUNNING"), true);
   dynamic p;
   p["sql"_key] = sql;
   p["max_rows"_key] = kRowLimits[idx];
@@ -717,8 +717,8 @@ dynamic sq_frontend::do_update_result(const dynamic& args) {
 
   if (!args.as<bool>("ok"_key)) {
     clear_table();
-    common::set_status_text(results_status_, "Query failed.", false);
-    common::set_status_text(editor_status_, str_of(args, "error"_key), false);
+    common::set_status_text(results_status_, tr("$$SQ_QUERY_FAILED"), false);
+    common::set_status_text(editor_status_, tr(str_of(args, "error"_key)), false);
     return dynamic{};
   }
 
@@ -780,12 +780,12 @@ dynamic sq_frontend::do_update_result(const dynamic& args) {
   set_children_list(results_table_, kids);
 
   const int32_t total = args.as<int32_t>("total_rows"_key);
-  std::string status = std::to_string(total) + (total == 1 ? " row" : " rows");
+  std::string status = trf(total == 1 ? "$$SQ_N_ROW" : "$$SQ_N_ROWS", {std::to_string(total)});
   if (args.as<bool>("truncated"_key))
-    status += " (showing the first " + std::to_string(row_no) + "; Export CSV writes all of them)";
+    status += " " + trf("$$SQ_SHOWING_FIRST_ROWS", {std::to_string(row_no)});
   if (names.empty())
-    status = "0 rows (no columns reported for an empty result)";
-  status += " in " + std::to_string(args.as<int32_t>("elapsed_ms"_key)) + " ms";
+    status = tr("$$SQ_ZERO_ROWS_NO_COLUMNS");
+  status = trf("$$SQ_STATUS_IN_MS", {status, std::to_string(args.as<int32_t>("elapsed_ms"_key))});
   common::set_status_text(results_status_, status, true);
   common::set_status_text(editor_status_, status, true);
   reset_chart_controls();
@@ -799,22 +799,21 @@ std::filesystem::path sq_frontend::resolve_output_path(
     const std::string& path, bool overwrite, bool allow_absolute, const ui_element_ptr& status) {
   namespace fs = std::filesystem;
   if (path.empty()) {
-    common::set_status_text(status, "Enter the file to write.", false);
+    common::set_status_text(status, tr("$$SQ_ENTER_FILE"), false);
     return {};
   }
   auto full = file_service::resolve_path(path, resource_dir_, allow_absolute);
   if (full.empty()) {
-    common::set_status_text(
-        status, path + " is not allowed: use a path inside the session folder (no absolute paths or \"..\").", false);
+    common::set_status_text(status, trf("$$SQ_PATH_NOT_ALLOWED", {path}), false);
     return {};
   }
   std::error_code ec;
   if (fs::is_directory(full, ec)) {
-    common::set_status_text(status, path + " is a directory.", false);
+    common::set_status_text(status, trf("$$SQ_PATH_IS_DIRECTORY", {path}), false);
     return {};
   }
   if (!overwrite && fs::exists(full, ec)) {
-    common::set_status_text(status, path + " already exists; tick Overwrite to replace it.", false);
+    common::set_status_text(status, trf("$$SQ_PATH_EXISTS", {path}), false);
     return {};
   }
   return full;
@@ -824,10 +823,7 @@ void sq_frontend::open_sandbox_folder(const ui_element_ptr& status) {
   // The folder is on the machine running the wish server (the same place
   // Export CSV / Save PNG write to); resource_dir_ is copied in on_init().
   const bool ok = open_in_host_explorer(resource_dir_);
-  common::set_status_text(
-      status,
-      ok ? "Opened the session folder in the server's file explorer." : "Could not open the file explorer.",
-      ok);
+  common::set_status_text(status, tr(ok ? "$$SQ_OPENED_SESSION_FOLDER" : "$$SQ_COULD_NOT_OPEN_EXPLORER"), ok);
 }
 
 void sq_frontend::save_chart_png() {
@@ -846,7 +842,7 @@ void sq_frontend::save_chart_png() {
   }
   const std::string png = sq_chart::render_png(spec, 1000, 600);
   if (png.empty()) {
-    common::set_status_text(chart_status_, "Nothing to save: the chart has no data.", false);
+    common::set_status_text(chart_status_, tr("$$SQ_CHART_NO_DATA"), false);
     return;
   }
   std::error_code ec;
@@ -855,7 +851,7 @@ void sq_frontend::save_chart_png() {
   f.write(png.data(), static_cast<std::streamsize>(png.size()));
   f.close();
   common::set_status_text(
-      chart_status_, f.fail() ? "Could not write " + path : "Saved the chart to " + path, !f.fail());
+      chart_status_, trf(f.fail() ? "$$SQ_COULD_NOT_WRITE" : "$$SQ_SAVED_CHART", {path}), !f.fail());
 }
 
 void sq_frontend::reset_chart_controls() {
@@ -877,7 +873,7 @@ void sq_frontend::reset_chart_controls() {
     return n > 0;
   };
 
-  std::vector<std::string> x_items = {"(row #)"};
+  std::vector<std::string> x_items = {tr("$$SQ_ROW_NUMBER")};
   int32_t x_sel = 0;
   for (size_t i = 0; i < result_columns_.size(); ++i) {
     x_items.push_back(result_columns_[i]);
@@ -970,11 +966,11 @@ void sq_frontend::rebuild_chart() {
   if (result_columns_.empty() || result_cells_.empty()) {
     chart_plot_["x_label"_key] = std::string{};
     chart_plot_["y_label"_key] = std::string{};
-    finish({}, "Run a query that returns rows to chart it.", true);
+    finish({}, tr("$$SQ_RUN_QUERY_TO_CHART"), true);
     return;
   }
   if (ycols.empty()) {
-    finish({}, "Tick at least one Y column.", false);
+    finish({}, tr("$$SQ_TICK_Y_COLUMN"), false);
     return;
   }
 
@@ -994,13 +990,13 @@ void sq_frontend::rebuild_chart() {
 
   std::string note;
   if (has_x && !x_numeric && !pie)
-    note = "  (X is not numeric; using row numbers)";
+    note = "  " + tr("$$SQ_X_NOT_NUMERIC");
 
   std::string y_names;
   for (size_t c : ycols)
     y_names += (y_names.empty() ? "" : ", ") + result_columns_[c];
-  chart_plot_["x_label"_key] = (pie || hist) ? std::string{} : has_x ? result_columns_[x_sel - 1] : std::string{"row #"};
-  chart_plot_["y_label"_key] = pie ? std::string{} : hist ? std::string{"count"} : y_names;
+  chart_plot_["x_label"_key] = (pie || hist) ? std::string{} : has_x ? result_columns_[x_sel - 1] : tr("$$SQ_ROW_AXIS");
+  chart_plot_["y_label"_key] = pie ? std::string{} : hist ? tr("$$SQ_COUNT_AXIS") : y_names;
 
   std::vector<ui_element_ptr> series;
   size_t points = 0;
@@ -1031,7 +1027,7 @@ void sq_frontend::rebuild_chart() {
     points = values.size();
     series.push_back(track(p));
     if (n > kMaxPieSlices)
-      note = "  (first " + std::to_string(kMaxPieSlices) + " rows only)";
+      note = "  " + trf("$$SQ_FIRST_ROWS_ONLY", {std::to_string(kMaxPieSlices)});
   } else if (hist) {
     for (size_t c : ycols) {
       std::vector<float> values;
@@ -1105,8 +1101,9 @@ void sq_frontend::rebuild_chart() {
   sync_spec_labels();
   finish(
       series,
-      std::to_string(points) + (points == 1 ? " point" : " points") + " in " + std::to_string(series.size()) +
-          " series" + note,
+      trf(points == 1 ? "$$SQ_N_POINT_IN_SERIES" : "$$SQ_N_POINTS_IN_SERIES",
+          {std::to_string(points), std::to_string(series.size())}) +
+          note,
       points > 0);
 }
 
@@ -1117,16 +1114,16 @@ dynamic sq_frontend::do_command_result(const dynamic& args) {
           : scope == "results" ? results_status_
           : scope == "chart"   ? chart_status_
                                : editor_status_,
-      str_of(args, "message"_key),
+      tr(str_of(args, "message"_key)),
       args.as<bool>("ok"_key));
   return dynamic{};
 }
 
 dynamic sq_frontend::do_show_unavailable(const dynamic& args) {
-  const std::string message = str_of(args, "message"_key);
+  const std::string message = tr(str_of(args, "message"_key));
   common::set_status_text(editor_status_, message, false);
   common::set_status_text(connections_status_, message, false);
-  show_message("sq is not installed", message);
+  show_message("$$SQ_NOT_INSTALLED", message);
   return dynamic{};
 }
 

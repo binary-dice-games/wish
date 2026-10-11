@@ -144,7 +144,7 @@ std::string format_field_description(const element_field_info& f) {
 // silently corrupt the rest of the translation unit.
 static constexpr const char* kEditorLayout = R"json({
   "type": "Window",
-  "title": "Editor",
+  "title": "$$EDITOR_EDITOR",
   "width": 900,
   "height": 720,
   "closable": true,
@@ -152,7 +152,7 @@ static constexpr const char* kEditorLayout = R"json({
     "vbox": {
       "type": "VerticalLayout",
       "children": {
-        "path_label": { "type": "Label", "text": "Filename: (none)" },
+        "path_label": { "type": "Label", "text": "$$EDITOR_FILENAME_NONE" },
         "banner": { "type": "Label", "text": "" },
         "editor_row": {
           "type": "HorizontalLayout",
@@ -178,7 +178,7 @@ static constexpr const char* kEditorLayout = R"json({
 // outer size.
 static constexpr const char* kLogWindowLayout = R"json({
   "type": "Window",
-  "title": "Event Log",
+  "title": "$$EDITOR_EVENT_LOG",
   "pos_x": 20,
   "pos_y": 760,
   "width": 900,
@@ -193,7 +193,7 @@ static constexpr const char* kLogWindowLayout = R"json({
       "flags": "ScrollY",
       "children": {
         "col_seq":   { "type": "TableColumn", "label": "#" },
-        "col_event": { "type": "TableColumn", "label": "Event" }
+        "col_event": { "type": "TableColumn", "label": "$$EDITOR_EVENT" }
       }
     }
   }
@@ -208,7 +208,7 @@ static constexpr const char* kLogWindowLayout = R"json({
 // width remains).
 static constexpr const char* kHelpWindowLayout = R"json({
   "type": "Window",
-  "title": "Help",
+  "title": "$$EDITOR_HELP",
   "pos_x": 930,
   "pos_y": 20,
   "width": 380,
@@ -227,9 +227,9 @@ static constexpr const char* kHelpWindowLayout = R"json({
           "headers": true,
           "flags": "Resizable|RowBg|BordersV",
           "children": {
-            "col_field":    { "type": "TableColumn", "label": "Field", "column_id": 0, "flags": "WidthFixed", "init_width": 150 },
-            "col_category": { "type": "TableColumn", "label": "Category", "column_id": 1, "flags": "WidthFixed", "init_width": 90 },
-            "col_desc":     { "type": "TableColumn", "label": "Description", "column_id": 2, "flags": "WidthStretch" }
+            "col_field":    { "type": "TableColumn", "label": "$$EDITOR_FIELD", "column_id": 0, "flags": "WidthFixed", "init_width": 150 },
+            "col_category": { "type": "TableColumn", "label": "$$EDITOR_CATEGORY", "column_id": 1, "flags": "WidthFixed", "init_width": 90 },
+            "col_desc":     { "type": "TableColumn", "label": "$$EDITOR_DESCRIPTION", "column_id": 2, "flags": "WidthStretch" }
           }
         }
       }
@@ -244,7 +244,9 @@ static constexpr const char* kHelpFieldNameColor = "#7EC8FFFF";
 
 // ── editor ───────────────────────────────────────────────────────────────────
 
-editor::editor(dynamic&& base) : tool_form(std::move(base)) {}
+editor::editor(dynamic&& base) : tool_form(std::move(base)) {
+  i18n_prefix_ = "bdg/dev/editor";
+}
 
 void editor::on_init() {
   // See form::internal_root_key_'s doc comment: ordinally-assigned, not pointer-derived.
@@ -332,7 +334,7 @@ void editor::try_reparse() {
     resolved = file_service::resolve_path(current_source_path_, s.resource_dir, s.allow_absolute_paths);
   });
   if (resolved.empty()) {
-    set_banner("invalid or unsafe source path: " + current_source_path_);
+    set_banner(trf("$$EDITOR_UNSAFE_SOURCE_PATH", {current_source_path_}));
     return;
   }
 
@@ -420,9 +422,9 @@ void editor::set_banner(const std::string& text) {
 void editor::update_path_label() {
   if (!path_label_ptr_)
     return;
-  std::string text = "Filename: " + (display_path_.empty() ? std::string{"(none)"} : display_path_);
+  std::string text = display_path_.empty() ? tr("$$EDITOR_FILENAME_NONE") : trf("$$EDITOR_FILENAME", {display_path_});
   if (dirty_)
-    text += " [MODIFIED]";
+    text += " " + tr("$$EDITOR_MODIFIED");
   (*path_label_ptr_)["text"_key] = text;
 }
 
@@ -553,9 +555,9 @@ void editor::update_highlight(const std::optional<std::string>& new_path) {
 
 void editor::show_close_confirm() {
   dynamic params;
-  params["title"_key] = std::string{"Unsaved changes"};
-  params["message"_key] = "Save changes to " +
-      (display_path_.empty() ? std::string{"this file"} : display_path_) + " before closing?";
+  params["title"_key] = tr("$$EDITOR_UNSAVED_CHANGES");
+  params["message"_key] =
+      display_path_.empty() ? tr("$$EDITOR_SAVE_THIS_FILE") : trf("$$EDITOR_SAVE_FILE", {display_path_});
   params["icon"_key] = std::string{"warning"};
   params["buttons"_key] = std::string{"yes_no_cancel"};
 

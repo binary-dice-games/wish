@@ -5,6 +5,7 @@
 
 #include "curl_response_parser.hpp"
 #include "src/client/wish_app_host.hpp"
+#include "src/i18n/translations.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -240,10 +241,7 @@ void curl_source::load_store() {
   history_.clear();
 
   if (!host_.has_user_store()) {
-    log_persistence(
-        false,
-        "Collections, Environments and History are not saved: anonymous session "
-        "(reconnect with --username to keep them)");
+    log_persistence(false, "$$CURL_NOT_SAVED_ANONYMOUS");
     return;
   }
 
@@ -283,7 +281,7 @@ void curl_source::load_store() {
       });
     }
   } catch (const std::exception& e) {
-    log_persistence(false, std::string{"Could not load saved data: "} + e.what());
+    log_persistence(false, make_message("$$CURL_COULD_NOT_LOAD", {e.what()}));
   }
   while (history_.size() > kMaxHistory)
     history_.pop_front();
@@ -335,7 +333,7 @@ void curl_source::write_entry(const char* name, dynamic value) const {
   try {
     host_.user_store_set(name, std::move(value)).get();
   } catch (const std::exception& e) {
-    log_persistence(false, std::string{"Could not save "} + name + ": " + e.what());
+    log_persistence(false, make_message("$$CURL_COULD_NOT_SAVE", {name, e.what()}));
   }
 }
 
@@ -589,7 +587,7 @@ void curl_source::send_request(const request_state& raw) {
   dynamic resp_args;
   if (r.exit_code != 0) {
     std::string err =
-        !r.stderr_text.empty() ? r.stderr_text : ("curl exited with code " + std::to_string(r.exit_code));
+        !r.stderr_text.empty() ? r.stderr_text : make_message("$$CURL_EXITED_WITH_CODE", {std::to_string(r.exit_code)});
     while (!err.empty() && (err.back() == '\n' || err.back() == '\r'))
       err.pop_back();
     resp_args["ok"_key] = false;

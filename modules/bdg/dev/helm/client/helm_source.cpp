@@ -4,6 +4,7 @@
 #include "helm_source.hpp"
 
 #include "helm_table_parser.hpp"
+#include "src/i18n/translations.hpp"
 
 #include <chrono>
 #include <filesystem>
@@ -64,7 +65,11 @@ bool helm_source::check_args(
     const std::string& label, const std::string& scope, const std::vector<std::string>& values) {
   for (auto& v : values) {
     if (!is_safe_arg(v)) {
-      report(label, scope, false, v.empty() ? "a required value is empty" : "invalid value '" + v + "'");
+      report(
+          label,
+          scope,
+          false,
+          v.empty() ? std::string{"$$HELM_REQUIRED_VALUE_EMPTY"} : make_message("$$HELM_INVALID_VALUE", {v}));
       return false;
     }
   }
@@ -182,7 +187,7 @@ void helm_source::on_install_requested(const install_request& req) {
   if (!check_args(label, "install", checked))
     return;
   if (!req.upgrade && !is_valid_release_name(req.release)) {
-    report(label, "install", false, "invalid release name '" + req.release + "'");
+    report(label, "install", false, make_message("$$HELM_INVALID_RELEASE_NAME_VALUE", {req.release}));
     return;
   }
 
@@ -203,7 +208,7 @@ void helm_source::on_install_requested(const install_request& req) {
     }
     if (!written) {
       std::filesystem::remove(values_file, ec);
-      report(label, "install", false, "cannot write the values to a temporary file");
+      report(label, "install", false, "$$HELM_CANNOT_WRITE_VALUES");
       return;
     }
     argv.push_back("-f");
@@ -241,7 +246,7 @@ void helm_source::on_install_values_requested(
   dynamic args;
   args["token"_key] = token;
   if (!safe) {
-    args["error"_key] = std::string{"invalid chart or release reference"};
+    args["error"_key] = std::string{"$$HELM_INVALID_REFERENCE"};
   } else {
     auto r = run_logged(argv);
     if (!r.ok()) {

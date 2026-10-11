@@ -136,7 +136,9 @@ std::string translate_text(std::string_view text, const translation_map& map) {
   std::vector<std::string> args;
   for (size_t start = sep + 1;;) {
     size_t next = text.find(message_arg_separator, start);
-    args.emplace_back(text.substr(start, next == std::string_view::npos ? std::string_view::npos : next - start));
+    std::string_view arg = text.substr(start, next == std::string_view::npos ? std::string_view::npos : next - start);
+    // An argument that is itself a "$$KEY" is translated too (one level).
+    args.push_back(is_translatable(arg) ? map.lookup(arg.substr(translation_prefix.size())) : std::string{arg});
     if (next == std::string_view::npos)
       break;
     start = next + 1;

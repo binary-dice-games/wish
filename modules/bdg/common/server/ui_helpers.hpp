@@ -272,16 +272,19 @@ inline std::string plural(size_t n, const char* noun) {
 }
 
 /// @brief `"<command>: OK"` or `"<command> failed: <output>"` (`"unknown
-/// error"` when the output is empty) -- the status-label text a form shows
-/// for a `command_result {command, ok, output}` call.
+/// error"` when the output is empty), translated with @p form's tr() (the
+/// output may itself be a `"$$KEY"` or make_message()) -- the status-label
+/// text a form shows for a `command_result {command, ok, output}` call.
 /// @param[out] ok  The call's `ok` field.
-inline std::string command_result_text(const bison::dynamic& args, bool& ok) {
+template <typename Form>
+std::string command_result_text(Form& form, const bison::dynamic& args, bool& ok) {
   ok = flag_of(args, "ok"_key);
-  const std::string command = str_of(args, "command"_key);
+  const std::string command = form.tr(str_of(args, "command"_key));
   if (ok)
-    return command + ": OK";
+    return form.trf("$$COMMON_COMMAND_OK", {command});
   const std::string output = str_of(args, "output"_key);
-  return command + " failed: " + (output.empty() ? std::string{"unknown error"} : output);
+  return form.trf(
+      "$$COMMON_COMMAND_FAILED", {command, output.empty() ? form.tr("$$COMMON_UNKNOWN_ERROR") : form.tr(output)});
 }
 
 } // namespace bdg::wish::common

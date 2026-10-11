@@ -52,7 +52,7 @@ void rolling_plot::init(
   if (!children_p || !*children_p)
     return;
   ui_element_ptr line = ui_element_ptr::create("wish"_key, "PlotLine"_key);
-  line["label"_key] = aggregate_label;
+  line["label"_key] = owner.tr(aggregate_label);
   line["order"_key] = static_cast<int32_t>(0);
   owner.assign_id(line);
   aggregate_.el = line;

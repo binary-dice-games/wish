@@ -16,6 +16,7 @@
 
 #include "src/client/app_registry.hpp"
 #include "src/client/wish_app_host.hpp"
+#include "src/i18n/translations.hpp"
 
 #include "src/bison/bison.hpp"
 
@@ -46,7 +47,7 @@ void run_pip(wish_app_host& s) {
   // running pip inside an event handler would block the whole UI until it
   // exits. Long commands get a modal progress dialog
   // (modules/bdg/common/command_worker.hpp).
-  const auto frontend = common::open_frontend(s, "PipFrontend"_key, "Running pip");
+  const auto frontend = common::open_frontend(s, "PipFrontend"_key, make_message("$$COMMON_RUNNING_TOOL", {"pip"}));
   const auto& proxy = frontend.proxy;
   const auto& worker = frontend.worker;
   auto source = std::make_shared<pip::pip_source>(proxy, interpreter, worker);

@@ -1,0 +1,15 @@
+# editor -- French.
+EDITOR_EDITOR = Éditeur
+EDITOR_FILENAME_NONE = Fichier : (aucun)
+EDITOR_FILENAME = Fichier : {0}
+EDITOR_MODIFIED = [MODIFIÉ]
+EDITOR_EVENT_LOG = Journal des événements
+EDITOR_EVENT = Événement
+EDITOR_HELP = Aide
+EDITOR_FIELD = Champ
+EDITOR_CATEGORY = Catégorie
+EDITOR_DESCRIPTION = Description
+EDITOR_UNSAFE_SOURCE_PATH = chemin source non valide ou dangereux : {0}
+EDITOR_UNSAVED_CHANGES = Modifications non enregistrées
+EDITOR_SAVE_THIS_FILE = Enregistrer les modifications de ce fichier avant de fermer ?
+EDITOR_SAVE_FILE = Enregistrer les modifications de {0} avant de fermer ?

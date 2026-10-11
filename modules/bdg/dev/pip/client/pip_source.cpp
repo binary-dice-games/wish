@@ -4,6 +4,7 @@
 #include "pip_source.hpp"
 
 #include "pip_parsers.hpp"
+#include "src/i18n/translations.hpp"
 
 #include <filesystem>
 
@@ -145,13 +146,13 @@ void pip_source::on_install_requested(const std::string& spec, const install_opt
   const auto requirements = split_requirements(spec);
   const std::string label = "install " + spec;
   if (requirements.empty()) {
-    report("install", "packages", false, "nothing to install");
+    report("install", "packages", false, "$$PIP_NOTHING_TO_INSTALL");
     return;
   }
   auto argv = install_argv(opts);
   for (auto& req : requirements) {
     if (!is_safe_arg(req)) {
-      report(label, "packages", false, "invalid requirement '" + req + "'");
+      report(label, "packages", false, make_message("$$PIP_INVALID_REQUIREMENT", {req}));
       return;
     }
     argv.push_back(req);
@@ -162,7 +163,11 @@ void pip_source::on_install_requested(const std::string& spec, const install_opt
 void pip_source::on_requirements_requested(const std::string& path, const install_options& opts) {
   const std::string label = "install -r " + path;
   if (!is_safe_arg(path)) {
-    report(label, "packages", false, path.empty() ? "no requirements file given" : "invalid path '" + path + "'");
+    report(
+        label,
+        "packages",
+        false,
+        path.empty() ? std::string{"$$PIP_NO_REQUIREMENTS_FILE"} : make_message("$$PIP_INVALID_PATH", {path}));
     return;
   }
   auto argv = install_argv(opts);
@@ -184,7 +189,7 @@ void pip_source::on_package_action(const std::string& name, const std::string& a
 
   const std::string label = action + " " + name;
   if (!is_valid_package_name(name)) {
-    report(label, "packages", false, "invalid package name '" + name + "'");
+    report(label, "packages", false, make_message("$$PIP_INVALID_PACKAGE_NAME", {name}));
     return;
   }
   run_and_refresh(label, argv);
@@ -195,7 +200,7 @@ void pip_source::on_package_action(const std::string& name, const std::string& a
 void pip_source::on_versions_requested(const std::string& name, bool pre) {
   const std::string label = "index versions " + name;
   if (!is_valid_package_name(name)) {
-    report(label, "versions", false, "invalid package name '" + name + "'");
+    report(label, "versions", false, make_message("$$PIP_INVALID_PACKAGE_NAME", {name}));
     return;
   }
   std::vector<std::string> argv = {"index", "versions", name};

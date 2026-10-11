@@ -3,6 +3,8 @@
 /// @brief Implementation of pkg_source.
 #include "pkg_source.hpp"
 
+#include "src/i18n/translations.hpp"
+
 namespace bdg::wish::pkg {
 
 using namespace bdg::bison;
@@ -115,12 +117,12 @@ void pkg_source::on_install_requested(const std::string& text) {
   const auto names = split_names(text);
   const std::string label = "install " + common::one_line(text, 80);
   if (names.empty()) {
-    report("install", "packages", false, "nothing to install");
+    report("install", "packages", false, "$$PKG_NOTHING_TO_INSTALL");
     return;
   }
   for (auto& name : names) {
     if (!is_valid_package_name(name)) {
-      report(label, "packages", false, "invalid package name '" + name + "'");
+      report(label, "packages", false, make_message("$$PKG_INVALID_PACKAGE_NAME", {name}));
       return;
     }
   }
@@ -130,7 +132,7 @@ void pkg_source::on_install_requested(const std::string& text) {
 void pkg_source::on_package_action(const std::string& name, const std::string& action) {
   const std::string label = action + " " + name;
   if (!is_valid_package_name(name)) {
-    report(label, "packages", false, "invalid package name '" + name + "'");
+    report(label, "packages", false, make_message("$$PKG_INVALID_PACKAGE_NAME", {name}));
     return;
   }
   if (action == "upgrade")

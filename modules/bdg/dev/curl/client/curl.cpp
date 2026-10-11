@@ -37,7 +37,7 @@ void run_curl(wish_app_host& s) {
   // running the tool inside an event handler would block the whole UI until
   // it exits. Long commands get a modal progress dialog
   // (modules/bdg/common/command_worker.hpp).
-  const auto frontend = common::open_frontend(s, "CurlFrontend"_key, "Sending request");
+  const auto frontend = common::open_frontend(s, "CurlFrontend"_key, "$$CURL_SENDING_REQUEST");
   const auto& proxy = frontend.proxy;
   const auto& worker = frontend.worker;
   auto source = std::make_shared<curl::curl_source>(proxy, s, worker);

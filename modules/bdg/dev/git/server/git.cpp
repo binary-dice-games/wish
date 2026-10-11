@@ -151,7 +151,7 @@ theme_hex diff_kind_theme_color(const std::string& kind) {
 // commit history survives a refresh instead of jumping back and forth.
 
 static constexpr const char* kMainLayout = R"({
-  "type": "Window", "title": "Git", "width": 900, "height": 720, "closable": true,
+  "type": "Window", "title": "$$GIT_GIT", "width": 900, "height": 720, "closable": true,
   "children": {
     "vbox": {
       "type": "VerticalLayout",
@@ -159,14 +159,14 @@ static constexpr const char* kMainLayout = R"({
         "toolbar": {
           "type": "HorizontalLayout", "spacing": 6,
           "children": {
-            "btn_commit":  { "type": "Button", "label": "Commit",  "icon": "res/icons/commit.png" },
-            "btn_push":    { "type": "Button", "label": "Push",    "icon": "res/icons/upload.png" },
-            "btn_pull":    { "type": "Button", "label": "Pull",    "icon": "res/icons/download.png" },
-            "btn_fetch":   { "type": "Button", "label": "Fetch",   "icon": "res/icons/sync.png" },
-            "btn_branch":  { "type": "Button", "label": "Branch",  "icon": "res/icons/tree.png" },
-            "btn_merge":   { "type": "Button", "label": "Merge",   "icon": "res/icons/merge.png" },
-            "btn_stash":   { "type": "Button", "label": "Stash",   "icon": "res/icons/package.png" },
-            "btn_refresh": { "type": "Button", "label": "Refresh", "icon": "res/icons/refresh.png" }
+            "btn_commit":  { "type": "Button", "label": "$$GIT_COMMIT",  "icon": "res/icons/commit.png" },
+            "btn_push":    { "type": "Button", "label": "$$GIT_PUSH",    "icon": "res/icons/upload.png" },
+            "btn_pull":    { "type": "Button", "label": "$$GIT_PULL",    "icon": "res/icons/download.png" },
+            "btn_fetch":   { "type": "Button", "label": "$$GIT_FETCH",   "icon": "res/icons/sync.png" },
+            "btn_branch":  { "type": "Button", "label": "$$GIT_BRANCH",  "icon": "res/icons/tree.png" },
+            "btn_merge":   { "type": "Button", "label": "$$GIT_MERGE",   "icon": "res/icons/merge.png" },
+            "btn_stash":   { "type": "Button", "label": "$$GIT_STASH",   "icon": "res/icons/package.png" },
+            "btn_refresh": { "type": "Button", "label": "$$GIT_REFRESH", "icon": "res/icons/refresh.png" }
           }
         },
         "status_label": { "type": "Label", "text": "" },
@@ -180,19 +180,19 @@ static constexpr const char* kMainLayout = R"({
                 "new_branch_row": {
                   "type": "HorizontalLayout", "spacing": 4,
                   "children": {
-                    "new_branch_input": { "type": "InputText", "hint": "New branch name", "width": -1 },
-                    "btn_create_branch": { "type": "Button", "label": "Create", "icon": "res/icons/add.png" }
+                    "new_branch_input": { "type": "InputText", "hint": "$$GIT_NEW_BRANCH_NAME", "width": -1 },
+                    "btn_create_branch": { "type": "Button", "label": "$$GIT_CREATE", "icon": "res/icons/add.png" }
                   }
                 },
                 "sep_sidebar": { "type": "Separator" },
-                "branches_header": { "type": "Label", "text": "BRANCHES" },
-                "branches": { "type": "TreeNode", "label": "Local", "icon": "res/icons/tree.png", "open": true, "children": {} },
-                "remotes_header": { "type": "Label", "text": "REMOTES" },
-                "remotes": { "type": "TreeNode", "label": "Remote-tracking", "icon": "res/icons/cloud.png", "open": false, "children": {} },
-                "tags_header": { "type": "Label", "text": "TAGS" },
-                "tags": { "type": "TreeNode", "label": "Tags", "icon": "res/icons/tag.png", "open": false, "children": {} },
-                "stashes_header": { "type": "Label", "text": "STASHES" },
-                "stashes": { "type": "TreeNode", "label": "Stashes", "icon": "res/icons/package.png", "open": false, "children": {} }
+                "branches_header": { "type": "Label", "text": "$$GIT_BRANCHES_HEADER" },
+                "branches": { "type": "TreeNode", "label": "$$GIT_LOCAL", "icon": "res/icons/tree.png", "open": true, "children": {} },
+                "remotes_header": { "type": "Label", "text": "$$GIT_REMOTES_HEADER" },
+                "remotes": { "type": "TreeNode", "label": "$$GIT_REMOTE_TRACKING", "icon": "res/icons/cloud.png", "open": false, "children": {} },
+                "tags_header": { "type": "Label", "text": "$$GIT_TAGS_HEADER" },
+                "tags": { "type": "TreeNode", "label": "$$GIT_TAGS", "icon": "res/icons/tag.png", "open": false, "children": {} },
+                "stashes_header": { "type": "Label", "text": "$$GIT_STASHES_HEADER" },
+                "stashes": { "type": "TreeNode", "label": "$$GIT_STASHES", "icon": "res/icons/package.png", "open": false, "children": {} }
               }
             },
             "graph_panel": {
@@ -204,11 +204,11 @@ static constexpr const char* kMainLayout = R"({
                   "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true, "outer_height": -1,
                   "auto_scroll": false,
                   "children": {
-                    "col_graph":  { "type": "TableColumn", "label": "Graph",       "flags": "WidthFixed", "init_width": 80,  "column_id": 0 },
-                    "col_desc":   { "type": "TableColumn", "label": "Description", "flags": "WidthStretch",                     "column_id": 1 },
-                    "col_author": { "type": "TableColumn", "label": "Author",      "flags": "WidthFixed", "init_width": 130, "column_id": 2 },
-                    "col_date":   { "type": "TableColumn", "label": "Date",        "flags": "WidthFixed", "init_width": 150, "column_id": 3 },
-                    "col_hash":   { "type": "TableColumn", "label": "Commit",      "flags": "WidthFixed", "init_width": 80,  "column_id": 4 }
+                    "col_graph":  { "type": "TableColumn", "label": "$$GIT_GRAPH",       "flags": "WidthFixed", "init_width": 80,  "column_id": 0 },
+                    "col_desc":   { "type": "TableColumn", "label": "$$GIT_DESCRIPTION", "flags": "WidthStretch",                     "column_id": 1 },
+                    "col_author": { "type": "TableColumn", "label": "$$GIT_AUTHOR",      "flags": "WidthFixed", "init_width": 130, "column_id": 2 },
+                    "col_date":   { "type": "TableColumn", "label": "$$GIT_DATE",        "flags": "WidthFixed", "init_width": 150, "column_id": 3 },
+                    "col_hash":   { "type": "TableColumn", "label": "$$GIT_COMMIT",      "flags": "WidthFixed", "init_width": 80,  "column_id": 4 }
                   }
                 }
               }
@@ -221,12 +221,12 @@ static constexpr const char* kMainLayout = R"({
 })";
 
 static constexpr const char* kFilesLayout = R"({
-  "type": "Window", "title": "Files", "width": 380, "height": 360,
+  "type": "Window", "title": "$$GIT_FILES", "width": 380, "height": 360,
   "children": {
     "vbox": {
       "type": "VerticalLayout",
       "children": {
-        "title_label": { "type": "Label", "text": "Uncommitted changes" },
+        "title_label": { "type": "Label", "text": "$$GIT_UNCOMMITTED_CHANGES" },
         "files_table": {
           "type": "Table", "id": "##files_table", "columns": 2, "height": -1,
           "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "outer_height": -1,
@@ -238,8 +238,8 @@ static constexpr const char* kFilesLayout = R"({
         "commit_row": {
           "type": "HorizontalLayout", "spacing": 6,
           "children": {
-            "commit_message": { "type": "InputText", "hint": "Commit message", "width": -1 },
-            "commit_button":  { "type": "Button", "label": "Commit", "icon": "res/icons/commit.png" }
+            "commit_message": { "type": "InputText", "hint": "$$GIT_COMMIT_MESSAGE", "width": -1 },
+            "commit_button":  { "type": "Button", "label": "$$GIT_COMMIT", "icon": "res/icons/commit.png" }
           }
         }
       }
@@ -248,7 +248,7 @@ static constexpr const char* kFilesLayout = R"({
 })";
 
 static constexpr const char* kDiffLayout = R"({
-  "type": "Window", "title": "Diff", "width": 380, "height": 360,
+  "type": "Window", "title": "$$GIT_DIFF", "width": 380, "height": 360,
   "children": {
     "vbox": {
       "type": "VerticalLayout",
@@ -269,7 +269,9 @@ static constexpr const char* kDiffLayout = R"({
 
 // ── git_repo ─────────────────────────────────────────────────────────────────
 
-git_repo::git_repo(dynamic&& base) : tool_form(std::move(base)) {}
+git_repo::git_repo(dynamic&& base) : tool_form(std::move(base)) {
+  i18n_prefix_ = "bdg/dev/git";
+}
 
 void git_repo::on_init() {
   // See form::internal_root_key_'s doc comment: ordinally-assigned, not pointer-derived.
@@ -285,13 +287,13 @@ void git_repo::on_init() {
   log_.build(
       *this,
       internal_root_key_ + "_log",
-      {.title = "Log",
+      {.title = "$$GIT_LOG",
        .table_id = "##git_log_table",
        .width = 900,
        .command_width = 340,
        .closable = false,
-       .on_cleared = [this] { set_status("Log cleared.", true); },
-       .on_copied = [this] { set_status("Copied log entry to clipboard.", true); }});
+       .on_cleared = [this] { set_status(tr("$$GIT_LOG_CLEARED"), true); },
+       .on_copied = [this] { set_status(tr("$$GIT_LOG_ENTRY_COPIED"), true); }});
 
   // Seed the first-run arrangement: the commit graph / detail Git window
   // filling the left ~70% with a Log strip along its bottom, and a
@@ -302,7 +304,7 @@ void git_repo::on_init() {
     using namespace dock;
     set_default_dock_layout(viewport(
         "git_dock",
-        "Git",
+        tr("$$GIT_GIT"),
         layout(
             split(
                 dir::left,
@@ -389,7 +391,7 @@ void git_repo::build_diff_window() {
 
 ui_element_ptr git_repo::make_menu_item(const std::string& label, std::function<void()> on_click) {
   ui_element_ptr item = ui_element_ptr::create("wish"_key, "MenuItem"_key);
-  item["label"_key] = label;
+  item["label"_key] = tr(label);
   if (std::string icon = common::action_icon(label); !icon.empty())
     common::set_icon(item, icon);
   assign_id(item);
@@ -414,7 +416,7 @@ ui_element_ptr git_repo::make_sidebar_row(
   ui_element_ptr menu = ui_element_ptr::create("wish"_key, "MenuButton"_key);
   menu["label"_key] = std::string{};
   common::set_icon(menu, "more");
-  menu["tooltip"_key] = std::string{"Actions"};
+  menu["tooltip"_key] = tr("$$COMMON_ACTIONS");
   assign_id(menu);
   std::vector<ui_element_ptr> items;
   items.reserve(menu_items.size());
@@ -475,7 +477,7 @@ void git_repo::submit_new_branch() {
 dynamic git_repo::do_update_refs(const dynamic& args) {
   std::string current_branch = args.as<std::string>("current_branch"_key);
   if (current_branch_label_)
-    current_branch_label_["text"_key] = "On branch: " + current_branch;
+    current_branch_label_["text"_key] = trf("$$GIT_ON_BRANCH", {tr(current_branch)});
 
   struct branch_info {
     std::string name;
@@ -512,18 +514,18 @@ dynamic git_repo::do_update_refs(const dynamic& args) {
     return make_sidebar_row(
         label,
         [this, ref] { selected_branch_ = ref; },
-        {{"Checkout",
+        {{"$$GIT_CHECKOUT",
           [this, ref] {
             selected_branch_ = ref;
             emit("checkout_requested"_key, make_payload("ref"_key, ref));
           }},
-         {"Merge into current",
+         {"$$GIT_MERGE_INTO_CURRENT",
           [this, ref] {
             selected_branch_ = ref;
             emit("merge_requested"_key, make_payload("ref"_key, ref));
           }},
-         {"Delete", [this, ref] {
-            show_confirm("Delete branch '" + ref + "'?", [this, ref] {
+         {"$$GIT_DELETE", [this, ref] {
+            show_confirm(trf("$$GIT_DELETE_BRANCH_CONFIRM", {ref}), [this, ref] {
               emit("delete_branch_requested"_key, make_payload("name"_key, ref, "force"_key, false));
             });
           }}});
@@ -535,12 +537,12 @@ dynamic git_repo::do_update_refs(const dynamic& args) {
     return make_sidebar_row(
         ref,
         [this, ref] { selected_branch_ = ref; },
-        {{"Checkout",
+        {{"$$GIT_CHECKOUT",
           [this, ref] {
             selected_branch_ = ref;
             emit("checkout_requested"_key, make_payload("ref"_key, ref));
           }},
-         {"Merge into current", [this, ref] {
+         {"$$GIT_MERGE_INTO_CURRENT", [this, ref] {
             selected_branch_ = ref;
             emit("merge_requested"_key, make_payload("ref"_key, ref));
           }}});
@@ -553,7 +555,7 @@ dynamic git_repo::do_update_refs(const dynamic& args) {
     return make_sidebar_row(
         ref,
         [this, ref] { selected_branch_ = ref; },
-        {{"Checkout", [this, ref] { emit("checkout_requested"_key, make_payload("ref"_key, ref)); }}});
+        {{"$$GIT_CHECKOUT", [this, ref] { emit("checkout_requested"_key, make_payload("ref"_key, ref)); }}});
   });
 
   struct stash_info {
@@ -572,10 +574,10 @@ dynamic git_repo::do_update_refs(const dynamic& args) {
     return make_sidebar_row(
         "stash@{" + std::to_string(idx) + "}: " + stashes[i].message,
         [] {},
-        {{"Apply", [this, idx] { emit("stash_apply_requested"_key, make_payload("index"_key, idx)); }},
-         {"Pop", [this, idx] { emit("stash_pop_requested"_key, make_payload("index"_key, idx)); }},
-         {"Drop", [this, idx] {
-            show_confirm("Drop stash@{" + std::to_string(idx) + "}? This cannot be undone.", [this, idx] {
+        {{"$$GIT_APPLY", [this, idx] { emit("stash_apply_requested"_key, make_payload("index"_key, idx)); }},
+         {"$$GIT_POP", [this, idx] { emit("stash_pop_requested"_key, make_payload("index"_key, idx)); }},
+         {"$$GIT_DROP", [this, idx] {
+            show_confirm(trf("$$GIT_DROP_STASH_CONFIRM", {std::to_string(idx)}), [this, idx] {
               emit("stash_drop_requested"_key, make_payload("index"_key, idx));
             });
           }}});
@@ -704,7 +706,7 @@ void git_repo::rebuild_graph_table(const dynamic& args) {
     std::vector<git_graph_segment> bottom;
     if (!layout.empty())
       bottom.push_back({0, head_lane, head_color});
-    add_row("", "Uncommitted changes", "", "", 0, head_color, false, true, {}, bottom);
+    add_row("", tr("$$GIT_UNCOMMITTED_CHANGES"), "", "", 0, head_color, false, true, {}, bottom);
   }
 
   for (size_t i = 0; i < metas.size(); ++i) {
@@ -751,12 +753,12 @@ void git_repo::select_row(int32_t index) {
   if (selected_hash_.empty()) {
     status_mode_working_ = true;
     if (files_title_label_)
-      files_title_label_["text"_key] = "Uncommitted changes";
+      files_title_label_["text"_key] = tr("$$GIT_UNCOMMITTED_CHANGES");
     do_update_status(last_status_args_);
   } else {
     status_mode_working_ = false;
     if (files_title_label_)
-      files_title_label_["text"_key] = "Commit " + selected_hash_.substr(0, 8);
+      files_title_label_["text"_key] = trf("$$GIT_COMMIT_N", {selected_hash_.substr(0, 8)});
     emit("commit_files_requested"_key, make_payload("hash"_key, selected_hash_));
   }
 }
@@ -962,7 +964,10 @@ dynamic git_repo::do_command_result(const dynamic& args) {
   std::string command = args.as<std::string>("command"_key);
   bool ok = args.as<bool>("ok"_key);
   std::string output = args.as<std::string>("output"_key);
-  set_status(ok ? (command + ": OK") : (command + " failed: " + output), ok);
+  set_status(
+      ok ? trf("$$COMMON_COMMAND_OK", {command})
+         : trf("$$COMMON_COMMAND_FAILED", {command, output.empty() ? tr("$$COMMON_UNKNOWN_ERROR") : tr(output)}),
+      ok);
   return dynamic{};
 }
 

@@ -84,14 +84,14 @@ theme_color ready_colour(const std::string& ready) {
 // tool. Keep them roughly in sync when changing columns.
 
 static constexpr const char* kPodsLayout = R"json({
-  "type": "Window", "title": "Pods", "width": 960, "height": 500,
+  "type": "Window", "title": "$$KUBECTL_PODS", "width": 960, "height": 500,
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_refresh": { "type": "Button", "label": "Refresh", "icon": "res/icons/refresh.png" },
-      "filter":      { "type": "InputText", "hint": "Filter by name", "width": 200 },
-      "ns":          { "type": "InputText", "hint": "Namespace", "width": 150 },
-      "state":       { "type": "Combo", "items": "All\nRunning\nPending\nSucceeded\nFailed", "value": 0, "width": 120 }
+      "btn_refresh": { "type": "Button", "label": "$$KUBECTL_REFRESH", "icon": "res/icons/refresh.png" },
+      "filter":      { "type": "InputText", "hint": "$$KUBECTL_FILTER_BY_NAME", "width": 200 },
+      "ns":          { "type": "InputText", "hint": "$$KUBECTL_NAMESPACE", "width": 150 },
+      "state":       { "type": "Combo", "items": "$$KUBECTL_STATE_ITEMS", "value": 0, "width": 120 }
     } },
     "status": { "type": "Label", "text": "" },
     "sep": { "type": "Separator" },
@@ -100,12 +100,12 @@ static constexpr const char* kPodsLayout = R"json({
       "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": -1, "outer_height": -1, "auto_scroll": false,
       "children": {
-        "col_ns":       { "type": "TableColumn", "label": "Namespace", "flags": "WidthFixed", "init_width": 130, "column_id": 0 },
-        "col_name":     { "type": "TableColumn", "label": "Name",      "flags": "WidthStretch",                    "column_id": 1 },
-        "col_ready":    { "type": "TableColumn", "label": "Ready",     "flags": "WidthFixed", "init_width": 64,  "column_id": 2 },
-        "col_status":   { "type": "TableColumn", "label": "Status",    "flags": "WidthFixed", "init_width": 150, "column_id": 3 },
-        "col_restarts": { "type": "TableColumn", "label": "Restarts",  "flags": "WidthFixed", "init_width": 72,  "column_id": 4 },
-        "col_age":      { "type": "TableColumn", "label": "Age",       "flags": "WidthFixed", "init_width": 80,  "column_id": 5 },
+        "col_ns":       { "type": "TableColumn", "label": "$$KUBECTL_NAMESPACE", "flags": "WidthFixed", "init_width": 130, "column_id": 0 },
+        "col_name":     { "type": "TableColumn", "label": "$$KUBECTL_NAME",      "flags": "WidthStretch",                    "column_id": 1 },
+        "col_ready":    { "type": "TableColumn", "label": "$$KUBECTL_READY",     "flags": "WidthFixed", "init_width": 64,  "column_id": 2 },
+        "col_status":   { "type": "TableColumn", "label": "$$KUBECTL_STATUS",    "flags": "WidthFixed", "init_width": 150, "column_id": 3 },
+        "col_restarts": { "type": "TableColumn", "label": "$$KUBECTL_RESTARTS",  "flags": "WidthFixed", "init_width": 72,  "column_id": 4 },
+        "col_age":      { "type": "TableColumn", "label": "$$KUBECTL_AGE",       "flags": "WidthFixed", "init_width": 80,  "column_id": 5 },
         "col_actions":  { "type": "TableColumn", "label": "",          "flags": "WidthFixed", "init_width": 40,  "column_id": 6 }
       }
     }
@@ -113,13 +113,13 @@ static constexpr const char* kPodsLayout = R"json({
 })json";
 
 static constexpr const char* kDeploymentsLayout = R"json({
-  "type": "Window", "title": "Deployments", "width": 820, "height": 420,
+  "type": "Window", "title": "$$KUBECTL_DEPLOYMENTS", "width": 820, "height": 420,
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_refresh": { "type": "Button", "label": "Refresh", "icon": "res/icons/refresh.png" },
-      "filter":      { "type": "InputText", "hint": "Filter by name", "width": 200 },
-      "ns":          { "type": "InputText", "hint": "Namespace", "width": 150 }
+      "btn_refresh": { "type": "Button", "label": "$$KUBECTL_REFRESH", "icon": "res/icons/refresh.png" },
+      "filter":      { "type": "InputText", "hint": "$$KUBECTL_FILTER_BY_NAME", "width": 200 },
+      "ns":          { "type": "InputText", "hint": "$$KUBECTL_NAMESPACE", "width": 150 }
     } },
     "status": { "type": "Label", "text": "" },
     "sep": { "type": "Separator" },
@@ -128,12 +128,12 @@ static constexpr const char* kDeploymentsLayout = R"json({
       "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": -1, "outer_height": -1, "auto_scroll": false,
       "children": {
-        "col_ns":        { "type": "TableColumn", "label": "Namespace",   "flags": "WidthFixed", "init_width": 130, "column_id": 0 },
-        "col_name":      { "type": "TableColumn", "label": "Name",        "flags": "WidthStretch",                    "column_id": 1 },
-        "col_ready":     { "type": "TableColumn", "label": "Ready",       "flags": "WidthFixed", "init_width": 70,  "column_id": 2 },
-        "col_uptodate":  { "type": "TableColumn", "label": "Up-to-date",  "flags": "WidthFixed", "init_width": 90,  "column_id": 3 },
-        "col_available": { "type": "TableColumn", "label": "Available",   "flags": "WidthFixed", "init_width": 80,  "column_id": 4 },
-        "col_age":       { "type": "TableColumn", "label": "Age",         "flags": "WidthFixed", "init_width": 80,  "column_id": 5 },
+        "col_ns":        { "type": "TableColumn", "label": "$$KUBECTL_NAMESPACE",   "flags": "WidthFixed", "init_width": 130, "column_id": 0 },
+        "col_name":      { "type": "TableColumn", "label": "$$KUBECTL_NAME",        "flags": "WidthStretch",                    "column_id": 1 },
+        "col_ready":     { "type": "TableColumn", "label": "$$KUBECTL_READY",       "flags": "WidthFixed", "init_width": 70,  "column_id": 2 },
+        "col_uptodate":  { "type": "TableColumn", "label": "$$KUBECTL_UP_TO_DATE",  "flags": "WidthFixed", "init_width": 90,  "column_id": 3 },
+        "col_available": { "type": "TableColumn", "label": "$$KUBECTL_AVAILABLE",   "flags": "WidthFixed", "init_width": 80,  "column_id": 4 },
+        "col_age":       { "type": "TableColumn", "label": "$$KUBECTL_AGE",         "flags": "WidthFixed", "init_width": 80,  "column_id": 5 },
         "col_actions":   { "type": "TableColumn", "label": "",            "flags": "WidthFixed", "init_width": 40,  "column_id": 6 }
       }
     }
@@ -141,13 +141,13 @@ static constexpr const char* kDeploymentsLayout = R"json({
 })json";
 
 static constexpr const char* kServicesLayout = R"json({
-  "type": "Window", "title": "Services", "width": 820, "height": 320,
+  "type": "Window", "title": "$$KUBECTL_SERVICES", "width": 820, "height": 320,
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_refresh": { "type": "Button", "label": "Refresh", "icon": "res/icons/refresh.png" },
-      "filter":      { "type": "InputText", "hint": "Filter by name", "width": 200 },
-      "ns":          { "type": "InputText", "hint": "Namespace", "width": 150 }
+      "btn_refresh": { "type": "Button", "label": "$$KUBECTL_REFRESH", "icon": "res/icons/refresh.png" },
+      "filter":      { "type": "InputText", "hint": "$$KUBECTL_FILTER_BY_NAME", "width": 200 },
+      "ns":          { "type": "InputText", "hint": "$$KUBECTL_NAMESPACE", "width": 150 }
     } },
     "status": { "type": "Label", "text": "" },
     "sep": { "type": "Separator" },
@@ -156,12 +156,12 @@ static constexpr const char* kServicesLayout = R"json({
       "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": -1, "outer_height": -1, "auto_scroll": false,
       "children": {
-        "col_ns":     { "type": "TableColumn", "label": "Namespace",  "flags": "WidthFixed", "init_width": 130, "column_id": 0 },
-        "col_name":   { "type": "TableColumn", "label": "Name",       "flags": "WidthStretch",                    "column_id": 1 },
-        "col_type":   { "type": "TableColumn", "label": "Type",       "flags": "WidthFixed", "init_width": 110, "column_id": 2 },
-        "col_ip":     { "type": "TableColumn", "label": "Cluster-IP", "flags": "WidthFixed", "init_width": 130, "column_id": 3 },
-        "col_ports":  { "type": "TableColumn", "label": "Ports",      "flags": "WidthFixed", "init_width": 140, "column_id": 4 },
-        "col_age":    { "type": "TableColumn", "label": "Age",        "flags": "WidthFixed", "init_width": 80,  "column_id": 5 },
+        "col_ns":     { "type": "TableColumn", "label": "$$KUBECTL_NAMESPACE",  "flags": "WidthFixed", "init_width": 130, "column_id": 0 },
+        "col_name":   { "type": "TableColumn", "label": "$$KUBECTL_NAME",       "flags": "WidthStretch",                    "column_id": 1 },
+        "col_type":   { "type": "TableColumn", "label": "$$KUBECTL_TYPE",       "flags": "WidthFixed", "init_width": 110, "column_id": 2 },
+        "col_ip":     { "type": "TableColumn", "label": "$$KUBECTL_CLUSTER_IP", "flags": "WidthFixed", "init_width": 130, "column_id": 3 },
+        "col_ports":  { "type": "TableColumn", "label": "$$KUBECTL_PORTS",      "flags": "WidthFixed", "init_width": 140, "column_id": 4 },
+        "col_age":    { "type": "TableColumn", "label": "$$KUBECTL_AGE",        "flags": "WidthFixed", "init_width": 80,  "column_id": 5 },
         "col_actions":{ "type": "TableColumn", "label": "",           "flags": "WidthFixed", "init_width": 40,  "column_id": 6 }
       }
     }
@@ -169,12 +169,12 @@ static constexpr const char* kServicesLayout = R"json({
 })json";
 
 static constexpr const char* kNodesLayout = R"json({
-  "type": "Window", "title": "Nodes", "width": 720, "height": 320,
+  "type": "Window", "title": "$$KUBECTL_NODES", "width": 720, "height": 320,
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_refresh": { "type": "Button", "label": "Refresh", "icon": "res/icons/refresh.png" },
-      "filter":      { "type": "InputText", "hint": "Filter by name", "width": 200 }
+      "btn_refresh": { "type": "Button", "label": "$$KUBECTL_REFRESH", "icon": "res/icons/refresh.png" },
+      "filter":      { "type": "InputText", "hint": "$$KUBECTL_FILTER_BY_NAME", "width": 200 }
     } },
     "status": { "type": "Label", "text": "" },
     "sep": { "type": "Separator" },
@@ -183,10 +183,10 @@ static constexpr const char* kNodesLayout = R"json({
       "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": -1, "outer_height": -1, "auto_scroll": false,
       "children": {
-        "col_name":   { "type": "TableColumn", "label": "Name",    "flags": "WidthStretch",                    "column_id": 0 },
-        "col_status": { "type": "TableColumn", "label": "Status",  "flags": "WidthFixed", "init_width": 200, "column_id": 1 },
-        "col_ver":    { "type": "TableColumn", "label": "Version", "flags": "WidthFixed", "init_width": 130, "column_id": 2 },
-        "col_age":    { "type": "TableColumn", "label": "Age",     "flags": "WidthFixed", "init_width": 90,  "column_id": 3 },
+        "col_name":   { "type": "TableColumn", "label": "$$KUBECTL_NAME",    "flags": "WidthStretch",                    "column_id": 0 },
+        "col_status": { "type": "TableColumn", "label": "$$KUBECTL_STATUS",  "flags": "WidthFixed", "init_width": 200, "column_id": 1 },
+        "col_ver":    { "type": "TableColumn", "label": "$$KUBECTL_VERSION", "flags": "WidthFixed", "init_width": 130, "column_id": 2 },
+        "col_age":    { "type": "TableColumn", "label": "$$KUBECTL_AGE",     "flags": "WidthFixed", "init_width": 90,  "column_id": 3 },
         "col_actions":{ "type": "TableColumn", "label": "",        "flags": "WidthFixed", "init_width": 40,  "column_id": 4 }
       }
     }
@@ -199,15 +199,15 @@ static constexpr const char* kNodesLayout = R"json({
 // default layout.
 
 static constexpr const char* kLogsLayout = R"json({
-  "type": "Window", "title": "Logs", "width": 900, "height": 420,
+  "type": "Window", "title": "$$KUBECTL_LOGS", "width": 900, "height": 420,
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 8, "children": {
-      "target":     { "type": "Label", "text": "(no pod selected)" },
+      "target":     { "type": "Label", "text": "$$KUBECTL_NO_POD_SELECTED" },
       "spring":     { "type": "Spring" },
-      "follow":     { "type": "Checkbox", "label": "Follow", "value": false },
-      "lines":      { "type": "InputInt", "label": "Lines", "value": 500, "step": 100, "width": 130 },
-      "btn_refresh":{ "type": "Button", "label": "Refresh", "icon": "res/icons/refresh.png" }
+      "follow":     { "type": "Checkbox", "label": "$$KUBECTL_FOLLOW", "value": false },
+      "lines":      { "type": "InputInt", "label": "$$KUBECTL_LINES", "value": 500, "step": 100, "width": 130 },
+      "btn_refresh":{ "type": "Button", "label": "$$KUBECTL_REFRESH", "icon": "res/icons/refresh.png" }
     } },
     "sep": { "type": "Separator" },
     "editor": {
@@ -224,24 +224,24 @@ static constexpr const char* kLogsLayout = R"json({
 // and per-pod / per-node lines are added/removed at runtime.
 
 static constexpr const char* kTopLayout = R"json({
-  "type": "Window", "title": "Top", "width": 960, "height": 660,
+  "type": "Window", "title": "$$KUBECTL_TOP", "width": 960, "height": 660,
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "scroll": true, "children": {
     "status": { "type": "Label", "text": "" },
-    "pods_cpu_plot":  { "type": "Plot", "title": "Pods CPU (millicores)", "height": 420, "profiler_marker": "K8s Pods CPU", "y_label": "m",   "children": {} },
-    "pods_mem_plot":  { "type": "Plot", "title": "Pods Memory (MiB)",     "height": 420, "profiler_marker": "K8s Pods Mem", "y_label": "MiB", "children": {} },
-    "nodes_cpu_plot": { "type": "Plot", "title": "Nodes CPU %",           "height": 200, "profiler_marker": "K8s Nodes CPU", "y_label": "%",  "children": {} },
-    "nodes_mem_plot": { "type": "Plot", "title": "Nodes Memory %",        "height": 200, "profiler_marker": "K8s Nodes Mem", "y_label": "%",  "children": {} },
+    "pods_cpu_plot":  { "type": "Plot", "title": "$$KUBECTL_PODS_CPU_MILLICORES", "height": 420, "profiler_marker": "K8s Pods CPU", "y_label": "m",   "children": {} },
+    "pods_mem_plot":  { "type": "Plot", "title": "$$KUBECTL_PODS_MEMORY_MIB",     "height": 420, "profiler_marker": "K8s Pods Mem", "y_label": "$$KUBECTL_MIB", "children": {} },
+    "nodes_cpu_plot": { "type": "Plot", "title": "$$KUBECTL_NODES_CPU",           "height": 200, "profiler_marker": "K8s Nodes CPU", "y_label": "%",  "children": {} },
+    "nodes_mem_plot": { "type": "Plot", "title": "$$KUBECTL_NODES_MEMORY",        "height": 200, "profiler_marker": "K8s Nodes Mem", "y_label": "%",  "children": {} },
     "sep": { "type": "Separator" },
     "pods_table": {
       "type": "Table", "id": "##k8s_top_pods", "columns": 4,
       "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": 200, "outer_height": 200, "auto_scroll": false,
       "children": {
-        "col_ns":   { "type": "TableColumn", "label": "Namespace", "flags": "WidthFixed", "init_width": 150, "column_id": 0 },
-        "col_name": { "type": "TableColumn", "label": "Pod",       "flags": "WidthStretch",                   "column_id": 1 },
-        "col_cpu":  { "type": "TableColumn", "label": "CPU",       "flags": "WidthFixed", "init_width": 90,  "column_id": 2 },
-        "col_mem":  { "type": "TableColumn", "label": "Memory",    "flags": "WidthFixed", "init_width": 100, "column_id": 3 }
+        "col_ns":   { "type": "TableColumn", "label": "$$KUBECTL_NAMESPACE", "flags": "WidthFixed", "init_width": 150, "column_id": 0 },
+        "col_name": { "type": "TableColumn", "label": "$$KUBECTL_POD",       "flags": "WidthStretch",                   "column_id": 1 },
+        "col_cpu":  { "type": "TableColumn", "label": "$$KUBECTL_CPU",       "flags": "WidthFixed", "init_width": 90,  "column_id": 2 },
+        "col_mem":  { "type": "TableColumn", "label": "$$KUBECTL_MEMORY",    "flags": "WidthFixed", "init_width": 100, "column_id": 3 }
       }
     },
     "nodes_table": {
@@ -249,11 +249,11 @@ static constexpr const char* kTopLayout = R"json({
       "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": 170, "outer_height": 170, "auto_scroll": false,
       "children": {
-        "col_name": { "type": "TableColumn", "label": "Node",     "flags": "WidthStretch",                   "column_id": 0 },
-        "col_cpu":  { "type": "TableColumn", "label": "CPU",      "flags": "WidthFixed", "init_width": 90,  "column_id": 1 },
-        "col_cpup": { "type": "TableColumn", "label": "CPU %",    "flags": "WidthFixed", "init_width": 70,  "column_id": 2 },
-        "col_mem":  { "type": "TableColumn", "label": "Memory",   "flags": "WidthFixed", "init_width": 100, "column_id": 3 },
-        "col_memp": { "type": "TableColumn", "label": "Memory %", "flags": "WidthFixed", "init_width": 80,  "column_id": 4 }
+        "col_name": { "type": "TableColumn", "label": "$$KUBECTL_NODE",     "flags": "WidthStretch",                   "column_id": 0 },
+        "col_cpu":  { "type": "TableColumn", "label": "$$KUBECTL_CPU",      "flags": "WidthFixed", "init_width": 90,  "column_id": 1 },
+        "col_cpup": { "type": "TableColumn", "label": "$$KUBECTL_CPU_PERCENT",    "flags": "WidthFixed", "init_width": 70,  "column_id": 2 },
+        "col_mem":  { "type": "TableColumn", "label": "$$KUBECTL_MEMORY",   "flags": "WidthFixed", "init_width": 100, "column_id": 3 },
+        "col_memp": { "type": "TableColumn", "label": "$$KUBECTL_MEMORY_PERCENT", "flags": "WidthFixed", "init_width": 80,  "column_id": 4 }
       }
     }
   } } }
@@ -265,27 +265,19 @@ std::string format_pct(float pct) {
   return oss.str();
 }
 
-const char* noun_for(const std::string& scope) {
-  if (scope == "pod")
-    return "pod";
-  if (scope == "deployment")
-    return "deployment";
-  if (scope == "service")
-    return "service";
-  return "node";
-}
-
 } // namespace
 
 // ── kubectl_frontend ───────────────────────────────────────────────────────
 
-kubectl_frontend::kubectl_frontend(dynamic&& base) : tool_form(std::move(base)) {}
+kubectl_frontend::kubectl_frontend(dynamic&& base) : tool_form(std::move(base)) {
+  i18n_prefix_ = "bdg/dev/kubectl";
+}
 
 void kubectl_frontend::on_init() {
   internal_root_key_ = next_available_key("__kubectl_");
 
   auto* title_f = findField<std::string>("title"_key);
-  title_ = title_f ? *title_f : std::string{"Kubernetes"};
+  title_ = tr(title_f ? *title_f : std::string{"$$KUBECTL_KUBERNETES"});
 
   // Pods is the main root -- form::init() registers internal_root_key_ as
   // this form's top-level object automatically; the other windows register
@@ -307,7 +299,7 @@ void kubectl_frontend::on_init() {
   describe_.build(
       *this,
       internal_root_key_ + "_describe",
-      {.title = "Describe", .language = "yaml", .file_stem = "describe", .on_refresh = [this] {
+      {.title = "$$KUBECTL_DESCRIBE", .language = "yaml", .file_stem = "describe", .on_refresh = [this] {
          emit_describe_request();
        }});
 
@@ -326,10 +318,12 @@ void kubectl_frontend::on_init() {
   {
     using namespace dock;
     set_default_dock_layout(viewport(
-        "kubectl_dock", "Kubectl",
+        "kubectl_dock",
+        title_,
         layout(
             split(
-                dir::left, 0.62f,
+                dir::left,
+                0.62f,
                 split(
                     dir::down,
                     0.24f,
@@ -413,10 +407,10 @@ void kubectl_frontend::rebuild_pods(const dynamic& args) {
         make_label(e.as<std::string>("age"_key), kIdle),
     };
     std::vector<common::menu_item> items = {
-        action_item("Logs", r, "logs", false),
-        action_item("Describe", r, "describe", false),
+        action_item("$$KUBECTL_LOGS", r, "logs", false),
+        action_item("$$KUBECTL_DESCRIBE", r, "describe", false),
         {},
-        action_item("Delete", r, "delete", true)};
+        action_item("$$KUBECTL_DELETE", r, "delete", true)};
     pods_.panel.add(std::move(r), cells, items);
     ++total;
     if (phase == "Running")
@@ -426,7 +420,9 @@ void kubectl_frontend::rebuild_pods(const dynamic& args) {
   pods_.panel.refresh();
   apply_list_filter(pods_);
   pods_.panel.set_status(
-      std::to_string(total) + (total == 1 ? " pod (" : " pods (") + std::to_string(running) + " running)", true);
+      trf(total == 1 ? "$$KUBECTL_N_POD_RUNNING" : "$$KUBECTL_N_PODS_RUNNING",
+          {std::to_string(total), std::to_string(running)}),
+      true);
 }
 
 void kubectl_frontend::rebuild_deployments(const dynamic& args) {
@@ -445,17 +441,18 @@ void kubectl_frontend::rebuild_deployments(const dynamic& args) {
         make_label(e.as<std::string>("age"_key), kIdle),
     };
     std::vector<common::menu_item> items = {
-        action_item("Restart", r, "restart", false),
-        action_item("Describe", r, "describe", false),
+        action_item("$$KUBECTL_RESTART", r, "restart", false),
+        action_item("$$KUBECTL_DESCRIBE", r, "describe", false),
         {},
-        action_item("Delete", r, "delete", true)};
+        action_item("$$KUBECTL_DELETE", r, "delete", true)};
     deployments_.panel.add(std::move(r), cells, items);
     ++total;
   });
 
   deployments_.panel.refresh();
   apply_list_filter(deployments_);
-  deployments_.panel.set_status(std::to_string(total) + (total == 1 ? " deployment" : " deployments"), true);
+  deployments_.panel.set_status(
+      trf(total == 1 ? "$$KUBECTL_N_DEPLOYMENT" : "$$KUBECTL_N_DEPLOYMENTS", {std::to_string(total)}), true);
 }
 
 void kubectl_frontend::rebuild_services(const dynamic& args) {
@@ -473,14 +470,17 @@ void kubectl_frontend::rebuild_services(const dynamic& args) {
         make_label(e.as<std::string>("age"_key), kIdle),
     };
     std::vector<common::menu_item> items = {
-        action_item("Describe", r, "describe", false), {}, action_item("Delete", r, "delete", true)};
+        action_item("$$KUBECTL_DESCRIBE", r, "describe", false),
+        {},
+        action_item("$$KUBECTL_DELETE", r, "delete", true)};
     services_.panel.add(std::move(r), cells, items);
     ++total;
   });
 
   services_.panel.refresh();
   apply_list_filter(services_);
-  services_.panel.set_status(std::to_string(total) + (total == 1 ? " service" : " services"), true);
+  services_.panel.set_status(
+      trf(total == 1 ? "$$KUBECTL_N_SERVICE" : "$$KUBECTL_N_SERVICES", {std::to_string(total)}), true);
 }
 
 void kubectl_frontend::rebuild_nodes(const dynamic& args) {
@@ -500,10 +500,11 @@ void kubectl_frontend::rebuild_nodes(const dynamic& args) {
     };
     // Cordon on a schedulable node; Uncordon on a cordoned one.
     std::vector<common::menu_item> items = {
-        schedulable ? action_item("Cordon", r, "cordon", false) : action_item("Uncordon", r, "uncordon", false),
-        action_item("Drain", r, "drain", true),
+        schedulable ? action_item("$$KUBECTL_CORDON", r, "cordon", false)
+                    : action_item("$$KUBECTL_UNCORDON", r, "uncordon", false),
+        action_item("$$KUBECTL_DRAIN", r, "drain", true),
         {},
-        action_item("Describe", r, "describe", false)};
+        action_item("$$KUBECTL_DESCRIBE", r, "describe", false)};
     nodes_.panel.add(std::move(r), cells, items);
     ++total;
     if (contains(status, "Ready") && !contains(status, "NotReady"))
@@ -513,7 +514,9 @@ void kubectl_frontend::rebuild_nodes(const dynamic& args) {
   nodes_.panel.refresh();
   apply_list_filter(nodes_);
   nodes_.panel.set_status(
-      std::to_string(total) + (total == 1 ? " node (" : " nodes (") + std::to_string(ready) + " ready)", true);
+      trf(total == 1 ? "$$KUBECTL_N_NODE_READY" : "$$KUBECTL_N_NODES_READY",
+          {std::to_string(total), std::to_string(ready)}),
+      true);
 }
 
 void kubectl_frontend::apply_list_filter(list_window& lw) {
@@ -576,7 +579,7 @@ dynamic kubectl_frontend::do_command_result(const dynamic& args) {
       : scope == "nodes"                   ? nodes_
                                            : pods_;
   bool ok = false;
-  const std::string text = common::command_result_text(args, ok);
+  const std::string text = common::command_result_text(*this, args, ok);
   lw.panel.set_status(text, ok);
   return dynamic{};
 }
@@ -599,19 +602,19 @@ void kubectl_frontend::build_top_window() {
     // legend column below each plot is absorbed by the scroll region.
     tree.with("vbox.pods_cpu_plot", [&](const auto& e) {
       common::rolling_plot::configure_axes(e, y_axis::auto_fit);
-      pods_cpu_plot_.init(*this, e, "Total");
+      pods_cpu_plot_.init(*this, e, "$$COMMON_TOTAL");
     });
     tree.with("vbox.pods_mem_plot", [&](const auto& e) {
       common::rolling_plot::configure_axes(e, y_axis::auto_fit);
-      pods_mem_plot_.init(*this, e, "Total");
+      pods_mem_plot_.init(*this, e, "$$COMMON_TOTAL");
     });
     tree.with("vbox.nodes_cpu_plot", [&](const auto& e) {
       common::rolling_plot::configure_axes(e, y_axis::percent);
-      nodes_cpu_plot_.init(*this, e, "Cluster avg", /*average=*/true);
+      nodes_cpu_plot_.init(*this, e, "$$KUBECTL_CLUSTER_AVG", /*average=*/true);
     });
     tree.with("vbox.nodes_mem_plot", [&](const auto& e) {
       common::rolling_plot::configure_axes(e, y_axis::percent);
-      nodes_mem_plot_.init(*this, e, "Cluster avg", /*average=*/true);
+      nodes_mem_plot_.init(*this, e, "$$KUBECTL_CLUSTER_AVG", /*average=*/true);
     });
   });
 }
@@ -676,10 +679,10 @@ dynamic kubectl_frontend::do_update_stats(const dynamic& args) {
 
   const std::string error = common::str_of(args, "error"_key);
   if (!error.empty())
-    common::set_status_text(top_status_label_, "kubectl top unavailable: " + error, false);
+    common::set_status_text(top_status_label_, trf("$$KUBECTL_TOP_UNAVAILABLE", {tr(error)}), false);
   else
     common::set_status_text(
-        top_status_label_, std::to_string(pod_count) + " pods, " + std::to_string(node_count) + " nodes", true);
+        top_status_label_, trf("$$KUBECTL_TOP_SUMMARY", {std::to_string(pod_count), std::to_string(node_count)}), true);
   return dynamic{};
 }
 
@@ -774,12 +777,18 @@ void kubectl_frontend::run_row_action(const resource& r, const std::string& acti
     return;
   }
 
+  // One sentence per action and kind, so each language can phrase it.
   std::string message;
   if (action == "drain")
-    message = "Drain node '" + r.name + "'? Its running pods will be evicted.";
+    message = trf("$$KUBECTL_DRAIN_CONFIRM", {r.name});
+  else if (r.ns.empty())
+    message = trf("$$KUBECTL_DELETE_CONFIRM", {r.name});
   else
-    message = std::string{"Delete "} + noun_for(r.scope) + " '" + r.name + "'" +
-        (r.ns.empty() ? std::string{} : " in namespace '" + r.ns + "'") + "?";
+    message =
+        trf(r.scope == "pod"              ? "$$KUBECTL_DELETE_POD_CONFIRM"
+                : r.scope == "deployment" ? "$$KUBECTL_DELETE_DEPLOYMENT_CONFIRM"
+                                          : "$$KUBECTL_DELETE_SERVICE_CONFIRM",
+            {r.name, r.ns});
   show_confirm(message, fire);
 }
 
@@ -788,7 +797,7 @@ void kubectl_frontend::run_row_action(const resource& r, const std::string& acti
 void register_kubectl() {
   auto proto = dynamic_ptr{"KubectlFrontend"_key, {}};
 
-  proto->addField("title"_key, field{std::string{"Kubernetes"}});
+  proto->addField("title"_key, field{std::string{"$$KUBECTL_KUBERNETES"}});
 
   auto add_method = [&](key_t name, dynamic (kubectl_frontend::*fn)(const dynamic&)) {
     proto->addMethod(name, bison::method{[fn](dynamic& self, const dynamic& args) -> dynamic {

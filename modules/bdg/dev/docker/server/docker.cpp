@@ -66,14 +66,14 @@ theme_color state_colour(const std::string& state) {
 // before implementation. Keep them roughly in sync when changing columns.
 
 static constexpr const char* kContainersLayout = R"json({
-  "type": "Window", "title": "Containers", "width": 940, "height": 500,
+  "type": "Window", "title": "$$DOCKER_CONTAINERS", "width": 940, "height": 500,
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_refresh": { "type": "Button", "label": "Refresh", "icon": "res/icons/refresh.png" },
-      "btn_prune":   { "type": "Button", "label": "Prune stopped...", "icon": "res/icons/delete.png" },
-      "filter":      { "type": "InputText", "hint": "Filter by name / image", "width": 240 },
-      "state":       { "type": "Combo", "items": "All\nRunning\nStopped", "value": 0, "width": 110 }
+      "btn_refresh": { "type": "Button", "label": "$$DOCKER_REFRESH", "icon": "res/icons/refresh.png" },
+      "btn_prune":   { "type": "Button", "label": "$$DOCKER_PRUNE_STOPPED", "icon": "res/icons/delete.png" },
+      "filter":      { "type": "InputText", "hint": "$$DOCKER_FILTER_BY_NAME_IMAGE", "width": 240 },
+      "state":       { "type": "Combo", "items": "$$DOCKER_STATE_ITEMS", "value": 0, "width": 110 }
     } },
     "status": { "type": "Label", "text": "" },
     "sep": { "type": "Separator" },
@@ -82,11 +82,11 @@ static constexpr const char* kContainersLayout = R"json({
       "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": -1, "outer_height": -1, "auto_scroll": false,
       "children": {
-        "col_name":    { "type": "TableColumn", "label": "Name",    "flags": "WidthFixed", "init_width": 150, "column_id": 0 },
-        "col_image":   { "type": "TableColumn", "label": "Image",   "flags": "WidthStretch",                    "column_id": 1 },
-        "col_status":  { "type": "TableColumn", "label": "Status",  "flags": "WidthFixed", "init_width": 175, "column_id": 2 },
-        "col_ports":   { "type": "TableColumn", "label": "Ports",   "flags": "WidthFixed", "init_width": 160, "column_id": 3 },
-        "col_created": { "type": "TableColumn", "label": "Created", "flags": "WidthFixed", "init_width": 110, "column_id": 4 },
+        "col_name":    { "type": "TableColumn", "label": "$$DOCKER_NAME",    "flags": "WidthFixed", "init_width": 150, "column_id": 0 },
+        "col_image":   { "type": "TableColumn", "label": "$$DOCKER_IMAGE",   "flags": "WidthStretch",                    "column_id": 1 },
+        "col_status":  { "type": "TableColumn", "label": "$$DOCKER_STATUS",  "flags": "WidthFixed", "init_width": 175, "column_id": 2 },
+        "col_ports":   { "type": "TableColumn", "label": "$$DOCKER_PORTS",   "flags": "WidthFixed", "init_width": 160, "column_id": 3 },
+        "col_created": { "type": "TableColumn", "label": "$$DOCKER_CREATED", "flags": "WidthFixed", "init_width": 110, "column_id": 4 },
         "col_actions": { "type": "TableColumn", "label": "",        "flags": "WidthFixed", "init_width": 40,  "column_id": 5 }
       }
     }
@@ -94,14 +94,14 @@ static constexpr const char* kContainersLayout = R"json({
 })json";
 
 static constexpr const char* kImagesLayout = R"json({
-  "type": "Window", "title": "Images", "width": 820, "height": 420,
+  "type": "Window", "title": "$$DOCKER_IMAGES", "width": 820, "height": 420,
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_refresh": { "type": "Button", "label": "Refresh", "icon": "res/icons/refresh.png" },
-      "pull_ref":    { "type": "InputText", "hint": "repo:tag to pull", "width": 220 },
-      "btn_pull":    { "type": "Button", "label": "Pull", "icon": "res/icons/download.png" },
-      "btn_prune":   { "type": "Button", "label": "Prune dangling...", "icon": "res/icons/delete.png" }
+      "btn_refresh": { "type": "Button", "label": "$$DOCKER_REFRESH", "icon": "res/icons/refresh.png" },
+      "pull_ref":    { "type": "InputText", "hint": "$$DOCKER_REPO_TAG_TO_PULL", "width": 220 },
+      "btn_pull":    { "type": "Button", "label": "$$DOCKER_PULL", "icon": "res/icons/download.png" },
+      "btn_prune":   { "type": "Button", "label": "$$DOCKER_PRUNE_DANGLING", "icon": "res/icons/delete.png" }
     } },
     "status": { "type": "Label", "text": "" },
     "sep": { "type": "Separator" },
@@ -110,11 +110,11 @@ static constexpr const char* kImagesLayout = R"json({
       "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": -1, "outer_height": -1, "auto_scroll": false,
       "children": {
-        "col_repo":    { "type": "TableColumn", "label": "Repository", "flags": "WidthStretch",                    "column_id": 0 },
-        "col_tag":     { "type": "TableColumn", "label": "Tag",        "flags": "WidthFixed", "init_width": 110, "column_id": 1 },
-        "col_id":      { "type": "TableColumn", "label": "Image ID",   "flags": "WidthFixed", "init_width": 140, "column_id": 2 },
-        "col_created": { "type": "TableColumn", "label": "Created",    "flags": "WidthFixed", "init_width": 120, "column_id": 3 },
-        "col_size":    { "type": "TableColumn", "label": "Size",       "flags": "WidthFixed", "init_width": 90,  "column_id": 4 },
+        "col_repo":    { "type": "TableColumn", "label": "$$DOCKER_REPOSITORY", "flags": "WidthStretch",                    "column_id": 0 },
+        "col_tag":     { "type": "TableColumn", "label": "$$DOCKER_TAG",        "flags": "WidthFixed", "init_width": 110, "column_id": 1 },
+        "col_id":      { "type": "TableColumn", "label": "$$DOCKER_IMAGE_ID",   "flags": "WidthFixed", "init_width": 140, "column_id": 2 },
+        "col_created": { "type": "TableColumn", "label": "$$DOCKER_CREATED",    "flags": "WidthFixed", "init_width": 120, "column_id": 3 },
+        "col_size":    { "type": "TableColumn", "label": "$$DOCKER_SIZE",       "flags": "WidthFixed", "init_width": 90,  "column_id": 4 },
         "col_actions": { "type": "TableColumn", "label": "",           "flags": "WidthFixed", "init_width": 40,  "column_id": 5 }
       }
     }
@@ -122,14 +122,14 @@ static constexpr const char* kImagesLayout = R"json({
 })json";
 
 static constexpr const char* kVolumesLayout = R"json({
-  "type": "Window", "title": "Volumes", "width": 720, "height": 300,
+  "type": "Window", "title": "$$DOCKER_VOLUMES", "width": 720, "height": 300,
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_refresh": { "type": "Button", "label": "Refresh", "icon": "res/icons/refresh.png" },
-      "vol_name":    { "type": "InputText", "hint": "new volume name", "width": 200 },
-      "btn_create":  { "type": "Button", "label": "Create", "icon": "res/icons/add.png" },
-      "btn_prune":   { "type": "Button", "label": "Prune...", "icon": "res/icons/delete.png" }
+      "btn_refresh": { "type": "Button", "label": "$$DOCKER_REFRESH", "icon": "res/icons/refresh.png" },
+      "vol_name":    { "type": "InputText", "hint": "$$DOCKER_NEW_VOLUME_NAME", "width": 200 },
+      "btn_create":  { "type": "Button", "label": "$$DOCKER_CREATE", "icon": "res/icons/add.png" },
+      "btn_prune":   { "type": "Button", "label": "$$DOCKER_PRUNE", "icon": "res/icons/delete.png" }
     } },
     "status": { "type": "Label", "text": "" },
     "sep": { "type": "Separator" },
@@ -138,9 +138,9 @@ static constexpr const char* kVolumesLayout = R"json({
       "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": -1, "outer_height": -1, "auto_scroll": false,
       "children": {
-        "col_name":   { "type": "TableColumn", "label": "Name",       "flags": "WidthFixed", "init_width": 220, "column_id": 0 },
-        "col_driver": { "type": "TableColumn", "label": "Driver",     "flags": "WidthFixed", "init_width": 90,  "column_id": 1 },
-        "col_mount":  { "type": "TableColumn", "label": "Mountpoint", "flags": "WidthStretch",                    "column_id": 2 },
+        "col_name":   { "type": "TableColumn", "label": "$$DOCKER_NAME",       "flags": "WidthFixed", "init_width": 220, "column_id": 0 },
+        "col_driver": { "type": "TableColumn", "label": "$$DOCKER_DRIVER",     "flags": "WidthFixed", "init_width": 90,  "column_id": 1 },
+        "col_mount":  { "type": "TableColumn", "label": "$$DOCKER_MOUNTPOINT", "flags": "WidthStretch",                    "column_id": 2 },
         "col_actions":{ "type": "TableColumn", "label": "",           "flags": "WidthFixed", "init_width": 40,  "column_id": 3 }
       }
     }
@@ -148,12 +148,12 @@ static constexpr const char* kVolumesLayout = R"json({
 })json";
 
 static constexpr const char* kNetworksLayout = R"json({
-  "type": "Window", "title": "Networks", "width": 720, "height": 300,
+  "type": "Window", "title": "$$DOCKER_NETWORKS", "width": 720, "height": 300,
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_refresh": { "type": "Button", "label": "Refresh", "icon": "res/icons/refresh.png" },
-      "btn_prune":   { "type": "Button", "label": "Prune...", "icon": "res/icons/delete.png" }
+      "btn_refresh": { "type": "Button", "label": "$$DOCKER_REFRESH", "icon": "res/icons/refresh.png" },
+      "btn_prune":   { "type": "Button", "label": "$$DOCKER_PRUNE", "icon": "res/icons/delete.png" }
     } },
     "status": { "type": "Label", "text": "" },
     "sep": { "type": "Separator" },
@@ -162,10 +162,10 @@ static constexpr const char* kNetworksLayout = R"json({
       "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": -1, "outer_height": -1, "auto_scroll": false,
       "children": {
-        "col_name":   { "type": "TableColumn", "label": "Name",       "flags": "WidthFixed", "init_width": 200, "column_id": 0 },
-        "col_driver": { "type": "TableColumn", "label": "Driver",     "flags": "WidthFixed", "init_width": 100, "column_id": 1 },
-        "col_scope":  { "type": "TableColumn", "label": "Scope",      "flags": "WidthFixed", "init_width": 100, "column_id": 2 },
-        "col_id":     { "type": "TableColumn", "label": "Network ID", "flags": "WidthStretch",                    "column_id": 3 },
+        "col_name":   { "type": "TableColumn", "label": "$$DOCKER_NAME",       "flags": "WidthFixed", "init_width": 200, "column_id": 0 },
+        "col_driver": { "type": "TableColumn", "label": "$$DOCKER_DRIVER",     "flags": "WidthFixed", "init_width": 100, "column_id": 1 },
+        "col_scope":  { "type": "TableColumn", "label": "$$DOCKER_SCOPE",      "flags": "WidthFixed", "init_width": 100, "column_id": 2 },
+        "col_id":     { "type": "TableColumn", "label": "$$DOCKER_NETWORK_ID", "flags": "WidthStretch",                    "column_id": 3 },
         "col_actions":{ "type": "TableColumn", "label": "",           "flags": "WidthFixed", "init_width": 40,  "column_id": 4 }
       }
     }
@@ -178,15 +178,15 @@ static constexpr const char* kNetworksLayout = R"json({
 // default layout.
 
 static constexpr const char* kLogsLayout = R"json({
-  "type": "Window", "title": "Logs", "width": 900, "height": 420,
+  "type": "Window", "title": "$$DOCKER_LOGS", "width": 900, "height": 420,
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 8, "children": {
-      "target":     { "type": "Label", "text": "(no container selected)" },
+      "target":     { "type": "Label", "text": "$$DOCKER_NO_CONTAINER_SELECTED" },
       "spring":     { "type": "Spring" },
-      "follow":     { "type": "Checkbox", "label": "Follow", "value": false },
-      "lines":      { "type": "InputInt", "label": "Lines", "value": 500, "step": 100, "width": 130 },
-      "btn_refresh":{ "type": "Button", "label": "Refresh", "icon": "res/icons/refresh.png" }
+      "follow":     { "type": "Checkbox", "label": "$$DOCKER_FOLLOW", "value": false },
+      "lines":      { "type": "InputInt", "label": "$$DOCKER_LINES", "value": 500, "step": 100, "width": 130 },
+      "btn_refresh":{ "type": "Button", "label": "$$DOCKER_REFRESH", "icon": "res/icons/refresh.png" }
     } },
     "sep": { "type": "Separator" },
     "editor": {
@@ -203,16 +203,16 @@ static constexpr const char* kLogsLayout = R"json({
 // lines are added/removed at runtime by update_stats_plot().
 
 static constexpr const char* kStatsLayout = R"json({
-  "type": "Window", "title": "Stats", "width": 940, "height": 800,
+  "type": "Window", "title": "$$DOCKER_STATS", "width": 940, "height": 800,
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "status": { "type": "Label", "text": "" },
     "cpu_plot": {
-      "type": "Plot", "title": "CPU %  (per container)", "height": 300,
+      "type": "Plot", "title": "$$DOCKER_CPU_PER_CONTAINER", "height": 300,
       "profiler_marker": "Docker CPU Plot", "y_label": "%", "children": {}
     },
     "mem_plot": {
-      "type": "Plot", "title": "Memory %  (per container)", "height": 300,
+      "type": "Plot", "title": "$$DOCKER_MEMORY_PER_CONTAINER", "height": 300,
       "profiler_marker": "Docker Mem Plot", "y_label": "%", "children": {}
     },
     "sep": { "type": "Separator" },
@@ -221,10 +221,10 @@ static constexpr const char* kStatsLayout = R"json({
       "flags": "Resizable|RowBg|Borders|ScrollX|ScrollY", "resize_pushes": true, "cell_tooltips": true, "headers": true,
       "height": -1, "outer_height": -1, "auto_scroll": false,
       "children": {
-        "col_name":  { "type": "TableColumn", "label": "Name",      "flags": "WidthStretch",                  "column_id": 0 },
-        "col_cpu":   { "type": "TableColumn", "label": "CPU %",     "flags": "WidthFixed", "init_width": 90,  "column_id": 1 },
-        "col_mem":   { "type": "TableColumn", "label": "Mem %",     "flags": "WidthFixed", "init_width": 90,  "column_id": 2 },
-        "col_usage": { "type": "TableColumn", "label": "Mem Usage", "flags": "WidthFixed", "init_width": 190, "column_id": 3 }
+        "col_name":  { "type": "TableColumn", "label": "$$DOCKER_NAME",      "flags": "WidthStretch",                  "column_id": 0 },
+        "col_cpu":   { "type": "TableColumn", "label": "$$DOCKER_CPU",     "flags": "WidthFixed", "init_width": 90,  "column_id": 1 },
+        "col_mem":   { "type": "TableColumn", "label": "$$DOCKER_MEM",     "flags": "WidthFixed", "init_width": 90,  "column_id": 2 },
+        "col_usage": { "type": "TableColumn", "label": "$$DOCKER_MEM_USAGE", "flags": "WidthFixed", "init_width": 190, "column_id": 3 }
       }
     }
   } } }
@@ -234,13 +234,15 @@ static constexpr const char* kStatsLayout = R"json({
 
 // ── docker_frontend ────────────────────────────────────────────────────────
 
-docker_frontend::docker_frontend(dynamic&& base) : tool_form(std::move(base)) {}
+docker_frontend::docker_frontend(dynamic&& base) : tool_form(std::move(base)) {
+  i18n_prefix_ = "bdg/dev/docker";
+}
 
 void docker_frontend::on_init() {
   internal_root_key_ = next_available_key("__docker_");
 
   auto* title_f = findField<std::string>("title"_key);
-  title_ = title_f ? *title_f : std::string{"Docker"};
+  title_ = tr(title_f ? *title_f : std::string{"$$DOCKER_DOCKER"});
 
   // Containers is the main root -- form::init() registers internal_root_key_
   // as this form's top-level object automatically; the other windows
@@ -250,7 +252,7 @@ void docker_frontend::on_init() {
       kContainersLayout,
       internal_root_key_,
       "containers",
-      "Remove all stopped containers (docker container prune)?",
+      "$$DOCKER_PRUNE_CONTAINERS_CONFIRM",
       [&](ui_tree& tree) {
         tree.with("vbox.toolbar.filter", [&](const auto& e) { filter_input_id_ = wish_id_of(e); });
         tree.with("vbox.toolbar.state", [&](const auto& e) { state_combo_id_ = wish_id_of(e); });
@@ -261,7 +263,7 @@ void docker_frontend::on_init() {
       kImagesLayout,
       internal_root_key_ + "_images",
       "images",
-      "Remove all dangling images (docker image prune)?",
+      "$$DOCKER_PRUNE_IMAGES_CONFIRM",
       [&](ui_tree& tree) {
         tree.with("vbox.toolbar.pull_ref", [&](const auto& e) {
           pull_ref_input_ = e;
@@ -284,7 +286,7 @@ void docker_frontend::on_init() {
       kVolumesLayout,
       internal_root_key_ + "_volumes",
       "volumes",
-      "Remove all unused local volumes (docker volume prune)?",
+      "$$DOCKER_PRUNE_VOLUMES_CONFIRM",
       [&](ui_tree& tree) {
         tree.with("vbox.toolbar.vol_name", [&](const auto& e) {
           volume_name_input_ = e;
@@ -303,11 +305,7 @@ void docker_frontend::on_init() {
       });
 
   build_list_window(
-      networks_,
-      kNetworksLayout,
-      internal_root_key_ + "_networks",
-      "networks",
-      "Remove all unused networks (docker network prune)?");
+      networks_, kNetworksLayout, internal_root_key_ + "_networks", "networks", "$$DOCKER_PRUNE_NETWORKS_CONFIRM");
 
   common::text_viewer_options logs_options;
   logs_options.layout_json = kLogsLayout;
@@ -321,7 +319,7 @@ void docker_frontend::on_init() {
   inspect_.build(
       *this,
       internal_root_key_ + "_inspect",
-      {.title = "Inspect", .language = "json", .file_stem = "inspect", .on_refresh = [this] {
+      {.title = "$$DOCKER_INSPECT", .language = "json", .file_stem = "inspect", .on_refresh = [this] {
          emit_inspect_request();
        }});
 
@@ -342,10 +340,12 @@ void docker_frontend::on_init() {
     // tabbed list/stats windows filling the rest -- and leave the right 38%
     // for Logs + Inspect.
     set_default_dock_layout(viewport(
-        "docker_dock", "Docker",
+        "docker_dock",
+        title_,
         layout(
             split(
-                dir::left, 0.62f,
+                dir::left,
+                0.62f,
                 split(
                     dir::down,
                     0.24f,
@@ -431,22 +431,22 @@ void docker_frontend::rebuild_containers(const dynamic& args) {
     std::vector<common::menu_item> items;
     if (state == "running")
       items = {
-          action_item("Stop", c, "stop", true),
-          action_item("Restart", c, "restart", false),
-          action_item("Pause", c, "pause", false),
-          action_item("Kill", c, "kill", true)};
+          action_item("$$DOCKER_STOP", c, "stop", true),
+          action_item("$$DOCKER_RESTART", c, "restart", false),
+          action_item("$$DOCKER_PAUSE", c, "pause", false),
+          action_item("$$DOCKER_KILL", c, "kill", true)};
     else if (state == "paused")
       items = {
-          action_item("Unpause", c, "unpause", false),
-          action_item("Stop", c, "stop", true),
-          action_item("Kill", c, "kill", true)};
+          action_item("$$DOCKER_UNPAUSE", c, "unpause", false),
+          action_item("$$DOCKER_STOP", c, "stop", true),
+          action_item("$$DOCKER_KILL", c, "kill", true)};
     else
-      items = {action_item("Start", c, "start", false)};
+      items = {action_item("$$DOCKER_START", c, "start", false)};
     items.push_back({});
-    items.push_back(action_item("Logs", c, "logs", false));
-    items.push_back(action_item("Inspect", c, "inspect", false));
+    items.push_back(action_item("$$DOCKER_LOGS", c, "logs", false));
+    items.push_back(action_item("$$DOCKER_INSPECT", c, "inspect", false));
     items.push_back({});
-    items.push_back(action_item("Remove", c, "remove", true));
+    items.push_back(action_item("$$DOCKER_REMOVE", c, "remove", true));
 
     containers_.add(std::move(c), cells, items);
     ++total;
@@ -457,7 +457,8 @@ void docker_frontend::rebuild_containers(const dynamic& args) {
   containers_.refresh();
   apply_container_filter();
   containers_.set_status(
-      std::to_string(total) + (total == 1 ? " container (" : " containers (") + std::to_string(running) + " running)",
+      trf(total == 1 ? "$$DOCKER_N_CONTAINER_RUNNING" : "$$DOCKER_N_CONTAINERS_RUNNING",
+          {std::to_string(total), std::to_string(running)}),
       true);
 }
 
@@ -483,16 +484,16 @@ void docker_frontend::rebuild_images(const dynamic& args) {
         make_label(e.as<std::string>("size"_key)),
     };
     std::vector<common::menu_item> items = {
-        action_item("Run", img, "run", false),
-        action_item("Inspect", img, "inspect", false),
+        action_item("$$DOCKER_RUN", img, "run", false),
+        action_item("$$DOCKER_INSPECT", img, "inspect", false),
         {},
-        action_item("Remove", img, "remove", true)};
+        action_item("$$DOCKER_REMOVE", img, "remove", true)};
     images_.add(std::move(img), cells, items);
     ++total;
   });
 
   images_.refresh();
-  images_.set_status(std::to_string(total) + (total == 1 ? " image" : " images"), true);
+  images_.set_status(trf(total == 1 ? "$$DOCKER_N_IMAGE" : "$$DOCKER_N_IMAGES", {std::to_string(total)}), true);
 }
 
 void docker_frontend::rebuild_volumes(const dynamic& args) {
@@ -511,13 +512,15 @@ void docker_frontend::rebuild_volumes(const dynamic& args) {
         make_label(e.as<std::string>("mountpoint"_key), kIdle),
     };
     std::vector<common::menu_item> items = {
-        action_item("Inspect", vol, "inspect", false), {}, action_item("Remove", vol, "remove", true)};
+        action_item("$$DOCKER_INSPECT", vol, "inspect", false),
+        {},
+        action_item("$$DOCKER_REMOVE", vol, "remove", true)};
     volumes_.add(std::move(vol), cells, items);
     ++total;
   });
 
   volumes_.refresh();
-  volumes_.set_status(std::to_string(total) + (total == 1 ? " volume" : " volumes"), true);
+  volumes_.set_status(trf(total == 1 ? "$$DOCKER_N_VOLUME" : "$$DOCKER_N_VOLUMES", {std::to_string(total)}), true);
 }
 
 void docker_frontend::rebuild_networks(const dynamic& args) {
@@ -538,17 +541,17 @@ void docker_frontend::rebuild_networks(const dynamic& args) {
         make_label(net.key.substr(0, 12), kIdle),
     };
     // The three built-in networks can't be removed -- offer Inspect only.
-    std::vector<common::menu_item> items = {action_item("Inspect", net, "inspect", false)};
+    std::vector<common::menu_item> items = {action_item("$$DOCKER_INSPECT", net, "inspect", false)};
     if (!builtin) {
       items.push_back({});
-      items.push_back(action_item("Remove", net, "remove", true));
+      items.push_back(action_item("$$DOCKER_REMOVE", net, "remove", true));
     }
     networks_.add(std::move(net), cells, items);
     ++total;
   });
 
   networks_.refresh();
-  networks_.set_status(std::to_string(total) + (total == 1 ? " network" : " networks"), true);
+  networks_.set_status(trf(total == 1 ? "$$DOCKER_N_NETWORK" : "$$DOCKER_N_NETWORKS", {std::to_string(total)}), true);
 }
 
 void docker_frontend::apply_container_filter() {
@@ -604,7 +607,7 @@ dynamic docker_frontend::do_command_result(const dynamic& args) {
       : scope == "networks"           ? networks_
                                       : containers_;
   bool ok = false;
-  const std::string text = common::command_result_text(args, ok);
+  const std::string text = common::command_result_text(*this, args, ok);
   lw.set_status(text, ok);
   return dynamic{};
 }
@@ -625,11 +628,11 @@ void docker_frontend::build_stats_window() {
     // 100 %); the memory plot is a true 0..100 % gauge.
     tree.with("vbox.cpu_plot", [&](const auto& e) {
       common::rolling_plot::configure_axes(e, y_axis::auto_fit);
-      stats_cpu_.init(*this, e, "Total");
+      stats_cpu_.init(*this, e, "$$COMMON_TOTAL");
     });
     tree.with("vbox.mem_plot", [&](const auto& e) {
       common::rolling_plot::configure_axes(e, y_axis::percent);
-      stats_mem_.init(*this, e, "Total");
+      stats_mem_.init(*this, e, "$$COMMON_TOTAL");
     });
   });
 }
@@ -666,10 +669,12 @@ dynamic docker_frontend::do_update_stats(const dynamic& args) {
 
   const std::string error = common::str_of(args, "error"_key);
   if (!error.empty())
-    common::set_status_text(stats_status_label_, "docker stats unavailable: " + error, false);
+    common::set_status_text(stats_status_label_, trf("$$DOCKER_STATS_UNAVAILABLE", {tr(error)}), false);
   else
     common::set_status_text(
-        stats_status_label_, std::to_string(count) + (count == 1 ? " running container" : " running containers"), true);
+        stats_status_label_,
+        trf(count == 1 ? "$$DOCKER_N_RUNNING_CONTAINER" : "$$DOCKER_N_RUNNING_CONTAINERS", {std::to_string(count)}),
+        true);
   return dynamic{};
 }
 
@@ -751,8 +756,14 @@ void docker_frontend::run_row_action(const entity& e, const std::string& action)
     return;
   }
 
-  std::string verb = action == "stop" ? "Stop" : action == "kill" ? "Kill" : "Remove";
-  show_confirm(verb + " " + e.scope + " '" + display_name + "'?", fire);
+  // One sentence per action and kind, so each language can phrase it.
+  const char* key = action == "stop" ? "$$DOCKER_CONFIRM_STOP_CONTAINER"
+      : action == "kill"             ? "$$DOCKER_CONFIRM_KILL_CONTAINER"
+      : e.scope == "container"       ? "$$DOCKER_CONFIRM_REMOVE_CONTAINER"
+      : e.scope == "image"           ? "$$DOCKER_CONFIRM_REMOVE_IMAGE"
+      : e.scope == "volume"          ? "$$DOCKER_CONFIRM_REMOVE_VOLUME"
+                                     : "$$DOCKER_CONFIRM_REMOVE_NETWORK";
+  show_confirm(trf(key, {display_name}), fire);
 }
 
 // ── Registration ───────────────────────────────────────────────────────────
@@ -760,7 +771,7 @@ void docker_frontend::run_row_action(const entity& e, const std::string& action)
 void register_docker() {
   auto proto = dynamic_ptr{"DockerFrontend"_key, {}};
 
-  proto->addField("title"_key, field{std::string{"Docker"}});
+  proto->addField("title"_key, field{std::string{"$$DOCKER_DOCKER"}});
 
   auto add_method = [&](key_t name, dynamic (docker_frontend::*fn)(const dynamic&)) {
     proto->addMethod(name, bison::method{[fn](dynamic& self, const dynamic& args) -> dynamic {

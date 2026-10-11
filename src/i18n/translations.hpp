@@ -105,7 +105,8 @@ inline constexpr char message_arg_separator = '\x1f';
 /// @brief Translate one string.
 ///
 /// A message built by make_message() (`"$$key\x1farg0\x1farg1..."`) is
-/// translated as `format_text(map.lookup(key), {arg0, arg1, ...})`.
+/// translated as `format_text(map.lookup(key), {arg0, arg1, ...})`; an
+/// argument that is itself a `"$$KEY"` is replaced by its translation.
 ///
 /// @return `map.lookup(key)` when @p text is `"$$key"`; @p text unchanged
 ///         otherwise.
