@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `wish server` / `wish standalone` `--save_defaults` and `--clear_defaults`: save the flags given on the command line (renderer, font size, language, theme, port, ...) to the server store as the defaults of later runs. Each flag now resolves as command line > `WISH_<FLAG>` env var > saved default > built-in default (see [docs/cli.md](docs/cli.md#saved-flag-defaults)).
 - Internationalization (see [docs/i18n.md](docs/i18n.md)): template string values `"$$KEY"` are replaced from `<lang>.lang` translation files, falling back to English, then to the bare key.
   - Client side: `client::set_translations()` / `translate()` (applied by `register_template_from_json`/`_yaml`), `wish_set_translations()` / `wish_translate()` (applied by `wish_register_template`), and the same in the C++ header, Python, C#, Rust, Go and Android bindings.
   - Server side: session language via `--lang` (client, server, standalone), `client::set_language()`, `wish_set_language()`, `server::set_default_language()` and `wish_app_host::language()`. Tools load `res/<org>/<collection>/<name>/i18n/<lang>.lang` (`context::translations_for()`, `form::tr()` / `trf()`).
@@ -95,6 +96,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `DockLayout`: a session's windows could still all end up crammed into one shared tabbed node instead of the intended split, even on a completely fresh run with no `imgui.ini` (e.g. `docker` standalone). `session::top_level_objects` iterates in arbitrary, unordered-map order, so a session's own windows could render (and resolve their first-ever dock placement) before that session's `DockLayout`/`DockSpaceViewport` got a chance to run `DockBuilderDockWindow()` in the same frame; ImGui then pruned the freshly-built, still-unhosted split nodes at end of frame, permanently collapsing the layout. Both the standalone and server render loops now always render a session's `DockLayout`/`DockSpaceViewport` top-levels before its other top-levels each frame, regardless of iteration order. See [docs/dock-layout.md](docs/dock-layout.md).
 
 ### Changed
+
+- `wish standalone` (and `wish-standalone`) now also reads `WISH_<FLAG>` environment variables as flag defaults, like the other modes.
 
 - The default `title` / `status` / `confirm_label` values of the built-in forms and bdg tools are now translation keys (e.g. `"$$MSGBOX_MESSAGE"`); the windows show their translation.
 

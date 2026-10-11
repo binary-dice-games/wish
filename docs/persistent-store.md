@@ -55,6 +55,11 @@ claim another's name and read that user's store.
 - Entry names are 1-256 printable ASCII characters and are never used as
   file paths.
 
+The wish CLI itself keeps the defaults saved with `wish server
+--save_defaults` / `wish standalone --save_defaults` in the server store,
+under `wish.cli.server` and `wish.cli.standalone` (one field per flag; see
+[docs/cli.md](cli.md#saved-flag-defaults)).
+
 ## Naming entries
 
 All tools share one user store, so prefix entry names with the tool's

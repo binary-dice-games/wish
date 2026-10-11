@@ -17,6 +17,7 @@ if(WISH_ENABLE_IMGUI AND (WISH_ENABLE_SDL3 OR WISH_ENABLE_WEB))
   # option (see wish_server_app.cpp's make_renderer()).
   add_executable(wish-cli
       wish_cli/main.cpp
+      wish_cli/config_flags.cpp
       wish_cli/env_flags.cpp
       wish_cli/host_renderer.cpp
       wish_cli/server/wish_server_app.cpp
@@ -37,6 +38,7 @@ if(WISH_ENABLE_IMGUI AND (WISH_ENABLE_SDL3 OR WISH_ENABLE_WEB))
 
   # ── wish-server — standalone server binary (requires ImGui + SDL3 and/or web) ─
   add_executable(wish-server
+      wish_cli/config_flags.cpp
       wish_cli/env_flags.cpp
       wish_cli/host_renderer.cpp
       wish_cli/server/wish_server_app.cpp
@@ -58,6 +60,8 @@ if(WISH_ENABLE_IMGUI AND WISH_ENABLE_SDL3)
   # inherently an interactive, windowed use case, so unlike wish-cli/
   # wish-server it does not build under WISH_ENABLE_WEB alone.
   add_executable(wish-standalone
+      wish_cli/config_flags.cpp
+      wish_cli/env_flags.cpp
       wish_cli/host_renderer.cpp
       wish_cli/standalone/wish_standalone_app.cpp
       wish_cli/standalone/standalone_main.cpp)

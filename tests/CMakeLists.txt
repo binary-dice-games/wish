@@ -105,6 +105,17 @@ target_link_libraries(test_env_flags PRIVATE gflags gtest gmock gtest_main)
 gtest_discover_tests(test_env_flags)
 set_target_properties(test_env_flags PROPERTIES FOLDER tests)
 
+# Exercises the CLI's saved flag defaults (app/wish_cli/config_flags.hpp),
+# another app/ source; links `wish` for the persistent store.
+add_executable(test_config_flags
+    test_config_flags.cpp
+    ${CMAKE_SOURCE_DIR}/app/wish_cli/config_flags.cpp
+    ${CMAKE_SOURCE_DIR}/app/wish_cli/env_flags.cpp)
+target_include_directories(test_config_flags PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(test_config_flags PRIVATE wish gflags gtest gmock gtest_main)
+gtest_discover_tests(test_config_flags)
+set_target_properties(test_config_flags PROPERTIES FOLDER tests)
+
 if(WISH_ENABLE_IMGUI)
   wish_add_test(test_imgui_renderer test_imgui_renderer.cpp)
   wish_add_test(test_imgui_layout   test_imgui_layout.cpp)

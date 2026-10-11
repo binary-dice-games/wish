@@ -1,6 +1,8 @@
 // MIT License © 2025 Binary Dice Games
 /// @file wish_standalone_app.cpp
 /// @brief wish CLI standalone mode implementation.
+#include "app/wish_cli/config_flags.hpp"
+#include "app/wish_cli/env_flags.hpp"
 #include "app/wish_cli/host_renderer.hpp"
 #include "app/wish_cli/standalone/wish_standalone_app.hpp"
 #include "src/client/app_registry.hpp"
@@ -17,6 +19,7 @@
 #include <filesystem>
 #include <iostream>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 // ── Shared flags — reused from main.cpp / wish_server_app.cpp / ──────────────
@@ -32,6 +35,8 @@ DECLARE_int32(width);
 DECLARE_int32(height);
 DECLARE_string(theme);
 DECLARE_string(lang);
+DECLARE_bool(save_defaults);
+DECLARE_bool(clear_defaults);
 
 #ifdef WISH_CLI_BUILD
 DECLARE_int32(font_size);
@@ -157,6 +162,25 @@ std::shared_ptr<logger> make_standalone_logger() {
       log_dir / "standalone.log");
 }
 
+// Flags --save_defaults may persist. Left out: --store_dir (it locates the
+// store), the app selection (--run/--list/--describe), the rejected
+// transport flags, and the debug/security switches (--debugger,
+// --profiling_*, --allow_absolute_paths).
+const std::vector<std::string> kStandaloneConfigFlags = {
+    "verbose",
+    "theme",
+    "lang",
+    "title",
+    "width",
+    "height",
+    "font_size",
+    "renderer",
+    "web_port",
+    "web_bind",
+    "sandbox_root",
+    "username",
+};
+
 /// @brief Reject flags that only make sense with a real transport — standalone
 ///        mode fuses server and client into one process and has none.
 /// @return true (and prints an error) if a rejected flag was set explicitly.
@@ -191,6 +215,8 @@ int wish_standalone_app::run(int argc, char** argv) {
   int orig_argc = argc;
   char** orig_argv = orig_argv_storage.data();
 
+  // Command line > WISH_<FLAG> env var > saved default > built-in default.
+  apply_env_flag_defaults();
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
   if (reject_transport_flags())
@@ -217,6 +243,11 @@ int wish_standalone_app::run(int argc, char** argv) {
         return 0;
     }
   }
+
+  load_cli_config(FLAGS_store_dir, kStandaloneConfigEntry, kStandaloneConfigFlags, "[wish standalone]");
+  // `--save_defaults`/`--clear_defaults` alone only update the saved defaults.
+  if (FLAGS_run.empty() && (FLAGS_save_defaults || FLAGS_clear_defaults))
+    return 0;
 
   if (FLAGS_run.empty()) {
     std::cerr << "[wish standalone] use --list to see apps or --run=<name> to launch one\n";
