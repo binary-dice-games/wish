@@ -165,6 +165,25 @@ bool desktop_app_matches(const desktop_app_info& app, const std::string& query);
 std::vector<desktop_window_info>
 desktop_collect_windows(const context& s, const sync_context* session, const std::vector<desktop_app_info>& apps);
 
+/// @brief One textured quad of the wallpaper: screen corners and the
+///        image's texture coordinates drawn there.
+struct desktop_wallpaper_quad {
+  ImVec2 p0, p1;
+  ImVec2 uv0, uv1;
+};
+
+/**
+ * @brief Lays out a wallpaper image of @p image pixels on the screen
+ *        rectangle at @p pos of @p screen size, per DesktopShell's
+ *        `wallpaper_fit`: "cover" (fill, cropping the overflowing axis),
+ *        "contain" (whole image, centered), "stretch", "center" (actual
+ *        size, centered, cropped to the screen) or "tile" (repeated from
+ *        the top-left, the last row and column cropped). An unknown fit is
+ *        "cover"; an unknown image size (0) stretches.
+ */
+std::vector<desktop_wallpaper_quad>
+desktop_wallpaper_layout(const std::string& fit, ImVec2 pos, ImVec2 screen, ImVec2 image);
+
 /// @brief Copies one DesktopApp node.
 desktop_app_info desktop_collect_app(const ui_element& app);
 

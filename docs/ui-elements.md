@@ -548,10 +548,12 @@ session disconnect.
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `wallpaper` | `string` | `""` | Background image, relative to the session's resource folder, drawn to cover the screen. Empty draws a built-in gradient. Sandboxed like `Image.src`. |
+| `wallpaper_fit` | `string` | `"cover"` | How the wallpaper fills the screen: `"cover"` (fill, cropping), `"contain"` (whole image, centered), `"stretch"`, `"center"` (actual size) or `"tile"`. |
+| `background` | `string` | `""` | Color (`"#RRGGBB"` / `"#RRGGBBAA"`) drawn instead of the built-in gradient, and around a wallpaper that doesn't cover the screen. Empty uses the gradient. |
 | `user` | `string` | `""` | User name shown at the bottom of the Start menu. |
 | `show_icons` | `bool` | `true` | Draws the apps whose `on_desktop` is true as icons on the wallpaper. |
 | `clients` | `int` | `0` | Number of connected apps, shown in the tray. |
-| `menu_error` | `string` | `""` | Shown in red at the top of the Start menu (e.g. a menu configuration error). |
+| `config_error` | `string` | `""` | Shown in red at the top of the Start menu (e.g. a configuration error). |
 | `shutdown` | `bool` | `false` | Set to `true` to make the server hosting the shell shut down. |
 | `time_format` / `date_format` | `string` | `"%H:%M"` / `"%d/%m/%Y"` | `strftime()` formats of the tray clock's two lines. |
 

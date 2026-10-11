@@ -209,6 +209,10 @@ std::optional<std::pair<std::filesystem::file_time_type, std::uintmax_t>> file_s
 // ── wish_desktop — desktop shell ────────────────────────────────────────────
 
 wish_desktop::~wish_desktop() {
+  stop_tasks();
+}
+
+void wish_desktop::stop_tasks() {
   stop_watcher();
   stop_worker();
 }
@@ -254,7 +258,7 @@ desktop::start_menu wish_desktop::start_menu() const {
 }
 
 std::string wish_desktop::config_error() const {
-  return state_.rlock()->menu_error;
+  return state_.rlock()->config_error;
 }
 
 desktop::placeholders wish_desktop::placeholders() const {
@@ -355,11 +359,16 @@ void wish_desktop::build_chrome() {
       config_stamp_ = file_stamp(config_file_);
     if (!loaded.error.empty())
       std::cerr << "[desktop] " << loaded.error << '\n';
+    // A theme set in the file wins over the one saved from the tray toggle.
+    if (!loaded.config.look.theme.empty())
+      saved.theme = loaded.config.look.theme;
     {
       auto st = state_.wlock();
       st->settings = saved;
-      st->menu = std::move(loaded.menu);
-      st->menu_error = loaded.error;
+      st->menu = std::move(loaded.config.menu);
+      st->look = std::move(loaded.config.look);
+      st->taskbar = std::move(loaded.config.taskbar);
+      st->config_error = loaded.error;
     }
 
     // Theme.
@@ -372,29 +381,7 @@ void wish_desktop::build_chrome() {
       apply_theme(saved.theme);
 
     // Wallpaper: uploaded into the upstream sandbox, then referenced by path.
-    if (!wallpaper_.empty()) {
-      std::ifstream in(wallpaper_, std::ios::binary);
-      if (!in) {
-        std::cerr << "[desktop] cannot read wallpaper " << wallpaper_.string() << '\n';
-      } else {
-        std::string bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-        std::string ext = wallpaper_.extension().string();
-        std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return char(std::tolower(c)); });
-        std::string src = std::string(kWallpaperDir) + "/wallpaper" + ext;
-        try {
-          auto fs = upstream().instantiate("wish"_key, "__WishFileSystem"_key).get();
-          dynamic args;
-          args["name"_key] = src;
-          args["data"_key] = std::move(bytes);
-          args["first"_key] = true;
-          args["eof"_key] = true;
-          fs.call("upload_chunk"_key, std::move(args)).get();
-          wallpaper_src_ = src;
-        } catch (const std::exception& ex) {
-          std::cerr << "[desktop] wallpaper upload failed: " << ex.what() << '\n';
-        }
-      }
-    }
+    refresh_wallpaper();
 
     template_proxy_ = upstream().instantiate("wish"_key, "__WishTemplate"_key).get();
     build_shell();
@@ -404,9 +391,10 @@ void wish_desktop::build_chrome() {
     std::cerr << "[desktop] chrome build error: " << ex.what() << '\n';
   }
 
-  // Watch the configuration file: an edit rebuilds the shell.
+  // Watch the configuration file (an edit rebuilds the shell) and the
+  // wallpaper image (a new image is uploaded).
   if (!config_file_.empty()) {
-    watcher_thread_ = std::thread([this, last = config_stamp_]() mutable {
+    watcher_thread_ = std::thread([this, last = config_stamp_, last_wallpaper = wallpaper_stamp_]() mutable {
       for (;;) {
         bool stop = watcher_stop_.wait_for(config_poll_, [](const bool& s) { return s; });
         if (stop)
@@ -415,6 +403,15 @@ void wish_desktop::build_chrome() {
         if (now && now != last) {
           last = now;
           post([this] { reload_config(); });
+        }
+        std::filesystem::path wallpaper = state_.rlock()->wallpaper_file;
+        auto wallpaper_now = wallpaper.empty() ? std::nullopt : file_stamp(wallpaper);
+        if (wallpaper_now != last_wallpaper) {
+          last_wallpaper = wallpaper_now;
+          post([this] {
+            if (refresh_wallpaper())
+              build_shell();
+          });
         }
       }
     });
@@ -478,14 +475,20 @@ void wish_desktop::build_shell() {
   if (!template_proxy_)
     return;
   desktop::start_menu menu;
+  desktop::appearance look;
+  desktop::taskbar_settings taskbar;
   desktop_settings settings;
   std::string error;
   std::string name;
   {
     auto st = state_.wlock();
     menu = st->menu;
+    look = st->look;
+    taskbar = st->taskbar;
     settings = st->settings;
-    error = st->menu_error;
+    error = st->config_error;
+    if (!st->wallpaper_error.empty())
+      error += (error.empty() ? "" : "\n") + st->wallpaper_error;
     name = std::string(kChromeTemplateName) + "_" + std::to_string(st->templates++);
   }
 
@@ -493,7 +496,12 @@ void wish_desktop::build_shell() {
   root["type"] = "DesktopShell";
   root["user"] = user_;
   root["wallpaper"] = wallpaper_src_;
-  root["menu_error"] = error;
+  root["wallpaper_fit"] = look.wallpaper_fit;
+  root["background"] = look.background;
+  root["show_icons"] = look.desktop_icons;
+  root["time_format"] = taskbar.time_format;
+  root["date_format"] = taskbar.date_format;
+  root["config_error"] = error;
   nlohmann::ordered_json children = nlohmann::ordered_json::object();
   std::map<std::string, std::string> path_to_id;
   describe_entries(menu.items, children, "", settings, path_to_id);
@@ -569,11 +577,18 @@ void wish_desktop::reload_config() {
       return; // being replaced by an editor; the next change reloads
     text.assign((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
   }
+  std::string new_theme;
   try {
-    auto menu = desktop::parse_config_text(text, placeholders());
+    auto config = desktop::parse_config_text(text, placeholders());
     auto st = state_.wlock();
-    st->menu = std::move(menu);
-    st->menu_error.clear();
+    // A theme set in the file applies when it changes; the tray toggle
+    // decides in between.
+    if (config.look.theme != st->look.theme)
+      new_theme = config.look.theme;
+    st->menu = std::move(config.menu);
+    st->look = std::move(config.look);
+    st->taskbar = std::move(config.taskbar);
+    st->config_error.clear();
   } catch (const std::exception& ex) {
     // Keep the menu in use; show what's wrong at the top of the Start menu.
     std::string error = config_file_.filename().string() + ": " + ex.what();
@@ -581,17 +596,86 @@ void wish_desktop::reload_config() {
     key_t shell{0u};
     {
       auto st = state_.wlock();
-      st->menu_error = error;
+      st->config_error = error;
       shell = st->shell_id;
     }
     if (shell.id != 0u) {
       dynamic fields;
-      fields["menu_error"_key] = error;
+      fields["config_error"_key] = error;
       upstream().make_proxy(shell).set(std::move(fields)).get();
     }
     return;
   }
+  if (!new_theme.empty()) {
+    dynamic args;
+    args["preset"_key] = new_theme;
+    run_action("set_theme", args);
+  }
+  refresh_wallpaper();
   build_shell();
+}
+
+bool wish_desktop::refresh_wallpaper() {
+  // set_wallpaper() (the --wallpaper flag) wins over the config file.
+  std::filesystem::path file = wallpaper_;
+  std::string origin = "--wallpaper";
+  if (file.empty()) {
+    file = state_.rlock()->look.wallpaper;
+    origin = "appearance.wallpaper";
+  }
+  std::string src = wallpaper_src_;
+  std::string error;
+  if (file.empty()) {
+    src.clear();
+  } else if (auto stamp = file_stamp(file); !stamp) {
+    error = origin + ": cannot read " + file.string();
+    src.clear();
+  } else if (file != wallpaper_uploaded_ || stamp != wallpaper_stamp_ || src.empty()) {
+    try {
+      src = upload_wallpaper(file);
+      wallpaper_uploaded_ = file;
+      wallpaper_stamp_ = stamp;
+    } catch (const std::exception& ex) {
+      error = origin + ": " + ex.what();
+      src.clear();
+    }
+  }
+  if (!error.empty())
+    std::cerr << "[desktop] " << error << '\n';
+  bool changed = src != wallpaper_src_;
+  wallpaper_src_ = src;
+  auto st = state_.wlock();
+  changed = changed || st->wallpaper_error != error;
+  st->wallpaper_error = error;
+  st->wallpaper_file = file;
+  return changed;
+}
+
+std::string wish_desktop::upload_wallpaper(const std::filesystem::path& file) {
+  std::ifstream in(file, std::ios::binary);
+  if (!in)
+    throw std::runtime_error("cannot read " + file.string());
+  std::string bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  std::string ext = file.extension().string();
+  std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return char(std::tolower(c)); });
+  std::string src = std::string(kWallpaperDir) + "/wallpaper_" + std::to_string(++wallpaper_uploads_) + ext;
+  auto fs = upstream().instantiate("wish"_key, "__WishFileSystem"_key).get();
+  dynamic args;
+  args["name"_key] = src;
+  args["data"_key] = std::move(bytes);
+  args["first"_key] = true;
+  args["eof"_key] = true;
+  fs.call("upload_chunk"_key, std::move(args)).get();
+  if (!wallpaper_src_.empty()) {
+    try {
+      dynamic erase_args;
+      erase_args["name"_key] = wallpaper_src_;
+      fs.call("erase"_key, std::move(erase_args)).get();
+    } catch (...) {
+      // Best effort: a stale image in the desktop's private directory.
+    }
+  }
+  return src;
 }
 
 // ── Shell events and actions ──
@@ -666,7 +750,7 @@ dynamic wish_desktop::run_action(const std::string& action, const dynamic& args)
     apply_theme(preset);
     save_settings();
   } else if (action == "reload_config") {
-    reload_config();
+    post([this] { reload_config(); });
   } else if (action == "launch") {
     result["ok"_key] = launch_entry(args.get_as<std::string>("id"_key, std::string{}));
   } else if (action == "items") {
@@ -1013,6 +1097,8 @@ void wish_desktop_app::wait_for_shutdown() {
   // Apps launched from the desktop go down with it.
   if (launcher_)
     launcher_->terminate_all();
+  // Before bridge_app stops the bridge (and its upstream connection).
+  desktop_->stop_tasks();
 }
 
 } // namespace bdg::wish

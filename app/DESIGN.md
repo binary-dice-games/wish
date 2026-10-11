@@ -240,8 +240,9 @@ The split follows where the information lives:
   their focus and their z-order, so the taskbar, Start menu, switcher and
   minimize/raise are server-side (`render_desktop_shell()`, called from
   `host_renderer::render_server_frame()` before the sessions render). The
-  `DesktopShell` element carries only data (`wallpaper`, `user`, `clients`,
-  clock formats, `menu_error`, `shutdown`) and the Start menu tree as
+  `DesktopShell` element carries only data (`wallpaper`, `wallpaper_fit`,
+  `background`, `show_icons`, `user`, `clients`, clock formats,
+  `config_error`, `shutdown`) and the Start menu tree as
   children: `DesktopMenu` folders (one with `role: "power"` fills the power
   button), `Separator`s and `DesktopApp` entries (`id`, `app`, `label`,
   `icon`, `tooltip`, `pinned`, `on_desktop`, `sessions`). User actions come
@@ -255,26 +256,31 @@ The split follows where the information lives:
   event and the bridge sets the field, so the bridge's saved settings and
   what is shown can't diverge.
 
-### The config file and the Start menu
+### The config file
 
-The Start menu is a section (`start_menu`) of a per-user file,
+The desktop's settings -- `appearance` (wallpaper, background, theme,
+desktop icons), `taskbar` (clock formats) and `start_menu` -- are sections of
+a per-user file,
 `~/.wish/desktop/desktop.yaml` (`--config`; format in
 [docs/desktop-config.md](../docs/desktop-config.md)). It is a plain file next
 to the persistent stores (`default_store_dir()`, in `wish_client` so the
 client-only `wish-desktop` can use it), not a store entry, so users can edit
 it with any editor, and the server store stays unreachable over RMI. The
-top level is a map of sections so later desktop settings (wallpaper,
-taskbar, ...) can be added without a format change; unknown sections are
-ignored.
+top level is a map of sections so later settings can be added without a
+format change; unknown sections and settings are ignored, and missing ones
+keep their defaults.
 
 - **Parsing** (`desktop_config.cpp`) is pure: YAML/JSON → `ordered_json`
   (`yaml_to_json()`, shared with the UI descriptor importer) →
-  `start_menu{items, power}` of `menu_entry`s with placeholders expanded,
-  `apps:` expanded from the registry, and unique ids. Errors are
+  `desktop_config{look, taskbar, menu}`: validated settings, the wallpaper
+  path made absolute (relative to the file), and `start_menu{items, power}`
+  of `menu_entry`s with placeholders expanded, `apps:` expanded from the
+  registry, and unique ids. Errors are
   `config_error`s naming the offending path. A missing file gets the default
   written; an unusable one yields the default menu plus an error, and is
   never overwritten.
-- **Rebuilds.** `build_shell()` turns the menu into a descriptor, registers
+- **Rebuilds.** `build_shell()` turns the settings and the menu into a
+  descriptor, registers
   it as a fresh `__wish_desktop_chrome_<n>` template, instantiates it, maps
   the instantiated node ids to entry ids, then destroys the previous shell
   root (its `HOOK_DESTRUCT` removes the top-level object). Rebuilding the
@@ -284,8 +290,19 @@ ignored.
   (`--config` may point anywhere, and polling needs no platform-specific
   notification API) and posts `reload_config()` to the worker. The initial
   stamp is taken before the first load, so an edit racing the start is
-  still seen. A reload that fails keeps the current menu and sets
-  `DesktopShell.menu_error`.
+  still seen. A reload that fails keeps the current configuration and sets
+  `DesktopShell.config_error`. The watcher also polls the wallpaper image,
+  so a new image saved under the same name is picked up.
+- **The wallpaper** is a file on the desktop's machine, while the server
+  draws it, so `refresh_wallpaper()` uploads it into the upstream sandbox
+  (`private/apps/wish.desktop/wallpaper_<n>.<ext>`) whenever its path, mtime
+  or size changes. Each upload gets a new name, because the renderer caches
+  textures by path, and the previous one is erased. A missing image is
+  reported through `config_error`; `--wallpaper` overrides the file.
+- **The theme** in the file applies at start (over the saved one) and on a
+  reload that changes it; the tray toggle decides in between. So a user who
+  never sets it keeps the toggle's choice across runs, and one who sets it
+  sees each edit take effect.
 - **Pins and icons** are entry ids. The file supplies the initial set; once
   the user pins, unpins or adds/removes a desktop icon, the saved lists in
   `wish.desktop` (`saved_pins`) win. Unknown ids are ignored.
@@ -404,9 +421,9 @@ Saved in the upstream user store entry `wish.desktop`
 `--upstream_username` (default: the OS user name) so the session has a
 store. Without a store (anonymous upstream), settings last for the run.
 `pinned`/`desktop` are written only once the user has changed them; until
-then the config file's lists apply (the default pins nano, mc and top). `--wallpaper FILE` is uploaded into the upstream sandbox at
-`private/apps/wish.desktop/wallpaper.<ext>` and drawn "cover"-fit
-(`imgui_renderer::texture_size()`).
+then the config file's lists apply (the default pins nano, mc and top). The
+wallpaper is drawn per `wallpaper_fit` (`detail::desktop_wallpaper_layout()`,
+using `imgui_renderer::texture_size()`).
 
 ### Lifecycle
 
@@ -421,7 +438,9 @@ wish_desktop_app::run()
     on_listening()    → desktop_->build_chrome() (loads the config, starts
                         the file watcher)
     wait_for_shutdown() → until "Quit desktop" or the anchor terminal exits;
-                          then terminates launched apps
+                          then terminates launched apps and stops the
+                          worker and watcher (stop_tasks()) while the
+                          upstream connection is still open
     bridge::stop()
 ```
 

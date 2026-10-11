@@ -129,6 +129,7 @@ class WishDesktopTest : public ::testing::Test {
   }
 
   void TearDown() override {
+    desktop_.stop_tasks();
     desktop_.stop();
     upstream_srv_.stop();
     std::error_code ec;
@@ -320,7 +321,7 @@ TEST_F(WishDesktopTest, InvalidConfigAtStartUsesTheDefaultAndReportsIt) {
   write_config("start_menu:\n  items:\n    - {label: A}\n");
   desktop_.build_chrome();
   EXPECT_NE(
-      shell()->get_as<std::string>("menu_error"_key, std::string{}).find("start_menu.items[0]"), std::string::npos);
+      shell()->get_as<std::string>("config_error"_key, std::string{}).find("start_menu.items[0]"), std::string::npos);
   EXPECT_TRUE(entry("test/apps/calc")); // the default menu
 }
 
@@ -342,7 +343,7 @@ TEST_F(WishDesktopTest, InvalidEditKeepsTheMenuAndShowsTheError) {
   write_config("start_menu:\n  items:\n    - {label: Broken, run: {oops: 1}}\n");
   ASSERT_TRUE(eventually([&] {
     auto sh = shell();
-    return sh && !sh->get_as<std::string>("menu_error"_key, std::string{}).empty();
+    return sh && !sh->get_as<std::string>("config_error"_key, std::string{}).empty();
   }));
   EXPECT_NE(desktop_.config_error().find("start_menu.items[0].run"), std::string::npos);
   EXPECT_TRUE(entry("ed")); // still the previous menu
@@ -351,7 +352,7 @@ TEST_F(WishDesktopTest, InvalidEditKeepsTheMenuAndShowsTheError) {
   write_config(kCustomConfig);
   ASSERT_TRUE(eventually([&] {
     auto sh = shell();
-    return sh && sh->get_as<std::string>("menu_error"_key, std::string{"x"}).empty();
+    return sh && sh->get_as<std::string>("config_error"_key, std::string{"x"}).empty();
   }));
 }
 
@@ -484,6 +485,147 @@ TEST_F(WishDesktopTest, ThemeEventAppliesAndPersistsThePreset) {
     auto saved = session().user_store->get("wish.desktop");
     return saved && saved->get_as<std::string>("theme"_key, std::string{}) == "dark";
   }));
+}
+
+// ── Appearance and taskbar settings ──────────────────────────────────────────
+
+namespace {
+
+std::string read_file(const std::filesystem::path& file) {
+  std::ifstream in(file, std::ios::binary);
+  std::stringstream ss;
+  ss << in.rdbuf();
+  return ss.str();
+}
+
+void write_file(const std::filesystem::path& file, const std::string& bytes) {
+  std::filesystem::create_directories(file.parent_path());
+  std::ofstream(file, std::ios::binary | std::ios::trunc) << bytes;
+}
+
+} // namespace
+
+TEST_F(WishDesktopTest, AppearanceAndTaskbarSettingsReachTheShell) {
+  write_config(
+      "appearance:\n"
+      "  wallpaper_fit: tile\n"
+      "  background: \"#1E3A5F\"\n"
+      "  desktop_icons: false\n"
+      "taskbar:\n"
+      "  time_format: \"%I:%M %p\"\n"
+      "  date_format: \"%A\"\n");
+  desktop_.build_chrome();
+
+  auto sh = shell();
+  ASSERT_NE(sh, nullptr);
+  EXPECT_EQ(sh->get_as<std::string>("wallpaper_fit"_key, std::string{}), "tile");
+  EXPECT_EQ(sh->get_as<std::string>("background"_key, std::string{}), "#1E3A5F");
+  EXPECT_FALSE(sh->get_as<bool>("show_icons"_key, true));
+  EXPECT_EQ(sh->get_as<std::string>("time_format"_key, std::string{}), "%I:%M %p");
+  EXPECT_EQ(sh->get_as<std::string>("date_format"_key, std::string{}), "%A");
+  EXPECT_TRUE(sh->get_as<std::string>("wallpaper"_key, std::string{"x"}).empty());
+  EXPECT_TRUE(sh->get_as<std::string>("config_error"_key, std::string{"x"}).empty());
+}
+
+TEST_F(WishDesktopTest, EditingAppearanceRebuildsTheShell) {
+  desktop_.build_chrome();
+  ASSERT_EQ(shell()->get_as<std::string>("wallpaper_fit"_key, std::string{}), "cover");
+  write_config("appearance:\n  wallpaper_fit: contain\n");
+  ASSERT_TRUE(eventually([&] {
+    auto sh = shell();
+    return sh && sh->get_as<std::string>("wallpaper_fit"_key, std::string{}) == "contain";
+  }));
+  EXPECT_EQ(shell_count(), size_t{1});
+}
+
+TEST_F(WishDesktopTest, ConfigWallpaperIsUploadedAndReplacedWhenTheImageChanges) {
+  // Relative to the config file's directory.
+  auto image = config_file_.parent_path() / "walls" / "a.png";
+  write_file(image, "one");
+  write_config("appearance:\n  wallpaper: walls/a.png\n");
+  desktop_.build_chrome();
+
+  std::string first = shell()->get_as<std::string>("wallpaper"_key, std::string{});
+  ASSERT_EQ(first.rfind("private/apps/wish.desktop/wallpaper_", 0), size_t{0}) << first;
+  EXPECT_EQ(first.substr(first.size() - 4), ".png");
+  EXPECT_EQ(read_file(session().resource_dir / first), "one");
+
+  // A new image in the same file: uploaded under a new name, the old one
+  // erased.
+  write_file(image, "second image");
+  std::string second;
+  ASSERT_TRUE(eventually([&] {
+    auto sh = shell();
+    second = sh ? sh->get_as<std::string>("wallpaper"_key, std::string{}) : std::string{};
+    return !second.empty() && second != first;
+  }));
+  EXPECT_EQ(read_file(session().resource_dir / second), "second image");
+  EXPECT_FALSE(std::filesystem::exists(session().resource_dir / first));
+}
+
+TEST_F(WishDesktopTest, MissingWallpaperIsReported) {
+  write_config("appearance:\n  wallpaper: nowhere.png\n");
+  desktop_.build_chrome();
+  auto sh = shell();
+  ASSERT_NE(sh, nullptr);
+  EXPECT_TRUE(sh->get_as<std::string>("wallpaper"_key, std::string{"x"}).empty());
+  EXPECT_NE(
+      sh->get_as<std::string>("config_error"_key, std::string{}).find("appearance.wallpaper: cannot read"),
+      std::string::npos);
+
+  // The image appears: the error goes away.
+  write_file(config_file_.parent_path() / "nowhere.png", "img");
+  ASSERT_TRUE(eventually([&] {
+    auto s2 = shell();
+    return s2 && !s2->get_as<std::string>("wallpaper"_key, std::string{}).empty() &&
+        s2->get_as<std::string>("config_error"_key, std::string{"x"}).empty();
+  }));
+}
+
+TEST_F(WishDesktopTest, WallpaperFlagWinsOverTheConfig) {
+  write_file(store_dir_ / "flag.jpg", "flag");
+  write_file(config_file_.parent_path() / "file.png", "file");
+  write_config("appearance:\n  wallpaper: file.png\n");
+  desktop_.set_wallpaper(store_dir_ / "flag.jpg");
+  desktop_.build_chrome();
+  std::string src = shell()->get_as<std::string>("wallpaper"_key, std::string{});
+  ASSERT_FALSE(src.empty());
+  EXPECT_EQ(read_file(session().resource_dir / src), "flag");
+}
+
+TEST_F(WishDesktopTest, ConfigThemeWinsOverTheSavedOneAndAppliesWhenEdited) {
+  dynamic saved;
+  saved["theme"_key] = std::string{"light"};
+  session().user_store->set("wish.desktop", saved);
+  write_config("appearance:\n  theme: dark\n");
+  desktop_.build_chrome();
+  EXPECT_EQ(desktop_.settings().theme, "dark");
+
+  // The tray toggle still works ...
+  dynamic p;
+  p["preset"_key] = std::string{"light"};
+  emit("theme", std::move(p));
+  ASSERT_TRUE(eventually([&] { return desktop_.settings().theme == "light"; }));
+
+  // ... and an edit that leaves the theme alone keeps the toggle's choice.
+  write_config("appearance:\n  theme: dark\ntaskbar:\n  date_format: \"%A\"\n");
+  ASSERT_TRUE(eventually([&] {
+    auto sh = shell();
+    return sh && sh->get_as<std::string>("date_format"_key, std::string{}) == "%A";
+  }));
+  EXPECT_EQ(desktop_.settings().theme, "light");
+
+  // Changing it in the file applies it.
+  write_config("appearance:\n  theme: classic\n");
+  ASSERT_TRUE(eventually([&] { return desktop_.settings().theme == "classic"; }));
+}
+
+TEST_F(WishDesktopTest, NoThemeInTheConfigKeepsTheSavedOne) {
+  dynamic saved;
+  saved["theme"_key] = std::string{"dark"};
+  session().user_store->set("wish.desktop", saved);
+  desktop_.build_chrome(); // the default config sets no theme
+  EXPECT_EQ(desktop_.settings().theme, "dark");
 }
 
 // ── Running apps ─────────────────────────────────────────────────────────────

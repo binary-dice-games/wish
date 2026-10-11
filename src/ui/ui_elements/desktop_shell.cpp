@@ -56,6 +56,22 @@ void register_desktop_shell() {
         "screen. Empty draws the built-in gradient. Same sandbox rules as Image.src.",
         "Appearance");
     add_text_field(*proto, "user"_rkey, "User", "User name shown at the bottom of the Start menu.", "Content");
+    add_text_field(
+        *proto,
+        "wallpaper_fit"_rkey,
+        "Wallpaper fit",
+        "How the wallpaper fills the screen: \"cover\" (fill, cropping), \"contain\" (whole "
+        "image, letterboxed), \"stretch\", \"center\" (actual size) or \"tile\".",
+        "Appearance",
+        "cover");
+    add_text_field(
+        *proto,
+        "background"_rkey,
+        "Background",
+        "Background color, \"#RRGGBB\" or \"#RRGGBBAA\": drawn instead of the built-in "
+        "gradient, and around a wallpaper that doesn't cover the screen. Empty uses the "
+        "gradient.",
+        "Appearance");
     add_bool_field(
         *proto,
         "show_icons"_rkey,
@@ -72,9 +88,9 @@ void register_desktop_shell() {
             attr<Category>("State")});
     add_text_field(
         *proto,
-        "menu_error"_rkey,
-        "Menu error",
-        "Shown at the top of the Start menu when the menu configuration has an error.",
+        "config_error"_rkey,
+        "Config error",
+        "Shown at the top of the Start menu, e.g. when the desktop configuration has an error.",
         "State");
     add_bool_field(
         *proto,

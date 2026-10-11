@@ -329,6 +329,54 @@ const menu_entry* start_menu::find(const std::string& id) const {
   return nullptr;
 }
 
+const std::vector<std::string>& wallpaper_fits() {
+  static const std::vector<std::string> kFits{"cover", "contain", "stretch", "center", "tile"};
+  return kFits;
+}
+
+appearance parse_appearance(const json& section, const placeholders& ph) {
+  if (!section.is_object())
+    fail("appearance", "expected a map");
+  appearance a;
+  if (std::string w = expand(optional_text(section, "wallpaper", "appearance"), ph); !w.empty()) {
+    if (w == "~" || w.rfind("~/", 0) == 0)
+      w = ph.home + w.substr(1);
+    std::filesystem::path p(w);
+    if (p.is_relative() && !ph.config_file.empty())
+      p = std::filesystem::path(ph.config_file).parent_path() / p;
+    a.wallpaper = p.lexically_normal();
+  }
+  if (std::string fit = optional_text(section, "wallpaper_fit", "appearance"); !fit.empty()) {
+    const auto& fits = wallpaper_fits();
+    if (std::find(fits.begin(), fits.end(), fit) == fits.end())
+      fail("appearance.wallpaper_fit", "expected cover, contain, stretch, center or tile");
+    a.wallpaper_fit = fit;
+  }
+  a.background = optional_text(section, "background", "appearance");
+  if (!a.background.empty()) {
+    const std::string& c = a.background;
+    bool ok = c[0] == '#' && (c.size() == 7 || c.size() == 9) &&
+        std::all_of(c.begin() + 1, c.end(), [](unsigned char ch) { return std::isxdigit(ch) != 0; });
+    if (!ok)
+      fail("appearance.background", "expected a color like \"#1E3A5F\" (#RRGGBB or #RRGGBBAA)");
+  }
+  a.theme = optional_text(section, "theme", "appearance");
+  if (auto it = section.find("desktop_icons"); it != section.end() && !it->is_null())
+    a.desktop_icons = optional_bool(section, "desktop_icons", "appearance");
+  return a;
+}
+
+taskbar_settings parse_taskbar(const json& section) {
+  if (!section.is_object())
+    fail("taskbar", "expected a map");
+  taskbar_settings t;
+  if (std::string f = optional_text(section, "time_format", "taskbar"); !f.empty())
+    t.time_format = f;
+  if (std::string f = optional_text(section, "date_format", "taskbar"); !f.empty())
+    t.date_format = f;
+  return t;
+}
+
 const std::vector<std::string>& known_actions() {
   static const std::vector<std::string> kActions{
       "quit", "shutdown_server", "set_theme", "toggle_theme", "reload_config", "launch"};
@@ -354,6 +402,19 @@ const std::string& default_config_text() {
 # Format: docs/desktop-config.md in the wish repository.
 version: 1
 
+# How the desktop looks.
+appearance:
+  wallpaper: ""            # image file (relative to this file, or ~/...); empty: built-in gradient
+  wallpaper_fit: cover     # cover, contain, stretch, center or tile
+  background: ""           # color, e.g. "#1E3A5F": replaces the gradient, fills around the wallpaper
+  # theme: dark            # fixes the theme; leave out to keep the tray toggle's choice
+  desktop_icons: true
+
+# The taskbar clock (strftime formats).
+taskbar:
+  time_format: "%H:%M"
+  date_format: "%d/%m/%Y"
+
 # The Start menu: a tree of entries. An entry runs a command (run), calls a
 # desktop action (action), holds other entries (items), or is a separator.
 start_menu:
@@ -378,16 +439,22 @@ start_menu:
   return kText;
 }
 
-start_menu parse_config_text(const std::string& text, const placeholders& ph) {
+desktop_config parse_config_text(const std::string& text, const placeholders& ph) {
   json doc = yaml_to_json(text);
   if (doc.is_null())
     doc = json::object();
   if (!doc.is_object())
     throw config_error("expected a map of sections (e.g. start_menu:)");
+  desktop_config c;
+  if (auto it = doc.find("appearance"); it != doc.end() && !it->is_null())
+    c.look = parse_appearance(*it, ph);
+  if (auto it = doc.find("taskbar"); it != doc.end() && !it->is_null())
+    c.taskbar = parse_taskbar(*it);
   if (auto it = doc.find("start_menu"); it != doc.end() && !it->is_null())
-    return parse_start_menu(*it, ph);
-  // No start_menu section: the default menu.
-  return parse_start_menu(yaml_to_json(default_config_text())["start_menu"], ph);
+    c.menu = parse_start_menu(*it, ph);
+  else // No start_menu section: the default menu.
+    c.menu = parse_start_menu(yaml_to_json(default_config_text())["start_menu"], ph);
+  return c;
 }
 
 loaded_config load_config(const std::filesystem::path& file, const placeholders& ph) {
@@ -398,7 +465,7 @@ loaded_config load_config(const std::filesystem::path& file, const placeholders&
     std::ofstream f(file, std::ios::binary);
     if (f << default_config_text())
       out.wrote_default = true;
-    out.menu = parse_config_text(default_config_text(), ph);
+    out.config = parse_config_text(default_config_text(), ph);
     if (!out.wrote_default)
       out.error = "cannot write " + file.string();
     return out;
@@ -409,10 +476,10 @@ loaded_config load_config(const std::filesystem::path& file, const placeholders&
       throw config_error("cannot read " + file.string());
     std::stringstream ss;
     ss << f.rdbuf();
-    out.menu = parse_config_text(ss.str(), ph);
+    out.config = parse_config_text(ss.str(), ph);
   } catch (const std::exception& ex) {
     out.error = file.filename().string() + ": " + ex.what();
-    out.menu = parse_config_text(default_config_text(), ph);
+    out.config = parse_config_text(default_config_text(), ph);
   }
   return out;
 }
