@@ -94,6 +94,7 @@ struct docker_app_registrar {
         .organization = WISH_MODULE_BDG_DEV_DOCKER_ORGANIZATION,
         .collection = WISH_MODULE_BDG_DEV_DOCKER_COLLECTION,
         .description = "Docker Desktop-style GUI frontend for the local `docker` CLI (wish client --run=docker)",
+        .icon = "res/icons/container.png",
         .params = {},
         .run = run_docker,
     });

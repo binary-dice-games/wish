@@ -188,6 +188,9 @@ int main(int argc, char** argv) {
   if (std::strcmp(subcmd, "desktop") == 0) {
     gflags::SetUsageMessage("wish desktop - multiplexing bridge with upstream/downstream transports");
     bdg::wish::wish_desktop_app app;
+    // Apps launched from the desktop run as `wish client --run=<app>` of
+    // this same binary.
+    app.set_client_command({bdg::wish::process_launcher::self_exe_path().string(), "client"});
     return app.run(sub_argc, sub_argv);
   }
 

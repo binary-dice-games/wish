@@ -38,6 +38,7 @@ void register_all() {
   register_image();
   register_separator();
   register_menu();
+  register_desktop_shell();
   register_tabs();
   register_tree();
   register_combo();

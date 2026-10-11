@@ -108,6 +108,7 @@ struct helm_app_registrar {
         .collection = WISH_MODULE_BDG_DEV_HELM_COLLECTION,
         .description = "GUI frontend for the local `helm` CLI: releases, repositories and charts "
                        "(wish client --run=helm)",
+        .icon = "res/icons/helm.png",
         .params = {},
         .run = run_helm,
     });

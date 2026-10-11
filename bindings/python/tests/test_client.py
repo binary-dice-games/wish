@@ -139,5 +139,46 @@ class TestRunWithConnectParams(unittest.TestCase):
             client.destroy()
 
 
+class TestClientFromEnv(unittest.TestCase):
+    """Client.from_env() picks the transport from WISH_* variables."""
+
+    def _from_env(self, env):
+        from unittest import mock
+
+        calls = []
+
+        def fake(kind):
+            def make(*args):
+                calls.append((kind, args))
+                return "client"
+
+            return make
+
+        with mock.patch.dict(os.environ, env, clear=False), \
+                mock.patch.object(Client, "tcp", side_effect=fake("tcp")), \
+                mock.patch.object(Client, "pipe", side_effect=fake("pipe")):
+            for var in ("WISH_TRANSPORT", "WISH_HOST", "WISH_PORT", "WISH_NAME"):
+                if var not in env:
+                    os.environ.pop(var, None)
+            Client.from_env()
+        return calls[0]
+
+    def test_defaults_to_local_tcp(self):
+        self.assertEqual(self._from_env({}), ("tcp", ("127.0.0.1", 7070)))
+
+    def test_reads_host_and_port(self):
+        self.assertEqual(self._from_env({"WISH_HOST": "10.0.0.5", "WISH_PORT": "7171"}), ("tcp", ("10.0.0.5", 7171)))
+
+    def test_wildcard_host_connects_to_loopback(self):
+        self.assertEqual(self._from_env({"WISH_HOST": "0.0.0.0", "WISH_PORT": "7071"}), ("tcp", ("127.0.0.1", 7071)))
+
+    def test_pipe_uses_name(self):
+        self.assertEqual(self._from_env({"WISH_TRANSPORT": "pipe", "WISH_NAME": "/tmp/w.sock"}), ("pipe", ("/tmp/w.sock",)))
+
+    def test_unknown_transport_raises(self):
+        with self.assertRaises(ValueError):
+            self._from_env({"WISH_TRANSPORT": "carrier-pigeon"})
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -430,6 +430,61 @@ Gotchas this recipe already handles:
   entries still read `OFF`. Pass those options explicitly, and check
   `--list` before blaming the tool.
 
+## Recipe: drive `wish desktop`
+
+Verified in a Claude Code cloud container (2026-10). Start the server under
+`AutomationClient` as in the recipe above (add `--store_dir <scratch>` so the
+desktop's saved pins/theme don't land in `~/.wish`), then start the desktop
+against it with `subprocess.Popen`:
+
+```python
+desk = subprocess.Popen([wish, "desktop", "--upstream_transport", "tcp", "--upstream_port", str(rmi_port),
+                         "--downstream_port", str(free_port()), "--upstream_username", "tester"],
+                        stdin=subprocess.PIPE, stdout=log, stderr=subprocess.STDOUT, cwd=scratch)
+```
+
+- **Keep the desktop's stdin open** (`stdin=subprocess.PIPE`): it spawns an
+  anchor terminal fed from stdin and quits when that terminal exits.
+- **The desktop chrome is not in `get_tree()`.** The taskbar, Start menu,
+  tray and desktop icons are drawn by the host renderer, not widgets, so
+  `DesktopShell`/`DesktopApp` show up with no `rect`. Click them by
+  coordinates (`ui._page.mouse.click(x, y, delay=60)`), from a screenshot.
+  Positions shift with the theme: the taskbar is a few pixels taller in the
+  dark theme, so a pinned icon at x=132 in light moved to x=112 in dark.
+- **Apps started from the desktop are real processes**: check them with
+  `pgrep -af "wish client"`; their output is in
+  `<desktop cwd>/wish_logs/desktop/<app>_<n>.log`. Windows they open do show
+  up in `get_tree()` as usual.
+- **Ctrl+Tab never reaches the page** in Chromium; the switcher also
+  answers to Ctrl+\` (`keyboard.down("Control")`, `press("Backquote")`,
+  screenshot, `keyboard.up("Control")`).
+- **Theme and pins persist between runs** in `--store_dir`: delete it for a
+  clean first run (nano, mc and top pinned, light theme).
+- **Pass `--config <scratch>/desktop.yaml`** so the desktop doesn't write
+  `~/.wish/desktop/desktop.yaml`. Rewriting that file while the desktop runs
+  rebuilds the Start menu within about a second, which is the quickest way
+  to try a menu layout. A broken file shows its error in red at the top of
+  the Start menu, which is easy to miss if the menu is closed in the
+  screenshot.
+- **`__WishDesktop` results come back with hashed keys** in Python
+  (`{"#3073927904": ...}` when dumped); index them by name
+  (`result["ok"]`) instead of reading the dump.
+- **Client-ABI scripts** (e.g. `bindings/python/examples/desktop/*.py`): start
+  them with `WISH_TRANSPORT=tcp WISH_PORT=<downstream port>` and
+  `WISH_LIB=<build>/libwish_client.so`; their widgets show in `get_tree()`
+  under their template paths (`add_row.input`, `buttons.start`), so drive
+  them by path like any app.
+- **Cascaded windows overlap**; to show several apps side by side, drag
+  each by its title bar: `mouse.move()` onto the title, `down()`, several
+  `move()` steps, `up()` (one jump is not seen as a drag).
+- **A taskbar button raises an inactive window first**; only a click on the
+  *active* app's button minimizes it (like Windows). Two clicks on an
+  inactive one: raise, then minimize.
+- **`InputText.flags` `EnterReturnsTrue` is `64`** in this ImGui (1.92), not
+  `32`; prefer the named form `"flags": "EnterReturnsTrue"`. With it, the
+  widget reports its text only on Enter, so a button next to it reads stale
+  text (2026-10).
+
 ## Python client
 
 `bindings/python/wish/automation.py`'s `AutomationClient` is the entry point. It

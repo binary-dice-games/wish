@@ -314,6 +314,23 @@ protocol these build on.
 
 `c.load_translations("i18n/es.lang", "i18n/en.lang")` (or `set_translations(text, fallback)`) sets the translations that `register_template` applies to `"$$KEY"` strings. `c.translate("$$KEY")` translates one string, and `c.set_language("es")` selects the language server-side tools use. See [docs/i18n.md](i18n.md).
 
+### Connecting from the environment, and `wish desktop`
+
+`Client.from_env()` builds the client from `WISH_TRANSPORT` / `WISH_HOST` /
+`WISH_PORT` / `WISH_NAME` (default tcp `127.0.0.1:7070`), the variables
+`wish client` reads and `wish desktop` sets for its terminal. A script that
+also names itself in its connect params shows on the desktop's taskbar with
+its own name and icon, like a built-in tool (a plain server ignores them):
+
+```python
+client = Client.from_env()
+client.run(session, params={"app": "examples/python/todo", "app_label": "To-do",
+                            "app_icon": "res/icons/check.png"})
+```
+
+`bindings/python/examples/desktop/` has three such apps (to-do list,
+stopwatch, live chart); see its README.
+
 ### TLS
 
 `Client.tls(host, port)` is the TLS counterpart of `Client.tcp()` -- trust/

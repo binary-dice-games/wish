@@ -1462,7 +1462,44 @@ class ui_dockspace_viewport : public cloneable_ui_element<ui_dockspace_viewport>
     return cached_field_or<bool>(embedded_field_, bison::key_t{"embedded"}, def);
   }
 
+  // ── Desktop shell bookkeeping (server-side only; see window.hpp's
+  //    identical accessors). In a desktop, a DockSpaceViewport is an app's
+  //    main frame: it floats, and the taskbar minimizes/raises it. ──
+
+  bool minimized() const {
+    return minimized_;
+  }
+  void set_minimized(bool v) const {
+    minimized_ = v;
+  }
+  void request_raise() const {
+    raise_requested_ = true;
+  }
+  bool take_raise_request() const {
+    return std::exchange(raise_requested_, false);
+  }
+  /// @brief Whether its host window (or a window docked in it) had focus
+  ///        at its last render.
+  bool is_focused() const {
+    return focused_;
+  }
+  void set_focused(bool v) const {
+    focused_ = v;
+  }
+  /// @brief The ImGui dockspace id of its last render (0 before the first),
+  ///        kept alive while minimized so docked windows stay docked.
+  unsigned int last_dockspace_id() const {
+    return last_dockspace_id_;
+  }
+  void set_last_dockspace_id(unsigned int id) const {
+    last_dockspace_id_ = id;
+  }
+
  private:
+  mutable bool minimized_ = false;
+  mutable bool raise_requested_ = false;
+  mutable bool focused_ = false;
+  mutable unsigned int last_dockspace_id_ = 0;
   mutable bison::field* id_field_ = nullptr;
   mutable bison::field* title_field_ = nullptr;
   mutable bison::field* flags_field_ = nullptr;

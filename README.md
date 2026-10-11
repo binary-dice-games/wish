@@ -10,6 +10,7 @@ A remote UI framework built on [bison](https://github.com/binary-dice-games/biso
 - **JSON/YAML templates** — describe a UI hierarchy as data and instantiate it by name, or build it object-by-object in code.
 - **Multiple transports** — TCP, TLS-secured TCP, named pipe/Unix socket, an interactive terminal hop, or in-process (no serialization) for single-binary demos.
 - **Per-session sandboxing** — isolated object tree, template registry, and file-service resource folder per connected client.
+- **Desktop mode** — `wish desktop` runs several apps as windows on one Windows/macOS-like desktop: wallpaper, taskbar, a Start menu configured from a YAML file, pinned apps, tray clock. See [docs/cli.md](docs/cli.md#wish-desktop) and [docs/desktop-config.md](docs/desktop-config.md).
 - **Automation-ready** — an optional query/screenshot/input-injection API lets Playwright (or an AI agent) drive and introspect a running UI like a browser page; the SDL3 renderer gets the same capabilities natively over the C ABI, no browser required.
 - **C++, Python, C#, Rust, Go, and Android clients** — a native C++ API, a header-only C++ binding (`bindings/cpp/`, C ABI only, no bison/wish source to compile), plus Python/C#/Rust/Go/Java bindings, all layered on the same bison RMI proxy semantics.
 - **AI-agent-assisted app/UI building** — describe a UI in plain English and have a Claude Code skill build and screenshot-verify it, with no need to know the widget catalog up front. See [docs/ai-assisted-development.md](docs/ai-assisted-development.md).
@@ -135,6 +136,7 @@ dirs under their own `private/apps/<tool>/` directory
 | [docs/tutorial.md](docs/tutorial.md) | Beginner-friendly walkthrough of wish with runnable examples |
 | [docs/building.md](docs/building.md) | Prerequisites, CMake options, build commands |
 | [docs/cli.md](docs/cli.md) | Full `wish` CLI reference: `server`/`client`/`standalone`/`desktop` |
+| [docs/desktop-config.md](docs/desktop-config.md) | `wish desktop` configuration file: the Start menu tree, its entries and actions, `__WishDesktop` |
 | [docs/examples.md](docs/examples.md) | Annotated example walkthroughs |
 | [docs/ui-elements.md](docs/ui-elements.md) | Full UI element/widget catalog (fields, events), window/layout model, JSON template schema, and the `editor` preview tool |
 | [docs/dock-layout.md](docs/dock-layout.md) | Shipping a built-in default docking arrangement with `DockLayout` (from a form or a client template) |

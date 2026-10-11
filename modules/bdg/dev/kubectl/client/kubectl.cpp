@@ -98,6 +98,7 @@ struct kubectl_app_registrar {
         .collection = WISH_MODULE_BDG_DEV_KUBECTL_COLLECTION,
         .description =
             "Kubernetes-dashboard-style GUI frontend for the local `kubectl` CLI (wish client --run=kubectl)",
+        .icon = "res/icons/server.png",
         .params = {},
         .run = run_kubectl,
     });

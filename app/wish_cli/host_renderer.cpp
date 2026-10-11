@@ -32,6 +32,11 @@ const ui_element* find_menu_bar_extension(const context& s) {
 
 template <typename Base>
 void host_renderer<Base>::render_server_frame(const std::vector<sync_context_ptr>& sessions) {
+  // A DesktopShell session turns the host into a desktop; its chrome
+  // replaces the menu bar host window below entirely.
+  if (render_desktop_shell(*this, sessions, desktop_state_, [this] { this->request_quit(); }))
+    return;
+
   const ImGuiViewport* vp = ImGui::GetMainViewport();
   ImGui::SetNextWindowPos(vp->WorkPos);
   ImGui::SetNextWindowSize(vp->WorkSize);

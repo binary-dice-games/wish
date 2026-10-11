@@ -137,6 +137,39 @@ class window : public cloneable_ui_element<window, ui_root> {
     float_height_ = h;
   }
 
+  /// @brief Whether the window is or was focused as of its last render
+  /// (itself or one of its child windows) -- the state `just_focused()`
+  /// tracks. Read by the desktop shell's taskbar to highlight the active
+  /// window.
+  bool is_focused() const {
+    return was_focused_;
+  }
+
+  /// @brief Desktop-shell minimize state: a minimized window is skipped by
+  /// render_window() (not submitted to ImGui at all), so it vanishes from
+  /// the screen while ImGui keeps its position, size and dock state for
+  /// when it is restored. Server-side render bookkeeping only -- not a
+  /// bison field, never sent to the client.
+  bool minimized() const {
+    return minimized_;
+  }
+  void set_minimized(bool v) const {
+    minimized_ = v;
+  }
+
+  /// @brief Asks render_window() to bring the window to the front on its
+  /// next render (selecting its tab when docked) -- the server-side
+  /// equivalent of bumping the client's `focus_request` field, used by the
+  /// desktop shell's taskbar and window switcher.
+  void request_raise() const {
+    raise_requested_ = true;
+  }
+
+  /// @brief True once after request_raise(); clears the request.
+  bool take_raise_request() const {
+    return std::exchange(raise_requested_, false);
+  }
+
  private:
   mutable bison::field* closable_field_ = nullptr;
   mutable bison::field* flags_field_ = nullptr;
@@ -155,6 +188,8 @@ class window : public cloneable_ui_element<window, ui_root> {
   mutable std::optional<int32_t> seen_focus_request_;
   mutable std::optional<std::pair<int32_t, int32_t>> seen_size_;
   mutable bool was_focused_ = false;
+  mutable bool minimized_ = false;
+  mutable bool raise_requested_ = false;
 };
 
 } // namespace bdg::wish

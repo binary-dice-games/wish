@@ -116,6 +116,7 @@ struct git_app_registrar {
         .collection = WISH_MODULE_BDG_DEV_GIT_COLLECTION,
         .description = "SourceTree-style git GUI frontend for a local repository "
                         "(wish client --run=git -- /path/to/repo)",
+        .icon = "res/icons/commit.png",
         .params = {},
         .run = run_git,
     });

@@ -307,6 +307,7 @@ struct nymph_app_registrar {
         .collection = WISH_MODULE_BDG_DEV_NYMPH_COLLECTION,
         .description = "Chart from text: render a source (description, format YAML, data CSV) to a PNG "
                        "that carries its own source, or edit one with a live preview",
+        .icon = "res/icons/chart.png",
         .params = {{"command", "render (no UI), edit, view (read-only), or extract"},
                    {"input", "A nymph source text or a nymph PNG ('-' with render: read the console)"},
                    {"-o file", "Output file (default: the input with a .png extension)"}},

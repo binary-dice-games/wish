@@ -194,19 +194,6 @@ void persistent_store::save(const entry_map& entries) const {
   }
 }
 
-// ── default_store_dir ────────────────────────────────────────────────────────
-
-std::filesystem::path default_store_dir() {
-#if defined(_WIN32)
-  const char* home = std::getenv("USERPROFILE");
-#else
-  const char* home = std::getenv("HOME");
-#endif
-  if (home && *home)
-    return std::filesystem::path(home) / ".wish";
-  return std::filesystem::path(".wish");
-}
-
 // ── store_registry ───────────────────────────────────────────────────────────
 
 store_registry::store_registry(std::filesystem::path dir) : dir_(std::move(dir)) {}

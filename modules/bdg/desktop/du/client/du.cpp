@@ -258,6 +258,7 @@ struct du_app_registrar {
         .collection = WISH_MODULE_BDG_DESKTOP_DU_COLLECTION,
         .description = "Disk usage analyzer: scan a local folder and see what takes the space, as a "
                        "size-sorted table and a treemap",
+        .icon = "res/icons/pie_chart.png",
         .params = {{"folder", "Folder to analyze at startup (default: the current directory)"}},
         .run = run_du,
     });

@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `wish desktop` is now a Windows/macOS-like desktop (see [docs/cli.md](docs/cli.md#wish-desktop)): wallpaper (built-in gradient or `--wallpaper FILE`), desktop icons, and a bottom taskbar with a Start menu (searchable, with a power menu), pinned apps, a button per open app/window (minimize/restore/close), connected-app count, light/dark theme toggle, clock with a calendar and a show-desktop strip; Ctrl+Tab / Ctrl+\` window switcher.
+  - The Start menu, initial pins and desktop icons come from a per-user config file, `~/.wish/desktop/desktop.yaml` (YAML or JSON; new `--config` flag), written with a default menu if missing and reloaded live when edited (see [docs/desktop-config.md](docs/desktop-config.md)). Entries are folders, separators, `apps:` (the built-in apps), `run` commands (built-in modules or any client-ABI app, with `env`/`cwd`) and desktop `action`s, each with a label, icon and tooltip; errors are shown in the Start menu.
+  - Desktop actions (`quit`, `shutdown_server`, `set_theme`, `toggle_theme`, `reload_config`, `launch`, `items`), callable from menu entries and by connected apps through a `__WishDesktop` object.
+  - Apps started from the desktop run as `wish client --run=<app>` subprocesses connected back to it, logging to `wish_logs/desktop/`, and are closed when the desktop quits.
+  - Pinned apps, desktop icons and the theme persist in the upstream user store (entry `wish.desktop`); new `--upstream_username` flag (default: the OS user name).
+- `DesktopShell`, `DesktopMenu` and `DesktopApp` UI classes, the server-side desktop chrome behind `wish desktop`.
+- `yaml_to_json()` (`src/ui/yaml_json.hpp`): parse YAML or JSON text into ordered JSON; YAML syntax errors now report their line and column.
+- `app_info::icon`: an optional icon per embedded app; every `bdg` app has one.
+- Built-in icons `apps`, `desktop`, `push_pin`, `power`, `calculate`, `monitoring`, `pie_chart`, `log`, `helm` and `container`.
+- `wish client --run` sends the app's qualified name in its connect params (`app`).
+- Client-ABI apps on `wish desktop`: a client that sends `app` (plus optional `app_label` / `app_icon`) in its connect params shows on the taskbar with its own name and icon, like a built-in tool; `DesktopApp.listed` marks such taskbar-only entries.
+- Python `Client.from_env()`: connect using the `WISH_TRANSPORT` / `WISH_HOST` / `WISH_PORT` / `WISH_NAME` environment variables.
+- Python example apps for the desktop in `bindings/python/examples/desktop/` (to-do list, stopwatch, live chart).
+
 - `wish server` / `wish standalone` `--save_defaults` and `--clear_defaults`: save the flags given on the command line (renderer, font size, language, theme, port, ...) to the server store as the defaults of later runs. Each flag now resolves as command line > `WISH_<FLAG>` env var > saved default > built-in default (see [docs/cli.md](docs/cli.md#saved-flag-defaults)).
 - Internationalization (see [docs/i18n.md](docs/i18n.md)): template string values `"$$KEY"` are replaced from `<lang>.lang` translation files, falling back to English, then to the bare key.
   - Client side: `client::set_translations()` / `translate()` (applied by `register_template_from_json`/`_yaml`), `wish_set_translations()` / `wish_translate()` (applied by `wish_register_template`), and the same in the C++ header, Python, C#, Rust, Go and Android bindings.
@@ -97,6 +111,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `wish desktop` no longer adds a "Desktop" menu to the server's menu bar: the desktop chrome replaces the menu bar, windows open floating and cascaded instead of docked, and an app's `DockSpaceViewport` becomes a floating app window.
 - `wish standalone` (and `wish-standalone`) now also reads `WISH_<FLAG>` environment variables as flag defaults, like the other modes.
 
 - The default `title` / `status` / `confirm_label` values of the built-in forms and bdg tools are now translation keys (e.g. `"$$MSGBOX_MESSAGE"`); the windows show their translation.

@@ -198,6 +198,7 @@ struct editor_app_registrar {
         .organization = WISH_MODULE_BDG_DEV_EDITOR_ORGANIZATION,
         .collection = WISH_MODULE_BDG_DEV_EDITOR_COLLECTION,
         .description = "Live JSON/YAML UI mock editor -- edit, preview, and watch events in real time",
+        .icon = "res/icons/code.png",
         .params = {{"file", "Path to the JSON or YAML UI file to edit (.json / .yaml / .yml)"}},
         .run = run_editor,
     });

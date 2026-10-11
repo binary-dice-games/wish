@@ -23,13 +23,16 @@ if(WISH_ENABLE_IMGUI AND (WISH_ENABLE_SDL3 OR WISH_ENABLE_WEB))
       wish_cli/server/wish_server_app.cpp
       wish_cli/client/wish_client_app.cpp
       wish_cli/standalone/wish_standalone_app.cpp
-      wish_cli/desktop/wish_desktop_app.cpp)
+      wish_cli/desktop/wish_desktop_app.cpp
+      wish_cli/desktop/process_launcher.cpp
+      wish_cli/desktop/desktop_config.cpp)
   target_include_directories(wish-cli PRIVATE
       ${WISH_ROOT_DIR}               # for "app/wish_cli/..." and "modules/.../..." and "src/..."
       ${WISH_ROOT_DIR}/src           # for <wish/...>
       ${WISH_ROOT_DIR}/extern/bison  # for "src/app/server/server_app.hpp" etc.
+      ${WISH_ROOT_DIR}/extern/bison/extern/json/single_include  # nlohmann/json
   )
-  target_link_libraries(wish-cli PRIVATE wish gflags)
+  target_link_libraries(wish-cli PRIVATE wish gflags uv_a)
   target_compile_definitions(wish-cli PRIVATE WISH_CLI_BUILD)
   set_target_properties(wish-cli PROPERTIES
       OUTPUT_NAME "wish"
@@ -97,12 +100,16 @@ install(TARGETS wish-client RUNTIME DESTINATION bin COMPONENT wish)
 add_executable(wish-desktop
     wish_cli/env_flags.cpp
     wish_cli/desktop/wish_desktop_app.cpp
+    wish_cli/desktop/process_launcher.cpp
+    wish_cli/desktop/desktop_config.cpp
     wish_cli/desktop/standalone_main.cpp)
 target_include_directories(wish-desktop PRIVATE
     ${WISH_ROOT_DIR}
     ${WISH_ROOT_DIR}/src
     ${WISH_ROOT_DIR}/extern/bison
+    ${WISH_ROOT_DIR}/extern/bison/extern/json/single_include  # nlohmann/json
 )
-target_link_libraries(wish-desktop PRIVATE wish_client gflags)
+# uv_a (libuv, built with bison) spawns the apps launched from the Start menu.
+target_link_libraries(wish-desktop PRIVATE wish_client gflags uv_a)
 set_target_properties(wish-desktop PROPERTIES FOLDER app)
 install(TARGETS wish-desktop RUNTIME DESTINATION bin COMPONENT wish)

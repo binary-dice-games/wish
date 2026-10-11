@@ -654,6 +654,13 @@ void web_renderer::service_automation_queries() {
 
 // ── texture loading ───────────────────────────────────────────────────────────
 
+ImVec2 web_renderer::texture_size(const std::string& src) const {
+  auto it = loaded_by_src_.find(src);
+  if (it == loaded_by_src_.end() || !it->second)
+    return ImVec2(0.0f, 0.0f);
+  return ImVec2(float(it->second->Width), float(it->second->Height));
+}
+
 ImTextureID web_renderer::get_or_load_texture(const std::string& src, const std::filesystem::path& resource_dir,
     const std::unordered_map<std::string, uint32_t>* embedded_crc32s) {
   auto it = loaded_by_src_.find(src);

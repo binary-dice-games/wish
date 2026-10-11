@@ -202,90 +202,227 @@ and returns. The session blocks in `on_session()` until `signal_done()` fires.
 
 ## desktop mode
 
-**Classes**: `wish_desktop` (extends `bison::rmi::bridge`, desktop shell) and
-`wish_desktop_app` (extends `bison::app::bridge_app`, CLI scaffold)
-**Sources**: `app/wish_cli/desktop/wish_desktop_app.hpp/.cpp`
+**Classes**: `wish_desktop` (extends `bison::rmi::bridge`, desktop shell),
+`wish_desktop_app` (extends `bison::app::bridge_app`, CLI scaffold) and
+`process_launcher` (starts the apps launched from the desktop); the
+`desktop::` config parser (`load_config()`, `parse_start_menu()`)
+**Sources**: `app/wish_cli/desktop/wish_desktop_app.hpp/.cpp`,
+`app/wish_cli/desktop/process_launcher.hpp/.cpp`,
+`app/wish_cli/desktop/desktop_config.hpp/.cpp`; the chrome itself is drawn
+by the server: `src/ui/ui_elements/desktop_shell.cpp` (classes) and
+`src/imgui/imgui_desktop_shell.hpp/.cpp` (rendering)
 
-`bison::rmi::bridge` already exposes a protected `upstream()` accessor
-(`rmi::client& upstream() { return upstream_client_; }`) that subclasses use
-to reach the upstream RMI client -- no bison change needed for this.
-`wish_desktop_app::make_bridge()` overrides `bison::app::bridge_app`'s factory
-to construct a `wish_desktop` instead of the generic internal bridge, and
-keeps a non-owning pointer to it so `on_listening()` can trigger chrome
-construction once the bridge starts listening.
+`wish desktop` multiplexes downstream clients into one upstream wish server
+session and turns that server's host window into a Windows/macOS-like
+desktop: wallpaper, desktop icons, and a bottom taskbar with a Start menu,
+pinned apps, open windows and a tray (connected apps, theme toggle, clock
+with a calendar, show-desktop strip). See [docs/cli.md](../docs/cli.md#wish-desktop)
+for the user-facing behavior.
 
-### Flags
+### Who does what
 
-| Group | Flags |
-|-------|-------|
-| Downstream | shared with server mode: `--transport`, `--host` (0.0.0.0), `--port` (7070), `--name`, `--cmd` |
-| Upstream | `--upstream_transport` (term), `--upstream_host` (127.0.0.1), `--upstream_port` (7070), `--upstream_name` |
-| Common | `--timeout` (shared with client mode), `--verbose`, `--debugger` |
+```
+wish desktop (bridge process)                 wish server (upstream)
+──────────────────────────────                ─────────────────────────────────
+wish_desktop::build_chrome()                  DesktopShell top-level object
+  desktop.yaml ──► DesktopMenu/DesktopApp tree  │ render_server_frame():
+  user store "wish.desktop" (pins, theme)       │  host_renderer → render_desktop_shell()
+  shell events ◄──────────────────────────────── │  activate / pin / desktop_icon / theme
+  launch_entry() ─► process_launcher (libuv)    │
+  run_action() ◄── __WishDesktop (downstream)   │
+        │                                       │
+        └─► wish client --run=<app> ──► downstream ──► relayed upstream (group = session id)
+```
 
-### Desktop shell
+The split follows where the information lives:
 
-`wish_desktop::build_chrome()` renders a full-viewport `DockSpaceViewport`
-with a `MenuBar` (File → Quit, with a live clock label docked to its right)
-on the upstream session. The chrome is built once, unconditionally, right
-after the bridge starts listening (`wish_desktop_app::on_listening()`) --
-it does not wait for a downstream client to connect, since it must remain
-usable with zero clients attached.
+- **The server draws everything.** Only the renderer knows the open windows,
+  their focus and their z-order, so the taskbar, Start menu, switcher and
+  minimize/raise are server-side (`render_desktop_shell()`, called from
+  `host_renderer::render_server_frame()` before the sessions render). The
+  `DesktopShell` element carries only data (`wallpaper`, `user`, `clients`,
+  clock formats, `menu_error`, `shutdown`) and the Start menu tree as
+  children: `DesktopMenu` folders (one with `role: "power"` fills the power
+  button), `Separator`s and `DesktopApp` entries (`id`, `app`, `label`,
+  `icon`, `tooltip`, `pinned`, `on_desktop`, `sessions`). User actions come
+  back as events naming the entry `id`; the server never knows what an
+  entry does.
+- **The bridge owns policy and processes.** It reads the config file, knows
+  the app registry (it is linked with the modules, for `apps: all`), the
+  user's settings, and can spawn processes, so it builds the `DesktopShell`
+  from the config, answers its events, runs entries and starts apps.
+- **The server never changes `pinned`/`on_desktop` itself**: it emits the
+  event and the bridge sets the field, so the bridge's saved settings and
+  what is shown can't diverge.
 
-The tree is created in one round trip through the upstream `__WishTemplate`
-protocol object -- the same `register`/`instantiate` RMI calls
-`wish::client::register_template`/`instantiate_template` make internally --
-using `wish::import_descriptor_json` (`src/ui/ui_descriptor.hpp`, part of the
-lightweight `wish_client` library, no ImGui/SDL dependency) to build the
-descriptor payload client-side. `wish_desktop` isn't a `wish::client`, so it
-issues these two calls directly against the `bison::rmi::client&` returned by
-`upstream()`.
+### The config file and the Start menu
 
-Downstream clients' own `Window` objects need no special handling to dock:
-`DockSpaceViewport`'s renderer calls `ImGui::DockSpace()` every frame, and
-ImGui auto-docks any window lacking `NoDocking` into whichever dockspace is
-open that frame -- the existing bridge proxy relay (unchanged) is sufficient.
+The Start menu is a section (`start_menu`) of a per-user file,
+`~/.wish/desktop/desktop.yaml` (`--config`; format in
+[docs/desktop-config.md](../docs/desktop-config.md)). It is a plain file next
+to the persistent stores (`default_store_dir()`, in `wish_client` so the
+client-only `wish-desktop` can use it), not a store entry, so users can edit
+it with any editor, and the server store stays unreachable over RMI. The
+top level is a map of sections so later desktop settings (wallpaper,
+taskbar, ...) can be added without a format change; unknown sections are
+ignored.
 
-One exception: `render_window` tracks each window's last-floating size in
-hidden `__float_width__`/`__float_height__`/`__was_docked__` fields and
-forces it back via `ImGui::SetWindowSize()` on the frame a window
-transitions from docked to floating, since ImGui's docking branch does
-not restore the pre-dock size on undock. This is renderer-internal
-bookkeeping -- client authors still don't need to do anything to make
-their `Window`s dock.
+- **Parsing** (`desktop_config.cpp`) is pure: YAML/JSON → `ordered_json`
+  (`yaml_to_json()`, shared with the UI descriptor importer) →
+  `start_menu{items, power}` of `menu_entry`s with placeholders expanded,
+  `apps:` expanded from the registry, and unique ids. Errors are
+  `config_error`s naming the offending path. A missing file gets the default
+  written; an unusable one yields the default menu plus an error, and is
+  never overwritten.
+- **Rebuilds.** `build_shell()` turns the menu into a descriptor, registers
+  it as a fresh `__wish_desktop_chrome_<n>` template, instantiates it, maps
+  the instantiated node ids to entry ids, then destroys the previous shell
+  root (its `HOOK_DESTRUCT` removes the top-level object). Rebuilding the
+  whole shell is simpler than diffing trees and costs one round trip per
+  config save.
+- **Live reload.** A watcher thread polls the file's mtime and size
+  (`--config` may point anywhere, and polling needs no platform-specific
+  notification API) and posts `reload_config()` to the worker. The initial
+  stamp is taken before the first load, so an edit racing the start is
+  still seen. A reload that fails keeps the current menu and sets
+  `DesktopShell.menu_error`.
+- **Pins and icons** are entry ids. The file supplies the initial set; once
+  the user pins, unpins or adds/removes a desktop icon, the saved lists in
+  `wish.desktop` (`saved_pins`) win. Unknown ids are ignored.
 
-The "Quit" `MenuItem`'s `"clicked"` event calls `wish_desktop::request_quit()`
-directly (no external handler injected -- `wish_desktop` owns its own
-quit condition variable). This wakes `wish_desktop::wait_for_quit()`, which
-`wish_desktop_app::wait_for_shutdown()` blocks on (overriding
-`bison::app::bridge_app::wait_for_shutdown()`'s default
-`std::getline(std::cin, ...)` block so both console Enter and the Quit click
-can wake it -- a detached thread runs the `getline` and also calls
-`request_quit()`). Once woken, `wait_for_shutdown()` returns into
-`bridge_app::run_with_transport()`, which calls `br->stop()` and unwinds --
-releasing terminal state (`scoped_terminal_config`/`terminal`) via RAII
-instead of terminating the process mid-teardown. Under
-`--downstream_transport=term`, `bridge_app::run()` sets `active_term_` before
-calling `wait_for_shutdown()`; `wish_desktop_app`'s override checks
-`active_term_` and, when set, defers to the base class's wait on the spawned
-terminal exiting instead of racing it for stdin -- so the Quit click has no
-effect in that mode, same as before this override existed.
+### Actions and `__WishDesktop`
 
-The clock label is updated once a second by a dedicated thread (stop flag +
-condition variable, joined in `wish_desktop`'s destructor before the base
-`bridge` destructor disconnects upstream).
+`run_action()` is the desktop's action table (`quit`, `shutdown_server`,
+`set_theme`, `toggle_theme`, `reload_config`, `launch`, plus `items` for
+RMI). `action:` menu entries call it, and so can connected apps: the
+desktop serves a `__WishDesktop` object on its **downstream** side, through
+`on_check_class()`/`on_create_object()`, and `try_handle_request()` keeps
+the `OP_INSTANTIATE` of that class and every op on a downstream-local object
+id out of the upstream relay. `shutdown_server` can't be done by the bridge
+directly (the server is another process), so it sets
+`DesktopShell.shutdown` and the host renderer calls its quit callback once.
+Clients start entries **by id only**, never an arbitrary command, since the
+downstream port may listen on all interfaces.
+
+### Which window belongs to which app
+
+All downstream clients share the bridge's one upstream session, but
+`rmi::bridge` tags every relayed request with the downstream session id as
+its object group, and the upstream server files every object it creates
+under that group (`bison::rmi::context::groups`, including objects created
+indirectly by templates). Two pieces close the loop:
+
+- `wish client --run=X` sends `"app": "<qualified name>"` in its connect
+  params. `wish_desktop` overrides `try_handle_request()` to read it on
+  `OP_CONNECT` (then lets the bridge handle the connect as usual) and
+  `on_client_disconnected()` to forget it.
+- It publishes each app's live session ids on the `DesktopApp.sessions` of
+  every entry with that `app` (an exact match, or a short `--run=nano`
+  matching `bdg/desktop/nano`). The
+  renderer maps a window's `__wish_id` to its group, and the group to an
+  app, for the taskbar icon and the running indicator under pinned apps.
+
+Apps no menu entry names -- a script on the client C ABI that sends
+`"app"` (plus optional `"app_label"`/`"app_icon"`) -- get an entry too:
+`add_unknown_apps()` instantiates a one-off template holding a single
+unlisted `DesktopApp` (`listed = false`: taskbar only, no Start menu entry,
+pin or desktop icon, since the desktop can't start it). It is a top-level
+object next to the shell rather than a child of it, because the server
+doesn't relink `children` by object id on a `set`; `render_desktop_shell()`
+lists those top-level `DesktopApp`s after the shell's children, and the
+per-session render pass skips them (`is_host_chrome_class()`). The entry is
+kept for the run; with no sessions it just isn't shown.
+
+An app instance whose group has a `DockSpaceViewport` (an app with its own
+dock layout, e.g. nano, top, du) gets one taskbar entry for that frame,
+standing for all of its top-level windows; otherwise every visible,
+non-modal top-level `Window` is its own entry.
+
+### Window behavior in a desktop
+
+`render_desktop_shell()` calls `imgui_renderer::set_desktop_cascade_area()`
+each frame, which switches two renderers into desktop behavior for that frame:
+
+- `render_window()`: an un-positioned, dockable window without a
+  `dock_target` that ImGui has never seen opens **floating at the next
+  cascade slot** (`claim_cascade_slot()`) instead of docking into the host
+  dockspace. The host dockspace is still there (passthrough central node),
+  so dragging a window into it docks it.
+- `render_dockspace_viewport()`: a `DockSpaceViewport` is an app's main
+  frame. It is a titled, floating, cascaded window, never a fullscreen host
+  covering the desktop.
+
+Minimize is server-side render bookkeeping (`window::minimized()`,
+`ui_dockspace_viewport::minimized()`; mutable members, not fields): a
+minimized window is not submitted to ImGui at all, so ImGui keeps its
+position, size and dock state for the restore. A minimized frame keeps its
+dockspace alive (`ImGuiDockNodeFlags_KeepAliveOnly`) so its docked windows
+stay docked. Raising uses `request_raise()` (`SetNextWindowFocus()` before
+`Begin`), the server-side counterpart of a client's `focus_request`.
+"Active" on the taskbar means most recently focused (`desktop_shell_state`
+keeps an MRU list), not focused this frame, because clicking the taskbar
+takes focus itself.
+
+The chrome is drawn with the shell session's style (`imgui_renderer::
+with_session_style()`/`session_style()`), so the tray's theme toggle (which
+the bridge applies through `__WishStyle.preset` on that session) restyles
+the chrome and every client window together.
+
+### Locking
+
+`render_desktop_shell()` locks each session once to copy out what it shows
+(`shell_frame`), draws with no lock held, then locks each affected session
+once more to apply what the user did (minimize/raise, a "closed" event, a
+shell event). It never holds two session locks at once.
+
+`wish_desktop`'s event handlers run on the upstream client's event thread,
+which must not block on an upstream round trip (the response would be
+dispatched by that same thread), so they post their work (proxy sets, user
+store writes, `__WishStyle.preset`, launching) to a private worker thread.
+`wish_desktop::flush()` waits for that worker, for tests.
+
+### Launching apps
+
+`process_launcher` runs a private libuv loop on its own thread (`uv_spawn`
+for each child, `exit_cb` to reap it, `uv_process_kill` to terminate it,
+`uv_exepath` for the program's own path), so it has no platform-specific
+code. Each child gets this process's environment plus
+`WISH_TRANSPORT/HOST/PORT/NAME` for the downstream side (a wildcard bind
+host becomes loopback) and writes stdout/stderr to
+`wish_logs/desktop/<entry id>_<n>.log`, never to the desktop's terminal.
+The entry's `env` goes on top and its `cwd` is applied. The entry point sets
+what `{wish_client}` expands to: `<wish> client` in the combined `wish`
+binary, the sibling `wish-client` for the standalone `wish-desktop`. `wish_desktop_app::wait_for_shutdown()`
+terminates the children when the desktop exits. With
+`--downstream_transport=term` nothing can dial in, so launching is
+disabled.
+
+### Settings
+
+Saved in the upstream user store entry `wish.desktop`
+(`{pinned: [...], desktop: [...], theme}`); the bridge connects upstream as
+`--upstream_username` (default: the OS user name) so the session has a
+store. Without a store (anonymous upstream), settings last for the run.
+`pinned`/`desktop` are written only once the user has changed them; until
+then the config file's lists apply (the default pins nano, mc and top). `--wallpaper FILE` is uploaded into the upstream sandbox at
+`private/apps/wish.desktop/wallpaper.<ext>` and drawn "cover"-fit
+(`imgui_renderer::texture_size()`).
 
 ### Lifecycle
 
 ```
 wish_desktop_app::run()
-  parse flags
-  build upstream transport (bison::app::bridge_app::run())
-  build downstream server transport
-  make_bridge()      → constructs a wish_desktop, captures desktop_ pointer
-  bridge::start()    → connects upstream; starts downstream listen loop
-  on_listening()      → desktop_->build_chrome() (menu bar + dockspace + clock)
-  block until Enter is pressed (or the spawned terminal exits, --transport=term)
-  bridge::stop()
+  parse flags; export WISH_TRANSPORT/HOST/PORT/NAME for the anchor terminal
+  bridge_app::run()
+    make_bridge()     → wish_desktop, configured with launcher, client command,
+                        launch environment, log dir, wallpaper, user,
+                        config file
+    bridge::start()   → connects upstream (with username); listens downstream
+    on_listening()    → desktop_->build_chrome() (loads the config, starts
+                        the file watcher)
+    wait_for_shutdown() → until "Quit desktop" or the anchor terminal exits;
+                          then terminates launched apps
+    bridge::stop()
 ```
 
 ---
@@ -312,6 +449,10 @@ app/
     desktop/
       wish_desktop_app.hpp
       wish_desktop_app.cpp
+      process_launcher.hpp             ← starts apps launched from the desktop (libuv)
+      process_launcher.cpp
+      desktop_config.hpp               ← desktop.yaml: sections, start_menu parser
+      desktop_config.cpp
 
 src/
   forms/

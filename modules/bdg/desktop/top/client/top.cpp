@@ -172,6 +172,7 @@ struct top_app_registrar {
         .organization = WISH_MODULE_BDG_DESKTOP_TOP_ORGANIZATION,
         .collection = WISH_MODULE_BDG_DESKTOP_TOP_COLLECTION,
         .description = "top/htop-style system monitor; client samples CPU/memory/processes, server only renders",
+        .icon = "res/icons/monitoring.png",
         .params = {},
         .run = run_top,
     });

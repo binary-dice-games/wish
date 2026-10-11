@@ -259,6 +259,7 @@ struct nano_app_registrar {
         .organization = WISH_MODULE_BDG_DESKTOP_NANO_ORGANIZATION,
         .collection = WISH_MODULE_BDG_DESKTOP_NANO_COLLECTION,
         .description = "Multi-file, syntax-highlighted text editor",
+        .icon = "res/icons/edit.png",
         .params = {{"file...", "Paths of files to open at startup (optional)"}},
         .run = run_nano,
     });

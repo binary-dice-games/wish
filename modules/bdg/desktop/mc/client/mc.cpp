@@ -470,6 +470,7 @@ struct mc_app_registrar {
         .organization = WISH_MODULE_BDG_DESKTOP_MC_ORGANIZATION,
         .collection = WISH_MODULE_BDG_DESKTOP_MC_COLLECTION,
         .description = "Two-panel file browser: local machine vs. session sandbox",
+        .icon = "res/icons/folder_open.png",
         .params = {},
         .run = run_mc,
     });

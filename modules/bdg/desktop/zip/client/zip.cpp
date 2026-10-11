@@ -467,6 +467,7 @@ struct zip_app_registrar {
         .organization = WISH_MODULE_BDG_DESKTOP_ZIP_ORGANIZATION,
         .collection = WISH_MODULE_BDG_DESKTOP_ZIP_COLLECTION,
         .description = "Zip/unzip tool: browse the local filesystem, compress/extract/view zip contents",
+        .icon = "res/icons/zip.png",
         .params = {},
         .run = run_zip,
     });

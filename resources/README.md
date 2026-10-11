@@ -65,3 +65,15 @@ module code can use `common::icon_path()` / `common::action_icon()` from
 | `logout.png` | logout | `zip.png` | folder_zip |
 | `mail.png` | mail | `zoom_in.png` | zoom_in |
 | `memory.png` | memory | `zoom_out.png` | zoom_out |
+
+Desktop and app icons, used by `wish desktop` (Start button, show desktop,
+pins, power menu) and as the `icon` of the bundled `bdg` apps
+(`app_info::icon`):
+
+| File | Material Symbols name | File | Material Symbols name |
+|------|-----------------------|------|-----------------------|
+| `apps.png` | apps | `log.png` | receipt_long |
+| `calculate.png` | calculate | `monitoring.png` | monitoring |
+| `container.png` | deployed_code | `pie_chart.png` | pie_chart |
+| `desktop.png` | desktop_windows | `power.png` | power_settings_new |
+| `helm.png` | sailing | `push_pin.png` | keep |

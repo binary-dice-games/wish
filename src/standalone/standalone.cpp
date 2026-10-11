@@ -263,7 +263,9 @@ void standalone::render_loop() {
               }
             }
             for (const auto& [key, win] : sess->top_level_objects) {
-              if (win && win->class_key() != "DockLayout"_key && win->class_key() != "DockSpaceViewport"_key) {
+              // Host chrome classes are drawn by render_server_frame().
+              if (win && win->class_key() != "DockLayout"_key && win->class_key() != "DockSpaceViewport"_key &&
+                  !is_host_chrome_class(win->class_key())) {
                 sess->current_top_level_key = key;
                 renderer_->render_session(*win, *sess);
               }
