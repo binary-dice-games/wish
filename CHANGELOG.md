@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `app_info::icon`: an optional icon per embedded app; every `bdg` app has one.
 - Built-in icons `apps`, `desktop`, `push_pin`, `power`, `calculate`, `monitoring`, `pie_chart`, `log`, `helm` and `container`.
 - `wish client --run` sends the app's qualified name in its connect params (`app`).
+- Client-ABI apps on `wish desktop`: a client that sends `app` (plus optional `app_label` / `app_icon`) in its connect params shows on the taskbar with its own name and icon, like a built-in tool; `DesktopApp.listed` marks such taskbar-only entries.
+- Python `Client.from_env()`: connect using the `WISH_TRANSPORT` / `WISH_HOST` / `WISH_PORT` / `WISH_NAME` environment variables.
+- Python example apps for the desktop in `bindings/python/examples/desktop/` (to-do list, stopwatch, live chart).
 
 - `wish server` / `wish standalone` `--save_defaults` and `--clear_defaults`: save the flags given on the command line (renderer, font size, language, theme, port, ...) to the server store as the defaults of later runs. Each flag now resolves as command line > `WISH_<FLAG>` env var > saved default > built-in default (see [docs/cli.md](docs/cli.md#saved-flag-defaults)).
 - Internationalization (see [docs/i18n.md](docs/i18n.md)): template string values `"$$KEY"` are replaced from `<lang>.lang` translation files, falling back to English, then to the bare key.

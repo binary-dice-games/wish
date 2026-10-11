@@ -339,7 +339,8 @@ void render_window(imgui_renderer& r, const ui_element& node0, const context& s)
   // (or one imgui.ini remembers) keeps its place.
   bool cascaded = false;
   const bool float_on_desktop = r.desktop_cascade_active() && node.dock_target_ref().empty();
-  if (!has_explicit_pos && !(fl & ImGuiWindowFlags_NoDocking) && float_on_desktop) {
+  // (A NoDocking window floats anyway; it takes a slot too.)
+  if (!has_explicit_pos && float_on_desktop) {
     const ImGuiViewport* vp = ImGui::GetMainViewport();
     bool sized = w > 0 && h > 0;
     ImVec2 size = sized ? ImVec2(float(w), float(h))

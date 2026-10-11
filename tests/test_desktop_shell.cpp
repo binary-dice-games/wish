@@ -8,6 +8,7 @@
 #include <imgui/imgui_desktop_shell.hpp>
 #include <imgui/imgui_renderer.hpp>
 #include <server/registry.hpp>
+#include <server/renderer.hpp>
 #include <ui/ui_elements/window.hpp>
 #include <ui/ui_importer.hpp>
 
@@ -79,7 +80,7 @@ class DesktopShellTest : public ::testing::Test {
       auto lock = session_->wlock();
       auto& s = static_cast<wish::context&>(**lock);
       for (auto& [key, root] : s.top_level_objects)
-        if (root && root->class_key() != bdg::bison::key_t{"DesktopShell"})
+        if (root && !wish::is_host_chrome_class(root->class_key()))
           renderer_->render_session(*root, s);
       s.pending_events.clear();
     }
@@ -169,6 +170,28 @@ TEST_F(DesktopShellTest, CollectsVisibleNonModalWindowsWithTheirApp) {
   EXPECT_EQ(wins[1].app_index, -1);
 }
 
+TEST_F(DesktopShellTest, UnlistedAppsAreCollectedAndOwnTheirWindows) {
+  auto app = add_top(
+      R"({"type":"DesktopApp","app":"ext/py/todo","label":"To-do","icon":"res/icons/check.png","listed":false})", 600u);
+  (*app)["sessions"_key] = std::vector<int32_t>{9};
+  add_top(R"({"type":"Window","title":"To-do"})", 601u, 9u);
+
+  auto info = wish::detail::desktop_collect_app(*app);
+  EXPECT_FALSE(info.listed);
+  EXPECT_EQ(info.label, "To-do");
+
+  auto wins = wish::detail::desktop_collect_windows(sess(), session_.get(), {info});
+  ASSERT_EQ(wins.size(), size_t{1});
+  EXPECT_EQ(wins[0].app_index, 0);
+}
+
+TEST_F(DesktopShellTest, TopLevelDesktopAppIsNotRenderedAsAWindow) {
+  add_top(kShell, 1u);
+  add_top(R"({"type":"DesktopApp","app":"ext/py/todo","label":"To-do","listed":false})", 610u);
+  EXPECT_TRUE(frame());
+  EXPECT_TRUE(wish::is_host_chrome_class(bdg::bison::key_t{"DesktopApp"}));
+}
+
 TEST_F(DesktopShellTest, AppFrameStandsForItsWindows) {
   add_top(R"({"type":"DockSpaceViewport","id":"main","title":"Editor"})", 200u, 7u);
   add_top(R"({"type":"Window","title":"Toolbar"})", 201u, 7u);
@@ -216,6 +239,22 @@ TEST_F(DesktopShellTest, NewWindowsFloatAtCascadingPositions) {
   ASSERT_NE(a, nullptr);
   ASSERT_NE(b, nullptr);
   EXPECT_EQ(a->DockNode, nullptr); // floating, not docked into the host
+  EXPECT_GT(b->Pos.x, a->Pos.x);
+  EXPECT_GT(b->Pos.y, a->Pos.y);
+}
+
+TEST_F(DesktopShellTest, NoDockingWindowsCascadeToo) {
+  add_top(kShell, 1u);
+  add_top(R"({"type":"Window","title":"A","width":300,"height":200,"flags":"NoDocking"})", 420u);
+  frame();
+  add_top(R"({"type":"Window","title":"B","width":300,"height":200,"flags":"NoDocking"})", 421u);
+  frame();
+  frame();
+
+  ImGuiWindow* a = ImGui::FindWindowByName("A###420");
+  ImGuiWindow* b = ImGui::FindWindowByName("B###421");
+  ASSERT_NE(a, nullptr);
+  ASSERT_NE(b, nullptr);
   EXPECT_GT(b->Pos.x, a->Pos.x);
   EXPECT_GT(b->Pos.y, a->Pos.y);
 }

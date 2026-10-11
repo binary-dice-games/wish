@@ -266,6 +266,18 @@ wish server --transport tcp &          # the window the desktop draws in
 wish desktop --upstream_transport tcp --wallpaper ~/Pictures/beach.jpg
 ```
 
+**Apps using the client ABI** (`wish_client_c.h`, and every binding on top
+of it) work on the desktop too: they connect to its downstream port like
+`wish client` does, and their windows float, cascade, minimize and follow the
+theme the same way. To show on the taskbar with their own name and icon --
+and be counted, and grouped, like a built-in tool -- they add three optional
+fields to their connect params: `app` (an identifier), `app_label` (the
+name shown) and `app_icon` (e.g. `res/icons/check.png`). Without them, a
+window shows under its title with a generic icon. Such an app has no Start
+menu entry and can't be pinned, since the desktop can't start it. Python's
+`Client.from_env()` connects wherever the `WISH_*` variables point; see
+`bindings/python/examples/desktop/` for three examples.
+
 `wish desktop` sets `WISH_TRANSPORT`/`WISH_HOST`/`WISH_PORT`/`WISH_NAME` in
 the terminal it spawns to match its own downstream flags, so a `wish
 client`/`wish server` launched from inside that terminal connects to the

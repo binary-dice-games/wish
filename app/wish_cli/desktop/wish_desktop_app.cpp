@@ -352,7 +352,8 @@ void wish_desktop::build_chrome() {
     }
     root["children"] = std::move(children);
 
-    auto tmpl = upstream().instantiate("wish"_key, "__WishTemplate"_key).get();
+    template_proxy_ = upstream().instantiate("wish"_key, "__WishTemplate"_key).get();
+    auto& tmpl = *template_proxy_;
 
     dynamic reg_args;
     reg_args["name"_key] = key_t{kChromeTemplateName};
@@ -494,8 +495,12 @@ bool wish_desktop::try_handle_request(
     {
       auto st = state_.wlock();
       st->sessions.insert(ctx.session_id.id);
-      if (!app.empty())
+      if (!app.empty()) {
         st->session_apps[ctx.session_id.id] = app;
+        st->app_meta[app] = {
+            env.payload.get_as<std::string>("app_label"_key, std::string{}),
+            env.payload.get_as<std::string>("app_icon"_key, std::string{})};
+      }
     }
     post([this] { push_running_state(); });
   }
@@ -511,7 +516,80 @@ void wish_desktop::on_client_disconnected(rmi::context& ctx) {
   post([this] { push_running_state(); });
 }
 
+namespace {
+
+/// The `app_nodes` entry @p app runs as: its exact name, or a registered
+/// app whose short name it is (e.g. a client run as "--run=nano").
+template <typename Map>
+auto find_app_node(Map& nodes, const std::string& app) {
+  auto it = nodes.find(app);
+  if (it != nodes.end())
+    return it;
+  return std::find_if(nodes.begin(), nodes.end(), [&](const auto& e) {
+    auto slash = e.first.rfind('/');
+    return slash != std::string::npos && e.first.substr(slash + 1) == app;
+  });
+}
+
+} // namespace
+
+void wish_desktop::add_unknown_apps() {
+  if (!template_proxy_)
+    return;
+  std::vector<std::pair<std::string, std::pair<std::string, std::string>>> unknown;
+  {
+    auto st = state_.rlock();
+    for (const auto& [session, app] : st->session_apps) {
+      if (find_app_node(st->app_nodes, app) != st->app_nodes.end())
+        continue;
+      auto meta = st->app_meta.find(app);
+      unknown.emplace_back(app, meta != st->app_meta.end() ? meta->second : std::pair<std::string, std::string>{});
+    }
+  }
+  for (const auto& [app, meta] : unknown) {
+    {
+      auto st = state_.rlock();
+      if (find_app_node(st->app_nodes, app) != st->app_nodes.end())
+        continue; // two sessions of the same new app
+    }
+    std::string label = meta.first;
+    if (label.empty())
+      label = app.substr(app.rfind('/') == std::string::npos ? 0 : app.rfind('/') + 1);
+    nlohmann::ordered_json d;
+    d["type"] = "DesktopApp";
+    d["app"] = app;
+    d["label"] = label;
+    d["icon"] = meta.second;
+    d["listed"] = false;
+    // A one-off template per app: instantiating it adds a top-level
+    // DesktopApp next to the shell, which the server lists with the shell's
+    // own children (see render_desktop_shell()).
+    std::string name = std::string(kChromeTemplateName) + "_app" + std::to_string(state_.wlock()->extra_apps++);
+    dynamic reg_args;
+    reg_args["name"_key] = key_t{name.c_str()};
+    reg_args["descriptor"_key] = dynamic_ptr{import_descriptor_json(d.dump())};
+    template_proxy_->call("register"_key, std::move(reg_args)).get();
+    dynamic inst_args;
+    inst_args["name"_key] = key_t{name.c_str()};
+    auto result = template_proxy_->call("instantiate"_key, std::move(inst_args)).get();
+    key_t node{0u};
+    result.forEach([&](key_t, const field& v) {
+      if (!v.is<dynamic_ptr>() || !v.as<dynamic_ptr>())
+        return;
+      const auto& entry = v.as<dynamic_ptr>();
+      const auto* name_field = entry->findField("name"_key);
+      const auto* id_field = entry->findField("id"_key);
+      if (name_field && id_field && name_field->is<std::string>() && id_field->is<key_t>() &&
+          name_field->as<std::string>().empty())
+        node = id_field->as<key_t>();
+    });
+    if (node.id != 0u)
+      state_.wlock()->app_nodes[app] = node;
+  }
+}
+
 void wish_desktop::push_running_state() {
+  add_unknown_apps();
   key_t shell_id{0u};
   int32_t clients = 0;
   std::map<key_t, std::vector<int32_t>> by_node;
@@ -522,14 +600,7 @@ void wish_desktop::push_running_state() {
     for (const auto& [app, node] : st->app_nodes)
       by_node[node]; // every app, so one that stopped is cleared too
     for (const auto& [session, app] : st->session_apps) {
-      auto it = st->app_nodes.find(app);
-      if (it == st->app_nodes.end()) {
-        // Matches a short name too (e.g. a client run as "--run=nano").
-        it = std::find_if(st->app_nodes.begin(), st->app_nodes.end(), [&](const auto& e) {
-          auto slash = e.first.rfind('/');
-          return slash != std::string::npos && e.first.substr(slash + 1) == app;
-        });
-      }
+      auto it = find_app_node(st->app_nodes, app);
       if (it != st->app_nodes.end())
         by_node[it->second].push_back(static_cast<int32_t>(session));
     }

@@ -143,9 +143,18 @@ class WishDesktopTest : public ::testing::Test {
     return out;
   }
 
+  /// The DesktopShell (by class: once the desktop adds an entry for an
+  /// unknown app, element("") is that template's root instead).
+  wish::ui_element_ptr shell() {
+    for (const auto& [key, root] : session().top_level_objects)
+      if (root && root->class_key() == bdg::bison::key_t{"DesktopShell"})
+        return root;
+    return nullptr;
+  }
+
   bdg::bison::key_t shell_id() {
-    auto shell = element("");
-    return shell ? shell->get_as<bdg::bison::key_t>("__wish_id"_key, bdg::bison::key_t{}) : bdg::bison::key_t{};
+    auto sh = shell();
+    return sh ? sh->get_as<bdg::bison::key_t>("__wish_id"_key, bdg::bison::key_t{}) : bdg::bison::key_t{};
   }
 
   /// Delivers a shell event the way the render loop does after a frame.
@@ -180,7 +189,7 @@ TEST_F(WishDesktopTest, BuildChromeCreatesDesktopShellWithOneAppPerRegisteredApp
   wish::context& sess = session();
   ASSERT_EQ(sess.top_level_objects.size(), size_t{1});
   EXPECT_EQ(sess.top_level_objects.begin()->second->class_key(), bdg::bison::key_t{"DesktopShell"});
-  EXPECT_EQ(element("")->get_as<std::string>("user"_key, std::string{}), std::string{});
+  EXPECT_EQ(shell()->get_as<std::string>("user"_key, std::string{}), std::string{});
 
   auto calc = element("app0");
   auto nano = element("app1");
@@ -322,11 +331,74 @@ TEST_F(WishDesktopTest, ConnectedClientIsPublishedOnItsApp) {
     return f && f->is<std::vector<int32_t>>() ? f->as<std::vector<int32_t>>() : std::vector<int32_t>{};
   };
   ASSERT_TRUE(eventually([&] { return sessions_of_nano().size() == 1; }));
-  EXPECT_EQ(element("")->get_as<int32_t>("clients"_key, 0), 1);
+  EXPECT_EQ(shell()->get_as<int32_t>("clients"_key, 0), 1);
 
   app_client.disconnect();
   ASSERT_TRUE(eventually([&] { return sessions_of_nano().empty(); }));
-  EXPECT_EQ(element("")->get_as<int32_t>("clients"_key, -1), 0);
+  EXPECT_EQ(shell()->get_as<int32_t>("clients"_key, -1), 0);
+}
+
+TEST_F(WishDesktopTest, UnknownAppGetsAnUnlistedEntryOfItsOwn) {
+  desktop_.build_chrome();
+
+  // A client-ABI app the registry doesn't know, identifying itself.
+  auto connect = [&] {
+    auto c = std::make_unique<client>(std::make_unique<memory_client_transport>(downstream_transport_.connect()));
+    dynamic params;
+    params["app"_key] = std::string{"ext/py/todo"};
+    params["app_label"_key] = std::string{"To-do"};
+    params["app_icon"_key] = std::string{"res/icons/check.png"};
+    c->connect(std::move(params));
+    return c;
+  };
+  // Top-level DesktopApp objects next to the shell, with their sessions.
+  auto extra_apps = [&] {
+    std::vector<wish::ui_element_ptr> out;
+    for (const auto& [key, root] : session().top_level_objects)
+      if (root && root->class_key() == bdg::bison::key_t{"DesktopApp"})
+        out.push_back(root);
+    return out;
+  };
+  auto sessions_of = [](const wish::ui_element_ptr& e) {
+    const field* f = e->findField("sessions"_key);
+    return f && f->is<std::vector<int32_t>>() ? f->as<std::vector<int32_t>>() : std::vector<int32_t>{};
+  };
+
+  auto first = connect();
+  ASSERT_TRUE(eventually([&] { return extra_apps().size() == 1 && sessions_of(extra_apps()[0]).size() == 1; }));
+  auto entry = extra_apps()[0];
+  EXPECT_EQ(entry->get_as<std::string>("app"_key, std::string{}), "ext/py/todo");
+  EXPECT_EQ(entry->get_as<std::string>("label"_key, std::string{}), "To-do");
+  EXPECT_EQ(entry->get_as<std::string>("icon"_key, std::string{}), "res/icons/check.png");
+  EXPECT_FALSE(entry->get_as<bool>("listed"_key, true));
+
+  // A second instance of the same app shares the entry.
+  auto second = connect();
+  ASSERT_TRUE(eventually([&] { return sessions_of(entry).size() == 2; }));
+  EXPECT_EQ(extra_apps().size(), size_t{1});
+  EXPECT_EQ(shell()->get_as<int32_t>("clients"_key, 0), 2);
+
+  first->disconnect();
+  second->disconnect();
+  ASSERT_TRUE(eventually([&] { return sessions_of(entry).empty(); }));
+}
+
+TEST_F(WishDesktopTest, UnknownAppWithoutLabelUsesTheLastPathSegment) {
+  desktop_.build_chrome();
+  client c(std::make_unique<memory_client_transport>(downstream_transport_.connect()));
+  dynamic params;
+  params["app"_key] = std::string{"ext/py/stopwatch"};
+  c.connect(std::move(params));
+
+  wish::ui_element_ptr entry;
+  ASSERT_TRUE(eventually([&] {
+    for (const auto& [key, root] : session().top_level_objects)
+      if (root && root->class_key() == bdg::bison::key_t{"DesktopApp"})
+        entry = root;
+    return entry != nullptr;
+  }));
+  EXPECT_EQ(entry->get_as<std::string>("label"_key, std::string{}), "stopwatch");
+  c.disconnect();
 }
 
 TEST_F(WishDesktopTest, WaitForQuitForTimesOutThenReturnsTrueAfterRequestQuit) {

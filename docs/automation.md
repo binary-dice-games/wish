@@ -460,6 +460,21 @@ desk = subprocess.Popen([wish, "desktop", "--upstream_transport", "tcp", "--upst
   screenshot, `keyboard.up("Control")`).
 - **Theme and pins persist between runs** in `--store_dir`: delete it for a
   clean first run (nano, mc and top pinned, light theme).
+- **Client-ABI scripts** (e.g. `bindings/python/examples/desktop/*.py`): start
+  them with `WISH_TRANSPORT=tcp WISH_PORT=<downstream port>` and
+  `WISH_LIB=<build>/libwish_client.so`; their widgets show in `get_tree()`
+  under their template paths (`add_row.input`, `buttons.start`), so drive
+  them by path like any app.
+- **Cascaded windows overlap**; to show several apps side by side, drag
+  each by its title bar: `mouse.move()` onto the title, `down()`, several
+  `move()` steps, `up()` (one jump is not seen as a drag).
+- **A taskbar button raises an inactive window first**; only a click on the
+  *active* app's button minimizes it (like Windows). Two clicks on an
+  inactive one: raise, then minimize.
+- **`InputText.flags` `EnterReturnsTrue` is `64`** in this ImGui (1.92), not
+  `32`; prefer the named form `"flags": "EnterReturnsTrue"`. With it, the
+  widget reports its text only on Enter, so a button next to it reads stale
+  text (2026-10).
 
 ## Python client
 

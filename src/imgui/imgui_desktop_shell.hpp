@@ -30,6 +30,7 @@ struct desktop_app_info {
   std::string icon;
   bool pinned{false};
   bool on_desktop{false};
+  bool listed{true}; ///< False: taskbar-only (no Start menu entry, pin or icon).
   std::vector<int32_t> sessions; ///< Object groups of its running instances.
 };
 
@@ -136,6 +137,9 @@ bool desktop_app_matches(const desktop_app_info& app, const std::string& query);
 ///        session locked.
 std::vector<desktop_window_info>
 desktop_collect_windows(const context& s, const sync_context* session, const std::vector<desktop_app_info>& apps);
+
+/// @brief Copies one DesktopApp node.
+desktop_app_info desktop_collect_app(const ui_element& app);
 
 /// @brief Copies a DesktopShell node's DesktopApp children, in order.
 std::vector<desktop_app_info> desktop_collect_apps(const ui_element& shell);

@@ -132,6 +132,15 @@ void register_desktop_shell() {
             attr<Description>("Shown as an icon on the desktop. Changed by the owner on \"desktop_icon\"."),
             attr<Category>("State")});
     proto->addField(
+        "listed"_rkey,
+        field{
+            true,
+            attr<DisplayName>("Listed"),
+            attr<Description>("Shown in the Start menu and available as a pinned button or desktop icon. "
+                              "False for an app the owner can't start itself (e.g. a client-ABI app that "
+                              "connected on its own), which only appears on the taskbar while running."),
+            attr<Category>("State")});
+    proto->addField(
         "sessions"_rkey,
         field{
             std::vector<int32_t>{},

@@ -75,25 +75,29 @@ bool desktop_app_matches(const desktop_app_info& app, const std::string& query) 
   return desktop_app_match_rank(app, query) >= 0;
 }
 
+desktop_app_info desktop_collect_app(const ui_element& child) {
+  desktop_app_info a;
+  a.node_id = child.wish_id();
+  a.app = child.get_as<std::string>("app"_key, std::string{});
+  a.label = child.get_as<std::string>("label"_key, std::string{});
+  a.description = child.get_as<std::string>("description"_key, std::string{});
+  a.collection = child.get_as<std::string>("collection"_key, std::string{});
+  a.icon = child.get_as<std::string>("icon"_key, std::string{});
+  a.pinned = child.get_as<bool>("pinned"_key, false);
+  a.on_desktop = child.get_as<bool>("on_desktop"_key, false);
+  a.listed = child.get_as<bool>("listed"_key, true);
+  if (const field* f = child.findField("sessions"_key); f && f->is<std::vector<int32_t>>())
+    a.sessions = f->as<std::vector<int32_t>>();
+  if (a.label.empty())
+    a.label = a.app;
+  return a;
+}
+
 std::vector<desktop_app_info> desktop_collect_apps(const ui_element& shell) {
   std::vector<desktop_app_info> apps;
   shell.for_each_child_ordered([&](key_t, const ui_element& child) {
-    if (child.class_key() != key_t{"DesktopApp"})
-      return;
-    desktop_app_info a;
-    a.node_id = child.wish_id();
-    a.app = child.get_as<std::string>("app"_key, std::string{});
-    a.label = child.get_as<std::string>("label"_key, std::string{});
-    a.description = child.get_as<std::string>("description"_key, std::string{});
-    a.collection = child.get_as<std::string>("collection"_key, std::string{});
-    a.icon = child.get_as<std::string>("icon"_key, std::string{});
-    a.pinned = child.get_as<bool>("pinned"_key, false);
-    a.on_desktop = child.get_as<bool>("on_desktop"_key, false);
-    if (const field* f = child.findField("sessions"_key); f && f->is<std::vector<int32_t>>())
-      a.sessions = f->as<std::vector<int32_t>>();
-    if (a.label.empty())
-      a.label = a.app;
-    apps.push_back(std::move(a));
+    if (child.class_key() == key_t{"DesktopApp"})
+      apps.push_back(desktop_collect_app(child));
   });
   return apps;
 }
@@ -274,6 +278,19 @@ std::optional<shell_frame> snapshot(imgui_renderer& r, const std::vector<sync_co
         f.style = *st;
       f.light = sess->style_service && sess->style_service->is_light_theme();
       f.apps = detail::desktop_collect_apps(*shell);
+      // Apps added after the shell was built (e.g. a client-ABI app that
+      // connected on its own) are top-level DesktopApp objects of the same
+      // session, in creation order.
+      std::vector<const ui_element*> extra;
+      for (const auto& [key, root] : sess->top_level_objects)
+        if (root && root->class_key() == key_t{"DesktopApp"})
+          extra.push_back(root.get());
+      std::sort(extra.begin(), extra.end(), [](const ui_element* a, const ui_element* b) {
+        return a->wish_id().id < b->wish_id().id;
+      });
+      for (const ui_element* e : extra) {
+        f.apps.push_back(detail::desktop_collect_app(*e));
+      }
       auto wins = detail::desktop_collect_windows(*sess, sync_ctx.get(), f.apps);
       f.windows.insert(f.windows.end(), wins.begin(), wins.end());
     } else {
@@ -638,7 +655,7 @@ void shell_painter::draw_desktop_icons(const ImRect& work) {
     int rows = std::max(1, int((work.GetHeight() - 24.0f) / cell_h));
     int index = 0;
     for (const auto& app : f_.apps) {
-      if (!app.on_desktop)
+      if (!app.on_desktop || !app.listed)
         continue;
       ImVec2 cell_min(origin.x + float(index / rows) * cell_w, origin.y + float(index % rows) * cell_h);
       ++index;
@@ -818,7 +835,7 @@ void shell_painter::draw_start_menu(const ImRect& anchor) {
   // first, in one flat list, and Enter opens the top one.
   std::vector<const desktop_app_info*> sorted;
   for (const auto& app : f_.apps)
-    if (detail::desktop_app_matches(app, query))
+    if (app.listed && detail::desktop_app_matches(app, query))
       sorted.push_back(&app);
   if (query.empty()) {
     std::stable_sort(sorted.begin(), sorted.end(), [](const desktop_app_info* a, const desktop_app_info* b) {
@@ -935,7 +952,7 @@ void shell_painter::draw_pinned(float button) {
   bool any = false;
   for (size_t i = 0; i < f_.apps.size(); ++i) {
     const auto& app = f_.apps[i];
-    if (!app.pinned)
+    if (!app.pinned || !app.listed)
       continue;
     any = true;
     ImGui::PushID(app.app.c_str());
@@ -1053,7 +1070,7 @@ void shell_painter::draw_window_buttons(float button, float width) {
         else
           minimize(*w);
       }
-      if (w->app_index >= 0) {
+      if (w->app_index >= 0 && f_.apps[size_t(w->app_index)].listed) {
         const auto& app = f_.apps[size_t(w->app_index)];
         if (ImGui::MenuItem("New window"))
           launch(app);

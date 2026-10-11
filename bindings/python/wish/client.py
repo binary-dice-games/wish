@@ -9,6 +9,7 @@ library re-exports the bison and RMI C ABIs alongside its own.
 
 import ctypes
 import json
+import os
 import time
 from typing import Any, Callable, List, Optional, Tuple
 
@@ -127,6 +128,41 @@ class Client:
         if not h:
             raise MemoryError("wish_client_term_create failed")
         return cls(h)
+
+    @classmethod
+    def from_env(cls) -> "Client":
+        """Create a client from the ``WISH_TRANSPORT`` / ``WISH_HOST`` /
+        ``WISH_PORT`` / ``WISH_NAME`` environment variables -- the same ones
+        ``wish client`` reads, and that ``wish desktop`` sets for its
+        terminal and for the apps it starts -- so a script run there needs no
+        connection flags.
+
+        Defaults: ``tcp``, ``127.0.0.1``, ``7070``. A wildcard bind host
+        (``0.0.0.0`` / ``::``) connects to loopback. ``WISH_TRANSPORT`` is
+        ``tcp``, ``tls``, ``pipe`` (``WISH_NAME`` is the path) or ``term``.
+
+        Raises:
+            ValueError: for an unknown transport or a non-numeric port.
+        """
+        transport = os.environ.get("WISH_TRANSPORT", "") or "tcp"
+        host = os.environ.get("WISH_HOST", "") or "127.0.0.1"
+        if host in ("0.0.0.0", "::", "[::]"):
+            host = "127.0.0.1" if host == "0.0.0.0" else "::1"
+        port_text = os.environ.get("WISH_PORT", "") or "7070"
+        try:
+            port = int(port_text)
+        except ValueError:
+            raise ValueError(f"WISH_PORT is not a port number: {port_text!r}") from None
+        name = os.environ.get("WISH_NAME", "")
+        if transport == "tcp":
+            return cls.tcp(host, port)
+        if transport == "tls":
+            return cls.tls(host, port)
+        if transport == "pipe":
+            return cls.pipe(name)
+        if transport == "term":
+            return cls.term()
+        raise ValueError(f"unknown WISH_TRANSPORT {transport!r} (tcp, tls, pipe or term)")
 
     def destroy(self) -> None:
         """Free the client. Must not be called while :meth:`run` is active."""

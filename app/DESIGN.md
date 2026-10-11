@@ -264,6 +264,17 @@ indirectly by templates). Two pieces close the loop:
   renderer maps a window's `__wish_id` to its group, and the group to an
   app, for the taskbar icon and the running indicator under pinned apps.
 
+Apps the registry doesn't know -- a script on the client C ABI that sends
+`"app"` (plus optional `"app_label"`/`"app_icon"`) -- get an entry too:
+`add_unknown_apps()` instantiates a one-off template holding a single
+unlisted `DesktopApp` (`listed = false`: taskbar only, no Start menu entry,
+pin or desktop icon, since the desktop can't start it). It is a top-level
+object next to the shell rather than a child of it, because the server
+doesn't relink `children` by object id on a `set`; `render_desktop_shell()`
+lists those top-level `DesktopApp`s after the shell's children, and the
+per-session render pass skips them (`is_host_chrome_class()`). The entry is
+kept for the run; with no sessions it just isn't shown.
+
 An app instance whose group has a `DockSpaceViewport` (an app with its own
 dock layout, e.g. nano, top, du) gets one taskbar entry for that frame,
 standing for all of its top-level windows; otherwise every visible,

@@ -344,7 +344,7 @@ A single-line text field.
 | `hint` | `string` | `""` | Placeholder shown when empty. |
 | `max_length` | `int32` | `256` | Max characters (1–65536). |
 | `width` | `float` | `0.0` | Width in pixels; `0` = ImGui default, `-1` = fill remaining width. |
-| `flags` | `int32` (flags) | `0` | ImGuiInputTextFlags bitmask; e.g. `EnterReturnsTrue = 32` makes `changed` fire only on Enter instead of every keystroke. |
+| `flags` | `int32` (flags) | `0` | ImGuiInputTextFlags bitmask; e.g. `"EnterReturnsTrue"` (`64`) makes `changed` fire only on Enter instead of every keystroke. |
 | `multiline` | `bool` | `false` | When true, renders as a resizable multi-line box (`ImGui::InputTextMultiline`) instead of a single-line field. `hint` is ignored in this mode. |
 | `height` | `float` | `0.0` | Box height in pixels when `multiline` is true; `0` uses ImGui's default (a few lines). |
 
@@ -538,7 +538,8 @@ Turns the server's host window into a desktop (used by `wish desktop`, see
 taskbar with a Start menu (search, pin, power menu), pinned apps, open
 windows, a tray (connected apps, light/dark toggle, clock with a calendar)
 and a show-desktop strip. Register as a top-level object; children are
-`DesktopApp`. While one is registered, un-positioned windows open floating
+`DesktopApp` (more `DesktopApp`s registered as top-level objects of the
+same session count too, after the children). While one is registered, un-positioned windows open floating
 and cascaded instead of docked, a `DockSpaceViewport` becomes a floating app
 frame, and Ctrl+Tab (or Ctrl+\`) switches windows. Removed automatically on
 session disconnect.
@@ -569,6 +570,7 @@ One app listed by a `DesktopShell`.
 | `icon` | `string` | `""` | Icon image (e.g. `"res/icons/edit.png"`), tinted; empty uses a generic app icon. |
 | `pinned` | `bool` | `false` | Shown on the taskbar while not running. |
 | `on_desktop` | `bool` | `false` | Shown as a desktop icon. |
+| `listed` | `bool` | `true` | Shown in the Start menu and usable as a pinned button or desktop icon. `false` for an app the owner can't start itself (e.g. a client-ABI app that connected on its own): it appears only on the taskbar, while running. |
 | `sessions` | `int[]` | `[]` | Object groups of its running instances (a bridge's downstream session ids); maps windows to the app for their taskbar icon and the running indicator. |
 
 No events of its own.

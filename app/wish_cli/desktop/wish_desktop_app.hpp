@@ -53,10 +53,13 @@ struct desktop_settings {
  * `<client command> --run=<app>` through the configured
  * `process_launcher_iface`; the child connects back to this bridge's
  * downstream side. Each downstream connection reports the app it runs in
- * its connect params (`"app"`), which the desktop records against the
- * connection's session id -- the object group its upstream objects are
- * filed under -- and publishes on the app's `DesktopApp.sessions`, so the
- * server can tell which windows belong to which app.
+ * its connect params (`"app"`, plus optional `"app_label"`/`"app_icon"`),
+ * which the desktop records against the connection's session id -- the
+ * object group its upstream objects are filed under -- and publishes on
+ * the app's `DesktopApp.sessions`, so the server can tell which windows
+ * belong to which app. An app the registry doesn't know (e.g. a script
+ * using the client C ABI) gets an unlisted `DesktopApp` of its own, so it
+ * shows on the taskbar with its own name and icon like a built-in tool.
  *
  * Shell event handlers run on the upstream client's event thread, which
  * must never block on an upstream round trip; their work is handed to a
@@ -150,6 +153,11 @@ class wish_desktop : public bison::rmi::bridge {
     std::set<bison::hash_t> sessions;
     /// Qualified app name -> its DesktopApp node's upstream object id.
     std::map<std::string, bison::key_t> app_nodes;
+    /// App name -> {label, icon} from connect params, for apps that have
+    /// no DesktopApp yet.
+    std::map<std::string, std::pair<std::string, std::string>> app_meta;
+    /// Number of DesktopApp nodes created for connected unknown apps.
+    int extra_apps{0};
     bison::key_t shell_id{0u};
     bool loaded_settings{false};
   };
@@ -161,12 +169,16 @@ class wish_desktop : public bison::rmi::bridge {
 
   void on_shell_event(bison::key_t event, const bison::dynamic& payload);
   void push_running_state();
+  /// Worker thread: creates an unlisted DesktopApp for each connected app
+  /// the shell doesn't list yet.
+  void add_unknown_apps();
   void save_settings();
   void apply_theme(const std::string& preset);
 
   std::atomic<bool> chrome_built_{false};
 
   std::optional<bison::rmi::proxy::dynamic> shell_proxy_;
+  std::optional<bison::rmi::proxy::dynamic> template_proxy_;
   std::optional<bison::rmi::proxy::dynamic> user_store_proxy_;
   std::optional<bison::rmi::proxy::dynamic> style_proxy_;
 
