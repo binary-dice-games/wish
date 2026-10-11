@@ -6,6 +6,7 @@
 #pragma once
 
 #include <client/wish_app_host.hpp>
+#include <context/settings_schema.hpp>
 #include <i18n/translations.hpp>
 
 #include "src/rmi/client/client.hpp"
@@ -431,6 +432,28 @@ class client : public bison::rmi::client {
    */
   std::future<std::vector<std::string>> user_store_keys();
 
+  // ── Settings metadata ─────────────────────────────────────────────────────
+  //
+  // Describes settings kept in the user store so settings tools (the
+  // bdg/desktop/conf tool) can show and edit them. See docs/settings.md.
+
+  /**
+   * @brief Describe the setting @p info names (e.g.
+   *        `"bdg.desktop.example.color"`: field `color` of the user store
+   *        entry `bdg.desktop.example`). Replaces an earlier description of
+   *        the same setting. Doesn't change its value.
+   * @throws settings::schema_error for invalid metadata (thrown directly);
+   *         std::logic_error (via the future) for an anonymous session.
+   */
+  std::future<void> describe_setting(const settings::setting_info& info);
+
+  /**
+   * @brief Describe a sidebar category settings can refer to by id.
+   * @throws settings::schema_error for invalid metadata (thrown directly);
+   *         std::logic_error (via the future) for an anonymous session.
+   */
+  std::future<void> describe_settings_category(const settings::category_info& info);
+
   // ── Automation helpers ────────────────────────────────────────────────────
   //
   // Native (ABI-driven) automation: drive/introspect the session's UI over
@@ -553,6 +576,8 @@ class client : public bison::rmi::client {
   // Resolved non-fatally in on_connect() -- unset for an anonymous session,
   // which has no user store. See has_user_store().
   std::optional<bison::rmi::proxy::dynamic> user_store_proxy_;
+  // Serializes describe_*()'s read-merge-write of schema entries.
+  bison::synchronized<bool> describe_lock_{false};
 
   // Set via set_on_disconnected(); invoked from on_disconnect().
   std::function<void()> on_disconnected_;

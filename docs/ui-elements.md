@@ -135,6 +135,9 @@ nest them freely to build rows, columns, and grids.
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `spacing` | `float` | `0.0` | Space between child elements in pixels (0–256). |
+| `card` | `bool` | `false` | Draws the children on a rounded, filled, bordered panel (like the grouped rows of macOS System Settings), inset by `padding`. Colors follow the theme. |
+| `padding` | `float` | `12.0` | Inner margin of a `card`, in pixels; included in the layout's measured size. Ignored unless `card` is set. |
+| `rounding` | `float` | `10.0` | Corner radius of a `card`, in pixels. Ignored unless `card` is set. |
 | `width` | `float` | `0.0` | Column width hint used when this element is a direct child of a `HorizontalLayout`: `0` sizes to content; a positive value reserves that many fixed pixels; a negative value makes it a stretch column, sharing whatever width remains after fixed columns and spacing, weighted by its magnitude relative to other stretch columns (mirrors ImGui's `ImGuiTableColumnFlags_WidthStretch` weight convention). Ignored outside a `HorizontalLayout`. |
 | `height` | `float` | `0.0` | Row height hint used when this element is a direct child of a `VerticalLayout` — the same convention as `width`, on the height axis. An auto (`0`) row's previous frame's measured height is reserved for this frame's stretch-row sizing, so a fixed header/footer plus one stretch-filling body works regardless of child order. Ignored outside a `VerticalLayout`. |
 
@@ -317,6 +320,7 @@ A toggleable checkbox with a label.
 |---|---|---|---|
 | `label` | `string` | `""` | Checkbox caption text. |
 | `value` | `bool` | `false` | Current checked state. |
+| `style` | `string` | `""` | `"switch"`: drawn as a sliding on/off switch (macOS style, accent color when on) instead of a check box. Same value and events. |
 
 **Events:** `changed` — `{ value: bool }`.
 
@@ -429,6 +433,7 @@ A highlight-on-hover row, useful for building list boxes or custom menus.
 | `selected` | `bool` | `false` | Highlighted/selected state. |
 | `width` | `float` | `0.0` | Width in pixels; `0` fills available width. |
 | `height` | `float` | `0.0` | Height in pixels; `0` uses the default line height. |
+| `rounding` | `float` | `0.0` | Corner radius of the selection/hover highlight; `0` draws ImGui's square highlight. When positive, `children` are laid out side by side, vertically centered and inset from the edge (a list row, e.g. an `Image` badge and a `Label`); use leaf children. |
 
 **Events:** `changed` — `{ selected: bool }`.
 
@@ -470,6 +475,7 @@ Displays an image previously uploaded via the file service; no events.
 | `tint` | `string` | `""` | Optional `"#RRGGBBAA"`/`"#RRGGBB"` hex color multiplied over the whole image; empty draws it unmodified. |
 | `tint_light` | `string` | `""` | Overrides `tint` while the session's active theme is light-based; re-evaluated every frame. Ignored when empty. |
 | `tint_dark` | `string` | `""` | Same as `tint_light`, used instead while the active theme is dark-based. Ignored when empty. |
+| `badge` | `string` | `""` | Optional `"#RRGGBB"` color: draws a rounded square of that color (`width` x `height`) with the image inset on it, like the category icons of macOS System Settings. Combine with a white `tint`. |
 
 #### `Separator` / `SeparatorText`
 Visual dividers; no events.

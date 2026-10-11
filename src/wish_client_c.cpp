@@ -795,6 +795,34 @@ extern "C" wish_error wish_user_store_keys(wish_client_handle c, char** out_json
 
 // ── Logging ───────────────────────────────────────────────────────────────────
 
+extern "C" wish_error wish_settings_describe(wish_client_handle c, const char* setting_json) {
+  if (!c || !setting_json)
+    return WISH_ERR_NULL;
+  if (!c->client_->has_user_store())
+    return WISH_ERR_UNAVAILABLE;
+  try {
+    c->client_->describe_setting(wish::settings::setting_from_json(setting_json)).get();
+    return WISH_OK;
+  } catch (const std::exception& e) {
+    c->last_error_ = e.what();
+    return WISH_ERR_EXCEPTION;
+  }
+}
+
+extern "C" wish_error wish_settings_describe_category(wish_client_handle c, const char* category_json) {
+  if (!c || !category_json)
+    return WISH_ERR_NULL;
+  if (!c->client_->has_user_store())
+    return WISH_ERR_UNAVAILABLE;
+  try {
+    c->client_->describe_settings_category(wish::settings::category_from_json(category_json)).get();
+    return WISH_OK;
+  } catch (const std::exception& e) {
+    c->last_error_ = e.what();
+    return WISH_ERR_EXCEPTION;
+  }
+}
+
 extern "C" wish_error wish_log(wish_client_handle c, const char* level, const char* msg) {
   if (!c || !level || !msg)
     return WISH_ERR_NULL;

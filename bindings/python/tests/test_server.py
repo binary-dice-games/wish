@@ -212,6 +212,43 @@ class TestUserStore(unittest.TestCase):
         self.assertTrue(r["erased"])
         self.assertFalse(r["erased_again"])
 
+    def test_describe_settings_writes_schema_entries(self):
+        def session(c, r):
+            c.describe_settings_category("example", label="Example", icon="res/icons/palette.png", color="#AF52DE")
+            c.describe_setting(
+                "bdg.desktop.example.color", type="color", label="Color", category="example", default="#2F7BF5"
+            )
+            c.describe_setting(
+                "bdg.desktop.example.mode",
+                type="enum",
+                category="example",
+                options=[("a", "Alpha"), "b"],
+                default="b",
+            )
+            c.describe_setting("bdg.desktop.example.count", type="int", min=0, max=10, default=3)
+            r["keys"] = c.user_store_keys()
+            try:
+                c.describe_setting("bdg.desktop.example.bad", type="bool", default="yes")
+            except Exception as e:
+                r["bad"] = str(e)
+
+        r = self._run(session, username="alice")
+        self.assertEqual(r["keys"], ["bdg.desktop.example#schema", "wish.category.example#schema"])
+        self.assertIn("default", r["bad"])
+
+    def test_describe_settings_needs_an_identity(self):
+        from wish import WishError
+        from wish import _native as _n
+
+        def session(c, r):
+            try:
+                c.describe_setting("a.b.c", type="bool")
+            except WishError as e:
+                r["code"] = e.code
+
+        r = self._run(session)
+        self.assertEqual(r["code"], _n.WISH_ERR_UNAVAILABLE)
+
     def test_other_user_cannot_see_entries(self):
         self._run(lambda c, r: c.user_store_set("secret", {"v": 1}), username="alice")
         r = self._run(lambda c, r: r.update(keys=c.user_store_keys()), username="bob")

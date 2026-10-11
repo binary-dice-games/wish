@@ -24,6 +24,7 @@
 #include "future.hpp"
 #include "key.hpp"
 #include "proxy.hpp"
+#include "settings.hpp"
 #include "value.hpp"
 
 #include <wish_client_c.h>
@@ -372,6 +373,26 @@ class client {
       if (auto s = arr->get_string_at(i)) names.push_back(std::move(*s));
     }
     return names;
+  }
+
+  // ── Settings metadata ────────────────────────────────────────────────
+  //
+  // Describes settings kept in the user store so settings tools (the
+  // bdg/desktop/conf tool) can show and edit them; see docs/settings.md.
+
+  /** @brief Describes a setting (replacing an earlier description). Throws
+   *         `error` for invalid metadata or an anonymous session. */
+  void describe_setting(const setting_info& info) {
+    detail::throw_if_wish_error(
+        wish_settings_describe(h_, to_json(info).c_str()), "client::describe_setting(" + info.name + ")", h_);
+  }
+
+  /** @brief Describes a sidebar category settings refer to by id. */
+  void describe_settings_category(const settings_category& category) {
+    detail::throw_if_wish_error(
+        wish_settings_describe_category(h_, to_json(category).c_str()),
+        "client::describe_settings_category(" + category.id + ")",
+        h_);
   }
 
   // ── Logging ──────────────────────────────────────────────────────────

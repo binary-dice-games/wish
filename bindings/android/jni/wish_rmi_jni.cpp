@@ -382,6 +382,24 @@ JNIEXPORT jstring JNICALL Java_com_bdg_wish_Client_nativeUserStoreKeys(JNIEnv* e
   return result;
 }
 
+// ─── Settings metadata ──────────────────────────────────────────────────
+
+JNIEXPORT void JNICALL
+Java_com_bdg_wish_Client_nativeSettingsDescribe(JNIEnv* env, jclass, jlong handle, jstring json) {
+  jstring_view j(env, json);
+  wish_error err = wish_settings_describe(from_jlong<wish_client_handle>(handle), j.c_str());
+  if (err != WISH_OK)
+    throw_user_store_error(env, handle, err, "settings_describe");
+}
+
+JNIEXPORT void JNICALL
+Java_com_bdg_wish_Client_nativeSettingsDescribeCategory(JNIEnv* env, jclass, jlong handle, jstring json) {
+  jstring_view j(env, json);
+  wish_error err = wish_settings_describe_category(from_jlong<wish_client_handle>(handle), j.c_str());
+  if (err != WISH_OK)
+    throw_user_store_error(env, handle, err, "settings_describe_category");
+}
+
 // ─── Logging ────────────────────────────────────────────────────────────
 
 JNIEXPORT jint JNICALL Java_com_bdg_wish_Client_nativeLog(

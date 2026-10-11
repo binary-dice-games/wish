@@ -81,6 +81,21 @@ std::vector<std::string> save_config_store_defaults(
     const std::vector<std::string>& excluded_flags);
 
 /**
+ * @brief Records settings metadata (see docs/settings.md) for the saveable
+ *        flags users most often change -- theme, font size, language,
+ *        renderer, window size and title, ports -- in @p store's
+ *        `<entry_name>#schema` entry, so the settings tool (bdg/desktop/conf)
+ *        can edit the saved defaults. Defaults come from the flags' built-in
+ *        defaults, so call it before apply_config_store_defaults().
+ * @param section  Group title shown in the settings tool, e.g. "wish server".
+ */
+void describe_config_flags(
+    persistent_store& store,
+    const std::string& entry_name,
+    const std::vector<std::string>& excluded_flags,
+    const std::string& section);
+
+/**
  * @brief CLI helper: opens the server store under @p store_dir, handles
  *        `--clear_defaults` and `--save_defaults`, then applies the saved
  *        defaults (see `apply_config_store_defaults()`).
@@ -93,6 +108,8 @@ std::vector<std::string> save_config_store_defaults(
  * @param entry_name   `kServerConfigEntry` or `kStandaloneConfigEntry`.
  * @param excluded_flags  The mode's flags that are never saved or loaded.
  * @param log_prefix   Message prefix, e.g. `"[wish server]"`.
+ *
+ * Also records the flags' settings metadata (describe_config_flags()).
  */
 void load_cli_config(
     const std::string& store_dir,

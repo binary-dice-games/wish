@@ -342,8 +342,15 @@ The security boundary is structural:
 
 - The RMI service wraps exactly one store, so a client can't name another user's store.
 - No RMI class wraps the server store at all.
+- Server-side settings tools (the `bdg/desktop/conf` form) edit the server
+  store in-process, and only for sessions with `context::settings_admin`
+  (identities listed with `server::set_settings_admins()`; always in
+  standalone).
 
-See [docs/persistent-store.md](docs/persistent-store.md).
+Settings metadata (`settings_schema.hpp`, `settings_store.hpp`) lives in the
+same stores as the values, in reserved `<entry>#schema` entries, so it needs
+no RMI surface of its own. See [docs/persistent-store.md](docs/persistent-store.md)
+and [docs/settings.md](docs/settings.md).
 
 ### `bdg::wish::style_service`
 

@@ -54,6 +54,10 @@ claim another's name and read that user's store.
   `wish::server`/`wish::standalone`, or `context::server_store`.
 - Entry names are 1-256 printable ASCII characters and are never used as
   file paths.
+- The **Settings** tool (`bdg/desktop/conf`) is server-side code: it edits
+  the server store in-process, and only for sessions whose identity is a
+  settings admin (`wish server --settings_admins`). See
+  [docs/settings.md](settings.md).
 
 The wish CLI itself keeps the defaults saved with `wish server
 --save_defaults` / `wish standalone --save_defaults` in the server store,
@@ -155,6 +159,8 @@ client.run(session, params={"username": "alice"})
 
 ## Related
 
+- [docs/settings.md](settings.md): describing settings kept in the stores
+  so the Settings tool can edit them.
 - [src/auth/DESIGN.md](../src/auth/DESIGN.md): auth modules, identities and
   persistent sandbox directories.
 - [docs/cli.md](cli.md): `--store_dir` and `--username`.

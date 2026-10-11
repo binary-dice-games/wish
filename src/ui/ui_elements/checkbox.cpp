@@ -21,6 +21,14 @@ void register_checkbox() {
   proto->addField(
       "value"_rkey,
       field{false, attr<DisplayName>("Value"), attr<Description>("Current checked state."), attr<Category>("State")});
+  proto->addField(
+      "style"_rkey,
+      field{
+          std::string{""},
+          attr<DisplayName>("Style"),
+          attr<Description>("\"switch\": drawn as a sliding on/off switch (as in macOS System Settings) "
+                            "instead of a check box. Same value and events."),
+          attr<Category>("Appearance")});
   (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Checkbox"));
   (*proto)[dynamic::CLASS].addAttribute(attr<Description>("A toggleable checkbox with a label."));
   dynamic::addClass(

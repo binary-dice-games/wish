@@ -1,0 +1,23 @@
+# conf -- French.
+CONF_TITLE = Réglages
+CONF_SEARCH = Rechercher
+CONF_ADMIN = Administrateur
+CONF_USER = Réglages utilisateur
+CONF_ANONYMOUS = Non connecté
+CONF_NO_IDENTITY = Connectez-vous avec un nom d'utilisateur (p. ex. --username) pour garder vos propres réglages.
+CONF_EMPTY = Aucun réglage dans cette catégorie pour l'instant.
+CONF_NO_RESULTS = Aucun réglage ne correspond à « {0} ».
+CONF_SERVER_TAG = Serveur
+CONF_RESTART = Prend effet après un redémarrage.
+CONF_READ_ONLY = Seuls les administrateurs peuvent modifier les réglages du serveur.
+CONF_RESET = Réinitialiser
+CONF_ON = Activé
+CONF_OFF = Désactivé
+CONF_CAT_GENERAL = Général
+CONF_CAT_GENERAL_DESC = Langue et autres réglages qui s'appliquent partout.
+CONF_CAT_APPEARANCE = Apparence
+CONF_CAT_APPEARANCE_DESC = Thème, polices et aspect de vos applications.
+CONF_CAT_DESKTOP = Bureau
+CONF_CAT_DESKTOP_DESC = Le bureau wish : thème, barre des tâches et menu Démarrer.
+CONF_CAT_SERVER = Serveur
+CONF_CAT_SERVER_DESC = Valeurs par défaut du serveur wish, pour tous les utilisateurs.

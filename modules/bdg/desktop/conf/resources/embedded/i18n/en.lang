@@ -1,0 +1,23 @@
+# conf -- English (fallback for every other language).
+CONF_TITLE = Settings
+CONF_SEARCH = Search
+CONF_ADMIN = Administrator
+CONF_USER = User settings
+CONF_ANONYMOUS = Not signed in
+CONF_NO_IDENTITY = Connect with a user name (e.g. --username) to keep settings of your own.
+CONF_EMPTY = No settings in this category yet.
+CONF_NO_RESULTS = No settings match "{0}".
+CONF_SERVER_TAG = Server
+CONF_RESTART = Takes effect after a restart.
+CONF_READ_ONLY = Only administrators can change server settings.
+CONF_RESET = Reset to default
+CONF_ON = On
+CONF_OFF = Off
+CONF_CAT_GENERAL = General
+CONF_CAT_GENERAL_DESC = Language and other settings that apply everywhere.
+CONF_CAT_APPEARANCE = Appearance
+CONF_CAT_APPEARANCE_DESC = Theme, fonts and the look of your apps.
+CONF_CAT_DESKTOP = Desktop
+CONF_CAT_DESKTOP_DESC = The wish desktop: theme, taskbar and Start menu.
+CONF_CAT_SERVER = Server
+CONF_CAT_SERVER_DESC = Defaults of the wish server, for every user.

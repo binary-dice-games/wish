@@ -290,6 +290,8 @@ add_library(wish_client STATIC
   src/ui/yaml_json.hpp
   src/context/store_dir.hpp
   src/context/store_dir.cpp
+  src/context/settings_schema.hpp
+  src/context/settings_schema.cpp
   src/i18n/translations.hpp
   src/i18n/translations.cpp
 )
@@ -323,6 +325,7 @@ add_library(wish_server STATIC
   src/context/logger.hpp
   src/context/style_service.hpp
   src/context/persistent_store.hpp
+  src/context/settings_store.hpp
   src/context/user_store_service.hpp
   src/server/server.hpp
   src/auth/local_auth_module.hpp
@@ -342,6 +345,7 @@ add_library(wish_server STATIC
   src/context/logger.cpp
   src/context/style_service.cpp
   src/context/persistent_store.cpp
+  src/context/settings_store.cpp
   src/context/user_store_service.cpp
   src/server/server.cpp
   src/auth/local_auth_module.cpp

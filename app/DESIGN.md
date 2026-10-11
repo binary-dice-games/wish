@@ -421,7 +421,7 @@ Saved in the upstream user store entry `wish.desktop`
 `--upstream_username` (default: the OS user name) so the session has a
 store. Without a store (anonymous upstream), settings last for the run.
 `pinned`/`desktop` are written only once the user has changed them; until
-then the config file's lists apply (the default pins nano, mc and top). The
+then the config file's lists apply (the default pins Settings, nano, mc and top). The
 wallpaper is drawn per `wallpaper_fit` (`detail::desktop_wallpaper_layout()`,
 using `imgui_renderer::texture_size()`).
 

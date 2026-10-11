@@ -667,6 +667,36 @@ impl Client {
             .collect())
     }
 
+    // ── Settings metadata ────────────────────────────────────────────────
+    //
+    // Describes settings kept in the user store so settings tools (the
+    // bdg/desktop/conf tool) can show and edit them; see docs/settings.md.
+
+    /// Describes a setting (replacing an earlier description). Fails with
+    /// `WISH_ERR_UNAVAILABLE` for an anonymous session and
+    /// `WISH_ERR_EXCEPTION` for invalid metadata.
+    pub fn describe_setting(&self, info: &crate::settings::SettingInfo) -> Result<(), WishError> {
+        check(
+            unsafe { sys::wish_settings_describe(self.handle, cstr(&info.to_json()).as_ptr()) },
+            &format!("client.describe_setting({:?})", info.name),
+            self.handle,
+        )
+    }
+
+    /// Describes a sidebar category settings refer to by id.
+    pub fn describe_settings_category(
+        &self,
+        category: &crate::settings::SettingsCategory,
+    ) -> Result<(), WishError> {
+        check(
+            unsafe {
+                sys::wish_settings_describe_category(self.handle, cstr(&category.to_json()).as_ptr())
+            },
+            &format!("client.describe_settings_category({:?})", category.id),
+            self.handle,
+        )
+    }
+
     // ── Logging ──────────────────────────────────────────────────────────
 
     pub fn log(&self, level: &str, msg: &str) -> Result<(), WishError> {

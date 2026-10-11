@@ -96,6 +96,7 @@ launch.
 | `--renderer NAME` | `web` | Rendering backend: `sdl3` or `web` |
 | `--web_port PORT` | `8080` | HTTP/WebSocket port (`--renderer web` only) |
 | `--web_bind ADDR` | `127.0.0.1` | Bind address (`--renderer web` only; localhost-only by default) |
+| `--settings_admins A,B` | *(empty)* | Identities (`--username`) allowed to change server-wide settings, such as the saved default theme, from the Settings tool (`bdg/desktop/conf`; see [settings.md](settings.md)). Trusts the client-supplied name — local/single-user use only. Never saved as a default |
 | `--sandbox_root PATH` | *(empty)* | Keep session sandboxes across connections: each client gets `PATH/<username>` (its `--username`, else `default`) instead of a temp directory deleted on disconnect. Trusts the client-supplied name (`local_auth_module`) — local/single-user use only; see [src/auth/DESIGN.md](../src/auth/DESIGN.md) |
 | `--store_dir PATH` | `~/.wish` | Directory holding the persistent server store and per-user stores. The server always trusts a client's `--username` as its identity: identified clients get a user store, clients without one are anonymous. See [docs/persistent-store.md](persistent-store.md) |
 | `--lang CODE` | *(empty: `en`)* | Default UI language of every session (e.g. `es`); a client's own `--lang` overrides it. See [docs/i18n.md](i18n.md) |
@@ -230,6 +231,10 @@ that server's window into a desktop:
   it or pin it.
 - **Windows** open floating and cascaded, like on a desktop. Drag one onto
   the desktop's dock area to dock it.
+- **Settings**: the pinned Settings button (also in the Start menu) opens
+  the [Settings tool](settings.md), macOS System Settings-style, to change
+  your apps' settings, and, with `wish server --settings_admins=<you>`, the
+  server's defaults such as its theme.
 - **Window switcher**: Ctrl+Tab (Ctrl+Shift+Tab backwards) cycles through
   the open windows while Ctrl is held. In a browser, which keeps Ctrl+Tab for
   itself (`--renderer web`), use Ctrl+\` instead.

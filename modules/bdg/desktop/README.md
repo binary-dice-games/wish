@@ -17,3 +17,4 @@ or individual modules with their own `WISH_MODULE_BDG_DESKTOP_<NAME>` option
 | [mc](mc/README.md) | Two-panel file browser for the client's local filesystem vs. session sandbox; server owns the UI, client does the actual filesystem I/O. |
 | [zip](zip/README.md) | Zip/unzip tool for the client's local filesystem; server owns the UI, client does the actual compress/extract/list-contents I/O. |
 | [du](du/README.md) | Disk usage analyzer: scans a folder on the client's local filesystem and shows what takes the space, as a size-sorted table and a treemap. |
+| [conf](conf/README.md) | Settings: a macOS System Settings-like editor of the settings apps and the server describe in the stores (docs/settings.md). |

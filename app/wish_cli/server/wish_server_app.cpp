@@ -25,6 +25,8 @@
 #include <filesystem>
 #include <iostream>
 #include <memory>
+#include <set>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -60,6 +62,12 @@ DEFINE_string(sandbox_root, "",
               "<sandbox_root>/<username> (its --username, or 'default') instead of a temp directory "
               "deleted on disconnect. Trusts the client-supplied username -- local/single-user "
               "deployments only; see wish::server::set_persistent_sandbox_root().");
+DEFINE_string(
+    settings_admins,
+    "",
+    "Comma-separated identities (--username) allowed to change server-wide settings, such as "
+    "the saved default theme, from the settings tool (bdg/desktop/conf). Empty: nobody. "
+    "Trusts the client-supplied username -- local/single-user deployments only.");
 DEFINE_string(store_dir, "",
               "Directory holding the persistent server store and per-user stores (see "
               "docs/persistent-store.md); empty: ~/.wish. Clients get a user store only when they "
@@ -79,6 +87,7 @@ const std::vector<std::string> kServerExcludedFlags = {
     "profiling_dir",
     "profiling_autostart",
     "allow_absolute_paths",
+    "settings_admins", // never from the store: an admin could otherwise make it permanent
 };
 
 static std::unique_ptr<renderer> make_renderer() {
@@ -191,6 +200,17 @@ int wish_server_app::run_with_transport(bison::rmi::transport::server_transport_
   srv.set_default_theme(FLAGS_theme);
   srv.set_default_language(FLAGS_lang);
   srv.set_allow_absolute_paths(FLAGS_allow_absolute_paths);
+  {
+    std::set<std::string> admins;
+    std::stringstream ss(FLAGS_settings_admins);
+    for (std::string item; std::getline(ss, item, ',');) {
+      item.erase(0, item.find_first_not_of(" \t"));
+      item.erase(item.find_last_not_of(" \t") + 1);
+      if (!item.empty())
+        admins.insert(item);
+    }
+    srv.set_settings_admins(std::move(admins));
+  }
   // Populates cert_file/key_file/etc. from FLAGS_* when --transport=tls
   // selected it (see bison::app::server_app::on_listen_params()); a no-op
   // for every other transport.

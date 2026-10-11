@@ -329,6 +329,19 @@ So that identified clients get a user store by default, `wish server` and
 An embedder calling `wish::server::start()` directly still chooses its own
 module, or none.
 
+### Identity also decides who administers server settings
+
+`server::on_authenticated()` records the identity on the session
+(`context::identity`) and sets `context::settings_admin` when the identity is
+in the set given to `server::set_settings_admins()` (`wish server
+--settings_admins`). `standalone` always sets it: its one local user owns the
+server store too. Server-side settings tools (the `bdg/desktop/conf` form)
+check it before writing the server store, which still has no RMI path. The
+identity is whatever the auth module accepted, so with `local_auth_module`
+(which trusts the claimed username) admins are only safe on trusted, local
+deployments; `--settings_admins` is excluded from saved flag defaults so it
+can't be made permanent from inside the server. See docs/settings.md.
+
 ## Public API Contract
 
 | Symbol | Layer | Contract |

@@ -256,6 +256,21 @@ public final class Client implements AutoCloseable {
     return names;
   }
 
+  // ─── Settings metadata ───────────────────────────────────────────────────
+  //
+  // Describes settings kept in the user store so settings tools (the
+  // bdg/desktop/conf tool) can show and edit them; see docs/settings.md.
+
+  /** Describes a setting (replacing an earlier description). Throws WishException for invalid metadata or an anonymous session. */
+  public void describeSetting(SettingInfo info) {
+    nativeSettingsDescribe(handle, info.toJson());
+  }
+
+  /** Describes a sidebar category settings refer to by id. */
+  public void describeSettingsCategory(SettingsCategory category) {
+    nativeSettingsDescribeCategory(handle, category.toJson());
+  }
+
   // ─── Logging ────────────────────────────────────────────────────────────
 
   /** Sends a structured log message; {@code level} is "debug"/"info"/"warn"/"error". */
@@ -306,6 +321,9 @@ public final class Client implements AutoCloseable {
   private static native void nativeUserStoreSet(long handle, String name, long valueHandle);
   private static native boolean nativeUserStoreErase(long handle, String name);
   private static native String nativeUserStoreKeys(long handle);
+
+  private static native void nativeSettingsDescribe(long handle, String json);
+  private static native void nativeSettingsDescribeCategory(long handle, String json);
 
   private static native int nativeLog(long handle, String level, String msg);
 }

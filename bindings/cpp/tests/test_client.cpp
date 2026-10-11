@@ -230,6 +230,35 @@ TEST_F(WishCppUserStoreTest, IdentifiedClientRoundTripsAndPersists) {
       as_user("alice"));
 }
 
+TEST_F(WishCppUserStoreTest, DescribesSettingsInTheUserStore) {
+  auto client = wish::client::tcp("127.0.0.1", port_);
+  client.run(
+      [](wish::client& c) {
+        wish::setting_info s;
+        s.name = "bdg.desktop.example.mode";
+        s.type = "enum";
+        s.label = "Mode \"quoted\"";
+        s.options = {{"a", "Alpha"}, {"b", ""}};
+        s.default_value = std::string{"a"};
+        c.describe_setting(s);
+        wish::setting_info n;
+        n.name = "bdg.desktop.example.size";
+        n.type = "float";
+        n.min = 0.5;
+        n.max = 2.0;
+        n.default_value = 1.25;
+        c.describe_setting(n);
+        c.describe_settings_category({"example", "Example", "", "res/icons/palette.png", "#AF52DE", 1});
+        EXPECT_EQ(
+            c.user_store_keys(),
+            (std::vector<std::string>{"bdg.desktop.example#schema", "wish.category.example#schema"}));
+        wish::setting_info bad;
+        bad.name = "nodot";
+        EXPECT_THROW(c.describe_setting(bad), wish::error);
+      },
+      as_user("alice"));
+}
+
 TEST_F(WishCppUserStoreTest, AnonymousClientGetsUnavailable) {
   auto client = wish::client::tcp("127.0.0.1", port_);
   client.run([](wish::client& c) {

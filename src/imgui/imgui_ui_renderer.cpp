@@ -515,11 +515,56 @@ void render_button(imgui_renderer& r, const ui_element& node0, const context& s)
     enqueue_event(s, node.wish_id(), "clicked"_key, dynamic{});
 }
 
+namespace {
+
+// A macOS-style on/off switch: a rounded track (accent color when on) with a
+// round knob, followed by the label's visible part like ImGui::Checkbox.
+// Built from public API only (an InvisibleButton plus draw-list shapes).
+// Returns true when clicked (and flips *v).
+bool switch_widget(const char* label, bool* v) {
+  const ImGuiStyle& style = ImGui::GetStyle();
+  const float height = ImGui::GetFrameHeight();
+  const float width = height * 1.75f;
+  const ImVec2 pos = ImGui::GetCursorScreenPos();
+  ImGui::PushID(label);
+  bool pressed = ImGui::InvisibleButton("##switch", ImVec2(width, height));
+  const bool hovered = ImGui::IsItemHovered();
+  ImGui::PopID();
+
+  std::string text = label;
+  if (auto hash = text.find("##"); hash != std::string::npos)
+    text.erase(hash);
+  if (!text.empty()) {
+    ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(text.c_str());
+    pressed = pressed || ImGui::IsItemClicked();
+  }
+  if (pressed)
+    *v = !*v;
+
+  ImDrawList* dl = ImGui::GetWindowDrawList();
+  const float radius = height * 0.5f;
+  ImVec4 on = ImGui::GetStyleColorVec4(ImGuiCol_CheckMark);
+  ImVec4 off = ImGui::GetStyleColorVec4(hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg);
+  if (hovered)
+    on.w *= 0.9f;
+  dl->AddRectFilled(pos, ImVec2(pos.x + width, pos.y + height), ImGui::GetColorU32(*v ? on : off), radius);
+  const ImVec2 center(*v ? pos.x + width - radius : pos.x + radius, pos.y + radius);
+  dl->AddCircleFilled(ImVec2(center.x, center.y + 1.0f), radius - 1.5f, IM_COL32(0, 0, 0, 40));
+  dl->AddCircleFilled(center, radius - 2.5f, IM_COL32(255, 255, 255, 255));
+  return pressed;
+}
+
+} // namespace
+
 void render_checkbox(imgui_renderer&, const ui_element& node0, const context& s) {
   const auto& node = static_cast<const ui_checkbox&>(node0);
   const std::string& label = node.label_ref();
   bool val = node.value_bool(false);
-  if (ImGui::Checkbox(label.c_str(), &val)) {
+  const field* style = node.findField("style"_key);
+  const bool as_switch = style && style->is<std::string>() && style->as<std::string>() == "switch";
+  if (as_switch ? switch_widget(label.c_str(), &val) : ImGui::Checkbox(label.c_str(), &val)) {
     const_cast<ui_element&>(node0)["value"_key] = val;
     dynamic payload;
     payload["value"_key] = val;
@@ -711,6 +756,26 @@ void render_image(imgui_renderer& r, const ui_element& node0, const context& s) 
   // either), so this reads ImGuiCol_Text fresh every render instead.
   if (node.tint_to_text_color(false))
     tint_col = ImGui::GetStyleColorVec4(ImGuiCol_Text);
+  // "badge": the icon inset on a rounded colored square, like the category
+  // icons of macOS System Settings.
+  if (const field* badge = node.findField("badge"_key);
+      badge && badge->is<std::string>() && !badge->as<std::string>().empty()) {
+    const ImVec2 p0 = ImGui::GetCursorScreenPos();
+    const ImVec2 size{float(w), float(h)};
+    ImGui::Dummy(size);
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const ImVec2 p1(p0.x + size.x, p0.y + size.y);
+    dl->AddRectFilled(p0, p1, ImGui::GetColorU32(parse_hex_color(badge->as<std::string>())), size.x * 0.24f);
+    const float inset = std::min(size.x, size.y) * 0.17f;
+    dl->AddImage(
+        ImTextureRef(tex),
+        ImVec2(p0.x + inset, p0.y + inset),
+        ImVec2(p1.x - inset, p1.y - inset),
+        ImVec2(0, 0),
+        ImVec2(1, 1),
+        ImGui::GetColorU32(tint_col));
+    return;
+  }
   ImGui::ImageWithBg(tex, ImVec2(float(w), float(h)), ImVec2(0, 0), ImVec2(1, 1), ImVec4(0, 0, 0, 0), tint_col);
 }
 
@@ -733,6 +798,37 @@ void render_spring(imgui_renderer&, const ui_element& node, const context&) {
   vec2f sz = node.arranged_size();
   ImGui::Dummy(ImVec2(sz.x, sz.y));
 }
+
+namespace {
+
+// Styles the BeginChild() that wraps a "card" layout: a filled, rounded,
+// bordered panel whose window padding is the card's padding (the measure
+// and arrange passes already inset the children by it). Colors are derived
+// from the theme (window background nudged toward the text color), so a
+// card reads as a raised panel in both light and dark themes. Call before
+// BeginChild(); returns the child flags to add. Pop with pop_card_style().
+ImGuiChildFlags push_card_style(const ui_element& node) {
+  const float pad = node.card_padding();
+  const float rounding = node.get_as<float>("rounding"_key, 10.0f);
+  const ImVec4 bg = ImGui::GetStyleColorVec4(ImGuiCol_WindowBg);
+  const ImVec4 fg = ImGui::GetStyleColorVec4(ImGuiCol_Text);
+  auto mix = [&](float t) {
+    return ImVec4(bg.x + (fg.x - bg.x) * t, bg.y + (fg.y - bg.y) * t, bg.z + (fg.z - bg.z) * t, 1.0f);
+  };
+  ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(pad, pad));
+  ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, rounding);
+  ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 1.0f);
+  ImGui::PushStyleColor(ImGuiCol_ChildBg, mix(0.045f));
+  ImGui::PushStyleColor(ImGuiCol_Border, mix(0.12f));
+  return ImGuiChildFlags_AlwaysUseWindowPadding | ImGuiChildFlags_Borders;
+}
+
+void pop_card_style() {
+  ImGui::PopStyleColor(2);
+  ImGui::PopStyleVar(3);
+}
+
+} // namespace
 
 void render_vertical_layout(imgui_renderer& r, const ui_element& node, const context& s) {
   // ensure_arranged() resolves every child's size in one top-down pass
@@ -803,8 +899,11 @@ void render_vertical_layout(imgui_renderer& r, const ui_element& node, const con
     float sw = avail.x > 1.0f ? avail.x : node.arranged_size().x;
     float sh = avail.y > 1.0f ? avail.y : node.arranged_size().y;
     auto child_id = "##vlscroll_" + stable_id(node);
-    ImGui::BeginChild(
-        child_id.c_str(), ImVec2(sw > 1.0f ? sw : 1.0f, sh > 1.0f ? sh : 1.0f), ImGuiChildFlags_None);
+    const bool card = node.card();
+    ImGuiChildFlags child_flags = card ? push_card_style(node) : ImGuiChildFlags_None;
+    ImGui::BeginChild(child_id.c_str(), ImVec2(sw > 1.0f ? sw : 1.0f, sh > 1.0f ? sh : 1.0f), child_flags);
+    if (card)
+      pop_card_style();
     report_self_rect(node);
   } else if (wrap_self) {
     // One real BeginChild for the *whole* row set, not one per hinted
@@ -819,9 +918,15 @@ void render_vertical_layout(imgui_renderer& r, const ui_element& node, const con
     // not WindowPadding (a margin around the container's own edge, which
     // was never part of what was broken and would shift every child's
     // position away from this node's own reported edges).
+    const bool card = node.card();
+    ImGuiChildFlags child_flags = card ? push_card_style(node) : ImGuiChildFlags_None;
     ImGui::BeginChild(
-        prefixed_stable_id("##vl_", node), ImVec2(self_size.x, self_size.y), ImGuiChildFlags_None,
+        prefixed_stable_id("##vl_", node),
+        ImVec2(self_size.x, self_size.y),
+        child_flags,
         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    if (card)
+      pop_card_style();
     report_self_rect(node);
   } else if (group_wrap_self) {
     ImGui::BeginGroup();
@@ -961,9 +1066,15 @@ void render_horizontal_layout(imgui_renderer& r, const ui_element& node0, const 
     // this replaces the old BeginGroup()/trailing-Dummy() rect-capture
     // approximation (and why it deliberately does not use
     // AlwaysUseWindowPadding).
+    const bool card = node.card();
+    ImGuiChildFlags child_flags = card ? push_card_style(node) : ImGuiChildFlags_None;
     ImGui::BeginChild(
-        prefixed_stable_id("##hl_", node), ImVec2(self_size.x, self_size.y), ImGuiChildFlags_None,
+        prefixed_stable_id("##hl_", node),
+        ImVec2(self_size.x, self_size.y),
+        child_flags,
         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    if (card)
+      pop_card_style();
     report_self_rect(node);
   } else if (group_wrap_self) {
     ImGui::BeginGroup();
@@ -1586,16 +1697,55 @@ void render_selectable(imgui_renderer& r, const ui_element& node0, const context
   bool has_children = node.has_children();
 
   bool v = selected;
-  ImGuiSelectableFlags flags = has_children ? ImGuiSelectableFlags_AllowOverlap : 0;
+  // The row style below (rounding > 0) only takes ID-less leaf children, so
+  // it needs no overlap -- and an overlappable item is only pressable when
+  // it was hovered the frame before, which a move-and-click in one frame
+  // (e.g. automation) never is.
+  const float rounding = node.get_as<float>("rounding"_key, 0.0f);
+  ImGuiSelectableFlags flags = has_children && rounding <= 0.0f ? ImGuiSelectableFlags_AllowOverlap : 0;
   ImVec2 top_left = ImGui::GetCursorScreenPos();
+  // "rounding": draw the highlight ourselves as a rounded rectangle before
+  // the Selectable (ImGui's own highlight is square, and drawing first keeps
+  // the label and any overlay children on top without splitting channels,
+  // which could clash with an enclosing Table's splitter). The rectangle is
+  // the size the Selectable is about to take: w/h, else the available width
+  // and one text line.
+  if (rounding > 0.0f) {
+    const ImVec2 box_size(w > 0.0f ? w : ImGui::GetContentRegionAvail().x, h > 0.0f ? h : ImGui::GetTextLineHeight());
+    const ImVec2 box_max(top_left.x + box_size.x, top_left.y + box_size.y);
+    const bool hovered = ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem) &&
+        ImGui::IsMouseHoveringRect(top_left, box_max);
+    if (selected || hovered)
+      ImGui::GetWindowDrawList()->AddRectFilled(
+          top_left, box_max, ImGui::GetColorU32(selected ? ImGuiCol_Header : ImGuiCol_HeaderHovered), rounding);
+    ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0, 0, 0, 0));
+    ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0, 0, 0, 0));
+    ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0, 0, 0, 0));
+  }
   if (ImGui::Selectable(label.c_str(), &v, flags, ImVec2(w, h))) {
     const_cast<ui_element&>(node0)["selected"_key] = v;
     dynamic payload;
     payload["selected"_key] = v;
     enqueue_event(s, node.wish_id(), "changed"_key, std::move(payload));
   }
+  if (rounding > 0.0f)
+    ImGui::PopStyleColor(3);
 
-  if (has_children) {
+  if (has_children && rounding > 0.0f) {
+    // Row style: children side by side, vertically centered, inset from
+    // the rounded edge -- e.g. an icon badge and a Label, as in a sidebar.
+    // Leaf children only stay click-through (a nested layout would open a
+    // child window over the Selectable).
+    ImVec2 box_size = ImGui::GetItemRectSize();
+    float x = top_left.x + 6.0f;
+    node.for_each_child_ordered([&](key_t, ui_element& child) {
+      vec2f sz = child.last_rendered_size();
+      ImGui::SetCursorScreenPos(ImVec2(x, top_left.y + std::max(0.0f, (box_size.y - sz.y) * 0.5f)));
+      r.render_node(child, s);
+      x += (sz.x > 0.0f ? sz.x : ImGui::GetItemRectSize().x) + ImGui::GetStyle().ItemInnerSpacing.x * 2.0f;
+    });
+    ImGui::SetCursorScreenPos(ImVec2(top_left.x, top_left.y + box_size.y));
+  } else if (has_children) {
     ImVec2 box_size = ImGui::GetItemRectSize();
     ImGui::SetCursorScreenPos(top_left);
     node.for_each_child_ordered([&](key_t, ui_element& child) { r.render_node(child, s); });

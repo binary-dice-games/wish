@@ -7,6 +7,7 @@
 #include "app/wish_cli/env_flags.hpp"
 
 #include <context/persistent_store.hpp>
+#include <context/settings_store.hpp>
 
 #include <gflags/gflags.h>
 #include <gtest/gtest.h>
@@ -26,6 +27,10 @@ DEFINE_bool(test_cfg_bool, false, "config_flags test flag");
 DEFINE_string(test_cfg_unlisted, "hard_unlisted", "config_flags test flag, excluded from saving");
 DEFINE_string(test_cfg_key_password, "", "config_flags test flag, a secret");
 DEFINE_string(test_cfg_cert_pem, "", "config_flags test flag, a secret");
+// Flags describe_config_flags() knows (the real CLI defines them in main.cpp).
+DEFINE_string(theme, "wish", "UI theme preset");
+DEFINE_int32(font_size, 16, "Font size in pixels");
+DEFINE_string(lang, "", "UI language code");
 
 DECLARE_bool(save_defaults);
 DECLARE_bool(clear_defaults);
@@ -281,4 +286,37 @@ TEST_F(ConfigFlagsTest, LoadCliConfigClearDefaultsErasesEntry) {
   EXPECT_EQ(FLAGS_test_cfg_store, "hard_store");
   wish::persistent_store store{store_file()};
   EXPECT_FALSE(store.contains(kEntry));
+}
+
+// ── Settings metadata ────────────────────────────────────────────────────────
+
+TEST_F(ConfigFlagsTest, DescribeConfigFlagsRecordsTheKnownFlags) {
+  wish::persistent_store store(dir_ / "server_store.bison");
+  wish::describe_config_flags(store, "wish.cli.server", {"font_size"}, "wish server");
+  auto catalog = wish::settings::collect(store);
+  std::vector<std::string> names;
+  for (const auto& s : catalog.settings)
+    names.push_back(s.info.name);
+  std::sort(names.begin(), names.end());
+  // font_size is excluded; flags this binary doesn't define are skipped.
+  EXPECT_EQ(names, (std::vector<std::string>{"wish.cli.server.lang", "wish.cli.server.theme"}));
+  for (const auto& s : catalog.settings) {
+    EXPECT_TRUE(s.info.restart);
+    EXPECT_EQ(s.info.section, "wish server");
+    if (s.info.name == "wish.cli.server.theme") {
+      EXPECT_EQ(s.info.category, "appearance");
+      EXPECT_EQ(std::get<std::string>(s.info.default_value), "wish");
+      EXPECT_EQ(s.info.options.size(), size_t{4});
+    } else {
+      // --lang's built-in default "" is not an option: the first one is used.
+      EXPECT_EQ(std::get<std::string>(s.info.default_value), "en");
+    }
+  }
+  // Writing through the metadata stores what the saved-defaults loader reads.
+  const auto theme = std::find_if(catalog.settings.begin(), catalog.settings.end(), [](const auto& s) {
+    return s.info.name == "wish.cli.server.theme";
+  });
+  ASSERT_NE(theme, catalog.settings.end());
+  ASSERT_EQ(wish::settings::write_setting(store, theme->info, std::string{"dark"}), "");
+  EXPECT_EQ(store.get("wish.cli.server")->get_as<std::string>("theme"_key, std::string{}), "dark");
 }

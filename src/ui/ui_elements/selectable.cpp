@@ -26,6 +26,16 @@ void register_selectable() {
           attr<Description>("Whether the item appears highlighted/selected."),
           attr<Category>("State")});
   proto->addField(
+      "rounding"_rkey,
+      field{
+          0.0f,
+          attr<DisplayName>("Rounding"),
+          attr<Description>("Corner radius of the selection/hover highlight in pixels; 0 (the "
+                            "default) draws ImGui's square highlight. When positive, children are "
+                            "laid out side by side, vertically centered and inset from the edge "
+                            "(a list row: e.g. an Image badge and a Label); use leaf children."),
+          attr<Category>("Appearance")});
+  proto->addField(
       "width"_rkey,
       field{
           float{0.0f},

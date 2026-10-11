@@ -480,6 +480,26 @@ public sealed class Client : IDisposable
         }
     }
 
+    // ── Settings metadata ─────────────────────────────────────────────────────
+    //
+    // Describes settings kept in the user store so settings tools (the
+    // bdg/desktop/conf tool) can show and edit them; see docs/settings.md.
+
+    /// <summary>
+    /// Describes a setting (replacing an earlier description). Throws
+    /// <see cref="WishException"/> with <c>Unavailable</c> for an anonymous
+    /// session, <c>Exception</c> for invalid metadata.
+    /// </summary>
+    public void DescribeSetting(SettingInfo info) =>
+        WishException.Check(Native.wish_settings_describe(_handle, info.ToJson()), $"describe_setting({info.Name})", LastError);
+
+    /// <summary>Describes a sidebar category settings refer to by id.</summary>
+    public void DescribeSettingsCategory(SettingsCategory category) =>
+        WishException.Check(
+            Native.wish_settings_describe_category(_handle, category.ToJson()),
+            $"describe_settings_category({category.Id})",
+            LastError);
+
     // ── Logging ───────────────────────────────────────────────────────────────
 
     /// <summary>Sends a structured log message: <paramref name="level"/> is "debug"/"info"/"warn"/"error".</summary>

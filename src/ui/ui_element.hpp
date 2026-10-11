@@ -496,6 +496,19 @@ class ui_element : public bison::cloneable_dynamic<ui_element> {
     return cached_field_or<bool>(scroll_field_, bison::key_t{"scroll"}, def);
   }
 
+  /// @brief Cached `get_as<bool>("card"_key, def)`. When true on a
+  ///        `VerticalLayout`/`HorizontalLayout`, its children render on a
+  ///        rounded, filled, bordered panel inset by `padding` -- read by
+  ///        the layout measure/arrange/render passes for every layout node.
+  bool card(bool def = false) const {
+    return cached_field_or<bool>(card_field_, bison::key_t{"card"}, def);
+  }
+
+  /// @brief Padding of a `card` layout (0 when it isn't one).
+  float card_padding() const {
+    return card() ? std::max(0.0f, get_as<float>(bison::key_t{"padding"}, 12.0f)) : 0.0f;
+  }
+
   // ── Drag & drop ───────────────────────────────────────────────────────────
   //
   // `handle_drag_drop()` (`src/imgui/imgui_renderer.cpp`) is called for every
@@ -666,6 +679,7 @@ class ui_element : public bison::cloneable_dynamic<ui_element> {
   mutable bison::field* weight_field_ = nullptr;
   mutable bison::field* spacing_field_ = nullptr;
   mutable bison::field* scroll_field_ = nullptr;
+  mutable bison::field* card_field_ = nullptr;
   mutable bison::field* drag_type_field_ = nullptr;
   mutable bison::field* drag_payload_field_ = nullptr;
   mutable bison::field* drop_type_field_ = nullptr;

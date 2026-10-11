@@ -16,14 +16,16 @@ tool; a plain ``wish server`` ignores them.
 import os
 import sys
 import threading
-from typing import Callable
+from typing import Callable, Optional
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from wish import Client  # noqa: E402
 
 
-def run_app(session: Callable[[Client], None], app: str, label: str, icon: str) -> None:
+def run_app(
+    session: Callable[[Client], None], app: str, label: str, icon: str, extra_params: Optional[dict] = None
+) -> None:
     """Connect, run ``session(client)`` until it returns, then disconnect.
 
     ``session`` runs on the client's worker thread; it builds the UI and
@@ -31,7 +33,7 @@ def run_app(session: Callable[[Client], None], app: str, label: str, icon: str) 
     (typically the window's "closed" event). Ctrl+C quits too.
     """
     client = Client.from_env()
-    params = {"app": app, "app_label": label, "app_icon": f"res/icons/{icon}.png"}
+    params = {"app": app, "app_label": label, "app_icon": f"res/icons/{icon}.png", **(extra_params or {})}
     errors: list = []
 
     def worker() -> None:

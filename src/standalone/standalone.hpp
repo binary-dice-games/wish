@@ -211,6 +211,12 @@ class standalone : public bison::rmi::standalone {
   /// @copydoc bdg::wish::client::user_store_keys
   std::future<std::vector<std::string>> user_store_keys();
 
+  /// @copydoc bdg::wish::client::describe_setting
+  std::future<void> describe_setting(const settings::setting_info& info);
+
+  /// @copydoc bdg::wish::client::describe_settings_category
+  std::future<void> describe_settings_category(const settings::category_info& info);
+
   /// @copydoc bdg::wish::client::log
   std::future<void> log(const std::string& level, const std::string& msg);
 
@@ -360,6 +366,8 @@ class standalone : public bison::rmi::standalone {
   std::optional<bison::rmi::proxy::dynamic> automation_proxy_;
   // Unset for an anonymous session -- see set_user_identity().
   std::optional<bison::rmi::proxy::dynamic> user_store_proxy_;
+  // Serializes describe_*()'s read-merge-write of schema entries.
+  bison::synchronized<bool> describe_lock_{false};
 };
 
 } // namespace bdg::wish

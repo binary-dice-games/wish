@@ -660,6 +660,44 @@ WISH_API wish_error wish_user_store_erase(wish_client_handle client, const char*
  */
 WISH_API wish_error wish_user_store_keys(wish_client_handle client, char** out_json);
 
+/* ── Settings metadata ────────────────────────────────────────────────────── */
+
+/*
+ * Describe settings kept in the user store so settings tools (the
+ * bdg/desktop/conf tool) can show and edit them. A setting is one field of a
+ * user store entry: "bdg.desktop.example.color" is the field "color" of the
+ * entry "bdg.desktop.example". See docs/settings.md for every metadata key.
+ */
+
+/**
+ * @brief Describe a setting. Replaces an earlier description of the same
+ *        setting; doesn't change its value.
+ *
+ * @param client        Active session handle.
+ * @param setting_json  JSON object, e.g.
+ *   `{"name": "bdg.desktop.example.color", "label": "Color",
+ *     "description": "...", "category": "example", "section": "Look",
+ *     "type": "color", "default": "#2F7BF5"}`. Types: bool, int, float,
+ *   string, enum (with "options": ["a", "b"] or [{"value", "label"}]),
+ *   color and path; int/float take "min", "max" and "step".
+ * @return WISH_OK; WISH_ERR_UNAVAILABLE for an anonymous session;
+ *         WISH_ERR_NULL or WISH_ERR_EXCEPTION (invalid metadata or a store
+ *         error; see wish_last_error()).
+ */
+WISH_API wish_error wish_settings_describe(wish_client_handle client, const char* setting_json);
+
+/**
+ * @brief Describe a sidebar category that settings refer to by id.
+ *
+ * @param client         Active session handle.
+ * @param category_json  JSON object, e.g. `{"id": "example", "label":
+ *                       "Example", "icon": "res/icons/palette.png",
+ *                       "color": "#AF52DE", "order": 10}`.
+ * @return WISH_OK; WISH_ERR_UNAVAILABLE for an anonymous session;
+ *         WISH_ERR_NULL or WISH_ERR_EXCEPTION (see wish_last_error()).
+ */
+WISH_API wish_error wish_settings_describe_category(wish_client_handle client, const char* category_json);
+
 /* ── Logging ──────────────────────────────────────────────────────────────── */
 
 /**

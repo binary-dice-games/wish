@@ -186,9 +186,10 @@ static natural_size measure_vertical_layout(imgui_renderer& r, const ui_element&
   // meant to absorb. Report 0 on that axis (same "size me from outside"
   // convention as Spring), still returning the measured max width. Children
   // were already measured above so their own self-heal stashes are fresh.
+  const float pad = 2.0f * node.card_padding();
   if (node.scroll(false))
-    return {max_w, 0.0f};
-  return {max_w, total_h};
+    return {max_w + pad, 0.0f};
+  return {max_w + pad, total_h + pad};
 }
 
 static natural_size measure_horizontal_layout(imgui_renderer& r, const ui_element& node, const context& s) {
@@ -208,7 +209,8 @@ static natural_size measure_horizontal_layout(imgui_renderer& r, const ui_elemen
   });
   if (n > 1)
     total_w += spacing * float(n - 1);
-  return {total_w, max_h};
+  const float pad = 2.0f * node.card_padding();
+  return {total_w + pad, max_h + pad};
 }
 
 static natural_size measure_splitter(imgui_renderer& r, const ui_element& node0, const context& s) {
@@ -412,6 +414,10 @@ static const arrange_fn_map& arrange_dispatch_fns();
 
 static void arrange_vertical_layout(imgui_renderer& r, const ui_element& node, ImVec2 origin, ImVec2 avail, const context& s) {
   float spacing = effective_spacing(node, ImGui::GetStyle().ItemSpacing.y);
+  // A card's children are arranged inside its padding.
+  const float pad = node.card_padding();
+  origin = ImVec2(origin.x + pad, origin.y + pad);
+  avail = ImVec2(std::max(0.0f, avail.x - 2.0f * pad), std::max(0.0f, avail.y - 2.0f * pad));
   struct child_info {
     ui_element* elem;
     float height;
@@ -483,11 +489,15 @@ static void arrange_vertical_layout(imgui_renderer& r, const ui_element& node, I
   // avail.y) soaks up the remainder, but can be much smaller when none of
   // the children stretch and avail.y itself came from an unbounded ambient
   // context (e.g. self-healing inside a Table cell).
-  node.set_content_extent({avail.x, y - origin.y});
+  node.set_content_extent({avail.x + 2.0f * pad, y - origin.y + 2.0f * pad});
 }
 
 static void arrange_horizontal_layout(imgui_renderer& r, const ui_element& node, ImVec2 origin, ImVec2 avail, const context& s) {
   float spacing = effective_spacing(node, ImGui::GetStyle().ItemSpacing.x);
+  // A card's children are arranged inside its padding.
+  const float pad = node.card_padding();
+  origin = ImVec2(origin.x + pad, origin.y + pad);
+  avail = ImVec2(std::max(0.0f, avail.x - 2.0f * pad), std::max(0.0f, avail.y - 2.0f * pad));
   struct child_info {
     ui_element* elem;
     float width;
@@ -562,7 +572,7 @@ static void arrange_horizontal_layout(imgui_renderer& r, const ui_element& node,
   // >= avail.y, or an explicit fill), never merely because avail.y was
   // large. The main-axis (width) extent is the actual x the cursor reached,
   // not avail.x, for the identical reason.
-  node.set_content_extent({x - origin.x, max_col_h});
+  node.set_content_extent({x - origin.x + 2.0f * pad, max_col_h + 2.0f * pad});
 }
 
 static void arrange_splitter(imgui_renderer& r, const ui_element& node0, ImVec2 origin, ImVec2 avail, const context& s) {

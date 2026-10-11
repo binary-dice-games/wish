@@ -154,6 +154,17 @@ fn user_store_is_unavailable_without_a_session() {
 }
 
 #[test]
+fn describe_setting_is_unavailable_without_a_session() {
+    let client = Client::tcp("127.0.0.1", 1);
+    let info = wish::SettingInfo::new("bdg.desktop.example.color", "color");
+    let err = client.describe_setting(&info).unwrap_err();
+    assert_eq!(err.code, wish::sys::WISH_ERR_UNAVAILABLE);
+    let category = wish::SettingsCategory { id: "example".into(), ..Default::default() };
+    let err = client.describe_settings_category(&category).unwrap_err();
+    assert_eq!(err.code, wish::sys::WISH_ERR_UNAVAILABLE);
+}
+
+#[test]
 fn run_with_params_against_unreachable_port_fails_cleanly() {
     let client = Client::tcp("127.0.0.1", 1);
     let mut params = Value::new();

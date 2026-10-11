@@ -8,6 +8,7 @@ made to run on a [`wish desktop`](../../../../docs/cli.md#wish-desktop):
 | `todo.py` | A to-do list: type a task and press Add, tick it off, delete it. |
 | `stopwatch.py` | A stopwatch with Start/Stop, Lap and Reset, and a table of laps. Updated from a background thread. |
 | `live_chart.py` | A live, scrolling chart of a noisy sine wave, with frequency and noise sliders and Pause. |
+| `settings_demo.py` | Declares its settings (a switch, text, color, slider, drop-down) for the Settings tool and shows a banner that follows them live. Connects with a user name (`WISH_USERNAME`, else your OS user). See [docs/settings.md](../../../../docs/settings.md). |
 
 Each one connects with `Client.from_env()` (the `WISH_TRANSPORT` /
 `WISH_HOST` / `WISH_PORT` / `WISH_NAME` environment variables, default tcp

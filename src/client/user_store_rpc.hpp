@@ -7,6 +7,8 @@
 #include "src/bison/bison_object.hpp"
 #include "src/rmi/client/proxy.hpp"
 
+#include <context/settings_schema.hpp>
+
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -67,6 +69,26 @@ inline std::vector<std::string> user_store_keys_sync(bison::rmi::proxy::dynamic&
       names.push_back(f.as<std::string>());
   });
   return names;
+}
+
+/// @brief Records @p info in the user store's `<entry>#schema` entry (read,
+///        merge, write). @throws settings::schema_error for invalid metadata.
+inline void describe_setting_sync(bison::rmi::proxy::dynamic& proxy, const settings::setting_info& info) {
+  settings::check(info);
+  const std::string name = settings::schema_entry_name(settings::parse_name(info.name).entry);
+  bison::dynamic schema = user_store_get_sync(proxy, name).value_or(bison::dynamic{});
+  settings::merge_setting(schema, info);
+  user_store_set_sync(proxy, name, std::move(schema));
+}
+
+/// @brief Records @p info in the user store's category schema entry.
+/// @throws settings::schema_error for invalid metadata.
+inline void describe_category_sync(bison::rmi::proxy::dynamic& proxy, const settings::category_info& info) {
+  settings::check(info);
+  const std::string name = settings::category_entry_name(info.id);
+  bison::dynamic schema = user_store_get_sync(proxy, name).value_or(bison::dynamic{});
+  settings::merge_category(schema, info);
+  user_store_set_sync(proxy, name, std::move(schema));
 }
 
 } // namespace bdg::wish::detail

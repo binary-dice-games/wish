@@ -238,6 +238,14 @@ internal static partial class Native
     [LibraryImport(LibName)]
     public static partial int wish_user_store_keys(nint client, out nint outJson);
 
+    // ── Settings metadata ─────────────────────────────────────────────────────
+
+    [LibraryImport(LibName, StringMarshalling = StringMarshalling.Utf8)]
+    public static partial int wish_settings_describe(nint client, string settingJson);
+
+    [LibraryImport(LibName, StringMarshalling = StringMarshalling.Utf8)]
+    public static partial int wish_settings_describe_category(nint client, string categoryJson);
+
     // ── Logging ───────────────────────────────────────────────────────────────
 
     [LibraryImport(LibName, StringMarshalling = StringMarshalling.Utf8)]
