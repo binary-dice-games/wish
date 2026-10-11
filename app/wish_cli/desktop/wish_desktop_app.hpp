@@ -88,8 +88,9 @@ class wish_desktop : public bison::rmi::bridge {
    * Idempotent: only the first call has an effect. Loads the saved
    * settings from the upstream user store (when the session has one), the
    * configuration file (writing the default one if it is missing), uploads
-   * the wallpaper (if set), applies the saved theme, builds the shell and
-   * starts watching the configuration file.
+   * the wallpaper (if any), applies the configured or saved theme, builds
+   * the shell and starts watching the configuration file and the
+   * wallpaper image.
    */
   void build_chrome();
 
@@ -109,7 +110,8 @@ class wish_desktop : public bison::rmi::bridge {
   ///        `run` entry only logs an error.
   void set_launcher(process_launcher_iface* launcher);
 
-  /// @brief Local image file uploaded as the wallpaper by build_chrome().
+  /// @brief Local image file uploaded as the wallpaper by build_chrome();
+  ///        overrides the config file's `appearance.wallpaper`.
   void set_wallpaper(std::filesystem::path file);
 
   /// @brief User name shown in the Start menu.
@@ -150,6 +152,12 @@ class wish_desktop : public bison::rmi::bridge {
   ///        applied (its upstream updates sent). For tests.
   void flush();
 
+  /// @brief Stops the configuration watcher and the worker thread (pending
+  ///        work is dropped). Call before stop(): work still running when
+  ///        the upstream connection closes could wait forever on a request
+  ///        that is never answered. Idempotent; the destructor calls it too.
+  void stop_tasks();
+
   /**
    * @brief Starts the Start menu entry @p id: runs its command, or its
    *        action.
@@ -188,7 +196,14 @@ class wish_desktop : public bison::rmi::bridge {
   struct shared_state {
     desktop_settings settings;
     desktop::start_menu menu;
-    std::string menu_error;
+    desktop::appearance look;
+    desktop::taskbar_settings taskbar;
+    std::string config_error;
+    /// Why the wallpaper can't be shown; empty when it can (or there is none).
+    std::string wallpaper_error;
+    /// The wallpaper image in use (set_wallpaper() or the config's), for the
+    /// file watcher; empty for none.
+    std::filesystem::path wallpaper_file;
     /// Downstream session id -> app name it runs.
     std::map<bison::hash_t, std::string> session_apps;
     /// Downstream sessions currently connected.
@@ -218,6 +233,14 @@ class wish_desktop : public bison::rmi::bridge {
   void add_unknown_apps();
   void save_settings();
   void apply_theme(const std::string& preset);
+  /// Worker thread: uploads the wallpaper image if it, or the file behind
+  /// it, changed since the last upload. Returns whether what the shell shows
+  /// (its wallpaper or the error) changed.
+  bool refresh_wallpaper();
+  /// Uploads @p file into the upstream sandbox under a new name (so the
+  /// renderer's texture cache can't serve the old image) and erases the
+  /// previous upload. Returns its sandbox path. Throws on failure.
+  std::string upload_wallpaper(const std::filesystem::path& file);
 
   std::atomic<bool> chrome_built_{false};
 
@@ -233,8 +256,16 @@ class wish_desktop : public bison::rmi::bridge {
   std::vector<std::pair<std::string, std::string>> launch_env_;
   std::filesystem::path log_dir_;
   process_launcher_iface* launcher_{nullptr};
-  std::filesystem::path wallpaper_;
-  std::string wallpaper_src_; ///< Its path in the upstream sandbox, once uploaded.
+  std::filesystem::path wallpaper_; ///< From set_wallpaper(); wins over the config's.
+
+  // Wallpaper upload state; worker thread only (and build_chrome() before
+  // the watcher starts).
+  std::string wallpaper_src_; ///< Uploaded image's path in the upstream sandbox.
+  std::filesystem::path wallpaper_uploaded_; ///< The local file uploaded.
+  /// That file's modification time and size when it was uploaded.
+  std::optional<std::pair<std::filesystem::file_time_type, std::uintmax_t>> wallpaper_stamp_;
+  int wallpaper_uploads_{0};
+
   std::string user_;
   std::filesystem::path config_file_;
   std::chrono::milliseconds config_poll_{500};

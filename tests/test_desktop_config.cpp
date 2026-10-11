@@ -1,6 +1,6 @@
 // MIT License © 2026 Binary Dice Games
 // Tests for app/wish_cli/desktop/desktop_config.hpp -- the `wish desktop`
-// configuration file and its start_menu section.
+// configuration file and its sections.
 #include "app/wish_cli/desktop/desktop_config.hpp"
 
 #include "src/client/app_registry.hpp"
@@ -37,7 +37,7 @@ dc::placeholders ph() {
 }
 
 dc::start_menu parse(const std::string& text) {
-  return dc::parse_config_text(text, ph());
+  return dc::parse_config_text(text, ph()).menu;
 }
 
 std::string error_of(const std::string& text) {
@@ -217,6 +217,83 @@ TEST(DesktopConfig, NoStartMenuSectionUsesTheDefaultMenu) {
   EXPECT_EQ(m.power.size(), size_t{2});
 }
 
+// ── appearance and taskbar ───────────────────────────────────────────────────
+
+TEST(DesktopConfig, MissingSectionsKeepTheirDefaults) {
+  auto c = dc::parse_config_text("version: 1\n", ph());
+  EXPECT_TRUE(c.look.wallpaper.empty());
+  EXPECT_EQ(c.look.wallpaper_fit, "cover");
+  EXPECT_TRUE(c.look.background.empty());
+  EXPECT_TRUE(c.look.theme.empty());
+  EXPECT_TRUE(c.look.desktop_icons);
+  EXPECT_EQ(c.taskbar.time_format, "%H:%M");
+  EXPECT_EQ(c.taskbar.date_format, "%d/%m/%Y");
+}
+
+TEST(DesktopConfig, DefaultConfigHasDefaultAppearance) {
+  auto c = dc::parse_config_text(dc::default_config_text(), ph());
+  EXPECT_TRUE(c.look.wallpaper.empty());
+  EXPECT_EQ(c.look.wallpaper_fit, "cover");
+  EXPECT_TRUE(c.look.theme.empty()); // the tray toggle's choice is kept
+  EXPECT_TRUE(c.look.desktop_icons);
+  EXPECT_EQ(c.taskbar.time_format, "%H:%M");
+}
+
+TEST(DesktopConfig, AppearanceAndTaskbarSettings) {
+  auto c = dc::parse_config_text(
+      "appearance:\n"
+      "  wallpaper: /pics/beach.jpg\n"
+      "  wallpaper_fit: tile\n"
+      "  background: \"#1E3A5F\"\n"
+      "  theme: dark\n"
+      "  desktop_icons: false\n"
+      "  future_setting: 1\n" // ignored
+      "taskbar:\n"
+      "  time_format: \"%I:%M %p\"\n"
+      "  date_format: \"%A\"\n",
+      ph());
+  EXPECT_EQ(c.look.wallpaper, std::filesystem::path("/pics/beach.jpg"));
+  EXPECT_EQ(c.look.wallpaper_fit, "tile");
+  EXPECT_EQ(c.look.background, "#1E3A5F");
+  EXPECT_EQ(c.look.theme, "dark");
+  EXPECT_FALSE(c.look.desktop_icons);
+  EXPECT_EQ(c.taskbar.time_format, "%I:%M %p");
+  EXPECT_EQ(c.taskbar.date_format, "%A");
+}
+
+TEST(DesktopConfig, WallpaperPathsExpand) {
+  auto wallpaper = [](const std::string& value) {
+    return dc::parse_config_text("appearance:\n  wallpaper: \"" + value + "\"\n", ph()).look.wallpaper;
+  };
+  EXPECT_EQ(wallpaper("~/Pictures/a.png"), std::filesystem::path("/home/u/Pictures/a.png"));
+  EXPECT_EQ(wallpaper("{home}/b.png"), std::filesystem::path("/home/u/b.png"));
+  // Relative to the config file's directory.
+  EXPECT_EQ(wallpaper("walls/c.png"), std::filesystem::path("/home/u/.wish/desktop/walls/c.png"));
+  EXPECT_EQ(wallpaper("../d.png"), std::filesystem::path("/home/u/.wish/d.png"));
+}
+
+TEST(DesktopConfig, AppearanceErrorsNameTheSetting) {
+  auto error = [](const std::string& text) {
+    try {
+      dc::parse_config_text(text, ph());
+    } catch (const std::exception& ex) {
+      return std::string(ex.what());
+    }
+    return std::string{};
+  };
+  EXPECT_NE(
+      error("appearance:\n  wallpaper_fit: zoom\n").find("appearance.wallpaper_fit: expected cover"),
+      std::string::npos);
+  EXPECT_NE(
+      error("appearance:\n  background: blue\n").find("appearance.background: expected a color"), std::string::npos);
+  EXPECT_NE(error("appearance:\n  background: \"#12345\"\n").find("appearance.background"), std::string::npos);
+  EXPECT_NE(
+      error("appearance:\n  desktop_icons: maybe\n").find("appearance.desktop_icons: expected true or false"),
+      std::string::npos);
+  EXPECT_NE(error("appearance: [1]\n").find("appearance: expected a map"), std::string::npos);
+  EXPECT_NE(error("taskbar: 3\n").find("taskbar: expected a map"), std::string::npos);
+}
+
 TEST(DesktopConfig, MissingFileGetsTheDefaultWritten) {
   auto file = temp_file();
   auto loaded = dc::load_config(file, ph());
@@ -236,7 +313,7 @@ TEST(DesktopConfig, BrokenFileFallsBackToTheDefaultAndReportsIt) {
   auto loaded = dc::load_config(file, ph());
   EXPECT_FALSE(loaded.wrote_default);
   EXPECT_NE(loaded.error.find("desktop.yaml: start_menu.items[0]"), std::string::npos);
-  EXPECT_EQ(loaded.menu.power.size(), size_t{2}); // the default menu
+  EXPECT_EQ(loaded.config.menu.power.size(), size_t{2}); // the default menu
   std::ifstream in(file);
   std::stringstream ss;
   ss << in.rdbuf();

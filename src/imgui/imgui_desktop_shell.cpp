@@ -75,6 +75,57 @@ bool desktop_app_matches(const desktop_app_info& app, const std::string& query) 
   return desktop_app_match_rank(app, query) >= 0;
 }
 
+std::vector<desktop_wallpaper_quad>
+desktop_wallpaper_layout(const std::string& fit, ImVec2 pos, ImVec2 screen, ImVec2 image) {
+  const ImVec2 end(pos.x + screen.x, pos.y + screen.y);
+  if (image.x <= 0 || image.y <= 0 || screen.x <= 0 || screen.y <= 0 || fit == "stretch")
+    return {{pos, end, ImVec2(0, 0), ImVec2(1, 1)}};
+
+  // A rectangle of @p size at @p at, cropped to the screen.
+  auto cropped = [&](ImVec2 at, ImVec2 size) {
+    desktop_wallpaper_quad q{at, ImVec2(at.x + size.x, at.y + size.y), ImVec2(0, 0), ImVec2(1, 1)};
+    if (q.p0.x < pos.x) {
+      q.uv0.x = (pos.x - q.p0.x) / size.x;
+      q.p0.x = pos.x;
+    }
+    if (q.p0.y < pos.y) {
+      q.uv0.y = (pos.y - q.p0.y) / size.y;
+      q.p0.y = pos.y;
+    }
+    if (q.p1.x > end.x) {
+      q.uv1.x = 1.0f - (q.p1.x - end.x) / size.x;
+      q.p1.x = end.x;
+    }
+    if (q.p1.y > end.y) {
+      q.uv1.y = 1.0f - (q.p1.y - end.y) / size.y;
+      q.p1.y = end.y;
+    }
+    return q;
+  };
+  auto centered = [&](ImVec2 size) {
+    return cropped(ImVec2(pos.x + (screen.x - size.x) * 0.5f, pos.y + (screen.y - size.y) * 0.5f), size);
+  };
+
+  if (fit == "contain") {
+    float scale = std::min(screen.x / image.x, screen.y / image.y);
+    return {centered(ImVec2(image.x * scale, image.y * scale))};
+  }
+  if (fit == "center")
+    return {centered(image)};
+  if (fit == "tile") {
+    // At most 64 x 64 tiles: a tiny image is drawn larger.
+    ImVec2 tile(std::max(image.x, screen.x / 64.0f), std::max(image.y, screen.y / 64.0f));
+    std::vector<desktop_wallpaper_quad> out;
+    for (float y = pos.y; y < end.y; y += tile.y)
+      for (float x = pos.x; x < end.x; x += tile.x)
+        out.push_back(cropped(ImVec2(x, y), tile));
+    return out;
+  }
+  // cover
+  float scale = std::max(screen.x / image.x, screen.y / image.y);
+  return {centered(ImVec2(image.x * scale, image.y * scale))};
+}
+
 desktop_app_info desktop_collect_app(const ui_element& child) {
   desktop_app_info a;
   a.node_id = child.wish_id();
@@ -291,6 +342,8 @@ struct shell_frame {
   bool allow_absolute_paths{false};
   const std::unordered_map<std::string, uint32_t>* embedded_crc32s{nullptr};
   std::string wallpaper;
+  std::string wallpaper_fit;
+  std::string background;
   std::string user;
   std::string time_format;
   std::string date_format;
@@ -298,7 +351,7 @@ struct shell_frame {
   int32_t clients{0};
   std::optional<ImGuiStyle> style;
   bool light{false};
-  std::string menu_error;
+  std::string config_error;
   bool shutdown{false};
   std::vector<desktop_app_info> apps; ///< Menu entries, then unlisted apps.
   std::vector<desktop_menu_node> menu; ///< The Start menu tree.
@@ -340,6 +393,8 @@ std::optional<shell_frame> snapshot(imgui_renderer& r, const std::vector<sync_co
       f.allow_absolute_paths = sess->allow_absolute_paths;
       f.embedded_crc32s = &sess->embedded_crc32s;
       f.wallpaper = shell->get_as<std::string>("wallpaper"_key, std::string{});
+      f.wallpaper_fit = shell->get_as<std::string>("wallpaper_fit"_key, std::string{"cover"});
+      f.background = shell->get_as<std::string>("background"_key, std::string{});
       f.user = shell->get_as<std::string>("user"_key, std::string{});
       f.time_format = shell->get_as<std::string>("time_format"_key, std::string{"%H:%M"});
       f.date_format = shell->get_as<std::string>("date_format"_key, std::string{"%d/%m/%Y"});
@@ -348,7 +403,7 @@ std::optional<shell_frame> snapshot(imgui_renderer& r, const std::vector<sync_co
       if (const ImGuiStyle* st = r.session_style(*sess))
         f.style = *st;
       f.light = sess->style_service && sess->style_service->is_light_theme();
-      f.menu_error = shell->get_as<std::string>("menu_error"_key, std::string{});
+      f.config_error = shell->get_as<std::string>("config_error"_key, std::string{});
       f.shutdown = shell->get_as<bool>("shutdown"_key, false);
       {
         desktop_menu m = detail::desktop_collect_menu(*shell);
@@ -671,49 +726,39 @@ void shell_painter::draw_wallpaper() {
   const ImVec2 p0 = vp->Pos;
   const ImVec2 p1(vp->Pos.x + vp->Size.x, vp->Pos.y + vp->Size.y);
 
-  if (!f_.wallpaper.empty()) {
-    if (ImTextureID tex = texture(f_.wallpaper)) {
-      // Cover fit: fill the screen, cropping the image's overflowing axis
-      // (stretch when the backend can't report the image size).
-      ImVec2 uv0(0, 0), uv1(1, 1);
-      ImVec2 ts = r_.texture_size(resolved(f_.wallpaper));
-      if (ts.x > 0 && ts.y > 0 && vp->Size.x > 0 && vp->Size.y > 0) {
-        float img_aspect = ts.x / ts.y;
-        float scr_aspect = vp->Size.x / vp->Size.y;
-        if (img_aspect > scr_aspect) {
-          float visible = scr_aspect / img_aspect;
-          uv0.x = (1.0f - visible) * 0.5f;
-          uv1.x = 1.0f - uv0.x;
-        } else {
-          float visible = img_aspect / scr_aspect;
-          uv0.y = (1.0f - visible) * 0.5f;
-          uv1.y = 1.0f - uv0.y;
-        }
-      }
-      dl->AddImage(ImTextureRef(tex), p0, p1, uv0, uv1);
-      return;
+  // The background: a plain color, or the built-in gradient. It shows where
+  // the wallpaper doesn't cover the screen.
+  if (!f_.background.empty()) {
+    dl->AddRectFilled(p0, p1, ImGui::GetColorU32(parse_hex_color(f_.background)));
+  } else {
+    // A diagonal gradient with two soft glows, in the theme's mood.
+    ImU32 tl, tr, br, bl;
+    if (f_.light) {
+      tl = IM_COL32(142, 197, 252, 255);
+      tr = IM_COL32(176, 190, 250, 255);
+      br = IM_COL32(224, 195, 252, 255);
+      bl = IM_COL32(190, 220, 250, 255);
+    } else {
+      tl = IM_COL32(16, 32, 64, 255);
+      tr = IM_COL32(40, 36, 92, 255);
+      br = IM_COL32(86, 44, 110, 255);
+      bl = IM_COL32(18, 60, 96, 255);
     }
+    dl->AddRectFilledMultiColor(p0, p1, tl, tr, br, bl);
+    const float r = std::max(vp->Size.x, vp->Size.y);
+    ImU32 glow = f_.light ? IM_COL32(255, 255, 255, 28) : IM_COL32(120, 160, 255, 22);
+    dl->AddCircleFilled(ImVec2(p0.x + vp->Size.x * 0.78f, p0.y + vp->Size.y * 0.30f), r * 0.32f, glow, 96);
+    dl->AddCircleFilled(ImVec2(p0.x + vp->Size.x * 0.15f, p0.y + vp->Size.y * 0.85f), r * 0.22f, glow, 96);
   }
 
-  // Built-in wallpaper: a diagonal gradient with two soft glows, in the
-  // theme's mood.
-  ImU32 tl, tr, br, bl;
-  if (f_.light) {
-    tl = IM_COL32(142, 197, 252, 255);
-    tr = IM_COL32(176, 190, 250, 255);
-    br = IM_COL32(224, 195, 252, 255);
-    bl = IM_COL32(190, 220, 250, 255);
-  } else {
-    tl = IM_COL32(16, 32, 64, 255);
-    tr = IM_COL32(40, 36, 92, 255);
-    br = IM_COL32(86, 44, 110, 255);
-    bl = IM_COL32(18, 60, 96, 255);
-  }
-  dl->AddRectFilledMultiColor(p0, p1, tl, tr, br, bl);
-  const float r = std::max(vp->Size.x, vp->Size.y);
-  ImU32 glow = f_.light ? IM_COL32(255, 255, 255, 28) : IM_COL32(120, 160, 255, 22);
-  dl->AddCircleFilled(ImVec2(p0.x + vp->Size.x * 0.78f, p0.y + vp->Size.y * 0.30f), r * 0.32f, glow, 96);
-  dl->AddCircleFilled(ImVec2(p0.x + vp->Size.x * 0.15f, p0.y + vp->Size.y * 0.85f), r * 0.22f, glow, 96);
+  if (f_.wallpaper.empty())
+    return;
+  ImTextureID tex = texture(f_.wallpaper);
+  if (!tex)
+    return;
+  ImVec2 ts = r_.texture_size(resolved(f_.wallpaper));
+  for (const auto& q : detail::desktop_wallpaper_layout(f_.wallpaper_fit, p0, vp->Size, ts))
+    dl->AddImage(ImTextureRef(tex), q.p0, q.p1, q.uv0, q.uv1);
 }
 
 void shell_painter::draw_desktop_icons(const ImRect& work) {
@@ -910,10 +955,10 @@ void shell_painter::draw_start_menu(const ImRect& anchor) {
 
   const float footer_h = ImGui::GetFrameHeightWithSpacing() + 12.0f;
   ImGui::BeginChild("##wish_start_list", ImVec2(0.0f, -footer_h), ImGuiChildFlags_None);
-  if (!f_.menu_error.empty()) {
+  if (!f_.config_error.empty()) {
     // The config file has an error: say so, above the menu still in use.
     ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(220, 60, 60, 255));
-    ImGui::TextWrapped("%s", f_.menu_error.c_str());
+    ImGui::TextWrapped("%s", f_.config_error.c_str());
     ImGui::PopStyleColor();
     ImGui::Separator();
   }

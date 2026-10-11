@@ -7,15 +7,55 @@ there and uses it. The desktop watches the file: save it in any editor and the
 running desktop reloads it. The default Start menu has an **Edit desktop
 settings** entry that opens the file in nano.
 
-The file is a map of sections, each configuring one part of the desktop.
-Only `start_menu` is defined so far; unknown sections are ignored, so files
-stay valid as new sections are added.
+The file is a map of sections, each configuring one part of the desktop. A
+missing section or setting keeps its default; unknown sections and settings
+are ignored, so files stay valid as new ones are added.
 
 ```yaml
 version: 1
-start_menu:
+appearance:   # wallpaper, background, theme, desktop icons
+  ...
+taskbar:      # the clock
+  ...
+start_menu:   # the Start menu, pins and desktop icons
   ...
 ```
+
+## `appearance`
+
+```yaml
+appearance:
+  wallpaper: ~/Pictures/beach.jpg
+  wallpaper_fit: cover
+  background: "#1E3A5F"
+  theme: dark
+  desktop_icons: true
+```
+
+| Setting | Default | Meaning |
+|---------|---------|---------|
+| `wallpaper` | *(none)* | Image file (png, jpg, ...) on the desktop's machine. A relative path is relative to this file's directory; `~/` and `{home}` expand. Empty draws the built-in gradient. The `--wallpaper` flag overrides it. |
+| `wallpaper_fit` | `cover` | How the image fills the screen: `cover` (fill, cropping the overflow), `contain` (whole image, centered), `stretch`, `center` (actual size) or `tile`. |
+| `background` | *(gradient)* | Color as `"#RRGGBB"` or `"#RRGGBBAA"` (quote it: `#` starts a YAML comment). Replaces the built-in gradient and shows around a wallpaper that doesn't cover the screen. |
+| `theme` | *(none)* | Theme preset (`light`, `dark`, ...) applied when the desktop starts and whenever you change it here. In between, the tray's theme toggle still switches it. Leave it out to keep the theme last chosen with the toggle. |
+| `desktop_icons` | `true` | Shows the desktop icons. |
+
+The image is uploaded to the server the desktop draws on, so it doesn't need
+to be on that machine. The desktop also watches the image file: saving a new
+image under the same name updates the wallpaper. If the image can't be read,
+the desktop shows why at the top of the Start menu and draws the background
+instead.
+
+## `taskbar`
+
+```yaml
+taskbar:
+  time_format: "%H:%M"      # 14:05
+  date_format: "%d/%m/%Y"   # 11/10/2026
+```
+
+`strftime()` formats of the two lines of the taskbar clock, e.g.
+`"%I:%M %p"` for 02:05 PM or `"%a %d %b"` for Sun 11 Oct.
 
 ## `start_menu`
 
@@ -94,14 +134,16 @@ desktop like a built-in tool. Give it the `app` it connects as, so its
 windows are tied to the entry; the `py.todo` entry above installs
 `bindings/python/examples/desktop/todo.py`.
 
-### Errors
+## Errors
 
-Errors name the offending path, e.g.
-`start_menu.items[2].run: expected a list or a string`. If the file is invalid
-when the desktop starts, the desktop uses the default menu and shows the error
-in red at the top of the Start menu, without overwriting your file. If it
-becomes invalid while running, the current menu stays and the error is shown
-until a valid file is saved.
+Errors name the offending setting, e.g.
+`start_menu.items[2].run: expected a list or a string` or
+`appearance.wallpaper_fit: expected cover, contain, stretch, center or tile`.
+If the file is invalid when the desktop starts, the desktop uses the default
+configuration and shows the error in red at the top of the Start menu,
+without overwriting your file. If it becomes invalid while running, the
+current configuration stays and the error is shown until a valid file is
+saved.
 
 ## Actions
 

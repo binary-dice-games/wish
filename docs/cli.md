@@ -207,8 +207,9 @@ A desktop for your wish apps, in the style of Windows or macOS. It listens
 connecting **upstream** to a real `wish server` (like a client), and turns
 that server's window into a desktop:
 
-- **Wallpaper**: a built-in gradient that follows the theme, or your own
-  image (`--wallpaper`).
+- **Wallpaper**: a built-in gradient that follows the theme, a plain color,
+  or your own image, set in the [configuration file](desktop-config.md#appearance)
+  (or with `--wallpaper`).
 - **Taskbar** along the bottom, always visible; windows open above it:
   - **Start** button: a menu of apps and actions in folders, read from the
     [desktop configuration file](desktop-config.md) (by default every app
@@ -233,9 +234,10 @@ that server's window into a desktop:
   the open windows while Ctrl is held. In a browser, which keeps Ctrl+Tab for
   itself (`--renderer web`), use Ctrl+\` instead.
 
-The Start menu, the initial pins and desktop icons, and the power button
-come from `~/.wish/desktop/desktop.yaml` (`--config`), written with the
-default configuration on first run; edit it and the desktop reloads it live.
+The wallpaper, background color, theme, desktop icons, clock formats and
+the Start menu (with its initial pins, desktop icons and power button) come
+from `~/.wish/desktop/desktop.yaml` (`--config`), written with the default
+configuration on first run; edit it and the desktop reloads it live.
 Each entry either runs a command or calls a desktop action, so external apps
 can be installed there too. See [desktop-config.md](desktop-config.md).
 
@@ -266,7 +268,7 @@ are active at once:
 | `--cmd C` | *(empty)* | Command to spawn (`upstream_transport=term` only) |
 | `--upstream_ca_file`/`--upstream_ca_pem`, `--upstream_server_name`, `--upstream_insecure_skip_verify`, `--upstream_cert_file`/`--upstream_cert_pem`, `--upstream_key_file`/`--upstream_key_pem`, `--upstream_key_password` | — | Upstream TLS client flags, same meaning as `--ca_file`/etc. above (`upstream_transport=tls` only) |
 | `--config PATH` | `~/.wish/desktop/desktop.yaml` | [Desktop configuration file](desktop-config.md); written with the default if missing, reloaded when it changes |
-| `--wallpaper FILE` | *(built-in gradient)* | Image (png, jpg, ...) shown as the desktop background, scaled to cover the screen |
+| `--wallpaper FILE` | *(from the config file)* | Image (png, jpg, ...) shown as the desktop background; overrides the config file's `appearance.wallpaper` |
 | `--timeout MS` | `30000` | Upstream connection timeout in milliseconds |
 
 ```sh

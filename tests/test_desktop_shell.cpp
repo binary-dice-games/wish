@@ -130,6 +130,74 @@ TEST(DesktopShellHelpers, SearchRanksNamePrefixFirst) {
   EXPECT_FALSE(wish::detail::desktop_app_matches(du, "zzz"));
 }
 
+// ── Wallpaper layout ─────────────────────────────────────────────────────────
+
+namespace {
+
+std::vector<wish::detail::desktop_wallpaper_quad> layout(const std::string& fit, ImVec2 image) {
+  // A 200 x 100 screen at (10, 20).
+  return wish::detail::desktop_wallpaper_layout(fit, ImVec2(10, 20), ImVec2(200, 100), image);
+}
+
+void expect_quad(const wish::detail::desktop_wallpaper_quad& q, ImVec2 p0, ImVec2 p1, ImVec2 uv0, ImVec2 uv1) {
+  EXPECT_FLOAT_EQ(q.p0.x, p0.x);
+  EXPECT_FLOAT_EQ(q.p0.y, p0.y);
+  EXPECT_FLOAT_EQ(q.p1.x, p1.x);
+  EXPECT_FLOAT_EQ(q.p1.y, p1.y);
+  EXPECT_FLOAT_EQ(q.uv0.x, uv0.x);
+  EXPECT_FLOAT_EQ(q.uv0.y, uv0.y);
+  EXPECT_FLOAT_EQ(q.uv1.x, uv1.x);
+  EXPECT_FLOAT_EQ(q.uv1.y, uv1.y);
+}
+
+} // namespace
+
+TEST(DesktopShellHelpers, WallpaperCoverCropsTheOverflowingAxis) {
+  // A square image on a 2:1 screen: full width, the middle half of its height.
+  auto q = layout("cover", ImVec2(50, 50));
+  ASSERT_EQ(q.size(), size_t{1});
+  expect_quad(q[0], ImVec2(10, 20), ImVec2(210, 120), ImVec2(0, 0.25f), ImVec2(1, 0.75f));
+  // Unknown fits are cover.
+  auto u = layout("zoom", ImVec2(50, 50));
+  ASSERT_EQ(u.size(), size_t{1});
+  expect_quad(u[0], ImVec2(10, 20), ImVec2(210, 120), ImVec2(0, 0.25f), ImVec2(1, 0.75f));
+}
+
+TEST(DesktopShellHelpers, WallpaperContainLetterboxes) {
+  auto q = layout("contain", ImVec2(50, 50)); // scaled to 100 x 100, centered
+  ASSERT_EQ(q.size(), size_t{1});
+  expect_quad(q[0], ImVec2(60, 20), ImVec2(160, 120), ImVec2(0, 0), ImVec2(1, 1));
+}
+
+TEST(DesktopShellHelpers, WallpaperStretchFillsTheScreen) {
+  auto q = layout("stretch", ImVec2(50, 50));
+  ASSERT_EQ(q.size(), size_t{1});
+  expect_quad(q[0], ImVec2(10, 20), ImVec2(210, 120), ImVec2(0, 0), ImVec2(1, 1));
+  // An unknown image size stretches whatever the fit.
+  auto u = layout("center", ImVec2(0, 0));
+  ASSERT_EQ(u.size(), size_t{1});
+  expect_quad(u[0], ImVec2(10, 20), ImVec2(210, 120), ImVec2(0, 0), ImVec2(1, 1));
+}
+
+TEST(DesktopShellHelpers, WallpaperCenterKeepsTheSizeAndCrops) {
+  auto small = layout("center", ImVec2(50, 40));
+  ASSERT_EQ(small.size(), size_t{1});
+  expect_quad(small[0], ImVec2(85, 50), ImVec2(135, 90), ImVec2(0, 0), ImVec2(1, 1));
+  auto wide = layout("center", ImVec2(400, 50)); // wider than the screen
+  ASSERT_EQ(wide.size(), size_t{1});
+  expect_quad(wide[0], ImVec2(10, 45), ImVec2(210, 95), ImVec2(0.25f, 0), ImVec2(0.75f, 1));
+}
+
+TEST(DesktopShellHelpers, WallpaperTileRepeatsAndCropsTheEdges) {
+  auto q = layout("tile", ImVec2(80, 60)); // 3 columns x 2 rows
+  ASSERT_EQ(q.size(), size_t{6});
+  expect_quad(q[0], ImVec2(10, 20), ImVec2(90, 80), ImVec2(0, 0), ImVec2(1, 1));
+  // Last column: 40 of 80 px shown; last row: 40 of 60 px.
+  expect_quad(q[5], ImVec2(170, 80), ImVec2(210, 120), ImVec2(0, 0), ImVec2(0.5f, 40.0f / 60.0f));
+  // A tiny image is capped at 64 x 64 tiles.
+  EXPECT_LE(layout("tile", ImVec2(1, 1)).size(), size_t{64 * 64});
+}
+
 TEST(DesktopShellHelpers, CalendarMath) {
   EXPECT_EQ(wish::detail::desktop_days_in_month(2024, 1), 29);
   EXPECT_EQ(wish::detail::desktop_days_in_month(2026, 1), 28);

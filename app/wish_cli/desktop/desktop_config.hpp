@@ -2,12 +2,12 @@
 /**
  * @file desktop_config.hpp
  * @brief The `wish desktop` configuration file (`~/.wish/desktop/desktop.yaml`)
- *        and its `start_menu` section.
+ *        and its sections: `appearance`, `taskbar` and `start_menu`.
  *
  * The file is a YAML (or JSON) map of sections, each configuring one part of
- * the desktop. Only `start_menu` is defined so far; unknown sections are
- * ignored, so a later feature adds a section without changing the format.
- * See docs/desktop-config.md.
+ * the desktop. Unknown sections and unknown settings are ignored, so a later
+ * feature adds one without changing the format, and a missing section or
+ * setting keeps its default. See docs/desktop-config.md.
  */
 #pragma once
 
@@ -79,6 +79,40 @@ struct placeholders {
   std::string home; ///< `{home}`
 };
 
+/// @brief The `appearance` section: how the desktop looks.
+struct appearance {
+  /// Wallpaper image on the desktop's machine (absolute after expansion),
+  /// or empty for the built-in gradient.
+  std::filesystem::path wallpaper;
+  /// How the wallpaper fills the screen: one of @ref wallpaper_fits().
+  std::string wallpaper_fit{"cover"};
+  /// Background color, `#RRGGBB` or `#RRGGBBAA`: drawn instead of the
+  /// built-in gradient, and around a wallpaper that doesn't cover the screen.
+  /// Empty for the gradient.
+  std::string background;
+  /// Theme preset ("light", "dark", ...) applied at start and whenever this
+  /// value changes. Empty keeps the theme last chosen with the tray toggle.
+  std::string theme;
+  bool desktop_icons{true}; ///< Show the desktop icons.
+};
+
+/// @brief The `taskbar` section.
+struct taskbar_settings {
+  std::string time_format{"%H:%M"}; ///< strftime() format, clock's time line.
+  std::string date_format{"%d/%m/%Y"}; ///< strftime() format, clock's date line.
+};
+
+/// @brief The whole configuration file.
+struct desktop_config {
+  appearance look;
+  taskbar_settings taskbar;
+  start_menu menu;
+};
+
+/// @brief Values `appearance.wallpaper_fit` accepts: cover, contain,
+///        stretch, center, tile.
+const std::vector<std::string>& wallpaper_fits();
+
 /// @brief Names `action:` entries may use (the desktop's action table).
 const std::vector<std::string>& known_actions();
 
@@ -93,14 +127,25 @@ const std::vector<std::string>& known_actions();
  */
 start_menu parse_start_menu(const nlohmann::ordered_json& section, const placeholders& ph);
 
+/**
+ * @brief Parse an `appearance` section. A relative `wallpaper` is relative to
+ *        the config file's directory; `~/`, `{home}` and `{config_file}`
+ *        expand.
+ * @throws config_error naming the offending path.
+ */
+appearance parse_appearance(const nlohmann::ordered_json& section, const placeholders& ph);
+
+/// @brief Parse a `taskbar` section. @throws config_error.
+taskbar_settings parse_taskbar(const nlohmann::ordered_json& section);
+
 /// @brief The configuration written when the file doesn't exist.
 const std::string& default_config_text();
 
 /// @brief Result of loading the config file.
 struct loaded_config {
-  /// The Start menu: the file's, or the default one when the file has no
-  /// `start_menu` section or (with @ref error set) can't be used.
-  start_menu menu;
+  /// The file's configuration; the default one when (with @ref error set)
+  /// the file can't be used.
+  desktop_config config;
   /// Why the file couldn't be used; empty when it was fine.
   std::string error;
   /// True when the file didn't exist and the default was written to it.
@@ -116,11 +161,11 @@ loaded_config load_config(const std::filesystem::path& file, const placeholders&
 
 /**
  * @brief Parse configuration @p text (YAML or JSON).
- * @return The Start menu (the default one when there is no `start_menu`
- *         section).
+ * @return The configuration; a missing section has its defaults (for
+ *         `start_menu`, the default config's menu).
  * @throws config_error / std::runtime_error on a syntax or schema error.
  */
-start_menu parse_config_text(const std::string& text, const placeholders& ph);
+desktop_config parse_config_text(const std::string& text, const placeholders& ph);
 
 /// @brief Split a command line on spaces, honoring '…' and "…" quotes.
 std::vector<std::string> split_command(const std::string& command);
