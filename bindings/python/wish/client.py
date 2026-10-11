@@ -506,6 +506,72 @@ class Client:
         finally:
             self._lib.bison_free_string(out)
 
+    # ── Settings metadata ────────────────────────────────────────────────────
+    #
+    # Describe settings kept in the user store so settings tools (the
+    # bdg/desktop/conf tool) can show and edit them; see docs/settings.md. A
+    # setting is one field of a user store entry: "bdg.desktop.example.color"
+    # is the field "color" of the entry "bdg.desktop.example".
+
+    def describe_setting(
+        self,
+        name: str,
+        *,
+        type: str = "string",
+        label: str = "",
+        description: str = "",
+        category: str = "",
+        section: str = "",
+        default: Any = None,
+        min: Optional[float] = None,
+        max: Optional[float] = None,
+        step: Optional[float] = None,
+        options: Optional[List[Any]] = None,
+        icon: str = "",
+        order: int = 0,
+        restart: bool = False,
+    ) -> None:
+        """Describe the setting ``name``. ``type`` is one of bool, int,
+        float, string, enum, color or path. ``options`` (enum) holds values,
+        or ``(value, label)`` pairs, or ``{"value", "label"}`` dicts.
+        Replaces an earlier description; doesn't change the value."""
+        meta: dict = {
+            "name": name,
+            "type": type,
+            "label": label,
+            "description": description,
+            "category": category,
+            "section": section,
+            "default": default,
+            "icon": icon,
+            "order": order,
+            "restart": restart,
+        }
+        for key, value in (("min", min), ("max", max), ("step", step)):
+            if value is not None:
+                meta[key] = value
+        if options is not None:
+            meta["options"] = [
+                {"value": o[0], "label": o[1]} if isinstance(o, (tuple, list)) else o for o in options
+            ]
+        _check(
+            self._lib.wish_settings_describe(self._handle, json.dumps(meta).encode()),
+            f"describe_setting({name!r})",
+            self.last_error,
+        )
+
+    def describe_settings_category(
+        self, id: str, *, label: str = "", description: str = "", icon: str = "", color: str = "", order: int = 0
+    ) -> None:
+        """Describe a sidebar category settings refer to by ``id``.
+        ``color`` is the icon badge color, ``"#RRGGBB"``."""
+        meta = {"id": id, "label": label, "description": description, "icon": icon, "color": color, "order": order}
+        _check(
+            self._lib.wish_settings_describe_category(self._handle, json.dumps(meta).encode()),
+            f"describe_settings_category({id!r})",
+            self.last_error,
+        )
+
     # ── Logging ──────────────────────────────────────────────────────────────
 
     def log(self, level: str, msg: str) -> None:

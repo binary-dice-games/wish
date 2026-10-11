@@ -99,7 +99,7 @@ protocol these build on.
 
 ### User store
 
-`has_user_store()` and `user_store_get` / `user_store_set` / `user_store_erase` / `user_store_keys` read and write the session's persistent, per-identity store of named objects. The session must connect with a `username` connect param; anonymous sessions get `WISH_ERR_UNAVAILABLE`. The API is the same shape in every binding: see the table in [docs/persistent-store.md](persistent-store.md#client-api).
+`has_user_store()` and `user_store_get` / `user_store_set` / `user_store_erase` / `user_store_keys` read and write the session's persistent, per-identity store of named objects. The session must connect with a `username` connect param; anonymous sessions get `WISH_ERR_UNAVAILABLE`. The API is the same shape in every binding: see the table in [docs/persistent-store.md](persistent-store.md#client-api). `describe_setting()` / `describe_settings_category()` (`DescribeSetting`, `describeSetting`, ...) describe settings kept there for the Settings tool: see [docs/settings.md](settings.md).
 
 ### Translations
 
@@ -308,7 +308,7 @@ protocol these build on.
 
 ### User store
 
-`has_user_store()` and `user_store_get` / `user_store_set` / `user_store_erase` / `user_store_keys` read and write the session's persistent, per-identity store of named objects. The session must connect with a `username` connect param; anonymous sessions get `WISH_ERR_UNAVAILABLE`. The API is the same shape in every binding: see the table in [docs/persistent-store.md](persistent-store.md#client-api).
+`has_user_store()` and `user_store_get` / `user_store_set` / `user_store_erase` / `user_store_keys` read and write the session's persistent, per-identity store of named objects. The session must connect with a `username` connect param; anonymous sessions get `WISH_ERR_UNAVAILABLE`. The API is the same shape in every binding: see the table in [docs/persistent-store.md](persistent-store.md#client-api). `describe_setting()` / `describe_settings_category()` (`DescribeSetting`, `describeSetting`, ...) describe settings kept there for the Settings tool: see [docs/settings.md](settings.md).
 
 ### Translations
 

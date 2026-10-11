@@ -212,6 +212,16 @@ TEST(DesktopConfig, DefaultConfigParses) {
   EXPECT_EQ(m.power[0].action, "quit");
 }
 
+TEST(DesktopConfig, DefaultMenuHasAPinnedSettingsEntry) {
+  auto m = parse(dc::default_config_text());
+  const dc::menu_entry* settings = m.find("settings");
+  ASSERT_NE(settings, nullptr);
+  EXPECT_EQ(settings->kind, dc::entry_kind::run);
+  EXPECT_EQ(settings->app, "bdg/desktop/conf");
+  EXPECT_EQ(settings->argv, (std::vector<std::string>{"/bin/wish", "client", "--run=bdg/desktop/conf"}));
+  EXPECT_TRUE(settings->pinned);
+}
+
 TEST(DesktopConfig, NoStartMenuSectionUsesTheDefaultMenu) {
   auto m = parse("version: 1\nwallpaper: {file: x.png}\n");
   EXPECT_EQ(m.power.size(), size_t{2});

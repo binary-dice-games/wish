@@ -4,8 +4,9 @@
 `~/.wish/desktop/desktop.yaml` by default (`--config PATH` to use another
 one). If the file doesn't exist, the desktop writes the default configuration
 there and uses it. The desktop watches the file: save it in any editor and the
-running desktop reloads it. The default Start menu has an **Edit desktop
-settings** entry that opens the file in nano.
+running desktop reloads it. The default Start menu has a pinned **Settings** entry (the
+[Settings tool](settings.md), `bdg/desktop/conf`) and an **Edit desktop
+settings** entry that opens this file in nano.
 
 The file is a map of sections, each configuring one part of the desktop. A
 missing section or setting keeps its default; unknown sections and settings

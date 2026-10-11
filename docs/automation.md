@@ -474,6 +474,22 @@ desk = subprocess.Popen([wish, "desktop", "--upstream_transport", "tcp", "--upst
   `WISH_LIB=<build>/libwish_client.so`; their widgets show in `get_tree()`
   under their template paths (`add_row.input`, `buttons.start`), so drive
   them by path like any app.
+- **Elements a form attaches at runtime are not in `get_tree()`** (it
+  lists the named paths of the form's layout): e.g. the Settings tool's
+  sidebar rows and editors. Click them by coordinates from a screenshot.
+- **A `Selectable` with `ImGuiSelectableFlags_AllowOverlap` (a childful
+  Selectable with `rounding` 0) only presses if it was hovered the frame
+  before**: Playwright's `mouse.click()` moves and presses in one frame, so
+  such a click can do nothing. Move the mouse there first (`mouse.move()`,
+  wait a frame), or use a rounded row, which doesn't use overlap.
+- **Stale `imgui.ini` in the server's working directory** keeps a window
+  docked or placed where an earlier run left it (e.g. a "Settings" window
+  opening docked on the desktop). Delete it for a clean run.
+- **Reading a store entry from Python:** `entry["field"]` on a
+  `bison.Dynamic` returns `0` for a missing field and reads a `false` bool
+  as `0`. Read `json.loads(entry.to_json())` instead: keys are
+  `"#<bison.key(name)>"` and values keep their type (see
+  `bindings/python/examples/desktop/settings_demo.py`).
 - **Cascaded windows overlap**; to show several apps side by side, drag
   each by its title bar: `mouse.move()` onto the title, `down()`, several
   `move()` steps, `up()` (one jump is not seen as a drag).

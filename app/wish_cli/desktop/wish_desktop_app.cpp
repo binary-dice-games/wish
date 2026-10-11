@@ -336,6 +336,23 @@ void wish_desktop::build_chrome() {
     } catch (...) {
       user_store_proxy_.reset();
     }
+    // Settings metadata for the settings tool (bdg/desktop/conf).
+    if (user_store_proxy_) {
+      try {
+        settings::setting_info theme;
+        theme.name = std::string(kSettingsEntry) + ".theme";
+        theme.label = "Desktop theme";
+        theme.description = "Theme of the desktop and the apps on it; the tray's theme button switches it too.";
+        theme.category = "desktop";
+        theme.type = settings::setting_type::choice;
+        theme.options = {{"light", "Light"}, {"dark", "Dark"}, {"wish", "Wish"}, {"classic", "Classic"}};
+        theme.default_value = std::string{"light"};
+        theme.restart = true;
+        detail::describe_setting_sync(*user_store_proxy_, theme);
+      } catch (const std::exception& ex) {
+        std::cerr << "[desktop] cannot describe settings: " << ex.what() << '\n';
+      }
+    }
     desktop_settings saved;
     if (user_store_proxy_) {
       try {

@@ -100,6 +100,35 @@ public class ErrorMappingTests
 }
 
 /// <summary>
+/// Settings metadata: the JSON the C ABI receives, and the anonymous-session
+/// error (a client that never connected has no user store).
+/// </summary>
+public class SettingsMetadataTests
+{
+    [Fact]
+    public void SettingJsonOmitsUnsetFields()
+    {
+        var json = new SettingInfo { Name = "bdg.desktop.example.count", Type = "int", Default = 3, Max = 10 }.ToJson();
+        Assert.Contains("\"name\":\"bdg.desktop.example.count\"", json);
+        Assert.Contains("\"default\":3", json);
+        Assert.Contains("\"max\":10", json);
+        Assert.DoesNotContain("\"min\"", json);
+        Assert.DoesNotContain("\"options\"", json);
+    }
+
+    [Fact]
+    public void DescribeSettingWithoutSessionIsUnavailable()
+    {
+        using var client = Client.Tcp("127.0.0.1", 1);
+        var ex = Assert.Throws<WishException>(() =>
+            client.DescribeSetting(new SettingInfo { Name = "bdg.desktop.example.color", Type = "color" }));
+        Assert.Equal(WishErrorCode.Unavailable, ex.Code);
+        ex = Assert.Throws<WishException>(() => client.DescribeSettingsCategory(new SettingsCategory { Id = "example" }));
+        Assert.Equal(WishErrorCode.Unavailable, ex.Code);
+    }
+}
+
+/// <summary>
 /// Exercises Client.ListApps() -&gt; wish_list_apps plumbing. Registration
 /// happens at library load time, so this needs no connection or live
 /// server -- it works even when no optional app module is enabled (an

@@ -53,6 +53,33 @@ void register_layout() {
                               "stretch-filling body works regardless of child order. Ignored outside "
                               "a VerticalLayout."),
             attr<Category>("Layout")});
+    proto->addField(
+        "card"_rkey,
+        field{
+            false,
+            attr<DisplayName>("Card"),
+            attr<Description>("Draws the children on a rounded, filled, bordered panel (like the "
+                              "grouped rows of macOS System Settings), inset by \"padding\". "
+                              "Colors follow the theme."),
+            attr<Category>("Appearance")});
+    proto->addField(
+        "padding"_rkey,
+        field{
+            12.0f,
+            attr<DisplayName>("Padding"),
+            attr<Description>("Inner margin of a card, in pixels. Ignored unless \"card\" is true."),
+            attr<Category>("Appearance"),
+            attr<Range>(0, 128),
+            attr<Step>(1)});
+    proto->addField(
+        "rounding"_rkey,
+        field{
+            10.0f,
+            attr<DisplayName>("Rounding"),
+            attr<Description>("Corner radius of a card, in pixels. Ignored unless \"card\" is true."),
+            attr<Category>("Appearance"),
+            attr<Range>(0, 64),
+            attr<Step>(1)});
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Layout"));
     (*proto)[dynamic::CLASS].addAttribute(attr<Description>("Base container that arranges child elements."));
     dynamic::addClass(

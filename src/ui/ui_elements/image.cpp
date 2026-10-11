@@ -48,6 +48,16 @@ void register_image() {
                             "draws the image unmodified."),
           attr<Category>("Appearance")});
   proto->addField(
+      "badge"_rkey,
+      field{
+          std::string{""},
+          attr<DisplayName>("Badge"),
+          attr<Description>("Optional \"#RRGGBB\" color: draws a rounded square of that color "
+                            "(width x height) with the image inset on it, like the category icons "
+                            "of macOS System Settings. Combine with a white tint. Empty (the "
+                            "default) draws the image alone."),
+          attr<Category>("Appearance")});
+  proto->addField(
       "tint_light"_rkey,
       field{
           std::string{""},

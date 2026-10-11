@@ -15,6 +15,7 @@
 package wish
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -247,6 +248,42 @@ func TestUserStoreUnavailableWithoutSession(t *testing.T) {
 	}
 	if _, err := c.UserStoreGet("bdg.test"); !errors.As(err, &we) || we.Code != WishErrUnavailable {
 		t.Fatalf("UserStoreGet() error = %v; want WishErrUnavailable", err)
+	}
+}
+
+func TestDescribeSettingUnavailableWithoutSession(t *testing.T) {
+	c, err := NewTCPClient("127.0.0.1", 1)
+	must(t, err)
+	defer c.Destroy()
+	var we *WishError
+	err = c.DescribeSetting(SettingInfo{Name: "bdg.desktop.example.color", Type: "color", Default: "#2F7BF5"})
+	if !errors.As(err, &we) || we.Code != WishErrUnavailable {
+		t.Fatalf("DescribeSetting() error = %v; want WishErrUnavailable", err)
+	}
+	err = c.DescribeSettingsCategory(SettingsCategory{ID: "example"})
+	if !errors.As(err, &we) || we.Code != WishErrUnavailable {
+		t.Fatalf("DescribeSettingsCategory() error = %v; want WishErrUnavailable", err)
+	}
+}
+
+func TestSettingInfoJSON(t *testing.T) {
+	max := 10.0
+	data, err := json.Marshal(SettingInfo{
+		Name:    "bdg.desktop.example.count",
+		Type:    "int",
+		Default: 3,
+		Max:     &max,
+		Options: nil,
+	})
+	must(t, err)
+	got := string(data)
+	for _, want := range []string{`"name":"bdg.desktop.example.count"`, `"default":3`, `"max":10`} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("JSON %s lacks %s", got, want)
+		}
+	}
+	if strings.Contains(got, `"min"`) || strings.Contains(got, `"options"`) {
+		t.Fatalf("JSON %s should omit unset min/options", got)
 	}
 }
 

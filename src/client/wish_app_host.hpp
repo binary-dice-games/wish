@@ -7,6 +7,7 @@
 #pragma once
 
 #include <client/app_registry.hpp>
+#include <context/settings_schema.hpp>
 
 #include "src/bison/bison.hpp"
 #include "src/rmi/client/proxy.hpp"
@@ -141,6 +142,32 @@ class wish_app_host {
   /// @copydoc bdg::wish::client::user_store_keys
   virtual std::future<std::vector<std::string>> user_store_keys() {
     return unavailable_user_store<std::vector<std::string>>();
+  }
+
+  // ── Settings metadata ─────────────────────────────────────────────────
+
+  /// @copydoc bdg::wish::client::describe_setting
+  /// The default implementation reads, merges and writes the schema entry
+  /// through user_store_get()/user_store_set().
+  virtual std::future<void> describe_setting(const settings::setting_info& info) {
+    settings::check(info);
+    return std::async(std::launch::async, [this, info]() {
+      const std::string name = settings::schema_entry_name(settings::parse_name(info.name).entry);
+      bison::dynamic schema = user_store_get(name).get().value_or(bison::dynamic{});
+      settings::merge_setting(schema, info);
+      user_store_set(name, std::move(schema)).get();
+    });
+  }
+
+  /// @copydoc bdg::wish::client::describe_settings_category
+  virtual std::future<void> describe_settings_category(const settings::category_info& info) {
+    settings::check(info);
+    return std::async(std::launch::async, [this, info]() {
+      const std::string name = settings::category_entry_name(info.id);
+      bison::dynamic schema = user_store_get(name).get().value_or(bison::dynamic{});
+      settings::merge_category(schema, info);
+      user_store_set(name, std::move(schema)).get();
+    });
   }
 
   /// @brief Store a proxy to keep the remote/local object alive for the session.

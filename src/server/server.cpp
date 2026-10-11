@@ -137,6 +137,8 @@ void server::on_authenticated(bison::rmi::context& ctx, const std::string& ident
   }
 
   auto& s = static_cast<context&>(ctx);
+  s.identity = identity;
+  s.settings_admin = settings_admins_.count(identity) != 0;
   s.user_store = stores_->user_store(identity);
   s.user_store_service = user_store_service::instantiate(s.user_store);
 

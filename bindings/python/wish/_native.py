@@ -264,6 +264,13 @@ def _setup_wish_signatures(lib: ctypes.CDLL) -> None:
     lib.wish_user_store_keys.restype = Error
     lib.wish_user_store_keys.argtypes = [ClientHandle, P(ctypes.c_char_p)]
 
+    # ── Settings metadata ────────────────────────────────────────────────────
+    lib.wish_settings_describe.restype = Error
+    lib.wish_settings_describe.argtypes = [ClientHandle, ctypes.c_char_p]
+
+    lib.wish_settings_describe_category.restype = Error
+    lib.wish_settings_describe_category.argtypes = [ClientHandle, ctypes.c_char_p]
+
     lib.wish_log.restype = Error
     lib.wish_log.argtypes = [ClientHandle, ctypes.c_char_p, ctypes.c_char_p]
 

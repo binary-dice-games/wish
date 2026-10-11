@@ -15,6 +15,7 @@
 #include <chrono>
 #include <filesystem>
 #include <memory>
+#include <set>
 #include <string>
 #include <thread>
 
@@ -189,6 +190,21 @@ class server : public bison::rmi::server {
   }
 
   /**
+   * @brief Identities allowed to change server-store settings (e.g. the
+   *        saved default theme) through server-side settings tools such as
+   *        the bdg/desktop/conf form; see `context::settings_admin`.
+   *
+   * Empty (the default): no session may. The identity comes from the auth
+   * module, so with `local_auth_module` (which trusts the client's claimed
+   * username) only list admins on trusted, local deployments.
+   *
+   * Must be called before `start()`.
+   */
+  void set_settings_admins(std::set<std::string> identities) {
+    settings_admins_ = std::move(identities);
+  }
+
+  /**
    * @brief Set the directory holding the persistent stores (see
    *        `docs/persistent-store.md`).
    *
@@ -306,6 +322,8 @@ class server : public bison::rmi::server {
   // Empty (default) disables persistent sandbox directories entirely; see
   // set_persistent_sandbox_root().
   std::filesystem::path persistent_sandbox_root_;
+  // See set_settings_admins().
+  std::set<std::string> settings_admins_;
   // Owns the server store and the per-identity user stores; see
   // set_store_dir(). Replaced only before start().
   store_registry_ptr stores_{std::make_shared<store_registry>(default_store_dir())};

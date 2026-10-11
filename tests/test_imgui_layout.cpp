@@ -598,3 +598,70 @@ TEST_F(ImguiLayoutTest, LabelWithExplicitFontSizeMeasuresConsistentlyWithRender)
   EXPECT_FLOAT_EQ(measured_sz.x, rendered_sz.x);
   EXPECT_FLOAT_EQ(measured_sz.y, rendered_sz.y);
 }
+
+// ── Cards ────────────────────────────────────────────────────────────────────
+
+// A "card" layout insets its children by "padding": measure grows by twice
+// the padding on both axes, and arrange offsets and shrinks the children.
+TEST_F(ImguiLayoutTest, CardLayoutPadsMeasureAndArrange) {
+  auto map = bdg::wish::import_json(R"({"type":"VerticalLayout","card":true,"padding":10,"children":{
+      "a":{"type":"Button","label":"A","height":20},
+      "b":{"type":"Button","label":"B","height":-1}
+  }})");
+  auto& root = *map[""];
+  ImGui::GetStyle().ItemSpacing = ImVec2(0.0f, 0.0f);
+
+  renderer_->begin_frame();
+  bdg::wish::natural_size sz{};
+  in_window([&] {
+    sz = measure_node(*renderer_, root, *sess_);
+    bdg::wish::arrange_node(*renderer_, root, ImVec2(0.0f, 0.0f), ImVec2(300.0f, 200.0f), *sess_);
+  });
+  renderer_->end_frame();
+
+  EXPECT_FLOAT_EQ(sz.y, 20.0f + 20.0f);
+  EXPECT_FLOAT_EQ(map["a"]->arranged_pos().x, 10.0f);
+  EXPECT_FLOAT_EQ(map["a"]->arranged_pos().y, 10.0f);
+  EXPECT_FLOAT_EQ(map["a"]->arranged_size().x, 280.0f);
+  EXPECT_FLOAT_EQ(map["b"]->arranged_size().y, 200.0f - 20.0f - 20.0f);
+  EXPECT_FLOAT_EQ(root.content_extent().x, 300.0f);
+  EXPECT_FLOAT_EQ(root.content_extent().y, 200.0f);
+}
+
+// Without "card", "padding" changes nothing (it only applies to cards).
+TEST_F(ImguiLayoutTest, PaddingIsIgnoredWithoutCard) {
+  auto map = bdg::wish::import_json(R"({"type":"HorizontalLayout","padding":10,"children":{
+      "a":{"type":"Button","label":"A","width":50,"height":20}
+  }})");
+  renderer_->begin_frame();
+  bdg::wish::natural_size sz{};
+  in_window([&] { sz = measure_node(*renderer_, *map[""], *sess_); });
+  renderer_->end_frame();
+  EXPECT_FLOAT_EQ(sz.x, 50.0f);
+}
+
+// The new appearance fields default to "off", so existing UIs are unchanged,
+// and a card, a badge, a switch and a rounded Selectable all render.
+TEST_F(ImguiLayoutTest, AppearanceFieldsDefaultOffAndRender) {
+  auto map = bdg::wish::import_json(R"({"type":"VerticalLayout","children":{
+      "card":{"type":"VerticalLayout","card":true,"children":{
+          "sw":{"type":"Checkbox","label":"Enabled","style":"switch","value":true},
+          "row":{"type":"Selectable","label":"Row","rounding":6,"selected":true},
+          "icon":{"type":"Image","src":"res/icons/settings.png","width":28,"height":28,"badge":"#8E8E93"}
+      }},
+      "plain":{"type":"Checkbox","label":"Plain"}
+  }})");
+  EXPECT_FALSE(map[""]->get_as<bool>("card"_key, true));
+  EXPECT_FLOAT_EQ(map[""]->get_as<float>("padding"_key, 0.0f), 12.0f);
+  EXPECT_FLOAT_EQ(map[""]->get_as<float>("rounding"_key, 0.0f), 10.0f);
+  EXPECT_EQ(map["plain"]->get_as<std::string>("style"_key, std::string{"x"}), "");
+
+  for (int frame = 0; frame < 3; ++frame) {
+    renderer_->begin_frame();
+    in_window([&] { renderer_->render_node(*map[""], *sess_); });
+    renderer_->end_frame();
+  }
+  // The card's switch row occupies real space inside the padded panel.
+  EXPECT_GT(map["card.sw"]->last_rendered_size().x, 0.0f);
+  EXPECT_GT(map["card"]->content_extent().y, map["card.sw"]->last_rendered_size().y);
+}

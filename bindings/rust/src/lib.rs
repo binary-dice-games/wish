@@ -37,10 +37,12 @@
 pub mod client;
 pub mod key;
 pub mod proxy;
+pub mod settings;
 pub mod sys;
 pub mod value;
 
 pub use client::{list_apps_json, Client, Error, QuitHandle, WishError};
 pub use key::key;
 pub use proxy::{Future, Proxy, RmiError};
+pub use settings::{SettingInfo, SettingOption, SettingValue, SettingsCategory};
 pub use value::{BisonError, Value};

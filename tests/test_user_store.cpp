@@ -10,6 +10,7 @@
 #include <auth/local_auth_module.hpp>
 #include <client/client.hpp>
 #include <context/persistent_store.hpp>
+#include <context/settings_store.hpp>
 #include <server/server.hpp>
 #include <standalone/standalone.hpp>
 
@@ -18,6 +19,7 @@
 #include <atomic>
 #include <filesystem>
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -369,4 +371,194 @@ TEST(WishAppHostUserStore, DefaultsReportUnavailable) {
   EXPECT_THROW(host.user_store_set("k", dynamic{}).get(), std::logic_error);
   EXPECT_THROW(host.user_store_erase("k").get(), std::logic_error);
   EXPECT_THROW(host.user_store_keys().get(), std::logic_error);
+}
+
+// ── Settings metadata ────────────────────────────────────────────────────────
+
+namespace {
+
+wish::settings::setting_info color_setting() {
+  wish::settings::setting_info s;
+  s.name = "bdg.desktop.example.color";
+  s.label = "Color";
+  s.category = "example";
+  s.type = wish::settings::setting_type::color;
+  s.default_value = std::string{"#2F7BF5"};
+  return s;
+}
+
+// A host whose user store is an in-memory map, to test wish_app_host's
+// default describe_setting().
+class map_host : public minimal_host {
+ public:
+  std::map<std::string, std::shared_ptr<dynamic>> entries;
+
+  bool has_user_store() const override {
+    return true;
+  }
+  std::future<std::optional<dynamic>> user_store_get(const std::string& name) override {
+    std::promise<std::optional<dynamic>> p;
+    auto it = entries.find(name);
+    if (it == entries.end())
+      p.set_value(std::nullopt);
+    else
+      p.set_value(dynamic{*it->second});
+    return p.get_future();
+  }
+  std::future<void> user_store_set(const std::string& name, dynamic value) override {
+    entries[name] = std::make_shared<dynamic>(std::move(value));
+    std::promise<void> p;
+    p.set_value();
+    return p.get_future();
+  }
+};
+
+} // namespace
+
+TEST_F(UserStoreTest, ClientDescribesSettingsInItsUserStore) {
+  memory_server_transport transport;
+  wish::server srv{transport, std::make_unique<wish::null_renderer>()};
+  srv.set_store_dir(dir_);
+  srv.start(std::make_shared<wish::local_auth_module>());
+
+  std::vector<std::string> keys;
+  run_as(transport, "alice", [&](store_test_client& c) {
+    c.describe_setting(color_setting()).get();
+    auto count = color_setting();
+    count.name = "bdg.desktop.example.count";
+    count.type = wish::settings::setting_type::integer;
+    count.default_value = int32_t{2};
+    c.describe_setting(count).get();
+    c.describe_settings_category({"example", "Example", "", "res/icons/palette.png", "#AF52DE", 10}).get();
+    keys = c.user_store_keys().get();
+  });
+  srv.stop();
+
+  EXPECT_EQ(keys, (std::vector<std::string>{"bdg.desktop.example#schema", "wish.category.example#schema"}));
+  wish::persistent_store store(dir_ / "users" / "alice.bison");
+  auto catalog = wish::settings::collect(store);
+  ASSERT_EQ(catalog.settings.size(), size_t{2});
+  EXPECT_EQ(catalog.settings[0].info.label, "Color");
+  ASSERT_EQ(catalog.categories.size(), size_t{1});
+  EXPECT_EQ(catalog.categories[0].color, "#AF52DE");
+}
+
+TEST_F(UserStoreTest, DescribingNeedsAnIdentityAndValidMetadata) {
+  memory_server_transport transport;
+  wish::server srv{transport, std::make_unique<wish::null_renderer>()};
+  srv.set_store_dir(dir_);
+  srv.start(std::make_shared<wish::local_auth_module>());
+
+  bool anonymous_threw = false;
+  bool invalid_threw = false;
+  run_as(transport, "", [&](store_test_client& c) {
+    try {
+      c.describe_setting(color_setting()).get();
+    } catch (const std::logic_error&) {
+      anonymous_threw = true;
+    }
+  });
+  run_as(transport, "alice", [&](store_test_client& c) {
+    auto bad = color_setting();
+    bad.default_value = int32_t{1};
+    try {
+      c.describe_setting(bad).get();
+    } catch (const wish::settings::schema_error&) {
+      invalid_threw = true;
+    }
+  });
+  srv.stop();
+  EXPECT_TRUE(anonymous_threw);
+  EXPECT_TRUE(invalid_threw);
+}
+
+TEST_F(UserStoreTest, StandaloneDescribesSettings) {
+  wish::standalone sa{std::make_unique<wish::null_renderer>()};
+  sa.set_store_dir(dir_);
+  sa.set_user_identity("carol");
+  sa.start();
+  sa.describe_setting(color_setting()).get();
+  auto keys = sa.user_store_keys().get();
+  sa.stop();
+  EXPECT_EQ(keys, (std::vector<std::string>{"bdg.desktop.example#schema"}));
+}
+
+TEST(WishAppHostSettings, DefaultDescribeGoesThroughTheUserStore) {
+  map_host host;
+  host.describe_setting(color_setting()).get();
+  auto changed = color_setting();
+  changed.label = "Accent";
+  host.describe_setting(changed).get();
+  host.describe_settings_category({"example", "Example", "", "", "", 0}).get();
+  ASSERT_EQ(host.entries.count("bdg.desktop.example#schema"), size_t{1});
+  auto settings = wish::settings::settings_of(*host.entries["bdg.desktop.example#schema"]);
+  ASSERT_EQ(settings.size(), size_t{1});
+  EXPECT_EQ(settings[0].label, "Accent");
+  EXPECT_EQ(host.entries.count("wish.category.example#schema"), size_t{1});
+  // Without a user store the default fails like user_store_set().
+  minimal_host none;
+  EXPECT_THROW(none.describe_setting(color_setting()).get(), std::logic_error);
+}
+
+// ── Settings admins ──────────────────────────────────────────────────────────
+
+namespace {
+// Remembers the latest session, so a client's session body (which runs
+// after authentication completed) can read what the server recorded.
+class session_tracking_server : public wish::server {
+ public:
+  using wish::server::server;
+  bdg::bison::synchronized<wish::context*> last{nullptr};
+
+ protected:
+  void on_session_created(wish::context& s) override {
+    *last.wlock() = &s;
+  }
+};
+} // namespace
+
+TEST_F(UserStoreTest, OnlyListedIdentitiesAreSettingsAdmins) {
+  memory_server_transport transport;
+  session_tracking_server srv{transport, std::make_unique<wish::null_renderer>()};
+  srv.set_store_dir(dir_);
+  srv.set_settings_admins({"alice"});
+  srv.start(std::make_shared<wish::local_auth_module>());
+
+  auto seen = [&](const std::string& user) {
+    std::pair<std::string, bool> out;
+    run_as(transport, user, [&](store_test_client&) {
+      wish::context* sess = *srv.last.rlock();
+      out = {sess->identity, sess->settings_admin};
+    });
+    return out;
+  };
+  EXPECT_EQ(seen("alice"), (std::pair<std::string, bool>{"alice", true}));
+  EXPECT_EQ(seen("bob"), (std::pair<std::string, bool>{"bob", false}));
+  EXPECT_EQ(seen(""), (std::pair<std::string, bool>{"", false}));
+  srv.stop();
+}
+
+namespace {
+class exposed_standalone : public wish::standalone {
+ public:
+  using wish::standalone::session_context_ptr;
+  using wish::standalone::standalone;
+};
+} // namespace
+
+TEST_F(UserStoreTest, StandaloneSessionIsSettingsAdmin) {
+  exposed_standalone sa{std::make_unique<wish::null_renderer>()};
+  sa.set_store_dir(dir_);
+  sa.set_user_identity("carol");
+  sa.start();
+  bool admin = false;
+  std::string identity;
+  {
+    auto sess = wish::context_wlock{*sa.session_context_ptr()};
+    admin = sess->settings_admin;
+    identity = sess->identity;
+  }
+  sa.stop();
+  EXPECT_TRUE(admin);
+  EXPECT_EQ(identity, "carol");
 }

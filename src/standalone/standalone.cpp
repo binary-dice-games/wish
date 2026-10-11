@@ -87,6 +87,8 @@ void standalone::on_session_created(bison::rmi::context& ctx) {
     sess->logger_service = logger_;
     sess->server_store = stores_->server_store();
     const std::string& identity = !user_identity_.empty() ? user_identity_ : persistent_identity_;
+    sess->identity = identity;
+    sess->settings_admin = true; // one local user, who owns the server store too
     if (auto store = stores_->user_store(identity)) {
       sess->user_store = store;
       sess->user_store_service = user_store_service::instantiate(std::move(store));
@@ -491,6 +493,24 @@ std::future<std::vector<std::string>> standalone::user_store_keys() {
   return std::async(std::launch::async, [this]() -> std::vector<std::string> {
     detail::require_user_store(user_store_proxy_);
     return detail::user_store_keys_sync(*user_store_proxy_);
+  });
+}
+
+std::future<void> standalone::describe_setting(const settings::setting_info& info) {
+  settings::check(info);
+  return std::async(std::launch::async, [this, info]() {
+    detail::require_user_store(user_store_proxy_);
+    auto lock = describe_lock_.wlock();
+    detail::describe_setting_sync(*user_store_proxy_, info);
+  });
+}
+
+std::future<void> standalone::describe_settings_category(const settings::category_info& info) {
+  settings::check(info);
+  return std::async(std::launch::async, [this, info]() {
+    detail::require_user_store(user_store_proxy_);
+    auto lock = describe_lock_.wlock();
+    detail::describe_category_sync(*user_store_proxy_, info);
   });
 }
 

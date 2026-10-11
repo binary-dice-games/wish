@@ -418,11 +418,17 @@ taskbar:
 # The Start menu: a tree of entries. An entry runs a command (run), calls a
 # desktop action (action), holds other entries (items), or is a separator.
 start_menu:
-  pinned: [bdg/desktop/nano, bdg/desktop/mc, bdg/desktop/top]   # taskbar pins, by entry id
+  pinned: [settings, bdg/desktop/nano, bdg/desktop/mc, bdg/desktop/top]   # taskbar pins, by entry id
   desktop: [bdg/desktop/nano, bdg/desktop/mc, bdg/desktop/top]  # desktop icons, by entry id
   items:
     - apps: all            # every app built into wish, a folder per collection
     - separator: true
+    - label: Settings
+      id: settings
+      icon: res/icons/settings.png
+      tooltip: Your settings, your apps' settings and the server's
+      run: ["{wish_client}", "--run=bdg/desktop/conf"]
+      app: bdg/desktop/conf
     - label: Edit desktop settings
       icon: res/icons/settings.png
       tooltip: Open this file in nano; saving it updates the desktop

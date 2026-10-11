@@ -201,6 +201,16 @@ struct context : public bison::rmi::context {
   /// `user_store` is.
   user_store_service_ptr user_store_service;
 
+  /// The session's authenticated identity; empty for anonymous sessions.
+  std::string identity;
+
+  /// Whether this session may change server-store settings through
+  /// server-side settings tools (the bdg/desktop/conf form): true for
+  /// identities listed with `server::set_settings_admins()`, and always in
+  /// `standalone` (one local user). No RMI path to the server store exists
+  /// either way; see docs/settings.md.
+  bool settings_admin{false};
+
 #ifdef WISH_AUTOMATION_ENABLED
   /// Automation service instance; only set (by `server::on_session_created`/
   /// `standalone::on_session_created`) when the active renderer implements

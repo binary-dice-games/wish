@@ -7,13 +7,18 @@
 
 #include "app/wish_cli/env_flags.hpp"
 
+#include <context/settings_store.hpp>
+
 #include <gflags/gflags.h>
 
+#include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
 #include <iostream>
+#include <optional>
 #include <set>
 #include <string>
 
@@ -137,6 +142,153 @@ std::vector<std::string> save_config_store_defaults(
   return saved;
 }
 
+// ── Settings metadata ────────────────────────────────────────────────────────
+
+namespace {
+
+/// The flag's built-in default as a setting value of @p type.
+settings::setting_value flag_default(const gflags::CommandLineFlagInfo& info, settings::setting_type type) {
+  try {
+    switch (type) {
+      case settings::setting_type::boolean:
+        return info.default_value == "true";
+      case settings::setting_type::integer:
+        return static_cast<int32_t>(std::stol(info.default_value));
+      case settings::setting_type::real:
+        return std::stof(info.default_value);
+      default:
+        return info.default_value;
+    }
+  } catch (...) {
+    return {};
+  }
+}
+
+} // namespace
+
+void describe_config_flags(
+    persistent_store& store,
+    const std::string& entry_name,
+    const std::vector<std::string>& excluded_flags,
+    const std::string& section) {
+  using settings::setting_type;
+  struct known {
+    const char* name;
+    const char* label;
+    const char* description;
+    const char* category;
+    setting_type type;
+    std::vector<settings::setting_option> options;
+    std::optional<float> min, max;
+    int32_t order;
+  };
+  const std::vector<known> kKnown = {
+      {"theme",
+       "Theme",
+       "Theme every new session starts with.",
+       "appearance",
+       setting_type::choice,
+       {{"wish", "Wish"}, {"light", "Light"}, {"dark", "Dark"}, {"classic", "Classic"}},
+       {},
+       {},
+       0},
+      {"font_size", "Text size", "Font size in pixels.", "appearance", setting_type::integer, {}, 8.0f, 48.0f, 1},
+      {"lang",
+       "Language",
+       "Language of the built-in dialogs and tools.",
+       "general",
+       setting_type::choice,
+       {{"en", "English"},
+        {"es", "Espa\xC3\xB1ol"},
+        {"fr",
+         "Fran\xC3\xA7"
+         "ais"}},
+       {},
+       {},
+       0},
+      {"renderer",
+       "Renderer",
+       "Where the server draws its window.",
+       "server",
+       setting_type::choice,
+       {{"web", "Web browser"}, {"sdl3", "Native window (SDL3)"}, {"none", "None"}},
+       {},
+       {},
+       0},
+      {"title", "Window title", "Title of the server's window.", "server", setting_type::text, {}, {}, {}, 1},
+      {"width",
+       "Window width",
+       "Initial window width in pixels.",
+       "server",
+       setting_type::integer,
+       {},
+       320.0f,
+       7680.0f,
+       2},
+      {"height",
+       "Window height",
+       "Initial window height in pixels.",
+       "server",
+       setting_type::integer,
+       {},
+       240.0f,
+       4320.0f,
+       3},
+      {"web_port",
+       "Web port",
+       "HTTP port of the web renderer.",
+       "server",
+       setting_type::integer,
+       {},
+       1.0f,
+       65535.0f,
+       4},
+      {"port",
+       "Port",
+       "Port clients connect to (tcp/tls transports).",
+       "server",
+       setting_type::integer,
+       {},
+       1.0f,
+       65535.0f,
+       5},
+  };
+  const auto names = config_flag_names(excluded_flags);
+  const std::set<std::string> saveable(names.begin(), names.end());
+  for (const auto& k : kKnown) {
+    gflags::CommandLineFlagInfo info;
+    if (!saveable.count(k.name) || !gflags::GetCommandLineFlagInfo(k.name, &info))
+      continue;
+    settings::setting_info s;
+    s.name = entry_name + "." + k.name;
+    s.label = k.label;
+    s.description = k.description;
+    s.category = k.category;
+    s.section = section;
+    s.type = k.type;
+    s.options = k.options;
+    // "none" is a renderer only standalone takes.
+    if (std::string(k.name) == "renderer" && entry_name != kStandaloneConfigEntry)
+      s.options.pop_back();
+    s.min = k.min;
+    s.max = k.max;
+    s.order = k.order;
+    s.restart = true;
+    s.default_value = flag_default(info, k.type);
+    // An empty or unknown built-in default (e.g. --lang "") has no option.
+    if (std::holds_alternative<std::string>(s.default_value) && !s.options.empty() &&
+        std::none_of(s.options.begin(), s.options.end(), [&](const settings::setting_option& o) {
+          return o.value == std::get<std::string>(s.default_value);
+        }))
+      s.default_value = s.options.front().value;
+    try {
+      settings::describe(store, s);
+    } catch (const std::exception&) {
+      // Metadata is a convenience; never fail a start over it.
+    }
+  }
+}
+
 // ── CLI helper ───────────────────────────────────────────────────────────────
 
 void load_cli_config(
@@ -166,6 +318,9 @@ void load_cli_config(
     std::cerr << log_prefix << " warning: could not update saved defaults: " << ex.what() << "\n";
   }
 
+  // Before applying: that replaces the flags' built-in defaults.
+  describe_config_flags(
+      *store, entry_name, excluded_flags, entry_name == kStandaloneConfigEntry ? "wish standalone" : "wish server");
   apply_config_store_defaults(*store, entry_name, excluded_flags);
 }
 

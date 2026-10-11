@@ -584,6 +584,74 @@ func (c *Client) UserStoreKeys() ([]string, error) {
 	return names, nil
 }
 
+// ── Settings metadata ────────────────────────────────────────────────────
+//
+// Describes settings kept in the user store so settings tools (the
+// bdg/desktop/conf tool) can show and edit them; see docs/settings.md.
+
+// SettingOption is one choice of an enum setting.
+type SettingOption struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
+}
+
+// SettingInfo is the metadata of one setting: field "color" of the user
+// store entry "bdg.desktop.example" is named "bdg.desktop.example.color".
+type SettingInfo struct {
+	Name        string          `json:"name"`
+	Type        string          `json:"type"` // bool, int, float, string, enum, color or path
+	Label       string          `json:"label"`
+	Description string          `json:"description"`
+	Category    string          `json:"category"` // sidebar category id
+	Section     string          `json:"section"`  // group title inside the category
+	Default     any             `json:"default"`  // nil, bool, int, float64 or string
+	Min         *float64        `json:"min,omitempty"`
+	Max         *float64        `json:"max,omitempty"`
+	Step        *float64        `json:"step,omitempty"`
+	Options     []SettingOption `json:"options,omitempty"` // enum choices
+	Icon        string          `json:"icon"`
+	Order       int32           `json:"order"`
+	Restart     bool            `json:"restart"` // takes effect only after a restart
+}
+
+// SettingsCategory is the metadata of one sidebar category.
+type SettingsCategory struct {
+	ID          string `json:"id"`
+	Label       string `json:"label"`
+	Description string `json:"description"`
+	Icon        string `json:"icon"`
+	Color       string `json:"color"` // badge color, "#RRGGBB"
+	Order       int32  `json:"order"`
+}
+
+// DescribeSetting describes a setting (replacing an earlier description).
+// It fails with WishErrUnavailable for an anonymous session.
+func (c *Client) DescribeSetting(info SettingInfo) error {
+	if info.Type == "" {
+		info.Type = "string"
+	}
+	data, err := json.Marshal(info)
+	if err != nil {
+		return fmt.Errorf("wish: describe_setting: %w", err)
+	}
+	cJSON := C.CString(string(data))
+	defer C.free(unsafe.Pointer(cJSON))
+	rc := C.wish_settings_describe(c.handle, cJSON)
+	return checkWish(rc, "client.describe_setting("+info.Name+")", c.handle)
+}
+
+// DescribeSettingsCategory describes a sidebar category settings refer to by id.
+func (c *Client) DescribeSettingsCategory(category SettingsCategory) error {
+	data, err := json.Marshal(category)
+	if err != nil {
+		return fmt.Errorf("wish: describe_settings_category: %w", err)
+	}
+	cJSON := C.CString(string(data))
+	defer C.free(unsafe.Pointer(cJSON))
+	rc := C.wish_settings_describe_category(c.handle, cJSON)
+	return checkWish(rc, "client.describe_settings_category("+category.ID+")", c.handle)
+}
+
 // ── Logging ──────────────────────────────────────────────────────────────
 
 func (c *Client) Log(level, msg string) error {

@@ -500,6 +500,47 @@ TEST_F(ImguiRendererTest, SelectableEmitsChangedWithCorrectPayload) {
   EXPECT_TRUE(last_selected);
 }
 
+// A rounded Selectable (a sidebar row: badge Image + Label children laid out
+// as a row) inside a VerticalLayout still gets clicked by real mouse input
+// -- the row's children must not swallow the click.
+TEST_F(ImguiRendererTest, RoundedSelectableRowClicksWithRealMouseInput) {
+  bool changed = false;
+  sess_->emit_event = [&](bdg::bison::key_t, bdg::bison::key_t ev, dynamic) {
+    changed = changed || ev == "changed"_key;
+  };
+  auto map = bdg::wish::import_json(R"({"type":"VerticalLayout","spacing":2,"children":{
+      "a":{"type":"Selectable","label":"##a","height":32,"rounding":6,"selected":true,"children":{
+          "icon":{"type":"Image","src":"res/icons/settings.png","width":24,"height":24,"badge":"#8E8E93"},
+          "text":{"type":"Label","text":"General"}}},
+      "b":{"type":"Selectable","label":"##b","height":32,"rounding":6,"children":{
+          "icon":{"type":"Image","src":"res/icons/palette.png","width":24,"height":24,"badge":"#AF52DE"},
+          "text":{"type":"Label","text":"Example"}}}
+  }})");
+  auto frame = [&] {
+    renderer_->begin_frame();
+    in_window([&] { renderer_->render_node(*map[""], *sess_); });
+    renderer_->end_frame();
+  };
+  frame();
+  frame();
+  // Row "b": below row "a" (32 px + 2 px spacing) inside the window padding.
+  const ImVec2 pad = ImGui::GetStyle().WindowPadding;
+  ImVec2 center(pad.x + 100.0f, pad.y + 32.0f + 2.0f + 16.0f);
+  ImGuiIO& io = ImGui::GetIO();
+  io.AddMousePosEvent(center.x, center.y);
+  frame();
+  io.AddMouseButtonEvent(0, true);
+  frame();
+  io.AddMouseButtonEvent(0, false);
+  frame();
+  for (auto& ev : sess_->pending_events)
+    if (sess_->emit_event)
+      sess_->emit_event(ev.id, ev.event_name, ev.payload);
+  sess_->pending_events.clear();
+  EXPECT_TRUE(changed);
+  EXPECT_TRUE(map["b"]->get_as<bool>("selected"_key, false));
+}
+
 // A Selectable with children renders them as overlay content on top of its
 // own hit-test area (pix's thumbnail grid cells: Image + filename Label),
 // per render_selectable()'s doc comment in imgui_ui_renderer.cpp. Verifies

@@ -400,6 +400,24 @@ std::future<std::vector<std::string>> client::user_store_keys() {
   });
 }
 
+std::future<void> client::describe_setting(const settings::setting_info& info) {
+  settings::check(info);
+  return std::async(std::launch::async, [this, info]() {
+    detail::require_user_store(user_store_proxy_);
+    auto lock = describe_lock_.wlock();
+    detail::describe_setting_sync(*user_store_proxy_, info);
+  });
+}
+
+std::future<void> client::describe_settings_category(const settings::category_info& info) {
+  settings::check(info);
+  return std::async(std::launch::async, [this, info]() {
+    detail::require_user_store(user_store_proxy_);
+    auto lock = describe_lock_.wlock();
+    detail::describe_category_sync(*user_store_proxy_, info);
+  });
+}
+
 // ── Automation helpers ──────────────────────────────────────────────────────
 
 namespace {
