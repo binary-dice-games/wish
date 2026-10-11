@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 
 #include "session_event_recorder.hpp"
+#include "store_session.hpp"
 
 #include <server/registry.hpp>
 #include <server/server.hpp>
@@ -794,4 +795,25 @@ TEST_F(NanoFilesTest, ClickingAResultForAClosedFileSaysSo) {
   fire(doc_window(0), "closed"_key);
   click_result(0);
   EXPECT_EQ(summary(), "\"a.txt\" is no longer open.");
+}
+
+// ── Settings ─────────────────────────────────────────────────────────────────
+
+TEST(NanoSettings, SearchOptionsAreSavedAndRestored) {
+  wish_test::store_session s;
+  s.open("Nano"_key);
+  dynamic on;
+  on["value"_key] = true;
+  s.fire("checks.chk_match_case", "changed"_key, on);
+  s.fire("mode_row.radio_regex", "clicked"_key);
+  auto entry = s.entry("bdg.desktop.nano");
+  ASSERT_TRUE(entry.has_value());
+  EXPECT_TRUE(entry->get_as<bool>("match_case"_key, false));
+  EXPECT_EQ(entry->get_as<std::string>("search_mode"_key, std::string{}), "regex");
+
+  s.open("Nano"_key);
+  EXPECT_TRUE(s.element("checks.chk_match_case")->as<bool>("value"_key));
+  EXPECT_FALSE(s.element("checks.chk_whole_word")->as<bool>("value"_key));
+  EXPECT_TRUE(s.element("mode_row.radio_regex")->as<bool>("active"_key));
+  EXPECT_FALSE(s.element("mode_row.radio_normal")->as<bool>("active"_key));
 }

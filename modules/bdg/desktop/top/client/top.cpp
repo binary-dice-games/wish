@@ -12,12 +12,14 @@
 #include "modules/bdg/desktop/top/client/top.hpp"
 #include "modules/bdg/desktop/top/client/process_control.hpp"
 #include "modules/bdg/desktop/top/client/process_info.hpp"
+#include "modules/bdg/desktop/top/top_settings.hpp"
 
 #include "src/client/app_registry.hpp"
 #include "src/client/wish_app_host.hpp"
 
 #include "src/bison/bison.hpp"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <memory>
@@ -147,7 +149,9 @@ void run_top(wish_app_host& s) {
   // `proxy` and `stop` stay alive via the shared_ptrs captured below (and by
   // the onEvent lambda above) -- no separate keep_alive() call needed,
   // mirroring nano's `nano` proxy (see its comment).
-  std::thread([proxy, stop] {
+  // Read once here: the sampling thread holds only the proxy, not the host.
+  const int ticks = std::max(1, s.read_int_setting(top_settings::refresh_ms()) / 100);
+  std::thread([proxy, stop, ticks] {
     using namespace std::chrono_literals;
     process_info_source source;
     while (!stop->load(std::memory_order_relaxed)) {
@@ -158,7 +162,7 @@ void run_top(wish_app_host& s) {
         // Form already torn down (window closed / session ending) -- stop.
         break;
       }
-      for (int i = 0; i < 10 && !stop->load(std::memory_order_relaxed); ++i)
+      for (int i = 0; i < ticks && !stop->load(std::memory_order_relaxed); ++i)
         std::this_thread::sleep_for(100ms);
     }
   }).detach();

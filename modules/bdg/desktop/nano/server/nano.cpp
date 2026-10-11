@@ -2,6 +2,7 @@
 /// @file nano.cpp
 /// @brief Implementation of the Nano form.
 #include "nano.hpp"
+#include "modules/bdg/desktop/nano/nano_settings.hpp"
 
 #include "src/bison/bison_object.hpp"
 
@@ -412,6 +413,16 @@ void nano::on_init() {
       results_table_id_ = wish_id_of(e);
     });
   });
+
+  // The search options start as the user left them.
+  if (chk_match_case_ptr_)
+    chk_match_case_ptr_["value"_key] = setting_bool(nano_settings::match_case());
+  if (chk_whole_word_ptr_)
+    chk_whole_word_ptr_["value"_key] = setting_bool(nano_settings::whole_word());
+  const std::string saved_mode = setting_text(nano_settings::search_mode());
+  set_search_mode(saved_mode == "regex"      ? search_mode::regex
+                  : saved_mode == "extended" ? search_mode::extended
+                                             : search_mode::normal);
 
   // Seed the first-run arrangement inside the editor's own nested dockspace
   // (titled with the form's "title" field): the Toolbar strip along the top
@@ -843,14 +854,17 @@ void nano::on_event(key_t id, key_t event, const dynamic& payload) {
   if (event == "clicked"_key) {
     if (id == radio_normal_id_) {
       set_search_mode(search_mode::normal);
+      save_setting(nano_settings::search_mode(), std::string{"normal"});
       return;
     }
     if (id == radio_extended_id_) {
       set_search_mode(search_mode::extended);
+      save_setting(nano_settings::search_mode(), std::string{"extended"});
       return;
     }
     if (id == radio_regex_id_) {
       set_search_mode(search_mode::regex);
+      save_setting(nano_settings::search_mode(), std::string{"regex"});
       return;
     }
     if (id == btn_find_current_id_) {
@@ -878,6 +892,11 @@ void nano::on_event(key_t id, key_t event, const dynamic& payload) {
     if (row >= 0)
       go_to_hit(static_cast<size_t>(row));
     return;
+  }
+  if ((id == chk_whole_word_id_ || id == chk_match_case_id_) && event == "changed"_key) {
+    if (auto* v = payload.findField<bool>("value"_key))
+      save_setting(id == chk_match_case_id_ ? nano_settings::match_case() : nano_settings::whole_word(), *v);
+    return; // their "value" fields are read when a search runs.
   }
   if (id == find_input_id_ || id == chk_whole_word_id_ || id == chk_match_case_id_)
     return; // their "value" fields are read when a search runs.
@@ -942,6 +961,7 @@ void nano::do_close(bool flush_dirty_files) {
 // ── Registration ──────────────────────────────────────────────────────────────
 
 void register_nano() {
+  common::register_tool_settings(nano_settings::all());
   auto proto = dynamic_ptr{"Nano"_key, {}};
 
   proto->addField(

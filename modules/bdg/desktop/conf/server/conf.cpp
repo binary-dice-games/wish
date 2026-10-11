@@ -286,7 +286,7 @@ bool conf::collect() {
   auto add_store = [&](persistent_store* store, bool server) {
     if (!store)
       return;
-    st::catalog cat = st::collect(*store);
+    st::catalog cat = st::collect(*store, !server);
     for (auto& c : cat.categories) {
       if (!ids.insert(c.id).second)
         continue; // built-in, or declared in the other store first
@@ -310,7 +310,7 @@ bool conf::collect() {
           {{it.setting.info.category, capitalize(it.setting.info.category), "", icon_src(""), "", 0}, false});
   }
   std::stable_sort(declared.begin(), declared.end(), [](const category& a, const category& b) {
-    return std::tie(a.info.order, a.info.label) < std::tie(b.info.order, b.info.label);
+    return std::make_tuple(a.info.order, lower(a.info.label)) < std::make_tuple(b.info.order, lower(b.info.label));
   });
   for (auto& c : declared)
     categories.push_back(std::move(c));

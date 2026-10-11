@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 
 #include "session_event_recorder.hpp"
+#include "store_session.hpp"
 
 #include <server/registry.hpp>
 #include <server/server.hpp>
@@ -1151,4 +1152,17 @@ TEST_F(TopSnapshotTest, VanishedProcessKillItemNoLongerTriggersConfirm) {
   got = srv_->events->wait_for("on_process_action_requested"_key, since).has_value();
   EXPECT_FALSE(got);
   EXPECT_TRUE(find_root_with_prefix(srv_->last_session->ui_objects, "__message_box_").empty());
+}
+
+// ── Settings ─────────────────────────────────────────────────────────────────
+
+TEST(TopSettings, GraphHistorySetsThePlotWidth) {
+  wish_test::store_session s;
+  s.open("Top"_key);
+  EXPECT_FLOAT_EQ(s.element("vbox.cpu_plot")->as<float>("x_max"_key), 59.0f); // the default, 60 samples
+  dynamic prefs;
+  prefs["history"_key] = int32_t{120};
+  s.session().user_store->set("bdg.desktop.top", prefs);
+  s.open("Top"_key);
+  EXPECT_FLOAT_EQ(s.element("vbox.cpu_plot")->as<float>("x_max"_key), 119.0f);
 }

@@ -170,6 +170,82 @@ class wish_app_host {
     });
   }
 
+  /**
+   * @brief The current value of @p info in the user store: the stored one
+   *        when it suits the setting (settings::validate()), else the default.
+   *
+   * Blocks on user_store_get(). Never throws: an anonymous session, a store
+   * error or a missing/invalid value all give the default.
+   */
+  settings::setting_value read_setting(const settings::setting_info& info) {
+    if (!has_user_store())
+      return info.default_value;
+    try {
+      const settings::setting_location loc = settings::parse_name(info.name);
+      if (auto entry = user_store_get(loc.entry).get()) {
+        settings::setting_value v = settings::read_value(*entry, loc.field, info.type);
+        if (!std::holds_alternative<std::monostate>(v)) {
+          auto checked = settings::validate(info, v);
+          if (auto* ok = std::get_if<settings::setting_value>(&checked))
+            return *ok;
+        }
+      }
+    } catch (const std::exception&) {
+    }
+    return info.default_value;
+  }
+
+  /// @brief read_setting() as a bool / int / float / string.
+  bool read_bool_setting(const settings::setting_info& info) {
+    auto v = read_setting(info);
+    auto* b = std::get_if<bool>(&v);
+    return b ? *b : false;
+  }
+  int32_t read_int_setting(const settings::setting_info& info) {
+    auto v = read_setting(info);
+    if (auto* f = std::get_if<float>(&v))
+      return static_cast<int32_t>(*f);
+    auto* i = std::get_if<int32_t>(&v);
+    return i ? *i : 0;
+  }
+  float read_float_setting(const settings::setting_info& info) {
+    auto v = read_setting(info);
+    if (auto* i = std::get_if<int32_t>(&v))
+      return static_cast<float>(*i);
+    auto* f = std::get_if<float>(&v);
+    return f ? *f : 0.0f;
+  }
+  std::string read_text_setting(const settings::setting_info& info) {
+    auto v = read_setting(info);
+    auto* s = std::get_if<std::string>(&v);
+    return s ? *s : std::string{};
+  }
+
+  /**
+   * @brief Validates @p value and stores it as @p info's field of its entry
+   *        (read, modify, write; other fields are kept).
+   *
+   * Blocks on the user store. Never throws.
+   * @return An error message, or empty on success. An anonymous session
+   *         gives an error.
+   */
+  std::string write_setting(const settings::setting_info& info, const settings::setting_value& value) {
+    if (!has_user_store())
+      return "no user store";
+    auto checked = settings::validate(info, value);
+    if (auto* err = std::get_if<std::string>(&checked))
+      return *err;
+    try {
+      const settings::setting_location loc = settings::parse_name(info.name);
+      bison::dynamic entry = user_store_get(loc.entry).get().value_or(bison::dynamic{});
+      settings::write_value(entry, loc.field, std::get<settings::setting_value>(checked));
+      user_store_set(loc.entry, std::move(entry)).get();
+    } catch (const std::exception& e) {
+      return e.what();
+    }
+    return {};
+  }
+
   /// @brief Store a proxy to keep the remote/local object alive for the session.
   virtual void keep_alive(bison::rmi::proxy::dynamic&& proxy) = 0;
 

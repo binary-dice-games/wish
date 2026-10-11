@@ -2,6 +2,7 @@
 /// @file mc.cpp
 /// @brief Implementation of the mc form.
 #include "mc.hpp"
+#include "modules/bdg/desktop/mc/mc_settings.hpp"
 
 #include "src/bison/bison_object.hpp"
 #include "src/rmi/shared/ids.hpp"
@@ -341,6 +342,7 @@ mc::~mc() {
 
 void mc::on_init() {
   internal_root_key_ = next_available_key("__mc_");
+  folders_first_ = setting_bool(mc_settings::folders_first()); // also keeps the store for later listings
   sandbox_root_key_ = internal_root_key_ + "_sandbox";
   local_tree_root_key_ = internal_root_key_ + "_local_tree";
   sandbox_tree_root_key_ = internal_root_key_ + "_sandbox_tree";
@@ -730,8 +732,18 @@ void mc::sort_entries(std::vector<file_row>& entries, int32_t sort_column_id, bo
     }
   };
   std::stable_sort(entries.begin() + static_cast<ptrdiff_t>(begin), entries.end(), [&](auto& a, auto& b) {
+    if (folders_first_ && (a.type == "dir") != (b.type == "dir"))
+      return a.type == "dir";
     return ascending ? key_less(a, b) : key_less(b, a);
   });
+}
+
+void mc::apply_view_settings(std::vector<file_row>& entries) {
+  folders_first_ = setting_bool(mc_settings::folders_first());
+  if (!setting_bool(mc_settings::show_hidden()))
+    entries.erase(std::remove_if(entries.begin(), entries.end(),
+                                 [](const file_row& r) { return r.name.size() > 1 && r.name[0] == '.' && r.name != ".."; }),
+                  entries.end());
 }
 
 void mc::on_table_sorted(
@@ -886,6 +898,7 @@ void mc::navigate_sandbox(
 
   sandbox_path_ = relative_path;
   sandbox_entries_ = std::move(entries);
+  apply_view_settings(sandbox_entries_);
   // Navigating to a (possibly different) directory invalidates whatever was
   // selected before -- the old names may not even exist here.
   selected_sandbox_names_.clear();
@@ -1088,6 +1101,7 @@ dynamic mc::do_update_local_listing(const dynamic& args) {
   selected_local_names_.clear();
   local_selection_anchor_ = -1;
 
+  apply_view_settings(local_entries_);
   sort_entries(local_entries_, local_sort_column_id_, local_sort_ascending_);
   fill_table(left_table_ptr_, local_entries_, false, local_menu_targets_, selected_local_names_);
   if (left_path_ptr_)
@@ -1478,6 +1492,7 @@ void register_file_properties_class() {
 }
 
 void register_mc() {
+  common::register_tool_settings(mc_settings::all());
   register_file_properties_class();
 
   auto proto = dynamic_ptr{"Mc"_key, {}};

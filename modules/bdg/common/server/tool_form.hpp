@@ -19,6 +19,9 @@
 #pragma once
 
 #include "modules/bdg/common/server/ui_helpers.hpp"
+#include "modules/bdg/common/tool_settings.hpp"
+
+#include <context/settings_store.hpp>
 
 #include <ui/forms/form.hpp>
 #include <ui/ui_element.hpp>
@@ -118,6 +121,21 @@ class tool_form : public form {
   /// idiom form::instantiate_child_form() uses.
   void run_in_dispatch(const std::function<void()>& fn);
 
+  // ── Module settings (see tool_settings.hpp) ────────────────────────────
+  //
+  // Values of the module's settings in the session's user store: the stored
+  // value when valid, else the default (always the default for an
+  // anonymous session). The first call must come from dispatch (e.g.
+  // on_init()), which keeps the store for later calls from on_event().
+
+  settings::setting_value setting(const settings::setting_info& info);
+  bool setting_bool(const settings::setting_info& info);
+  int32_t setting_int(const settings::setting_info& info);
+  std::string setting_text(const settings::setting_info& info);
+  /// @brief Stores @p value (e.g. a View menu toggle the tool remembers).
+  ///        Does nothing for an anonymous session or an invalid value.
+  void save_setting(const settings::setting_info& info, const settings::setting_value& value);
+
   /// id -> handler for buttons, menu items and other clickable widgets.
   std::unordered_map<bison::key_t, click_handler, bison::key_t, bison::key_t> click_handlers_;
 
@@ -130,8 +148,22 @@ class tool_form : public form {
   template <typename Meta>
   friend class list_panel;
 
+  /// The session's user store, kept by the first setting call.
+  persistent_store* settings_store();
+
   std::shared_ptr<message_box> confirm_dialog_;
   std::shared_ptr<message_box> message_dialog_;
+  persistent_store_ptr settings_store_;
+  bool settings_store_known_{false};
 };
+
+/// @brief Registers a module's settings (settings::register_category() and
+///        settings::register_setting()), so the Settings tool lists them for
+///        every identity. Call from the module's `register_<name>()`.
+inline void register_tool_settings(const tool_settings& t) {
+  settings::register_category(t.category);
+  for (const auto& s : t.settings)
+    settings::register_setting(s);
+}
 
 } // namespace bdg::wish::common

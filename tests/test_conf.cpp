@@ -204,22 +204,51 @@ class ConfTest : public ::testing::Test {
 TEST_F(ConfTest, SidebarListsCategoriesThatHaveSettings) {
   start();
   // General is always shown; Appearance holds the server theme; Desktop and
-  // Server are empty; Example comes after the built-ins.
-  EXPECT_EQ(sidebar_labels(), (std::vector<std::string>{"General", "Appearance", "Example"}));
+  // Server are empty; then the declared categories: Example and the
+  // modules' registered ones (bc, top, ...), sorted by order, then label
+  // without case.
+  auto labels = sidebar_labels();
+  ASSERT_GE(labels.size(), size_t{3});
+  EXPECT_EQ(labels[0], "General");
+  EXPECT_EQ(labels[1], "Appearance");
+  auto at = [&](const std::string& l) { return std::find(labels.begin(), labels.end(), l) - labels.begin(); };
+  const auto end = static_cast<ptrdiff_t>(labels.size());
+  EXPECT_LT(at("Example"), end);
+  EXPECT_LT(at("bc"), at("top"));
+  EXPECT_LT(at("top"), end);
+  EXPECT_EQ(at("Desktop"), static_cast<ptrdiff_t>(labels.size()));
 }
 
 TEST_F(ConfTest, ClickingACategorySelectsIt) {
   start();
+  auto labels = sidebar_labels();
+  const size_t example = size_t(std::find(labels.begin(), labels.end(), "Example") - labels.begin());
   auto rows = of_class("sidebar.c", "Selectable");
-  ASSERT_EQ(rows.size(), size_t{3});
+  ASSERT_EQ(rows.size(), labels.size());
+  ASSERT_LT(example, rows.size());
   dynamic payload;
   payload["selected"_key] = true;
-  send(rows[2].second, "changed", payload);
+  send(rows[example].second, "changed", payload);
   // The panel now shows the Example category's editors.
   EXPECT_FALSE(of_class("panel", "ColorEdit").empty());
   auto selected = of_class("sidebar.c", "Selectable");
-  EXPECT_TRUE(selected[2].second->get_as<bool>("selected"_key, false));
+  EXPECT_TRUE(selected[example].second->get_as<bool>("selected"_key, false));
   EXPECT_FALSE(selected[0].second->get_as<bool>("selected"_key, true));
+}
+
+TEST_F(ConfTest, ModuleSettingsAreListedAndEditable) {
+  start();
+  select("bdg.desktop.top");
+  auto sliders = of_class("panel", "SliderInt");
+  ASSERT_EQ(sliders.size(), size_t{2}); // refresh interval, graph history
+  dynamic value;
+  value["value"_key] = int32_t{300}; // in range for both
+  send(sliders[0].second, "changed", value);
+  auto entry = srv_->last_session->user_store->get("bdg.desktop.top");
+  ASSERT_TRUE(entry.has_value());
+  int32_t history = entry->get_as<int32_t>("history"_key, 0);
+  int32_t refresh = entry->get_as<int32_t>("refresh_ms"_key, 0);
+  EXPECT_EQ(history + refresh, 300); // whichever slider came first
 }
 
 // ── Editors ──────────────────────────────────────────────────────────────────

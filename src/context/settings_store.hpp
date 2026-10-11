@@ -43,8 +43,14 @@ struct catalog {
   std::vector<described_setting> settings; ///< Sorted by category, section, order, label.
 };
 
-/// @brief Reads every schema entry of @p store and the matching values.
-catalog collect(const persistent_store& store);
+/**
+ * @brief Reads every schema entry of @p store and the matching values.
+ * @param with_registered Also list the registered settings and categories
+ *        (register_setting()), with their values in @p store; they win over
+ *        a description of the same name stored in @p store. Pass it for a
+ *        user store.
+ */
+catalog collect(const persistent_store& store, bool with_registered = false);
 
 /**
  * @brief Validates @p value against @p info and writes it into its entry
@@ -55,5 +61,41 @@ std::string write_setting(persistent_store& store, const setting_info& info, con
 
 /// @brief Removes the stored value of @p info, so its default applies.
 void reset_setting(persistent_store& store, const setting_info& info);
+
+/**
+ * @brief The value of @p info in @p store: the stored one when it suits the
+ *        setting (validate()), else the default. @p store may be null (an
+ *        anonymous session): the default.
+ */
+setting_value value_of(const persistent_store* store, const setting_info& info);
+
+/// @brief value_of() as a bool / int / float / string (the default's type
+///        when the value has another).
+bool bool_of(const persistent_store* store, const setting_info& info);
+int32_t int_of(const persistent_store* store, const setting_info& info);
+float float_of(const persistent_store* store, const setting_info& info);
+std::string text_of(const persistent_store* store, const setting_info& info);
+
+// ── Registry ─────────────────────────────────────────────────────────────────
+//
+// Settings that server-side code (e.g. a module's register_<name>()) knows
+// about at startup. They live in every user store without being described
+// there: settings tools list them for every identity, even before the app
+// that uses them ever ran. Apps that aren't part of the server process
+// describe their settings in the store instead (describe_setting()).
+
+/// @brief Registers a user-store setting. Re-registering a name replaces it.
+/// @throws schema_error for invalid metadata.
+void register_setting(const setting_info& info);
+
+/// @brief Registers a category. Re-registering an id replaces it.
+/// @throws schema_error for invalid metadata.
+void register_category(const category_info& info);
+
+/// @brief Registered settings, in registration order.
+std::vector<setting_info> registered_settings();
+
+/// @brief Registered categories, in registration order.
+std::vector<category_info> registered_categories();
 
 } // namespace bdg::wish::settings
