@@ -76,7 +76,10 @@ void register_docking() {
             attr<Description>(
                 "Render as an ordinary dockable window (title bar, auto-docks into the ambient "
                 "dockspace) instead of a fullscreen NoDocking host, so this element is one tile "
-                "among siblings with its own nested dockspace for its children.")});
+                "among siblings with its own nested dockspace for its children. Docking is scoped: "
+                "only this element's own windows (Window children, DockLayout windows, "
+                "dock_target windows) can dock into the nested dockspace, and they can dock "
+                "nowhere else.")});
     (*proto)[dynamic::CLASS].addAttribute(
         attr<Description>("Full-viewport dockspace host. Windows nested as children become dockable."));
     dynamic::addClass(

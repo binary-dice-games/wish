@@ -120,6 +120,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Docking is scoped to the parent docker: an app's panels (windows of an embedded/desktop `DockSpaceViewport`, its `DockLayout` windows, or `dock_target` windows) can only dock into that app's own dockspace, and the app window only into its parent dockspace -- e.g. curl's panels can no longer be docked into kubectl's window or the desktop.
 - `wish desktop` no longer adds a "Desktop" menu to the server's menu bar: the desktop chrome replaces the menu bar, windows open floating and cascaded instead of docked, and an app's `DockSpaceViewport` becomes a floating app window.
 - `wish standalone` (and `wish-standalone`) now also reads `WISH_<FLAG>` environment variables as flag defaults, like the other modes.
 

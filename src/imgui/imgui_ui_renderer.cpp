@@ -27,6 +27,7 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -148,6 +149,19 @@ static void report_self_rect(const ui_element& node) {
 // suppress_layout_wrap_self handling.
 static void report_self_rect_from(const ui_element& node, ImVec2 rect_min, ImVec2 rect_max) {
   node.set_self_rect({rect_min.x, rect_min.y}, {rect_max.x - rect_min.x, rect_max.y - rect_min.y});
+}
+
+// Sets the next window's ImGui window class to @p class_id, which restricts
+// where the user can dock it: windows of different classes never dock with
+// each other, and a classed dockspace never accepts an unclassed window
+// (DockingAllowUnclassed = false). 0 is the default, unclassed class --
+// still set explicitly, since ImGui keeps a window's last class otherwise.
+// See imgui_renderer::set_ambient_dockspace_id().
+static void set_next_dock_class(ImGuiID class_id) {
+  ImGuiWindowClass wc;
+  wc.ClassId = class_id;
+  wc.DockingAllowUnclassed = class_id == 0;
+  ImGui::SetNextWindowClass(&wc);
 }
 
 // ── Core ──────────────────────────────────────────────────────────────────────
@@ -360,6 +374,20 @@ void render_window(imgui_renderer& r, const ui_element& node0, const context& s)
     }
     if (dock_id != 0)
       ImGui::SetNextWindowDockID(dock_id, ImGuiCond_FirstUseEver);
+  }
+
+  // A panel may only be docked into its own parent docker: the dockspace
+  // its "dock_target" names, else the one a DockLayout places it in, else
+  // the one it is rendered under (a DockSpaceViewport's Window child) --
+  // never a sibling app's nested dockspace. Expressed as the window class
+  // of that dockspace (0 for a root one such as the host chrome).
+  {
+    std::optional<ImGuiID> dock_class;
+    if (const std::string& target = node.dock_target_ref(); !target.empty())
+      dock_class = r.named_dock_class_id(target);
+    if (!dock_class)
+      dock_class = r.window_dock_class_id(node.path_ref());
+    set_next_dock_class(dock_class.value_or(r.ambient_dock_class_id()));
   }
 
   // "focus_request" changed since the last frame: bring the window to the
@@ -1855,8 +1883,14 @@ void render_dockspace_viewport(imgui_renderer& r, const ui_element& node0, const
   // Minimized from the taskbar: nothing is drawn, but the dockspace is kept
   // alive so the windows docked in it stay docked for the restore.
   if (desktop && node.minimized()) {
-    if (ImGuiID kept = node.last_dockspace_id(); kept != 0)
-      ImGui::DockSpace(kept, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_KeepAliveOnly);
+    if (ImGuiID kept = node.last_dockspace_id(); kept != 0) {
+      ImGuiWindowClass dock_class;
+      dock_class.ClassId = kept;
+      dock_class.DockingAllowUnclassed = false;
+      ImGui::DockSpace(kept, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_KeepAliveOnly, &dock_class);
+      if (!id_stored.empty())
+        r.set_named_dock_class_id(id_stored, kept);
+    }
     return;
   }
   // Embedded mode gives this element a readable tab name once docked among
@@ -1883,6 +1917,7 @@ void render_dockspace_viewport(imgui_renderer& r, const ui_element& node0, const
   // sibling top-level object -- or the next session sharing this same
   // process-wide, mutable slot -- never inherits the nested id set below.
   ImGuiID prior_ambient = r.ambient_dockspace_id();
+  ImGuiID prior_class = r.ambient_dock_class_id();
 
   if (desktop) {
     // Never shown before: open floating at the next cascade slot, sized
@@ -1930,6 +1965,11 @@ void render_dockspace_viewport(imgui_renderer& r, const ui_element& node0, const
 
   if (node.take_raise_request())
     ImGui::SetNextWindowFocus();
+  // The app window itself docks only into its own parent docker (the
+  // dockspace ambient when it renders), like any Window -- see
+  // render_window().
+  if (embedded)
+    set_next_dock_class(prior_class);
   ImGui::Begin(window_label, nullptr, host_flags);
   node.set_focused(ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows | ImGuiFocusedFlags_DockHierarchy));
   report_self_rect(node);
@@ -1943,14 +1983,25 @@ void render_dockspace_viewport(imgui_renderer& r, const ui_element& node0, const
   // host-window scope (it is no longer current once End() runs below, when
   // the Window children actually render).
   ImGuiID dockspace_id = ImGui::GetID(id);
-  ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), dock_flags);
+  // An embedded (or desktop) viewport is an app nested in an outer docker,
+  // so its dockspace gets a window class of its own (its id) and refuses
+  // every window of another class: only this app's own panels can dock
+  // into it, and they can dock nowhere else (see render_window()). A
+  // fullscreen viewport is a root docker like the host chrome: unclassed.
+  const ImGuiID dock_class_id = embedded ? dockspace_id : 0;
+  ImGuiWindowClass dock_class;
+  dock_class.ClassId = dock_class_id;
+  dock_class.DockingAllowUnclassed = dock_class_id == 0;
+  ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), dock_flags, &dock_class);
   node.set_last_dockspace_id(dockspace_id);
   // Un-positioned Window children dock here by default (see render_window).
-  r.set_ambient_dockspace_id(dockspace_id);
+  r.set_ambient_dockspace_id(dockspace_id, dock_class_id);
   // Lets a Window elsewhere in the tree target this dockspace by name (see
   // Window.dock_target).
-  if (!id_stored.empty())
+  if (!id_stored.empty()) {
     r.set_named_dockspace_id(id_stored, dockspace_id);
+    r.set_named_dock_class_id(id_stored, dock_class_id);
+  }
 
   // Non-Window children (e.g. MenuBar, or a DockLayout targeting this same
   // id -- see DockLayout.target's doc comment) are rendered inside the host
@@ -1978,7 +2029,7 @@ void render_dockspace_viewport(imgui_renderer& r, const ui_element& node0, const
       r.render_node(child, s);
   });
 
-  r.set_ambient_dockspace_id(prior_ambient);
+  r.set_ambient_dockspace_id(prior_ambient, prior_class);
 }
 
 void render_dockspace(imgui_renderer&, const ui_element& node0, const context&) {

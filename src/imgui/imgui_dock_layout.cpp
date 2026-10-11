@@ -343,6 +343,13 @@ void render_dock_layout(imgui_renderer& r, const ui_element& node0, const contex
   if (target_id == 0)
     return; // no ambient dockspace this frame and no resolvable target
 
+  // Every frame, not only when applying: restricts each window this layout
+  // names to the dockspace it targets (see render_window()), whether or not
+  // the layout has already been realized.
+  const ImGuiID dock_class_id =
+      target.empty() ? r.ambient_dock_class_id() : r.named_dock_class_id(target).value_or(r.ambient_dock_class_id());
+  for_each_layout_window(node, [&](const std::string& w) { r.set_window_dock_class_id(w, dock_class_id); });
+
   const int32_t version = node.version(1);
   if (!should_apply_dock_layout(node, target_id, version))
     return;

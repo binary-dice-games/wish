@@ -170,6 +170,24 @@ example. Without `dock_target`, list every window you can predict ahead of
 time in the `DockArea` tree, and treat windows outside it as independently
 placed.
 
+**Docking scope.** Each app's panels can only be docked into their own
+app's dockspace, and each app tile only into its parent's — curl's panels
+can never be dropped into kubectl's tile or onto the desktop, and the curl
+tile itself only docks into the host (desktop) dockspace. The embedded
+viewport's nested dockspace gets its own ImGui window class
+(`ImGuiWindowClass`, refusing unclassed windows), and a `Window` takes the
+class of its parent docker, resolved in this order:
+
+1. the dockspace its `dock_target` names;
+2. the dockspace a `DockLayout` places it in (it is listed in a `DockArea`);
+3. the dockspace it is rendered under (a `Window` child of the viewport).
+
+Any other window — and the app tile itself, when its parent is the host
+chrome or a fullscreen `DockSpaceViewport` — stays unclassed and docks
+only into root dockspaces. A window the app neither lists in its layout
+nor targets with `dock_target` is therefore *not* one of the app's
+panels: it cannot be docked into the app's tile.
+
 ---
 
 ## From a client-registered template

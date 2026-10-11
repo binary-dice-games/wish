@@ -88,7 +88,8 @@ void register_window() {
                             "node left over after every DockLayout split, which stays even when "
                             "empty -- instead of the ambient dockspace. For windows an app creates "
                             "at runtime (e.g. one per opened document) that a DockLayout cannot "
-                            "name ahead of time. Ignored when that dockspace is not rendered."),
+                            "name ahead of time. The user can then only re-dock it inside that "
+                            "dockspace. Ignored when that dockspace is not rendered."),
           attr<Category>("Layout")});
   proto->addField(
       "focus_request"_rkey,
