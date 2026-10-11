@@ -12,9 +12,13 @@ inline constexpr const char* kCategory = "bdg.dev.sq";
 /// @brief The SQL editor's row limit combo (server form); saved when changed.
 /// The values are sq.cpp's kRowLimits.
 inline settings::setting_info row_limit() {
-  return common::choice_setting(kCategory, "bdg.dev.sq.row_limit", "Row limit",
-                                "Most rows a query returns (the SQL editor's row limit).", "500",
-                                {{"100", "100 rows"}, {"500", "500 rows"}, {"1000", "1000 rows"}, {"5000", "5000 rows"}});
+  return common::choice_setting(
+      kCategory,
+      "bdg.dev.sq.row_limit",
+      "Row limit",
+      "Most rows a query returns (the SQL editor's row limit).",
+      "500",
+      {{"100", "100 rows"}, {"500", "500 rows"}, {"1000", "1000 rows"}, {"5000", "5000 rows"}});
 }
 
 inline common::tool_settings all() {

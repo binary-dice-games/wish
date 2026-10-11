@@ -101,7 +101,9 @@ persistent_store* tool_form::settings_store() {
     } else if (sync_ctx_) {
       // From on_event(), which runs outside the session lock (see
       // run_in_dispatch()).
-      settings_store_ = context_rlock{*sync_ctx_}->user_store;
+      settings_store_ = context_rlock {
+        *sync_ctx_
+      } -> user_store;
     }
     settings_store_known_ = detail::current_context || sync_ctx_;
   }

@@ -13,19 +13,33 @@ inline constexpr const char* kCategory = "bdg.dev.pip";
 inline constexpr const char* kInstall = "Install";
 
 inline settings::setting_info upgrade() {
-  return common::bool_setting(kCategory, "bdg.dev.pip.upgrade", "Upgrade",
-                              "Upgrades packages that are already installed (pip install --upgrade).", false,
-                              kInstall);
+  return common::bool_setting(
+      kCategory,
+      "bdg.dev.pip.upgrade",
+      "Upgrade",
+      "Upgrades packages that are already installed (pip install --upgrade).",
+      false,
+      kInstall);
 }
 
 inline settings::setting_info user() {
-  return common::bool_setting(kCategory, "bdg.dev.pip.user", "User install",
-                              "Installs into your user site-packages (pip install --user).", false, kInstall);
+  return common::bool_setting(
+      kCategory,
+      "bdg.dev.pip.user",
+      "User install",
+      "Installs into your user site-packages (pip install --user).",
+      false,
+      kInstall);
 }
 
 inline settings::setting_info pre() {
-  return common::bool_setting(kCategory, "bdg.dev.pip.pre", "Pre-releases",
-                              "Includes pre-release and development versions (pip install --pre).", false, kInstall);
+  return common::bool_setting(
+      kCategory,
+      "bdg.dev.pip.pre",
+      "Pre-releases",
+      "Includes pre-release and development versions (pip install --pre).",
+      false,
+      kInstall);
 }
 
 inline common::tool_settings all() {

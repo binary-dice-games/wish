@@ -12,25 +12,40 @@ inline constexpr const char* kCategory = "bdg.desktop.tail";
 
 /// @brief Lines read from the end of each file when `-n` isn't given (client).
 inline settings::setting_info lines() {
-  return common::int_setting(kCategory, "bdg.desktop.tail.lines", "Initial lines",
-                             "Lines shown from the end of each file when tail is run without -n; the Lines field "
-                             "saves it.",
-                             100, 1, 2000,
-                             10);
+  return common::int_setting(
+      kCategory,
+      "bdg.desktop.tail.lines",
+      "Initial lines",
+      "Lines shown from the end of each file when tail is run without -n; the Lines field "
+      "saves it.",
+      100,
+      1,
+      2000,
+      10);
 }
 
 /// @brief The toolbar's Follow checkbox (server form); saved when toggled.
 inline settings::setting_info follow() {
-  return common::bool_setting(kCategory, "bdg.desktop.tail.follow", "Scroll to new lines",
-                              "Keeps the newest line in view as lines arrive (the Follow checkbox).", true);
+  return common::bool_setting(
+      kCategory,
+      "bdg.desktop.tail.follow",
+      "Scroll to new lines",
+      "Keeps the newest line in view as lines arrive (the Follow checkbox).",
+      true);
 }
 
 /// @brief Milliseconds between two checks of a file for new lines (client).
 inline settings::setting_info poll_ms() {
-  return common::int_setting(kCategory, "bdg.desktop.tail.poll_ms", "Check interval",
-                             "Milliseconds between two checks of each file for new lines. Applies the next time "
-                             "tail opens.",
-                             300, 100, 5000, 100);
+  return common::int_setting(
+      kCategory,
+      "bdg.desktop.tail.poll_ms",
+      "Check interval",
+      "Milliseconds between two checks of each file for new lines. Applies the next time "
+      "tail opens.",
+      300,
+      100,
+      5000,
+      100);
 }
 
 inline common::tool_settings all() {

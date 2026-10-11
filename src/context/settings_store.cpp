@@ -163,7 +163,8 @@ bison::synchronized<registry_state>& registry() {
 void register_setting(const setting_info& info) {
   check(info);
   auto r = registry().wlock();
-  auto it = std::find_if(r->settings.begin(), r->settings.end(), [&](const setting_info& s) { return s.name == info.name; });
+  auto it =
+      std::find_if(r->settings.begin(), r->settings.end(), [&](const setting_info& s) { return s.name == info.name; });
   if (it != r->settings.end())
     *it = info;
   else
@@ -173,7 +174,8 @@ void register_setting(const setting_info& info) {
 void register_category(const category_info& info) {
   check(info);
   auto r = registry().wlock();
-  auto it = std::find_if(r->categories.begin(), r->categories.end(), [&](const category_info& c) { return c.id == info.id; });
+  auto it =
+      std::find_if(r->categories.begin(), r->categories.end(), [&](const category_info& c) { return c.id == info.id; });
   if (it != r->categories.end())
     *it = info;
   else

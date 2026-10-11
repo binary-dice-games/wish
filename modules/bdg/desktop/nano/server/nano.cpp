@@ -420,9 +420,10 @@ void nano::on_init() {
   if (chk_whole_word_ptr_)
     chk_whole_word_ptr_["value"_key] = setting_bool(nano_settings::whole_word());
   const std::string saved_mode = setting_text(nano_settings::search_mode());
-  set_search_mode(saved_mode == "regex"      ? search_mode::regex
-                  : saved_mode == "extended" ? search_mode::extended
-                                             : search_mode::normal);
+  set_search_mode(
+      saved_mode == "regex"          ? search_mode::regex
+          : saved_mode == "extended" ? search_mode::extended
+                                     : search_mode::normal);
 
   // Seed the first-run arrangement inside the editor's own nested dockspace
   // (titled with the form's "title" field): the Toolbar strip along the top

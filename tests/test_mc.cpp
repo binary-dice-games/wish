@@ -1825,9 +1825,14 @@ TEST(McSettings, HiddenFilesAndFoldersFirstFollowTheSettings) {
   s.session().user_store->set("bdg.desktop.mc", prefs);
   // Read at every listing: no need to reopen.
   s.proxy()
-      .call("update_local_listing"_key,
-            make_local_listing_args("/home", {{"a.txt", "file", "1 B", ""}, {".cache", "dir", "", ""},
-                                              {"zdir", "dir", "", ""}, {".profile", "file", "1 B", ""}}))
+      .call(
+          "update_local_listing"_key,
+          make_local_listing_args(
+              "/home",
+              {{"a.txt", "file", "1 B", ""},
+               {".cache", "dir", "", ""},
+               {"zdir", "dir", "", ""},
+               {".profile", "file", "1 B", ""}}))
       .get();
   auto table = s.element("vbox.left_table");
   ASSERT_TRUE(table);

@@ -12,8 +12,14 @@ inline constexpr const char* kCategory = "bdg.desktop.zip";
 
 /// @brief Deflate level of new archives, read at each compression.
 inline settings::setting_info compression_level() {
-  return common::int_setting(kCategory, "bdg.desktop.zip.compression_level", "Compression level",
-                             "0 stores files uncompressed; 9 makes the smallest archives, slowest.", 6, 0, 9);
+  return common::int_setting(
+      kCategory,
+      "bdg.desktop.zip.compression_level",
+      "Compression level",
+      "0 stores files uncompressed; 9 makes the smallest archives, slowest.",
+      6,
+      0,
+      9);
 }
 
 inline common::tool_settings all() {

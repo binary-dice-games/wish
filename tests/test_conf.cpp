@@ -205,17 +205,16 @@ TEST_F(ConfTest, SidebarListsCategoriesThatHaveSettings) {
   start();
   // General is always shown; Appearance holds the server theme; Desktop and
   // Server are empty; then the declared categories: Example and the
-  // modules' registered ones (bc, top, ...), sorted by order, then label
-  // without case.
+  // modules' registered ones (bc, top, ...).
   auto labels = sidebar_labels();
   ASSERT_GE(labels.size(), size_t{3});
   EXPECT_EQ(labels[0], "General");
   EXPECT_EQ(labels[1], "Appearance");
   auto at = [&](const std::string& l) { return std::find(labels.begin(), labels.end(), l) - labels.begin(); };
+  // (sidebar_labels() is in path order, not display order.)
   const auto end = static_cast<ptrdiff_t>(labels.size());
-  EXPECT_LT(at("Example"), end);
-  EXPECT_LT(at("bc"), at("top"));
-  EXPECT_LT(at("top"), end);
+  for (const char* l : {"Example", "bc", "top", "tail", "nano", "mc", "zip"})
+    EXPECT_LT(at(l), end) << l;
   EXPECT_EQ(at("Desktop"), static_cast<ptrdiff_t>(labels.size()));
 }
 

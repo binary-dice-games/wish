@@ -12,9 +12,15 @@ inline constexpr const char* kCategory = "bdg.dev.git";
 
 /// @brief Commits loaded into the history graph (`git log -n`).
 inline settings::setting_info max_commits() {
-  return common::int_setting(kCategory, "bdg.dev.git.max_commits", "Commits in history",
-                             "Most recent commits shown in the history graph. Applies the next time git opens.",
-                             300, 50, 5000, 50);
+  return common::int_setting(
+      kCategory,
+      "bdg.dev.git.max_commits",
+      "Commits in history",
+      "Most recent commits shown in the history graph. Applies the next time git opens.",
+      300,
+      50,
+      5000,
+      50);
 }
 
 inline common::tool_settings all() {

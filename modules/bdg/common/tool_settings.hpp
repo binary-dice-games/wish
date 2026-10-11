@@ -26,9 +26,13 @@ struct tool_settings {
 };
 
 /// @brief A setting of @p category; @p name is "<entry>.<field>".
-inline settings::setting_info make_setting(const std::string& category, const std::string& name,
-                                           settings::setting_type type, const std::string& label,
-                                           const std::string& description, const std::string& section = {}) {
+inline settings::setting_info make_setting(
+    const std::string& category,
+    const std::string& name,
+    settings::setting_type type,
+    const std::string& label,
+    const std::string& description,
+    const std::string& section = {}) {
   settings::setting_info s;
   s.name = name;
   s.category = category;
@@ -40,19 +44,29 @@ inline settings::setting_info make_setting(const std::string& category, const st
 }
 
 /// @brief A switch.
-inline settings::setting_info bool_setting(const std::string& category, const std::string& name,
-                                           const std::string& label, const std::string& description,
-                                           bool default_value, const std::string& section = {}) {
+inline settings::setting_info bool_setting(
+    const std::string& category,
+    const std::string& name,
+    const std::string& label,
+    const std::string& description,
+    bool default_value,
+    const std::string& section = {}) {
   auto s = make_setting(category, name, settings::setting_type::boolean, label, description, section);
   s.default_value = default_value;
   return s;
 }
 
 /// @brief An integer in [@p min, @p max] (a slider).
-inline settings::setting_info int_setting(const std::string& category, const std::string& name,
-                                          const std::string& label, const std::string& description,
-                                          int32_t default_value, int32_t min, int32_t max, int32_t step = 1,
-                                          const std::string& section = {}) {
+inline settings::setting_info int_setting(
+    const std::string& category,
+    const std::string& name,
+    const std::string& label,
+    const std::string& description,
+    int32_t default_value,
+    int32_t min,
+    int32_t max,
+    int32_t step = 1,
+    const std::string& section = {}) {
   auto s = make_setting(category, name, settings::setting_type::integer, label, description, section);
   s.default_value = default_value;
   s.min = float(min);
@@ -62,11 +76,14 @@ inline settings::setting_info int_setting(const std::string& category, const std
 }
 
 /// @brief One of @p options (a drop-down).
-inline settings::setting_info choice_setting(const std::string& category, const std::string& name,
-                                             const std::string& label, const std::string& description,
-                                             const std::string& default_value,
-                                             std::vector<settings::setting_option> options,
-                                             const std::string& section = {}) {
+inline settings::setting_info choice_setting(
+    const std::string& category,
+    const std::string& name,
+    const std::string& label,
+    const std::string& description,
+    const std::string& default_value,
+    std::vector<settings::setting_option> options,
+    const std::string& section = {}) {
   auto s = make_setting(category, name, settings::setting_type::choice, label, description, section);
   s.default_value = default_value;
   s.options = std::move(options);

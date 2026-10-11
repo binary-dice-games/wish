@@ -1,9 +1,9 @@
 // MIT License © 2026 Binary Dice Games
 // Tests for src/context/settings_schema.hpp and settings_store.hpp -- the
 // settings metadata model behind the conf tool.
+#include "client/wish_app_host.hpp"
 #include "context/settings_schema.hpp"
 #include "context/settings_store.hpp"
-#include "client/wish_app_host.hpp"
 #include "src/rmi/shared/ids.hpp"
 
 #include <gtest/gtest.h>
@@ -333,10 +333,12 @@ TEST(SettingsStore, RegisteredSettingsAreCollectedWithTheirValues) {
   ASSERT_NE(it, c.settings.end());
   EXPECT_EQ(it->info.label, "Lines");
   EXPECT_EQ(std::get<int32_t>(it->value), 42);
-  EXPECT_EQ(std::count_if(c.settings.begin(), c.settings.end(), [](const st::described_setting& d) {
-              return d.info.name == "test.registry.app.lines";
-            }),
-            1);
+  EXPECT_EQ(
+      std::count_if(
+          c.settings.begin(),
+          c.settings.end(),
+          [](const st::described_setting& d) { return d.info.name == "test.registry.app.lines"; }),
+      1);
   EXPECT_TRUE(std::any_of(c.categories.begin(), c.categories.end(), [](const st::category_info& ci) {
     return ci.id == "test.registry.app" && ci.color == "#FF9500";
   }));

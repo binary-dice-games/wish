@@ -13,15 +13,23 @@ inline constexpr const char* kCategory = "bdg.dev.helm";
 inline constexpr const char* kInstall = "Install";
 
 inline settings::setting_info create_namespace() {
-  return common::bool_setting(kCategory, "bdg.dev.helm.create_namespace", "Create namespace",
-                              "Creates the release's namespace when it doesn't exist (--create-namespace).", true,
-                              kInstall);
+  return common::bool_setting(
+      kCategory,
+      "bdg.dev.helm.create_namespace",
+      "Create namespace",
+      "Creates the release's namespace when it doesn't exist (--create-namespace).",
+      true,
+      kInstall);
 }
 
 inline settings::setting_info wait() {
-  return common::bool_setting(kCategory, "bdg.dev.helm.wait", "Wait",
-                              "Waits until the release's resources are ready before reporting success (--wait).",
-                              false, kInstall);
+  return common::bool_setting(
+      kCategory,
+      "bdg.dev.helm.wait",
+      "Wait",
+      "Waits until the release's resources are ready before reporting success (--wait).",
+      false,
+      kInstall);
 }
 
 inline common::tool_settings all() {

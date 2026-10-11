@@ -741,9 +741,12 @@ void mc::sort_entries(std::vector<file_row>& entries, int32_t sort_column_id, bo
 void mc::apply_view_settings(std::vector<file_row>& entries) {
   folders_first_ = setting_bool(mc_settings::folders_first());
   if (!setting_bool(mc_settings::show_hidden()))
-    entries.erase(std::remove_if(entries.begin(), entries.end(),
-                                 [](const file_row& r) { return r.name.size() > 1 && r.name[0] == '.' && r.name != ".."; }),
-                  entries.end());
+    entries.erase(
+        std::remove_if(
+            entries.begin(),
+            entries.end(),
+            [](const file_row& r) { return r.name.size() > 1 && r.name[0] == '.' && r.name != ".."; }),
+        entries.end());
 }
 
 void mc::on_table_sorted(

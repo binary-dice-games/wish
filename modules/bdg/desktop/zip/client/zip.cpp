@@ -209,8 +209,11 @@ void write_planned_entry(mz_zip_archive& zip, const zip_entry_plan& e, mz_uint l
 // set) once before each entry is written, at deflate @p level (0-9).
 // Throws std::runtime_error on failure.
 void compress(
-    const fs::path& dir, const std::vector<std::string>& source_names, const std::string& archive_name,
-    const progress_fn& progress, int32_t level) {
+    const fs::path& dir,
+    const std::vector<std::string>& source_names,
+    const std::string& archive_name,
+    const progress_fn& progress,
+    int32_t level) {
   fs::path archive_full = dir / archive_name;
 
   std::error_code ec;
@@ -383,8 +386,12 @@ void run_zip(wish_app_host& s) {
     std::string message;
     worker->run_task(make_message("$$ZIP_COMPRESSING_INTO", {archive_name}), [&](common::task_progress& progress) {
       try {
-        compress(fs::path(path), source_names, archive_name, item_reporter(progress),
-                 s.read_int_setting(zip_settings::compression_level()));
+        compress(
+            fs::path(path),
+            source_names,
+            archive_name,
+            item_reporter(progress),
+            s.read_int_setting(zip_settings::compression_level()));
         message = make_message("$$ZIP_CREATED", {archive_name});
       } catch (const operation_cancelled&) {
         std::error_code ec;
