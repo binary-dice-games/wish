@@ -715,6 +715,7 @@ struct pix_app_registrar {
         .organization = WISH_MODULE_BDG_DESKTOP_PIX_ORGANIZATION,
         .collection = WISH_MODULE_BDG_DESKTOP_PIX_COLLECTION,
         .description = "Local image folder viewer: thumbnail grid + zoomable/pannable preview",
+        .icon = "res/icons/image.png",
         .params = {},
         .run = run_pix,
     });

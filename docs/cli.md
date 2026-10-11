@@ -202,20 +202,51 @@ same holds for `wish client --run`).
 
 ## `wish desktop`
 
-A multiplexing shell: it listens **downstream** for client connections
-(like a server) while itself connecting **upstream** to a real `wish
-server` (like a client), rendering a menu bar (File → Quit) and clock, with
-downstream clients' own windows docking into the same upstream session
-automatically. Useful for running several `wish client`/`wish <app>`
-processes as windows inside one shared desktop, without each one owning its
-own top-level window.
+A desktop for your wish apps, in the style of Windows or macOS. It listens
+**downstream** for client connections (like a server) while itself
+connecting **upstream** to a real `wish server` (like a client), and turns
+that server's window into a desktop:
+
+- **Wallpaper**: a built-in gradient that follows the theme, or your own
+  image (`--wallpaper`).
+- **Taskbar** along the bottom, always visible; windows open above it:
+  - **Start** button: a menu listing every app built into wish, grouped by
+    collection, with a search box (type and press Enter to open the best
+    match). Right-click an app to pin it to the taskbar or add it to the
+    desktop. The **power** button at the bottom quits the desktop or shuts
+    down the server.
+  - **Pinned apps**: click to start one. A line under the icon means it is
+    running; clicking it then brings it to the front (or minimizes it when
+    it already is), and its right-click menu has "New window" and "Unpin".
+  - **Open windows**: one button per app or window. Click to bring it to the
+    front, click the active one to minimize it; right-click for Minimize /
+    Restore, New window, Pin and Close.
+  - **Tray**: number of connected apps, a light/dark theme toggle, and the
+    time and date (click for a calendar). The strip at the far right edge
+    minimizes every window ("show desktop"); click it again to restore them.
+- **Desktop icons**: double-click to start the app; right-click to remove
+  it or pin it.
+- **Windows** open floating and cascaded, like on a desktop. Drag one onto
+  the desktop's dock area to dock it.
+- **Window switcher**: Ctrl+Tab (Ctrl+Shift+Tab backwards) cycles through
+  the open windows while Ctrl is held. In a browser, which keeps Ctrl+Tab for
+  itself (`--renderer web`), use Ctrl+\` instead.
+
+Starting an app runs `wish client --run=<app>` as a separate process that
+connects back to the desktop (the `wish-client` beside a standalone
+`wish-desktop` binary). Its output goes to
+`wish_logs/desktop/<app>_<n>.log`. Apps started from the desktop are closed
+when the desktop quits. Pinned apps, desktop icons and the theme are saved in
+the upstream server's [user store](persistent-store.md) (entry
+`wish.desktop`). The desktop connects as `--upstream_username`, which defaults
+to your OS user name. The first run pins nano, mc and top.
 
 Downstream and upstream each get their own flag set, since both transports
 are active at once:
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--downstream_transport T` | `tcp` | `tcp`, `pipe`, `tls`, or `term` |
+| `--downstream_transport T` | `tcp` | `tcp`, `pipe`, `tls`, or `term` (apps can't be started from the desktop with `term`) |
 | `--downstream_host H` | `0.0.0.0` | (`downstream_transport=tcp`/`tls` only) |
 | `--downstream_port P` | `7071` | (`downstream_transport=tcp`/`tls` only) |
 | `--downstream_name PATH` | *(empty)* | (`downstream_transport=pipe` only) |
@@ -224,19 +255,22 @@ are active at once:
 | `--upstream_host H` | `127.0.0.1` | (`upstream_transport=tcp`/`tls` only) |
 | `--upstream_port P` | `7070` | (`upstream_transport=tcp`/`tls` only) |
 | `--upstream_name PATH` | *(empty)* | (`upstream_transport=pipe` only) |
+| `--upstream_username NAME` | OS user | Identity the desktop connects upstream as; its user store keeps the desktop settings |
 | `--cmd C` | *(empty)* | Command to spawn (`upstream_transport=term` only) |
 | `--upstream_ca_file`/`--upstream_ca_pem`, `--upstream_server_name`, `--upstream_insecure_skip_verify`, `--upstream_cert_file`/`--upstream_cert_pem`, `--upstream_key_file`/`--upstream_key_pem`, `--upstream_key_password` | — | Upstream TLS client flags, same meaning as `--ca_file`/etc. above (`upstream_transport=tls` only) |
+| `--wallpaper FILE` | *(built-in gradient)* | Image (png, jpg, ...) shown as the desktop background, scaled to cover the screen |
 | `--timeout MS` | `30000` | Upstream connection timeout in milliseconds |
 
 ```sh
-wish desktop   # upstream: spawns its own terminal (term, default)
-               # downstream: listens on tcp:7071
+wish server --transport tcp &          # the window the desktop draws in
+wish desktop --upstream_transport tcp --wallpaper ~/Pictures/beach.jpg
 ```
 
 `wish desktop` sets `WISH_TRANSPORT`/`WISH_HOST`/`WISH_PORT`/`WISH_NAME` in
 the terminal it spawns to match its own downstream flags, so a `wish
 client`/`wish server` launched from inside that terminal connects to the
-desktop with no flags at all:
+desktop with no flags at all (and shows up on its taskbar like an app
+started from the Start menu):
 
 ```sh
 wish desktop                      # downstream defaults to tcp:7071

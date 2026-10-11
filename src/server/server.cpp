@@ -341,11 +341,10 @@ void server::render_loop() {
               }
             }
             for (const auto& [key, win] : sess->top_level_objects) {
-              // MenuBarExtension top-levels are spliced into the server's own
-              // chrome menu bar by render_server_frame() above; rendering
-              // them again here as standalone windows would double-draw them.
-              if (win && win->class_key() != bison::key_t{"MenuBarExtension"} &&
-                  win->class_key() != bison::key_t{"DockLayout"} &&
+              // MenuBarExtension/DesktopShell top-levels are drawn by the
+              // server's own chrome in render_server_frame() above;
+              // rendering them again here would double-draw them.
+              if (win && !is_host_chrome_class(win->class_key()) && win->class_key() != bison::key_t{"DockLayout"} &&
                   win->class_key() != bison::key_t{"DockSpaceViewport"}) {
                 sess->current_top_level_key = key;
                 renderer_->render_session(*win, *sess);

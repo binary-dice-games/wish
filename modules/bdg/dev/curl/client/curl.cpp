@@ -87,6 +87,7 @@ struct curl_app_registrar {
         .organization = WISH_MODULE_BDG_DEV_CURL_ORGANIZATION,
         .collection = WISH_MODULE_BDG_DEV_CURL_COLLECTION,
         .description = "Postman-style GUI frontend for the local `curl` binary (wish client --run=curl)",
+        .icon = "res/icons/send.png",
         .params = {},
         .run = run_curl,
     });

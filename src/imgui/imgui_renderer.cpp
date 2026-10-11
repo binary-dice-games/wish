@@ -23,6 +23,7 @@
 #include <imgui/imgui_ui_renderer.hpp>
 #include <imgui/themes/themes.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -331,6 +332,7 @@ void imgui_renderer::begin_frame() {
   // `host_renderer`) or a `DockSpaceViewport` element in a session's tree.
   ambient_dockspace_id_ = 0;
   named_dockspaces_.clear();
+  cascade_active_ = false;
   // Register the [WishDockLayout] settings handler before the first
   // NewFrame() so it participates in the initial imgui.ini load (idempotent).
   install_dock_layout_settings_handler();
@@ -724,12 +726,9 @@ void imgui_renderer::render_node(const ui_element& node, const context& s) {
   ImGui::PopFont();
 }
 
-void imgui_renderer::render_session(const ui_element& root, const context& s) {
-  BISON_TRACE_SCOPE("render_session");
-  if (!s.style_service) {
-    render_node(root, s);
-    return;
-  }
+const ImGuiStyle* imgui_renderer::session_style(const context& s) {
+  if (!s.style_service)
+    return nullptr;
 
   // Recompile the bison field map into an ImGuiStyle only when the client
   // has changed the style since the last compiled cache.
@@ -746,21 +745,46 @@ void imgui_renderer::render_session(const ui_element& root, const context& s) {
     s.style_service->set_renderer_cache(compiled);
   }
 
-  // RAII guard: swap in the cached style, render, restore. static_cast off the
-  // shared_ptr<void> rather than static_pointer_cast (which would build a
-  // temporary shared_ptr<ImGuiStyle>, i.e. an atomic refcount inc/dec) just to
-  // read it -- the style_service keeps the cache alive for the whole call.
-  const ImGuiStyle& compiled =
-      *static_cast<const ImGuiStyle*>(s.style_service->renderer_cache().get());
-  ImGuiStyle saved = ImGui::GetStyle();
-  ImGui::GetStyle() = compiled;
-  try {
-    render_node(root, s);
-  } catch (...) {
-    ImGui::GetStyle() = saved;
-    throw;
-  }
-  ImGui::GetStyle() = saved;
+  // static_cast off the shared_ptr<void> rather than static_pointer_cast
+  // (which would build a temporary shared_ptr<ImGuiStyle>, i.e. an atomic
+  // refcount inc/dec) just to read it -- the style_service keeps the cache
+  // alive for the whole call.
+  return static_cast<const ImGuiStyle*>(s.style_service->renderer_cache().get());
+}
+
+void imgui_renderer::render_session(const ui_element& root, const context& s) {
+  BISON_TRACE_SCOPE("render_session");
+  // RAII-style swap: apply the session's cached style, render, restore.
+  with_session_style(s, [&] { render_node(root, s); });
+}
+
+std::optional<ImVec2> imgui_renderer::claim_cascade_slot(const char* imgui_name, ImVec2 size) {
+  if (ImGui::FindWindowByName(imgui_name) != nullptr || ImGui::FindWindowSettingsByID(ImHashStr(imgui_name)) != nullptr)
+    return std::nullopt;
+  // Step by roughly a title bar's height, like the Windows/macOS cascade.
+  const float step = ImGui::GetFrameHeight() + 8.0f;
+  const float avail_x = cascade_area_max_.x - cascade_area_min_.x - size.x;
+  const float avail_y = cascade_area_max_.y - cascade_area_min_.y - size.y;
+  int max_steps = 1;
+  if (avail_x > 0.0f && avail_y > 0.0f)
+    max_steps = std::max(1, int(std::min(avail_x, avail_y) / step));
+  // Start one step in from the corner so the first window doesn't sit
+  // flush against the top-left edge of the desktop.
+  const int slot = cascade_index_ % max_steps + 1;
+  ++cascade_index_;
+  float x = cascade_area_min_.x + step * float(slot);
+  float y = cascade_area_min_.y + step * float(slot);
+  // An oversized window is clamped to the area's top-left instead.
+  if (avail_x <= step)
+    x = cascade_area_min_.x;
+  if (avail_y <= step)
+    y = cascade_area_min_.y;
+  return ImVec2(x, y);
+}
+
+ImVec2 imgui_renderer::texture_size(const std::string& src) const {
+  (void)src;
+  return ImVec2(0.0f, 0.0f);
 }
 
 ImTextureID imgui_renderer::get_or_load_texture(const std::string& src, const std::filesystem::path& resource_dir,

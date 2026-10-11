@@ -72,17 +72,23 @@ wish_add_test(test_handlers       test_handlers.cpp)
 wish_add_test(test_integration    test_integration.cpp)
 wish_add_test(test_auth           test_auth.cpp)
 
-# Exercises wish_desktop's chrome-building behavior (menu bar + dockspace +
-# clock) against a real wish::server upstream. wish_desktop_app.cpp isn't
+# Exercises wish_desktop's desktop shell (DesktopShell chrome, launching,
+# pins, theme, running apps) against a real wish::server upstream, and
+# process_launcher. wish_desktop_app.cpp isn't
 # part of the `wish` library (it's an app/ source, compiled directly into
 # wish-cli/wish-desktop), so it's added as an extra source here, along with
 # gflags for the DEFINE_string calls it makes at file scope.
 add_executable(test_wish_desktop
     test_wish_desktop.cpp
     ${CMAKE_SOURCE_DIR}/app/wish_cli/desktop/wish_desktop_app.cpp
+    ${CMAKE_SOURCE_DIR}/app/wish_cli/desktop/process_launcher.cpp
     ${CMAKE_SOURCE_DIR}/app/wish_cli/env_flags.cpp)
-target_include_directories(test_wish_desktop PRIVATE ${CMAKE_SOURCE_DIR})
-target_link_libraries(test_wish_desktop PRIVATE wish gflags gtest gmock gtest_main)
+target_include_directories(test_wish_desktop PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/extern/bison/extern/json/single_include)
+target_link_libraries(test_wish_desktop PRIVATE wish gflags gtest gmock gtest_main uv_a)
+# The launcher tests run `cmake -E echo/environment/sleep` as a portable child.
+target_compile_definitions(test_wish_desktop PRIVATE CMAKE_COMMAND_PATH="${CMAKE_COMMAND}")
 gtest_discover_tests(test_wish_desktop)
 set_target_properties(test_wish_desktop PROPERTIES FOLDER tests)
 
@@ -118,6 +124,7 @@ set_target_properties(test_config_flags PROPERTIES FOLDER tests)
 
 if(WISH_ENABLE_IMGUI)
   wish_add_test(test_imgui_renderer test_imgui_renderer.cpp)
+  wish_add_test(test_desktop_shell test_desktop_shell.cpp)
   wish_add_test(test_imgui_layout   test_imgui_layout.cpp)
   wish_add_test(test_drag_drop      test_drag_drop.cpp)
   wish_add_test(test_style_service  test_style_service.cpp)

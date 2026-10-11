@@ -200,6 +200,11 @@ void wish_client_app::on_connect_params(bison::dynamic& params) const {
   params["timeout_ms"_key] = int32_t{FLAGS_timeout};
   if (!FLAGS_username.empty())
     params["username"_key] = FLAGS_username;
+  // Which app this connection runs, so a `wish desktop` in between can tell
+  // its clients apart (taskbar icons, running indicators). A plain server
+  // ignores it.
+  if (resolved_app_)
+    params["app"_key] = qualified_app_name(*resolved_app_);
 }
 
 int wish_client_app::on_session(bison::rmi::client& c) {

@@ -15,6 +15,16 @@
 namespace bdg::wish {
 
 /**
+ * @brief True for top-level classes that are host chrome rather than a
+ *        window of their own (`MenuBarExtension`, `DesktopShell`): the
+ *        host renderer's `render_server_frame()` draws them, so the
+ *        per-session render pass must skip them.
+ */
+inline bool is_host_chrome_class(bison::key_t class_key) {
+  return class_key == bison::key_t{"MenuBarExtension"} || class_key == bison::key_t{"DesktopShell"};
+}
+
+/**
  * @brief Abstract rendering backend contract.
  *
  * Concrete backends (imgui, Qt, null) implement the three virtual methods.

@@ -326,7 +326,9 @@ function(wish_finalize_app_modules)
   get_property(defs GLOBAL PROPERTY WISH_APP_MODULE_DEFS)
   # An organization's common/ sources are listed once per enabled module.
   list(REMOVE_DUPLICATES sources)
-  foreach(tgt wish-cli wish-standalone wish-client wish_client_dll)
+  # wish-desktop lists the modules in its Start menu (it launches them
+  # through wish-client, but reads their names/icons from its own registry).
+  foreach(tgt wish-cli wish-standalone wish-client wish-desktop wish_client_dll)
     if(TARGET ${tgt})
       target_sources(${tgt} PRIVATE ${sources})
       target_compile_definitions(${tgt} PRIVATE ${defs})

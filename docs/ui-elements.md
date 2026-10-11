@@ -532,6 +532,47 @@ register as a top-level object (not nested under a `Window`); children are
 `Menu`/trailing `Label`, same shape as `MenuBar`. Removed automatically on
 session disconnect. No fields, no events.
 
+#### `DesktopShell`
+Turns the server's host window into a desktop (used by `wish desktop`, see
+[cli.md](cli.md#wish-desktop)): wallpaper, desktop icons, and a bottom
+taskbar with a Start menu (search, pin, power menu), pinned apps, open
+windows, a tray (connected apps, light/dark toggle, clock with a calendar)
+and a show-desktop strip. Register as a top-level object; children are
+`DesktopApp`. While one is registered, un-positioned windows open floating
+and cascaded instead of docked, a `DockSpaceViewport` becomes a floating app
+frame, and Ctrl+Tab (or Ctrl+\`) switches windows. Removed automatically on
+session disconnect.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `wallpaper` | `string` | `""` | Background image, relative to the session's resource folder, drawn to cover the screen. Empty draws a built-in gradient. Sandboxed like `Image.src`. |
+| `user` | `string` | `""` | User name shown at the bottom of the Start menu. |
+| `show_icons` | `bool` | `true` | Draws the apps whose `on_desktop` is true as icons on the wallpaper. |
+| `clients` | `int` | `0` | Number of connected apps, shown in the tray. |
+| `time_format` / `date_format` | `string` | `"%H:%M"` / `"%d/%m/%Y"` | `strftime()` formats of the tray clock's two lines. |
+
+**Events:** `launch` — `{ app }` (Start menu entry, pinned button of an app
+that isn't running, desktop icon double-click); `pin` — `{ app, pinned }`;
+`desktop_icon` — `{ app, on_desktop }`; `theme` — `{ preset }` (`"dark"` /
+`"light"`); `quit` (Start → Power → Quit desktop). The shell never changes
+`pinned`/`on_desktop` itself: the owner sets the field in response.
+
+#### `DesktopApp`
+One app listed by a `DesktopShell`.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `app` | `string` | `""` | Identifier sent back in the shell's events (e.g. `"bdg/desktop/nano"`). |
+| `label` | `string` | `""` | Name shown in the Start menu, on the taskbar and under the desktop icon. |
+| `description` | `string` | `""` | Tooltip; also matched by the Start menu search. |
+| `collection` | `string` | `""` | Start menu group heading. |
+| `icon` | `string` | `""` | Icon image (e.g. `"res/icons/edit.png"`), tinted; empty uses a generic app icon. |
+| `pinned` | `bool` | `false` | Shown on the taskbar while not running. |
+| `on_desktop` | `bool` | `false` | Shown as a desktop icon. |
+| `sessions` | `int[]` | `[]` | Object groups of its running instances (a bridge's downstream session ids); maps windows to the app for their taskbar icon and the running indicator. |
+
+No events of its own.
+
 #### `ContextMenu`
 A right-click popup. It draws nothing itself — it opens when the *previous
 sibling* in the same parent is right-clicked, via

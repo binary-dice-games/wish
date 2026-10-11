@@ -120,6 +120,8 @@ class sdl3_renderer : public imgui_renderer
   ImTextureID get_or_load_texture(const std::string& src, const std::filesystem::path& resource_dir,
       const std::unordered_map<std::string, uint32_t>* embedded_crc32s = nullptr) override;
 
+  ImVec2 texture_size(const std::string& src) const override;
+
   /**
    * @brief Return a cached ImFont* for (path, size), or schedule an atlas
    *        rebuild and return nullptr (default font) on the first request.

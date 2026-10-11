@@ -18,5 +18,9 @@ DEFINE_bool(debugger, false, "Wait for debugger attachment before starting");
 int main(int argc, char** argv) {
   gflags::SetUsageMessage("wish-desktop - wish RMI bridge / multiplexer with desktop shell");
   bdg::wish::wish_desktop_app app;
+  // Apps launched from the desktop run through the wish-client binary
+  // installed beside this one.
+  auto self = bdg::wish::process_launcher::self_exe_path();
+  app.set_client_command({(self.parent_path() / ("wish-client" + self.extension().string())).string()});
   return app.run(argc, argv);
 }

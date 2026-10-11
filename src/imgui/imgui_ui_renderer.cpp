@@ -163,6 +163,12 @@ void render_window(imgui_renderer& r, const ui_element& node0, const context& s)
   bool closable = node.closable(false);
   bool modal = node.modal(false);
 
+  // Minimized from the desktop shell's taskbar: not submitted at all, so it
+  // disappears while ImGui keeps its position/size/dock state for restore.
+  // A modal is never minimizable -- it would block input invisibly.
+  if (!modal && node.minimized())
+    return;
+
   // Automatically reserve menu bar space when a direct MenuBar child exists
   // (cached on the node -- see ui_element::has_menu_bar_child()).
   if (node.has_menu_bar_child())
@@ -325,7 +331,27 @@ void render_window(imgui_renderer& r, const ui_element& node0, const context& s)
   // leaves on its far side, which ImGui keeps even while empty -- so a
   // window an app creates at runtime (nano's one-per-file documents) lands
   // in the app's own nested dockspace rather than the outer host one.
-  if (!has_explicit_pos && !(fl & ImGuiWindowFlags_NoDocking)) {
+  //
+  // In a desktop shell (desktop_cascade_active()), a window with no dock
+  // target opens floating at the next cascade slot instead, like a window on
+  // a Windows/macOS desktop; dragging it into the dockspace still docks it.
+  // Only a window ImGui has never seen claims a slot -- an existing one
+  // (or one imgui.ini remembers) keeps its place.
+  bool cascaded = false;
+  const bool float_on_desktop = r.desktop_cascade_active() && node.dock_target_ref().empty();
+  if (!has_explicit_pos && !(fl & ImGuiWindowFlags_NoDocking) && float_on_desktop) {
+    const ImGuiViewport* vp = ImGui::GetMainViewport();
+    bool sized = w > 0 && h > 0;
+    ImVec2 size = sized ? ImVec2(float(w), float(h))
+                        : ImVec2(std::floor(vp->WorkSize.x * 0.6f), std::floor(vp->WorkSize.y * 0.6f));
+    if (auto pos = r.claim_cascade_slot(iml.c_str(), size)) {
+      if (!sized)
+        ImGui::SetNextWindowSize(size, ImGuiCond_FirstUseEver);
+      ImGui::SetNextWindowPos(*pos, ImGuiCond_FirstUseEver);
+    }
+    cascaded = true;
+  }
+  if (!cascaded && !has_explicit_pos && !(fl & ImGuiWindowFlags_NoDocking)) {
     ImGuiID dock_id = r.ambient_dockspace_id();
     if (const std::string& target = node.dock_target_ref(); !target.empty()) {
       if (ImGuiID named = r.named_dockspace_id(target); named != 0)
@@ -339,7 +365,11 @@ void render_window(imgui_renderer& r, const ui_element& node0, const context& s)
   // front (selecting its tab when docked). Must precede Begin(): a window
   // that is a hidden dock tab is not submitted far enough for anything
   // inside it to run.
-  if (node.take_focus_request(node.focus_request(0)))
+  // take_raise_request() is the desktop shell's server-side equivalent
+  // (taskbar click, window switcher). Both are always consumed.
+  bool raise = node.take_focus_request(node.focus_request(0));
+  raise = node.take_raise_request() || raise;
+  if (raise)
     ImGui::SetNextWindowFocus();
 
   bool window_open = ImGui::Begin(iml.c_str(), p_open, ImGuiWindowFlags(fl));
@@ -1665,7 +1695,19 @@ void render_progress_bar(imgui_renderer&, const ui_element& node0, const context
 void render_dockspace_viewport(imgui_renderer& r, const ui_element& node0, const context& s) {
   const auto& node = static_cast<const ui_dockspace_viewport&>(node0);
   const std::string& id_stored = node.id_ref();
-  bool embedded = node.embedded(false);
+  // In a desktop shell (desktop_cascade_active()) every DockSpaceViewport is
+  // an app's main frame: a floating, titled window like an embedded one,
+  // never a fullscreen host covering the desktop.
+  const bool desktop = r.desktop_cascade_active();
+  bool embedded = node.embedded(false) || desktop;
+
+  // Minimized from the taskbar: nothing is drawn, but the dockspace is kept
+  // alive so the windows docked in it stay docked for the restore.
+  if (desktop && node.minimized()) {
+    if (ImGuiID kept = node.last_dockspace_id(); kept != 0)
+      ImGui::DockSpace(kept, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_KeepAliveOnly);
+    return;
+  }
   // Embedded mode gives this element a readable tab name once docked among
   // siblings; the fullscreen host has no visible chrome, so its id can stay
   // hidden behind "##".
@@ -1691,7 +1733,20 @@ void render_dockspace_viewport(imgui_renderer& r, const ui_element& node0, const
   // process-wide, mutable slot -- never inherits the nested id set below.
   ImGuiID prior_ambient = r.ambient_dockspace_id();
 
-  if (!embedded) {
+  if (desktop) {
+    // Never shown before: open floating at the next cascade slot, sized
+    // generously since it hosts a whole app.
+    const ImGuiViewport* vp = ImGui::GetMainViewport();
+    ImVec2 size(std::floor(vp->WorkSize.x * 0.7f), std::floor(vp->WorkSize.y * 0.75f));
+    if (title_stored.empty()) {
+      window_label_buf = std::string(id) + "###" + id;
+      window_label = window_label_buf.c_str();
+    }
+    if (auto pos = r.claim_cascade_slot(window_label, size)) {
+      ImGui::SetNextWindowPos(*pos, ImGuiCond_FirstUseEver);
+      ImGui::SetNextWindowSize(size, ImGuiCond_FirstUseEver);
+    }
+  } else if (!embedded) {
     const ImGuiViewport* vp = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(vp->WorkPos);
     ImGui::SetNextWindowSize(vp->WorkSize);
@@ -1722,7 +1777,10 @@ void render_dockspace_viewport(imgui_renderer& r, const ui_element& node0, const
   if (node.has_menu_bar_child())
     host_flags |= ImGuiWindowFlags_MenuBar;
 
+  if (node.take_raise_request())
+    ImGui::SetNextWindowFocus();
   ImGui::Begin(window_label, nullptr, host_flags);
+  node.set_focused(ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows | ImGuiFocusedFlags_DockHierarchy));
   report_self_rect(node);
   ImGui::PopStyleVar(3);
   ImGui::PopStyleColor();
@@ -1735,6 +1793,7 @@ void render_dockspace_viewport(imgui_renderer& r, const ui_element& node0, const
   // the Window children actually render).
   ImGuiID dockspace_id = ImGui::GetID(id);
   ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), dock_flags);
+  node.set_last_dockspace_id(dockspace_id);
   // Un-positioned Window children dock here by default (see render_window).
   r.set_ambient_dockspace_id(dockspace_id);
   // Lets a Window elsewhere in the tree target this dockspace by name (see

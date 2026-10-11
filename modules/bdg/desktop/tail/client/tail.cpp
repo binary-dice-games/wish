@@ -352,6 +352,7 @@ struct tail_app_registrar {
         .collection = WISH_MODULE_BDG_DESKTOP_TAIL_COLLECTION,
         .description = "`tail`-like log viewer: colorized by severity, filterable by regex, "
                         "with a dedicated tab per [Tag] token seen in the stream",
+        .icon = "res/icons/log.png",
         .params = {{"files", "One or more log file paths to tail (see --describe=tail for full usage)"}},
         .run = run_tail,
     });

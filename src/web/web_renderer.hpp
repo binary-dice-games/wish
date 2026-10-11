@@ -237,6 +237,8 @@ class web_renderer : public imgui_renderer {
   ImTextureID get_or_load_texture(const std::string& src, const std::filesystem::path& resource_dir,
       const std::unordered_map<std::string, uint32_t>* embedded_crc32s = nullptr) override;
 
+  ImVec2 texture_size(const std::string& src) const override;
+
   /// Per-texture identity/versioning metadata for the browser resource
   /// cache, populated by get_or_load_texture(). Textures with no such
   /// metadata (the font atlas, and any other user texture not registered

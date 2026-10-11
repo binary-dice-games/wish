@@ -47,6 +47,13 @@ struct app_info {
   std::string collection;
 
   std::string description;
+
+  /// @brief Optional icon, an image path relative to a session's resource
+  ///        folder (normally one of the embedded `res/icons/<name>.png`).
+  ///        Shown by `wish desktop` in its Start menu, taskbar and desktop
+  ///        icons; empty uses a generic app icon.
+  std::string icon;
+
   std::vector<app_param> params;
   AppFn run;
 };

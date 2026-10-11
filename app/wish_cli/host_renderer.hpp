@@ -7,6 +7,7 @@
 #pragma once
 
 #include <context/context.hpp>
+#include <imgui/imgui_desktop_shell.hpp>
 #include <ui/ui_element.hpp>
 
 #include <vector>
@@ -21,6 +22,10 @@ namespace bdg::wish {
  *          - A menu bar with host-level actions (including Quit),
  *            extensible by sessions that register a MenuBarExtension
  *            top-level object.
+ *        When a session registers a `DesktopShell` top-level object (the
+ *        `wish desktop` bridge does), the menu bar is replaced by the
+ *        desktop chrome instead -- wallpaper, desktop icons and a taskbar
+ *        with a Start menu (see `render_desktop_shell()`).
  *
  * Templatized on the backend so the same host-window UI is shared by every
  * renderer that draws through ImGui, rather than duplicating it per backend.
@@ -41,6 +46,10 @@ class host_renderer : public Base {
   using Base::Base;
 
   void render_server_frame(const std::vector<sync_context_ptr>& sessions) override;
+
+ private:
+  /// Cross-frame UI state of the desktop chrome (see render_desktop_shell()).
+  desktop_shell_state desktop_state_;
 };
 
 } // namespace bdg::wish

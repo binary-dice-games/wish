@@ -97,6 +97,7 @@ struct pip_app_registrar {
         .collection = WISH_MODULE_BDG_DEV_PIP_COLLECTION,
         .description = "GUI frontend for the local `pip` CLI: list, install, upgrade and uninstall Python "
                        "packages (wish client --run=pip [-- <python-or-venv>])",
+        .icon = "res/icons/download.png",
         .params = {{"python", "Python interpreter or virtualenv directory to manage (optional; default: the "
                               "python3 on PATH)"}},
         .run = run_pip,

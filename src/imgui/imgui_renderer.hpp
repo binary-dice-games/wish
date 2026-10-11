@@ -11,6 +11,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <unordered_map>
 
@@ -191,6 +192,66 @@ class imgui_renderer : public renderer {
   void set_ambient_dockspace_id(ImGuiID id) { ambient_dockspace_id_ = id; }
   ImGuiID ambient_dockspace_id() const { return ambient_dockspace_id_; }
 
+  /**
+   * @brief Turns on desktop-style window placement for this frame: an
+   *        un-positioned, dockable top-level `Window` opening for the first
+   *        time floats at the next cascade slot inside @p area_min ..
+   *        @p area_max instead of docking into `ambient_dockspace_id()`.
+   *
+   * Set each frame by the desktop shell (see `render_desktop_shell()`),
+   * reset by `begin_frame()`. The cascade position itself persists across
+   * frames, so consecutive new windows step diagonally and wrap back to the
+   * top-left of the area once the next slot would no longer fit.
+   */
+  void set_desktop_cascade_area(ImVec2 area_min, ImVec2 area_max) {
+    cascade_active_ = true;
+    cascade_area_min_ = area_min;
+    cascade_area_max_ = area_max;
+  }
+  /// @brief Whether `set_desktop_cascade_area()` was called this frame.
+  bool desktop_cascade_active() const {
+    return cascade_active_;
+  }
+
+  /**
+   * @brief Claims the next cascade slot for the top-level ImGui window
+   *        @p imgui_name of size @p size, advancing the cascade -- but only
+   *        when ImGui has never seen that window (neither live this run nor
+   *        remembered by imgui.ini), so an existing window keeps its place.
+   *        Only meaningful while `desktop_cascade_active()`.
+   * @return The window's top-left position, or nullopt for a known window.
+   */
+  std::optional<ImVec2> claim_cascade_slot(const char* imgui_name, ImVec2 size);
+
+  /// @brief @p s's compiled style (recompiling it first when the session
+  ///        changed it), or nullptr when the session has no style service.
+  const ImGuiStyle* session_style(const context& s);
+
+  /**
+   * @brief Runs @p fn with @p s's compiled session style swapped in as the
+   *        current ImGui style (the same style `render_session()` applies
+   *        around the session's own tree), restoring the previous style
+   *        afterwards, even on exception. Runs @p fn unstyled when the
+   *        session has no style service.
+   */
+  template <typename Fn>
+  void with_session_style(const context& s, Fn&& fn) {
+    const ImGuiStyle* compiled = session_style(s);
+    if (!compiled) {
+      fn();
+      return;
+    }
+    ImGuiStyle saved = ImGui::GetStyle();
+    ImGui::GetStyle() = *compiled;
+    try {
+      fn();
+    } catch (...) {
+      ImGui::GetStyle() = saved;
+      throw;
+    }
+    ImGui::GetStyle() = saved;
+  }
+
   /// @brief Records that the `DockSpaceViewport` whose `id` field is
   ///        @p name published dockspace @p id this frame, so a `Window`
   ///        rendered later in the frame can target it by name (see
@@ -266,6 +327,14 @@ class imgui_renderer : public renderer {
    */
   virtual ImTextureID get_or_load_texture(const std::string& src, const std::filesystem::path& resource_dir,
       const std::unordered_map<std::string, uint32_t>* embedded_crc32s = nullptr);
+
+  /**
+   * @brief Pixel size of the texture `get_or_load_texture(src, ...)` loaded,
+   *        or (0, 0) when it is not loaded or the backend does not know
+   *        (the base implementation, headless). Lets a caller keep an
+   *        image's aspect ratio (e.g. the desktop wallpaper's cover fit).
+   */
+  virtual ImVec2 texture_size(const std::string& src) const;
 
   /**
    * @brief Fetch a cached font or schedule loading the TTF at @p path with
@@ -358,6 +427,13 @@ class imgui_renderer : public renderer {
 
   /// See `named_dockspace_id()`. Reset every `begin_frame()`.
   std::unordered_map<std::string, ImGuiID> named_dockspaces_;
+
+  /// See `set_desktop_cascade_area()`. `cascade_active_` is reset every
+  /// `begin_frame()`; `cascade_index_` persists across frames.
+  bool cascade_active_ = false;
+  ImVec2 cascade_area_min_{};
+  ImVec2 cascade_area_max_{};
+  int cascade_index_ = 0;
 
  private:
   /// This instance's full class-id -> render function dispatch table: wish's

@@ -357,6 +357,7 @@ add_library(wish_server STATIC
   src/ui/ui_elements/image.cpp
   src/ui/ui_elements/separator.cpp
   src/ui/ui_elements/menu.cpp
+  src/ui/ui_elements/desktop_shell.cpp
   src/ui/ui_elements/tabs.cpp
   src/ui/ui_elements/tree.cpp
   src/ui/ui_elements/combo.cpp
@@ -414,6 +415,8 @@ if(WISH_ENABLE_IMGUI)
     src/imgui/imgui_table_fit.hpp
     src/imgui/imgui_table_fit.cpp
     src/imgui/imgui_icon_widgets.hpp
+    src/imgui/imgui_desktop_shell.hpp
+    src/imgui/imgui_desktop_shell.cpp
     src/imgui/imgui_icon_widgets.cpp
     src/imgui/imgui_layout.hpp
     src/imgui/imgui_layout.cpp

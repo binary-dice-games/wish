@@ -93,6 +93,7 @@ struct sq_app_registrar {
         .organization = WISH_MODULE_BDG_DEV_SQ_ORGANIZATION,
         .collection = WISH_MODULE_BDG_DEV_SQ_COLLECTION,
         .description = "DBeaver-style, query-only GUI frontend for the local `sq` CLI (wish client --run=sq)",
+        .icon = "res/icons/database.png",
         .params = {},
         .run = run_sq,
     });

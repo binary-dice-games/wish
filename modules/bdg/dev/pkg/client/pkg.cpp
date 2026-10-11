@@ -164,6 +164,7 @@ struct pkg_app_registrar {
         .collection = WISH_MODULE_BDG_DEV_PKG_COLLECTION,
         .description = "GUI frontend for the system package manager -- apt, dnf, pacman or brew: list, search, "
                        "install, upgrade and remove packages (wish client --run=pkg -- <manager>)",
+        .icon = "res/icons/package.png",
         .params = {{"manager", "Package manager to use: apt, dnf, pacman or brew (optional; default: the first "
                                "one found on this machine)"},
                    {"elevation", "How commands that need root get it: sudo, pkexec, none or auto (optional; "

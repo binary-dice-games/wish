@@ -33,6 +33,7 @@ struct bc_app_registrar {
         .organization = WISH_MODULE_BDG_DESKTOP_BC_ORGANIZATION,
         .collection = WISH_MODULE_BDG_DESKTOP_BC_COLLECTION,
         .description = "Calculator with standard, scientific and programmer layouts",
+        .icon = "res/icons/calculate.png",
         .params = {},
         .run = run_bc,
     });
