@@ -153,9 +153,9 @@ class wish_desktop : public bison::rmi::bridge {
   void flush();
 
   /// @brief Stops the configuration watcher and the worker thread (pending
-  ///        work is dropped). Call before stop(): work still running when
-  ///        the upstream connection closes could wait forever on a request
-  ///        that is never answered. Idempotent; the destructor calls it too.
+  ///        work is dropped). Call before stop(), so no work is cut off
+  ///        midway by the upstream connection closing (its requests would
+  ///        fail). Idempotent; the destructor calls it too.
   void stop_tasks();
 
   /**
