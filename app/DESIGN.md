@@ -442,7 +442,8 @@ wish_desktop_app::run()
                         and on the endpoint
     on_listening()    → desktop_->build_chrome() (loads the config, starts
                         the file watcher)
-    wait_for_shutdown() → until "Quit desktop" or the anchor terminal exits;
+    wait_for_shutdown() → until "Quit desktop", the anchor terminal exits,
+                          or the upstream connection is lost;
                           then terminates launched apps and stops the
                           worker and watcher (stop_tasks()) while the
                           upstream connection is still open

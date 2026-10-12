@@ -498,23 +498,25 @@ desk = subprocess.Popen([wish, "desktop", "--upstream_transport", "tcp", "--upst
   inactive one: raise, then minimize.
 - **Quit a desktop by typing `exit` into its stdin** (`desk.stdin.write(b"exit\n")`):
   closing stdin does not end the anchor terminal, so the desktop keeps
-  running (2026-10).
+  running (deliberately: a desktop started with no terminal has stdin at
+  EOF from the start). It also exits by itself when its upstream server
+  stops (2026-10).
 - **Only one desktop runs per machine** and it owns the fixed endpoint
   (`@wish-desktop` on Linux, see [cli.md](cli.md#services-a-ui-whenever-the-desktop-runs)).
   A desktop left over from an earlier run makes every new one exit with
-  `wish desktop is already running`, and if its upstream server is gone,
-  clients that connect to it hang in their first request. Check for strays
-  with `ps -eo pid,args | grep "wish desktop"` before a run; set
-  `WISH_DESKTOP_ENDPOINT` to a unique name to isolate a run.
+  `wish desktop is already running`. Check for strays with `ps -eo
+  pid,args | grep "wish desktop"` before a run; set `WISH_DESKTOP_ENDPOINT`
+  to a unique name to isolate a run.
 - **Keep the proxy `instantiate_template()` returns** in Python (`root =
   client.instantiate_template(...)`): a dropped `Proxy` is released when
   garbage-collected, which removes the window. Its child widgets fetched
   with `proxy_get()` stay in `get_tree()` (with no `rect`, never drawn), so
   the window looks half-there (2026-10).
-- **A client killed with SIGKILL leaves its windows on the server**: server
-  connections do not report the peer's EOF, so the session is only dropped
-  on an explicit disconnect. The same holds for a SIGKILLed `wish desktop`
-  and the windows of the apps it relayed (2026-10).
+- **A client killed with SIGKILL loses its windows** within a moment: the
+  server drops a session when its connection closes, not only on an
+  explicit disconnect (fixed 2026-10; before, they stayed until the server
+  stopped). The same holds for a SIGKILLed `wish desktop` and the windows of
+  the apps it relayed.
 - **Template paths of a client-ABI app over the desktop drop the instance
   prefix** in `get_tree()`: `instantiate_template("service", "svc")`'s
   `svc.jobs` shows as `jobs`, and the window itself as path `""` (2026-10).

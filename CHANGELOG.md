@@ -107,6 +107,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Clients over the `pipe` transport notice when the server goes away (they hung in `wait()` before) and can connect again; a server on a pipe no longer risks a crash when stopped (bison update).
+- The windows of a client that was killed or lost its connection now disappear: the server drops the session when the connection closes, not only on an explicit disconnect (bison update).
 - `nano` no longer writes its working copies at the sandbox root, where they collided with other tools' files and earlier runs in a persistent sandbox; they go in a temp dir private to nano and the session.
 - The Details windows of the `bdg` tools (docker, kubectl, helm, pip, pkg) no longer overwrite each other's files when two sessions share a persistent sandbox.
 - `git`, `nano`, `zip` and `du` toolbar buttons size to their label and icon instead of a fixed width, so their text is no longer cropped.
@@ -130,6 +131,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Only one `wish desktop` can run at a time: a second one prints `wish desktop is already running` and exits with 1.
+- `wish desktop` exits when the wish server it draws on stops, releasing its endpoint (it used to keep running with nothing to show).
 - Docking is scoped to the parent docker: an app's panels (windows of an embedded/desktop `DockSpaceViewport`, its `DockLayout` windows, or `dock_target` windows) can only dock into that app's own dockspace, and the app window only into its parent dockspace -- e.g. curl's panels can no longer be docked into kubectl's window or the desktop.
 - `wish desktop` no longer adds a "Desktop" menu to the server's menu bar: the desktop chrome replaces the menu bar, windows open floating and cascaded instead of docked, and an app's `DockSpaceViewport` becomes a floating app window.
 - `wish standalone` (and `wish-standalone`) now also reads `WISH_<FLAG>` environment variables as flag defaults, like the other modes.

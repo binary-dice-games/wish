@@ -315,7 +315,9 @@ Only one `wish desktop` runs per machine. Besides its downstream transport,
 it always listens on a fixed, system-wide local endpoint, and owning that
 endpoint is what stops a second desktop from starting (it prints `wish
 desktop is already running` and exits with 1). The endpoint is released by
-the OS when the desktop exits, even after a crash.
+the OS when the desktop exits, even after a crash. A desktop also exits
+when the wish server it draws on stops, so it never holds the endpoint
+without a screen to show.
 
 | Platform | Endpoint |
 |----------|----------|

@@ -293,8 +293,17 @@ valgrind-clean:
    the connection (before: `std::terminate` from overwriting joinable
    threads).
 
-Not fixed (out of scope): `socket_transport.cpp`'s `on_new_connection()`
-has the same stack-allocated temporary handle as fixed in (1).
+5. `e4ec1a6`: server connections (TCP, TLS, pipe) report the peer's close
+   in `is_closed()`, so `rmi::server` drops the session of a killed client
+   (its windows stayed until the server stopped); the TCP/TLS accept paths
+   had the same stack-handle bug as fixed in (1).
+6. `32f2645`: the bridge's upstream wrapper forwards `is_connected()`;
+   `rmi::client::is_connected()` and `bridge::upstream_connected()`. `wish
+   desktop` uses it to exit when its upstream server stops, instead of
+   holding the endpoint with nothing to show.
+
+Kept as is: closing a desktop's stdin does not quit it, since a desktop
+started without a terminal has stdin at EOF from the start.
 
 ## Ordering
 

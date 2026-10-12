@@ -1146,6 +1146,13 @@ void wish_desktop_app::wait_for_shutdown() {
   while (!desktop_->wait_for_quit_for(100ms)) {
     if (active_term_ && active_term_->has_exited())
       break;
+    // Without its server the desktop can show nothing, yet it would keep
+    // the fixed endpoint, refusing a new desktop and leaving the clients
+    // that connect to it unanswered.
+    if (!desktop_->upstream_connected()) {
+      std::cerr << "[desktop] lost the connection to the wish server; exiting\n";
+      break;
+    }
   }
   // Apps launched from the desktop go down with it.
   if (launcher_)

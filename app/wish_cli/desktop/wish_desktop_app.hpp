@@ -395,6 +395,9 @@ class wish_desktop_app : public bison::app::bridge_app {
    * alongside `active_term_->has_exited()`, returning as soon as either
    * the shell's "quit" event handler calls
    * `wish_desktop::request_quit()`, or the operator exits the terminal.
+   * It also returns when the upstream connection is lost
+   * (`bridge::upstream_connected()`), so a desktop whose server is gone
+   * releases its fixed endpoint instead of holding it.
    * Either path lets `bridge_app::run_with_transport()`/`run()` proceed
    * through `br->stop()` and unwind normally, releasing terminal state
    * (`scoped_terminal_config`/`terminal`) via RAII.
