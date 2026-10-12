@@ -4,8 +4,9 @@
 ///
 /// The Top form (server-side) never samples anything itself --
 /// it only renders whatever snapshot it was last given. This runner owns
-/// the actual process/CPU/memory sampling (inherently local to whichever
-/// machine the client is running on) and periodically pushes a fresh
+/// the actual process/CPU/memory/network/disk/port sampling (inherently
+/// local to whichever machine the client is running on) and periodically
+/// pushes a fresh
 /// snapshot into the form via its `update_snapshot` RMI method, mirroring
 /// how nano's reference client owns upload_file/download_file while the
 /// server only manages tabs (see modules/bdg/desktop/nano/client/nano.cpp).
@@ -41,6 +42,28 @@ dynamic encode_snapshot(const system_snapshot& snap) {
 
   std::vector<float> per_core(snap.system.per_core_percent.begin(), snap.system.per_core_percent.end());
   args["per_core_percent"_key] = std::move(per_core);
+
+  args["net_rx_bytes_per_sec"_key] = static_cast<float>(snap.system.net_rx_bytes_per_sec);
+  args["net_tx_bytes_per_sec"_key] = static_cast<float>(snap.system.net_tx_bytes_per_sec);
+  args["net_rx_total_bytes"_key] = static_cast<float>(snap.system.net_rx_total_bytes);
+  args["net_tx_total_bytes"_key] = static_cast<float>(snap.system.net_tx_total_bytes);
+  args["disk_read_bytes_per_sec"_key] = static_cast<float>(snap.system.disk_read_bytes_per_sec);
+  args["disk_write_bytes_per_sec"_key] = static_cast<float>(snap.system.disk_write_bytes_per_sec);
+  args["disk_read_total_bytes"_key] = static_cast<float>(snap.system.disk_read_total_bytes);
+  args["disk_write_total_bytes"_key] = static_cast<float>(snap.system.disk_write_total_bytes);
+
+  dynamic ports;
+  size_t port_index = 0;
+  for (auto& p : snap.ports) {
+    auto e = std::make_shared<dynamic>();
+    (*e)["protocol"_key] = p.protocol;
+    (*e)["address"_key] = p.address;
+    (*e)["port"_key] = static_cast<int32_t>(p.port);
+    (*e)["pid"_key] = static_cast<int32_t>(p.pid);
+    (*e)["process"_key] = p.process;
+    ports[port_index++] = dynamic_ptr{e};
+  }
+  args["ports"_key] = dynamic_ptr{std::make_shared<dynamic>(std::move(ports))};
 
   dynamic processes;
   size_t i = 0;
@@ -175,7 +198,8 @@ struct top_app_registrar {
         .name = "top",
         .organization = WISH_MODULE_BDG_DESKTOP_TOP_ORGANIZATION,
         .collection = WISH_MODULE_BDG_DESKTOP_TOP_COLLECTION,
-        .description = "top/htop-style system monitor; client samples CPU/memory/processes, server only renders",
+        .description =
+            "top/htop-style system monitor; client samples CPU/memory/network/disk/processes/ports, server only renders",
         .icon = "res/icons/monitoring.png",
         .params = {},
         .run = run_top,

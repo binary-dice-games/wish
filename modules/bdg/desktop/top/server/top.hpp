@@ -21,17 +21,20 @@ class properties_dialog;
 /// @brief Top/htop-style system monitor form, with a per-row right-click
 /// menu for managing individual processes.
 ///
-/// Laid out as four dockable panels inside the tool's own nested dockspace
+/// Laid out as seven dockable panels inside the tool's own nested dockspace
 /// (`dock::viewport()`, see docs/dock-layout.md), like the dev modules:
 /// **Processes** (the form's main root: a process table the user can sort
 /// by clicking any column header -- PID, Name, State, CPU %, Memory, or
 /// Command; defaults to CPU % descending -- a case-insensitive name filter,
-/// and a status label), **CPU**
-/// and **Memory** (a summary label over a history graph each), and
-/// **Cores** (one meter per logical CPU core). A first-run arrangement is
-/// seeded by `on_init()`; the user can re-dock, tab, or float any panel
-/// afterwards. Closing any panel closes the whole tool. All process/CPU/memory *sampling* happens client-side
-/// (gathering this information is inherently OS-specific, and the machine a
+/// and a status label), **CPU** and **Memory** (a summary label over a
+/// percentage history graph each), **Network** and **Disk I/O** (a summary
+/// label over a two-series throughput graph each, received/sent and
+/// read/written, whose Y axis rescales to the visible peak and picks a
+/// B/s..GB/s unit), **Ports** (a table of listening TCP/UDP sockets and
+/// their owning processes), and **Cores** (one meter per logical CPU core).
+/// A first-run arrangement is seeded by `on_init()`; the user can re-dock,
+/// tab, or float any panel afterwards. Closing any panel closes the whole
+/// tool. All sampling happens client-side (gathering this information is inherently OS-specific, and the machine a
 /// user actually wants visibility into is their own, not necessarily the
 /// wish server's host) -- the client periodically calls `update_snapshot`
 /// with the latest data; this form only renders whatever it was last given.
@@ -74,6 +77,17 @@ class top : public common::tool_form {
   ///   - `cpu_percent` (float) — overall CPU usage, 0..100.
   ///   - `per_core_percent` (vector<float>) — one entry per logical core.
   ///   - `mem_total_bytes`, `mem_used_bytes` (float).
+  ///   - `net_rx_bytes_per_sec`, `net_tx_bytes_per_sec`,
+  ///     `net_rx_total_bytes`, `net_tx_total_bytes` (float, optional,
+  ///     default 0) — network throughput and totals.
+  ///   - `disk_read_bytes_per_sec`, `disk_write_bytes_per_sec`,
+  ///     `disk_read_total_bytes`, `disk_write_total_bytes` (float, optional,
+  ///     default 0) — disk throughput and totals.
+  ///   - `ports` (dynamic array, optional) — listening sockets, each a
+  ///     dynamic with `protocol` (string, e.g. "TCP6"), `address` (string),
+  ///     `port` (int32), `pid` (int32, 0 = unknown) and `process` (string).
+  ///     Shown in the given order; the Ports table is only rebuilt when the
+  ///     list differs from the previous call's.
   ///   - `processes` (dynamic array) — each entry a dynamic with `pid`
   ///     (int32), `name`, `command`, `state` (single-character string),
   ///     `cpu_percent` (float), `mem_rss_bytes` (float), `nice_value`
@@ -155,7 +169,17 @@ class top : public common::tool_form {
     std::vector<int32_t> affinity_cores;
   };
 
-  /// @brief Remove the CPU/Memory/Cores panels and forget their keys.
+  /// One listening socket as last shown in the Ports table.
+  struct port_entry {
+    std::string protocol;
+    std::string address;
+    int32_t port{0};
+    int32_t pid{0};
+    std::string process;
+    bool operator==(const port_entry&) const = default;
+  };
+
+  /// @brief Remove the secondary panels and forget their keys.
   /// Safe to call more than once.
   void remove_panel_objects();
 
@@ -163,6 +187,18 @@ class top : public common::tool_form {
   void update_process_table(const bison::dynamic& args);
   void push_history(std::vector<float>& history, float value);
   void update_history_xs(size_t count);
+  /// @brief Refreshes a two-series throughput graph from @p first/@p second
+  /// (bytes/s histories): picks the B/s..GB/s unit that fits their peak,
+  /// scales both series to it, and sets the plot's Y label and range.
+  void update_rate_plot(
+      const ui_element_ptr& plot,
+      const ui_element_ptr& first_series,
+      const ui_element_ptr& second_series,
+      const std::vector<float>& first,
+      const std::vector<float>& second);
+  /// @brief Rebuilds the Ports table's rows from `args["ports"]` when the
+  /// list differs from `ports_`.
+  void update_ports_table(const bison::dynamic& args);
   /// @brief Re-sort `pid_to_row_` by `sort_column_id_`/`sort_ascending_` and
   /// refresh each row's `order` field -- no new data needed, so this can run
   /// directly from `on_event` for instant feedback on a header click.
@@ -203,14 +239,21 @@ class top : public common::tool_form {
       const std::string& exe_path, const std::string& cwd, const std::string& cmdline, int32_t nice,
       const std::vector<int32_t>& affinity_cores);
 
-  /// Secondary panel roots: internal_root_key_ + "_cpu"/"_mem"/"_cores".
+  /// Secondary panel roots: internal_root_key_ + "_cpu"/"_mem"/"_net"/
+  /// "_disk"/"_ports"/"_cores".
   std::string cpu_root_key_;
   std::string mem_root_key_;
+  std::string net_root_key_;
+  std::string disk_root_key_;
+  std::string ports_root_key_;
   std::string cores_root_key_;
 
   bison::key_t window_id_; ///< Processes panel (main root).
   bison::key_t cpu_window_id_;
   bison::key_t mem_window_id_;
+  bison::key_t net_window_id_;
+  bison::key_t disk_window_id_;
+  bison::key_t ports_window_id_;
   bison::key_t cores_window_id_;
   bison::key_t proc_table_id_;
   bison::key_t filter_input_id_;
@@ -233,16 +276,35 @@ class top : public common::tool_form {
   ui_element_ptr proc_table_;
   ui_element_ptr status_label_;
   ui_element_ptr filter_count_label_;
+  ui_element_ptr net_summary_label_;
+  ui_element_ptr net_plot_;
+  ui_element_ptr net_rx_series_;
+  ui_element_ptr net_tx_series_;
+  ui_element_ptr disk_summary_label_;
+  ui_element_ptr disk_plot_;
+  ui_element_ptr disk_read_series_;
+  ui_element_ptr disk_write_series_;
+  ui_element_ptr ports_table_;
+  ui_element_ptr ports_count_label_;
 
   std::vector<float> cpu_history_;
   std::vector<float> mem_history_;
-  std::vector<float> history_xs_; ///< Shared index axis (0, 1, 2, ...) for both plots.
+  std::vector<float> net_rx_history_; ///< Bytes/s, unscaled.
+  std::vector<float> net_tx_history_;
+  std::vector<float> disk_read_history_;
+  std::vector<float> disk_write_history_;
+  std::vector<float> history_xs_; ///< Shared index axis (0, 1, 2, ...) for every plot.
   /// Samples kept in each history; also the plots' fixed X-axis width.
   /// The `bdg.desktop.top.history` setting, read in on_init().
   size_t max_history_{60};
 
   std::unordered_map<int, row_entry> pid_to_row_;
   size_t next_child_key_{0};
+
+  /// Listening sockets currently shown in the Ports table, in row order,
+  /// and the table's child keys for those rows (parallel to `ports_`).
+  std::vector<port_entry> ports_;
+  std::vector<size_t> port_row_keys_;
 
   /// Maps a row context-menu item's `__wish_id` to the (pid, action) it
   /// represents; erased alongside the row when its process vanishes.

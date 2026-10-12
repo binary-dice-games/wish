@@ -2,13 +2,19 @@
 
 <img src="top.png" alt="top" height="300"/>
 
-top/htop-style system monitor laid out as four dockable panels inside its
+top/htop-style system monitor laid out as seven dockable panels inside its
 own nested "Top" dockspace (see [docs/dock-layout.md](../../../../docs/dock-layout.md)):
 **Processes** (sortable table with a name filter, right-click a row for kill/pause/priority/
-affinity/properties), **CPU** and **Memory** (history graphs), and **Cores**
-(one meter per logical core). The first run seeds the graphs above the
-process table with the core meters along the right; rearrange freely
-afterwards (Shift+drag to re-dock). Closing any panel closes the tool.
+affinity/properties), **CPU** and **Memory** (history graphs), **Network**
+(received/sent throughput graph plus totals, loopback excluded), **Disk I/O**
+(read/written throughput graph plus totals, physical disks only), **Ports**
+(listening TCP/UDP sockets with their owning process; another user's
+sockets show `-` unless top runs elevated), and **Cores** (one meter per
+logical core). The throughput graphs rescale to their visible peak and pick
+a B/s..GB/s unit. The first run seeds a row of graphs above the process
+table (with Ports as a second tab next to it) and the core meters along
+the right; rearrange freely afterwards (Shift+drag to re-dock). Closing any
+panel closes the tool.
 All sampling is client-side
 (inherently OS-specific, and the machine a user wants visibility into is
 their own) — the server-side form only renders whatever snapshot it was
@@ -18,8 +24,10 @@ last given.
   read-only rendering of whatever snapshot its `update_snapshot` RMI method
   was last called with.
 - **client/**: `run_top(wish_app_host&)`, self-registered as
-  the `"top"` embedded app — owns process/CPU/memory sampling
-  (platform-specific: `process_info_linux.cpp`/`process_info_win.cpp`) and
+  the `"top"` embedded app — owns process/CPU/memory/network/disk/port
+  sampling (platform-specific: `process_info_linux.cpp` reads `/proc` and
+  `/sys/block`; `process_info_win.cpp` uses `GetIfTable2`,
+  `IOCTL_DISK_PERFORMANCE` and `GetExtendedTcpTable`/`UdpTable`) and
   periodically pushes a fresh snapshot to the form.
 - **resources/**: none.
 

@@ -224,6 +224,20 @@ if(TARGET test_nano_client)
       WISH_MODULE_BDG_DESKTOP_NANO_COLLECTION="desktop")
 endif()
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_TOP                test_top               test_top.cpp)
+# top's client-side sampler (process_info_<platform>.cpp), compiled straight
+# into the test like nano's client above; uv_a is linked directly for the
+# test's own listening socket (wish links it PRIVATE).
+if(WIN32)
+  set(top_process_info_source process_info_win.cpp)
+else()
+  set(top_process_info_source process_info_linux.cpp)
+endif()
+wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_TOP                test_top_client        test_top_client.cpp
+    ${CMAKE_SOURCE_DIR}/modules/bdg/desktop/top/client/${top_process_info_source})
+if(TARGET test_top_client)
+  target_include_directories(test_top_client PRIVATE ${CMAKE_SOURCE_DIR})
+  target_link_libraries(test_top_client PRIVATE uv_a)
+endif()
 # The helpers shared by the bdg/dev modules' clients (modules/bdg/common):
 # run_process() against stub programs (printf/cat/sh -- never a real dev
 # tool), the text helpers, and tool_source against a stub form over an

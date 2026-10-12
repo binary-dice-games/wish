@@ -1,6 +1,6 @@
 // MIT License © 2025 Binary Dice Games
 /// @file process_info_linux.cpp
-/// @brief Linux/MSYS2 implementation of process_info_source (reads /proc).
+/// @brief Linux implementation of process_info_source (reads /proc and /sys).
 ///
 /// This is the only file in this directory that knows about /proc; a future
 /// native-Windows port would add a process_info_windows.cpp implementing the
@@ -8,14 +8,20 @@
 /// touching any other file here.
 #include "process_info.hpp"
 
+#include <arpa/inet.h>
+#include <netinet/in.h>
 #include <sched.h>
+#include <unistd.h>
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace bdg::wish {
 
@@ -196,6 +202,159 @@ std::string read_proc_pid_cmdline(int pid) {
   return raw;
 }
 
+// ── Network / disk counters ──────────────────────────────────────────────────
+
+struct io_counters {
+  uint64_t first{0}; ///< Received (network) or read (disk) bytes.
+  uint64_t second{0}; ///< Sent (network) or written (disk) bytes.
+};
+
+// Sums received/sent bytes over every interface in /proc/net/dev except
+// loopback. Each data line is "  name: rx_bytes rx_packets ... (8 rx
+// fields) tx_bytes ...", so tx_bytes is the 9th number after the colon.
+io_counters read_proc_net_dev() {
+  io_counters total;
+  std::ifstream in("/proc/net/dev");
+  std::string line;
+  while (std::getline(in, line)) {
+    auto colon = line.find(':');
+    if (colon == std::string::npos)
+      continue; // the two header lines
+    std::string name = line.substr(0, colon);
+    name.erase(0, name.find_first_not_of(' '));
+    if (name == "lo")
+      continue;
+    std::istringstream iss(line.substr(colon + 1));
+    uint64_t v[9] = {};
+    for (auto& x : v)
+      iss >> x;
+    if (!iss)
+      continue;
+    total.first += v[0];
+    total.second += v[8];
+  }
+  return total;
+}
+
+// Sums read/written bytes over every *physical* disk in /proc/diskstats:
+// one with a /sys/block/<name>/device link. That skips partitions (not in
+// /sys/block at all) and loop/ram/zram/dm/md devices (no device link),
+// whose I/O is already counted on the disk underneath them. Sectors are
+// always 512 bytes here, whatever the disk's real sector size.
+io_counters read_proc_diskstats() {
+  io_counters total;
+  std::ifstream in("/proc/diskstats");
+  std::string line;
+  std::error_code ec;
+  while (std::getline(in, line)) {
+    std::istringstream iss(line);
+    unsigned major = 0, minor = 0;
+    std::string name;
+    uint64_t reads = 0, reads_merged = 0, sectors_read = 0, ms_reading = 0;
+    uint64_t writes = 0, writes_merged = 0, sectors_written = 0;
+    iss >> major >> minor >> name >> reads >> reads_merged >> sectors_read >> ms_reading >> writes >> writes_merged >>
+        sectors_written;
+    if (!iss || !fs::exists("/sys/block/" + name + "/device", ec))
+      continue;
+    total.first += sectors_read * 512ULL;
+    total.second += sectors_written * 512ULL;
+  }
+  return total;
+}
+
+// ── Listening ports ──────────────────────────────────────────────────────────
+
+constexpr int kTcpListen = 0x0A; ///< TCP_LISTEN in include/net/tcp_states.h.
+
+// Decodes /proc/net/{tcp,udp}{,6}'s "ADDR:PORT" hex form. ADDR is the
+// in-memory address printed as one (IPv4) or four (IPv6) 32-bit words with
+// %08X, so each word is parsed and copied back byte-for-byte; PORT is
+// already in host order.
+bool parse_hex_endpoint(const std::string& text, bool v6, std::string& address, int& port) {
+  auto colon = text.find(':');
+  size_t words = v6 ? 4 : 1;
+  if (colon != words * 8)
+    return false;
+  uint32_t raw[4] = {};
+  for (size_t i = 0; i < words; ++i)
+    raw[i] = static_cast<uint32_t>(std::stoul(text.substr(i * 8, 8), nullptr, 16));
+  port = static_cast<int>(std::stoul(text.substr(colon + 1), nullptr, 16));
+  char buf[INET6_ADDRSTRLEN] = {};
+  if (v6) {
+    in6_addr a{};
+    std::memcpy(&a, raw, sizeof(a));
+    inet_ntop(AF_INET6, &a, buf, sizeof(buf));
+  } else {
+    in_addr a{};
+    std::memcpy(&a, raw, sizeof(a));
+    inet_ntop(AF_INET, &a, buf, sizeof(buf));
+  }
+  address = buf;
+  return true;
+}
+
+// Appends every listening socket in one /proc/net table to @p out, and the
+// socket's inode to @p inode_of (parallel to @p out) so the owning process
+// can be found afterwards. TCP sockets count only in the LISTEN state; UDP
+// ones only when they have no fixed remote peer (remote port 0).
+void read_proc_net_table(
+    const char* path,
+    const char* protocol,
+    bool v6,
+    bool tcp,
+    std::vector<open_port>& out,
+    std::vector<uint64_t>& inode_of) {
+  std::ifstream in(path);
+  std::string line;
+  std::getline(in, line); // header
+  while (std::getline(in, line)) {
+    std::istringstream iss(line);
+    std::string slot, local, remote, state_hex, queues, timer, retransmits, uid, timeout;
+    uint64_t inode = 0;
+    iss >> slot >> local >> remote >> state_hex >> queues >> timer >> retransmits >> uid >> timeout >> inode;
+    if (!iss)
+      continue;
+    try {
+      open_port p;
+      std::string remote_address;
+      int remote_port = 0;
+      if (!parse_hex_endpoint(local, v6, p.address, p.port) ||
+          !parse_hex_endpoint(remote, v6, remote_address, remote_port))
+        continue;
+      int state = static_cast<int>(std::stoul(state_hex, nullptr, 16));
+      if (tcp ? state != kTcpListen : remote_port != 0)
+        continue;
+      p.protocol = protocol;
+      out.push_back(std::move(p));
+      inode_of.push_back(inode);
+    } catch (const std::exception&) {
+      // Malformed line -- skip it.
+    }
+  }
+}
+
+// Inodes of every socket @p pid has open, from its /proc/<pid>/fd/* links
+// ("socket:[12345]"). Only readable for the caller's own processes unless
+// running as root -- other sockets keep pid 0 ("unknown"), like `ss -p`.
+void collect_socket_inodes(
+    int pid,
+    const std::unordered_set<uint64_t>& wanted,
+    std::unordered_map<uint64_t, int>& owner) {
+  std::error_code ec;
+  for (auto& fd : fs::directory_iterator("/proc/" + std::to_string(pid) + "/fd", ec)) {
+    char target[64];
+    ssize_t n = readlink(fd.path().c_str(), target, sizeof(target) - 1);
+    if (n <= 0)
+      continue;
+    target[n] = '\0';
+    if (std::strncmp(target, "socket:[", 8) != 0)
+      continue;
+    uint64_t inode = std::strtoull(target + 8, nullptr, 10);
+    if (wanted.count(inode))
+      owner.emplace(inode, pid);
+  }
+}
+
 } // namespace
 
 struct process_info_source::impl {
@@ -203,9 +362,40 @@ struct process_info_source::impl {
   cpu_times overall_prev;
   std::vector<cpu_times> per_core_prev;
   std::unordered_map<int, uint64_t> prev_proc_jiffies;
+  std::chrono::steady_clock::time_point prev_time;
+  io_counters prev_net;
+  io_counters prev_disk;
 
   system_snapshot sample() {
     system_snapshot snap;
+
+    auto now = std::chrono::steady_clock::now();
+    io_counters net = read_proc_net_dev();
+    io_counters disk = read_proc_diskstats();
+    snap.system.net_rx_total_bytes = net.first;
+    snap.system.net_tx_total_bytes = net.second;
+    snap.system.disk_read_total_bytes = disk.first;
+    snap.system.disk_write_total_bytes = disk.second;
+    if (has_prev) {
+      double elapsed = std::chrono::duration<double>(now - prev_time).count();
+      snap.system.net_rx_bytes_per_sec = counter_rate(prev_net.first, net.first, elapsed);
+      snap.system.net_tx_bytes_per_sec = counter_rate(prev_net.second, net.second, elapsed);
+      snap.system.disk_read_bytes_per_sec = counter_rate(prev_disk.first, disk.first, elapsed);
+      snap.system.disk_write_bytes_per_sec = counter_rate(prev_disk.second, disk.second, elapsed);
+    }
+    prev_time = now;
+    prev_net = net;
+    prev_disk = disk;
+
+    std::vector<uint64_t> port_inodes;
+    read_proc_net_table("/proc/net/tcp", "TCP", false, true, snap.ports, port_inodes);
+    read_proc_net_table("/proc/net/tcp6", "TCP6", true, true, snap.ports, port_inodes);
+    read_proc_net_table("/proc/net/udp", "UDP", false, false, snap.ports, port_inodes);
+    read_proc_net_table("/proc/net/udp6", "UDP6", true, false, snap.ports, port_inodes);
+    std::unordered_set<uint64_t> wanted_inodes(port_inodes.begin(), port_inodes.end());
+    wanted_inodes.erase(0);
+    std::unordered_map<uint64_t, int> inode_owner;
+    std::unordered_map<int, std::string> pid_names;
 
     cpu_times overall_cur;
     std::vector<cpu_times> per_core_cur;
@@ -262,6 +452,12 @@ struct process_info_source::impl {
       ps.mem_rss_bytes = read_proc_pid_rss_bytes(pid);
       ps.nice = nice;
       ps.affinity_cores = read_affinity_cores(pid, num_cores);
+      if (inode_owner.size() < wanted_inodes.size()) {
+        size_t owned_before = inode_owner.size();
+        collect_socket_inodes(pid, wanted_inodes, inode_owner);
+        if (inode_owner.size() != owned_before)
+          pid_names[pid] = ps.name;
+      }
 
       uint64_t jiffies = utime + stime;
       next_prev_proc_jiffies[pid] = jiffies;
@@ -276,6 +472,15 @@ struct process_info_source::impl {
       snap.processes.push_back(std::move(ps));
     }
     prev_proc_jiffies = std::move(next_prev_proc_jiffies);
+
+    for (size_t i = 0; i < snap.ports.size(); ++i) {
+      auto owner = inode_owner.find(port_inodes[i]);
+      if (owner == inode_owner.end())
+        continue;
+      snap.ports[i].pid = owner->second;
+      snap.ports[i].process = pid_names[owner->second];
+    }
+    sort_ports(snap.ports);
 
     if (have_stat) {
       overall_prev = overall_cur;
