@@ -194,7 +194,8 @@ TEST_F(TopWindowTest, EachPanelIsATopLevelWindow) {
   std::string root = instantiate_and_get_root();
   ASSERT_FALSE(root.empty());
   auto& s = *srv_->last_session;
-  for (const std::string key : {root, root + "_cpu", root + "_mem", root + "_cores"}) {
+  for (const std::string key :
+       {root, root + "_cpu", root + "_mem", root + "_net", root + "_disk", root + "_ports", root + "_cores"}) {
     auto it = s.top_level_objects.find(bison::key_t{key});
     ASSERT_NE(it, s.top_level_objects.end()) << key;
     EXPECT_EQ(it->second->as<bison::key_t>(dynamic::CLASS), "Window"_key) << key;
@@ -204,6 +205,9 @@ TEST_F(TopWindowTest, EachPanelIsATopLevelWindow) {
   EXPECT_EQ(s.ui_objects.at(root + "_cpu")->as<std::string>("title"_key), "CPU");
   EXPECT_EQ(s.ui_objects.at(root + "_mem")->as<std::string>("title"_key), "Memory");
   EXPECT_EQ(s.ui_objects.at(root + "_cores")->as<std::string>("title"_key), "Cores");
+  EXPECT_EQ(s.ui_objects.at(root + "_net")->as<std::string>("title"_key), "Network");
+  EXPECT_EQ(s.ui_objects.at(root + "_disk")->as<std::string>("title"_key), "Disk I/O");
+  EXPECT_EQ(s.ui_objects.at(root + "_ports")->as<std::string>("title"_key), "Ports");
 }
 
 // The panels are seeded into a nested DockSpaceViewport ("top_dock") whose
@@ -220,11 +224,19 @@ TEST_F(TopWindowTest, RegistersDefaultDockLayoutNamingEveryPanel) {
   EXPECT_EQ(viewport->as<std::string>("id"_key), "top_dock");
   EXPECT_EQ(viewport->as<std::string>("title"_key), "Top");
 
-  // Collect every DockArea's newline-separated "windows" list.
+  // Collect every window named by a DockArea's newline-separated "windows"
+  // list (Processes and Ports share one area, as tabs).
   std::vector<std::string> windows;
   std::function<void(const dynamic&)> walk = [&](const dynamic& node) {
-    if (node.as<bison::key_t>(dynamic::CLASS) == "DockArea"_key)
-      windows.push_back(node.as<std::string>("windows"_key));
+    if (node.as<bison::key_t>(dynamic::CLASS) == "DockArea"_key) {
+      std::string list = node.as<std::string>("windows"_key);
+      for (size_t start = 0; start <= list.size();) {
+        size_t end = std::min(list.find('\n', start), list.size());
+        if (end > start)
+          windows.push_back(list.substr(start, end - start));
+        start = end + 1;
+      }
+    }
     if (auto* cf = node.findField<dynamic_ptr>("children"_key); cf && *cf)
       (*cf)->forEach([&](bison::key_t, const field& f) {
         if (f.is<dynamic_ptr>() && f.as<dynamic_ptr>())
@@ -233,7 +245,8 @@ TEST_F(TopWindowTest, RegistersDefaultDockLayoutNamingEveryPanel) {
   };
   walk(*viewport);
   std::sort(windows.begin(), windows.end());
-  std::vector<std::string> expected{root, root + "_cores", root + "_cpu", root + "_mem"};
+  std::vector<std::string> expected{
+      root, root + "_cores", root + "_cpu", root + "_disk", root + "_mem", root + "_net", root + "_ports"};
   std::sort(expected.begin(), expected.end());
   EXPECT_EQ(windows, expected);
 }
@@ -772,8 +785,193 @@ TEST_F(TopSnapshotTest, SecondaryPanelClosedEmitsClosedAndCleansUpEverything) {
   fire_at(cpu_root, win_id, "closed"_key);
 
   EXPECT_TRUE(srv_->events->wait_for("closed"_key, since));
-  for (const std::string key : {root_, cpu_root, root_ + "_mem", root_ + "_cores"})
+  for (const std::string key :
+       {root_, cpu_root, root_ + "_mem", root_ + "_net", root_ + "_disk", root_ + "_ports", root_ + "_cores"})
     EXPECT_EQ(srv_->last_session->ui_objects.count(key), 0u) << key;
+}
+
+// The new Ports panel's X button closes the tool like every other panel.
+TEST_F(TopSnapshotTest, PortsPanelClosedEmitsClosed) {
+  size_t since = srv_->events->mark();
+  const std::string ports_root = root_ + "_ports";
+  auto win_id = srv_->last_session->ui_objects.at(ports_root)->as<bison::key_t>("__wish_id"_key);
+  fire_at(ports_root, win_id, "closed"_key);
+  EXPECT_TRUE(srv_->events->wait_for("closed"_key, since));
+  EXPECT_EQ(srv_->last_session->ui_objects.count(root_), 0u);
+  EXPECT_EQ(srv_->last_session->ui_objects.count(ports_root), 0u);
+}
+
+// ── Network / disk I/O / ports ───────────────────────────────────────────────
+
+namespace {
+
+struct fake_port {
+  std::string protocol;
+  std::string address;
+  int32_t port;
+  int32_t pid;
+  std::string process;
+};
+
+// Adds the optional network/disk/ports fields to a make_snapshot_args() map.
+void add_io_fields(
+    dynamic& args,
+    float net_rx,
+    float net_tx,
+    float disk_read,
+    float disk_write,
+    const std::vector<fake_port>& ports) {
+  args["net_rx_bytes_per_sec"_key] = net_rx;
+  args["net_tx_bytes_per_sec"_key] = net_tx;
+  args["net_rx_total_bytes"_key] = 2048.0f;
+  args["net_tx_total_bytes"_key] = 1024.0f;
+  args["disk_read_bytes_per_sec"_key] = disk_read;
+  args["disk_write_bytes_per_sec"_key] = disk_write;
+  args["disk_read_total_bytes"_key] = 0.0f;
+  args["disk_write_total_bytes"_key] = 0.0f;
+  dynamic list;
+  size_t i = 0;
+  for (auto& p : ports) {
+    auto e = std::make_shared<dynamic>();
+    (*e)["protocol"_key] = p.protocol;
+    (*e)["address"_key] = p.address;
+    (*e)["port"_key] = p.port;
+    (*e)["pid"_key] = p.pid;
+    (*e)["process"_key] = p.process;
+    list[i++] = dynamic_ptr{e};
+  }
+  args["ports"_key] = dynamic_ptr{std::make_shared<dynamic>(std::move(list))};
+}
+
+} // namespace
+
+class TopIoTest : public TopSnapshotTest {
+ protected:
+  void send_io(float net_rx, float net_tx, float disk_read, float disk_write, const std::vector<fake_port>& ports) {
+    auto args = make_snapshot_args(1.0f, {}, 1000.0f, 100.0f, {});
+    add_io_fields(args, net_rx, net_tx, disk_read, disk_write, ports);
+    proxy_->call("update_snapshot"_key, std::move(args)).get();
+  }
+
+  dynamic_ptr element(const std::string& path) const {
+    auto it = srv_->last_session->ui_objects.find(path);
+    return it == srv_->last_session->ui_objects.end() ? nullptr : it->second;
+  }
+
+  // Each Ports row's cell texts, in row ("order") order.
+  std::vector<std::vector<std::string>> port_rows() const {
+    std::vector<std::pair<int32_t, std::vector<std::string>>> rows;
+    auto table = element(root_ + "_ports.vbox.ports_table");
+    if (!table)
+      return {};
+    auto* cf = table->findField<dynamic_ptr>("children"_key);
+    if (!cf || !*cf)
+      return {};
+    (*cf)->forEach([&](bison::key_t, const field& f) {
+      if (!f.is<dynamic_ptr>() || !f.as<dynamic_ptr>())
+        return;
+      auto row = f.as<dynamic_ptr>();
+      auto* rc = row->findField<dynamic_ptr>("children"_key);
+      if (!rc || !*rc || row->as<bison::key_t>(dynamic::CLASS) != "TableRow"_key)
+        return;
+      std::vector<std::string> cells;
+      for (size_t i = 0; i < (*rc)->size(); ++i)
+        cells.push_back((*rc)->at(i).as<dynamic_ptr>()->as<std::string>("text"_key));
+      rows.push_back({row->as<int32_t>("order"_key), std::move(cells)});
+    });
+    std::sort(rows.begin(), rows.end());
+    std::vector<std::vector<std::string>> result;
+    for (auto& r : rows)
+      result.push_back(std::move(r.second));
+    return result;
+  }
+};
+
+TEST_F(TopIoTest, PanelsStartWithPlaceholders) {
+  EXPECT_EQ(label_text(root_ + "_net.vbox.net_label"), "Net: --");
+  EXPECT_EQ(label_text(root_ + "_disk.vbox.disk_label"), "Disk: --");
+  EXPECT_TRUE(port_rows().empty());
+}
+
+TEST_F(TopIoTest, UpdatesNetworkAndDiskSummaryLabels) {
+  send_io(1536.0f, 512.0f, 3.0f * 1024 * 1024, 0.0f, {});
+  EXPECT_EQ(label_text(root_ + "_net.vbox.net_label"), "Down: 1.5 KB/s  Up: 512.0 B/s  (total 2.0 KB / 1.0 KB)");
+  EXPECT_EQ(label_text(root_ + "_disk.vbox.disk_label"), "Read: 3.0 MB/s  Write: 0.0 B/s  (total 0.0 B / 0.0 B)");
+}
+
+// Snapshots without the optional fields (an older client) show 0 throughput.
+TEST_F(TopIoTest, MissingIoFieldsReadAsZero) {
+  update_snapshot(1.0f, {}, 1000.0f, 100.0f, {});
+  EXPECT_EQ(label_text(root_ + "_net.vbox.net_label"), "Down: 0.0 B/s  Up: 0.0 B/s  (total 0.0 B / 0.0 B)");
+  EXPECT_EQ(plot_field(root_ + "_net.vbox.net_plot.rx_series", "ys"_key).size(), 1u);
+}
+
+// The throughput graphs pick the unit that fits the visible peak, scale
+// both series to it, and fit the Y range to the peak plus headroom.
+TEST_F(TopIoTest, RatePlotRescalesToPeakUnit) {
+  send_io(100.0f, 0.0f, 0.0f, 0.0f, {});
+  EXPECT_EQ(element(root_ + "_net.vbox.net_plot")->as<std::string>("y_label"_key), "B/s");
+  EXPECT_FLOAT_EQ(element(root_ + "_net.vbox.net_plot")->as<float>("y_max"_key), 115.0f);
+
+  send_io(100.0f, 2.0f * 1024 * 1024, 0.0f, 0.0f, {});
+  auto plot = element(root_ + "_net.vbox.net_plot");
+  EXPECT_EQ(plot->as<std::string>("y_label"_key), "MB/s");
+  EXPECT_FLOAT_EQ(plot->as<float>("y_max"_key), 2.3f);
+  auto tx = plot_field(root_ + "_net.vbox.net_plot.tx_series", "ys"_key);
+  auto xs = plot_field(root_ + "_net.vbox.net_plot.tx_series", "xs"_key);
+  ASSERT_EQ(tx.size(), 2u);
+  ASSERT_EQ(xs.size(), 2u);
+  EXPECT_FLOAT_EQ(tx[1], 2.0f);
+  auto rx = plot_field(root_ + "_net.vbox.net_plot.rx_series", "ys"_key);
+  ASSERT_EQ(rx.size(), 2u);
+  EXPECT_FLOAT_EQ(rx[0], 100.0f / (1024.0f * 1024.0f));
+
+  // An idle disk keeps a 0..1 B/s range rather than magnifying nothing.
+  EXPECT_EQ(element(root_ + "_disk.vbox.disk_plot")->as<std::string>("y_label"_key), "B/s");
+  EXPECT_FLOAT_EQ(element(root_ + "_disk.vbox.disk_plot")->as<float>("y_max"_key), 1.0f);
+}
+
+TEST_F(TopIoTest, PortsTableShowsListeningSocketsInOrder) {
+  send_io(0, 0, 0, 0, {{"TCP", "0.0.0.0", 22, 812, "sshd"}, {"UDP6", "::", 5353, 0, ""}});
+  auto rows = port_rows();
+  ASSERT_EQ(rows.size(), 2u);
+  EXPECT_EQ(rows[0], (std::vector<std::string>{"TCP", "0.0.0.0", "22", "812", "sshd"}));
+  EXPECT_EQ(rows[1], (std::vector<std::string>{"UDP6", "::", "5353", "-", "-"}));
+  EXPECT_EQ(label_text(root_ + "_ports.vbox.ports_count"), "2 listening sockets");
+}
+
+TEST_F(TopIoTest, PortsTableReconcilesChanges) {
+  send_io(0, 0, 0, 0, {{"TCP", "0.0.0.0", 22, 812, "sshd"}, {"TCP", "127.0.0.1", 631, 900, "cupsd"}});
+  ASSERT_EQ(port_rows().size(), 2u);
+
+  send_io(0, 0, 0, 0, {{"TCP", "127.0.0.1", 631, 900, "cupsd"}});
+  auto rows = port_rows();
+  ASSERT_EQ(rows.size(), 1u);
+  EXPECT_EQ(rows[0][2], "631");
+
+  send_io(0, 0, 0, 0, {});
+  EXPECT_TRUE(port_rows().empty());
+  EXPECT_EQ(label_text(root_ + "_ports.vbox.ports_count"), "0 listening sockets");
+}
+
+// An unchanged list leaves the existing row objects in place.
+TEST_F(TopIoTest, UnchangedPortsKeepTheirRows) {
+  const std::vector<fake_port> ports{{"TCP", "0.0.0.0", 22, 812, "sshd"}};
+  send_io(0, 0, 0, 0, ports);
+  auto table = element(root_ + "_ports.vbox.ports_table");
+  ASSERT_TRUE(table);
+  auto first_row = [&] {
+    dynamic* found = nullptr;
+    table->as<dynamic_ptr>("children"_key)->forEach([&](bison::key_t, const field& f) {
+      if (f.is<dynamic_ptr>() && f.as<dynamic_ptr>()->as<bison::key_t>(dynamic::CLASS) == "TableRow"_key)
+        found = f.as<dynamic_ptr>().get();
+    });
+    return found;
+  };
+  dynamic* before = first_row();
+  ASSERT_NE(before, nullptr);
+  send_io(10, 10, 10, 10, ports);
+  EXPECT_EQ(first_row(), before);
 }
 
 // ── Row context menu: shape ───────────────────────────────────────────────────

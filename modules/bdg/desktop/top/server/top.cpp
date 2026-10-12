@@ -47,6 +47,26 @@ std::string format_bytes(float bytes) {
   return oss.str();
 }
 
+std::string format_rate(float bytes_per_sec) {
+  return format_bytes(bytes_per_sec) + "/s";
+}
+
+// A throughput graph's display unit: the largest one the visible peak still
+// reaches at least 1 of, so the Y axis reads "12.5 MB/s" rather than
+// "13107200".
+struct rate_unit {
+  const char* label;
+  float divisor;
+};
+rate_unit pick_rate_unit(float peak_bytes_per_sec) {
+  static constexpr rate_unit kUnits[] = {
+      {"GB/s", 1024.0f * 1024.0f * 1024.0f}, {"MB/s", 1024.0f * 1024.0f}, {"KB/s", 1024.0f}};
+  for (auto& unit : kUnits)
+    if (peak_bytes_per_sec >= unit.divisor)
+      return unit;
+  return {"B/s", 1.0f};
+}
+
 // The 6 selectable priority levels offered by each row's Priority submenu,
 // on the Linux nice-value scale (-20 highest .. 19 lowest) on every
 // platform -- process_control_win.cpp's nice_to_priority_class() (and
@@ -75,8 +95,8 @@ std::string to_lower(std::string text) {
 
 // ── UI layouts ────────────────────────────────────────────────────────────────
 //
-// The tool is split into four dockable panels -- Processes, CPU, Memory and
-// Cores -- seeded into a first-run arrangement by on_init()'s
+// The tool is split into seven dockable panels -- Processes, CPU, Memory,
+// Network, Disk I/O, Ports and Cores -- seeded into a first-run arrangement by on_init()'s
 // set_default_dock_layout() call, the same multi-window pattern the dev
 // modules (git, curl, docker) use. The user can re-dock, tab or float any of
 // them; imgui.ini owns the arrangement after the first run. Each Window keeps
@@ -105,6 +125,14 @@ std::string to_lower(std::string text) {
 // CPU / Memory: a summary label over a Plot with "height": -1 (sq.cpp's
 // chart technique), so the graph fills whatever space the panel is docked
 // into instead of a fixed 160px strip.
+//
+// Network / Disk I/O: like CPU / Memory, but with two series each and no
+// fixed Y range: update_rate_plot() rescales the Y axis to the visible peak
+// on every snapshot and relabels it with the unit that fits (B/s .. GB/s).
+//
+// Ports: a plain (non-sortable) Table of listening sockets, in the order
+// the client sends them (by port), filling the panel like proc_table does.
+// update_ports_table() rebuilds its rows only when the list changes.
 //
 // Cores: one ProgressBar per logical core, stacked vertically (default
 // width -1 = full panel width) and added on the first snapshot by
@@ -195,6 +223,81 @@ static constexpr const char* kMemoryLayout = R"({
   }
 })";
 
+static constexpr const char* kNetworkLayout = R"({
+  "type": "Window",
+  "title": "$$TOP_NETWORK",
+  "width": 450, "height": 240,
+  "closable": true,
+  "children": {
+    "vbox": {
+      "type": "VerticalLayout",
+      "children": {
+        "net_label": { "type": "Label", "text": "$$TOP_NET_NONE" },
+        "net_plot": {
+          "type": "Plot", "title": "$$TOP_NETWORK_HISTORY", "height": -1,
+          "profiler_marker": "Network Plot",
+          "y_label": "B/s",
+          "children": {
+            "rx_series": { "type": "PlotLine", "label": "$$TOP_RECEIVED" },
+            "tx_series": { "type": "PlotLine", "label": "$$TOP_SENT" }
+          }
+        }
+      }
+    }
+  }
+})";
+
+static constexpr const char* kDiskLayout = R"({
+  "type": "Window",
+  "title": "$$TOP_DISK",
+  "width": 450, "height": 240,
+  "closable": true,
+  "children": {
+    "vbox": {
+      "type": "VerticalLayout",
+      "children": {
+        "disk_label": { "type": "Label", "text": "$$TOP_DISK_NONE" },
+        "disk_plot": {
+          "type": "Plot", "title": "$$TOP_DISK_HISTORY", "height": -1,
+          "profiler_marker": "Disk Plot",
+          "y_label": "B/s",
+          "children": {
+            "read_series": { "type": "PlotLine", "label": "$$TOP_READ" },
+            "write_series": { "type": "PlotLine", "label": "$$TOP_WRITE" }
+          }
+        }
+      }
+    }
+  }
+})";
+
+static constexpr const char* kPortsLayout = R"({
+  "type": "Window",
+  "title": "$$TOP_PORTS",
+  "width": 600, "height": 360,
+  "closable": true,
+  "children": {
+    "vbox": {
+      "type": "VerticalLayout",
+      "children": {
+        "ports_count": { "type": "Label", "text": "" },
+        "ports_table": {
+          "type": "Table", "id": "##ports_table", "columns": 5,
+          "flags": "Resizable|RowBg|Borders|ScrollY", "headers": true,
+          "outer_width": 0, "height": -1, "auto_scroll": false,
+          "children": {
+            "col_proto":   { "type": "TableColumn", "label": "$$TOP_PROTOCOL", "flags": "WidthFixed", "init_width": 70 },
+            "col_address": { "type": "TableColumn", "label": "$$TOP_ADDRESS",  "flags": "WidthFixed", "init_width": 200 },
+            "col_port":    { "type": "TableColumn", "label": "$$TOP_PORT",     "flags": "WidthFixed", "init_width": 70 },
+            "col_pid":     { "type": "TableColumn", "label": "$$TOP_PID",      "flags": "WidthFixed", "init_width": 70 },
+            "col_process": { "type": "TableColumn", "label": "$$TOP_PROCESS" }
+          }
+        }
+      }
+    }
+  }
+})";
+
 static constexpr const char* kCoresLayout = R"({
   "type": "Window",
   "title": "$$TOP_CORES",
@@ -229,6 +332,9 @@ void top::on_init() {
   max_history_ = size_t(setting_int(top_settings::history()));
   cpu_root_key_ = internal_root_key_ + "_cpu";
   mem_root_key_ = internal_root_key_ + "_mem";
+  net_root_key_ = internal_root_key_ + "_net";
+  disk_root_key_ = internal_root_key_ + "_disk";
+  ports_root_key_ = internal_root_key_ + "_ports";
   cores_root_key_ = internal_root_key_ + "_cores";
 
   auto* title_f = findField<std::string>("title"_key);
@@ -269,26 +375,72 @@ void top::on_init() {
     tree.with("vbox.mem_plot", fix_axes);
   });
 
+  // Throughput graphs: same fixed X window as the percentage graphs; Y is
+  // left to update_rate_plot(), starting at 0..1 until data arrives.
+  auto fix_rate_axes = [this](const auto& e) {
+    e["x_min"_key] = 0.0f;
+    e["x_max"_key] = static_cast<float>(max_history_ - 1);
+    e["y_min"_key] = 0.0f;
+    e["y_max"_key] = 1.0f;
+    e["x_flags"_key] = kHideXTickLabels;
+  };
+
+  build_window(net_root_key_, kNetworkLayout, net_window_id_, [&](ui_tree& tree) {
+    tree.with("vbox.net_label", [&](const auto& e) { net_summary_label_ = e; });
+    tree.with("vbox.net_plot.rx_series", [&](const auto& e) { net_rx_series_ = e; });
+    tree.with("vbox.net_plot.tx_series", [&](const auto& e) { net_tx_series_ = e; });
+    tree.with("vbox.net_plot", [&](const auto& e) {
+      net_plot_ = e;
+      fix_rate_axes(e);
+    });
+  });
+
+  build_window(disk_root_key_, kDiskLayout, disk_window_id_, [&](ui_tree& tree) {
+    tree.with("vbox.disk_label", [&](const auto& e) { disk_summary_label_ = e; });
+    tree.with("vbox.disk_plot.read_series", [&](const auto& e) { disk_read_series_ = e; });
+    tree.with("vbox.disk_plot.write_series", [&](const auto& e) { disk_write_series_ = e; });
+    tree.with("vbox.disk_plot", [&](const auto& e) {
+      disk_plot_ = e;
+      fix_rate_axes(e);
+    });
+  });
+
+  build_window(ports_root_key_, kPortsLayout, ports_window_id_, [&](ui_tree& tree) {
+    tree.with("vbox.ports_count", [&](const auto& e) { ports_count_label_ = e; });
+    tree.with("vbox.ports_table", [&](const auto& e) { ports_table_ = e; });
+  });
+
   build_window(cores_root_key_, kCoresLayout, cores_window_id_, [&](ui_tree& tree) {
     tree.with("vbox.cores", [&](const auto& e) { cores_container_ = e; });
   });
 
   // Seed the first-run arrangement inside the tool's own nested dockspace
   // (titled with the form's "title" field): a Cores column along the right
-  // ~20%, and to its left CPU/Memory graphs side by side over the process
-  // table. Owned by imgui.ini after the first run (see docs/dock-layout.md);
-  // bump the version arg to layout() if it changes.
+  // ~20%, and to its left a row of CPU/Memory/Network/Disk graphs over the
+  // process table, with Ports as a second tab next to Processes. Owned by
+  // imgui.ini after the first run (see docs/dock-layout.md); bump the
+  // version arg to layout() if it changes.
   {
     using namespace dock;
     set_default_dock_layout(viewport(
-        "top_dock", title,
+        "top_dock",
+        title,
         layout(
             split(
-                dir::right, 0.20f, area({cores_root_key_}),
+                dir::right,
+                0.20f,
+                area({cores_root_key_}),
                 split(
-                    dir::up, 0.35f, split(dir::left, 0.50f, area({cpu_root_key_}), area({mem_root_key_})),
-                    area({internal_root_key_}))),
-            /*version=*/1, /*target=*/"top_dock")));
+                    dir::up,
+                    0.35f,
+                    split(
+                        dir::left,
+                        0.50f,
+                        split(dir::left, 0.50f, area({cpu_root_key_}), area({mem_root_key_})),
+                        split(dir::left, 0.50f, area({net_root_key_}), area({disk_root_key_}))),
+                    area({internal_root_key_, ports_root_key_}, internal_root_key_))),
+            /*version=*/2,
+            /*target=*/"top_dock")));
   }
 }
 
@@ -297,7 +449,8 @@ void top::remove_panel_objects() {
   // form's freed internal_root_key_ to a new Top instance, whose panels
   // would then reuse these exact secondary keys (see the same reasoning in
   // form::remove_objects_at()).
-  for (std::string* key : {&cpu_root_key_, &mem_root_key_, &cores_root_key_}) {
+  for (std::string* key :
+       {&cpu_root_key_, &mem_root_key_, &net_root_key_, &disk_root_key_, &ports_root_key_, &cores_root_key_}) {
     remove_objects_at(*key);
     key->clear();
   }
@@ -320,8 +473,40 @@ dynamic top::do_update_snapshot(const dynamic& args) {
   }
   push_history(mem_history_, mem_pct);
 
-  // Both histories are pushed exactly once per call, so they always share
-  // one length -- an index axis (0, 1, 2, ...) is all either series needs.
+  // Network / disk fields are optional on the wire (an older client simply
+  // shows 0 throughput); dynamic::as<float>() would throw on a missing key.
+  auto optional_float = [&](key_t key) {
+    auto* f = args.findField<float>(key);
+    return f ? *f : 0.0f;
+  };
+  float net_rx = optional_float("net_rx_bytes_per_sec"_key);
+  float net_tx = optional_float("net_tx_bytes_per_sec"_key);
+  if (net_summary_label_) {
+    net_summary_label_["text"_key] =
+        trf("$$TOP_NET_SUMMARY",
+            {format_rate(net_rx),
+             format_rate(net_tx),
+             format_bytes(optional_float("net_rx_total_bytes"_key)),
+             format_bytes(optional_float("net_tx_total_bytes"_key))});
+  }
+  push_history(net_rx_history_, net_rx);
+  push_history(net_tx_history_, net_tx);
+
+  float disk_read = optional_float("disk_read_bytes_per_sec"_key);
+  float disk_write = optional_float("disk_write_bytes_per_sec"_key);
+  if (disk_summary_label_) {
+    disk_summary_label_["text"_key] =
+        trf("$$TOP_DISK_SUMMARY",
+            {format_rate(disk_read),
+             format_rate(disk_write),
+             format_bytes(optional_float("disk_read_total_bytes"_key)),
+             format_bytes(optional_float("disk_write_total_bytes"_key))});
+  }
+  push_history(disk_read_history_, disk_read);
+  push_history(disk_write_history_, disk_write);
+
+  // Every history is pushed exactly once per call, so they always share
+  // one length -- an index axis (0, 1, 2, ...) is all any series needs.
   update_history_xs(cpu_history_.size());
   if (cpu_plot_series_) {
     cpu_plot_series_["xs"_key] = history_xs_;
@@ -331,6 +516,8 @@ dynamic top::do_update_snapshot(const dynamic& args) {
     mem_plot_series_["xs"_key] = history_xs_;
     mem_plot_series_["ys"_key] = mem_history_;
   }
+  update_rate_plot(net_plot_, net_rx_series_, net_tx_series_, net_rx_history_, net_tx_history_);
+  update_rate_plot(disk_plot_, disk_read_series_, disk_write_series_, disk_read_history_, disk_write_history_);
 
   if (auto* per_core = args.findField<std::vector<float>>("per_core_percent"_key)) {
     ensure_core_meters(per_core->size());
@@ -342,6 +529,7 @@ dynamic top::do_update_snapshot(const dynamic& args) {
   }
 
   update_process_table(args);
+  update_ports_table(args);
   return dynamic{};
 }
 
@@ -486,6 +674,105 @@ void top::update_history_xs(size_t count) {
   history_xs_.resize(count);
   for (size_t i = 0; i < count; ++i)
     history_xs_[i] = static_cast<float>(i);
+}
+
+void top::update_rate_plot(
+    const ui_element_ptr& plot,
+    const ui_element_ptr& first_series,
+    const ui_element_ptr& second_series,
+    const std::vector<float>& first,
+    const std::vector<float>& second) {
+  if (!plot || !first_series || !second_series)
+    return;
+  float peak = 0.0f;
+  for (const auto* history : {&first, &second})
+    for (float v : *history)
+      peak = std::max(peak, v);
+  rate_unit unit = pick_rate_unit(peak);
+
+  auto scaled = [&](const std::vector<float>& history) {
+    std::vector<float> ys(history.size());
+    for (size_t i = 0; i < history.size(); ++i)
+      ys[i] = history[i] / unit.divisor;
+    return ys;
+  };
+  first_series["xs"_key] = history_xs_;
+  first_series["ys"_key] = scaled(first);
+  second_series["xs"_key] = history_xs_;
+  second_series["ys"_key] = scaled(second);
+
+  // 15% headroom so the peak doesn't sit on the plot's top edge; never
+  // below 1 unit, so an idle link doesn't magnify noise to full height.
+  plot["y_max"_key] = std::max(1.0f, peak / unit.divisor * 1.15f);
+  plot["y_label"_key] = std::string{unit.label};
+}
+
+void top::update_ports_table(const dynamic& args) {
+  auto* ports_f = args.findField<dynamic_ptr>("ports"_key);
+  if (!ports_table_ || !ports_f || !*ports_f)
+    return;
+  auto* children_p = ports_table_->findField<dynamic_ptr>("children"_key);
+  if (!children_p || !*children_p)
+    return;
+  auto& children = *children_p;
+
+  std::vector<port_entry> ports;
+  (*ports_f)->forEach([&](key_t, const field& f) {
+    if (!f.is<dynamic_ptr>() || !f.as<dynamic_ptr>())
+      return;
+    auto& e = *f.as<dynamic_ptr>();
+    ports.push_back(
+        {e.as<std::string>("protocol"_key),
+         e.as<std::string>("address"_key),
+         e.as<int32_t>("port"_key),
+         e.as<int32_t>("pid"_key),
+         e.as<std::string>("process"_key)});
+  });
+
+  if (ports_count_label_)
+    ports_count_label_["text"_key] = trf("$$TOP_PORTS_COUNT", {std::to_string(ports.size())});
+  // Listening sockets rarely change between samples: skip the rebuild (and
+  // its per-cell object churn) unless something actually did.
+  if (ports == ports_)
+    return;
+
+  for (size_t key : port_row_keys_)
+    children->erase(key);
+  port_row_keys_.clear();
+
+  auto make_label = [&](const std::string& text) {
+    ui_element_ptr label = ui_element_ptr::create("wish"_key, "Label"_key);
+    label["text"_key] = text;
+    key_t id = rmi::shared::generate_id();
+    ctx().put_object(id, label);
+    label["__wish_id"_key] = id;
+    return label;
+  };
+
+  for (size_t i = 0; i < ports.size(); ++i) {
+    const auto& p = ports[i];
+    ui_element_ptr row = ui_element_ptr::create("wish"_key, "TableRow"_key);
+    key_t row_id = rmi::shared::generate_id();
+    ctx().put_object(row_id, row);
+    row["__wish_id"_key] = row_id;
+    row["order"_key] = static_cast<int32_t>(i);
+
+    auto row_children = dynamic_ptr{key_t{0U}, {}};
+    size_t k = 0;
+    (*row_children)[k++] = dynamic_ptr{make_label(p.protocol)};
+    (*row_children)[k++] = dynamic_ptr{make_label(p.address)};
+    (*row_children)[k++] = dynamic_ptr{make_label(std::to_string(p.port))};
+    (*row_children)[k++] = dynamic_ptr{make_label(p.pid > 0 ? std::to_string(p.pid) : std::string{"-"})};
+    (*row_children)[k++] = dynamic_ptr{make_label(p.process.empty() ? std::string{"-"} : p.process)};
+    row["children"_key] = row_children;
+    row->refresh_children_order();
+
+    size_t child_key = next_child_key_++;
+    (*children)[child_key] = dynamic_ptr{row};
+    port_row_keys_.push_back(child_key);
+  }
+  ports_table_->refresh_children_order();
+  ports_ = std::move(ports);
 }
 
 void top::set_status(const std::string& text) {
@@ -944,7 +1231,8 @@ void top::resort_rows() {
 void top::on_event(key_t id, key_t event, const dynamic& payload) {
   // Any panel's X button -> tear the whole tool down (docker/curl's rule).
   if (event == "closed"_key &&
-      (id == window_id_ || id == cpu_window_id_ || id == mem_window_id_ || id == cores_window_id_)) {
+      (id == window_id_ || id == cpu_window_id_ || id == mem_window_id_ || id == net_window_id_ ||
+       id == disk_window_id_ || id == ports_window_id_ || id == cores_window_id_)) {
     emit("closed"_key);
     remove_panel_objects();
     remove_internal_objects();
@@ -1095,15 +1383,15 @@ void register_top() {
       }});
 
   (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Top"));
-  (*proto)[dynamic::CLASS].addAttribute(
-      attr<Description>("Top/htop-style system monitor: CPU and memory history graphs, "
-                        "per-core meters, and a process table. Right-click a row to kill, "
-                        "pause/resume, change priority or CPU affinity, or view extended "
-                        "properties for that process. The client owns all sampling and "
-                        "process-control work and calls update_snapshot() periodically; the "
-                        "server only renders whatever it was last given and relays context-menu "
-                        "actions back via 'on_process_action_requested'/'on_process_details_requested'. "
-                        "Listen for the 'closed' event to detect when the user is done."));
+  (*proto)[dynamic::CLASS].addAttribute(attr<Description>(
+      "Top/htop-style system monitor: CPU, memory, network and disk I/O "
+      "history graphs, per-core meters, a listening-ports table, and a process table. Right-click a row to kill, "
+      "pause/resume, change priority or CPU affinity, or view extended "
+      "properties for that process. The client owns all sampling and "
+      "process-control work and calls update_snapshot() periodically; the "
+      "server only renders whatever it was last given and relays context-menu "
+      "actions back via 'on_process_action_requested'/'on_process_details_requested'. "
+      "Listen for the 'closed' event to detect when the user is done."));
 
   dynamic::addClass(
       "wish"_key, std::move(proto), key_t{0U}, dynamic::make_factory<top>("wish"_key, "Top"_key));
