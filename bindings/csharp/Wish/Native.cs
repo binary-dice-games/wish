@@ -132,6 +132,9 @@ internal static partial class Native
     public static partial nint wish_client_pipe_create(string path);
 
     [LibraryImport(LibName)]
+    public static partial nint wish_client_desktop_create();
+
+    [LibraryImport(LibName)]
     public static partial nint wish_client_term_create();
 
     [LibraryImport(LibName)]
@@ -148,6 +151,13 @@ internal static partial class Native
 
     [LibraryImport(LibName)]
     public static partial void wish_client_quit(nint client);
+
+    [LibraryImport(LibName)]
+    public static partial int
+    wish_client_run_on_desktop(nint client, nint sessionFn, nint userdata, nint connectParams, uint retryMs);
+
+    [LibraryImport(LibName)]
+    public static partial void wish_client_desktop_stop(nint client);
 
     [LibraryImport(LibName)]
     public static partial nint wish_last_error(nint client);

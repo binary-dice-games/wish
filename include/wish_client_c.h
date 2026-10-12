@@ -162,6 +162,18 @@ WISH_API wish_client_handle wish_client_stream_create(const char* path);
 WISH_API wish_client_handle wish_client_pipe_create(const char* path);
 
 /**
+ * @brief Create a client for the local `wish desktop`.
+ *
+ * Connects to the desktop's fixed, system-wide endpoint: the named pipe
+ * `\\.\pipe\wish-desktop` on Windows/MSYS2, the abstract socket
+ * `@wish-desktop` on Linux, or `$WISH_DESKTOP_ENDPOINT` when set. Does not
+ * connect; use wish_client_run_on_desktop() (or wish_client_run()).
+ *
+ * @return Non-null handle on success; NULL on allocation failure.
+ */
+WISH_API wish_client_handle wish_client_desktop_create(void);
+
+/**
  * @brief Create a terminal (OSC-99 framed) client.
  *
  * Wraps the calling process's own inherited stdio (fd 0 for reads, fd 1 for
@@ -239,6 +251,57 @@ WISH_API void wish_client_wait(wish_client_handle client);
  * @param client  Active session handle.
  */
 WISH_API void wish_client_quit(wish_client_handle client);
+
+/**
+ * @brief Run a session on the desktop whenever one is running, until
+ *        stopped.
+ *
+ * Meant for long-running processes (services) that want a UI on the
+ * desktop. Loops:
+ * 1. Connect with @p connect_params. While no desktop is running, retry
+ *    every @p retry_ms milliseconds.
+ * 2. Call @p session_fn, which typically builds its UI and then calls
+ *    wish_client_wait().
+ * 3. If the desktop closed, go back to 1, so the UI comes back when the
+ *    desktop is started again.
+ *
+ * Returns when wish_client_desktop_stop() is called, or when @p session_fn
+ * returns while the desktop is still connected (for example after
+ * wish_client_quit(), when the user closed the process's UI).
+ *
+ * @param client          Handle from wish_client_desktop_create() (any
+ *                        handle works; this one targets the desktop).
+ * @param session_fn      Session callback (must not be NULL). Runs on the
+ *                        calling thread, once per connection.
+ * @param userdata        Forwarded to @p session_fn unchanged.
+ * @param connect_params  Optional connect params (`bison_handle` or
+ *                        `NULL`), e.g. `app`/`app_label`/`app_icon` for the
+ *                        desktop's taskbar; copied on every connect.
+ * @param retry_ms        Delay between connection attempts; 0 means 1000.
+ * @return WISH_OK, or WISH_ERR_NULL for a NULL @p client or @p session_fn.
+ *         Connection failures are retried, not returned; the latest one is
+ *         available from wish_last_error().
+ */
+WISH_API wish_error wish_client_run_on_desktop(
+    wish_client_handle client,
+    wish_session_fn session_fn,
+    void* userdata,
+    bison_handle connect_params,
+    uint32_t retry_ms);
+
+/**
+ * @brief Make wish_client_run_on_desktop() return.
+ *
+ * Ends the running session, if any (wish_client_wait() returns), and stops
+ * waiting for a desktop. Safe to call from any thread, before or during
+ * wish_client_run_on_desktop(); a call made before it starts makes it
+ * return at once. The stop request is cleared when
+ * wish_client_run_on_desktop() returns.
+ *
+ * @param client  Handle passed to wish_client_run_on_desktop(); NULL is a
+ *                no-op.
+ */
+WISH_API void wish_client_desktop_stop(wish_client_handle client);
 
 /**
  * @brief Retrieve the last error message for this client.

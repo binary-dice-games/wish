@@ -779,6 +779,127 @@ TEST_F(WishDesktopTest, WaitForQuitForTimesOutThenReturnsTrueAfterRequestQuit) {
   EXPECT_TRUE(desktop_.wait_for_quit_for(std::chrono::milliseconds{20}));
 }
 
+// ── multi_server_transport ───────────────────────────────────────────────────
+
+TEST(MultiServerTransportTest, AcceptsFromEveryTransport) {
+  memory_server_transport primary;
+  auto extra_owned = std::make_unique<memory_server_transport>();
+  memory_server_transport& extra = *extra_owned;
+  wish::multi_server_transport multi{primary};
+  multi.add(std::move(extra_owned));
+  multi.start(dynamic{});
+
+  memory_client_transport via_extra{extra.connect()};
+  via_extra.open(dynamic{});
+  EXPECT_NE(multi.accept(std::chrono::seconds{2}), nullptr);
+
+  memory_client_transport via_primary{primary.connect()};
+  via_primary.open(dynamic{});
+  EXPECT_NE(multi.accept(std::chrono::seconds{2}), nullptr);
+
+  EXPECT_EQ(multi.accept(std::chrono::milliseconds{20}), nullptr);
+  multi.stop();
+}
+
+TEST(MultiServerTransportTest, StopEndsAcceptAndIsIdempotent) {
+  memory_server_transport primary;
+  wish::multi_server_transport multi{primary};
+  multi.start(dynamic{});
+  multi.stop();
+  const auto before = std::chrono::steady_clock::now();
+  EXPECT_EQ(multi.accept(std::chrono::seconds{2}), nullptr);
+  EXPECT_LT(std::chrono::steady_clock::now() - before, std::chrono::seconds{1});
+  multi.stop();
+}
+
+// ── Fixed endpoint / single instance ─────────────────────────────────────────
+
+namespace {
+
+// A pipe name no other test (or real desktop) uses: ctest runs tests as
+// parallel processes.
+std::string unique_endpoint_name() {
+  const std::string id = std::to_string(bdg::bison::rmi::shared::generate_id().id);
+#if defined(_WIN32) || defined(__CYGWIN__)
+  return "\\\\.\\pipe\\wish_desktop_test_" + id;
+#else
+  return "@wish_desktop_test_" + id;
+#endif
+}
+
+} // namespace
+
+TEST(DesktopEndpointClaimTest, SecondClaimFailsUntilTheFirstIsReleased) {
+  const std::string name = unique_endpoint_name();
+  auto first = wish::claim_desktop_endpoint(name);
+  ASSERT_NE(first, nullptr);
+  EXPECT_EQ(wish::claim_desktop_endpoint(name), nullptr);
+
+  first->stop();
+  first.reset();
+  auto again = wish::claim_desktop_endpoint(name);
+  EXPECT_NE(again, nullptr);
+}
+
+// A wish_desktop serving its downstream transport and the fixed endpoint
+// together, as wish_desktop_app::make_bridge() sets it up.
+class WishDesktopEndpointTest : public ::testing::Test {
+ protected:
+  std::filesystem::path store_dir_ = test_store_dir();
+  std::string endpoint_name_ = unique_endpoint_name();
+  memory_server_transport upstream_transport_;
+  tracking_upstream_server upstream_srv_{upstream_transport_, std::make_unique<wish::null_renderer>()};
+
+  memory_server_transport primary_transport_;
+  wish::multi_server_transport downstream_{primary_transport_};
+  wish::wish_desktop desktop_{
+      downstream_,
+      std::make_unique<memory_client_transport>(upstream_transport_.connect()),
+      upstream_params()};
+  fake_launcher launcher_;
+
+  void SetUp() override {
+    ASSERT_TRUE(kAppsRegistered);
+    auto endpoint = wish::claim_desktop_endpoint(endpoint_name_);
+    ASSERT_NE(endpoint, nullptr);
+    downstream_.add(std::move(endpoint));
+    upstream_srv_.set_store_dir(store_dir_);
+    upstream_srv_.start(std::make_shared<wish::local_auth_module>());
+    desktop_.set_launcher(&launcher_);
+    desktop_.set_client_command({"wish", "client"});
+    desktop_.set_config_file(store_dir_ / "desktop" / "desktop.yaml");
+    desktop_.start();
+    desktop_.build_chrome();
+  }
+
+  void TearDown() override {
+    desktop_.stop_tasks();
+    desktop_.stop();
+    upstream_srv_.stop();
+    std::error_code ec;
+    std::filesystem::remove_all(store_dir_, ec);
+  }
+};
+
+TEST_F(WishDesktopEndpointTest, ClientOnTheEndpointGetsADesktopSession) {
+  client app_client(std::make_unique<named_pipe_client_transport>(endpoint_name_));
+  app_client.connect();
+  auto desk = app_client.instantiate("wish"_key, "__WishDesktop"_key).get();
+  auto items = desk.call("items"_key, dynamic{}).get();
+  EXPECT_NE(items.findField("items"_key), nullptr);
+  app_client.disconnect();
+}
+
+TEST_F(WishDesktopEndpointTest, EndpointStaysClaimedWhileTheDesktopRuns) {
+  EXPECT_EQ(wish::claim_desktop_endpoint(endpoint_name_), nullptr);
+}
+
+TEST_F(WishDesktopEndpointTest, StoppingTheDesktopReleasesTheEndpoint) {
+  desktop_.stop_tasks();
+  desktop_.stop();
+  EXPECT_NE(wish::claim_desktop_endpoint(endpoint_name_), nullptr);
+}
+
 // ── process_launcher ─────────────────────────────────────────────────────────
 
 TEST(ProcessLauncherTest, SelfExePathExists) {

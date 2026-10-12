@@ -17,12 +17,18 @@
 #include <server/server.hpp>
 
 #include "../../../tests/free_port_server.hpp"
+#include "src/rmi/shared/schemas.hpp"
+#include "src/rmi/transport/named_pipe_transport.hpp"
 #include "src/rmi/transport/socket_transport.hpp"
 #include "src/rmi/transport/tls_socket_transport.hpp"
 #include "tests/tls_test_certs.hpp"
 
 #include <chrono>
+#include <condition_variable>
+#include <cstdlib>
 #include <filesystem>
+#include <future>
+#include <mutex>
 #include <thread>
 
 namespace wish = bdg::wish::binding;
@@ -164,6 +170,156 @@ TEST_F(WishCppClientTest, RegisterTemplateAppliesTranslations) {
 TEST_F(WishCppClientTest, ProxyGetForUnknownPathThrows) {
   auto client = wish::client::tcp("127.0.0.1", port_);
   client.run([](wish::client& c) { EXPECT_THROW(c.proxy_get("no.such.path"), wish::error); });
+}
+
+// ── Desktop: run_on_desktop() against a stand-in desktop ─────────────────
+//
+// A plain wish::server listening on a per-test pipe plays the desktop;
+// WISH_DESKTOP_ENDPOINT points client::desktop() at it. Each test runs in
+// its own process (ctest), so setting the variable is local to the test.
+
+namespace {
+
+std::string unique_desktop_endpoint() {
+  const std::string id = std::to_string(bdg::bison::rmi::shared::generate_id().id);
+#if defined(_WIN32) || defined(__CYGWIN__)
+  return "\\\\.\\pipe\\wish_cpp_desktop_test_" + id;
+#else
+  return "@wish_cpp_desktop_test_" + id;
+#endif
+}
+
+void set_desktop_endpoint_env(const std::string& value) {
+#if defined(_WIN32)
+  _putenv_s("WISH_DESKTOP_ENDPOINT", value.c_str());
+#else
+  setenv("WISH_DESKTOP_ENDPOINT", value.c_str(), 1);
+#endif
+}
+
+// Stops a client's run_on_desktop() loop when a test returns early (a
+// failed ASSERT), so the std::async future's destructor cannot hang.
+struct stop_desktop_on_exit {
+  wish::client& client;
+  ~stop_desktop_on_exit() {
+    client.stop_desktop();
+  }
+};
+
+// Counts sessions; tests wait on it instead of sleeping.
+class session_counter {
+ public:
+  void bump() {
+    {
+      std::lock_guard<std::mutex> lk(mtx_);
+      ++count_;
+    }
+    cv_.notify_all();
+  }
+  bool wait_for_count(int n, std::chrono::milliseconds timeout = std::chrono::seconds{5}) {
+    std::unique_lock<std::mutex> lk(mtx_);
+    return cv_.wait_for(lk, timeout, [&] { return count_ >= n; });
+  }
+
+ private:
+  std::mutex mtx_;
+  std::condition_variable cv_;
+  int count_ = 0;
+};
+
+class WishCppDesktopTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    set_desktop_endpoint_env(endpoint_);
+  }
+
+  void TearDown() override {
+    stop_desktop();
+  }
+
+  // (Re)starts the stand-in desktop.
+  void start_desktop() {
+    transport_ = std::make_unique<bdg::bison::rmi::transport::named_pipe_server_transport>(endpoint_);
+    server_ = std::make_unique<bdg::wish::server>(*transport_, std::make_unique<bdg::wish::null_renderer>());
+    server_->start();
+  }
+
+  void stop_desktop() {
+    if (server_)
+      server_->stop();
+    server_.reset();
+    transport_.reset();
+  }
+
+  // Runs client.run_on_desktop() on another thread; the session builds a
+  // window, counts itself, and waits.
+  std::future<void> run_in_background(wish::client& client) {
+    return std::async(std::launch::async, [this, &client] {
+      client.run_on_desktop(
+          [this](wish::client& c) {
+            c.register_template("win", kWindowDesc);
+            EXPECT_TRUE(c.instantiate_template("win", "win").valid());
+            sessions_.bump();
+            c.wait();
+          },
+          wish::value{},
+          std::chrono::milliseconds{20});
+    });
+  }
+
+  std::string endpoint_ = unique_desktop_endpoint();
+  std::unique_ptr<bdg::bison::rmi::transport::named_pipe_server_transport> transport_;
+  std::unique_ptr<bdg::wish::server> server_;
+  session_counter sessions_;
+};
+
+} // namespace
+
+TEST_F(WishCppDesktopTest, SessionRunsAgainEachTimeTheDesktopComesBack) {
+  auto client = wish::client::desktop();
+  auto done = run_in_background(client); // no desktop yet: retrying
+  stop_desktop_on_exit guard{client};
+
+  start_desktop();
+  ASSERT_TRUE(sessions_.wait_for_count(1));
+
+  stop_desktop(); // the desktop closes; the client goes back to waiting
+  start_desktop();
+  ASSERT_TRUE(sessions_.wait_for_count(2));
+
+  client.stop_desktop();
+  ASSERT_EQ(done.wait_for(std::chrono::seconds{5}), std::future_status::ready);
+  done.get();
+}
+
+TEST_F(WishCppDesktopTest, StopWhileWaitingForADesktopReturns) {
+  auto client = wish::client::desktop();
+  auto done = run_in_background(client);
+  stop_desktop_on_exit guard{client};
+  client.stop_desktop();
+  ASSERT_EQ(done.wait_for(std::chrono::seconds{5}), std::future_status::ready);
+  done.get();
+}
+
+TEST_F(WishCppDesktopTest, QuitWhileConnectedEndsTheLoop) {
+  start_desktop();
+  auto client = wish::client::desktop();
+  auto done = std::async(std::launch::async, [&client] {
+    client.run_on_desktop([](wish::client& c) {
+      c.quit();
+      c.wait();
+    });
+  });
+  ASSERT_EQ(done.wait_for(std::chrono::seconds{5}), std::future_status::ready);
+  done.get();
+}
+
+TEST_F(WishCppDesktopTest, StopBeforeRunReturnsAtOnce) {
+  auto client = wish::client::desktop();
+  client.stop_desktop();
+  bool ran = false;
+  client.run_on_desktop([&ran](wish::client&) { ran = true; });
+  EXPECT_FALSE(ran);
 }
 
 // ── User store ───────────────────────────────────────────────────────────

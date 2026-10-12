@@ -82,6 +82,7 @@ wish_add_test(test_auth           test_auth.cpp)
 add_executable(test_wish_desktop
     test_wish_desktop.cpp
     ${CMAKE_SOURCE_DIR}/app/wish_cli/desktop/wish_desktop_app.cpp
+    ${CMAKE_SOURCE_DIR}/app/wish_cli/desktop/multi_server_transport.cpp
     ${CMAKE_SOURCE_DIR}/app/wish_cli/desktop/process_launcher.cpp
     ${CMAKE_SOURCE_DIR}/app/wish_cli/desktop/desktop_config.cpp
     ${CMAKE_SOURCE_DIR}/app/wish_cli/env_flags.cpp)
@@ -105,6 +106,20 @@ target_include_directories(test_desktop_config PRIVATE
 target_link_libraries(test_desktop_config PRIVATE wish_client gtest gmock gtest_main)
 gtest_discover_tests(test_desktop_config)
 set_target_properties(test_desktop_config PROPERTIES FOLDER tests)
+
+# desktop_endpoint() (src/client/desktop_endpoint.hpp), part of wish_client.
+add_executable(test_desktop_endpoint test_desktop_endpoint.cpp)
+target_link_libraries(test_desktop_endpoint PRIVATE wish_client gtest gmock gtest_main)
+gtest_discover_tests(test_desktop_endpoint)
+set_target_properties(test_desktop_endpoint PROPERTIES FOLDER tests)
+
+# `wish client --transport=desktop`'s argv rewrite
+# (app/wish_cli/client/desktop_transport_args.hpp, header-only).
+add_executable(test_desktop_transport_args test_desktop_transport_args.cpp)
+target_include_directories(test_desktop_transport_args PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(test_desktop_transport_args PRIVATE gflags gtest gmock gtest_main)
+gtest_discover_tests(test_desktop_transport_args)
+set_target_properties(test_desktop_transport_args PROPERTIES FOLDER tests)
 
 # Links ONLY wish_client (not the combined `wish` target) to prove the
 # lightweight client / heavy server CMake split actually works for a real

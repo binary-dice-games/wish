@@ -35,6 +35,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Client-ABI apps on `wish desktop`: a client that sends `app` (plus optional `app_label` / `app_icon`) in its connect params shows on the taskbar with its own name and icon, like a built-in tool; `DesktopApp.listed` marks such taskbar-only entries.
 - Python `Client.from_env()`: connect using the `WISH_TRANSPORT` / `WISH_HOST` / `WISH_PORT` / `WISH_NAME` environment variables.
 - Python example apps for the desktop in `bindings/python/examples/desktop/` (to-do list, stopwatch, live chart).
+- `wish desktop` listens on a fixed, system-wide local endpoint besides its downstream transport: the named pipe `\\.\pipe\wish-desktop` on Windows, the abstract socket `@wish-desktop` on Linux (`WISH_DESKTOP_ENDPOINT` overrides it). See [docs/cli.md](docs/cli.md#services-a-ui-whenever-the-desktop-runs).
+- `wish client --transport=desktop` (and `WISH_TRANSPORT=desktop`): connect to the local desktop with no other flag.
+- Desktop services: a long-running process gets a UI on the desktop whenever one runs, and again after the desktop is restarted. C ABI `wish_client_desktop_create()`, `wish_client_run_on_desktop()` and `wish_client_desktop_stop()`, wrapped in the C++, Python, C#, Rust and Go bindings (`desktop()` / `run_on_desktop()` / `stop_desktop()`, Python `Client.from_env()` with `WISH_TRANSPORT=desktop`).
+- Python example `bindings/python/examples/desktop/service.py`.
 
 - `wish server` / `wish standalone` `--save_defaults` and `--clear_defaults`: save the flags given on the command line (renderer, font size, language, theme, port, ...) to the server store as the defaults of later runs. Each flag now resolves as command line > `WISH_<FLAG>` env var > saved default > built-in default (see [docs/cli.md](docs/cli.md#saved-flag-defaults)).
 - Internationalization (see [docs/i18n.md](docs/i18n.md)): template string values `"$$KEY"` are replaced from `<lang>.lang` translation files, falling back to English, then to the bare key.
@@ -102,6 +106,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Clients over the `pipe` transport notice when the server goes away (they hung in `wait()` before) and can connect again; a server on a pipe no longer risks a crash when stopped (bison update).
+- The windows of a client that was killed or lost its connection now disappear: the server drops the session when the connection closes, not only on an explicit disconnect (bison update).
 - `nano` no longer writes its working copies at the sandbox root, where they collided with other tools' files and earlier runs in a persistent sandbox; they go in a temp dir private to nano and the session.
 - The Details windows of the `bdg` tools (docker, kubectl, helm, pip, pkg) no longer overwrite each other's files when two sessions share a persistent sandbox.
 - `git`, `nano`, `zip` and `du` toolbar buttons size to their label and icon instead of a fixed width, so their text is no longer cropped.
@@ -124,6 +130,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Only one `wish desktop` can run at a time: a second one prints `wish desktop is already running` and exits with 1.
+- `wish desktop` exits when the wish server it draws on stops, releasing its endpoint (it used to keep running with nothing to show).
 - Docking is scoped to the parent docker: an app's panels (windows of an embedded/desktop `DockSpaceViewport`, its `DockLayout` windows, or `dock_target` windows) can only dock into that app's own dockspace, and the app window only into its parent dockspace -- e.g. curl's panels can no longer be docked into kubectl's window or the desktop.
 - `wish desktop` no longer adds a "Desktop" menu to the server's menu bar: the desktop chrome replaces the menu bar, windows open floating and cascaded instead of docked, and an app's `DockSpaceViewport` becomes a floating app window.
 - `wish standalone` (and `wish-standalone`) now also reads `WISH_<FLAG>` environment variables as flag defaults, like the other modes.

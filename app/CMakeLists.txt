@@ -24,6 +24,7 @@ if(WISH_ENABLE_IMGUI AND (WISH_ENABLE_SDL3 OR WISH_ENABLE_WEB))
       wish_cli/client/wish_client_app.cpp
       wish_cli/standalone/wish_standalone_app.cpp
       wish_cli/desktop/wish_desktop_app.cpp
+      wish_cli/desktop/multi_server_transport.cpp
       wish_cli/desktop/process_launcher.cpp
       wish_cli/desktop/desktop_config.cpp)
   target_include_directories(wish-cli PRIVATE
@@ -100,6 +101,7 @@ install(TARGETS wish-client RUNTIME DESTINATION bin COMPONENT wish)
 add_executable(wish-desktop
     wish_cli/env_flags.cpp
     wish_cli/desktop/wish_desktop_app.cpp
+    wish_cli/desktop/multi_server_transport.cpp
     wish_cli/desktop/process_launcher.cpp
     wish_cli/desktop/desktop_config.cpp
     wish_cli/desktop/standalone_main.cpp)

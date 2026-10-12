@@ -100,6 +100,20 @@ public sealed class Client : IDisposable
         return new Client(h);
     }
 
+    /// <summary>
+    /// Client for the local <c>wish desktop</c>'s fixed endpoint
+    /// (<c>\\.\pipe\wish-desktop</c> on Windows, <c>@wish-desktop</c> on
+    /// Linux, or <c>WISH_DESKTOP_ENDPOINT</c> when set). Use with
+    /// <see cref="RunOnDesktop"/>.
+    /// </summary>
+    public static Client Desktop() {
+      var h = Native.wish_client_desktop_create();
+      if (h == nint.Zero) {
+        throw new OutOfMemoryException("wish_client_desktop_create failed");
+      }
+      return new Client(h);
+    }
+
     public static Client Term()
     {
         var h = Native.wish_client_term_create();
@@ -184,6 +198,50 @@ public sealed class Client : IDisposable
         }
         WishException.Check(rc, "run", LastError);
     }
+
+    /// <summary>
+    /// Runs <paramref name="sessionFn"/> on the desktop whenever one is
+    /// running, for long-running processes (services). While no desktop
+    /// runs, the connection is retried every <paramref name="retry"/>
+    /// (default 1 s); when the desktop closes, it waits for the next one, so
+    /// the UI comes back when the desktop is started again. Returns after
+    /// <see cref="StopDesktop"/>, or when <paramref name="sessionFn"/>
+    /// returns while still connected (e.g. after <see cref="Quit"/>). An
+    /// exception thrown by <paramref name="sessionFn"/> ends the loop and is
+    /// rethrown. <paramref name="parameters"/> is as for <see cref="Run"/>.
+    /// </summary>
+    public void RunOnDesktop(Action<Client> sessionFn, object? parameters = null, TimeSpan? retry = null) {
+      Exception? caught = null;
+
+      void Trampoline(nint _client, nint _userdata) {
+        try {
+          sessionFn(this);
+        } catch (Exception exc) // C ABI boundary: cannot propagate directly
+        {
+          caught = exc;
+          StopDesktop();
+        }
+      }
+
+      NativeSessionFn native = Trampoline;
+      _sessionCallback = native;
+      int rc;
+      try {
+        var fnPtr = Marshal.GetFunctionPointerForDelegate(native);
+        using var scope = ParamsMarshal.From(parameters);
+        var retryMs = (uint)Math.Max(1, (retry ?? TimeSpan.FromSeconds(1)).TotalMilliseconds);
+        rc = Native.wish_client_run_on_desktop(_handle, fnPtr, nint.Zero, scope.Handle, retryMs);
+      } finally {
+        _sessionCallback = null;
+      }
+      if (caught is not null) {
+        throw caught;
+      }
+      WishException.Check(rc, "run_on_desktop", LastError);
+    }
+
+    /// <summary>Makes a running (or the next) <see cref="RunOnDesktop"/> return. Any thread.</summary>
+    public void StopDesktop() => Native.wish_client_desktop_stop(_handle);
 
     /// <summary>Blocks until <see cref="Quit"/> is called (from any thread).</summary>
     public void Wait() => Native.wish_client_wait(_handle);

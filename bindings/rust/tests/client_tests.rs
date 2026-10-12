@@ -223,3 +223,34 @@ fn translations_apply_without_a_connection() {
     assert_eq!(client.translate("$$MISSING").unwrap(), "MISSING");
     assert_eq!(client.translate("plain").unwrap(), "plain");
 }
+
+// ═════════════════════════════════════════════════════════════════════════
+// Desktop loop (no desktop needed: stopping works either way)
+// ═════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn desktop_stop_before_run_returns_at_once() {
+    let client = Client::desktop();
+    client.stop_desktop();
+    let mut ran = false;
+    client
+        .run_on_desktop(|_c| ran = true, None, std::time::Duration::from_millis(20))
+        .unwrap();
+    assert!(!ran);
+}
+
+#[test]
+fn desktop_stop_from_another_thread_ends_the_loop() {
+    let client = Client::desktop();
+    let stopper = client.quit_handle();
+    let (tx, rx) = std::sync::mpsc::channel();
+    let loop_thread = std::thread::spawn(move || {
+        client
+            .run_on_desktop(|c| c.wait(), None, std::time::Duration::from_millis(20))
+            .unwrap();
+        tx.send(()).unwrap();
+    });
+    stopper.stop_desktop();
+    assert!(rx.recv_timeout(std::time::Duration::from_secs(5)).is_ok());
+    loop_thread.join().unwrap();
+}

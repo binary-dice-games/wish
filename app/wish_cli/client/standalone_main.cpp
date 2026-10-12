@@ -8,7 +8,7 @@
 #include <string>
 
 // Shared transport flags — declared by bison::app internals.
-DEFINE_string(transport, "term", "Transport to use: tcp, pipe, tls, or term");
+DEFINE_string(transport, "term", "Transport to use: tcp, pipe, tls, term, or desktop (the local wish desktop)");
 DEFINE_string(host, "0.0.0.0", "Connect host address (transport=tcp/tls)");
 DEFINE_int32(port, 7070, "Connect port (transport=tcp/tls)");
 DEFINE_string(name, "", "Named-pipe / Unix-socket path (transport=pipe)");

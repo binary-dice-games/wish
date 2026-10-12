@@ -6,9 +6,10 @@
 /// C FFI can drive a wish session without linking against C++ directly.
 #include <client/app_registry.hpp>
 #include <client/client.hpp>
+#include <client/desktop_endpoint.hpp>
 #include <client/wish_app_host.hpp>
-#include <ui/ui_descriptor.hpp>
 #include <include/wish_client_c.h>
+#include <ui/ui_descriptor.hpp>
 
 #include "src/rmi/transport/named_pipe_transport.hpp"
 #include "src/rmi/transport/socket_transport.hpp"
@@ -32,6 +33,7 @@
 #include "src/bison/bison_c.cpp"
 #include "src/rmi/rmi_c.cpp"
 
+#include <chrono>
 #include <condition_variable>
 #include <cstdint>
 #include <cstring>
@@ -166,6 +168,12 @@ struct wish_client_handle_ {
   std::mutex wait_mtx_;
   std::condition_variable wait_cv_;
   bool quit_ = false;
+  // wish_client_run_on_desktop() state, guarded by wait_mtx_: whether
+  // session_fn_ is running, whether the server closed the connection while
+  // it was, and whether wish_client_desktop_stop() was called.
+  bool session_active_ = false;
+  bool peer_closed_ = false;
+  bool desktop_stop_ = false;
 
   // Cache of the most recent instantiate_template() result: dot-path ->
   // proxy. wish_proxy_get() builds a fresh, independently-owned
@@ -206,8 +214,15 @@ void c_abi_client::on_session() {
     state_->active_host_ = nullptr;
     return;
   }
-  if (state_->session_fn_)
+  if (state_->session_fn_) {
+    {
+      std::lock_guard<std::mutex> lk(state_->wait_mtx_);
+      state_->session_active_ = true;
+    }
     state_->session_fn_(state_, state_->session_ud_);
+    std::lock_guard<std::mutex> lk(state_->wait_mtx_);
+    state_->session_active_ = false;
+  }
 }
 
 // Fires on a clean disconnect() as well as an abrupt server-initiated one
@@ -221,6 +236,10 @@ void c_abi_client::on_disconnect() {
   {
     std::lock_guard<std::mutex> lk(state_->wait_mtx_);
     state_->quit_ = true;
+    // Only a disconnect during the session is the server's doing; the
+    // one after it is client::run()'s own.
+    if (state_->session_active_)
+      state_->peer_closed_ = true;
   }
   state_->wait_cv_.notify_all();
 }
@@ -291,6 +310,16 @@ extern "C" wish_client_handle wish_client_pipe_create(const char* path) {
   }
 }
 
+extern "C" wish_client_handle wish_client_desktop_create(void) {
+  try {
+    auto state = std::make_unique<wish_client_handle_>();
+    return make_client_handle(
+        std::move(state), std::make_unique<named_pipe_client_transport>(wish::desktop_endpoint()));
+  } catch (...) {
+    return nullptr;
+  }
+}
+
 extern "C" wish_client_handle wish_client_term_create(void) {
   try {
     auto state = std::make_unique<wish_client_handle_>();
@@ -348,7 +377,7 @@ extern "C" void wish_client_wait(wish_client_handle c) {
   if (!c)
     return;
   std::unique_lock<std::mutex> lk(c->wait_mtx_);
-  c->wait_cv_.wait(lk, [c] { return c->quit_; });
+  c->wait_cv_.wait(lk, [c] { return c->quit_ || c->desktop_stop_; });
 }
 
 extern "C" void wish_client_quit(wish_client_handle c) {
@@ -357,6 +386,49 @@ extern "C" void wish_client_quit(wish_client_handle c) {
   {
     std::lock_guard<std::mutex> lk(c->wait_mtx_);
     c->quit_ = true;
+  }
+  c->wait_cv_.notify_all();
+}
+
+extern "C" wish_error wish_client_run_on_desktop(
+    wish_client_handle c,
+    wish_session_fn fn,
+    void* ud,
+    bison_handle connect_params,
+    uint32_t retry_ms) {
+  if (!c || !fn)
+    return WISH_ERR_NULL;
+  const std::chrono::milliseconds retry{retry_ms ? retry_ms : 1000};
+  for (;;) {
+    {
+      std::lock_guard<std::mutex> lk(c->wait_mtx_);
+      if (c->desktop_stop_)
+        break;
+      c->peer_closed_ = false;
+    }
+    // A connection failure (no desktop running) comes back as an error.
+    const wish_error rc = wish_client_run_with_params(c, fn, ud, connect_params);
+    std::unique_lock<std::mutex> lk(c->wait_mtx_);
+    if (c->desktop_stop_)
+      break;
+    // The session ended on its own while the desktop was still there.
+    if (rc == WISH_OK && !c->peer_closed_)
+      break;
+    // No desktop, or it closed: wait for the next one.
+    if (c->wait_cv_.wait_for(lk, retry, [c] { return c->desktop_stop_; }))
+      break;
+  }
+  std::lock_guard<std::mutex> lk(c->wait_mtx_);
+  c->desktop_stop_ = false;
+  return WISH_OK;
+}
+
+extern "C" void wish_client_desktop_stop(wish_client_handle c) {
+  if (!c)
+    return;
+  {
+    std::lock_guard<std::mutex> lk(c->wait_mtx_);
+    c->desktop_stop_ = true;
   }
   c->wait_cv_.notify_all();
 }

@@ -21,6 +21,13 @@ wish_error wish_client_run_with_params_shim(
     uintptr_t userdata,
     bison_handle connect_params);
 
+wish_error wish_client_run_on_desktop_shim(
+    wish_client_handle client,
+    wish_session_fn session_fn,
+    uintptr_t userdata,
+    bison_handle connect_params,
+    uint32_t retry_ms);
+
 rmi_error rmi_proxy_on_event_shim(
     rmi_proxy_handle proxy,
     bison_hash event_name,

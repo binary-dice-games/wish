@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"runtime"
 	"runtime/cgo"
+	"time"
 	"unsafe"
 )
 
@@ -188,6 +189,18 @@ func NewPipeClient(path string) (*Client, error) {
 	return newClient(h), nil
 }
 
+// NewDesktopClient creates a client for the local wish desktop's fixed
+// endpoint (`\\.\pipe\wish-desktop` on Windows, the abstract socket
+// `@wish-desktop` on Linux, or WISH_DESKTOP_ENDPOINT when set). Use with
+// Client.RunOnDesktop.
+func NewDesktopClient() (*Client, error) {
+	h := C.wish_client_desktop_create()
+	if h == nil {
+		return nil, fmt.Errorf("wish: wish_client_desktop_create failed")
+	}
+	return newClient(h), nil
+}
+
 // NewTermClient creates a terminal (OSC-99 framed) client wrapping the
 // calling process's own inherited stdio.
 func NewTermClient() (*Client, error) {
@@ -224,6 +237,8 @@ func (c *Client) LastError() string {
 type sessionCtx struct {
 	fn         func(*Client)
 	panicValue interface{}
+	// Set by RunOnDesktop: a panic also ends the reconnect loop.
+	stopDesktopOnPanic bool
 }
 
 // Run connects, invokes fn(c), then disconnects. Blocks until fn returns;
@@ -252,6 +267,40 @@ func (c *Client) RunWithParams(fn func(*Client), connectParams *Value) error {
 		panic(ctx.panicValue)
 	}
 	return checkWish(rc, "client.run", c.handle)
+}
+
+// RunOnDesktop runs fn(c) on the desktop whenever one is running, for
+// long-running processes (services). While no desktop runs, the connection
+// is retried every retry; when the desktop closes, it waits for the next
+// one, so the UI comes back when the desktop is started again. Returns
+// after StopDesktop, or when fn returns while still connected (e.g. after
+// Quit). A panic in fn ends the loop and is re-raised here.
+func (c *Client) RunOnDesktop(fn func(*Client), connectParams *Value, retry time.Duration) error {
+	ctx := &sessionCtx{fn: fn, stopDesktopOnPanic: true}
+	h := cgo.NewHandle(ctx)
+	defer h.Delete()
+
+	retryMs := retry.Milliseconds()
+	if retryMs < 1 {
+		retryMs = 1
+	}
+	rc := C.wish_client_run_on_desktop_shim(
+		c.handle,
+		C.wish_session_fn(C.goSessionTrampoline),
+		C.uintptr_t(h),
+		paramsHandle(connectParams),
+		C.uint32_t(retryMs),
+	)
+	if ctx.panicValue != nil {
+		panic(ctx.panicValue)
+	}
+	return checkWish(rc, "client.run_on_desktop", c.handle)
+}
+
+// StopDesktop makes a running (or the next) RunOnDesktop return. Safe to
+// call from any goroutine.
+func (c *Client) StopDesktop() {
+	C.wish_client_desktop_stop(c.handle)
 }
 
 // Wait blocks until Quit is called (from any thread).

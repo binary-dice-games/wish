@@ -1,410 +1,328 @@
-# PLAN: Local wish-desktop discovery/notification mechanism
+# PLAN: Well-known desktop endpoint (discovery + single instance)
 
 See [`app/DESIGN.md`](../../DESIGN.md)'s "desktop mode" section for the
 existing architecture of `wish_desktop`/`wish_desktop_app` this plan extends.
 
+**Status:** Steps 1-6 implemented. Step 1 grew three more bison fixes
+found while testing Steps 3-4 (see "Bison changes" below). Remaining: the
+C# binding is written but untested here (no .NET SDK in the build
+environment), and the Windows side is untested (Linux only).
+
 ## Problem
 
-`wish desktop` multiplexes N downstream client connections into one upstream
-wish server session. Today a downstream client can only connect if it already
-knows the desktop's transport/host/port — there is no way for a client
-process to discover a locally-running desktop, or to be told when one becomes
-available after the client has already started looking. No
-discovery/broadcast/registry mechanism of any kind exists anywhere in wish or
-its `extern/bison` dependency today (confirmed by exploration: no
-UDP/multicast, no signaling socket, no shared memory, no filesystem
-registry).
+A process started independently of `wish desktop` (a service, a daemon, a
+script started at login) has no way to find the desktop, or to learn that
+it started after the process did. Today only apps the desktop launches
+itself know where it is, through the `WISH_TRANSPORT`/`WISH_HOST`/
+`WISH_PORT`/`WISH_NAME` variables `wish_desktop_app::make_bridge()` passes
+via `set_launch_env()`. Nothing stops two desktops from being started
+either.
 
 ## Goal
 
-A client process can register a callback — in C++, via the C ABI, and via
-every language binding (cpp/python/csharp/android) — that fires with a
-desktop's connection info (transport, host, port/pipe-name, pid) whenever a
-wish desktop is available locally, regardless of whether the desktop was
-already running before registration or starts afterward. The callback fires
-once per discovered desktop, so multiple concurrently-running desktops are
-each reported.
+- There is at most **one** wish desktop on the machine. Starting a second
+  one fails immediately with a clear message.
+- The desktop always listens on one **fixed, system-wide** local endpoint.
+  Any local process can open a UI on it by connecting there; no address
+  needs to be configured or looked up.
+- A long-running process can keep a UI on the desktop across desktop
+  restarts: it retries the connection while no desktop is running, runs its
+  UI session when one is, and goes back to retrying when the desktop closes.
 
-## Confirmed design decisions (not open for re-litigation without cause)
+## Design decisions
 
-1. **Discovery mechanism = polling filesystem registry.** The desktop writes
-   a small JSON announce file to a well-known temp-dir subdirectory when it
-   starts listening, and removes it on clean shutdown; a client-side
-   background thread polls that directory (~500ms) to catch both orderings.
-   No platform-specific file-watch APIs (inotify/ReadDirectoryChangesW/
-   kqueue) — consistent with this repo's stated preference to avoid
-   `#ifdef`-heavy platform branching.
-2. **Multiple desktops supported** — one file per desktop process (keyed by
-   pid); callback fires once per desktop.
-3. **Full binding scope** — core C++, C ABI, and wrapper APIs in all four
-   existing bindings (cpp, python, csharp, android).
-
-## Architecture
-
-A new shared module in `src/client/` (already linked by both the announcer
-side and every C ABI consumer, via the `wish_client` static target in the
-root `CMakeLists.txt`):
-
-- **`src/client/desktop_registry.hpp/.cpp`** — registry directory path, JSON
-  schema, atomic write, permission hardening, stale-pid reaping. Used by
-  *both* the desktop-side announcer and the client-side watcher, so the file
-  format is defined exactly once.
-- **`src/client/desktop_watcher.hpp/.cpp`** — the polling background thread +
-  callback registry (`bdg::wish::on_desktop_available`), built on
-  `desktop_registry::list_live_desktops()`.
-
-The desktop-side hook lives in the existing `wish_desktop_app.hpp/.cpp` in
-this directory.
-
----
-
-## Step 1 — Shared registry core
-
-**Goal:** A dependency-free module can atomically publish one announce file
-per desktop process and list/reap the set of currently-live ones, with
-owner-only permission hardening against local cross-user spoofing.
-
-**Deliverables:**
-- New `src/client/desktop_registry.hpp/.cpp`, namespace
-  `bdg::wish::desktop_registry`:
-  - `std::filesystem::path registry_dir()` — returns
-    `std::filesystem::temp_directory_path() / "wish_desktops"` (mirrors the
-    existing precedent at `src/context/context.cpp:83`,
-    `temp_directory_path() / ("wish_" + ...)`). Creates the directory on
-    first use and hardens it to owner-only
-    (`std::filesystem::permissions(dir, perms::owner_all,
-    perm_options::replace, ec)`) — call unconditionally, no `#ifdef` (inert
-    but harmless on Windows, which already has a per-user `%TEMP%`).
-  - `struct info { int64_t pid; std::string transport, host, name; int port; };`
-    — `transport` is one of `"tcp" | "pipe" | "tls"` (reuses
-    `--downstream_transport`'s vocabulary from `wish_desktop_app.cpp:31`);
-    `host`/`port` populated for tcp/tls, `name` (pipe/unix-socket path) for
-    pipe. Normalize a wildcard bind host (`0.0.0.0`/`::`) to loopback
-    (`127.0.0.1`/`::1`) before writing, since discovery is local-machine-only
-    by construction.
-  - JSON schema written to `<pid>.json`, versioned:
-    `{"schema": 1, "pid": ..., "transport": "...", "host": "...", "port": ..., "name": "..."}`.
-  - `class announcer` (RAII, non-copyable/movable): constructor atomically
-    publishes `<pid>.json` — write to `<pid>.json.tmp`, harden its
-    permissions to owner-read/write only, then `std::filesystem::rename()`
-    into place (mirrors the staging-file pattern in
-    `src/context/file_service.cpp`'s `.part`-suffix + rename); destructor
-    removes the file (best-effort, ignore errors).
-  - `std::vector<info> list_live_desktops()` — scans `registry_dir()`, parses
-    every `*.json`, drops and best-effort-deletes (reaps) any entry whose pid
-    is no longer alive, returns the rest. On POSIX, additionally
-    `::stat()`-checks each file's owner UID against `geteuid()` and
-    skips/reaps mismatches (second layer of the spoofing mitigation).
-  - A small `is_pid_alive(int64_t)` helper, narrow `#if defined(_WIN32)`
-    guard within one function (mirrors the style at
-    `src/context/logger.cpp:21-24` and `src/web/web_renderer.cpp:136,138`
-    — no existing pid-liveness helper to reuse): `OpenProcess`/
-    `GetExitCodeProcess` on Windows, `::kill(pid, 0)` (treating `EPERM` as
-    "alive, owned by another user") on POSIX.
-- Add the two new files to the `wish_client` target in the root
-  `CMakeLists.txt` (`add_library(wish_client STATIC ...)`).
-
-**Tests — new `tests/test_desktop_registry.cpp`:**
-- `announcer` writes a well-formed, owner-only-permission file at the
-  expected path; removes it on destruction.
-- `list_live_desktops()` returns an entry published by the current process
-  (its own pid is always "alive").
-- A hand-written `<huge-nonexistent-pid>.json` is reaped (file disappears)
-  and excluded from results.
-- Note in a comment: the cross-UID spoofing check has no automated test
-  (can't be exercised without a second real UID in a single-user test
-  environment) — documented gap, not silently skipped.
+1. **The endpoint is the lock.** Only one process can listen on a local
+   pipe/socket name, and the OS releases it when that process dies, even on
+   a crash. Binding the fixed endpoint therefore enforces the single
+   instance; no lock file, pid file or registry is needed.
+2. **System-wide, not per user.** One endpoint name for the whole machine;
+   no user is checked on either side.
+3. **Endpoint name:**
+   - Native Windows and MSYS2 (Windows libuv): named pipe
+     `\\.\pipe\wish-desktop`. libuv's `uv_pipe_bind()` creates the first
+     instance with `FILE_FLAG_FIRST_PIPE_INSTANCE` and returns
+     `UV_EADDRINUSE` when another process already owns the name
+     (`src/win/pipe.c`), which is exactly the single-instance check.
+     Pipes vanish with their process.
+   - Linux: abstract-namespace Unix socket `@wish-desktop`. Abstract
+     sockets have no file system entry, so there is no stale socket file
+     after a crash; `bind()` fails with `EADDRINUSE` while another desktop
+     holds it, and the kernel releases it when the process exits. This
+     needs a small bison change (Step 1).
+   - The `WISH_DESKTOP_ENDPOINT` environment variable overrides the name
+     (tests use a unique name per test).
+4. **No push notification.** Nothing can notify a process before the
+   desktop exists, so a waiting process retries the connect, by default
+   once a second. A failed connect to a local pipe costs microseconds.
+5. **The fixed endpoint is an extra downstream listener.** The desktop
+   keeps its configured downstream transport (`--downstream_transport`,
+   default tcp:7071) and additionally accepts clients on the fixed
+   endpoint, so existing setups and launched apps keep working.
+6. **No Android binding.** The desktop does not run on Android, so there
+   is nothing local to discover there.
 
 ---
 
-## Step 2 — Desktop-side announcer wiring
+## Step 1: Abstract socket names in bison's pipe transport (bison) -- DONE
 
-**Goal:** `wish_desktop` publishes an announce file exactly once, right after
-listening starts, for every downstream transport except `term`, and removes
-it automatically on shutdown.
+**Goal:** On Linux, `named_pipe_server_transport`/`named_pipe_client_transport`
+accept a name starting with `@` as an abstract-namespace socket.
 
-**Deliverables:**
-- `wish_desktop_app.hpp`, class `wish_desktop` (lines 36-86): add
-  ```cpp
-  void publish_announcement(const std::string& transport, const std::string& host,
-                             int port, const std::string& name);
-  ```
-  and a private member (alongside `chrome_built_` etc. at lines 79-85):
-  `std::optional<bdg::wish::desktop_registry::announcer> announcement_;`.
-- `wish_desktop_app.cpp`:
-  - Implement `publish_announcement()` alongside `build_chrome()`: return
-    immediately if `transport == "term"` (a spawned terminal has no
-    listening socket a second process could dial); otherwise build a
-    `desktop_registry::info` from the arguments (current pid via a small
-    helper in `desktop_registry.cpp`) and `announcement_.emplace(...)` it.
-  - In `wish_desktop_app::on_listening()` (lines 207-211), add, right after
-    `desktop_->build_chrome();`:
-    ```cpp
-    if (desktop_)
-      desktop_->publish_announcement(FLAGS_downstream_transport, FLAGS_downstream_host,
-                                      FLAGS_downstream_port, FLAGS_downstream_name);
-    ```
-    (`FLAGS_downstream_*` are defined in this same file at lines 31-34;
-    `on_listening()` is `const` but `desktop_` is the existing non-owning raw
-    pointer at `wish_desktop_app.hpp:167`, called the same way
-    `build_chrome()` already is.)
-  - Add a one-line comment on `wish_desktop::~wish_desktop() = default;`
-    (line 115) noting `announcement_`'s destructor removes the file
-    automatically.
+Approved and implemented. Besides the deliverables below, the same commit
+fixes three bugs in `named_pipe_transport.cpp` found while testing: `open()`
+spinning forever when `uv_pipe_connect2()` fails synchronously, a failed
+`start()` leaking its loop, and `on_new_connection()` closing a
+stack-allocated `uv_pipe_t` asynchronously (use after scope; valgrind).
 
-**Tests — extend `tests/test_wish_desktop.cpp`** (reusing the existing
-`WishDesktopTest` fixture, lines 47-64):
-- `PublishAnnouncementWritesRegistryFile` — call `publish_announcement("tcp",
-  "127.0.0.1", 7071, "")` directly; assert `list_live_desktops()` contains a
-  matching entry for the current process's pid.
-- `PublishAnnouncementSkippedForTermTransport` — call with `"term"`; assert
-  no file appears.
-- `DestructorRemovesAnnouncementFile` — publish, destroy the `wish_desktop`,
-  assert the file is gone.
+**Deliverables (in bison):**
+- `src/rmi/transport/named_pipe_transport.cpp`: when `path_` starts with
+  `@`, replace the `@` with `\0` and call `uv_pipe_bind2()` /
+  `uv_pipe_connect2()` with the explicit length (libuv >= 1.46; the bundled
+  libuv is 1.52) instead of `uv_pipe_bind()` / `uv_pipe_connect()`. Other
+  names keep the current code path. On Windows `@` names are left as
+  they are (named pipes have no abstract namespace).
+- `named_pipe_server_transport::start()` already throws on a bind error;
+  make sure the message keeps libuv's `EADDRINUSE` text so callers can
+  recognize "already in use", or throw a dedicated
+  `address_in_use_error : std::runtime_error`.
+- Doc comment in `named_pipe_transport.hpp` describing `@` names.
+- `CHANGELOG.md` entry in bison; submodule update in wish (see
+  `CLAUDE.md`, "Updating the submodule after a bison commit").
+
+**Tests (bison):**
+- Linux: a client connects to a server listening on a unique `@name`.
+- A second server on the same `@name` fails to start with the
+  address-in-use error, and succeeds once the first one has stopped.
+- Windows: a second server on the same pipe name fails the same way.
 
 ---
 
-## Step 3 — Client-side watcher core
+## Step 2: Endpoint name helper -- DONE
 
-**Goal:** `bdg::wish::on_desktop_available(callback)` fires, from a
-background polling thread, once per desktop already live at registration
-time and once per desktop that becomes live afterward — correct regardless
-of registration order relative to any other callback.
+**Goal:** Desktop and clients agree on the endpoint name in exactly one
+place.
 
 **Deliverables:**
-- New `src/client/desktop_watcher.hpp/.cpp`:
+- New `src/client/desktop_endpoint.hpp/.cpp` in the `wish_client` target
+  (linked by both `wish-desktop` and `wish_client_dll`):
   ```cpp
   namespace bdg::wish {
-  void on_desktop_available(std::function<void(const desktop_registry::info&)> callback);
+  /// Name of the desktop's fixed local endpoint: `WISH_DESKTOP_ENDPOINT` if
+  /// set, else `\\.\pipe\wish-desktop` on Windows, `@wish-desktop` on Linux.
+  std::string desktop_endpoint();
   }
   ```
-  No unregister API (deliberate — mirrors `rmi_proxy_on_event`'s and
-  `wish_list_apps`/`app_registry`'s process-lifetime, no-removal shape; see
-  `bindings/android/jni/wish_rmi_jni.cpp`'s existing rationale for the same
-  tradeoff on the closest analogous callback).
-  - State: `bison::synchronized<watcher_state>` (per this repo's concurrency
-    conventions), where `watcher_state` holds `callbacks`, a global
-    `notified_pids` set (poll-loop dedup only), and `stop`/`started` flags.
-    `bison::synchronized<T>` (`extern/bison/src/bison/bison_sync.hpp`) owns
-    its own condition variable — `wait`/`wait_for`/`notify_one`/`notify_all`
-    are member functions — so no separate `std::mutex`/`std::condition_variable`
-    is needed.
-  - `on_desktop_available()`: **first** synchronously calls `callback` for
-    every desktop returned by `list_live_desktops()` right now (this is what
-    makes a *late* registration still correctly see an *earlier* desktop,
-    independent of the poll loop's own global dedup state); **then** adds the
-    callback to `watcher_state.callbacks` and, on the very first registration
-    only, starts the background poll thread and registers `stop_watcher` via
-    `std::atexit()`.
-  - `poll_loop()`: every `poll_interval()` (default 500ms, overridable via a
-    `bdg::wish::detail::set_desktop_watcher_poll_interval_for_testing(...)`
-    hook), calls `list_live_desktops()`; for each entry not yet in the global
-    `notified_pids` set, snapshots the callback list under lock and invokes
-    them all outside the lock.
-  - `stop_watcher()`: sets the stop flag, notifies, joins the worker thread.
-    Registered via `std::atexit()` (not a static destructor) so it is
-    guaranteed to run — and join the thread — before `state()`'s
-    function-local static is destroyed (per `[basic.start.term]`'s ordering
-    guarantee relative to when the `atexit` handler was registered).
-- Add the two new files to the `wish_client` CMake target alongside Step 1's.
+  The platform difference is one narrow `#if defined(_WIN32) ||
+  defined(__CYGWIN__)` in this function (the same split bison's pipe
+  transport uses). An empty `WISH_DESKTOP_ENDPOINT` counts as unset.
 
-**Tests — new `tests/test_desktop_watcher.cpp`:** set a short (few-ms) poll
-interval in `SetUp()` via the testing hook; use a bounded-timeout
-(e.g. 2s) wait helper so failures fail fast rather than hang:
-- `FiresForAlreadyPublishedDesktop` — publish via `desktop_registry::announcer`
-  before registering; assert the callback fires (synchronous catch-up path).
-- `FiresForDesktopPublishedLater` — register first, publish after; assert it
-  fires within a couple of poll intervals.
-- `IgnoresStaleDeadPidEntries` — hand-write a fake dead-pid `.json`; assert no
-  callback fires and the file is reaped.
-- `FiresOncePerDesktopForMultipleDesktops` — publish two `announcer`s; assert
-  exactly two distinct-pid firings.
-- `LateRegistrationStillFiresForEarlierDesktop` — publish, register callback
-  A, then register callback B; assert **both** fire.
+**Tests:** new `tests/test_desktop_endpoint.cpp`: the default name, and the
+environment override.
 
 ---
 
-## Step 4 — C ABI
+## Step 3: Desktop listens on the endpoint and enforces one instance -- DONE
 
-**Goal:** `wish_on_desktop_available()` is callable with no
-`wish_client_handle`/connection, and delivers each discovered desktop's info
-as a scope-local `bison_handle`.
+**Goal:** `wish desktop` refuses to start when a desktop is already
+running, and otherwise accepts clients on the fixed endpoint as well as on
+its configured downstream transport.
 
 **Deliverables:**
-- `include/wish_client_c.h` (new section near `wish_list_apps`, line 431):
-  ```c
-  typedef void (*wish_desktop_available_fn)(bison_handle info, void* userdata);
-  WISH_API wish_error wish_on_desktop_available(wish_desktop_available_fn callback, void* userdata);
+- New `app/wish_cli/desktop/multi_server_transport.hpp/.cpp`: a
+  `bison::rmi::transport::server_transport_iface` that combines several
+  server transports (some borrowed, some owned). `start()` starts each,
+  `accept(timeout)` returns the first connection from any of them, `stop()`
+  stops all. Small, local to the desktop; bison's `bridge` stays unchanged
+  because it only sees one transport.
+- `wish_desktop_app::run()`: right after parsing flags, before
+  `bridge_app::run()` connects upstream or spawns any terminal, create a
+  `named_pipe_server_transport(desktop_endpoint())` and `start()` it. On
+  the address-in-use error print
+  `wish desktop is already running` to stderr and return 1. Keep the
+  started transport in a new member, `endpoint_transport_`.
+- `wish_desktop_app::make_bridge()`: build a `multi_server_transport` from
+  the `downstream_transport` it is given (borrowed) and
+  `endpoint_transport_` (already started; `named_pipe_server_transport::
+  start()` returns early when started), keep it in a member, and construct
+  `wish_desktop` with it.
+- The endpoint is released when `wish_desktop_app` is destroyed, or by the
+  OS if the process dies.
+- As built: `claim_desktop_endpoint(name)` (declared in
+  `wish_desktop_app.hpp`) returns the started listener or `nullptr` when the
+  name is taken; `run()` turns `nullptr` into the "already running" exit.
+  When `--downstream_transport=pipe --downstream_name` already names the
+  endpoint, no extra listener is added. `multi_server_transport::stop()`
+  joins its accept threads *before* stopping the transports, because
+  `named_pipe_server_transport::stop()` frees state a concurrent
+  `accept()` still uses (found as an intermittent crash in testing).
+
+**Tests:**
+- `tests/test_multi_server_transport.cpp`: clients on either of two memory
+  transports are accepted; `stop()` stops both.
+- `tests/test_wish_desktop.cpp` (or a new `tests/test_desktop_single_instance.cpp`),
+  with a unique `WISH_DESKTOP_ENDPOINT` per test:
+  - With the endpoint already held by a listener, the startup check
+    reports "already running".
+  - A wish client connecting to the endpoint gets a desktop session (the
+    desktop's `__WishDesktop` object can be instantiated).
+
+---
+
+## Step 4: Client side: run a UI whenever the desktop is up -- DONE
+
+**Goal:** A process gets a UI on the desktop, and gets it back after the
+desktop restarts, with one call.
+
+**Deliverables:**
+- C++: a client for the endpoint is just
+  `named_pipe_client_transport(desktop_endpoint())`. (Revised: the loop
+  below is implemented directly in the C ABI, `src/wish_client_c.cpp`,
+  since every binding, the C++ one included, goes through it; no separate
+  internal C++ helper.) Original sketch of the loop:
+  ```cpp
+  /// Repeats until `stop` is set: connect to the desktop (retrying every
+  /// `retry_interval` while none is running), call `session`, then go back
+  /// to waiting once `session` returns or the desktop closes.
+  void run_on_desktop(std::function<void(client&)> session,
+                      std::stop_token stop,
+                      bison::dynamic connect_params = {},
+                      std::chrono::milliseconds retry_interval = std::chrono::seconds{1});
   ```
-  Doc comment specifies: called from a background thread; `info` is
-  scope-local and valid only for the call's duration (mirrors
-  `rmi_proxy_event_fn`'s contract) — read with `bison_get_*()`, never
-  `bison_release()`d by the caller; fields `pid`(int)/`transport`(string)/
-  `host`(string)/`port`(int)/`name`(string); process-lifetime registration,
-  no unregister call.
-- `src/wish_client_c.cpp`: implement by wrapping
-  `wish::on_desktop_available(...)` with a lambda that builds a `dynamic`
-  from the `desktop_registry::info` fields and delivers it using the exact
-  scope-local `bison_dynamic_ptr`/`as_bison_handle` idiom already used by
-  `rmi_proxy_on_event` (`extern/bison/src/rmi/rmi_c.cpp:627-638`) — no heap
-  allocation crossing the ABI, no caller-side free needed.
+  `connect_params` lets the process set the `app`/`app_label`/`app_icon`
+  fields the desktop shows on its taskbar.
+- C ABI (`include/wish_client_c.h`, `src/wish_client_c.cpp`):
+  ```c
+  /// Client handle for the desktop's fixed endpoint.
+  WISH_API wish_client_handle wish_client_desktop_create(void);
+  /// Loops like wish_client_run_with_params(), reconnecting whenever the
+  /// desktop comes back, until wish_client_desktop_stop() is called.
+  WISH_API wish_error wish_client_run_on_desktop(
+      wish_client_handle client, wish_session_fn session_fn, void* userdata,
+      bison_handle connect_params, uint32_t retry_ms);
+  /// Ends wish_client_run_on_desktop(): quits the running session, if
+  /// any, and stops retrying. Safe from any thread.
+  WISH_API void wish_client_desktop_stop(wish_client_handle client);
+  ```
+  Inside `session_fn` the caller uses `wish_client_wait()` as today. It
+  already returns when the desktop closes (`c_abi_client::on_disconnect()`
+  sets `quit_`), and `wish_client_run()` resets `quit_` on each run, so the
+  same handle is reused across reconnects.
+- CLI: `wish client --transport=desktop` (and `wish <app> --transport=desktop`,
+  and `WISH_TRANSPORT=desktop` in the environment) connects to
+  `desktop_endpoint()` with no other flag. `wish_client_app::run()` parses
+  flags twice (once itself, once in bison's `client_app::run()` on a copy of
+  the original argv), so after its own parse, when `FLAGS_transport ==
+  "desktop"`, it inserts `--transport=pipe` and `--name=<desktop_endpoint()>`
+  into that argv copy just before any `--` (gflags keeps the last value), so
+  the second parse sees a plain pipe transport. No bison change. Update the
+  `--transport` row in `docs/cli.md` and the flag's help text.
 
-**Tests:** none dedicated at this layer (matches `wish_list_apps`'s own
-precedent of no direct C-ABI gtest); covered by Step 3's core tests plus
-Step 5+'s binding tests exercising the real ABI end to end.
+**Tests:** in `tests/` with a unique `WISH_DESKTOP_ENDPOINT` and a real
+`wish::server` listening on that endpoint as a stand-in for the desktop:
+- Client started first, server second: the session runs.
+- Server stopped: the session ends and the loop keeps running; server
+  started again: the session runs a second time.
+- `wish_client_desktop_stop()` while waiting and while in a session: the
+  call returns promptly.
+- `--transport=desktop`: the argv rewrite produces `--transport=pipe
+  --name=<endpoint>` before `--`, for the `=` form, the two-token form, and
+  the `WISH_TRANSPORT` environment form, and leaves app arguments after
+  `--` untouched.
 
 ---
 
-## Step 5 — `bindings/cpp` (header-only C++ wrapper)
+## Step 5: Bindings -- DONE (C# untested)
 
-**Goal:** A free function `bdg::wish::binding::on_desktop_available(callback)`
-usable with no `client` instance, mirroring `list_apps_json()`'s shape.
+**Goal:** Each desktop-capable binding exposes the endpoint client and the
+reconnecting loop in its own style.
+
+All bindings already wrap `wish_client_pipe_create`; they add only
+`wish_client_desktop_create`, `wish_client_run_on_desktop` and
+`wish_client_desktop_stop`. Each test sets `WISH_DESKTOP_ENDPOINT` to a
+unique name and uses a bounded wait.
+
+| Binding | API |
+|---|---|
+| cpp (`bindings/cpp/`) | `client::desktop()`, `client::run_on_desktop(session, params)`, `client::stop_desktop()` |
+| python (`bindings/python/`) | `Client.desktop()`, `client.run_on_desktop(session, params=None)`, `client.stop_desktop()` |
+| csharp (`bindings/csharp/`) | `Client.Desktop()`, `RunOnDesktop(...)`, `StopDesktop()` |
+| rust (`bindings/rust/`) | `Client::desktop()`, `run_on_desktop(...)`, `QuitHandle`-style stop |
+| go (`bindings/go/`) | `NewDesktopClient()`, `RunOnDesktop(...)`, `StopDesktop()` |
+
+Android is out of scope (see design decision 6).
+
+---
+
+## Step 6: Documentation and changelog -- DONE
 
 **Deliverables:**
-- New `bindings/cpp/include/wish_cpp/desktop.hpp`: `struct desktop_info`
-  (pid/transport/host/port/name) and `inline void
-  on_desktop_available(std::function<void(const desktop_info&)>)`, wrapping
-  `wish_on_desktop_available()` with a heap-allocated (intentionally leaked —
-  process-lifetime, matches the ABI's own no-unregister contract)
-  `std::function` as the trampoline's `userdata`. Verify
-  `value::get_int`/`get_string` signatures in
-  `bindings/cpp/include/wish_cpp/value.hpp` before implementing. Include from
-  the `wish_cpp/wish.hpp` umbrella header.
-
-**Tests:** add to `bindings/cpp/tests/test_client.cpp` — since this target
-links `wish_client_dll` (not the internal `wish_client` static lib) and can't
-include `src/client/desktop_registry.hpp` directly, write a fake registry
-`.json` file at the well-known path by recomputing `temp_directory_path() /
-"wish_desktops"` locally in the test (small, explicitly-commented
-duplication), register a callback, assert it fires.
+- `app/DESIGN.md`, "desktop mode": the endpoint, the single-instance check
+  in `run()`, `multi_server_transport`, and why the endpoint doubles as the
+  lock.
+- `docs/cli.md`, `## wish desktop`: only one desktop per machine; the fixed
+  endpoint name per platform; `WISH_DESKTOP_ENDPOINT`.
+- `docs/bindings.md`: a short "UI on the desktop, across restarts" snippet
+  per binding.
+- A runnable example, `bindings/python/examples/desktop/service.py`: a
+  background process that shows a status window whenever the desktop is
+  running. Mention it in that folder's README. (`docs/examples.md` only
+  covers the C++ example programs, so it is not touched; `docs/bindings.md`
+  and `docs/cli.md` point at the example.)
+- `CHANGELOG.md`, `## [Unreleased]`: `### Added` for the endpoint and the
+  client API, `### Changed` for "only one desktop can run at a time".
 
 ---
 
-## Step 6 — Python binding
+## Bison changes
 
-**Goal:** `wish.on_desktop_available(callback)` works with no `Client`
-instance, keeping the ctypes trampoline alive for process lifetime.
+All on bison's `claude/desktop-app-notification-3wn7d7` branch, each with
+regression tests (`tests/rmi_tests.cpp`, `NamedPipeTransport.*`), all
+valgrind-clean:
 
-**Deliverables:**
-- `bindings/python/wish/_native.py`: add `DesktopAvailableFn =
-  ctypes.CFUNCTYPE(None, _bison_native.Handle, ctypes.c_void_p)` near
-  `SessionFn` (line 68), plus `argtypes`/`restype` registration for
-  `wish_on_desktop_available`.
-- New `bindings/python/wish/desktop.py`: module-level `_trampolines = []`
-  list (keeps callback objects alive — mirrors bison's `Proxy.on_event()`'s
-  `self._callbacks`, adapted to module scope since there's no owning
-  instance), and `on_desktop_available(callback)` wrapping a `c_callback`
-  that builds a `dict` (`pid`/`transport`/`host`/`port`/`name`) from a
-  `bison.rmi.Dynamic(_handle=..., _owned=False)` view of the payload. Verify
-  `Dynamic`'s constructor kwargs and `get_int`/`get_string` method names
-  against `extern/bison/bindings/python/bison/rmi.py` before implementing.
-  Export from `bindings/python/wish/__init__.py`.
+1. `85326cd` (Step 1): `@name` abstract sockets on Linux,
+   `address_in_use_error`; also `open()` hanging on a synchronous connect
+   error, a failed `start()` leaking its loop, and a use-after-scope in
+   `on_new_connection()`.
+2. `7d31708`: `named_pipe_server_transport::stop()` freed state that
+   `rmi::server`'s accept loop could still be using (crash on shutdown of
+   any server on a pipe); start() after stop() works.
+3. `b519524`: `named_pipe_client_transport::is_connected()`, so an
+   `rmi::client` over a pipe notices the server going away (before, a
+   service's `wait()` never returned when the desktop closed).
+4. `f32f8b3`: `rmi::client` can `connect()` again after the server closed
+   the connection (before: `std::terminate` from overwriting joinable
+   threads).
 
-**Tests** — new `bindings/python/tests/test_desktop.py`: write a fake
-registry file directly (`tempfile.gettempdir()` + `"wish_desktops"`,
-matching the C++ path logic), register a callback, assert it fires within a
-bounded `threading.Event().wait(timeout=2)`. No poll-interval injection
-available from this layer, so a real ~1s+ bounded wait is acceptable here
-(unlike Step 3's millisecond-scale core tests).
+5. `e4ec1a6`: server connections (TCP, TLS, pipe) report the peer's close
+   in `is_closed()`, so `rmi::server` drops the session of a killed client
+   (its windows stayed until the server stopped); the TCP/TLS accept paths
+   had the same stack-handle bug as fixed in (1).
+6. `32f2645`: the bridge's upstream wrapper forwards `is_connected()`;
+   `rmi::client::is_connected()` and `bridge::upstream_connected()`. `wish
+   desktop` uses it to exit when its upstream server stops, instead of
+   holding the endpoint with nothing to show.
 
----
-
-## Step 7 — C# binding
-
-**Goal:** `Bdg.Wish.Desktop.OnDesktopAvailable(callback)`, static (no
-`Client` instance), keeping delegates alive for process lifetime.
-
-**Deliverables:**
-- `bindings/csharp/Wish/Native.cs`: add a `NativeDesktopAvailableFn` delegate
-  type and the `wish_on_desktop_available` P/Invoke declaration, matching
-  whichever calling-convention pattern `Client.cs`'s existing `Run()`/
-  `NativeSessionFn` wiring uses (verify before implementing).
-- New `bindings/csharp/Wish/Desktop.cs`: `record DesktopInfo(long Pid, string
-  Transport, string Host, int Port, string Name)` and `static class Desktop`
-  with a static `List<object> _callbacks` (adapts `Proxy.OnEvent`'s
-  per-instance list to static scope) and `OnDesktopAvailable(Action<DesktopInfo>)`.
-  Verify the exact "wrap a borrowed `bison_handle` as Dynamic" helper name
-  (likely in bison's own `Bdg.Bison` C# binding) before implementing.
-
-**Tests** — new `bindings/csharp/Wish.Tests/DesktopTests.cs`: same shape as
-Step 6 — fake registry file + bounded-timeout `TaskCompletionSource`.
-
----
-
-## Step 8 — Android/JNI + Kotlin/Java binding
-
-**Goal:** `Client.onDesktopAvailable(DesktopAvailableCallback)` static
-method, JNI trampoline mirroring the existing `event_ctx`/`event_trampoline`
-pattern used for `rmi_proxy_on_event`.
-
-**Deliverables:**
-- New `DesktopAvailableCallback.java` (one-method interface) and
-  `DesktopInfo.java` (data class: pid/transport/host/port/name), mirroring
-  `AppInfo.java`'s style.
-- `Client.java`: static `onDesktopAvailable(DesktopAvailableCallback)` calling
-  a new native method, mirroring `listApps()`'s static-native shape.
-- `bindings/android/jni/wish_rmi_jni.cpp`: `desktop_ctx`/`desktop_trampoline`
-  pair mirroring `event_ctx`/`event_trampoline` (attach/detach current thread
-  around each invocation, `NewGlobalRef` on registration since it's never
-  released — matches the ABI's no-unregister contract — `DeleteLocalRef` on
-  the constructed `DesktopInfo` object after the Java call returns, catch and
-  log any Java exception rather than letting it cross back into C++).
-
-**Tests:** Android instrumented tests need an emulator and aren't part of
-this repo's normal test loop (verify: `rmi_proxy_on_event`'s own JNI wrapper
-has no dedicated instrumented test either). Documented gap; correctness
-coverage comes from Steps 3-4's C++/ABI tests plus a manual smoke check.
-
----
-
-## Step 9 — Documentation
-
-**Goal:** `app/DESIGN.md`, `docs/cli.md`, and `docs/bindings.md` accurately
-describe the new discovery mechanism; no stale content remains.
-
-**Deliverables:**
-- `app/DESIGN.md` — extend the existing "desktop mode" section's lifecycle
-  diagram (currently ending `on_listening() → desktop_->build_chrome() (menu
-  bar + dockspace + clock)`) with a `publish_announcement()` line, plus a
-  short "Desktop discovery" paragraph pointing at
-  `src/client/desktop_registry.hpp` for the schema and explaining why `term`
-  is skipped.
-- `docs/cli.md` — in the `## wish desktop` section, right after the existing
-  paragraph on `WISH_TRANSPORT`/etc. env vars (~lines 198-206), add a
-  paragraph noting the discovery announcement published for tcp/pipe/tls
-  downstream transports.
-- `docs/bindings.md` — add a short "Desktop discovery" snippet to each
-  per-language section (cpp/python/csharp; add an Android subsection if none
-  exists yet).
-- `README.md` — no change needed (no new `docs/` file is being added).
-- Do **not** create `src/client/DESIGN.md` speculatively.
-
----
+Kept as is: closing a desktop's stdin does not quit it, since a desktop
+started without a terminal has stdin at EOF from the start.
 
 ## Ordering
 
-Step 1 gates Steps 2 and 3 (shared registry format). Steps 4-8 each depend on
-Step 3 (the core `on_desktop_available`) and Step 2 (so binding tests have a
-real desktop to discover), but are otherwise independent and can proceed in
-any order. Step 9 (docs) lands last, once the real API shapes from Steps 4-8
-are settled.
+Step 1 is done. Steps 3 and 4 depend on Step 2 and
+are independent of each other. Step 5 depends on Step 4. Step 6 lands last.
 
 ## Completion Criteria
 
-- [ ] `test_desktop_registry`, `test_desktop_watcher`, and the extended
-      `test_wish_desktop` all pass under `ctest`, with no added flakiness
-      (watcher tests use the injectable short poll interval, not the
-      production 500ms default).
-- [ ] Manual end-to-end check, both orderings: (a) start `wish desktop`,
-      then register a callback from a separate client process — it fires
-      with the correct port; (b) register the callback first, then start
-      `wish desktop` — it still fires, within one poll interval.
-- [ ] Every implemented binding's own test suite passes
-      (`bindings/cpp/tests`, `bindings/python/tests`,
-      `bindings/csharp/Wish.Tests`); Android is verified by code review plus
-      a manual smoke check given the emulator-test gap noted in Step 8.
-- [ ] Full `ctest` run shows no regressions in `test_wish_desktop` or
-      elsewhere.
-- [ ] `app/DESIGN.md`, `docs/cli.md`, and `docs/bindings.md` are updated and
-      accurate; no stale content describing the pre-discovery behavior
-      remains.
+- [ ] Starting a second `wish desktop` prints "already running" and exits
+      with 1, on Linux and Windows.
+- [ ] After a desktop is killed (`kill -9` / Task Manager), a new desktop
+      starts without any cleanup.
+- [ ] Manual end-to-end check with a real `wish desktop` and the example
+      service: (a) desktop first, then service: a window appears;
+      (b) service first, then desktop: a window appears within about a
+      second; (c) close the desktop: the service keeps running; reopen it:
+      the window appears again. Verified with the automation module
+      (widget tree), not only "didn't crash".
+- [ ] New tests pass under parallel `ctest -j`; every touched binding's
+      test suite passes; no regressions.
+- [ ] `app/DESIGN.md`, `docs/cli.md`, `docs/bindings.md` and `CHANGELOG.md`
+      are updated.

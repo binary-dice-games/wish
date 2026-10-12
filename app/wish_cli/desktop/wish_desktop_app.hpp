@@ -7,11 +7,13 @@
 #pragma once
 
 #include "app/wish_cli/desktop/desktop_config.hpp"
+#include "app/wish_cli/desktop/multi_server_transport.hpp"
 #include "app/wish_cli/desktop/process_launcher.hpp"
 #include "src/app/bridge/bridge_app.hpp"
 #include "src/bison/bison_sync.hpp"
 #include "src/rmi/bridge/bridge.hpp"
 #include "src/rmi/client/proxy.hpp"
+#include "src/rmi/transport/named_pipe_transport.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -290,6 +292,16 @@ class wish_desktop : public bison::rmi::bridge {
 };
 
 /**
+ * @brief Starts listening on the desktop's fixed endpoint @p name (see
+ *        `desktop_endpoint()`), which doubles as the single-instance lock.
+ *
+ * @return The started listener, or `nullptr` if another process already
+ *         listens on @p name, i.e. a desktop is already running.
+ * @throws std::runtime_error on any other failure to listen.
+ */
+std::unique_ptr<bison::rmi::transport::named_pipe_server_transport> claim_desktop_endpoint(const std::string& name);
+
+/**
  * @brief CLI scaffold for `wish desktop` -- multiplexing bridge with a
  *        Windows/macOS-like desktop shell.
  *
@@ -318,6 +330,11 @@ class wish_desktop : public bison::rmi::bridge {
  * - `wait_for_shutdown()` is overridden so the Start menu's "Quit desktop"
  *   can trigger an orderly shutdown alongside console Enter.
  * - Apps launched from the desktop are terminated when it exits.
+ * - `run()` first claims the fixed endpoint (`desktop_endpoint()`); if
+ *   another desktop holds it, it reports that and exits with 1 before
+ *   connecting anything. `make_bridge()` then serves clients on that
+ *   endpoint as well as on the configured downstream transport, through a
+ *   `multi_server_transport`.
  */
 class wish_desktop_app : public bison::app::bridge_app {
  public:
@@ -378,6 +395,9 @@ class wish_desktop_app : public bison::app::bridge_app {
    * alongside `active_term_->has_exited()`, returning as soon as either
    * the shell's "quit" event handler calls
    * `wish_desktop::request_quit()`, or the operator exits the terminal.
+   * It also returns when the upstream connection is lost
+   * (`bridge::upstream_connected()`), so a desktop whose server is gone
+   * releases its fixed endpoint instead of holding it.
    * Either path lets `bridge_app::run_with_transport()`/`run()` proceed
    * through `br->stop()` and unwind normally, releasing terminal state
    * (`scoped_terminal_config`/`terminal`) via RAII.
@@ -389,6 +409,14 @@ class wish_desktop_app : public bison::app::bridge_app {
   wish_desktop* desktop_{nullptr};
 
   std::vector<std::string> client_command_;
+
+  /// The fixed endpoint, claimed by run(); moved into downstream_ by
+  /// make_bridge(). Null when the downstream transport is the endpoint.
+  std::unique_ptr<bison::rmi::transport::named_pipe_server_transport> endpoint_;
+
+  /// The configured downstream transport plus endpoint_; borrowed by the
+  /// bridge, so it is declared here to outlive it.
+  std::unique_ptr<multi_server_transport> downstream_;
 
   /// Starts the apps launched from the desktop; its destructor terminates
   /// the ones still running when the desktop exits.

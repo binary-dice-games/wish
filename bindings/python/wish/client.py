@@ -123,6 +123,19 @@ class Client:
         return cls(h)
 
     @classmethod
+    def desktop(cls) -> "Client":
+        """Create a client for the local ``wish desktop``.
+
+        Connects to the desktop's fixed endpoint (``\\\\.\\pipe\\wish-desktop``
+        on Windows, the abstract socket ``@wish-desktop`` on Linux, or
+        ``WISH_DESKTOP_ENDPOINT`` when set). Use with :meth:`run_on_desktop`.
+        """
+        h = _n.get_lib().wish_client_desktop_create()
+        if not h:
+            raise MemoryError("wish_client_desktop_create failed")
+        return cls(h)
+
+    @classmethod
     def term(cls) -> "Client":
         h = _n.get_lib().wish_client_term_create()
         if not h:
@@ -139,7 +152,8 @@ class Client:
 
         Defaults: ``tcp``, ``127.0.0.1``, ``7070``. A wildcard bind host
         (``0.0.0.0`` / ``::``) connects to loopback. ``WISH_TRANSPORT`` is
-        ``tcp``, ``tls``, ``pipe`` (``WISH_NAME`` is the path) or ``term``.
+        ``tcp``, ``tls``, ``pipe`` (``WISH_NAME`` is the path), ``term`` or
+        ``desktop`` (the local wish desktop, see :meth:`desktop`).
 
         Raises:
             ValueError: for an unknown transport or a non-numeric port.
@@ -162,7 +176,9 @@ class Client:
             return cls.pipe(name)
         if transport == "term":
             return cls.term()
-        raise ValueError(f"unknown WISH_TRANSPORT {transport!r} (tcp, tls, pipe or term)")
+        if transport == "desktop":
+            return cls.desktop()
+        raise ValueError(f"unknown WISH_TRANSPORT {transport!r} (tcp, tls, pipe, term or desktop)")
 
     def destroy(self) -> None:
         """Free the client. Must not be called while :meth:`run` is active."""
@@ -213,6 +229,42 @@ class Client:
         if errors:
             raise errors[0]
         _check(rc, "run", self.last_error)
+
+    def run_on_desktop(self, session_fn: Callable[["Client"], None], params: Any = None, retry: float = 1.0) -> None:
+        """Run ``session_fn(self)`` on the desktop whenever one is running.
+
+        For long-running processes (services): while no desktop runs, the
+        connection is retried every ``retry`` seconds; when the desktop
+        closes, it waits for the next one, so the UI comes back when the
+        desktop is started again. Returns after :meth:`stop_desktop`, or when
+        ``session_fn`` returns while still connected (e.g. after
+        :meth:`quit`). An exception raised by ``session_fn`` ends the loop and
+        is re-raised here. ``params`` is as for :meth:`run`.
+        """
+        errors: list = []
+
+        def c_callback(_client_h, _userdata) -> None:
+            try:
+                session_fn(self)
+            except Exception as exc:  # C ABI boundary: cannot propagate directly
+                errors.append(exc)
+                self.stop_desktop()
+
+        self._session_cb = _n.SessionFn(c_callback)
+        try:
+            with _as_params(params) as ph:
+                rc = self._lib.wish_client_run_on_desktop(
+                    self._handle, self._session_cb, None, ph, max(1, int(retry * 1000))
+                )
+        finally:
+            self._session_cb = None
+        if errors:
+            raise errors[0]
+        _check(rc, "run_on_desktop", self.last_error)
+
+    def stop_desktop(self) -> None:
+        """Make a running (or the next) :meth:`run_on_desktop` return. Any thread."""
+        self._lib.wish_client_desktop_stop(self._handle)
 
     def wait(self) -> None:
         """Block until :meth:`quit` is called (from any thread)."""
