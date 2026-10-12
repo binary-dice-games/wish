@@ -3,7 +3,8 @@
 See [`app/DESIGN.md`](../../DESIGN.md)'s "desktop mode" section for the
 existing architecture of `wish_desktop`/`wish_desktop_app` this plan extends.
 
-**Status:** not started.
+**Status:** Step 1 done (bison `85326cd`, on bison's
+`claude/desktop-app-notification-3wn7d7` branch). Steps 2-6 not started.
 
 ## Problem
 
@@ -60,12 +61,16 @@ either.
 
 ---
 
-## Step 1: Abstract socket names in bison's pipe transport (bison, needs approval)
+## Step 1: Abstract socket names in bison's pipe transport (bison) -- DONE
 
 **Goal:** On Linux, `named_pipe_server_transport`/`named_pipe_client_transport`
 accept a name starting with `@` as an abstract-namespace socket.
 
-Per `CLAUDE.md`, a bison change needs explicit approval before it is made.
+Approved and implemented. Besides the deliverables below, the same commit
+fixes three bugs in `named_pipe_transport.cpp` found while testing: `open()`
+spinning forever when `uv_pipe_connect2()` fails synchronously, a failed
+`start()` leaking its loop, and `on_new_connection()` closing a
+stack-allocated `uv_pipe_t` asynchronously (use after scope; valgrind).
 
 **Deliverables (in bison):**
 - `src/rmi/transport/named_pipe_transport.cpp`: when `path_` starts with
@@ -87,12 +92,6 @@ Per `CLAUDE.md`, a bison change needs explicit approval before it is made.
 - A second server on the same `@name` fails to start with the
   address-in-use error, and succeeds once the first one has stopped.
 - Windows: a second server on the same pipe name fails the same way.
-
-**Fallback if not approved:** on Linux use a socket file
-`/tmp/wish-desktop.sock` (mode 0666) plus an `flock()` on
-`/tmp/wish-desktop.lock` held for the desktop's lifetime; with the lock
-held, the desktop deletes any stale socket file before binding. More code
-than the abstract socket, but no bison change.
 
 ---
 
@@ -247,7 +246,7 @@ Android is out of scope (see design decision 6).
 
 ## Ordering
 
-Step 1 (or its fallback) gates Step 2. Steps 3 and 4 depend on Step 2 and
+Step 1 is done. Steps 3 and 4 depend on Step 2 and
 are independent of each other. Step 5 depends on Step 4. Step 6 lands last.
 
 ## Completion Criteria
