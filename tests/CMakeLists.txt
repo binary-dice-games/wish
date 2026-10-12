@@ -106,6 +106,12 @@ target_link_libraries(test_desktop_config PRIVATE wish_client gtest gmock gtest_
 gtest_discover_tests(test_desktop_config)
 set_target_properties(test_desktop_config PROPERTIES FOLDER tests)
 
+# desktop_endpoint() (src/client/desktop_endpoint.hpp), part of wish_client.
+add_executable(test_desktop_endpoint test_desktop_endpoint.cpp)
+target_link_libraries(test_desktop_endpoint PRIVATE wish_client gtest gmock gtest_main)
+gtest_discover_tests(test_desktop_endpoint)
+set_target_properties(test_desktop_endpoint PROPERTIES FOLDER tests)
+
 # Links ONLY wish_client (not the combined `wish` target) to prove the
 # lightweight client / heavy server CMake split actually works for a real
 # thin client -- see tests/test_client_only_link.cpp.

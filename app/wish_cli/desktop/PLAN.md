@@ -4,7 +4,8 @@ See [`app/DESIGN.md`](../../DESIGN.md)'s "desktop mode" section for the
 existing architecture of `wish_desktop`/`wish_desktop_app` this plan extends.
 
 **Status:** Step 1 done (bison `85326cd`, on bison's
-`claude/desktop-app-notification-3wn7d7` branch). Steps 2-6 not started.
+`claude/desktop-app-notification-3wn7d7` branch) and Step 2 done. Steps 3-6
+not started.
 
 ## Problem
 
@@ -95,7 +96,7 @@ stack-allocated `uv_pipe_t` asynchronously (use after scope; valgrind).
 
 ---
 
-## Step 2: Endpoint name helper
+## Step 2: Endpoint name helper -- DONE
 
 **Goal:** Desktop and clients agree on the endpoint name in exactly one
 place.
@@ -110,8 +111,9 @@ place.
   std::string desktop_endpoint();
   }
   ```
-  The platform difference is one narrow `#if defined(_WIN32)` in this
-  function.
+  The platform difference is one narrow `#if defined(_WIN32) ||
+  defined(__CYGWIN__)` in this function (the same split bison's pipe
+  transport uses). An empty `WISH_DESKTOP_ENDPOINT` counts as unset.
 
 **Tests:** new `tests/test_desktop_endpoint.cpp`: the default name, and the
 environment override.
@@ -193,6 +195,15 @@ desktop restarts, with one call.
   already returns when the desktop closes (`c_abi_client::on_disconnect()`
   sets `quit_`), and `wish_client_run()` resets `quit_` on each run, so the
   same handle is reused across reconnects.
+- CLI: `wish client --transport=desktop` (and `wish <app> --transport=desktop`,
+  and `WISH_TRANSPORT=desktop` in the environment) connects to
+  `desktop_endpoint()` with no other flag. `wish_client_app::run()` parses
+  flags twice (once itself, once in bison's `client_app::run()` on a copy of
+  the original argv), so after its own parse, when `FLAGS_transport ==
+  "desktop"`, it inserts `--transport=pipe` and `--name=<desktop_endpoint()>`
+  into that argv copy just before any `--` (gflags keeps the last value), so
+  the second parse sees a plain pipe transport. No bison change. Update the
+  `--transport` row in `docs/cli.md` and the flag's help text.
 
 **Tests:** in `tests/` with a unique `WISH_DESKTOP_ENDPOINT` and a real
 `wish::server` listening on that endpoint as a stand-in for the desktop:
@@ -201,6 +212,10 @@ desktop restarts, with one call.
   started again: the session runs a second time.
 - `wish_client_desktop_stop()` while waiting and while in a session: the
   call returns promptly.
+- `--transport=desktop`: the argv rewrite produces `--transport=pipe
+  --name=<endpoint>` before `--`, for the `=` form, the two-token form, and
+  the `WISH_TRANSPORT` environment form, and leaves app arguments after
+  `--` untouched.
 
 ---
 
