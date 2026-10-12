@@ -4,8 +4,8 @@ See [`app/DESIGN.md`](../../DESIGN.md)'s "desktop mode" section for the
 existing architecture of `wish_desktop`/`wish_desktop_app` this plan extends.
 
 **Status:** Step 1 done (bison `85326cd`, on bison's
-`claude/desktop-app-notification-3wn7d7` branch) and Step 2 done. Steps 3-6
-not started.
+`claude/desktop-app-notification-3wn7d7` branch), Steps 2 and 3 done.
+Steps 4-6 in progress.
 
 ## Problem
 
@@ -120,7 +120,7 @@ environment override.
 
 ---
 
-## Step 3: Desktop listens on the endpoint and enforces one instance
+## Step 3: Desktop listens on the endpoint and enforces one instance -- DONE
 
 **Goal:** `wish desktop` refuses to start when a desktop is already
 running, and otherwise accepts clients on the fixed endpoint as well as on
@@ -146,6 +146,14 @@ its configured downstream transport.
   `wish_desktop` with it.
 - The endpoint is released when `wish_desktop_app` is destroyed, or by the
   OS if the process dies.
+- As built: `claim_desktop_endpoint(name)` (declared in
+  `wish_desktop_app.hpp`) returns the started listener or `nullptr` when the
+  name is taken; `run()` turns `nullptr` into the "already running" exit.
+  When `--downstream_transport=pipe --downstream_name` already names the
+  endpoint, no extra listener is added. `multi_server_transport::stop()`
+  joins its accept threads *before* stopping the transports, because
+  `named_pipe_server_transport::stop()` frees state a concurrent
+  `accept()` still uses (found as an intermittent crash in testing).
 
 **Tests:**
 - `tests/test_multi_server_transport.cpp`: clients on either of two memory
@@ -165,8 +173,11 @@ its configured downstream transport.
 desktop restarts, with one call.
 
 **Deliverables:**
-- C++ (`src/client/desktop_endpoint.hpp/.cpp`): a client for the endpoint
-  is just `named_pipe_client_transport(desktop_endpoint())`. Add a loop:
+- C++: a client for the endpoint is just
+  `named_pipe_client_transport(desktop_endpoint())`. (Revised: the loop
+  below is implemented directly in the C ABI, `src/wish_client_c.cpp`,
+  since every binding, the C++ one included, goes through it; no separate
+  internal C++ helper.) Original sketch of the loop:
   ```cpp
   /// Repeats until `stop` is set: connect to the desktop (retrying every
   /// `retry_interval` while none is running), call `session`, then go back

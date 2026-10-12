@@ -82,6 +82,7 @@ wish_add_test(test_auth           test_auth.cpp)
 add_executable(test_wish_desktop
     test_wish_desktop.cpp
     ${CMAKE_SOURCE_DIR}/app/wish_cli/desktop/wish_desktop_app.cpp
+    ${CMAKE_SOURCE_DIR}/app/wish_cli/desktop/multi_server_transport.cpp
     ${CMAKE_SOURCE_DIR}/app/wish_cli/desktop/process_launcher.cpp
     ${CMAKE_SOURCE_DIR}/app/wish_cli/desktop/desktop_config.cpp
     ${CMAKE_SOURCE_DIR}/app/wish_cli/env_flags.cpp)

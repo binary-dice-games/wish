@@ -8,6 +8,7 @@
 #include "app/wish_cli/env_flags.hpp"
 #include "src/bison/bison.hpp"
 #include "src/client/app_registry.hpp"
+#include "src/client/desktop_endpoint.hpp"
 #include "src/client/user_store_rpc.hpp"
 #include "src/context/store_dir.hpp"
 #include "src/rmi/shared/constants.hpp"
@@ -1033,11 +1034,41 @@ bool wish_desktop::wait_for_quit_for(std::chrono::milliseconds timeout) {
   return quit_cv_.wait_for(lk, timeout, [this] { return quit_requested_; });
 }
 
+// ── Single instance ──────────────────────────────────────────────────────────
+
+std::unique_ptr<bison::rmi::transport::named_pipe_server_transport> claim_desktop_endpoint(const std::string& name) {
+  auto endpoint = std::make_unique<bison::rmi::transport::named_pipe_server_transport>(name);
+  try {
+    endpoint->start(bison::dynamic{});
+  } catch (const bison::rmi::transport::address_in_use_error&) {
+    return nullptr;
+  }
+  return endpoint;
+}
+
 // ── wish_desktop_app ─────────────────────────────────────────────────────────
 
 int wish_desktop_app::run(int argc, char** argv) {
   apply_env_flag_defaults();
   gflags::ParseCommandLineFlags(&argc, &argv, true);
+
+  // One desktop per machine: owning the fixed endpoint is the lock. Checked
+  // before anything else starts (upstream server, terminal, launcher).
+  // When the downstream transport is that same pipe, bridge_app binds it
+  // and fails the same way, so no extra listener is needed.
+  const std::string endpoint_name = desktop_endpoint();
+  if (FLAGS_downstream_transport != "pipe" || FLAGS_downstream_name != endpoint_name) {
+    try {
+      endpoint_ = claim_desktop_endpoint(endpoint_name);
+    } catch (const std::exception& e) {
+      std::cerr << "[desktop] cannot listen on " << endpoint_name << ": " << e.what() << '\n';
+      return 1;
+    }
+    if (!endpoint_) {
+      std::cerr << "[desktop] wish desktop is already running (" << endpoint_name << ")\n";
+      return 1;
+    }
+  }
 
   set_env_var("WISH_TRANSPORT", FLAGS_downstream_transport);
   set_env_var("WISH_HOST", FLAGS_downstream_host);
@@ -1058,8 +1089,13 @@ std::unique_ptr<bison::rmi::bridge> wish_desktop_app::make_bridge(
     bison::rmi::transport::server_transport_iface& downstream_transport,
     std::unique_ptr<bison::rmi::transport::client_transport_iface> upstream_transport,
     bison::dynamic upstream_params) {
-  auto br =
-      std::make_unique<wish_desktop>(downstream_transport, std::move(upstream_transport), std::move(upstream_params));
+  bison::rmi::transport::server_transport_iface* downstream = &downstream_transport;
+  if (endpoint_) {
+    downstream_ = std::make_unique<multi_server_transport>(downstream_transport);
+    downstream_->add(std::move(endpoint_));
+    downstream = downstream_.get();
+  }
+  auto br = std::make_unique<wish_desktop>(*downstream, std::move(upstream_transport), std::move(upstream_params));
 
   // {wish_client} in the configuration, also when nothing can be started.
   br->set_client_command(client_command_);
