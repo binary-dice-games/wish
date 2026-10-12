@@ -4,16 +4,21 @@
  * @brief wish CLI client application implementation.
  */
 #include "app/wish_cli/client/wish_client_app.hpp"
-#include "src/client/app_registry.hpp"
+#include "app/wish_cli/client/desktop_transport_args.hpp"
 #include "app/wish_cli/env_flags.hpp"
+#include "src/client/app_registry.hpp"
+#include "src/client/desktop_endpoint.hpp"
 
 #include <gflags/gflags.h>
 
+#include <array>
 #include <iostream>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 // ── Shared flags (defined in main.cpp) ────────────────────────────────────────
+DECLARE_string(transport);
 DECLARE_string(host);
 DECLARE_int32(port);
 DECLARE_string(name);
@@ -103,6 +108,16 @@ int wish_client_app::run(int argc, char** argv) {
       return 1;
     case app_resolve_status::found:
       break;
+  }
+
+  // --transport=desktop (or WISH_TRANSPORT=desktop): the local wish
+  // desktop's fixed endpoint. client_app::run() re-parses orig_argv and only
+  // knows tcp/pipe/tls/term, so add a plain pipe transport to that copy.
+  std::array<std::string, 2> desktop_args;
+  if (FLAGS_transport == "desktop") {
+    insert_desktop_transport_args(orig_argv_storage, desktop_args, desktop_endpoint());
+    orig_argc = static_cast<int>(orig_argv_storage.size());
+    orig_argv = orig_argv_storage.data();
   }
 
   // Store app-specific data before delegating to parent's run_with_transport(),

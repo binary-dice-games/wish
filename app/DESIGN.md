@@ -208,7 +208,8 @@ and returns. The session blocks in `on_session()` until `signal_done()` fires.
 `desktop::` config parser (`load_config()`, `parse_start_menu()`)
 **Sources**: `app/wish_cli/desktop/wish_desktop_app.hpp/.cpp`,
 `app/wish_cli/desktop/process_launcher.hpp/.cpp`,
-`app/wish_cli/desktop/desktop_config.hpp/.cpp`; the chrome itself is drawn
+`app/wish_cli/desktop/desktop_config.hpp/.cpp`,
+`app/wish_cli/desktop/multi_server_transport.hpp/.cpp`; the chrome itself is drawn
 by the server: `src/ui/ui_elements/desktop_shell.cpp` (classes) and
 `src/imgui/imgui_desktop_shell.hpp/.cpp` (rendering)
 
@@ -429,12 +430,16 @@ using `imgui_renderer::texture_size()`).
 
 ```
 wish_desktop_app::run()
-  parse flags; export WISH_TRANSPORT/HOST/PORT/NAME for the anchor terminal
+  parse flags; claim the fixed endpoint (claim_desktop_endpoint()), or
+    print "already running" and exit 1
+  export WISH_TRANSPORT/HOST/PORT/NAME for the anchor terminal
   bridge_app::run()
-    make_bridge()     → wish_desktop, configured with launcher, client command,
-                        launch environment, log dir, wallpaper, user,
-                        config file
+    make_bridge()     → multi_server_transport(downstream + endpoint);
+                        wish_desktop on it, configured with launcher, client
+                        command, launch environment, log dir, wallpaper,
+                        user, config file
     bridge::start()   → connects upstream (with username); listens downstream
+                        and on the endpoint
     on_listening()    → desktop_->build_chrome() (loads the config, starts
                         the file watcher)
     wait_for_shutdown() → until "Quit desktop" or the anchor terminal exits;
@@ -443,6 +448,41 @@ wish_desktop_app::run()
                           upstream connection is still open
     bridge::stop()
 ```
+
+### Fixed endpoint and single instance
+
+There is at most one desktop per machine, reachable without configuration:
+besides its `--downstream_*` transport, the desktop always listens on
+`desktop_endpoint()` (`src/client/desktop_endpoint.hpp`): the named pipe
+`\\.\pipe\wish-desktop` on Windows, the abstract Unix socket
+`@wish-desktop` on Linux, or `$WISH_DESKTOP_ENDPOINT`. Both kinds of name
+have the two properties the design rests on:
+
+- **Only one listener at a time.** A second bind fails with
+  `address_in_use_error` (libuv creates a Windows pipe's first instance
+  with `FILE_FLAG_FIRST_PIPE_INSTANCE`; Linux refuses a second bind on an
+  abstract name). So the endpoint *is* the single-instance lock, with no
+  lock or pid file. `run()` claims it before connecting upstream or
+  spawning anything, so a second desktop fails fast.
+- **Released by the OS when the process exits**, even on a crash. Abstract
+  sockets leave no file behind, unlike a socket file in `/tmp`, so there is
+  nothing stale to clean up.
+
+Alternatives rejected: a file registry of running desktops (needed atomic
+writes, pid liveness checks, stale-file reaping and per-user directories),
+and UDP/multicast announcements (unreliable on loopback, no access
+control). Nothing can notify a process before the desktop exists, so a
+waiting client retries the connect instead (`wish_client_run_on_desktop()`,
+about once a second; a failed local connect costs microseconds).
+
+The bridge accepts from one transport, so `multi_server_transport` combines
+the configured downstream transport (borrowed) with the endpoint (owned):
+one accept thread per transport feeds a shared queue. Its `stop()` joins the
+accept threads before stopping the transports, so it never depends on a
+transport's `stop()` being safe against a concurrent `accept()` (bison's
+pipe transport was not, before the fix that came with this feature). When
+`--downstream_transport=pipe --downstream_name` already names the endpoint,
+no extra listener is added.
 
 ---
 

@@ -1,6 +1,6 @@
 # Desktop example apps (Python, client ABI)
 
-Three small apps built on the wish client C ABI through the Python binding,
+Small apps built on the wish client C ABI through the Python binding,
 made to run on a [`wish desktop`](../../../../docs/cli.md#wish-desktop):
 
 | Script | What it shows |
@@ -8,9 +8,10 @@ made to run on a [`wish desktop`](../../../../docs/cli.md#wish-desktop):
 | `todo.py` | A to-do list: type a task and press Add, tick it off, delete it. |
 | `stopwatch.py` | A stopwatch with Start/Stop, Lap and Reset, and a table of laps. Updated from a background thread. |
 | `live_chart.py` | A live, scrolling chart of a noisy sine wave, with frequency and noise sliders and Pause. |
+| `service.py` | A background "service" that keeps working whether or not a desktop runs, and shows a status window whenever one does: start it before or after `wish desktop`, close and reopen the desktop, and the window comes back. Connects with `Client.desktop()` and `run_on_desktop()`. |
 | `settings_demo.py` | Declares its settings (a switch, text, color, slider, drop-down) for the Settings tool and shows a banner that follows them live. Connects with a user name (`WISH_USERNAME`, else your OS user). See [docs/settings.md](../../../../docs/settings.md). |
 
-Each one connects with `Client.from_env()` (the `WISH_TRANSPORT` /
+Each one (except `service.py`) connects with `Client.from_env()` (the `WISH_TRANSPORT` /
 `WISH_HOST` / `WISH_PORT` / `WISH_NAME` environment variables, default tcp
 `127.0.0.1:7070`) and names itself in its connect params, so the desktop
 shows it on the taskbar with its own name and icon, like a built-in tool:
@@ -55,6 +56,13 @@ start_menu:
           app: examples/python/todo            # matches its connect params
           env: {WISH_LIB: "{home}/wish/build/libwish_client.so"}
     - apps: all
+```
+
+`service.py` needs no environment at all: it connects to the desktop's
+fixed endpoint (`\\.\pipe\wish-desktop` / `@wish-desktop`), from any shell:
+
+```sh
+python3 bindings/python/examples/desktop/service.py   # before or after the desktop
 ```
 
 From any other shell, point them at the desktop yourself:

@@ -29,6 +29,7 @@
 
 #include <wish_client_c.h>
 
+#include <chrono>
 #include <cstdint>
 #include <exception>
 #include <functional>
@@ -116,6 +117,17 @@ class client {
     return client(h);
   }
 
+  /**
+   * @brief Client for the local `wish desktop`'s fixed endpoint (see
+   *        `wish_client_desktop_create()`). Use with `run_on_desktop()`.
+   */
+  static client desktop() {
+    wish_client_handle h = wish_client_desktop_create();
+    if (!h)
+      throw error(WISH_ERR_EXCEPTION, "client::desktop: wish_client_desktop_create failed");
+    return client(h);
+  }
+
   static client term() {
     wish_client_handle h = wish_client_term_create();
     if (!h) throw error(WISH_ERR_EXCEPTION, "client::term: wish_client_term_create failed");
@@ -146,6 +158,35 @@ class client {
     session_cb_ = nullptr;
     if (session_exception_) std::rethrow_exception(session_exception_);
     detail::throw_if_wish_error(rc, "client::run", h_);
+  }
+
+  /**
+   * @brief Runs `session_fn(*this)` on the desktop whenever one is running,
+   *        until `stop_desktop()` (see `wish_client_run_on_desktop()`).
+   *
+   * Retries the connection every @p retry while no desktop runs, and again
+   * after the desktop closes, so the UI comes back when it is restarted.
+   * Also returns when `session_fn` returns while still connected (e.g.
+   * after `quit()`). An exception thrown by `session_fn` ends the loop and
+   * is rethrown here.
+   */
+  void run_on_desktop(
+      session_fn fn,
+      const value& connect_params = value{},
+      std::chrono::milliseconds retry = std::chrono::seconds{1}) {
+    session_cb_ = std::move(fn);
+    session_exception_ = nullptr;
+    wish_error rc = wish_client_run_on_desktop(
+        h_, &client::session_trampoline, this, connect_params.handle(), static_cast<uint32_t>(retry.count()));
+    session_cb_ = nullptr;
+    if (session_exception_)
+      std::rethrow_exception(session_exception_);
+    detail::throw_if_wish_error(rc, "client::run_on_desktop", h_);
+  }
+
+  /** @brief Makes a running (or the next) `run_on_desktop()` return. Any thread. */
+  void stop_desktop() {
+    wish_client_desktop_stop(h_);
   }
 
   /** @brief Blocks until `quit()` is called (from any thread). */

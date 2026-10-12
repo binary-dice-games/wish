@@ -164,6 +164,9 @@ def _setup_wish_signatures(lib: ctypes.CDLL) -> None:
     lib.wish_client_pipe_create.restype = ClientHandle
     lib.wish_client_pipe_create.argtypes = [ctypes.c_char_p]
 
+    lib.wish_client_desktop_create.restype = ClientHandle
+    lib.wish_client_desktop_create.argtypes = []
+
     lib.wish_client_term_create.restype = ClientHandle
     lib.wish_client_term_create.argtypes = []
 
@@ -181,6 +184,12 @@ def _setup_wish_signatures(lib: ctypes.CDLL) -> None:
 
     lib.wish_client_quit.restype = None
     lib.wish_client_quit.argtypes = [ClientHandle]
+
+    lib.wish_client_run_on_desktop.restype = Error
+    lib.wish_client_run_on_desktop.argtypes = [ClientHandle, SessionFn, ctypes.c_void_p, _bison_native.Handle, ctypes.c_uint32]
+
+    lib.wish_client_desktop_stop.restype = None
+    lib.wish_client_desktop_stop.argtypes = [ClientHandle]
 
     lib.wish_last_error.restype = ctypes.c_char_p
     lib.wish_last_error.argtypes = [ClientHandle]

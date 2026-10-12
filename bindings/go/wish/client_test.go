@@ -19,6 +19,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 func must(t *testing.T, err error) {
@@ -346,5 +347,42 @@ func TestTranslationsApplyWithoutConnection(t *testing.T) {
 		if got != want {
 			t.Errorf("Translate(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// ── Desktop loop (no desktop needed: stopping works either way) ───────────
+
+func TestDesktopStopBeforeRunReturnsAtOnce(t *testing.T) {
+	c, err := NewDesktopClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Destroy()
+	c.StopDesktop()
+	ran := false
+	if err := c.RunOnDesktop(func(*Client) { ran = true }, nil, 20*time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if ran {
+		t.Fatal("session ran after StopDesktop")
+	}
+}
+
+func TestDesktopStopFromAnotherGoroutineEndsTheLoop(t *testing.T) {
+	c, err := NewDesktopClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Destroy()
+	done := make(chan error, 1)
+	go func() { done <- c.RunOnDesktop(func(s *Client) { s.Wait() }, nil, 20*time.Millisecond) }()
+	c.StopDesktop()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("RunOnDesktop did not return after StopDesktop")
 	}
 }

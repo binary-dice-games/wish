@@ -98,6 +98,9 @@ func goSessionTrampoline(client C.wish_client_handle, userdata unsafe.Pointer) {
 	defer func() {
 		if r := recover(); r != nil {
 			ctx.panicValue = r
+			if ctx.stopDesktopOnPanic {
+				C.wish_client_desktop_stop(client)
+			}
 		}
 	}()
 	ctx.fn(&Client{handle: client})

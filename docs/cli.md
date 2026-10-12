@@ -37,7 +37,7 @@ all; passing any of `--transport`/`--host`/`--port`/`--name` is an error).
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--transport T` | `term` | `tcp`, `pipe`, `tls`, or `term`. `term` is an interactive pty/stdio hop the server spawns and the client is expected to run inside — see the [C# bindings example](bindings.md#c-bindingscsharp). `tls` is a TLS-secured TCP socket. |
+| `--transport T` | `term` | `tcp`, `pipe`, `tls`, or `term`. `term` is an interactive pty/stdio hop the server spawns and the client is expected to run inside — see the [C# bindings example](bindings.md#c-bindingscsharp). `tls` is a TLS-secured TCP socket. Clients also accept `desktop`: the local `wish desktop`'s fixed endpoint, no other flag needed (see [Services: a UI whenever the desktop runs](#services-a-ui-whenever-the-desktop-runs)). |
 | `--host H` | `0.0.0.0` for server, `127.0.0.1` for client | Bind/connect host address (`--transport tcp`/`tls` only) |
 | `--port P` | `7070` | Bind/connect port (`--transport tcp`/`tls` only) |
 | `--name PATH` | *(empty)* | Named-pipe / Unix-socket path (`--transport pipe` only) |
@@ -308,6 +308,37 @@ wish desktop                      # downstream defaults to tcp:7071
 wish client --run nano     # connects to the desktop's tcp:7071, no flags needed
 wish nano                  # same thing, via the app-name alias
 ```
+
+### Services: a UI whenever the desktop runs
+
+Only one `wish desktop` runs per machine. Besides its downstream transport,
+it always listens on a fixed, system-wide local endpoint, and owning that
+endpoint is what stops a second desktop from starting (it prints `wish
+desktop is already running` and exits with 1). The endpoint is released by
+the OS when the desktop exits, even after a crash.
+
+| Platform | Endpoint |
+|----------|----------|
+| Windows (and MSYS2) | named pipe `\\.\pipe\wish-desktop` |
+| Linux | abstract Unix socket `@wish-desktop` (no file on disk) |
+
+`WISH_DESKTOP_ENDPOINT` overrides the name, for the desktop and its clients
+alike. Any local process can connect there without knowing a port:
+
+```sh
+wish client --transport=desktop --run nano
+WISH_TRANSPORT=desktop wish nano
+```
+
+A long-running process (a service, a daemon) that wants a UI on the desktop
+uses the client library's desktop loop: it retries the connection while no
+desktop is running (about once a second), runs its UI session when one is,
+and goes back to waiting when the desktop closes, so the UI comes back when
+the desktop is started again. In the C ABI that is
+`wish_client_desktop_create()` + `wish_client_run_on_desktop()` (stopped by
+`wish_client_desktop_stop()`); every binding wraps it, see
+[bindings.md](bindings.md#desktop-services-a-ui-whenever-the-desktop-runs)
+and `bindings/python/examples/desktop/service.py`.
 
 ## Environment-variable flag defaults
 

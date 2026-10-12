@@ -113,6 +113,14 @@ target_link_libraries(test_desktop_endpoint PRIVATE wish_client gtest gmock gtes
 gtest_discover_tests(test_desktop_endpoint)
 set_target_properties(test_desktop_endpoint PROPERTIES FOLDER tests)
 
+# `wish client --transport=desktop`'s argv rewrite
+# (app/wish_cli/client/desktop_transport_args.hpp, header-only).
+add_executable(test_desktop_transport_args test_desktop_transport_args.cpp)
+target_include_directories(test_desktop_transport_args PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(test_desktop_transport_args PRIVATE gflags gtest gmock gtest_main)
+gtest_discover_tests(test_desktop_transport_args)
+set_target_properties(test_desktop_transport_args PROPERTIES FOLDER tests)
+
 # Links ONLY wish_client (not the combined `wish` target) to prove the
 # lightweight client / heavy server CMake split actually works for a real
 # thin client -- see tests/test_client_only_link.cpp.

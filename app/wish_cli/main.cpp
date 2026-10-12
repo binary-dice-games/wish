@@ -37,7 +37,10 @@
 #include <vector>
 
 // ── Shared transport flags — consumed by server and client modes ─────────────
-DEFINE_string(transport, "term", "Transport to use: tcp, pipe, tls, or term");
+DEFINE_string(
+    transport,
+    "term",
+    "Transport to use: tcp, pipe, tls, or term; clients also accept desktop (the local wish desktop)");
 DEFINE_string(host, "0.0.0.0", "Bind/connect host address");
 DEFINE_int32(port, 7070, "Listen/connect port");
 DEFINE_string(name, "", "Named-pipe / Unix-socket path (transport=pipe)");

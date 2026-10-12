@@ -956,6 +956,65 @@ go test ./wishserver/
 
 ---
 
+## Desktop services: a UI whenever the desktop runs
+
+A long-running process (a service, a daemon) can show a UI on the local
+`wish desktop` and keep it across desktop restarts: the desktop client
+connects to the desktop's fixed endpoint (see
+[cli.md](cli.md#services-a-ui-whenever-the-desktop-runs)), and the desktop
+loop retries the connection while no desktop is running, runs the session
+when one is, and waits again when the desktop closes. The loop ends when
+stopped from another thread, or when the session returns while still
+connected (e.g. after `quit()`, when the user closed the UI). Connect params
+such as `app`/`app_label`/`app_icon` give the service its own taskbar entry.
+
+C ABI: `wish_client_desktop_create()`, `wish_client_run_on_desktop(client,
+session_fn, userdata, connect_params, retry_ms)`,
+`wish_client_desktop_stop(client)`.
+
+```cpp
+// C++ (wish_cpp)
+auto client = wish::client::desktop();
+client.run_on_desktop([](wish::client& c) {
+  c.register_template("ui", R"({"type":"Window","title":"My service"})");
+  auto root = c.instantiate_template("ui", "ui");  // keep it: dropping it releases the window
+  c.wait();  // returns when the desktop closes, or on quit()/stop_desktop()
+});
+// elsewhere: client.stop_desktop();
+```
+
+```python
+# Python
+client = Client.desktop()            # or Client.from_env() with WISH_TRANSPORT=desktop
+client.run_on_desktop(session, params={"app": "my.service", "app_label": "My service"})
+# elsewhere: client.stop_desktop()
+```
+
+```csharp
+// C#
+using var client = Client.Desktop();
+client.RunOnDesktop(c => { /* build UI */ c.Wait(); });
+// elsewhere: client.StopDesktop();
+```
+
+```rust
+// Rust
+let client = Client::desktop();
+let stopper = client.quit_handle(); // Send + Copy: stopper.stop_desktop()
+client.run_on_desktop(|c| { /* build UI */ c.wait(); }, None, Duration::from_secs(1))?;
+```
+
+```go
+// Go
+c, _ := wish.NewDesktopClient()
+err := c.RunOnDesktop(func(s *wish.Client) { /* build UI */ s.Wait() }, nil, time.Second)
+// elsewhere: c.StopDesktop()
+```
+
+`bindings/python/examples/desktop/service.py` is a runnable example. The
+Android binding does not wrap the desktop loop (the desktop does not run on
+Android).
+
 ## Android (Java / Kotlin) (`bindings/android/`)
 
 Like Android apps generally, this binding ships its own native libraries

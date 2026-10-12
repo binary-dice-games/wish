@@ -207,6 +207,7 @@ extern "C" {
     pub fn wish_client_tls_create(host: *const c_char, port: u16) -> wish_client_handle;
     pub fn wish_client_stream_create(path: *const c_char) -> wish_client_handle;
     pub fn wish_client_pipe_create(path: *const c_char) -> wish_client_handle;
+    pub fn wish_client_desktop_create() -> wish_client_handle;
     pub fn wish_client_term_create() -> wish_client_handle;
     pub fn wish_client_destroy(client: wish_client_handle);
 
@@ -223,6 +224,14 @@ extern "C" {
     ) -> wish_error;
     pub fn wish_client_wait(client: wish_client_handle);
     pub fn wish_client_quit(client: wish_client_handle);
+    pub fn wish_client_run_on_desktop(
+        client: wish_client_handle,
+        session_fn: wish_session_fn,
+        userdata: *mut c_void,
+        connect_params: bison_handle,
+        retry_ms: u32,
+    ) -> wish_error;
+    pub fn wish_client_desktop_stop(client: wish_client_handle);
     pub fn wish_last_error(client: wish_client_handle) -> *const c_char;
 
     // ── wish_client_c.h: style ────────────────────────────────────────────────

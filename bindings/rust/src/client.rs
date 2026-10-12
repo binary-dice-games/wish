@@ -181,6 +181,11 @@ impl QuitHandle {
     pub fn quit(&self) {
         unsafe { sys::wish_client_quit(self.0) };
     }
+
+    /// Makes a running (or the next) [`Client::run_on_desktop`] return.
+    pub fn stop_desktop(&self) {
+        unsafe { sys::wish_client_desktop_stop(self.0) };
+    }
 }
 
 impl Client {
@@ -217,6 +222,16 @@ impl Client {
     pub fn pipe(path: &str) -> Client {
         let h = unsafe { sys::wish_client_pipe_create(cstr(path).as_ptr()) };
         assert!(!h.is_null(), "wish_client_pipe_create failed");
+        Client::from_raw(h)
+    }
+
+    /// Creates a client for the local `wish desktop`'s fixed endpoint
+    /// (`\\.\pipe\wish-desktop` on Windows, the abstract socket
+    /// `@wish-desktop` on Linux, or `WISH_DESKTOP_ENDPOINT` when set). Use
+    /// with [`Client::run_on_desktop`].
+    pub fn desktop() -> Client {
+        let h = unsafe { sys::wish_client_desktop_create() };
+        assert!(!h.is_null(), "wish_client_desktop_create failed");
         Client::from_raw(h)
     }
 
@@ -272,6 +287,55 @@ impl Client {
         }
         check(rc, "client.run", self.handle)?;
         Ok(())
+    }
+
+    /// Runs `session_fn(self)` on the desktop whenever one is running, for
+    /// long-running processes (services).
+    ///
+    /// While no desktop runs, the connection is retried every `retry`; when
+    /// the desktop closes, it waits for the next one, so the UI comes back
+    /// when the desktop is started again. Returns after
+    /// [`QuitHandle::stop_desktop`] / [`Client::stop_desktop`], or when
+    /// `session_fn` returns while still connected (e.g. after
+    /// [`Client::quit`]). A panic in `session_fn` ends the loop and is
+    /// returned as [`Error::SessionPanic`].
+    pub fn run_on_desktop<F>(
+        &self,
+        session_fn: F,
+        connect_params: Option<&Value>,
+        retry: std::time::Duration,
+    ) -> Result<(), Error>
+    where
+        F: FnMut(&Client),
+    {
+        let mut ctx: DesktopSessionCtx<F> = DesktopSessionCtx {
+            fn_: session_fn,
+            panic: None,
+        };
+        let user = &mut ctx as *mut DesktopSessionCtx<F> as *mut c_void;
+        let params_h = connect_params.map_or(ptr::null_mut(), Value::raw_handle);
+        let retry_ms = u32::try_from(retry.as_millis()).unwrap_or(u32::MAX).max(1);
+        let rc = unsafe {
+            sys::wish_client_run_on_desktop(
+                self.handle,
+                desktop_session_trampoline::<F>,
+                user,
+                params_h,
+                retry_ms,
+            )
+        };
+        if let Some(panic_msg) = ctx.panic {
+            return Err(Error::SessionPanic(panic_msg));
+        }
+        check(rc, "client.run_on_desktop", self.handle)?;
+        Ok(())
+    }
+
+    /// Makes a running (or the next) [`Client::run_on_desktop`] return.
+    /// From another thread, use [`Client::quit_handle`]'s
+    /// [`QuitHandle::stop_desktop`].
+    pub fn stop_desktop(&self) {
+        unsafe { sys::wish_client_desktop_stop(self.handle) };
     }
 
     /// Blocks until [`Client::quit`] is called (from any thread).
@@ -903,6 +967,32 @@ where
     std::mem::forget(client_view);
     if let Err(payload) = result {
         ctx.panic = Some(panic_message(payload));
+    }
+}
+
+struct DesktopSessionCtx<F> {
+    fn_: F,
+    panic: Option<String>,
+}
+
+/// Like [`session_trampoline`], for `wish_client_run_on_desktop`, which
+/// calls it once per connection. A panic stops the loop.
+unsafe extern "C" fn desktop_session_trampoline<F>(
+    client: sys::wish_client_handle,
+    userdata: *mut c_void,
+) where
+    F: FnMut(&Client),
+{
+    let ctx = &mut *(userdata as *mut DesktopSessionCtx<F>);
+    if ctx.panic.is_some() {
+        return;
+    }
+    let client_view = Client::from_raw(client);
+    let result = std::panic::catch_unwind(AssertUnwindSafe(|| (ctx.fn_)(&client_view)));
+    std::mem::forget(client_view);
+    if let Err(payload) = result {
+        ctx.panic = Some(panic_message(payload));
+        sys::wish_client_desktop_stop(client);
     }
 }
 

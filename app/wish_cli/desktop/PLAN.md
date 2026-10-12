@@ -3,9 +3,10 @@
 See [`app/DESIGN.md`](../../DESIGN.md)'s "desktop mode" section for the
 existing architecture of `wish_desktop`/`wish_desktop_app` this plan extends.
 
-**Status:** Step 1 done (bison `85326cd`, on bison's
-`claude/desktop-app-notification-3wn7d7` branch), Steps 2 and 3 done.
-Steps 4-6 in progress.
+**Status:** Steps 1-6 implemented. Step 1 grew three more bison fixes
+found while testing Steps 3-4 (see "Bison changes" below). Remaining: the
+C# binding is written but untested here (no .NET SDK in the build
+environment), and the Windows side is untested (Linux only).
 
 ## Problem
 
@@ -167,7 +168,7 @@ its configured downstream transport.
 
 ---
 
-## Step 4: Client side: run a UI whenever the desktop is up
+## Step 4: Client side: run a UI whenever the desktop is up -- DONE
 
 **Goal:** A process gets a UI on the desktop, and gets it back after the
 desktop restarts, with one call.
@@ -230,7 +231,7 @@ desktop restarts, with one call.
 
 ---
 
-## Step 5: Bindings
+## Step 5: Bindings -- DONE (C# untested)
 
 **Goal:** Each desktop-capable binding exposes the endpoint client and the
 reconnecting loop in its own style.
@@ -252,7 +253,7 @@ Android is out of scope (see design decision 6).
 
 ---
 
-## Step 6: Documentation and changelog
+## Step 6: Documentation and changelog -- DONE
 
 **Deliverables:**
 - `app/DESIGN.md`, "desktop mode": the endpoint, the single-instance check
@@ -264,11 +265,36 @@ Android is out of scope (see design decision 6).
   per binding.
 - A runnable example, `bindings/python/examples/desktop/service.py`: a
   background process that shows a status window whenever the desktop is
-  running. Mention it in that folder's README and in `docs/examples.md`.
+  running. Mention it in that folder's README. (`docs/examples.md` only
+  covers the C++ example programs, so it is not touched; `docs/bindings.md`
+  and `docs/cli.md` point at the example.)
 - `CHANGELOG.md`, `## [Unreleased]`: `### Added` for the endpoint and the
   client API, `### Changed` for "only one desktop can run at a time".
 
 ---
+
+## Bison changes
+
+All on bison's `claude/desktop-app-notification-3wn7d7` branch, each with
+regression tests (`tests/rmi_tests.cpp`, `NamedPipeTransport.*`), all
+valgrind-clean:
+
+1. `85326cd` (Step 1): `@name` abstract sockets on Linux,
+   `address_in_use_error`; also `open()` hanging on a synchronous connect
+   error, a failed `start()` leaking its loop, and a use-after-scope in
+   `on_new_connection()`.
+2. `7d31708`: `named_pipe_server_transport::stop()` freed state that
+   `rmi::server`'s accept loop could still be using (crash on shutdown of
+   any server on a pipe); start() after stop() works.
+3. `b519524`: `named_pipe_client_transport::is_connected()`, so an
+   `rmi::client` over a pipe notices the server going away (before, a
+   service's `wait()` never returned when the desktop closed).
+4. `f32f8b3`: `rmi::client` can `connect()` again after the server closed
+   the connection (before: `std::terminate` from overwriting joinable
+   threads).
+
+Not fixed (out of scope): `socket_transport.cpp`'s `on_new_connection()`
+has the same stack-allocated temporary handle as fixed in (1).
 
 ## Ordering
 
