@@ -1,15 +1,16 @@
 # pkg -- English (fallback for every other language).
 PKG_PACKAGES = Packages
-PKG_REFRESH = Refresh
-PKG_CHECK_UPDATES = Check updates
+PKG_REFRESH = &Refresh
+PKG_CHECK_UPDATES = &Check updates
 PKG_FILTER = Filter
 PKG_STATE_ITEMS = All\nUpgradable
-PKG_UPDATE_INDEX = Update index
-PKG_UPGRADE_ALL = Upgrade all
+PKG_UPDATE_INDEX = Update in&dex
+PKG_UPGRADE_ALL = &Upgrade all
 PKG_FIND_NEW_PACKAGES = Find new packages:
 PKG_SEARCH_HINT = name or keyword, e.g. htop
 PKG_SEARCH = Search
-PKG_INSTALL = Install
+PKG_SEARCH_BUTTON = &Search
+PKG_INSTALL = &Install
 PKG_NAME = Name
 PKG_VERSION = Version
 PKG_LATEST = Latest

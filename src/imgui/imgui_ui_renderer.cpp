@@ -10,6 +10,7 @@
 
 #include "imgui_dock_layout.hpp"
 #include "imgui_icon_widgets.hpp"
+#include "imgui_keyboard.hpp"
 
 #ifdef WISH_IMGUI_ENABLED
 
@@ -170,6 +171,15 @@ static std::string viewport_instance_suffix(const context& s, const ui_dockspace
   return {};
 }
 
+// Resolves `label`'s "&X" access-key markup (see parse_access_key()) into a
+// reused per-thread buffer. The result's text is only valid until the next
+// call on this thread, so every caller finishes with it (draws the widget and
+// its underline) before rendering any child node.
+static access_key_label access_key_of(const std::string& label) {
+  static thread_local std::string buf;
+  return parse_access_key(label, buf);
+}
+
 // Builds "<prefix><stable-id-of-node>" into a reused per-thread buffer and
 // returns a C-string valid until the next call on this thread. The layout
 // render functions build a BeginChild id per (hinted) child per frame; this
@@ -230,6 +240,14 @@ static void set_next_dock_class(ImGuiID class_id) {
   wc.DockingAllowUnclassed = class_id == 0;
   ImGui::SetNextWindowClass(&wc);
 }
+
+// Child flags for every BeginChild() that exists only as layout plumbing
+// (Layout/Splitter/TabItem wraps). NavFlattened makes keyboard navigation
+// treat such a child as part of its parent window: Tab/Shift+Tab and the
+// arrow keys cross from one child to the next, and the child shares its
+// parent's focus scope, so focus-routed shortcuts and access keys of a
+// widget nested in layouts fire whenever its window has focus.
+static constexpr ImGuiChildFlags kLayoutChildFlags = ImGuiChildFlags_NavFlattened;
 
 // ── Core ──────────────────────────────────────────────────────────────────────
 
@@ -333,6 +351,8 @@ void render_window(imgui_renderer& r, const ui_element& node0, const context& s)
       if (ImGui::IsWindowAppearing())
         s.dirty.store(kDirtySettleFrames, std::memory_order_release);
 
+      if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows))
+        s.keyboard_focus_frame = ImGui::GetFrameCount();
       // BeginPopupModal() returns false without calling Begin() at all when
       // the popup isn't open -- gating on now_open avoids capturing the
       // *enclosing* window's rect in that case.
@@ -477,7 +497,10 @@ void render_window(imgui_renderer& r, const ui_element& node0, const context& s)
   // "focused": it (or one of its child windows, e.g. a TextEditor) just
   // gained focus -- lets an app track which of several document windows
   // is the current one.
-  if (node.just_focused(ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)))
+  const bool window_focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
+  if (window_focused)
+    s.keyboard_focus_frame = ImGui::GetFrameCount();
+  if (node.just_focused(window_focused))
     enqueue_event(s, node.wish_id(), "focused"_key, dynamic{});
   // Begin()/BeginChild() are the only ImGui calls where a matching End() is
   // required regardless of the return value -- a collapsed/clipped window
@@ -599,18 +622,34 @@ static ImTextureID load_icon_texture(imgui_renderer& r, const context& s, const 
 
 void render_button(imgui_renderer& r, const ui_element& node0, const context& s) {
   const auto& node = static_cast<const ui_button&>(node0);
-  const std::string& label = node.label_ref();
+  const access_key_label label = access_key_of(node.label_ref());
   int32_t w = node.width_i(0);
   int32_t h = node.height_i(0);
   ImVec2 size{float(w), float(h)};
   bool clicked = false;
+  set_next_access_key(label);
   if (ImTextureID icon = load_icon_texture(r, s, node.icon_ref())) {
     const std::string& color = node.icon_color_ref();
+    ImVec2 text_pos;
     clicked = icon_button(
-        label.c_str(), icon, color.empty() ? ImGui::GetStyleColorVec4(ImGuiCol_Text) : parse_hex_color(color), size);
+        label.text,
+        icon,
+        color.empty() ? ImGui::GetStyleColorVec4(ImGuiCol_Text) : parse_hex_color(color),
+        size,
+        &text_pos);
+    draw_access_key_underline(text_pos, label);
   } else {
-    clicked = ImGui::Button(label.c_str(), size);
+    clicked = ImGui::Button(label.text, size);
+    underline_button_label(label);
   }
+  // `shortcut` (e.g. "Ctrl+S"): a second, explicit binding on top of the
+  // label's access key -- ImGui::Shortcut() rather than SetNextItemShortcut(),
+  // which allows only one chord per item and is taken by the access key.
+  if (shortcut_pressed(
+          node.shortcut_ref(),
+          parse_shortcut_scope(node.shortcut_scope_ref()),
+          s.has_keyboard_focus(ImGui::GetFrameCount())))
+    clicked = true;
   if (clicked)
     enqueue_event(s, node.wish_id(), "clicked"_key, dynamic{});
 }
@@ -620,8 +659,9 @@ namespace {
 // A macOS-style on/off switch: a rounded track (accent color when on) with a
 // round knob, followed by the label's visible part like ImGui::Checkbox.
 // Built from public API only (an InvisibleButton plus draw-list shapes).
-// Returns true when clicked (and flips *v).
-bool switch_widget(const char* label, bool* v) {
+// Returns true when clicked (and flips *v); *text_pos receives where the
+// label text was drawn (unchanged when the label is empty).
+bool switch_widget(const char* label, bool* v, ImVec2* text_pos) {
   const ImGuiStyle& style = ImGui::GetStyle();
   const float height = ImGui::GetFrameHeight();
   const float width = height * 1.75f;
@@ -638,6 +678,7 @@ bool switch_widget(const char* label, bool* v) {
     ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted(text.c_str());
+    *text_pos = ImGui::GetItemRectMin();
     pressed = pressed || ImGui::IsItemClicked();
   }
   if (pressed)
@@ -660,11 +701,21 @@ bool switch_widget(const char* label, bool* v) {
 
 void render_checkbox(imgui_renderer&, const ui_element& node0, const context& s) {
   const auto& node = static_cast<const ui_checkbox&>(node0);
-  const std::string& label = node.label_ref();
+  const access_key_label label = access_key_of(node.label_ref());
   bool val = node.value_bool(false);
   const field* style = node.findField("style"_key);
   const bool as_switch = style && style->is<std::string>() && style->as<std::string>() == "switch";
-  if (as_switch ? switch_widget(label.c_str(), &val) : ImGui::Checkbox(label.c_str(), &val)) {
+  set_next_access_key(label);
+  bool toggled;
+  if (as_switch) {
+    ImVec2 text_pos{0.0f, 0.0f};
+    toggled = switch_widget(label.text, &val, &text_pos);
+    draw_access_key_underline(text_pos, label);
+  } else {
+    toggled = ImGui::Checkbox(label.text, &val);
+    underline_check_label(label);
+  }
+  if (toggled) {
     const_cast<ui_element&>(node0)["value"_key] = val;
     dynamic payload;
     payload["value"_key] = val;
@@ -682,7 +733,11 @@ void render_slider_float(imgui_renderer&, const ui_element& node0, const context
   float width = node.width(0.0f);
   if (width != 0.0f)
     ImGui::SetNextItemWidth(width);
-  if (ImGui::SliderFloat(label.c_str(), &val, vmin, vmax, fmt.c_str())) {
+  const access_key_label ak = access_key_of(label);
+  set_next_access_key(ak);
+  const bool changed = ImGui::SliderFloat(ak.text, &val, vmin, vmax, fmt.c_str());
+  underline_trailing_label(ak);
+  if (changed) {
     const_cast<ui_element&>(node0)["value"_key] = val;
     dynamic payload;
     payload["value"_key] = val;
@@ -699,7 +754,11 @@ void render_slider_int(imgui_renderer&, const ui_element& node0, const context& 
   float width = node.width(0.0f);
   if (width != 0.0f)
     ImGui::SetNextItemWidth(width);
-  if (ImGui::SliderInt(label.c_str(), &val, vmin, vmax)) {
+  const access_key_label ak = access_key_of(label);
+  set_next_access_key(ak);
+  const bool changed = ImGui::SliderInt(ak.text, &val, vmin, vmax);
+  underline_trailing_label(ak);
+  if (changed) {
     const_cast<ui_element&>(node0)["value"_key] = val;
     dynamic payload;
     payload["value"_key] = val;
@@ -725,17 +784,20 @@ void render_input_text(imgui_renderer&, const ui_element& node0, const context& 
   auto copy_len = std::min(static_cast<size_t>(maxlen), current.size());
   std::copy_n(current.c_str(), copy_len, buf.data());
 
+  const access_key_label ak = access_key_of(label);
+  set_next_access_key(ak);
   bool changed;
   if (multiline) {
     // ImGui::InputTextMultiline has no hint-text overload -- "hint" is
     // silently ignored for a multiline box, matching ImGui's own API shape.
-    changed = ImGui::InputTextMultiline(
-        label.c_str(), buf.data(), buf.size(), ImVec2(0.0f, height), ImGuiInputTextFlags(flags));
+    changed =
+        ImGui::InputTextMultiline(ak.text, buf.data(), buf.size(), ImVec2(0.0f, height), ImGuiInputTextFlags(flags));
   } else {
     changed = hint.empty()
-        ? ImGui::InputText(label.c_str(), buf.data(), buf.size(), ImGuiInputTextFlags(flags))
-        : ImGui::InputTextWithHint(label.c_str(), hint.c_str(), buf.data(), buf.size(), ImGuiInputTextFlags(flags));
+        ? ImGui::InputText(ak.text, buf.data(), buf.size(), ImGuiInputTextFlags(flags))
+        : ImGui::InputTextWithHint(ak.text, hint.c_str(), buf.data(), buf.size(), ImGuiInputTextFlags(flags));
   }
+  underline_trailing_label(ak);
 
   if (changed) {
     std::string new_val(buf.data());
@@ -764,8 +826,11 @@ void render_color_edit(imgui_renderer&, const ui_element& node0, const context& 
   for (size_t i = 0; i < value.size() && i < comps.size(); ++i)
     comps[i] = value[i];
 
-  bool changed = use_alpha ? ImGui::ColorEdit4(label.c_str(), comps.data(), ImGuiColorEditFlags(flags))
-                            : ImGui::ColorEdit3(label.c_str(), comps.data(), ImGuiColorEditFlags(flags));
+  const access_key_label ak = access_key_of(label);
+  set_next_access_key(ak);
+  bool changed = use_alpha ? ImGui::ColorEdit4(ak.text, comps.data(), ImGuiColorEditFlags(flags))
+                           : ImGui::ColorEdit3(ak.text, comps.data(), ImGuiColorEditFlags(flags));
+  underline_trailing_label(ak);
 
   if (changed) {
     std::vector<float> new_val(comps.begin(), comps.begin() + (use_alpha ? 4 : 3));
@@ -1001,7 +1066,8 @@ void render_vertical_layout(imgui_renderer& r, const ui_element& node, const con
     auto child_id = "##vlscroll_" + stable_id(node);
     const bool card = node.card();
     ImGuiChildFlags child_flags = card ? push_card_style(node) : ImGuiChildFlags_None;
-    ImGui::BeginChild(child_id.c_str(), ImVec2(sw > 1.0f ? sw : 1.0f, sh > 1.0f ? sh : 1.0f), child_flags);
+    ImGui::BeginChild(
+        child_id.c_str(), ImVec2(sw > 1.0f ? sw : 1.0f, sh > 1.0f ? sh : 1.0f), child_flags | kLayoutChildFlags);
     if (card)
       pop_card_style();
     report_self_rect(node);
@@ -1023,7 +1089,7 @@ void render_vertical_layout(imgui_renderer& r, const ui_element& node, const con
     ImGui::BeginChild(
         prefixed_stable_id("##vl_", node),
         ImVec2(self_size.x, self_size.y),
-        child_flags,
+        child_flags | kLayoutChildFlags,
         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     if (card)
       pop_card_style();
@@ -1079,7 +1145,9 @@ void render_vertical_layout(imgui_renderer& r, const ui_element& node, const con
     // itself a normal item, so it slots into the vertical stack exactly
     // like an unwrapped child does.
     ImGui::BeginChild(
-        prefixed_stable_id("##vl_row_", child), ImVec2(size.x, size.y), ImGuiChildFlags_None,
+        prefixed_stable_id("##vl_row_", child),
+        ImVec2(size.x, size.y),
+        kLayoutChildFlags,
         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     r.render_node(child, s);
     ImGui::EndChild();
@@ -1171,7 +1239,7 @@ void render_horizontal_layout(imgui_renderer& r, const ui_element& node0, const 
     ImGui::BeginChild(
         prefixed_stable_id("##hl_", node),
         ImVec2(self_size.x, self_size.y),
-        child_flags,
+        child_flags | kLayoutChildFlags,
         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     if (card)
       pop_card_style();
@@ -1233,7 +1301,9 @@ void render_horizontal_layout(imgui_renderer& r, const ui_element& node0, const 
       // structurally prevents the historical nano toolbar regression
       // (fixed-width buttons ballooning to the full window height).
       ImGui::BeginChild(
-          prefixed_stable_id("##hl_col_", child), ImVec2(size.x, size.y), ImGuiChildFlags_None,
+          prefixed_stable_id("##hl_col_", child),
+          ImVec2(size.x, size.y),
+          kLayoutChildFlags,
           ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
       r.render_node(child, s);
       ImGui::EndChild();
@@ -1351,7 +1421,7 @@ void render_splitter(imgui_renderer& r, const ui_element& node0, const context& 
     auto pane_sid = stable_id(*panes[i].elem);
     auto pane_child_id = "##sp_pane_" + pane_sid;
     ImVec2 child_size = is_vertical ? ImVec2(panes[i].size, 0.0f) : ImVec2(0.0f, panes[i].size);
-    ImGui::BeginChild(pane_child_id.c_str(), child_size, ImGuiChildFlags_None);
+    ImGui::BeginChild(pane_child_id.c_str(), child_size, kLayoutChildFlags);
     r.render_node(*panes[i].elem, s);
     ImGui::EndChild();
     ImVec2 pane_extent = ImGui::GetItemRectSize();
@@ -1417,7 +1487,43 @@ void render_splitter(imgui_renderer& r, const ui_element& node0, const context& 
 
 // ── Menu ──────────────────────────────────────────────────────────────────────
 
+// What clicking a MenuItem does, shared by a real click and its `shortcut`.
+static void activate_menu_item(const ui_menu_item& node, const context& s) {
+  // Clipboard access needs an active ImGui context, so this must happen
+  // here on the render thread -- not in some later on_event() handler
+  // over on the dispatch thread, which has no ImGui context of its own.
+  const std::string& copy_text = node.copy_text_ref();
+  if (!copy_text.empty())
+    ImGui::SetClipboardText(copy_text.c_str());
+  dynamic payload;
+  payload["checked"_key] = node.checked(false);
+  enqueue_event(s, node.wish_id(), "clicked"_key, std::move(payload));
+}
+
+// Fires the `shortcut` of every enabled MenuItem under @p node (recursing
+// into enabled, visible Menus), so "Ctrl+S" works while its menu is closed
+// -- the items themselves are only rendered while their popup is open.
+// Called once per frame by the MenuBar/MenuButton owning the menu, in that
+// owner's window, so the chords are routed to that window's focus. Only the
+// first binding of a chord in a window fires (see chord_pressed()).
+static void process_menu_shortcuts(const ui_element& node, const context& s) {
+  node.for_each_child_ordered([&](key_t, ui_element& child) {
+    if (!child.visible())
+      return;
+    auto cls = child.class_key();
+    if (cls == "Menu"_key) {
+      if (static_cast<const ui_menu&>(child).enabled(true))
+        process_menu_shortcuts(child, s);
+    } else if (cls == "MenuItem"_key) {
+      const auto& item = static_cast<const ui_menu_item&>(child);
+      if (item.enabled(true) && shortcut_pressed(item.shortcut_ref()))
+        activate_menu_item(item, s);
+    }
+  });
+}
+
 void render_menu_bar(imgui_renderer& r, const ui_element& node, const context& s) {
+  process_menu_shortcuts(node, s);
   if (ImGui::BeginMenuBar()) {
     // A trailing Label child (e.g. a clock) is right-aligned instead of
     // flowing left-to-right with the Menu children; anything else renders
@@ -1448,9 +1554,21 @@ void render_menu_bar(imgui_renderer& r, const ui_element& node, const context& s
 
 void render_menu(imgui_renderer& r, const ui_element& node0, const context& s) {
   const auto& node = static_cast<const ui_menu&>(node0);
-  const std::string& label = node.label_ref();
+  const access_key_label label = access_key_of(node.label_ref());
   bool enabled = node.enabled(true);
-  if (ImGui::BeginMenu(label.c_str(), enabled)) {
+  // The underline is drawn after BeginMenu() returns, when an open menu has
+  // already made its popup the current window -- so capture the parent
+  // window's draw list and label position first.
+  // Visibility too: inside the popup, underlines are always visible.
+  const ImVec2 text_pos = next_menu_label_pos();
+  ImDrawList* parent_draw_list = ImGui::GetWindowDrawList();
+  const bool show_underline = enabled && access_keys_visible();
+  if (enabled)
+    set_next_access_key(label);
+  const bool open = ImGui::BeginMenu(label.text, enabled);
+  if (show_underline)
+    draw_access_key_underline(text_pos, label, parent_draw_list);
+  if (open) {
     // Same settle-frames need as render_combo()/render_menu_button(): the
     // submenu popup enqueues no wish event of its own, so nothing else
     // forces the couple of follow-up frames ImGui needs to size/render its
@@ -1465,11 +1583,14 @@ void render_menu(imgui_renderer& r, const ui_element& node0, const context& s) {
 
 void render_menu_item(imgui_renderer& r, const ui_element& node0, const context& s) {
   const auto& node = static_cast<const ui_menu_item&>(node0);
-  const std::string& label = node.label_ref();
+  const access_key_label label = access_key_of(node.label_ref());
   const std::string& shortcut = node.shortcut_ref();
   bool checked = node.checked(false);
   bool enabled = node.enabled(true);
   const char* sc = shortcut.empty() ? nullptr : shortcut.c_str();
+  const ImVec2 text_pos = next_menu_label_pos();
+  if (enabled)
+    set_next_access_key(label);
   // `checked` is passed BY VALUE (the ImGuiSelectableFlags-less overload),
   // not `&checked` -- the pointer overload has ImGui auto-toggle *checked
   // itself* on every click, turning every plain action item (Properties,
@@ -1478,32 +1599,42 @@ void render_menu_item(imgui_renderer& r, const ui_element& node0, const context&
   // leaves the field entirely under the form's own control (e.g. a
   // radio-style priority submenu that recomputes "checked" from server
   // state on every update, as top.cpp's row context menu does).
-  if (icon_menu_item(label.c_str(), sc, checked, enabled, load_icon_texture(r, s, node.icon_ref()))) {
-    // Clipboard access needs an active ImGui context, so this must happen
-    // here on the render thread -- not in some later on_event() handler
-    // over on the dispatch thread, which has no ImGui context of its own.
-    const std::string& copy_text = node.copy_text_ref();
-    if (!copy_text.empty())
-      ImGui::SetClipboardText(copy_text.c_str());
-    dynamic payload;
-    payload["checked"_key] = checked;
-    enqueue_event(s, node.wish_id(), "clicked"_key, std::move(payload));
-  }
+  // (`shortcut` itself is only the right-aligned hint here; the chord is
+  // handled by process_menu_shortcuts() in the owning MenuBar/MenuButton.)
+  const bool clicked = icon_menu_item(label.text, sc, checked, enabled, load_icon_texture(r, s, node.icon_ref()));
+  if (enabled)
+    draw_access_key_underline(text_pos, label);
+  if (clicked)
+    activate_menu_item(node, s);
 }
 
 void render_menu_button(imgui_renderer& r, const ui_element& node0, const context& s) {
   const auto& node = static_cast<const ui_menu_button&>(node0);
-  const std::string& label = node.label_ref();
+  const access_key_label label = access_key_of(node.label_ref());
+  process_menu_shortcuts(node, s);
   // Same with_id() suffix used for both the trigger Button's own ImGui id
   // and the popup's id (mirrors render_window()'s "iml" reuse for a modal's
   // Begin/OpenPopup/BeginPopupModal calls) -- a single stable identifier is
   // all either call needs, and ImGui::Button()'s widget-id namespace and
   // ImGui::OpenPopup()'s popup-id namespace don't collide even when given
   // the identical string.
-  auto iml = with_id(label, node);
+  auto iml = with_id(label.text, node);
   ImTextureID icon = load_icon_texture(r, s, node.icon_ref());
-  bool clicked =
-      icon ? icon_button(iml.c_str(), icon, ImGui::GetStyleColorVec4(ImGuiCol_Text)) : ImGui::Button(iml.c_str());
+  set_next_access_key(label);
+  bool clicked;
+  if (icon) {
+    ImVec2 text_pos;
+    clicked = icon_button(iml.c_str(), icon, ImGui::GetStyleColorVec4(ImGuiCol_Text), ImVec2(0, 0), &text_pos);
+    draw_access_key_underline(text_pos, label);
+  } else {
+    clicked = ImGui::Button(iml.c_str());
+    underline_button_label(label);
+  }
+  if (shortcut_pressed(
+          node.shortcut_ref(),
+          parse_shortcut_scope(node.shortcut_scope_ref()),
+          s.has_keyboard_focus(ImGui::GetFrameCount())))
+    clicked = true;
   if (clicked) {
     ImGui::OpenPopup(iml.c_str());
     // Same settle-frames need as render_combo() above: opening the popup
@@ -1535,6 +1666,15 @@ void render_context_menu(imgui_renderer& r, const ui_element& node, const contex
   }
 }
 
+void render_shortcut(imgui_renderer&, const ui_element& node0, const context& s) {
+  const auto& node = static_cast<const ui_shortcut&>(node0);
+  if (!node.enabled(true))
+    return;
+  if (shortcut_pressed(
+          node.keys_ref(), parse_shortcut_scope(node.scope_ref()), s.has_keyboard_focus(ImGui::GetFrameCount())))
+    enqueue_event(s, node.wish_id(), "pressed"_key, dynamic{});
+}
+
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 
 void render_tab_bar(imgui_renderer& r, const ui_element& node0, const context& s) {
@@ -1549,6 +1689,7 @@ void render_tab_bar(imgui_renderer& r, const ui_element& node0, const context& s
 void render_tab_item(imgui_renderer& r, const ui_element& node0, const context& s) {
   const auto& node = static_cast<const ui_tab_item&>(node0);
   const std::string& label = node.label_ref();
+  const access_key_label ak = access_key_of(label);
   bool closable = node.closable(false);
   bool open = true;
   bool* p_open = closable ? &open : nullptr;
@@ -1561,7 +1702,10 @@ void render_tab_item(imgui_renderer& r, const ui_element& node0, const context& 
   // -- from ImGui's point of view a brand-new tab appears in the old one's
   // place, which loses its active/selected status and, if it happened to be
   // the active tab, hands "active" to a neighboring tab instead.
-  auto iml = label.empty() ? with_id("Tab", node) : with_id(label, node);
+  auto iml = label.empty() ? with_id("Tab", node) : with_id(ak.text, node);
+  // Activation only (no underline): BeginTabItem() lays its label out
+  // internally, with no stable position to recompute from the outside.
+  set_next_access_key(ak);
   bool is_selected = ImGui::BeginTabItem(iml.c_str(), p_open);
 
   // Emit 'selected' only on the transition from invisible to visible.
@@ -1588,8 +1732,7 @@ void render_tab_item(imgui_renderer& r, const ui_element& node0, const context& 
     if (node.scroll(false)) {
       auto child_id = "##tabscroll_" + stable_id(node);
       float child_h = ImGui::GetContentRegionAvail().y - ImGui::GetStyle().WindowPadding.y;
-      ImGui::BeginChild(
-          child_id.c_str(), ImVec2(0, child_h > 1.0f ? child_h : 1.0f), ImGuiChildFlags_None);
+      ImGui::BeginChild(child_id.c_str(), ImVec2(0, child_h > 1.0f ? child_h : 1.0f), kLayoutChildFlags);
       render_children(r, node, s);
       ImGui::EndChild();
     } else {
@@ -1738,7 +1881,14 @@ void render_combo(imgui_renderer&, const ui_element& node0, const context& s) {
   // BeginCombo()/EndCombo() (not the Combo() convenience wrapper) so the
   // popup-opening transition can be observed directly below -- same idiom
   // render_menu() uses for BeginMenu()'s submenu popup.
-  if (ImGui::BeginCombo(label.c_str(), preview)) {
+  const access_key_label ak = access_key_of(label);
+  set_next_access_key(ak);
+  const bool combo_open = ImGui::BeginCombo(ak.text, preview);
+  // While the popup is open the current window is the popup itself, so the
+  // underline (only a hint) is skipped for those frames.
+  if (!combo_open)
+    underline_trailing_label(ak);
+  if (combo_open) {
     // Opening the dropdown (clicking the combo header) enqueues no wish
     // event of its own -- unlike a selection change below, there is nothing
     // for the render loop's "events not empty" check (server::render_loop())
@@ -1773,9 +1923,12 @@ void render_combo(imgui_renderer&, const ui_element& node0, const context& s) {
 
 void render_radio_button(imgui_renderer&, const ui_element& node0, const context& s) {
   const auto& node = static_cast<const ui_radio_button&>(node0);
-  const std::string& label = node.label_ref();
+  const access_key_label label = access_key_of(node.label_ref());
   bool active = node.active(false);
-  if (ImGui::RadioButton(label.c_str(), active))
+  set_next_access_key(label);
+  const bool clicked = ImGui::RadioButton(label.text, active);
+  underline_check_label(label);
+  if (clicked)
     enqueue_event(s, node.wish_id(), "clicked"_key, dynamic{});
 }
 
@@ -1870,7 +2023,11 @@ void render_input_int(imgui_renderer&, const ui_element& node0, const context& s
   if (width != 0.0f)
     ImGui::SetNextItemWidth(width);
   int v = val;
-  if (ImGui::InputInt(label.c_str(), &v, step, step_fast, ImGuiInputTextFlags(flags))) {
+  const access_key_label ak = access_key_of(label);
+  set_next_access_key(ak);
+  const bool changed = ImGui::InputInt(ak.text, &v, step, step_fast, ImGuiInputTextFlags(flags));
+  underline_trailing_label(ak);
+  if (changed) {
     const_cast<ui_element&>(node0)["value"_key] = int32_t(v);
     dynamic payload;
     payload["value"_key] = int32_t(v);
@@ -1889,7 +2046,11 @@ void render_input_float(imgui_renderer&, const ui_element& node0, const context&
   if (width != 0.0f)
     ImGui::SetNextItemWidth(width);
   float v = val;
-  if (ImGui::InputFloat(label.c_str(), &v, step, step_fast, fmt.c_str())) {
+  const access_key_label ak = access_key_of(label);
+  set_next_access_key(ak);
+  const bool changed = ImGui::InputFloat(ak.text, &v, step, step_fast, fmt.c_str());
+  underline_trailing_label(ak);
+  if (changed) {
     const_cast<ui_element&>(node0)["value"_key] = v;
     dynamic payload;
     payload["value"_key] = v;
@@ -1906,7 +2067,11 @@ void render_drag_float(imgui_renderer&, const ui_element& node0, const context& 
   float vmax = node.max_float(0.0f);
   auto fmt = node.format("%.3f");
   float v = val;
-  if (ImGui::DragFloat(label.c_str(), &v, speed, vmin, vmax, fmt.c_str())) {
+  const access_key_label ak = access_key_of(label);
+  set_next_access_key(ak);
+  const bool changed = ImGui::DragFloat(ak.text, &v, speed, vmin, vmax, fmt.c_str());
+  underline_trailing_label(ak);
+  if (changed) {
     const_cast<ui_element&>(node0)["value"_key] = v;
     dynamic payload;
     payload["value"_key] = v;
@@ -1922,7 +2087,11 @@ void render_drag_int(imgui_renderer&, const ui_element& node0, const context& s)
   int32_t vmin = node.min_int(0);
   int32_t vmax = node.max_int(0);
   int v = val;
-  if (ImGui::DragInt(label.c_str(), &v, speed, vmin, vmax)) {
+  const access_key_label ak = access_key_of(label);
+  set_next_access_key(ak);
+  const bool changed = ImGui::DragInt(ak.text, &v, speed, vmin, vmax);
+  underline_trailing_label(ak);
+  if (changed) {
     const_cast<ui_element&>(node0)["value"_key] = int32_t(v);
     dynamic payload;
     payload["value"_key] = int32_t(v);

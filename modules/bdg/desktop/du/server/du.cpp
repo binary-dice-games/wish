@@ -103,8 +103,8 @@ static constexpr const char* kFilesLayout = R"json({
           "type": "HorizontalLayout",
           "spacing": 6,
           "children": {
-            "btn_scan": { "type": "Button", "label": "$$DU_RESCAN", "icon": "res/icons/refresh.png" },
-            "btn_up": { "type": "Button", "label": "$$DU_UP", "icon": "res/icons/arrow_up.png" },
+            "btn_scan": { "type": "Button", "label": "$$DU_RESCAN", "shortcut": "F5", "icon": "res/icons/refresh.png" },
+            "btn_up": { "type": "Button", "label": "$$DU_UP", "shortcut": "Alt+Up, Backspace", "icon": "res/icons/arrow_up.png" },
             "path_input": { "type": "InputText", "hint": "$$DU_FOLDER_TO_ANALYZE_ENTER_TO_SCAN", "value": "", "flags": "EnterReturnsTrue", "width": -1 }
           }
         },

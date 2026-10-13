@@ -89,7 +89,7 @@ static constexpr const char* kPodsLayout = R"json({
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_refresh": { "type": "Button", "label": "$$KUBECTL_REFRESH", "icon": "res/icons/refresh.png" },
+      "btn_refresh": { "type": "Button", "label": "$$KUBECTL_REFRESH", "shortcut": "F5", "icon": "res/icons/refresh.png" },
       "filter":      { "type": "InputText", "hint": "$$KUBECTL_FILTER_BY_NAME", "width": 200 },
       "ns":          { "type": "InputText", "hint": "$$KUBECTL_NAMESPACE", "width": 150 },
       "state":       { "type": "Combo", "items": "$$KUBECTL_STATE_ITEMS", "value": 0, "width": 120 }
@@ -118,7 +118,7 @@ static constexpr const char* kDeploymentsLayout = R"json({
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_refresh": { "type": "Button", "label": "$$KUBECTL_REFRESH", "icon": "res/icons/refresh.png" },
+      "btn_refresh": { "type": "Button", "label": "$$KUBECTL_REFRESH", "shortcut": "F5", "icon": "res/icons/refresh.png" },
       "filter":      { "type": "InputText", "hint": "$$KUBECTL_FILTER_BY_NAME", "width": 200 },
       "ns":          { "type": "InputText", "hint": "$$KUBECTL_NAMESPACE", "width": 150 }
     } },
@@ -146,7 +146,7 @@ static constexpr const char* kServicesLayout = R"json({
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_refresh": { "type": "Button", "label": "$$KUBECTL_REFRESH", "icon": "res/icons/refresh.png" },
+      "btn_refresh": { "type": "Button", "label": "$$KUBECTL_REFRESH", "shortcut": "F5", "icon": "res/icons/refresh.png" },
       "filter":      { "type": "InputText", "hint": "$$KUBECTL_FILTER_BY_NAME", "width": 200 },
       "ns":          { "type": "InputText", "hint": "$$KUBECTL_NAMESPACE", "width": 150 }
     } },
@@ -174,7 +174,7 @@ static constexpr const char* kNodesLayout = R"json({
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_refresh": { "type": "Button", "label": "$$KUBECTL_REFRESH", "icon": "res/icons/refresh.png" },
+      "btn_refresh": { "type": "Button", "label": "$$KUBECTL_REFRESH", "shortcut": "F5", "icon": "res/icons/refresh.png" },
       "filter":      { "type": "InputText", "hint": "$$KUBECTL_FILTER_BY_NAME", "width": 200 }
     } },
     "status": { "type": "Label", "text": "" },
@@ -208,7 +208,7 @@ static constexpr const char* kLogsLayout = R"json({
       "spring":     { "type": "Spring" },
       "follow":     { "type": "Checkbox", "label": "$$KUBECTL_FOLLOW", "value": false },
       "lines":      { "type": "InputInt", "label": "$$KUBECTL_LINES", "value": 500, "step": 100, "width": 130 },
-      "btn_refresh":{ "type": "Button", "label": "$$KUBECTL_REFRESH", "icon": "res/icons/refresh.png" }
+      "btn_refresh":{ "type": "Button", "label": "$$KUBECTL_REFRESH", "shortcut": "F5", "icon": "res/icons/refresh.png" }
     } },
     "sep": { "type": "Separator" },
     "editor": {

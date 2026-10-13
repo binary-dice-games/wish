@@ -291,3 +291,9 @@ not saved. Closing with unsaved changes asks first.
   `line_weight: 2` and it keeps its colour.
 - There is no cursor-tracked field help window yet (the `editor` module has
   one); completion in the Format tab covers the same schema.
+
+## Keyboard
+
+Every control can be reached with Tab / Shift+Tab and pressed with Space or Enter; hold Alt to see the underlined access keys (Alt+letter).
+
+- `Ctrl+S` in an editor saves (as before); Save also has an access key (`Alt+S` in English).

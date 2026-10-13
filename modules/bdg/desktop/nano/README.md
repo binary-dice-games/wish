@@ -41,6 +41,12 @@ runner bridges the two via `upload_file`/`download_file`.
   (`wish client --run=nano -- a.cpp b.md`).
 - **resources/**: none.
 
+## Keyboard
+
+Every control can be reached with Tab / Shift+Tab and pressed with Space or Enter; hold Alt to see the underlined access keys (Alt+letter).
+
+- `Ctrl+O` open, `Ctrl+N` new, `Ctrl+H` find panel (from any nano window); `Ctrl+S` saves the focused editor. The editor's own keys (Ctrl+F find, Ctrl+Z undo, ...) are unchanged.
+
 ## Settings
 
 In Settings (`bdg/desktop/conf`), under the tool's own category:

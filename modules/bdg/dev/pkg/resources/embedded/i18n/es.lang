@@ -1,15 +1,16 @@
 # pkg -- Spanish.
 PKG_PACKAGES = Paquetes
-PKG_REFRESH = Actualizar
-PKG_CHECK_UPDATES = Buscar actualizaciones
+PKG_REFRESH = &Actualizar
+PKG_CHECK_UPDATES = &Buscar actualizaciones
 PKG_FILTER = Filtrar
 PKG_STATE_ITEMS = Todos\nActualizables
-PKG_UPDATE_INDEX = Actualizar índice
-PKG_UPGRADE_ALL = Actualizar todo
+PKG_UPDATE_INDEX = Actualizar ín&dice
+PKG_UPGRADE_ALL = Actualizar &todo
 PKG_FIND_NEW_PACKAGES = Buscar paquetes nuevos:
 PKG_SEARCH_HINT = nombre o palabra clave, p. ej. htop
 PKG_SEARCH = Buscar
-PKG_INSTALL = Instalar
+PKG_SEARCH_BUTTON = Bu&scar
+PKG_INSTALL = &Instalar
 PKG_NAME = Nombre
 PKG_VERSION = Versión
 PKG_LATEST = Última

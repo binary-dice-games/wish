@@ -71,7 +71,7 @@ static constexpr const char* kReleasesLayout = R"json({
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_refresh": { "type": "Button", "label": "$$HELM_REFRESH", "icon": "res/icons/refresh.png" },
+      "btn_refresh": { "type": "Button", "label": "$$HELM_REFRESH", "shortcut": "F5", "icon": "res/icons/refresh.png" },
       "filter":      { "type": "InputText", "hint": "$$HELM_FILTER_BY_NAME", "width": 200 },
       "ns":          { "type": "InputText", "hint": "$$HELM_NAMESPACE", "width": 150 },
       "state":       { "type": "Combo", "items": "$$HELM_STATE_ITEMS", "value": 0, "width": 120 }
@@ -101,7 +101,7 @@ static constexpr const char* kReposLayout = R"json({
   "closable": true, "flags": "NoFocusOnAppearing",
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_refresh":    { "type": "Button", "label": "$$HELM_REFRESH", "icon": "res/icons/refresh.png" },
+      "btn_refresh":    { "type": "Button", "label": "$$HELM_REFRESH", "shortcut": "F5", "icon": "res/icons/refresh.png" },
       "btn_update_all": { "type": "Button", "label": "$$HELM_UPDATE_ALL", "icon": "res/icons/sync.png" },
       "filter":         { "type": "InputText", "hint": "$$HELM_FILTER_BY_NAME", "width": 200 }
     } },
@@ -159,7 +159,7 @@ static constexpr const char* kHistoryLayout = R"json({
     "toolbar": { "type": "HorizontalLayout", "spacing": 8, "children": {
       "target":      { "type": "Label", "text": "$$HELM_NO_RELEASE_SELECTED" },
       "spring":      { "type": "Spring" },
-      "btn_refresh": { "type": "Button", "label": "$$HELM_REFRESH", "icon": "res/icons/refresh.png" }
+      "btn_refresh": { "type": "Button", "label": "$$HELM_REFRESH", "shortcut": "F5", "icon": "res/icons/refresh.png" }
     } },
     "status": { "type": "Label", "text": "" },
     "sep": { "type": "Separator" },
@@ -213,8 +213,8 @@ static constexpr const char* kInstallLayout = R"json({
     "status": { "type": "Label", "text": "" },
     "buttons": { "type": "HorizontalLayout", "spacing": 6, "children": {
       "spring":     { "type": "Spring" },
-      "btn_submit": { "type": "Button", "label": "$$HELM_INSTALL" },
-      "btn_cancel": { "type": "Button", "label": "$$HELM_CANCEL" }
+      "btn_submit": { "type": "Button", "label": "$$HELM_INSTALL", "shortcut": "Enter" },
+      "btn_cancel": { "type": "Button", "label": "$$HELM_CANCEL", "shortcut": "Esc" }
     } }
   } } }
 })json";

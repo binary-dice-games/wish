@@ -4,15 +4,15 @@
 MSGBOX_MESSAGE = Message
 MSGBOX_OK = OK
 MSGBOX_CANCEL = Annuler
-MSGBOX_YES = Oui
-MSGBOX_NO = Non
-MSGBOX_RETRY = Réessayer
-MSGBOX_ABORT = Abandonner
-MSGBOX_IGNORE = Ignorer
+MSGBOX_YES = &Oui
+MSGBOX_NO = &Non
+MSGBOX_RETRY = &Réessayer
+MSGBOX_ABORT = &Abandonner
+MSGBOX_IGNORE = &Ignorer
 
 # FileDialog
 FILEDLG_OPEN_FILE = Ouvrir un fichier
-FILEDLG_OPEN = Ouvrir
+FILEDLG_OPEN = &Ouvrir
 FILEDLG_PATH = chemin
 FILEDLG_NAME = Nom
 FILEDLG_TYPE = Type
@@ -26,7 +26,7 @@ PROGRESS_CANCELLING = Annulation ...
 
 # PropertiesDialog
 PROPS_PROPERTIES = Propriétés
-PROPS_CLOSE = Fermer
+PROPS_CLOSE = &Fermer
 
 # Shared tool panels (modules/bdg/common)
 COMMON_ACTIONS = Actions
@@ -39,7 +39,7 @@ COMMON_COPY_ENTRY = Copier l'entrée
 COMMON_CLEAR_TITLE = Effacer : {0}
 COMMON_DETAILS = Détails
 COMMON_NOTHING_SELECTED = (aucune sélection)
-COMMON_REFRESH = Actualiser
+COMMON_REFRESH = &Actualiser
 COMMON_COMMAND_OK = {0} : OK
 COMMON_COMMAND_FAILED = {0} : échec : {1}
 COMMON_UNKNOWN_ERROR = erreur inconnue

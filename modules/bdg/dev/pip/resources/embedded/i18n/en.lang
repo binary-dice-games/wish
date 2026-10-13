@@ -1,22 +1,22 @@
 # pip -- English (fallback for every other language).
 PIP_PACKAGES = Packages
-PIP_REFRESH = Refresh
-PIP_CHECK_FOR_UPDATES = Check for updates
+PIP_REFRESH = &Refresh
+PIP_CHECK_FOR_UPDATES = Check for &updates
 PIP_FILTER_BY_NAME = Filter by name
 PIP_STATE_ITEMS = All\nOutdated\nEditable
-PIP_FREEZE = Freeze
-PIP_CHECK = Check
+PIP_FREEZE = &Freeze
+PIP_CHECK = &Check
 PIP_INSTALL_NEW_PACKAGE = Install new package:
 PIP_PACKAGE_HINT = exact name, e.g. requests or requests==2.31.0
-PIP_LOOK_UP = Look up
-PIP_INSTALL = Install
+PIP_LOOK_UP = &Look up
+PIP_INSTALL = &Install
 PIP_OR_A_REQUIREMENTS_FILE = Or a requirements file:
 PIP_REQUIREMENTS_HINT = path on the client machine
-PIP_INSTALL_REQUIREMENTS = Install requirements
+PIP_INSTALL_REQUIREMENTS = Install re&quirements
 PIP_INSTALL_OPTIONS = Install options:
-PIP_UPGRADE = Upgrade
-PIP_USER = User
-PIP_PRE_RELEASES = Pre-releases
+PIP_UPGRADE = Up&grade
+PIP_USER = U&ser
+PIP_PRE_RELEASES = &Pre-releases
 PIP_NAME = Name
 PIP_VERSION = Version
 PIP_LATEST = Latest

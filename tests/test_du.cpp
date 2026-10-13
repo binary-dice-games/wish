@@ -352,7 +352,7 @@ TEST_F(DuTest, ScanningTurnsRescanIntoStop) {
   proxy_->set(std::move(patch)).get();
   // set() is one-way; a round trip guarantees the server has applied it.
   proxy_->get().get();
-  EXPECT_EQ(element(".main.toolbar.btn_scan")->as<std::string>("label"_key), "Stop");
+  EXPECT_EQ(element(".main.toolbar.btn_scan")->as<std::string>("label"_key), "&Stop");
   EXPECT_EQ(text_of(".main.status"), "Scanning: 10 items");
 
   size_t since = srv_->events->mark();
@@ -364,7 +364,7 @@ TEST_F(DuTest, ScanningTurnsRescanIntoStop) {
   done["scanning"_key] = false;
   proxy_->set(std::move(done)).get();
   proxy_->get().get();
-  EXPECT_EQ(element(".main.toolbar.btn_scan")->as<std::string>("label"_key), "Rescan");
+  EXPECT_EQ(element(".main.toolbar.btn_scan")->as<std::string>("label"_key), "&Rescan");
 }
 
 // ── Navigation ────────────────────────────────────────────────────────────────

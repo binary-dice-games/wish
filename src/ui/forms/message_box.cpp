@@ -104,7 +104,7 @@ static constexpr const char* kLayoutOk = R"({
     } },
     "sep": { "type": "Separator" },
     "buttons": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn0": { "type": "Button", "label": "$$MSGBOX_OK", "height": 32 }
+      "btn0": { "type": "Button", "label": "$$MSGBOX_OK", "height": 32, "shortcut": "Enter, Esc" }
     } }
   }
 })";
@@ -118,8 +118,8 @@ static constexpr const char* kLayoutOkCancel = R"({
     } },
     "sep": { "type": "Separator" },
     "buttons": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn0": { "type": "Button", "label": "$$MSGBOX_OK", "height": 32 },
-      "btn1": { "type": "Button", "label": "$$MSGBOX_CANCEL", "height": 32 }
+      "btn0": { "type": "Button", "label": "$$MSGBOX_OK", "height": 32, "shortcut": "Enter" },
+      "btn1": { "type": "Button", "label": "$$MSGBOX_CANCEL", "height": 32, "shortcut": "Esc" }
     } }
   }
 })";
@@ -133,7 +133,7 @@ static constexpr const char* kLayoutYesNo = R"({
     } },
     "sep": { "type": "Separator" },
     "buttons": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn0": { "type": "Button", "label": "$$MSGBOX_YES", "height": 32 },
+      "btn0": { "type": "Button", "label": "$$MSGBOX_YES", "height": 32, "shortcut": "Enter" },
       "btn1": { "type": "Button", "label": "$$MSGBOX_NO", "height": 32 }
     } }
   }
@@ -148,9 +148,9 @@ static constexpr const char* kLayoutYesNoCancel = R"({
     } },
     "sep": { "type": "Separator" },
     "buttons": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn0": { "type": "Button", "label": "$$MSGBOX_YES", "height": 32 },
+      "btn0": { "type": "Button", "label": "$$MSGBOX_YES", "height": 32, "shortcut": "Enter" },
       "btn1": { "type": "Button", "label": "$$MSGBOX_NO", "height": 32 },
-      "btn2": { "type": "Button", "label": "$$MSGBOX_CANCEL", "height": 32 }
+      "btn2": { "type": "Button", "label": "$$MSGBOX_CANCEL", "height": 32, "shortcut": "Esc" }
     } }
   }
 })";
@@ -164,8 +164,8 @@ static constexpr const char* kLayoutRetryCancel = R"({
     } },
     "sep": { "type": "Separator" },
     "buttons": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn0": { "type": "Button", "label": "$$MSGBOX_RETRY", "height": 32 },
-      "btn1": { "type": "Button", "label": "$$MSGBOX_CANCEL", "height": 32 }
+      "btn0": { "type": "Button", "label": "$$MSGBOX_RETRY", "height": 32, "shortcut": "Enter" },
+      "btn1": { "type": "Button", "label": "$$MSGBOX_CANCEL", "height": 32, "shortcut": "Esc" }
     } }
   }
 })";
@@ -179,7 +179,7 @@ static constexpr const char* kLayoutAbortRetryIgnore = R"({
     } },
     "sep": { "type": "Separator" },
     "buttons": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn0": { "type": "Button", "label": "$$MSGBOX_ABORT", "height": 32 },
+      "btn0": { "type": "Button", "label": "$$MSGBOX_ABORT", "height": 32, "shortcut": "Enter" },
       "btn1": { "type": "Button", "label": "$$MSGBOX_RETRY", "height": 32 },
       "btn2": { "type": "Button", "label": "$$MSGBOX_IGNORE", "height": 32 }
     } }

@@ -61,6 +61,9 @@ void render_menu(imgui_renderer& r, const ui_element& node, const context& s);
 void render_menu_item(imgui_renderer&, const ui_element& node, const context& s);
 void render_menu_button(imgui_renderer& r, const ui_element& node, const context& s);
 void render_context_menu(imgui_renderer& r, const ui_element& node, const context& s);
+/// @brief `Shortcut`: draws nothing; emits `pressed` when its `keys` chord is
+///        pressed (focus-routed to the current window unless `global`).
+void render_shortcut(imgui_renderer& r, const ui_element& node, const context& s);
 
 // Tabs
 void render_tab_bar(imgui_renderer& r, const ui_element& node, const context& s);

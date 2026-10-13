@@ -17,6 +17,7 @@
 
 #include <imgui/imgui_dock_layout.hpp>
 #include <imgui/imgui_graph_renderer.hpp>
+#include <imgui/imgui_keyboard.hpp>
 #include <imgui/imgui_plot3d_renderer.hpp>
 #include <imgui/imgui_plot_renderer.hpp>
 #include <imgui/imgui_treemap_renderer.hpp>
@@ -83,6 +84,7 @@ static const render_fn_map& built_in_render_fns() {
       {"MenuItem"_key.id, render_menu_item},
       {"MenuButton"_key.id, render_menu_button},
       {"ContextMenu"_key.id, render_context_menu},
+      {"Shortcut"_key.id, render_shortcut},
       // Tabs
       {"TabBar"_key.id, render_tab_bar},
       {"TabItem"_key.id, render_tab_item},
@@ -377,15 +379,46 @@ void handle_drag_drop(const ui_element& node, const context& s) {
   }
 }
 
+// The `shortcut` field of a Button/MenuButton (empty for any other class),
+// shown in the tooltip -- see handle_tooltip().
+static const std::string& tooltip_shortcut(const ui_element& node) {
+  static const std::string kNone;
+  auto cls = node.class_key();
+  if (cls == "Button"_key)
+    return static_cast<const ui_button&>(node).shortcut_ref();
+  if (cls == "MenuButton"_key)
+    return static_cast<const ui_menu_button&>(node).shortcut_ref();
+  return kNone;
+}
+
 void handle_tooltip(const ui_element& node) {
   const std::string& tooltip = node.tooltip_ref();
-  if (tooltip.empty())
+  const std::string& shortcut = tooltip_shortcut(node);
+  if (tooltip.empty() && shortcut.empty())
     return;
   // Classic `if (IsItemHovered()) SetTooltip(...)` idiom (see imgui.h's
   // SetTooltip() comment): attaches to the last item drawn by the node's
   // dispatch call -- see this function's doc comment.
-  if (ImGui::IsItemHovered())
+  if (!ImGui::IsItemHovered())
+    return;
+  if (shortcut.empty()) {
     ImGui::SetTooltip("%s", tooltip.c_str());
+    return;
+  }
+  // Windows toolbar convention: "Save (Ctrl+S)". Without a tooltip, the
+  // button's own caption (access-key markup and "##id" removed) leads.
+  std::string lead = tooltip;
+  if (lead.empty()) {
+    std::string storage;
+    std::string visible = parse_access_key(node.get_as<std::string>("label"_key, ""), storage).text;
+    if (auto hash = visible.find("##"); hash != std::string::npos)
+      visible.erase(hash);
+    lead = std::move(visible);
+  }
+  if (lead.empty())
+    ImGui::SetTooltip("%s", shortcut.c_str());
+  else
+    ImGui::SetTooltip("%s (%s)", lead.c_str(), shortcut.c_str());
 }
 
 void draw_highlight_if_set(const ui_element& node, ImVec2 rect_min, ImVec2 rect_max) {

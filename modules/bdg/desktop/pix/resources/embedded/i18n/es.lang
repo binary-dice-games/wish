@@ -2,8 +2,8 @@
 PIX_IMAGE_VIEWER = Visor de imágenes
 PIX_IMAGES = Imágenes
 PIX_FOLDER_PATH = Ruta de la carpeta...
-PIX_BROWSE = Examinar...
-PIX_OPEN_SANDBOX = Abrir sandbox
+PIX_BROWSE = &Examinar...
+PIX_OPEN_SANDBOX = Abrir &sandbox
 PIX_PREVIEW = Vista previa
 PIX_ZOOM_OUT = Alejar
 PIX_ZOOM_IN = Acercar

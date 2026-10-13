@@ -74,6 +74,12 @@ re-exercised in a live browser session — see PLAN.md:
   invocation the module ran (`#` / Command / Exit / Output), green on
   success, red on failure — the docker/kubectl Console pattern.
 
+## Keyboard
+
+Every control can be reached with Tab / Shift+Tab and pressed with Space or Enter; hold Alt to see the underlined access keys (Alt+letter).
+
+- `Ctrl+Enter` sends the request, `Ctrl+S` saves it (from any curl window, also while typing in a field).
+
 ## Settings
 
 In Settings (`bdg/desktop/conf`), under the tool's own category:

@@ -423,6 +423,54 @@ state worth keeping across a rebuild anyway (no scrolling, no
 open/collapsed state, nothing `NoScrollbar`-flagged `BeginChild()` calls
 here track).
 
+## Keyboard control
+
+Every renderer turns on Dear ImGui's own keyboard navigation
+(`enable_keyboard_navigation()`, `imgui_keyboard.hpp`), which already gives
+Tab/Shift+Tab, arrows, Space/Enter activation, Esc and menu walking.
+`imgui_keyboard.{hpp,cpp}` only adds what ImGui lacks, on top of its own
+primitives rather than beside them:
+
+- **Layout children are `NavFlattened`** (`kLayoutChildFlags` in
+  `imgui_ui_renderer.cpp`). Every Layout/Splitter/TabItem wrap is a real
+  `BeginChild()` window; without the flag, Tab cannot leave a child window
+  and each child has its own focus scope, so a focus-routed shortcut of a
+  widget nested in layouts never fires while the window itself is focused.
+  Flattened children share the parent's focus scope and navigation.
+- **Access keys (`"&File"`) map to `SetNextItemShortcut()`**, which
+  nav-activates the item -- the same activation Space/Enter performs, so each
+  widget's own reaction (press, toggle, focus a field, open a menu) comes for
+  free instead of per-class code. Alt+key in a window, the bare key inside a
+  popup menu. ImGui has no notion of an underlined glyph, so the underline is
+  drawn afterwards at the label position each widget's own layout formula
+  gives (button text align, checkbox square, trailing input label, menu
+  column offset); widgets whose label position is internal (TabItem) get
+  activation only. Underlines follow Windows' default: shown while Alt is
+  held or the keyboard drives navigation, and always inside open menus.
+- **`shortcut` strings go through `ImGui::Shortcut()`** with
+  `RouteFocused`, so they behave like Windows accelerators (the focused
+  window wins; docked windows route to their dock host). A MenuItem is only
+  rendered while its popup is open, so `MenuBar`/`MenuButton` scan their
+  closed menu tree once per frame (`process_menu_shortcuts()`) instead.
+  `SetNextItemShortcut()` takes one chord per item and is used by the access
+  key, hence `Shortcut()` for the explicit shortcut.
+- **Scope "app"** exists because a wish tool is usually several docked
+  windows: "only the focused window" is too narrow (nano's Ctrl+O from its
+  editor), and ImGui's own `RouteGlobal` is too wide (every app on a shared
+  `wish desktop`). `render_window()` stamps `context::keyboard_focus_frame`
+  when one of the session's windows is focused; an app-scoped chord is only
+  registered (as `RouteGlobal`) by the focused session, so apps never compete.
+- **Typing does not block accelerators**: a chord with Ctrl/Alt/Super or a
+  function key is routed with `RouteOverActive`, except the editing chords a
+  text field uses itself (`passes_through_text_input()`), so Ctrl+S or
+  Ctrl+Enter work from a text field as in Windows. A bare Enter/Space bound
+  as a default button yields when ImGui's nav has just activated the focused
+  control with it (`NavActivatePressedId`).
+
+Labels with markup are resolved into a per-thread buffer
+(`access_key_of()`); callers finish drawing the widget and its underline
+before recursing into children, which reuse the buffer.
+
 ## Non-goals
 
 - Full CSS-style width-then-height constraint solving for wrap-dependent

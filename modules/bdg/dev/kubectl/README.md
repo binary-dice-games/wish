@@ -74,6 +74,12 @@ All eight windows are implemented and unit-tested over `memory_transport`
 Plus a `kubectl version` startup gate and a `MessageBox` confirm for Delete
 and Drain.
 
+## Keyboard
+
+Every control can be reached with Tab / Shift+Tab and pressed with Space or Enter; hold Alt to see the underlined access keys (Alt+letter).
+
+- `F5` refreshes the focused panel.
+
 ## Settings
 
 In Settings (`bdg/desktop/conf`), under the tool's own category:

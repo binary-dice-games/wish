@@ -229,10 +229,10 @@ static constexpr const char* kToolbarLayout = R"({
       "type": "HorizontalLayout",
       "spacing": 8.0,
       "children": {
-        "btn_open": { "type": "Button", "label": "$$NANO_OPEN", "icon": "res/icons/folder_open.png" },
-        "btn_new":  { "type": "Button", "label": "$$NANO_NEW", "icon": "res/icons/add.png" },
-        "btn_save": { "type": "Button", "label": "$$NANO_SAVE", "icon": "res/icons/save.png" },
-        "btn_find": { "type": "Button", "label": "$$NANO_FIND", "icon": "res/icons/search.png" },
+        "btn_open": { "type": "Button", "label": "$$NANO_OPEN", "shortcut": "Ctrl+O", "shortcut_scope": "app", "icon": "res/icons/folder_open.png" },
+        "btn_new":  { "type": "Button", "label": "$$NANO_NEW", "shortcut": "Ctrl+N", "shortcut_scope": "app", "icon": "res/icons/add.png" },
+        "btn_save": { "type": "Button", "label": "$$NANO_SAVE", "shortcut": "Ctrl+S", "icon": "res/icons/save.png" },
+        "btn_find": { "type": "Button", "label": "$$NANO_FIND", "shortcut": "Ctrl+H", "shortcut_scope": "app", "icon": "res/icons/search.png" },
         "current_label": { "type": "Label", "text": "$$NANO_NO_FILE_OPEN" }
       }
     }

@@ -1,15 +1,16 @@
 # git -- French.
 GIT_GIT = Git
 GIT_COMMIT = Valider
-GIT_PUSH = Pousser
-GIT_PULL = Tirer
-GIT_FETCH = Récupérer
-GIT_BRANCH = Branche
-GIT_MERGE = Fusionner
-GIT_STASH = Remiser
-GIT_REFRESH = Actualiser
+GIT_COMMIT_ACTION = &Valider
+GIT_PUSH = &Pousser
+GIT_PULL = &Tirer
+GIT_FETCH = &Récupérer
+GIT_BRANCH = &Branche
+GIT_MERGE = &Fusionner
+GIT_STASH = Re&miser
+GIT_REFRESH = &Actualiser
 GIT_NEW_BRANCH_NAME = Nom de la nouvelle branche
-GIT_CREATE = Créer
+GIT_CREATE = &Créer
 GIT_BRANCHES_HEADER = BRANCHES
 GIT_LOCAL = Locales
 GIT_REMOTES_HEADER = DÉPÔTS DISTANTS

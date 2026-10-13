@@ -78,6 +78,13 @@ static natural_size measure_spring(imgui_renderer&, const ui_element&, const con
   return {0.0f, 0.0f};
 }
 
+// Shortcut draws nothing at all (render_shortcut()), so it must never take
+// layout space -- the generic last_rendered_size() fallback would hand it
+// whatever item happened to be drawn just before it.
+static natural_size measure_shortcut(imgui_renderer&, const ui_element&, const context&) {
+  return {0.0f, 0.0f};
+}
+
 // TextEditor shares Spring's exact hazard: render_text_editor()
 // (imgui_text_editor_renderer.cpp) turns an unhinted width/height of 0 into
 // ImGui's own "-1 = fill remaining space" convention, not a genuine
@@ -359,6 +366,7 @@ static natural_size measure_treemap(imgui_renderer&, const ui_element& node, con
 static const measure_fn_map& measure_dispatch_fns() {
   static const measure_fn_map tbl{
       {"Spring"_key.id, measure_spring},
+      {"Shortcut"_key.id, measure_shortcut},
       {"TextEditor"_key.id, measure_text_editor},
       {"Combo"_key.id, measure_combo},
       {"Table"_key.id, measure_table},

@@ -365,6 +365,69 @@ layout_node right_aligned(const std::string& id, layout_node label) {
   return row;
 }
 
+// Physical-keyboard keys for a keypad key, by key id, as in Windows
+// Calculator: digits (top row and numeric keypad), operators, Enter / = for
+// equals, Esc = C, Del = CE, F9 = +/-, plus the scientific letters (S sin,
+// O cos, T tan, ...). "" for a key with none. Keys are matched by key, not by
+// the typed character, so the shifted symbols assume a US layout; the keypad
+// alternatives work on any layout.
+std::string keypad_shortcut(const std::string& id) {
+  if (id.size() == 2 && id[0] == 'n') {
+    const char d = id[1];
+    if (d >= '0' && d <= '9')
+      return std::string{d} + ", Num" + d;
+    return std::string{d}; // hex digits A-F
+  }
+  static const std::pair<const char*, const char*> kKeys[] = {
+      {"add", "Shift+=, NumPlus"},
+      {"sub", "-, NumMinus"},
+      {"mul", "Shift+8, NumMul"},
+      {"div", "/, NumDiv"},
+      {"eq", "Enter, =, NumEnter"},
+      {"dot", "., NumDot"},
+      {"bsp", "Backspace"},
+      {"c", "Esc"},
+      {"ce", "Del"},
+      {"neg", "F9"},
+      {"pct", "Shift+5"},
+      {"lp", "Shift+9"},
+      {"rp", "Shift+0"},
+      {"inv", "R"},
+      {"sq", "Q"},
+      {"sqrt", "Shift+2"},
+      {"pow", "Y"},
+      {"fact", "Shift+1"},
+      {"sin", "S"},
+      {"cos", "O"},
+      {"tan", "T"},
+      {"pi", "P"},
+      {"log", "L"},
+      {"ln", "N"},
+      {"exp", "X"},
+      {"fe", "V"},
+      {"mod", "Shift+M"},
+      {"lsh", "Shift+,"},
+      {"rsh", "Shift+."},
+      {"and", "Shift+7"},
+      {"or", "Shift+\\"},
+      {"xor", "Shift+6"},
+      {"not", "Shift+`"},
+  };
+  for (const auto& [key_id, keys] : kKeys)
+    if (id == key_id)
+      return keys;
+  return {};
+}
+
+std::string shortcut_field(const std::string& keys) {
+  return keys.empty() ? std::string{} : "\"shortcut\":" + json_string(keys);
+}
+
+/// Joins two comma-separated JSON member lists, skipping empty ones.
+std::string join_fields(const std::string& a, const std::string& b) {
+  return a.empty() ? b : b.empty() ? a : a + "," + b;
+}
+
 std::string to_json(const layout_node& n, int order = -1) {
   std::string s = "{" + n.fields;
   if (order >= 0)
@@ -402,19 +465,28 @@ std::string bc::make_layout(const std::vector<keypad_def>& pads) const {
 
   // ── Menu bar ──
   layout_node& menu = window.add("menu", node("MenuBar"));
+  // Windows Calculator's shortcuts: Alt+1/2/3 modes, F3/F4/F5 angle units,
+  // Ctrl+H history, Ctrl+C copy, Ctrl+Shift+D clear history.
   layout_node& view = menu.add("view", node("Menu", labelled("$$BC_VIEW")));
+  const char* mode_keys[] = {"Alt+1", "Alt+2", "Alt+3"};
   for (int m = 0; m < 3; ++m)
-    view.add(kKeypadIds[m], node("MenuItem", labelled(kModeNames[m])));
+    view.add(kKeypadIds[m], node("MenuItem", labelled(kModeNames[m], shortcut_field(mode_keys[m]))));
   view.add("sep1", node("Separator"));
-  view.add("deg", node("MenuItem", labelled("$$BC_DEGREES")));
-  view.add("rad", node("MenuItem", labelled("$$BC_RADIANS")));
-  view.add("grad", node("MenuItem", labelled("$$BC_GRADIANS")));
+  view.add("deg", node("MenuItem", labelled("$$BC_DEGREES", shortcut_field("F3"))));
+  view.add("rad", node("MenuItem", labelled("$$BC_RADIANS", shortcut_field("F4"))));
+  view.add("grad", node("MenuItem", labelled("$$BC_GRADIANS", shortcut_field("F5"))));
   view.add("sep2", node("Separator"));
-  view.add("history", node("MenuItem", labelled("$$BC_HISTORY", icon_field("history"))));
+  view.add(
+      "history",
+      node("MenuItem", labelled("$$BC_HISTORY_MENU", join_fields(icon_field("history"), shortcut_field("Ctrl+H")))));
   view.add("grouping", node("MenuItem", labelled("$$BC_DIGIT_GROUPING")));
   layout_node& edit = menu.add("edit", node("Menu", labelled("$$BC_EDIT")));
-  edit.add("copy", node("MenuItem", labelled("$$BC_COPY", icon_field("copy"))));
-  edit.add("clear_history", node("MenuItem", labelled("$$BC_CLEAR_HISTORY", icon_field("delete"))));
+  edit.add("copy", node("MenuItem", labelled("$$BC_COPY", join_fields(icon_field("copy"), shortcut_field("Ctrl+C")))));
+  edit.add(
+      "clear_history",
+      node(
+          "MenuItem",
+          labelled("$$BC_CLEAR_HISTORY", join_fields(icon_field("delete"), shortcut_field("Ctrl+Shift+D")))));
 
   // ── Calculator column ──
   layout_node& body = window.add("body", node("HorizontalLayout", "\"spacing\":" + std::to_string(kHistoryGap)));
@@ -443,8 +515,12 @@ std::string bc::make_layout(const std::vector<keypad_def>& pads) const {
   layout_node& mem = main.add("mem", node("HorizontalLayout", "\"spacing\":4,\"height\":26"));
   const char* mem_ids[] = {"mc", "mr", "mplus", "mminus", "ms"};
   const std::string mem_labels[] = {"MC", "MR", "M+", str("M", kMinus), "MS"};
+  // Windows Calculator's memory keys.
+  const char* mem_keys[] = {"Ctrl+L", "Ctrl+R", "Ctrl+P", "Ctrl+Q", "Ctrl+M"};
   for (int i = 0; i < 5; ++i)
-    mem.add(mem_ids[i], node("Button", labelled(mem_labels[i], size_fields(56, 26, 15))));
+    mem.add(
+        mem_ids[i],
+        node("Button", labelled(mem_labels[i], join_fields(size_fields(56, 26, 15), shortcut_field(mem_keys[i])))));
 
   for (const auto& pad : pads) {
     layout_node& keypad =
@@ -454,7 +530,14 @@ std::string bc::make_layout(const std::vector<keypad_def>& pads) const {
       layout_node& row = keypad.add(
           "r" + std::to_string(r), node("HorizontalLayout", spacing_and_height(kKeySpacing, pad.key_height)));
       for (const auto& k : pad.rows[r])
-        row.add(k.id, node("Button", labelled(k.label, size_fields(pad.key_width, pad.key_height, font))));
+        row.add(
+            k.id,
+            node(
+                "Button",
+                labelled(
+                    k.label,
+                    join_fields(
+                        size_fields(pad.key_width, pad.key_height, font), shortcut_field(keypad_shortcut(k.id))))));
     }
   }
 

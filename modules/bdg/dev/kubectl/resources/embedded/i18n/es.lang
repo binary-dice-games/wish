@@ -1,6 +1,6 @@
 # kubectl -- Spanish.
 KUBECTL_PODS = Pods
-KUBECTL_REFRESH = Actualizar
+KUBECTL_REFRESH = &Actualizar
 KUBECTL_FILTER_BY_NAME = Filtrar por nombre
 KUBECTL_NAMESPACE = Espacio de nombres
 KUBECTL_STATE_ITEMS = Todos\nEn ejecución\nPendientes\nCompletados\nFallidos
@@ -20,7 +20,7 @@ KUBECTL_NODES = Nodos
 KUBECTL_VERSION = Versión
 KUBECTL_LOGS = Registros
 KUBECTL_NO_POD_SELECTED = (ningún pod seleccionado)
-KUBECTL_FOLLOW = Seguir
+KUBECTL_FOLLOW = &Seguir
 KUBECTL_LINES = Líneas
 KUBECTL_TOP = Top
 KUBECTL_PODS_CPU_MILLICORES = CPU de los pods (milinúcleos)

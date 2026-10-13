@@ -153,6 +153,7 @@ set_target_properties(test_config_flags PROPERTIES FOLDER tests)
 
 if(WISH_ENABLE_IMGUI)
   wish_add_test(test_imgui_renderer test_imgui_renderer.cpp)
+  wish_add_test(test_keyboard       test_keyboard.cpp)
   wish_add_test(test_desktop_shell test_desktop_shell.cpp)
   wish_add_test(test_imgui_layout   test_imgui_layout.cpp)
   wish_add_test(test_drag_drop      test_drag_drop.cpp)
@@ -374,6 +375,14 @@ wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_DU                 test_du_scan  
     ${CMAKE_SOURCE_DIR}/modules/bdg/desktop/du/client/du_scan.cpp)
 if(TARGET test_du_scan)
   target_include_directories(test_du_scan PRIVATE ${CMAKE_SOURCE_DIR})
+endif()
+wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_FIND               test_find              test_find.cpp)
+# The index and query engine has no bison/RMI dependency (see find_db.hpp);
+# compiled straight into the test rather than reached through wish_server.
+wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_FIND               test_find_db           test_find_db.cpp
+    ${CMAKE_SOURCE_DIR}/modules/bdg/desktop/find/client/find_db.cpp)
+if(TARGET test_find_db)
+  target_include_directories(test_find_db PRIVATE ${CMAKE_SOURCE_DIR})
 endif()
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_PIX                test_pix               test_pix.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DEV_GIT                test_git               test_git.cpp)

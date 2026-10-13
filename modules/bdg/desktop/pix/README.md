@@ -34,3 +34,9 @@ happen client-side.
   (navigate to a directory, then confirm).
 - **resources/**: none (the generic placeholder thumbnail is the top-level
   `res/icons/image.png` every session already gets).
+
+## Keyboard
+
+Every control can be reached with Tab / Shift+Tab and pressed with Space or Enter; hold Alt to see the underlined access keys (Alt+letter).
+
+- `Ctrl+O` browse, `Ctrl++`/`Ctrl+-` zoom in/out, `Ctrl+0` fit, `Ctrl+1` 100% (from any pix window).

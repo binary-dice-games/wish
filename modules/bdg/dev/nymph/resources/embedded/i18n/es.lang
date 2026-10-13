@@ -1,12 +1,13 @@
 # nymph -- Spanish.
 NYMPH_NYMPH = nymph
 NYMPH_SOURCE = Origen
-NYMPH_SAVE = Guardar
+NYMPH_SAVE = &Guardar
 NYMPH_NO_FILE = (ningún archivo)
 NYMPH_MODIFIED = [MODIFICADO]
-NYMPH_FORMAT = Formato
+NYMPH_FORMAT = &Formato
 NYMPH_DATA = Datos
-NYMPH_DESCRIPTION = Descripción
+NYMPH_DATA_TAB = &Datos
+NYMPH_DESCRIPTION = Des&cripción
 NYMPH_PREVIEW = Vista previa
 NYMPH_NO_DATA = Sin datos.
 NYMPH_SHOWING_ROWS = Mostrando {0} de {1} filas

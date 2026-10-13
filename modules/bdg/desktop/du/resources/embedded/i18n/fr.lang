@@ -2,9 +2,9 @@
 DU_DISK_USAGE = Utilisation du disque
 DU_FILES = Fichiers
 DU_TREEMAP = Carte proportionnelle
-DU_RESCAN = Réanalyser
-DU_STOP = Arrêter
-DU_UP = Remonter
+DU_RESCAN = &Réanalyser
+DU_STOP = &Arrêter
+DU_UP = Re&monter
 DU_FOLDER_TO_ANALYZE_ENTER_TO_SCAN = Dossier à analyser (Entrée pour lancer)...
 DU_NO_FOLDER_SCANNED_YET = Aucun dossier analysé pour l'instant.
 DU_NAME = Nom

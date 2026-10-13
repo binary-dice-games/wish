@@ -73,7 +73,7 @@ constexpr const char* kSourceLayout = R"json({
             },
             "data_tab": {
               "type": "TabItem",
-              "label": "$$NYMPH_DATA",
+              "label": "$$NYMPH_DATA_TAB",
               "children": {
                 "data": { "type": "TextEditor", "language": "text", "width": 0, "height": 0 }
               }

@@ -2,8 +2,8 @@
 PIX_IMAGE_VIEWER = Visionneuse d'images
 PIX_IMAGES = Images
 PIX_FOLDER_PATH = Chemin du dossier...
-PIX_BROWSE = Parcourir...
-PIX_OPEN_SANDBOX = Ouvrir le bac à sable
+PIX_BROWSE = &Parcourir...
+PIX_OPEN_SANDBOX = Ouvrir le &bac à sable
 PIX_PREVIEW = Aperçu
 PIX_ZOOM_OUT = Zoom arrière
 PIX_ZOOM_IN = Zoom avant

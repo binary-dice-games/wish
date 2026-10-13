@@ -31,7 +31,9 @@ void register_menu() {
         field{
             std::string{},
             attr<DisplayName>("Label"),
-            attr<Description>("Text shown in the parent menu bar or parent menu."),
+            attr<Description>("Text shown in the parent menu bar or parent menu. A '&' before a "
+                              "letter or digit marks the access key (\"&File\": Alt+F opens it from "
+                              "the menu bar, F alone inside an open menu); \"&&\" is a literal '&'."),
             attr<Category>("Content")});
     proto->addField(
         "enabled"_rkey,
@@ -56,14 +58,21 @@ void register_menu() {
         field{
             std::string{},
             attr<DisplayName>("Label"),
-            attr<Description>("Text of the menu item."),
+            attr<Description>("Text of the menu item. A '&' before a letter or digit marks the "
+                              "access key (\"&New\": N activates it while its menu is open); \"&&\" "
+                              "is a literal '&'."),
             attr<Category>("Content")});
     proto->addField(
         "shortcut"_rkey,
         field{
             std::string{},
             attr<DisplayName>("Shortcut"),
-            attr<Description>("Optional shortcut hint displayed on the right (decorative only)."),
+            attr<Description>("Optional keyboard shortcut, shown right-aligned in the menu and "
+                              "active while the menu is closed: pressing it (e.g. \"Ctrl+S\", "
+                              "\"F5\", \"Ctrl+Shift+N\"; same syntax as Shortcut.keys) emits "
+                              "'clicked' as if the item were clicked, while the window owning the "
+                              "MenuBar/MenuButton has keyboard focus. Disabled items, and items in a "
+                              "disabled Menu, do not fire."),
             attr<Category>("Content")});
     proto->addField(
         "checked"_rkey,
@@ -128,7 +137,7 @@ void register_menu() {
         field{
             std::string{},
             attr<DisplayName>("Label"),
-            attr<Description>("Button caption text."),
+            attr<Description>("Button caption text; '&' marks an access key as in Button.label."),
             attr<Category>("Content")});
     proto->addField(
         "icon"_rkey,
@@ -138,6 +147,20 @@ void register_menu() {
             attr<Description>("Image drawn left of the label, same as Button.icon (an empty label "
                               "gives a square icon-only button)."),
             attr<Category>("Content")});
+    proto->addField(
+        "shortcut"_rkey,
+        field{
+            std::string{},
+            attr<DisplayName>("Shortcut"),
+            attr<Description>("Optional keyboard shortcut that opens the popup, same as Button.shortcut."),
+            attr<Category>("Behavior")});
+    proto->addField(
+        "shortcut_scope"_rkey,
+        field{
+            std::string{"window"},
+            attr<DisplayName>("Shortcut Scope"),
+            attr<Description>("Where the shortcut is active, same as Button.shortcut_scope."),
+            attr<Category>("Behavior")});
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("MenuButton"));
     (*proto)[dynamic::CLASS].addAttribute(
         attr<Description>("A button that opens a popup menu when clicked. Children should be "

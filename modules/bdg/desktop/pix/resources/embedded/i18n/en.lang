@@ -2,8 +2,8 @@
 PIX_IMAGE_VIEWER = Image Viewer
 PIX_IMAGES = Images
 PIX_FOLDER_PATH = Folder path...
-PIX_BROWSE = Browse...
-PIX_OPEN_SANDBOX = Open Sandbox
+PIX_BROWSE = &Browse...
+PIX_OPEN_SANDBOX = Open &Sandbox
 PIX_PREVIEW = Preview
 PIX_ZOOM_OUT = Zoom out
 PIX_ZOOM_IN = Zoom in
