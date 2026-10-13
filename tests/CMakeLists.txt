@@ -375,6 +375,14 @@ wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_DU                 test_du_scan  
 if(TARGET test_du_scan)
   target_include_directories(test_du_scan PRIVATE ${CMAKE_SOURCE_DIR})
 endif()
+wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_FIND               test_find              test_find.cpp)
+# The index and query engine has no bison/RMI dependency (see find_db.hpp);
+# compiled straight into the test rather than reached through wish_server.
+wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_FIND               test_find_db           test_find_db.cpp
+    ${CMAKE_SOURCE_DIR}/modules/bdg/desktop/find/client/find_db.cpp)
+if(TARGET test_find_db)
+  target_include_directories(test_find_db PRIVATE ${CMAKE_SOURCE_DIR})
+endif()
 wish_add_optional_test(WISH_MODULE_BDG_DESKTOP_PIX                test_pix               test_pix.cpp)
 wish_add_optional_test(WISH_MODULE_BDG_DEV_GIT                test_git               test_git.cpp)
 # Pure algorithm, no bison/RMI dependency -- still gated on the module
