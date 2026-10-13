@@ -11,14 +11,17 @@
 /// target links (see cmake/WishModules.cmake) and which itself requires them.
 #include "process_info.hpp"
 
-// winsock2.h must precede windows.h (which otherwise pulls in winsock 1).
-#include <iphlpapi.h>
-#include <psapi.h>
-#include <tlhelp32.h>
-#include <windows.h>
-#include <winioctl.h>
+// winsock2.h must precede windows.h (which otherwise pulls in winsock 1), and
+// both must precede iphlpapi.h.
+// clang-format off
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <windows.h>
+#include <iphlpapi.h>
+// clang-format on
+#include <psapi.h>
+#include <tlhelp32.h>
+#include <winioctl.h>
 
 #include <chrono>
 #include <memory>
