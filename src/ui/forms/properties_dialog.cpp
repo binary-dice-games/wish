@@ -74,7 +74,7 @@ static constexpr const char* kLayout = R"({
       "children": {
         "sep": { "type": "Separator" },
         "close_row": { "type": "HorizontalLayout", "children": {
-          "btn_close": { "type": "Button", "label": "$$PROPS_CLOSE", "height": 32 }
+          "btn_close": { "type": "Button", "label": "$$PROPS_CLOSE", "height": 32, "shortcut": "Esc, Enter" }
         } }
       }
     }

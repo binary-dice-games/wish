@@ -414,7 +414,7 @@ TEST_F(PipRmiTest, RequirementsButtonNeedsAPathThenEmitsIt) {
 TEST_F(PipRmiTest, UpgradeMenuActionFiresWithoutConfirmation) {
   call("update_packages"_key, three_packages());
   size_t since = srv_->events->mark();
-  fire(menu_id_in(root_ + ".vbox.table", 0, "Upgrade"), "clicked"_key);
+  fire(menu_id_in(root_ + ".vbox.table", 0, "Up&grade"), "clicked"_key);
   auto ev = srv_->events->wait_for("package_action_requested"_key, since);
   ASSERT_TRUE(ev);
   EXPECT_EQ(ev->as<std::string>("name"_key), "requests");

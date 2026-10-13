@@ -129,7 +129,7 @@ static constexpr const char* kImagesLayout = R"json({
               "type": "InputText", "value": "", "hint": "$$PIX_FOLDER_PATH",
               "max_length": 4096, "flags": "EnterReturnsTrue", "width": -1
             },
-            "btn_browse": { "type": "Button", "label": "$$PIX_BROWSE", "icon": "res/icons/folder_open.png" },
+            "btn_browse": { "type": "Button", "label": "$$PIX_BROWSE", "shortcut": "Ctrl+O", "shortcut_scope": "app", "icon": "res/icons/folder_open.png" },
             "btn_open_explorer": { "type": "Button", "label": "$$PIX_OPEN_SANDBOX", "icon": "res/icons/open_in_new.png" }
           }
         },
@@ -166,11 +166,11 @@ static constexpr const char* kPreviewLayout = R"json({
           "type": "HorizontalLayout",
           "spacing": 6.0,
           "children": {
-            "btn_zoom_out": { "type": "Button", "label": "", "icon": "res/icons/zoom_out.png", "tooltip": "$$PIX_ZOOM_OUT" },
+            "btn_zoom_out": { "type": "Button", "label": "", "shortcut": "Ctrl+-, Ctrl+NumMinus", "shortcut_scope": "app", "icon": "res/icons/zoom_out.png", "tooltip": "$$PIX_ZOOM_OUT" },
             "zoom_label": { "type": "Label", "text": "--" },
-            "btn_zoom_in": { "type": "Button", "label": "", "icon": "res/icons/zoom_in.png", "tooltip": "$$PIX_ZOOM_IN" },
-            "btn_zoom_fit": { "type": "Button", "label": "", "icon": "res/icons/fit_screen.png", "tooltip": "$$PIX_FIT_TO_WINDOW" },
-            "btn_zoom_100": { "type": "Button", "label": "100%" },
+            "btn_zoom_in": { "type": "Button", "label": "", "shortcut": "Ctrl+=, Ctrl+Shift+=, Ctrl+NumPlus", "shortcut_scope": "app", "icon": "res/icons/zoom_in.png", "tooltip": "$$PIX_ZOOM_IN" },
+            "btn_zoom_fit": { "type": "Button", "label": "", "shortcut": "Ctrl+0, Ctrl+Num0", "shortcut_scope": "app", "icon": "res/icons/fit_screen.png", "tooltip": "$$PIX_FIT_TO_WINDOW" },
+            "btn_zoom_100": { "type": "Button", "label": "100%", "shortcut": "Ctrl+1, Ctrl+Num1", "shortcut_scope": "app" },
             "pan_hint": { "type": "Label", "text": "$$PIX_SCROLL_THE_PREVIEW_TO_PAN" }
           }
         },

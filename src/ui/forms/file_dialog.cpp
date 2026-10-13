@@ -78,8 +78,8 @@ static constexpr const char* kDialogLayout = R"({
           "spacing": 8.0,
           "children": {
             "btn_row_spring": { "type": "Spring" },
-            "btn_open":   { "type": "Button", "label": "$$FILEDLG_OPEN" },
-            "btn_cancel": { "type": "Button", "label": "$$MSGBOX_CANCEL" }
+            "btn_open":   { "type": "Button", "label": "$$FILEDLG_OPEN", "shortcut": "Enter" },
+            "btn_cancel": { "type": "Button", "label": "$$MSGBOX_CANCEL", "shortcut": "Esc" }
           }
         }
       }

@@ -237,8 +237,8 @@ std::string format_count(std::uint64_t n);
 /// @brief `"2026-10-12 14:03"`, local time; `""` for 0.
 std::string format_time(std::int64_t seconds);
 
-/// @brief The "Type" column of an entry: a `"$$FIND_TYPE_..."` translation
-/// key or make_message()-shaped `"$$FIND_TYPE_<FAMILY>\x1f<EXT>"` string
+/// @brief The "Type" column of an entry: a `$$FIND_TYPE_...` translation
+/// key or make_message()-shaped `$$FIND_TYPE_<FAMILY>\x1f<EXT>` string
 /// (e.g. "PNG Image"), translated by the form.
 std::string type_label(const entry& e);
 

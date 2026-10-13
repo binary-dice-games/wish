@@ -71,7 +71,7 @@ static constexpr const char* kContainersLayout = R"json({
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_refresh": { "type": "Button", "label": "$$DOCKER_REFRESH", "icon": "res/icons/refresh.png" },
+      "btn_refresh": { "type": "Button", "label": "$$DOCKER_REFRESH", "shortcut": "F5", "icon": "res/icons/refresh.png" },
       "btn_prune":   { "type": "Button", "label": "$$DOCKER_PRUNE_STOPPED", "icon": "res/icons/delete.png" },
       "filter":      { "type": "InputText", "hint": "$$DOCKER_FILTER_BY_NAME_IMAGE", "width": 240 },
       "state":       { "type": "Combo", "items": "$$DOCKER_STATE_ITEMS", "value": 0, "width": 110 }
@@ -99,7 +99,7 @@ static constexpr const char* kImagesLayout = R"json({
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_refresh": { "type": "Button", "label": "$$DOCKER_REFRESH", "icon": "res/icons/refresh.png" },
+      "btn_refresh": { "type": "Button", "label": "$$DOCKER_REFRESH", "shortcut": "F5", "icon": "res/icons/refresh.png" },
       "pull_ref":    { "type": "InputText", "hint": "$$DOCKER_REPO_TAG_TO_PULL", "width": 220 },
       "btn_pull":    { "type": "Button", "label": "$$DOCKER_PULL", "icon": "res/icons/download.png" },
       "btn_prune":   { "type": "Button", "label": "$$DOCKER_PRUNE_DANGLING", "icon": "res/icons/delete.png" }
@@ -127,7 +127,7 @@ static constexpr const char* kVolumesLayout = R"json({
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_refresh": { "type": "Button", "label": "$$DOCKER_REFRESH", "icon": "res/icons/refresh.png" },
+      "btn_refresh": { "type": "Button", "label": "$$DOCKER_REFRESH", "shortcut": "F5", "icon": "res/icons/refresh.png" },
       "vol_name":    { "type": "InputText", "hint": "$$DOCKER_NEW_VOLUME_NAME", "width": 200 },
       "btn_create":  { "type": "Button", "label": "$$DOCKER_CREATE", "icon": "res/icons/add.png" },
       "btn_prune":   { "type": "Button", "label": "$$DOCKER_PRUNE", "icon": "res/icons/delete.png" }
@@ -153,7 +153,7 @@ static constexpr const char* kNetworksLayout = R"json({
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_refresh": { "type": "Button", "label": "$$DOCKER_REFRESH", "icon": "res/icons/refresh.png" },
+      "btn_refresh": { "type": "Button", "label": "$$DOCKER_REFRESH", "shortcut": "F5", "icon": "res/icons/refresh.png" },
       "btn_prune":   { "type": "Button", "label": "$$DOCKER_PRUNE", "icon": "res/icons/delete.png" }
     } },
     "status": { "type": "Label", "text": "" },
@@ -187,7 +187,7 @@ static constexpr const char* kLogsLayout = R"json({
       "spring":     { "type": "Spring" },
       "follow":     { "type": "Checkbox", "label": "$$DOCKER_FOLLOW", "value": false },
       "lines":      { "type": "InputInt", "label": "$$DOCKER_LINES", "value": 500, "step": 100, "width": 130 },
-      "btn_refresh":{ "type": "Button", "label": "$$DOCKER_REFRESH", "icon": "res/icons/refresh.png" }
+      "btn_refresh":{ "type": "Button", "label": "$$DOCKER_REFRESH", "shortcut": "F5", "icon": "res/icons/refresh.png" }
     } },
     "sep": { "type": "Separator" },
     "editor": {

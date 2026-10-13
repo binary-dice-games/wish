@@ -151,7 +151,7 @@ static constexpr const char* kControlsLayout = R"json({
             "filter_input": { "type": "InputText", "label": "$$TAIL_FILTER", "hint": "$$TAIL_FILTER_HINT", "width": 320 },
             "lines_input": { "type": "InputInt", "label": "$$TAIL_LINES", "value": 10, "step": 0, "step_fast": 0, "width": 80, "flags": "EnterReturnsTrue" },
             "chk_follow": { "type": "Checkbox", "label": "$$TAIL_FOLLOW", "value": true },
-            "btn_clear": { "type": "Button", "label": "$$TAIL_CLEAR_ALL", "icon": "res/icons/delete.png" }
+            "btn_clear": { "type": "Button", "label": "$$TAIL_CLEAR_ALL", "shortcut": "Ctrl+L", "shortcut_scope": "app", "icon": "res/icons/delete.png" }
           }
         },
         "status_label": { "type": "Label", "text": "$$TAIL_NO_LINES" }

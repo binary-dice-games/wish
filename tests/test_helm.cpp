@@ -595,12 +595,12 @@ TEST_F(HelmRmiTest, ChartInstallOpensPrefilledDialogAndSubmitEmitsEverything) {
   const std::string dlg = root_ + "_install";
   call("update_charts"_key, one_chart());
 
-  fire_at(charts, menu_id_in(charts + ".vbox.table", 0, "Install..."), "clicked"_key);
+  fire_at(charts, menu_id_in(charts + ".vbox.table", 0, "&Install..."), "clicked"_key);
   auto& objects = srv_->last_session->ui_objects;
   ASSERT_TRUE(objects.count(dlg + ".vbox.buttons.btn_submit"));
   EXPECT_EQ(objects.at(dlg + ".vbox.chart_row.chart")->as<std::string>("value"_key), "bitnami/nginx");
   EXPECT_EQ(objects.at(dlg + ".vbox.chart_row.version")->as<std::string>("value"_key), "15.1.0");
-  EXPECT_EQ(objects.at(dlg + ".vbox.buttons.btn_submit")->as<std::string>("label"_key), "Install");
+  EXPECT_EQ(objects.at(dlg + ".vbox.buttons.btn_submit")->as<std::string>("label"_key), "&Install");
 
   // No release name yet: nothing is emitted, the dialog says why.
   size_t since = srv_->events->mark();
@@ -675,11 +675,11 @@ TEST_F(HelmRmiTest, UpgradeDialogLoadsReleaseValuesAndEmitsUpgrade) {
   call("update_releases"_key, two_releases());
 
   size_t since = srv_->events->mark();
-  fire(menu_id_in(root_ + ".vbox.table", 0, "Upgrade..."), "clicked"_key);
+  fire(menu_id_in(root_ + ".vbox.table", 0, "&Upgrade..."), "clicked"_key);
   auto& objects = srv_->last_session->ui_objects;
   ASSERT_TRUE(objects.count(dlg));
   EXPECT_EQ(objects.at(dlg + ".vbox.release_row.release")->as<std::string>("value"_key), "web");
-  EXPECT_EQ(objects.at(dlg + ".vbox.buttons.btn_submit")->as<std::string>("label"_key), "Upgrade");
+  EXPECT_EQ(objects.at(dlg + ".vbox.buttons.btn_submit")->as<std::string>("label"_key), "&Upgrade");
   EXPECT_FALSE(objects.at(dlg + ".vbox.opts.create_ns")->as<bool>("visible"_key));
 
   auto req = srv_->events->wait_for("install_values_requested"_key, since);

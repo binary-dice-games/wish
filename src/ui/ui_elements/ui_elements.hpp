@@ -30,6 +30,7 @@ void register_progress_bar();
 void register_input_number(); // InputInt, InputFloat
 void register_drag(); // DragFloat, DragInt
 void register_selectable();
+void register_shortcut(); // Shortcut: invisible keyboard binding
 void register_docking(); // DockSpaceViewport, DockSpace, DockLayout, DockSplit, DockArea
 void register_table(); // Table, TableColumn, TableRow
 void register_text_editor();

@@ -57,3 +57,9 @@ in the final status message.
 The treemap itself is the core `Treemap` element (see
 [docs/ui-elements.md](../../../../docs/ui-elements.md#treemap)), usable by
 any wish UI.
+
+## Keyboard
+
+Every control can be reached with Tab / Shift+Tab and pressed with Space or Enter; hold Alt to see the underlined access keys (Alt+letter).
+
+- `F5` rescan, `Alt+Up` or `Backspace` up one folder.

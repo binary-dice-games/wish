@@ -6,6 +6,8 @@
 #include <gtest/gtest.h>
 
 #include <context/context.hpp>
+#include <imgui/imgui_keyboard.hpp>
+#include <imgui/imgui_renderer.hpp>
 #include <server/server.hpp>
 #include <ui/ui_root.hpp>
 
@@ -13,6 +15,8 @@
 #include "src/bison/bison_object.hpp"
 #include "src/rmi/rmi.hpp"
 #include "store_session.hpp"
+
+#include <imgui.h>
 
 #include <memory>
 #include <optional>
@@ -604,4 +608,99 @@ TEST(BcSettings, ModeAndViewOptionsAreSavedAndRestored) {
   EXPECT_TRUE(s.element("body.history")->as<bool>("visible"_key));
   EXPECT_TRUE(s.element("menu.view.rad")->as<bool>("checked"_key));
   EXPECT_FALSE(s.element("menu.view.grouping")->as<bool>("checked"_key));
+}
+
+// ── Keyboard: physical keys drive the keypad (Windows Calculator style) ─────
+
+namespace {
+
+/// Renders bc's real server-side tree headlessly with the ImGui renderer and
+/// delivers the events it enqueues to the form, as the server render loop
+/// would.
+class BcKeyboardTest : public BcTest {
+ protected:
+  void SetUp() override {
+    BcTest::SetUp();
+    ctx_ = ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    io.IniFilename = nullptr;
+    io.DisplaySize = ImVec2(1000.0f, 800.0f);
+    io.DeltaTime = 1.0f / 60.0f;
+    unsigned char* pixels;
+    int fw, fh;
+    io.Fonts->GetTexDataAsRGBA32(&pixels, &fw, &fh);
+    io.Fonts->SetTexID(ImTextureID{1});
+    bdg::wish::enable_keyboard_navigation(io);
+    renderer_ = std::make_unique<bdg::wish::imgui_renderer>();
+    frames(3);
+  }
+
+  void TearDown() override {
+    renderer_.reset();
+    ImGui::DestroyContext(ctx_);
+    BcTest::TearDown();
+  }
+
+  void frames(int n) {
+    auto& session = *srv_->last_session;
+    for (int i = 0; i < n; ++i) {
+      renderer_->begin_frame();
+      renderer_->render_node(*session.ui_objects.at(root_), session);
+      renderer_->end_frame();
+      auto events = std::move(session.pending_events);
+      session.pending_events.clear();
+      auto h = session.top_level_handlers.find(bison::key_t{root_});
+      ASSERT_NE(h, session.top_level_handlers.end());
+      for (auto& ev : events)
+        h->second->on_event(ev.id, ev.event_name, ev.payload);
+    }
+  }
+
+  void tap(ImGuiKeyChord chord) {
+    ImGuiIO& io = ImGui::GetIO();
+    const bool shift = chord & ImGuiMod_Shift;
+    const auto key = static_cast<ImGuiKey>(chord & ~ImGuiMod_Mask_);
+    if (shift) {
+      io.AddKeyEvent(ImGuiKey_LeftShift, true);
+      io.AddKeyEvent(ImGuiMod_Shift, true);
+    }
+    io.AddKeyEvent(key, true);
+    frames(1);
+    io.AddKeyEvent(key, false);
+    if (shift) {
+      io.AddKeyEvent(ImGuiKey_LeftShift, false);
+      io.AddKeyEvent(ImGuiMod_Shift, false);
+    }
+    frames(2);
+  }
+
+  ImGuiContext* ctx_ = nullptr;
+  std::unique_ptr<bdg::wish::imgui_renderer> renderer_;
+};
+
+} // namespace
+
+TEST_F(BcKeyboardTest, TypedKeysComputeASum) {
+  tap(ImGuiKey_7);
+  tap(ImGuiMod_Shift | ImGuiKey_Equal); // '+'
+  tap(ImGuiKey_Keypad1);
+  tap(ImGuiKey_Enter);
+  EXPECT_EQ(display(), "8");
+  tap(ImGuiKey_Escape); // C
+  EXPECT_EQ(display(), "0");
+}
+
+TEST_F(BcKeyboardTest, AltDigitSwitchesMode) {
+  ASSERT_TRUE(visible("body.main.std"));
+  ImGuiIO& io = ImGui::GetIO();
+  io.AddKeyEvent(ImGuiKey_LeftAlt, true);
+  io.AddKeyEvent(ImGuiMod_Alt, true);
+  io.AddKeyEvent(ImGuiKey_2, true);
+  frames(1);
+  io.AddKeyEvent(ImGuiKey_2, false);
+  io.AddKeyEvent(ImGuiKey_LeftAlt, false);
+  io.AddKeyEvent(ImGuiMod_Alt, false);
+  frames(3);
+  EXPECT_TRUE(visible("body.main.sci"));
+  EXPECT_FALSE(visible("body.main.std"));
 }

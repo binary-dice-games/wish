@@ -536,7 +536,7 @@ TEST_F(PkgFormTest, InstallFromTheSearchRowAndFromTheBox) {
   call("update_search"_key, results_for("htop", {{{"name", "htop"}, {"description", "process viewer"}}}));
 
   size_t since = srv_->events->mark();
-  fire_at(root_ + "_search", menu_id_in(root_ + "_search.vbox.table", 0, "Install"), "clicked"_key);
+  fire_at(root_ + "_search", menu_id_in(root_ + "_search.vbox.table", 0, "&Install"), "clicked"_key);
   auto ev = srv_->events->wait_for("install_requested"_key, since);
   ASSERT_TRUE(ev);
   EXPECT_EQ(ev->as<std::string>("names"_key), "htop");

@@ -70,7 +70,7 @@ static constexpr const char* kPackagesLayout = R"json({
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_refresh":  { "type": "Button", "label": "$$PIP_REFRESH", "icon": "res/icons/refresh.png" },
+      "btn_refresh":  { "type": "Button", "label": "$$PIP_REFRESH", "shortcut": "F5", "icon": "res/icons/refresh.png" },
       "btn_outdated": { "type": "Button", "label": "$$PIP_CHECK_FOR_UPDATES", "icon": "res/icons/arrow_up.png" },
       "filter":       { "type": "InputText", "hint": "$$PIP_FILTER_BY_NAME", "width": 180 },
       "state":        { "type": "Combo", "items": "$$PIP_STATE_ITEMS", "value": 0, "width": 110 },
@@ -120,7 +120,7 @@ static constexpr const char* kVersionsLayout = R"json({
     "toolbar": { "type": "HorizontalLayout", "spacing": 8, "children": {
       "target":      { "type": "Label", "text": "$$PIP_NO_PACKAGE_SELECTED" },
       "spring":      { "type": "Spring" },
-      "btn_refresh": { "type": "Button", "label": "$$PIP_REFRESH", "icon": "res/icons/refresh.png" }
+      "btn_refresh": { "type": "Button", "label": "$$PIP_REFRESH", "shortcut": "F5", "icon": "res/icons/refresh.png" }
     } },
     "status": { "type": "Label", "text": "$$PIP_VERSIONS_PLACEHOLDER" },
     "sep": { "type": "Separator" },

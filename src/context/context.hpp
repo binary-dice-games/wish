@@ -284,6 +284,19 @@ struct context : public bison::rmi::context {
   /// plain `Label` cell always has been.
   mutable bool suppress_layout_wrap_self{false};
 
+  /// @brief ImGui frame number in which one of this session's windows last
+  ///        had keyboard focus (-1: never). Set by `render_window()`; read
+  ///        by app-scoped keyboard shortcuts (`has_keyboard_focus()`).
+  mutable int keyboard_focus_frame{-1};
+
+  /// @brief True when one of this session's windows has keyboard focus,
+  ///        this frame or the previous one (windows render one after
+  ///        another, so the window holding focus may not have rendered yet).
+  /// @param frame  The current ImGui frame number.
+  bool has_keyboard_focus(int frame) const {
+    return keyboard_focus_frame >= frame - 1;
+  }
+
   /// @brief Construct a session: creates a unique temporary directory.
   /// @param id  Session identifier; used to derive a unique directory name.
   explicit context(bison::key_t id);

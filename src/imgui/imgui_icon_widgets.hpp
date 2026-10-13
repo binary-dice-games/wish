@@ -20,8 +20,15 @@ namespace bdg::wish {
 /// @param icon   Texture to draw; must be non-null.
 /// @param tint   Color multiplied over the icon (usually the text color).
 /// @param size   Same meaning as ImGui::Button()'s size (0 = auto, <0 = fill).
+/// @param text_pos  When non-null, receives where the label text was drawn
+///                  (top-left), e.g. to underline an access key.
 /// @return True on the frame the button is clicked.
-bool icon_button(const char* label, ImTextureID icon, const ImVec4& tint, const ImVec2& size = ImVec2(0, 0));
+bool icon_button(
+    const char* label,
+    ImTextureID icon,
+    const ImVec4& tint,
+    const ImVec2& size = ImVec2(0, 0),
+    ImVec2* text_pos = nullptr);
 
 /// @brief `ImGui::MenuItem()` with @p icon drawn in the popup's icon column.
 ///

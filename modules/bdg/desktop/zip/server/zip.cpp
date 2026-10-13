@@ -168,9 +168,9 @@ static constexpr const char* kActionsLayout = R"json({
           "spacing": 8,
           "children": {
             "btn_compress": { "type": "Button", "label": "$$ZIP_COMPRESS", "icon": "res/icons/zip.png", "height": 32 },
-            "btn_extract":  { "type": "Button", "label": "$$ZIP_EXTRACT", "icon": "res/icons/folder_open.png", "height": 32 },
+            "btn_extract":  { "type": "Button", "label": "$$ZIP_EXTRACT_BUTTON", "icon": "res/icons/folder_open.png", "height": 32 },
             "btn_view":     { "type": "Button", "label": "$$ZIP_VIEW_CONTENTS", "icon": "res/icons/visibility.png", "height": 32 },
-            "btn_refresh":  { "type": "Button", "label": "$$ZIP_REFRESH", "icon": "res/icons/refresh.png", "height": 32 }
+            "btn_refresh":  { "type": "Button", "label": "$$ZIP_REFRESH", "shortcut": "F5", "shortcut_scope": "app", "icon": "res/icons/refresh.png", "height": 32 }
           }
         },
         "status": { "type": "Label", "text": "$$ZIP_READY" }
@@ -191,8 +191,8 @@ static constexpr const char* kPromptLayout = R"({
     "name_input": { "type": "InputText", "value": "", "width": 300 },
     "sep": { "type": "Separator" },
     "buttons": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_ok": { "type": "Button", "label": "", "height": 32 },
-      "btn_cancel": { "type": "Button", "label": "$$ZIP_CANCEL", "height": 32 }
+      "btn_ok": { "type": "Button", "label": "", "shortcut": "Enter", "height": 32 },
+      "btn_cancel": { "type": "Button", "label": "$$ZIP_CANCEL", "shortcut": "Esc", "height": 32 }
     } }
   }
 })";

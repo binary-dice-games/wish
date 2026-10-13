@@ -153,6 +153,7 @@ set_target_properties(test_config_flags PROPERTIES FOLDER tests)
 
 if(WISH_ENABLE_IMGUI)
   wish_add_test(test_imgui_renderer test_imgui_renderer.cpp)
+  wish_add_test(test_keyboard       test_keyboard.cpp)
   wish_add_test(test_desktop_shell test_desktop_shell.cpp)
   wish_add_test(test_imgui_layout   test_imgui_layout.cpp)
   wish_add_test(test_drag_drop      test_drag_drop.cpp)

@@ -1,15 +1,16 @@
 # git -- English (fallback for every other language).
 GIT_GIT = Git
 GIT_COMMIT = Commit
-GIT_PUSH = Push
-GIT_PULL = Pull
-GIT_FETCH = Fetch
-GIT_BRANCH = Branch
-GIT_MERGE = Merge
-GIT_STASH = Stash
-GIT_REFRESH = Refresh
+GIT_COMMIT_ACTION = &Commit
+GIT_PUSH = &Push
+GIT_PULL = P&ull
+GIT_FETCH = &Fetch
+GIT_BRANCH = &Branch
+GIT_MERGE = &Merge
+GIT_STASH = &Stash
+GIT_REFRESH = &Refresh
 GIT_NEW_BRANCH_NAME = New branch name
-GIT_CREATE = Create
+GIT_CREATE = Cr&eate
 GIT_BRANCHES_HEADER = BRANCHES
 GIT_LOCAL = Local
 GIT_REMOTES_HEADER = REMOTES

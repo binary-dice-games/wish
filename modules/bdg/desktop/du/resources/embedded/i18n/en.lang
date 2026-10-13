@@ -2,9 +2,9 @@
 DU_DISK_USAGE = Disk Usage
 DU_FILES = Files
 DU_TREEMAP = Treemap
-DU_RESCAN = Rescan
-DU_STOP = Stop
-DU_UP = Up
+DU_RESCAN = &Rescan
+DU_STOP = &Stop
+DU_UP = &Up
 DU_FOLDER_TO_ANALYZE_ENTER_TO_SCAN = Folder to analyze (Enter to scan)...
 DU_NO_FOLDER_SCANNED_YET = No folder scanned yet.
 DU_NAME = Name

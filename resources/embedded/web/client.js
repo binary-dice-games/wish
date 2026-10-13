@@ -74,6 +74,11 @@
       "F13", "F14", "F15", "F16", "F17", "F18", "F19", "F20", "F21", "F22", "F23", "F24",
       "Apostrophe", "Comma", "Minus", "Period", "Slash", "Semicolon", "Equal",
       "LeftBracket", "Backslash", "RightBracket", "GraveAccent",
+      "CapsLock", "ScrollLock", "NumLock", "PrintScreen", "Pause",
+      "Keypad0", "Keypad1", "Keypad2", "Keypad3", "Keypad4",
+      "Keypad5", "Keypad6", "Keypad7", "Keypad8", "Keypad9",
+      "KeypadDecimal", "KeypadDivide", "KeypadMultiply", "KeypadSubtract",
+      "KeypadAdd", "KeypadEnter", "KeypadEqual",
     ];
     const table = {};
     names.forEach((name, i) => (table[name] = 512 + i));
@@ -95,8 +100,15 @@
     for (let d = 0; d <= 9; ++d) map["Digit" + d] = String(d);
     for (const c of "ABCDEFGHIJKLMNOPQRSTUVWXYZ") map["Key" + c] = c;
     for (let f = 1; f <= 24; ++f) map["F" + f] = "F" + f;
+    for (let d = 0; d <= 9; ++d) map["Numpad" + d] = "Keypad" + d;
+    Object.assign(map, {
+      NumpadDecimal: "KeypadDecimal", NumpadDivide: "KeypadDivide", NumpadMultiply: "KeypadMultiply",
+      NumpadSubtract: "KeypadSubtract", NumpadAdd: "KeypadAdd", NumpadEnter: "KeypadEnter",
+      NumpadEqual: "KeypadEqual",
+    });
     ["Tab", "Home", "End", "PageUp", "PageDown", "Insert", "Delete", "Backspace",
-      "Space", "Enter", "Escape", "Menu"].forEach((n) => (map[n] = n));
+      "Space", "Enter", "Escape", "Menu",
+      "Minus", "Equal", "Comma", "Period", "Slash", "Semicolon", "Backslash"].forEach((n) => (map[n] = n));
     return map;
   })();
 

@@ -940,8 +940,8 @@ void top::show_affinity_dialog(int pid) {
          << checkboxes_json.str() << R"( } },
           "sep": { "type": "Separator" },
           "buttons": { "type": "HorizontalLayout", "spacing": 6, "children": {
-            "btn_apply": { "type": "Button", "label": "$$TOP_APPLY", "height": 32 },
-            "btn_cancel": { "type": "Button", "label": "$$TOP_CANCEL", "height": 32 }
+            "btn_apply": { "type": "Button", "label": "$$TOP_APPLY", "shortcut": "Enter", "height": 32 },
+            "btn_cancel": { "type": "Button", "label": "$$TOP_CANCEL", "shortcut": "Esc", "height": 32 }
           } }
         }
       }

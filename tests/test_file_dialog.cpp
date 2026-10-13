@@ -198,7 +198,7 @@ TEST_F(FileDialogWindowTest, BtnOpenLabelMatchesConfirmLabel) {
   ASSERT_FALSE(root.empty());
   auto& objs = srv_->last_session->ui_objects;
   ASSERT_TRUE(objs.count(root + ".vbox.btn_row.btn_open"));
-  EXPECT_EQ(objs.at(root + ".vbox.btn_row.btn_open")->findField("label"_key)->as<std::string>(), "Open");
+  EXPECT_EQ(objs.at(root + ".vbox.btn_row.btn_open")->findField("label"_key)->as<std::string>(), "&Open");
 }
 
 // ── Step 6: file list synchronization ────────────────────────────────────────

@@ -5,6 +5,7 @@
 
 #ifdef WISH_WEB_ENABLED
 
+#include <imgui/imgui_keyboard.hpp>
 #include <web/draw_protocol.hpp>
 
 #ifdef WISH_AUTOMATION_ENABLED
@@ -84,6 +85,7 @@ void web_renderer::setup() {
 
   ImGuiIO& io = ImGui::GetIO();
   io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+  enable_keyboard_navigation(io);
   io.ConfigDockingWithShift = true;
   // The render loop only calls NewFrame() when activity/dirty triggers a
   // frame (see server::render_loop()), not once per hardware tick -- so a

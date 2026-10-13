@@ -1,13 +1,14 @@
 # git -- Spanish.
 GIT_GIT = Git
 GIT_COMMIT = Confirmar
-GIT_PUSH = Enviar
-GIT_PULL = Traer
-GIT_FETCH = Obtener
-GIT_BRANCH = Rama
-GIT_MERGE = Fusionar
-GIT_STASH = Guardar cambios
-GIT_REFRESH = Actualizar
+GIT_COMMIT_ACTION = &Confirmar
+GIT_PUSH = &Enviar
+GIT_PULL = &Traer
+GIT_FETCH = &Obtener
+GIT_BRANCH = &Rama
+GIT_MERGE = &Fusionar
+GIT_STASH = &Guardar cambios
+GIT_REFRESH = &Actualizar
 GIT_NEW_BRANCH_NAME = Nombre de la nueva rama
 GIT_CREATE = Crear
 GIT_BRANCHES_HEADER = RAMAS

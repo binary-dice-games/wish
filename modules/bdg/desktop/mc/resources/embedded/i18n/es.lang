@@ -2,12 +2,12 @@
 MC_FILE_EXPLORER = Explorador de archivos
 MC_LOCAL_MACHINE = Equipo local
 MC_LOCAL_PATH = Ruta local...
-MC_UPLOAD = Subir
+MC_UPLOAD = &Subir
 MC_UPLOAD_TOOLTIP = Copia los archivos seleccionados a la carpeta del sandbox mostrada en el panel Sandbox
 MC_SANDBOX_SERVER = Sandbox (servidor)
 MC_SANDBOX_PATH = Ruta del sandbox...
-MC_OPEN_IN_EXPLORER = Abrir en el explorador
-MC_DOWNLOAD = Descargar
+MC_OPEN_IN_EXPLORER = Abrir en el &explorador
+MC_DOWNLOAD = &Descargar
 MC_DOWNLOAD_TOOLTIP = Copia los archivos seleccionados a la carpeta local mostrada en el panel Equipo local
 MC_LOCAL_FOLDERS = Carpetas locales
 MC_SANDBOX_FOLDERS = Carpetas del sandbox

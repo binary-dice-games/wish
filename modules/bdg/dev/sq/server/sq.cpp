@@ -59,7 +59,7 @@ static constexpr const char* kEditorLayout = R"json({
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_run":  { "type": "Button", "label": "$$SQ_RUN", "icon": "res/icons/play.png" },
+      "btn_run":  { "type": "Button", "label": "$$SQ_RUN", "shortcut": "F5", "shortcut_scope": "app", "icon": "res/icons/play.png" },
       "conn":     { "type": "Combo", "items": "$$SQ_NO_CONNECTION", "value": 0, "width": 220 },
       "rows":     { "type": "Combo", "items": "$$SQ_ROW_LIMIT_ITEMS", "value": 1, "width": 110 },
       "btn_refresh": { "type": "Button", "label": "$$SQ_REFRESH", "icon": "res/icons/refresh.png" }
