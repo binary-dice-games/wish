@@ -6,6 +6,7 @@ A remote UI framework built on [bison](https://github.com/binary-dice-games/biso
 
 - **Remote, declarative UI** — build a widget tree from a separate client process; the server owns rendering, the client owns application logic.
 - **~50 built-in widgets** — layouts, inputs, tables, docking/tabs, and full 2D/3D plotting, all backed by Dear ImGui.
+- **Keyboard-only control** — Windows-style Tab/arrow navigation, `&File` access keys (Alt+F) and `Ctrl+S`/`F5` shortcuts; see [docs/ui-elements.md](docs/ui-elements.md#keyboard-navigation-access-keys-and-shortcuts).
 - **Two renderer backends** — windowed (SDL3) or browser-based (`--renderer web`, no GPU/window system required).
 - **JSON/YAML templates** — describe a UI hierarchy as data and instantiate it by name, or build it object-by-object in code.
 - **Multiple transports** — TCP, TLS-secured TCP, named pipe/Unix socket, an interactive terminal hop, or in-process (no serialization) for single-binary demos.

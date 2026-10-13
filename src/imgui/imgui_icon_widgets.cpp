@@ -18,7 +18,7 @@
 
 namespace bdg::wish {
 
-bool icon_button(const char* label, ImTextureID icon, const ImVec4& tint, const ImVec2& size) {
+bool icon_button(const char* label, ImTextureID icon, const ImVec4& tint, const ImVec2& size, ImVec2* text_pos) {
   const ImGuiStyle& style = ImGui::GetStyle();
   const float icon_px = ImGui::GetTextLineHeight();
   const char* label_end = ImGui::FindRenderedTextEnd(label);
@@ -46,10 +46,11 @@ bool icon_button(const char* label, ImTextureID icon, const ImVec4& tint, const 
   draw_list->PushClipRect(bb_min, bb_max, true);
   draw_list->AddImage(
       icon, ImVec2(x, y), ImVec2(x + icon_px, y + icon_px), ImVec2(0, 0), ImVec2(1, 1), ImGui::GetColorU32(tint));
-  if (has_text) {
-    const ImVec2 text_pos(x + icon_px + gap, bb_min.y + std::floor((bb_max.y - bb_min.y - text_size.y) * 0.5f));
-    draw_list->AddText(text_pos, ImGui::GetColorU32(ImGuiCol_Text), label, label_end);
-  }
+  const ImVec2 label_pos(x + icon_px + gap, bb_min.y + std::floor((bb_max.y - bb_min.y - text_size.y) * 0.5f));
+  if (has_text)
+    draw_list->AddText(label_pos, ImGui::GetColorU32(ImGuiCol_Text), label, label_end);
+  if (text_pos)
+    *text_pos = label_pos;
   draw_list->PopClipRect();
   return pressed;
 }

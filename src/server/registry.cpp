@@ -47,6 +47,7 @@ void register_all() {
   register_input_number();
   register_drag();
   register_selectable();
+  register_shortcut();
   register_docking();
   register_table();
   register_text_editor();

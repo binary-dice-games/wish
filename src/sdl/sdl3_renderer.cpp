@@ -3,6 +3,8 @@
 /// @brief Implementation of wish::sdl3_renderer.
 #include <sdl/sdl3_renderer.hpp>
 
+#include <imgui/imgui_keyboard.hpp>
+
 #ifdef WISH_SDL3_ENABLED
 
 #include <SDL3_image/SDL_image.h>
@@ -80,6 +82,7 @@ void sdl3_renderer::setup() {
 
   ImGuiIO& io = ImGui::GetIO();
   io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+  enable_keyboard_navigation(io);
   io.ConfigDockingWithShift = true;
 
   // Anchor imgui.ini next to the executable rather than letting ImGui use

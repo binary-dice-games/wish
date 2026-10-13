@@ -375,6 +375,7 @@ add_library(wish_server STATIC
   src/ui/ui_elements/input_number.cpp
   src/ui/ui_elements/drag.cpp
   src/ui/ui_elements/selectable.cpp
+  src/ui/ui_elements/shortcut.cpp
   src/ui/ui_elements/docking.cpp
   src/ui/ui_elements/table.cpp
   src/ui/ui_elements/text_editor.cpp
@@ -427,6 +428,8 @@ if(WISH_ENABLE_IMGUI)
     src/imgui/imgui_desktop_shell.hpp
     src/imgui/imgui_desktop_shell.cpp
     src/imgui/imgui_icon_widgets.cpp
+    src/imgui/imgui_keyboard.hpp
+    src/imgui/imgui_keyboard.cpp
     src/imgui/imgui_layout.hpp
     src/imgui/imgui_layout.cpp
     src/imgui/imgui_ui_renderer.hpp

@@ -103,7 +103,9 @@ void handle_drag_drop(const ui_element& node, const context& s);
 ///        `Label`, `Image`, ...). `"tooltip"` defaults to empty on every
 ///        element (element.cpp), so this is a no-op for the overwhelming
 ///        majority of calls. Called by `imgui_renderer::render_node()` for
-///        every element after its own dispatch.
+///        every element after its own dispatch. A Button/MenuButton with a
+///        `shortcut` gets a tooltip even without one, Windows-style:
+///        "<tooltip or caption> (Ctrl+S)".
 void handle_tooltip(const ui_element& node);
 
 /// @brief Draws a gold highlight box around [@p rect_min, @p rect_max] if

@@ -681,6 +681,19 @@ def test_saving_shows_confirmation(wish_ui):
 
 ## Gotchas
 
+- **Keyboard-only flows are drivable with `page.keyboard`** (verified
+  2026-10, web renderer): click the window once so it has focus, then
+  `keyboard.down("Alt")` shows the access-key underlines for a screenshot,
+  `press("Alt+o", delay=60)` triggers `"&OK"`, `press("Control+s",
+  delay=60)` / `press("F5", delay=60)` trigger `shortcut`s, `Tab` moves
+  focus (a blue focus frame), and `press("Alt+f")` + `ArrowDown` walks a
+  menu. Mind `Esc`: it closes a popup, but also clicks a `Button` whose
+  `shortcut` is `"Esc"` when no popup is open.
+- **A Python `wish.Client` must run its session in `client.run(fn)`**
+  (calling `register_template()` on a bare `Client.tcp()` segfaults), and
+  must keep the `Proxy` returned by `instantiate_template()` (and any
+  `proxy_get()` used for `on_event`) alive: a discarded proxy is released and
+  its window is listed in `get_tree()` with `rect: None`.
 - **An open `TreeNode`'s `rect` covers its children too** (2026-10, `mc`'s
   folder trees). `click(path)` aims at the rect's center, which then lands
   on a child row or in the gap between rows. Click the node's own row

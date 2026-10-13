@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Keyboard-only control of every wish UI, Windows-style (see [docs/ui-elements.md](docs/ui-elements.md#keyboard-navigation-access-keys-and-shortcuts)): Tab/Shift+Tab between controls, arrow keys in menus, Space/Enter to press, Esc to close.
+  - Access keys: a `&` before a letter in a `Button`, `MenuButton`, `Checkbox`, `RadioButton`, `Menu`, `MenuItem`, `TabItem` or input label (`"&File"`) underlines it and makes Alt+letter (the bare letter inside an open menu) activate the control; `&&` is a literal `&`.
+  - Functional shortcuts: `MenuItem.shortcut` (e.g. `"Ctrl+S"`, `"F5"`) now fires `clicked` while its menu is closed; new `shortcut` field on `Button` (shown in its tooltip as "Save (Ctrl+S)") and `MenuButton`.
+  - `Shortcut` element: an invisible key binding (e.g. `F1`) that emits `pressed`.
 - `top` module: **Network** and **Disk I/O** panels (throughput graphs with auto-scaled units, plus totals) and a **Ports** panel listing listening TCP/UDP sockets with their owning process. `Top.update_snapshot` accepts the matching optional `net_*`, `disk_*` and `ports` fields.
 - Settings metadata (see [docs/settings.md](docs/settings.md)): apps describe the settings they keep in the user store (category, section, label, description, type -- bool, int, float, string, enum, color, path -- default, range, options, icon, order, restart note) and sidebar categories, so settings tools can edit them.
   - C++: `describe_setting()` / `describe_settings_category()` on `wish::client`, `wish::standalone` and `wish_app_host`; `wish::settings::describe()` / `describe_category()` / `collect()` / `write_setting()` for server code (`src/context/settings_store.hpp`).

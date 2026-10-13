@@ -64,6 +64,51 @@ last-rendered child instead of the container itself. `render_table()` also
 calls `handle_tooltip()` directly for each `TableRow`, since `TableRow`
 children never go through `render_node()`.
 
+### Keyboard navigation, access keys and shortcuts
+
+Every wish UI can be driven without a mouse, following Windows conventions.
+Navigation is Dear ImGui's own keyboard nav, on for every renderer:
+
+| Key | Action |
+|---|---|
+| `Tab` / `Shift+Tab` | Next / previous control in the focused window (across layouts, splitter panes and tabs) |
+| Arrow keys | Move between controls; open a menu-bar menu (`Down`), walk a menu, open (`Right`) / close (`Left`) a submenu |
+| `Space` / `Enter` | Press the focused button, toggle a checkbox, open a combo; `Enter` on a text field starts editing |
+| `Esc` | Close the open popup/menu, leave a text field |
+| `Alt` (press and release) | Highlight the window's menu bar; then arrows + `Enter` |
+| `Ctrl+Tab` | Switch window |
+
+**Access keys.** A `&` before a letter or digit in a label marks that
+character as the access key: `"&File"` shows *F*ile and `Alt+F` opens it;
+`"&OK"` makes `Alt+O` press the button. Inside an open menu the bare letter
+works (`"&Save"` -> `S`). `&&` shows a literal `&`; any other `&` (e.g.
+`"Save & Exit"`) stays as typed. The underline is hidden until `Alt` is held
+or the keyboard is used to navigate, and always shown inside open menus.
+Supported on `Button`, `MenuButton`, `Checkbox` (also `style: "switch"`),
+`RadioButton`, `Menu`, `MenuItem`, `TabItem` (no underline drawn) and the
+labelled inputs (`InputText`, `InputInt`/`InputFloat`, `SliderFloat`/
+`SliderInt`, `DragFloat`/`DragInt`, `Combo`, `ColorEdit`), where it focuses
+the field. Window titles, `Label`, `Selectable`, `TreeNode` and table cells
+are shown verbatim.
+
+**Shortcuts.** `MenuItem.shortcut`, `Button.shortcut`, `MenuButton.shortcut`
+and the invisible [`Shortcut`](#shortcut) element take a key combination:
+modifiers `Ctrl`/`Control`, `Shift`, `Alt`, `Super`/`Win`/`Cmd`, joined by
+`+` to one key: `A`-`Z`, `0`-`9`, `F1`-`F24`, `Enter`, `Esc`, `Tab`,
+`Space`, `Backspace`, `Del`, `Ins`, `Home`, `End`, `PgUp`, `PgDn`,
+`Up`/`Down`/`Left`/`Right`, `Plus`/`Minus` or a punctuation key such as
+`-`, `=`, `,`, `.`, `/`, `;`, `[`, `]`. Case does not matter (`"ctrl+shift+n"`). An invalid string
+binds nothing. A shortcut fires while its window (or a window docked into it)
+has keyboard focus, like a Windows accelerator; a `MenuItem`'s fires while its
+menu is closed, and not when it or its `Menu` is disabled. A `Button`'s
+shortcut is shown in its tooltip, Windows-style: `"Save (Ctrl+S)"`.
+
+Limitations: `Alt+letter` access keys are ignored while a text field is
+being edited (ImGui treats them as typed characters; press `Esc` or `Tab`
+first). When two controls share an access key or shortcut, the first one
+wins. In the browser renderer, chords the browser reserves (`Ctrl+W`,
+`Ctrl+T`, ...) never reach wish.
+
 ### Drag and drop
 
 Any element becomes a **drag source** by setting a non-empty `drag_type`
@@ -296,11 +341,12 @@ A clickable button.
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `label` | `string` | `""` | Button caption text. |
+| `label` | `string` | `""` | Button caption text; `"&Save"` marks an [access key](#keyboard-navigation-access-keys-and-shortcuts). |
 | `icon` | `string` | `""` | Image drawn left of the label, at text height and tinted to the text color (e.g. `"res/icons/settings.png"`, one of the built-in icons listed in [resources/README.md](../resources/README.md)). With an empty `label` the button is a square icon-only button — give it a `tooltip`. Sandboxed like `Image.src`. |
 | `icon_color` | `string` | `""` | Optional `"#RRGGBBAA"`/`"#RRGGBB"` tint for `icon`; empty uses the theme's text color. |
+| `shortcut` | `string` | `""` | [Keyboard shortcut](#keyboard-navigation-access-keys-and-shortcuts) that clicks the button, e.g. `"Ctrl+S"`, `"F5"`; shown in the tooltip as `"<tooltip or label> (Ctrl+S)"`. |
 
-**Events:** `clicked` — button pressed; no payload.
+**Events:** `clicked` — button pressed (by mouse, `Space`/`Enter`, access key or shortcut); no payload.
 
 #### `Label`
 Read-only static text; no events.
@@ -499,7 +545,7 @@ A drop-down menu; children may be `MenuItem`, nested `Menu` (submenu), or
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `label` | `string` | `""` | Text shown in the parent bar/menu. |
+| `label` | `string` | `""` | Text shown in the parent bar/menu; `"&File"` makes `Alt+F` open it from the bar (`F` inside an open menu). |
 | `enabled` | `bool` | `true` | When `false`, grayed out and cannot open. |
 
 #### `MenuItem`
@@ -507,8 +553,8 @@ A selectable leaf inside a `Menu`.
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `label` | `string` | `""` | Item text. |
-| `shortcut` | `string` | `""` | Decorative shortcut hint shown on the right (not a real keybinding). |
+| `label` | `string` | `""` | Item text; `"&New"` makes `N` activate it while its menu is open. |
+| `shortcut` | `string` | `""` | [Keyboard shortcut](#keyboard-navigation-access-keys-and-shortcuts), shown on the right and active while the menu is closed: pressing it emits `clicked` (while the window owning the `MenuBar`/`MenuButton` has focus). Not fired when the item or its `Menu` is disabled. |
 | `checked` | `bool` | `false` | Shows a check mark. Purely display -- the renderer never modifies it; the form sets it explicitly (e.g. a radio-style submenu recomputing it from server state). |
 | `enabled` | `bool` | `true` | When `false`, grayed out and cannot be clicked. |
 | `copy_text` | `string` | `""` | When non-empty, clicking the item also copies this text to the OS clipboard (`ImGui::SetClipboardText`, on the render thread) -- a "Copy ..." action with no client round trip. |
@@ -529,7 +575,8 @@ same as they would inside a `Menu`.
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `label` | `string` | `""` | Button caption text. |
+| `label` | `string` | `""` | Button caption text (`&` access key as in `Button`). |
+| `shortcut` | `string` | `""` | Keyboard shortcut that opens the popup, as in `Button.shortcut`. |
 | `icon` | `string` | `""` | Same as `Button.icon`; an empty `label` gives a square icon-only button (e.g. a table row's `res/icons/more.png` actions menu). |
 
 #### `MenuBarExtension`
@@ -612,6 +659,19 @@ Children should be `MenuItem`, `Menu` (submenu), or `Separator` elements,
 rendered inside the popup exactly as they would inside a `MenuBar`. No
 fields, no events of its own — its `MenuItem` children fire `clicked` the
 same as they would inside a `Menu`.
+
+#### `Shortcut`
+An invisible keyboard binding, for keys with no visible control (e.g. `F1`
+for help, `F5` to refresh). Draws nothing and takes no layout space; place it
+anywhere in the window it belongs to.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `keys` | `string` | `""` | [Key combination](#keyboard-navigation-access-keys-and-shortcuts), e.g. `"F5"`, `"Ctrl+Shift+N"`. |
+| `enabled` | `bool` | `true` | When `false`, the binding is ignored. |
+| `global` | `bool` | `false` | `false`: fires only while its window has keyboard focus. `true`: fires whichever window is focused, unless the focused window binds the same keys. |
+
+**Events:** `pressed` — no payload.
 
 ### Tabs
 

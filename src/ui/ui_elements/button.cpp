@@ -16,7 +16,9 @@ void register_button() {
       field{
           std::string{""},
           attr<DisplayName>("Label"),
-          attr<Description>("Button caption text."),
+          attr<Description>("Button caption text. A '&' before a letter or digit marks it as the "
+                            "access key (\"&Save\": S is underlined, Alt+S clicks); \"&&\" shows a "
+                            "literal '&'."),
           attr<Category>("Content")});
   proto->addField(
       "icon"_rkey,
@@ -39,6 +41,16 @@ void register_button() {
           attr<Description>("Optional \"#RRGGBBAA\"/\"#RRGGBB\" tint for 'icon'; empty uses the "
                             "current theme's text color."),
           attr<Category>("Appearance")});
+  proto->addField(
+      "shortcut"_rkey,
+      field{
+          std::string{},
+          attr<DisplayName>("Shortcut"),
+          attr<Description>("Optional keyboard shortcut that clicks the button while its window has "
+                            "focus, e.g. \"Ctrl+S\" or \"F5\" (same syntax as Shortcut.keys). Shown in "
+                            "the hover tooltip as \"<tooltip or label> (Ctrl+S)\". For an Alt+letter "
+                            "access key, mark the letter in the label instead (\"&Save\")."),
+          attr<Category>("Behavior")});
   (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Button"));
   (*proto)[dynamic::CLASS].addAttribute(attr<Description>("A clickable button that emits a clicked event."));
   dynamic::addClass(
