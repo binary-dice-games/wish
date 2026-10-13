@@ -114,6 +114,7 @@ cmake -S . -B build
 | `WISH_MODULE_BDG_DESKTOP_MC` | `ON`¹ | Include the mc form (server; a two-panel local-filesystem-vs-sandbox file browser) and its self-registering reference client runner. |
 | `WISH_MODULE_BDG_DESKTOP_ZIP` | `ON`¹ | Include the zip form (server) and its self-registering reference client runner (client-side compress/extract/list-contents via miniz). |
 | `WISH_MODULE_BDG_DESKTOP_DU` | `ON`¹ | Include the du form (server) and its self-registering reference client runner — a disk usage analyzer with a treemap (`wish client --run=du -- [FOLDER]`); the client scans its own local filesystem. |
+| `WISH_MODULE_BDG_DESKTOP_FIND` | `ON`¹ | Include the find form (server) and its self-registering reference client runner — instant file search in the spirit of FSearch (`wish client --run=find -- [FOLDER...]`); the client indexes and searches its own local filesystem. |
 | `WISH_COLLECTION_BDG_DEV` | `OFF` | Include every module in `modules/bdg/dev/` (editor, docker, kubectl, helm, pip, pkg, curl, sq, nymph, git) — see below. |
 | `WISH_MODULE_BDG_DEV_EDITOR` | `OFF` | Include the Editor form (server) and its self-registering reference client runner — a live JSON UI mock editor (`wish client --run=editor -- path/to/ui.json`). |
 | `WISH_MODULE_BDG_DEV_DOCKER` | `OFF` | Include the DockerFrontend form (server) and its self-registering reference client runner — a Docker Desktop-style GUI that shells out to the local `docker` binary (`wish client --run=docker`). |
