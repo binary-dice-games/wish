@@ -1,22 +1,22 @@
 # pip -- French.
 PIP_PACKAGES = Paquets
-PIP_REFRESH = Actualiser
-PIP_CHECK_FOR_UPDATES = Rechercher des mises à jour
+PIP_REFRESH = &Actualiser
+PIP_CHECK_FOR_UPDATES = &Rechercher des mises à jour
 PIP_FILTER_BY_NAME = Filtrer par nom
 PIP_STATE_ITEMS = Tous\nObsolètes\nModifiables
-PIP_FREEZE = Freeze
-PIP_CHECK = Vérifier
+PIP_FREEZE = &Freeze
+PIP_CHECK = &Vérifier
 PIP_INSTALL_NEW_PACKAGE = Installer un nouveau paquet :
 PIP_PACKAGE_HINT = nom exact, ex. requests ou requests==2.31.0
-PIP_LOOK_UP = Consulter
-PIP_INSTALL = Installer
+PIP_LOOK_UP = C&onsulter
+PIP_INSTALL = &Installer
 PIP_OR_A_REQUIREMENTS_FILE = Ou un fichier de dépendances :
 PIP_REQUIREMENTS_HINT = chemin sur la machine cliente
-PIP_INSTALL_REQUIREMENTS = Installer les dépendances
+PIP_INSTALL_REQUIREMENTS = Installer les &dépendances
 PIP_INSTALL_OPTIONS = Options d'installation :
-PIP_UPGRADE = Mettre à niveau
-PIP_USER = Utilisateur
-PIP_PRE_RELEASES = Préversions
+PIP_UPGRADE = &Mettre à niveau
+PIP_USER = &Utilisateur
+PIP_PRE_RELEASES = &Préversions
 PIP_NAME = Nom
 PIP_VERSION = Version
 PIP_LATEST = Dernière

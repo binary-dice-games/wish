@@ -688,7 +688,12 @@ def test_saving_shows_confirmation(wish_ui):
   delay=60)` / `press("F5", delay=60)` trigger `shortcut`s, `Tab` moves
   focus (a blue focus frame), and `press("Alt+f")` + `ArrowDown` walks a
   menu. Mind `Esc`: it closes a popup, but also clicks a `Button` whose
-  `shortcut` is `"Esc"` when no popup is open.
+  `shortcut` is `"Esc"` when no popup is open. Punctuation and keypad keys
+  go by DOM code: `press("Shift+Equal")` for `+`, `press("Numpad5")`
+  (before 2026-10 the web client dropped those keydowns, so a shortcut on
+  them never fired in the browser). To screenshot a module with its access
+  keys showing, `keyboard.down("Alt")` before the shot; open a menu with
+  `press("Alt+<letter>")` instead of clicking it.
 - **A Python `wish.Client` must run its session in `client.run(fn)`**
   (calling `register_template()` on a bare `Client.tcp()` segfaults), and
   must keep the `Proxy` returned by `instantiate_template()` (and any

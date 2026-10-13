@@ -69,6 +69,12 @@ the table and asks the client to re-read each tailed file's last N lines,
 so raising it really does surface more history, not just relax future
 eviction.
 
+## Keyboard
+
+Every control can be reached with Tab / Shift+Tab and pressed with Space or Enter; hold Alt to see the underlined access keys (Alt+letter).
+
+- `Ctrl+L` clears all lines; the filter has an access key (`Alt+F` in English).
+
 ## Settings
 
 In Settings (`bdg/desktop/conf`), under the tool's own category:

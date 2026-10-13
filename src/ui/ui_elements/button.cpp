@@ -51,6 +51,16 @@ void register_button() {
                             "the hover tooltip as \"<tooltip or label> (Ctrl+S)\". For an Alt+letter "
                             "access key, mark the letter in the label instead (\"&Save\")."),
           attr<Category>("Behavior")});
+  proto->addField(
+      "shortcut_scope"_rkey,
+      field{
+          std::string{"window"},
+          attr<DisplayName>("Shortcut Scope"),
+          attr<Description>("Where the shortcut is active: \"window\" (the default) while the window "
+                            "containing it has keyboard focus, like a Windows accelerator; \"app\" while "
+                            "any window of the same app (session) has focus -- for a tool split into "
+                            "several docked panels."),
+          attr<Category>("Behavior")});
   (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Button"));
   (*proto)[dynamic::CLASS].addAttribute(attr<Description>("A clickable button that emits a clicked event."));
   dynamic::addClass(

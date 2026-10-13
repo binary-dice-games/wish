@@ -107,6 +107,12 @@ CSV-hostile text), tables whose names need quoting (`order details`,
 - Table names in *View data* are quoted for the driver (`"x"`, `` `x` ``
   for MySQL, `[x]` for SQL Server).
 
+## Keyboard
+
+Every control can be reached with Tab / Shift+Tab and pressed with Space or Enter; hold Alt to see the underlined access keys (Alt+letter).
+
+- `F5` runs the query (from any sq window).
+
 ## Settings
 
 In Settings (`bdg/desktop/conf`), under the tool's own category:

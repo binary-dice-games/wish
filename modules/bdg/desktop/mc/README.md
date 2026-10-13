@@ -69,6 +69,12 @@ directories are silently skipped).
   preset) to confirm once with the user before overwriting the whole batch.
 - **resources/**: none.
 
+## Keyboard
+
+Every control can be reached with Tab / Shift+Tab and pressed with Space or Enter; hold Alt to see the underlined access keys (Alt+letter).
+
+- `F5` copies the selection to the other panel (Upload in the local panel, Download in the sandbox panel). Rename dialog: `Enter` renames, `Esc` cancels.
+
 ## Settings
 
 In Settings (`bdg/desktop/conf`), under the tool's own category:

@@ -1,12 +1,13 @@
 # nymph -- English (fallback for every other language).
 NYMPH_NYMPH = nymph
 NYMPH_SOURCE = Source
-NYMPH_SAVE = Save
+NYMPH_SAVE = &Save
 NYMPH_NO_FILE = (no file)
 NYMPH_MODIFIED = [MODIFIED]
-NYMPH_FORMAT = Format
+NYMPH_FORMAT = &Format
 NYMPH_DATA = Data
-NYMPH_DESCRIPTION = Description
+NYMPH_DATA_TAB = &Data
+NYMPH_DESCRIPTION = Des&cription
 NYMPH_PREVIEW = Preview
 NYMPH_NO_DATA = No data.
 NYMPH_SHOWING_ROWS = Showing {0} of {1} rows

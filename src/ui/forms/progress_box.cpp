@@ -53,7 +53,7 @@ static constexpr const char* kLayout = R"json({
         "col_line": { "type": "TableColumn", "label": "$$PROGRESS_OUTPUT", "flags": "WidthStretch", "column_id": 0 }
       }
     },
-    "btn_cancel": { "type": "Button", "label": "$$MSGBOX_CANCEL" }
+    "btn_cancel": { "type": "Button", "label": "$$MSGBOX_CANCEL", "shortcut": "Esc" }
   } } }
 })json";
 

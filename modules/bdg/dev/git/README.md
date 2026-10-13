@@ -45,6 +45,12 @@ Build: off by default. `cmake -S . -B build -DWISH_MODULE_BDG_DEV_GIT=ON`
 See [DESIGN.md](DESIGN.md) for the full architecture and [PLAN.md](PLAN.md)
 for what's implemented vs. deferred to future work.
 
+## Keyboard
+
+Every control can be reached with Tab / Shift+Tab and pressed with Space or Enter; hold Alt to see the underlined access keys (Alt+letter).
+
+- `F5` refreshes; `Ctrl+Enter` commits (also while typing the commit message).
+
 ## Settings
 
 In Settings (`bdg/desktop/conf`), under the tool's own category:

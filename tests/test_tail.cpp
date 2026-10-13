@@ -454,10 +454,10 @@ TEST_F(TailTest, TreeContainsAllTab) {
 }
 
 TEST_F(TailTest, LabelsAreEnglishByDefault) {
-  EXPECT_NE(find_tab_item(tab_bar(), "All"), nullptr);
+  EXPECT_NE(find_tab_item(tab_bar(), "&All"), nullptr);
   EXPECT_EQ(status_label()->as<std::string>("text"_key), "0 lines");
   auto follow = srv_->last_session->ui_objects.at(root_ + "_controls.vbox.toolbar.chk_follow");
-  EXPECT_EQ(follow->as<std::string>("label"_key), "Follow");
+  EXPECT_EQ(follow->as<std::string>("label"_key), "F&ollow");
 }
 
 TEST(TailLanguageTest, LabelsFollowSessionLanguage) {
@@ -473,8 +473,8 @@ TEST(TailLanguageTest, LabelsFollowSessionLanguage) {
     auto& objs = srv.last_session->ui_objects;
     std::string root = find_form_root(objs);
     ASSERT_FALSE(root.empty());
-    EXPECT_NE(find_tab_item(dynamic_ptr{objs.at(root + ".vbox.tab_bar")}, "Todo"), nullptr);
-    EXPECT_EQ(objs.at(root + "_controls.vbox.toolbar.chk_follow")->as<std::string>("label"_key), "Seguir");
+    EXPECT_NE(find_tab_item(dynamic_ptr{objs.at(root + ".vbox.tab_bar")}, "&Todo"), nullptr);
+    EXPECT_EQ(objs.at(root + "_controls.vbox.toolbar.chk_follow")->as<std::string>("label"_key), "&Seguir");
     EXPECT_EQ(objs.at(root + "_controls.vbox.status_label")->as<std::string>("text"_key), "0 l\xc3\xadneas");
     // A string missing from es.lang would fall back to en.lang; the column
     // headers come from es.lang.

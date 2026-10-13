@@ -27,7 +27,7 @@ constexpr const char* kTextViewerLayout = R"json({
     "toolbar": { "type": "HorizontalLayout", "spacing": 8, "children": {
       "target":      { "type": "Label", "text": "$$COMMON_NOTHING_SELECTED" },
       "spring":      { "type": "Spring" },
-      "btn_refresh": { "type": "Button", "label": "$$COMMON_REFRESH", "icon": "res/icons/refresh.png" }
+      "btn_refresh": { "type": "Button", "label": "$$COMMON_REFRESH", "shortcut": "F5", "icon": "res/icons/refresh.png" }
     } },
     "sep": { "type": "Separator" },
     "editor": {

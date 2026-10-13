@@ -1,15 +1,16 @@
 # pkg -- French.
 PKG_PACKAGES = Paquets
-PKG_REFRESH = Actualiser
-PKG_CHECK_UPDATES = Rechercher des mises à jour
+PKG_REFRESH = &Actualiser
+PKG_CHECK_UPDATES = &Rechercher des mises à jour
 PKG_FILTER = Filtrer
 PKG_STATE_ITEMS = Tous\nÀ mettre à niveau
-PKG_UPDATE_INDEX = Mettre à jour l'index
-PKG_UPGRADE_ALL = Tout mettre à niveau
+PKG_UPDATE_INDEX = &Mettre à jour l'index
+PKG_UPGRADE_ALL = &Tout mettre à niveau
 PKG_FIND_NEW_PACKAGES = Trouver de nouveaux paquets :
 PKG_SEARCH_HINT = nom ou mot-clé, ex. htop
 PKG_SEARCH = Rechercher
-PKG_INSTALL = Installer
+PKG_SEARCH_BUTTON = Re&chercher
+PKG_INSTALL = &Installer
 PKG_NAME = Nom
 PKG_VERSION = Version
 PKG_LATEST = Dernière

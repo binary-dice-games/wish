@@ -8,6 +8,7 @@
 #include "src/bison/bison_object.hpp"
 #include "src/rmi/shared/ids.hpp"
 
+#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <map>
@@ -208,14 +209,14 @@ TEST_F(ContextTranslationsTest, MissingModuleFallsBackToBuiltIn) {
   auto map = ctx_->translations_for("no/such/module");
   ASSERT_NE(map, nullptr);
   EXPECT_EQ(map->lookup("UNKNOWN_KEY"), "UNKNOWN_KEY");
-  EXPECT_EQ(map->lookup("COMMON_REFRESH"), "Refresh");
+  EXPECT_EQ(map->lookup("COMMON_REFRESH"), "&Refresh");
 }
 
 TEST_F(ContextTranslationsTest, ModuleChainEndsInBuiltInTranslations) {
   ctx_->set_language("fr");
   auto map = ctx_->translations_for("test/i18n/mod");
   EXPECT_EQ(map->lookup("A"), "A-en");  // no fr file for the module
-  EXPECT_EQ(map->lookup("COMMON_REFRESH"), "Actualiser");
+  EXPECT_EQ(map->lookup("COMMON_REFRESH"), "&Actualiser");
 }
 
 TEST_F(ContextTranslationsTest, InvalidLanguageCodeIsRejected) {
@@ -326,6 +327,25 @@ TEST(ShippedTranslations, EveryLanguageHasTheSameKeysAndPlaceholders) {
         EXPECT_TRUE(en.count(key)) << dir << ": " << lang << ".lang has extra key " << key;
     }
   }
+}
+
+TEST(ShippedTranslations, LabelsMarkAtMostOneAccessKey) {
+  // "&X" marks a control's access key (see bdg::wish::parse_access_key());
+  // only the first counts, so a second one would show its '&' literally.
+  auto markers = [](const std::string& text) {
+    int n = 0;
+    for (size_t i = 0; i + 1 < text.size(); ++i) {
+      if (text[i] == '&' && text[i + 1] == '&')
+        ++i;
+      else if (text[i] == '&' && std::isalnum(static_cast<unsigned char>(text[i + 1])))
+        ++n;
+    }
+    return n;
+  };
+  for (const auto& dir : translation_dirs())
+    for (const char* lang : kShippedLanguages)
+      for (const auto& [key, text] : read_lang(dir / (std::string{lang} + ".lang")))
+        EXPECT_LE(markers(text), 1) << dir << ": " << lang << " " << key << " = " << text;
 }
 
 TEST(ShippedTranslations, EveryKeyAModuleUsesIsDefined) {

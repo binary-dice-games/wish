@@ -112,3 +112,9 @@ Build: off by default. `cmake -S . -B build -DWISH_MODULE_BDG_DEV_PKG=ON`
 - **`sudo` cannot prompt.** See the elevation notes above.
 - **Progress is indeterminate**, and Cancel stops the manager the way Ctrl-C
   would: a half-finished transaction is not rolled back.
+
+## Keyboard
+
+Every control can be reached with Tab / Shift+Tab and pressed with Space or Enter; hold Alt to see the underlined access keys (Alt+letter).
+
+- `F5` refreshes the focused panel.

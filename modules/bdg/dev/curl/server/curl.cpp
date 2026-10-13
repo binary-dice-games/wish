@@ -87,13 +87,13 @@ static constexpr const char* kRequestLayout = R"json({
       "url":    { "type": "InputText", "hint": "https://api.example.com/v1/users", "width": -1, "max_length": 4096 },
       "env":    { "type": "Combo", "items": "$$CURL_NO_ENVIRONMENT", "value": 0, "width": 160 },
       "follow": { "type": "Checkbox", "label": "$$CURL_FOLLOW_REDIRECTS", "value": true },
-      "btn_send": { "type": "Button", "label": "$$CURL_SEND", "icon": "res/icons/send.png" }
+      "btn_send": { "type": "Button", "label": "$$CURL_SEND", "shortcut": "Ctrl+Enter", "shortcut_scope": "app", "icon": "res/icons/send.png" }
     } },
     "save_bar": { "type": "HorizontalLayout", "spacing": 6, "children": {
       "save_label": { "type": "Label", "text": "$$CURL_SAVE_AS" },
       "save_name":  { "type": "InputText", "hint": "$$CURL_REQUEST_NAME", "width": 200 },
       "save_collection": { "type": "InputText", "hint": "$$CURL_COLLECTION_HINT", "width": 220 },
-      "btn_save":   { "type": "Button", "label": "$$CURL_SAVE", "icon": "res/icons/bookmark.png" }
+      "btn_save":   { "type": "Button", "label": "$$CURL_SAVE", "shortcut": "Ctrl+S", "shortcut_scope": "app", "icon": "res/icons/bookmark.png" }
     } },
     "status": { "type": "Label", "text": "" },
     "sep": { "type": "Separator" },

@@ -97,11 +97,25 @@ modifiers `Ctrl`/`Control`, `Shift`, `Alt`, `Super`/`Win`/`Cmd`, joined by
 `+` to one key: `A`-`Z`, `0`-`9`, `F1`-`F24`, `Enter`, `Esc`, `Tab`,
 `Space`, `Backspace`, `Del`, `Ins`, `Home`, `End`, `PgUp`, `PgDn`,
 `Up`/`Down`/`Left`/`Right`, `Plus`/`Minus` or a punctuation key such as
-`-`, `=`, `,`, `.`, `/`, `;`, `[`, `]`. Case does not matter (`"ctrl+shift+n"`). An invalid string
-binds nothing. A shortcut fires while its window (or a window docked into it)
-has keyboard focus, like a Windows accelerator; a `MenuItem`'s fires while its
-menu is closed, and not when it or its `Menu` is disabled. A `Button`'s
-shortcut is shown in its tooltip, Windows-style: `"Save (Ctrl+S)"`.
+`-`, `=`, `,`, `.`, `/`, `;`, `[`, `]`, or a numeric-keypad key: `Num0`-`Num9`,
+`NumPlus`, `NumMinus`, `NumMul`, `NumDiv`, `NumDot`, `NumEnter`. Case does
+not matter (`"ctrl+shift+n"`). List alternatives with commas: `"5, Num5"`,
+`"Ctrl+Y, Ctrl+Shift+Z"` (`"Ctrl+,"` is the comma key itself). An invalid
+combination binds nothing. A shortcut fires while its window (or a window docked into it)
+has keyboard focus, like a Windows accelerator, or, with `scope`/
+`shortcut_scope` `"app"`, while any window of the same app has focus (never
+another app's window on a shared `wish desktop`). A `MenuItem`'s fires while
+its menu is closed, and not when it or its `Menu` is disabled. Combinations
+with `Ctrl`/`Alt`/`Super`, and function keys, also fire while a text field is
+being edited, except the editing keys the field uses itself (`Ctrl+A`/`C`/
+`V`/`X`/`Z`/`Y`, `Ctrl`+arrows/`Home`/`End`/`Backspace`/`Del`/`Ins`); bare
+keys and `Shift`+key never do. A `Button`'s
+shortcut is shown in its tooltip, Windows-style: `"Save (Ctrl+S)"`. As in a
+Windows dialog, a button bound to `Enter` (or `Space`) is the default button:
+it fires unless `Enter` has just pressed the control the keyboard has focused.
+Keys are matched by key, not by the character it types, so a
+shifted symbol such as `+` is `Shift+=` on a US layout; prefer the keypad
+names or a letter key where layouts differ.
 
 Limitations: `Alt+letter` access keys are ignored while a text field is
 being edited (ImGui treats them as typed characters; press `Esc` or `Tab`
@@ -345,6 +359,7 @@ A clickable button.
 | `icon` | `string` | `""` | Image drawn left of the label, at text height and tinted to the text color (e.g. `"res/icons/settings.png"`, one of the built-in icons listed in [resources/README.md](../resources/README.md)). With an empty `label` the button is a square icon-only button — give it a `tooltip`. Sandboxed like `Image.src`. |
 | `icon_color` | `string` | `""` | Optional `"#RRGGBBAA"`/`"#RRGGBB"` tint for `icon`; empty uses the theme's text color. |
 | `shortcut` | `string` | `""` | [Keyboard shortcut](#keyboard-navigation-access-keys-and-shortcuts) that clicks the button, e.g. `"Ctrl+S"`, `"F5"`; shown in the tooltip as `"<tooltip or label> (Ctrl+S)"`. |
+| `shortcut_scope` | `string` | `"window"` | `"app"` makes `shortcut` work from any window of the same app, not just the button's own. |
 
 **Events:** `clicked` — button pressed (by mouse, `Space`/`Enter`, access key or shortcut); no payload.
 
@@ -576,7 +591,7 @@ same as they would inside a `Menu`.
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `label` | `string` | `""` | Button caption text (`&` access key as in `Button`). |
-| `shortcut` | `string` | `""` | Keyboard shortcut that opens the popup, as in `Button.shortcut`. |
+| `shortcut` | `string` | `""` | Keyboard shortcut that opens the popup, as in `Button.shortcut` (also `shortcut_scope`). |
 | `icon` | `string` | `""` | Same as `Button.icon`; an empty `label` gives a square icon-only button (e.g. a table row's `res/icons/more.png` actions menu). |
 
 #### `MenuBarExtension`
@@ -669,7 +684,7 @@ anywhere in the window it belongs to.
 |---|---|---|---|
 | `keys` | `string` | `""` | [Key combination](#keyboard-navigation-access-keys-and-shortcuts), e.g. `"F5"`, `"Ctrl+Shift+N"`. |
 | `enabled` | `bool` | `true` | When `false`, the binding is ignored. |
-| `global` | `bool` | `false` | `false`: fires only while its window has keyboard focus. `true`: fires whichever window is focused, unless the focused window binds the same keys. |
+| `scope` | `string` | `"window"` | `"window"`: fires while its window has keyboard focus. `"app"`: fires while any window of the same app (session) has focus -- for a tool made of several docked panels. |
 
 **Events:** `pressed` — no payload.
 

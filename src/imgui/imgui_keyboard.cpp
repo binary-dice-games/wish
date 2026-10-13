@@ -222,6 +222,9 @@ ImGuiKey key_for_token(std::string_view token) {
       return static_cast<ImGuiKey>(ImGuiKey_F1 + (n - 1));
     return ImGuiKey_None;
   }
+  if (token.size() == 4 && (token[0] == 'N' || token[0] == 'n') && iequals(token.substr(0, 3), "num") &&
+      token[3] >= '0' && token[3] <= '9')
+    return static_cast<ImGuiKey>(ImGuiKey_Keypad0 + (token[3] - '0'));
   struct named_key {
     const char* name;
     ImGuiKey key;
@@ -250,6 +253,15 @@ ImGuiKey key_for_token(std::string_view token) {
       {"right", ImGuiKey_RightArrow},
       {"plus", ImGuiKey_Equal},
       {"minus", ImGuiKey_Minus},
+      {"numplus", ImGuiKey_KeypadAdd},
+      {"numminus", ImGuiKey_KeypadSubtract},
+      {"nummul", ImGuiKey_KeypadMultiply},
+      {"nummultiply", ImGuiKey_KeypadMultiply},
+      {"numdiv", ImGuiKey_KeypadDivide},
+      {"numdivide", ImGuiKey_KeypadDivide},
+      {"numdot", ImGuiKey_KeypadDecimal},
+      {"numdecimal", ImGuiKey_KeypadDecimal},
+      {"numenter", ImGuiKey_KeypadEnter},
   };
   for (const auto& named : kNamed)
     if (iequals(token, named.name))
@@ -267,12 +279,62 @@ std::string_view trim(std::string_view s) {
 
 } // namespace
 
-bool chord_pressed(ImGuiKeyChord chord, ImGuiInputFlags route) {
-  if (chord == 0)
+shortcut_scope parse_shortcut_scope(std::string_view text) {
+  return iequals(trim(text), "app") ? shortcut_scope::app : shortcut_scope::window;
+}
+
+namespace {
+
+/// True when @p chord should still fire while a text field is active: it
+/// cannot type a character and is not one of the editing chords the field
+/// handles itself.
+bool passes_through_text_input(ImGuiKeyChord chord) {
+  const ImGuiKeyChord mods = chord & ImGuiMod_Mask_;
+  const auto key = static_cast<ImGuiKey>(chord & ~ImGuiMod_Mask_);
+  if (key >= ImGuiKey_F1 && key <= ImGuiKey_F24)
+    return true;
+  if ((mods & (ImGuiMod_Ctrl | ImGuiMod_Alt | ImGuiMod_Super)) == 0)
     return false;
-  // (root window, chord) pairs already bound this frame.
+  if (mods & (ImGuiMod_Alt | ImGuiMod_Super))
+    return true;
+  switch (key) {
+    case ImGuiKey_A:
+    case ImGuiKey_C:
+    case ImGuiKey_V:
+    case ImGuiKey_X:
+    case ImGuiKey_Y:
+    case ImGuiKey_Z:
+    case ImGuiKey_LeftArrow:
+    case ImGuiKey_RightArrow:
+    case ImGuiKey_UpArrow:
+    case ImGuiKey_DownArrow:
+    case ImGuiKey_Home:
+    case ImGuiKey_End:
+    case ImGuiKey_Backspace:
+    case ImGuiKey_Delete:
+    case ImGuiKey_Insert:
+    case ImGuiKey_Tab:
+      return false;
+    default:
+      return true;
+  }
+}
+
+} // namespace
+
+bool chord_pressed(ImGuiKeyChord chord, shortcut_scope scope, bool app_has_focus) {
+  if (chord == 0 || (scope == shortcut_scope::app && !app_has_focus))
+    return false;
+  // Windows dialog rule: when a bare Enter/Space has just activated the
+  // keyboard-focused control (ImGui's own nav, earlier this frame), it does
+  // not also press a default button bound to the same key. The route is
+  // still registered.
+  const bool yields_to_focus = (chord == ImGuiKey_Enter || chord == ImGuiKey_KeypadEnter || chord == ImGuiKey_Space) &&
+      GImGui->NavActivatePressedId != 0;
+  // (window or app, chord) pairs already bound this frame. Only the focused
+  // app registers app-scoped chords, so one shared id serves them all.
   struct claim {
-    ImGuiID root;
+    ImGuiID owner;
     ImGuiKeyChord chord;
   };
   static thread_local std::vector<claim> claims;
@@ -281,17 +343,38 @@ bool chord_pressed(ImGuiKeyChord chord, ImGuiInputFlags route) {
     claims.clear();
     claims_frame = ImGui::GetFrameCount();
   }
+  constexpr ImGuiID kAppOwner = 1;
   const ImGuiWindow* window = ImGui::GetCurrentWindowRead();
-  const ImGuiID root = window ? window->RootWindow->ID : 0;
+  const ImGuiID owner = scope == shortcut_scope::app ? kAppOwner : (window ? window->RootWindow->ID : 0);
   for (const claim& c : claims)
-    if (c.root == root && c.chord == chord)
+    if (c.owner == owner && c.chord == chord)
       return false;
-  claims.push_back({root, chord});
-  return ImGui::Shortcut(chord, route);
+  claims.push_back({owner, chord});
+  // App scope: a global route, which still loses to a chord the focused
+  // window binds itself.
+  ImGuiInputFlags flags = scope == shortcut_scope::app ? ImGuiInputFlags_RouteGlobal : ImGuiInputFlags_RouteFocused;
+  if (passes_through_text_input(chord))
+    flags |= ImGuiInputFlags_RouteOverActive;
+  return ImGui::Shortcut(chord, flags) && !yields_to_focus;
 }
 
-bool shortcut_pressed(std::string_view keys, ImGuiInputFlags route) {
-  return !keys.empty() && chord_pressed(parse_key_chord(keys), route);
+bool shortcut_pressed(std::string_view keys, shortcut_scope scope, bool app_has_focus) {
+  // Comma-separated alternatives; a ',' right after '+' (or alone) is the
+  // comma key itself ("Ctrl+,"), not a separator.
+  bool pressed = false;
+  size_t start = 0;
+  for (size_t i = 0; i <= keys.size(); ++i) {
+    const bool separator = i < keys.size() && keys[i] == ',' && i > start && keys[i - 1] != '+' &&
+        !trim(keys.substr(start, i - start)).empty();
+    if (i == keys.size() || separator) {
+      // Every alternative is evaluated (not short-circuited) so each keeps
+      // its shortcut route registered every frame.
+      if (chord_pressed(parse_key_chord(keys.substr(start, i - start)), scope, app_has_focus))
+        pressed = true;
+      start = i + 1;
+    }
+  }
+  return pressed;
 }
 
 ImGuiKeyChord parse_key_chord(std::string_view text) {

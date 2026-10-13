@@ -30,6 +30,16 @@ errors, overflow) show a message until the next digit or `C`.
   closes.
 - **resources/**: none.
 
+## Keyboard
+
+Every control can be reached with Tab / Shift+Tab and pressed with Space or Enter; hold Alt to see the underlined access keys (Alt+letter).
+
+- Type as on Windows Calculator: digits (top row or keypad); `+` `-` `*` `/` on the keypad (or `Shift+=`, `-`, `Shift+8`, `/`); `Enter` or `=` equals; `Esc` C; `Del` CE; `Backspace`; `F9` +/-; `Shift+5` %; `Shift+9` / `Shift+0` parentheses.
+- Scientific: `S` sin, `O` cos, `T` tan, `L` log, `N` ln, `P` pi, `Q` square, `Shift+2` square root, `Y` x^y, `R` 1/x, `Shift+1` n!, `X` exp, `V` F-E. Programmer: `A`-`F` hex digits, `Shift+M` mod, `Shift+,` / `Shift+.` shift left/right, `Shift+7` AND, `Shift+\` OR, `Shift+6` XOR, Shift+backquote NOT.
+- Shifted symbols assume a US layout; the keypad keys work on any layout.
+- Memory: `Ctrl+L` MC, `Ctrl+R` MR, `Ctrl+P` M+, `Ctrl+Q` M-, `Ctrl+M` MS.
+- `Alt+1`/`Alt+2`/`Alt+3` Standard/Scientific/Programmer, `F3`/`F4`/`F5` degrees/radians/gradians, `Ctrl+H` history, `Ctrl+C` copy, `Ctrl+Shift+D` clear history.
+
 ## Settings
 
 In Settings (`bdg/desktop/conf`), under the tool's own category:

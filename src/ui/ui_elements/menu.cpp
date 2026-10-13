@@ -154,6 +154,13 @@ void register_menu() {
             attr<DisplayName>("Shortcut"),
             attr<Description>("Optional keyboard shortcut that opens the popup, same as Button.shortcut."),
             attr<Category>("Behavior")});
+    proto->addField(
+        "shortcut_scope"_rkey,
+        field{
+            std::string{"window"},
+            attr<DisplayName>("Shortcut Scope"),
+            attr<Description>("Where the shortcut is active, same as Button.shortcut_scope."),
+            attr<Category>("Behavior")});
     (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("MenuButton"));
     (*proto)[dynamic::CLASS].addAttribute(
         attr<Description>("A button that opens a popup menu when clicked. Children should be "

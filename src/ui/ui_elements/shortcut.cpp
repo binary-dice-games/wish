@@ -29,14 +29,14 @@ void register_shortcut() {
           attr<Description>("When false, the binding is ignored."),
           attr<Category>("Behavior")});
   proto->addField(
-      "global"_rkey,
+      "scope"_rkey,
       field{
-          false,
-          attr<DisplayName>("Global"),
-          attr<Description>("When false (the default), the keys only fire while the window containing "
-                            "this element has keyboard focus, like a Windows accelerator. When true, they "
-                            "fire whichever window is focused, unless the focused window binds the same "
-                            "keys itself."),
+          std::string{"window"},
+          attr<DisplayName>("Scope"),
+          attr<Description>("Where the shortcut is active: \"window\" (the default) while the window "
+                            "containing it has keyboard focus, like a Windows accelerator; \"app\" while "
+                            "any window of the same app (session) has focus -- for a tool split into "
+                            "several docked panels."),
           attr<Category>("Behavior")});
   (*proto)[dynamic::CLASS].addAttribute(attr<DisplayName>("Shortcut"));
   (*proto)[dynamic::CLASS].addAttribute(

@@ -454,6 +454,18 @@ primitives rather than beside them:
   closed menu tree once per frame (`process_menu_shortcuts()`) instead.
   `SetNextItemShortcut()` takes one chord per item and is used by the access
   key, hence `Shortcut()` for the explicit shortcut.
+- **Scope "app"** exists because a wish tool is usually several docked
+  windows: "only the focused window" is too narrow (nano's Ctrl+O from its
+  editor), and ImGui's own `RouteGlobal` is too wide (every app on a shared
+  `wish desktop`). `render_window()` stamps `context::keyboard_focus_frame`
+  when one of the session's windows is focused; an app-scoped chord is only
+  registered (as `RouteGlobal`) by the focused session, so apps never compete.
+- **Typing does not block accelerators**: a chord with Ctrl/Alt/Super or a
+  function key is routed with `RouteOverActive`, except the editing chords a
+  text field uses itself (`passes_through_text_input()`), so Ctrl+S or
+  Ctrl+Enter work from a text field as in Windows. A bare Enter/Space bound
+  as a default button yields when ImGui's nav has just activated the focused
+  control with it (`NavActivatePressedId`).
 
 Labels with markup are resolved into a per-thread buffer
 (`access_key_of()`); callers finish drawing the widget and its underline

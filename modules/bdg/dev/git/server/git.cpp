@@ -160,14 +160,14 @@ static constexpr const char* kMainLayout = R"({
         "toolbar": {
           "type": "HorizontalLayout", "spacing": 6,
           "children": {
-            "btn_commit":  { "type": "Button", "label": "$$GIT_COMMIT",  "icon": "res/icons/commit.png" },
+            "btn_commit":  { "type": "Button", "label": "$$GIT_COMMIT_ACTION",  "icon": "res/icons/commit.png" },
             "btn_push":    { "type": "Button", "label": "$$GIT_PUSH",    "icon": "res/icons/upload.png" },
             "btn_pull":    { "type": "Button", "label": "$$GIT_PULL",    "icon": "res/icons/download.png" },
             "btn_fetch":   { "type": "Button", "label": "$$GIT_FETCH",   "icon": "res/icons/sync.png" },
             "btn_branch":  { "type": "Button", "label": "$$GIT_BRANCH",  "icon": "res/icons/tree.png" },
             "btn_merge":   { "type": "Button", "label": "$$GIT_MERGE",   "icon": "res/icons/merge.png" },
             "btn_stash":   { "type": "Button", "label": "$$GIT_STASH",   "icon": "res/icons/package.png" },
-            "btn_refresh": { "type": "Button", "label": "$$GIT_REFRESH", "icon": "res/icons/refresh.png" }
+            "btn_refresh": { "type": "Button", "label": "$$GIT_REFRESH", "shortcut": "F5", "shortcut_scope": "app", "icon": "res/icons/refresh.png" }
           }
         },
         "status_label": { "type": "Label", "text": "" },
@@ -240,7 +240,7 @@ static constexpr const char* kFilesLayout = R"({
           "type": "HorizontalLayout", "spacing": 6,
           "children": {
             "commit_message": { "type": "InputText", "hint": "$$GIT_COMMIT_MESSAGE", "width": -1 },
-            "commit_button":  { "type": "Button", "label": "$$GIT_COMMIT", "icon": "res/icons/commit.png" }
+            "commit_button":  { "type": "Button", "label": "$$GIT_COMMIT_ACTION", "shortcut": "Ctrl+Enter", "shortcut_scope": "app", "icon": "res/icons/commit.png" }
           }
         }
       }

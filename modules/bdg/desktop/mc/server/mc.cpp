@@ -184,7 +184,7 @@ static constexpr const char* kLocalLayout = R"json({
           "spacing": 8,
           "children": {
             "upload": {
-              "type": "Button", "label": "$$MC_UPLOAD", "icon": "res/icons/upload.png",
+              "type": "Button", "label": "$$MC_UPLOAD", "shortcut": "F5", "icon": "res/icons/upload.png",
               "tooltip": "$$MC_UPLOAD_TOOLTIP"
             },
             "left_selected": { "type": "Label", "text": "$$MC_SELECTED_NONE" }
@@ -234,7 +234,7 @@ static constexpr const char* kSandboxLayout = R"json({
           "spacing": 8,
           "children": {
             "download": {
-              "type": "Button", "label": "$$MC_DOWNLOAD", "icon": "res/icons/download.png",
+              "type": "Button", "label": "$$MC_DOWNLOAD", "shortcut": "F5", "icon": "res/icons/download.png",
               "tooltip": "$$MC_DOWNLOAD_TOOLTIP"
             },
             "right_selected": { "type": "Label", "text": "$$MC_SELECTED_NONE" }
@@ -314,8 +314,8 @@ static constexpr const char* kRenameLayout = R"json({
         },
         "sep": { "type": "Separator" },
         "buttons": { "type": "HorizontalLayout", "spacing": 6, "children": {
-          "btn_ok": { "type": "Button", "label": "$$MC_RENAME", "height": 32 },
-          "btn_cancel": { "type": "Button", "label": "$$MC_CANCEL", "height": 32 }
+          "btn_ok": { "type": "Button", "label": "$$MC_RENAME", "shortcut": "Enter", "height": 32 },
+          "btn_cancel": { "type": "Button", "label": "$$MC_CANCEL", "shortcut": "Esc", "height": 32 }
         } }
       }
     }

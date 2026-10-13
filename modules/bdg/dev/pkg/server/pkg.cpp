@@ -54,7 +54,7 @@ static constexpr const char* kPackagesLayout = R"json({
   "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
-      "btn_refresh":     { "type": "Button", "label": "$$PKG_REFRESH", "icon": "res/icons/refresh.png" },
+      "btn_refresh":     { "type": "Button", "label": "$$PKG_REFRESH", "shortcut": "F5", "icon": "res/icons/refresh.png" },
       "btn_outdated":    { "type": "Button", "label": "$$PKG_CHECK_UPDATES", "icon": "res/icons/arrow_up.png" },
       "filter":          { "type": "InputText", "hint": "$$PKG_FILTER", "width": 110 },
       "state":           { "type": "Combo", "items": "$$PKG_STATE_ITEMS", "value": 0, "width": 110 },
@@ -65,7 +65,7 @@ static constexpr const char* kPackagesLayout = R"json({
     "find_bar": { "type": "HorizontalLayout", "spacing": 6, "children": {
       "caption":     { "type": "Label", "text": "$$PKG_FIND_NEW_PACKAGES" },
       "query":       { "type": "InputText", "hint": "$$PKG_SEARCH_HINT", "width": 300 },
-      "btn_search":  { "type": "Button", "label": "$$PKG_SEARCH", "icon": "res/icons/search.png" },
+      "btn_search":  { "type": "Button", "label": "$$PKG_SEARCH_BUTTON", "icon": "res/icons/search.png" },
       "btn_install": { "type": "Button", "label": "$$PKG_INSTALL", "icon": "res/icons/download.png" }
     } },
     "env": { "type": "Label", "text": "" },
@@ -93,7 +93,7 @@ static constexpr const char* kSearchLayout = R"json({
     "toolbar": { "type": "HorizontalLayout", "spacing": 8, "children": {
       "target":      { "type": "Label", "text": "$$PKG_NO_SEARCH_YET" },
       "spring":      { "type": "Spring" },
-      "btn_refresh": { "type": "Button", "label": "$$PKG_REFRESH", "icon": "res/icons/refresh.png" }
+      "btn_refresh": { "type": "Button", "label": "$$PKG_REFRESH", "shortcut": "F5", "icon": "res/icons/refresh.png" }
     } },
     "status": { "type": "Label", "text": "$$PKG_SEARCH_PLACEHOLDER" },
     "sep": { "type": "Separator" },

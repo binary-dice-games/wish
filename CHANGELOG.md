@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Access keys: a `&` before a letter in a `Button`, `MenuButton`, `Checkbox`, `RadioButton`, `Menu`, `MenuItem`, `TabItem` or input label (`"&File"`) underlines it and makes Alt+letter (the bare letter inside an open menu) activate the control; `&&` is a literal `&`.
   - Functional shortcuts: `MenuItem.shortcut` (e.g. `"Ctrl+S"`, `"F5"`) now fires `clicked` while its menu is closed; new `shortcut` field on `Button` (shown in its tooltip as "Save (Ctrl+S)") and `MenuButton`.
   - `Shortcut` element: an invisible key binding (e.g. `F1`) that emits `pressed`.
+  - The bundled tools use it: Windows-style access keys on their buttons, checkboxes, tabs and menus in English, Spanish and French; `F5` refreshes (docker, kubectl, helm, pip, pkg, git, zip, du, details panels) or runs the query (sq) or copies to the other panel (mc); `Ctrl+O`/`Ctrl+N`/`Ctrl+S`/`Ctrl+H` in nano; `Ctrl+Enter` sends (curl) and commits (git); pix zoom keys; bc follows Windows Calculator's keys (digits, operators, `Enter`, `Esc`, memory, `Alt+1`-`Alt+3` modes); message boxes and dialogs take `Enter` for the default button and `Esc` to cancel.
+  - Shortcuts take comma-separated alternatives (`"5, Num5"`) and keypad keys (`Num0`-`Num9`, `NumPlus`, ...); `Shortcut.scope` / `Button.shortcut_scope` `"app"` makes one work from any window of the same app; Ctrl/Alt/function-key shortcuts also work while typing in a text field; an `Enter` default button yields to the keyboard-focused control.
 - `top` module: **Network** and **Disk I/O** panels (throughput graphs with auto-scaled units, plus totals) and a **Ports** panel listing listening TCP/UDP sockets with their owning process. `Top.update_snapshot` accepts the matching optional `net_*`, `disk_*` and `ports` fields.
 - Settings metadata (see [docs/settings.md](docs/settings.md)): apps describe the settings they keep in the user store (category, section, label, description, type -- bool, int, float, string, enum, color, path -- default, range, options, icon, order, restart note) and sidebar categories, so settings tools can edit them.
   - C++: `describe_setting()` / `describe_settings_category()` on `wish::client`, `wish::standalone` and `wish_app_host`; `wish::settings::describe()` / `describe_category()` / `collect()` / `write_setting()` for server code (`src/context/settings_store.hpp`).
@@ -110,6 +112,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `TextEditor` gains `breakpoint_lines` (int array, 1-based) and `current_line` (int, 1-based, 0 = none) fields, rendering a breakpoint dot / current-line arrow in the gutter, and a `"line_context_menu"` event (`{line, has_breakpoint}`) emitted on a gutter right-click.
 
 ### Fixed
+
+- Web renderer: the punctuation keys (`-` `=` `,` `.` `/` `;` `\`) and the numeric keypad now reach the server as keys, not only as typed characters, so shortcuts using them work in the browser.
 
 - Clients over the `pipe` transport notice when the server goes away (they hung in `wait()` before) and can connect again; a server on a pipe no longer risks a crash when stopped (bison update).
 - The windows of a client that was killed or lost its connection now disappear: the server drops the session when the connection closes, not only on an explicit disconnect (bison update).

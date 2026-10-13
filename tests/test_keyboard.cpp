@@ -20,6 +20,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 using namespace bdg::bison;
@@ -103,6 +104,10 @@ TEST(KeyChord, ParsesModifiersAndKeys) {
   EXPECT_EQ(parse_key_chord("Ctrl+-"), ImGuiMod_Ctrl | ImGuiKey_Minus);
   EXPECT_EQ(parse_key_chord("Esc"), ImGuiKey_Escape);
   EXPECT_EQ(parse_key_chord("Super+Up"), ImGuiMod_Super | ImGuiKey_UpArrow);
+  EXPECT_EQ(parse_key_chord("Num5"), ImGuiKey_Keypad5);
+  EXPECT_EQ(parse_key_chord("NumPlus"), ImGuiKey_KeypadAdd);
+  EXPECT_EQ(parse_key_chord("Ctrl+NumMinus"), ImGuiMod_Ctrl | ImGuiKey_KeypadSubtract);
+  EXPECT_EQ(parse_key_chord("NumEnter"), ImGuiKey_KeypadEnter);
 }
 
 TEST(KeyChord, RejectsInvalidStrings) {
@@ -335,4 +340,142 @@ TEST_F(KeyboardTest, DuplicateShortcutInOneWindowFiresOnlyFirst) {
   ASSERT_EQ(sess_->pending_events.size(), 1u);
   EXPECT_EQ(sess_->pending_events[0].event_name, "clicked"_key);
   EXPECT_EQ(sess_->pending_events[0].id, map["first"]->wish_id());
+}
+
+TEST_F(KeyboardTest, ShortcutAlternativesEachFire) {
+  auto map = bdg::wish::import_json(R"({"type":"VerticalLayout","children":{
+      "five":{"type":"Button","label":"5","shortcut":"5, Num5"},
+      "comma":{"type":"Shortcut","keys":"Ctrl+,"}}})");
+  frames(*map[""], 3);
+  tap(*map[""], ImGuiKey_5);
+  EXPECT_EQ(take_events(), std::vector<std::string>{"clicked"});
+  tap(*map[""], ImGuiKey_Keypad5);
+  EXPECT_EQ(take_events(), std::vector<std::string>{"clicked"});
+  tap(*map[""], ImGuiMod_Ctrl | ImGuiKey_Comma);
+  EXPECT_EQ(take_events(), std::vector<std::string>{"pressed"});
+}
+
+TEST_F(KeyboardTest, EnterShortcutYieldsToKeyboardFocusedControl) {
+  auto map = bdg::wish::import_json(R"({"type":"VerticalLayout","children":{
+      "ok":{"type":"Button","label":"OK","shortcut":"Enter"},
+      "cancel":{"type":"Button","label":"Cancel","shortcut":"Esc"}}})");
+  frames(*map[""], 3);
+
+  // Nothing focused: Enter is the default button.
+  tap(*map[""], ImGuiKey_Enter);
+  ASSERT_EQ(sess_->pending_events.size(), 1u);
+  EXPECT_EQ(sess_->pending_events[0].id, map["ok"]->wish_id());
+  sess_->pending_events.clear();
+
+  // Tab to OK, Tab to Cancel: Enter now presses the focused Cancel only.
+  tap(*map[""], ImGuiKey_Tab);
+  tap(*map[""], ImGuiKey_Tab);
+  sess_->pending_events.clear();
+  tap(*map[""], ImGuiKey_Enter);
+  ASSERT_EQ(sess_->pending_events.size(), 1u);
+  EXPECT_EQ(sess_->pending_events[0].id, map["cancel"]->wish_id());
+}
+
+// ── Shortcut scope and typing ────────────────────────────────────────────────
+
+namespace {
+
+/// Two windows side by side; click_x picks which one gets focus.
+constexpr const char* kLeftWindow = R"({"type":"Window","title":"Left","pos_x":0,"pos_y":0,
+    "width":300,"height":200,"children":{
+      "app_key":{"type":"Shortcut","keys":"F6","scope":"app"},
+      "win_key":{"type":"Shortcut","keys":"F7"}}})";
+constexpr const char* kRightWindow = R"({"type":"Window","title":"Right","pos_x":400,"pos_y":0,
+    "width":300,"height":200,"children":{"text":{"type":"Label","text":"right"}}})";
+
+} // namespace
+
+class KeyboardScopeTest : public KeyboardTest {
+ protected:
+  /// One frame of left+right (same session) and, optionally, other (a
+  /// second session).
+  void frame2() {
+    renderer_->begin_frame();
+    renderer_->render_node(*left_[""], *sess_);
+    renderer_->render_node(*right_[""], *sess_);
+    if (other_sess_)
+      renderer_->render_node(*other_[""], *other_sess_);
+    renderer_->end_frame();
+  }
+
+  void click_at(float x, float y) {
+    ImGuiIO& io = ImGui::GetIO();
+    io.AddMousePosEvent(x, y);
+    frame2();
+    io.AddMouseButtonEvent(0, true);
+    frame2();
+    io.AddMouseButtonEvent(0, false);
+    frame2();
+    frame2();
+  }
+
+  void tap2(ImGuiKeyChord chord) {
+    set_keys(chord, true);
+    frame2();
+    set_keys(chord, false);
+    frame2();
+    frame2();
+  }
+
+  // Imported in SetUp(): the base SetUp() registers the widget classes.
+  void SetUp() override {
+    KeyboardTest::SetUp();
+    left_ = bdg::wish::import_json(kLeftWindow);
+    right_ = bdg::wish::import_json(kRightWindow);
+    other_ = bdg::wish::import_json(
+        R"({"type":"Window","title":"Other","pos_x":0,"pos_y":300,"width":300,"height":200,
+            "children":{"t":{"type":"Label","text":"other"}}})");
+  }
+
+  bdg::wish::ui_tree left_;
+  bdg::wish::ui_tree right_;
+  bdg::wish::ui_tree other_;
+  std::unique_ptr<context> other_sess_;
+};
+
+TEST_F(KeyboardScopeTest, AppScopeFiresFromAnyWindowOfTheSameApp) {
+  frame2();
+  click_at(500, 100); // focus "Right"
+  take_events();
+  tap2(ImGuiKey_F6); // app scope: fires although "Left" is not focused
+  tap2(ImGuiKey_F7); // window scope: does not
+  EXPECT_EQ(take_events(), std::vector<std::string>{"pressed"});
+
+  click_at(100, 100); // focus "Left": both fire
+  take_events();
+  tap2(ImGuiKey_F6);
+  tap2(ImGuiKey_F7);
+  EXPECT_EQ(take_events(), (std::vector<std::string>{"pressed", "pressed"}));
+}
+
+TEST_F(KeyboardScopeTest, AppScopeIgnoresOtherAppsWindows) {
+  other_sess_ = std::make_unique<context>(bdg::bison::rmi::shared::generate_id());
+  frame2();
+  click_at(100, 400); // focus the other session's window
+  take_events();
+  tap2(ImGuiKey_F6);
+  EXPECT_TRUE(take_events().empty());
+}
+
+TEST_F(KeyboardTest, ModifierShortcutsFireWhileTypingButEditingChordsDoNot) {
+  auto map = bdg::wish::import_json(R"({"type":"VerticalLayout","children":{
+      "name":{"type":"InputText","label":"Name","value":""},
+      "save":{"type":"Button","label":"Save","shortcut":"Ctrl+S"},
+      "all":{"type":"Button","label":"All","shortcut":"Ctrl+A"},
+      "go":{"type":"Button","label":"Go","shortcut":"G"}}})");
+  frames(*map[""], 3);
+  tap(*map[""], ImGuiKey_Tab); // start editing "Name"
+  ASSERT_TRUE(ImGui::GetIO().WantTextInput);
+  take_events();
+
+  tap(*map[""], ImGuiMod_Ctrl | ImGuiKey_S);
+  EXPECT_EQ(take_events(), std::vector<std::string>{"clicked"});
+  tap(*map[""], ImGuiMod_Ctrl | ImGuiKey_A); // select-all in the field instead
+  tap(*map[""], ImGuiKey_G); // types 'g'
+  EXPECT_TRUE(take_events().empty());
 }

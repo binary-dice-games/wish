@@ -31,6 +31,12 @@ last given.
   periodically pushes a fresh snapshot to the form.
 - **resources/**: none.
 
+## Keyboard
+
+Every control can be reached with Tab / Shift+Tab and pressed with Space or Enter; hold Alt to see the underlined access keys (Alt+letter).
+
+- Affinity dialog: `Enter` applies, `Esc` cancels.
+
 ## Settings
 
 In Settings (`bdg/desktop/conf`), under the tool's own category:

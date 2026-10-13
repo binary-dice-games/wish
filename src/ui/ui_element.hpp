@@ -777,12 +777,17 @@ class ui_button : public cloneable_ui_element<ui_button> {
   const std::string& shortcut_ref() const {
     return cached_field_str(shortcut_field_, bison::key_t{"shortcut"});
   }
+  /// @brief Zero-copy `shortcut_scope` ("window"/"app"; empty fallback).
+  const std::string& shortcut_scope_ref() const {
+    return cached_field_str(shortcut_scope_field_, bison::key_t{"shortcut_scope"});
+  }
 
  private:
   mutable bison::field* label_field_ = nullptr;
   mutable bison::field* icon_field_ = nullptr;
   mutable bison::field* icon_color_field_ = nullptr;
   mutable bison::field* shortcut_field_ = nullptr;
+  mutable bison::field* shortcut_scope_field_ = nullptr;
 };
 
 /// @brief Invisible keyboard binding (`Shortcut` class): emits `pressed`
@@ -798,14 +803,15 @@ class ui_shortcut : public cloneable_ui_element<ui_shortcut> {
   bool enabled(bool def = true) const {
     return cached_field_or<bool>(enabled_field_, bison::key_t{"enabled"}, def);
   }
-  bool global(bool def = false) const {
-    return cached_field_or<bool>(global_field_, bison::key_t{"global"}, def);
+  /// @brief Zero-copy `scope` ("window"/"app"; empty fallback).
+  const std::string& scope_ref() const {
+    return cached_field_str(scope_field_, bison::key_t{"scope"});
   }
 
  private:
   mutable bison::field* keys_field_ = nullptr;
   mutable bison::field* enabled_field_ = nullptr;
-  mutable bison::field* global_field_ = nullptr;
+  mutable bison::field* scope_field_ = nullptr;
 };
 
 class ui_label : public cloneable_ui_element<ui_label> {
@@ -1268,11 +1274,16 @@ class ui_menu_button : public cloneable_ui_element<ui_menu_button> {
   const std::string& shortcut_ref() const {
     return cached_field_str(shortcut_field_, bison::key_t{"shortcut"});
   }
+  /// @brief Zero-copy `shortcut_scope` ("window"/"app"; empty fallback).
+  const std::string& shortcut_scope_ref() const {
+    return cached_field_str(shortcut_scope_field_, bison::key_t{"shortcut_scope"});
+  }
 
  private:
   mutable bison::field* label_field_ = nullptr;
   mutable bison::field* icon_field_ = nullptr;
   mutable bison::field* shortcut_field_ = nullptr;
+  mutable bison::field* shortcut_scope_field_ = nullptr;
 };
 
 // ── Tabs ─────────────────────────────────────────────────────────────────────

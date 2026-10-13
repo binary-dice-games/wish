@@ -2,12 +2,12 @@
 MC_FILE_EXPLORER = Explorateur de fichiers
 MC_LOCAL_MACHINE = Machine locale
 MC_LOCAL_PATH = Chemin local...
-MC_UPLOAD = Envoyer
+MC_UPLOAD = &Envoyer
 MC_UPLOAD_TOOLTIP = Copie les fichiers sélectionnés dans le dossier du bac à sable affiché dans le panneau Bac à sable
 MC_SANDBOX_SERVER = Bac à sable (serveur)
 MC_SANDBOX_PATH = Chemin du bac à sable...
-MC_OPEN_IN_EXPLORER = Ouvrir dans l'explorateur
-MC_DOWNLOAD = Télécharger
+MC_OPEN_IN_EXPLORER = Ouvrir dans l'&explorateur
+MC_DOWNLOAD = &Télécharger
 MC_DOWNLOAD_TOOLTIP = Copie les fichiers sélectionnés dans le dossier local affiché dans le panneau Machine locale
 MC_LOCAL_FOLDERS = Dossiers locaux
 MC_SANDBOX_FOLDERS = Dossiers du bac à sable

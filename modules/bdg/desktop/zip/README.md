@@ -40,6 +40,12 @@ button; a failure stays in the dialog until closed.
 Mirrors `tree`'s client/server split for its local (left) panel:
 the server owns and renders the UI, the client owns the local filesystem.
 
+## Keyboard
+
+Every control can be reached with Tab / Shift+Tab and pressed with Space or Enter; hold Alt to see the underlined access keys (Alt+letter).
+
+- `F5` refreshes; name dialog: `Enter` confirms, `Esc` cancels.
+
 ## Settings
 
 In Settings (`bdg/desktop/conf`), under the tool's own category:

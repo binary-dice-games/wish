@@ -56,24 +56,45 @@ access_key_label parse_access_key(const std::string& label, std::string& storage
 /// Modifiers: Ctrl/Control, Shift, Alt, Super/Win/Cmd. Keys: A-Z, 0-9,
 /// F1-F24, Enter/Return, Esc/Escape, Tab, Space, Backspace, Del/Delete,
 /// Ins/Insert, Home, End, PgUp/PageUp, PgDn/PageDown, Up/Down/Left/Right,
-/// Plus/Minus and the punctuation keys - = , . / ; ' [ ] \ `.
+/// Plus/Minus, the punctuation keys - = , . / ; ' [ ] \ ` and the numeric
+/// keypad: Num0-Num9, NumPlus, NumMinus, NumMul, NumDiv, NumDot, NumEnter.
 ///
 /// @return The ImGui key chord, or 0 when the string is empty or invalid
 ///         (unknown token, no non-modifier key, more than one key).
 ImGuiKeyChord parse_key_chord(std::string_view text);
 
-/// @brief True on the frame @p chord is pressed, routed like
-///        ImGui::Shortcut(): by default only while the current window (or
-///        one of its children/docked windows) has keyboard focus.
+/// @brief Where a shortcut is active.
+enum class shortcut_scope {
+  window, ///< While the window it is rendered in (or a child/docked window) has keyboard focus.
+  app, ///< While any window of the same session (app) has keyboard focus.
+};
+
+/// @brief "app" -> shortcut_scope::app; anything else (including "") ->
+///        shortcut_scope::window.
+shortcut_scope parse_shortcut_scope(std::string_view text);
+
+/// @brief True on the frame @p chord is pressed within @p scope. For
+///        shortcut_scope::app the caller passes whether its session has
+///        keyboard focus (context::has_keyboard_focus()); an unfocused app
+///        does not even register the chord, so it never competes with the
+///        focused one.
+///
+/// Chords with Ctrl/Alt/Super or a function key also fire while a text
+/// field is being edited (as Windows accelerators do), except the editing
+/// chords text fields use themselves (Ctrl+A/C/V/X/Z/Y, Ctrl+arrows, ...).
 ///
 /// Within one top-level window and frame, only the first caller binding a
 /// given chord can fire (ImGui alone would fire every binding sharing the
-/// window's focus scope). A 0 @p chord never fires.
-bool chord_pressed(ImGuiKeyChord chord, ImGuiInputFlags route = ImGuiInputFlags_RouteFocused);
+/// window's focus scope). A bare Enter/Space does not fire while the
+/// keyboard has a control focused: that control is activated instead, as in
+/// a Windows dialog. A 0 @p chord never fires.
+bool chord_pressed(ImGuiKeyChord chord, shortcut_scope scope = shortcut_scope::window, bool app_has_focus = false);
 
-/// @brief chord_pressed() for a shortcut string (parse_key_chord() syntax).
-///        An empty or invalid @p keys never fires.
-bool shortcut_pressed(std::string_view keys, ImGuiInputFlags route = ImGuiInputFlags_RouteFocused);
+/// @brief chord_pressed() for a shortcut string: one or more
+///        parse_key_chord() combinations separated by commas ("5, Num5";
+///        "Ctrl+," is the comma key). True when any alternative is pressed;
+///        an empty or invalid alternative never fires.
+bool shortcut_pressed(std::string_view keys, shortcut_scope scope = shortcut_scope::window, bool app_has_focus = false);
 
 /// @brief True when access-key underlines should be drawn: while Alt is held,
 ///        while the keyboard is driving navigation, or inside a popup menu

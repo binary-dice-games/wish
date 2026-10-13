@@ -2,12 +2,12 @@
 MC_FILE_EXPLORER = File Explorer
 MC_LOCAL_MACHINE = Local Machine
 MC_LOCAL_PATH = Local path...
-MC_UPLOAD = Upload
+MC_UPLOAD = &Upload
 MC_UPLOAD_TOOLTIP = Copy the selected files to the sandbox folder shown in the Sandbox panel
 MC_SANDBOX_SERVER = Sandbox (Server)
 MC_SANDBOX_PATH = Sandbox path...
-MC_OPEN_IN_EXPLORER = Open in Explorer
-MC_DOWNLOAD = Download
+MC_OPEN_IN_EXPLORER = Open in &Explorer
+MC_DOWNLOAD = &Download
 MC_DOWNLOAD_TOOLTIP = Copy the selected files to the local folder shown in the Local Machine panel
 MC_LOCAL_FOLDERS = Local Folders
 MC_SANDBOX_FOLDERS = Sandbox Folders

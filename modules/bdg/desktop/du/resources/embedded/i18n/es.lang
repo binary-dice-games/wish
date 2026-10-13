@@ -2,9 +2,9 @@
 DU_DISK_USAGE = Uso del disco
 DU_FILES = Archivos
 DU_TREEMAP = Mapa de árbol
-DU_RESCAN = Volver a analizar
-DU_STOP = Detener
-DU_UP = Subir
+DU_RESCAN = &Volver a analizar
+DU_STOP = &Detener
+DU_UP = &Subir
 DU_FOLDER_TO_ANALYZE_ENTER_TO_SCAN = Carpeta a analizar (Intro para analizar)...
 DU_NO_FOLDER_SCANNED_YET = Todavía no se ha analizado ninguna carpeta.
 DU_NAME = Nombre

@@ -282,6 +282,8 @@ void render_window(imgui_renderer& r, const ui_element& node0, const context& s)
       if (ImGui::IsWindowAppearing())
         s.dirty.store(kDirtySettleFrames, std::memory_order_release);
 
+      if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows))
+        s.keyboard_focus_frame = ImGui::GetFrameCount();
       // BeginPopupModal() returns false without calling Begin() at all when
       // the popup isn't open -- gating on now_open avoids capturing the
       // *enclosing* window's rect in that case.
@@ -423,7 +425,10 @@ void render_window(imgui_renderer& r, const ui_element& node0, const context& s)
   // "focused": it (or one of its child windows, e.g. a TextEditor) just
   // gained focus -- lets an app track which of several document windows
   // is the current one.
-  if (node.just_focused(ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)))
+  const bool window_focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
+  if (window_focused)
+    s.keyboard_focus_frame = ImGui::GetFrameCount();
+  if (node.just_focused(window_focused))
     enqueue_event(s, node.wish_id(), "focused"_key, dynamic{});
   // Begin()/BeginChild() are the only ImGui calls where a matching End() is
   // required regardless of the return value -- a collapsed/clipped window
@@ -568,7 +573,10 @@ void render_button(imgui_renderer& r, const ui_element& node0, const context& s)
   // `shortcut` (e.g. "Ctrl+S"): a second, explicit binding on top of the
   // label's access key -- ImGui::Shortcut() rather than SetNextItemShortcut(),
   // which allows only one chord per item and is taken by the access key.
-  if (shortcut_pressed(node.shortcut_ref()))
+  if (shortcut_pressed(
+          node.shortcut_ref(),
+          parse_shortcut_scope(node.shortcut_scope_ref()),
+          s.has_keyboard_focus(ImGui::GetFrameCount())))
     clicked = true;
   if (clicked)
     enqueue_event(s, node.wish_id(), "clicked"_key, dynamic{});
@@ -1479,12 +1487,14 @@ void render_menu(imgui_renderer& r, const ui_element& node0, const context& s) {
   // The underline is drawn after BeginMenu() returns, when an open menu has
   // already made its popup the current window -- so capture the parent
   // window's draw list and label position first.
+  // Visibility too: inside the popup, underlines are always visible.
   const ImVec2 text_pos = next_menu_label_pos();
   ImDrawList* parent_draw_list = ImGui::GetWindowDrawList();
+  const bool show_underline = enabled && access_keys_visible();
   if (enabled)
     set_next_access_key(label);
   const bool open = ImGui::BeginMenu(label.text, enabled);
-  if (enabled)
+  if (show_underline)
     draw_access_key_underline(text_pos, label, parent_draw_list);
   if (open) {
     // Same settle-frames need as render_combo()/render_menu_button(): the
@@ -1548,7 +1558,10 @@ void render_menu_button(imgui_renderer& r, const ui_element& node0, const contex
     clicked = ImGui::Button(iml.c_str());
     underline_button_label(label);
   }
-  if (shortcut_pressed(node.shortcut_ref()))
+  if (shortcut_pressed(
+          node.shortcut_ref(),
+          parse_shortcut_scope(node.shortcut_scope_ref()),
+          s.has_keyboard_focus(ImGui::GetFrameCount())))
     clicked = true;
   if (clicked) {
     ImGui::OpenPopup(iml.c_str());
@@ -1585,8 +1598,8 @@ void render_shortcut(imgui_renderer&, const ui_element& node0, const context& s)
   const auto& node = static_cast<const ui_shortcut&>(node0);
   if (!node.enabled(true))
     return;
-  const ImGuiInputFlags route = node.global(false) ? ImGuiInputFlags_RouteGlobal : ImGuiInputFlags_RouteFocused;
-  if (shortcut_pressed(node.keys_ref(), route))
+  if (shortcut_pressed(
+          node.keys_ref(), parse_shortcut_scope(node.scope_ref()), s.has_keyboard_focus(ImGui::GetFrameCount())))
     enqueue_event(s, node.wish_id(), "pressed"_key, dynamic{});
 }
 

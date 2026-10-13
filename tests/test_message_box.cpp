@@ -216,9 +216,13 @@ TEST_F(MessageBoxConstructTest, ConstructParamsBuildYesNoCancelButtonRow) {
   ASSERT_TRUE(objs.count(root + ".buttons.btn0"));
   ASSERT_TRUE(objs.count(root + ".buttons.btn1"));
   ASSERT_TRUE(objs.count(root + ".buttons.btn2"));
-  EXPECT_EQ(objs.at(root + ".buttons.btn0")->findField("label"_key)->as<std::string>(), "Yes");
-  EXPECT_EQ(objs.at(root + ".buttons.btn1")->findField("label"_key)->as<std::string>(), "No");
+  EXPECT_EQ(objs.at(root + ".buttons.btn0")->findField("label"_key)->as<std::string>(), "&Yes");
+  EXPECT_EQ(objs.at(root + ".buttons.btn1")->findField("label"_key)->as<std::string>(), "&No");
   EXPECT_EQ(objs.at(root + ".buttons.btn2")->findField("label"_key)->as<std::string>(), "Cancel");
+  // Windows message-box keys: Enter is the default (first) button, Esc cancels.
+  EXPECT_EQ(objs.at(root + ".buttons.btn0")->as<std::string>("shortcut"_key), "Enter");
+  EXPECT_EQ(objs.at(root + ".buttons.btn1")->as<std::string>("shortcut"_key), "");
+  EXPECT_EQ(objs.at(root + ".buttons.btn2")->as<std::string>("shortcut"_key), "Esc");
 }
 
 // ── Translation (i18n) ───────────────────────────────────────────────────────
@@ -239,8 +243,8 @@ TEST_F(MessageBoxConstructTest, ButtonLabelsFollowSessionLanguage) {
   std::string root = find_form_root(srv_->last_session->ui_objects);
   ASSERT_FALSE(root.empty());
   auto& objs = srv_->last_session->ui_objects;
-  EXPECT_EQ(objs.at(root + ".buttons.btn0")->findField("label"_key)->as<std::string>(), "S\xc3\xad");
-  EXPECT_EQ(objs.at(root + ".buttons.btn1")->findField("label"_key)->as<std::string>(), "No");
+  EXPECT_EQ(objs.at(root + ".buttons.btn0")->findField("label"_key)->as<std::string>(), "&S\xc3\xad");
+  EXPECT_EQ(objs.at(root + ".buttons.btn1")->findField("label"_key)->as<std::string>(), "&No");
   EXPECT_EQ(objs.at(root + ".buttons.btn2")->findField("label"_key)->as<std::string>(), "Cancelar");
 }
 

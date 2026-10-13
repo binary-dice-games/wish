@@ -300,7 +300,7 @@ TEST_F(ProgressBoxRmiTest, FinishWithErrorStaysOpenUntilClosed) {
   EXPECT_NE(BOX_TEXT_AT(root_ + ".vbox.result").find("No matching distribution"), std::string::npos);
   EXPECT_TRUE(objects.at(root_ + ".vbox.result")->as<bool>("visible"_key));
   EXPECT_FALSE(objects.at(root_ + ".vbox.bar")->as<bool>("visible"_key));
-  EXPECT_EQ(objects.at(root_ + ".vbox.btn_cancel")->as<std::string>("label"_key), "Close");
+  EXPECT_EQ(objects.at(root_ + ".vbox.btn_cancel")->as<std::string>("label"_key), "&Close");
   EXPECT_EQ(row_count(root_ + ".vbox.table"), 2u) << "the output that led to it is kept";
 
   size_t since = srv_->events->mark();
