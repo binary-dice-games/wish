@@ -332,6 +332,7 @@ void imgui_renderer::begin_frame() {
   // `host_renderer`) or a `DockSpaceViewport` element in a session's tree.
   ambient_dockspace_id_ = 0;
   ambient_dock_class_id_ = 0;
+  ambient_suffix_.clear();
   named_dockspaces_.clear();
   named_dock_classes_.clear();
   window_dock_classes_.clear();

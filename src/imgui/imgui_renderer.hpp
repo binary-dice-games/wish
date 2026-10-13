@@ -289,6 +289,13 @@ class imgui_renderer : public renderer {
     return it->second;
   }
 
+  /// @brief ImGui-name suffix (e.g. "~601") of the `DockSpaceViewport`
+  ///        currently rendering its children (empty outside one). It keeps
+  ///        the windows of a later instance of a tool apart from the first
+  ///        instance's, whose `__path__`s are identical.
+  void set_ambient_suffix(const std::string& suffix) { ambient_suffix_ = suffix; }
+  const std::string& ambient_suffix() const { return ambient_suffix_; }
+
   /// @brief Records that a `DockLayout` rendered this frame places the
   ///        `Window` whose `__path__` is @p window_path into a dockspace
   ///        of window class @p class_id, so that window -- usually a
@@ -476,6 +483,9 @@ class imgui_renderer : public renderer {
 
   /// See `named_dock_class_id()`. Reset every `begin_frame()`.
   std::unordered_map<std::string, ImGuiID> named_dock_classes_;
+
+  /// See `set_ambient_suffix()`.
+  std::string ambient_suffix_;
 
   /// See `window_dock_class_id()`. Reset every `begin_frame()`.
   std::unordered_map<std::string, ImGuiID> window_dock_classes_;

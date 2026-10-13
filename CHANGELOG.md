@@ -107,6 +107,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `wish desktop`: starting several instances of one tool no longer asserts on a shared dockspace; each instance gets its own.
 - Clients over the `pipe` transport notice when the server goes away (they hung in `wait()` before) and can connect again; a server on a pipe no longer risks a crash when stopped (bison update).
 - The windows of a client that was killed or lost its connection now disappear: the server drops the session when the connection closes, not only on an explicit disconnect (bison update).
 - `nano` no longer writes its working copies at the sandbox root, where they collided with other tools' files and earlier runs in a persistent sandbox; they go in a temp dir private to nano and the session.

@@ -70,7 +70,7 @@ std::vector<std::string> split_lines(const std::string& text) {
 
 // Recursively realize one DockSplit/DockArea node into @p node_id.
 // Returns false on any malformed node (aborting the whole build).
-bool realize_node(const ui_element& node, ImGuiID node_id, logger* log) {
+bool realize_node(const ui_element& node, ImGuiID node_id, const std::string& suffix, logger* log) {
   const key_t cls = node.class_key();
 
   if (cls == "DockArea"_key) {
@@ -84,10 +84,10 @@ bool realize_node(const ui_element& node, ImGuiID node_id, logger* log) {
     for (const auto& w : windows) {
       if (w == focused)
         continue; // docked last, below, so it wins the active tab
-      ImGui::DockBuilderDockWindow(w.c_str(), node_id);
+      ImGui::DockBuilderDockWindow((w + suffix).c_str(), node_id);
     }
     if (!focused.empty())
-      ImGui::DockBuilderDockWindow(focused.c_str(), node_id);
+      ImGui::DockBuilderDockWindow((focused + suffix).c_str(), node_id);
     return true;
   }
 
@@ -122,7 +122,7 @@ bool realize_node(const ui_element& node, ImGuiID node_id, logger* log) {
     ImGuiID id_dir = 0;
     ImGuiID id_opposite = 0;
     ImGui::DockBuilderSplitNode(node_id, dir, ratio, &id_dir, &id_opposite);
-    return realize_node(*kids[0], id_dir, log) && realize_node(*kids[1], id_opposite, log);
+    return realize_node(*kids[0], id_dir, suffix, log) && realize_node(*kids[1], id_opposite, suffix, log);
   }
 
   log_warn(log, "wish DockLayout: unexpected child class in layout tree");
@@ -246,7 +246,8 @@ ImGuiID dock_central_node_id(ImGuiID dockspace_id) {
   return central ? central->ID : dockspace_id;
 }
 
-bool build_dock_layout(const ui_element& layout_root, ImGuiID target_id, ImVec2 node_size, logger* log) {
+bool build_dock_layout(
+    const ui_element& layout_root, ImGuiID target_id, ImVec2 node_size, logger* log, const std::string& window_suffix) {
   const ui_element* root_child = nullptr;
   layout_root.for_each_child_ordered([&](key_t, ui_element& c) {
     if (!root_child)
@@ -262,7 +263,7 @@ bool build_dock_layout(const ui_element& layout_root, ImGuiID target_id, ImVec2 
   if (node_size.x > 0.0f && node_size.y > 0.0f)
     ImGui::DockBuilderSetNodeSize(target_id, node_size);
 
-  const bool ok = realize_node(*root_child, target_id, log);
+  const bool ok = realize_node(*root_child, target_id, window_suffix, log);
   ImGui::DockBuilderFinish(target_id);
   return ok;
 }
@@ -338,7 +339,9 @@ void render_dock_layout(imgui_renderer& r, const ui_element& node0, const contex
     // directly against window->ID (the seed at the very top of Begin/End,
     // before anything else was pushed) to match regardless of how deep the
     // DockLayout sits in the tree.
-    target_id = ImHashStr(target.c_str(), 0, w->ID);
+    // The viewport's own window name carries the instance suffix, so its
+    // dockspace id does too.
+    target_id = ImHashStr((target + r.ambient_suffix()).c_str(), 0, w->ID);
   }
   if (target_id == 0)
     return; // no ambient dockspace this frame and no resolvable target
@@ -348,14 +351,15 @@ void render_dock_layout(imgui_renderer& r, const ui_element& node0, const contex
   // the layout has already been realized.
   const ImGuiID dock_class_id =
       target.empty() ? r.ambient_dock_class_id() : r.named_dock_class_id(target).value_or(r.ambient_dock_class_id());
-  for_each_layout_window(node, [&](const std::string& w) { r.set_window_dock_class_id(w, dock_class_id); });
+  for_each_layout_window(
+      node, [&](const std::string& w) { r.set_window_dock_class_id(w + r.ambient_suffix(), dock_class_id); });
 
   const int32_t version = node.version(1);
   if (!should_apply_dock_layout(node, target_id, version))
     return;
 
   const ImVec2 size = ImGui::GetMainViewport()->WorkSize;
-  if (build_dock_layout(node, target_id, size, s.logger_service.get()))
+  if (build_dock_layout(node, target_id, size, s.logger_service.get(), r.ambient_suffix()))
     note_dock_layout_applied(node, target_id, version);
 }
 

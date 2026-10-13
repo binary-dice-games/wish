@@ -17,6 +17,7 @@
 #include <imgui.h>
 
 #include <cstdint>
+#include <string>
 
 namespace bdg::wish {
 
@@ -37,9 +38,13 @@ class logger;
 /// @param node_size    Size to give the root node (typically the viewport
 ///                     work size).
 /// @param log          Optional session logger for malformed-tree warnings.
+/// @param window_suffix Appended to each window path (the app instance
+///                     suffix, see `imgui_renderer::set_ambient_suffix()`).
 /// @return true if a tree was built; false if the child tree was missing or
 ///         malformed (in which case an empty node is left at @p target_id).
-bool build_dock_layout(const ui_element& layout_root, ImGuiID target_id, ImVec2 node_size, logger* log);
+bool build_dock_layout(
+    const ui_element& layout_root, ImGuiID target_id, ImVec2 node_size, logger* log,
+    const std::string& window_suffix = {});
 
 /// @brief Whether @p layout_root should be (re)applied this run. True only
 ///        when it has never been applied at @p version before -- a fresh

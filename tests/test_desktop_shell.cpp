@@ -79,8 +79,16 @@ class DesktopShellTest : public ::testing::Test {
     {
       auto lock = session_->wlock();
       auto& s = static_cast<wish::context&>(**lock);
+      // Like the server: docking containers first, so their layout exists
+      // before the windows that target it submit.
+      auto is_dock = [](const wish::ui_element_ptr& root) {
+        return root->class_key() == bdg::bison::key_t{"DockSpaceViewport"};
+      };
       for (auto& [key, root] : s.top_level_objects)
-        if (root && !wish::is_host_chrome_class(root->class_key()))
+        if (root && is_dock(root))
+          renderer_->render_session(*root, s);
+      for (auto& [key, root] : s.top_level_objects)
+        if (root && !is_dock(root) && !wish::is_host_chrome_class(root->class_key()))
           renderer_->render_session(*root, s);
       s.pending_events.clear();
     }
@@ -397,4 +405,51 @@ TEST_F(DesktopShellTest, MinimizedWindowIsNotSubmitted) {
   static_cast<const wish::window&>(*w).set_minimized(false);
   frame();
   EXPECT_TRUE(win->Active);
+}
+
+TEST_F(DesktopShellTest, InstancesOfOneAppGetTheirOwnDockspace) {
+  add_top(kShell, 1u);
+  add_top(R"({"type":"DockSpaceViewport","id":"main","title":"Editor"})", 600u, 60u);
+  add_top(R"({"type":"DockSpaceViewport","id":"main","title":"Editor"})", 601u, 61u);
+  add_top(R"({"type":"Window","title":"P","dock_target":"main"})", 602u, 60u);
+  add_top(R"({"type":"Window","title":"P","dock_target":"main"})", 603u, 61u);
+  // Calling ImGui::DockSpace() twice with one ID asserts inside imgui.
+  frame();
+  frame();
+  frame();
+
+  ImGuiWindow* first = ImGui::FindWindowByName("Editor###main");
+  ImGuiWindow* second = ImGui::FindWindowByName("Editor###main~601");
+  ASSERT_NE(first, nullptr);
+  ASSERT_NE(second, nullptr);
+  EXPECT_NE(first->ID, second->ID);
+  EXPECT_TRUE(first->Active);
+  EXPECT_TRUE(second->Active);
+}
+
+TEST_F(DesktopShellTest, SecondInstanceDocksItsOwnPanels) {
+  add_top(kShell, 1u);
+  const char* vp = R"({"type":"DockSpaceViewport","id":"main","title":"Editor","children":{
+    "lay":{"type":"DockLayout","target":"main","version":1,"children":{
+      "s":{"type":"DockSplit","dir":"up","ratio":0.3,"children":{
+        "a":{"type":"DockArea","windows":"__p0"},"b":{"type":"DockArea"}}}}}}})";
+  const char* panel = R"({"type":"Window","title":"Panel","__path__":"__p0","dock_target":"main"})";
+  for (auto [vid, pid, group] : {std::tuple{600u, 602u, 60u}, std::tuple{601u, 603u, 61u}}) {
+    add_top(vp, vid, group);
+    auto w = add_top(panel, pid, group);
+    (*w)["__path__"_key] = std::string{"__p0"};
+  }
+  for (int i = 0; i < 5; ++i)
+    frame();
+
+  ImGuiWindow* v2 = ImGui::FindWindowByName("Editor###main~601");
+  ImGuiWindow* p2 = ImGui::FindWindowByName("Panel###__p0~601");
+  ASSERT_NE(v2, nullptr);
+  ASSERT_NE(p2, nullptr);
+  ASSERT_NE(p2->DockNode, nullptr);
+  EXPECT_EQ(p2->DockNode->HostWindow->ParentWindow, v2); // the dockspace child of its own instance
+  ImGuiWindow* p1 = ImGui::FindWindowByName("Panel###__p0");
+  ASSERT_NE(p1, nullptr);
+  ASSERT_NE(p1->DockNode, nullptr);
+  EXPECT_NE(p1->DockNode->HostWindow->ParentWindow, v2);
 }

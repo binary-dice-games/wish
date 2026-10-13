@@ -103,6 +103,73 @@ static std::string with_id(const std::string& label, const ui_element& node) {
   return label + "###" + stable_id(node);
 }
 
+// ── Per-instance dockspace scoping ────────────────────────────────────────────
+//
+// Several instances of one tool (each a bridge client / object group) build
+// DockSpaceViewports carrying the same `id` string. Left alone they would
+// share one ImGui host window and so call ImGui::DockSpace() twice with the
+// same ID in a frame. These helpers keep each instance's dockspace distinct
+// and let a Window's `dock_target` find the viewport of its own instance.
+
+// The object group (bridge client) @p node was created under; 0 for none.
+static bison::hash_t object_group_of(const context& s, const ui_element& node) {
+  const bison::hash_t id = node.wish_id().id;
+  for (const auto& [group, ids] : s.groups)
+    if (ids.count(id) != 0)
+      return group;
+  return 0u;
+}
+
+// Name under which a viewport's dockspace is also published for @p group, so
+// a Window of that same group resolves its own instance's viewport.
+static std::string group_scoped_name(const std::string& name, bison::hash_t group) {
+  return name + '\x1f' + std::to_string(group);
+}
+
+// The `dock_target` name @p node should look up: the group-scoped one when
+// its own group published a viewport of that name this frame, else @p target.
+static const std::string& resolve_dock_target(
+    const imgui_renderer& r, const context& s, const ui_element& node, const std::string& target,
+    std::string& scratch) {
+  if (bison::hash_t group = object_group_of(s, node); group != 0u) {
+    scratch = group_scoped_name(target, group);
+    if (r.named_dock_class_id(scratch).has_value())
+      return scratch;
+  }
+  return target;
+}
+
+static std::string viewport_instance_suffix(const context& s, const ui_dockspace_viewport& node);
+
+// ImGui-name suffix of the app instance @p node belongs to: that of its object
+// group's DockSpaceViewport when it has one, else that of the viewport being
+// rendered. Computed on demand, so it does not depend on render order.
+static std::string instance_suffix(const imgui_renderer& r, const context& s, const ui_element& node) {
+  if (!r.desktop_cascade_active())
+    return {};
+  if (bison::hash_t group = object_group_of(s, node); group != 0u) {
+    for (const auto& [key, root] : s.top_level_objects)
+      if (root && root->class_key() == bison::key_t{"DockSpaceViewport"} && object_group_of(s, *root) == group)
+        return viewport_instance_suffix(s, static_cast<const ui_dockspace_viewport&>(*root));
+  }
+  return r.ambient_suffix();
+}
+
+// Suffix that makes a DockSpaceViewport's ImGui window (and so the dockspace
+// ID derived from it) unique among the visible viewports sharing its `id`.
+// The viewport with the lowest object id keeps the plain name -- the
+// single-instance case is unchanged and keeps its imgui.ini layout.
+static std::string viewport_instance_suffix(const context& s, const ui_dockspace_viewport& node) {
+  for (const auto& [key, root] : s.top_level_objects) {
+    if (!root || root.get() == &node || root->class_key() != bison::key_t{"DockSpaceViewport"} || !root->visible())
+      continue;
+    const auto& other = static_cast<const ui_dockspace_viewport&>(*root);
+    if (other.id_ref() == node.id_ref() && other.wish_id().id < node.wish_id().id)
+      return "~" + std::to_string(node.wish_id().id);
+  }
+  return {};
+}
+
 // Builds "<prefix><stable-id-of-node>" into a reused per-thread buffer and
 // returns a C-string valid until the next call on this thread. The layout
 // render functions build a BeginChild id per (hinted) child per frame; this
@@ -214,7 +281,9 @@ void render_window(imgui_renderer& r, const ui_element& node0, const context& s)
 
   bool open = true;
   bool* p_open = closable ? &open : nullptr;
-  auto iml = with_id(title, node);
+  // Windows of a later instance of one tool share their `__path__` with the
+  // first instance's; the suffix keeps their ImGui windows apart.
+  auto iml = with_id(title, node) + instance_suffix(r, s, node);
 
   if (modal) {
     // Docking concepts (dock nodes, floating-size restore) don't apply to a
@@ -369,7 +438,8 @@ void render_window(imgui_renderer& r, const ui_element& node0, const context& s)
   if (!cascaded && !has_explicit_pos && !(fl & ImGuiWindowFlags_NoDocking)) {
     ImGuiID dock_id = r.ambient_dockspace_id();
     if (const std::string& target = node.dock_target_ref(); !target.empty()) {
-      if (ImGuiID named = r.named_dockspace_id(target); named != 0)
+      std::string scratch;
+      if (ImGuiID named = r.named_dockspace_id(resolve_dock_target(r, s, node, target, scratch)); named != 0)
         dock_id = dock_central_node_id(named);
     }
     if (dock_id != 0)
@@ -383,10 +453,12 @@ void render_window(imgui_renderer& r, const ui_element& node0, const context& s)
   // of that dockspace (0 for a root one such as the host chrome).
   {
     std::optional<ImGuiID> dock_class;
-    if (const std::string& target = node.dock_target_ref(); !target.empty())
-      dock_class = r.named_dock_class_id(target);
+    if (const std::string& target = node.dock_target_ref(); !target.empty()) {
+      std::string scratch;
+      dock_class = r.named_dock_class_id(resolve_dock_target(r, s, node, target, scratch));
+    }
     if (!dock_class)
-      dock_class = r.window_dock_class_id(node.path_ref());
+      dock_class = r.window_dock_class_id(node.path_ref() + instance_suffix(r, s, node));
     set_next_dock_class(dock_class.value_or(r.ambient_dock_class_id()));
   }
 
@@ -1879,6 +1951,7 @@ void render_dockspace_viewport(imgui_renderer& r, const ui_element& node0, const
   // never a fullscreen host covering the desktop.
   const bool desktop = r.desktop_cascade_active();
   bool embedded = node.embedded(false) || desktop;
+  const std::string instance = desktop ? viewport_instance_suffix(s, node) : std::string{};
 
   // Minimized from the taskbar: nothing is drawn, but the dockspace is kept
   // alive so the windows docked in it stay docked for the restore.
@@ -1888,15 +1961,22 @@ void render_dockspace_viewport(imgui_renderer& r, const ui_element& node0, const
       dock_class.ClassId = kept;
       dock_class.DockingAllowUnclassed = false;
       ImGui::DockSpace(kept, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_KeepAliveOnly, &dock_class);
-      if (!id_stored.empty())
+      if (!id_stored.empty()) {
         r.set_named_dock_class_id(id_stored, kept);
+        if (auto group = object_group_of(s, node))
+          r.set_named_dock_class_id(group_scoped_name(id_stored, group), kept);
+      }
     }
     return;
   }
   // Embedded mode gives this element a readable tab name once docked among
   // siblings; the fullscreen host has no visible chrome, so its id can stay
   // hidden behind "##".
-  const char* id = id_stored.empty() ? "##viewport_dockspace" : id_stored.c_str();
+  std::string id_buf = id_stored.empty() ? "##viewport_dockspace" : id_stored;
+  // Concurrent instances of one tool each get a distinct window (hence
+  // dockspace); see viewport_instance_suffix().
+  id_buf += instance;
+  const char* id = id_buf.c_str();
   // The visible tab/title bar name is `title` when set, but the ImGui
   // ID -- and therefore the DockSpace/DockBuilder identity a nested
   // DockLayout.target resolves against -- must stay derived from `id`
@@ -1996,11 +2076,18 @@ void render_dockspace_viewport(imgui_renderer& r, const ui_element& node0, const
   node.set_last_dockspace_id(dockspace_id);
   // Un-positioned Window children dock here by default (see render_window).
   r.set_ambient_dockspace_id(dockspace_id, dock_class_id);
+  const std::string prior_suffix = r.ambient_suffix();
+  r.set_ambient_suffix(instance);
   // Lets a Window elsewhere in the tree target this dockspace by name (see
   // Window.dock_target).
   if (!id_stored.empty()) {
     r.set_named_dockspace_id(id_stored, dockspace_id);
     r.set_named_dock_class_id(id_stored, dock_class_id);
+    if (auto group = object_group_of(s, node)) {
+      const std::string scoped = group_scoped_name(id_stored, group);
+      r.set_named_dockspace_id(scoped, dockspace_id);
+      r.set_named_dock_class_id(scoped, dock_class_id);
+    }
   }
 
   // Non-Window children (e.g. MenuBar, or a DockLayout targeting this same
@@ -2030,6 +2117,7 @@ void render_dockspace_viewport(imgui_renderer& r, const ui_element& node0, const
   });
 
   r.set_ambient_dockspace_id(prior_ambient, prior_class);
+  r.set_ambient_suffix(prior_suffix);
 }
 
 void render_dockspace(imgui_renderer&, const ui_element& node0, const context&) {
