@@ -22,6 +22,8 @@ enum class caption_action {
   /// Maximize button, or a double-click on the title.
   toggle_maximize,
   close,
+  /// "Reset layout" in the title bar's context menu.
+  reset_layout,
 };
 
 /// @brief Which caption buttons are enabled, and how the maximize one looks.
@@ -32,6 +34,8 @@ struct caption_options {
   bool maximized = false;
   /// False greys the close button out.
   bool can_close = true;
+  /// Offer "Reset layout" in the context menu (an app frame with panels).
+  bool can_reset_layout = false;
 };
 
 /// @brief Whether the ImGui window @p label was docked at its last render;
@@ -42,7 +46,9 @@ bool window_was_docked(const char* label);
 
 /// @brief Draws the caption into the title bar of the current window: call
 ///        right after `ImGui::Begin()`. Draws nothing and returns `none`
-///        for a docked, collapsed or title-less window.
+///        for a docked, collapsed or title-less window. A right-click on
+///        the title opens a context menu (Maximize/Restore, Minimize, Reset
+///        layout, Close), like a Windows window's system menu.
 /// @param title  Text shown in the title bar.
 /// @param opts   Enabled buttons / maximize glyph.
 /// @return The button clicked this frame, if any.

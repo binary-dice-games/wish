@@ -11,9 +11,11 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace bdg::wish {
 
@@ -304,6 +306,35 @@ class imgui_renderer : public renderer {
   ///        currently rendering its children (empty outside one). It keeps
   ///        the windows of a later instance of a tool apart from the first
   ///        instance's, whose `__path__`s are identical.
+  /**
+   * @brief Instance slot of a `DockSpaceViewport` named @p id owned by the
+   *        element with `__wish_id` @p owner: 0 for the first live instance
+   *        of that id, 1, 2, ... for concurrent ones.
+   *
+   * A slot is claimed on first use and kept while its owner keeps rendering,
+   * so an instance's ImGui names (its window, dockspace and panels, all
+   * suffixed `~<slot>`) never change while it is open -- a rename would
+   * turn them into new ImGui windows and detach every panel. Another
+   * instance opening or closing therefore never renames this one. A slot is
+   * freed once its owner is gone: immediately when @p alive reports it so,
+   * else after it has not rendered for a few seconds of frames. The lowest
+   * free slot is reused, so a reopened tool gets the names (and saved
+   * layout) of the one before it.
+   *
+   * @param session  Identity of the owner's session.
+   * @param alive    Whether an owner of @p session still exists; only asked
+   *                 about owners of the same session.
+   */
+  int viewport_slot(
+      const std::string& id, bison::hash_t owner, const void* session,
+      const std::function<bool(bison::hash_t)>& alive);
+
+  /// @brief While set, a `DockLayout` rendered now is rebuilt even when it
+  ///        was already applied ("Reset layout"). Set and cleared around a
+  ///        `DockSpaceViewport`'s children by `render_dockspace_viewport()`.
+  void set_force_dock_layout(bool force) { force_dock_layout_ = force; }
+  bool force_dock_layout() const { return force_dock_layout_; }
+
   void set_ambient_suffix(const std::string& suffix) { ambient_suffix_ = suffix; }
   const std::string& ambient_suffix() const { return ambient_suffix_; }
 
@@ -497,6 +528,18 @@ class imgui_renderer : public renderer {
 
   /// See `set_ambient_suffix()`.
   std::string ambient_suffix_;
+
+  /// See `set_force_dock_layout()`.
+  bool force_dock_layout_ = false;
+
+  /// See `viewport_slot()`: per viewport `id`, one entry per slot (owner 0 =
+  /// free) with the frame its owner last rendered. Persists across frames.
+  struct viewport_slot_entry {
+    bison::hash_t owner = 0;
+    const void* session = nullptr;
+    int last_frame = 0;
+  };
+  std::unordered_map<std::string, std::vector<viewport_slot_entry>> viewport_slots_;
 
   /// See `window_dock_class_id()`. Reset every `begin_frame()`.
   std::unordered_map<std::string, ImGuiID> window_dock_classes_;

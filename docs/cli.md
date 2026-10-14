@@ -231,7 +231,9 @@ that server's window into a desktop:
   it or pin it.
 - **Windows** open floating and cascaded, like on a desktop. An app's
   window has minimize, maximize/restore and close buttons at the top right
-  (double-click its title to maximize) and a border with a shadow. Its
+  (double-click its title to maximize) and a border with a shadow. Right-click
+  the title (or the app's taskbar button) for **Reset layout**, which puts
+  its panels back in their default arrangement. Its
   panels have no close button: close the app window instead. Drag a window
   onto the desktop's dock area to dock it.
 - **Settings**: the pinned Settings button (also in the Start menu) opens

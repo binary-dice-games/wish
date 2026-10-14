@@ -484,7 +484,21 @@ desk = subprocess.Popen([wish, "desktop", "--upstream_transport", "tcp", "--upst
   wait a frame), or use a rounded row, which doesn't use overlap.
 - **Stale `imgui.ini` in the server's working directory** keeps a window
   docked or placed where an earlier run left it (e.g. a "Settings" window
-  opening docked on the desktop). Delete it for a clean run.
+  opening docked on the desktop). Delete it for a clean run. It also keeps
+  a frame where a previous run dragged or maximized it -- partly off-screen,
+  so clicks computed from a fresh-run layout miss (2026-10).
+- **Caption buttons are not in `get_tree()`**: click them from the app
+  frame's (`__docklayout_<n>`, class `DockSpaceViewport`) or main window's
+  `rect`. In the web renderer the title bar is about 28 px tall and each
+  button `floor(1.5 * 28)` px wide, counted from the right edge: close,
+  maximize, minimize (2026-10).
+- **Drag a panel out of a frame by its tab**, not by the panel's `rect`
+  top: a panel's rect starts at the frame's title bar, so a drag from
+  there moves the whole frame. Locate the tab in a screenshot first; then
+  `mouse.down()`, several `mouse.move()` steps, `mouse.up()` (2026-10).
+- **Pick items in the caption's right-click menu with the mouse.** Arrow
+  keys + Enter landed on "Close" instead of the third item and closed the
+  app (2026-10).
 - **Reading a store entry from Python:** `entry["field"]` on a
   `bison.Dynamic` returns `0` for a missing field and reads a `false` bool
   as `0`. Read `json.loads(entry.to_json())` instead: keys are

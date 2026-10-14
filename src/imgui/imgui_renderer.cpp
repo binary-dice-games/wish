@@ -328,6 +328,32 @@ imgui_renderer::imgui_renderer(render_fn_map extra_render_fns) : render_fns_(bui
     render_fns_[class_id] = fn;
 }
 
+int imgui_renderer::viewport_slot(
+    const std::string& id, bison::hash_t owner, const void* session,
+    const std::function<bool(bison::hash_t)>& alive) {
+  // A few seconds at 60 fps: covers a viewport that stops rendering for
+  // good (another session went away) without ever freeing one that is only
+  // skipped for a frame or two.
+  constexpr int kStaleFrames = 240;
+  const int now = ImGui::GetFrameCount();
+  auto& slots = viewport_slots_[id];
+  for (auto& e : slots)
+    if (e.owner == owner && e.session == session) {
+      e.last_frame = now;
+      return int(&e - slots.data());
+    }
+  for (auto& e : slots) {
+    const bool free =
+        e.owner == 0 || now - e.last_frame > kStaleFrames || (e.session == session && !alive(e.owner));
+    if (free) {
+      e = {owner, session, now};
+      return int(&e - slots.data());
+    }
+  }
+  slots.push_back({owner, session, now});
+  return int(slots.size()) - 1;
+}
+
 void imgui_renderer::begin_frame() {
   // Cleared here, re-set this frame by whichever dockspace host renders
   // first: an opt-in server-frame host wrapper (`dockspace_renderer`,

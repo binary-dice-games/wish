@@ -925,6 +925,7 @@ position or the `NoDocking` flag to keep it floating. Emits `closed` when
 | `id` | `string` | `"demo_dockspace"` | Identifier for the host window and dockspace. |
 | `flags` | `int32` (flags) | `0` | ImGuiDockNodeFlags bitmask. |
 | `passthru` | `bool` | `false` | Let the central node pass through mouse/keyboard input. |
+| `layout_reset_request` | `int32` | `0` | Change it (e.g. increment) to put the docked windows back in their default arrangement (the `DockLayout` child) on the next frame, re-docking windows that were dragged out. See [dock-layout.md](dock-layout.md#reset-layout). |
 | `closable` | `bool` | `false` | When embedded (and as a desktop app frame), show a close button on the title bar; clicking it emits `closed`. `dock::viewport()` sets it: the frame's close button closes the app, its panels have none. |
 
 #### `DockSpace`

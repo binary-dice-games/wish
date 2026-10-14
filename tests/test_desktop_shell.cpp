@@ -459,7 +459,7 @@ TEST_F(DesktopShellTest, InstancesOfOneAppGetTheirOwnDockspace) {
   frame();
 
   ImGuiWindow* first = ImGui::FindWindowByName("Editor###main");
-  ImGuiWindow* second = ImGui::FindWindowByName("Editor###main~601");
+  ImGuiWindow* second = ImGui::FindWindowByName("Editor###main~1");
   ASSERT_NE(first, nullptr);
   ASSERT_NE(second, nullptr);
   EXPECT_NE(first->ID, second->ID);
@@ -482,8 +482,8 @@ TEST_F(DesktopShellTest, SecondInstanceDocksItsOwnPanels) {
   for (int i = 0; i < 5; ++i)
     frame();
 
-  ImGuiWindow* v2 = ImGui::FindWindowByName("Editor###main~601");
-  ImGuiWindow* p2 = ImGui::FindWindowByName("Panel###__p0~601");
+  ImGuiWindow* v2 = ImGui::FindWindowByName("Editor###main~1");
+  ImGuiWindow* p2 = ImGui::FindWindowByName("Panel###__p0~1");
   ASSERT_NE(v2, nullptr);
   ASSERT_NE(p2, nullptr);
   ASSERT_NE(p2->DockNode, nullptr);
@@ -644,4 +644,225 @@ TEST_F(DesktopShellTest, ClosableEmbeddedFrameOutsideADesktopUsesImGuisCloseButt
   ImGuiWindow* win = ImGui::FindWindowByName("App###app");
   ASSERT_NE(win, nullptr);
   EXPECT_TRUE(win->HasCloseButton);
+}
+
+// ── Instance names stay stable ───────────────────────────────────────────────
+//
+// Several instances of one tool share a DockSpaceViewport `id`; each one's
+// ImGui window names carry an instance suffix. That suffix must not change
+// while the instance is open, or its frame, dockspace and panels become new
+// ImGui windows and the panels fall out of the frame (the "panels all
+// detached" layout corruption).
+
+namespace {
+
+const char* kInstanceViewport = R"({"type":"DockSpaceViewport","id":"main","title":"Editor","children":{
+  "lay":{"type":"DockLayout","target":"main","version":1,"children":{
+    "s":{"type":"DockSplit","dir":"up","ratio":0.3,"children":{
+      "a":{"type":"DockArea","windows":"__p0"},"b":{"type":"DockArea"}}}}}}})";
+
+} // namespace
+
+TEST_F(DesktopShellTest, OpeningAnotherInstanceDoesNotRenameAnOpenOne) {
+  add_top(kShell, 1u);
+  // The open instance has the higher object id: an order-by-id suffix
+  // would hand it a suffix as soon as the lower-id instance appears.
+  add_top(kInstanceViewport, 901u, 91u);
+  auto p = add_top(R"({"type":"Window","title":"Panel","dock_target":"main"})", 902u, 91u);
+  (*p)["__path__"_key] = std::string{"__p0"};
+  for (int i = 0; i < 4; ++i)
+    frame();
+  ImGuiWindow* panel = ImGui::FindWindowByName("Panel###__p0");
+  ASSERT_NE(panel, nullptr);
+  ASSERT_NE(panel->DockNode, nullptr);
+  const ImGuiID frame_id = panel->DockNode->HostWindow->ParentWindow->ID;
+
+  add_top(kInstanceViewport, 800u, 80u);
+  auto q = add_top(R"({"type":"Window","title":"Panel","dock_target":"main"})", 802u, 80u);
+  (*q)["__path__"_key] = std::string{"__p1"};
+  for (int i = 0; i < 4; ++i)
+    frame();
+
+  EXPECT_TRUE(panel->Active); // same ImGui window, still submitted
+  ASSERT_NE(panel->DockNode, nullptr);
+  EXPECT_EQ(panel->DockNode->HostWindow->ParentWindow->ID, frame_id);
+}
+
+TEST_F(DesktopShellTest, ClosingAnInstanceDoesNotRenameTheOthers) {
+  add_top(kShell, 1u);
+  add_top(kInstanceViewport, 800u, 80u);
+  auto p = add_top(R"({"type":"Window","title":"Panel","dock_target":"main"})", 802u, 80u);
+  (*p)["__path__"_key] = std::string{"__p0"};
+  for (int i = 0; i < 3; ++i)
+    frame();
+  add_top(kInstanceViewport, 901u, 91u);
+  auto q = add_top(R"({"type":"Window","title":"Panel","dock_target":"main"})", 902u, 91u);
+  (*q)["__path__"_key] = std::string{"__p1"};
+  for (int i = 0; i < 4; ++i)
+    frame();
+  ImGuiWindow* second = ImGui::FindWindowByName("Panel###__p1~1");
+  ASSERT_NE(second, nullptr);
+  ASSERT_NE(second->DockNode, nullptr);
+  const ImGuiID frame_id = second->DockNode->HostWindow->ParentWindow->ID;
+
+  // The first instance goes away.
+  {
+    wish::context& s = sess();
+    s.top_level_objects.erase(bdg::bison::key_t{800u});
+    s.top_level_objects.erase(bdg::bison::key_t{802u});
+    s.groups.erase(80u);
+  }
+  for (int i = 0; i < 4; ++i)
+    frame();
+
+  EXPECT_TRUE(second->Active);
+  ASSERT_NE(second->DockNode, nullptr);
+  EXPECT_EQ(second->DockNode->HostWindow->ParentWindow->ID, frame_id);
+}
+
+// ── Reset layout ─────────────────────────────────────────────────────────────
+
+namespace {
+
+// A frame with a DockLayout placing "__p0", and a document window docked by
+// dock_target (not in the layout).
+const char* kResetViewport = R"({"type":"DockSpaceViewport","id":"main","title":"Editor","children":{
+  "lay":{"type":"DockLayout","target":"main","version":1,"children":{
+    "s":{"type":"DockSplit","dir":"left","ratio":0.3,"children":{
+      "a":{"type":"DockArea","windows":"__p0"},"b":{"type":"DockArea"}}}}}}})";
+
+// Undocks @p name as a user dragging its tab out would.
+void undock(const char* name) {
+  ImGuiWindow* w = ImGui::FindWindowByName(name);
+  ASSERT_NE(w, nullptr);
+  ImGui::DockBuilderDockWindow(name, 0);
+}
+
+} // namespace
+
+TEST_F(DesktopShellTest, ResetLayoutRedocksPanelsDraggedOut) {
+  add_top(kShell, 1u);
+  auto vp = add_top(kResetViewport, 950u, 95u);
+  auto p = add_top(R"({"type":"Window","title":"Panel","dock_target":"main"})", 951u, 95u);
+  (*p)["__path__"_key] = std::string{"__p0"};
+  auto doc = add_top(R"({"type":"Window","title":"Doc","dock_target":"main"})", 952u, 95u);
+  (*doc)["__path__"_key] = std::string{"__doc"};
+  for (int i = 0; i < 4; ++i)
+    frame();
+  ImGuiWindow* panel = ImGui::FindWindowByName("Panel###__p0");
+  ImGuiWindow* document = ImGui::FindWindowByName("Doc###__doc");
+  ASSERT_NE(panel, nullptr);
+  ASSERT_NE(document, nullptr);
+  ASSERT_NE(panel->DockNode, nullptr);
+  ASSERT_NE(document->DockNode, nullptr);
+
+  undock("Panel###__p0");
+  undock("Doc###__doc");
+  for (int i = 0; i < 3; ++i)
+    frame();
+  ASSERT_EQ(panel->DockNode, nullptr);
+  ASSERT_EQ(document->DockNode, nullptr);
+
+  static_cast<const wish::ui_dockspace_viewport&>(*vp).request_layout_reset();
+  for (int i = 0; i < 3; ++i)
+    frame();
+  ASSERT_NE(panel->DockNode, nullptr);
+  ASSERT_NE(document->DockNode, nullptr);
+  EXPECT_FALSE(panel->DockNode->IsCentralNode()); // its layout area again
+  EXPECT_TRUE(document->DockNode->IsCentralNode()); // the documents area
+  EXPECT_NE(document->DockNode, panel->DockNode);
+  ImGuiWindow* frame_win = ImGui::FindWindowByName("###main");
+  ASSERT_NE(frame_win, nullptr);
+  EXPECT_EQ(panel->DockNode->HostWindow->ParentWindow, frame_win);
+  EXPECT_EQ(document->DockNode->HostWindow->ParentWindow, frame_win);
+}
+
+TEST_F(DesktopShellTest, ResetLayoutLeavesDialogsAlone) {
+  add_top(kShell, 1u);
+  auto vp = add_top(kResetViewport, 960u, 96u);
+  auto p = add_top(R"({"type":"Window","title":"Panel","dock_target":"main"})", 961u, 96u);
+  (*p)["__path__"_key] = std::string{"__p0"};
+  add_top(R"({"type":"Window","title":"Dialog","dock_target":"main","flags":"NoDocking","pos_x":50,"pos_y":50})",
+      962u, 96u);
+  for (int i = 0; i < 3; ++i)
+    frame();
+  static_cast<const wish::ui_dockspace_viewport&>(*vp).request_layout_reset();
+  for (int i = 0; i < 3; ++i)
+    frame();
+  ImGuiWindow* dialog = ImGui::FindWindowByName("Dialog###962");
+  ASSERT_NE(dialog, nullptr);
+  EXPECT_EQ(dialog->DockNode, nullptr);
+}
+
+TEST_F(DesktopShellTest, LayoutResetRequestFieldResetsTheLayout) {
+  add_top(kShell, 1u);
+  auto vp = add_top(kResetViewport, 970u, 97u);
+  auto p = add_top(R"({"type":"Window","title":"Panel","dock_target":"main"})", 971u, 97u);
+  (*p)["__path__"_key] = std::string{"__p0"};
+  for (int i = 0; i < 4; ++i)
+    frame();
+  undock("Panel###__p0");
+  for (int i = 0; i < 3; ++i)
+    frame();
+  ImGuiWindow* panel = ImGui::FindWindowByName("Panel###__p0");
+  ASSERT_NE(panel, nullptr);
+  ASSERT_EQ(panel->DockNode, nullptr);
+
+  (*vp)["layout_reset_request"_key] = int32_t{1}; // a client bumps the field
+  for (int i = 0; i < 3; ++i)
+    frame();
+  EXPECT_NE(panel->DockNode, nullptr);
+}
+
+TEST_F(DesktopShellTest, RightClickOnTheTitleOpensTheWindowMenu) {
+  add_top(kShell, 1u);
+  add_top(R"({"type":"Window","title":"Main","width":400,"height":300})", 980u);
+  frame();
+  frame();
+  ImGuiWindow* win = ImGui::FindWindowByName("###980");
+  ASSERT_NE(win, nullptr);
+
+  ImGuiIO& io = ImGui::GetIO();
+  io.AddMousePosEvent(win->Pos.x + 40.0f, win->Pos.y + win->TitleBarHeight * 0.5f);
+  frame();
+  io.AddMouseButtonEvent(ImGuiMouseButton_Right, true);
+  frame();
+  io.AddMouseButtonEvent(ImGuiMouseButton_Right, false);
+  frame();
+  ASSERT_FALSE(GImGui->OpenPopupStack.empty());
+  EXPECT_EQ(GImGui->OpenPopupStack.back().PopupId, win->GetID("##wish_caption_menu"));
+}
+
+// ── Several sessions on one server ───────────────────────────────────────────
+
+TEST_F(DesktopShellTest, SameToolInTwoSessionsGetsDistinctWindows) {
+  // No desktop: two clients each running the same tool against one server.
+  auto other =
+      std::make_shared<wish::sync_context>(std::make_unique<wish::context>(bdg::bison::rmi::shared::generate_id()));
+  const char* vp = R"({"type":"DockSpaceViewport","id":"main","title":"Editor","embedded":true})";
+  for (auto* sc : {&session_, &other}) {
+    auto lock = (*sc)->wlock();
+    auto& s = static_cast<wish::context&>(**lock);
+    auto root = wish::import_json(vp)[""];
+    (*root)["__wish_id"_key] = bdg::bison::key_t{sc == &session_ ? 990u : 991u};
+    s.top_level_objects[bdg::bison::key_t{1u}] = root;
+  }
+  // Calling ImGui::DockSpace() twice with one ID asserts inside imgui.
+  for (int i = 0; i < 3; ++i) {
+    renderer_->begin_frame();
+    for (auto* sc : {&session_, &other}) {
+      auto lock = (*sc)->wlock();
+      auto& s = static_cast<wish::context&>(**lock);
+      s.current_top_level_key = bdg::bison::key_t{1u};
+      renderer_->render_session(*s.top_level_objects.at(bdg::bison::key_t{1u}), s);
+      s.pending_events.clear();
+    }
+    renderer_->end_frame();
+  }
+  ImGuiWindow* first = ImGui::FindWindowByName("Editor###main");
+  ImGuiWindow* second = ImGui::FindWindowByName("Editor###main~1");
+  ASSERT_NE(first, nullptr);
+  ASSERT_NE(second, nullptr);
+  EXPECT_TRUE(first->Active);
+  EXPECT_TRUE(second->Active);
 }

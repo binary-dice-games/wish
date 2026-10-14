@@ -302,6 +302,30 @@ Version=1
 
 Deleting `imgui.ini` resets everything to a fresh first run.
 
+### Reset layout
+
+One app can go back to its default without touching anything else: on a
+`wish desktop`, right-click the app window's title bar (or its taskbar
+button) and choose **Reset layout**. A client does the same by changing
+the `DockSpaceViewport`'s `layout_reset_request` field (e.g. from a
+View > Reset Layout menu item). The `DockLayout` is rebuilt right away,
+whatever its applied `version`, and the frame's other windows (its
+`dock_target` documents, its `Window` children) are docked back into the
+central node. Dialogs -- modal, `NoDocking` or explicitly positioned
+windows -- keep their place.
+
+### Several instances of one app
+
+Concurrent instances of an app share the `DockSpaceViewport` `id`; the
+renderer tells them apart with an instance suffix on every ImGui name of
+the instance (its window, dockspace and panels): none for the first live
+instance, `~1`, `~2`, ... for the others, also across sessions on one
+server. An instance keeps its suffix while it is open
+(`imgui_renderer::viewport_slot()`): renaming it would make its frame and
+panels new ImGui windows, which detaches every panel from the frame. The
+lowest free suffix is reused, so a reopened tool picks up the saved layout
+of the one before it.
+
 ---
 
 ## Render-order hazard: DockLayout must render before its own windows

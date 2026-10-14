@@ -382,7 +382,19 @@ Minimize hides the whole app, as the taskbar does; maximize fills the
 cascade area (`desktop_area_min()/max()`) with `NoMove|NoResize` and
 restores the saved rectangle (`desktop_maximize_state`, render
 bookkeeping like `minimized()`); a `NoResize` window cannot maximize.
-Close emits `closed` only when the window (or frame) is `closable`. The
+Close emits `closed` only when the window (or frame) is `closable`. A
+right-click on the title opens a window menu with the same actions plus,
+for a frame, "Reset layout" (also on the taskbar): it rebuilds the frame's
+`DockLayout` regardless of its applied version and re-docks the frame's
+other windows (see docs/dock-layout.md).
+
+Concurrent instances of one app share their frame's `id`; each gets an
+instance suffix (`~<slot>`, none for slot 0) on all its ImGui names from
+`imgui_renderer::viewport_slot()`. The slot is kept for the instance's
+lifetime. It used to be derived from the order of the (random) object ids
+of the live instances, so opening or closing another instance could rename
+an open one mid-run, which turned its frame and panels into new ImGui
+windows: every panel came loose from the frame. The
 bundled tools' panels are not closable: a panel's X used to close the whole
 app, which nobody expects from a panel.
 
