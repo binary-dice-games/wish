@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `wish desktop`: an app's main window has Windows-style minimize, maximize/restore and close buttons at the top right of its title bar (double-click the title to maximize), and a border with a shadow that sets it apart from overlapping windows.
+- "Reset layout" puts an app's panels back in their default arrangement: from the app window's title-bar menu (right-click the title; it also has Maximize/Restore, Minimize and Close) or its taskbar button on `wish desktop`, or by changing the new `DockSpaceViewport.layout_reset_request` field.
 - `DockSpaceViewport.closable`: a close button on the app frame that emits `closed` (also offered as "Close window" on the desktop taskbar); `dock::viewport()` frames are closable.
 - Keyboard-only control of every wish UI, Windows-style (see [docs/ui-elements.md](docs/ui-elements.md#keyboard-navigation-access-keys-and-shortcuts)): Tab/Shift+Tab between controls, arrow keys in menus, Space/Enter to press, Esc to close.
   - Access keys: a `&` before a letter in a `Button`, `MenuButton`, `Checkbox`, `RadioButton`, `Menu`, `MenuItem`, `TabItem` or input label (`"&File"`) underlines it and makes Alt+letter (the bare letter inside an open menu) activate the control; `&&` is a literal `&`.
@@ -116,6 +117,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Opening or closing an instance of a tool no longer detaches the panels of another open instance of the same tool: an instance's window names no longer change while it is open (they depended on the order of random object ids). Two clients running the same tool on one server no longer share windows either.
 - `wish desktop`: starting several instances of one tool no longer asserts on a shared dockspace; each instance gets its own.
 - Web renderer: the punctuation keys (`-` `=` `,` `.` `/` `;` `\`) and the numeric keypad now reach the server as keys, not only as typed characters, so shortcuts using them work in the browser.
 - Clients over the `pipe` transport notice when the server goes away (they hung in `wait()` before) and can connect again; a server on a pipe no longer risks a crash when stopped (bison update).

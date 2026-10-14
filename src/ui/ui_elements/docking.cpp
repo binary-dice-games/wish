@@ -91,6 +91,17 @@ void register_docking() {
                 "window' item). Clicking it emits the 'closed' event; the owner decides what "
                 "closing means (usually ending the app)."),
             attr<Category>("Behavior")});
+    proto->addField(
+        "layout_reset_request"_rkey,
+        field{
+            int32_t{0},
+            attr<DisplayName>("Layout Reset Request"),
+            attr<Description>(
+                "Change this value (e.g. increment it) to put the windows docked in this "
+                "dockspace back in their default arrangement (its DockLayout child) on the next "
+                "frame, re-docking any that were dragged out -- a 'Reset layout' command. On a "
+                "desktop the frame's title-bar menu and the taskbar offer the same."),
+            attr<Category>("Behavior")});
     (*proto)[dynamic::CLASS].addAttribute(
         attr<Description>("Full-viewport dockspace host. Windows nested as children become dockable."));
     dynamic::addClass(

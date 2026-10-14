@@ -1575,8 +1575,31 @@ class ui_dockspace_viewport : public cloneable_ui_element<ui_dockspace_viewport>
     return maximize_;
   }
 
+  /// @brief Cached `get_as<int32_t>("layout_reset_request"_key, def)`.
+  int32_t layout_reset_request(int32_t def = 0) const {
+    return cached_field_or<int32_t>(layout_reset_field_, bison::key_t{"layout_reset_request"}, def);
+  }
+  /// @brief Asks the next render to put the frame's panels back in its
+  ///        default `DockLayout` (the caption menu's / taskbar's "Reset
+  ///        layout"). Server-side; clients bump `layout_reset_request`.
+  void request_layout_reset() const {
+    layout_reset_requested_ = true;
+  }
+  /// @brief True once after request_layout_reset() or after
+  ///        `layout_reset_request` changed since the previous call (the
+  ///        first call only records the field); clears the request.
+  bool take_layout_reset_request() const {
+    const int32_t request = layout_reset_request(0);
+    const bool changed = seen_layout_reset_.has_value() && *seen_layout_reset_ != request;
+    seen_layout_reset_ = request;
+    return std::exchange(layout_reset_requested_, false) || changed;
+  }
+
  private:
   mutable desktop_maximize_state maximize_;
+  mutable bool layout_reset_requested_ = false;
+  mutable std::optional<int32_t> seen_layout_reset_;
+  mutable bison::field* layout_reset_field_ = nullptr;
   mutable bool minimized_ = false;
   mutable bool raise_requested_ = false;
   mutable bool focused_ = false;

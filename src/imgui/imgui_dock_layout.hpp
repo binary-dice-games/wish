@@ -18,6 +18,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace bdg::wish {
 
@@ -85,6 +86,16 @@ void note_dock_layout_applied(const ui_element& layout_root, ImGuiID target_id, 
 ///        @p dockspace_id itself when it has no node tree yet. See
 ///        `Window.dock_target`.
 ImGuiID dock_central_node_id(ImGuiID dockspace_id);
+
+/// @brief The window paths (`__path__`) a `DockLayout`'s `DockArea`s list,
+///        in order.
+std::vector<std::string> dock_layout_windows(const ui_element& layout_root);
+
+/// @brief Docks each ImGui window named in @p window_names (live or not)
+///        into the central node of dockspace @p dockspace_id -- the place a
+///        `dock_target` window opens in. Used by "Reset layout" for the
+///        windows its `DockLayout` does not place.
+void dock_windows_into_central(ImGuiID dockspace_id, const std::vector<std::string>& window_names);
 
 /// @brief Install the `[WishDockLayout]` `ImGuiSettingsHandler` on the
 ///        current ImGui context if not already present. Must be called

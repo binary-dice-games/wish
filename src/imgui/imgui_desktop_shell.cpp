@@ -607,6 +607,19 @@ class shell_painter {
                         }});
   }
 
+  /// Puts @p w's panels back in its default layout (an app frame only).
+  void reset_layout(const desktop_window_info& w) {
+    key_t key = w.top_key;
+    actions_.push_back({w.session, [key](context& s) {
+                          auto it = s.top_level_objects.find(key);
+                          if (it == s.top_level_objects.end() || !it->second ||
+                              it->second->class_key() != key_t{"DockSpaceViewport"})
+                            return;
+                          static_cast<const ui_dockspace_viewport&>(*it->second).request_layout_reset();
+                          s.dirty.store(kDirtySettleFrames, std::memory_order_release);
+                        }});
+  }
+
   /// The active window: the most recently focused one, unless minimized.
   /// Not simply "focused now": clicking the taskbar takes focus itself,
   /// and its buttons must still see which window was active before.
@@ -1291,6 +1304,8 @@ void shell_painter::draw_window_buttons(float button, float width) {
         if (ImGui::MenuItem(app.pinned ? "Unpin from taskbar" : "Pin to taskbar"))
           set_pinned(app, !app.pinned);
       }
+      if (w->frame && ImGui::MenuItem("Reset layout"))
+        reset_layout(*w);
       ImGui::Separator();
       if (ImGui::MenuItem("Close window", nullptr, false, w->closable))
         close(*w);

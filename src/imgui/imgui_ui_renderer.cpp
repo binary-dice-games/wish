@@ -141,35 +141,46 @@ static const std::string& resolve_dock_target(
   return target;
 }
 
-static std::string viewport_instance_suffix(const context& s, const ui_dockspace_viewport& node);
+static std::string viewport_instance_suffix(imgui_renderer& r, const context& s, const ui_dockspace_viewport& node);
 
-// ImGui-name suffix of the app instance @p node belongs to: that of its object
-// group's DockSpaceViewport when it has one, else that of the viewport being
-// rendered. Computed on demand, so it does not depend on render order.
-static std::string instance_suffix(const imgui_renderer& r, const context& s, const ui_element& node) {
-  if (!r.desktop_cascade_active())
-    return {};
+// ImGui-name suffix of the app instance @p node belongs to: that of the
+// DockSpaceViewport owned by the same form as @p node's top-level object,
+// else that of its object group's DockSpaceViewport, else that of the
+// viewport being rendered. Computed on demand, so it does not depend on
+// render order. Applies with or without a desktop: two sessions running the
+// same tool on one server must not share ImGui window names either.
+static std::string instance_suffix(imgui_renderer& r, const context& s, const ui_element& node) {
+  if (auto h = s.top_level_handlers.find(s.current_top_level_key); h != s.top_level_handlers.end() && h->second) {
+    for (const auto& [key, root] : s.top_level_objects) {
+      if (!root || root->class_key() != bison::key_t{"DockSpaceViewport"})
+        continue;
+      auto rh = s.top_level_handlers.find(key);
+      if (rh != s.top_level_handlers.end() && rh->second == h->second)
+        return viewport_instance_suffix(r, s, static_cast<const ui_dockspace_viewport&>(*root));
+    }
+  }
   if (bison::hash_t group = object_group_of(s, node); group != 0u) {
     for (const auto& [key, root] : s.top_level_objects)
       if (root && root->class_key() == bison::key_t{"DockSpaceViewport"} && object_group_of(s, *root) == group)
-        return viewport_instance_suffix(s, static_cast<const ui_dockspace_viewport&>(*root));
+        return viewport_instance_suffix(r, s, static_cast<const ui_dockspace_viewport&>(*root));
   }
   return r.ambient_suffix();
 }
 
 // Suffix that makes a DockSpaceViewport's ImGui window (and so the dockspace
-// ID derived from it) unique among the visible viewports sharing its `id`.
-// The viewport with the lowest object id keeps the plain name -- the
-// single-instance case is unchanged and keeps its imgui.ini layout.
-static std::string viewport_instance_suffix(const context& s, const ui_dockspace_viewport& node) {
-  for (const auto& [key, root] : s.top_level_objects) {
-    if (!root || root.get() == &node || root->class_key() != bison::key_t{"DockSpaceViewport"} || !root->visible())
-      continue;
-    const auto& other = static_cast<const ui_dockspace_viewport&>(*root);
-    if (other.id_ref() == node.id_ref() && other.wish_id().id < node.wish_id().id)
-      return "~" + std::to_string(node.wish_id().id);
-  }
-  return {};
+// ID derived from it, and its panels' names) unique among the live viewports
+// sharing its `id`: "~<slot>" from imgui_renderer::viewport_slot(), empty for
+// slot 0 -- the single-instance case keeps the plain name and its imgui.ini
+// layout. The slot is kept while the instance is open, so another instance
+// opening or closing never renames it (a rename detaches all its panels).
+static std::string viewport_instance_suffix(imgui_renderer& r, const context& s, const ui_dockspace_viewport& node) {
+  const int slot = r.viewport_slot(node.id_ref(), node.wish_id().id, &s, [&](bison::hash_t owner) {
+    for (const auto& [key, root] : s.top_level_objects)
+      if (root && root->wish_id().id == owner && root->class_key() == bison::key_t{"DockSpaceViewport"})
+        return true;
+    return false;
+  });
+  return slot == 0 ? std::string{} : "~" + std::to_string(slot);
 }
 
 // Resolves `label`'s "&X" access-key markup (see parse_access_key()) into a
@@ -322,6 +333,51 @@ static void minimize_framed_app(const context& s, const ui_dockspace_viewport& f
       static_cast<const ui_dockspace_viewport&>(*root).set_minimized(true);
   }
   s.dirty.store(kDirtySettleFrames, std::memory_order_release);
+}
+
+// ── Reset layout ──────────────────────────────────────────────────────────────
+
+// Whether "Reset layout" may re-dock @p w: a dialog (modal, NoDocking, or
+// explicitly positioned) keeps its place.
+static bool is_redockable(const window& w) {
+  return !w.modal(false) && !(w.flags(0) & ImGuiWindowFlags_NoDocking) && !(w.pos_x(-1) >= 0 && w.pos_y(-1) >= 0);
+}
+
+// ImGui names of the windows "Reset layout" docks back into @p frame's
+// central node: its Window children and the top-level windows that target
+// it by `dock_target` (from the same form or app instance), minus those its
+// DockLayout places (@p placed). "###<stable id><suffix>" names the same
+// ImGui window as the full "Title###..." label.
+static std::vector<std::string> windows_to_redock(
+    const context& s, const ui_dockspace_viewport& frame, const std::string& suffix,
+    const std::vector<std::string>& placed) {
+  std::vector<std::string> out;
+  auto add = [&](const window& w) {
+    const std::string id = stable_id(w);
+    if (is_redockable(w) && std::find(placed.begin(), placed.end(), id) == placed.end())
+      out.push_back("###" + id + suffix);
+  };
+  frame.for_each_child_ordered([&](bison::key_t, ui_element& child) {
+    if (child.class_key() == "Window"_key)
+      add(static_cast<const window&>(child));
+  });
+  const ui_root* owner = nullptr;
+  if (auto h = s.top_level_handlers.find(s.current_top_level_key); h != s.top_level_handlers.end())
+    owner = h->second;
+  const bison::hash_t group = object_group_of(s, frame);
+  for (const auto& [key, root] : s.top_level_objects) {
+    if (!root || root->class_key() != "Window"_key)
+      continue;
+    const auto& w = static_cast<const window&>(*root);
+    if (w.dock_target_ref().empty() || w.dock_target_ref() != frame.id_ref())
+      continue;
+    auto h = s.top_level_handlers.find(key);
+    const bool same_owner = owner && h != s.top_level_handlers.end() && h->second == owner;
+    const bool same_group = group != 0u && object_group_of(s, w) == group;
+    if (same_owner || same_group)
+      add(w);
+  }
+  return out;
 }
 
 // ── Core ──────────────────────────────────────────────────────────────────────
@@ -598,6 +654,7 @@ void render_window(imgui_renderer& r, const ui_element& node0, const context& s)
     case caption_action::close:
       open = false;
       break;
+    case caption_action::reset_layout:
     case caption_action::none:
       break;
     }
@@ -2228,7 +2285,7 @@ void render_dockspace_viewport(imgui_renderer& r, const ui_element& node0, const
   // never a fullscreen host covering the desktop.
   const bool desktop = r.desktop_cascade_active();
   bool embedded = node.embedded(false) || desktop;
-  const std::string instance = desktop ? viewport_instance_suffix(s, node) : std::string{};
+  const std::string instance = viewport_instance_suffix(r, s, node);
 
   // Minimized from the taskbar: nothing is drawn, but the dockspace is kept
   // alive so the windows docked in it stay docked for the restore.
@@ -2344,9 +2401,16 @@ void render_dockspace_viewport(imgui_renderer& r, const ui_element& node0, const
   const bool closable = node.closable(false);
   bool open = true;
   ImGui::Begin(window_label, embedded && closable && !caption ? &open : nullptr, ImGuiWindowFlags(host_flags));
+  node.set_focused(ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows | ImGuiFocusedFlags_DockHierarchy));
+  report_self_rect(node);
+  ImGui::PopStyleVar(3);
+  ImGui::PopStyleColor();
+  // After the frame's own style pops: the caption's window menu is a popup
+  // and must not inherit the zero padding / docking background.
   if (caption) {
     auto& st = node.maximize_state();
-    switch (draw_window_caption(caption_title.c_str(), {.maximized = st.maximized, .can_close = closable})) {
+    switch (draw_window_caption(
+        caption_title.c_str(), {.maximized = st.maximized, .can_close = closable, .can_reset_layout = true})) {
     case caption_action::minimize:
       minimize_framed_app(s, node);
       break;
@@ -2356,16 +2420,15 @@ void render_dockspace_viewport(imgui_renderer& r, const ui_element& node0, const
     case caption_action::close:
       open = false;
       break;
+    case caption_action::reset_layout:
+      node.request_layout_reset();
+      break;
     case caption_action::none:
       break;
     }
   }
   if (!open)
     enqueue_event(s, node.wish_id(), "closed"_key, dynamic{});
-  node.set_focused(ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows | ImGuiFocusedFlags_DockHierarchy));
-  report_self_rect(node);
-  ImGui::PopStyleVar(3);
-  ImGui::PopStyleColor();
 
   ImGuiDockNodeFlags dock_flags = ImGuiDockNodeFlags(flags);
   if (passthru)
@@ -2403,11 +2466,26 @@ void render_dockspace_viewport(imgui_renderer& r, const ui_element& node0, const
 
   // Non-Window children (e.g. MenuBar, or a DockLayout targeting this same
   // id -- see DockLayout.target's doc comment) are rendered inside the host
-  // window.
+  // window. "Reset layout" rebuilds the DockLayout even though it was
+  // applied before, then docks the frame's other windows back into the
+  // central node, so a panel dragged out (or left floating by a corrupted
+  // imgui.ini) comes home.
+  const bool reset_layout = node.take_layout_reset_request();
+  r.set_force_dock_layout(reset_layout);
+  std::vector<std::string> placed;
   node.for_each_child_ordered([&](bison::key_t, ui_element& child) {
-    if (child.class_key() != "Window"_key)
-      r.render_node(child, s);
+    if (child.class_key() == "Window"_key)
+      return;
+    r.render_node(child, s);
+    if (reset_layout && child.class_key() == "DockLayout"_key)
+      for (auto& w : dock_layout_windows(child))
+        placed.push_back(std::move(w));
   });
+  r.set_force_dock_layout(false);
+  if (reset_layout) {
+    dock_windows_into_central(dockspace_id, windows_to_redock(s, node, instance, placed));
+    s.dirty.store(kDirtySettleFrames, std::memory_order_release);
+  }
 
   // Drawn before End() -- see the identical reasoning in render_window().
   {

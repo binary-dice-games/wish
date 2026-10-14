@@ -246,6 +246,18 @@ ImGuiID dock_central_node_id(ImGuiID dockspace_id) {
   return central ? central->ID : dockspace_id;
 }
 
+std::vector<std::string> dock_layout_windows(const ui_element& layout_root) {
+  std::vector<std::string> out;
+  for_each_layout_window(layout_root, [&](const std::string& w) { out.push_back(w); });
+  return out;
+}
+
+void dock_windows_into_central(ImGuiID dockspace_id, const std::vector<std::string>& window_names) {
+  const ImGuiID node = dock_central_node_id(dockspace_id);
+  for (const auto& name : window_names)
+    ImGui::DockBuilderDockWindow(name.c_str(), node);
+}
+
 bool build_dock_layout(
     const ui_element& layout_root, ImGuiID target_id, ImVec2 node_size, logger* log, const std::string& window_suffix) {
   const ui_element* root_child = nullptr;
@@ -354,8 +366,9 @@ void render_dock_layout(imgui_renderer& r, const ui_element& node0, const contex
   for_each_layout_window(
       node, [&](const std::string& w) { r.set_window_dock_class_id(w + r.ambient_suffix(), dock_class_id); });
 
+  // "Reset layout" (render_dockspace_viewport()) rebuilds it regardless.
   const int32_t version = node.version(1);
-  if (!should_apply_dock_layout(node, target_id, version))
+  if (!r.force_dock_layout() && !should_apply_dock_layout(node, target_id, version))
     return;
 
   const ImVec2 size = ImGui::GetMainViewport()->WorkSize;

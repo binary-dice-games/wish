@@ -167,10 +167,27 @@ caption_action draw_window_caption(const char* title, const caption_options& opt
   window->DC.NavLayerCurrent = layer_backup;
   ImGui::PopClipRect();
 
-  // Double-click on the title toggles maximize, as in Windows.
-  if (action == caption_action::none && opts.can_maximize && !any_hovered && GImGui->HoveredWindow == window &&
-      ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && title_bar.Contains(ImGui::GetIO().MousePos))
+  // Double-click on the title toggles maximize, as in Windows; a right-click
+  // opens the window menu.
+  const bool over_title =
+      !any_hovered && GImGui->HoveredWindow == window && title_bar.Contains(ImGui::GetIO().MousePos);
+  if (action == caption_action::none && opts.can_maximize && over_title &&
+      ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
     action = caption_action::toggle_maximize;
+  if (over_title && ImGui::IsMouseClicked(ImGuiMouseButton_Right))
+    ImGui::OpenPopup("##wish_caption_menu");
+  if (ImGui::BeginPopup("##wish_caption_menu")) {
+    if (ImGui::MenuItem(opts.maximized ? "Restore" : "Maximize", nullptr, false, opts.can_maximize))
+      action = caption_action::toggle_maximize;
+    if (ImGui::MenuItem("Minimize"))
+      action = caption_action::minimize;
+    if (opts.can_reset_layout && ImGui::MenuItem("Reset layout"))
+      action = caption_action::reset_layout;
+    ImGui::Separator();
+    if (ImGui::MenuItem("Close", nullptr, false, opts.can_close))
+      action = caption_action::close;
+    ImGui::EndPopup();
+  }
   return action;
 }
 
