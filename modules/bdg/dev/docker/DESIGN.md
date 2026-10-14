@@ -166,7 +166,8 @@ window's actions. Root keys are
   trace *and* every container line stays visible (a horizontal legend gets
   clamped to the plot width and crops the tail entries).
 
-Closing any window emits `"closed"` and tears down all eight subtrees
+Closing the app frame (its title-bar X; the panels have none) emits
+`"closed"` and tears down all eight subtrees
 (`remove_objects_at` for the seven extra roots + `remove_internal_objects` —
 `git.cpp`'s `on_event` close branch).
 
@@ -288,7 +289,7 @@ DockerFrontend.update_logs / update_inspect (server):
 | `"create_volume_requested"` event | `{ name }` — from the Volumes window's inline field. |
 | `"logs_requested"` event | `{ id, follow (bool), lines (int32) }`. |
 | `"inspect_requested"` event | `{ kind, id }` — `kind` ∈ `container`, `image`, `volume`, `network`. |
-| `"closed"` event | Any window's X was clicked; all eight subtrees torn down. The client should `signal_done()`. |
+| `"closed"` event | The app frame's X was clicked; all eight subtrees torn down. The client should `signal_done()`. |
 | `wish client --run=docker` | No positional args — the module talks to whatever Docker daemon the `docker` CLI itself would (`DOCKER_HOST` / default socket / current context). |
 
 The internal `ui_element` tree of every window is private — clients must

@@ -1485,6 +1485,19 @@ class ui_collapsing_header : public cloneable_ui_element<ui_collapsing_header> {
 
 // ── Docking, table ───────────────────────────────────────────────────────────
 
+/// @brief Desktop-shell maximize state of an app's top-level window (a
+///        `Window` or a `DockSpaceViewport`), set by its title-bar caption
+///        buttons. Server-side render bookkeeping only, never a bison field.
+struct desktop_maximize_state {
+  /// Filling the desktop work area (cannot be moved or resized).
+  bool maximized = false;
+  /// Set when un-maximized: the next render moves the window back to
+  /// `restore_pos`/`restore_size`, then clears it.
+  bool restore_pending = false;
+  float restore_pos[2] = {0.0f, 0.0f};
+  float restore_size[2] = {0.0f, 0.0f};
+};
+
 class ui_dockspace_viewport : public cloneable_ui_element<ui_dockspace_viewport> {
  public:
   using cloneable_ui_element::cloneable_ui_element;
@@ -1519,6 +1532,11 @@ class ui_dockspace_viewport : public cloneable_ui_element<ui_dockspace_viewport>
   bool embedded(bool def = false) const {
     return cached_field_or<bool>(embedded_field_, bison::key_t{"embedded"}, def);
   }
+  /// @brief Show a close button on the frame's title bar; clicking it
+  ///        emits `closed`. Desktop mode also offers it from the taskbar.
+  bool closable(bool def = false) const {
+    return cached_field_or<bool>(closable_field_, bison::key_t{"closable"}, def);
+  }
 
   // ── Desktop shell bookkeeping (server-side only; see window.hpp's
   //    identical accessors). In a desktop, a DockSpaceViewport is an app's
@@ -1552,8 +1570,13 @@ class ui_dockspace_viewport : public cloneable_ui_element<ui_dockspace_viewport>
   void set_last_dockspace_id(unsigned int id) const {
     last_dockspace_id_ = id;
   }
+  /// @brief Maximize state driven by the desktop caption buttons.
+  desktop_maximize_state& maximize_state() const {
+    return maximize_;
+  }
 
  private:
+  mutable desktop_maximize_state maximize_;
   mutable bool minimized_ = false;
   mutable bool raise_requested_ = false;
   mutable bool focused_ = false;
@@ -1563,6 +1586,7 @@ class ui_dockspace_viewport : public cloneable_ui_element<ui_dockspace_viewport>
   mutable bison::field* flags_field_ = nullptr;
   mutable bison::field* passthru_field_ = nullptr;
   mutable bison::field* embedded_field_ = nullptr;
+  mutable bison::field* closable_field_ = nullptr;
 };
 
 class ui_dockspace : public cloneable_ui_element<ui_dockspace> {

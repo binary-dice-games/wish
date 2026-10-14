@@ -252,7 +252,7 @@ hour, temp, hum
 `view` opens the same **Preview** and **Data** windows as edit mode and
 nothing else: no source editor and no Save. The plot is live, so zoom, pan,
 legend toggles and (for `Plot3D`) rotation work, but nothing can change the
-chart or the file. Close the Preview window to quit.
+chart or the file. Close the window to quit.
 
 A source that does not render is not shown half-built: `view` prints the
 same one-line error as `render` and exits 1.

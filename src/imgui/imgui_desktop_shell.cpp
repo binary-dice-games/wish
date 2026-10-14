@@ -277,6 +277,7 @@ desktop_collect_windows(const context& s, const sync_context* session, const std
       const auto& dsv = static_cast<const ui_dockspace_viewport&>(*t.root);
       info.minimized = dsv.minimized();
       info.focused = dsv.is_focused();
+      info.closable = dsv.closable(false);
       title = dsv.title_ref().empty() ? dsv.id_ref() : dsv.title_ref();
       for (const auto& o : tops) {
         if (o.key == t.key || o.group != t.group || t.group == 0u)

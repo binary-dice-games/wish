@@ -80,6 +80,17 @@ void register_docking() {
                 "only this element's own windows (Window children, DockLayout windows, "
                 "dock_target windows) can dock into the nested dockspace, and they can dock "
                 "nowhere else.")});
+    proto->addField(
+        "closable"_rkey,
+        field{
+            bool{false},
+            attr<DisplayName>("Closable"),
+            attr<Description>(
+                "Show a close button on the title bar when embedded (and in a desktop shell, "
+                "where the frame also gets minimize/maximize buttons and a taskbar 'Close "
+                "window' item). Clicking it emits the 'closed' event; the owner decides what "
+                "closing means (usually ending the app)."),
+            attr<Category>("Behavior")});
     (*proto)[dynamic::CLASS].addAttribute(
         attr<Description>("Full-viewport dockspace host. Windows nested as children become dockable."));
     dynamic::addClass(

@@ -19,8 +19,10 @@
 #include <imgui.h>
 #include <imgui_internal.h>
 
+#include <cmath>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace bdg::bison;
@@ -84,20 +86,58 @@ class DesktopShellTest : public ::testing::Test {
       auto is_dock = [](const wish::ui_element_ptr& root) {
         return root->class_key() == bdg::bison::key_t{"DockSpaceViewport"};
       };
+      // Like the server, each top-level object renders with its key as
+      // current_top_level_key.
       for (auto& [key, root] : s.top_level_objects)
-        if (root && is_dock(root))
+        if (root && is_dock(root)) {
+          s.current_top_level_key = key;
           renderer_->render_session(*root, s);
+        }
       for (auto& [key, root] : s.top_level_objects)
-        if (root && !is_dock(root) && !wish::is_host_chrome_class(root->class_key()))
+        if (root && !is_dock(root) && !wish::is_host_chrome_class(root->class_key())) {
+          s.current_top_level_key = key;
           renderer_->render_session(*root, s);
+        }
+      s.current_top_level_key = bdg::bison::key_t{};
+      for (auto& ev : s.pending_events)
+        events_.push_back({ev.id, ev.event_name});
       s.pending_events.clear();
     }
     renderer_->end_frame();
     return desktop;
   }
 
+  /// Clicks the left mouse button at @p pos: a frame to hover, one to
+  /// press, one to release.
+  void click(ImVec2 pos) {
+    ImGuiIO& io = ImGui::GetIO();
+    io.AddMousePosEvent(pos.x, pos.y);
+    frame();
+    io.AddMouseButtonEvent(ImGuiMouseButton_Left, true);
+    frame();
+    io.AddMouseButtonEvent(ImGuiMouseButton_Left, false);
+    frame();
+  }
+
+  /// Center of caption button @p index (0 = close, 1 = maximize,
+  /// 2 = minimize, counted from the right) of @p win.
+  static ImVec2 caption_button(const ImGuiWindow* win, int index) {
+    const float h = win->TitleBarHeight;
+    const float w = std::floor(h * 1.5f);
+    return ImVec2(win->Pos.x + win->Size.x - w * (float(index) + 0.5f), win->Pos.y + h * 0.5f);
+  }
+
+  /// Whether a frame queued @p event from the element with `__wish_id` @p id.
+  bool saw_event(hash_t id, const char* event) const {
+    for (const auto& [ev_id, name] : events_)
+      if (ev_id.id == id && name == bdg::bison::key_t{event})
+        return true;
+    return false;
+  }
+
   static const char* kShell;
 
+  std::vector<std::pair<bdg::bison::key_t, bdg::bison::key_t>> events_;
   ImGuiContext* ctx_ = nullptr;
   wish::sync_context_ptr session_;
   std::unique_ptr<wish::imgui_renderer> renderer_;
@@ -452,4 +492,156 @@ TEST_F(DesktopShellTest, SecondInstanceDocksItsOwnPanels) {
   ASSERT_NE(p1, nullptr);
   ASSERT_NE(p1->DockNode, nullptr);
   EXPECT_NE(p1->DockNode->HostWindow->ParentWindow, v2);
+}
+
+// ── Caption (title-bar buttons) ──────────────────────────────────────────────
+
+TEST_F(DesktopShellTest, MainWindowDrawsItsOwnTitleAndPanelsKeepImGuis) {
+  add_top(kShell, 1u);
+  add_top(R"({"type":"Window","title":"Main","width":400,"height":300})", 700u);
+  add_top(R"({"type":"DockSpaceViewport","id":"app","title":"App","closable":true})", 701u, 70u);
+  add_top(R"({"type":"Window","title":"Panel","dock_target":"app"})", 702u, 70u);
+  frame();
+  frame();
+
+  // An app's main window hides ImGui's title: the caption draws it, before
+  // the buttons. A panel keeps ImGui's title bar.
+  ImGuiWindow* main = ImGui::FindWindowByName("###700");
+  ImGuiWindow* app = ImGui::FindWindowByName("###app");
+  ImGuiWindow* panel = ImGui::FindWindowByName("Panel###702");
+  ASSERT_NE(main, nullptr);
+  ASSERT_NE(app, nullptr);
+  ASSERT_NE(panel, nullptr);
+  EXPECT_STREQ(main->Name, "###700");
+  EXPECT_STREQ(app->Name, "###app");
+  EXPECT_STREQ(panel->Name, "Panel###702");
+  EXPECT_FALSE(main->HasCloseButton); // the caption's own close button replaces it
+  EXPECT_TRUE(main->Flags & ImGuiWindowFlags_NoCollapse);
+}
+
+TEST_F(DesktopShellTest, CaptionMinimizeHidesTheWindow) {
+  add_top(kShell, 1u);
+  auto w = add_top(R"({"type":"Window","title":"Main","width":400,"height":300})", 710u);
+  frame();
+  frame();
+  ImGuiWindow* win = ImGui::FindWindowByName("###710");
+  ASSERT_NE(win, nullptr);
+
+  click(caption_button(win, 2));
+  EXPECT_TRUE(static_cast<const wish::window&>(*w).minimized());
+  frame(); // the click's own frame still submitted it
+  EXPECT_FALSE(win->Active);
+}
+
+TEST_F(DesktopShellTest, CaptionMaximizeFillsTheDesktopAndRestores) {
+  add_top(kShell, 1u);
+  auto w = add_top(R"({"type":"Window","title":"Main","width":400,"height":300})", 720u);
+  frame();
+  frame();
+  ImGuiWindow* win = ImGui::FindWindowByName("###720");
+  ASSERT_NE(win, nullptr);
+  const ImVec2 pos = win->Pos;
+  const ImVec2 size = win->Size;
+
+  click(caption_button(win, 1));
+  frame();
+  EXPECT_TRUE(static_cast<const wish::window&>(*w).maximize_state().maximized);
+  const ImVec2 min = renderer_->desktop_area_min();
+  const ImVec2 max = renderer_->desktop_area_max();
+  EXPECT_FLOAT_EQ(win->Pos.x, min.x);
+  EXPECT_FLOAT_EQ(win->Pos.y, min.y);
+  EXPECT_FLOAT_EQ(win->Size.x, max.x - min.x);
+  EXPECT_FLOAT_EQ(win->Size.y, max.y - min.y);
+  EXPECT_TRUE(win->Flags & ImGuiWindowFlags_NoMove); // a maximized window stays put
+
+  click(caption_button(win, 1));
+  frame();
+  EXPECT_FALSE(static_cast<const wish::window&>(*w).maximize_state().maximized);
+  EXPECT_FLOAT_EQ(win->Pos.x, pos.x);
+  EXPECT_FLOAT_EQ(win->Pos.y, pos.y);
+  EXPECT_FLOAT_EQ(win->Size.x, size.x);
+  EXPECT_FLOAT_EQ(win->Size.y, size.y);
+}
+
+TEST_F(DesktopShellTest, DoubleClickOnTheTitleMaximizes) {
+  add_top(kShell, 1u);
+  auto w = add_top(R"({"type":"Window","title":"Main","width":400,"height":300})", 730u);
+  frame();
+  frame();
+  ImGuiWindow* win = ImGui::FindWindowByName("###730");
+  ASSERT_NE(win, nullptr);
+
+  ImGuiIO& io = ImGui::GetIO();
+  io.AddMousePosEvent(win->Pos.x + 40.0f, win->Pos.y + win->TitleBarHeight * 0.5f);
+  frame();
+  for (bool down : {true, false, true, false}) {
+    io.AddMouseButtonEvent(ImGuiMouseButton_Left, down);
+    frame();
+  }
+  EXPECT_TRUE(static_cast<const wish::window&>(*w).maximize_state().maximized);
+}
+
+TEST_F(DesktopShellTest, NonResizableWindowCannotMaximize) {
+  add_top(kShell, 1u);
+  auto w = add_top(R"({"type":"Window","title":"Calc","width":300,"height":200,"flags":"NoResize"})", 740u);
+  frame();
+  frame();
+  ImGuiWindow* win = ImGui::FindWindowByName("###740");
+  ASSERT_NE(win, nullptr);
+
+  click(caption_button(win, 1));
+  EXPECT_FALSE(static_cast<const wish::window&>(*w).maximize_state().maximized);
+}
+
+TEST_F(DesktopShellTest, CaptionCloseEmitsClosedOnlyWhenClosable) {
+  add_top(kShell, 1u);
+  add_top(R"({"type":"Window","title":"Fixed","width":300,"height":200,"pos_x":40,"pos_y":40})", 750u);
+  add_top(R"({"type":"Window","title":"Doc","width":300,"height":200,"closable":true,"pos_x":500,"pos_y":40})",
+      751u);
+  frame();
+  frame();
+  ImGuiWindow* fixed = ImGui::FindWindowByName("###750");
+  ImGuiWindow* doc = ImGui::FindWindowByName("###751");
+  ASSERT_NE(fixed, nullptr);
+  ASSERT_NE(doc, nullptr);
+
+  click(caption_button(fixed, 0));
+  EXPECT_FALSE(saw_event(750u, "closed"));
+  click(caption_button(doc, 0));
+  EXPECT_TRUE(saw_event(751u, "closed"));
+}
+
+TEST_F(DesktopShellTest, FrameCaptionMinimizesTheWholeAppAndCloses) {
+  add_top(kShell, 1u);
+  auto vp = add_top(R"({"type":"DockSpaceViewport","id":"app","title":"App","closable":true})", 760u, 76u);
+  auto panel = add_top(R"({"type":"Window","title":"Panel","dock_target":"app"})", 761u, 76u);
+  frame();
+  frame();
+  ImGuiWindow* win = ImGui::FindWindowByName("###app");
+  ASSERT_NE(win, nullptr);
+
+  click(caption_button(win, 0));
+  EXPECT_TRUE(saw_event(760u, "closed"));
+
+  click(caption_button(win, 2));
+  EXPECT_TRUE(static_cast<const wish::ui_dockspace_viewport&>(*vp).minimized());
+  EXPECT_TRUE(static_cast<const wish::window&>(*panel).minimized());
+}
+
+TEST_F(DesktopShellTest, ClosableFrameCanBeClosedFromTheTaskbar) {
+  add_top(R"({"type":"DockSpaceViewport","id":"a","title":"A","closable":true})", 770u, 77u);
+  add_top(R"({"type":"DockSpaceViewport","id":"b","title":"B"})", 771u, 78u);
+  auto wins = wish::detail::desktop_collect_windows(sess(), session_.get(), {});
+  ASSERT_EQ(wins.size(), size_t{2});
+  std::sort(wins.begin(), wins.end(), [](const auto& a, const auto& b) { return a.top_key.id < b.top_key.id; });
+  EXPECT_TRUE(wins[0].closable);
+  EXPECT_FALSE(wins[1].closable);
+}
+
+TEST_F(DesktopShellTest, ClosableEmbeddedFrameOutsideADesktopUsesImGuisCloseButton) {
+  add_top(R"({"type":"DockSpaceViewport","id":"app","title":"App","embedded":true,"closable":true})", 780u);
+  frame();
+  ImGuiWindow* win = ImGui::FindWindowByName("App###app");
+  ASSERT_NE(win, nullptr);
+  EXPECT_TRUE(win->HasCloseButton);
 }

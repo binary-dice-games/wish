@@ -13,8 +13,8 @@ sockets show `-` unless top runs elevated), and **Cores** (one meter per
 logical core). The throughput graphs rescale to their visible peak and pick
 a B/s..GB/s unit. The first run seeds a row of graphs above the process
 table (with Ports as a second tab next to it) and the core meters along
-the right; rearrange freely afterwards (Shift+drag to re-dock). Closing any
-panel closes the tool.
+the right; rearrange freely afterwards (Shift+drag to re-dock). The title-bar X
+closes the tool.
 All sampling is client-side
 (inherently OS-specific, and the machine a user wants visibility into is
 their own) — the server-side form only renders whatever snapshot it was

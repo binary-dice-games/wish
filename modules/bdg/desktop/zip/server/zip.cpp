@@ -108,7 +108,6 @@ static constexpr const char* kFilesLayout = R"json({
   "type": "Window",
   "title": "$$ZIP_FILES",
   "width": 520, "height": 440,
-  "closable": true,
   "children": {
     "main": {
       "type": "VerticalLayout",
@@ -133,7 +132,6 @@ static constexpr const char* kContentsLayout = R"json({
   "type": "Window",
   "title": "$$ZIP_CONTENTS",
   "width": 480, "height": 440,
-  "closable": true,
   "children": {
     "vbox": {
       "type": "VerticalLayout",
@@ -158,7 +156,6 @@ static constexpr const char* kActionsLayout = R"json({
   "type": "Window",
   "title": "$$ZIP_ACTIONS",
   "width": 1000, "height": 90,
-  "closable": true,
   "children": {
     "vbox": {
       "type": "VerticalLayout",
@@ -710,8 +707,8 @@ void zip::show_contents_panel(const std::string& zip_name, const std::vector<arc
 // ── Event routing ─────────────────────────────────────────────────────────────
 
 void zip::on_event(key_t id, key_t event, const dynamic& payload) {
-  // Any panel's X button -> tear the whole tool down (top/pix's rule).
-  if (event == "closed"_key && (id == window_id_ || id == contents_window_id_ || id == actions_window_id_)) {
+  // The frame's close button (or the taskbar's "Close window").
+  if (event == "closed"_key && id == dock_frame_id()) {
     emit("closed"_key);
     remove_panel_objects();
     remove_internal_objects();

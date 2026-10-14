@@ -68,7 +68,6 @@ theme_color release_status_colour(const std::string& status) {
 
 static constexpr const char* kReleasesLayout = R"json({
   "type": "Window", "title": "$$HELM_RELEASES", "width": 980, "height": 500,
-  "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
       "btn_refresh": { "type": "Button", "label": "$$HELM_REFRESH", "shortcut": "F5", "icon": "res/icons/refresh.png" },
@@ -98,7 +97,7 @@ static constexpr const char* kReleasesLayout = R"json({
 
 static constexpr const char* kReposLayout = R"json({
   "type": "Window", "title": "$$HELM_REPOSITORIES", "width": 820, "height": 360,
-  "closable": true, "flags": "NoFocusOnAppearing",
+  "flags": "NoFocusOnAppearing",
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
       "btn_refresh":    { "type": "Button", "label": "$$HELM_REFRESH", "shortcut": "F5", "icon": "res/icons/refresh.png" },
@@ -127,7 +126,7 @@ static constexpr const char* kReposLayout = R"json({
 
 static constexpr const char* kChartsLayout = R"json({
   "type": "Window", "title": "$$HELM_CHARTS", "width": 900, "height": 420,
-  "closable": true, "flags": "NoFocusOnAppearing",
+  "flags": "NoFocusOnAppearing",
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
       "query":      { "type": "InputText", "hint": "$$HELM_SEARCH_HINT", "width": 320 },
@@ -154,7 +153,6 @@ static constexpr const char* kChartsLayout = R"json({
 
 static constexpr const char* kHistoryLayout = R"json({
   "type": "Window", "title": "$$HELM_HISTORY", "width": 820, "height": 420,
-  "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 8, "children": {
       "target":      { "type": "Label", "text": "$$HELM_NO_RELEASE_SELECTED" },
@@ -816,10 +814,8 @@ void helm_frontend::on_event(key_t id, key_t event, const dynamic& payload) {
     return;
   }
 
-  // Any window's X button -> tear everything down.
-  if (event == "closed"_key &&
-      (id == releases_.panel.window_id() || id == repos_.panel.window_id() || id == charts_.panel.window_id() ||
-       id == history_.panel.window_id() || id == details_.window_id() || id == console_.window_id())) {
+  // The frame's close button (or the taskbar's "Close window").
+  if (event == "closed"_key && id == dock_frame_id()) {
     details_.remove_file();
     close_install_dialog();
     emit("closed"_key);

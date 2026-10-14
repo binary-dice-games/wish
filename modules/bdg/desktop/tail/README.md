@@ -10,7 +10,7 @@ inside its own nested "Tail" dockspace (see [docs/dock-layout.md](../../../../do
 **Log** (the All tab plus one tab per tag) and **Controls** (the toolbar --
 filter, Lines, Follow, Clear All -- and the status line). The first run
 seeds Controls as a strip above the Log; rearrange freely afterwards
-(Shift+drag to re-dock). Closing either panel closes the tool.
+(Shift+drag to re-dock). The title-bar X closes the tool.
 
 - **server/**: `Tail` form (`register_tail()`) -- parses/classifies
   raw lines (via `log_line_parser`, configured from `patterns.json` below)

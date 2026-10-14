@@ -1,6 +1,7 @@
 // MIT License © 2026 Binary Dice Games
 #include <gtest/gtest.h>
 
+#include "dock_frame.hpp"
 #include "session_event_recorder.hpp"
 #include "store_session.hpp"
 
@@ -526,8 +527,7 @@ TEST_F(KubectlRmiTest, ClosingDeletesLogsEditorFile) {
 
   bool got = false;
   size_t since = srv_->events->mark();
-  auto win = srv_->last_session->ui_objects.at(root_ + "_logs")->as<bison::key_t>("__wish_id"_key);
-  fire_at(root_ + "_logs", win, "closed"_key);
+  fire_at(wish_test::dock_frame_root(*srv_->last_session), wish_test::dock_frame_id(*srv_->last_session), "closed"_key);
   got = srv_->events->wait_for("closed"_key, since).has_value();
   ASSERT_TRUE(got);
   EXPECT_FALSE(std::filesystem::exists(file));
@@ -575,11 +575,13 @@ TEST_F(KubectlRmiTest, DescribeMenuActionEmitsAndUpdateDescribeFills) {
   EXPECT_EQ(editor_text(root_ + "_describe.vbox.editor"), resp_text);
 }
 
-TEST_F(KubectlRmiTest, ClosingAnyWindowEmitsClosed) {
+TEST_F(KubectlRmiTest, ClosingTheFrameEmitsClosed) {
+  // The panels have no X of their own.
+  for (const char* suffix : {"", "_deployments", "_services", "_nodes", "_logs", "_describe", "_console", "_top"})
+    EXPECT_FALSE(srv_->last_session->ui_objects.at(root_ + suffix)->get_as<bool>("closable"_key, false)) << suffix;
   bool got = false;
   size_t since = srv_->events->mark();
-  auto win = srv_->last_session->ui_objects.at(root_ + "_services")->as<bison::key_t>("__wish_id"_key);
-  fire_at(root_ + "_services", win, "closed"_key);
+  fire_at(wish_test::dock_frame_root(*srv_->last_session), wish_test::dock_frame_id(*srv_->last_session), "closed"_key);
   got = srv_->events->wait_for("closed"_key, since).has_value();
   EXPECT_TRUE(got);
 }
@@ -618,10 +620,9 @@ TEST_F(KubectlRmiTest, RegistersDefaultDockLayout) {
     EXPECT_TRUE(srv_->last_session->top_level_objects.count(bison::key_t{t})) << "unresolved DockArea window: " << t;
 }
 
-TEST_F(KubectlRmiTest, ClosingAWindowAlsoTearsDownDockLayout) {
+TEST_F(KubectlRmiTest, ClosingTheFrameAlsoTearsDownDockLayout) {
   ASSERT_FALSE(find_root_with_prefix(srv_->last_session->ui_objects, "__docklayout_").empty());
-  auto win = srv_->last_session->ui_objects.at(root_ + "_top")->as<bison::key_t>("__wish_id"_key);
-  fire_at(root_ + "_top", win, "closed"_key); // kubectl's on_event tears down synchronously
+  fire_at(wish_test::dock_frame_root(*srv_->last_session), wish_test::dock_frame_id(*srv_->last_session), "closed"_key); // kubectl's on_event tears down synchronously
   EXPECT_TRUE(find_root_with_prefix(srv_->last_session->ui_objects, "__docklayout_").empty());
 }
 

@@ -56,7 +56,6 @@ constexpr int32_t kRowLimits[] = {100, 500, 1000, 5000};
 
 static constexpr const char* kEditorLayout = R"json({
   "type": "Window", "title": "$$SQ_SQL_EDITOR", "width": 900, "height": 300,
-  "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
       "btn_run":  { "type": "Button", "label": "$$SQ_RUN", "shortcut": "F5", "shortcut_scope": "app", "icon": "res/icons/play.png" },
@@ -71,7 +70,6 @@ static constexpr const char* kEditorLayout = R"json({
 
 static constexpr const char* kResultsLayout = R"json({
   "type": "Window", "title": "$$SQ_RESULTS", "width": 900, "height": 360,
-  "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "export": { "type": "HorizontalLayout", "spacing": 6, "children": {
       "btn_export": { "type": "Button", "label": "$$SQ_EXPORT_CSV", "icon": "res/icons/download.png" },
@@ -91,7 +89,6 @@ static constexpr const char* kResultsLayout = R"json({
 
 static constexpr const char* kConnectionsLayout = R"json({
   "type": "Window", "title": "$$SQ_CONNECTIONS", "width": 760, "height": 340,
-  "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "new_row1": { "type": "HorizontalLayout", "spacing": 6, "children": {
       "driver": { "type": "Combo", "items": "$$SQ_AUTO_DETECT", "value": 0, "width": 150 },
@@ -123,7 +120,6 @@ static constexpr const char* kConnectionsLayout = R"json({
 
 static constexpr const char* kNavigatorLayout = R"json({
   "type": "Window", "title": "$$SQ_NAVIGATOR", "width": 360, "height": 520,
-  "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "tree": { "type": "VerticalLayout", "children": {} }
   } } }
@@ -131,7 +127,6 @@ static constexpr const char* kNavigatorLayout = R"json({
 
 static constexpr const char* kStructureLayout = R"json({
   "type": "Window", "title": "$$SQ_STRUCTURE", "width": 700, "height": 320,
-  "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "title": { "type": "Label", "text": "$$SQ_STRUCTURE_PLACEHOLDER" },
     "sep": { "type": "Separator" },
@@ -153,7 +148,6 @@ static constexpr const char* kStructureLayout = R"json({
 
 static constexpr const char* kChartLayout = R"json({
   "type": "Window", "title": "$$SQ_CHART", "width": 900, "height": 420,
-  "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
       "type": { "type": "Combo", "items": "$$SQ_CHART_TYPE_ITEMS", "value": 0, "width": 140 },
@@ -1145,10 +1139,8 @@ dynamic sq_frontend::do_append_command_log(const dynamic& args) {
 // ── Events ─────────────────────────────────────────────────────────────────
 
 void sq_frontend::on_event(key_t id, key_t event, const dynamic& payload) {
-  if (event == "closed"_key &&
-      (id == editor_window_id_ || id == connections_window_id_ || id == navigator_window_id_ ||
-       id == structure_window_id_ || id == results_window_id_ || id == console_.window_id() ||
-       id == chart_window_id_)) {
+  // The frame's close button (or the taskbar's "Close window").
+  if (event == "closed"_key && id == dock_frame_id()) {
     emit("closed"_key);
     remove_objects_at(connections_root_key_);
     remove_objects_at(navigator_root_key_);

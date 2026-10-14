@@ -1,6 +1,7 @@
 // MIT License © 2026 Binary Dice Games
 #include <gtest/gtest.h>
 
+#include "dock_frame.hpp"
 #include "session_event_recorder.hpp"
 
 #include <server/registry.hpp>
@@ -457,9 +458,16 @@ TEST_F(DuTest, TreemapClicksOnTheRootOrOutOfRangeAreIgnored) {
 
 // ── Closing ───────────────────────────────────────────────────────────────────
 
-TEST_F(DuTest, ClosingEitherPanelClosesTheTool) {
+TEST_F(DuTest, ClosingTheFrameClosesTheTool) {
   size_t since = srv_->events->mark();
-  handler_->on_event(
-      srv_->last_session->ui_objects.at(root_ + "_treemap")->as<bison::key_t>("__wish_id"_key), "closed"_key, dynamic{});
+  handler_->on_event(wish_test::dock_frame_id(*srv_->last_session), "closed"_key, dynamic{});
   EXPECT_TRUE(srv_->events->wait_for("closed"_key, since));
+}
+
+// Only the app frame has a close button; the panels have none.
+TEST_F(DuTest, OnlyTheFrameIsClosable) {
+  const auto& objects = srv_->last_session->ui_objects;
+  EXPECT_TRUE(objects.at(wish_test::dock_frame_root(*srv_->last_session))->get_as<bool>("closable"_key, false));
+  for (const char* suffix : {"", "_treemap"})
+    EXPECT_FALSE(objects.at(root_ + suffix)->get_as<bool>("closable"_key, false)) << suffix;
 }

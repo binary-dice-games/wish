@@ -94,7 +94,6 @@ static constexpr const char* kFilesLayout = R"json({
   "type": "Window",
   "title": "$$DU_FILES",
   "width": 520, "height": 600,
-  "closable": true,
   "children": {
     "main": {
       "type": "VerticalLayout",
@@ -130,7 +129,6 @@ static constexpr const char* kTreemapLayout = R"json({
   "type": "Window",
   "title": "$$DU_TREEMAP",
   "width": 900, "height": 420,
-  "closable": true,
   "children": {
     "map": { "type": "Treemap", "padding": 1 }
   }
@@ -428,8 +426,8 @@ dynamic du::on_set(const dynamic& patch) {
 // ── Event routing ─────────────────────────────────────────────────────────────
 
 void du::on_event(key_t id, key_t event, const dynamic& payload) {
-  // Either panel's X button -> tear the whole tool down (zip/top/pix's rule).
-  if (event == "closed"_key && (id == window_id_ || id == treemap_window_id_)) {
+  // The frame's close button (or the taskbar's "Close window").
+  if (event == "closed"_key && id == dock_frame_id()) {
     emit("closed"_key);
     remove_panel_objects();
     remove_internal_objects();

@@ -223,7 +223,6 @@ static constexpr const char* kToolbarLayout = R"({
   "type": "Window",
   "title": "$$NANO_TOOLBAR",
   "width": 720, "height": 60,
-  "closable": true,
   "children": {
     "toolbar": {
       "type": "HorizontalLayout",
@@ -802,7 +801,8 @@ dynamic nano::do_find(const dynamic& args) {
 // ── Event routing ─────────────────────────────────────────────────────────────
 
 void nano::on_event(key_t id, key_t event, const dynamic& payload) {
-  if (id == window_id_ && event == "closed"_key) {
+  // The frame's close button (or the taskbar's "Close window").
+  if (id == dock_frame_id() && event == "closed"_key) {
     bool any_dirty = std::any_of(open_files_.begin(), open_files_.end(), [](const auto& f) { return f.dirty; });
     if (!any_dirty) {
       do_close(/*flush_dirty_files=*/true);

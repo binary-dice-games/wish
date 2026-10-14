@@ -11,6 +11,7 @@
 #include "imgui_dock_layout.hpp"
 #include "imgui_icon_widgets.hpp"
 #include "imgui_keyboard.hpp"
+#include "imgui_window_caption.hpp"
 
 #ifdef WISH_IMGUI_ENABLED
 
@@ -249,6 +250,80 @@ static void set_next_dock_class(ImGuiID class_id) {
 // widget nested in layouts fire whenever its window has focus.
 static constexpr ImGuiChildFlags kLayoutChildFlags = ImGuiChildFlags_NavFlattened;
 
+// ── Desktop caption ───────────────────────────────────────────────────────────
+//
+// On a desktop shell an app's main window -- its DockSpaceViewport frame, or
+// a top-level Window of an app without one -- gets a Windows-style caption
+// (imgui_window_caption.hpp): minimize, maximize/restore and close buttons,
+// a border and a shadow. Its panels get none.
+
+// Whether @p node (a Window) is an app's main window on the desktop: a
+// top-level, non-modal Window with no dock target, of an app that has no
+// DockSpaceViewport frame -- the windows the taskbar lists on their own
+// (see desktop_collect_windows()).
+static bool is_desktop_main_window(const imgui_renderer& r, const context& s, const window& node) {
+  if (!r.desktop_cascade_active() || node.modal(false) || !node.dock_target_ref().empty())
+    return false;
+  auto it = s.top_level_objects.find(s.current_top_level_key);
+  if (it == s.top_level_objects.end() || it->second.get() != &node)
+    return false;
+  if (bison::hash_t group = object_group_of(s, node); group != 0u) {
+    for (const auto& [key, root] : s.top_level_objects)
+      if (root && root->class_key() == bison::key_t{"DockSpaceViewport"} && object_group_of(s, *root) == group)
+        return false;
+  }
+  return true;
+}
+
+// Before Begin(): a maximized window fills the desktop work area and cannot
+// be moved or resized; a window just restored returns to its saved place.
+static void apply_maximize_state(const imgui_renderer& r, desktop_maximize_state& st, int32_t& flags) {
+  if (st.maximized) {
+    const ImVec2 min = r.desktop_area_min();
+    const ImVec2 max = r.desktop_area_max();
+    ImGui::SetNextWindowPos(min, ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(max.x - min.x, max.y - min.y), ImGuiCond_Always);
+    flags |= ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize;
+  } else if (st.restore_pending) {
+    st.restore_pending = false;
+    ImGui::SetNextWindowPos(ImVec2(st.restore_pos[0], st.restore_pos[1]), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(st.restore_size[0], st.restore_size[1]), ImGuiCond_Always);
+  }
+}
+
+// Inside Begin()/End(): maximizes the current window (saving its place) or
+// restores it.
+static void toggle_maximize(desktop_maximize_state& st, const context& s) {
+  if (st.maximized) {
+    st.maximized = false;
+    st.restore_pending = true;
+  } else {
+    const ImVec2 pos = ImGui::GetWindowPos();
+    const ImVec2 size = ImGui::GetWindowSize();
+    st.restore_pos[0] = pos.x;
+    st.restore_pos[1] = pos.y;
+    st.restore_size[0] = size.x;
+    st.restore_size[1] = size.y;
+    st.maximized = true;
+  }
+  s.dirty.store(kDirtySettleFrames, std::memory_order_release);
+}
+
+// Minimizes the app framed by @p frame: every top-level window of its object
+// group, as the taskbar does (just @p frame when it has no group).
+static void minimize_framed_app(const context& s, const ui_dockspace_viewport& frame) {
+  const bison::hash_t group = object_group_of(s, frame);
+  for (const auto& [key, root] : s.top_level_objects) {
+    if (!root || (root.get() != &frame && (group == 0u || object_group_of(s, *root) != group)))
+      continue;
+    if (root->class_key() == bison::key_t{"Window"})
+      static_cast<const window&>(*root).set_minimized(true);
+    else if (root->class_key() == bison::key_t{"DockSpaceViewport"})
+      static_cast<const ui_dockspace_viewport&>(*root).set_minimized(true);
+  }
+  s.dirty.store(kDirtySettleFrames, std::memory_order_release);
+}
+
 // ── Core ──────────────────────────────────────────────────────────────────────
 
 void render_window(imgui_renderer& r, const ui_element& node0, const context& s) {
@@ -297,11 +372,22 @@ void render_window(imgui_renderer& r, const ui_element& node0, const context& s)
         ImVec2(float(w), float(h)), resized || app_sized ? ImGuiCond_Always : ImGuiCond_FirstUseEver);
   }
 
-  bool open = true;
-  bool* p_open = closable ? &open : nullptr;
   // Windows of a later instance of one tool share their `__path__` with the
   // first instance's; the suffix keeps their ImGui windows apart.
   auto iml = with_id(title, node) + instance_suffix(r, s, node);
+
+  // An app's main window on a desktop draws its own caption; ImGui's title
+  // is hidden ("###id" names the same window) unless it is docked, where
+  // the dock tab needs it.
+  const bool caption =
+      !(fl & ImGuiWindowFlags_NoTitleBar) && is_desktop_main_window(r, s, node) && !window_was_docked(iml.c_str());
+  if (caption) {
+    iml.erase(0, iml.find("###"));
+    fl |= ImGuiWindowFlags_NoCollapse;
+  }
+
+  bool open = true;
+  bool* p_open = closable && !caption ? &open : nullptr;
 
   if (modal) {
     // Docking concepts (dock nodes, floating-size restore) don't apply to a
@@ -493,7 +579,29 @@ void render_window(imgui_renderer& r, const ui_element& node0, const context& s)
   if (raise)
     ImGui::SetNextWindowFocus();
 
+  const bool resizable = !(fl & (ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize));
+  if (caption)
+    apply_maximize_state(r, node.maximize_state(), fl);
+
   bool window_open = ImGui::Begin(iml.c_str(), p_open, ImGuiWindowFlags(fl));
+  if (caption) {
+    auto& st = node.maximize_state();
+    switch (draw_window_caption(title.c_str(), {.can_maximize = resizable, .maximized = st.maximized,
+                                                   .can_close = closable})) {
+    case caption_action::minimize:
+      node.set_minimized(true);
+      s.dirty.store(kDirtySettleFrames, std::memory_order_release);
+      break;
+    case caption_action::toggle_maximize:
+      toggle_maximize(st, s);
+      break;
+    case caption_action::close:
+      open = false;
+      break;
+    case caption_action::none:
+      break;
+    }
+  }
   // "focused": it (or one of its child windows, e.g. a TextEditor) just
   // gained focus -- lets an app track which of several document windows
   // is the current one.
@@ -2202,7 +2310,19 @@ void render_dockspace_viewport(imgui_renderer& r, const ui_element& node0, const
   // ImGuiCol_WindowBg, which the dark preset sets close to black.
   ImGui::PushStyleColor(ImGuiCol_WindowBg, ImGui::GetStyle().Colors[ImGuiCol_DockingEmptyBg]);
 
-  ImGuiWindowFlags host_flags = ImGuiWindowFlags_NoCollapse;
+  // The app's main frame on a desktop draws its own caption (see
+  // render_window()); ImGui's title is hidden unless the frame is docked.
+  const bool caption = desktop && !window_was_docked(window_label);
+  std::string caption_title;
+  if (caption) {
+    caption_title = title_stored.empty() ? id_stored : title_stored;
+    const std::string full = window_label;
+    window_label_buf = full.substr(full.find("###"));
+    window_label = window_label_buf.c_str();
+  }
+  int32_t host_flags = ImGuiWindowFlags_NoCollapse;
+  if (caption)
+    apply_maximize_state(r, node.maximize_state(), host_flags);
   if (!embedded) {
     // The fullscreen host chrome is not itself a window a user can drag,
     // resize, or dock -- it just carries the dockspace.
@@ -2219,7 +2339,29 @@ void render_dockspace_viewport(imgui_renderer& r, const ui_element& node0, const
   // render_window().
   if (embedded)
     set_next_dock_class(prior_class);
-  ImGui::Begin(window_label, nullptr, host_flags);
+  // Without the caption (outside a desktop, or docked on one), a closable
+  // frame uses ImGui's own close button.
+  const bool closable = node.closable(false);
+  bool open = true;
+  ImGui::Begin(window_label, embedded && closable && !caption ? &open : nullptr, ImGuiWindowFlags(host_flags));
+  if (caption) {
+    auto& st = node.maximize_state();
+    switch (draw_window_caption(caption_title.c_str(), {.maximized = st.maximized, .can_close = closable})) {
+    case caption_action::minimize:
+      minimize_framed_app(s, node);
+      break;
+    case caption_action::toggle_maximize:
+      toggle_maximize(st, s);
+      break;
+    case caption_action::close:
+      open = false;
+      break;
+    case caption_action::none:
+      break;
+    }
+  }
+  if (!open)
+    enqueue_event(s, node.wish_id(), "closed"_key, dynamic{});
   node.set_focused(ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows | ImGuiFocusedFlags_DockHierarchy));
   report_self_rect(node);
   ImGui::PopStyleVar(3);

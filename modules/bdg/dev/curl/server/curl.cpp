@@ -80,7 +80,6 @@ std::string format_bytes(float bytes) {
 
 static constexpr const char* kRequestLayout = R"json({
   "type": "Window", "title": "$$CURL_REQUEST", "width": 900, "height": 700,
-  "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
       "method": { "type": "Combo", "items": "GET\nPOST\nPUT\nPATCH\nDELETE\nHEAD\nOPTIONS", "value": 0, "width": 100 },
@@ -162,7 +161,6 @@ static constexpr const char* kRequestLayout = R"json({
 
 static constexpr const char* kResponseLayout = R"json({
   "type": "Window", "title": "$$CURL_RESPONSE", "width": 900, "height": 620,
-  "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "status": { "type": "Label", "text": "$$CURL_NO_REQUEST_SENT_YET" },
     "sep": { "type": "Separator" },
@@ -187,7 +185,6 @@ static constexpr const char* kResponseLayout = R"json({
 
 static constexpr const char* kHistoryLayout = R"json({
   "type": "Window", "title": "$$CURL_HISTORY", "width": 860, "height": 420,
-  "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
       "btn_clear": { "type": "Button", "label": "$$CURL_CLEAR_HISTORY", "icon": "res/icons/delete.png" }
@@ -212,7 +209,6 @@ static constexpr const char* kHistoryLayout = R"json({
 
 static constexpr const char* kCollectionsLayout = R"json({
   "type": "Window", "title": "$$CURL_COLLECTIONS", "width": 860, "height": 420,
-  "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "status": { "type": "Label", "text": "" },
     "sep": { "type": "Separator" },
@@ -233,7 +229,6 @@ static constexpr const char* kCollectionsLayout = R"json({
 
 static constexpr const char* kEnvironmentsLayout = R"json({
   "type": "Window", "title": "$$CURL_ENVIRONMENTS", "width": 780, "height": 620,
-  "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
       "new_name": { "type": "InputText", "hint": "$$CURL_NEW_ENVIRONMENT_NAME", "width": 220 },
@@ -835,9 +830,8 @@ dynamic curl_frontend::do_append_command_log(const dynamic& args) {
 // ── Event routing ─────────────────────────────────────────────────────
 
 void curl_frontend::on_event(key_t id, key_t event, const dynamic& payload) {
-  if (event == "closed"_key &&
-      (id == request_window_id_ || id == response_window_id_ || id == history_.window_id() ||
-       id == collections_.window_id() || id == environments_.window_id() || id == console_.window_id())) {
+  // The frame's close button (or the taskbar's "Close window").
+  if (event == "closed"_key && id == dock_frame_id()) {
     emit("closed"_key);
     remove_objects_at(response_root_key_);
     remove_objects_at(history_.root_key());

@@ -170,7 +170,13 @@ class window : public cloneable_ui_element<window, ui_root> {
     return std::exchange(raise_requested_, false);
   }
 
+  /// @brief Maximize state driven by the desktop caption buttons.
+  desktop_maximize_state& maximize_state() const {
+    return maximize_;
+  }
+
  private:
+  mutable desktop_maximize_state maximize_;
   mutable bison::field* closable_field_ = nullptr;
   mutable bison::field* flags_field_ = nullptr;
   mutable bison::field* title_field_ = nullptr;

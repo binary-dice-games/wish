@@ -169,7 +169,6 @@ static constexpr const char* kLocalLayout = R"json({
   "type": "Window",
   "title": "$$MC_LOCAL_MACHINE",
   "width": 460, "height": 480,
-  "closable": true,
   "children": {
     "vbox": {
       "type": "VerticalLayout",
@@ -212,7 +211,6 @@ static constexpr const char* kSandboxLayout = R"json({
   "type": "Window",
   "title": "$$MC_SANDBOX_SERVER",
   "width": 460, "height": 480,
-  "closable": true,
   "children": {
     "vbox": {
       "type": "VerticalLayout",
@@ -268,7 +266,6 @@ static constexpr const char* kLocalTreeLayout = R"json({
   "type": "Window",
   "title": "$$MC_LOCAL_FOLDERS",
   "width": 240, "height": 480,
-  "closable": true,
   "children": {
     "tree": { "type": "VerticalLayout", "spacing": 0, "scroll": true, "children": {} }
   }
@@ -278,7 +275,6 @@ static constexpr const char* kSandboxTreeLayout = R"json({
   "type": "Window",
   "title": "$$MC_SANDBOX_FOLDERS",
   "width": 240, "height": 480,
-  "closable": true,
   "children": {
     "tree": { "type": "VerticalLayout", "spacing": 0, "scroll": true, "children": {} }
   }
@@ -1202,9 +1198,8 @@ dynamic mc::on_set(const dynamic& patch) {
 // ── Event routing ─────────────────────────────────────────────────────────────
 
 void mc::on_event(key_t id, key_t event, const dynamic& payload) {
-  // Any panel's X button -> tear the whole browser down (top/pix's rule).
-  if (event == "closed"_key && (id == window_id_ || id == sandbox_window_id_ || id == local_tree_window_id_ ||
-                                id == sandbox_tree_window_id_)) {
+  // The frame's close button (or the taskbar's "Close window").
+  if (event == "closed"_key && id == dock_frame_id()) {
     emit("closed"_key);
     remove_panel_objects();
     remove_internal_objects();

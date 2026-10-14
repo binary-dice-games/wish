@@ -7,7 +7,7 @@ nested "Image Viewer" dockspace (see [docs/dock-layout.md](../../../../docs/dock
 **Images** (folder toolbar + thumbnail grid), **Preview** (zoomable/pannable
 full image) and **Info** (metadata). The first run seeds Images on the left
 with Preview over Info on the right; rearrange freely afterwards (Shift+drag
-to re-dock). Closing any panel closes the tool. Demonstrates a form
+to re-dock). The title-bar X closes the tool. Demonstrates a form
 that's almost entirely client-driven — the server only owns UI structure
 and the sandbox-local "Open in Explorer" action; all local directory
 enumeration, image decoding, thumbnail/preview generation (via

@@ -304,13 +304,13 @@ directly. Every render in both modes thus happens in `nymph::on_event()`.
    with a message instead of an empty window.
 2. On success the form builds the Preview and Data windows with the same
    code edit mode uses (`rebuild_preview()`, `rebuild_data()`), under their
-   own default dock layout (`nymph_view_dock`: plot over data). The Preview
-   window is closable here, since there is no Source window to close. The
+   own default dock layout (`nymph_view_dock`: plot over data). The app
+   frame's close button closes it; the panels have none. The
    two windows are registered as `<root>_view_preview` / `<root>_view_data`,
    not under edit mode's names: ImGui saves a window's dock position in
    `imgui.ini` by name, and with shared names a view session's positions
    were restored in the next edit session, covering its Source window.
-3. Nothing in the form reacts to these windows except the Preview's
+3. Nothing in the form reacts to these windows except the frame's
    `"closed"`, which tears both down and emits `"closed"`. There is no
    dirty state, so there is no confirmation dialog.
 

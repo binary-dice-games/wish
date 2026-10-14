@@ -1,6 +1,7 @@
 // MIT License © 2026 Binary Dice Games
 #include <gtest/gtest.h>
 
+#include "dock_frame.hpp"
 #include "session_event_recorder.hpp"
 #include "store_session.hpp"
 
@@ -295,8 +296,13 @@ TEST_F(PipRmiTest, RegistersDefaultDockLayoutAndClosingTearsItDown) {
   ASSERT_FALSE(dl.empty());
   EXPECT_EQ(srv_->last_session->ui_objects.at(dl)->class_key(), "DockSpaceViewport"_key);
 
+  // The frame's X closes the tool; the panels have none.
+  EXPECT_TRUE(srv_->last_session->ui_objects.at(dl)->get_as<bool>("closable"_key, false));
+  for (const char* suffix : {"", "_versions", "_details", "_console"})
+    EXPECT_FALSE(srv_->last_session->ui_objects.at(root_ + suffix)->get_as<bool>("closable"_key, false)) << suffix;
+
   size_t since = srv_->events->mark();
-  fire_at(root_ + "_versions", id_at(root_ + "_versions"), "closed"_key);
+  fire_at(wish_test::dock_frame_root(*srv_->last_session), wish_test::dock_frame_id(*srv_->last_session), "closed"_key);
   EXPECT_TRUE(srv_->events->wait_for("closed"_key, since));
   EXPECT_TRUE(find_root_with_prefix(srv_->last_session->ui_objects, "__docklayout_").empty());
   EXPECT_FALSE(srv_->last_session->ui_objects.count(root_ + "_details"));
@@ -580,10 +586,10 @@ TEST_F(PipRmiTest, DetailsMenuActionEmitsAndUpdateDetailsFillsEditor) {
   call("update_details"_key, details("files", "six", "stale"));
   EXPECT_EQ(editor_file(editor), first);
 
-  // Closing any window removes the file.
+  // Closing the tool removes the file.
   const auto file = srv_->last_session->resource_dir / first;
   ASSERT_TRUE(std::filesystem::exists(file));
-  fire_at(root_ + "_details", id_at(root_ + "_details"), "closed"_key);
+  fire_at(wish_test::dock_frame_root(*srv_->last_session), wish_test::dock_frame_id(*srv_->last_session), "closed"_key);
   EXPECT_FALSE(std::filesystem::exists(file));
 }
 

@@ -45,7 +45,6 @@ constexpr const char* kSourceLayout = R"json({
   "title": "$$NYMPH_SOURCE",
   "width": 560,
   "height": 720,
-  "closable": true,
   "children": {
     "vbox": {
       "type": "VerticalLayout",
@@ -520,9 +519,6 @@ void nymph_form::show_view() {
 void nymph_form::rebuild_preview(nymph::figure& fig) {
   dynamic window = node("Window");
   window["title"_key] = tr("$$NYMPH_PREVIEW");
-  // View mode has no Source window; its Preview is the one to close.
-  if (view_)
-    window["closable"_key] = true;
   // Sized so the plot appears at about the size it will have in the image.
   window["width"_key] = fig.options.width + 2 * fig.options.padding + 16;
   window["height"_key] = fig.options.height + 2 * fig.options.padding + 40;
@@ -655,20 +651,17 @@ void nymph_form::on_event(key_t id, key_t event, const dynamic& /*payload*/) {
       render_to_sandbox("rendered"_key);
     return;
   }
-  if (view_built_ && id == preview_window_id_ && event == "closed"_key) {
-    request_close(); // nothing can be unsaved in view mode
-    return;
-  }
-  if (!ui_built_)
-    return;
-
-  if (id == source_window_id_ && event == "closed"_key) {
-    if (dirty_)
+  // The frame's close button (or the taskbar's "Close window"); nothing can
+  // be unsaved in view mode.
+  if (id == dock_frame_id() && event == "closed"_key) {
+    if (ui_built_ && dirty_)
       show_close_confirm();
     else
       request_close();
     return;
   }
+  if (!ui_built_)
+    return;
   if (id == save_button_id_ && event == "clicked"_key) {
     render_to_sandbox("on_image_saved"_key);
     return;

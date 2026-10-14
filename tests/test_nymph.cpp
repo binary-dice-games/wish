@@ -4,6 +4,7 @@
 ///        load/render path and the edit-mode windows.
 #include <gtest/gtest.h>
 
+#include "dock_frame.hpp"
 #include "session_event_recorder.hpp"
 
 #include <context/context.hpp>
@@ -535,7 +536,7 @@ TEST_F(NymphTest, ClosingUnmodifiedClosesAtOnce) {
   seed("in.nymph", kExample);
   load("in.nymph");
   size_t since = srv_->events->mark();
-  fire("_source", "", "closed"_key);
+  ASSERT_TRUE(wish_test::close_dock_frame(*srv_->last_session));
   EXPECT_TRUE(srv_->events->wait_for("closed"_key, since).has_value());
   EXPECT_FALSE(window_registered("_source"));
   EXPECT_FALSE(window_registered("_preview"));
@@ -549,7 +550,7 @@ TEST_F(NymphTest, ClosingModifiedAsksAndNoDiscards) {
   load("in.nymph");
   edit("description", "A new description.\n");
   size_t since = srv_->events->mark();
-  fire("_source", "", "closed"_key);
+  ASSERT_TRUE(wish_test::close_dock_frame(*srv_->last_session));
   ASSERT_FALSE(close_dialog_root().empty());
   EXPECT_TRUE(window_registered("_source"));
 
@@ -565,7 +566,7 @@ TEST_F(NymphTest, ClosingModifiedYesSavesThenClosesOnMarkSaved) {
   load("in.nymph");
   edit("description", "A new description.\n");
   size_t since = srv_->events->mark();
-  fire("_source", "", "closed"_key);
+  ASSERT_TRUE(wish_test::close_dock_frame(*srv_->last_session));
   ASSERT_FALSE(close_dialog_root().empty());
 
   click_close_dialog_button(0); // Yes
@@ -605,8 +606,9 @@ TEST_F(NymphTest, ViewModeShowsOnlyPreviewAndData) {
   ASSERT_EQ(series.size(), 2u);
   EXPECT_EQ(series[0]->findField("ys"_key)->as<std::vector<float>>().size(), 3u);
   EXPECT_EQ(text_of(root_ + "_view_data.vbox.status"), "Showing 3 of 3 rows");
-  // The Preview window is the one the user closes.
-  EXPECT_TRUE(element(root_ + "_view_preview")->get_as<bool>("closable"_key, false));
+  // The app frame is the one the user closes; the panels have no X.
+  EXPECT_FALSE(element(root_ + "_view_preview")->get_as<bool>("closable"_key, false));
+  EXPECT_TRUE(element(wish_test::dock_frame_root(*srv_->last_session))->get_as<bool>("closable"_key, false));
 }
 
 TEST_F(NymphTest, ViewModeOpensANymphPng) {
@@ -669,7 +671,7 @@ TEST_F(NymphTest, ClosingTheViewEndsIt) {
   seed("in.nymph", kExample);
   load("in.nymph");
   size_t since = srv_->events->mark();
-  fire("_view_preview", "", "closed"_key);
+  ASSERT_TRUE(wish_test::close_dock_frame(*srv_->last_session));
   EXPECT_TRUE(srv_->events->wait_for("closed"_key, since).has_value());
   EXPECT_FALSE(window_registered("_view_preview"));
   EXPECT_FALSE(window_registered("_view_data"));

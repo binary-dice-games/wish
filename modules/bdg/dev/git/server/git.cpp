@@ -152,7 +152,7 @@ theme_hex diff_kind_theme_color(const std::string& kind) {
 // commit history survives a refresh instead of jumping back and forth.
 
 static constexpr const char* kMainLayout = R"({
-  "type": "Window", "title": "$$GIT_GIT", "width": 900, "height": 720, "closable": true,
+  "type": "Window", "title": "$$GIT_GIT", "width": 900, "height": 720,
   "children": {
     "vbox": {
       "type": "VerticalLayout",
@@ -283,8 +283,6 @@ void git_repo::on_init() {
   build_main_window();
   build_files_window();
   build_diff_window();
-  // Not closable, unlike the other tools' Console: closing it would end the
-  // whole session (see on_event()).
   log_.build(
       *this,
       internal_root_key_ + "_log",
@@ -292,7 +290,6 @@ void git_repo::on_init() {
        .table_id = "##git_log_table",
        .width = 900,
        .command_width = 340,
-       .closable = false,
        .on_cleared = [this] { set_status(tr("$$GIT_LOG_CLEARED"), true); },
        .on_copied = [this] { set_status(tr("$$GIT_LOG_ENTRY_COPIED"), true); }});
 
@@ -982,7 +979,8 @@ dynamic git_repo::do_append_command_log(const dynamic& args) {
 // ── Event routing ─────────────────────────────────────────────────────────────
 
 void git_repo::on_event(key_t id, key_t event, const dynamic& payload) {
-  if (id == window_id_ && event == "closed"_key) {
+  // The frame's close button (or the taskbar's "Close window").
+  if (id == dock_frame_id() && event == "closed"_key) {
     emit("closed"_key);
     remove_objects_at(files_root_key_);
     remove_objects_at(diff_root_key_);

@@ -7,8 +7,8 @@ inside its own nested "Nano" dockspace (see
 [docs/dock-layout.md](../../../../docs/dock-layout.md)):
 
 - **Toolbar** — Open, New, Save (the current file) and Find, plus the name of
-  the current file. Its X closes the editor (asking first about unsaved
-  files).
+  the current file. The editor's title-bar X closes it (asking first about
+  unsaved files).
 - **One window per open file** — a language combo above the editor, titled
   with the file name (`" *"` while unsaved). Files open as tabs in the middle
   "documents" area; drag a tab out to put two files side by side, split them,

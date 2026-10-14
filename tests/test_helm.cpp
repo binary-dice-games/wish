@@ -1,6 +1,7 @@
 // MIT License © 2026 Binary Dice Games
 #include <gtest/gtest.h>
 
+#include "dock_frame.hpp"
 #include "session_event_recorder.hpp"
 #include "store_session.hpp"
 
@@ -284,8 +285,12 @@ TEST_F(HelmRmiTest, RegistersDefaultDockLayoutAndClosingTearsItDown) {
   ASSERT_FALSE(dl.empty());
   EXPECT_EQ(srv_->last_session->ui_objects.at(dl)->class_key(), "DockSpaceViewport"_key);
 
+  // The frame's X closes the tool; the panels have none.
+  EXPECT_TRUE(srv_->last_session->ui_objects.at(dl)->get_as<bool>("closable"_key, false));
+  EXPECT_FALSE(srv_->last_session->ui_objects.at(root_ + "_charts")->get_as<bool>("closable"_key, false));
+
   size_t since = srv_->events->mark();
-  fire_at(root_ + "_charts", id_at(root_ + "_charts"), "closed"_key);
+  fire_at(wish_test::dock_frame_root(*srv_->last_session), wish_test::dock_frame_id(*srv_->last_session), "closed"_key);
   EXPECT_TRUE(srv_->events->wait_for("closed"_key, since));
   EXPECT_TRUE(find_root_with_prefix(srv_->last_session->ui_objects, "__docklayout_").empty());
   EXPECT_FALSE(srv_->last_session->ui_objects.count(root_ + "_repos"));
@@ -429,10 +434,10 @@ TEST_F(HelmRmiTest, ValuesMenuActionEmitsAndUpdateDetailsFillsEditor) {
   EXPECT_EQ(editor_text(editor), "replicaCount: 3\n");
   EXPECT_FALSE(std::filesystem::exists(srv_->last_session->resource_dir / first));
 
-  // Closing any window removes the file.
+  // Closing the tool removes the file.
   const auto file = srv_->last_session->resource_dir / editor_file(editor);
   ASSERT_TRUE(std::filesystem::exists(file));
-  fire_at(root_ + "_details", id_at(root_ + "_details"), "closed"_key);
+  fire_at(wish_test::dock_frame_root(*srv_->last_session), wish_test::dock_frame_id(*srv_->last_session), "closed"_key);
   EXPECT_FALSE(std::filesystem::exists(file));
 }
 
