@@ -137,6 +137,12 @@ only what follows `"###"`, so `ImGui::GetID("Docker###docker_dock")` and
 `ImGui::GetID("docker_dock")` land on the identical id. Change `title`
 freely; `id` (and therefore `layout()`'s `target`) must stay untouched.
 
+`viewport()` frames are `closable`: the frame's close button is the app's
+close button, and the app's panels have none (a panel's X closing the whole
+app is confusing). A form gets the frame's `closed` event in `on_event()`
+with `dock_frame_id()` as the id; on a `wish desktop` the frame also has
+minimize and maximize buttons.
+
 **Windows created at runtime.** Only windows *listed in the wrapped
 layout's `DockArea` nodes* are placed by `DockLayout` itself
 (`DockBuilderDockWindow(path, target_id)`). A window an app creates later

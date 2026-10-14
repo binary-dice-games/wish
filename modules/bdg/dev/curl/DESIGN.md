@@ -158,7 +158,8 @@ History, Collections, Environments, and Console. Root keys are
 - **Console**: verbatim the docker/kubectl Console pattern — a FIFO-capped
   trace table fed by `append_command_log`.
 
-Closing any window emits `"closed"` and tears down all six subtrees
+Closing the app frame (its title-bar X; the panels have none) emits
+`"closed"` and tears down all six subtrees
 (`remove_objects_at` for the five extra roots + `remove_internal_objects`).
 
 #### 3.1 `kv_table` — editable key/value row lists
@@ -282,7 +283,7 @@ Load (History or Collections row "Load"):
 | `"new_environment_requested"` event | `{ name }`. |
 | `"delete_environment_requested"` / `"select_environment_requested"` | `{ id }` — an Environments row action. |
 | `"save_environment_vars_requested"` event | `{ id, vars: [{key,value}] }` — the Environments window's "Save Variables" button. |
-| `"closed"` event | Any window's X was clicked; all six subtrees torn down. |
+| `"closed"` event | The app frame's X was clicked; all six subtrees torn down. |
 | `wish client --run=curl` | No positional args. |
 
 The internal `ui_element` tree of every window is private.
@@ -517,7 +518,7 @@ Depended on by: nothing else in wish; this is a leaf module.
   tables from `update_*` and their row actions emit the right
   `*_requested` events (Collections Delete through a `MessageBox` confirm,
   mirroring `test_docker.cpp`'s `ConfirmRemoveYesEmits...` pattern);
-  closing any window emits `"closed"` and tears down every root. No
+  closing the app frame emits `"closed"` and tears down every root. No
   network access required.
 - **`tests/test_dev_common.cpp`** — the shared `common::run_process()` /
   `common::tool_source` plumbing (stdout capture, non-zero exits, a missing

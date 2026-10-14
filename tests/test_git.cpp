@@ -1,6 +1,7 @@
 // MIT License © 2025 Binary Dice Games
 #include <gtest/gtest.h>
 
+#include "dock_frame.hpp"
 #include "session_event_recorder.hpp"
 
 #include <server/registry.hpp>
@@ -391,11 +392,11 @@ TEST_F(GitRepoRmiTest, RegistersDefaultDockLayout) {
     EXPECT_TRUE(srv_->last_session->top_level_objects.count(bison::key_t{t})) << "unresolved DockArea window: " << t;
 }
 
-TEST_F(GitRepoRmiTest, ClosingMainWindowAlsoTearsDownDockLayout) {
-  // Only the main Git window is closable; closing it tears everything down.
+TEST_F(GitRepoRmiTest, ClosingTheFrameAlsoTearsDownDockLayout) {
+  // Only the app frame is closable; closing it tears everything down.
   ASSERT_FALSE(find_root_with_prefix(srv_->last_session->ui_objects, "__docklayout_").empty());
-  auto win = srv_->last_session->ui_objects.at(root_)->as<bison::key_t>("__wish_id"_key);
-  fire_at(root_, win, "closed"_key);
+  EXPECT_FALSE(srv_->last_session->ui_objects.at(root_)->get_as<bool>("closable"_key, false));
+  fire_at(root_, wish_test::dock_frame_id(*srv_->last_session), "closed"_key);
   EXPECT_TRUE(find_root_with_prefix(srv_->last_session->ui_objects, "__docklayout_").empty());
 }
 

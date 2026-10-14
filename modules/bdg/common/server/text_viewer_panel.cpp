@@ -22,7 +22,6 @@ constexpr const char* kTextViewerApp = "bdg/common/text_viewer";
 
 constexpr const char* kTextViewerLayout = R"json({
   "type": "Window", "title": "$$COMMON_DETAILS", "width": 820, "height": 420,
-  "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 8, "children": {
       "target":      { "type": "Label", "text": "$$COMMON_NOTHING_SELECTED" },

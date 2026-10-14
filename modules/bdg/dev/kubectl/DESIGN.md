@@ -164,7 +164,8 @@ Per-window specifics:
   are keyed/labelled by bare pod name (unique within a cluster) rather than
   `namespace/name`.
 
-Closing any window emits `"closed"` and tears down all eight subtrees
+Closing the app frame (its title-bar X; the panels have none) emits
+`"closed"` and tears down all eight subtrees
 (`remove_objects_at` for the seven extra roots + `remove_internal_objects` —
 `docker.cpp`'s `on_event` close branch).
 
@@ -259,7 +260,7 @@ open target (`docker`'s `do_update_logs` staleness guard).
 | `"node_action_requested"` event | `{ name, action }` — `action` ∈ `cordon`, `uncordon`, `drain`. No `namespace` (cluster-scoped). |
 | `"logs_requested"` event | `{ name, namespace, follow (bool), lines (int32) }`. |
 | `"describe_requested"` event | `{ kind, name, namespace }` — `kind` ∈ `pod`, `deployment`, `service`, `node`. |
-| `"closed"` event | Any window's X was clicked; all eight subtrees torn down. The client should `signal_done()`. |
+| `"closed"` event | The app frame's X was clicked; all eight subtrees torn down. The client should `signal_done()`. |
 | `wish client --run=kubectl` | No positional args — the module talks to whatever cluster the `kubectl` CLI itself would (current kubeconfig / context). |
 
 The internal `ui_element` tree of every window is private.

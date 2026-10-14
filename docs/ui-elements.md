@@ -610,7 +610,9 @@ Start menu tree: `DesktopApp` entries, `DesktopMenu` folders and
 `Separator`s (more `DesktopApp`s registered as top-level objects of the same
 session count too, as unlisted entries). While one is registered, un-positioned windows open floating
 and cascaded instead of docked, a `DockSpaceViewport` becomes a floating app
-frame, and Ctrl+Tab (or Ctrl+\`) switches windows. Removed automatically on
+frame, an app's main window (its frame, or a top-level `Window` of an app
+without one) gets Windows-style minimize / maximize / close buttons and a
+border, and Ctrl+Tab (or Ctrl+\`) switches windows. Removed automatically on
 session disconnect.
 
 | Field | Type | Default | Description |
@@ -915,13 +917,15 @@ root (its ancestors' labels joined by `/`) and its `details` line.
 Full-viewport dockspace host; `Window` children nested under it become
 independently dockable panels. A child `Window` with no explicit `pos_x`/
 `pos_y` docks into this dockspace by default (see `Window.pos_x`); give it a
-position or the `NoDocking` flag to keep it floating. No events.
+position or the `NoDocking` flag to keep it floating. Emits `closed` when
+`closable` and its close button is clicked.
 
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `id` | `string` | `"demo_dockspace"` | Identifier for the host window and dockspace. |
 | `flags` | `int32` (flags) | `0` | ImGuiDockNodeFlags bitmask. |
 | `passthru` | `bool` | `false` | Let the central node pass through mouse/keyboard input. |
+| `closable` | `bool` | `false` | When embedded (and as a desktop app frame), show a close button on the title bar; clicking it emits `closed`. `dock::viewport()` sets it: the frame's close button closes the app, its panels have none. |
 
 #### `DockSpace`
 An inline dockspace inside an existing window. No events.

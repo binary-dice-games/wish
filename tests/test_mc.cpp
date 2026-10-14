@@ -1,6 +1,7 @@
 // MIT License © 2025 Binary Dice Games
 #include <gtest/gtest.h>
 
+#include "dock_frame.hpp"
 #include "session_event_recorder.hpp"
 #include "store_session.hpp"
 
@@ -1458,11 +1459,11 @@ TEST_F(McEventTest, DownloadClickedWithExistingLocalFileEmitsConflictInsteadOfRe
   EXPECT_EQ(read_names(*captured), std::vector<std::string>{"a.txt"});
 }
 
-TEST_F(McEventTest, WindowClosedEmitsClosedAndCleansUp) {
+TEST_F(McEventTest, FrameClosedEmitsClosedAndCleansUp) {
   bool got_closed = false;
   size_t since = srv_->events->mark();
 
-  handler_->on_event(widget_id(""), "closed"_key, dynamic{});
+  handler_->on_event(wish_test::dock_frame_id(*srv_->last_session), "closed"_key, dynamic{});
 
   got_closed = srv_->events->wait_for("closed"_key, since).has_value();
   EXPECT_TRUE(got_closed);
@@ -1470,16 +1471,12 @@ TEST_F(McEventTest, WindowClosedEmitsClosedAndCleansUp) {
     EXPECT_EQ(srv_->last_session->ui_objects.count(key), 0u) << key;
 }
 
-// Closing the secondary Sandbox panel tears down the whole browser too.
-TEST_F(McEventTest, SecondaryPanelClosedEmitsClosedAndRemovesEveryPanel) {
-  size_t since = srv_->events->mark();
-
-  handler_->on_event(widget_id("_sandbox"), "closed"_key, dynamic{});
-
-  EXPECT_TRUE(srv_->events->wait_for("closed"_key, since).has_value());
-  for (const std::string key : {root_, root_ + "_sandbox", root_ + "_local_tree", root_ + "_sandbox_tree"})
-    EXPECT_EQ(srv_->last_session->ui_objects.count(key), 0u) << key;
-  EXPECT_EQ(srv_->last_session->top_level_objects.count(bison::key_t{root_ + "_sandbox"}), 0u);
+// Only the app frame has a close button; the panels have none.
+TEST_F(McEventTest, OnlyTheFrameIsClosable) {
+  const auto& objects = srv_->last_session->ui_objects;
+  EXPECT_TRUE(objects.at(wish_test::dock_frame_root(*srv_->last_session))->get_as<bool>("closable"_key, false));
+  for (const char* suffix : {"", "_sandbox", "_local_tree", "_sandbox_tree"})
+    EXPECT_FALSE(objects.at(root_ + suffix)->get_as<bool>("closable"_key, false)) << suffix;
 }
 
 // ── Folder trees ──────────────────────────────────────────────────────────────
@@ -1717,9 +1714,9 @@ TEST_F(McTreeTest, LocalPathBarNavigationExpandsTreeLevelByLevelAndSelectsTheNod
   EXPECT_TRUE(tree_children(*tree_node("_local_tree", {"/", "home", "other"})).empty());
 }
 
-TEST_F(McTreeTest, ClosingATreePanelClosesTheWholeBrowser) {
+TEST_F(McTreeTest, ClosingTheFrameAlsoRemovesTheTreePanels) {
   size_t since = srv_->events->mark();
-  handler_->on_event(widget_id("_local_tree"), "closed"_key, dynamic{});
+  handler_->on_event(wish_test::dock_frame_id(*srv_->last_session), "closed"_key, dynamic{});
 
   EXPECT_TRUE(srv_->events->wait_for("closed"_key, since).has_value());
   for (const std::string key : {root_, root_ + "_sandbox", root_ + "_local_tree", root_ + "_sandbox_tree"})

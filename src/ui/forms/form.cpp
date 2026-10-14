@@ -46,6 +46,8 @@ void form::set_default_dock_layout(ui_element_ptr layout_root) {
   ctx().put_object(id, layout_root);
   (*layout_root)["__wish_id"_key] = id;
   (*layout_root)["__path__"_key] = root_key;
+  if (layout_root->class_key() == "DockSpaceViewport"_key)
+    dock_frame_id_ = id;
 
   s.ui_objects[root_key] = layout_root;
   s.top_level_objects[key_t{root_key}] = layout_root;

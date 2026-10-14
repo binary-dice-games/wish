@@ -131,12 +131,17 @@ inline ui_element_ptr layout(ui_element_ptr root, std::int32_t version = 1, cons
 ///                DockSpace/DockBuilder identity, which is always derived
 ///                from @p id alone, so the wrapped layout's `target` still
 ///                names @p id, never this.
+///
+/// The tile is `closable`: its title-bar close button is the app's close
+/// button (its panels have none), so the owner must handle the `closed`
+/// event it emits -- for a form, `on_event()` with `dock_frame_id()`.
 /// @param wrapped A `dock::layout(..., target = id)` tree.
 inline ui_element_ptr viewport(const std::string& id, const std::string& title, ui_element_ptr wrapped) {
   auto e = ui_element_ptr::create(bison::key_t{"wish"}, bison::key_t{"DockSpaceViewport"});
   (*e)[bison::key_t{"id"}] = id;
   (*e)[bison::key_t{"title"}] = title;
   (*e)[bison::key_t{"embedded"}] = true;
+  (*e)[bison::key_t{"closable"}] = true;
   detail::set_children(e, {std::move(wrapped)});
   return e;
 }

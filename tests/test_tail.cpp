@@ -1,6 +1,7 @@
 // MIT License © 2025 Binary Dice Games
 #include <gtest/gtest.h>
 
+#include "dock_frame.hpp"
 #include "session_event_recorder.hpp"
 #include "store_session.hpp"
 
@@ -390,14 +391,11 @@ class TailTest : public ::testing::Test {
     h->second->on_event(input_id, "changed"_key, payload);
   }
 
-  // Fires "closed" on the panel rooted at root_ + @p panel_suffix ("" for
-  // the Log panel, "_controls" for Controls).
-  void simulate_window_closed(const std::string& panel_suffix = "") {
-    const std::string panel_root = root_ + panel_suffix;
-    auto win_id = srv_->last_session->ui_objects.at(panel_root)->as<bison::key_t>("__wish_id"_key);
-    auto h = srv_->last_session->top_level_handlers.find(panel_root);
+  // Fires "closed" on the app frame (its title-bar X).
+  void simulate_window_closed() {
+    auto h = srv_->last_session->top_level_handlers.find(root_);
     ASSERT_NE(h, srv_->last_session->top_level_handlers.end());
-    h->second->on_event(win_id, "closed"_key, dynamic{});
+    h->second->on_event(wish_test::dock_frame_id(*srv_->last_session), "closed"_key, dynamic{});
   }
 
   bool has_event(bison::key_t name) const {
@@ -880,12 +878,12 @@ TEST_F(TailTest, WindowClosedEmitsClosed) {
   EXPECT_FALSE(srv_->last_session->ui_objects.count(root_ + "_controls"));
 }
 
-// Closing the secondary Controls panel tears down the whole viewer too.
-TEST_F(TailTest, ControlsPanelClosedEmitsClosedAndRemovesEveryPanel) {
-  simulate_window_closed("_controls");
-  EXPECT_TRUE(wait_for_event("closed"_key));
-  for (const std::string key : {root_, root_ + "_controls"})
-    EXPECT_FALSE(srv_->last_session->ui_objects.count(key)) << key;
+// Only the app frame has a close button; the panels have none.
+TEST_F(TailTest, OnlyTheFrameIsClosable) {
+  const auto& objects = srv_->last_session->ui_objects;
+  EXPECT_TRUE(objects.at(wish_test::dock_frame_root(*srv_->last_session))->get_as<bool>("closable"_key, false));
+  for (const char* suffix : {"", "_controls"})
+    EXPECT_FALSE(objects.at(root_ + suffix)->get_as<bool>("closable"_key, false)) << suffix;
 }
 
 // ── Dockable panels ────────────────────────────────────────────────────────────

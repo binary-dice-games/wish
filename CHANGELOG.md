@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `wish desktop`: an app's main window has Windows-style minimize, maximize/restore and close buttons at the top right of its title bar (double-click the title to maximize), and a border with a shadow that sets it apart from overlapping windows.
+- `DockSpaceViewport.closable`: a close button on the app frame that emits `closed` (also offered as "Close window" on the desktop taskbar); `dock::viewport()` frames are closable.
 - Keyboard-only control of every wish UI, Windows-style (see [docs/ui-elements.md](docs/ui-elements.md#keyboard-navigation-access-keys-and-shortcuts)): Tab/Shift+Tab between controls, arrow keys in menus, Space/Enter to press, Esc to close.
   - Access keys: a `&` before a letter in a `Button`, `MenuButton`, `Checkbox`, `RadioButton`, `Menu`, `MenuItem`, `TabItem` or input label (`"&File"`) underlines it and makes Alt+letter (the bare letter inside an open menu) activate the control; `&&` is a literal `&`.
   - Functional shortcuts: `MenuItem.shortcut` (e.g. `"Ctrl+S"`, `"F5"`) now fires `clicked` while its menu is closed; new `shortcut` field on `Button` (shown in its tooltip as "Save (Ctrl+S)") and `MenuButton`.
@@ -140,6 +142,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The bundled tools' panels no longer have a close button that closed the whole tool; the app window's close button (or the taskbar's "Close window") closes it. Dialogs, nano's file windows and its Search panel keep theirs.
 - Only one `wish desktop` can run at a time: a second one prints `wish desktop is already running` and exits with 1.
 - `wish desktop` exits when the wish server it draws on stops, releasing its endpoint (it used to keep running with nothing to show).
 - Docking is scoped to the parent docker: an app's panels (windows of an embedded/desktop `DockSpaceViewport`, its `DockLayout` windows, or `dock_target` windows) can only dock into that app's own dockspace, and the app window only into its parent dockspace -- e.g. curl's panels can no longer be docked into kubectl's window or the desktop.

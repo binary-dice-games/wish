@@ -43,7 +43,7 @@ in the final status message.
   between table rows and treemap nodes. It has no filesystem access — the
   folder lives on the client's machine — so it emits `on_scan_requested`,
   `on_cancel_requested` and `on_navigate` for the client to act on (answered
-  with `show_directory()`), and `closed` when a panel is dismissed. It only
+  with `show_directory()`), and `closed` when the window is closed. It only
   ever holds the one folder on display.
 - **client/**: `run_du(wish_app_host&)`, self-registered as the `"du"`
   embedded app. `du_scan.hpp/.cpp` does the scan and flattens a folder's

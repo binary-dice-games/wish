@@ -323,7 +323,7 @@ the leftmost cell of the commit `Table`'s each `TableRow`. This means:
   exists).
 
 - **The Log window is the shared `common::console_panel`** (titled "Log",
-  not closable, table `##git_log_table`), the same command-trace window
+  table `##git_log_table`), the same command-trace window
   every bdg/dev tool uses: a FIFO-capped table (500 rows) whose eviction
   and "Clear Log" erase every object a row registered (including its
   context menu), so a long session's trace stays bounded.

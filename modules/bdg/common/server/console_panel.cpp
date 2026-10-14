@@ -16,7 +16,6 @@ namespace {
 // table id and the Command column's width are set per tool in build().
 constexpr const char* kConsoleLayout = R"json({
   "type": "Window", "title": "$$COMMON_CONSOLE", "width": 940, "height": 240,
-  "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "table": {
       "type": "Table", "id": "##console_table", "columns": 4,

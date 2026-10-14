@@ -10,8 +10,8 @@ with an "Open in Explorer" shortcut), each with a folder tree above it
 that sends its selected files to the other one (**Upload** in Local,
 **Download** in Sandbox). The first run seeds them as a 2x2 grid --
 folder trees on top, file panels below, Local on the left and Sandbox on
-the right; rearrange freely afterwards (Shift+drag to re-dock). Closing any panel
-closes the tool.
+the right; rearrange freely afterwards (Shift+drag to re-dock). The window's
+title-bar X closes the tool.
 
 The folder trees list directories only, Explorer-style: click a folder to
 show it in the file panel, click its arrow to expand it. Navigating the file

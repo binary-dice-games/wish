@@ -196,7 +196,17 @@ class form : public ui_root {
   /// Call once from `on_init()` after every window is registered. The
   /// `DockLayout` object is torn down automatically with the form
   /// (`remove_internal_objects()` / `~form()`).
+  ///
+  /// When @p layout_root is a `dock::viewport()` frame, its id is kept as
+  /// `dock_frame_id()`: the frame's close button is the app's close button,
+  /// so `on_event()` gets `closed` from that id.
   void set_default_dock_layout(ui_element_ptr layout_root);
+
+  /// @brief The `__wish_id` of the `DockSpaceViewport` frame registered by
+  ///        `set_default_dock_layout()`; empty (id 0) when there is none.
+  bison::key_t dock_frame_id() const {
+    return dock_frame_id_;
+  }
 
   /// @brief Ask the internal Window rooted at @p root_key to close itself,
   /// via the hidden "__request_close__" field render_window()'s modal
@@ -322,6 +332,7 @@ class form : public ui_root {
   /// registered -- currently just the `set_default_dock_layout()` object.
   /// Cleared by `remove_internal_objects()`.
   std::vector<std::string> extra_internal_roots_;
+  bison::key_t dock_frame_id_{};
   /// Lazily resolved on the first call to emit().
   bison::key_t own_id_;
   /// Set by set_local_result_sink(); when present, emit() routes through it

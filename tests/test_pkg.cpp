@@ -1,6 +1,7 @@
 // MIT License © 2026 Binary Dice Games
 #include <gtest/gtest.h>
 
+#include "dock_frame.hpp"
 #include "session_event_recorder.hpp"
 
 #include <server/registry.hpp>
@@ -304,9 +305,9 @@ TEST_F(PkgFormTest, InstantiationBuildsAllFourWindows) {
     EXPECT_TRUE(srv_->last_session->top_level_handlers.count(bison::key_t{root_ + suffix})) << suffix;
 }
 
-TEST_F(PkgFormTest, ClosingAnyWindowTearsEverythingDown) {
+TEST_F(PkgFormTest, ClosingTheFrameTearsEverythingDown) {
   size_t since = srv_->events->mark();
-  fire_at(root_ + "_search", id_at(root_ + "_search"), "closed"_key);
+  fire_at(wish_test::dock_frame_root(*srv_->last_session), wish_test::dock_frame_id(*srv_->last_session), "closed"_key);
   EXPECT_TRUE(srv_->events->wait_for("closed"_key, since));
   EXPECT_FALSE(srv_->last_session->ui_objects.count(root_ + "_details"));
   EXPECT_TRUE(find_root_with_prefix(srv_->last_session->ui_objects, "__docklayout_").empty());

@@ -36,7 +36,9 @@ struct console_options {
   int32_t width{940};
   /// Initial width of the Command column.
   int32_t command_width{360};
-  bool closable{true};
+  /// Show a close button. Off by default: a tool's panels have none, the
+  /// app's frame closes the tool.
+  bool closable{false};
   /// Called after the user cleared the console from the context menu.
   std::function<void()> on_cleared;
   /// Called after the user copied a row with "Copy Entry" (the copy itself

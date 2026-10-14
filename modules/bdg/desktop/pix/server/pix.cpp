@@ -115,7 +115,6 @@ static constexpr const char* kImagesLayout = R"json({
   "type": "Window",
   "title": "$$PIX_IMAGES",
   "width": 360, "height": 700,
-  "closable": true,
   "children": {
     "vbox": {
       "type": "VerticalLayout",
@@ -156,7 +155,6 @@ static constexpr const char* kPreviewLayout = R"json({
   "type": "Window",
   "title": "$$PIX_PREVIEW",
   "width": 640, "height": 540,
-  "closable": true,
   "children": {
     "vbox": {
       "type": "VerticalLayout",
@@ -200,7 +198,6 @@ static constexpr const char* kInfoLayout = R"json({
   "type": "Window",
   "title": "$$PIX_INFO",
   "width": 640, "height": 160,
-  "closable": true,
   "children": {
     "vbox": {
       "type": "VerticalLayout",
@@ -576,8 +573,8 @@ dynamic pix_viewer::on_set(const dynamic& patch) {
 // ── Event routing ─────────────────────────────────────────────────────────────
 
 void pix_viewer::on_event(key_t id, key_t event, const dynamic& payload) {
-  // Any panel's X button -> tear the whole viewer down (top/docker's rule).
-  if (event == "closed"_key && (id == window_id_ || id == preview_window_id_ || id == info_window_id_)) {
+  // The frame's close button (or the taskbar's "Close window").
+  if (event == "closed"_key && id == dock_frame_id()) {
     emit("closed"_key);
     remove_panel_objects();
     remove_internal_objects();

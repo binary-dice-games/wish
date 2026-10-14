@@ -13,7 +13,7 @@ Ctrl+click, Shift+click/drag), **Contents** (the archive last viewed via
 View Contents or a double-click), and **Actions** (Compress, Extract, View
 Contents, Refresh and the status line). The first run seeds Actions along
 the top with Files beside Contents below it; rearrange freely afterwards
-(Shift+drag to re-dock). Closing any panel closes the tool. A compress or
+(Shift+drag to re-dock). The title-bar X closes the tool. A compress or
 extract that takes more than a moment opens the same modal progress dialog
 mc and the dev tools use, with a bar of the entries processed and a Cancel
 button; a failure stays in the dialog until closed.

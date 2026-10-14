@@ -1,6 +1,7 @@
 // MIT License © 2026 Binary Dice Games
 #include <gtest/gtest.h>
 
+#include "dock_frame.hpp"
 #include "session_event_recorder.hpp"
 #include "store_session.hpp"
 
@@ -531,13 +532,12 @@ TEST_F(CurlRmiTest, UpdateEnvironmentVarsPopulatesVarsTable) {
 
 // ── Teardown ─────────────────────────────────────────────────────────────
 
-TEST_F(CurlRmiTest, ClosingWindowEmitsClosedAndTearsDownAllRoots) {
+TEST_F(CurlRmiTest, ClosingTheFrameEmitsClosedAndTearsDownAllRoots) {
   auto response_root = find_root_with_prefix(srv_->last_session->ui_objects, root_ + "_response");
   ASSERT_FALSE(response_root.empty());
 
-  auto window_id = srv_->last_session->ui_objects.at(root_)->as<bison::key_t>("__wish_id"_key);
   auto c = capture_event("closed"_key);
-  fire(window_id, "closed"_key);
+  fire(wish_test::dock_frame_id(*srv_->last_session), "closed"_key);
   wait_for(*c);
   ASSERT_TRUE(c->got);
   EXPECT_FALSE(srv_->last_session->ui_objects.count(response_root));

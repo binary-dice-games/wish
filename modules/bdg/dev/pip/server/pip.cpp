@@ -67,7 +67,6 @@ std::string requirement_name(const std::string& spec) {
 
 static constexpr const char* kPackagesLayout = R"json({
   "type": "Window", "title": "$$PIP_PACKAGES", "width": 900, "height": 520,
-  "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
       "btn_refresh":  { "type": "Button", "label": "$$PIP_REFRESH", "shortcut": "F5", "icon": "res/icons/refresh.png" },
@@ -115,7 +114,6 @@ static constexpr const char* kPackagesLayout = R"json({
 
 static constexpr const char* kVersionsLayout = R"json({
   "type": "Window", "title": "$$PIP_VERSIONS", "width": 460, "height": 420,
-  "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 8, "children": {
       "target":      { "type": "Label", "text": "$$PIP_NO_PACKAGE_SELECTED" },
@@ -495,10 +493,8 @@ void pip_frontend::run_row_action(const package_row& r, const std::string& actio
 }
 
 void pip_frontend::on_event(key_t id, key_t event, const dynamic& payload) {
-  // Any window's X button -> tear everything down.
-  if (event == "closed"_key &&
-      (id == packages_.window_id() || id == versions_window_.window_id() || id == details_.window_id() ||
-       id == console_.window_id())) {
+  // The frame's close button (or the taskbar's "Close window").
+  if (event == "closed"_key && id == dock_frame_id()) {
     details_.remove_file();
     emit("closed"_key);
     remove_objects_at(versions_window_.root_key());

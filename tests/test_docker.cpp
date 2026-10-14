@@ -1,6 +1,7 @@
 // MIT License © 2026 Binary Dice Games
 #include <gtest/gtest.h>
 
+#include "dock_frame.hpp"
 #include "session_event_recorder.hpp"
 #include "store_session.hpp"
 
@@ -625,11 +626,13 @@ TEST_F(DockerRmiTest, CommandResultScopeRoutesToRightWindowStatus) {
   EXPECT_NE(st.find("pull redis:7"), std::string::npos);
 }
 
-TEST_F(DockerRmiTest, ClosingAnyWindowEmitsClosed) {
+TEST_F(DockerRmiTest, ClosingTheFrameEmitsClosed) {
+  // The panels have no X of their own.
+  for (const char* suffix : {"", "_images", "_volumes", "_networks", "_logs", "_inspect", "_console", "_stats"})
+    EXPECT_FALSE(srv_->last_session->ui_objects.at(root_ + suffix)->get_as<bool>("closable"_key, false)) << suffix;
   bool got = false;
   size_t since = srv_->events->mark();
-  auto win = srv_->last_session->ui_objects.at(root_ + "_volumes")->as<bison::key_t>("__wish_id"_key);
-  fire_at(root_ + "_volumes", win, "closed"_key);
+  fire_at(wish_test::dock_frame_root(*srv_->last_session), wish_test::dock_frame_id(*srv_->last_session), "closed"_key);
   got = srv_->events->wait_for("closed"_key, since).has_value();
   EXPECT_TRUE(got);
 }
@@ -740,8 +743,7 @@ TEST_F(DockerRmiTest, ClosingDeletesLogsEditorFile) {
 
   bool got = false;
   size_t since = srv_->events->mark();
-  auto win = srv_->last_session->ui_objects.at(root_ + "_logs")->as<bison::key_t>("__wish_id"_key);
-  fire_at(root_ + "_logs", win, "closed"_key);
+  fire_at(wish_test::dock_frame_root(*srv_->last_session), wish_test::dock_frame_id(*srv_->last_session), "closed"_key);
   got = srv_->events->wait_for("closed"_key, since).has_value();
   ASSERT_TRUE(got);
   EXPECT_FALSE(std::filesystem::exists(file));
@@ -880,10 +882,9 @@ TEST_F(DockerRmiTest, RegistersDefaultDockLayout) {
     EXPECT_TRUE(srv_->last_session->top_level_objects.count(bison::key_t{t})) << "unresolved DockArea window: " << t;
 }
 
-TEST_F(DockerRmiTest, ClosingAWindowAlsoTearsDownDockLayout) {
+TEST_F(DockerRmiTest, ClosingTheFrameAlsoTearsDownDockLayout) {
   ASSERT_FALSE(find_root_with_prefix(srv_->last_session->ui_objects, "__docklayout_").empty());
-  auto win = srv_->last_session->ui_objects.at(root_ + "_stats")->as<bison::key_t>("__wish_id"_key);
-  fire_at(root_ + "_stats", win, "closed"_key); // docker's on_event tears down synchronously
+  fire_at(wish_test::dock_frame_root(*srv_->last_session), wish_test::dock_frame_id(*srv_->last_session), "closed"_key); // docker's on_event tears down synchronously
   EXPECT_TRUE(find_root_with_prefix(srv_->last_session->ui_objects, "__docklayout_").empty());
 }
 

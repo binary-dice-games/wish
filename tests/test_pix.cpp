@@ -1,6 +1,7 @@
 // MIT License © 2025 Binary Dice Games
 #include <gtest/gtest.h>
 
+#include "dock_frame.hpp"
 #include "session_event_recorder.hpp"
 
 #include <context/context.hpp>
@@ -579,11 +580,10 @@ TEST_F(PixFunctionalTest, SelectableClickEmitsImageSelectedWithName) {
   EXPECT_TRUE(*selectable->findField<bool>("selected"_key));
 }
 
-TEST_F(PixFunctionalTest, WindowClosedEmitsClosedAndRemovesTree) {
-  auto win_id = wish_id_at(root_);
+TEST_F(PixFunctionalTest, FrameClosedEmitsClosedAndRemovesTree) {
   auto h = srv_->last_session->top_level_handlers.find(bison::key_t{root_});
   ASSERT_NE(h, srv_->last_session->top_level_handlers.end());
-  h->second->on_event(win_id, "closed"_key, dynamic{});
+  h->second->on_event(wish_test::dock_frame_id(*srv_->last_session), "closed"_key, dynamic{});
 
   EXPECT_TRUE(wait_for_event("closed"_key));
   EXPECT_FALSE(srv_->last_session->ui_objects.count(root_));
@@ -591,16 +591,10 @@ TEST_F(PixFunctionalTest, WindowClosedEmitsClosedAndRemovesTree) {
   EXPECT_FALSE(srv_->last_session->ui_objects.count(root_ + "_info"));
 }
 
-// Closing a secondary panel (here: Preview) tears down the whole viewer too.
-TEST_F(PixFunctionalTest, SecondaryPanelClosedEmitsClosedAndRemovesEveryPanel) {
-  const std::string preview_root = root_ + "_preview";
-  auto win_id = wish_id_at(preview_root);
-  ASSERT_TRUE(win_id.id);
-  auto h = srv_->last_session->top_level_handlers.find(bison::key_t{preview_root});
-  ASSERT_NE(h, srv_->last_session->top_level_handlers.end());
-  h->second->on_event(win_id, "closed"_key, dynamic{});
-
-  EXPECT_TRUE(wait_for_event("closed"_key));
-  for (const std::string key : {root_, preview_root, root_ + "_info"})
-    EXPECT_FALSE(srv_->last_session->ui_objects.count(key)) << key;
+// Only the app frame has a close button; the panels have none.
+TEST_F(PixFunctionalTest, OnlyTheFrameIsClosable) {
+  const auto& objects = srv_->last_session->ui_objects;
+  EXPECT_TRUE(objects.at(wish_test::dock_frame_root(*srv_->last_session))->get_as<bool>("closable"_key, false));
+  for (const char* suffix : {"", "_preview", "_info"})
+    EXPECT_FALSE(objects.at(root_ + suffix)->get_as<bool>("closable"_key, false)) << suffix;
 }

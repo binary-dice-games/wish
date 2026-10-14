@@ -227,6 +227,15 @@ class imgui_renderer : public renderer {
   bool desktop_cascade_active() const {
     return cascade_active_;
   }
+  /// @brief The desktop work area (desktop minus taskbar) given to
+  ///        `set_desktop_cascade_area()`: where a maximized window goes.
+  ///        Only meaningful while `desktop_cascade_active()`.
+  ImVec2 desktop_area_min() const {
+    return cascade_area_min_;
+  }
+  ImVec2 desktop_area_max() const {
+    return cascade_area_max_;
+  }
 
   /**
    * @brief Claims the next cascade slot for the top-level ImGui window

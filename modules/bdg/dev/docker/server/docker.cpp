@@ -68,7 +68,6 @@ theme_color state_colour(const std::string& state) {
 
 static constexpr const char* kContainersLayout = R"json({
   "type": "Window", "title": "$$DOCKER_CONTAINERS", "width": 940, "height": 500,
-  "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
       "btn_refresh": { "type": "Button", "label": "$$DOCKER_REFRESH", "shortcut": "F5", "icon": "res/icons/refresh.png" },
@@ -96,7 +95,6 @@ static constexpr const char* kContainersLayout = R"json({
 
 static constexpr const char* kImagesLayout = R"json({
   "type": "Window", "title": "$$DOCKER_IMAGES", "width": 820, "height": 420,
-  "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
       "btn_refresh": { "type": "Button", "label": "$$DOCKER_REFRESH", "shortcut": "F5", "icon": "res/icons/refresh.png" },
@@ -124,7 +122,6 @@ static constexpr const char* kImagesLayout = R"json({
 
 static constexpr const char* kVolumesLayout = R"json({
   "type": "Window", "title": "$$DOCKER_VOLUMES", "width": 720, "height": 300,
-  "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
       "btn_refresh": { "type": "Button", "label": "$$DOCKER_REFRESH", "shortcut": "F5", "icon": "res/icons/refresh.png" },
@@ -150,7 +147,6 @@ static constexpr const char* kVolumesLayout = R"json({
 
 static constexpr const char* kNetworksLayout = R"json({
   "type": "Window", "title": "$$DOCKER_NETWORKS", "width": 720, "height": 300,
-  "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
       "btn_refresh": { "type": "Button", "label": "$$DOCKER_REFRESH", "shortcut": "F5", "icon": "res/icons/refresh.png" },
@@ -180,7 +176,6 @@ static constexpr const char* kNetworksLayout = R"json({
 
 static constexpr const char* kLogsLayout = R"json({
   "type": "Window", "title": "$$DOCKER_LOGS", "width": 900, "height": 420,
-  "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 8, "children": {
       "target":     { "type": "Label", "text": "$$DOCKER_NO_CONTAINER_SELECTED" },
@@ -205,7 +200,6 @@ static constexpr const char* kLogsLayout = R"json({
 
 static constexpr const char* kStatsLayout = R"json({
   "type": "Window", "title": "$$DOCKER_STATS", "width": 940, "height": 800,
-  "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "status": { "type": "Label", "text": "" },
     "cpu_plot": {
@@ -690,11 +684,8 @@ dynamic docker_frontend::do_update_stats(const dynamic& args) {
 // ── Event routing ──────────────────────────────────────────────────────────
 
 void docker_frontend::on_event(key_t id, key_t event, const dynamic& payload) {
-  // Any window's X button -> tear everything down.
-  if (event == "closed"_key &&
-      (id == containers_.window_id() || id == images_.window_id() || id == volumes_.window_id() ||
-       id == networks_.window_id() || id == logs_.window_id() || id == inspect_.window_id() ||
-       id == console_.window_id() || id == stats_window_id_)) {
+  // The frame's close button (or the taskbar's "Close window").
+  if (event == "closed"_key && id == dock_frame_id()) {
     logs_.remove_file();
     inspect_.remove_file();
     emit("closed"_key);

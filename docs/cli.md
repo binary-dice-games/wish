@@ -229,8 +229,11 @@ that server's window into a desktop:
     minimizes every window ("show desktop"); click it again to restore them.
 - **Desktop icons**: double-click to start the app; right-click to remove
   it or pin it.
-- **Windows** open floating and cascaded, like on a desktop. Drag one onto
-  the desktop's dock area to dock it.
+- **Windows** open floating and cascaded, like on a desktop. An app's
+  window has minimize, maximize/restore and close buttons at the top right
+  (double-click its title to maximize) and a border with a shadow. Its
+  panels have no close button: close the app window instead. Drag a window
+  onto the desktop's dock area to dock it.
 - **Settings**: the pinned Settings button (also in the Start menu) opens
   the [Settings tool](settings.md), macOS System Settings-style, to change
   your apps' settings, and, with `wish server --settings_admins=<you>`, the

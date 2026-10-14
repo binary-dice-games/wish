@@ -1,6 +1,7 @@
 // MIT License © 2025 Binary Dice Games
 #include <gtest/gtest.h>
 
+#include "dock_frame.hpp"
 #include "session_event_recorder.hpp"
 
 #include <server/registry.hpp>
@@ -855,11 +856,11 @@ TEST_F(ZipEventTest, TableSortedEventSortsRowsDescendingByName) {
   EXPECT_EQ(name_cell_text(1), "apple.txt");
 }
 
-TEST_F(ZipEventTest, WindowClosedEmitsClosedAndCleansUp) {
+TEST_F(ZipEventTest, FrameClosedEmitsClosedAndCleansUp) {
   bool got_closed = false;
   size_t since = srv_->events->mark();
 
-  handler_->on_event(widget_id(""), "closed"_key, dynamic{});
+  handler_->on_event(wish_test::dock_frame_id(*srv_->last_session), "closed"_key, dynamic{});
 
   got_closed = srv_->events->wait_for("closed"_key, since).has_value();
   EXPECT_TRUE(got_closed);
@@ -867,17 +868,12 @@ TEST_F(ZipEventTest, WindowClosedEmitsClosedAndCleansUp) {
     EXPECT_EQ(srv_->last_session->ui_objects.count(key), 0u) << key;
 }
 
-// Closing a secondary panel (here: Actions) tears down the whole tool too.
-TEST_F(ZipEventTest, SecondaryPanelClosedEmitsClosedAndRemovesEveryPanel) {
-  size_t since = srv_->events->mark();
-  const std::string actions_root = root_ + "_actions";
-  auto h = srv_->last_session->top_level_handlers.find(bison::key_t{actions_root});
-  ASSERT_NE(h, srv_->last_session->top_level_handlers.end());
-  h->second->on_event(widget_id_at(actions_root), "closed"_key, dynamic{});
-
-  EXPECT_TRUE(srv_->events->wait_for("closed"_key, since).has_value());
-  for (const std::string key : {root_, root_ + "_contents", actions_root})
-    EXPECT_EQ(srv_->last_session->ui_objects.count(key), 0u) << key;
+// Only the app frame has a close button; the panels have none.
+TEST_F(ZipEventTest, OnlyTheFrameIsClosable) {
+  const auto& objects = srv_->last_session->ui_objects;
+  EXPECT_TRUE(objects.at(wish_test::dock_frame_root(*srv_->last_session))->get_as<bool>("closable"_key, false));
+  for (const char* suffix : {"", "_contents", "_actions"})
+    EXPECT_FALSE(objects.at(root_ + suffix)->get_as<bool>("closable"_key, false)) << suffix;
 }
 
 // ── Standalone dispatch: repeated RMI calls must not hang ─────────────────────

@@ -1,6 +1,7 @@
 // MIT License © 2025 Binary Dice Games
 #include <gtest/gtest.h>
 
+#include "dock_frame.hpp"
 #include "session_event_recorder.hpp"
 #include "store_session.hpp"
 
@@ -759,13 +760,12 @@ TEST_F(TopFilterTest, FilterAppliesToRowsAddedByLaterSnapshots) {
 
 // ── Event routing ─────────────────────────────────────────────────────────────
 
-TEST_F(TopSnapshotTest, WindowClosedEmitsClosedAndCleansUp) {
+TEST_F(TopSnapshotTest, FrameClosedEmitsClosedAndCleansUp) {
   size_t since = srv_->events->mark();
 
-  auto win_id = srv_->last_session->ui_objects.at(root_)->as<bison::key_t>("__wish_id"_key);
   auto h = srv_->last_session->top_level_handlers.find(root_);
   ASSERT_NE(h, srv_->last_session->top_level_handlers.end());
-  h->second->on_event(win_id, "closed"_key, dynamic{});
+  h->second->on_event(wish_test::dock_frame_id(*srv_->last_session), "closed"_key, dynamic{});
 
   // form::emit() defers delivery to the render loop's next frame (see
   // session.hpp's contract on emit_event), so wait for it.
@@ -776,29 +776,13 @@ TEST_F(TopSnapshotTest, WindowClosedEmitsClosedAndCleansUp) {
   EXPECT_EQ(srv_->last_session->ui_objects.count(root_ + "_cores"), 0u);
 }
 
-// Closing a secondary panel (here: CPU) tears down the whole tool too.
-TEST_F(TopSnapshotTest, SecondaryPanelClosedEmitsClosedAndCleansUpEverything) {
-  size_t since = srv_->events->mark();
-
-  const std::string cpu_root = root_ + "_cpu";
-  auto win_id = srv_->last_session->ui_objects.at(cpu_root)->as<bison::key_t>("__wish_id"_key);
-  fire_at(cpu_root, win_id, "closed"_key);
-
-  EXPECT_TRUE(srv_->events->wait_for("closed"_key, since));
-  for (const std::string key :
-       {root_, cpu_root, root_ + "_mem", root_ + "_net", root_ + "_disk", root_ + "_ports", root_ + "_cores"})
-    EXPECT_EQ(srv_->last_session->ui_objects.count(key), 0u) << key;
-}
-
-// The new Ports panel's X button closes the tool like every other panel.
-TEST_F(TopSnapshotTest, PortsPanelClosedEmitsClosed) {
-  size_t since = srv_->events->mark();
-  const std::string ports_root = root_ + "_ports";
-  auto win_id = srv_->last_session->ui_objects.at(ports_root)->as<bison::key_t>("__wish_id"_key);
-  fire_at(ports_root, win_id, "closed"_key);
-  EXPECT_TRUE(srv_->events->wait_for("closed"_key, since));
-  EXPECT_EQ(srv_->last_session->ui_objects.count(root_), 0u);
-  EXPECT_EQ(srv_->last_session->ui_objects.count(ports_root), 0u);
+// Only the app frame has a close button: a panel's X would close the whole
+// tool, which is not what a panel's X means.
+TEST_F(TopSnapshotTest, OnlyTheFrameIsClosable) {
+  const auto& objects = srv_->last_session->ui_objects;
+  EXPECT_TRUE(objects.at(wish_test::dock_frame_root(*srv_->last_session))->get_as<bool>("closable"_key, false));
+  for (const char* suffix : {"", "_cpu", "_mem", "_net", "_disk", "_ports", "_cores"})
+    EXPECT_FALSE(objects.at(root_ + suffix)->get_as<bool>("closable"_key, false)) << suffix;
 }
 
 // ── Network / disk I/O / ports ───────────────────────────────────────────────

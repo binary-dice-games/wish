@@ -145,7 +145,6 @@ static constexpr const char* kProcessesLayout = R"({
   "type": "Window",
   "title": "$$TOP_PROCESSES",
   "width": 900, "height": 460,
-  "closable": true,
   "children": {
     "vbox": {
       "type": "VerticalLayout",
@@ -181,7 +180,6 @@ static constexpr const char* kCpuLayout = R"({
   "type": "Window",
   "title": "$$TOP_CPU_SHORT",
   "width": 450, "height": 240,
-  "closable": true,
   "children": {
     "vbox": {
       "type": "VerticalLayout",
@@ -204,7 +202,6 @@ static constexpr const char* kMemoryLayout = R"({
   "type": "Window",
   "title": "$$TOP_MEMORY",
   "width": 450, "height": 240,
-  "closable": true,
   "children": {
     "vbox": {
       "type": "VerticalLayout",
@@ -227,7 +224,6 @@ static constexpr const char* kNetworkLayout = R"({
   "type": "Window",
   "title": "$$TOP_NETWORK",
   "width": 450, "height": 240,
-  "closable": true,
   "children": {
     "vbox": {
       "type": "VerticalLayout",
@@ -251,7 +247,6 @@ static constexpr const char* kDiskLayout = R"({
   "type": "Window",
   "title": "$$TOP_DISK",
   "width": 450, "height": 240,
-  "closable": true,
   "children": {
     "vbox": {
       "type": "VerticalLayout",
@@ -275,7 +270,6 @@ static constexpr const char* kPortsLayout = R"({
   "type": "Window",
   "title": "$$TOP_PORTS",
   "width": 600, "height": 360,
-  "closable": true,
   "children": {
     "vbox": {
       "type": "VerticalLayout",
@@ -302,7 +296,6 @@ static constexpr const char* kCoresLayout = R"({
   "type": "Window",
   "title": "$$TOP_CORES",
   "width": 240, "height": 700,
-  "closable": true,
   "children": {
     "vbox": {
       "type": "VerticalLayout",
@@ -1229,10 +1222,8 @@ void top::resort_rows() {
 // ── Event routing ─────────────────────────────────────────────────────────────
 
 void top::on_event(key_t id, key_t event, const dynamic& payload) {
-  // Any panel's X button -> tear the whole tool down (docker/curl's rule).
-  if (event == "closed"_key &&
-      (id == window_id_ || id == cpu_window_id_ || id == mem_window_id_ || id == net_window_id_ ||
-       id == disk_window_id_ || id == ports_window_id_ || id == cores_window_id_)) {
+  // The frame's close button (or the taskbar's "Close window").
+  if (event == "closed"_key && id == dock_frame_id()) {
     emit("closed"_key);
     remove_panel_objects();
     remove_internal_objects();

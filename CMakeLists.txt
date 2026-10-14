@@ -428,6 +428,8 @@ if(WISH_ENABLE_IMGUI)
     src/imgui/imgui_desktop_shell.hpp
     src/imgui/imgui_desktop_shell.cpp
     src/imgui/imgui_icon_widgets.cpp
+    src/imgui/imgui_window_caption.hpp
+    src/imgui/imgui_window_caption.cpp
     src/imgui/imgui_keyboard.hpp
     src/imgui/imgui_keyboard.cpp
     src/imgui/imgui_layout.hpp

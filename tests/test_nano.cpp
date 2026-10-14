@@ -1,6 +1,7 @@
 // MIT License © 2025 Binary Dice Games
 #include <gtest/gtest.h>
 
+#include "dock_frame.hpp"
 #include "session_event_recorder.hpp"
 #include "store_session.hpp"
 
@@ -293,7 +294,12 @@ class NanoFilesTest : public ::testing::Test {
     return result;
   }
 
-  void simulate_toolbar_closed() { fire(obj(root_), "closed"_key); }
+  // The editor's title-bar X (its app frame; the Toolbar has none).
+  void simulate_toolbar_closed() {
+    auto h = srv_->last_session->top_level_handlers.find(root_);
+    ASSERT_NE(h, srv_->last_session->top_level_handlers.end());
+    h->second->on_event(wish_test::dock_frame_id(*srv_->last_session), "closed"_key, dynamic{});
+  }
   void simulate_btn_click(const std::string& btn_key) { fire(obj(root_ + ".toolbar." + btn_key), "clicked"_key); }
   void simulate_editor_changed(size_t n) { fire(editor_at(n), "changed"_key); }
 

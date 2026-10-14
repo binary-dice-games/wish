@@ -104,7 +104,6 @@ static constexpr const char* kLogLayout = R"json({
   "type": "Window",
   "title": "$$TAIL_LOG",
   "width": 960, "height": 540,
-  "closable": true,
   "children": {
     "vbox": {
       "type": "VerticalLayout",
@@ -139,7 +138,6 @@ static constexpr const char* kControlsLayout = R"json({
   "type": "Window",
   "title": "$$TAIL_CONTROLS",
   "width": 960, "height": 90,
-  "closable": true,
   "children": {
     "vbox": {
       "type": "VerticalLayout",
@@ -613,8 +611,8 @@ void tail::update_status() {
 // ── Event routing ─────────────────────────────────────────────────────────────
 
 void tail::on_event(key_t id, key_t event, const dynamic& payload) {
-  // Either panel's X button -> tear the whole viewer down (top/pix's rule).
-  if (event == "closed"_key && (id == window_id_ || id == controls_window_id_)) {
+  // The frame's close button (or the taskbar's "Close window").
+  if (event == "closed"_key && id == dock_frame_id()) {
     emit("closed"_key);
     remove_panel_objects();
     remove_internal_objects();

@@ -370,6 +370,22 @@ each frame, which switches two renderers into desktop behavior for that frame:
   frame. It is a titled, floating, cascaded window, never a fullscreen host
   covering the desktop.
 
+An app's **main window** -- its frame, or a top-level non-modal `Window` of
+an app without one (the windows the taskbar lists) -- gets a Windows-style
+caption (`src/imgui/imgui_window_caption.hpp`): minimize, maximize/restore
+and close buttons at the top right, the title ellipsized before them, and a
+1px border plus a shadow drawn just outside the window, so overlapping
+windows stay apart (inside, the frame's docked panels would cover them).
+ImGui's own title is hidden (the window is begun as `"###id"`, the same ID)
+except while docked, where the tab needs it. Panels get no caption.
+Minimize hides the whole app, as the taskbar does; maximize fills the
+cascade area (`desktop_area_min()/max()`) with `NoMove|NoResize` and
+restores the saved rectangle (`desktop_maximize_state`, render
+bookkeeping like `minimized()`); a `NoResize` window cannot maximize.
+Close emits `closed` only when the window (or frame) is `closable`. The
+bundled tools' panels are not closable: a panel's X used to close the whole
+app, which nobody expects from a panel.
+
 Minimize is server-side render bookkeeping (`window::minimized()`,
 `ui_dockspace_viewport::minimized()`; mutable members, not fields): a
 minimized window is not submitted to ImGui at all, so ImGui keeps its

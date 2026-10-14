@@ -86,7 +86,6 @@ theme_color ready_colour(const std::string& ready) {
 
 static constexpr const char* kPodsLayout = R"json({
   "type": "Window", "title": "$$KUBECTL_PODS", "width": 960, "height": 500,
-  "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
       "btn_refresh": { "type": "Button", "label": "$$KUBECTL_REFRESH", "shortcut": "F5", "icon": "res/icons/refresh.png" },
@@ -115,7 +114,6 @@ static constexpr const char* kPodsLayout = R"json({
 
 static constexpr const char* kDeploymentsLayout = R"json({
   "type": "Window", "title": "$$KUBECTL_DEPLOYMENTS", "width": 820, "height": 420,
-  "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
       "btn_refresh": { "type": "Button", "label": "$$KUBECTL_REFRESH", "shortcut": "F5", "icon": "res/icons/refresh.png" },
@@ -143,7 +141,6 @@ static constexpr const char* kDeploymentsLayout = R"json({
 
 static constexpr const char* kServicesLayout = R"json({
   "type": "Window", "title": "$$KUBECTL_SERVICES", "width": 820, "height": 320,
-  "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
       "btn_refresh": { "type": "Button", "label": "$$KUBECTL_REFRESH", "shortcut": "F5", "icon": "res/icons/refresh.png" },
@@ -171,7 +168,6 @@ static constexpr const char* kServicesLayout = R"json({
 
 static constexpr const char* kNodesLayout = R"json({
   "type": "Window", "title": "$$KUBECTL_NODES", "width": 720, "height": 320,
-  "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 6, "children": {
       "btn_refresh": { "type": "Button", "label": "$$KUBECTL_REFRESH", "shortcut": "F5", "icon": "res/icons/refresh.png" },
@@ -201,7 +197,6 @@ static constexpr const char* kNodesLayout = R"json({
 
 static constexpr const char* kLogsLayout = R"json({
   "type": "Window", "title": "$$KUBECTL_LOGS", "width": 900, "height": 420,
-  "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "children": {
     "toolbar": { "type": "HorizontalLayout", "spacing": 8, "children": {
       "target":     { "type": "Label", "text": "$$KUBECTL_NO_POD_SELECTED" },
@@ -226,7 +221,6 @@ static constexpr const char* kLogsLayout = R"json({
 
 static constexpr const char* kTopLayout = R"json({
   "type": "Window", "title": "$$KUBECTL_TOP", "width": 960, "height": 660,
-  "closable": true,
   "children": { "vbox": { "type": "VerticalLayout", "spacing": 4, "scroll": true, "children": {
     "status": { "type": "Label", "text": "" },
     "pods_cpu_plot":  { "type": "Plot", "title": "$$KUBECTL_PODS_CPU_MILLICORES", "height": 420, "profiler_marker": "K8s Pods CPU", "y_label": "m",   "children": {} },
@@ -698,11 +692,8 @@ dynamic kubectl_frontend::do_update_stats(const dynamic& args) {
 // ── Event routing ──────────────────────────────────────────────────────────
 
 void kubectl_frontend::on_event(key_t id, key_t event, const dynamic& payload) {
-  // Any window's X button -> tear everything down.
-  if (event == "closed"_key &&
-      (id == pods_.panel.window_id() || id == deployments_.panel.window_id() || id == services_.panel.window_id() ||
-       id == nodes_.panel.window_id() || id == logs_.window_id() || id == describe_.window_id() ||
-       id == console_.window_id() || id == top_window_id_)) {
+  // The frame's close button (or the taskbar's "Close window").
+  if (event == "closed"_key && id == dock_frame_id()) {
     logs_.remove_file();
     describe_.remove_file();
     emit("closed"_key);
