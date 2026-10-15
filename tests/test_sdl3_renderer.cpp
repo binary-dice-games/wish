@@ -187,3 +187,38 @@ TEST_F(Sdl3RendererTest, FlushDrawListWithNonPositiveSizeIsSafeNoOp) {
   EXPECT_NO_THROW(renderer_->flush_draw_list(draw_list, 0, 0));
   EXPECT_NO_THROW(renderer_->flush_draw_list(draw_list, -1, 4));
 }
+
+// ── Window close ────────────────────────────────────────────────────────────
+
+namespace {
+
+void push_close_request(SDL_Renderer* r) {
+  SDL_Event ev{};
+  ev.type = SDL_EVENT_WINDOW_CLOSE_REQUESTED;
+  ev.window.windowID = SDL_GetWindowID(SDL_GetRenderWindow(r));
+  ASSERT_TRUE(SDL_PushEvent(&ev));
+}
+
+} // namespace
+
+TEST_F(Sdl3RendererTest, ClosingTheWindowQuitsByDefault) {
+  push_close_request(renderer_->sdl_renderer());
+  renderer_->poll_events();
+  EXPECT_TRUE(renderer_->should_quit());
+  EXPECT_FALSE(renderer_->consume_close_request());
+}
+
+TEST_F(Sdl3RendererTest, ConfirmCloseReportsTheRequestInsteadOfQuitting) {
+  renderer_->set_confirm_close(true);
+  push_close_request(renderer_->sdl_renderer());
+  EXPECT_TRUE(renderer_->poll_events());
+  EXPECT_FALSE(renderer_->should_quit());
+  EXPECT_TRUE(renderer_->consume_close_request());
+  EXPECT_FALSE(renderer_->consume_close_request()); // cleared
+
+  SDL_Event quit{};
+  quit.type = SDL_EVENT_QUIT; // Ctrl+C / an OS-level quit still quits
+  ASSERT_TRUE(SDL_PushEvent(&quit));
+  renderer_->poll_events();
+  EXPECT_TRUE(renderer_->should_quit());
+}

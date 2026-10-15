@@ -69,6 +69,11 @@ The bottom bar has:
 - **Shut down server**, after a confirmation that says how many clients
   will be disconnected.
 
+The same confirmation shows, without opening the overlay, whenever
+something else asks the server to stop: closing its window (the close
+button, Alt+F4), **Server → Quit**, or "Shut down server" in the `wish
+desktop` Start menu. Ctrl+C in the terminal still stops it right away.
+
 Folders, files and links open with the server machine's default handler
 (Explorer / `xdg-open`, or `explorer.exe` under WSL). With `--renderer web`
 they open on the machine running the server, not in the browser that shows

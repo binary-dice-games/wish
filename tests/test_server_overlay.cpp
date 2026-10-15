@@ -28,6 +28,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -830,4 +831,60 @@ TEST_F(ServerOverlayTest, EveryThemeRenders) {
     }
     EXPECT_EQ(ov.theme(), opt.value);
   }
+}
+
+// ── Shutdown confirmation ───────────────────────────────────────────────────
+
+namespace {
+
+// Whether the "Shut down server?" modal was drawn in the last frame.
+bool shutdown_popup_shown() {
+  ImGuiContext& g = *ImGui::GetCurrentContext();
+  for (ImGuiWindow* w : g.Windows) {
+    if (w->WasActive && std::strstr(w->Name, "Shut down server?"))
+      return true;
+  }
+  return false;
+}
+
+} // namespace
+
+TEST_F(ServerOverlayTest, ShutdownRequestShowsTheConfirmationWithoutTheOverlay) {
+  auto& ov = make_overlay();
+  frame();
+  ov.request_shutdown();
+  EXPECT_TRUE(ov.confirming_shutdown());
+  frame();
+  frame();
+  EXPECT_FALSE(ov.is_open());
+  EXPECT_TRUE(shutdown_popup_shown());
+  EXPECT_EQ(shutdowns_, 0); // nothing stops before the operator confirms
+
+  press(ImGuiKey_Escape); // Cancel
+  frame();
+  EXPECT_FALSE(ov.confirming_shutdown());
+  EXPECT_FALSE(shutdown_popup_shown());
+  EXPECT_EQ(shutdowns_, 0);
+
+  ov.request_shutdown(); // asking again shows it again
+  frame();
+  frame();
+  EXPECT_TRUE(shutdown_popup_shown());
+}
+
+TEST_F(ServerOverlayTest, ShutdownConfirmationSurvivesTogglingTheOverlay) {
+  auto& ov = make_overlay();
+  frame();
+  ov.request_shutdown();
+  frame();
+  frame();
+  ov.set_open(true);
+  frame();
+  frame();
+  EXPECT_TRUE(shutdown_popup_shown());
+  ov.set_open(false);
+  frame();
+  frame();
+  EXPECT_TRUE(shutdown_popup_shown());
+  EXPECT_TRUE(ov.confirming_shutdown());
 }

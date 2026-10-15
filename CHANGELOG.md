@@ -151,6 +151,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `wish server`: closing its window (close button, Alt+F4), **Server → Quit** and the `wish desktop` "Shut down server" action now ask for confirmation, with the same dialog as the overlay's **Shut down server** button (Ctrl+C still stops it right away). The desktop's "Shut down server" works again after a cancel; `DesktopShell.shutdown` is reset to `false` once seen.
 - `wish desktop`: the tray's theme button opens a menu of every theme instead of switching between light and dark, and the `toggle_theme` action cycles through all of them.
 - Python `AutomationClient.launch()` starts `wish server` with `--overlay_hotkey=` (no server overlay or startup notification) unless the command sets that flag, so the toast never covers widgets under test.
 - The bundled tools' panels no longer have a close button that closed the whole tool; the app window's close button (or the taskbar's "Close window") closes it. Dialogs, nano's file windows and its Search panel keep theirs.

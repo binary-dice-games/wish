@@ -774,9 +774,14 @@ void server_overlay::refresh_machine(bool force) {
   machine_ = query_machine_info();
 }
 
+void server_overlay::request_shutdown() {
+  if (info_.shutdown)
+    request_shutdown_popup_ = true;
+}
+
 void server_overlay::render(const std::vector<sync_context_ptr>& sessions) {
   update_capture();
-  if (!open_ || capture_)
+  if (capture_ || (!open_ && !confirming_shutdown()))
     return;
   refresh_theme(false);
   pal = detail::overlay_palette_is_builtin(theme_) ? steam_palette() : [&] {
@@ -785,6 +790,13 @@ void server_overlay::render(const std::vector<sync_context_ptr>& sessions) {
   }();
   const float fs = ImGui::GetFontSize();
   const auto clients = collect_overlay_clients(sessions);
+  if (!open_) {
+    // Closing the window or the desktop's "Shut down server" asked for the
+    // confirmation without opening the overlay: show it on its own.
+    overlay_style style{fs};
+    draw_shutdown_popup(clients.size());
+    return;
+  }
   refresh_machine(false);
 
   overlay_style style{fs};
@@ -796,7 +808,9 @@ void server_overlay::render(const std::vector<sync_context_ptr>& sessions) {
   ImGui::SetNextWindowSize(vp->Size);
   ImGui::SetNextWindowViewport(vp->ID);
   if (focus_next_) {
-    ImGui::SetNextWindowFocus();
+    // Focusing the overlay would close the shutdown confirmation over it.
+    if (!shutdown_popup_open_)
+      ImGui::SetNextWindowFocus();
     focus_next_ = false;
   }
   constexpr ImGuiWindowFlags kFlags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings |
@@ -1093,6 +1107,9 @@ void server_overlay::draw_bottom_bar(const std::vector<overlay_client_info>& cli
 }
 
 void server_overlay::draw_shutdown_popup(size_t client_count) {
+  // A fixed ID, so the popup stays open when the overlay opens or closes
+  // under it (it is drawn inside the overlay window, or on its own).
+  ImGui::PushOverrideID(ImHashStr("##wish_shutdown_confirm"));
   if (request_shutdown_popup_) {
     ImGui::OpenPopup("Shut down server?");
     request_shutdown_popup_ = false;
@@ -1101,9 +1118,10 @@ void server_overlay::draw_shutdown_popup(size_t client_count) {
   ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Always, {0.5f, 0.5f});
   ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{fs * 1.4f, fs * 1.2f});
   ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, fs * 0.6f);
-  if (ImGui::BeginPopupModal("Shut down server?", nullptr,
-                             ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar |
-                                 ImGuiWindowFlags_NoSavedSettings)) {
+  shutdown_popup_open_ = ImGui::BeginPopupModal("Shut down server?", nullptr,
+                                                 ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar |
+                                                     ImGuiWindowFlags_NoSavedSettings);
+  if (shutdown_popup_open_) {
     {
       font_scale big{1.25f};
       ImGui::TextUnformatted("Shut down the server?");
@@ -1126,6 +1144,7 @@ void server_overlay::draw_shutdown_popup(size_t client_count) {
     ImGui::EndPopup();
   }
   ImGui::PopStyleVar(2);
+  ImGui::PopID();
 }
 
 // ── Overview ─────────────────────────────────────────────────────────────────

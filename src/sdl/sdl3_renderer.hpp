@@ -41,8 +41,11 @@ namespace bdg::wish {
  *   N × begin_frame / render_node / end_frame
  *   teardown()      — shuts down ImGui backends, destroys SDL objects
  *
- * The window close event sets the `should_quit()` flag, which causes
- * `wish::server::render_loop` to exit gracefully.
+ * Closing the window (its close button, Alt+F4) sets the `should_quit()`
+ * flag, which causes `wish::server::render_loop` to exit gracefully --
+ * unless `set_confirm_close(true)`, in which case it is only recorded for
+ * `consume_close_request()`, so the host can ask the user first.
+ * `SDL_EVENT_QUIT` (Ctrl+C, an OS-level quit) always quits.
  *
  * Texture loading: BMP files are loaded via `SDL_LoadBMP`; PNG would require
  * SDL3_image (out of scope).  Loaded textures are cached by filename and
@@ -105,6 +108,14 @@ class sdl3_renderer : public imgui_renderer
 
   /// @brief Programmatically request shutdown (e.g. from a menu action).
   void request_quit();
+
+  /// @brief When true, closing the window no longer quits; it is reported
+  ///        by consume_close_request() instead. Safe from any thread.
+  void set_confirm_close(bool confirm);
+
+  /// @brief Whether the window was asked to close (with set_confirm_close())
+  ///        since the last call; clears the request.
+  bool consume_close_request();
 
   // ── texture loading ───────────────────────────────────────────────────────
 
@@ -252,6 +263,8 @@ class sdl3_renderer : public imgui_renderer
 
   SDL_Renderer* sdl_renderer_ = nullptr;
   std::atomic<bool> quit_{false};
+  std::atomic<bool> confirm_close_{false};
+  std::atomic<bool> close_requested_{false};
 
   // Backing storage for ImGuiIO::IniFilename -- ImGui keeps the pointer we
   // assign it, so the path string must outlive the ImGui context.

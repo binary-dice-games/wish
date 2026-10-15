@@ -624,7 +624,7 @@ session disconnect.
 | `show_icons` | `bool` | `true` | Draws the apps whose `on_desktop` is true as icons on the wallpaper. |
 | `clients` | `int` | `0` | Number of connected apps, shown in the tray. |
 | `config_error` | `string` | `""` | Shown in red at the top of the Start menu (e.g. a configuration error). |
-| `shutdown` | `bool` | `false` | Set to `true` to make the server hosting the shell shut down. |
+| `shutdown` | `bool` | `false` | Set to `true` to make the server hosting the shell shut down, once its operator confirms. Reset to `false` when seen. |
 | `time_format` / `date_format` | `string` | `"%H:%M"` / `"%d/%m/%Y"` | `strftime()` formats of the tray clock's two lines. |
 
 **Events:** `activate` — `{ id }` (a Start menu or power entry, the pinned

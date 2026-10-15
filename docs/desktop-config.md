@@ -155,7 +155,7 @@ relayed to the upstream server):
 | Action | Arguments | Effect |
 |--------|-----------|--------|
 | `quit` | — | Quits the desktop (and closes the apps it started). |
-| `shutdown_server` | — | Asks the upstream server to shut down. |
+| `shutdown_server` | — | Asks the upstream server to shut down (its operator confirms first). |
 | `set_theme` | `preset` (`wish`, `light`, `dark`, `classic`, ...) | Applies and saves a theme preset. |
 | `toggle_theme` | — | Switches to the next of the server's themes (wish, light, dark, classic, then any the server registered), wrapping around. |
 | `reload_config` | — | Re-reads the configuration file. |

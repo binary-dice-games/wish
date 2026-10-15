@@ -122,8 +122,10 @@ settings editor, the server log, and buttons to take a screenshot, open the
 sandbox and log folders or shut the server down. Apps can post
 notifications there too.
 
-Close the window, choose **Server → Quit** from the menu bar, or Ctrl+C
-(`--renderer web` has no window) to stop the server. See
+Close the window or choose **Server → Quit** from the menu bar, then
+confirm, or press Ctrl+C in the terminal (`--renderer web` has no window) to
+stop the server. Without the overlay (`--overlay_hotkey ""`) the window
+closes without asking. See
 [building.md#running-the-web-renderer](building.md#running-the-web-renderer)
 and [building.md#running-automation](building.md#running-automation) for the
 build flags and Python driver needed for the browser backend and the
@@ -308,7 +310,7 @@ and the server apply instead: `--renderer`, `--title`, `--width`/`--height`,
 `--font_size`, `--web_port`/`--web_bind`, `--theme`, `--lang`, `--store_dir`,
 `--sandbox_root`, `--settings_admins`, ... as do `wish server`'s saved
 defaults (`--save_defaults`). Closing the window, or "Shut down server" in
-the Start menu, ends the desktop too, and quitting the desktop closes the
+the Start menu, ends the desktop too (once confirmed), and quitting the desktop closes the
 window. Only the combined `wish` binary has it (the client-only
 `wish-desktop` doesn't link the server).
 

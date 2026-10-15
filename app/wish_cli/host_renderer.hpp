@@ -31,7 +31,9 @@ class server_overlay_host {
    *        server starts rendering. Null `info.shutdown` and
    *        `info.request_screenshot` default to this renderer's
    *        (closing it stops the server); `info.perf` is always this
-   *        renderer's history.
+   *        renderer's history. From then on, closing the window, the
+   *        menu's Quit and the desktop's "Shut down server" ask the
+   *        operator to confirm first (see `request_server_shutdown()`).
    */
   virtual void enable_server_overlay(server_overlay_info info) = 0;
 };
@@ -98,6 +100,13 @@ class host_renderer : public Base, public server_overlay_host {
   const perf_recorder& perf() const {
     return perf_;
   }
+
+  /**
+   * @brief Stops the server once the operator confirms (the overlay's
+   *        shutdown confirmation); without the overlay (e.g. `wish
+   *        standalone`), stops it right away.
+   */
+  void request_server_shutdown();
 
   /// @brief The overlay, or null when not enabled.
   server_overlay* overlay() {

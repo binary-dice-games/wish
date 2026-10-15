@@ -42,6 +42,10 @@ sdl3_renderer::~sdl3_renderer() {
 // ── lifecycle ─────────────────────────────────────────────────────────────────
 
 void sdl3_renderer::setup() {
+  // Closing the window arrives as SDL_EVENT_WINDOW_CLOSE_REQUESTED only, so
+  // poll_events() can ask for confirmation first (set_confirm_close());
+  // SDL_EVENT_QUIT is then left to signals (Ctrl+C) and OS-level quits.
+  SDL_SetHint(SDL_HINT_QUIT_ON_LAST_WINDOW_CLOSE, "0");
   if (!SDL_Init(SDL_INIT_VIDEO))
     throw std::runtime_error(std::string("SDL_Init failed: ") + SDL_GetError());
 
@@ -164,6 +168,13 @@ bool sdl3_renderer::poll_events() {
     ImGui_ImplSDL3_ProcessEvent(&event);
     if (event.type == SDL_EVENT_QUIT)
       quit_.store(true, std::memory_order_release);
+    if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED && window_ &&
+        event.window.windowID == SDL_GetWindowID(window_)) {
+      if (confirm_close_.load(std::memory_order_acquire))
+        close_requested_.store(true, std::memory_order_release);
+      else
+        quit_.store(true, std::memory_order_release);
+    }
 
     if (event.type == SDL_EVENT_MOUSE_MOTION) {
       if (mouse_motion_significant(event.motion.x, event.motion.y))
@@ -272,6 +283,14 @@ bool sdl3_renderer::should_quit() const {
 
 void sdl3_renderer::request_quit() {
   quit_.store(true, std::memory_order_release);
+}
+
+void sdl3_renderer::set_confirm_close(bool confirm) {
+  confirm_close_.store(confirm, std::memory_order_release);
+}
+
+bool sdl3_renderer::consume_close_request() {
+  return close_requested_.exchange(false, std::memory_order_acq_rel);
 }
 
 // ── font loading ──────────────────────────────────────────────────────────────

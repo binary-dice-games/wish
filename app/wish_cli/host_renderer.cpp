@@ -41,6 +41,9 @@ void host_renderer<Base>::enable_server_overlay(server_overlay_info info) {
     };
   info.perf = &perf_;
   overlay_ = std::make_unique<server_overlay>(std::move(info), this->notifications());
+  // Closing the window asks for confirmation (render_server_frame()).
+  if constexpr (requires(Base& b) { b.set_confirm_close(true); })
+    this->set_confirm_close(true);
   if (overlay_->has_hotkey()) {
     notification hint;
     hint.title = "wish server is running";
@@ -50,6 +53,14 @@ void host_renderer<Base>::enable_server_overlay(server_overlay_info info) {
     hint.tag = "wish.server.overlay.hint";
     this->notifications()->post(std::move(hint));
   }
+}
+
+template <typename Base>
+void host_renderer<Base>::request_server_shutdown() {
+  if (overlay_)
+    overlay_->request_shutdown();
+  else
+    this->request_quit();
 }
 
 template <typename Base>
@@ -87,7 +98,7 @@ void host_renderer<Base>::tick(const std::vector<sync_context_ptr>& sessions) {
 template <typename Base>
 bool host_renderer<Base>::wants_continuous_redraw() const {
   return Base::wants_continuous_redraw() || notifications_visible_ ||
-      (overlay_ && (overlay_->is_open() || overlay_->capturing()));
+      (overlay_ && (overlay_->is_open() || overlay_->capturing() || overlay_->confirming_shutdown()));
 }
 
 template <typename Base>
@@ -103,10 +114,14 @@ void host_renderer<Base>::render_server_frame(const std::vector<sync_context_ptr
   // with the keyboard this frame.
   if (overlay_)
     overlay_->handle_keys();
+  if constexpr (requires(Base& b) { b.consume_close_request(); }) {
+    if (this->consume_close_request())
+      request_server_shutdown();
+  }
 
   // A DesktopShell session turns the host into a desktop; its chrome
   // replaces the menu bar host window below entirely.
-  if (render_desktop_shell(*this, sessions, desktop_state_, [this] { this->request_quit(); }))
+  if (render_desktop_shell(*this, sessions, desktop_state_, [this] { request_server_shutdown(); }))
     return;
 
   const ImGuiViewport* vp = ImGui::GetMainViewport();
@@ -135,7 +150,7 @@ void host_renderer<Base>::render_server_frame(const std::vector<sync_context_ptr
       if (overlay_ && ImGui::MenuItem("Overlay", overlay_->hotkey().c_str()))
         overlay_->set_open(true);
       if (ImGui::MenuItem("Quit", "Alt+F4"))
-        this->request_quit();
+        request_server_shutdown();
       ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("View")) {

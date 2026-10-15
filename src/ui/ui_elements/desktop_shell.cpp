@@ -97,7 +97,8 @@ void register_desktop_shell() {
         "shutdown"_rkey,
         "Shut down",
         "Set to true to ask the server hosting the shell to shut down (the desktop's "
-        "\"shutdown_server\" action).",
+        "\"shutdown_server\" action). The server asks its operator to confirm, and resets "
+        "the field to false.",
         "State",
         false);
     add_text_field(

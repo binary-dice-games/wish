@@ -140,6 +140,20 @@ class server_overlay {
   /// @brief Opens or closes the overlay (opening focuses it).
   void set_open(bool open);
 
+  /**
+   * @brief Asks the operator to confirm shutting the server down: opens the
+   *        "Shut down the server?" modal on the next render(), whether or
+   *        not the overlay is open; confirming runs info's `shutdown`. The
+   *        overlay's own "Shut down server" button does the same. No-op
+   *        without `shutdown`.
+   */
+  void request_shutdown();
+
+  /// @brief True while the shutdown confirmation is requested or shown.
+  bool confirming_shutdown() const {
+    return request_shutdown_popup_ || shutdown_popup_open_;
+  }
+
   /// @brief The page shown; set_page() switches to another one.
   page current_page() const {
     return page_;
@@ -157,8 +171,9 @@ class server_overlay {
   bool handle_keys();
 
   /**
-   * @brief Draws the overlay over everything drawn so far, when open.
-   *        Call after every client session has rendered.
+   * @brief Draws the overlay over everything drawn so far, when open, and
+   *        the shutdown confirmation (see request_shutdown()), even when
+   *        not. Call after every client session has rendered.
    * @param sessions The connected sessions.
    */
   void render(const std::vector<sync_context_ptr>& sessions);
@@ -232,6 +247,7 @@ class server_overlay {
   std::chrono::steady_clock::time_point opened_at_{};
   std::chrono::steady_clock::time_point started_at_{std::chrono::steady_clock::now()};
   bool request_shutdown_popup_{false};
+  bool shutdown_popup_open_{false};
 
   // Overview: refreshed every couple of seconds while open.
   machine_info machine_;

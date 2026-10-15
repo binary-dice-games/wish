@@ -375,7 +375,7 @@ std::optional<shell_frame> snapshot(imgui_renderer& r, const std::vector<sync_co
   bool found = false;
   for (const auto& sync_ctx : sessions) {
     auto sess = context_wlock{*sync_ctx};
-    const ui_element* shell = nullptr;
+    ui_element* shell = nullptr;
     key_t shell_key{0u};
     if (!found) {
       for (const auto& [key, root] : sess->top_level_objects) {
@@ -409,6 +409,10 @@ std::optional<shell_frame> snapshot(imgui_renderer& r, const std::vector<sync_co
         f.theme = sess->style_service->current_style().get_as<std::string>("preset"_key, std::string{});
       f.config_error = shell->get_as<std::string>("config_error"_key, std::string{});
       f.shutdown = shell->get_as<bool>("shutdown"_key, false);
+      // One request per `true`: cleared, so the next one (e.g. after the
+      // operator cancelled the confirmation) is seen again.
+      if (f.shutdown)
+        (*shell)["shutdown"_key] = false;
       {
         desktop_menu m = detail::desktop_collect_menu(*shell);
         f.apps = std::move(m.apps);
@@ -694,12 +698,10 @@ void shell_painter::update_window_order() {
 
 void shell_painter::draw() {
   update_window_order();
-  // The desktop's "shutdown_server" action: shut the hosting server down,
-  // once.
-  if (f_.shutdown && !st_.shutdown_requested && shutdown_server_) {
-    st_.shutdown_requested = true;
+  // The desktop's "shutdown_server" action: shut the hosting server down
+  // (the host asks the operator to confirm first).
+  if (f_.shutdown && shutdown_server_)
     shutdown_server_();
-  }
   {
     const ImGuiWindow* nav = GImGui->NavWindow;
     const char* nav_name = nav && nav->RootWindow ? nav->RootWindow->Name : "";
