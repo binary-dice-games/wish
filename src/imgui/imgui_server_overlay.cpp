@@ -4,6 +4,7 @@
 #include "imgui_server_overlay.hpp"
 
 #include <imgui/imgui_desktop_shell.hpp>
+#include <imgui/imgui_renderer.hpp>
 #include <imgui/imgui_keyboard.hpp>
 #include <ui/forms/file_browser_utils.hpp>
 #include <ui/ui_element.hpp>
@@ -81,6 +82,30 @@ std::vector<std::string> list_store_identities(const std::filesystem::path& stor
       ids.insert(std::move(id));
   }
   return {ids.begin(), ids.end()};
+}
+
+bool overlay_palette_is_builtin(const std::string& theme) {
+  return theme.empty() || theme == kOverlayTheme || !find_theme(theme);
+}
+
+std::vector<settings::setting_option> overlay_theme_options() {
+  std::vector<settings::setting_option> options{{kOverlayTheme, "Overlay (default)"}};
+  for (const auto& t : registered_themes())
+    options.push_back({t.name, t.label + (t.is_light ? " (light)" : " (dark)")});
+  return options;
+}
+
+settings::setting_info overlay_theme_setting() {
+  settings::setting_info s;
+  s.name = "wish.server.overlay.theme";
+  s.label = "Overlay theme";
+  s.description = "Colors of the server overlay (Shift+F1): its own look, or one of the server's themes.";
+  s.category = "server";
+  s.section = "Overlay";
+  s.type = settings::setting_type::choice;
+  s.options = overlay_theme_options();
+  s.default_value = std::string{kOverlayTheme};
+  return s;
 }
 
 std::filesystem::path screenshot_path(const std::filesystem::path& dir, std::time_t t) {
@@ -182,17 +207,101 @@ namespace {
 
 using clock = std::chrono::steady_clock;
 
-// Steam-overlay-like palette: deep blue-gray glass, one bright accent.
-constexpr ImVec4 kText{0.91f, 0.93f, 0.96f, 1.0f};
-constexpr ImVec4 kMuted{0.56f, 0.61f, 0.69f, 1.0f};
-constexpr ImVec4 kAccent{0.10f, 0.62f, 1.00f, 1.0f};
-constexpr ImVec4 kDanger{0.86f, 0.27f, 0.27f, 1.0f};
-constexpr ImVec4 kWarn{0.95f, 0.68f, 0.30f, 1.0f};
-constexpr ImVec4 kGood{0.36f, 0.75f, 0.41f, 1.0f};
-constexpr ImVec4 kPanel{0.09f, 0.11f, 0.16f, 0.94f};
-constexpr ImVec4 kPanelHi{0.13f, 0.16f, 0.22f, 1.0f};
-constexpr ImVec4 kFrame{0.15f, 0.18f, 0.25f, 1.0f};
-constexpr ImVec4 kFrameHi{0.20f, 0.24f, 0.33f, 1.0f};
+// The overlay's colors. The built-in look (steam_palette(), a deep
+// blue-gray glass with one bright accent) is the default; a registered wish
+// theme can be picked instead (palette_from_theme()). Render-thread only:
+// server_overlay::render() sets `pal` once per frame, before drawing.
+struct overlay_palette {
+  ImVec4 text, muted, accent, danger, warn, good;
+  ImVec4 panel, panel_hi, frame, frame_hi, frame_active, popup;
+  ImVec4 backdrop_top, backdrop_bottom;
+  ImVec4 primary; ///< Base of accent-colored buttons.
+  ImVec4 tint; ///< Hairlines and hover washes: white on dark, black on light.
+  bool light{false};
+};
+
+overlay_palette steam_palette() {
+  overlay_palette p;
+  p.text = {0.91f, 0.93f, 0.96f, 1.0f};
+  p.muted = {0.56f, 0.61f, 0.69f, 1.0f};
+  p.accent = {0.10f, 0.62f, 1.00f, 1.0f};
+  p.danger = {0.86f, 0.27f, 0.27f, 1.0f};
+  p.warn = {0.95f, 0.68f, 0.30f, 1.0f};
+  p.good = {0.36f, 0.75f, 0.41f, 1.0f};
+  p.panel = {0.09f, 0.11f, 0.16f, 0.94f};
+  p.panel_hi = {0.13f, 0.16f, 0.22f, 1.0f};
+  p.frame = {0.15f, 0.18f, 0.25f, 1.0f};
+  p.frame_hi = {0.20f, 0.24f, 0.33f, 1.0f};
+  p.frame_active = {0.22f, 0.28f, 0.40f, 1.0f};
+  p.popup = {0.10f, 0.12f, 0.17f, 0.98f};
+  p.backdrop_top = {0.03f, 0.05f, 0.09f, 0.95f};
+  p.backdrop_bottom = {0.06f, 0.10f, 0.17f, 0.97f};
+  p.primary = {0.08f, 0.42f, 0.72f, 1.0f};
+  p.tint = {1.0f, 1.0f, 1.0f, 1.0f};
+  p.light = false;
+  return p;
+}
+
+// @p over composited onto the opaque @p under (theme colors such as
+// FrameBg are often translucent; the overlay wants solid ones).
+ImVec4 blend(ImVec4 under, ImVec4 over) {
+  const float a = over.w;
+  return {under.x + (over.x - under.x) * a, under.y + (over.y - under.y) * a, under.z + (over.z - under.z) * a, 1.0f};
+}
+
+ImVec4 scaled(ImVec4 c, float k, float alpha) {
+  return {std::clamp(c.x * k, 0.0f, 1.0f), std::clamp(c.y * k, 0.0f, 1.0f), std::clamp(c.z * k, 0.0f, 1.0f), alpha};
+}
+
+overlay_palette palette_from_theme(theme_fn fn, bool light) {
+  ImGuiStyle st;
+  fn(&st);
+  const ImVec4* c = st.Colors;
+  overlay_palette p = steam_palette();
+  p.light = light;
+  const ImVec4 base{c[ImGuiCol_WindowBg].x, c[ImGuiCol_WindowBg].y, c[ImGuiCol_WindowBg].z, 1.0f};
+  p.text = c[ImGuiCol_Text];
+  p.muted = c[ImGuiCol_TextDisabled];
+  // The accent: the most colorful of the theme's accent-like colors (Classic's
+  // check mark, for one, is a pale gray).
+  p.accent = c[ImGuiCol_CheckMark];
+  float best = -1.0f;
+  for (ImGuiCol idx : {ImGuiCol_CheckMark, ImGuiCol_SliderGrabActive, ImGuiCol_ButtonActive, ImGuiCol_HeaderActive,
+                       ImGuiCol_TabSelected}) {
+    const ImVec4 v = c[idx];
+    const float sat = std::max({v.x, v.y, v.z}) - std::min({v.x, v.y, v.z});
+    if (sat > best) {
+      best = sat;
+      p.accent = v;
+    }
+  }
+  p.accent.w = 1.0f;
+  p.panel = {base.x, base.y, base.z, 0.96f};
+  p.panel_hi = blend(base, c[ImGuiCol_TableHeaderBg]);
+  p.frame = blend(base, c[ImGuiCol_FrameBg]);
+  p.frame_hi = blend(base, c[ImGuiCol_FrameBgHovered]);
+  p.frame_active = blend(base, c[ImGuiCol_FrameBgActive]);
+  p.popup = blend(base, c[ImGuiCol_PopupBg]);
+  p.popup.w = 0.98f;
+  // The backdrop: the theme's window color, a little deeper at the top.
+  p.backdrop_top = scaled(base, light ? 0.92f : 0.7f, 0.95f);
+  p.backdrop_bottom = {base.x, base.y, base.z, 0.97f};
+  p.primary = scaled(p.accent, 0.8f, 1.0f);
+  p.tint = light ? ImVec4{0.0f, 0.0f, 0.0f, 1.0f} : ImVec4{1.0f, 1.0f, 1.0f, 1.0f};
+  if (light) { // darker status colors read better on a light background
+    p.danger = {0.80f, 0.18f, 0.18f, 1.0f};
+    p.warn = {0.82f, 0.50f, 0.05f, 1.0f};
+    p.good = {0.18f, 0.58f, 0.25f, 1.0f};
+  }
+  return p;
+}
+
+overlay_palette pal = steam_palette();
+
+// The palette's tint at @p alpha.
+ImVec4 tint(float alpha) {
+  return {pal.tint.x, pal.tint.y, pal.tint.z, alpha};
+}
 
 ImVec4 with_alpha(ImVec4 c, float a) {
   c.w *= a;
@@ -204,37 +313,37 @@ ImVec4 with_alpha(ImVec4 c, float a) {
 class overlay_style {
  public:
   explicit overlay_style(float fs) {
-    color(ImGuiCol_Text, kText);
-    color(ImGuiCol_TextDisabled, kMuted);
+    color(ImGuiCol_Text, pal.text);
+    color(ImGuiCol_TextDisabled, pal.muted);
     color(ImGuiCol_WindowBg, ImVec4{0, 0, 0, 0});
-    color(ImGuiCol_ChildBg, kPanel);
-    color(ImGuiCol_PopupBg, ImVec4{0.10f, 0.12f, 0.17f, 0.98f});
-    color(ImGuiCol_Border, ImVec4{1.0f, 1.0f, 1.0f, 0.07f});
-    color(ImGuiCol_FrameBg, kFrame);
-    color(ImGuiCol_FrameBgHovered, kFrameHi);
-    color(ImGuiCol_FrameBgActive, ImVec4{0.22f, 0.28f, 0.40f, 1.0f});
-    color(ImGuiCol_Button, kFrame);
-    color(ImGuiCol_ButtonHovered, kFrameHi);
-    color(ImGuiCol_ButtonActive, with_alpha(kAccent, 0.8f));
-    color(ImGuiCol_Header, ImVec4{0.10f, 0.62f, 1.00f, 0.22f});
-    color(ImGuiCol_HeaderHovered, ImVec4{0.10f, 0.62f, 1.00f, 0.30f});
-    color(ImGuiCol_HeaderActive, ImVec4{0.10f, 0.62f, 1.00f, 0.40f});
-    color(ImGuiCol_CheckMark, kAccent);
-    color(ImGuiCol_SliderGrab, kAccent);
-    color(ImGuiCol_SliderGrabActive, ImVec4{0.35f, 0.75f, 1.0f, 1.0f});
-    color(ImGuiCol_Separator, ImVec4{1.0f, 1.0f, 1.0f, 0.08f});
-    color(ImGuiCol_TableHeaderBg, kPanelHi);
+    color(ImGuiCol_ChildBg, pal.panel);
+    color(ImGuiCol_PopupBg, pal.popup);
+    color(ImGuiCol_Border, tint(0.07f));
+    color(ImGuiCol_FrameBg, pal.frame);
+    color(ImGuiCol_FrameBgHovered, pal.frame_hi);
+    color(ImGuiCol_FrameBgActive, pal.frame_active);
+    color(ImGuiCol_Button, pal.frame);
+    color(ImGuiCol_ButtonHovered, pal.frame_hi);
+    color(ImGuiCol_ButtonActive, with_alpha(pal.accent, 0.8f));
+    color(ImGuiCol_Header, with_alpha(pal.accent, 0.22f));
+    color(ImGuiCol_HeaderHovered, with_alpha(pal.accent, 0.30f));
+    color(ImGuiCol_HeaderActive, with_alpha(pal.accent, 0.40f));
+    color(ImGuiCol_CheckMark, pal.accent);
+    color(ImGuiCol_SliderGrab, pal.accent);
+    color(ImGuiCol_SliderGrabActive, scaled(pal.accent, 1.2f, 1.0f));
+    color(ImGuiCol_Separator, tint(0.08f));
+    color(ImGuiCol_TableHeaderBg, pal.panel_hi);
     color(ImGuiCol_TableRowBg, ImVec4{0, 0, 0, 0});
-    color(ImGuiCol_TableRowBgAlt, ImVec4{1.0f, 1.0f, 1.0f, 0.025f});
-    color(ImGuiCol_TableBorderLight, ImVec4{1.0f, 1.0f, 1.0f, 0.05f});
-    color(ImGuiCol_TableBorderStrong, ImVec4{1.0f, 1.0f, 1.0f, 0.08f});
+    color(ImGuiCol_TableRowBgAlt, tint(0.025f));
+    color(ImGuiCol_TableBorderLight, tint(0.05f));
+    color(ImGuiCol_TableBorderStrong, tint(0.08f));
     color(ImGuiCol_ScrollbarBg, ImVec4{0, 0, 0, 0});
-    color(ImGuiCol_ScrollbarGrab, ImVec4{1.0f, 1.0f, 1.0f, 0.12f});
-    color(ImGuiCol_ScrollbarGrabHovered, ImVec4{1.0f, 1.0f, 1.0f, 0.20f});
-    color(ImGuiCol_ScrollbarGrabActive, ImVec4{1.0f, 1.0f, 1.0f, 0.28f});
-    color(ImGuiCol_TextLink, kAccent);
+    color(ImGuiCol_ScrollbarGrab, tint(0.12f));
+    color(ImGuiCol_ScrollbarGrabHovered, tint(0.20f));
+    color(ImGuiCol_ScrollbarGrabActive, tint(0.28f));
+    color(ImGuiCol_TextLink, pal.accent);
     color(ImGuiCol_ModalWindowDimBg, ImVec4{0.0f, 0.0f, 0.0f, 0.45f});
-    color(ImGuiCol_NavCursor, kAccent);
+    color(ImGuiCol_NavCursor, pal.accent);
     var(ImGuiStyleVar_WindowPadding, ImVec2{0.0f, 0.0f});
     var(ImGuiStyleVar_WindowBorderSize, 0.0f);
     var(ImGuiStyleVar_WindowRounding, 0.0f);
@@ -285,13 +394,13 @@ class font_scale {
 };
 
 void muted_text(const char* text) {
-  ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
+  ImGui::PushStyleColor(ImGuiCol_Text, pal.muted);
   ImGui::TextUnformatted(text);
   ImGui::PopStyleColor();
 }
 
 void muted_wrapped(const std::string& text) {
-  ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
+  ImGui::PushStyleColor(ImGuiCol_Text, pal.muted);
   ImGui::PushTextWrapPos(0.0f);
   ImGui::TextUnformatted(text.c_str());
   ImGui::PopTextWrapPos();
@@ -314,13 +423,14 @@ void badge(const char* text, ImVec4 color) {
 
 // A primary/danger/ghost button with its own colors.
 bool styled_button(const char* label, ImVec4 base, ImVec2 size = {0, 0}) {
+  ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{1.0f, 1.0f, 1.0f, 1.0f}); // on a saturated color, in any theme
   ImGui::PushStyleColor(ImGuiCol_Button, base);
   ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
                         ImVec4{std::min(base.x + 0.08f, 1.0f), std::min(base.y + 0.08f, 1.0f),
                                std::min(base.z + 0.08f, 1.0f), 1.0f});
   ImGui::PushStyleColor(ImGuiCol_ButtonActive, base);
   const bool clicked = ImGui::Button(label, size);
-  ImGui::PopStyleColor(3);
+  ImGui::PopStyleColor(4);
   return clicked;
 }
 
@@ -336,7 +446,7 @@ bool toggle_switch(const char* id, bool* v) {
     *v = !*v;
   const bool hovered = ImGui::IsItemHovered();
   ImDrawList* dl = ImGui::GetWindowDrawList();
-  const ImVec4 track = *v ? kAccent : (hovered ? kFrameHi : ImVec4{0.24f, 0.28f, 0.36f, 1.0f});
+  const ImVec4 track = *v ? pal.accent : (hovered ? pal.frame_hi : pal.frame_active);
   dl->AddRectFilled(pos, {pos.x + w, pos.y + h}, ImGui::GetColorU32(track), h * 0.5f);
   const float r = h * 0.5f - 2.5f;
   const float cx = *v ? pos.x + w - h * 0.5f : pos.x + h * 0.5f;
@@ -481,6 +591,39 @@ struct server_overlay::settings_scope {
 server_overlay::server_overlay(server_overlay_info info, notification_center_ptr notifications)
     : info_(std::move(info)), notifications_(std::move(notifications)) {
   hotkey_ = parse_key_chord(info_.hotkey);
+  // The theme choice lives in the server store, so it is kept across runs
+  // and shows on the Settings page.
+  if (info_.stores) {
+    try {
+      st::describe(*info_.stores->server_store(), detail::overlay_theme_setting());
+    } catch (const std::exception&) {
+      // Metadata is a convenience; the picker works without it.
+    }
+  }
+  refresh_theme(true);
+}
+
+const std::string& server_overlay::theme() const {
+  return theme_;
+}
+
+void server_overlay::set_theme(const std::string& name) {
+  theme_ = name == kOverlayTheme || find_theme(name) ? name : std::string{kOverlayTheme};
+  if (info_.stores)
+    st::write_setting(*info_.stores->server_store(), detail::overlay_theme_setting(), theme_);
+  theme_at_ = clock::now();
+}
+
+void server_overlay::refresh_theme(bool force) {
+  const auto now = clock::now();
+  if (!force && now - theme_at_ < std::chrono::seconds{1})
+    return;
+  theme_at_ = now;
+  if (!info_.stores)
+    return;
+  // Edited on the Settings page, or by another tool: follow it.
+  const std::string stored = st::text_of(info_.stores->server_store().get(), detail::overlay_theme_setting());
+  theme_ = stored == kOverlayTheme || find_theme(stored) ? stored : std::string{kOverlayTheme};
 }
 
 server_overlay::~server_overlay() = default;
@@ -635,6 +778,11 @@ void server_overlay::render(const std::vector<sync_context_ptr>& sessions) {
   update_capture();
   if (!open_ || capture_)
     return;
+  refresh_theme(false);
+  pal = detail::overlay_palette_is_builtin(theme_) ? steam_palette() : [&] {
+    const auto info = find_theme_info(theme_);
+    return palette_from_theme(find_theme(theme_), info && info->is_light);
+  }();
   const float fs = ImGui::GetFontSize();
   const auto clients = collect_overlay_clients(sessions);
   refresh_machine(false);
@@ -709,13 +857,13 @@ void server_overlay::draw_backdrop() {
   ImDrawList* dl = ImGui::GetWindowDrawList();
   const float a = ImGui::GetStyle().Alpha;
   const ImVec2 mn = vp->Pos, mx{vp->Pos.x + vp->Size.x, vp->Pos.y + vp->Size.y};
-  const ImU32 top = ImGui::ColorConvertFloat4ToU32({0.03f, 0.05f, 0.09f, 0.95f * a});
-  const ImU32 bottom = ImGui::ColorConvertFloat4ToU32({0.06f, 0.10f, 0.17f, 0.97f * a});
+  const ImU32 top = ImGui::ColorConvertFloat4ToU32(with_alpha(pal.backdrop_top, a));
+  const ImU32 bottom = ImGui::ColorConvertFloat4ToU32(with_alpha(pal.backdrop_bottom, a));
   dl->AddRectFilledMultiColor(mn, mx, top, top, bottom, bottom);
   // A soft accent glow along the top edge.
   const float fs = ImGui::GetFontSize();
-  const ImU32 glow = ImGui::ColorConvertFloat4ToU32({0.10f, 0.62f, 1.0f, 0.10f * a});
-  const ImU32 none = ImGui::ColorConvertFloat4ToU32({0.10f, 0.62f, 1.0f, 0.0f});
+  const ImU32 glow = ImGui::ColorConvertFloat4ToU32({pal.accent.x, pal.accent.y, pal.accent.z, 0.10f * a});
+  const ImU32 none = ImGui::ColorConvertFloat4ToU32({pal.accent.x, pal.accent.y, pal.accent.z, 0.0f});
   dl->AddRectFilledMultiColor(mn, {mx.x, mn.y + fs * 8.0f}, glow, glow, none, none);
 }
 
@@ -726,14 +874,14 @@ void server_overlay::draw_top_bar(size_t client_count) {
   const float pad = std::floor(fs * 1.5f);
   ImDrawList* dl = ImGui::GetWindowDrawList();
   dl->AddLine({vp->Pos.x, vp->Pos.y + bar_h}, {vp->Pos.x + vp->Size.x, vp->Pos.y + bar_h},
-              ImGui::GetColorU32(ImVec4{1.0f, 1.0f, 1.0f, 0.06f}));
+              ImGui::GetColorU32(tint(0.06f)));
 
   // Brand, left.
   ImGui::SetCursorScreenPos({vp->Pos.x + pad, vp->Pos.y + fs * 0.9f});
   ImGui::BeginGroup();
   {
     font_scale big{1.6f};
-    ImGui::PushStyleColor(ImGuiCol_Text, kAccent);
+    ImGui::PushStyleColor(ImGuiCol_Text, pal.accent);
     ImGui::TextUnformatted("wish");
     ImGui::PopStyleColor();
   }
@@ -784,12 +932,12 @@ void server_overlay::draw_top_bar(size_t client_count) {
       const bool active = page_ == t.p;
       if (active || hovered)
         dl->AddRectFilled({x, tab_y}, {x + size.x, tab_y + size.y},
-                          ImGui::GetColorU32(active ? ImVec4{1.0f, 1.0f, 1.0f, 0.08f} : ImVec4{1.0f, 1.0f, 1.0f, 0.04f}),
+                          ImGui::GetColorU32(active ? tint(0.08f) : tint(0.04f)),
                           size.y * 0.5f);
       if (active)
         dl->AddRectFilled({x + tab_pad, tab_y + size.y - 3.0f}, {x + size.x - tab_pad, tab_y + size.y - 1.0f},
-                          ImGui::GetColorU32(kAccent), 1.0f);
-      dl->AddText({x + tab_pad, tab_y + (size.y - ts.y) * 0.5f}, ImGui::GetColorU32(active ? kText : kMuted),
+                          ImGui::GetColorU32(pal.accent), 1.0f);
+      dl->AddText({x + tab_pad, tab_y + (size.y - ts.y) * 0.5f}, ImGui::GetColorU32(active ? pal.text : pal.muted),
                   t.label.c_str());
       x += size.x + tab_gap;
     }
@@ -806,7 +954,35 @@ void server_overlay::draw_top_bar(size_t client_count) {
     font_scale big{1.6f};
     clock_w = ImGui::CalcTextSize(time_text.c_str()).x;
   }
-  ImGui::SetCursorScreenPos({close_x - fs * 1.2f - clock_w, vp->Pos.y + fs * 0.75f});
+  const float clock_x = close_x - fs * 1.2f - clock_w;
+
+  // Theme picker, left of the clock.
+  {
+    std::string current = "Overlay";
+    if (theme_ != kOverlayTheme) {
+      if (const auto info = find_theme_info(theme_))
+        current = info->label;
+    }
+    const std::string label = "Theme: " + current;
+    const float w = ImGui::CalcTextSize(label.c_str()).x + ImGui::GetStyle().FramePadding.x * 2.0f;
+    ImGui::SetCursorScreenPos({clock_x - fs * 1.5f - w, vp->Pos.y + (bar_h - ImGui::GetFrameHeight()) * 0.5f});
+    if (ImGui::Button((label + "##overlay_theme").c_str()))
+      ImGui::OpenPopup("##overlay_theme_menu");
+    ImGui::SetItemTooltip("The overlay's colors: its own look, or one of the server's themes");
+    ImGui::SetNextWindowPos({ImGui::GetItemRectMin().x, ImGui::GetItemRectMax().y + 4.0f}, ImGuiCond_Appearing);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{fs * 0.6f, fs * 0.5f});
+    const bool menu_open = ImGui::BeginPopup("##overlay_theme_menu");
+    ImGui::PopStyleVar();
+    if (menu_open) {
+      for (const auto& opt : detail::overlay_theme_options()) {
+        if (ImGui::MenuItem(opt.label.c_str(), nullptr, opt.value == theme_) && opt.value != theme_)
+          set_theme(opt.value);
+      }
+      ImGui::EndPopup();
+    }
+  }
+
+  ImGui::SetCursorScreenPos({clock_x, vp->Pos.y + fs * 0.75f});
   ImGui::BeginGroup();
   {
     font_scale big{1.6f};
@@ -826,10 +1002,10 @@ void server_overlay::draw_top_bar(size_t client_count) {
   if (hov)
     ImGui::SetTooltip("Close (%s or Esc)", info_.hotkey.c_str());
   const ImVec2 c{cpos.x + close_sz * 0.5f, cpos.y + close_sz * 0.5f};
-  dl->AddCircleFilled(c, close_sz * 0.5f, ImGui::GetColorU32(hov ? kFrameHi : kFrame), 24);
+  dl->AddCircleFilled(c, close_sz * 0.5f, ImGui::GetColorU32(hov ? pal.frame_hi : pal.frame), 24);
   const float k = close_sz * 0.18f;
-  dl->AddLine({c.x - k, c.y - k}, {c.x + k, c.y + k}, ImGui::GetColorU32(kText), 2.0f);
-  dl->AddLine({c.x + k, c.y - k}, {c.x - k, c.y + k}, ImGui::GetColorU32(kText), 2.0f);
+  dl->AddLine({c.x - k, c.y - k}, {c.x + k, c.y + k}, ImGui::GetColorU32(pal.text), 2.0f);
+  dl->AddLine({c.x + k, c.y - k}, {c.x - k, c.y + k}, ImGui::GetColorU32(pal.text), 2.0f);
 }
 
 void server_overlay::draw_bottom_bar(const std::vector<overlay_client_info>& clients) {
@@ -840,15 +1016,15 @@ void server_overlay::draw_bottom_bar(const std::vector<overlay_client_info>& cli
   const float y0 = vp->Pos.y + vp->Size.y - bar_h;
   ImDrawList* dl = ImGui::GetWindowDrawList();
   dl->AddRectFilled({vp->Pos.x, y0}, {vp->Pos.x + vp->Size.x, vp->Pos.y + vp->Size.y},
-                    ImGui::GetColorU32(ImVec4{0.0f, 0.0f, 0.0f, 0.25f}));
-  dl->AddLine({vp->Pos.x, y0}, {vp->Pos.x + vp->Size.x, y0}, ImGui::GetColorU32(ImVec4{1.0f, 1.0f, 1.0f, 0.06f}));
+                    ImGui::GetColorU32(ImVec4{0.0f, 0.0f, 0.0f, pal.light ? 0.06f : 0.25f}));
+  dl->AddLine({vp->Pos.x, y0}, {vp->Pos.x + vp->Size.x, y0}, ImGui::GetColorU32(tint(0.06f)));
 
   const float btn_h = fs * 2.2f;
   ImGui::SetCursorScreenPos({vp->Pos.x + pad, y0 + (bar_h - btn_h) * 0.5f});
   ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2{fs * 0.9f, (btn_h - fs) * 0.5f});
 
   if (info_.request_screenshot) {
-    if (styled_button("Screenshot", ImVec4{0.08f, 0.42f, 0.72f, 1.0f}))
+    if (styled_button("Screenshot", pal.primary))
       take_screenshot();
     ImGui::SetItemTooltip("Saves the clients' windows, without this overlay, to %s",
                           info_.screenshot_dir.string().c_str());
@@ -968,14 +1144,14 @@ void server_overlay::draw_overview(const std::vector<overlay_client_info>& clien
   // Tiles.
   const int tiles = w > fs * 40.0f ? 4 : 2;
   const float tile_w = std::floor((w - gap * static_cast<float>(tiles - 1)) / static_cast<float>(tiles));
-  stat_tile("##t_uptime", "Uptime", format_duration(uptime), "since the server started", tile_w, kAccent);
+  stat_tile("##t_uptime", "Uptime", format_duration(uptime), "since the server started", tile_w, pal.accent);
   ImGui::SameLine();
   stat_tile("##t_clients", "Clients", std::to_string(clients.size()),
-            std::to_string(window_count) + (window_count == 1 ? " window" : " windows"), tile_w, kGood);
+            std::to_string(window_count) + (window_count == 1 ? " window" : " windows"), tile_w, pal.good);
   if (tiles == 4)
     ImGui::SameLine();
   stat_tile("##t_mem", "Server memory", machine_.process_memory ? format_bytes(machine_.process_memory) : "-",
-            "resident", tile_w, kWarn);
+            "resident", tile_w, pal.warn);
   ImGui::SameLine();
   char fps[32];
   std::snprintf(fps, sizeof(fps), "%.0f", ImGui::GetIO().Framerate);
@@ -1033,7 +1209,7 @@ void server_overlay::draw_overview(const std::vector<overlay_client_info>& clien
       const uint64_t used = machine_.total_memory - std::min(machine_.available_memory, machine_.total_memory);
       const float frac = static_cast<float>(static_cast<double>(used) / static_cast<double>(machine_.total_memory));
       muted_text("Memory");
-      ImGui::PushStyleColor(ImGuiCol_PlotHistogram, frac > 0.9f ? kDanger : (frac > 0.75f ? kWarn : kAccent));
+      ImGui::PushStyleColor(ImGuiCol_PlotHistogram, frac > 0.9f ? pal.danger : (frac > 0.75f ? pal.warn : pal.accent));
       const std::string overlay_text = format_bytes(used) + " of " + format_bytes(machine_.total_memory) + " used";
       ImGui::ProgressBar(frac, {-FLT_MIN, fs * 1.3f}, overlay_text.c_str());
       ImGui::PopStyleColor();
@@ -1091,7 +1267,7 @@ void server_overlay::draw_clients(const std::vector<overlay_client_info>& client
   ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2{fs * 0.7f, fs * 0.55f});
   constexpr ImGuiTableFlags kFlags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH |
       ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_ScrollY | ImGuiTableFlags_PadOuterX;
-  ImGui::PushStyleColor(ImGuiCol_ChildBg, kPanel);
+  ImGui::PushStyleColor(ImGuiCol_ChildBg, pal.panel);
   if (ImGui::BeginTable("##clients", 6, kFlags, ImGui::GetContentRegionAvail())) {
     ImGui::TableSetupScrollFreeze(0, 1);
     ImGui::TableSetupColumn("User", ImGuiTableColumnFlags_WidthStretch, 1.4f);
@@ -1112,11 +1288,11 @@ void server_overlay::draw_clients(const std::vector<overlay_client_info>& client
       }
       if (c.settings_admin) {
         ImGui::SameLine();
-        badge("admin", kAccent);
+        badge("admin", pal.accent);
       }
       if (c.has_user_store) {
         ImGui::SameLine();
-        badge("store", kGood);
+        badge("store", pal.good);
         ImGui::SetItemTooltip("Has a user store: its settings are on the Settings page");
       }
       ImGui::TableNextColumn();
@@ -1173,7 +1349,7 @@ void history_graph(const char* id, const char* title, const std::vector<float>& 
   ImGui::SetCursorPosX(ImGui::GetContentRegionMax().x - ImGui::CalcTextSize(now).x);
   ImGui::TextUnformatted(now);
   ImGui::PushStyleColor(ImGuiCol_PlotLines, color);
-  ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4{0.0f, 0.0f, 0.0f, 0.18f});
+  ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4{0.0f, 0.0f, 0.0f, pal.light ? 0.06f : 0.18f});
   // Pad on the left so a short history grows from the right edge.
   std::vector<float> padded(perf_recorder::kHistory - std::min(values.size(), perf_recorder::kHistory), 0.0f);
   padded.insert(padded.end(), values.begin(), values.end());
@@ -1206,17 +1382,17 @@ void server_overlay::draw_performance() {
   char buf[64], sub[64];
   std::snprintf(buf, sizeof(buf), "%.1f ms", now.frame_ms_avg);
   std::snprintf(sub, sizeof(sub), "slowest %.1f ms", now.frame_ms_max);
-  stat_tile("##p_frame", "Frame time", buf, sub, tile_w, kAccent);
+  stat_tile("##p_frame", "Frame time", buf, sub, tile_w, pal.accent);
   ImGui::SameLine();
   std::snprintf(buf, sizeof(buf), "%.0f", now.frames);
   stat_tile("##p_fps", "Frames drawn", buf, "per second", tile_w, ImVec4{0.68f, 0.45f, 0.95f, 1.0f});
   if (tiles == 4)
     ImGui::SameLine();
   std::snprintf(buf, sizeof(buf), "%.0f %%", now.cpu_percent);
-  stat_tile("##p_cpu", "CPU", buf, "100 % = one core", tile_w, kWarn);
+  stat_tile("##p_cpu", "CPU", buf, "100 % = one core", tile_w, pal.warn);
   ImGui::SameLine();
   std::snprintf(buf, sizeof(buf), "%.0f MB", now.memory_mb);
-  stat_tile("##p_mem", "Memory", buf, "resident", tile_w, kGood);
+  stat_tile("##p_mem", "Memory", buf, "resident", tile_w, pal.good);
 
   ImGui::Dummy({0.0f, fs * 0.2f});
   auto series = [&](float perf_sample::*field) {
@@ -1228,15 +1404,15 @@ void server_overlay::draw_performance() {
   };
   const bool two_cols = w > fs * 40.0f;
   const float gw = two_cols ? std::floor((w - gap) * 0.5f) : w;
-  history_graph("##g_frame", "Slowest frame", series(&perf_sample::frame_ms_max), "ms", 16.7f, kAccent, gw);
+  history_graph("##g_frame", "Slowest frame", series(&perf_sample::frame_ms_max), "ms", 16.7f, pal.accent, gw);
   if (two_cols)
     ImGui::SameLine();
   history_graph("##g_fps", "Frames drawn", series(&perf_sample::frames), "/s", 60.0f,
                 ImVec4{0.68f, 0.45f, 0.95f, 1.0f}, gw);
-  history_graph("##g_cpu", "CPU", series(&perf_sample::cpu_percent), "%", 100.0f, kWarn, gw);
+  history_graph("##g_cpu", "CPU", series(&perf_sample::cpu_percent), "%", 100.0f, pal.warn, gw);
   if (two_cols)
     ImGui::SameLine();
-  history_graph("##g_mem", "Memory", series(&perf_sample::memory_mb), "MB", 64.0f, kGood, gw);
+  history_graph("##g_mem", "Memory", series(&perf_sample::memory_mb), "MB", 64.0f, pal.good, gw);
   history_graph("##g_clients", "Clients", series(&perf_sample::clients), "", 4.0f, ImVec4{0.45f, 0.75f, 0.85f, 1.0f},
                 w);
 
@@ -1255,7 +1431,7 @@ void server_overlay::draw_performance() {
         last_trace_ = detail::newest_trace(prof.dir);
       }
       if (active) {
-        ImGui::PushStyleColor(ImGuiCol_Text, kDanger);
+        ImGui::PushStyleColor(ImGuiCol_Text, pal.danger);
         ImGui::TextUnformatted("Recording");
         ImGui::PopStyleColor();
         ImGui::SameLine();
@@ -1268,7 +1444,7 @@ void server_overlay::draw_performance() {
       } else {
         muted_text("Not recording");
         ImGui::SameLine();
-        if (styled_button("Start recording", ImVec4{0.08f, 0.42f, 0.72f, 1.0f}) && !prof.start() && notifications_)
+        if (styled_button("Start recording", pal.primary) && !prof.start() && notifications_)
           notifications_->post({"Couldn't start recording", prof.dir.string(), {}, notification_kind::error});
       }
       if (begin_kv("##prof_kv")) {
@@ -1602,13 +1778,13 @@ void server_overlay::draw_settings(const std::vector<overlay_client_info>& clien
           ImGui::TextUnformatted(row->info.label.empty() ? row->info.name.c_str() : row->info.label.c_str());
           if (row->info.restart) {
             ImGui::SameLine();
-            badge("restart", kWarn);
+            badge("restart", pal.warn);
             ImGui::SetItemTooltip("Takes effect after a restart");
           }
           if (!row->info.description.empty())
             muted_wrapped(row->info.description);
           if (!row->error.empty()) {
-            ImGui::PushStyleColor(ImGuiCol_Text, kDanger);
+            ImGui::PushStyleColor(ImGuiCol_Text, pal.danger);
             ImGui::TextWrapped("%s", row->error.c_str());
             ImGui::PopStyleColor();
           }
@@ -1720,13 +1896,13 @@ void server_overlay::draw_logs() {
       for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i) {
         const std::string& l = *shown[static_cast<size_t>(i)];
         const std::string lo = lower(l);
-        ImVec4 col = kText;
+        ImVec4 col = pal.text;
         if (lo.find("error") != std::string::npos || lo.find("fatal") != std::string::npos)
-          col = kDanger;
+          col = pal.danger;
         else if (lo.find("warn") != std::string::npos)
-          col = kWarn;
+          col = pal.warn;
         else if (lo.find("[rmi]") != std::string::npos)
-          col = kMuted;
+          col = pal.muted;
         ImGui::PushStyleColor(ImGuiCol_Text, col);
         ImGui::TextUnformatted(l.c_str());
         ImGui::PopStyleColor();
@@ -1748,7 +1924,7 @@ void server_overlay::draw_about() {
   if (begin_card("##about", "", {w, 0.0f})) {
     {
       font_scale big{2.4f};
-      ImGui::PushStyleColor(ImGuiCol_Text, kAccent);
+      ImGui::PushStyleColor(ImGuiCol_Text, pal.accent);
       ImGui::TextUnformatted("wish");
       ImGui::PopStyleColor();
     }

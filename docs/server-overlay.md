@@ -27,6 +27,16 @@ An invalid value prints a warning and disables the shortcut. The flag can be
 saved with `--save_defaults`. `wish desktop --with_server` has the overlay
 too.
 
+## Theme
+
+The **Theme** button left of the clock picks the overlay's colors: its own
+look (**Overlay**, the default: dark glass with a blue accent) or any theme
+the server has -- Wish, Light, Dark, Classic, and any a project registered
+with `register_theme()`. A theme's window, frame and text colors and its
+accent color carry over to the overlay. The choice is saved in the server
+store (`wish.server.overlay.theme`, Server category), so it lasts across
+runs and can be changed on the Settings page too.
+
 ## Pages
 
 | Page | Shows |

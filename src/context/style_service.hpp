@@ -8,7 +8,9 @@
 
 #include <atomic>
 #include <memory>
+#include <optional>
 #include <string>
+#include <vector>
 
 namespace bdg::wish {
 
@@ -29,6 +31,7 @@ using style_service_ptr = std::shared_ptr<style_service>;
  * | `set`    | any flat dynamic field map    | Merges fields into the active style           |
  * | `get`    | —                             | Returns current style as a flat dynamic       |
  * | `preset` | `"name"`: string              | Resets to a built-in preset and clears overrides |
+ * | `themes` | —                             | Indexed list of `{name, label, light}`: the themes the server's renderer has (see `registered_themes()`) |
  *
  * ## Supported `preset` names
  *
@@ -165,5 +168,38 @@ class style_service : public bison::dynamic {
 
 /// @brief Register `"__WishStyle"` in the `"wish"` bison class namespace.
 void register_style_service();
+
+// ── Theme catalog ─────────────────────────────────────────────────────────────
+//
+// The names of the themes a renderer can apply, kept here (renderer-agnostic)
+// so tools that offer a theme choice -- the desktop's tray, the server
+// overlay, the settings metadata -- list every theme instead of hard-coding
+// some. The ImGui backend's `register_theme()` adds to it; any project
+// registering its own theme there shows up everywhere automatically.
+
+/// @brief One registered theme.
+struct theme_info {
+  std::string name; ///< Preset name for `style_service::set_preset()`.
+  std::string label; ///< Shown name ("Wish").
+  bool is_light{false}; ///< Whether it reads as a light theme.
+};
+
+/// @brief Adds @p info to the catalog, replacing a theme with the same name
+///        (in place, keeping its position). Thread-safe.
+void add_theme_info(theme_info info);
+
+/// @brief The registered themes, in registration order. Thread-safe.
+std::vector<theme_info> registered_themes();
+
+/// @brief The registered theme named @p name, if any.
+std::optional<theme_info> find_theme_info(const std::string& name);
+
+/// @brief The theme after @p name in registered_themes(), wrapping around
+///        (the first one when @p name isn't registered); empty when none is.
+std::string next_theme(const std::string& name);
+
+/// @brief @p name with its first letter upper-cased ("wish" -> "Wish"):
+///        the label of a theme registered without one.
+std::string default_theme_label(const std::string& name);
 
 } // namespace bdg::wish

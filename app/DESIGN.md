@@ -262,7 +262,7 @@ by the server: `src/ui/ui_elements/desktop_shell.cpp` (classes) and
 `wish desktop` multiplexes downstream clients into one upstream wish server
 session and turns that server's host window into a Windows/macOS-like
 desktop: wallpaper, desktop icons, and a bottom taskbar with a Start menu,
-pinned apps, open windows and a tray (connected apps, theme toggle, clock
+pinned apps, open windows and a tray (connected apps, theme menu, clock
 with a calendar, show-desktop strip). See [docs/cli.md](../docs/cli.md#wish-desktop)
 for the user-facing behavior.
 
@@ -456,9 +456,20 @@ keeps an MRU list), not focused this frame, because clicking the taskbar
 takes focus itself.
 
 The chrome is drawn with the shell session's style (`imgui_renderer::
-with_session_style()`/`session_style()`), so the tray's theme toggle (which
+with_session_style()`/`session_style()`), so the tray's theme menu (which
 the bridge applies through `__WishStyle.preset` on that session) restyles
 the chrome and every client window together.
+
+The themes offered are never a hard-coded list. `register_theme()` (the
+ImGui backend) also records each theme in a renderer-agnostic catalog,
+`registered_themes()` in `src/context/style_service.hpp`, so a theme a
+project registers shows up everywhere at once: the tray menu reads the
+catalog directly (it is drawn server-side), and the bridge -- a separate
+process -- fetches it with `__WishStyle.themes` on connect, for the
+Settings choices of `wish.desktop.theme` and for `toggle_theme`'s cycle. The
+server overlay derives its palette from the chosen theme's `ImGuiStyle`
+(window, frame and text colors; its most saturated accent-like color as the
+accent), keeping its own look as the default.
 
 ### Locking
 

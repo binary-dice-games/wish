@@ -4,6 +4,7 @@
 #include <standalone/standalone.hpp>
 
 #include <client/notification_rpc.hpp>
+#include <client/style_rpc.hpp>
 #include <client/user_store_rpc.hpp>
 #include <context/file_service.hpp>
 #include <server/registry.hpp>
@@ -458,6 +459,10 @@ std::future<std::string> standalone::create_temp_dir(const std::string& qualifie
     args["app"_key] = qualified_app;
     return fs_proxy_->call("create_temp_dir"_key, std::move(args)).get().as<std::string>("result"_key);
   });
+}
+
+std::future<std::vector<theme_info>> standalone::list_themes() {
+  return std::async(std::launch::async, [this]() { return detail::list_themes_sync(*style_proxy_); });
 }
 
 std::future<void> standalone::set_style_preset(const std::string& name) {

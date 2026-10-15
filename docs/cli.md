@@ -235,7 +235,8 @@ that server's window into a desktop:
   - **Open windows**: one button per app or window. Click to bring it to the
     front, click the active one to minimize it; right-click for Minimize /
     Restore, New window, Pin and Close.
-  - **Tray**: number of connected apps, a light/dark theme toggle, and the
+  - **Tray**: number of connected apps, a theme menu with every theme the
+    server has (Wish, Light, Dark, Classic, and any a project registered), and the
     time and date (click for a calendar). The strip at the far right edge
     minimizes every window ("show desktop"); click it again to restore them.
 - **Desktop icons**: double-click to start the app; right-click to remove

@@ -148,8 +148,9 @@ static std::unordered_map<std::string, theme_entry>& theme_registry() {
   return registry;
 }
 
-void register_theme(const std::string& name, theme_fn fn, bool is_light) {
+void register_theme(const std::string& name, theme_fn fn, bool is_light, const std::string& label) {
   theme_registry()[name] = {fn, is_light};
+  add_theme_info({name, label, is_light});
 }
 
 // Fallback theme applied -- with a logged warning -- when a session's
@@ -164,11 +165,12 @@ static constexpr const char* kDefaultThemeName = "wish";
 // as file-local static initializers -- so registration doesn't depend on
 // whether that .cpp's object file happens to get pulled out of the static
 // archive (it only would if something else referenced a symbol from it).
+// The order is the order theme pickers list them: the default first.
 static bool register_built_in_themes() {
-  register_theme_dark();
-  register_theme_light();
-  register_theme_classic();
   register_theme_wish();
+  register_theme_light();
+  register_theme_dark();
+  register_theme_classic();
   return true;
 }
 static const bool built_in_themes_registered_ = register_built_in_themes();

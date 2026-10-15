@@ -26,6 +26,7 @@
 #include <imgui.h>
 #include <imgui_internal.h>
 
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -754,4 +755,79 @@ TEST_F(ServerOverlayTest, ToastsStayAboveTheOverlayActionBar) {
   ImGuiWindow* w = ImGui::FindWindowByName("##wish_notifications");
   ASSERT_NE(w, nullptr);
   EXPECT_LE(w->Pos.y + w->Size.y, ImGui::GetIO().DisplaySize.y - bar);
+}
+
+// ── Themes ──────────────────────────────────────────────────────────────────
+
+TEST(StyleThemes, ClientListsTheServersThemes) {
+  rmi::transport::memory_server_transport transport;
+  wish::server srv{transport, std::make_unique<wish::null_renderer>()};
+  srv.start();
+  std::vector<wish::theme_info> themes;
+  {
+    notify_test_client c{transport.connect()};
+    c.body = [&](notify_test_client& self) { themes = self.list_themes().get(); };
+    c.run(dynamic{});
+  }
+  srv.stop();
+  const auto expected = wish::registered_themes();
+  ASSERT_EQ(themes.size(), expected.size());
+  for (size_t i = 0; i < themes.size(); ++i) {
+    EXPECT_EQ(themes[i].name, expected[i].name);
+    EXPECT_EQ(themes[i].label, expected[i].label);
+    EXPECT_EQ(themes[i].is_light, expected[i].is_light);
+  }
+  EXPECT_EQ(themes.front().name, "wish");
+}
+
+TEST(ServerOverlayDetail, ThemeOptionsAreTheOverlayLookThenEveryTheme) {
+  const auto options = wish::detail::overlay_theme_options();
+  ASSERT_EQ(options.size(), 1 + wish::registered_themes().size());
+  EXPECT_EQ(options[0].value, wish::kOverlayTheme);
+  for (const auto& t : wish::registered_themes()) {
+    EXPECT_TRUE(std::any_of(options.begin(), options.end(), [&](const auto& o) { return o.value == t.name; }))
+        << t.name;
+  }
+  EXPECT_TRUE(wish::detail::overlay_palette_is_builtin(wish::kOverlayTheme));
+  EXPECT_TRUE(wish::detail::overlay_palette_is_builtin("no-such-theme"));
+  EXPECT_FALSE(wish::detail::overlay_palette_is_builtin("dark"));
+}
+
+TEST_F(ServerOverlayTest, ThemeIsSavedInTheServerStoreAndFollowed) {
+  auto& ov = make_overlay();
+  EXPECT_EQ(ov.theme(), wish::kOverlayTheme);
+  const auto setting = wish::detail::overlay_theme_setting();
+  ov.set_theme("dark");
+  EXPECT_EQ(ov.theme(), "dark");
+  EXPECT_EQ(wish::settings::text_of(stores_->server_store().get(), setting), "dark");
+
+  // A new overlay (the next run) starts with it.
+  overlay_.reset();
+  auto& again = make_overlay();
+  EXPECT_EQ(again.theme(), "dark");
+
+  // Changed elsewhere (the Settings page): followed within a second.
+  ASSERT_EQ(wish::settings::write_setting(*stores_->server_store(), setting, std::string{"classic"}), "");
+  again.set_open(true);
+  frame();
+  ImGui::GetIO().DeltaTime = 1.0f / 60.0f;
+  std::this_thread::sleep_for(1100ms);
+  frame();
+  EXPECT_EQ(again.theme(), "classic");
+
+  again.set_theme("no-such-theme");
+  EXPECT_EQ(again.theme(), wish::kOverlayTheme);
+}
+
+TEST_F(ServerOverlayTest, EveryThemeRenders) {
+  auto& ov = make_overlay();
+  ov.set_open(true);
+  for (const auto& opt : wish::detail::overlay_theme_options()) {
+    ov.set_theme(opt.value);
+    for (auto p : {wish::server_overlay::page::overview, wish::server_overlay::page::settings}) {
+      ov.set_page(p);
+      frame();
+    }
+    EXPECT_EQ(ov.theme(), opt.value);
+  }
 }

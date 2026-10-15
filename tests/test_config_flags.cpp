@@ -8,6 +8,7 @@
 
 #include <context/persistent_store.hpp>
 #include <context/settings_store.hpp>
+#include <context/style_service.hpp>
 
 #include <gflags/gflags.h>
 #include <gtest/gtest.h>
@@ -290,6 +291,26 @@ TEST_F(ConfigFlagsTest, LoadCliConfigClearDefaultsErasesEntry) {
 
 // ── Settings metadata ────────────────────────────────────────────────────────
 
+TEST_F(ConfigFlagsTest, ThemeChoicesAreTheRegisteredThemes) {
+  // As a renderer would (this binary links none): the built-in ones, then a
+  // project's own -- so later tests in this process still see the built-ins.
+  for (const char* name : {"wish", "light", "dark", "classic"})
+    wish::add_theme_info({name, {}, false});
+  wish::add_theme_info({"test_solarized", "Solarized", false});
+  wish::persistent_store store(dir_ / "server_store.bison");
+  wish::describe_config_flags(store, "wish.cli.server", {}, "wish server");
+  auto catalog = wish::settings::collect(store);
+  const auto theme = std::find_if(catalog.settings.begin(), catalog.settings.end(), [](const auto& s) {
+    return s.info.name == "wish.cli.server.theme";
+  });
+  ASSERT_NE(theme, catalog.settings.end());
+  const auto& options = theme->info.options;
+  EXPECT_EQ(options.size(), wish::registered_themes().size());
+  EXPECT_TRUE(std::any_of(options.begin(), options.end(), [](const auto& o) {
+    return o.value == "test_solarized" && o.label == "Solarized";
+  }));
+}
+
 TEST_F(ConfigFlagsTest, DescribeConfigFlagsRecordsTheKnownFlags) {
   wish::persistent_store store(dir_ / "server_store.bison");
   wish::describe_config_flags(store, "wish.cli.server", {"font_size"}, "wish server");
@@ -306,7 +327,9 @@ TEST_F(ConfigFlagsTest, DescribeConfigFlagsRecordsTheKnownFlags) {
     if (s.info.name == "wish.cli.server.theme") {
       EXPECT_EQ(s.info.category, "appearance");
       EXPECT_EQ(std::get<std::string>(s.info.default_value), "wish");
-      EXPECT_EQ(s.info.options.size(), size_t{4});
+      // Every registered theme; the built-in four when none is (no renderer).
+      const size_t registered = wish::registered_themes().size();
+      EXPECT_EQ(s.info.options.size(), registered == 0 ? size_t{4} : registered);
     } else {
       // --lang's built-in default "" is not an option: the first one is used.
       EXPECT_EQ(std::get<std::string>(s.info.default_value), "en");

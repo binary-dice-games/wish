@@ -15,6 +15,7 @@
 #include <context/context.hpp>
 #include <context/persistent_store.hpp>
 #include <context/settings_store.hpp>
+#include <context/style_service.hpp>
 #include <server/machine_info.hpp>
 #include <server/notifications.hpp>
 #include <server/perf_stats.hpp>
@@ -37,6 +38,10 @@ namespace bdg::wish {
 
 /// @brief Project home page, opened from the overlay's About page.
 inline constexpr const char* kWishGithubUrl = "https://github.com/binary-dice-games/wish";
+/// @brief Theme name of the overlay's own look (the default), next to the
+///        registered wish themes it can also use.
+inline constexpr const char* kOverlayTheme = "overlay";
+
 /// @brief Documentation index, opened from the overlay's About page.
 inline constexpr const char* kWishDocsUrl = "https://github.com/binary-dice-games/wish/tree/main/docs";
 
@@ -172,6 +177,19 @@ class server_overlay {
    */
   void take_screenshot();
 
+  /// @brief The overlay's theme: `kOverlayTheme` (its own look) or a
+  ///        registered wish theme (see `registered_themes()`).
+  const std::string& theme() const;
+
+  /**
+   * @brief Switches the overlay's colors to @p name (`kOverlayTheme` or a
+   *        registered theme; anything else falls back to `kOverlayTheme`)
+   *        and saves the choice in the server store
+   *        (`wish.server.overlay.theme`), so it is kept across runs and
+   *        editable on the Settings page.
+   */
+  void set_theme(const std::string& name);
+
   /// @brief Height of the bottom action bar while the overlay is shown
   ///        (0 when hidden), so toasts can stay clear of its buttons.
   float bottom_bar_height() const;
@@ -201,6 +219,7 @@ class server_overlay {
   void refresh_machine(bool force);
   void refresh_settings(const std::vector<overlay_client_info>& clients, bool force);
   void refresh_log(bool force);
+  void refresh_theme(bool force);
   void update_capture();
   bool draw_setting_editor(settings_row& row);
 
@@ -234,6 +253,10 @@ class server_overlay {
   std::chrono::steady_clock::time_point log_at_{};
   std::filesystem::file_time_type log_mtime_{};
 
+  // Theme: re-read from the server store every second.
+  std::string theme_{kOverlayTheme};
+  std::chrono::steady_clock::time_point theme_at_{};
+
   // Screenshot in progress; null otherwise.
   std::shared_ptr<capture_state> capture_;
 
@@ -252,6 +275,18 @@ std::vector<std::string> read_log_tail(const std::filesystem::path& path, size_t
 ///        plus @p connected, sorted and unique; unsafe names are skipped.
 std::vector<std::string> list_store_identities(const std::filesystem::path& store_dir,
                                                const std::vector<std::string>& connected);
+
+/// @brief Whether @p theme selects the overlay's own look: `kOverlayTheme`,
+///        empty, or a name no renderer registered.
+bool overlay_palette_is_builtin(const std::string& theme);
+
+/// @brief The overlay theme choices: its own look, then every registered
+///        theme (with "(light)"/"(dark)"), as setting options.
+std::vector<settings::setting_option> overlay_theme_options();
+
+/// @brief The `wish.server.overlay.theme` setting (server store, Server
+///        category, Overlay section).
+settings::setting_info overlay_theme_setting();
 
 /// @brief A new screenshot file name in @p dir for local time @p t:
 ///        "wish-YYYYMMDD-HHMMSS.png", with "-2", "-3", ... appended when

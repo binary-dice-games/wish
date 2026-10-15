@@ -9,6 +9,7 @@
 #include <context/context.hpp>
 #include <context/logger.hpp>
 #include <context/persistent_store.hpp>
+#include <context/style_service.hpp>
 #include <i18n/translations.hpp>
 #include <server/renderer.hpp>
 #include "src/rmi/standalone/standalone.hpp"
@@ -187,6 +188,9 @@ class standalone : public bison::rmi::standalone {
 
   /// @copydoc bdg::wish::client::set_style_preset
   std::future<void> set_style_preset(const std::string& name);
+
+  /// @copydoc bdg::wish::client::list_themes
+  std::future<std::vector<theme_info>> list_themes();
 
   /// @copydoc bdg::wish::client::set_style
   std::future<void> set_style(bison::dynamic params);

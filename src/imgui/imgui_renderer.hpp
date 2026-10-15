@@ -63,7 +63,11 @@ using theme_fn = void (*)(ImGuiStyle*);
 ///                   into data once (see `Label.text_color_light`/
 ///                   `text_color_dark` and `tail::append_row()` for the
 ///                   pattern that replaced doing that).
-void register_theme(const std::string& name, theme_fn fn, bool is_light);
+/// @param label     Name shown in theme pickers (the desktop's tray, the
+///                   server overlay, settings); empty: @p name capitalized.
+///                   Also lists the theme in `registered_themes()`
+///                   (style_service.hpp), so every picker offers it.
+void register_theme(const std::string& name, theme_fn fn, bool is_light, const std::string& label = {});
 
 /// @brief Look up a theme registered with `register_theme()`.
 /// @param name  Preset name (`"light"`, `"dark"`, `"classic"`, `"wish"`, or

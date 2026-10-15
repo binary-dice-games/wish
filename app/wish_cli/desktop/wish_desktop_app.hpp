@@ -11,6 +11,7 @@
 #include "app/wish_cli/desktop/process_launcher.hpp"
 #include "src/app/bridge/bridge_app.hpp"
 #include "src/bison/bison_sync.hpp"
+#include "src/context/style_service.hpp"
 #include "src/rmi/bridge/bridge.hpp"
 #include "src/rmi/client/proxy.hpp"
 #include "src/rmi/transport/memory_transport.hpp"
@@ -42,7 +43,7 @@ struct desktop_settings {
   bool saved_pins{false};
   std::vector<std::string> pinned; ///< Entry ids on the taskbar.
   std::vector<std::string> on_desktop; ///< Entry ids with a desktop icon.
-  std::string theme; ///< Style preset ("dark"/"light"), or empty.
+  std::string theme; ///< Style preset (any registered theme), or empty.
 };
 
 /**
@@ -236,6 +237,11 @@ class wish_desktop : public bison::rmi::bridge {
   void add_unknown_apps();
   void save_settings();
   void apply_theme(const std::string& preset);
+
+  /// @brief The theme toggle_theme switches to after @p current: the next
+  ///        of the server's themes, wrapping around (light/dark with an
+  ///        older server that doesn't list them).
+  std::string next_theme_name(const std::string& current) const;
   /// Worker thread: uploads the wallpaper image if it, or the file behind
   /// it, changed since the last upload. Returns whether what the shell shows
   /// (its wallpaper or the error) changed.
@@ -251,6 +257,8 @@ class wish_desktop : public bison::rmi::bridge {
   std::optional<bison::rmi::proxy::dynamic> template_proxy_;
   std::optional<bison::rmi::proxy::dynamic> user_store_proxy_;
   std::optional<bison::rmi::proxy::dynamic> style_proxy_;
+  // The upstream server's themes (style "themes"), fetched once on connect.
+  bison::synchronized<std::vector<theme_info>> themes_;
 
   bison::synchronized<shared_state> state_;
 

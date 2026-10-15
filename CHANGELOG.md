@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Toast notifications: `wish::notification_center` (`renderer::notifications()`, `context::notifications`) lets server-side code post info/success/warning/error toasts, drawn in a corner of the server's screen.
 - Apps post notifications too: `notify()` / `dismiss_notification()` / `has_notifications()` on `wish::client`, `wish::standalone` and `wish_app_host`; C ABI `wish_notify()` / `wish_notify_dismiss()` (`WISH_NOTIFY_*` kinds); `notify` / `Notify` / `showNotification` in the C++, Python, C#, Rust, Go and Java bindings. Each shows the sender's identity; at most 4 per session.
 - Server overlay **Performance** page: two minutes of frame time, frames drawn, CPU, memory and clients, and Start/Stop recording of a Perfetto trace when the server runs with `--profiling_dir`.
+- Every registered theme everywhere a theme is picked: the desktop tray's theme button opens a menu of all of them, `toggle_theme` cycles through all of them, and the server overlay gets a **Theme** picker (its own look, or any theme; saved as `wish.server.overlay.theme`). The Settings choices for `--theme` and the desktop theme list them too. `registered_themes()` / `find_theme_info()` (theme catalog, `style_service.hpp`), an optional `label` for `register_theme()`, the `__WishStyle.themes` RMI method and `client::list_themes()` / `standalone::list_themes()`.
 - Server overlay **Screenshot** button: saves the clients' windows (without the overlay) as a PNG in `--screenshot_dir` (default `wish_screenshots`); works with the SDL3 and the web renderer. `renderer::request_screenshot()`.
 - `wish desktop --with_server`: runs the wish server in the desktop's own process, connected through the in-memory transport, so a single command starts both (`wish` binary only; the `wish server` flags such as `--renderer` apply).
 - `wish desktop`: an app's main window has Windows-style minimize, maximize/restore and close buttons at the top right of its title bar (double-click the title to maximize), and a border with a shadow that sets it apart from overlapping windows.
@@ -150,6 +151,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `wish desktop`: the tray's theme button opens a menu of every theme instead of switching between light and dark, and the `toggle_theme` action cycles through all of them.
 - Python `AutomationClient.launch()` starts `wish server` with `--overlay_hotkey=` (no server overlay or startup notification) unless the command sets that flag, so the toast never covers widgets under test.
 - The bundled tools' panels no longer have a close button that closed the whole tool; the app window's close button (or the taskbar's "Close window") closes it. Dialogs, nano's file windows and its Search panel keep theirs.
 - Only one `wish desktop` can run at a time: a second one prints `wish desktop is already running` and exits with 1.

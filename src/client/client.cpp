@@ -3,6 +3,7 @@
 /// @brief Implementation of wish::client.
 #include <client/client.hpp>
 #include <client/notification_rpc.hpp>
+#include <client/style_rpc.hpp>
 #include <client/user_store_rpc.hpp>
 
 #include <ui/ui_descriptor.hpp>
@@ -349,6 +350,10 @@ std::future<void> client::set_style(bison::dynamic params) {
     // oneway=true: same reasoning as set_style_preset above.
     style_proxy_->call("set"_key, std::move(p), true).get();
   });
+}
+
+std::future<std::vector<theme_info>> client::list_themes() {
+  return std::async(std::launch::async, [this]() { return detail::list_themes_sync(*style_proxy_); });
 }
 
 std::future<bison::dynamic> client::get_style() {

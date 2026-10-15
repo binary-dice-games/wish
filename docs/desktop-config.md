@@ -38,7 +38,7 @@ appearance:
 | `wallpaper` | *(none)* | Image file (png, jpg, ...) on the desktop's machine. A relative path is relative to this file's directory; `~/` and `{home}` expand. Empty draws the built-in gradient. The `--wallpaper` flag overrides it. |
 | `wallpaper_fit` | `cover` | How the image fills the screen: `cover` (fill, cropping the overflow), `contain` (whole image, centered), `stretch`, `center` (actual size) or `tile`. |
 | `background` | *(gradient)* | Color as `"#RRGGBB"` or `"#RRGGBBAA"` (quote it: `#` starts a YAML comment). Replaces the built-in gradient and shows around a wallpaper that doesn't cover the screen. |
-| `theme` | *(none)* | Theme preset (`light`, `dark`, ...) applied when the desktop starts and whenever you change it here. In between, the tray's theme toggle still switches it. Leave it out to keep the theme last chosen with the toggle. |
+| `theme` | *(none)* | Theme preset (`wish`, `light`, `dark`, `classic`, or any theme the server registered) applied when the desktop starts and whenever you change it here. In between, the tray's theme menu still switches it. Leave it out to keep the theme last chosen in the menu. |
 | `desktop_icons` | `true` | Shows the desktop icons. |
 
 The image is uploaded to the server the desktop draws on, so it doesn't need
@@ -156,8 +156,8 @@ relayed to the upstream server):
 |--------|-----------|--------|
 | `quit` | — | Quits the desktop (and closes the apps it started). |
 | `shutdown_server` | — | Asks the upstream server to shut down. |
-| `set_theme` | `preset` (`dark`, `light`, ...) | Applies and saves a theme preset. |
-| `toggle_theme` | — | Switches between light and dark. |
+| `set_theme` | `preset` (`wish`, `light`, `dark`, `classic`, ...) | Applies and saves a theme preset. |
+| `toggle_theme` | — | Switches to the next of the server's themes (wish, light, dark, classic, then any the server registered), wrapping around. |
 | `reload_config` | — | Re-reads the configuration file. |
 | `launch` | `id` | Starts a Start menu entry; returns `{ok}`. |
 | `items` | — | (RMI only) Returns `{items: [{id, label, app}, ...]}` for the `run`/`action` entries. |

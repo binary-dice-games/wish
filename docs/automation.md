@@ -465,6 +465,10 @@ desk = subprocess.Popen([wish, "desktop", "--upstream_transport", "tcp", "--upst
 - **Ctrl+Tab never reaches the page** in Chromium; the switcher also
   answers to Ctrl+\` (`keyboard.down("Control")`, `press("Backquote")`,
   screenshot, `keyboard.up("Control")`).
+- **The tray's theme button opens a menu** of every registered theme
+  (1440x900, light theme: the button at (1270, 874); the menu opens upward,
+  items about 22 px apart, Wish at y≈762 down to Classic at y≈828). Picking
+  one restyles the desktop within a second (verified 2026-10).
 - **Theme and pins persist between runs** in `--store_dir`: delete it for a
   clean first run (nano, mc and top pinned, light theme).
 - **Pass `--config <scratch>/desktop.yaml`** so the desktop doesn't write

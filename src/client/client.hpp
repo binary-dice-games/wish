@@ -7,6 +7,7 @@
 
 #include <client/wish_app_host.hpp>
 #include <context/settings_schema.hpp>
+#include <context/style_service.hpp>
 #include <server/notifications.hpp>
 #include <i18n/translations.hpp>
 
@@ -326,8 +327,17 @@ class client : public bison::rmi::client {
   std::future<std::string> create_temp_dir(const std::string& qualified_app);
 
   /**
-   * @brief Apply a named built-in style preset for this session.
-   * @param name  `"dark"`, `"light"`, or `"classic"`.
+   * @brief The themes the server can apply with set_style_preset(), in the
+   *        order theme pickers show them (built in: wish, light, dark,
+   *        classic, plus any the server registered). Empty for an older
+   *        server without the call.
+   */
+  std::future<std::vector<theme_info>> list_themes();
+
+  /**
+   * @brief Apply a named style preset (theme) for this session.
+   * @param name  A theme from list_themes(), e.g. `"wish"`, `"dark"`,
+   *              `"light"` or `"classic"`.
    *
    * Clears any per-field overrides set by `set_style`; the preset becomes the
    * new baseline.  Call `set_style` after this to add individual overrides.

@@ -8,6 +8,7 @@
 #include "app/wish_cli/env_flags.hpp"
 
 #include <context/settings_store.hpp>
+#include <context/style_service.hpp>
 
 #include <gflags/gflags.h>
 
@@ -267,6 +268,15 @@ void describe_config_flags(
     s.section = section;
     s.type = k.type;
     s.options = k.options;
+    // Every theme the renderer registered, not only the built-in ones
+    // listed above (which stay as the fallback for a build without one).
+    if (std::string(k.name) == "theme") {
+      std::vector<settings::setting_option> themes;
+      for (const auto& t : registered_themes())
+        themes.push_back({t.name, t.label});
+      if (!themes.empty())
+        s.options = std::move(themes);
+    }
     // "none" is a renderer only standalone takes.
     if (std::string(k.name) == "renderer" && entry_name != kStandaloneConfigEntry)
       s.options.pop_back();

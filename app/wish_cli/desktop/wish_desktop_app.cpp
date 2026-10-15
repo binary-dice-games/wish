@@ -9,6 +9,7 @@
 #include "src/bison/bison.hpp"
 #include "src/client/app_registry.hpp"
 #include "src/client/desktop_endpoint.hpp"
+#include "src/client/style_rpc.hpp"
 #include "src/client/user_store_rpc.hpp"
 #include "src/context/store_dir.hpp"
 #include "src/rmi/shared/constants.hpp"
@@ -337,6 +338,14 @@ void wish_desktop::build_chrome() {
     return;
 
   try {
+    // The themes the server has: the settings' choices and toggle_theme's
+    // cycle.
+    try {
+      style_proxy_ = upstream().instantiate("wish"_key, "__WishStyle"_key).get();
+      *themes_.wlock() = detail::list_themes_sync(*style_proxy_);
+    } catch (...) {
+      style_proxy_.reset();
+    }
     // Saved settings (identified upstream sessions only).
     try {
       user_store_proxy_ = upstream().instantiate("wish"_key, "__WishUserStore"_key).get();
@@ -352,7 +361,10 @@ void wish_desktop::build_chrome() {
         theme.description = "Theme of the desktop and the apps on it; the tray's theme button switches it too.";
         theme.category = "desktop";
         theme.type = settings::setting_type::choice;
-        theme.options = {{"light", "Light"}, {"dark", "Dark"}, {"wish", "Wish"}, {"classic", "Classic"}};
+        for (const auto& t : *themes_.rlock())
+          theme.options.push_back({t.name, t.label});
+        if (theme.options.empty()) // an older server: the built-in ones
+          theme.options = {{"wish", "Wish"}, {"light", "Light"}, {"dark", "Dark"}, {"classic", "Classic"}};
         theme.default_value = std::string{"light"};
         theme.restart = true;
         detail::describe_setting_sync(*user_store_proxy_, theme);
@@ -396,11 +408,6 @@ void wish_desktop::build_chrome() {
     }
 
     // Theme.
-    try {
-      style_proxy_ = upstream().instantiate("wish"_key, "__WishStyle"_key).get();
-    } catch (...) {
-      style_proxy_.reset();
-    }
     if (!saved.theme.empty())
       apply_theme(saved.theme);
 
@@ -767,7 +774,7 @@ dynamic wish_desktop::run_action(const std::string& action, const dynamic& args)
   } else if (action == "set_theme" || action == "toggle_theme") {
     std::string preset = args.get_as<std::string>("preset"_key, std::string{});
     if (action == "toggle_theme")
-      preset = state_.rlock()->settings.theme == "dark" ? "light" : "dark";
+      preset = next_theme_name(state_.rlock()->settings.theme);
     if (preset.empty())
       throw std::runtime_error("set_theme: missing \"preset\"");
     state_.wlock()->settings.theme = preset;
@@ -794,6 +801,17 @@ dynamic wish_desktop::run_action(const std::string& action, const dynamic& args)
     throw std::runtime_error("unknown desktop action '" + action + "'");
   }
   return result;
+}
+
+std::string wish_desktop::next_theme_name(const std::string& current) const {
+  const auto themes = *themes_.rlock();
+  if (themes.empty()) // an older server: the two built-in ones that always exist
+    return current == "dark" ? "light" : "dark";
+  for (size_t i = 0; i < themes.size(); ++i) {
+    if (themes[i].name == current)
+      return themes[(i + 1) % themes.size()].name;
+  }
+  return themes.front().name;
 }
 
 void wish_desktop::apply_theme(const std::string& preset) {
