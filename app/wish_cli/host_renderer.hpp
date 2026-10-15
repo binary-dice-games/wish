@@ -8,11 +8,30 @@
 
 #include <context/context.hpp>
 #include <imgui/imgui_desktop_shell.hpp>
+#include <imgui/imgui_server_overlay.hpp>
 #include <ui/ui_element.hpp>
 
+#include <memory>
 #include <vector>
 
 namespace bdg::wish {
+
+/**
+ * @brief Non-template face of `host_renderer`, so the server app can turn
+ *        on the server overlay without knowing the backend type.
+ */
+class server_overlay_host {
+ public:
+  virtual ~server_overlay_host() = default;
+
+  /**
+   * @brief Turns on the server overlay (see `server_overlay`) and posts a
+   *        notification telling the operator its hotkey. Call before the
+   *        server starts rendering. A null `info.shutdown` defaults to
+   *        closing the renderer, which stops the server.
+   */
+  virtual void enable_server_overlay(server_overlay_info info) = 0;
+};
 
 /**
  * @brief Extends a given imgui-based renderer backend (sdl3_renderer or
@@ -22,6 +41,10 @@ namespace bdg::wish {
  *          - A menu bar with host-level actions (including Quit),
  *            extensible by sessions that register a MenuBarExtension
  *            top-level object.
+ *          - Optionally (enable_server_overlay()), the server overlay,
+ *            toggled by a hotkey, drawn on top of every session.
+ *          - Toast notifications (`renderer::notifications()`), drawn on
+ *            top of everything.
  *        When a session registers a `DesktopShell` top-level object (the
  *        `wish desktop` bridge does), the menu bar is replaced by the
  *        desktop chrome instead -- wallpaper, desktop icons and a taskbar
@@ -41,15 +64,35 @@ namespace bdg::wish {
  * grows, and callers only need the declaration to use the type.
  */
 template <typename Base>
-class host_renderer : public Base {
+class host_renderer : public Base, public server_overlay_host {
  public:
   using Base::Base;
 
+  void enable_server_overlay(server_overlay_info info) override;
+
   void render_server_frame(const std::vector<sync_context_ptr>& sessions) override;
+
+  /// @brief Draws the server overlay (when open) and the notifications.
+  void render_server_overlay(const std::vector<sync_context_ptr>& sessions) override;
+
+  /// @brief Also true while the overlay is open or a notification is on
+  ///        screen (clock, animations, expiry).
+  bool wants_continuous_redraw() const override;
+
+  /// @brief Also true when a notification was posted or removed, so a
+  ///        notification posted while nothing else changes still shows.
+  bool consume_render_request() override;
+
+  /// @brief The overlay, or null when not enabled.
+  server_overlay* overlay() {
+    return overlay_.get();
+  }
 
  private:
   /// Cross-frame UI state of the desktop chrome (see render_desktop_shell()).
   desktop_shell_state desktop_state_;
+  std::unique_ptr<server_overlay> overlay_;
+  bool notifications_visible_{false};
 };
 
 } // namespace bdg::wish

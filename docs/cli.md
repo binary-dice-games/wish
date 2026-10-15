@@ -101,6 +101,7 @@ launch.
 | `--sandbox_root PATH` | *(empty)* | Keep session sandboxes across connections: each client gets `PATH/<username>` (its `--username`, else `default`) instead of a temp directory deleted on disconnect. Trusts the client-supplied name (`local_auth_module`) — local/single-user use only; see [src/auth/DESIGN.md](../src/auth/DESIGN.md) |
 | `--store_dir PATH` | `~/.wish` | Directory holding the persistent server store and per-user stores. The server always trusts a client's `--username` as its identity: identified clients get a user store, clients without one are anonymous. See [docs/persistent-store.md](persistent-store.md) |
 | `--lang CODE` | *(empty: `en`)* | Default UI language of every session (e.g. `es`); a client's own `--lang` overrides it. See [docs/i18n.md](i18n.md) |
+| `--overlay_hotkey KEYS` | `Shift+F1` | Key combination that opens the [server overlay](server-overlay.md) (clients, settings, logs, ...), e.g. `Ctrl+Shift+F12`; empty disables it and its startup notification |
 | `--save_defaults` | `false` | Save the flags given on this command line as the defaults of later runs, then start as usual. See [Saved flag defaults](#saved-flag-defaults) |
 | `--clear_defaults` | `false` | Erase the saved defaults |
 
@@ -111,6 +112,12 @@ wish server --transport tcp --port 9090 --renderer sdl3 --title "My App Server"
 # Browser-based, no window/GPU required:
 wish server --renderer web --web_port 8080
 ```
+
+At startup a notification in the bottom-right corner shows the overlay's
+key combination: press **Shift+F1** (or choose **Server → Overlay**) for the
+[server overlay](server-overlay.md), with the server's and the machine's
+details, the connected clients, a settings editor, the server log, and
+buttons to open the sandbox and log folders or shut the server down.
 
 Close the window, choose **Server → Quit** from the menu bar, or Ctrl+C
 (`--renderer web` has no window) to stop the server. See

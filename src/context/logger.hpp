@@ -113,6 +113,11 @@ class logger : public bison::dynamic {
     return level_;
   }
 
+  /// @brief The file messages are appended to; empty when none.
+  const std::filesystem::path& path() const noexcept {
+    return log_path_;
+  }
+
 #ifdef WISH_AUTOMATION_ENABLED
   // ── automation ───────────────────────────────────────────────────────────
 

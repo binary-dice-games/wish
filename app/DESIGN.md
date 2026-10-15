@@ -95,6 +95,33 @@ silently.
 Behaviour is identical to the original implementation. The SDL3 renderer,
 dockspace, menu bar, and session restart logic are unchanged.
 
+### Server overlay and notifications
+
+`configured_server` turns on the server overlay (`server_overlay`,
+`src/imgui/imgui_server_overlay.hpp`; see
+[docs/server-overlay.md](../docs/server-overlay.md)) through
+`server_overlay_host`, the non-template face of `host_renderer`, since
+`make_renderer()` picks the backend at runtime. It fills
+`server_overlay_info` from the flags and the started `wish::server` (its
+`stores()`, sandbox root and admins), so the overlay edits the very store
+instances the sessions use, never a second copy of the same file.
+
+`host_renderer` checks the hotkey in `render_server_frame()`, before the
+sessions take the keyboard, and draws the overlay and the toasts in
+`renderer::render_server_overlay()`, which the render loop calls after the
+last session: drawn last, they cover the clients' windows. The overlay only
+raises itself when a client window is in front of it; raising it every
+frame would also put it above its own pop-ups (combo lists, the shutdown
+confirmation).
+
+The notification model (`notification_center`) lives in `src/server`, not
+in the ImGui code: every `renderer` owns one and every session gets it as
+`context::notifications`, so forms and server code post toasts without
+knowing the backend. `host_renderer::consume_render_request()` reports a
+new notification, so it shows even when nothing else asks for a frame.
+`wish standalone` shares `host_renderer`, so it draws notifications, but
+nothing enables its overlay.
+
 ---
 
 ## client mode

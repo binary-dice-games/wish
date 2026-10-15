@@ -330,6 +330,8 @@ add_library(wish_server STATIC
   src/context/settings_store.hpp
   src/context/user_store_service.hpp
   src/server/server.hpp
+  src/server/notifications.hpp
+  src/server/machine_info.hpp
   src/auth/local_auth_module.hpp
   src/standalone/standalone.hpp
   src/ui/forms/form.hpp
@@ -350,6 +352,8 @@ add_library(wish_server STATIC
   src/context/settings_store.cpp
   src/context/user_store_service.cpp
   src/server/server.cpp
+  src/server/notifications.cpp
+  src/server/machine_info.cpp
   src/auth/local_auth_module.cpp
   src/standalone/standalone.cpp
   src/ui/ui_template.cpp
@@ -427,6 +431,10 @@ if(WISH_ENABLE_IMGUI)
     src/imgui/imgui_icon_widgets.hpp
     src/imgui/imgui_desktop_shell.hpp
     src/imgui/imgui_desktop_shell.cpp
+    src/imgui/imgui_notifications.hpp
+    src/imgui/imgui_notifications.cpp
+    src/imgui/imgui_server_overlay.hpp
+    src/imgui/imgui_server_overlay.cpp
     src/imgui/imgui_icon_widgets.cpp
     src/imgui/imgui_window_caption.hpp
     src/imgui/imgui_window_caption.cpp
@@ -451,7 +459,7 @@ if(WISH_ENABLE_IMGUI)
     src/imgui/themes/theme_classic.cpp
     src/imgui/themes/theme_wish.cpp
   )
-  target_compile_definitions(wish_server PUBLIC WISH_IMGUI_ENABLED)
+  target_compile_definitions(wish_server PUBLIC WISH_IMGUI_ENABLED WISH_VERSION_STRING="${Wish_VERSION}")
   # PUBLIC so that consumers who include imgui_renderer.hpp have imgui in path.
   target_link_libraries(wish_server PUBLIC imgui_core)
 endif()

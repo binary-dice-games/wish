@@ -99,6 +99,8 @@ void server::on_session_created(bison::rmi::context& ctx) {
   // All sessions share the same global logger instance (set via set_logger()).
   s.logger_service = logger_;
   s.server_store = stores_->server_store();
+  if (renderer_)
+    s.notifications = renderer_->notifications();
 #ifdef WISH_AUTOMATION_ENABLED
   if (renderer_) {
     if (auto* backend = renderer_->as_automation_backend())
@@ -396,6 +398,7 @@ void server::render_loop() {
           if (!events.empty())
             context_rlock{*sync_ctx}->dirty.store(kDirtySettleFrames, std::memory_order_release);
         }
+        renderer_->render_server_overlay(sessions_snapshot);
         renderer_->end_frame();
         if (!renderer_->render_on_demand() && renderer_->wants_continuous_redraw())
           pending_render_ = true;

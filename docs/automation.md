@@ -702,6 +702,17 @@ def test_saving_shows_confirmation(wish_ui):
 
 ## Gotchas
 
+- **The server overlay and toasts are host chrome, not widgets** (verified
+  2026-10, web renderer): `get_tree()` never lists them. Open the overlay
+  with `page.keyboard.press("Shift+F1", delay=80)` (move the mouse over
+  the page first) and drive it by coordinates read off a screenshot: at
+  1440x900 the page tabs sit at y≈35 (Overview, Clients, Settings, Logs,
+  About from x≈510 to x≈935), and **Shut down server** is at the bottom
+  right. `press("Escape")` closes it. `AutomationClient.launch()` appends
+  `--overlay_hotkey=` (no overlay, and no "press Shift+F1" toast covering
+  the bottom-right corner for 10 s) unless the command sets the flag, so
+  pass `--overlay_hotkey=Shift+F1` to drive the overlay. See
+  [server-overlay.md](server-overlay.md).
 - **Keyboard-only flows are drivable with `page.keyboard`** (verified
   2026-10, web renderer): click the window once so it has focus, then
   `keyboard.down("Alt")` shows the access-key underlines for a screenshot,

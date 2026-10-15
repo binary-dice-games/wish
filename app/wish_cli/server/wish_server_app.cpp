@@ -11,6 +11,7 @@
 
 #include <auth/local_auth_module.hpp>
 #include <context/logger.hpp>
+#include <imgui/imgui_keyboard.hpp>
 #include <server/registry.hpp>
 #include <sdl/sdl3_renderer.hpp>
 #include <server/server.hpp>
@@ -68,10 +69,17 @@ DEFINE_string(
     "Comma-separated identities (--username) allowed to change server-wide settings, such as "
     "the saved default theme, from the settings tool (bdg/desktop/conf). Empty: nobody. "
     "Trusts the client-supplied username -- local/single-user deployments only.");
+DEFINE_string(overlay_hotkey, "Shift+F1",
+              "Key combination that opens the server overlay (clients, settings, logs, ...), e.g. "
+              "Shift+F1 or Ctrl+Shift+O; empty disables the overlay and its startup notification.");
 DEFINE_string(store_dir, "",
               "Directory holding the persistent server store and per-user stores (see "
               "docs/persistent-store.md); empty: ~/.wish. Clients get a user store only when they "
               "connect with --username.");
+
+#ifndef WISH_VERSION_STRING
+#define WISH_VERSION_STRING "dev"
+#endif
 
 namespace bdg::wish {
 
@@ -90,18 +98,26 @@ const std::vector<std::string> kServerExcludedFlags = {
     "settings_admins", // never from the store: an admin could otherwise make it permanent
 };
 
-static std::unique_ptr<renderer> make_renderer() {
+// The renderer selected by --renderer; @p host (optional) receives its
+// overlay face, to enable the server overlay once the server exists.
+static std::unique_ptr<renderer> make_renderer(server_overlay_host** host = nullptr) {
   if (FLAGS_renderer == "sdl3") {
 #ifdef WISH_SDL3_ENABLED
-    return std::make_unique<host_renderer<sdl3_renderer>>(
+    auto r = std::make_unique<host_renderer<sdl3_renderer>>(
         FLAGS_title.c_str(), FLAGS_width, FLAGS_height, FLAGS_font_size);
+    if (host)
+      *host = r.get();
+    return r;
 #else
     throw std::runtime_error("--renderer=sdl3 requested but this binary was built with WISH_ENABLE_SDL3=OFF");
 #endif
   }
   if (FLAGS_renderer == "web") {
 #ifdef WISH_WEB_ENABLED
-    return std::make_unique<host_renderer<web_renderer>>(FLAGS_web_bind, FLAGS_web_port, FLAGS_font_size);
+    auto r = std::make_unique<host_renderer<web_renderer>>(FLAGS_web_bind, FLAGS_web_port, FLAGS_font_size);
+    if (host)
+      *host = r.get();
+    return r;
 #else
     throw std::runtime_error("--renderer=web requested but this binary was built with WISH_ENABLE_WEB=OFF");
 #endif
@@ -125,6 +141,21 @@ static std::shared_ptr<logger> make_server_logger() {
 }
 
 } // namespace
+
+std::string server_endpoint_description() {
+  using bison::app::transport_kind;
+  switch (bison::app::selected_transport()) {
+    case transport_kind::pipe:
+      return "pipe " + FLAGS_name;
+    case transport_kind::term:
+      return "terminal (" + (FLAGS_cmd.empty() ? std::string{"default shell"} : FLAGS_cmd) + ")";
+    case transport_kind::tls:
+      return "tls " + FLAGS_host + ':' + std::to_string(FLAGS_port);
+    case transport_kind::tcp:
+    default:
+      return "tcp " + FLAGS_host + ':' + std::to_string(FLAGS_port);
+  }
+}
 
 void load_server_cli_config(const std::string& log_prefix) {
   load_cli_config(FLAGS_store_dir, kServerConfigEntry, kServerExcludedFlags, log_prefix);
@@ -201,7 +232,7 @@ int wish_server_app::run_with_transport(bison::rmi::transport::server_transport_
   bison::dynamic listen_params;
   on_listen_params(listen_params);
   {
-    configured_server srv{transport, std::move(listen_params)};
+    configured_server srv{transport, std::move(listen_params), server_endpoint_description()};
     server_log_ = srv.log();
     on_listening();
     // Stops on whichever comes first: the renderer's own close signal (sdl3
@@ -220,8 +251,11 @@ int wish_server_app::run_with_transport(bison::rmi::transport::server_transport_
 
 configured_server::configured_server(
     bison::rmi::transport::server_transport_iface& transport,
-    bison::dynamic listen_params)
-    : log_(make_server_logger()), server_(std::make_unique<server>(transport, make_renderer())) {
+    bison::dynamic listen_params,
+    std::string endpoint)
+    : log_(make_server_logger()) {
+  server_overlay_host* overlay_host = nullptr;
+  server_ = std::make_unique<server>(transport, make_renderer(&overlay_host));
   auto& srv = *server_;
   srv.set_logger(log_);
   srv.set_default_theme(FLAGS_theme);
@@ -254,6 +288,26 @@ configured_server::configured_server(
     log_->info("persistent sandboxes under " + FLAGS_sandbox_root);
   } else {
     auth = std::make_shared<local_auth_module>();
+  }
+  if (overlay_host && !FLAGS_overlay_hotkey.empty()) {
+    if (parse_key_chord(FLAGS_overlay_hotkey) == 0)
+      std::cerr << "[wish] --overlay_hotkey: '" << FLAGS_overlay_hotkey
+                << "' is not a key combination; the overlay is disabled\n";
+    server_overlay_info info;
+    info.version = WISH_VERSION_STRING;
+    info.hotkey = FLAGS_overlay_hotkey;
+    info.endpoint = std::move(endpoint);
+    info.renderer = FLAGS_renderer == "web"
+        ? "web (http://" + FLAGS_web_bind + ':' + std::to_string(FLAGS_web_port) + ")"
+        : FLAGS_renderer;
+    std::error_code ec;
+    info.log_file = std::filesystem::absolute(log_->path(), ec);
+    if (ec)
+      info.log_file = log_->path();
+    info.sandbox_root = srv.persistent_sandbox_root();
+    info.stores = srv.stores();
+    info.settings_admins = srv.settings_admins();
+    overlay_host->enable_server_overlay(std::move(info));
   }
   srv.start(auth, std::move(listen_params));
   if (FLAGS_profiling_autostart) {

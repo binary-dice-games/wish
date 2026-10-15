@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Server overlay (see [docs/server-overlay.md](docs/server-overlay.md)): Shift+F1 (new `--overlay_hotkey` flag; also **Server → Overlay**) opens a Steam-like full-screen overlay over every app on `wish server`, with an overview of the server and the local machine, the connected clients, a settings editor for the server store and each user store, the live server log, links to the project and its documentation, and buttons to open the sandbox and log folders and to shut the server down. A notification at startup shows the key.
+- Toast notifications: `wish::notification_center` (`renderer::notifications()`, `context::notifications`) lets server-side code post info/success/warning/error toasts, drawn in a corner of the server's screen.
 - `wish desktop --with_server`: runs the wish server in the desktop's own process, connected through the in-memory transport, so a single command starts both (`wish` binary only; the `wish server` flags such as `--renderer` apply).
 - `wish desktop`: an app's main window has Windows-style minimize, maximize/restore and close buttons at the top right of its title bar (double-click the title to maximize), and a border with a shadow that sets it apart from overlapping windows.
 - "Reset layout" puts an app's panels back in their default arrangement: from the app window's title-bar menu (right-click the title; it also has Maximize/Restore, Minimize and Close) or its taskbar button on `wish desktop`, or by changing the new `DockSpaceViewport.layout_reset_request` field.
@@ -145,6 +147,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Python `AutomationClient.launch()` starts `wish server` with `--overlay_hotkey=` (no server overlay or startup notification) unless the command sets that flag, so the toast never covers widgets under test.
 - The bundled tools' panels no longer have a close button that closed the whole tool; the app window's close button (or the taskbar's "Close window") closes it. Dialogs, nano's file windows and its Search panel keep theirs.
 - Only one `wish desktop` can run at a time: a second one prints `wish desktop is already running` and exits with 1.
 - `wish desktop` exits when the wish server it draws on stops, releasing its endpoint (it used to keep running with nothing to show).

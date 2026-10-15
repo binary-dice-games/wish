@@ -12,6 +12,7 @@
 #include "src/rmi/server/context.hpp"
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <functional>
@@ -49,6 +50,9 @@ using persistent_store_ptr = std::shared_ptr<persistent_store>;
 
 class user_store_service;
 using user_store_service_ptr = std::shared_ptr<user_store_service>;
+
+class notification_center; // defined in <server/notifications.hpp>
+using notification_center_ptr = std::shared_ptr<notification_center>;
 
 #ifdef WISH_AUTOMATION_ENABLED
 class automation_service;
@@ -210,6 +214,17 @@ struct context : public bison::rmi::context {
   /// `standalone` (one local user). No RMI path to the server store exists
   /// either way; see docs/settings.md.
   bool settings_admin{false};
+
+  /// Toast notifications of the server's screen (the renderer's
+  /// `renderer::notifications()`), so server-side code such as a form can
+  /// post one: `sess().notifications->post({...})`. Set by
+  /// `server::on_session_created()` / `standalone::on_session_created()`;
+  /// null in a context built without a server (tests). Thread-safe on its
+  /// own.
+  notification_center_ptr notifications;
+
+  /// When the session was created (the client connected).
+  std::chrono::system_clock::time_point connected_at{std::chrono::system_clock::now()};
 
 #ifdef WISH_AUTOMATION_ENABLED
   /// Automation service instance; only set (by `server::on_session_created`/

@@ -217,6 +217,10 @@ in the server store at every start, as `wish.cli.server.*` and
 They take effect at the next start. `wish desktop` describes its own theme
 (`wish.desktop.theme`) under Desktop.
 
+The [server overlay](server-overlay.md) (Shift+F1 on the server's
+screen) has a Settings page too: the server's local operator edits the
+server store and any user's store there, admin or not.
+
 ## The Settings tool
 
 - **Sidebar:** a search box, the signed-in identity (Administrator or User

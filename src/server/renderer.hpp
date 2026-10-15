@@ -4,12 +4,14 @@
 #pragma once
 
 #include <context/context.hpp>
+#include <server/notifications.hpp>
 #include <ui/ui_element.hpp>
 
 #ifdef WISH_AUTOMATION_ENABLED
 #include <automation/automation_backend.hpp>
 #endif
 
+#include <memory>
 #include <vector>
 
 namespace bdg::wish {
@@ -195,6 +197,32 @@ class renderer {
   }
 
   /**
+   * @brief Optional server-level UI rendered once per frame after every
+   *        client session, so it draws on top of them: overlays and toast
+   *        notifications.
+   *
+   * Called from `wish::server::render_loop` (and `wish::standalone`'s)
+   * after the last session is rendered and before `end_frame`, with no
+   * session locked. The default is a no-op; `host_renderer` draws the
+   * server overlay and `notifications()` here.
+   *
+   * @param sessions Same snapshot `render_server_frame()` received.
+   */
+  virtual void render_server_overlay(const std::vector<sync_context_ptr>& sessions) {
+    (void)sessions;
+  }
+
+  /**
+   * @brief Toast notifications this renderer shows (see
+   *        `notification_center`). Always non-null; shared with every
+   *        session as `context::notifications`, so server-side code can
+   *        post them. Backends that draw no chrome simply never show them.
+   */
+  const notification_center_ptr& notifications() const {
+    return notifications_;
+  }
+
+  /**
    * @brief Render one session's complete element tree.
    *
    * The default implementation calls `render_node(root, s)` directly.
@@ -282,6 +310,9 @@ class renderer {
     return nullptr;
   }
 #endif
+
+ private:
+  notification_center_ptr notifications_{std::make_shared<notification_center>()};
 };
 
 /**

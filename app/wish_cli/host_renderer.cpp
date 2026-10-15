@@ -6,6 +6,7 @@
  */
 #include "app/wish_cli/host_renderer.hpp"
 
+#include <imgui/imgui_notifications.hpp>
 #include <sdl/sdl3_renderer.hpp>
 #include <ui/ui_elements/ui_elements.hpp>
 #include <web/web_renderer.hpp>
@@ -31,7 +32,47 @@ const ui_element* find_menu_bar_extension(const context& s) {
 } // namespace
 
 template <typename Base>
+void host_renderer<Base>::enable_server_overlay(server_overlay_info info) {
+  if (!info.shutdown)
+    info.shutdown = [this] { this->request_quit(); };
+  overlay_ = std::make_unique<server_overlay>(std::move(info), this->notifications());
+  if (overlay_->has_hotkey()) {
+    notification hint;
+    hint.title = "wish server is running";
+    hint.body = "Press to open the server overlay: clients, settings, logs and more.";
+    hint.keys = overlay_->hotkey();
+    hint.duration = std::chrono::seconds{10};
+    hint.tag = "wish.server.overlay.hint";
+    this->notifications()->post(std::move(hint));
+  }
+}
+
+template <typename Base>
+void host_renderer<Base>::render_server_overlay(const std::vector<sync_context_ptr>& sessions) {
+  if (overlay_)
+    overlay_->render(sessions);
+  notifications_visible_ = render_notifications(*this->notifications());
+}
+
+template <typename Base>
+bool host_renderer<Base>::wants_continuous_redraw() const {
+  return Base::wants_continuous_redraw() || notifications_visible_ || (overlay_ && overlay_->is_open());
+}
+
+template <typename Base>
+bool host_renderer<Base>::consume_render_request() {
+  const bool requested = Base::consume_render_request();
+  const bool notified = this->notifications()->consume_changed();
+  return requested || notified;
+}
+
+template <typename Base>
 void host_renderer<Base>::render_server_frame(const std::vector<sync_context_ptr>& sessions) {
+  // The overlay's hotkey first, so it toggles whatever the sessions do
+  // with the keyboard this frame.
+  if (overlay_)
+    overlay_->handle_keys();
+
   // A DesktopShell session turns the host into a desktop; its chrome
   // replaces the menu bar host window below entirely.
   if (render_desktop_shell(*this, sessions, desktop_state_, [this] { this->request_quit(); }))
@@ -60,6 +101,8 @@ void host_renderer<Base>::render_server_frame(const std::vector<sync_context_ptr
 
   if (ImGui::BeginMenuBar()) {
     if (ImGui::BeginMenu("Server")) {
+      if (overlay_ && ImGui::MenuItem("Overlay", overlay_->hotkey().c_str()))
+        overlay_->set_open(true);
       if (ImGui::MenuItem("Quit", "Alt+F4"))
         this->request_quit();
       ImGui::EndMenu();

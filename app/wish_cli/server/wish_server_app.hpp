@@ -31,12 +31,16 @@ class configured_server {
    * @param transport     Transport the server listens on (borrowed; must
    *                      outlive this object).
    * @param listen_params Forwarded to `server::start()`, e.g. TLS material.
+   * @param endpoint      Where clients connect, as shown by the server
+   *                      overlay (e.g. "tcp 0.0.0.0:7070"; see
+   *                      server_endpoint_description()).
    * @throws std::runtime_error for an invalid `--verbose` or a `--renderer`
    *         this binary wasn't built with.
    */
   explicit configured_server(
       bison::rmi::transport::server_transport_iface& transport,
-      bison::dynamic listen_params = bison::dynamic{});
+      bison::dynamic listen_params = bison::dynamic{},
+      std::string endpoint = "in-process");
   ~configured_server();
 
   configured_server(const configured_server&) = delete;
@@ -59,6 +63,10 @@ class configured_server {
   std::shared_ptr<logger> log_;
   std::unique_ptr<server> server_;
 };
+
+/// @brief Where `wish server`'s transport flags make clients connect, e.g.
+///        "tcp 0.0.0.0:7070" or "pipe /tmp/wish.sock".
+std::string server_endpoint_description();
 
 /**
  * @brief Applies `wish server`'s saved flag defaults (server store entry

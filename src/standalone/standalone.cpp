@@ -93,6 +93,8 @@ void standalone::on_session_created(bison::rmi::context& ctx) {
       sess->user_store = store;
       sess->user_store_service = user_store_service::instantiate(std::move(store));
     }
+    if (renderer_)
+      sess->notifications = renderer_->notifications();
 #ifdef WISH_AUTOMATION_ENABLED
     if (renderer_) {
       if (auto* backend = renderer_->as_automation_backend())
@@ -302,6 +304,7 @@ void standalone::render_loop() {
           if (!events.empty())
             context_wlock{*context_}->dirty.store(kDirtySettleFrames, std::memory_order_release);
         }
+        renderer_->render_server_overlay(sessions_snapshot);
         renderer_->end_frame();
         if (!renderer_->render_on_demand() && renderer_->wants_continuous_redraw())
           pending_render_ = true;

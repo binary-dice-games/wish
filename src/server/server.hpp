@@ -232,6 +232,27 @@ class server : public bison::rmi::server {
     return *stores_->server_store();
   }
 
+  /**
+   * @brief The registry owning the server store and the per-identity user
+   *        stores. Server-side tools that edit a store (e.g. the server
+   *        overlay's settings page) must go through it rather than opening
+   *        the store files themselves, so they share the sessions' store
+   *        instances instead of overwriting each other's writes.
+   */
+  const store_registry_ptr& stores() const noexcept {
+    return stores_;
+  }
+
+  /// @brief See set_persistent_sandbox_root(); empty when not set.
+  const std::filesystem::path& persistent_sandbox_root() const noexcept {
+    return persistent_sandbox_root_;
+  }
+
+  /// @brief See set_settings_admins().
+  const std::set<std::string>& settings_admins() const noexcept {
+    return settings_admins_;
+  }
+
   /** @brief Stop the accept loop, render loop, and join all threads. */
   void stop();
 

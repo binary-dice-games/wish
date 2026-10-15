@@ -353,6 +353,68 @@ TEST(ServerTest, MenuBarExtensionSplicedNotDoubleRendered) {
   srv.stop();
 }
 
+// ── Server overlay hook and notifications ───────────────────────────────────
+//
+// render_server_overlay() runs once per drawn frame after every session (so
+// an overlay or a toast covers the clients' windows), and every session
+// shares the renderer's notification center.
+
+namespace {
+
+class overlay_recording_renderer : public wish::renderer {
+ public:
+  std::mutex mtx;
+  std::condition_variable cv;
+  bool overlay_after_session = false;
+  bool session_shares_notifications = false;
+
+  void begin_frame() override {
+    std::lock_guard<std::mutex> lk(mtx);
+    session_rendered_ = false;
+  }
+  void end_frame() override {}
+
+  void render_node(const wish::ui_element&, const wish::context& s) override {
+    std::lock_guard<std::mutex> lk(mtx);
+    session_rendered_ = true;
+    if (s.notifications && s.notifications == notifications())
+      session_shares_notifications = true;
+  }
+
+  void render_server_overlay(const std::vector<wish::sync_context_ptr>& sessions) override {
+    std::lock_guard<std::mutex> lk(mtx);
+    if (session_rendered_ && !sessions.empty())
+      overlay_after_session = true;
+    cv.notify_all();
+  }
+
+ private:
+  bool session_rendered_ = false;
+};
+
+} // namespace
+
+TEST(ServerTest, OverlayHookRunsAfterSessionsAndSessionsShareNotifications) {
+  memory_server_transport transport;
+  auto rec_owner = std::make_unique<overlay_recording_renderer>();
+  overlay_recording_renderer& rec = *rec_owner;
+  wish::server srv{transport, std::move(rec_owner)};
+  srv.start();
+  {
+    client c{transport.connect()};
+    c.connect();
+    instantiate_template(c, "__test_overlay_window", R"json({ "type": "Window", "title": "Plain" })json");
+    {
+      std::unique_lock<std::mutex> lk(rec.mtx);
+      ASSERT_TRUE(rec.cv.wait_for(lk, std::chrono::seconds{2}, [&] {
+        return rec.overlay_after_session && rec.session_shares_notifications;
+      }));
+    }
+    c.disconnect();
+  }
+  srv.stop();
+}
+
 // ── RMI trace verbosity ──────────────────────────────────────────────────────
 //
 // set_logger() maps the logger's log_level onto bison's trace hooks:
