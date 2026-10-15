@@ -5,6 +5,7 @@
 #include <server/registry.hpp>
 #include <context/style_service.hpp>
 #include <context/user_store_service.hpp>
+#include <server/notification_service.hpp>
 
 #ifdef WISH_AUTOMATION_ENABLED
 #include <automation/automation_service.hpp>
@@ -74,6 +75,7 @@ void register_all() {
   register_style_service();
   register_user_store_service();
   register_logger();
+  register_notification_service();
 #ifdef WISH_AUTOMATION_ENABLED
   register_automation_service();
 #endif

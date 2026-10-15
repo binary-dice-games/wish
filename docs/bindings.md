@@ -101,6 +101,19 @@ protocol these build on.
 
 `has_user_store()` and `user_store_get` / `user_store_set` / `user_store_erase` / `user_store_keys` read and write the session's persistent, per-identity store of named objects. The session must connect with a `username` connect param; anonymous sessions get `WISH_ERR_UNAVAILABLE`. The API is the same shape in every binding: see the table in [docs/persistent-store.md](persistent-store.md#client-api). `describe_setting()` / `describe_settings_category()` (`DescribeSetting`, `describeSetting`, ...) describe settings kept there for the Settings tool, and `read_setting()` (`ReadSetting`, `readSetting`, ...) returns a setting's value or its default: see [docs/settings.md](settings.md).
 
+### Notifications
+
+`notify(title, body, kind, keys, duration, tag)` shows a toast in a corner of the server's screen and returns its id; `dismiss_notification(id)` removes it early (C ABI `wish_notify()` / `wish_notify_dismiss()`). The server marks each one with the session's identity and keeps at most 4 per session. A server that shows no notifications reports `WISH_ERR_UNAVAILABLE`. See [docs/server-overlay.md](server-overlay.md#notifications-from-clients).
+
+| Binding | Call |
+|---------|------|
+| C++ binding | `c.notify("Backup finished", "42 files", wish::client::notify_kind::success)` |
+| Python | `c.notify("Backup finished", "42 files", kind="success", duration=8)` |
+| C# | `c.Notify("Backup finished", "42 files", NotifyKind.Success)` |
+| Rust | `c.notify(&Notification { kind: NotifyKind::Success, ..Notification::new("Backup finished") })` |
+| Go | `c.Notify(wish.Notification{Title: "Backup finished", Kind: wish.NotifySuccess})` |
+| Java (Android) | `c.showNotification("Backup finished", "42 files")` (not `notify`: that is `Object.notify()`) |
+
 ### Translations
 
 `set_translations(text, fallback)` sets the `KEY = value` translations that `register_template` applies to `"$$KEY"` strings. `translate("$$KEY")` translates one string, and `set_language("es")` selects the language server-side tools use. Every binding has the same three calls (`SetTranslations` / `Translate` / `SetLanguage` in C# and Go, `setTranslations` / `translate` / `setLanguage` on Android); Python and C# add `load_translations(path, fallback_path)` / `LoadTranslations`. See [docs/i18n.md](i18n.md).

@@ -2,6 +2,7 @@
 /// @file client.cpp
 /// @brief Implementation of wish::client.
 #include <client/client.hpp>
+#include <client/notification_rpc.hpp>
 #include <client/user_store_rpc.hpp>
 
 #include <ui/ui_descriptor.hpp>
@@ -54,6 +55,12 @@ void client::on_connect() {
   } catch (...) {
     user_store_proxy_.reset();
   }
+  // Non-fatal too: a server without notifications (or an older one).
+  try {
+    notifications_proxy_ = instantiate("wish"_key, "__WishNotifications"_key).get();
+  } catch (...) {
+    notifications_proxy_.reset();
+  }
 }
 
 void client::on_disconnect() {
@@ -63,6 +70,7 @@ void client::on_disconnect() {
   log_proxy_.reset();
   automation_proxy_.reset();
   user_store_proxy_.reset();
+  notifications_proxy_.reset();
   if (on_disconnected_)
     on_disconnected_();
 }
@@ -368,6 +376,22 @@ std::future<void> client::log_warn(const std::string& msg) {
 }
 std::future<void> client::log_error(const std::string& msg) {
   return log("error", msg);
+}
+
+// ── Notifications ───────────────────────────────────────────────────────────
+
+std::future<uint64_t> client::notify(const notification& n) {
+  return std::async(std::launch::async, [this, n]() {
+    detail::require_notifications(notifications_proxy_);
+    return detail::notify_sync(*notifications_proxy_, n);
+  });
+}
+
+std::future<bool> client::dismiss_notification(uint64_t id) {
+  return std::async(std::launch::async, [this, id]() {
+    detail::require_notifications(notifications_proxy_);
+    return detail::dismiss_notification_sync(*notifications_proxy_, id);
+  });
 }
 
 // ── User store ──────────────────────────────────────────────────────────────

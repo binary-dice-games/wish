@@ -5,6 +5,9 @@
 
 #include <SDL3/SDL.h>
 
+#include <cstdint>
+#include <vector>
+
 namespace bdg::wish {
 
 // Exposes the protected sdl_renderer() accessor so this test can issue
@@ -108,6 +111,26 @@ TEST_F(Sdl3RendererTest, EndRenderTargetRestoresPreviousTarget) {
   EXPECT_EQ(c.r, 255);
   EXPECT_EQ(c.b, 0);
   renderer_->end_render_target();
+}
+
+// request_screenshot() (the server overlay's Screenshot button) works
+// without the automation module: the next end_frame() reads the frame back.
+TEST_F(Sdl3RendererTest, RequestScreenshotDeliversPngOfNextFrame) {
+  std::vector<uint8_t> png;
+  int calls = 0;
+  ASSERT_TRUE(renderer_->request_screenshot([&](std::vector<uint8_t> bytes) {
+    png = std::move(bytes);
+    ++calls;
+  }));
+  renderer_->begin_frame();
+  renderer_->end_frame();
+  ASSERT_EQ(calls, 1);
+  ASSERT_GE(png.size(), 8u);
+  EXPECT_EQ(png[0], 0x89);
+  EXPECT_EQ(png[1], static_cast<uint8_t>('P'));
+  renderer_->begin_frame();
+  renderer_->end_frame();
+  EXPECT_EQ(calls, 1) << "one request, one capture";
 }
 
 TEST_F(Sdl3RendererTest, EndRenderTargetWithoutBeginIsSafeNoOp) {

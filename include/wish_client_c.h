@@ -782,6 +782,56 @@ WISH_API wish_error wish_settings_describe_category(wish_client_handle client, c
  */
 WISH_API wish_error wish_settings_read(wish_client_handle client, const char* setting_json, char** out_json);
 
+/* ── Notifications ────────────────────────────────────────────────────────── */
+
+/**
+ * Toasts shown in a corner of the server's screen (see
+ * docs/server-overlay.md). The server marks each one with the session's
+ * identity, keeps at most 4 per session (posting more drops the oldest),
+ * and removes them when the session ends.
+ */
+
+#define WISH_NOTIFY_INFO 0    /**< Blue "i". */
+#define WISH_NOTIFY_SUCCESS 1 /**< Green check mark. */
+#define WISH_NOTIFY_WARNING 2 /**< Orange "!". */
+#define WISH_NOTIFY_ERROR 3   /**< Red cross. */
+
+/**
+ * @brief Show a notification on the server's screen.
+ *
+ * @param client       Active session handle.
+ * @param title        First line, bold; required (at most 120 bytes kept).
+ * @param body         Text under the title, or NULL (at most 600 bytes).
+ * @param kind         WISH_NOTIFY_INFO / _SUCCESS / _WARNING / _ERROR.
+ * @param keys         Key combination drawn as key caps (e.g. "Ctrl+B"), or NULL.
+ * @param duration_ms  How long it stays; 0 keeps it until dismissed (at
+ *                     most 5 minutes).
+ * @param tag          Replaces this session's notification with the same
+ *                     tag instead of adding one, or NULL.
+ * @param out_id       Output: its id, for wish_notify_dismiss(); may be NULL.
+ * @return WISH_OK; WISH_ERR_UNAVAILABLE when the server shows no
+ *         notifications; WISH_ERR_NULL; WISH_ERR_EXCEPTION (e.g. an empty
+ *         title; see wish_last_error()).
+ */
+WISH_API wish_error wish_notify(
+    wish_client_handle client,
+    const char* title,
+    const char* body,
+    int32_t kind,
+    const char* keys,
+    int32_t duration_ms,
+    const char* tag,
+    uint64_t* out_id);
+
+/**
+ * @brief Remove one of this session's notifications early.
+ * @param client  Active session handle.
+ * @param id      Id from wish_notify().
+ * @return WISH_OK (also when it was already gone); WISH_ERR_UNAVAILABLE;
+ *         WISH_ERR_NULL; WISH_ERR_EXCEPTION.
+ */
+WISH_API wish_error wish_notify_dismiss(wish_client_handle client, uint64_t id);
+
 /* ── Logging ──────────────────────────────────────────────────────────────── */
 
 /**

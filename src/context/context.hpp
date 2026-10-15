@@ -54,6 +54,9 @@ using user_store_service_ptr = std::shared_ptr<user_store_service>;
 class notification_center; // defined in <server/notifications.hpp>
 using notification_center_ptr = std::shared_ptr<notification_center>;
 
+class notification_service; // defined in <server/notification_service.hpp>
+using notification_service_ptr = std::shared_ptr<notification_service>;
+
 #ifdef WISH_AUTOMATION_ENABLED
 class automation_service;
 using automation_service_ptr = std::shared_ptr<automation_service>;
@@ -222,6 +225,11 @@ struct context : public bison::rmi::context {
   /// null in a context built without a server (tests). Thread-safe on its
   /// own.
   notification_center_ptr notifications;
+
+  /// The `__WishNotifications` RMI service, through which the client posts
+  /// notifications (guarded: see `notification_service`); null whenever
+  /// `notifications` is.
+  notification_service_ptr notification_service;
 
   /// When the session was created (the client connected).
   std::chrono::system_clock::time_point connected_at{std::chrono::system_clock::now()};

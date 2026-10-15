@@ -728,6 +728,58 @@ func (c *Client) DescribeSettingsCategory(category SettingsCategory) error {
 	return checkWish(rc, "client.describe_settings_category("+category.ID+")", c.handle)
 }
 
+// ── Notifications ────────────────────────────────────────────────────────
+
+// NotifyKind is a notification's severity: its accent color and icon
+// (WISH_NOTIFY_*).
+type NotifyKind int32
+
+const (
+	NotifyInfo    NotifyKind = 0
+	NotifySuccess NotifyKind = 1
+	NotifyWarning NotifyKind = 2
+	NotifyError   NotifyKind = 3
+)
+
+// Notification is a toast for Client.Notify. Title is required; a zero
+// Duration keeps it until dismissed (at most 5 minutes).
+type Notification struct {
+	Title    string
+	Body     string
+	Kind     NotifyKind
+	Keys     string // key combination drawn as key caps, e.g. "Ctrl+B"
+	Duration time.Duration
+	Tag      string // replaces this session's notification with the same tag
+}
+
+// Notify shows a toast notification on the server's screen and returns its
+// id. The server shows this session's identity on it and keeps at most 4
+// per session. Fails when the server shows no notifications or the title is
+// empty.
+func (c *Client) Notify(n Notification) (uint64, error) {
+	cTitle := C.CString(n.Title)
+	defer C.free(unsafe.Pointer(cTitle))
+	cBody := C.CString(n.Body)
+	defer C.free(unsafe.Pointer(cBody))
+	cKeys := C.CString(n.Keys)
+	defer C.free(unsafe.Pointer(cKeys))
+	cTag := C.CString(n.Tag)
+	defer C.free(unsafe.Pointer(cTag))
+	var id C.uint64_t
+	rc := C.wish_notify(c.handle, cTitle, cBody, C.int32_t(n.Kind), cKeys,
+		C.int32_t(n.Duration.Milliseconds()), cTag, &id)
+	if err := checkWish(rc, "client.notify", c.handle); err != nil {
+		return 0, err
+	}
+	return uint64(id), nil
+}
+
+// DismissNotification removes one of this session's notifications early.
+func (c *Client) DismissNotification(id uint64) error {
+	rc := C.wish_notify_dismiss(c.handle, C.uint64_t(id))
+	return checkWish(rc, "client.dismiss_notification", c.handle)
+}
+
 // ── Logging ──────────────────────────────────────────────────────────────
 
 func (c *Client) Log(level, msg string) error {

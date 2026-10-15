@@ -69,8 +69,10 @@ uint32  payload_len
 byte[payload_len] payload
 ```
 
-Server → browser: `0x01 FRAME`, `0x02 TEX_CREATE`, `0x03 TEX_UPDATE`, `0x04 TEX_DESTROY`, `0x05 TEX_CHECK`, `0x14 CLIPBOARD_WRITE`.
-Browser → server: `0x10 INPUT`, `0x11 RESIZE`, `0x12 CACHE_RESPONSE`, `0x13 CLIPBOARD_TEXT`.
+Server → browser: `0x01 FRAME`, `0x02 TEX_CREATE`, `0x03 TEX_UPDATE`, `0x04 TEX_DESTROY`, `0x05 TEX_CHECK`, `0x14 CLIPBOARD_WRITE`, `0x15 SCREENSHOT_REQUEST`.
+Browser → server: `0x10 INPUT`, `0x11 RESIZE`, `0x12 CACHE_RESPONSE`, `0x13 CLIPBOARD_TEXT`, `0x16 SCREENSHOT_DATA`.
+
+**SCREENSHOT_REQUEST/SCREENSHOT_DATA** implement `renderer::request_screenshot()` (the server overlay's Screenshot button). The pixels only exist in the browser, so `web_renderer::end_frame()` sends an empty `SCREENSHOT_REQUEST` after the frame it broadcasts, and every connected browser captures its canvas (`canvas.toBlob()`, PNG) right after drawing its next frame -- in the same task as the draw, since a WebGL canvas without `preserveDrawingBuffer` is cleared once composited -- and replies with the PNG as `SCREENSHOT_DATA`. The first reply completes every pending request; later ones are ignored. The request is re-sent every 2 s while one is pending, since a background tab doesn't draw. `request_screenshot()` fails right away when no browser is connected.
 
 **FRAME** carries a `target_id` (see "Offscreen Render Targets" below; `0` means the visible canvas), then display pos/size/framebuffer-scale, then per `ImDrawList`: the vertex buffer (memcpy'd directly — `ImDrawVert` is a stable 20-byte pos/uv/col layout), the index buffer (`ImDrawIdx` is 16-bit in this repo's ImGui config; `draw_protocol.cpp` has a `static_assert` guarding that assumption), and per `ImDrawCmd`: clip rect, wish-assigned texture id, vtx/idx offsets, element count.
 

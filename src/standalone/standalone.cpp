@@ -3,11 +3,13 @@
 /// @brief Implementation of wish::standalone.
 #include <standalone/standalone.hpp>
 
+#include <client/notification_rpc.hpp>
 #include <client/user_store_rpc.hpp>
 #include <context/file_service.hpp>
 #include <server/registry.hpp>
 #include <context/style_service.hpp>
 #include <context/user_store_service.hpp>
+#include <server/notification_service.hpp>
 #include <ui/ui_descriptor.hpp>
 #include <ui/ui_root.hpp>
 
@@ -93,8 +95,10 @@ void standalone::on_session_created(bison::rmi::context& ctx) {
       sess->user_store = store;
       sess->user_store_service = user_store_service::instantiate(std::move(store));
     }
-    if (renderer_)
+    if (renderer_) {
       sess->notifications = renderer_->notifications();
+      sess->notification_service = notification_service::instantiate(sess->notifications, identity);
+    }
 #ifdef WISH_AUTOMATION_ENABLED
     if (renderer_) {
       if (auto* backend = renderer_->as_automation_backend())
@@ -121,6 +125,12 @@ void standalone::on_session_created(bison::rmi::context& ctx) {
     user_store_proxy_ = instantiate("wish"_key, "__WishUserStore"_key).get();
   } catch (...) {
     user_store_proxy_.reset();
+  }
+  // Non-fatal: without a renderer there is no notification service.
+  try {
+    notifications_proxy_ = instantiate("wish"_key, "__WishNotifications"_key).get();
+  } catch (...) {
+    notifications_proxy_.reset();
   }
 }
 
@@ -514,6 +524,20 @@ std::future<void> standalone::describe_settings_category(const settings::categor
     detail::require_user_store(user_store_proxy_);
     auto lock = describe_lock_.wlock();
     detail::describe_category_sync(*user_store_proxy_, info);
+  });
+}
+
+std::future<uint64_t> standalone::notify(const notification& n) {
+  return std::async(std::launch::async, [this, n]() {
+    detail::require_notifications(notifications_proxy_);
+    return detail::notify_sync(*notifications_proxy_, n);
+  });
+}
+
+std::future<bool> standalone::dismiss_notification(uint64_t id) {
+  return std::async(std::launch::async, [this, id]() {
+    detail::require_notifications(notifications_proxy_);
+    return detail::dismiss_notification_sync(*notifications_proxy_, id);
   });
 }
 

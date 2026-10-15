@@ -19,6 +19,7 @@
 #include <fstream>
 #include <map>
 #include <thread>
+#include <atomic>
 #include <tuple>
 #include <utility>
 
@@ -80,6 +81,32 @@ std::vector<std::string> list_store_identities(const std::filesystem::path& stor
       ids.insert(std::move(id));
   }
   return {ids.begin(), ids.end()};
+}
+
+std::filesystem::path screenshot_path(const std::filesystem::path& dir, std::time_t t) {
+  const std::string stem = "wish-" + desktop_format_time("%Y%m%d-%H%M%S", t);
+  std::filesystem::path p = dir / (stem + ".png");
+  std::error_code ec;
+  for (int n = 2; std::filesystem::exists(p, ec); ++n)
+    p = dir / (stem + "-" + std::to_string(n) + ".png");
+  return p;
+}
+
+std::filesystem::path newest_trace(const std::filesystem::path& dir) {
+  std::filesystem::path best;
+  std::filesystem::file_time_type best_time{};
+  std::error_code ec;
+  for (std::filesystem::directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec)) {
+    if (it->path().extension() != ".perfetto-trace")
+      continue;
+    std::error_code tec;
+    const auto t = it->last_write_time(tec);
+    if (!tec && (best.empty() || t > best_time)) {
+      best = it->path();
+      best_time = t;
+    }
+  }
+  return best;
 }
 
 std::optional<std::array<float, 4>> parse_hex_color(const std::string& text) {
@@ -471,6 +498,8 @@ void server_overlay::set_open(bool open) {
 }
 
 bool server_overlay::handle_keys() {
+  if (capture_)
+    return false; // a screenshot is being taken: hidden, keys go to nobody
   if (hotkey_ != 0 && ImGui::IsKeyChordPressed(hotkey_)) {
     set_open(!open_);
     return true;
@@ -501,6 +530,99 @@ void server_overlay::open_target(const std::string& target, const std::string& w
   }).detach();
 }
 
+// ── Screenshots ──────────────────────────────────────────────────────────────
+
+struct server_overlay::capture_state {
+  enum class phase { hide, waiting };
+  phase step{phase::hide};
+  bool reopen{false}; // the overlay was open: show it again afterwards
+  clock::time_point requested{};
+  // Written by the screenshot callback (any thread), read on the render
+  // thread: 0 = pending, 1 = saved, -1 = failed.
+  std::atomic<int> result{0};
+  bison::synchronized<std::string> message; // the saved path, or the error
+};
+
+float server_overlay::bottom_bar_height() const {
+  return open_ && !capture_ ? std::floor(ImGui::GetFontSize() * 4.0f) : 0.0f;
+}
+
+void server_overlay::take_screenshot() {
+  if (capture_ || !info_.request_screenshot)
+    return;
+  capture_ = std::make_shared<capture_state>();
+  capture_->reopen = open_;
+}
+
+void server_overlay::update_capture() {
+  if (!capture_)
+    return;
+  auto& c = *capture_;
+  auto finish = [&](notification n) {
+    if (notifications_)
+      notifications_->post(std::move(n));
+    const bool reopen = c.reopen;
+    capture_.reset();
+    if (reopen)
+      opened_at_ = clock::now() - std::chrono::seconds{1}; // no fade: it never really left
+  };
+
+  if (c.step == capture_state::phase::hide) {
+    // This frame draws neither the overlay nor the notifications, so it is
+    // the one to capture (web: this one or a later one, all hidden).
+    c.step = capture_state::phase::waiting;
+    c.requested = clock::now();
+    std::weak_ptr<capture_state> weak = capture_;
+    const std::filesystem::path dir = info_.screenshot_dir;
+    const bool ok = info_.request_screenshot([weak, dir](std::vector<uint8_t> png) {
+      auto state = weak.lock();
+      if (!state)
+        return; // timed out: nobody waits for it any more
+      std::string message;
+      int result = -1;
+      if (png.empty()) {
+        message = "The renderer couldn't read the screen.";
+      } else {
+        std::error_code ec;
+        std::filesystem::create_directories(dir, ec);
+        const auto path = detail::screenshot_path(dir, std::time(nullptr));
+        std::ofstream out(path, std::ios::binary);
+        out.write(reinterpret_cast<const char*>(png.data()), static_cast<std::streamsize>(png.size()));
+        if (out) {
+          std::error_code aec;
+          const auto abs = std::filesystem::absolute(path, aec);
+          message = (aec ? path : abs).string();
+          result = 1;
+        } else {
+          message = "Couldn't write " + path.string();
+        }
+      }
+      *state->message.wlock() = std::move(message);
+      state->result.store(result, std::memory_order_release);
+    });
+    if (!ok)
+      finish({"Couldn't take a screenshot",
+              "Nothing shows the server's screen right now (with --renderer web, open it in a browser).", {},
+              notification_kind::error});
+    return;
+  }
+
+  const int result = c.result.load(std::memory_order_acquire);
+  if (result == 1) {
+    notification n;
+    n.title = "Screenshot saved";
+    n.body = *c.message.rlock();
+    n.kind = notification_kind::success;
+    finish(std::move(n));
+  } else if (result == -1) {
+    finish({"Couldn't take a screenshot", *c.message.rlock(), {}, notification_kind::error});
+  } else if (clock::now() - c.requested > std::chrono::seconds{6}) {
+    finish({"Couldn't take a screenshot",
+            "The screen didn't answer in time (a browser tab in the background doesn't draw).", {},
+            notification_kind::error});
+  }
+}
+
 void server_overlay::refresh_machine(bool force) {
   const auto now = clock::now();
   if (!force && now - machine_at_ < std::chrono::seconds{2})
@@ -510,7 +632,8 @@ void server_overlay::refresh_machine(bool force) {
 }
 
 void server_overlay::render(const std::vector<sync_context_ptr>& sessions) {
-  if (!open_)
+  update_capture();
+  if (!open_ || capture_)
     return;
   const float fs = ImGui::GetFontSize();
   const auto clients = collect_overlay_clients(sessions);
@@ -557,6 +680,9 @@ void server_overlay::render(const std::vector<sync_context_ptr>& sessions) {
       break;
     case page::clients:
       draw_clients(clients);
+      break;
+    case page::performance:
+      draw_performance();
       break;
     case page::settings:
       draw_settings(clients);
@@ -624,12 +750,16 @@ void server_overlay::draw_top_bar(size_t client_count) {
   };
   std::vector<tab> tabs = {{page::overview, "Overview"},
                            {page::clients, "Clients (" + std::to_string(client_count) + ")"},
+                           {page::performance, "Performance"},
                            {page::settings, "Settings"},
                            {page::logs, "Logs"},
                            {page::about, "About"}};
-  if (!info_.stores)
-    tabs.erase(std::remove_if(tabs.begin(), tabs.end(), [](const tab& t) { return t.p == page::settings; }),
-               tabs.end());
+  tabs.erase(std::remove_if(tabs.begin(), tabs.end(),
+                            [&](const tab& t) {
+                              return (t.p == page::settings && !info_.stores) ||
+                                  (t.p == page::performance && !info_.perf);
+                            }),
+             tabs.end());
   float tabs_w = 0.0f;
   const float tab_pad = fs * 1.1f, tab_gap = fs * 0.3f;
   {
@@ -716,6 +846,14 @@ void server_overlay::draw_bottom_bar(const std::vector<overlay_client_info>& cli
   const float btn_h = fs * 2.2f;
   ImGui::SetCursorScreenPos({vp->Pos.x + pad, y0 + (bar_h - btn_h) * 0.5f});
   ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2{fs * 0.9f, (btn_h - fs) * 0.5f});
+
+  if (info_.request_screenshot) {
+    if (styled_button("Screenshot", ImVec4{0.08f, 0.42f, 0.72f, 1.0f}))
+      take_screenshot();
+    ImGui::SetItemTooltip("Saves the clients' windows, without this overlay, to %s",
+                          info_.screenshot_dir.string().c_str());
+    ImGui::SameLine();
+  }
 
   // Sandbox: the persistent root, else pick a client's temporary sandbox.
   if (!info_.sandbox_root.empty()) {
@@ -861,6 +999,15 @@ void server_overlay::draw_overview(const std::vector<overlay_client_info>& clien
       for (const auto& a : info_.settings_admins)
         admins += (admins.empty() ? "" : ", ") + a;
       kv("Settings admins", admins.empty() ? std::string{"none"} : admins);
+      if (info_.request_screenshot) {
+        kv("Screenshots", info_.screenshot_dir.string());
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Open##screenshots")) {
+          std::error_code ec;
+          std::filesystem::create_directories(info_.screenshot_dir, ec);
+          open_target(info_.screenshot_dir.string(), "the screenshots folder");
+        }
+      }
       ImGui::EndTable();
     }
   }
@@ -1000,6 +1147,143 @@ void server_overlay::draw_clients(const std::vector<overlay_client_info>& client
   }
   ImGui::PopStyleColor();
   ImGui::PopStyleVar();
+}
+
+// ── Performance ──────────────────────────────────────────────────────────────
+
+namespace {
+
+// One history graph: title, the newest value, and a line over the samples.
+void history_graph(const char* id, const char* title, const std::vector<float>& values, const char* unit,
+                   float min_top, ImVec4 color, float width) {
+  const float fs = ImGui::GetFontSize();
+  ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{fs * 1.0f, fs * 0.75f});
+  ImGui::BeginChild(id, {width, 0.0f},
+                    ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding | ImGuiChildFlags_AutoResizeY,
+                    ImGuiWindowFlags_NoScrollbar);
+  ImGui::PopStyleVar();
+  float top = min_top;
+  for (float v : values)
+    top = std::max(top, v * 1.15f);
+  const float latest = values.empty() ? 0.0f : values.back();
+  muted_text(title);
+  ImGui::SameLine();
+  char now[48];
+  std::snprintf(now, sizeof(now), "%.1f %s", latest, unit);
+  ImGui::SetCursorPosX(ImGui::GetContentRegionMax().x - ImGui::CalcTextSize(now).x);
+  ImGui::TextUnformatted(now);
+  ImGui::PushStyleColor(ImGuiCol_PlotLines, color);
+  ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4{0.0f, 0.0f, 0.0f, 0.18f});
+  // Pad on the left so a short history grows from the right edge.
+  std::vector<float> padded(perf_recorder::kHistory - std::min(values.size(), perf_recorder::kHistory), 0.0f);
+  padded.insert(padded.end(), values.begin(), values.end());
+  ImGui::PlotLines("##plot", padded.data(), static_cast<int>(padded.size()), 0, nullptr, 0.0f, top,
+                   {-FLT_MIN, fs * 4.5f});
+  ImGui::PopStyleColor(2);
+  ImGui::EndChild();
+}
+
+} // namespace
+
+void server_overlay::draw_performance() {
+  const float fs = ImGui::GetFontSize();
+  const float w = ImGui::GetContentRegionAvail().x;
+  const float gap = ImGui::GetStyle().ItemSpacing.x;
+  const auto& history = info_.perf->history();
+  const perf_sample now = history.empty() ? perf_sample{} : history.back();
+
+  {
+    font_scale big{1.4f};
+    ImGui::TextUnformatted("Performance");
+  }
+  muted_wrapped("The last two minutes, one point per second. The server only draws a frame when something "
+                "changes, so an idle server draws none; frame time is the CPU time to build and submit one "
+                "frame for every client.");
+  ImGui::Dummy({0.0f, fs * 0.2f});
+
+  const int tiles = w > fs * 40.0f ? 4 : 2;
+  const float tile_w = std::floor((w - gap * static_cast<float>(tiles - 1)) / static_cast<float>(tiles));
+  char buf[64], sub[64];
+  std::snprintf(buf, sizeof(buf), "%.1f ms", now.frame_ms_avg);
+  std::snprintf(sub, sizeof(sub), "slowest %.1f ms", now.frame_ms_max);
+  stat_tile("##p_frame", "Frame time", buf, sub, tile_w, kAccent);
+  ImGui::SameLine();
+  std::snprintf(buf, sizeof(buf), "%.0f", now.frames);
+  stat_tile("##p_fps", "Frames drawn", buf, "per second", tile_w, ImVec4{0.68f, 0.45f, 0.95f, 1.0f});
+  if (tiles == 4)
+    ImGui::SameLine();
+  std::snprintf(buf, sizeof(buf), "%.0f %%", now.cpu_percent);
+  stat_tile("##p_cpu", "CPU", buf, "100 % = one core", tile_w, kWarn);
+  ImGui::SameLine();
+  std::snprintf(buf, sizeof(buf), "%.0f MB", now.memory_mb);
+  stat_tile("##p_mem", "Memory", buf, "resident", tile_w, kGood);
+
+  ImGui::Dummy({0.0f, fs * 0.2f});
+  auto series = [&](float perf_sample::*field) {
+    std::vector<float> v;
+    v.reserve(history.size());
+    for (const auto& s : history)
+      v.push_back(s.*field);
+    return v;
+  };
+  const bool two_cols = w > fs * 40.0f;
+  const float gw = two_cols ? std::floor((w - gap) * 0.5f) : w;
+  history_graph("##g_frame", "Slowest frame", series(&perf_sample::frame_ms_max), "ms", 16.7f, kAccent, gw);
+  if (two_cols)
+    ImGui::SameLine();
+  history_graph("##g_fps", "Frames drawn", series(&perf_sample::frames), "/s", 60.0f,
+                ImVec4{0.68f, 0.45f, 0.95f, 1.0f}, gw);
+  history_graph("##g_cpu", "CPU", series(&perf_sample::cpu_percent), "%", 100.0f, kWarn, gw);
+  if (two_cols)
+    ImGui::SameLine();
+  history_graph("##g_mem", "Memory", series(&perf_sample::memory_mb), "MB", 64.0f, kGood, gw);
+  history_graph("##g_clients", "Clients", series(&perf_sample::clients), "", 4.0f, ImVec4{0.45f, 0.75f, 0.85f, 1.0f},
+                w);
+
+  // Profiler.
+  ImGui::Dummy({0.0f, fs * 0.2f});
+  if (begin_card("##profiler", "Profiler", {w, 0.0f})) {
+    const auto& prof = info_.profiler;
+    if (!prof.start) {
+      muted_wrapped("Record a Perfetto trace of the render loop and the layout engine: start the server with "
+                    "--profiling_dir DIR, then start and stop recording here. See docs/profiling.md.");
+    } else {
+      const bool active = prof.active && prof.active();
+      const auto t = clock::now();
+      if (t - trace_at_ > std::chrono::seconds{1}) {
+        trace_at_ = t;
+        last_trace_ = detail::newest_trace(prof.dir);
+      }
+      if (active) {
+        ImGui::PushStyleColor(ImGuiCol_Text, kDanger);
+        ImGui::TextUnformatted("Recording");
+        ImGui::PopStyleColor();
+        ImGui::SameLine();
+        if (styled_button("Stop and save", ImVec4{0.55f, 0.16f, 0.16f, 1.0f}) && prof.stop) {
+          prof.stop();
+          trace_at_ = {};
+          if (notifications_)
+            notifications_->post({"Trace saved", prof.dir.string(), {}, notification_kind::success});
+        }
+      } else {
+        muted_text("Not recording");
+        ImGui::SameLine();
+        if (styled_button("Start recording", ImVec4{0.08f, 0.42f, 0.72f, 1.0f}) && !prof.start() && notifications_)
+          notifications_->post({"Couldn't start recording", prof.dir.string(), {}, notification_kind::error});
+      }
+      if (begin_kv("##prof_kv")) {
+        kv("Trace folder", prof.dir.string());
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Open##traces"))
+          open_target(prof.dir.string(), "the trace folder");
+        kv("Latest trace", last_trace_.empty() ? std::string{"none yet"} : last_trace_.filename().string());
+        ImGui::EndTable();
+      }
+      if (ImGui::TextLink("Open ui.perfetto.dev to view a trace"))
+        open_target("https://ui.perfetto.dev", "ui.perfetto.dev");
+    }
+  }
+  end_card();
 }
 
 // ── Settings ─────────────────────────────────────────────────────────────────

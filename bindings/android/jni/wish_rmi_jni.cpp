@@ -413,6 +413,33 @@ JNIEXPORT jstring JNICALL Java_com_bdg_wish_Client_nativeSettingsRead(JNIEnv* en
   return result;
 }
 
+// ─── Notifications ──────────────────────────────────────────────────────
+
+// Returns the notification's id (> 0), or the negative wish_error code.
+JNIEXPORT jlong JNICALL Java_com_bdg_wish_Client_nativeNotify(
+    JNIEnv* env,
+    jclass,
+    jlong handle,
+    jstring title,
+    jstring body,
+    jint kind,
+    jstring keys,
+    jint duration_ms,
+    jstring tag) {
+  jstring_view t(env, title);
+  jstring_view b(env, body);
+  jstring_view k(env, keys);
+  jstring_view g(env, tag);
+  uint64_t id = 0;
+  wish_error err =
+      wish_notify(from_jlong<wish_client_handle>(handle), t.c_str(), b.c_str(), kind, k.c_str(), duration_ms, g.c_str(), &id);
+  return err != WISH_OK ? static_cast<jlong>(err) : static_cast<jlong>(id);
+}
+
+JNIEXPORT jint JNICALL Java_com_bdg_wish_Client_nativeNotifyDismiss(JNIEnv*, jclass, jlong handle, jlong id) {
+  return static_cast<jint>(wish_notify_dismiss(from_jlong<wish_client_handle>(handle), static_cast<uint64_t>(id)));
+}
+
 // ─── Logging ────────────────────────────────────────────────────────────
 
 JNIEXPORT jint JNICALL Java_com_bdg_wish_Client_nativeLog(

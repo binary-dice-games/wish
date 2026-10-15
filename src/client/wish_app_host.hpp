@@ -8,6 +8,7 @@
 
 #include <client/app_registry.hpp>
 #include <context/settings_schema.hpp>
+#include <server/notifications.hpp>
 
 #include "src/bison/bison.hpp"
 #include "src/rmi/client/proxy.hpp"
@@ -107,6 +108,28 @@ class wish_app_host {
     if (!running_app_)
       throw std::logic_error("wish: create_app_temp_dir() needs a running app");
     return create_temp_dir(qualified_app_name(*running_app_));
+  }
+
+  // ── Notifications ───────────────────────────────────────────────────────
+  //
+  // Toasts on the server's screen. Not pure: a host without them (e.g. a
+  // test double) inherits these defaults, which report them as unavailable.
+
+  /// @copydoc bdg::wish::client::has_notifications
+  virtual bool has_notifications() const {
+    return false;
+  }
+
+  /// @copydoc bdg::wish::client::notify
+  virtual std::future<uint64_t> notify(const notification& n) {
+    (void)n;
+    return unavailable<uint64_t>("notifications");
+  }
+
+  /// @copydoc bdg::wish::client::dismiss_notification
+  virtual std::future<bool> dismiss_notification(uint64_t id) {
+    (void)id;
+    return unavailable<bool>("notifications");
   }
 
   // ── User store ──────────────────────────────────────────────────────────
@@ -284,10 +307,16 @@ class wish_app_host {
   const app_info* running_app_ = nullptr;
 
   template <typename T>
-  static std::future<T> unavailable_user_store() {
+  static std::future<T> unavailable(const char* what) {
     std::promise<T> p;
-    p.set_exception(std::make_exception_ptr(std::logic_error("wish: user store not supported by this app host")));
+    p.set_exception(
+        std::make_exception_ptr(std::logic_error(std::string{"wish: "} + what + " not supported by this app host")));
     return p.get_future();
+  }
+
+  template <typename T>
+  static std::future<T> unavailable_user_store() {
+    return unavailable<T>("user store");
   }
 };
 

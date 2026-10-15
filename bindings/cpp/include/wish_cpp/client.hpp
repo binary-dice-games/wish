@@ -468,6 +468,42 @@ class client {
     return std::monostate{};
   }
 
+  // ── Notifications ────────────────────────────────────────────────────
+
+  /// @brief Severity of a notification (matches WISH_NOTIFY_*).
+  enum class notify_kind : int32_t { info = 0, success = 1, warning = 2, error = 3 };
+
+  /**
+   * @brief Show a toast notification on the server's screen (see
+   *        wish_notify()).
+   * @param duration_ms  0 keeps it until dismissed.
+   * @param keys         Key combination drawn as key caps, e.g. "Ctrl+B".
+   * @param tag          Replaces this session's notification with that tag.
+   * @return Its id, for dismiss_notification().
+   * @throws wish_error when the server shows no notifications or the title
+   *         is empty.
+   */
+  uint64_t notify(
+      const std::string& title,
+      const std::string& body = {},
+      notify_kind kind = notify_kind::info,
+      int32_t duration_ms = 6000,
+      const std::string& keys = {},
+      const std::string& tag = {}) {
+    uint64_t id = 0;
+    detail::throw_if_wish_error(
+        wish_notify(
+            h_, title.c_str(), body.c_str(), static_cast<int32_t>(kind), keys.c_str(), duration_ms, tag.c_str(), &id),
+        "client::notify",
+        h_);
+    return id;
+  }
+
+  /// @brief Remove one of this session's notifications early.
+  void dismiss_notification(uint64_t id) {
+    detail::throw_if_wish_error(wish_notify_dismiss(h_, id), "client::dismiss_notification", h_);
+  }
+
   // ── Logging ──────────────────────────────────────────────────────────
 
   void log(const std::string& level, const std::string& msg) {

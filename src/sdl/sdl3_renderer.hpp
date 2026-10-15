@@ -13,20 +13,20 @@
 #ifdef WISH_AUTOMATION_ENABLED
 #include <automation/automation_backend.hpp>
 #include <automation/automation_query.hpp>
-#include "src/bison/bison_sync.hpp"
 #endif
+#include "src/bison/bison_sync.hpp"
 
 #include <atomic>
 #include <chrono>
+#include <deque>
 #include <filesystem>
 #include <map>
 #include <set>
 #include <string>
+#include <vector>
 
 #ifdef WISH_AUTOMATION_ENABLED
-#include <deque>
 #include <future>
-#include <vector>
 #endif
 
 namespace bdg::wish {
@@ -98,6 +98,11 @@ class sdl3_renderer : public imgui_renderer
   /// @brief Returns true once the user closes the window or quit is requested.
   bool should_quit() const override;
 
+  /// @brief Reads back the next frame before it is presented (see
+  ///        renderer::request_screenshot()); @p done runs on the render
+  ///        thread. Never false once the renderer is set up.
+  bool request_screenshot(screenshot_callback done) override;
+
   /// @brief Programmatically request shutdown (e.g. from a menu action).
   void request_quit();
 
@@ -161,6 +166,17 @@ class sdl3_renderer : public imgui_renderer
    * backbuffer everything else eventually lands on.
    */
   void flush_draw_list(ImDrawList& draw_list, int w, int h) override;
+
+  /// request_screenshot() (any thread; capture_screenshot() for
+  /// automation) pushes here; drained on the render thread by end_frame(),
+  /// right after draw data is submitted to sdl_renderer_ but before
+  /// SDL_RenderPresent() -- the last point at which SDL_RenderReadPixels()
+  /// still sees this frame's pixels.
+  bison::synchronized<std::deque<screenshot_callback>> pending_screenshots_;
+
+  /// @brief Read back the currently-rendered frame from `sdl_renderer_` and
+  ///        PNG-encode it. Render-thread only; called from `end_frame()`.
+  std::vector<uint8_t> capture_frame_png();
 
 #ifdef WISH_AUTOMATION_ENABLED
   // ── automation ────────────────────────────────────────────────────────────
@@ -315,16 +331,6 @@ class sdl3_renderer : public imgui_renderer
   /// query_tree() (called from an RMI dispatch thread) pushes here; drained
   /// on the render thread by service_automation_queries().
   bison::synchronized<std::deque<pending_tree_query>> pending_tree_queries_;
-
-  /// capture_screenshot() (called from an RMI dispatch thread) pushes here;
-  /// drained on the render thread by end_frame(), right after draw data is
-  /// submitted to sdl_renderer_ but before SDL_RenderPresent() -- the last
-  /// point at which SDL_RenderReadPixels() still sees this frame's pixels.
-  bison::synchronized<std::deque<std::promise<std::vector<uint8_t>>>> pending_screenshots_;
-
-  /// @brief Read back the currently-rendered frame from `sdl_renderer_` and
-  ///        PNG-encode it. Render-thread only; called from `end_frame()`.
-  std::vector<uint8_t> capture_frame_png();
 
   /// inject_text() (called from an RMI dispatch thread) pushes here; drained
   /// on the render thread at the top of begin_frame(), before ImGui::NewFrame(),

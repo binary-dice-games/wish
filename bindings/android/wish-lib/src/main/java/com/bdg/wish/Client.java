@@ -294,6 +294,43 @@ public final class Client implements AutoCloseable {
     nativeSettingsDescribeCategory(handle, category.toJson());
   }
 
+  // ─── Notifications ──────────────────────────────────────────────────────
+
+  /** A notification's severity: its accent color and icon (WISH_NOTIFY_*). */
+  public enum NotifyKind {
+    INFO(0), SUCCESS(1), WARNING(2), ERROR(3);
+
+    final int code;
+
+    NotifyKind(int code) { this.code = code; }
+  }
+
+  /** Shows an info toast on the server's screen for 6 seconds; returns its id. */
+  public long showNotification(String title, String body) {
+    return showNotification(title, body, NotifyKind.INFO, 6000, "", "");
+  }
+
+  /**
+   * Shows a toast notification on the server's screen and returns its id (named so as not to
+   * overload {@code Object.notify()}). The server shows
+   * this session's identity on it and keeps at most 4 per session.
+   *
+   * @param durationMs how long it stays; 0 keeps it until dismissed (at most 5 minutes)
+   * @param keys key combination drawn as key caps, e.g. "Ctrl+B"
+   * @param tag replaces this session's notification with the same tag
+   * @throws WishException when the server shows no notifications or the title is empty
+   */
+  public long showNotification(String title, String body, NotifyKind kind, int durationMs, String keys, String tag) {
+    long r = nativeNotify(handle, title, body, kind.code, keys, durationMs, tag);
+    if (r < 0) check((int) r);
+    return r;
+  }
+
+  /** Removes one of this session's notifications early. */
+  public void dismissNotification(long id) {
+    check(nativeNotifyDismiss(handle, id));
+  }
+
   // ─── Logging ────────────────────────────────────────────────────────────
 
   /** Sends a structured log message; {@code level} is "debug"/"info"/"warn"/"error". */
@@ -348,6 +385,10 @@ public final class Client implements AutoCloseable {
   private static native void nativeSettingsDescribe(long handle, String json);
   private static native void nativeSettingsDescribeCategory(long handle, String json);
   private static native String nativeSettingsRead(long handle, String json);
+
+  private static native long nativeNotify(
+      long handle, String title, String body, int kind, String keys, int durationMs, String tag);
+  private static native int nativeNotifyDismiss(long handle, long id);
 
   private static native int nativeLog(long handle, String level, String msg);
 }

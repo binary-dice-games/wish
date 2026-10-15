@@ -28,6 +28,13 @@ struct machine_info {
 ///        are left at their "unknown" value.
 machine_info query_machine_info();
 
+/// @brief CPU time this process used so far (user + system), in seconds;
+///        negative when unknown. Cheap enough to call once a second.
+double process_cpu_seconds();
+
+/// @brief Resident memory of this process in bytes; 0 when unknown.
+uint64_t process_memory_bytes();
+
 /// @brief A byte count as text with a binary unit: "512 B", "1.5 KB",
 ///        "3.2 GB".
 std::string format_bytes(uint64_t bytes);

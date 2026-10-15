@@ -372,6 +372,20 @@ extern "C" {
         out_json: *mut *mut c_char,
     ) -> wish_error;
 
+    // ── wish_client_c.h: notifications ───────────────────────────────────────
+
+    pub fn wish_notify(
+        client: wish_client_handle,
+        title: *const c_char,
+        body: *const c_char,
+        kind: i32,
+        keys: *const c_char,
+        duration_ms: i32,
+        tag: *const c_char,
+        out_id: *mut u64,
+    ) -> wish_error;
+    pub fn wish_notify_dismiss(client: wish_client_handle, id: u64) -> wish_error;
+
     // ── wish_client_c.h: logging ──────────────────────────────────────────────
 
     pub fn wish_log(

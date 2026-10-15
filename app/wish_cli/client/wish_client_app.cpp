@@ -175,6 +175,22 @@ std::future<std::string> wish_client_app::create_temp_dir(const std::string& qua
   return wish_client_->create_temp_dir(qualified_app);
 }
 
+bool wish_client_app::has_notifications() const {
+  return wish_client_ && wish_client_->has_notifications();
+}
+
+std::future<uint64_t> wish_client_app::notify(const notification& n) {
+  if (!wish_client_)
+    throw std::runtime_error("client not connected");
+  return wish_client_->notify(n);
+}
+
+std::future<bool> wish_client_app::dismiss_notification(uint64_t id) {
+  if (!wish_client_)
+    throw std::runtime_error("client not connected");
+  return wish_client_->dismiss_notification(id);
+}
+
 bool wish_client_app::has_user_store() const {
   return wish_client_ && wish_client_->has_user_store();
 }

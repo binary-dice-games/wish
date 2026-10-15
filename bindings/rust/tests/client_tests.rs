@@ -154,6 +154,17 @@ fn user_store_is_unavailable_without_a_session() {
 }
 
 #[test]
+fn notify_is_unavailable_without_a_session() {
+    let client = Client::tcp("127.0.0.1", 1);
+    let mut n = wish::Notification::new("Backup finished");
+    n.kind = wish::NotifyKind::Success;
+    let err = client.notify(&n).unwrap_err();
+    assert_eq!(err.code, wish::sys::WISH_ERR_UNAVAILABLE);
+    let err = client.dismiss_notification(1).unwrap_err();
+    assert_eq!(err.code, wish::sys::WISH_ERR_UNAVAILABLE);
+}
+
+#[test]
 fn describe_setting_is_unavailable_without_a_session() {
     let client = Client::tcp("127.0.0.1", 1);
     let info = wish::SettingInfo::new("bdg.desktop.example.color", "color");

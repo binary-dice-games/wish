@@ -11,6 +11,7 @@
 #include <imgui/imgui_server_overlay.hpp>
 #include <ui/ui_element.hpp>
 
+#include <chrono>
 #include <memory>
 #include <vector>
 
@@ -27,8 +28,10 @@ class server_overlay_host {
   /**
    * @brief Turns on the server overlay (see `server_overlay`) and posts a
    *        notification telling the operator its hotkey. Call before the
-   *        server starts rendering. A null `info.shutdown` defaults to
-   *        closing the renderer, which stops the server.
+   *        server starts rendering. Null `info.shutdown` and
+   *        `info.request_screenshot` default to this renderer's
+   *        (closing it stops the server); `info.perf` is always this
+   *        renderer's history.
    */
   virtual void enable_server_overlay(server_overlay_info info) = 0;
 };
@@ -83,6 +86,19 @@ class host_renderer : public Base, public server_overlay_host {
   ///        notification posted while nothing else changes still shows.
   bool consume_render_request() override;
 
+  /// @brief Times each frame for the performance history (perf()).
+  void begin_frame() override;
+  void end_frame() override;
+
+  /// @brief Also closes one performance sample per second, even when no
+  ///        frame is drawn.
+  void tick(const std::vector<sync_context_ptr>& sessions) override;
+
+  /// @brief Per-second performance history (render thread only).
+  const perf_recorder& perf() const {
+    return perf_;
+  }
+
   /// @brief The overlay, or null when not enabled.
   server_overlay* overlay() {
     return overlay_.get();
@@ -93,6 +109,8 @@ class host_renderer : public Base, public server_overlay_host {
   desktop_shell_state desktop_state_;
   std::unique_ptr<server_overlay> overlay_;
   bool notifications_visible_{false};
+  perf_recorder perf_;
+  std::chrono::steady_clock::time_point frame_start_{};
 };
 
 } // namespace bdg::wish

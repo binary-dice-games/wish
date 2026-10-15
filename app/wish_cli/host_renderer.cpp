@@ -35,6 +35,11 @@ template <typename Base>
 void host_renderer<Base>::enable_server_overlay(server_overlay_info info) {
   if (!info.shutdown)
     info.shutdown = [this] { this->request_quit(); };
+  if (!info.request_screenshot)
+    info.request_screenshot = [this](std::function<void(std::vector<uint8_t>)> done) {
+      return this->request_screenshot(std::move(done));
+    };
+  info.perf = &perf_;
   overlay_ = std::make_unique<server_overlay>(std::move(info), this->notifications());
   if (overlay_->has_hotkey()) {
     notification hint;
@@ -51,12 +56,38 @@ template <typename Base>
 void host_renderer<Base>::render_server_overlay(const std::vector<sync_context_ptr>& sessions) {
   if (overlay_)
     overlay_->render(sessions);
-  notifications_visible_ = render_notifications(*this->notifications());
+  // A screenshot frame shows the clients' windows only.
+  // Toasts stay clear of the overlay's action bar (its Shut down button sits
+  // in the same corner).
+  notifications_visible_ = !(overlay_ && overlay_->capturing()) &&
+      render_notifications(*this->notifications(), notification_corner::bottom_right,
+                           overlay_ ? overlay_->bottom_bar_height() : 0.0f);
+}
+
+template <typename Base>
+void host_renderer<Base>::begin_frame() {
+  frame_start_ = std::chrono::steady_clock::now();
+  Base::begin_frame();
+}
+
+template <typename Base>
+void host_renderer<Base>::end_frame() {
+  Base::end_frame();
+  perf_.record_frame(std::chrono::steady_clock::now() - frame_start_);
+}
+
+template <typename Base>
+void host_renderer<Base>::tick(const std::vector<sync_context_ptr>& sessions) {
+  Base::tick(sessions);
+  const auto now = std::chrono::steady_clock::now();
+  if (perf_.due(now))
+    perf_.close_sample(now, sessions.size(), process_cpu_seconds(), process_memory_bytes());
 }
 
 template <typename Base>
 bool host_renderer<Base>::wants_continuous_redraw() const {
-  return Base::wants_continuous_redraw() || notifications_visible_ || (overlay_ && overlay_->is_open());
+  return Base::wants_continuous_redraw() || notifications_visible_ ||
+      (overlay_ && (overlay_->is_open() || overlay_->capturing()));
 }
 
 template <typename Base>

@@ -34,6 +34,10 @@ struct notification {
   notification_kind kind{notification_kind::info};
   /// How long the notification stays; zero keeps it until dismissed.
   std::chrono::milliseconds duration{std::chrono::seconds{6}};
+  /// Who posted it, shown small under the text (e.g. "From alice"); empty
+  /// for the server itself. Set by the server for client notifications,
+  /// so an app can't pass its toasts off as the server's.
+  std::string source;
   /// Optional tag: posting a notification with the tag of an active one
   /// replaces that one instead of stacking a second copy (e.g. a "server
   /// overlay" hint posted twice).

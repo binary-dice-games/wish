@@ -588,6 +588,36 @@ public sealed class Client : IDisposable
         }
     }
 
+    // ── Notifications ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Shows a toast notification on the server's screen and returns its id. The server shows
+    /// this session's identity on it and keeps at most 4 per session.
+    /// </summary>
+    /// <param name="title">First line; required.</param>
+    /// <param name="body">Text under the title.</param>
+    /// <param name="kind">Accent color and icon.</param>
+    /// <param name="duration">How long it stays; <see cref="TimeSpan.Zero"/> keeps it until dismissed (default 6 s).</param>
+    /// <param name="keys">Key combination drawn as key caps, e.g. "Ctrl+B".</param>
+    /// <param name="tag">Replaces this session's notification with the same tag.</param>
+    /// <exception cref="WishException">The server shows no notifications, or the title is empty.</exception>
+    public ulong Notify(
+        string title,
+        string body = "",
+        NotifyKind kind = NotifyKind.Info,
+        TimeSpan? duration = null,
+        string keys = "",
+        string tag = "")
+    {
+        int ms = (int)(duration ?? TimeSpan.FromSeconds(6)).TotalMilliseconds;
+        WishException.Check(Native.wish_notify(_handle, title, body, (int)kind, keys, ms, tag, out ulong id), "notify", LastError);
+        return id;
+    }
+
+    /// <summary>Removes one of this session's notifications early.</summary>
+    public void DismissNotification(ulong id) =>
+        WishException.Check(Native.wish_notify_dismiss(_handle, id), "dismiss_notification", LastError);
+
     // ── Logging ───────────────────────────────────────────────────────────────
 
     /// <summary>Sends a structured log message: <paramref name="level"/> is "debug"/"info"/"warn"/"error".</summary>
@@ -600,4 +630,13 @@ public sealed class Client : IDisposable
     public void LogWarn(string msg) => WishException.Check(Native.wish_log_warn(_handle, msg), "log_warn", LastError);
 
     public void LogError(string msg) => WishException.Check(Native.wish_log_error(_handle, msg), "log_error", LastError);
+}
+
+/// <summary>Severity of a notification: its accent color and icon (WISH_NOTIFY_*).</summary>
+public enum NotifyKind
+{
+    Info = 0,
+    Success = 1,
+    Warning = 2,
+    Error = 3,
 }

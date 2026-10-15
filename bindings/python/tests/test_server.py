@@ -26,7 +26,7 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from wish import Client, Server
+from wish import Client, Server, WishError
 
 
 def _free_port() -> int:
@@ -284,6 +284,37 @@ class TestUserStore(unittest.TestCase):
         r = self._run(session)
         self.assertFalse(r["has"])
         self.assertEqual(r["code"], _n.WISH_ERR_UNAVAILABLE)
+
+
+class TestNotifications(unittest.TestCase):
+    """Client.notify / dismiss_notification against a real wish_server_dll server."""
+
+    setUp = TestUserStore.setUp
+    tearDown = TestUserStore.tearDown
+    _run = TestUserStore._run
+
+    def test_post_replace_and_dismiss(self):
+        def session(c, r):
+            r["first"] = c.notify("Backup finished", "42 files", kind="success", keys="Ctrl+B", tag="backup")
+            r["again"] = c.notify("Backup finished", "43 files", kind="success", tag="backup", duration=0)
+            c.dismiss_notification(r["first"])
+
+        r = self._run(session, username="alice")
+        self.assertGreater(r["first"], 0)
+        self.assertEqual(r["again"], r["first"])  # same tag: replaced
+
+    def test_anonymous_clients_can_notify(self):
+        r = self._run(lambda c, r: r.update(id=c.notify("hello")))
+        self.assertGreater(r["id"], 0)
+
+    def test_bad_input_is_rejected(self):
+        def session(c, r):
+            with self.assertRaises(ValueError):
+                c.notify("x", kind="loud")
+            with self.assertRaises(WishError):
+                c.notify("")
+
+        self._run(session)
 
 
 if __name__ == "__main__":

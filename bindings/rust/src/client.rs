@@ -800,6 +800,47 @@ impl Client {
         .unwrap_or(SettingValue::None))
     }
 
+    // ── Notifications ────────────────────────────────────────────────────
+
+    /// Shows a toast notification on the server's screen and returns its
+    /// id. `duration` of zero keeps it until dismissed. The server shows
+    /// this session's identity on it and keeps at most 4 per session.
+    /// Fails when the server shows no notifications or `title` is empty.
+    pub fn notify(&self, notification: &Notification) -> Result<u64, WishError> {
+        let mut id: u64 = 0;
+        let title = cstr(&notification.title);
+        let body = cstr(&notification.body);
+        let keys = cstr(&notification.keys);
+        let tag = cstr(&notification.tag);
+        let ms = i32::try_from(notification.duration.as_millis()).unwrap_or(i32::MAX);
+        check(
+            unsafe {
+                sys::wish_notify(
+                    self.handle,
+                    title.as_ptr(),
+                    body.as_ptr(),
+                    notification.kind as i32,
+                    keys.as_ptr(),
+                    ms,
+                    tag.as_ptr(),
+                    &mut id,
+                )
+            },
+            "client.notify",
+            self.handle,
+        )?;
+        Ok(id)
+    }
+
+    /// Removes one of this session's notifications early.
+    pub fn dismiss_notification(&self, id: u64) -> Result<(), WishError> {
+        check(
+            unsafe { sys::wish_notify_dismiss(self.handle, id) },
+            "client.dismiss_notification",
+            self.handle,
+        )
+    }
+
     // ── Logging ──────────────────────────────────────────────────────────
 
     pub fn log(&self, level: &str, msg: &str) -> Result<(), WishError> {
@@ -1003,5 +1044,47 @@ fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
         s.clone()
     } else {
         "unknown panic payload".to_string()
+    }
+}
+
+// ── Notifications ────────────────────────────────────────────────────────────
+
+/// Severity of a notification: its accent color and icon (`WISH_NOTIFY_*`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum NotifyKind {
+    #[default]
+    Info = 0,
+    Success = 1,
+    Warning = 2,
+    Error = 3,
+}
+
+/// A toast notification for [`Client::notify`].
+#[derive(Debug, Clone)]
+pub struct Notification {
+    /// First line; required.
+    pub title: String,
+    /// Text under the title.
+    pub body: String,
+    pub kind: NotifyKind,
+    /// Key combination drawn as key caps, e.g. `"Ctrl+B"`.
+    pub keys: String,
+    /// How long it stays; zero keeps it until dismissed (at most 5 minutes).
+    pub duration: std::time::Duration,
+    /// Replaces this session's notification with the same tag.
+    pub tag: String,
+}
+
+impl Notification {
+    /// An info notification with `title`, shown for 6 seconds.
+    pub fn new(title: impl Into<String>) -> Self {
+        Self {
+            title: title.into(),
+            body: String::new(),
+            kind: NotifyKind::Info,
+            keys: String::new(),
+            duration: std::time::Duration::from_secs(6),
+            tag: String::new(),
+        }
     }
 }

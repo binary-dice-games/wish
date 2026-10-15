@@ -18,7 +18,10 @@ wish-server --renderer=sdl3 --profiling_dir=./traces --profiling_autostart
   `BISON_TRACE_SCOPE` calls in the render loop become no-ops.
 - `--profiling_autostart` starts capture immediately at server startup.
   Without it, profiling is enabled but idle until something starts capture
-  via the `__BisonProfiler` RMI singleton (see bison's doc above).
+  via the `__BisonProfiler` RMI singleton (see bison's doc above), or the
+  **Start recording** button on the [server overlay](server-overlay.md)'s
+  Performance page (Shift+F1), which also stops the capture, writing the
+  trace, and shows the newest trace file.
 
 The trace is finalized and flushed to disk when the server shuts down
 (Ctrl+C, window close, or the client disconnecting a `--transport=term`

@@ -1324,6 +1324,31 @@ TEST(DrawProtocolTest, EncodeTextureDestroy_EncodesId) {
   EXPECT_EQ(read_u32(bytes, pos), 99u);
 }
 
+// ── draw_protocol: SCREENSHOT_REQUEST / SCREENSHOT_DATA ──────────────────────
+
+TEST(DrawProtocolTest, ScreenshotRequestHasNoPayload) {
+  auto bytes = bdg::wish::draw_protocol::encode_screenshot_request();
+  size_t pos = 0;
+  EXPECT_EQ(read_u8(bytes, pos), static_cast<uint8_t>(web_msg_type::screenshot_request));
+  pos += 3;
+  EXPECT_EQ(read_u32(bytes, pos), 0u);
+  EXPECT_EQ(bytes.size(), 8u);
+}
+
+TEST(DrawProtocolTest, ScreenshotDataDecodesThePngBytes) {
+  const std::vector<uint8_t> png{0x89, 'P', 'N', 'G', 1, 2, 3};
+  std::vector<std::byte> msg(8 + png.size());
+  msg[0] = static_cast<std::byte>(web_msg_type::screenshot_data);
+  msg[4] = static_cast<std::byte>(png.size());
+  std::memcpy(msg.data() + 8, png.data(), png.size());
+  auto decoded = bdg::wish::draw_protocol::decode_screenshot_data_message(msg);
+  ASSERT_TRUE(decoded);
+  EXPECT_EQ(*decoded, png);
+  // Another message type is not mistaken for one.
+  msg[0] = static_cast<std::byte>(web_msg_type::clipboard_text);
+  EXPECT_FALSE(bdg::wish::draw_protocol::decode_screenshot_data_message(msg));
+}
+
 // ── draw_protocol: TEX_CHECK / CACHE_RESPONSE ───────────────────────────────
 
 TEST(DrawProtocolTest, EncodeTextureCheck_PayloadLayout) {

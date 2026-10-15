@@ -259,6 +259,15 @@ internal static partial class Native
     [LibraryImport(LibName, StringMarshalling = StringMarshalling.Utf8)]
     public static partial int wish_settings_read(nint client, string settingJson, out nint outJson);
 
+    // ── Notifications ─────────────────────────────────────────────────────────
+
+    [LibraryImport(LibName, StringMarshalling = StringMarshalling.Utf8)]
+    public static partial int wish_notify(
+        nint client, string title, string? body, int kind, string? keys, int durationMs, string? tag, out ulong outId);
+
+    [LibraryImport(LibName)]
+    public static partial int wish_notify_dismiss(nint client, ulong id);
+
     // ── Logging ───────────────────────────────────────────────────────────────
 
     [LibraryImport(LibName, StringMarshalling = StringMarshalling.Utf8)]

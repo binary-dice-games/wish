@@ -409,6 +409,20 @@ std::vector<std::byte> encode_clipboard_write(const std::string& text) {
   return wrap_envelope(web_msg_type::clipboard_write, std::move(payload));
 }
 
+// ── outbound: SCREENSHOT_REQUEST / inbound: SCREENSHOT_DATA ─────────────────
+
+std::vector<std::byte> encode_screenshot_request() {
+  return wrap_envelope(web_msg_type::screenshot_request, {});
+}
+
+std::optional<std::vector<uint8_t>> decode_screenshot_data_message(std::span<const std::byte> message) {
+  auto payload = unwrap_envelope(message, web_msg_type::screenshot_data);
+  if (!payload)
+    return std::nullopt;
+  const auto* bytes = reinterpret_cast<const uint8_t*>(payload->data());
+  return std::vector<uint8_t>(bytes, bytes + payload->size());
+}
+
 // ── inbound: QUERY_TREE / outbound: TREE_SNAPSHOT ───────────────────────────
 
 #ifdef WISH_AUTOMATION_ENABLED

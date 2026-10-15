@@ -17,12 +17,14 @@
 #include <context/settings_store.hpp>
 #include <server/machine_info.hpp>
 #include <server/notifications.hpp>
+#include <server/perf_stats.hpp>
 
 #include <imgui.h>
 
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <ctime>
 #include <filesystem>
 #include <functional>
 #include <memory>
@@ -60,6 +62,25 @@ struct server_overlay_info {
   /// open_in_host_shell(), on a background thread). Replaceable for tests.
   /// @return false when nothing could be opened.
   std::function<bool(const std::string&)> open_in_shell;
+
+  /// Asks the renderer for a PNG of its next frame (see
+  /// `renderer::request_screenshot()`); null hides the Screenshot button.
+  std::function<bool(std::function<void(std::vector<uint8_t>)>)> request_screenshot;
+  /// Where screenshots are saved (`--screenshot_dir`), created on demand.
+  std::filesystem::path screenshot_dir;
+
+  /// The host renderer's performance history; null hides the Performance
+  /// page. Must outlive the overlay.
+  const perf_recorder* perf{nullptr};
+
+  /// Perfetto capture controls; all null when the server runs without
+  /// `--profiling_dir` (the Performance page then says how to enable it).
+  struct profiler_controls {
+    std::filesystem::path dir; ///< Where traces are written.
+    std::function<bool()> active; ///< Whether a capture is running.
+    std::function<bool()> start; ///< Starts one; false on failure.
+    std::function<void()> stop; ///< Stops and writes the trace.
+  } profiler;
 };
 
 /// @brief One connected client, as listed on the Clients page.
@@ -86,7 +107,7 @@ std::vector<overlay_client_info> collect_overlay_clients(const std::vector<sync_
 class server_overlay {
  public:
   /// @brief Overlay pages, in tab order.
-  enum class page { overview, clients, settings, logs, about };
+  enum class page { overview, clients, performance, settings, logs, about };
 
   /// @param info          What to show and how to act (see server_overlay_info).
   /// @param notifications Where action failures are reported; may be null.
@@ -141,9 +162,30 @@ class server_overlay {
   ///        as an error notification. Public for the host's menu bar.
   void open_target(const std::string& target, const std::string& what);
 
+  /**
+   * @brief Takes a screenshot of the clients' windows: the overlay (and the
+   *        notifications, see capturing()) hide while the next frame is
+   *        captured, then the PNG is saved under `screenshot_dir` and a
+   *        notification gives its path. The overlay comes back afterwards
+   *        when it was open. No-op while a capture runs or without
+   *        `request_screenshot`.
+   */
+  void take_screenshot();
+
+  /// @brief Height of the bottom action bar while the overlay is shown
+  ///        (0 when hidden), so toasts can stay clear of its buttons.
+  float bottom_bar_height() const;
+
+  /// @brief True while a screenshot is being taken: nothing of the
+  ///        overlay's or the notifications' may be drawn.
+  bool capturing() const {
+    return capture_ != nullptr;
+  }
+
  private:
   struct settings_scope; // one store: the server's or one identity's
   struct settings_row;
+  struct capture_state; // shared with the screenshot callback
 
   void draw_backdrop();
   void draw_top_bar(size_t client_count);
@@ -151,6 +193,7 @@ class server_overlay {
   void draw_overview(const std::vector<overlay_client_info>& clients);
   void draw_clients(const std::vector<overlay_client_info>& clients);
   void draw_settings(const std::vector<overlay_client_info>& clients);
+  void draw_performance();
   void draw_logs();
   void draw_about();
   void draw_shutdown_popup(size_t client_count);
@@ -158,6 +201,7 @@ class server_overlay {
   void refresh_machine(bool force);
   void refresh_settings(const std::vector<overlay_client_info>& clients, bool force);
   void refresh_log(bool force);
+  void update_capture();
   bool draw_setting_editor(settings_row& row);
 
   server_overlay_info info_;
@@ -189,6 +233,13 @@ class server_overlay {
   bool log_scroll_to_end_{false};
   std::chrono::steady_clock::time_point log_at_{};
   std::filesystem::file_time_type log_mtime_{};
+
+  // Screenshot in progress; null otherwise.
+  std::shared_ptr<capture_state> capture_;
+
+  // Performance: the newest trace in the profiler's directory.
+  std::filesystem::path last_trace_;
+  std::chrono::steady_clock::time_point trace_at_{};
 };
 
 namespace detail {
@@ -201,6 +252,15 @@ std::vector<std::string> read_log_tail(const std::filesystem::path& path, size_t
 ///        plus @p connected, sorted and unique; unsafe names are skipped.
 std::vector<std::string> list_store_identities(const std::filesystem::path& store_dir,
                                                const std::vector<std::string>& connected);
+
+/// @brief A new screenshot file name in @p dir for local time @p t:
+///        "wish-YYYYMMDD-HHMMSS.png", with "-2", "-3", ... appended when
+///        that file exists.
+std::filesystem::path screenshot_path(const std::filesystem::path& dir, std::time_t t);
+
+/// @brief The most recently modified `*.perfetto-trace` file in @p dir;
+///        empty when there is none.
+std::filesystem::path newest_trace(const std::filesystem::path& dir);
 
 /// @brief "#RRGGBB" / "#RRGGBBAA" to RGBA floats; nullopt when malformed.
 std::optional<std::array<float, 4>> parse_hex_color(const std::string& text);

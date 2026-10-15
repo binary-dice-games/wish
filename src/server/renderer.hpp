@@ -11,6 +11,8 @@
 #include <automation/automation_backend.hpp>
 #endif
 
+#include <cstdint>
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -210,6 +212,26 @@ class renderer {
    */
   virtual void render_server_overlay(const std::vector<sync_context_ptr>& sessions) {
     (void)sessions;
+  }
+
+  /// @brief Receives a PNG-encoded screenshot; empty when capturing failed.
+  using screenshot_callback = std::function<void(std::vector<uint8_t> png)>;
+
+  /**
+   * @brief Asks for a PNG of the next frame this renderer finishes, with
+   *        everything that frame draws.
+   *
+   * @p done runs once, on any thread: the render thread (SDL3) or a
+   * WebSocket thread (web, where the browser that shows the server
+   * captures its canvas and sends it back). The default renderer can't
+   * take screenshots.
+   *
+   * @return false when no screenshot can be taken now (unsupported, or no
+   *         browser connected); @p done is then never called.
+   */
+  virtual bool request_screenshot(screenshot_callback done) {
+    (void)done;
+    return false;
   }
 
   /**

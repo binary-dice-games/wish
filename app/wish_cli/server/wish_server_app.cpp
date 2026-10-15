@@ -72,6 +72,8 @@ DEFINE_string(
 DEFINE_string(overlay_hotkey, "Shift+F1",
               "Key combination that opens the server overlay (clients, settings, logs, ...), e.g. "
               "Shift+F1 or Ctrl+Shift+O; empty disables the overlay and its startup notification.");
+DEFINE_string(screenshot_dir, "wish_screenshots",
+              "Directory the server overlay's Screenshot button saves PNG files to (created on demand).");
 DEFINE_string(store_dir, "",
               "Directory holding the persistent server store and per-user stores (see "
               "docs/persistent-store.md); empty: ~/.wish. Clients get a user store only when they "
@@ -307,6 +309,17 @@ configured_server::configured_server(
     info.sandbox_root = srv.persistent_sandbox_root();
     info.stores = srv.stores();
     info.settings_admins = srv.settings_admins();
+    info.screenshot_dir = std::filesystem::absolute(FLAGS_screenshot_dir, ec);
+    if (ec)
+      info.screenshot_dir = FLAGS_screenshot_dir;
+    if (!FLAGS_profiling_dir.empty()) {
+      info.profiler.dir = std::filesystem::absolute(FLAGS_profiling_dir, ec);
+      if (ec)
+        info.profiler.dir = FLAGS_profiling_dir;
+      info.profiler.active = [&srv] { return srv.is_capture_active_now(); };
+      info.profiler.start = [&srv] { return srv.start_capture_now("overlay"); };
+      info.profiler.stop = [&srv] { srv.stop_capture_now(); };
+    }
     overlay_host->enable_server_overlay(std::move(info));
   }
   srv.start(auth, std::move(listen_params));

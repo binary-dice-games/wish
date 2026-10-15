@@ -122,6 +122,25 @@ new notification, so it shows even when nothing else asks for a frame.
 `wish standalone` shares `host_renderer`, so it draws notifications, but
 nothing enables its overlay.
 
+Clients post notifications through a per-session `__WishNotifications`
+service (`notification_service`), not straight into the center: it is the
+choke point for the guards (the session's identity as the visible source,
+a per-session cap, size and duration limits, session-scoped tags and
+dismissal, cleanup when the session ends). The identity is only known after
+authentication, so `server::on_authenticated()` sets it on the service that
+`on_session_created()` made.
+
+The Performance page reads `perf_recorder`, which `host_renderer` feeds:
+`begin_frame()`/`end_frame()` time each drawn frame, and `tick()` -- called
+at ~60 Hz whether or not a frame is drawn -- closes one sample a second
+with the process' CPU time and memory, so an idle server still shows a
+flat line instead of a frozen graph. Screenshots go through
+`renderer::request_screenshot()`, a renderer-level hook because only the
+renderer has the pixels: the SDL3 renderer reads the frame back before
+presenting it, and the web renderer asks the browser for its canvas (see
+`src/web/DESIGN.md`). The overlay hides itself and the toasts for the frames
+in between, then saves the PNG and comes back.
+
 ---
 
 ## client mode

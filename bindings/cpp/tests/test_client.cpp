@@ -458,6 +458,19 @@ TEST_F(WishCppUserStoreTest, ReadsSettingsOrTheirDefaults) {
   });
 }
 
+TEST_F(WishCppUserStoreTest, ClientPostsAndDismissesNotifications) {
+  auto client = wish::client::tcp("127.0.0.1", port_);
+  client.run([](wish::client& c) {
+    const uint64_t id =
+        c.notify("Backup finished", "42 files", wish::client::notify_kind::success, 0, "Ctrl+B", "backup");
+    EXPECT_GT(id, 0u);
+    EXPECT_EQ(c.notify("Backup finished", "43 files", wish::client::notify_kind::success, 0, "", "backup"), id)
+        << "same tag: replaced";
+    c.dismiss_notification(id);
+    EXPECT_THROW(c.notify(""), wish::error);
+  });
+}
+
 TEST_F(WishCppUserStoreTest, AnonymousClientGetsUnavailable) {
   auto client = wish::client::tcp("127.0.0.1", port_);
   client.run([](wish::client& c) {

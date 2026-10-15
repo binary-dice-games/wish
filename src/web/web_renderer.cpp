@@ -175,6 +175,11 @@ void web_renderer::setup() {
         } else if (auto resp = draw_protocol::decode_cache_response_message(message)) {
           cache_response_queue_.wlock()->push_back({id, *resp});
           activity_.store(true, std::memory_order_relaxed);
+        } else if (auto png = draw_protocol::decode_screenshot_data_message(message)) {
+          std::vector<screenshot_callback> done;
+          std::swap(done, *pending_screenshots_.wlock());
+          for (auto& cb : done)
+            cb(*png);
         } else if (auto clip = draw_protocol::decode_clipboard_text_message(message)) {
           *pending_clipboard_text_.wlock() = std::move(*clip);
           // No activity_ bump: this alone never needs a frame redrawn, and
@@ -518,6 +523,30 @@ void web_renderer::end_frame() {
 
   draw_protocol::encode_frame(*draw_data, /*target_id=*/0, frame_scratch_);
   server_->broadcast(frame_scratch_);
+
+  // After the frame, so a browser that gets the request captures this frame
+  // or a later one, never an earlier one.
+  const auto now = std::chrono::steady_clock::now();
+  const bool due = screenshot_request_due_.exchange(false, std::memory_order_acq_rel);
+  if (due || (!pending_screenshots_.rlock()->empty() && now - screenshot_requested_at_ >= std::chrono::seconds{2})) {
+    screenshot_requested_at_ = now;
+    server_->broadcast(draw_protocol::encode_screenshot_request());
+  }
+}
+
+bool web_renderer::request_screenshot(screenshot_callback done) {
+  if (!done || connected_ids_.rlock()->empty())
+    return false;
+  bool first = false;
+  {
+    auto pending = pending_screenshots_.wlock();
+    first = pending->empty();
+    pending->push_back(std::move(done));
+  }
+  if (first)
+    screenshot_request_due_.store(true, std::memory_order_release); // ask on the next end_frame()
+  activity_.store(true, std::memory_order_relaxed);
+  return true;
 }
 
 bool web_renderer::should_quit() const {

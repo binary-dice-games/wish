@@ -101,6 +101,16 @@ class c_abi_app_host : public wish::wish_app_host {
     return client_.create_temp_dir(qualified_app);
   }
 
+  bool has_notifications() const override {
+    return client_.has_notifications();
+  }
+  std::future<uint64_t> notify(const wish::notification& n) override {
+    return client_.notify(n);
+  }
+  std::future<bool> dismiss_notification(uint64_t id) override {
+    return client_.dismiss_notification(id);
+  }
+
   bool has_user_store() const override {
     return client_.has_user_store();
   }
@@ -909,6 +919,54 @@ extern "C" wish_error wish_settings_read(wish_client_handle c, const char* setti
     char* buf = new char[json_str.size() + 1];
     std::memcpy(buf, json_str.c_str(), json_str.size() + 1);
     *out_json = buf;
+    return WISH_OK;
+  } catch (const std::exception& e) {
+    c->last_error_ = e.what();
+    return WISH_ERR_EXCEPTION;
+  }
+}
+
+// ── Notifications ─────────────────────────────────────────────────────────────
+
+extern "C" wish_error wish_notify(
+    wish_client_handle c,
+    const char* title,
+    const char* body,
+    int32_t kind,
+    const char* keys,
+    int32_t duration_ms,
+    const char* tag,
+    uint64_t* out_id) {
+  if (!c || !title)
+    return WISH_ERR_NULL;
+  if (!c->client_->has_notifications())
+    return WISH_ERR_UNAVAILABLE;
+  try {
+    wish::notification n;
+    n.title = title;
+    n.body = body ? body : "";
+    n.keys = keys ? keys : "";
+    n.tag = tag ? tag : "";
+    n.kind = kind >= WISH_NOTIFY_INFO && kind <= WISH_NOTIFY_ERROR ? static_cast<wish::notification_kind>(kind)
+                                                                    : wish::notification_kind::info;
+    n.duration = std::chrono::milliseconds{duration_ms};
+    const uint64_t id = c->client_->notify(n).get();
+    if (out_id)
+      *out_id = id;
+    return WISH_OK;
+  } catch (const std::exception& e) {
+    c->last_error_ = e.what();
+    return WISH_ERR_EXCEPTION;
+  }
+}
+
+extern "C" wish_error wish_notify_dismiss(wish_client_handle c, uint64_t id) {
+  if (!c)
+    return WISH_ERR_NULL;
+  if (!c->client_->has_notifications())
+    return WISH_ERR_UNAVAILABLE;
+  try {
+    c->client_->dismiss_notification(id).get();
     return WISH_OK;
   } catch (const std::exception& e) {
     c->last_error_ = e.what();

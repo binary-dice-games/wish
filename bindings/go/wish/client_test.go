@@ -232,6 +232,20 @@ func TestRunAgainstUnreachablePortFailsCleanly(t *testing.T) {
 	}
 }
 
+func TestNotifyUnavailableWithoutSession(t *testing.T) {
+	c, err := NewTCPClient("127.0.0.1", 1)
+	must(t, err)
+	defer c.Destroy()
+	var we *WishError
+	_, err = c.Notify(Notification{Title: "Backup finished", Kind: NotifySuccess, Duration: 5 * time.Second})
+	if !errors.As(err, &we) || we.Code != WishErrUnavailable {
+		t.Fatalf("Notify() error = %v; want WishErrUnavailable", err)
+	}
+	if err := c.DismissNotification(1); !errors.As(err, &we) || we.Code != WishErrUnavailable {
+		t.Fatalf("DismissNotification() error = %v; want WishErrUnavailable", err)
+	}
+}
+
 func TestUserStoreUnavailableWithoutSession(t *testing.T) {
 	// A client that never connected has no identity, so it behaves like an
 	// anonymous session: no user store, every call reports Unavailable.

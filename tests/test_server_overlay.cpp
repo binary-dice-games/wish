@@ -10,11 +10,17 @@
 #include <imgui/imgui_renderer.hpp>
 #include <imgui/imgui_server_overlay.hpp>
 #include <server/machine_info.hpp>
+#include <auth/local_auth_module.hpp>
+#include <client/client.hpp>
+#include <server/notification_service.hpp>
 #include <server/notifications.hpp>
+#include <server/perf_stats.hpp>
 #include <server/registry.hpp>
+#include <server/server.hpp>
 #include <ui/ui_importer.hpp>
 
 #include "src/bison/bison_common.hpp"
+#include "src/rmi/rmi.hpp"
 #include "src/rmi/shared/ids.hpp"
 
 #include <imgui.h>
@@ -23,8 +29,10 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 using namespace bdg::bison;
@@ -137,6 +145,189 @@ TEST(NotificationDetail, AlphaFadesInAndOut) {
   EXPECT_FLOAT_EQ(wish::detail::notification_alpha(1.0f, -1.0f), 1.0f) << "sticky never fades out";
 }
 
+// ── notification_service (client notifications) ─────────────────────────────
+
+TEST(NotificationService, MarksSourceAndClipsText) {
+  auto center = std::make_shared<wish::notification_center>();
+  auto svc = wish::notification_service::instantiate(center, "alice");
+  wish::notification n = note(std::string(500, 'T'), 10min);
+  n.body = std::string(5000, 'b');
+  n.source = "the server"; // a client can't choose its own source
+  svc->post(std::move(n));
+  auto items = center->active();
+  ASSERT_EQ(items.size(), 1u);
+  EXPECT_EQ(items[0].content.source, "alice");
+  EXPECT_EQ(items[0].content.title.size(), wish::notification_service::kMaxTitle);
+  EXPECT_EQ(items[0].content.body.size(), wish::notification_service::kMaxBody);
+  EXPECT_EQ(items[0].expires - items[0].posted,
+            std::chrono::milliseconds{wish::notification_service::kMaxDurationMs});
+  EXPECT_THROW(svc->post(note("")), std::invalid_argument);
+}
+
+TEST(NotificationService, AnonymousSourceAndLateIdentity) {
+  auto center = std::make_shared<wish::notification_center>();
+  auto svc = wish::notification_service::instantiate(center, "");
+  svc->post(note("a"));
+  svc->set_source("bob");
+  svc->post(note("b"));
+  auto items = center->active();
+  ASSERT_EQ(items.size(), 2u);
+  EXPECT_EQ(items[0].content.source, "an anonymous app");
+  EXPECT_EQ(items[1].content.source, "bob");
+}
+
+TEST(NotificationService, KeepsAtMostFourPerSession) {
+  auto center = std::make_shared<wish::notification_center>();
+  center->post(note("server's own"));
+  auto svc = wish::notification_service::instantiate(center, "alice");
+  for (int i = 0; i < 7; ++i)
+    svc->post(note("n" + std::to_string(i)));
+  auto items = center->active();
+  ASSERT_EQ(items.size(), 1u + wish::notification_service::kMaxPerSession);
+  EXPECT_EQ(items[0].content.title, "server's own") << "a client never pushes out others' notifications";
+  EXPECT_EQ(items[1].content.title, "n3");
+}
+
+TEST(NotificationService, TagsAndDismissAreScopedToTheSession) {
+  auto center = std::make_shared<wish::notification_center>();
+  auto a = wish::notification_service::instantiate(center, "alice");
+  auto b = wish::notification_service::instantiate(center, "bob");
+  const uint64_t a1 = a->post(note("alice v1", 6s, "progress"));
+  const uint64_t b1 = b->post(note("bob v1", 6s, "progress"));
+  EXPECT_NE(a1, b1) << "the same tag in two sessions doesn't collide";
+  EXPECT_EQ(a->post(note("alice v2", 6s, "progress")), a1);
+  EXPECT_FALSE(a->dismiss(b1)) << "can't dismiss another session's notification";
+  EXPECT_EQ(center->active().size(), 2u);
+  EXPECT_TRUE(a->dismiss(a1));
+  EXPECT_EQ(center->active().size(), 1u);
+}
+
+TEST(NotificationService, SessionEndRemovesItsNotifications) {
+  auto center = std::make_shared<wish::notification_center>();
+  {
+    auto svc = wish::notification_service::instantiate(center, "alice");
+    svc->post(note("sticky", 0ms));
+  }
+  EXPECT_TRUE(center->active().empty());
+}
+
+namespace {
+
+// Runs @p body inside on_session(), connected as @p username.
+class notify_test_client : public wish::client {
+ public:
+  using wish::client::client;
+  std::function<void(notify_test_client&)> body;
+
+ protected:
+  void on_session() override {
+    if (body)
+      body(*this);
+  }
+};
+
+} // namespace
+
+TEST(NotificationService, ClientsPostOverRmi) {
+  rmi::transport::memory_server_transport transport;
+  auto renderer = std::make_unique<wish::null_renderer>();
+  auto center = renderer->notifications();
+  wish::server srv{transport, std::move(renderer)};
+  srv.start(std::make_shared<wish::local_auth_module>());
+
+  auto run_as = [&](const std::string& username, std::function<void(notify_test_client&)> body) {
+    notify_test_client c{transport.connect()};
+    c.body = std::move(body);
+    dynamic params;
+    if (!username.empty())
+      params["username"_key] = username;
+    c.run(params);
+  };
+
+  bool has = false;
+  uint64_t id = 0;
+  bool dismissed_unknown = true;
+  std::vector<wish::active_notification> seen;
+  run_as("alice", [&](notify_test_client& c) {
+    has = c.has_notifications();
+    wish::notification n = note("Backup finished", 0ms);
+    n.body = "42 files";
+    n.kind = wish::notification_kind::success;
+    n.keys = "Ctrl+B";
+    id = c.notify(n).get();
+    dismissed_unknown = c.dismiss_notification(id + 1000).get();
+    seen = center->active();
+    EXPECT_THROW(c.notify(note("")).get(), std::exception);
+  });
+  EXPECT_TRUE(has);
+  EXPECT_GT(id, 0u);
+  EXPECT_FALSE(dismissed_unknown);
+  ASSERT_EQ(seen.size(), 1u);
+  EXPECT_EQ(seen[0].id, id);
+  EXPECT_EQ(seen[0].content.title, "Backup finished");
+  EXPECT_EQ(seen[0].content.body, "42 files");
+  EXPECT_EQ(seen[0].content.kind, wish::notification_kind::success);
+  EXPECT_EQ(seen[0].content.keys, "Ctrl+B");
+  EXPECT_EQ(seen[0].content.source, "alice");
+  // The session is torn down on the server's worker thread: wait for it.
+  const auto deadline = std::chrono::steady_clock::now() + 5s;
+  while (!center->active().empty() && std::chrono::steady_clock::now() < deadline)
+    std::this_thread::sleep_for(10ms);
+  EXPECT_TRUE(center->active().empty()) << "the sticky one went with its session";
+
+  std::string anon_source;
+  run_as("", [&](notify_test_client& c) {
+    c.notify(note("hi")).get();
+    anon_source = center->active().at(0).content.source;
+  });
+  EXPECT_EQ(anon_source, "an anonymous app");
+  srv.stop();
+}
+
+// ── perf_recorder ───────────────────────────────────────────────────────────
+
+TEST(PerfRecorder, ClosesOneSamplePerSecond) {
+  wish::perf_recorder perf;
+  const auto t0 = std::chrono::steady_clock::now();
+  EXPECT_TRUE(perf.due(t0));
+  perf.close_sample(t0, 0, 1.0, 0); // baseline only
+  EXPECT_TRUE(perf.history().empty());
+  EXPECT_FALSE(perf.due(t0 + 500ms));
+
+  perf.record_frame(2ms);
+  perf.record_frame(6ms);
+  ASSERT_TRUE(perf.due(t0 + 1s));
+  perf.close_sample(t0 + 1s, 3, 1.5, uint64_t{64} << 20);
+  ASSERT_EQ(perf.history().size(), 1u);
+  const auto s = *perf.latest();
+  EXPECT_FLOAT_EQ(s.frame_ms_avg, 4.0f);
+  EXPECT_FLOAT_EQ(s.frame_ms_max, 6.0f);
+  EXPECT_FLOAT_EQ(s.frames, 2.0f);
+  EXPECT_NEAR(s.cpu_percent, 50.0f, 0.01f);
+  EXPECT_FLOAT_EQ(s.memory_mb, 64.0f);
+  EXPECT_FLOAT_EQ(s.clients, 3.0f);
+
+  perf.close_sample(t0 + 3s, 3, 1.5, 0); // idle and late: no frames, 0 % CPU
+  EXPECT_FLOAT_EQ(perf.latest()->frames, 0.0f);
+  EXPECT_FLOAT_EQ(perf.latest()->frame_ms_avg, 0.0f);
+  EXPECT_FLOAT_EQ(perf.latest()->cpu_percent, 0.0f);
+}
+
+TEST(PerfRecorder, KeepsTwoMinutes) {
+  wish::perf_recorder perf;
+  auto t = std::chrono::steady_clock::now();
+  for (size_t i = 0; i < wish::perf_recorder::kHistory + 10; ++i, t += 1s)
+    perf.close_sample(t, i, -1.0, 0);
+  EXPECT_EQ(perf.history().size(), wish::perf_recorder::kHistory);
+  EXPECT_FLOAT_EQ(perf.history().back().clients, static_cast<float>(wish::perf_recorder::kHistory + 9));
+  EXPECT_FLOAT_EQ(perf.history().back().cpu_percent, 0.0f) << "unknown CPU time reads 0";
+}
+
+TEST(MachineInfo, ProcessFigures) {
+  EXPECT_GE(wish::process_cpu_seconds(), 0.0);
+  EXPECT_GT(wish::process_memory_bytes(), 0u);
+}
+
 // ── machine_info ────────────────────────────────────────────────────────────
 
 TEST(MachineInfo, FormatBytes) {
@@ -185,6 +376,30 @@ TEST(ServerOverlayDetail, ListStoreIdentitiesMergesFilesAndConnectedSessions) {
   std::ofstream(dir.path / "users" / "notes.txt") << "";
   auto ids = wish::detail::list_store_identities(dir.path, {"carol", "", "../evil", "alice"});
   EXPECT_EQ(ids, (std::vector<std::string>{"alice", "bob", "carol"}));
+}
+
+TEST(ServerOverlayDetail, ScreenshotPathNeverOverwrites) {
+  temp_dir dir;
+  const std::time_t t = 1700000000;
+  const auto first = wish::detail::screenshot_path(dir.path, t);
+  EXPECT_EQ(first.parent_path(), dir.path);
+  EXPECT_EQ(first.extension(), ".png");
+  EXPECT_EQ(first.filename().string().rfind("wish-", 0), 0u);
+  std::ofstream(first) << "x";
+  const auto second = wish::detail::screenshot_path(dir.path, t);
+  EXPECT_NE(first, second);
+  EXPECT_EQ(second.stem().string(), first.stem().string() + "-2");
+}
+
+TEST(ServerOverlayDetail, NewestTraceIgnoresOtherFiles) {
+  temp_dir dir;
+  EXPECT_TRUE(wish::detail::newest_trace(dir.path).empty());
+  std::ofstream(dir.path / "old.perfetto-trace") << "";
+  std::ofstream(dir.path / "notes.txt") << "";
+  std::filesystem::last_write_time(dir.path / "old.perfetto-trace",
+                                   std::filesystem::file_time_type::clock::now() - 1h);
+  std::ofstream(dir.path / "new.perfetto-trace") << "";
+  EXPECT_EQ(wish::detail::newest_trace(dir.path).filename(), "new.perfetto-trace");
 }
 
 TEST(ServerOverlayDetail, HexColorsRoundTrip) {
@@ -269,6 +484,15 @@ class ServerOverlayTest : public ::testing::Test {
       opened_.push_back(target);
       return open_result_;
     };
+    info.request_screenshot = [this](std::function<void(std::vector<uint8_t>)> done) {
+      if (!screen_available_)
+        return false;
+      screenshot_cb_ = std::move(done);
+      ++screenshot_requests_;
+      return true;
+    };
+    info.screenshot_dir = dir_.path / "shots";
+    info.perf = &perf_;
     overlay_ = std::make_unique<wish::server_overlay>(std::move(info), notifications_);
     return *overlay_;
   }
@@ -289,7 +513,8 @@ class ServerOverlayTest : public ::testing::Test {
     ImGui::End();
     if (overlay_)
       overlay_->render({session_});
-    toasts_visible_ = wish::render_notifications(*notifications_);
+    // Like host_renderer: no toasts in a screenshot frame.
+    toasts_visible_ = !(overlay_ && overlay_->capturing()) && wish::render_notifications(*notifications_);
     renderer_->end_frame();
   }
 
@@ -328,6 +553,10 @@ class ServerOverlayTest : public ::testing::Test {
   int shutdowns_{0};
   bool focus_client_{false};
   bool toasts_visible_{false};
+  wish::perf_recorder perf_;
+  std::function<void(std::vector<uint8_t>)> screenshot_cb_;
+  int screenshot_requests_{0};
+  bool screen_available_{true};
 };
 
 } // namespace
@@ -384,8 +613,11 @@ TEST_F(ServerOverlayTest, EveryPageRenders) {
   }
   auto& ov = make_overlay();
   ov.set_open(true);
+  for (int i = 0; i < 5; ++i)
+    perf_.close_sample(std::chrono::steady_clock::now() + std::chrono::seconds{i}, 1, 0.1 * i, 1 << 20);
   for (auto p : {wish::server_overlay::page::overview, wish::server_overlay::page::clients,
-                 wish::server_overlay::page::settings, wish::server_overlay::page::logs,
+                 wish::server_overlay::page::performance, wish::server_overlay::page::settings,
+                 wish::server_overlay::page::logs,
                  wish::server_overlay::page::about}) {
     ov.set_page(p);
     frame();
@@ -438,4 +670,88 @@ TEST_F(ServerOverlayTest, ToastsDrawAboveTheOverlayAndDismissOnClick) {
   io.AddMouseButtonEvent(ImGuiMouseButton_Left, false);
   frame();
   EXPECT_TRUE(notifications_->active().empty());
+}
+
+// ── Screenshots ─────────────────────────────────────────────────────────────
+
+TEST_F(ServerOverlayTest, ScreenshotHidesTheOverlaySavesThePngAndComesBack) {
+  auto& ov = make_overlay();
+  ov.set_open(true);
+  notifications_->post(note("visible toast", 0ms));
+  frame();
+  frame();
+  ASSERT_TRUE(ImGui::FindWindowByName("##wish_server_overlay")->Active);
+
+  ov.take_screenshot();
+  EXPECT_TRUE(ov.capturing());
+  frame(); // the capture frame: requested, nothing of ours drawn
+  EXPECT_EQ(screenshot_requests_, 1);
+  EXPECT_FALSE(ImGui::FindWindowByName("##wish_server_overlay")->Active);
+  EXPECT_FALSE(toasts_visible_);
+  ov.take_screenshot(); // ignored while one runs
+  frame();
+  EXPECT_EQ(screenshot_requests_, 1);
+
+  const std::vector<uint8_t> png{0x89, 'P', 'N', 'G', 13, 10, 26, 10};
+  screenshot_cb_(png); // as the renderer would, from any thread
+  frame();
+  EXPECT_FALSE(ov.capturing());
+  EXPECT_TRUE(ov.is_open());
+  frame();
+  EXPECT_TRUE(ImGui::FindWindowByName("##wish_server_overlay")->Active) << "the overlay comes back";
+
+  std::vector<std::filesystem::path> files;
+  for (const auto& e : std::filesystem::directory_iterator(dir_.path / "shots"))
+    files.push_back(e.path());
+  ASSERT_EQ(files.size(), 1u);
+  std::ifstream in(files[0], std::ios::binary);
+  std::vector<uint8_t> saved((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  EXPECT_EQ(saved, png);
+  auto items = notifications_->active();
+  ASSERT_EQ(items.size(), 2u);
+  EXPECT_EQ(items[1].content.title, "Screenshot saved");
+  EXPECT_NE(items[1].content.body.find(files[0].filename().string()), std::string::npos);
+}
+
+TEST_F(ServerOverlayTest, ScreenshotWithNothingToCaptureReportsAnError) {
+  auto& ov = make_overlay();
+  screen_available_ = false; // e.g. no browser shows the web renderer
+  ov.set_open(true);
+  ov.take_screenshot();
+  frame();
+  EXPECT_FALSE(ov.capturing());
+  auto items = notifications_->active();
+  ASSERT_EQ(items.size(), 1u);
+  EXPECT_EQ(items[0].content.kind, wish::notification_kind::error);
+}
+
+TEST_F(ServerOverlayTest, EmptyCaptureReportsAnError) {
+  auto& ov = make_overlay();
+  ov.take_screenshot(); // works with the overlay closed too
+  frame();
+  ASSERT_TRUE(screenshot_cb_);
+  screenshot_cb_({});
+  frame();
+  EXPECT_FALSE(ov.capturing());
+  EXPECT_FALSE(ov.is_open()) << "it wasn't open before";
+  auto items = notifications_->active();
+  ASSERT_EQ(items.size(), 1u);
+  EXPECT_EQ(items[0].content.kind, wish::notification_kind::error);
+}
+
+TEST_F(ServerOverlayTest, ToastsStayAboveTheOverlayActionBar) {
+  auto& ov = make_overlay();
+  EXPECT_EQ(ov.bottom_bar_height(), 0.0f);
+  ov.set_open(true);
+  frame();
+  const float bar = ov.bottom_bar_height();
+  ASSERT_GT(bar, 0.0f);
+  notifications_->post(note("hello", 0ms));
+  renderer_->begin_frame();
+  ov.render({session_});
+  wish::render_notifications(*notifications_, wish::notification_corner::bottom_right, bar);
+  renderer_->end_frame();
+  ImGuiWindow* w = ImGui::FindWindowByName("##wish_notifications");
+  ASSERT_NE(w, nullptr);
+  EXPECT_LE(w->Pos.y + w->Size.y, ImGui::GetIO().DisplaySize.y - bar);
 }

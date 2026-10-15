@@ -116,6 +116,16 @@ class web_renderer : public imgui_renderer {
   /// @brief Programmatically request shutdown.
   void request_quit();
 
+  /**
+   * @brief Asks the connected browsers to capture their canvas right after
+   *        drawing the next frame (SCREENSHOT_REQUEST); the first
+   *        SCREENSHOT_DATA reply goes to @p done, on a WebSocket thread.
+   *        The request is re-sent every 2 s until one answers (e.g. a
+   *        background tab, whose drawing is paused).
+   * @return false when no browser is connected.
+   */
+  bool request_screenshot(screenshot_callback done) override;
+
   bool render_on_demand() const override {
     return render_on_demand_;
   }
@@ -396,6 +406,13 @@ class web_renderer : public imgui_renderer {
   // to drain here (unlike input_queue_) because that callback fires
   // on-demand, mid-frame, whenever ImGui processes a paste keystroke.
   bison::synchronized<std::string> pending_clipboard_text_;
+
+  // Screenshots: callbacks waiting for a SCREENSHOT_DATA reply; set when a
+  // first one is queued (any thread); and when end_frame() last sent
+  // SCREENSHOT_REQUEST (render thread only).
+  bison::synchronized<std::vector<screenshot_callback>> pending_screenshots_;
+  std::atomic<bool> screenshot_request_due_{false};
+  std::chrono::steady_clock::time_point screenshot_requested_at_{};
 
   // Backing storage for GetClipboardTextFn's returned `const char*`, which
   // per ImGui's contract must stay valid until the next clipboard call --

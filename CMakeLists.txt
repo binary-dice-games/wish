@@ -331,6 +331,8 @@ add_library(wish_server STATIC
   src/context/user_store_service.hpp
   src/server/server.hpp
   src/server/notifications.hpp
+  src/server/notification_service.hpp
+  src/server/perf_stats.hpp
   src/server/machine_info.hpp
   src/auth/local_auth_module.hpp
   src/standalone/standalone.hpp
@@ -353,6 +355,8 @@ add_library(wish_server STATIC
   src/context/user_store_service.cpp
   src/server/server.cpp
   src/server/notifications.cpp
+  src/server/notification_service.cpp
+  src/server/perf_stats.cpp
   src/server/machine_info.cpp
   src/auth/local_auth_module.cpp
   src/standalone/standalone.cpp
@@ -471,11 +475,9 @@ if(WISH_ENABLE_IMGUI AND WISH_ENABLE_SDL3)
   )
   target_compile_definitions(wish_server PUBLIC WISH_SDL3_ENABLED)
   target_link_libraries(wish_server PUBLIC SDL3::SDL3 SDL3_image::SDL3_image)
-  if(WISH_ENABLE_AUTOMATION)
-    # stb_image_write.h (screenshot PNG encoding, capture_frame_png()) is
-    # isolated behind sdl3_renderer.cpp; public headers never include it.
-    target_link_libraries(wish_server PRIVATE stb_image)
-  endif()
+  # stb_image_write.h (screenshot PNG encoding, capture_frame_png()) is
+  # isolated behind sdl3_renderer.cpp; public headers never include it.
+  target_link_libraries(wish_server PRIVATE stb_image)
 endif()
 
 if(WISH_ENABLE_IMGUI AND WISH_ENABLE_WEB)

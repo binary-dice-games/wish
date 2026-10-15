@@ -673,6 +673,51 @@ class Client:
             self.last_error,
         )
 
+    # ── Notifications ────────────────────────────────────────────────────────
+
+    NOTIFY_KINDS = {"info": 0, "success": 1, "warning": 2, "error": 3}
+
+    def notify(
+        self,
+        title: str,
+        body: str = "",
+        *,
+        kind: str = "info",
+        keys: str = "",
+        duration: float = 6.0,
+        tag: str = "",
+    ) -> int:
+        """Show a toast notification on the server's screen and return its id.
+
+        ``kind`` is ``"info"``, ``"success"``, ``"warning"`` or ``"error"``;
+        ``keys`` a key combination drawn as key caps (``"Ctrl+B"``);
+        ``duration`` in seconds, 0 to keep it until dismissed (at most 300);
+        ``tag`` replaces this session's notification with the same tag. The
+        server shows this session's identity on it and keeps at most 4 per
+        session. Raises ``WishError`` when the server shows no notifications."""
+        if kind not in self.NOTIFY_KINDS:
+            raise ValueError(f"notify: kind must be one of {sorted(self.NOTIFY_KINDS)}")
+        out = ctypes.c_uint64(0)
+        _check(
+            self._lib.wish_notify(
+                self._handle,
+                title.encode(),
+                body.encode(),
+                self.NOTIFY_KINDS[kind],
+                keys.encode(),
+                int(duration * 1000),
+                tag.encode(),
+                ctypes.byref(out),
+            ),
+            "notify",
+            self.last_error,
+        )
+        return out.value
+
+    def dismiss_notification(self, id: int) -> None:
+        """Remove one of this session's notifications early."""
+        _check(self._lib.wish_notify_dismiss(self._handle, id), "dismiss_notification", self.last_error)
+
     # ── Logging ──────────────────────────────────────────────────────────────
 
     def log(self, level: str, msg: str) -> None:

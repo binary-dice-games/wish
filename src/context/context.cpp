@@ -18,6 +18,7 @@
 #include <resource_store.hpp>
 #include <context/style_service.hpp>
 #include <context/user_store_service.hpp>
+#include <server/notification_service.hpp>
 
 #ifdef WISH_AUTOMATION_ENABLED
 #include <automation/automation_service.hpp>
@@ -49,6 +50,13 @@ bison::dynamic_ptr find_singleton_service(const context& s, bison::key_t klass) 
     if (s.user_store_service)
       return dynamic_ptr{std::static_pointer_cast<dynamic>(s.user_store_service)};
     throw std::runtime_error("wish: user store unavailable: anonymous session");
+  }
+  if (klass == "__WishNotifications"_key) {
+    // Same reasoning as __WishUserStore: no service (a renderer-less host)
+    // must be a clear instantiate() error, not a method-less object.
+    if (s.notification_service)
+      return dynamic_ptr{std::static_pointer_cast<dynamic>(s.notification_service)};
+    throw std::runtime_error("wish: this server shows no notifications");
   }
 #ifdef WISH_AUTOMATION_ENABLED
   if (klass == "__WishAutomation"_key) {

@@ -16,6 +16,7 @@
 #include <windows.h>
 #include <psapi.h>
 #else
+#include <sys/resource.h>
 #include <sys/utsname.h>
 #include <unistd.h>
 #endif
@@ -65,9 +66,7 @@ machine_info query_machine_info() {
     m.total_memory = mem.ullTotalPhys;
     m.available_memory = mem.ullAvailPhys;
   }
-  PROCESS_MEMORY_COUNTERS pmc{};
-  if (K32GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc)))
-    m.process_memory = pmc.WorkingSetSize;
+  m.process_memory = process_memory_bytes();
   m.pid = GetCurrentProcessId();
 #else
   char name[256] = {};
@@ -79,13 +78,43 @@ machine_info query_machine_info() {
   m.user = env_or_empty("USER");
   m.total_memory = proc_kb_field("/proc/meminfo", "MemTotal");
   m.available_memory = proc_kb_field("/proc/meminfo", "MemAvailable");
-  m.process_memory = proc_kb_field("/proc/self/status", "VmRSS");
+  m.process_memory = process_memory_bytes();
   m.pid = static_cast<uint64_t>(getpid());
   double load[1] = {};
   if (getloadavg(load, 1) == 1)
     m.load_average = load[0];
 #endif
   return m;
+}
+
+double process_cpu_seconds() {
+#if defined(_WIN32)
+  FILETIME created, exited, kernel, user;
+  if (!GetProcessTimes(GetCurrentProcess(), &created, &exited, &kernel, &user))
+    return -1.0;
+  auto secs = [](const FILETIME& f) {
+    const uint64_t t = (static_cast<uint64_t>(f.dwHighDateTime) << 32) | f.dwLowDateTime;
+    return static_cast<double>(t) / 1e7; // 100 ns units
+  };
+  return secs(kernel) + secs(user);
+#else
+  struct rusage ru {};
+  if (getrusage(RUSAGE_SELF, &ru) != 0)
+    return -1.0;
+  auto secs = [](const timeval& t) { return static_cast<double>(t.tv_sec) + static_cast<double>(t.tv_usec) / 1e6; };
+  return secs(ru.ru_utime) + secs(ru.ru_stime);
+#endif
+}
+
+uint64_t process_memory_bytes() {
+#if defined(_WIN32)
+  PROCESS_MEMORY_COUNTERS pmc{};
+  if (K32GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc)))
+    return pmc.WorkingSetSize;
+  return 0;
+#else
+  return proc_kb_field("/proc/self/status", "VmRSS");
+#endif
 }
 
 std::string format_bytes(uint64_t bytes) {

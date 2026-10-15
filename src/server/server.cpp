@@ -4,6 +4,7 @@
 #include <context/file_service.hpp>
 #include <ui/forms/form.hpp>
 #include <context/logger.hpp>
+#include <server/notification_service.hpp>
 #include <server/registry.hpp>
 #include <server/server.hpp>
 #include <context/style_service.hpp>
@@ -99,8 +100,11 @@ void server::on_session_created(bison::rmi::context& ctx) {
   // All sessions share the same global logger instance (set via set_logger()).
   s.logger_service = logger_;
   s.server_store = stores_->server_store();
-  if (renderer_)
+  if (renderer_) {
     s.notifications = renderer_->notifications();
+    // Anonymous until on_authenticated() names the session.
+    s.notification_service = notification_service::instantiate(s.notifications, {});
+  }
 #ifdef WISH_AUTOMATION_ENABLED
   if (renderer_) {
     if (auto* backend = renderer_->as_automation_backend())
@@ -143,6 +147,8 @@ void server::on_authenticated(bison::rmi::context& ctx, const std::string& ident
   s.settings_admin = settings_admins_.count(identity) != 0;
   s.user_store = stores_->user_store(identity);
   s.user_store_service = user_store_service::instantiate(s.user_store);
+  if (s.notification_service)
+    s.notification_service->set_source(identity);
 
   if (persistent_sandbox_root_.empty())
     return; // no persistent sandboxes configured

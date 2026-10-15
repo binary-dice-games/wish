@@ -283,6 +283,22 @@ def _setup_wish_signatures(lib: ctypes.CDLL) -> None:
     lib.wish_settings_read.restype = Error
     lib.wish_settings_read.argtypes = [ClientHandle, ctypes.c_char_p, P(ctypes.c_char_p)]
 
+    # ── Notifications ────────────────────────────────────────────────────────
+    lib.wish_notify.restype = Error
+    lib.wish_notify.argtypes = [
+        ClientHandle,
+        ctypes.c_char_p,
+        ctypes.c_char_p,
+        ctypes.c_int32,
+        ctypes.c_char_p,
+        ctypes.c_int32,
+        ctypes.c_char_p,
+        P(ctypes.c_uint64),
+    ]
+
+    lib.wish_notify_dismiss.restype = Error
+    lib.wish_notify_dismiss.argtypes = [ClientHandle, ctypes.c_uint64]
+
     lib.wish_log.restype = Error
     lib.wish_log.argtypes = [ClientHandle, ctypes.c_char_p, ctypes.c_char_p]
 

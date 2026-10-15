@@ -78,6 +78,16 @@ class wish_standalone_session : public standalone, public wish_app_host {
     return standalone::create_temp_dir(qualified_app);
   }
 
+  bool has_notifications() const override {
+    return standalone::has_notifications();
+  }
+  std::future<uint64_t> notify(const notification& n) override {
+    return standalone::notify(n);
+  }
+  std::future<bool> dismiss_notification(uint64_t id) override {
+    return standalone::dismiss_notification(id);
+  }
+
   bool has_user_store() const override {
     return standalone::has_user_store();
   }

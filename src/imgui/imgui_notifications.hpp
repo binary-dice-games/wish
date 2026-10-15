@@ -27,12 +27,17 @@ enum class notification_corner { top_left, top_right, bottom_left, bottom_right 
  * older ones wait their turn.
  *
  * Uses the main viewport's work area, so a viewport side bar such as the
- * desktop's taskbar is never covered.
+ * desktop's taskbar is never covered; @p bottom_inset keeps that many more
+ * pixels free at the bottom (e.g. the server overlay's action bar, whose
+ * buttons a toast would otherwise cover).
  *
  * @return true while at least one toast is on screen: the caller must keep
  *         drawing frames for the animations and expiry to progress.
  */
-bool render_notifications(notification_center& center, notification_corner corner = notification_corner::bottom_right);
+bool render_notifications(
+    notification_center& center,
+    notification_corner corner = notification_corner::bottom_right,
+    float bottom_inset = 0.0f);
 
 /// @brief Most toasts drawn at once.
 inline constexpr size_t kMaxVisibleNotifications = 4;

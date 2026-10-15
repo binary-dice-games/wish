@@ -7,6 +7,7 @@
 
 #include <client/wish_app_host.hpp>
 #include <context/settings_schema.hpp>
+#include <server/notifications.hpp>
 #include <i18n/translations.hpp>
 
 #include "src/rmi/client/client.hpp"
@@ -375,6 +376,33 @@ class client : public bison::rmi::client {
   /// @brief Convenience wrapper for `log("error", msg)`.
   std::future<void> log_error(const std::string& msg);
 
+  // ── Notifications ─────────────────────────────────────────────────────────
+  //
+  // Toasts shown in a corner of the server's screen (see
+  // docs/server-overlay.md). The server marks each with this session's
+  // identity, keeps at most a few of them per session, and removes them
+  // when the session ends.
+
+  /// @brief True when the server accepts notifications from this session.
+  bool has_notifications() const noexcept {
+    return notifications_proxy_.has_value();
+  }
+
+  /**
+   * @brief Show @p n on the server's screen. Only `title`, `body`, `keys`,
+   *        `kind`, `duration` (0: until dismissed; at most 5 minutes) and
+   *        `tag` (replaces this session's notification with the same tag)
+   *        are sent; `source` is set by the server.
+   * @return Future resolving to the notification's id (for
+   *         dismiss_notification()). Throws through the future when
+   *         has_notifications() is false or the title is empty.
+   */
+  std::future<uint64_t> notify(const notification& n);
+
+  /// @brief Remove notification @p id early (only this session's own).
+  /// @return Future resolving to whether it was still on screen.
+  std::future<bool> dismiss_notification(uint64_t id);
+
   // ── User store ────────────────────────────────────────────────────────────
   //
   // A persistent store of named bison objects private to this session's
@@ -576,6 +604,9 @@ class client : public bison::rmi::client {
   // Resolved non-fatally in on_connect() -- unset for an anonymous session,
   // which has no user store. See has_user_store().
   std::optional<bison::rmi::proxy::dynamic> user_store_proxy_;
+  // Unset when the server has no __WishNotifications service. See
+  // has_notifications().
+  std::optional<bison::rmi::proxy::dynamic> notifications_proxy_;
   // Serializes describe_*()'s read-merge-write of schema entries.
   bison::synchronized<bool> describe_lock_{false};
 

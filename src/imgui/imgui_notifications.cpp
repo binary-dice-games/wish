@@ -129,7 +129,7 @@ struct toast_layout {
 
 } // namespace
 
-bool render_notifications(notification_center& center, notification_corner corner) {
+bool render_notifications(notification_center& center, notification_corner corner, float bottom_inset) {
   using clock = std::chrono::steady_clock;
   const auto now = clock::now();
   std::vector<active_notification> items = center.active(now);
@@ -139,7 +139,7 @@ bool render_notifications(notification_center& center, notification_corner corne
     items.erase(items.begin(), items.end() - static_cast<std::ptrdiff_t>(kMaxVisibleNotifications));
 
   const float fs = ImGui::GetFontSize();
-  const float title_fs = fs * 1.05f, body_fs = fs * 0.92f;
+  const float title_fs = fs * 1.05f, body_fs = fs * 0.92f, source_fs = fs * 0.8f;
   const float width = std::floor(fs * 23.0f);
   const float pad = std::floor(fs * 0.85f);
   const float icon_r = std::floor(fs * 0.85f);
@@ -165,6 +165,8 @@ bool render_notifications(notification_center& center, notification_corner corne
     }
     if (!l.caps.empty())
       h += fs * 0.55f + body_fs + cap_pad * 1.2f + 2.0f;
+    if (!it.content.source.empty())
+      h += fs * 0.35f + source_fs;
     h = std::max(h + pad, pad * 2.0f + icon_r * 2.0f);
     l.height = std::floor(h);
     total_h += l.height;
@@ -177,7 +179,7 @@ bool render_notifications(notification_center& center, notification_corner corne
   const bool bottom = corner == notification_corner::bottom_left || corner == notification_corner::bottom_right;
   const float slide = fs * 2.5f; // horizontal slide-in distance
   ImVec2 win_pos{right ? vp->WorkPos.x + vp->WorkSize.x - margin - width - slide : vp->WorkPos.x + margin,
-                 bottom ? vp->WorkPos.y + vp->WorkSize.y - margin - total_h : vp->WorkPos.y + margin};
+                 bottom ? vp->WorkPos.y + vp->WorkSize.y - bottom_inset - margin - total_h : vp->WorkPos.y + margin};
   ImGui::SetNextWindowPos(win_pos);
   ImGui::SetNextWindowSize({width + slide, total_h});
   ImGui::SetNextWindowViewport(vp->ID);
@@ -237,6 +239,12 @@ bool render_notifications(notification_center& center, notification_corner corne
     if (!l.caps.empty()) {
       ty += fs * 0.55f;
       draw_key_caps(dl, {mn.x + text_x, ty}, l.caps, body_fs, cap_pad, cap_gap, a);
+      ty += body_fs + cap_pad * 1.2f + 2.0f;
+    }
+    if (!n.content.source.empty()) {
+      ty += fs * 0.35f;
+      const std::string from = "From " + n.content.source;
+      dl->AddText(font, source_fs, {mn.x + text_x, ty}, rgba(130, 140, 160, a), from.c_str());
     }
 
     if (hovered) { // close cross

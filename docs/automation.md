@@ -706,9 +706,14 @@ def test_saving_shows_confirmation(wish_ui):
   2026-10, web renderer): `get_tree()` never lists them. Open the overlay
   with `page.keyboard.press("Shift+F1", delay=80)` (move the mouse over
   the page first) and drive it by coordinates read off a screenshot: at
-  1440x900 the page tabs sit at y≈35 (Overview, Clients, Settings, Logs,
-  About from x≈510 to x≈935), and **Shut down server** is at the bottom
-  right. `press("Escape")` closes it. `AutomationClient.launch()` appends
+  1440x900 the page tabs sit at y≈35 (Overview, Clients, Performance,
+  Settings, Logs, About from x≈440 to x≈1005; Performance at x≈706), the
+  bottom bar's **Screenshot** at (80, 868) and **Shut down server** at the
+  bottom right. `press("Escape")` closes it. The Screenshot button works
+  under Playwright (the headless page answers the server's capture
+  request), and a toast with the saved path follows within a second;
+  client notifications posted from a Python `Client.notify()` show up the
+  same way (verified 2026-10). `AutomationClient.launch()` appends
   `--overlay_hotkey=` (no overlay, and no "press Shift+F1" toast covering
   the bottom-right corner for 10 s) unless the command sets the flag, so
   pass `--overlay_hotkey=Shift+F1` to drive the overlay. See
