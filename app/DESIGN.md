@@ -462,6 +462,9 @@ wish_desktop_app::run()
     print "already running" and exit 1
   export WISH_TRANSPORT/HOST/PORT/NAME for the anchor terminal
   bridge_app::run()
+    make_upstream_transport() → nullptr (the --upstream_* flags), or with
+                        --with_server: start the in-process server on a
+                        memory transport, connect to it
     make_bridge()     → multi_server_transport(downstream + endpoint);
                         wish_desktop on it, configured with launcher, client
                         command, launch environment, log dir, wallpaper,
@@ -471,12 +474,45 @@ wish_desktop_app::run()
     on_listening()    → desktop_->build_chrome() (loads the config, starts
                         the file watcher)
     wait_for_shutdown() → until "Quit desktop", the anchor terminal exits,
-                          or the upstream connection is lost;
+                          the upstream connection is lost, or the
+                          --with_server server quits;
                           then terminates launched apps and stops the
                           worker and watcher (stop_tasks()) while the
                           upstream connection is still open
     bridge::stop()
+  stop the --with_server server
 ```
+
+### `--with_server`: the server in the desktop's process
+
+When the server and the desktop share a machine, `--with_server` runs both
+in one process, so there is one command to start. The bridge still talks to
+the server through RMI, over a `memory_server_transport`/
+`memory_client_transport` pair instead of a socket, pipe or terminal hop:
+the desktop's logic (sessions grouped per app, the `__WishDesktop`
+object, the relay) is all in `rmi::bridge`, which needs a client transport
+upstream. Running the shell directly against the server's objects would
+have meant a second desktop implementation.
+
+- **Hook.** `bridge_app::run()` used to build the upstream transport only
+  from the `--upstream_*` flags. bison gained
+  `bridge_app::make_upstream_transport()` (default `nullptr`: use the
+  flags); `wish_desktop_app` overrides it to create the memory transport,
+  start the server on it, and return a client endpoint connected to it.
+  The `--upstream_*` transport flags are then ignored, and the anchor
+  terminal reads stdin as with any non-`term` upstream.
+- **Server construction is injected** (`set_server_factory()`), like the
+  client command: `wish_desktop_app.cpp` is also built into the
+  client-only `wish-desktop`, which doesn't link the server or its
+  renderers. `main.cpp` (the combined `wish`) supplies a factory that
+  builds a `configured_server` (`server/wish_server_app.hpp`), the same
+  flag-configured server `wish server` runs, after applying `wish server`'s
+  saved defaults. Without a factory, `--with_server` is an error.
+- **Lifetime.** `wait_for_shutdown()` also returns once the server wants to
+  quit (window closed, or "Shut down server", which reaches the server as
+  `DesktopShell.shutdown` exactly as with a separate server). `run()`
+  destroys the server only after `bridge_app::run()` returns, i.e. after
+  the bridge, the server's only client, has disconnected.
 
 ### Fixed endpoint and single instance
 

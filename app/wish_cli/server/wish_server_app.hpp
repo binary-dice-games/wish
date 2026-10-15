@@ -8,10 +8,65 @@
 #include "src/app/server/server_app.hpp"
 
 #include <memory>
+#include <string>
 
 namespace bdg::wish {
 
 class logger;
+class server;
+
+/**
+ * @brief A `wish::server` configured from the `wish server` flags
+ *        (`--renderer`, `--theme`, `--lang`, `--store_dir`, `--sandbox_root`,
+ *        `--settings_admins`, `--profiling_dir`, ...) and started on a
+ *        transport. The server is stopped on destruction.
+ *
+ * Shared by `wish server` and by `wish desktop --with_server`, which runs
+ * the server in its own process on a memory transport. The caller must have
+ * parsed the flags.
+ */
+class configured_server {
+ public:
+  /**
+   * @param transport     Transport the server listens on (borrowed; must
+   *                      outlive this object).
+   * @param listen_params Forwarded to `server::start()`, e.g. TLS material.
+   * @throws std::runtime_error for an invalid `--verbose` or a `--renderer`
+   *         this binary wasn't built with.
+   */
+  explicit configured_server(
+      bison::rmi::transport::server_transport_iface& transport,
+      bison::dynamic listen_params = bison::dynamic{});
+  ~configured_server();
+
+  configured_server(const configured_server&) = delete;
+  configured_server& operator=(const configured_server&) = delete;
+
+  /// @brief Whether the renderer asked to stop (window closed, or a desktop
+  ///        "Shut down server").
+  bool should_quit() const;
+
+  /// @brief The server log (`wish_logs/server.log`).
+  const std::shared_ptr<logger>& log() const {
+    return log_;
+  }
+
+  /// @brief Prints how to reach the renderer: the URL to open for
+  ///        `--renderer web`, nothing for `sdl3`.
+  static void print_renderer_hint();
+
+ private:
+  std::shared_ptr<logger> log_;
+  std::unique_ptr<server> server_;
+};
+
+/**
+ * @brief Applies `wish server`'s saved flag defaults (server store entry
+ *        `wish.cli.server`, handling `--save_defaults`/`--clear_defaults`;
+ *        see config_flags.hpp). Call after parsing the command line.
+ * @param log_prefix Message prefix, e.g. `"[wish server]"`.
+ */
+void load_server_cli_config(const std::string& log_prefix);
 
 /**
  * @brief Server application that accepts wish clients over any bison

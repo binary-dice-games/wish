@@ -20,6 +20,7 @@ wish desktop    [--downstream_transport T] [--downstream_host H]
                 [--downstream_port P] [--downstream_name PATH]
                 [--upstream_transport T] [--upstream_host H]
                 [--upstream_port P] [--upstream_name PATH] [--timeout MS]
+                [--with_server [server flags...]]
 wish <app>      [--transport T] [--host H] [--port P] [--name PATH]
                 [--timeout MS] [-- app-args...]
 ```
@@ -280,10 +281,29 @@ are active at once:
 | `--config PATH` | `~/.wish/desktop/desktop.yaml` | [Desktop configuration file](desktop-config.md); written with the default if missing, reloaded when it changes |
 | `--wallpaper FILE` | *(from the config file)* | Image (png, jpg, ...) shown as the desktop background; overrides the config file's `appearance.wallpaper` |
 | `--timeout MS` | `30000` | Upstream connection timeout in milliseconds |
+| `--with_server` | `false` | Run the wish server in the desktop's own process instead of connecting upstream (see below) |
 
 ```sh
 wish server --transport tcp &          # the window the desktop draws in
 wish desktop --upstream_transport tcp --wallpaper ~/Pictures/beach.jpg
+```
+
+**One process: `--with_server`.** When the server and the desktop run on the
+same machine, `wish desktop --with_server` starts both in one process,
+connected through the in-memory transport (no socket, pipe or terminal
+hop). The `--upstream_*` transport flags are ignored, and the
+[`wish server` flags](#wish-server) that pick and configure the renderer
+and the server apply instead: `--renderer`, `--title`, `--width`/`--height`,
+`--font_size`, `--web_port`/`--web_bind`, `--theme`, `--lang`, `--store_dir`,
+`--sandbox_root`, `--settings_admins`, ... as do `wish server`'s saved
+defaults (`--save_defaults`). Closing the window, or "Shut down server" in
+the Start menu, ends the desktop too, and quitting the desktop closes the
+window. Only the combined `wish` binary has it (the client-only
+`wish-desktop` doesn't link the server).
+
+```sh
+wish desktop --with_server --renderer sdl3      # a desktop window, nothing else to start
+wish desktop --with_server --renderer web       # then open http://127.0.0.1:8080
 ```
 
 **Apps using the client ABI** (`wish_client_c.h`, and every binding on top

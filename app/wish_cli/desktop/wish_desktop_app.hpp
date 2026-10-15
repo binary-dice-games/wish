@@ -13,6 +13,7 @@
 #include "src/bison/bison_sync.hpp"
 #include "src/rmi/bridge/bridge.hpp"
 #include "src/rmi/client/proxy.hpp"
+#include "src/rmi/transport/memory_transport.hpp"
 #include "src/rmi/transport/named_pipe_transport.hpp"
 
 #include <atomic>
@@ -302,6 +303,26 @@ class wish_desktop : public bison::rmi::bridge {
 std::unique_ptr<bison::rmi::transport::named_pipe_server_transport> claim_desktop_endpoint(const std::string& name);
 
 /**
+ * @brief A wish server running in the desktop's own process
+ *        (`wish desktop --with_server`), see
+ *        `wish_desktop_app::set_server_factory()`. Destroying it stops the
+ *        server.
+ */
+class in_process_server {
+ public:
+  virtual ~in_process_server() = default;
+
+  /// @brief Whether the server wants to stop: its window was closed, or
+  ///        the desktop's "Shut down server" was used.
+  virtual bool should_quit() const = 0;
+};
+
+/// @brief Starts a server listening on the given (already constructed,
+///        not yet started) transport.
+using in_process_server_factory =
+    std::function<std::unique_ptr<in_process_server>(bison::rmi::transport::server_transport_iface&)>;
+
+/**
  * @brief CLI scaffold for `wish desktop` -- multiplexing bridge with a
  *        Windows/macOS-like desktop shell.
  *
@@ -330,6 +351,11 @@ std::unique_ptr<bison::rmi::transport::named_pipe_server_transport> claim_deskto
  * - `wait_for_shutdown()` is overridden so the Start menu's "Quit desktop"
  *   can trigger an orderly shutdown alongside console Enter.
  * - Apps launched from the desktop are terminated when it exits.
+ * - With `--with_server`, `make_upstream_transport()` starts a wish server
+ *   in this process (through the factory set with `set_server_factory()`)
+ *   and connects upstream to it over a memory transport, so no separate
+ *   `wish server` is needed. The desktop then exits when the server's
+ *   window closes, and the server stops when the desktop quits.
  * - `run()` first claims the fixed endpoint (`desktop_endpoint()`); if
  *   another desktop holds it, it reports that and exits with 1 before
  *   connecting anything. `make_bridge()` then serves clients on that
@@ -367,6 +393,15 @@ class wish_desktop_app : public bison::app::bridge_app {
     client_command_ = std::move(command);
   }
 
+  /**
+   * @brief How `--with_server` starts the in-process server. Set by the
+   *        combined `wish` binary, which links the server; without it
+   *        (the client-only `wish-desktop`), `--with_server` is an error.
+   */
+  void set_server_factory(in_process_server_factory factory) {
+    server_factory_ = std::move(factory);
+  }
+
  protected:
   std::string bridge_description() const override;
 
@@ -382,6 +417,14 @@ class wish_desktop_app : public bison::app::bridge_app {
   void on_listening() const override;
 
   void on_upstream_connect_params(bison::dynamic& params) const override;
+
+  /**
+   * @brief With `--with_server`, starts the in-process server on a memory
+   *        transport and returns a client transport connected to it;
+   *        otherwise `nullptr` (the `--upstream_*` flags apply).
+   * @throws std::runtime_error with `--with_server` but no server factory.
+   */
+  std::unique_ptr<bison::rmi::transport::client_transport_iface> make_upstream_transport() override;
 
   /**
    * @brief Block until the anchor/downstream terminal exits or the Start
@@ -421,6 +464,14 @@ class wish_desktop_app : public bison::app::bridge_app {
   /// Starts the apps launched from the desktop; its destructor terminates
   /// the ones still running when the desktop exits.
   std::unique_ptr<process_launcher> launcher_;
+
+  in_process_server_factory server_factory_;
+
+  /// `--with_server`: the transport the in-process server listens on, and
+  /// the server. Declared in this order so the server is destroyed first;
+  /// run() stops it once the bridge (its only client) is gone.
+  std::unique_ptr<bison::rmi::transport::memory_server_transport> server_transport_;
+  std::unique_ptr<in_process_server> server_;
 };
 
 } // namespace bdg::wish

@@ -443,6 +443,13 @@ desk = subprocess.Popen([wish, "desktop", "--upstream_transport", "tcp", "--upst
                         stdin=subprocess.PIPE, stdout=log, stderr=subprocess.STDOUT, cwd=scratch)
 ```
 
+- **Or skip the separate server: `wish desktop --with_server --renderer web
+  --web_port <free port>`** runs both in one process (verified 2026-10).
+  Start it with `subprocess.Popen` as above, wait for the web port, then
+  attach with `AutomationClient.launch(url="http://127.0.0.1:<port>")`
+  rather than `server_cmd=`. Pass `--store_dir <scratch>` to the desktop
+  itself; `exit` on its stdin closes the server too (the web port goes
+  away), and so does `__WishDesktop.shutdown_server`.
 - **Keep the desktop's stdin open** (`stdin=subprocess.PIPE`): it spawns an
   anchor terminal fed from stdin and quits when that terminal exits.
 - **The desktop chrome is not in `get_tree()`.** The taskbar, Start menu,

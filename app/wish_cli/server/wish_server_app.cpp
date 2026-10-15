@@ -126,6 +126,10 @@ static std::shared_ptr<logger> make_server_logger() {
 
 } // namespace
 
+void load_server_cli_config(const std::string& log_prefix) {
+  load_cli_config(FLAGS_store_dir, kServerConfigEntry, kServerExcludedFlags, log_prefix);
+}
+
 // ── server_app overrides ──────────────────────────────────────────────────────
 
 int wish_server_app::run(int argc, char** argv) {
@@ -138,7 +142,7 @@ int wish_server_app::run(int argc, char** argv) {
   // Command line > WISH_<FLAG> env var > saved default > built-in default.
   apply_env_flag_defaults();
   gflags::ParseCommandLineFlags(&parse_argc, &parse_argv, true);
-  load_cli_config(FLAGS_store_dir, kServerConfigEntry, kServerExcludedFlags, "[wish server]");
+  load_server_cli_config("[wish server]");
   return bison::app::server_app::run(argc, argv);
 }
 
@@ -177,9 +181,7 @@ void wish_server_app::on_listening() const {
       break;
   }
 
-  if (FLAGS_renderer == "web") {
-    std::cout << "[wish] open http://" << FLAGS_web_bind << ':' << FLAGS_web_port << " in a browser\n" << std::flush;
-  }
+  configured_server::print_renderer_hint();
 }
 
 void wish_server_app::on_verbose_trace(bison::key_t /*session_id*/, const std::string& line) const {
@@ -193,10 +195,35 @@ std::unique_ptr<bison::rmi::server> wish_server_app::make_server(
 }
 
 int wish_server_app::run_with_transport(bison::rmi::transport::server_transport_iface& transport) {
-  server_log_ = make_server_logger();
-  auto srv_owner = make_server(transport);
-  auto& srv = static_cast<server&>(*srv_owner);
-  srv.set_logger(server_log_);
+  // Populates cert_file/key_file/etc. from FLAGS_* when --transport=tls
+  // selected it (see bison::app::server_app::on_listen_params()); a no-op
+  // for every other transport.
+  bison::dynamic listen_params;
+  on_listen_params(listen_params);
+  {
+    configured_server srv{transport, std::move(listen_params)};
+    server_log_ = srv.log();
+    on_listening();
+    // Stops on whichever comes first: the renderer's own close signal (sdl3
+    // window close; web has none), or -- when --transport=term spawned a
+    // terminal -- that terminal process exiting. This is what lets --renderer
+    // web be stopped at all: it has no window and nothing installs a SIGINT
+    // handler for this process.
+    while (!srv.should_quit() && !is_shutdown_requested())
+      std::this_thread::sleep_for(std::chrono::milliseconds{50});
+  }
+  server_log_.reset();
+  return 0;
+}
+
+// ── configured_server ─────────────────────────────────────────────────────────
+
+configured_server::configured_server(
+    bison::rmi::transport::server_transport_iface& transport,
+    bison::dynamic listen_params)
+    : log_(make_server_logger()), server_(std::make_unique<server>(transport, make_renderer())) {
+  auto& srv = *server_;
+  srv.set_logger(log_);
   srv.set_default_theme(FLAGS_theme);
   srv.set_default_language(FLAGS_lang);
   srv.set_allow_absolute_paths(FLAGS_allow_absolute_paths);
@@ -211,16 +238,11 @@ int wish_server_app::run_with_transport(bison::rmi::transport::server_transport_
     }
     srv.set_settings_admins(std::move(admins));
   }
-  // Populates cert_file/key_file/etc. from FLAGS_* when --transport=tls
-  // selected it (see bison::app::server_app::on_listen_params()); a no-op
-  // for every other transport.
-  bison::dynamic listen_params;
-  on_listen_params(listen_params);
   if (!FLAGS_profiling_dir.empty())
     srv.enable_profiling(FLAGS_profiling_dir);
   if (!FLAGS_store_dir.empty())
     srv.set_store_dir(FLAGS_store_dir);
-  server_log_->info("persistent stores under " + srv.store_dir().string());
+  log_->info("persistent stores under " + srv.store_dir().string());
   // Always trust the client-supplied --username as the session identity, so
   // identified clients get a user store; a client without one stays
   // anonymous -- unless --sandbox_root is set, which keeps its 'default'
@@ -229,30 +251,33 @@ int wish_server_app::run_with_transport(bison::rmi::transport::server_transport_
   if (!FLAGS_sandbox_root.empty()) {
     srv.set_persistent_sandbox_root(FLAGS_sandbox_root);
     auth = std::make_shared<local_auth_module>("default");
-    server_log_->info("persistent sandboxes under " + FLAGS_sandbox_root);
+    log_->info("persistent sandboxes under " + FLAGS_sandbox_root);
   } else {
     auth = std::make_shared<local_auth_module>();
   }
   srv.start(auth, std::move(listen_params));
   if (FLAGS_profiling_autostart) {
     if (FLAGS_profiling_dir.empty())
-      server_log_->info("--profiling_autostart requires --profiling_dir; ignoring");
+      log_->info("--profiling_autostart requires --profiling_dir; ignoring");
     else
       srv.start_capture_now("startup");
   }
-  server_log_->info("server started");
-  on_listening();
-  // Stops on whichever comes first: the renderer's own close signal (sdl3
-  // window close; web has none), or -- when --transport=term spawned a
-  // terminal -- that terminal process exiting. This is what lets --renderer
-  // web be stopped at all: it has no window and nothing installs a SIGINT
-  // handler for this process.
-  while (!srv.should_quit() && !is_shutdown_requested())
-    std::this_thread::sleep_for(std::chrono::milliseconds{50});
-  srv.stop_capture_now();
-  srv.stop();
-  server_log_.reset();
-  return 0;
+  log_->info("server started");
+}
+
+configured_server::~configured_server() {
+  server_->stop_capture_now();
+  server_->stop();
+}
+
+bool configured_server::should_quit() const {
+  return server_->should_quit();
+}
+
+void configured_server::print_renderer_hint() {
+  if (FLAGS_renderer == "web") {
+    std::cout << "[wish] open http://" << FLAGS_web_bind << ':' << FLAGS_web_port << " in a browser\n" << std::flush;
+  }
 }
 
 } // namespace bdg::wish

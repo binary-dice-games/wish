@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `wish desktop --with_server`: runs the wish server in the desktop's own process, connected through the in-memory transport, so a single command starts both (`wish` binary only; the `wish server` flags such as `--renderer` apply).
 - `wish desktop`: an app's main window has Windows-style minimize, maximize/restore and close buttons at the top right of its title bar (double-click the title to maximize), and a border with a shadow that sets it apart from overlapping windows.
 - "Reset layout" puts an app's panels back in their default arrangement: from the app window's title-bar menu (right-click the title; it also has Maximize/Restore, Minimize and Close) or its taskbar button on `wish desktop`, or by changing the new `DockSpaceViewport.layout_reset_request` field.
 - `DockSpaceViewport.closable`: a close button on the app frame that emits `closed` (also offered as "Close window" on the desktop taskbar); `dock::viewport()` frames are closable.

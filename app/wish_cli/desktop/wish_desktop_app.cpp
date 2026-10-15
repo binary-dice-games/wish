@@ -82,6 +82,12 @@ DEFINE_string(
     "",
     "Desktop configuration file (YAML or JSON): the Start menu and other desktop settings; "
     "created with the defaults if missing (default: ~/.wish/desktop/desktop.yaml)");
+DEFINE_bool(
+    with_server,
+    false,
+    "Run the wish server in this process, connected through an in-memory transport, instead of "
+    "connecting to a separate one (the --upstream_* transport flags are ignored; the wish server "
+    "flags such as --renderer apply). Combined wish binary only.");
 
 namespace bdg::wish {
 
@@ -1075,7 +1081,11 @@ int wish_desktop_app::run(int argc, char** argv) {
   set_env_var("WISH_PORT", std::to_string(FLAGS_downstream_port));
   set_env_var("WISH_NAME", FLAGS_downstream_name);
 
-  return bison::app::bridge_app::run(argc, argv);
+  int rc = bison::app::bridge_app::run(argc, argv);
+  // The bridge, the server's only client, is gone: stop the server.
+  server_.reset();
+  server_transport_.reset();
+  return rc;
 }
 
 std::string wish_desktop_app::bridge_description() const {
@@ -1136,6 +1146,16 @@ void wish_desktop_app::on_upstream_connect_params(bison::dynamic& params) const 
     params["username"_key] = user;
 }
 
+std::unique_ptr<bison::rmi::transport::client_transport_iface> wish_desktop_app::make_upstream_transport() {
+  if (!FLAGS_with_server)
+    return nullptr;
+  if (!server_factory_)
+    throw std::runtime_error("--with_server is only available in the combined wish binary");
+  server_transport_ = std::make_unique<rmi::transport::memory_server_transport>();
+  server_ = server_factory_(*server_transport_);
+  return std::make_unique<rmi::transport::memory_client_transport>(server_transport_->connect());
+}
+
 void wish_desktop_app::wait_for_shutdown() {
   if (!desktop_) {
     bison::app::bridge_app::wait_for_shutdown();
@@ -1145,6 +1165,9 @@ void wish_desktop_app::wait_for_shutdown() {
   using namespace std::chrono_literals;
   while (!desktop_->wait_for_quit_for(100ms)) {
     if (active_term_ && active_term_->has_exited())
+      break;
+    // --with_server: its window was closed, or "Shut down server" was used.
+    if (server_ && server_->should_quit())
       break;
     // Without its server the desktop can show nothing, yet it would keep
     // the fixed endpoint, refusing a new desktop and leaving the clients
