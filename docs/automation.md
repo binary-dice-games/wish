@@ -760,6 +760,12 @@ def test_saving_shows_confirmation(wish_ui):
   the bottom-right corner for 10 s) unless the command sets the flag, so
   pass `--overlay_hotkey=Shift+F1` to drive the overlay. See
   [server-overlay.md](server-overlay.md).
+- **Check the overlay's "open folder/file" buttons with a fake `xdg-open`**
+  (verified 2026-10): put a script named `xdg-open` that appends `"$@"` to a
+  file first on the server's `PATH`, click, and read the file -- it shows the
+  exact path the server tried to open, without a real file manager window
+  (and, on WSL, without the `explorer.exe` fallback popping a window on the
+  Windows desktop).
 - **Keyboard-only flows are drivable with `page.keyboard`** (verified
   2026-10, web renderer): click the window once so it has focus, then
   `keyboard.down("Alt")` shows the access-key underlines for a screenshot,

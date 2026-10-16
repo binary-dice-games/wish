@@ -45,7 +45,14 @@ DEFINE_string(title, "wish", "Window title");
 DEFINE_int32(width, 1280, "Window width in pixels");
 DEFINE_int32(height, 720, "Window height in pixels");
 DEFINE_int32(font_size, 16, "Font size in pixels");
-DEFINE_string(renderer, "web", "Rendering backend: sdl3 or web (standalone also takes none: no UI)");
+// sdl3 by default: video playback (the Video widget) is smoothest in a native
+// window. A binary built without SDL3 can only default to web.
+#ifdef WISH_SDL3_ENABLED
+#define WISH_DEFAULT_RENDERER "sdl3"
+#else
+#define WISH_DEFAULT_RENDERER "web"
+#endif
+DEFINE_string(renderer, WISH_DEFAULT_RENDERER, "Rendering backend: sdl3 or web (standalone also takes none: no UI)");
 // Deliberately NOT named --port: that flag is already bison's TCP RMI
 // transport port (see main.cpp), an unrelated concept from the web
 // renderer's HTTP/WebSocket port.

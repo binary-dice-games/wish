@@ -223,7 +223,7 @@ class server_overlay {
 
   void draw_backdrop();
   void draw_top_bar(size_t client_count);
-  void draw_bottom_bar(const std::vector<overlay_client_info>& clients);
+  void draw_bottom_bar();
   void draw_overview(const std::vector<overlay_client_info>& clients);
   void draw_clients(const std::vector<overlay_client_info>& clients);
   void draw_settings(const std::vector<overlay_client_info>& clients);

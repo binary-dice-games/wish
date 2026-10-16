@@ -62,9 +62,6 @@ The bottom bar has:
   the file's path; the Overview's Server card has an **Open** button for the
   folder. With `--renderer web` the browser showing the server takes the
   picture, so one must be open (and in the foreground).
-- **Open sandbox folder**: a menu of the connected clients' sandboxes
-  (`users/<identity>/sandbox` under the wish home for identified clients
-  with persistent sandboxes, a temporary one otherwise).
 - **Open server log** and **Logs folder**.
 - **GitHub** and **Documentation**.
 - **Shut down server**, after a confirmation that says how many clients

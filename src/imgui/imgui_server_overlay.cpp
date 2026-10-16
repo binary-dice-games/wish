@@ -851,7 +851,7 @@ void server_overlay::render(const std::vector<sync_context_ptr>& sessions) {
   }
   ImGui::EndChild();
 
-  draw_bottom_bar(clients);
+  draw_bottom_bar();
   draw_shutdown_popup(clients.size());
   ImGui::End();
   ImGui::PopStyleVar(); // Alpha
@@ -1015,7 +1015,7 @@ void server_overlay::draw_top_bar(size_t client_count) {
   dl->AddLine({c.x + k, c.y - k}, {c.x - k, c.y + k}, ImGui::GetColorU32(pal.text), 2.0f);
 }
 
-void server_overlay::draw_bottom_bar(const std::vector<overlay_client_info>& clients) {
+void server_overlay::draw_bottom_bar() {
   const ImGuiViewport* vp = ImGui::GetMainViewport();
   const float fs = ImGui::GetFontSize();
   const float bar_h = std::floor(fs * 4.0f);
@@ -1038,31 +1038,6 @@ void server_overlay::draw_bottom_bar(const std::vector<overlay_client_info>& cli
     ImGui::SameLine();
   }
 
-  // Sandbox: pick a connected client's sandbox.
-  {
-    ImGui::BeginDisabled(clients.empty());
-    if (ImGui::Button("Open sandbox folder"))
-      ImGui::OpenPopup("##sandbox_pick");
-    ImGui::EndDisabled();
-    const char* tip = "Each client has its own temporary sandbox";
-    if (clients.empty())
-      tip = "No client connected";
-    else if (info_.persistent_sandboxes)
-      tip = "Identified clients keep their sandbox in users/<identity>/sandbox under the wish home; "
-            "anonymous ones get a temporary one";
-    ImGui::SetItemTooltip("%s", tip);
-    if (ImGui::BeginPopup("##sandbox_pick")) {
-      for (const auto& c : clients) {
-        const std::string label = (c.identity.empty() ? std::string{"anonymous"} : c.identity) + "  (" +
-            short_session(c.session_id) + ")##" + short_session(c.session_id);
-        if (ImGui::MenuItem(label.c_str()))
-          open_target(c.sandbox.string(), "the sandbox folder");
-        ImGui::SetItemTooltip("%s", c.sandbox.string().c_str());
-      }
-      ImGui::EndPopup();
-    }
-  }
-  ImGui::SameLine();
   if (ImGui::Button("Open server log"))
     open_target(info_.log_file.string(), "the server log");
   ImGui::SetItemTooltip("%s", info_.log_file.string().c_str());

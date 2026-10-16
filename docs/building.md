@@ -296,7 +296,7 @@ the example app on an emulator.
 ## Running the wish server
 
 `wish server` (or the standalone `wish-server` binary, equivalent flags, no
-subcommand) opens an SDL3 window, or — with `--renderer web` (the default) —
+subcommand) opens an SDL3 window (the default), or — with `--renderer web` —
 a browser endpoint, and renders UI pushed by connected clients over the
 transport selected at launch.
 

@@ -52,7 +52,7 @@ DECLARE_string(username);
 DECLARE_bool(anonymous);
 #else
 DEFINE_int32(font_size, 16, "Font size in pixels");
-DEFINE_string(renderer, "web", "Rendering backend: sdl3, web, or none (no UI)");
+DEFINE_string(renderer, "sdl3", "Rendering backend: sdl3, web, or none (no UI)");
 DEFINE_int32(web_port, 8080, "HTTP/WebSocket port for --renderer web");
 DEFINE_string(web_bind, "127.0.0.1", "Bind address for --renderer web (localhost-only by default)");
 DEFINE_bool(profiling, false, "Enable the Perfetto profiler; traces go to <wish_home>/traces (or --profiling_dir)");

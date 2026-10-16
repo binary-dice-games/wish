@@ -95,7 +95,7 @@ launch.
 | `--width N` | `1280` | Initial window width in pixels (`--renderer sdl3` only) |
 | `--height N` | `720` | Initial window height in pixels (`--renderer sdl3` only) |
 | `--font_size N` | `16` | UI font size in pixels |
-| `--renderer NAME` | `web` | Rendering backend: `sdl3` or `web` |
+| `--renderer NAME` | `sdl3` | Rendering backend: `sdl3` (a native window; best for video playback) or `web`. A binary built without SDL3 defaults to `web` |
 | `--web_port PORT` | `8080` | HTTP/WebSocket port (`--renderer web` only) |
 | `--web_bind ADDR` | `127.0.0.1` | Bind address (`--renderer web` only; localhost-only by default) |
 | `--settings_admins A,B` | *(empty)* | Identities (`--username`) allowed to change server-wide settings, such as the saved default theme, from the Settings tool (`bdg/desktop/conf`; see [settings.md](settings.md)). Trusts the client-supplied name — local/single-user use only. Never saved as a default |
@@ -120,8 +120,9 @@ At startup a notification in the bottom-right corner shows the overlay's
 key combination: press **Shift+F1** (or choose **Server → Overlay**) for the
 [server overlay](server-overlay.md), with the server's and the machine's
 details, the connected clients, performance graphs and the profiler, a
-settings editor, the server log, and buttons to take a screenshot, open the
-sandbox and log folders or shut the server down. Apps can post
+settings editor, the server log, and buttons to take a screenshot, open a
+client's sandbox (from the Clients page) or the log folder, or shut the
+server down. Apps can post
 notifications there too.
 
 Close the window or choose **Server → Quit** from the menu bar, then
@@ -189,7 +190,7 @@ SDL3, it still supports `--renderer sdl3|web` at runtime exactly like
 | `--title TITLE` | `wish` | Window title (`--renderer sdl3` only) |
 | `--width N` | `1280` | Initial window width in pixels (`--renderer sdl3` only) |
 | `--height N` | `720` | Initial window height in pixels (`--renderer sdl3` only) |
-| `--renderer NAME` | `web` | Rendering backend: `sdl3`, `web`, or `none` (no window and no web server — for apps run as command line tools, see below) |
+| `--renderer NAME` | `sdl3` | Rendering backend: `sdl3`, `web`, or `none` (no window and no web server — for apps run as command line tools, see below) |
 | `--web_port PORT` / `--web_bind ADDR` | `8080` / `127.0.0.1` | Same as `server` (`--renderer web` only) |
 | `--username NAME` / `--anonymous` | OS user / `false` | The session's profile: its user store and its sandbox, kept across runs in `<wish_home>/users/<name>/`. `--anonymous` runs without one (temporary sandbox, deleted on exit) |
 | `--wish_home PATH` | `~/.wish` | Root of every file wish keeps (see [wish-home.md](wish-home.md)) |
